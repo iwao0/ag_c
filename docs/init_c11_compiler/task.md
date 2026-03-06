@@ -30,3 +30,47 @@
   - [x] `src/parser/` を新設し、再帰下降構文解析のパース処理(AST構築)を実装
   - [x] `arch/arm64_apple.c` に乗算(`mul`)・除算(`sdiv`)のアセンブリ生成を追加
   - [x] 結合テストが通ることを確認
+
+- [x] 構文解析器（Parser）の単体テスト実装
+  - [x] `test/test_parser.c` の実装およびAST構築(`expr()`)の検証ケース作成
+  - [x] `Makefile` を修正して `make test` または `make unittest` でパーサーの単体テストを実行可能にする
+  - [x] 期待通りにすべてのテストがPassすることを確認
+
+- [x] テスト環境のリファクタリング
+  - [x] `ASSERT_TRUE` などのテストマクロを `test/test_common.h` に分離
+
+- [x] 比較演算子の実装 (`==`, `!=`, `<`, `<=`, `>`, `>=`) (TDD)
+  - [x] `test.sh` に比較演算子のテストケースを先行追加
+  - [x] `test_tokenizer.c` に比較演算子のトークナイズテストを追加
+  - [x] `test_parser.c` に比較演算子のパース(AST)テストを追加
+  - [x] `tokenizer.c` および `parser.c` のコードの拡張
+  - [x] `arch/arm64_apple.c` に比較演算のアセンブリ生成を追加 (`cmp`, `cset`)
+  - [x] 単体テストおよび結合テストが通ることを確認
+
+- [x] ローカル変数サポートの実装 (TDD)
+  - [x] `test.sh` に代入式・複文（セミコロン区切り）のテストケースを先行追加
+  - [x] `test_tokenizer.c` に識別子(`TK_IDENT`)・セミコロン・`=` のトークナイズテストを追加
+  - [x] `test_parser.c` に代入式・変数参照・複文のAST構造テストを追加
+  - [x] `tokenizer.c` を拡張（`TK_IDENT` トークン、セミコロン、`=` 対応）
+  - [x] `parser.h`/`parser.c` を拡張（`ND_ASSIGN`, `ND_LVAR` ノード、`program()` / `stmt()` / `assign()` 関数）
+  - [x] `ag_c.h` / `arm64_apple.c` を拡張（スタックフレーム(`stp`/`ldp`)、変数アドレス計算(`gen_lval`)）
+  - [x] `main.c` を拡張（複文対応：`program()` を呼び出し、各文ごとに `gen()` を実行）
+  - [x] 単体テストおよび結合テストが通ることを確認
+
+- [x] if/else 制御構文の実装 (TDD)
+  - [x] テストケース・実装コードの作成
+  - [x] 単体テストおよび結合テストが通ることを確認
+  - [x] `grammar.md` の更新
+
+- [x] for/while ループの実装 (TDD)
+  - [x] テストケース・実装コードの作成
+  - [x] 単体テストおよび結合テストが通ることを確認
+  - [x] `grammar.md` の更新
+
+- [x] 結合テストの C 言語化
+  - [x] `test/test_e2e.c` を作成（test.sh の全ケースを移植）
+  - [x] `Makefile` の `test` ターゲットを更新
+  - [x] 全テストが通ることを確認
+- [x] `walkthrough.md` への実装完了項目の追記
+
+- [x] return 文の実装 (TDD)

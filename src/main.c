@@ -13,20 +13,21 @@ int main(int argc, char **argv) {
   // トークナイズ
   token = tokenize(argv[1]);
 
-  // パースしてAST（抽象構文木）を構築
-  node_t *node = expr();
+  // パースしてAST（抽象構文木）を構築（複文対応）
+  program();
 
   // アセンブリの前半部分を出力
   gen_main_prologue();
 
-  // ASTを下りながらコード生成
-  gen(node);
+  // 各文のASTを下りながらコード生成
+  for (int i = 0; code[i]; i++) {
+    gen(code[i]);
 
-  // スタックトップに式全体の値が残っているので、x0
-  // (実質w0)にポップして返り値とする
-  printf("  ldr x0, [sp], #16\n");
+    // 文の評価結果はスタックに残っているので、ポップしてx0に入れる
+    printf("  ldr x0, [sp], #16\n");
+  }
 
-  // アセンブリの後半部分を出力
+  // アセンブリの後半部分を出力（最後の文の結果がx0に入った状態でret）
   gen_main_epilogue();
 
   return 0;

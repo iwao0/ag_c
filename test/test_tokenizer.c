@@ -5,26 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// テスト用のマクロ
-#define ASSERT_TRUE(cond)                                                      \
-  do {                                                                         \
-    if (!(cond)) {                                                             \
-      fprintf(stderr, "Assertion failed: %s at %s:%d\n", #cond, __FILE__,      \
-              __LINE__);                                                       \
-      exit(1);                                                                 \
-    }                                                                          \
-  } while (0)
-
-#define ASSERT_EQ(expected, actual)                                            \
-  do {                                                                         \
-    long e = (long)(expected);                                                 \
-    long a = (long)(actual);                                                   \
-    if (e != a) {                                                              \
-      fprintf(stderr, "Assertion failed: %ld == %ld at %s:%d\n", e, a,         \
-              __FILE__, __LINE__);                                             \
-      exit(1);                                                                 \
-    }                                                                          \
-  } while (0)
+#include "test_common.h"
 
 // tokenizer.c で定義されているがヘッダにない変数と関数をextern
 extern char *user_input;
@@ -95,6 +76,116 @@ static void test_tokenize() {
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);
+
+  // 比較演算子のテスト
+  token = tokenize("1 == 2 != 3 <= 4 >= 5 < 6 > 7");
+  // 1
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(1, token->val);
+  token = token->next;
+  // ==
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(2, token->len);
+  ASSERT_EQ('=', token->str[0]);
+  ASSERT_EQ('=', token->str[1]);
+  token = token->next;
+  // 2
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(2, token->val);
+  token = token->next;
+  // !=
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(2, token->len);
+  ASSERT_EQ('!', token->str[0]);
+  ASSERT_EQ('=', token->str[1]);
+  token = token->next;
+  // 3
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(3, token->val);
+  token = token->next;
+  // <=
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(2, token->len);
+  ASSERT_EQ('<', token->str[0]);
+  ASSERT_EQ('=', token->str[1]);
+  token = token->next;
+  // 4
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(4, token->val);
+  token = token->next;
+  // >=
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(2, token->len);
+  ASSERT_EQ('>', token->str[0]);
+  ASSERT_EQ('=', token->str[1]);
+  token = token->next;
+  // 5
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, token->val);
+  token = token->next;
+  // <
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(1, token->len);
+  ASSERT_EQ('<', token->str[0]);
+  token = token->next;
+  // 6
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(6, token->val);
+  token = token->next;
+  // >
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(1, token->len);
+  ASSERT_EQ('>', token->str[0]);
+  token = token->next;
+  // 7
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(7, token->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
+// 1b. tokenize() ローカル変数関連のテスト
+static void test_tokenize_ident() {
+  printf("test_tokenize_ident...\n");
+  token = tokenize("a = 3; b = a;");
+
+  // a
+  ASSERT_EQ(TK_IDENT, token->kind);
+  ASSERT_EQ('a', token->str[0]);
+  ASSERT_EQ(1, token->len);
+  token = token->next;
+  // =
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ('=', token->str[0]);
+  ASSERT_EQ(1, token->len);
+  token = token->next;
+  // 3
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(3, token->val);
+  token = token->next;
+  // ;
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(';', token->str[0]);
+  token = token->next;
+  // b
+  ASSERT_EQ(TK_IDENT, token->kind);
+  ASSERT_EQ('b', token->str[0]);
+  token = token->next;
+  // =
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ('=', token->str[0]);
+  token = token->next;
+  // a
+  ASSERT_EQ(TK_IDENT, token->kind);
+  ASSERT_EQ('a', token->str[0]);
+  token = token->next;
+  // ;
+  ASSERT_EQ(TK_RESERVED, token->kind);
+  ASSERT_EQ(';', token->str[0]);
+  token = token->next;
+
+  ASSERT_EQ(TK_EOF, token->kind);
 }
 
 // 2. consume() のテスト
@@ -146,6 +237,7 @@ int main() {
   printf("Running tests for Tokenizer...\n");
 
   test_tokenize();
+  test_tokenize_ident();
   test_consume();
   test_expect();
   test_expect_number();

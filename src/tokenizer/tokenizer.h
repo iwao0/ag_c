@@ -6,7 +6,13 @@
 // トークンの種類
 typedef enum {
   TK_RESERVED, // 記号
+  TK_IDENT,    // 識別子
   TK_NUM,      // 整数トークン
+  TK_IF,       // if
+  TK_ELSE,     // else
+  TK_WHILE,    // while
+  TK_FOR,      // for
+  TK_RETURN,   // return
   TK_EOF,      // 入力の終わりを表すトークン
 } token_kind_t;
 
@@ -29,6 +35,8 @@ void error_at(char *loc, char *fmt, ...);
 // 次のトークンが期待している記号のときには、トークンを1つ読み進めて真を返す。
 // それ以外の場合には偽を返す。
 bool consume(char op);
+bool consume_str(char *op);
+token_t *consume_ident(void);
 
 // 次のトークンが期待している記号のときには、トークンを1つ読み進める。
 // それ以外の場合にはエラーを報告する。
