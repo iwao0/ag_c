@@ -99,8 +99,8 @@ token_t *tokenize(char *p) {
       continue;
     }
 
-    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =)
-    if (strchr("+-*/()<>;=", *p)) {
+    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,)
+    if (strchr("+-*/()<>;={},", *p)) {
       cur = new_token(TK_RESERVED, cur, p++);
       cur->len = 1;
       continue;

@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "../tokenizer/tokenizer.h"
+#include <stdio.h>
 #include <stdlib.h>
 
 node_t *code[MAX_STMTS];
@@ -33,22 +34,80 @@ static node_t *relational(void);
 static node_t *add(void);
 static node_t *mul(void);
 static node_t *primary(void);
+static node_t *funcdef(void);
 
-// program = stmt*
+// program = funcdef*
 void program(void) {
   int i = 0;
   while (!at_eof()) {
-    code[i++] = stmt();
+    code[i++] = funcdef();
   }
   code[i] = NULL;
 }
 
-// stmt = "if" "(" expr ")" stmt ("else" stmt)?
+// funcdef = ident "(" params? ")" "{" stmt* "}"
+// params  = ident ("," ident)*
+static node_t *funcdef(void) {
+  token_t *tok = consume_ident();
+  if (!tok) {
+    fprintf(stderr, "関数定義が期待されます\n");
+    exit(1);
+  }
+  node_t *node = calloc(1, sizeof(node_t));
+  node->kind = ND_FUNCDEF;
+  node->funcname = tok->str;
+  node->funcname_len = tok->len;
+
+  expect('(');
+  // 仮引数のパース
+  int nargs = 0;
+  if (!consume(')')) {
+    token_t *param = consume_ident();
+    if (param) {
+      node->args[nargs++] = new_node_lvar((param->str[0] - 'a' + 1) * 8);
+    }
+    while (consume(',')) {
+      param = consume_ident();
+      if (param) {
+        node->args[nargs++] = new_node_lvar((param->str[0] - 'a' + 1) * 8);
+      }
+    }
+    expect(')');
+  }
+  node->nargs = nargs;
+
+  // 関数本体 (ブロック)
+  expect('{');
+  node_t *body = calloc(1, sizeof(node_t));
+  body->kind = ND_BLOCK;
+  int i = 0;
+  while (!consume('}')) {
+    body->body[i++] = stmt();
+  }
+  body->body[i] = NULL;
+  node->rhs = body;
+
+  return node;
+}
+
+// stmt = "{" stmt* "}"
+//      | "if" "(" expr ")" stmt ("else" stmt)?
 //      | "while" "(" expr ")" stmt
 //      | "for" "(" expr? ";" expr? ";" expr? ")" stmt
 //      | "return" expr ";"
 //      | expr ";"
 static node_t *stmt(void) {
+  if (consume('{')) {
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_BLOCK;
+    int i = 0;
+    while (!consume('}')) {
+      node->body[i++] = stmt();
+    }
+    node->body[i] = NULL;
+    return node;
+  }
+
   if (token->kind == TK_RETURN) {
     token = token->next;
     node_t *node = calloc(1, sizeof(node_t));
@@ -181,7 +240,8 @@ static node_t *mul(void) {
   }
 }
 
-// primary = "(" expr ")" | ident | num
+// primary = ident "(" args? ")" | "(" expr ")" | ident | num
+// args    = expr ("," expr)*
 static node_t *primary(void) {
   if (consume('(')) {
     node_t *node = expr();
@@ -191,7 +251,24 @@ static node_t *primary(void) {
 
   token_t *tok = consume_ident();
   if (tok) {
-    // 変数名(1文字)からオフセットを計算: a=8, b=16, c=24, ...
+    // 関数呼び出し: ident "(" args? ")"
+    if (consume('(')) {
+      node_t *node = calloc(1, sizeof(node_t));
+      node->kind = ND_FUNCALL;
+      node->funcname = tok->str;
+      node->funcname_len = tok->len;
+      int nargs = 0;
+      if (!consume(')')) {
+        node->args[nargs++] = expr();
+        while (consume(',')) {
+          node->args[nargs++] = expr();
+        }
+        expect(')');
+      }
+      node->nargs = nargs;
+      return node;
+    }
+    // ローカル変数
     int offset = (tok->str[0] - 'a' + 1) * 8;
     return new_node_lvar(offset);
   }

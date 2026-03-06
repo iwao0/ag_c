@@ -159,37 +159,47 @@ static void test_expr_assign() {
   ASSERT_EQ(3, node->rhs->val);
 }
 
-static void test_program_multi_stmt() {
-  printf("test_program_multi_stmt...\n");
-  token = tokenize("a=1; b=2; a+b;");
+static void test_program_funcdef() {
+  printf("test_program_funcdef...\n");
+  token = tokenize("main() { a=1; b=2; a+b; }");
   program();
 
-  // 1文目: a=1
+  // code[0] は ND_FUNCDEF
   ASSERT_TRUE(code[0] != NULL);
-  ASSERT_EQ(ND_ASSIGN, code[0]->kind);
-  ASSERT_EQ(ND_LVAR, code[0]->lhs->kind);
-  ASSERT_EQ(8, code[0]->lhs->offset); // a
-  ASSERT_EQ(ND_NUM, code[0]->rhs->kind);
-  ASSERT_EQ(1, code[0]->rhs->val);
+  ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
+  ASSERT_EQ(0, code[0]->nargs);
+
+  // 関数本体は ND_BLOCK
+  node_t *body = code[0]->rhs;
+  ASSERT_EQ(ND_BLOCK, body->kind);
+
+  // 1文目: a=1
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(8, body->body[0]->lhs->offset);
 
   // 2文目: b=2
-  ASSERT_TRUE(code[1] != NULL);
-  ASSERT_EQ(ND_ASSIGN, code[1]->kind);
-  ASSERT_EQ(ND_LVAR, code[1]->lhs->kind);
-  ASSERT_EQ(16, code[1]->lhs->offset); // b
-  ASSERT_EQ(ND_NUM, code[1]->rhs->kind);
-  ASSERT_EQ(2, code[1]->rhs->val);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(16, body->body[1]->lhs->offset);
 
   // 3文目: a+b
-  ASSERT_TRUE(code[2] != NULL);
-  ASSERT_EQ(ND_ADD, code[2]->kind);
-  ASSERT_EQ(ND_LVAR, code[2]->lhs->kind);
-  ASSERT_EQ(8, code[2]->lhs->offset); // a
-  ASSERT_EQ(ND_LVAR, code[2]->rhs->kind);
-  ASSERT_EQ(16, code[2]->rhs->offset); // b
+  ASSERT_EQ(ND_ADD, body->body[2]->kind);
 
   // 終端
-  ASSERT_TRUE(code[3] == NULL);
+  ASSERT_TRUE(body->body[3] == NULL);
+  ASSERT_TRUE(code[1] == NULL);
+}
+
+static void test_funcall() {
+  printf("test_funcall...\n");
+  token = tokenize("add(1, 2)");
+  node_t *node = expr();
+
+  ASSERT_EQ(ND_FUNCALL, node->kind);
+  ASSERT_EQ(2, node->nargs);
+  ASSERT_EQ(ND_NUM, node->args[0]->kind);
+  ASSERT_EQ(1, node->args[0]->val);
+  ASSERT_EQ(ND_NUM, node->args[1]->kind);
+  ASSERT_EQ(2, node->args[1]->val);
 }
 
 int main() {
@@ -203,7 +213,8 @@ int main() {
   test_expr_eq_neq();
   test_expr_relational();
   test_expr_assign();
-  test_program_multi_stmt();
+  test_program_funcdef();
+  test_funcall();
 
   printf("OK: All unit tests passed!\n");
   return 0;

@@ -6,8 +6,11 @@
 ## 対応済みの文法
 
 ```
-program    = stmt*
-stmt       = "if" "(" expr ")" stmt ("else" stmt)?
+program    = funcdef*
+funcdef    = ident "(" params? ")" "{" stmt* "}"
+params     = ident ("," ident)*
+stmt       = "{" stmt* "}"
+           | "if" "(" expr ")" stmt ("else" stmt)?
            | "while" "(" expr ")" stmt
            | "for" "(" expr? ";" expr? ";" expr? ")" stmt
            | "return" expr ";"
@@ -18,7 +21,8 @@ equality   = relational ("==" relational | "!=" relational)*
 relational = add ("<" add | "<=" add | ">" add | ">=" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = primary ("*" primary | "/" primary)*
-primary    = "(" expr ")" | ident | num
+primary    = ident "(" args? ")" | "(" expr ")" | ident | num
+args       = expr ("," expr)*
 ```
 
 ### トークン定義
@@ -53,13 +57,16 @@ primary    = "(" expr ")" | ident | num
 | `ND_WHILE` | while文（`lhs`=条件, `rhs`=ループ本体） |
 | `ND_FOR` | for文（`init`=初期化, `lhs`=条件, `inc`=インクリメント, `rhs`=本体） |
 | `ND_RETURN` | return文（`lhs`=戻り値の式） |
+| `ND_BLOCK` | ブロック文（`body[]`=文の配列） |
+| `ND_FUNCDEF` | 関数定義（`funcname`, `args[]`=仮引数, `rhs`=本体BLOCK） |
+| `ND_FUNCALL` | 関数呼び出し（`funcname`, `args[]`=実引数, `nargs`） |
 | `ND_NUM` | 整数リテラル |
 
 ## 未実装（今後の拡張候補）
 
 - ~~`if` / `else`~~ / ~~`while`~~ / ~~`for`~~ などの制御構文 → **実装済み**
 - ~~`return` 文~~ → **実装済み**
-- 関数定義・関数呼び出し
+- ~~関数定義・関数呼び出し~~ → **実装済み**
 - 複数文字の変数名（現在は `a`〜`z` の1文字のみ）
 - 型宣言（`int` など）
 - ポインタ・配列

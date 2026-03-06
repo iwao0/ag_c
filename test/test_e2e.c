@@ -7,8 +7,7 @@
 
 // コンパイル → アセンブル → 実行 → 終了コード取得
 static int compile_and_run(const char *input) {
-  // 1. ag_c でアセンブリを生成
-  char cmd[1024];
+  char cmd[2048];
   snprintf(cmd, sizeof(cmd), "./build/ag_c '%s' > build/tmp_e2e.s 2>&1", input);
   int ret = system(cmd);
   if (ret != 0) {
@@ -16,14 +15,12 @@ static int compile_and_run(const char *input) {
     return -1;
   }
 
-  // 2. clang でアセンブル・リンク
   ret = system("clang -o build/tmp_e2e build/tmp_e2e.s 2>&1");
   if (ret != 0) {
     fprintf(stderr, "  Assemble failed for: %s\n", input);
     return -1;
   }
 
-  // 3. 実行して終了コードを取得
   ret = system("./build/tmp_e2e");
   return WEXITSTATUS(ret);
 }
@@ -36,94 +33,114 @@ static void assert_result(int expected, const char *input) {
   int actual = compile_and_run(input);
   if (actual == expected) {
     pass_count++;
-    printf("  OK: \"%s\" => %d\n", input, actual);
+    printf("  OK: => %d\n", actual);
   } else {
-    fprintf(stderr, "  FAIL: \"%s\" => expected %d, got %d\n", input, expected,
-            actual);
+    fprintf(stderr, "  FAIL: => expected %d, got %d\n  input: %s\n", expected,
+            actual, input);
     exit(1);
   }
 }
 
 // --- テストケース ---
+// 全テストが main() { ... } の関数定義形式
 
 static void test_integer() {
   printf("test_integer...\n");
-  assert_result(0, "0;");
-  assert_result(42, "42;");
+  assert_result(0, "main() { 0; }");
+  assert_result(42, "main() { 42; }");
 }
 
 static void test_arithmetic() {
   printf("test_arithmetic...\n");
-  assert_result(21, "5+20-4;");
-  assert_result(41, " 12 + 34 - 5 ;");
-  assert_result(47, "5+6*7;");
-  assert_result(15, "5*(9-6);");
-  assert_result(4, "(3+5)/2;");
+  assert_result(21, "main() { 5+20-4; }");
+  assert_result(41, "main() { 12 + 34 - 5 ; }");
+  assert_result(47, "main() { 5+6*7; }");
+  assert_result(15, "main() { 5*(9-6); }");
+  assert_result(4, "main() { (3+5)/2; }");
 }
 
 static void test_comparison() {
   printf("test_comparison...\n");
-  // ==, !=
-  assert_result(1, "0==0;");
-  assert_result(0, "42==0;");
-  assert_result(1, "0!=1;");
-  assert_result(0, "42!=42;");
-  // <, <=
-  assert_result(1, "0<1;");
-  assert_result(0, "1<1;");
-  assert_result(0, "2<1;");
-  assert_result(1, "0<=1;");
-  assert_result(1, "1<=1;");
-  assert_result(0, "2<=1;");
-  // >, >=
-  assert_result(1, "1>0;");
-  assert_result(0, "1>1;");
-  assert_result(0, "1>2;");
-  assert_result(1, "1>=0;");
-  assert_result(1, "1>=1;");
-  assert_result(0, "1>=2;");
+  assert_result(1, "main() { 0==0; }");
+  assert_result(0, "main() { 42==0; }");
+  assert_result(1, "main() { 0!=1; }");
+  assert_result(0, "main() { 42!=42; }");
+  assert_result(1, "main() { 0<1; }");
+  assert_result(0, "main() { 1<1; }");
+  assert_result(0, "main() { 2<1; }");
+  assert_result(1, "main() { 0<=1; }");
+  assert_result(1, "main() { 1<=1; }");
+  assert_result(0, "main() { 2<=1; }");
+  assert_result(1, "main() { 1>0; }");
+  assert_result(0, "main() { 1>1; }");
+  assert_result(0, "main() { 1>2; }");
+  assert_result(1, "main() { 1>=0; }");
+  assert_result(1, "main() { 1>=1; }");
+  assert_result(0, "main() { 1>=2; }");
 }
 
 static void test_local_variables() {
   printf("test_local_variables...\n");
-  assert_result(3, "a=3; a;");
-  assert_result(14, "a=3; b=5*6-8; a+b/2;");
-  assert_result(6, "a=1; b=2; c=3; a+b+c;");
-  assert_result(10, "a=5; a*2;");
-  assert_result(1, "a=1; b=a; b;");
+  assert_result(3, "main() { a=3; a; }");
+  assert_result(14, "main() { a=3; b=5*6-8; a+b/2; }");
+  assert_result(6, "main() { a=1; b=2; c=3; a+b+c; }");
+  assert_result(10, "main() { a=5; a*2; }");
+  assert_result(1, "main() { a=1; b=a; b; }");
 }
 
 static void test_if_else() {
   printf("test_if_else...\n");
-  assert_result(3, "a=3; if (a==3) a; else 0;");
-  assert_result(0, "a=3; if (a==5) a; else 0;");
-  assert_result(5, "a=3; if (a==3) 5; else 10;");
-  assert_result(10, "a=3; if (a!=3) 5; else 10;");
-  assert_result(2, "if (1) 2; else 3;");
-  assert_result(3, "if (0) 2; else 3;");
-  assert_result(42, "if (1) 42;");
+  assert_result(3, "main() { a=3; if (a==3) a; else 0; }");
+  assert_result(0, "main() { a=3; if (a==5) a; else 0; }");
+  assert_result(5, "main() { a=3; if (a==3) 5; else 10; }");
+  assert_result(10, "main() { a=3; if (a!=3) 5; else 10; }");
+  assert_result(2, "main() { if (1) 2; else 3; }");
+  assert_result(3, "main() { if (0) 2; else 3; }");
+  assert_result(42, "main() { if (1) 42; }");
 }
 
 static void test_while() {
   printf("test_while...\n");
-  assert_result(10, "a=0; while (a<10) a=a+1; a;");
-  assert_result(0, "a=0; while (0) a=a+1; a;");
+  assert_result(10, "main() { a=0; while (a<10) a=a+1; a; }");
+  assert_result(0, "main() { a=0; while (0) a=a+1; a; }");
 }
 
 static void test_for() {
   printf("test_for...\n");
-  assert_result(55, "a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; b;");
-  assert_result(10, "a=0; for (a=0; a<10; a=a+1) a; a;");
+  assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; b; }");
+  assert_result(10, "main() { a=0; for (a=0; a<10; a=a+1) a; a; }");
 }
 
 static void test_return() {
   printf("test_return...\n");
-  assert_result(42, "return 42;");
-  assert_result(5, "return 2+3;");
-  assert_result(10, "a=10; return a;");
-  assert_result(3, "a=1; b=2; return a+b;");
-  assert_result(1, "if (1) return 1; else return 2;");
-  assert_result(10, "a=0; while (a<10) a=a+1; return a;");
+  assert_result(42, "main() { return 42; }");
+  assert_result(5, "main() { return 2+3; }");
+  assert_result(10, "main() { a=10; return a; }");
+  assert_result(3, "main() { a=1; b=2; return a+b; }");
+  assert_result(1, "main() { if (1) return 1; else return 2; }");
+  assert_result(10, "main() { a=0; while (a<10) a=a+1; return a; }");
+}
+
+static void test_block() {
+  printf("test_block...\n");
+  assert_result(3, "main() { { 1; 2; 3; } }");
+  assert_result(6, "main() { a=1; b=2; c=3; { a+b+c; } }");
+  assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) { b=b+a; } return b; }");
+  assert_result(10, "main() { a=0; while (a<10) { a=a+1; } return a; }");
+  assert_result(5, "main() { if (1) { a=2; b=3; a+b; } else { 0; } }");
+}
+
+static void test_funcall() {
+  printf("test_funcall...\n");
+  // 引数なし関数
+  assert_result(42, "fortytwo() { return 42; } main() { return fortytwo(); }");
+  // 引数あり関数
+  assert_result(7, "add(a, b) { return a+b; } main() { return add(3, 4); }");
+  assert_result(10, "double(a) { return a*2; } main() { return double(5); }");
+  // 複数関数の組み合わせ
+  assert_result(21, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }");
+  // 再帰（フィボナッチ的なもの — ただし深い再帰は避ける）
+  assert_result(120, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }");
 }
 
 int main() {
@@ -137,6 +154,8 @@ int main() {
   test_while();
   test_for();
   test_return();
+  test_block();
+  test_funcall();
 
   printf("OK: All %d E2E tests passed! (%d/%d)\n", test_count, pass_count,
          test_count);

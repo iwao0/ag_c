@@ -42,6 +42,9 @@
 | while 文 | `stmt = "while" "(" expr ")" stmt` |
 | for 文 | `stmt = "for" "(" expr? ";" expr? ";" expr? ")" stmt` |
 | return 文 | `stmt = "return" expr ";"` |
+| ブロック文 | `stmt = "{" stmt* "}"` |
+| 関数定義 | `funcdef = ident "(" params? ")" "{" stmt* "}"` |
+| 関数呼び出し | `primary = ident "(" args? ")"` |
 
 > [!NOTE]
 > 文法規則の完全な定義は [grammar.md](grammar.md) を参照してください。
@@ -75,5 +78,5 @@ test_local_variables...
 test_if_else...
 test_while...
 test_for...
-OK: All 45 E2E tests passed! (45/45)
+OK: All 55 E2E tests passed! (55/55)
 ```
