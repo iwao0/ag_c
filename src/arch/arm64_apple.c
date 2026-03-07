@@ -56,6 +56,12 @@ void gen(struct node_t *node) {
   case ND_ADDR:
     gen_lval(node->lhs);
     return;
+  case ND_STRING:
+    // 文字列ラベルのアドレスをロード
+    printf("  adrp x0, %s@PAGE\n", node->string_label);
+    printf("  add x0, x0, %s@PAGEOFF\n", node->string_label);
+    printf("  str x0, [sp, #-16]!\n");
+    return;
   case ND_ASSIGN:
     gen_lval(node->lhs);
     gen(node->rhs);
@@ -221,4 +227,26 @@ void gen(struct node_t *node) {
   }
 
   printf("  str x0, [sp, #-16]!\n");
+}
+
+void gen_string_literals(void) {
+  if (!string_literals) return;
+  printf(".section __TEXT,__cstring\n");
+  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    printf("%s:\n", lit->label);
+    printf("  .asciz \"");
+    for (int i = 0; i < lit->len; i++) {
+      char c = lit->str[i];
+      if (c == '\\' && i + 1 < lit->len) {
+        char next = lit->str[i + 1];
+        if (next == 'n') { printf("\\n"); i++; continue; }
+        if (next == 't') { printf("\\t"); i++; continue; }
+        if (next == '\\') { printf("\\\\"); i++; continue; }
+        if (next == '"') { printf("\\\""); i++; continue; }
+      }
+      printf("%c", c);
+    }
+    printf("\"\n");
+  }
+  printf(".text\n");
 }

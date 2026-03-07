@@ -20,6 +20,7 @@ typedef enum {
   TK_LONG,     // long
   TK_FLOAT,    // float
   TK_DOUBLE,   // double
+  TK_STRING,   // 文字列リテラル
   TK_EOF,      // 入力の終わりを表すトークン
 } token_kind_t;
 

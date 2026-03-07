@@ -5,6 +5,8 @@
 #include <string.h>
 
 node_t *code[MAX_STMTS];
+string_lit_t *string_literals;
+static int string_label_count = 0;
 
 // ローカル変数テーブル（関数ごとにリセット）
 static lvar_t *locals;
@@ -368,7 +370,7 @@ static node_t *unary(void) {
   return node;
 }
 
-// primary = ident "(" args? ")" | "(" expr ")" | ident | num
+// primary = ident "(" args? ")" | "(" expr ")" | ident | num | string
 // args    = expr ("," expr)*
 static node_t *primary(void) {
   if (consume('(')) {
@@ -410,6 +412,25 @@ static node_t *primary(void) {
       return node;
     }
     return new_node_lvar(var->offset);
+  }
+
+  // 文字列リテラル
+  if (token->kind == TK_STRING) {
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_STRING;
+    // ラベルを生成
+    char label[32];
+    snprintf(label, sizeof(label), ".LC%d", string_label_count++);
+    node->string_label = strdup(label);
+    // 文字列テーブルに登録
+    string_lit_t *lit = calloc(1, sizeof(string_lit_t));
+    lit->label = node->string_label;
+    lit->str = token->str;
+    lit->len = token->len;
+    lit->next = string_literals;
+    string_literals = lit;
+    token = token->next;
+    return node;
   }
 
   return new_node_num(expect_number());

@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// test_codegen は parser.o をリンクしないため、string_literals のダミー定義が必要
+string_lit_t *string_literals = NULL;
+
 // stdout を一時的にバッファへリダイレクトして gen 系関数の出力をキャプチャする
 static char *capture_buf;
 static size_t capture_size;

@@ -48,6 +48,8 @@
 | 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double"` |
 | ポインタ (`*p`, `&x`) | `unary = ("*" \| "&") unary` |
 | 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
+| 文字列リテラル (`"..."`) | `primary = ... \| string` |
+| 文字リテラル (`'A'`) | `TK_NUM` としてASCII値を格納 |
 
 > [!NOTE]
 > 文法規則の完全な定義は [grammar.md](grammar.md) を参照してください。
@@ -81,5 +83,5 @@ test_local_variables...
 test_if_else...
 test_while...
 test_for...
-OK: All 77 E2E tests passed! (77/77)
+OK: All 82 E2E tests passed! (82/82)
 ```

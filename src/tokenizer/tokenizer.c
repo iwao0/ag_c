@@ -98,6 +98,45 @@ token_t *tokenize(char *p) {
       p += 2;
       continue;
     }
+    // 文字列リテラル
+    if (*p == '"') {
+      p++; // 開き引用符をスキップ
+      char *start = p;
+      while (*p && *p != '"')
+        p++;
+      int len = p - start;
+      if (*p == '"')
+        p++; // 閉じ引用符をスキップ
+      cur = new_token(TK_STRING, cur, start);
+      cur->len = len;
+      continue;
+    }
+
+    // 文字リテラル ('c')
+    if (*p == '\'') {
+      p++; // 開きクォートをスキップ
+      int ch;
+      if (*p == '\\') {
+        p++;
+        switch (*p) {
+          case 'n': ch = '\n'; break;
+          case 't': ch = '\t'; break;
+          case '\\': ch = '\\'; break;
+          case '\'': ch = '\''; break;
+          case '0': ch = '\0'; break;
+          default: ch = *p; break;
+        }
+      } else {
+        ch = *p;
+      }
+      p++; // 文字本体をスキップ
+      if (*p == '\'')
+        p++; // 閉じクォートをスキップ
+      cur = new_token(TK_NUM, cur, p);
+      cur->val = ch;
+      cur->len = 1;
+      continue;
+    }
 
     // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,, &, [, ])
     if (strchr("+-*/()<>;={},&[]", *p)) {

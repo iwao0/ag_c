@@ -22,6 +22,7 @@ typedef enum {
   ND_FUNCALL, // 関数呼び出し
   ND_DEREF,   // 間接参照 (*p)
   ND_ADDR,    // アドレス取得 (&x)
+  ND_STRING,  // 文字列リテラル
   ND_NUM,     // 整数
 } node_kind_t;
 
@@ -44,6 +45,7 @@ struct node_t {
   int nargs;                // 引数の数
   int val;          // kindがND_NUMの場合のみ使う
   int offset;       // kindがND_LVARの場合のみ使う（フレームポインタからのオフセット）
+  char *string_label; // kindがND_STRINGの場合のみ使う（データラベル）
 };
 
 // ローカル変数テーブル（連結リスト）
@@ -56,6 +58,16 @@ struct lvar_t {
   int size;      // サイズ（スカラー=8、配列=要素数*8）
   int is_array;  // 配列かどうか
 };
+
+// 文字列リテラルテーブル（連結リスト）
+typedef struct string_lit_t string_lit_t;
+struct string_lit_t {
+  string_lit_t *next;
+  char *label;
+  char *str;
+  int len;
+};
+extern string_lit_t *string_literals;
 
 // プログラム全体をパースする（複数の文を返す）
 extern node_t *code[MAX_STMTS];

@@ -25,7 +25,7 @@ add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary)*
 unary      = ("*" | "&") unary | primary postfix*
 postfix    = "[" expr "]"
-primary    = ident "(" args? ")" | "(" expr ")" | ident | num
+primary    = ident "(" args? ")" | "(" expr ")" | ident | num | string | char_lit
 args       = expr ("," expr)*
 ```
 
@@ -48,6 +48,7 @@ args       = expr ("," expr)*
 | `TK_FLOAT` | `float` キーワード | `float` |
 | `TK_DOUBLE` | `double` キーワード | `double` |
 | `TK_NUM` | 整数リテラル | `0`, `42`, `123` |
+| `TK_STRING` | 文字列リテラル | `"hello"` |
 | `TK_EOF` | 入力の終端 | — |
 
 ### ASTノード種別
@@ -73,6 +74,7 @@ args       = expr ("," expr)*
 | `ND_FUNCALL` | 関数呼び出し（`funcname`, `args[]`=実引数, `nargs`） |
 | `ND_DEREF` | 間接参照 `*p`（`lhs`=アドレス式） |
 | `ND_ADDR` | アドレス取得 `&x`（`lhs`=変数） |
+| `ND_STRING` | 文字列リテラル（`string_label`=データラベル） |
 | `ND_NUM` | 整数リテラル |
 
 ## 未実装（今後の拡張候補）
@@ -83,5 +85,5 @@ args       = expr ("," expr)*
 - ~~複数文字の変数名~~ → **実装済み**（英数字・アンダースコア対応）
 - ~~型宣言（`int`）~~ → **実装済み**（`int`/`char`/`void`/`short`/`long`/`float`/`double`、構文レベル）
 - ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`）
-- 文字列リテラル
+- ~~文字列リテラル~~ → **実装済み**（`char *s = "..."`、添字アクセスは型システム待ち）
 - プリプロセッサ (`#include`, `#define`)

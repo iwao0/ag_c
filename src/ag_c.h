@@ -7,5 +7,6 @@ struct node_t;
 void gen_main_prologue(void);
 void gen_main_epilogue(void);
 void gen(struct node_t *node);
+void gen_string_literals(void);
 
 #endif

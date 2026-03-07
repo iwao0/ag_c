@@ -7,15 +7,29 @@
 
 // コンパイル → アセンブル → 実行 → 終了コード取得
 static int compile_and_run(const char *input) {
-  char cmd[2048];
-  snprintf(cmd, sizeof(cmd), "./build/ag_c '%s' > build/tmp_e2e.s 2>&1", input);
-  int ret = system(cmd);
-  if (ret != 0) {
+  // ag_c をパイプで呼び出し（シェルのクォート問題を回避）
+  FILE *fp = fopen("build/tmp_e2e.s", "w");
+  if (!fp) { fprintf(stderr, "  Cannot open tmp file\n"); return -1; }
+  fclose(fp);
+
+  int pipefd[2];
+  pipe(pipefd);
+  pid_t pid = fork();
+  if (pid == 0) {
+    // 子プロセス: stdout を .s ファイルにリダイレクト
+    freopen("build/tmp_e2e.s", "w", stdout);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[0]); close(pipefd[1]);
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
     fprintf(stderr, "  Compile failed for: %s\n", input);
     return -1;
   }
 
-  ret = system("clang -o build/tmp_e2e build/tmp_e2e.s 2>&1");
+  int ret = system("clang -o build/tmp_e2e build/tmp_e2e.s 2>&1");
   if (ret != 0) {
     fprintf(stderr, "  Assemble failed for: %s\n", input);
     return -1;
@@ -194,6 +208,18 @@ static void test_array() {
   assert_result(55, "int main() { int arr[10]; int i; for(i=0; i<10; i=i+1) arr[i]=i+1; int sum=0; for(i=0; i<10; i=i+1) sum=sum+arr[i]; return sum; }");
 }
 
+static void test_string() {
+  printf("test_string...\n");
+  // 文字列の先頭文字を間接参照
+  assert_result(65, "int main() { char *s = \"AB\"; return *s; }");
+  // 空文字列のNUL終端
+  assert_result(0, "int main() { char *s = \"\"; return *s; }");
+  // 文字リテラル
+  assert_result(65, "int main() { return 'A'; }");
+  assert_result(10, "int main() { return '\\n'; }");
+  assert_result(0, "int main() { return '\\0'; }");
+}
+
 int main() {
   printf("Running E2E tests...\n");
 
@@ -211,6 +237,7 @@ int main() {
   test_type_decl();
   test_pointer();
   test_array();
+  test_string();
 
   printf("OK: All %d E2E tests passed! (%d/%d)\n", test_count, pass_count,
          test_count);

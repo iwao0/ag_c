@@ -21,5 +21,8 @@ int main(int argc, char **argv) {
     gen(code[i]);
   }
 
+  // 文字列データの出力
+  gen_string_literals();
+
   return 0;
 }
