@@ -45,6 +45,8 @@ struct node_t {
   int nargs;                // 引数の数
   int val;          // kindがND_NUMの場合のみ使う
   int offset;       // kindがND_LVARの場合のみ使う（フレームポインタからのオフセット）
+  int type_size;    // ロード/ストアサイズ（1=char, 8=int/pointer）
+  int deref_size;   // ポインタが指す先の要素サイズ（*p で使用）
   char *string_label; // kindがND_STRINGの場合のみ使う（データラベル）
 };
 
@@ -55,7 +57,8 @@ struct lvar_t {
   char *name;
   int len;
   int offset;
-  int size;      // サイズ（スカラー=8、配列=要素数*8）
+  int size;      // サイズ（スカラー=8、配列=要素数*elem_size）
+  int elem_size;   // 要素サイズ（1=char, 8=int/pointer）
   int is_array;  // 配列かどうか
 };
 

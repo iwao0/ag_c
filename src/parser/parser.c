@@ -23,7 +23,7 @@ static lvar_t *find_lvar(char *name, int len) {
 }
 
 // 新しいローカル変数を登録（サイズ指定付き）
-static lvar_t *register_lvar_sized(char *name, int len, int size, int is_array) {
+static lvar_t *register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
   lvar_t *var = calloc(1, sizeof(lvar_t));
   var->next = locals;
   var->name = name;
@@ -31,13 +31,14 @@ static lvar_t *register_lvar_sized(char *name, int len, int size, int is_array) 
   locals_offset += size;
   var->offset = locals_offset;
   var->size = size;
+  var->elem_size = elem_size;
   var->is_array = is_array;
   locals = var;
   return var;
 }
 
 static lvar_t *register_lvar(char *name, int len) {
-  return register_lvar_sized(name, len, 8, 0);
+  return register_lvar_sized(name, len, 8, 8, 0);
 }
 
 static node_t *new_node(node_kind_t kind, node_t *lhs, node_t *rhs) {
@@ -59,6 +60,13 @@ static node_t *new_node_lvar(int offset) {
   node_t *node = calloc(1, sizeof(node_t));
   node->kind = ND_LVAR;
   node->offset = offset;
+  node->type_size = 8; // デフォルトは8バイト
+  return node;
+}
+
+static node_t *new_node_lvar_typed(int offset, int type_size) {
+  node_t *node = new_node_lvar(offset);
+  node->type_size = type_size;
   return node;
 }
 
@@ -81,13 +89,18 @@ void program(void) {
   code[i] = NULL;
 }
 
-// consume_type: 型キーワード(int)があれば読み飛ばす（現在は無視）
-static bool consume_type(void) {
+// consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
+static token_kind_t consume_type_kind(void) {
   if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
+    token_kind_t kind = token->kind;
     token = token->next;
-    return true;
+    return kind;
   }
-  return false;
+  return TK_EOF; // 型なし
+}
+
+static bool consume_type(void) {
+  return consume_type_kind() != TK_EOF;
 }
 
 // funcdef = "int"? ident "(" params? ")" "{" stmt* "}"
@@ -167,9 +180,12 @@ static node_t *stmt(void) {
 
   // 型付き変数宣言: type "*"* ident ("[" num "]")? ("=" expr)? ";"
   if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
-    token = token->next;
-    // ポインタの * を読み飛ばす
-    while (consume('*')) {}
+    token_kind_t type_kind = consume_type_kind();
+    int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT) ? 4 : 8;
+    // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
+    int is_pointer = 0;
+    while (consume('*')) { is_pointer = 1; }
+    int var_size = is_pointer ? 8 : elem_size;
     token_t *tok = consume_ident();
     if (!tok) {
       fprintf(stderr, "変数名が期待されます\n");
@@ -181,7 +197,7 @@ static node_t *stmt(void) {
       if (consume('[')) {
         int array_size = expect_number();
         expect(']');
-        var = register_lvar_sized(tok->str, tok->len, array_size * 8, 1);
+        var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
         if (consume('=')) {
           // 配列初期化は未対応
           expr();
@@ -190,11 +206,13 @@ static node_t *stmt(void) {
         node_t *node = new_node_num(0);
         return node;
       }
-      var = register_lvar(tok->str, tok->len);
+      var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
     }
     if (consume('=')) {
       // int x = expr;
-      node_t *node = new_node(ND_ASSIGN, new_node_lvar(var->offset), expr());
+      node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
+      node_t *node = new_node(ND_ASSIGN, lvar, expr());
+      node->type_size = is_pointer ? 8 : var->elem_size;
       expect(';');
       return node;
     }
@@ -271,8 +289,11 @@ node_t *expr(void) { return assign(); }
 // assign = equality ("=" assign)?
 static node_t *assign(void) {
   node_t *node = equality();
-  if (consume('='))
+  if (consume('=')) {
     node = new_node(ND_ASSIGN, node, assign());
+    // 左辺のtype_sizeをASSIGNに伝播（str/strb/strh の切り替えに使用）
+    node->type_size = node->lhs->type_size;
+  }
   return node;
 }
 
@@ -340,9 +361,12 @@ static node_t *mul(void) {
 // postfix = "[" expr "]"
 static node_t *unary(void) {
   if (consume('*')) {
+    node_t *operand = unary();
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_DEREF;
-    node->lhs = unary();
+    node->lhs = operand;
+    // デリファレンス結果のサイズ: オペランドが指す先の要素サイズ
+    node->type_size = operand->deref_size ? operand->deref_size : 8;
     return node;
   }
   if (consume('&')) {
@@ -354,17 +378,18 @@ static node_t *unary(void) {
   node_t *node = primary();
   // 後置演算子: [expr]
   while (consume('[')) {
-    // arr[i] → *(arr + i*8)
+    // arr[i] → *(arr + i*elem_size)
     node_t *idx = expr();
     expect(']');
-    // i * 8
-    node_t *scaled = new_node(ND_MUL, idx, new_node_num(8));
-    // arr + i*8
+    // 要素サイズを取得（nodeから伝播、デフォルトは8）
+    // 要素サイズを取得（deref_size > type_size の優先度で伝播）
+    int es = node->deref_size ? node->deref_size : (node->type_size ? node->type_size : 8);
+    node_t *scaled = new_node(ND_MUL, idx, new_node_num(es));
     node_t *addr = new_node(ND_ADD, node, scaled);
-    // *(arr + i*8)
     node_t *deref = calloc(1, sizeof(node_t));
     deref->kind = ND_DEREF;
     deref->lhs = addr;
+    deref->type_size = es;
     node = deref;
   }
   return node;
@@ -405,13 +430,16 @@ static node_t *primary(void) {
     }
     if (var->is_array) {
       // 配列名は先頭要素のアドレスを返す
-      // 配列の先頭は offset - size + 8 の位置
       node_t *node = calloc(1, sizeof(node_t));
       node->kind = ND_ADDR;
-      node->lhs = new_node_lvar(var->offset - var->size + 8);
+      node->lhs = new_node_lvar(var->offset - var->size + var->elem_size);
+      node->type_size = var->elem_size; // 配列の要素サイズを伝播
       return node;
     }
-    return new_node_lvar(var->offset);
+    // ポインタ変数: 変数自体は8バイトロード、デリファレンス時は elem_size
+    node_t *n = new_node_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
+    n->deref_size = var->elem_size;
+    return n;
   }
 
   // 文字列リテラル
@@ -430,6 +458,8 @@ static node_t *primary(void) {
     lit->next = string_literals;
     string_literals = lit;
     token = token->next;
+    node->type_size = 8; // ポインタとして8バイト
+    node->deref_size = 1; // 文字列は char* なので1バイト
     return node;
   }
 

@@ -50,6 +50,7 @@
 | 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
 | 文字列リテラル (`"..."`) | `primary = ... \| string` |
 | 文字リテラル (`'A'`) | `TK_NUM` としてASCII値を格納 |
+| char型 1バイト対応 | `ldrb`/`strb` で char 変数・配列・文字列添字を処理 |
 
 > [!NOTE]
 > 文法規則の完全な定義は [grammar.md](grammar.md) を参照してください。
@@ -83,5 +84,5 @@ test_local_variables...
 test_if_else...
 test_while...
 test_for...
-OK: All 82 E2E tests passed! (82/82)
+OK: All 86 E2E tests passed! (86/86)
 ```

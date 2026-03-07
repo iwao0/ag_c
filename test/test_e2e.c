@@ -186,6 +186,10 @@ static void test_type_decl() {
   // short / long 型
   assert_result(10, "int main() { short s = 10; return s; }");
   assert_result(99, "long calc(long x) { return x+1; } int main() { return calc(98); }");
+  // short配列（2バイトアクセス）
+  assert_result(30, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[2]; }");
+  assert_result(60, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[0]+arr[1]+arr[2]; }");
+  assert_result(42, "int main() { short a = 42; return a; }");
   // float / double 型
   assert_result(7, "int main() { float f = 7; return f; }");
   assert_result(3, "double square(double x) { return x; } int main() { return square(3); }");
@@ -212,12 +216,19 @@ static void test_string() {
   printf("test_string...\n");
   // 文字列の先頭文字を間接参照
   assert_result(65, "int main() { char *s = \"AB\"; return *s; }");
+  // 文字列の添字アクセス（charは1バイト）
+  assert_result(66, "int main() { char *s = \"AB\"; return s[1]; }");
   // 空文字列のNUL終端
   assert_result(0, "int main() { char *s = \"\"; return *s; }");
   // 文字リテラル
   assert_result(65, "int main() { return 'A'; }");
   assert_result(10, "int main() { return '\\n'; }");
   assert_result(0, "int main() { return '\\0'; }");
+  // char配列の1バイトアクセス
+  assert_result(3, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[2]; }");
+  assert_result(6, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[0]+buf[1]+buf[2]; }");
+  // char変数の1バイトストア/ロード
+  assert_result(42, "int main() { char c = 42; return c; }");
 }
 
 int main() {

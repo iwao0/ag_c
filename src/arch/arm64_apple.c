@@ -44,13 +44,25 @@ void gen(struct node_t *node) {
   case ND_LVAR:
     gen_lval(node);
     printf("  ldr x0, [sp], #16\n");
-    printf("  ldr x0, [x0]\n");
+    if (node->type_size == 1)
+      printf("  ldrb w0, [x0]\n");
+    else if (node->type_size == 2)
+      printf("  ldrh w0, [x0]\n");
+    else if (node->type_size == 4)
+      printf("  ldr w0, [x0]\n");
+    else
+      printf("  ldr x0, [x0]\n");
     printf("  str x0, [sp, #-16]!\n");
     return;
   case ND_DEREF:
     gen(node->lhs);
     printf("  ldr x0, [sp], #16\n");
-    printf("  ldr x0, [x0]\n");
+    if (node->type_size == 1)
+      printf("  ldrb w0, [x0]\n");
+    else if (node->type_size == 2)
+      printf("  ldrh w0, [x0]\n");
+    else
+      printf("  ldr x0, [x0]\n");
     printf("  str x0, [sp, #-16]!\n");
     return;
   case ND_ADDR:
@@ -67,7 +79,14 @@ void gen(struct node_t *node) {
     gen(node->rhs);
     printf("  ldr x1, [sp], #16\n");
     printf("  ldr x0, [sp], #16\n");
-    printf("  str x1, [x0]\n");
+    if (node->type_size == 1)
+      printf("  strb w1, [x0]\n");
+    else if (node->type_size == 2)
+      printf("  strh w1, [x0]\n");
+    else if (node->type_size == 4)
+      printf("  str w1, [x0]\n");
+    else
+      printf("  str x1, [x0]\n");
     printf("  str x1, [sp, #-16]!\n");
     return;
   case ND_RETURN:
