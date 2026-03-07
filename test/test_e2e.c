@@ -136,11 +136,62 @@ static void test_funcall() {
   assert_result(42, "fortytwo() { return 42; } main() { return fortytwo(); }");
   // 引数あり関数
   assert_result(7, "add(a, b) { return a+b; } main() { return add(3, 4); }");
-  assert_result(10, "double(a) { return a*2; } main() { return double(5); }");
+  assert_result(10, "twice(a) { return a*2; } main() { return twice(5); }");
   // 複数関数の組み合わせ
   assert_result(21, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }");
   // 再帰（フィボナッチ的なもの — ただし深い再帰は避ける）
   assert_result(120, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }");
+}
+
+static void test_multichar_var() {
+  printf("test_multichar_var...\n");
+  assert_result(3, "main() { foo=3; return foo; }");
+  assert_result(5, "main() { hello=2; world=3; return hello+world; }");
+  assert_result(15, "main() { x1=5; x2=10; return x1+x2; }");
+  assert_result(10, "add(lhs, rhs) { return lhs+rhs; } main() { return add(3, 7); }");
+  assert_result(6, "main() { count=0; for (i=1; i<=3; i=i+1) count=count+i; return count; }");
+}
+
+static void test_type_decl() {
+  printf("test_type_decl...\n");
+  // int 付き関数定義
+  assert_result(42, "int main() { return 42; }");
+  // int 付き変数宣言
+  assert_result(3, "int main() { int x = 3; return x; }");
+  assert_result(7, "int main() { int a = 3; int b = 4; return a+b; }");
+  // int 付き仮引数
+  assert_result(10, "int add(int a, int b) { return a+b; } int main() { return add(3, 7); }");
+  // 初期化なし変数宣言
+  assert_result(5, "int main() { int x; x = 5; return x; }");
+  // for ループ内で int 宣言 (初期化式の前)
+  assert_result(55, "int main() { int sum = 0; int i; for (i=1; i<=10; i=i+1) sum=sum+i; return sum; }");
+  // char 型
+  assert_result(65, "int main() { char c = 65; return c; }");
+  // void 型関数
+  assert_result(42, "void noop() { return 42; } int main() { return noop(); }");
+  // short / long 型
+  assert_result(10, "int main() { short s = 10; return s; }");
+  assert_result(99, "long calc(long x) { return x+1; } int main() { return calc(98); }");
+  // float / double 型
+  assert_result(7, "int main() { float f = 7; return f; }");
+  assert_result(3, "double square(double x) { return x; } int main() { return square(3); }");
+}
+
+static void test_pointer() {
+  printf("test_pointer...\n");
+  // アドレス取得と間接参照
+  assert_result(5, "int main() { int x = 5; int *p = &x; return *p; }");
+  // ポインタ経由の代入
+  assert_result(10, "int main() { int x = 5; int *p = &x; *p = 10; return x; }");
+}
+
+static void test_array() {
+  printf("test_array...\n");
+  // 配列宣言と添字アクセス
+  assert_result(3, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }");
+  assert_result(6, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }");
+  // 配列とループ
+  assert_result(55, "int main() { int arr[10]; int i; for(i=0; i<10; i=i+1) arr[i]=i+1; int sum=0; for(i=0; i<10; i=i+1) sum=sum+arr[i]; return sum; }");
 }
 
 int main() {
@@ -156,6 +207,10 @@ int main() {
   test_return();
   test_block();
   test_funcall();
+  test_multichar_var();
+  test_type_decl();
+  test_pointer();
+  test_array();
 
   printf("OK: All %d E2E tests passed! (%d/%d)\n", test_count, pass_count,
          test_count);

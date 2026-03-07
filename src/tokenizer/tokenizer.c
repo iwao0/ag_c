@@ -99,17 +99,18 @@ token_t *tokenize(char *p) {
       continue;
     }
 
-    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,)
-    if (strchr("+-*/()<>;={},", *p)) {
+    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,, &, [, ])
+    if (strchr("+-*/()<>;={},&[]", *p)) {
       cur = new_token(TK_RESERVED, cur, p++);
       cur->len = 1;
       continue;
     }
 
     // 識別子またはキーワード (a〜z で始まる連続した英字)
-    if ('a' <= *p && *p <= 'z') {
+    // 識別子・キーワード（英字または_で始まり、英数字または_が続く）
+    if (isalpha(*p) || *p == '_') {
       char *start = p;
-      while ('a' <= *p && *p <= 'z')
+      while (isalnum(*p) || *p == '_')
         p++;
       int len = p - start;
 
@@ -128,6 +129,27 @@ token_t *tokenize(char *p) {
         cur->len = len;
       } else if (len == 6 && strncmp(start, "return", 6) == 0) {
         cur = new_token(TK_RETURN, cur, start);
+        cur->len = len;
+      } else if (len == 3 && strncmp(start, "int", 3) == 0) {
+        cur = new_token(TK_INT, cur, start);
+        cur->len = len;
+      } else if (len == 4 && strncmp(start, "char", 4) == 0) {
+        cur = new_token(TK_CHAR, cur, start);
+        cur->len = len;
+      } else if (len == 4 && strncmp(start, "void", 4) == 0) {
+        cur = new_token(TK_VOID, cur, start);
+        cur->len = len;
+      } else if (len == 5 && strncmp(start, "short", 5) == 0) {
+        cur = new_token(TK_SHORT, cur, start);
+        cur->len = len;
+      } else if (len == 4 && strncmp(start, "long", 4) == 0) {
+        cur = new_token(TK_LONG, cur, start);
+        cur->len = len;
+      } else if (len == 5 && strncmp(start, "float", 5) == 0) {
+        cur = new_token(TK_FLOAT, cur, start);
+        cur->len = len;
+      } else if (len == 6 && strncmp(start, "double", 6) == 0) {
+        cur = new_token(TK_DOUBLE, cur, start);
         cur->len = len;
       } else {
         cur = new_token(TK_IDENT, cur, start);

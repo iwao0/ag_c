@@ -7,20 +7,24 @@
 
 ```
 program    = funcdef*
-funcdef    = ident "(" params? ")" "{" stmt* "}"
-params     = ident ("," ident)*
+funcdef    = type? ident "(" params? ")" "{" stmt* "}"
+params     = type? ident ("," type? ident)*
 stmt       = "{" stmt* "}"
            | "if" "(" expr ")" stmt ("else" stmt)?
            | "while" "(" expr ")" stmt
            | "for" "(" expr? ";" expr? ";" expr? ")" stmt
            | "return" expr ";"
+           | type ident ("=" expr)? ";"
            | expr ";"
+type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"
 expr       = assign
 assign     = equality ("=" assign)?
 equality   = relational ("==" relational | "!=" relational)*
 relational = add ("<" add | "<=" add | ">" add | ">=" add)*
 add        = mul ("+" mul | "-" mul)*
-mul        = primary ("*" primary | "/" primary)*
+mul        = unary ("*" unary | "/" unary)*
+unary      = ("*" | "&") unary | primary postfix*
+postfix    = "[" expr "]"
 primary    = ident "(" args? ")" | "(" expr ")" | ident | num
 args       = expr ("," expr)*
 ```
@@ -29,13 +33,20 @@ args       = expr ("," expr)*
 
 | トークン種別 | 説明 | 例 |
 |---|---|---|
-| `TK_RESERVED` | 記号・演算子 | `+`, `-`, `*`, `/`, `(`, `)`, `<`, `>`, `<=`, `>=`, `==`, `!=`, `=`, `;` |
-| `TK_IDENT` | 識別子（現在は `a`〜`z` の1文字） | `a`, `b`, `z` |
+| `TK_RESERVED` | 記号・演算子 | `+`, `-`, `*`, `/`, `(`, `)`, `<`, `>`, `<=`, `>=`, `==`, `!=`, `=`, `;`, `{`, `}`, `,`, `&`, `[`, `]` |
+| `TK_IDENT` | 識別子（英字/`_`で始まり英数字/`_`が続く） | `a`, `foo`, `x1`, `my_var` |
 | `TK_IF` | `if` キーワード | `if` |
 | `TK_ELSE` | `else` キーワード | `else` |
 | `TK_WHILE` | `while` キーワード | `while` |
 | `TK_FOR` | `for` キーワード | `for` |
 | `TK_RETURN` | `return` キーワード | `return` |
+| `TK_INT` | `int` キーワード | `int` |
+| `TK_CHAR` | `char` キーワード | `char` |
+| `TK_VOID` | `void` キーワード | `void` |
+| `TK_SHORT` | `short` キーワード | `short` |
+| `TK_LONG` | `long` キーワード | `long` |
+| `TK_FLOAT` | `float` キーワード | `float` |
+| `TK_DOUBLE` | `double` キーワード | `double` |
 | `TK_NUM` | 整数リテラル | `0`, `42`, `123` |
 | `TK_EOF` | 入力の終端 | — |
 
@@ -60,6 +71,8 @@ args       = expr ("," expr)*
 | `ND_BLOCK` | ブロック文（`body[]`=文の配列） |
 | `ND_FUNCDEF` | 関数定義（`funcname`, `args[]`=仮引数, `rhs`=本体BLOCK） |
 | `ND_FUNCALL` | 関数呼び出し（`funcname`, `args[]`=実引数, `nargs`） |
+| `ND_DEREF` | 間接参照 `*p`（`lhs`=アドレス式） |
+| `ND_ADDR` | アドレス取得 `&x`（`lhs`=変数） |
 | `ND_NUM` | 整数リテラル |
 
 ## 未実装（今後の拡張候補）
@@ -67,8 +80,8 @@ args       = expr ("," expr)*
 - ~~`if` / `else`~~ / ~~`while`~~ / ~~`for`~~ などの制御構文 → **実装済み**
 - ~~`return` 文~~ → **実装済み**
 - ~~関数定義・関数呼び出し~~ → **実装済み**
-- 複数文字の変数名（現在は `a`〜`z` の1文字のみ）
-- 型宣言（`int` など）
-- ポインタ・配列
+- ~~複数文字の変数名~~ → **実装済み**（英数字・アンダースコア対応）
+- ~~型宣言（`int`）~~ → **実装済み**（`int`/`char`/`void`/`short`/`long`/`float`/`double`、構文レベル）
+- ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`）
 - 文字列リテラル
 - プリプロセッサ (`#include`, `#define`)

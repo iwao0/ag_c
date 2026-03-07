@@ -20,6 +20,8 @@ typedef enum {
   ND_BLOCK,   // { ... }
   ND_FUNCDEF, // 関数定義
   ND_FUNCALL, // 関数呼び出し
+  ND_DEREF,   // 間接参照 (*p)
+  ND_ADDR,    // アドレス取得 (&x)
   ND_NUM,     // 整数
 } node_kind_t;
 
@@ -42,6 +44,17 @@ struct node_t {
   int nargs;                // 引数の数
   int val;          // kindがND_NUMの場合のみ使う
   int offset;       // kindがND_LVARの場合のみ使う（フレームポインタからのオフセット）
+};
+
+// ローカル変数テーブル（連結リスト）
+typedef struct lvar_t lvar_t;
+struct lvar_t {
+  lvar_t *next;
+  char *name;
+  int len;
+  int offset;
+  int size;      // サイズ（スカラー=8、配列=要素数*8）
+  int is_array;  // 配列かどうか
 };
 
 // プログラム全体をパースする（複数の文を返す）

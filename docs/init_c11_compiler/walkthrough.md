@@ -35,7 +35,7 @@
 | 四則演算 (`+`,`-`,`*`,`/`) | `add`, `mul` |
 | 括弧 `()` | `primary = "(" expr ")"` |
 | 比較演算子 (`==`,`!=`,`<`,`<=`,`>`,`>=`) | `equality`, `relational` |
-| ローカル変数 (`a`〜`z` の1文字) | `primary = ident`, `assign` |
+| ローカル変数 (複数文字対応) | `primary = ident`, `assign` |
 | 代入式 (`=`) | `assign = equality ("=" assign)?` |
 | 複文（セミコロン区切り） | `program = stmt*`, `stmt = expr ";"` |
 | if/else 文 | `stmt = "if" "(" expr ")" stmt ("else" stmt)?` |
@@ -45,6 +45,9 @@
 | ブロック文 | `stmt = "{" stmt* "}"` |
 | 関数定義 | `funcdef = ident "(" params? ")" "{" stmt* "}"` |
 | 関数呼び出し | `primary = ident "(" args? ")"` |
+| 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double"` |
+| ポインタ (`*p`, `&x`) | `unary = ("*" \| "&") unary` |
+| 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
 
 > [!NOTE]
 > 文法規則の完全な定義は [grammar.md](grammar.md) を参照してください。
@@ -78,5 +81,5 @@ test_local_variables...
 test_if_else...
 test_while...
 test_for...
-OK: All 55 E2E tests passed! (55/55)
+OK: All 77 E2E tests passed! (77/77)
 ```

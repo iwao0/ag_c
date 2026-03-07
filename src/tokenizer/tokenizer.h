@@ -13,6 +13,13 @@ typedef enum {
   TK_WHILE,    // while
   TK_FOR,      // for
   TK_RETURN,   // return
+  TK_INT,      // int
+  TK_CHAR,     // char
+  TK_VOID,     // void
+  TK_SHORT,    // short
+  TK_LONG,     // long
+  TK_FLOAT,    // float
+  TK_DOUBLE,   // double
   TK_EOF,      // 入力の終わりを表すトークン
 } token_kind_t;
 

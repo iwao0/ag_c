@@ -10,7 +10,7 @@ static int label_count = 0;
 
 // 26個の変数(a-z) * 8バイト = 208バイト + フレームポインタ/リンクレジスタ用16バイト = 224
 // 16バイトアラインメントに合わせる → 224
-#define STACK_SIZE 224
+#define STACK_SIZE 1024
 
 void gen_main_prologue(void) {
   // 関数定義で生成するため空にする（互換性維持）
@@ -22,6 +22,11 @@ void gen_main_epilogue(void) {
 
 // 左辺値（変数のアドレス）をスタックへプッシュする
 static void gen_lval(node_t *node) {
+  if (node->kind == ND_DEREF) {
+    // *p = x の左辺値: p の値（アドレス）をプッシュ
+    gen(node->lhs);
+    return;
+  }
   if (node->kind != ND_LVAR) {
     fprintf(stderr, "代入の左辺値が変数ではありません\n");
     return;
@@ -42,6 +47,15 @@ void gen(struct node_t *node) {
     printf("  ldr x0, [x0]\n");
     printf("  str x0, [sp, #-16]!\n");
     return;
+  case ND_DEREF:
+    gen(node->lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  ldr x0, [x0]\n");
+    printf("  str x0, [sp, #-16]!\n");
+    return;
+  case ND_ADDR:
+    gen_lval(node->lhs);
+    return;
   case ND_ASSIGN:
     gen_lval(node->lhs);
     gen(node->rhs);
@@ -53,7 +67,8 @@ void gen(struct node_t *node) {
   case ND_RETURN:
     gen(node->lhs);
     printf("  ldr x0, [sp], #16\n");
-    printf("  ldp x29, x30, [sp], #%d\n", STACK_SIZE);
+    printf("  ldp x29, x30, [sp]\n");
+    printf("  add sp, sp, #%d\n", STACK_SIZE);
     printf("  ret\n");
     printf("  mov x0, #0\n");
     printf("  str x0, [sp, #-16]!\n");
@@ -72,7 +87,8 @@ void gen(struct node_t *node) {
     printf(".align 2\n");
     printf("_%.*s:\n", node->funcname_len, node->funcname);
     // プロローグ
-    printf("  stp x29, x30, [sp, #-%d]!\n", STACK_SIZE);
+    printf("  sub sp, sp, #%d\n", STACK_SIZE);
+    printf("  stp x29, x30, [sp]\n");
     printf("  mov x29, sp\n");
     // 仮引数をレジスタからローカル変数スロットへ保存
     for (int i = 0; i < node->nargs; i++) {
@@ -82,7 +98,8 @@ void gen(struct node_t *node) {
     gen(node->rhs);
     printf("  ldr x0, [sp], #16\n");
     // エピローグ
-    printf("  ldp x29, x30, [sp], #%d\n", STACK_SIZE);
+    printf("  ldp x29, x30, [sp]\n");
+    printf("  add sp, sp, #%d\n", STACK_SIZE);
     printf("  ret\n");
     return;
   }
