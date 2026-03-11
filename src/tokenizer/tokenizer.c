@@ -12,6 +12,14 @@ static char *user_input;
 // 現在着目しているトークン
 token_t *token;
 
+char *get_user_input(void) {
+  return user_input;
+}
+
+void set_user_input(char *p) {
+  user_input = p;
+}
+
 // エラー箇所を視覚的に表示する
 void error_at(char *loc, char *fmt, ...) {
   va_list ap;
@@ -82,19 +90,35 @@ token_t *tokenize(char *p) {
   token_t head;
   head.next = NULL;
   token_t *cur = &head;
+  
+  bool at_bol = true;
+  bool has_space = false;
 
   while (*p) {
     // 空白文字をスキップ
     if (isspace(*p)) {
+      has_space = true;
+      if (*p == '\n') {
+        at_bol = true;
+      }
       p++;
       continue;
     }
 
-    // 2文字の演算子 (==, !=, <=, >=)
+    // 新しいトークンの処理前にフラグを覚えておく
+    bool _at_bol = at_bol;
+    bool _has_space = has_space;
+    at_bol = false;
+    has_space = false;
+
+    // 2文字の演算子 (==, !=, <=, >=, &&, ||)
     if (strncmp(p, "==", 2) == 0 || strncmp(p, "!=", 2) == 0 ||
-        strncmp(p, "<=", 2) == 0 || strncmp(p, ">=", 2) == 0) {
+        strncmp(p, "<=", 2) == 0 || strncmp(p, ">=", 2) == 0 ||
+        strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0) {
       cur = new_token(TK_RESERVED, cur, p);
       cur->len = 2;
+      cur->at_bol = _at_bol;
+      cur->has_space = _has_space;
       p += 2;
       continue;
     }
@@ -109,6 +133,8 @@ token_t *tokenize(char *p) {
         p++; // 閉じ引用符をスキップ
       cur = new_token(TK_STRING, cur, start);
       cur->len = len;
+      cur->at_bol = _at_bol;
+      cur->has_space = _has_space;
       continue;
     }
 
@@ -135,13 +161,17 @@ token_t *tokenize(char *p) {
       cur = new_token(TK_NUM, cur, p);
       cur->val = ch;
       cur->len = 1;
+      cur->at_bol = _at_bol;
+      cur->has_space = _has_space;
       continue;
     }
 
-    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,, &, [, ])
-    if (strchr("+-*/()<>;={},&[]", *p)) {
+    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~)
+    if (strchr("+-*/()<>;={},&[]#.!~", *p) || (*p == '.' && !isdigit(p[1]))) {
       cur = new_token(TK_RESERVED, cur, p++);
       cur->len = 1;
+      cur->at_bol = _at_bol;
+      cur->has_space = _has_space;
       continue;
     }
 
@@ -154,51 +184,49 @@ token_t *tokenize(char *p) {
       int len = p - start;
 
       // キーワード判定
-      if (len == 2 && strncmp(start, "if", 2) == 0) {
-        cur = new_token(TK_IF, cur, start);
-        cur->len = len;
-      } else if (len == 4 && strncmp(start, "else", 4) == 0) {
-        cur = new_token(TK_ELSE, cur, start);
-        cur->len = len;
-      } else if (len == 5 && strncmp(start, "while", 5) == 0) {
-        cur = new_token(TK_WHILE, cur, start);
-        cur->len = len;
-      } else if (len == 3 && strncmp(start, "for", 3) == 0) {
-        cur = new_token(TK_FOR, cur, start);
-        cur->len = len;
-      } else if (len == 6 && strncmp(start, "return", 6) == 0) {
-        cur = new_token(TK_RETURN, cur, start);
-        cur->len = len;
-      } else if (len == 3 && strncmp(start, "int", 3) == 0) {
-        cur = new_token(TK_INT, cur, start);
-        cur->len = len;
-      } else if (len == 4 && strncmp(start, "char", 4) == 0) {
-        cur = new_token(TK_CHAR, cur, start);
-        cur->len = len;
-      } else if (len == 4 && strncmp(start, "void", 4) == 0) {
-        cur = new_token(TK_VOID, cur, start);
-        cur->len = len;
-      } else if (len == 5 && strncmp(start, "short", 5) == 0) {
-        cur = new_token(TK_SHORT, cur, start);
-        cur->len = len;
-      } else if (len == 4 && strncmp(start, "long", 4) == 0) {
-        cur = new_token(TK_LONG, cur, start);
-        cur->len = len;
-      } else if (len == 5 && strncmp(start, "float", 5) == 0) {
-        cur = new_token(TK_FLOAT, cur, start);
-        cur->len = len;
-      } else if (len == 6 && strncmp(start, "double", 6) == 0) {
-        cur = new_token(TK_DOUBLE, cur, start);
-        cur->len = len;
-      } else {
+      static const struct {
+        const char *name;
+        int len;
+        token_kind_t kind;
+      } kw[] = {
+        {"if", 2, TK_IF},
+        {"else", 4, TK_ELSE},
+        {"while", 5, TK_WHILE},
+        {"for", 3, TK_FOR},
+        {"return", 6, TK_RETURN},
+        {"int", 3, TK_INT},
+        {"char", 4, TK_CHAR},
+        {"void", 4, TK_VOID},
+        {"short", 5, TK_SHORT},
+        {"long", 4, TK_LONG},
+        {"float", 5, TK_FLOAT},
+        {"double", 6, TK_DOUBLE},
+      };
+
+      bool is_kw = false;
+      for (size_t i = 0; i < sizeof(kw) / sizeof(kw[0]); i++) {
+        if (len == kw[i].len && strncmp(start, kw[i].name, len) == 0) {
+          cur = new_token(kw[i].kind, cur, start);
+          cur->len = len;
+          cur->at_bol = _at_bol;
+          cur->has_space = _has_space;
+          is_kw = true;
+          break;
+        }
+      }
+
+      if (!is_kw) {
         cur = new_token(TK_IDENT, cur, start);
         cur->len = len;
+        cur->at_bol = _at_bol;
+        cur->has_space = _has_space;
       }
       continue;
     }
 
     // 数値リテラル (整数 または 浮動小数点数)
     if (isdigit(*p) || (*p == '.' && isdigit(p[1]))) {
+      char *start = p; // Keep track of the start of the number for length calculation
       char *q = p;
       // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
       bool is_float = false;

@@ -1,6 +1,7 @@
 #include "ag_c.h"
 #include "parser/parser.h"
 #include "tokenizer/tokenizer.h"
+#include "preprocess/preprocess.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -12,6 +13,9 @@ int main(int argc, char **argv) {
 
   // トークナイズ
   token = tokenize(argv[1]);
+
+  // プリプロセス（マクロ展開やディレクティブ処理）
+  token = preprocess(token);
 
   // パースしてAST（抽象構文木）を構築（関数定義の列）
   program();

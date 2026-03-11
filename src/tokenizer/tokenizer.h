@@ -24,6 +24,12 @@ typedef enum {
   TK_EOF,      // 入力の終わりを表すトークン
 } token_kind_t;
 
+typedef struct hideset_t hideset_t;
+struct hideset_t {
+  hideset_t *next;
+  char *name;
+};
+
 // トークン型
 typedef struct token_t token_t;
 struct token_t {
@@ -34,6 +40,9 @@ struct token_t {
   int is_float;      // 0=整数, 1=float, 2=double
   char *str;         // トークン文字列
   int len;           // トークンの長さ
+  bool at_bol;       // 行頭(Beginning of Line)にあるか
+  bool has_space;    // 直前に空白文字があるか
+  hideset_t *hideset; // マクロ展開の無限ループ防止用
 };
 
 // 現在着目しているトークン
@@ -61,5 +70,9 @@ bool at_eof(void);
 
 // 入力文字列 p をトークナイズしてそれを返す
 token_t *tokenize(char *p);
+
+// 現在の入力文字列を取得・設定
+char *get_user_input(void);
+void set_user_input(char *p);
 
 #endif

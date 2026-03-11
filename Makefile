@@ -1,11 +1,13 @@
 CFLAGS=-std=c11 -g -O0 -Wall -Wextra
-SRCS=$(wildcard src/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c)
+SRCS=$(wildcard src/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c)
 OBJS=$(patsubst src/%.c,build/%.o,$(SRCS))
 TARGET=build/ag_c
 TEST_TOKENIZER=build/test_tokenizer
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
+TEST_PREPROCESS=build/test_preprocess
+
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
@@ -30,10 +32,15 @@ $(TEST_E2E): test/test_e2e.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_e2e.c
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E)
+$(TEST_PREPROCESS): test/test_preprocess.c $(TARGET)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ test/test_preprocess.c
+
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(TEST_CODEGEN)
+	$(TEST_PREPROCESS)
 	$(TEST_E2E)
 
 clean:
