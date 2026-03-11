@@ -55,6 +55,69 @@ static void assert_result(int expected, const char *input) {
   }
 }
 
+static float compile_and_run_float(const char *input, int is_double) {
+  char buf[4096];
+  strcpy(buf, input);
+  char *m = strstr(buf, "main");
+  if (m) memcpy(m, "ag_m", 4);
+
+  FILE *fp = fopen("build/tmp_e2e.s", "w");
+  if (!fp) { fprintf(stderr, "  Cannot open tmp file\n"); return -1; }
+  fclose(fp);
+
+  int pipefd[2]; pipe(pipefd);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("build/tmp_e2e.s", "w", stdout);
+    execl("./build/ag_c", "./build/ag_c", buf, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[0]); close(pipefd[1]);
+  int status; waitpid(pid, &status, 0);
+
+  fp = fopen("build/driver.c", "w");
+  if (is_double) {
+    fprintf(fp, "#include <stdio.h>\nextern double ag_m();\nint main() { printf(\"%%.6lf\\n\", ag_m()); return 0; }\n");
+  } else {
+    fprintf(fp, "#include <stdio.h>\nextern float ag_m();\nint main() { printf(\"%%.6f\\n\", ag_m()); return 0; }\n");
+  }
+  fclose(fp);
+
+  int ret = system("clang -o build/tmp_e2e build/tmp_e2e.s build/driver.c 2>&1");
+  if (ret != 0) { fprintf(stderr, "  Assemble failed for float\n"); exit(1); }
+
+  FILE *out = popen("./build/tmp_e2e", "r");
+  if (is_double) {
+    double d; fscanf(out, "%lf", &d); pclose(out); return d;
+  } else {
+    float f; fscanf(out, "%f", &f); pclose(out); return f;
+  }
+}
+
+static void assert_result_float(float expected, const char *input) {
+  test_count++;
+  float actual = compile_and_run_float(input, 0);
+  if (actual > expected - 0.001 && actual < expected + 0.001) {
+    pass_count++;
+    printf("  OK: => %.2f\n", actual);
+  } else {
+    fprintf(stderr, "  FAIL: => expected %.2f, got %.2f\n  input: %s\n", expected, actual, input);
+    exit(1);
+  }
+}
+
+static void assert_result_double(double expected, const char *input) {
+  test_count++;
+  double actual = compile_and_run_float(input, 1);
+  if (actual > expected - 0.001 && actual < expected + 0.001) {
+    pass_count++;
+    printf("  OK: => %.2f\n", actual);
+  } else {
+    fprintf(stderr, "  FAIL: => expected %.2f, got %.2f\n  input: %s\n", expected, actual, input);
+    exit(1);
+  }
+}
+
 // --- テストケース ---
 // 全テストが main() { ... } の関数定義形式
 
@@ -190,9 +253,17 @@ static void test_type_decl() {
   assert_result(30, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[2]; }");
   assert_result(60, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[0]+arr[1]+arr[2]; }");
   assert_result(42, "int main() { short a = 42; return a; }");
-  // float / double 型
-  assert_result(7, "int main() { float f = 7; return f; }");
-  assert_result(3, "double square(double x) { return x; } int main() { return square(3); }");
+  // float / double 型（FPU命令）
+  assert_result_float(7.0f, "float main() { float f = 7; return f; }");
+  assert_result_float(7.34f, "float main() { float f = 3.14; float g = 4.2; return f + g; }");
+  assert_result_float(2.3f, "float main() { float f = 5.5; float g = 3.2; return f - g; }");
+  assert_result_float(15.0f, "float main() { float f = 6.0f; float g = 2.5f; return f * g; }");
+  assert_result_float(3.5f, "float main() { float f = 10.5F; float g = 3.0F; return f / g; }");
+  // double
+  assert_result_double(3.99, "double main() { double d = 3.99; return d; }");
+  assert_result_double(7.3, "double main() { double a = 3.1; double b = 4.2; return a + b; }");
+  assert_result_double(15.0, "double main() { double a = 5.0; double b = 3.0; return a * b; }");
+  assert_result_double(5.0, "double main() { double a = 15.0; double b = 3.0; return a / b; }");
 }
 
 static void test_pointer() {

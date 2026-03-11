@@ -29,7 +29,9 @@ typedef struct token_t token_t;
 struct token_t {
   token_kind_t kind; // トークンの型
   token_t *next;     // 次の入力トークン
-  int val;           // kindがTK_NUMの場合、その数値
+  int val;           // kindがTK_NUMの場合、その数値(整数の場合)
+  double fval;       // kindがTK_NUMの場合、その数値(浮動小数点数の場合)
+  int is_float;      // 0=整数, 1=float, 2=double
   char *str;         // トークン文字列
   int len;           // トークンの長さ
 };

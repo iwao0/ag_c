@@ -5,8 +5,10 @@
 #include <string.h>
 
 node_t *code[MAX_STMTS];
-string_lit_t *string_literals;
+string_lit_t *string_literals = NULL;
+float_lit_t *float_literals = NULL;
 static int string_label_count = 0;
+static int float_label_count = 0;
 
 // ローカル変数テーブル（関数ごとにリセット）
 static lvar_t *locals;
@@ -46,6 +48,14 @@ static node_t *new_node(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node->kind = kind;
   node->lhs = lhs;
   node->rhs = rhs;
+  // 左辺と右辺から is_float を伝播 (double優先)
+  if (lhs && lhs->is_float) node->is_float = lhs->is_float;
+  if (rhs && rhs->is_float > node->is_float) node->is_float = rhs->is_float;
+  
+  // 比較演算の結果は整数(0 または 1)
+  if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE) {
+    node->is_float = 0;
+  }
   return node;
 }
 
@@ -103,10 +113,15 @@ static bool consume_type(void) {
   return consume_type_kind() != TK_EOF;
 }
 
+static int current_func_ret_type = 0; // 0=int, 1=float, 2=double
+
 // funcdef = "int"? ident "(" params? ")" "{" stmt* "}"
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
-  consume_type(); // 戻り値の型（省略可）
+  token_kind_t ret_kind = consume_type_kind(); // 戻り値の型（省略可）
+  current_func_ret_type = 0;
+  if (ret_kind == TK_FLOAT) current_func_ret_type = 1;
+  else if (ret_kind == TK_DOUBLE) current_func_ret_type = 2;
   token_t *tok = consume_ident();
   if (!tok) {
     fprintf(stderr, "関数定義が期待されます\n");
@@ -181,7 +196,7 @@ static node_t *stmt(void) {
   // 型付き変数宣言: type "*"* ident ("[" num "]")? ("=" expr)? ";"
   if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
     token_kind_t type_kind = consume_type_kind();
-    int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT) ? 4 : 8;
+    int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT || type_kind == TK_FLOAT) ? 4 : 8;
     // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
     int is_pointer = 0;
     while (consume('*')) { is_pointer = 1; }
@@ -208,11 +223,18 @@ static node_t *stmt(void) {
       }
       var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
     }
+    // float/double フラグを設定
+    if (!is_pointer) {
+      if (type_kind == TK_FLOAT) var->is_float = 1;
+      else if (type_kind == TK_DOUBLE) var->is_float = 2;
+    }
     if (consume('=')) {
       // int x = expr;
       node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
+      lvar->is_float = var->is_float;
       node_t *node = new_node(ND_ASSIGN, lvar, expr());
       node->type_size = is_pointer ? 8 : var->elem_size;
+      node->is_float = var->is_float;
       expect(';');
       return node;
     }
@@ -227,6 +249,7 @@ static node_t *stmt(void) {
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_RETURN;
     node->lhs = expr();
+    node->is_float = current_func_ret_type; // 関数宣言時の戻り値型を記録
     expect(';');
     return node;
   }
@@ -293,6 +316,7 @@ static node_t *assign(void) {
     node = new_node(ND_ASSIGN, node, assign());
     // 左辺のtype_sizeをASSIGNに伝播（str/strb/strh の切り替えに使用）
     node->type_size = node->lhs->type_size;
+    node->is_float = node->lhs->is_float;
   }
   return node;
 }
@@ -439,6 +463,7 @@ static node_t *primary(void) {
     // ポインタ変数: 変数自体は8バイトロード、デリファレンス時は elem_size
     node_t *n = new_node_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
     n->deref_size = var->elem_size;
+    n->is_float = var->is_float;
     return n;
   }
 
@@ -460,8 +485,32 @@ static node_t *primary(void) {
     token = token->next;
     node->type_size = 8; // ポインタとして8バイト
     node->deref_size = 1; // 文字列は char* なので1バイト
+    node->is_float = 0; // 文字列はポインタなので整数
     return node;
   }
 
-  return new_node_num(expect_number());
+  if (token->kind == TK_NUM) {
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_NUM;
+    node->val = token->val;
+    node->fval = token->fval;
+    node->is_float = token->is_float;
+    
+    if (node->is_float) {
+      // 浮動小数点リテラルを登録
+      float_lit_t *lit = calloc(1, sizeof(float_lit_t));
+      lit->id = float_label_count++;
+      lit->fval = node->fval;
+      lit->is_float = node->is_float;
+      lit->next = float_literals;
+      float_literals = lit;
+      node->fval_id = lit->id;
+    }
+    
+    token = token->next;
+    return node;
+  }
+
+  error_at(token->str, "数値を期待しています");
+  return NULL;
 }

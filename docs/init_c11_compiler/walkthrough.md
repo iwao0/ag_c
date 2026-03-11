@@ -51,6 +51,10 @@
 | 文字列リテラル (`"..."`) | `primary = ... \| string` |
 | 文字リテラル (`'A'`) | `TK_NUM` としてASCII値を格納 |
 | char型 1バイト対応 | `ldrb`/`strb` で char 変数・配列・文字列添字を処理 |
+| short型 2バイト対応 | `ldrh`/`strh` で short 変数・配列を処理 |
+| int型 4バイト対応 | `ldr w0`/`str w1` で int 変数を処理 |
+| float / double対応 | FPU命令 (`fadd`, `fsub`, `fmul`, `fdiv`, `scvtf`, `fcvtzs`, `fcmp`) に対応 |
+| 浮動小数点リテラル | `3.14`, `1.5f` 等のパースと `.data` セクションへの定数配置・ロードに対応 |
 
 > [!NOTE]
 > 文法規則の完全な定義は [grammar.md](grammar.md) を参照してください。
@@ -84,5 +88,5 @@ test_local_variables...
 test_if_else...
 test_while...
 test_for...
-OK: All 86 E2E tests passed! (86/86)
+OK: All 96 E2E tests passed! (96/96)
 ```

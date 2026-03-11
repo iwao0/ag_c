@@ -7,6 +7,7 @@
 
 // test_codegen は parser.o をリンクしないため、string_literals のダミー定義が必要
 string_lit_t *string_literals = NULL;
+float_lit_t *float_literals = NULL;
 
 // stdout を一時的にバッファへリダイレクトして gen 系関数の出力をキャプチャする
 static char *capture_buf;
@@ -114,6 +115,24 @@ static void test_gen_add(void) {
   gen(n);
   char *out = capture_end();
   ASSERT_TRUE(strstr(out, "add x0, x0, x1") != NULL);
+  free(out);
+}
+
+static void test_gen_fadd(void) {
+  printf("test_gen_fadd...\n");
+  node_t *lhs = make_num(3);
+  lhs->is_float = 1;
+  lhs->fval_id = 1;
+  node_t *rhs = make_num(4);
+  rhs->is_float = 1;
+  rhs->fval_id = 2;
+  node_t *n = make_binop(ND_ADD, lhs, rhs);
+  n->is_float = 1; // float
+  
+  capture_start();
+  gen(n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "fadd s0, s0, s1") != NULL);
   free(out);
 }
 
@@ -287,6 +306,7 @@ int main(void) {
   test_gen_funcall();
   test_gen_num();
   test_gen_add();
+  test_gen_fadd();
   test_gen_sub();
   test_gen_mul();
   test_gen_div();

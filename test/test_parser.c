@@ -17,6 +17,22 @@ static void test_expr_number() {
   node_t *node = expr();
   ASSERT_EQ(ND_NUM, node->kind);
   ASSERT_EQ(42, node->val);
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
+static void test_expr_float() {
+  printf("test_expr_float...\n");
+  token = tokenize("3.14 + 1.5f");
+  node_t *node = expr();
+  
+  ASSERT_EQ(ND_ADD, node->kind);
+  ASSERT_EQ(ND_NUM, node->lhs->kind);
+  ASSERT_EQ(2, node->lhs->is_float);  // 3.14 (double)
+  ASSERT_TRUE(node->lhs->fval > 3.13 && node->lhs->fval < 3.15);
+  
+  ASSERT_EQ(ND_NUM, node->rhs->kind);
+  ASSERT_EQ(1, node->rhs->is_float);  // 1.5f (float)
+  ASSERT_TRUE(node->rhs->fval > 1.49 && node->rhs->fval < 1.51);
 }
 
 static void test_expr_add_sub() {
@@ -317,6 +333,7 @@ int main() {
   test_stmt_block();
   test_expr_deref_addr();
   test_expr_string();
+  test_expr_float();
   test_type_decl();
   test_multiple_funcdefs();
 

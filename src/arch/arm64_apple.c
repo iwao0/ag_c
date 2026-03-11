@@ -2,9 +2,12 @@
 #include "../parser/parser.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
+// 浮動小数点定数用ラベルカウンタ
+static int fconst_count = 0;
 
 // Apple Silicon (ARM64) 向けのアセンブリコード生成
 
@@ -18,6 +21,39 @@ void gen_main_prologue(void) {
 
 void gen_main_epilogue(void) {
   // 関数定義で生成するため空にする（互換性維持）
+}
+
+void gen(struct node_t *node);
+
+// レジスタ名取得ヘルパー
+static const char *freg(int is_float, int reg_idx) {
+  if (is_float == 1) return (reg_idx == 0) ? "s0" : "s1";
+  return (reg_idx == 0) ? "d0" : "d1";
+}
+
+// child_type の値をスタックからポップし、target_type にキャストして FPU レジスタ (s0/d0 または s1/d1) にロードする
+static void gen_pop_fpu(int target_type, int child_type, int reg_idx) {
+  const char *s = (reg_idx == 0) ? "s0" : "s1";
+  const char *d = (reg_idx == 0) ? "d0" : "d1";
+  
+  if (child_type == 1) {       // float がプッシュされている
+    printf("  ldr %s, [sp], #16\n", s);
+    if (target_type == 2) {
+      printf("  fcvt %s, %s\n", d, s); // float -> double
+    }
+  } else if (child_type == 2) { // double がプッシュされている
+    printf("  ldr %s, [sp], #16\n", d);
+    if (target_type == 1) {
+      printf("  fcvt %s, %s\n", s, d); // double -> float
+    }
+  } else {                      // int がプッシュされている
+    printf("  ldr x%d, [sp], #16\n", reg_idx);
+    if (target_type == 1) {
+      printf("  scvtf %s, x%d\n", s, reg_idx); // int -> float
+    } else {
+      printf("  scvtf %s, x%d\n", d, reg_idx); // int -> double
+    }
+  }
 }
 
 // 左辺値（変数のアドレス）をスタックへプッシュする
@@ -38,21 +74,42 @@ static void gen_lval(node_t *node) {
 void gen(struct node_t *node) {
   switch (node->kind) {
   case ND_NUM:
-    printf("  mov x0, #%d\n", node->val);
-    printf("  str x0, [sp, #-16]!\n");
+    if (node->is_float) {
+      // 浮動小数点リテラルをデータセクションからロード
+      printf("  adrp x0, .LCF%d@PAGE\n", node->fval_id);
+      printf("  add x0, x0, .LCF%d@PAGEOFF\n", node->fval_id);
+      if (node->is_float == 1) {
+        printf("  ldr s0, [x0]\n");
+        printf("  str s0, [sp, #-16]!\n");
+      } else {
+        printf("  ldr d0, [x0]\n");
+        printf("  str d0, [sp, #-16]!\n");
+      }
+    } else {
+      printf("  mov x0, #%d\n", node->val);
+      printf("  str x0, [sp, #-16]!\n");
+    }
     return;
   case ND_LVAR:
     gen_lval(node);
     printf("  ldr x0, [sp], #16\n");
-    if (node->type_size == 1)
-      printf("  ldrb w0, [x0]\n");
-    else if (node->type_size == 2)
-      printf("  ldrh w0, [x0]\n");
-    else if (node->type_size == 4)
-      printf("  ldr w0, [x0]\n");
-    else
-      printf("  ldr x0, [x0]\n");
-    printf("  str x0, [sp, #-16]!\n");
+    if (node->is_float == 1) {
+      printf("  ldr s0, [x0]\n");
+      printf("  str s0, [sp, #-16]!\n");
+    } else if (node->is_float == 2) {
+      printf("  ldr d0, [x0]\n");
+      printf("  str d0, [sp, #-16]!\n");
+    } else {
+      if (node->type_size == 1)
+        printf("  ldrb w0, [x0]\n");
+      else if (node->type_size == 2)
+        printf("  ldrh w0, [x0]\n");
+      else if (node->type_size == 4)
+        printf("  ldr w0, [x0]\n");
+      else
+        printf("  ldr x0, [x0]\n");
+      printf("  str x0, [sp, #-16]!\n");
+    }
     return;
   case ND_DEREF:
     gen(node->lhs);
@@ -61,6 +118,8 @@ void gen(struct node_t *node) {
       printf("  ldrb w0, [x0]\n");
     else if (node->type_size == 2)
       printf("  ldrh w0, [x0]\n");
+    else if (node->type_size == 4)
+      printf("  ldr w0, [x0]\n");
     else
       printf("  ldr x0, [x0]\n");
     printf("  str x0, [sp, #-16]!\n");
@@ -77,21 +136,51 @@ void gen(struct node_t *node) {
   case ND_ASSIGN:
     gen_lval(node->lhs);
     gen(node->rhs);
-    printf("  ldr x1, [sp], #16\n");
-    printf("  ldr x0, [sp], #16\n");
-    if (node->type_size == 1)
-      printf("  strb w1, [x0]\n");
-    else if (node->type_size == 2)
-      printf("  strh w1, [x0]\n");
-    else if (node->type_size == 4)
-      printf("  str w1, [x0]\n");
-    else
-      printf("  str x1, [x0]\n");
-    printf("  str x1, [sp, #-16]!\n");
+    if (node->is_float == 1) {
+      // float 代入
+      gen_pop_fpu(1, node->rhs->is_float, 0); // s0 に rhs をロード
+      printf("  ldr x0, [sp], #16\n"); // lhs アドレス
+      printf("  str s0, [x0]\n");
+      printf("  str s0, [sp, #-16]!\n");
+    } else if (node->is_float == 2) {
+      // double 代入
+      gen_pop_fpu(2, node->rhs->is_float, 0); // d0 に rhs をロード
+      printf("  ldr x0, [sp], #16\n"); // lhs アドレス
+      printf("  str d0, [x0]\n");
+      printf("  str d0, [sp, #-16]!\n");
+    } else {
+      printf("  ldr x1, [sp], #16\n");
+      printf("  ldr x0, [sp], #16\n");
+      if (node->type_size == 1)
+        printf("  strb w1, [x0]\n");
+      else if (node->type_size == 2)
+        printf("  strh w1, [x0]\n");
+      else if (node->type_size == 4)
+        printf("  str w1, [x0]\n");
+      else
+        printf("  str x1, [x0]\n");
+      printf("  str x1, [sp, #-16]!\n");
+    }
     return;
   case ND_RETURN:
     gen(node->lhs);
-    printf("  ldr x0, [sp], #16\n");
+    
+    if (node->is_float == 1) {             // 関数の戻り値が float
+      gen_pop_fpu(1, node->lhs->is_float, 0); // s0 にロード
+    } else if (node->is_float == 2) {      // 関数の戻り値が double
+      gen_pop_fpu(2, node->lhs->is_float, 0); // d0 にロード
+    } else {                               // 関数の戻り値が 整数
+      if (node->lhs->is_float == 1) {
+        printf("  ldr s0, [sp], #16\n");
+        printf("  fcvtzs x0, s0\n");       // float->int
+      } else if (node->lhs->is_float == 2) {
+        printf("  ldr d0, [sp], #16\n");
+        printf("  fcvtzs x0, d0\n");       // double->int
+      } else {
+        printf("  ldr x0, [sp], #16\n");   // そのまま int
+      }
+    }
+    
     printf("  ldp x29, x30, [sp]\n");
     printf("  add sp, sp, #%d\n", STACK_SIZE);
     printf("  ret\n");
@@ -206,6 +295,65 @@ void gen(struct node_t *node) {
     break;
   }
 
+  // 二項演算
+  int fpu_op_type = node->is_float; // ADD/SUB/MUL/DIV の場合は結果型
+  if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
+    // 比較演算の場合はオペランドの型を見る
+    if (node->lhs && node->lhs->is_float > fpu_op_type) fpu_op_type = node->lhs->is_float;
+    if (node->rhs && node->rhs->is_float > fpu_op_type) fpu_op_type = node->rhs->is_float;
+  }
+
+  if (fpu_op_type) {
+    // FPU 演算
+    gen(node->lhs);
+    gen(node->rhs);
+    const char *r0 = freg(fpu_op_type, 0);
+    const char *r1 = freg(fpu_op_type, 1);
+    
+    gen_pop_fpu(fpu_op_type, node->rhs->is_float, 1); // rhs を r1 に
+    gen_pop_fpu(fpu_op_type, node->lhs->is_float, 0); // lhs を r0 に
+
+    switch (node->kind) {
+    case ND_ADD:
+      printf("  fadd %s, %s, %s\n", r0, r0, r1);
+      break;
+    case ND_SUB:
+      printf("  fsub %s, %s, %s\n", r0, r0, r1);
+      break;
+    case ND_MUL:
+      printf("  fmul %s, %s, %s\n", r0, r0, r1);
+      break;
+    case ND_DIV:
+      printf("  fdiv %s, %s, %s\n", r0, r0, r1);
+      break;
+    case ND_EQ:
+      printf("  fcmp %s, %s\n", r0, r1);
+      printf("  cset x0, eq\n");
+      printf("  str x0, [sp, #-16]!\n");
+      return;
+    case ND_NE:
+      printf("  fcmp %s, %s\n", r0, r1);
+      printf("  cset x0, ne\n");
+      printf("  str x0, [sp, #-16]!\n");
+      return;
+    case ND_LT:
+      printf("  fcmp %s, %s\n", r0, r1);
+      printf("  cset x0, lo\n");
+      printf("  str x0, [sp, #-16]!\n");
+      return;
+    case ND_LE:
+      printf("  fcmp %s, %s\n", r0, r1);
+      printf("  cset x0, ls\n");
+      printf("  str x0, [sp, #-16]!\n");
+      return;
+    default:
+      break;
+    }
+    printf("  str %s, [sp, #-16]!\n", r0);
+    return;
+  }
+
+  // 整数二項演算
   gen(node->lhs);
   gen(node->rhs);
 
@@ -266,6 +414,25 @@ void gen_string_literals(void) {
       printf("%c", c);
     }
     printf("\"\n");
+  }
+  printf(".text\n");
+}
+
+void gen_float_literals(void) {
+  if (!float_literals) return;
+  printf(".section __DATA,__data\n");
+  printf(".align 3\n");
+  for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
+    printf(".LCF%d:\n", lit->id);
+    if (lit->is_float == 1) {
+      // float (32bit) 定数出力: IEEE754 format
+      union { float f; uint32_t i; } u = { .f = (float)lit->fval };
+      printf("  .word %u\n", u.i);
+    } else {
+      // double (64bit) 定数出力
+      union { double d; uint64_t i; } u = { .d = lit->fval };
+      printf("  .quad %llu\n", (unsigned long long)u.i);
+    }
   }
   printf(".text\n");
 }

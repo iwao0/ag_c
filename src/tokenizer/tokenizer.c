@@ -197,9 +197,39 @@ token_t *tokenize(char *p) {
       continue;
     }
 
-    if (isdigit(*p)) {
+    // 数値リテラル (整数 または 浮動小数点数)
+    if (isdigit(*p) || (*p == '.' && isdigit(p[1]))) {
+      char *q = p;
+      // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
+      bool is_float = false;
+      while (isalnum(*q) || *q == '.') {
+        if (*q == '.' || *q == 'e' || *q == 'E') {
+          is_float = true;
+        }
+        q++;
+      }
+      
       cur = new_token(TK_NUM, cur, p);
-      cur->val = strtol(p, &p, 10);
+      if (is_float) {
+        char *end;
+        cur->fval = strtod(p, &end);
+        // サフィックスの判定
+        if (*end == 'f' || *end == 'F') {
+          cur->is_float = 1; // float
+          end++;
+        } else if (*end == 'l' || *end == 'L') {
+          cur->is_float = 2; // long double は未対応だが double 扱い
+          end++;
+        } else {
+          cur->is_float = 2; // デフォルトは double
+        }
+        p = end;
+      } else {
+        cur->val = strtol(p, &p, 10);
+        cur->is_float = 0;
+      }
+      // suffixスキップ (L, U, LL など)
+      while (isalnum(*p)) p++;
       continue;
     }
 

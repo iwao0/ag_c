@@ -8,5 +8,6 @@ void gen_main_prologue(void);
 void gen_main_epilogue(void);
 void gen(struct node_t *node);
 void gen_string_literals(void);
+void gen_float_literals(void);
 
 #endif

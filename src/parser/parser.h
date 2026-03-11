@@ -47,6 +47,9 @@ struct node_t {
   int offset;       // kindがND_LVARの場合のみ使う（フレームポインタからのオフセット）
   int type_size;    // ロード/ストアサイズ（1=char, 8=int/pointer）
   int deref_size;   // ポインタが指す先の要素サイズ（*p で使用）
+  int is_float;     // 0=整数, 1=float, 2=double
+  double fval;      // 浮動小数点値（is_float > 0 かつ文字列からパースした場合）
+  int fval_id;      // 浮動小数点リテラルのID
   char *string_label; // kindがND_STRINGの場合のみ使う（データラベル）
 };
 
@@ -60,6 +63,7 @@ struct lvar_t {
   int size;      // サイズ（スカラー=8、配列=要素数*elem_size）
   int elem_size;   // 要素サイズ（1=char, 8=int/pointer）
   int is_array;  // 配列かどうか
+  int is_float;  // 0=整数, 1=float, 2=double
 };
 
 // 文字列リテラルテーブル（連結リスト）
@@ -71,6 +75,16 @@ struct string_lit_t {
   int len;
 };
 extern string_lit_t *string_literals;
+
+// 浮動小数点リテラルテーブル（連結リスト）
+typedef struct float_lit_t float_lit_t;
+struct float_lit_t {
+  float_lit_t *next;
+  int id;
+  double fval;
+  int is_float;
+};
+extern float_lit_t *float_literals;
 
 // プログラム全体をパースする（複数の文を返す）
 extern node_t *code[MAX_STMTS];

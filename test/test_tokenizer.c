@@ -258,6 +258,29 @@ static void test_tokenize_string() {
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
+// 1g. 浮動小数点リテラルのテスト
+static void test_tokenize_float_literal() {
+  printf("test_tokenize_float_literal...\n");
+  token = tokenize("3.14 1.5f 2.0E-3");
+  
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(2, token->is_float); // デフォルトは double
+  ASSERT_TRUE(token->fval > 3.13 && token->fval < 3.15);
+  token = token->next;
+  
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(1, token->is_float); // 'f' suffix なので float
+  ASSERT_TRUE(token->fval > 1.49 && token->fval < 1.51);
+  token = token->next;
+  
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(2, token->is_float); // 指数表現
+  ASSERT_TRUE(token->fval > 0.0019 && token->fval < 0.0021);
+  token = token->next;
+  
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
 // 2. consume() のテスト
 static void test_consume() {
   printf("test_consume...\n");
@@ -354,12 +377,14 @@ int main() {
   test_tokenize_symbols();
   test_tokenize_string();
   test_tokenize_char_literal();
+  test_at_eof();
   test_consume();
   test_consume_str();
   test_consume_ident();
   test_expect();
   test_expect_number();
-  test_at_eof();
+  test_tokenize_char_literal();
+  test_tokenize_float_literal();
 
   printf("OK: All unit tests passed!\n");
   return 0;
