@@ -43,6 +43,8 @@ struct token_t {
   bool at_bol;       // 行頭(Beginning of Line)にあるか
   bool has_space;    // 直前に空白文字があるか
   hideset_t *hideset; // マクロ展開の無限ループ防止用
+  char *file_name;    // ファイル名
+  int line_no;        // 行番号
 };
 
 // 現在着目しているトークン
@@ -50,6 +52,7 @@ extern token_t *token;
 
 // エラーを報告する関数
 void error_at(char *loc, char *fmt, ...);
+void error_tok(token_t *tok, char *fmt, ...);
 
 // 次のトークンが期待している記号のときには、トークンを1つ読み進めて真を返す。
 // それ以外の場合には偽を返す。
@@ -74,5 +77,9 @@ token_t *tokenize(char *p);
 // 現在の入力文字列を取得・設定
 char *get_user_input(void);
 void set_user_input(char *p);
+
+// 現在のファイル名を取得・設定
+char *get_filename(void);
+void set_filename(char *name);
 
 #endif

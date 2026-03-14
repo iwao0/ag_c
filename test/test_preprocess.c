@@ -81,6 +81,23 @@ int main() {
   assert_result(42, "#if 1 + 2 == 3\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif");
   assert_result(42, "#define X 5\n#if X * 2 > 8 && X < 10\nint main() { return 42; }\n#endif");
 
+  // Function-like macros
+  assert_result(42, "#define ADD(a, b) (a + b)\nint main() { return ADD(20, 22); }");
+  assert_result(10, "#define TWICE(x) (x * 2)\nint main() { return TWICE(5); }");
+  assert_result(25, "#define SQUARE(x) (x * x)\nint main() { return SQUARE(5); }");
+  
+  // Function-like macro with recursive expansion
+  assert_result(12, "#define ADD(x, y) (x+y)\n#define SUB(x, y) (x-y)\nint main() { return ADD(SUB(10, 2), 4); }");
+  
+  // Test #error skipping (if it reaches #error in an active block, the test would fail, which is exactly why it should not execute here)
+  assert_result(0, "#if 0\n#error \"This should not be evaluated\"\n#endif\nint main() { return 0; }");
+
+  // Stringification test
+  assert_result(0, "#define STR(x) #x\nint main() { char *s = STR(hello world); if (s[0] == 'h') if (s[6] == 'w') return 0; return 1; }");
+
+  // Token pasting test
+  assert_result(42, "#define PASTE(a, b) a ## b\nint main() { int var123 = 42; return PASTE(var, 123); }");
+
   printf("OK: Preprocessor tests passed!\n");
   return 0;
 }

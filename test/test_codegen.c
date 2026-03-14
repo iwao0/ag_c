@@ -63,6 +63,7 @@ static void test_gen_funcdef(void) {
   n->nargs = 0;
   node_t *body = calloc(1, sizeof(node_t));
   body->kind = ND_BLOCK;
+  body->body = calloc(2, sizeof(node_t*));
   body->body[0] = make_num(42);
   body->body[1] = NULL;
   n->rhs = body;
@@ -87,6 +88,7 @@ static void test_gen_funcall(void) {
   n->funcname = "bar";
   n->funcname_len = 3;
   n->nargs = 2;
+  n->args = calloc(2, sizeof(node_t*));
   n->args[0] = make_num(1);
   n->args[1] = make_num(2);
 
@@ -288,6 +290,7 @@ static void test_gen_block(void) {
   printf("test_gen_block...\n");
   node_t *n = calloc(1, sizeof(node_t));
   n->kind = ND_BLOCK;
+  n->body = calloc(3, sizeof(node_t*));
   n->body[0] = make_num(1);
   n->body[1] = make_num(2);
   n->body[2] = NULL;

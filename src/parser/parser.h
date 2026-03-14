@@ -26,31 +26,36 @@ typedef enum {
   ND_NUM,     // 整数
 } node_kind_t;
 
-#define MAX_ARGS 8
-
 // 抽象構文木のノードの型
-#define MAX_STMTS 100
 typedef struct node_t node_t;
 struct node_t {
   node_kind_t kind; // ノードの型
+  
+  // ツリー構造用
   node_t *lhs;      // 左辺 / 条件式
   node_t *rhs;      // 右辺 / then節 / ループ本体
+  
+  // 関数/ブロック用
+  node_t **body;    // ブロック内の文（NULL終端の動的配列）(ND_BLOCK)
+  node_t **args;    // 引数/仮引数の動的配列 (ND_FUNCALL, ND_FUNCDEF)
+  int nargs;        // 引数の数
+  char *funcname;   // 関数名
+  int funcname_len; // 関数名の長さ
+  
+  // 制御構造用
   node_t *els;      // else節（ND_IFのみ）
   node_t *init;     // 初期化式（ND_FORのみ）
   node_t *inc;      // インクリメント式（ND_FORのみ）
-  node_t *body[MAX_STMTS]; // ブロック内の文（ND_BLOCKのみ）
-  char *funcname;           // 関数名（ND_FUNCDEF, ND_FUNCALL）
-  int funcname_len;         // 関数名の長さ
-  node_t *args[MAX_ARGS];   // 引数/仮引数（ND_FUNCALL, ND_FUNCDEF）
-  int nargs;                // 引数の数
-  int val;          // kindがND_NUMの場合のみ使う
-  int offset;       // kindがND_LVARの場合のみ使う（フレームポインタからのオフセット）
+  
+  // データ型/リテラル用
+  int val;          // 整数値（ND_NUMのみ）
+  int offset;       // フレームオフセット（ND_LVARのみ）
   int type_size;    // ロード/ストアサイズ（1=char, 8=int/pointer）
   int deref_size;   // ポインタが指す先の要素サイズ（*p で使用）
   int is_float;     // 0=整数, 1=float, 2=double
-  double fval;      // 浮動小数点値（is_float > 0 かつ文字列からパースした場合）
+  double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
-  char *string_label; // kindがND_STRINGの場合のみ使う（データラベル）
+  char *string_label; // 文字列リテラルのデータラベル（ND_STRINGのみ）
 };
 
 // ローカル変数テーブル（連結リスト）
@@ -87,7 +92,7 @@ struct float_lit_t {
 extern float_lit_t *float_literals;
 
 // プログラム全体をパースする（複数の文を返す）
-extern node_t *code[MAX_STMTS];
+extern node_t **code;
 void program(void);
 
 // 単一の式をパースしてASTのルートを返す

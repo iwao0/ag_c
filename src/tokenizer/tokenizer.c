@@ -20,6 +20,16 @@ void set_user_input(char *p) {
   user_input = p;
 }
 
+static char *current_filename;
+
+char *get_filename(void) {
+  return current_filename;
+}
+
+void set_filename(char *name) {
+  current_filename = name;
+}
+
 // エラー箇所を視覚的に表示する
 void error_at(char *loc, char *fmt, ...) {
   va_list ap;
@@ -30,6 +40,21 @@ void error_at(char *loc, char *fmt, ...) {
   fprintf(stderr, "%*s", pos, ""); // pos個の空白を出力
   fprintf(stderr, "^ ");
   vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "\n");
+  exit(1);
+}
+
+void error_tok(token_t *tok, char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+
+  if (tok && tok->file_name) {
+    fprintf(stderr, "%s:%d: ", tok->file_name, tok->line_no);
+  }
+  vfprintf(stderr, fmt, ap);
+  if (tok && tok->str) {
+    fprintf(stderr, " (actual: '%.*s')", tok->len, tok->str);
+  }
   fprintf(stderr, "\n");
   exit(1);
 }
@@ -59,14 +84,14 @@ token_t *consume_ident(void) {
 
 void expect(char op) {
   if (token->kind != TK_RESERVED || token->str[0] != op) {
-    error_at(token->str, "'%c'ではありません", op);
+    error_tok(token, "'%c'ではありません", op);
   }
   token = token->next;
 }
 
 int expect_number(void) {
   if (token->kind != TK_NUM) {
-    error_at(token->str, "数ではありません");
+    error_tok(token, "数ではありません");
   }
   int val = token->val;
   token = token->next;
@@ -76,10 +101,12 @@ int expect_number(void) {
 bool at_eof(void) { return token->kind == TK_EOF; }
 
 // 新しいトークンを作成して、curに繋げる
-static token_t *new_token(token_kind_t kind, token_t *cur, char *str) {
+static token_t *new_token(token_kind_t kind, token_t *cur, char *str, int line_no) {
   token_t *tok = calloc(1, sizeof(token_t));
   tok->kind = kind;
   tok->str = str;
+  tok->file_name = current_filename;
+  tok->line_no = line_no;
   cur->next = tok;
   return tok;
 }
@@ -93,6 +120,7 @@ token_t *tokenize(char *p) {
   
   bool at_bol = true;
   bool has_space = false;
+  int line_no = 1;
 
   while (*p) {
     // 空白文字をスキップ
@@ -100,6 +128,7 @@ token_t *tokenize(char *p) {
       has_space = true;
       if (*p == '\n') {
         at_bol = true;
+        line_no++;
       }
       p++;
       continue;
@@ -111,11 +140,12 @@ token_t *tokenize(char *p) {
     at_bol = false;
     has_space = false;
 
-    // 2文字の演算子 (==, !=, <=, >=, &&, ||)
+    // 2文字の演算子 (==, !=, <=, >=, &&, ||, ##)
     if (strncmp(p, "==", 2) == 0 || strncmp(p, "!=", 2) == 0 ||
         strncmp(p, "<=", 2) == 0 || strncmp(p, ">=", 2) == 0 ||
-        strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0) {
-      cur = new_token(TK_RESERVED, cur, p);
+        strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0 ||
+        strncmp(p, "##", 2) == 0) {
+      cur = new_token(TK_RESERVED, cur, p, line_no);
       cur->len = 2;
       cur->at_bol = _at_bol;
       cur->has_space = _has_space;
@@ -131,7 +161,7 @@ token_t *tokenize(char *p) {
       int len = p - start;
       if (*p == '"')
         p++; // 閉じ引用符をスキップ
-      cur = new_token(TK_STRING, cur, start);
+      cur = new_token(TK_STRING, cur, start, line_no);
       cur->len = len;
       cur->at_bol = _at_bol;
       cur->has_space = _has_space;
@@ -158,7 +188,7 @@ token_t *tokenize(char *p) {
       p++; // 文字本体をスキップ
       if (*p == '\'')
         p++; // 閉じクォートをスキップ
-      cur = new_token(TK_NUM, cur, p);
+      cur = new_token(TK_NUM, cur, p, line_no);
       cur->val = ch;
       cur->len = 1;
       cur->at_bol = _at_bol;
@@ -168,7 +198,7 @@ token_t *tokenize(char *p) {
 
     // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~)
     if (strchr("+-*/()<>;={},&[]#.!~", *p) || (*p == '.' && !isdigit(p[1]))) {
-      cur = new_token(TK_RESERVED, cur, p++);
+      cur = new_token(TK_RESERVED, cur, p++, line_no);
       cur->len = 1;
       cur->at_bol = _at_bol;
       cur->has_space = _has_space;
@@ -206,7 +236,7 @@ token_t *tokenize(char *p) {
       bool is_kw = false;
       for (size_t i = 0; i < sizeof(kw) / sizeof(kw[0]); i++) {
         if (len == kw[i].len && strncmp(start, kw[i].name, len) == 0) {
-          cur = new_token(kw[i].kind, cur, start);
+          cur = new_token(kw[i].kind, cur, start, line_no);
           cur->len = len;
           cur->at_bol = _at_bol;
           cur->has_space = _has_space;
@@ -216,7 +246,7 @@ token_t *tokenize(char *p) {
       }
 
       if (!is_kw) {
-        cur = new_token(TK_IDENT, cur, start);
+        cur = new_token(TK_IDENT, cur, start, line_no);
         cur->len = len;
         cur->at_bol = _at_bol;
         cur->has_space = _has_space;
@@ -237,7 +267,7 @@ token_t *tokenize(char *p) {
         q++;
       }
       
-      cur = new_token(TK_NUM, cur, p);
+      cur = new_token(TK_NUM, cur, p, line_no);
       if (is_float) {
         char *end;
         cur->fval = strtod(p, &end);
@@ -258,12 +288,13 @@ token_t *tokenize(char *p) {
       }
       // suffixスキップ (L, U, LL など)
       while (isalnum(*p)) p++;
+      cur->len = p - start;
       continue;
     }
 
     error_at(p, "トークナイズできません");
   }
 
-  new_token(TK_EOF, cur, p);
+  new_token(TK_EOF, cur, p, line_no);
   return head.next;
 }

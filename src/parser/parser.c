@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-node_t *code[MAX_STMTS];
+node_t **code;
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 static int string_label_count = 0;
@@ -92,8 +92,14 @@ static node_t *funcdef(void);
 
 // program = funcdef*
 void program(void) {
+  int cap = 8;
+  code = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!at_eof()) {
+    if (i >= cap - 1) { // NULL終端用
+      cap *= 2;
+      code = realloc(code, sizeof(node_t*) * cap);
+    }
     code[i++] = funcdef();
   }
   code[i] = NULL;
@@ -138,6 +144,8 @@ static node_t *funcdef(void) {
 
   expect('(');
   // 仮引数のパース
+  int arg_cap = 4;
+  node->args = calloc(arg_cap, sizeof(node_t*));
   int nargs = 0;
   if (!consume(')')) {
     consume_type(); // 仮引数の型
@@ -148,6 +156,10 @@ static node_t *funcdef(void) {
       node->args[nargs++] = new_node_lvar(var->offset);
     }
     while (consume(',')) {
+      if (nargs >= arg_cap) {
+        arg_cap *= 2;
+        node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
+      }
       consume_type(); // 仮引数の型
       while (consume('*')) {} // ポインタの * を読み飛ばす
       param = consume_ident();
@@ -165,7 +177,13 @@ static node_t *funcdef(void) {
   node_t *body = calloc(1, sizeof(node_t));
   body->kind = ND_BLOCK;
   int i = 0;
+  int body_cap = 8;
+  body->body = calloc(body_cap, sizeof(node_t*));
   while (!consume('}')) {
+    if (i >= body_cap - 1) {
+      body_cap *= 2;
+      body->body = realloc(body->body, sizeof(node_t*) * body_cap);
+    }
     body->body[i++] = stmt();
   }
   body->body[i] = NULL;
@@ -186,7 +204,13 @@ static node_t *stmt(void) {
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_BLOCK;
     int i = 0;
+    int cap = 8;
+    node->body = calloc(cap, sizeof(node_t*));
     while (!consume('}')) {
+      if (i >= cap - 1) {
+        cap *= 2;
+        node->body = realloc(node->body, sizeof(node_t*) * cap);
+      }
       node->body[i++] = stmt();
     }
     node->body[i] = NULL;
@@ -437,9 +461,15 @@ static node_t *primary(void) {
       node->funcname = tok->str;
       node->funcname_len = tok->len;
       int nargs = 0;
+      int arg_cap = 4;
+      node->args = calloc(arg_cap, sizeof(node_t*));
       if (!consume(')')) {
         node->args[nargs++] = expr();
         while (consume(',')) {
+          if (nargs >= arg_cap) {
+            arg_cap *= 2;
+            node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
+          }
           node->args[nargs++] = expr();
         }
         expect(')');

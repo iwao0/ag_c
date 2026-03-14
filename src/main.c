@@ -12,6 +12,7 @@ int main(int argc, char **argv) {
   }
 
   // トークナイズ
+  set_filename(argv[1]);
   token = tokenize(argv[1]);
 
   // プリプロセス（マクロ展開やディレクティブ処理）
