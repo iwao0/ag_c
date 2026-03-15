@@ -10,6 +10,19 @@ float_lit_t *float_literals = NULL;
 static int string_label_count = 0;
 static int float_label_count = 0;
 
+// ローカル変数テーブル（連結リスト）
+typedef struct lvar_t lvar_t;
+struct lvar_t {
+  lvar_t *next;
+  char *name;
+  int len;
+  int offset;
+  int size;      // サイズ（スカラー=8、配列=要素数*elem_size）
+  int elem_size;   // 要素サイズ（1=char, 8=int/pointer）
+  int is_array;  // 配列かどうか
+  int is_float;  // 0=整数, 1=float, 2=double
+};
+
 // ローカル変数テーブル（関数ごとにリセット）
 static lvar_t *locals;
 static int locals_offset;
