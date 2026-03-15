@@ -10,6 +10,37 @@ float_lit_t *float_literals = NULL;
 static int string_label_count = 0;
 static int float_label_count = 0;
 
+static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
+static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
+
+static int node_type_size(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.type_size;
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING:
+      return as_mem(node)->type_size;
+    default:
+      return 0;
+  }
+}
+
+static int node_deref_size(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.deref_size;
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING:
+      return as_mem(node)->deref_size;
+    default:
+      return 0;
+  }
+}
+
 // ローカル変数テーブル（連結リスト）
 typedef struct lvar_t lvar_t;
 struct lvar_t {
@@ -56,7 +87,7 @@ static lvar_t *register_lvar(char *name, int len) {
   return register_lvar_sized(name, len, 8, 8, 0);
 }
 
-static node_t *new_node(node_kind_t kind, node_t *lhs, node_t *rhs) {
+static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = calloc(1, sizeof(node_t));
   node->kind = kind;
   node->lhs = lhs;
@@ -64,7 +95,7 @@ static node_t *new_node(node_kind_t kind, node_t *lhs, node_t *rhs) {
   // 左辺と右辺から is_float を伝播 (double優先)
   if (lhs && lhs->is_float) node->is_float = lhs->is_float;
   if (rhs && rhs->is_float > node->is_float) node->is_float = rhs->is_float;
-  
+
   // 比較演算の結果は整数(0 または 1)
   if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE) {
     node->is_float = 0;
@@ -73,23 +104,32 @@ static node_t *new_node(node_kind_t kind, node_t *lhs, node_t *rhs) {
 }
 
 static node_t *new_node_num(int val) {
-  node_t *node = calloc(1, sizeof(node_t));
-  node->kind = ND_NUM;
+  node_num_t *node = calloc(1, sizeof(node_num_t));
+  node->base.kind = ND_NUM;
   node->val = val;
-  return node;
+  return (node_t *)node;
 }
 
 static node_t *new_node_lvar(int offset) {
-  node_t *node = calloc(1, sizeof(node_t));
-  node->kind = ND_LVAR;
+  node_lvar_t *node = calloc(1, sizeof(node_lvar_t));
+  node->mem.base.kind = ND_LVAR;
   node->offset = offset;
-  node->type_size = 8; // デフォルトは8バイト
-  return node;
+  node->mem.type_size = 8; // デフォルトは8バイト
+  return (node_t *)node;
 }
 
 static node_t *new_node_lvar_typed(int offset, int type_size) {
-  node_t *node = new_node_lvar(offset);
-  node->type_size = type_size;
+  node_lvar_t *node = (node_lvar_t *)new_node_lvar(offset);
+  node->mem.type_size = type_size;
+  return (node_t *)node;
+}
+
+static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
+  node_mem_t *node = calloc(1, sizeof(node_mem_t));
+  node->base.kind = ND_ASSIGN;
+  node->base.lhs = lhs;
+  node->base.rhs = rhs;
+  node->base.is_float = lhs ? lhs->is_float : 0;
   return node;
 }
 
@@ -146,8 +186,8 @@ static node_t *funcdef(void) {
     fprintf(stderr, "関数定義が期待されます\n");
     exit(1);
   }
-  node_t *node = calloc(1, sizeof(node_t));
-  node->kind = ND_FUNCDEF;
+  node_func_t *node = calloc(1, sizeof(node_func_t));
+  node->base.kind = ND_FUNCDEF;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
 
@@ -187,8 +227,8 @@ static node_t *funcdef(void) {
 
   // 関数本体 (ブロック)
   expect('{');
-  node_t *body = calloc(1, sizeof(node_t));
-  body->kind = ND_BLOCK;
+  node_block_t *body = calloc(1, sizeof(node_block_t));
+  body->base.kind = ND_BLOCK;
   int i = 0;
   int body_cap = 8;
   body->body = calloc(body_cap, sizeof(node_t*));
@@ -200,9 +240,9 @@ static node_t *funcdef(void) {
     body->body[i++] = stmt();
   }
   body->body[i] = NULL;
-  node->rhs = body;
+  node->base.rhs = (node_t *)body;
 
-  return node;
+  return (node_t *)node;
 }
 
 // stmt = "{" stmt* "}"
@@ -214,8 +254,8 @@ static node_t *funcdef(void) {
 //      | expr ";"
 static node_t *stmt(void) {
   if (consume('{')) {
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_BLOCK;
+    node_block_t *node = calloc(1, sizeof(node_block_t));
+    node->base.kind = ND_BLOCK;
     int i = 0;
     int cap = 8;
     node->body = calloc(cap, sizeof(node_t*));
@@ -227,7 +267,7 @@ static node_t *stmt(void) {
       node->body[i++] = stmt();
     }
     node->body[i] = NULL;
-    return node;
+    return (node_t *)node;
   }
 
   // 型付き変数宣言: type "*"* ident ("[" num "]")? ("=" expr)? ";"
@@ -269,11 +309,11 @@ static node_t *stmt(void) {
       // int x = expr;
       node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
       lvar->is_float = var->is_float;
-      node_t *node = new_node(ND_ASSIGN, lvar, expr());
+      node_mem_t *node = new_node_assign(lvar, expr());
       node->type_size = is_pointer ? 8 : var->elem_size;
-      node->is_float = var->is_float;
+      node->base.is_float = var->is_float;
       expect(';');
-      return node;
+      return (node_t *)node;
     }
     // int x; (初期化なし → ダミーの値0)
     expect(';');
@@ -294,48 +334,48 @@ static node_t *stmt(void) {
   if (token->kind == TK_IF) {
     token = token->next;
     expect('(');
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_IF;
-    node->lhs = expr();
+    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node->base.kind = ND_IF;
+    node->base.lhs = expr();
     expect(')');
-    node->rhs = stmt();
+    node->base.rhs = stmt();
     if (token->kind == TK_ELSE) {
       token = token->next;
       node->els = stmt();
     }
-    return node;
+    return (node_t *)node;
   }
 
   if (token->kind == TK_WHILE) {
     token = token->next;
     expect('(');
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_WHILE;
-    node->lhs = expr();  // 条件式
+    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node->base.kind = ND_WHILE;
+    node->base.lhs = expr();  // 条件式
     expect(')');
-    node->rhs = stmt();  // ループ本体
-    return node;
+    node->base.rhs = stmt();  // ループ本体
+    return (node_t *)node;
   }
 
   if (token->kind == TK_FOR) {
     token = token->next;
     expect('(');
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_FOR;
+    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node->base.kind = ND_FOR;
     if (!consume(';')) {
       node->init = expr();  // 初期化式
       expect(';');
     }
     if (!consume(';')) {
-      node->lhs = expr();   // 条件式
+      node->base.lhs = expr();   // 条件式
       expect(';');
     }
     if (!consume(')')) {
       node->inc = expr();   // インクリメント式
       expect(')');
     }
-    node->rhs = stmt();     // ループ本体
-    return node;
+    node->base.rhs = stmt();     // ループ本体
+    return (node_t *)node;
   }
 
   node_t *node = expr();
@@ -350,10 +390,11 @@ node_t *expr(void) { return assign(); }
 static node_t *assign(void) {
   node_t *node = equality();
   if (consume('=')) {
-    node = new_node(ND_ASSIGN, node, assign());
+    node_mem_t *assign_node = new_node_assign(node, assign());
     // 左辺のtype_sizeをASSIGNに伝播（str/strb/strh の切り替えに使用）
-    node->type_size = node->lhs->type_size;
-    node->is_float = node->lhs->is_float;
+    assign_node->type_size = node_type_size(assign_node->base.lhs);
+    assign_node->base.is_float = assign_node->base.lhs ? assign_node->base.lhs->is_float : 0;
+    node = (node_t *)assign_node;
   }
   return node;
 }
@@ -364,9 +405,9 @@ static node_t *equality(void) {
 
   for (;;) {
     if (consume_str("=="))
-      node = new_node(ND_EQ, node, relational());
+      node = new_node_binary(ND_EQ, node, relational());
     else if (consume_str("!="))
-      node = new_node(ND_NE, node, relational());
+      node = new_node_binary(ND_NE, node, relational());
     else
       return node;
   }
@@ -378,13 +419,13 @@ static node_t *relational(void) {
 
   for (;;) {
     if (consume_str("<"))
-      node = new_node(ND_LT, node, add());
+      node = new_node_binary(ND_LT, node, add());
     else if (consume_str("<="))
-      node = new_node(ND_LE, node, add());
+      node = new_node_binary(ND_LE, node, add());
     else if (consume_str(">"))
-      node = new_node(ND_LT, add(), node);
+      node = new_node_binary(ND_LT, add(), node);
     else if (consume_str(">="))
-      node = new_node(ND_LE, add(), node);
+      node = new_node_binary(ND_LE, add(), node);
     else
       return node;
   }
@@ -396,9 +437,9 @@ static node_t *add(void) {
 
   for (;;) {
     if (consume('+'))
-      node = new_node(ND_ADD, node, mul());
+      node = new_node_binary(ND_ADD, node, mul());
     else if (consume('-'))
-      node = new_node(ND_SUB, node, mul());
+      node = new_node_binary(ND_SUB, node, mul());
     else
       return node;
   }
@@ -410,9 +451,9 @@ static node_t *mul(void) {
 
   for (;;) {
     if (consume('*'))
-      node = new_node(ND_MUL, node, unary());
+      node = new_node_binary(ND_MUL, node, unary());
     else if (consume('/'))
-      node = new_node(ND_DIV, node, unary());
+      node = new_node_binary(ND_DIV, node, unary());
     else
       return node;
   }
@@ -423,18 +464,20 @@ static node_t *mul(void) {
 static node_t *unary(void) {
   if (consume('*')) {
     node_t *operand = unary();
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_DEREF;
-    node->lhs = operand;
+    node_mem_t *node = calloc(1, sizeof(node_mem_t));
+    node->base.kind = ND_DEREF;
+    node->base.lhs = operand;
+    node->base.is_float = operand ? operand->is_float : 0;
     // デリファレンス結果のサイズ: オペランドが指す先の要素サイズ
-    node->type_size = operand->deref_size ? operand->deref_size : 8;
-    return node;
+    int ds = node_deref_size(operand);
+    node->type_size = ds ? ds : 8;
+    return (node_t *)node;
   }
   if (consume('&')) {
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_ADDR;
-    node->lhs = unary();
-    return node;
+    node_mem_t *node = calloc(1, sizeof(node_mem_t));
+    node->base.kind = ND_ADDR;
+    node->base.lhs = unary();
+    return (node_t *)node;
   }
   node_t *node = primary();
   // 後置演算子: [expr]
@@ -444,14 +487,16 @@ static node_t *unary(void) {
     expect(']');
     // 要素サイズを取得（nodeから伝播、デフォルトは8）
     // 要素サイズを取得（deref_size > type_size の優先度で伝播）
-    int es = node->deref_size ? node->deref_size : (node->type_size ? node->type_size : 8);
-    node_t *scaled = new_node(ND_MUL, idx, new_node_num(es));
-    node_t *addr = new_node(ND_ADD, node, scaled);
-    node_t *deref = calloc(1, sizeof(node_t));
-    deref->kind = ND_DEREF;
-    deref->lhs = addr;
+    int ds = node_deref_size(node);
+    int ts = node_type_size(node);
+    int es = ds ? ds : (ts ? ts : 8);
+    node_t *scaled = new_node_binary(ND_MUL, idx, new_node_num(es));
+    node_t *addr = new_node_binary(ND_ADD, node, scaled);
+    node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+    deref->base.kind = ND_DEREF;
+    deref->base.lhs = addr;
     deref->type_size = es;
-    node = deref;
+    node = (node_t *)deref;
   }
   return node;
 }
@@ -469,8 +514,8 @@ static node_t *primary(void) {
   if (tok) {
     // 関数呼び出し: ident "(" args? ")"
     if (consume('(')) {
-      node_t *node = calloc(1, sizeof(node_t));
-      node->kind = ND_FUNCALL;
+      node_func_t *node = calloc(1, sizeof(node_func_t));
+      node->base.kind = ND_FUNCALL;
       node->funcname = tok->str;
       node->funcname_len = tok->len;
       int nargs = 0;
@@ -488,7 +533,7 @@ static node_t *primary(void) {
         expect(')');
       }
       node->nargs = nargs;
-      return node;
+      return (node_t *)node;
     }
     // ローカル変数
     lvar_t *var = find_lvar(tok->str, tok->len);
@@ -497,15 +542,16 @@ static node_t *primary(void) {
     }
     if (var->is_array) {
       // 配列名は先頭要素のアドレスを返す
-      node_t *node = calloc(1, sizeof(node_t));
-      node->kind = ND_ADDR;
-      node->lhs = new_node_lvar(var->offset - var->size + var->elem_size);
+      node_mem_t *node = calloc(1, sizeof(node_mem_t));
+      node->base.kind = ND_ADDR;
+      node->base.lhs = new_node_lvar(var->offset - var->size + var->elem_size);
       node->type_size = var->elem_size; // 配列の要素サイズを伝播
-      return node;
+      node->deref_size = var->elem_size;
+      return (node_t *)node;
     }
     // ポインタ変数: 変数自体は8バイトロード、デリファレンス時は elem_size
     node_t *n = new_node_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
-    n->deref_size = var->elem_size;
+    as_lvar(n)->mem.deref_size = var->elem_size;
     n->is_float = var->is_float;
     return n;
   }
@@ -513,8 +559,8 @@ static node_t *primary(void) {
   // 文字列リテラル
   if (token->kind == TK_STRING) {
     token_string_t *st = (token_string_t *)token;
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_STRING;
+    node_string_t *node = calloc(1, sizeof(node_string_t));
+    node->mem.base.kind = ND_STRING;
     // ラベルを生成
     char label[32];
     snprintf(label, sizeof(label), ".LC%d", string_label_count++);
@@ -527,33 +573,33 @@ static node_t *primary(void) {
     lit->next = string_literals;
     string_literals = lit;
     token = token->next;
-    node->type_size = 8; // ポインタとして8バイト
-    node->deref_size = 1; // 文字列は char* なので1バイト
-    node->is_float = 0; // 文字列はポインタなので整数
-    return node;
+    node->mem.type_size = 8; // ポインタとして8バイト
+    node->mem.deref_size = 1; // 文字列は char* なので1バイト
+    node->mem.base.is_float = 0; // 文字列はポインタなので整数
+    return (node_t *)node;
   }
 
   if (token->kind == TK_NUM) {
     token_num_t *num = (token_num_t *)token;
-    node_t *node = calloc(1, sizeof(node_t));
-    node->kind = ND_NUM;
+    node_num_t *node = calloc(1, sizeof(node_num_t));
+    node->base.kind = ND_NUM;
     node->val = num->val;
     node->fval = num->fval;
-    node->is_float = num->is_float;
+    node->base.is_float = num->is_float;
 
-    if (node->is_float) {
+    if (node->base.is_float) {
       // 浮動小数点リテラルを登録
       float_lit_t *lit = calloc(1, sizeof(float_lit_t));
       lit->id = float_label_count++;
       lit->fval = node->fval;
-      lit->is_float = node->is_float;
+      lit->is_float = node->base.is_float;
       lit->next = float_literals;
       float_literals = lit;
       node->fval_id = lit->id;
     }
 
     token = token->next;
-    return node;
+    return (node_t *)node;
   }
 
   error_tok(token, "数値を期待しています");

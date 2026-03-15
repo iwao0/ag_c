@@ -17,6 +17,7 @@
 3. **抽象構文木 (AST) と再帰下降構文解析 (Parser)**
    - [src/parser/parser.c](../../src/parser/parser.c) にて再帰下降パーサーを実装しました。
    - 四則演算の優先順位、括弧、比較演算子、代入式、制御構文(if/else/while/for)に対応。
+   - ASTノード型は用途ごとに分割し、`node_t` を最小共通型として `node_num_t` / `node_lvar_t` / `node_string_t` / `node_mem_t` / `node_block_t` / `node_func_t` / `node_ctrl_t` にキャストして扱います。
    - 単体テスト: [test/test_parser.c](../../test/test_parser.c)
 
 4. **ARM64 コード生成 (Code Gen)**

@@ -9,6 +9,8 @@
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 
+static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
+
 // stdout を一時的にバッファへリダイレクトして gen 系関数の出力をキャプチャする
 static char *capture_buf;
 static size_t capture_size;
@@ -29,14 +31,22 @@ static char *capture_end(void) {
 
 // ヘルパー: ASTリーフ（整数ノード）を作成
 static node_t *make_num(int val) {
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_NUM;
+  node_num_t *n = calloc(1, sizeof(node_num_t));
+  n->base.kind = ND_NUM;
   n->val = val;
-  return n;
+  return (node_t *)n;
 }
 
 // ヘルパー: 二項演算ノードを作成
 static node_t *make_binop(node_kind_t kind, node_t *lhs, node_t *rhs) {
+  if (kind == ND_ASSIGN) {
+    node_mem_t *n = calloc(1, sizeof(node_mem_t));
+    n->base.kind = kind;
+    n->base.lhs = lhs;
+    n->base.rhs = rhs;
+    n->type_size = 8;
+    return (node_t *)n;
+  }
   node_t *n = calloc(1, sizeof(node_t));
   n->kind = kind;
   n->lhs = lhs;
@@ -46,30 +56,31 @@ static node_t *make_binop(node_kind_t kind, node_t *lhs, node_t *rhs) {
 
 // ヘルパー: ローカル変数ノードを作成
 static node_t *make_lvar(int offset) {
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_LVAR;
+  node_lvar_t *n = calloc(1, sizeof(node_lvar_t));
+  n->mem.base.kind = ND_LVAR;
   n->offset = offset;
-  return n;
+  n->mem.type_size = 8;
+  return (node_t *)n;
 }
 
 // --- テストケース ---
 
 static void test_gen_funcdef(void) {
   printf("test_gen_funcdef...\n");
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_FUNCDEF;
+  node_func_t *n = calloc(1, sizeof(node_func_t));
+  n->base.kind = ND_FUNCDEF;
   n->funcname = "foo";
   n->funcname_len = 3;
   n->nargs = 0;
-  node_t *body = calloc(1, sizeof(node_t));
-  body->kind = ND_BLOCK;
+  node_block_t *body = calloc(1, sizeof(node_block_t));
+  body->base.kind = ND_BLOCK;
   body->body = calloc(2, sizeof(node_t*));
   body->body[0] = make_num(42);
   body->body[1] = NULL;
-  n->rhs = body;
+  n->base.rhs = (node_t *)body;
 
   capture_start();
-  gen(n);
+  gen((node_t *)n);
   char *out = capture_end();
 
   ASSERT_TRUE(strstr(out, ".global _foo") != NULL);
@@ -83,8 +94,8 @@ static void test_gen_funcdef(void) {
 
 static void test_gen_funcall(void) {
   printf("test_gen_funcall...\n");
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_FUNCALL;
+  node_func_t *n = calloc(1, sizeof(node_func_t));
+  n->base.kind = ND_FUNCALL;
   n->funcname = "bar";
   n->funcname_len = 3;
   n->nargs = 2;
@@ -93,7 +104,7 @@ static void test_gen_funcall(void) {
   n->args[1] = make_num(2);
 
   capture_start();
-  gen(n);
+  gen((node_t *)n);
   char *out = capture_end();
 
   ASSERT_TRUE(strstr(out, "bl _bar") != NULL);
@@ -124,10 +135,10 @@ static void test_gen_fadd(void) {
   printf("test_gen_fadd...\n");
   node_t *lhs = make_num(3);
   lhs->is_float = 1;
-  lhs->fval_id = 1;
+  as_num(lhs)->fval_id = 1;
   node_t *rhs = make_num(4);
   rhs->is_float = 1;
-  rhs->fval_id = 2;
+  as_num(rhs)->fval_id = 2;
   node_t *n = make_binop(ND_ADD, lhs, rhs);
   n->is_float = 1; // float
   
@@ -231,13 +242,13 @@ static void test_gen_assign(void) {
 
 static void test_gen_if(void) {
   printf("test_gen_if...\n");
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_IF;
-  n->lhs = make_num(1);
-  n->rhs = make_num(42);
+  node_ctrl_t *n = calloc(1, sizeof(node_ctrl_t));
+  n->base.kind = ND_IF;
+  n->base.lhs = make_num(1);
+  n->base.rhs = make_num(42);
   n->els = make_num(0);
   capture_start();
-  gen(n);
+  gen((node_t *)n);
   char *out = capture_end();
   ASSERT_TRUE(strstr(out, "cbz x0") != NULL);
   ASSERT_TRUE(strstr(out, ".Lelse") != NULL);
@@ -246,12 +257,12 @@ static void test_gen_if(void) {
 
 static void test_gen_while(void) {
   printf("test_gen_while...\n");
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_WHILE;
-  n->lhs = make_num(0);
-  n->rhs = make_num(1);
+  node_ctrl_t *n = calloc(1, sizeof(node_ctrl_t));
+  n->base.kind = ND_WHILE;
+  n->base.lhs = make_num(0);
+  n->base.rhs = make_num(1);
   capture_start();
-  gen(n);
+  gen((node_t *)n);
   char *out = capture_end();
   ASSERT_TRUE(strstr(out, ".Lbegin") != NULL);
   ASSERT_TRUE(strstr(out, "cbz x0") != NULL);
@@ -260,14 +271,14 @@ static void test_gen_while(void) {
 
 static void test_gen_for(void) {
   printf("test_gen_for...\n");
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_FOR;
+  node_ctrl_t *n = calloc(1, sizeof(node_ctrl_t));
+  n->base.kind = ND_FOR;
   n->init = make_num(0);
-  n->lhs = make_num(1);
+  n->base.lhs = make_num(1);
   n->inc = make_num(1);
-  n->rhs = make_num(99);
+  n->base.rhs = make_num(99);
   capture_start();
-  gen(n);
+  gen((node_t *)n);
   char *out = capture_end();
   ASSERT_TRUE(strstr(out, ".Lbegin") != NULL);
   ASSERT_TRUE(strstr(out, "cbz x0") != NULL);
@@ -288,14 +299,14 @@ static void test_gen_return(void) {
 
 static void test_gen_block(void) {
   printf("test_gen_block...\n");
-  node_t *n = calloc(1, sizeof(node_t));
-  n->kind = ND_BLOCK;
+  node_block_t *n = calloc(1, sizeof(node_block_t));
+  n->base.kind = ND_BLOCK;
   n->body = calloc(3, sizeof(node_t*));
   n->body[0] = make_num(1);
   n->body[1] = make_num(2);
   n->body[2] = NULL;
   capture_start();
-  gen(n);
+  gen((node_t *)n);
   char *out = capture_end();
   ASSERT_TRUE(strstr(out, "mov x0, #1") != NULL);
   ASSERT_TRUE(strstr(out, "mov x0, #2") != NULL);

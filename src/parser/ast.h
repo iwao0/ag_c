@@ -35,27 +35,65 @@ struct node_t {
   node_t *lhs;      // 左辺 / 条件式
   node_t *rhs;      // 右辺 / then節 / ループ本体
 
-  // 関数/ブロック用
-  node_t **body;    // ブロック内の文（NULL終端の動的配列）(ND_BLOCK)
-  node_t **args;    // 引数/仮引数の動的配列 (ND_FUNCALL, ND_FUNCDEF)
+  // データ型判定用（演算結果の型）
+  int is_float;     // 0=整数, 1=float, 2=double
+};
+
+// メモリ参照系ノード（型サイズ情報）
+typedef struct node_mem_t node_mem_t;
+struct node_mem_t {
+  node_t base;
+  int type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
+  int deref_size;  // ポインタが指す先の要素サイズ
+};
+
+// 数値ノード
+typedef struct node_num_t node_num_t;
+struct node_num_t {
+  node_t base;
+  int val;          // 整数値
+  double fval;      // 浮動小数点値
+  int fval_id;      // 浮動小数点リテラルのID
+};
+
+// ローカル変数ノード
+typedef struct node_lvar_t node_lvar_t;
+struct node_lvar_t {
+  node_mem_t mem;
+  int offset;       // フレームオフセット
+};
+
+// 文字列リテラルノード
+typedef struct node_string_t node_string_t;
+struct node_string_t {
+  node_mem_t mem;
+  char *string_label; // 文字列リテラルのデータラベル
+};
+
+// ブロックノード
+typedef struct node_block_t node_block_t;
+struct node_block_t {
+  node_t base;
+  node_t **body;    // ブロック内の文（NULL終端の動的配列）
+};
+
+// 関数ノード
+typedef struct node_func_t node_func_t;
+struct node_func_t {
+  node_t base;
+  node_t **args;    // 引数/仮引数の動的配列
   int nargs;        // 引数の数
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
+};
 
-  // 制御構造用
+// 制御構造ノード
+typedef struct node_ctrl_t node_ctrl_t;
+struct node_ctrl_t {
+  node_t base;
   node_t *els;      // else節（ND_IFのみ）
   node_t *init;     // 初期化式（ND_FORのみ）
   node_t *inc;      // インクリメント式（ND_FORのみ）
-
-  // データ型/リテラル用
-  int val;          // 整数値（ND_NUMのみ）
-  int offset;       // フレームオフセット（ND_LVARのみ）
-  int type_size;    // ロード/ストアサイズ（1=char, 8=int/pointer）
-  int deref_size;   // ポインタが指す先の要素サイズ（*p で使用）
-  int is_float;     // 0=整数, 1=float, 2=double
-  double fval;      // 浮動小数点値
-  int fval_id;      // 浮動小数点リテラルのID
-  char *string_label; // 文字列リテラルのデータラベル（ND_STRINGのみ）
 };
 
 // 文字列リテラルテーブル（連結リスト）

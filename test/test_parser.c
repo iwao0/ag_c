@@ -11,12 +11,19 @@
 // 文字列テーブル (parser.c で定義)
 extern string_lit_t *string_literals;
 
+static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
+static node_lvar_t *as_lvar(node_t *n) { return (node_lvar_t *)n; }
+static node_func_t *as_func(node_t *n) { return (node_func_t *)n; }
+static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
+static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
+static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
+
 static void test_expr_number() {
   printf("test_expr_number...\n");
   token = tokenize("42");
   node_t *node = expr();
   ASSERT_EQ(ND_NUM, node->kind);
-  ASSERT_EQ(42, node->val);
+  ASSERT_EQ(42, as_num(node)->val);
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
@@ -28,11 +35,11 @@ static void test_expr_float() {
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(ND_NUM, node->lhs->kind);
   ASSERT_EQ(2, node->lhs->is_float);  // 3.14 (double)
-  ASSERT_TRUE(node->lhs->fval > 3.13 && node->lhs->fval < 3.15);
+  ASSERT_TRUE(as_num(node->lhs)->fval > 3.13 && as_num(node->lhs)->fval < 3.15);
   
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(1, node->rhs->is_float);  // 1.5f (float)
-  ASSERT_TRUE(node->rhs->fval > 1.49 && node->rhs->fval < 1.51);
+  ASSERT_TRUE(as_num(node->rhs)->fval > 1.49 && as_num(node->rhs)->fval < 1.51);
 }
 
 static void test_expr_add_sub() {
@@ -42,9 +49,9 @@ static void test_expr_add_sub() {
 
   ASSERT_EQ(ND_SUB, node->kind);
   ASSERT_EQ(ND_ADD, node->lhs->kind);
-  ASSERT_EQ(1, node->lhs->lhs->val);
-  ASSERT_EQ(2, node->lhs->rhs->val);
-  ASSERT_EQ(3, node->rhs->val);
+  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
 }
 
 static void test_expr_mul_div() {
@@ -54,9 +61,9 @@ static void test_expr_mul_div() {
 
   ASSERT_EQ(ND_DIV, node->kind);
   ASSERT_EQ(ND_MUL, node->lhs->kind);
-  ASSERT_EQ(1, node->lhs->lhs->val);
-  ASSERT_EQ(2, node->lhs->rhs->val);
-  ASSERT_EQ(3, node->rhs->val);
+  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
 }
 
 static void test_expr_precedence() {
@@ -65,10 +72,10 @@ static void test_expr_precedence() {
   node_t *node = expr(); // 1+(2*3)
 
   ASSERT_EQ(ND_ADD, node->kind);
-  ASSERT_EQ(1, node->lhs->val);
+  ASSERT_EQ(1, as_num(node->lhs)->val);
   ASSERT_EQ(ND_MUL, node->rhs->kind);
-  ASSERT_EQ(2, node->rhs->lhs->val);
-  ASSERT_EQ(3, node->rhs->rhs->val);
+  ASSERT_EQ(2, as_num(node->rhs->lhs)->val);
+  ASSERT_EQ(3, as_num(node->rhs->rhs)->val);
 }
 
 static void test_expr_parentheses() {
@@ -78,9 +85,9 @@ static void test_expr_parentheses() {
 
   ASSERT_EQ(ND_MUL, node->kind);
   ASSERT_EQ(ND_ADD, node->lhs->kind);
-  ASSERT_EQ(1, node->lhs->lhs->val);
-  ASSERT_EQ(2, node->lhs->rhs->val);
-  ASSERT_EQ(3, node->rhs->val);
+  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
 }
 
 static void test_expr_eq_neq() {
@@ -90,9 +97,9 @@ static void test_expr_eq_neq() {
 
   ASSERT_EQ(ND_NE, node->kind);
   ASSERT_EQ(ND_EQ, node->lhs->kind);
-  ASSERT_EQ(1, node->lhs->lhs->val);
-  ASSERT_EQ(2, node->lhs->rhs->val);
-  ASSERT_EQ(3, node->rhs->val);
+  ASSERT_EQ(1, as_num(node->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(node->lhs->rhs)->val);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
 }
 
 static void test_expr_relational() {
@@ -102,17 +109,17 @@ static void test_expr_relational() {
 
   // ルートは ND_LE (>= が反転)
   ASSERT_EQ(ND_LE, node->kind);
-  ASSERT_EQ(5, node->lhs->val); // 5が左辺
+  ASSERT_EQ(5, as_num(node->lhs)->val); // 5が左辺
   // > が反転 → ND_LT
   ASSERT_EQ(ND_LT, node->rhs->kind);
-  ASSERT_EQ(4, node->rhs->lhs->val); // 4が左辺
+  ASSERT_EQ(4, as_num(node->rhs->lhs)->val); // 4が左辺
   // <=
   ASSERT_EQ(ND_LE, node->rhs->rhs->kind);
-  ASSERT_EQ(3, node->rhs->rhs->rhs->val);
+  ASSERT_EQ(3, as_num(node->rhs->rhs->rhs)->val);
   // <
   ASSERT_EQ(ND_LT, node->rhs->rhs->lhs->kind);
-  ASSERT_EQ(1, node->rhs->rhs->lhs->lhs->val);
-  ASSERT_EQ(2, node->rhs->rhs->lhs->rhs->val);
+  ASSERT_EQ(1, as_num(node->rhs->rhs->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(node->rhs->rhs->lhs->rhs)->val);
 }
 
 static void test_expr_assign() {
@@ -122,9 +129,9 @@ static void test_expr_assign() {
 
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_EQ(ND_LVAR, node->lhs->kind);
-  ASSERT_EQ(8, node->lhs->offset);
+  ASSERT_EQ(8, as_lvar(node->lhs)->offset);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
-  ASSERT_EQ(3, node->rhs->val);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
 }
 
 static void test_program_funcdef() {
@@ -134,16 +141,16 @@ static void test_program_funcdef() {
 
   ASSERT_TRUE(code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
-  ASSERT_EQ(0, code[0]->nargs);
+  ASSERT_EQ(0, as_func(code[0])->nargs);
 
-  node_t *body = code[0]->rhs;
+  node_t *body = as_func(code[0])->base.rhs;
   ASSERT_EQ(ND_BLOCK, body->kind);
-  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_EQ(8, body->body[0]->lhs->offset);
-  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
-  ASSERT_EQ(16, body->body[1]->lhs->offset);
-  ASSERT_EQ(ND_ADD, body->body[2]->kind);
-  ASSERT_TRUE(body->body[3] == NULL);
+  ASSERT_EQ(ND_ASSIGN, as_block(body)->body[0]->kind);
+  ASSERT_EQ(8, as_lvar(as_block(body)->body[0]->lhs)->offset);
+  ASSERT_EQ(ND_ASSIGN, as_block(body)->body[1]->kind);
+  ASSERT_EQ(16, as_lvar(as_block(body)->body[1]->lhs)->offset);
+  ASSERT_EQ(ND_ADD, as_block(body)->body[2]->kind);
+  ASSERT_TRUE(as_block(body)->body[3] == NULL);
   ASSERT_TRUE(code[1] == NULL);
 }
 
@@ -153,9 +160,9 @@ static void test_funcall() {
   node_t *node = expr();
 
   ASSERT_EQ(ND_FUNCALL, node->kind);
-  ASSERT_EQ(2, node->nargs);
-  ASSERT_EQ(1, node->args[0]->val);
-  ASSERT_EQ(2, node->args[1]->val);
+  ASSERT_EQ(2, as_func(node)->nargs);
+  ASSERT_EQ(1, as_num(as_func(node)->args[0])->val);
+  ASSERT_EQ(2, as_num(as_func(node)->args[1])->val);
 }
 
 // --- ここから追加テスト ---
@@ -166,60 +173,60 @@ static void test_funcdef_with_params() {
   program();
 
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
-  ASSERT_EQ(2, code[0]->nargs);
-  ASSERT_EQ(ND_LVAR, code[0]->args[0]->kind);
-  ASSERT_EQ(ND_LVAR, code[0]->args[1]->kind);
+  ASSERT_EQ(2, as_func(code[0])->nargs);
+  ASSERT_EQ(ND_LVAR, as_func(code[0])->args[0]->kind);
+  ASSERT_EQ(ND_LVAR, as_func(code[0])->args[1]->kind);
 }
 
 static void test_stmt_if() {
   printf("test_stmt_if...\n");
   token = tokenize("main() { if (1) 2; }");
   program();
-  node_t *body = code[0]->rhs;
-  node_t *if_node = body->body[0];
+  node_t *body = as_func(code[0])->base.rhs;
+  node_t *if_node = as_block(body)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
   ASSERT_EQ(ND_NUM, if_node->lhs->kind);  // 条件: 1
-  ASSERT_EQ(1, if_node->lhs->val);
+  ASSERT_EQ(1, as_num(if_node->lhs)->val);
   ASSERT_EQ(ND_NUM, if_node->rhs->kind);  // then: 2
-  ASSERT_EQ(2, if_node->rhs->val);
-  ASSERT_TRUE(if_node->els == NULL);       // else なし
+  ASSERT_EQ(2, as_num(if_node->rhs)->val);
+  ASSERT_TRUE(as_ctrl(if_node)->els == NULL);       // else なし
 }
 
 static void test_stmt_if_else() {
   printf("test_stmt_if_else...\n");
   token = tokenize("main() { if (1) 2; else 3; }");
   program();
-  node_t *if_node = code[0]->rhs->body[0];
+  node_t *if_node = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
-  ASSERT_EQ(1, if_node->lhs->val);        // 条件
-  ASSERT_EQ(2, if_node->rhs->val);        // then
-  ASSERT_EQ(ND_NUM, if_node->els->kind);  // else
-  ASSERT_EQ(3, if_node->els->val);
+  ASSERT_EQ(1, as_num(if_node->lhs)->val);        // 条件
+  ASSERT_EQ(2, as_num(if_node->rhs)->val);        // then
+  ASSERT_EQ(ND_NUM, as_ctrl(if_node)->els->kind);  // else
+  ASSERT_EQ(3, as_num(as_ctrl(if_node)->els)->val);
 }
 
 static void test_stmt_while() {
   printf("test_stmt_while...\n");
   token = tokenize("main() { while (1) 2; }");
   program();
-  node_t *wh = code[0]->rhs->body[0];
+  node_t *wh = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_WHILE, wh->kind);
-  ASSERT_EQ(1, wh->lhs->val);   // 条件
-  ASSERT_EQ(2, wh->rhs->val);   // ループ本体
+  ASSERT_EQ(1, as_num(wh->lhs)->val);   // 条件
+  ASSERT_EQ(2, as_num(wh->rhs)->val);   // ループ本体
 }
 
 static void test_stmt_for() {
   printf("test_stmt_for...\n");
   token = tokenize("main() { for (a=0; a<10; a=a+1) a; }");
   program();
-  node_t *fr = code[0]->rhs->body[0];
+  node_t *fr = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
-  ASSERT_EQ(ND_ASSIGN, fr->init->kind);  // init: a=0
+  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: a=0
   ASSERT_EQ(ND_LT, fr->lhs->kind);      // 条件: a<10
-  ASSERT_EQ(ND_ASSIGN, fr->inc->kind);   // inc: a=a+1
+  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: a=a+1
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);     // 本体: a
 }
 
@@ -227,25 +234,25 @@ static void test_stmt_return() {
   printf("test_stmt_return...\n");
   token = tokenize("main() { return 42; }");
   program();
-  node_t *ret = code[0]->rhs->body[0];
+  node_t *ret = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
-  ASSERT_EQ(42, ret->lhs->val);
+  ASSERT_EQ(42, as_num(ret->lhs)->val);
 }
 
 static void test_stmt_block() {
   printf("test_stmt_block...\n");
   token = tokenize("main() { { 1; 2; } }");
   program();
-  node_t *blk = code[0]->rhs->body[0];
+  node_t *blk = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_BLOCK, blk->kind);
-  ASSERT_EQ(ND_NUM, blk->body[0]->kind);
-  ASSERT_EQ(1, blk->body[0]->val);
-  ASSERT_EQ(ND_NUM, blk->body[1]->kind);
-  ASSERT_EQ(2, blk->body[1]->val);
-  ASSERT_TRUE(blk->body[2] == NULL);
+  ASSERT_EQ(ND_NUM, as_block(blk)->body[0]->kind);
+  ASSERT_EQ(1, as_num(as_block(blk)->body[0])->val);
+  ASSERT_EQ(ND_NUM, as_block(blk)->body[1]->kind);
+  ASSERT_EQ(2, as_num(as_block(blk)->body[1])->val);
+  ASSERT_TRUE(as_block(blk)->body[2] == NULL);
 }
 
 static void test_expr_deref_addr() {
@@ -270,7 +277,7 @@ static void test_expr_string() {
   node_t *node = expr();
 
   ASSERT_EQ(ND_STRING, node->kind);
-  ASSERT_TRUE(node->string_label != NULL);
+  ASSERT_TRUE(as_string(node)->string_label != NULL);
   // 文字列テーブルに登録されている
   ASSERT_TRUE(string_literals != NULL);
   ASSERT_EQ(5, string_literals->len);
@@ -282,17 +289,17 @@ static void test_type_decl() {
   // int x = 5; → ND_ASSIGN
   token = tokenize("main() { int x = 5; }");
   program();
-  node_t *stmt = code[0]->rhs->body[0];
+  node_t *stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_LVAR, stmt->lhs->kind);
-  ASSERT_EQ(5, stmt->rhs->val);
+  ASSERT_EQ(5, as_num(stmt->rhs)->val);
 
   // int x; → ND_NUM(0) ダミー
   token = tokenize("main() { int x; }");
   program();
-  stmt = code[0]->rhs->body[0];
+  stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_NUM, stmt->kind);
-  ASSERT_EQ(0, stmt->val);
+  ASSERT_EQ(0, as_num(stmt)->val);
 }
 
 static void test_multiple_funcdefs() {
@@ -302,11 +309,11 @@ static void test_multiple_funcdefs() {
 
   ASSERT_TRUE(code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
-  ASSERT_TRUE(strncmp(code[0]->funcname, "foo", 3) == 0);
+  ASSERT_TRUE(strncmp(as_func(code[0])->funcname, "foo", 3) == 0);
 
   ASSERT_TRUE(code[1] != NULL);
   ASSERT_EQ(ND_FUNCDEF, code[1]->kind);
-  ASSERT_TRUE(strncmp(code[1]->funcname, "bar", 3) == 0);
+  ASSERT_TRUE(strncmp(as_func(code[1])->funcname, "bar", 3) == 0);
 
   ASSERT_TRUE(code[2] == NULL);
 }

@@ -7,13 +7,20 @@
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
 // 浮動小数点定数用ラベルカウンタ
-static int fconst_count = 0;
 
 // Apple Silicon (ARM64) 向けのアセンブリコード生成
 
 // 26個の変数(a-z) * 8バイト = 208バイト + フレームポインタ/リンクレジスタ用16バイト = 224
 // 16バイトアラインメントに合わせる → 224
 #define STACK_SIZE 1024
+
+static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
+static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
+static node_num_t *as_num(node_t *node) { return (node_num_t *)node; }
+static node_block_t *as_block(node_t *node) { return (node_block_t *)node; }
+static node_func_t *as_func(node_t *node) { return (node_func_t *)node; }
+static node_ctrl_t *as_ctrl(node_t *node) { return (node_ctrl_t *)node; }
+static node_string_t *as_string(node_t *node) { return (node_string_t *)node; }
 
 void gen_main_prologue(void) {
   // 関数定義で生成するため空にする（互換性維持）
@@ -67,7 +74,7 @@ static void gen_lval(node_t *node) {
     fprintf(stderr, "代入の左辺値が変数ではありません\n");
     return;
   }
-  printf("  add x0, x29, #%d\n", 16 + node->offset);
+  printf("  add x0, x29, #%d\n", 16 + as_lvar(node)->offset);
   printf("  str x0, [sp, #-16]!\n");
 }
 
@@ -75,9 +82,10 @@ void gen(struct node_t *node) {
   switch (node->kind) {
   case ND_NUM:
     if (node->is_float) {
+      node_num_t *num = as_num(node);
       // 浮動小数点リテラルをデータセクションからロード
-      printf("  adrp x0, .LCF%d@PAGE\n", node->fval_id);
-      printf("  add x0, x0, .LCF%d@PAGEOFF\n", node->fval_id);
+      printf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
+      printf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
       if (node->is_float == 1) {
         printf("  ldr s0, [x0]\n");
         printf("  str s0, [sp, #-16]!\n");
@@ -86,7 +94,7 @@ void gen(struct node_t *node) {
         printf("  str d0, [sp, #-16]!\n");
       }
     } else {
-      printf("  mov x0, #%d\n", node->val);
+      printf("  mov x0, #%d\n", as_num(node)->val);
       printf("  str x0, [sp, #-16]!\n");
     }
     return;
@@ -100,11 +108,11 @@ void gen(struct node_t *node) {
       printf("  ldr d0, [x0]\n");
       printf("  str d0, [sp, #-16]!\n");
     } else {
-      if (node->type_size == 1)
+      if (as_lvar(node)->mem.type_size == 1)
         printf("  ldrb w0, [x0]\n");
-      else if (node->type_size == 2)
+      else if (as_lvar(node)->mem.type_size == 2)
         printf("  ldrh w0, [x0]\n");
-      else if (node->type_size == 4)
+      else if (as_lvar(node)->mem.type_size == 4)
         printf("  ldr w0, [x0]\n");
       else
         printf("  ldr x0, [x0]\n");
@@ -114,11 +122,11 @@ void gen(struct node_t *node) {
   case ND_DEREF:
     gen(node->lhs);
     printf("  ldr x0, [sp], #16\n");
-    if (node->type_size == 1)
+    if (as_mem(node)->type_size == 1)
       printf("  ldrb w0, [x0]\n");
-    else if (node->type_size == 2)
+    else if (as_mem(node)->type_size == 2)
       printf("  ldrh w0, [x0]\n");
-    else if (node->type_size == 4)
+    else if (as_mem(node)->type_size == 4)
       printf("  ldr w0, [x0]\n");
     else
       printf("  ldr x0, [x0]\n");
@@ -129,8 +137,8 @@ void gen(struct node_t *node) {
     return;
   case ND_STRING:
     // 文字列ラベルのアドレスをロード
-    printf("  adrp x0, %s@PAGE\n", node->string_label);
-    printf("  add x0, x0, %s@PAGEOFF\n", node->string_label);
+    printf("  adrp x0, %s@PAGE\n", as_string(node)->string_label);
+    printf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
     printf("  str x0, [sp, #-16]!\n");
     return;
   case ND_ASSIGN:
@@ -151,11 +159,11 @@ void gen(struct node_t *node) {
     } else {
       printf("  ldr x1, [sp], #16\n");
       printf("  ldr x0, [sp], #16\n");
-      if (node->type_size == 1)
+      if (as_mem(node)->type_size == 1)
         printf("  strb w1, [x0]\n");
-      else if (node->type_size == 2)
+      else if (as_mem(node)->type_size == 2)
         printf("  strh w1, [x0]\n");
-      else if (node->type_size == 4)
+      else if (as_mem(node)->type_size == 4)
         printf("  str w1, [x0]\n");
       else
         printf("  str x1, [x0]\n");
@@ -188,28 +196,29 @@ void gen(struct node_t *node) {
     printf("  str x0, [sp, #-16]!\n");
     return;
   case ND_BLOCK:
-    for (int i = 0; node->body[i]; i++) {
-      gen(node->body[i]);
-      if (node->body[i + 1]) {
+    for (int i = 0; as_block(node)->body[i]; i++) {
+      gen(as_block(node)->body[i]);
+      if (as_block(node)->body[i + 1]) {
         printf("  ldr x0, [sp], #16\n");
       }
     }
     return;
   case ND_FUNCDEF: {
+    node_func_t *fn = as_func(node);
     // 関数ラベルの出力
-    printf(".global _%.*s\n", node->funcname_len, node->funcname);
+    printf(".global _%.*s\n", fn->funcname_len, fn->funcname);
     printf(".align 2\n");
-    printf("_%.*s:\n", node->funcname_len, node->funcname);
+    printf("_%.*s:\n", fn->funcname_len, fn->funcname);
     // プロローグ
     printf("  sub sp, sp, #%d\n", STACK_SIZE);
     printf("  stp x29, x30, [sp]\n");
     printf("  mov x29, sp\n");
     // 仮引数をレジスタからローカル変数スロットへ保存
-    for (int i = 0; i < node->nargs; i++) {
-      printf("  str x%d, [x29, #%d]\n", i, 16 + node->args[i]->offset);
+    for (int i = 0; i < fn->nargs; i++) {
+      printf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
     }
     // 関数本体
-    gen(node->rhs);
+    gen(fn->base.rhs);
     printf("  ldr x0, [sp], #16\n");
     // エピローグ
     printf("  ldp x29, x30, [sp]\n");
@@ -218,30 +227,32 @@ void gen(struct node_t *node) {
     return;
   }
   case ND_FUNCALL: {
+    node_func_t *fn = as_func(node);
     // 引数を評価してレジスタに格納
-    for (int i = 0; i < node->nargs; i++) {
-      gen(node->args[i]);
+    for (int i = 0; i < fn->nargs; i++) {
+      gen(fn->args[i]);
     }
     // スタックからレジスタへ (逆順にポップ)
-    for (int i = node->nargs - 1; i >= 0; i--) {
+    for (int i = fn->nargs - 1; i >= 0; i--) {
       printf("  ldr x%d, [sp], #16\n", i);
     }
     // 関数呼び出し
-    printf("  bl _%.*s\n", node->funcname_len, node->funcname);
+    printf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
     // 戻り値をスタックにプッシュ
     printf("  str x0, [sp, #-16]!\n");
     return;
   }
   case ND_IF: {
+    node_ctrl_t *ctrl = as_ctrl(node);
     int lbl = label_count++;
-    gen(node->lhs);
+    gen(ctrl->base.lhs);
     printf("  ldr x0, [sp], #16\n");
     printf("  cbz x0, .Lelse%d\n", lbl);
-    gen(node->rhs);
-    if (node->els) {
+    gen(ctrl->base.rhs);
+    if (ctrl->els) {
       printf("  b .Lend%d\n", lbl);
       printf(".Lelse%d:\n", lbl);
-      gen(node->els);
+      gen(ctrl->els);
       printf(".Lend%d:\n", lbl);
     } else {
       printf("  b .Lend%d\n", lbl);
@@ -254,12 +265,13 @@ void gen(struct node_t *node) {
     return;
   }
   case ND_WHILE: {
+    node_ctrl_t *ctrl = as_ctrl(node);
     int lbl = label_count++;
     printf(".Lbegin%d:\n", lbl);
-    gen(node->lhs);
+    gen(ctrl->base.lhs);
     printf("  ldr x0, [sp], #16\n");
     printf("  cbz x0, .Lend%d\n", lbl);
-    gen(node->rhs);
+    gen(ctrl->base.rhs);
     printf("  ldr x0, [sp], #16\n");
     printf("  b .Lbegin%d\n", lbl);
     printf(".Lend%d:\n", lbl);
@@ -268,21 +280,22 @@ void gen(struct node_t *node) {
     return;
   }
   case ND_FOR: {
+    node_ctrl_t *ctrl = as_ctrl(node);
     int lbl = label_count++;
-    if (node->init) {
-      gen(node->init);
+    if (ctrl->init) {
+      gen(ctrl->init);
       printf("  ldr x0, [sp], #16\n");
     }
     printf(".Lbegin%d:\n", lbl);
-    if (node->lhs) {
-      gen(node->lhs);
+    if (ctrl->base.lhs) {
+      gen(ctrl->base.lhs);
       printf("  ldr x0, [sp], #16\n");
       printf("  cbz x0, .Lend%d\n", lbl);
     }
-    gen(node->rhs);
+    gen(ctrl->base.rhs);
     printf("  ldr x0, [sp], #16\n");
-    if (node->inc) {
-      gen(node->inc);
+    if (ctrl->inc) {
+      gen(ctrl->inc);
       printf("  ldr x0, [sp], #16\n");
     }
     printf("  b .Lbegin%d\n", lbl);
