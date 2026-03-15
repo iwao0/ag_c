@@ -9,12 +9,13 @@ extern token_t *token;
 // エラーを報告する関数
 void error_at(char *loc, char *fmt, ...);
 void error_tok(token_t *tok, char *fmt, ...);
+const char *token_kind_str(token_kind_t kind, int *len);
 
 // 次のトークンが期待している記号のときには、トークンを1つ読み進めて真を返す。
 // それ以外の場合には偽を返す。
 bool consume(char op);
 bool consume_str(char *op);
-token_t *consume_ident(void);
+token_ident_t *consume_ident(void);
 
 // 次のトークンが期待している記号のときには、トークンを1つ読み進める。
 // それ以外の場合にはエラーを報告する。

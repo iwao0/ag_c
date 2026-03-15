@@ -10,7 +10,8 @@
 
 2. **字句解析器 (Tokenizer)**
    - [src/tokenizer/tokenizer.c](../../src/tokenizer/tokenizer.c) にて、入力文字列をトークン列（連結リスト）に変換する `tokenize` 関数を実装しました。
-   - 対応トークン: 整数リテラル、記号(`+-*/()<>;=`)、2文字演算子(`==`,`!=`,`<=`,`>=`)、識別子(`a`〜`z`)、キーワード(`if`,`else`,`while`,`for`)。
+   - 対応トークン: 数値/文字列リテラル、識別子、キーワード、記号・演算子（`TK_LPAREN`〜`TK_HASHHASH` など個別の種別）。
+   - トークン型は用途ごとに分割し、`token_t` を最小共通型として `token_ident_t` / `token_string_t` / `token_num_t` / `token_pp_t` にキャストして扱います。
    - 単体テスト: [test/test_tokenizer.c](../../test/test_tokenizer.c)
 
 3. **抽象構文木 (AST) と再帰下降構文解析 (Parser)**

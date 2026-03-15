@@ -141,7 +141,7 @@ static node_t *funcdef(void) {
   current_func_ret_type = 0;
   if (ret_kind == TK_FLOAT) current_func_ret_type = 1;
   else if (ret_kind == TK_DOUBLE) current_func_ret_type = 2;
-  token_t *tok = consume_ident();
+  token_ident_t *tok = consume_ident();
   if (!tok) {
     fprintf(stderr, "関数定義が期待されます\n");
     exit(1);
@@ -163,7 +163,7 @@ static node_t *funcdef(void) {
   if (!consume(')')) {
     consume_type(); // 仮引数の型
     while (consume('*')) {} // ポインタの * を読み飛ばす
-    token_t *param = consume_ident();
+    token_ident_t *param = consume_ident();
     if (param) {
       lvar_t *var = register_lvar(param->str, param->len);
       node->args[nargs++] = new_node_lvar(var->offset);
@@ -238,7 +238,7 @@ static node_t *stmt(void) {
     int is_pointer = 0;
     while (consume('*')) { is_pointer = 1; }
     int var_size = is_pointer ? 8 : elem_size;
-    token_t *tok = consume_ident();
+    token_ident_t *tok = consume_ident();
     if (!tok) {
       fprintf(stderr, "変数名が期待されます\n");
       exit(1);
@@ -465,7 +465,7 @@ static node_t *primary(void) {
     return node;
   }
 
-  token_t *tok = consume_ident();
+  token_ident_t *tok = consume_ident();
   if (tok) {
     // 関数呼び出し: ident "(" args? ")"
     if (consume('(')) {
@@ -512,6 +512,7 @@ static node_t *primary(void) {
 
   // 文字列リテラル
   if (token->kind == TK_STRING) {
+    token_string_t *st = (token_string_t *)token;
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_STRING;
     // ラベルを生成
@@ -521,8 +522,8 @@ static node_t *primary(void) {
     // 文字列テーブルに登録
     string_lit_t *lit = calloc(1, sizeof(string_lit_t));
     lit->label = node->string_label;
-    lit->str = token->str;
-    lit->len = token->len;
+    lit->str = st->str;
+    lit->len = st->len;
     lit->next = string_literals;
     string_literals = lit;
     token = token->next;
@@ -533,12 +534,13 @@ static node_t *primary(void) {
   }
 
   if (token->kind == TK_NUM) {
+    token_num_t *num = (token_num_t *)token;
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_NUM;
-    node->val = token->val;
-    node->fval = token->fval;
-    node->is_float = token->is_float;
-    
+    node->val = num->val;
+    node->fval = num->fval;
+    node->is_float = num->is_float;
+
     if (node->is_float) {
       // 浮動小数点リテラルを登録
       float_lit_t *lit = calloc(1, sizeof(float_lit_t));
@@ -549,11 +551,11 @@ static node_t *primary(void) {
       float_literals = lit;
       node->fval_id = lit->id;
     }
-    
+
     token = token->next;
     return node;
   }
 
-  error_at(token->str, "数値を期待しています");
+  error_tok(token, "数値を期待しています");
   return NULL;
 }

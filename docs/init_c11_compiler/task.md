@@ -88,5 +88,6 @@
 - [x] 文字列リテラルの実装 (TDD)
 
 ## 今後の課題・リファクタリング
-- [ ] `token_t`、`node_t` を用途ごとに分割/整理する
+- [x] `token_t` を用途ごとに分割/整理する（`token_ident_t`/`token_string_t`/`token_num_t`/`token_pp_t`）
+- [ ] `node_t` を用途ごとに分割/整理する
 - [x] `MAX_STMTS` 等による静的確保から、都度の動的メモリ確保（malloc/calloc）へと移行する

@@ -33,8 +33,10 @@ args       = expr ("," expr)*
 
 | トークン種別 | 説明 | 例 |
 |---|---|---|
-| `TK_RESERVED` | 記号・演算子 | `+`, `-`, `*`, `/`, `(`, `)`, `<`, `>`, `<=`, `>=`, `==`, `!=`, `=`, `;`, `{`, `}`, `,`, `&`, `[`, `]` |
+| `TK_EOF` | 入力の終端 | — |
 | `TK_IDENT` | 識別子（英字/`_`で始まり英数字/`_`が続く） | `a`, `foo`, `x1`, `my_var` |
+| `TK_NUM` | 数値リテラル（整数/浮動小数） | `0`, `42`, `123`, `3.14`, `1.5f` |
+| `TK_STRING` | 文字列リテラル | `"hello"` |
 | `TK_IF` | `if` キーワード | `if` |
 | `TK_ELSE` | `else` キーワード | `else` |
 | `TK_WHILE` | `while` キーワード | `while` |
@@ -47,9 +49,33 @@ args       = expr ("," expr)*
 | `TK_LONG` | `long` キーワード | `long` |
 | `TK_FLOAT` | `float` キーワード | `float` |
 | `TK_DOUBLE` | `double` キーワード | `double` |
-| `TK_NUM` | 整数リテラル | `0`, `42`, `123` |
-| `TK_STRING` | 文字列リテラル | `"hello"` |
-| `TK_EOF` | 入力の終端 | — |
+| `TK_LPAREN` | `(` | `(` |
+| `TK_RPAREN` | `)` | `)` |
+| `TK_LBRACE` | `{` | `{` |
+| `TK_RBRACE` | `}` | `}` |
+| `TK_LBRACKET` | `[` | `[` |
+| `TK_RBRACKET` | `]` | `]` |
+| `TK_COMMA` | `,` | `,` |
+| `TK_SEMI` | `;` | `;` |
+| `TK_ASSIGN` | `=` | `=` |
+| `TK_PLUS` | `+` | `+` |
+| `TK_MINUS` | `-` | `-` |
+| `TK_MUL` | `*` | `*` |
+| `TK_DIV` | `/` | `/` |
+| `TK_BANG` | `!` | `!` |
+| `TK_TILDE` | `~` | `~` |
+| `TK_LT` | `<` | `<` |
+| `TK_LE` | `<=` | `<=` |
+| `TK_GT` | `>` | `>` |
+| `TK_GE` | `>=` | `>=` |
+| `TK_EQEQ` | `==` | `==` |
+| `TK_NEQ` | `!=` | `!=` |
+| `TK_ANDAND` | `&&` | `&&` |
+| `TK_OROR` | `||` | `||` |
+| `TK_AMP` | `&` | `&` |
+| `TK_HASH` | `#` | `#` |
+| `TK_HASHHASH` | `##` | `##` |
+| `TK_DOT` | `.` | `.` |
 
 ### ASTノード種別
 
