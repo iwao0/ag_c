@@ -210,6 +210,16 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
   - Recent two accepted steps were not within ±2% improvement band, so "stop now" condition was **not** triggered.
   - Continue with low-risk-only optimization policy.
 
+## Phase3 Decision (Chosen)
+
+- Decision:
+  - stop tokenizer micro-optimization on mainline for now.
+- Mainline policy:
+  - avoid large structural changes (DFA/generator migration) in this branch.
+  - allow high-cost ideas only as separate PoC branches.
+- Next priority:
+  - shift effort to feature work (Parser/Preprocessor enhancements).
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
