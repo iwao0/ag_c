@@ -235,9 +235,9 @@
 - [x] `inline` 方針を `-O2` 前提で見直す
   - [x] 小関数のみ `static inline` を適用して過剰インラインを避ける
   - [x] `check_function_size.sh` の基準内であることを確認する
-- [ ] PGO（Profile Guided Optimization）導入を検証する
-  - [ ] 学習用ベンチ入力を定義し、`-fprofile-generate/-fprofile-use` を試す
-  - [ ] CIへの常時導入可否を判断する
+- [x] PGO（Profile Guided Optimization）導入を検証する
+  - [x] 学習用ベンチ入力を定義し、`-fprofile-generate/-fprofile-use` を試す
+  - [x] CIへの常時導入可否を判断する
 - [x] 実コード由来コーパスでのTokenizerベンチを追加する
   - [x] 合成ベンチ（mixed/ident/numeric/punct）との乖離を可視化する
   - [x] 改善優先度を実コード寄りに再調整する

@@ -132,6 +132,20 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - Note:
   - corpus case sits between synthetic `ident`/`numeric`/`mixed` patterns and is useful for practical regression checks.
 
+## PGO Trial (`-fprofile-generate/-fprofile-use`)
+
+- Added PGO benchmark script:
+  - `scripts/bench_tokenizer_pgo.sh`
+- 256KB result snapshot (`-O2` baseline vs PGO):
+  - mixed: `44,939,213` -> `46,347,887`
+  - ident-heavy: `28,018,465` -> `35,083,815`
+  - numeric-heavy: `32,400,188` -> `36,296,414`
+  - punct-heavy: `59,550,415` -> `52,484,056`
+- Decision for CI:
+  - **Do not enable PGO as default CI build path for now**.
+  - Rationale: workload-dependent tradeoff (punct-heavy regression), additional tool/runtime complexity (`llvm-profdata`), and longer pipeline steps.
+  - Keep PGO as an optional local/periodic experiment via `scripts/bench_tokenizer_pgo.sh`.
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
