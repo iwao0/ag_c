@@ -8,7 +8,7 @@ TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
 BENCH_TOKENIZER=build/bench_tokenizer
-TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_adapter.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
+TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_adapter.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
 
 
 $(TARGET): $(OBJS)
@@ -26,7 +26,7 @@ $(TEST_PARSER): test/test_parser.c build/parser/parser.o $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_CODEGEN): test/test_codegen.c build/arch/arm64_apple.o
+$(TEST_CODEGEN): test/test_codegen.c build/arch/arm64_apple.o build/tokenizer/escape.o
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

@@ -1,6 +1,7 @@
 #include "literals.h"
 #include "allocator.h"
 #include "charclass.h"
+#include "escape.h"
 #include "tokenizer.h"
 #include <string.h>
 
@@ -65,31 +66,8 @@ int tk_encode_utf8(uint32_t cp, char out[4]) {
 
 int tk_read_escape_char(char **pp) {
   char *p = *pp;
-  if (*p == 'a') { *pp = p + 1; return '\a'; }
-  if (*p == 'b') { *pp = p + 1; return '\b'; }
-  if (*p == 'f') { *pp = p + 1; return '\f'; }
-  if (*p == 'n') { *pp = p + 1; return '\n'; }
-  if (*p == 'r') { *pp = p + 1; return '\r'; }
-  if (*p == 't') { *pp = p + 1; return '\t'; }
-  if (*p == 'v') { *pp = p + 1; return '\v'; }
-  if (*p == '\\') { *pp = p + 1; return '\\'; }
-  if (*p == '\'') { *pp = p + 1; return '\''; }
-  if (*p == '"') { *pp = p + 1; return '"'; }
-  if (*p == '?') { *pp = p + 1; return '?'; }
-  if (*p == 'x') {
-    p++;
-    if (!tk_is_xdigit(*p)) error_at(p, "16進エスケープが不正です");
-    unsigned valx = 0;
-    while (tk_is_xdigit(*p)) {
-      int digit;
-      if ('0' <= *p && *p <= '9') digit = *p - '0';
-      else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
-      else digit = *p - 'A' + 10;
-      valx = valx * 16 + (unsigned)digit;
-      p++;
-    }
-    *pp = p;
-    return (int)valx;
+  if (*p == 'x' && !tk_is_xdigit(p[1])) {
+    error_at(p + 1, "16進エスケープが不正です");
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
@@ -100,23 +78,26 @@ int tk_read_escape_char(char **pp) {
     if (!tk_is_valid_ucn_codepoint(cp)) {
       error_at(p, "UCNエスケープが不正です");
     }
-    *pp = (char *)(p - 1 + consumed);
-    return (int)cp;
   }
-  if (tk_is_octal_digit(*p)) {
-    int cnt = 0;
-    unsigned valo = 0;
-    while (cnt < 3 && tk_is_octal_digit(*p)) {
-      valo = valo * 8 + (unsigned)(*p - '0');
-      p++;
-      cnt++;
-    }
-    *pp = p;
-    return (int)valo;
+  switch (*p) {
+    case 'a': case 'b': case 'f': case 'n': case 'r': case 't': case 'v':
+    case '\\': case '\'': case '"': case '?':
+    case 'x': case 'u': case 'U':
+    case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
+      break;
+    default:
+      error_at(p, "不正なエスケープです");
   }
-  error_at(p, "不正なエスケープです");
-  *pp = p + 1;
-  return (unsigned char)*p;
+
+  char *bs = p - 1;
+  int idx = 0;
+  uint32_t out = 0;
+  int len = (int)strlen(bs);
+  if (!tk_parse_escape_value(bs, len, &idx, &out)) {
+    error_at(p, "不正なエスケープです");
+  }
+  *pp = bs + idx;
+  return (int)out;
 }
 
 void tk_parse_string_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width) {

@@ -175,6 +175,7 @@ args       = expr ("," expr)*
 - 文字列リテラル:
   - 接頭辞付き文字列 `L"..."`, `u"..."`, `U"..."`, `u8"..."` を受理
   - 隣接文字列リテラル連結（`"a" "b"`）を Parser 側で連結
+  - 接頭辞情報を `token_string_t.str_prefix_kind` と `token_string_t.char_width` に保持し、AST (`node_string_t`) へ伝搬
 - Universal Character Name:
   - `\uXXXX`, `\UXXXXXXXX` を識別子・文字列/文字定数のエスケープで受理
 - トライグラフ:
@@ -187,3 +188,4 @@ args       = expr ("," expr)*
 > 現在の実装では、字句解析の先頭でトライグラフ置換を行い、その後にトークナイズを行います（翻訳フェーズ順序との整合）。
 > `0b...` はデフォルトで拡張として許可し、`strict C11 = true` または `enable_binary_literals = false` で拒否されます。
 > これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
+> 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
