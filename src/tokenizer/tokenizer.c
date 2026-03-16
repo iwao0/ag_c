@@ -634,12 +634,26 @@ token_t *tokenize(char *p) {
       continue;
     }
     // 文字列リテラル（接頭辞 L/u/U/u8 を含む）
-    if (*p == '"' || *p == 'L' || *p == 'u' || *p == 'U') {
-      int str_prefix = 0;
-      int str_prefix_kind = 0;
-      int str_char_width = 1;
-      tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
-      if (*p != '"' && str_prefix == 0) goto parse_char_or_other;
+    int str_prefix = 0;
+    int str_prefix_kind = 0;
+    int str_char_width = 1;
+    bool is_string_lit = false;
+    switch (*p) {
+      case '"':
+        is_string_lit = true;
+        break;
+      case 'L':
+        if (p[1] == '"') { is_string_lit = true; str_prefix = 1; str_prefix_kind = 1; str_char_width = 4; }
+        break;
+      case 'u':
+        if (p[1] == '8' && p[2] == '"') { is_string_lit = true; str_prefix = 2; str_prefix_kind = 4; str_char_width = 1; }
+        else if (p[1] == '"') { is_string_lit = true; str_prefix = 1; str_prefix_kind = 2; str_char_width = 2; }
+        break;
+      case 'U':
+        if (p[1] == '"') { is_string_lit = true; str_prefix = 1; str_prefix_kind = 3; str_char_width = 4; }
+        break;
+    }
+    if (is_string_lit) {
       if (*p == '"') {
         str_prefix = 0;
         str_prefix_kind = 0;
@@ -668,15 +682,27 @@ token_t *tokenize(char *p) {
       cur = (token_t *)st;
       continue;
     }
-parse_char_or_other:
 
     // 文字リテラル（接頭辞 L/u/U を含む）
-    if (*p == '\'' || *p == 'L' || *p == 'u' || *p == 'U') {
-      int chr_prefix = 0;
-      int chr_prefix_kind = 0;
-      int chr_char_width = 1;
-      tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
-      if (*p != '\'' && chr_prefix == 0) goto parse_punct_ident_num;
+    int chr_prefix = 0;
+    int chr_prefix_kind = 0;
+    int chr_char_width = 1;
+    bool is_char_lit = false;
+    switch (*p) {
+      case '\'':
+        is_char_lit = true;
+        break;
+      case 'L':
+        if (p[1] == '\'') { is_char_lit = true; chr_prefix = 1; chr_prefix_kind = 1; chr_char_width = 4; }
+        break;
+      case 'u':
+        if (p[1] == '\'') { is_char_lit = true; chr_prefix = 1; chr_prefix_kind = 2; chr_char_width = 2; }
+        break;
+      case 'U':
+        if (p[1] == '\'') { is_char_lit = true; chr_prefix = 1; chr_prefix_kind = 3; chr_char_width = 4; }
+        break;
+    }
+    if (is_char_lit) {
       char *start = p;
       p += chr_prefix;
       p++; // 開きクォートをスキップ
@@ -737,7 +763,6 @@ parse_char_or_other:
       cur = (token_t *)num;
       continue;
     }
-parse_punct_ident_num:
 
     // 1文字の記号 (+, -, *, /, %, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~, |, ^, ?, :)
     if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {
