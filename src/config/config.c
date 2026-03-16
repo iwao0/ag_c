@@ -73,8 +73,9 @@ void load_config_toml(void) {
       tk_set_enable_trigraphs(b);
     } else if (strcmp(key, "enable_binary_literals") == 0) {
       tk_set_enable_binary_literals(b);
+    } else if (strcmp(key, "enable_c11_audit_extensions") == 0) {
+      tk_set_enable_c11_audit_extensions(b);
     }
   }
   fclose(fp);
 }
-

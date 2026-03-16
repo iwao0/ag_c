@@ -706,6 +706,18 @@ static void test_strict_c11_mode() {
   tk_set_enable_binary_literals(true);
 }
 
+static void test_c11_audit_mode_flag() {
+  printf("test_c11_audit_mode_flag...\n");
+  tk_set_enable_c11_audit_extensions(false);
+  ASSERT_TRUE(!tk_get_enable_c11_audit_extensions());
+  tk_set_enable_c11_audit_extensions(true);
+  ASSERT_TRUE(tk_get_enable_c11_audit_extensions());
+  tk_set_enable_c11_audit_extensions(false);
+  token = tk_tokenize("0b101");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, as_num(token)->val);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -722,6 +734,7 @@ int main() {
   test_tokenize_string_prefixes_and_ucn();
   test_tokenize_ucn_ident_and_trigraph();
   test_strict_c11_mode();
+  test_c11_audit_mode_flag();
   test_at_eof();
   test_consume();
   test_consume_str();

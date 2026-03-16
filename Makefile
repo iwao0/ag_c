@@ -5,6 +5,7 @@ OBJS=$(patsubst src/%.c,build/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 TEST_TOKENIZER=build/test_tokenizer
+TEST_TOKENIZER_C11=build/test_tokenizer_c11
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
@@ -21,6 +22,10 @@ build/%.o: src/%.c src/ag_c.h
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(TEST_TOKENIZER_C11): test/test_tokenizer_c11.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -44,8 +49,9 @@ $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
 	$(TEST_TOKENIZER)
+	$(TEST_TOKENIZER_C11)
 	$(TEST_PARSER)
 	$(TEST_CODEGEN)
 	$(TEST_PREPROCESS)

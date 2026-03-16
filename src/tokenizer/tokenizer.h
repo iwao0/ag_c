@@ -47,6 +47,8 @@ bool tk_get_enable_trigraphs(void);
 void tk_set_enable_trigraphs(bool enable);
 bool tk_get_enable_binary_literals(void);
 void tk_set_enable_binary_literals(bool enable);
+bool tk_get_enable_c11_audit_extensions(void);
+void tk_set_enable_c11_audit_extensions(bool enable);
 
 typedef struct {
   size_t alloc_count;

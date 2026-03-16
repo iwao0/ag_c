@@ -8,3 +8,5 @@ enable_trigraphs = true
 # GNU-style binary integer literal support (0b...)
 enable_binary_literals = true
 
+# C11 audit mode for extension usage (logs when extension tokens are used)
+enable_c11_audit_extensions = false

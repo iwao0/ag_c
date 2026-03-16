@@ -548,6 +548,13 @@ static inline bool has_hex_float_marker(const char *p) {
   return false;
 }
 
+static void tk_audit_extension(char *loc, const char *msg) {
+  if (!tk_get_enable_c11_audit_extensions()) return;
+  int pos = (int)(loc - user_input);
+  if (pos < 0) pos = 0;
+  fprintf(stderr, "[c11-audit] %s at offset %d\n", msg, pos);
+}
+
 static void parse_number_literal(char **pp, token_num_t *num) {
   char *p = *pp;
 
@@ -586,6 +593,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     if (tk_get_strict_c11_mode() || !tk_get_enable_binary_literals()) {
       tk_error_at(p, "2進数リテラルは strict C11 では未対応です");
     }
+    tk_audit_extension(p, "binary literal extension");
     p += 2;
     if (*p != '0' && *p != '1') tk_error_at(p, "2進数リテラルが不正です");
     unsigned long long val = parse_digits(&p, 2);
