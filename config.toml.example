@@ -1,0 +1,10 @@
+[tokenizer]
+# C11 strict mode (disables non-standard binary literals)
+strict_c11 = false
+
+# Trigraph replacement (??= etc.)
+enable_trigraphs = true
+
+# GNU-style binary integer literal support (0b...)
+enable_binary_literals = true
+
