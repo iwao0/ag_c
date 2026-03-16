@@ -16,13 +16,45 @@ typedef enum {
   TK_WHILE,
   TK_FOR,
   TK_RETURN,
+  TK_AUTO,
+  TK_BREAK,
+  TK_CASE,
+  TK_CONST,
+  TK_CONTINUE,
+  TK_DEFAULT,
+  TK_DO,
+  TK_ENUM,
+  TK_EXTERN,
+  TK_GOTO,
+  TK_INLINE,
   TK_INT,
+  TK_REGISTER,
+  TK_RESTRICT,
+  TK_SIGNED,
+  TK_SIZEOF,
+  TK_STATIC,
+  TK_STRUCT,
+  TK_SWITCH,
+  TK_TYPEDEF,
+  TK_UNION,
+  TK_UNSIGNED,
+  TK_VOLATILE,
   TK_CHAR,
   TK_VOID,
   TK_SHORT,
   TK_LONG,
   TK_FLOAT,
   TK_DOUBLE,
+  TK_ALIGNAS,       // _Alignas
+  TK_ALIGNOF,       // _Alignof
+  TK_ATOMIC,        // _Atomic
+  TK_BOOL,          // _Bool
+  TK_COMPLEX,       // _Complex
+  TK_GENERIC,       // _Generic
+  TK_IMAGINARY,     // _Imaginary
+  TK_NORETURN,      // _Noreturn
+  TK_STATIC_ASSERT, // _Static_assert
+  TK_THREAD_LOCAL,  // _Thread_local
 
   // 記号・演算子
   TK_LPAREN,   // (

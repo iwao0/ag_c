@@ -227,14 +227,54 @@ static void test_tokenize_keywords() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 型キーワード
-  token = tokenize("int char void short long float double");
-  ASSERT_EQ(TK_INT, token->kind);    token = token->next;
-  ASSERT_EQ(TK_CHAR, token->kind);   token = token->next;
-  ASSERT_EQ(TK_VOID, token->kind);   token = token->next;
-  ASSERT_EQ(TK_SHORT, token->kind);  token = token->next;
-  ASSERT_EQ(TK_LONG, token->kind);   token = token->next;
-  ASSERT_EQ(TK_FLOAT, token->kind);  token = token->next;
-  ASSERT_EQ(TK_DOUBLE, token->kind); token = token->next;
+  token = tokenize("int char void short long float double signed unsigned");
+  ASSERT_EQ(TK_INT, token->kind);     token = token->next;
+  ASSERT_EQ(TK_CHAR, token->kind);    token = token->next;
+  ASSERT_EQ(TK_VOID, token->kind);    token = token->next;
+  ASSERT_EQ(TK_SHORT, token->kind);   token = token->next;
+  ASSERT_EQ(TK_LONG, token->kind);    token = token->next;
+  ASSERT_EQ(TK_FLOAT, token->kind);   token = token->next;
+  ASSERT_EQ(TK_DOUBLE, token->kind);  token = token->next;
+  ASSERT_EQ(TK_SIGNED, token->kind);  token = token->next;
+  ASSERT_EQ(TK_UNSIGNED, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // その他のキーワード
+  token = tokenize(
+      "auto break case const continue default do enum extern goto inline "
+      "register restrict sizeof static struct switch typedef union volatile "
+      "_Alignas _Alignof _Atomic _Bool _Complex _Generic _Imaginary "
+      "_Noreturn _Static_assert _Thread_local");
+  ASSERT_EQ(TK_AUTO, token->kind); token = token->next;
+  ASSERT_EQ(TK_BREAK, token->kind); token = token->next;
+  ASSERT_EQ(TK_CASE, token->kind); token = token->next;
+  ASSERT_EQ(TK_CONST, token->kind); token = token->next;
+  ASSERT_EQ(TK_CONTINUE, token->kind); token = token->next;
+  ASSERT_EQ(TK_DEFAULT, token->kind); token = token->next;
+  ASSERT_EQ(TK_DO, token->kind); token = token->next;
+  ASSERT_EQ(TK_ENUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_EXTERN, token->kind); token = token->next;
+  ASSERT_EQ(TK_GOTO, token->kind); token = token->next;
+  ASSERT_EQ(TK_INLINE, token->kind); token = token->next;
+  ASSERT_EQ(TK_REGISTER, token->kind); token = token->next;
+  ASSERT_EQ(TK_RESTRICT, token->kind); token = token->next;
+  ASSERT_EQ(TK_SIZEOF, token->kind); token = token->next;
+  ASSERT_EQ(TK_STATIC, token->kind); token = token->next;
+  ASSERT_EQ(TK_STRUCT, token->kind); token = token->next;
+  ASSERT_EQ(TK_SWITCH, token->kind); token = token->next;
+  ASSERT_EQ(TK_TYPEDEF, token->kind); token = token->next;
+  ASSERT_EQ(TK_UNION, token->kind); token = token->next;
+  ASSERT_EQ(TK_VOLATILE, token->kind); token = token->next;
+  ASSERT_EQ(TK_ALIGNAS, token->kind); token = token->next;
+  ASSERT_EQ(TK_ALIGNOF, token->kind); token = token->next;
+  ASSERT_EQ(TK_ATOMIC, token->kind); token = token->next;
+  ASSERT_EQ(TK_BOOL, token->kind); token = token->next;
+  ASSERT_EQ(TK_COMPLEX, token->kind); token = token->next;
+  ASSERT_EQ(TK_GENERIC, token->kind); token = token->next;
+  ASSERT_EQ(TK_IMAGINARY, token->kind); token = token->next;
+  ASSERT_EQ(TK_NORETURN, token->kind); token = token->next;
+  ASSERT_EQ(TK_STATIC_ASSERT, token->kind); token = token->next;
+  ASSERT_EQ(TK_THREAD_LOCAL, token->kind); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // キーワードと似た識別子はキーワードにならない

@@ -82,13 +82,45 @@ const char *token_kind_str(token_kind_t kind, int *len) {
     case TK_WHILE: s = "while"; break;
     case TK_FOR: s = "for"; break;
     case TK_RETURN: s = "return"; break;
+    case TK_AUTO: s = "auto"; break;
+    case TK_BREAK: s = "break"; break;
+    case TK_CASE: s = "case"; break;
+    case TK_CONST: s = "const"; break;
+    case TK_CONTINUE: s = "continue"; break;
+    case TK_DEFAULT: s = "default"; break;
+    case TK_DO: s = "do"; break;
+    case TK_ENUM: s = "enum"; break;
+    case TK_EXTERN: s = "extern"; break;
+    case TK_GOTO: s = "goto"; break;
+    case TK_INLINE: s = "inline"; break;
     case TK_INT: s = "int"; break;
+    case TK_REGISTER: s = "register"; break;
+    case TK_RESTRICT: s = "restrict"; break;
+    case TK_SIGNED: s = "signed"; break;
+    case TK_SIZEOF: s = "sizeof"; break;
+    case TK_STATIC: s = "static"; break;
+    case TK_STRUCT: s = "struct"; break;
+    case TK_SWITCH: s = "switch"; break;
+    case TK_TYPEDEF: s = "typedef"; break;
+    case TK_UNION: s = "union"; break;
+    case TK_UNSIGNED: s = "unsigned"; break;
+    case TK_VOLATILE: s = "volatile"; break;
     case TK_CHAR: s = "char"; break;
     case TK_VOID: s = "void"; break;
     case TK_SHORT: s = "short"; break;
     case TK_LONG: s = "long"; break;
     case TK_FLOAT: s = "float"; break;
     case TK_DOUBLE: s = "double"; break;
+    case TK_ALIGNAS: s = "_Alignas"; break;
+    case TK_ALIGNOF: s = "_Alignof"; break;
+    case TK_ATOMIC: s = "_Atomic"; break;
+    case TK_BOOL: s = "_Bool"; break;
+    case TK_COMPLEX: s = "_Complex"; break;
+    case TK_GENERIC: s = "_Generic"; break;
+    case TK_IMAGINARY: s = "_Imaginary"; break;
+    case TK_NORETURN: s = "_Noreturn"; break;
+    case TK_STATIC_ASSERT: s = "_Static_assert"; break;
+    case TK_THREAD_LOCAL: s = "_Thread_local"; break;
     case TK_LPAREN: s = "("; break;
     case TK_RPAREN: s = ")"; break;
     case TK_LBRACE: s = "{"; break;
@@ -561,13 +593,45 @@ token_t *tokenize(char *p) {
         {"while", 5, TK_WHILE},
         {"for", 3, TK_FOR},
         {"return", 6, TK_RETURN},
+        {"auto", 4, TK_AUTO},
+        {"break", 5, TK_BREAK},
+        {"case", 4, TK_CASE},
+        {"const", 5, TK_CONST},
+        {"continue", 8, TK_CONTINUE},
+        {"default", 7, TK_DEFAULT},
+        {"do", 2, TK_DO},
+        {"enum", 4, TK_ENUM},
+        {"extern", 6, TK_EXTERN},
+        {"goto", 4, TK_GOTO},
+        {"inline", 6, TK_INLINE},
         {"int", 3, TK_INT},
+        {"register", 8, TK_REGISTER},
+        {"restrict", 8, TK_RESTRICT},
+        {"signed", 6, TK_SIGNED},
+        {"sizeof", 6, TK_SIZEOF},
+        {"static", 6, TK_STATIC},
+        {"struct", 6, TK_STRUCT},
+        {"switch", 6, TK_SWITCH},
+        {"typedef", 7, TK_TYPEDEF},
+        {"union", 5, TK_UNION},
+        {"unsigned", 8, TK_UNSIGNED},
+        {"volatile", 8, TK_VOLATILE},
         {"char", 4, TK_CHAR},
         {"void", 4, TK_VOID},
         {"short", 5, TK_SHORT},
         {"long", 4, TK_LONG},
         {"float", 5, TK_FLOAT},
         {"double", 6, TK_DOUBLE},
+        {"_Alignas", 8, TK_ALIGNAS},
+        {"_Alignof", 8, TK_ALIGNOF},
+        {"_Atomic", 7, TK_ATOMIC},
+        {"_Bool", 5, TK_BOOL},
+        {"_Complex", 8, TK_COMPLEX},
+        {"_Generic", 8, TK_GENERIC},
+        {"_Imaginary", 10, TK_IMAGINARY},
+        {"_Noreturn", 9, TK_NORETURN},
+        {"_Static_assert", 14, TK_STATIC_ASSERT},
+        {"_Thread_local", 13, TK_THREAD_LOCAL},
       };
 
       bool is_kw = false;
