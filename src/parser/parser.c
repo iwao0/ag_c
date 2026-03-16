@@ -612,6 +612,7 @@ static node_t *primary(void) {
     node->base.kind = ND_NUM;
     node->val = num->val;
     node->fval = num->fval;
+    node->float_suffix_kind = num->float_suffix_kind;
     node->base.is_float = num->is_float;
 
     if (node->base.is_float) {
@@ -620,6 +621,7 @@ static node_t *primary(void) {
       lit->id = float_label_count++;
       lit->fval = node->fval;
       lit->is_float = node->base.is_float;
+      lit->float_suffix_kind = node->float_suffix_kind;
       lit->next = float_literals;
       float_literals = lit;
       node->fval_id = lit->id;

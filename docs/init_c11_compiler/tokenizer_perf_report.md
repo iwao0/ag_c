@@ -226,8 +226,9 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
   - keep strict C11 **disabled by default** (binary literals remain extension by default).
 - implemented:
   - tokenizer now preserves floating suffix kind in `token_num_t.float_suffix_kind` (`0=none, 1=f/F, 2=l/L`).
-- remaining:
-  - semantic handling of `long double` outside tokenizer remains TODO (currently treated as double path).
+- parser/codegen policy:
+  - float suffix metadata is propagated to AST/float literal table.
+  - `long double` suffix (`l/L`) is currently lowered to double codegen path by policy.
 
 ## Summary
 

@@ -54,6 +54,7 @@ struct node_num_t {
   long long val;    // 整数値
   double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
+  int float_suffix_kind; // 0=none, 1=f/F, 2=l/L
 };
 
 // ローカル変数ノード
@@ -117,6 +118,7 @@ struct float_lit_t {
   int id;
   double fval;
   int is_float;
+  int float_suffix_kind; // 0=none, 1=f/F, 2=l/L
 };
 extern float_lit_t *float_literals;
 

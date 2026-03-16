@@ -60,6 +60,26 @@ static void test_expr_float() {
   ASSERT_TRUE(as_num(node->rhs)->fval > 1.49 && as_num(node->rhs)->fval < 1.51);
 }
 
+static void test_expr_long_double_suffix_metadata() {
+  printf("test_expr_long_double_suffix_metadata...\n");
+  token = tokenize("4.0L");
+  node_t *node = expr();
+
+  ASSERT_EQ(ND_NUM, node->kind);
+  ASSERT_EQ(2, node->is_float); // 現状は double 扱い
+  ASSERT_EQ(2, as_num(node)->float_suffix_kind);
+  ASSERT_TRUE(as_num(node)->fval > 3.9 && as_num(node)->fval < 4.1);
+
+  bool found = false;
+  for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
+    if (lit->float_suffix_kind == 2) {
+      found = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found);
+}
+
 static void test_expr_add_sub() {
   printf("test_expr_add_sub...\n");
   token = tokenize("1 + 2 - 3");
@@ -386,6 +406,7 @@ int main() {
   test_expr_string();
   test_expr_concat_string();
   test_expr_float();
+  test_expr_long_double_suffix_metadata();
   test_type_decl();
   test_multiple_funcdefs();
   test_parse_invalid();

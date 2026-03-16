@@ -456,7 +456,8 @@ void gen_float_literals(void) {
       union { float f; uint32_t i; } u = { .f = (float)lit->fval };
       printf("  .word %u\n", u.i);
     } else {
-      // double (64bit) 定数出力
+      // double (64bit) 定数出力。
+      // note: float_suffix_kind==2 (long double suffix) is currently lowered to double.
       union { double d; uint64_t i; } u = { .d = lit->fval };
       printf("  .quad %llu\n", (unsigned long long)u.i);
     }
