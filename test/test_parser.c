@@ -160,6 +160,37 @@ static void test_expr_relational() {
   ASSERT_EQ(2, as_num(node->rhs->rhs->lhs->rhs)->val);
 }
 
+static void test_expr_unary_ops() {
+  printf("test_expr_unary_ops...\n");
+
+  token = tk_tokenize("+42");
+  node_t *pos = expr();
+  ASSERT_EQ(ND_NUM, pos->kind);
+  ASSERT_EQ(42, as_num(pos)->val);
+
+  token = tk_tokenize("-42");
+  node_t *neg = expr();
+  ASSERT_EQ(ND_SUB, neg->kind);
+  ASSERT_EQ(ND_NUM, neg->lhs->kind);
+  ASSERT_EQ(0, as_num(neg->lhs)->val);
+  ASSERT_EQ(ND_NUM, neg->rhs->kind);
+  ASSERT_EQ(42, as_num(neg->rhs)->val);
+
+  token = tk_tokenize("!0");
+  node_t *not0 = expr();
+  ASSERT_EQ(ND_EQ, not0->kind);
+  ASSERT_EQ(ND_NUM, not0->lhs->kind);
+  ASSERT_EQ(0, as_num(not0->lhs)->val);
+  ASSERT_EQ(ND_NUM, not0->rhs->kind);
+  ASSERT_EQ(0, as_num(not0->rhs)->val);
+
+  token = tk_tokenize("~5");
+  node_t *bitnot = expr();
+  ASSERT_EQ(ND_SUB, bitnot->kind);               // (~5) == ((0-5)-1)
+  ASSERT_EQ(ND_SUB, bitnot->lhs->kind);
+  ASSERT_EQ(1, as_num(bitnot->rhs)->val);
+}
+
 static void test_expr_assign() {
   printf("test_expr_assign...\n");
   token = tk_tokenize("a = 3");
@@ -266,6 +297,19 @@ static void test_stmt_for() {
   ASSERT_EQ(ND_LT, fr->lhs->kind);      // 条件: a<10
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: a=a+1
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);     // 本体: a
+}
+
+static void test_stmt_for_with_decl_init() {
+  printf("test_stmt_for_with_decl_init...\n");
+  token = tk_tokenize("main() { for (int i=0; i<3; i=i+1) i; }");
+  program();
+  node_t *fr = as_block(as_func(code[0])->base.rhs)->body[0];
+
+  ASSERT_EQ(ND_FOR, fr->kind);
+  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: int i=0
+  ASSERT_EQ(ND_LT, fr->lhs->kind);                // 条件: i<3
+  ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: i=i+1
+  ASSERT_EQ(ND_LVAR, fr->rhs->kind);              // 本体: i
 }
 
 static void test_stmt_return() {
@@ -392,6 +436,7 @@ int main() {
   test_expr_parentheses();
   test_expr_eq_neq();
   test_expr_relational();
+  test_expr_unary_ops();
   test_expr_assign();
   test_program_funcdef();
   test_funcall();
@@ -400,6 +445,7 @@ int main() {
   test_stmt_if_else();
   test_stmt_while();
   test_stmt_for();
+  test_stmt_for_with_decl_init();
   test_stmt_return();
   test_stmt_block();
   test_expr_deref_addr();

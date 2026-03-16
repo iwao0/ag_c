@@ -33,6 +33,11 @@ static const test_case_t test_cases[] = {
     {"arithmetic", "mul", CASE_INT, "main() { return 5+6*7; }", 47, 0},
     {"arithmetic", "paren", CASE_INT, "main() { return 5*(9-6); }", 15, 0},
     {"arithmetic", "div", CASE_INT, "main() { return (3+5)/2; }", 4, 0},
+    {"arithmetic", "unary_plus", CASE_INT, "main() { return +42; }", 42, 0},
+    {"arithmetic", "unary_minus", CASE_INT, "main() { return -7+10; }", 3, 0},
+    {"arithmetic", "logical_not_true", CASE_INT, "main() { return !0; }", 1, 0},
+    {"arithmetic", "logical_not_false", CASE_INT, "main() { return !5; }", 0, 0},
+    {"arithmetic", "bit_not", CASE_INT, "main() { return ~5; }", 250, 0},
 
     {"comparison", "eq1", CASE_INT, "main() { return 0==0; }", 1, 0},
     {"comparison", "eq2", CASE_INT, "main() { return 42==0; }", 0, 0},

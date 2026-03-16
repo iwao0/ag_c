@@ -134,6 +134,7 @@ static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
 }
 
 static node_t *stmt(void);
+static node_t *declaration(void);
 static node_t *assign(void);
 static node_t *equality(void);
 static node_t *relational(void);
@@ -142,6 +143,11 @@ static node_t *mul(void);
 static node_t *unary(void);
 static node_t *primary(void);
 static node_t *funcdef(void);
+
+static bool is_type_token(token_kind_t kind) {
+  return kind == TK_INT || kind == TK_CHAR || kind == TK_VOID || kind == TK_SHORT ||
+         kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE;
+}
 
 // program = funcdef*
 void program(void) {
@@ -245,6 +251,55 @@ static node_t *funcdef(void) {
   return (node_t *)node;
 }
 
+// declaration = type "*"* ident ("[" num "]")? ("=" expr)? ";"
+static node_t *declaration(void) {
+  token_kind_t type_kind = consume_type_kind();
+  int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT || type_kind == TK_FLOAT) ? 4 : 8;
+  // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
+  int is_pointer = 0;
+  while (tk_consume('*')) { is_pointer = 1; }
+  int var_size = is_pointer ? 8 : elem_size;
+  token_ident_t *tok = tk_consume_ident();
+  if (!tok) {
+    fprintf(stderr, "変数名が期待されます\n");
+    exit(1);
+  }
+  lvar_t *var = find_lvar(tok->str, tok->len);
+  if (!var) {
+    // 配列宣言: ident "[" num "]"
+    if (tk_consume('[')) {
+      int array_size = tk_expect_number();
+      tk_expect(']');
+      var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
+      if (tk_consume('=')) {
+        // 配列初期化は未対応
+        expr();
+      }
+      tk_expect(';');
+      return new_node_num(0);
+    }
+    var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
+  }
+  // float/double フラグを設定
+  if (!is_pointer) {
+    if (type_kind == TK_FLOAT) var->fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (type_kind == TK_DOUBLE) var->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  }
+  if (tk_consume('=')) {
+    // int x = expr;
+    node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
+    lvar->fp_kind = var->fp_kind;
+    node_mem_t *node = new_node_assign(lvar, expr());
+    node->type_size = is_pointer ? 8 : var->elem_size;
+    node->base.fp_kind = var->fp_kind;
+    tk_expect(';');
+    return (node_t *)node;
+  }
+  // int x; (初期化なし → ダミーの値0)
+  tk_expect(';');
+  return new_node_num(0);
+}
+
 // stmt = "{" stmt* "}"
 //      | "if" "(" expr ")" stmt ("else" stmt)?
 //      | "while" "(" expr ")" stmt
@@ -271,54 +326,8 @@ static node_t *stmt(void) {
   }
 
   // 型付き変数宣言: type "*"* ident ("[" num "]")? ("=" expr)? ";"
-  if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
-    token_kind_t type_kind = consume_type_kind();
-    int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT || type_kind == TK_FLOAT) ? 4 : 8;
-    // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
-    int is_pointer = 0;
-    while (tk_consume('*')) { is_pointer = 1; }
-    int var_size = is_pointer ? 8 : elem_size;
-    token_ident_t *tok = tk_consume_ident();
-    if (!tok) {
-      fprintf(stderr, "変数名が期待されます\n");
-      exit(1);
-    }
-    lvar_t *var = find_lvar(tok->str, tok->len);
-    if (!var) {
-      // 配列宣言: ident "[" num "]"
-      if (tk_consume('[')) {
-        int array_size = tk_expect_number();
-        tk_expect(']');
-        var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
-        if (tk_consume('=')) {
-          // 配列初期化は未対応
-          expr();
-        }
-        tk_expect(';');
-        node_t *node = new_node_num(0);
-        return node;
-      }
-      var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
-    }
-    // float/double フラグを設定
-    if (!is_pointer) {
-      if (type_kind == TK_FLOAT) var->fp_kind = TK_FLOAT_KIND_FLOAT;
-      else if (type_kind == TK_DOUBLE) var->fp_kind = TK_FLOAT_KIND_DOUBLE;
-    }
-    if (tk_consume('=')) {
-      // int x = expr;
-      node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
-      lvar->fp_kind = var->fp_kind;
-      node_mem_t *node = new_node_assign(lvar, expr());
-      node->type_size = is_pointer ? 8 : var->elem_size;
-      node->base.fp_kind = var->fp_kind;
-      tk_expect(';');
-      return (node_t *)node;
-    }
-    // int x; (初期化なし → ダミーの値0)
-    tk_expect(';');
-    node_t *node = new_node_num(0);
-    return node;
+  if (is_type_token(token->kind)) {
+    return declaration();
   }
 
   if (token->kind == TK_RETURN) {
@@ -363,8 +372,12 @@ static node_t *stmt(void) {
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
     if (!tk_consume(';')) {
-      node->init = expr();  // 初期化式
-      tk_expect(';');
+      if (is_type_token(token->kind)) {
+        node->init = declaration(); // 宣言は終端 ';' を含めて読む
+      } else {
+        node->init = expr();  // 初期化式
+        tk_expect(';');
+      }
     }
     if (!tk_consume(';')) {
       node->base.lhs = expr();   // 条件式
@@ -459,9 +472,23 @@ static node_t *mul(void) {
   }
 }
 
-// unary = ("*" | "&") unary | primary postfix*
+// unary = ("+" | "-" | "!" | "~" | "*" | "&") unary | primary postfix*
 // postfix = "[" expr "]"
 static node_t *unary(void) {
+  if (tk_consume('+')) {
+    return unary();
+  }
+  if (tk_consume('-')) {
+    return new_node_binary(ND_SUB, new_node_num(0), unary());
+  }
+  if (tk_consume('!')) {
+    return new_node_binary(ND_EQ, unary(), new_node_num(0));
+  }
+  if (tk_consume('~')) {
+    // ~x == -x - 1 (2の補数表現)
+    node_t *neg = new_node_binary(ND_SUB, new_node_num(0), unary());
+    return new_node_binary(ND_SUB, neg, new_node_num(1));
+  }
   if (tk_consume('*')) {
     node_t *operand = unary();
     node_mem_t *node = calloc(1, sizeof(node_mem_t));
