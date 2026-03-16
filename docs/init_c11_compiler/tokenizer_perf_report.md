@@ -146,6 +146,32 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
   - Rationale: workload-dependent tradeoff (punct-heavy regression), additional tool/runtime complexity (`llvm-profdata`), and longer pipeline steps.
   - Keep PGO as an optional local/periodic experiment via `scripts/bench_tokenizer_pgo.sh`.
 
+## Continue/Stop Gate (Phase0)
+
+- Added gate script:
+  - `scripts/check_tokenizer_continue_gate.sh`
+- Baseline (2026-03-16):
+  - mixed 256KB: `19,705,021`, alloc `21`
+  - ident 256KB: `12,289,547`, alloc `6`
+  - numeric 256KB: `13,075,812`, alloc `15`
+  - punct 256KB: `33,759,919`, alloc `10`
+  - corpus: `16,561,884`, alloc `7`
+- Pass condition:
+  - all cases `tokens/sec` >= baseline * `0.95`
+  - all cases `alloc_count` <= baseline
+- Stop heuristic:
+  - if two consecutive optimization steps stay within ±2% improvement, stop tokenizer micro-optimization and prioritize feature work.
+- Operational note:
+  - run gate checks from dedicated bench outputs (not from mixed `make test bench` timings) to reduce variance impact.
+
+## Phase1 Trial Note
+
+- Trialed integer-suffix table micro-optimization in `parse_int_suffix`.
+- Gate result:
+  - ident case regressed beyond -5% threshold in repeated checks.
+- Action:
+  - rolled back the trial and kept current implementation.
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
