@@ -415,79 +415,96 @@ void gen(node_t *node) {
   gen_stmt(node);
 }
 
+static int parse_escape_value(const char *s, int len, int *i, uint32_t *out) {
+  if (*i >= len || s[*i] != '\\') return 0;
+  (*i)++;
+  if (*i >= len) return 0;
+  char esc = s[*i];
+  if (esc == 'a') { *out = '\a'; (*i)++; return 1; }
+  if (esc == 'b') { *out = '\b'; (*i)++; return 1; }
+  if (esc == 'f') { *out = '\f'; (*i)++; return 1; }
+  if (esc == 'n') { *out = '\n'; (*i)++; return 1; }
+  if (esc == 'r') { *out = '\r'; (*i)++; return 1; }
+  if (esc == 't') { *out = '\t'; (*i)++; return 1; }
+  if (esc == 'v') { *out = '\v'; (*i)++; return 1; }
+  if (esc == '\\') { *out = '\\'; (*i)++; return 1; }
+  if (esc == '\'') { *out = '\''; (*i)++; return 1; }
+  if (esc == '"') { *out = '"'; (*i)++; return 1; }
+  if (esc == '?') { *out = '?'; (*i)++; return 1; }
+  if (esc == 'x') {
+    (*i)++;
+    uint32_t val = 0;
+    while (*i < len && isxdigit((unsigned char)s[*i])) {
+      char ch = s[*i];
+      int digit;
+      if ('0' <= ch && ch <= '9') digit = ch - '0';
+      else if ('a' <= ch && ch <= 'f') digit = ch - 'a' + 10;
+      else digit = ch - 'A' + 10;
+      val = (val << 4) | (uint32_t)digit;
+      (*i)++;
+    }
+    *out = val;
+    return 1;
+  }
+  if (esc == 'u' || esc == 'U') {
+    int digits = (esc == 'u') ? 4 : 8;
+    (*i)++;
+    uint32_t val = 0;
+    for (int k = 0; k < digits && *i < len; k++, (*i)++) {
+      char ch = s[*i];
+      int digit;
+      if ('0' <= ch && ch <= '9') digit = ch - '0';
+      else if ('a' <= ch && ch <= 'f') digit = ch - 'a' + 10;
+      else if ('A' <= ch && ch <= 'F') digit = ch - 'A' + 10;
+      else break;
+      val = (val << 4) | (uint32_t)digit;
+    }
+    *out = val;
+    return 1;
+  }
+  if ('0' <= esc && esc <= '7') {
+    uint32_t val = 0;
+    int cnt = 0;
+    while (*i < len && cnt < 3) {
+      char ch = s[*i];
+      if (ch < '0' || ch > '7') break;
+      val = val * 8 + (uint32_t)(ch - '0');
+      (*i)++;
+      cnt++;
+    }
+    *out = val;
+    return 1;
+  }
+  *out = (unsigned char)esc;
+  (*i)++;
+  return 1;
+}
+
 void gen_string_literals(void) {
   if (!string_literals) return;
   printf(".section __TEXT,__cstring\n");
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
     printf("%s:\n", lit->label);
-    int col = 0;
     int i = 0;
     while (i < lit->len) {
-      unsigned char c = (unsigned char)lit->str[i];
-      if (c == '\\') {
-        i++;
-        if (i >= lit->len) break;
-        char esc = lit->str[i];
-        if (esc == 'a') { c = '\a'; i++; }
-        else if (esc == 'b') { c = '\b'; i++; }
-        else if (esc == 'f') { c = '\f'; i++; }
-        else if (esc == 'n') { c = '\n'; i++; }
-        else if (esc == 'r') { c = '\r'; i++; }
-        else if (esc == 't') { c = '\t'; i++; }
-        else if (esc == 'v') { c = '\v'; i++; }
-        else if (esc == '\\') { c = '\\'; i++; }
-        else if (esc == '\'') { c = '\''; i++; }
-        else if (esc == '"') { c = '"'; i++; }
-        else if (esc == '?') { c = '?'; i++; }
-        else if (esc == 'x') {
-          i++;
-          unsigned val = 0;
-          while (i < lit->len && isxdigit((unsigned char)lit->str[i])) {
-            char ch = lit->str[i];
-            int digit;
-            if ('0' <= ch && ch <= '9') digit = ch - '0';
-            else if ('a' <= ch && ch <= 'f') digit = ch - 'a' + 10;
-            else digit = ch - 'A' + 10;
-            val = val * 16 + digit;
-            i++;
-          }
-          c = (unsigned char)val;
-        } else if ('0' <= esc && esc <= '7') {
-          unsigned val = 0;
-          int cnt = 0;
-          while (i < lit->len && cnt < 3) {
-            char ch = lit->str[i];
-            if (ch < '0' || ch > '7') break;
-            val = val * 8 + (ch - '0');
-            i++;
-            cnt++;
-          }
-          c = (unsigned char)val;
-        } else {
-          c = (unsigned char)esc;
-          i++;
-        }
+      uint32_t v = 0;
+      if (lit->str[i] == '\\') {
+        parse_escape_value(lit->str, lit->len, &i, &v);
       } else {
+        v = (unsigned char)lit->str[i];
         i++;
       }
-
-      if (col == 0) {
-        printf("  .byte ");
+      if (lit->char_width == 1) {
+        printf("  .byte %u\n", (unsigned)(v & 0xFF));
+      } else if (lit->char_width == 2) {
+        printf("  .hword %u\n", (unsigned)(v & 0xFFFF));
       } else {
-        printf(", ");
-      }
-      printf("%u", (unsigned)c);
-      col++;
-      if (col == 16) {
-        printf("\n");
-        col = 0;
+        printf("  .word %u\n", (unsigned)v);
       }
     }
-    if (col == 0) {
-      printf("  .byte 0\n");
-    } else {
-      printf(", 0\n");
-    }
+    if (lit->char_width == 1) printf("  .byte 0\n");
+    else if (lit->char_width == 2) printf("  .hword 0\n");
+    else printf("  .word 0\n");
   }
   printf(".text\n");
 }

@@ -558,10 +558,18 @@ static node_t *primary(void) {
 
   // 文字列リテラル
   if (token->kind == TK_STRING) {
+    int merged_width = 1;
+    int merged_prefix_kind = 0;
     int total_len = 0;
     token_t *t = token;
     while (t && t->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)t;
+      if (total_len == 0) {
+        merged_width = st->char_width ? st->char_width : 1;
+        merged_prefix_kind = st->str_prefix_kind;
+      } else if (merged_width != st->char_width) {
+        error_tok(t, "異なる接頭辞の文字列リテラルは連結できません");
+      }
       total_len += st->len;
       t = t->next;
     }
@@ -586,11 +594,15 @@ static node_t *primary(void) {
     lit->label = node->string_label;
     lit->str = merged;
     lit->len = total_len;
+    lit->char_width = merged_width;
+    lit->str_prefix_kind = merged_prefix_kind;
     lit->next = string_literals;
     string_literals = lit;
     node->mem.type_size = 8; // ポインタとして8バイト
-    node->mem.deref_size = 1; // 文字列は char* なので1バイト
+    node->mem.deref_size = merged_width;
     node->mem.base.is_float = 0; // 文字列はポインタなので整数
+    node->char_width = merged_width;
+    node->str_prefix_kind = merged_prefix_kind;
     return (node_t *)node;
   }
 

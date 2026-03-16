@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 
 // 入力プログラム（エラーメッセージ表示用）
 static char *user_input;
@@ -23,6 +24,8 @@ void set_user_input(char *p) {
 
 static char *current_filename;
 static bool strict_c11_mode = false;
+static bool enable_trigraphs = true;
+static bool enable_binary_literals = true;
 
 char *get_filename(void) {
   return current_filename;
@@ -38,6 +41,22 @@ bool get_strict_c11_mode(void) {
 
 void set_strict_c11_mode(bool strict) {
   strict_c11_mode = strict;
+}
+
+bool get_enable_trigraphs(void) {
+  return enable_trigraphs;
+}
+
+void set_enable_trigraphs(bool enable) {
+  enable_trigraphs = enable;
+}
+
+bool get_enable_binary_literals(void) {
+  return enable_binary_literals;
+}
+
+void set_enable_binary_literals(bool enable) {
+  enable_binary_literals = enable;
 }
 
 static char trigraph_to_char(char c) {
@@ -57,6 +76,7 @@ static char trigraph_to_char(char c) {
 
 // 翻訳フェーズ1: trigraph を置換する
 static char *replace_trigraphs(const char *in) {
+  if (!enable_trigraphs) return strdup(in);
   size_t n = strlen(in);
   char *out = calloc(n + 1, 1);
   size_t i = 0;
@@ -85,6 +105,57 @@ static bool starts_with_ucn(const char *p, int *len) {
   }
   *len = 2 + digits;
   return true;
+}
+
+static uint32_t hexval(char c) {
+  if ('0' <= c && c <= '9') return (uint32_t)(c - '0');
+  if ('a' <= c && c <= 'f') return (uint32_t)(c - 'a' + 10);
+  return (uint32_t)(c - 'A' + 10);
+}
+
+static bool parse_ucn_codepoint(const char *p, uint32_t *out, int *consumed) {
+  int len = 0;
+  if (!starts_with_ucn(p, &len)) return false;
+  int digits = (p[1] == 'u') ? 4 : 8;
+  uint32_t cp = 0;
+  for (int i = 0; i < digits; i++) {
+    cp = (cp << 4) | hexval(p[2 + i]);
+  }
+  *out = cp;
+  *consumed = len;
+  return true;
+}
+
+static bool is_valid_ucn_codepoint(uint32_t cp) {
+  if (cp > 0x10FFFF) return false;
+  if (0xD800 <= cp && cp <= 0xDFFF) return false;
+  // C11 6.4.3: basic source characters are not permitted via UCN
+  // except '$', '@', '`'.
+  if (cp < 0xA0 && cp != '$' && cp != '@' && cp != '`') return false;
+  return true;
+}
+
+static int encode_utf8(uint32_t cp, char out[4]) {
+  if (cp <= 0x7F) {
+    out[0] = (char)cp;
+    return 1;
+  }
+  if (cp <= 0x7FF) {
+    out[0] = (char)(0xC0 | (cp >> 6));
+    out[1] = (char)(0x80 | (cp & 0x3F));
+    return 2;
+  }
+  if (cp <= 0xFFFF) {
+    out[0] = (char)(0xE0 | (cp >> 12));
+    out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[2] = (char)(0x80 | (cp & 0x3F));
+    return 3;
+  }
+  out[0] = (char)(0xF0 | (cp >> 18));
+  out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+  out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+  out[3] = (char)(0x80 | (cp & 0x3F));
+  return 4;
 }
 
 // エラー箇所を視覚的に表示する
@@ -435,28 +506,20 @@ static int read_escape_char(char **pp) {
       valx = valx * 16 + digit;
       p++;
     }
-    if (valx > 255) error_at(p, "エスケープが大きすぎます");
     *pp = p;
     return (int)valx;
   }
   if (*p == 'u' || *p == 'U') {
-    int digits = (*p == 'u') ? 4 : 8;
-    p++;
-    unsigned long val = 0;
-    for (int i = 0; i < digits; i++) {
-      if (!isxdigit((unsigned char)p[i])) {
-        error_at(p + i, "UCNエスケープが不正です");
-      }
-      int digit;
-      if ('0' <= p[i] && p[i] <= '9') digit = p[i] - '0';
-      else if ('a' <= p[i] && p[i] <= 'f') digit = p[i] - 'a' + 10;
-      else digit = p[i] - 'A' + 10;
-      val = val * 16 + (unsigned)digit;
+    uint32_t cp = 0;
+    int consumed = 0;
+    if (!parse_ucn_codepoint(p - 1, &cp, &consumed)) {
+      error_at(p, "UCNエスケープが不正です");
     }
-    if (val > 0x10FFFF) error_at(p, "UCNエスケープが不正です");
-    p += digits;
-    *pp = p;
-    return (int)(val & 0xFF);
+    if (!is_valid_ucn_codepoint(cp)) {
+      error_at(p, "UCNエスケープが不正です");
+    }
+    *pp = (char *)(p - 1 + consumed);
+    return (int)cp;
   }
   if (*p >= '0' && *p <= '7') {
     int cnt = 0;
@@ -466,7 +529,6 @@ static int read_escape_char(char **pp) {
       p++;
       cnt++;
     }
-    if (valo > 255) error_at(p, "エスケープが大きすぎます");
     *pp = p;
     return (int)valo;
   }
@@ -594,15 +656,82 @@ static long long token_signed_from_u64(unsigned long long uval) {
   return (long long)(uval & (unsigned long long)LLONG_MAX);
 }
 
-static int string_prefix_len(const char *p) {
-  if (p[0] == 'u' && p[1] == '8' && p[2] == '"') return 2;
-  if ((p[0] == 'L' || p[0] == 'u' || p[0] == 'U') && p[1] == '"') return 1;
-  return 0;
+static void parse_string_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width) {
+  *prefix_len = 0;
+  *prefix_kind = 0;
+  *char_width = 1;
+  if (p[0] == 'u' && p[1] == '8' && p[2] == '"') {
+    *prefix_len = 2;
+    *prefix_kind = 4;
+    *char_width = 1;
+    return;
+  }
+  if (p[0] == 'L' && p[1] == '"') {
+    *prefix_len = 1;
+    *prefix_kind = 1;
+    *char_width = 4;
+    return;
+  }
+  if (p[0] == 'u' && p[1] == '"') {
+    *prefix_len = 1;
+    *prefix_kind = 2;
+    *char_width = 2;
+    return;
+  }
+  if (p[0] == 'U' && p[1] == '"') {
+    *prefix_len = 1;
+    *prefix_kind = 3;
+    *char_width = 4;
+    return;
+  }
 }
 
-static int char_prefix_len(const char *p) {
-  if ((p[0] == 'L' || p[0] == 'u' || p[0] == 'U') && p[1] == '\'') return 1;
-  return 0;
+static void parse_char_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width) {
+  *prefix_len = 0;
+  *prefix_kind = 0;
+  *char_width = 1;
+  if (p[0] == 'L' && p[1] == '\'') {
+    *prefix_len = 1;
+    *prefix_kind = 1;
+    *char_width = 4;
+    return;
+  }
+  if (p[0] == 'u' && p[1] == '\'') {
+    *prefix_len = 1;
+    *prefix_kind = 2;
+    *char_width = 2;
+    return;
+  }
+  if (p[0] == 'U' && p[1] == '\'') {
+    *prefix_len = 1;
+    *prefix_kind = 3;
+    *char_width = 4;
+    return;
+  }
+}
+
+static void decode_identifier_ucn(char *start, int len, char **out_str, int *out_len, bool *has_ucn) {
+  *has_ucn = false;
+  char *buf = calloc((size_t)len * 4 + 1, 1);
+  int bi = 0;
+  for (int i = 0; i < len;) {
+    uint32_t cp = 0;
+    int consumed = 0;
+    if (parse_ucn_codepoint(start + i, &cp, &consumed)) {
+      if (!is_valid_ucn_codepoint(cp)) error_at(start + i, "識別子内のUCNが不正です");
+      char tmp[4];
+      int n = encode_utf8(cp, tmp);
+      memcpy(buf + bi, tmp, (size_t)n);
+      bi += n;
+      i += consumed;
+      *has_ucn = true;
+      continue;
+    }
+    buf[bi++] = start[i++];
+  }
+  buf[bi] = '\0';
+  *out_str = buf;
+  *out_len = bi;
 }
 
 static bool is_ident_start(const char *p, int *adv) {
@@ -768,8 +897,16 @@ token_t *tokenize(char *p) {
       continue;
     }
     // 文字列リテラル（接頭辞 L/u/U/u8 を含む）
-    int str_prefix = string_prefix_len(p);
+    int str_prefix = 0;
+    int str_prefix_kind = 0;
+    int str_char_width = 1;
+    parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
     if (*p == '"' || str_prefix > 0) {
+      if (*p == '"') {
+        str_prefix = 0;
+        str_prefix_kind = 0;
+        str_char_width = 1;
+      }
       p += str_prefix;
       p++; // 開き引用符をスキップ
       char *start = p;
@@ -790,12 +927,17 @@ token_t *tokenize(char *p) {
       token_string_t *st = new_token_string(cur, start, len, line_no);
       st->pp.base.at_bol = _at_bol;
       st->pp.base.has_space = _has_space;
+      st->char_width = str_char_width;
+      st->str_prefix_kind = str_prefix_kind;
       cur = (token_t *)st;
       continue;
     }
 
-    // 文字リテラル（接頭辞 L/u/U を含む、マルチ文字定数対応）
-    int chr_prefix = char_prefix_len(p);
+    // 文字リテラル（接頭辞 L/u/U を含む）
+    int chr_prefix = 0;
+    int chr_prefix_kind = 0;
+    int chr_char_width = 1;
+    parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
     if (*p == '\'' || chr_prefix > 0) {
       char *start = p;
       p += chr_prefix;
@@ -808,19 +950,37 @@ token_t *tokenize(char *p) {
       }
       unsigned long long ch = 0;
       int nchar = 0;
-      while (*p && *p != '\'') {
+      if (chr_prefix_kind == 0) {
+        // 通常文字定数はマルチ文字定数を許可（実装定義）
+        while (*p && *p != '\'') {
+          int one = 0;
+          if (*p == '\\') {
+            p++;
+            one = read_escape_char(&p);
+          } else if (*p == '\n') {
+            error_at(p, "文字リテラルが不正です");
+          } else {
+            one = (unsigned char)*p;
+            p++;
+          }
+          ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
+          nchar++;
+        }
+      } else {
+        // 接頭辞付き文字定数は1文字のみを扱う
         int one = 0;
         if (*p == '\\') {
           p++;
           one = read_escape_char(&p);
-        } else if (*p == '\n') {
-          error_at(p, "文字リテラルが不正です");
         } else {
           one = (unsigned char)*p;
           p++;
         }
-        ch = ((ch << 8) | (unsigned char)one) & 0xFFFFFFFFULL;
-        nchar++;
+        ch = (unsigned long long)(unsigned)one;
+        nchar = 1;
+        if (*p != '\'') {
+          error_at(p, "接頭辞付き文字リテラルは1文字のみ対応です");
+        }
       }
       if (nchar == 0 || *p != '\'') {
         error_at(p, "文字リテラルが不正です");
@@ -834,6 +994,8 @@ token_t *tokenize(char *p) {
       num->int_base = 10;
       num->is_unsigned = false;
       num->int_size = 0;
+      num->char_width = chr_char_width;
+      num->char_prefix_kind = chr_prefix_kind;
       num->pp.base.at_bol = _at_bol;
       num->pp.base.has_space = _has_space;
       cur = (token_t *)num;
@@ -859,6 +1021,12 @@ token_t *tokenize(char *p) {
       while (is_ident_continue(p, &adv))
         p += adv;
       int len = p - start;
+      char *id_str = start;
+      int id_len = len;
+      bool has_ucn = false;
+      if (memchr(start, '\\', (size_t)len) != NULL) {
+        decode_identifier_ucn(start, len, &id_str, &id_len, &has_ucn);
+      }
 
       // キーワード判定
       static const struct {
@@ -914,7 +1082,7 @@ token_t *tokenize(char *p) {
 
       bool is_kw = false;
       for (size_t i = 0; i < sizeof(kw) / sizeof(kw[0]); i++) {
-        if (len == kw[i].len && strncmp(start, kw[i].name, len) == 0) {
+        if (!has_ucn && len == kw[i].len && strncmp(start, kw[i].name, len) == 0) {
           cur = new_token_simple(kw[i].kind, cur, line_no);
           cur->at_bol = _at_bol;
           cur->has_space = _has_space;
@@ -924,7 +1092,7 @@ token_t *tokenize(char *p) {
       }
 
       if (!is_kw) {
-        token_ident_t *id = new_token_ident(cur, start, len, line_no);
+        token_ident_t *id = new_token_ident(cur, id_str, id_len, line_no);
         id->pp.base.at_bol = _at_bol;
         id->pp.base.has_space = _has_space;
         cur = (token_t *)id;
@@ -975,7 +1143,7 @@ token_t *tokenize(char *p) {
           parse_int_suffix(num, &p, val, false);
         }
       } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
-        if (strict_c11_mode) {
+        if (strict_c11_mode || !enable_binary_literals) {
           error_at(p, "2進数リテラルは strict C11 では未対応です");
         }
         p += 2;

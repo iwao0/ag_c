@@ -42,5 +42,9 @@ void set_filename(char *name);
 // strict C11 モード（拡張機能の許可/禁止）
 bool get_strict_c11_mode(void);
 void set_strict_c11_mode(bool strict);
+bool get_enable_trigraphs(void);
+void set_enable_trigraphs(bool enable);
+bool get_enable_binary_literals(void);
+void set_enable_binary_literals(bool enable);
 
 #endif

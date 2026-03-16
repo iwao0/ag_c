@@ -607,45 +607,54 @@ static void test_tokenize_char_literal() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 接頭辞付き文字定数
-  token = tokenize("L'A' u'B' U'\\u0043'");
+  token = tokenize("L'A' u'B' U'\\u00A9'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ('A', as_num(token)->val);
+  ASSERT_EQ(4, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ('B', as_num(token)->val);
+  ASSERT_EQ(2, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ('C', as_num(token)->val);
+  ASSERT_EQ(0xA9, as_num(token)->val);
+  ASSERT_EQ(4, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
 static void test_tokenize_string_prefixes_and_ucn() {
   printf("test_tokenize_string_prefixes_and_ucn...\n");
-  token = tokenize("L\"wide\" u\"u16\" U\"u32\" u8\"utf8\" \"\\u0041\"");
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(6, as_string(token)->len); token = token->next;
+  token = tokenize("L\"wide\" u\"u16\" U\"u32\" u8\"utf8\" \"\\u00A9\"");
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(4, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(2, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(4, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(1, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(6, as_string(token)->len); ASSERT_EQ(1, as_string(token)->char_width); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
 static void test_tokenize_ucn_ident_and_trigraph() {
   printf("test_tokenize_ucn_ident_and_trigraph...\n");
-  token = tokenize("foo\\u0041 = 1;");
+  token = tokenize("foo\\u00A9 = 1;");
   ASSERT_EQ(TK_IDENT, token->kind);
-  ASSERT_EQ(9, as_ident(token)->len);
+  ASSERT_EQ(5, as_ident(token)->len);
   token = token->next;
   ASSERT_EQ(TK_ASSIGN, token->kind); token = token->next;
   ASSERT_EQ(TK_NUM, token->kind); token = token->next;
   ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
+  set_enable_trigraphs(true);
   token = tokenize("?" "?=define X 1");
   ASSERT_EQ(TK_HASH, token->kind);
   token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind);
+
+  set_enable_trigraphs(false);
+  token = tokenize("?" "?=define X 1");
+  ASSERT_EQ(TK_QUESTION, token->kind);
+  set_enable_trigraphs(true);
 }
 
 static void test_strict_c11_mode() {
@@ -658,6 +667,10 @@ static void test_strict_c11_mode() {
   set_strict_c11_mode(true);
   expect_tokenize_fail("0b101");
   set_strict_c11_mode(false);
+
+  set_enable_binary_literals(false);
+  expect_tokenize_fail("0b101");
+  set_enable_binary_literals(true);
 }
 
 int main() {

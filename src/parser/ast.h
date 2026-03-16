@@ -68,6 +68,8 @@ typedef struct node_string_t node_string_t;
 struct node_string_t {
   node_mem_t mem;
   char *string_label; // 文字列リテラルのデータラベル
+  int char_width;     // 1/2/4
+  int str_prefix_kind;
 };
 
 // ブロックノード
@@ -103,6 +105,8 @@ struct string_lit_t {
   char *label;
   char *str;
   int len;
+  int char_width; // 1/2/4
+  int str_prefix_kind;
 };
 extern string_lit_t *string_literals;
 

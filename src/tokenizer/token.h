@@ -145,6 +145,10 @@ struct token_string_t {
   token_pp_t pp;
   char *str;
   int len;
+  // 1=char/u8, 2=char16_t, 4=char32_t/wchar_t(Apple)
+  int char_width;
+  // 0=ordinary, 1=L, 2=u, 3=U, 4=u8
+  int str_prefix_kind;
 };
 
 // 数値トークン
@@ -160,6 +164,10 @@ struct token_num_t {
   int int_base;    // 2, 8, 10, 16
   char *str;       // 元の文字列
   int len;         // 元の文字列長
+  // 文字定数由来の場合のみ有効
+  int char_width;
+  // 0=none, 1=L, 2=u, 3=U
+  int char_prefix_kind;
 };
 
 #endif

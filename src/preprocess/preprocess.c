@@ -143,6 +143,8 @@ static token_t *copy_token(token_t *tok) {
       dst->pp.hideset = src->pp.hideset;
       dst->str = src->str;
       dst->len = src->len;
+      dst->char_width = src->char_width;
+      dst->str_prefix_kind = src->str_prefix_kind;
       t = (token_t *)dst;
       break;
     }
@@ -160,6 +162,8 @@ static token_t *copy_token(token_t *tok) {
       dst->int_base = src->int_base;
       dst->str = src->str;
       dst->len = src->len;
+      dst->char_width = src->char_width;
+      dst->char_prefix_kind = src->char_prefix_kind;
       t = (token_t *)dst;
       break;
     }
