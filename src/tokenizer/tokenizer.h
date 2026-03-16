@@ -39,4 +39,8 @@ void set_user_input(char *p);
 char *get_filename(void);
 void set_filename(char *name);
 
+// strict C11 モード（拡張機能の許可/禁止）
+bool get_strict_c11_mode(void);
+void set_strict_c11_mode(bool strict);
+
 #endif

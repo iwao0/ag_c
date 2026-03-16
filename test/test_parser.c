@@ -302,6 +302,18 @@ static void test_expr_string() {
   ASSERT_TRUE(strncmp(string_literals->str, "hello", 5) == 0);
 }
 
+static void test_expr_concat_string() {
+  printf("test_expr_concat_string...\n");
+  string_literals = NULL;
+  token = tokenize("\"he\" \"llo\"");
+  node_t *node = expr();
+
+  ASSERT_EQ(ND_STRING, node->kind);
+  ASSERT_TRUE(string_literals != NULL);
+  ASSERT_EQ(5, string_literals->len);
+  ASSERT_TRUE(strncmp(string_literals->str, "hello", 5) == 0);
+}
+
 static void test_type_decl() {
   printf("test_type_decl...\n");
   // int x = 5; → ND_ASSIGN
@@ -372,6 +384,7 @@ int main() {
   test_stmt_block();
   test_expr_deref_addr();
   test_expr_string();
+  test_expr_concat_string();
   test_expr_float();
   test_type_decl();
   test_multiple_funcdefs();

@@ -151,7 +151,7 @@ struct token_string_t {
 typedef struct token_num_t token_num_t;
 struct token_num_t {
   token_pp_t pp;
-  int val;         // 整数値
+  long long val;   // 整数値
   unsigned long long uval; // 整数値(符号なし)
   double fval;     // 浮動小数点値
   int is_float;    // 0=整数, 1=float, 2=double

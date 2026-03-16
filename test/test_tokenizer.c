@@ -245,7 +245,6 @@ static void test_tokenize_invalid() {
   expect_tokenize_fail("\"\\q\"");    // 不正エスケープ
   expect_tokenize_fail("''");         // 空の文字リテラル
   expect_tokenize_fail("'\\x'");      // 16進エスケープ不正
-  expect_tokenize_fail("'ab'");       // 複数文字
   expect_tokenize_fail("1.0f0");      // pp-number 連結
   expect_tokenize_fail("1..2");       // pp-number 連結
 }
@@ -599,6 +598,66 @@ static void test_tokenize_char_literal() {
   ASSERT_EQ(0, as_num(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
+
+  // マルチ文字文字定数（実装定義）
+  token = tokenize("'ab'");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(((unsigned char)'a' << 8) | (unsigned char)'b', as_num(token)->val);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 接頭辞付き文字定数
+  token = tokenize("L'A' u'B' U'\\u0043'");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ('A', as_num(token)->val);
+  token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ('B', as_num(token)->val);
+  token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ('C', as_num(token)->val);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
+static void test_tokenize_string_prefixes_and_ucn() {
+  printf("test_tokenize_string_prefixes_and_ucn...\n");
+  token = tokenize("L\"wide\" u\"u16\" U\"u32\" u8\"utf8\" \"\\u0041\"");
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(6, as_string(token)->len); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
+static void test_tokenize_ucn_ident_and_trigraph() {
+  printf("test_tokenize_ucn_ident_and_trigraph...\n");
+  token = tokenize("foo\\u0041 = 1;");
+  ASSERT_EQ(TK_IDENT, token->kind);
+  ASSERT_EQ(9, as_ident(token)->len);
+  token = token->next;
+  ASSERT_EQ(TK_ASSIGN, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  token = tokenize("?" "?=define X 1");
+  ASSERT_EQ(TK_HASH, token->kind);
+  token = token->next;
+  ASSERT_EQ(TK_IDENT, token->kind);
+}
+
+static void test_strict_c11_mode() {
+  printf("test_strict_c11_mode...\n");
+  set_strict_c11_mode(false);
+  token = tokenize("0b101");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, as_num(token)->val);
+
+  set_strict_c11_mode(true);
+  expect_tokenize_fail("0b101");
+  set_strict_c11_mode(false);
 }
 
 int main() {
@@ -614,13 +673,15 @@ int main() {
   test_tokenize_comments();
   test_tokenize_string();
   test_tokenize_char_literal();
+  test_tokenize_string_prefixes_and_ucn();
+  test_tokenize_ucn_ident_and_trigraph();
+  test_strict_c11_mode();
   test_at_eof();
   test_consume();
   test_consume_str();
   test_consume_ident();
   test_expect();
   test_expect_number();
-  test_tokenize_char_literal();
   test_tokenize_float_literal();
 
   printf("OK: All unit tests passed!\n");

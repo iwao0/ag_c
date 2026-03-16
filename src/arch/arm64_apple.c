@@ -100,7 +100,7 @@ static void gen_expr(node_t *node) {
         printf("  str d0, [sp, #-16]!\n");
       }
     } else {
-      printf("  mov x0, #%d\n", as_num(node)->val);
+      printf("  mov x0, #%lld\n", as_num(node)->val);
       printf("  str x0, [sp, #-16]!\n");
     }
     return;

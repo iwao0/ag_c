@@ -763,7 +763,7 @@ token_t *preprocess(token_t *tok) {
           const char *ts = token_text(tok, &tlen);
           if (tok->kind == TK_NUM) {
             token_num_t *num = as_num(tok);
-            fprintf(stderr, "%d", num->val);
+            fprintf(stderr, "%lld", num->val);
           } else if (ts && tlen > 0) {
             fprintf(stderr, "%.*s", tlen, ts);
           }

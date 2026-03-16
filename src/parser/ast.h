@@ -51,7 +51,7 @@ struct node_mem_t {
 typedef struct node_num_t node_num_t;
 struct node_num_t {
   node_t base;
-  int val;          // 整数値
+  long long val;    // 整数値
   double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
 };

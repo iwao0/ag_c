@@ -22,6 +22,7 @@ void set_user_input(char *p) {
 }
 
 static char *current_filename;
+static bool strict_c11_mode = false;
 
 char *get_filename(void) {
   return current_filename;
@@ -29,6 +30,61 @@ char *get_filename(void) {
 
 void set_filename(char *name) {
   current_filename = name;
+}
+
+bool get_strict_c11_mode(void) {
+  return strict_c11_mode;
+}
+
+void set_strict_c11_mode(bool strict) {
+  strict_c11_mode = strict;
+}
+
+static char trigraph_to_char(char c) {
+  switch (c) {
+    case '=': return '#';
+    case '(': return '[';
+    case '/': return '\\';
+    case ')': return ']';
+    case '\'': return '^';
+    case '<': return '{';
+    case '>': return '}';
+    case '!': return '|';
+    case '-': return '~';
+    default: return '\0';
+  }
+}
+
+// 翻訳フェーズ1: trigraph を置換する
+static char *replace_trigraphs(const char *in) {
+  size_t n = strlen(in);
+  char *out = calloc(n + 1, 1);
+  size_t i = 0;
+  size_t j = 0;
+
+  while (i < n) {
+    if (i + 2 < n && in[i] == '?' && in[i + 1] == '?') {
+      char mapped = trigraph_to_char(in[i + 2]);
+      if (mapped) {
+        out[j++] = mapped;
+        i += 3;
+        continue;
+      }
+    }
+    out[j++] = in[i++];
+  }
+  out[j] = '\0';
+  return out;
+}
+
+static bool starts_with_ucn(const char *p, int *len) {
+  if (p[0] != '\\' || (p[1] != 'u' && p[1] != 'U')) return false;
+  int digits = (p[1] == 'u') ? 4 : 8;
+  for (int i = 0; i < digits; i++) {
+    if (!isxdigit((unsigned char)p[2 + i])) return false;
+  }
+  *len = 2 + digits;
+  return true;
 }
 
 // エラー箇所を視覚的に表示する
@@ -302,7 +358,11 @@ int expect_number(void) {
   if (token->kind != TK_NUM) {
     error_tok(token, "数ではありません");
   }
-  int val = ((token_num_t *)token)->val;
+  long long n = ((token_num_t *)token)->val;
+  if (n < INT_MIN || n > INT_MAX) {
+    error_tok(token, "数値が int 範囲外です");
+  }
+  int val = (int)n;
   token = token->next;
   return val;
 }
@@ -352,7 +412,6 @@ static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no)
 
 static int read_escape_char(char **pp) {
   char *p = *pp;
-  int val;
   if (*p == 'a') { *pp = p + 1; return '\a'; }
   if (*p == 'b') { *pp = p + 1; return '\b'; }
   if (*p == 'f') { *pp = p + 1; return '\f'; }
@@ -380,6 +439,25 @@ static int read_escape_char(char **pp) {
     *pp = p;
     return (int)valx;
   }
+  if (*p == 'u' || *p == 'U') {
+    int digits = (*p == 'u') ? 4 : 8;
+    p++;
+    unsigned long val = 0;
+    for (int i = 0; i < digits; i++) {
+      if (!isxdigit((unsigned char)p[i])) {
+        error_at(p + i, "UCNエスケープが不正です");
+      }
+      int digit;
+      if ('0' <= p[i] && p[i] <= '9') digit = p[i] - '0';
+      else if ('a' <= p[i] && p[i] <= 'f') digit = p[i] - 'a' + 10;
+      else digit = p[i] - 'A' + 10;
+      val = val * 16 + (unsigned)digit;
+    }
+    if (val > 0x10FFFF) error_at(p, "UCNエスケープが不正です");
+    p += digits;
+    *pp = p;
+    return (int)(val & 0xFF);
+  }
   if (*p >= '0' && *p <= '7') {
     int cnt = 0;
     unsigned valo = 0;
@@ -393,9 +471,8 @@ static int read_escape_char(char **pp) {
     return (int)valo;
   }
   error_at(p, "不正なエスケープです");
-  val = *p;
   *pp = p + 1;
-  return val;
+  return (unsigned char)*p;
 }
 
 static void choose_int_type(token_num_t *num, unsigned long long val, bool is_decimal, bool has_u, int long_cnt) {
@@ -512,9 +589,53 @@ static unsigned long long parse_digits(char **pp, int base) {
   return val;
 }
 
+static long long token_signed_from_u64(unsigned long long uval) {
+  if (uval <= (unsigned long long)LLONG_MAX) return (long long)uval;
+  return (long long)(uval & (unsigned long long)LLONG_MAX);
+}
+
+static int string_prefix_len(const char *p) {
+  if (p[0] == 'u' && p[1] == '8' && p[2] == '"') return 2;
+  if ((p[0] == 'L' || p[0] == 'u' || p[0] == 'U') && p[1] == '"') return 1;
+  return 0;
+}
+
+static int char_prefix_len(const char *p) {
+  if ((p[0] == 'L' || p[0] == 'u' || p[0] == 'U') && p[1] == '\'') return 1;
+  return 0;
+}
+
+static bool is_ident_start(const char *p, int *adv) {
+  int ucn_len = 0;
+  if (isalpha((unsigned char)*p) || *p == '_') {
+    *adv = 1;
+    return true;
+  }
+  if (starts_with_ucn(p, &ucn_len)) {
+    *adv = ucn_len;
+    return true;
+  }
+  return false;
+}
+
+static bool is_ident_continue(const char *p, int *adv) {
+  int ucn_len = 0;
+  if (isalnum((unsigned char)*p) || *p == '_') {
+    *adv = 1;
+    return true;
+  }
+  if (starts_with_ucn(p, &ucn_len)) {
+    *adv = ucn_len;
+    return true;
+  }
+  return false;
+}
+
 // 文字列 p をトークナイズしてその結果へのポインタを返す
 token_t *tokenize(char *p) {
-  user_input = p;
+  char *normalized = replace_trigraphs(p);
+  user_input = normalized;
+  p = normalized;
   token_t head;
   head.next = NULL;
   token_t *cur = &head;
@@ -646,8 +767,10 @@ token_t *tokenize(char *p) {
       p += 2;
       continue;
     }
-    // 文字列リテラル
-    if (*p == '"') {
+    // 文字列リテラル（接頭辞 L/u/U/u8 を含む）
+    int str_prefix = string_prefix_len(p);
+    if (*p == '"' || str_prefix > 0) {
+      p += str_prefix;
       p++; // 開き引用符をスキップ
       char *start = p;
       while (true) {
@@ -671,9 +794,11 @@ token_t *tokenize(char *p) {
       continue;
     }
 
-    // 文字リテラル ('c')
-    if (*p == '\'') {
+    // 文字リテラル（接頭辞 L/u/U を含む、マルチ文字定数対応）
+    int chr_prefix = char_prefix_len(p);
+    if (*p == '\'' || chr_prefix > 0) {
       char *start = p;
+      p += chr_prefix;
       p++; // 開きクォートをスキップ
       if (*p == '\0' || *p == '\n') {
         error_at(p, "文字リテラルが閉じられていません");
@@ -681,24 +806,34 @@ token_t *tokenize(char *p) {
       if (*p == '\'') {
         error_at(p, "空の文字リテラルは使えません");
       }
-      int ch;
-      if (*p == '\\') {
-        p++;
-        ch = read_escape_char(&p);
-      } else {
-        ch = (unsigned char)*p;
-        p++;
+      unsigned long long ch = 0;
+      int nchar = 0;
+      while (*p && *p != '\'') {
+        int one = 0;
+        if (*p == '\\') {
+          p++;
+          one = read_escape_char(&p);
+        } else if (*p == '\n') {
+          error_at(p, "文字リテラルが不正です");
+        } else {
+          one = (unsigned char)*p;
+          p++;
+        }
+        ch = ((ch << 8) | (unsigned char)one) & 0xFFFFFFFFULL;
+        nchar++;
       }
-      if (*p != '\'') {
+      if (nchar == 0 || *p != '\'') {
         error_at(p, "文字リテラルが不正です");
       }
       p++; // 閉じクォートをスキップ
       int len = p - start;
       token_num_t *num = new_token_num(cur, start, len, line_no);
-      num->val = ch;
-      num->uval = (unsigned long long)(unsigned char)ch;
+      num->uval = ch;
+      num->val = (long long)ch;
       num->is_float = 0;
       num->int_base = 10;
+      num->is_unsigned = false;
+      num->int_size = 0;
       num->pp.base.at_bol = _at_bol;
       num->pp.base.has_space = _has_space;
       cur = (token_t *)num;
@@ -717,10 +852,12 @@ token_t *tokenize(char *p) {
 
     // 識別子またはキーワード (a〜z で始まる連続した英字)
     // 識別子・キーワード（英字または_で始まり、英数字または_が続く）
-    if (isalpha(*p) || *p == '_') {
+    int adv = 0;
+    if (is_ident_start(p, &adv)) {
       char *start = p;
-      while (isalnum(*p) || *p == '_')
-        p++;
+      p += adv;
+      while (is_ident_continue(p, &adv))
+        p += adv;
       int len = p - start;
 
       // キーワード判定
@@ -832,17 +969,20 @@ token_t *tokenize(char *p) {
           p += 2;
           unsigned long long val = parse_digits(&p, 16);
           num->uval = val;
-          num->val = (int)val;
+          num->val = token_signed_from_u64(val);
           num->is_float = 0;
           num->int_base = 16;
           parse_int_suffix(num, &p, val, false);
         }
       } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
+        if (strict_c11_mode) {
+          error_at(p, "2進数リテラルは strict C11 では未対応です");
+        }
         p += 2;
         if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
         unsigned long long val = parse_digits(&p, 2);
         num->uval = val;
-        num->val = (int)val;
+        num->val = token_signed_from_u64(val);
         num->is_float = 0;
         num->int_base = 2;
         parse_int_suffix(num, &p, val, false);
@@ -855,7 +995,7 @@ token_t *tokenize(char *p) {
           val = parse_digits(&p, 8);
         }
         num->uval = val;
-        num->val = (int)val;
+        num->val = token_signed_from_u64(val);
         num->is_float = 0;
         num->int_base = 8;
         parse_int_suffix(num, &p, val, false);
@@ -887,13 +1027,13 @@ token_t *tokenize(char *p) {
         } else {
           unsigned long long val = parse_digits(&p, 10);
           num->uval = val;
-          num->val = (int)val;
+          num->val = token_signed_from_u64(val);
           num->is_float = 0;
           num->int_base = 10;
           parse_int_suffix(num, &p, val, true);
         }
       }
-      if (*p == '.' || isalnum(*p) || *p == '_') {
+      if (*p == '.' || isalnum((unsigned char)*p) || *p == '_') {
         error_at(p, "数値リテラルが不正です");
       }
       num->len = p - start;

@@ -103,7 +103,7 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   return node;
 }
 
-static node_t *new_node_num(int val) {
+static node_t *new_node_num(long long val) {
   node_num_t *node = calloc(1, sizeof(node_num_t));
   node->base.kind = ND_NUM;
   node->val = val;
@@ -558,7 +558,23 @@ static node_t *primary(void) {
 
   // 文字列リテラル
   if (token->kind == TK_STRING) {
-    token_string_t *st = (token_string_t *)token;
+    int total_len = 0;
+    token_t *t = token;
+    while (t && t->kind == TK_STRING) {
+      token_string_t *st = (token_string_t *)t;
+      total_len += st->len;
+      t = t->next;
+    }
+
+    char *merged = calloc((size_t)total_len + 1, 1);
+    int off = 0;
+    while (token && token->kind == TK_STRING) {
+      token_string_t *st = (token_string_t *)token;
+      memcpy(merged + off, st->str, (size_t)st->len);
+      off += st->len;
+      token = token->next;
+    }
+
     node_string_t *node = calloc(1, sizeof(node_string_t));
     node->mem.base.kind = ND_STRING;
     // ラベルを生成
@@ -568,11 +584,10 @@ static node_t *primary(void) {
     // 文字列テーブルに登録
     string_lit_t *lit = calloc(1, sizeof(string_lit_t));
     lit->label = node->string_label;
-    lit->str = st->str;
-    lit->len = st->len;
+    lit->str = merged;
+    lit->len = total_len;
     lit->next = string_literals;
     string_literals = lit;
-    token = token->next;
     node->mem.type_size = 8; // ポインタとして8バイト
     node->mem.deref_size = 1; // 文字列は char* なので1バイト
     node->mem.base.is_float = 0; // 文字列はポインタなので整数
