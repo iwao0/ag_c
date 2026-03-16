@@ -37,18 +37,50 @@ args       = expr ("," expr)*
 | `TK_IDENT` | 識別子（英字/`_`で始まり英数字/`_`が続く） | `a`, `foo`, `x1`, `my_var` |
 | `TK_NUM` | 数値リテラル（整数/浮動小数） | `0`, `42`, `123`, `3.14`, `1.5f`, `0x2a`, `0b101`, `077`, `0x1.8p1` |
 | `TK_STRING` | 文字列リテラル | `"hello"` |
+| `TK_AUTO` | `auto` キーワード | `auto` |
+| `TK_BREAK` | `break` キーワード | `break` |
+| `TK_CASE` | `case` キーワード | `case` |
+| `TK_CONST` | `const` キーワード | `const` |
+| `TK_CONTINUE` | `continue` キーワード | `continue` |
+| `TK_DEFAULT` | `default` キーワード | `default` |
+| `TK_DO` | `do` キーワード | `do` |
+| `TK_ENUM` | `enum` キーワード | `enum` |
+| `TK_EXTERN` | `extern` キーワード | `extern` |
+| `TK_GOTO` | `goto` キーワード | `goto` |
 | `TK_IF` | `if` キーワード | `if` |
 | `TK_ELSE` | `else` キーワード | `else` |
 | `TK_WHILE` | `while` キーワード | `while` |
 | `TK_FOR` | `for` キーワード | `for` |
 | `TK_RETURN` | `return` キーワード | `return` |
+| `TK_INLINE` | `inline` キーワード | `inline` |
 | `TK_INT` | `int` キーワード | `int` |
+| `TK_REGISTER` | `register` キーワード | `register` |
+| `TK_RESTRICT` | `restrict` キーワード | `restrict` |
+| `TK_SIGNED` | `signed` キーワード | `signed` |
+| `TK_SIZEOF` | `sizeof` キーワード | `sizeof` |
+| `TK_STATIC` | `static` キーワード | `static` |
+| `TK_STRUCT` | `struct` キーワード | `struct` |
+| `TK_SWITCH` | `switch` キーワード | `switch` |
+| `TK_TYPEDEF` | `typedef` キーワード | `typedef` |
+| `TK_UNION` | `union` キーワード | `union` |
+| `TK_UNSIGNED` | `unsigned` キーワード | `unsigned` |
+| `TK_VOLATILE` | `volatile` キーワード | `volatile` |
 | `TK_CHAR` | `char` キーワード | `char` |
 | `TK_VOID` | `void` キーワード | `void` |
 | `TK_SHORT` | `short` キーワード | `short` |
 | `TK_LONG` | `long` キーワード | `long` |
 | `TK_FLOAT` | `float` キーワード | `float` |
 | `TK_DOUBLE` | `double` キーワード | `double` |
+| `TK_ALIGNAS` | `_Alignas` キーワード | `_Alignas` |
+| `TK_ALIGNOF` | `_Alignof` キーワード | `_Alignof` |
+| `TK_ATOMIC` | `_Atomic` キーワード | `_Atomic` |
+| `TK_BOOL` | `_Bool` キーワード | `_Bool` |
+| `TK_COMPLEX` | `_Complex` キーワード | `_Complex` |
+| `TK_GENERIC` | `_Generic` キーワード | `_Generic` |
+| `TK_IMAGINARY` | `_Imaginary` キーワード | `_Imaginary` |
+| `TK_NORETURN` | `_Noreturn` キーワード | `_Noreturn` |
+| `TK_STATIC_ASSERT` | `_Static_assert` キーワード | `_Static_assert` |
+| `TK_THREAD_LOCAL` | `_Thread_local` キーワード | `_Thread_local` |
 | `TK_LPAREN` | `(` | `(` |
 | `TK_RPAREN` | `)` | `)` |
 | `TK_LBRACE` | `{` | `{` |
@@ -98,55 +130,6 @@ args       = expr ("," expr)*
 | `TK_HASHHASH` | `##` | `##` |
 | `TK_DOT` | `.` | `.` |
 
-### キーワード一覧 (C11)
-
-| トークン種別 | キーワード |
-|---|---|
-| `TK_IF` | `if` |
-| `TK_ELSE` | `else` |
-| `TK_WHILE` | `while` |
-| `TK_FOR` | `for` |
-| `TK_RETURN` | `return` |
-| `TK_AUTO` | `auto` |
-| `TK_BREAK` | `break` |
-| `TK_CASE` | `case` |
-| `TK_CONST` | `const` |
-| `TK_CONTINUE` | `continue` |
-| `TK_DEFAULT` | `default` |
-| `TK_DO` | `do` |
-| `TK_ENUM` | `enum` |
-| `TK_EXTERN` | `extern` |
-| `TK_GOTO` | `goto` |
-| `TK_INLINE` | `inline` |
-| `TK_INT` | `int` |
-| `TK_REGISTER` | `register` |
-| `TK_RESTRICT` | `restrict` |
-| `TK_SIGNED` | `signed` |
-| `TK_SIZEOF` | `sizeof` |
-| `TK_STATIC` | `static` |
-| `TK_STRUCT` | `struct` |
-| `TK_SWITCH` | `switch` |
-| `TK_TYPEDEF` | `typedef` |
-| `TK_UNION` | `union` |
-| `TK_UNSIGNED` | `unsigned` |
-| `TK_VOLATILE` | `volatile` |
-| `TK_CHAR` | `char` |
-| `TK_VOID` | `void` |
-| `TK_SHORT` | `short` |
-| `TK_LONG` | `long` |
-| `TK_FLOAT` | `float` |
-| `TK_DOUBLE` | `double` |
-| `TK_ALIGNAS` | `_Alignas` |
-| `TK_ALIGNOF` | `_Alignof` |
-| `TK_ATOMIC` | `_Atomic` |
-| `TK_BOOL` | `_Bool` |
-| `TK_COMPLEX` | `_Complex` |
-| `TK_GENERIC` | `_Generic` |
-| `TK_IMAGINARY` | `_Imaginary` |
-| `TK_NORETURN` | `_Noreturn` |
-| `TK_STATIC_ASSERT` | `_Static_assert` |
-| `TK_THREAD_LOCAL` | `_Thread_local` |
-
 ### ASTノード種別
 
 | ノード種別 | 説明 |
@@ -183,3 +166,22 @@ args       = expr ("," expr)*
 - ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`）
 - ~~文字列リテラル~~ → **実装済み**（`char *s = "..."`、添字アクセス `s[i]` 対応済み）
 - プリプロセッサ (`#include`, `#define`)
+
+## 2026-03 C11準拠強化（Tokenizer/Parser）
+
+- 文字定数:
+  - マルチ文字文字定数（例: `'ab'`）を受理
+  - 接頭辞付き文字定数 `L'c'`, `u'c'`, `U'c'` を受理
+- 文字列リテラル:
+  - 接頭辞付き文字列 `L"..."`, `u"..."`, `U"..."`, `u8"..."` を受理
+  - 隣接文字列リテラル連結（`"a" "b"`）を Parser 側で連結
+- Universal Character Name:
+  - `\uXXXX`, `\UXXXXXXXX` を識別子・文字列/文字定数のエスケープで受理
+- トライグラフ:
+  - `??=` などのトライグラフ置換を前処理として実行
+- 数値リテラル:
+  - `token_num_t.val` / `node_num_t.val` を `long long` 化し、`int` への早期切り詰めを回避
+  - `0b...` は拡張として維持し、`strict C11` モード時は拒否
+
+> [!NOTE]
+> 現在の実装ではトライグラフ置換は常時有効です。`strict C11` モードは `0b...` の受理可否に適用されています。
