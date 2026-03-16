@@ -17,6 +17,7 @@ typedef enum {
   ND_LVAR,   // ローカル変数
   ND_IF,     // if
   ND_WHILE,  // while
+  ND_DO_WHILE, // do ... while
   ND_FOR,    // for
   ND_RETURN,  // return
   ND_BLOCK,   // { ... }

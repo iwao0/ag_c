@@ -303,6 +303,7 @@ static node_t *declaration(void) {
 // stmt = "{" stmt* "}"
 //      | "if" "(" expr ")" stmt ("else" stmt)?
 //      | "while" "(" expr ")" stmt
+//      | "do" stmt "while" "(" expr ")" ";"
 //      | "for" "(" expr? ";" expr? ";" expr? ")" stmt
 //      | "return" expr ";"
 //      | "int" ident ("=" expr)? ";"
@@ -363,6 +364,22 @@ static node_t *stmt(void) {
     node->base.lhs = expr();  // 条件式
     tk_expect(')');
     node->base.rhs = stmt();  // ループ本体
+    return (node_t *)node;
+  }
+
+  if (token->kind == TK_DO) {
+    token = token->next;
+    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node->base.kind = ND_DO_WHILE;
+    node->base.rhs = stmt();  // ループ本体
+    if (token->kind != TK_WHILE) {
+      tk_error_tok(token, "'while'が必要です");
+    }
+    token = token->next;
+    tk_expect('(');
+    node->base.lhs = expr();  // 条件式
+    tk_expect(')');
+    tk_expect(';');
     return (node_t *)node;
   }
 

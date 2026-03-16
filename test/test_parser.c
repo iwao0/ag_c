@@ -286,6 +286,17 @@ static void test_stmt_while() {
   ASSERT_EQ(2, as_num(wh->rhs)->val);   // ループ本体
 }
 
+static void test_stmt_do_while() {
+  printf("test_stmt_do_while...\n");
+  token = tk_tokenize("main() { do a=a+1; while (a<3); }");
+  program();
+  node_t *dw = as_block(as_func(code[0])->base.rhs)->body[0];
+
+  ASSERT_EQ(ND_DO_WHILE, dw->kind);
+  ASSERT_EQ(ND_ASSIGN, dw->rhs->kind);  // 本体: a=a+1
+  ASSERT_EQ(ND_LT, dw->lhs->kind);      // 条件: a<3
+}
+
 static void test_stmt_for() {
   printf("test_stmt_for...\n");
   token = tk_tokenize("main() { for (a=0; a<10; a=a+1) a; }");
@@ -444,6 +455,7 @@ int main() {
   test_stmt_if();
   test_stmt_if_else();
   test_stmt_while();
+  test_stmt_do_while();
   test_stmt_for();
   test_stmt_for_with_decl_init();
   test_stmt_return();

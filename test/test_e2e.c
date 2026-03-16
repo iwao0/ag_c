@@ -72,6 +72,8 @@ static const test_case_t test_cases[] = {
 
     {"while", "count", CASE_INT, "main() { a=0; while (a<10) a=a+1; return a; }", 10, 0},
     {"while", "zero", CASE_INT, "main() { a=0; while (0) a=a+1; return a; }", 0, 0},
+    {"while", "do_once", CASE_INT, "main() { a=0; do a=a+1; while (0); return a; }", 1, 0},
+    {"while", "do_loop", CASE_INT, "main() { a=0; do a=a+1; while (a<5); return a; }", 5, 0},
 
     {"for", "sum10", CASE_INT, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; return b; }", 55, 0},
     {"for", "inc", CASE_INT, "main() { a=0; for (a=0; a<10; a=a+1) a; return a; }", 10, 0},

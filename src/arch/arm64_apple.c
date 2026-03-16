@@ -383,6 +383,17 @@ static void gen_stmt(node_t *node) {
     printf(".Lend%d:\n", lbl);
     return;
   }
+  case ND_DO_WHILE: {
+    node_ctrl_t *ctrl = as_ctrl(node);
+    int lbl = label_count++;
+    printf(".Lbegin%d:\n", lbl);
+    gen_stmt(ctrl->base.rhs);
+    gen_expr(ctrl->base.lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbnz x0, .Lbegin%d\n", lbl);
+    printf(".Lend%d:\n", lbl);
+    return;
+  }
   case ND_FOR: {
     node_ctrl_t *ctrl = as_ctrl(node);
     int lbl = label_count++;
