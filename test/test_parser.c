@@ -66,7 +66,7 @@ static void test_expr_long_double_suffix_metadata() {
   node_t *node = expr();
 
   ASSERT_EQ(ND_NUM, node->kind);
-  ASSERT_EQ(2, node->is_float); // 現状は double 扱い
+  ASSERT_EQ(3, node->is_float); // long double (codegenでは現状double経路へlowering)
   ASSERT_EQ(2, as_num(node)->float_suffix_kind);
   ASSERT_TRUE(as_num(node)->fval > 3.9 && as_num(node)->fval < 4.1);
 

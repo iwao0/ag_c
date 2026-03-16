@@ -192,7 +192,7 @@ args       = expr ("," expr)*
 > これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
 > 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
 > 接頭辞付きマルチ文字定数は、現実装では 8-bit 単位で左シフトしながら畳み込む実装定義規則で値を形成します。
-> `l/L` 付き浮動小数点はサフィックス情報を保持しますが、現時点の意味処理/Codegenは double 経路を使用します。
+> `l/L` 付き浮動小数点は `is_float=3`（long double）として意味分類します。現時点のCodegenは double 経路へ lowering します。
 
 ## 2026-03 Tokenizer最適化メモ
 

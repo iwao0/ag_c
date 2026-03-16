@@ -52,10 +52,10 @@ static void gen_pop_fpu(int target_type, int child_type, int reg_idx) {
   
   if (child_type == 1) {       // float がプッシュされている
     printf("  ldr %s, [sp], #16\n", s);
-    if (target_type == 2) {
+    if (target_type >= 2) {
       printf("  fcvt %s, %s\n", d, s); // float -> double
     }
-  } else if (child_type == 2) { // double がプッシュされている
+  } else if (child_type >= 2) { // double/long double(現状lowering) がプッシュされている
     printf("  ldr %s, [sp], #16\n", d);
     if (target_type == 1) {
       printf("  fcvt %s, %s\n", s, d); // double -> float
@@ -111,7 +111,7 @@ static void gen_expr(node_t *node) {
     if (node->is_float == 1) {
       printf("  ldr s0, [x0]\n");
       printf("  str s0, [sp, #-16]!\n");
-    } else if (node->is_float == 2) {
+    } else if (node->is_float >= 2) {
       printf("  ldr d0, [x0]\n");
       printf("  str d0, [sp, #-16]!\n");
     } else {
@@ -157,8 +157,8 @@ static void gen_expr(node_t *node) {
       printf("  ldr x0, [sp], #16\n"); // lhs アドレス
       printf("  str s0, [x0]\n");
       printf("  str s0, [sp, #-16]!\n");
-    } else if (node->is_float == 2) {
-      // double 代入
+    } else if (node->is_float >= 2) {
+      // double/long double(現状lowering) 代入
       gen_pop_fpu(2, node->rhs->is_float, 0); // d0 に rhs をロード
       printf("  ldr x0, [sp], #16\n"); // lhs アドレス
       printf("  str d0, [x0]\n");
@@ -309,13 +309,13 @@ static void gen_stmt(node_t *node) {
     gen_expr(node->lhs);
     if (node->is_float == 1) {             // 関数の戻り値が float
       gen_pop_fpu(1, node->lhs->is_float, 0); // s0 にロード
-    } else if (node->is_float == 2) {      // 関数の戻り値が double
+    } else if (node->is_float >= 2) {      // 関数の戻り値が double/long double(現状lowering)
       gen_pop_fpu(2, node->lhs->is_float, 0); // d0 にロード
     } else {                               // 関数の戻り値が 整数
       if (node->lhs->is_float == 1) {
         printf("  ldr s0, [sp], #16\n");
         printf("  fcvtzs x0, s0\n");       // float->int
-      } else if (node->lhs->is_float == 2) {
+      } else if (node->lhs->is_float >= 2) {
         printf("  ldr d0, [sp], #16\n");
         printf("  fcvtzs x0, d0\n");       // double->int
       } else {
@@ -457,7 +457,7 @@ void gen_float_literals(void) {
       printf("  .word %u\n", u.i);
     } else {
       // double (64bit) 定数出力。
-      // note: float_suffix_kind==2 (long double suffix) is currently lowered to double.
+      // note: long double is currently lowered to double in codegen.
       union { double d; uint64_t i; } u = { .d = lit->fval };
       printf("  .quad %llu\n", (unsigned long long)u.i);
     }

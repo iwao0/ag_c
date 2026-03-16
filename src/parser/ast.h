@@ -36,7 +36,7 @@ struct node_t {
   node_t *rhs;      // 右辺 / then節 / ループ本体
 
   // データ型判定用（演算結果の型）
-  int is_float;     // 0=整数, 1=float, 2=double
+  int is_float;     // 0=整数, 1=float, 2=double, 3=long double
 };
 
 // メモリ参照系ノード（型サイズ情報）

@@ -570,7 +570,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
         num->float_suffix_kind = 1;
         end++;
       } else if (*end == 'l' || *end == 'L') {
-        num->is_float = 2;
+        num->is_float = 3;
         num->float_suffix_kind = 2;
         end++;
       } else {
@@ -631,8 +631,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
         num->float_suffix_kind = 1;
         end++;
       } else if (*end == 'l' || *end == 'L') {
-        // long double suffix is preserved in metadata; current semantic/codegen path uses double.
-        num->is_float = 2;
+        num->is_float = 3; // long double (backendでは現状double経路へlowering)
         num->float_suffix_kind = 2;
         end++;
       } else {

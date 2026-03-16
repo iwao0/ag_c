@@ -161,7 +161,7 @@ struct token_num_t {
   double fval;             // 浮動小数点値
   char *str;               // 元の文字列
   int len;                 // 元の文字列長
-  uint8_t is_float;        // 0=整数, 1=float, 2=double
+  uint8_t is_float;        // 0=整数, 1=float, 2=double, 3=long double
   uint8_t float_suffix_kind; // 0=none, 1=f/F, 2=l/L
   bool is_unsigned;        // 整数サフィックス: unsigned
   uint8_t int_size;        // 0=int, 1=long, 2=long long

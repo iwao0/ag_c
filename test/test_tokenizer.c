@@ -516,13 +516,13 @@ static void test_tokenize_float_literal() {
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->is_float); // long double は現状 double 扱い
+  ASSERT_EQ(3, as_num(token)->is_float); // long double
   ASSERT_EQ(2, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->is_float); // hex float + L suffix
+  ASSERT_EQ(3, as_num(token)->is_float); // hex float + L suffix
   ASSERT_EQ(2, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;

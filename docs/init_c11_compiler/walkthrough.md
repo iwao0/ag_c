@@ -43,7 +43,7 @@
    - トライグラフ置換は字句解析の先頭で実行するよう整理し、翻訳フェーズ順序との整合を明文化しました。
    - `config.toml`（`[tokenizer]`）から `strict_c11` / `enable_trigraphs` / `enable_binary_literals` を切り替え可能にしました。
    - 浮動小数点サフィックス情報を `token_num_t.float_suffix_kind` として保持し、Parser/AST/Codegenへ伝搬するようにしました。
-   - `l/L` サフィックス（long double）はメタデータ保持のうえ、現時点では double 経路で扱う方針を明文化しました。
+   - `l/L` サフィックス（long double）は `is_float=3` として分類し、Codegen は現時点で double 経路へ lowering する方針を明文化しました。
    - 接頭辞付きマルチ文字定数（`L/u/U`）を実装定義として受理するように更新しました。
 
 7. **Tokenizer最適化（メンテナンス性重視）**

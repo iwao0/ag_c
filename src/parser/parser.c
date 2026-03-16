@@ -51,7 +51,7 @@ struct lvar_t {
   int size;      // サイズ（スカラー=8、配列=要素数*elem_size）
   int elem_size;   // 要素サイズ（1=char, 8=int/pointer）
   int is_array;  // 配列かどうか
-  int is_float;  // 0=整数, 1=float, 2=double
+  int is_float;  // 0=整数, 1=float, 2=double, 3=long double
 };
 
 // ローカル変数テーブル（関数ごとにリセット）
@@ -92,7 +92,7 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node->kind = kind;
   node->lhs = lhs;
   node->rhs = rhs;
-  // 左辺と右辺から is_float を伝播 (double優先)
+  // 左辺と右辺から is_float を伝播 (より広い浮動小数点種別を優先)
   if (lhs && lhs->is_float) node->is_float = lhs->is_float;
   if (rhs && rhs->is_float > node->is_float) node->is_float = rhs->is_float;
 
@@ -172,7 +172,7 @@ static bool consume_type(void) {
   return consume_type_kind() != TK_EOF;
 }
 
-static int current_func_ret_type = 0; // 0=int, 1=float, 2=double
+static int current_func_ret_type = 0; // 0=int, 1=float, 2=double, 3=long double
 
 // funcdef = "int"? ident "(" params? ")" "{" stmt* "}"
 // params  = "int"? ident ("," "int"? ident)*

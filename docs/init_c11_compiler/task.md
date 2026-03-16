@@ -265,7 +265,7 @@
   - [x] `0b...` は拡張としてデフォルト許可、strict時のみ拒否
 - [x] 浮動小数点サフィックス情報をトークンに保持する
   - [x] `f/F` と `l/L` を `token_num_t` に保持する
-  - [x] Parser/Codegenで `long double` 扱い方針を決める（現状はdouble扱い）
+  - [x] Parserで `long double` を `is_float=3` として扱い、Codegenは現状double経路へ lowering する方針を適用する
 - [x] 接頭辞付き文字定数のマルチ文字扱いをC11寄りに整理する
   - [x] `L/u/U` 付きで複数 `c-char` をどう扱うか方針化する
   - [x] 方針に合わせてTokenizer実装と異常系テストを更新する

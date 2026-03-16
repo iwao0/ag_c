@@ -85,7 +85,7 @@ TDD用の自動テストスクリプトです。
   - `config.toml` の `[tokenizer]` で `strict_c11` / `enable_trigraphs` / `enable_binary_literals` を切替可能
   - トライグラフ置換は字句解析の先頭で実行し、翻訳フェーズ順序と整合
   - strict C11 はデフォルトOFFを維持
-  - 浮動小数点サフィックス種別を保持（`float_suffix_kind`）し、`l/L` は現時点で double 経路へ降格
+  - 浮動小数点サフィックス種別を保持（`float_suffix_kind`）し、`l/L` は `is_float=3` として分類（Codegenは現時点で double 経路へ lowering）
 
 ### 追加テスト観点
 
