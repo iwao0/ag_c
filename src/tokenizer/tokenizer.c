@@ -514,6 +514,7 @@ static bool try_parse_decimal_int_fast(char **pp, token_num_t *num) {
   num->uval = val;
   num->val = token_signed_from_u64(val);
   num->is_float = 0;
+  num->float_suffix_kind = 0;
   num->int_base = 10;
   if (*p == 'u' || *p == 'U' || *p == 'l' || *p == 'L') {
     parse_int_suffix(num, &p, val, true);
@@ -559,12 +560,15 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       if (end == p) error_at(p, "16進浮動小数点リテラルが不正です");
       if (*end == 'f' || *end == 'F') {
         num->is_float = 1;
+        num->float_suffix_kind = 1;
         end++;
       } else if (*end == 'l' || *end == 'L') {
         num->is_float = 2;
+        num->float_suffix_kind = 2;
         end++;
       } else {
         num->is_float = 2;
+        num->float_suffix_kind = 0;
       }
       if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
       p = end;
@@ -574,6 +578,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       num->uval = val;
       num->val = token_signed_from_u64(val);
       num->is_float = 0;
+      num->float_suffix_kind = 0;
       num->int_base = 16;
       parse_int_suffix(num, &p, val, false);
     }
@@ -587,6 +592,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     num->uval = val;
     num->val = token_signed_from_u64(val);
     num->is_float = 0;
+    num->float_suffix_kind = 0;
     num->int_base = 2;
     parse_int_suffix(num, &p, val, false);
   } else if (*p == '0' && tk_is_digit(p[1])) {
@@ -600,6 +606,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     num->uval = val;
     num->val = token_signed_from_u64(val);
     num->is_float = 0;
+    num->float_suffix_kind = 0;
     num->int_base = 8;
     parse_int_suffix(num, &p, val, false);
   } else {
@@ -613,12 +620,15 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       num->fval = strtod(p, &end);
       if (*end == 'f' || *end == 'F') {
         num->is_float = 1; // float
+        num->float_suffix_kind = 1;
         end++;
       } else if (*end == 'l' || *end == 'L') {
         num->is_float = 2; // long double は未対応だが double 扱い
+        num->float_suffix_kind = 2;
         end++;
       } else {
         num->is_float = 2; // デフォルトは double
+        num->float_suffix_kind = 0;
       }
       if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
       p = end;
@@ -627,6 +637,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       num->uval = val;
       num->val = token_signed_from_u64(val);
       num->is_float = 0;
+      num->float_suffix_kind = 0;
       num->int_base = 10;
       parse_int_suffix(num, &p, val, true);
     }
@@ -792,6 +803,7 @@ token_t *tokenize(char *p) {
       num->uval = ch;
       num->val = (long long)ch;
       num->is_float = 0;
+      num->float_suffix_kind = 0;
       num->int_base = 10;
       num->is_unsigned = false;
       num->int_size = 0;

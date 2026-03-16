@@ -157,6 +157,7 @@ static token_t *copy_token(token_t *tok) {
       dst->uval = src->uval;
       dst->fval = src->fval;
       dst->is_float = src->is_float;
+      dst->float_suffix_kind = src->float_suffix_kind;
       dst->is_unsigned = src->is_unsigned;
       dst->int_size = src->int_size;
       dst->int_base = src->int_base;

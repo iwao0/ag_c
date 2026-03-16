@@ -483,30 +483,41 @@ static void test_tokenize_string() {
 // 1g. 浮動小数点リテラルのテスト
 static void test_tokenize_float_literal() {
   printf("test_tokenize_float_literal...\n");
-  token = tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f");
+  token = tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f 4.0L");
   
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->is_float); // デフォルトは double
+  ASSERT_EQ(0, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.13 && as_num(token)->fval < 3.15);
   token = token->next;
   
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(1, as_num(token)->is_float); // 'f' suffix なので float
+  ASSERT_EQ(1, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 1.49 && as_num(token)->fval < 1.51);
   token = token->next;
   
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->is_float); // 指数表現
+  ASSERT_EQ(0, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 0.0019 && as_num(token)->fval < 0.0021);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->is_float); // 16進浮動小数点
+  ASSERT_EQ(0, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 2.9 && as_num(token)->fval < 3.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(1, as_num(token)->is_float); // 16進浮動小数点 + f
+  ASSERT_EQ(1, as_num(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(2, as_num(token)->is_float); // long double は現状 double 扱い
+  ASSERT_EQ(2, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;
   

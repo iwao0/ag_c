@@ -162,6 +162,7 @@ struct token_num_t {
   char *str;               // 元の文字列
   int len;                 // 元の文字列長
   uint8_t is_float;        // 0=整数, 1=float, 2=double
+  uint8_t float_suffix_kind; // 0=none, 1=f/F, 2=l/L
   bool is_unsigned;        // 整数サフィックス: unsigned
   uint8_t int_size;        // 0=int, 1=long, 2=long long
   uint8_t int_base;        // 2, 8, 10, 16

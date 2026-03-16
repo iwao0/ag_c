@@ -220,6 +220,15 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - Next priority:
   - shift effort to feature work (Parser/Preprocessor enhancements).
 
+## C11 Gap Follow-up (Tokenizer)
+
+- strict mode policy:
+  - keep strict C11 **disabled by default** (binary literals remain extension by default).
+- implemented:
+  - tokenizer now preserves floating suffix kind in `token_num_t.float_suffix_kind` (`0=none, 1=f/F, 2=l/L`).
+- remaining:
+  - semantic handling of `long double` outside tokenizer remains TODO (currently treated as double path).
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
