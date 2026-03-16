@@ -344,6 +344,10 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { if (1) return 1; else }"); // else ブロック不正
   expect_parse_fail("main() { int ; return 0; }");       // 変数名なし
   expect_parse_fail("main() { int a[; return 0; }");     // 配列サイズ不正
+  expect_parse_fail("main() { int a[1 return 0; }");     // ']' がない
+  expect_parse_fail("main() { return (1+2; }");          // ')' がない
+  expect_parse_fail("main() { if 1) return 0; }");       // '(' がない
+  expect_parse_fail("main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
 }
 
 int main() {

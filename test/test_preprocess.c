@@ -124,6 +124,13 @@ int main() {
   expect_preprocess_fail("#undef\nint main() { return 0; }\n");
   expect_preprocess_fail("#if defined(\nint main() { return 0; }\n#endif\n");
   expect_preprocess_fail("#if defined(FOO\nint main() { return 0; }\n#endif\n");
+  expect_preprocess_fail("#if defined()\nint main() { return 0; }\n#endif\n");
+  expect_preprocess_fail("#define FOO(1) 1\nint main() { return FOO(1); }\n");
+  expect_preprocess_fail("#define FOO(a, 1) 1\nint main() { return FOO(1); }\n");
+  expect_preprocess_fail("#include <stdio.h\nint main() { return 0; }\n");
+  expect_preprocess_fail("#include \"build/not_found.h\"\nint main() { return 0; }\n");
+  expect_preprocess_fail("#define FOO(x) x\nint main() { return FOO(1; }\n"); // ')' missing
+  expect_preprocess_fail("#error \"forced\"\nint main() { return 0; }\n");
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;
