@@ -198,6 +198,18 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - Decision:
   - keep this change (passes continue gate).
 
+## Phase2 Decision Check
+
+- Current gate run:
+  - mixed: `21,749,540`
+  - ident: `13,241,342`
+  - numeric: `14,316,206`
+  - punct: `37,199,704`
+  - corpus: `19,643,290` (current corpus size `211,833 bytes`)
+- Continue/stop heuristic result:
+  - Recent two accepted steps were not within ±2% improvement band, so "stop now" condition was **not** triggered.
+  - Continue with low-risk-only optimization policy.
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
