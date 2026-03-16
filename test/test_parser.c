@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <string.h>
 
 #include "test_common.h"
@@ -17,6 +19,22 @@ static node_func_t *as_func(node_t *n) { return (node_func_t *)n; }
 static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
+
+static void expect_parse_fail(const char *input) {
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    token = tokenize((char *)input);
+    program();
+    _exit(0);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+}
 
 static void test_expr_number() {
   printf("test_expr_number...\n");
@@ -318,6 +336,16 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(code[2] == NULL);
 }
 
+static void test_parse_invalid() {
+  printf("test_parse_invalid...\n");
+  expect_parse_fail("main( { return 0; }");     // ')' がない
+  expect_parse_fail("main() { return 0; ");     // '}' がない
+  expect_parse_fail("main() { return 0 }");     // ';' がない
+  expect_parse_fail("main() { if (1) return 1; else }"); // else ブロック不正
+  expect_parse_fail("main() { int ; return 0; }");       // 変数名なし
+  expect_parse_fail("main() { int a[; return 0; }");     // 配列サイズ不正
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
@@ -343,6 +371,7 @@ int main() {
   test_expr_float();
   test_type_decl();
   test_multiple_funcdefs();
+  test_parse_invalid();
 
   printf("OK: All unit tests passed!\n");
   return 0;

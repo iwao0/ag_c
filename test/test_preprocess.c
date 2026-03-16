@@ -46,6 +46,23 @@ static void assert_result(int expected, const char *input) {
   }
 }
 
+static void expect_preprocess_fail(const char *input) {
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    _exit(1);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) {
+    fprintf(stderr, "  FAIL: expected preprocess error\n  input: %s\n", input);
+    exit(1);
+  }
+}
+
 int main() {
   printf("Running Preprocessor tests...\n");
 
@@ -97,6 +114,16 @@ int main() {
 
   // Token pasting test
   assert_result(42, "#define PASTE(a, b) a ## b\nint main() { int var123 = 42; return PASTE(var, 123); }");
+
+  // Invalid directives / malformed preprocessor usage
+  expect_preprocess_fail("#else\nint main() { return 0; }\n");
+  expect_preprocess_fail("#endif\nint main() { return 0; }\n");
+  expect_preprocess_fail("#elif 1\nint main() { return 0; }\n");
+  expect_preprocess_fail("#if 1\n#else\n#else\n#endif\nint main() { return 0; }\n");
+  expect_preprocess_fail("#define\nint main() { return 0; }\n");
+  expect_preprocess_fail("#undef\nint main() { return 0; }\n");
+  expect_preprocess_fail("#if defined(\nint main() { return 0; }\n#endif\n");
+  expect_preprocess_fail("#if defined(FOO\nint main() { return 0; }\n#endif\n");
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;
