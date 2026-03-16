@@ -81,6 +81,8 @@ TDD用の自動テストスクリプトです。
   - `??=` などのトライグラフ置換を導入
 - 方針明確化:
   - `0b...` は拡張として維持し、`strict C11` モード時は拒否
+  - `config.toml` の `[tokenizer]` で `strict_c11` / `enable_trigraphs` / `enable_binary_literals` を切替可能
+  - トライグラフ置換は字句解析の先頭で実行し、翻訳フェーズ順序と整合
 
 ### 追加テスト観点
 

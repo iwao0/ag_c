@@ -184,4 +184,6 @@ args       = expr ("," expr)*
   - `0b...` は拡張として維持し、`strict C11` モード時は拒否
 
 > [!NOTE]
-> 現在の実装ではトライグラフ置換は常時有効です。`strict C11` モードは `0b...` の受理可否に適用されています。
+> 現在の実装では、字句解析の先頭でトライグラフ置換を行い、その後にトークナイズを行います（翻訳フェーズ順序との整合）。
+> `0b...` はデフォルトで拡張として許可し、`strict C11 = true` または `enable_binary_literals = false` で拒否されます。
+> これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
