@@ -123,69 +123,69 @@ static void assert_result_double(double expected, const char *input) {
 
 static void test_integer() {
   printf("test_integer...\n");
-  assert_result(0, "main() { 0; }");
-  assert_result(42, "main() { 42; }");
+  assert_result(0, "main() { return 0; }");
+  assert_result(42, "main() { return 42; }");
 }
 
 static void test_arithmetic() {
   printf("test_arithmetic...\n");
-  assert_result(21, "main() { 5+20-4; }");
-  assert_result(41, "main() { 12 + 34 - 5 ; }");
-  assert_result(47, "main() { 5+6*7; }");
-  assert_result(15, "main() { 5*(9-6); }");
-  assert_result(4, "main() { (3+5)/2; }");
+  assert_result(21, "main() { return 5+20-4; }");
+  assert_result(41, "main() { return 12 + 34 - 5 ; }");
+  assert_result(47, "main() { return 5+6*7; }");
+  assert_result(15, "main() { return 5*(9-6); }");
+  assert_result(4, "main() { return (3+5)/2; }");
 }
 
 static void test_comparison() {
   printf("test_comparison...\n");
-  assert_result(1, "main() { 0==0; }");
-  assert_result(0, "main() { 42==0; }");
-  assert_result(1, "main() { 0!=1; }");
-  assert_result(0, "main() { 42!=42; }");
-  assert_result(1, "main() { 0<1; }");
-  assert_result(0, "main() { 1<1; }");
-  assert_result(0, "main() { 2<1; }");
-  assert_result(1, "main() { 0<=1; }");
-  assert_result(1, "main() { 1<=1; }");
-  assert_result(0, "main() { 2<=1; }");
-  assert_result(1, "main() { 1>0; }");
-  assert_result(0, "main() { 1>1; }");
-  assert_result(0, "main() { 1>2; }");
-  assert_result(1, "main() { 1>=0; }");
-  assert_result(1, "main() { 1>=1; }");
-  assert_result(0, "main() { 1>=2; }");
+  assert_result(1, "main() { return 0==0; }");
+  assert_result(0, "main() { return 42==0; }");
+  assert_result(1, "main() { return 0!=1; }");
+  assert_result(0, "main() { return 42!=42; }");
+  assert_result(1, "main() { return 0<1; }");
+  assert_result(0, "main() { return 1<1; }");
+  assert_result(0, "main() { return 2<1; }");
+  assert_result(1, "main() { return 0<=1; }");
+  assert_result(1, "main() { return 1<=1; }");
+  assert_result(0, "main() { return 2<=1; }");
+  assert_result(1, "main() { return 1>0; }");
+  assert_result(0, "main() { return 1>1; }");
+  assert_result(0, "main() { return 1>2; }");
+  assert_result(1, "main() { return 1>=0; }");
+  assert_result(1, "main() { return 1>=1; }");
+  assert_result(0, "main() { return 1>=2; }");
 }
 
 static void test_local_variables() {
   printf("test_local_variables...\n");
-  assert_result(3, "main() { a=3; a; }");
-  assert_result(14, "main() { a=3; b=5*6-8; a+b/2; }");
-  assert_result(6, "main() { a=1; b=2; c=3; a+b+c; }");
-  assert_result(10, "main() { a=5; a*2; }");
-  assert_result(1, "main() { a=1; b=a; b; }");
+  assert_result(3, "main() { a=3; return a; }");
+  assert_result(14, "main() { a=3; b=5*6-8; return a+b/2; }");
+  assert_result(6, "main() { a=1; b=2; c=3; return a+b+c; }");
+  assert_result(10, "main() { a=5; return a*2; }");
+  assert_result(1, "main() { a=1; b=a; return b; }");
 }
 
 static void test_if_else() {
   printf("test_if_else...\n");
-  assert_result(3, "main() { a=3; if (a==3) a; else 0; }");
-  assert_result(0, "main() { a=3; if (a==5) a; else 0; }");
-  assert_result(5, "main() { a=3; if (a==3) 5; else 10; }");
-  assert_result(10, "main() { a=3; if (a!=3) 5; else 10; }");
-  assert_result(2, "main() { if (1) 2; else 3; }");
-  assert_result(3, "main() { if (0) 2; else 3; }");
-  assert_result(42, "main() { if (1) 42; }");
+  assert_result(3, "main() { a=3; if (a==3) return a; else return 0; }");
+  assert_result(0, "main() { a=3; if (a==5) return a; else return 0; }");
+  assert_result(5, "main() { a=3; if (a==3) return 5; else return 10; }");
+  assert_result(10, "main() { a=3; if (a!=3) return 5; else return 10; }");
+  assert_result(2, "main() { if (1) return 2; else return 3; }");
+  assert_result(3, "main() { if (0) return 2; else return 3; }");
+  assert_result(42, "main() { if (1) return 42; return 0; }");
 }
 
 static void test_while() {
   printf("test_while...\n");
-  assert_result(10, "main() { a=0; while (a<10) a=a+1; a; }");
-  assert_result(0, "main() { a=0; while (0) a=a+1; a; }");
+  assert_result(10, "main() { a=0; while (a<10) a=a+1; return a; }");
+  assert_result(0, "main() { a=0; while (0) a=a+1; return a; }");
 }
 
 static void test_for() {
   printf("test_for...\n");
-  assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; b; }");
-  assert_result(10, "main() { a=0; for (a=0; a<10; a=a+1) a; a; }");
+  assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; return b; }");
+  assert_result(10, "main() { a=0; for (a=0; a<10; a=a+1) a; return a; }");
 }
 
 static void test_return() {
@@ -200,11 +200,11 @@ static void test_return() {
 
 static void test_block() {
   printf("test_block...\n");
-  assert_result(3, "main() { { 1; 2; 3; } }");
-  assert_result(6, "main() { a=1; b=2; c=3; { a+b+c; } }");
+  assert_result(3, "main() { { 1; 2; 3; } return 3; }");
+  assert_result(6, "main() { a=1; b=2; c=3; { a+b+c; } return a+b+c; }");
   assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) { b=b+a; } return b; }");
   assert_result(10, "main() { a=0; while (a<10) { a=a+1; } return a; }");
-  assert_result(5, "main() { if (1) { a=2; b=3; a+b; } else { 0; } }");
+  assert_result(5, "main() { if (1) { a=2; b=3; return a+b; } else { return 0; } }");
 }
 
 static void test_funcall() {

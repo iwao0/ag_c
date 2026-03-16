@@ -22,6 +22,10 @@ static node_func_t *as_func(node_t *node) { return (node_func_t *)node; }
 static node_ctrl_t *as_ctrl(node_t *node) { return (node_ctrl_t *)node; }
 static node_string_t *as_string(node_t *node) { return (node_string_t *)node; }
 
+static int is_main_func(const node_func_t *fn) {
+  return fn->funcname_len == 4 && strncmp(fn->funcname, "main", 4) == 0;
+}
+
 void gen_main_prologue(void) {
   // 関数定義で生成するため空にする（互換性維持）
 }
@@ -30,7 +34,8 @@ void gen_main_epilogue(void) {
   // 関数定義で生成するため空にする（互換性維持）
 }
 
-void gen(struct node_t *node);
+static void gen_expr(node_t *node);
+static void gen_stmt(node_t *node);
 
 // レジスタ名取得ヘルパー
 static const char *freg(int is_float, int reg_idx) {
@@ -67,7 +72,7 @@ static void gen_pop_fpu(int target_type, int child_type, int reg_idx) {
 static void gen_lval(node_t *node) {
   if (node->kind == ND_DEREF) {
     // *p = x の左辺値: p の値（アドレス）をプッシュ
-    gen(node->lhs);
+    gen_expr(node->lhs);
     return;
   }
   if (node->kind != ND_LVAR) {
@@ -78,7 +83,7 @@ static void gen_lval(node_t *node) {
   printf("  str x0, [sp, #-16]!\n");
 }
 
-void gen(struct node_t *node) {
+static void gen_expr(node_t *node) {
   switch (node->kind) {
   case ND_NUM:
     if (node->is_float) {
@@ -120,7 +125,7 @@ void gen(struct node_t *node) {
     }
     return;
   case ND_DEREF:
-    gen(node->lhs);
+    gen_expr(node->lhs);
     printf("  ldr x0, [sp], #16\n");
     if (as_mem(node)->type_size == 1)
       printf("  ldrb w0, [x0]\n");
@@ -143,7 +148,7 @@ void gen(struct node_t *node) {
     return;
   case ND_ASSIGN:
     gen_lval(node->lhs);
-    gen(node->rhs);
+    gen_expr(node->rhs);
     if (node->is_float == 1) {
       // float 代入
       gen_pop_fpu(1, node->rhs->is_float, 0); // s0 に rhs をロード
@@ -170,67 +175,11 @@ void gen(struct node_t *node) {
       printf("  str x1, [sp, #-16]!\n");
     }
     return;
-  case ND_RETURN:
-    gen(node->lhs);
-    
-    if (node->is_float == 1) {             // 関数の戻り値が float
-      gen_pop_fpu(1, node->lhs->is_float, 0); // s0 にロード
-    } else if (node->is_float == 2) {      // 関数の戻り値が double
-      gen_pop_fpu(2, node->lhs->is_float, 0); // d0 にロード
-    } else {                               // 関数の戻り値が 整数
-      if (node->lhs->is_float == 1) {
-        printf("  ldr s0, [sp], #16\n");
-        printf("  fcvtzs x0, s0\n");       // float->int
-      } else if (node->lhs->is_float == 2) {
-        printf("  ldr d0, [sp], #16\n");
-        printf("  fcvtzs x0, d0\n");       // double->int
-      } else {
-        printf("  ldr x0, [sp], #16\n");   // そのまま int
-      }
-    }
-    
-    printf("  ldp x29, x30, [sp]\n");
-    printf("  add sp, sp, #%d\n", STACK_SIZE);
-    printf("  ret\n");
-    printf("  mov x0, #0\n");
-    printf("  str x0, [sp, #-16]!\n");
-    return;
-  case ND_BLOCK:
-    for (int i = 0; as_block(node)->body[i]; i++) {
-      gen(as_block(node)->body[i]);
-      if (as_block(node)->body[i + 1]) {
-        printf("  ldr x0, [sp], #16\n");
-      }
-    }
-    return;
-  case ND_FUNCDEF: {
-    node_func_t *fn = as_func(node);
-    // 関数ラベルの出力
-    printf(".global _%.*s\n", fn->funcname_len, fn->funcname);
-    printf(".align 2\n");
-    printf("_%.*s:\n", fn->funcname_len, fn->funcname);
-    // プロローグ
-    printf("  sub sp, sp, #%d\n", STACK_SIZE);
-    printf("  stp x29, x30, [sp]\n");
-    printf("  mov x29, sp\n");
-    // 仮引数をレジスタからローカル変数スロットへ保存
-    for (int i = 0; i < fn->nargs; i++) {
-      printf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
-    }
-    // 関数本体
-    gen(fn->base.rhs);
-    printf("  ldr x0, [sp], #16\n");
-    // エピローグ
-    printf("  ldp x29, x30, [sp]\n");
-    printf("  add sp, sp, #%d\n", STACK_SIZE);
-    printf("  ret\n");
-    return;
-  }
   case ND_FUNCALL: {
     node_func_t *fn = as_func(node);
     // 引数を評価してレジスタに格納
     for (int i = 0; i < fn->nargs; i++) {
-      gen(fn->args[i]);
+      gen_expr(fn->args[i]);
     }
     // スタックからレジスタへ (逆順にポップ)
     for (int i = fn->nargs - 1; i >= 0; i--) {
@@ -239,68 +188,6 @@ void gen(struct node_t *node) {
     // 関数呼び出し
     printf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
     // 戻り値をスタックにプッシュ
-    printf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  case ND_IF: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
-    gen(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lelse%d\n", lbl);
-    gen(ctrl->base.rhs);
-    if (ctrl->els) {
-      printf("  b .Lend%d\n", lbl);
-      printf(".Lelse%d:\n", lbl);
-      gen(ctrl->els);
-      printf(".Lend%d:\n", lbl);
-    } else {
-      printf("  b .Lend%d\n", lbl);
-      printf(".Lelse%d:\n", lbl);
-      // else節がない場合、条件偽のときにダミー値をプッシュ（スタックバランス）
-      printf("  mov x0, #0\n");
-      printf("  str x0, [sp, #-16]!\n");
-      printf(".Lend%d:\n", lbl);
-    }
-    return;
-  }
-  case ND_WHILE: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
-    printf(".Lbegin%d:\n", lbl);
-    gen(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lend%d\n", lbl);
-    gen(ctrl->base.rhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  b .Lbegin%d\n", lbl);
-    printf(".Lend%d:\n", lbl);
-    printf("  mov x0, #0\n");
-    printf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  case ND_FOR: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
-    if (ctrl->init) {
-      gen(ctrl->init);
-      printf("  ldr x0, [sp], #16\n");
-    }
-    printf(".Lbegin%d:\n", lbl);
-    if (ctrl->base.lhs) {
-      gen(ctrl->base.lhs);
-      printf("  ldr x0, [sp], #16\n");
-      printf("  cbz x0, .Lend%d\n", lbl);
-    }
-    gen(ctrl->base.rhs);
-    printf("  ldr x0, [sp], #16\n");
-    if (ctrl->inc) {
-      gen(ctrl->inc);
-      printf("  ldr x0, [sp], #16\n");
-    }
-    printf("  b .Lbegin%d\n", lbl);
-    printf(".Lend%d:\n", lbl);
-    printf("  mov x0, #0\n");
     printf("  str x0, [sp, #-16]!\n");
     return;
   }
@@ -318,8 +205,8 @@ void gen(struct node_t *node) {
 
   if (fpu_op_type) {
     // FPU 演算
-    gen(node->lhs);
-    gen(node->rhs);
+    gen_expr(node->lhs);
+    gen_expr(node->rhs);
     const char *r0 = freg(fpu_op_type, 0);
     const char *r1 = freg(fpu_op_type, 1);
     
@@ -367,8 +254,8 @@ void gen(struct node_t *node) {
   }
 
   // 整数二項演算
-  gen(node->lhs);
-  gen(node->rhs);
+  gen_expr(node->lhs);
+  gen_expr(node->rhs);
 
   printf("  ldr x1, [sp], #16\n");
   printf("  ldr x0, [sp], #16\n");
@@ -407,6 +294,124 @@ void gen(struct node_t *node) {
   }
 
   printf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_stmt(node_t *node) {
+  switch (node->kind) {
+  case ND_BLOCK:
+    for (int i = 0; as_block(node)->body[i]; i++) {
+      gen_stmt(as_block(node)->body[i]);
+    }
+    return;
+  case ND_RETURN:
+    gen_expr(node->lhs);
+    if (node->is_float == 1) {             // 関数の戻り値が float
+      gen_pop_fpu(1, node->lhs->is_float, 0); // s0 にロード
+    } else if (node->is_float == 2) {      // 関数の戻り値が double
+      gen_pop_fpu(2, node->lhs->is_float, 0); // d0 にロード
+    } else {                               // 関数の戻り値が 整数
+      if (node->lhs->is_float == 1) {
+        printf("  ldr s0, [sp], #16\n");
+        printf("  fcvtzs x0, s0\n");       // float->int
+      } else if (node->lhs->is_float == 2) {
+        printf("  ldr d0, [sp], #16\n");
+        printf("  fcvtzs x0, d0\n");       // double->int
+      } else {
+        printf("  ldr x0, [sp], #16\n");   // そのまま int
+      }
+    }
+    printf("  ldp x29, x30, [sp]\n");
+    printf("  add sp, sp, #%d\n", STACK_SIZE);
+    printf("  ret\n");
+    return;
+  case ND_FUNCDEF: {
+    node_func_t *fn = as_func(node);
+    // 関数ラベルの出力
+    printf(".global _%.*s\n", fn->funcname_len, fn->funcname);
+    printf(".align 2\n");
+    printf("_%.*s:\n", fn->funcname_len, fn->funcname);
+    // プロローグ
+    printf("  sub sp, sp, #%d\n", STACK_SIZE);
+    printf("  stp x29, x30, [sp]\n");
+    printf("  mov x29, sp\n");
+    // 仮引数をレジスタからローカル変数スロットへ保存
+    for (int i = 0; i < fn->nargs; i++) {
+      printf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
+    }
+    // 関数本体
+    gen_stmt(fn->base.rhs);
+    // main の return が無い場合は 0 を返す
+    if (is_main_func(fn)) {
+      printf("  mov x0, #0\n");
+    }
+    // エピローグ
+    printf("  ldp x29, x30, [sp]\n");
+    printf("  add sp, sp, #%d\n", STACK_SIZE);
+    printf("  ret\n");
+    return;
+  }
+  case ND_IF: {
+    node_ctrl_t *ctrl = as_ctrl(node);
+    int lbl = label_count++;
+    gen_expr(ctrl->base.lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbz x0, .Lelse%d\n", lbl);
+    gen_stmt(ctrl->base.rhs);
+    if (ctrl->els) {
+      printf("  b .Lend%d\n", lbl);
+      printf(".Lelse%d:\n", lbl);
+      gen_stmt(ctrl->els);
+      printf(".Lend%d:\n", lbl);
+    } else {
+      printf("  b .Lend%d\n", lbl);
+      printf(".Lelse%d:\n", lbl);
+      printf(".Lend%d:\n", lbl);
+    }
+    return;
+  }
+  case ND_WHILE: {
+    node_ctrl_t *ctrl = as_ctrl(node);
+    int lbl = label_count++;
+    printf(".Lbegin%d:\n", lbl);
+    gen_expr(ctrl->base.lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbz x0, .Lend%d\n", lbl);
+    gen_stmt(ctrl->base.rhs);
+    printf("  b .Lbegin%d\n", lbl);
+    printf(".Lend%d:\n", lbl);
+    return;
+  }
+  case ND_FOR: {
+    node_ctrl_t *ctrl = as_ctrl(node);
+    int lbl = label_count++;
+    if (ctrl->init) {
+      gen_expr(ctrl->init);
+      printf("  add sp, sp, #16\n");
+    }
+    printf(".Lbegin%d:\n", lbl);
+    if (ctrl->base.lhs) {
+      gen_expr(ctrl->base.lhs);
+      printf("  ldr x0, [sp], #16\n");
+      printf("  cbz x0, .Lend%d\n", lbl);
+    }
+    gen_stmt(ctrl->base.rhs);
+    if (ctrl->inc) {
+      gen_expr(ctrl->inc);
+      printf("  add sp, sp, #16\n");
+    }
+    printf("  b .Lbegin%d\n", lbl);
+    printf(".Lend%d:\n", lbl);
+    return;
+  }
+  default:
+    gen_expr(node);
+    printf("  add sp, sp, #16\n");
+    return;
+  }
+}
+
+void gen(node_t *node) {
+  gen_stmt(node);
 }
 
 void gen_string_literals(void) {
