@@ -46,6 +46,10 @@ TDD用の自動テストスクリプトです。
 
 ### [NEW] [test/test_tokenizer.c](test/test_tokenizer.c)
 `src/tokenizer/tokenizer.c` に含まれるすべての関数（`tokenize`, `consume`, `expect`, `expect_number`, `at_eof`）の単体テストを行います。C言語アサートや独自のテスト用マクロを利用して、個別の関数の振る舞いが仕様を満たしているかを検証します。
+加えて、以下の拡張事項についてもテストケースを追加しています。
+* コメント/空白の厳密処理（`//`, `/* ... */`、行継続）
+* 16進/2進/8進整数、16進浮動小数点、整数/浮動小数点サフィックス
+* C11キーワード全網羅
 
 ### [NEW] [test/test_parser.c](test/test_parser.c)
 `src/parser/parser.c` に含まれる構文解析と抽象構文木（AST）構築処理の単体テストを行います。数式文字列をトークナイズし、`expr()` によるパース結果として得られるASTのノード種別（`ND_ADD`, `ND_SUB`, `ND_MUL`, `ND_DIV`, `ND_NUM`）やツリー構造が期待通りであることを検証します。
