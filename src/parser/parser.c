@@ -98,7 +98,7 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
 
   // 比較演算の結果は整数(0 または 1)
   if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE) {
-    node->fp_kind = TK_FLOAT_KIND_INT;
+    node->fp_kind = TK_FLOAT_KIND_NONE;
   }
   return node;
 }
@@ -129,7 +129,7 @@ static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
   node->base.kind = ND_ASSIGN;
   node->base.lhs = lhs;
   node->base.rhs = rhs;
-  node->base.fp_kind = lhs ? lhs->fp_kind : TK_FLOAT_KIND_INT;
+  node->base.fp_kind = lhs ? lhs->fp_kind : TK_FLOAT_KIND_NONE;
   return node;
 }
 
@@ -172,13 +172,13 @@ static bool consume_type(void) {
   return consume_type_kind() != TK_EOF;
 }
 
-static tk_float_kind_t current_func_ret_type = TK_FLOAT_KIND_INT;
+static tk_float_kind_t current_func_ret_type = TK_FLOAT_KIND_NONE;
 
 // funcdef = "int"? ident "(" params? ")" "{" stmt* "}"
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
   token_kind_t ret_kind = consume_type_kind(); // 戻り値の型（省略可）
-  current_func_ret_type = TK_FLOAT_KIND_INT;
+  current_func_ret_type = TK_FLOAT_KIND_NONE;
   if (ret_kind == TK_FLOAT) current_func_ret_type = TK_FLOAT_KIND_FLOAT;
   else if (ret_kind == TK_DOUBLE) current_func_ret_type = TK_FLOAT_KIND_DOUBLE;
   token_ident_t *tok = tk_consume_ident();
@@ -600,7 +600,7 @@ static node_t *primary(void) {
     string_literals = lit;
     node->mem.type_size = 8; // ポインタとして8バイト
     node->mem.deref_size = merged_width;
-    node->mem.base.fp_kind = TK_FLOAT_KIND_INT; // 文字列はポインタなので整数
+    node->mem.base.fp_kind = TK_FLOAT_KIND_NONE; // 文字列はポインタなので整数
     node->char_width = merged_width;
     node->str_prefix_kind = merged_prefix_kind;
     return (node_t *)node;
@@ -610,10 +610,15 @@ static node_t *primary(void) {
     token_num_t *num = (token_num_t *)token;
     node_num_t *node = calloc(1, sizeof(node_num_t));
     node->base.kind = ND_NUM;
-    node->val = num->val;
-    node->fval = num->fval;
-    node->float_suffix_kind = num->float_suffix_kind;
-    node->base.fp_kind = num->fp_kind;
+    if (num->num_kind == TK_NUM_KIND_INT) {
+      node->base.fp_kind = TK_FLOAT_KIND_NONE;
+      node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
+      node->val = tk_as_num_int(token)->val;
+    } else {
+      node->base.fp_kind = tk_as_num_float(token)->fp_kind;
+      node->float_suffix_kind = tk_as_num_float(token)->float_suffix_kind;
+      node->fval = tk_as_num_float(token)->fval;
+    }
 
     if (node->base.fp_kind) {
       // 浮動小数点リテラルを登録

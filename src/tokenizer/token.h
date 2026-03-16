@@ -6,7 +6,7 @@
 
 // 浮動小数点種別
 typedef enum {
-  TK_FLOAT_KIND_INT = 0,
+  TK_FLOAT_KIND_NONE = 0,
   TK_FLOAT_KIND_FLOAT = 1,
   TK_FLOAT_KIND_DOUBLE = 2,
   TK_FLOAT_KIND_LONG_DOUBLE = 3,
@@ -18,6 +18,11 @@ typedef enum {
   TK_FLOAT_SUFFIX_F = 1,
   TK_FLOAT_SUFFIX_L = 2,
 } tk_float_suffix_kind_t;
+
+typedef enum {
+  TK_NUM_KIND_INT = 0,
+  TK_NUM_KIND_FLOAT = 1,
+} tk_num_kind_t;
 
 // 整数サイズ種別（サフィックス由来）
 typedef enum {
@@ -198,21 +203,44 @@ struct token_string_t {
 
 // 数値トークン
 typedef struct token_num_t token_num_t;
+typedef struct token_num_int_t token_num_int_t;
+typedef struct token_num_float_t token_num_float_t;
 struct token_num_t {
   token_pp_t pp;
-  long long val;            // 整数値
-  unsigned long long uval; // 整数値(符号なし)
-  double fval;             // 浮動小数点値
   char *str;               // 元の文字列
   int len;                 // 元の文字列長
-  tk_float_kind_t fp_kind;
-  tk_float_suffix_kind_t float_suffix_kind;
-  bool is_unsigned;        // 整数サフィックス: unsigned
+  tk_num_kind_t num_kind;
+};
+
+struct token_num_int_t {
+  token_num_t base;
+  long long val;                // 整数値
+  unsigned long long uval;      // 整数値(符号なし)
+  bool is_unsigned;             // 整数サフィックス: unsigned
   tk_int_size_t int_size;
-  uint8_t int_base;        // 2, 8, 10, 16
+  uint8_t int_base;             // 2, 8, 10, 16
   // 文字定数由来の場合のみ有効
   tk_char_width_t char_width;
   tk_char_prefix_kind_t char_prefix_kind;
 };
+
+struct token_num_float_t {
+  token_num_t base;
+  double fval;                  // 浮動小数点値
+  tk_float_kind_t fp_kind;      // float / double / long double
+  tk_float_suffix_kind_t float_suffix_kind;
+};
+
+static inline token_num_t *tk_as_num(token_t *tok) {
+  return (token_num_t *)tok;
+}
+
+static inline token_num_int_t *tk_as_num_int(token_t *tok) {
+  return (token_num_int_t *)tok;
+}
+
+static inline token_num_float_t *tk_as_num_float(token_t *tok) {
+  return (token_num_float_t *)tok;
+}
 
 #endif

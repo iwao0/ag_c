@@ -150,22 +150,35 @@ static token_t *copy_token(token_t *tok) {
     }
     case TK_NUM: {
       token_num_t *src = as_num(tok);
-      token_num_t *dst = calloc(1, sizeof(token_num_t));
-      dst->pp.base = src->pp.base;
-      dst->pp.hideset = src->pp.hideset;
-      dst->val = src->val;
-      dst->uval = src->uval;
-      dst->fval = src->fval;
-      dst->fp_kind = src->fp_kind;
-      dst->float_suffix_kind = src->float_suffix_kind;
-      dst->is_unsigned = src->is_unsigned;
-      dst->int_size = src->int_size;
-      dst->int_base = src->int_base;
-      dst->str = src->str;
-      dst->len = src->len;
-      dst->char_width = src->char_width;
-      dst->char_prefix_kind = src->char_prefix_kind;
-      t = (token_t *)dst;
+      if (src->num_kind == TK_NUM_KIND_INT) {
+        token_num_int_t *src_i = tk_as_num_int(tok);
+        token_num_int_t *dst = calloc(1, sizeof(token_num_int_t));
+        dst->base.pp.base = src_i->base.pp.base;
+        dst->base.pp.hideset = src_i->base.pp.hideset;
+        dst->base.str = src_i->base.str;
+        dst->base.len = src_i->base.len;
+        dst->base.num_kind = TK_NUM_KIND_INT;
+        dst->val = src_i->val;
+        dst->uval = src_i->uval;
+        dst->is_unsigned = src_i->is_unsigned;
+        dst->int_size = src_i->int_size;
+        dst->int_base = src_i->int_base;
+        dst->char_width = src_i->char_width;
+        dst->char_prefix_kind = src_i->char_prefix_kind;
+        t = (token_t *)dst;
+      } else {
+        token_num_float_t *src_f = tk_as_num_float(tok);
+        token_num_float_t *dst = calloc(1, sizeof(token_num_float_t));
+        dst->base.pp.base = src_f->base.pp.base;
+        dst->base.pp.hideset = src_f->base.pp.hideset;
+        dst->base.str = src_f->base.str;
+        dst->base.len = src_f->base.len;
+        dst->base.num_kind = TK_NUM_KIND_FLOAT;
+        dst->fval = src_f->fval;
+        dst->fp_kind = src_f->fp_kind;
+        dst->float_suffix_kind = src_f->float_suffix_kind;
+        t = (token_t *)dst;
+      }
       break;
     }
     default: {
@@ -260,7 +273,10 @@ static long primary(token_t **rest, token_t *tok) {
     return val;
   }
   if (tok->kind == TK_NUM) {
-    long val = as_num(tok)->val;
+    if (tk_as_num(tok)->num_kind != TK_NUM_KIND_INT) {
+      fprintf(stderr, "#if の定数式では整数リテラルが必要です\n"); exit(1);
+    }
+    long val = tk_as_num_int(tok)->val;
     *rest = tok->next;
     return val;
   }
@@ -420,17 +436,16 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
             t = t->next;
          }
          
-         token_num_t *num = calloc(1, sizeof(token_num_t));
-         num->pp.base.kind = TK_NUM;
+         token_num_int_t *num = calloc(1, sizeof(token_num_int_t));
+         num->base.pp.base.kind = TK_NUM;
+         num->base.num_kind = TK_NUM_KIND_INT;
+         num->base.str = "0"; // just dummy
+         num->base.len = 1;
          num->val = is_def ? 1 : 0;
          num->uval = (unsigned long long)num->val;
-         num->fp_kind = TK_FLOAT_KIND_INT;
-         num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
          num->is_unsigned = false;
          num->int_size = TK_INT_SIZE_INT;
          num->int_base = 10;
-         num->str = "0"; // just dummy
-         num->len = 1;
          cur2->next = (token_t *)num;
          cur2 = cur2->next;
       } else {
@@ -768,8 +783,11 @@ token_t *preprocess(token_t *tok) {
           int tlen = 0;
           const char *ts = token_text(tok, &tlen);
           if (tok->kind == TK_NUM) {
-            token_num_t *num = as_num(tok);
-            fprintf(stderr, "%lld", num->val);
+            if (tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
+              fprintf(stderr, "%lld", tk_as_num_int(tok)->val);
+            } else {
+              fprintf(stderr, "%g", tk_as_num_float(tok)->fval);
+            }
           } else if (ts && tlen > 0) {
             fprintf(stderr, "%.*s", tlen, ts);
           }

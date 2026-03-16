@@ -12,7 +12,8 @@
 // tokenizer.c で定義されているがヘッダにない変数をextern
 extern char *user_input;
 
-static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
+static token_num_int_t *as_num_i(token_t *tok) { return (token_num_int_t *)tok; }
+static token_num_float_t *as_num_f(token_t *tok) { return (token_num_float_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 
@@ -38,7 +39,7 @@ static void test_tokenize() {
 
   // 最初のトークン: "12"
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(12, as_num(token)->val);
+  ASSERT_EQ(12, as_num_i(token)->val);
   token = token->next;
 
   // 2番目のトークン: "+"
@@ -47,7 +48,7 @@ static void test_tokenize() {
 
   // 3番目のトークン: "34"
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(34, as_num(token)->val);
+  ASSERT_EQ(34, as_num_i(token)->val);
   token = token->next;
 
   // 4番目のトークン: "-"
@@ -56,7 +57,7 @@ static void test_tokenize() {
 
   // 5番目のトークン: "5"
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(5, as_num(token)->val);
+  ASSERT_EQ(5, as_num_i(token)->val);
   token = token->next;
 
   // 最後のトークン: EOF
@@ -65,7 +66,7 @@ static void test_tokenize() {
   // 四則演算と括弧のテスト
   token = tk_tokenize("1 * (2 / 3)");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(1, as_num(token)->val);
+  ASSERT_EQ(1, as_num_i(token)->val);
   token = token->next;
 
   ASSERT_EQ(TK_MUL, token->kind);
@@ -75,14 +76,14 @@ static void test_tokenize() {
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->val);
+  ASSERT_EQ(2, as_num_i(token)->val);
   token = token->next;
 
   ASSERT_EQ(TK_DIV, token->kind);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(3, as_num(token)->val);
+  ASSERT_EQ(3, as_num_i(token)->val);
   token = token->next;
 
   ASSERT_EQ(TK_RPAREN, token->kind);
@@ -94,49 +95,49 @@ static void test_tokenize() {
   token = tk_tokenize("1 == 2 != 3 <= 4 >= 5 < 6 > 7");
   // 1
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(1, as_num(token)->val);
+  ASSERT_EQ(1, as_num_i(token)->val);
   token = token->next;
   // ==
   ASSERT_EQ(TK_EQEQ, token->kind);
   token = token->next;
   // 2
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->val);
+  ASSERT_EQ(2, as_num_i(token)->val);
   token = token->next;
   // !=
   ASSERT_EQ(TK_NEQ, token->kind);
   token = token->next;
   // 3
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(3, as_num(token)->val);
+  ASSERT_EQ(3, as_num_i(token)->val);
   token = token->next;
   // <=
   ASSERT_EQ(TK_LE, token->kind);
   token = token->next;
   // 4
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(4, as_num(token)->val);
+  ASSERT_EQ(4, as_num_i(token)->val);
   token = token->next;
   // >=
   ASSERT_EQ(TK_GE, token->kind);
   token = token->next;
   // 5
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(5, as_num(token)->val);
+  ASSERT_EQ(5, as_num_i(token)->val);
   token = token->next;
   // <
   ASSERT_EQ(TK_LT, token->kind);
   token = token->next;
   // 6
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(6, as_num(token)->val);
+  ASSERT_EQ(6, as_num_i(token)->val);
   token = token->next;
   // >
   ASSERT_EQ(TK_GT, token->kind);
   token = token->next;
   // 7
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(7, as_num(token)->val);
+  ASSERT_EQ(7, as_num_i(token)->val);
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);
@@ -148,81 +149,81 @@ static void test_tokenize_int_literals() {
   token = tk_tokenize("0x2a 0X10 0b101 0B11 077 010 0 123 1u 2UL 3llu 0x1ffffffff");
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(42, as_num(token)->val);
-  ASSERT_EQ(42ULL, as_num(token)->uval);
-  ASSERT_EQ(16, as_num(token)->int_base);
-  ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
+  ASSERT_EQ(42, as_num_i(token)->val);
+  ASSERT_EQ(42ULL, as_num_i(token)->uval);
+  ASSERT_EQ(16, as_num_i(token)->int_base);
+  ASSERT_TRUE(!as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(16, as_num(token)->val);
-  ASSERT_EQ(16ULL, as_num(token)->uval);
-  ASSERT_EQ(16, as_num(token)->int_base);
+  ASSERT_EQ(16, as_num_i(token)->val);
+  ASSERT_EQ(16ULL, as_num_i(token)->uval);
+  ASSERT_EQ(16, as_num_i(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(5, as_num(token)->val);
-  ASSERT_EQ(5ULL, as_num(token)->uval);
-  ASSERT_EQ(2, as_num(token)->int_base);
+  ASSERT_EQ(5, as_num_i(token)->val);
+  ASSERT_EQ(5ULL, as_num_i(token)->uval);
+  ASSERT_EQ(2, as_num_i(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(3, as_num(token)->val);
-  ASSERT_EQ(3ULL, as_num(token)->uval);
-  ASSERT_EQ(2, as_num(token)->int_base);
+  ASSERT_EQ(3, as_num_i(token)->val);
+  ASSERT_EQ(3ULL, as_num_i(token)->uval);
+  ASSERT_EQ(2, as_num_i(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(63, as_num(token)->val);
-  ASSERT_EQ(63ULL, as_num(token)->uval);
-  ASSERT_EQ(8, as_num(token)->int_base);
+  ASSERT_EQ(63, as_num_i(token)->val);
+  ASSERT_EQ(63ULL, as_num_i(token)->uval);
+  ASSERT_EQ(8, as_num_i(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(8, as_num(token)->val);
-  ASSERT_EQ(8ULL, as_num(token)->uval);
-  ASSERT_EQ(8, as_num(token)->int_base);
+  ASSERT_EQ(8, as_num_i(token)->val);
+  ASSERT_EQ(8ULL, as_num_i(token)->uval);
+  ASSERT_EQ(8, as_num_i(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(0, as_num(token)->val);
-  ASSERT_EQ(0ULL, as_num(token)->uval);
-  ASSERT_EQ(10, as_num(token)->int_base);
-  ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
+  ASSERT_EQ(0, as_num_i(token)->val);
+  ASSERT_EQ(0ULL, as_num_i(token)->uval);
+  ASSERT_EQ(10, as_num_i(token)->int_base);
+  ASSERT_TRUE(!as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(123, as_num(token)->val);
-  ASSERT_EQ(123ULL, as_num(token)->uval);
-  ASSERT_EQ(10, as_num(token)->int_base);
-  ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
+  ASSERT_EQ(123, as_num_i(token)->val);
+  ASSERT_EQ(123ULL, as_num_i(token)->uval);
+  ASSERT_EQ(10, as_num_i(token)->int_base);
+  ASSERT_TRUE(!as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(1, as_num(token)->val);
-  ASSERT_TRUE(as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
+  ASSERT_EQ(1, as_num_i(token)->val);
+  ASSERT_TRUE(as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->val);
-  ASSERT_TRUE(as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_LONG, as_num(token)->int_size);
+  ASSERT_EQ(2, as_num_i(token)->val);
+  ASSERT_TRUE(as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(3, as_num(token)->val);
-  ASSERT_TRUE(as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num(token)->int_size);
+  ASSERT_EQ(3, as_num_i(token)->val);
+  ASSERT_TRUE(as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(0x1ffffffffULL, as_num(token)->uval);
-  ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(TK_INT_SIZE_LONG, as_num(token)->int_size);
+  ASSERT_EQ(0x1ffffffffULL, as_num_i(token)->uval);
+  ASSERT_TRUE(!as_num_i(token)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);
@@ -256,7 +257,7 @@ static void test_tokenize_ident() {
 
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ('a', as_ident(token)->str[0]); ASSERT_EQ(1, as_ident(token)->len); token = token->next;
   ASSERT_EQ(TK_ASSIGN, token->kind); token = token->next;
-  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(3, as_num(token)->val); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(3, as_num_i(token)->val); token = token->next;
   ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ('b', as_ident(token)->str[0]); token = token->next;
   ASSERT_EQ(TK_ASSIGN, token->kind); token = token->next;
@@ -486,45 +487,45 @@ static void test_tokenize_float_literal() {
   token = tk_tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f 4.0L 0x1p2L");
   
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 3.13 && as_num(token)->fval < 3.15);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 3.13 && as_num_f(token)->fval < 3.15);
   token = token->next;
   
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 1.49 && as_num(token)->fval < 1.51);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 1.49 && as_num_f(token)->fval < 1.51);
   token = token->next;
   
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 0.0019 && as_num(token)->fval < 0.0021);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 0.0019 && as_num_f(token)->fval < 0.0021);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 2.9 && as_num(token)->fval < 3.1);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 2.9 && as_num_f(token)->fval < 3.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 3.9 && as_num_f(token)->fval < 4.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 3.9 && as_num_f(token)->fval < 4.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num(token)->fp_kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(token)->float_suffix_kind);
-  ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num_f(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num_f(token)->float_suffix_kind);
+  ASSERT_TRUE(as_num_f(token)->fval > 3.9 && as_num_f(token)->fval < 4.1);
   token = token->next;
   
   ASSERT_EQ(TK_EOF, token->kind);
@@ -538,7 +539,7 @@ static void test_consume() {
   ASSERT_TRUE(tk_consume('+'));  // "+"を消費して次に進む
   ASSERT_TRUE(!tk_consume('-')); // "-"ではないので進まない
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(42, as_num(token)->val);
+  ASSERT_EQ(42, as_num_i(token)->val);
 }
 
 // 2b. tk_consume_str() のテスト
@@ -599,59 +600,59 @@ static void test_tokenize_char_literal() {
   printf("test_tokenize_char_literal...\n");
   token = tk_tokenize("'A'");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(65, as_num(token)->val);
+  ASSERT_EQ(65, as_num_i(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // エスケープシーケンス
   token = tk_tokenize("'\\n'");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(10, as_num(token)->val);
+  ASSERT_EQ(10, as_num_i(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   token = tk_tokenize("'\\0'");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(0, as_num(token)->val);
+  ASSERT_EQ(0, as_num_i(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // マルチ文字文字定数（実装定義）
   token = tk_tokenize("'ab'");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(((unsigned char)'a' << 8) | (unsigned char)'b', as_num(token)->val);
+  ASSERT_EQ(((unsigned char)'a' << 8) | (unsigned char)'b', as_num_i(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 接頭辞付き文字定数
   token = tk_tokenize("L'A' u'B' U'\\u00A9'");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ('A', as_num(token)->val);
-  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
+  ASSERT_EQ('A', as_num_i(token)->val);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num_i(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ('B', as_num(token)->val);
-  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num(token)->char_width);
+  ASSERT_EQ('B', as_num_i(token)->val);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num_i(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(0xA9, as_num(token)->val);
-  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
+  ASSERT_EQ(0xA9, as_num_i(token)->val);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num_i(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 接頭辞付きマルチ文字定数（実装定義として受理）
   token = tk_tokenize("L'AB' u'CD' U'EF'");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(((unsigned char)'A' << 8) | (unsigned char)'B', as_num(token)->val);
-  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
+  ASSERT_EQ(((unsigned char)'A' << 8) | (unsigned char)'B', as_num_i(token)->val);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num_i(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(((unsigned char)'C' << 8) | (unsigned char)'D', as_num(token)->val);
-  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num(token)->char_width);
+  ASSERT_EQ(((unsigned char)'C' << 8) | (unsigned char)'D', as_num_i(token)->val);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num_i(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(((unsigned char)'E' << 8) | (unsigned char)'F', as_num(token)->val);
-  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
+  ASSERT_EQ(((unsigned char)'E' << 8) | (unsigned char)'F', as_num_i(token)->val);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num_i(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 }
@@ -695,7 +696,7 @@ static void test_strict_c11_mode() {
   tk_set_strict_c11_mode(false);
   token = tk_tokenize("0b101");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(5, as_num(token)->val);
+  ASSERT_EQ(5, as_num_i(token)->val);
 
   tk_set_strict_c11_mode(true);
   expect_tokenize_fail("0b101");
@@ -715,7 +716,7 @@ static void test_c11_audit_mode_flag() {
   tk_set_enable_c11_audit_extensions(false);
   token = tk_tokenize("0b101");
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(5, as_num(token)->val);
+  ASSERT_EQ(5, as_num_i(token)->val);
 }
 
 int main() {

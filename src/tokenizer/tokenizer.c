@@ -319,7 +319,10 @@ int tk_expect_number(void) {
   if (token->kind != TK_NUM) {
     tk_error_tok(token, "数ではありません");
   }
-  long long n = ((token_num_t *)token)->val;
+  if (tk_as_num(token)->num_kind != TK_NUM_KIND_INT) {
+    tk_error_tok(token, "整数ではありません");
+  }
+  long long n = tk_as_num_int(token)->val;
   if (n < INT_MIN || n > INT_MAX) {
     tk_error_tok(token, "数値が int 範囲外です");
   }
@@ -368,18 +371,46 @@ static token_string_t *new_token_string(token_t *cur, char *str, int len, int li
   return tok;
 }
 
-static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
-  token_num_t *tok = tcalloc(1, sizeof(token_num_t));
-  init_token_base(&tok->pp.base, TK_NUM, line_no);
-  tok->pp.base.at_bol = at_bol;
-  tok->pp.base.has_space = has_space;
-  tok->str = str;
-  tok->len = len;
+typedef struct parsed_num_t parsed_num_t;
+struct parsed_num_t {
+  long long val;
+  unsigned long long uval;
+  double fval;
+  tk_float_kind_t fp_kind;
+  tk_float_suffix_kind_t float_suffix_kind;
+  bool is_unsigned;
+  tk_int_size_t int_size;
+  uint8_t int_base;
+  tk_char_width_t char_width;
+  tk_char_prefix_kind_t char_prefix_kind;
+};
+
+static token_num_int_t *new_token_num_int(
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
+  token_num_int_t *tok = tcalloc(1, sizeof(token_num_int_t));
+  init_token_base(&tok->base.pp.base, TK_NUM, line_no);
+  tok->base.pp.base.at_bol = at_bol;
+  tok->base.pp.base.has_space = has_space;
+  tok->base.str = str;
+  tok->base.len = len;
   cur->next = (token_t *)tok;
   return tok;
 }
 
-static void choose_int_type(token_num_t *num, unsigned long long val, bool is_decimal, bool has_u, int long_cnt) {
+static token_num_float_t *new_token_num_float(
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
+  token_num_float_t *tok = tcalloc(1, sizeof(token_num_float_t));
+  init_token_base(&tok->base.pp.base, TK_NUM, line_no);
+  tok->base.pp.base.at_bol = at_bol;
+  tok->base.pp.base.has_space = has_space;
+  tok->base.str = str;
+  tok->base.len = len;
+  cur->next = (token_t *)tok;
+  return tok;
+}
+
+static void choose_int_type(
+    parsed_num_t *num, unsigned long long val, bool is_decimal, bool has_u, int long_cnt, char *err_loc) {
   if (!has_u && long_cnt == 0) {
     if (is_decimal) {
       if (val <= (unsigned long long)INT_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_INT; return; }
@@ -393,14 +424,14 @@ static void choose_int_type(token_num_t *num, unsigned long long val, bool is_de
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    tk_error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(err_loc, "整数リテラルが大きすぎます");
   }
 
   if (has_u && long_cnt == 0) {
     if (val <= (unsigned long long)UINT_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_INT; return; }
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    tk_error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(err_loc, "整数リテラルが大きすぎます");
   }
 
   if (!has_u && long_cnt == 1) {
@@ -413,13 +444,13 @@ static void choose_int_type(token_num_t *num, unsigned long long val, bool is_de
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    tk_error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(err_loc, "整数リテラルが大きすぎます");
   }
 
   if (has_u && long_cnt == 1) {
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    tk_error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(err_loc, "整数リテラルが大きすぎます");
   }
 
   if (!has_u && long_cnt == 2) {
@@ -429,16 +460,16 @@ static void choose_int_type(token_num_t *num, unsigned long long val, bool is_de
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
     }
-    tk_error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(err_loc, "整数リテラルが大きすぎます");
   }
 
   if (has_u && long_cnt == 2) {
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = TK_INT_SIZE_LONG_LONG; return; }
-    tk_error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(err_loc, "整数リテラルが大きすぎます");
   }
 }
 
-static void parse_int_suffix(token_num_t *num, char **pp, unsigned long long val, bool is_decimal) {
+static void parse_int_suffix(parsed_num_t *num, char **pp, unsigned long long val, bool is_decimal, char *err_loc) {
   char *p = *pp;
   bool seen_u = false;
   int long_cnt = 0;
@@ -467,7 +498,7 @@ static void parse_int_suffix(token_num_t *num, char **pp, unsigned long long val
 
   if (tk_is_ident_start_byte(*p)) tk_error_at(p, "整数サフィックスが不正です");
 
-  choose_int_type(num, val, is_decimal, seen_u, long_cnt);
+  choose_int_type(num, val, is_decimal, seen_u, long_cnt, err_loc);
   *pp = p;
 }
 
@@ -495,7 +526,7 @@ static unsigned long long parse_digits(char **pp, int base) {
 
 static long long token_signed_from_u64(unsigned long long uval);
 
-static bool try_parse_decimal_int_fast(char **pp, token_num_t *num) {
+static bool try_parse_decimal_int_fast(char **pp, parsed_num_t *num) {
   char *p = *pp;
   if (!tk_is_digit(*p)) return false;
 
@@ -513,13 +544,13 @@ static bool try_parse_decimal_int_fast(char **pp, token_num_t *num) {
 
   num->uval = val;
   num->val = token_signed_from_u64(val);
-  num->fp_kind = TK_FLOAT_KIND_INT;
+  num->fp_kind = TK_FLOAT_KIND_NONE;
   num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
   num->int_base = 10;
   if (*p == 'u' || *p == 'U' || *p == 'l' || *p == 'L') {
-    parse_int_suffix(num, &p, val, true);
+    parse_int_suffix(num, &p, val, true, *pp);
   } else {
-    choose_int_type(num, val, true, false, 0);
+    choose_int_type(num, val, true, false, 0, *pp);
   }
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
     tk_error_at(p, "数値リテラルが不正です");
@@ -555,7 +586,7 @@ static void tk_audit_extension(char *loc, const char *msg) {
   fprintf(stderr, "[c11-audit] %s at offset %d\n", msg, pos);
 }
 
-static void parse_number_literal(char **pp, token_num_t *num) {
+static void parse_number_literal(char **pp, parsed_num_t *num) {
   char *p = *pp;
 
   // 16進数/2進数/8進数/10進数
@@ -584,10 +615,10 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       unsigned long long val = parse_digits(&p, 16);
       num->uval = val;
       num->val = token_signed_from_u64(val);
-      num->fp_kind = TK_FLOAT_KIND_INT;
+      num->fp_kind = TK_FLOAT_KIND_NONE;
       num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       num->int_base = 16;
-      parse_int_suffix(num, &p, val, false);
+      parse_int_suffix(num, &p, val, false, *pp);
     }
   } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
     if (tk_get_strict_c11_mode() || !tk_get_enable_binary_literals()) {
@@ -599,10 +630,10 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     unsigned long long val = parse_digits(&p, 2);
     num->uval = val;
     num->val = token_signed_from_u64(val);
-    num->fp_kind = TK_FLOAT_KIND_INT;
+    num->fp_kind = TK_FLOAT_KIND_NONE;
     num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
     num->int_base = 2;
-    parse_int_suffix(num, &p, val, false);
+    parse_int_suffix(num, &p, val, false, *pp);
   } else if (*p == '0' && tk_is_digit(p[1])) {
     if (p[1] == '8' || p[1] == '9') tk_error_at(p, "8進数リテラルが不正です");
     p++;
@@ -613,10 +644,10 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     }
     num->uval = val;
     num->val = token_signed_from_u64(val);
-    num->fp_kind = TK_FLOAT_KIND_INT;
+    num->fp_kind = TK_FLOAT_KIND_NONE;
     num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
     num->int_base = 8;
-    parse_int_suffix(num, &p, val, false);
+    parse_int_suffix(num, &p, val, false, *pp);
   } else {
     if (try_parse_decimal_int_fast(&p, num)) {
       *pp = p;
@@ -644,10 +675,10 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       unsigned long long val = parse_digits(&p, 10);
       num->uval = val;
       num->val = token_signed_from_u64(val);
-      num->fp_kind = TK_FLOAT_KIND_INT;
+      num->fp_kind = TK_FLOAT_KIND_NONE;
       num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       num->int_base = 10;
-      parse_int_suffix(num, &p, val, true);
+      parse_int_suffix(num, &p, val, true, *pp);
     }
   }
 
@@ -808,11 +839,10 @@ token_t *tk_tokenize(char *p) {
       }
       p++; // 閉じクォートをスキップ
       int len = p - start;
-      token_num_t *num = new_token_num(cur, start, len, line_no, _at_bol, _has_space);
+      token_num_int_t *num = new_token_num_int(cur, start, len, line_no, _at_bol, _has_space);
+      num->base.num_kind = TK_NUM_KIND_INT;
       num->uval = ch;
       num->val = (long long)ch;
-      num->fp_kind = TK_FLOAT_KIND_INT;
-      num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       num->int_base = 10;
       num->is_unsigned = false;
       num->int_size = TK_INT_SIZE_INT;
@@ -866,11 +896,28 @@ token_t *tk_tokenize(char *p) {
     // 数値リテラル (整数 または 浮動小数点数)
     if (tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1]))) {
       char *start = p; // Keep track of the start of the number for length calculation
-      token_num_t *num = new_token_num(cur, p, 0, line_no, _at_bol, _has_space);
-      parse_number_literal(&p, num);
-      num->len = p - start;
-      num->str = start;
-      cur = (token_t *)num;
+      parsed_num_t parsed = {0};
+      parse_number_literal(&p, &parsed);
+      int len = p - start;
+      if (parsed.fp_kind == TK_FLOAT_KIND_NONE) {
+        token_num_int_t *num = new_token_num_int(cur, start, len, line_no, _at_bol, _has_space);
+        num->base.num_kind = TK_NUM_KIND_INT;
+        num->val = parsed.val;
+        num->uval = parsed.uval;
+        num->is_unsigned = parsed.is_unsigned;
+        num->int_size = parsed.int_size;
+        num->int_base = parsed.int_base;
+        num->char_width = parsed.char_width;
+        num->char_prefix_kind = parsed.char_prefix_kind;
+        cur = (token_t *)num;
+      } else {
+        token_num_float_t *num = new_token_num_float(cur, start, len, line_no, _at_bol, _has_space);
+        num->base.num_kind = TK_NUM_KIND_FLOAT;
+        num->fval = parsed.fval;
+        num->fp_kind = parsed.fp_kind;
+        num->float_suffix_kind = parsed.float_suffix_kind;
+        cur = (token_t *)num;
+      }
       continue;
     }
 

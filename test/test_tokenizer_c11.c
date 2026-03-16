@@ -7,7 +7,8 @@
 
 #include "test_common.h"
 
-static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
+static token_num_int_t *as_num_i(token_t *tok) { return (token_num_int_t *)tok; }
+static token_num_float_t *as_num_f(token_t *tok) { return (token_num_float_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 
 static void expect_tokenize_fail(const char *input) {
@@ -53,7 +54,7 @@ static void test_c11_binary_literal_strict_behavior(void) {
   tk_set_strict_c11_mode(false);
   token_t *tok = tk_tokenize("0b101");
   ASSERT_EQ(TK_NUM, tok->kind);
-  ASSERT_EQ(5, as_num(tok)->val);
+  ASSERT_EQ(5, as_num_i(tok)->val);
 
   tk_set_strict_c11_mode(true);
   expect_tokenize_fail("0b101");
@@ -64,10 +65,10 @@ static void test_c11_float_suffix_metadata(void) {
   printf("test_c11_float_suffix_metadata...\n");
   token_t *tok = tk_tokenize("1.0f 2.0L");
   ASSERT_EQ(TK_NUM, tok->kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num(tok)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num_f(tok)->float_suffix_kind);
   tok = tok->next;
   ASSERT_EQ(TK_NUM, tok->kind);
-  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(tok)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num_f(tok)->float_suffix_kind);
 }
 
 int main(void) {
