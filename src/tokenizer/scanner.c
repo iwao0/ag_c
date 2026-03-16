@@ -48,7 +48,7 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
       p++;
     }
     if (!closed) {
-      error_at(p, "コメントが閉じられていません");
+      tk_error_at(p, "コメントが閉じられていません");
     }
     return p;
   }

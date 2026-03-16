@@ -57,28 +57,4 @@ typedef struct {
 void tk_reset_tokenizer_stats(void);
 tokenizer_stats_t tk_get_tokenizer_stats(void);
 
-// 既存呼び出し互換（段階移行用）
-#define error_at tk_error_at
-#define error_tok tk_error_tok
-#define token_kind_str tk_token_kind_str
-#define consume tk_consume
-#define consume_str tk_consume_str
-#define consume_ident tk_consume_ident
-#define expect tk_expect
-#define expect_number tk_expect_number
-#define at_eof tk_at_eof
-#define tokenize tk_tokenize
-#define get_user_input tk_get_user_input
-#define set_user_input tk_set_user_input
-#define get_filename tk_get_filename
-#define set_filename tk_set_filename
-#define get_strict_c11_mode tk_get_strict_c11_mode
-#define set_strict_c11_mode tk_set_strict_c11_mode
-#define get_enable_trigraphs tk_get_enable_trigraphs
-#define set_enable_trigraphs tk_set_enable_trigraphs
-#define get_enable_binary_literals tk_get_enable_binary_literals
-#define set_enable_binary_literals tk_set_enable_binary_literals
-#define reset_tokenizer_stats tk_reset_tokenizer_stats
-#define get_tokenizer_stats tk_get_tokenizer_stats
-
 #endif

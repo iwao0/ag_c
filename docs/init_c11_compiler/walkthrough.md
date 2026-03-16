@@ -54,6 +54,10 @@
    - ベンチを mixed / ident-heavy / numeric-heavy / punct-heavy の4系統で継続計測し、CIしきい値をケース別に設定しました。
    - `scripts/bench_tokenizer_opt_levels.sh` を追加し、`-O0`/`-O2` の2軸ベンチを定点実行できるようにしました。
 
+8. **Tokenizer API命名統一**
+   - `src/tokenizer/tokenizer.h` の公開関数を `tk_` 接頭辞へ統一しました。
+   - `src/` と `test/` の呼び出し側も `tk_` 名に移行し、旧API互換マクロを削除しました。
+
 ## 実装済み機能一覧
 
 | 機能 | 対応する文法規則 |

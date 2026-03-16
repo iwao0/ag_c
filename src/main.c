@@ -15,8 +15,8 @@ int main(int argc, char **argv) {
   load_config_toml();
 
   // トークナイズ
-  set_filename(argv[1]);
-  token = tokenize(argv[1]);
+  tk_set_filename(argv[1]);
+  token = tk_tokenize(argv[1]);
 
   // プリプロセス（マクロ展開やディレクティブ処理）
   token = preprocess(token);

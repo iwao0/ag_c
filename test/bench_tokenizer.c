@@ -80,12 +80,12 @@ static void run_case_with_input(const char *name, char *input) {
   struct timespec t0;
   struct timespec t1;
 
-  reset_tokenizer_stats();
+  tk_reset_tokenizer_stats();
   clock_gettime(CLOCK_MONOTONIC, &t0);
-  token_t *tok = tokenize(input);
+  token_t *tok = tk_tokenize(input);
   clock_gettime(CLOCK_MONOTONIC, &t1);
 
-  tokenizer_stats_t st = get_tokenizer_stats();
+  tokenizer_stats_t st = tk_get_tokenizer_stats();
   size_t token_count = count_tokens(tok);
   double sec = elapsed_sec(t0, t1);
   double tps = sec > 0.0 ? token_count / sec : 0.0;
@@ -110,9 +110,9 @@ int main(void) {
   const char *punct_pattern =
       "{ } ( ) [ ] ; , . ... + - * / % ++ -- += -= *= /= %= == != < <= > >= && || & | ^ ~ ? : -> << >> <<= >>= # ## %: %:%: <::> <% %>\n";
 
-  set_strict_c11_mode(false);
-  set_enable_binary_literals(true);
-  set_enable_trigraphs(true);
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(true);
+  tk_set_enable_trigraphs(true);
 
   puts("Tokenizer benchmark");
   run_case("mixed", mixed_pattern, 1024);

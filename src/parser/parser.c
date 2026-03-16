@@ -148,7 +148,7 @@ void program(void) {
   int cap = 8;
   code = calloc(cap, sizeof(node_t*));
   int i = 0;
-  while (!at_eof()) {
+  while (!tk_at_eof()) {
     if (i >= cap - 1) { // NULL終端用
       cap *= 2;
       code = realloc(code, sizeof(node_t*) * cap);
@@ -181,7 +181,7 @@ static node_t *funcdef(void) {
   current_func_ret_type = 0;
   if (ret_kind == TK_FLOAT) current_func_ret_type = 1;
   else if (ret_kind == TK_DOUBLE) current_func_ret_type = 2;
-  token_ident_t *tok = consume_ident();
+  token_ident_t *tok = tk_consume_ident();
   if (!tok) {
     fprintf(stderr, "関数定義が期待されます\n");
     exit(1);
@@ -195,44 +195,44 @@ static node_t *funcdef(void) {
   locals = NULL;
   locals_offset = 0;
 
-  expect('(');
+  tk_expect('(');
   // 仮引数のパース
   int arg_cap = 4;
   node->args = calloc(arg_cap, sizeof(node_t*));
   int nargs = 0;
-  if (!consume(')')) {
+  if (!tk_consume(')')) {
     consume_type(); // 仮引数の型
-    while (consume('*')) {} // ポインタの * を読み飛ばす
-    token_ident_t *param = consume_ident();
+    while (tk_consume('*')) {} // ポインタの * を読み飛ばす
+    token_ident_t *param = tk_consume_ident();
     if (param) {
       lvar_t *var = register_lvar(param->str, param->len);
       node->args[nargs++] = new_node_lvar(var->offset);
     }
-    while (consume(',')) {
+    while (tk_consume(',')) {
       if (nargs >= arg_cap) {
         arg_cap *= 2;
         node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
       }
       consume_type(); // 仮引数の型
-      while (consume('*')) {} // ポインタの * を読み飛ばす
-      param = consume_ident();
+      while (tk_consume('*')) {} // ポインタの * を読み飛ばす
+      param = tk_consume_ident();
       if (param) {
         lvar_t *var = register_lvar(param->str, param->len);
         node->args[nargs++] = new_node_lvar(var->offset);
       }
     }
-    expect(')');
+    tk_expect(')');
   }
   node->nargs = nargs;
 
   // 関数本体 (ブロック)
-  expect('{');
+  tk_expect('{');
   node_block_t *body = calloc(1, sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
   int body_cap = 8;
   body->body = calloc(body_cap, sizeof(node_t*));
-  while (!consume('}')) {
+  while (!tk_consume('}')) {
     if (i >= body_cap - 1) {
       body_cap *= 2;
       body->body = realloc(body->body, sizeof(node_t*) * body_cap);
@@ -253,13 +253,13 @@ static node_t *funcdef(void) {
 //      | "int" ident ("=" expr)? ";"
 //      | expr ";"
 static node_t *stmt(void) {
-  if (consume('{')) {
+  if (tk_consume('{')) {
     node_block_t *node = calloc(1, sizeof(node_block_t));
     node->base.kind = ND_BLOCK;
     int i = 0;
     int cap = 8;
     node->body = calloc(cap, sizeof(node_t*));
-    while (!consume('}')) {
+    while (!tk_consume('}')) {
       if (i >= cap - 1) {
         cap *= 2;
         node->body = realloc(node->body, sizeof(node_t*) * cap);
@@ -276,9 +276,9 @@ static node_t *stmt(void) {
     int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT || type_kind == TK_FLOAT) ? 4 : 8;
     // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
     int is_pointer = 0;
-    while (consume('*')) { is_pointer = 1; }
+    while (tk_consume('*')) { is_pointer = 1; }
     int var_size = is_pointer ? 8 : elem_size;
-    token_ident_t *tok = consume_ident();
+    token_ident_t *tok = tk_consume_ident();
     if (!tok) {
       fprintf(stderr, "変数名が期待されます\n");
       exit(1);
@@ -286,15 +286,15 @@ static node_t *stmt(void) {
     lvar_t *var = find_lvar(tok->str, tok->len);
     if (!var) {
       // 配列宣言: ident "[" num "]"
-      if (consume('[')) {
-        int array_size = expect_number();
-        expect(']');
+      if (tk_consume('[')) {
+        int array_size = tk_expect_number();
+        tk_expect(']');
         var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
-        if (consume('=')) {
+        if (tk_consume('=')) {
           // 配列初期化は未対応
           expr();
         }
-        expect(';');
+        tk_expect(';');
         node_t *node = new_node_num(0);
         return node;
       }
@@ -305,18 +305,18 @@ static node_t *stmt(void) {
       if (type_kind == TK_FLOAT) var->is_float = 1;
       else if (type_kind == TK_DOUBLE) var->is_float = 2;
     }
-    if (consume('=')) {
+    if (tk_consume('=')) {
       // int x = expr;
       node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
       lvar->is_float = var->is_float;
       node_mem_t *node = new_node_assign(lvar, expr());
       node->type_size = is_pointer ? 8 : var->elem_size;
       node->base.is_float = var->is_float;
-      expect(';');
+      tk_expect(';');
       return (node_t *)node;
     }
     // int x; (初期化なし → ダミーの値0)
-    expect(';');
+    tk_expect(';');
     node_t *node = new_node_num(0);
     return node;
   }
@@ -327,17 +327,17 @@ static node_t *stmt(void) {
     node->kind = ND_RETURN;
     node->lhs = expr();
     node->is_float = current_func_ret_type; // 関数宣言時の戻り値型を記録
-    expect(';');
+    tk_expect(';');
     return node;
   }
 
   if (token->kind == TK_IF) {
     token = token->next;
-    expect('(');
+    tk_expect('(');
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_IF;
     node->base.lhs = expr();
-    expect(')');
+    tk_expect(')');
     node->base.rhs = stmt();
     if (token->kind == TK_ELSE) {
       token = token->next;
@@ -348,38 +348,38 @@ static node_t *stmt(void) {
 
   if (token->kind == TK_WHILE) {
     token = token->next;
-    expect('(');
+    tk_expect('(');
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_WHILE;
     node->base.lhs = expr();  // 条件式
-    expect(')');
+    tk_expect(')');
     node->base.rhs = stmt();  // ループ本体
     return (node_t *)node;
   }
 
   if (token->kind == TK_FOR) {
     token = token->next;
-    expect('(');
+    tk_expect('(');
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
-    if (!consume(';')) {
+    if (!tk_consume(';')) {
       node->init = expr();  // 初期化式
-      expect(';');
+      tk_expect(';');
     }
-    if (!consume(';')) {
+    if (!tk_consume(';')) {
       node->base.lhs = expr();   // 条件式
-      expect(';');
+      tk_expect(';');
     }
-    if (!consume(')')) {
+    if (!tk_consume(')')) {
       node->inc = expr();   // インクリメント式
-      expect(')');
+      tk_expect(')');
     }
     node->base.rhs = stmt();     // ループ本体
     return (node_t *)node;
   }
 
   node_t *node = expr();
-  expect(';');
+  tk_expect(';');
   return node;
 }
 
@@ -389,7 +389,7 @@ node_t *expr(void) { return assign(); }
 // assign = equality ("=" assign)?
 static node_t *assign(void) {
   node_t *node = equality();
-  if (consume('=')) {
+  if (tk_consume('=')) {
     node_mem_t *assign_node = new_node_assign(node, assign());
     // 左辺のtype_sizeをASSIGNに伝播（str/strb/strh の切り替えに使用）
     assign_node->type_size = node_type_size(assign_node->base.lhs);
@@ -404,9 +404,9 @@ static node_t *equality(void) {
   node_t *node = relational();
 
   for (;;) {
-    if (consume_str("=="))
+    if (tk_consume_str("=="))
       node = new_node_binary(ND_EQ, node, relational());
-    else if (consume_str("!="))
+    else if (tk_consume_str("!="))
       node = new_node_binary(ND_NE, node, relational());
     else
       return node;
@@ -418,13 +418,13 @@ static node_t *relational(void) {
   node_t *node = add();
 
   for (;;) {
-    if (consume_str("<"))
+    if (tk_consume_str("<"))
       node = new_node_binary(ND_LT, node, add());
-    else if (consume_str("<="))
+    else if (tk_consume_str("<="))
       node = new_node_binary(ND_LE, node, add());
-    else if (consume_str(">"))
+    else if (tk_consume_str(">"))
       node = new_node_binary(ND_LT, add(), node);
-    else if (consume_str(">="))
+    else if (tk_consume_str(">="))
       node = new_node_binary(ND_LE, add(), node);
     else
       return node;
@@ -436,9 +436,9 @@ static node_t *add(void) {
   node_t *node = mul();
 
   for (;;) {
-    if (consume('+'))
+    if (tk_consume('+'))
       node = new_node_binary(ND_ADD, node, mul());
-    else if (consume('-'))
+    else if (tk_consume('-'))
       node = new_node_binary(ND_SUB, node, mul());
     else
       return node;
@@ -450,9 +450,9 @@ static node_t *mul(void) {
   node_t *node = unary();
 
   for (;;) {
-    if (consume('*'))
+    if (tk_consume('*'))
       node = new_node_binary(ND_MUL, node, unary());
-    else if (consume('/'))
+    else if (tk_consume('/'))
       node = new_node_binary(ND_DIV, node, unary());
     else
       return node;
@@ -462,7 +462,7 @@ static node_t *mul(void) {
 // unary = ("*" | "&") unary | primary postfix*
 // postfix = "[" expr "]"
 static node_t *unary(void) {
-  if (consume('*')) {
+  if (tk_consume('*')) {
     node_t *operand = unary();
     node_mem_t *node = calloc(1, sizeof(node_mem_t));
     node->base.kind = ND_DEREF;
@@ -473,7 +473,7 @@ static node_t *unary(void) {
     node->type_size = ds ? ds : 8;
     return (node_t *)node;
   }
-  if (consume('&')) {
+  if (tk_consume('&')) {
     node_mem_t *node = calloc(1, sizeof(node_mem_t));
     node->base.kind = ND_ADDR;
     node->base.lhs = unary();
@@ -481,10 +481,10 @@ static node_t *unary(void) {
   }
   node_t *node = primary();
   // 後置演算子: [expr]
-  while (consume('[')) {
+  while (tk_consume('[')) {
     // arr[i] → *(arr + i*elem_size)
     node_t *idx = expr();
-    expect(']');
+    tk_expect(']');
     // 要素サイズを取得（nodeから伝播、デフォルトは8）
     // 要素サイズを取得（deref_size > type_size の優先度で伝播）
     int ds = node_deref_size(node);
@@ -504,16 +504,16 @@ static node_t *unary(void) {
 // primary = ident "(" args? ")" | "(" expr ")" | ident | num | string
 // args    = expr ("," expr)*
 static node_t *primary(void) {
-  if (consume('(')) {
+  if (tk_consume('(')) {
     node_t *node = expr();
-    expect(')');
+    tk_expect(')');
     return node;
   }
 
-  token_ident_t *tok = consume_ident();
+  token_ident_t *tok = tk_consume_ident();
   if (tok) {
     // 関数呼び出し: ident "(" args? ")"
-    if (consume('(')) {
+    if (tk_consume('(')) {
       node_func_t *node = calloc(1, sizeof(node_func_t));
       node->base.kind = ND_FUNCALL;
       node->funcname = tok->str;
@@ -521,16 +521,16 @@ static node_t *primary(void) {
       int nargs = 0;
       int arg_cap = 4;
       node->args = calloc(arg_cap, sizeof(node_t*));
-      if (!consume(')')) {
+      if (!tk_consume(')')) {
         node->args[nargs++] = expr();
-        while (consume(',')) {
+        while (tk_consume(',')) {
           if (nargs >= arg_cap) {
             arg_cap *= 2;
             node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
           }
           node->args[nargs++] = expr();
         }
-        expect(')');
+        tk_expect(')');
       }
       node->nargs = nargs;
       return (node_t *)node;
@@ -568,7 +568,7 @@ static node_t *primary(void) {
         merged_width = st->char_width ? st->char_width : 1;
         merged_prefix_kind = st->str_prefix_kind;
       } else if (merged_width != st->char_width) {
-        error_tok(t, "異なる接頭辞の文字列リテラルは連結できません");
+        tk_error_tok(t, "異なる接頭辞の文字列リテラルは連結できません");
       }
       total_len += st->len;
       t = t->next;
@@ -631,6 +631,6 @@ static node_t *primary(void) {
     return (node_t *)node;
   }
 
-  error_tok(token, "数値を期待しています");
+  tk_error_tok(token, "数値を期待しています");
   return NULL;
 }

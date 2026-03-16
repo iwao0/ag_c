@@ -19,11 +19,11 @@ static char *user_input;
 // 現在着目しているトークン
 token_t *token;
 
-char *get_user_input(void) {
+char *tk_get_user_input(void) {
   return user_input;
 }
 
-void set_user_input(char *p) {
+void tk_set_user_input(char *p) {
   user_input = p;
 }
 
@@ -32,15 +32,15 @@ static tokenizer_stats_t tok_stats = {0};
 static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
 
-char *get_filename(void) {
+char *tk_get_filename(void) {
   return current_filename;
 }
 
-void set_filename(char *name) {
+void tk_set_filename(char *name) {
   current_filename = name;
 }
 
-void reset_tokenizer_stats(void) {
+void tk_reset_tokenizer_stats(void) {
   stats_base_chunks = tk_allocator_total_chunks();
   stats_base_reserved_bytes = tk_allocator_total_reserved_bytes();
   tok_stats.alloc_count = 0;
@@ -48,7 +48,7 @@ void reset_tokenizer_stats(void) {
   tok_stats.peak_alloc_bytes = 0;
 }
 
-tokenizer_stats_t get_tokenizer_stats(void) {
+tokenizer_stats_t tk_get_tokenizer_stats(void) {
   tok_stats.alloc_count = tk_allocator_total_chunks() - stats_base_chunks;
   tok_stats.alloc_bytes = tk_allocator_total_reserved_bytes() - stats_base_reserved_bytes;
   tok_stats.peak_alloc_bytes = tok_stats.alloc_bytes;
@@ -76,7 +76,7 @@ static char trigraph_to_char(char c) {
 
 // 翻訳フェーズ1: trigraph を置換する
 static char *replace_trigraphs(const char *in) {
-  if (!get_enable_trigraphs()) return (char *)in;
+  if (!tk_get_enable_trigraphs()) return (char *)in;
   size_t n = strlen(in);
   bool has_trigraph = false;
   for (size_t i = 0; i + 2 < n; i++) {
@@ -107,7 +107,7 @@ static char *replace_trigraphs(const char *in) {
 }
 
 // エラー箇所を視覚的に表示する
-void error_at(char *loc, char *fmt, ...) {
+void tk_error_at(char *loc, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
 
@@ -120,7 +120,7 @@ void error_at(char *loc, char *fmt, ...) {
   exit(1);
 }
 
-void error_tok(token_t *tok, char *fmt, ...) {
+void tk_error_tok(token_t *tok, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
 
@@ -140,7 +140,7 @@ void error_tok(token_t *tok, char *fmt, ...) {
       fprintf(stderr, " (actual: '%.*s')", num->len, num->str);
     } else {
       int len = 0;
-      const char *s = token_kind_str(tok->kind, &len);
+      const char *s = tk_token_kind_str(tok->kind, &len);
       if (s && len > 0) {
         fprintf(stderr, " (actual: '%.*s')", len, s);
       }
@@ -150,7 +150,7 @@ void error_tok(token_t *tok, char *fmt, ...) {
   exit(1);
 }
 
-const char *token_kind_str(token_kind_t kind, int *len) {
+const char *tk_token_kind_str(token_kind_t kind, int *len) {
   const char *s = NULL;
   switch (kind) {
     case TK_IF: s = "if"; break;
@@ -283,7 +283,7 @@ static token_kind_t kind_for_char(char op) {
   }
 }
 
-bool consume(char op) {
+bool tk_consume(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind)
     return false;
@@ -291,7 +291,7 @@ bool consume(char op) {
   return true;
 }
 
-bool consume_str(char *op) {
+bool tk_consume_str(char *op) {
   token_kind_t kind = punctuator_kind_for_str(op);
   if (kind == TK_EOF || token->kind != kind)
     return false;
@@ -299,7 +299,7 @@ bool consume_str(char *op) {
   return true;
 }
 
-token_ident_t *consume_ident(void) {
+token_ident_t *tk_consume_ident(void) {
   if (token->kind != TK_IDENT)
     return NULL;
   token_ident_t *tok = (token_ident_t *)token;
@@ -307,28 +307,28 @@ token_ident_t *consume_ident(void) {
   return tok;
 }
 
-void expect(char op) {
+void tk_expect(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind) {
-    error_tok(token, "'%c'ではありません", op);
+    tk_error_tok(token, "'%c'ではありません", op);
   }
   token = token->next;
 }
 
-int expect_number(void) {
+int tk_expect_number(void) {
   if (token->kind != TK_NUM) {
-    error_tok(token, "数ではありません");
+    tk_error_tok(token, "数ではありません");
   }
   long long n = ((token_num_t *)token)->val;
   if (n < INT_MIN || n > INT_MAX) {
-    error_tok(token, "数値が int 範囲外です");
+    tk_error_tok(token, "数値が int 範囲外です");
   }
   int val = (int)n;
   token = token->next;
   return val;
 }
 
-bool at_eof(void) { return token->kind == TK_EOF; }
+bool tk_at_eof(void) { return token->kind == TK_EOF; }
 
 // 新しいトークンを作成して、curに繋げる
 static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
@@ -393,14 +393,14 @@ static void choose_int_type(token_num_t *num, unsigned long long val, bool is_de
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
     }
-    error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(num->str, "整数リテラルが大きすぎます");
   }
 
   if (has_u && long_cnt == 0) {
     if (val <= (unsigned long long)UINT_MAX) { num->is_unsigned = true; num->int_size = 0; return; }
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = 1; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
-    error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(num->str, "整数リテラルが大きすぎます");
   }
 
   if (!has_u && long_cnt == 1) {
@@ -413,13 +413,13 @@ static void choose_int_type(token_num_t *num, unsigned long long val, bool is_de
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
     }
-    error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(num->str, "整数リテラルが大きすぎます");
   }
 
   if (has_u && long_cnt == 1) {
     if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = 1; return; }
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
-    error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(num->str, "整数リテラルが大きすぎます");
   }
 
   if (!has_u && long_cnt == 2) {
@@ -429,12 +429,12 @@ static void choose_int_type(token_num_t *num, unsigned long long val, bool is_de
       if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
       if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
     }
-    error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(num->str, "整数リテラルが大きすぎます");
   }
 
   if (has_u && long_cnt == 2) {
     if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
-    error_at(num->str, "整数リテラルが大きすぎます");
+    tk_error_at(num->str, "整数リテラルが大きすぎます");
   }
 }
 
@@ -445,18 +445,18 @@ static void parse_int_suffix(token_num_t *num, char **pp, unsigned long long val
 
   while (true) {
     if (*p == 'u' || *p == 'U') {
-      if (seen_u) error_at(p, "整数サフィックスが不正です");
+      if (seen_u) tk_error_at(p, "整数サフィックスが不正です");
       seen_u = true;
       p++;
       continue;
     }
     if (*p == 'l' || *p == 'L') {
       if ((p[1] == 'l' || p[1] == 'L')) {
-        if (long_cnt == 2) error_at(p, "整数サフィックスが不正です");
+        if (long_cnt == 2) tk_error_at(p, "整数サフィックスが不正です");
         long_cnt = 2;
         p += 2;
       } else {
-        if (long_cnt == 2) error_at(p, "整数サフィックスが不正です");
+        if (long_cnt == 2) tk_error_at(p, "整数サフィックスが不正です");
         long_cnt = 1;
         p++;
       }
@@ -465,7 +465,7 @@ static void parse_int_suffix(token_num_t *num, char **pp, unsigned long long val
     break;
   }
 
-  if (tk_is_ident_start_byte(*p)) error_at(p, "整数サフィックスが不正です");
+  if (tk_is_ident_start_byte(*p)) tk_error_at(p, "整数サフィックスが不正です");
 
   choose_int_type(num, val, is_decimal, seen_u, long_cnt);
   *pp = p;
@@ -484,11 +484,11 @@ static unsigned long long parse_digits(char **pp, int base) {
     if (digit >= base) break;
     has_digit = true;
     if (val > (ULLONG_MAX - (unsigned long long)digit) / (unsigned long long)base)
-      error_at(*pp, "整数リテラルが大きすぎます");
+      tk_error_at(*pp, "整数リテラルが大きすぎます");
     val = val * (unsigned long long)base + (unsigned long long)digit;
     p++;
   }
-  if (!has_digit) error_at(*pp, "整数リテラルが不正です");
+  if (!has_digit) tk_error_at(*pp, "整数リテラルが不正です");
   *pp = p;
   return val;
 }
@@ -522,7 +522,7 @@ static bool try_parse_decimal_int_fast(char **pp, token_num_t *num) {
     choose_int_type(num, val, true, false, 0);
   }
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    error_at(p, "数値リテラルが不正です");
+    tk_error_at(p, "数値リテラルが不正です");
   }
   *pp = p;
   return true;
@@ -557,7 +557,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     if (has_hex_float_marker(p)) {
       char *end;
       num->fval = strtod(p, &end);
-      if (end == p) error_at(p, "16進浮動小数点リテラルが不正です");
+      if (end == p) tk_error_at(p, "16進浮動小数点リテラルが不正です");
       if (*end == 'f' || *end == 'F') {
         num->is_float = 1;
         num->float_suffix_kind = 1;
@@ -570,7 +570,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
         num->is_float = 2;
         num->float_suffix_kind = 0;
       }
-      if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
+      if (tk_is_ident_start_byte(*end)) tk_error_at(end, "浮動小数点サフィックスが不正です");
       p = end;
     } else {
       p += 2;
@@ -583,11 +583,11 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       parse_int_suffix(num, &p, val, false);
     }
   } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
-    if (get_strict_c11_mode() || !get_enable_binary_literals()) {
-      error_at(p, "2進数リテラルは strict C11 では未対応です");
+    if (tk_get_strict_c11_mode() || !tk_get_enable_binary_literals()) {
+      tk_error_at(p, "2進数リテラルは strict C11 では未対応です");
     }
     p += 2;
-    if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
+    if (*p != '0' && *p != '1') tk_error_at(p, "2進数リテラルが不正です");
     unsigned long long val = parse_digits(&p, 2);
     num->uval = val;
     num->val = token_signed_from_u64(val);
@@ -596,7 +596,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     num->int_base = 2;
     parse_int_suffix(num, &p, val, false);
   } else if (*p == '0' && tk_is_digit(p[1])) {
-    if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
+    if (p[1] == '8' || p[1] == '9') tk_error_at(p, "8進数リテラルが不正です");
     p++;
     unsigned long long val = 0;
     if (*p >= '0' && *p <= '7') {
@@ -631,7 +631,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
         num->is_float = 2; // デフォルトは double
         num->float_suffix_kind = 0;
       }
-      if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
+      if (tk_is_ident_start_byte(*end)) tk_error_at(end, "浮動小数点サフィックスが不正です");
       p = end;
     } else {
       unsigned long long val = parse_digits(&p, 10);
@@ -645,13 +645,13 @@ static void parse_number_literal(char **pp, token_num_t *num) {
   }
 
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    error_at(p, "数値リテラルが不正です");
+    tk_error_at(p, "数値リテラルが不正です");
   }
   *pp = p;
 }
 
 // 文字列 p をトークナイズしてその結果へのポインタを返す
-token_t *tokenize(char *p) {
+token_t *tk_tokenize(char *p) {
   tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);
   user_input = normalized;
@@ -713,7 +713,7 @@ token_t *tokenize(char *p) {
       char *start = p;
       while (true) {
         if (*p == '\0' || *p == '\n') {
-          error_at(p, "文字列リテラルが閉じられていません");
+          tk_error_at(p, "文字列リテラルが閉じられていません");
         }
         if (*p == '"') break;
         if (*p == '\\') {
@@ -756,10 +756,10 @@ token_t *tokenize(char *p) {
       p += chr_prefix;
       p++; // 開きクォートをスキップ
       if (*p == '\0' || *p == '\n') {
-        error_at(p, "文字リテラルが閉じられていません");
+        tk_error_at(p, "文字リテラルが閉じられていません");
       }
       if (*p == '\'') {
-        error_at(p, "空の文字リテラルは使えません");
+        tk_error_at(p, "空の文字リテラルは使えません");
       }
       unsigned long long ch = 0;
       int nchar = 0;
@@ -771,7 +771,7 @@ token_t *tokenize(char *p) {
             p++;
             one = tk_read_escape_char(&p);
           } else if (*p == '\n') {
-            error_at(p, "文字リテラルが不正です");
+            tk_error_at(p, "文字リテラルが不正です");
           } else {
             one = (unsigned char)*p;
             p++;
@@ -787,7 +787,7 @@ token_t *tokenize(char *p) {
             p++;
             one = tk_read_escape_char(&p);
           } else if (*p == '\n') {
-            error_at(p, "文字リテラルが不正です");
+            tk_error_at(p, "文字リテラルが不正です");
           } else {
             one = (unsigned char)*p;
             p++;
@@ -797,7 +797,7 @@ token_t *tokenize(char *p) {
         }
       }
       if (nchar == 0 || *p != '\'') {
-        error_at(p, "文字リテラルが不正です");
+        tk_error_at(p, "文字リテラルが不正です");
       }
       p++; // 閉じクォートをスキップ
       int len = p - start;
@@ -867,7 +867,7 @@ token_t *tokenize(char *p) {
       continue;
     }
 
-    error_at(p, "トークナイズできません");
+    tk_error_at(p, "トークナイズできません");
   }
 
   new_token_simple(TK_EOF, cur, line_no, false, false);

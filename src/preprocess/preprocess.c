@@ -49,7 +49,7 @@ static const char *token_text(token_t *tok, int *len) {
     if (len) *len = num->len;
     return num->str;
   }
-  return token_kind_str(tok->kind, len);
+  return tk_token_kind_str(tok->kind, len);
 }
 
 static char *my_strndup(const char *s, size_t n) {
@@ -503,15 +503,15 @@ static token_t *paste_tokens(token_t *tok) {
       memcpy(buf, s_l, len_l);
       memcpy(buf + len_l, s_r, len_r);
       
-      char *saved_input = get_user_input();
-      char *saved_filename = get_filename();
+      char *saved_input = tk_get_user_input();
+      char *saved_filename = tk_get_filename();
       token_t *saved_token = token;
 
-      set_filename("<paste>");
-      token_t *merged = tokenize(buf);
+      tk_set_filename("<paste>");
+      token_t *merged = tk_tokenize(buf);
 
-      set_filename(saved_filename);
-      set_user_input(saved_input);
+      tk_set_filename(saved_filename);
+      tk_set_user_input(saved_input);
       token = saved_token;
 
       if (merged->kind == TK_EOF) {
@@ -574,16 +574,16 @@ token_t *preprocess(token_t *tok) {
           exit(1);
         }
 
-        char *saved_input = get_user_input();
-        char *saved_filename = get_filename();
+        char *saved_input = tk_get_user_input();
+        char *saved_filename = tk_get_filename();
         token_t *saved_token = token;
 
-        set_filename(my_strndup(filename, strlen(filename)));
-        token_t *tok2 = tokenize(buf);
+        tk_set_filename(my_strndup(filename, strlen(filename)));
+        token_t *tok2 = tk_tokenize(buf);
         tok2 = preprocess(tok2);
 
-        set_filename(saved_filename);
-        set_user_input(saved_input);
+        tk_set_filename(saved_filename);
+        tk_set_user_input(saved_input);
         token = saved_token;
 
         if (tok2->kind != TK_EOF) {

@@ -68,11 +68,11 @@ void load_config_toml(void) {
     if (!parse_bool_value(val, &b)) continue;
 
     if (strcmp(key, "strict_c11") == 0) {
-      set_strict_c11_mode(b);
+      tk_set_strict_c11_mode(b);
     } else if (strcmp(key, "enable_trigraphs") == 0) {
-      set_enable_trigraphs(b);
+      tk_set_enable_trigraphs(b);
     } else if (strcmp(key, "enable_binary_literals") == 0) {
-      set_enable_binary_literals(b);
+      tk_set_enable_binary_literals(b);
     }
   }
   fclose(fp);

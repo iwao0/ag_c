@@ -22,7 +22,7 @@ static void expect_tokenize_fail(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    tokenize((char *)input);
+    tk_tokenize((char *)input);
     _exit(0);
   }
   int status;
@@ -31,10 +31,10 @@ static void expect_tokenize_fail(const char *input) {
   ASSERT_TRUE(WEXITSTATUS(status) != 0);
 }
 
-// 1. tokenize() のテスト
+// 1. tk_tokenize() のテスト
 static void test_tokenize() {
   printf("test_tokenize...\n");
-  token = tokenize(" 12 + 34 - 5 ");
+  token = tk_tokenize(" 12 + 34 - 5 ");
 
   // 最初のトークン: "12"
   ASSERT_EQ(TK_NUM, token->kind);
@@ -63,7 +63,7 @@ static void test_tokenize() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 四則演算と括弧のテスト
-  token = tokenize("1 * (2 / 3)");
+  token = tk_tokenize("1 * (2 / 3)");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(1, as_num(token)->val);
   token = token->next;
@@ -91,7 +91,7 @@ static void test_tokenize() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 比較演算子のテスト
-  token = tokenize("1 == 2 != 3 <= 4 >= 5 < 6 > 7");
+  token = tk_tokenize("1 == 2 != 3 <= 4 >= 5 < 6 > 7");
   // 1
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(1, as_num(token)->val);
@@ -145,7 +145,7 @@ static void test_tokenize() {
 // 1b. 16進数/2進数リテラルのテスト
 static void test_tokenize_int_literals() {
   printf("test_tokenize_int_literals...\n");
-  token = tokenize("0x2a 0X10 0b101 0B11 077 010 0 123 1u 2UL 3llu 0x1ffffffff");
+  token = tk_tokenize("0x2a 0X10 0b101 0B11 077 010 0 123 1u 2UL 3llu 0x1ffffffff");
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(42, as_num(token)->val);
@@ -252,7 +252,7 @@ static void test_tokenize_invalid() {
 // 1c. ローカル変数・複数文字識別子のテスト
 static void test_tokenize_ident() {
   printf("test_tokenize_ident...\n");
-  token = tokenize("a = 3; b = a;");
+  token = tk_tokenize("a = 3; b = a;");
 
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ('a', as_ident(token)->str[0]); ASSERT_EQ(1, as_ident(token)->len); token = token->next;
   ASSERT_EQ(TK_ASSIGN, token->kind); token = token->next;
@@ -265,7 +265,7 @@ static void test_tokenize_ident() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 複数文字識別子
-  token = tokenize("foo my_var x1");
+  token = tk_tokenize("foo my_var x1");
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ(3, as_ident(token)->len);
   ASSERT_TRUE(strncmp(as_ident(token)->str, "foo", 3) == 0); token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ(6, as_ident(token)->len);
@@ -275,7 +275,7 @@ static void test_tokenize_ident() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // アンダースコアで始まる識別子
-  token = tokenize("_start _a1");
+  token = tk_tokenize("_start _a1");
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ(6, as_ident(token)->len);
   ASSERT_TRUE(strncmp(as_ident(token)->str, "_start", 6) == 0); token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind); ASSERT_EQ(3, as_ident(token)->len);
@@ -288,7 +288,7 @@ static void test_tokenize_keywords() {
   printf("test_tokenize_keywords...\n");
 
   // 制御構文キーワード
-  token = tokenize("if else while for return");
+  token = tk_tokenize("if else while for return");
   ASSERT_EQ(TK_IF, token->kind);     token = token->next;
   ASSERT_EQ(TK_ELSE, token->kind);   token = token->next;
   ASSERT_EQ(TK_WHILE, token->kind);  token = token->next;
@@ -297,7 +297,7 @@ static void test_tokenize_keywords() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 型キーワード
-  token = tokenize("int char void short long float double signed unsigned");
+  token = tk_tokenize("int char void short long float double signed unsigned");
   ASSERT_EQ(TK_INT, token->kind);     token = token->next;
   ASSERT_EQ(TK_CHAR, token->kind);    token = token->next;
   ASSERT_EQ(TK_VOID, token->kind);    token = token->next;
@@ -310,7 +310,7 @@ static void test_tokenize_keywords() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // その他のキーワード
-  token = tokenize(
+  token = tk_tokenize(
       "auto break case const continue default do enum extern goto inline "
       "register restrict sizeof static struct switch typedef union volatile "
       "_Alignas _Alignof _Atomic _Bool _Complex _Generic _Imaginary "
@@ -348,7 +348,7 @@ static void test_tokenize_keywords() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // キーワードと似た識別子はキーワードにならない
-  token = tokenize("iff int1 returns");
+  token = tk_tokenize("iff int1 returns");
   ASSERT_EQ(TK_IDENT, token->kind);
   ASSERT_TRUE(strncmp(as_ident(token)->str, "iff", 3) == 0); token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind);
@@ -361,7 +361,7 @@ static void test_tokenize_keywords() {
 // 1d. 追加記号のテスト
 static void test_tokenize_symbols() {
   printf("test_tokenize_symbols...\n");
-  token = tokenize("{ } , & [ ]");
+  token = tk_tokenize("{ } , & [ ]");
   ASSERT_EQ(TK_LBRACE, token->kind); token = token->next;
   ASSERT_EQ(TK_RBRACE, token->kind); token = token->next;
   ASSERT_EQ(TK_COMMA, token->kind); token = token->next;
@@ -374,7 +374,7 @@ static void test_tokenize_symbols() {
 // 1d-2. 追加演算子のテスト
 static void test_tokenize_punctuators() {
   printf("test_tokenize_punctuators...\n");
-  token = tokenize("++ -- -> << >> <<= >>= += -= *= /= %= &= ^= |= % | ^ ? : ...");
+  token = tk_tokenize("++ -- -> << >> <<= >>= += -= *= /= %= &= ^= |= % | ^ ? : ...");
   ASSERT_EQ(TK_INC, token->kind); token = token->next;
   ASSERT_EQ(TK_DEC, token->kind); token = token->next;
   ASSERT_EQ(TK_ARROW, token->kind); token = token->next;
@@ -398,7 +398,7 @@ static void test_tokenize_punctuators() {
   ASSERT_EQ(TK_ELLIPSIS, token->kind); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
-  token = tokenize("<: :> <% %> %: %:%:");
+  token = tk_tokenize("<: :> <% %> %: %:%:");
   ASSERT_EQ(TK_LBRACKET, token->kind); token = token->next;
   ASSERT_EQ(TK_RBRACKET, token->kind); token = token->next;
   ASSERT_EQ(TK_LBRACE, token->kind); token = token->next;
@@ -407,7 +407,7 @@ static void test_tokenize_punctuators() {
   ASSERT_EQ(TK_HASHHASH, token->kind); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
-  token = tokenize("#include \"x.h\"\nint main() { return 0; }");
+  token = tk_tokenize("#include \"x.h\"\nint main() { return 0; }");
   ASSERT_EQ(TK_HASH, token->kind);
   ASSERT_TRUE(token->at_bol);
   token = token->next;
@@ -420,21 +420,21 @@ static void test_tokenize_punctuators() {
 // 1d-3. コメントと空白のテスト
 static void test_tokenize_comments() {
   printf("test_tokenize_comments...\n");
-  token = tokenize("1//comment\n2");
+  token = tk_tokenize("1//comment\n2");
   ASSERT_EQ(TK_NUM, token->kind); token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_TRUE(token->at_bol);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
-  token = tokenize("1/* comment */2");
+  token = tk_tokenize("1/* comment */2");
   ASSERT_EQ(TK_NUM, token->kind); token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_TRUE(!token->at_bol);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
-  token = tokenize("1/*\n*/2");
+  token = tk_tokenize("1/*\n*/2");
   ASSERT_EQ(TK_NUM, token->kind); token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_TRUE(token->at_bol);
@@ -445,7 +445,7 @@ static void test_tokenize_comments() {
 // 1e. 文字列リテラルのテスト
 static void test_tokenize_string() {
   printf("test_tokenize_string...\n");
-  token = tokenize("\"hello\"");
+  token = tk_tokenize("\"hello\"");
   ASSERT_EQ(TK_STRING, token->kind);
   ASSERT_EQ(5, as_string(token)->len);
   ASSERT_TRUE(strncmp(as_string(token)->str, "hello", 5) == 0);
@@ -453,14 +453,14 @@ static void test_tokenize_string() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 空文字列
-  token = tokenize("\"\"");
+  token = tk_tokenize("\"\"");
   ASSERT_EQ(TK_STRING, token->kind);
   ASSERT_EQ(0, as_string(token)->len);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 文字列と他のトークンの混在
-  token = tokenize("char *s = \"AB\";");
+  token = tk_tokenize("char *s = \"AB\";");
   ASSERT_EQ(TK_CHAR, token->kind);     token = token->next;
   ASSERT_EQ(TK_MUL, token->kind); token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind);    token = token->next;
@@ -473,7 +473,7 @@ static void test_tokenize_string() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // エスケープを含む文字列
-  token = tokenize("\"a\\\"b\"");
+  token = tk_tokenize("\"a\\\"b\"");
   ASSERT_EQ(TK_STRING, token->kind);
   ASSERT_EQ(4, as_string(token)->len);
   token = token->next;
@@ -483,7 +483,7 @@ static void test_tokenize_string() {
 // 1g. 浮動小数点リテラルのテスト
 static void test_tokenize_float_literal() {
   printf("test_tokenize_float_literal...\n");
-  token = tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f 4.0L 0x1p2L");
+  token = tk_tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f 4.0L 0x1p2L");
   
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->is_float); // デフォルトは double
@@ -530,101 +530,101 @@ static void test_tokenize_float_literal() {
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
-// 2. consume() のテスト
+// 2. tk_consume() のテスト
 static void test_consume() {
   printf("test_consume...\n");
-  token = tokenize(" + 42 ");
+  token = tk_tokenize(" + 42 ");
 
-  ASSERT_TRUE(consume('+'));  // "+"を消費して次に進む
-  ASSERT_TRUE(!consume('-')); // "-"ではないので進まない
+  ASSERT_TRUE(tk_consume('+'));  // "+"を消費して次に進む
+  ASSERT_TRUE(!tk_consume('-')); // "-"ではないので進まない
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(42, as_num(token)->val);
 }
 
-// 2b. consume_str() のテスト
+// 2b. tk_consume_str() のテスト
 static void test_consume_str() {
   printf("test_consume_str...\n");
-  token = tokenize("== != < <=");
-  ASSERT_TRUE(consume_str("=="));
-  ASSERT_TRUE(!consume_str("=="));  // 次は != なので false
-  ASSERT_TRUE(consume_str("!="));
-  ASSERT_TRUE(!consume_str("<="));  // 次は < (1文字) なので <= にはマッチしない
-  ASSERT_TRUE(consume('<'));
-  ASSERT_TRUE(consume_str("<="));
+  token = tk_tokenize("== != < <=");
+  ASSERT_TRUE(tk_consume_str("=="));
+  ASSERT_TRUE(!tk_consume_str("=="));  // 次は != なので false
+  ASSERT_TRUE(tk_consume_str("!="));
+  ASSERT_TRUE(!tk_consume_str("<="));  // 次は < (1文字) なので <= にはマッチしない
+  ASSERT_TRUE(tk_consume('<'));
+  ASSERT_TRUE(tk_consume_str("<="));
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
-// 2c. consume_ident() のテスト
+// 2c. tk_consume_ident() のテスト
 static void test_consume_ident() {
   printf("test_consume_ident...\n");
-  token = tokenize("foo 42");
-  token_ident_t *tok = consume_ident();
+  token = tk_tokenize("foo 42");
+  token_ident_t *tok = tk_consume_ident();
   ASSERT_TRUE(tok != NULL);
   ASSERT_EQ(3, tok->len);
   ASSERT_TRUE(strncmp(tok->str, "foo", 3) == 0);
   // 数値トークンでは NULL を返す
-  tok = consume_ident();
+  tok = tk_consume_ident();
   ASSERT_TRUE(tok == NULL);
   ASSERT_EQ(TK_NUM, token->kind);
 }
 
-// 3. expect() のテスト
+// 3. tk_expect() のテスト
 static void test_expect() {
   printf("test_expect...\n");
-  token = tokenize(" - ");
-  expect('-');
+  token = tk_tokenize(" - ");
+  tk_expect('-');
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
-// 4. expect_number() のテスト
+// 4. tk_expect_number() のテスト
 static void test_expect_number() {
   printf("test_expect_number...\n");
-  token = tokenize(" 999 ");
-  int val = expect_number();
+  token = tk_tokenize(" 999 ");
+  int val = tk_expect_number();
   ASSERT_EQ(999, val);
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
-// 5. at_eof() のテスト
+// 5. tk_at_eof() のテスト
 static void test_at_eof() {
   printf("test_at_eof...\n");
-  token = tokenize(" 1 ");
-  ASSERT_TRUE(!at_eof());
-  expect_number();
-  ASSERT_TRUE(at_eof());
+  token = tk_tokenize(" 1 ");
+  ASSERT_TRUE(!tk_at_eof());
+  tk_expect_number();
+  ASSERT_TRUE(tk_at_eof());
 }
 
 // 1f. 文字リテラルのテスト
 static void test_tokenize_char_literal() {
   printf("test_tokenize_char_literal...\n");
-  token = tokenize("'A'");
+  token = tk_tokenize("'A'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(65, as_num(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // エスケープシーケンス
-  token = tokenize("'\\n'");
+  token = tk_tokenize("'\\n'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(10, as_num(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
-  token = tokenize("'\\0'");
+  token = tk_tokenize("'\\0'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(0, as_num(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // マルチ文字文字定数（実装定義）
-  token = tokenize("'ab'");
+  token = tk_tokenize("'ab'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(((unsigned char)'a' << 8) | (unsigned char)'b', as_num(token)->val);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 接頭辞付き文字定数
-  token = tokenize("L'A' u'B' U'\\u00A9'");
+  token = tk_tokenize("L'A' u'B' U'\\u00A9'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ('A', as_num(token)->val);
   ASSERT_EQ(4, as_num(token)->char_width);
@@ -640,7 +640,7 @@ static void test_tokenize_char_literal() {
   ASSERT_EQ(TK_EOF, token->kind);
 
   // 接頭辞付きマルチ文字定数（実装定義として受理）
-  token = tokenize("L'AB' u'CD' U'EF'");
+  token = tk_tokenize("L'AB' u'CD' U'EF'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(((unsigned char)'A' << 8) | (unsigned char)'B', as_num(token)->val);
   ASSERT_EQ(4, as_num(token)->char_width);
@@ -658,7 +658,7 @@ static void test_tokenize_char_literal() {
 
 static void test_tokenize_string_prefixes_and_ucn() {
   printf("test_tokenize_string_prefixes_and_ucn...\n");
-  token = tokenize("L\"wide\" u\"u16\" U\"u32\" u8\"utf8\" \"\\u00A9\"");
+  token = tk_tokenize("L\"wide\" u\"u16\" U\"u32\" u8\"utf8\" \"\\u00A9\"");
   ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(4, as_string(token)->char_width); token = token->next;
   ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(2, as_string(token)->char_width); token = token->next;
   ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(4, as_string(token)->char_width); token = token->next;
@@ -669,7 +669,7 @@ static void test_tokenize_string_prefixes_and_ucn() {
 
 static void test_tokenize_ucn_ident_and_trigraph() {
   printf("test_tokenize_ucn_ident_and_trigraph...\n");
-  token = tokenize("foo\\u00A9 = 1;");
+  token = tk_tokenize("foo\\u00A9 = 1;");
   ASSERT_EQ(TK_IDENT, token->kind);
   ASSERT_EQ(5, as_ident(token)->len);
   token = token->next;
@@ -678,32 +678,32 @@ static void test_tokenize_ucn_ident_and_trigraph() {
   ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
-  set_enable_trigraphs(true);
-  token = tokenize("?" "?=define X 1");
+  tk_set_enable_trigraphs(true);
+  token = tk_tokenize("?" "?=define X 1");
   ASSERT_EQ(TK_HASH, token->kind);
   token = token->next;
   ASSERT_EQ(TK_IDENT, token->kind);
 
-  set_enable_trigraphs(false);
-  token = tokenize("?" "?=define X 1");
+  tk_set_enable_trigraphs(false);
+  token = tk_tokenize("?" "?=define X 1");
   ASSERT_EQ(TK_QUESTION, token->kind);
-  set_enable_trigraphs(true);
+  tk_set_enable_trigraphs(true);
 }
 
 static void test_strict_c11_mode() {
   printf("test_strict_c11_mode...\n");
-  set_strict_c11_mode(false);
-  token = tokenize("0b101");
+  tk_set_strict_c11_mode(false);
+  token = tk_tokenize("0b101");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(5, as_num(token)->val);
 
-  set_strict_c11_mode(true);
+  tk_set_strict_c11_mode(true);
   expect_tokenize_fail("0b101");
-  set_strict_c11_mode(false);
+  tk_set_strict_c11_mode(false);
 
-  set_enable_binary_literals(false);
+  tk_set_enable_binary_literals(false);
   expect_tokenize_fail("0b101");
-  set_enable_binary_literals(true);
+  tk_set_enable_binary_literals(true);
 }
 
 int main() {
