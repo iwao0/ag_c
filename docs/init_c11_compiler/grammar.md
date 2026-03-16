@@ -12,19 +12,29 @@ params     = type? ident ("," type? ident)*
 stmt       = "{" stmt* "}"
            | "if" "(" expr ")" stmt ("else" stmt)?
            | "while" "(" expr ")" stmt
+           | "do" stmt "while" "(" expr ")" ";"
            | "for" "(" expr? ";" expr? ";" expr? ")" stmt
+           | "switch" "(" expr ")" stmt
+           | "case" num ":" stmt
+           | "default" ":" stmt
+           | "break" ";"
+           | "continue" ";"
            | "return" expr ";"
            | type ident ("=" expr)? ";"
            | expr ";"
 type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"
 expr       = assign
-assign     = equality ("=" assign)?
+assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=") assign)?
+conditional= logical_or ("?" expr ":" conditional)?
+logical_or = logical_and ("||" logical_and)*
+logical_and= equality ("&&" equality)*
 equality   = relational ("==" relational | "!=" relational)*
 relational = add ("<" add | "<=" add | ">" add | ">=" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary)*
-unary      = ("*" | "&") unary | primary postfix*
-postfix    = "[" expr "]"
+unary      = ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
+           | primary postfix*
+postfix    = ("[" expr "]" | "++" | "--")*
 primary    = ident "(" args? ")" | "(" expr ")" | ident | num | string | char_lit
 args       = expr ("," expr)*
 ```
@@ -142,11 +152,24 @@ args       = expr ("," expr)*
 | `ND_NE` | 非等値比較 (`!=`) |
 | `ND_LT` | 小なり (`<`, `>` は左右反転して `<` に変換) |
 | `ND_LE` | 以下 (`<=`, `>=` は左右反転して `<=` に変換) |
+| `ND_LOGAND` | 論理積 (`&&`, 短絡評価) |
+| `ND_LOGOR` | 論理和 (`||`, 短絡評価) |
+| `ND_TERNARY` | 条件演算子 (`?:`) |
 | `ND_ASSIGN` | 代入 (`=`) |
 | `ND_LVAR` | ローカル変数参照 |
 | `ND_IF` | if文（`lhs`=条件, `rhs`=then節, `els`=else節） |
 | `ND_WHILE` | while文（`lhs`=条件, `rhs`=ループ本体） |
+| `ND_DO_WHILE` | do-while文（`rhs`=ループ本体, `lhs`=条件） |
 | `ND_FOR` | for文（`init`=初期化, `lhs`=条件, `inc`=インクリメント, `rhs`=本体） |
+| `ND_SWITCH` | switch文（`lhs`=制御式, `rhs`=本体） |
+| `ND_CASE` | caseラベル（`val`=case値, `rhs`=case文） |
+| `ND_DEFAULT` | defaultラベル（`rhs`=default文） |
+| `ND_BREAK` | break文 |
+| `ND_CONTINUE` | continue文 |
+| `ND_PRE_INC` | 前置インクリメント (`++x`) |
+| `ND_PRE_DEC` | 前置デクリメント (`--x`) |
+| `ND_POST_INC` | 後置インクリメント (`x++`) |
+| `ND_POST_DEC` | 後置デクリメント (`x--`) |
 | `ND_RETURN` | return文（`lhs`=戻り値の式） |
 | `ND_BLOCK` | ブロック文（`body[]`=文の配列） |
 | `ND_FUNCDEF` | 関数定義（`funcname`, `args[]`=仮引数, `rhs`=本体BLOCK） |

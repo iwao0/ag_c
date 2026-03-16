@@ -67,11 +67,17 @@
 | 括弧 `()` | `primary = "(" expr ")"` |
 | 比較演算子 (`==`,`!=`,`<`,`<=`,`>`,`>=`) | `equality`, `relational` |
 | ローカル変数 (複数文字対応) | `primary = ident`, `assign` |
-| 代入式 (`=`) | `assign = equality ("=" assign)?` |
+| 代入式/複合代入 (`=`, `+=`, `-=`, `*=`, `/=`) | `assign = conditional (("=" \| "+=" \| "-=" \| "*=" \| "/=") assign)?` |
 | 複文（セミコロン区切り） | `program = stmt*`, `stmt = expr ";"` |
 | if/else 文 | `stmt = "if" "(" expr ")" stmt ("else" stmt)?` |
 | while 文 | `stmt = "while" "(" expr ")" stmt` |
+| do-while 文 | `stmt = "do" stmt "while" "(" expr ")" ";"` |
 | for 文 | `stmt = "for" "(" expr? ";" expr? ";" expr? ")" stmt` |
+| switch/case/default | `stmt = "switch" "(" expr ")" stmt` / `stmt = "case" num ":" stmt` / `stmt = "default" ":" stmt` |
+| break/continue | `stmt = "break" ";"` / `stmt = "continue" ";"` |
+| 論理演算 (`&&`, `||`) | `logical_or`, `logical_and`（短絡評価） |
+| 条件演算子 (`?:`) | `conditional = logical_or ("?" expr ":" conditional)?` |
+| 前置/後置インクリメント・デクリメント | `unary/postfix` の `++` / `--` |
 | return 文 | `stmt = "return" expr ";"` |
 | ブロック文 | `stmt = "{" stmt* "}"` |
 | 関数定義 | `funcdef = ident "(" params? ")" "{" stmt* "}"` |
@@ -108,8 +114,8 @@
    - `test_parser.c`: AST構築（四則演算の優先順位、括弧、比較、代入式、複文パース `program()`）の検証。
 
 * **結合テスト (E2E Test) — `test/test_e2e.c`**
-   - 7カテゴリ・39ケースで、コンパイル→アセンブル→実行→終了コード検証を自動化。
-   - 整数, 四則演算, 比較演算, ローカル変数, if/else, while, for の全機能をカバー。
+   - 16カテゴリ・132ケースで、コンパイル→アセンブル→実行→終了コード検証を自動化。
+   - `switch`, `break/continue`, `++/--`, `+=` 系、`&&/||`, `?:` を含む拡張機能をカバー。
 
 ## 検証結果 (Validation Results)
 
@@ -123,12 +129,5 @@ Running tests for Parser...
 OK: All unit tests passed!
 build/test_e2e
 Running E2E tests...
-test_integer...
-test_arithmetic...
-test_comparison...
-test_local_variables...
-test_if_else...
-test_while...
-test_for...
-OK: All 96 E2E tests passed! (96/96)
+OK: All 132 E2E tests passed! (132/132)
 ```
