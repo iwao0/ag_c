@@ -125,7 +125,31 @@ static void test_tokenize() {
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
-// 1b. ローカル変数・複数文字識別子のテスト
+// 1b. 16進数/2進数リテラルのテスト
+static void test_tokenize_int_literals() {
+  printf("test_tokenize_int_literals...\n");
+  token = tokenize("0x2a 0X10 0b101 0B11");
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(42, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(16, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(3, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
+// 1c. ローカル変数・複数文字識別子のテスト
 static void test_tokenize_ident() {
   printf("test_tokenize_ident...\n");
   token = tokenize("a = 3; b = a;");
@@ -423,6 +447,7 @@ int main() {
   printf("Running tests for Tokenizer...\n");
 
   test_tokenize();
+  test_tokenize_int_literals();
   test_tokenize_ident();
   test_tokenize_keywords();
   test_tokenize_symbols();

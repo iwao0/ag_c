@@ -559,36 +559,64 @@ token_t *tokenize(char *p) {
     // 数値リテラル (整数 または 浮動小数点数)
     if (isdigit(*p) || (*p == '.' && isdigit(p[1]))) {
       char *start = p; // Keep track of the start of the number for length calculation
-      char *q = p;
-      // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
-      bool is_float = false;
-      while (isalnum(*q) || *q == '.') {
-        if (*q == '.' || *q == 'e' || *q == 'E') {
-          is_float = true;
-        }
-        q++;
-      }
-      
       token_num_t *num = new_token_num(cur, p, 0, line_no);
       num->pp.base.at_bol = _at_bol;
       num->pp.base.has_space = _has_space;
-      if (is_float) {
-        char *end;
-        num->fval = strtod(p, &end);
-        // サフィックスの判定
-        if (*end == 'f' || *end == 'F') {
-          num->is_float = 1; // float
-          end++;
-        } else if (*end == 'l' || *end == 'L') {
-          num->is_float = 2; // long double は未対応だが double 扱い
-          end++;
-        } else {
-          num->is_float = 2; // デフォルトは double
+
+      // 16進数/2進数 (整数)
+      if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
+        p += 2;
+        if (!isxdigit(*p)) error_at(p, "16進数リテラルが不正です");
+        long val = 0;
+        while (isxdigit(*p)) {
+          int digit;
+          if ('0' <= *p && *p <= '9') digit = *p - '0';
+          else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
+          else digit = *p - 'A' + 10;
+          val = val * 16 + digit;
+          p++;
         }
-        p = end;
-      } else {
-        num->val = strtol(p, &p, 10);
+        num->val = val;
         num->is_float = 0;
+      } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
+        p += 2;
+        if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
+        long val = 0;
+        while (*p == '0' || *p == '1') {
+          val = val * 2 + (*p - '0');
+          p++;
+        }
+        num->val = val;
+        num->is_float = 0;
+      } else {
+        char *q = p;
+        // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
+        bool is_float = false;
+        while (isalnum(*q) || *q == '.') {
+          if (*q == '.' || *q == 'e' || *q == 'E') {
+            is_float = true;
+          }
+          q++;
+        }
+
+        if (is_float) {
+          char *end;
+          num->fval = strtod(p, &end);
+          // サフィックスの判定
+          if (*end == 'f' || *end == 'F') {
+            num->is_float = 1; // float
+            end++;
+          } else if (*end == 'l' || *end == 'L') {
+            num->is_float = 2; // long double は未対応だが double 扱い
+            end++;
+          } else {
+            num->is_float = 2; // デフォルトは double
+          }
+          p = end;
+        } else {
+          num->val = strtol(p, &p, 10);
+          num->is_float = 0;
+        }
       }
       // suffixスキップ (L, U, LL など)
       while (isalnum(*p)) p++;
