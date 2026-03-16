@@ -1,6 +1,8 @@
 CFLAGS=-std=c11 -g -O0 -Wall -Wextra
+DEPFLAGS=-MMD -MP
 SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c)
 OBJS=$(patsubst src/%.c,build/%.o,$(SRCS))
+DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 TEST_TOKENIZER=build/test_tokenizer
 TEST_PARSER=build/test_parser
@@ -16,7 +18,7 @@ $(TARGET): $(OBJS)
 
 build/%.o: src/%.c src/ag_c.h
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
@@ -56,3 +58,5 @@ clean:
 	rm -rf build
 
 .PHONY: test clean bench
+
+-include $(DEPS)

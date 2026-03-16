@@ -15,6 +15,7 @@ struct arena_chunk_t {
 static arena_chunk_t *arena_head;
 static size_t total_chunks;
 static size_t total_reserved_bytes;
+static size_t next_chunk_hint = 16 * 1024;
 
 static size_t align_up(size_t n, size_t align) {
   return (n + align - 1) & ~(align - 1);
@@ -25,7 +26,7 @@ static void *arena_alloc(size_t size) {
   size = align_up(size, 8);
 
   if (!arena_head || arena_head->used + size > arena_head->cap) {
-    size_t cap = 16 * 1024;
+    size_t cap = next_chunk_hint;
     if (cap < size) cap = align_up(size, 4096);
     arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + cap);
     if (!chunk) {
@@ -43,6 +44,15 @@ static void *arena_alloc(size_t size) {
   void *p = arena_head->data + arena_head->used;
   arena_head->used += size;
   return p;
+}
+
+void tk_allocator_set_expected_size(size_t bytes) {
+  // Heuristic: expected token arena footprint tends to be multiple of input size.
+  // Keep bounded to avoid excessively large chunks.
+  size_t hint = align_up(bytes * 3 / 2 + 4096, 4096);
+  if (hint < 16 * 1024) hint = 16 * 1024;
+  if (hint > 512 * 1024) hint = 512 * 1024;
+  next_chunk_hint = hint;
 }
 
 void *tk_allocator_calloc(size_t n, size_t size) {

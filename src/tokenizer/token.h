@@ -116,12 +116,12 @@ struct hideset_t {
 // 共通トークン型（最小限の共通フィールド）
 typedef struct token_t token_t;
 struct token_t {
-  token_kind_t kind; // トークンの型
   token_t *next;     // 次の入力トークン
-  bool at_bol;       // 行頭(Beginning of Line)にあるか
-  bool has_space;    // 直前に空白文字があるか
   char *file_name;   // ファイル名
   int line_no;       // 行番号
+  token_kind_t kind; // トークンの型
+  bool at_bol;       // 行頭(Beginning of Line)にあるか
+  bool has_space;    // 直前に空白文字があるか
 };
 
 // プリプロセッサ用の共通拡張

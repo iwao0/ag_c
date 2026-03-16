@@ -30,6 +30,13 @@ Environment: Apple clang (`-O0`), `make bench`
 - numeric-heavy 256KB: `8,872,873 tokens/sec`, `alloc_count=472`
 - punct-heavy 256KB: `24,901,290 tokens/sec`, `alloc_count=294`
 
+## After Locality Optimization (Adaptive Arena + Token Layout)
+
+- mixed 256KB: `8,314,973 tokens/sec`, `alloc_count=21`
+- ident-heavy 256KB: `8,160,672 tokens/sec`, `alloc_count=7`
+- numeric-heavy 256KB: `8,226,898 tokens/sec`, `alloc_count=18`
+- punct-heavy 256KB: `24,632,483 tokens/sec`, `alloc_count=10`
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).

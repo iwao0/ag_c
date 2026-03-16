@@ -604,6 +604,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
 
 // 文字列 p をトークナイズしてその結果へのポインタを返す
 token_t *tokenize(char *p) {
+  tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);
   user_input = normalized;
   p = normalized;
