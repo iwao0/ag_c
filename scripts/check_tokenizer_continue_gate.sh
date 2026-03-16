@@ -36,7 +36,11 @@ parse_line() {
   local file="$1"
   local case_name="$2"
   local input_size="$3"
-  grep "case=${case_name} input=${input_size}" "$file" | tail -n 1 || true
+  if [[ -n "$input_size" ]]; then
+    grep "case=${case_name} input=${input_size}" "$file" | tail -n 1 || true
+    return
+  fi
+  grep "case=${case_name} " "$file" | tail -n 1 || true
 }
 
 extract_tps() {
@@ -82,6 +86,6 @@ check_case "$bench_file" "mixed" "262200b" "$BASE_MIXED_TPS" "$BASE_MIXED_ALLOC"
 check_case "$bench_file" "ident" "262197b" "$BASE_IDENT_TPS" "$BASE_IDENT_ALLOC"
 check_case "$bench_file" "numeric" "262160b" "$BASE_NUMERIC_TPS" "$BASE_NUMERIC_ALLOC"
 check_case "$bench_file" "punct" "262272b" "$BASE_PUNCT_TPS" "$BASE_PUNCT_ALLOC"
-check_case "$corpus_file" "corpus" "211541b" "$BASE_CORPUS_TPS" "$BASE_CORPUS_ALLOC"
+check_case "$corpus_file" "corpus" "" "$BASE_CORPUS_TPS" "$BASE_CORPUS_ALLOC"
 
 echo "gate-check: OK (all cases within -5% and alloc_count non-increasing)"

@@ -172,6 +172,19 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - Action:
   - rolled back the trial and kept current implementation.
 
+## Phase1 Step1 (`tk_scan_ident_*` branch tuning)
+
+- Change:
+  - call UCN parser only when first byte is `'\\'` in `tk_scan_ident_start/continue`.
+- Gate check (dedicated bench run):
+  - mixed: `20,635,639` (baseline `19,705,021`)
+  - ident: `12,114,770` (baseline `12,289,547`)
+  - numeric: `13,874,597` (baseline `13,075,812`)
+  - punct: `34,173,587` (baseline `33,759,919`)
+  - corpus: `17,370,980` (baseline `16,561,884`)
+- Decision:
+  - keep this change (passes continue gate).
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).

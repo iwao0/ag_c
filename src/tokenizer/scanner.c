@@ -92,7 +92,8 @@ bool tk_scan_ident_start(const char *p, int *adv) {
     *adv = 1;
     return true;
   }
-  if (tk_starts_with_ucn(p, &ucn_len)) {
+  // Avoid UCN helper call unless the first byte can actually start UCN.
+  if (*p == '\\' && tk_starts_with_ucn(p, &ucn_len)) {
     *adv = ucn_len;
     return true;
   }
@@ -105,7 +106,8 @@ bool tk_scan_ident_continue(const char *p, int *adv) {
     *adv = 1;
     return true;
   }
-  if (tk_starts_with_ucn(p, &ucn_len)) {
+  // Avoid UCN helper call unless the first byte can actually start UCN.
+  if (*p == '\\' && tk_starts_with_ucn(p, &ucn_len)) {
     *adv = ucn_len;
     return true;
   }
