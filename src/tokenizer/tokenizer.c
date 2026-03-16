@@ -523,11 +523,12 @@ token_t *tokenize(char *p) {
       continue;
     }
     // 文字列リテラル（接頭辞 L/u/U/u8 を含む）
-    int str_prefix = 0;
-    int str_prefix_kind = 0;
-    int str_char_width = 1;
-    tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
-    if (*p == '"' || str_prefix > 0) {
+    if (*p == '"' || *p == 'L' || *p == 'u' || *p == 'U') {
+      int str_prefix = 0;
+      int str_prefix_kind = 0;
+      int str_char_width = 1;
+      tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
+      if (*p != '"' && str_prefix == 0) goto parse_char_or_other;
       if (*p == '"') {
         str_prefix = 0;
         str_prefix_kind = 0;
@@ -558,13 +559,15 @@ token_t *tokenize(char *p) {
       cur = (token_t *)st;
       continue;
     }
+parse_char_or_other:
 
     // 文字リテラル（接頭辞 L/u/U を含む）
-    int chr_prefix = 0;
-    int chr_prefix_kind = 0;
-    int chr_char_width = 1;
-    tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
-    if (*p == '\'' || chr_prefix > 0) {
+    if (*p == '\'' || *p == 'L' || *p == 'u' || *p == 'U') {
+      int chr_prefix = 0;
+      int chr_prefix_kind = 0;
+      int chr_char_width = 1;
+      tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
+      if (*p != '\'' && chr_prefix == 0) goto parse_punct_ident_num;
       char *start = p;
       p += chr_prefix;
       p++; // 開きクォートをスキップ
@@ -627,6 +630,7 @@ token_t *tokenize(char *p) {
       cur = (token_t *)num;
       continue;
     }
+parse_punct_ident_num:
 
     // 1文字の記号 (+, -, *, /, %, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~, |, ^, ?, :)
     if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {

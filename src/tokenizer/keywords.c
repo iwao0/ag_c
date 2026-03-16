@@ -14,45 +14,42 @@ static token_kind_t lookup_in_bucket(const kw_entry_t *bucket, int n, const char
 }
 
 token_kind_t lookup_keyword(const char *s, int len) {
+  char c0 = s[0];
   switch (len) {
     case 2: {
-      static const kw_entry_t b[] = {
-        {"if", TK_IF},
-        {"do", TK_DO},
-      };
-      return lookup_in_bucket(b, (int)(sizeof(b) / sizeof(b[0])), s, len);
+      if (c0 == 'i' && s[1] == 'f') return TK_IF;
+      if (c0 == 'd' && s[1] == 'o') return TK_DO;
+      return TK_EOF;
     }
     case 3: {
-      static const kw_entry_t b[] = {
-        {"for", TK_FOR},
-        {"int", TK_INT},
-      };
-      return lookup_in_bucket(b, (int)(sizeof(b) / sizeof(b[0])), s, len);
+      if (c0 == 'f' && strncmp(s, "for", 3) == 0) return TK_FOR;
+      if (c0 == 'i' && strncmp(s, "int", 3) == 0) return TK_INT;
+      return TK_EOF;
     }
     case 4: {
-      static const kw_entry_t b[] = {
-        {"else", TK_ELSE},
-        {"auto", TK_AUTO},
-        {"case", TK_CASE},
-        {"enum", TK_ENUM},
-        {"goto", TK_GOTO},
-        {"long", TK_LONG},
-        {"char", TK_CHAR},
-        {"void", TK_VOID},
-      };
-      return lookup_in_bucket(b, (int)(sizeof(b) / sizeof(b[0])), s, len);
+      switch (c0) {
+        case 'e': if (strncmp(s, "else", 4) == 0) return TK_ELSE;
+                  if (strncmp(s, "enum", 4) == 0) return TK_ENUM; break;
+        case 'a': if (strncmp(s, "auto", 4) == 0) return TK_AUTO; break;
+        case 'c': if (strncmp(s, "case", 4) == 0) return TK_CASE;
+                  if (strncmp(s, "char", 4) == 0) return TK_CHAR; break;
+        case 'g': if (strncmp(s, "goto", 4) == 0) return TK_GOTO; break;
+        case 'l': if (strncmp(s, "long", 4) == 0) return TK_LONG; break;
+        case 'v': if (strncmp(s, "void", 4) == 0) return TK_VOID; break;
+      }
+      return TK_EOF;
     }
     case 5: {
-      static const kw_entry_t b[] = {
-        {"while", TK_WHILE},
-        {"break", TK_BREAK},
-        {"const", TK_CONST},
-        {"float", TK_FLOAT},
-        {"short", TK_SHORT},
-        {"_Bool", TK_BOOL},
-        {"union", TK_UNION},
-      };
-      return lookup_in_bucket(b, (int)(sizeof(b) / sizeof(b[0])), s, len);
+      switch (c0) {
+        case 'w': if (strncmp(s, "while", 5) == 0) return TK_WHILE; break;
+        case 'b': if (strncmp(s, "break", 5) == 0) return TK_BREAK; break;
+        case 'c': if (strncmp(s, "const", 5) == 0) return TK_CONST; break;
+        case 'f': if (strncmp(s, "float", 5) == 0) return TK_FLOAT; break;
+        case 's': if (strncmp(s, "short", 5) == 0) return TK_SHORT; break;
+        case 'u': if (strncmp(s, "union", 5) == 0) return TK_UNION; break;
+        case '_': if (strncmp(s, "_Bool", 5) == 0) return TK_BOOL; break;
+      }
+      return TK_EOF;
     }
     case 6: {
       static const kw_entry_t b[] = {
@@ -118,4 +115,3 @@ token_kind_t lookup_keyword(const char *s, int len) {
       return TK_EOF;
   }
 }
-

@@ -72,14 +72,66 @@ token_kind_t punctuator_kind_for_str(const char *op) {
 }
 
 bool match_punctuator(const char *p, token_kind_t *out_kind, int *out_len) {
-  for (size_t i = 0; i < sizeof(puncts) / sizeof(puncts[0]); i++) {
-    const punct_entry_t *e = &puncts[i];
-    if (strncmp(p, e->op, (size_t)e->len) == 0) {
-      *out_kind = e->kind;
-      *out_len = e->len;
-      return true;
-    }
+  switch (p[0]) {
+    case '%':
+      if (p[1] == ':' && p[2] == '%' && p[3] == ':') { *out_kind = TK_HASHHASH; *out_len = 4; return true; }
+      if (p[1] == '=') { *out_kind = TK_MODEQ; *out_len = 2; return true; }
+      if (p[1] == '>') { *out_kind = TK_RBRACE; *out_len = 2; return true; }
+      if (p[1] == ':') { *out_kind = TK_HASH; *out_len = 2; return true; }
+      break;
+    case '.':
+      if (p[1] == '.' && p[2] == '.') { *out_kind = TK_ELLIPSIS; *out_len = 3; return true; }
+      break;
+    case '<':
+      if (p[1] == '<' && p[2] == '=') { *out_kind = TK_SHLEQ; *out_len = 3; return true; }
+      if (p[1] == '<') { *out_kind = TK_SHL; *out_len = 2; return true; }
+      if (p[1] == '=') { *out_kind = TK_LE; *out_len = 2; return true; }
+      if (p[1] == ':') { *out_kind = TK_LBRACKET; *out_len = 2; return true; }
+      if (p[1] == '%') { *out_kind = TK_LBRACE; *out_len = 2; return true; }
+      break;
+    case '>':
+      if (p[1] == '>' && p[2] == '=') { *out_kind = TK_SHREQ; *out_len = 3; return true; }
+      if (p[1] == '>') { *out_kind = TK_SHR; *out_len = 2; return true; }
+      if (p[1] == '=') { *out_kind = TK_GE; *out_len = 2; return true; }
+      break;
+    case '=':
+      if (p[1] == '=') { *out_kind = TK_EQEQ; *out_len = 2; return true; }
+      break;
+    case '!':
+      if (p[1] == '=') { *out_kind = TK_NEQ; *out_len = 2; return true; }
+      break;
+    case '&':
+      if (p[1] == '&') { *out_kind = TK_ANDAND; *out_len = 2; return true; }
+      if (p[1] == '=') { *out_kind = TK_ANDEQ; *out_len = 2; return true; }
+      break;
+    case '|':
+      if (p[1] == '|') { *out_kind = TK_OROR; *out_len = 2; return true; }
+      if (p[1] == '=') { *out_kind = TK_OREQ; *out_len = 2; return true; }
+      break;
+    case '#':
+      if (p[1] == '#') { *out_kind = TK_HASHHASH; *out_len = 2; return true; }
+      break;
+    case '+':
+      if (p[1] == '+') { *out_kind = TK_INC; *out_len = 2; return true; }
+      if (p[1] == '=') { *out_kind = TK_PLUSEQ; *out_len = 2; return true; }
+      break;
+    case '-':
+      if (p[1] == '-') { *out_kind = TK_DEC; *out_len = 2; return true; }
+      if (p[1] == '>') { *out_kind = TK_ARROW; *out_len = 2; return true; }
+      if (p[1] == '=') { *out_kind = TK_MINUSEQ; *out_len = 2; return true; }
+      break;
+    case '*':
+      if (p[1] == '=') { *out_kind = TK_MULEQ; *out_len = 2; return true; }
+      break;
+    case '/':
+      if (p[1] == '=') { *out_kind = TK_DIVEQ; *out_len = 2; return true; }
+      break;
+    case '^':
+      if (p[1] == '=') { *out_kind = TK_XOREQ; *out_len = 2; return true; }
+      break;
+    case ':':
+      if (p[1] == '>') { *out_kind = TK_RBRACKET; *out_len = 2; return true; }
+      break;
   }
   return false;
 }
-

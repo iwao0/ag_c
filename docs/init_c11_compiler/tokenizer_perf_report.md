@@ -15,6 +15,12 @@ Environment: Apple clang (`-O0`), `make bench`
 - 16KB: `2,368,974 tokens/sec`, `alloc_count=37`, `peak_alloc_bytes=607,096`
 - 256KB: `3,721,371 tokens/sec`, `alloc_count=590`, `peak_alloc_bytes=9,680,720`
 
+## After Additional Fast-Path Optimization
+
+- 1KB: `6,289,720 tokens/sec`, `alloc_count=3`, `peak_alloc_bytes=49,224`
+- 16KB: `6,621,328 tokens/sec`, `alloc_count=37`, `peak_alloc_bytes=607,096`
+- 256KB: `9,728,074 tokens/sec`, `alloc_count=590`, `peak_alloc_bytes=9,680,720`
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
