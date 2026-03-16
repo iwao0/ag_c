@@ -3,23 +3,33 @@
 #include "literals.h"
 #include "tokenizer.h"
 
+static inline bool tk_is_space_fast(char c) {
+  // Hot path for typical ASCII whitespace.
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
 char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
   for (;;) {
-    // 行継続（バックスラッシュ + 改行）を除去
-    if (*p == '\\' && p[1] == '\n') {
-      p += 2;
-      (*line_no)++;
-      continue;
+    char c = *p;
+    if (c != '/' && c != '\\' && !tk_is_space_fast(c) && !tk_is_space(c)) {
+      return p;
     }
 
-    // 空白文字をスキップ
-    if (tk_is_space(*p)) {
+    // 空白文字をスキップ（最頻パス）
+    if (tk_is_space_fast(c) || tk_is_space(c)) {
       *has_space = true;
-      if (*p == '\n') {
+      if (c == '\n') {
         *at_bol = true;
         (*line_no)++;
       }
       p++;
+      continue;
+    }
+
+    // 行継続（バックスラッシュ + 改行）を除去
+    if (*p == '\\' && p[1] == '\n') {
+      p += 2;
+      (*line_no)++;
       continue;
     }
 

@@ -14,9 +14,7 @@ static size_t count_tokens(token_t *tok) {
   return n;
 }
 
-static char *build_input(size_t approx_bytes) {
-  const char *pattern =
-      "int main(){int x=0;for(int i=0;i<100;i++){x+=i;}if(x>=10){x=x-1;}return x;}\n";
+static char *build_input_from_pattern(const char *pattern, size_t approx_bytes) {
   size_t pat_len = strlen(pattern);
   size_t n = approx_bytes / pat_len + 1;
   char *buf = calloc(n * pat_len + 1, 1);
@@ -39,8 +37,8 @@ static double elapsed_sec(struct timespec start, struct timespec end) {
   return s + ns;
 }
 
-static void run_case(size_t bytes) {
-  char *input = build_input(bytes);
+static void run_case(const char *name, const char *pattern, size_t bytes) {
+  char *input = build_input_from_pattern(pattern, bytes);
   struct timespec t0;
   struct timespec t1;
 
@@ -54,19 +52,31 @@ static void run_case(size_t bytes) {
   double sec = elapsed_sec(t0, t1);
   double tps = sec > 0.0 ? token_count / sec : 0.0;
 
-  printf("input=%zub tokens=%zu time=%.6fs tokens/sec=%.0f alloc_count=%zu peak_alloc_bytes=%zu\n",
-         strlen(input), token_count, sec, tps, st.alloc_count, st.peak_alloc_bytes);
+  printf("case=%s input=%zub tokens=%zu time=%.6fs tokens/sec=%.0f alloc_count=%zu peak_alloc_bytes=%zu\n",
+         name, strlen(input), token_count, sec, tps, st.alloc_count, st.peak_alloc_bytes);
   free(input);
 }
 
 int main(void) {
+  const char *mixed_pattern =
+      "int main(){int x=0;for(int i=0;i<100;i++){x+=i;}if(x>=10){x=x-1;}return x;}\n";
+  const char *ident_pattern =
+      "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron\n";
+  const char *numeric_pattern =
+      "0 1 2 3 4 5 6 7 8 9 10 11 12 255 1024 65535 3.14 6.02e23 0x1.fp+3 0777 0b101010\n";
+  const char *punct_pattern =
+      "{ } ( ) [ ] ; , . ... + - * / % ++ -- += -= *= /= %= == != < <= > >= && || & | ^ ~ ? : -> << >> <<= >>= # ## %: %:%: <::> <% %>\n";
+
   set_strict_c11_mode(false);
   set_enable_binary_literals(true);
   set_enable_trigraphs(true);
 
   puts("Tokenizer benchmark");
-  run_case(1024);
-  run_case(16 * 1024);
-  run_case(256 * 1024);
+  run_case("mixed", mixed_pattern, 1024);
+  run_case("mixed", mixed_pattern, 16 * 1024);
+  run_case("mixed", mixed_pattern, 256 * 1024);
+  run_case("ident", ident_pattern, 256 * 1024);
+  run_case("numeric", numeric_pattern, 256 * 1024);
+  run_case("punct", punct_pattern, 256 * 1024);
   return 0;
 }

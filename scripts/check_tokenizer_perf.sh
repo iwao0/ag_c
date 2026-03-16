@@ -12,9 +12,12 @@ if [[ ! -f "$file" ]]; then
   exit 2
 fi
 
-line="$(grep 'input=262200b' "$file" | tail -n 1 || true)"
+line="$(grep 'case=mixed input=262200b' "$file" | tail -n 1 || true)"
 if [[ -z "$line" ]]; then
-  echo "cannot find 256KB benchmark line in output" >&2
+  line="$(grep 'input=262200b' "$file" | tail -n 1 || true)"
+fi
+if [[ -z "$line" ]]; then
+  echo "cannot find mixed 256KB benchmark line in output" >&2
   exit 1
 fi
 
