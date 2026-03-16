@@ -35,7 +35,7 @@ args       = expr ("," expr)*
 |---|---|---|
 | `TK_EOF` | 入力の終端 | — |
 | `TK_IDENT` | 識別子（英字/`_`で始まり英数字/`_`が続く） | `a`, `foo`, `x1`, `my_var` |
-| `TK_NUM` | 数値リテラル（整数/浮動小数） | `0`, `42`, `123`, `3.14`, `1.5f` |
+| `TK_NUM` | 数値リテラル（整数/浮動小数） | `0`, `42`, `123`, `3.14`, `1.5f`, `0x2a`, `0b101`, `077`, `0x1.8p1` |
 | `TK_STRING` | 文字列リテラル | `"hello"` |
 | `TK_IF` | `if` キーワード | `if` |
 | `TK_ELSE` | `else` キーワード | `else` |
@@ -97,6 +97,55 @@ args       = expr ("," expr)*
 | `TK_HASH` | `#` | `#` |
 | `TK_HASHHASH` | `##` | `##` |
 | `TK_DOT` | `.` | `.` |
+
+### キーワード一覧 (C11)
+
+| トークン種別 | キーワード |
+|---|---|
+| `TK_IF` | `if` |
+| `TK_ELSE` | `else` |
+| `TK_WHILE` | `while` |
+| `TK_FOR` | `for` |
+| `TK_RETURN` | `return` |
+| `TK_AUTO` | `auto` |
+| `TK_BREAK` | `break` |
+| `TK_CASE` | `case` |
+| `TK_CONST` | `const` |
+| `TK_CONTINUE` | `continue` |
+| `TK_DEFAULT` | `default` |
+| `TK_DO` | `do` |
+| `TK_ENUM` | `enum` |
+| `TK_EXTERN` | `extern` |
+| `TK_GOTO` | `goto` |
+| `TK_INLINE` | `inline` |
+| `TK_INT` | `int` |
+| `TK_REGISTER` | `register` |
+| `TK_RESTRICT` | `restrict` |
+| `TK_SIGNED` | `signed` |
+| `TK_SIZEOF` | `sizeof` |
+| `TK_STATIC` | `static` |
+| `TK_STRUCT` | `struct` |
+| `TK_SWITCH` | `switch` |
+| `TK_TYPEDEF` | `typedef` |
+| `TK_UNION` | `union` |
+| `TK_UNSIGNED` | `unsigned` |
+| `TK_VOLATILE` | `volatile` |
+| `TK_CHAR` | `char` |
+| `TK_VOID` | `void` |
+| `TK_SHORT` | `short` |
+| `TK_LONG` | `long` |
+| `TK_FLOAT` | `float` |
+| `TK_DOUBLE` | `double` |
+| `TK_ALIGNAS` | `_Alignas` |
+| `TK_ALIGNOF` | `_Alignof` |
+| `TK_ATOMIC` | `_Atomic` |
+| `TK_BOOL` | `_Bool` |
+| `TK_COMPLEX` | `_Complex` |
+| `TK_GENERIC` | `_Generic` |
+| `TK_IMAGINARY` | `_Imaginary` |
+| `TK_NORETURN` | `_Noreturn` |
+| `TK_STATIC_ASSERT` | `_Static_assert` |
+| `TK_THREAD_LOCAL` | `_Thread_local` |
 
 ### ASTノード種別
 
