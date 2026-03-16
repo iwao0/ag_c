@@ -273,6 +273,26 @@ static int run_category(const char *category) {
   return (ok == total) ? 0 : 1;
 }
 
+static int build_category(const char *category) {
+  char log_path[PATH_MAX];
+  snprintf(log_path, sizeof(log_path), "build/e2e/logs/%s.build.log", category);
+  FILE *log = fopen(log_path, "w");
+  if (!log) return -1;
+  fprintf(log, "Category: %s\n", category);
+  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+    const test_case_t *tc = &test_cases[i];
+    if (strcmp(tc->category, category) != 0) continue;
+    if (build_case(tc) != 0) {
+      fprintf(log, "  FAIL: build %s\n  input: %s\n", tc->name, tc->input);
+      fclose(log);
+      return 1;
+    }
+  }
+  fprintf(log, "Summary: build OK\n");
+  fclose(log);
+  return 0;
+}
+
 int main() {
   printf("Running E2E tests...\n");
   fflush(stdout);
@@ -280,13 +300,6 @@ int main() {
   if (mkdir_p("build/e2e/logs") != 0) {
     fprintf(stderr, "Failed to create log directory\n");
     return 1;
-  }
-
-  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
-    if (build_case(&test_cases[i]) != 0) {
-      fprintf(stderr, "Build failed: %s/%s\n", test_cases[i].category, test_cases[i].name);
-      return 1;
-    }
   }
 
   const char *categories[64];
@@ -298,6 +311,25 @@ int main() {
       if (strcmp(categories[j], cat) == 0) { exists = true; break; }
     }
     if (!exists) categories[ncat++] = cat;
+  }
+
+  pid_t build_pids[64];
+  for (size_t i = 0; i < ncat; i++) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      int rc = build_category(categories[i]);
+      _exit(rc);
+    }
+    build_pids[i] = pid;
+  }
+
+  for (size_t i = 0; i < ncat; i++) {
+    int status;
+    waitpid(build_pids[i], &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+      fprintf(stderr, "Build failed: %s (see build/e2e/logs/%s.build.log)\n", categories[i], categories[i]);
+      return 1;
+    }
   }
 
   pid_t pids[64];
