@@ -38,6 +38,7 @@ typedef enum {
   TK_MINUS,    // -
   TK_MUL,      // *
   TK_DIV,      // /
+  TK_MOD,      // %
   TK_BANG,     // !
   TK_TILDE,    // ~
   TK_LT,       // <
@@ -49,6 +50,26 @@ typedef enum {
   TK_ANDAND,   // &&
   TK_OROR,     // ||
   TK_AMP,      // &
+  TK_PIPE,     // |
+  TK_CARET,    // ^
+  TK_QUESTION, // ?
+  TK_COLON,    // :
+  TK_INC,      // ++
+  TK_DEC,      // --
+  TK_SHL,      // <<
+  TK_SHR,      // >>
+  TK_ARROW,    // ->
+  TK_PLUSEQ,   // +=
+  TK_MINUSEQ,  // -=
+  TK_MULEQ,    // *=
+  TK_DIVEQ,    // /=
+  TK_MODEQ,    // %=
+  TK_SHLEQ,    // <<=
+  TK_SHREQ,    // >>=
+  TK_ANDEQ,    // &=
+  TK_XOREQ,    // ^=
+  TK_OREQ,     // |=
+  TK_ELLIPSIS, // ...
   TK_HASH,     // #
   TK_HASHHASH, // ##
   TK_DOT,      // .

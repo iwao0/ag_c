@@ -102,6 +102,7 @@ const char *token_kind_str(token_kind_t kind, int *len) {
     case TK_MINUS: s = "-"; break;
     case TK_MUL: s = "*"; break;
     case TK_DIV: s = "/"; break;
+    case TK_MOD: s = "%"; break;
     case TK_BANG: s = "!"; break;
     case TK_TILDE: s = "~"; break;
     case TK_LT: s = "<"; break;
@@ -113,6 +114,26 @@ const char *token_kind_str(token_kind_t kind, int *len) {
     case TK_ANDAND: s = "&&"; break;
     case TK_OROR: s = "||"; break;
     case TK_AMP: s = "&"; break;
+    case TK_PIPE: s = "|"; break;
+    case TK_CARET: s = "^"; break;
+    case TK_QUESTION: s = "?"; break;
+    case TK_COLON: s = ":"; break;
+    case TK_INC: s = "++"; break;
+    case TK_DEC: s = "--"; break;
+    case TK_SHL: s = "<<"; break;
+    case TK_SHR: s = ">>"; break;
+    case TK_ARROW: s = "->"; break;
+    case TK_PLUSEQ: s = "+="; break;
+    case TK_MINUSEQ: s = "-="; break;
+    case TK_MULEQ: s = "*="; break;
+    case TK_DIVEQ: s = "/="; break;
+    case TK_MODEQ: s = "%="; break;
+    case TK_SHLEQ: s = "<<="; break;
+    case TK_SHREQ: s = ">>="; break;
+    case TK_ANDEQ: s = "&="; break;
+    case TK_XOREQ: s = "^="; break;
+    case TK_OREQ: s = "|="; break;
+    case TK_ELLIPSIS: s = "..."; break;
     case TK_HASH: s = "#"; break;
     case TK_HASHHASH: s = "##"; break;
     case TK_DOT: s = "."; break;
@@ -138,11 +159,16 @@ static token_kind_t kind_for_char(char op) {
     case '-': return TK_MINUS;
     case '*': return TK_MUL;
     case '/': return TK_DIV;
+    case '%': return TK_MOD;
     case '!': return TK_BANG;
     case '~': return TK_TILDE;
     case '<': return TK_LT;
     case '>': return TK_GT;
     case '&': return TK_AMP;
+    case '|': return TK_PIPE;
+    case '^': return TK_CARET;
+    case '?': return TK_QUESTION;
+    case ':': return TK_COLON;
     case '#': return TK_HASH;
     case '.': return TK_DOT;
     default: return TK_EOF;
@@ -157,12 +183,30 @@ static token_kind_t kind_for_op(const char *op) {
   if (strcmp(op, "&&") == 0) return TK_ANDAND;
   if (strcmp(op, "||") == 0) return TK_OROR;
   if (strcmp(op, "##") == 0) return TK_HASHHASH;
+  if (strcmp(op, "++") == 0) return TK_INC;
+  if (strcmp(op, "--") == 0) return TK_DEC;
+  if (strcmp(op, "<<") == 0) return TK_SHL;
+  if (strcmp(op, ">>") == 0) return TK_SHR;
+  if (strcmp(op, "->") == 0) return TK_ARROW;
+  if (strcmp(op, "+=") == 0) return TK_PLUSEQ;
+  if (strcmp(op, "-=") == 0) return TK_MINUSEQ;
+  if (strcmp(op, "*=") == 0) return TK_MULEQ;
+  if (strcmp(op, "/=") == 0) return TK_DIVEQ;
+  if (strcmp(op, "%=") == 0) return TK_MODEQ;
+  if (strcmp(op, "<<=") == 0) return TK_SHLEQ;
+  if (strcmp(op, ">>=") == 0) return TK_SHREQ;
+  if (strcmp(op, "&=") == 0) return TK_ANDEQ;
+  if (strcmp(op, "^=") == 0) return TK_XOREQ;
+  if (strcmp(op, "|=") == 0) return TK_OREQ;
+  if (strcmp(op, "...") == 0) return TK_ELLIPSIS;
+  if (strcmp(op, "%:%:") == 0) return TK_HASHHASH;
   if (strcmp(op, "<") == 0) return TK_LT;
   if (strcmp(op, ">") == 0) return TK_GT;
   if (strcmp(op, "+") == 0) return TK_PLUS;
   if (strcmp(op, "-") == 0) return TK_MINUS;
   if (strcmp(op, "*") == 0) return TK_MUL;
   if (strcmp(op, "/") == 0) return TK_DIV;
+  if (strcmp(op, "%") == 0) return TK_MOD;
   if (strcmp(op, "!") == 0) return TK_BANG;
   if (strcmp(op, "~") == 0) return TK_TILDE;
   if (strcmp(op, "=") == 0) return TK_ASSIGN;
@@ -175,7 +219,16 @@ static token_kind_t kind_for_op(const char *op) {
   if (strcmp(op, ",") == 0) return TK_COMMA;
   if (strcmp(op, ";") == 0) return TK_SEMI;
   if (strcmp(op, "&") == 0) return TK_AMP;
+  if (strcmp(op, "|") == 0) return TK_PIPE;
+  if (strcmp(op, "^") == 0) return TK_CARET;
+  if (strcmp(op, "?") == 0) return TK_QUESTION;
+  if (strcmp(op, ":") == 0) return TK_COLON;
   if (strcmp(op, "#") == 0) return TK_HASH;
+  if (strcmp(op, "<:") == 0) return TK_LBRACKET;
+  if (strcmp(op, ":>") == 0) return TK_RBRACKET;
+  if (strcmp(op, "<%") == 0) return TK_LBRACE;
+  if (strcmp(op, "%>") == 0) return TK_RBRACE;
+  if (strcmp(op, "%:") == 0) return TK_HASH;
   if (strcmp(op, ".") == 0) return TK_DOT;
   return TK_EOF;
 }
@@ -293,11 +346,35 @@ token_t *tokenize(char *p) {
     at_bol = false;
     has_space = false;
 
-    // 2文字の演算子 (==, !=, <=, >=, &&, ||, ##)
+    // 3文字の演算子 (..., <<=, >>=, %:%:)
+    if (strncmp(p, "...", 3) == 0 || strncmp(p, "<<=", 3) == 0 ||
+        strncmp(p, ">>=", 3) == 0 || strncmp(p, "%:%:", 4) == 0) {
+      token_kind_t kind = TK_EOF;
+      if (strncmp(p, "...", 3) == 0) kind = TK_ELLIPSIS;
+      else if (strncmp(p, "<<=", 3) == 0) kind = TK_SHLEQ;
+      else if (strncmp(p, ">>=", 3) == 0) kind = TK_SHREQ;
+      else if (strncmp(p, "%:%:", 4) == 0) kind = TK_HASHHASH;
+      cur = new_token_simple(kind, cur, line_no);
+      cur->at_bol = _at_bol;
+      cur->has_space = _has_space;
+      p += (kind == TK_HASHHASH) ? 4 : 3;
+      continue;
+    }
+
+    // 2文字の演算子
     if (strncmp(p, "==", 2) == 0 || strncmp(p, "!=", 2) == 0 ||
         strncmp(p, "<=", 2) == 0 || strncmp(p, ">=", 2) == 0 ||
         strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0 ||
-        strncmp(p, "##", 2) == 0) {
+        strncmp(p, "##", 2) == 0 || strncmp(p, "++", 2) == 0 ||
+        strncmp(p, "--", 2) == 0 || strncmp(p, "<<", 2) == 0 ||
+        strncmp(p, ">>", 2) == 0 || strncmp(p, "->", 2) == 0 ||
+        strncmp(p, "+=", 2) == 0 || strncmp(p, "-=", 2) == 0 ||
+        strncmp(p, "*=", 2) == 0 || strncmp(p, "/=", 2) == 0 ||
+        strncmp(p, "%=", 2) == 0 || strncmp(p, "&=", 2) == 0 ||
+        strncmp(p, "^=", 2) == 0 || strncmp(p, "|=", 2) == 0 ||
+        strncmp(p, "<:", 2) == 0 || strncmp(p, ":>", 2) == 0 ||
+        strncmp(p, "<%", 2) == 0 || strncmp(p, "%>", 2) == 0 ||
+        strncmp(p, "%:", 2) == 0) {
       token_kind_t kind = TK_EOF;
       if (strncmp(p, "==", 2) == 0) kind = TK_EQEQ;
       else if (strncmp(p, "!=", 2) == 0) kind = TK_NEQ;
@@ -306,6 +383,24 @@ token_t *tokenize(char *p) {
       else if (strncmp(p, "&&", 2) == 0) kind = TK_ANDAND;
       else if (strncmp(p, "||", 2) == 0) kind = TK_OROR;
       else if (strncmp(p, "##", 2) == 0) kind = TK_HASHHASH;
+      else if (strncmp(p, "++", 2) == 0) kind = TK_INC;
+      else if (strncmp(p, "--", 2) == 0) kind = TK_DEC;
+      else if (strncmp(p, "<<", 2) == 0) kind = TK_SHL;
+      else if (strncmp(p, ">>", 2) == 0) kind = TK_SHR;
+      else if (strncmp(p, "->", 2) == 0) kind = TK_ARROW;
+      else if (strncmp(p, "+=", 2) == 0) kind = TK_PLUSEQ;
+      else if (strncmp(p, "-=", 2) == 0) kind = TK_MINUSEQ;
+      else if (strncmp(p, "*=", 2) == 0) kind = TK_MULEQ;
+      else if (strncmp(p, "/=", 2) == 0) kind = TK_DIVEQ;
+      else if (strncmp(p, "%=", 2) == 0) kind = TK_MODEQ;
+      else if (strncmp(p, "&=", 2) == 0) kind = TK_ANDEQ;
+      else if (strncmp(p, "^=", 2) == 0) kind = TK_XOREQ;
+      else if (strncmp(p, "|=", 2) == 0) kind = TK_OREQ;
+      else if (strncmp(p, "<:", 2) == 0) kind = TK_LBRACKET;
+      else if (strncmp(p, ":>", 2) == 0) kind = TK_RBRACKET;
+      else if (strncmp(p, "<%", 2) == 0) kind = TK_LBRACE;
+      else if (strncmp(p, "%>", 2) == 0) kind = TK_RBRACE;
+      else if (strncmp(p, "%:", 2) == 0) kind = TK_HASH;
       cur = new_token_simple(kind, cur, line_no);
       cur->at_bol = _at_bol;
       cur->has_space = _has_space;
@@ -359,8 +454,8 @@ token_t *tokenize(char *p) {
       continue;
     }
 
-    // 1文字の記号 (+, -, *, /, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~)
-    if (strchr("+-*/()<>;={},&[]#.!~", *p) || (*p == '.' && !isdigit(p[1]))) {
+    // 1文字の記号 (+, -, *, /, %, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~, |, ^, ?, :)
+    if (strchr("+-*/%()<>;={},&[]#.!~|^?:", *p) || (*p == '.' && !isdigit(p[1]))) {
       token_kind_t kind = kind_for_char(*p);
       cur = new_token_simple(kind, cur, line_no);
       cur->at_bol = _at_bol;

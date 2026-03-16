@@ -207,6 +207,52 @@ static void test_tokenize_symbols() {
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
+// 1d-2. 追加演算子のテスト
+static void test_tokenize_punctuators() {
+  printf("test_tokenize_punctuators...\n");
+  token = tokenize("++ -- -> << >> <<= >>= += -= *= /= %= &= ^= |= % | ^ ? : ...");
+  ASSERT_EQ(TK_INC, token->kind); token = token->next;
+  ASSERT_EQ(TK_DEC, token->kind); token = token->next;
+  ASSERT_EQ(TK_ARROW, token->kind); token = token->next;
+  ASSERT_EQ(TK_SHL, token->kind); token = token->next;
+  ASSERT_EQ(TK_SHR, token->kind); token = token->next;
+  ASSERT_EQ(TK_SHLEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_SHREQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_PLUSEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_MINUSEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_MULEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_DIVEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_MODEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_ANDEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_XOREQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_OREQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_MOD, token->kind); token = token->next;
+  ASSERT_EQ(TK_PIPE, token->kind); token = token->next;
+  ASSERT_EQ(TK_CARET, token->kind); token = token->next;
+  ASSERT_EQ(TK_QUESTION, token->kind); token = token->next;
+  ASSERT_EQ(TK_COLON, token->kind); token = token->next;
+  ASSERT_EQ(TK_ELLIPSIS, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  token = tokenize("<: :> <% %> %: %:%:");
+  ASSERT_EQ(TK_LBRACKET, token->kind); token = token->next;
+  ASSERT_EQ(TK_RBRACKET, token->kind); token = token->next;
+  ASSERT_EQ(TK_LBRACE, token->kind); token = token->next;
+  ASSERT_EQ(TK_RBRACE, token->kind); token = token->next;
+  ASSERT_EQ(TK_HASH, token->kind); token = token->next;
+  ASSERT_EQ(TK_HASHHASH, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  token = tokenize("#include \"x.h\"\nint main() { return 0; }");
+  ASSERT_EQ(TK_HASH, token->kind);
+  ASSERT_TRUE(token->at_bol);
+  token = token->next;
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); token = token->next;
+  ASSERT_EQ(TK_INT, token->kind); token = token->next;
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+}
+
 // 1e. 文字列リテラルのテスト
 static void test_tokenize_string() {
   printf("test_tokenize_string...\n");
@@ -355,6 +401,7 @@ int main() {
   test_tokenize_ident();
   test_tokenize_keywords();
   test_tokenize_symbols();
+  test_tokenize_punctuators();
   test_tokenize_string();
   test_tokenize_char_literal();
   test_at_eof();
