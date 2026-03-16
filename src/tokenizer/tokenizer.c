@@ -779,19 +779,20 @@ token_t *tokenize(char *p) {
           nchar++;
         }
       } else {
-        // 接頭辞付き文字定数は1文字のみを扱う
-        int one = 0;
-        if (*p == '\\') {
-          p++;
-          one = tk_read_escape_char(&p);
-        } else {
-          one = (unsigned char)*p;
-          p++;
-        }
-        ch = (unsigned long long)(unsigned)one;
-        nchar = 1;
-        if (*p != '\'') {
-          error_at(p, "接頭辞付き文字リテラルは1文字のみ対応です");
+        // 接頭辞付き文字定数の複数文字は実装定義として受理する。
+        while (*p && *p != '\'') {
+          int one = 0;
+          if (*p == '\\') {
+            p++;
+            one = tk_read_escape_char(&p);
+          } else if (*p == '\n') {
+            error_at(p, "文字リテラルが不正です");
+          } else {
+            one = (unsigned char)*p;
+            p++;
+          }
+          ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
+          nchar++;
         }
       }
       if (nchar == 0 || *p != '\'') {

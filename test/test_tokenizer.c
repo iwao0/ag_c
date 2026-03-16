@@ -632,6 +632,22 @@ static void test_tokenize_char_literal() {
   ASSERT_EQ(4, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
+
+  // 接頭辞付きマルチ文字定数（実装定義として受理）
+  token = tokenize("L'AB' u'CD' U'EF'");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(((unsigned char)'A' << 8) | (unsigned char)'B', as_num(token)->val);
+  ASSERT_EQ(4, as_num(token)->char_width);
+  token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(((unsigned char)'C' << 8) | (unsigned char)'D', as_num(token)->val);
+  ASSERT_EQ(2, as_num(token)->char_width);
+  token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(((unsigned char)'E' << 8) | (unsigned char)'F', as_num(token)->val);
+  ASSERT_EQ(4, as_num(token)->char_width);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
 }
 
 static void test_tokenize_string_prefixes_and_ucn() {

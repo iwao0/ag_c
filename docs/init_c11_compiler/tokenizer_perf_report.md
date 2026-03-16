@@ -229,6 +229,9 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - parser/codegen policy:
   - float suffix metadata is propagated to AST/float literal table.
   - `long double` suffix (`l/L`) is currently lowered to double codegen path by policy.
+- prefixed character constants:
+  - `L/u/U` prefixed multi-character constants are now accepted as implementation-defined values.
+  - current implementation packs units in 8-bit chunks (same style as ordinary multi-character constants) and preserves prefix/width metadata.
 
 ## Summary
 
