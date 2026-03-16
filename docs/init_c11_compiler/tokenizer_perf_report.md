@@ -93,6 +93,13 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - numeric-heavy 256KB: `11,283,489 tokens/sec`, `alloc_count=15`
 - punct-heavy 256KB: `31,582,888 tokens/sec`, `alloc_count=10`
 
+## Round-2 Progress (Decimal Prescan Strengthening)
+
+- mixed 256KB: `15,266,986 tokens/sec`, `alloc_count=21`
+- ident-heavy 256KB: `10,019,810 tokens/sec`, `alloc_count=6`
+- numeric-heavy 256KB: `11,219,107 tokens/sec`, `alloc_count=15`
+- punct-heavy 256KB: `29,669,622 tokens/sec`, `alloc_count=10`
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).

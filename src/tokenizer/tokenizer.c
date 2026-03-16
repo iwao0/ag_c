@@ -509,14 +509,19 @@ static bool try_parse_decimal_int_fast(char **pp, token_num_t *num) {
   }
 
   if (*p == '.' || *p == 'e' || *p == 'E') return false;
-  if (*p == 'u' || *p == 'U' || *p == 'l' || *p == 'L') return false;
-  if (*p == '.' || tk_is_ident_continue_byte(*p)) return false;
 
   num->uval = val;
   num->val = token_signed_from_u64(val);
   num->is_float = 0;
   num->int_base = 10;
-  choose_int_type(num, val, true, false, 0);
+  if (*p == 'u' || *p == 'U' || *p == 'l' || *p == 'L') {
+    parse_int_suffix(num, &p, val, true);
+  } else {
+    choose_int_type(num, val, true, false, 0);
+  }
+  if (*p == '.' || tk_is_ident_continue_byte(*p)) {
+    error_at(p, "数値リテラルが不正です");
+  }
   *pp = p;
   return true;
 }
