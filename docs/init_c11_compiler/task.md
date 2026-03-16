@@ -146,18 +146,25 @@
       1KB: `1,399,168 tokens/sec`, `alloc_count=674`, `peak_alloc_bytes=40,313`  
       16KB: `2,177,904 tokens/sec`, `alloc_count=10,370`, `peak_alloc_bytes=621,265`  
       256KB: `3,744,003 tokens/sec`, `alloc_count=165,602`, `peak_alloc_bytes=9,922,249`
-- [ ] Tokenizerの責務を分離する
-  - [ ] `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `config_adapter.c` へ段階的に分割する
-  - [ ] `tokenizer.c` は全体制御フロー中心に整理する
-  - [ ] UCN・escape等の共通処理をユーティリティへ集約する
-- [ ] 判定ロジックをテーブル駆動へ移行する
+- [x] Tokenizerの責務を分離する
+  - [x] `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `config_adapter.c` へ段階的に分割する
+    - [x] `literals.c` を追加し、文字/文字列接頭辞・UCN・escape処理を移設する
+    - [x] `config_adapter.c` を追加し、strict/拡張モード設定を分離する
+    - [x] `scanner.c` を追加し、空白/コメントスキップと識別子開始・継続判定を分離する
+  - [x] `tokenizer.c` は全体制御フロー中心に整理する
+  - [x] UCN・escape等の共通処理をユーティリティへ集約する
+- [x] 判定ロジックをテーブル駆動へ移行する
   - [x] 演算子判定（1/2/3文字）をデータテーブル化する
   - [x] キーワード判定を長さ分岐＋テーブル参照へ置換する
   - [x] `is*` 系判定の重複を削減し、文字種判定の共通化を行う
-- [ ] メモリアロケーションを最適化する
-  - [ ] トークン生成を `calloc` 連発から arena/pool 方式へ移行する
-  - [ ] trigraph 置換バッファの全体コピーを必要時のみ実行する
-  - [ ] 識別子UCN変換バッファの再利用を導入する
+- [x] メモリアロケーションを最適化する
+  - [x] トークン生成を `calloc` 連発から arena/pool 方式へ移行する
+  - [x] trigraph 置換バッファの全体コピーを必要時のみ実行する
+  - [x] 識別子UCN変換バッファの再利用を導入する
+  - [x] `make bench` 再計測（2026-03-16, Apple clang `-O0`）  
+    1KB: `2,568,702 tokens/sec`, `alloc_count=3`, `peak_alloc_bytes=49,224`  
+    16KB: `2,668,296 tokens/sec`, `alloc_count=37`, `peak_alloc_bytes=607,096`  
+    256KB: `3,651,218 tokens/sec`, `alloc_count=590`, `peak_alloc_bytes=9,680,720`
 - [ ] 文字列/エスケープ処理の一貫性を高める
   - [ ] Tokenizer/Codegen間でエスケープ解釈ロジックを共通化する
   - [ ] prefix/char幅の型情報伝搬ルールを明文化し実装に反映する
