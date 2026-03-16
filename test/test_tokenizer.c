@@ -128,34 +128,60 @@ static void test_tokenize() {
 // 1b. 16進数/2進数リテラルのテスト
 static void test_tokenize_int_literals() {
   printf("test_tokenize_int_literals...\n");
-  token = tokenize("0x2a 0X10 0b101 0B11 077 010 0 1u 2UL 3llu");
+  token = tokenize("0x2a 0X10 0b101 0B11 077 010 0 123 1u 2UL 3llu 0x1ffffffff");
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(42, as_num(token)->val);
+  ASSERT_EQ(42ULL, as_num(token)->uval);
+  ASSERT_EQ(16, as_num(token)->int_base);
+  ASSERT_TRUE(!as_num(token)->is_unsigned);
+  ASSERT_EQ(0, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(16, as_num(token)->val);
+  ASSERT_EQ(16ULL, as_num(token)->uval);
+  ASSERT_EQ(16, as_num(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(5, as_num(token)->val);
+  ASSERT_EQ(5ULL, as_num(token)->uval);
+  ASSERT_EQ(2, as_num(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(3, as_num(token)->val);
+  ASSERT_EQ(3ULL, as_num(token)->uval);
+  ASSERT_EQ(2, as_num(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(63, as_num(token)->val);
+  ASSERT_EQ(63ULL, as_num(token)->uval);
+  ASSERT_EQ(8, as_num(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(8, as_num(token)->val);
+  ASSERT_EQ(8ULL, as_num(token)->uval);
+  ASSERT_EQ(8, as_num(token)->int_base);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(0, as_num(token)->val);
+  ASSERT_EQ(0ULL, as_num(token)->uval);
+  ASSERT_EQ(10, as_num(token)->int_base);
+  ASSERT_TRUE(!as_num(token)->is_unsigned);
+  ASSERT_EQ(0, as_num(token)->int_size);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(123, as_num(token)->val);
+  ASSERT_EQ(123ULL, as_num(token)->uval);
+  ASSERT_EQ(10, as_num(token)->int_base);
+  ASSERT_TRUE(!as_num(token)->is_unsigned);
+  ASSERT_EQ(0, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
@@ -174,6 +200,12 @@ static void test_tokenize_int_literals() {
   ASSERT_EQ(3, as_num(token)->val);
   ASSERT_TRUE(as_num(token)->is_unsigned);
   ASSERT_EQ(2, as_num(token)->int_size);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(0x1ffffffffULL, as_num(token)->uval);
+  ASSERT_TRUE(!as_num(token)->is_unsigned);
+  ASSERT_EQ(1, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);

@@ -152,10 +152,12 @@ typedef struct token_num_t token_num_t;
 struct token_num_t {
   token_pp_t pp;
   int val;         // 整数値
+  unsigned long long uval; // 整数値(符号なし)
   double fval;     // 浮動小数点値
   int is_float;    // 0=整数, 1=float, 2=double
   bool is_unsigned; // 整数サフィックス: unsigned
   int int_size;    // 0=int, 1=long, 2=long long
+  int int_base;    // 2, 8, 10, 16
   char *str;       // 元の文字列
   int len;         // 元の文字列長
 };

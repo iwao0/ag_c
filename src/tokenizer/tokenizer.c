@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 // 入力プログラム（エラーメッセージ表示用）
 static char *user_input;
@@ -349,7 +350,66 @@ static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no)
   return tok;
 }
 
-static void parse_int_suffix(token_num_t *num, char **pp) {
+static void choose_int_type(token_num_t *num, unsigned long long val, bool is_decimal, bool has_u, int long_cnt) {
+  if (!has_u && long_cnt == 0) {
+    if (is_decimal) {
+      if (val <= (unsigned long long)INT_MAX) { num->is_unsigned = false; num->int_size = 0; return; }
+      if (val <= (unsigned long long)LONG_MAX) { num->is_unsigned = false; num->int_size = 1; return; }
+      if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
+    } else {
+      if (val <= (unsigned long long)INT_MAX) { num->is_unsigned = false; num->int_size = 0; return; }
+      if (val <= (unsigned long long)UINT_MAX) { num->is_unsigned = true; num->int_size = 0; return; }
+      if (val <= (unsigned long long)LONG_MAX) { num->is_unsigned = false; num->int_size = 1; return; }
+      if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = 1; return; }
+      if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
+      if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
+    }
+    error_at(num->str, "整数リテラルが大きすぎます");
+  }
+
+  if (has_u && long_cnt == 0) {
+    if (val <= (unsigned long long)UINT_MAX) { num->is_unsigned = true; num->int_size = 0; return; }
+    if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = 1; return; }
+    if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
+    error_at(num->str, "整数リテラルが大きすぎます");
+  }
+
+  if (!has_u && long_cnt == 1) {
+    if (is_decimal) {
+      if (val <= (unsigned long long)LONG_MAX) { num->is_unsigned = false; num->int_size = 1; return; }
+      if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
+    } else {
+      if (val <= (unsigned long long)LONG_MAX) { num->is_unsigned = false; num->int_size = 1; return; }
+      if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = 1; return; }
+      if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
+      if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
+    }
+    error_at(num->str, "整数リテラルが大きすぎます");
+  }
+
+  if (has_u && long_cnt == 1) {
+    if (val <= (unsigned long long)ULONG_MAX) { num->is_unsigned = true; num->int_size = 1; return; }
+    if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
+    error_at(num->str, "整数リテラルが大きすぎます");
+  }
+
+  if (!has_u && long_cnt == 2) {
+    if (is_decimal) {
+      if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
+    } else {
+      if (val <= (unsigned long long)LLONG_MAX) { num->is_unsigned = false; num->int_size = 2; return; }
+      if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
+    }
+    error_at(num->str, "整数リテラルが大きすぎます");
+  }
+
+  if (has_u && long_cnt == 2) {
+    if (val <= (unsigned long long)ULLONG_MAX) { num->is_unsigned = true; num->int_size = 2; return; }
+    error_at(num->str, "整数リテラルが大きすぎます");
+  }
+}
+
+static void parse_int_suffix(token_num_t *num, char **pp, unsigned long long val, bool is_decimal) {
   char *p = *pp;
   bool seen_u = false;
   int long_cnt = 0;
@@ -378,9 +438,30 @@ static void parse_int_suffix(token_num_t *num, char **pp) {
 
   if (isalpha(*p) || *p == '_') error_at(p, "整数サフィックスが不正です");
 
-  num->is_unsigned = seen_u;
-  num->int_size = long_cnt;
+  choose_int_type(num, val, is_decimal, seen_u, long_cnt);
   *pp = p;
+}
+
+static unsigned long long parse_digits(char **pp, int base) {
+  char *p = *pp;
+  unsigned long long val = 0;
+  bool has_digit = false;
+  while (*p) {
+    int digit;
+    if ('0' <= *p && *p <= '9') digit = *p - '0';
+    else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
+    else if ('A' <= *p && *p <= 'F') digit = *p - 'A' + 10;
+    else break;
+    if (digit >= base) break;
+    has_digit = true;
+    if (val > (ULLONG_MAX - (unsigned long long)digit) / (unsigned long long)base)
+      error_at(*pp, "整数リテラルが大きすぎます");
+    val = val * (unsigned long long)base + (unsigned long long)digit;
+    p++;
+  }
+  if (!has_digit) error_at(*pp, "整数リテラルが不正です");
+  *pp = p;
+  return val;
 }
 
 // 文字列 p をトークナイズしてその結果へのポインタを返す
@@ -557,7 +638,9 @@ token_t *tokenize(char *p) {
       int len = p - start;
       token_num_t *num = new_token_num(cur, start, len, line_no);
       num->val = ch;
+      num->uval = (unsigned long long)ch;
       num->is_float = 0;
+      num->int_base = 10;
       num->pp.base.at_bol = _at_bol;
       num->pp.base.has_space = _has_space;
       cur = (token_t *)num;
@@ -689,42 +772,35 @@ token_t *tokenize(char *p) {
           p = end;
         } else {
           p += 2;
-          if (!isxdigit(*p)) error_at(p, "16進数リテラルが不正です");
-          long val = 0;
-          while (isxdigit(*p)) {
-            int digit;
-            if ('0' <= *p && *p <= '9') digit = *p - '0';
-            else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
-            else digit = *p - 'A' + 10;
-            val = val * 16 + digit;
-            p++;
-          }
-          num->val = val;
+          unsigned long long val = parse_digits(&p, 16);
+          num->uval = val;
+          num->val = (int)val;
           num->is_float = 0;
-          parse_int_suffix(num, &p);
+          num->int_base = 16;
+          parse_int_suffix(num, &p, val, false);
         }
       } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
         p += 2;
         if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
-        long val = 0;
-        while (*p == '0' || *p == '1') {
-          val = val * 2 + (*p - '0');
-          p++;
-        }
-        num->val = val;
+        unsigned long long val = parse_digits(&p, 2);
+        num->uval = val;
+        num->val = (int)val;
         num->is_float = 0;
-        parse_int_suffix(num, &p);
+        num->int_base = 2;
+        parse_int_suffix(num, &p, val, false);
       } else if (*p == '0' && isdigit(p[1])) {
         if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
         p++;
-        long val = 0;
-        while (*p >= '0' && *p <= '7') {
-          val = val * 8 + (*p - '0');
-          p++;
+        unsigned long long val = 0;
+        if (*p >= '0' && *p <= '7') {
+          p--;
+          val = parse_digits(&p, 8);
         }
-        num->val = val;
+        num->uval = val;
+        num->val = (int)val;
         num->is_float = 0;
-        parse_int_suffix(num, &p);
+        num->int_base = 8;
+        parse_int_suffix(num, &p, val, false);
       } else {
         char *q = p;
         // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
@@ -751,9 +827,12 @@ token_t *tokenize(char *p) {
           if (isalpha(*end) || *end == '_') error_at(end, "浮動小数点サフィックスが不正です");
           p = end;
         } else {
-          num->val = strtol(p, &p, 10);
+          unsigned long long val = parse_digits(&p, 10);
+          num->uval = val;
+          num->val = (int)val;
           num->is_float = 0;
-          parse_int_suffix(num, &p);
+          num->int_base = 10;
+          parse_int_suffix(num, &p, val, true);
         }
       }
       num->len = p - start;

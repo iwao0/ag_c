@@ -152,10 +152,12 @@ static token_t *copy_token(token_t *tok) {
       dst->pp.base = src->pp.base;
       dst->pp.hideset = src->pp.hideset;
       dst->val = src->val;
+      dst->uval = src->uval;
       dst->fval = src->fval;
       dst->is_float = src->is_float;
       dst->is_unsigned = src->is_unsigned;
       dst->int_size = src->int_size;
+      dst->int_base = src->int_base;
       dst->str = src->str;
       dst->len = src->len;
       t = (token_t *)dst;
@@ -416,7 +418,11 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
          token_num_t *num = calloc(1, sizeof(token_num_t));
          num->pp.base.kind = TK_NUM;
          num->val = is_def ? 1 : 0;
+         num->uval = (unsigned long long)num->val;
          num->is_float = 0;
+         num->is_unsigned = false;
+         num->int_size = 0;
+         num->int_base = 10;
          num->str = "0"; // just dummy
          num->len = 1;
          cur2->next = (token_t *)num;
