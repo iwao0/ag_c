@@ -19,6 +19,7 @@ static node_func_t *as_func(node_t *n) { return (node_func_t *)n; }
 static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
+static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
 
 static void expect_parse_fail(const char *input) {
   fflush(NULL);
@@ -160,6 +161,27 @@ static void test_expr_relational() {
   ASSERT_EQ(2, as_num(node->rhs->rhs->lhs->rhs)->val);
 }
 
+static void test_expr_logical_and_or() {
+  printf("test_expr_logical_and_or...\n");
+
+  token = tk_tokenize("1 && 0 || 3");
+  node_t *node = expr();
+  ASSERT_EQ(ND_LOGOR, node->kind);
+  ASSERT_EQ(ND_LOGAND, node->lhs->kind);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
+}
+
+static void test_expr_ternary() {
+  printf("test_expr_ternary...\n");
+  token = tk_tokenize("1 ? 2 : 3 ? 4 : 5");
+  node_t *node = expr();
+
+  ASSERT_EQ(ND_TERNARY, node->kind);
+  ASSERT_EQ(1, as_num(node->lhs)->val);
+  ASSERT_EQ(2, as_num(node->rhs)->val);
+  ASSERT_EQ(ND_TERNARY, as_ctrl(node)->els->kind); // 右結合
+}
+
 static void test_expr_unary_ops() {
   printf("test_expr_unary_ops...\n");
 
@@ -191,6 +213,30 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(1, as_num(bitnot->rhs)->val);
 }
 
+static void test_expr_inc_dec() {
+  printf("test_expr_inc_dec...\n");
+
+  token = tk_tokenize("++a");
+  node_t *prei = expr();
+  ASSERT_EQ(ND_PRE_INC, prei->kind);
+  ASSERT_EQ(ND_LVAR, prei->lhs->kind);
+
+  token = tk_tokenize("--a");
+  node_t *pred = expr();
+  ASSERT_EQ(ND_PRE_DEC, pred->kind);
+  ASSERT_EQ(ND_LVAR, pred->lhs->kind);
+
+  token = tk_tokenize("a++");
+  node_t *posti = expr();
+  ASSERT_EQ(ND_POST_INC, posti->kind);
+  ASSERT_EQ(ND_LVAR, posti->lhs->kind);
+
+  token = tk_tokenize("a--");
+  node_t *postd = expr();
+  ASSERT_EQ(ND_POST_DEC, postd->kind);
+  ASSERT_EQ(ND_LVAR, postd->lhs->kind);
+}
+
 static void test_expr_assign() {
   printf("test_expr_assign...\n");
   token = tk_tokenize("a = 3");
@@ -201,6 +247,30 @@ static void test_expr_assign() {
   ASSERT_EQ(8, as_lvar(node->lhs)->offset);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(3, as_num(node->rhs)->val);
+}
+
+static void test_expr_compound_assign() {
+  printf("test_expr_compound_assign...\n");
+
+  token = tk_tokenize("a += 3");
+  node_t *add = expr();
+  ASSERT_EQ(ND_ASSIGN, add->kind);
+  ASSERT_EQ(ND_ADD, add->rhs->kind);
+
+  token = tk_tokenize("a -= 3");
+  node_t *sub = expr();
+  ASSERT_EQ(ND_ASSIGN, sub->kind);
+  ASSERT_EQ(ND_SUB, sub->rhs->kind);
+
+  token = tk_tokenize("a *= 3");
+  node_t *mul = expr();
+  ASSERT_EQ(ND_ASSIGN, mul->kind);
+  ASSERT_EQ(ND_MUL, mul->rhs->kind);
+
+  token = tk_tokenize("a /= 3");
+  node_t *div = expr();
+  ASSERT_EQ(ND_ASSIGN, div->kind);
+  ASSERT_EQ(ND_DIV, div->rhs->kind);
 }
 
 static void test_program_funcdef() {
@@ -295,6 +365,34 @@ static void test_stmt_do_while() {
   ASSERT_EQ(ND_DO_WHILE, dw->kind);
   ASSERT_EQ(ND_ASSIGN, dw->rhs->kind);  // 本体: a=a+1
   ASSERT_EQ(ND_LT, dw->lhs->kind);      // 条件: a<3
+}
+
+static void test_stmt_break_continue() {
+  printf("test_stmt_break_continue...\n");
+  token = tk_tokenize("main() { while (1) { continue; break; } }");
+  program();
+  node_t *wh = as_block(as_func(code[0])->base.rhs)->body[0];
+  node_t *body = wh->rhs;
+
+  ASSERT_EQ(ND_WHILE, wh->kind);
+  ASSERT_EQ(ND_BLOCK, body->kind);
+  ASSERT_EQ(ND_CONTINUE, as_block(body)->body[0]->kind);
+  ASSERT_EQ(ND_BREAK, as_block(body)->body[1]->kind);
+}
+
+static void test_stmt_switch_case_default() {
+  printf("test_stmt_switch_case_default...\n");
+  token = tk_tokenize("main() { switch (a) { case 1: a=2; break; default: a=3; } }");
+  program();
+  node_t *sw = as_block(as_func(code[0])->base.rhs)->body[0];
+
+  ASSERT_EQ(ND_SWITCH, sw->kind);
+  ASSERT_EQ(ND_LVAR, sw->lhs->kind);
+  ASSERT_EQ(ND_BLOCK, sw->rhs->kind);
+  ASSERT_EQ(ND_CASE, as_block(sw->rhs)->body[0]->kind);
+  ASSERT_EQ(1, as_case(as_block(sw->rhs)->body[0])->val);
+  ASSERT_EQ(ND_BREAK, as_block(sw->rhs)->body[1]->kind);
+  ASSERT_EQ(ND_DEFAULT, as_block(sw->rhs)->body[2]->kind);
 }
 
 static void test_stmt_for() {
@@ -435,6 +533,9 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { return (1+2; }");          // ')' がない
   expect_parse_fail("main() { if 1) return 0; }");       // '(' がない
   expect_parse_fail("main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
+  expect_parse_fail("main() { ++1; }");                  // lvalueでない
+  expect_parse_fail("main() { 1++; }");                  // lvalueでない
+  expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
 }
 
 int main() {
@@ -447,8 +548,12 @@ int main() {
   test_expr_parentheses();
   test_expr_eq_neq();
   test_expr_relational();
+  test_expr_logical_and_or();
+  test_expr_ternary();
   test_expr_unary_ops();
+  test_expr_inc_dec();
   test_expr_assign();
+  test_expr_compound_assign();
   test_program_funcdef();
   test_funcall();
   test_funcdef_with_params();
@@ -456,6 +561,8 @@ int main() {
   test_stmt_if_else();
   test_stmt_while();
   test_stmt_do_while();
+  test_stmt_break_continue();
+  test_stmt_switch_case_default();
   test_stmt_for();
   test_stmt_for_with_decl_init();
   test_stmt_return();

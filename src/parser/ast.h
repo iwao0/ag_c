@@ -13,12 +13,24 @@ typedef enum {
   ND_NE,     // !=
   ND_LT,     // <
   ND_LE,     // <=
+  ND_LOGAND, // &&
+  ND_LOGOR,  // ||
+  ND_TERNARY, // ?:
   ND_ASSIGN, // =
   ND_LVAR,   // ローカル変数
   ND_IF,     // if
   ND_WHILE,  // while
   ND_DO_WHILE, // do ... while
   ND_FOR,    // for
+  ND_SWITCH, // switch
+  ND_CASE,   // case
+  ND_DEFAULT, // default
+  ND_BREAK,  // break
+  ND_CONTINUE, // continue
+  ND_PRE_INC, // ++x
+  ND_PRE_DEC, // --x
+  ND_POST_INC, // x++
+  ND_POST_DEC, // x--
   ND_RETURN,  // return
   ND_BLOCK,   // { ... }
   ND_FUNCDEF, // 関数定義
@@ -100,6 +112,21 @@ struct node_ctrl_t {
   node_t *els;      // else節（ND_IFのみ）
   node_t *init;     // 初期化式（ND_FORのみ）
   node_t *inc;      // インクリメント式（ND_FORのみ）
+};
+
+// case ラベルノード
+typedef struct node_case_t node_case_t;
+struct node_case_t {
+  node_t base;
+  long long val;    // case 値
+  int label_id;     // codegenで使うラベル番号
+};
+
+// default ラベルノード
+typedef struct node_default_t node_default_t;
+struct node_default_t {
+  node_t base;
+  int label_id;     // codegenで使うラベル番号
 };
 
 // 文字列リテラルテーブル（連結リスト）

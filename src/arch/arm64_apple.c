@@ -5,9 +5,13 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h>
+#include <stdlib.h>
 
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
+static int break_labels[128];
+static int continue_labels[128];
+static int control_depth = 0;
 // 浮動小数点定数用ラベルカウンタ
 
 // Apple Silicon (ARM64) 向けのアセンブリコード生成
@@ -23,6 +27,106 @@ static node_block_t *as_block(node_t *node) { return (node_block_t *)node; }
 static node_func_t *as_func(node_t *node) { return (node_func_t *)node; }
 static node_ctrl_t *as_ctrl(node_t *node) { return (node_ctrl_t *)node; }
 static node_string_t *as_string(node_t *node) { return (node_string_t *)node; }
+static node_case_t *as_case(node_t *node) { return (node_case_t *)node; }
+static node_default_t *as_default(node_t *node) { return (node_default_t *)node; }
+
+static void push_control_labels(int break_lbl, int continue_lbl) {
+  if (control_depth >= 128) {
+    fprintf(stderr, "制御構文のネストが深すぎます\n");
+    exit(1);
+  }
+  break_labels[control_depth] = break_lbl;
+  continue_labels[control_depth] = continue_lbl;
+  control_depth++;
+}
+
+static void pop_control_labels(void) {
+  if (control_depth > 0) control_depth--;
+}
+
+static int current_break_label(void) {
+  if (control_depth == 0) return -1;
+  return break_labels[control_depth - 1];
+}
+
+static int current_continue_label(void) {
+  for (int i = control_depth - 1; i >= 0; i--) {
+    if (continue_labels[i] >= 0) return continue_labels[i];
+  }
+  return -1;
+}
+
+typedef struct {
+  node_case_t **cases;
+  int case_count;
+  int case_cap;
+  node_default_t *default_node;
+} switch_collect_t;
+
+static void switch_collect_add_case(switch_collect_t *sc, node_case_t *c) {
+  if (sc->case_count >= sc->case_cap) {
+    sc->case_cap = sc->case_cap ? sc->case_cap * 2 : 8;
+    sc->cases = realloc(sc->cases, sizeof(node_case_t *) * (size_t)sc->case_cap);
+  }
+  sc->cases[sc->case_count++] = c;
+}
+
+static void collect_switch_labels(node_t *node, switch_collect_t *sc) {
+  if (!node) return;
+  if (node->kind == ND_SWITCH) return; // ネストしたswitchは別スコープ
+
+  if (node->kind == ND_CASE) {
+    node_case_t *c = as_case(node);
+    c->label_id = label_count++;
+    switch_collect_add_case(sc, c);
+    collect_switch_labels(c->base.rhs, sc);
+    return;
+  }
+  if (node->kind == ND_DEFAULT) {
+    if (sc->default_node) {
+      fprintf(stderr, "default が重複しています\n");
+      exit(1);
+    }
+    node_default_t *d = as_default(node);
+    d->label_id = label_count++;
+    sc->default_node = d;
+    collect_switch_labels(d->base.rhs, sc);
+    return;
+  }
+  if (node->kind == ND_BLOCK) {
+    node_block_t *b = as_block(node);
+    for (int i = 0; b->body[i]; i++) {
+      collect_switch_labels(b->body[i], sc);
+    }
+    return;
+  }
+}
+
+static void gen_stmt(node_t *node);
+
+static void gen_switch_body(node_t *node) {
+  if (!node) return;
+  if (node->kind == ND_BLOCK) {
+    node_block_t *b = as_block(node);
+    for (int i = 0; b->body[i]; i++) {
+      gen_switch_body(b->body[i]);
+    }
+    return;
+  }
+  if (node->kind == ND_CASE) {
+    node_case_t *c = as_case(node);
+    printf(".Lcase%d:\n", c->label_id);
+    gen_stmt(c->base.rhs);
+    return;
+  }
+  if (node->kind == ND_DEFAULT) {
+    node_default_t *d = as_default(node);
+    printf(".Ldefault%d:\n", d->label_id);
+    gen_stmt(d->base.rhs);
+    return;
+  }
+  gen_stmt(node);
+}
 
 static int is_main_func(const node_func_t *fn) {
   return fn->funcname_len == 4 && strncmp(fn->funcname, "main", 4) == 0;
@@ -38,6 +142,28 @@ void gen_main_epilogue(void) {
 
 static void gen_expr(node_t *node);
 static void gen_stmt(node_t *node);
+
+static void gen_load_x0_from_addr(int type_size) {
+  if (type_size == 1)
+    printf("  ldrb w0, [x1]\n");
+  else if (type_size == 2)
+    printf("  ldrh w0, [x1]\n");
+  else if (type_size == 4)
+    printf("  ldr w0, [x1]\n");
+  else
+    printf("  ldr x0, [x1]\n");
+}
+
+static void gen_store_x0_to_addr(int type_size) {
+  if (type_size == 1)
+    printf("  strb w0, [x1]\n");
+  else if (type_size == 2)
+    printf("  strh w0, [x1]\n");
+  else if (type_size == 4)
+    printf("  str w0, [x1]\n");
+  else
+    printf("  str x0, [x1]\n");
+}
 
 // レジスタ名取得ヘルパー
 static const char *freg(int fp_kind, int reg_idx) {
@@ -177,6 +303,84 @@ static void gen_expr(node_t *node) {
       printf("  str x1, [sp, #-16]!\n");
     }
     return;
+  case ND_PRE_INC:
+  case ND_PRE_DEC:
+  case ND_POST_INC:
+  case ND_POST_DEC: {
+    node_t *target = node->lhs;
+    int type_size = 8;
+    if (target->kind == ND_LVAR) type_size = as_lvar(target)->mem.type_size;
+    else if (target->kind == ND_DEREF) type_size = as_mem(target)->type_size ? as_mem(target)->type_size : 8;
+
+    gen_lval(target);
+    printf("  ldr x1, [sp], #16\n"); // x1: addr
+    gen_load_x0_from_addr(type_size);   // x0: old value
+
+    if (node->kind == ND_POST_INC || node->kind == ND_POST_DEC) {
+      printf("  mov x2, x0\n");         // x2: return old value
+    }
+
+    if (node->kind == ND_PRE_INC || node->kind == ND_POST_INC)
+      printf("  add x0, x0, #1\n");
+    else
+      printf("  sub x0, x0, #1\n");
+
+    gen_store_x0_to_addr(type_size);    // store updated value
+
+    if (node->kind == ND_POST_INC || node->kind == ND_POST_DEC)
+      printf("  str x2, [sp, #-16]!\n");
+    else
+      printf("  str x0, [sp, #-16]!\n");
+    return;
+  }
+  case ND_LOGAND: {
+    int false_lbl = label_count++;
+    int end_lbl = label_count++;
+    gen_expr(node->lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbz x0, .Lfalse%d\n", false_lbl);
+    gen_expr(node->rhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbz x0, .Lfalse%d\n", false_lbl);
+    printf("  mov x0, #1\n");
+    printf("  b .Lend%d\n", end_lbl);
+    printf(".Lfalse%d:\n", false_lbl);
+    printf("  mov x0, #0\n");
+    printf(".Lend%d:\n", end_lbl);
+    printf("  str x0, [sp, #-16]!\n");
+    return;
+  }
+  case ND_LOGOR: {
+    int true_lbl = label_count++;
+    int end_lbl = label_count++;
+    gen_expr(node->lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbnz x0, .Ltrue%d\n", true_lbl);
+    gen_expr(node->rhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbnz x0, .Ltrue%d\n", true_lbl);
+    printf("  mov x0, #0\n");
+    printf("  b .Lend%d\n", end_lbl);
+    printf(".Ltrue%d:\n", true_lbl);
+    printf("  mov x0, #1\n");
+    printf(".Lend%d:\n", end_lbl);
+    printf("  str x0, [sp, #-16]!\n");
+    return;
+  }
+  case ND_TERNARY: {
+    node_ctrl_t *ctrl = as_ctrl(node);
+    int else_lbl = label_count++;
+    int end_lbl = label_count++;
+    gen_expr(ctrl->base.lhs);
+    printf("  ldr x0, [sp], #16\n");
+    printf("  cbz x0, .Lelse%d\n", else_lbl);
+    gen_expr(ctrl->base.rhs);
+    printf("  b .Lend%d\n", end_lbl);
+    printf(".Lelse%d:\n", else_lbl);
+    gen_expr(ctrl->els);
+    printf(".Lend%d:\n", end_lbl);
+    return;
+  }
   case ND_FUNCALL: {
     node_func_t *fn = as_func(node);
     // 引数を評価してレジスタに格納
@@ -373,49 +577,108 @@ static void gen_stmt(node_t *node) {
   }
   case ND_WHILE: {
     node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
-    printf(".Lbegin%d:\n", lbl);
+    int begin_lbl = label_count++;
+    int cont_lbl = label_count++;
+    int end_lbl = label_count++;
+    push_control_labels(end_lbl, cont_lbl);
+    printf(".Lbegin%d:\n", begin_lbl);
+    printf(".Lcont%d:\n", cont_lbl);
     gen_expr(ctrl->base.lhs);
     printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lend%d\n", lbl);
+    printf("  cbz x0, .Lend%d\n", end_lbl);
     gen_stmt(ctrl->base.rhs);
-    printf("  b .Lbegin%d\n", lbl);
-    printf(".Lend%d:\n", lbl);
+    printf("  b .Lbegin%d\n", begin_lbl);
+    printf(".Lend%d:\n", end_lbl);
+    pop_control_labels();
     return;
   }
   case ND_DO_WHILE: {
     node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
-    printf(".Lbegin%d:\n", lbl);
+    int begin_lbl = label_count++;
+    int cont_lbl = label_count++;
+    int end_lbl = label_count++;
+    push_control_labels(end_lbl, cont_lbl);
+    printf(".Lbegin%d:\n", begin_lbl);
     gen_stmt(ctrl->base.rhs);
+    printf(".Lcont%d:\n", cont_lbl);
     gen_expr(ctrl->base.lhs);
     printf("  ldr x0, [sp], #16\n");
-    printf("  cbnz x0, .Lbegin%d\n", lbl);
-    printf(".Lend%d:\n", lbl);
+    printf("  cbnz x0, .Lbegin%d\n", begin_lbl);
+    printf(".Lend%d:\n", end_lbl);
+    pop_control_labels();
     return;
   }
   case ND_FOR: {
     node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
+    int begin_lbl = label_count++;
+    int cont_lbl = label_count++;
+    int end_lbl = label_count++;
+    push_control_labels(end_lbl, cont_lbl);
     if (ctrl->init) {
       gen_expr(ctrl->init);
       printf("  add sp, sp, #16\n");
     }
-    printf(".Lbegin%d:\n", lbl);
+    printf(".Lbegin%d:\n", begin_lbl);
     if (ctrl->base.lhs) {
       gen_expr(ctrl->base.lhs);
       printf("  ldr x0, [sp], #16\n");
-      printf("  cbz x0, .Lend%d\n", lbl);
+      printf("  cbz x0, .Lend%d\n", end_lbl);
     }
     gen_stmt(ctrl->base.rhs);
+    printf(".Lcont%d:\n", cont_lbl);
     if (ctrl->inc) {
       gen_expr(ctrl->inc);
       printf("  add sp, sp, #16\n");
     }
-    printf("  b .Lbegin%d\n", lbl);
-    printf(".Lend%d:\n", lbl);
+    printf("  b .Lbegin%d\n", begin_lbl);
+    printf(".Lend%d:\n", end_lbl);
+    pop_control_labels();
     return;
   }
+  case ND_SWITCH: {
+    node_ctrl_t *ctrl = as_ctrl(node);
+    int end_lbl = label_count++;
+
+    gen_expr(ctrl->base.lhs);
+    printf("  ldr x0, [sp], #16\n");
+
+    switch_collect_t sc = {0};
+    collect_switch_labels(ctrl->base.rhs, &sc);
+
+    for (int i = 0; i < sc.case_count; i++) {
+      node_case_t *c = sc.cases[i];
+      printf("  mov x1, #%lld\n", c->val);
+      printf("  cmp x0, x1\n");
+      printf("  beq .Lcase%d\n", c->label_id);
+    }
+    if (sc.default_node) {
+      printf("  b .Ldefault%d\n", sc.default_node->label_id);
+    } else {
+      printf("  b .Lend%d\n", end_lbl);
+    }
+
+    push_control_labels(end_lbl, -1); // switch は continue 対象外
+    gen_switch_body(ctrl->base.rhs);
+    pop_control_labels();
+
+    printf(".Lend%d:\n", end_lbl);
+    free(sc.cases);
+    return;
+  }
+  case ND_BREAK:
+    if (current_break_label() < 0) {
+      fprintf(stderr, "break はループまたはswitch内でのみ使用できます\n");
+      exit(1);
+    }
+    printf("  b .Lend%d\n", current_break_label());
+    return;
+  case ND_CONTINUE:
+    if (current_continue_label() < 0) {
+      fprintf(stderr, "continue はループ内でのみ使用できます\n");
+      exit(1);
+    }
+    printf("  b .Lcont%d\n", current_continue_label());
+    return;
   default:
     gen_expr(node);
     printf("  add sp, sp, #16\n");

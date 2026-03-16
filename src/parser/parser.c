@@ -97,7 +97,8 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   if (rhs && rhs->fp_kind > node->fp_kind) node->fp_kind = rhs->fp_kind;
 
   // 比較演算の結果は整数(0 または 1)
-  if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE) {
+  if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE ||
+      kind == ND_LOGAND || kind == ND_LOGOR) {
     node->fp_kind = TK_FLOAT_KIND_NONE;
   }
   return node;
@@ -133,9 +134,28 @@ static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
   return node;
 }
 
+static void expect_lvalue(node_t *node, const char *op) {
+  if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF)) {
+    fprintf(stderr, "%s の対象は左辺値である必要があります\n", op);
+    exit(1);
+  }
+}
+
+static node_t *new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {
+  expect_lvalue(lhs, op);
+  node_t *op_expr = new_node_binary(op_kind, lhs, rhs);
+  node_mem_t *assign_node = new_node_assign(lhs, op_expr);
+  assign_node->type_size = node_type_size(lhs);
+  assign_node->base.fp_kind = lhs ? lhs->fp_kind : 0;
+  return (node_t *)assign_node;
+}
+
 static node_t *stmt(void);
 static node_t *declaration(void);
 static node_t *assign(void);
+static node_t *conditional(void);
+static node_t *logical_or(void);
+static node_t *logical_and(void);
 static node_t *equality(void);
 static node_t *relational(void);
 static node_t *add(void);
@@ -143,6 +163,7 @@ static node_t *mul(void);
 static node_t *unary(void);
 static node_t *primary(void);
 static node_t *funcdef(void);
+static int switch_depth = 0;
 
 static bool is_type_token(token_kind_t kind) {
   return kind == TK_INT || kind == TK_CHAR || kind == TK_VOID || kind == TK_SHORT ||
@@ -305,6 +326,11 @@ static node_t *declaration(void) {
 //      | "while" "(" expr ")" stmt
 //      | "do" stmt "while" "(" expr ")" ";"
 //      | "for" "(" expr? ";" expr? ";" expr? ")" stmt
+//      | "switch" "(" expr ")" stmt
+//      | "case" num ":" stmt
+//      | "default" ":" stmt
+//      | "break" ";"
+//      | "continue" ";"
 //      | "return" expr ";"
 //      | "int" ident ("=" expr)? ";"
 //      | expr ";"
@@ -408,6 +434,60 @@ static node_t *stmt(void) {
     return (node_t *)node;
   }
 
+  if (token->kind == TK_SWITCH) {
+    token = token->next;
+    tk_expect('(');
+    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node->base.kind = ND_SWITCH;
+    node->base.lhs = expr();   // switch式
+    tk_expect(')');
+    switch_depth++;
+    node->base.rhs = stmt();   // switch本体
+    switch_depth--;
+    return (node_t *)node;
+  }
+
+  if (token->kind == TK_CASE) {
+    if (switch_depth == 0) {
+      tk_error_tok(token, "case は switch 内でのみ使用できます");
+    }
+    token = token->next;
+    node_case_t *node = calloc(1, sizeof(node_case_t));
+    node->base.kind = ND_CASE;
+    node->val = tk_expect_number();
+    tk_expect(':');
+    node->base.rhs = stmt();
+    return (node_t *)node;
+  }
+
+  if (token->kind == TK_DEFAULT) {
+    if (switch_depth == 0) {
+      tk_error_tok(token, "default は switch 内でのみ使用できます");
+    }
+    token = token->next;
+    node_default_t *node = calloc(1, sizeof(node_default_t));
+    node->base.kind = ND_DEFAULT;
+    tk_expect(':');
+    node->base.rhs = stmt();
+    return (node_t *)node;
+  }
+
+  if (token->kind == TK_BREAK) {
+    token = token->next;
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_BREAK;
+    tk_expect(';');
+    return node;
+  }
+
+  if (token->kind == TK_CONTINUE) {
+    token = token->next;
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_CONTINUE;
+    tk_expect(';');
+    return node;
+  }
+
   node_t *node = expr();
   tk_expect(';');
   return node;
@@ -416,15 +496,61 @@ static node_t *stmt(void) {
 // expr = assign
 node_t *expr(void) { return assign(); }
 
-// assign = equality ("=" assign)?
+// assign = conditional (("=" | "+=" | "-=" | "*=" | "/=") assign)?
 static node_t *assign(void) {
-  node_t *node = equality();
+  node_t *node = conditional();
   if (tk_consume('=')) {
     node_mem_t *assign_node = new_node_assign(node, assign());
     // 左辺のtype_sizeをASSIGNに伝播（str/strb/strh の切り替えに使用）
     assign_node->type_size = node_type_size(assign_node->base.lhs);
     assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
     node = (node_t *)assign_node;
+  } else if (tk_consume_str("+=")) {
+    node = new_compound_assign(node, ND_ADD, assign(), "+=");
+  } else if (tk_consume_str("-=")) {
+    node = new_compound_assign(node, ND_SUB, assign(), "-=");
+  } else if (tk_consume_str("*=")) {
+    node = new_compound_assign(node, ND_MUL, assign(), "*=");
+  } else if (tk_consume_str("/=")) {
+    node = new_compound_assign(node, ND_DIV, assign(), "/=");
+  }
+  return node;
+}
+
+// conditional = logical_or ("?" expr ":" conditional)?
+static node_t *conditional(void) {
+  node_t *node = logical_or();
+  if (tk_consume('?')) {
+    node_ctrl_t *ternary = calloc(1, sizeof(node_ctrl_t));
+    ternary->base.kind = ND_TERNARY;
+    ternary->base.lhs = node;
+    ternary->base.rhs = expr();
+    tk_expect(':');
+    ternary->els = conditional(); // 右結合
+    // 三項演算の結果型は then/else の優先型を採用
+    ternary->base.fp_kind = ternary->base.rhs->fp_kind;
+    if (ternary->els && ternary->els->fp_kind > ternary->base.fp_kind) {
+      ternary->base.fp_kind = ternary->els->fp_kind;
+    }
+    return (node_t *)ternary;
+  }
+  return node;
+}
+
+// logical_or = logical_and ("||" logical_and)*
+static node_t *logical_or(void) {
+  node_t *node = logical_and();
+  while (tk_consume_str("||")) {
+    node = new_node_binary(ND_LOGOR, node, logical_and());
+  }
+  return node;
+}
+
+// logical_and = equality ("&&" equality)*
+static node_t *logical_and(void) {
+  node_t *node = equality();
+  while (tk_consume_str("&&")) {
+    node = new_node_binary(ND_LOGAND, node, equality());
   }
   return node;
 }
@@ -489,9 +615,25 @@ static node_t *mul(void) {
   }
 }
 
-// unary = ("+" | "-" | "!" | "~" | "*" | "&") unary | primary postfix*
+// unary = ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary | primary postfix*
 // postfix = "[" expr "]"
 static node_t *unary(void) {
+  if (tk_consume_str("++")) {
+    node_t *target = unary();
+    expect_lvalue(target, "++");
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_PRE_INC;
+    node->lhs = target;
+    return node;
+  }
+  if (tk_consume_str("--")) {
+    node_t *target = unary();
+    expect_lvalue(target, "--");
+    node_t *node = calloc(1, sizeof(node_t));
+    node->kind = ND_PRE_DEC;
+    node->lhs = target;
+    return node;
+  }
   if (tk_consume('+')) {
     return unary();
   }
@@ -541,6 +683,25 @@ static node_t *unary(void) {
     deref->base.lhs = addr;
     deref->type_size = es;
     node = (node_t *)deref;
+  }
+  for (;;) {
+    if (tk_consume_str("++")) {
+      expect_lvalue(node, "++");
+      node_t *inc = calloc(1, sizeof(node_t));
+      inc->kind = ND_POST_INC;
+      inc->lhs = node;
+      node = inc;
+      continue;
+    }
+    if (tk_consume_str("--")) {
+      expect_lvalue(node, "--");
+      node_t *dec = calloc(1, sizeof(node_t));
+      dec->kind = ND_POST_DEC;
+      dec->lhs = node;
+      node = dec;
+      continue;
+    }
+    break;
   }
   return node;
 }
