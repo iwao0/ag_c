@@ -172,6 +172,7 @@ args       = expr ("," expr)*
 - 文字定数:
   - マルチ文字文字定数（例: `'ab'`）を受理
   - 接頭辞付き文字定数 `L'c'`, `u'c'`, `U'c'` を受理
+  - 接頭辞付きマルチ文字定数（例: `L'AB'`）を実装定義として受理
 - 文字列リテラル:
   - 接頭辞付き文字列 `L"..."`, `u"..."`, `U"..."`, `u8"..."` を受理
   - 隣接文字列リテラル連結（`"a" "b"`）を Parser 側で連結
@@ -182,6 +183,7 @@ args       = expr ("," expr)*
   - `??=` などのトライグラフ置換を前処理として実行
 - 数値リテラル:
   - `token_num_t.val` / `node_num_t.val` を `long long` 化し、`int` への早期切り詰めを回避
+  - 浮動小数点サフィックス種別を `token_num_t.float_suffix_kind` へ保持（`0=none,1=f/F,2=l/L`）
   - `0b...` は拡張として維持し、`strict C11` モード時は拒否
 
 > [!NOTE]
@@ -189,6 +191,8 @@ args       = expr ("," expr)*
 > `0b...` はデフォルトで拡張として許可し、`strict C11 = true` または `enable_binary_literals = false` で拒否されます。
 > これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
 > 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
+> 接頭辞付きマルチ文字定数は、現実装では 8-bit 単位で左シフトしながら畳み込む実装定義規則で値を形成します。
+> `l/L` 付き浮動小数点はサフィックス情報を保持しますが、現時点の意味処理/Codegenは double 経路を使用します。
 
 ## 2026-03 Tokenizer最適化メモ
 
