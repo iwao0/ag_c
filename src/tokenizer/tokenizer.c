@@ -489,6 +489,111 @@ static long long token_signed_from_u64(unsigned long long uval) {
   return (long long)(uval & (unsigned long long)LLONG_MAX);
 }
 
+static void parse_number_literal(char **pp, token_num_t *num) {
+  char *p = *pp;
+
+  // 16進数/2進数/8進数/10進数
+  if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
+    // 16進数 (整数 or 浮動小数点)
+    bool is_hex_float = false;
+    for (char *q = p + 2; tk_is_xdigit(*q) || *q == '.' || *q == 'p' || *q == 'P'; q++) {
+      if (*q == '.' || *q == 'p' || *q == 'P') {
+        is_hex_float = true;
+        break;
+      }
+    }
+
+    if (is_hex_float) {
+      char *end;
+      num->fval = strtod(p, &end);
+      if (end == p) error_at(p, "16進浮動小数点リテラルが不正です");
+      if (*end == 'f' || *end == 'F') {
+        num->is_float = 1;
+        end++;
+      } else if (*end == 'l' || *end == 'L') {
+        num->is_float = 2;
+        end++;
+      } else {
+        num->is_float = 2;
+      }
+      if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
+      p = end;
+    } else {
+      p += 2;
+      unsigned long long val = parse_digits(&p, 16);
+      num->uval = val;
+      num->val = token_signed_from_u64(val);
+      num->is_float = 0;
+      num->int_base = 16;
+      parse_int_suffix(num, &p, val, false);
+    }
+  } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
+    if (get_strict_c11_mode() || !get_enable_binary_literals()) {
+      error_at(p, "2進数リテラルは strict C11 では未対応です");
+    }
+    p += 2;
+    if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
+    unsigned long long val = parse_digits(&p, 2);
+    num->uval = val;
+    num->val = token_signed_from_u64(val);
+    num->is_float = 0;
+    num->int_base = 2;
+    parse_int_suffix(num, &p, val, false);
+  } else if (*p == '0' && tk_is_digit(p[1])) {
+    if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
+    p++;
+    unsigned long long val = 0;
+    if (*p >= '0' && *p <= '7') {
+      p--;
+      val = parse_digits(&p, 8);
+    }
+    num->uval = val;
+    num->val = token_signed_from_u64(val);
+    num->is_float = 0;
+    num->int_base = 8;
+    parse_int_suffix(num, &p, val, false);
+  } else {
+    // 10進整数はまず数字列だけ高速スキャンし、浮動小数点判定を早期化する
+    bool is_float = false;
+    if (*p == '.') {
+      is_float = true;
+    } else {
+      char *q = p;
+      while (tk_is_digit(*q)) q++;
+      if (*q == '.' || *q == 'e' || *q == 'E')
+        is_float = true;
+    }
+
+    if (is_float) {
+      char *end;
+      num->fval = strtod(p, &end);
+      if (*end == 'f' || *end == 'F') {
+        num->is_float = 1; // float
+        end++;
+      } else if (*end == 'l' || *end == 'L') {
+        num->is_float = 2; // long double は未対応だが double 扱い
+        end++;
+      } else {
+        num->is_float = 2; // デフォルトは double
+      }
+      if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
+      p = end;
+    } else {
+      unsigned long long val = parse_digits(&p, 10);
+      num->uval = val;
+      num->val = token_signed_from_u64(val);
+      num->is_float = 0;
+      num->int_base = 10;
+      parse_int_suffix(num, &p, val, true);
+    }
+  }
+
+  if (*p == '.' || tk_is_ident_continue_byte(*p)) {
+    error_at(p, "数値リテラルが不正です");
+  }
+  *pp = p;
+}
+
 // 文字列 p をトークナイズしてその結果へのポインタを返す
 token_t *tokenize(char *p) {
   char *normalized = replace_trigraphs(p);
@@ -682,104 +787,7 @@ parse_punct_ident_num:
       token_num_t *num = new_token_num(cur, p, 0, line_no);
       num->pp.base.at_bol = _at_bol;
       num->pp.base.has_space = _has_space;
-
-      // 16進数/2進数/8進数/10進数
-      if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
-        // 16進数 (整数 or 浮動小数点)
-        bool is_hex_float = false;
-        for (char *q = p + 2; tk_is_xdigit(*q) || *q == '.' || *q == 'p' || *q == 'P'; q++) {
-          if (*q == '.' || *q == 'p' || *q == 'P') {
-            is_hex_float = true;
-            break;
-          }
-        }
-
-        if (is_hex_float) {
-          char *end;
-          num->fval = strtod(p, &end);
-          if (end == p) error_at(p, "16進浮動小数点リテラルが不正です");
-          if (*end == 'f' || *end == 'F') {
-            num->is_float = 1;
-            end++;
-          } else if (*end == 'l' || *end == 'L') {
-            num->is_float = 2;
-            end++;
-          } else {
-            num->is_float = 2;
-          }
-          if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
-          p = end;
-        } else {
-          p += 2;
-          unsigned long long val = parse_digits(&p, 16);
-          num->uval = val;
-          num->val = token_signed_from_u64(val);
-          num->is_float = 0;
-          num->int_base = 16;
-          parse_int_suffix(num, &p, val, false);
-        }
-      } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
-        if (get_strict_c11_mode() || !get_enable_binary_literals()) {
-          error_at(p, "2進数リテラルは strict C11 では未対応です");
-        }
-        p += 2;
-        if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
-        unsigned long long val = parse_digits(&p, 2);
-        num->uval = val;
-        num->val = token_signed_from_u64(val);
-        num->is_float = 0;
-        num->int_base = 2;
-        parse_int_suffix(num, &p, val, false);
-      } else if (*p == '0' && tk_is_digit(p[1])) {
-        if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
-        p++;
-        unsigned long long val = 0;
-        if (*p >= '0' && *p <= '7') {
-          p--;
-          val = parse_digits(&p, 8);
-        }
-        num->uval = val;
-        num->val = token_signed_from_u64(val);
-        num->is_float = 0;
-        num->int_base = 8;
-        parse_int_suffix(num, &p, val, false);
-      } else {
-        char *q = p;
-        // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
-        bool is_float = false;
-        while (tk_is_alnum(*q) || *q == '.') {
-          if (*q == '.' || *q == 'e' || *q == 'E') {
-            is_float = true;
-          }
-          q++;
-        }
-
-        if (is_float) {
-          char *end;
-          num->fval = strtod(p, &end);
-          if (*end == 'f' || *end == 'F') {
-            num->is_float = 1; // float
-            end++;
-          } else if (*end == 'l' || *end == 'L') {
-            num->is_float = 2; // long double は未対応だが double 扱い
-            end++;
-          } else {
-            num->is_float = 2; // デフォルトは double
-          }
-          if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
-          p = end;
-        } else {
-          unsigned long long val = parse_digits(&p, 10);
-          num->uval = val;
-          num->val = token_signed_from_u64(val);
-          num->is_float = 0;
-          num->int_base = 10;
-          parse_int_suffix(num, &p, val, true);
-        }
-      }
-      if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-        error_at(p, "数値リテラルが不正です");
-      }
+      parse_number_literal(&p, num);
       num->len = p - start;
       num->str = start;
       cur = (token_t *)num;

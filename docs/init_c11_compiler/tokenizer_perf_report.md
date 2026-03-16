@@ -26,3 +26,4 @@ Environment: Apple clang (`-O0`), `make bench`
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
 - Throughput is maintained or improved depending on input size.
 - CI perf guard is added to detect major regressions in tokenizer throughput and allocations.
+- Additional numeric fast-path refactoring keeps throughput at high level (`9,718,939 tokens/sec` on 256KB).
