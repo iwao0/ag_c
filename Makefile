@@ -7,6 +7,8 @@ TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
+BENCH_TOKENIZER=build/bench_tokenizer
+TOKENIZER_LIB_OBJS=build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
 
 
 $(TARGET): $(OBJS)
@@ -16,11 +18,11 @@ build/%.o: src/%.c src/ag_c.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(TEST_TOKENIZER): test/test_tokenizer.c build/tokenizer/tokenizer.o
+$(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_PARSER): test/test_parser.c build/parser/parser.o build/tokenizer/tokenizer.o
+$(TEST_PARSER): test/test_parser.c build/parser/parser.o $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -36,6 +38,10 @@ $(TEST_PREPROCESS): test/test_preprocess.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_preprocess.c
 
+$(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
 test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
@@ -43,7 +49,10 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(T
 	$(TEST_PREPROCESS)
 	$(TEST_E2E)
 
+bench: $(BENCH_TOKENIZER)
+	$(BENCH_TOKENIZER)
+
 clean:
 	rm -rf build
 
-.PHONY: test clean
+.PHONY: test clean bench

@@ -2,6 +2,7 @@
 #define TOKENIZER_H
 
 #include "token.h"
+#include <stddef.h>
 
 // 現在着目しているトークン
 extern token_t *token;
@@ -46,5 +47,14 @@ bool get_enable_trigraphs(void);
 void set_enable_trigraphs(bool enable);
 bool get_enable_binary_literals(void);
 void set_enable_binary_literals(bool enable);
+
+typedef struct {
+  size_t alloc_count;
+  size_t alloc_bytes;
+  size_t peak_alloc_bytes;
+} tokenizer_stats_t;
+
+void reset_tokenizer_stats(void);
+tokenizer_stats_t get_tokenizer_stats(void);
 
 #endif

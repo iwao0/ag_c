@@ -1,5 +1,7 @@
 #include "tokenizer.h"
-#include <ctype.h>
+#include "charclass.h"
+#include "keywords.h"
+#include "punctuator.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -26,6 +28,7 @@ static char *current_filename;
 static bool strict_c11_mode = false;
 static bool enable_trigraphs = true;
 static bool enable_binary_literals = true;
+static tokenizer_stats_t tok_stats = {0};
 
 char *get_filename(void) {
   return current_filename;
@@ -59,6 +62,30 @@ void set_enable_binary_literals(bool enable) {
   enable_binary_literals = enable;
 }
 
+void reset_tokenizer_stats(void) {
+  tok_stats.alloc_count = 0;
+  tok_stats.alloc_bytes = 0;
+  tok_stats.peak_alloc_bytes = 0;
+}
+
+tokenizer_stats_t get_tokenizer_stats(void) {
+  return tok_stats;
+}
+
+static void *tcalloc(size_t n, size_t size) {
+  void *p = calloc(n, size);
+  if (!p) {
+    fprintf(stderr, "メモリ確保に失敗しました\n");
+    exit(1);
+  }
+  tok_stats.alloc_count++;
+  tok_stats.alloc_bytes += n * size;
+  if (tok_stats.alloc_bytes > tok_stats.peak_alloc_bytes) {
+    tok_stats.peak_alloc_bytes = tok_stats.alloc_bytes;
+  }
+  return p;
+}
+
 static char trigraph_to_char(char c) {
   switch (c) {
     case '=': return '#';
@@ -78,7 +105,7 @@ static char trigraph_to_char(char c) {
 static char *replace_trigraphs(const char *in) {
   if (!enable_trigraphs) return strdup(in);
   size_t n = strlen(in);
-  char *out = calloc(n + 1, 1);
+  char *out = tcalloc(n + 1, 1);
   size_t i = 0;
   size_t j = 0;
 
@@ -101,7 +128,7 @@ static bool starts_with_ucn(const char *p, int *len) {
   if (p[0] != '\\' || (p[1] != 'u' && p[1] != 'U')) return false;
   int digits = (p[1] == 'u') ? 4 : 8;
   for (int i = 0; i < digits; i++) {
-    if (!isxdigit((unsigned char)p[2 + i])) return false;
+    if (!tk_is_xdigit(p[2 + i])) return false;
   }
   *len = 2 + digits;
   return true;
@@ -335,64 +362,6 @@ static token_kind_t kind_for_char(char op) {
   }
 }
 
-static token_kind_t kind_for_op(const char *op) {
-  if (strcmp(op, "==") == 0) return TK_EQEQ;
-  if (strcmp(op, "!=") == 0) return TK_NEQ;
-  if (strcmp(op, "<=") == 0) return TK_LE;
-  if (strcmp(op, ">=") == 0) return TK_GE;
-  if (strcmp(op, "&&") == 0) return TK_ANDAND;
-  if (strcmp(op, "||") == 0) return TK_OROR;
-  if (strcmp(op, "##") == 0) return TK_HASHHASH;
-  if (strcmp(op, "++") == 0) return TK_INC;
-  if (strcmp(op, "--") == 0) return TK_DEC;
-  if (strcmp(op, "<<") == 0) return TK_SHL;
-  if (strcmp(op, ">>") == 0) return TK_SHR;
-  if (strcmp(op, "->") == 0) return TK_ARROW;
-  if (strcmp(op, "+=") == 0) return TK_PLUSEQ;
-  if (strcmp(op, "-=") == 0) return TK_MINUSEQ;
-  if (strcmp(op, "*=") == 0) return TK_MULEQ;
-  if (strcmp(op, "/=") == 0) return TK_DIVEQ;
-  if (strcmp(op, "%=") == 0) return TK_MODEQ;
-  if (strcmp(op, "<<=") == 0) return TK_SHLEQ;
-  if (strcmp(op, ">>=") == 0) return TK_SHREQ;
-  if (strcmp(op, "&=") == 0) return TK_ANDEQ;
-  if (strcmp(op, "^=") == 0) return TK_XOREQ;
-  if (strcmp(op, "|=") == 0) return TK_OREQ;
-  if (strcmp(op, "...") == 0) return TK_ELLIPSIS;
-  if (strcmp(op, "%:%:") == 0) return TK_HASHHASH;
-  if (strcmp(op, "<") == 0) return TK_LT;
-  if (strcmp(op, ">") == 0) return TK_GT;
-  if (strcmp(op, "+") == 0) return TK_PLUS;
-  if (strcmp(op, "-") == 0) return TK_MINUS;
-  if (strcmp(op, "*") == 0) return TK_MUL;
-  if (strcmp(op, "/") == 0) return TK_DIV;
-  if (strcmp(op, "%") == 0) return TK_MOD;
-  if (strcmp(op, "!") == 0) return TK_BANG;
-  if (strcmp(op, "~") == 0) return TK_TILDE;
-  if (strcmp(op, "=") == 0) return TK_ASSIGN;
-  if (strcmp(op, "(") == 0) return TK_LPAREN;
-  if (strcmp(op, ")") == 0) return TK_RPAREN;
-  if (strcmp(op, "{") == 0) return TK_LBRACE;
-  if (strcmp(op, "}") == 0) return TK_RBRACE;
-  if (strcmp(op, "[") == 0) return TK_LBRACKET;
-  if (strcmp(op, "]") == 0) return TK_RBRACKET;
-  if (strcmp(op, ",") == 0) return TK_COMMA;
-  if (strcmp(op, ";") == 0) return TK_SEMI;
-  if (strcmp(op, "&") == 0) return TK_AMP;
-  if (strcmp(op, "|") == 0) return TK_PIPE;
-  if (strcmp(op, "^") == 0) return TK_CARET;
-  if (strcmp(op, "?") == 0) return TK_QUESTION;
-  if (strcmp(op, ":") == 0) return TK_COLON;
-  if (strcmp(op, "#") == 0) return TK_HASH;
-  if (strcmp(op, "<:") == 0) return TK_LBRACKET;
-  if (strcmp(op, ":>") == 0) return TK_RBRACKET;
-  if (strcmp(op, "<%") == 0) return TK_LBRACE;
-  if (strcmp(op, "%>") == 0) return TK_RBRACE;
-  if (strcmp(op, "%:") == 0) return TK_HASH;
-  if (strcmp(op, ".") == 0) return TK_DOT;
-  return TK_EOF;
-}
-
 bool consume(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind)
@@ -402,7 +371,7 @@ bool consume(char op) {
 }
 
 bool consume_str(char *op) {
-  token_kind_t kind = kind_for_op(op);
+  token_kind_t kind = punctuator_kind_for_str(op);
   if (kind == TK_EOF || token->kind != kind)
     return false;
   token = token->next;
@@ -448,14 +417,14 @@ static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
 }
 
 static token_t *new_token_simple(token_kind_t kind, token_t *cur, int line_no) {
-  token_pp_t *tok = calloc(1, sizeof(token_pp_t));
+  token_pp_t *tok = tcalloc(1, sizeof(token_pp_t));
   init_token_base(&tok->base, kind, line_no);
   cur->next = (token_t *)tok;
   return (token_t *)tok;
 }
 
 static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line_no) {
-  token_ident_t *tok = calloc(1, sizeof(token_ident_t));
+  token_ident_t *tok = tcalloc(1, sizeof(token_ident_t));
   init_token_base(&tok->pp.base, TK_IDENT, line_no);
   tok->str = str;
   tok->len = len;
@@ -464,7 +433,7 @@ static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line
 }
 
 static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no) {
-  token_string_t *tok = calloc(1, sizeof(token_string_t));
+  token_string_t *tok = tcalloc(1, sizeof(token_string_t));
   init_token_base(&tok->pp.base, TK_STRING, line_no);
   tok->str = str;
   tok->len = len;
@@ -473,7 +442,7 @@ static token_string_t *new_token_string(token_t *cur, char *str, int len, int li
 }
 
 static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no) {
-  token_num_t *tok = calloc(1, sizeof(token_num_t));
+  token_num_t *tok = tcalloc(1, sizeof(token_num_t));
   init_token_base(&tok->pp.base, TK_NUM, line_no);
   tok->str = str;
   tok->len = len;
@@ -496,9 +465,9 @@ static int read_escape_char(char **pp) {
   if (*p == '?') { *pp = p + 1; return '?'; }
   if (*p == 'x') {
     p++;
-    if (!isxdigit(*p)) error_at(p, "16進エスケープが不正です");
+    if (!tk_is_xdigit(*p)) error_at(p, "16進エスケープが不正です");
     unsigned valx = 0;
-    while (isxdigit(*p)) {
+    while (tk_is_xdigit(*p)) {
       int digit;
       if ('0' <= *p && *p <= '9') digit = *p - '0';
       else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
@@ -623,7 +592,7 @@ static void parse_int_suffix(token_num_t *num, char **pp, unsigned long long val
     break;
   }
 
-  if (isalpha(*p) || *p == '_') error_at(p, "整数サフィックスが不正です");
+  if (tk_is_ident_start_byte(*p)) error_at(p, "整数サフィックスが不正です");
 
   choose_int_type(num, val, is_decimal, seen_u, long_cnt);
   *pp = p;
@@ -712,7 +681,7 @@ static void parse_char_prefix(const char *p, int *prefix_len, int *prefix_kind, 
 
 static void decode_identifier_ucn(char *start, int len, char **out_str, int *out_len, bool *has_ucn) {
   *has_ucn = false;
-  char *buf = calloc((size_t)len * 4 + 1, 1);
+  char *buf = tcalloc((size_t)len * 4 + 1, 1);
   int bi = 0;
   for (int i = 0; i < len;) {
     uint32_t cp = 0;
@@ -736,7 +705,7 @@ static void decode_identifier_ucn(char *start, int len, char **out_str, int *out
 
 static bool is_ident_start(const char *p, int *adv) {
   int ucn_len = 0;
-  if (isalpha((unsigned char)*p) || *p == '_') {
+  if (tk_is_ident_start_byte(*p)) {
     *adv = 1;
     return true;
   }
@@ -749,7 +718,7 @@ static bool is_ident_start(const char *p, int *adv) {
 
 static bool is_ident_continue(const char *p, int *adv) {
   int ucn_len = 0;
-  if (isalnum((unsigned char)*p) || *p == '_') {
+  if (tk_is_ident_continue_byte(*p)) {
     *adv = 1;
     return true;
   }
@@ -782,7 +751,7 @@ token_t *tokenize(char *p) {
     }
 
     // 空白文字をスキップ
-    if (isspace(*p)) {
+    if (tk_is_space(*p)) {
       has_space = true;
       if (*p == '\n') {
         at_bol = true;
@@ -835,65 +804,14 @@ token_t *tokenize(char *p) {
     at_bol = false;
     has_space = false;
 
-    // 3文字の演算子 (..., <<=, >>=, %:%:)
-    if (strncmp(p, "...", 3) == 0 || strncmp(p, "<<=", 3) == 0 ||
-        strncmp(p, ">>=", 3) == 0 || strncmp(p, "%:%:", 4) == 0) {
-      token_kind_t kind = TK_EOF;
-      if (strncmp(p, "...", 3) == 0) kind = TK_ELLIPSIS;
-      else if (strncmp(p, "<<=", 3) == 0) kind = TK_SHLEQ;
-      else if (strncmp(p, ">>=", 3) == 0) kind = TK_SHREQ;
-      else if (strncmp(p, "%:%:", 4) == 0) kind = TK_HASHHASH;
-      cur = new_token_simple(kind, cur, line_no);
+    // 複数文字の演算子・記号（最長一致）
+    token_kind_t matched_kind = TK_EOF;
+    int matched_len = 0;
+    if (match_punctuator(p, &matched_kind, &matched_len) && matched_len >= 2) {
+      cur = new_token_simple(matched_kind, cur, line_no);
       cur->at_bol = _at_bol;
       cur->has_space = _has_space;
-      p += (kind == TK_HASHHASH) ? 4 : 3;
-      continue;
-    }
-
-    // 2文字の演算子
-    if (strncmp(p, "==", 2) == 0 || strncmp(p, "!=", 2) == 0 ||
-        strncmp(p, "<=", 2) == 0 || strncmp(p, ">=", 2) == 0 ||
-        strncmp(p, "&&", 2) == 0 || strncmp(p, "||", 2) == 0 ||
-        strncmp(p, "##", 2) == 0 || strncmp(p, "++", 2) == 0 ||
-        strncmp(p, "--", 2) == 0 || strncmp(p, "<<", 2) == 0 ||
-        strncmp(p, ">>", 2) == 0 || strncmp(p, "->", 2) == 0 ||
-        strncmp(p, "+=", 2) == 0 || strncmp(p, "-=", 2) == 0 ||
-        strncmp(p, "*=", 2) == 0 || strncmp(p, "/=", 2) == 0 ||
-        strncmp(p, "%=", 2) == 0 || strncmp(p, "&=", 2) == 0 ||
-        strncmp(p, "^=", 2) == 0 || strncmp(p, "|=", 2) == 0 ||
-        strncmp(p, "<:", 2) == 0 || strncmp(p, ":>", 2) == 0 ||
-        strncmp(p, "<%", 2) == 0 || strncmp(p, "%>", 2) == 0 ||
-        strncmp(p, "%:", 2) == 0) {
-      token_kind_t kind = TK_EOF;
-      if (strncmp(p, "==", 2) == 0) kind = TK_EQEQ;
-      else if (strncmp(p, "!=", 2) == 0) kind = TK_NEQ;
-      else if (strncmp(p, "<=", 2) == 0) kind = TK_LE;
-      else if (strncmp(p, ">=", 2) == 0) kind = TK_GE;
-      else if (strncmp(p, "&&", 2) == 0) kind = TK_ANDAND;
-      else if (strncmp(p, "||", 2) == 0) kind = TK_OROR;
-      else if (strncmp(p, "##", 2) == 0) kind = TK_HASHHASH;
-      else if (strncmp(p, "++", 2) == 0) kind = TK_INC;
-      else if (strncmp(p, "--", 2) == 0) kind = TK_DEC;
-      else if (strncmp(p, "<<", 2) == 0) kind = TK_SHL;
-      else if (strncmp(p, ">>", 2) == 0) kind = TK_SHR;
-      else if (strncmp(p, "->", 2) == 0) kind = TK_ARROW;
-      else if (strncmp(p, "+=", 2) == 0) kind = TK_PLUSEQ;
-      else if (strncmp(p, "-=", 2) == 0) kind = TK_MINUSEQ;
-      else if (strncmp(p, "*=", 2) == 0) kind = TK_MULEQ;
-      else if (strncmp(p, "/=", 2) == 0) kind = TK_DIVEQ;
-      else if (strncmp(p, "%=", 2) == 0) kind = TK_MODEQ;
-      else if (strncmp(p, "&=", 2) == 0) kind = TK_ANDEQ;
-      else if (strncmp(p, "^=", 2) == 0) kind = TK_XOREQ;
-      else if (strncmp(p, "|=", 2) == 0) kind = TK_OREQ;
-      else if (strncmp(p, "<:", 2) == 0) kind = TK_LBRACKET;
-      else if (strncmp(p, ":>", 2) == 0) kind = TK_RBRACKET;
-      else if (strncmp(p, "<%", 2) == 0) kind = TK_LBRACE;
-      else if (strncmp(p, "%>", 2) == 0) kind = TK_RBRACE;
-      else if (strncmp(p, "%:", 2) == 0) kind = TK_HASH;
-      cur = new_token_simple(kind, cur, line_no);
-      cur->at_bol = _at_bol;
-      cur->has_space = _has_space;
-      p += 2;
+      p += matched_len;
       continue;
     }
     // 文字列リテラル（接頭辞 L/u/U/u8 を含む）
@@ -1003,7 +921,7 @@ token_t *tokenize(char *p) {
     }
 
     // 1文字の記号 (+, -, *, /, %, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~, |, ^, ?, :)
-    if (strchr("+-*/%()<>;={},&[]#.!~|^?:", *p) || (*p == '.' && !isdigit(p[1]))) {
+    if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {
       token_kind_t kind = kind_for_char(*p);
       cur = new_token_simple(kind, cur, line_no);
       cur->at_bol = _at_bol;
@@ -1028,70 +946,16 @@ token_t *tokenize(char *p) {
         decode_identifier_ucn(start, len, &id_str, &id_len, &has_ucn);
       }
 
-      // キーワード判定
-      static const struct {
-        const char *name;
-        int len;
-        token_kind_t kind;
-      } kw[] = {
-        {"if", 2, TK_IF},
-        {"else", 4, TK_ELSE},
-        {"while", 5, TK_WHILE},
-        {"for", 3, TK_FOR},
-        {"return", 6, TK_RETURN},
-        {"auto", 4, TK_AUTO},
-        {"break", 5, TK_BREAK},
-        {"case", 4, TK_CASE},
-        {"const", 5, TK_CONST},
-        {"continue", 8, TK_CONTINUE},
-        {"default", 7, TK_DEFAULT},
-        {"do", 2, TK_DO},
-        {"enum", 4, TK_ENUM},
-        {"extern", 6, TK_EXTERN},
-        {"goto", 4, TK_GOTO},
-        {"inline", 6, TK_INLINE},
-        {"int", 3, TK_INT},
-        {"register", 8, TK_REGISTER},
-        {"restrict", 8, TK_RESTRICT},
-        {"signed", 6, TK_SIGNED},
-        {"sizeof", 6, TK_SIZEOF},
-        {"static", 6, TK_STATIC},
-        {"struct", 6, TK_STRUCT},
-        {"switch", 6, TK_SWITCH},
-        {"typedef", 7, TK_TYPEDEF},
-        {"union", 5, TK_UNION},
-        {"unsigned", 8, TK_UNSIGNED},
-        {"volatile", 8, TK_VOLATILE},
-        {"char", 4, TK_CHAR},
-        {"void", 4, TK_VOID},
-        {"short", 5, TK_SHORT},
-        {"long", 4, TK_LONG},
-        {"float", 5, TK_FLOAT},
-        {"double", 6, TK_DOUBLE},
-        {"_Alignas", 8, TK_ALIGNAS},
-        {"_Alignof", 8, TK_ALIGNOF},
-        {"_Atomic", 7, TK_ATOMIC},
-        {"_Bool", 5, TK_BOOL},
-        {"_Complex", 8, TK_COMPLEX},
-        {"_Generic", 8, TK_GENERIC},
-        {"_Imaginary", 10, TK_IMAGINARY},
-        {"_Noreturn", 9, TK_NORETURN},
-        {"_Static_assert", 14, TK_STATIC_ASSERT},
-        {"_Thread_local", 13, TK_THREAD_LOCAL},
-      };
-
-      bool is_kw = false;
-      for (size_t i = 0; i < sizeof(kw) / sizeof(kw[0]); i++) {
-        if (!has_ucn && len == kw[i].len && strncmp(start, kw[i].name, len) == 0) {
-          cur = new_token_simple(kw[i].kind, cur, line_no);
-          cur->at_bol = _at_bol;
-          cur->has_space = _has_space;
-          is_kw = true;
-          break;
-        }
+      token_kind_t kw_kind = TK_EOF;
+      if (!has_ucn) {
+        kw_kind = lookup_keyword(start, len);
       }
 
-      if (!is_kw) {
+      if (kw_kind != TK_EOF) {
+        cur = new_token_simple(kw_kind, cur, line_no);
+        cur->at_bol = _at_bol;
+        cur->has_space = _has_space;
+      } else {
         token_ident_t *id = new_token_ident(cur, id_str, id_len, line_no);
         id->pp.base.at_bol = _at_bol;
         id->pp.base.has_space = _has_space;
@@ -1101,7 +965,7 @@ token_t *tokenize(char *p) {
     }
 
     // 数値リテラル (整数 または 浮動小数点数)
-    if (isdigit(*p) || (*p == '.' && isdigit(p[1]))) {
+    if (tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1]))) {
       char *start = p; // Keep track of the start of the number for length calculation
       token_num_t *num = new_token_num(cur, p, 0, line_no);
       num->pp.base.at_bol = _at_bol;
@@ -1111,7 +975,7 @@ token_t *tokenize(char *p) {
       if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
         // 16進数 (整数 or 浮動小数点)
         bool is_hex_float = false;
-        for (char *q = p + 2; isxdigit(*q) || *q == '.' || *q == 'p' || *q == 'P'; q++) {
+        for (char *q = p + 2; tk_is_xdigit(*q) || *q == '.' || *q == 'p' || *q == 'P'; q++) {
           if (*q == '.' || *q == 'p' || *q == 'P') {
             is_hex_float = true;
             break;
@@ -1131,7 +995,7 @@ token_t *tokenize(char *p) {
           } else {
             num->is_float = 2;
           }
-          if (isalpha(*end) || *end == '_') error_at(end, "浮動小数点サフィックスが不正です");
+          if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
           p = end;
         } else {
           p += 2;
@@ -1154,7 +1018,7 @@ token_t *tokenize(char *p) {
         num->is_float = 0;
         num->int_base = 2;
         parse_int_suffix(num, &p, val, false);
-      } else if (*p == '0' && isdigit(p[1])) {
+      } else if (*p == '0' && tk_is_digit(p[1])) {
         if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
         p++;
         unsigned long long val = 0;
@@ -1171,7 +1035,7 @@ token_t *tokenize(char *p) {
         char *q = p;
         // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
         bool is_float = false;
-        while (isalnum(*q) || *q == '.') {
+        while (tk_is_alnum(*q) || *q == '.') {
           if (*q == '.' || *q == 'e' || *q == 'E') {
             is_float = true;
           }
@@ -1190,7 +1054,7 @@ token_t *tokenize(char *p) {
           } else {
             num->is_float = 2; // デフォルトは double
           }
-          if (isalpha(*end) || *end == '_') error_at(end, "浮動小数点サフィックスが不正です");
+          if (tk_is_ident_start_byte(*end)) error_at(end, "浮動小数点サフィックスが不正です");
           p = end;
         } else {
           unsigned long long val = parse_digits(&p, 10);
@@ -1201,7 +1065,7 @@ token_t *tokenize(char *p) {
           parse_int_suffix(num, &p, val, true);
         }
       }
-      if (*p == '.' || isalnum((unsigned char)*p) || *p == '_') {
+      if (*p == '.' || tk_is_ident_continue_byte(*p)) {
         error_at(p, "数値リテラルが不正です");
       }
       num->len = p - start;
