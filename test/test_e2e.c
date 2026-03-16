@@ -1,327 +1,329 @@
 #include "test_common.h"
+#include <errno.h>
+#include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-// コンパイル → アセンブル → 実行 → 終了コード取得
-static int compile_and_run(const char *input) {
-  // ag_c をパイプで呼び出し（シェルのクォート問題を回避）
-  FILE *fp = fopen("build/tmp_e2e.s", "w");
-  if (!fp) { fprintf(stderr, "  Cannot open tmp file\n"); return -1; }
-  fclose(fp);
+typedef enum {
+  CASE_INT,
+  CASE_FLOAT,
+  CASE_DOUBLE,
+} case_kind_t;
 
-  int pipefd[2];
-  pipe(pipefd);
-  pid_t pid = fork();
-  if (pid == 0) {
-    // 子プロセス: stdout を .s ファイルにリダイレクト
-    freopen("build/tmp_e2e.s", "w", stdout);
-    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
-    _exit(1);
-  }
-  close(pipefd[0]); close(pipefd[1]);
-  int status;
-  waitpid(pid, &status, 0);
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-    fprintf(stderr, "  Compile failed for: %s\n", input);
-    return -1;
-  }
+typedef struct {
+  const char *category;
+  const char *name;
+  case_kind_t kind;
+  const char *input;
+  int expected_i;
+  double expected_f;
+} test_case_t;
 
-  int ret = system("clang -o build/tmp_e2e build/tmp_e2e.s 2>&1");
-  if (ret != 0) {
-    fprintf(stderr, "  Assemble failed for: %s\n", input);
-    return -1;
-  }
+static const test_case_t test_cases[] = {
+    {"integer", "zero", CASE_INT, "main() { return 0; }", 0, 0},
+    {"integer", "literal", CASE_INT, "main() { return 42; }", 42, 0},
 
-  ret = system("./build/tmp_e2e");
-  return WEXITSTATUS(ret);
-}
+    {"arithmetic", "add_sub", CASE_INT, "main() { return 5+20-4; }", 21, 0},
+    {"arithmetic", "spaces", CASE_INT, "main() { return 12 + 34 - 5 ; }", 41, 0},
+    {"arithmetic", "mul", CASE_INT, "main() { return 5+6*7; }", 47, 0},
+    {"arithmetic", "paren", CASE_INT, "main() { return 5*(9-6); }", 15, 0},
+    {"arithmetic", "div", CASE_INT, "main() { return (3+5)/2; }", 4, 0},
+
+    {"comparison", "eq1", CASE_INT, "main() { return 0==0; }", 1, 0},
+    {"comparison", "eq2", CASE_INT, "main() { return 42==0; }", 0, 0},
+    {"comparison", "neq1", CASE_INT, "main() { return 0!=1; }", 1, 0},
+    {"comparison", "neq2", CASE_INT, "main() { return 42!=42; }", 0, 0},
+    {"comparison", "lt1", CASE_INT, "main() { return 0<1; }", 1, 0},
+    {"comparison", "lt2", CASE_INT, "main() { return 1<1; }", 0, 0},
+    {"comparison", "lt3", CASE_INT, "main() { return 2<1; }", 0, 0},
+    {"comparison", "le1", CASE_INT, "main() { return 0<=1; }", 1, 0},
+    {"comparison", "le2", CASE_INT, "main() { return 1<=1; }", 1, 0},
+    {"comparison", "le3", CASE_INT, "main() { return 2<=1; }", 0, 0},
+    {"comparison", "gt1", CASE_INT, "main() { return 1>0; }", 1, 0},
+    {"comparison", "gt2", CASE_INT, "main() { return 1>1; }", 0, 0},
+    {"comparison", "gt3", CASE_INT, "main() { return 1>2; }", 0, 0},
+    {"comparison", "ge1", CASE_INT, "main() { return 1>=0; }", 1, 0},
+    {"comparison", "ge2", CASE_INT, "main() { return 1>=1; }", 1, 0},
+    {"comparison", "ge3", CASE_INT, "main() { return 1>=2; }", 0, 0},
+
+    {"local_variables", "basic", CASE_INT, "main() { a=3; return a; }", 3, 0},
+    {"local_variables", "expr", CASE_INT, "main() { a=3; b=5*6-8; return a+b/2; }", 14, 0},
+    {"local_variables", "sum3", CASE_INT, "main() { a=1; b=2; c=3; return a+b+c; }", 6, 0},
+    {"local_variables", "mul2", CASE_INT, "main() { a=5; return a*2; }", 10, 0},
+    {"local_variables", "copy", CASE_INT, "main() { a=1; b=a; return b; }", 1, 0},
+
+    {"if_else", "if_true", CASE_INT, "main() { a=3; if (a==3) return a; else return 0; }", 3, 0},
+    {"if_else", "if_false", CASE_INT, "main() { a=3; if (a==5) return a; else return 0; }", 0, 0},
+    {"if_else", "branch1", CASE_INT, "main() { a=3; if (a==3) return 5; else return 10; }", 5, 0},
+    {"if_else", "branch2", CASE_INT, "main() { a=3; if (a!=3) return 5; else return 10; }", 10, 0},
+    {"if_else", "literal1", CASE_INT, "main() { if (1) return 2; else return 3; }", 2, 0},
+    {"if_else", "literal0", CASE_INT, "main() { if (0) return 2; else return 3; }", 3, 0},
+    {"if_else", "fallthrough", CASE_INT, "main() { if (1) return 42; return 0; }", 42, 0},
+
+    {"while", "count", CASE_INT, "main() { a=0; while (a<10) a=a+1; return a; }", 10, 0},
+    {"while", "zero", CASE_INT, "main() { a=0; while (0) a=a+1; return a; }", 0, 0},
+
+    {"for", "sum10", CASE_INT, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; return b; }", 55, 0},
+    {"for", "inc", CASE_INT, "main() { a=0; for (a=0; a<10; a=a+1) a; return a; }", 10, 0},
+
+    {"return", "literal", CASE_INT, "main() { return 42; }", 42, 0},
+    {"return", "expr", CASE_INT, "main() { return 2+3; }", 5, 0},
+    {"return", "var", CASE_INT, "main() { a=10; return a; }", 10, 0},
+    {"return", "sum", CASE_INT, "main() { a=1; b=2; return a+b; }", 3, 0},
+    {"return", "if", CASE_INT, "main() { if (1) return 1; else return 2; }", 1, 0},
+    {"return", "while", CASE_INT, "main() { a=0; while (a<10) a=a+1; return a; }", 10, 0},
+
+    {"block", "stmts", CASE_INT, "main() { { 1; 2; 3; } return 3; }", 3, 0},
+    {"block", "sum", CASE_INT, "main() { a=1; b=2; c=3; { a+b+c; } return a+b+c; }", 6, 0},
+    {"block", "for", CASE_INT, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) { b=b+a; } return b; }", 55, 0},
+    {"block", "while", CASE_INT, "main() { a=0; while (a<10) { a=a+1; } return a; }", 10, 0},
+    {"block", "if", CASE_INT, "main() { if (1) { a=2; b=3; return a+b; } else { return 0; } }", 5, 0},
+
+    {"funcall", "noargs", CASE_INT, "fortytwo() { return 42; } main() { return fortytwo(); }", 42, 0},
+    {"funcall", "add", CASE_INT, "add(a, b) { return a+b; } main() { return add(3, 4); }", 7, 0},
+    {"funcall", "twice", CASE_INT, "twice(a) { return a*2; } main() { return twice(5); }", 10, 0},
+    {"funcall", "multi", CASE_INT, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }", 21, 0},
+    {"funcall", "rec", CASE_INT, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }", 120, 0},
+
+    {"multichar_var", "foo", CASE_INT, "main() { foo=3; return foo; }", 3, 0},
+    {"multichar_var", "hello", CASE_INT, "main() { hello=2; world=3; return hello+world; }", 5, 0},
+    {"multichar_var", "x1x2", CASE_INT, "main() { x1=5; x2=10; return x1+x2; }", 15, 0},
+    {"multichar_var", "args", CASE_INT, "add(lhs, rhs) { return lhs+rhs; } main() { return add(3, 7); }", 10, 0},
+    {"multichar_var", "loop", CASE_INT, "main() { count=0; for (i=1; i<=3; i=i+1) count=count+i; return count; }", 6, 0},
+
+    {"type_decl", "int_func", CASE_INT, "int main() { return 42; }", 42, 0},
+    {"type_decl", "int_var", CASE_INT, "int main() { int x = 3; return x; }", 3, 0},
+    {"type_decl", "int_sum", CASE_INT, "int main() { int a = 3; int b = 4; return a+b; }", 7, 0},
+    {"type_decl", "int_args", CASE_INT, "int add(int a, int b) { return a+b; } int main() { return add(3, 7); }", 10, 0},
+    {"type_decl", "int_init", CASE_INT, "int main() { int x; x = 5; return x; }", 5, 0},
+    {"type_decl", "for_decl", CASE_INT, "int main() { int sum = 0; int i; for (i=1; i<=10; i=i+1) sum=sum+i; return sum; }", 55, 0},
+    {"type_decl", "char", CASE_INT, "int main() { char c = 65; return c; }", 65, 0},
+    {"type_decl", "void", CASE_INT, "void noop() { return 42; } int main() { return noop(); }", 42, 0},
+    {"type_decl", "short", CASE_INT, "int main() { short s = 10; return s; }", 10, 0},
+    {"type_decl", "long", CASE_INT, "long calc(long x) { return x+1; } int main() { return calc(98); }", 99, 0},
+    {"type_decl", "short_arr", CASE_INT, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[2]; }", 30, 0},
+    {"type_decl", "short_sum", CASE_INT, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[0]+arr[1]+arr[2]; }", 60, 0},
+    {"type_decl", "short_one", CASE_INT, "int main() { short a = 42; return a; }", 42, 0},
+    {"type_decl", "float1", CASE_FLOAT, "float main() { float f = 7; return f; }", 0, 7.0},
+    {"type_decl", "float2", CASE_FLOAT, "float main() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
+    {"type_decl", "float3", CASE_FLOAT, "float main() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},
+    {"type_decl", "float4", CASE_FLOAT, "float main() { float f = 6.0f; float g = 2.5f; return f * g; }", 0, 15.0},
+    {"type_decl", "float5", CASE_FLOAT, "float main() { float f = 10.5F; float g = 3.0F; return f / g; }", 0, 3.5},
+    {"type_decl", "double1", CASE_DOUBLE, "double main() { double d = 3.99; return d; }", 0, 3.99},
+    {"type_decl", "double2", CASE_DOUBLE, "double main() { double a = 3.1; double b = 4.2; return a + b; }", 0, 7.3},
+    {"type_decl", "double3", CASE_DOUBLE, "double main() { double a = 5.0; double b = 3.0; return a * b; }", 0, 15.0},
+    {"type_decl", "double4", CASE_DOUBLE, "double main() { double a = 15.0; double b = 3.0; return a / b; }", 0, 5.0},
+
+    {"pointer", "deref", CASE_INT, "int main() { int x = 5; int *p = &x; return *p; }", 5, 0},
+    {"pointer", "assign", CASE_INT, "int main() { int x = 5; int *p = &x; *p = 10; return x; }", 10, 0},
+
+    {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
+    {"array", "sum", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }", 6, 0},
+    {"array", "loop", CASE_INT, "int main() { int arr[10]; int i; for(i=0; i<10; i=i+1) arr[i]=i+1; int sum=0; for(i=0; i<10; i=i+1) sum=sum+arr[i]; return sum; }", 55, 0},
+
+    {"string", "deref", CASE_INT, "int main() { char *s = \"AB\"; return *s; }", 65, 0},
+    {"string", "index", CASE_INT, "int main() { char *s = \"AB\"; return s[1]; }", 66, 0},
+    {"string", "empty", CASE_INT, "int main() { char *s = \"\"; return *s; }", 0, 0},
+    {"string", "charlit", CASE_INT, "int main() { return 'A'; }", 65, 0},
+    {"string", "newline", CASE_INT, "int main() { return '\\n'; }", 10, 0},
+    {"string", "nul", CASE_INT, "int main() { return '\\0'; }", 0, 0},
+    {"string", "buf_idx", CASE_INT, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[2]; }", 3, 0},
+    {"string", "buf_sum", CASE_INT, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[0]+buf[1]+buf[2]; }", 6, 0},
+    {"string", "char_var", CASE_INT, "int main() { char c = 42; return c; }", 42, 0},
+};
 
 static int test_count = 0;
 static int pass_count = 0;
 
-static void assert_result(int expected, const char *input) {
-  test_count++;
-  int actual = compile_and_run(input);
-  if (actual == expected) {
-    pass_count++;
-    printf("  OK: => %d\n", actual);
-  } else {
-    fprintf(stderr, "  FAIL: => expected %d, got %d\n  input: %s\n", expected,
-            actual, input);
-    exit(1);
+static int mkdir_p(const char *path) {
+  char tmp[PATH_MAX];
+  snprintf(tmp, sizeof(tmp), "%s", path);
+  size_t len = strlen(tmp);
+  if (len == 0) return 0;
+  if (tmp[len - 1] == '/') tmp[len - 1] = '\0';
+  for (char *p = tmp + 1; *p; p++) {
+    if (*p == '/') {
+      *p = '\0';
+      if (mkdir(tmp, 0777) != 0 && errno != EEXIST) return -1;
+      *p = '/';
+    }
   }
+  if (mkdir(tmp, 0777) != 0 && errno != EEXIST) return -1;
+  return 0;
 }
 
-static float compile_and_run_float(const char *input, int is_double) {
-  char buf[4096];
-  strcpy(buf, input);
-  char *m = strstr(buf, "main");
-  if (m) memcpy(m, "ag_m", 4);
-
-  FILE *fp = fopen("build/tmp_e2e.s", "w");
-  if (!fp) { fprintf(stderr, "  Cannot open tmp file\n"); return -1; }
-  fclose(fp);
-
-  int pipefd[2]; pipe(pipefd);
+static int run_ag_c_to_s(const char *input, const char *s_path) {
   pid_t pid = fork();
   if (pid == 0) {
-    freopen("build/tmp_e2e.s", "w", stdout);
-    execl("./build/ag_c", "./build/ag_c", buf, (char *)NULL);
+    freopen(s_path, "w", stdout);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
     _exit(1);
   }
-  close(pipefd[0]); close(pipefd[1]);
-  int status; waitpid(pid, &status, 0);
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
+  return 0;
+}
 
-  fp = fopen("build/driver.c", "w");
-  if (is_double) {
+static int build_case(const test_case_t *tc) {
+  char dir[PATH_MAX];
+  char s_path[PATH_MAX];
+  char bin_path[PATH_MAX];
+  char drv_path[PATH_MAX];
+  char cmd[PATH_MAX * 2];
+
+  snprintf(dir, sizeof(dir), "build/e2e/%s", tc->category);
+  if (mkdir_p(dir) != 0) return -1;
+  snprintf(s_path, sizeof(s_path), "%s/%s.s", dir, tc->name);
+  snprintf(bin_path, sizeof(bin_path), "%s/%s", dir, tc->name);
+
+  if (tc->kind == CASE_INT) {
+    if (run_ag_c_to_s(tc->input, s_path) != 0) return -1;
+    snprintf(cmd, sizeof(cmd), "clang -o %s %s 2>&1", bin_path, s_path);
+    if (system(cmd) != 0) return -1;
+    return 0;
+  }
+
+  char buf[4096];
+  snprintf(buf, sizeof(buf), "%s", tc->input);
+  char *m = strstr(buf, "main");
+  if (m) memcpy(m, "ag_m", 4);
+  if (run_ag_c_to_s(buf, s_path) != 0) return -1;
+
+  snprintf(drv_path, sizeof(drv_path), "%s/%s_driver.c", dir, tc->name);
+  FILE *fp = fopen(drv_path, "w");
+  if (!fp) return -1;
+  if (tc->kind == CASE_DOUBLE) {
     fprintf(fp, "#include <stdio.h>\nextern double ag_m();\nint main() { printf(\"%%.6lf\\n\", ag_m()); return 0; }\n");
   } else {
     fprintf(fp, "#include <stdio.h>\nextern float ag_m();\nint main() { printf(\"%%.6f\\n\", ag_m()); return 0; }\n");
   }
   fclose(fp);
 
-  int ret = system("clang -o build/tmp_e2e build/tmp_e2e.s build/driver.c 2>&1");
-  if (ret != 0) { fprintf(stderr, "  Assemble failed for float\n"); exit(1); }
+  snprintf(cmd, sizeof(cmd), "clang -o %s %s %s 2>&1", bin_path, s_path, drv_path);
+  if (system(cmd) != 0) return -1;
+  return 0;
+}
 
-  FILE *out = popen("./build/tmp_e2e", "r");
-  if (is_double) {
-    double d; fscanf(out, "%lf", &d); pclose(out); return d;
-  } else {
-    float f; fscanf(out, "%f", &f); pclose(out); return f;
+static int run_case(const test_case_t *tc, FILE *log) {
+  char bin_path[PATH_MAX];
+  snprintf(bin_path, sizeof(bin_path), "build/e2e/%s/%s", tc->category, tc->name);
+  if (tc->kind == CASE_INT) {
+    int status = system(bin_path);
+    if (status == -1 || !WIFEXITED(status)) {
+      fprintf(log, "  FAIL: %s could not run\n  input: %s\n", tc->name, tc->input);
+      return -1;
+    }
+    int actual = WEXITSTATUS(status);
+    if (actual == tc->expected_i) {
+      fprintf(log, "  OK: %s => %d\n", tc->name, actual);
+      return 0;
+    }
+    fprintf(log, "  FAIL: %s expected %d, got %d\n  input: %s\n",
+            tc->name, tc->expected_i, actual, tc->input);
+    return -1;
   }
-}
 
-static void assert_result_float(float expected, const char *input) {
-  test_count++;
-  float actual = compile_and_run_float(input, 0);
-  if (actual > expected - 0.001 && actual < expected + 0.001) {
-    pass_count++;
-    printf("  OK: => %.2f\n", actual);
-  } else {
-    fprintf(stderr, "  FAIL: => expected %.2f, got %.2f\n  input: %s\n", expected, actual, input);
-    exit(1);
+  char cmd[PATH_MAX * 2];
+  snprintf(cmd, sizeof(cmd), "%s", bin_path);
+  FILE *out = popen(cmd, "r");
+  if (!out) {
+    fprintf(log, "  FAIL: %s could not run\n", tc->name);
+    return -1;
   }
-}
-
-static void assert_result_double(double expected, const char *input) {
-  test_count++;
-  double actual = compile_and_run_float(input, 1);
-  if (actual > expected - 0.001 && actual < expected + 0.001) {
-    pass_count++;
-    printf("  OK: => %.2f\n", actual);
+  double actual = 0.0;
+  if (tc->kind == CASE_DOUBLE) {
+    fscanf(out, "%lf", &actual);
   } else {
-    fprintf(stderr, "  FAIL: => expected %.2f, got %.2f\n  input: %s\n", expected, actual, input);
-    exit(1);
+    float f = 0.0f;
+    fscanf(out, "%f", &f);
+    actual = f;
   }
+  pclose(out);
+  if (actual > tc->expected_f - 0.001 && actual < tc->expected_f + 0.001) {
+    fprintf(log, "  OK: %s => %.2f\n", tc->name, actual);
+    return 0;
+  }
+  fprintf(log, "  FAIL: %s expected %.2f, got %.2f\n  input: %s\n",
+          tc->name, tc->expected_f, actual, tc->input);
+  return -1;
 }
 
-// --- テストケース ---
-// 全テストが main() { ... } の関数定義形式
-
-static void test_integer() {
-  printf("test_integer...\n");
-  assert_result(0, "main() { return 0; }");
-  assert_result(42, "main() { return 42; }");
-}
-
-static void test_arithmetic() {
-  printf("test_arithmetic...\n");
-  assert_result(21, "main() { return 5+20-4; }");
-  assert_result(41, "main() { return 12 + 34 - 5 ; }");
-  assert_result(47, "main() { return 5+6*7; }");
-  assert_result(15, "main() { return 5*(9-6); }");
-  assert_result(4, "main() { return (3+5)/2; }");
-}
-
-static void test_comparison() {
-  printf("test_comparison...\n");
-  assert_result(1, "main() { return 0==0; }");
-  assert_result(0, "main() { return 42==0; }");
-  assert_result(1, "main() { return 0!=1; }");
-  assert_result(0, "main() { return 42!=42; }");
-  assert_result(1, "main() { return 0<1; }");
-  assert_result(0, "main() { return 1<1; }");
-  assert_result(0, "main() { return 2<1; }");
-  assert_result(1, "main() { return 0<=1; }");
-  assert_result(1, "main() { return 1<=1; }");
-  assert_result(0, "main() { return 2<=1; }");
-  assert_result(1, "main() { return 1>0; }");
-  assert_result(0, "main() { return 1>1; }");
-  assert_result(0, "main() { return 1>2; }");
-  assert_result(1, "main() { return 1>=0; }");
-  assert_result(1, "main() { return 1>=1; }");
-  assert_result(0, "main() { return 1>=2; }");
-}
-
-static void test_local_variables() {
-  printf("test_local_variables...\n");
-  assert_result(3, "main() { a=3; return a; }");
-  assert_result(14, "main() { a=3; b=5*6-8; return a+b/2; }");
-  assert_result(6, "main() { a=1; b=2; c=3; return a+b+c; }");
-  assert_result(10, "main() { a=5; return a*2; }");
-  assert_result(1, "main() { a=1; b=a; return b; }");
-}
-
-static void test_if_else() {
-  printf("test_if_else...\n");
-  assert_result(3, "main() { a=3; if (a==3) return a; else return 0; }");
-  assert_result(0, "main() { a=3; if (a==5) return a; else return 0; }");
-  assert_result(5, "main() { a=3; if (a==3) return 5; else return 10; }");
-  assert_result(10, "main() { a=3; if (a!=3) return 5; else return 10; }");
-  assert_result(2, "main() { if (1) return 2; else return 3; }");
-  assert_result(3, "main() { if (0) return 2; else return 3; }");
-  assert_result(42, "main() { if (1) return 42; return 0; }");
-}
-
-static void test_while() {
-  printf("test_while...\n");
-  assert_result(10, "main() { a=0; while (a<10) a=a+1; return a; }");
-  assert_result(0, "main() { a=0; while (0) a=a+1; return a; }");
-}
-
-static void test_for() {
-  printf("test_for...\n");
-  assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) b=b+a; return b; }");
-  assert_result(10, "main() { a=0; for (a=0; a<10; a=a+1) a; return a; }");
-}
-
-static void test_return() {
-  printf("test_return...\n");
-  assert_result(42, "main() { return 42; }");
-  assert_result(5, "main() { return 2+3; }");
-  assert_result(10, "main() { a=10; return a; }");
-  assert_result(3, "main() { a=1; b=2; return a+b; }");
-  assert_result(1, "main() { if (1) return 1; else return 2; }");
-  assert_result(10, "main() { a=0; while (a<10) a=a+1; return a; }");
-}
-
-static void test_block() {
-  printf("test_block...\n");
-  assert_result(3, "main() { { 1; 2; 3; } return 3; }");
-  assert_result(6, "main() { a=1; b=2; c=3; { a+b+c; } return a+b+c; }");
-  assert_result(55, "main() { a=0; b=0; for (a=1; a<=10; a=a+1) { b=b+a; } return b; }");
-  assert_result(10, "main() { a=0; while (a<10) { a=a+1; } return a; }");
-  assert_result(5, "main() { if (1) { a=2; b=3; return a+b; } else { return 0; } }");
-}
-
-static void test_funcall() {
-  printf("test_funcall...\n");
-  // 引数なし関数
-  assert_result(42, "fortytwo() { return 42; } main() { return fortytwo(); }");
-  // 引数あり関数
-  assert_result(7, "add(a, b) { return a+b; } main() { return add(3, 4); }");
-  assert_result(10, "twice(a) { return a*2; } main() { return twice(5); }");
-  // 複数関数の組み合わせ
-  assert_result(21, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }");
-  // 再帰（フィボナッチ的なもの — ただし深い再帰は避ける）
-  assert_result(120, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }");
-}
-
-static void test_multichar_var() {
-  printf("test_multichar_var...\n");
-  assert_result(3, "main() { foo=3; return foo; }");
-  assert_result(5, "main() { hello=2; world=3; return hello+world; }");
-  assert_result(15, "main() { x1=5; x2=10; return x1+x2; }");
-  assert_result(10, "add(lhs, rhs) { return lhs+rhs; } main() { return add(3, 7); }");
-  assert_result(6, "main() { count=0; for (i=1; i<=3; i=i+1) count=count+i; return count; }");
-}
-
-static void test_type_decl() {
-  printf("test_type_decl...\n");
-  // int 付き関数定義
-  assert_result(42, "int main() { return 42; }");
-  // int 付き変数宣言
-  assert_result(3, "int main() { int x = 3; return x; }");
-  assert_result(7, "int main() { int a = 3; int b = 4; return a+b; }");
-  // int 付き仮引数
-  assert_result(10, "int add(int a, int b) { return a+b; } int main() { return add(3, 7); }");
-  // 初期化なし変数宣言
-  assert_result(5, "int main() { int x; x = 5; return x; }");
-  // for ループ内で int 宣言 (初期化式の前)
-  assert_result(55, "int main() { int sum = 0; int i; for (i=1; i<=10; i=i+1) sum=sum+i; return sum; }");
-  // char 型
-  assert_result(65, "int main() { char c = 65; return c; }");
-  // void 型関数
-  assert_result(42, "void noop() { return 42; } int main() { return noop(); }");
-  // short / long 型
-  assert_result(10, "int main() { short s = 10; return s; }");
-  assert_result(99, "long calc(long x) { return x+1; } int main() { return calc(98); }");
-  // short配列（2バイトアクセス）
-  assert_result(30, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[2]; }");
-  assert_result(60, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[0]+arr[1]+arr[2]; }");
-  assert_result(42, "int main() { short a = 42; return a; }");
-  // float / double 型（FPU命令）
-  assert_result_float(7.0f, "float main() { float f = 7; return f; }");
-  assert_result_float(7.34f, "float main() { float f = 3.14; float g = 4.2; return f + g; }");
-  assert_result_float(2.3f, "float main() { float f = 5.5; float g = 3.2; return f - g; }");
-  assert_result_float(15.0f, "float main() { float f = 6.0f; float g = 2.5f; return f * g; }");
-  assert_result_float(3.5f, "float main() { float f = 10.5F; float g = 3.0F; return f / g; }");
-  // double
-  assert_result_double(3.99, "double main() { double d = 3.99; return d; }");
-  assert_result_double(7.3, "double main() { double a = 3.1; double b = 4.2; return a + b; }");
-  assert_result_double(15.0, "double main() { double a = 5.0; double b = 3.0; return a * b; }");
-  assert_result_double(5.0, "double main() { double a = 15.0; double b = 3.0; return a / b; }");
-}
-
-static void test_pointer() {
-  printf("test_pointer...\n");
-  // アドレス取得と間接参照
-  assert_result(5, "int main() { int x = 5; int *p = &x; return *p; }");
-  // ポインタ経由の代入
-  assert_result(10, "int main() { int x = 5; int *p = &x; *p = 10; return x; }");
-}
-
-static void test_array() {
-  printf("test_array...\n");
-  // 配列宣言と添字アクセス
-  assert_result(3, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }");
-  assert_result(6, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }");
-  // 配列とループ
-  assert_result(55, "int main() { int arr[10]; int i; for(i=0; i<10; i=i+1) arr[i]=i+1; int sum=0; for(i=0; i<10; i=i+1) sum=sum+arr[i]; return sum; }");
-}
-
-static void test_string() {
-  printf("test_string...\n");
-  // 文字列の先頭文字を間接参照
-  assert_result(65, "int main() { char *s = \"AB\"; return *s; }");
-  // 文字列の添字アクセス（charは1バイト）
-  assert_result(66, "int main() { char *s = \"AB\"; return s[1]; }");
-  // 空文字列のNUL終端
-  assert_result(0, "int main() { char *s = \"\"; return *s; }");
-  // 文字リテラル
-  assert_result(65, "int main() { return 'A'; }");
-  assert_result(10, "int main() { return '\\n'; }");
-  assert_result(0, "int main() { return '\\0'; }");
-  // char配列の1バイトアクセス
-  assert_result(3, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[2]; }");
-  assert_result(6, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[0]+buf[1]+buf[2]; }");
-  // char変数の1バイトストア/ロード
-  assert_result(42, "int main() { char c = 42; return c; }");
+static int run_category(const char *category) {
+  char log_path[PATH_MAX];
+  snprintf(log_path, sizeof(log_path), "build/e2e/logs/%s.log", category);
+  FILE *log = fopen(log_path, "w");
+  if (!log) return -1;
+  fprintf(log, "Category: %s\n", category);
+  int total = 0;
+  int ok = 0;
+  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+    const test_case_t *tc = &test_cases[i];
+    if (strcmp(tc->category, category) != 0) continue;
+    total++;
+    if (run_case(tc, log) == 0) ok++;
+  }
+  fprintf(log, "Summary: %d/%d passed\n", ok, total);
+  fclose(log);
+  return (ok == total) ? 0 : 1;
 }
 
 int main() {
   printf("Running E2E tests...\n");
+  fflush(stdout);
 
-  test_integer();
-  test_arithmetic();
-  test_comparison();
-  test_local_variables();
-  test_if_else();
-  test_while();
-  test_for();
-  test_return();
-  test_block();
-  test_funcall();
-  test_multichar_var();
-  test_type_decl();
-  test_pointer();
-  test_array();
-  test_string();
+  if (mkdir_p("build/e2e/logs") != 0) {
+    fprintf(stderr, "Failed to create log directory\n");
+    return 1;
+  }
 
-  printf("OK: All %d E2E tests passed! (%d/%d)\n", test_count, pass_count,
-         test_count);
+  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+    if (build_case(&test_cases[i]) != 0) {
+      fprintf(stderr, "Build failed: %s/%s\n", test_cases[i].category, test_cases[i].name);
+      return 1;
+    }
+  }
+
+  const char *categories[64];
+  size_t ncat = 0;
+  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+    const char *cat = test_cases[i].category;
+    bool exists = false;
+    for (size_t j = 0; j < ncat; j++) {
+      if (strcmp(categories[j], cat) == 0) { exists = true; break; }
+    }
+    if (!exists) categories[ncat++] = cat;
+  }
+
+  pid_t pids[64];
+  for (size_t i = 0; i < ncat; i++) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      int rc = run_category(categories[i]);
+      _exit(rc);
+    }
+    pids[i] = pid;
+  }
+
+  int failed = 0;
+  for (size_t i = 0; i < ncat; i++) {
+    int status;
+    waitpid(pids[i], &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+      failed = 1;
+      fprintf(stderr, "Category failed: %s (see build/e2e/logs/%s.log)\n", categories[i], categories[i]);
+    }
+  }
+
+  test_count = (int)(sizeof(test_cases) / sizeof(test_cases[0]));
+  pass_count = failed ? 0 : test_count;
+
+  if (failed) return 1;
+  printf("OK: All %d E2E tests passed! (%d/%d)\n", test_count, pass_count, test_count);
   return 0;
 }
