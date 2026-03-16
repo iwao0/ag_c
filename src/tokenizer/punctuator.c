@@ -90,20 +90,28 @@ bool match_punctuator(const char *p, token_kind_t *out_kind, int *out_len) {
     return true;
   }
 
-  if (p[0] == '<' && p[1] == '<' && p[2] == '=') {
-    *out_kind = TK_SHLEQ;
-    *out_len = 3;
-    return true;
-  }
-  if (p[0] == '>' && p[1] == '>' && p[2] == '=') {
-    *out_kind = TK_SHREQ;
-    *out_len = 3;
-    return true;
-  }
-  if (p[0] == '.' && p[1] == '.' && p[2] == '.') {
-    *out_kind = TK_ELLIPSIS;
-    *out_len = 3;
-    return true;
+  switch (p[0]) {
+    case '.':
+      if (p[1] == '.' && p[2] == '.') {
+        *out_kind = TK_ELLIPSIS;
+        *out_len = 3;
+        return true;
+      }
+      break;
+    case '<':
+      if (p[1] == '<' && p[2] == '=') {
+        *out_kind = TK_SHLEQ;
+        *out_len = 3;
+        return true;
+      }
+      break;
+    case '>':
+      if (p[1] == '>' && p[2] == '=') {
+        *out_kind = TK_SHREQ;
+        *out_len = 3;
+        return true;
+      }
+      break;
   }
 
   token_kind_t two = punctuator_kind_for_2chars(p[0], p[1]);

@@ -185,6 +185,19 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - Decision:
   - keep this change (passes continue gate).
 
+## Phase1 Step2 (`match_punctuator` 3-char order tuning)
+
+- Change:
+  - switch-based 3-char check order in `match_punctuator` (`...`, `<<=`, `>>=`) while keeping longest-match behavior.
+- Gate check (dedicated bench run):
+  - mixed: `25,232,516` (baseline `19,705,021`)
+  - ident: `14,515,994` (baseline `12,289,547`)
+  - numeric: `14,915,041` (baseline `13,075,812`)
+  - punct: `38,855,263` (baseline `33,759,919`)
+  - corpus: `18,423,061` (baseline `16,561,884`)
+- Decision:
+  - keep this change (passes continue gate).
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
