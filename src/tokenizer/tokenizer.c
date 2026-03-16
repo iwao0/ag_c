@@ -623,7 +623,8 @@ static void parse_number_literal(char **pp, token_num_t *num) {
         num->float_suffix_kind = 1;
         end++;
       } else if (*end == 'l' || *end == 'L') {
-        num->is_float = 2; // long double は未対応だが double 扱い
+        // long double suffix is preserved in metadata; current semantic/codegen path uses double.
+        num->is_float = 2;
         num->float_suffix_kind = 2;
         end++;
       } else {
