@@ -128,7 +128,7 @@ static void test_tokenize() {
 // 1b. 16進数/2進数リテラルのテスト
 static void test_tokenize_int_literals() {
   printf("test_tokenize_int_literals...\n");
-  token = tokenize("0x2a 0X10 0b101 0B11 077 010 0");
+  token = tokenize("0x2a 0X10 0b101 0B11 077 010 0 1u 2UL 3llu");
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(42, as_num(token)->val);
@@ -156,6 +156,24 @@ static void test_tokenize_int_literals() {
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(0, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(1, as_num(token)->val);
+  ASSERT_TRUE(as_num(token)->is_unsigned);
+  ASSERT_EQ(0, as_num(token)->int_size);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(2, as_num(token)->val);
+  ASSERT_TRUE(as_num(token)->is_unsigned);
+  ASSERT_EQ(1, as_num(token)->int_size);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(3, as_num(token)->val);
+  ASSERT_TRUE(as_num(token)->is_unsigned);
+  ASSERT_EQ(2, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);
@@ -348,7 +366,7 @@ static void test_tokenize_string() {
 // 1g. 浮動小数点リテラルのテスト
 static void test_tokenize_float_literal() {
   printf("test_tokenize_float_literal...\n");
-  token = tokenize("3.14 1.5f 2.0E-3");
+  token = tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f");
   
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->is_float); // デフォルトは double
@@ -363,6 +381,16 @@ static void test_tokenize_float_literal() {
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->is_float); // 指数表現
   ASSERT_TRUE(as_num(token)->fval > 0.0019 && as_num(token)->fval < 0.0021);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(2, as_num(token)->is_float); // 16進浮動小数点
+  ASSERT_TRUE(as_num(token)->fval > 2.9 && as_num(token)->fval < 3.1);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(1, as_num(token)->is_float); // 16進浮動小数点 + f
+  ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;
   
   ASSERT_EQ(TK_EOF, token->kind);

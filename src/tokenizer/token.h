@@ -119,11 +119,13 @@ struct token_string_t {
 typedef struct token_num_t token_num_t;
 struct token_num_t {
   token_pp_t pp;
-  int val;       // 整数値
-  double fval;   // 浮動小数点値
-  int is_float;  // 0=整数, 1=float, 2=double
-  char *str;     // 元の文字列
-  int len;       // 元の文字列長
+  int val;         // 整数値
+  double fval;     // 浮動小数点値
+  int is_float;    // 0=整数, 1=float, 2=double
+  bool is_unsigned; // 整数サフィックス: unsigned
+  int int_size;    // 0=int, 1=long, 2=long long
+  char *str;       // 元の文字列
+  int len;         // 元の文字列長
 };
 
 #endif

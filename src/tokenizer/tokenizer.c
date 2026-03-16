@@ -317,6 +317,40 @@ static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no)
   return tok;
 }
 
+static void parse_int_suffix(token_num_t *num, char **pp) {
+  char *p = *pp;
+  bool seen_u = false;
+  int long_cnt = 0;
+
+  while (true) {
+    if (*p == 'u' || *p == 'U') {
+      if (seen_u) error_at(p, "整数サフィックスが不正です");
+      seen_u = true;
+      p++;
+      continue;
+    }
+    if (*p == 'l' || *p == 'L') {
+      if ((p[1] == 'l' || p[1] == 'L')) {
+        if (long_cnt == 2) error_at(p, "整数サフィックスが不正です");
+        long_cnt = 2;
+        p += 2;
+      } else {
+        if (long_cnt == 2) error_at(p, "整数サフィックスが不正です");
+        long_cnt = 1;
+        p++;
+      }
+      continue;
+    }
+    break;
+  }
+
+  if (isalpha(*p) || *p == '_') error_at(p, "整数サフィックスが不正です");
+
+  num->is_unsigned = seen_u;
+  num->int_size = long_cnt;
+  *pp = p;
+}
+
 // 文字列 p をトークナイズしてその結果へのポインタを返す
 token_t *tokenize(char *p) {
   user_input = p;
@@ -563,21 +597,48 @@ token_t *tokenize(char *p) {
       num->pp.base.at_bol = _at_bol;
       num->pp.base.has_space = _has_space;
 
-      // 16進数/2進数 (整数)
+      // 16進数/2進数/8進数/10進数
       if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
-        p += 2;
-        if (!isxdigit(*p)) error_at(p, "16進数リテラルが不正です");
-        long val = 0;
-        while (isxdigit(*p)) {
-          int digit;
-          if ('0' <= *p && *p <= '9') digit = *p - '0';
-          else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
-          else digit = *p - 'A' + 10;
-          val = val * 16 + digit;
-          p++;
+        // 16進数 (整数 or 浮動小数点)
+        bool is_hex_float = false;
+        for (char *q = p + 2; isxdigit(*q) || *q == '.' || *q == 'p' || *q == 'P'; q++) {
+          if (*q == '.' || *q == 'p' || *q == 'P') {
+            is_hex_float = true;
+            break;
+          }
         }
-        num->val = val;
-        num->is_float = 0;
+
+        if (is_hex_float) {
+          char *end;
+          num->fval = strtod(p, &end);
+          if (end == p) error_at(p, "16進浮動小数点リテラルが不正です");
+          if (*end == 'f' || *end == 'F') {
+            num->is_float = 1;
+            end++;
+          } else if (*end == 'l' || *end == 'L') {
+            num->is_float = 2;
+            end++;
+          } else {
+            num->is_float = 2;
+          }
+          if (isalpha(*end) || *end == '_') error_at(end, "浮動小数点サフィックスが不正です");
+          p = end;
+        } else {
+          p += 2;
+          if (!isxdigit(*p)) error_at(p, "16進数リテラルが不正です");
+          long val = 0;
+          while (isxdigit(*p)) {
+            int digit;
+            if ('0' <= *p && *p <= '9') digit = *p - '0';
+            else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
+            else digit = *p - 'A' + 10;
+            val = val * 16 + digit;
+            p++;
+          }
+          num->val = val;
+          num->is_float = 0;
+          parse_int_suffix(num, &p);
+        }
       } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
         p += 2;
         if (*p != '0' && *p != '1') error_at(p, "2進数リテラルが不正です");
@@ -588,6 +649,7 @@ token_t *tokenize(char *p) {
         }
         num->val = val;
         num->is_float = 0;
+        parse_int_suffix(num, &p);
       } else if (*p == '0' && isdigit(p[1])) {
         if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
         p++;
@@ -598,6 +660,7 @@ token_t *tokenize(char *p) {
         }
         num->val = val;
         num->is_float = 0;
+        parse_int_suffix(num, &p);
       } else {
         char *q = p;
         // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
@@ -612,7 +675,6 @@ token_t *tokenize(char *p) {
         if (is_float) {
           char *end;
           num->fval = strtod(p, &end);
-          // サフィックスの判定
           if (*end == 'f' || *end == 'F') {
             num->is_float = 1; // float
             end++;
@@ -622,14 +684,14 @@ token_t *tokenize(char *p) {
           } else {
             num->is_float = 2; // デフォルトは double
           }
+          if (isalpha(*end) || *end == '_') error_at(end, "浮動小数点サフィックスが不正です");
           p = end;
         } else {
           num->val = strtol(p, &p, 10);
           num->is_float = 0;
+          parse_int_suffix(num, &p);
         }
       }
-      // suffixスキップ (L, U, LL など)
-      while (isalnum(*p)) p++;
       num->len = p - start;
       num->str = start;
       cur = (token_t *)num;
