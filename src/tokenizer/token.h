@@ -4,6 +4,52 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// 浮動小数点種別
+typedef enum {
+  TK_FLOAT_KIND_INT = 0,
+  TK_FLOAT_KIND_FLOAT = 1,
+  TK_FLOAT_KIND_DOUBLE = 2,
+  TK_FLOAT_KIND_LONG_DOUBLE = 3,
+} tk_float_kind_t;
+
+// 浮動小数点サフィックス種別
+typedef enum {
+  TK_FLOAT_SUFFIX_NONE = 0,
+  TK_FLOAT_SUFFIX_F = 1,
+  TK_FLOAT_SUFFIX_L = 2,
+} tk_float_suffix_kind_t;
+
+// 整数サイズ種別（サフィックス由来）
+typedef enum {
+  TK_INT_SIZE_INT = 0,
+  TK_INT_SIZE_LONG = 1,
+  TK_INT_SIZE_LONG_LONG = 2,
+} tk_int_size_t;
+
+// 文字幅
+typedef enum {
+  TK_CHAR_WIDTH_CHAR = 1,
+  TK_CHAR_WIDTH_CHAR16 = 2,
+  TK_CHAR_WIDTH_CHAR32 = 4,
+} tk_char_width_t;
+
+// 文字列リテラル接頭辞
+typedef enum {
+  TK_STR_PREFIX_NONE = 0,
+  TK_STR_PREFIX_L = 1,
+  TK_STR_PREFIX_u = 2,
+  TK_STR_PREFIX_U = 3,
+  TK_STR_PREFIX_u8 = 4,
+} tk_string_prefix_kind_t;
+
+// 文字定数接頭辞
+typedef enum {
+  TK_CHAR_PREFIX_NONE = 0,
+  TK_CHAR_PREFIX_L = 1,
+  TK_CHAR_PREFIX_u = 2,
+  TK_CHAR_PREFIX_U = 3,
+} tk_char_prefix_kind_t;
+
 // トークンの種類
 typedef enum {
   TK_EOF,      // 入力の終わりを表すトークン
@@ -146,10 +192,8 @@ struct token_string_t {
   token_pp_t pp;
   char *str;
   int len;
-  // 1=char/u8, 2=char16_t, 4=char32_t/wchar_t(Apple)
-  uint8_t char_width;
-  // 0=ordinary, 1=L, 2=u, 3=U, 4=u8
-  uint8_t str_prefix_kind;
+  tk_char_width_t char_width;
+  tk_string_prefix_kind_t str_prefix_kind;
 };
 
 // 数値トークン
@@ -161,15 +205,14 @@ struct token_num_t {
   double fval;             // 浮動小数点値
   char *str;               // 元の文字列
   int len;                 // 元の文字列長
-  uint8_t is_float;        // 0=整数, 1=float, 2=double, 3=long double
-  uint8_t float_suffix_kind; // 0=none, 1=f/F, 2=l/L
+  tk_float_kind_t fp_kind;
+  tk_float_suffix_kind_t float_suffix_kind;
   bool is_unsigned;        // 整数サフィックス: unsigned
-  uint8_t int_size;        // 0=int, 1=long, 2=long long
+  tk_int_size_t int_size;
   uint8_t int_base;        // 2, 8, 10, 16
   // 文字定数由来の場合のみ有効
-  uint8_t char_width;
-  // 0=none, 1=L, 2=u, 3=U
-  uint8_t char_prefix_kind;
+  tk_char_width_t char_width;
+  tk_char_prefix_kind_t char_prefix_kind;
 };
 
 #endif

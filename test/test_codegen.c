@@ -134,13 +134,13 @@ static void test_gen_add(void) {
 static void test_gen_fadd(void) {
   printf("test_gen_fadd...\n");
   node_t *lhs = make_num(3);
-  lhs->is_float = 1;
+  lhs->fp_kind = TK_FLOAT_KIND_FLOAT;
   as_num(lhs)->fval_id = 1;
   node_t *rhs = make_num(4);
-  rhs->is_float = 1;
+  rhs->fp_kind = TK_FLOAT_KIND_FLOAT;
   as_num(rhs)->fval_id = 2;
   node_t *n = make_binop(ND_ADD, lhs, rhs);
-  n->is_float = 1; // float
+  n->fp_kind = TK_FLOAT_KIND_FLOAT;
   
   capture_start();
   gen(n);

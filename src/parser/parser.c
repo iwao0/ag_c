@@ -51,7 +51,7 @@ struct lvar_t {
   int size;      // サイズ（スカラー=8、配列=要素数*elem_size）
   int elem_size;   // 要素サイズ（1=char, 8=int/pointer）
   int is_array;  // 配列かどうか
-  int is_float;  // 0=整数, 1=float, 2=double, 3=long double
+  tk_float_kind_t fp_kind;
 };
 
 // ローカル変数テーブル（関数ごとにリセット）
@@ -92,13 +92,13 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node->kind = kind;
   node->lhs = lhs;
   node->rhs = rhs;
-  // 左辺と右辺から is_float を伝播 (より広い浮動小数点種別を優先)
-  if (lhs && lhs->is_float) node->is_float = lhs->is_float;
-  if (rhs && rhs->is_float > node->is_float) node->is_float = rhs->is_float;
+  // 左辺と右辺から fp_kind を伝播 (より広い浮動小数点種別を優先)
+  if (lhs && lhs->fp_kind) node->fp_kind = lhs->fp_kind;
+  if (rhs && rhs->fp_kind > node->fp_kind) node->fp_kind = rhs->fp_kind;
 
   // 比較演算の結果は整数(0 または 1)
   if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE) {
-    node->is_float = 0;
+    node->fp_kind = TK_FLOAT_KIND_INT;
   }
   return node;
 }
@@ -129,7 +129,7 @@ static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
   node->base.kind = ND_ASSIGN;
   node->base.lhs = lhs;
   node->base.rhs = rhs;
-  node->base.is_float = lhs ? lhs->is_float : 0;
+  node->base.fp_kind = lhs ? lhs->fp_kind : TK_FLOAT_KIND_INT;
   return node;
 }
 
@@ -172,15 +172,15 @@ static bool consume_type(void) {
   return consume_type_kind() != TK_EOF;
 }
 
-static int current_func_ret_type = 0; // 0=int, 1=float, 2=double, 3=long double
+static tk_float_kind_t current_func_ret_type = TK_FLOAT_KIND_INT;
 
 // funcdef = "int"? ident "(" params? ")" "{" stmt* "}"
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
   token_kind_t ret_kind = consume_type_kind(); // 戻り値の型（省略可）
-  current_func_ret_type = 0;
-  if (ret_kind == TK_FLOAT) current_func_ret_type = 1;
-  else if (ret_kind == TK_DOUBLE) current_func_ret_type = 2;
+  current_func_ret_type = TK_FLOAT_KIND_INT;
+  if (ret_kind == TK_FLOAT) current_func_ret_type = TK_FLOAT_KIND_FLOAT;
+  else if (ret_kind == TK_DOUBLE) current_func_ret_type = TK_FLOAT_KIND_DOUBLE;
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
     fprintf(stderr, "関数定義が期待されます\n");
@@ -302,16 +302,16 @@ static node_t *stmt(void) {
     }
     // float/double フラグを設定
     if (!is_pointer) {
-      if (type_kind == TK_FLOAT) var->is_float = 1;
-      else if (type_kind == TK_DOUBLE) var->is_float = 2;
+      if (type_kind == TK_FLOAT) var->fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (type_kind == TK_DOUBLE) var->fp_kind = TK_FLOAT_KIND_DOUBLE;
     }
     if (tk_consume('=')) {
       // int x = expr;
       node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
-      lvar->is_float = var->is_float;
+      lvar->fp_kind = var->fp_kind;
       node_mem_t *node = new_node_assign(lvar, expr());
       node->type_size = is_pointer ? 8 : var->elem_size;
-      node->base.is_float = var->is_float;
+      node->base.fp_kind = var->fp_kind;
       tk_expect(';');
       return (node_t *)node;
     }
@@ -326,7 +326,7 @@ static node_t *stmt(void) {
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_RETURN;
     node->lhs = expr();
-    node->is_float = current_func_ret_type; // 関数宣言時の戻り値型を記録
+    node->fp_kind = current_func_ret_type; // 関数宣言時の戻り値型を記録
     tk_expect(';');
     return node;
   }
@@ -393,7 +393,7 @@ static node_t *assign(void) {
     node_mem_t *assign_node = new_node_assign(node, assign());
     // 左辺のtype_sizeをASSIGNに伝播（str/strb/strh の切り替えに使用）
     assign_node->type_size = node_type_size(assign_node->base.lhs);
-    assign_node->base.is_float = assign_node->base.lhs ? assign_node->base.lhs->is_float : 0;
+    assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
     node = (node_t *)assign_node;
   }
   return node;
@@ -467,7 +467,7 @@ static node_t *unary(void) {
     node_mem_t *node = calloc(1, sizeof(node_mem_t));
     node->base.kind = ND_DEREF;
     node->base.lhs = operand;
-    node->base.is_float = operand ? operand->is_float : 0;
+    node->base.fp_kind = operand ? operand->fp_kind : 0;
     // デリファレンス結果のサイズ: オペランドが指す先の要素サイズ
     int ds = node_deref_size(operand);
     node->type_size = ds ? ds : 8;
@@ -552,20 +552,20 @@ static node_t *primary(void) {
     // ポインタ変数: 変数自体は8バイトロード、デリファレンス時は elem_size
     node_t *n = new_node_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
     as_lvar(n)->mem.deref_size = var->elem_size;
-    n->is_float = var->is_float;
+    n->fp_kind = var->fp_kind;
     return n;
   }
 
   // 文字列リテラル
   if (token->kind == TK_STRING) {
-    int merged_width = 1;
-    int merged_prefix_kind = 0;
+    tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
+    tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
     int total_len = 0;
     token_t *t = token;
     while (t && t->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)t;
       if (total_len == 0) {
-        merged_width = st->char_width ? st->char_width : 1;
+        merged_width = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
         merged_prefix_kind = st->str_prefix_kind;
       } else if (merged_width != st->char_width) {
         tk_error_tok(t, "異なる接頭辞の文字列リテラルは連結できません");
@@ -600,7 +600,7 @@ static node_t *primary(void) {
     string_literals = lit;
     node->mem.type_size = 8; // ポインタとして8バイト
     node->mem.deref_size = merged_width;
-    node->mem.base.is_float = 0; // 文字列はポインタなので整数
+    node->mem.base.fp_kind = TK_FLOAT_KIND_INT; // 文字列はポインタなので整数
     node->char_width = merged_width;
     node->str_prefix_kind = merged_prefix_kind;
     return (node_t *)node;
@@ -613,14 +613,14 @@ static node_t *primary(void) {
     node->val = num->val;
     node->fval = num->fval;
     node->float_suffix_kind = num->float_suffix_kind;
-    node->base.is_float = num->is_float;
+    node->base.fp_kind = num->fp_kind;
 
-    if (node->base.is_float) {
+    if (node->base.fp_kind) {
       // 浮動小数点リテラルを登録
       float_lit_t *lit = calloc(1, sizeof(float_lit_t));
       lit->id = float_label_count++;
       lit->fval = node->fval;
-      lit->is_float = node->base.is_float;
+      lit->fp_kind = node->base.fp_kind;
       lit->float_suffix_kind = node->float_suffix_kind;
       lit->next = float_literals;
       float_literals = lit;

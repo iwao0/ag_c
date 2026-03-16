@@ -40,8 +40,8 @@ static void gen_expr(node_t *node);
 static void gen_stmt(node_t *node);
 
 // レジスタ名取得ヘルパー
-static const char *freg(int is_float, int reg_idx) {
-  if (is_float == 1) return (reg_idx == 0) ? "s0" : "s1";
+static const char *freg(int fp_kind, int reg_idx) {
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) return (reg_idx == 0) ? "s0" : "s1";
   return (reg_idx == 0) ? "d0" : "d1";
 }
 
@@ -50,19 +50,19 @@ static void gen_pop_fpu(int target_type, int child_type, int reg_idx) {
   const char *s = (reg_idx == 0) ? "s0" : "s1";
   const char *d = (reg_idx == 0) ? "d0" : "d1";
   
-  if (child_type == 1) {       // float がプッシュされている
+  if (child_type == TK_FLOAT_KIND_FLOAT) { // float がプッシュされている
     printf("  ldr %s, [sp], #16\n", s);
-    if (target_type >= 2) {
+    if (target_type >= TK_FLOAT_KIND_DOUBLE) {
       printf("  fcvt %s, %s\n", d, s); // float -> double
     }
-  } else if (child_type >= 2) { // double/long double(現状lowering) がプッシュされている
+  } else if (child_type >= TK_FLOAT_KIND_DOUBLE) { // double/long double(現状lowering) がプッシュされている
     printf("  ldr %s, [sp], #16\n", d);
-    if (target_type == 1) {
+    if (target_type == TK_FLOAT_KIND_FLOAT) {
       printf("  fcvt %s, %s\n", s, d); // double -> float
     }
   } else {                      // int がプッシュされている
     printf("  ldr x%d, [sp], #16\n", reg_idx);
-    if (target_type == 1) {
+    if (target_type == TK_FLOAT_KIND_FLOAT) {
       printf("  scvtf %s, x%d\n", s, reg_idx); // int -> float
     } else {
       printf("  scvtf %s, x%d\n", d, reg_idx); // int -> double
@@ -88,12 +88,12 @@ static void gen_lval(node_t *node) {
 static void gen_expr(node_t *node) {
   switch (node->kind) {
   case ND_NUM:
-    if (node->is_float) {
+    if (node->fp_kind) {
       node_num_t *num = as_num(node);
       // 浮動小数点リテラルをデータセクションからロード
       printf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
       printf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
-      if (node->is_float == 1) {
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
         printf("  ldr s0, [x0]\n");
         printf("  str s0, [sp, #-16]!\n");
       } else {
@@ -108,10 +108,10 @@ static void gen_expr(node_t *node) {
   case ND_LVAR:
     gen_lval(node);
     printf("  ldr x0, [sp], #16\n");
-    if (node->is_float == 1) {
+    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
       printf("  ldr s0, [x0]\n");
       printf("  str s0, [sp, #-16]!\n");
-    } else if (node->is_float >= 2) {
+    } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
       printf("  ldr d0, [x0]\n");
       printf("  str d0, [sp, #-16]!\n");
     } else {
@@ -151,15 +151,15 @@ static void gen_expr(node_t *node) {
   case ND_ASSIGN:
     gen_lval(node->lhs);
     gen_expr(node->rhs);
-    if (node->is_float == 1) {
+    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
       // float 代入
-      gen_pop_fpu(1, node->rhs->is_float, 0); // s0 に rhs をロード
+      gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0); // s0 に rhs をロード
       printf("  ldr x0, [sp], #16\n"); // lhs アドレス
       printf("  str s0, [x0]\n");
       printf("  str s0, [sp, #-16]!\n");
-    } else if (node->is_float >= 2) {
+    } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
       // double/long double(現状lowering) 代入
-      gen_pop_fpu(2, node->rhs->is_float, 0); // d0 に rhs をロード
+      gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0); // d0 に rhs をロード
       printf("  ldr x0, [sp], #16\n"); // lhs アドレス
       printf("  str d0, [x0]\n");
       printf("  str d0, [sp, #-16]!\n");
@@ -198,11 +198,11 @@ static void gen_expr(node_t *node) {
   }
 
   // 二項演算
-  int fpu_op_type = node->is_float; // ADD/SUB/MUL/DIV の場合は結果型
+  tk_float_kind_t fpu_op_type = node->fp_kind; // ADD/SUB/MUL/DIV の場合は結果型
   if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
     // 比較演算の場合はオペランドの型を見る
-    if (node->lhs && node->lhs->is_float > fpu_op_type) fpu_op_type = node->lhs->is_float;
-    if (node->rhs && node->rhs->is_float > fpu_op_type) fpu_op_type = node->rhs->is_float;
+    if (node->lhs && node->lhs->fp_kind > fpu_op_type) fpu_op_type = node->lhs->fp_kind;
+    if (node->rhs && node->rhs->fp_kind > fpu_op_type) fpu_op_type = node->rhs->fp_kind;
   }
 
   if (fpu_op_type) {
@@ -212,8 +212,8 @@ static void gen_expr(node_t *node) {
     const char *r0 = freg(fpu_op_type, 0);
     const char *r1 = freg(fpu_op_type, 1);
     
-    gen_pop_fpu(fpu_op_type, node->rhs->is_float, 1); // rhs を r1 に
-    gen_pop_fpu(fpu_op_type, node->lhs->is_float, 0); // lhs を r0 に
+    gen_pop_fpu(fpu_op_type, node->rhs->fp_kind, 1); // rhs を r1 に
+    gen_pop_fpu(fpu_op_type, node->lhs->fp_kind, 0); // lhs を r0 に
 
     switch (node->kind) {
     case ND_ADD:
@@ -307,15 +307,15 @@ static void gen_stmt(node_t *node) {
     return;
   case ND_RETURN:
     gen_expr(node->lhs);
-    if (node->is_float == 1) {             // 関数の戻り値が float
-      gen_pop_fpu(1, node->lhs->is_float, 0); // s0 にロード
-    } else if (node->is_float >= 2) {      // 関数の戻り値が double/long double(現状lowering)
-      gen_pop_fpu(2, node->lhs->is_float, 0); // d0 にロード
+    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { // 関数の戻り値が float
+      gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
+    } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { // 関数の戻り値が double/long double(現状lowering)
+      gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
     } else {                               // 関数の戻り値が 整数
-      if (node->lhs->is_float == 1) {
+      if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
         printf("  ldr s0, [sp], #16\n");
         printf("  fcvtzs x0, s0\n");       // float->int
-      } else if (node->lhs->is_float >= 2) {
+      } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
         printf("  ldr d0, [sp], #16\n");
         printf("  fcvtzs x0, d0\n");       // double->int
       } else {
@@ -430,16 +430,16 @@ void gen_string_literals(void) {
         v = (unsigned char)lit->str[i];
         i++;
       }
-      if (lit->char_width == 1) {
+      if (lit->char_width == TK_CHAR_WIDTH_CHAR) {
         printf("  .byte %u\n", (unsigned)(v & 0xFF));
-      } else if (lit->char_width == 2) {
+      } else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
         printf("  .hword %u\n", (unsigned)(v & 0xFFFF));
       } else {
         printf("  .word %u\n", (unsigned)v);
       }
     }
-    if (lit->char_width == 1) printf("  .byte 0\n");
-    else if (lit->char_width == 2) printf("  .hword 0\n");
+    if (lit->char_width == TK_CHAR_WIDTH_CHAR) printf("  .byte 0\n");
+    else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) printf("  .hword 0\n");
     else printf("  .word 0\n");
   }
   printf(".text\n");
@@ -451,7 +451,7 @@ void gen_float_literals(void) {
   printf(".align 3\n");
   for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
     printf(".LCF%d:\n", lit->id);
-    if (lit->is_float == 1) {
+    if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
       // float (32bit) 定数出力: IEEE754 format
       union { float f; uint32_t i; } u = { .f = (float)lit->fval };
       printf("  .word %u\n", u.i);

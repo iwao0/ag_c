@@ -36,16 +36,16 @@ static void test_c11_string_prefixes(void) {
   printf("test_c11_string_prefixes...\n");
   token_t *tok = tk_tokenize("L\"a\" u\"b\" U\"c\" u8\"d\"");
   ASSERT_EQ(TK_STRING, tok->kind);
-  ASSERT_EQ(4, ((token_string_t *)tok)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, ((token_string_t *)tok)->char_width);
   tok = tok->next;
   ASSERT_EQ(TK_STRING, tok->kind);
-  ASSERT_EQ(2, ((token_string_t *)tok)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, ((token_string_t *)tok)->char_width);
   tok = tok->next;
   ASSERT_EQ(TK_STRING, tok->kind);
-  ASSERT_EQ(4, ((token_string_t *)tok)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, ((token_string_t *)tok)->char_width);
   tok = tok->next;
   ASSERT_EQ(TK_STRING, tok->kind);
-  ASSERT_EQ(1, ((token_string_t *)tok)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR, ((token_string_t *)tok)->char_width);
 }
 
 static void test_c11_binary_literal_strict_behavior(void) {
@@ -64,10 +64,10 @@ static void test_c11_float_suffix_metadata(void) {
   printf("test_c11_float_suffix_metadata...\n");
   token_t *tok = tk_tokenize("1.0f 2.0L");
   ASSERT_EQ(TK_NUM, tok->kind);
-  ASSERT_EQ(1, as_num(tok)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num(tok)->float_suffix_kind);
   tok = tok->next;
   ASSERT_EQ(TK_NUM, tok->kind);
-  ASSERT_EQ(2, as_num(tok)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(tok)->float_suffix_kind);
 }
 
 int main(void) {

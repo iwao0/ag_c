@@ -1,6 +1,8 @@
 #ifndef AST_H
 #define AST_H
 
+#include "../tokenizer/token.h"
+
 // 抽象構文木 (AST) のノードの種類
 typedef enum {
   ND_ADD,    // +
@@ -36,7 +38,7 @@ struct node_t {
   node_t *rhs;      // 右辺 / then節 / ループ本体
 
   // データ型判定用（演算結果の型）
-  int is_float;     // 0=整数, 1=float, 2=double, 3=long double
+  tk_float_kind_t fp_kind;
 };
 
 // メモリ参照系ノード（型サイズ情報）
@@ -54,7 +56,7 @@ struct node_num_t {
   long long val;    // 整数値
   double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
-  int float_suffix_kind; // 0=none, 1=f/F, 2=l/L
+  tk_float_suffix_kind_t float_suffix_kind;
 };
 
 // ローカル変数ノード
@@ -69,8 +71,8 @@ typedef struct node_string_t node_string_t;
 struct node_string_t {
   node_mem_t mem;
   char *string_label; // 文字列リテラルのデータラベル
-  int char_width;     // 1/2/4
-  int str_prefix_kind;
+  tk_char_width_t char_width;
+  tk_string_prefix_kind_t str_prefix_kind;
 };
 
 // ブロックノード
@@ -106,8 +108,8 @@ struct string_lit_t {
   char *label;
   char *str;
   int len;
-  int char_width; // 1/2/4
-  int str_prefix_kind;
+  tk_char_width_t char_width;
+  tk_string_prefix_kind_t str_prefix_kind;
 };
 extern string_lit_t *string_literals;
 
@@ -117,8 +119,8 @@ struct float_lit_t {
   float_lit_t *next;
   int id;
   double fval;
-  int is_float;
-  int float_suffix_kind; // 0=none, 1=f/F, 2=l/L
+  tk_float_kind_t fp_kind;
+  tk_float_suffix_kind_t float_suffix_kind;
 };
 extern float_lit_t *float_literals;
 

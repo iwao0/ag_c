@@ -52,11 +52,11 @@ static void test_expr_float() {
   
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(ND_NUM, node->lhs->kind);
-  ASSERT_EQ(2, node->lhs->is_float);  // 3.14 (double)
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind);
   ASSERT_TRUE(as_num(node->lhs)->fval > 3.13 && as_num(node->lhs)->fval < 3.15);
   
   ASSERT_EQ(ND_NUM, node->rhs->kind);
-  ASSERT_EQ(1, node->rhs->is_float);  // 1.5f (float)
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind);
   ASSERT_TRUE(as_num(node->rhs)->fval > 1.49 && as_num(node->rhs)->fval < 1.51);
 }
 
@@ -66,13 +66,13 @@ static void test_expr_long_double_suffix_metadata() {
   node_t *node = expr();
 
   ASSERT_EQ(ND_NUM, node->kind);
-  ASSERT_EQ(3, node->is_float); // long double (codegenでは現状double経路へlowering)
-  ASSERT_EQ(2, as_num(node)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, node->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(node)->float_suffix_kind);
   ASSERT_TRUE(as_num(node)->fval > 3.9 && as_num(node)->fval < 4.1);
 
   bool found = false;
   for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
-    if (lit->float_suffix_kind == 2) {
+    if (lit->float_suffix_kind == TK_FLOAT_SUFFIX_L) {
       found = true;
       break;
     }

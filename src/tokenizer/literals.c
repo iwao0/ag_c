@@ -148,56 +148,64 @@ void tk_skip_escape_in_literal(char **pp) {
   *pp = p + 1;
 }
 
-void tk_parse_string_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width) {
+void tk_parse_string_prefix(
+    const char *p,
+    int *prefix_len,
+    tk_string_prefix_kind_t *prefix_kind,
+    tk_char_width_t *char_width) {
   *prefix_len = 0;
-  *prefix_kind = 0;
-  *char_width = 1;
+  *prefix_kind = TK_STR_PREFIX_NONE;
+  *char_width = TK_CHAR_WIDTH_CHAR;
   if (p[0] == 'u' && p[1] == '8' && p[2] == '"') {
     *prefix_len = 2;
-    *prefix_kind = 4;
-    *char_width = 1;
+    *prefix_kind = TK_STR_PREFIX_u8;
+    *char_width = TK_CHAR_WIDTH_CHAR;
     return;
   }
   if (p[0] == 'L' && p[1] == '"') {
     *prefix_len = 1;
-    *prefix_kind = 1;
-    *char_width = 4;
+    *prefix_kind = TK_STR_PREFIX_L;
+    *char_width = TK_CHAR_WIDTH_CHAR32;
     return;
   }
   if (p[0] == 'u' && p[1] == '"') {
     *prefix_len = 1;
-    *prefix_kind = 2;
-    *char_width = 2;
+    *prefix_kind = TK_STR_PREFIX_u;
+    *char_width = TK_CHAR_WIDTH_CHAR16;
     return;
   }
   if (p[0] == 'U' && p[1] == '"') {
     *prefix_len = 1;
-    *prefix_kind = 3;
-    *char_width = 4;
+    *prefix_kind = TK_STR_PREFIX_U;
+    *char_width = TK_CHAR_WIDTH_CHAR32;
     return;
   }
 }
 
-void tk_parse_char_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width) {
+void tk_parse_char_prefix(
+    const char *p,
+    int *prefix_len,
+    tk_char_prefix_kind_t *prefix_kind,
+    tk_char_width_t *char_width) {
   *prefix_len = 0;
-  *prefix_kind = 0;
-  *char_width = 1;
+  *prefix_kind = TK_CHAR_PREFIX_NONE;
+  *char_width = TK_CHAR_WIDTH_CHAR;
   if (p[0] == 'L' && p[1] == '\'') {
     *prefix_len = 1;
-    *prefix_kind = 1;
-    *char_width = 4;
+    *prefix_kind = TK_CHAR_PREFIX_L;
+    *char_width = TK_CHAR_WIDTH_CHAR32;
     return;
   }
   if (p[0] == 'u' && p[1] == '\'') {
     *prefix_len = 1;
-    *prefix_kind = 2;
-    *char_width = 2;
+    *prefix_kind = TK_CHAR_PREFIX_u;
+    *char_width = TK_CHAR_WIDTH_CHAR16;
     return;
   }
   if (p[0] == 'U' && p[1] == '\'') {
     *prefix_len = 1;
-    *prefix_kind = 3;
-    *char_width = 4;
+    *prefix_kind = TK_CHAR_PREFIX_U;
+    *char_width = TK_CHAR_WIDTH_CHAR32;
     return;
   }
 }

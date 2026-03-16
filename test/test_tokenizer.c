@@ -152,7 +152,7 @@ static void test_tokenize_int_literals() {
   ASSERT_EQ(42ULL, as_num(token)->uval);
   ASSERT_EQ(16, as_num(token)->int_base);
   ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(0, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
@@ -190,7 +190,7 @@ static void test_tokenize_int_literals() {
   ASSERT_EQ(0ULL, as_num(token)->uval);
   ASSERT_EQ(10, as_num(token)->int_base);
   ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(0, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
@@ -198,31 +198,31 @@ static void test_tokenize_int_literals() {
   ASSERT_EQ(123ULL, as_num(token)->uval);
   ASSERT_EQ(10, as_num(token)->int_base);
   ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(0, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(1, as_num(token)->val);
   ASSERT_TRUE(as_num(token)->is_unsigned);
-  ASSERT_EQ(0, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(2, as_num(token)->val);
   ASSERT_TRUE(as_num(token)->is_unsigned);
-  ASSERT_EQ(1, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(3, as_num(token)->val);
   ASSERT_TRUE(as_num(token)->is_unsigned);
-  ASSERT_EQ(2, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(0x1ffffffffULL, as_num(token)->uval);
   ASSERT_TRUE(!as_num(token)->is_unsigned);
-  ASSERT_EQ(1, as_num(token)->int_size);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num(token)->int_size);
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);
@@ -486,44 +486,44 @@ static void test_tokenize_float_literal() {
   token = tk_tokenize("3.14 1.5f 2.0E-3 0x1.8p1 0x1p2f 4.0L 0x1p2L");
   
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->is_float); // デフォルトは double
-  ASSERT_EQ(0, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.13 && as_num(token)->fval < 3.15);
   token = token->next;
   
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(1, as_num(token)->is_float); // 'f' suffix なので float
-  ASSERT_EQ(1, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 1.49 && as_num(token)->fval < 1.51);
   token = token->next;
   
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->is_float); // 指数表現
-  ASSERT_EQ(0, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 0.0019 && as_num(token)->fval < 0.0021);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(2, as_num(token)->is_float); // 16進浮動小数点
-  ASSERT_EQ(0, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 2.9 && as_num(token)->fval < 3.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(1, as_num(token)->is_float); // 16進浮動小数点 + f
-  ASSERT_EQ(1, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(3, as_num(token)->is_float); // long double
-  ASSERT_EQ(2, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;
 
   ASSERT_EQ(TK_NUM, token->kind);
-  ASSERT_EQ(3, as_num(token)->is_float); // hex float + L suffix
-  ASSERT_EQ(2, as_num(token)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num(token)->fp_kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num(token)->float_suffix_kind);
   ASSERT_TRUE(as_num(token)->fval > 3.9 && as_num(token)->fval < 4.1);
   token = token->next;
   
@@ -627,15 +627,15 @@ static void test_tokenize_char_literal() {
   token = tk_tokenize("L'A' u'B' U'\\u00A9'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ('A', as_num(token)->val);
-  ASSERT_EQ(4, as_num(token)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ('B', as_num(token)->val);
-  ASSERT_EQ(2, as_num(token)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(0xA9, as_num(token)->val);
-  ASSERT_EQ(4, as_num(token)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 
@@ -643,15 +643,15 @@ static void test_tokenize_char_literal() {
   token = tk_tokenize("L'AB' u'CD' U'EF'");
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(((unsigned char)'A' << 8) | (unsigned char)'B', as_num(token)->val);
-  ASSERT_EQ(4, as_num(token)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(((unsigned char)'C' << 8) | (unsigned char)'D', as_num(token)->val);
-  ASSERT_EQ(2, as_num(token)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(((unsigned char)'E' << 8) | (unsigned char)'F', as_num(token)->val);
-  ASSERT_EQ(4, as_num(token)->char_width);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_num(token)->char_width);
   token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 }
@@ -659,11 +659,11 @@ static void test_tokenize_char_literal() {
 static void test_tokenize_string_prefixes_and_ucn() {
   printf("test_tokenize_string_prefixes_and_ucn...\n");
   token = tk_tokenize("L\"wide\" u\"u16\" U\"u32\" u8\"utf8\" \"\\u00A9\"");
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(4, as_string(token)->char_width); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(2, as_string(token)->char_width); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(4, as_string(token)->char_width); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(1, as_string(token)->char_width); token = token->next;
-  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(6, as_string(token)->len); ASSERT_EQ(1, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(3, as_string(token)->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(4, as_string(token)->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR, as_string(token)->char_width); token = token->next;
+  ASSERT_EQ(TK_STRING, token->kind); ASSERT_EQ(6, as_string(token)->len); ASSERT_EQ(TK_CHAR_WIDTH_CHAR, as_string(token)->char_width); token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 }
 
