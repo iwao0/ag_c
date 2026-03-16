@@ -37,10 +37,27 @@ Environment: Apple clang (`-O0`), `make bench`
 - numeric-heavy 256KB: `8,226,898 tokens/sec`, `alloc_count=18`
 - punct-heavy 256KB: `24,632,483 tokens/sec`, `alloc_count=10`
 
+## After Lazy Decode + Decimal Int Fast Path
+
+- mixed 1KB: `4,948,529 tokens/sec`, `alloc_count=3`
+- mixed 16KB: `5,687,877 tokens/sec`, `alloc_count=16`
+- mixed 256KB: `8,045,132 tokens/sec`, `alloc_count=21`
+- ident-heavy 256KB: `8,177,164 tokens/sec`, `alloc_count=7`
+- numeric-heavy 256KB: `8,802,507 tokens/sec`, `alloc_count=18`
+- punct-heavy 256KB: `22,046,992 tokens/sec`, `alloc_count=10`
+
+## Goal Check (2026-03-16)
+
+- Fixed baseline target was `12,023,597 tokens/sec` (mixed 256KB).
+- This phase target (`+10〜20%`) would be `13.2M〜14.4M tokens/sec`.
+- Latest mixed 256KB is `8,045,132 tokens/sec`, so target is **not reached** in this measurement.
+- Allocation target is maintained (`alloc_count=21`, previous low-alloc path level).
+- Remaining focus: keep the low-allocation design while recovering mixed/punctuator throughput.
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
-- Throughput is maintained or improved depending on input size.
+- Throughput has improved in several phases, but latest phase shows a regression on mixed/punct-heavy input that needs follow-up tuning.
 - CI perf guard is added to detect major regressions in tokenizer throughput and allocations.
 - Additional numeric fast-path refactoring keeps throughput at high level (`9,718,939 tokens/sec` on 256KB).
 - Additional punctuator exact-match fast path improved throughput further (`12,023,597 tokens/sec` on 256KB).

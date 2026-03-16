@@ -492,6 +492,35 @@ static unsigned long long parse_digits(char **pp, int base) {
   return val;
 }
 
+static long long token_signed_from_u64(unsigned long long uval);
+
+static bool try_parse_decimal_int_fast(char **pp, token_num_t *num) {
+  char *p = *pp;
+  if (!tk_is_digit(*p)) return false;
+
+  unsigned long long val = 0;
+  while (tk_is_digit(*p)) {
+    int digit = *p - '0';
+    if (val > (ULLONG_MAX - (unsigned long long)digit) / 10ULL) {
+      return false;
+    }
+    val = val * 10ULL + (unsigned long long)digit;
+    p++;
+  }
+
+  if (*p == '.' || *p == 'e' || *p == 'E') return false;
+  if (*p == 'u' || *p == 'U' || *p == 'l' || *p == 'L') return false;
+  if (*p == '.' || tk_is_ident_continue_byte(*p)) return false;
+
+  num->uval = val;
+  num->val = token_signed_from_u64(val);
+  num->is_float = 0;
+  num->int_base = 10;
+  choose_int_type(num, val, true, false, 0);
+  *pp = p;
+  return true;
+}
+
 static long long token_signed_from_u64(unsigned long long uval) {
   if (uval <= (unsigned long long)LLONG_MAX) return (long long)uval;
   return (long long)(uval & (unsigned long long)LLONG_MAX);
@@ -561,6 +590,11 @@ static void parse_number_literal(char **pp, token_num_t *num) {
     num->int_base = 8;
     parse_int_suffix(num, &p, val, false);
   } else {
+    if (try_parse_decimal_int_fast(&p, num)) {
+      *pp = p;
+      return;
+    }
+
     // 10進整数はまず数字列だけ高速スキャンし、浮動小数点判定を早期化する
     bool is_float = false;
     if (*p == '.') {
@@ -670,7 +704,7 @@ token_t *tokenize(char *p) {
         if (*p == '"') break;
         if (*p == '\\') {
           p++;
-          tk_read_escape_char(&p);
+          tk_skip_escape_in_literal(&p);
           continue;
         }
         p++;
@@ -778,14 +812,17 @@ token_t *tokenize(char *p) {
     int adv = 0;
     if (tk_scan_ident_start(p, &adv)) {
       char *start = p;
+      bool has_ucn_escape = (adv > 1);
       p += adv;
-      while (tk_scan_ident_continue(p, &adv))
+      while (tk_scan_ident_continue(p, &adv)) {
+        if (adv > 1) has_ucn_escape = true;
         p += adv;
+      }
       int len = p - start;
       char *id_str = start;
       int id_len = len;
       bool has_ucn = false;
-      if (memchr(start, '\\', (size_t)len) != NULL) {
+      if (has_ucn_escape) {
         tk_decode_identifier_ucn(start, len, &id_str, &id_len, &has_ucn);
       }
 

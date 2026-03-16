@@ -100,6 +100,54 @@ int tk_read_escape_char(char **pp) {
   return (int)out;
 }
 
+void tk_skip_escape_in_literal(char **pp) {
+  char *p = *pp;
+  if (*p == 'x' && !tk_is_xdigit(p[1])) {
+    error_at(p + 1, "16進エスケープが不正です");
+  }
+  if (*p == 'u' || *p == 'U') {
+    uint32_t cp = 0;
+    int consumed = 0;
+    if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
+      error_at(p, "UCNエスケープが不正です");
+    }
+    if (!tk_is_valid_ucn_codepoint(cp)) {
+      error_at(p, "UCNエスケープが不正です");
+    }
+  }
+  switch (*p) {
+    case 'a': case 'b': case 'f': case 'n': case 'r': case 't': case 'v':
+    case '\\': case '\'': case '"': case '?':
+    case 'x': case 'u': case 'U':
+    case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
+      break;
+    default:
+      error_at(p, "不正なエスケープです");
+  }
+
+  if (*p == 'x') {
+    p++;
+    while (tk_is_xdigit(*p)) p++;
+    *pp = p;
+    return;
+  }
+  if (*p == 'u' || *p == 'U') {
+    int consumed = (*p == 'u') ? 5 : 9; // uXXXX / UXXXXXXXX from current char
+    *pp = p + consumed;
+    return;
+  }
+  if (tk_is_octal_digit(*p)) {
+    int cnt = 0;
+    while (cnt < 3 && tk_is_octal_digit(*p)) {
+      p++;
+      cnt++;
+    }
+    *pp = p;
+    return;
+  }
+  *pp = p + 1;
+}
+
 void tk_parse_string_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width) {
   *prefix_len = 0;
   *prefix_kind = 0;

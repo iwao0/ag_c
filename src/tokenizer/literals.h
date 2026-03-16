@@ -10,6 +10,7 @@ bool tk_is_valid_ucn_codepoint(uint32_t cp);
 int tk_encode_utf8(uint32_t cp, char out[4]);
 
 int tk_read_escape_char(char **pp);
+void tk_skip_escape_in_literal(char **pp);
 
 void tk_parse_string_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width);
 void tk_parse_char_prefix(const char *p, int *prefix_len, int *prefix_kind, int *char_width);
