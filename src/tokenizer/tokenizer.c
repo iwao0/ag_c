@@ -1,4 +1,5 @@
 #include "allocator.h"
+#include "branch_hint.h"
 #include "tokenizer.h"
 #include "charclass.h"
 #include "keywords.h"
@@ -531,13 +532,13 @@ static long long token_signed_from_u64(unsigned long long uval) {
   return (long long)(uval & (unsigned long long)LLONG_MAX);
 }
 
-static bool has_decimal_float_marker(const char *p) {
+static inline bool has_decimal_float_marker(const char *p) {
   if (*p == '.') return true;
   while (tk_is_digit(*p)) p++;
   return *p == '.' || *p == 'e' || *p == 'E';
 }
 
-static bool has_hex_float_marker(const char *p) {
+static inline bool has_hex_float_marker(const char *p) {
   // p points to "0x" or "0X".
   for (char *q = (char *)p + 2; *q; q++) {
     if (*q == '.' || *q == 'p' || *q == 'P') return true;
@@ -811,7 +812,7 @@ token_t *tokenize(char *p) {
     // 識別子またはキーワード (a〜z で始まる連続した英字)
     // 識別子・キーワード（英字または_で始まり、英数字または_が続く）
     int adv = 0;
-    if (tk_scan_ident_start(p, &adv)) {
+    if (TK_LIKELY(tk_scan_ident_start(p, &adv))) {
       char *start = p;
       bool has_ucn_escape = (adv > 1);
       p += adv;

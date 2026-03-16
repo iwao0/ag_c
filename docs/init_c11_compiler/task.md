@@ -229,12 +229,12 @@
 - [ ] キーワード判定を最小完全ハッシュ化（例: gperf）で比較検証する
   - [ ] 現行実装と可読性・保守性・速度を比較して採用判断する
   - [ ] 不採用の場合も検証結果を `tokenizer_perf_report.md` に記録する
-- [ ] 分岐予測ヒント（`likely/unlikely`）をホットパス限定で導入する
-  - [ ] `tokenize` / `scanner` の最頻分岐に限定して適用する
-  - [ ] 可読性を損なう箇所には導入しない
-- [ ] `inline` 方針を `-O2` 前提で見直す
-  - [ ] 小関数のみ `static inline` を適用して過剰インラインを避ける
-  - [ ] `check_function_size.sh` の基準内であることを確認する
+- [x] 分岐予測ヒント（`likely/unlikely`）をホットパス限定で導入する
+  - [x] `tokenize` / `scanner` の最頻分岐に限定して適用する
+  - [x] 可読性を損なう箇所には導入しない
+- [x] `inline` 方針を `-O2` 前提で見直す
+  - [x] 小関数のみ `static inline` を適用して過剰インラインを避ける
+  - [x] `check_function_size.sh` の基準内であることを確認する
 - [ ] PGO（Profile Guided Optimization）導入を検証する
   - [ ] 学習用ベンチ入力を定義し、`-fprofile-generate/-fprofile-use` を試す
   - [ ] CIへの常時導入可否を判断する

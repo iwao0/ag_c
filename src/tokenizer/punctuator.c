@@ -1,9 +1,9 @@
 #include "punctuator.h"
 #include <string.h>
 
-static token_kind_t punctuator_kind_for_2chars(char c0, char c1);
+static inline token_kind_t punctuator_kind_for_2chars(char c0, char c1);
 
-static token_kind_t punctuator_kind_for_char(char c) {
+static inline token_kind_t punctuator_kind_for_char(char c) {
   switch (c) {
     case '<': return TK_LT;
     case '>': return TK_GT;
@@ -52,7 +52,7 @@ token_kind_t punctuator_kind_for_str(const char *op) {
   return TK_EOF;
 }
 
-static token_kind_t punctuator_kind_for_2chars(char c0, char c1) {
+static inline token_kind_t punctuator_kind_for_2chars(char c0, char c1) {
   static const token_kind_t table[256][256] = {
       ['!']['='] = TK_NEQ,
       ['#']['#'] = TK_HASHHASH,
