@@ -240,6 +240,14 @@ static void test_tokenize_invalid() {
   expect_tokenize_fail("/* unterminated"); // コメント未閉じ
   expect_tokenize_fail("@");           // 不正文字
   expect_tokenize_fail("18446744073709551616"); // ULLONG_MAX+1
+  expect_tokenize_fail("\"unterminated"); // 文字列未閉じ
+  expect_tokenize_fail("\"\\x\"");    // 16進エスケープ不正
+  expect_tokenize_fail("\"\\q\"");    // 不正エスケープ
+  expect_tokenize_fail("''");         // 空の文字リテラル
+  expect_tokenize_fail("'\\x'");      // 16進エスケープ不正
+  expect_tokenize_fail("'ab'");       // 複数文字
+  expect_tokenize_fail("1.0f0");      // pp-number 連結
+  expect_tokenize_fail("1..2");       // pp-number 連結
 }
 
 // 1c. ローカル変数・複数文字識別子のテスト
@@ -463,6 +471,13 @@ static void test_tokenize_string() {
   ASSERT_TRUE(strncmp(as_string(token)->str, "AB", 2) == 0);
   token = token->next;
   ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // エスケープを含む文字列
+  token = tokenize("\"a\\\"b\"");
+  ASSERT_EQ(TK_STRING, token->kind);
+  ASSERT_EQ(4, as_string(token)->len);
+  token = token->next;
   ASSERT_EQ(TK_EOF, token->kind);
 }
 

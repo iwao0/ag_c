@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <ctype.h>
 
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
@@ -419,19 +420,74 @@ void gen_string_literals(void) {
   printf(".section __TEXT,__cstring\n");
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
     printf("%s:\n", lit->label);
-    printf("  .asciz \"");
-    for (int i = 0; i < lit->len; i++) {
-      char c = lit->str[i];
-      if (c == '\\' && i + 1 < lit->len) {
-        char next = lit->str[i + 1];
-        if (next == 'n') { printf("\\n"); i++; continue; }
-        if (next == 't') { printf("\\t"); i++; continue; }
-        if (next == '\\') { printf("\\\\"); i++; continue; }
-        if (next == '"') { printf("\\\""); i++; continue; }
+    int col = 0;
+    int i = 0;
+    while (i < lit->len) {
+      unsigned char c = (unsigned char)lit->str[i];
+      if (c == '\\') {
+        i++;
+        if (i >= lit->len) break;
+        char esc = lit->str[i];
+        if (esc == 'a') { c = '\a'; i++; }
+        else if (esc == 'b') { c = '\b'; i++; }
+        else if (esc == 'f') { c = '\f'; i++; }
+        else if (esc == 'n') { c = '\n'; i++; }
+        else if (esc == 'r') { c = '\r'; i++; }
+        else if (esc == 't') { c = '\t'; i++; }
+        else if (esc == 'v') { c = '\v'; i++; }
+        else if (esc == '\\') { c = '\\'; i++; }
+        else if (esc == '\'') { c = '\''; i++; }
+        else if (esc == '"') { c = '"'; i++; }
+        else if (esc == '?') { c = '?'; i++; }
+        else if (esc == 'x') {
+          i++;
+          unsigned val = 0;
+          while (i < lit->len && isxdigit((unsigned char)lit->str[i])) {
+            char ch = lit->str[i];
+            int digit;
+            if ('0' <= ch && ch <= '9') digit = ch - '0';
+            else if ('a' <= ch && ch <= 'f') digit = ch - 'a' + 10;
+            else digit = ch - 'A' + 10;
+            val = val * 16 + digit;
+            i++;
+          }
+          c = (unsigned char)val;
+        } else if ('0' <= esc && esc <= '7') {
+          unsigned val = 0;
+          int cnt = 0;
+          while (i < lit->len && cnt < 3) {
+            char ch = lit->str[i];
+            if (ch < '0' || ch > '7') break;
+            val = val * 8 + (ch - '0');
+            i++;
+            cnt++;
+          }
+          c = (unsigned char)val;
+        } else {
+          c = (unsigned char)esc;
+          i++;
+        }
+      } else {
+        i++;
       }
-      printf("%c", c);
+
+      if (col == 0) {
+        printf("  .byte ");
+      } else {
+        printf(", ");
+      }
+      printf("%u", (unsigned)c);
+      col++;
+      if (col == 16) {
+        printf("\n");
+        col = 0;
+      }
     }
-    printf("\"\n");
+    if (col == 0) {
+      printf("  .byte 0\n");
+    } else {
+      printf(", 0\n");
+    }
   }
   printf(".text\n");
 }

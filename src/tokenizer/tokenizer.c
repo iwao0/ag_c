@@ -350,6 +350,54 @@ static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no)
   return tok;
 }
 
+static int read_escape_char(char **pp) {
+  char *p = *pp;
+  int val;
+  if (*p == 'a') { *pp = p + 1; return '\a'; }
+  if (*p == 'b') { *pp = p + 1; return '\b'; }
+  if (*p == 'f') { *pp = p + 1; return '\f'; }
+  if (*p == 'n') { *pp = p + 1; return '\n'; }
+  if (*p == 'r') { *pp = p + 1; return '\r'; }
+  if (*p == 't') { *pp = p + 1; return '\t'; }
+  if (*p == 'v') { *pp = p + 1; return '\v'; }
+  if (*p == '\\') { *pp = p + 1; return '\\'; }
+  if (*p == '\'') { *pp = p + 1; return '\''; }
+  if (*p == '"') { *pp = p + 1; return '"'; }
+  if (*p == '?') { *pp = p + 1; return '?'; }
+  if (*p == 'x') {
+    p++;
+    if (!isxdigit(*p)) error_at(p, "16進エスケープが不正です");
+    unsigned valx = 0;
+    while (isxdigit(*p)) {
+      int digit;
+      if ('0' <= *p && *p <= '9') digit = *p - '0';
+      else if ('a' <= *p && *p <= 'f') digit = *p - 'a' + 10;
+      else digit = *p - 'A' + 10;
+      valx = valx * 16 + digit;
+      p++;
+    }
+    if (valx > 255) error_at(p, "エスケープが大きすぎます");
+    *pp = p;
+    return (int)valx;
+  }
+  if (*p >= '0' && *p <= '7') {
+    int cnt = 0;
+    unsigned valo = 0;
+    while (cnt < 3 && *p >= '0' && *p <= '7') {
+      valo = valo * 8 + (*p - '0');
+      p++;
+      cnt++;
+    }
+    if (valo > 255) error_at(p, "エスケープが大きすぎます");
+    *pp = p;
+    return (int)valo;
+  }
+  error_at(p, "不正なエスケープです");
+  val = *p;
+  *pp = p + 1;
+  return val;
+}
+
 static void choose_int_type(token_num_t *num, unsigned long long val, bool is_decimal, bool has_u, int long_cnt) {
   if (!has_u && long_cnt == 0) {
     if (is_decimal) {
@@ -602,11 +650,20 @@ token_t *tokenize(char *p) {
     if (*p == '"') {
       p++; // 開き引用符をスキップ
       char *start = p;
-      while (*p && *p != '"')
+      while (true) {
+        if (*p == '\0' || *p == '\n') {
+          error_at(p, "文字列リテラルが閉じられていません");
+        }
+        if (*p == '"') break;
+        if (*p == '\\') {
+          p++;
+          read_escape_char(&p);
+          continue;
+        }
         p++;
+      }
       int len = p - start;
-      if (*p == '"')
-        p++; // 閉じ引用符をスキップ
+      p++; // 閉じ引用符をスキップ
       token_string_t *st = new_token_string(cur, start, len, line_no);
       st->pp.base.at_bol = _at_bol;
       st->pp.base.has_space = _has_space;
@@ -618,27 +675,28 @@ token_t *tokenize(char *p) {
     if (*p == '\'') {
       char *start = p;
       p++; // 開きクォートをスキップ
+      if (*p == '\0' || *p == '\n') {
+        error_at(p, "文字リテラルが閉じられていません");
+      }
+      if (*p == '\'') {
+        error_at(p, "空の文字リテラルは使えません");
+      }
       int ch;
       if (*p == '\\') {
         p++;
-        switch (*p) {
-          case 'n': ch = '\n'; break;
-          case 't': ch = '\t'; break;
-          case '\\': ch = '\\'; break;
-          case '\'': ch = '\''; break;
-          case '0': ch = '\0'; break;
-          default: ch = *p; break;
-        }
+        ch = read_escape_char(&p);
       } else {
-        ch = *p;
+        ch = (unsigned char)*p;
+        p++;
       }
-      p++; // 文字本体をスキップ
-      if (*p == '\'')
-        p++; // 閉じクォートをスキップ
+      if (*p != '\'') {
+        error_at(p, "文字リテラルが不正です");
+      }
+      p++; // 閉じクォートをスキップ
       int len = p - start;
       token_num_t *num = new_token_num(cur, start, len, line_no);
       num->val = ch;
-      num->uval = (unsigned long long)ch;
+      num->uval = (unsigned long long)(unsigned char)ch;
       num->is_float = 0;
       num->int_base = 10;
       num->pp.base.at_bol = _at_bol;
@@ -834,6 +892,9 @@ token_t *tokenize(char *p) {
           num->int_base = 10;
           parse_int_suffix(num, &p, val, true);
         }
+      }
+      if (*p == '.' || isalnum(*p) || *p == '_') {
+        error_at(p, "数値リテラルが不正です");
       }
       num->len = p - start;
       num->str = start;
