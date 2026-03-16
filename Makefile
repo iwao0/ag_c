@@ -1,5 +1,5 @@
 CFLAGS=-std=c11 -g -O0 -Wall -Wextra
-SRCS=$(wildcard src/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c)
+SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c)
 OBJS=$(patsubst src/%.c,build/%.o,$(SRCS))
 TARGET=build/ag_c
 TEST_TOKENIZER=build/test_tokenizer
