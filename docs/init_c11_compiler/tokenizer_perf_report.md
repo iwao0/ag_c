@@ -86,6 +86,13 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - `-O0` mixed 256KB: `9,101,957 tokens/sec`, ident: `8,173,035`, numeric: `8,606,553`, punct: `20,709,983`
 - `-O2` mixed 256KB: `31,198,380 tokens/sec`, ident: `21,503,986`, numeric: `23,359,810`, punct: `43,997,371`
 
+## Round-2 Progress (Token Layout Tuning)
+
+- mixed 256KB: `17,107,541 tokens/sec`, `alloc_count=21`
+- ident-heavy 256KB: `10,263,369 tokens/sec`, `alloc_count=6`
+- numeric-heavy 256KB: `11,283,489 tokens/sec`, `alloc_count=15`
+- punct-heavy 256KB: `31,582,888 tokens/sec`, `alloc_count=10`
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).

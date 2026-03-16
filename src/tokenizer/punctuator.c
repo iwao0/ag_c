@@ -1,6 +1,7 @@
 #include "punctuator.h"
-#include <stdint.h>
 #include <string.h>
+
+static token_kind_t punctuator_kind_for_2chars(char c0, char c1);
 
 static token_kind_t punctuator_kind_for_char(char c) {
   switch (c) {
@@ -37,41 +38,7 @@ token_kind_t punctuator_kind_for_str(const char *op) {
   size_t len = strlen(op);
   if (len == 1) return punctuator_kind_for_char(op[0]);
   if (len == 2) {
-    switch (op[0]) {
-      case '=': if (op[1] == '=') return TK_EQEQ; break;
-      case '!': if (op[1] == '=') return TK_NEQ; break;
-      case '<': if (op[1] == '=') return TK_LE;
-                if (op[1] == '<') return TK_SHL;
-                if (op[1] == ':') return TK_LBRACKET;
-                if (op[1] == '%') return TK_LBRACE;
-                break;
-      case '>': if (op[1] == '=') return TK_GE;
-                if (op[1] == '>') return TK_SHR;
-                break;
-      case '&': if (op[1] == '&') return TK_ANDAND;
-                if (op[1] == '=') return TK_ANDEQ;
-                break;
-      case '|': if (op[1] == '|') return TK_OROR;
-                if (op[1] == '=') return TK_OREQ;
-                break;
-      case '#': if (op[1] == '#') return TK_HASHHASH; break;
-      case '+': if (op[1] == '+') return TK_INC;
-                if (op[1] == '=') return TK_PLUSEQ;
-                break;
-      case '-': if (op[1] == '-') return TK_DEC;
-                if (op[1] == '>') return TK_ARROW;
-                if (op[1] == '=') return TK_MINUSEQ;
-                break;
-      case '*': if (op[1] == '=') return TK_MULEQ; break;
-      case '/': if (op[1] == '=') return TK_DIVEQ; break;
-      case '%': if (op[1] == '=') return TK_MODEQ;
-                if (op[1] == '>') return TK_RBRACE;
-                if (op[1] == ':') return TK_HASH;
-                break;
-      case '^': if (op[1] == '=') return TK_XOREQ; break;
-      case ':': if (op[1] == '>') return TK_RBRACKET; break;
-    }
-    return TK_EOF;
+    return punctuator_kind_for_2chars(op[0], op[1]);
   }
   if (len == 3) {
     if (op[0] == '<' && op[1] == '<' && op[2] == '=') return TK_SHLEQ;
@@ -85,49 +52,35 @@ token_kind_t punctuator_kind_for_str(const char *op) {
   return TK_EOF;
 }
 
-typedef struct {
-  uint16_t key2;
-  token_kind_t kind;
-} punct2_t;
-
-static inline uint16_t punct_key2(char c0, char c1) {
-  return (uint16_t)(((uint16_t)(unsigned char)c0 << 8) | (uint16_t)(unsigned char)c1);
-}
-
 static token_kind_t punctuator_kind_for_2chars(char c0, char c1) {
-  static const punct2_t table[] = {
-      {0x213d, TK_NEQ},      // !=
-      {0x2323, TK_HASHHASH}, // ##
-      {0x253d, TK_MODEQ},    // %=
-      {0x253a, TK_HASH},     // %:
-      {0x253e, TK_RBRACE},   // %>
-      {0x2626, TK_ANDAND},   // &&
-      {0x263d, TK_ANDEQ},    // &=
-      {0x2b2b, TK_INC},      // ++
-      {0x2b3d, TK_PLUSEQ},   // +=
-      {0x2d2d, TK_DEC},      // --
-      {0x2d3d, TK_MINUSEQ},  // -=
-      {0x2d3e, TK_ARROW},    // ->
-      {0x2a3d, TK_MULEQ},    // *=
-      {0x2f3d, TK_DIVEQ},    // /=
-      {0x3a3e, TK_RBRACKET}, // :>
-      {0x3c25, TK_LBRACE},   // <%
-      {0x3c3a, TK_LBRACKET}, // <:
-      {0x3c3c, TK_SHL},      // <<
-      {0x3c3d, TK_LE},       // <=
-      {0x3d3d, TK_EQEQ},     // ==
-      {0x3e3d, TK_GE},       // >=
-      {0x3e3e, TK_SHR},      // >>
-      {0x5e3d, TK_XOREQ},    // ^=
-      {0x7c3d, TK_OREQ},     // |=
-      {0x7c7c, TK_OROR},     // ||
+  static const token_kind_t table[256][256] = {
+      ['!']['='] = TK_NEQ,
+      ['#']['#'] = TK_HASHHASH,
+      ['%']['='] = TK_MODEQ,
+      ['%'][':'] = TK_HASH,
+      ['%']['>'] = TK_RBRACE,
+      ['&']['&'] = TK_ANDAND,
+      ['&']['='] = TK_ANDEQ,
+      ['+']['+'] = TK_INC,
+      ['+']['='] = TK_PLUSEQ,
+      ['-']['-'] = TK_DEC,
+      ['-']['='] = TK_MINUSEQ,
+      ['-']['>'] = TK_ARROW,
+      ['*']['='] = TK_MULEQ,
+      ['/']['='] = TK_DIVEQ,
+      [':']['>'] = TK_RBRACKET,
+      ['<']['%'] = TK_LBRACE,
+      ['<'][':'] = TK_LBRACKET,
+      ['<']['<'] = TK_SHL,
+      ['<']['='] = TK_LE,
+      ['=']['='] = TK_EQEQ,
+      ['>']['='] = TK_GE,
+      ['>']['>'] = TK_SHR,
+      ['^']['='] = TK_XOREQ,
+      ['|']['='] = TK_OREQ,
+      ['|']['|'] = TK_OROR,
   };
-
-  uint16_t key = punct_key2(c0, c1);
-  for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); i++) {
-    if (table[i].key2 == key) return table[i].kind;
-  }
-  return TK_EOF;
+  return table[(unsigned char)c0][(unsigned char)c1];
 }
 
 bool match_punctuator(const char *p, token_kind_t *out_kind, int *out_len) {
