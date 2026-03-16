@@ -336,34 +336,42 @@ static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
   tok->line_no = line_no;
 }
 
-static token_t *new_token_simple(token_kind_t kind, token_t *cur, int line_no) {
+static token_t *new_token_simple(token_kind_t kind, token_t *cur, int line_no, bool at_bol, bool has_space) {
   token_pp_t *tok = tcalloc(1, sizeof(token_pp_t));
   init_token_base(&tok->base, kind, line_no);
+  tok->base.at_bol = at_bol;
+  tok->base.has_space = has_space;
   cur->next = (token_t *)tok;
   return (token_t *)tok;
 }
 
-static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line_no) {
+static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_ident_t *tok = tcalloc(1, sizeof(token_ident_t));
   init_token_base(&tok->pp.base, TK_IDENT, line_no);
+  tok->pp.base.at_bol = at_bol;
+  tok->pp.base.has_space = has_space;
   tok->str = str;
   tok->len = len;
   cur->next = (token_t *)tok;
   return tok;
 }
 
-static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no) {
+static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_string_t *tok = tcalloc(1, sizeof(token_string_t));
   init_token_base(&tok->pp.base, TK_STRING, line_no);
+  tok->pp.base.at_bol = at_bol;
+  tok->pp.base.has_space = has_space;
   tok->str = str;
   tok->len = len;
   cur->next = (token_t *)tok;
   return tok;
 }
 
-static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no) {
+static token_num_t *new_token_num(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_num_t *tok = tcalloc(1, sizeof(token_num_t));
   init_token_base(&tok->pp.base, TK_NUM, line_no);
+  tok->pp.base.at_bol = at_bol;
+  tok->pp.base.has_space = has_space;
   tok->str = str;
   tok->len = len;
   cur->next = (token_t *)tok;
@@ -621,9 +629,7 @@ token_t *tokenize(char *p) {
     token_kind_t matched_kind = TK_EOF;
     int matched_len = 0;
     if (match_punctuator(p, &matched_kind, &matched_len) && matched_len >= 2) {
-      cur = new_token_simple(matched_kind, cur, line_no);
-      cur->at_bol = _at_bol;
-      cur->has_space = _has_space;
+      cur = new_token_simple(matched_kind, cur, line_no, _at_bol, _has_space);
       p += matched_len;
       continue;
     }
@@ -656,9 +662,7 @@ token_t *tokenize(char *p) {
       }
       int len = p - start;
       p++; // 閉じ引用符をスキップ
-      token_string_t *st = new_token_string(cur, start, len, line_no);
-      st->pp.base.at_bol = _at_bol;
-      st->pp.base.has_space = _has_space;
+      token_string_t *st = new_token_string(cur, start, len, line_no, _at_bol, _has_space);
       st->char_width = str_char_width;
       st->str_prefix_kind = str_prefix_kind;
       cur = (token_t *)st;
@@ -721,7 +725,7 @@ parse_char_or_other:
       }
       p++; // 閉じクォートをスキップ
       int len = p - start;
-      token_num_t *num = new_token_num(cur, start, len, line_no);
+      token_num_t *num = new_token_num(cur, start, len, line_no, _at_bol, _has_space);
       num->uval = ch;
       num->val = (long long)ch;
       num->is_float = 0;
@@ -730,8 +734,6 @@ parse_char_or_other:
       num->int_size = 0;
       num->char_width = chr_char_width;
       num->char_prefix_kind = chr_prefix_kind;
-      num->pp.base.at_bol = _at_bol;
-      num->pp.base.has_space = _has_space;
       cur = (token_t *)num;
       continue;
     }
@@ -740,9 +742,7 @@ parse_punct_ident_num:
     // 1文字の記号 (+, -, *, /, %, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~, |, ^, ?, :)
     if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {
       token_kind_t kind = kind_for_char(*p);
-      cur = new_token_simple(kind, cur, line_no);
-      cur->at_bol = _at_bol;
-      cur->has_space = _has_space;
+      cur = new_token_simple(kind, cur, line_no, _at_bol, _has_space);
       p++;
       continue;
     }
@@ -769,13 +769,9 @@ parse_punct_ident_num:
       }
 
       if (kw_kind != TK_EOF) {
-        cur = new_token_simple(kw_kind, cur, line_no);
-        cur->at_bol = _at_bol;
-        cur->has_space = _has_space;
+        cur = new_token_simple(kw_kind, cur, line_no, _at_bol, _has_space);
       } else {
-        token_ident_t *id = new_token_ident(cur, id_str, id_len, line_no);
-        id->pp.base.at_bol = _at_bol;
-        id->pp.base.has_space = _has_space;
+        token_ident_t *id = new_token_ident(cur, id_str, id_len, line_no, _at_bol, _has_space);
         cur = (token_t *)id;
       }
       continue;
@@ -784,9 +780,7 @@ parse_punct_ident_num:
     // 数値リテラル (整数 または 浮動小数点数)
     if (tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1]))) {
       char *start = p; // Keep track of the start of the number for length calculation
-      token_num_t *num = new_token_num(cur, p, 0, line_no);
-      num->pp.base.at_bol = _at_bol;
-      num->pp.base.has_space = _has_space;
+      token_num_t *num = new_token_num(cur, p, 0, line_no, _at_bol, _has_space);
       parse_number_literal(&p, num);
       num->len = p - start;
       num->str = start;
@@ -797,6 +791,6 @@ parse_punct_ident_num:
     error_at(p, "トークナイズできません");
   }
 
-  new_token_simple(TK_EOF, cur, line_no);
+  new_token_simple(TK_EOF, cur, line_no, false, false);
   return head.next;
 }
