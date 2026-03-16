@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "test_common.h"
 
@@ -13,6 +15,21 @@ extern char *user_input;
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
+
+static void expect_tokenize_fail(const char *input) {
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    tokenize((char *)input);
+    _exit(0);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+}
 
 // 1. tokenize() のテスト
 static void test_tokenize() {
@@ -209,6 +226,20 @@ static void test_tokenize_int_literals() {
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);
+}
+
+// 1c. 異常系トークナイズのテスト
+static void test_tokenize_invalid() {
+  printf("test_tokenize_invalid...\n");
+  expect_tokenize_fail("0x");          // 16進数の桁不足
+  expect_tokenize_fail("0b2");         // 2進数の不正桁
+  expect_tokenize_fail("08");          // 8進数の不正桁
+  expect_tokenize_fail("1uu");         // 整数サフィックス重複
+  expect_tokenize_fail("1lll");        // long サフィックス過多
+  expect_tokenize_fail("1.0q");        // 浮動小数点サフィックス不正
+  expect_tokenize_fail("/* unterminated"); // コメント未閉じ
+  expect_tokenize_fail("@");           // 不正文字
+  expect_tokenize_fail("18446744073709551616"); // ULLONG_MAX+1
 }
 
 // 1c. ローカル変数・複数文字識別子のテスト
@@ -560,6 +591,7 @@ int main() {
 
   test_tokenize();
   test_tokenize_int_literals();
+  test_tokenize_invalid();
   test_tokenize_ident();
   test_tokenize_keywords();
   test_tokenize_symbols();
