@@ -128,7 +128,7 @@ static void test_tokenize() {
 // 1b. 16進数/2進数リテラルのテスト
 static void test_tokenize_int_literals() {
   printf("test_tokenize_int_literals...\n");
-  token = tokenize("0x2a 0X10 0b101 0B11");
+  token = tokenize("0x2a 0X10 0b101 0B11 077 010 0");
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(42, as_num(token)->val);
@@ -144,6 +144,18 @@ static void test_tokenize_int_literals() {
 
   ASSERT_EQ(TK_NUM, token->kind);
   ASSERT_EQ(3, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(63, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(8, as_num(token)->val);
+  token = token->next;
+
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(0, as_num(token)->val);
   token = token->next;
 
   ASSERT_EQ(TK_EOF, token->kind);

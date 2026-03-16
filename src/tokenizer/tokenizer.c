@@ -588,6 +588,16 @@ token_t *tokenize(char *p) {
         }
         num->val = val;
         num->is_float = 0;
+      } else if (*p == '0' && isdigit(p[1])) {
+        if (p[1] == '8' || p[1] == '9') error_at(p, "8進数リテラルが不正です");
+        p++;
+        long val = 0;
+        while (*p >= '0' && *p <= '7') {
+          val = val * 8 + (*p - '0');
+          p++;
+        }
+        num->val = val;
+        num->is_float = 0;
       } else {
         char *q = p;
         // 浮動小数点数の判定 (小数点 '.' または指数 'e'/'E' が含まれるか)
