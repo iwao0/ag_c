@@ -189,3 +189,16 @@ args       = expr ("," expr)*
 > `0b...` はデフォルトで拡張として許可し、`strict C11 = true` または `enable_binary_literals = false` で拒否されます。
 > これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
 > 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
+
+## 2026-03 Tokenizer最適化メモ
+
+- 実装整理:
+  - `tokenizer.c` は制御フロー中心、文字種判定/リテラル処理/空白スキップ/キーワード判定/記号判定は分離モジュール化。
+- 主要最適化:
+  - UCNなし識別子はゼロコピー経路を使用。
+  - 文字列中 escape は妥当性確認のみ先行し、値デコードは必要箇所で実施。
+  - 記号は 3/4文字最長一致 → 2文字小テーブルの順で判定。
+  - `tk_skip_ignored()` は ASCII 空白ホットパス + コメント/行継続フォールバックを採用。
+- 運用:
+  - ベンチは `mixed` / `ident-heavy` / `numeric-heavy` / `punct-heavy` を継続利用。
+  - `scripts/bench_tokenizer_opt_levels.sh` で `-O0`/`-O2` 比較を定点化。

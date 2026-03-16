@@ -95,6 +95,24 @@ TDD用の自動テストスクリプトです。
 - Parser:
   - 隣接文字列連結結果（内容・長さ）
 
+## 追補: Tokenizer最適化運用（2026-03-16）
+
+本フェーズで、Tokenizerの最適化を「速度だけでなく保守性を維持する」方針で実施しました。
+
+- モジュール分離:
+  - `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `punctuator.c` / `config_adapter.c` / `allocator.c` に整理。
+- Hot Path 改善:
+  - 識別子（UCNなし）をゼロコピー経路化。
+  - 文字列リテラルは escape を必要時のみ解釈する遅延化。
+  - 記号判定は 2文字小テーブル + 3/4文字最長一致で分岐整理。
+  - `tk_skip_ignored()` を ASCIIホットパス + フォールバックに分離。
+- 計測基盤:
+  - `test/bench_tokenizer.c` で mixed/ident/numeric/punct を測定。
+  - `scripts/check_tokenizer_perf.sh` でケース別しきい値を検査。
+  - `scripts/bench_tokenizer_opt_levels.sh` で `-O0/-O2` の2軸比較を実施。
+
+性能結果の詳細と履歴は [tokenizer_perf_report.md](tokenizer_perf_report.md) を参照してください。
+
 ## Next Steps: ローカル変数サポート
 比較演算子の実装が完了したため、次は **ローカル変数** をサポートします。これにより `a=1; b=2; a+b;` のような複数の文からなるプログラムが実行可能になります。
 

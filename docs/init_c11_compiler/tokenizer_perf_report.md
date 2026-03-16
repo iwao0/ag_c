@@ -3,6 +3,26 @@
 Date: 2026-03-16  
 Environment: Apple clang (`-O0`), `make bench`
 
+## How To Run
+
+```bash
+# 1) 通常テスト + ベンチ
+make clean
+make -j4 test bench
+
+# 2) 関数サイズ回帰チェック
+bash scripts/check_function_size.sh
+
+# 3) Tokenizer性能回帰チェック（case別しきい値）
+bash scripts/check_tokenizer_perf.sh /tmp/agc_tb.out
+
+# 4) -O0 / -O2 比較ベンチ
+scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
+```
+
+`check_tokenizer_perf.sh` は `case=mixed/ident/numeric/punct` の `tokens/sec` と `alloc_count` を検査します。  
+しきい値は環境変数（例: `MIXED_MIN_TPS`）で上書きできます。
+
 ## Baseline (Before Optimization)
 
 - 1KB: `1,399,168 tokens/sec`, `alloc_count=674`, `peak_alloc_bytes=40,313`
@@ -54,6 +74,18 @@ Environment: Apple clang (`-O0`), `make bench`
 - Allocation target is maintained (`alloc_count=21`, previous low-alloc path level).
 - Remaining focus: keep the low-allocation design while recovering mixed/punctuator throughput.
 
+## Optimization Follow-Up (Branch Table + Two-Layer Scanner)
+
+- mixed 256KB: `7,159,886 tokens/sec`, `alloc_count=21`
+- ident-heavy 256KB: `7,487,433 tokens/sec`, `alloc_count=7`
+- numeric-heavy 256KB: `8,641,135 tokens/sec`, `alloc_count=18`
+- punct-heavy 256KB: `21,226,638 tokens/sec`, `alloc_count=10`
+
+## Opt-Level Benchmark Matrix (same code, 2026-03-16)
+
+- `-O0` mixed 256KB: `9,101,957 tokens/sec`, ident: `8,173,035`, numeric: `8,606,553`, punct: `20,709,983`
+- `-O2` mixed 256KB: `31,198,380 tokens/sec`, ident: `21,503,986`, numeric: `23,359,810`, punct: `43,997,371`
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).
@@ -61,3 +93,4 @@ Environment: Apple clang (`-O0`), `make bench`
 - CI perf guard is added to detect major regressions in tokenizer throughput and allocations.
 - Additional numeric fast-path refactoring keeps throughput at high level (`9,718,939 tokens/sec` on 256KB).
 - Additional punctuator exact-match fast path improved throughput further (`12,023,597 tokens/sec` on 256KB).
+- Added `scripts/bench_tokenizer_opt_levels.sh` to run the same benchmark suite on `-O0` and `-O2`.

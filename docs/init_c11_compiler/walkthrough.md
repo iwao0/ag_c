@@ -43,6 +43,14 @@
    - トライグラフ置換は字句解析の先頭で実行するよう整理し、翻訳フェーズ順序との整合を明文化しました。
    - `config.toml`（`[tokenizer]`）から `strict_c11` / `enable_trigraphs` / `enable_binary_literals` を切り替え可能にしました。
 
+7. **Tokenizer最適化（メンテナンス性重視）**
+   - `src/tokenizer/` を `scanner` / `literals` / `keywords` / `punctuator` / `config_adapter` / `allocator` に分離し、責務を明確化しました。
+   - 識別子の UCN なし経路をゼロコピー化し、文字列リテラルは escape 値デコード不要時にスキップする遅延処理を導入しました。
+   - `match_punctuator()` は 2文字小テーブル + 3/4文字最長一致で分岐を整理しました。
+   - `tk_skip_ignored()` は ASCII ホットパスとフォールバック（コメント/行継続）に分離しました。
+   - ベンチを mixed / ident-heavy / numeric-heavy / punct-heavy の4系統で継続計測し、CIしきい値をケース別に設定しました。
+   - `scripts/bench_tokenizer_opt_levels.sh` を追加し、`-O0`/`-O2` の2軸ベンチを定点実行できるようにしました。
+
 ## 実装済み機能一覧
 
 | 機能 | 対応する文法規則 |

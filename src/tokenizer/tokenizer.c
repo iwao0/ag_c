@@ -526,21 +526,28 @@ static long long token_signed_from_u64(unsigned long long uval) {
   return (long long)(uval & (unsigned long long)LLONG_MAX);
 }
 
+static bool has_decimal_float_marker(const char *p) {
+  if (*p == '.') return true;
+  while (tk_is_digit(*p)) p++;
+  return *p == '.' || *p == 'e' || *p == 'E';
+}
+
+static bool has_hex_float_marker(const char *p) {
+  // p points to "0x" or "0X".
+  for (char *q = (char *)p + 2; *q; q++) {
+    if (*q == '.' || *q == 'p' || *q == 'P') return true;
+    if (!tk_is_xdigit(*q)) break;
+  }
+  return false;
+}
+
 static void parse_number_literal(char **pp, token_num_t *num) {
   char *p = *pp;
 
   // 16進数/2進数/8進数/10進数
   if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
     // 16進数 (整数 or 浮動小数点)
-    bool is_hex_float = false;
-    for (char *q = p + 2; tk_is_xdigit(*q) || *q == '.' || *q == 'p' || *q == 'P'; q++) {
-      if (*q == '.' || *q == 'p' || *q == 'P') {
-        is_hex_float = true;
-        break;
-      }
-    }
-
-    if (is_hex_float) {
+    if (has_hex_float_marker(p)) {
       char *end;
       num->fval = strtod(p, &end);
       if (end == p) error_at(p, "16進浮動小数点リテラルが不正です");
@@ -595,18 +602,7 @@ static void parse_number_literal(char **pp, token_num_t *num) {
       return;
     }
 
-    // 10進整数はまず数字列だけ高速スキャンし、浮動小数点判定を早期化する
-    bool is_float = false;
-    if (*p == '.') {
-      is_float = true;
-    } else {
-      char *q = p;
-      while (tk_is_digit(*q)) q++;
-      if (*q == '.' || *q == 'e' || *q == 'E')
-        is_float = true;
-    }
-
-    if (is_float) {
+    if (has_decimal_float_marker(p)) {
       char *end;
       num->fval = strtod(p, &end);
       if (*end == 'f' || *end == 'F') {
