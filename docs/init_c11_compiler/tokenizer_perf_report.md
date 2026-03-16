@@ -27,3 +27,4 @@ Environment: Apple clang (`-O0`), `make bench`
 - Throughput is maintained or improved depending on input size.
 - CI perf guard is added to detect major regressions in tokenizer throughput and allocations.
 - Additional numeric fast-path refactoring keeps throughput at high level (`9,718,939 tokens/sec` on 256KB).
+- Additional punctuator exact-match fast path improved throughput further (`12,023,597 tokens/sec` on 256KB).
