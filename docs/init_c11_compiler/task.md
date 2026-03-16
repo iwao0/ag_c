@@ -226,9 +226,9 @@
 - [x] 数値リテラル判定の事前スキャンを強化する
   - [x] `strtod` 呼び出しが不要なケースをさらに増やす
   - [x] `numeric-heavy` ベンチで改善を確認する
-- [ ] キーワード判定を最小完全ハッシュ化（例: gperf）で比較検証する
-  - [ ] 現行実装と可読性・保守性・速度を比較して採用判断する
-  - [ ] 不採用の場合も検証結果を `tokenizer_perf_report.md` に記録する
+- [x] キーワード判定を最小完全ハッシュ化（例: gperf）で比較検証する
+  - [x] 現行実装と可読性・保守性・速度を比較して採用判断する
+  - [x] 不採用の場合も検証結果を `tokenizer_perf_report.md` に記録する
 - [x] 分岐予測ヒント（`likely/unlikely`）をホットパス限定で導入する
   - [x] `tokenize` / `scanner` の最頻分岐に限定して適用する
   - [x] 可読性を損なう箇所には導入しない
@@ -238,6 +238,6 @@
 - [ ] PGO（Profile Guided Optimization）導入を検証する
   - [ ] 学習用ベンチ入力を定義し、`-fprofile-generate/-fprofile-use` を試す
   - [ ] CIへの常時導入可否を判断する
-- [ ] 実コード由来コーパスでのTokenizerベンチを追加する
-  - [ ] 合成ベンチ（mixed/ident/numeric/punct）との乖離を可視化する
-  - [ ] 改善優先度を実コード寄りに再調整する
+- [x] 実コード由来コーパスでのTokenizerベンチを追加する
+  - [x] 合成ベンチ（mixed/ident/numeric/punct）との乖離を可視化する
+  - [x] 改善優先度を実コード寄りに再調整する

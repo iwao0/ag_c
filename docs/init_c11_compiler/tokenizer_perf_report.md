@@ -107,6 +107,31 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - numeric-heavy 256KB: `12,223,446 tokens/sec`, `alloc_count=15`
 - punct-heavy 256KB: `28,155,356 tokens/sec`, `alloc_count=10`
 
+## Keyword Lookup Comparison (manual vs gperf)
+
+- Added comparison tools:
+  - `test/bench_keywords.c`
+  - `scripts/compare_keyword_lookup.sh`
+  - experimental implementation `src/tokenizer/keywords_gperf.c`
+- Result example (`-O2`, mixed keyword/non-keyword workload):
+  - manual: `269,128,696 qps`
+  - gperf: `194,242,858 qps`
+- Decision:
+  - **Do not adopt gperf version in production path for now**.
+  - Current hand-tuned length/character branch implementation remains faster and easier to debug in this codebase.
+
+## Real-Source Corpus Benchmark
+
+- Added corpus benchmark script:
+  - `scripts/bench_tokenizer_real_corpus.sh`
+- Corpus source:
+  - repository `src/**/*.c`, `src/**/*.h`, `test/**/*.c`, `test/**/*.h` concatenated
+- Example result:
+  - corpus size: `211,541 bytes`
+  - case=corpus: `18,350,728 tokens/sec`, `alloc_count=7`, `peak_alloc_bytes=2,265,256`
+- Note:
+  - corpus case sits between synthetic `ident`/`numeric`/`mixed` patterns and is useful for practical regression checks.
+
 ## Summary
 
 - Allocation count improved significantly with arena allocation (`165,602 -> 590` on 256KB).

@@ -31,14 +31,52 @@ static char *build_input_from_pattern(const char *pattern, size_t approx_bytes) 
   return buf;
 }
 
+static char *read_file_all(const char *path) {
+  FILE *fp = fopen(path, "rb");
+  if (!fp) {
+    fprintf(stderr, "failed to open file: %s\n", path);
+    exit(1);
+  }
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    fprintf(stderr, "failed to seek file: %s\n", path);
+    exit(1);
+  }
+  long sz = ftell(fp);
+  if (sz < 0) {
+    fclose(fp);
+    fprintf(stderr, "failed to tell file size: %s\n", path);
+    exit(1);
+  }
+  if (fseek(fp, 0, SEEK_SET) != 0) {
+    fclose(fp);
+    fprintf(stderr, "failed to rewind file: %s\n", path);
+    exit(1);
+  }
+  char *buf = calloc((size_t)sz + 1, 1);
+  if (!buf) {
+    fclose(fp);
+    fprintf(stderr, "failed to allocate file buffer: %s\n", path);
+    exit(1);
+  }
+  size_t nread = fread(buf, 1, (size_t)sz, fp);
+  fclose(fp);
+  if (nread != (size_t)sz) {
+    free(buf);
+    fprintf(stderr, "failed to read file: %s\n", path);
+    exit(1);
+  }
+  buf[nread] = '\0';
+  return buf;
+}
+
 static double elapsed_sec(struct timespec start, struct timespec end) {
   double s = (double)(end.tv_sec - start.tv_sec);
   double ns = (double)(end.tv_nsec - start.tv_nsec) / 1000000000.0;
   return s + ns;
 }
 
-static void run_case(const char *name, const char *pattern, size_t bytes) {
-  char *input = build_input_from_pattern(pattern, bytes);
+static void run_case_with_input(const char *name, char *input) {
   struct timespec t0;
   struct timespec t1;
 
@@ -54,6 +92,11 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
 
   printf("case=%s input=%zub tokens=%zu time=%.6fs tokens/sec=%.0f alloc_count=%zu peak_alloc_bytes=%zu\n",
          name, strlen(input), token_count, sec, tps, st.alloc_count, st.peak_alloc_bytes);
+}
+
+static void run_case(const char *name, const char *pattern, size_t bytes) {
+  char *input = build_input_from_pattern(pattern, bytes);
+  run_case_with_input(name, input);
   free(input);
 }
 
@@ -78,5 +121,12 @@ int main(void) {
   run_case("ident", ident_pattern, 256 * 1024);
   run_case("numeric", numeric_pattern, 256 * 1024);
   run_case("punct", punct_pattern, 256 * 1024);
+
+  const char *corpus = getenv("TOKENIZER_BENCH_CORPUS_FILE");
+  if (corpus && corpus[0] != '\0') {
+    char *content = read_file_all(corpus);
+    run_case_with_input("corpus", content);
+    free(content);
+  }
   return 0;
 }
