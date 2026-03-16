@@ -329,6 +329,13 @@ token_t *tokenize(char *p) {
   int line_no = 1;
 
   while (*p) {
+    // 行継続（バックスラッシュ + 改行）を除去
+    if (*p == '\\' && p[1] == '\n') {
+      p += 2;
+      line_no++;
+      continue;
+    }
+
     // 空白文字をスキップ
     if (isspace(*p)) {
       has_space = true;
@@ -337,6 +344,43 @@ token_t *tokenize(char *p) {
         line_no++;
       }
       p++;
+      continue;
+    }
+
+    // 行コメント // ... \n
+    if (*p == '/' && p[1] == '/') {
+      has_space = true;
+      p += 2;
+      while (*p && *p != '\n')
+        p++;
+      if (*p == '\n') {
+        at_bol = true;
+        line_no++;
+        p++;
+      }
+      continue;
+    }
+
+    // ブロックコメント /* ... */
+    if (*p == '/' && p[1] == '*') {
+      has_space = true;
+      p += 2;
+      bool closed = false;
+      while (*p) {
+        if (*p == '\n') {
+          at_bol = true;
+          line_no++;
+        }
+        if (*p == '*' && p[1] == '/') {
+          p += 2;
+          closed = true;
+          break;
+        }
+        p++;
+      }
+      if (!closed) {
+        error_at(p, "コメントが閉じられていません");
+      }
       continue;
     }
 
@@ -526,6 +570,8 @@ token_t *tokenize(char *p) {
       }
       
       token_num_t *num = new_token_num(cur, p, 0, line_no);
+      num->pp.base.at_bol = _at_bol;
+      num->pp.base.has_space = _has_space;
       if (is_float) {
         char *end;
         num->fval = strtod(p, &end);

@@ -253,6 +253,31 @@ static void test_tokenize_punctuators() {
   ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
 }
 
+// 1d-3. コメントと空白のテスト
+static void test_tokenize_comments() {
+  printf("test_tokenize_comments...\n");
+  token = tokenize("1//comment\n2");
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_TRUE(token->at_bol);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  token = tokenize("1/* comment */2");
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_TRUE(!token->at_bol);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  token = tokenize("1/*\n*/2");
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_TRUE(token->at_bol);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
 // 1e. 文字列リテラルのテスト
 static void test_tokenize_string() {
   printf("test_tokenize_string...\n");
@@ -402,6 +427,7 @@ int main() {
   test_tokenize_keywords();
   test_tokenize_symbols();
   test_tokenize_punctuators();
+  test_tokenize_comments();
   test_tokenize_string();
   test_tokenize_char_literal();
   test_at_eof();
