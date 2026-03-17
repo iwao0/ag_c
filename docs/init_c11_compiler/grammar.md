@@ -6,7 +6,13 @@
 ## 対応済みの文法
 
 ```
-program    = funcdef*
+program    = external_decl*
+external_decl = funcdef
+             | ("struct" | "union" | "enum") ident ";"
+             | ("struct" | "union" | "enum") ident "{" tag_member_list "}" ";"
+             | ("struct" | "union" | "enum") ident "{" tag_member_list "}" declarator ("," declarator)* ";"
+             | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
+             | type declarator ("," declarator)* ";"
 funcdef    = type? ident "(" params? ")" (";" | "{" stmt* "}")
 params     = type? ident ("," type? ident)*
 stmt       = "{" stmt* "}"
@@ -22,11 +28,6 @@ stmt       = "{" stmt* "}"
            | "goto" ident ";"
            | ident ":" stmt
            | "return" expr ";"
-           | ("struct" | "union" | "enum") ident ";"
-           | ("struct" | "union" | "enum") ident "{" tag_member_list "}" ";"
-           | ("struct" | "union" | "enum") ident "{" tag_member_list "}" declarator ("," declarator)* ";"
-           | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
-           | type declarator ("," declarator)* ";"
            | expr ";"
 type       = "int" | "char" | "void" | "short" | "long" | "float" | "double" | "signed" | "unsigned" | "_Bool"
 tag_type   = ("struct" | "union" | "enum") ident

@@ -72,7 +72,7 @@
 | 比較演算子 (`==`,`!=`,`<`,`<=`,`>`,`>=`) | `equality`, `relational` |
 | ローカル変数 (複数文字対応) | `primary = ident`, `assign` |
 | 代入式/複合代入 (`=`, `+=`, `-=`, `*=`, `/=`) | `assign = conditional (("=" \| "+=" \| "-=" \| "*=" \| "/=") assign)?` |
-| 複文（セミコロン区切り） | `program = stmt*`, `stmt = expr ";"` |
+| 複文（セミコロン区切り） | `stmt = expr ";"` |
 | if/else 文 | `stmt = "if" "(" expr ")" stmt ("else" stmt)?` |
 | while 文 | `stmt = "while" "(" expr ")" stmt` |
 | do-while 文 | `stmt = "do" stmt "while" "(" expr ")" ";"` |
@@ -84,7 +84,8 @@
 | 前置/後置インクリメント・デクリメント | `unary/postfix` の `++` / `--` |
 | return 文 | `stmt = "return" expr ";"` |
 | ブロック文 | `stmt = "{" stmt* "}"` |
-| 関数定義 | `funcdef = ident "(" params? ")" "{" stmt* "}"` |
+| 関数定義 | `funcdef = type? ident "(" params? ")" (";" \| "{" stmt* "}")` |
+| 最外部宣言 | `program = external_decl*`（関数/タグ宣言・定義/型付きグローバル宣言） |
 | 関数呼び出し | `primary = ident "(" args? ")"` |
 | 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double" \| "signed" \| "unsigned" \| "_Bool"` |
 | タグ定義/参照 | `("struct"\|"union"\|"enum") ident`（定義本体 `{...}` とブロックスコープに対応） |
