@@ -11,6 +11,7 @@ TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
 BENCH_TOKENIZER=build/bench_tokenizer
+BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_adapter.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
 
 
@@ -49,6 +50,10 @@ $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
+$(BENCH_PARSER): test/bench_parser.c build/parser/parser.o $(TOKENIZER_LIB_OBJS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
 test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
 	$(TEST_TOKENIZER)
 	$(TEST_TOKENIZER_C11)
@@ -57,8 +62,9 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CO
 	$(TEST_PREPROCESS)
 	$(TEST_E2E)
 
-bench: $(BENCH_TOKENIZER)
+bench: $(BENCH_TOKENIZER) $(BENCH_PARSER)
 	$(BENCH_TOKENIZER)
+	$(BENCH_PARSER)
 
 clean:
 	rm -rf build

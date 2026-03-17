@@ -386,7 +386,8 @@
 
 ## Parser最適化計画（保守性 + 実行速度）
 - [ ] フェーズ1: 現状計測を固定する
-  - [ ] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
+  - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
+    - [x] 計測結果を `parser_perf_report.md` に記録する（`tokenize`/`parser` 分離計測）
   - [ ] 保守性指標（関数長・分岐数・重複コード）を可視化する
   - [ ] 改善目標値（例: +10%）と許容回帰閾値（例: -5%）を定義する
 - [ ] フェーズ2: 責務分離で保守性を上げる
@@ -408,4 +409,4 @@
 - [ ] フェーズ6: 回帰防止を強化する
   - [ ] Parser性能回帰チェックをCIに追加する
   - [ ] 1テーマ1コミットで段階適用し、各段階で `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` を必須化する
-  - [ ] 各フェーズの計測結果と判断ログを `task.md` か専用レポートに記録する
+  - [ ] 各フェーズの計測結果と判断ログを `parser_perf_report.md` に記録する
