@@ -295,6 +295,10 @@ static bool is_type_token(token_kind_t kind) {
          kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE;
 }
 
+static bool is_tag_keyword(token_kind_t kind) {
+  return kind == TK_STRUCT || kind == TK_UNION || kind == TK_ENUM;
+}
+
 static int scalar_type_size(token_kind_t kind) {
   switch (kind) {
     case TK_CHAR: return 1;
@@ -561,6 +565,20 @@ static node_t *stmt(void) {
   // 型付き変数宣言: type "*"* ident ("[" num "]")? ("=" expr)? ";"
   if (is_type_token(token->kind)) {
     return declaration();
+  }
+
+  // 最小対応: タグ宣言（struct/union/enum Tag;）
+  if (is_tag_keyword(token->kind)) {
+    token = token->next;
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) {
+      tk_error_tok(token, "タグ名が必要です");
+    }
+    if (tk_consume('{')) {
+      tk_error_tok(token, "struct/union/enum のメンバ宣言は未対応です");
+    }
+    tk_expect(';');
+    return new_node_num(0);
   }
 
   if (token->kind == TK_RETURN) {

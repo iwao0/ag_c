@@ -177,6 +177,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "multi_decl_two_init", CASE_INT, "int main() { int a=3, b=4; return a+b; }", 7, 0},
     {"type_decl", "for_decl", CASE_INT, "int main() { int sum = 0; int i; for (i=1; i<=10; i=i+1) sum=sum+i; return sum; }", 55, 0},
     {"type_decl", "for_multi_decl_init", CASE_INT, "int main() { int s=0; for (int i=0, j=3; i<j; i=i+1) s=s+i; return s; }", 3, 0},
+    {"type_decl", "tag_decl_minimal", CASE_INT, "int main() { struct S; union U; enum E; return 7; }", 7, 0},
     {"type_decl", "char", CASE_INT, "int main() { char c = 65; return c; }", 65, 0},
     {"type_decl", "void", CASE_INT, "void noop() { return; } int main() { noop(); return 42; }", 42, 0},
     {"type_decl", "short", CASE_INT, "int main() { short s = 10; return s; }", 10, 0},
