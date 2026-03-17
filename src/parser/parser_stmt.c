@@ -1,5 +1,6 @@
 #include "parser_stmt.h"
 #include "parser_decl.h"
+#include "parser_diag.h"
 #include "parser_dynarray.h"
 #include "parser_expr.h"
 #include "parser_loop_ctx.h"
@@ -38,7 +39,7 @@ static node_t *stmt_internal(void) {
     token = token->next;
     token_ident_t *tag = tk_consume_ident();
     if (!tag) {
-      tk_error_tok(token, "タグ名が必要です");
+      pdiag_missing(token, "タグ名");
     }
     if (tk_consume('{')) {
       tk_error_tok(token, "struct/union/enum のメンバ宣言は未対応です");
@@ -48,7 +49,7 @@ static node_t *stmt_internal(void) {
       return pnode_new_num(0);
     }
     if (!pctx_has_tag_type(tag_kind, tag->str, tag->len)) {
-      tk_error_tok(token, "未定義のタグ型 '%.*s' です", tag->len, tag->str);
+      pdiag_undefined_with_name(token, "のタグ型", tag->str, tag->len);
     }
     return pdecl_parse_declaration_after_type(8, TK_FLOAT_KIND_NONE);
   }
@@ -110,7 +111,7 @@ static node_t *stmt_internal(void) {
     node->base.rhs = stmt_internal();
     ploop_leave();
     if (token->kind != TK_WHILE) {
-      tk_error_tok(token, "'while'が必要です");
+      pdiag_missing(token, "'while'");
     }
     token = token->next;
     tk_expect('(');
@@ -183,7 +184,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_BREAK) {
     if (ploop_depth() == 0 && !psw_has_ctx()) {
-      tk_error_tok(token, "break はループまたはswitch内でのみ使用できます");
+      pdiag_only_in(token, "break", "ループまたはswitch内");
     }
     token = token->next;
     node_t *node = calloc(1, sizeof(node_t));
@@ -194,7 +195,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_CONTINUE) {
     if (ploop_depth() == 0) {
-      tk_error_tok(token, "continue はループ内でのみ使用できます");
+      pdiag_only_in(token, "continue", "ループ内");
     }
     token = token->next;
     node_t *node = calloc(1, sizeof(node_t));
@@ -208,7 +209,7 @@ static node_t *stmt_internal(void) {
     token = token->next;
     token_ident_t *ident = tk_consume_ident();
     if (!ident) {
-      tk_error_tok(token, "goto の後にラベル名が必要です");
+      pdiag_missing(token, "goto の後のラベル名");
     }
     node_jump_t *node = calloc(1, sizeof(node_jump_t));
     node->base.kind = ND_GOTO;

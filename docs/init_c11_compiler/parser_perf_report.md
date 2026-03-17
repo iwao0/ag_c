@@ -218,3 +218,25 @@
 
 - 判定:
   - メッセージ精度の追加検証を導入しつつ、性能は回帰ガードレール（-5%）以内
+
+## 2026-03-17 Diagnostic Pattern Unification (Phase 5-1)
+
+- 実施:
+  - `src/parser/parser_diag.{h,c}` を追加し、診断メッセージの共通生成関数を導入
+  - `parser_stmt`/`parser_switch_ctx`/`parser_semantic_ctx` の一部診断を共通関数へ移行
+  - 既存メッセージ語彙は維持し、呼び出し側の重複を削減
+- 回帰確認:
+  - `build/test_parser` pass
+  - `build/test_e2e` pass (`171/171`)
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 42.20 | 45.91 | +8.8% |
+| mixed (256KB) parser_MB/s | 51.99 | 55.15 | +6.1% |
+| expr-heavy (256KB) parser_MB/s | 53.57 | 52.84 | -1.4% |
+| control-heavy (256KB) parser_MB/s | 60.34 | 62.64 | +3.8% |
+
+- 判定:
+  - 保守性改善を達成し、性能は全ケースで回帰ガードレール（-5%）以内

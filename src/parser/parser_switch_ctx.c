@@ -1,4 +1,5 @@
 #include "parser_switch_ctx.h"
+#include "parser_diag.h"
 #include "parser_dynarray.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
@@ -34,7 +35,7 @@ int psw_has_ctx(void) {
 
 void psw_register_case(long long v, token_t *tok) {
   if (!switch_ctx) {
-    tk_error_tok(tok, "case は switch 内でのみ使用できます");
+    pdiag_only_in(tok, "case", "switch 内");
   }
   for (int i = 0; i < switch_ctx->ncase; i++) {
     if (switch_ctx->case_vals[i] == v) {
@@ -50,7 +51,7 @@ void psw_register_case(long long v, token_t *tok) {
 
 void psw_register_default(token_t *tok) {
   if (!switch_ctx) {
-    tk_error_tok(tok, "default は switch 内でのみ使用できます");
+    pdiag_only_in(tok, "default", "switch 内");
   }
   if (switch_ctx->has_default) {
     tk_error_tok(tok, "default が重複しています");

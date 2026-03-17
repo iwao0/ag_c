@@ -1,4 +1,5 @@
 #include "parser_semantic_ctx.h"
+#include "parser_diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +70,7 @@ void pctx_register_label_def(char *name, int len, token_t *tok) {
   unsigned bucket = pctx_hash_name(name, len);
   for (label_def_t *d = label_defs_by_bucket[bucket]; d; d = d->next_hash) {
     if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
-      tk_error_tok(tok, "ラベル '%.*s' が重複しています", len, name);
+      pdiag_duplicate_with_name(tok, "ラベル", name, len);
     }
   }
   label_def_t *d = calloc(1, sizeof(label_def_t));
