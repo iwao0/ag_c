@@ -413,3 +413,8 @@
   - [x] Parser性能回帰チェックをCIに追加する
   - [x] 1テーマ1コミットで段階適用し、各段階で `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` を必須化する
   - [x] 各フェーズの計測結果と判断ログを `parser_perf_report.md` に記録する
+
+## Codegen最適化タスク（ARM64 float literal）
+- [x] 浮動小数点リテラルの即値化可能判定を導入する
+  - [x] 即値化可能な値は `fmov` 系でロードする（現状: `+0.0f` / `+0.0`）
+  - [x] それ以外は既存どおり `float_literals` 経由でロードする

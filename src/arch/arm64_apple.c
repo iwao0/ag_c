@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <math.h>
 
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
@@ -204,6 +205,30 @@ void gen_main_epilogue(void) {
 static void gen_expr(node_t *node);
 static void gen_stmt(node_t *node);
 
+static int psx_can_use_fp_immediate_zero(double fval, tk_float_kind_t fp_kind) {
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
+    float v = (float)fval;
+    return v == 0.0f && !signbit(v);
+  }
+  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    double v = fval;
+    return v == 0.0 && !signbit(v);
+  }
+  return 0;
+}
+
+static int psx_emit_fp_literal_immediate_if_possible(const node_num_t *num, tk_float_kind_t fp_kind) {
+  if (!psx_can_use_fp_immediate_zero(num->fval, fp_kind)) return 0;
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
+    printf("  fmov s0, #0.0\n");
+    printf("  str s0, [sp, #-16]!\n");
+  } else {
+    printf("  fmov d0, #0.0\n");
+    printf("  str d0, [sp, #-16]!\n");
+  }
+  return 1;
+}
+
 static void gen_load_x0_from_addr(int type_size) {
   if (type_size == 1)
     printf("  ldrb w0, [x1]\n");
@@ -277,6 +302,7 @@ static void gen_expr(node_t *node) {
   case ND_NUM:
     if (node->fp_kind) {
       node_num_t *num = as_num(node);
+      if (psx_emit_fp_literal_immediate_if_possible(num, node->fp_kind)) return;
       // 浮動小数点リテラルをデータセクションからロード
       printf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
       printf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
@@ -833,6 +859,7 @@ void gen_float_literals(void) {
   printf(".section __DATA,__data\n");
   printf(".align 3\n");
   for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
+    if (psx_can_use_fp_immediate_zero(lit->fval, lit->fp_kind)) continue;
     printf(".LCF%d:\n", lit->id);
     if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
       // float (32bit) 定数出力: IEEE754 format
