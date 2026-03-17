@@ -18,3 +18,46 @@
 - `expr-heavy` / `control-heavy` で `funcs/sec` は 38万〜48万程度。
 - 今後の最適化評価は、本レポートの `parser` 指標を基準値として比較する。
 
+## 2026-03-17 Maintainability Baseline
+
+- Command: `scripts/parser_maint_metrics.sh src/parser/parser.c`
+- Scope: 関数長 / 分岐スコア / 3行ウィンドウ重複（ヒューリスティック）
+
+### Summary
+
+- functions: `22`
+- max function length: `15` lines
+- avg function length: `9.1` lines
+- max branch score: `4`
+- avg branch score: `0.7`
+
+### Top Functions by Length
+
+| Function | Start Line | Lines | Branch Score |
+|---|---:|---:|---:|
+| `parse_cast_type` | 353 | 15 | 4 |
+| `program` | 397 | 15 | 0 |
+| `register_switch_case` | 295 | 15 | 1 |
+| `scalar_type_size` | 330 | 14 | 0 |
+| `validate_goto_labels` | 247 | 14 | 1 |
+
+### Top Duplicate 3-line Windows (Heuristic)
+
+| Count | Snippet |
+|---:|---|
+| 10 | `} | return node; | }` |
+| 5 | `else | return node; | }` |
+| 5 | `return node; | } | }` |
+| 4 | `tk_expect(';'); | return node; | }` |
+| 4 | `token = token->next; | tk_expect('('); | node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));` |
+
+## Optimization Targets & Guardrails
+
+- Target window (Phase 1 -> Phase 3):
+  - `mixed 256KB` の `parser_MB/s` を **+10%〜+20%** 改善
+  - `expr-heavy 256KB` の `parser_MB/s` を **+8%以上** 改善
+- Regression guardrail:
+  - いずれかのケースで **-5%** を超える低下が出たら回帰候補として扱う
+- Maintainability guardrail:
+  - max function length を **180 行以下**（`check_function_size.sh` の方針）
+  - 3行重複ウィンドウの上位件数は、根拠なしに **+20%** を超えて増やさない
