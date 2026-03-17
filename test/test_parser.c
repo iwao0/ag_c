@@ -308,6 +308,11 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, n2->kind);
   ASSERT_EQ(8, as_num(n2)->val);
 
+  token = tk_tokenize("sizeof(int (*)(int))");
+  node_t *n3 = ps_expr();
+  ASSERT_EQ(ND_NUM, n3->kind);
+  ASSERT_EQ(8, as_num(n3)->val);
+
   token = tk_tokenize("main() { int x; return sizeof(x); }");
   parsed_code = ps_program();
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];

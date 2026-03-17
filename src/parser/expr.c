@@ -25,6 +25,40 @@ static int sizeof_expr_node(node_t *node) {
   return 8;
 }
 
+static token_t *skip_balanced_paren_token(token_t *start) {
+  if (!start || start->kind != TK_LPAREN) return NULL;
+  int depth = 0;
+  for (token_t *t = start; t; t = t->next) {
+    if (t->kind == TK_LPAREN) depth++;
+    else if (t->kind == TK_RPAREN) {
+      depth--;
+      if (depth == 0) return t->next;
+    }
+    if (t->kind == TK_EOF) break;
+  }
+  return NULL;
+}
+
+static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
+  token_t *t = *ptok;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  while (t && t->kind == TK_MUL) {
+    *is_pointer = 1;
+    t = t->next;
+  }
+  if (t && t->kind == TK_IDENT) t = t->next; // named declaratorも許可
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  token_t *after_params = skip_balanced_paren_token(t);
+  if (!after_params) return 0;
+  *ptok = after_params;
+  *is_pointer = 1;
+  return 1;
+}
+
 static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
   token_ident_t *member = tk_consume_ident();
   if (!member) {
@@ -116,6 +150,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     *is_pointer = 1;
     t = t->next;
   }
+  parse_funcptr_abstract_decl(&t, is_pointer);
   if (!t || t->kind != TK_RPAREN) return 0;
   *after_rparen = t->next;
   return 1;
@@ -411,6 +446,10 @@ static node_t *unary(void) {
           token = token->next;
           sz = 8;
         }
+        int fp_ptr = 0;
+        if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+          sz = 8;
+        }
         tk_expect(')');
         return psx_node_new_num(sz);
       }
@@ -428,6 +467,10 @@ static node_t *unary(void) {
         int sz = td_ptr ? 8 : td_elem;
         while (token->kind == TK_MUL) {
           token = token->next;
+          sz = 8;
+        }
+        int fp_ptr = 0;
+        if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
           sz = 8;
         }
         tk_expect(')');

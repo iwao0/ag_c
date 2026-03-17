@@ -209,6 +209,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "sizeof_int", CASE_INT, "int main() { return sizeof(int); }", 4, 0},
     {"type_decl", "sizeof_bool", CASE_INT, "int main() { return sizeof(_Bool); }", 1, 0},
     {"type_decl", "sizeof_int_ptr", CASE_INT, "int main() { return sizeof(int*); }", 8, 0},
+    {"type_decl", "sizeof_funcptr_type", CASE_INT, "int main() { return sizeof(int (*)(int)); }", 8, 0},
     {"type_decl", "sizeof_expr_var", CASE_INT, "int main() { int x = 3; return sizeof(x); }", 4, 0},
     {"type_decl", "cast_int", CASE_INT, "int main() { return (int)42; }", 42, 0},
     {"type_decl", "cast_char_wrap", CASE_INT, "int main() { return (char)300; }", 44, 0},
