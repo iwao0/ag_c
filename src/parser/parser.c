@@ -38,6 +38,7 @@ static long long parse_enum_const_mul_toplevel(void);
 static long long parse_enum_const_unary_toplevel(void);
 static long long parse_enum_const_primary_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
+static token_kind_t parse_atomic_type_specifier(void);
 
 static bool is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
@@ -56,7 +57,7 @@ static void skip_cv_qualifiers(void) {
       continue;
     }
     if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
-      psx_diag_ctx(token, "decl", "_Atomic(type) 形式は未対応です");
+      return;
     }
     token = token->next;
   }
@@ -105,11 +106,42 @@ static token_t *skip_decl_prefix_lookahead(token_t *t) {
       continue;
     }
     if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
-      return t;
+      int depth = 0;
+      t = t->next;
+      while (t) {
+        if (t->kind == TK_LPAREN) depth++;
+        else if (t->kind == TK_RPAREN) {
+          depth--;
+          if (depth == 0) {
+            t = t->next;
+            break;
+          }
+        }
+        t = t->next;
+      }
+      continue;
     }
     t = t->next;
   }
   return t;
+}
+
+static token_kind_t parse_atomic_type_specifier(void) {
+  if (token->kind != TK_ATOMIC) return TK_EOF;
+  token = token->next;
+  if (!tk_consume('(')) {
+    // qualifier-form: "_Atomic int" は前置指定子として扱う
+    return TK_EOF;
+  }
+  token_kind_t inner = psx_consume_type_kind();
+  if (inner == TK_EOF) {
+    psx_diag_ctx(token, "decl", "_Atomic(...) の中には型名が必要です");
+  }
+  if (token->kind == TK_MUL) {
+    psx_diag_ctx(token, "decl", "_Atomic(type) での派生宣言子は未対応です");
+  }
+  tk_expect(')');
+  return inner;
 }
 
 // program = funcdef*
@@ -541,6 +573,10 @@ static void parse_toplevel_tag_decl(void) {
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
   skip_cv_qualifiers();
+  if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
+    token_kind_t inner = parse_atomic_type_specifier();
+    if (inner != TK_EOF) return inner;
+  }
   token_t *start = token;
   int saw_signed = 0;
   int saw_unsigned = 0;

@@ -865,6 +865,12 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { _Atomic(int) z=5; return z; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
   token = tk_tokenize("main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -987,6 +993,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
   expect_parse_fail("main() { _Complex int x; return 0; }");   // 未対応型指定子
   expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 未対応型指定子
+  expect_parse_fail("main() { _Atomic(int*) p=0; return 0; }"); // _Atomic(type) 派生型は未対応
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
   expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
   expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
