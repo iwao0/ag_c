@@ -195,15 +195,15 @@ static const test_case_t test_cases[] = {
     {"type_decl", "cast_int", CASE_INT, "int main() { return (int)42; }", 42, 0},
     {"type_decl", "cast_char_wrap", CASE_INT, "int main() { return (char)300; }", 44, 0},
     {"type_decl", "cast_short_wrap", CASE_INT, "int main() { return (short)(700*100); }", 112, 0},
-    {"type_decl", "float1", CASE_FLOAT, "float main() { float f = 7; return f; }", 0, 7.0},
-    {"type_decl", "float2", CASE_FLOAT, "float main() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
-    {"type_decl", "float3", CASE_FLOAT, "float main() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},
-    {"type_decl", "float4", CASE_FLOAT, "float main() { float f = 6.0f; float g = 2.5f; return f * g; }", 0, 15.0},
-    {"type_decl", "float5", CASE_FLOAT, "float main() { float f = 10.5F; float g = 3.0F; return f / g; }", 0, 3.5},
-    {"type_decl", "double1", CASE_DOUBLE, "double main() { double d = 3.99; return d; }", 0, 3.99},
-    {"type_decl", "double2", CASE_DOUBLE, "double main() { double a = 3.1; double b = 4.2; return a + b; }", 0, 7.3},
-    {"type_decl", "double3", CASE_DOUBLE, "double main() { double a = 5.0; double b = 3.0; return a * b; }", 0, 15.0},
-    {"type_decl", "double4", CASE_DOUBLE, "double main() { double a = 15.0; double b = 3.0; return a / b; }", 0, 5.0},
+    {"type_decl", "float1", CASE_FLOAT, "float ag_m() { float f = 7; return f; }", 0, 7.0},
+    {"type_decl", "float2", CASE_FLOAT, "float ag_m() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
+    {"type_decl", "float3", CASE_FLOAT, "float ag_m() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},
+    {"type_decl", "float4", CASE_FLOAT, "float ag_m() { float f = 6.0f; float g = 2.5f; return f * g; }", 0, 15.0},
+    {"type_decl", "float5", CASE_FLOAT, "float ag_m() { float f = 10.5F; float g = 3.0F; return f / g; }", 0, 3.5},
+    {"type_decl", "double1", CASE_DOUBLE, "double ag_m() { double d = 3.99; return d; }", 0, 3.99},
+    {"type_decl", "double2", CASE_DOUBLE, "double ag_m() { double a = 3.1; double b = 4.2; return a + b; }", 0, 7.3},
+    {"type_decl", "double3", CASE_DOUBLE, "double ag_m() { double a = 5.0; double b = 3.0; return a * b; }", 0, 15.0},
+    {"type_decl", "double4", CASE_DOUBLE, "double ag_m() { double a = 15.0; double b = 3.0; return a / b; }", 0, 5.0},
 
     {"pointer", "deref", CASE_INT, "int main() { int x = 5; int *p = &x; return *p; }", 5, 0},
     {"pointer", "assign", CASE_INT, "int main() { int x = 5; int *p = &x; *p = 10; return x; }", 10, 0},
@@ -273,11 +273,7 @@ static int build_case(const test_case_t *tc) {
     return 0;
   }
 
-  char buf[4096];
-  snprintf(buf, sizeof(buf), "%s", tc->input);
-  char *m = strstr(buf, "main");
-  if (m) memcpy(m, "ag_m", 4);
-  if (run_ag_c_to_s(buf, s_path) != 0) return -1;
+  if (run_ag_c_to_s(tc->input, s_path) != 0) return -1;
 
   FILE *fp = fopen(drv_path, "w");
   if (!fp) return -1;
