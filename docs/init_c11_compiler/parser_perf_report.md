@@ -82,6 +82,14 @@
 - 置換（第3段）:
   - ローカル変数表と宣言パース（`declaration` / `declaration_after_type`）を `parser_decl` へ移管
   - `parser_consume_type_kind` / `parser_assign_expr` を公開し、宣言モジュールから再利用
+- 追加ファイル（第4段）:
+  - `src/parser/parser_stmt.h`
+  - `src/parser/parser_stmt.c`
+  - `src/parser/parser_loop_ctx.h`
+  - `src/parser/parser_loop_ctx.c`
+- 置換（第4段）:
+  - `stmt` 本体を `parser_stmt` へ移管
+  - `loop_depth` を `parser_loop_ctx` へ移管
 - ビルド連携:
   - `Makefile` に `PARSER_LIB_OBJS` を導入し、`test_parser` / `bench_parser` で再利用
 - 回帰確認:
