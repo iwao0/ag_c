@@ -317,3 +317,28 @@
   - `bash scripts/check_tokenizer_perf.sh /tmp/bench.out`
   - `bash scripts/check_parser_perf.sh /tmp/bench.out`
   - すべて pass
+
+## 2026-03-17 Stable Benchmark Operation (Phase 6-2)
+
+- 実施:
+  - `scripts/bench_parser_stable.sh` を追加
+  - `bench_parser` を複数回実行し、ケース別に中央値を算出する運用を追加
+  - 対象ケース:
+    - `mixed 262200b`
+    - `expr-heavy 262176b`
+    - `control-heavy 262185b`
+- 実行例:
+  - `scripts/bench_parser_stable.sh /tmp/agc_parser_bench_stable 5`
+- 実測（5回中央値）:
+  - `mixed 262200b`: `median_parser_MB/s=78.34`, `median_funcs/sec=1441103`
+  - `expr-heavy 262176b`: `median_parser_MB/s=68.56`, `median_funcs/sec=1497669`
+  - `control-heavy 262185b`: `median_parser_MB/s=62.31`, `median_funcs/sec=848492`
+
+## Phase Decision Log Summary
+
+- Phase 1: Baseline/guardrail を確定し採用（計測方式・しきい値を固定）
+- Phase 2: `stmt/decl/expr` 分離を採用（責務分離優先、回帰なし）
+- Phase 3: ホットパス最適化を採用（段階適用、-5%超回帰なし）
+- Phase 4: 探索構造ハッシュ化を採用（未定義/重複診断を追加検証）
+- Phase 5: 診断API共通化＋`[rule]` 形式を採用（テスト追従済み）
+- Phase 6: CI perf guard + 複数回中央値運用を採用（継続監視可能）
