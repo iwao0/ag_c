@@ -447,3 +447,11 @@
   - [x] `src/config/config.c` の `char line[512]` の上限仕様を明文化し、必要に応じて動的化する
   - [x] `src/parser/diag.c` の `char detail[256]` の切り捨て方針を明文化し、診断品質への影響を評価する
   - [x] `src/parser/expr.c` の `char label[32]`（`.LC` ラベル生成）の上限妥当性を確認し、必要なら `snprintf` 依存から安全な生成へ変更する
+
+## バッファオーバーフロー観点の追加ハードニング
+- [x] `src/preprocess/preprocess.c` のサイズ計算を `size_t` 化する
+  - [x] `stringify_tokens()` の `cap/len` を `size_t` に変更し、加算時のオーバーフローを検出する
+  - [x] `paste_tokens()` の `len_l + len_r` を安全に計算する
+- [x] `test/test_e2e.c` の固定上限配列を動的化する
+  - [x] `categories[64]` / `build_pids[64]` / `pids[64]` を入力件数に応じて確保する
+  - [x] カテゴリ数増加時に境界外アクセスが起きないことを確認する

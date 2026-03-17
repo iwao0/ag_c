@@ -408,9 +408,20 @@ int main() {
     return 1;
   }
 
-  const char *categories[64];
+  size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
+  const char **categories = calloc(max_cases, sizeof(const char *));
+  pid_t *build_pids = calloc(max_cases, sizeof(pid_t));
+  pid_t *pids = calloc(max_cases, sizeof(pid_t));
+  if (!categories || !build_pids || !pids) {
+    fprintf(stderr, "Failed to allocate category buffers\n");
+    free(categories);
+    free(build_pids);
+    free(pids);
+    return 1;
+  }
+
   size_t ncat = 0;
-  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+  for (size_t i = 0; i < max_cases; i++) {
     const char *cat = test_cases[i].category;
     bool exists = false;
     for (size_t j = 0; j < ncat; j++) {
@@ -419,7 +430,6 @@ int main() {
     if (!exists) categories[ncat++] = cat;
   }
 
-  pid_t build_pids[64];
   for (size_t i = 0; i < ncat; i++) {
     pid_t pid = fork();
     if (pid == 0) {
@@ -434,11 +444,13 @@ int main() {
     waitpid(build_pids[i], &status, 0);
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
       fprintf(stderr, "Build failed: %s (see build/e2e/logs/%s.build.log)\n", categories[i], categories[i]);
+      free(categories);
+      free(build_pids);
+      free(pids);
       return 1;
     }
   }
 
-  pid_t pids[64];
   for (size_t i = 0; i < ncat; i++) {
     pid_t pid = fork();
     if (pid == 0) {
@@ -461,6 +473,9 @@ int main() {
   test_count = (int)(sizeof(test_cases) / sizeof(test_cases[0]));
   pass_count = failed ? 0 : test_count;
 
+  free(categories);
+  free(build_pids);
+  free(pids);
   if (failed) return 1;
   printf("OK: All %d E2E tests passed! (%d/%d)\n", test_count, pass_count, test_count);
   return 0;

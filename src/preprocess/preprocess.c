@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <stdint.h>
 
 typedef struct macro macro_t;
 struct macro {
@@ -469,21 +470,44 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
 }
 
 static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
-  int cap = 64;
+  size_t cap = 64;
   char *buf = calloc(1, cap);
-  int len = 0;
+  size_t len = 0;
   
   for (token_t *t = tok; t; t = t->next) {
     if (len > 0 && t->has_space) {
-      if (len + 1 >= cap) { cap *= 2; buf = realloc(buf, cap); }
+      if (len + 1 >= cap) {
+        if (cap > SIZE_MAX / 2) {
+          fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
+          exit(1);
+        }
+        cap *= 2;
+        buf = realloc(buf, cap);
+      }
       buf[len++] = ' ';
     }
     int tlen = 0;
     const char *ts = token_text(t, &tlen);
     if (!ts) ts = "";
-    if (len + tlen >= cap) { cap = (cap + tlen) * 2; buf = realloc(buf, cap); }
-    memcpy(buf + len, ts, tlen);
-    len += tlen;
+    if (tlen < 0 || (size_t)tlen > SIZE_MAX - len - 1) {
+      fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
+      exit(1);
+    }
+    size_t need = len + (size_t)tlen + 1;
+    while (need > cap) {
+      if (cap > SIZE_MAX / 2) {
+        fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
+        exit(1);
+      }
+      cap *= 2;
+    }
+    if (need > len + (size_t)tlen + 1) {
+      fprintf(stderr, "文字列化中にサイズが不正です\n");
+      exit(1);
+    }
+    buf = realloc(buf, cap);
+    memcpy(buf + len, ts, (size_t)tlen);
+    len += (size_t)tlen;
   }
   buf[len] = '\0';
   
@@ -514,10 +538,14 @@ static token_t *paste_tokens(token_t *tok) {
       int len_r = 0;
       const char *s_l = token_text(cur, &len_l);
       const char *s_r = token_text(rhs, &len_r);
-      int len = len_l + len_r;
+      if (len_l < 0 || len_r < 0 || (size_t)len_l > SIZE_MAX - (size_t)len_r - 1) {
+        fprintf(stderr, "トークン結合中にサイズが大きすぎます\n");
+        exit(1);
+      }
+      size_t len = (size_t)len_l + (size_t)len_r;
       char *buf = calloc(1, len + 1);
-      memcpy(buf, s_l, len_l);
-      memcpy(buf + len_l, s_r, len_r);
+      memcpy(buf, s_l, (size_t)len_l);
+      memcpy(buf + len_l, s_r, (size_t)len_r);
       
       char *saved_input = tk_get_user_input();
       char *saved_filename = tk_get_filename();
