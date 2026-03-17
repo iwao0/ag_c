@@ -212,6 +212,8 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
   int member_count = 0;
   int current_off = 0;
   int union_size = 0;
+  int agg_align = 1;
+  #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
   while (!tk_consume('}')) {
     int elem_size = 8;
     token_kind_t member_tag_kind = TK_EOF;
@@ -253,7 +255,17 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       }
       int total_size = is_ptr ? 8 : elem_size * arr_size;
       int deref_size = is_ptr ? elem_size : 0;
-      int off = (tag_kind == TK_UNION) ? 0 : current_off;
+      int member_align = is_ptr ? 8 : elem_size;
+      if (member_align <= 0) member_align = 1;
+      if (member_align > 8) member_align = 8;
+      if (member_align > agg_align) agg_align = member_align;
+      int off = 0;
+      if (tag_kind == TK_UNION) {
+        off = 0;
+      } else {
+        current_off = ALIGN_UP(current_off, member_align);
+        off = current_off;
+      }
       psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
                              member->str, member->len, off, is_ptr ? 8 : elem_size, deref_size,
                              member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
@@ -267,7 +279,8 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
     }
     tk_expect(';');
   }
-  *out_size = (tag_kind == TK_UNION) ? union_size : current_off;
+  *out_size = (tag_kind == TK_UNION) ? ALIGN_UP(union_size, agg_align) : ALIGN_UP(current_off, agg_align);
+  #undef ALIGN_UP
   return member_count;
 }
 
