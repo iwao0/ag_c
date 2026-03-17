@@ -20,18 +20,22 @@ stmt       = "{" stmt* "}"
            | "break" ";"
            | "continue" ";"
            | "return" expr ";"
-           | type ident ("=" expr)? ";"
+           | type "*"* ident ("[" num "]")? ("=" expr)? ";"
            | expr ";"
 type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"
 expr       = assign
-assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=") assign)?
+assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 conditional= logical_or ("?" expr ":" conditional)?
 logical_or = logical_and ("||" logical_and)*
-logical_and= equality ("&&" equality)*
+logical_and= bit_or ("&&" bit_or)*
+bit_or     = bit_xor ("|" bit_xor)*
+bit_xor    = bit_and ("^" bit_and)*
+bit_and    = equality ("&" equality)*
 equality   = relational ("==" relational | "!=" relational)*
-relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
+shift      = add ("<<" add | ">>" add)*
 add        = mul ("+" mul | "-" mul)*
-mul        = unary ("*" unary | "/" unary)*
+mul        = unary ("*" unary | "/" unary | "%" unary)*
 unary      = ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
            | primary postfix*
 postfix    = ("[" expr "]" | "++" | "--")*
@@ -148,6 +152,12 @@ args       = expr ("," expr)*
 | `ND_SUB` | 減算 (`-`) |
 | `ND_MUL` | 乗算 (`*`) |
 | `ND_DIV` | 除算 (`/`) |
+| `ND_MOD` | 剰余 (`%`) |
+| `ND_SHL` | 左シフト (`<<`) |
+| `ND_SHR` | 右シフト (`>>`) |
+| `ND_BITAND` | ビットAND (`&`) |
+| `ND_BITXOR` | ビットXOR (`^`) |
+| `ND_BITOR` | ビットOR (`\|`) |
 | `ND_EQ` | 等値比較 (`==`) |
 | `ND_NE` | 非等値比較 (`!=`) |
 | `ND_LT` | 小なり (`<`, `>` は左右反転して `<` に変換) |
