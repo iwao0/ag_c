@@ -1,9 +1,9 @@
-#include "parser_expr.h"
-#include "parser_decl.h"
-#include "parser_diag.h"
-#include "parser_dynarray.h"
-#include "parser_node_utils.h"
-#include "parser_semantic_ctx.h"
+#include "expr.h"
+#include "decl.h"
+#include "diag.h"
+#include "dynarray.h"
+#include "node_utils.h"
+#include "semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>

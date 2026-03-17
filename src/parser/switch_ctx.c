@@ -1,6 +1,6 @@
-#include "parser_switch_ctx.h"
-#include "parser_diag.h"
-#include "parser_dynarray.h"
+#include "switch_ctx.h"
+#include "diag.h"
+#include "dynarray.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 

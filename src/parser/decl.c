@@ -1,8 +1,8 @@
-#include "parser_decl.h"
-#include "parser_diag.h"
-#include "parser_expr.h"
-#include "parser_node_utils.h"
-#include "parser_semantic_ctx.h"
+#include "decl.h"
+#include "diag.h"
+#include "expr.h"
+#include "node_utils.h"
+#include "semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>

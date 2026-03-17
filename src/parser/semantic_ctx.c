@@ -1,5 +1,5 @@
-#include "parser_semantic_ctx.h"
-#include "parser_diag.h"
+#include "semantic_ctx.h"
+#include "diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>

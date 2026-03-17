@@ -55,9 +55,14 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
 
   close(fds[1]);
   char buf[4096];
-  ssize_t nread = read(fds[0], buf, sizeof(buf) - 1);
-  if (nread < 0) nread = 0;
-  buf[nread] = '\0';
+  size_t used = 0;
+  for (;;) {
+    ssize_t nread = read(fds[0], buf + used, sizeof(buf) - 1 - used);
+    if (nread <= 0) break;
+    used += (size_t)nread;
+    if (used >= sizeof(buf) - 1) break;
+  }
+  buf[used] = '\0';
   close(fds[0]);
 
   int status;

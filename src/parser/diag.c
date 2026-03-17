@@ -1,4 +1,4 @@
-#include "parser_diag.h"
+#include "diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdarg.h>
 #include <stdio.h>
