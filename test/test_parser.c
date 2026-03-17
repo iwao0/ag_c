@@ -599,6 +599,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { ++1; }");                  // lvalueでない
   expect_parse_fail("main() { 1++; }");                  // lvalueでない
   expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
+  expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
+  expect_parse_fail("main() { switch (1) { default: 0; default: 1; } }"); // default 重複
 }
 
 int main() {
