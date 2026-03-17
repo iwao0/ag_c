@@ -862,6 +862,22 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
+  token = tk_tokenize("int log(const char *fmt, ...); int main() { return 0; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[1] == NULL);
+
+  token = tk_tokenize("int variadic(...){ return 0; } int main() { return variadic(); }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "variadic", 8) == 0);
+  ASSERT_TRUE(parsed_code[1] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_TRUE(parsed_code[2] == NULL);
+
   token = tk_tokenize("struct S { int x; }; int main() { return 0; }");
   parsed_code = ps_program();
   ASSERT_TRUE(parsed_code[0] != NULL);
@@ -909,6 +925,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
   expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
   expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
+  expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail("main() { break; }");                // ループ/switch外

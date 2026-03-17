@@ -640,22 +640,31 @@ static node_t *funcdef(void) {
   node->args = calloc(arg_cap, sizeof(node_t*));
   int nargs = 0;
   if (!tk_consume(')')) {
-    consume_type(); // 仮引数の型
-    token_ident_t *param = parse_param_declarator_name();
-    if (param) {
-      lvar_t *var = psx_decl_register_lvar(param->str, param->len);
-      node->args[nargs++] = psx_node_new_lvar(var->offset);
-    }
-    while (tk_consume(',')) {
-      if (nargs >= arg_cap) {
-        arg_cap = pda_next_cap(arg_cap, nargs + 1);
-        node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
+    bool done = false;
+    while (!done) {
+      if (token->kind == TK_ELLIPSIS) {
+        token = token->next;
+        if (token->kind == ',') {
+          tk_error_tok(token, "'...' は可変長引数リストの末尾にのみ指定できます");
+        }
+        done = true;
+        continue;
       }
+
       consume_type(); // 仮引数の型
-      param = parse_param_declarator_name();
+      token_ident_t *param = parse_param_declarator_name();
       if (param) {
+        if (nargs >= arg_cap) {
+          arg_cap = pda_next_cap(arg_cap, nargs + 1);
+          node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
+        }
         lvar_t *var = psx_decl_register_lvar(param->str, param->len);
         node->args[nargs++] = psx_node_new_lvar(var->offset);
+      }
+
+      if (!tk_consume(',')) break;
+      if (token->kind == TK_RPAREN) {
+        psx_diag_missing(token, "仮引数");
       }
     }
     tk_expect(')');

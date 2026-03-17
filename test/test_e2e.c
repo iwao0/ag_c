@@ -168,6 +168,8 @@ static const test_case_t test_cases[] = {
     {"funcall", "param_funcptr_decl", CASE_INT, "int apply(int (*fp)(int), int x) { return x; } int main(){ return apply(0,7); }", 7, 0},
     {"funcall", "param_array_decl", CASE_INT, "int f(int a[], int n) { return n; } int main(){ return f(0,5); }", 5, 0},
     {"funcall", "printf_variadic", CASE_INT, "#include <stdio.h>\nint main() { return printf(\"x=%d\\n\", 42) == 5 ? 0 : 1; }", 0, 0},
+    {"funcall", "variadic_proto", CASE_INT, "int log(const char *fmt, ...); int main() { return 7; }", 7, 0},
+    {"funcall", "variadic_def", CASE_INT, "int pick(...) { return 9; } int main() { return pick(); }", 9, 0},
 
     {"multichar_var", "foo", CASE_INT, "main() { foo=3; return foo; }", 3, 0},
     {"multichar_var", "hello", CASE_INT, "main() { hello=2; world=3; return hello+world; }", 5, 0},
