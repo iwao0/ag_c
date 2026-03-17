@@ -557,7 +557,7 @@ static void gen_expr(node_t *node) {
   }
   case ND_FUNCALL: {
     node_func_t *fn = as_func(node);
-    if (is_printf_func(fn) && fn->nargs >= 1) {
+    if (!fn->callee && is_printf_func(fn) && fn->nargs >= 1) {
       // Darwin/ARM64: variadic 引数はレジスタではなくスタックで受け渡す。
       gen_expr(fn->args[0]);
       cg_emitf("  ldr x19, [sp], #16\n");
@@ -591,7 +591,13 @@ static void gen_expr(node_t *node) {
       cg_emitf("  ldr x%d, [sp], #16\n", i);
     }
     // 関数呼び出し
-    cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+    if (fn->callee) {
+      gen_expr(fn->callee);
+      cg_emitf("  ldr x16, [sp], #16\n");
+      cg_emitf("  blr x16\n");
+    } else {
+      cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+    }
     // 戻り値をスタックにプッシュ
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;

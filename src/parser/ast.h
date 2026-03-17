@@ -114,6 +114,7 @@ struct node_func_t {
   node_t base;
   node_t **args;    // 引数/仮引数の動的配列
   int nargs;        // 引数の数
+  node_t *callee;   // 間接呼び出し時のcallee式（直接呼び出しはNULL）
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
 };

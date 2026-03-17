@@ -136,6 +136,7 @@ static node_t *add(void);
 static node_t *mul(void);
 static node_t *unary(void);
 static node_t *primary(void);
+static node_t *parse_call_postfix(node_t *callee);
 
 void psx_expr_set_current_func_ret_type(token_kind_t ret_kind, tk_float_kind_t fp_kind) {
   g_current_ret_token_kind = ret_kind;
@@ -546,6 +547,10 @@ static node_t *unary(void) {
     node = (node_t *)deref;
   }
   for (;;) {
+    if (token->kind == TK_LPAREN) {
+      node = parse_call_postfix(node);
+      continue;
+    }
     if (token->kind == TK_DOT) {
       token_t *op_tok = token;
       token = token->next;
@@ -579,6 +584,32 @@ static node_t *unary(void) {
     break;
   }
   return node;
+}
+
+static node_t *parse_call_postfix(node_t *callee) {
+  tk_expect('(');
+  node_func_t *node = calloc(1, sizeof(node_func_t));
+  node->base.kind = ND_FUNCALL;
+  node->callee = callee;
+  int nargs = 0;
+  int arg_cap = 16;
+  node->args = calloc(arg_cap, sizeof(node_t *));
+  if (token->kind == TK_RPAREN) {
+    token = token->next;
+  } else {
+    node->args[nargs++] = assign();
+    while (token->kind == TK_COMMA) {
+      token = token->next;
+      if (nargs >= arg_cap) {
+        arg_cap = pda_next_cap(arg_cap, nargs + 1);
+        node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
+      }
+      node->args[nargs++] = assign();
+    }
+    tk_expect(')');
+  }
+  node->nargs = nargs;
+  return (node_t *)node;
 }
 
 static node_t *primary(void) {
@@ -620,33 +651,6 @@ static node_t *primary(void) {
 
   token_ident_t *tok = tk_consume_ident();
   if (tok) {
-    if (token->kind == TK_LPAREN) {
-      token = token->next;
-      node_func_t *node = calloc(1, sizeof(node_func_t));
-      node->base.kind = ND_FUNCALL;
-      node->funcname = tok->str;
-      node->funcname_len = tok->len;
-      int nargs = 0;
-      int arg_cap = 16;
-      node->args = calloc(arg_cap, sizeof(node_t*));
-      if (token->kind == TK_RPAREN) {
-        token = token->next;
-      } else {
-        node->args[nargs++] = assign();
-        while (token->kind == TK_COMMA) {
-          token = token->next;
-          if (nargs >= arg_cap) {
-            arg_cap = pda_next_cap(arg_cap, nargs + 1);
-            node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
-          }
-          node->args[nargs++] = assign();
-        }
-        tk_expect(')');
-      }
-      node->nargs = nargs;
-      return (node_t *)node;
-    }
-
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
       long long enum_val = 0;
@@ -654,6 +658,36 @@ static node_t *primary(void) {
         return psx_node_new_num(enum_val);
       }
     }
+    if (token->kind == TK_LPAREN) {
+      if (!var) {
+        token = token->next;
+        node_func_t *node = calloc(1, sizeof(node_func_t));
+        node->base.kind = ND_FUNCALL;
+        node->callee = NULL;
+        node->funcname = tok->str;
+        node->funcname_len = tok->len;
+        int nargs = 0;
+        int arg_cap = 16;
+        node->args = calloc(arg_cap, sizeof(node_t*));
+        if (token->kind == TK_RPAREN) {
+          token = token->next;
+        } else {
+          node->args[nargs++] = assign();
+          while (token->kind == TK_COMMA) {
+            token = token->next;
+            if (nargs >= arg_cap) {
+              arg_cap = pda_next_cap(arg_cap, nargs + 1);
+              node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
+            }
+            node->args[nargs++] = assign();
+          }
+          tk_expect(')');
+        }
+        node->nargs = nargs;
+        return (node_t *)node;
+      }
+    }
+
     if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }

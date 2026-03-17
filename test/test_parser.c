@@ -458,6 +458,13 @@ static void test_funcall() {
   ASSERT_EQ(ND_COMMA, as_func(node)->args[0]->kind);
   ASSERT_EQ(ND_NUM, as_func(node)->args[1]->kind);
   ASSERT_EQ(3, as_num(as_func(node)->args[1])->val);
+
+  token = tk_tokenize("main() { int fp; fp(1); }");
+  parsed_code = ps_program();
+  node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_FUNCALL, stmt->kind);
+  ASSERT_EQ(ND_LVAR, as_func(stmt)->callee->kind);
+  ASSERT_EQ(1, as_func(stmt)->nargs);
 }
 
 // --- ここから追加テスト ---
