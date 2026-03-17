@@ -330,5 +330,5 @@
   - [x] エラーメッセージの一貫化（`tk_error_tok` 経由）を行う
 - [ ] テスト基盤の可観測性を改善する
   - [x] `test_e2e` の失敗時に生成 `.s` の保存パスをログへ出力する
-  - [ ] 新カテゴリ（`bitwise`, `shift`, `switch_edge`）を追加する
+  - [x] 新カテゴリ（`bitwise`, `shift`, `switch_edge`）を追加する
   - [ ] CI で parser/e2e を分離実行し、失敗原因を切り分けやすくする
