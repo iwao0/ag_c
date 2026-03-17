@@ -194,3 +194,27 @@
 - 判定:
   - 全ケースで改善を確認
   - フェーズ4の残作業は「異常系診断精度の再確認」
+
+## 2026-03-17 Diagnostic Precision Recheck (Phase 4-3)
+
+- 実施:
+  - `test_parse_invalid_diagnostics` を追加し、異常系メッセージ本文を直接検証
+  - 検証対象:
+    - 未定義ラベル（`goto MISSING`）
+    - 重複ラベル（`L1:` 再定義）
+    - 未定義タグ型（`struct T` 参照）
+- 回帰確認:
+  - `build/test_parser` pass
+  - `build/test_e2e` pass (`171/171`)
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 39.04 | 42.20 | +8.1% |
+| mixed (256KB) parser_MB/s | 52.69 | 51.99 | -1.3% |
+| expr-heavy (256KB) parser_MB/s | 54.27 | 53.57 | -1.3% |
+| control-heavy (256KB) parser_MB/s | 61.94 | 60.34 | -2.6% |
+
+- 判定:
+  - メッセージ精度の追加検証を導入しつつ、性能は回帰ガードレール（-5%）以内

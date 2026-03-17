@@ -37,6 +37,36 @@ static void expect_parse_fail(const char *input) {
   ASSERT_TRUE(WEXITSTATUS(status) != 0);
 }
 
+static void expect_parse_fail_with_message(const char *input, const char *needle) {
+  int fds[2];
+  ASSERT_TRUE(pipe(fds) == 0);
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(fds[0]);
+    dup2(fds[1], STDERR_FILENO);
+    close(fds[1]);
+    freopen("/dev/null", "w", stdout);
+    token = tk_tokenize((char *)input);
+    program();
+    _exit(0);
+  }
+
+  close(fds[1]);
+  char buf[4096];
+  ssize_t nread = read(fds[0], buf, sizeof(buf) - 1);
+  if (nread < 0) nread = 0;
+  buf[nread] = '\0';
+  close(fds[0]);
+
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+  ASSERT_TRUE(strstr(buf, needle) != NULL);
+}
+
 static void test_expr_number() {
   printf("test_expr_number...\n");
   token = tk_tokenize("42");
@@ -716,6 +746,13 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { switch (1) { default: 0; default: 1; } }"); // default 重複
 }
 
+static void test_parse_invalid_diagnostics() {
+  printf("test_parse_invalid_diagnostics...\n");
+  expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "未定義ラベル 'MISSING'");
+  expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "ラベル 'L1' が重複");
+  expect_parse_fail_with_message("main() { struct T x; return 0; }", "未定義のタグ型 'T'");
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
@@ -759,6 +796,7 @@ int main() {
   test_type_decl();
   test_multiple_funcdefs();
   test_parse_invalid();
+  test_parse_invalid_diagnostics();
 
   printf("OK: All unit tests passed!\n");
   return 0;
