@@ -19,7 +19,7 @@ PARSER_LIB_OBJS=build/parser/parser.o build/parser/decl.o build/parser/diag.o bu
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
-build/%.o: src/%.c src/ag_c.h
+build/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
