@@ -269,9 +269,9 @@
 - [x] キャスト式（`(type)expr`）を実装する
   - [x] `unary` にキャスト文法を追加する
   - [x] 数値型間キャストの最小ルール（`int/char/short/long/float/double`）を定める（第1段: `char/short` はビット幅マスク、`int/long/pointer` は no-op、`float/double` は型情報付与）
-- [ ] カンマ演算子（`expr , expr`）を実装する
-  - [ ] `expr = assign ("," assign)*` に拡張する
-  - [ ] 関数引数区切りとの衝突が起きないことをテストで保証する
+- [x] カンマ演算子（`expr , expr`）を実装する
+  - [x] `expr = assign ("," assign)*` に拡張する
+  - [x] 関数引数区切りとの衝突が起きないことをテストで保証する（引数は `assign` 区切りに統一）
 - [ ] 宣言子の拡張（1文で複数宣言）を実装する
   - [ ] `int a, b=1;` のような複数 declarator をパース可能にする
   - [ ] `for` 初期化部の宣言にも同じ規則を適用する

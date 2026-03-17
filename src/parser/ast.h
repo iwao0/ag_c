@@ -22,6 +22,7 @@ typedef enum {
   ND_LOGAND, // &&
   ND_LOGOR,  // ||
   ND_TERNARY, // ?:
+  ND_COMMA,  // ,
   ND_ASSIGN, // =
   ND_LVAR,   // ローカル変数
   ND_IF,     // if

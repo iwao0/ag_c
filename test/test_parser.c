@@ -362,6 +362,16 @@ static void test_expr_compound_assign() {
   ASSERT_EQ(ND_BITOR, bor->rhs->kind);
 }
 
+static void test_expr_comma() {
+  printf("test_expr_comma...\n");
+
+  token = tk_tokenize("a=1, b=2, a+b");
+  node_t *node = expr();
+  ASSERT_EQ(ND_COMMA, node->kind);
+  ASSERT_EQ(ND_COMMA, node->lhs->kind);
+  ASSERT_EQ(ND_ADD, node->rhs->kind);
+}
+
 static void test_program_funcdef() {
   printf("test_program_funcdef...\n");
   token = tk_tokenize("main() { a=1; b=2; a+b; }");
@@ -391,6 +401,14 @@ static void test_funcall() {
   ASSERT_EQ(2, as_func(node)->nargs);
   ASSERT_EQ(1, as_num(as_func(node)->args[0])->val);
   ASSERT_EQ(2, as_num(as_func(node)->args[1])->val);
+
+  token = tk_tokenize("foo((1,2), 3)");
+  node = expr();
+  ASSERT_EQ(ND_FUNCALL, node->kind);
+  ASSERT_EQ(2, as_func(node)->nargs);
+  ASSERT_EQ(ND_COMMA, as_func(node)->args[0]->kind);
+  ASSERT_EQ(ND_NUM, as_func(node)->args[1]->kind);
+  ASSERT_EQ(3, as_num(as_func(node)->args[1])->val);
 }
 
 // --- ここから追加テスト ---
@@ -663,6 +681,7 @@ int main() {
   test_expr_inc_dec();
   test_expr_assign();
   test_expr_compound_assign();
+  test_expr_comma();
   test_program_funcdef();
   test_funcall();
   test_funcdef_with_params();

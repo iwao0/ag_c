@@ -23,7 +23,7 @@ stmt       = "{" stmt* "}"
            | type "*"* ident ("[" num "]")? ("=" expr)? ";"
            | expr ";"
 type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"
-expr       = assign
+expr       = assign ("," assign)*
 assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 conditional= logical_or ("?" expr ":" conditional)?
 logical_or = logical_and ("||" logical_and)*
@@ -167,6 +167,7 @@ args       = expr ("," expr)*
 | `ND_LOGAND` | 論理積 (`&&`, 短絡評価) |
 | `ND_LOGOR` | 論理和 (`||`, 短絡評価) |
 | `ND_TERNARY` | 条件演算子 (`?:`) |
+| `ND_COMMA` | カンマ演算子 (`,`) |
 | `ND_ASSIGN` | 代入 (`=`) |
 | `ND_LVAR` | ローカル変数参照 |
 | `ND_IF` | if文（`lhs`=条件, `rhs`=then節, `els`=else節） |

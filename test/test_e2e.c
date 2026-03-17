@@ -66,6 +66,8 @@ static const test_case_t test_cases[] = {
     {"arithmetic", "and_eq", CASE_INT, "main() { a=14; a&=3; return a; }", 2, 0},
     {"arithmetic", "xor_eq", CASE_INT, "main() { a=14; a^=3; return a; }", 13, 0},
     {"arithmetic", "or_eq", CASE_INT, "main() { a=8; a|=3; return a; }", 11, 0},
+    {"arithmetic", "comma_basic", CASE_INT, "main() { a=0; return (a=1, a+2); }", 3, 0},
+    {"arithmetic", "comma_chain", CASE_INT, "main() { a=0; b=0; return (a=1, b=2, a+b); }", 3, 0},
 
     {"comparison", "eq1", CASE_INT, "main() { return 0==0; }", 1, 0},
     {"comparison", "eq2", CASE_INT, "main() { return 42==0; }", 0, 0},
@@ -155,6 +157,7 @@ static const test_case_t test_cases[] = {
     {"funcall", "twice", CASE_INT, "twice(a) { return a*2; } main() { return twice(5); }", 10, 0},
     {"funcall", "multi", CASE_INT, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }", 21, 0},
     {"funcall", "rec", CASE_INT, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }", 120, 0},
+    {"funcall", "comma_arg", CASE_INT, "f(x,y){return x*10+y;} main(){ return f((1,2),3); }", 23, 0},
 
     {"multichar_var", "foo", CASE_INT, "main() { foo=3; return foo; }", 3, 0},
     {"multichar_var", "hello", CASE_INT, "main() { hello=2; world=3; return hello+world; }", 5, 0},

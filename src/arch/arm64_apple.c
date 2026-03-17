@@ -303,6 +303,12 @@ static void gen_expr(node_t *node) {
       printf("  str x1, [sp, #-16]!\n");
     }
     return;
+  case ND_COMMA:
+    gen_expr(node->lhs);
+    // lhs の値は式値としては不要
+    printf("  add sp, sp, #16\n");
+    gen_expr(node->rhs);
+    return;
   case ND_PRE_INC:
   case ND_PRE_DEC:
   case ND_POST_INC:

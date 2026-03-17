@@ -641,8 +641,17 @@ static node_t *stmt(void) {
   return node;
 }
 
-// expr = assign
-node_t *expr(void) { return assign(); }
+// expr = assign ("," assign)*
+node_t *expr(void) {
+  node_t *node = assign();
+  while (tk_consume(',')) {
+    node_t *rhs = assign();
+    node_t *comma = new_node_binary(ND_COMMA, node, rhs);
+    comma->fp_kind = rhs ? rhs->fp_kind : TK_FLOAT_KIND_NONE;
+    node = comma;
+  }
+  return node;
+}
 
 // assign = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 static node_t *assign(void) {
@@ -942,7 +951,7 @@ static node_t *unary(void) {
 }
 
 // primary = ident "(" args? ")" | "(" expr ")" | ident | num | string
-// args    = expr ("," expr)*
+// args    = assign ("," assign)*
 static node_t *primary(void) {
   if (tk_consume('(')) {
     node_t *node = expr();
@@ -962,13 +971,13 @@ static node_t *primary(void) {
       int arg_cap = 4;
       node->args = calloc(arg_cap, sizeof(node_t*));
       if (!tk_consume(')')) {
-        node->args[nargs++] = expr();
+        node->args[nargs++] = assign();
         while (tk_consume(',')) {
           if (nargs >= arg_cap) {
             arg_cap *= 2;
             node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
           }
-          node->args[nargs++] = expr();
+          node->args[nargs++] = assign();
         }
         tk_expect(')');
       }
