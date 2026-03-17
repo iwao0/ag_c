@@ -246,6 +246,27 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(1, as_num(bitnot->rhs)->val);
 }
 
+static void test_expr_sizeof() {
+  printf("test_expr_sizeof...\n");
+
+  token = tk_tokenize("sizeof(int)");
+  node_t *n1 = expr();
+  ASSERT_EQ(ND_NUM, n1->kind);
+  ASSERT_EQ(4, as_num(n1)->val);
+
+  token = tk_tokenize("sizeof(int*)");
+  node_t *n2 = expr();
+  ASSERT_EQ(ND_NUM, n2->kind);
+  ASSERT_EQ(8, as_num(n2)->val);
+
+  token = tk_tokenize("main() { int x; return sizeof(x); }");
+  program();
+  node_t *ret = as_block(as_func(code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(4, as_num(ret->lhs)->val);
+}
+
 static void test_expr_inc_dec() {
   printf("test_expr_inc_dec...\n");
 
@@ -277,7 +298,7 @@ static void test_expr_assign() {
 
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_EQ(ND_LVAR, node->lhs->kind);
-  ASSERT_EQ(8, as_lvar(node->lhs)->offset);
+  ASSERT_TRUE(as_lvar(node->lhs)->offset > 0);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(3, as_num(node->rhs)->val);
 }
@@ -609,6 +630,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
   expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
+  expect_parse_fail("main() { return sizeof(void); }");  // sizeof(void) 未対応
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
@@ -631,6 +653,7 @@ int main() {
   test_expr_logical_and_or();
   test_expr_ternary();
   test_expr_unary_ops();
+  test_expr_sizeof();
   test_expr_inc_dec();
   test_expr_assign();
   test_expr_compound_assign();

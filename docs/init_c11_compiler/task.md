@@ -263,9 +263,9 @@
 - [x] `return;`（`void` 関数での式なし return）をサポートする
   - [x] `stmt()` の `return` 分岐で `;` 直後を許可する
   - [x] `void`/非`void` の整合チェック方針を決める（`void` は `return;` のみ許可、非`void` は式必須）
-- [ ] `sizeof` 演算子（`sizeof expr` / `sizeof(type)`）を実装する
-  - [ ] Tokenizerの `TK_SIZEOF` を Parser の `unary` に接続する
-  - [ ] 型名版と式版の評価ルール（少なくとも既存基本型）を定義する
+- [x] `sizeof` 演算子（`sizeof expr` / `sizeof(type)`）を実装する
+  - [x] Tokenizerの `TK_SIZEOF` を Parser の `unary` に接続する
+  - [x] 型名版と式版の評価ルール（少なくとも既存基本型）を定義する（`sizeof(void)` は未対応として診断）
 - [ ] キャスト式（`(type)expr`）を実装する
   - [ ] `unary` にキャスト文法を追加する
   - [ ] 数値型間キャストの最小ルール（`int/char/short/long/float/double`）を定める

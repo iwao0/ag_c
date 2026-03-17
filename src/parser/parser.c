@@ -233,6 +233,29 @@ static bool is_type_token(token_kind_t kind) {
          kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE;
 }
 
+static int scalar_type_size(token_kind_t kind) {
+  switch (kind) {
+    case TK_CHAR: return 1;
+    case TK_SHORT: return 2;
+    case TK_INT:
+    case TK_FLOAT:
+      return 4;
+    case TK_LONG:
+    case TK_DOUBLE:
+      return 8;
+    default:
+      return 8;
+  }
+}
+
+static int sizeof_expr_node(node_t *node) {
+  int sz = node_type_size(node);
+  if (sz) return sz;
+  if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
+  if (node && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
+  return 8;
+}
+
 // program = funcdef*
 void program(void) {
   int cap = 8;
@@ -339,7 +362,7 @@ static node_t *funcdef(void) {
 // declaration = type "*"* ident ("[" num "]")? ("=" expr)? ";"
 static node_t *declaration(void) {
   token_kind_t type_kind = consume_type_kind();
-  int elem_size = (type_kind == TK_CHAR) ? 1 : (type_kind == TK_SHORT) ? 2 : (type_kind == TK_INT || type_kind == TK_FLOAT) ? 4 : 8;
+  int elem_size = scalar_type_size(type_kind);
   // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
   int is_pointer = 0;
   while (tk_consume('*')) { is_pointer = 1; }
@@ -754,6 +777,28 @@ static node_t *mul(void) {
 // unary = ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary | primary postfix*
 // postfix = "[" expr "]"
 static node_t *unary(void) {
+  if (token->kind == TK_SIZEOF) {
+    token = token->next;
+    if (tk_consume('(')) {
+      if (is_type_token(token->kind)) {
+        token_kind_t type_kind = consume_type_kind();
+        if (type_kind == TK_VOID) {
+          tk_error_tok(token, "sizeof(void) はサポートしていません");
+        }
+        int sz = scalar_type_size(type_kind);
+        while (tk_consume('*')) {
+          sz = 8;
+        }
+        tk_expect(')');
+        return new_node_num(sz);
+      }
+      node_t *node = expr();
+      tk_expect(')');
+      return new_node_num(sizeof_expr_node(node));
+    }
+    return new_node_num(sizeof_expr_node(unary()));
+  }
+
   if (tk_consume_str("++")) {
     node_t *target = unary();
     expect_incdec_target(target, "++");
