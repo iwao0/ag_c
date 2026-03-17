@@ -24,6 +24,11 @@ static int is_toplevel_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(void);
+static long long parse_enum_const_expr_toplevel(void);
+static long long parse_enum_const_add_toplevel(void);
+static long long parse_enum_const_mul_toplevel(void);
+static long long parse_enum_const_unary_toplevel(void);
+static long long parse_enum_const_primary_toplevel(void);
 
 // program = funcdef*
 node_t **ps_program(void) {
@@ -266,6 +271,62 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
   return member_count;
 }
 
+static long long parse_enum_const_expr_toplevel(void) { return parse_enum_const_add_toplevel(); }
+
+static long long parse_enum_const_add_toplevel(void) {
+  long long v = parse_enum_const_mul_toplevel();
+  while (token->kind == TK_PLUS || token->kind == TK_MINUS) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_mul_toplevel();
+    v = (op == TK_PLUS) ? (v + r) : (v - r);
+  }
+  return v;
+}
+
+static long long parse_enum_const_mul_toplevel(void) {
+  long long v = parse_enum_const_unary_toplevel();
+  while (token->kind == TK_MUL || token->kind == TK_DIV || token->kind == TK_MOD) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_unary_toplevel();
+    if (op == TK_MUL) v *= r;
+    else if (op == TK_DIV) v /= r;
+    else v %= r;
+  }
+  return v;
+}
+
+static long long parse_enum_const_unary_toplevel(void) {
+  if (token->kind == TK_PLUS) {
+    token = token->next;
+    return parse_enum_const_unary_toplevel();
+  }
+  if (token->kind == TK_MINUS) {
+    token = token->next;
+    return -parse_enum_const_unary_toplevel();
+  }
+  return parse_enum_const_primary_toplevel();
+}
+
+static long long parse_enum_const_primary_toplevel(void) {
+  if (token->kind == TK_LPAREN) {
+    token = token->next;
+    long long v = parse_enum_const_expr_toplevel();
+    tk_expect(')');
+    return v;
+  }
+  token_ident_t *id = tk_consume_ident();
+  if (id) {
+    long long v = 0;
+    if (!psx_ctx_find_enum_const(id->str, id->len, &v)) {
+      psx_diag_ctx(token, "enum", "未定義の列挙子 '%.*s' です", id->len, id->str);
+    }
+    return v;
+  }
+  return tk_expect_number();
+}
+
 static int parse_enum_members_toplevel(void) {
   int member_count = 0;
   long long next_value = 0;
@@ -275,7 +336,7 @@ static int parse_enum_members_toplevel(void) {
     long long value = next_value;
     member_count++;
     if (tk_consume('=')) {
-      value = tk_expect_number();
+      value = parse_enum_const_expr_toplevel();
     }
     psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
     next_value = value + 1;

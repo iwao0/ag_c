@@ -190,6 +190,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "tag_def_and_ptr_decl", CASE_INT, "int main() { struct S { int x; } *p; p=0; return p==0; }", 1, 0},
     {"type_decl", "tag_def_union_enum", CASE_INT, "int main() { union U { int x; char y; }; enum E { A=1, B=2 }; return 7; }", 7, 0},
     {"type_decl", "enum_const_ref", CASE_INT, "int main() { enum E { A=1, B, C=10 }; return A+B+C; }", 13, 0},
+    {"type_decl", "enum_const_expr", CASE_INT, "int main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }", 5, 0},
     {"type_decl", "global_tag_before_main", CASE_INT, "struct S { int x; }; int main() { return 7; }", 7, 0},
     {"type_decl", "global_tag_decl_with_var", CASE_INT, "struct S { int x; } *gp; int main() { return 7; }", 7, 0},
     {"type_decl", "global_int_var_decl", CASE_INT, "int g = 1; int main() { return 7; }", 7, 0},

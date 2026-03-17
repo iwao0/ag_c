@@ -18,6 +18,11 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind);
 static token_ident_t *parse_typedef_name_decl(int *is_ptr);
+static long long parse_enum_const_expr(void);
+static long long parse_enum_const_add(void);
+static long long parse_enum_const_mul(void);
+static long long parse_enum_const_unary(void);
+static long long parse_enum_const_primary(void);
 
 static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
@@ -108,6 +113,62 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
   return member_count;
 }
 
+static long long parse_enum_const_expr(void) { return parse_enum_const_add(); }
+
+static long long parse_enum_const_add(void) {
+  long long v = parse_enum_const_mul();
+  while (token->kind == TK_PLUS || token->kind == TK_MINUS) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_mul();
+    v = (op == TK_PLUS) ? (v + r) : (v - r);
+  }
+  return v;
+}
+
+static long long parse_enum_const_mul(void) {
+  long long v = parse_enum_const_unary();
+  while (token->kind == TK_MUL || token->kind == TK_DIV || token->kind == TK_MOD) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_unary();
+    if (op == TK_MUL) v *= r;
+    else if (op == TK_DIV) v /= r;
+    else v %= r;
+  }
+  return v;
+}
+
+static long long parse_enum_const_unary(void) {
+  if (token->kind == TK_PLUS) {
+    token = token->next;
+    return parse_enum_const_unary();
+  }
+  if (token->kind == TK_MINUS) {
+    token = token->next;
+    return -parse_enum_const_unary();
+  }
+  return parse_enum_const_primary();
+}
+
+static long long parse_enum_const_primary(void) {
+  if (token->kind == TK_LPAREN) {
+    token = token->next;
+    long long v = parse_enum_const_expr();
+    tk_expect(')');
+    return v;
+  }
+  token_ident_t *id = tk_consume_ident();
+  if (id) {
+    long long v = 0;
+    if (!psx_ctx_find_enum_const(id->str, id->len, &v)) {
+      psx_diag_ctx(token, "enum", "未定義の列挙子 '%.*s' です", id->len, id->str);
+    }
+    return v;
+  }
+  return tk_expect_number();
+}
+
 static int parse_enum_members(void) {
   int member_count = 0;
   long long next_value = 0;
@@ -118,7 +179,7 @@ static int parse_enum_members(void) {
     }
     long long value = next_value;
     if (tk_consume('=')) {
-      value = tk_expect_number();
+      value = parse_enum_const_expr();
     }
     psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
     next_value = value + 1;
