@@ -33,6 +33,10 @@ static void build_artifact_paths(const test_case_t *tc, char *dir, char *s_path,
   }
 }
 
+static void build_source_path(const test_case_t *tc, char *src_path) {
+  snprintf(src_path, PATH_MAX, "build/e2e/%s/%s.c", tc->category, tc->name);
+}
+
 static const test_case_t test_cases[] = {
     {"integer", "zero", CASE_INT, "main() { return 0; }", 0, 0},
     {"integer", "literal", CASE_INT, "main() { return 42; }", 42, 0},
@@ -256,24 +260,35 @@ static int run_ag_c_to_s(const char *input, const char *s_path) {
   return 0;
 }
 
+static int write_source_file(const char *path, const char *source) {
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  fputs(source, fp);
+  fclose(fp);
+  return 0;
+}
+
 static int build_case(const test_case_t *tc) {
   char dir[PATH_MAX];
   char s_path[PATH_MAX];
   char bin_path[PATH_MAX];
   char drv_path[PATH_MAX];
+  char src_path[PATH_MAX];
   char cmd[PATH_MAX * 2];
 
   build_artifact_paths(tc, dir, s_path, bin_path, drv_path);
+  build_source_path(tc, src_path);
   if (mkdir_p(dir) != 0) return -1;
+  if (write_source_file(src_path, tc->input) != 0) return -1;
 
   if (tc->kind == CASE_INT) {
-    if (run_ag_c_to_s(tc->input, s_path) != 0) return -1;
+    if (run_ag_c_to_s(src_path, s_path) != 0) return -1;
     snprintf(cmd, sizeof(cmd), "clang -o %s %s 2>&1", bin_path, s_path);
     if (system(cmd) != 0) return -1;
     return 0;
   }
 
-  if (run_ag_c_to_s(tc->input, s_path) != 0) return -1;
+  if (run_ag_c_to_s(src_path, s_path) != 0) return -1;
 
   FILE *fp = fopen(drv_path, "w");
   if (!fp) return -1;

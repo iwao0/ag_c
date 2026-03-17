@@ -5,10 +5,50 @@
 #include "preprocess/preprocess.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+static char *read_file_contents(const char *path) {
+  FILE *fp = fopen(path, "rb");
+  if (!fp) return NULL;
+
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    return NULL;
+  }
+  long size = ftell(fp);
+  if (size < 0) {
+    fclose(fp);
+    return NULL;
+  }
+  if (fseek(fp, 0, SEEK_SET) != 0) {
+    fclose(fp);
+    return NULL;
+  }
+
+  char *buf = calloc((size_t)size + 1, 1);
+  if (!buf) {
+    fclose(fp);
+    return NULL;
+  }
+  size_t nread = fread(buf, 1, (size_t)size, fp);
+  fclose(fp);
+  if (nread != (size_t)size) {
+    free(buf);
+    return NULL;
+  }
+  buf[nread] = '\0';
+  return buf;
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {
-    fprintf(stderr, "引数の個数が正しくありません\n");
+    fprintf(stderr, "使い方: %s <input.c>\n", argv[0]);
+    return 1;
+  }
+
+  char *source = read_file_contents(argv[1]);
+  if (!source) {
+    fprintf(stderr, "入力ファイルを読み込めませんでした: %s\n", argv[1]);
     return 1;
   }
 
@@ -16,7 +56,7 @@ int main(int argc, char **argv) {
 
   // トークナイズ
   tk_set_filename(argv[1]);
-  token = tk_tokenize(argv[1]);
+  token = tk_tokenize(source);
 
   // プリプロセス（マクロ展開やディレクティブ処理）
   token = preprocess(token);
@@ -33,5 +73,6 @@ int main(int argc, char **argv) {
   gen_string_literals();
   gen_float_literals();
 
+  free(source);
   return 0;
 }

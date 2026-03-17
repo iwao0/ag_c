@@ -4,7 +4,21 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
+static int write_input_file(const char *path, const char *input) {
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  fputs(input, fp);
+  fclose(fp);
+  return 0;
+}
+
 static int compile_and_run(const char *input) {
+  const char *src_path = "build/tmp_cpp_input.c";
+  if (write_input_file(src_path, input) != 0) {
+    fprintf(stderr, "  Cannot create input file\n");
+    return -1;
+  }
+
   FILE *fp = fopen("build/tmp_cpp.s", "w");
   if (!fp) { fprintf(stderr, "  Cannot open tmp file\n"); return -1; }
   fclose(fp);
@@ -14,7 +28,7 @@ static int compile_and_run(const char *input) {
   pid_t pid = fork();
   if (pid == 0) {
     freopen("build/tmp_cpp.s", "w", stdout);
-    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    execl("./build/ag_c", "./build/ag_c", src_path, (char *)NULL);
     _exit(1);
   }
   close(pipefd[0]); close(pipefd[1]);
@@ -47,12 +61,18 @@ static void assert_result(int expected, const char *input) {
 }
 
 static void expect_preprocess_fail(const char *input) {
+  const char *src_path = "build/tmp_cpp_input_fail.c";
+  if (write_input_file(src_path, input) != 0) {
+    fprintf(stderr, "  FAIL: cannot create input file\n");
+    exit(1);
+  }
+
   fflush(NULL);
   pid_t pid = fork();
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    execl("./build/ag_c", "./build/ag_c", src_path, (char *)NULL);
     _exit(1);
   }
   int status;
