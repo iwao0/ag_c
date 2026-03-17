@@ -340,23 +340,23 @@
 - [x] コメント方針を定義する
   - [x] `@brief`, `@param`, `@return`, `@pre`, `@post`, `@note` の最小テンプレートを定める
   - [x] 副作用や実装依存のある関数には `@warning` を付与する方針を追加する
-- [ ] 公開ヘッダにDoxygenコメントを付与する
+- [x] 公開ヘッダにDoxygenコメントを付与する
   - [x] `tokenizer.h` に公開関数コメントを追加する
   - [x] `token.h` に公開構造体・enumの説明を追加する
   - [x] `escape.h` / `literals.h` / `scanner.h` / `keywords.h` / `punctuator.h` / `allocator.h` の公開宣言を整備する
-- [ ] 実装ファイルの主要関数コメントを補完する
+- [x] 実装ファイルの主要関数コメントを補完する
   - [x] `tokenizer.c` のエントリ関数と主要分岐点に関数コメントを追加する
   - [x] `literals.c` / `escape.c` のリテラル・エスケープ処理に前提条件と失敗条件を明記する
   - [x] `scanner.c` / `keywords.c` / `punctuator.c` / `allocator.c` のホットパス関数に意図を明記する
 - [x] 意味整合性を確認する
   - [x] `num_kind` / `fp_kind` / strict C11関連フラグの説明が実装と一致しているか確認する
   - [x] コメントと実際のエラー挙動（例: 異常系）に齟齬がないか確認する
-- [ ] 品質ゲートを実施する
+- [x] 品質ゲートを実施する
   - [x] `make test` を実行して回帰がないことを確認する
   - [x] 追加コメントが警告や可読性低下を招いていないかレビューする
-- [ ] 運用ルールをドキュメント化する
-  - [ ] 「Tokenizer新規関数はDoxygen必須」のルールを追記する
-  - [ ] 「公開API変更時はDoxygen更新必須」のルールを追記する
+- [x] 運用ルールをドキュメント化する
+  - [x] 「Tokenizer新規関数はDoxygen必須」のルールを追記する
+  - [x] 「公開API変更時はDoxygen更新必須」のルールを追記する
 
 ### Doxygenコメント最小テンプレート（Tokenizer）
 - `@brief`: 1行で責務を示す（「何をするか」を先頭で説明）

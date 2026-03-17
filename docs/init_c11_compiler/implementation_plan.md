@@ -116,6 +116,20 @@ TDD用の自動テストスクリプトです。
 
 性能結果の詳細と履歴は [tokenizer_perf_report.md](tokenizer_perf_report.md) を参照してください。
 
+## 追補: Tokenizer Doxygen運用ルール（2026-03-17）
+
+Tokenizerの保守性を維持するため、以下を運用ルールとして固定します。
+
+- Tokenizer新規関数はDoxygenコメント必須
+  - 対象: `src/tokenizer/*.h` の公開宣言、`src/tokenizer/*.c` の主要関数（外部公開・ホットパス・失敗経路を持つ関数）
+  - 最低限のタグ: `@brief`、必要に応じて `@param` / `@return` / `@pre` / `@post` / `@note`
+  - 副作用や異常終了経路がある場合は `@warning` を付与
+
+- 公開API変更時はDoxygen更新必須
+  - 対象: シグネチャ変更、戻り値意味変更、strict C11関連設定の仕様変更
+  - 実装変更時に、同一PR/コミット内で `src/tokenizer/tokenizer.h` / `src/tokenizer/token.h` の説明更新を同時に行う
+  - `num_kind`・`fp_kind`・`float_suffix_kind` の有効範囲が変わる変更では、型コメントと使用側コメントを同時更新する
+
 ## Next Steps: ローカル変数サポート
 比較演算子の実装が完了したため、次は **ローカル変数** をサポートします。これにより `a=1; b=2; a+b;` のような複数の文からなるプログラムが実行可能になります。
 
