@@ -183,6 +183,17 @@ static void test_expr_bitwise() {
   ASSERT_EQ(ND_BITAND, node->rhs->rhs->kind);
 }
 
+static void test_expr_shift() {
+  printf("test_expr_shift...\n");
+  token = tk_tokenize("1 + 2 << 3 >> 1");
+  node_t *node = expr();
+
+  ASSERT_EQ(ND_SHR, node->kind);
+  ASSERT_EQ(ND_SHL, node->lhs->kind);
+  ASSERT_EQ(ND_ADD, node->lhs->lhs->kind);
+  ASSERT_EQ(1, as_num(node->rhs)->val);
+}
+
 static void test_expr_ternary() {
   printf("test_expr_ternary...\n");
   token = tk_tokenize("1 ? 2 : 3 ? 4 : 5");
@@ -561,6 +572,7 @@ int main() {
   test_expr_eq_neq();
   test_expr_relational();
   test_expr_bitwise();
+  test_expr_shift();
   test_expr_logical_and_or();
   test_expr_ternary();
   test_expr_unary_ops();

@@ -504,6 +504,12 @@ static void gen_expr(node_t *node) {
   case ND_BITOR:
     printf("  orr x0, x0, x1\n");
     break;
+  case ND_SHL:
+    printf("  lsl x0, x0, x1\n");
+    break;
+  case ND_SHR:
+    printf("  asr x0, x0, x1\n");
+    break;
   default:
     break;
   }

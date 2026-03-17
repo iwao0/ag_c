@@ -76,6 +76,9 @@ static const test_case_t test_cases[] = {
     {"comparison", "bit_or", CASE_INT, "main() { return 6 | 3; }", 7, 0},
     {"comparison", "bit_precedence", CASE_INT, "main() { return 1 | 2 ^ 3 & 4; }", 3, 0},
     {"comparison", "bit_vs_logical_prec", CASE_INT, "main() { return 1 && 2 | 0; }", 1, 0},
+    {"comparison", "shl", CASE_INT, "main() { return 3 << 2; }", 12, 0},
+    {"comparison", "shr", CASE_INT, "main() { return 32 >> 3; }", 4, 0},
+    {"comparison", "shift_precedence", CASE_INT, "main() { return 1 + 2 << 3; }", 24, 0},
 
     {"local_variables", "basic", CASE_INT, "main() { a=3; return a; }", 3, 0},
     {"local_variables", "expr", CASE_INT, "main() { a=3; b=5*6-8; return a+b/2; }", 14, 0},

@@ -99,7 +99,8 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   // 比較演算の結果は整数(0 または 1)
   if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE ||
       kind == ND_LOGAND || kind == ND_LOGOR ||
-      kind == ND_BITAND || kind == ND_BITXOR || kind == ND_BITOR) {
+      kind == ND_BITAND || kind == ND_BITXOR || kind == ND_BITOR ||
+      kind == ND_SHL || kind == ND_SHR) {
     node->fp_kind = TK_FLOAT_KIND_NONE;
   }
   return node;
@@ -162,6 +163,7 @@ static node_t *bit_xor(void);
 static node_t *bit_and(void);
 static node_t *equality(void);
 static node_t *relational(void);
+static node_t *shift(void);
 static node_t *add(void);
 static node_t *mul(void);
 static node_t *unary(void);
@@ -600,19 +602,32 @@ static node_t *equality(void) {
   }
 }
 
-// relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+// relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 static node_t *relational(void) {
-  node_t *node = add();
+  node_t *node = shift();
 
   for (;;) {
     if (tk_consume_str("<"))
-      node = new_node_binary(ND_LT, node, add());
+      node = new_node_binary(ND_LT, node, shift());
     else if (tk_consume_str("<="))
-      node = new_node_binary(ND_LE, node, add());
+      node = new_node_binary(ND_LE, node, shift());
     else if (tk_consume_str(">"))
-      node = new_node_binary(ND_LT, add(), node);
+      node = new_node_binary(ND_LT, shift(), node);
     else if (tk_consume_str(">="))
-      node = new_node_binary(ND_LE, add(), node);
+      node = new_node_binary(ND_LE, shift(), node);
+    else
+      return node;
+  }
+}
+
+// shift = add ("<<" add | ">>" add)*
+static node_t *shift(void) {
+  node_t *node = add();
+  for (;;) {
+    if (tk_consume_str("<<"))
+      node = new_node_binary(ND_SHL, node, add());
+    else if (tk_consume_str(">>"))
+      node = new_node_binary(ND_SHR, node, add());
     else
       return node;
   }
