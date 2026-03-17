@@ -15,6 +15,6 @@ void pctx_define_tag_type(token_kind_t kind, char *name, int len);
 bool pctx_is_type_token(token_kind_t kind);
 bool pctx_is_tag_keyword(token_kind_t kind);
 int pctx_scalar_type_size(token_kind_t kind);
+void pctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_size);
 
 #endif
-

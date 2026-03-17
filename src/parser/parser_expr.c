@@ -25,7 +25,9 @@ static int sizeof_expr_node(node_t *node) {
 static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
   token_t *t = tok->next;
-  if (!t || !pctx_is_type_token(t->kind)) return 0;
+  bool is_type = false;
+  pctx_get_type_info(t ? t->kind : TK_EOF, &is_type, NULL);
+  if (!t || !is_type) return 0;
   *type_kind = t->kind;
   t = t->next;
   *is_pointer = 0;
@@ -301,13 +303,16 @@ static node_t *unary(void) {
     token = token->next;
     if (token->kind == TK_LPAREN) {
       token = token->next;
-      if (pctx_is_type_token(token->kind)) {
-        token_kind_t type_kind = token->kind;
+      bool is_type = false;
+      int scalar_size = 8;
+      token_kind_t type_kind = token->kind;
+      pctx_get_type_info(type_kind, &is_type, &scalar_size);
+      if (is_type) {
         token = token->next;
         if (type_kind == TK_VOID) {
           tk_error_tok(token, "sizeof(void) はサポートしていません");
         }
-        int sz = pctx_scalar_type_size(type_kind);
+        int sz = scalar_size;
         while (token->kind == TK_MUL) {
           token = token->next;
           sz = 8;

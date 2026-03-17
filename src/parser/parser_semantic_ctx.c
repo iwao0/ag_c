@@ -118,3 +118,35 @@ int pctx_scalar_type_size(token_kind_t kind) {
   }
 }
 
+void pctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_size) {
+  bool is_type = false;
+  int size = 8;
+  switch (kind) {
+    case TK_CHAR:
+      is_type = true;
+      size = 1;
+      break;
+    case TK_SHORT:
+      is_type = true;
+      size = 2;
+      break;
+    case TK_INT:
+    case TK_FLOAT:
+      is_type = true;
+      size = 4;
+      break;
+    case TK_LONG:
+    case TK_DOUBLE:
+      is_type = true;
+      size = 8;
+      break;
+    case TK_VOID:
+      is_type = true;
+      size = 8;
+      break;
+    default:
+      break;
+  }
+  if (is_type_token) *is_type_token = is_type;
+  if (scalar_size) *scalar_size = size;
+}

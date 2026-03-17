@@ -94,7 +94,8 @@ node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_f
 
 node_t *pdecl_parse_declaration(void) {
   token_kind_t type_kind = parser_consume_type_kind();
-  int elem_size = pctx_scalar_type_size(type_kind);
+  int elem_size = 8;
+  pctx_get_type_info(type_kind, NULL, &elem_size);
   tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
   if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;

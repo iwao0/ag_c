@@ -128,3 +128,25 @@
 - 判定:
   - 目標（`mixed 256KB` +10〜20%, `expr-heavy` +8%以上）は達成
   - `control-heavy` は小幅改善だが、回帰ガードレール（-5%以内）を満たす
+
+## 2026-03-17 Local Type-Info Cache (Phase 3-2)
+
+- 実施:
+  - `pctx_get_type_info(kind, &is_type, &size)` を追加し、型トークン判定とサイズ判定を1回の分岐で取得
+  - `parser_expr` の cast/`sizeof(type)` 判定で上記APIを利用
+  - `parser_decl` の宣言サイズ決定で上記APIを利用
+- 回帰確認:
+  - `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` pass
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 22.53 | 22.49 | -0.2% |
+| mixed (256KB) parser_MB/s | 27.03 | 26.69 | -1.3% |
+| expr-heavy (256KB) parser_MB/s | 24.49 | 23.83 | -2.7% |
+| control-heavy (256KB) parser_MB/s | 28.92 | 28.11 | -2.8% |
+
+- 判定:
+  - 小幅な変動に留まり、回帰ガードレール（-5%）以内
+  - 保守性側の狙い（重複判定の集約）を優先して採用
