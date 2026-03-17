@@ -142,6 +142,14 @@ static void expect_lvalue(node_t *node, const char *op) {
   }
 }
 
+static void expect_incdec_target(node_t *node, const char *op) {
+  expect_lvalue(node, op);
+  // 現在の実装では ++/-- は整数スカラーのみ対応（float/double は未対応）
+  if (node->fp_kind != TK_FLOAT_KIND_NONE) {
+    tk_error_tok(token, "%s の対象は整数スカラーである必要があります", (char *)op);
+  }
+}
+
 static node_t *new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {
   expect_lvalue(lhs, op);
   node_t *op_expr = new_node_binary(op_kind, lhs, rhs);
@@ -735,7 +743,7 @@ static node_t *mul(void) {
 static node_t *unary(void) {
   if (tk_consume_str("++")) {
     node_t *target = unary();
-    expect_lvalue(target, "++");
+    expect_incdec_target(target, "++");
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_PRE_INC;
     node->lhs = target;
@@ -743,7 +751,7 @@ static node_t *unary(void) {
   }
   if (tk_consume_str("--")) {
     node_t *target = unary();
-    expect_lvalue(target, "--");
+    expect_incdec_target(target, "--");
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_PRE_DEC;
     node->lhs = target;
@@ -801,7 +809,7 @@ static node_t *unary(void) {
   }
   for (;;) {
     if (tk_consume_str("++")) {
-      expect_lvalue(node, "++");
+      expect_incdec_target(node, "++");
       node_t *inc = calloc(1, sizeof(node_t));
       inc->kind = ND_POST_INC;
       inc->lhs = node;
@@ -809,7 +817,7 @@ static node_t *unary(void) {
       continue;
     }
     if (tk_consume_str("--")) {
-      expect_lvalue(node, "--");
+      expect_incdec_target(node, "--");
       node_t *dec = calloc(1, sizeof(node_t));
       dec->kind = ND_POST_DEC;
       dec->lhs = node;
