@@ -263,10 +263,36 @@ static void parse_toplevel_tag_decl(void) {
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
+  if (token->kind == TK_SIGNED || token->kind == TK_UNSIGNED) {
+    token_kind_t sign_kind = token->kind;
+    token = token->next;
+    if (token->kind == TK_LONG) {
+      token = token->next;
+      if (token->kind == TK_INT) token = token->next;
+      (void)sign_kind;
+      return TK_LONG;
+    }
+    if (token->kind == TK_SHORT) {
+      token = token->next;
+      if (token->kind == TK_INT) token = token->next;
+      (void)sign_kind;
+      return TK_SHORT;
+    }
+    if (token->kind == TK_INT) token = token->next;
+    return TK_INT;
+  }
+  if (token->kind == TK_LONG) {
+    token = token->next;
+    if (token->kind == TK_INT) token = token->next;
+    return TK_LONG;
+  }
+  if (token->kind == TK_SHORT) {
+    token = token->next;
+    if (token->kind == TK_INT) token = token->next;
+    return TK_SHORT;
+  }
   if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID ||
-      token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT ||
-      token->kind == TK_DOUBLE || token->kind == TK_BOOL || token->kind == TK_SIGNED ||
-      token->kind == TK_UNSIGNED) {
+      token->kind == TK_FLOAT || token->kind == TK_DOUBLE || token->kind == TK_BOOL) {
     token_kind_t kind = token->kind;
     token = token->next;
     return kind;

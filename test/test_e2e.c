@@ -221,6 +221,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "typedef_int", CASE_INT, "typedef int myint; int main() { myint x=9; return x; }", 9, 0},
     {"type_decl", "typedef_ptr", CASE_INT, "typedef int *intptr; int main() { int a=11; intptr p=&a; return *p; }", 11, 0},
     {"type_decl", "typedef_in_func", CASE_INT, "int main() { typedef int myint; myint x=6; return x; }", 6, 0},
+    {"type_decl", "unsigned_long_decl", CASE_INT, "int main() { unsigned long v=12; return v; }", 12, 0},
+    {"type_decl", "signed_short_decl", CASE_INT, "int main() { signed short v=13; return v; }", 13, 0},
     {"type_decl", "float1", CASE_FLOAT, "float ag_m() { float f = 7; return f; }", 0, 7.0},
     {"type_decl", "float2", CASE_FLOAT, "float ag_m() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
     {"type_decl", "float3", CASE_FLOAT, "float ag_m() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},
