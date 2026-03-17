@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -11,36 +12,17 @@ float_lit_t *float_literals = NULL;
 static int string_label_count = 0;
 static int float_label_count = 0;
 
-static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
-
-static int node_type_size(node_t *node) {
-  if (!node) return 0;
-  switch (node->kind) {
-    case ND_LVAR: return as_lvar(node)->mem.type_size;
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-      return as_mem(node)->type_size;
-    default:
-      return 0;
-  }
-}
-
-static int node_deref_size(node_t *node) {
-  if (!node) return 0;
-  switch (node->kind) {
-    case ND_LVAR: return as_lvar(node)->mem.deref_size;
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-      return as_mem(node)->deref_size;
-    default:
-      return 0;
-  }
-}
+#define node_type_size pnode_type_size
+#define node_deref_size pnode_deref_size
+#define new_node_binary pnode_new_binary
+#define new_node_num pnode_new_num
+#define new_node_lvar pnode_new_lvar
+#define new_node_lvar_typed pnode_new_lvar_typed
+#define new_node_assign pnode_new_assign
+#define expect_lvalue pnode_expect_lvalue
+#define expect_incdec_target pnode_expect_incdec_target
+#define new_compound_assign pnode_new_compound_assign
 
 // ローカル変数テーブル（連結リスト）
 typedef struct lvar_t lvar_t;
@@ -86,78 +68,6 @@ static lvar_t *register_lvar_sized(char *name, int len, int size, int elem_size,
 
 static lvar_t *register_lvar(char *name, int len) {
   return register_lvar_sized(name, len, 8, 8, 0);
-}
-
-static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
-  node_t *node = calloc(1, sizeof(node_t));
-  node->kind = kind;
-  node->lhs = lhs;
-  node->rhs = rhs;
-  // 左辺と右辺から fp_kind を伝播 (より広い浮動小数点種別を優先)
-  if (lhs && lhs->fp_kind) node->fp_kind = lhs->fp_kind;
-  if (rhs && rhs->fp_kind > node->fp_kind) node->fp_kind = rhs->fp_kind;
-
-  // 比較演算の結果は整数(0 または 1)
-  if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE ||
-      kind == ND_LOGAND || kind == ND_LOGOR ||
-      kind == ND_BITAND || kind == ND_BITXOR || kind == ND_BITOR ||
-      kind == ND_SHL || kind == ND_SHR) {
-    node->fp_kind = TK_FLOAT_KIND_NONE;
-  }
-  return node;
-}
-
-static node_t *new_node_num(long long val) {
-  node_num_t *node = calloc(1, sizeof(node_num_t));
-  node->base.kind = ND_NUM;
-  node->val = val;
-  return (node_t *)node;
-}
-
-static node_t *new_node_lvar(int offset) {
-  node_lvar_t *node = calloc(1, sizeof(node_lvar_t));
-  node->mem.base.kind = ND_LVAR;
-  node->offset = offset;
-  node->mem.type_size = 8; // デフォルトは8バイト
-  return (node_t *)node;
-}
-
-static node_t *new_node_lvar_typed(int offset, int type_size) {
-  node_lvar_t *node = (node_lvar_t *)new_node_lvar(offset);
-  node->mem.type_size = type_size;
-  return (node_t *)node;
-}
-
-static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
-  node_mem_t *node = calloc(1, sizeof(node_mem_t));
-  node->base.kind = ND_ASSIGN;
-  node->base.lhs = lhs;
-  node->base.rhs = rhs;
-  node->base.fp_kind = lhs ? lhs->fp_kind : TK_FLOAT_KIND_NONE;
-  return node;
-}
-
-static void expect_lvalue(node_t *node, const char *op) {
-  if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF)) {
-    tk_error_tok(token, "%s の対象は左辺値である必要があります", (char *)op);
-  }
-}
-
-static void expect_incdec_target(node_t *node, const char *op) {
-  expect_lvalue(node, op);
-  // 現在の実装では ++/-- は整数スカラーのみ対応（float/double は未対応）
-  if (node->fp_kind != TK_FLOAT_KIND_NONE) {
-    tk_error_tok(token, "%s の対象は整数スカラーである必要があります", (char *)op);
-  }
-}
-
-static node_t *new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {
-  expect_lvalue(lhs, op);
-  node_t *op_expr = new_node_binary(op_kind, lhs, rhs);
-  node_mem_t *assign_node = new_node_assign(lhs, op_expr);
-  assign_node->type_size = node_type_size(lhs);
-  assign_node->base.fp_kind = lhs ? lhs->fp_kind : 0;
-  return (node_t *)assign_node;
 }
 
 static node_t *stmt(void);

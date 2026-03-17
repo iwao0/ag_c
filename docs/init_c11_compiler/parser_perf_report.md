@@ -71,6 +71,11 @@
 - 追加ファイル:
   - `src/parser/parser_semantic_ctx.h`
   - `src/parser/parser_semantic_ctx.c`
+- 追加ファイル（第2段）:
+  - `src/parser/parser_node_utils.h`
+  - `src/parser/parser_node_utils.c`
+- 置換:
+  - ASTノード生成・型サイズ計算・lvalue検証を `parser_node_utils` へ移管
 - ビルド連携:
   - `Makefile` に `PARSER_LIB_OBJS` を導入し、`test_parser` / `bench_parser` で再利用
 - 回帰確認:
