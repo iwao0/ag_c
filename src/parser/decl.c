@@ -11,6 +11,12 @@
 static lvar_t *locals;
 static int locals_offset;
 
+static void skip_ptr_qualifiers_decl(void) {
+  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
+    token = token->next;
+  }
+}
+
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -28,7 +34,10 @@ static token_ident_t *consume_decl_name(int *is_pointer) {
   token_ident_t *tok = NULL;
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) *is_pointer = 1;
+  while (tk_consume('*')) {
+    *is_pointer = 1;
+    skip_ptr_qualifiers_decl();
+  }
   tok = tk_consume_ident();
   if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
   while (open_parens-- > 0) tk_expect(')');
@@ -77,7 +86,10 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
   for (;;) {
     int is_pointer = base_is_pointer;
-    while (tk_consume('*')) { is_pointer = 1; }
+    while (tk_consume('*')) {
+      is_pointer = 1;
+      skip_ptr_qualifiers_decl();
+    }
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
       psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
     }

@@ -37,8 +37,20 @@ static long long parse_enum_const_mul_toplevel(void);
 static long long parse_enum_const_unary_toplevel(void);
 static long long parse_enum_const_primary_toplevel(void);
 
+static bool is_decl_prefix_token(token_kind_t k) {
+  return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
+         k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
+         k == TK_THREAD_LOCAL;
+}
+
 static void skip_cv_qualifiers(void) {
-  while (token->kind == TK_CONST || token->kind == TK_VOLATILE) {
+  while (is_decl_prefix_token(token->kind)) {
+    token = token->next;
+  }
+}
+
+static void skip_ptr_qualifiers(void) {
+  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
     token = token->next;
   }
 }
@@ -57,7 +69,7 @@ node_t **ps_program(void) {
       parse_toplevel_typedef_decl();
       continue;
     }
-    if ((psx_ctx_is_type_token(token->kind) || token->kind == TK_CONST || token->kind == TK_VOLATILE || psx_ctx_is_typedef_name_token(token)) &&
+    if ((psx_ctx_is_type_token(token->kind) || is_decl_prefix_token(token->kind) || psx_ctx_is_typedef_name_token(token)) &&
         !is_toplevel_function_signature(token)) {
       if (psx_ctx_is_typedef_name_token(token)) {
         token = token->next;
@@ -82,7 +94,7 @@ node_t **ps_program(void) {
 static int is_toplevel_function_signature(token_t *tok) {
   if (!tok) return 0;
   token_t *t = tok;
-  while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next;
+  while (t && is_decl_prefix_token(t->kind)) t = t->next;
   if (!t || (!psx_ctx_is_type_token(t->kind) && !psx_ctx_is_typedef_name_token(t))) return 0;
   t = t->next;
   while (t && t->kind == TK_MUL) t = t->next;
@@ -93,7 +105,10 @@ static int is_toplevel_function_signature(token_t *tok) {
 static void parse_toplevel_declarator_list(void) {
   for (;;) {
     int is_ptr = 0;
-    while (tk_consume('*')) is_ptr = 1;
+    while (tk_consume('*')) {
+      is_ptr = 1;
+      skip_ptr_qualifiers();
+    }
     token_ident_t *name = parse_toplevel_decl_name(&is_ptr);
     if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
     if (tk_consume('[')) {
@@ -110,7 +125,10 @@ static void parse_toplevel_declarator_list(void) {
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) *is_ptr = 1;
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers();
+  }
   token_ident_t *name = tk_consume_ident();
   if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
   while (open_parens-- > 0) tk_expect(')');
@@ -130,7 +148,10 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr) {
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) *is_ptr = 1;
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers();
+  }
   token_ident_t *name = tk_consume_ident();
   if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
   while (open_parens-- > 0) tk_expect(')');
@@ -196,7 +217,10 @@ static void parse_toplevel_typedef_decl(void) {
 
   for (;;) {
     int is_ptr = is_ptr_base;
-    while (tk_consume('*')) is_ptr = 1;
+    while (tk_consume('*')) {
+      is_ptr = 1;
+      skip_ptr_qualifiers();
+    }
     token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
     if (tk_consume('[')) {
       tk_expect_number();
@@ -245,7 +269,10 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
 
     for (;;) {
       int is_ptr = 0;
-      while (tk_consume('*')) is_ptr = 1;
+      while (tk_consume('*')) {
+        is_ptr = 1;
+        skip_ptr_qualifiers();
+      }
       token_ident_t *member = tk_consume_ident();
       if (!member) psx_diag_missing(token, "メンバ名");
       int arr_size = 1;
@@ -593,7 +620,9 @@ static token_ident_t *parse_param_declarator_name(void) {
   token_ident_t *param = NULL;
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) {}
+  while (tk_consume('*')) {
+    skip_ptr_qualifiers();
+  }
   param = tk_consume_ident();
   if (param) {
     while (open_parens-- > 0) tk_expect(')');

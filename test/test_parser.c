@@ -838,6 +838,15 @@ static void test_type_decl() {
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
+  token = tk_tokenize("main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -898,6 +907,26 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
+
+  token = tk_tokenize("extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
+  ASSERT_TRUE(parsed_code[1] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[2] == NULL);
+
+  token = tk_tokenize("_Noreturn void die() { return; } int main() { return 0; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "die", 3) == 0);
+  ASSERT_TRUE(parsed_code[1] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[2] == NULL);
 }
 
 static void test_parse_invalid() {

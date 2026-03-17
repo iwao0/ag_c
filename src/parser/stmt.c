@@ -30,6 +30,18 @@ static long long parse_enum_const_mul(void);
 static long long parse_enum_const_unary(void);
 static long long parse_enum_const_primary(void);
 
+static bool is_decl_prefix_token_stmt(token_kind_t k) {
+  return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
+         k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
+         k == TK_THREAD_LOCAL;
+}
+
+static void skip_ptr_qualifiers_stmt(void) {
+  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
+    token = token->next;
+  }
+}
+
 static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -44,7 +56,10 @@ static void skip_func_params_stmt(void) {
 static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) *is_ptr = 1;
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers_stmt();
+  }
   token_ident_t *name = tk_consume_ident();
   if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
   while (open_parens-- > 0) tk_expect(')');
@@ -91,7 +106,10 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
 
     for (;;) {
       int is_ptr = 0;
-      while (tk_consume('*')) is_ptr = 1;
+      while (tk_consume('*')) {
+        is_ptr = 1;
+        skip_ptr_qualifiers_stmt();
+      }
       token_ident_t *member = tk_consume_ident();
       if (!member) psx_diag_missing(token, "メンバ名");
       int arr_size = 1;
@@ -336,7 +354,10 @@ static void parse_typedef_decl(void) {
   }
   for (;;) {
     int is_ptr = is_pointer_base;
-    while (tk_consume('*')) is_ptr = 1;
+    while (tk_consume('*')) {
+      is_ptr = 1;
+      skip_ptr_qualifiers_stmt();
+    }
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     if (tk_consume('[')) {
       tk_expect_number();
@@ -373,7 +394,7 @@ static node_t *stmt_internal(void) {
     return psx_node_new_num(0);
   }
 
-  if (psx_ctx_is_type_token(token->kind) || token->kind == TK_CONST || token->kind == TK_VOLATILE || psx_ctx_is_typedef_name_token(token)) {
+  if (psx_ctx_is_type_token(token->kind) || is_decl_prefix_token_stmt(token->kind) || psx_ctx_is_typedef_name_token(token)) {
     if (psx_ctx_is_typedef_name_token(token)) {
       token_ident_t *id = (token_ident_t *)token;
       int elem_size = 8;
@@ -492,7 +513,7 @@ static node_t *stmt_internal(void) {
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
     if (!tk_consume(';')) {
-      if (psx_ctx_is_type_token(token->kind) || token->kind == TK_CONST || token->kind == TK_VOLATILE || psx_ctx_is_typedef_name_token(token)) {
+      if (psx_ctx_is_type_token(token->kind) || is_decl_prefix_token_stmt(token->kind) || psx_ctx_is_typedef_name_token(token)) {
         if (psx_ctx_is_typedef_name_token(token)) {
           token_ident_t *id = (token_ident_t *)token;
           int elem_size = 8;
