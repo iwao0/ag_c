@@ -16,8 +16,6 @@ node_t **code;
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 
-#define new_node_lvar psx_node_new_lvar
-
 static node_t *funcdef(void);
 
 // program = funcdef*
@@ -85,7 +83,7 @@ static node_t *funcdef(void) {
     token_ident_t *param = tk_consume_ident();
     if (param) {
       lvar_t *var = psx_decl_register_lvar(param->str, param->len);
-      node->args[nargs++] = new_node_lvar(var->offset);
+      node->args[nargs++] = psx_node_new_lvar(var->offset);
     }
     while (tk_consume(',')) {
       if (nargs >= arg_cap) {
@@ -97,7 +95,7 @@ static node_t *funcdef(void) {
       param = tk_consume_ident();
       if (param) {
         lvar_t *var = psx_decl_register_lvar(param->str, param->len);
-        node->args[nargs++] = new_node_lvar(var->offset);
+        node->args[nargs++] = psx_node_new_lvar(var->offset);
       }
     }
     tk_expect(')');
