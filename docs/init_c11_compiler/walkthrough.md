@@ -86,7 +86,9 @@
 | ブロック文 | `stmt = "{" stmt* "}"` |
 | 関数定義 | `funcdef = ident "(" params? ")" "{" stmt* "}"` |
 | 関数呼び出し | `primary = ident "(" args? ")"` |
-| 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double"` |
+| 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double" \| "signed" \| "unsigned" \| "_Bool"` |
+| タグ定義/参照 | `("struct"\|"union"\|"enum") ident`（定義本体 `{...}` とブロックスコープに対応） |
+| タグ型ポインタcast | `unary = "(" tag_type "*"* ")" unary`（例: `(struct S*)p`） |
 | ポインタ (`*p`, `&x`) | `unary = ("*" \| "&") unary` |
 | 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
 | 文字列リテラル (`"..."`) | `primary = ... \| string` |

@@ -23,10 +23,16 @@ stmt       = "{" stmt* "}"
            | ident ":" stmt
            | "return" expr ";"
            | ("struct" | "union" | "enum") ident ";"
+           | ("struct" | "union" | "enum") ident "{" tag_member_list "}" ";"
+           | ("struct" | "union" | "enum") ident "{" tag_member_list "}" declarator ("," declarator)* ";"
            | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
            | type declarator ("," declarator)* ";"
            | expr ";"
-type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"
+type       = "int" | "char" | "void" | "short" | "long" | "float" | "double" | "signed" | "unsigned" | "_Bool"
+tag_type   = ("struct" | "union" | "enum") ident
+tag_member_list = tag_member_decl+
+tag_member_decl = (type | tag_type) "*"* ident ("[" num "]")? ("," "*"* ident ("[" num "]")?)* ";"
+                | ident ("=" expr)? ("," ident ("=" expr)?)* ";"   // enum
 declarator = "*"* ident ("[" num "]")? ("=" expr)?
 expr       = assign ("," assign)*
 assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
@@ -41,7 +47,7 @@ relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 shift      = add ("<<" add | ">>" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary | "%" unary)*
-unary      = "(" type "*"* ")" unary
+unary      = "(" (type | tag_type) "*"* ")" unary
            | "sizeof" ("(" type "*"* ")" | unary | "(" expr ")")
            | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
            | primary postfix*
@@ -205,7 +211,7 @@ args       = expr ("," expr)*
 - ~~`return` 文~~ → **実装済み**
 - ~~関数定義・関数呼び出し~~ → **実装済み**
 - ~~複数文字の変数名~~ → **実装済み**（英数字・アンダースコア対応）
-- ~~型宣言（`int`）~~ → **実装済み**（`int`/`char`/`void`/`short`/`long`/`float`/`double`、サイズ・FPU命令対応済み）
+- ~~型宣言（`int`）~~ → **実装済み**（`int`/`char`/`void`/`short`/`long`/`float`/`double`/`signed`/`unsigned`/`_Bool`）
 - ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`）
 - ~~文字列リテラル~~ → **実装済み**（`char *s = "..."`、添字アクセス `s[i]` 対応済み）
 - プリプロセッサ (`#include`, `#define`)
