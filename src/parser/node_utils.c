@@ -33,6 +33,38 @@ int psx_node_deref_size(node_t *node) {
   }
 }
 
+void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer) {
+  token_kind_t kind = TK_EOF;
+  char *name = NULL;
+  int len = 0;
+  int ptr = 0;
+  if (node) {
+    switch (node->kind) {
+      case ND_LVAR:
+        kind = as_lvar(node)->mem.tag_kind;
+        name = as_lvar(node)->mem.tag_name;
+        len = as_lvar(node)->mem.tag_len;
+        ptr = as_lvar(node)->mem.is_tag_pointer;
+        break;
+      case ND_DEREF:
+      case ND_ASSIGN:
+      case ND_ADDR:
+      case ND_STRING:
+        kind = as_mem(node)->tag_kind;
+        name = as_mem(node)->tag_name;
+        len = as_mem(node)->tag_len;
+        ptr = as_mem(node)->is_tag_pointer;
+        break;
+      default:
+        break;
+    }
+  }
+  if (tag_kind) *tag_kind = kind;
+  if (tag_name) *tag_name = name;
+  if (tag_len) *tag_len = len;
+  if (is_tag_pointer) *is_tag_pointer = ptr;
+}
+
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = calloc(1, sizeof(node_t));
   node->kind = kind;
@@ -101,4 +133,3 @@ node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *r
   assign_node->base.fp_kind = lhs ? lhs->fp_kind : 0;
   return (node_t *)assign_node;
 }
-

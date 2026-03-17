@@ -22,6 +22,7 @@ static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
 static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
+static node_mem_t *as_mem(node_t *n) { return (node_mem_t *)n; }
 
 static void expect_parse_fail(const char *input) {
   fflush(NULL);
@@ -638,6 +639,30 @@ static void test_expr_deref_addr() {
   ASSERT_EQ(ND_LVAR, deref->lhs->kind);
 }
 
+static void test_expr_member_access() {
+  printf("test_expr_member_access...\n");
+  token = tk_tokenize("main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
+  parsed_code = ps_program();
+  node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
+  node_t *assign = body->body[2];
+  ASSERT_EQ(ND_ASSIGN, assign->kind);
+  ASSERT_EQ(ND_DEREF, assign->lhs->kind);
+  ASSERT_EQ(4, as_mem(assign->lhs)->type_size);
+  ASSERT_EQ(ND_ADD, assign->lhs->lhs->kind);
+
+  node_t *ret = body->body[3];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_DEREF, ret->lhs->kind);
+
+  token = tk_tokenize("main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  assign = body->body[4];
+  ASSERT_EQ(ND_ASSIGN, assign->kind);
+  ASSERT_EQ(ND_DEREF, assign->lhs->kind);
+  ASSERT_EQ(4, as_mem(assign->lhs)->type_size);
+}
+
 static void test_expr_string() {
   printf("test_expr_string...\n");
   string_literals = NULL; // リセット
@@ -813,6 +838,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
   expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
+  expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
+  expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
@@ -865,6 +892,7 @@ int main() {
   test_stmt_block();
   test_stmt_goto_label();
   test_expr_deref_addr();
+  test_expr_member_access();
   test_expr_string();
   test_expr_concat_string();
   test_expr_float();

@@ -43,12 +43,16 @@ lvar_t *psx_decl_register_lvar(char *name, int len) {
   return psx_decl_register_lvar_sized(name, len, 8, 8, 0);
 }
 
-node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind) {
+node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
+                                              token_kind_t tag_kind, char *tag_name, int tag_len) {
   node_t *init_chain = NULL;
 
   for (;;) {
     int is_pointer = 0;
     while (tk_consume('*')) { is_pointer = 1; }
+    if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
+      psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
+    }
     int var_size = is_pointer ? 8 : elem_size;
 
     token_ident_t *tok = tk_consume_ident();
@@ -62,11 +66,19 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         int array_size = tk_expect_number();
         tk_expect(']');
         var = psx_decl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
+        var->tag_kind = tag_kind;
+        var->tag_name = tag_name;
+        var->tag_len = tag_len;
+        var->is_tag_pointer = 0;
         if (tk_consume('=')) {
           psx_expr_assign();
         }
       } else {
         var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
+        var->tag_kind = tag_kind;
+        var->tag_name = tag_name;
+        var->tag_len = tag_len;
+        var->is_tag_pointer = is_pointer ? 1 : 0;
       }
     }
 
@@ -77,6 +89,10 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     if (tk_consume('=')) {
       node_t *lvar = psx_node_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
       lvar->fp_kind = var->fp_kind;
+      ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
+      ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
+      ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
+      ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
       node_mem_t *assign_node = psx_node_new_assign(lvar, psx_expr_assign());
       assign_node->type_size = is_pointer ? 8 : var->elem_size;
       assign_node->base.fp_kind = var->fp_kind;
@@ -99,5 +115,5 @@ node_t *psx_decl_parse_declaration(void) {
   tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
   if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind);
+  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0);
 }

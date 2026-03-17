@@ -69,6 +69,10 @@ struct node_mem_t {
   node_t base;
   int type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
   int deref_size;  // ポインタが指す先の要素サイズ
+  token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）
+  char *tag_name;
+  int tag_len;
+  int is_tag_pointer; // 1: tagへのポインタ値, 0: tag値そのもの
 };
 
 // 数値ノード

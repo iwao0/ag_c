@@ -13,6 +13,10 @@ struct lvar_t {
   int elem_size;
   int is_array;
   tk_float_kind_t fp_kind;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int is_tag_pointer;
 };
 
 void psx_decl_reset_locals(void);
@@ -21,7 +25,7 @@ lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 
 node_t *psx_decl_parse_declaration(void);
-node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind);
+node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
+                                              token_kind_t tag_kind, char *tag_name, int tag_len);
 
 #endif
-

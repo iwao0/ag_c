@@ -12,54 +12,68 @@
 
 node_t *ps_expr(void);
 
-static int parse_tag_definition_body(token_kind_t tag_kind);
+static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 
-static void parse_member_type_specifier(void) {
-  if (psx_ctx_is_type_token(token->kind)) {
-    token = token->next;
-    return;
-  }
-
-  if (psx_ctx_is_tag_keyword(token->kind)) {
-    token_kind_t nested_kind = token->kind;
-    token = token->next;
-    token_ident_t *nested_tag = tk_consume_ident();
-    if (!nested_tag) {
-      psx_diag_missing(token, "タグ名");
-    }
-    if (tk_consume('{')) {
-      int member_count = parse_tag_definition_body(nested_kind);
-      psx_ctx_define_tag_type_with_members(nested_kind, nested_tag->str, nested_tag->len, member_count);
-      return;
-    }
-    if (!psx_ctx_has_tag_type(nested_kind, nested_tag->str, nested_tag->len)) {
-      psx_diag_undefined_with_name(token, "のタグ型", nested_tag->str, nested_tag->len);
-    }
-    return;
-  }
-
-  psx_diag_ctx(token, "decl", "メンバ型が期待されます");
-}
-
-static int parse_struct_or_union_members(void) {
+static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   int member_count = 0;
+  int current_off = 0;
+  int union_size = 0;
   while (!tk_consume('}')) {
-    parse_member_type_specifier();
-    for (;;) {
-      while (tk_consume('*')) {}
-      token_ident_t *member = tk_consume_ident();
-      if (!member) {
-        psx_diag_missing(token, "メンバ名");
+    int elem_size = 8;
+    token_kind_t member_tag_kind = TK_EOF;
+    char *member_tag_name = NULL;
+    int member_tag_len = 0;
+    if (psx_ctx_is_type_token(token->kind)) {
+      psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+      token = token->next;
+    } else if (psx_ctx_is_tag_keyword(token->kind)) {
+      member_tag_kind = token->kind;
+      token = token->next;
+      token_ident_t *nested_tag = tk_consume_ident();
+      if (!nested_tag) psx_diag_missing(token, "タグ名");
+      member_tag_name = nested_tag->str;
+      member_tag_len = nested_tag->len;
+      if (tk_consume('{')) {
+        int nested_n = 0;
+        int nested_sz = 0;
+        nested_n = parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len, &nested_sz);
+        psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len, nested_n, nested_sz);
+      } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
+        psx_diag_undefined_with_name(token, "のタグ型", member_tag_name, member_tag_len);
       }
-      member_count++;
+      elem_size = psx_ctx_get_tag_size(member_tag_kind, member_tag_name, member_tag_len);
+      if (elem_size <= 0) psx_diag_ctx(token, "decl", "不完全型のメンバは定義できません");
+    } else {
+      psx_diag_ctx(token, "decl", "メンバ型が期待されます");
+    }
+
+    for (;;) {
+      int is_ptr = 0;
+      while (tk_consume('*')) is_ptr = 1;
+      token_ident_t *member = tk_consume_ident();
+      if (!member) psx_diag_missing(token, "メンバ名");
+      int arr_size = 1;
       if (tk_consume('[')) {
-        tk_expect_number();
+        arr_size = tk_expect_number();
         tk_expect(']');
+      }
+      int total_size = is_ptr ? 8 : elem_size * arr_size;
+      int deref_size = is_ptr ? elem_size : 0;
+      int off = (tag_kind == TK_UNION) ? 0 : current_off;
+      psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
+                             member->str, member->len, off, is_ptr ? 8 : elem_size, deref_size,
+                             member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
+      member_count++;
+      if (tag_kind == TK_UNION) {
+        if (total_size > union_size) union_size = total_size;
+      } else {
+        current_off += total_size;
       }
       if (!tk_consume(',')) break;
     }
     tk_expect(';');
   }
+  *out_size = (tag_kind == TK_UNION) ? union_size : current_off;
   return member_count;
 }
 
@@ -85,9 +99,12 @@ static int parse_enum_members(void) {
   return member_count;
 }
 
-static int parse_tag_definition_body(token_kind_t tag_kind) {
-  if (tag_kind == TK_ENUM) return parse_enum_members();
-  return parse_struct_or_union_members();
+static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
+  if (tag_kind == TK_ENUM) {
+    if (out_size) *out_size = 4;
+    return parse_enum_members();
+  }
+  return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
 
 static node_t *stmt_internal(void) {
@@ -122,12 +139,14 @@ static node_t *stmt_internal(void) {
       psx_diag_missing(token, "タグ名");
     }
     if (tk_consume('{')) {
-      int member_count = parse_tag_definition_body(tag_kind);
-      psx_ctx_define_tag_type_with_members(tag_kind, tag->str, tag->len, member_count);
+      int member_count = 0;
+      int tag_size = 0;
+      member_count = parse_tag_definition_body(tag_kind, tag->str, tag->len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(tag_kind, tag->str, tag->len, member_count, tag_size);
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
-      return psx_decl_parse_declaration_after_type(8, TK_FLOAT_KIND_NONE);
+      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
@@ -136,7 +155,9 @@ static node_t *stmt_internal(void) {
     if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
       psx_diag_undefined_with_name(token, "のタグ型", tag->str, tag->len);
     }
-    return psx_decl_parse_declaration_after_type(8, TK_FLOAT_KIND_NONE);
+    int tag_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
+    return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
+                                                 TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len);
   }
 
   if (token->kind == TK_RETURN) {

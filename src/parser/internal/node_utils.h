@@ -5,6 +5,7 @@
 
 int psx_node_type_size(node_t *node);
 int psx_node_deref_size(node_t *node);
+void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer);
 
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);
 node_t *psx_node_new_num(long long val);
@@ -17,4 +18,3 @@ void psx_node_expect_incdec_target(node_t *node, const char *op);
 node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op);
 
 #endif
-

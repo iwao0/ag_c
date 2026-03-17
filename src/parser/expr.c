@@ -25,6 +25,55 @@ static int sizeof_expr_node(node_t *node) {
   return 8;
 }
 
+static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
+  token_ident_t *member = tk_consume_ident();
+  if (!member) {
+    psx_diag_missing(token, "メンバ名");
+  }
+
+  token_kind_t base_tag_kind = TK_EOF;
+  char *base_tag_name = NULL;
+  int base_tag_len = 0;
+  int base_is_ptr = 0;
+  psx_node_get_tag_type(base, &base_tag_kind, &base_tag_name, &base_tag_len, &base_is_ptr);
+  if (base_tag_kind == TK_EOF || (!from_ptr && base_is_ptr) || (from_ptr && !base_is_ptr)) {
+    tk_error_tok(op_tok, from_ptr ? "'->' の左辺は構造体/共用体ポインタである必要があります"
+                                  : "'.' の左辺は構造体/共用体である必要があります");
+  }
+
+  int off = 0, mem_size = 0, mem_deref = 0;
+  token_kind_t mem_tag_kind = TK_EOF;
+  char *mem_tag_name = NULL;
+  int mem_tag_len = 0;
+  int mem_is_ptr = 0;
+  if (!psx_ctx_find_tag_member(base_tag_kind, base_tag_name, base_tag_len,
+                               member->str, member->len,
+                               &off, &mem_size, &mem_deref,
+                               &mem_tag_kind, &mem_tag_name, &mem_tag_len, &mem_is_ptr)) {
+    psx_diag_ctx(op_tok, "member", "メンバ '%.*s' は存在しません", member->len, member->str);
+  }
+
+  node_t *addr_base = base;
+  if (!from_ptr) {
+    node_mem_t *addr = calloc(1, sizeof(node_mem_t));
+    addr->base.kind = ND_ADDR;
+    addr->base.lhs = base;
+    addr->type_size = 8;
+    addr_base = (node_t *)addr;
+  }
+  node_t *addr = psx_node_new_binary(ND_ADD, addr_base, psx_node_new_num(off));
+  node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+  deref->base.kind = ND_DEREF;
+  deref->base.lhs = addr;
+  deref->type_size = mem_size ? mem_size : 8;
+  deref->deref_size = mem_deref;
+  deref->tag_kind = mem_tag_kind;
+  deref->tag_name = mem_tag_name;
+  deref->tag_len = mem_tag_len;
+  deref->is_tag_pointer = mem_is_ptr;
+  return (node_t *)deref;
+}
+
 static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
   token_t *t = tok->next;
@@ -402,6 +451,18 @@ static node_t *unary(void) {
     node->base.fp_kind = operand ? operand->fp_kind : 0;
     int ds = psx_node_deref_size(operand);
     node->type_size = ds ? ds : 8;
+    token_kind_t tag_kind = TK_EOF;
+    char *tag_name = NULL;
+    int tag_len = 0;
+    int is_tag_ptr = 0;
+    psx_node_get_tag_type(operand, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+    if (tag_kind != TK_EOF && is_tag_ptr) {
+      node->tag_kind = tag_kind;
+      node->tag_name = tag_name;
+      node->tag_len = tag_len;
+      node->is_tag_pointer = 0;
+      node->deref_size = 0;
+    }
     return (node_t *)node;
   }
   if (token->kind == TK_AMP) {
@@ -409,6 +470,19 @@ static node_t *unary(void) {
     node_mem_t *node = calloc(1, sizeof(node_mem_t));
     node->base.kind = ND_ADDR;
     node->base.lhs = unary();
+    token_kind_t tag_kind = TK_EOF;
+    char *tag_name = NULL;
+    int tag_len = 0;
+    int is_tag_ptr = 0;
+    psx_node_get_tag_type(node->base.lhs, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+    if (tag_kind != TK_EOF && !is_tag_ptr) {
+      node->tag_kind = tag_kind;
+      node->tag_name = tag_name;
+      node->tag_len = tag_len;
+      node->is_tag_pointer = 1;
+      node->deref_size = psx_node_type_size(node->base.lhs);
+      node->type_size = 8;
+    }
     return (node_t *)node;
   }
 
@@ -426,9 +500,32 @@ static node_t *unary(void) {
     deref->base.kind = ND_DEREF;
     deref->base.lhs = addr;
     deref->type_size = es;
+    token_kind_t tag_kind = TK_EOF;
+    char *tag_name = NULL;
+    int tag_len = 0;
+    int is_tag_ptr = 0;
+    psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+    if (tag_kind != TK_EOF && is_tag_ptr) {
+      deref->tag_kind = tag_kind;
+      deref->tag_name = tag_name;
+      deref->tag_len = tag_len;
+      deref->is_tag_pointer = 0;
+    }
     node = (node_t *)deref;
   }
   for (;;) {
+    if (token->kind == TK_DOT) {
+      token_t *op_tok = token;
+      token = token->next;
+      node = build_member_access(node, 0, op_tok);
+      continue;
+    }
+    if (token->kind == TK_ARROW) {
+      token_t *op_tok = token;
+      token = token->next;
+      node = build_member_access(node, 1, op_tok);
+      continue;
+    }
     if (token->kind == TK_INC) {
       token = token->next;
       psx_node_expect_incdec_target(node, "++");
@@ -534,10 +631,18 @@ static node_t *primary(void) {
       node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
       node->type_size = var->elem_size;
       node->deref_size = var->elem_size;
+      node->tag_kind = var->tag_kind;
+      node->tag_name = var->tag_name;
+      node->tag_len = var->tag_len;
+      node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
       return (node_t *)node;
     }
     node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
     as_lvar(n)->mem.deref_size = var->elem_size;
+    as_lvar(n)->mem.tag_kind = var->tag_kind;
+    as_lvar(n)->mem.tag_name = var->tag_name;
+    as_lvar(n)->mem.tag_len = var->tag_len;
+    as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
     n->fp_kind = var->fp_kind;
     return n;
   }
