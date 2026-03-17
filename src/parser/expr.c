@@ -1,4 +1,5 @@
 #include "internal/expr.h"
+#include "internal/core.h"
 #include "internal/decl.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
@@ -16,6 +17,11 @@ static int string_label_count = 0;
 static int float_label_count = 0;
 
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
+
+typedef struct {
+  token_kind_t kind;
+  int is_pointer;
+} generic_type_t;
 
 static int sizeof_expr_node(node_t *node) {
   int sz = psx_node_type_size(node);
@@ -56,6 +62,76 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   if (!after_params) return 0;
   *ptok = after_params;
   *is_pointer = 1;
+  return 1;
+}
+
+static void skip_ptr_qualifiers_expr(void) {
+  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
+    token = token->next;
+  }
+}
+
+static generic_type_t infer_generic_control_type(node_t *control) {
+  generic_type_t gt = {TK_INT, 0};
+  if (!control) return gt;
+  if (control->kind == ND_STRING) {
+    gt.kind = TK_CHAR;
+    gt.is_pointer = 1;
+    return gt;
+  }
+  if (control->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    gt.kind = TK_FLOAT;
+    return gt;
+  }
+  if (control->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    gt.kind = TK_DOUBLE;
+    return gt;
+  }
+  int ts = psx_node_type_size(control);
+  int ds = psx_node_deref_size(control);
+  if (ts == 8 && ds > 0) {
+    gt.is_pointer = 1;
+    gt.kind = TK_INT;
+    return gt;
+  }
+  if (ts == 1) gt.kind = TK_CHAR;
+  else if (ts == 2) gt.kind = TK_SHORT;
+  else if (ts == 8) gt.kind = TK_LONG;
+  else gt.kind = TK_INT;
+  return gt;
+}
+
+static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
+  if (control.is_pointer != assoc.is_pointer) return 0;
+  if (control.is_pointer) return 1;
+  return control.kind == assoc.kind;
+}
+
+static int parse_generic_assoc_type(generic_type_t *out) {
+  out->kind = TK_EOF;
+  out->is_pointer = 0;
+  if (psx_ctx_is_typedef_name_token(token)) {
+    token_ident_t *id = (token_ident_t *)token;
+    token_kind_t base_kind = TK_EOF;
+    int elem_size = 8;
+    tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+    token_kind_t tag_kind = TK_EOF;
+    char *tag_name = NULL;
+    int tag_len = 0;
+    int is_ptr = 0;
+    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
+    token = token->next;
+    out->kind = base_kind;
+    out->is_pointer = is_ptr;
+  } else {
+    token_kind_t tk = psx_consume_type_kind();
+    if (tk == TK_EOF) return 0;
+    out->kind = tk;
+  }
+  while (tk_consume('*')) {
+    out->is_pointer = 1;
+    skip_ptr_qualifiers_expr();
+  }
   return 1;
 }
 
@@ -672,6 +748,44 @@ static node_t *parse_call_postfix(node_t *callee) {
 }
 
 static node_t *primary(void) {
+  if (token->kind == TK_GENERIC) {
+    token = token->next;
+    tk_expect('(');
+    node_t *control = assign();
+    generic_type_t control_ty = infer_generic_control_type(control);
+    tk_expect(',');
+
+    node_t *selected = NULL;
+    node_t *default_expr = NULL;
+    int matched = 0;
+    for (;;) {
+      if (token->kind == TK_DEFAULT) {
+        token = token->next;
+        tk_expect(':');
+        node_t *expr_node = assign();
+        if (!default_expr) default_expr = expr_node;
+      } else {
+        generic_type_t assoc_ty = {TK_EOF, 0};
+        if (!parse_generic_assoc_type(&assoc_ty)) {
+          psx_diag_ctx(token, "generic", "_Generic の関連型が不正です");
+        }
+        tk_expect(':');
+        node_t *expr_node = assign();
+        if (!matched && generic_type_matches(control_ty, assoc_ty)) {
+          selected = expr_node;
+          matched = 1;
+        }
+      }
+      if (!tk_consume(',')) break;
+    }
+    tk_expect(')');
+    if (!selected) selected = default_expr;
+    if (!selected) {
+      psx_diag_ctx(token, "generic", "_Generic に一致する関連がありません");
+    }
+    return selected;
+  }
+
   if (token->kind == TK_NUM) {
     token_num_t *num = (token_num_t *)token;
     node_num_t *node = calloc(1, sizeof(node_num_t));

@@ -556,11 +556,12 @@
   - [ ] 「この型へのキャストは未対応です」となる型カテゴリを棚卸しして、受理範囲を拡張する
 
 ## Parser未実装タスク（2026-03-17 追加棚卸し2）
-- [ ] C11キーワードのParser接続を進める
-  - [ ] `_Alignas`, `_Alignof`, `_Atomic`, `_Generic`, `_Noreturn`, `_Static_assert`, `_Thread_local` を段階的に受理する
+- [x] C11キーワードのParser接続を進める
+  - [x] `_Alignas`, `_Alignof`, `_Atomic`, `_Generic`, `_Noreturn`, `_Static_assert`, `_Thread_local` を段階的に受理する
   - [x] `_Alignas(...)` を宣言前置指定子として受理する（アラインメント適用自体は今後）
   - [x] `_Atomic`（修飾子形式）を宣言前置指定子として受理する
   - [x] `_Atomic(type)` 形式を最小受理する（現状: 組み込み基本型まで）
+  - [x] `_Generic` を式として最小受理する（現状: 基本型/ポインタ + `default`）
   - [x] `_Alignof` を式として受理する（型名のみ）
   - [x] `_Static_assert` を最外部/文内宣言として受理する（整数定数式 + 文字列）
   - [x] `_Noreturn` / `_Thread_local` を宣言前置指定子として受理する

@@ -295,6 +295,27 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(0, as_num(boolcast->rhs)->val);
 }
 
+static void test_expr_generic() {
+  printf("test_expr_generic...\n");
+
+  token = tk_tokenize("_Generic(1, int: 11, default: 22)");
+  node_t *g1 = ps_expr();
+  ASSERT_EQ(ND_NUM, g1->kind);
+  ASSERT_EQ(11, as_num(g1)->val);
+
+  token = tk_tokenize("_Generic(1.0, float: 11, double: 33, default: 22)");
+  node_t *g2 = ps_expr();
+  ASSERT_EQ(ND_NUM, g2->kind);
+  ASSERT_EQ(33, as_num(g2)->val);
+
+  token = tk_tokenize("main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
+  parsed_code = ps_program();
+  node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(3, as_num(ret->lhs)->val);
+}
+
 static void test_expr_sizeof() {
   printf("test_expr_sizeof...\n");
 
@@ -994,6 +1015,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { _Complex int x; return 0; }");   // 未対応型指定子
   expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 未対応型指定子
   expect_parse_fail("main() { _Atomic(int*) p=0; return 0; }"); // _Atomic(type) 派生型は未対応
+  expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
   expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
   expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
@@ -1031,6 +1053,7 @@ int main() {
   test_expr_logical_and_or();
   test_expr_ternary();
   test_expr_unary_ops();
+  test_expr_generic();
   test_expr_sizeof();
   test_expr_inc_dec();
   test_expr_assign();
