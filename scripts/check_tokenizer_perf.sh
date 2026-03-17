@@ -15,7 +15,10 @@ fi
 parse_line() {
   local case_name="$1"
   local input_size="$2"
-  grep "case=${case_name} input=${input_size}" "$file" | tail -n 1 || true
+  grep "case=${case_name} input=${input_size}" "$file" \
+    | grep 'tokens/sec=' \
+    | grep 'alloc_count=' \
+    | tail -n 1 || true
 }
 
 extract_tps() {
