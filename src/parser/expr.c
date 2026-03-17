@@ -111,6 +111,13 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }
+  if (type_kind == TK_SIGNED || type_kind == TK_UNSIGNED) {
+    operand->fp_kind = TK_FLOAT_KIND_NONE;
+    return operand;
+  }
+  if (type_kind == TK_BOOL) {
+    return psx_node_new_binary(ND_NE, operand, psx_node_new_num(0));
+  }
   if (type_kind == TK_VOID) {
     // 現状ASTでは専用ノードを持たず、既存ノードのまま評価値を捨てる文脈で利用する。
     operand->fp_kind = TK_FLOAT_KIND_NONE;

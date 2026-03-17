@@ -120,7 +120,8 @@ void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
 
 bool psx_ctx_is_type_token(token_kind_t kind) {
   return kind == TK_INT || kind == TK_CHAR || kind == TK_VOID || kind == TK_SHORT ||
-         kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE;
+         kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE ||
+         kind == TK_BOOL || kind == TK_SIGNED || kind == TK_UNSIGNED;
 }
 
 bool psx_ctx_is_tag_keyword(token_kind_t kind) {
@@ -130,8 +131,11 @@ bool psx_ctx_is_tag_keyword(token_kind_t kind) {
 int psx_ctx_scalar_type_size(token_kind_t kind) {
   switch (kind) {
     case TK_CHAR: return 1;
+    case TK_BOOL: return 1;
     case TK_SHORT: return 2;
     case TK_INT:
+    case TK_SIGNED:
+    case TK_UNSIGNED:
     case TK_FLOAT:
       return 4;
     case TK_LONG:
@@ -147,6 +151,7 @@ void psx_ctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_s
   int size = 8;
   switch (kind) {
     case TK_CHAR:
+    case TK_BOOL:
       is_type = true;
       size = 1;
       break;
@@ -155,6 +160,8 @@ void psx_ctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_s
       size = 2;
       break;
     case TK_INT:
+    case TK_SIGNED:
+    case TK_UNSIGNED:
     case TK_FLOAT:
       is_type = true;
       size = 4;

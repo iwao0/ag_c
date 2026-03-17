@@ -286,6 +286,12 @@ static void test_expr_unary_ops() {
   node_t *voidcast = ps_expr();
   ASSERT_EQ(ND_NUM, voidcast->kind);
   ASSERT_EQ(1, as_num(voidcast)->val);
+
+  token = tk_tokenize("(_Bool)3");
+  node_t *boolcast = ps_expr();
+  ASSERT_EQ(ND_NE, boolcast->kind);
+  ASSERT_EQ(ND_NUM, boolcast->rhs->kind);
+  ASSERT_EQ(0, as_num(boolcast->rhs)->val);
 }
 
 static void test_expr_sizeof() {
@@ -762,6 +768,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
   expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "[parser] ラベル 'L1' が重複");
   expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
+  expect_parse_fail_with_message("main() { return sizeof(void); }", "[sizeof] sizeof(void) はサポートしていません");
 }
 
 int main() {
