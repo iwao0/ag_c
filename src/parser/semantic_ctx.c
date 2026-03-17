@@ -28,6 +28,7 @@ struct tag_type_t {
   token_kind_t kind;
   char *name;
   int len;
+  int member_count;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -108,14 +109,34 @@ bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
 }
 
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
-  if (psx_ctx_has_tag_type(kind, name, len)) return;
-  tag_type_t *t = calloc(1, sizeof(tag_type_t));
+  psx_ctx_define_tag_type_with_members(kind, name, len, 0);
+}
+
+void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count) {
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
+  for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
+    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
+      if (member_count > t->member_count) t->member_count = member_count;
+      return;
+    }
+  }
+  tag_type_t *t = calloc(1, sizeof(tag_type_t));
   t->kind = kind;
   t->name = name;
   t->len = len;
+  t->member_count = member_count;
   t->next_hash = tag_types_by_bucket[bucket];
   tag_types_by_bucket[bucket] = t;
+}
+
+int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
+  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
+  for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
+    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
+      return t->member_count;
+    }
+  }
+  return -1;
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {

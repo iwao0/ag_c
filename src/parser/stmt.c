@@ -12,6 +12,80 @@
 
 node_t *ps_expr(void);
 
+static int parse_tag_definition_body(token_kind_t tag_kind);
+
+static void parse_member_type_specifier(void) {
+  if (psx_ctx_is_type_token(token->kind)) {
+    token = token->next;
+    return;
+  }
+
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    token_kind_t nested_kind = token->kind;
+    token = token->next;
+    token_ident_t *nested_tag = tk_consume_ident();
+    if (!nested_tag) {
+      psx_diag_missing(token, "タグ名");
+    }
+    if (tk_consume('{')) {
+      int member_count = parse_tag_definition_body(nested_kind);
+      psx_ctx_define_tag_type_with_members(nested_kind, nested_tag->str, nested_tag->len, member_count);
+      return;
+    }
+    if (!psx_ctx_has_tag_type(nested_kind, nested_tag->str, nested_tag->len)) {
+      psx_diag_undefined_with_name(token, "のタグ型", nested_tag->str, nested_tag->len);
+    }
+    return;
+  }
+
+  psx_diag_ctx(token, "decl", "メンバ型が期待されます");
+}
+
+static int parse_struct_or_union_members(void) {
+  int member_count = 0;
+  while (!tk_consume('}')) {
+    parse_member_type_specifier();
+    for (;;) {
+      while (tk_consume('*')) {}
+      token_ident_t *member = tk_consume_ident();
+      if (!member) {
+        psx_diag_missing(token, "メンバ名");
+      }
+      member_count++;
+      if (tk_consume('[')) {
+        tk_expect_number();
+        tk_expect(']');
+      }
+      if (!tk_consume(',')) break;
+    }
+    tk_expect(';');
+  }
+  return member_count;
+}
+
+static int parse_enum_members(void) {
+  int member_count = 0;
+  while (!tk_consume('}')) {
+    token_ident_t *enumerator = tk_consume_ident();
+    if (!enumerator) {
+      psx_diag_missing(token, "列挙子名");
+    }
+    member_count++;
+    if (tk_consume('=')) {
+      ps_expr();
+    }
+    if (tk_consume('}')) break;
+    tk_expect(',');
+    if (tk_consume('}')) break;
+  }
+  return member_count;
+}
+
+static int parse_tag_definition_body(token_kind_t tag_kind) {
+  if (tag_kind == TK_ENUM) return parse_enum_members();
+  return parse_struct_or_union_members();
+}
+
 static node_t *stmt_internal(void) {
   if (tk_consume('{')) {
     node_block_t *node = calloc(1, sizeof(node_block_t));
@@ -42,7 +116,12 @@ static node_t *stmt_internal(void) {
       psx_diag_missing(token, "タグ名");
     }
     if (tk_consume('{')) {
-      tk_error_tok(token, "struct/union/enum のメンバ宣言は未対応です");
+      int member_count = parse_tag_definition_body(tag_kind);
+      psx_ctx_define_tag_type_with_members(tag_kind, tag->str, tag->len, member_count);
+      if (tk_consume(';')) {
+        return psx_node_new_num(0);
+      }
+      return psx_decl_parse_declaration_after_type(8, TK_FLOAT_KIND_NONE);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
