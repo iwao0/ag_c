@@ -951,6 +951,13 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
+  token = tk_tokenize("int f(int a[static 3], int b[restrict static 2]) { return 7; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "f", 1) == 0);
+  ASSERT_TRUE(parsed_code[1] == NULL);
+
   token = tk_tokenize("struct S { int x; }; int main() { return 0; }");
   parsed_code = ps_program();
   ASSERT_TRUE(parsed_code[0] != NULL);
