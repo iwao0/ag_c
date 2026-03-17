@@ -172,3 +172,25 @@
 - 判定:
   - ケース間で増減はあるが、全ケースで回帰ガードレール（-5%）以内
   - 保守性（容量成長ロジックの統一）と `realloc` 抑制のため採用
+
+## 2026-03-17 Lookup Hashing (Phase 4-1/4-2)
+
+- 実施:
+  - `parser_semantic_ctx` の `goto` 参照検証を、ラベル名ハッシュバケット探索へ置換
+  - ラベル重複チェックも同じハッシュバケットで実施
+  - `struct/union/enum` タグ型参照 (`pctx_has_tag_type`) をハッシュ探索へ置換
+- 回帰確認:
+  - `make build/test_parser build/test_e2e build/bench_parser && build/test_parser && build/test_e2e` pass
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 21.59 | 39.04 | +80.8% |
+| mixed (256KB) parser_MB/s | 27.28 | 52.69 | +93.1% |
+| expr-heavy (256KB) parser_MB/s | 24.32 | 54.27 | +123.1% |
+| control-heavy (256KB) parser_MB/s | 27.10 | 61.94 | +128.6% |
+
+- 判定:
+  - 全ケースで改善を確認
+  - フェーズ4の残作業は「異常系診断精度の再確認」
