@@ -212,7 +212,7 @@ static void parse_toplevel_declarator_list(void) {
     }
     token_ident_t *name = parse_toplevel_decl_name(&is_ptr);
     if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
-    if (tk_consume('[')) {
+    while (tk_consume('[')) {
       (void)parse_array_size_constexpr_toplevel();
       tk_expect(']');
     }
@@ -323,7 +323,7 @@ static void parse_toplevel_typedef_decl(void) {
       skip_ptr_qualifiers();
     }
     token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
-    if (tk_consume('[')) {
+    while (tk_consume('[')) {
       (void)parse_array_size_constexpr_toplevel();
       tk_expect(']');
     }
@@ -377,8 +377,8 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       token_ident_t *member = tk_consume_ident();
       if (!member) psx_diag_missing(token, "メンバ名");
       int arr_size = 1;
-      if (tk_consume('[')) {
-        arr_size = parse_array_size_constexpr_toplevel();
+      while (tk_consume('[')) {
+        arr_size *= parse_array_size_constexpr_toplevel();
         tk_expect(']');
       }
       int total_size = is_ptr ? 8 : elem_size * arr_size;

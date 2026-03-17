@@ -216,6 +216,10 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
       if (tk_consume('[')) {
         int array_size = parse_array_size_constexpr_decl();
         tk_expect(']');
+        while (tk_consume('[')) {
+          array_size *= parse_array_size_constexpr_decl();
+          tk_expect(']');
+        }
         var = psx_decl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;

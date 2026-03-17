@@ -115,8 +115,8 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       token_ident_t *member = tk_consume_ident();
       if (!member) psx_diag_missing(token, "メンバ名");
       int arr_size = 1;
-      if (tk_consume('[')) {
-        arr_size = parse_array_size_constexpr_stmt();
+      while (tk_consume('[')) {
+        arr_size *= parse_array_size_constexpr_stmt();
         tk_expect(']');
       }
       int total_size = is_ptr ? 8 : elem_size * arr_size;
@@ -391,7 +391,7 @@ static void parse_typedef_decl(void) {
       skip_ptr_qualifiers_stmt();
     }
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
-    if (tk_consume('[')) {
+    while (tk_consume('[')) {
       (void)parse_array_size_constexpr_stmt();
       tk_expect(']');
     }
