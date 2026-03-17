@@ -39,6 +39,7 @@ static long long parse_enum_const_unary_toplevel(void);
 static long long parse_enum_const_primary_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
+static int parse_array_size_constexpr_toplevel(void);
 
 static bool is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
@@ -144,6 +145,14 @@ static token_kind_t parse_atomic_type_specifier(void) {
   return inner;
 }
 
+static int parse_array_size_constexpr_toplevel(void) {
+  long long v = parse_enum_const_expr_toplevel();
+  if (v <= 0) {
+    psx_diag_ctx(token, "decl", "配列サイズは正の整数である必要があります");
+  }
+  return (int)v;
+}
+
 // program = funcdef*
 node_t **ps_program(void) {
   int cap = 16;
@@ -204,7 +213,7 @@ static void parse_toplevel_declarator_list(void) {
     token_ident_t *name = parse_toplevel_decl_name(&is_ptr);
     if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
     if (tk_consume('[')) {
-      tk_expect_number();
+      (void)parse_array_size_constexpr_toplevel();
       tk_expect(']');
     }
     if (tk_consume('=')) {
@@ -315,7 +324,7 @@ static void parse_toplevel_typedef_decl(void) {
     }
     token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
     if (tk_consume('[')) {
-      tk_expect_number();
+      (void)parse_array_size_constexpr_toplevel();
       tk_expect(']');
     }
     psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
@@ -369,7 +378,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       if (!member) psx_diag_missing(token, "メンバ名");
       int arr_size = 1;
       if (tk_consume('[')) {
-        arr_size = tk_expect_number();
+        arr_size = parse_array_size_constexpr_toplevel();
         tk_expect(']');
       }
       int total_size = is_ptr ? 8 : elem_size * arr_size;

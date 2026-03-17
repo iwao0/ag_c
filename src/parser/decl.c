@@ -11,10 +11,124 @@
 static lvar_t *locals;
 static int locals_offset;
 
+static long long eval_const_expr_decl(node_t *n, int *ok) {
+  if (!n) {
+    *ok = 0;
+    return 0;
+  }
+  switch (n->kind) {
+    case ND_NUM:
+      return ((node_num_t *)n)->val;
+    case ND_ADD: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l + r;
+    }
+    case ND_SUB: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l - r;
+    }
+    case ND_MUL: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l * r;
+    }
+    case ND_DIV: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l / r;
+    }
+    case ND_MOD: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l % r;
+    }
+    case ND_SHL: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l << r;
+    }
+    case ND_SHR: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l >> r;
+    }
+    case ND_BITAND: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l & r;
+    }
+    case ND_BITXOR: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l ^ r;
+    }
+    case ND_BITOR: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      return l | r;
+    }
+    case ND_EQ:
+    case ND_NE:
+    case ND_LT:
+    case ND_LE:
+    case ND_LOGAND:
+    case ND_LOGOR: {
+      long long l = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_decl(n->rhs, ok);
+      if (n->kind == ND_EQ) return l == r;
+      if (n->kind == ND_NE) return l != r;
+      if (n->kind == ND_LT) return l < r;
+      if (n->kind == ND_LE) return l <= r;
+      if (n->kind == ND_LOGAND) return (l && r) ? 1 : 0;
+      return (l || r) ? 1 : 0;
+    }
+    case ND_COMMA:
+      (void)eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      return eval_const_expr_decl(n->rhs, ok);
+    case ND_TERNARY: {
+      long long c = eval_const_expr_decl(n->lhs, ok);
+      if (!*ok) return 0;
+      node_t *then_expr = n->rhs;
+      node_t *else_expr = ((node_ctrl_t *)n)->els;
+      return c ? eval_const_expr_decl(then_expr, ok) : eval_const_expr_decl(else_expr, ok);
+    }
+    default:
+      *ok = 0;
+      return 0;
+  }
+}
+
 static void skip_ptr_qualifiers_decl(void) {
   while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
     token = token->next;
   }
+}
+
+static int parse_array_size_constexpr_decl(void) {
+  node_t *n = psx_expr_assign();
+  int ok = 1;
+  long long v = eval_const_expr_decl(n, &ok);
+  if (!ok) {
+    psx_diag_ctx(token, "decl", "配列サイズには整数定数式が必要です");
+  }
+  if (v <= 0) {
+    psx_diag_ctx(token, "decl", "配列サイズは正の整数である必要があります");
+  }
+  return (int)v;
 }
 
 static void skip_func_params(void) {
@@ -100,7 +214,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
       if (tk_consume('[')) {
-        int array_size = tk_expect_number();
+        int array_size = parse_array_size_constexpr_decl();
         tk_expect(']');
         var = psx_decl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
         var->tag_kind = tag_kind;

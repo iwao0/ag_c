@@ -30,6 +30,7 @@ static long long parse_enum_const_add(void);
 static long long parse_enum_const_mul(void);
 static long long parse_enum_const_unary(void);
 static long long parse_enum_const_primary(void);
+static int parse_array_size_constexpr_stmt(void);
 
 static bool is_decl_prefix_token_stmt(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
@@ -115,7 +116,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       if (!member) psx_diag_missing(token, "メンバ名");
       int arr_size = 1;
       if (tk_consume('[')) {
-        arr_size = tk_expect_number();
+        arr_size = parse_array_size_constexpr_stmt();
         tk_expect(']');
       }
       int total_size = is_ptr ? 8 : elem_size * arr_size;
@@ -261,6 +262,14 @@ static long long parse_enum_const_primary(void) {
   return tk_expect_number();
 }
 
+static int parse_array_size_constexpr_stmt(void) {
+  long long v = parse_enum_const_expr();
+  if (v <= 0) {
+    psx_diag_ctx(token, "decl", "配列サイズは正の整数である必要があります");
+  }
+  return (int)v;
+}
+
 static int parse_enum_members(void) {
   int member_count = 0;
   long long next_value = 0;
@@ -383,7 +392,7 @@ static void parse_typedef_decl(void) {
     }
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     if (tk_consume('[')) {
-      tk_expect_number();
+      (void)parse_array_size_constexpr_stmt();
       tk_expect(']');
     }
     psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);

@@ -892,6 +892,13 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
+  token = tk_tokenize("main() { int a[1+2]; a[0]=3; return a[0]; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
   token = tk_tokenize("main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -1015,6 +1022,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { _Complex int x; return 0; }");   // 未対応型指定子
   expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 未対応型指定子
   expect_parse_fail("main() { _Atomic(int*) p=0; return 0; }"); // _Atomic(type) 派生型は未対応
+  expect_parse_fail("main() { int a[0]; return 0; }");          // 配列サイズは正数のみ
   expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
   expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
