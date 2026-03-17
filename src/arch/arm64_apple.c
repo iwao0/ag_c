@@ -495,6 +495,15 @@ static void gen_expr(node_t *node) {
     printf("  cmp x0, x1\n");
     printf("  cset x0, le\n");
     break;
+  case ND_BITAND:
+    printf("  and x0, x0, x1\n");
+    break;
+  case ND_BITXOR:
+    printf("  eor x0, x0, x1\n");
+    break;
+  case ND_BITOR:
+    printf("  orr x0, x0, x1\n");
+    break;
   default:
     break;
   }

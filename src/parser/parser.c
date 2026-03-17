@@ -98,7 +98,8 @@ static node_t *new_node_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
 
   // 比較演算の結果は整数(0 または 1)
   if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE ||
-      kind == ND_LOGAND || kind == ND_LOGOR) {
+      kind == ND_LOGAND || kind == ND_LOGOR ||
+      kind == ND_BITAND || kind == ND_BITXOR || kind == ND_BITOR) {
     node->fp_kind = TK_FLOAT_KIND_NONE;
   }
   return node;
@@ -156,6 +157,9 @@ static node_t *assign(void);
 static node_t *conditional(void);
 static node_t *logical_or(void);
 static node_t *logical_and(void);
+static node_t *bit_or(void);
+static node_t *bit_xor(void);
+static node_t *bit_and(void);
 static node_t *equality(void);
 static node_t *relational(void);
 static node_t *add(void);
@@ -546,11 +550,38 @@ static node_t *logical_or(void) {
   return node;
 }
 
-// logical_and = equality ("&&" equality)*
+// logical_and = bit_or ("&&" bit_or)*
 static node_t *logical_and(void) {
-  node_t *node = equality();
+  node_t *node = bit_or();
   while (tk_consume_str("&&")) {
-    node = new_node_binary(ND_LOGAND, node, equality());
+    node = new_node_binary(ND_LOGAND, node, bit_or());
+  }
+  return node;
+}
+
+// bit_or = bit_xor ("|" bit_xor)*
+static node_t *bit_or(void) {
+  node_t *node = bit_xor();
+  while (tk_consume('|')) {
+    node = new_node_binary(ND_BITOR, node, bit_xor());
+  }
+  return node;
+}
+
+// bit_xor = bit_and ("^" bit_and)*
+static node_t *bit_xor(void) {
+  node_t *node = bit_and();
+  while (tk_consume('^')) {
+    node = new_node_binary(ND_BITXOR, node, bit_and());
+  }
+  return node;
+}
+
+// bit_and = equality ("&" equality)*
+static node_t *bit_and(void) {
+  node_t *node = equality();
+  while (tk_consume('&')) {
+    node = new_node_binary(ND_BITAND, node, equality());
   }
   return node;
 }

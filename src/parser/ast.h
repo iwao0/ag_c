@@ -13,6 +13,9 @@ typedef enum {
   ND_NE,     // !=
   ND_LT,     // <
   ND_LE,     // <=
+  ND_BITAND, // &
+  ND_BITXOR, // ^
+  ND_BITOR,  // |
   ND_LOGAND, // &&
   ND_LOGOR,  // ||
   ND_TERNARY, // ?:
