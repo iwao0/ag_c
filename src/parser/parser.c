@@ -37,15 +37,27 @@ static long long parse_enum_const_add_toplevel(void);
 static long long parse_enum_const_mul_toplevel(void);
 static long long parse_enum_const_unary_toplevel(void);
 static long long parse_enum_const_primary_toplevel(void);
+static token_t *skip_decl_prefix_lookahead(token_t *t);
 
 static bool is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
-         k == TK_THREAD_LOCAL;
+         k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
 }
 
 static void skip_cv_qualifiers(void) {
   while (is_decl_prefix_token(token->kind)) {
+    if (token->kind == TK_ALIGNAS) {
+      token = token->next;
+      if (token->kind != TK_LPAREN) {
+        psx_diag_ctx(token, "decl", "_Alignas の後には '(' が必要です");
+      }
+      skip_balanced_group(TK_LPAREN, TK_RPAREN);
+      continue;
+    }
+    if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
+      psx_diag_ctx(token, "decl", "_Atomic(type) 形式は未対応です");
+    }
     token = token->next;
   }
 }
@@ -76,6 +88,28 @@ static void parse_static_assert_toplevel(void) {
   if (((node_num_t *)cond)->val == 0) {
     psx_diag_ctx(token, "static_assert", "_Static_assert が失敗しました");
   }
+}
+
+static token_t *skip_decl_prefix_lookahead(token_t *t) {
+  while (t && is_decl_prefix_token(t->kind)) {
+    if (t->kind == TK_ALIGNAS) {
+      t = t->next;
+      if (!t || t->kind != TK_LPAREN) return t;
+      int depth = 1;
+      t = t->next;
+      while (t && depth > 0) {
+        if (t->kind == TK_LPAREN) depth++;
+        else if (t->kind == TK_RPAREN) depth--;
+        t = t->next;
+      }
+      continue;
+    }
+    if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
+      return t;
+    }
+    t = t->next;
+  }
+  return t;
 }
 
 // program = funcdef*
@@ -120,8 +154,7 @@ node_t **ps_program(void) {
 
 static int is_toplevel_function_signature(token_t *tok) {
   if (!tok) return 0;
-  token_t *t = tok;
-  while (t && is_decl_prefix_token(t->kind)) t = t->next;
+  token_t *t = skip_decl_prefix_lookahead(tok);
   if (!t || (!psx_ctx_is_type_token(t->kind) && !psx_ctx_is_typedef_name_token(t))) return 0;
   t = t->next;
   while (t && t->kind == TK_MUL) t = t->next;
@@ -522,6 +555,9 @@ token_kind_t psx_consume_type_kind(void) {
 
   while (true) {
     token_kind_t k = token->kind;
+    if (k == TK_COMPLEX || k == TK_IMAGINARY) {
+      psx_diag_ctx(token, "decl", "_Complex/_Imaginary は未対応です");
+    }
     if (k == TK_SIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
         tk_error_tok(token, "不正な型指定子の組み合わせです");

@@ -34,7 +34,7 @@ static long long parse_enum_const_primary(void);
 static bool is_decl_prefix_token_stmt(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
-         k == TK_THREAD_LOCAL;
+         k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
 }
 
 static void skip_ptr_qualifiers_stmt(void) {
