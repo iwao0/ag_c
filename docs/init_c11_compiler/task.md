@@ -398,7 +398,7 @@
   - [x] タグ管理・ラベル管理・型ユーティリティを専用モジュールへ分離する
   - [x] 共有ヘルパーの公開範囲を整理して依存関係を単純化する
 - [ ] フェーズ3: ホットパス最適化を実施する
-  - [ ] `expr/assign/unary/primary` の分岐順を頻出ケース優先へ調整する
+  - [x] `expr/assign/unary/primary` の分岐順を頻出ケース優先へ調整する
   - [ ] `is_type_token`/サイズ判定などの繰り返し計算を局所キャッシュする
   - [ ] 動的配列成長戦略を統一して `realloc` 頻度を抑える
 - [ ] フェーズ4: 探索構造を改善する
@@ -411,5 +411,5 @@
   - [ ] 既存テストのメッセージ依存箇所を必要に応じて調整する
 - [ ] フェーズ6: 回帰防止を強化する
   - [ ] Parser性能回帰チェックをCIに追加する
-  - [ ] 1テーマ1コミットで段階適用し、各段階で `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` を必須化する
+  - [x] 1テーマ1コミットで段階適用し、各段階で `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` を必須化する
   - [ ] 各フェーズの計測結果と判断ログを `parser_perf_report.md` に記録する

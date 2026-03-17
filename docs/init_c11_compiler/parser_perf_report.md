@@ -106,3 +106,25 @@
 - 回帰確認（第5段）:
   - `build/test_parser` pass
   - `build/test_e2e` pass (`171/171`)
+
+## 2026-03-17 Hot Path Tuning (Phase 3-1)
+
+- 実施:
+  - `parser_expr` の演算子判定を `tk_consume*` 連鎖から `token->kind` 直接分岐へ置換
+  - `assign/equality/relational/shift/add/mul/unary/postfix` の分岐でトークン消費コストを削減
+  - `primary` の頻出ケース（`TK_NUM`）を先頭で処理
+- 回帰確認:
+  - `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` pass
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 13.12 | 22.53 | +71.7% |
+| mixed (256KB) parser_MB/s | 20.74 | 27.03 | +30.3% |
+| expr-heavy (256KB) parser_MB/s | 22.14 | 24.49 | +10.6% |
+| control-heavy (256KB) parser_MB/s | 28.05 | 28.92 | +3.1% |
+
+- 判定:
+  - 目標（`mixed 256KB` +10〜20%, `expr-heavy` +8%以上）は達成
+  - `control-heavy` は小幅改善だが、回帰ガードレール（-5%以内）を満たす
