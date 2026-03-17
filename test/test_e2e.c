@@ -169,7 +169,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "int_init", CASE_INT, "int main() { int x; x = 5; return x; }", 5, 0},
     {"type_decl", "for_decl", CASE_INT, "int main() { int sum = 0; int i; for (i=1; i<=10; i=i+1) sum=sum+i; return sum; }", 55, 0},
     {"type_decl", "char", CASE_INT, "int main() { char c = 65; return c; }", 65, 0},
-    {"type_decl", "void", CASE_INT, "void noop() { return 42; } int main() { return noop(); }", 42, 0},
+    {"type_decl", "void", CASE_INT, "void noop() { return; } int main() { noop(); return 42; }", 42, 0},
     {"type_decl", "short", CASE_INT, "int main() { short s = 10; return s; }", 10, 0},
     {"type_decl", "long", CASE_INT, "long calc(long x) { return x+1; } int main() { return calc(98); }", 99, 0},
     {"type_decl", "short_arr", CASE_INT, "int main() { short arr[3]; arr[0]=10; arr[1]=20; arr[2]=30; return arr[2]; }", 30, 0},

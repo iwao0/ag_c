@@ -529,21 +529,26 @@ static void gen_stmt(node_t *node) {
     }
     return;
   case ND_RETURN:
-    gen_expr(node->lhs);
-    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { // 関数の戻り値が float
-      gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
-    } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { // 関数の戻り値が double/long double(現状lowering)
-      gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
-    } else {                               // 関数の戻り値が 整数
-      if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
-        printf("  ldr s0, [sp], #16\n");
-        printf("  fcvtzs x0, s0\n");       // float->int
-      } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-        printf("  ldr d0, [sp], #16\n");
-        printf("  fcvtzs x0, d0\n");       // double->int
-      } else {
-        printf("  ldr x0, [sp], #16\n");   // そのまま int
+    if (node->lhs) {
+      gen_expr(node->lhs);
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { // 関数の戻り値が float
+        gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
+      } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { // 関数の戻り値が double/long double(現状lowering)
+        gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
+      } else {                               // 関数の戻り値が 整数
+        if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
+          printf("  ldr s0, [sp], #16\n");
+          printf("  fcvtzs x0, s0\n");       // float->int
+        } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+          printf("  ldr d0, [sp], #16\n");
+          printf("  fcvtzs x0, d0\n");       // double->int
+        } else {
+          printf("  ldr x0, [sp], #16\n");   // そのまま int
+        }
       }
+    } else {
+      // void 関数の return; は戻り値レジスタを0で統一
+      printf("  mov x0, #0\n");
     }
     printf("  ldp x29, x30, [sp]\n");
     printf("  add sp, sp, #%d\n", STACK_SIZE);

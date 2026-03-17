@@ -493,6 +493,12 @@ static void test_stmt_return() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(42, as_num(ret->lhs)->val);
+
+  token = tk_tokenize("void noop() { return; }");
+  program();
+  ret = as_block(as_func(code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_TRUE(ret->lhs == NULL);
 }
 
 static void test_stmt_block() {
@@ -601,6 +607,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { float f=1.0; ++f; }");     // 非整数スカラー
   expect_parse_fail("main() { double d=1.0; d--; }");    // 非整数スカラー
   expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
+  expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
+  expect_parse_fail("void f() { return 1; }");           // void関数で値return
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
