@@ -105,6 +105,16 @@ static void test_expr_mul_div() {
   ASSERT_EQ(3, as_num(node->rhs)->val);
 }
 
+static void test_expr_mod() {
+  printf("test_expr_mod...\n");
+  token = tk_tokenize("10 % 3");
+  node_t *node = expr();
+
+  ASSERT_EQ(ND_MOD, node->kind);
+  ASSERT_EQ(10, as_num(node->lhs)->val);
+  ASSERT_EQ(3, as_num(node->rhs)->val);
+}
+
 static void test_expr_precedence() {
   printf("test_expr_precedence...\n");
   token = tk_tokenize("1 + 2 * 3");
@@ -567,6 +577,7 @@ int main() {
   test_expr_number();
   test_expr_add_sub();
   test_expr_mul_div();
+  test_expr_mod();
   test_expr_precedence();
   test_expr_parentheses();
   test_expr_eq_neq();

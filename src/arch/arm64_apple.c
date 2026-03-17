@@ -479,6 +479,10 @@ static void gen_expr(node_t *node) {
   case ND_DIV:
     printf("  sdiv x0, x0, x1\n");
     break;
+  case ND_MOD:
+    printf("  sdiv x2, x0, x1\n");
+    printf("  msub x0, x2, x1, x0\n");
+    break;
   case ND_EQ:
     printf("  cmp x0, x1\n");
     printf("  cset x0, eq\n");

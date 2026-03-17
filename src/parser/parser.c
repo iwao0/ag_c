@@ -647,7 +647,7 @@ static node_t *add(void) {
   }
 }
 
-// mul = unary ("*" unary | "/" unary)*
+// mul = unary ("*" unary | "/" unary | "%" unary)*
 static node_t *mul(void) {
   node_t *node = unary();
 
@@ -656,6 +656,8 @@ static node_t *mul(void) {
       node = new_node_binary(ND_MUL, node, unary());
     else if (tk_consume('/'))
       node = new_node_binary(ND_DIV, node, unary());
+    else if (tk_consume('%'))
+      node = new_node_binary(ND_MOD, node, unary());
     else
       return node;
   }
