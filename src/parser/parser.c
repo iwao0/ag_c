@@ -502,7 +502,7 @@ static node_t *stmt(void) {
 // expr = assign
 node_t *expr(void) { return assign(); }
 
-// assign = conditional (("=" | "+=" | "-=" | "*=" | "/=") assign)?
+// assign = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 static node_t *assign(void) {
   node_t *node = conditional();
   if (tk_consume('=')) {
@@ -519,6 +519,18 @@ static node_t *assign(void) {
     node = new_compound_assign(node, ND_MUL, assign(), "*=");
   } else if (tk_consume_str("/=")) {
     node = new_compound_assign(node, ND_DIV, assign(), "/=");
+  } else if (tk_consume_str("%=")) {
+    node = new_compound_assign(node, ND_MOD, assign(), "%=");
+  } else if (tk_consume_str("<<=")) {
+    node = new_compound_assign(node, ND_SHL, assign(), "<<=");
+  } else if (tk_consume_str(">>=")) {
+    node = new_compound_assign(node, ND_SHR, assign(), ">>=");
+  } else if (tk_consume_str("&=")) {
+    node = new_compound_assign(node, ND_BITAND, assign(), "&=");
+  } else if (tk_consume_str("^=")) {
+    node = new_compound_assign(node, ND_BITXOR, assign(), "^=");
+  } else if (tk_consume_str("|=")) {
+    node = new_compound_assign(node, ND_BITOR, assign(), "|=");
   }
   return node;
 }

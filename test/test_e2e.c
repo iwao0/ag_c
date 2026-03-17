@@ -48,6 +48,12 @@ static const test_case_t test_cases[] = {
     {"arithmetic", "sub_eq", CASE_INT, "main() { a=5; a-=3; return a; }", 2, 0},
     {"arithmetic", "mul_eq", CASE_INT, "main() { a=5; a*=3; return a; }", 15, 0},
     {"arithmetic", "div_eq", CASE_INT, "main() { a=8; a/=2; return a; }", 4, 0},
+    {"arithmetic", "mod_eq", CASE_INT, "main() { a=10; a%=4; return a; }", 2, 0},
+    {"arithmetic", "shl_eq", CASE_INT, "main() { a=3; a<<=2; return a; }", 12, 0},
+    {"arithmetic", "shr_eq", CASE_INT, "main() { a=32; a>>=3; return a; }", 4, 0},
+    {"arithmetic", "and_eq", CASE_INT, "main() { a=14; a&=3; return a; }", 2, 0},
+    {"arithmetic", "xor_eq", CASE_INT, "main() { a=14; a^=3; return a; }", 13, 0},
+    {"arithmetic", "or_eq", CASE_INT, "main() { a=8; a|=3; return a; }", 11, 0},
 
     {"comparison", "eq1", CASE_INT, "main() { return 0==0; }", 1, 0},
     {"comparison", "eq2", CASE_INT, "main() { return 42==0; }", 0, 0},

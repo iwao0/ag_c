@@ -304,6 +304,36 @@ static void test_expr_compound_assign() {
   node_t *div = expr();
   ASSERT_EQ(ND_ASSIGN, div->kind);
   ASSERT_EQ(ND_DIV, div->rhs->kind);
+
+  token = tk_tokenize("a %= 3");
+  node_t *mod = expr();
+  ASSERT_EQ(ND_ASSIGN, mod->kind);
+  ASSERT_EQ(ND_MOD, mod->rhs->kind);
+
+  token = tk_tokenize("a <<= 3");
+  node_t *shl = expr();
+  ASSERT_EQ(ND_ASSIGN, shl->kind);
+  ASSERT_EQ(ND_SHL, shl->rhs->kind);
+
+  token = tk_tokenize("a >>= 3");
+  node_t *shr = expr();
+  ASSERT_EQ(ND_ASSIGN, shr->kind);
+  ASSERT_EQ(ND_SHR, shr->rhs->kind);
+
+  token = tk_tokenize("a &= 3");
+  node_t *band = expr();
+  ASSERT_EQ(ND_ASSIGN, band->kind);
+  ASSERT_EQ(ND_BITAND, band->rhs->kind);
+
+  token = tk_tokenize("a ^= 3");
+  node_t *bxor = expr();
+  ASSERT_EQ(ND_ASSIGN, bxor->kind);
+  ASSERT_EQ(ND_BITXOR, bxor->rhs->kind);
+
+  token = tk_tokenize("a |= 3");
+  node_t *bor = expr();
+  ASSERT_EQ(ND_ASSIGN, bor->kind);
+  ASSERT_EQ(ND_BITOR, bor->rhs->kind);
 }
 
 static void test_program_funcdef() {
