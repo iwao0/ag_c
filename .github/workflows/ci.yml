@@ -9,7 +9,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build Parser Test
         run: make build/test_parser
@@ -21,7 +21,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build E2E Test
         run: make build/test_e2e
@@ -34,7 +34,7 @@ jobs:
     needs: [parser-test, e2e-test]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build Core Tests
         run: make test
