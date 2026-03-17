@@ -748,9 +748,9 @@ static void test_parse_invalid() {
 
 static void test_parse_invalid_diagnostics() {
   printf("test_parse_invalid_diagnostics...\n");
-  expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "未定義ラベル 'MISSING'");
-  expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "ラベル 'L1' が重複");
-  expect_parse_fail_with_message("main() { struct T x; return 0; }", "未定義のタグ型 'T'");
+  expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
+  expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "[parser] ラベル 'L1' が重複");
+  expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
 }
 
 int main() {

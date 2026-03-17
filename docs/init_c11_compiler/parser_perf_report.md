@@ -116,7 +116,7 @@
 - 回帰確認:
   - `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` pass
 
-### Benchmark (`build/bench_parser`, `-O0`)
+### Benchmark (`build/bench_parser`, `-O0`, 1st run)
 
 | Case | Parser (Before) | Parser (After) | Δ |
 |---|---:|---:|---:|
@@ -263,3 +263,41 @@
 - 判定:
   - コンテキスト付き診断フォーマット統一を達成
   - 性能は全ケースで回帰ガードレール（-5%）を満たす
+
+## 2026-03-17 Message-Dependent Test Alignment (Phase 5-3)
+
+- 実施:
+  - `test_parse_invalid_diagnostics` を新フォーマットに追従
+  - 期待文字列を `[rule]` 付きへ更新
+    - `[goto] 未定義ラベル ...`
+    - `[parser] ラベル ... が重複`
+    - `[parser] 未定義のタグ型 ...`
+- 回帰確認:
+  - `build/test_parser` pass
+  - `build/test_e2e` pass (`171/171`)
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 69.27 | 23.97 | -65.4% |
+| mixed (256KB) parser_MB/s | 75.54 | 39.80 | -47.3% |
+| expr-heavy (256KB) parser_MB/s | 67.96 | 46.15 | -32.1% |
+| control-heavy (256KB) parser_MB/s | 71.36 | 56.58 | -20.7% |
+
+- 注記:
+  - このステップの変更はテスト文字列のみで、実行コードは無変更
+  - 上記の大幅差分は環境ノイズの可能性が高いため再計測を実施
+
+### Benchmark (`build/bench_parser`, `-O0`, 2nd run)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 69.27 | 43.01 | -37.9% |
+| mixed (256KB) parser_MB/s | 75.54 | 54.68 | -27.6% |
+| expr-heavy (256KB) parser_MB/s | 67.96 | 54.19 | -20.3% |
+| control-heavy (256KB) parser_MB/s | 71.36 | 57.20 | -19.8% |
+
+- 再計測判定:
+  - 1st run より改善するが、依然として差分が大きくベンチ安定性に課題がある
+  - 本変更自体はテストコードのみのため、次フェーズで複数回実行の中央値記録へ運用改善する
