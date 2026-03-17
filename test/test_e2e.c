@@ -24,6 +24,15 @@ typedef struct {
   double expected_f;
 } test_case_t;
 
+static void build_artifact_paths(const test_case_t *tc, char *dir, char *s_path, char *bin_path, char *drv_path) {
+  snprintf(dir, PATH_MAX, "build/e2e/%s", tc->category);
+  snprintf(s_path, PATH_MAX, "%s/%s.s", dir, tc->name);
+  snprintf(bin_path, PATH_MAX, "%s/%s", dir, tc->name);
+  if (drv_path) {
+    snprintf(drv_path, PATH_MAX, "%s/%s_driver.c", dir, tc->name);
+  }
+}
+
 static const test_case_t test_cases[] = {
     {"integer", "zero", CASE_INT, "main() { return 0; }", 0, 0},
     {"integer", "literal", CASE_INT, "main() { return 42; }", 42, 0},
@@ -230,10 +239,8 @@ static int build_case(const test_case_t *tc) {
   char drv_path[PATH_MAX];
   char cmd[PATH_MAX * 2];
 
-  snprintf(dir, sizeof(dir), "build/e2e/%s", tc->category);
+  build_artifact_paths(tc, dir, s_path, bin_path, drv_path);
   if (mkdir_p(dir) != 0) return -1;
-  snprintf(s_path, sizeof(s_path), "%s/%s.s", dir, tc->name);
-  snprintf(bin_path, sizeof(bin_path), "%s/%s", dir, tc->name);
 
   if (tc->kind == CASE_INT) {
     if (run_ag_c_to_s(tc->input, s_path) != 0) return -1;
@@ -248,7 +255,6 @@ static int build_case(const test_case_t *tc) {
   if (m) memcpy(m, "ag_m", 4);
   if (run_ag_c_to_s(buf, s_path) != 0) return -1;
 
-  snprintf(drv_path, sizeof(drv_path), "%s/%s_driver.c", dir, tc->name);
   FILE *fp = fopen(drv_path, "w");
   if (!fp) return -1;
   if (tc->kind == CASE_DOUBLE) {
@@ -264,12 +270,15 @@ static int build_case(const test_case_t *tc) {
 }
 
 static int run_case(const test_case_t *tc, FILE *log) {
+  char dir[PATH_MAX];
+  char s_path[PATH_MAX];
   char bin_path[PATH_MAX];
-  snprintf(bin_path, sizeof(bin_path), "build/e2e/%s/%s", tc->category, tc->name);
+  build_artifact_paths(tc, dir, s_path, bin_path, NULL);
   if (tc->kind == CASE_INT) {
     int status = system(bin_path);
     if (status == -1 || !WIFEXITED(status)) {
-      fprintf(log, "  FAIL: %s could not run\n  input: %s\n", tc->name, tc->input);
+      fprintf(log, "  FAIL: %s could not run\n  input: %s\n  artifacts: s=%s bin=%s\n",
+              tc->name, tc->input, s_path, bin_path);
       return -1;
     }
     int actual = WEXITSTATUS(status);
@@ -277,8 +286,8 @@ static int run_case(const test_case_t *tc, FILE *log) {
       fprintf(log, "  OK: %s => %d\n", tc->name, actual);
       return 0;
     }
-    fprintf(log, "  FAIL: %s expected %d, got %d\n  input: %s\n",
-            tc->name, tc->expected_i, actual, tc->input);
+    fprintf(log, "  FAIL: %s expected %d, got %d\n  input: %s\n  artifacts: s=%s bin=%s\n",
+            tc->name, tc->expected_i, actual, tc->input, s_path, bin_path);
     return -1;
   }
 
@@ -286,7 +295,7 @@ static int run_case(const test_case_t *tc, FILE *log) {
   snprintf(cmd, sizeof(cmd), "%s", bin_path);
   FILE *out = popen(cmd, "r");
   if (!out) {
-    fprintf(log, "  FAIL: %s could not run\n", tc->name);
+    fprintf(log, "  FAIL: %s could not run\n  artifacts: s=%s bin=%s\n", tc->name, s_path, bin_path);
     return -1;
   }
   double actual = 0.0;
@@ -302,8 +311,8 @@ static int run_case(const test_case_t *tc, FILE *log) {
     fprintf(log, "  OK: %s => %.2f\n", tc->name, actual);
     return 0;
   }
-  fprintf(log, "  FAIL: %s expected %.2f, got %.2f\n  input: %s\n",
-          tc->name, tc->expected_f, actual, tc->input);
+  fprintf(log, "  FAIL: %s expected %.2f, got %.2f\n  input: %s\n  artifacts: s=%s bin=%s\n",
+          tc->name, tc->expected_f, actual, tc->input, s_path, bin_path);
   return -1;
 }
 
@@ -336,7 +345,10 @@ static int build_category(const char *category) {
     const test_case_t *tc = &test_cases[i];
     if (strcmp(tc->category, category) != 0) continue;
     if (build_case(tc) != 0) {
-      fprintf(log, "  FAIL: build %s\n  input: %s\n", tc->name, tc->input);
+      char dir[PATH_MAX], s_path[PATH_MAX], bin_path[PATH_MAX], drv_path[PATH_MAX];
+      build_artifact_paths(tc, dir, s_path, bin_path, drv_path);
+      fprintf(log, "  FAIL: build %s\n  input: %s\n  artifacts: s=%s bin=%s driver=%s\n",
+              tc->name, tc->input, s_path, bin_path, drv_path);
       fclose(log);
       return 1;
     }
