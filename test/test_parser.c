@@ -760,6 +760,27 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
+
+  token = tk_tokenize("struct S { int x; }; int main() { return 0; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[1] == NULL);
+
+  token = tk_tokenize("struct S { int x; } *gp; int main() { return 0; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[1] == NULL);
+
+  token = tk_tokenize("int g=1; int main() { return 0; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[1] == NULL);
 }
 
 static void test_parse_invalid() {

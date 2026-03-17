@@ -16,6 +16,10 @@ string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 
 static node_t *funcdef(void);
+static void parse_toplevel_decl_after_type(void);
+static void parse_toplevel_tag_decl(void);
+static int is_toplevel_function_signature(token_t *tok);
+static int parse_tag_definition_body_toplevel(token_kind_t tag_kind);
 
 // program = funcdef*
 node_t **ps_program(void) {
@@ -23,6 +27,15 @@ node_t **ps_program(void) {
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
+    if (psx_ctx_is_tag_keyword(token->kind)) {
+      parse_toplevel_tag_decl();
+      continue;
+    }
+    if (psx_ctx_is_type_token(token->kind) && !is_toplevel_function_signature(token)) {
+      token = token->next; // base type
+      parse_toplevel_decl_after_type();
+      continue;
+    }
     node_t *fn = funcdef();
     if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
     if (i >= cap - 1) { // NULL終端用
@@ -33,6 +46,122 @@ node_t **ps_program(void) {
   }
   codes[i] = NULL;
   return codes;
+}
+
+static int is_toplevel_function_signature(token_t *tok) {
+  if (!tok || !psx_ctx_is_type_token(tok->kind)) return 0;
+  token_t *t = tok->next;
+  while (t && t->kind == TK_MUL) t = t->next;
+  if (!t || t->kind != TK_IDENT) return 0;
+  return t->next && t->next->kind == TK_LPAREN;
+}
+
+static void parse_toplevel_declarator_list(void) {
+  for (;;) {
+    while (tk_consume('*')) {}
+    token_ident_t *name = tk_consume_ident();
+    if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
+    if (tk_consume('[')) {
+      tk_expect_number();
+      tk_expect(']');
+    }
+    if (tk_consume('=')) {
+      psx_expr_assign();
+    }
+    if (!tk_consume(',')) break;
+  }
+}
+
+static void parse_toplevel_decl_after_type(void) {
+  parse_toplevel_declarator_list();
+  tk_expect(';');
+}
+
+static void parse_member_type_specifier_toplevel(void) {
+  if (psx_ctx_is_type_token(token->kind)) {
+    token = token->next;
+    return;
+  }
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    token_kind_t nested_kind = token->kind;
+    token = token->next;
+    token_ident_t *nested_tag = tk_consume_ident();
+    if (!nested_tag) psx_diag_missing(token, "タグ名");
+    if (tk_consume('{')) {
+      int n = parse_tag_definition_body_toplevel(nested_kind);
+      psx_ctx_define_tag_type_with_members(nested_kind, nested_tag->str, nested_tag->len, n);
+      return;
+    }
+    if (!psx_ctx_has_tag_type(nested_kind, nested_tag->str, nested_tag->len)) {
+      psx_diag_undefined_with_name(token, "のタグ型", nested_tag->str, nested_tag->len);
+    }
+    return;
+  }
+  psx_diag_ctx(token, "decl", "メンバ型が期待されます");
+}
+
+static int parse_struct_or_union_members_toplevel(void) {
+  int member_count = 0;
+  while (!tk_consume('}')) {
+    parse_member_type_specifier_toplevel();
+    for (;;) {
+      while (tk_consume('*')) {}
+      token_ident_t *member = tk_consume_ident();
+      if (!member) psx_diag_missing(token, "メンバ名");
+      member_count++;
+      if (tk_consume('[')) {
+        tk_expect_number();
+        tk_expect(']');
+      }
+      if (!tk_consume(',')) break;
+    }
+    tk_expect(';');
+  }
+  return member_count;
+}
+
+static int parse_enum_members_toplevel(void) {
+  int member_count = 0;
+  while (!tk_consume('}')) {
+    token_ident_t *enumerator = tk_consume_ident();
+    if (!enumerator) psx_diag_missing(token, "列挙子名");
+    member_count++;
+    if (tk_consume('=')) psx_expr_assign();
+    if (tk_consume('}')) break;
+    tk_expect(',');
+    if (tk_consume('}')) break;
+  }
+  return member_count;
+}
+
+static int parse_tag_definition_body_toplevel(token_kind_t tag_kind) {
+  if (tag_kind == TK_ENUM) return parse_enum_members_toplevel();
+  return parse_struct_or_union_members_toplevel();
+}
+
+static void parse_toplevel_tag_decl(void) {
+  token_kind_t tag_kind = token->kind;
+  token = token->next;
+  token_ident_t *tag = tk_consume_ident();
+  if (!tag) psx_diag_missing(token, "タグ名");
+
+  if (tk_consume('{')) {
+    int member_count = parse_tag_definition_body_toplevel(tag_kind);
+    psx_ctx_define_tag_type_with_members(tag_kind, tag->str, tag->len, member_count);
+    if (tk_consume(';')) return;
+    parse_toplevel_declarator_list();
+    tk_expect(';');
+    return;
+  }
+  if (tk_consume(';')) {
+    psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
+    return;
+  }
+  if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
+    psx_diag_undefined_with_name(token, "のタグ型", tag->str, tag->len);
+  }
+  parse_toplevel_declarator_list();
+  tk_expect(';');
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
