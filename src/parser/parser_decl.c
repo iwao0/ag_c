@@ -1,4 +1,5 @@
 #include "parser_decl.h"
+#include "parser_expr.h"
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
@@ -9,7 +10,6 @@ static lvar_t *locals;
 static int locals_offset;
 
 extern token_kind_t parser_consume_type_kind(void);
-extern node_t *parser_assign_expr(void);
 
 void pdecl_reset_locals(void) {
   locals = NULL;
@@ -63,7 +63,7 @@ node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_f
         tk_expect(']');
         var = pdecl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
         if (tk_consume('=')) {
-          parser_assign_expr();
+          pexpr_assign();
         }
       } else {
         var = pdecl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
@@ -77,7 +77,7 @@ node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_f
     if (tk_consume('=')) {
       node_t *lvar = pnode_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
       lvar->fp_kind = var->fp_kind;
-      node_mem_t *assign_node = pnode_new_assign(lvar, parser_assign_expr());
+      node_mem_t *assign_node = pnode_new_assign(lvar, pexpr_assign());
       assign_node->type_size = is_pointer ? 8 : var->elem_size;
       assign_node->base.fp_kind = var->fp_kind;
       node_t *init_node = (node_t *)assign_node;
@@ -100,4 +100,3 @@ node_t *pdecl_parse_declaration(void) {
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
   return pdecl_parse_declaration_after_type(elem_size, decl_fp_kind);
 }
-

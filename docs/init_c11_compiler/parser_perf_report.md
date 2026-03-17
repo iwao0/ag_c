@@ -95,3 +95,14 @@
 - 回帰確認:
   - `build/test_parser` pass
   - `build/test_e2e` pass (`171/171`)
+
+- 追加ファイル（第5段）:
+  - `src/parser/parser_expr.h`
+  - `src/parser/parser_expr.c`
+- 置換（第5段）:
+  - `expr/assign/conditional/logical/bit/equality/relational/shift/add/mul/unary/primary` を `parser_expr` へ移管
+  - `parser.c` の `expr()` は `pexpr_expr()` への委譲に縮小
+  - `parser_decl` の初期化式パース呼び出しを `pexpr_assign()` に統一
+- 回帰確認（第5段）:
+  - `build/test_parser` pass
+  - `build/test_e2e` pass (`171/171`)
