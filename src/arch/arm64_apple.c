@@ -194,6 +194,10 @@ static int is_main_func(const node_func_t *fn) {
   return fn->funcname_len == 4 && strncmp(fn->funcname, "main", 4) == 0;
 }
 
+static int is_printf_func(const node_func_t *fn) {
+  return fn->funcname_len == 6 && strncmp(fn->funcname, "printf", 6) == 0;
+}
+
 void gen_main_prologue(void) {
   // 関数定義で生成するため空にする（互換性維持）
 }
@@ -476,6 +480,31 @@ static void gen_expr(node_t *node) {
   }
   case ND_FUNCALL: {
     node_func_t *fn = as_func(node);
+    if (is_printf_func(fn) && fn->nargs >= 1) {
+      // Darwin/ARM64: variadic 引数はレジスタではなくスタックで受け渡す。
+      gen_expr(fn->args[0]);
+      printf("  ldr x19, [sp], #16\n");
+
+      int var_count = fn->nargs - 1;
+      int stack_bytes = ((var_count + 1) / 2) * 16; // call時の16byte alignment維持
+      if (stack_bytes > 0) {
+        printf("  sub sp, sp, #%d\n", stack_bytes);
+      }
+      for (int i = 1; i < fn->nargs; i++) {
+        gen_expr(fn->args[i]);
+        printf("  ldr x9, [sp], #16\n");
+        printf("  str x9, [sp, #%d]\n", (i - 1) * 8);
+      }
+
+      printf("  mov x0, x19\n");
+      printf("  bl _printf\n");
+      if (stack_bytes > 0) {
+        printf("  add sp, sp, #%d\n", stack_bytes);
+      }
+      printf("  str x0, [sp, #-16]!\n");
+      return;
+    }
+
     // 引数を評価してレジスタに格納
     for (int i = 0; i < fn->nargs; i++) {
       gen_expr(fn->args[i]);

@@ -560,21 +560,47 @@ token_t *preprocess(token_t *tok) {
       
       if (is_dir(tok, "include")) {
         tok = tok->next;
-        char filename[1024] = {0};
+        size_t filename_cap = 64;
+        size_t filename_len = 0;
+        char *filename = calloc(filename_cap, 1);
+        if (!filename) {
+          fprintf(stderr, "メモリ確保に失敗しました\n");
+          exit(1);
+        }
         
         if (tok->kind == TK_STRING) {
           token_string_t *st = as_string(tok);
-          strncpy(filename, st->str, st->len);
+          size_t need = (size_t)st->len + 1;
+          if (need > filename_cap) {
+            filename_cap = need;
+            filename = realloc(filename, filename_cap);
+            if (!filename) {
+              fprintf(stderr, "メモリ確保に失敗しました\n");
+              exit(1);
+            }
+          }
+          memcpy(filename, st->str, (size_t)st->len);
+          filename[st->len] = '\0';
+          filename_len = (size_t)st->len;
           tok = tok->next;
         } else if (tok->kind == TK_LT) {
           tok = tok->next;
-          int pos = 0;
           while (tok->kind != TK_EOF && tok->kind != TK_GT) {
             int tlen = 0;
             const char *ts = token_text(tok, &tlen);
             if (!ts) ts = "";
-            strncpy(filename + pos, ts, tlen);
-            pos += tlen;
+            size_t need = filename_len + (size_t)tlen + 1;
+            if (need > filename_cap) {
+              while (filename_cap < need) filename_cap *= 2;
+              filename = realloc(filename, filename_cap);
+              if (!filename) {
+                fprintf(stderr, "メモリ確保に失敗しました\n");
+                exit(1);
+              }
+            }
+            memcpy(filename + filename_len, ts, (size_t)tlen);
+            filename_len += (size_t)tlen;
+            filename[filename_len] = '\0';
             tok = tok->next;
           }
           if (tok->kind == TK_EOF) {
@@ -586,7 +612,19 @@ token_t *preprocess(token_t *tok) {
 
         char *buf = read_file(filename);
         if (!buf) {
+          size_t alt_len = strlen("include/") + strlen(filename) + 1;
+          char *alt = calloc(alt_len, 1);
+          if (!alt) {
+            fprintf(stderr, "メモリ確保に失敗しました\n");
+            exit(1);
+          }
+          snprintf(alt, alt_len, "include/%s", filename);
+          buf = read_file(alt);
+          free(alt);
+        }
+        if (!buf) {
           fprintf(stderr, "ファイルが見つかりません: %s\n", filename);
+          free(filename);
           exit(1);
         }
 
@@ -609,6 +647,7 @@ token_t *preprocess(token_t *tok) {
             tok2 = tok2->next;
           }
         }
+        free(filename);
         continue;
       }
 

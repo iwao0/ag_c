@@ -418,3 +418,32 @@
 - [x] 浮動小数点リテラルの即値化可能判定を導入する
   - [x] 即値化可能な値は `fmov` 系でロードする（現状: `+0.0f` / `+0.0`）
   - [x] それ以外は既存どおり `float_literals` 経由でロードする
+
+## `printf` 可変長引数ABI対応（`ag_printf`撤去）
+- [x] 原因を確定する
+  - [x] Apple ARM64(Darwin) における可変長引数呼び出し規約を、`clang -S` 出力で確認する
+  - [x] 現行 `ag_c` 出力との差分（レジスタ渡し/スタック渡し/16byteアライメント）を整理する
+  - [x] `%d` が崩れる再現ケースを最小化し、原因を「呼び出し規約不一致」で固定する
+- [x] 一時ワークアラウンドを除去する
+  - [x] `gen_runtime_helpers()` の生成を削除する
+  - [x] `include/stdio.h` の `#define printf ag_printf` を削除し、通常の `printf` 宣言へ戻す
+  - [x] `ag_printf` シンボルへの依存を全て除去する
+- [x] Codegenで正しい可変長引数呼び出しを実装する
+  - [x] `ND_FUNCALL` で variadic 関数呼び出し経路を追加する（まず `printf` 対象）
+  - [x] variadic 引数をABIどおりスタックへ配置し、call直前のSP 16byteアラインを保証する
+  - [x] 呼び出し後のスタック回復と既存式評価スタックとの整合を取る
+- [x] 回帰テストを追加する
+  - [x] `#include <stdio.h>` + `printf("x=%d\n", 42)` のE2Eテストを追加する
+  - [x] 既存の `puts` / 通常関数呼び出しが壊れていないことを確認する
+- [x] 検証とドキュメント更新
+  - [x] `build/test_preprocess` と `build/test_e2e` を通す
+  - [x] 仕様メモ（Darwin variadic ABI対応方針）を `walkthrough.md` へ追記する
+
+## 固定長バッファ見直し（ハードコード長の削減）
+- [x] `preprocess.c` の `#include` パス組み立てを動的化する
+  - [x] `char alt[1200]` を廃止し、必要長を計算して確保する
+  - [x] `char filename[1024]` を廃止し、トークン長に応じて伸長する
+- [ ] 同様の固定長バッファを段階的に見直す
+  - [ ] `src/config/config.c` の `char line[512]` の上限仕様を明文化し、必要に応じて動的化する
+  - [ ] `src/parser/diag.c` の `char detail[256]` の切り捨て方針を明文化し、診断品質への影響を評価する
+  - [ ] `src/parser/expr.c` の `char label[32]`（`.LC` ラベル生成）の上限妥当性を確認し、必要なら `snprintf` 依存から安全な生成へ変更する
