@@ -785,6 +785,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
+  expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
@@ -798,6 +799,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { return sizeof(void); }", "[sizeof] sizeof(void) はサポートしていません");
+  expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] 非スカラ型へのキャストは未対応です");
 }
 
 int main() {

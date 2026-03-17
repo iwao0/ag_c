@@ -210,6 +210,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "cast_bool_true", CASE_INT, "int main() { return (_Bool)3; }", 1, 0},
     {"type_decl", "cast_bool_false", CASE_INT, "int main() { return (_Bool)0; }", 0, 0},
     {"type_decl", "cast_unsigned", CASE_INT, "int main() { return (unsigned)42; }", 42, 0},
+    {"type_decl", "cast_tag_ptr", CASE_INT, "int main() { struct S { int x; }; struct S *p = 0; return ((struct S*)p)==0; }", 1, 0},
     {"type_decl", "float1", CASE_FLOAT, "float ag_m() { float f = 7; return f; }", 0, 7.0},
     {"type_decl", "float2", CASE_FLOAT, "float ag_m() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
     {"type_decl", "float3", CASE_FLOAT, "float ag_m() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},
