@@ -17,6 +17,33 @@ static void parse_typedef_decl(void);
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind);
+static token_ident_t *parse_typedef_name_decl(int *is_ptr);
+
+static void skip_func_params_stmt(void) {
+  if (!tk_consume('(')) return;
+  int depth = 1;
+  while (depth > 0) {
+    if (token->kind == TK_EOF) psx_diag_ctx(token, "typedef", "関数宣言子の ')' が不足しています");
+    if (token->kind == TK_LPAREN) depth++;
+    else if (token->kind == TK_RPAREN) depth--;
+    token = token->next;
+  }
+}
+
+static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
+  if (tk_consume('(')) {
+    while (tk_consume('*')) *is_ptr = 1;
+    token_ident_t *name = tk_consume_ident();
+    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+    tk_expect(')');
+    skip_func_params_stmt();
+    return name;
+  }
+  token_ident_t *name = tk_consume_ident();
+  if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+  skip_func_params_stmt();
+  return name;
+}
 
 static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   int member_count = 0;
@@ -176,8 +203,7 @@ static void parse_typedef_decl(void) {
   for (;;) {
     int is_ptr = is_pointer_base;
     while (tk_consume('*')) is_ptr = 1;
-    token_ident_t *name = tk_consume_ident();
-    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+    token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     if (tk_consume('[')) {
       tk_expect_number();
       tk_expect(']');

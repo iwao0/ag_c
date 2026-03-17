@@ -19,6 +19,7 @@ static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
 static void parse_toplevel_tag_decl(void);
 static void parse_toplevel_typedef_decl(void);
+static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
 static int is_toplevel_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 
@@ -68,7 +69,34 @@ static int is_toplevel_function_signature(token_t *tok) {
 static void parse_toplevel_declarator_list(void) {
   for (;;) {
     while (tk_consume('*')) {}
-    token_ident_t *name = tk_consume_ident();
+    token_ident_t *name = NULL;
+    if (tk_consume('(')) {
+      while (tk_consume('*')) {}
+      name = tk_consume_ident();
+      if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
+      tk_expect(')');
+      if (tk_consume('(')) {
+        int depth = 1;
+        while (depth > 0) {
+          if (token->kind == TK_EOF) psx_diag_ctx(token, "decl", "関数宣言子の ')' が不足しています");
+          if (token->kind == TK_LPAREN) depth++;
+          else if (token->kind == TK_RPAREN) depth--;
+          token = token->next;
+        }
+      }
+    } else {
+      name = tk_consume_ident();
+      if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
+      if (tk_consume('(')) {
+        int depth = 1;
+        while (depth > 0) {
+          if (token->kind == TK_EOF) psx_diag_ctx(token, "decl", "関数宣言子の ')' が不足しています");
+          if (token->kind == TK_LPAREN) depth++;
+          else if (token->kind == TK_RPAREN) depth--;
+          token = token->next;
+        }
+      }
+    }
     if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
     if (tk_consume('[')) {
       tk_expect_number();
@@ -79,6 +107,37 @@ static void parse_toplevel_declarator_list(void) {
     }
     if (!tk_consume(',')) break;
   }
+}
+
+static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr) {
+  if (tk_consume('(')) {
+    while (tk_consume('*')) *is_ptr = 1;
+    token_ident_t *name = tk_consume_ident();
+    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+    tk_expect(')');
+    if (tk_consume('(')) {
+      int depth = 1;
+      while (depth > 0) {
+        if (token->kind == TK_EOF) psx_diag_ctx(token, "typedef", "関数宣言子の ')' が不足しています");
+        if (token->kind == TK_LPAREN) depth++;
+        else if (token->kind == TK_RPAREN) depth--;
+        token = token->next;
+      }
+    }
+    return name;
+  }
+  token_ident_t *name = tk_consume_ident();
+  if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+  if (tk_consume('(')) {
+    int depth = 1;
+    while (depth > 0) {
+      if (token->kind == TK_EOF) psx_diag_ctx(token, "typedef", "関数宣言子の ')' が不足しています");
+      if (token->kind == TK_LPAREN) depth++;
+      else if (token->kind == TK_RPAREN) depth--;
+      token = token->next;
+    }
+  }
+  return name;
 }
 
 static void parse_toplevel_decl_after_type(void) {
@@ -131,8 +190,7 @@ static void parse_toplevel_typedef_decl(void) {
   for (;;) {
     int is_ptr = is_ptr_base;
     while (tk_consume('*')) is_ptr = 1;
-    token_ident_t *name = tk_consume_ident();
-    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+    token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
     if (tk_consume('[')) {
       tk_expect_number();
       tk_expect(']');

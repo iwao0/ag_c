@@ -11,6 +11,35 @@
 static lvar_t *locals;
 static int locals_offset;
 
+static void skip_func_params(void) {
+  if (!tk_consume('(')) return;
+  int depth = 1;
+  while (depth > 0) {
+    if (token->kind == TK_EOF) {
+      psx_diag_ctx(token, "decl", "関数宣言子の ')' が不足しています");
+    }
+    if (token->kind == TK_LPAREN) depth++;
+    else if (token->kind == TK_RPAREN) depth--;
+    token = token->next;
+  }
+}
+
+static token_ident_t *consume_decl_name(int *is_pointer) {
+  token_ident_t *tok = NULL;
+  if (tk_consume('(')) {
+    while (tk_consume('*')) *is_pointer = 1;
+    tok = tk_consume_ident();
+    if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
+    tk_expect(')');
+    skip_func_params();
+    return tok;
+  }
+  tok = tk_consume_ident();
+  if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
+  skip_func_params();
+  return tok;
+}
+
 void psx_decl_reset_locals(void) {
   locals = NULL;
   locals_offset = 0;
@@ -56,10 +85,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     }
     int var_size = is_pointer ? 8 : elem_size;
 
-    token_ident_t *tok = tk_consume_ident();
-    if (!tok) {
-      psx_diag_ctx(token, "decl", "変数名が期待されます");
-    }
+    token_ident_t *tok = consume_decl_name(&is_pointer);
 
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
