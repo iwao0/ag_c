@@ -1,6 +1,6 @@
 #include "../ag_c.h"
 #include "../parser/parser.h"
-#include "../tokenizer/escape.h"
+#include "../tokenizer/internal/escape.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
