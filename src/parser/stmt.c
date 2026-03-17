@@ -40,17 +40,15 @@ static void skip_func_params_stmt(void) {
 }
 
 static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
-  if (tk_consume('(')) {
-    while (tk_consume('*')) *is_ptr = 1;
-    token_ident_t *name = tk_consume_ident();
-    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
-    tk_expect(')');
-    skip_func_params_stmt();
-    return name;
-  }
+  int open_parens = 0;
+  while (tk_consume('(')) open_parens++;
+  while (tk_consume('*')) *is_ptr = 1;
   token_ident_t *name = tk_consume_ident();
   if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
-  skip_func_params_stmt();
+  while (open_parens-- > 0) tk_expect(')');
+  while (token->kind == TK_LPAREN) {
+    skip_func_params_stmt();
+  }
   return name;
 }
 

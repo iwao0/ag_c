@@ -227,6 +227,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "typedef_ptr", CASE_INT, "typedef int *intptr; int main() { int a=11; intptr p=&a; return *p; }", 11, 0},
     {"type_decl", "typedef_in_func", CASE_INT, "int main() { typedef int myint; myint x=6; return x; }", 6, 0},
     {"type_decl", "typedef_funcptr", CASE_INT, "typedef int (*fp_t)(int); int main() { fp_t p; return 0; }", 0, 0},
+    {"type_decl", "typedef_funcptr_nested", CASE_INT, "typedef int (((*fp_t)))(int); int main() { fp_t p; return 0; }", 0, 0},
     {"type_decl", "unsigned_long_decl", CASE_INT, "int main() { unsigned long v=12; return v; }", 12, 0},
     {"type_decl", "signed_short_decl", CASE_INT, "int main() { signed short v=13; return v; }", 13, 0},
     {"type_decl", "const_decl", CASE_INT, "int main() { const int x=8; return x; }", 8, 0},

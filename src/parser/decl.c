@@ -26,17 +26,15 @@ static void skip_func_params(void) {
 
 static token_ident_t *consume_decl_name(int *is_pointer) {
   token_ident_t *tok = NULL;
-  if (tk_consume('(')) {
-    while (tk_consume('*')) *is_pointer = 1;
-    tok = tk_consume_ident();
-    if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
-    tk_expect(')');
-    skip_func_params();
-    return tok;
-  }
+  int open_parens = 0;
+  while (tk_consume('(')) open_parens++;
+  while (tk_consume('*')) *is_pointer = 1;
   tok = tk_consume_ident();
   if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
-  skip_func_params();
+  while (open_parens-- > 0) tk_expect(')');
+  while (token->kind == TK_LPAREN) {
+    skip_func_params();
+  }
   return tok;
 }
 

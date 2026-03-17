@@ -814,6 +814,11 @@ static void test_type_decl() {
   parsed_code = ps_program();
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+
+  token = tk_tokenize("typedef int (((*fp_t)))(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
+  parsed_code = ps_program();
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 }
 
 static void test_multiple_funcdefs() {
