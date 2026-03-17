@@ -5,13 +5,38 @@ on:
   pull_request:
 
 jobs:
-  test-and-bench:
+  parser-test:
     runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build And Test
+      - name: Build Parser Test
+        run: make build/test_parser
+
+      - name: Run Parser Test
+        run: build/test_parser
+
+  e2e-test:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build E2E Test
+        run: make build/test_e2e
+
+      - name: Run E2E Test
+        run: build/test_e2e
+
+  bench-and-guards:
+    runs-on: macos-latest
+    needs: [parser-test, e2e-test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Core Tests
         run: make test
 
       - name: Check Function Size
