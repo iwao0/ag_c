@@ -1,16 +1,15 @@
-#include "decl.h"
-#include "diag.h"
-#include "expr.h"
-#include "node_utils.h"
-#include "semantic_ctx.h"
+#include "internal/decl.h"
+#include "internal/core.h"
+#include "internal/diag.h"
+#include "internal/expr.h"
+#include "internal/node_utils.h"
+#include "internal/semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
 
 static lvar_t *locals;
 static int locals_offset;
-
-extern token_kind_t psx_consume_type_kind(void);
 
 void psx_decl_reset_locals(void) {
   locals = NULL;

@@ -1,7 +1,7 @@
 #ifndef PARSER_SEMANTIC_CTX_H
 #define PARSER_SEMANTIC_CTX_H
 
-#include "../tokenizer/token.h"
+#include "../../tokenizer/token.h"
 #include <stdbool.h>
 
 void psx_ctx_reset_function_scope(void);

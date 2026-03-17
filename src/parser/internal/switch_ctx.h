@@ -1,7 +1,7 @@
 #ifndef PARSER_SWITCH_CTX_H
 #define PARSER_SWITCH_CTX_H
 
-#include "../tokenizer/token.h"
+#include "../../tokenizer/token.h"
 
 void psx_switch_push_ctx(void);
 void psx_switch_pop_ctx(void);

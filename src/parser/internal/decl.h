@@ -1,7 +1,7 @@
 #ifndef PARSER_DECL_H
 #define PARSER_DECL_H
 
-#include "ast.h"
+#include "../ast.h"
 
 typedef struct lvar_t lvar_t;
 struct lvar_t {

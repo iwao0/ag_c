@@ -1,7 +1,7 @@
 #ifndef PARSER_NODE_UTILS_H
 #define PARSER_NODE_UTILS_H
 
-#include "ast.h"
+#include "../ast.h"
 
 int psx_node_type_size(node_t *node);
 int psx_node_deref_size(node_t *node);

@@ -1,4 +1,4 @@
-#include "node_utils.h"
+#include "internal/node_utils.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 
