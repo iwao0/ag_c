@@ -1,4 +1,4 @@
-#include "allocator.h"
+#include "internal/allocator.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

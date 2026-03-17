@@ -1,4 +1,4 @@
-#include "keywords.h"
+#include "internal/keywords.h"
 
 static inline bool eq2(const char *s, const char a, const char b) {
   return s[0] == a && s[1] == b;

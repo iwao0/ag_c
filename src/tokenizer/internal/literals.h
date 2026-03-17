@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "token.h"
+#include "../token.h"
 
 /** @brief `\\uXXXX` / `\\UXXXXXXXX` 形式のUCN開始かを判定する。 */
 bool tk_starts_with_ucn(const char *p, int *len);

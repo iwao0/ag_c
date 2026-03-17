@@ -1,7 +1,7 @@
-#include "scanner.h"
-#include "branch_hint.h"
-#include "charclass.h"
-#include "literals.h"
+#include "internal/scanner.h"
+#include "internal/branch_hint.h"
+#include "internal/charclass.h"
+#include "internal/literals.h"
 #include "tokenizer.h"
 
 static inline bool tk_is_space_fast(char c) {

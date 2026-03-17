@@ -1,4 +1,4 @@
-#include "escape.h"
+#include "internal/escape.h"
 
 static inline int hex_digit_value(unsigned char ch) {
   if ('0' <= ch && ch <= '9') return (int)(ch - '0');

@@ -1,7 +1,7 @@
 #ifndef TOKENIZER_PUNCTUATOR_H
 #define TOKENIZER_PUNCTUATOR_H
 
-#include "token.h"
+#include "../token.h"
 #include <stdbool.h>
 
 /** @brief 記号文字列が完全一致した場合の token kind を返す。 */
