@@ -2,6 +2,7 @@
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
 #include "internal/decl.h"
+#include "internal/core.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
 #include "internal/expr.h"
@@ -30,6 +31,12 @@ static long long parse_enum_const_mul_toplevel(void);
 static long long parse_enum_const_unary_toplevel(void);
 static long long parse_enum_const_primary_toplevel(void);
 
+static void skip_cv_qualifiers(void) {
+  while (token->kind == TK_CONST || token->kind == TK_VOLATILE) {
+    token = token->next;
+  }
+}
+
 // program = funcdef*
 node_t **ps_program(void) {
   int cap = 16;
@@ -44,11 +51,12 @@ node_t **ps_program(void) {
       parse_toplevel_typedef_decl();
       continue;
     }
-    if ((psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) && !is_toplevel_function_signature(token)) {
+    if ((psx_ctx_is_type_token(token->kind) || token->kind == TK_CONST || token->kind == TK_VOLATILE || psx_ctx_is_typedef_name_token(token)) &&
+        !is_toplevel_function_signature(token)) {
       if (psx_ctx_is_typedef_name_token(token)) {
         token = token->next;
       } else {
-        token = token->next; // base type
+        (void)psx_consume_type_kind();
       }
       parse_toplevel_decl_after_type();
       continue;
@@ -66,8 +74,11 @@ node_t **ps_program(void) {
 }
 
 static int is_toplevel_function_signature(token_t *tok) {
-  if (!tok || (!psx_ctx_is_type_token(tok->kind) && !psx_ctx_is_typedef_name_token(tok))) return 0;
-  token_t *t = tok->next;
+  if (!tok) return 0;
+  token_t *t = tok;
+  while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next;
+  if (!t || (!psx_ctx_is_type_token(t->kind) && !psx_ctx_is_typedef_name_token(t))) return 0;
+  t = t->next;
   while (t && t->kind == TK_MUL) t = t->next;
   if (!t || t->kind != TK_IDENT) return 0;
   return t->next && t->next->kind == TK_LPAREN;
@@ -163,6 +174,7 @@ static void parse_toplevel_typedef_decl(void) {
   int tag_len = 0;
   int is_ptr_base = 0;
 
+  skip_cv_qualifiers();
   if (psx_ctx_is_type_token(token->kind)) {
     base_kind = token->kind;
     psx_ctx_get_type_info(token->kind, NULL, &elem_size);
@@ -397,6 +409,7 @@ static void parse_toplevel_tag_decl(void) {
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
+  skip_cv_qualifiers();
   if (token->kind == TK_SIGNED || token->kind == TK_UNSIGNED) {
     token_kind_t sign_kind = token->kind;
     token = token->next;
@@ -435,6 +448,7 @@ token_kind_t psx_consume_type_kind(void) {
 }
 
 static bool consume_type(void) {
+  skip_cv_qualifiers();
   if (psx_consume_type_kind() != TK_EOF) return true;
   if (psx_ctx_is_typedef_name_token(token)) {
     token = token->next;

@@ -24,6 +24,10 @@ static long long parse_enum_const_mul(void);
 static long long parse_enum_const_unary(void);
 static long long parse_enum_const_primary(void);
 
+static void skip_cv_qualifiers_stmt(void) {
+  while (token->kind == TK_CONST || token->kind == TK_VOLATILE) token = token->next;
+}
+
 static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -223,6 +227,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
   *is_pointer_base = 0;
   *base_kind = TK_EOF;
 
+  skip_cv_qualifiers_stmt();
   if (psx_ctx_is_type_token(token->kind)) {
     *base_kind = token->kind;
     psx_ctx_get_type_info(token->kind, NULL, elem_size);
@@ -313,7 +318,7 @@ static node_t *stmt_internal(void) {
     return psx_node_new_num(0);
   }
 
-  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+  if (psx_ctx_is_type_token(token->kind) || token->kind == TK_CONST || token->kind == TK_VOLATILE || psx_ctx_is_typedef_name_token(token)) {
     if (psx_ctx_is_typedef_name_token(token)) {
       token_ident_t *id = (token_ident_t *)token;
       int elem_size = 8;
@@ -432,7 +437,7 @@ static node_t *stmt_internal(void) {
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
     if (!tk_consume(';')) {
-      if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+      if (psx_ctx_is_type_token(token->kind) || token->kind == TK_CONST || token->kind == TK_VOLATILE || psx_ctx_is_typedef_name_token(token)) {
         if (psx_ctx_is_typedef_name_token(token)) {
           token_ident_t *id = (token_ident_t *)token;
           int elem_size = 8;
