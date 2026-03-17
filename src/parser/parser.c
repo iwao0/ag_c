@@ -12,27 +12,27 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-node_t **code;
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 
 static node_t *funcdef(void);
 
 // program = funcdef*
-void ps_program(void) {
+node_t **ps_program(void) {
   int cap = 16;
-  code = calloc(cap, sizeof(node_t*));
+  node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
     node_t *fn = funcdef();
     if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
     if (i >= cap - 1) { // NULL終端用
       cap = pda_next_cap(cap, i + 2);
-      code = realloc(code, sizeof(node_t*) * cap);
+      codes = realloc(codes, sizeof(node_t*) * cap);
     }
-    code[i++] = fn;
+    codes[i++] = fn;
   }
-  code[i] = NULL;
+  codes[i] = NULL;
+  return codes;
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）

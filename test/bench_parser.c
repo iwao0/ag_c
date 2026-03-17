@@ -49,7 +49,7 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
-  ps_program();
+  node_t **code = ps_program();
   clock_gettime(CLOCK_MONOTONIC, &t_par1);
 
   size_t funcs = count_funcs(code);
