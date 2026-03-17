@@ -90,6 +90,12 @@ int main() {
   FILE *h = fopen("build/test_inc.h", "w");
   fprintf(h, "int inc_func() { return 42; }\n");
   fclose(h);
+  FILE *ha = fopen("build/cycle_a.h", "w");
+  fprintf(ha, "#include \"build/cycle_b.h\"\n");
+  fclose(ha);
+  FILE *hb = fopen("build/cycle_b.h", "w");
+  fprintf(hb, "#include \"build/cycle_a.h\"\n");
+  fclose(hb);
 
   assert_result(42, "#include \"build/test_inc.h\"\nint main() { return inc_func(); }");
 
@@ -149,6 +155,8 @@ int main() {
   expect_preprocess_fail("#define FOO(a, 1) 1\nint main() { return FOO(1); }\n");
   expect_preprocess_fail("#include <stdio.h\nint main() { return 0; }\n");
   expect_preprocess_fail("#include \"build/not_found.h\"\nint main() { return 0; }\n");
+  expect_preprocess_fail("#include \"../README.md\"\nint main() { return 0; }\n");
+  expect_preprocess_fail("#include \"build/cycle_a.h\"\nint main() { return 0; }\n");
   expect_preprocess_fail("#define FOO(x) x\nint main() { return FOO(1; }\n"); // ')' missing
   expect_preprocess_fail("#error \"forced\"\nint main() { return 0; }\n");
 

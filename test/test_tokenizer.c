@@ -248,6 +248,12 @@ static void test_tokenize_invalid() {
   expect_tokenize_fail("'\\x'");      // 16進エスケープ不正
   expect_tokenize_fail("1.0f0");      // pp-number 連結
   expect_tokenize_fail("1..2");       // pp-number 連結
+
+  // 大きすぎるトークン長を安全に拒否できること（テスト用上限を利用）
+  tk_set_max_token_len_for_test(8);
+  expect_tokenize_fail("identifier_too_long");
+  expect_tokenize_fail("\"string_too_long\"");
+  tk_set_max_token_len_for_test(0);
 }
 
 // 1c. ローカル変数・複数文字識別子のテスト

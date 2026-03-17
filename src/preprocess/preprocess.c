@@ -22,6 +22,17 @@ static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
+#define PP_MAX_INCLUDE_DEPTH 64
+
+typedef struct include_frame include_frame_t;
+struct include_frame {
+  include_frame_t *next;
+  const char *path;
+};
+
+static include_frame_t *include_stack = NULL;
+static int include_depth = 0;
+
 static void *xrealloc(void *ptr, size_t size) {
   void *p = realloc(ptr, size);
   if (!p) {
@@ -37,6 +48,57 @@ static void *xreallocarray(void *ptr, size_t n, size_t size) {
     exit(1);
   }
   return xrealloc(ptr, n * size);
+}
+
+static void pp_error(const char *fmt, const char *arg) {
+  if (arg) {
+    fprintf(stderr, fmt, arg);
+  } else {
+    fprintf(stderr, "%s", fmt);
+  }
+  fprintf(stderr, "\n");
+  exit(1);
+}
+
+static void validate_include_path_or_die(const char *path) {
+  if (!path || !*path) {
+    pp_error("不正な include ファイル名です", NULL);
+  }
+  if (path[0] == '/' || path[0] == '\\') {
+    pp_error("許可されない include パスです: %s", path);
+  }
+  for (const char *p = path; *p; p++) {
+    if ((p == path || p[-1] == '/') && p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
+      pp_error("親ディレクトリ参照を含む include は禁止です: %s", path);
+    }
+  }
+}
+
+static void push_include_or_die(const char *path) {
+  if (include_depth >= PP_MAX_INCLUDE_DEPTH) {
+    pp_error("include のネストが深すぎます", NULL);
+  }
+  for (include_frame_t *f = include_stack; f; f = f->next) {
+    if (!strcmp(f->path, path)) {
+      pp_error("循環 include を検出しました: %s", path);
+    }
+  }
+  include_frame_t *f = calloc(1, sizeof(include_frame_t));
+  if (!f) {
+    pp_error("メモリ確保に失敗しました", NULL);
+  }
+  f->path = path;
+  f->next = include_stack;
+  include_stack = f;
+  include_depth++;
+}
+
+static void pop_include(void) {
+  if (!include_stack) return;
+  include_frame_t *f = include_stack;
+  include_stack = f->next;
+  free(f);
+  if (include_depth > 0) include_depth--;
 }
 
 static bool ident_is(token_t *tok, const char *s) {
@@ -680,6 +742,7 @@ token_t *preprocess(token_t *tok) {
           }
           tok = tok->next; // '>' をスキップ
         }
+        validate_include_path_or_die(filename);
 
         char *buf = read_file(filename);
         if (!buf) {
@@ -705,7 +768,9 @@ token_t *preprocess(token_t *tok) {
 
         tk_set_filename(my_strndup(filename, strlen(filename)));
         token_t *tok2 = tk_tokenize(buf);
+        push_include_or_die(filename);
         tok2 = preprocess(tok2);
+        pop_include();
 
         tk_set_filename(saved_filename);
         tk_set_user_input(saved_input);

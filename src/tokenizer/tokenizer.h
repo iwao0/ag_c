@@ -85,4 +85,10 @@ void tk_reset_tokenizer_stats(void);
 /** @brief 現在のTokenizer統計を取得する。 */
 tokenizer_stats_t tk_get_tokenizer_stats(void);
 
+/**
+ * @brief テスト用にトークン長の上限を設定する。
+ * @note 0 を指定すると既定値（INT_MAX）に戻す。
+ */
+void tk_set_max_token_len_for_test(size_t max_len);
+
 #endif

@@ -8,6 +8,7 @@
 #include "internal/scanner.h"
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +34,7 @@ static char *current_filename;
 static tokenizer_stats_t tok_stats = {0};
 static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
+static size_t max_token_len_for_test = (size_t)INT_MAX;
 
 /** @brief 現在のファイル名（エラー表示用）を取得する。 */
 char *tk_get_filename(void) {
@@ -63,6 +65,18 @@ tokenizer_stats_t tk_get_tokenizer_stats(void) {
 
 static void *tcalloc(size_t n, size_t size) {
   return tk_allocator_calloc(n, size);
+}
+
+static int checked_span_len(char *start, char *end, const char *what) {
+  ptrdiff_t diff = end - start;
+  if (diff < 0 || (size_t)diff > max_token_len_for_test || (size_t)diff > (size_t)INT_MAX) {
+    tk_error_at(start, "%s が大きすぎます", (char *)what);
+  }
+  return (int)diff;
+}
+
+void tk_set_max_token_len_for_test(size_t max_len) {
+  max_token_len_for_test = (max_len == 0) ? (size_t)INT_MAX : max_len;
 }
 
 static char trigraph_to_char(char c) {
@@ -138,13 +152,16 @@ void tk_error_tok(token_t *tok, char *fmt, ...) {
   if (tok) {
     if (tok->kind == TK_IDENT) {
       token_ident_t *id = (token_ident_t *)tok;
-      fprintf(stderr, " (actual: '%.*s')", id->len, id->str);
+      int n = id->len < 0 ? 0 : id->len;
+      fprintf(stderr, " (actual: '%.*s')", n, id->str);
     } else if (tok->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)tok;
-      fprintf(stderr, " (actual: '%.*s')", st->len, st->str);
+      int n = st->len < 0 ? 0 : st->len;
+      fprintf(stderr, " (actual: '%.*s')", n, st->str);
     } else if (tok->kind == TK_NUM) {
       token_num_t *num = (token_num_t *)tok;
-      fprintf(stderr, " (actual: '%.*s')", num->len, num->str);
+      int n = num->len < 0 ? 0 : num->len;
+      fprintf(stderr, " (actual: '%.*s')", n, num->str);
     } else {
       int len = 0;
       const char *s = tk_token_kind_str(tok->kind, &len);
@@ -776,7 +793,7 @@ token_t *tk_tokenize(char *p) {
         }
         p++;
       }
-      int len = p - start;
+      int len = checked_span_len(start, p, "文字列リテラル");
       p++; // 閉じ引用符をスキップ
       token_string_t *st = new_token_string(cur, start, len, line_no, _at_bol, _has_space);
       st->char_width = str_char_width;
@@ -853,7 +870,7 @@ token_t *tk_tokenize(char *p) {
         tk_error_at(p, "文字リテラルが不正です");
       }
       p++; // 閉じクォートをスキップ
-      int len = p - start;
+      int len = checked_span_len(start, p, "文字リテラル");
       token_num_int_t *num = new_token_num_int(cur, start, len, line_no, _at_bol, _has_space);
       num->base.num_kind = TK_NUM_KIND_INT;
       num->uval = ch;
@@ -886,7 +903,7 @@ token_t *tk_tokenize(char *p) {
         if (adv > 1) has_ucn_escape = true;
         p += adv;
       }
-      int len = p - start;
+      int len = checked_span_len(start, p, "識別子");
       char *id_str = start;
       int id_len = len;
       bool has_ucn = false;
@@ -913,7 +930,7 @@ token_t *tk_tokenize(char *p) {
       char *start = p; // Keep track of the start of the number for length calculation
       parsed_num_t parsed = {0};
       parse_number_literal(&p, &parsed);
-      int len = p - start;
+      int len = checked_span_len(start, p, "数値リテラル");
       if (parsed.fp_kind == TK_FLOAT_KIND_NONE) {
         token_num_int_t *num = new_token_num_int(cur, start, len, line_no, _at_bol, _has_space);
         num->base.num_kind = TK_NUM_KIND_INT;
