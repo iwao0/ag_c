@@ -165,6 +165,8 @@ static const test_case_t test_cases[] = {
     {"funcall", "rec", CASE_INT, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }", 120, 0},
     {"funcall", "comma_arg", CASE_INT, "f(x,y){return x*10+y;} main(){ return f((1,2),3); }", 23, 0},
     {"funcall", "prototype_decl", CASE_INT, "int add(int a, int b); int add(int a, int b){ return a+b; } int main(){ return add(20,22); }", 42, 0},
+    {"funcall", "param_funcptr_decl", CASE_INT, "int apply(int (*fp)(int), int x) { return x; } int main(){ return apply(0,7); }", 7, 0},
+    {"funcall", "param_array_decl", CASE_INT, "int f(int a[], int n) { return n; } int main(){ return f(0,5); }", 5, 0},
     {"funcall", "printf_variadic", CASE_INT, "#include <stdio.h>\nint main() { return printf(\"x=%d\\n\", 42) == 5 ? 0 : 1; }", 0, 0},
 
     {"multichar_var", "foo", CASE_INT, "main() { foo=3; return foo; }", 3, 0},

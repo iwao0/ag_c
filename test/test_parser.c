@@ -478,6 +478,16 @@ static void test_funcdef_with_params() {
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
   ASSERT_EQ(ND_LVAR, as_func(parsed_code[0])->args[0]->kind);
   ASSERT_EQ(ND_LVAR, as_func(parsed_code[0])->args[1]->kind);
+
+  token = tk_tokenize("int apply(int (*fp)(int), int x) { return x; }");
+  parsed_code = ps_program();
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
+
+  token = tk_tokenize("int sum(int a[], int n) { return n; }");
+  parsed_code = ps_program();
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
 }
 
 static void test_stmt_if() {

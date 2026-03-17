@@ -22,6 +22,8 @@ static void parse_toplevel_typedef_decl(void);
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
 static int is_toplevel_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
+static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
+static token_ident_t *parse_param_declarator_name(void);
 
 // program = funcdef*
 node_t **ps_program(void) {
@@ -367,6 +369,45 @@ static bool consume_type(void) {
   return false;
 }
 
+static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
+  if (token->kind != lkind) return;
+  int depth = 0;
+  while (token && token->kind != TK_EOF) {
+    if (token->kind == lkind) depth++;
+    else if (token->kind == rkind) {
+      depth--;
+      if (depth == 0) {
+        token = token->next;
+        return;
+      }
+    }
+    token = token->next;
+  }
+  psx_diag_ctx(token, "param", "対応する閉じ括弧がありません");
+}
+
+static token_ident_t *parse_param_declarator_name(void) {
+  token_ident_t *param = NULL;
+  if (tk_consume('(')) {
+    while (tk_consume('*')) {}
+    param = tk_consume_ident();
+    if (param) tk_expect(')');
+    else skip_balanced_group(TK_LPAREN, TK_RPAREN);
+  } else {
+    while (tk_consume('*')) {}
+    param = tk_consume_ident();
+  }
+
+  while (token->kind == TK_LPAREN || token->kind == TK_LBRACKET) {
+    if (token->kind == TK_LPAREN) {
+      skip_balanced_group(TK_LPAREN, TK_RPAREN);
+    } else {
+      skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+    }
+  }
+  return param;
+}
+
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
@@ -397,8 +438,7 @@ static node_t *funcdef(void) {
   int nargs = 0;
   if (!tk_consume(')')) {
     consume_type(); // 仮引数の型
-    while (tk_consume('*')) {} // ポインタの * を読み飛ばす
-    token_ident_t *param = tk_consume_ident();
+    token_ident_t *param = parse_param_declarator_name();
     if (param) {
       lvar_t *var = psx_decl_register_lvar(param->str, param->len);
       node->args[nargs++] = psx_node_new_lvar(var->offset);
@@ -409,8 +449,7 @@ static node_t *funcdef(void) {
         node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
       }
       consume_type(); // 仮引数の型
-      while (tk_consume('*')) {} // ポインタの * を読み飛ばす
-      param = tk_consume_ident();
+      param = parse_param_declarator_name();
       if (param) {
         lvar_t *var = psx_decl_register_lvar(param->str, param->len);
         node->args[nargs++] = psx_node_new_lvar(var->offset);
