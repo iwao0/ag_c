@@ -240,3 +240,26 @@
 
 - 判定:
   - 保守性改善を達成し、性能は全ケースで回帰ガードレール（-5%）以内
+
+## 2026-03-17 Contextual Error Format (Phase 5-2)
+
+- 実施:
+  - `pdiag_ctx(tok, rule, fmt, ...)` を追加し、`[rule] detail` 形式の診断フォーマットを導入
+  - `parser.c`（funcdef）, `parser_decl.c`（decl）, `parser_expr.c`（cast/sizeof/primary）, `parser_semantic_ctx.c`（goto）に段階適用
+  - 既存メッセージ語彙は維持しつつ、失敗規則コンテキストを追加
+- 回帰確認:
+  - `build/test_parser` pass
+  - `build/test_e2e` pass (`171/171`)
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 45.91 | 69.27 | +50.9% |
+| mixed (256KB) parser_MB/s | 55.15 | 75.54 | +37.0% |
+| expr-heavy (256KB) parser_MB/s | 52.84 | 67.96 | +28.6% |
+| control-heavy (256KB) parser_MB/s | 62.64 | 71.36 | +13.9% |
+
+- 判定:
+  - コンテキスト付き診断フォーマット統一を達成
+  - 性能は全ケースで回帰ガードレール（-5%）を満たす

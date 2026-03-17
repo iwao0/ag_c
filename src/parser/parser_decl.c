@@ -1,4 +1,5 @@
 #include "parser_decl.h"
+#include "parser_diag.h"
 #include "parser_expr.h"
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
@@ -53,7 +54,7 @@ node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_f
 
     token_ident_t *tok = tk_consume_ident();
     if (!tok) {
-      tk_error_tok(token, "変数名が期待されます");
+      pdiag_ctx(token, "decl", "変数名が期待されます");
     }
 
     lvar_t *var = pdecl_find_lvar(tok->str, tok->len);

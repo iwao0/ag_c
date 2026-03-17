@@ -92,7 +92,7 @@ void pctx_validate_goto_refs(void) {
       }
     }
     if (!found) {
-      tk_error_tok(g->tok, "未定義ラベル '%.*s' への goto です", g->len, g->name);
+      pdiag_ctx(g->tok, "goto", "未定義ラベル '%.*s' への goto です", g->len, g->name);
     }
   }
 }

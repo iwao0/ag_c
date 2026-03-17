@@ -2,6 +2,7 @@
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "parser_decl.h"
+#include "parser_diag.h"
 #include "parser_dynarray.h"
 #include "parser_expr.h"
 #include "parser_loop_ctx.h"
@@ -61,7 +62,7 @@ static node_t *funcdef(void) {
   pexpr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
-    tk_error_tok(token, "関数定義が期待されます");
+    pdiag_ctx(token, "funcdef", "関数定義が期待されます");
   }
   node_func_t *node = calloc(1, sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;

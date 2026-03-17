@@ -1,5 +1,6 @@
 #include "parser_expr.h"
 #include "parser_decl.h"
+#include "parser_diag.h"
 #include "parser_dynarray.h"
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
@@ -115,7 +116,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (type_kind == TK_CHAR) {
     return pnode_new_binary(ND_BITAND, operand, pnode_new_num(0xff));
   }
-  tk_error_tok(token, "この型へのキャストは未対応です");
+  pdiag_ctx(token, "cast", "この型へのキャストは未対応です");
   return operand;
 }
 
@@ -295,7 +296,7 @@ static node_t *unary(void) {
   if (parse_cast_type(token, &cast_kind, &cast_is_ptr, &after_rparen)) {
     token = after_rparen;
     if (cast_kind == TK_VOID && !cast_is_ptr) {
-      tk_error_tok(token, "void へのキャストは未対応です");
+      pdiag_ctx(token, "cast", "void へのキャストは未対応です");
     }
     return apply_cast(cast_kind, cast_is_ptr, unary());
   }
@@ -311,7 +312,7 @@ static node_t *unary(void) {
       if (is_type) {
         token = token->next;
         if (type_kind == TK_VOID) {
-          tk_error_tok(token, "sizeof(void) はサポートしていません");
+          pdiag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
         }
         int sz = scalar_size;
         while (token->kind == TK_MUL) {
@@ -553,6 +554,6 @@ static node_t *primary(void) {
     return (node_t *)node;
   }
 
-  tk_error_tok(token, "数値を期待しています");
+  pdiag_ctx(token, "primary", "数値を期待しています");
   return NULL;
 }
