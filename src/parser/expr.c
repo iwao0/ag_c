@@ -111,6 +111,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }
+  if (type_kind == TK_VOID) {
+    // 現状ASTでは専用ノードを持たず、既存ノードのまま評価値を捨てる文脈で利用する。
+    operand->fp_kind = TK_FLOAT_KIND_NONE;
+    return operand;
+  }
   if (type_kind == TK_SHORT) {
     return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffff));
   }
@@ -296,9 +301,6 @@ static node_t *unary(void) {
   token_t *after_rparen = NULL;
   if (parse_cast_type(token, &cast_kind, &cast_is_ptr, &after_rparen)) {
     token = after_rparen;
-    if (cast_kind == TK_VOID && !cast_is_ptr) {
-      psx_diag_ctx(token, "cast", "void へのキャストは未対応です");
-    }
     return apply_cast(cast_kind, cast_is_ptr, unary());
   }
 

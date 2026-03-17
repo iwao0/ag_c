@@ -281,6 +281,11 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_SUB, bitnot->kind);               // (~5) == ((0-5)-1)
   ASSERT_EQ(ND_SUB, bitnot->lhs->kind);
   ASSERT_EQ(1, as_num(bitnot->rhs)->val);
+
+  token = tk_tokenize("(void)1");
+  node_t *voidcast = ps_expr();
+  ASSERT_EQ(ND_NUM, voidcast->kind);
+  ASSERT_EQ(1, as_num(voidcast)->val);
 }
 
 static void test_expr_sizeof() {
@@ -743,7 +748,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
   expect_parse_fail("main() { return sizeof(void); }");  // sizeof(void) 未対応
-  expect_parse_fail("main() { return (void)1; }");       // void cast 未対応
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct { int x; }; }");      // メンバ宣言未対応
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
