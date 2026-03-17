@@ -122,11 +122,17 @@ static int parse_struct_or_union_members_toplevel(void) {
 
 static int parse_enum_members_toplevel(void) {
   int member_count = 0;
+  long long next_value = 0;
   while (!tk_consume('}')) {
     token_ident_t *enumerator = tk_consume_ident();
     if (!enumerator) psx_diag_missing(token, "列挙子名");
+    long long value = next_value;
     member_count++;
-    if (tk_consume('=')) psx_expr_assign();
+    if (tk_consume('=')) {
+      value = tk_expect_number();
+    }
+    psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
+    next_value = value + 1;
     if (tk_consume('}')) break;
     tk_expect(',');
     if (tk_consume('}')) break;

@@ -32,9 +32,19 @@ struct tag_type_t {
   int scope_depth;
 };
 
+typedef struct enum_const_t enum_const_t;
+struct enum_const_t {
+  enum_const_t *next_hash;
+  char *name;
+  int len;
+  long long value;
+  int scope_depth;
+};
+
 static goto_ref_t *goto_refs_all = NULL;
 static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
 static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
+static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
@@ -59,6 +69,7 @@ void psx_ctx_reset_function_scope(void) {
   tag_scope_depth = 0;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
+  memset(enum_consts_by_bucket, 0, sizeof(enum_consts_by_bucket));
 }
 
 void psx_ctx_enter_block_scope(void) {
@@ -73,6 +84,17 @@ void psx_ctx_leave_block_scope(void) {
     tag_type_t **pp = &tag_types_by_bucket[i];
     while (*pp) {
       tag_type_t *cur = *pp;
+      if (cur->scope_depth >= old_depth) {
+        *pp = cur->next_hash;
+        continue;
+      }
+      pp = &cur->next_hash;
+    }
+  }
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    enum_const_t **pp = &enum_consts_by_bucket[i];
+    while (*pp) {
+      enum_const_t *cur = *pp;
       if (cur->scope_depth >= old_depth) {
         *pp = cur->next_hash;
         continue;
@@ -162,6 +184,35 @@ int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
     }
   }
   return -1;
+}
+
+void psx_ctx_define_enum_const(char *name, int len, long long value) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
+    if (e->scope_depth == tag_scope_depth && e->len == len &&
+        strncmp(e->name, name, (size_t)len) == 0) {
+      e->value = value;
+      return;
+    }
+  }
+  enum_const_t *e = calloc(1, sizeof(enum_const_t));
+  e->name = name;
+  e->len = len;
+  e->value = value;
+  e->scope_depth = tag_scope_depth;
+  e->next_hash = enum_consts_by_bucket[bucket];
+  enum_consts_by_bucket[bucket] = e;
+}
+
+bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
+    if (e->len == len && strncmp(e->name, name, (size_t)len) == 0) {
+      if (out_value) *out_value = e->value;
+      return true;
+    }
+  }
+  return false;
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {

@@ -520,6 +520,12 @@ static node_t *primary(void) {
 
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
+      long long enum_val = 0;
+      if (psx_ctx_find_enum_const(tok->str, tok->len, &enum_val)) {
+        return psx_node_new_num(enum_val);
+      }
+    }
+    if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }
     if (var->is_array) {

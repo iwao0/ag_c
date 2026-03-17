@@ -730,6 +730,12 @@ static void test_type_decl() {
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { enum E { A=1, B, C=10 }; return A+B+C; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
   token = tk_tokenize("main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
