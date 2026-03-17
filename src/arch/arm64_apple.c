@@ -10,8 +10,9 @@
 
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
-static int break_labels[128];
-static int continue_labels[128];
+static int *break_labels;
+static int *continue_labels;
+static int control_cap = 0;
 static int control_depth = 0;
 // 浮動小数点定数用ラベルカウンタ
 
@@ -32,11 +33,25 @@ static node_case_t *as_case(node_t *node) { return (node_case_t *)node; }
 static node_default_t *as_default(node_t *node) { return (node_default_t *)node; }
 static node_jump_t *as_jump(node_t *node) { return (node_jump_t *)node; }
 
-static void push_control_labels(int break_lbl, int continue_lbl) {
-  if (control_depth >= 128) {
-    fprintf(stderr, "制御構文のネストが深すぎます\n");
+static void ensure_control_capacity(int need) {
+  if (control_cap >= need) return;
+  int new_cap = control_cap ? control_cap : 16;
+  while (new_cap < need) new_cap *= 2;
+  int *new_break_labels = realloc(break_labels, sizeof(int) * (size_t)new_cap);
+  int *new_continue_labels = realloc(continue_labels, sizeof(int) * (size_t)new_cap);
+  if (!new_break_labels || !new_continue_labels) {
+    if (new_break_labels && new_break_labels != break_labels) free(new_break_labels);
+    if (new_continue_labels && new_continue_labels != continue_labels) free(new_continue_labels);
+    fprintf(stderr, "メモリ確保に失敗しました\n");
     exit(1);
   }
+  break_labels = new_break_labels;
+  continue_labels = new_continue_labels;
+  control_cap = new_cap;
+}
+
+static void push_control_labels(int break_lbl, int continue_lbl) {
+  ensure_control_capacity(control_depth + 1);
   break_labels[control_depth] = break_lbl;
   continue_labels[control_depth] = continue_lbl;
   control_depth++;
