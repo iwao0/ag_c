@@ -2,6 +2,7 @@
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "parser_decl.h"
+#include "parser_expr.h"
 #include "parser_switch_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -133,17 +134,15 @@ static bool consume_type(void) {
   return parser_consume_type_kind() != TK_EOF;
 }
 
-static tk_float_kind_t current_func_ret_type = TK_FLOAT_KIND_NONE;
-static token_kind_t current_func_ret_token_kind = TK_INT;
-
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
   token_kind_t ret_kind = parser_consume_type_kind(); // 戻り値の型（省略可）
-  current_func_ret_type = TK_FLOAT_KIND_NONE;
-  current_func_ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
-  if (ret_kind == TK_FLOAT) current_func_ret_type = TK_FLOAT_KIND_FLOAT;
-  else if (ret_kind == TK_DOUBLE) current_func_ret_type = TK_FLOAT_KIND_DOUBLE;
+  token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
+  tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
+  if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  pexpr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
     tk_error_tok(token, "関数定義が期待されます");
@@ -279,18 +278,18 @@ static node_t *stmt(void) {
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_RETURN;
     if (tk_consume(';')) {
-      if (current_func_ret_token_kind != TK_VOID) {
+      if (pexpr_current_func_ret_token_kind() != TK_VOID) {
         tk_error_tok(token, "void 以外の関数では return に式が必要です");
       }
       node->lhs = NULL;
-      node->fp_kind = current_func_ret_type;
+      node->fp_kind = pexpr_current_func_ret_fp_kind();
       return node;
     }
     node->lhs = expr();
-    if (current_func_ret_token_kind == TK_VOID) {
+    if (pexpr_current_func_ret_token_kind() == TK_VOID) {
       tk_error_tok(token, "void 関数では return に式を指定できません");
     }
-    node->fp_kind = current_func_ret_type; // 関数宣言時の戻り値型を記録
+    node->fp_kind = pexpr_current_func_ret_fp_kind(); // 関数宣言時の戻り値型を記録
     tk_expect(';');
     return node;
   }
