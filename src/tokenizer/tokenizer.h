@@ -4,59 +4,76 @@
 #include "token.h"
 #include <stddef.h>
 
-// 現在着目しているトークン
+/** @brief 現在着目しているトークン。 */
 extern token_t *token;
 
-// エラーを報告する関数
+/** @brief 入力位置ベースでトークナイズエラーを報告して終了する。 */
 void tk_error_at(char *loc, char *fmt, ...);
+/** @brief トークン情報ベースでエラーを報告して終了する。 */
 void tk_error_tok(token_t *tok, char *fmt, ...);
+/** @brief token kind を可読文字列へ変換する。 */
 const char *tk_token_kind_str(token_kind_t kind, int *len);
 
-// 次のトークンが期待している記号のときには、トークンを1つ読み進めて真を返す。
-// それ以外の場合には偽を返す。
+/** @brief 次トークンが1文字記号 op なら消費して true を返す。 */
 bool tk_consume(char op);
+/** @brief 次トークンが複数文字演算子 op なら消費して true を返す。 */
 bool tk_consume_str(char *op);
+/** @brief 次トークンが識別子なら消費して返す。 */
 token_ident_t *tk_consume_ident(void);
 
-// 次のトークンが期待している記号のときには、トークンを1つ読み進める。
-// それ以外の場合にはエラーを報告する。
+/** @brief 次トークンが1文字記号 op であることを期待して消費する。 */
 void tk_expect(char op);
 
-// 次のトークンが数値の場合、トークンを1つ読み進めてその数値を返す。
-// それ以外の場合にはエラーを報告する。
+/**
+ * @brief 次トークンが整数リテラルであることを期待して int 値を返す。
+ * @return 消費した整数値。
+ * @warning 浮動小数点トークンや int 範囲外はエラー終了する。
+ */
 int tk_expect_number(void);
 
-// トークンが入力の終わり(EOF)かを判定する。
+/** @brief 現在トークンが EOF かを返す。 */
 bool tk_at_eof(void);
 
-// 入力文字列 p をトークナイズしてそれを返す
+/** @brief 入力文字列をトークナイズして先頭トークンを返す。 */
 token_t *tk_tokenize(char *p);
 
-// 現在の入力文字列を取得・設定
+/** @brief 現在の入力文字列（エラー表示用）を取得する。 */
 char *tk_get_user_input(void);
+/** @brief 現在の入力文字列（エラー表示用）を設定する。 */
 void tk_set_user_input(char *p);
 
-// 現在のファイル名を取得・設定
+/** @brief 現在のファイル名（エラー表示用）を取得する。 */
 char *tk_get_filename(void);
+/** @brief 現在のファイル名（エラー表示用）を設定する。 */
 void tk_set_filename(char *name);
 
-// strict C11 モード（拡張機能の許可/禁止）
+/** @brief strict C11 モードの有効/無効を取得する。 */
 bool tk_get_strict_c11_mode(void);
+/** @brief strict C11 モードの有効/無効を設定する。 */
 void tk_set_strict_c11_mode(bool strict);
+/** @brief トライグラフ置換の有効/無効を取得する。 */
 bool tk_get_enable_trigraphs(void);
+/** @brief トライグラフ置換の有効/無効を設定する。 */
 void tk_set_enable_trigraphs(bool enable);
+/** @brief 2進整数リテラル拡張の有効/無効を取得する。 */
 bool tk_get_enable_binary_literals(void);
+/** @brief 2進整数リテラル拡張の有効/無効を設定する。 */
 void tk_set_enable_binary_literals(bool enable);
+/** @brief C11監査ログ（拡張使用検出）の有効/無効を取得する。 */
 bool tk_get_enable_c11_audit_extensions(void);
+/** @brief C11監査ログ（拡張使用検出）の有効/無効を設定する。 */
 void tk_set_enable_c11_audit_extensions(bool enable);
 
+/** @brief Tokenizerメモリアロケーション統計。 */
 typedef struct {
   size_t alloc_count;
   size_t alloc_bytes;
   size_t peak_alloc_bytes;
 } tokenizer_stats_t;
 
+/** @brief Tokenizer統計カウンタをリセットする。 */
 void tk_reset_tokenizer_stats(void);
+/** @brief 現在のTokenizer統計を取得する。 */
 tokenizer_stats_t tk_get_tokenizer_stats(void);
 
 #endif

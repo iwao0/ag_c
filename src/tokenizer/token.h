@@ -209,6 +209,7 @@ struct token_num_t {
   token_pp_t pp;
   char *str;               // 元の文字列
   int len;                 // 元の文字列長
+  // 数値トークンの実体種別（int/float 構造体へのダウンキャストに使用）
   tk_num_kind_t num_kind;
 };
 
@@ -235,10 +236,12 @@ static inline token_num_t *tk_as_num(token_t *tok) {
   return (token_num_t *)tok;
 }
 
+/** @brief `token_t*` を整数数値トークンへキャストする。 */
 static inline token_num_int_t *tk_as_num_int(token_t *tok) {
   return (token_num_int_t *)tok;
 }
 
+/** @brief `token_t*` を浮動小数点数値トークンへキャストする。 */
 static inline token_num_float_t *tk_as_num_float(token_t *tok) {
   return (token_num_float_t *)tok;
 }

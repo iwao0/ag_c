@@ -332,3 +332,28 @@
   - [x] `test_e2e` の失敗時に生成 `.s` の保存パスをログへ出力する
   - [x] 新カテゴリ（`bitwise`, `shift`, `switch_edge`）を追加する
   - [x] CI で parser/e2e を分離実行し、失敗原因を切り分けやすくする
+
+## Tokenizer Doxygen整備タスク（保守性向上）
+- [ ] 対象範囲を確定する
+  - [x] `src/tokenizer/` の公開APIと内部ヘルパーを分類する
+  - [x] 公開API（ヘッダ宣言）を優先対象として明記する
+- [ ] コメント方針を定義する
+  - [ ] `@brief`, `@param`, `@return`, `@pre`, `@post`, `@note` の最小テンプレートを定める
+  - [ ] 副作用や実装依存のある関数には `@warning` を付与する方針を追加する
+- [ ] 公開ヘッダにDoxygenコメントを付与する
+  - [x] `tokenizer.h` に公開関数コメントを追加する
+  - [x] `token.h` に公開構造体・enumの説明を追加する
+  - [x] `escape.h` / `literals.h` / `scanner.h` / `keywords.h` / `punctuator.h` / `allocator.h` の公開宣言を整備する
+- [ ] 実装ファイルの主要関数コメントを補完する
+  - [ ] `tokenizer.c` のエントリ関数と主要分岐点に関数コメントを追加する
+  - [ ] `literals.c` / `escape.c` のリテラル・エスケープ処理に前提条件と失敗条件を明記する
+  - [ ] `scanner.c` / `keywords.c` / `punctuator.c` / `allocator.c` のホットパス関数に意図を明記する
+- [ ] 意味整合性を確認する
+  - [ ] `num_kind` / `fp_kind` / strict C11関連フラグの説明が実装と一致しているか確認する
+  - [ ] コメントと実際のエラー挙動（例: 異常系）に齟齬がないか確認する
+- [ ] 品質ゲートを実施する
+  - [x] `make test` を実行して回帰がないことを確認する
+  - [ ] 追加コメントが警告や可読性低下を招いていないかレビューする
+- [ ] 運用ルールをドキュメント化する
+  - [ ] 「Tokenizer新規関数はDoxygen必須」のルールを追記する
+  - [ ] 「公開API変更時はDoxygen更新必須」のルールを追記する

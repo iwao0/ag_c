@@ -4,12 +4,16 @@
 #include "token.h"
 #include <stdbool.h>
 
-// Returns token kind for exact punctuator string, or TK_EOF if unknown.
+/** @brief 記号文字列が完全一致した場合の token kind を返す。 */
 token_kind_t punctuator_kind_for_str(const char *op);
 
-// Match punctuator at p with longest-match rule.
-// Returns true when matched. out_len is byte length consumed.
+/**
+ * @brief 最長一致ルールで記号をマッチする。
+ * @param p 入力位置。
+ * @param out_kind マッチした token kind。
+ * @param out_len 消費バイト数。
+ * @return マッチ時 true。
+ */
 bool match_punctuator(const char *p, token_kind_t *out_kind, int *out_len);
 
 #endif
-
