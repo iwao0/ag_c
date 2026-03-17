@@ -23,6 +23,7 @@ stmt       = "{" stmt* "}"
            | ident ":" stmt
            | "return" expr ";"
            | ("struct" | "union" | "enum") ident ";"
+           | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
            | type declarator ("," declarator)* ";"
            | expr ";"
 type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"

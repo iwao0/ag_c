@@ -653,6 +653,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_NUM, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
+
+  token = tk_tokenize("main() { struct S; struct S *p; p=0; return p==0; }");
+  program();
+  body = as_block(as_func(code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_NUM, body->body[1]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -701,6 +709,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { return (void)1; }");       // void cast 未対応
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct { int x; }; }");      // メンバ宣言未対応
+  expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複

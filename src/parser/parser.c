@@ -206,10 +206,19 @@ struct label_def_t {
 
 static goto_ref_t *goto_refs = NULL;
 static label_def_t *label_defs = NULL;
+typedef struct tag_type_t tag_type_t;
+struct tag_type_t {
+  tag_type_t *next;
+  token_kind_t kind;
+  char *name;
+  int len;
+};
+static tag_type_t *tag_types = NULL;
 
 static void reset_goto_label_ctx(void) {
   goto_refs = NULL;
   label_defs = NULL;
+  tag_types = NULL;
 }
 
 static void register_goto_ref(char *name, int len, token_t *tok) {
@@ -248,6 +257,25 @@ static void validate_goto_labels(void) {
       tk_error_tok(g->tok, "未定義ラベル '%.*s' への goto です", g->len, g->name);
     }
   }
+}
+
+static bool has_tag_type(token_kind_t kind, char *name, int len) {
+  for (tag_type_t *t = tag_types; t; t = t->next) {
+    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void define_tag_type(token_kind_t kind, char *name, int len) {
+  if (has_tag_type(kind, name, len)) return;
+  tag_type_t *t = calloc(1, sizeof(tag_type_t));
+  t->kind = kind;
+  t->name = name;
+  t->len = len;
+  t->next = tag_types;
+  tag_types = t;
 }
 
 static void push_switch_ctx(void) {
@@ -477,10 +505,8 @@ static node_t *funcdef(void) {
   return (node_t *)node;
 }
 
-// declaration = type "*"* ident ("[" num "]")? ("=" expr)? ";"
-static node_t *declaration(void) {
-  token_kind_t type_kind = consume_type_kind();
-  int elem_size = scalar_type_size(type_kind);
+// declaration_after_type = declarator ("," declarator)* ";"
+static node_t *declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind) {
   node_t *init_chain = NULL;
 
   for (;;) {
@@ -509,8 +535,7 @@ static node_t *declaration(void) {
     }
 
     if (!is_pointer) {
-      if (type_kind == TK_FLOAT) var->fp_kind = TK_FLOAT_KIND_FLOAT;
-      else if (type_kind == TK_DOUBLE) var->fp_kind = TK_FLOAT_KIND_DOUBLE;
+      var->fp_kind = decl_fp_kind;
     }
 
     if (tk_consume('=')) {
@@ -529,6 +554,16 @@ static node_t *declaration(void) {
 
   tk_expect(';');
   return init_chain ? init_chain : new_node_num(0);
+}
+
+// declaration = type declarator ("," declarator)* ";"
+static node_t *declaration(void) {
+  token_kind_t type_kind = consume_type_kind();
+  int elem_size = scalar_type_size(type_kind);
+  tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
+  if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  return declaration_after_type(elem_size, decl_fp_kind);
 }
 
 // stmt = "{" stmt* "}"
@@ -567,8 +602,9 @@ static node_t *stmt(void) {
     return declaration();
   }
 
-  // 最小対応: タグ宣言（struct/union/enum Tag;）
+  // タグ宣言 / タグ型参照
   if (is_tag_keyword(token->kind)) {
+    token_kind_t tag_kind = token->kind;
     token = token->next;
     token_ident_t *tag = tk_consume_ident();
     if (!tag) {
@@ -577,8 +613,14 @@ static node_t *stmt(void) {
     if (tk_consume('{')) {
       tk_error_tok(token, "struct/union/enum のメンバ宣言は未対応です");
     }
-    tk_expect(';');
-    return new_node_num(0);
+    if (tk_consume(';')) {
+      define_tag_type(tag_kind, tag->str, tag->len);
+      return new_node_num(0);
+    }
+    if (!has_tag_type(tag_kind, tag->str, tag->len)) {
+      tk_error_tok(token, "未定義のタグ型 '%.*s' です", tag->len, tag->str);
+    }
+    return declaration_after_type(8, TK_FLOAT_KIND_NONE);
   }
 
   if (token->kind == TK_RETURN) {
