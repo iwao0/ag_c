@@ -37,14 +37,20 @@ static void ensure_control_capacity(int need) {
   if (control_cap >= need) return;
   int new_cap = control_cap ? control_cap : 16;
   while (new_cap < need) new_cap *= 2;
-  int *new_break_labels = realloc(break_labels, sizeof(int) * (size_t)new_cap);
-  int *new_continue_labels = realloc(continue_labels, sizeof(int) * (size_t)new_cap);
+  int *new_break_labels = malloc(sizeof(int) * (size_t)new_cap);
+  int *new_continue_labels = malloc(sizeof(int) * (size_t)new_cap);
   if (!new_break_labels || !new_continue_labels) {
-    if (new_break_labels && new_break_labels != break_labels) free(new_break_labels);
-    if (new_continue_labels && new_continue_labels != continue_labels) free(new_continue_labels);
+    free(new_break_labels);
+    free(new_continue_labels);
     fprintf(stderr, "メモリ確保に失敗しました\n");
     exit(1);
   }
+  if (control_depth > 0) {
+    memcpy(new_break_labels, break_labels, sizeof(int) * (size_t)control_depth);
+    memcpy(new_continue_labels, continue_labels, sizeof(int) * (size_t)control_depth);
+  }
+  free(break_labels);
+  free(continue_labels);
   break_labels = new_break_labels;
   continue_labels = new_continue_labels;
   control_cap = new_cap;
@@ -111,7 +117,12 @@ static int find_label_id(char *name, int len) {
 static void switch_collect_add_case(switch_collect_t *sc, node_case_t *c) {
   if (sc->case_count >= sc->case_cap) {
     sc->case_cap = sc->case_cap ? sc->case_cap * 2 : 8;
-    sc->cases = realloc(sc->cases, sizeof(node_case_t *) * (size_t)sc->case_cap);
+    node_case_t **new_cases = realloc(sc->cases, sizeof(node_case_t *) * (size_t)sc->case_cap);
+    if (!new_cases) {
+      fprintf(stderr, "メモリ確保に失敗しました\n");
+      exit(1);
+    }
+    sc->cases = new_cases;
   }
   sc->cases[sc->case_count++] = c;
 }

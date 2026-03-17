@@ -44,7 +44,7 @@ void psx_switch_register_case(long long v, token_t *tok) {
   }
   if (switch_ctx->ncase >= switch_ctx->cap) {
     switch_ctx->cap = pda_next_cap(switch_ctx->cap, switch_ctx->ncase + 1);
-    switch_ctx->case_vals = realloc(switch_ctx->case_vals, sizeof(long long) * (size_t)switch_ctx->cap);
+    switch_ctx->case_vals = pda_xreallocarray(switch_ctx->case_vals, (size_t)switch_ctx->cap, sizeof(long long));
   }
   switch_ctx->case_vals[switch_ctx->ncase++] = v;
 }

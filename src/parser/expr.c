@@ -5,6 +5,7 @@
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -479,7 +480,7 @@ static node_t *primary(void) {
           token = token->next;
           if (nargs >= arg_cap) {
             arg_cap = pda_next_cap(arg_cap, nargs + 1);
-            node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
+            node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
           }
           node->args[nargs++] = assign();
         }
@@ -510,7 +511,7 @@ static node_t *primary(void) {
   if (token->kind == TK_STRING) {
     tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
     tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
-    int total_len = 0;
+    size_t total_len = 0;
     token_t *t = token;
     while (t && t->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)t;
@@ -520,16 +521,28 @@ static node_t *primary(void) {
       } else if (merged_width != st->char_width) {
         tk_error_tok(t, "異なる接頭辞の文字列リテラルは連結できません");
       }
-      total_len += st->len;
+      if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
+        tk_error_tok(t, "文字列リテラルが大きすぎます");
+      }
+      total_len += (size_t)st->len;
       t = t->next;
     }
 
-    char *merged = calloc((size_t)total_len + 1, 1);
-    int off = 0;
+    if (total_len > (size_t)INT_MAX) {
+      tk_error_tok(token, "文字列リテラルが大きすぎます");
+    }
+    char *merged = calloc(total_len + 1, 1);
+    if (!merged) {
+      tk_error_tok(token, "メモリ確保に失敗しました");
+    }
+    size_t off = 0;
     while (token && token->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)token;
+      if (st->len < 0 || (size_t)st->len > total_len - off) {
+        tk_error_tok(token, "文字列連結中にサイズが不正です");
+      }
       memcpy(merged + off, st->str, (size_t)st->len);
-      off += st->len;
+      off += (size_t)st->len;
       token = token->next;
     }
 
@@ -542,7 +555,7 @@ static node_t *primary(void) {
     string_lit_t *lit = calloc(1, sizeof(string_lit_t));
     lit->label = node->string_label;
     lit->str = merged;
-    lit->len = total_len;
+    lit->len = (int)total_len;
     lit->char_width = merged_width;
     lit->str_prefix_kind = merged_prefix_kind;
     lit->next = string_literals;

@@ -27,7 +27,7 @@ node_t **ps_program(void) {
     if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
     if (i >= cap - 1) { // NULL終端用
       cap = pda_next_cap(cap, i + 2);
-      codes = realloc(codes, sizeof(node_t*) * cap);
+      codes = pda_xreallocarray(codes, (size_t)cap, sizeof(node_t *));
     }
     codes[i++] = fn;
   }
@@ -88,7 +88,7 @@ static node_t *funcdef(void) {
     while (tk_consume(',')) {
       if (nargs >= arg_cap) {
         arg_cap = pda_next_cap(arg_cap, nargs + 1);
-        node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
+        node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
       }
       consume_type(); // 仮引数の型
       while (tk_consume('*')) {} // ポインタの * を読み飛ばす
@@ -117,7 +117,7 @@ static node_t *funcdef(void) {
   while (!tk_consume('}')) {
     if (i >= body_cap - 1) {
       body_cap = pda_next_cap(body_cap, i + 2);
-      body->body = realloc(body->body, sizeof(node_t*) * body_cap);
+      body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
     }
     body->body[i++] = psx_stmt_stmt();
   }

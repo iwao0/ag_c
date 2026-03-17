@@ -22,7 +22,7 @@ static node_t *stmt_internal(void) {
     while (!tk_consume('}')) {
       if (i >= cap - 1) {
         cap = pda_next_cap(cap, i + 2);
-        node->body = realloc(node->body, sizeof(node_t*) * cap);
+        node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
       }
       node->body[i++] = stmt_internal();
     }

@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdio.h>
 #include <ctype.h>
 #include <stdint.h>
 
@@ -22,6 +21,23 @@ static token_pp_t *as_pp(token_t *tok) { return (token_pp_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
+
+static void *xrealloc(void *ptr, size_t size) {
+  void *p = realloc(ptr, size);
+  if (!p) {
+    fprintf(stderr, "メモリ確保に失敗しました\n");
+    exit(1);
+  }
+  return p;
+}
+
+static void *xreallocarray(void *ptr, size_t n, size_t size) {
+  if (n != 0 && size > SIZE_MAX / n) {
+    fprintf(stderr, "メモリ確保に失敗しました\n");
+    exit(1);
+  }
+  return xrealloc(ptr, n * size);
+}
 
 static bool ident_is(token_t *tok, const char *s) {
   if (!tok || tok->kind != TK_IDENT) return false;
@@ -201,14 +217,35 @@ static char *read_file(char *path) {
   if (!fp)
     return NULL;
 
-  if (fseek(fp, 0, SEEK_END) == -1)
+  if (fseek(fp, 0, SEEK_END) == -1) {
+    fclose(fp);
     return NULL;
-  size_t size = ftell(fp);
-  if (fseek(fp, 0, SEEK_SET) == -1)
+  }
+  long file_size = ftell(fp);
+  if (file_size < 0) {
+    fclose(fp);
     return NULL;
+  }
+  size_t size = (size_t)file_size;
+  if (size > SIZE_MAX - 2) {
+    fclose(fp);
+    return NULL;
+  }
+  if (fseek(fp, 0, SEEK_SET) == -1) {
+    fclose(fp);
+    return NULL;
+  }
 
   char *buf = calloc(1, size + 2);
-  fread(buf, size, 1, fp);
+  if (!buf) {
+    fclose(fp);
+    return NULL;
+  }
+  if (fread(buf, 1, size, fp) != size) {
+    fclose(fp);
+    free(buf);
+    return NULL;
+  }
 
   // ファイルが必ず「\n\0」で終わるようにする
   if (size == 0 || buf[size - 1] != '\n')
@@ -476,16 +513,16 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
   
   for (token_t *t = tok; t; t = t->next) {
     if (len > 0 && t->has_space) {
-      if (len + 1 >= cap) {
-        if (cap > SIZE_MAX / 2) {
-          fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
-          exit(1);
+        if (len + 1 >= cap) {
+          if (cap > SIZE_MAX / 2) {
+            fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
+            exit(1);
+          }
+          cap *= 2;
+          buf = xrealloc(buf, cap);
         }
-        cap *= 2;
-        buf = realloc(buf, cap);
+        buf[len++] = ' ';
       }
-      buf[len++] = ' ';
-    }
     int tlen = 0;
     const char *ts = token_text(t, &tlen);
     if (!ts) ts = "";
@@ -505,7 +542,7 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
       fprintf(stderr, "文字列化中にサイズが不正です\n");
       exit(1);
     }
-    buf = realloc(buf, cap);
+    buf = xrealloc(buf, cap);
     memcpy(buf + len, ts, (size_t)tlen);
     len += (size_t)tlen;
   }
@@ -599,13 +636,13 @@ token_t *preprocess(token_t *tok) {
         if (tok->kind == TK_STRING) {
           token_string_t *st = as_string(tok);
           size_t need = (size_t)st->len + 1;
+          if (st->len < 0 || need == 0) {
+            fprintf(stderr, "不正な include ファイル名です\n");
+            exit(1);
+          }
           if (need > filename_cap) {
             filename_cap = need;
-            filename = realloc(filename, filename_cap);
-            if (!filename) {
-              fprintf(stderr, "メモリ確保に失敗しました\n");
-              exit(1);
-            }
+            filename = xrealloc(filename, filename_cap);
           }
           memcpy(filename, st->str, (size_t)st->len);
           filename[st->len] = '\0';
@@ -617,14 +654,20 @@ token_t *preprocess(token_t *tok) {
             int tlen = 0;
             const char *ts = token_text(tok, &tlen);
             if (!ts) ts = "";
+            if (tlen < 0 || (size_t)tlen > SIZE_MAX - filename_len - 1) {
+              fprintf(stderr, "include ファイル名が大きすぎます\n");
+              exit(1);
+            }
             size_t need = filename_len + (size_t)tlen + 1;
             if (need > filename_cap) {
-              while (filename_cap < need) filename_cap *= 2;
-              filename = realloc(filename, filename_cap);
-              if (!filename) {
-                fprintf(stderr, "メモリ確保に失敗しました\n");
-                exit(1);
+              while (filename_cap < need) {
+                if (filename_cap > SIZE_MAX / 2) {
+                  fprintf(stderr, "include ファイル名が大きすぎます\n");
+                  exit(1);
+                }
+                filename_cap *= 2;
               }
+              filename = xrealloc(filename, filename_cap);
             }
             memcpy(filename + filename_len, ts, (size_t)tlen);
             filename_len += (size_t)tlen;
@@ -794,7 +837,10 @@ token_t *preprocess(token_t *tok) {
           params = calloc(cap, sizeof(char*));
           while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
             if (tok->kind != TK_IDENT) { fprintf(stderr, "マクロの引数が不正です\n"); exit(1); }
-            if (num_params >= cap) { cap *= 2; params = realloc(params, cap * sizeof(char*)); }
+            if (num_params >= cap) {
+              cap *= 2;
+              params = xreallocarray(params, (size_t)cap, sizeof(char *));
+            }
             token_ident_t *pid = as_ident(tok);
             params[num_params++] = my_strndup(pid->str, pid->len);
             tok = tok->next;
