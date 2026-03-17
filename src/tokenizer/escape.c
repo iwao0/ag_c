@@ -1,31 +1,40 @@
 #include "escape.h"
-#include <ctype.h>
+
+static inline int hex_digit_value(unsigned char ch) {
+  if ('0' <= ch && ch <= '9') return (int)(ch - '0');
+  if ('a' <= ch && ch <= 'f') return (int)(ch - 'a' + 10);
+  if ('A' <= ch && ch <= 'F') return (int)(ch - 'A' + 10);
+  return -1;
+}
 
 int tk_parse_escape_value(const char *s, int len, int *i, uint32_t *out) {
   if (*i >= len || s[*i] != '\\') return 0;
   (*i)++;
   if (*i >= len) return 0;
-  char esc = s[*i];
-  if (esc == 'a') { *out = '\a'; (*i)++; return 1; }
-  if (esc == 'b') { *out = '\b'; (*i)++; return 1; }
-  if (esc == 'f') { *out = '\f'; (*i)++; return 1; }
-  if (esc == 'n') { *out = '\n'; (*i)++; return 1; }
-  if (esc == 'r') { *out = '\r'; (*i)++; return 1; }
-  if (esc == 't') { *out = '\t'; (*i)++; return 1; }
-  if (esc == 'v') { *out = '\v'; (*i)++; return 1; }
-  if (esc == '\\') { *out = '\\'; (*i)++; return 1; }
-  if (esc == '\'') { *out = '\''; (*i)++; return 1; }
-  if (esc == '"') { *out = '"'; (*i)++; return 1; }
-  if (esc == '?') { *out = '?'; (*i)++; return 1; }
+  unsigned char esc = (unsigned char)s[*i];
+
+  switch (esc) {
+    case 'a': *out = '\a'; (*i)++; return 1;
+    case 'b': *out = '\b'; (*i)++; return 1;
+    case 'f': *out = '\f'; (*i)++; return 1;
+    case 'n': *out = '\n'; (*i)++; return 1;
+    case 'r': *out = '\r'; (*i)++; return 1;
+    case 't': *out = '\t'; (*i)++; return 1;
+    case 'v': *out = '\v'; (*i)++; return 1;
+    case '\\': *out = '\\'; (*i)++; return 1;
+    case '\'': *out = '\''; (*i)++; return 1;
+    case '"': *out = '"'; (*i)++; return 1;
+    case '?': *out = '?'; (*i)++; return 1;
+    default:
+      break;
+  }
+
   if (esc == 'x') {
     (*i)++;
     uint32_t val = 0;
-    while (*i < len && isxdigit((unsigned char)s[*i])) {
-      char ch = s[*i];
-      int digit;
-      if ('0' <= ch && ch <= '9') digit = ch - '0';
-      else if ('a' <= ch && ch <= 'f') digit = ch - 'a' + 10;
-      else digit = ch - 'A' + 10;
+    while (*i < len) {
+      int digit = hex_digit_value((unsigned char)s[*i]);
+      if (digit < 0) break;
       val = (val << 4) | (uint32_t)digit;
       (*i)++;
     }
@@ -37,12 +46,8 @@ int tk_parse_escape_value(const char *s, int len, int *i, uint32_t *out) {
     (*i)++;
     uint32_t val = 0;
     for (int k = 0; k < digits && *i < len; k++, (*i)++) {
-      char ch = s[*i];
-      int digit;
-      if ('0' <= ch && ch <= '9') digit = ch - '0';
-      else if ('a' <= ch && ch <= 'f') digit = ch - 'a' + 10;
-      else if ('A' <= ch && ch <= 'F') digit = ch - 'A' + 10;
-      else break;
+      int digit = hex_digit_value((unsigned char)s[*i]);
+      if (digit < 0) break;
       val = (val << 4) | (uint32_t)digit;
     }
     *out = val;
