@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "parser_semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -188,95 +189,6 @@ struct switch_ctx_t {
 static switch_ctx_t *switch_ctx = NULL;
 static int loop_depth = 0;
 
-typedef struct goto_ref_t goto_ref_t;
-struct goto_ref_t {
-  goto_ref_t *next;
-  char *name;
-  int len;
-  token_t *tok;
-};
-
-typedef struct label_def_t label_def_t;
-struct label_def_t {
-  label_def_t *next;
-  char *name;
-  int len;
-  token_t *tok;
-};
-
-static goto_ref_t *goto_refs = NULL;
-static label_def_t *label_defs = NULL;
-typedef struct tag_type_t tag_type_t;
-struct tag_type_t {
-  tag_type_t *next;
-  token_kind_t kind;
-  char *name;
-  int len;
-};
-static tag_type_t *tag_types = NULL;
-
-static void reset_goto_label_ctx(void) {
-  goto_refs = NULL;
-  label_defs = NULL;
-  tag_types = NULL;
-}
-
-static void register_goto_ref(char *name, int len, token_t *tok) {
-  goto_ref_t *g = calloc(1, sizeof(goto_ref_t));
-  g->name = name;
-  g->len = len;
-  g->tok = tok;
-  g->next = goto_refs;
-  goto_refs = g;
-}
-
-static void register_label_def(char *name, int len, token_t *tok) {
-  for (label_def_t *d = label_defs; d; d = d->next) {
-    if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
-      tk_error_tok(tok, "ラベル '%.*s' が重複しています", len, name);
-    }
-  }
-  label_def_t *d = calloc(1, sizeof(label_def_t));
-  d->name = name;
-  d->len = len;
-  d->tok = tok;
-  d->next = label_defs;
-  label_defs = d;
-}
-
-static void validate_goto_labels(void) {
-  for (goto_ref_t *g = goto_refs; g; g = g->next) {
-    int found = 0;
-    for (label_def_t *d = label_defs; d; d = d->next) {
-      if (d->len == g->len && strncmp(d->name, g->name, (size_t)g->len) == 0) {
-        found = 1;
-        break;
-      }
-    }
-    if (!found) {
-      tk_error_tok(g->tok, "未定義ラベル '%.*s' への goto です", g->len, g->name);
-    }
-  }
-}
-
-static bool has_tag_type(token_kind_t kind, char *name, int len) {
-  for (tag_type_t *t = tag_types; t; t = t->next) {
-    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static void define_tag_type(token_kind_t kind, char *name, int len) {
-  if (has_tag_type(kind, name, len)) return;
-  tag_type_t *t = calloc(1, sizeof(tag_type_t));
-  t->kind = kind;
-  t->name = name;
-  t->len = len;
-  t->next = tag_types;
-  tag_types = t;
-}
 
 static void push_switch_ctx(void) {
   switch_ctx_t *ctx = calloc(1, sizeof(switch_ctx_t));
@@ -318,29 +230,9 @@ static void register_switch_default(void) {
   switch_ctx->has_default = 1;
 }
 
-static bool is_type_token(token_kind_t kind) {
-  return kind == TK_INT || kind == TK_CHAR || kind == TK_VOID || kind == TK_SHORT ||
-         kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE;
-}
-
-static bool is_tag_keyword(token_kind_t kind) {
-  return kind == TK_STRUCT || kind == TK_UNION || kind == TK_ENUM;
-}
-
-static int scalar_type_size(token_kind_t kind) {
-  switch (kind) {
-    case TK_CHAR: return 1;
-    case TK_SHORT: return 2;
-    case TK_INT:
-    case TK_FLOAT:
-      return 4;
-    case TK_LONG:
-    case TK_DOUBLE:
-      return 8;
-    default:
-      return 8;
-  }
-}
+static bool is_type_token(token_kind_t kind) { return pctx_is_type_token(kind); }
+static bool is_tag_keyword(token_kind_t kind) { return pctx_is_tag_keyword(kind); }
+static int scalar_type_size(token_kind_t kind) { return pctx_scalar_type_size(kind); }
 
 static int sizeof_expr_node(node_t *node) {
   int sz = node_type_size(node);
@@ -447,7 +339,7 @@ static node_t *funcdef(void) {
   // 関数ごとにローカル変数テーブルをリセット
   locals = NULL;
   locals_offset = 0;
-  reset_goto_label_ctx();
+  pctx_reset_function_scope();
 
   tk_expect('(');
   // 仮引数のパース
@@ -500,7 +392,7 @@ static node_t *funcdef(void) {
   }
   body->body[i] = NULL;
   node->base.rhs = (node_t *)body;
-  validate_goto_labels();
+  pctx_validate_goto_refs();
 
   return (node_t *)node;
 }
@@ -614,10 +506,10 @@ static node_t *stmt(void) {
       tk_error_tok(token, "struct/union/enum のメンバ宣言は未対応です");
     }
     if (tk_consume(';')) {
-      define_tag_type(tag_kind, tag->str, tag->len);
+      pctx_define_tag_type(tag_kind, tag->str, tag->len);
       return new_node_num(0);
     }
-    if (!has_tag_type(tag_kind, tag->str, tag->len)) {
+    if (!pctx_has_tag_type(tag_kind, tag->str, tag->len)) {
       tk_error_tok(token, "未定義のタグ型 '%.*s' です", tag->len, tag->str);
     }
     return declaration_after_type(8, TK_FLOAT_KIND_NONE);
@@ -784,7 +676,7 @@ static node_t *stmt(void) {
     node->base.kind = ND_GOTO;
     node->name = ident->str;
     node->name_len = ident->len;
-    register_goto_ref(ident->str, ident->len, goto_tok);
+    pctx_register_goto_ref(ident->str, ident->len, goto_tok);
     tk_expect(';');
     return (node_t *)node;
   }
@@ -796,7 +688,7 @@ static node_t *stmt(void) {
     node->base.kind = ND_LABEL;
     node->name = ident->str;
     node->name_len = ident->len;
-    register_label_def(ident->str, ident->len, token);
+    pctx_register_label_def(ident->str, ident->len, token);
     node->base.rhs = stmt();
     return (node_t *)node;
   }

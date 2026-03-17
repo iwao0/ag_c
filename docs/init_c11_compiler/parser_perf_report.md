@@ -61,3 +61,18 @@
 - Maintainability guardrail:
   - max function length を **180 行以下**（`check_function_size.sh` の方針）
   - 3行重複ウィンドウの上位件数は、根拠なしに **+20%** を超えて増やさない
+
+## 2026-03-17 Refactor Progress (Phase 2)
+
+- 実施: `parser_semantic_ctx` モジュールを追加し、以下を `parser.c` から分離
+  - goto/label 参照管理
+  - struct/union/enum タグ型管理
+  - 型トークン判定・型サイズユーティリティ
+- 追加ファイル:
+  - `src/parser/parser_semantic_ctx.h`
+  - `src/parser/parser_semantic_ctx.c`
+- ビルド連携:
+  - `Makefile` に `PARSER_LIB_OBJS` を導入し、`test_parser` / `bench_parser` で再利用
+- 回帰確認:
+  - `build/test_parser` pass
+  - `build/test_e2e` pass (`171/171`)

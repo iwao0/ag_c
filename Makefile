@@ -13,6 +13,7 @@ TEST_PREPROCESS=build/test_preprocess
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_adapter.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
+PARSER_LIB_OBJS=build/parser/parser.o build/parser/parser_semantic_ctx.o
 
 
 $(TARGET): $(OBJS)
@@ -30,7 +31,7 @@ $(TEST_TOKENIZER_C11): test/test_tokenizer_c11.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_PARSER): test/test_parser.c build/parser/parser.o $(TOKENIZER_LIB_OBJS)
+$(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -50,7 +51,7 @@ $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BENCH_PARSER): test/bench_parser.c build/parser/parser.o $(TOKENIZER_LIB_OBJS)
+$(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
