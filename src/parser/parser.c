@@ -2,6 +2,7 @@
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "parser_decl.h"
+#include "parser_switch_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,57 +44,8 @@ static node_t *unary(void);
 static node_t *primary(void);
 static node_t *funcdef(void);
 
-typedef struct switch_ctx_t switch_ctx_t;
-struct switch_ctx_t {
-  switch_ctx_t *next;
-  long long *case_vals;
-  int ncase;
-  int cap;
-  int has_default;
-};
-static switch_ctx_t *switch_ctx = NULL;
 static int loop_depth = 0;
 
-
-static void push_switch_ctx(void) {
-  switch_ctx_t *ctx = calloc(1, sizeof(switch_ctx_t));
-  ctx->next = switch_ctx;
-  switch_ctx = ctx;
-}
-
-static void pop_switch_ctx(void) {
-  switch_ctx_t *ctx = switch_ctx;
-  if (!ctx) return;
-  switch_ctx = ctx->next;
-  free(ctx->case_vals);
-  free(ctx);
-}
-
-static void register_switch_case(long long v) {
-  if (!switch_ctx) {
-    tk_error_tok(token, "case は switch 内でのみ使用できます");
-  }
-  for (int i = 0; i < switch_ctx->ncase; i++) {
-    if (switch_ctx->case_vals[i] == v) {
-      tk_error_tok(token, "case %lld が重複しています", v);
-    }
-  }
-  if (switch_ctx->ncase >= switch_ctx->cap) {
-    switch_ctx->cap = switch_ctx->cap ? switch_ctx->cap * 2 : 8;
-    switch_ctx->case_vals = realloc(switch_ctx->case_vals, sizeof(long long) * (size_t)switch_ctx->cap);
-  }
-  switch_ctx->case_vals[switch_ctx->ncase++] = v;
-}
-
-static void register_switch_default(void) {
-  if (!switch_ctx) {
-    tk_error_tok(token, "default は switch 内でのみ使用できます");
-  }
-  if (switch_ctx->has_default) {
-    tk_error_tok(token, "default が重複しています");
-  }
-  switch_ctx->has_default = 1;
-}
 
 static bool is_type_token(token_kind_t kind) { return pctx_is_type_token(kind); }
 static bool is_tag_keyword(token_kind_t kind) { return pctx_is_tag_keyword(kind); }
@@ -423,9 +375,9 @@ static node_t *stmt(void) {
     node->base.kind = ND_SWITCH;
     node->base.lhs = expr();   // switch式
     tk_expect(')');
-    push_switch_ctx();
+    psw_push_ctx();
     node->base.rhs = stmt();   // switch本体
-    pop_switch_ctx();
+    psw_pop_ctx();
     return (node_t *)node;
   }
 
@@ -434,7 +386,7 @@ static node_t *stmt(void) {
     node_case_t *node = calloc(1, sizeof(node_case_t));
     node->base.kind = ND_CASE;
     node->val = tk_expect_number();
-    register_switch_case(node->val);
+    psw_register_case(node->val, token);
     tk_expect(':');
     node->base.rhs = stmt();
     return (node_t *)node;
@@ -442,7 +394,7 @@ static node_t *stmt(void) {
 
   if (token->kind == TK_DEFAULT) {
     token = token->next;
-    register_switch_default();
+    psw_register_default(token);
     node_default_t *node = calloc(1, sizeof(node_default_t));
     node->base.kind = ND_DEFAULT;
     tk_expect(':');
@@ -451,7 +403,7 @@ static node_t *stmt(void) {
   }
 
   if (token->kind == TK_BREAK) {
-    if (loop_depth == 0 && !switch_ctx) {
+    if (loop_depth == 0 && !psw_has_ctx()) {
       tk_error_tok(token, "break はループまたはswitch内でのみ使用できます");
     }
     token = token->next;
