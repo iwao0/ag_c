@@ -138,8 +138,7 @@ static node_mem_t *new_node_assign(node_t *lhs, node_t *rhs) {
 
 static void expect_lvalue(node_t *node, const char *op) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF)) {
-    fprintf(stderr, "%s の対象は左辺値である必要があります\n", op);
-    exit(1);
+    tk_error_tok(token, "%s の対象は左辺値である必要があります", (char *)op);
   }
 }
 
@@ -179,6 +178,7 @@ struct switch_ctx_t {
   int has_default;
 };
 static switch_ctx_t *switch_ctx = NULL;
+static int loop_depth = 0;
 
 static void push_switch_ctx(void) {
   switch_ctx_t *ctx = calloc(1, sizeof(switch_ctx_t));
@@ -265,8 +265,7 @@ static node_t *funcdef(void) {
   else if (ret_kind == TK_DOUBLE) current_func_ret_type = TK_FLOAT_KIND_DOUBLE;
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
-    fprintf(stderr, "関数定義が期待されます\n");
-    exit(1);
+    tk_error_tok(token, "関数定義が期待されます");
   }
   node_func_t *node = calloc(1, sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
@@ -337,8 +336,7 @@ static node_t *declaration(void) {
   int var_size = is_pointer ? 8 : elem_size;
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
-    fprintf(stderr, "変数名が期待されます\n");
-    exit(1);
+    tk_error_tok(token, "変数名が期待されます");
   }
   lvar_t *var = find_lvar(tok->str, tok->len);
   if (!var) {
@@ -444,7 +442,9 @@ static node_t *stmt(void) {
     node->base.kind = ND_WHILE;
     node->base.lhs = expr();  // 条件式
     tk_expect(')');
+    loop_depth++;
     node->base.rhs = stmt();  // ループ本体
+    loop_depth--;
     return (node_t *)node;
   }
 
@@ -452,7 +452,9 @@ static node_t *stmt(void) {
     token = token->next;
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_DO_WHILE;
+    loop_depth++;
     node->base.rhs = stmt();  // ループ本体
+    loop_depth--;
     if (token->kind != TK_WHILE) {
       tk_error_tok(token, "'while'が必要です");
     }
@@ -485,7 +487,9 @@ static node_t *stmt(void) {
       node->inc = expr();   // インクリメント式
       tk_expect(')');
     }
+    loop_depth++;
     node->base.rhs = stmt();     // ループ本体
+    loop_depth--;
     return (node_t *)node;
   }
 
@@ -524,6 +528,9 @@ static node_t *stmt(void) {
   }
 
   if (token->kind == TK_BREAK) {
+    if (loop_depth == 0 && !switch_ctx) {
+      tk_error_tok(token, "break はループまたはswitch内でのみ使用できます");
+    }
     token = token->next;
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_BREAK;
@@ -532,6 +539,9 @@ static node_t *stmt(void) {
   }
 
   if (token->kind == TK_CONTINUE) {
+    if (loop_depth == 0) {
+      tk_error_tok(token, "continue はループ内でのみ使用できます");
+    }
     token = token->next;
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_CONTINUE;
