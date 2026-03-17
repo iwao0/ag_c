@@ -1,10 +1,10 @@
 #ifndef PARSER_LOOP_CTX_H
 #define PARSER_LOOP_CTX_H
 
-void ploop_reset(void);
-void ploop_enter(void);
-void ploop_leave(void);
-int ploop_depth(void);
+void psx_loop_reset(void);
+void psx_loop_enter(void);
+void psx_loop_leave(void);
+int psx_loop_depth(void);
 
 #endif
 

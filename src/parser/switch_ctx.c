@@ -15,13 +15,13 @@ struct switch_ctx_t {
 
 static switch_ctx_t *switch_ctx = NULL;
 
-void psw_push_ctx(void) {
+void psx_switch_push_ctx(void) {
   switch_ctx_t *ctx = calloc(1, sizeof(switch_ctx_t));
   ctx->next = switch_ctx;
   switch_ctx = ctx;
 }
 
-void psw_pop_ctx(void) {
+void psx_switch_pop_ctx(void) {
   switch_ctx_t *ctx = switch_ctx;
   if (!ctx) return;
   switch_ctx = ctx->next;
@@ -29,13 +29,13 @@ void psw_pop_ctx(void) {
   free(ctx);
 }
 
-int psw_has_ctx(void) {
+int psx_switch_has_ctx(void) {
   return switch_ctx != NULL;
 }
 
-void psw_register_case(long long v, token_t *tok) {
+void psx_switch_register_case(long long v, token_t *tok) {
   if (!switch_ctx) {
-    pdiag_only_in(tok, "case", "switch 内");
+    psx_diag_only_in(tok, "case", "switch 内");
   }
   for (int i = 0; i < switch_ctx->ncase; i++) {
     if (switch_ctx->case_vals[i] == v) {
@@ -49,9 +49,9 @@ void psw_register_case(long long v, token_t *tok) {
   switch_ctx->case_vals[switch_ctx->ncase++] = v;
 }
 
-void psw_register_default(token_t *tok) {
+void psx_switch_register_default(token_t *tok) {
   if (!switch_ctx) {
-    pdiag_only_in(tok, "default", "switch 内");
+    psx_diag_only_in(tok, "default", "switch 内");
   }
   if (switch_ctx->has_default) {
     tk_error_tok(tok, "default が重複しています");

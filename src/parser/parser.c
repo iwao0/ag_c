@@ -16,7 +16,7 @@ node_t **code;
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 
-#define new_node_lvar pnode_new_lvar
+#define new_node_lvar psx_node_new_lvar
 
 static node_t *funcdef(void);
 
@@ -38,7 +38,7 @@ void ps_program(void) {
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
-token_kind_t parser_consume_type_kind(void) {
+token_kind_t psx_consume_type_kind(void) {
   if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
     token_kind_t kind = token->kind;
     token = token->next;
@@ -48,21 +48,21 @@ token_kind_t parser_consume_type_kind(void) {
 }
 
 static bool consume_type(void) {
-  return parser_consume_type_kind() != TK_EOF;
+  return psx_consume_type_kind() != TK_EOF;
 }
 
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
-  token_kind_t ret_kind = parser_consume_type_kind(); // 戻り値の型（省略可）
+  token_kind_t ret_kind = psx_consume_type_kind(); // 戻り値の型（省略可）
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
   if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  pexpr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
+  psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
-    pdiag_ctx(token, "funcdef", "関数定義が期待されます");
+    psx_diag_ctx(token, "funcdef", "関数定義が期待されます");
   }
   node_func_t *node = calloc(1, sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
@@ -70,9 +70,9 @@ static node_t *funcdef(void) {
   node->funcname_len = tok->len;
 
   // 関数ごとにローカル変数テーブルをリセット
-  pdecl_reset_locals();
-  pctx_reset_function_scope();
-  ploop_reset();
+  psx_decl_reset_locals();
+  psx_ctx_reset_function_scope();
+  psx_loop_reset();
 
   tk_expect('(');
   // 仮引数のパース
@@ -84,7 +84,7 @@ static node_t *funcdef(void) {
     while (tk_consume('*')) {} // ポインタの * を読み飛ばす
     token_ident_t *param = tk_consume_ident();
     if (param) {
-      lvar_t *var = pdecl_register_lvar(param->str, param->len);
+      lvar_t *var = psx_decl_register_lvar(param->str, param->len);
       node->args[nargs++] = new_node_lvar(var->offset);
     }
     while (tk_consume(',')) {
@@ -96,7 +96,7 @@ static node_t *funcdef(void) {
       while (tk_consume('*')) {} // ポインタの * を読み飛ばす
       param = tk_consume_ident();
       if (param) {
-        lvar_t *var = pdecl_register_lvar(param->str, param->len);
+        lvar_t *var = psx_decl_register_lvar(param->str, param->len);
         node->args[nargs++] = new_node_lvar(var->offset);
       }
     }
@@ -121,17 +121,17 @@ static node_t *funcdef(void) {
       body_cap = pda_next_cap(body_cap, i + 2);
       body->body = realloc(body->body, sizeof(node_t*) * body_cap);
     }
-    body->body[i++] = pstmt_stmt();
+    body->body[i++] = psx_stmt_stmt();
   }
   body->body[i] = NULL;
   node->base.rhs = (node_t *)body;
-  pctx_validate_goto_refs();
+  psx_ctx_validate_goto_refs();
 
   return (node_t *)node;
 }
 
 // expr = assign ("," assign)*
 node_t *ps_expr(void) {
-  node_t *node = pexpr_expr();
+  node_t *node = psx_expr_expr();
   return node;
 }

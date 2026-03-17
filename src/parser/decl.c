@@ -10,14 +10,14 @@
 static lvar_t *locals;
 static int locals_offset;
 
-extern token_kind_t parser_consume_type_kind(void);
+extern token_kind_t psx_consume_type_kind(void);
 
-void pdecl_reset_locals(void) {
+void psx_decl_reset_locals(void) {
   locals = NULL;
   locals_offset = 0;
 }
 
-lvar_t *pdecl_find_lvar(char *name, int len) {
+lvar_t *psx_decl_find_lvar(char *name, int len) {
   for (lvar_t *var = locals; var; var = var->next) {
     if (var->len == len && memcmp(var->name, name, len) == 0) {
       return var;
@@ -26,7 +26,7 @@ lvar_t *pdecl_find_lvar(char *name, int len) {
   return NULL;
 }
 
-lvar_t *pdecl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
+lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
   lvar_t *var = calloc(1, sizeof(lvar_t));
   var->next = locals;
   var->name = name;
@@ -40,11 +40,11 @@ lvar_t *pdecl_register_lvar_sized(char *name, int len, int size, int elem_size, 
   return var;
 }
 
-lvar_t *pdecl_register_lvar(char *name, int len) {
-  return pdecl_register_lvar_sized(name, len, 8, 8, 0);
+lvar_t *psx_decl_register_lvar(char *name, int len) {
+  return psx_decl_register_lvar_sized(name, len, 8, 8, 0);
 }
 
-node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind) {
+node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind) {
   node_t *init_chain = NULL;
 
   for (;;) {
@@ -54,20 +54,20 @@ node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_f
 
     token_ident_t *tok = tk_consume_ident();
     if (!tok) {
-      pdiag_ctx(token, "decl", "変数名が期待されます");
+      psx_diag_ctx(token, "decl", "変数名が期待されます");
     }
 
-    lvar_t *var = pdecl_find_lvar(tok->str, tok->len);
+    lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
       if (tk_consume('[')) {
         int array_size = tk_expect_number();
         tk_expect(']');
-        var = pdecl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
+        var = psx_decl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
         if (tk_consume('=')) {
-          pexpr_assign();
+          psx_expr_assign();
         }
       } else {
-        var = pdecl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
+        var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
       }
     }
 
@@ -76,29 +76,29 @@ node_t *pdecl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_f
     }
 
     if (tk_consume('=')) {
-      node_t *lvar = pnode_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
+      node_t *lvar = psx_node_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
       lvar->fp_kind = var->fp_kind;
-      node_mem_t *assign_node = pnode_new_assign(lvar, pexpr_assign());
+      node_mem_t *assign_node = psx_node_new_assign(lvar, psx_expr_assign());
       assign_node->type_size = is_pointer ? 8 : var->elem_size;
       assign_node->base.fp_kind = var->fp_kind;
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
-      else init_chain = pnode_new_binary(ND_COMMA, init_chain, init_node);
+      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
     }
 
     if (!tk_consume(',')) break;
   }
 
   tk_expect(';');
-  return init_chain ? init_chain : pnode_new_num(0);
+  return init_chain ? init_chain : psx_node_new_num(0);
 }
 
-node_t *pdecl_parse_declaration(void) {
-  token_kind_t type_kind = parser_consume_type_kind();
+node_t *psx_decl_parse_declaration(void) {
+  token_kind_t type_kind = psx_consume_type_kind();
   int elem_size = 8;
-  pctx_get_type_info(type_kind, NULL, &elem_size);
+  psx_ctx_get_type_info(type_kind, NULL, &elem_size);
   tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
   if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  return pdecl_parse_declaration_after_type(elem_size, decl_fp_kind);
+  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind);
 }

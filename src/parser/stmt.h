@@ -3,7 +3,7 @@
 
 #include "ast.h"
 
-node_t *pstmt_stmt(void);
+node_t *psx_stmt_stmt(void);
 
 #endif
 

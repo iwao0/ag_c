@@ -17,7 +17,7 @@ static int float_label_count = 0;
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 
 static int sizeof_expr_node(node_t *node) {
-  int sz = pnode_type_size(node);
+  int sz = psx_node_type_size(node);
   if (sz) return sz;
   if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
   if (node && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
@@ -28,7 +28,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (!tok || tok->kind != TK_LPAREN) return 0;
   token_t *t = tok->next;
   bool is_type = false;
-  pctx_get_type_info(t ? t->kind : TK_EOF, &is_type, NULL);
+  psx_ctx_get_type_info(t ? t->kind : TK_EOF, &is_type, NULL);
   if (!t || !is_type) return 0;
   *type_kind = t->kind;
   t = t->next;
@@ -58,26 +58,26 @@ static node_t *mul(void);
 static node_t *unary(void);
 static node_t *primary(void);
 
-void pexpr_set_current_func_ret_type(token_kind_t ret_kind, tk_float_kind_t fp_kind) {
+void psx_expr_set_current_func_ret_type(token_kind_t ret_kind, tk_float_kind_t fp_kind) {
   g_current_ret_token_kind = ret_kind;
   g_current_ret_fp_kind = fp_kind;
 }
 
-token_kind_t pexpr_current_func_ret_token_kind(void) {
+token_kind_t psx_expr_current_func_ret_token_kind(void) {
   return g_current_ret_token_kind;
 }
 
-tk_float_kind_t pexpr_current_func_ret_fp_kind(void) {
+tk_float_kind_t psx_expr_current_func_ret_fp_kind(void) {
   return g_current_ret_fp_kind;
 }
 
 // expr = assign ("," assign)*
-node_t *pexpr_expr(void) {
+node_t *psx_expr_expr(void) {
   return expr_internal();
 }
 
 // assign = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
-node_t *pexpr_assign(void) {
+node_t *psx_expr_assign(void) {
   return assign();
 }
 
@@ -86,7 +86,7 @@ static node_t *expr_internal(void) {
   while (token->kind == TK_COMMA) {
     token = token->next;
     node_t *rhs = assign();
-    node_t *comma = pnode_new_binary(ND_COMMA, node, rhs);
+    node_t *comma = psx_node_new_binary(ND_COMMA, node, rhs);
     comma->fp_kind = rhs ? rhs->fp_kind : TK_FLOAT_KIND_NONE;
     node = comma;
   }
@@ -111,12 +111,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return operand;
   }
   if (type_kind == TK_SHORT) {
-    return pnode_new_binary(ND_BITAND, operand, pnode_new_num(0xffff));
+    return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffff));
   }
   if (type_kind == TK_CHAR) {
-    return pnode_new_binary(ND_BITAND, operand, pnode_new_num(0xff));
+    return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xff));
   }
-  pdiag_ctx(token, "cast", "この型へのキャストは未対応です");
+  psx_diag_ctx(token, "cast", "この型へのキャストは未対応です");
   return operand;
 }
 
@@ -125,22 +125,22 @@ static node_t *assign(void) {
   switch (token->kind) {
     case TK_ASSIGN: {
       token = token->next;
-      node_mem_t *assign_node = pnode_new_assign(node, assign());
-      assign_node->type_size = pnode_type_size(assign_node->base.lhs);
+      node_mem_t *assign_node = psx_node_new_assign(node, assign());
+      assign_node->type_size = psx_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
       node = (node_t *)assign_node;
       break;
     }
-    case TK_PLUSEQ: token = token->next; node = pnode_new_compound_assign(node, ND_ADD, assign(), "+="); break;
-    case TK_MINUSEQ: token = token->next; node = pnode_new_compound_assign(node, ND_SUB, assign(), "-="); break;
-    case TK_MULEQ: token = token->next; node = pnode_new_compound_assign(node, ND_MUL, assign(), "*="); break;
-    case TK_DIVEQ: token = token->next; node = pnode_new_compound_assign(node, ND_DIV, assign(), "/="); break;
-    case TK_MODEQ: token = token->next; node = pnode_new_compound_assign(node, ND_MOD, assign(), "%="); break;
-    case TK_SHLEQ: token = token->next; node = pnode_new_compound_assign(node, ND_SHL, assign(), "<<="); break;
-    case TK_SHREQ: token = token->next; node = pnode_new_compound_assign(node, ND_SHR, assign(), ">>="); break;
-    case TK_ANDEQ: token = token->next; node = pnode_new_compound_assign(node, ND_BITAND, assign(), "&="); break;
-    case TK_XOREQ: token = token->next; node = pnode_new_compound_assign(node, ND_BITXOR, assign(), "^="); break;
-    case TK_OREQ: token = token->next; node = pnode_new_compound_assign(node, ND_BITOR, assign(), "|="); break;
+    case TK_PLUSEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_ADD, assign(), "+="); break;
+    case TK_MINUSEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_SUB, assign(), "-="); break;
+    case TK_MULEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_MUL, assign(), "*="); break;
+    case TK_DIVEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_DIV, assign(), "/="); break;
+    case TK_MODEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_MOD, assign(), "%="); break;
+    case TK_SHLEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_SHL, assign(), "<<="); break;
+    case TK_SHREQ: token = token->next; node = psx_node_new_compound_assign(node, ND_SHR, assign(), ">>="); break;
+    case TK_ANDEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_BITAND, assign(), "&="); break;
+    case TK_XOREQ: token = token->next; node = psx_node_new_compound_assign(node, ND_BITXOR, assign(), "^="); break;
+    case TK_OREQ: token = token->next; node = psx_node_new_compound_assign(node, ND_BITOR, assign(), "|="); break;
     default: break;
   }
   return node;
@@ -169,7 +169,7 @@ static node_t *logical_or(void) {
   node_t *node = logical_and();
   while (token->kind == TK_OROR) {
     token = token->next;
-    node = pnode_new_binary(ND_LOGOR, node, logical_and());
+    node = psx_node_new_binary(ND_LOGOR, node, logical_and());
   }
   return node;
 }
@@ -178,7 +178,7 @@ static node_t *logical_and(void) {
   node_t *node = bit_or();
   while (token->kind == TK_ANDAND) {
     token = token->next;
-    node = pnode_new_binary(ND_LOGAND, node, bit_or());
+    node = psx_node_new_binary(ND_LOGAND, node, bit_or());
   }
   return node;
 }
@@ -187,7 +187,7 @@ static node_t *bit_or(void) {
   node_t *node = bit_xor();
   while (token->kind == TK_PIPE) {
     token = token->next;
-    node = pnode_new_binary(ND_BITOR, node, bit_xor());
+    node = psx_node_new_binary(ND_BITOR, node, bit_xor());
   }
   return node;
 }
@@ -196,7 +196,7 @@ static node_t *bit_xor(void) {
   node_t *node = bit_and();
   while (token->kind == TK_CARET) {
     token = token->next;
-    node = pnode_new_binary(ND_BITXOR, node, bit_and());
+    node = psx_node_new_binary(ND_BITXOR, node, bit_and());
   }
   return node;
 }
@@ -205,7 +205,7 @@ static node_t *bit_and(void) {
   node_t *node = equality();
   while (token->kind == TK_AMP) {
     token = token->next;
-    node = pnode_new_binary(ND_BITAND, node, equality());
+    node = psx_node_new_binary(ND_BITAND, node, equality());
   }
   return node;
 }
@@ -215,10 +215,10 @@ static node_t *equality(void) {
   for (;;) {
     if (token->kind == TK_EQEQ) {
       token = token->next;
-      node = pnode_new_binary(ND_EQ, node, relational());
+      node = psx_node_new_binary(ND_EQ, node, relational());
     } else if (token->kind == TK_NEQ) {
       token = token->next;
-      node = pnode_new_binary(ND_NE, node, relational());
+      node = psx_node_new_binary(ND_NE, node, relational());
     }
     else return node;
   }
@@ -229,16 +229,16 @@ static node_t *relational(void) {
   for (;;) {
     if (token->kind == TK_LT) {
       token = token->next;
-      node = pnode_new_binary(ND_LT, node, shift());
+      node = psx_node_new_binary(ND_LT, node, shift());
     } else if (token->kind == TK_LE) {
       token = token->next;
-      node = pnode_new_binary(ND_LE, node, shift());
+      node = psx_node_new_binary(ND_LE, node, shift());
     } else if (token->kind == TK_GT) {
       token = token->next;
-      node = pnode_new_binary(ND_LT, shift(), node);
+      node = psx_node_new_binary(ND_LT, shift(), node);
     } else if (token->kind == TK_GE) {
       token = token->next;
-      node = pnode_new_binary(ND_LE, shift(), node);
+      node = psx_node_new_binary(ND_LE, shift(), node);
     }
     else return node;
   }
@@ -249,10 +249,10 @@ static node_t *shift(void) {
   for (;;) {
     if (token->kind == TK_SHL) {
       token = token->next;
-      node = pnode_new_binary(ND_SHL, node, add());
+      node = psx_node_new_binary(ND_SHL, node, add());
     } else if (token->kind == TK_SHR) {
       token = token->next;
-      node = pnode_new_binary(ND_SHR, node, add());
+      node = psx_node_new_binary(ND_SHR, node, add());
     }
     else return node;
   }
@@ -263,10 +263,10 @@ static node_t *add(void) {
   for (;;) {
     if (token->kind == TK_PLUS) {
       token = token->next;
-      node = pnode_new_binary(ND_ADD, node, mul());
+      node = psx_node_new_binary(ND_ADD, node, mul());
     } else if (token->kind == TK_MINUS) {
       token = token->next;
-      node = pnode_new_binary(ND_SUB, node, mul());
+      node = psx_node_new_binary(ND_SUB, node, mul());
     }
     else return node;
   }
@@ -277,13 +277,13 @@ static node_t *mul(void) {
   for (;;) {
     if (token->kind == TK_MUL) {
       token = token->next;
-      node = pnode_new_binary(ND_MUL, node, unary());
+      node = psx_node_new_binary(ND_MUL, node, unary());
     } else if (token->kind == TK_DIV) {
       token = token->next;
-      node = pnode_new_binary(ND_DIV, node, unary());
+      node = psx_node_new_binary(ND_DIV, node, unary());
     } else if (token->kind == TK_MOD) {
       token = token->next;
-      node = pnode_new_binary(ND_MOD, node, unary());
+      node = psx_node_new_binary(ND_MOD, node, unary());
     }
     else return node;
   }
@@ -296,7 +296,7 @@ static node_t *unary(void) {
   if (parse_cast_type(token, &cast_kind, &cast_is_ptr, &after_rparen)) {
     token = after_rparen;
     if (cast_kind == TK_VOID && !cast_is_ptr) {
-      pdiag_ctx(token, "cast", "void へのキャストは未対応です");
+      psx_diag_ctx(token, "cast", "void へのキャストは未対応です");
     }
     return apply_cast(cast_kind, cast_is_ptr, unary());
   }
@@ -308,11 +308,11 @@ static node_t *unary(void) {
       bool is_type = false;
       int scalar_size = 8;
       token_kind_t type_kind = token->kind;
-      pctx_get_type_info(type_kind, &is_type, &scalar_size);
+      psx_ctx_get_type_info(type_kind, &is_type, &scalar_size);
       if (is_type) {
         token = token->next;
         if (type_kind == TK_VOID) {
-          pdiag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
+          psx_diag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
         }
         int sz = scalar_size;
         while (token->kind == TK_MUL) {
@@ -320,19 +320,19 @@ static node_t *unary(void) {
           sz = 8;
         }
         tk_expect(')');
-        return pnode_new_num(sz);
+        return psx_node_new_num(sz);
       }
       node_t *node = expr_internal();
       tk_expect(')');
-      return pnode_new_num(sizeof_expr_node(node));
+      return psx_node_new_num(sizeof_expr_node(node));
     }
-    return pnode_new_num(sizeof_expr_node(unary()));
+    return psx_node_new_num(sizeof_expr_node(unary()));
   }
 
   if (token->kind == TK_INC) {
     token = token->next;
     node_t *target = unary();
-    pnode_expect_incdec_target(target, "++");
+    psx_node_expect_incdec_target(target, "++");
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_PRE_INC;
     node->lhs = target;
@@ -341,7 +341,7 @@ static node_t *unary(void) {
   if (token->kind == TK_DEC) {
     token = token->next;
     node_t *target = unary();
-    pnode_expect_incdec_target(target, "--");
+    psx_node_expect_incdec_target(target, "--");
     node_t *node = calloc(1, sizeof(node_t));
     node->kind = ND_PRE_DEC;
     node->lhs = target;
@@ -353,16 +353,16 @@ static node_t *unary(void) {
   }
   if (token->kind == TK_MINUS) {
     token = token->next;
-    return pnode_new_binary(ND_SUB, pnode_new_num(0), unary());
+    return psx_node_new_binary(ND_SUB, psx_node_new_num(0), unary());
   }
   if (token->kind == TK_BANG) {
     token = token->next;
-    return pnode_new_binary(ND_EQ, unary(), pnode_new_num(0));
+    return psx_node_new_binary(ND_EQ, unary(), psx_node_new_num(0));
   }
   if (token->kind == TK_TILDE) {
     token = token->next;
-    node_t *neg = pnode_new_binary(ND_SUB, pnode_new_num(0), unary());
-    return pnode_new_binary(ND_SUB, neg, pnode_new_num(1));
+    node_t *neg = psx_node_new_binary(ND_SUB, psx_node_new_num(0), unary());
+    return psx_node_new_binary(ND_SUB, neg, psx_node_new_num(1));
   }
   if (token->kind == TK_MUL) {
     token = token->next;
@@ -371,7 +371,7 @@ static node_t *unary(void) {
     node->base.kind = ND_DEREF;
     node->base.lhs = operand;
     node->base.fp_kind = operand ? operand->fp_kind : 0;
-    int ds = pnode_deref_size(operand);
+    int ds = psx_node_deref_size(operand);
     node->type_size = ds ? ds : 8;
     return (node_t *)node;
   }
@@ -388,11 +388,11 @@ static node_t *unary(void) {
     token = token->next;
     node_t *idx = expr_internal();
     tk_expect(']');
-    int ds = pnode_deref_size(node);
-    int ts = pnode_type_size(node);
+    int ds = psx_node_deref_size(node);
+    int ts = psx_node_type_size(node);
     int es = ds ? ds : (ts ? ts : 8);
-    node_t *scaled = pnode_new_binary(ND_MUL, idx, pnode_new_num(es));
-    node_t *addr = pnode_new_binary(ND_ADD, node, scaled);
+    node_t *scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
+    node_t *addr = psx_node_new_binary(ND_ADD, node, scaled);
     node_mem_t *deref = calloc(1, sizeof(node_mem_t));
     deref->base.kind = ND_DEREF;
     deref->base.lhs = addr;
@@ -402,7 +402,7 @@ static node_t *unary(void) {
   for (;;) {
     if (token->kind == TK_INC) {
       token = token->next;
-      pnode_expect_incdec_target(node, "++");
+      psx_node_expect_incdec_target(node, "++");
       node_t *inc = calloc(1, sizeof(node_t));
       inc->kind = ND_POST_INC;
       inc->lhs = node;
@@ -411,7 +411,7 @@ static node_t *unary(void) {
     }
     if (token->kind == TK_DEC) {
       token = token->next;
-      pnode_expect_incdec_target(node, "--");
+      psx_node_expect_incdec_target(node, "--");
       node_t *dec = calloc(1, sizeof(node_t));
       dec->kind = ND_POST_DEC;
       dec->lhs = node;
@@ -489,19 +489,19 @@ static node_t *primary(void) {
       return (node_t *)node;
     }
 
-    lvar_t *var = pdecl_find_lvar(tok->str, tok->len);
+    lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
-      var = pdecl_register_lvar(tok->str, tok->len);
+      var = psx_decl_register_lvar(tok->str, tok->len);
     }
     if (var->is_array) {
       node_mem_t *node = calloc(1, sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
-      node->base.lhs = pnode_new_lvar(var->offset - var->size + var->elem_size);
+      node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
       node->type_size = var->elem_size;
       node->deref_size = var->elem_size;
       return (node_t *)node;
     }
-    node_t *n = pnode_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
+    node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
     as_lvar(n)->mem.deref_size = var->elem_size;
     n->fp_kind = var->fp_kind;
     return n;
@@ -554,6 +554,6 @@ static node_t *primary(void) {
     return (node_t *)node;
   }
 
-  pdiag_ctx(token, "primary", "数値を期待しています");
+  psx_diag_ctx(token, "primary", "数値を期待しています");
   return NULL;
 }
