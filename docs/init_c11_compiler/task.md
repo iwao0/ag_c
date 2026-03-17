@@ -444,6 +444,6 @@
   - [x] `char alt[1200]` を廃止し、必要長を計算して確保する
   - [x] `char filename[1024]` を廃止し、トークン長に応じて伸長する
 - [ ] 同様の固定長バッファを段階的に見直す
-  - [ ] `src/config/config.c` の `char line[512]` の上限仕様を明文化し、必要に応じて動的化する
-  - [ ] `src/parser/diag.c` の `char detail[256]` の切り捨て方針を明文化し、診断品質への影響を評価する
-  - [ ] `src/parser/expr.c` の `char label[32]`（`.LC` ラベル生成）の上限妥当性を確認し、必要なら `snprintf` 依存から安全な生成へ変更する
+  - [x] `src/config/config.c` の `char line[512]` の上限仕様を明文化し、必要に応じて動的化する
+  - [x] `src/parser/diag.c` の `char detail[256]` の切り捨て方針を明文化し、診断品質への影響を評価する
+  - [x] `src/parser/expr.c` の `char label[32]`（`.LC` ラベル生成）の上限妥当性を確認し、必要なら `snprintf` 依存から安全な生成へ変更する

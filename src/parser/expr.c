@@ -535,9 +535,10 @@ static node_t *primary(void) {
 
     node_string_t *node = calloc(1, sizeof(node_string_t));
     node->mem.base.kind = ND_STRING;
-    char label[32];
-    snprintf(label, sizeof(label), ".LC%d", string_label_count++);
-    node->string_label = strdup(label);
+    int id = string_label_count++;
+    int label_len = snprintf(NULL, 0, ".LC%d", id);
+    node->string_label = calloc((size_t)label_len + 1, 1);
+    snprintf(node->string_label, (size_t)label_len + 1, ".LC%d", id);
     string_lit_t *lit = calloc(1, sizeof(string_lit_t));
     lit->label = node->string_label;
     lit->str = merged;

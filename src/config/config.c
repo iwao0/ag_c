@@ -1,6 +1,7 @@
 #include "config.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdbool.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -39,8 +40,9 @@ void load_config_toml(void) {
   if (!fp) return; // 設定ファイルがなければデフォルトで実行
 
   bool in_tokenizer = false;
-  char line[512];
-  while (fgets(line, sizeof(line), fp)) {
+  char *line = NULL;
+  size_t line_cap = 0;
+  while (getline(&line, &line_cap, fp) != -1) {
     char *p = trim_left(line);
     if (*p == '\0' || *p == '#') continue;
 
@@ -77,5 +79,6 @@ void load_config_toml(void) {
       tk_set_enable_c11_audit_extensions(b);
     }
   }
+  free(line);
   fclose(fp);
 }
