@@ -44,6 +44,9 @@ static const test_case_t test_cases[] = {
     {"arithmetic", "div", CASE_INT, "main() { return (3+5)/2; }", 4, 0},
     {"arithmetic", "mod", CASE_INT, "main() { return 10%3; }", 1, 0},
     {"arithmetic", "mod_prec", CASE_INT, "main() { return 10+7%4*2; }", 16, 0},
+    {"arithmetic", "mod_neg_lhs", CASE_INT, "main() { return (-10%3)==-1; }", 1, 0},
+    {"arithmetic", "mod_neg_rhs", CASE_INT, "main() { return (10%-3)==1; }", 1, 0},
+    {"arithmetic", "mod_zero_impl_defined", CASE_INT, "main() { return 10%0; }", 10, 0},
     {"arithmetic", "unary_plus", CASE_INT, "main() { return +42; }", 42, 0},
     {"arithmetic", "unary_minus", CASE_INT, "main() { return -7+10; }", 3, 0},
     {"arithmetic", "logical_not_true", CASE_INT, "main() { return !0; }", 1, 0},
@@ -124,6 +127,9 @@ static const test_case_t test_cases[] = {
     {"shift", "shl", CASE_INT, "main() { return 3 << 2; }", 12, 0},
     {"shift", "shr", CASE_INT, "main() { return 32 >> 3; }", 4, 0},
     {"shift", "shift_precedence", CASE_INT, "main() { return 1 + 2 << 3; }", 24, 0},
+    {"shift", "shift_neg_right", CASE_INT, "main() { return (-8 >> 1) == -4; }", 1, 0},
+    {"shift", "shift_by_zero", CASE_INT, "main() { return (5 << 0) == 5; }", 1, 0},
+    {"shift", "shift_large_bit", CASE_INT, "main() { return (1 << 30) > 0; }", 1, 0},
 
     {"switch_edge", "match", CASE_INT, "main() { a=2; switch (a) { case 1: return 10; case 2: return 20; default: return 30; } }", 20, 0},
     {"switch_edge", "default", CASE_INT, "main() { a=9; switch (a) { case 1: return 10; case 2: return 20; default: return 30; } }", 30, 0},
@@ -277,8 +283,13 @@ static int run_case(const test_case_t *tc, FILE *log) {
   build_artifact_paths(tc, dir, s_path, bin_path, NULL);
   if (tc->kind == CASE_INT) {
     int status = system(bin_path);
-    if (status == -1 || !WIFEXITED(status)) {
+    if (status == -1) {
       fprintf(log, "  FAIL: %s could not run\n  input: %s\n  artifacts: s=%s bin=%s\n",
+              tc->name, tc->input, s_path, bin_path);
+      return -1;
+    }
+    if (!WIFEXITED(status)) {
+      fprintf(log, "  FAIL: %s terminated unexpectedly\n  input: %s\n  artifacts: s=%s bin=%s\n",
               tc->name, tc->input, s_path, bin_path);
       return -1;
     }
