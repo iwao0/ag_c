@@ -46,6 +46,7 @@ static inline bool eq14(const char *s) {
          s[7] == '_' && s[8] == 'a' && s[9] == 's' && s[10] == 's' && s[11] == 'e' && s[12] == 'r' && s[13] == 't';
 }
 
+/** @brief 文字列がC11キーワードなら対応する token kind を返す。 */
 token_kind_t lookup_keyword(const char *s, int len) {
   switch (len) {
     case 2:

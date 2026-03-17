@@ -19,10 +19,12 @@ static char *user_input;
 // 現在着目しているトークン
 token_t *token;
 
+/** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
 char *tk_get_user_input(void) {
   return user_input;
 }
 
+/** @brief 現在の入力バッファ（エラー表示用）を設定する。 */
 void tk_set_user_input(char *p) {
   user_input = p;
 }
@@ -32,14 +34,17 @@ static tokenizer_stats_t tok_stats = {0};
 static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
 
+/** @brief 現在のファイル名（エラー表示用）を取得する。 */
 char *tk_get_filename(void) {
   return current_filename;
 }
 
+/** @brief 現在のファイル名（エラー表示用）を設定する。 */
 void tk_set_filename(char *name) {
   current_filename = name;
 }
 
+/** @brief Tokenizer統計の計測基準点をリセットする。 */
 void tk_reset_tokenizer_stats(void) {
   stats_base_chunks = tk_allocator_total_chunks();
   stats_base_reserved_bytes = tk_allocator_total_reserved_bytes();
@@ -48,6 +53,7 @@ void tk_reset_tokenizer_stats(void) {
   tok_stats.peak_alloc_bytes = 0;
 }
 
+/** @brief Tokenizer統計（alloc回数/bytes）を取得する。 */
 tokenizer_stats_t tk_get_tokenizer_stats(void) {
   tok_stats.alloc_count = tk_allocator_total_chunks() - stats_base_chunks;
   tok_stats.alloc_bytes = tk_allocator_total_reserved_bytes() - stats_base_reserved_bytes;
@@ -106,7 +112,7 @@ static char *replace_trigraphs(const char *in) {
   return out;
 }
 
-// エラー箇所を視覚的に表示する
+/** @brief 入力文字列上の位置を指してエラーを出力し終了する。 */
 void tk_error_at(char *loc, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -120,6 +126,7 @@ void tk_error_at(char *loc, char *fmt, ...) {
   exit(1);
 }
 
+/** @brief トークン情報付きエラーを出力し終了する。 */
 void tk_error_tok(token_t *tok, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -150,6 +157,7 @@ void tk_error_tok(token_t *tok, char *fmt, ...) {
   exit(1);
 }
 
+/** @brief token kind を表示用文字列へ変換する。 */
 const char *tk_token_kind_str(token_kind_t kind, int *len) {
   const char *s = NULL;
   switch (kind) {
@@ -252,6 +260,7 @@ const char *tk_token_kind_str(token_kind_t kind, int *len) {
   return s;
 }
 
+/** @brief 1文字演算子/区切りの token kind を返す。 */
 static token_kind_t kind_for_char(char op) {
   switch (op) {
     case '(': return TK_LPAREN;
@@ -283,6 +292,7 @@ static token_kind_t kind_for_char(char op) {
   }
 }
 
+/** @brief 次トークンが指定1文字なら消費して true を返す。 */
 bool tk_consume(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind)
@@ -291,6 +301,7 @@ bool tk_consume(char op) {
   return true;
 }
 
+/** @brief 次トークンが指定記号文字列なら消費して true を返す。 */
 bool tk_consume_str(char *op) {
   token_kind_t kind = punctuator_kind_for_str(op);
   if (kind == TK_EOF || token->kind != kind)
@@ -299,6 +310,7 @@ bool tk_consume_str(char *op) {
   return true;
 }
 
+/** @brief 次トークンが識別子なら消費して返す。 */
 token_ident_t *tk_consume_ident(void) {
   if (token->kind != TK_IDENT)
     return NULL;
@@ -307,6 +319,7 @@ token_ident_t *tk_consume_ident(void) {
   return tok;
 }
 
+/** @brief 次トークンが指定1文字であることを期待して消費する。 */
 void tk_expect(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind) {
@@ -315,6 +328,7 @@ void tk_expect(char op) {
   token = token->next;
 }
 
+/** @brief 次トークンが整数であることを期待し int 値を返す。 */
 int tk_expect_number(void) {
   if (token->kind != TK_NUM) {
     tk_error_tok(token, "数ではありません");
@@ -331,6 +345,7 @@ int tk_expect_number(void) {
   return val;
 }
 
+/** @brief 現在トークンが EOF かを返す。 */
 bool tk_at_eof(void) { return token->kind == TK_EOF; }
 
 // 新しいトークンを作成して、curに繋げる
@@ -688,7 +703,7 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
   *pp = p;
 }
 
-// 文字列 p をトークナイズしてその結果へのポインタを返す
+/** @brief 入力文字列をトークナイズし、先頭トークンを返す。 */
 token_t *tk_tokenize(char *p) {
   tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);

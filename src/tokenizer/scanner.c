@@ -9,6 +9,7 @@ static inline bool tk_is_space_fast(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
+/** @brief 低頻度ケース（コメント/行継続/エラー）を処理する。 */
 static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, int *line_no) {
   // 行継続（バックスラッシュ + 改行）を除去
   if (*p == '\\' && p[1] == '\n') {
@@ -55,6 +56,7 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
   return p;
 }
 
+/** @brief 空白・コメント・行継続をスキップして次の有効文字位置を返す。 */
 char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
   for (;;) {
     // Hot path: ASCII空白だけを最短で処理
@@ -86,6 +88,7 @@ char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
   }
 }
 
+/** @brief 識別子開始判定（UCN含む）を行う。 */
 bool tk_scan_ident_start(const char *p, int *adv) {
   int ucn_len = 0;
   if (tk_is_ident_start_byte(*p)) {
@@ -100,6 +103,7 @@ bool tk_scan_ident_start(const char *p, int *adv) {
   return false;
 }
 
+/** @brief 識別子継続判定（UCN含む）を行う。 */
 bool tk_scan_ident_continue(const char *p, int *adv) {
   int ucn_len = 0;
   if (tk_is_ident_continue_byte(*p)) {

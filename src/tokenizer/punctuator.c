@@ -34,6 +34,7 @@ static inline token_kind_t punctuator_kind_for_char(char c) {
   }
 }
 
+/** @brief 記号文字列の完全一致 token kind を返す。 */
 token_kind_t punctuator_kind_for_str(const char *op) {
   size_t len = strlen(op);
   if (len == 1) return punctuator_kind_for_char(op[0]);
@@ -83,6 +84,7 @@ static inline token_kind_t punctuator_kind_for_2chars(char c0, char c1) {
   return table[(unsigned char)c0][(unsigned char)c1];
 }
 
+/** @brief `p` 位置で最長一致する記号（2〜4文字）を判定する。 */
 bool match_punctuator(const char *p, token_kind_t *out_kind, int *out_len) {
   if (p[0] == '%' && p[1] == ':' && p[2] == '%' && p[3] == ':') {
     *out_kind = TK_HASHHASH;

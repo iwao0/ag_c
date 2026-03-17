@@ -345,15 +345,15 @@
   - [x] `token.h` に公開構造体・enumの説明を追加する
   - [x] `escape.h` / `literals.h` / `scanner.h` / `keywords.h` / `punctuator.h` / `allocator.h` の公開宣言を整備する
 - [ ] 実装ファイルの主要関数コメントを補完する
-  - [ ] `tokenizer.c` のエントリ関数と主要分岐点に関数コメントを追加する
-  - [ ] `literals.c` / `escape.c` のリテラル・エスケープ処理に前提条件と失敗条件を明記する
-  - [ ] `scanner.c` / `keywords.c` / `punctuator.c` / `allocator.c` のホットパス関数に意図を明記する
+  - [x] `tokenizer.c` のエントリ関数と主要分岐点に関数コメントを追加する
+  - [x] `literals.c` / `escape.c` のリテラル・エスケープ処理に前提条件と失敗条件を明記する
+  - [x] `scanner.c` / `keywords.c` / `punctuator.c` / `allocator.c` のホットパス関数に意図を明記する
 - [ ] 意味整合性を確認する
   - [ ] `num_kind` / `fp_kind` / strict C11関連フラグの説明が実装と一致しているか確認する
   - [ ] コメントと実際のエラー挙動（例: 異常系）に齟齬がないか確認する
 - [ ] 品質ゲートを実施する
   - [x] `make test` を実行して回帰がないことを確認する
-  - [ ] 追加コメントが警告や可読性低下を招いていないかレビューする
+  - [x] 追加コメントが警告や可読性低下を招いていないかレビューする
 - [ ] 運用ルールをドキュメント化する
   - [ ] 「Tokenizer新規関数はDoxygen必須」のルールを追記する
   - [ ] 「公開API変更時はDoxygen更新必須」のルールを追記する

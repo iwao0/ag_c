@@ -7,6 +7,7 @@ static inline int hex_digit_value(unsigned char ch) {
   return -1;
 }
 
+/** @brief バックスラッシュ開始のエスケープ列をデコードする。 */
 int tk_parse_escape_value(const char *s, int len, int *i, uint32_t *out) {
   if (*i >= len || s[*i] != '\\') return 0;
   (*i)++;

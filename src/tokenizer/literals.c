@@ -11,6 +11,7 @@ static uint32_t hexval(char c) {
   return (uint32_t)(c - 'A' + 10);
 }
 
+/** @brief `\u` / `\U` 形式のUCN開始かを判定する。 */
 bool tk_starts_with_ucn(const char *p, int *len) {
   if (p[0] != '\\' || (p[1] != 'u' && p[1] != 'U')) return false;
   int digits = (p[1] == 'u') ? 4 : 8;
@@ -21,6 +22,7 @@ bool tk_starts_with_ucn(const char *p, int *len) {
   return true;
 }
 
+/** @brief UCNをコードポイント値へ変換する。 */
 bool tk_parse_ucn_codepoint(const char *p, uint32_t *out, int *consumed) {
   int len = 0;
   if (!tk_starts_with_ucn(p, &len)) return false;
@@ -34,6 +36,7 @@ bool tk_parse_ucn_codepoint(const char *p, uint32_t *out, int *consumed) {
   return true;
 }
 
+/** @brief C11で許可されるUCNかを検証する。 */
 bool tk_is_valid_ucn_codepoint(uint32_t cp) {
   if (cp > 0x10FFFF) return false;
   if (0xD800 <= cp && cp <= 0xDFFF) return false;
@@ -41,6 +44,7 @@ bool tk_is_valid_ucn_codepoint(uint32_t cp) {
   return true;
 }
 
+/** @brief コードポイントをUTF-8バイト列へエンコードする。 */
 int tk_encode_utf8(uint32_t cp, char out[4]) {
   if (cp <= 0x7F) {
     out[0] = (char)cp;
@@ -64,6 +68,7 @@ int tk_encode_utf8(uint32_t cp, char out[4]) {
   return 4;
 }
 
+/** @brief リテラル中のエスケープ1個を値にデコードする。 */
 int tk_read_escape_char(char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
@@ -100,6 +105,7 @@ int tk_read_escape_char(char **pp) {
   return (int)out;
 }
 
+/** @brief リテラル中のエスケープ1個を値化せず読み飛ばす。 */
 void tk_skip_escape_in_literal(char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
@@ -148,6 +154,7 @@ void tk_skip_escape_in_literal(char **pp) {
   *pp = p + 1;
 }
 
+/** @brief 文字列接頭辞（L/u/U/u8）を解析する。 */
 void tk_parse_string_prefix(
     const char *p,
     int *prefix_len,
@@ -182,6 +189,7 @@ void tk_parse_string_prefix(
   }
 }
 
+/** @brief 文字定数接頭辞（L/u/U）を解析する。 */
 void tk_parse_char_prefix(
     const char *p,
     int *prefix_len,
@@ -210,6 +218,7 @@ void tk_parse_char_prefix(
   }
 }
 
+/** @brief 識別子中のUCNをUTF-8へ展開する。 */
 void tk_decode_identifier_ucn(char *start, int len, char **out_str, int *out_len, bool *has_ucn) {
   *has_ucn = false;
   char *buf = tk_allocator_calloc((size_t)len * 4 + 1, 1);
