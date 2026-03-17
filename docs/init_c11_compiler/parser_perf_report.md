@@ -76,6 +76,12 @@
   - `src/parser/parser_node_utils.c`
 - 置換:
   - ASTノード生成・型サイズ計算・lvalue検証を `parser_node_utils` へ移管
+- 追加ファイル（第3段）:
+  - `src/parser/parser_decl.h`
+  - `src/parser/parser_decl.c`
+- 置換（第3段）:
+  - ローカル変数表と宣言パース（`declaration` / `declaration_after_type`）を `parser_decl` へ移管
+  - `parser_consume_type_kind` / `parser_assign_expr` を公開し、宣言モジュールから再利用
 - ビルド連携:
   - `Makefile` に `PARSER_LIB_OBJS` を導入し、`test_parser` / `bench_parser` で再利用
 - 回帰確認:

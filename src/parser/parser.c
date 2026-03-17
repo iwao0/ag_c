@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
+#include "parser_decl.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,52 +24,6 @@ static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 #define expect_lvalue pnode_expect_lvalue
 #define expect_incdec_target pnode_expect_incdec_target
 #define new_compound_assign pnode_new_compound_assign
-
-// ローカル変数テーブル（連結リスト）
-typedef struct lvar_t lvar_t;
-struct lvar_t {
-  lvar_t *next;
-  char *name;
-  int len;
-  int offset;
-  int size;      // サイズ（スカラー=8、配列=要素数*elem_size）
-  int elem_size;   // 要素サイズ（1=char, 8=int/pointer）
-  int is_array;  // 配列かどうか
-  tk_float_kind_t fp_kind;
-};
-
-// ローカル変数テーブル（関数ごとにリセット）
-static lvar_t *locals;
-static int locals_offset;
-
-// 名前でローカル変数を検索
-static lvar_t *find_lvar(char *name, int len) {
-  for (lvar_t *var = locals; var; var = var->next) {
-    if (var->len == len && memcmp(var->name, name, len) == 0) {
-      return var;
-    }
-  }
-  return NULL;
-}
-
-// 新しいローカル変数を登録（サイズ指定付き）
-static lvar_t *register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
-  lvar_t *var = calloc(1, sizeof(lvar_t));
-  var->next = locals;
-  var->name = name;
-  var->len = len;
-  locals_offset += size;
-  var->offset = locals_offset;
-  var->size = size;
-  var->elem_size = elem_size;
-  var->is_array = is_array;
-  locals = var;
-  return var;
-}
-
-static lvar_t *register_lvar(char *name, int len) {
-  return register_lvar_sized(name, len, 8, 8, 0);
-}
 
 static node_t *stmt(void);
 static node_t *declaration(void);
@@ -213,7 +168,7 @@ void program(void) {
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
-static token_kind_t consume_type_kind(void) {
+token_kind_t parser_consume_type_kind(void) {
   if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
     token_kind_t kind = token->kind;
     token = token->next;
@@ -223,7 +178,7 @@ static token_kind_t consume_type_kind(void) {
 }
 
 static bool consume_type(void) {
-  return consume_type_kind() != TK_EOF;
+  return parser_consume_type_kind() != TK_EOF;
 }
 
 static tk_float_kind_t current_func_ret_type = TK_FLOAT_KIND_NONE;
@@ -232,7 +187,7 @@ static token_kind_t current_func_ret_token_kind = TK_INT;
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
-  token_kind_t ret_kind = consume_type_kind(); // 戻り値の型（省略可）
+  token_kind_t ret_kind = parser_consume_type_kind(); // 戻り値の型（省略可）
   current_func_ret_type = TK_FLOAT_KIND_NONE;
   current_func_ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   if (ret_kind == TK_FLOAT) current_func_ret_type = TK_FLOAT_KIND_FLOAT;
@@ -247,8 +202,7 @@ static node_t *funcdef(void) {
   node->funcname_len = tok->len;
 
   // 関数ごとにローカル変数テーブルをリセット
-  locals = NULL;
-  locals_offset = 0;
+  pdecl_reset_locals();
   pctx_reset_function_scope();
 
   tk_expect('(');
@@ -261,7 +215,7 @@ static node_t *funcdef(void) {
     while (tk_consume('*')) {} // ポインタの * を読み飛ばす
     token_ident_t *param = tk_consume_ident();
     if (param) {
-      lvar_t *var = register_lvar(param->str, param->len);
+      lvar_t *var = pdecl_register_lvar(param->str, param->len);
       node->args[nargs++] = new_node_lvar(var->offset);
     }
     while (tk_consume(',')) {
@@ -273,7 +227,7 @@ static node_t *funcdef(void) {
       while (tk_consume('*')) {} // ポインタの * を読み飛ばす
       param = tk_consume_ident();
       if (param) {
-        lvar_t *var = register_lvar(param->str, param->len);
+        lvar_t *var = pdecl_register_lvar(param->str, param->len);
         node->args[nargs++] = new_node_lvar(var->offset);
       }
     }
@@ -307,65 +261,8 @@ static node_t *funcdef(void) {
   return (node_t *)node;
 }
 
-// declaration_after_type = declarator ("," declarator)* ";"
-static node_t *declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind) {
-  node_t *init_chain = NULL;
-
-  for (;;) {
-    int is_pointer = 0;
-    while (tk_consume('*')) { is_pointer = 1; } // ポインタ自体は8バイト
-    int var_size = is_pointer ? 8 : elem_size;
-
-    token_ident_t *tok = tk_consume_ident();
-    if (!tok) {
-      tk_error_tok(token, "変数名が期待されます");
-    }
-
-    lvar_t *var = find_lvar(tok->str, tok->len);
-    if (!var) {
-      if (tk_consume('[')) {
-        int array_size = tk_expect_number();
-        tk_expect(']');
-        var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
-        if (tk_consume('=')) {
-          // 配列初期化は未対応
-          assign();
-        }
-      } else {
-        var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
-      }
-    }
-
-    if (!is_pointer) {
-      var->fp_kind = decl_fp_kind;
-    }
-
-    if (tk_consume('=')) {
-      node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
-      lvar->fp_kind = var->fp_kind;
-      node_mem_t *assign_node = new_node_assign(lvar, assign());
-      assign_node->type_size = is_pointer ? 8 : var->elem_size;
-      assign_node->base.fp_kind = var->fp_kind;
-      node_t *init_node = (node_t *)assign_node;
-      if (!init_chain) init_chain = init_node;
-      else init_chain = new_node_binary(ND_COMMA, init_chain, init_node);
-    }
-
-    if (!tk_consume(',')) break;
-  }
-
-  tk_expect(';');
-  return init_chain ? init_chain : new_node_num(0);
-}
-
-// declaration = type declarator ("," declarator)* ";"
 static node_t *declaration(void) {
-  token_kind_t type_kind = consume_type_kind();
-  int elem_size = scalar_type_size(type_kind);
-  tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
-  if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  return declaration_after_type(elem_size, decl_fp_kind);
+  return pdecl_parse_declaration();
 }
 
 // stmt = "{" stmt* "}"
@@ -422,7 +319,7 @@ static node_t *stmt(void) {
     if (!pctx_has_tag_type(tag_kind, tag->str, tag->len)) {
       tk_error_tok(token, "未定義のタグ型 '%.*s' です", tag->len, tag->str);
     }
-    return declaration_after_type(8, TK_FLOAT_KIND_NONE);
+    return pdecl_parse_declaration_after_type(8, TK_FLOAT_KIND_NONE);
   }
 
   if (token->kind == TK_RETURN) {
@@ -653,6 +550,8 @@ static node_t *assign(void) {
   return node;
 }
 
+node_t *parser_assign_expr(void) { return assign(); }
+
 // conditional = logical_or ("?" expr ":" conditional)?
 static node_t *conditional(void) {
   node_t *node = logical_or();
@@ -811,7 +710,7 @@ static node_t *unary(void) {
     token = token->next;
     if (tk_consume('(')) {
       if (is_type_token(token->kind)) {
-        token_kind_t type_kind = consume_type_kind();
+        token_kind_t type_kind = parser_consume_type_kind();
         if (type_kind == TK_VOID) {
           tk_error_tok(token, "sizeof(void) はサポートしていません");
         }
@@ -952,9 +851,9 @@ static node_t *primary(void) {
       return (node_t *)node;
     }
     // ローカル変数
-    lvar_t *var = find_lvar(tok->str, tok->len);
+    lvar_t *var = pdecl_find_lvar(tok->str, tok->len);
     if (!var) {
-      var = register_lvar(tok->str, tok->len);
+      var = pdecl_register_lvar(tok->str, tok->len);
     }
     if (var->is_array) {
       // 配列名は先頭要素のアドレスを返す
