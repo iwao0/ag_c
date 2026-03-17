@@ -579,10 +579,10 @@
   - [ ] 多次元配列宣言子と仮引数配列の `static`/`restrict` を段階導入する
 
 ## Parser未実装タスク（2026-03-17 追加棚卸し3）
-- [ ] 型指定子の組み合わせ受理を厳密化する
-  - [ ] `long long`, `long long int`, `unsigned long long` を型指定子として受理する
-  - [ ] `signed char`, `unsigned char`, `unsigned short`, `unsigned int` など符号付き/無し組み合わせを一貫して扱う
-  - [ ] 不正な組み合わせ（例: `short double`）を診断できるようにする
+- [x] 型指定子の組み合わせ受理を厳密化する
+  - [x] `long long`, `long long int`, `unsigned long long` を型指定子として受理する
+  - [x] `signed char`, `unsigned char`, `unsigned short`, `unsigned int` など符号付き/無し組み合わせを一貫して扱う
+  - [x] 不正な組み合わせ（例: `short double`）を診断できるようにする
 - [x] `enum` 定数式の対応範囲をC寄りに拡張する
   - [x] 比較演算（`==`, `!=`, `<`, `<=`, `>`, `>=`）を列挙子初期化式で受理する
   - [x] 論理演算（`&&`, `||`）と条件演算子（`?:`）を列挙子初期化式で受理する

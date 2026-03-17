@@ -825,6 +825,19 @@ static void test_type_decl() {
   parsed_code = ps_program();
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
+
+  token = tk_tokenize("main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
+  token = tk_tokenize("typedef unsigned long long ull; main() { ull v = 5; return v; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -895,6 +908,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
   expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
+  expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail("main() { break; }");                // ループ/switch外

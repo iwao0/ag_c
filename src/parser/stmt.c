@@ -1,4 +1,5 @@
 #include "internal/stmt.h"
+#include "internal/core.h"
 #include "internal/decl.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
@@ -28,10 +29,6 @@ static long long parse_enum_const_add(void);
 static long long parse_enum_const_mul(void);
 static long long parse_enum_const_unary(void);
 static long long parse_enum_const_primary(void);
-
-static void skip_cv_qualifiers_stmt(void) {
-  while (token->kind == TK_CONST || token->kind == TK_VOLATILE) token = token->next;
-}
 
 static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
@@ -286,13 +283,12 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
   *is_pointer_base = 0;
   *base_kind = TK_EOF;
 
-  skip_cv_qualifiers_stmt();
-  if (psx_ctx_is_type_token(token->kind)) {
-    *base_kind = token->kind;
-    psx_ctx_get_type_info(token->kind, NULL, elem_size);
-    if (token->kind == TK_FLOAT) *fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (token->kind == TK_DOUBLE) *fp_kind = TK_FLOAT_KIND_DOUBLE;
-    token = token->next;
+  token_kind_t builtin_kind = psx_consume_type_kind();
+  if (builtin_kind != TK_EOF) {
+    *base_kind = builtin_kind;
+    psx_ctx_get_type_info(builtin_kind, NULL, elem_size);
+    if (builtin_kind == TK_FLOAT) *fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (builtin_kind == TK_DOUBLE) *fp_kind = TK_FLOAT_KIND_DOUBLE;
     return 1;
   }
   if (psx_ctx_is_tag_keyword(token->kind)) {

@@ -163,13 +163,12 @@ static void parse_toplevel_typedef_decl(void) {
   int tag_len = 0;
   int is_ptr_base = 0;
 
-  skip_cv_qualifiers();
-  if (psx_ctx_is_type_token(token->kind)) {
-    base_kind = token->kind;
-    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
-    if (token->kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (token->kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
-    token = token->next;
+  token_kind_t builtin_kind = psx_consume_type_kind();
+  if (builtin_kind != TK_EOF) {
+    base_kind = builtin_kind;
+    psx_ctx_get_type_info(builtin_kind, NULL, &elem_size);
+    if (builtin_kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (builtin_kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
   } else if (psx_ctx_is_tag_keyword(token->kind)) {
     base_kind = token->kind;
     tag_kind = token->kind;
@@ -455,41 +454,112 @@ static void parse_toplevel_tag_decl(void) {
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
   skip_cv_qualifiers();
-  if (token->kind == TK_SIGNED || token->kind == TK_UNSIGNED) {
-    token_kind_t sign_kind = token->kind;
-    token = token->next;
-    if (token->kind == TK_LONG) {
+  token_t *start = token;
+  int saw_signed = 0;
+  int saw_unsigned = 0;
+  int long_count = 0;
+  int saw_short = 0;
+  int saw_int = 0;
+  int saw_char = 0;
+  int saw_void = 0;
+  int saw_float = 0;
+  int saw_double = 0;
+  int saw_bool = 0;
+
+  while (true) {
+    token_kind_t k = token->kind;
+    if (k == TK_SIGNED) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_signed = 1;
       token = token->next;
-      if (token->kind == TK_INT) token = token->next;
-      (void)sign_kind;
-      return TK_LONG;
+      continue;
     }
-    if (token->kind == TK_SHORT) {
+    if (k == TK_UNSIGNED) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_unsigned = 1;
       token = token->next;
-      if (token->kind == TK_INT) token = token->next;
-      (void)sign_kind;
-      return TK_SHORT;
+      continue;
     }
-    if (token->kind == TK_INT) token = token->next;
-    return TK_INT;
+    if (k == TK_LONG) {
+      if (saw_char || saw_short || saw_void || saw_float || saw_bool || long_count >= 2) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      long_count++;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_SHORT) {
+      if (saw_char || saw_short || long_count || saw_void || saw_float || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_short = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_INT) {
+      if (saw_int || saw_char || saw_void || saw_float || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_int = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_CHAR) {
+      if (saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_char = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_VOID) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_float || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_void = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_FLOAT) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_double || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_float = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_DOUBLE) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int || saw_void || saw_float || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_double = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_BOOL) {
+      if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_bool = 1;
+      token = token->next;
+      continue;
+    }
+    break;
   }
-  if (token->kind == TK_LONG) {
-    token = token->next;
-    if (token->kind == TK_INT) token = token->next;
-    return TK_LONG;
-  }
-  if (token->kind == TK_SHORT) {
-    token = token->next;
-    if (token->kind == TK_INT) token = token->next;
-    return TK_SHORT;
-  }
-  if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID ||
-      token->kind == TK_FLOAT || token->kind == TK_DOUBLE || token->kind == TK_BOOL) {
-    token_kind_t kind = token->kind;
-    token = token->next;
-    return kind;
-  }
-  return TK_EOF; // 型なし
+
+  if (token == start) return TK_EOF;
+  if (saw_void) return TK_VOID;
+  if (saw_float) return TK_FLOAT;
+  if (saw_double) return TK_DOUBLE;
+  if (saw_bool) return TK_BOOL;
+  if (saw_char) return TK_CHAR;
+  if (saw_short) return TK_SHORT;
+  if (long_count > 0) return TK_LONG;
+  return TK_INT;
 }
 
 static bool consume_type(void) {
