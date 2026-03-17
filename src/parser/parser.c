@@ -3,6 +3,7 @@
 #include "parser_semantic_ctx.h"
 #include "parser_decl.h"
 #include "parser_expr.h"
+#include "parser_loop_ctx.h"
 #include "parser_switch_ctx.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -45,7 +46,6 @@ static node_t *unary(void);
 static node_t *primary(void);
 static node_t *funcdef(void);
 
-static int loop_depth = 0;
 
 
 static bool is_type_token(token_kind_t kind) { return pctx_is_type_token(kind); }
@@ -155,6 +155,7 @@ static node_t *funcdef(void) {
   // 関数ごとにローカル変数テーブルをリセット
   pdecl_reset_locals();
   pctx_reset_function_scope();
+  ploop_reset();
 
   tk_expect('(');
   // 仮引数のパース
@@ -316,9 +317,9 @@ static node_t *stmt(void) {
     node->base.kind = ND_WHILE;
     node->base.lhs = expr();  // 条件式
     tk_expect(')');
-    loop_depth++;
+    ploop_enter();
     node->base.rhs = stmt();  // ループ本体
-    loop_depth--;
+    ploop_leave();
     return (node_t *)node;
   }
 
@@ -326,9 +327,9 @@ static node_t *stmt(void) {
     token = token->next;
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_DO_WHILE;
-    loop_depth++;
+    ploop_enter();
     node->base.rhs = stmt();  // ループ本体
-    loop_depth--;
+    ploop_leave();
     if (token->kind != TK_WHILE) {
       tk_error_tok(token, "'while'が必要です");
     }
@@ -361,9 +362,9 @@ static node_t *stmt(void) {
       node->inc = expr();   // インクリメント式
       tk_expect(')');
     }
-    loop_depth++;
+    ploop_enter();
     node->base.rhs = stmt();     // ループ本体
-    loop_depth--;
+    ploop_leave();
     return (node_t *)node;
   }
 
@@ -402,7 +403,7 @@ static node_t *stmt(void) {
   }
 
   if (token->kind == TK_BREAK) {
-    if (loop_depth == 0 && !psw_has_ctx()) {
+    if (ploop_depth() == 0 && !psw_has_ctx()) {
       tk_error_tok(token, "break はループまたはswitch内でのみ使用できます");
     }
     token = token->next;
@@ -413,7 +414,7 @@ static node_t *stmt(void) {
   }
 
   if (token->kind == TK_CONTINUE) {
-    if (loop_depth == 0) {
+    if (ploop_depth() == 0) {
       tk_error_tok(token, "continue はループ内でのみ使用できます");
     }
     token = token->next;
