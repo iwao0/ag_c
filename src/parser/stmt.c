@@ -13,6 +13,10 @@
 node_t *ps_expr(void);
 
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
+static void parse_typedef_decl(void);
+static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
+                                token_kind_t *tag_kind, char **tag_name, int *tag_len,
+                                int *is_pointer_base, token_kind_t *base_kind);
 
 static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   int member_count = 0;
@@ -107,6 +111,83 @@ static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int 
   return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
 
+static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
+                                token_kind_t *tag_kind, char **tag_name, int *tag_len,
+                                int *is_pointer_base, token_kind_t *base_kind) {
+  *elem_size = 8;
+  *fp_kind = TK_FLOAT_KIND_NONE;
+  *tag_kind = TK_EOF;
+  *tag_name = NULL;
+  *tag_len = 0;
+  *is_pointer_base = 0;
+  *base_kind = TK_EOF;
+
+  if (psx_ctx_is_type_token(token->kind)) {
+    *base_kind = token->kind;
+    psx_ctx_get_type_info(token->kind, NULL, elem_size);
+    if (token->kind == TK_FLOAT) *fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (token->kind == TK_DOUBLE) *fp_kind = TK_FLOAT_KIND_DOUBLE;
+    token = token->next;
+    return 1;
+  }
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    *base_kind = token->kind;
+    *tag_kind = token->kind;
+    token = token->next;
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) psx_diag_missing(token, "タグ名");
+    *tag_name = tag->str;
+    *tag_len = tag->len;
+    if (tk_consume('{')) {
+      int member_count = 0;
+      int tag_size = 0;
+      member_count = parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size);
+    } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
+      psx_diag_undefined_with_name(token, "のタグ型", *tag_name, *tag_len);
+    }
+    *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
+    return 1;
+  }
+  if (psx_ctx_is_typedef_name_token(token)) {
+    token_ident_t *id = (token_ident_t *)token;
+    if (!psx_ctx_find_typedef_name(id->str, id->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_pointer_base)) {
+      return 0;
+    }
+    token = token->next;
+    return 1;
+  }
+  return 0;
+}
+
+static void parse_typedef_decl(void) {
+  if (token->kind != TK_TYPEDEF) psx_diag_ctx(token, "typedef", "'typedef' が必要です");
+  token = token->next;
+  int elem_size = 8;
+  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_pointer_base = 0;
+  token_kind_t base_kind = TK_EOF;
+  if (!parse_decl_type_spec(&elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_pointer_base, &base_kind)) {
+    psx_diag_ctx(token, "typedef", "型名が必要です");
+  }
+  for (;;) {
+    int is_ptr = is_pointer_base;
+    while (tk_consume('*')) is_ptr = 1;
+    token_ident_t *name = tk_consume_ident();
+    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+    if (tk_consume('[')) {
+      tk_expect_number();
+      tk_expect(']');
+    }
+    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+    if (!tk_consume(',')) break;
+  }
+  tk_expect(';');
+}
+
 static node_t *stmt_internal(void) {
   if (tk_consume('{')) {
     psx_ctx_enter_block_scope();
@@ -127,7 +208,25 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (psx_ctx_is_type_token(token->kind)) {
+  if (token->kind == TK_TYPEDEF) {
+    parse_typedef_decl();
+    return psx_node_new_num(0);
+  }
+
+  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+    if (psx_ctx_is_typedef_name_token(token)) {
+      token_ident_t *id = (token_ident_t *)token;
+      int elem_size = 8;
+      tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+      token_kind_t tag_kind = TK_EOF;
+      char *tag_name = NULL;
+      int tag_len = 0;
+      int is_ptr = 0;
+      token_kind_t base_kind = TK_EOF;
+      psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
+      token = token->next;
+      return psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+    }
     return psx_decl_parse_declaration();
   }
 
@@ -146,7 +245,7 @@ static node_t *stmt_internal(void) {
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
-      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len);
+      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
@@ -157,7 +256,7 @@ static node_t *stmt_internal(void) {
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
-                                                 TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len);
+                                                 TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0);
   }
 
   if (token->kind == TK_RETURN) {
@@ -233,8 +332,22 @@ static node_t *stmt_internal(void) {
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
     if (!tk_consume(';')) {
-      if (psx_ctx_is_type_token(token->kind)) {
-        node->init = psx_decl_parse_declaration();
+      if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+        if (psx_ctx_is_typedef_name_token(token)) {
+          token_ident_t *id = (token_ident_t *)token;
+          int elem_size = 8;
+          tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+          token_kind_t tag_kind = TK_EOF;
+          char *tag_name = NULL;
+          int tag_len = 0;
+          int is_ptr = 0;
+          token_kind_t base_kind = TK_EOF;
+          psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
+          token = token->next;
+          node->init = psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+        } else {
+          node->init = psx_decl_parse_declaration();
+        }
       } else {
         node->init = ps_expr();
         tk_expect(';');

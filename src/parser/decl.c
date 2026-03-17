@@ -44,11 +44,12 @@ lvar_t *psx_decl_register_lvar(char *name, int len) {
 }
 
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
-                                              token_kind_t tag_kind, char *tag_name, int tag_len) {
+                                              token_kind_t tag_kind, char *tag_name, int tag_len,
+                                              int base_is_pointer) {
   node_t *init_chain = NULL;
 
   for (;;) {
-    int is_pointer = 0;
+    int is_pointer = base_is_pointer;
     while (tk_consume('*')) { is_pointer = 1; }
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
       psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
@@ -115,5 +116,5 @@ node_t *psx_decl_parse_declaration(void) {
   tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
   if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0);
+  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0, 0);
 }

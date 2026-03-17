@@ -18,6 +18,7 @@ float_lit_t *float_literals = NULL;
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
 static void parse_toplevel_tag_decl(void);
+static void parse_toplevel_typedef_decl(void);
 static int is_toplevel_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 
@@ -31,8 +32,16 @@ node_t **ps_program(void) {
       parse_toplevel_tag_decl();
       continue;
     }
-    if (psx_ctx_is_type_token(token->kind) && !is_toplevel_function_signature(token)) {
-      token = token->next; // base type
+    if (token->kind == TK_TYPEDEF) {
+      parse_toplevel_typedef_decl();
+      continue;
+    }
+    if ((psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) && !is_toplevel_function_signature(token)) {
+      if (psx_ctx_is_typedef_name_token(token)) {
+        token = token->next;
+      } else {
+        token = token->next; // base type
+      }
       parse_toplevel_decl_after_type();
       continue;
     }
@@ -49,7 +58,7 @@ node_t **ps_program(void) {
 }
 
 static int is_toplevel_function_signature(token_t *tok) {
-  if (!tok || !psx_ctx_is_type_token(tok->kind)) return 0;
+  if (!tok || (!psx_ctx_is_type_token(tok->kind) && !psx_ctx_is_typedef_name_token(tok))) return 0;
   token_t *t = tok->next;
   while (t && t->kind == TK_MUL) t = t->next;
   if (!t || t->kind != TK_IDENT) return 0;
@@ -74,6 +83,63 @@ static void parse_toplevel_declarator_list(void) {
 
 static void parse_toplevel_decl_after_type(void) {
   parse_toplevel_declarator_list();
+  tk_expect(';');
+}
+
+static void parse_toplevel_typedef_decl(void) {
+  if (token->kind != TK_TYPEDEF) psx_diag_ctx(token, "typedef", "'typedef' が必要です");
+  token = token->next;
+  token_kind_t base_kind = TK_EOF;
+  int elem_size = 8;
+  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_ptr_base = 0;
+
+  if (psx_ctx_is_type_token(token->kind)) {
+    base_kind = token->kind;
+    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+    if (token->kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (token->kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
+    token = token->next;
+  } else if (psx_ctx_is_tag_keyword(token->kind)) {
+    base_kind = token->kind;
+    tag_kind = token->kind;
+    token = token->next;
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) psx_diag_missing(token, "タグ名");
+    tag_name = tag->str;
+    tag_len = tag->len;
+    if (tk_consume('{')) {
+      int member_count = 0;
+      int tag_size = 0;
+      member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
+    } else if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
+      psx_diag_undefined_with_name(token, "のタグ型", tag_name, tag_len);
+    }
+    elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+  } else if (psx_ctx_is_typedef_name_token(token)) {
+    token_ident_t *id = (token_ident_t *)token;
+    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr_base);
+    token = token->next;
+  } else {
+    psx_diag_ctx(token, "typedef", "型名が必要です");
+  }
+
+  for (;;) {
+    int is_ptr = is_ptr_base;
+    while (tk_consume('*')) is_ptr = 1;
+    token_ident_t *name = tk_consume_ident();
+    if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+    if (tk_consume('[')) {
+      tk_expect_number();
+      tk_expect(']');
+    }
+    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+    if (!tk_consume(',')) break;
+  }
   tk_expect(';');
 }
 
@@ -209,7 +275,12 @@ token_kind_t psx_consume_type_kind(void) {
 }
 
 static bool consume_type(void) {
-  return psx_consume_type_kind() != TK_EOF;
+  if (psx_consume_type_kind() != TK_EOF) return true;
+  if (psx_ctx_is_typedef_name_token(token)) {
+    token = token->next;
+    return true;
+  }
+  return false;
 }
 
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")

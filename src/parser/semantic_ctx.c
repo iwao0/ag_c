@@ -58,12 +58,27 @@ struct enum_const_t {
   long long value;
   int scope_depth;
 };
+typedef struct typedef_name_t typedef_name_t;
+struct typedef_name_t {
+  typedef_name_t *next_hash;
+  char *name;
+  int len;
+  token_kind_t base_kind;
+  int elem_size;
+  tk_float_kind_t fp_kind;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int is_pointer;
+  int scope_depth;
+};
 
 static goto_ref_t *goto_refs_all = NULL;
 static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
 static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
 static tag_member_t *tag_members_by_bucket[PCTX_HASH_BUCKETS];
 static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
+static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
@@ -85,11 +100,42 @@ static unsigned psx_ctx_hash_tag(token_kind_t kind, const char *name, int len) {
 
 void psx_ctx_reset_function_scope(void) {
   goto_refs_all = NULL;
-  tag_scope_depth = 0;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
-  memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
-  memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
-  memset(enum_consts_by_bucket, 0, sizeof(enum_consts_by_bucket));
+  tag_scope_depth = 0;
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    tag_type_t **tt = &tag_types_by_bucket[i];
+    while (*tt) {
+      if ((*tt)->scope_depth > 0) {
+        *tt = (*tt)->next_hash;
+        continue;
+      }
+      tt = &(*tt)->next_hash;
+    }
+    tag_member_t **tm = &tag_members_by_bucket[i];
+    while (*tm) {
+      if ((*tm)->scope_depth > 0) {
+        *tm = (*tm)->next_hash;
+        continue;
+      }
+      tm = &(*tm)->next_hash;
+    }
+    enum_const_t **ec = &enum_consts_by_bucket[i];
+    while (*ec) {
+      if ((*ec)->scope_depth > 0) {
+        *ec = (*ec)->next_hash;
+        continue;
+      }
+      ec = &(*ec)->next_hash;
+    }
+    typedef_name_t **td = &typedefs_by_bucket[i];
+    while (*td) {
+      if ((*td)->scope_depth > 0) {
+        *td = (*td)->next_hash;
+        continue;
+      }
+      td = &(*td)->next_hash;
+    }
+  }
 }
 
 void psx_ctx_enter_block_scope(void) {
@@ -104,6 +150,17 @@ void psx_ctx_leave_block_scope(void) {
     tag_type_t **pp = &tag_types_by_bucket[i];
     while (*pp) {
       tag_type_t *cur = *pp;
+      if (cur->scope_depth >= old_depth) {
+        *pp = cur->next_hash;
+        continue;
+      }
+      pp = &cur->next_hash;
+    }
+  }
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    typedef_name_t **pp = &typedefs_by_bucket[i];
+    while (*pp) {
+      typedef_name_t *cur = *pp;
       if (cur->scope_depth >= old_depth) {
         *pp = cur->next_hash;
         continue;
@@ -326,6 +383,64 @@ bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
     }
   }
   return false;
+}
+
+void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
+                                 tk_float_kind_t fp_kind, token_kind_t tag_kind,
+                                 char *tag_name, int tag_len, int is_pointer) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
+    if (t->scope_depth == tag_scope_depth && t->len == len &&
+        strncmp(t->name, name, (size_t)len) == 0) {
+      t->base_kind = base_kind;
+      t->elem_size = elem_size;
+      t->fp_kind = fp_kind;
+      t->tag_kind = tag_kind;
+      t->tag_name = tag_name;
+      t->tag_len = tag_len;
+      t->is_pointer = is_pointer;
+      return;
+    }
+  }
+  typedef_name_t *t = calloc(1, sizeof(typedef_name_t));
+  t->name = name;
+  t->len = len;
+  t->base_kind = base_kind;
+  t->elem_size = elem_size;
+  t->fp_kind = fp_kind;
+  t->tag_kind = tag_kind;
+  t->tag_name = tag_name;
+  t->tag_len = tag_len;
+  t->is_pointer = is_pointer;
+  t->scope_depth = tag_scope_depth;
+  t->next_hash = typedefs_by_bucket[bucket];
+  typedefs_by_bucket[bucket] = t;
+}
+
+bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
+                               int *out_elem_size, tk_float_kind_t *out_fp_kind,
+                               token_kind_t *out_tag_kind, char **out_tag_name,
+                               int *out_tag_len, int *out_is_pointer) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
+    if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
+      if (out_base_kind) *out_base_kind = t->base_kind;
+      if (out_elem_size) *out_elem_size = t->elem_size;
+      if (out_fp_kind) *out_fp_kind = t->fp_kind;
+      if (out_tag_kind) *out_tag_kind = t->tag_kind;
+      if (out_tag_name) *out_tag_name = t->tag_name;
+      if (out_tag_len) *out_tag_len = t->tag_len;
+      if (out_is_pointer) *out_is_pointer = t->is_pointer;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool psx_ctx_is_typedef_name_token(token_t *tok) {
+  if (!tok || tok->kind != TK_IDENT) return false;
+  token_ident_t *id = (token_ident_t *)tok;
+  return psx_ctx_find_typedef_name(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {

@@ -94,11 +94,24 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     }
     *type_kind = tag_kind;
     t = t->next;
+  } else if (psx_ctx_is_typedef_name_token(t)) {
+    token_ident_t *id = (token_ident_t *)t;
+    token_kind_t td_base = TK_EOF;
+    int td_elem = 8;
+    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+    token_kind_t td_tag = TK_EOF;
+    char *td_tag_name = NULL;
+    int td_tag_len = 0;
+    int td_ptr = 0;
+    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+    *type_kind = (td_tag != TK_EOF) ? td_tag : td_base;
+    *is_pointer = td_ptr;
+    t = t->next;
   } else {
     return 0;
   }
 
-  *is_pointer = 0;
+  if (*is_pointer != 1) *is_pointer = 0;
   while (t && t->kind == TK_MUL) {
     *is_pointer = 1;
     t = t->next;
@@ -393,6 +406,25 @@ static node_t *unary(void) {
           psx_diag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
         }
         int sz = scalar_size;
+        while (token->kind == TK_MUL) {
+          token = token->next;
+          sz = 8;
+        }
+        tk_expect(')');
+        return psx_node_new_num(sz);
+      }
+      if (psx_ctx_is_typedef_name_token(token)) {
+        token_ident_t *id = (token_ident_t *)token;
+        token_kind_t td_base = TK_EOF;
+        int td_elem = 8;
+        tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+        token_kind_t td_tag = TK_EOF;
+        char *td_tag_name = NULL;
+        int td_tag_len = 0;
+        int td_ptr = 0;
+        psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+        token = token->next;
+        int sz = td_ptr ? 8 : td_elem;
         while (token->kind == TK_MUL) {
           token = token->next;
           sz = 8;

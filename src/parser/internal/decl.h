@@ -26,6 +26,7 @@ lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_siz
 
 node_t *psx_decl_parse_declaration(void);
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
-                                              token_kind_t tag_kind, char *tag_name, int tag_len);
+                                              token_kind_t tag_kind, char *tag_name, int tag_len,
+                                              int base_is_pointer);
 
 #endif
