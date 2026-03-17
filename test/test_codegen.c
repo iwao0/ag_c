@@ -1,4 +1,4 @@
-#include "../src/ag_c.h"
+#include "../src/codegen_backend.h"
 #include "../src/parser/parser.h"
 #include "test_common.h"
 #include <stdio.h>
@@ -11,22 +11,52 @@ float_lit_t *float_literals = NULL;
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 
-// stdout を一時的にバッファへリダイレクトして gen 系関数の出力をキャプチャする
-static char *capture_buf;
-static size_t capture_size;
-static FILE *original_stdout;
+typedef struct {
+  char *buf;
+  size_t len;
+  size_t cap;
+} capture_buf_t;
+
+static capture_buf_t g_capture;
+
+static void capture_line(const char *line, size_t len, void *user_data) {
+  capture_buf_t *cap = (capture_buf_t *)user_data;
+  size_t required = cap->len + len + 1;
+  if (required > cap->cap) {
+    size_t new_cap = cap->cap ? cap->cap : 1024;
+    while (new_cap < required) {
+      new_cap *= 2;
+    }
+    char *new_buf = realloc(cap->buf, new_cap);
+    if (!new_buf) {
+      fprintf(stderr, "capture realloc failed\n");
+      exit(1);
+    }
+    cap->buf = new_buf;
+    cap->cap = new_cap;
+  }
+  memcpy(cap->buf + cap->len, line, len);
+  cap->len += len;
+  cap->buf[cap->len] = '\0';
+}
 
 static void capture_start(void) {
-  fflush(stdout);
-  original_stdout = stdout;
-  stdout = open_memstream(&capture_buf, &capture_size);
+  g_capture.len = 0;
+  if (!g_capture.buf) {
+    g_capture.cap = 1024;
+    g_capture.buf = calloc(g_capture.cap, 1);
+    if (!g_capture.buf) {
+      fprintf(stderr, "capture calloc failed\n");
+      exit(1);
+    }
+  }
+  g_capture.buf[0] = '\0';
+  gen_set_output_callback(capture_line, &g_capture);
 }
 
 static char *capture_end(void) {
-  fflush(stdout);
-  fclose(stdout);
-  stdout = original_stdout;
-  return capture_buf;
+  gen_set_output_callback(NULL, NULL);
+  return strdup(g_capture.buf ? g_capture.buf : "");
 }
 
 // ヘルパー: ASTリーフ（整数ノード）を作成

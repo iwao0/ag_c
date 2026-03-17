@@ -1,4 +1,4 @@
-#include "ag_c.h"
+#include "codegen_backend.h"
 #include "config/config.h"
 #include "parser/parser.h"
 #include "tokenizer/tokenizer.h"
@@ -6,6 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static void write_line_to_file(const char *line, size_t len, void *user_data) {
+  FILE *out = (FILE *)user_data;
+  fwrite(line, 1, len, out);
+}
 
 static char *read_file_contents(const char *path) {
   FILE *fp = fopen(path, "rb");
@@ -63,6 +68,7 @@ int main(int argc, char **argv) {
 
   // パースしてAST（抽象構文木）を構築（関数定義の列）
   node_t **code = ps_program();
+  gen_set_output_callback(write_line_to_file, stdout);
 
   // 各関数定義のコード生成
   for (int i = 0; code[i]; i++) {
@@ -72,6 +78,7 @@ int main(int argc, char **argv) {
   // 文字列と浮動小数点数データの出力
   gen_string_literals();
   gen_float_literals();
+  gen_set_output_callback(NULL, NULL);
 
   free(source);
   return 0;

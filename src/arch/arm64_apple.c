@@ -1,6 +1,7 @@
-#include "../ag_c.h"
+#include "../codegen_backend.h"
 #include "../parser/parser.h"
 #include "../tokenizer/internal/escape.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -14,7 +15,57 @@ static int *break_labels;
 static int *continue_labels;
 static int control_cap = 0;
 static int control_depth = 0;
+static gen_output_line_fn gen_output_cb;
+static void *gen_output_user_data;
 // 浮動小数点定数用ラベルカウンタ
+
+static void cg_emit_line(const char *line, size_t len) {
+  if (gen_output_cb) {
+    gen_output_cb(line, len, gen_output_user_data);
+    return;
+  }
+  fwrite(line, 1, len, stdout);
+}
+
+static void cg_emitf(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  va_list ap2;
+  va_copy(ap2, ap);
+  int need_i = vsnprintf(NULL, 0, fmt, ap2);
+  va_end(ap2);
+  if (need_i < 0) {
+    va_end(ap);
+    fprintf(stderr, "コード生成出力に失敗しました\n");
+    exit(1);
+  }
+  size_t need = (size_t)need_i;
+  char *buf = malloc(need + 1);
+  if (!buf) {
+    va_end(ap);
+    fprintf(stderr, "メモリ確保に失敗しました\n");
+    exit(1);
+  }
+  vsnprintf(buf, need + 1, fmt, ap);
+  va_end(ap);
+  size_t start = 0;
+  for (size_t i = 0; i < need; i++) {
+    if (buf[i] == '\n') {
+      cg_emit_line(buf + start, i - start + 1);
+      start = i + 1;
+    }
+  }
+  if (start < need) {
+    cg_emit_line(buf + start, need - start);
+  }
+  free(buf);
+}
+
+
+void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
+  gen_output_cb = cb;
+  gen_output_user_data = user_data;
+}
 
 // Apple Silicon (ARM64) 向けのアセンブリコード生成
 
@@ -203,13 +254,13 @@ static void gen_switch_body(node_t *node) {
   }
   if (node->kind == ND_CASE) {
     node_case_t *c = as_case(node);
-    printf(".Lcase%d:\n", c->label_id);
+    cg_emitf(".Lcase%d:\n", c->label_id);
     gen_stmt(c->base.rhs);
     return;
   }
   if (node->kind == ND_DEFAULT) {
     node_default_t *d = as_default(node);
-    printf(".Ldefault%d:\n", d->label_id);
+    cg_emitf(".Ldefault%d:\n", d->label_id);
     gen_stmt(d->base.rhs);
     return;
   }
@@ -235,7 +286,7 @@ void gen_main_epilogue(void) {
 static void gen_expr(node_t *node);
 static void gen_stmt(node_t *node);
 
-static int psx_can_use_fp_immediate_zero(double fval, tk_float_kind_t fp_kind) {
+static int cg_can_use_fp_immediate_zero(double fval, tk_float_kind_t fp_kind) {
   if (fp_kind == TK_FLOAT_KIND_FLOAT) {
     float v = (float)fval;
     return v == 0.0f && !signbit(v);
@@ -247,38 +298,38 @@ static int psx_can_use_fp_immediate_zero(double fval, tk_float_kind_t fp_kind) {
   return 0;
 }
 
-static int psx_emit_fp_literal_immediate_if_possible(const node_num_t *num, tk_float_kind_t fp_kind) {
-  if (!psx_can_use_fp_immediate_zero(num->fval, fp_kind)) return 0;
+static int cg_emit_fp_literal_immediate_if_possible(const node_num_t *num, tk_float_kind_t fp_kind) {
+  if (!cg_can_use_fp_immediate_zero(num->fval, fp_kind)) return 0;
   if (fp_kind == TK_FLOAT_KIND_FLOAT) {
-    printf("  fmov s0, #0.0\n");
-    printf("  str s0, [sp, #-16]!\n");
+    cg_emitf("  fmov s0, #0.0\n");
+    cg_emitf("  str s0, [sp, #-16]!\n");
   } else {
-    printf("  fmov d0, #0.0\n");
-    printf("  str d0, [sp, #-16]!\n");
+    cg_emitf("  fmov d0, #0.0\n");
+    cg_emitf("  str d0, [sp, #-16]!\n");
   }
   return 1;
 }
 
 static void gen_load_x0_from_addr(int type_size) {
   if (type_size == 1)
-    printf("  ldrb w0, [x1]\n");
+    cg_emitf("  ldrb w0, [x1]\n");
   else if (type_size == 2)
-    printf("  ldrh w0, [x1]\n");
+    cg_emitf("  ldrh w0, [x1]\n");
   else if (type_size == 4)
-    printf("  ldr w0, [x1]\n");
+    cg_emitf("  ldr w0, [x1]\n");
   else
-    printf("  ldr x0, [x1]\n");
+    cg_emitf("  ldr x0, [x1]\n");
 }
 
 static void gen_store_x0_to_addr(int type_size) {
   if (type_size == 1)
-    printf("  strb w0, [x1]\n");
+    cg_emitf("  strb w0, [x1]\n");
   else if (type_size == 2)
-    printf("  strh w0, [x1]\n");
+    cg_emitf("  strh w0, [x1]\n");
   else if (type_size == 4)
-    printf("  str w0, [x1]\n");
+    cg_emitf("  str w0, [x1]\n");
   else
-    printf("  str x0, [x1]\n");
+    cg_emitf("  str x0, [x1]\n");
 }
 
 // レジスタ名取得ヘルパー
@@ -293,21 +344,21 @@ static void gen_pop_fpu(int target_type, int child_type, int reg_idx) {
   const char *d = (reg_idx == 0) ? "d0" : "d1";
   
   if (child_type == TK_FLOAT_KIND_FLOAT) { // float がプッシュされている
-    printf("  ldr %s, [sp], #16\n", s);
+    cg_emitf("  ldr %s, [sp], #16\n", s);
     if (target_type >= TK_FLOAT_KIND_DOUBLE) {
-      printf("  fcvt %s, %s\n", d, s); // float -> double
+      cg_emitf("  fcvt %s, %s\n", d, s); // float -> double
     }
   } else if (child_type >= TK_FLOAT_KIND_DOUBLE) { // double/long double(現状lowering) がプッシュされている
-    printf("  ldr %s, [sp], #16\n", d);
+    cg_emitf("  ldr %s, [sp], #16\n", d);
     if (target_type == TK_FLOAT_KIND_FLOAT) {
-      printf("  fcvt %s, %s\n", s, d); // double -> float
+      cg_emitf("  fcvt %s, %s\n", s, d); // double -> float
     }
   } else {                      // int がプッシュされている
-    printf("  ldr x%d, [sp], #16\n", reg_idx);
+    cg_emitf("  ldr x%d, [sp], #16\n", reg_idx);
     if (target_type == TK_FLOAT_KIND_FLOAT) {
-      printf("  scvtf %s, x%d\n", s, reg_idx); // int -> float
+      cg_emitf("  scvtf %s, x%d\n", s, reg_idx); // int -> float
     } else {
-      printf("  scvtf %s, x%d\n", d, reg_idx); // int -> double
+      cg_emitf("  scvtf %s, x%d\n", d, reg_idx); // int -> double
     }
   }
 }
@@ -323,8 +374,8 @@ static void gen_lval(node_t *node) {
     fprintf(stderr, "代入の左辺値が変数ではありません\n");
     return;
   }
-  printf("  add x0, x29, #%d\n", 16 + as_lvar(node)->offset);
-  printf("  str x0, [sp, #-16]!\n");
+  cg_emitf("  add x0, x29, #%d\n", 16 + as_lvar(node)->offset);
+  cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
 static void gen_expr(node_t *node) {
@@ -332,64 +383,64 @@ static void gen_expr(node_t *node) {
   case ND_NUM:
     if (node->fp_kind) {
       node_num_t *num = as_num(node);
-      if (psx_emit_fp_literal_immediate_if_possible(num, node->fp_kind)) return;
+      if (cg_emit_fp_literal_immediate_if_possible(num, node->fp_kind)) return;
       // 浮動小数点リテラルをデータセクションからロード
-      printf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
-      printf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
+      cg_emitf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
+      cg_emitf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-        printf("  ldr s0, [x0]\n");
-        printf("  str s0, [sp, #-16]!\n");
+        cg_emitf("  ldr s0, [x0]\n");
+        cg_emitf("  str s0, [sp, #-16]!\n");
       } else {
-        printf("  ldr d0, [x0]\n");
-        printf("  str d0, [sp, #-16]!\n");
+        cg_emitf("  ldr d0, [x0]\n");
+        cg_emitf("  str d0, [sp, #-16]!\n");
       }
     } else {
-      printf("  mov x0, #%lld\n", as_num(node)->val);
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  mov x0, #%lld\n", as_num(node)->val);
+      cg_emitf("  str x0, [sp, #-16]!\n");
     }
     return;
   case ND_LVAR:
     gen_lval(node);
-    printf("  ldr x0, [sp], #16\n");
+    cg_emitf("  ldr x0, [sp], #16\n");
     if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      printf("  ldr s0, [x0]\n");
-      printf("  str s0, [sp, #-16]!\n");
+      cg_emitf("  ldr s0, [x0]\n");
+      cg_emitf("  str s0, [sp, #-16]!\n");
     } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-      printf("  ldr d0, [x0]\n");
-      printf("  str d0, [sp, #-16]!\n");
+      cg_emitf("  ldr d0, [x0]\n");
+      cg_emitf("  str d0, [sp, #-16]!\n");
     } else {
       if (as_lvar(node)->mem.type_size == 1)
-        printf("  ldrb w0, [x0]\n");
+        cg_emitf("  ldrb w0, [x0]\n");
       else if (as_lvar(node)->mem.type_size == 2)
-        printf("  ldrh w0, [x0]\n");
+        cg_emitf("  ldrh w0, [x0]\n");
       else if (as_lvar(node)->mem.type_size == 4)
-        printf("  ldr w0, [x0]\n");
+        cg_emitf("  ldr w0, [x0]\n");
       else
-        printf("  ldr x0, [x0]\n");
-      printf("  str x0, [sp, #-16]!\n");
+        cg_emitf("  ldr x0, [x0]\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
     }
     return;
   case ND_DEREF:
     gen_expr(node->lhs);
-    printf("  ldr x0, [sp], #16\n");
+    cg_emitf("  ldr x0, [sp], #16\n");
     if (as_mem(node)->type_size == 1)
-      printf("  ldrb w0, [x0]\n");
+      cg_emitf("  ldrb w0, [x0]\n");
     else if (as_mem(node)->type_size == 2)
-      printf("  ldrh w0, [x0]\n");
+      cg_emitf("  ldrh w0, [x0]\n");
     else if (as_mem(node)->type_size == 4)
-      printf("  ldr w0, [x0]\n");
+      cg_emitf("  ldr w0, [x0]\n");
     else
-      printf("  ldr x0, [x0]\n");
-    printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  ldr x0, [x0]\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   case ND_ADDR:
     gen_lval(node->lhs);
     return;
   case ND_STRING:
     // 文字列ラベルのアドレスをロード
-    printf("  adrp x0, %s@PAGE\n", as_string(node)->string_label);
-    printf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
-    printf("  str x0, [sp, #-16]!\n");
+    cg_emitf("  adrp x0, %s@PAGE\n", as_string(node)->string_label);
+    cg_emitf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
+    cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   case ND_ASSIGN:
     gen_lval(node->lhs);
@@ -397,33 +448,33 @@ static void gen_expr(node_t *node) {
     if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
       // float 代入
       gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0); // s0 に rhs をロード
-      printf("  ldr x0, [sp], #16\n"); // lhs アドレス
-      printf("  str s0, [x0]\n");
-      printf("  str s0, [sp, #-16]!\n");
+      cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
+      cg_emitf("  str s0, [x0]\n");
+      cg_emitf("  str s0, [sp, #-16]!\n");
     } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
       // double/long double(現状lowering) 代入
       gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0); // d0 に rhs をロード
-      printf("  ldr x0, [sp], #16\n"); // lhs アドレス
-      printf("  str d0, [x0]\n");
-      printf("  str d0, [sp, #-16]!\n");
+      cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
+      cg_emitf("  str d0, [x0]\n");
+      cg_emitf("  str d0, [sp, #-16]!\n");
     } else {
-      printf("  ldr x1, [sp], #16\n");
-      printf("  ldr x0, [sp], #16\n");
+      cg_emitf("  ldr x1, [sp], #16\n");
+      cg_emitf("  ldr x0, [sp], #16\n");
       if (as_mem(node)->type_size == 1)
-        printf("  strb w1, [x0]\n");
+        cg_emitf("  strb w1, [x0]\n");
       else if (as_mem(node)->type_size == 2)
-        printf("  strh w1, [x0]\n");
+        cg_emitf("  strh w1, [x0]\n");
       else if (as_mem(node)->type_size == 4)
-        printf("  str w1, [x0]\n");
+        cg_emitf("  str w1, [x0]\n");
       else
-        printf("  str x1, [x0]\n");
-      printf("  str x1, [sp, #-16]!\n");
+        cg_emitf("  str x1, [x0]\n");
+      cg_emitf("  str x1, [sp, #-16]!\n");
     }
     return;
   case ND_COMMA:
     gen_expr(node->lhs);
     // lhs の値は式値としては不要
-    printf("  add sp, sp, #16\n");
+    cg_emitf("  add sp, sp, #16\n");
     gen_expr(node->rhs);
     return;
   case ND_PRE_INC:
@@ -436,58 +487,58 @@ static void gen_expr(node_t *node) {
     else if (target->kind == ND_DEREF) type_size = as_mem(target)->type_size ? as_mem(target)->type_size : 8;
 
     gen_lval(target);
-    printf("  ldr x1, [sp], #16\n"); // x1: addr
+    cg_emitf("  ldr x1, [sp], #16\n"); // x1: addr
     gen_load_x0_from_addr(type_size);   // x0: old value
 
     if (node->kind == ND_POST_INC || node->kind == ND_POST_DEC) {
-      printf("  mov x2, x0\n");         // x2: return old value
+      cg_emitf("  mov x2, x0\n");         // x2: return old value
     }
 
     if (node->kind == ND_PRE_INC || node->kind == ND_POST_INC)
-      printf("  add x0, x0, #1\n");
+      cg_emitf("  add x0, x0, #1\n");
     else
-      printf("  sub x0, x0, #1\n");
+      cg_emitf("  sub x0, x0, #1\n");
 
     gen_store_x0_to_addr(type_size);    // store updated value
 
     if (node->kind == ND_POST_INC || node->kind == ND_POST_DEC)
-      printf("  str x2, [sp, #-16]!\n");
+      cg_emitf("  str x2, [sp, #-16]!\n");
     else
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
   case ND_LOGAND: {
     int false_lbl = label_count++;
     int end_lbl = label_count++;
     gen_expr(node->lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lfalse%d\n", false_lbl);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
     gen_expr(node->rhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lfalse%d\n", false_lbl);
-    printf("  mov x0, #1\n");
-    printf("  b .Lend%d\n", end_lbl);
-    printf(".Lfalse%d:\n", false_lbl);
-    printf("  mov x0, #0\n");
-    printf(".Lend%d:\n", end_lbl);
-    printf("  str x0, [sp, #-16]!\n");
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
+    cg_emitf("  mov x0, #1\n");
+    cg_emitf("  b .Lend%d\n", end_lbl);
+    cg_emitf(".Lfalse%d:\n", false_lbl);
+    cg_emitf("  mov x0, #0\n");
+    cg_emitf(".Lend%d:\n", end_lbl);
+    cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
   case ND_LOGOR: {
     int true_lbl = label_count++;
     int end_lbl = label_count++;
     gen_expr(node->lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbnz x0, .Ltrue%d\n", true_lbl);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
     gen_expr(node->rhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbnz x0, .Ltrue%d\n", true_lbl);
-    printf("  mov x0, #0\n");
-    printf("  b .Lend%d\n", end_lbl);
-    printf(".Ltrue%d:\n", true_lbl);
-    printf("  mov x0, #1\n");
-    printf(".Lend%d:\n", end_lbl);
-    printf("  str x0, [sp, #-16]!\n");
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
+    cg_emitf("  mov x0, #0\n");
+    cg_emitf("  b .Lend%d\n", end_lbl);
+    cg_emitf(".Ltrue%d:\n", true_lbl);
+    cg_emitf("  mov x0, #1\n");
+    cg_emitf(".Lend%d:\n", end_lbl);
+    cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
   case ND_TERNARY: {
@@ -495,13 +546,13 @@ static void gen_expr(node_t *node) {
     int else_lbl = label_count++;
     int end_lbl = label_count++;
     gen_expr(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lelse%d\n", else_lbl);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbz x0, .Lelse%d\n", else_lbl);
     gen_expr(ctrl->base.rhs);
-    printf("  b .Lend%d\n", end_lbl);
-    printf(".Lelse%d:\n", else_lbl);
+    cg_emitf("  b .Lend%d\n", end_lbl);
+    cg_emitf(".Lelse%d:\n", else_lbl);
     gen_expr(ctrl->els);
-    printf(".Lend%d:\n", end_lbl);
+    cg_emitf(".Lend%d:\n", end_lbl);
     return;
   }
   case ND_FUNCALL: {
@@ -509,25 +560,25 @@ static void gen_expr(node_t *node) {
     if (is_printf_func(fn) && fn->nargs >= 1) {
       // Darwin/ARM64: variadic 引数はレジスタではなくスタックで受け渡す。
       gen_expr(fn->args[0]);
-      printf("  ldr x19, [sp], #16\n");
+      cg_emitf("  ldr x19, [sp], #16\n");
 
       int var_count = fn->nargs - 1;
       int stack_bytes = ((var_count + 1) / 2) * 16; // call時の16byte alignment維持
       if (stack_bytes > 0) {
-        printf("  sub sp, sp, #%d\n", stack_bytes);
+        cg_emitf("  sub sp, sp, #%d\n", stack_bytes);
       }
       for (int i = 1; i < fn->nargs; i++) {
         gen_expr(fn->args[i]);
-        printf("  ldr x9, [sp], #16\n");
-        printf("  str x9, [sp, #%d]\n", (i - 1) * 8);
+        cg_emitf("  ldr x9, [sp], #16\n");
+        cg_emitf("  str x9, [sp, #%d]\n", (i - 1) * 8);
       }
 
-      printf("  mov x0, x19\n");
-      printf("  bl _printf\n");
+      cg_emitf("  mov x0, x19\n");
+      cg_emitf("  bl _printf\n");
       if (stack_bytes > 0) {
-        printf("  add sp, sp, #%d\n", stack_bytes);
+        cg_emitf("  add sp, sp, #%d\n", stack_bytes);
       }
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
       return;
     }
 
@@ -537,12 +588,12 @@ static void gen_expr(node_t *node) {
     }
     // スタックからレジスタへ (逆順にポップ)
     for (int i = fn->nargs - 1; i >= 0; i--) {
-      printf("  ldr x%d, [sp], #16\n", i);
+      cg_emitf("  ldr x%d, [sp], #16\n", i);
     }
     // 関数呼び出し
-    printf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+    cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
     // 戻り値をスタックにプッシュ
-    printf("  str x0, [sp, #-16]!\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
   default:
@@ -569,41 +620,41 @@ static void gen_expr(node_t *node) {
 
     switch (node->kind) {
     case ND_ADD:
-      printf("  fadd %s, %s, %s\n", r0, r0, r1);
+      cg_emitf("  fadd %s, %s, %s\n", r0, r0, r1);
       break;
     case ND_SUB:
-      printf("  fsub %s, %s, %s\n", r0, r0, r1);
+      cg_emitf("  fsub %s, %s, %s\n", r0, r0, r1);
       break;
     case ND_MUL:
-      printf("  fmul %s, %s, %s\n", r0, r0, r1);
+      cg_emitf("  fmul %s, %s, %s\n", r0, r0, r1);
       break;
     case ND_DIV:
-      printf("  fdiv %s, %s, %s\n", r0, r0, r1);
+      cg_emitf("  fdiv %s, %s, %s\n", r0, r0, r1);
       break;
     case ND_EQ:
-      printf("  fcmp %s, %s\n", r0, r1);
-      printf("  cset x0, eq\n");
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  fcmp %s, %s\n", r0, r1);
+      cg_emitf("  cset x0, eq\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
       return;
     case ND_NE:
-      printf("  fcmp %s, %s\n", r0, r1);
-      printf("  cset x0, ne\n");
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  fcmp %s, %s\n", r0, r1);
+      cg_emitf("  cset x0, ne\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
       return;
     case ND_LT:
-      printf("  fcmp %s, %s\n", r0, r1);
-      printf("  cset x0, lo\n");
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  fcmp %s, %s\n", r0, r1);
+      cg_emitf("  cset x0, lo\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
       return;
     case ND_LE:
-      printf("  fcmp %s, %s\n", r0, r1);
-      printf("  cset x0, ls\n");
-      printf("  str x0, [sp, #-16]!\n");
+      cg_emitf("  fcmp %s, %s\n", r0, r1);
+      cg_emitf("  cset x0, ls\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
       return;
     default:
       break;
     }
-    printf("  str %s, [sp, #-16]!\n", r0);
+    cg_emitf("  str %s, [sp, #-16]!\n", r0);
     return;
   }
 
@@ -611,62 +662,62 @@ static void gen_expr(node_t *node) {
   gen_expr(node->lhs);
   gen_expr(node->rhs);
 
-  printf("  ldr x1, [sp], #16\n");
-  printf("  ldr x0, [sp], #16\n");
+  cg_emitf("  ldr x1, [sp], #16\n");
+  cg_emitf("  ldr x0, [sp], #16\n");
 
   switch (node->kind) {
   case ND_ADD:
-    printf("  add x0, x0, x1\n");
+    cg_emitf("  add x0, x0, x1\n");
     break;
   case ND_SUB:
-    printf("  sub x0, x0, x1\n");
+    cg_emitf("  sub x0, x0, x1\n");
     break;
   case ND_MUL:
-    printf("  mul x0, x0, x1\n");
+    cg_emitf("  mul x0, x0, x1\n");
     break;
   case ND_DIV:
-    printf("  sdiv x0, x0, x1\n");
+    cg_emitf("  sdiv x0, x0, x1\n");
     break;
   case ND_MOD:
-    printf("  sdiv x2, x0, x1\n");
-    printf("  msub x0, x2, x1, x0\n");
+    cg_emitf("  sdiv x2, x0, x1\n");
+    cg_emitf("  msub x0, x2, x1, x0\n");
     break;
   case ND_EQ:
-    printf("  cmp x0, x1\n");
-    printf("  cset x0, eq\n");
+    cg_emitf("  cmp x0, x1\n");
+    cg_emitf("  cset x0, eq\n");
     break;
   case ND_NE:
-    printf("  cmp x0, x1\n");
-    printf("  cset x0, ne\n");
+    cg_emitf("  cmp x0, x1\n");
+    cg_emitf("  cset x0, ne\n");
     break;
   case ND_LT:
-    printf("  cmp x0, x1\n");
-    printf("  cset x0, lt\n");
+    cg_emitf("  cmp x0, x1\n");
+    cg_emitf("  cset x0, lt\n");
     break;
   case ND_LE:
-    printf("  cmp x0, x1\n");
-    printf("  cset x0, le\n");
+    cg_emitf("  cmp x0, x1\n");
+    cg_emitf("  cset x0, le\n");
     break;
   case ND_BITAND:
-    printf("  and x0, x0, x1\n");
+    cg_emitf("  and x0, x0, x1\n");
     break;
   case ND_BITXOR:
-    printf("  eor x0, x0, x1\n");
+    cg_emitf("  eor x0, x0, x1\n");
     break;
   case ND_BITOR:
-    printf("  orr x0, x0, x1\n");
+    cg_emitf("  orr x0, x0, x1\n");
     break;
   case ND_SHL:
-    printf("  lsl x0, x0, x1\n");
+    cg_emitf("  lsl x0, x0, x1\n");
     break;
   case ND_SHR:
-    printf("  asr x0, x0, x1\n");
+    cg_emitf("  asr x0, x0, x1\n");
     break;
   default:
     break;
   }
 
-  printf("  str x0, [sp, #-16]!\n");
+  cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
 static void gen_stmt(node_t *node) {
@@ -685,67 +736,67 @@ static void gen_stmt(node_t *node) {
         gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
       } else {                               // 関数の戻り値が 整数
         if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
-          printf("  ldr s0, [sp], #16\n");
-          printf("  fcvtzs x0, s0\n");       // float->int
+          cg_emitf("  ldr s0, [sp], #16\n");
+          cg_emitf("  fcvtzs x0, s0\n");       // float->int
         } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-          printf("  ldr d0, [sp], #16\n");
-          printf("  fcvtzs x0, d0\n");       // double->int
+          cg_emitf("  ldr d0, [sp], #16\n");
+          cg_emitf("  fcvtzs x0, d0\n");       // double->int
         } else {
-          printf("  ldr x0, [sp], #16\n");   // そのまま int
+          cg_emitf("  ldr x0, [sp], #16\n");   // そのまま int
         }
       }
     } else {
       // void 関数の return; は戻り値レジスタを0で統一
-      printf("  mov x0, #0\n");
+      cg_emitf("  mov x0, #0\n");
     }
-    printf("  ldp x29, x30, [sp]\n");
-    printf("  add sp, sp, #%d\n", STACK_SIZE);
-    printf("  ret\n");
+    cg_emitf("  ldp x29, x30, [sp]\n");
+    cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
+    cg_emitf("  ret\n");
     return;
   case ND_FUNCDEF: {
     node_func_t *fn = as_func(node);
     clear_label_map();
     collect_goto_labels(fn->base.rhs);
     // 関数ラベルの出力
-    printf(".global _%.*s\n", fn->funcname_len, fn->funcname);
-    printf(".align 2\n");
-    printf("_%.*s:\n", fn->funcname_len, fn->funcname);
+    cg_emitf(".global _%.*s\n", fn->funcname_len, fn->funcname);
+    cg_emitf(".align 2\n");
+    cg_emitf("_%.*s:\n", fn->funcname_len, fn->funcname);
     // プロローグ
-    printf("  sub sp, sp, #%d\n", STACK_SIZE);
-    printf("  stp x29, x30, [sp]\n");
-    printf("  mov x29, sp\n");
+    cg_emitf("  sub sp, sp, #%d\n", STACK_SIZE);
+    cg_emitf("  stp x29, x30, [sp]\n");
+    cg_emitf("  mov x29, sp\n");
     // 仮引数をレジスタからローカル変数スロットへ保存
     for (int i = 0; i < fn->nargs; i++) {
-      printf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
+      cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
     }
     // 関数本体
     gen_stmt(fn->base.rhs);
     // main の return が無い場合は 0 を返す
     if (is_main_func(fn)) {
-      printf("  mov x0, #0\n");
+      cg_emitf("  mov x0, #0\n");
     }
     // エピローグ
-    printf("  ldp x29, x30, [sp]\n");
-    printf("  add sp, sp, #%d\n", STACK_SIZE);
-    printf("  ret\n");
+    cg_emitf("  ldp x29, x30, [sp]\n");
+    cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
+    cg_emitf("  ret\n");
     return;
   }
   case ND_IF: {
     node_ctrl_t *ctrl = as_ctrl(node);
     int lbl = label_count++;
     gen_expr(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lelse%d\n", lbl);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbz x0, .Lelse%d\n", lbl);
     gen_stmt(ctrl->base.rhs);
     if (ctrl->els) {
-      printf("  b .Lend%d\n", lbl);
-      printf(".Lelse%d:\n", lbl);
+      cg_emitf("  b .Lend%d\n", lbl);
+      cg_emitf(".Lelse%d:\n", lbl);
       gen_stmt(ctrl->els);
-      printf(".Lend%d:\n", lbl);
+      cg_emitf(".Lend%d:\n", lbl);
     } else {
-      printf("  b .Lend%d\n", lbl);
-      printf(".Lelse%d:\n", lbl);
-      printf(".Lend%d:\n", lbl);
+      cg_emitf("  b .Lend%d\n", lbl);
+      cg_emitf(".Lelse%d:\n", lbl);
+      cg_emitf(".Lend%d:\n", lbl);
     }
     return;
   }
@@ -755,14 +806,14 @@ static void gen_stmt(node_t *node) {
     int cont_lbl = label_count++;
     int end_lbl = label_count++;
     push_control_labels(end_lbl, cont_lbl);
-    printf(".Lbegin%d:\n", begin_lbl);
-    printf(".Lcont%d:\n", cont_lbl);
+    cg_emitf(".Lbegin%d:\n", begin_lbl);
+    cg_emitf(".Lcont%d:\n", cont_lbl);
     gen_expr(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbz x0, .Lend%d\n", end_lbl);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
     gen_stmt(ctrl->base.rhs);
-    printf("  b .Lbegin%d\n", begin_lbl);
-    printf(".Lend%d:\n", end_lbl);
+    cg_emitf("  b .Lbegin%d\n", begin_lbl);
+    cg_emitf(".Lend%d:\n", end_lbl);
     pop_control_labels();
     return;
   }
@@ -772,13 +823,13 @@ static void gen_stmt(node_t *node) {
     int cont_lbl = label_count++;
     int end_lbl = label_count++;
     push_control_labels(end_lbl, cont_lbl);
-    printf(".Lbegin%d:\n", begin_lbl);
+    cg_emitf(".Lbegin%d:\n", begin_lbl);
     gen_stmt(ctrl->base.rhs);
-    printf(".Lcont%d:\n", cont_lbl);
+    cg_emitf(".Lcont%d:\n", cont_lbl);
     gen_expr(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
-    printf("  cbnz x0, .Lbegin%d\n", begin_lbl);
-    printf(".Lend%d:\n", end_lbl);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbnz x0, .Lbegin%d\n", begin_lbl);
+    cg_emitf(".Lend%d:\n", end_lbl);
     pop_control_labels();
     return;
   }
@@ -790,22 +841,22 @@ static void gen_stmt(node_t *node) {
     push_control_labels(end_lbl, cont_lbl);
     if (ctrl->init) {
       gen_expr(ctrl->init);
-      printf("  add sp, sp, #16\n");
+      cg_emitf("  add sp, sp, #16\n");
     }
-    printf(".Lbegin%d:\n", begin_lbl);
+    cg_emitf(".Lbegin%d:\n", begin_lbl);
     if (ctrl->base.lhs) {
       gen_expr(ctrl->base.lhs);
-      printf("  ldr x0, [sp], #16\n");
-      printf("  cbz x0, .Lend%d\n", end_lbl);
+      cg_emitf("  ldr x0, [sp], #16\n");
+      cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
     }
     gen_stmt(ctrl->base.rhs);
-    printf(".Lcont%d:\n", cont_lbl);
+    cg_emitf(".Lcont%d:\n", cont_lbl);
     if (ctrl->inc) {
       gen_expr(ctrl->inc);
-      printf("  add sp, sp, #16\n");
+      cg_emitf("  add sp, sp, #16\n");
     }
-    printf("  b .Lbegin%d\n", begin_lbl);
-    printf(".Lend%d:\n", end_lbl);
+    cg_emitf("  b .Lbegin%d\n", begin_lbl);
+    cg_emitf(".Lend%d:\n", end_lbl);
     pop_control_labels();
     return;
   }
@@ -814,28 +865,28 @@ static void gen_stmt(node_t *node) {
     int end_lbl = label_count++;
 
     gen_expr(ctrl->base.lhs);
-    printf("  ldr x0, [sp], #16\n");
+    cg_emitf("  ldr x0, [sp], #16\n");
 
     switch_collect_t sc = {0};
     collect_switch_labels(ctrl->base.rhs, &sc);
 
     for (int i = 0; i < sc.case_count; i++) {
       node_case_t *c = sc.cases[i];
-      printf("  mov x1, #%lld\n", c->val);
-      printf("  cmp x0, x1\n");
-      printf("  beq .Lcase%d\n", c->label_id);
+      cg_emitf("  mov x1, #%lld\n", c->val);
+      cg_emitf("  cmp x0, x1\n");
+      cg_emitf("  beq .Lcase%d\n", c->label_id);
     }
     if (sc.default_node) {
-      printf("  b .Ldefault%d\n", sc.default_node->label_id);
+      cg_emitf("  b .Ldefault%d\n", sc.default_node->label_id);
     } else {
-      printf("  b .Lend%d\n", end_lbl);
+      cg_emitf("  b .Lend%d\n", end_lbl);
     }
 
     push_control_labels(end_lbl, -1); // switch は continue 対象外
     gen_switch_body(ctrl->base.rhs);
     pop_control_labels();
 
-    printf(".Lend%d:\n", end_lbl);
+    cg_emitf(".Lend%d:\n", end_lbl);
     free(sc.cases);
     return;
   }
@@ -844,14 +895,14 @@ static void gen_stmt(node_t *node) {
       fprintf(stderr, "break はループまたはswitch内でのみ使用できます\n");
       exit(1);
     }
-    printf("  b .Lend%d\n", current_break_label());
+    cg_emitf("  b .Lend%d\n", current_break_label());
     return;
   case ND_CONTINUE:
     if (current_continue_label() < 0) {
       fprintf(stderr, "continue はループ内でのみ使用できます\n");
       exit(1);
     }
-    printf("  b .Lcont%d\n", current_continue_label());
+    cg_emitf("  b .Lcont%d\n", current_continue_label());
     return;
   case ND_GOTO: {
     node_jump_t *j = as_jump(node);
@@ -860,18 +911,18 @@ static void gen_stmt(node_t *node) {
       fprintf(stderr, "未定義ラベル '%.*s' への goto です\n", j->name_len, j->name);
       exit(1);
     }
-    printf("  b .Luser%d\n", id);
+    cg_emitf("  b .Luser%d\n", id);
     return;
   }
   case ND_LABEL: {
     node_jump_t *j = as_jump(node);
-    printf(".Luser%d:\n", j->label_id);
+    cg_emitf(".Luser%d:\n", j->label_id);
     gen_stmt(j->base.rhs);
     return;
   }
   default:
     gen_expr(node);
-    printf("  add sp, sp, #16\n");
+    cg_emitf("  add sp, sp, #16\n");
     return;
   }
 }
@@ -882,9 +933,9 @@ void gen(node_t *node) {
 
 void gen_string_literals(void) {
   if (!string_literals) return;
-  printf(".section __TEXT,__cstring\n");
+  cg_emitf(".section __TEXT,__cstring\n");
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    printf("%s:\n", lit->label);
+    cg_emitf("%s:\n", lit->label);
     int i = 0;
     while (i < lit->len) {
       uint32_t v = 0;
@@ -895,37 +946,37 @@ void gen_string_literals(void) {
         i++;
       }
       if (lit->char_width == TK_CHAR_WIDTH_CHAR) {
-        printf("  .byte %u\n", (unsigned)(v & 0xFF));
+        cg_emitf("  .byte %u\n", (unsigned)(v & 0xFF));
       } else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
-        printf("  .hword %u\n", (unsigned)(v & 0xFFFF));
+        cg_emitf("  .hword %u\n", (unsigned)(v & 0xFFFF));
       } else {
-        printf("  .word %u\n", (unsigned)v);
+        cg_emitf("  .word %u\n", (unsigned)v);
       }
     }
-    if (lit->char_width == TK_CHAR_WIDTH_CHAR) printf("  .byte 0\n");
-    else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) printf("  .hword 0\n");
-    else printf("  .word 0\n");
+    if (lit->char_width == TK_CHAR_WIDTH_CHAR) cg_emitf("  .byte 0\n");
+    else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword 0\n");
+    else cg_emitf("  .word 0\n");
   }
-  printf(".text\n");
+  cg_emitf(".text\n");
 }
 
 void gen_float_literals(void) {
   if (!float_literals) return;
-  printf(".section __DATA,__data\n");
-  printf(".align 3\n");
+  cg_emitf(".section __DATA,__data\n");
+  cg_emitf(".align 3\n");
   for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
-    if (psx_can_use_fp_immediate_zero(lit->fval, lit->fp_kind)) continue;
-    printf(".LCF%d:\n", lit->id);
+    if (cg_can_use_fp_immediate_zero(lit->fval, lit->fp_kind)) continue;
+    cg_emitf(".LCF%d:\n", lit->id);
     if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
       // float (32bit) 定数出力: IEEE754 format
       union { float f; uint32_t i; } u = { .f = (float)lit->fval };
-      printf("  .word %u\n", u.i);
+      cg_emitf("  .word %u\n", u.i);
     } else {
       // double (64bit) 定数出力。
       // note: long double is currently lowered to double in codegen.
       union { double d; uint64_t i; } u = { .d = lit->fval };
-      printf("  .quad %llu\n", (unsigned long long)u.i);
+      cg_emitf("  .quad %llu\n", (unsigned long long)u.i);
     }
   }
-  printf(".text\n");
+  cg_emitf(".text\n");
 }
