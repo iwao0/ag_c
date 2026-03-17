@@ -26,6 +26,7 @@ static int is_toplevel_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(void);
+static void parse_static_assert_toplevel(void);
 static long long parse_enum_const_expr_toplevel(void);
 static long long parse_enum_const_conditional_toplevel(void);
 static long long parse_enum_const_logor_toplevel(void);
@@ -55,12 +56,38 @@ static void skip_ptr_qualifiers(void) {
   }
 }
 
+static void parse_static_assert_toplevel(void) {
+  if (token->kind != TK_STATIC_ASSERT) {
+    psx_diag_ctx(token, "static_assert", "'_Static_assert' が必要です");
+  }
+  token = token->next;
+  tk_expect('(');
+  node_t *cond = psx_expr_assign();
+  if (cond->kind != ND_NUM) {
+    psx_diag_ctx(token, "static_assert", "_Static_assert の条件は整数定数式が必要です");
+  }
+  tk_expect(',');
+  if (token->kind != TK_STRING) {
+    psx_diag_ctx(token, "static_assert", "_Static_assert の第2引数は文字列リテラルが必要です");
+  }
+  token = token->next;
+  tk_expect(')');
+  tk_expect(';');
+  if (((node_num_t *)cond)->val == 0) {
+    psx_diag_ctx(token, "static_assert", "_Static_assert が失敗しました");
+  }
+}
+
 // program = funcdef*
 node_t **ps_program(void) {
   int cap = 16;
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
+    if (token->kind == TK_STATIC_ASSERT) {
+      parse_static_assert_toplevel();
+      continue;
+    }
     if (psx_ctx_is_tag_keyword(token->kind)) {
       parse_toplevel_tag_decl();
       continue;

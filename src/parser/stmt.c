@@ -14,6 +14,7 @@
 node_t *ps_expr(void);
 
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
+static void parse_static_assert_stmt(void);
 static void parse_typedef_decl(void);
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -290,6 +291,28 @@ static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int 
   return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
 
+static void parse_static_assert_stmt(void) {
+  if (token->kind != TK_STATIC_ASSERT) {
+    psx_diag_ctx(token, "static_assert", "'_Static_assert' が必要です");
+  }
+  token = token->next;
+  tk_expect('(');
+  node_t *cond = psx_expr_assign();
+  if (cond->kind != ND_NUM) {
+    psx_diag_ctx(token, "static_assert", "_Static_assert の条件は整数定数式が必要です");
+  }
+  tk_expect(',');
+  if (token->kind != TK_STRING) {
+    psx_diag_ctx(token, "static_assert", "_Static_assert の第2引数は文字列リテラルが必要です");
+  }
+  token = token->next;
+  tk_expect(')');
+  tk_expect(';');
+  if (((node_num_t *)cond)->val == 0) {
+    psx_diag_ctx(token, "static_assert", "_Static_assert が失敗しました");
+  }
+}
+
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind) {
@@ -391,6 +414,11 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_TYPEDEF) {
     parse_typedef_decl();
+    return psx_node_new_num(0);
+  }
+
+  if (token->kind == TK_STATIC_ASSERT) {
+    parse_static_assert_stmt();
     return psx_node_new_num(0);
   }
 

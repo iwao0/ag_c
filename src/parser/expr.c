@@ -171,6 +171,54 @@ static node_t *add(void);
 static node_t *mul(void);
 static node_t *unary(void);
 static node_t *primary(void);
+
+static int parse_parenthesized_type_size(void) {
+  bool is_type = false;
+  int scalar_size = 8;
+  token_kind_t type_kind = token->kind;
+  psx_ctx_get_type_info(type_kind, &is_type, &scalar_size);
+  if (is_type) {
+    token = token->next;
+    if (type_kind == TK_VOID) {
+      psx_diag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
+    }
+    int sz = scalar_size;
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
+  if (psx_ctx_is_typedef_name_token(token)) {
+    token_ident_t *id = (token_ident_t *)token;
+    token_kind_t td_base = TK_EOF;
+    int td_elem = 8;
+    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+    token_kind_t td_tag = TK_EOF;
+    char *td_tag_name = NULL;
+    int td_tag_len = 0;
+    int td_ptr = 0;
+    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+    token = token->next;
+    int sz = td_ptr ? 8 : td_elem;
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
+  return -1;
+}
 static node_t *parse_call_postfix(node_t *callee);
 
 void psx_expr_set_current_func_ret_type(token_kind_t ret_kind, tk_float_kind_t fp_kind) {
@@ -432,55 +480,23 @@ static node_t *unary(void) {
     token = token->next;
     if (token->kind == TK_LPAREN) {
       token = token->next;
-      bool is_type = false;
-      int scalar_size = 8;
-      token_kind_t type_kind = token->kind;
-      psx_ctx_get_type_info(type_kind, &is_type, &scalar_size);
-      if (is_type) {
-        token = token->next;
-        if (type_kind == TK_VOID) {
-          psx_diag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
-        }
-        int sz = scalar_size;
-        while (token->kind == TK_MUL) {
-          token = token->next;
-          sz = 8;
-        }
-        int fp_ptr = 0;
-        if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
-          sz = 8;
-        }
-        tk_expect(')');
-        return psx_node_new_num(sz);
-      }
-      if (psx_ctx_is_typedef_name_token(token)) {
-        token_ident_t *id = (token_ident_t *)token;
-        token_kind_t td_base = TK_EOF;
-        int td_elem = 8;
-        tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-        token_kind_t td_tag = TK_EOF;
-        char *td_tag_name = NULL;
-        int td_tag_len = 0;
-        int td_ptr = 0;
-        psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
-        token = token->next;
-        int sz = td_ptr ? 8 : td_elem;
-        while (token->kind == TK_MUL) {
-          token = token->next;
-          sz = 8;
-        }
-        int fp_ptr = 0;
-        if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
-          sz = 8;
-        }
-        tk_expect(')');
-        return psx_node_new_num(sz);
-      }
+      int type_sz = parse_parenthesized_type_size();
+      if (type_sz >= 0) return psx_node_new_num(type_sz);
       node_t *node = expr_internal();
       tk_expect(')');
       return psx_node_new_num(sizeof_expr_node(node));
     }
     return psx_node_new_num(sizeof_expr_node(unary()));
+  }
+
+  if (token->kind == TK_ALIGNOF) {
+    token = token->next;
+    tk_expect('(');
+    int type_sz = parse_parenthesized_type_size();
+    if (type_sz < 0) {
+      psx_diag_ctx(token, "alignof", "_Alignof には型名が必要です");
+    }
+    return psx_node_new_num(type_sz);
   }
 
   if (token->kind == TK_INC) {

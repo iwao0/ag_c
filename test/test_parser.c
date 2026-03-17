@@ -313,6 +313,16 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, n3->kind);
   ASSERT_EQ(8, as_num(n3)->val);
 
+  token = tk_tokenize("_Alignof(int)");
+  node_t *a1 = ps_expr();
+  ASSERT_EQ(ND_NUM, a1->kind);
+  ASSERT_EQ(4, as_num(a1)->val);
+
+  token = tk_tokenize("_Alignof(int*)");
+  node_t *a2 = ps_expr();
+  ASSERT_EQ(ND_NUM, a2->kind);
+  ASSERT_EQ(8, as_num(a2)->val);
+
   token = tk_tokenize("main() { int x; return sizeof(x); }");
   parsed_code = ps_program();
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
@@ -847,6 +857,13 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
+
+  token = tk_tokenize("main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -927,6 +944,13 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
+
+  token = tk_tokenize("_Static_assert(1, \"ok\"); int main() { return 0; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(parsed_code[1] == NULL);
 }
 
 static void test_parse_invalid() {
@@ -955,6 +979,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
   expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
+  expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
+  expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail("main() { break; }");                // ループ/switch外

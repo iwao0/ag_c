@@ -558,6 +558,9 @@
 ## Parser未実装タスク（2026-03-17 追加棚卸し2）
 - [ ] C11キーワードのParser接続を進める
   - [ ] `_Alignas`, `_Alignof`, `_Atomic`, `_Generic`, `_Noreturn`, `_Static_assert`, `_Thread_local` を段階的に受理する
+  - [x] `_Alignof` を式として受理する（型名のみ）
+  - [x] `_Static_assert` を最外部/文内宣言として受理する（整数定数式 + 文字列）
+  - [x] `_Noreturn` / `_Thread_local` を宣言前置指定子として受理する
   - [ ] `_Complex`, `_Imaginary` の扱い方針（受理範囲/診断）を確定する
 - [x] ストレージクラス/関数指定子の意味処理を追加する
   - [x] `extern`, `static`, `auto`, `register`, `inline`, `restrict` を宣言子パースと意味解析に反映する
