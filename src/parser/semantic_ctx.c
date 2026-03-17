@@ -29,11 +29,13 @@ struct tag_type_t {
   char *name;
   int len;
   int member_count;
+  int scope_depth;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
 static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
 static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
+static int tag_scope_depth = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
   // djb2 variant
@@ -54,8 +56,30 @@ static unsigned psx_ctx_hash_tag(token_kind_t kind, const char *name, int len) {
 
 void psx_ctx_reset_function_scope(void) {
   goto_refs_all = NULL;
+  tag_scope_depth = 0;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
+}
+
+void psx_ctx_enter_block_scope(void) {
+  tag_scope_depth++;
+}
+
+void psx_ctx_leave_block_scope(void) {
+  if (tag_scope_depth <= 0) return;
+  int old_depth = tag_scope_depth;
+  tag_scope_depth--;
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    tag_type_t **pp = &tag_types_by_bucket[i];
+    while (*pp) {
+      tag_type_t *cur = *pp;
+      if (cur->scope_depth >= old_depth) {
+        *pp = cur->next_hash;
+        continue;
+      }
+      pp = &cur->next_hash;
+    }
+  }
 }
 
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok) {
@@ -125,6 +149,7 @@ void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len
   t->name = name;
   t->len = len;
   t->member_count = member_count;
+  t->scope_depth = tag_scope_depth;
   t->next_hash = tag_types_by_bucket[bucket];
   tag_types_by_bucket[bucket] = t;
 }

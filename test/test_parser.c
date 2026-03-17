@@ -729,6 +729,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
+  token = tk_tokenize("main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -776,6 +784,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { return sizeof(void); }");  // sizeof(void) 未対応
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
+  expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
@@ -787,6 +796,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
   expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "[parser] ラベル 'L1' が重複");
   expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
+  expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { return sizeof(void); }", "[sizeof] sizeof(void) はサポートしていません");
 }
 

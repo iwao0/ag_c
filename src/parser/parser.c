@@ -37,7 +37,10 @@ node_t **ps_program(void) {
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
-  if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID || token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT || token->kind == TK_DOUBLE) {
+  if (token->kind == TK_INT || token->kind == TK_CHAR || token->kind == TK_VOID ||
+      token->kind == TK_SHORT || token->kind == TK_LONG || token->kind == TK_FLOAT ||
+      token->kind == TK_DOUBLE || token->kind == TK_BOOL || token->kind == TK_SIGNED ||
+      token->kind == TK_UNSIGNED) {
     token_kind_t kind = token->kind;
     token = token->next;
     return kind;
@@ -109,6 +112,7 @@ static node_t *funcdef(void) {
 
   // 関数本体 (ブロック)
   tk_expect('{');
+  psx_ctx_enter_block_scope();
   node_block_t *body = calloc(1, sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
@@ -122,6 +126,7 @@ static node_t *funcdef(void) {
     body->body[i++] = psx_stmt_stmt();
   }
   body->body[i] = NULL;
+  psx_ctx_leave_block_scope();
   node->base.rhs = (node_t *)body;
   psx_ctx_validate_goto_refs();
 

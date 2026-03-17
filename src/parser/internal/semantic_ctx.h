@@ -5,6 +5,8 @@
 #include <stdbool.h>
 
 void psx_ctx_reset_function_scope(void);
+void psx_ctx_enter_block_scope(void);
+void psx_ctx_leave_block_scope(void);
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok);
 void psx_ctx_register_label_def(char *name, int len, token_t *tok);
 void psx_ctx_validate_goto_refs(void);

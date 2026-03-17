@@ -88,6 +88,7 @@ static int parse_tag_definition_body(token_kind_t tag_kind) {
 
 static node_t *stmt_internal(void) {
   if (tk_consume('{')) {
+    psx_ctx_enter_block_scope();
     node_block_t *node = calloc(1, sizeof(node_block_t));
     node->base.kind = ND_BLOCK;
     int i = 0;
@@ -101,6 +102,7 @@ static node_t *stmt_internal(void) {
       node->body[i++] = stmt_internal();
     }
     node->body[i] = NULL;
+    psx_ctx_leave_block_scope();
     return (node_t *)node;
   }
 
