@@ -34,7 +34,10 @@ int tk_expect_number(void);
 /** @brief 現在トークンが EOF かを返す。 */
 bool tk_at_eof(void);
 
-/** @brief 入力文字列をトークナイズして先頭トークンを返す。 */
+/**
+ * @brief 入力文字列をトークナイズして先頭トークンを返す。
+ * @warning 不正な字句を検出した場合は `tk_error_at` を呼び出して終了する。
+ */
 token_t *tk_tokenize(char *p);
 
 /** @brief 現在の入力文字列（エラー表示用）を取得する。 */
@@ -47,7 +50,10 @@ char *tk_get_filename(void);
 /** @brief 現在のファイル名（エラー表示用）を設定する。 */
 void tk_set_filename(char *name);
 
-/** @brief strict C11 モードの有効/無効を取得する。 */
+/**
+ * @brief strict C11 モードの有効/無効を取得する。
+ * @note strict C11 が有効な場合、2進整数リテラル（`0b...`）は拒否される。
+ */
 bool tk_get_strict_c11_mode(void);
 /** @brief strict C11 モードの有効/無効を設定する。 */
 void tk_set_strict_c11_mode(bool strict);
@@ -55,7 +61,10 @@ void tk_set_strict_c11_mode(bool strict);
 bool tk_get_enable_trigraphs(void);
 /** @brief トライグラフ置換の有効/無効を設定する。 */
 void tk_set_enable_trigraphs(bool enable);
-/** @brief 2進整数リテラル拡張の有効/無効を取得する。 */
+/**
+ * @brief 2進整数リテラル拡張の有効/無効を取得する。
+ * @note strict C11 が有効な場合、この設定が true でも `0b...` は拒否される。
+ */
 bool tk_get_enable_binary_literals(void);
 /** @brief 2進整数リテラル拡張の有効/無効を設定する。 */
 void tk_set_enable_binary_literals(bool enable);

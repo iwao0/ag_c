@@ -205,6 +205,7 @@ struct token_string_t {
 typedef struct token_num_t token_num_t;
 typedef struct token_num_int_t token_num_int_t;
 typedef struct token_num_float_t token_num_float_t;
+/** @brief 数値トークン共通ヘッダ。実体は `num_kind` で分岐する。 */
 struct token_num_t {
   token_pp_t pp;
   char *str;               // 元の文字列
@@ -213,6 +214,7 @@ struct token_num_t {
   tk_num_kind_t num_kind;
 };
 
+/** @brief 整数数値トークン本体。 */
 struct token_num_int_t {
   token_num_t base;
   long long val;                // 整数値
@@ -225,10 +227,11 @@ struct token_num_int_t {
   tk_char_prefix_kind_t char_prefix_kind;
 };
 
+/** @brief 浮動小数点数値トークン本体。 */
 struct token_num_float_t {
   token_num_t base;
   double fval;                  // 浮動小数点値
-  tk_float_kind_t fp_kind;      // float / double / long double
+  tk_float_kind_t fp_kind;      // float / double / long double（整数トークンでは未使用）
   tk_float_suffix_kind_t float_suffix_kind;
 };
 
