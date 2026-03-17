@@ -602,7 +602,7 @@ static node_t *stmt_internal(void) {
     token = token->next;
     node_case_t *node = calloc(1, sizeof(node_case_t));
     node->base.kind = ND_CASE;
-    node->val = tk_expect_number();
+    node->val = parse_enum_const_expr();
     psx_switch_register_case(node->val, token);
     tk_expect(':');
     node->base.rhs = stmt_internal();

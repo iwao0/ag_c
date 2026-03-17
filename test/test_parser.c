@@ -1045,6 +1045,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
+  expect_parse_fail("main() { switch (0) { case 1+2: 0; case 3: 0; } }"); // 定数式評価後のcase重複
   expect_parse_fail("main() { switch (1) { default: 0; default: 1; } }"); // default 重複
 }
 
