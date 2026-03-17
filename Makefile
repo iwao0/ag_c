@@ -12,7 +12,7 @@ TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
-TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_adapter.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
+TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_runtime.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
 PARSER_LIB_OBJS=build/parser/parser.o build/parser/decl.o build/parser/diag.o build/parser/expr.o build/parser/loop_ctx.o build/parser/semantic_ctx.o build/parser/node_utils.o build/parser/stmt.o build/parser/switch_ctx.o
 
 

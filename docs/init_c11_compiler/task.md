@@ -147,9 +147,9 @@
       16KB: `2,177,904 tokens/sec`, `alloc_count=10,370`, `peak_alloc_bytes=621,265`  
       256KB: `3,744,003 tokens/sec`, `alloc_count=165,602`, `peak_alloc_bytes=9,922,249`
 - [x] Tokenizerの責務を分離する
-  - [x] `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `config_adapter.c` へ段階的に分割する
+  - [x] `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `config_runtime.c` へ段階的に分割する
     - [x] `literals.c` を追加し、文字/文字列接頭辞・UCN・escape処理を移設する
-    - [x] `config_adapter.c` を追加し、strict/拡張モード設定を分離する
+    - [x] `config_runtime.c` を追加し、strict/拡張モード設定を分離する
     - [x] `scanner.c` を追加し、空白/コメントスキップと識別子開始・継続判定を分離する
   - [x] `tokenizer.c` は全体制御フロー中心に整理する
   - [x] UCN・escape等の共通処理をユーティリティへ集約する

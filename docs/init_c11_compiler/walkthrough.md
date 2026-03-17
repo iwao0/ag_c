@@ -51,7 +51,7 @@
    - 接頭辞付きマルチ文字定数（`L/u/U`）を実装定義として受理するように更新しました。
 
 7. **Tokenizer最適化（メンテナンス性重視）**
-   - `src/tokenizer/` を `scanner` / `literals` / `keywords` / `punctuator` / `config_adapter` / `allocator` に分離し、責務を明確化しました。
+   - `src/tokenizer/` を `scanner` / `literals` / `keywords` / `punctuator` / `config_runtime` / `allocator` に分離し、責務を明確化しました。
    - 識別子の UCN なし経路をゼロコピー化し、文字列リテラルは escape 値デコード不要時にスキップする遅延処理を導入しました。
    - `match_punctuator()` は 2文字小テーブル + 3/4文字最長一致で分岐を整理しました。
    - `tk_skip_ignored()` は ASCII ホットパスとフォールバック（コメント/行継続）に分離しました。

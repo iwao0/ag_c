@@ -103,7 +103,7 @@ TDD用の自動テストスクリプトです。
 本フェーズで、Tokenizerの最適化を「速度だけでなく保守性を維持する」方針で実施しました。
 
 - モジュール分離:
-  - `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `punctuator.c` / `config_adapter.c` / `allocator.c` に整理。
+  - `src/tokenizer/` を `scanner.c` / `literals.c` / `keywords.c` / `punctuator.c` / `config_runtime.c` / `allocator.c` に整理。
 - Hot Path 改善:
   - 識別子（UCNなし）をゼロコピー経路化。
   - 文字列リテラルは escape を必要時のみ解釈する遅延化。
