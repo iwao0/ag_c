@@ -265,6 +265,11 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
+
+  token = tk_tokenize("(char)300");
+  node_t *c1 = expr();
+  ASSERT_EQ(ND_BITAND, c1->kind);
+  ASSERT_EQ(0xff, as_num(c1->rhs)->val);
 }
 
 static void test_expr_inc_dec() {
@@ -631,6 +636,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
   expect_parse_fail("main() { return sizeof(void); }");  // sizeof(void) 未対応
+  expect_parse_fail("main() { return (void)1; }");       // void cast 未対応
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複

@@ -256,6 +256,49 @@ static int sizeof_expr_node(node_t *node) {
   return 8;
 }
 
+static bool parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen) {
+  if (!tok || tok->kind != TK_LPAREN) return false;
+  token_t *t = tok->next;
+  if (!t || !is_type_token(t->kind)) return false;
+  *type_kind = t->kind;
+  t = t->next;
+  *is_pointer = 0;
+  while (t && t->kind == TK_MUL) {
+    *is_pointer = 1;
+    t = t->next;
+  }
+  if (!t || t->kind != TK_RPAREN) return false;
+  *after_rparen = t->next;
+  return true;
+}
+
+static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand) {
+  if (is_pointer || type_kind == TK_LONG) {
+    operand->fp_kind = TK_FLOAT_KIND_NONE;
+    return operand;
+  }
+  if (type_kind == TK_FLOAT) {
+    operand->fp_kind = TK_FLOAT_KIND_FLOAT;
+    return operand;
+  }
+  if (type_kind == TK_DOUBLE) {
+    operand->fp_kind = TK_FLOAT_KIND_DOUBLE;
+    return operand;
+  }
+  if (type_kind == TK_INT) {
+    operand->fp_kind = TK_FLOAT_KIND_NONE;
+    return operand;
+  }
+  if (type_kind == TK_SHORT) {
+    return new_node_binary(ND_BITAND, operand, new_node_num(0xffff));
+  }
+  if (type_kind == TK_CHAR) {
+    return new_node_binary(ND_BITAND, operand, new_node_num(0xff));
+  }
+  tk_error_tok(token, "この型へのキャストは未対応です");
+  return operand;
+}
+
 // program = funcdef*
 void program(void) {
   int cap = 8;
@@ -777,6 +820,17 @@ static node_t *mul(void) {
 // unary = ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary | primary postfix*
 // postfix = "[" expr "]"
 static node_t *unary(void) {
+  token_kind_t cast_kind = TK_EOF;
+  int cast_is_ptr = 0;
+  token_t *after_rparen = NULL;
+  if (parse_cast_type(token, &cast_kind, &cast_is_ptr, &after_rparen)) {
+    token = after_rparen;
+    if (cast_kind == TK_VOID && !cast_is_ptr) {
+      tk_error_tok(token, "void へのキャストは未対応です");
+    }
+    return apply_cast(cast_kind, cast_is_ptr, unary());
+  }
+
   if (token->kind == TK_SIZEOF) {
     token = token->next;
     if (tk_consume('(')) {

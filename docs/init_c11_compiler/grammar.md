@@ -36,7 +36,8 @@ relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 shift      = add ("<<" add | ">>" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary | "%" unary)*
-unary      = "sizeof" ("(" type "*"* ")" | unary | "(" expr ")")
+unary      = "(" type "*"* ")" unary
+           | "sizeof" ("(" type "*"* ")" | unary | "(" expr ")")
            | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
            | primary postfix*
 postfix    = ("[" expr "]" | "++" | "--")*

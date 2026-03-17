@@ -266,9 +266,9 @@
 - [x] `sizeof` 演算子（`sizeof expr` / `sizeof(type)`）を実装する
   - [x] Tokenizerの `TK_SIZEOF` を Parser の `unary` に接続する
   - [x] 型名版と式版の評価ルール（少なくとも既存基本型）を定義する（`sizeof(void)` は未対応として診断）
-- [ ] キャスト式（`(type)expr`）を実装する
-  - [ ] `unary` にキャスト文法を追加する
-  - [ ] 数値型間キャストの最小ルール（`int/char/short/long/float/double`）を定める
+- [x] キャスト式（`(type)expr`）を実装する
+  - [x] `unary` にキャスト文法を追加する
+  - [x] 数値型間キャストの最小ルール（`int/char/short/long/float/double`）を定める（第1段: `char/short` はビット幅マスク、`int/long/pointer` は no-op、`float/double` は型情報付与）
 - [ ] カンマ演算子（`expr , expr`）を実装する
   - [ ] `expr = assign ("," assign)*` に拡張する
   - [ ] 関数引数区切りとの衝突が起きないことをテストで保証する
