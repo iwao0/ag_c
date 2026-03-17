@@ -28,7 +28,7 @@ static void expect_parse_fail(const char *input) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
     token = tk_tokenize((char *)input);
-    program();
+    ps_program();
     _exit(0);
   }
   int status;
@@ -49,7 +49,7 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
     token = tk_tokenize((char *)input);
-    program();
+    ps_program();
     _exit(0);
   }
 
@@ -75,7 +75,7 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
 static void test_expr_number() {
   printf("test_expr_number...\n");
   token = tk_tokenize("42");
-  node_t *node = expr();
+  node_t *node = ps_expr();
   ASSERT_EQ(ND_NUM, node->kind);
   ASSERT_EQ(42, as_num(node)->val);
   ASSERT_EQ(TK_EOF, token->kind);
@@ -84,7 +84,7 @@ static void test_expr_number() {
 static void test_expr_float() {
   printf("test_expr_float...\n");
   token = tk_tokenize("3.14 + 1.5f");
-  node_t *node = expr();
+  node_t *node = ps_expr();
   
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(ND_NUM, node->lhs->kind);
@@ -99,7 +99,7 @@ static void test_expr_float() {
 static void test_expr_long_double_suffix_metadata() {
   printf("test_expr_long_double_suffix_metadata...\n");
   token = tk_tokenize("4.0L");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_NUM, node->kind);
   ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, node->fp_kind);
@@ -119,7 +119,7 @@ static void test_expr_long_double_suffix_metadata() {
 static void test_expr_add_sub() {
   printf("test_expr_add_sub...\n");
   token = tk_tokenize("1 + 2 - 3");
-  node_t *node = expr(); // (1+2)-3
+  node_t *node = ps_expr(); // (1+2)-3
 
   ASSERT_EQ(ND_SUB, node->kind);
   ASSERT_EQ(ND_ADD, node->lhs->kind);
@@ -131,7 +131,7 @@ static void test_expr_add_sub() {
 static void test_expr_mul_div() {
   printf("test_expr_mul_div...\n");
   token = tk_tokenize("1 * 2 / 3");
-  node_t *node = expr(); // (1*2)/3
+  node_t *node = ps_expr(); // (1*2)/3
 
   ASSERT_EQ(ND_DIV, node->kind);
   ASSERT_EQ(ND_MUL, node->lhs->kind);
@@ -143,7 +143,7 @@ static void test_expr_mul_div() {
 static void test_expr_mod() {
   printf("test_expr_mod...\n");
   token = tk_tokenize("10 % 3");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_MOD, node->kind);
   ASSERT_EQ(10, as_num(node->lhs)->val);
@@ -153,7 +153,7 @@ static void test_expr_mod() {
 static void test_expr_precedence() {
   printf("test_expr_precedence...\n");
   token = tk_tokenize("1 + 2 * 3");
-  node_t *node = expr(); // 1+(2*3)
+  node_t *node = ps_expr(); // 1+(2*3)
 
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(1, as_num(node->lhs)->val);
@@ -165,7 +165,7 @@ static void test_expr_precedence() {
 static void test_expr_parentheses() {
   printf("test_expr_parentheses...\n");
   token = tk_tokenize("(1 + 2) * 3");
-  node_t *node = expr(); // (1+2)*3
+  node_t *node = ps_expr(); // (1+2)*3
 
   ASSERT_EQ(ND_MUL, node->kind);
   ASSERT_EQ(ND_ADD, node->lhs->kind);
@@ -177,7 +177,7 @@ static void test_expr_parentheses() {
 static void test_expr_eq_neq() {
   printf("test_expr_eq_neq...\n");
   token = tk_tokenize("1 == 2 != 3");
-  node_t *node = expr(); // (1==2)!=3
+  node_t *node = ps_expr(); // (1==2)!=3
 
   ASSERT_EQ(ND_NE, node->kind);
   ASSERT_EQ(ND_EQ, node->lhs->kind);
@@ -189,7 +189,7 @@ static void test_expr_eq_neq() {
 static void test_expr_relational() {
   printf("test_expr_relational...\n");
   token = tk_tokenize("1 < 2 <= 3 > 4 >= 5");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   // ルートは ND_LE (>= が反転)
   ASSERT_EQ(ND_LE, node->kind);
@@ -210,7 +210,7 @@ static void test_expr_logical_and_or() {
   printf("test_expr_logical_and_or...\n");
 
   token = tk_tokenize("1 && 0 || 3");
-  node_t *node = expr();
+  node_t *node = ps_expr();
   ASSERT_EQ(ND_LOGOR, node->kind);
   ASSERT_EQ(ND_LOGAND, node->lhs->kind);
   ASSERT_EQ(3, as_num(node->rhs)->val);
@@ -219,7 +219,7 @@ static void test_expr_logical_and_or() {
 static void test_expr_bitwise() {
   printf("test_expr_bitwise...\n");
   token = tk_tokenize("1 | 2 ^ 3 & 4");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_BITOR, node->kind);
   ASSERT_EQ(1, as_num(node->lhs)->val);
@@ -231,7 +231,7 @@ static void test_expr_bitwise() {
 static void test_expr_shift() {
   printf("test_expr_shift...\n");
   token = tk_tokenize("1 + 2 << 3 >> 1");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_SHR, node->kind);
   ASSERT_EQ(ND_SHL, node->lhs->kind);
@@ -242,7 +242,7 @@ static void test_expr_shift() {
 static void test_expr_ternary() {
   printf("test_expr_ternary...\n");
   token = tk_tokenize("1 ? 2 : 3 ? 4 : 5");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_TERNARY, node->kind);
   ASSERT_EQ(1, as_num(node->lhs)->val);
@@ -254,12 +254,12 @@ static void test_expr_unary_ops() {
   printf("test_expr_unary_ops...\n");
 
   token = tk_tokenize("+42");
-  node_t *pos = expr();
+  node_t *pos = ps_expr();
   ASSERT_EQ(ND_NUM, pos->kind);
   ASSERT_EQ(42, as_num(pos)->val);
 
   token = tk_tokenize("-42");
-  node_t *neg = expr();
+  node_t *neg = ps_expr();
   ASSERT_EQ(ND_SUB, neg->kind);
   ASSERT_EQ(ND_NUM, neg->lhs->kind);
   ASSERT_EQ(0, as_num(neg->lhs)->val);
@@ -267,7 +267,7 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(42, as_num(neg->rhs)->val);
 
   token = tk_tokenize("!0");
-  node_t *not0 = expr();
+  node_t *not0 = ps_expr();
   ASSERT_EQ(ND_EQ, not0->kind);
   ASSERT_EQ(ND_NUM, not0->lhs->kind);
   ASSERT_EQ(0, as_num(not0->lhs)->val);
@@ -275,7 +275,7 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(0, as_num(not0->rhs)->val);
 
   token = tk_tokenize("~5");
-  node_t *bitnot = expr();
+  node_t *bitnot = ps_expr();
   ASSERT_EQ(ND_SUB, bitnot->kind);               // (~5) == ((0-5)-1)
   ASSERT_EQ(ND_SUB, bitnot->lhs->kind);
   ASSERT_EQ(1, as_num(bitnot->rhs)->val);
@@ -285,24 +285,24 @@ static void test_expr_sizeof() {
   printf("test_expr_sizeof...\n");
 
   token = tk_tokenize("sizeof(int)");
-  node_t *n1 = expr();
+  node_t *n1 = ps_expr();
   ASSERT_EQ(ND_NUM, n1->kind);
   ASSERT_EQ(4, as_num(n1)->val);
 
   token = tk_tokenize("sizeof(int*)");
-  node_t *n2 = expr();
+  node_t *n2 = ps_expr();
   ASSERT_EQ(ND_NUM, n2->kind);
   ASSERT_EQ(8, as_num(n2)->val);
 
   token = tk_tokenize("main() { int x; return sizeof(x); }");
-  program();
+  ps_program();
   node_t *ret = as_block(as_func(code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
   token = tk_tokenize("(char)300");
-  node_t *c1 = expr();
+  node_t *c1 = ps_expr();
   ASSERT_EQ(ND_BITAND, c1->kind);
   ASSERT_EQ(0xff, as_num(c1->rhs)->val);
 }
@@ -311,22 +311,22 @@ static void test_expr_inc_dec() {
   printf("test_expr_inc_dec...\n");
 
   token = tk_tokenize("++a");
-  node_t *prei = expr();
+  node_t *prei = ps_expr();
   ASSERT_EQ(ND_PRE_INC, prei->kind);
   ASSERT_EQ(ND_LVAR, prei->lhs->kind);
 
   token = tk_tokenize("--a");
-  node_t *pred = expr();
+  node_t *pred = ps_expr();
   ASSERT_EQ(ND_PRE_DEC, pred->kind);
   ASSERT_EQ(ND_LVAR, pred->lhs->kind);
 
   token = tk_tokenize("a++");
-  node_t *posti = expr();
+  node_t *posti = ps_expr();
   ASSERT_EQ(ND_POST_INC, posti->kind);
   ASSERT_EQ(ND_LVAR, posti->lhs->kind);
 
   token = tk_tokenize("a--");
-  node_t *postd = expr();
+  node_t *postd = ps_expr();
   ASSERT_EQ(ND_POST_DEC, postd->kind);
   ASSERT_EQ(ND_LVAR, postd->lhs->kind);
 }
@@ -334,7 +334,7 @@ static void test_expr_inc_dec() {
 static void test_expr_assign() {
   printf("test_expr_assign...\n");
   token = tk_tokenize("a = 3");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_EQ(ND_LVAR, node->lhs->kind);
@@ -347,52 +347,52 @@ static void test_expr_compound_assign() {
   printf("test_expr_compound_assign...\n");
 
   token = tk_tokenize("a += 3");
-  node_t *add = expr();
+  node_t *add = ps_expr();
   ASSERT_EQ(ND_ASSIGN, add->kind);
   ASSERT_EQ(ND_ADD, add->rhs->kind);
 
   token = tk_tokenize("a -= 3");
-  node_t *sub = expr();
+  node_t *sub = ps_expr();
   ASSERT_EQ(ND_ASSIGN, sub->kind);
   ASSERT_EQ(ND_SUB, sub->rhs->kind);
 
   token = tk_tokenize("a *= 3");
-  node_t *mul = expr();
+  node_t *mul = ps_expr();
   ASSERT_EQ(ND_ASSIGN, mul->kind);
   ASSERT_EQ(ND_MUL, mul->rhs->kind);
 
   token = tk_tokenize("a /= 3");
-  node_t *div = expr();
+  node_t *div = ps_expr();
   ASSERT_EQ(ND_ASSIGN, div->kind);
   ASSERT_EQ(ND_DIV, div->rhs->kind);
 
   token = tk_tokenize("a %= 3");
-  node_t *mod = expr();
+  node_t *mod = ps_expr();
   ASSERT_EQ(ND_ASSIGN, mod->kind);
   ASSERT_EQ(ND_MOD, mod->rhs->kind);
 
   token = tk_tokenize("a <<= 3");
-  node_t *shl = expr();
+  node_t *shl = ps_expr();
   ASSERT_EQ(ND_ASSIGN, shl->kind);
   ASSERT_EQ(ND_SHL, shl->rhs->kind);
 
   token = tk_tokenize("a >>= 3");
-  node_t *shr = expr();
+  node_t *shr = ps_expr();
   ASSERT_EQ(ND_ASSIGN, shr->kind);
   ASSERT_EQ(ND_SHR, shr->rhs->kind);
 
   token = tk_tokenize("a &= 3");
-  node_t *band = expr();
+  node_t *band = ps_expr();
   ASSERT_EQ(ND_ASSIGN, band->kind);
   ASSERT_EQ(ND_BITAND, band->rhs->kind);
 
   token = tk_tokenize("a ^= 3");
-  node_t *bxor = expr();
+  node_t *bxor = ps_expr();
   ASSERT_EQ(ND_ASSIGN, bxor->kind);
   ASSERT_EQ(ND_BITXOR, bxor->rhs->kind);
 
   token = tk_tokenize("a |= 3");
-  node_t *bor = expr();
+  node_t *bor = ps_expr();
   ASSERT_EQ(ND_ASSIGN, bor->kind);
   ASSERT_EQ(ND_BITOR, bor->rhs->kind);
 }
@@ -401,7 +401,7 @@ static void test_expr_comma() {
   printf("test_expr_comma...\n");
 
   token = tk_tokenize("a=1, b=2, a+b");
-  node_t *node = expr();
+  node_t *node = ps_expr();
   ASSERT_EQ(ND_COMMA, node->kind);
   ASSERT_EQ(ND_COMMA, node->lhs->kind);
   ASSERT_EQ(ND_ADD, node->rhs->kind);
@@ -410,7 +410,7 @@ static void test_expr_comma() {
 static void test_program_funcdef() {
   printf("test_program_funcdef...\n");
   token = tk_tokenize("main() { a=1; b=2; a+b; }");
-  program();
+  ps_program();
 
   ASSERT_TRUE(code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
@@ -430,7 +430,7 @@ static void test_program_funcdef() {
 static void test_funcall() {
   printf("test_funcall...\n");
   token = tk_tokenize("add(1, 2)");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_FUNCALL, node->kind);
   ASSERT_EQ(2, as_func(node)->nargs);
@@ -438,7 +438,7 @@ static void test_funcall() {
   ASSERT_EQ(2, as_num(as_func(node)->args[1])->val);
 
   token = tk_tokenize("foo((1,2), 3)");
-  node = expr();
+  node = ps_expr();
   ASSERT_EQ(ND_FUNCALL, node->kind);
   ASSERT_EQ(2, as_func(node)->nargs);
   ASSERT_EQ(ND_COMMA, as_func(node)->args[0]->kind);
@@ -451,7 +451,7 @@ static void test_funcall() {
 static void test_funcdef_with_params() {
   printf("test_funcdef_with_params...\n");
   token = tk_tokenize("int add(int a, int b) { return a+b; }");
-  program();
+  ps_program();
 
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
   ASSERT_EQ(2, as_func(code[0])->nargs);
@@ -462,7 +462,7 @@ static void test_funcdef_with_params() {
 static void test_stmt_if() {
   printf("test_stmt_if...\n");
   token = tk_tokenize("main() { if (1) 2; }");
-  program();
+  ps_program();
   node_t *body = as_func(code[0])->base.rhs;
   node_t *if_node = as_block(body)->body[0];
 
@@ -477,7 +477,7 @@ static void test_stmt_if() {
 static void test_stmt_if_else() {
   printf("test_stmt_if_else...\n");
   token = tk_tokenize("main() { if (1) 2; else 3; }");
-  program();
+  ps_program();
   node_t *if_node = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
@@ -490,7 +490,7 @@ static void test_stmt_if_else() {
 static void test_stmt_while() {
   printf("test_stmt_while...\n");
   token = tk_tokenize("main() { while (1) 2; }");
-  program();
+  ps_program();
   node_t *wh = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_WHILE, wh->kind);
@@ -501,7 +501,7 @@ static void test_stmt_while() {
 static void test_stmt_do_while() {
   printf("test_stmt_do_while...\n");
   token = tk_tokenize("main() { do a=a+1; while (a<3); }");
-  program();
+  ps_program();
   node_t *dw = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_DO_WHILE, dw->kind);
@@ -512,7 +512,7 @@ static void test_stmt_do_while() {
 static void test_stmt_break_continue() {
   printf("test_stmt_break_continue...\n");
   token = tk_tokenize("main() { while (1) { continue; break; } }");
-  program();
+  ps_program();
   node_t *wh = as_block(as_func(code[0])->base.rhs)->body[0];
   node_t *body = wh->rhs;
 
@@ -525,7 +525,7 @@ static void test_stmt_break_continue() {
 static void test_stmt_switch_case_default() {
   printf("test_stmt_switch_case_default...\n");
   token = tk_tokenize("main() { switch (a) { case 1: a=2; break; default: a=3; } }");
-  program();
+  ps_program();
   node_t *sw = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_SWITCH, sw->kind);
@@ -540,7 +540,7 @@ static void test_stmt_switch_case_default() {
 static void test_stmt_for() {
   printf("test_stmt_for...\n");
   token = tk_tokenize("main() { for (a=0; a<10; a=a+1) a; }");
-  program();
+  ps_program();
   node_t *fr = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
@@ -553,7 +553,7 @@ static void test_stmt_for() {
 static void test_stmt_for_with_decl_init() {
   printf("test_stmt_for_with_decl_init...\n");
   token = tk_tokenize("main() { for (int i=0; i<3; i=i+1) i; }");
-  program();
+  ps_program();
   node_t *fr = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
@@ -563,7 +563,7 @@ static void test_stmt_for_with_decl_init() {
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);              // 本体: i
 
   token = tk_tokenize("main() { for (int i=0, j=2; i<j; i=i+1) i; }");
-  program();
+  ps_program();
   fr = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_COMMA, as_ctrl(fr)->init->kind);   // init: int i=0, j=2
@@ -572,7 +572,7 @@ static void test_stmt_for_with_decl_init() {
 static void test_stmt_return() {
   printf("test_stmt_return...\n");
   token = tk_tokenize("main() { return 42; }");
-  program();
+  ps_program();
   node_t *ret = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_RETURN, ret->kind);
@@ -580,7 +580,7 @@ static void test_stmt_return() {
   ASSERT_EQ(42, as_num(ret->lhs)->val);
 
   token = tk_tokenize("void noop() { return; }");
-  program();
+  ps_program();
   ret = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_TRUE(ret->lhs == NULL);
@@ -589,7 +589,7 @@ static void test_stmt_return() {
 static void test_stmt_block() {
   printf("test_stmt_block...\n");
   token = tk_tokenize("main() { { 1; 2; } }");
-  program();
+  ps_program();
   node_t *blk = as_block(as_func(code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_BLOCK, blk->kind);
@@ -603,7 +603,7 @@ static void test_stmt_block() {
 static void test_stmt_goto_label() {
   printf("test_stmt_goto_label...\n");
   token = tk_tokenize("main() { goto L1; L1: return 42; }");
-  program();
+  ps_program();
   node_block_t *body = as_block(as_func(code[0])->base.rhs);
   ASSERT_EQ(ND_GOTO, body->body[0]->kind);
   ASSERT_EQ(ND_LABEL, body->body[1]->kind);
@@ -614,13 +614,13 @@ static void test_expr_deref_addr() {
   printf("test_expr_deref_addr...\n");
   // &a
   token = tk_tokenize("&a");
-  node_t *addr = expr();
+  node_t *addr = ps_expr();
   ASSERT_EQ(ND_ADDR, addr->kind);
   ASSERT_EQ(ND_LVAR, addr->lhs->kind);
 
   // *p (p が変数として存在する前提)
   token = tk_tokenize("*a");
-  node_t *deref = expr();
+  node_t *deref = ps_expr();
   ASSERT_EQ(ND_DEREF, deref->kind);
   ASSERT_EQ(ND_LVAR, deref->lhs->kind);
 }
@@ -629,7 +629,7 @@ static void test_expr_string() {
   printf("test_expr_string...\n");
   string_literals = NULL; // リセット
   token = tk_tokenize("\"hello\"");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_STRING, node->kind);
   ASSERT_TRUE(as_string(node)->string_label != NULL);
@@ -643,7 +643,7 @@ static void test_expr_concat_string() {
   printf("test_expr_concat_string...\n");
   string_literals = NULL;
   token = tk_tokenize("\"he\" \"llo\"");
-  node_t *node = expr();
+  node_t *node = ps_expr();
 
   ASSERT_EQ(ND_STRING, node->kind);
   ASSERT_TRUE(string_literals != NULL);
@@ -655,7 +655,7 @@ static void test_type_decl() {
   printf("test_type_decl...\n");
   // int x = 5; → ND_ASSIGN
   token = tk_tokenize("main() { int x = 5; }");
-  program();
+  ps_program();
   node_t *stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_LVAR, stmt->lhs->kind);
@@ -663,26 +663,26 @@ static void test_type_decl() {
 
   // int x; → ND_NUM(0) ダミー
   token = tk_tokenize("main() { int x; }");
-  program();
+  ps_program();
   stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_NUM, stmt->kind);
   ASSERT_EQ(0, as_num(stmt)->val);
 
   // int a, b=1; → 初期化のある宣言子のみ式木に残る
   token = tk_tokenize("main() { int a, b=1; }");
-  program();
+  ps_program();
   stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_NUM, stmt->rhs->kind);
   ASSERT_EQ(1, as_num(stmt->rhs)->val);
 
   token = tk_tokenize("main() { int a=1, b=2; }");
-  program();
+  ps_program();
   stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_COMMA, stmt->kind);
 
   token = tk_tokenize("main() { struct S; union U; enum E; return 0; }");
-  program();
+  ps_program();
   node_block_t *body = as_block(as_func(code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
@@ -690,7 +690,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   token = tk_tokenize("main() { struct S; struct S *p; p=0; return p==0; }");
-  program();
+  ps_program();
   body = as_block(as_func(code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
@@ -701,7 +701,7 @@ static void test_type_decl() {
 static void test_multiple_funcdefs() {
   printf("test_multiple_funcdefs...\n");
   token = tk_tokenize("foo() { 1; } bar() { 2; }");
-  program();
+  ps_program();
 
   ASSERT_TRUE(code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
@@ -714,7 +714,7 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(code[2] == NULL);
 
   token = tk_tokenize("int add(int a, int b); int add(int a, int b) { return a+b; }");
-  program();
+  ps_program();
   ASSERT_TRUE(code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(code[0])->funcname, "add", 3) == 0);

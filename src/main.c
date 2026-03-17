@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
   token = preprocess(token);
 
   // パースしてAST（抽象構文木）を構築（関数定義の列）
-  program();
+  ps_program();
 
   // 各関数定義のコード生成
   for (int i = 0; code[i]; i++) {

@@ -21,7 +21,7 @@ float_lit_t *float_literals = NULL;
 static node_t *funcdef(void);
 
 // program = funcdef*
-void program(void) {
+void ps_program(void) {
   int cap = 16;
   code = calloc(cap, sizeof(node_t*));
   int i = 0;
@@ -131,7 +131,7 @@ static node_t *funcdef(void) {
 }
 
 // expr = assign ("," assign)*
-node_t *expr(void) {
+node_t *ps_expr(void) {
   node_t *node = pexpr_expr();
   return node;
 }

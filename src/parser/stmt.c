@@ -10,7 +10,7 @@
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 
-node_t *expr(void);
+node_t *ps_expr(void);
 
 static node_t *stmt_internal(void) {
   if (tk_consume('{')) {
@@ -66,7 +66,7 @@ static node_t *stmt_internal(void) {
       node->fp_kind = pexpr_current_func_ret_fp_kind();
       return node;
     }
-    node->lhs = expr();
+    node->lhs = ps_expr();
     if (pexpr_current_func_ret_token_kind() == TK_VOID) {
       tk_error_tok(token, "void 関数では return に式を指定できません");
     }
@@ -80,7 +80,7 @@ static node_t *stmt_internal(void) {
     tk_expect('(');
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_IF;
-    node->base.lhs = expr();
+    node->base.lhs = ps_expr();
     tk_expect(')');
     node->base.rhs = stmt_internal();
     if (token->kind == TK_ELSE) {
@@ -95,7 +95,7 @@ static node_t *stmt_internal(void) {
     tk_expect('(');
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_WHILE;
-    node->base.lhs = expr();
+    node->base.lhs = ps_expr();
     tk_expect(')');
     ploop_enter();
     node->base.rhs = stmt_internal();
@@ -115,7 +115,7 @@ static node_t *stmt_internal(void) {
     }
     token = token->next;
     tk_expect('(');
-    node->base.lhs = expr();
+    node->base.lhs = ps_expr();
     tk_expect(')');
     tk_expect(';');
     return (node_t *)node;
@@ -130,16 +130,16 @@ static node_t *stmt_internal(void) {
       if (pctx_is_type_token(token->kind)) {
         node->init = pdecl_parse_declaration();
       } else {
-        node->init = expr();
+        node->init = ps_expr();
         tk_expect(';');
       }
     }
     if (!tk_consume(';')) {
-      node->base.lhs = expr();
+      node->base.lhs = ps_expr();
       tk_expect(';');
     }
     if (!tk_consume(')')) {
-      node->inc = expr();
+      node->inc = ps_expr();
       tk_expect(')');
     }
     ploop_enter();
@@ -153,7 +153,7 @@ static node_t *stmt_internal(void) {
     tk_expect('(');
     node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
     node->base.kind = ND_SWITCH;
-    node->base.lhs = expr();
+    node->base.lhs = ps_expr();
     tk_expect(')');
     psw_push_ctx();
     node->base.rhs = stmt_internal();
@@ -232,7 +232,7 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  node_t *node = expr();
+  node_t *node = ps_expr();
   tk_expect(';');
   return node;
 }
