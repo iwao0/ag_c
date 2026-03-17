@@ -1,5 +1,6 @@
 #include "parser_stmt.h"
 #include "parser_decl.h"
+#include "parser_dynarray.h"
 #include "parser_expr.h"
 #include "parser_loop_ctx.h"
 #include "parser_node_utils.h"
@@ -15,11 +16,11 @@ static node_t *stmt_internal(void) {
     node_block_t *node = calloc(1, sizeof(node_block_t));
     node->base.kind = ND_BLOCK;
     int i = 0;
-    int cap = 8;
+    int cap = 16;
     node->body = calloc(cap, sizeof(node_t*));
     while (!tk_consume('}')) {
       if (i >= cap - 1) {
-        cap *= 2;
+        cap = pda_next_cap(cap, i + 2);
         node->body = realloc(node->body, sizeof(node_t*) * cap);
       }
       node->body[i++] = stmt_internal();
@@ -238,4 +239,3 @@ static node_t *stmt_internal(void) {
 node_t *pstmt_stmt(void) {
   return stmt_internal();
 }
-

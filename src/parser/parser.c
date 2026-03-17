@@ -2,6 +2,7 @@
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "parser_decl.h"
+#include "parser_dynarray.h"
 #include "parser_expr.h"
 #include "parser_loop_ctx.h"
 #include "parser_stmt.h"
@@ -20,14 +21,14 @@ static node_t *funcdef(void);
 
 // program = funcdef*
 void program(void) {
-  int cap = 8;
+  int cap = 16;
   code = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
     node_t *fn = funcdef();
     if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
     if (i >= cap - 1) { // NULL終端用
-      cap *= 2;
+      cap = pda_next_cap(cap, i + 2);
       code = realloc(code, sizeof(node_t*) * cap);
     }
     code[i++] = fn;
@@ -74,7 +75,7 @@ static node_t *funcdef(void) {
 
   tk_expect('(');
   // 仮引数のパース
-  int arg_cap = 4;
+  int arg_cap = 16;
   node->args = calloc(arg_cap, sizeof(node_t*));
   int nargs = 0;
   if (!tk_consume(')')) {
@@ -87,7 +88,7 @@ static node_t *funcdef(void) {
     }
     while (tk_consume(',')) {
       if (nargs >= arg_cap) {
-        arg_cap *= 2;
+        arg_cap = pda_next_cap(arg_cap, nargs + 1);
         node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
       }
       consume_type(); // 仮引数の型
@@ -112,11 +113,11 @@ static node_t *funcdef(void) {
   node_block_t *body = calloc(1, sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
-  int body_cap = 8;
+  int body_cap = 16;
   body->body = calloc(body_cap, sizeof(node_t*));
   while (!tk_consume('}')) {
     if (i >= body_cap - 1) {
-      body_cap *= 2;
+      body_cap = pda_next_cap(body_cap, i + 2);
       body->body = realloc(body->body, sizeof(node_t*) * body_cap);
     }
     body->body[i++] = pstmt_stmt();

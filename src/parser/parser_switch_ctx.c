@@ -1,4 +1,5 @@
 #include "parser_switch_ctx.h"
+#include "parser_dynarray.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 
@@ -41,7 +42,7 @@ void psw_register_case(long long v, token_t *tok) {
     }
   }
   if (switch_ctx->ncase >= switch_ctx->cap) {
-    switch_ctx->cap = switch_ctx->cap ? switch_ctx->cap * 2 : 8;
+    switch_ctx->cap = pda_next_cap(switch_ctx->cap, switch_ctx->ncase + 1);
     switch_ctx->case_vals = realloc(switch_ctx->case_vals, sizeof(long long) * (size_t)switch_ctx->cap);
   }
   switch_ctx->case_vals[switch_ctx->ncase++] = v;
@@ -56,4 +57,3 @@ void psw_register_default(token_t *tok) {
   }
   switch_ctx->has_default = 1;
 }
-

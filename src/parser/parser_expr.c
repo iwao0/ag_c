@@ -1,5 +1,6 @@
 #include "parser_expr.h"
 #include "parser_decl.h"
+#include "parser_dynarray.h"
 #include "parser_node_utils.h"
 #include "parser_semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
@@ -467,7 +468,7 @@ static node_t *primary(void) {
       node->funcname = tok->str;
       node->funcname_len = tok->len;
       int nargs = 0;
-      int arg_cap = 4;
+      int arg_cap = 16;
       node->args = calloc(arg_cap, sizeof(node_t*));
       if (token->kind == TK_RPAREN) {
         token = token->next;
@@ -476,7 +477,7 @@ static node_t *primary(void) {
         while (token->kind == TK_COMMA) {
           token = token->next;
           if (nargs >= arg_cap) {
-            arg_cap *= 2;
+            arg_cap = pda_next_cap(arg_cap, nargs + 1);
             node->args = realloc(node->args, sizeof(node_t*) * arg_cap);
           }
           node->args[nargs++] = assign();

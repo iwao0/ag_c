@@ -150,3 +150,25 @@
 - 判定:
   - 小幅な変動に留まり、回帰ガードレール（-5%）以内
   - 保守性側の狙い（重複判定の集約）を優先して採用
+
+## 2026-03-17 Dynamic Array Growth Policy (Phase 3-3)
+
+- 実施:
+  - `parser_dynarray.h` を追加し、容量拡張ロジックを `pda_next_cap()` に統一
+  - `program` / 関数引数配列 / block文配列 / 関数呼び出し引数 / switch case 値配列に適用
+  - 初期容量を `16` に引き上げて中規模入力での `realloc` 回数を抑制
+- 回帰確認:
+  - `make build/test_parser build/test_e2e build/bench_parser && build/test_parser && build/test_e2e` pass
+
+### Benchmark (`build/bench_parser`, `-O0`)
+
+| Case | Parser (Before) | Parser (After) | Δ |
+|---|---:|---:|---:|
+| mixed (16KB) parser_MB/s | 22.49 | 21.59 | -4.0% |
+| mixed (256KB) parser_MB/s | 26.69 | 27.28 | +2.2% |
+| expr-heavy (256KB) parser_MB/s | 23.83 | 24.32 | +2.1% |
+| control-heavy (256KB) parser_MB/s | 28.11 | 27.10 | -3.6% |
+
+- 判定:
+  - ケース間で増減はあるが、全ケースで回帰ガードレール（-5%）以内
+  - 保守性（容量成長ロジックの統一）と `realloc` 抑制のため採用
