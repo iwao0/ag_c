@@ -29,6 +29,7 @@ static node_ctrl_t *as_ctrl(node_t *node) { return (node_ctrl_t *)node; }
 static node_string_t *as_string(node_t *node) { return (node_string_t *)node; }
 static node_case_t *as_case(node_t *node) { return (node_case_t *)node; }
 static node_default_t *as_default(node_t *node) { return (node_default_t *)node; }
+static node_jump_t *as_jump(node_t *node) { return (node_jump_t *)node; }
 
 static void push_control_labels(int break_lbl, int continue_lbl) {
   if (control_depth >= 128) {
@@ -62,6 +63,34 @@ typedef struct {
   int case_cap;
   node_default_t *default_node;
 } switch_collect_t;
+
+typedef struct label_map_t label_map_t;
+struct label_map_t {
+  label_map_t *next;
+  char *name;
+  int len;
+  int id;
+};
+
+static label_map_t *label_map_head = NULL;
+
+static void clear_label_map(void) { label_map_head = NULL; }
+
+static void add_label_map(char *name, int len, int id) {
+  label_map_t *m = calloc(1, sizeof(label_map_t));
+  m->name = name;
+  m->len = len;
+  m->id = id;
+  m->next = label_map_head;
+  label_map_head = m;
+}
+
+static int find_label_id(char *name, int len) {
+  for (label_map_t *m = label_map_head; m; m = m->next) {
+    if (m->len == len && strncmp(m->name, name, (size_t)len) == 0) return m->id;
+  }
+  return -1;
+}
 
 static void switch_collect_add_case(switch_collect_t *sc, node_case_t *c) {
   if (sc->case_count >= sc->case_cap) {
@@ -98,6 +127,38 @@ static void collect_switch_labels(node_t *node, switch_collect_t *sc) {
     for (int i = 0; b->body[i]; i++) {
       collect_switch_labels(b->body[i], sc);
     }
+    return;
+  }
+}
+
+static void collect_goto_labels(node_t *node) {
+  if (!node) return;
+  if (node->kind == ND_LABEL) {
+    node_jump_t *j = as_jump(node);
+    if (j->label_id <= 0) {
+      j->label_id = label_count++;
+      add_label_map(j->name, j->name_len, j->label_id);
+    }
+    collect_goto_labels(j->base.rhs);
+    return;
+  }
+  if (node->kind == ND_BLOCK) {
+    node_block_t *b = as_block(node);
+    for (int i = 0; b->body[i]; i++) collect_goto_labels(b->body[i]);
+    return;
+  }
+  if (node->kind == ND_IF) {
+    node_ctrl_t *c = as_ctrl(node);
+    collect_goto_labels(c->base.rhs);
+    collect_goto_labels(c->els);
+    return;
+  }
+  if (node->kind == ND_WHILE || node->kind == ND_DO_WHILE || node->kind == ND_FOR || node->kind == ND_SWITCH) {
+    collect_goto_labels(node->rhs);
+    return;
+  }
+  if (node->kind == ND_CASE || node->kind == ND_DEFAULT) {
+    collect_goto_labels(node->rhs);
     return;
   }
 }
@@ -562,6 +623,8 @@ static void gen_stmt(node_t *node) {
     return;
   case ND_FUNCDEF: {
     node_func_t *fn = as_func(node);
+    clear_label_map();
+    collect_goto_labels(fn->base.rhs);
     // 関数ラベルの出力
     printf(".global _%.*s\n", fn->funcname_len, fn->funcname);
     printf(".align 2\n");
@@ -709,6 +772,22 @@ static void gen_stmt(node_t *node) {
     }
     printf("  b .Lcont%d\n", current_continue_label());
     return;
+  case ND_GOTO: {
+    node_jump_t *j = as_jump(node);
+    int id = find_label_id(j->name, j->name_len);
+    if (id < 0) {
+      fprintf(stderr, "未定義ラベル '%.*s' への goto です\n", j->name_len, j->name);
+      exit(1);
+    }
+    printf("  b .Luser%d\n", id);
+    return;
+  }
+  case ND_LABEL: {
+    node_jump_t *j = as_jump(node);
+    printf(".Luser%d:\n", j->label_id);
+    gen_stmt(j->base.rhs);
+    return;
+  }
   default:
     gen_expr(node);
     printf("  add sp, sp, #16\n");

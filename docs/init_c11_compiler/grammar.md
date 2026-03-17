@@ -19,6 +19,8 @@ stmt       = "{" stmt* "}"
            | "default" ":" stmt
            | "break" ";"
            | "continue" ";"
+           | "goto" ident ";"
+           | ident ":" stmt
            | "return" expr ";"
            | type declarator ("," declarator)* ";"
            | expr ";"
@@ -180,6 +182,8 @@ args       = expr ("," expr)*
 | `ND_DEFAULT` | defaultラベル（`rhs`=default文） |
 | `ND_BREAK` | break文 |
 | `ND_CONTINUE` | continue文 |
+| `ND_GOTO` | goto文（`goto label;`） |
+| `ND_LABEL` | ラベル文（`label: stmt`） |
 | `ND_PRE_INC` | 前置インクリメント (`++x`) |
 | `ND_PRE_DEC` | 前置デクリメント (`--x`) |
 | `ND_POST_INC` | 後置インクリメント (`x++`) |

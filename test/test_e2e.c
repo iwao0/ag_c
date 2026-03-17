@@ -138,6 +138,8 @@ static const test_case_t test_cases[] = {
     {"switch_edge", "fallthrough", CASE_INT, "main() { a=1; b=0; switch (a) { case 1: b=b+1; case 2: b=b+2; break; default: b=99; } return b; }", 3, 0},
     {"switch_edge", "break_in_switch", CASE_INT, "main() { a=1; b=0; switch (a) { case 1: b=7; break; default: b=9; } return b; }", 7, 0},
     {"switch_edge", "continue_outer_loop", CASE_INT, "main() { i=0; s=0; while (i<4) { i=i+1; switch (i) { case 2: continue; default: s=s+i; } } return s; }", 8, 0},
+    {"switch_edge", "goto_forward", CASE_INT, "main() { goto L1; return 0; L1: return 42; }", 42, 0},
+    {"switch_edge", "goto_backward_loop", CASE_INT, "main() { i=0; L: i=i+1; if (i<3) goto L; return i; }", 3, 0},
 
     {"return", "literal", CASE_INT, "main() { return 42; }", 42, 0},
     {"return", "expr", CASE_INT, "main() { return 2+3; }", 5, 0},

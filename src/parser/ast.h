@@ -34,6 +34,8 @@ typedef enum {
   ND_DEFAULT, // default
   ND_BREAK,  // break
   ND_CONTINUE, // continue
+  ND_GOTO,   // goto
+  ND_LABEL,  // label:
   ND_PRE_INC, // ++x
   ND_PRE_DEC, // --x
   ND_POST_INC, // x++
@@ -134,6 +136,15 @@ typedef struct node_default_t node_default_t;
 struct node_default_t {
   node_t base;
   int label_id;     // codegenで使うラベル番号
+};
+
+// goto / label ノード
+typedef struct node_jump_t node_jump_t;
+struct node_jump_t {
+  node_t base;
+  char *name;
+  int name_len;
+  int label_id;     // codegenで解決されるラベル番号
 };
 
 // 文字列リテラルテーブル（連結リスト）

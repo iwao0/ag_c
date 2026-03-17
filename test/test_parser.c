@@ -565,6 +565,16 @@ static void test_stmt_block() {
   ASSERT_TRUE(as_block(blk)->body[2] == NULL);
 }
 
+static void test_stmt_goto_label() {
+  printf("test_stmt_goto_label...\n");
+  token = tk_tokenize("main() { goto L1; L1: return 42; }");
+  program();
+  node_block_t *body = as_block(as_func(code[0])->base.rhs);
+  ASSERT_EQ(ND_GOTO, body->body[0]->kind);
+  ASSERT_EQ(ND_LABEL, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->rhs->kind);
+}
+
 static void test_expr_deref_addr() {
   printf("test_expr_deref_addr...\n");
   // &a
@@ -681,6 +691,7 @@ static void test_parse_invalid() {
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
   expect_parse_fail("main() { return sizeof(void); }");  // sizeof(void) 未対応
   expect_parse_fail("main() { return (void)1; }");       // void cast 未対応
+  expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
@@ -721,6 +732,7 @@ int main() {
   test_stmt_for_with_decl_init();
   test_stmt_return();
   test_stmt_block();
+  test_stmt_goto_label();
   test_expr_deref_addr();
   test_expr_string();
   test_expr_concat_string();

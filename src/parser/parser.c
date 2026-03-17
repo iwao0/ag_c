@@ -188,6 +188,68 @@ struct switch_ctx_t {
 static switch_ctx_t *switch_ctx = NULL;
 static int loop_depth = 0;
 
+typedef struct goto_ref_t goto_ref_t;
+struct goto_ref_t {
+  goto_ref_t *next;
+  char *name;
+  int len;
+  token_t *tok;
+};
+
+typedef struct label_def_t label_def_t;
+struct label_def_t {
+  label_def_t *next;
+  char *name;
+  int len;
+  token_t *tok;
+};
+
+static goto_ref_t *goto_refs = NULL;
+static label_def_t *label_defs = NULL;
+
+static void reset_goto_label_ctx(void) {
+  goto_refs = NULL;
+  label_defs = NULL;
+}
+
+static void register_goto_ref(char *name, int len, token_t *tok) {
+  goto_ref_t *g = calloc(1, sizeof(goto_ref_t));
+  g->name = name;
+  g->len = len;
+  g->tok = tok;
+  g->next = goto_refs;
+  goto_refs = g;
+}
+
+static void register_label_def(char *name, int len, token_t *tok) {
+  for (label_def_t *d = label_defs; d; d = d->next) {
+    if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
+      tk_error_tok(tok, "ラベル '%.*s' が重複しています", len, name);
+    }
+  }
+  label_def_t *d = calloc(1, sizeof(label_def_t));
+  d->name = name;
+  d->len = len;
+  d->tok = tok;
+  d->next = label_defs;
+  label_defs = d;
+}
+
+static void validate_goto_labels(void) {
+  for (goto_ref_t *g = goto_refs; g; g = g->next) {
+    int found = 0;
+    for (label_def_t *d = label_defs; d; d = d->next) {
+      if (d->len == g->len && strncmp(d->name, g->name, (size_t)g->len) == 0) {
+        found = 1;
+        break;
+      }
+    }
+    if (!found) {
+      tk_error_tok(g->tok, "未定義ラベル '%.*s' への goto です", g->len, g->name);
+    }
+  }
+}
+
 static void push_switch_ctx(void) {
   switch_ctx_t *ctx = calloc(1, sizeof(switch_ctx_t));
   ctx->next = switch_ctx;
@@ -353,6 +415,7 @@ static node_t *funcdef(void) {
   // 関数ごとにローカル変数テーブルをリセット
   locals = NULL;
   locals_offset = 0;
+  reset_goto_label_ctx();
 
   tk_expect('(');
   // 仮引数のパース
@@ -405,6 +468,7 @@ static node_t *funcdef(void) {
   }
   body->body[i] = NULL;
   node->base.rhs = (node_t *)body;
+  validate_goto_labels();
 
   return (node_t *)node;
 }
@@ -647,6 +711,34 @@ static node_t *stmt(void) {
     node->kind = ND_CONTINUE;
     tk_expect(';');
     return node;
+  }
+
+  if (token->kind == TK_GOTO) {
+    token_t *goto_tok = token;
+    token = token->next;
+    token_ident_t *ident = tk_consume_ident();
+    if (!ident) {
+      tk_error_tok(token, "goto の後にラベル名が必要です");
+    }
+    node_jump_t *node = calloc(1, sizeof(node_jump_t));
+    node->base.kind = ND_GOTO;
+    node->name = ident->str;
+    node->name_len = ident->len;
+    register_goto_ref(ident->str, ident->len, goto_tok);
+    tk_expect(';');
+    return (node_t *)node;
+  }
+
+  if (token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON) {
+    token_ident_t *ident = tk_consume_ident();
+    tk_expect(':');
+    node_jump_t *node = calloc(1, sizeof(node_jump_t));
+    node->base.kind = ND_LABEL;
+    node->name = ident->str;
+    node->name_len = ident->len;
+    register_label_def(ident->str, ident->len, token);
+    node->base.rhs = stmt();
+    return (node_t *)node;
   }
 
   node_t *node = expr();
