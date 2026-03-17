@@ -47,3 +47,6 @@ jobs:
 
       - name: Check Tokenizer Perf Guard
         run: bash scripts/check_tokenizer_perf.sh bench.out
+
+      - name: Check Parser Perf Guard
+        run: bash scripts/check_parser_perf.sh bench.out

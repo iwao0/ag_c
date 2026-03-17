@@ -410,6 +410,6 @@
   - [x] コンテキスト付きエラー（どの規則で失敗したか）を統一フォーマットで出す
   - [x] 既存テストのメッセージ依存箇所を必要に応じて調整する
 - [ ] フェーズ6: 回帰防止を強化する
-  - [ ] Parser性能回帰チェックをCIに追加する
+  - [x] Parser性能回帰チェックをCIに追加する
   - [x] 1テーマ1コミットで段階適用し、各段階で `make build/test_parser build/test_e2e && build/test_parser && build/test_e2e` を必須化する
   - [ ] 各フェーズの計測結果と判断ログを `parser_perf_report.md` に記録する

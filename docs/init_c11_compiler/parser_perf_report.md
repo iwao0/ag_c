@@ -301,3 +301,19 @@
 - 再計測判定:
   - 1st run より改善するが、依然として差分が大きくベンチ安定性に課題がある
   - 本変更自体はテストコードのみのため、次フェーズで複数回実行の中央値記録へ運用改善する
+
+## 2026-03-17 CI Parser Perf Guard (Phase 6-1)
+
+- 実施:
+  - `scripts/check_parser_perf.sh` を追加
+  - `.github/workflows/ci.yml` の `bench-and-guards` ジョブに parser perf guard を追加
+  - `bench.out` から以下ケースの `parser_MB/s` / `funcs/sec` を検証
+    - `mixed 262200b`
+    - `expr-heavy 262176b`
+    - `control-heavy 262185b`
+  - しきい値は環境変数で上書き可能にしてCI調整を容易化
+- ローカル確認:
+  - `make bench | tee /tmp/bench.out`
+  - `bash scripts/check_tokenizer_perf.sh /tmp/bench.out`
+  - `bash scripts/check_parser_perf.sh /tmp/bench.out`
+  - すべて pass
