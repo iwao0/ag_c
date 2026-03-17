@@ -20,9 +20,10 @@ stmt       = "{" stmt* "}"
            | "break" ";"
            | "continue" ";"
            | "return" expr ";"
-           | type "*"* ident ("[" num "]")? ("=" expr)? ";"
+           | type declarator ("," declarator)* ";"
            | expr ";"
 type       = "int" | "char" | "void" | "short" | "long" | "float" | "double"
+declarator = "*"* ident ("[" num "]")? ("=" expr)?
 expr       = assign ("," assign)*
 assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 conditional= logical_or ("?" expr ":" conditional)?

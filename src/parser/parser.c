@@ -406,48 +406,54 @@ static node_t *funcdef(void) {
 static node_t *declaration(void) {
   token_kind_t type_kind = consume_type_kind();
   int elem_size = scalar_type_size(type_kind);
-  // ポインタの * を読み飛ばす（ポインタ自体は8バイト）
-  int is_pointer = 0;
-  while (tk_consume('*')) { is_pointer = 1; }
-  int var_size = is_pointer ? 8 : elem_size;
-  token_ident_t *tok = tk_consume_ident();
-  if (!tok) {
-    tk_error_tok(token, "変数名が期待されます");
-  }
-  lvar_t *var = find_lvar(tok->str, tok->len);
-  if (!var) {
-    // 配列宣言: ident "[" num "]"
-    if (tk_consume('[')) {
-      int array_size = tk_expect_number();
-      tk_expect(']');
-      var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
-      if (tk_consume('=')) {
-        // 配列初期化は未対応
-        expr();
-      }
-      tk_expect(';');
-      return new_node_num(0);
+  node_t *init_chain = NULL;
+
+  for (;;) {
+    int is_pointer = 0;
+    while (tk_consume('*')) { is_pointer = 1; } // ポインタ自体は8バイト
+    int var_size = is_pointer ? 8 : elem_size;
+
+    token_ident_t *tok = tk_consume_ident();
+    if (!tok) {
+      tk_error_tok(token, "変数名が期待されます");
     }
-    var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
+
+    lvar_t *var = find_lvar(tok->str, tok->len);
+    if (!var) {
+      if (tk_consume('[')) {
+        int array_size = tk_expect_number();
+        tk_expect(']');
+        var = register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
+        if (tk_consume('=')) {
+          // 配列初期化は未対応
+          assign();
+        }
+      } else {
+        var = register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
+      }
+    }
+
+    if (!is_pointer) {
+      if (type_kind == TK_FLOAT) var->fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (type_kind == TK_DOUBLE) var->fp_kind = TK_FLOAT_KIND_DOUBLE;
+    }
+
+    if (tk_consume('=')) {
+      node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
+      lvar->fp_kind = var->fp_kind;
+      node_mem_t *assign_node = new_node_assign(lvar, assign());
+      assign_node->type_size = is_pointer ? 8 : var->elem_size;
+      assign_node->base.fp_kind = var->fp_kind;
+      node_t *init_node = (node_t *)assign_node;
+      if (!init_chain) init_chain = init_node;
+      else init_chain = new_node_binary(ND_COMMA, init_chain, init_node);
+    }
+
+    if (!tk_consume(',')) break;
   }
-  // float/double フラグを設定
-  if (!is_pointer) {
-    if (type_kind == TK_FLOAT) var->fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (type_kind == TK_DOUBLE) var->fp_kind = TK_FLOAT_KIND_DOUBLE;
-  }
-  if (tk_consume('=')) {
-    // int x = expr;
-    node_t *lvar = new_node_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
-    lvar->fp_kind = var->fp_kind;
-    node_mem_t *node = new_node_assign(lvar, expr());
-    node->type_size = is_pointer ? 8 : var->elem_size;
-    node->base.fp_kind = var->fp_kind;
-    tk_expect(';');
-    return (node_t *)node;
-  }
-  // int x; (初期化なし → ダミーの値0)
+
   tk_expect(';');
-  return new_node_num(0);
+  return init_chain ? init_chain : new_node_num(0);
 }
 
 // stmt = "{" stmt* "}"

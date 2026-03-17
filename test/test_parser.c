@@ -526,6 +526,12 @@ static void test_stmt_for_with_decl_init() {
   ASSERT_EQ(ND_LT, fr->lhs->kind);                // 条件: i<3
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: i=i+1
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);              // 本体: i
+
+  token = tk_tokenize("main() { for (int i=0, j=2; i<j; i=i+1) i; }");
+  program();
+  fr = as_block(as_func(code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_FOR, fr->kind);
+  ASSERT_EQ(ND_COMMA, as_ctrl(fr)->init->kind);   // init: int i=0, j=2
 }
 
 static void test_stmt_return() {
@@ -616,6 +622,19 @@ static void test_type_decl() {
   stmt = as_block(as_func(code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_NUM, stmt->kind);
   ASSERT_EQ(0, as_num(stmt)->val);
+
+  // int a, b=1; → 初期化のある宣言子のみ式木に残る
+  token = tk_tokenize("main() { int a, b=1; }");
+  program();
+  stmt = as_block(as_func(code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_ASSIGN, stmt->kind);
+  ASSERT_EQ(ND_NUM, stmt->rhs->kind);
+  ASSERT_EQ(1, as_num(stmt->rhs)->val);
+
+  token = tk_tokenize("main() { int a=1, b=2; }");
+  program();
+  stmt = as_block(as_func(code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_COMMA, stmt->kind);
 }
 
 static void test_multiple_funcdefs() {
