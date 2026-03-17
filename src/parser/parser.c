@@ -27,6 +27,11 @@ static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_n
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(void);
 static long long parse_enum_const_expr_toplevel(void);
+static long long parse_enum_const_conditional_toplevel(void);
+static long long parse_enum_const_logor_toplevel(void);
+static long long parse_enum_const_logand_toplevel(void);
+static long long parse_enum_const_eq_toplevel(void);
+static long long parse_enum_const_rel_toplevel(void);
 static long long parse_enum_const_add_toplevel(void);
 static long long parse_enum_const_mul_toplevel(void);
 static long long parse_enum_const_unary_toplevel(void);
@@ -280,7 +285,63 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
   return member_count;
 }
 
-static long long parse_enum_const_expr_toplevel(void) { return parse_enum_const_add_toplevel(); }
+static long long parse_enum_const_expr_toplevel(void) { return parse_enum_const_conditional_toplevel(); }
+
+static long long parse_enum_const_conditional_toplevel(void) {
+  long long cond = parse_enum_const_logor_toplevel();
+  if (!tk_consume('?')) return cond;
+  long long then_v = parse_enum_const_expr_toplevel();
+  tk_expect(':');
+  long long else_v = parse_enum_const_conditional_toplevel();
+  return cond ? then_v : else_v;
+}
+
+static long long parse_enum_const_logor_toplevel(void) {
+  long long v = parse_enum_const_logand_toplevel();
+  while (token->kind == TK_OROR) {
+    token = token->next;
+    long long r = parse_enum_const_logand_toplevel();
+    v = (v || r) ? 1 : 0;
+  }
+  return v;
+}
+
+static long long parse_enum_const_logand_toplevel(void) {
+  long long v = parse_enum_const_eq_toplevel();
+  while (token->kind == TK_ANDAND) {
+    token = token->next;
+    long long r = parse_enum_const_eq_toplevel();
+    v = (v && r) ? 1 : 0;
+  }
+  return v;
+}
+
+static long long parse_enum_const_eq_toplevel(void) {
+  long long v = parse_enum_const_rel_toplevel();
+  while (token->kind == TK_EQEQ || token->kind == TK_NEQ) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_rel_toplevel();
+    v = (op == TK_EQEQ) ? (v == r) : (v != r);
+  }
+  return v;
+}
+
+static long long parse_enum_const_rel_toplevel(void) {
+  long long v = parse_enum_const_add_toplevel();
+  while (token->kind == TK_LT || token->kind == TK_LE || token->kind == TK_GT || token->kind == TK_GE) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_add_toplevel();
+    switch (op) {
+      case TK_LT: v = (v < r); break;
+      case TK_LE: v = (v <= r); break;
+      case TK_GT: v = (v > r); break;
+      default: v = (v >= r); break;
+    }
+  }
+  return v;
+}
 
 static long long parse_enum_const_add_toplevel(void) {
   long long v = parse_enum_const_mul_toplevel();
