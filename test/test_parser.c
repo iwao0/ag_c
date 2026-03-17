@@ -651,6 +651,13 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(strncmp(as_func(code[1])->funcname, "bar", 3) == 0);
 
   ASSERT_TRUE(code[2] == NULL);
+
+  token = tk_tokenize("int add(int a, int b); int add(int a, int b) { return a+b; }");
+  program();
+  ASSERT_TRUE(code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, code[0]->kind);
+  ASSERT_TRUE(strncmp(as_func(code[0])->funcname, "add", 3) == 0);
+  ASSERT_TRUE(code[1] == NULL);
 }
 
 static void test_parse_invalid() {

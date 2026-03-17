@@ -158,6 +158,7 @@ static const test_case_t test_cases[] = {
     {"funcall", "multi", CASE_INT, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }", 21, 0},
     {"funcall", "rec", CASE_INT, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }", 120, 0},
     {"funcall", "comma_arg", CASE_INT, "f(x,y){return x*10+y;} main(){ return f((1,2),3); }", 23, 0},
+    {"funcall", "prototype_decl", CASE_INT, "int add(int a, int b); int add(int a, int b){ return a+b; } int main(){ return add(20,22); }", 42, 0},
 
     {"multichar_var", "foo", CASE_INT, "main() { foo=3; return foo; }", 3, 0},
     {"multichar_var", "hello", CASE_INT, "main() { hello=2; world=3; return hello+world; }", 5, 0},

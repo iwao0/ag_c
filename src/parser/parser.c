@@ -305,11 +305,13 @@ void program(void) {
   code = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
+    node_t *fn = funcdef();
+    if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
     if (i >= cap - 1) { // NULL終端用
       cap *= 2;
       code = realloc(code, sizeof(node_t*) * cap);
     }
-    code[i++] = funcdef();
+    code[i++] = fn;
   }
   code[i] = NULL;
 }
@@ -331,7 +333,7 @@ static bool consume_type(void) {
 static tk_float_kind_t current_func_ret_type = TK_FLOAT_KIND_NONE;
 static token_kind_t current_func_ret_token_kind = TK_INT;
 
-// funcdef = "int"? ident "(" params? ")" "{" stmt* "}"
+// funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
   token_kind_t ret_kind = consume_type_kind(); // 戻り値の型（省略可）
@@ -381,6 +383,11 @@ static node_t *funcdef(void) {
     tk_expect(')');
   }
   node->nargs = nargs;
+
+  // 関数プロトタイプ宣言（本体なし）
+  if (tk_consume(';')) {
+    return NULL;
+  }
 
   // 関数本体 (ブロック)
   tk_expect('{');

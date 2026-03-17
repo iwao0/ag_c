@@ -7,7 +7,7 @@
 
 ```
 program    = funcdef*
-funcdef    = type? ident "(" params? ")" "{" stmt* "}"
+funcdef    = type? ident "(" params? ")" (";" | "{" stmt* "}")
 params     = type? ident ("," type? ident)*
 stmt       = "{" stmt* "}"
            | "if" "(" expr ")" stmt ("else" stmt)?
