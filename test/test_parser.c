@@ -1047,6 +1047,22 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { struct I { int x; int y; }; struct O { struct I i; int z; }; struct O o={{1,2},3}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
+  ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
+              (body->body[3] && body->body[3]->kind == ND_RETURN));
+
+  token = tk_tokenize("main() { struct I { int x; int y; }; union U { struct I i; int raw; }; union U u={{4,5}}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_ASSIGN);
+  ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
+              (body->body[3] && body->body[3]->kind == ND_RETURN));
+
   token = tk_tokenize("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
