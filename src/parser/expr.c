@@ -386,7 +386,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }
-  if (type_kind == TK_STRUCT || type_kind == TK_UNION || type_kind == TK_ENUM) {
+  if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
     psx_diag_ctx(token, "cast", "非スカラ型へのキャストは未対応です");
   }
   if (type_kind == TK_FLOAT) {
@@ -397,7 +397,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     operand->fp_kind = TK_FLOAT_KIND_DOUBLE;
     return operand;
   }
-  if (type_kind == TK_INT) {
+  if (type_kind == TK_INT || type_kind == TK_ENUM) {
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }

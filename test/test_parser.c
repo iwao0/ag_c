@@ -951,6 +951,12 @@ static void test_type_decl() {
   ASSERT_EQ(0, as_lvar(body->body[0]->lhs)->mem.is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
+  token = tk_tokenize("main() { enum E { A=1 }; return (enum E)42; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
   token = tk_tokenize("main() { const int cx=1; volatile int vx=2; return cx+vx; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
