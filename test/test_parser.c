@@ -1046,6 +1046,12 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
+  token = tk_tokenize("main() { int a[2]=1; return a[0]+a[1]; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_COMMA, body->body[0]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
   token = tk_tokenize("main() { char s[4]=\"abc\"; return s[2]; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -1284,7 +1290,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { switch (1) { default: 0; default: 1; } }"); // default 重複
   expect_parse_fail("main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
   expect_parse_fail("main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
-  expect_parse_fail("main() { int a[2]=1; return 0; }"); // 配列の単一式初期化は未対応
   expect_parse_fail("main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
   expect_parse_fail("main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
   expect_parse_fail("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator
@@ -1300,7 +1305,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)a; }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
-  expect_parse_fail_with_message("main() { int a[2]=1; return 0; }", "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
   expect_parse_fail_with_message("main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");

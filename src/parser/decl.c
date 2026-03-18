@@ -290,8 +290,24 @@ static node_t *parse_array_initializer(lvar_t *var) {
     }
     return init_chain ? init_chain : psx_node_new_num(0);
   }
-
-  psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
+  // Extension: scalar expression for array init
+  //   int a[3] = 1;  => a[0]=1, a[1]=0, a[2]=0
+  if (array_len > 0) {
+    node_t *lhs0 = new_array_elem_lvar(var, 0);
+    node_mem_t *assign0 = psx_node_new_assign(lhs0, rhs);
+    assign0->type_size = var->elem_size;
+    assign0->base.fp_kind = var->fp_kind;
+    init_chain = (node_t *)assign0;
+    for (int idx = 1; idx < array_len; idx++) {
+      node_t *lhs = new_array_elem_lvar(var, idx);
+      node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
+      assign_node->type_size = var->elem_size;
+      assign_node->base.fp_kind = var->fp_kind;
+      node_t *init_node = (node_t *)assign_node;
+      init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+    }
+    return init_chain;
+  }
   return psx_node_new_num(0);
 }
 
