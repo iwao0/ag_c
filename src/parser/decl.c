@@ -510,6 +510,49 @@ static node_t *parse_union_initializer(lvar_t *var) {
   bool has_brace = tk_consume('{');
   if (has_brace && tk_consume('}')) return psx_node_new_num(0);
 
+  if (!has_brace) {
+    node_t *rhs = psx_expr_assign();
+    if (rhs && rhs->kind == ND_LVAR) {
+      node_lvar_t *src = (node_lvar_t *)rhs;
+      if (src->mem.tag_kind == var->tag_kind && !src->mem.is_tag_pointer &&
+          src->mem.tag_len == var->tag_len &&
+          strncmp(src->mem.tag_name ? src->mem.tag_name : "",
+                  var->tag_name ? var->tag_name : "", (size_t)var->tag_len) == 0) {
+        return build_byte_copy_chain(var->offset, src->offset, var->size, NULL);
+      }
+    }
+
+    // Fallback: scalar expression initializes the first union member.
+    char *member_name = NULL;
+    int member_len = 0;
+    int member_offset = 0;
+    int member_type_size = 0;
+    int member_array_len = 0;
+    token_kind_t member_tag_kind = TK_EOF;
+    char *member_tag_name = NULL;
+    int member_tag_len = 0;
+    int member_is_tag_pointer = 0;
+    int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
+    bool found = false;
+    for (int ordinal = 0; ordinal < member_count; ordinal++) {
+      found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+                                        &member_name, &member_len,
+                                        &member_offset, &member_type_size, NULL, &member_array_len,
+                                        &member_tag_kind, &member_tag_name,
+                                        &member_tag_len, &member_is_tag_pointer);
+      if (!found) break;
+      if (member_len > 0) break;
+    }
+    if (!found || member_len <= 0) {
+      psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
+    }
+    node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                         member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+    assign_node->type_size = member_type_size;
+    return (node_t *)assign_node;
+  }
+
   char *member_name = NULL;
   int member_len = 0;
   int member_offset = 0;
