@@ -125,6 +125,25 @@ static void skip_ptr_qualifiers_decl(int *is_const_qualified, int *is_volatile_q
   }
 }
 
+static void consume_pointer_chain_decl(int *is_pointer,
+                                       unsigned int *const_mask, unsigned int *volatile_mask,
+                                       int *levels) {
+  while (tk_consume('*')) {
+    *is_pointer = 1;
+    int cur_const = 0;
+    int cur_volatile = 0;
+    skip_ptr_qualifiers_decl(&cur_const, &cur_volatile);
+    if (levels && const_mask && volatile_mask) {
+      int lv = *levels;
+      if (lv < 32) {
+        if (cur_const) *const_mask |= (1u << lv);
+        if (cur_volatile) *volatile_mask |= (1u << lv);
+      }
+      *levels = lv + 1;
+    }
+  }
+}
+
 static int parse_array_size_constexpr_decl(void) {
   node_t *n = psx_expr_assign();
   int ok = 1;
@@ -412,14 +431,13 @@ static void skip_func_params(void) {
   }
 }
 
-static token_ident_t *consume_decl_name(int *is_pointer) {
+static token_ident_t *consume_decl_name(int *is_pointer,
+                                        unsigned int *const_mask, unsigned int *volatile_mask,
+                                        int *levels) {
   token_ident_t *tok = NULL;
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) {
-    *is_pointer = 1;
-    skip_ptr_qualifiers_decl(NULL, NULL);
-  }
+  consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
   tok = tk_consume_ident();
   if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
   while (open_parens-- > 0) tk_expect(')');
@@ -481,6 +499,9 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.is_volatile_qualified = var->is_volatile_qualified;
   ((node_lvar_t *)lvar)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
   ((node_lvar_t *)lvar)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
+  ((node_lvar_t *)lvar)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
+  ((node_lvar_t *)lvar)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
+  ((node_lvar_t *)lvar)->mem.pointer_qual_levels = var->pointer_qual_levels;
   node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
   assign_node->type_size = is_pointer ? 8 : var->elem_size;
   assign_node->base.fp_kind = var->fp_kind;
@@ -495,24 +516,18 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
   for (;;) {
     int is_pointer = base_is_pointer;
-    int ptr_is_const_qualified = 0;
-    int ptr_is_volatile_qualified = 0;
-    while (tk_consume('*')) {
-      is_pointer = 1;
-      int cur_const = 0;
-      int cur_volatile = 0;
-      skip_ptr_qualifiers_decl(&cur_const, &cur_volatile);
-      if (!ptr_is_const_qualified && !ptr_is_volatile_qualified) {
-        ptr_is_const_qualified = cur_const;
-        ptr_is_volatile_qualified = cur_volatile;
-      }
-    }
+    unsigned int ptr_const_mask = 0;
+    unsigned int ptr_volatile_mask = 0;
+    int ptr_levels = 0;
+    consume_pointer_chain_decl(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
       psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
     }
 
-    token_ident_t *tok = consume_decl_name(&is_pointer);
+    token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     int var_size = is_pointer ? 8 : elem_size;
+    int ptr_is_const_qualified = (ptr_const_mask & 1u) ? 1 : 0;
+    int ptr_is_volatile_qualified = (ptr_volatile_mask & 1u) ? 1 : 0;
 
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
@@ -532,6 +547,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
         var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
+        var->pointer_const_qual_mask = ptr_const_mask;
+        var->pointer_volatile_qual_mask = ptr_volatile_mask;
+        var->pointer_qual_levels = ptr_levels;
       } else {
         var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
         var->tag_kind = tag_kind;
@@ -542,6 +560,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
         var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
+        var->pointer_const_qual_mask = ptr_const_mask;
+        var->pointer_volatile_qual_mask = ptr_volatile_mask;
+        var->pointer_qual_levels = ptr_levels;
       }
     }
 

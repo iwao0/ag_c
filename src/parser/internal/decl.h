@@ -21,6 +21,9 @@ struct lvar_t {
   int is_volatile_qualified;
   int is_pointer_const_qualified;
   int is_pointer_volatile_qualified;
+  unsigned int pointer_const_qual_mask;
+  unsigned int pointer_volatile_qual_mask;
+  int pointer_qual_levels;
 };
 
 void psx_decl_reset_locals(void);
