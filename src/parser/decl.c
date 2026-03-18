@@ -13,7 +13,7 @@ static int locals_offset;
 static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
-static void skip_brace_initializer(void);
+static node_t *parse_union_initializer(lvar_t *var);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -285,17 +285,51 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
-static void skip_brace_initializer(void) {
+static node_t *parse_union_initializer(lvar_t *var) {
   if (!tk_consume('{')) {
-    psx_diag_ctx(token, "decl", "初期化子は現在 '{...}' 形式のみ対応です");
+    psx_diag_ctx(token, "decl", "共用体初期化は現在 '{...}' 形式のみ対応です");
   }
-  int depth = 1;
-  while (depth > 0) {
-    if (token->kind == TK_EOF) psx_diag_ctx(token, "decl", "初期化子の '}' が不足しています");
-    if (token->kind == TK_LBRACE) depth++;
-    else if (token->kind == TK_RBRACE) depth--;
-    token = token->next;
+  if (tk_consume('}')) return psx_node_new_num(0);
+
+  char *member_name = NULL;
+  int member_len = 0;
+  int member_offset = 0;
+  int member_type_size = 0;
+  token_kind_t member_tag_kind = TK_EOF;
+  char *member_tag_name = NULL;
+  int member_tag_len = 0;
+  int member_is_tag_pointer = 0;
+  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
+  bool found = false;
+  int ordinal = 0;
+  while (ordinal < member_count) {
+    found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+                                      &member_name, &member_len,
+                                      &member_offset, &member_type_size, NULL,
+                                      &member_tag_kind, &member_tag_name,
+                                      &member_tag_len, &member_is_tag_pointer);
+    ordinal++;
+    if (!found) break;
+    if (member_len > 0) break;
   }
+  if (!found || member_len <= 0) {
+    psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
+  }
+  if (!(member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8)) {
+    psx_diag_ctx(token, "decl", "共用体初期化の非スカラメンバは未対応です");
+  }
+  node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                       member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+  node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+  assign_node->type_size = member_type_size;
+  if (tk_consume(',')) {
+    if (!tk_consume('}')) {
+      psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
+    }
+    return (node_t *)assign_node;
+  }
+  tk_expect('}');
+  return (node_t *)assign_node;
 }
 
 static void skip_func_params(void) {
@@ -418,8 +452,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         if (var->tag_kind == TK_STRUCT) {
           init_node = parse_struct_initializer(var);
         } else {
-          skip_brace_initializer();
-          init_node = psx_node_new_num(0);
+          init_node = parse_union_initializer(var);
         }
         if (!init_chain) init_chain = init_node;
         else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
