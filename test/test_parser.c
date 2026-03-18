@@ -962,6 +962,17 @@ static void test_type_decl() {
   ASSERT_EQ(1, as_lvar(body->body[1]->lhs)->mem.is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(1, as_lvar(body->body[0]->lhs)->mem.is_pointer_const_qualified);
+  ASSERT_EQ(0, as_lvar(body->body[0]->lhs)->mem.is_pointer_volatile_qualified);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(0, as_lvar(body->body[1]->lhs)->mem.is_pointer_const_qualified);
+  ASSERT_EQ(1, as_lvar(body->body[1]->lhs)->mem.is_pointer_volatile_qualified);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
   token = tk_tokenize("main() { int a[3]={1,2,3}; return a[2]; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);

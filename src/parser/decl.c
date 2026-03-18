@@ -117,8 +117,10 @@ static long long eval_const_expr_decl(node_t *n, int *ok) {
   }
 }
 
-static void skip_ptr_qualifiers_decl(void) {
+static void skip_ptr_qualifiers_decl(int *is_const_qualified, int *is_volatile_qualified) {
   while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
+    if (token->kind == TK_CONST && is_const_qualified) *is_const_qualified = 1;
+    if (token->kind == TK_VOLATILE && is_volatile_qualified) *is_volatile_qualified = 1;
     token = token->next;
   }
 }
@@ -416,7 +418,7 @@ static token_ident_t *consume_decl_name(int *is_pointer) {
   while (tk_consume('(')) open_parens++;
   while (tk_consume('*')) {
     *is_pointer = 1;
-    skip_ptr_qualifiers_decl();
+    skip_ptr_qualifiers_decl(NULL, NULL);
   }
   tok = tk_consume_ident();
   if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
@@ -477,6 +479,8 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
   ((node_lvar_t *)lvar)->mem.is_const_qualified = var->is_const_qualified;
   ((node_lvar_t *)lvar)->mem.is_volatile_qualified = var->is_volatile_qualified;
+  ((node_lvar_t *)lvar)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
+  ((node_lvar_t *)lvar)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
   node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
   assign_node->type_size = is_pointer ? 8 : var->elem_size;
   assign_node->base.fp_kind = var->fp_kind;
@@ -491,9 +495,17 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
   for (;;) {
     int is_pointer = base_is_pointer;
+    int ptr_is_const_qualified = 0;
+    int ptr_is_volatile_qualified = 0;
     while (tk_consume('*')) {
       is_pointer = 1;
-      skip_ptr_qualifiers_decl();
+      int cur_const = 0;
+      int cur_volatile = 0;
+      skip_ptr_qualifiers_decl(&cur_const, &cur_volatile);
+      if (!ptr_is_const_qualified && !ptr_is_volatile_qualified) {
+        ptr_is_const_qualified = cur_const;
+        ptr_is_volatile_qualified = cur_volatile;
+      }
     }
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
       psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
@@ -518,6 +530,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->is_tag_pointer = 0;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
+        var->is_pointer_const_qualified = ptr_is_const_qualified;
+        var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
       } else {
         var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
         var->tag_kind = tag_kind;
@@ -526,6 +540,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->is_tag_pointer = is_pointer ? 1 : 0;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
+        var->is_pointer_const_qualified = ptr_is_const_qualified;
+        var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
       }
     }
 

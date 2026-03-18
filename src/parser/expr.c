@@ -289,6 +289,8 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   as_lvar(ref)->mem.is_tag_pointer = var->is_tag_pointer;
   as_lvar(ref)->mem.is_const_qualified = var->is_const_qualified;
   as_lvar(ref)->mem.is_volatile_qualified = var->is_volatile_qualified;
+  as_lvar(ref)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
+  as_lvar(ref)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
   return ref;
 }
 
@@ -975,6 +977,8 @@ static node_t *primary(void) {
     as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
     as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;
     as_lvar(n)->mem.is_volatile_qualified = var->is_volatile_qualified;
+    as_lvar(n)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
+    as_lvar(n)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
     n->fp_kind = var->fp_kind;
     return n;
   }

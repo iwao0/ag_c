@@ -19,6 +19,8 @@ struct lvar_t {
   int is_tag_pointer;
   int is_const_qualified;
   int is_volatile_qualified;
+  int is_pointer_const_qualified;
+  int is_pointer_volatile_qualified;
 };
 
 void psx_decl_reset_locals(void);
