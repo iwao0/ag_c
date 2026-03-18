@@ -269,6 +269,7 @@ static node_t *add(void);
 static node_t *mul(void);
 static node_t *unary(void);
 static node_t *primary(void);
+static node_t *apply_postfix(node_t *node);
 
 static char *new_compound_lit_name(void) {
   int n = compound_lit_seq++;
@@ -613,7 +614,8 @@ static node_t *unary(void) {
       var->fp_kind = cast_fp_kind;
       node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
       node_t *ref = new_typed_lvar_ref(var, cast_is_ptr);
-      return psx_node_new_binary(ND_COMMA, init, ref);
+      node_t *val = apply_postfix(ref);
+      return psx_node_new_binary(ND_COMMA, init, val);
     }
     token = after_rparen;
     return apply_cast(cast_kind, cast_is_ptr, unary());
@@ -722,6 +724,18 @@ static node_t *unary(void) {
   }
 
   node_t *node = primary();
+  return apply_postfix(node);
+}
+
+static node_t *apply_postfix(node_t *node) {
+  if (node && node->kind == ND_COMMA &&
+      (token->kind == TK_LBRACKET || token->kind == TK_LPAREN ||
+       token->kind == TK_DOT || token->kind == TK_ARROW ||
+       token->kind == TK_INC || token->kind == TK_DEC)) {
+    node->rhs = apply_postfix(node->rhs);
+    return node;
+  }
+
   while (token->kind == TK_LBRACKET) {
     token = token->next;
     node_t *idx = expr_internal();
