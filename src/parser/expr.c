@@ -304,10 +304,8 @@ static int parse_parenthesized_type_size(void) {
   psx_ctx_get_type_info(type_kind, &is_type, &scalar_size);
   if (is_type) {
     token = token->next;
-    if (type_kind == TK_VOID) {
-      psx_diag_ctx(token, "sizeof", "sizeof(void) はサポートしていません");
-    }
-    int sz = scalar_size;
+    // Extension: treat sizeof(void) as 1 (GNU-compatible behavior).
+    int sz = (type_kind == TK_VOID) ? 1 : scalar_size;
     while (token->kind == TK_MUL) {
       token = token->next;
       sz = 8;

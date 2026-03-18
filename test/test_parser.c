@@ -331,6 +331,11 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, n1->kind);
   ASSERT_EQ(4, as_num(n1)->val);
 
+  token = tk_tokenize("sizeof(void)");
+  node_t *n0 = ps_expr();
+  ASSERT_EQ(ND_NUM, n0->kind);
+  ASSERT_EQ(1, as_num(n0)->val);
+
   token = tk_tokenize("sizeof(int*)");
   node_t *n2 = ps_expr();
   ASSERT_EQ(ND_NUM, n2->kind);
@@ -1148,7 +1153,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
   expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
-  expect_parse_fail("main() { return sizeof(void); }");  // sizeof(void) 未対応
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
@@ -1186,7 +1190,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "[parser] ラベル 'L1' が重複");
   expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
-  expect_parse_fail_with_message("main() { return sizeof(void); }", "[sizeof] sizeof(void) はサポートしていません");
   expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
 }
 
