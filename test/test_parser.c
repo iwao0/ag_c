@@ -958,7 +958,7 @@ static void test_type_decl() {
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
-  ASSERT_EQ(ND_NUM, body->body[1]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 

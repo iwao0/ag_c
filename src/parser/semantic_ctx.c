@@ -47,6 +47,7 @@ struct tag_member_t {
   char *member_tag_name;
   int member_tag_len;
   int member_is_tag_pointer;
+  int decl_order;
   int scope_depth;
 };
 
@@ -87,6 +88,7 @@ static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
 static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
 static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
+static int tag_member_decl_order = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
   // djb2 variant
@@ -333,9 +335,56 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->member_tag_name = member_tag_name;
   m->member_tag_len = member_tag_len;
   m->member_is_tag_pointer = member_is_tag_pointer;
+  m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
   tag_members_by_bucket[bucket] = m;
+}
+
+static int cmp_tag_member_ptr(const void *a, const void *b) {
+  const tag_member_t *ma = *(const tag_member_t * const *)a;
+  const tag_member_t *mb = *(const tag_member_t * const *)b;
+  if (ma->offset != mb->offset) return (ma->offset < mb->offset) ? -1 : 1;
+  if (ma->decl_order != mb->decl_order) return (ma->decl_order < mb->decl_order) ? -1 : 1;
+  return 0;
+}
+
+bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_len, int index,
+                               char **out_member_name, int *out_member_len,
+                               int *out_offset, int *out_type_size, int *out_deref_size,
+                               token_kind_t *out_member_tag_kind, char **out_member_tag_name,
+                               int *out_member_tag_len, int *out_member_is_tag_pointer) {
+  int cap = 8;
+  int n = 0;
+  tag_member_t **members = calloc((size_t)cap, sizeof(tag_member_t *));
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (tag_member_t *m = tag_members_by_bucket[i]; m; m = m->next_hash) {
+      if (m->tag_kind != tag_kind || m->tag_len != tag_len) continue;
+      if (strncmp(m->tag_name, tag_name, (size_t)tag_len) != 0) continue;
+      if (n >= cap) {
+        cap *= 2;
+        members = realloc(members, (size_t)cap * sizeof(tag_member_t *));
+      }
+      members[n++] = m;
+    }
+  }
+  if (n == 0 || index < 0 || index >= n) {
+    free(members);
+    return false;
+  }
+  qsort(members, (size_t)n, sizeof(tag_member_t *), cmp_tag_member_ptr);
+  tag_member_t *m = members[index];
+  if (out_member_name) *out_member_name = m->member_name;
+  if (out_member_len) *out_member_len = m->member_len;
+  if (out_offset) *out_offset = m->offset;
+  if (out_type_size) *out_type_size = m->type_size;
+  if (out_deref_size) *out_deref_size = m->deref_size;
+  if (out_member_tag_kind) *out_member_tag_kind = m->member_tag_kind;
+  if (out_member_tag_name) *out_member_tag_name = m->member_tag_name;
+  if (out_member_tag_len) *out_member_tag_len = m->member_tag_len;
+  if (out_member_is_tag_pointer) *out_member_is_tag_pointer = m->member_is_tag_pointer;
+  free(members);
+  return true;
 }
 
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,

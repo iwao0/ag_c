@@ -27,6 +27,11 @@ bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int *out_offset, int *out_type_size, int *out_deref_size,
                              token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                              int *out_member_tag_len, int *out_member_is_tag_pointer);
+bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_len, int index,
+                               char **out_member_name, int *out_member_len,
+                               int *out_offset, int *out_type_size, int *out_deref_size,
+                               token_kind_t *out_member_tag_kind, char **out_member_tag_name,
+                               int *out_member_tag_len, int *out_member_is_tag_pointer);
 void psx_ctx_define_enum_const(char *name, int len, long long value);
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value);
 void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
