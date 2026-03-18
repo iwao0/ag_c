@@ -1187,7 +1187,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { return sizeof(void); }", "[sizeof] sizeof(void) はサポートしていません");
-  expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] 非スカラ型へのキャストは未対応です");
+  expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
 }
 
 int main() {

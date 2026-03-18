@@ -387,7 +387,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return operand;
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
-    psx_diag_ctx(token, "cast", "非スカラ型へのキャストは未対応です");
+    const char *kind = (type_kind == TK_STRUCT) ? "struct" : "union";
+    psx_diag_ctx(token, "cast", "%s 値へのキャストは未対応です（非スカラ型）", kind);
   }
   if (type_kind == TK_FLOAT) {
     operand->fp_kind = TK_FLOAT_KIND_FLOAT;
