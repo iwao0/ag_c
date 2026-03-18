@@ -1289,6 +1289,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
   expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
+  expect_parse_fail("main() { struct S { int x; }; int *p=0; return (struct S)p; }"); // ソース式がポインタでも非スカラ型cast未対応
   expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
   expect_parse_fail("main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
   expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
@@ -1323,6 +1324,8 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
   expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)a; }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
+  expect_parse_fail_with_message("main() { struct S { int x; }; int *p=0; return (struct S)p; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
+  expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)(a?1:2); }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(1?t:t); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
