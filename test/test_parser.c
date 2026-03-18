@@ -1134,6 +1134,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
   expect_parse_fail("main() { int a[2]=1; return 0; }"); // 配列の単一式初期化は未対応
   expect_parse_fail("main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
+  expect_parse_fail("main() { union U { int x; char y; }; union U u=1; return 0; }"); // 共用体単一式初期化は未対応
   expect_parse_fail("main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
   expect_parse_fail("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator
   expect_parse_fail("main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
