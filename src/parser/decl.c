@@ -11,6 +11,7 @@
 static lvar_t *locals;
 static int locals_offset;
 static node_t *parse_scalar_brace_initializer(void);
+static node_t *parse_array_brace_initializer(lvar_t *var);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -147,6 +148,45 @@ static node_t *parse_scalar_brace_initializer(void) {
   return rhs;
 }
 
+static node_t *new_array_elem_lvar(lvar_t *var, int idx) {
+  int elem_off = var->offset - var->size + (idx + 1) * var->elem_size;
+  node_t *lvar = psx_node_new_lvar_typed(elem_off, var->elem_size);
+  lvar->fp_kind = var->fp_kind;
+  ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
+  ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
+  ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
+  ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
+  return lvar;
+}
+
+static node_t *parse_array_brace_initializer(lvar_t *var) {
+  if (!tk_consume('{')) {
+    psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' 形式のみ対応です");
+  }
+  node_t *init_chain = NULL;
+  int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
+  int idx = 0;
+  if (!tk_consume('}')) {
+    for (;;) {
+      if (idx >= array_len) {
+        psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
+      }
+      node_t *lhs = new_array_elem_lvar(var, idx);
+      node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+      assign_node->type_size = var->elem_size;
+      assign_node->base.fp_kind = var->fp_kind;
+      node_t *init_node = (node_t *)assign_node;
+      if (!init_chain) init_chain = init_node;
+      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      idx++;
+      if (tk_consume('}')) break;
+      tk_expect(',');
+      if (tk_consume('}')) break;
+    }
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -241,9 +281,6 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->tag_name = tag_name;
         var->tag_len = tag_len;
         var->is_tag_pointer = 0;
-        if (tk_consume('=')) {
-          psx_expr_assign();
-        }
       } else {
         var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
         var->tag_kind = tag_kind;
@@ -258,6 +295,13 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     }
 
     if (tk_consume('=')) {
+      if (var->is_array) {
+        node_t *init_node = parse_array_brace_initializer(var);
+        if (!init_chain) init_chain = init_node;
+        else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+        if (!tk_consume(',')) break;
+        continue;
+      }
       node_t *lvar = psx_node_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
       lvar->fp_kind = var->fp_kind;
       ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;

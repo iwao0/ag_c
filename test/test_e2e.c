@@ -273,6 +273,7 @@ static const test_case_t test_cases[] = {
     {"pointer", "assign", CASE_INT, "int main() { int x = 5; int *p = &x; *p = 10; return x; }", 10, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
+    {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},
     {"array", "sum", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }", 6, 0},
     {"array", "const_expr_size", CASE_INT, "int main() { int arr[1+2]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "multi_dim_decl", CASE_INT, "int main() { int arr[2][3]; return 7; }", 7, 0},
