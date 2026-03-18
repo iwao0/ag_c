@@ -44,11 +44,22 @@ static long long parse_enum_const_primary_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static int parse_array_size_constexpr_toplevel(void);
+static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
+static int anonymous_tag_seq_toplevel = 0;
 
 static bool is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
+}
+
+static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
+  int seq = anonymous_tag_seq_toplevel++;
+  int len = snprintf(NULL, 0, "__anon_tag_top_%d", seq);
+  char *name = calloc((size_t)len + 1, 1);
+  snprintf(name, (size_t)len + 1, "__anon_tag_top_%d", seq);
+  *out_name = name;
+  *out_len = len;
 }
 
 static void skip_cv_qualifiers(void) {
@@ -355,9 +366,14 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       member_tag_kind = token->kind;
       token = token->next;
       token_ident_t *nested_tag = tk_consume_ident();
-      if (!nested_tag) psx_diag_missing(token, "タグ名");
-      member_tag_name = nested_tag->str;
-      member_tag_len = nested_tag->len;
+      if (nested_tag) {
+        member_tag_name = nested_tag->str;
+        member_tag_len = nested_tag->len;
+      } else if (token->kind == TK_LBRACE) {
+        make_anonymous_tag_name_toplevel(&member_tag_name, &member_tag_len);
+      } else {
+        psx_diag_missing(token, "タグ名");
+      }
       if (tk_consume('{')) {
         int nested_n = 0;
         int nested_sz = 0;
@@ -379,12 +395,17 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
         skip_ptr_qualifiers();
       }
       token_ident_t *member = tk_consume_ident();
-      if (!member) psx_diag_missing(token, "メンバ名");
+      int has_member_name = member != NULL;
+      if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
+        psx_diag_missing(token, "メンバ名");
+      }
       if (tk_consume(':')) {
+        if (!has_member_name) psx_diag_missing(token, "メンバ名");
         (void)parse_enum_const_expr_toplevel();
       }
       int arr_size = 1;
       while (tk_consume('[')) {
+        if (!has_member_name) psx_diag_missing(token, "メンバ名");
         arr_size *= parse_array_size_constexpr_toplevel();
         tk_expect(']');
       }
@@ -401,8 +422,10 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
         current_off = ALIGN_UP(current_off, member_align);
         off = current_off;
       }
+      char *member_name = has_member_name ? member->str : "";
+      int member_len = has_member_name ? member->len : 0;
       psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
-                             member->str, member->len, off, is_ptr ? 8 : elem_size, deref_size,
+                             member_name, member_len, off, is_ptr ? 8 : elem_size, deref_size,
                              member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
       member_count++;
       if (tag_kind == TK_UNION) {
@@ -410,6 +433,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       } else {
         current_off += total_size;
       }
+      if (!has_member_name && tk_consume(',')) psx_diag_missing(token, "メンバ名");
       if (!tk_consume(',')) break;
     }
     tk_expect(';');
