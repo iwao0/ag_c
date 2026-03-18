@@ -34,7 +34,10 @@ tag_type   = ("struct" | "union" | "enum") ident
 tag_member_list = tag_member_decl+
 tag_member_decl = (type | tag_type) "*"* ident ("[" num "]")? ("," "*"* ident ("[" num "]")?)* ";"
                 | ident ("=" expr)? ("," ident ("=" expr)?)* ";"   // enum
-declarator = "*"* ident ("[" num "]")? ("=" expr)?
+declarator = "*"* ident ("[" num "]")? ("=" initializer)?
+initializer = assign
+            | "{" initializer_list? "}"
+initializer_list = initializer ("," initializer)* ","?
 expr       = assign ("," assign)*
 assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 conditional= logical_or ("?" expr ":" conditional)?
@@ -216,6 +219,23 @@ args       = expr ("," expr)*
 - ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`）
 - ~~文字列リテラル~~ → **実装済み**（`char *s = "..."`、添字アクセス `s[i]` 対応済み）
 - プリプロセッサ (`#include`, `#define`)
+
+## 初期化子と診断の現行方針（2026-03時点）
+
+- スカラ初期化子:
+  - `int x=1;` と `int x={1};` を受理
+  - `int x={1,2};` は診断（`スカラ初期化子の波括弧内は1要素のみ対応です`）
+- 配列初期化子:
+  - `int a[3]={1,2,3};` / `char s[4]="abc";` を受理
+  - 非波括弧の配列初期化は診断（`配列初期化は現在 '{...}' または文字列リテラルのみ対応です`）
+- 構造体初期化子:
+  - `{...}`（designator含む）を受理
+  - 単一式は同型オブジェクトのみ受理（`,` 演算子の最終値が同型 `lvar` の場合を含む）
+- 共用体初期化子:
+  - `{...}` は1要素のみ受理（designator含む）
+  - 単一式は同型オブジェクトコピー、または先頭メンバへの初期化として処理
+- cast 方針:
+  - `struct/union` 値への cast は現状一律診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）
 
 ## 2026-03 C11準拠強化（Tokenizer/Parser）
 
