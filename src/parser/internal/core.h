@@ -4,5 +4,6 @@
 #include "../ast.h"
 
 token_kind_t psx_consume_type_kind(void);
+void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified);
 
 #endif

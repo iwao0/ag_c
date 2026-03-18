@@ -520,7 +520,7 @@ static node_t *stmt_internal(void) {
       token_kind_t base_kind = TK_EOF;
       psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
       token = token->next;
-      return psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+      return psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr, 0, 0);
     }
     return psx_decl_parse_declaration();
   }
@@ -540,7 +540,7 @@ static node_t *stmt_internal(void) {
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
-      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0);
+      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0, 0, 0);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
@@ -551,7 +551,7 @@ static node_t *stmt_internal(void) {
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
-                                                 TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0);
+                                                 TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0, 0, 0);
   }
 
   if (token->kind == TK_RETURN) {
@@ -639,7 +639,7 @@ static node_t *stmt_internal(void) {
           token_kind_t base_kind = TK_EOF;
           psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
           token = token->next;
-          node->init = psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+          node->init = psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr, 0, 0);
         } else {
           node->init = psx_decl_parse_declaration();
         }

@@ -74,6 +74,8 @@ struct node_mem_t {
   char *tag_name;
   int tag_len;
   int is_tag_pointer; // 1: tagへのポインタ値, 0: tag値そのもの
+  int is_const_qualified;
+  int is_volatile_qualified;
 };
 
 // 数値ノード

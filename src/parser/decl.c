@@ -475,6 +475,8 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
   ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
   ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
+  ((node_lvar_t *)lvar)->mem.is_const_qualified = var->is_const_qualified;
+  ((node_lvar_t *)lvar)->mem.is_volatile_qualified = var->is_volatile_qualified;
   node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
   assign_node->type_size = is_pointer ? 8 : var->elem_size;
   assign_node->base.fp_kind = var->fp_kind;
@@ -483,7 +485,8 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
 
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
                                               token_kind_t tag_kind, char *tag_name, int tag_len,
-                                              int base_is_pointer) {
+                                              int base_is_pointer,
+                                              int is_const_qualified, int is_volatile_qualified) {
   node_t *init_chain = NULL;
 
   for (;;) {
@@ -513,12 +516,16 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->tag_name = tag_name;
         var->tag_len = tag_len;
         var->is_tag_pointer = 0;
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
       } else {
         var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;
         var->is_tag_pointer = is_pointer ? 1 : 0;
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
       }
     }
 
@@ -543,10 +550,14 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
 node_t *psx_decl_parse_declaration(void) {
   token_kind_t type_kind = psx_consume_type_kind();
+  int is_const_qualified = 0;
+  int is_volatile_qualified = 0;
+  psx_take_type_qualifiers(&is_const_qualified, &is_volatile_qualified);
   int elem_size = 8;
   psx_ctx_get_type_info(type_kind, NULL, &elem_size);
   tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
   if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0, 0);
+  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0, 0,
+                                               is_const_qualified, is_volatile_qualified);
 }

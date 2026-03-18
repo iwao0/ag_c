@@ -15,6 +15,8 @@
 
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
+static int g_last_type_const_qualified = 0;
+static int g_last_type_volatile_qualified = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -63,7 +65,11 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
 }
 
 static void skip_cv_qualifiers(void) {
+  g_last_type_const_qualified = 0;
+  g_last_type_volatile_qualified = 0;
   while (is_decl_prefix_token(token->kind)) {
+    if (token->kind == TK_CONST) g_last_type_const_qualified = 1;
+    if (token->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
     if (token->kind == TK_ALIGNAS) {
       token = token->next;
       if (token->kind != TK_LPAREN) {
@@ -77,6 +83,11 @@ static void skip_cv_qualifiers(void) {
     }
     token = token->next;
   }
+}
+
+void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified) {
+  if (is_const_qualified) *is_const_qualified = g_last_type_const_qualified;
+  if (is_volatile_qualified) *is_volatile_qualified = g_last_type_volatile_qualified;
 }
 
 static void skip_ptr_qualifiers(void) {
