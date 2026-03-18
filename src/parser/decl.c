@@ -14,6 +14,7 @@ static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
 static node_t *parse_union_initializer(lvar_t *var);
+static node_t *parse_struct_copy_initializer(lvar_t *var);
 static int parse_nonneg_const_expr_decl(const char *what);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
@@ -431,6 +432,61 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
+static node_t *parse_struct_copy_initializer(lvar_t *var) {
+  node_t *rhs = psx_expr_assign();
+  if (!rhs || rhs->kind != ND_LVAR) {
+    psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
+  }
+  node_lvar_t *src = (node_lvar_t *)rhs;
+  if (src->mem.tag_kind != var->tag_kind || src->mem.is_tag_pointer ||
+      src->mem.tag_len != var->tag_len ||
+      strncmp(src->mem.tag_name ? src->mem.tag_name : "",
+              var->tag_name ? var->tag_name : "", (size_t)var->tag_len) != 0) {
+    psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
+  }
+
+  lvar_t src_var = {0};
+  src_var.offset = src->offset;
+  src_var.tag_kind = src->mem.tag_kind;
+  src_var.tag_name = src->mem.tag_name;
+  src_var.tag_len = src->mem.tag_len;
+  src_var.is_tag_pointer = src->mem.is_tag_pointer;
+
+  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
+  node_t *init_chain = NULL;
+  for (int ordinal = 0; ordinal < member_count; ordinal++) {
+    char *member_name = NULL;
+    int member_len = 0;
+    int member_offset = 0;
+    int member_type_size = 0;
+    int member_array_len = 0;
+    token_kind_t member_tag_kind = TK_EOF;
+    char *member_tag_name = NULL;
+    int member_tag_len = 0;
+    int member_is_tag_pointer = 0;
+    bool found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+                                           &member_name, &member_len,
+                                           &member_offset, &member_type_size, NULL, &member_array_len,
+                                           &member_tag_kind, &member_tag_name,
+                                           &member_tag_len, &member_is_tag_pointer);
+    if (!found || member_len <= 0) continue;
+    if (member_array_len > 0 || (!member_is_tag_pointer && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) ||
+        !(member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8)) {
+      psx_diag_ctx(token, "decl", "構造体単一式初期化の非スカラメンバコピーは未対応です");
+    }
+    node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                         member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+    node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
+                                                member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
+    assign_node->type_size = member_type_size;
+    node_t *init_node = (node_t *)assign_node;
+    if (!init_chain) init_chain = init_node;
+    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
 static node_t *parse_union_initializer(lvar_t *var) {
   bool has_brace = tk_consume('{');
   if (has_brace && tk_consume('}')) return psx_node_new_num(0);
@@ -558,6 +614,9 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     return parse_array_initializer(var);
   }
   if (!is_pointer && var->tag_kind == TK_STRUCT) {
+    if (token->kind != TK_LBRACE) {
+      return parse_struct_copy_initializer(var);
+    }
     return parse_struct_initializer(var);
   }
   if (!is_pointer && var->tag_kind == TK_UNION) {
