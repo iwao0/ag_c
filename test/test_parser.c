@@ -1165,6 +1165,13 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
   token = tk_tokenize("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -1310,7 +1317,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
   expect_parse_fail("main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
   expect_parse_fail("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
-  expect_parse_fail("main() { struct S { int a[2]; int z; }; struct S s={1,2}; return 0; }"); // 先頭配列メンバへ非波括弧初期化
   expect_parse_fail("main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
   expect_parse_fail("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
   expect_parse_fail("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }"); // 先頭配列メンバへ非波括弧初期化
@@ -1333,7 +1339,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(1?t:t); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("main() { struct S { int a[2]; int z; }; struct S s={1,2}; return 0; }", "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
   expect_parse_fail_with_message("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }", "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");

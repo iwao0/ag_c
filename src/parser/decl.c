@@ -383,6 +383,21 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       free(assigned);
       return init_chain ? init_chain : psx_node_new_num(0);
     }
+    if (owner->tag_kind == TK_STRUCT) {
+      // Brace elision for struct members: allow flat scalar list for array members.
+      node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
+      node_mem_t *assign0 = psx_node_new_assign(lhs0, parse_scalar_brace_initializer());
+      assign0->type_size = elem_size;
+      init_chain = (node_t *)assign0;
+      for (int idx = 1; idx < array_len; idx++) {
+        if (!tk_consume(',')) break;
+        node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, idx);
+        node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+        assign_node->type_size = elem_size;
+        init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
+      }
+      return init_chain;
+    }
     psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
   }
   if (!member_is_tag_pointer && member_tag_kind == TK_STRUCT) {
