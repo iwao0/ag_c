@@ -238,6 +238,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "struct_anonymous_union_member", CASE_INT, "int main() { struct S { union { int x; char c; }; int y; }; return 7; }", 7, 0},
     {"type_decl", "struct_brace_init_parse_only", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={1,2}; return 7; }", 7, 0},
     {"type_decl", "struct_brace_init_values", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={1,2}; return s.x+s.y; }", 3, 0},
+    {"type_decl", "struct_brace_init_designated", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return s.x+s.y; }", 3, 0},
     {"type_decl", "struct_padding_array", CASE_INT, "int main() { struct S { char c; int x; }; struct S a[2]; a[0].x=3; a[1].c=9; return a[0].x; }", 3, 0},
     {"type_decl", "typedef_int", CASE_INT, "typedef int myint; int main() { myint x=9; return x; }", 9, 0},
     {"type_decl", "typedef_ptr", CASE_INT, "typedef int *intptr; int main() { int a=11; intptr p=&a; return *p; }", 11, 0},
@@ -277,6 +278,7 @@ static const test_case_t test_cases[] = {
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},
+    {"array", "brace_init_designated", CASE_INT, "int main() { int arr[4]={[2]=7,[0]=1}; return arr[0]+arr[2]; }", 8, 0},
     {"array", "char_array_string_init", CASE_INT, "int main() { char s[4]=\"abc\"; return s[2]+s[3]; }", 99, 0},
     {"array", "sum", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }", 6, 0},
     {"array", "const_expr_size", CASE_INT, "int main() { int arr[1+2]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},

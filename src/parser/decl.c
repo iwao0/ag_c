@@ -14,6 +14,7 @@ static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
 static node_t *parse_union_initializer(lvar_t *var);
+static int parse_nonneg_const_expr_decl(const char *what);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -135,6 +136,19 @@ static int parse_array_size_constexpr_decl(void) {
   return (int)v;
 }
 
+static int parse_nonneg_const_expr_decl(const char *what) {
+  node_t *n = psx_expr_assign();
+  int ok = 1;
+  long long v = eval_const_expr_decl(n, &ok);
+  if (!ok) {
+    psx_diag_ctx(token, "decl", "%sには整数定数式が必要です", what);
+  }
+  if (v < 0) {
+    psx_diag_ctx(token, "decl", "%sは0以上である必要があります", what);
+  }
+  return (int)v;
+}
+
 static node_t *parse_scalar_brace_initializer(void) {
   if (!tk_consume('{')) {
     return psx_expr_assign();
@@ -173,24 +187,36 @@ static node_t *parse_array_initializer(lvar_t *var) {
   int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
   if (tk_consume('{')) {
     int idx = 0;
+    bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
     if (!tk_consume('}')) {
       for (;;) {
-        if (idx >= array_len) {
+        int target_idx = idx;
+        if (tk_consume('[')) {
+          target_idx = parse_nonneg_const_expr_decl("配列designator添字");
+          tk_expect(']');
+          tk_expect('=');
+        }
+        if (target_idx >= array_len) {
           psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
         }
-        node_t *lhs = new_array_elem_lvar(var, idx);
+        if (assigned[target_idx]) {
+          psx_diag_ctx(token, "decl", "配列初期化子で同一要素が重複指定されています");
+        }
+        node_t *lhs = new_array_elem_lvar(var, target_idx);
         node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
         assign_node->type_size = var->elem_size;
         assign_node->base.fp_kind = var->fp_kind;
         node_t *init_node = (node_t *)assign_node;
         if (!init_chain) init_chain = init_node;
         else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-        idx++;
+        assigned[target_idx] = true;
+        idx = target_idx + 1;
         if (tk_consume('}')) break;
         tk_expect(',');
         if (tk_consume('}')) break;
       }
     }
+    free(assigned);
     return init_chain ? init_chain : psx_node_new_num(0);
   }
 
@@ -243,6 +269,9 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
   node_t *init_chain = NULL;
   int ordinal = 0;
+  char **assigned_names = calloc((size_t)(member_count > 0 ? member_count : 1), sizeof(char *));
+  int *assigned_lens = calloc((size_t)(member_count > 0 ? member_count : 1), sizeof(int));
+  int assigned_n = 0;
   if (!tk_consume('}')) {
     for (;;) {
       char *member_name = NULL;
@@ -254,18 +283,36 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       int member_tag_len = 0;
       int member_is_tag_pointer = 0;
       bool found = false;
-      while (ordinal < member_count) {
-        found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                          &member_name, &member_len,
-                                          &member_offset, &member_type_size, NULL,
-                                          &member_tag_kind, &member_tag_name,
-                                          &member_tag_len, &member_is_tag_pointer);
-        ordinal++;
-        if (!found) break;
-        if (member_len > 0) break;
+      if (tk_consume('.')) {
+        token_ident_t *id = tk_consume_ident();
+        if (!id) psx_diag_missing(token, "メンバ名");
+        tk_expect('=');
+        found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
+                                        id->str, id->len,
+                                        &member_offset, &member_type_size, NULL,
+                                        &member_tag_kind, &member_tag_name,
+                                        &member_tag_len, &member_is_tag_pointer);
+        member_name = id->str;
+        member_len = id->len;
+      } else {
+        while (ordinal < member_count) {
+          found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+                                            &member_name, &member_len,
+                                            &member_offset, &member_type_size, NULL,
+                                            &member_tag_kind, &member_tag_name,
+                                            &member_tag_len, &member_is_tag_pointer);
+          ordinal++;
+          if (!found) break;
+          if (member_len > 0) break;
+        }
       }
       if (!found || member_len <= 0) {
         psx_diag_ctx(token, "decl", "構造体初期化子がメンバ数を超えています");
+      }
+      for (int i = 0; i < assigned_n; i++) {
+        if (assigned_lens[i] == member_len && strncmp(assigned_names[i], member_name, (size_t)member_len) == 0) {
+          psx_diag_ctx(token, "decl", "構造体初期化子で同一メンバが重複指定されています");
+        }
       }
       if (!(member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8)) {
         psx_diag_ctx(token, "decl", "構造体初期化の非スカラメンバは未対応です");
@@ -277,11 +324,16 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      assigned_names[assigned_n] = member_name;
+      assigned_lens[assigned_n] = member_len;
+      assigned_n++;
       if (tk_consume('}')) break;
       tk_expect(',');
       if (tk_consume('}')) break;
     }
   }
+  free(assigned_names);
+  free(assigned_lens);
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
