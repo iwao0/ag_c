@@ -164,8 +164,11 @@ static token_kind_t parse_atomic_type_specifier(void) {
   if (inner == TK_EOF) {
     psx_diag_ctx(token, "decl", "_Atomic(...) の中には型名が必要です");
   }
-  if (token->kind == TK_MUL) {
-    psx_diag_ctx(token, "decl", "_Atomic(type) での派生宣言子は未対応です");
+  // Minimal support for derived declarators in _Atomic(type), e.g. _Atomic(int*).
+  while (tk_consume('*')) {
+    while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
+      token = token->next;
+    }
   }
   tk_expect(')');
   return inner;
