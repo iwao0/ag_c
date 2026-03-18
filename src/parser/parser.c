@@ -687,11 +687,26 @@ token_kind_t psx_consume_type_kind(void) {
   int saw_float = 0;
   int saw_double = 0;
   int saw_bool = 0;
+  int saw_complex = 0;
+  int saw_imaginary = 0;
 
   while (true) {
     token_kind_t k = token->kind;
-    if (k == TK_COMPLEX || k == TK_IMAGINARY) {
-      psx_diag_ctx(token, "decl", "_Complex/_Imaginary は未対応です");
+    if (k == TK_COMPLEX) {
+      if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_complex = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_IMAGINARY) {
+      if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
+        tk_error_tok(token, "不正な型指定子の組み合わせです");
+      }
+      saw_imaginary = 1;
+      token = token->next;
+      continue;
     }
     if (k == TK_SIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
@@ -777,6 +792,9 @@ token_kind_t psx_consume_type_kind(void) {
   }
 
   if (token == start) return TK_EOF;
+  if ((saw_complex || saw_imaginary) && !(saw_float || saw_double)) {
+    tk_error_tok(start, "_Complex/_Imaginary は浮動小数型にのみ指定できます");
+  }
   if (saw_void) return TK_VOID;
   if (saw_float) return TK_FLOAT;
   if (saw_double) return TK_DOUBLE;

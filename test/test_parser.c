@@ -917,6 +917,13 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { _Complex double cx=1.0; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
   token = tk_tokenize("main() { int a[1+2]; a[0]=3; return a[0]; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -1165,8 +1172,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { { struct T { int x; }; } struct T *p; return 0; }"); // ブロックスコープ外参照
   expect_parse_fail("main() { struct S { int x; }; int a=0; return (struct S)a; }"); // 非スカラ型cast未対応
   expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
-  expect_parse_fail("main() { _Complex int x; return 0; }");   // 未対応型指定子
-  expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 未対応型指定子
+  expect_parse_fail("main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
+  expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
   expect_parse_fail("main() { int a[0]; return 0; }");          // 配列サイズは正数のみ
   expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ

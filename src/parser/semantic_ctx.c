@@ -526,7 +526,8 @@ bool psx_ctx_has_function_name(char *name, int len) {
 bool psx_ctx_is_type_token(token_kind_t kind) {
   return kind == TK_INT || kind == TK_CHAR || kind == TK_VOID || kind == TK_SHORT ||
          kind == TK_LONG || kind == TK_FLOAT || kind == TK_DOUBLE ||
-         kind == TK_BOOL || kind == TK_SIGNED || kind == TK_UNSIGNED;
+         kind == TK_BOOL || kind == TK_SIGNED || kind == TK_UNSIGNED ||
+         kind == TK_COMPLEX || kind == TK_IMAGINARY;
 }
 
 bool psx_ctx_is_tag_keyword(token_kind_t kind) {
