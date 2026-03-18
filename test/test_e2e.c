@@ -257,6 +257,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "volatile_decl", CASE_INT, "int main() { volatile int x=9; return x; }", 9, 0},
     {"type_decl", "storage_specs_local", CASE_INT, "int main() { static int x=8; register int r=2; auto int a=1; int *restrict p=0; return x+r+a+(p==0); }", 12, 0},
     {"type_decl", "scalar_brace_init", CASE_INT, "int main() { int x={3}; return x; }", 3, 0},
+    {"type_decl", "complex_decl_collapse_bool", CASE_INT, "int main() { _Complex double cx=1.5; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }", 2, 0},
+    {"type_decl", "complex_decl_collapse_arith", CASE_INT, "int main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c==3.0; }", 1, 0},
     {"type_decl", "extern_inline_funcspec", CASE_INT, "extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }", 7, 0},
     {"type_decl", "noreturn_spec_parse", CASE_INT, "_Noreturn void die() { return; } int main() { return 7; }", 7, 0},
     {"type_decl", "static_assert_toplevel", CASE_INT, "_Static_assert(1, \"ok\"); int main() { return 7; }", 7, 0},
