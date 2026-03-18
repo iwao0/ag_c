@@ -118,6 +118,9 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       }
       token_ident_t *member = tk_consume_ident();
       if (!member) psx_diag_missing(token, "メンバ名");
+      if (tk_consume(':')) {
+        (void)parse_enum_const_expr();
+      }
       int arr_size = 1;
       while (tk_consume('[')) {
         arr_size *= parse_array_size_constexpr_stmt();
