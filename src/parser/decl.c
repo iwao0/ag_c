@@ -432,10 +432,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
 }
 
 static node_t *parse_union_initializer(lvar_t *var) {
-  if (!tk_consume('{')) {
-    psx_diag_ctx(token, "decl", "共用体初期化は現在 '{...}' 形式のみ対応です");
-  }
-  if (tk_consume('}')) return psx_node_new_num(0);
+  bool has_brace = tk_consume('{');
+  if (has_brace && tk_consume('}')) return psx_node_new_num(0);
 
   char *member_name = NULL;
   int member_len = 0;
@@ -482,13 +480,15 @@ static node_t *parse_union_initializer(lvar_t *var) {
                                     member_tag_kind, member_tag_name, member_tag_len,
                                     member_is_tag_pointer, member_array_len));
   assign_node->type_size = member_type_size;
-  if (tk_consume(',')) {
-    if (!tk_consume('}')) {
-      psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
+  if (has_brace) {
+    if (tk_consume(',')) {
+      if (!tk_consume('}')) {
+        psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
+      }
+      return (node_t *)assign_node;
     }
-    return (node_t *)assign_node;
+    tk_expect('}');
   }
-  tk_expect('}');
   return (node_t *)assign_node;
 }
 
