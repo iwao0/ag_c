@@ -17,6 +17,7 @@ static node_t *parse_union_initializer(lvar_t *var);
 static node_t *parse_struct_copy_initializer(lvar_t *var);
 static int parse_nonneg_const_expr_decl(const char *what);
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src);
+static int is_supported_scalar_store_size(int size);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -220,6 +221,10 @@ static node_t *build_byte_copy_chain(int dst_base_off, int src_base_off, int siz
   return init_chain;
 }
 
+static int is_supported_scalar_store_size(int size) {
+  return size == 1 || size == 2 || size == 4 || size == 8;
+}
+
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src) {
   node_t *prefix = NULL;
   node_t *value = expr;
@@ -398,7 +403,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     nested.tag_len = member_tag_len;
     return parse_union_initializer(&nested);
   }
-  if (!(member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8)) {
+  if (!is_supported_scalar_store_size(member_type_size)) {
     psx_diag_ctx(token, "decl", "構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
   }
   return parse_scalar_brace_initializer();
@@ -519,7 +524,7 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
                                            &member_tag_kind, &member_tag_name,
                                            &member_tag_len, &member_is_tag_pointer);
     if (!found || member_len <= 0) continue;
-    if (member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8) {
+    if (is_supported_scalar_store_size(member_type_size)) {
       node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
                                            member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
       node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
