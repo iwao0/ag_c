@@ -353,16 +353,29 @@ static node_t *parse_union_initializer(lvar_t *var) {
   int member_is_tag_pointer = 0;
   int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
   bool found = false;
-  int ordinal = 0;
-  while (ordinal < member_count) {
-    found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                      &member_name, &member_len,
-                                      &member_offset, &member_type_size, NULL,
-                                      &member_tag_kind, &member_tag_name,
-                                      &member_tag_len, &member_is_tag_pointer);
-    ordinal++;
-    if (!found) break;
-    if (member_len > 0) break;
+  if (tk_consume('.')) {
+    token_ident_t *id = tk_consume_ident();
+    if (!id) psx_diag_missing(token, "メンバ名");
+    tk_expect('=');
+    found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
+                                    id->str, id->len,
+                                    &member_offset, &member_type_size, NULL,
+                                    &member_tag_kind, &member_tag_name,
+                                    &member_tag_len, &member_is_tag_pointer);
+    member_name = id->str;
+    member_len = id->len;
+  } else {
+    int ordinal = 0;
+    while (ordinal < member_count) {
+      found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+                                        &member_name, &member_len,
+                                        &member_offset, &member_type_size, NULL,
+                                        &member_tag_kind, &member_tag_name,
+                                        &member_tag_len, &member_is_tag_pointer);
+      ordinal++;
+      if (!found) break;
+      if (member_len > 0) break;
+    }
   }
   if (!found || member_len <= 0) {
     psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
