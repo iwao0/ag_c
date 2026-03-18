@@ -241,6 +241,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "struct_brace_init_parse_only", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={1,2}; return 7; }", 7, 0},
     {"type_decl", "struct_brace_init_values", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={1,2}; return s.x+s.y; }", 3, 0},
     {"type_decl", "struct_brace_init_designated", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return s.x+s.y; }", 3, 0},
+    {"type_decl", "struct_single_expr_copy_comma", CASE_INT, "int main() { struct S { int x; int y; }; struct S t={4,5}; struct S s=(t.y=9,t); return s.x+s.y; }", 13, 0},
+    {"type_decl", "union_single_expr_copy_comma", CASE_INT, "int main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return u.x; }", 9, 0},
     {"type_decl", "struct_padding_array", CASE_INT, "int main() { struct S { char c; int x; }; struct S a[2]; a[0].x=3; a[1].c=9; return a[0].x; }", 3, 0},
     {"type_decl", "typedef_int", CASE_INT, "typedef int myint; int main() { myint x=9; return x; }", 9, 0},
     {"type_decl", "typedef_ptr", CASE_INT, "typedef int *intptr; int main() { int a=11; intptr p=&a; return *p; }", 11, 0},

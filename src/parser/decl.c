@@ -16,6 +16,7 @@ static node_t *parse_struct_initializer(lvar_t *var);
 static node_t *parse_union_initializer(lvar_t *var);
 static node_t *parse_struct_copy_initializer(lvar_t *var);
 static int parse_nonneg_const_expr_decl(const char *what);
+static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -217,6 +218,20 @@ static node_t *build_byte_copy_chain(int dst_base_off, int src_base_off, int siz
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
   }
   return init_chain;
+}
+
+static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src) {
+  node_t *prefix = NULL;
+  node_t *value = expr;
+  while (value && value->kind == ND_COMMA) {
+    if (!prefix) prefix = value->lhs;
+    else prefix = psx_node_new_binary(ND_COMMA, prefix, value->lhs);
+    value = value->rhs;
+  }
+  if (!value || value->kind != ND_LVAR) return 0;
+  if (out_prefix) *out_prefix = prefix;
+  if (out_src) *out_src = (node_lvar_t *)value;
+  return 1;
 }
 
 static string_lit_t *find_string_lit_by_label(char *label) {
@@ -467,10 +482,11 @@ static node_t *parse_struct_initializer(lvar_t *var) {
 
 static node_t *parse_struct_copy_initializer(lvar_t *var) {
   node_t *rhs = psx_expr_assign();
-  if (!rhs || rhs->kind != ND_LVAR) {
+  node_t *prefix = NULL;
+  node_lvar_t *src = NULL;
+  if (!resolve_copy_source_lvar(rhs, &prefix, &src)) {
     psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
   }
-  node_lvar_t *src = (node_lvar_t *)rhs;
   if (src->mem.tag_kind != var->tag_kind || src->mem.is_tag_pointer ||
       src->mem.tag_len != var->tag_len ||
       strncmp(src->mem.tag_name ? src->mem.tag_name : "",
@@ -519,7 +535,9 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     init_chain = build_byte_copy_chain(var->offset + member_offset, src_var.offset + member_offset,
                                        member_type_size, init_chain);
   }
-  return init_chain ? init_chain : psx_node_new_num(0);
+  if (!init_chain) init_chain = psx_node_new_num(0);
+  if (prefix) return psx_node_new_binary(ND_COMMA, prefix, init_chain);
+  return init_chain;
 }
 
 static node_t *parse_union_initializer(lvar_t *var) {
@@ -528,13 +546,16 @@ static node_t *parse_union_initializer(lvar_t *var) {
 
   if (!has_brace) {
     node_t *rhs = psx_expr_assign();
-    if (rhs && rhs->kind == ND_LVAR) {
-      node_lvar_t *src = (node_lvar_t *)rhs;
+    node_t *prefix = NULL;
+    node_lvar_t *src = NULL;
+    if (resolve_copy_source_lvar(rhs, &prefix, &src)) {
       if (src->mem.tag_kind == var->tag_kind && !src->mem.is_tag_pointer &&
           src->mem.tag_len == var->tag_len &&
           strncmp(src->mem.tag_name ? src->mem.tag_name : "",
                   var->tag_name ? var->tag_name : "", (size_t)var->tag_len) == 0) {
-        return build_byte_copy_chain(var->offset, src->offset, var->size, NULL);
+        node_t *copy = build_byte_copy_chain(var->offset, src->offset, var->size, NULL);
+        if (prefix) return psx_node_new_binary(ND_COMMA, prefix, copy);
+        return copy;
       }
     }
 
