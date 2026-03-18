@@ -196,6 +196,11 @@ static node_t *new_array_elem_lvar(lvar_t *var, int idx) {
   return lvar;
 }
 
+static node_t *new_array_elem_lvar_at(int base_offset, int elem_size, int idx) {
+  node_t *lvar = psx_node_new_lvar_typed(base_offset + idx * elem_size, elem_size);
+  return lvar;
+}
+
 static string_lit_t *find_string_lit_by_label(char *label) {
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
     if (strcmp(lit->label, label) == 0) return lit;
@@ -285,7 +290,47 @@ static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member
 
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
-                                        int member_tag_len, int member_is_tag_pointer) {
+                                        int member_tag_len, int member_is_tag_pointer,
+                                        int member_array_len) {
+  if (member_array_len > 0 && !member_is_tag_pointer) {
+    int array_len = member_array_len;
+    int elem_size = member_type_size;
+    node_t *init_chain = NULL;
+    if (tk_consume('{')) {
+      int idx = 0;
+      bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
+      if (!tk_consume('}')) {
+        for (;;) {
+          int target_idx = idx;
+          if (tk_consume('[')) {
+            target_idx = parse_nonneg_const_expr_decl("配列designator添字");
+            tk_expect(']');
+            tk_expect('=');
+          }
+          if (target_idx >= array_len) {
+            psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
+          }
+          if (assigned[target_idx]) {
+            psx_diag_ctx(token, "decl", "配列初期化子で同一要素が重複指定されています");
+          }
+          node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
+          node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+          assign_node->type_size = elem_size;
+          node_t *init_node = (node_t *)assign_node;
+          if (!init_chain) init_chain = init_node;
+          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+          assigned[target_idx] = true;
+          idx = target_idx + 1;
+          if (tk_consume('}')) break;
+          tk_expect(',');
+          if (tk_consume('}')) break;
+        }
+      }
+      free(assigned);
+      return init_chain ? init_chain : psx_node_new_num(0);
+    }
+    psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
+  }
   if (!member_is_tag_pointer && member_tag_kind == TK_STRUCT) {
     lvar_t nested = {0};
     nested.offset = owner->offset + member_offset;
@@ -326,6 +371,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       int member_len = 0;
       int member_offset = 0;
       int member_type_size = 0;
+      int member_array_len = 0;
       token_kind_t member_tag_kind = TK_EOF;
       char *member_tag_name = NULL;
       int member_tag_len = 0;
@@ -337,7 +383,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         tk_expect('=');
         found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                         id->str, id->len,
-                                        &member_offset, &member_type_size, NULL,
+                                        &member_offset, &member_type_size, NULL, &member_array_len,
                                         &member_tag_kind, &member_tag_name,
                                         &member_tag_len, &member_is_tag_pointer);
         member_name = id->str;
@@ -346,7 +392,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         while (ordinal < member_count) {
           found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
                                             &member_name, &member_len,
-                                            &member_offset, &member_type_size, NULL,
+                                            &member_offset, &member_type_size, NULL, &member_array_len,
                                             &member_tag_kind, &member_tag_name,
                                             &member_tag_len, &member_is_tag_pointer);
           ordinal++;
@@ -366,7 +412,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
                                            member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
       node_mem_t *assign_node = psx_node_new_assign(
           lhs, parse_member_initializer(var, member_offset, member_type_size,
-                                        member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer));
+                                        member_tag_kind, member_tag_name, member_tag_len,
+                                        member_is_tag_pointer, member_array_len));
       assign_node->type_size = member_type_size;
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
@@ -394,6 +441,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   int member_len = 0;
   int member_offset = 0;
   int member_type_size = 0;
+  int member_array_len = 0;
   token_kind_t member_tag_kind = TK_EOF;
   char *member_tag_name = NULL;
   int member_tag_len = 0;
@@ -406,7 +454,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     tk_expect('=');
     found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                     id->str, id->len,
-                                    &member_offset, &member_type_size, NULL,
+                                    &member_offset, &member_type_size, NULL, &member_array_len,
                                     &member_tag_kind, &member_tag_name,
                                     &member_tag_len, &member_is_tag_pointer);
     member_name = id->str;
@@ -416,7 +464,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     while (ordinal < member_count) {
       found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
                                         &member_name, &member_len,
-                                        &member_offset, &member_type_size, NULL,
+                                        &member_offset, &member_type_size, NULL, &member_array_len,
                                         &member_tag_kind, &member_tag_name,
                                         &member_tag_len, &member_is_tag_pointer);
       ordinal++;
@@ -431,7 +479,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
                                        member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
   node_mem_t *assign_node = psx_node_new_assign(
       lhs, parse_member_initializer(var, member_offset, member_type_size,
-                                    member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer));
+                                    member_tag_kind, member_tag_name, member_tag_len,
+                                    member_is_tag_pointer, member_array_len));
   assign_node->type_size = member_type_size;
   if (tk_consume(',')) {
     if (!tk_consume('}')) {

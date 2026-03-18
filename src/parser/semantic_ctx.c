@@ -43,6 +43,7 @@ struct tag_member_t {
   int offset;
   int type_size;
   int deref_size;
+  int array_len;
   token_kind_t member_tag_kind;
   char *member_tag_name;
   int member_tag_len;
@@ -301,7 +302,7 @@ int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len) {
 
 void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             char *member_name, int member_len, int offset,
-                            int type_size, int deref_size,
+                            int type_size, int deref_size, int array_len,
                             token_kind_t member_tag_kind, char *member_tag_name,
                             int member_tag_len, int member_is_tag_pointer) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -315,6 +316,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->offset = offset;
       m->type_size = type_size;
       m->deref_size = deref_size;
+      m->array_len = array_len;
       m->member_tag_kind = member_tag_kind;
       m->member_tag_name = member_tag_name;
       m->member_tag_len = member_tag_len;
@@ -331,6 +333,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->offset = offset;
   m->type_size = type_size;
   m->deref_size = deref_size;
+  m->array_len = array_len;
   m->member_tag_kind = member_tag_kind;
   m->member_tag_name = member_tag_name;
   m->member_tag_len = member_tag_len;
@@ -351,7 +354,7 @@ static int cmp_tag_member_ptr(const void *a, const void *b) {
 
 bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_len, int index,
                                char **out_member_name, int *out_member_len,
-                               int *out_offset, int *out_type_size, int *out_deref_size,
+                               int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
                                token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                                int *out_member_tag_len, int *out_member_is_tag_pointer) {
   int cap = 8;
@@ -379,6 +382,7 @@ bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_le
   if (out_offset) *out_offset = m->offset;
   if (out_type_size) *out_type_size = m->type_size;
   if (out_deref_size) *out_deref_size = m->deref_size;
+  if (out_array_len) *out_array_len = m->array_len;
   if (out_member_tag_kind) *out_member_tag_kind = m->member_tag_kind;
   if (out_member_tag_name) *out_member_tag_name = m->member_tag_name;
   if (out_member_tag_len) *out_member_tag_len = m->member_tag_len;
@@ -389,7 +393,7 @@ bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_le
 
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
-                             int *out_offset, int *out_type_size, int *out_deref_size,
+                             int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
                              token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                              int *out_member_tag_len, int *out_member_is_tag_pointer) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -402,6 +406,7 @@ bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       if (out_offset) *out_offset = m->offset;
       if (out_type_size) *out_type_size = m->type_size;
       if (out_deref_size) *out_deref_size = m->deref_size;
+      if (out_array_len) *out_array_len = m->array_len;
       if (out_member_tag_kind) *out_member_tag_kind = m->member_tag_kind;
       if (out_member_tag_name) *out_member_tag_name = m->member_tag_name;
       if (out_member_tag_len) *out_member_tag_len = m->member_tag_len;

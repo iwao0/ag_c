@@ -19,17 +19,17 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
 void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             char *member_name, int member_len, int offset,
-                            int type_size, int deref_size,
+                            int type_size, int deref_size, int array_len,
                             token_kind_t member_tag_kind, char *member_tag_name,
                             int member_tag_len, int member_is_tag_pointer);
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
-                             int *out_offset, int *out_type_size, int *out_deref_size,
+                             int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
                              token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                              int *out_member_tag_len, int *out_member_is_tag_pointer);
 bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_len, int index,
                                char **out_member_name, int *out_member_len,
-                               int *out_offset, int *out_type_size, int *out_deref_size,
+                               int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
                                token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                                int *out_member_tag_len, int *out_member_is_tag_pointer);
 void psx_ctx_define_enum_const(char *name, int len, long long value);

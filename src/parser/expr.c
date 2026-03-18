@@ -159,7 +159,7 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   int mem_is_ptr = 0;
   if (!psx_ctx_find_tag_member(base_tag_kind, base_tag_name, base_tag_len,
                                member->str, member->len,
-                               &off, &mem_size, &mem_deref,
+                               &off, &mem_size, &mem_deref, NULL,
                                &mem_tag_kind, &mem_tag_name, &mem_tag_len, &mem_is_ptr)) {
     psx_diag_ctx(op_tok, "member", "メンバ '%.*s' は存在しません", member->len, member->str);
   }

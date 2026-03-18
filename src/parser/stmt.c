@@ -163,8 +163,10 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       }
       char *member_name = has_member_name ? member->str : "";
       int member_len = has_member_name ? member->len : 0;
+      int member_array_len = (is_ptr || arr_size <= 1) ? 0 : arr_size;
       psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
                              member_name, member_len, off, is_ptr ? 8 : elem_size, deref_size,
+                             member_array_len,
                              member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
       member_count++;
       if (tag_kind == TK_UNION) {
