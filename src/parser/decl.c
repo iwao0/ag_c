@@ -11,7 +11,7 @@
 static lvar_t *locals;
 static int locals_offset;
 static node_t *parse_scalar_brace_initializer(void);
-static node_t *parse_array_brace_initializer(lvar_t *var);
+static node_t *parse_array_initializer(lvar_t *var);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -159,32 +159,68 @@ static node_t *new_array_elem_lvar(lvar_t *var, int idx) {
   return lvar;
 }
 
-static node_t *parse_array_brace_initializer(lvar_t *var) {
-  if (!tk_consume('{')) {
-    psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' 形式のみ対応です");
+static string_lit_t *find_string_lit_by_label(char *label) {
+  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    if (strcmp(lit->label, label) == 0) return lit;
   }
+  return NULL;
+}
+
+static node_t *parse_array_initializer(lvar_t *var) {
   node_t *init_chain = NULL;
   int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
-  int idx = 0;
-  if (!tk_consume('}')) {
-    for (;;) {
-      if (idx >= array_len) {
-        psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
+  if (tk_consume('{')) {
+    int idx = 0;
+    if (!tk_consume('}')) {
+      for (;;) {
+        if (idx >= array_len) {
+          psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
+        }
+        node_t *lhs = new_array_elem_lvar(var, idx);
+        node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+        assign_node->type_size = var->elem_size;
+        assign_node->base.fp_kind = var->fp_kind;
+        node_t *init_node = (node_t *)assign_node;
+        if (!init_chain) init_chain = init_node;
+        else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+        idx++;
+        if (tk_consume('}')) break;
+        tk_expect(',');
+        if (tk_consume('}')) break;
       }
+    }
+    return init_chain ? init_chain : psx_node_new_num(0);
+  }
+
+  node_t *rhs = psx_expr_assign();
+  if (var->elem_size == 1 && rhs->kind == ND_STRING) {
+    node_string_t *s = (node_string_t *)rhs;
+    string_lit_t *lit = find_string_lit_by_label(s->string_label);
+    if (!lit) psx_diag_ctx(token, "decl", "文字列初期化子の解決に失敗しました");
+    int idx = 0;
+    for (; idx < lit->len && idx < array_len; idx++) {
       node_t *lhs = new_array_elem_lvar(var, idx);
-      node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+      node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)lit->str[idx]));
       assign_node->type_size = var->elem_size;
       assign_node->base.fp_kind = var->fp_kind;
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-      idx++;
-      if (tk_consume('}')) break;
-      tk_expect(',');
-      if (tk_consume('}')) break;
     }
+    if (idx < array_len) {
+      node_t *lhs = new_array_elem_lvar(var, idx);
+      node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
+      assign_node->type_size = var->elem_size;
+      assign_node->base.fp_kind = var->fp_kind;
+      node_t *init_node = (node_t *)assign_node;
+      if (!init_chain) init_chain = init_node;
+      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+    }
+    return init_chain ? init_chain : psx_node_new_num(0);
   }
-  return init_chain ? init_chain : psx_node_new_num(0);
+
+  psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
+  return psx_node_new_num(0);
 }
 
 static void skip_func_params(void) {
@@ -296,7 +332,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     if (tk_consume('=')) {
       if (var->is_array) {
-        node_t *init_node = parse_array_brace_initializer(var);
+        node_t *init_node = parse_array_initializer(var);
         if (!init_chain) init_chain = init_node;
         else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
         if (!tk_consume(',')) break;

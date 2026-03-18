@@ -274,6 +274,7 @@ static const test_case_t test_cases[] = {
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},
+    {"array", "char_array_string_init", CASE_INT, "int main() { char s[4]=\"abc\"; return s[2]+s[3]; }", 99, 0},
     {"array", "sum", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }", 6, 0},
     {"array", "const_expr_size", CASE_INT, "int main() { int arr[1+2]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "multi_dim_decl", CASE_INT, "int main() { int arr[2][3]; return 7; }", 7, 0},
