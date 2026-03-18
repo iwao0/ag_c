@@ -446,6 +446,28 @@ lvar_t *psx_decl_register_lvar(char *name, int len) {
   return psx_decl_register_lvar_sized(name, len, 8, 8, 0);
 }
 
+node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
+  if (var->is_array) {
+    return parse_array_initializer(var);
+  }
+  if (!is_pointer && var->tag_kind == TK_STRUCT) {
+    return parse_struct_initializer(var);
+  }
+  if (!is_pointer && var->tag_kind == TK_UNION) {
+    return parse_union_initializer(var);
+  }
+  node_t *lvar = psx_node_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
+  lvar->fp_kind = var->fp_kind;
+  ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
+  ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
+  ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
+  ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
+  node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
+  assign_node->type_size = is_pointer ? 8 : var->elem_size;
+  assign_node->base.fp_kind = var->fp_kind;
+  return (node_t *)assign_node;
+}
+
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
                                               token_kind_t tag_kind, char *tag_name, int tag_len,
                                               int base_is_pointer) {
@@ -492,37 +514,11 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     }
 
     if (tk_consume('=')) {
-      if (var->is_array) {
-        node_t *init_node = parse_array_initializer(var);
-        if (!init_chain) init_chain = init_node;
-        else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-        if (!tk_consume(',')) break;
-        continue;
-      }
-      if (!is_pointer && (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
-        node_t *init_node = NULL;
-        if (var->tag_kind == TK_STRUCT) {
-          init_node = parse_struct_initializer(var);
-        } else {
-          init_node = parse_union_initializer(var);
-        }
-        if (!init_chain) init_chain = init_node;
-        else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-        if (!tk_consume(',')) break;
-        continue;
-      }
-      node_t *lvar = psx_node_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
-      lvar->fp_kind = var->fp_kind;
-      ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
-      ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
-      ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
-      ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
-      node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
-      assign_node->type_size = is_pointer ? 8 : var->elem_size;
-      assign_node->base.fp_kind = var->fp_kind;
-      node_t *init_node = (node_t *)assign_node;
+      node_t *init_node = psx_decl_parse_initializer_for_var(var, is_pointer);
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      if (!tk_consume(',')) break;
+      continue;
     }
 
     if (!tk_consume(',')) break;

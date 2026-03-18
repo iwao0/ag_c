@@ -119,6 +119,13 @@ static void test_expr_long_double_suffix_metadata() {
   ASSERT_TRUE(found);
 }
 
+static void test_expr_compound_literal() {
+  printf("test_expr_compound_literal...\n");
+  token = tk_tokenize("(int){3}");
+  node_t *node = ps_expr();
+  ASSERT_EQ(ND_COMMA, node->kind);
+}
+
 static void test_expr_add_sub() {
   printf("test_expr_add_sub...\n");
   token = tk_tokenize("1 + 2 - 3");
@@ -1178,6 +1185,7 @@ int main() {
   test_expr_concat_string();
   test_expr_float();
   test_expr_long_double_suffix_metadata();
+  test_expr_compound_literal();
   test_type_decl();
   test_multiple_funcdefs();
   test_parse_invalid();
