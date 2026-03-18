@@ -345,6 +345,66 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
 }
 
 static int parse_parenthesized_type_size(void) {
+  // Minimal support for C11 complex/imaginary spellings in sizeof/alignof:
+  //   _Complex float, _Imaginary double, float _Complex, double _Imaginary
+  if (token->kind == TK_COMPLEX || token->kind == TK_IMAGINARY) {
+    token = token->next;
+    int sz = 0;
+    if (token->kind == TK_FLOAT) {
+      sz = 4;
+      token = token->next;
+    } else if (token->kind == TK_DOUBLE) {
+      sz = 8;
+      token = token->next;
+    } else if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE) {
+      sz = 8;
+      token = token->next->next;
+    } else {
+      return -1;
+    }
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
+  if ((token->kind == TK_FLOAT || token->kind == TK_DOUBLE) &&
+      token->next && (token->next->kind == TK_COMPLEX || token->next->kind == TK_IMAGINARY)) {
+    int sz = (token->kind == TK_FLOAT) ? 4 : 8;
+    token = token->next->next;
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
+  if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE &&
+      token->next->next &&
+      (token->next->next->kind == TK_COMPLEX || token->next->next->kind == TK_IMAGINARY)) {
+    int sz = 8;
+    token = token->next->next->next;
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
+
   bool is_type = false;
   int scalar_size = 8;
   token_kind_t type_kind = token->kind;

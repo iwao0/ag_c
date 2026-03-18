@@ -346,6 +346,16 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, n3->kind);
   ASSERT_EQ(8, as_num(n3)->val);
 
+  token = tk_tokenize("sizeof(_Complex double)");
+  node_t *n4 = ps_expr();
+  ASSERT_EQ(ND_NUM, n4->kind);
+  ASSERT_EQ(8, as_num(n4)->val);
+
+  token = tk_tokenize("sizeof(float _Imaginary)");
+  node_t *n5 = ps_expr();
+  ASSERT_EQ(ND_NUM, n5->kind);
+  ASSERT_EQ(4, as_num(n5)->val);
+
   token = tk_tokenize("_Alignof(int)");
   node_t *a1 = ps_expr();
   ASSERT_EQ(ND_NUM, a1->kind);
@@ -355,6 +365,11 @@ static void test_expr_sizeof() {
   node_t *a2 = ps_expr();
   ASSERT_EQ(ND_NUM, a2->kind);
   ASSERT_EQ(8, as_num(a2)->val);
+
+  token = tk_tokenize("_Alignof(_Imaginary double)");
+  node_t *a3 = ps_expr();
+  ASSERT_EQ(ND_NUM, a3->kind);
+  ASSERT_EQ(8, as_num(a3)->val);
 
   token = tk_tokenize("main() { int x; return sizeof(x); }");
   parsed_code = ps_program();
