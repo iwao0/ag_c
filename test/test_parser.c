@@ -820,6 +820,12 @@ static void test_type_decl() {
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
+  token = tk_tokenize("main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
   token = tk_tokenize("main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);

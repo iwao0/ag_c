@@ -24,8 +24,12 @@ static long long parse_enum_const_expr(void);
 static long long parse_enum_const_conditional(void);
 static long long parse_enum_const_logor(void);
 static long long parse_enum_const_logand(void);
+static long long parse_enum_const_bitor(void);
+static long long parse_enum_const_bitxor(void);
+static long long parse_enum_const_bitand(void);
 static long long parse_enum_const_eq(void);
 static long long parse_enum_const_rel(void);
+static long long parse_enum_const_shift(void);
 static long long parse_enum_const_add(void);
 static long long parse_enum_const_mul(void);
 static long long parse_enum_const_unary(void);
@@ -172,11 +176,41 @@ static long long parse_enum_const_logor(void) {
 }
 
 static long long parse_enum_const_logand(void) {
-  long long v = parse_enum_const_eq();
+  long long v = parse_enum_const_bitor();
   while (token->kind == TK_ANDAND) {
     token = token->next;
-    long long r = parse_enum_const_eq();
+    long long r = parse_enum_const_bitor();
     v = (v && r) ? 1 : 0;
+  }
+  return v;
+}
+
+static long long parse_enum_const_bitor(void) {
+  long long v = parse_enum_const_bitxor();
+  while (token->kind == TK_PIPE) {
+    token = token->next;
+    long long r = parse_enum_const_bitxor();
+    v |= r;
+  }
+  return v;
+}
+
+static long long parse_enum_const_bitxor(void) {
+  long long v = parse_enum_const_bitand();
+  while (token->kind == TK_CARET) {
+    token = token->next;
+    long long r = parse_enum_const_bitand();
+    v ^= r;
+  }
+  return v;
+}
+
+static long long parse_enum_const_bitand(void) {
+  long long v = parse_enum_const_eq();
+  while (token->kind == TK_AMP) {
+    token = token->next;
+    long long r = parse_enum_const_eq();
+    v &= r;
   }
   return v;
 }
@@ -193,17 +227,28 @@ static long long parse_enum_const_eq(void) {
 }
 
 static long long parse_enum_const_rel(void) {
-  long long v = parse_enum_const_add();
+  long long v = parse_enum_const_shift();
   while (token->kind == TK_LT || token->kind == TK_LE || token->kind == TK_GT || token->kind == TK_GE) {
     token_kind_t op = token->kind;
     token = token->next;
-    long long r = parse_enum_const_add();
+    long long r = parse_enum_const_shift();
     switch (op) {
       case TK_LT: v = (v < r); break;
       case TK_LE: v = (v <= r); break;
       case TK_GT: v = (v > r); break;
       default: v = (v >= r); break;
     }
+  }
+  return v;
+}
+
+static long long parse_enum_const_shift(void) {
+  long long v = parse_enum_const_add();
+  while (token->kind == TK_SHL || token->kind == TK_SHR) {
+    token_kind_t op = token->kind;
+    token = token->next;
+    long long r = parse_enum_const_add();
+    v = (op == TK_SHL) ? (v << r) : (v >> r);
   }
   return v;
 }
@@ -240,6 +285,10 @@ static long long parse_enum_const_unary(void) {
   if (token->kind == TK_MINUS) {
     token = token->next;
     return -parse_enum_const_unary();
+  }
+  if (token->kind == TK_TILDE) {
+    token = token->next;
+    return ~parse_enum_const_unary();
   }
   return parse_enum_const_primary();
 }

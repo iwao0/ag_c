@@ -197,6 +197,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "enum_const_ref", CASE_INT, "int main() { enum E { A=1, B, C=10 }; return A+B+C; }", 13, 0},
     {"type_decl", "enum_const_expr", CASE_INT, "int main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }", 5, 0},
     {"type_decl", "enum_const_expr_cond", CASE_INT, "int main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }", 7, 0},
+    {"type_decl", "enum_const_expr_bitwise", CASE_INT, "int main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }", 11, 0},
     {"type_decl", "global_tag_before_main", CASE_INT, "struct S { int x; }; int main() { return 7; }", 7, 0},
     {"type_decl", "global_tag_decl_with_var", CASE_INT, "struct S { int x; } *gp; int main() { return 7; }", 7, 0},
     {"type_decl", "global_int_var_decl", CASE_INT, "int g = 1; int main() { return 7; }", 7, 0},
