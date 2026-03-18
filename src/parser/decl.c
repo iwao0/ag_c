@@ -10,6 +10,7 @@
 
 static lvar_t *locals;
 static int locals_offset;
+static node_t *parse_scalar_brace_initializer(void);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -131,6 +132,21 @@ static int parse_array_size_constexpr_decl(void) {
   return (int)v;
 }
 
+static node_t *parse_scalar_brace_initializer(void) {
+  if (!tk_consume('{')) {
+    return psx_expr_assign();
+  }
+  node_t *rhs = psx_expr_assign();
+  if (tk_consume(',')) {
+    if (!tk_consume('}')) {
+      psx_diag_ctx(token, "decl", "スカラ初期化子の波括弧内は1要素のみ対応です");
+    }
+    return rhs;
+  }
+  tk_expect('}');
+  return rhs;
+}
+
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -248,7 +264,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
       ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
       ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
       ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
-      node_mem_t *assign_node = psx_node_new_assign(lvar, psx_expr_assign());
+      node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
       assign_node->type_size = is_pointer ? 8 : var->elem_size;
       assign_node->base.fp_kind = var->fp_kind;
       node_t *init_node = (node_t *)assign_node;
