@@ -399,7 +399,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     return parse_union_initializer(&nested);
   }
   if (!(member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8)) {
-    psx_diag_ctx(token, "decl", "構造体/共用体初期化の非スカラメンバは未対応です");
+    psx_diag_ctx(token, "decl", "構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
   }
   return parse_scalar_brace_initializer();
 }
