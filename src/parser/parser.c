@@ -413,6 +413,10 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
         psx_diag_missing(token, "メンバ名");
       }
+      if (token->kind == TK_LPAREN) {
+        skip_balanced_group(TK_LPAREN, TK_RPAREN);
+        psx_diag_ctx(token, "decl", "関数型のメンバは定義できません");
+      }
       if (tk_consume(':')) {
         if (!has_member_name) psx_diag_missing(token, "メンバ名");
         (void)parse_enum_const_expr_toplevel();
