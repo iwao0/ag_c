@@ -949,6 +949,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c!=0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[3]->kind);
+
   token = tk_tokenize("main() { int a[1+2]; a[0]=3; return a[0]; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
