@@ -207,9 +207,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
       psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
     }
-    int var_size = is_pointer ? 8 : elem_size;
 
     token_ident_t *tok = consume_decl_name(&is_pointer);
+    int var_size = is_pointer ? 8 : elem_size;
 
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {

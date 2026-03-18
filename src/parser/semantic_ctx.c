@@ -72,6 +72,12 @@ struct typedef_name_t {
   int is_pointer;
   int scope_depth;
 };
+typedef struct func_name_t func_name_t;
+struct func_name_t {
+  func_name_t *next_hash;
+  char *name;
+  int len;
+};
 
 static goto_ref_t *goto_refs_all = NULL;
 static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
@@ -79,6 +85,7 @@ static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
 static tag_member_t *tag_members_by_bucket[PCTX_HASH_BUCKETS];
 static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
 static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
+static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
@@ -441,6 +448,30 @@ bool psx_ctx_is_typedef_name_token(token_t *tok) {
   if (!tok || tok->kind != TK_IDENT) return false;
   token_ident_t *id = (token_ident_t *)tok;
   return psx_ctx_find_typedef_name(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+}
+
+void psx_ctx_define_function_name(char *name, int len) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
+    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
+      return;
+    }
+  }
+  func_name_t *f = calloc(1, sizeof(func_name_t));
+  f->name = name;
+  f->len = len;
+  f->next_hash = func_names_by_bucket[bucket];
+  func_names_by_bucket[bucket] = f;
+}
+
+bool psx_ctx_has_function_name(char *name, int len) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
+    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {

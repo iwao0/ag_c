@@ -80,6 +80,7 @@ static node_block_t *as_block(node_t *node) { return (node_block_t *)node; }
 static node_func_t *as_func(node_t *node) { return (node_func_t *)node; }
 static node_ctrl_t *as_ctrl(node_t *node) { return (node_ctrl_t *)node; }
 static node_string_t *as_string(node_t *node) { return (node_string_t *)node; }
+static node_funcref_t *as_funcref(node_t *node) { return (node_funcref_t *)node; }
 static node_case_t *as_case(node_t *node) { return (node_case_t *)node; }
 static node_default_t *as_default(node_t *node) { return (node_default_t *)node; }
 static node_jump_t *as_jump(node_t *node) { return (node_jump_t *)node; }
@@ -442,6 +443,11 @@ static void gen_expr(node_t *node) {
     cg_emitf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
+  case ND_FUNCREF:
+    cg_emitf("  adrp x0, _%.*s@PAGE\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
+    cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
   case ND_ASSIGN:
     gen_lval(node->lhs);
     gen_expr(node->rhs);
@@ -582,20 +588,27 @@ static void gen_expr(node_t *node) {
       return;
     }
 
-    // 引数を評価してレジスタに格納
-    for (int i = 0; i < fn->nargs; i++) {
-      gen_expr(fn->args[i]);
-    }
-    // スタックからレジスタへ (逆順にポップ)
-    for (int i = fn->nargs - 1; i >= 0; i--) {
-      cg_emitf("  ldr x%d, [sp], #16\n", i);
-    }
-    // 関数呼び出し
     if (fn->callee) {
       gen_expr(fn->callee);
       cg_emitf("  ldr x16, [sp], #16\n");
+      // 引数を評価してレジスタに格納
+      for (int i = 0; i < fn->nargs; i++) {
+        gen_expr(fn->args[i]);
+      }
+      // スタックからレジスタへ (逆順にポップ)
+      for (int i = fn->nargs - 1; i >= 0; i--) {
+        cg_emitf("  ldr x%d, [sp], #16\n", i);
+      }
       cg_emitf("  blr x16\n");
     } else {
+      // 引数を評価してレジスタに格納
+      for (int i = 0; i < fn->nargs; i++) {
+        gen_expr(fn->args[i]);
+      }
+      // スタックからレジスタへ (逆順にポップ)
+      for (int i = fn->nargs - 1; i >= 0; i--) {
+        cg_emitf("  ldr x%d, [sp], #16\n", i);
+      }
       cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
     }
     // 戻り値をスタックにプッシュ

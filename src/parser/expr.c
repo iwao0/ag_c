@@ -861,6 +861,14 @@ static node_t *primary(void) {
       }
     }
 
+    if (!var && psx_ctx_has_function_name(tok->str, tok->len)) {
+      node_funcref_t *fr = calloc(1, sizeof(node_funcref_t));
+      fr->base.kind = ND_FUNCREF;
+      fr->funcname = tok->str;
+      fr->funcname_len = tok->len;
+      return (node_t *)fr;
+    }
+
     if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }

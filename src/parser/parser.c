@@ -814,6 +814,7 @@ static node_t *funcdef(void) {
   node->base.kind = ND_FUNCDEF;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
+  psx_ctx_define_function_name(tok->str, tok->len);
 
   // 関数ごとにローカル変数テーブルをリセット
   psx_decl_reset_locals();

@@ -44,6 +44,7 @@ typedef enum {
   ND_BLOCK,   // { ... }
   ND_FUNCDEF, // 関数定義
   ND_FUNCALL, // 関数呼び出し
+  ND_FUNCREF, // 関数シンボル参照（関数ポインタ値）
   ND_DEREF,   // 間接参照 (*p)
   ND_ADDR,    // アドレス取得 (&x)
   ND_STRING,  // 文字列リテラル
@@ -117,6 +118,14 @@ struct node_func_t {
   node_t *callee;   // 間接呼び出し時のcallee式（直接呼び出しはNULL）
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
+};
+
+// 関数シンボル参照ノード
+typedef struct node_funcref_t node_funcref_t;
+struct node_funcref_t {
+  node_t base;
+  char *funcname;
+  int funcname_len;
 };
 
 // 制御構造ノード
