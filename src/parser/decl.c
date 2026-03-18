@@ -202,6 +202,23 @@ static node_t *new_array_elem_lvar_at(int base_offset, int elem_size, int idx) {
   return lvar;
 }
 
+static node_t *new_byte_lvar_at(int offset) {
+  return psx_node_new_lvar_typed(offset, 1);
+}
+
+static node_t *build_byte_copy_chain(int dst_base_off, int src_base_off, int size, node_t *init_chain) {
+  for (int i = 0; i < size; i++) {
+    node_t *lhs = new_byte_lvar_at(dst_base_off + i);
+    node_t *rhs = new_byte_lvar_at(src_base_off + i);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+    assign_node->type_size = 1;
+    node_t *init_node = (node_t *)assign_node;
+    if (!init_chain) init_chain = init_node;
+    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+  }
+  return init_chain;
+}
+
 static string_lit_t *find_string_lit_by_label(char *label) {
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
     if (strcmp(lit->label, label) == 0) return lit;
@@ -470,19 +487,21 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
                                            &member_tag_kind, &member_tag_name,
                                            &member_tag_len, &member_is_tag_pointer);
     if (!found || member_len <= 0) continue;
-    if (member_array_len > 0 || (!member_is_tag_pointer && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) ||
-        !(member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8)) {
-      psx_diag_ctx(token, "decl", "構造体単一式初期化の非スカラメンバコピーは未対応です");
+    if (member_type_size == 1 || member_type_size == 2 || member_type_size == 4 || member_type_size == 8) {
+      node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                           member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+      node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
+                                                  member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+      node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
+      assign_node->type_size = member_type_size;
+      node_t *init_node = (node_t *)assign_node;
+      if (!init_chain) init_chain = init_node;
+      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      continue;
     }
-    node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                         member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-    node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
-                                                member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
-    assign_node->type_size = member_type_size;
-    node_t *init_node = (node_t *)assign_node;
-    if (!init_chain) init_chain = init_node;
-    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+    // Non-scalar member fallback: copy raw bytes member-by-member.
+    init_chain = build_byte_copy_chain(var->offset + member_offset, src_var.offset + member_offset,
+                                       member_type_size, init_chain);
   }
   return init_chain ? init_chain : psx_node_new_num(0);
 }
