@@ -598,6 +598,10 @@ static node_t *unary(void) {
                       &cast_elem_size, &cast_fp_kind)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       token = after_rparen;
+      // Compound literal strategy (minimal):
+      // materialize as a hidden local stack object and lower to
+      //   (init(hidden_obj), hidden_obj)
+      // This gives block-lifetime behavior in function scope for current backend.
       int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
       int var_size = cast_is_ptr ? 8 : base_elem;
       char *tmp_name = new_compound_lit_name();
