@@ -12,6 +12,7 @@ static lvar_t *locals;
 static int locals_offset;
 static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
+static void consume_aggregate_initializer_tokens(void);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -223,6 +224,24 @@ static node_t *parse_array_initializer(lvar_t *var) {
   return psx_node_new_num(0);
 }
 
+static void consume_aggregate_initializer_tokens(void) {
+  if (!tk_consume('{')) {
+    psx_diag_ctx(token, "decl", "構造体/共用体初期化は現在 '{...}' 形式のみ対応です");
+  }
+  int depth = 1;
+  while (depth > 0) {
+    if (token->kind == TK_EOF) {
+      psx_diag_ctx(token, "decl", "初期化子の '}' が不足しています");
+    }
+    if (token->kind == TK_LBRACE) {
+      depth++;
+    } else if (token->kind == TK_RBRACE) {
+      depth--;
+    }
+    token = token->next;
+  }
+}
+
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -335,6 +354,11 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         node_t *init_node = parse_array_initializer(var);
         if (!init_chain) init_chain = init_node;
         else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+        if (!tk_consume(',')) break;
+        continue;
+      }
+      if (!is_pointer && (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
+        consume_aggregate_initializer_tokens();
         if (!tk_consume(',')) break;
         continue;
       }

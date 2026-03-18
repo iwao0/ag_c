@@ -953,6 +953,13 @@ static void test_type_decl() {
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
+  token = tk_tokenize("main() { struct S { int x; int y; }; struct S s={1,2}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_NUM, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -1092,6 +1099,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
   expect_parse_fail("main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
   expect_parse_fail("main() { int a[2]=1; return 0; }"); // 配列の単一式初期化は未対応
+  expect_parse_fail("main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
 }
 
 static void test_parse_invalid_diagnostics() {
