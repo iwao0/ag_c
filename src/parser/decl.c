@@ -4,6 +4,7 @@
 #include "internal/expr.h"
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -160,10 +161,12 @@ static int parse_array_size_constexpr_decl(void) {
   int ok = 1;
   long long v = eval_const_expr_decl(n, &ok);
   if (!ok) {
-    psx_diag_ctx(token, "decl", "配列サイズには整数定数式が必要です");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED));
   }
   if (v <= 0) {
-    psx_diag_ctx(token, "decl", "配列サイズは正の整数である必要があります");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
 }
@@ -187,9 +190,10 @@ static node_t *parse_scalar_brace_initializer(void) {
   }
   node_t *rhs = psx_expr_assign();
   if (tk_consume(',')) {
-    if (!tk_consume('}')) {
-      psx_diag_ctx(token, "decl", "スカラ初期化子の波括弧内は1要素のみ対応です");
-    }
+      if (!tk_consume('}')) {
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
+      }
     return rhs;
   }
   tk_expect('}');
@@ -316,7 +320,10 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
 
   node_string_t *s = (node_string_t *)rhs;
   string_lit_t *lit = find_string_lit_by_label(s->string_label);
-  if (!lit) psx_diag_ctx(token, "decl", "文字列初期化子の解決に失敗しました");
+  if (!lit) {
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+  }
 
   node_t *init_chain = NULL;
   int idx = 0;
@@ -375,10 +382,12 @@ static node_t *parse_array_initializer(lvar_t *var) {
           tk_expect('=');
         }
         if (target_idx >= array_len) {
-          psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
+          psx_diag_ctx(token, "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
         }
         if (assigned[target_idx]) {
-          psx_diag_ctx(token, "decl", "配列初期化子で同一要素が重複指定されています");
+          psx_diag_ctx(token, "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
         }
         node_t *lhs = new_array_elem_lvar(var, target_idx);
         node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
@@ -402,7 +411,10 @@ static node_t *parse_array_initializer(lvar_t *var) {
   if (var->elem_size == 1 && rhs->kind == ND_STRING) {
     node_string_t *s = (node_string_t *)rhs;
     string_lit_t *lit = find_string_lit_by_label(s->string_label);
-    if (!lit) psx_diag_ctx(token, "decl", "文字列初期化子の解決に失敗しました");
+    if (!lit) {
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+    }
     int idx = 0;
     for (; idx < lit->len && idx < array_len; idx++) {
       node_t *lhs = new_array_elem_lvar(var, idx);
@@ -516,7 +528,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       }
       return init_chain;
     }
-    psx_diag_ctx(token, "decl", "配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_UNSUPPORTED_FORM));
   }
   if (!member_is_tag_pointer && member_tag_kind == TK_STRUCT) {
     lvar_t nested = {0};
@@ -537,14 +550,16 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     return parse_union_initializer(&nested);
   }
   if (!is_supported_scalar_store_size(member_type_size)) {
-    psx_diag_ctx(token, "decl", "構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_AGGREGATE_INIT_SCALAR_SIZE_UNSUPPORTED));
   }
   return parse_scalar_brace_initializer();
 }
 
 static node_t *parse_struct_initializer(lvar_t *var) {
   if (!tk_consume('{')) {
-    psx_diag_ctx(token, "decl", "構造体/共用体初期化は現在 '{...}' 形式のみ対応です");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_AGGREGATE_INIT_BRACE_REQUIRED));
   }
   int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
   node_t *init_chain = NULL;
@@ -588,11 +603,13 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         }
       }
       if (!found || member_len <= 0) {
-        psx_diag_ctx(token, "decl", "構造体初期化子がメンバ数を超えています");
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
       for (int i = 0; i < assigned_n; i++) {
         if (assigned_lens[i] == member_len && strncmp(assigned_names[i], member_name, (size_t)member_len) == 0) {
-          psx_diag_ctx(token, "decl", "構造体初期化子で同一メンバが重複指定されています");
+          psx_diag_ctx(token, "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
         }
       }
       node_t *member_init = parse_member_initializer(var, member_offset, member_type_size,
@@ -646,7 +663,8 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     resolve_copy_source_lvar(ternary->base.rhs, &then_prefix, &then_src);
     resolve_copy_source_lvar(ternary->els, &else_prefix, &else_src);
     if (!is_compatible_tag_object_lvar(then_src, var) || !is_compatible_tag_object_lvar(else_src, var)) {
-      psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
     }
     node_ctrl_t *copy_select = calloc(1, sizeof(node_ctrl_t));
     copy_select->base.kind = ND_TERNARY;
@@ -657,7 +675,8 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     copy_select->els = else_prefix ? psx_node_new_binary(ND_COMMA, else_prefix, else_copy) : else_copy;
     init_chain = (node_t *)copy_select;
   } else {
-    psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
   }
   if (prefix) return psx_node_new_binary(ND_COMMA, prefix, init_chain);
   return init_chain;
@@ -701,7 +720,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
       if (member_len > 0) break;
     }
     if (!found || member_len <= 0) {
-      psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
     node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
                                          member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
@@ -746,7 +766,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
     }
   }
   if (!found || member_len <= 0) {
-    psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
   node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
                                        member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
@@ -762,7 +783,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
         return init_chain;
       }
       if (!tk_consume('.')) {
-        psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
       }
       for (;;) {
         token_ident_t *id = tk_consume_ident();
@@ -774,7 +796,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
                                         &member_tag_kind, &member_tag_name,
                                         &member_tag_len, &member_is_tag_pointer);
         if (!found || id->len <= 0) {
-          psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
+          psx_diag_ctx(token, "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
         }
         node_t *next_lhs = new_struct_member_lvar(var, member_offset, member_type_size,
                                                   member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
@@ -787,7 +810,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
         if (tk_consume('}')) return init_chain;
         tk_expect(',');
         if (!tk_consume('.')) {
-          psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
+          psx_diag_ctx(token, "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
         }
       }
     }
@@ -801,7 +825,8 @@ static void skip_func_params(void) {
   int depth = 1;
   while (depth > 0) {
     if (token->kind == TK_EOF) {
-      psx_diag_ctx(token, "decl", "関数宣言子の ')' が不足しています");
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
     }
     if (token->kind == TK_LPAREN) depth++;
     else if (token->kind == TK_RPAREN) depth--;
@@ -817,7 +842,10 @@ static token_ident_t *consume_decl_name(int *is_pointer,
   while (tk_consume('(')) open_parens++;
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
   tok = tk_consume_ident();
-  if (!tok) psx_diag_ctx(token, "decl", "変数名が期待されます");
+  if (!tok) {
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+  }
   while (open_parens-- > 0) tk_expect(')');
   while (token->kind == TK_LPAREN) {
     skip_func_params();
@@ -902,7 +930,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     int ptr_levels = 0;
     consume_pointer_chain_decl(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
-      psx_diag_ctx(token, "decl", "不完全型のオブジェクトは宣言できません");
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
     }
 
     token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);

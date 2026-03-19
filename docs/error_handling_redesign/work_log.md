@@ -830,3 +830,50 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `decl.c` / `expr.c` の `psx_diag_ctx` 直書き文言の専用ID化を継続する。
+
+## Task 30: decl 初期化子診断の専用ID化（E3024-E3037）
+- 日付: 2026-03-19
+- 目的:
+  - `decl.c` に残る定型日本語診断をIDベースへ移行し、翻訳切替の土台を拡張する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3024` / `parser.array_size_constexpr_required`
+    - `E3025` / `parser.scalar_brace_single_element_only`
+    - `E3026` / `parser.string_init_resolve_failed`
+    - `E3027` / `parser.array_init_too_many_elements`
+    - `E3028` / `parser.array_init_duplicate_element`
+    - `E3029` / `parser.array_init_unsupported_form`
+    - `E3030` / `parser.aggregate_init_scalar_size_unsupported`
+    - `E3031` / `parser.aggregate_init_brace_required`
+    - `E3032` / `parser.struct_init_too_many_members`
+    - `E3033` / `parser.struct_init_duplicate_member`
+    - `E3034` / `parser.struct_copy_compat_required`
+    - `E3035` / `parser.union_init_target_member_not_found`
+    - `E3036` / `parser.union_init_single_element_only`
+    - `E3037` / `parser.incomplete_object_forbidden`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/decl.c` の対象箇所を
+    `psx_diag_ctx(..., "%s", diag_message_for(...))` へ置換。
+  - 既存IDを再利用した置換:
+    - `E3013`（関数宣言子 `)` 不足）
+    - `E3016`（変数名が期待される）
+    - `E3019`（配列サイズは正の整数）
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/decl.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `src/parser/expr.c` の残存 `psx_diag_ctx` 定型文を同様に専用ID化。
