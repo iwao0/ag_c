@@ -233,3 +233,29 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `literals.c` のエスケープ系を用途別（hex/UCN/一般）で分割するか検討。
+
+## Task 10: エスケープ不正の細分化
+- 日付: 2026-03-19
+- 目的:
+  - `E2005` を用途別（hex/UCN/一般）へ分割し、調査しやすくする。
+- 実施内容:
+  - エラーカタログに以下を追加:
+    - `E2011` (`tokenizer.invalid_escape_hex`)
+    - `E2012` (`tokenizer.invalid_escape_ucn`)
+    - `E2013` (`tokenizer.invalid_escape_general`)
+  - `literals.c` のエラー発生箇所を上記3種へ振り分け。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/literals.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer build/test_tokenizer_c11`
+  - `./build/test_tokenizer`
+  - `./build/test_tokenizer_c11`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser 側の generic 診断（`E3000`）を段階的に個別化。

@@ -16,6 +16,9 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_INVALID_CHAR_LITERAL: return "Invalid character literal";
     case DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT: return "Unterminated comment";
     case DIAG_ERR_TOKENIZER_UNTERMINATED_LITERAL: return "Unterminated string or character literal";
+    case DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX: return "Invalid hexadecimal escape";
+    case DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN: return "Invalid universal character name escape";
+    case DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL: return "Invalid escape";
     case DIAG_ERR_PARSER_GENERIC: return "Parser error";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
