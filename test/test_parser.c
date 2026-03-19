@@ -346,6 +346,11 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NUM, volatile_cast->kind);
   ASSERT_EQ(8, as_num(volatile_cast)->val);
 
+  token = tk_tokenize("(int const)12");
+  node_t *post_const_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, post_const_cast->kind);
+  ASSERT_EQ(12, as_num(post_const_cast)->val);
+
   token = tk_tokenize("(restrict int*)0");
   node_t *restrict_ptr_cast = ps_expr();
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);

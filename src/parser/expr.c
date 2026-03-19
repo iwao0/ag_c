@@ -72,6 +72,12 @@ static void skip_ptr_qualifiers_expr(void) {
   }
 }
 
+static void consume_local_type_quals(token_t **cur) {
+  while (*cur && ((*cur)->kind == TK_CONST || (*cur)->kind == TK_VOLATILE || (*cur)->kind == TK_RESTRICT)) {
+    *cur = (*cur)->next;
+  }
+}
+
 static generic_type_t infer_generic_control_type(node_t *control) {
   generic_type_t gt = {TK_INT, 0};
   if (!control) return gt;
@@ -198,14 +204,14 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_elem_size) *out_elem_size = 8;
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
 
-  while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT)) t = t->next;
+  consume_local_type_quals(&t);
   if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
             t->kind == TK_AUTO || t->kind == TK_REGISTER || t->kind == TK_TYPEDEF)) {
     psx_diag_ctx(t, "cast", "cast 型名にストレージ指定子は使えません");
   }
   if (t && t->kind == TK_ATOMIC && !(t->next && t->next->kind == TK_LPAREN)) {
     t = t->next;
-    while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT)) t = t->next;
+    consume_local_type_quals(&t);
   }
 
   if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
@@ -221,10 +227,10 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     while (q && q->kind == TK_ATOMIC && q->next && q->next->kind == TK_LPAREN) {
       nested_atomic_wrappers++;
       q = q->next->next;
-      while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
+      consume_local_type_quals(&q);
     }
     if (q && q->kind == TK_ATOMIC && !(q->next && q->next->kind == TK_LPAREN)) q = q->next;
-    while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
+    consume_local_type_quals(&q);
 
     bool inner_is_type = false;
     bool q_is_type = false;
@@ -283,6 +289,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       inner_ptr = 1;
       q = q->next;
     }
+    consume_local_type_quals(&q);
     while (nested_atomic_wrappers-- > 0) {
       if (!q || q->kind != TK_RPAREN) return 0;
       q = q->next;
@@ -400,10 +407,12 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
 
 cast_parse_postfix:
   if (*is_pointer != 1) *is_pointer = 0;
+  consume_local_type_quals(&t);
   while (t && t->kind == TK_MUL) {
     *is_pointer = 1;
     t = t->next;
   }
+  consume_local_type_quals(&t);
   parse_funcptr_abstract_decl(&t, is_pointer);
   if (!t || t->kind != TK_RPAREN) return 0;
   *after_rparen = t->next;
