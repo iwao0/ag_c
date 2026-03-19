@@ -41,6 +41,13 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED: return "Typedef name is required";
     case DIAG_ERR_PARSER_TYPE_NAME_REQUIRED: return "Type name is required";
     case DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED: return "Variable name is required";
+    case DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED: return "'(' is required after _Alignas";
+    case DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED: return "Type name is required in _Atomic(...)";
+    case DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED: return "Array size must be a positive integer";
+    case DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN: return "Incomplete type member is not allowed";
+    case DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED: return "Member type is required";
+    case DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN: return "Function type member is not allowed";
+    case DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED: return "'typedef' is required";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

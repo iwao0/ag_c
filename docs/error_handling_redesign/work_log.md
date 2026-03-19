@@ -791,3 +791,42 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - parser の残存 `psx_diag_ctx` 定型文を順次専用IDへ移行する。
+
+## Task 29: 宣言系定型文の追加ID化（E3017-E3023）
+- 日付: 2026-03-19
+- 目的:
+  - parser/stmt の重複する定型文を専用ID化し、将来の翻訳差し替えを容易にする。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3017` / `parser.alignas_lparen_required`
+    - `E3018` / `parser.atomic_type_name_required`
+    - `E3019` / `parser.array_size_positive_required`
+    - `E3020` / `parser.incomplete_member_forbidden`
+    - `E3021` / `parser.member_type_required`
+    - `E3022` / `parser.function_member_forbidden`
+    - `E3023` / `parser.typedef_keyword_required`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/parser.c` / `src/parser/stmt.c` の対象診断を
+    `diag_message_for(...)` 参照へ置換。
+  - 既存テストの期待形式（`[decl]` 等）を維持するため、
+    出力経路は `psx_diag_ctx(..., "%s", diag_message_for(...))` へ統一。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/parser.c`
+  - `src/parser/stmt.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `decl.c` / `expr.c` の `psx_diag_ctx` 直書き文言の専用ID化を継続する。

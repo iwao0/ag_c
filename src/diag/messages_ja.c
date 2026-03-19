@@ -41,6 +41,13 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED: return "typedef名が必要です";
     case DIAG_ERR_PARSER_TYPE_NAME_REQUIRED: return "型名が必要です";
     case DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED: return "変数名が期待されます";
+    case DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED: return "_Alignas の後には '(' が必要です";
+    case DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED: return "_Atomic(...) の中には型名が必要です";
+    case DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED: return "配列サイズは正の整数である必要があります";
+    case DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN: return "不完全型のメンバは定義できません";
+    case DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED: return "メンバ型が期待されます";
+    case DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN: return "関数型のメンバは定義できません";
+    case DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED: return "'typedef' が必要です";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

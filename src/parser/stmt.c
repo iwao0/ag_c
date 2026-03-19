@@ -129,9 +129,13 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         psx_diag_undefined_with_name(token, "のタグ型", member_tag_name, member_tag_len);
       }
       elem_size = psx_ctx_get_tag_size(member_tag_kind, member_tag_name, member_tag_len);
-      if (elem_size <= 0) psx_diag_ctx(token, "decl", "不完全型のメンバは定義できません");
+      if (elem_size <= 0) {
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN));
+      }
     } else {
-      psx_diag_ctx(token, "decl", "メンバ型が期待されます");
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
 
     for (;;) {
@@ -147,7 +151,8 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       }
       if (token->kind == TK_LPAREN) {
         skip_func_params_stmt();
-        psx_diag_ctx(token, "decl", "関数型のメンバは定義できません");
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
       }
       if (tk_consume(':')) {
         if (!has_member_name) psx_diag_missing(token, "メンバ名");
@@ -355,7 +360,8 @@ static long long parse_enum_const_primary(void) {
 static int parse_array_size_constexpr_stmt(void) {
   long long v = parse_enum_const_expr();
   if (v <= 0) {
-    psx_diag_ctx(token, "decl", "配列サイズは正の整数である必要があります");
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
 }
@@ -466,7 +472,10 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
 }
 
 static void parse_typedef_decl(void) {
-  if (token->kind != TK_TYPEDEF) psx_diag_ctx(token, "typedef", "'typedef' が必要です");
+  if (token->kind != TK_TYPEDEF) {
+    psx_diag_ctx(token, "typedef", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED));
+  }
   token = token->next;
   int elem_size = 8;
   tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
