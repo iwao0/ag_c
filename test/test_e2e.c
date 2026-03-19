@@ -246,6 +246,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "struct_brace_init_values", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={1,2}; return s.x+s.y; }", 3, 0},
     {"type_decl", "struct_brace_init_designated", CASE_INT, "int main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return s.x+s.y; }", 3, 0},
     {"type_decl", "struct_brace_elision_array_member", CASE_INT, "int main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return s.z; }", 3, 0},
+    {"type_decl", "struct_brace_elision_array_member_copy", CASE_INT, "int main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return s.a[0]+s.a[1]+s.z; }", 18, 0},
     {"type_decl", "struct_single_expr_copy_comma", CASE_INT, "int main() { struct S { int x; int y; }; struct S t={4,5}; struct S s=(t.y=9,t); return s.x+s.y; }", 13, 0},
     {"type_decl", "struct_single_expr_copy_ternary", CASE_INT, "int main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return s.x+s.y; }", 7, 0},
     {"type_decl", "union_single_expr_copy_comma", CASE_INT, "int main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return u.x; }", 9, 0},
