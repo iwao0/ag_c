@@ -237,6 +237,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "cast_unsigned", CASE_INT, "int main() { return (unsigned)42; }", 42, 0},
     {"type_decl", "cast_enum", CASE_INT, "int main() { enum E { A=1 }; return (enum E)42; }", 42, 0},
     {"type_decl", "cast_tag_ptr", CASE_INT, "int main() { struct S { int x; }; struct S *p = 0; return ((struct S*)p)==0; }", 1, 0},
+    {"type_decl", "cast_struct_from_scalar", CASE_INT, "int main() { struct S { int x; int y; }; return ((struct S)7).x; }", 7, 0},
+    {"type_decl", "cast_struct_from_pointer_postfix", CASE_INT, "int main() { struct S { int *p; int q; }; int x=3; return *((struct S)&x).p; }", 3, 0},
     {"type_decl", "cast_struct_same_type", CASE_INT, "int main() { struct S { int x; }; struct S s=(struct S)(struct S){7}; return s.x; }", 7, 0},
     {"type_decl", "cast_struct_diff_tag_same_size", CASE_INT, "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; struct B b=(struct B)a; return b.x; }", 7, 0},
     {"type_decl", "cast_union_same_type", CASE_INT, "int main() { union U { int x; char y; }; union U u=(union U)(union U){.x=9}; return u.x; }", 9, 0},
@@ -330,11 +332,8 @@ static const test_case_t test_cases[] = {
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
-    {"cast_struct_from_scalar_rejected",
-     "int main() { struct S { int x; }; int a=0; return (struct S)a; }",
-     "[cast] struct 値へのキャストは未対応です（非スカラ型）"},
-    {"cast_struct_from_pointer_rejected",
-     "int main() { struct S { int x; }; int a=0; int *p=&a; return (struct S)p; }",
+    {"cast_struct_from_nonscalar_rejected",
+     "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }",
      "[cast] struct 値へのキャストは未対応です（非スカラ型）"},
 };
 

@@ -758,11 +758,11 @@
   - [x] `test_e2e` に多段ポインタ参照の実行時回帰テストを追加して固定する
 
 ## Parser未実装タスク（2026-03-19 追加棚卸し12）
-- [ ] 非スカラ値 cast の未対応ケース（スカラ/ポインタ→`struct`/`union`）を段階解消する
+- [x] 非スカラ値 cast の未対応ケース（スカラ/ポインタ→`struct`/`union`）を段階解消する
   - [x] 現状診断（`[cast] struct/union 値へのキャストは未対応です（非スカラ型）`）となるケースは、当面は診断維持（受理しない）方針とする
-  - [ ] 受理する場合は最小lowering（byte copy など）を実装し、`test_parser`/`test_e2e` に回帰を追加する（段階対応中）
+  - [x] 受理する場合は最小lowering（byte copy など）を実装し、`test_parser`/`test_e2e` に回帰を追加する（第2段: `struct` へのスカラ/ポインタ cast 受理を追加）
   - [x] 第1段: `union` へのスカラ cast（例: `(union U)7`）を「先頭メンバ初期化」lowering で受理し、`test_e2e` 回帰を追加する
-  - [x] `struct` へのスカラ/ポインタ cast は現時点では拒否維持とし、`test_parser` / `test_e2e` compile-fail で固定する
+  - [x] 第2段: `struct` へのスカラ/ポインタ cast を最小 lowering（先頭メンバ初期化）で受理し、拒否ケースは「非スカラ源のみ」に整理する
 - [x] `struct` 単一式初期化の対応範囲を拡張する
   - [x] 現状未対応の `struct S s=1` は禁止維持とする（`[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です`）
   - [x] 診断文言を `test_parser` で固定する
@@ -776,8 +776,8 @@
   - [x] `union U { int a[2]; int z; }; union U u={1,2};` の値評価方針（先頭配列メンバの連続初期化）を明文化する
   - [x] codegen/e2e の期待値テストを追加し、parse-only ケースを実行検証へ置換する
 - [x] 非スカラ cast の lowering を次段階へ進める
-  - [x] `struct` へのスカラ/ポインタ cast は当面拒否維持で確定する（`test_parser`/`test_e2e` compile-fail で固定）
-  - [x] `union` 実装で導入した一時オブジェクト経由 lowering の共通化は、`struct` 受理方針が再オープンした時点で着手する
+  - [x] `struct` へのスカラ/ポインタ cast を段階受理し、config でON/OFF可能にする
+  - [x] `union` と同様の一時オブジェクト経由 lowering を `struct` 側にも適用する
 - [x] cast 後 postfix 連鎖の回帰を拡充する
   - [x] `((union U)&x).p` 以外の連鎖（`->`, `[]`, `++/--`）について parser/e2e を追加し、意味差分を固定する
   - [x] `->` 連鎖の回帰を `test_e2e` に追加する（`((union U*)&u)->a[1]`）

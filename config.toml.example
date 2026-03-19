@@ -15,6 +15,9 @@ enable_c11_audit_extensions = false
 # Allow same-size struct/union cast as a parser extension (non-standard)
 enable_size_compatible_nonscalar_cast = true
 
+# Allow scalar/pointer to struct value cast by lowering to first-member initialization
+enable_struct_scalar_pointer_cast = true
+
 # Allow scalar/pointer to union value cast by lowering to first-member initialization
 enable_union_scalar_pointer_cast = true
 

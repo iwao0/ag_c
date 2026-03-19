@@ -87,6 +87,8 @@ void load_config_toml(void) {
     if (in_parser) {
       if (strcmp(key, "enable_size_compatible_nonscalar_cast") == 0) {
         ps_set_enable_size_compatible_nonscalar_cast(b);
+      } else if (strcmp(key, "enable_struct_scalar_pointer_cast") == 0) {
+        ps_set_enable_struct_scalar_pointer_cast(b);
       } else if (strcmp(key, "enable_union_scalar_pointer_cast") == 0) {
         ps_set_enable_union_scalar_pointer_cast(b);
       } else if (strcmp(key, "enable_union_array_member_nonbrace_init") == 0) {

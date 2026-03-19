@@ -68,6 +68,7 @@
    - 共用体初期化子は1要素制約を維持し、2要素目以降は診断固定としました。
    - `union` の先頭配列メンバに対する非波括弧初期化（`union U u={1,2};`）を段階受理しました（brace elision）。
    - `struct/union` 値 cast は「同一タグ型どうしのみ no-op 受理」を維持しつつ、同種同サイズ cast の段階受理を Parser 設定で切り替えられるようにしました。
+   - `struct` へのスカラ/ポインタ cast（例: `(struct S)7`, `(struct S)p`）を、先頭メンバ初期化へ lowering する形で段階受理しました。
    - `union` へのスカラ cast（例: `(union U)7`）を、先頭メンバ初期化へ lowering する形で段階受理しました。
    - cast 式の直後に postfix を連鎖できるようにし、`((union U)&x).p` のような式を受理できるようにしました。
    - cast 型名で `const/volatile/restrict`、`_Atomic int`、`_Atomic(T)`、入れ子 `_Atomic(_Atomic(T))` を受理するように拡張しました。

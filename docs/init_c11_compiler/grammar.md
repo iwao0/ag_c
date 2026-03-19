@@ -239,6 +239,7 @@ args       = expr ("," expr)*
   - 先頭メンバが配列の場合、`union U u={1,2};` のような非波括弧初期化を段階受理（brace elision）
 - cast 方針:
   - `struct/union` 値への cast は「同一タグ型どうしのみ no-op 受理」を基本とし、`config.toml` の `[parser].enable_size_compatible_nonscalar_cast = true` 時は「同種かつ同サイズ」も段階受理
+  - `struct` へのスカラ/ポインタ cast（例: `(struct S)7`, `(struct S)p`）は段階受理（先頭メンバ初期化へ lowering）
   - `union` へのスカラ cast（例: `(union U)7`）は段階受理（先頭メンバ初期化へ lowering）
   - 非受理ケースは診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）を維持
   - cast 型名は `const/volatile/restrict`・`_Atomic int`・`_Atomic(T)`・入れ子 `_Atomic(_Atomic(T))` を受理
@@ -268,6 +269,7 @@ args       = expr ("," expr)*
 > `0b...` はデフォルトで拡張として許可し、`strict C11 = true` または `enable_binary_literals = false` で拒否されます。
 > これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
 > `struct/union` 値 cast の段階受理（同種同サイズ）も `config.toml` の `[parser]` セクション（`enable_size_compatible_nonscalar_cast`）で切り替え可能です。
+> `struct` のスカラ/ポインタ cast は `enable_struct_scalar_pointer_cast`、`union` のスカラ/ポインタ cast は `enable_union_scalar_pointer_cast` で切り替え可能です。
 > cast 後の postfix 連鎖（例: `((union U)&x).p`）を受理します。
 > 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
 > 接頭辞付きマルチ文字定数は、現実装では 8-bit 単位で左シフトしながら畳み込む実装定義規則で値を形成します。
