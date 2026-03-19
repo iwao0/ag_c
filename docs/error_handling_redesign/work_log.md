@@ -336,3 +336,22 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser 直下の残り `tk_error_*` 経路を洗い出し、`E300x` へ統一。
+
+## Task 14: parser 残存経路の個別コード化（第四段）
+- 日付: 2026-03-19
+- 目的:
+  - Parser 配下の残存 `tk_error_*` 経路を解消し、`E300x` に統一する。
+- 実施内容:
+  - `src/parser/node_utils.c`
+    - 左辺値要求エラーを `E3005`（invalid context）へ移行。
+    - インクリメント/デクリメント対象の整数スカラー要求エラーを `E3005` へ移行。
+  - `src/parser` 配下の `tk_error_tok` / `tk_error_at` 呼び出しが 0 件になったことを確認。
+- 変更ファイル:
+  - `src/parser/node_utils.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make DIAG_LANG=ja build/test_parser && ./build/test_parser`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser 以外（共通層・将来カテゴリ）の診断粒度見直しと追加コード体系の検討。

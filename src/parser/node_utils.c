@@ -1,4 +1,5 @@
 #include "internal/node_utils.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 
@@ -114,14 +115,14 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
 
 void psx_node_expect_lvalue(node_t *node, const char *op) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF)) {
-    tk_error_tok(token, "%s の対象は左辺値である必要があります", (char *)op);
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s の対象は左辺値である必要があります", (char *)op);
   }
 }
 
 void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_expect_lvalue(node, op);
   if (node->fp_kind != TK_FLOAT_KIND_NONE) {
-    tk_error_tok(token, "%s の対象は整数スカラーである必要があります", (char *)op);
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s の対象は整数スカラーである必要があります", (char *)op);
   }
 }
 
