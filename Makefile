@@ -1,6 +1,7 @@
 CFLAGS=-std=c11 -g -O0 -Wall -Wextra
 DEPFLAGS=-MMD -MP
 DIAG_LANG?=ja
+OBJROOT=build/obj/$(DIAG_LANG)
 DIAG_COMMON_SRCS=$(filter-out src/diag/messages_ja.c src/diag/messages_en.c src/diag/messages_all.c,$(wildcard src/diag/*.c))
 ifeq ($(DIAG_LANG),all)
 DIAG_MSG_SRCS=src/diag/messages_all.c
@@ -14,7 +15,7 @@ CFLAGS+=-DDIAG_LANG_JA
 endif
 
 SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
-OBJS=$(patsubst src/%.c,build/%.o,$(SRCS))
+OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 TEST_TOKENIZER=build/test_tokenizer
@@ -25,15 +26,15 @@ TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
-TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_runtime.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
-PARSER_LIB_OBJS=build/parser/parser.o build/parser/decl.o build/parser/diag.o build/parser/expr.o build/parser/loop_ctx.o build/parser/semantic_ctx.o build/parser/node_utils.o build/parser/stmt.o build/parser/switch_ctx.o
-DIAG_LIB_OBJS=$(patsubst src/%.c,build/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
+TOKENIZER_LIB_OBJS=$(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o
+PARSER_LIB_OBJS=$(OBJROOT)/parser/config_runtime.o $(OBJROOT)/parser/parser.o $(OBJROOT)/parser/decl.o $(OBJROOT)/parser/diag.o $(OBJROOT)/parser/expr.o $(OBJROOT)/parser/loop_ctx.o $(OBJROOT)/parser/semantic_ctx.o $(OBJROOT)/parser/node_utils.o $(OBJROOT)/parser/stmt.o $(OBJROOT)/parser/switch_ctx.o
+DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
-build/%.o: src/%.c
+$(OBJROOT)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
@@ -49,7 +50,7 @@ $(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DI
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_CODEGEN): test/test_codegen.c build/arch/arm64_apple.o build/tokenizer/escape.o $(DIAG_LIB_OBJS)
+$(TEST_CODEGEN): test/test_codegen.c $(OBJROOT)/arch/arm64_apple.o $(OBJROOT)/tokenizer/escape.o $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
