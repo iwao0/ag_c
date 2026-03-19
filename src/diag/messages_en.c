@@ -84,6 +84,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT: return "Left-hand side of '.' must be a struct/union";
     case DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH: return "String literals with different prefixes cannot be concatenated";
     case DIAG_ERR_PARSER_VARIADIC_NOT_LAST: return "'...' can be specified only at the end of a variadic argument list";
+    case DIAG_ERR_PARSER_SWITCH_DUPLICATE_CASE: return "Duplicate symbol (switch case): %lld";
+    case DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT: return "Duplicate symbol (switch default)";
+    case DIAG_ERR_PARSER_LVALUE_REQUIRED: return "%s target must be an lvalue";
+    case DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED: return "%s target must be an integer scalar";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

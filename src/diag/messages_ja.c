@@ -84,6 +84,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT: return "'.' の左辺は構造体/共用体である必要があります";
     case DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH: return "異なる接頭辞の文字列リテラルは連結できません";
     case DIAG_ERR_PARSER_VARIADIC_NOT_LAST: return "'...' は可変長引数リストの末尾にのみ指定できます";
+    case DIAG_ERR_PARSER_SWITCH_DUPLICATE_CASE: return "識別子が重複しています (switch case): %lld";
+    case DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT: return "識別子が重複しています (switch default)";
+    case DIAG_ERR_PARSER_LVALUE_REQUIRED: return "%s の対象は左辺値である必要があります";
+    case DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED: return "%s の対象は整数スカラーである必要があります";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

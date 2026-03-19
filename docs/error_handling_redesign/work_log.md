@@ -1079,3 +1079,38 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `parser/diag.c` など文脈組み立て層（優先度B）のテンプレート整理へ移行。
+
+## Task 37: 優先度B（switch/node utils）の定型文テンプレート化
+- 日付: 2026-03-19
+- 目的:
+  - 文脈組み立て層のうち、`switch_ctx` と `node_utils` の定型文を専用IDへ移行する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3060` / `parser.switch_duplicate_case`
+    - `E3061` / `parser.switch_duplicate_default`
+    - `E3062` / `parser.lvalue_required`
+    - `E3063` / `parser.integer_scalar_required`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - 置換:
+    - `src/parser/switch_ctx.c`（重複 case/default 診断）
+    - `src/parser/node_utils.c`（lvalue / integer-scalar 要求）
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/switch_ctx.c`
+  - `src/parser/node_utils.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `src/parser/diag.c` の文脈組み立てメッセージを専用IDへ整理する。

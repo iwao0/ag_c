@@ -115,16 +115,16 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
 
 void psx_node_expect_lvalue(node_t *node, const char *op) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s: %s / lvalue",
-                   diag_message_for(DIAG_ERR_PARSER_INVALID_CONTEXT), (char *)op);
+    diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
+                   diag_message_for(DIAG_ERR_PARSER_LVALUE_REQUIRED), (char *)op);
   }
 }
 
 void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_expect_lvalue(node, op);
   if (node->fp_kind != TK_FLOAT_KIND_NONE) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s: %s / integer-scalar",
-                   diag_message_for(DIAG_ERR_PARSER_INVALID_CONTEXT), (char *)op);
+    diag_emit_tokf(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED, token,
+                   diag_message_for(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED), (char *)op);
   }
 }
 

@@ -25,6 +25,7 @@
   - `E3050-E3051`: 非負整数定数式チェック（`%s` 埋め込み）を専用IDテンプレート化。
   - `E3052-E3055`: `_Complex/_Imaginary` と `return` 文脈の定型診断を専用ID化。
   - `E3056-E3059`: `->`/`.` 左辺制約、文字列接頭辞混在、可変長引数 `...` 位置制約を専用ID化。
+  - `E3060-E3063`: `switch` 重複診断、lvalue/integer-scalar 要件を専用ID化。
 - `src/preprocess/preprocess.c` / `src/arch/arm64_apple.c`
   - 主要な日本語直書き診断を `diag_message_for(...)` ベースへ移行。
 
@@ -38,12 +39,6 @@
   - `"[parser] 未定義%s '%.*s' です"`
   - `"[parser] %s '%.*s' が重複しています"`
   - `"[parser] %s は %sでのみ使用できます"`
-- `src/parser/switch_ctx.c`
-  - `"[switch] case %lld が重複しています"`
-  - `"[switch] default が重複しています"`
-- `src/parser/node_utils.c`
-  - `"%s の対象は左辺値である必要があります"`
-  - `"%s の対象は整数スカラーである必要があります"`
 
 ## 優先度C: parser 以外の残件確認
 - `src/preprocess/preprocess.c`
