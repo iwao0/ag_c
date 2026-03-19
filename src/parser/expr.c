@@ -217,8 +217,11 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     int inner_ptr = 0;
     int inner_elem = 8;
     tk_float_kind_t inner_fp = TK_FLOAT_KIND_NONE;
-    if (q && q->kind == TK_ATOMIC && q->next && q->next->kind == TK_LPAREN) {
-      psx_diag_ctx(q, "cast", "入れ子の _Atomic(...) cast 型名は未対応です");
+    int nested_atomic_wrappers = 0;
+    while (q && q->kind == TK_ATOMIC && q->next && q->next->kind == TK_LPAREN) {
+      nested_atomic_wrappers++;
+      q = q->next->next;
+      while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
     }
     if (q && q->kind == TK_ATOMIC && !(q->next && q->next->kind == TK_LPAREN)) q = q->next;
     while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
@@ -278,6 +281,10 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     if (!inner_is_type) return 0;
     while (q && q->kind == TK_MUL) {
       inner_ptr = 1;
+      q = q->next;
+    }
+    while (nested_atomic_wrappers-- > 0) {
+      if (!q || q->kind != TK_RPAREN) return 0;
       q = q->next;
     }
     if (!q || q->kind != TK_RPAREN) return 0;

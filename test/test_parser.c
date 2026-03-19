@@ -360,6 +360,11 @@ static void test_expr_unary_ops() {
   node_t *atomic_const_cast = ps_expr();
   ASSERT_EQ(ND_NUM, atomic_const_cast->kind);
   ASSERT_EQ(10, as_num(atomic_const_cast)->val);
+
+  token = tk_tokenize("(_Atomic(_Atomic(int)))11");
+  node_t *nested_atomic_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, nested_atomic_cast->kind);
+  ASSERT_EQ(11, as_num(nested_atomic_cast)->val);
 }
 
 static void test_expr_generic() {
@@ -1404,7 +1409,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
   expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
   expect_parse_fail("main() { return (_Thread_local int)1; }"); // cast型名のストレージ指定は未対応
-  expect_parse_fail("main() { int x=1; return (_Atomic(_Atomic(int)))x; }"); // 入れ子_Atomic cast型名は未対応
   expect_parse_fail("main() { int a[0]; return 0; }");          // 配列サイズは正数のみ
   expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
@@ -1448,14 +1452,12 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
   expect_parse_fail_with_message("main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
-  expect_parse_fail_with_message("main() { int x=1; return (_Atomic(_Atomic(int)))x; }", "[cast] 入れ子の _Atomic(...) cast 型名は未対応です");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
-  expect_parse_fail_without_message("main() { int x=1; return (_Atomic(_Atomic(int)))x; }", "[cast] この型へのキャストは未対応です");
   expect_parse_fail_without_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] この型へのキャストは未対応です");
 
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
