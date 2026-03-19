@@ -52,7 +52,8 @@ shift      = add ("<<" add | ">>" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary | "%" unary)*
 unary      = "(" cast_type ")" unary
-           | "sizeof" ("(" type "*"* ")" | unary | "(" expr ")")
+           | "sizeof" ("(" cast_type ")" | unary | "(" expr ")")
+           | "_Alignof" "(" cast_type ")"
            | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
            | primary postfix*
 cast_type  = type_qual* (type | tag_type | typedef_name | "_Atomic" type | "_Atomic" "(" cast_type ")") "*"*

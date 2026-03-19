@@ -75,6 +75,7 @@
    - Parser拡張の有効/無効切替は `config.toml` の `[parser]` で制御し、代表挙動は README の設定マトリクスに整理しました。
    - cast 型名で `const/volatile/restrict`、`_Atomic int`、`_Atomic(T)`、入れ子 `_Atomic(_Atomic(T))` を受理するように拡張しました。
    - cast 型名でのストレージ指定子（`_Thread_local` など）は `[cast]` 文脈の専用診断に統一しました。
+   - `sizeof(struct S)` / `_Alignof(union U)` のようなタグ型 type-name を受理するように拡張しました。
    - `union` 配列メンバの非波括弧初期化（設定OFF時）にも専用診断を追加し、配列メンバ文脈を明示するようにしました。
    - 構造体/共用体メンバ初期化のサイズ制約を `1/2/4/8 byte` スカラ対応として明文化しました。
 
