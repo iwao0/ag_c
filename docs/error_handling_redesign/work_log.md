@@ -426,3 +426,22 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 必要なら `tokenizer.c` 側の `diag_emit_atf(..., user_input, ...)` も同系ヘルパーで揃えるか検討。
+
+## Task 18: tokenizer.c の位置診断呼び出し統一
+- 日付: 2026-03-19
+- 目的:
+  - `tokenizer.c` 内の `diag_emit_atf(..., user_input, ...)` 呼び出しを内部ヘルパーへ統一する。
+- 実施内容:
+  - `src/tokenizer/tokenizer.c` に `internal/diag_helper.h` を導入。
+  - `checked_span_len`、数値リテラル処理、文字列/文字定数処理などの位置診断を
+    `TK_DIAG_ATF(...)` へ置換。
+  - Tokenizer 内で `tk_get_user_input()` 受け渡しの書き方を `tokenizer.c/literals.c/scanner.c` で統一。
+- 変更ファイル:
+  - `src/tokenizer/tokenizer.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 必要なら `TK_DIAG_TOKF` などトークン位置向けの内部ヘルパー追加を検討。
