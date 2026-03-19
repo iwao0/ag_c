@@ -15,8 +15,31 @@
     - `E3007`（`parser.string_literal_too_large`）
     - `E3008`（`parser.string_concat_size_invalid`）
   - 呼び出し側の固定文言は `diag_message_for(...)` 参照に移行。
+- `src/parser` 全体（段階的）
+  - `E3009-E3012`: `static_assert` 系診断を専用ID化。
+  - `E3013-E3016`: 宣言子/typedef/型名/変数名の定型診断を専用ID化。
+  - `E3017-E3023`: `_Alignas` / `_Atomic` / 配列サイズ正値 / メンバ型 / `typedef` 必須等を専用ID化。
+  - `E3024-E3037`: `decl.c` 初期化子まわりの定型診断を専用ID化。
+  - `E3038-E3045`: `expr.c` の cast / generic / primary 系定型診断を専用ID化。
+  - `E3046-E3049`: enum未定義 / goto未定義ラベル / 括弧不足 / 関数定義必須を専用ID化。
+  - `E3050-E3051`: 非負整数定数式チェック（`%s` 埋め込み）を専用IDテンプレート化。
+- `src/preprocess/preprocess.c` / `src/arch/arm64_apple.c`
+  - 主要な日本語直書き診断を `diag_message_for(...)` ベースへ移行。
 
-## 優先度B: 追加キー/テンプレート化が必要（文脈付き）
+## 優先度A: 残存する parser 直書き（要ID化）
+- `src/parser/expr.c`
+  - `"'->' の左辺は構造体/共用体ポインタである必要があります"`
+  - `"'.' の左辺は構造体/共用体である必要があります"`
+  - `"_Complex/_Imaginary cast は浮動小数型のみ対応です"`（2箇所）
+  - `"異なる接頭辞の文字列リテラルは連結できません"`
+- `src/parser/parser.c`
+  - `"_Complex/_Imaginary は浮動小数型にのみ指定できます"`
+  - `"'...' は可変長引数リストの末尾にのみ指定できます"`
+- `src/parser/stmt.c`
+  - `"[stmt] void 以外の関数では return に式が必要です"`
+  - `"[stmt] void 関数では return に式を指定できません"`
+
+## 優先度B: 文脈組み立てAPI側のテンプレート整理
 - `src/parser/diag.c`
   - `"[%s] 診断メッセージの生成に失敗しました"`
   - `"[parser] %sが必要です"`
@@ -30,15 +53,14 @@
   - `"%s の対象は左辺値である必要があります"`
   - `"%s の対象は整数スカラーである必要があります"`
 
-## 優先度C: Codegen / Preprocess の文脈特化メッセージ
-- `src/arch/arm64_apple.c`
-  - `"default が重複しています"`
-  - `"代入の左辺値が変数ではありません"`
+## 優先度C: parser 以外の残件確認
 - `src/preprocess/preprocess.c`
-  - `"ファイルが見つかりません: %s"`
+  - `pp_error(...)` 経路の文言（未採番）を将来方針に合わせて整理するか要判断。
+- `src/parser/internal/dynarray.h`
+  - `fprintf(stderr, ...)` 直接出力のため、`diag` 系に寄せるか要判断。
 
 ## 推奨移行手順
-1. `error_catalog.h/.c` に必要なIDを追加（必要なら `5000` 番台を利用）。
+1. `error_catalog.h/.c` に必要なIDを追加（parser は `3000` 番台を継続）。
 2. `messages_ja.c` / `messages_en.c` / `messages_all.c` にテンプレート対応キーを追加。
 3. 呼び出し側は可能な限り `diag_message_for(id)` ベースへ寄せ、可変部のみ `fmt` 引数で渡す。
 4. テスト（`make test`）を都度実施し、回帰を防ぐ。
