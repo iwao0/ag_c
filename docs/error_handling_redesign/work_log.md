@@ -631,3 +631,47 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `switch_ctx.c` / `node_utils.c` の残る文脈付き直書きを同方針で整理。
+
+## Task 25: switch/node_utils 文脈メッセージの整理
+- 日付: 2026-03-19
+- 目的:
+  - `switch_ctx.c` / `node_utils.c` の固定日本語文を減らし、カタログ文言中心へ寄せる。
+- 実施内容:
+  - `src/parser/switch_ctx.c`
+    - 重複 `case/default` 診断を
+      `diag_message_for(DIAG_ERR_PARSER_DUPLICATE_SYMBOL)` + 補足情報形式へ変更。
+  - `src/parser/node_utils.c`
+    - 左辺値要求/整数スカラー要求を
+      `diag_message_for(DIAG_ERR_PARSER_INVALID_CONTEXT)` + 補足情報形式へ変更。
+- 変更ファイル:
+  - `src/parser/switch_ctx.c`
+  - `src/parser/node_utils.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `preprocess` / `codegen` の直書き文脈メッセージ整理へ展開。
+
+## Task 25: switch/node_utils 文脈メッセージの整理
+- 日付: 2026-03-19
+- 目的:
+  - `switch_ctx.c` / `node_utils.c` の固定日本語文を減らし、カタログ文言中心へ寄せる。
+- 実施内容:
+  - `src/parser/switch_ctx.c`
+    - 重複 `case/default` 診断を
+      `diag_message_for(DIAG_ERR_PARSER_DUPLICATE_SYMBOL)` + 補足情報形式へ変更。
+  - `src/parser/node_utils.c`
+    - 左辺値要求/整数スカラー要求を
+      `diag_message_for(DIAG_ERR_PARSER_INVALID_CONTEXT)` + 補足情報形式へ変更。
+- 変更ファイル:
+  - `src/parser/switch_ctx.c`
+  - `src/parser/node_utils.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `preprocess` / `codegen` の直書き文脈メッセージ整理へ展開。

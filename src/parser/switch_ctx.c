@@ -40,8 +40,8 @@ void psx_switch_register_case(long long v, token_t *tok) {
   }
   for (int i = 0; i < switch_ctx->ncase; i++) {
     if (switch_ctx->case_vals[i] == v) {
-      diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "[switch] case %lld が重複しています",
-                     v);
+      diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "%s (switch case): %lld",
+                     diag_message_for(DIAG_ERR_PARSER_DUPLICATE_SYMBOL), v);
     }
   }
   if (switch_ctx->ncase >= switch_ctx->cap) {
@@ -56,7 +56,8 @@ void psx_switch_register_default(token_t *tok) {
     psx_diag_only_in(tok, "default", "switch 内");
   }
   if (switch_ctx->has_default) {
-    diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "[switch] default が重複しています");
+    diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "%s (switch default)",
+                   diag_message_for(DIAG_ERR_PARSER_DUPLICATE_SYMBOL));
   }
   switch_ctx->has_default = 1;
 }
