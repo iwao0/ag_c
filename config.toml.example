@@ -1,3 +1,7 @@
+[general]
+# Error message locale ("ja" or "en")
+error_message_locale = "ja"
+
 [tokenizer]
 # C11 strict mode (disables non-standard binary literals)
 strict_c11 = false

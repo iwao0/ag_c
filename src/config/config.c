@@ -1,4 +1,5 @@
 #include "config.h"
+#include "../diag/diag.h"
 #include "../parser/config_runtime.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdbool.h>
@@ -36,10 +37,20 @@ static bool parse_bool_value(const char *v, bool *out) {
   return false;
 }
 
+static bool parse_string_value(char *v, char **out) {
+  size_t n = strlen(v);
+  if (n < 2) return false;
+  if (v[0] != '"' || v[n - 1] != '"') return false;
+  v[n - 1] = '\0';
+  *out = v + 1;
+  return true;
+}
+
 void load_config_toml(void) {
   FILE *fp = fopen("config.toml", "r");
   if (!fp) return; // 設定ファイルがなければデフォルトで実行
 
+  bool in_general = false;
   bool in_tokenizer = false;
   bool in_parser = false;
   char *line = NULL;
@@ -55,11 +66,12 @@ void load_config_toml(void) {
     if (*p == '\0') continue;
 
     if (*p == '[') {
+      in_general = (strcmp(p, "[general]") == 0);
       in_tokenizer = (strcmp(p, "[tokenizer]") == 0);
       in_parser = (strcmp(p, "[parser]") == 0);
       continue;
     }
-    if (!in_tokenizer && !in_parser) continue;
+    if (!in_general && !in_tokenizer && !in_parser) continue;
 
     char *eq = strchr(p, '=');
     if (!eq) continue;
@@ -68,6 +80,14 @@ void load_config_toml(void) {
     trim_right(key);
     char *val = trim_left(eq + 1);
     trim_right(val);
+
+    if (in_general) {
+      if (strcmp(key, "error_message_locale") == 0) {
+        char *s = NULL;
+        if (parse_string_value(val, &s)) diag_set_locale(s);
+      }
+      continue;
+    }
 
     bool b = false;
     if (!parse_bool_value(val, &b)) continue;
