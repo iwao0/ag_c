@@ -1467,6 +1467,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後のstruct重複designator
   expect_parse_fail("main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
   expect_parse_fail("main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator
+  expect_parse_fail("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; return (struct B)a; }"); // 非同一タグstruct cast
+  expect_parse_fail("main() { union A { int x; }; union B { int x; }; union A a={.x=1}; return (union B)a; }"); // 非同一タグunion cast
 }
 
 static void test_parse_invalid_diagnostics() {
@@ -1490,6 +1492,8 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
+  expect_parse_fail_with_message("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; return (struct B)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
+  expect_parse_fail_with_message("main() { union A { int x; }; union B { int x; }; union A a={.x=1}; return (union B)a; }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
