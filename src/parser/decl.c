@@ -15,9 +15,14 @@ static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
 static node_t *parse_union_initializer(lvar_t *var);
 static node_t *parse_struct_copy_initializer(lvar_t *var);
+static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member_type_size,
+                                      token_kind_t member_tag_kind, char *member_tag_name,
+                                      int member_tag_len, int member_is_tag_pointer);
 static int parse_nonneg_const_expr_decl(const char *what);
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src);
 static int is_supported_scalar_store_size(int size);
+static int is_same_tag_object_lvar(node_lvar_t *src, lvar_t *var);
+static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -223,6 +228,59 @@ static node_t *build_byte_copy_chain(int dst_base_off, int src_base_off, int siz
 
 static int is_supported_scalar_store_size(int size) {
   return size == 1 || size == 2 || size == 4 || size == 8;
+}
+
+static int is_same_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
+  if (!src || !var) return 0;
+  if (src->mem.tag_kind != var->tag_kind) return 0;
+  if (src->mem.is_tag_pointer) return 0;
+  if (src->mem.tag_len != var->tag_len) return 0;
+  return strncmp(src->mem.tag_name ? src->mem.tag_name : "",
+                 var->tag_name ? var->tag_name : "", (size_t)var->tag_len) == 0;
+}
+
+static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src) {
+  lvar_t src_var = {0};
+  src_var.offset = src->offset;
+  src_var.tag_kind = src->mem.tag_kind;
+  src_var.tag_name = src->mem.tag_name;
+  src_var.tag_len = src->mem.tag_len;
+  src_var.is_tag_pointer = src->mem.is_tag_pointer;
+
+  int member_count = psx_ctx_get_tag_member_count(dst->tag_kind, dst->tag_name, dst->tag_len);
+  node_t *init_chain = NULL;
+  for (int ordinal = 0; ordinal < member_count; ordinal++) {
+    char *member_name = NULL;
+    int member_len = 0;
+    int member_offset = 0;
+    int member_type_size = 0;
+    int member_array_len = 0;
+    token_kind_t member_tag_kind = TK_EOF;
+    char *member_tag_name = NULL;
+    int member_tag_len = 0;
+    int member_is_tag_pointer = 0;
+    bool found = psx_ctx_get_tag_member_at(dst->tag_kind, dst->tag_name, dst->tag_len, ordinal,
+                                           &member_name, &member_len,
+                                           &member_offset, &member_type_size, NULL, &member_array_len,
+                                           &member_tag_kind, &member_tag_name,
+                                           &member_tag_len, &member_is_tag_pointer);
+    if (!found || member_len <= 0) continue;
+    if (is_supported_scalar_store_size(member_type_size)) {
+      node_t *lhs = new_struct_member_lvar(dst, member_offset, member_type_size,
+                                           member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+      node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
+                                                  member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+      node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
+      assign_node->type_size = member_type_size;
+      node_t *init_node = (node_t *)assign_node;
+      if (!init_chain) init_chain = init_node;
+      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      continue;
+    }
+    init_chain = build_byte_copy_chain(dst->offset + member_offset, src_var.offset + member_offset,
+                                       member_type_size, init_chain);
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
 }
 
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src) {
@@ -503,59 +561,33 @@ static node_t *parse_struct_initializer(lvar_t *var) {
 static node_t *parse_struct_copy_initializer(lvar_t *var) {
   node_t *rhs = psx_expr_assign();
   node_t *prefix = NULL;
-  node_lvar_t *src = NULL;
-  if (!resolve_copy_source_lvar(rhs, &prefix, &src)) {
-    psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
+  node_t *value = rhs;
+  while (value && value->kind == ND_COMMA) {
+    if (!prefix) prefix = value->lhs;
+    else prefix = psx_node_new_binary(ND_COMMA, prefix, value->lhs);
+    value = value->rhs;
   }
-  if (src->mem.tag_kind != var->tag_kind || src->mem.is_tag_pointer ||
-      src->mem.tag_len != var->tag_len ||
-      strncmp(src->mem.tag_name ? src->mem.tag_name : "",
-              var->tag_name ? var->tag_name : "", (size_t)var->tag_len) != 0) {
-    psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
-  }
-
-  lvar_t src_var = {0};
-  src_var.offset = src->offset;
-  src_var.tag_kind = src->mem.tag_kind;
-  src_var.tag_name = src->mem.tag_name;
-  src_var.tag_len = src->mem.tag_len;
-  src_var.is_tag_pointer = src->mem.is_tag_pointer;
-
-  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
   node_t *init_chain = NULL;
-  for (int ordinal = 0; ordinal < member_count; ordinal++) {
-    char *member_name = NULL;
-    int member_len = 0;
-    int member_offset = 0;
-    int member_type_size = 0;
-    int member_array_len = 0;
-    token_kind_t member_tag_kind = TK_EOF;
-    char *member_tag_name = NULL;
-    int member_tag_len = 0;
-    int member_is_tag_pointer = 0;
-    bool found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                           &member_name, &member_len,
-                                           &member_offset, &member_type_size, NULL, &member_array_len,
-                                           &member_tag_kind, &member_tag_name,
-                                           &member_tag_len, &member_is_tag_pointer);
-    if (!found || member_len <= 0) continue;
-    if (is_supported_scalar_store_size(member_type_size)) {
-      node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                           member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-      node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
-                                                  member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-      node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
-      assign_node->type_size = member_type_size;
-      node_t *init_node = (node_t *)assign_node;
-      if (!init_chain) init_chain = init_node;
-      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-      continue;
+  if (value && value->kind == ND_LVAR && is_same_tag_object_lvar((node_lvar_t *)value, var)) {
+    init_chain = build_struct_copy_chain_from_source(var, (node_lvar_t *)value);
+  } else if (value && value->kind == ND_TERNARY) {
+    node_ctrl_t *ternary = (node_ctrl_t *)value;
+    node_lvar_t *then_src = (ternary->base.rhs && ternary->base.rhs->kind == ND_LVAR)
+                                ? (node_lvar_t *)ternary->base.rhs
+                                : NULL;
+    node_lvar_t *else_src = (ternary->els && ternary->els->kind == ND_LVAR) ? (node_lvar_t *)ternary->els : NULL;
+    if (!is_same_tag_object_lvar(then_src, var) || !is_same_tag_object_lvar(else_src, var)) {
+      psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
     }
-    // Non-scalar member fallback: copy raw bytes member-by-member.
-    init_chain = build_byte_copy_chain(var->offset + member_offset, src_var.offset + member_offset,
-                                       member_type_size, init_chain);
+    node_ctrl_t *copy_select = calloc(1, sizeof(node_ctrl_t));
+    copy_select->base.kind = ND_TERNARY;
+    copy_select->base.lhs = ternary->base.lhs;
+    copy_select->base.rhs = build_struct_copy_chain_from_source(var, then_src);
+    copy_select->els = build_struct_copy_chain_from_source(var, else_src);
+    init_chain = (node_t *)copy_select;
+  } else {
+    psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
   }
-  if (!init_chain) init_chain = psx_node_new_num(0);
   if (prefix) return psx_node_new_binary(ND_COMMA, prefix, init_chain);
   return init_chain;
 }

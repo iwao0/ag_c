@@ -1073,6 +1073,15 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
+  token = tk_tokenize("main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[1]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[2]->kind);
+  ASSERT_EQ(ND_TERNARY, body->body[3]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[4]->kind);
+
   token = tk_tokenize("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -1337,7 +1346,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct S { int x; }; return (struct S)(struct S){1}; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)(a?1:2); }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(1?t:t); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
