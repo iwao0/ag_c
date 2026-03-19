@@ -708,3 +708,6 @@
 - [x] cast 型名の cv/restrict 修飾子を受理する
   - [x] `(const int)`, `(volatile int)`, `(restrict int*)` を parser で受理する
   - [x] cast 型名で不正なストレージ指定（`_Thread_local`）に cast 文脈の専用診断を出す
+- [x] cast 型名で `_Atomic` 型指定子（`_Atomic int` 形式）を受理する
+  - [x] `(_Atomic int)` / `(_Atomic const int)` を parser で受理する
+  - [x] 既存の `_Atomic(T)` 受理と共存することを確認する（回帰）

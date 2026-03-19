@@ -203,6 +203,10 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
             t->kind == TK_AUTO || t->kind == TK_REGISTER || t->kind == TK_TYPEDEF)) {
     psx_diag_ctx(t, "cast", "cast 型名にストレージ指定子は使えません");
   }
+  if (t && t->kind == TK_ATOMIC && !(t->next && t->next->kind == TK_LPAREN)) {
+    t = t->next;
+    while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT)) t = t->next;
+  }
 
   if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
     token_t *q = t->next->next;
@@ -213,6 +217,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     int inner_ptr = 0;
     int inner_elem = 8;
     tk_float_kind_t inner_fp = TK_FLOAT_KIND_NONE;
+    if (q && q->kind == TK_ATOMIC && !(q->next && q->next->kind == TK_LPAREN)) q = q->next;
     while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
 
     bool inner_is_type = false;

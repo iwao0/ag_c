@@ -315,6 +315,16 @@ static void test_expr_unary_ops() {
   node_t *restrict_ptr_cast = ps_expr();
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);
   ASSERT_EQ(0, as_num(restrict_ptr_cast)->val);
+
+  token = tk_tokenize("(_Atomic int)9");
+  node_t *atomic_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, atomic_cast->kind);
+  ASSERT_EQ(9, as_num(atomic_cast)->val);
+
+  token = tk_tokenize("(_Atomic const int)10");
+  node_t *atomic_const_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, atomic_const_cast->kind);
+  ASSERT_EQ(10, as_num(atomic_const_cast)->val);
 }
 
 static void test_expr_generic() {
