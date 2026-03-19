@@ -229,6 +229,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "alignof_int", CASE_INT, "int main() { return _Alignof(int); }", 4, 0},
     {"type_decl", "alignof_ptr", CASE_INT, "int main() { return _Alignof(int*); }", 8, 0},
     {"type_decl", "sizeof_expr_var", CASE_INT, "int main() { int x = 3; return sizeof(x); }", 4, 0},
+    {"type_decl", "sizeof_struct_type", CASE_INT, "int main() { struct S { int x; }; return sizeof(struct S); }", 4, 0},
+    {"type_decl", "alignof_struct_type", CASE_INT, "int main() { struct S { int x; }; return _Alignof(struct S); }", 4, 0},
     {"type_decl", "cast_int", CASE_INT, "int main() { return (int)42; }", 42, 0},
     {"type_decl", "cast_char_wrap", CASE_INT, "int main() { return (char)300; }", 44, 0},
     {"type_decl", "cast_short_wrap", CASE_INT, "int main() { return (short)(700*100); }", 112, 0},

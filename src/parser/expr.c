@@ -771,6 +771,26 @@ static int parse_parenthesized_type_size(void) {
     tk_expect(')');
     return sz;
   }
+  if (token->kind == TK_STRUCT || token->kind == TK_UNION) {
+    token_kind_t tag_kind = token->kind;
+    token = token->next;
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) return -1;
+    int sz = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
+    if (sz <= 0) {
+      psx_diag_undefined_with_name((token_t *)tag, "タグ型", tag->str, tag->len);
+    }
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
   if (psx_ctx_is_typedef_name_token(token)) {
     token_ident_t *id = (token_ident_t *)token;
     token_kind_t td_base = TK_EOF;

@@ -796,3 +796,8 @@
   - [x] `enable_*` フラグの ON/OFF 組み合わせを最小網羅で固定する
   - [x] cast 系設定は scalar だけでなく pointer cast ケースも ON/OFF で固定する
   - [x] ドキュメント（README/grammar/walkthrough）に設定マトリクスを追加する
+
+## Parser未実装タスク（2026-03-19 追加棚卸し14）
+- [x] `sizeof` / `_Alignof` のタグ型 type-name（`struct/union`）を受理する
+  - [x] `sizeof(struct S)` が式フォールバックで失敗する回帰（`[primary] 数値が必要です`）を解消する
+  - [x] `test_parser` / `test_e2e` に `sizeof(struct S)` / `_Alignof(struct S)` の回帰を追加して固定する

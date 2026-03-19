@@ -527,6 +527,20 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
+  token = tk_tokenize("main() { struct S { int x; }; return sizeof(struct S); }");
+  parsed_code = ps_program();
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(4, as_num(ret->lhs)->val);
+
+  token = tk_tokenize("main() { struct S { int x; }; return _Alignof(struct S); }");
+  parsed_code = ps_program();
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(4, as_num(ret->lhs)->val);
+
   token = tk_tokenize("(char)300");
   node_t *c1 = ps_expr();
   ASSERT_EQ(ND_BITAND, c1->kind);
