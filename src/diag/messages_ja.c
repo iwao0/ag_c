@@ -44,7 +44,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_UNTERMINATED: return "リテラルまたはコメントが閉じられていません";
     case DIAG_ERR_TOKENIZER_INVALID_NUMBER: return "数値リテラルが不正です";
     case DIAG_ERR_TOKENIZER_INVALID_ESCAPE: return "エスケープシーケンスが不正です";
-    case DIAG_ERR_TOKENIZER_EXPECTED_TOKEN: return "必要なトークンがありません";
+    case DIAG_ERR_TOKENIZER_EXPECTED_TOKEN: return "トークンが必要です";
     case DIAG_ERR_TOKENIZER_EXPECTED_INTEGER: return "必要な整数がありません";
     case DIAG_ERR_TOKENIZER_INVALID_CHAR_LITERAL: return "文字リテラルが不正です";
     case DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT: return "コメントが閉じられていません";
@@ -68,7 +68,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID: return "識別子内のUCNが不正です";
     case DIAG_ERR_TOKENIZER_TOKENIZE_FAILED: return "トークナイズできません";
     case DIAG_ERR_PARSER_GENERIC: return "構文解析エラーです";
-    case DIAG_ERR_PARSER_EXPECTED_TOKEN: return "必要なトークンがありません";
+    case DIAG_ERR_PARSER_EXPECTED_TOKEN: return "トークンが必要です";
     case DIAG_ERR_PARSER_UNEXPECTED_TOKEN: return "予期しないトークンです";
     case DIAG_ERR_PARSER_UNDEFINED_SYMBOL: return "未定義の識別子です";
     case DIAG_ERR_PARSER_DUPLICATE_SYMBOL: return "識別子が重複しています";
@@ -83,12 +83,12 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN: return "関数宣言子の ')' が不足しています";
     case DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED: return "typedef名が必要です";
     case DIAG_ERR_PARSER_TYPE_NAME_REQUIRED: return "型名が必要です";
-    case DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED: return "変数名が期待されます";
+    case DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED: return "変数名が必要です";
     case DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED: return "_Alignas の後には '(' が必要です";
     case DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED: return "_Atomic(...) の中には型名が必要です";
     case DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED: return "配列サイズは正の整数である必要があります";
     case DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN: return "不完全型のメンバは定義できません";
-    case DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED: return "メンバ型が期待されます";
+    case DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED: return "メンバ型が必要です";
     case DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN: return "関数型のメンバは定義できません";
     case DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED: return "'typedef' が必要です";
     case DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED: return "配列サイズには整数定数式が必要です";
@@ -112,7 +112,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED: return "_Alignof には型名が必要です";
     case DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID: return "_Generic の関連型が不正です";
     case DIAG_ERR_PARSER_GENERIC_NO_MATCH: return "_Generic に一致する関連がありません";
-    case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "数値を期待しています";
+    case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "数値が必要です";
     case DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED: return "未定義の列挙子 '%.*s' です";
     case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
     case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "対応する閉じ括弧がありません";
@@ -132,7 +132,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_LVALUE_REQUIRED: return "%s の対象は左辺値である必要があります";
     case DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED: return "%s の対象は整数スカラーである必要があります";
     case DIAG_ERR_PARSER_RULE_DETAIL: return "[%s] %s";
-    case DIAG_ERR_PARSER_MISSING_ITEM: return "必要なトークンがありません: %s";
+    case DIAG_ERR_PARSER_MISSING_ITEM: return "必要な項目がありません: %s";
     case DIAG_ERR_PARSER_UNDEFINED_WITH_KIND: return "未定義の識別子です (%s): '%.*s'";
     case DIAG_ERR_PARSER_DUPLICATE_WITH_KIND: return "識別子が重複しています (%s): '%.*s'";
     case DIAG_ERR_PARSER_ONLY_IN_SCOPE: return "この文脈では使用できません: %s / %s";
