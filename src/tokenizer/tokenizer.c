@@ -302,14 +302,14 @@ void tk_expect(char op) {
 /** @brief 次トークンが整数であることを期待し int 値を返す。 */
 int tk_expect_number(void) {
   if (token->kind != TK_NUM) {
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token, "整数が必要です");
+    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token);
   }
   if (tk_as_num(token)->num_kind != TK_NUM_KIND_INT) {
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token, "整数が必要です");
+    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token);
   }
   long long n = tk_as_num_int(token)->val;
   if (n < INT_MIN || n > INT_MAX) {
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token, "整数が必要です");
+    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token);
   }
   int val = (int)n;
   token = token->next;

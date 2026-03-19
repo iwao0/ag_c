@@ -50,7 +50,7 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
       p++;
     }
     if (!closed) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p, "コメントが閉じられていません");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p);
     }
     return p;
   }

@@ -445,3 +445,26 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 必要なら `TK_DIAG_TOKF` などトークン位置向けの内部ヘルパー追加を検討。
+
+## Task 19: カタログ既定文言への段階移行（Tokenizer先行）
+- 日付: 2026-03-19
+- 目的:
+  - `diag_emit_*` 呼び出しの日本語直書きを減らし、多言語化に備えた呼び出し形へ寄せる。
+- 実施内容:
+  - `src/tokenizer/internal/diag_helper.h` に以下を追加:
+    - `TK_DIAG_AT(id, loc)`（`diag_message_for(id)` を使用）
+    - `TK_DIAG_TOK(id, tok)`（`diag_message_for(id)` を使用）
+  - `literals.c` / `scanner.c` の定型文言を上記既定文言ヘルパーへ置換。
+  - `tokenizer.c` の `E2007`（expected integer）を `TK_DIAG_TOK` 化。
+- 変更ファイル:
+  - `src/tokenizer/internal/diag_helper.h`
+  - `src/tokenizer/literals.c`
+  - `src/tokenizer/scanner.c`
+  - `src/tokenizer/tokenizer.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser/Codegen 側の定型文言も、可能なものから `diag_message_for(id)` ベースへ段階移行。

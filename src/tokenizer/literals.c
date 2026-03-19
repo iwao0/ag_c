@@ -73,16 +73,16 @@ int tk_encode_utf8(uint32_t cp, char out[4]) {
 int tk_read_escape_char(char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1, "16進エスケープが不正です");
+    TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
     int consumed = 0;
     if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
     if (!tk_is_valid_ucn_codepoint(cp)) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
   }
   switch (*p) {
@@ -92,7 +92,7 @@ int tk_read_escape_char(char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p, "不正なエスケープです");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
   }
 
   char *bs = p - 1;
@@ -100,7 +100,7 @@ int tk_read_escape_char(char **pp) {
   uint32_t out = 0;
   int len = (int)strlen(bs);
   if (!tk_parse_escape_value(bs, len, &idx, &out)) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p, "不正なエスケープです");
+    TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
   }
   *pp = bs + idx;
   return (int)out;
@@ -110,16 +110,16 @@ int tk_read_escape_char(char **pp) {
 void tk_skip_escape_in_literal(char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1, "16進エスケープが不正です");
+    TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1);
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
     int consumed = 0;
     if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
     if (!tk_is_valid_ucn_codepoint(cp)) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p);
     }
   }
   switch (*p) {
@@ -129,7 +129,7 @@ void tk_skip_escape_in_literal(char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p, "不正なエスケープです");
+      TK_DIAG_AT(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p);
   }
 
   if (*p == 'x') {
