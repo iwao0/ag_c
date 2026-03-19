@@ -28,7 +28,7 @@
   - `E3060-E3063`: `switch` 重複診断、lvalue/integer-scalar 要件を専用ID化。
   - `E3064-E3069`: `parser/diag.c` の共通テンプレート（missing/undefined/duplicate/scope等）を専用ID化。
   - `E3070-E3071`: `dynarray` の直接stderr出力を専用ID + `diag_emit_internalf` へ移行。
-  - `E1001-E1026`: `preprocess` の `pp_error` 経路を採番化（文言→IDマッピング導入）。
+  - `E1001-E1026`: `preprocess` の `pp_error` 経路を採番化し、ID直指定へ移行。
 - `src/preprocess/preprocess.c` / `src/arch/arm64_apple.c`
   - 主要な日本語直書き診断を `diag_message_for(...)` ベースへ移行。
 

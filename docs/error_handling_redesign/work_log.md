@@ -1221,4 +1221,24 @@
 - コミット:
   - （このセクション追加後にコミット）
 - 次アクション:
-  - `pp_error` 呼び出しを将来的に `pp_error(id, ...)` 直指定へ段階移行するか検討。
+  - `pp_error` 呼び出しを `pp_error(id, ...)` 直指定へ移行する。
+
+## Task 41: preprocess `pp_error` のID直指定化
+- 日付: 2026-03-19
+- 目的:
+  - 文言マッピング依存をなくし、`pp_error` 呼び出しをID直指定で明確化する。
+- 実施内容:
+  - `src/preprocess/preprocess.c`
+    - `pp_error(const char *fmt, ...)` 相当から
+      `pp_error(diag_error_id_t id, const char *arg)` へ変更。
+    - 既存 `pp_error(\"...\")` 呼び出しを `E1001-E1026` / `E0000`（OOM）へ置換。
+    - `pp_error_id_for_fmt(...)` を廃止し、ID解決を呼び出し側に移管。
+- 変更ファイル:
+  - `src/preprocess/preprocess.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 必要に応じて preprocess 固有の診断ヘルパー（`PP_ERROR0/1` 等）導入を検討。
