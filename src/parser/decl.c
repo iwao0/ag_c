@@ -687,16 +687,45 @@ static node_t *parse_union_initializer(lvar_t *var) {
                                     member_tag_kind, member_tag_name, member_tag_len,
                                     member_is_tag_pointer, member_array_len));
   assign_node->type_size = member_type_size;
+  node_t *init_chain = (node_t *)assign_node;
   if (has_brace) {
     if (tk_consume(',')) {
-      if (!tk_consume('}')) {
+      if (tk_consume('}')) {
+        return init_chain;
+      }
+      if (!tk_consume('.')) {
         psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
       }
-      return (node_t *)assign_node;
+      for (;;) {
+        token_ident_t *id = tk_consume_ident();
+        if (!id) psx_diag_missing(token, "メンバ名");
+        tk_expect('=');
+        found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
+                                        id->str, id->len,
+                                        &member_offset, &member_type_size, NULL, &member_array_len,
+                                        &member_tag_kind, &member_tag_name,
+                                        &member_tag_len, &member_is_tag_pointer);
+        if (!found || id->len <= 0) {
+          psx_diag_ctx(token, "decl", "共用体の初期化対象メンバが見つかりません");
+        }
+        node_t *next_lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                                  member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+        node_mem_t *next_assign = psx_node_new_assign(
+            next_lhs, parse_member_initializer(var, member_offset, member_type_size,
+                                               member_tag_kind, member_tag_name, member_tag_len,
+                                               member_is_tag_pointer, member_array_len));
+        next_assign->type_size = member_type_size;
+        init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)next_assign);
+        if (tk_consume('}')) return init_chain;
+        tk_expect(',');
+        if (!tk_consume('.')) {
+          psx_diag_ctx(token, "decl", "共用体初期化子は現状1要素のみ対応です");
+        }
+      }
     }
     tk_expect('}');
   }
-  return (node_t *)assign_node;
+  return init_chain;
 }
 
 static void skip_func_params(void) {
