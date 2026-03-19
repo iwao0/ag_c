@@ -391,6 +391,16 @@ static void test_expr_unary_ops() {
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
+  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=(c?(struct S){3}:b); return s.x; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+
+  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}; struct S s=(a,(struct S){9}); return s.x; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+
   token = tk_tokenize("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S t=(struct S)(c?a:b); return t.x; }");
   parsed_code = ps_program();
   ASSERT_TRUE(parsed_code[0] != NULL);
