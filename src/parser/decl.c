@@ -21,7 +21,7 @@ static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member
 static int parse_nonneg_const_expr_decl(const char *what);
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src);
 static int is_supported_scalar_store_size(int size);
-static int is_same_tag_object_lvar(node_lvar_t *src, lvar_t *var);
+static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var);
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src);
 static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len);
 static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len);
@@ -233,13 +233,11 @@ static int is_supported_scalar_store_size(int size) {
   return size == 1 || size == 2 || size == 4 || size == 8;
 }
 
-static int is_same_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
+static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
   if (!src || !var) return 0;
+  if (src->mem.is_tag_pointer || var->is_tag_pointer) return 0;
   if (src->mem.tag_kind != var->tag_kind) return 0;
-  if (src->mem.is_tag_pointer) return 0;
-  if (src->mem.tag_len != var->tag_len) return 0;
-  return strncmp(src->mem.tag_name ? src->mem.tag_name : "",
-                 var->tag_name ? var->tag_name : "", (size_t)var->tag_len) == 0;
+  return src->mem.type_size > 0 && var->size > 0 && src->mem.type_size == var->size;
 }
 
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src) {
@@ -637,7 +635,7 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     value = value->rhs;
   }
   node_t *init_chain = NULL;
-  if (value && value->kind == ND_LVAR && is_same_tag_object_lvar((node_lvar_t *)value, var)) {
+  if (value && value->kind == ND_LVAR && is_compatible_tag_object_lvar((node_lvar_t *)value, var)) {
     init_chain = build_struct_copy_chain_from_source(var, (node_lvar_t *)value);
   } else if (value && value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
@@ -647,7 +645,7 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     node_lvar_t *else_src = NULL;
     resolve_copy_source_lvar(ternary->base.rhs, &then_prefix, &then_src);
     resolve_copy_source_lvar(ternary->els, &else_prefix, &else_src);
-    if (!is_same_tag_object_lvar(then_src, var) || !is_same_tag_object_lvar(else_src, var)) {
+    if (!is_compatible_tag_object_lvar(then_src, var) || !is_compatible_tag_object_lvar(else_src, var)) {
       psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
     }
     node_ctrl_t *copy_select = calloc(1, sizeof(node_ctrl_t));
@@ -674,10 +672,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     node_t *prefix = NULL;
     node_lvar_t *src = NULL;
     if (resolve_copy_source_lvar(rhs, &prefix, &src)) {
-      if (src->mem.tag_kind == var->tag_kind && !src->mem.is_tag_pointer &&
-          src->mem.tag_len == var->tag_len &&
-          strncmp(src->mem.tag_name ? src->mem.tag_name : "",
-                  var->tag_name ? var->tag_name : "", (size_t)var->tag_len) == 0) {
+      if (is_compatible_tag_object_lvar(src, var)) {
         node_t *copy = build_byte_copy_chain(var->offset, src->offset, var->size, NULL);
         if (prefix) return psx_node_new_binary(ND_COMMA, prefix, copy);
         return copy;
