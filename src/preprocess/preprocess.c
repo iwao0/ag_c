@@ -50,9 +50,43 @@ static void *xreallocarray(void *ptr, size_t n, size_t size) {
 }
 
 static void pp_error(const char *fmt, const char *arg) __attribute__((noreturn));
+
+static diag_error_id_t pp_error_id_for_fmt(const char *fmt) {
+  if (!fmt) return DIAG_ERR_PREPROCESS_GENERIC;
+  if (!strcmp(fmt, "不正な include ファイル名です")) return DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME;
+  if (!strcmp(fmt, "許可されない include パスです: %s")) return DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH;
+  if (!strcmp(fmt, "親ディレクトリ参照を含む include は禁止です: %s")) return DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN;
+  if (!strcmp(fmt, "include のネストが深すぎます")) return DIAG_ERR_PREPROCESS_INCLUDE_NEST_TOO_DEEP;
+  if (!strcmp(fmt, "循環 include を検出しました: %s")) return DIAG_ERR_PREPROCESS_INCLUDE_CYCLE_DETECTED;
+  if (!strcmp(fmt, ") が必要です")) return DIAG_ERR_PREPROCESS_RPAREN_REQUIRED;
+  if (!strcmp(fmt, "#if の定数式では整数リテラルが必要です")) return DIAG_ERR_PREPROCESS_IF_INT_LITERAL_REQUIRED;
+  if (!strcmp(fmt, "定数式のエラー: 予期しないトークンです")) return DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN;
+  if (!strcmp(fmt, "ゼロ除算")) return DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO;
+  if (!strcmp(fmt, "defined の後にマクロ名が必要です")) return DIAG_ERR_PREPROCESS_DEFINED_MACRO_NAME_REQUIRED;
+  if (!strcmp(fmt, "defined の閉じ括弧がありません")) return DIAG_ERR_PREPROCESS_DEFINED_RPAREN_MISSING;
+  if (!strcmp(fmt, "定数式に余分なトークンがあります")) return DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN;
+  if (!strcmp(fmt, "文字列化中にサイズが大きすぎます")) return DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE;
+  if (!strcmp(fmt, "文字列化中にサイズが不正です")) return DIAG_ERR_PREPROCESS_STRINGIZE_INVALID_SIZE;
+  if (!strcmp(fmt, "トークン結合中にサイズが大きすぎます")) return DIAG_ERR_PREPROCESS_TOKEN_PASTE_SIZE_TOO_LARGE;
+  if (!strcmp(fmt, "include ファイル名が大きすぎます")) return DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE;
+  if (!strcmp(fmt, "'>' が必要です")) return DIAG_ERR_PREPROCESS_GT_REQUIRED;
+  if (!strcmp(fmt, "マクロ名がありません")) return DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED;
+  if (!strcmp(fmt, "孤立した #else")) return DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF;
+  if (!strcmp(fmt, "#else の重複")) return DIAG_ERR_PREPROCESS_DUPLICATE_ELSE;
+  if (!strcmp(fmt, "孤立した #elif")) return DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF;
+  if (!strcmp(fmt, "#else の後の #elif")) return DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE;
+  if (!strcmp(fmt, "孤立した #endif")) return DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF;
+  if (!strcmp(fmt, "マクロの引数が不正です")) return DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT;
+  if (!strcmp(fmt, "error メッセージが大きすぎます")) return DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE;
+  if (!strcmp(fmt, "関数マクロ呼び出しの引数が閉じられていません")) return DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED;
+  return DIAG_ERR_PREPROCESS_GENERIC;
+}
+
 static void pp_error(const char *fmt, const char *arg) {
-  if (arg) diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, fmt, arg);
-  diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", fmt);
+  diag_error_id_t id = pp_error_id_for_fmt(fmt);
+  const char *msg = diag_message_for(id);
+  if (arg) diag_emit_internalf(id, msg, arg);
+  diag_emit_internalf(id, "%s", msg);
 }
 
 static void validate_include_path_or_die(const char *path) {

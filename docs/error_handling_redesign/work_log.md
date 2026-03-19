@@ -1182,4 +1182,43 @@
 - コミット:
   - （このセクション追加後にコミット）
 - 次アクション:
-  - `preprocess.c` の `pp_error(...)` 経路は「採番不要」方針に沿って運用方針のみ文書化し、必要時に別タスク化。
+  - 必要に応じて `preprocess.c` の `pp_error(...)` 経路を採番化する。
+
+## Task 40: preprocess `pp_error` 経路の採番化
+- 日付: 2026-03-19
+- 目的:
+  - `pp_error(...)` で出力されるプリプロセスエラーを採番管理に統一する。
+- 実施内容:
+  - 以下のエラーIDを追加（`E1001-E1026`）:
+    - include path/filename 検証
+    - include 深さ/循環
+    - `#if` 定数式関連
+    - `defined(...)` 構文関連
+    - 文字列化/トークン結合サイズ関連
+    - 条件付きディレクティブ整合性（`#else/#elif/#endif`）
+    - マクロ名/引数関連
+    - 関数マクロ呼び出し括弧関連
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/preprocess/preprocess.c`
+    - `pp_error_id_for_fmt(...)` を追加し、既存 `pp_error("...")` 呼び出しを
+      文言→IDへ解決して `diag_emit_internalf(id, ...)` へ変換する経路を導入。
+    - 未定義文言は `DIAG_ERR_PREPROCESS_GENERIC` へフォールバック。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/preprocess/preprocess.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `pp_error` 呼び出しを将来的に `pp_error(id, ...)` 直指定へ段階移行するか検討。
