@@ -13,6 +13,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_INVALID_ESCAPE: return "エスケープシーケンスが不正です";
     case DIAG_ERR_TOKENIZER_EXPECTED_TOKEN: return "必要なトークンがありません";
     case DIAG_ERR_TOKENIZER_EXPECTED_INTEGER: return "必要な整数がありません";
+    case DIAG_ERR_TOKENIZER_INVALID_CHAR_LITERAL: return "文字リテラルが不正です";
     case DIAG_ERR_PARSER_GENERIC: return "構文解析エラーです";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";

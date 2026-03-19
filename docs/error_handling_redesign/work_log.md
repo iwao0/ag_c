@@ -181,3 +181,28 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser 側作業と競合しない範囲で Tokenizer の残り generic 経路を個別化。
+
+## Task 8: tokenizer 残り generic 経路の個別化
+- 日付: 2026-03-19
+- 目的:
+  - `tokenizer.c` 内の残り `tk_error_at(...)` 呼び出しを個別IDへ移行する。
+- 実施内容:
+  - エラーカタログに `E2008` (`tokenizer.invalid_char_literal`) を追加。
+  - 整数リテラル系（桁あふれ/不正サフィックス/strict C11制約）を `E2004` へ統一。
+  - 文字リテラル系（空文字/不正形式）を `E2008` へ統一。
+  - `tokenizer.c` 内の直接 `tk_error_at(...)` 呼び出しを `tk_error_at_id(...)` へ置換完了。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/tokenizer.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer build/test_tokenizer_c11`
+  - `./build/test_tokenizer`
+  - `./build/test_tokenizer_c11`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `literals.c` / `scanner.c` 側のメッセージ粒度を見直し、必要ならコードを更に分割。

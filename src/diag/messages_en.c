@@ -13,6 +13,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_INVALID_ESCAPE: return "Invalid escape sequence";
     case DIAG_ERR_TOKENIZER_EXPECTED_TOKEN: return "Expected token is missing";
     case DIAG_ERR_TOKENIZER_EXPECTED_INTEGER: return "Expected integer is missing";
+    case DIAG_ERR_TOKENIZER_INVALID_CHAR_LITERAL: return "Invalid character literal";
     case DIAG_ERR_PARSER_GENERIC: return "Parser error";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
