@@ -46,6 +46,7 @@
    - 隣接文字列リテラル連結（`"a" "b"`）を Parser 側で実装しました。
    - トライグラフ置換は字句解析の先頭で実行するよう整理し、翻訳フェーズ順序との整合を明文化しました。
    - `config.toml`（`[tokenizer]`）から `strict_c11` / `enable_trigraphs` / `enable_binary_literals` を切り替え可能にしました。
+   - `config.toml`（`[parser]`）から `enable_size_compatible_nonscalar_cast` を切り替え可能にしました（`false` で同種同サイズ cast 拡張を無効化）。
    - 浮動小数点サフィックス情報を `token_num_t.float_suffix_kind` として保持し、Parser/AST/Codegenへ伝搬するようにしました。
    - `l/L` サフィックス（long double）は `is_float=3` として分類し、Codegen は現時点で double 経路へ lowering する方針を明文化しました。
    - 接頭辞付きマルチ文字定数（`L/u/U`）を実装定義として受理するように更新しました。
@@ -66,7 +67,7 @@
    - 構造体の単一式初期化は「同型オブジェクトのみ受理」に統一しました（`,` 演算子の最終値が同型 `lvar` のケースを含む）。
    - 共用体初期化子は1要素制約を維持し、2要素目以降は診断固定としました。
    - 配列メンバへの非波括弧初期化は診断固定（`配列初期化は現在 '{...}' または文字列リテラルのみ対応です`）としました。
-   - `struct/union` 値 cast は「同一タグ型どうしのみ no-op 受理」、それ以外は未対応診断を維持し、回帰テストで固定しました。
+   - `struct/union` 値 cast は「同一タグ型どうしのみ no-op 受理」を維持しつつ、同種同サイズ cast の段階受理を Parser 設定で切り替えられるようにしました。
    - cast 型名で `const/volatile/restrict`、`_Atomic int`、`_Atomic(T)`、入れ子 `_Atomic(_Atomic(T))` を受理するように拡張しました。
    - cast 型名でのストレージ指定子（`_Thread_local` など）は `[cast]` 文脈の専用診断に統一しました。
    - 構造体/共用体メンバ初期化のサイズ制約を `1/2/4/8 byte` スカラ対応として明文化しました。

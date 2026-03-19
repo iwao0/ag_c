@@ -237,7 +237,8 @@ args       = expr ("," expr)*
   - `{...}` は1要素のみ受理（designator含む）
   - 単一式は同型オブジェクトコピー、または先頭メンバへの初期化として処理
 - cast 方針:
-  - `struct/union` 値への cast は「同一タグ型どうしのみ no-op 受理」、それ以外は診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）
+  - `struct/union` 値への cast は「同一タグ型どうしのみ no-op 受理」を基本とし、`config.toml` の `[parser].enable_size_compatible_nonscalar_cast = true` 時は「同種かつ同サイズ」も段階受理
+  - 非受理ケースは診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）を維持
   - cast 型名は `const/volatile/restrict`・`_Atomic int`・`_Atomic(T)`・入れ子 `_Atomic(_Atomic(T))` を受理
   - cast 型名のストレージ指定子（例: `_Thread_local`）は診断（`[cast] cast 型名にストレージ指定子は使えません`）
 
@@ -264,6 +265,7 @@ args       = expr ("," expr)*
 > 現在の実装では、字句解析の先頭でトライグラフ置換を行い、その後にトークナイズを行います（翻訳フェーズ順序との整合）。
 > `0b...` はデフォルトで拡張として許可し、`strict C11 = true` または `enable_binary_literals = false` で拒否されます。
 > これらの挙動は `config.toml` の `[tokenizer]` セクション（`strict_c11`, `enable_trigraphs`, `enable_binary_literals`）で切り替え可能です。
+> `struct/union` 値 cast の段階受理（同種同サイズ）も `config.toml` の `[parser]` セクション（`enable_size_compatible_nonscalar_cast`）で切り替え可能です。
 > 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
 > 接頭辞付きマルチ文字定数は、現実装では 8-bit 単位で左シフトしながら畳み込む実装定義規則で値を形成します。
 > `l/L` 付き浮動小数点は `is_float=3`（long double）として意味分類します。現時点のCodegenは double 経路へ lowering します。
