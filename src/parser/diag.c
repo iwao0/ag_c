@@ -30,17 +30,20 @@ void psx_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
 }
 
 void psx_diag_missing(token_t *tok, const char *what) {
-  psx_diag_ctx(tok, "parser", "%sが必要です", what);
+  diag_emit_tokf(DIAG_ERR_PARSER_EXPECTED_TOKEN, tok, "[parser] %sが必要です", what);
 }
 
 void psx_diag_undefined_with_name(token_t *tok, const char *kind, const char *name, int len) {
-  psx_diag_ctx(tok, "parser", "未定義%s '%.*s' です", kind, len, name);
+  diag_emit_tokf(DIAG_ERR_PARSER_UNDEFINED_SYMBOL, tok, "[parser] 未定義%s '%.*s' です", kind, len,
+                 name);
 }
 
 void psx_diag_duplicate_with_name(token_t *tok, const char *kind, const char *name, int len) {
-  psx_diag_ctx(tok, "parser", "%s '%.*s' が重複しています", kind, len, name);
+  diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "[parser] %s '%.*s' が重複しています", kind,
+                 len, name);
 }
 
 void psx_diag_only_in(token_t *tok, const char *what, const char *scope) {
-  psx_diag_ctx(tok, "parser", "%s は %sでのみ使用できます", what, scope);
+  diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok, "[parser] %s は %sでのみ使用できます", what,
+                 scope);
 }

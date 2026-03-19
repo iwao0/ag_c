@@ -259,3 +259,38 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser 側の generic 診断（`E3000`）を段階的に個別化。
+
+## Task 11: parser 診断の個別コード化（第一段）
+- 日付: 2026-03-19
+- 目的:
+  - `parser/diag.c` の診断ヘルパーを `E300x` 個別コードへ移行する。
+- 実施内容:
+  - エラーカタログに以下を追加:
+    - `E3001` (`parser.expected_token`)
+    - `E3002` (`parser.unexpected_token`)
+    - `E3003` (`parser.undefined_symbol`)
+    - `E3004` (`parser.duplicate_symbol`)
+    - `E3005` (`parser.invalid_context`)
+  - `psx_diag_missing` / `undefined` / `duplicate` / `only_in` を個別IDで出力するよう変更。
+  - Tokenizer 側ではエスケープ不正の細分化を追加:
+    - `E2011` (`tokenizer.invalid_escape_hex`)
+    - `E2012` (`tokenizer.invalid_escape_ucn`)
+    - `E2013` (`tokenizer.invalid_escape_general`)
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/literals.c`
+  - `src/parser/diag.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer build/test_tokenizer_c11`
+  - `./build/test_tokenizer`
+  - `./build/test_tokenizer_c11`
+  - `make DIAG_LANG=ja build/test_parser`
+  - `./build/test_parser`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser本体（`decl/stmt/expr`）の直接診断経路も段階的に `E300x` へ統一。

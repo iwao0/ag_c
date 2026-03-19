@@ -20,6 +20,11 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN: return "Invalid universal character name escape";
     case DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL: return "Invalid escape";
     case DIAG_ERR_PARSER_GENERIC: return "Parser error";
+    case DIAG_ERR_PARSER_EXPECTED_TOKEN: return "Expected token is missing";
+    case DIAG_ERR_PARSER_UNEXPECTED_TOKEN: return "Unexpected token";
+    case DIAG_ERR_PARSER_UNDEFINED_SYMBOL: return "Undefined symbol";
+    case DIAG_ERR_PARSER_DUPLICATE_SYMBOL: return "Duplicate symbol";
+    case DIAG_ERR_PARSER_INVALID_CONTEXT: return "Invalid context";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
