@@ -5,6 +5,7 @@
 #include "internal/dynarray.h"
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -114,16 +115,16 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
   }
 
   if (n_signed > 1 || n_unsigned > 1 || n_short > 1 || n_long > 2 || n_int > 1 || n_char > 1) {
-    tk_error_tok(start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
   }
   if (n_signed && n_unsigned) {
-    tk_error_tok(start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
   }
   if (n_short && n_long) {
-    tk_error_tok(start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
   }
   if (n_char && (n_short || n_long || n_int)) {
-    tk_error_tok(start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
   }
 
   token_kind_t kind = TK_INT;
@@ -227,8 +228,9 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   int base_is_ptr = 0;
   psx_node_get_tag_type(base, &base_tag_kind, &base_tag_name, &base_tag_len, &base_is_ptr);
   if (base_tag_kind == TK_EOF || (!from_ptr && base_is_ptr) || (from_ptr && !base_is_ptr)) {
-    tk_error_tok(op_tok, from_ptr ? "'->' の左辺は構造体/共用体ポインタである必要があります"
-                                  : "'.' の左辺は構造体/共用体である必要があります");
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, op_tok,
+                   from_ptr ? "'->' の左辺は構造体/共用体ポインタである必要があります"
+                            : "'.' の左辺は構造体/共用体である必要があります");
   }
 
   int off = 0, mem_size = 0, mem_deref = 0;
@@ -405,14 +407,16 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       t = q->next;
       is_type = true;
     } else {
-      tk_error_tok(t, "_Complex/_Imaginary cast は浮動小数型のみ対応です");
+      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, t,
+                     "_Complex/_Imaginary cast は浮動小数型のみ対応です");
     }
   } else if ((t->kind == TK_FLOAT || t->kind == TK_DOUBLE || t->kind == TK_LONG) &&
              t->next && (t->next->kind == TK_COMPLEX || t->next->kind == TK_IMAGINARY)) {
     if (t->kind == TK_LONG) {
       if (!t->next || t->next->kind != TK_DOUBLE || !t->next->next ||
           (t->next->next->kind != TK_COMPLEX && t->next->next->kind != TK_IMAGINARY)) {
-        tk_error_tok(t, "_Complex/_Imaginary cast は浮動小数型のみ対応です");
+        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, t,
+                       "_Complex/_Imaginary cast は浮動小数型のみ対応です");
       }
       *type_kind = TK_DOUBLE;
       if (out_elem_size) *out_elem_size = 8;
@@ -1367,27 +1371,28 @@ static node_t *primary(void) {
         merged_width = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
         merged_prefix_kind = st->str_prefix_kind;
       } else if (merged_width != st->char_width) {
-        tk_error_tok(t, "異なる接頭辞の文字列リテラルは連結できません");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t,
+                       "異なる接頭辞の文字列リテラルは連結できません");
       }
       if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
-        tk_error_tok(t, "文字列リテラルが大きすぎます");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "文字列リテラルが大きすぎます");
       }
       total_len += (size_t)st->len;
       t = t->next;
     }
 
     if (total_len > (size_t)INT_MAX) {
-      tk_error_tok(token, "文字列リテラルが大きすぎます");
+      diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "文字列リテラルが大きすぎます");
     }
     char *merged = calloc(total_len + 1, 1);
     if (!merged) {
-      tk_error_tok(token, "メモリ確保に失敗しました");
+      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
     }
     size_t off = 0;
     while (token && token->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)token;
       if (st->len < 0 || (size_t)st->len > total_len - off) {
-        tk_error_tok(token, "文字列連結中にサイズが不正です");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "文字列連結中にサイズが不正です");
       }
       memcpy(merged + off, st->str, (size_t)st->len);
       off += (size_t)st->len;

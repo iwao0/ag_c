@@ -312,3 +312,27 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `expr.c` / `parser.c` の `tk_error_tok` 経路を個別コード化（Parser作業再開タイミングで実施）。
+
+## Task 13: parser 本体の個別コード化（第三段）
+- 日付: 2026-03-19
+- 目的:
+  - `expr.c` / `parser.c` の直接エラー経路を `E300x` / `E000x` に寄せる。
+- 実施内容:
+  - `src/parser/expr.c`
+    - 型指定子組み合わせ不正を `E3002`（unexpected token）へ移行。
+    - `.` / `->` の左辺文脈不正を `E3005`（invalid context）へ移行。
+    - `_Complex/_Imaginary` の cast 文脈不正を `E3005` へ移行。
+    - 文字列連結時の接頭辞不一致・サイズ不正を `E3002` へ移行。
+    - 文字列連結バッファ確保失敗を `E0001`（internal OOM）へ移行。
+  - `src/parser/parser.c`
+    - `psx_consume_type_kind` の型指定子組み合わせ不正を `E3002` へ移行。
+    - `_Complex/_Imaginary` の型指定文脈不正と `...` 位置不正を `E3005` へ移行。
+- 変更ファイル:
+  - `src/parser/expr.c`
+  - `src/parser/parser.c`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser 直下の残り `tk_error_*` 経路を洗い出し、`E300x` へ統一。

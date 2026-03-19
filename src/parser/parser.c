@@ -9,6 +9,7 @@
 #include "internal/loop_ctx.h"
 #include "internal/stmt.h"
 #include "internal/switch_ctx.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -700,7 +701,7 @@ token_kind_t psx_consume_type_kind(void) {
     token_kind_t k = token->kind;
     if (k == TK_COMPLEX) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_complex = 1;
       token = token->next;
@@ -708,7 +709,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_IMAGINARY) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_imaginary = 1;
       token = token->next;
@@ -716,7 +717,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_SIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_signed = 1;
       token = token->next;
@@ -724,7 +725,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_UNSIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_unsigned = 1;
       token = token->next;
@@ -732,7 +733,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_LONG) {
       if (saw_char || saw_short || saw_void || saw_float || saw_bool || long_count >= 2) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       long_count++;
       token = token->next;
@@ -740,7 +741,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_SHORT) {
       if (saw_char || saw_short || long_count || saw_void || saw_float || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_short = 1;
       token = token->next;
@@ -748,7 +749,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_INT) {
       if (saw_int || saw_char || saw_void || saw_float || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_int = 1;
       token = token->next;
@@ -756,7 +757,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_CHAR) {
       if (saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_char = 1;
       token = token->next;
@@ -764,7 +765,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_VOID) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_float || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_void = 1;
       token = token->next;
@@ -772,7 +773,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_FLOAT) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_double || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_float = 1;
       token = token->next;
@@ -780,7 +781,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_DOUBLE) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int || saw_void || saw_float || saw_bool) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_double = 1;
       token = token->next;
@@ -788,7 +789,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_BOOL) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double) {
-        tk_error_tok(token, "不正な型指定子の組み合わせです");
+        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "不正な型指定子の組み合わせです");
       }
       saw_bool = 1;
       token = token->next;
@@ -799,7 +800,8 @@ token_kind_t psx_consume_type_kind(void) {
 
   if (token == start) return TK_EOF;
   if ((saw_complex || saw_imaginary) && !(saw_float || saw_double)) {
-    tk_error_tok(start, "_Complex/_Imaginary は浮動小数型にのみ指定できます");
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, start,
+                   "_Complex/_Imaginary は浮動小数型にのみ指定できます");
   }
   if (saw_void) return TK_VOID;
   if (saw_float) return TK_FLOAT;
@@ -897,7 +899,8 @@ static node_t *funcdef(void) {
       if (token->kind == TK_ELLIPSIS) {
         token = token->next;
         if (token->kind == ',') {
-          tk_error_tok(token, "'...' は可変長引数リストの末尾にのみ指定できます");
+          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+                         "'...' は可変長引数リストの末尾にのみ指定できます");
         }
         done = true;
         continue;
