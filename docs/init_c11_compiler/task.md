@@ -766,6 +766,7 @@
 - [ ] `struct` 単一式初期化の対応範囲を拡張する
   - [x] 現状未対応の `struct S s=1` は禁止維持とする（`[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です`）
   - [x] 診断文言を `test_parser` で固定する
-- [ ] `union` 配列メンバの非波括弧初期化（例: `union U { int a[2]; int z; }; union U u={1,2};`）の扱いを明確化する
-  - [x] 現状診断（`配列初期化は現在 '{...}' または文字列リテラルのみ対応です`）を維持する
-  - [x] 採用方針に合わせて parser/e2e の回帰を整備する（`test_parser` の診断固定 + `test_e2e` compile-fail ケース追加）
+- [x] `union` 配列メンバの非波括弧初期化（例: `union U { int a[2]; int z; }; union U u={1,2};`）の扱いを明確化する
+  - [x] 方針: 段階受理する（先頭配列メンバへの brace elision として扱う）
+  - [x] parser/e2e の回帰を整備する（`test_e2e` に受理ケースを追加、compile-fail 期待を削除）
+  - [x] 現段階は parse 受理を優先し、実行時の値評価詳細は別タスクで追う（`test_e2e` は parse-only ケースで固定）

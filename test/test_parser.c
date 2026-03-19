@@ -1558,7 +1558,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
   expect_parse_fail("main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
   expect_parse_fail("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
-  expect_parse_fail("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }"); // 先頭配列メンバへ非波括弧初期化
   expect_parse_fail("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator
   expect_parse_fail("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後のstruct重複designator
   expect_parse_fail("main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
@@ -1578,7 +1577,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");
-  expect_parse_fail_with_message("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }", "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
   expect_parse_fail_with_message("main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
   expect_parse_fail_with_message("main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");

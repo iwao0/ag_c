@@ -250,6 +250,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "union_brace_init_value", CASE_INT, "int main() { union U { int x; char y; }; union U u={7}; return u.x; }", 7, 0},
     {"type_decl", "union_brace_init_designated", CASE_INT, "int main() { union U { int x; char y; }; union U u={.x=7}; return u.x; }", 7, 0},
     {"type_decl", "union_brace_init_multi_designated", CASE_INT, "int main() { union U { int x; char y; }; union U u={.x=7,.y=2}; return u.y; }", 2, 0},
+    {"type_decl", "union_array_member_nonbrace_init_parse_only", CASE_INT, "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 7; }", 7, 0},
     {"type_decl", "struct_bitfield_decl", CASE_INT, "int main() { struct S { int x:3; int y; }; return 7; }", 7, 0},
     {"type_decl", "struct_anonymous_struct_member", CASE_INT, "int main() { struct S { struct { int x; }; int y; }; return 7; }", 7, 0},
     {"type_decl", "struct_anonymous_union_member", CASE_INT, "int main() { struct S { union { int x; char c; }; int y; }; return 7; }", 7, 0},
@@ -331,9 +332,6 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"cast_struct_from_pointer_rejected",
      "int main() { struct S { int x; }; int a=0; int *p=&a; return (struct S)p; }",
      "[cast] struct 値へのキャストは未対応です（非スカラ型）"},
-    {"union_array_member_nonbrace_rejected",
-     "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
-     "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です"},
 };
 
 static int test_count = 0;

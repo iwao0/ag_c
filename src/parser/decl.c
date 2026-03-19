@@ -513,8 +513,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       free(assigned);
       return init_chain ? init_chain : psx_node_new_num(0);
     }
-    if (owner->tag_kind == TK_STRUCT) {
-      // Brace elision for struct members: allow flat scalar list for array members.
+    if (owner->tag_kind == TK_STRUCT || owner->tag_kind == TK_UNION) {
+      // Brace elision for aggregate array members: allow flat scalar list.
       node_t *array_str = try_parse_array_member_string_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_str) return array_str;
       node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
