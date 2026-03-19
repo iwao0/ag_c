@@ -74,6 +74,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
     case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "Missing corresponding closing parenthesis";
     case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "Function definition is required";
+    case DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED: return "%s requires an integer constant expression";
+    case DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED: return "%s must be non-negative";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

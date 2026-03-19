@@ -74,6 +74,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
     case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "対応する閉じ括弧がありません";
     case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "関数定義が必要です";
+    case DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED: return "%sには整数定数式が必要です";
+    case DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED: return "%sは0以上である必要があります";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
@@ -155,6 +157,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
     case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "Missing corresponding closing parenthesis";
     case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "Function definition is required";
+    case DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED: return "%s requires an integer constant expression";
+    case DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED: return "%s must be non-negative";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

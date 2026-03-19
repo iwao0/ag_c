@@ -74,6 +74,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED, "E3047", "parser.goto_label_undefined"},
     {DIAG_ERR_PARSER_MISSING_CLOSING_PAREN, "E3048", "parser.missing_closing_paren"},
     {DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED, "E3049", "parser.function_def_expected"},
+    {DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED, "E3050", "parser.nonneg_constexpr_required"},
+    {DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED, "E3051", "parser.nonneg_value_required"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

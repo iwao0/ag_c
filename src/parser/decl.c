@@ -176,10 +176,12 @@ static int parse_nonneg_const_expr_decl(const char *what) {
   int ok = 1;
   long long v = eval_const_expr_decl(n, &ok);
   if (!ok) {
-    psx_diag_ctx(token, "decl", "%sには整数定数式が必要です", what);
+    psx_diag_ctx(token, "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+                 what);
   }
   if (v < 0) {
-    psx_diag_ctx(token, "decl", "%sは0以上である必要があります", what);
+    psx_diag_ctx(token, "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
+                 what);
   }
   return (int)v;
 }

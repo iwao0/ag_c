@@ -976,3 +976,34 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `decl.c` の `%sには整数定数式が必要です` 形式（引数埋め込み）のID化方針を検討。
+
+## Task 34: 非負整数定数式チェック文言のID化
+- 日付: 2026-03-19
+- 目的:
+  - `%s` 埋め込み形式の宣言診断をID化し、翻訳切替時のテンプレート管理を統一する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3050` / `parser.nonneg_constexpr_required`
+    - `E3051` / `parser.nonneg_value_required`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/decl.c` の `parse_nonneg_const_expr_decl` で
+    `diag_message_for(E3050/E3051)` テンプレートを利用するよう変更。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/decl.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - parser 直書き文言の最終棚卸しと、残件を backlog に反映。
