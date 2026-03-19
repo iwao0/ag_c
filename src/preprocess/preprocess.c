@@ -49,6 +49,7 @@ static void *xreallocarray(void *ptr, size_t n, size_t size) {
   return xrealloc(ptr, n * size);
 }
 
+static void pp_error(const char *fmt, const char *arg) __attribute__((noreturn));
 static void pp_error(const char *fmt, const char *arg) {
   if (arg) diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, fmt, arg);
   diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", fmt);
@@ -361,14 +362,14 @@ static long primary(token_t **rest, token_t *tok) {
   if (tok->kind == TK_LPAREN) {
     long val = const_expr(&tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
-        fprintf(stderr, "期待される )\n"); exit(1);
+      pp_error("期待される )", NULL);
     }
     *rest = tok->next;
     return val;
   }
   if (tok->kind == TK_NUM) {
     if (tk_as_num(tok)->num_kind != TK_NUM_KIND_INT) {
-      fprintf(stderr, "#if の定数式では整数リテラルが必要です\n"); exit(1);
+      pp_error("#if の定数式では整数リテラルが必要です", NULL);
     }
     long val = tk_as_num_int(tok)->val;
     *rest = tok->next;
@@ -378,7 +379,7 @@ static long primary(token_t **rest, token_t *tok) {
     *rest = tok->next;
     return 0; // undefined macro to 0
   }
-  fprintf(stderr, "定数式のエラー: 予期しないトークンです\n"); exit(1);
+  pp_error("定数式のエラー: 予期しないトークンです", NULL);
 }
 
 static long unary(token_t **rest, token_t *tok) {
@@ -404,7 +405,7 @@ static long mul(token_t **rest, token_t *tok) {
       val *= unary(&tok, tok->next);
     } else if (tok->kind == TK_DIV) {
       long rhs = unary(&tok, tok->next);
-      if (rhs == 0) { fprintf(stderr, "ゼロ除算\n"); exit(1); }
+      if (rhs == 0) pp_error("ゼロ除算", NULL);
       val /= rhs;
     } else {
       *rest = tok;
@@ -517,7 +518,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
             has_paren = true;
             t = t->next;
          }
-         if (t->kind != TK_IDENT) { fprintf(stderr, "defined の後にマクロ名が必要です\n"); exit(1); }
+         if (t->kind != TK_IDENT) pp_error("defined の後にマクロ名が必要です", NULL);
          token_ident_t *id = as_ident(t);
          char *name = my_strndup(id->str, id->len);
          bool is_def = find_macro(name) != NULL;
@@ -525,7 +526,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
          t = t->next;
          if (has_paren) {
             if (!(t->kind == TK_RPAREN)) {
-               fprintf(stderr, "defined の閉じ括弧がありません\n"); exit(1);
+              pp_error("defined の閉じ括弧がありません", NULL);
             }
             t = t->next;
          }
@@ -555,10 +556,10 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
 
    if (expanded->kind == TK_EOF) return false;
    token_t *rest;
-   long val = const_expr(&rest, expanded);
-   if (rest->kind != TK_EOF) {
-      fprintf(stderr, "定数式に余分なトークンがあります\n"); exit(1);
-   }
+  long val = const_expr(&rest, expanded);
+  if (rest->kind != TK_EOF) {
+    pp_error("定数式に余分なトークンがあります", NULL);
+  }
    return val != 0;
 }
 
@@ -571,8 +572,7 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
     if (len > 0 && t->has_space) {
         if (len + 1 >= cap) {
           if (cap > SIZE_MAX / 2) {
-            fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
-            exit(1);
+            pp_error("文字列化中にサイズが大きすぎます", NULL);
           }
           cap *= 2;
           buf = xrealloc(buf, cap);
@@ -583,20 +583,17 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
     const char *ts = token_text(t, &tlen);
     if (!ts) ts = "";
     if (tlen < 0 || (size_t)tlen > SIZE_MAX - len - 1) {
-      fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
-      exit(1);
+      pp_error("文字列化中にサイズが大きすぎます", NULL);
     }
     size_t need = len + (size_t)tlen + 1;
     while (need > cap) {
       if (cap > SIZE_MAX / 2) {
-        fprintf(stderr, "文字列化中にサイズが大きすぎます\n");
-        exit(1);
+        pp_error("文字列化中にサイズが大きすぎます", NULL);
       }
       cap *= 2;
     }
     if (need > len + (size_t)tlen + 1) {
-      fprintf(stderr, "文字列化中にサイズが不正です\n");
-      exit(1);
+      pp_error("文字列化中にサイズが不正です", NULL);
     }
     buf = xrealloc(buf, cap);
     memcpy(buf + len, ts, (size_t)tlen);
@@ -632,8 +629,7 @@ static token_t *paste_tokens(token_t *tok) {
       const char *s_l = token_text(cur, &len_l);
       const char *s_r = token_text(rhs, &len_r);
       if (len_l < 0 || len_r < 0 || (size_t)len_l > SIZE_MAX - (size_t)len_r - 1) {
-        fprintf(stderr, "トークン結合中にサイズが大きすぎます\n");
-        exit(1);
+        pp_error("トークン結合中にサイズが大きすぎます", NULL);
       }
       size_t len = (size_t)len_l + (size_t)len_r;
       char *buf = calloc(1, len + 1);
@@ -685,16 +681,14 @@ token_t *preprocess(token_t *tok) {
         size_t filename_len = 0;
         char *filename = calloc(filename_cap, 1);
         if (!filename) {
-          fprintf(stderr, "メモリ確保に失敗しました\n");
-          exit(1);
+          diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
         }
         
         if (tok->kind == TK_STRING) {
           token_string_t *st = as_string(tok);
           size_t need = (size_t)st->len + 1;
           if (st->len < 0 || need == 0) {
-            fprintf(stderr, "不正な include ファイル名です\n");
-            exit(1);
+            pp_error("不正な include ファイル名です", NULL);
           }
           if (need > filename_cap) {
             filename_cap = need;
@@ -711,15 +705,13 @@ token_t *preprocess(token_t *tok) {
             const char *ts = token_text(tok, &tlen);
             if (!ts) ts = "";
             if (tlen < 0 || (size_t)tlen > SIZE_MAX - filename_len - 1) {
-              fprintf(stderr, "include ファイル名が大きすぎます\n");
-              exit(1);
+              pp_error("include ファイル名が大きすぎます", NULL);
             }
             size_t need = filename_len + (size_t)tlen + 1;
             if (need > filename_cap) {
               while (filename_cap < need) {
                 if (filename_cap > SIZE_MAX / 2) {
-                  fprintf(stderr, "include ファイル名が大きすぎます\n");
-                  exit(1);
+                  pp_error("include ファイル名が大きすぎます", NULL);
                 }
                 filename_cap *= 2;
               }
@@ -731,8 +723,7 @@ token_t *preprocess(token_t *tok) {
             tok = tok->next;
           }
           if (tok->kind == TK_EOF) {
-            fprintf(stderr, "期待される '>' がありません\n");
-            exit(1);
+            pp_error("期待される '>' がありません", NULL);
           }
           tok = tok->next; // '>' をスキップ
         }
@@ -743,17 +734,15 @@ token_t *preprocess(token_t *tok) {
           size_t alt_len = strlen("include/") + strlen(filename) + 1;
           char *alt = calloc(alt_len, 1);
           if (!alt) {
-            fprintf(stderr, "メモリ確保に失敗しました\n");
-            exit(1);
+            diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
           }
           snprintf(alt, alt_len, "include/%s", filename);
           buf = read_file(alt);
           free(alt);
         }
         if (!buf) {
-          fprintf(stderr, "ファイルが見つかりません: %s\n", filename);
+          diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "ファイルが見つかりません: %s", filename);
           free(filename);
-          exit(1);
         }
 
         char *saved_input = tk_get_user_input();
@@ -783,7 +772,7 @@ token_t *preprocess(token_t *tok) {
 
       if (is_dir(tok, "ifdef")) {
         tok = tok->next;
-        if (tok->kind != TK_IDENT) { fprintf(stderr, "マクロ名がありません\n"); exit(1); }
+        if (tok->kind != TK_IDENT) pp_error("マクロ名がありません", NULL);
         token_ident_t *id = as_ident(tok);
         char *name = my_strndup(id->str, id->len);
         bool is_true = find_macro(name) != NULL;
@@ -803,7 +792,7 @@ token_t *preprocess(token_t *tok) {
       
       if (is_dir(tok, "ifndef")) {
         tok = tok->next;
-        if (tok->kind != TK_IDENT) { fprintf(stderr, "マクロ名がありません\n"); exit(1); }
+        if (tok->kind != TK_IDENT) pp_error("マクロ名がありません", NULL);
         token_ident_t *id = as_ident(tok);
         char *name = my_strndup(id->str, id->len);
         bool is_true = find_macro(name) == NULL;
@@ -822,8 +811,8 @@ token_t *preprocess(token_t *tok) {
       }
       
       if (is_dir(tok, "else")) {
-        if (!cond_incl) { fprintf(stderr, "孤立した #else\n"); exit(1); }
-        if (cond_incl->ctx == IN_ELSE) { fprintf(stderr, "#else の重複\n"); exit(1); }
+        if (!cond_incl) pp_error("孤立した #else", NULL);
+        if (cond_incl->ctx == IN_ELSE) pp_error("#else の重複", NULL);
         cond_incl->ctx = IN_ELSE;
         tok = tok->next;
         while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next; // skip to eol
@@ -837,8 +826,8 @@ token_t *preprocess(token_t *tok) {
       }
       
       if (is_dir(tok, "elif")) {
-        if (!cond_incl) { fprintf(stderr, "孤立した #elif\n"); exit(1); }
-        if (cond_incl->ctx == IN_ELSE) { fprintf(stderr, "#else の後の #elif\n"); exit(1); }
+        if (!cond_incl) pp_error("孤立した #elif", NULL);
+        if (cond_incl->ctx == IN_ELSE) pp_error("#else の後の #elif", NULL);
         cond_incl->ctx = IN_ELIF;
         tok = tok->next;
         
@@ -866,7 +855,7 @@ token_t *preprocess(token_t *tok) {
       }
       
       if (is_dir(tok, "endif")) {
-        if (!cond_incl) { fprintf(stderr, "孤立した #endif\n"); exit(1); }
+        if (!cond_incl) pp_error("孤立した #endif", NULL);
         cond_incl_t *ci = cond_incl;
         cond_incl = cond_incl->next;
         free(ci);
@@ -878,8 +867,7 @@ token_t *preprocess(token_t *tok) {
       if (is_dir(tok, "define")) {
         tok = tok->next;
         if (tok->kind != TK_IDENT) {
-          fprintf(stderr, "マクロ名がありません\n");
-          exit(1);
+          pp_error("マクロ名がありません", NULL);
         }
         token_ident_t *id = as_ident(tok);
         char *name = my_strndup(id->str, id->len);
@@ -895,7 +883,7 @@ token_t *preprocess(token_t *tok) {
           int cap = 8;
           params = calloc(cap, sizeof(char*));
           while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
-            if (tok->kind != TK_IDENT) { fprintf(stderr, "マクロの引数が不正です\n"); exit(1); }
+            if (tok->kind != TK_IDENT) pp_error("マクロの引数が不正です", NULL);
             if (num_params >= cap) {
               cap *= 2;
               params = xreallocarray(params, (size_t)cap, sizeof(char *));
@@ -925,8 +913,7 @@ token_t *preprocess(token_t *tok) {
       if (is_dir(tok, "undef")) {
         tok = tok->next;
         if (tok->kind != TK_IDENT) {
-          fprintf(stderr, "マクロ名がありません\n");
-          exit(1);
+          pp_error("マクロ名がありません", NULL);
         }
         token_ident_t *id = as_ident(tok);
         char *name = my_strndup(id->str, id->len);
@@ -950,24 +937,57 @@ token_t *preprocess(token_t *tok) {
 
       if (is_dir(tok, "error")) {
         tok = tok->next;
-        fprintf(stderr, "error: ");
+        size_t cap = 64;
+        size_t len = 0;
+        char *msg = calloc(cap, 1);
+        if (!msg) {
+          diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+        }
+        const char *prefix = "error: ";
+        size_t pfx_len = strlen(prefix);
+        if (cap <= pfx_len) {
+          cap = pfx_len + 1;
+          msg = xrealloc(msg, cap);
+        }
+        memcpy(msg, prefix, pfx_len);
+        len = pfx_len;
         while (tok->kind != TK_EOF && !tok->at_bol) {
           int tlen = 0;
           const char *ts = token_text(tok, &tlen);
+          char tmp[64];
+          tmp[0] = '\0';
           if (tok->kind == TK_NUM) {
             if (tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
-              fprintf(stderr, "%lld", tk_as_num_int(tok)->val);
+              snprintf(tmp, sizeof(tmp), "%lld", tk_as_num_int(tok)->val);
             } else {
-              fprintf(stderr, "%g", tk_as_num_float(tok)->fval);
+              snprintf(tmp, sizeof(tmp), "%g", tk_as_num_float(tok)->fval);
             }
-          } else if (ts && tlen > 0) {
-            fprintf(stderr, "%.*s", tlen, ts);
+            ts = tmp;
+            tlen = (int)strlen(tmp);
           }
-          if (tok->has_space) fprintf(stderr, " ");
+          if (ts && tlen > 0) {
+            size_t need = len + (size_t)tlen + 2;
+            while (need > cap) {
+              if (cap > SIZE_MAX / 2) pp_error("error メッセージが大きすぎます", NULL);
+              cap *= 2;
+            }
+            msg = xrealloc(msg, cap);
+            memcpy(msg + len, ts, (size_t)tlen);
+            len += (size_t)tlen;
+            msg[len] = '\0';
+          }
+          if (tok->has_space) {
+            if (len + 2 > cap) {
+              if (cap > SIZE_MAX / 2) pp_error("error メッセージが大きすぎます", NULL);
+              cap *= 2;
+              msg = xrealloc(msg, cap);
+            }
+            msg[len++] = ' ';
+            msg[len] = '\0';
+          }
           tok = tok->next;
         }
-        fprintf(stderr, "\n");
-        exit(1);
+        diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", msg);
       }
       
       // ひとまず改行（次の行頭）またはEOFまでトークンを読み飛ばす
@@ -1009,7 +1029,7 @@ token_t *preprocess(token_t *tok) {
                }
              }
              if (tok->kind != TK_RPAREN) {
-               fprintf(stderr, "関数マクロ呼び出しの引数が閉じられていません\n"); exit(1);
+               pp_error("関数マクロ呼び出しの引数が閉じられていません", NULL);
              }
              tok = tok->next; // skip ')'
              
