@@ -243,7 +243,8 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
                                member->str, member->len,
                                &off, &mem_size, &mem_deref, &mem_array_len,
                                &mem_tag_kind, &mem_tag_name, &mem_tag_len, &mem_is_ptr)) {
-    psx_diag_ctx(op_tok, "member", "メンバ '%.*s' は存在しません", member->len, member->str);
+    psx_diag_ctx(op_tok, "member", diag_message_for(DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
+                 member->len, member->str);
   }
 
   node_t *addr_base = base;
@@ -288,7 +289,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   consume_local_type_quals(&t);
   if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
             t->kind == TK_AUTO || t->kind == TK_REGISTER || t->kind == TK_TYPEDEF)) {
-    psx_diag_ctx(t, "cast", "cast 型名にストレージ指定子は使えません");
+    psx_diag_ctx(t, "cast", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN));
   }
   if (t && t->kind == TK_ATOMIC && !(t->next && t->next->kind == TK_LPAREN)) {
     t = t->next;
@@ -730,7 +732,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
     const char *kind = (type_kind == TK_STRUCT) ? "struct" : "union";
-    psx_diag_ctx(token, "cast", "%s 値へのキャストは未対応です（非スカラ型）", kind);
+    psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+                 kind);
   }
   if (type_kind == TK_FLOAT) {
     operand->fp_kind = TK_FLOAT_KIND_FLOAT;
@@ -763,7 +766,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xff));
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
-  psx_diag_ctx(token, "cast", "cast 型指定子の解釈に失敗しました");
+  psx_diag_ctx(token, "cast", "%s",
+               diag_message_for(DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED));
   return operand;
 }
 
@@ -980,7 +984,8 @@ static node_t *unary(void) {
         return operand;
       }
       const char *kind = (cast_kind == TK_STRUCT) ? "struct" : "union";
-      psx_diag_ctx(token, "cast", "%s 値へのキャストは未対応です（非スカラ型）", kind);
+      psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+                   kind);
     }
     return apply_cast(cast_kind, cast_is_ptr, operand);
   }
@@ -1003,7 +1008,8 @@ static node_t *unary(void) {
     tk_expect('(');
     int type_sz = parse_parenthesized_type_size();
     if (type_sz < 0) {
-      psx_diag_ctx(token, "alignof", "_Alignof には型名が必要です");
+      psx_diag_ctx(token, "alignof", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED));
     }
     return psx_node_new_num(type_sz);
   }
@@ -1226,7 +1232,8 @@ static node_t *primary(void) {
       } else {
         generic_type_t assoc_ty = {TK_EOF, 0};
         if (!parse_generic_assoc_type(&assoc_ty)) {
-          psx_diag_ctx(token, "generic", "_Generic の関連型が不正です");
+          psx_diag_ctx(token, "generic", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
         }
         tk_expect(':');
         node_t *expr_node = assign();
@@ -1240,7 +1247,8 @@ static node_t *primary(void) {
     tk_expect(')');
     if (!selected) selected = default_expr;
     if (!selected) {
-      psx_diag_ctx(token, "generic", "_Generic に一致する関連がありません");
+      psx_diag_ctx(token, "generic", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_GENERIC_NO_MATCH));
     }
     return selected;
   }
@@ -1424,6 +1432,7 @@ static node_t *primary(void) {
     return (node_t *)node;
   }
 
-  psx_diag_ctx(token, "primary", "数値を期待しています");
+  psx_diag_ctx(token, "primary", "%s",
+               diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
   return NULL;
 }

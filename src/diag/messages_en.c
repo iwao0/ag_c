@@ -62,6 +62,14 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND: return "Target member for union initialization was not found";
     case DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY: return "Union initializer currently supports only one element";
     case DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN: return "Object of incomplete type cannot be declared";
+    case DIAG_ERR_PARSER_MEMBER_NOT_FOUND: return "Member '%.*s' was not found";
+    case DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN: return "Storage-class specifier is not allowed in cast type";
+    case DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED: return "Cast to %s value is not supported (non-scalar)";
+    case DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED: return "Failed to resolve cast type specifier";
+    case DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED: return "_Alignof requires a type name";
+    case DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID: return "Invalid _Generic association type";
+    case DIAG_ERR_PARSER_GENERIC_NO_MATCH: return "No matching association in _Generic";
+    case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "Number is required";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

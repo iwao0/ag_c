@@ -877,3 +877,42 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `src/parser/expr.c` の残存 `psx_diag_ctx` 定型文を同様に専用ID化。
+
+## Task 31: expr 診断の専用ID化（E3038-E3045）
+- 日付: 2026-03-19
+- 目的:
+  - `expr.c` の定型診断をID管理へ移行し、文言差し替えを容易にする。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3038` / `parser.member_not_found`
+    - `E3039` / `parser.cast_storage_class_forbidden`
+    - `E3040` / `parser.cast_nonscalar_unsupported`
+    - `E3041` / `parser.cast_type_resolve_failed`
+    - `E3042` / `parser.alignof_type_name_required`
+    - `E3043` / `parser.generic_assoc_type_invalid`
+    - `E3044` / `parser.generic_no_match`
+    - `E3045` / `parser.primary_number_expected`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/expr.c` の対象箇所を
+    `psx_diag_ctx(..., diag_message_for(...), ...)` へ置換。
+  - 既存テスト互換を維持するため、`E3040` / `E3038` は
+    既存フォーマット（`%s`, `%.*s`）をメッセージテンプレートとして保持。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/expr.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `diag_emit_atf(..., tk_get_user_input(), ...)` 系の残差分がないか横断確認。

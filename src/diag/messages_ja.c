@@ -62,6 +62,14 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND: return "共用体の初期化対象メンバが見つかりません";
     case DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY: return "共用体初期化子は現状1要素のみ対応です";
     case DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN: return "不完全型のオブジェクトは宣言できません";
+    case DIAG_ERR_PARSER_MEMBER_NOT_FOUND: return "メンバ '%.*s' は存在しません";
+    case DIAG_ERR_PARSER_CAST_STORAGE_CLASS_FORBIDDEN: return "cast 型名にストレージ指定子は使えません";
+    case DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED: return "%s 値へのキャストは未対応です（非スカラ型）";
+    case DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED: return "cast 型指定子の解釈に失敗しました";
+    case DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED: return "_Alignof には型名が必要です";
+    case DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID: return "_Generic の関連型が不正です";
+    case DIAG_ERR_PARSER_GENERIC_NO_MATCH: return "_Generic に一致する関連がありません";
+    case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "数値を期待しています";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
