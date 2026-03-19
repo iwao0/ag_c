@@ -34,7 +34,18 @@ typedef enum {
   DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW = 4003,
 } diag_error_id_t;
 
+/**
+ * @brief エラーIDを表示用コード（例: "E3002"）へ変換する。
+ * @param id エラーID。
+ * @return 対応する表示用コード文字列。未定義IDの場合は既定コード。
+ */
 const char *diag_error_code(diag_error_id_t id);
+
+/**
+ * @brief エラーIDを論理キー（例: "parser.unexpected_token"）へ変換する。
+ * @param id エラーID。
+ * @return 対応する論理キー文字列。未定義IDの場合は既定キー。
+ */
 const char *diag_error_key(diag_error_id_t id);
 
 #endif

@@ -383,3 +383,25 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Tokenizer 内で `diag_emit_atf(..., tk_get_user_input(), ...)` が多い箇所を薄い内部ヘルパーで整理するか検討。
+
+## Task 16: diag 関数の Doxygen コメント整備
+- 日付: 2026-03-19
+- 目的:
+  - `src/diag` 配下の関数に引数・戻り値を含む Doxygen コメントを追加し、API理解を容易にする。
+- 実施内容:
+  - 公開ヘッダに `@param` / `@return` 付きコメントを追加:
+    - `src/diag/diag.h`
+    - `src/diag/error_catalog.h`
+    - `src/diag/messages.h`
+  - 実装側の主要関数にも Doxygen コメントを追加:
+    - `src/diag/diag.c`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 必要なら Doxygen 生成設定（INPUT/EXTRACT_STATIC など）を `docs` に追加。

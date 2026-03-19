@@ -7,15 +7,28 @@
 
 static const char *g_diag_locale = "ja";
 
+/**
+ * @brief 診断メッセージのロケールを設定する。
+ * @param locale ロケール名（例: "ja", "en"）。
+ */
 void diag_set_locale(const char *locale) {
   if (!locale || locale[0] == '\0') return;
   g_diag_locale = locale;
 }
 
+/**
+ * @brief 現在の診断ロケールを取得する。
+ * @return 現在有効なロケール名。
+ */
 const char *diag_get_locale(void) {
   return g_diag_locale;
 }
 
+/**
+ * @brief エラーIDに対応するメッセージを現在ロケールに従って取得する。
+ * @param id エラーID。
+ * @return ローカライズ済みメッセージ。未定義時はエラーキー。
+ */
 const char *diag_message_for(diag_error_id_t id) {
   const char *msg = NULL;
 #if defined(DIAG_LANG_ALL)
@@ -42,6 +55,11 @@ const char *diag_message_for(diag_error_id_t id) {
   return diag_error_key(id);
 }
 
+/**
+ * @brief トークンの実際の値を補助表示する。
+ * @param tok 表示対象トークン。
+ * @return なし。
+ */
 static void print_token_actual(const token_t *tok) {
   if (!tok) return;
   if (tok->kind == TK_IDENT) {
@@ -65,6 +83,14 @@ static void print_token_actual(const token_t *tok) {
   fprintf(stderr, " (actual-kind: %d)", (int)tok->kind);
 }
 
+/**
+ * @brief 入力位置ベースの診断を出力して終了する。
+ * @param id エラーID。
+ * @param input 入力全体文字列。
+ * @param loc エラー位置。
+ * @param fmt 追加メッセージのフォーマット文字列。
+ * @return 戻らない。
+ */
 void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -81,6 +107,13 @@ void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const
   exit(1);
 }
 
+/**
+ * @brief トークンベースの診断を出力して終了する。
+ * @param id エラーID。
+ * @param tok エラー位置を示すトークン。
+ * @param fmt 追加メッセージのフォーマット文字列。
+ * @return 戻らない。
+ */
 void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -93,6 +126,12 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
   exit(1);
 }
 
+/**
+ * @brief 内部診断を出力して終了する。
+ * @param id エラーID。
+ * @param fmt 追加メッセージのフォーマット文字列。
+ * @return 戻らない。
+ */
 void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);

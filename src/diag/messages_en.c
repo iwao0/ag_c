@@ -1,6 +1,11 @@
 #include "messages.h"
 #include <stddef.h>
 
+/**
+ * @brief エラーIDに対応する英語メッセージを返す。
+ * @param id エラーID。
+ * @return 英語メッセージ。未定義時は NULL。
+ */
 const char *diag_message_en(diag_error_id_t id) {
   switch (id) {
     case DIAG_ERR_INTERNAL_OOM: return "Out of memory";

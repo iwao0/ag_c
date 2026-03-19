@@ -36,6 +36,11 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW, "E4003", "codegen.invalid_control_flow"},
 };
 
+/**
+ * @brief エラーIDに対応するカタログ要素を探索する。
+ * @param id エラーID。
+ * @return 対応要素へのポインタ。見つからない場合は NULL。
+ */
 static const diag_entry_t *find_entry(diag_error_id_t id) {
   for (size_t i = 0; i < sizeof(k_diag_entries) / sizeof(k_diag_entries[0]); i++) {
     if (k_diag_entries[i].id == id) return &k_diag_entries[i];
@@ -43,11 +48,21 @@ static const diag_entry_t *find_entry(diag_error_id_t id) {
   return NULL;
 }
 
+/**
+ * @brief エラーIDを表示コードに変換する。
+ * @param id エラーID。
+ * @return 表示コード文字列。未登録時は "E9999"。
+ */
 const char *diag_error_code(diag_error_id_t id) {
   const diag_entry_t *entry = find_entry(id);
   return entry ? entry->code : "E9999";
 }
 
+/**
+ * @brief エラーIDを論理キーに変換する。
+ * @param id エラーID。
+ * @return 論理キー文字列。未登録時は "unknown.error"。
+ */
 const char *diag_error_key(diag_error_id_t id) {
   const diag_entry_t *entry = find_entry(id);
   return entry ? entry->key : "unknown.error";
