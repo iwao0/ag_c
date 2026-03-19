@@ -916,3 +916,25 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `diag_emit_atf(..., tk_get_user_input(), ...)` 系の残差分がないか横断確認。
+
+## Task 32: 取りこぼし診断の追加置換
+- 日付: 2026-03-19
+- 目的:
+  - 直近リファクタ後に残っていた `psx_diag_ctx` 直書き文言の取りこぼしを解消する。
+- 実施内容:
+  - `src/parser/decl.c`
+    - `parse_member_initializer` 内の配列初期化子診断2件を
+      `E3027` / `E3028` 経由へ置換。
+  - `src/parser/parser.c`
+    - `parse_toplevel_declarator_list` の
+      「変数名が期待されます」を `E3016` 経由へ置換。
+- 変更ファイル:
+  - `src/parser/decl.c`
+  - `src/parser/parser.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - enum/goto など可変文言を伴う診断のID化方針を整理。

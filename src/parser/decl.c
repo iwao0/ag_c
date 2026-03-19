@@ -488,10 +488,12 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             tk_expect('=');
           }
           if (target_idx >= array_len) {
-            psx_diag_ctx(token, "decl", "配列初期化子が要素数を超えています");
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
           if (assigned[target_idx]) {
-            psx_diag_ctx(token, "decl", "配列初期化子で同一要素が重複指定されています");
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
           }
           node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
           node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());

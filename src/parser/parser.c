@@ -248,7 +248,10 @@ static void parse_toplevel_declarator_list(void) {
       skip_ptr_qualifiers();
     }
     token_ident_t *name = parse_toplevel_decl_name(&is_ptr);
-    if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
+    if (!name) {
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+    }
     while (tk_consume('[')) {
       (void)parse_array_size_constexpr_toplevel();
       tk_expect(']');
