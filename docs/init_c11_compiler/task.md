@@ -783,9 +783,9 @@
   - [x] `->` 連鎖の回帰を `test_e2e` に追加する（`((union U*)&u)->a[1]`）
 
 ## Parser次フェーズ候補（2026-03-19）
-- [ ] 最適化: cast lowering 生成ノードの簡素化
-  - [ ] `struct/union` cast の一時オブジェクト生成で冗長な `ND_COMMA` 連鎖を削減する
-  - [ ] 最適化後も `test_parser` / `test_e2e` の意味互換を維持する
+- [x] 最適化: cast lowering 生成ノードの簡素化
+  - [x] `struct/union` cast の一時オブジェクト生成で冗長な `ND_COMMA` 連鎖を削減する
+  - [x] 最適化後も `test_parser` / `test_e2e` の意味互換を維持する
 - [ ] C準拠強化: 非スカラ cast の適用範囲を再評価する
   - [x] 現在の先頭メンバ初期化 lowering を C 制約観点で許容する範囲と非許容範囲に分けて仕様化する
   - [x] 非許容ケースは明示診断へ寄せる

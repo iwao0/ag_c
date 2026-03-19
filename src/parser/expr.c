@@ -642,8 +642,7 @@ static node_t *lower_union_value_cast(node_t *operand,
   assign_node->type_size = member_type_size;
 
   node_t *ref = new_typed_lvar_ref(var, 0);
-  node_t *val = apply_postfix(ref);
-  return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, val);
+  return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, ref);
 }
 
 static node_t *lower_struct_value_cast(node_t *operand,
@@ -1126,8 +1125,8 @@ static node_t *unary(void) {
         }
         // staged extension: allow scalar/pointer -> union value cast by
         // initializing the first union member, then yielding the union object.
-        return lower_union_value_cast(operand, cast_tag_kind, cast_tag_name, cast_tag_len,
-                                      cast_elem_size, cast_fp_kind);
+        return apply_postfix(lower_union_value_cast(operand, cast_tag_kind, cast_tag_name, cast_tag_len,
+                                                    cast_elem_size, cast_fp_kind));
       }
       const char *kind = (cast_kind == TK_STRUCT) ? "struct" : "union";
       psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
