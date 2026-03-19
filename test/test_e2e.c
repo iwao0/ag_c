@@ -349,59 +349,25 @@ static int run_ag_c_to_s(const char *input, const char *s_path) {
   return 0;
 }
 
-static int run_clang_build(const char *bin_path, const char *s_path, const char *drv_path) {
+static int run_clang_build_many(const char *bin_path, const char **inputs, size_t ninputs) {
   pid_t pid = fork();
   if (pid == 0) {
-    if (drv_path) {
-      execlp("clang", "clang", "-o", bin_path, s_path, drv_path, (char *)NULL);
-    } else {
-      execlp("clang", "clang", "-o", bin_path, s_path, (char *)NULL);
+    char **argv = calloc(ninputs + 4, sizeof(char *));
+    if (!argv) _exit(1);
+    argv[0] = "clang";
+    argv[1] = "-o";
+    argv[2] = (char *)bin_path;
+    for (size_t i = 0; i < ninputs; i++) {
+      argv[3 + i] = (char *)inputs[i];
     }
+    argv[3 + ninputs] = NULL;
+    execvp("clang", argv);
     _exit(1);
   }
   if (pid < 0) return -1;
   int status;
   waitpid(pid, &status, 0);
   if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
-  return 0;
-}
-
-static int run_binary_exit_code(const char *bin_path, int *exit_code) {
-  pid_t pid = fork();
-  if (pid == 0) {
-    execl(bin_path, bin_path, (char *)NULL);
-    _exit(1);
-  }
-  if (pid < 0) return -1;
-  int status;
-  waitpid(pid, &status, 0);
-  if (!WIFEXITED(status)) return -1;
-  *exit_code = WEXITSTATUS(status);
-  return 0;
-}
-
-static int run_binary_read_stdout(const char *bin_path, char *buf, size_t buf_size) {
-  int pipefd[2];
-  if (pipe(pipefd) != 0) return -1;
-  pid_t pid = fork();
-  if (pid == 0) {
-    close(pipefd[0]);
-    dup2(pipefd[1], STDOUT_FILENO);
-    close(pipefd[1]);
-    execl(bin_path, bin_path, (char *)NULL);
-    _exit(1);
-  }
-  close(pipefd[1]);
-  if (pid < 0) {
-    close(pipefd[0]);
-    return -1;
-  }
-  ssize_t nread = read(pipefd[0], buf, buf_size - 1);
-  close(pipefd[0]);
-  int status;
-  waitpid(pid, &status, 0);
-  if (nread < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
-  buf[nread] = '\0';
   return 0;
 }
 
@@ -413,120 +379,254 @@ static int write_source_file(const char *path, const char *source) {
   return 0;
 }
 
-static int build_case(const test_case_t *tc) {
-  char dir[PATH_MAX];
-  char s_path[PATH_MAX];
-  char bin_path[PATH_MAX];
-  char drv_path[PATH_MAX];
-  char src_path[PATH_MAX];
+static void build_category_bin_path(const char *category, char *bin_path) {
+  snprintf(bin_path, PATH_MAX, "build/e2e/%s/%s_category_runner", category, category);
+}
 
-  build_artifact_paths(tc, dir, s_path, bin_path, drv_path);
-  build_source_path(tc, src_path);
-  if (mkdir_p(dir) != 0) return -1;
-  if (write_source_file(src_path, tc->input) != 0) return -1;
+static void sanitize_symbol(const char *in, char *out, size_t out_size) {
+  size_t j = 0;
+  for (size_t i = 0; in[i] && j + 1 < out_size; i++) {
+    unsigned char c = (unsigned char)in[i];
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+      out[j++] = (char)c;
+    } else {
+      out[j++] = '_';
+    }
+  }
+  out[j] = '\0';
+}
 
-  if (tc->kind == CASE_INT) {
-    if (run_ag_c_to_s(src_path, s_path) != 0) return -1;
-    if (run_clang_build(bin_path, s_path, NULL) != 0) return -1;
-    return 0;
+static int copy_and_namespace_symbols(const char *src_path, const char *dst_path, const char *prefix) {
+  FILE *in = fopen(src_path, "r");
+  if (!in) return -1;
+  FILE *out = fopen(dst_path, "w");
+  if (!out) {
+    fclose(in);
+    return -1;
   }
 
-  if (run_ag_c_to_s(src_path, s_path) != 0) return -1;
-
-  FILE *fp = fopen(drv_path, "w");
-  if (!fp) return -1;
-  if (tc->kind == CASE_DOUBLE) {
-    fprintf(fp, "#include <stdio.h>\nextern double ag_m();\nint main() { printf(\"%%.6lf\\n\", ag_m()); return 0; }\n");
-  } else {
-    fprintf(fp, "#include <stdio.h>\nextern float ag_m();\nint main() { printf(\"%%.6f\\n\", ag_m()); return 0; }\n");
+  char *line = NULL;
+  size_t cap = 0;
+  while (getline(&line, &cap, in) != -1) {
+    size_t len = strlen(line);
+    for (size_t i = 0; i < len; ) {
+      if (line[i] == '_' && (i == 0 || line[i - 1] != '_') && i + 1 < len &&
+          ((line[i + 1] >= 'A' && line[i + 1] <= 'Z') || (line[i + 1] >= 'a' && line[i + 1] <= 'z'))) {
+        size_t j = i + 1;
+        while ((line[j] >= 'A' && line[j] <= 'Z') || (line[j] >= 'a' && line[j] <= 'z') ||
+               (line[j] >= '0' && line[j] <= '9') || line[j] == '_') {
+          j++;
+        }
+        char sym[256];
+        size_t sym_len = j - i;
+        if (sym_len >= sizeof(sym)) sym_len = sizeof(sym) - 1;
+        memcpy(sym, line + i, sym_len);
+        sym[sym_len] = '\0';
+        if (strcmp(sym, "_printf") == 0 || (sym[1] == '_') ||
+            strcmp(sym, "_TEXT") == 0 || strcmp(sym, "_cstring") == 0 ||
+            strcmp(sym, "_literal4") == 0 || strcmp(sym, "_literal8") == 0 ||
+            strcmp(sym, "_literal16") == 0 || strcmp(sym, "_const") == 0) {
+          fputs(sym, out);
+        } else {
+          fprintf(out, "_%s_%s", prefix, sym + 1);
+        }
+        i = j;
+      } else {
+        fputc(line[i], out);
+        i++;
+      }
+    }
   }
-  fclose(fp);
-
-  if (run_clang_build(bin_path, s_path, drv_path) != 0) return -1;
+  free(line);
+  fclose(in);
+  fclose(out);
   return 0;
-}
-
-static int run_case(const test_case_t *tc, FILE *log) {
-  char dir[PATH_MAX];
-  char s_path[PATH_MAX];
-  char bin_path[PATH_MAX];
-  build_artifact_paths(tc, dir, s_path, bin_path, NULL);
-  if (tc->kind == CASE_INT) {
-    int actual = 0;
-    if (run_binary_exit_code(bin_path, &actual) != 0) {
-      fprintf(log, "  FAIL: %s could not run\n  input: %s\n  artifacts: s=%s bin=%s\n",
-              tc->name, tc->input, s_path, bin_path);
-      return -1;
-    }
-    if (actual == tc->expected_i) {
-      fprintf(log, "  OK: %s => %d\n", tc->name, actual);
-      return 0;
-    }
-    fprintf(log, "  FAIL: %s expected %d, got %d\n  input: %s\n  artifacts: s=%s bin=%s\n",
-            tc->name, tc->expected_i, actual, tc->input, s_path, bin_path);
-    return -1;
-  }
-
-  char outbuf[128];
-  if (run_binary_read_stdout(bin_path, outbuf, sizeof(outbuf)) != 0) {
-    fprintf(log, "  FAIL: %s could not run\n  artifacts: s=%s bin=%s\n", tc->name, s_path, bin_path);
-    return -1;
-  }
-  double actual = 0.0;
-  if (tc->kind == CASE_DOUBLE) {
-    sscanf(outbuf, "%lf", &actual);
-  } else {
-    float f = 0.0f;
-    sscanf(outbuf, "%f", &f);
-    actual = f;
-  }
-  if (actual > tc->expected_f - 0.001 && actual < tc->expected_f + 0.001) {
-    fprintf(log, "  OK: %s => %.2f\n", tc->name, actual);
-    return 0;
-  }
-  fprintf(log, "  FAIL: %s expected %.2f, got %.2f\n  input: %s\n  artifacts: s=%s bin=%s\n",
-          tc->name, tc->expected_f, actual, tc->input, s_path, bin_path);
-  return -1;
-}
-
-static int run_category(const char *category) {
-  char log_path[PATH_MAX];
-  snprintf(log_path, sizeof(log_path), "build/e2e/logs/%s.log", category);
-  FILE *log = fopen(log_path, "w");
-  if (!log) return -1;
-  fprintf(log, "Category: %s\n", category);
-  int total = 0;
-  int ok = 0;
-  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
-    const test_case_t *tc = &test_cases[i];
-    if (strcmp(tc->category, category) != 0) continue;
-    total++;
-    if (run_case(tc, log) == 0) ok++;
-  }
-  fprintf(log, "Summary: %d/%d passed\n", ok, total);
-  fclose(log);
-  return (ok == total) ? 0 : 1;
 }
 
 static int build_category(const char *category) {
   char log_path[PATH_MAX];
+  char driver_path[PATH_MAX];
+  char bin_path[PATH_MAX];
+  char category_dir[PATH_MAX];
   snprintf(log_path, sizeof(log_path), "build/e2e/logs/%s.build.log", category);
+  snprintf(driver_path, sizeof(driver_path), "build/e2e/%s/%s_category_driver.c", category, category);
+  snprintf(category_dir, sizeof(category_dir), "build/e2e/%s", category);
+  build_category_bin_path(category, bin_path);
+
   FILE *log = fopen(log_path, "w");
   if (!log) return -1;
   fprintf(log, "Category: %s\n", category);
-  for (size_t i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+
+  const size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
+  const char **clang_inputs = calloc(max_cases + 1, sizeof(char *));
+  char **owned_paths = calloc(max_cases + 1, sizeof(char *));
+  if (!clang_inputs || !owned_paths) {
+    fclose(log);
+    free(clang_inputs);
+    free(owned_paths);
+    return 1;
+  }
+  if (mkdir_p(category_dir) != 0) {
+    fclose(log);
+    free(clang_inputs);
+    free(owned_paths);
+    return 1;
+  }
+
+  FILE *drv = fopen(driver_path, "w");
+  if (!drv) {
+    fclose(log);
+    free(clang_inputs);
+    free(owned_paths);
+    return 1;
+  }
+
+  fprintf(drv, "#include <math.h>\n#include <stdio.h>\n\n");
+  fprintf(drv, "static int agc_nearly(double a, double b) { return fabs(a - b) < 0.001; }\n\n");
+  fprintf(drv, "int main(void) {\n  int failed = 0;\n");
+
+  size_t input_count = 0;
+  for (size_t i = 0; i < max_cases; i++) {
     const test_case_t *tc = &test_cases[i];
     if (strcmp(tc->category, category) != 0) continue;
-    if (build_case(tc) != 0) {
-      char dir[PATH_MAX], s_path[PATH_MAX], bin_path[PATH_MAX], drv_path[PATH_MAX];
-      build_artifact_paths(tc, dir, s_path, bin_path, drv_path);
-      fprintf(log, "  FAIL: build %s\n  input: %s\n  artifacts: s=%s bin=%s driver=%s\n",
-              tc->name, tc->input, s_path, bin_path, drv_path);
+
+    char dir[PATH_MAX], s_path[PATH_MAX], bin_unused[PATH_MAX], drv_unused[PATH_MAX], src_path[PATH_MAX], rs_path[PATH_MAX];
+    build_artifact_paths(tc, dir, s_path, bin_unused, drv_unused);
+    build_source_path(tc, src_path);
+    snprintf(rs_path, sizeof(rs_path), "%s/%s.renamed.s", dir, tc->name);
+
+    if (mkdir_p(dir) != 0 || write_source_file(src_path, tc->input) != 0 || run_ag_c_to_s(src_path, s_path) != 0) {
+      fprintf(log, "  FAIL: build %s\n  input: %s\n  artifacts: s=%s\n", tc->name, tc->input, s_path);
+      fclose(drv);
       fclose(log);
+      free(clang_inputs);
+      free(owned_paths);
       return 1;
     }
+
+    char cat_sym[128], name_sym[128], fn_sym[320];
+    sanitize_symbol(category, cat_sym, sizeof(cat_sym));
+    sanitize_symbol(tc->name, name_sym, sizeof(name_sym));
+    snprintf(fn_sym, sizeof(fn_sym), "agc_%s_%s", cat_sym, name_sym);
+    if (copy_and_namespace_symbols(s_path, rs_path, fn_sym) != 0) {
+      fprintf(log, "  FAIL: rewrite %s\n", tc->name);
+      fclose(drv);
+      fclose(log);
+      free(clang_inputs);
+      free(owned_paths);
+      return 1;
+    }
+
+    owned_paths[input_count] = strdup(rs_path);
+    clang_inputs[input_count] = owned_paths[input_count];
+    if (!owned_paths[input_count]) {
+      fclose(drv);
+      fclose(log);
+      free(clang_inputs);
+      free(owned_paths);
+      return 1;
+    }
+    input_count++;
+
+    if (tc->kind == CASE_INT) {
+      fprintf(drv, "  extern int %s_main(void);\n", fn_sym);
+    } else if (tc->kind == CASE_DOUBLE) {
+      fprintf(drv, "  extern double %s_ag_m(void);\n", fn_sym);
+    } else {
+      fprintf(drv, "  extern float %s_ag_m(void);\n", fn_sym);
+    }
   }
+
+  fprintf(drv, "\n");
+  for (size_t i = 0; i < max_cases; i++) {
+    const test_case_t *tc = &test_cases[i];
+    if (strcmp(tc->category, category) != 0) continue;
+    char cat_sym[128], name_sym[128], fn_sym[320];
+    sanitize_symbol(category, cat_sym, sizeof(cat_sym));
+    sanitize_symbol(tc->name, name_sym, sizeof(name_sym));
+    snprintf(fn_sym, sizeof(fn_sym), "agc_%s_%s", cat_sym, name_sym);
+
+    if (tc->kind == CASE_INT) {
+      fprintf(drv, "  { int actual = (%s_main() & 255); if (actual != %d) { failed = 1; printf(\"FAIL %s expected %d got %%d\\n\", actual); } else { printf(\"OK %s => %%d\\n\", actual); } }\n",
+              fn_sym, tc->expected_i, tc->name, tc->expected_i, tc->name);
+    } else {
+      fprintf(drv, "  { double actual = (double)%s_ag_m(); if (!agc_nearly(actual, %.6f)) { failed = 1; printf(\"FAIL %s expected %.2f got %%.2f\\n\", actual); } else { printf(\"OK %s => %%.2f\\n\", actual); } }\n",
+              fn_sym, tc->expected_f, tc->name, tc->expected_f, tc->name);
+    }
+  }
+  fprintf(drv, "  return failed;\n}\n");
+  fclose(drv);
+
+  owned_paths[input_count] = strdup(driver_path);
+  clang_inputs[input_count] = owned_paths[input_count];
+  if (!owned_paths[input_count]) {
+    fclose(log);
+    free(clang_inputs);
+    free(owned_paths);
+    return 1;
+  }
+  input_count++;
+
+  if (run_clang_build_many(bin_path, clang_inputs, input_count) != 0) {
+    fprintf(log, "  FAIL: clang link category binary\n");
+    for (size_t i = 0; i < input_count; i++) free(owned_paths[i]);
+    free(clang_inputs);
+    free(owned_paths);
+    fclose(log);
+    return 1;
+  }
+
+  for (size_t i = 0; i < input_count; i++) free(owned_paths[i]);
+  free(clang_inputs);
+  free(owned_paths);
   fprintf(log, "Summary: build OK\n");
+  fclose(log);
+  return 0;
+}
+
+static int run_category(const char *category) {
+  char log_path[PATH_MAX];
+  char bin_path[PATH_MAX];
+  snprintf(log_path, sizeof(log_path), "build/e2e/logs/%s.log", category);
+  build_category_bin_path(category, bin_path);
+  FILE *log = fopen(log_path, "w");
+  if (!log) return -1;
+  fprintf(log, "Category: %s\n", category);
+
+  int pipefd[2];
+  if (pipe(pipefd) != 0) {
+    fclose(log);
+    return -1;
+  }
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+    execl(bin_path, bin_path, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[1]);
+  if (pid < 0) {
+    close(pipefd[0]);
+    fclose(log);
+    return -1;
+  }
+
+  char buf[1024];
+  ssize_t nread = 0;
+  while ((nread = read(pipefd[0], buf, sizeof(buf))) > 0) {
+    fwrite(buf, 1, (size_t)nread, log);
+  }
+  close(pipefd[0]);
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    fprintf(log, "Summary: FAILED\n");
+    fclose(log);
+    return 1;
+  }
+  fprintf(log, "Summary: PASS\n");
   fclose(log);
   return 0;
 }
