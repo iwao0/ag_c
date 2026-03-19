@@ -553,3 +553,35 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser の残る定型文（文字列リテラルサイズ不正）の専用ID化を検討。
+
+## Task 23: Parser 文字列リテラル診断の専用ID化
+- 日付: 2026-03-19
+- 目的:
+  - Parser の文字列リテラル関連定型文を専用IDへ分離し、直書き依存を削減する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3007` / `parser.string_literal_too_large`
+    - `E3008` / `parser.string_concat_size_invalid`
+  - カタログとメッセージ定義へ反映:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/expr.c` の該当診断を `diag_message_for(E3007/E3008)` へ置換。
+  - `message_migration_backlog.md` を更新。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/expr.c`
+  - `docs/error_handling_redesign/message_migration_backlog.md`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `parser/diag.c` の文脈付きメッセージをテンプレート化できる形に整理。

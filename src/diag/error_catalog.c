@@ -31,6 +31,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_DUPLICATE_SYMBOL, "E3004", "parser.duplicate_symbol"},
     {DIAG_ERR_PARSER_INVALID_CONTEXT, "E3005", "parser.invalid_context"},
     {DIAG_ERR_PARSER_INVALID_TYPE_SPEC, "E3006", "parser.invalid_type_spec"},
+    {DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, "E3007", "parser.string_literal_too_large"},
+    {DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, "E3008", "parser.string_concat_size_invalid"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

@@ -10,6 +10,11 @@
 - `src/parser/expr.c` / `src/parser/parser.c`
   - 型指定子組み合わせ不正を `E3006`（`parser.invalid_type_spec`）へ分離。
   - 呼び出し側の固定文言は `diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC)` 参照に移行。
+- `src/parser/expr.c`
+  - 文字列リテラルサイズ関連を専用IDへ分離:
+    - `E3007`（`parser.string_literal_too_large`）
+    - `E3008`（`parser.string_concat_size_invalid`）
+  - 呼び出し側の固定文言は `diag_message_for(...)` 参照に移行。
 
 ## 優先度B: 追加キー/テンプレート化が必要（文脈付き）
 - `src/parser/diag.c`
@@ -24,9 +29,6 @@
 - `src/parser/node_utils.c`
   - `"%s の対象は左辺値である必要があります"`
   - `"%s の対象は整数スカラーである必要があります"`
-- `src/parser/expr.c`
-  - `"文字列リテラルが大きすぎます"`
-  - `"文字列連結中にサイズが不正です"`
 
 ## 優先度C: Codegen / Preprocess の文脈特化メッセージ
 - `src/arch/arm64_apple.c`

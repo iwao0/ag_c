@@ -1375,14 +1375,16 @@ static node_t *primary(void) {
                        "異なる接頭辞の文字列リテラルは連結できません");
       }
       if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
-        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "文字列リテラルが大きすぎます");
+        diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, t, "%s",
+                       diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
       }
       total_len += (size_t)st->len;
       t = t->next;
     }
 
     if (total_len > (size_t)INT_MAX) {
-      diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "文字列リテラルが大きすぎます");
+      diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, token, "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
     }
     char *merged = calloc(total_len + 1, 1);
     if (!merged) {
@@ -1392,7 +1394,8 @@ static node_t *primary(void) {
     while (token && token->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)token;
       if (st->len < 0 || (size_t)st->len > total_len - off) {
-        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, token, "文字列連結中にサイズが不正です");
+        diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, token, "%s",
+                       diag_message_for(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
       }
       memcpy(merged + off, st->str, (size_t)st->len);
       off += (size_t)st->len;
