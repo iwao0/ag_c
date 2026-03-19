@@ -1312,3 +1312,35 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `main.c` のCLI向け `fprintf`（非diagnostic）を方針上どう扱うか判断する。
+
+## Task 44: main エントリポイントのエラー出力採番化
+- 日付: 2026-03-19
+- 目的:
+  - `main.c` の CLI エラー出力を `diag` 経由へ統一し、採番体系に取り込む。
+- 実施内容:
+  - 以下の internal エラーIDを追加:
+    - `E0002` / `internal.usage`
+    - `E0003` / `internal.input_read_failed`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/main.c`
+    - `fprintf(stderr, ...)` を `diag_emit_internalf(...)` に置換。
+    - `diag/diag.h` を追加インクルード。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/main.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 全カテゴリ（internal/preprocess/tokenizer/parser/codegen）の採番網羅性を最終確認する。

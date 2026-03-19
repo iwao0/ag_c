@@ -3,6 +3,7 @@
 #include "parser/parser.h"
 #include "tokenizer/tokenizer.h"
 #include "preprocess/preprocess.h"
+#include "diag/diag.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,13 +48,15 @@ static char *read_file_contents(const char *path) {
 
 int main(int argc, char **argv) {
   if (argc != 2) {
-    fprintf(stderr, "使い方: %s <input.c>\n", argv[0]);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
+                        diag_message_for(DIAG_ERR_INTERNAL_USAGE), argv[0]);
     return 1;
   }
 
   char *source = read_file_contents(argv[1]);
   if (!source) {
-    fprintf(stderr, "入力ファイルを読み込めませんでした: %s\n", argv[1]);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_INPUT_READ_FAILED,
+                        diag_message_for(DIAG_ERR_INTERNAL_INPUT_READ_FAILED), argv[1]);
     return 1;
   }
 

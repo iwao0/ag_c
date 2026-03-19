@@ -9,6 +9,8 @@
 const char *diag_message_ja(diag_error_id_t id) {
   switch (id) {
     case DIAG_ERR_INTERNAL_OOM: return "メモリ確保に失敗しました";
+    case DIAG_ERR_INTERNAL_USAGE: return "使い方: %s <input.c>";
+    case DIAG_ERR_INTERNAL_INPUT_READ_FAILED: return "入力ファイルを読み込めませんでした: %s";
     case DIAG_ERR_PREPROCESS_GENERIC: return "プリプロセッサエラーです";
     case DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME: return "不正な include ファイル名です";
     case DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH: return "許可されない include パスです: %s";

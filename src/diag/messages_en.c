@@ -9,6 +9,8 @@
 const char *diag_message_en(diag_error_id_t id) {
   switch (id) {
     case DIAG_ERR_INTERNAL_OOM: return "Out of memory";
+    case DIAG_ERR_INTERNAL_USAGE: return "Usage: %s <input.c>";
+    case DIAG_ERR_INTERNAL_INPUT_READ_FAILED: return "Failed to read input file: %s";
     case DIAG_ERR_PREPROCESS_GENERIC: return "Preprocessor error";
     case DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME: return "Invalid include filename";
     case DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH: return "Disallowed include path: %s";
