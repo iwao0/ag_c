@@ -1,4 +1,5 @@
 #include "internal/diag.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdarg.h>
 #include <stdlib.h>
@@ -13,17 +14,18 @@ void psx_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
   va_end(ap2);
   if (len < 0) {
     va_end(ap);
-    tk_error_tok(tok, "[%s] 診断メッセージの生成に失敗しました", (char *)rule);
+    diag_emit_tokf(DIAG_ERR_PARSER_GENERIC, tok, "[%s] 診断メッセージの生成に失敗しました",
+                   (char *)rule);
   }
 
   char *detail = calloc((size_t)len + 1, 1);
   if (!detail) {
     va_end(ap);
-    tk_error_tok(tok, "[%s] メモリ確保に失敗しました", (char *)rule);
+    diag_emit_tokf(DIAG_ERR_INTERNAL_OOM, tok, "[%s] メモリ確保に失敗しました", (char *)rule);
   }
   vsnprintf(detail, (size_t)len + 1, fmt, ap);
   va_end(ap);
-  tk_error_tok(tok, "[%s] %s", (char *)rule, detail);
+  diag_emit_tokf(DIAG_ERR_PARSER_GENERIC, tok, "[%s] %s", (char *)rule, detail);
   free(detail);
 }
 

@@ -1,0 +1,21 @@
+#ifndef DIAG_ERROR_CATALOG_H
+#define DIAG_ERROR_CATALOG_H
+
+typedef enum {
+  DIAG_ERR_INTERNAL_OOM = 1,
+
+  DIAG_ERR_PREPROCESS_GENERIC = 1000,
+
+  DIAG_ERR_TOKENIZER_GENERIC = 2000,
+  DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR = 2001,
+  DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG = 2002,
+
+  DIAG_ERR_PARSER_GENERIC = 3000,
+
+  DIAG_ERR_CODEGEN_GENERIC = 4000,
+} diag_error_id_t;
+
+const char *diag_error_code(diag_error_id_t id);
+const char *diag_error_key(diag_error_id_t id);
+
+#endif

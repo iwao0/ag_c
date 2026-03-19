@@ -1,6 +1,7 @@
 #include "internal/allocator.h"
 #include "internal/branch_hint.h"
 #include "tokenizer.h"
+#include "../diag/diag.h"
 #include "internal/charclass.h"
 #include "internal/keywords.h"
 #include "internal/literals.h"
@@ -70,7 +71,8 @@ static void *tcalloc(size_t n, size_t size) {
 static int checked_span_len(char *start, char *end, const char *what) {
   ptrdiff_t diff = end - start;
   if (diff < 0 || (size_t)diff > max_token_len_for_test || (size_t)diff > (size_t)INT_MAX) {
-    tk_error_at(start, "%s が大きすぎます", (char *)what);
+    diag_emit_atf(DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG, user_input, start, "%s が大きすぎます",
+                  (char *)what);
   }
   return (int)diff;
 }
@@ -130,48 +132,44 @@ static char *replace_trigraphs(const char *in) {
 void tk_error_at(char *loc, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-
-  int pos = loc - user_input;
-  fprintf(stderr, "%s\n", user_input);
-  fprintf(stderr, "%*s", pos, ""); // pos個の空白を出力
-  fprintf(stderr, "^ ");
-  vfprintf(stderr, fmt, ap);
-  fprintf(stderr, "\n");
-  exit(1);
+  va_list ap2;
+  va_copy(ap2, ap);
+  int len = vsnprintf(NULL, 0, fmt, ap2);
+  va_end(ap2);
+  if (len < 0) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  char *msg = calloc((size_t)len + 1, 1);
+  if (!msg) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  vsnprintf(msg, (size_t)len + 1, fmt, ap);
+  va_end(ap);
+  diag_emit_atf(DIAG_ERR_TOKENIZER_GENERIC, user_input, loc, "%s", msg);
 }
 
 /** @brief トークン情報付きエラーを出力し終了する。 */
 void tk_error_tok(token_t *tok, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-
-  if (tok && tok->file_name) {
-    fprintf(stderr, "%s:%d: ", tok->file_name, tok->line_no);
+  va_list ap2;
+  va_copy(ap2, ap);
+  int len = vsnprintf(NULL, 0, fmt, ap2);
+  va_end(ap2);
+  if (len < 0) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
-  vfprintf(stderr, fmt, ap);
-  if (tok) {
-    if (tok->kind == TK_IDENT) {
-      token_ident_t *id = (token_ident_t *)tok;
-      int n = id->len < 0 ? 0 : id->len;
-      fprintf(stderr, " (actual: '%.*s')", n, id->str);
-    } else if (tok->kind == TK_STRING) {
-      token_string_t *st = (token_string_t *)tok;
-      int n = st->len < 0 ? 0 : st->len;
-      fprintf(stderr, " (actual: '%.*s')", n, st->str);
-    } else if (tok->kind == TK_NUM) {
-      token_num_t *num = (token_num_t *)tok;
-      int n = num->len < 0 ? 0 : num->len;
-      fprintf(stderr, " (actual: '%.*s')", n, num->str);
-    } else {
-      int len = 0;
-      const char *s = tk_token_kind_str(tok->kind, &len);
-      if (s && len > 0) {
-        fprintf(stderr, " (actual: '%.*s')", len, s);
-      }
-    }
+  char *msg = calloc((size_t)len + 1, 1);
+  if (!msg) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
-  fprintf(stderr, "\n");
-  exit(1);
+  vsnprintf(msg, (size_t)len + 1, fmt, ap);
+  va_end(ap);
+  diag_emit_tokf(DIAG_ERR_TOKENIZER_GENERIC, tok, "%s", msg);
 }
 
 /** @brief token kind を表示用文字列へ変換する。 */

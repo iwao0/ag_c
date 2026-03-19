@@ -1,6 +1,19 @@
 CFLAGS=-std=c11 -g -O0 -Wall -Wextra
 DEPFLAGS=-MMD -MP
-SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c)
+DIAG_LANG?=ja
+DIAG_COMMON_SRCS=$(filter-out src/diag/messages_ja.c src/diag/messages_en.c src/diag/messages_all.c,$(wildcard src/diag/*.c))
+ifeq ($(DIAG_LANG),all)
+DIAG_MSG_SRCS=src/diag/messages_all.c
+CFLAGS+=-DDIAG_LANG_ALL
+else ifeq ($(DIAG_LANG),en)
+DIAG_MSG_SRCS=src/diag/messages_en.c
+CFLAGS+=-DDIAG_LANG_EN
+else
+DIAG_MSG_SRCS=src/diag/messages_ja.c
+CFLAGS+=-DDIAG_LANG_JA
+endif
+
+SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
 OBJS=$(patsubst src/%.c,build/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
@@ -14,6 +27,7 @@ BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=build/tokenizer/allocator.o build/tokenizer/config_runtime.o build/tokenizer/escape.o build/tokenizer/literals.o build/tokenizer/scanner.o build/tokenizer/tokenizer.o build/tokenizer/keywords.o build/tokenizer/punctuator.o
 PARSER_LIB_OBJS=build/parser/parser.o build/parser/decl.o build/parser/diag.o build/parser/expr.o build/parser/loop_ctx.o build/parser/semantic_ctx.o build/parser/node_utils.o build/parser/stmt.o build/parser/switch_ctx.o
+DIAG_LIB_OBJS=$(patsubst src/%.c,build/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 
 
 $(TARGET): $(OBJS)
@@ -23,15 +37,15 @@ build/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
-$(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS)
+$(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_TOKENIZER_C11): test/test_tokenizer_c11.c $(TOKENIZER_LIB_OBJS)
+$(TEST_TOKENIZER_C11): test/test_tokenizer_c11.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS)
+$(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -47,11 +61,11 @@ $(TEST_PREPROCESS): test/test_preprocess.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_preprocess.c
 
-$(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS)
+$(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS)
+$(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

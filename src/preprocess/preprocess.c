@@ -1,4 +1,5 @@
 #include "preprocess.h"
+#include "../diag/diag.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -36,28 +37,21 @@ static int include_depth = 0;
 static void *xrealloc(void *ptr, size_t size) {
   void *p = realloc(ptr, size);
   if (!p) {
-    fprintf(stderr, "メモリ確保に失敗しました\n");
-    exit(1);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   return p;
 }
 
 static void *xreallocarray(void *ptr, size_t n, size_t size) {
   if (n != 0 && size > SIZE_MAX / n) {
-    fprintf(stderr, "メモリ確保に失敗しました\n");
-    exit(1);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   return xrealloc(ptr, n * size);
 }
 
 static void pp_error(const char *fmt, const char *arg) {
-  if (arg) {
-    fprintf(stderr, fmt, arg);
-  } else {
-    fprintf(stderr, "%s", fmt);
-  }
-  fprintf(stderr, "\n");
-  exit(1);
+  if (arg) diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, fmt, arg);
+  diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", fmt);
 }
 
 static void validate_include_path_or_die(const char *path) {
