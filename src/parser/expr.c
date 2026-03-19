@@ -1065,33 +1065,34 @@ static node_t *apply_postfix(node_t *node) {
     return node;
   }
 
-  while (token->kind == TK_LBRACKET) {
-    token = token->next;
-    node_t *idx = expr_internal();
-    tk_expect(']');
-    int ds = psx_node_deref_size(node);
-    int ts = psx_node_type_size(node);
-    int es = ds ? ds : (ts ? ts : 8);
-    node_t *scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
-    node_t *addr = psx_node_new_binary(ND_ADD, node, scaled);
-    node_mem_t *deref = calloc(1, sizeof(node_mem_t));
-    deref->base.kind = ND_DEREF;
-    deref->base.lhs = addr;
-    deref->type_size = es;
-    token_kind_t tag_kind = TK_EOF;
-    char *tag_name = NULL;
-    int tag_len = 0;
-    int is_tag_ptr = 0;
-    psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-    if (tag_kind != TK_EOF && is_tag_ptr) {
-      deref->tag_kind = tag_kind;
-      deref->tag_name = tag_name;
-      deref->tag_len = tag_len;
-      deref->is_tag_pointer = 0;
-    }
-    node = (node_t *)deref;
-  }
   for (;;) {
+    if (token->kind == TK_LBRACKET) {
+      token = token->next;
+      node_t *idx = expr_internal();
+      tk_expect(']');
+      int ds = psx_node_deref_size(node);
+      int ts = psx_node_type_size(node);
+      int es = ds ? ds : (ts ? ts : 8);
+      node_t *scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
+      node_t *addr = psx_node_new_binary(ND_ADD, node, scaled);
+      node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+      deref->base.kind = ND_DEREF;
+      deref->base.lhs = addr;
+      deref->type_size = es;
+      token_kind_t tag_kind = TK_EOF;
+      char *tag_name = NULL;
+      int tag_len = 0;
+      int is_tag_ptr = 0;
+      psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+      if (tag_kind != TK_EOF && is_tag_ptr) {
+        deref->tag_kind = tag_kind;
+        deref->tag_name = tag_name;
+        deref->tag_len = tag_len;
+        deref->is_tag_pointer = 0;
+      }
+      node = (node_t *)deref;
+      continue;
+    }
     if (token->kind == TK_LPAREN) {
       node = parse_call_postfix(node);
       continue;

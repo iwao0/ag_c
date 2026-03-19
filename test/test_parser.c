@@ -896,6 +896,13 @@ static void test_expr_member_access() {
   ASSERT_EQ(ND_ASSIGN, assign->kind);
   ASSERT_EQ(ND_DEREF, assign->lhs->kind);
   ASSERT_EQ(4, as_mem(assign->lhs)->type_size);
+
+  token = tk_tokenize("main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 
 static void test_expr_string() {
