@@ -380,6 +380,14 @@ static void test_expr_unary_ops() {
   node_t *unsigned_short_int_cast = ps_expr();
   ASSERT_EQ(ND_BITAND, unsigned_short_int_cast->kind);
 
+  token = tk_tokenize("(signed char)17");
+  node_t *signed_char_cast = ps_expr();
+  ASSERT_EQ(ND_BITAND, signed_char_cast->kind);
+
+  token = tk_tokenize("(unsigned char)18");
+  node_t *unsigned_char_cast = ps_expr();
+  ASSERT_EQ(ND_BITAND, unsigned_char_cast->kind);
+
   token = tk_tokenize("(restrict int*)0");
   node_t *restrict_ptr_cast = ps_expr();
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);

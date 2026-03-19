@@ -94,23 +94,26 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
                                             token_t **out_next) {
   if (!start) return 0;
   if (start->kind != TK_SIGNED && start->kind != TK_UNSIGNED &&
-      start->kind != TK_SHORT && start->kind != TK_LONG && start->kind != TK_INT) {
+      start->kind != TK_SHORT && start->kind != TK_LONG &&
+      start->kind != TK_INT && start->kind != TK_CHAR) {
     return 0;
   }
 
-  int n_signed = 0, n_unsigned = 0, n_short = 0, n_long = 0, n_int = 0;
+  int n_signed = 0, n_unsigned = 0, n_short = 0, n_long = 0, n_int = 0, n_char = 0;
   token_t *t = start;
   while (t && (t->kind == TK_SIGNED || t->kind == TK_UNSIGNED ||
-               t->kind == TK_SHORT || t->kind == TK_LONG || t->kind == TK_INT)) {
+               t->kind == TK_SHORT || t->kind == TK_LONG ||
+               t->kind == TK_INT || t->kind == TK_CHAR)) {
     if (t->kind == TK_SIGNED) n_signed++;
     else if (t->kind == TK_UNSIGNED) n_unsigned++;
     else if (t->kind == TK_SHORT) n_short++;
     else if (t->kind == TK_LONG) n_long++;
     else if (t->kind == TK_INT) n_int++;
+    else if (t->kind == TK_CHAR) n_char++;
     t = t->next;
   }
 
-  if (n_signed > 1 || n_unsigned > 1 || n_short > 1 || n_long > 2 || n_int > 1) {
+  if (n_signed > 1 || n_unsigned > 1 || n_short > 1 || n_long > 2 || n_int > 1 || n_char > 1) {
     tk_error_tok(start, "不正な型指定子の組み合わせです");
   }
   if (n_signed && n_unsigned) {
@@ -119,10 +122,16 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
   if (n_short && n_long) {
     tk_error_tok(start, "不正な型指定子の組み合わせです");
   }
+  if (n_char && (n_short || n_long || n_int)) {
+    tk_error_tok(start, "不正な型指定子の組み合わせです");
+  }
 
   token_kind_t kind = TK_INT;
   int elem = 4;
-  if (n_short) {
+  if (n_char) {
+    kind = TK_CHAR;
+    elem = 1;
+  } else if (n_short) {
     kind = TK_SHORT;
     elem = 2;
   } else if (n_long) {
