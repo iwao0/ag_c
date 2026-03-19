@@ -901,7 +901,7 @@ static void test_expr_member_access() {
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
-  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 
@@ -1368,6 +1368,13 @@ static void test_type_decl() {
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
+
+  token = tk_tokenize("main() { struct S { char a[4]; int z; }; struct S s={\"ab\",7}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   token = tk_tokenize("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
   parsed_code = ps_program();

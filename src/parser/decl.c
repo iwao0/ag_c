@@ -24,6 +24,8 @@ static int is_supported_scalar_store_size(int size);
 static int is_same_tag_object_lvar(node_lvar_t *src, lvar_t *var);
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src);
 static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len);
+static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len);
+static string_lit_t *find_string_lit_by_label(char *label);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -307,6 +309,38 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
+static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len) {
+  if (elem_size != 1) return NULL;
+  if (!token || token->kind != TK_STRING) return NULL;
+
+  node_t *rhs = psx_expr_assign();
+  if (!rhs || rhs->kind != ND_STRING) return NULL;
+
+  node_string_t *s = (node_string_t *)rhs;
+  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  if (!lit) psx_diag_ctx(token, "decl", "文字列初期化子の解決に失敗しました");
+
+  node_t *init_chain = NULL;
+  int idx = 0;
+  for (; idx < lit->len && idx < array_len; idx++) {
+    node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)lit->str[idx]));
+    assign_node->type_size = elem_size;
+    node_t *init_node = (node_t *)assign_node;
+    if (!init_chain) init_chain = init_node;
+    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+  }
+  if (idx < array_len) {
+    node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
+    assign_node->type_size = elem_size;
+    node_t *init_node = (node_t *)assign_node;
+    if (!init_chain) init_chain = init_node;
+    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src) {
   node_t *prefix = NULL;
   node_t *value = expr;
@@ -467,6 +501,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     }
     if (owner->tag_kind == TK_STRUCT) {
       // Brace elision for struct members: allow flat scalar list for array members.
+      node_t *array_str = try_parse_array_member_string_initializer(owner->offset + member_offset, elem_size, array_len);
+      if (array_str) return array_str;
       node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_copy) return array_copy;
       node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
@@ -561,14 +597,21 @@ static node_t *parse_struct_initializer(lvar_t *var) {
           psx_diag_ctx(token, "decl", "構造体初期化子で同一メンバが重複指定されています");
         }
       }
-      node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                           member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-      node_mem_t *assign_node = psx_node_new_assign(
-          lhs, parse_member_initializer(var, member_offset, member_type_size,
-                                        member_tag_kind, member_tag_name, member_tag_len,
-                                        member_is_tag_pointer, member_array_len));
-      assign_node->type_size = member_type_size;
-      node_t *init_node = (node_t *)assign_node;
+      node_t *member_init = parse_member_initializer(var, member_offset, member_type_size,
+                                                     member_tag_kind, member_tag_name, member_tag_len,
+                                                     member_is_tag_pointer, member_array_len);
+      node_t *init_node = NULL;
+      if ((member_array_len > 0 && !member_is_tag_pointer) ||
+          (!member_is_tag_pointer && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION))) {
+        // parse_member_initializer already returns assignment chain for aggregate members.
+        init_node = member_init;
+      } else {
+        node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                             member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+        node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
+        assign_node->type_size = member_type_size;
+        init_node = (node_t *)assign_node;
+      }
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
       assigned_names[assigned_n] = member_name;
