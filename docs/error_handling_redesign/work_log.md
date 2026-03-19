@@ -405,3 +405,24 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 必要なら Doxygen 生成設定（INPUT/EXTRACT_STATIC など）を `docs` に追加。
+
+## Task 17: Tokenizer 診断呼び出しの重複削減
+- 日付: 2026-03-19
+- 目的:
+  - `diag_emit_atf(..., tk_get_user_input(), ...)` の重複を薄い内部ヘルパーで整理する。
+- 実施内容:
+  - `src/tokenizer/internal/diag_helper.h` を追加。
+    - `TK_DIAG_ATF(id, loc, fmt, ...)` マクロを定義し、`tk_get_user_input()` の受け渡しを集約。
+  - `src/tokenizer/literals.c` と `src/tokenizer/scanner.c` の該当箇所を `TK_DIAG_ATF(...)` へ置換。
+  - 上記2ファイルから `diag.h` 直接 include を外し、内部ヘルパー経由に統一。
+- 変更ファイル:
+  - `src/tokenizer/internal/diag_helper.h`
+  - `src/tokenizer/literals.c`
+  - `src/tokenizer/scanner.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 必要なら `tokenizer.c` 側の `diag_emit_atf(..., user_input, ...)` も同系ヘルパーで揃えるか検討。

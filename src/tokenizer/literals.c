@@ -1,9 +1,9 @@
 #include "internal/literals.h"
 #include "internal/allocator.h"
 #include "internal/charclass.h"
+#include "internal/diag_helper.h"
 #include "internal/escape.h"
 #include "tokenizer.h"
-#include "../diag/diag.h"
 #include <string.h>
 
 static uint32_t hexval(char c) {
@@ -73,16 +73,16 @@ int tk_encode_utf8(uint32_t cp, char out[4]) {
 int tk_read_escape_char(char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, tk_get_user_input(), p + 1, "16進エスケープが不正です");
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1, "16進エスケープが不正です");
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
     int consumed = 0;
     if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
-      diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, tk_get_user_input(), p, "UCNエスケープが不正です");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
     }
     if (!tk_is_valid_ucn_codepoint(cp)) {
-      diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, tk_get_user_input(), p, "UCNエスケープが不正です");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
     }
   }
   switch (*p) {
@@ -92,7 +92,7 @@ int tk_read_escape_char(char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, tk_get_user_input(), p, "不正なエスケープです");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p, "不正なエスケープです");
   }
 
   char *bs = p - 1;
@@ -100,7 +100,7 @@ int tk_read_escape_char(char **pp) {
   uint32_t out = 0;
   int len = (int)strlen(bs);
   if (!tk_parse_escape_value(bs, len, &idx, &out)) {
-    diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, tk_get_user_input(), p, "不正なエスケープです");
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p, "不正なエスケープです");
   }
   *pp = bs + idx;
   return (int)out;
@@ -110,16 +110,16 @@ int tk_read_escape_char(char **pp) {
 void tk_skip_escape_in_literal(char **pp) {
   char *p = *pp;
   if (*p == 'x' && !tk_is_xdigit(p[1])) {
-    diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, tk_get_user_input(), p + 1, "16進エスケープが不正です");
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_HEX, p + 1, "16進エスケープが不正です");
   }
   if (*p == 'u' || *p == 'U') {
     uint32_t cp = 0;
     int consumed = 0;
     if (!tk_parse_ucn_codepoint(p - 1, &cp, &consumed)) {
-      diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, tk_get_user_input(), p, "UCNエスケープが不正です");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
     }
     if (!tk_is_valid_ucn_codepoint(cp)) {
-      diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, tk_get_user_input(), p, "UCNエスケープが不正です");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, p, "UCNエスケープが不正です");
     }
   }
   switch (*p) {
@@ -129,7 +129,7 @@ void tk_skip_escape_in_literal(char **pp) {
     case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7':
       break;
     default:
-      diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, tk_get_user_input(), p, "不正なエスケープです");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_GENERAL, p, "不正なエスケープです");
   }
 
   if (*p == 'x') {
@@ -229,8 +229,7 @@ void tk_decode_identifier_ucn(char *start, int len, char **out_str, int *out_len
     int consumed = 0;
     if (tk_parse_ucn_codepoint(start + i, &cp, &consumed)) {
       if (!tk_is_valid_ucn_codepoint(cp))
-        diag_emit_atf(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, tk_get_user_input(), start + i,
-                       "識別子内のUCNが不正です");
+        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, start + i, "識別子内のUCNが不正です");
       char tmp[4];
       int n = tk_encode_utf8(cp, tmp);
       memcpy(buf + bi, tmp, (size_t)n);

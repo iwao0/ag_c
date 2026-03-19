@@ -1,9 +1,9 @@
 #include "internal/scanner.h"
 #include "internal/branch_hint.h"
 #include "internal/charclass.h"
+#include "internal/diag_helper.h"
 #include "internal/literals.h"
 #include "tokenizer.h"
-#include "../diag/diag.h"
 
 static inline bool tk_is_space_fast(char c) {
   // Hot path for typical ASCII whitespace.
@@ -50,8 +50,7 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
       p++;
     }
     if (!closed) {
-      diag_emit_atf(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, tk_get_user_input(), p,
-                    "コメントが閉じられていません");
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p, "コメントが閉じられていません");
     }
     return p;
   }
