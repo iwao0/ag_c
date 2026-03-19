@@ -49,7 +49,7 @@ $(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DI
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_CODEGEN): test/test_codegen.c build/arch/arm64_apple.o build/tokenizer/escape.o
+$(TEST_CODEGEN): test/test_codegen.c build/arch/arm64_apple.o build/tokenizer/escape.o $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

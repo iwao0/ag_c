@@ -1,6 +1,5 @@
 #include "diag.h"
 #include "messages.h"
-#include "../tokenizer/tokenizer.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,9 +62,7 @@ static void print_token_actual(const token_t *tok) {
     fprintf(stderr, " (actual: '%.*s')", n, num->str);
     return;
   }
-  int len = 0;
-  const char *s = tk_token_kind_str(tok->kind, &len);
-  if (s && len > 0) fprintf(stderr, " (actual: '%.*s')", len, s);
+  fprintf(stderr, " (actual-kind: %d)", (int)tok->kind);
 }
 
 void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const char *fmt, ...) {

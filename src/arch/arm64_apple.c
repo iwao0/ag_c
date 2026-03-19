@@ -1,4 +1,5 @@
 #include "../codegen_backend.h"
+#include "../diag/diag.h"
 #include "../parser/parser.h"
 #include "../tokenizer/internal/escape.h"
 #include <stdarg.h>
@@ -36,15 +37,14 @@ static void cg_emitf(const char *fmt, ...) {
   va_end(ap2);
   if (need_i < 0) {
     va_end(ap);
-    fprintf(stderr, "コード生成出力に失敗しました\n");
-    exit(1);
+    diag_emit_internalf(DIAG_ERR_CODEGEN_OUTPUT_FAILED, "%s",
+                        diag_message_for(DIAG_ERR_CODEGEN_OUTPUT_FAILED));
   }
   size_t need = (size_t)need_i;
   char *buf = malloc(need + 1);
   if (!buf) {
     va_end(ap);
-    fprintf(stderr, "メモリ確保に失敗しました\n");
-    exit(1);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   vsnprintf(buf, need + 1, fmt, ap);
   va_end(ap);
@@ -94,8 +94,7 @@ static void ensure_control_capacity(int need) {
   if (!new_break_labels || !new_continue_labels) {
     free(new_break_labels);
     free(new_continue_labels);
-    fprintf(stderr, "メモリ確保に失敗しました\n");
-    exit(1);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   if (control_depth > 0) {
     memcpy(new_break_labels, break_labels, sizeof(int) * (size_t)control_depth);
@@ -171,8 +170,7 @@ static void switch_collect_add_case(switch_collect_t *sc, node_case_t *c) {
     sc->case_cap = sc->case_cap ? sc->case_cap * 2 : 8;
     node_case_t **new_cases = realloc(sc->cases, sizeof(node_case_t *) * (size_t)sc->case_cap);
     if (!new_cases) {
-      fprintf(stderr, "メモリ確保に失敗しました\n");
-      exit(1);
+      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
     }
     sc->cases = new_cases;
   }
@@ -192,8 +190,7 @@ static void collect_switch_labels(node_t *node, switch_collect_t *sc) {
   }
   if (node->kind == ND_DEFAULT) {
     if (sc->default_node) {
-      fprintf(stderr, "default が重複しています\n");
-      exit(1);
+      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW, "default が重複しています");
     }
     node_default_t *d = as_default(node);
     d->label_id = label_count++;
@@ -372,8 +369,7 @@ static void gen_lval(node_t *node) {
     return;
   }
   if (node->kind != ND_LVAR) {
-    fprintf(stderr, "代入の左辺値が変数ではありません\n");
-    return;
+    diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_LVALUE, "代入の左辺値が変数ではありません");
   }
   cg_emitf("  add x0, x29, #%d\n", 16 + as_lvar(node)->offset);
   cg_emitf("  str x0, [sp, #-16]!\n");
@@ -911,15 +907,15 @@ static void gen_stmt(node_t *node) {
   }
   case ND_BREAK:
     if (current_break_label() < 0) {
-      fprintf(stderr, "break はループまたはswitch内でのみ使用できます\n");
-      exit(1);
+      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW,
+                          "break はループまたはswitch内でのみ使用できます");
     }
     cg_emitf("  b .Lend%d\n", current_break_label());
     return;
   case ND_CONTINUE:
     if (current_continue_label() < 0) {
-      fprintf(stderr, "continue はループ内でのみ使用できます\n");
-      exit(1);
+      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW,
+                          "continue はループ内でのみ使用できます");
     }
     cg_emitf("  b .Lcont%d\n", current_continue_label());
     return;
@@ -927,8 +923,8 @@ static void gen_stmt(node_t *node) {
     node_jump_t *j = as_jump(node);
     int id = find_label_id(j->name, j->name_len);
     if (id < 0) {
-      fprintf(stderr, "未定義ラベル '%.*s' への goto です\n", j->name_len, j->name);
-      exit(1);
+      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW,
+                          "未定義ラベル '%.*s' への goto です", j->name_len, j->name);
     }
     cg_emitf("  b .Luser%d\n", id);
     return;

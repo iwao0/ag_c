@@ -15,6 +15,9 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG, "E2002", "tokenizer.token_too_long"},
     {DIAG_ERR_PARSER_GENERIC, "E3000", "parser.generic"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
+    {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
+    {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},
+    {DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW, "E4003", "codegen.invalid_control_flow"},
 };
 
 static const diag_entry_t *find_entry(diag_error_id_t id) {

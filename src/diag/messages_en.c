@@ -10,6 +10,9 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";
     case DIAG_ERR_PARSER_GENERIC: return "Parser error";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
+    case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
+    case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
+    case DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW: return "Invalid control flow usage";
   }
   return NULL;
 }

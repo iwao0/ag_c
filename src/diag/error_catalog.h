@@ -13,6 +13,9 @@ typedef enum {
   DIAG_ERR_PARSER_GENERIC = 3000,
 
   DIAG_ERR_CODEGEN_GENERIC = 4000,
+  DIAG_ERR_CODEGEN_OUTPUT_FAILED = 4001,
+  DIAG_ERR_CODEGEN_INVALID_LVALUE = 4002,
+  DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW = 4003,
 } diag_error_id_t;
 
 const char *diag_error_code(diag_error_id_t id);

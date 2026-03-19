@@ -78,3 +78,29 @@
   - `19f0a47`
 - 次アクション:
   - codegenのエラー出力を `E4000` 系へ移行。
+
+## Task 4: codegen エラー経路の置換
+- 日付: 2026-03-19
+- 目的:
+  - codegen内の直接 `fprintf/exit` を `E4000` 系へ統合する。
+- 実施内容:
+  - `src/arch/arm64_apple.c` の致命エラー経路を `diag_emit_internalf` 経由へ置換。
+  - `E4001`（出力失敗）/`E4002`（不正左辺値）/`E4003`（制御フロー不正）を追加。
+  - `test_codegen` が `diag` をリンクするよう `Makefile` を更新。
+  - `diag.c` から tokenizer 依存を外し、`test_codegen` 単独リンクを安定化。
+- 変更ファイル:
+  - `src/arch/arm64_apple.c`
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/diag/diag.c`
+  - `Makefile`
+- テスト:
+  - `make DIAG_LANG=ja build/test_codegen && ./build/test_codegen`
+  - `make DIAG_LANG=ja test`（All pass, E2E `256/256`）
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - parser/tokenizerの個別エラーID（generic以外）を段階的に拡充。
