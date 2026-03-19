@@ -382,7 +382,7 @@ token_ident_t *tk_consume_ident(void) {
 void tk_expect(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind) {
-    tk_error_tok(token, "'%c'ではありません", op);
+    tk_error_tok_id(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, token, "'%c' が必要です", op);
   }
   token = token->next;
 }
@@ -390,14 +390,14 @@ void tk_expect(char op) {
 /** @brief 次トークンが整数であることを期待し int 値を返す。 */
 int tk_expect_number(void) {
   if (token->kind != TK_NUM) {
-    tk_error_tok(token, "数ではありません");
+    tk_error_tok_id(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token, "整数が必要です");
   }
   if (tk_as_num(token)->num_kind != TK_NUM_KIND_INT) {
-    tk_error_tok(token, "整数ではありません");
+    tk_error_tok_id(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token, "整数が必要です");
   }
   long long n = tk_as_num_int(token)->val;
   if (n < INT_MIN || n > INT_MAX) {
-    tk_error_tok(token, "数値が int 範囲外です");
+    tk_error_tok_id(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token, "整数が必要です");
   }
   int val = (int)n;
   token = token->next;

@@ -154,3 +154,30 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `tk_error_tok` 系（expect系など）の個別コード化を段階導入。
+
+## Task 7: tokenizer expect系エラーの個別コード化
+- 日付: 2026-03-19
+- 目的:
+  - `tk_expect` / `tk_expect_number` の失敗を generic から個別コードへ分離する。
+- 実施内容:
+  - エラーカタログに以下を追加:
+    - `E2006` (`tokenizer.expected_token`)
+    - `E2007` (`tokenizer.expected_integer`)
+  - `tokenizer.c` の expect系失敗を `tk_error_tok_id(...)` で個別コードへマップ。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/tokenizer.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer build/test_tokenizer_c11`
+  - `./build/test_tokenizer`
+  - `./build/test_tokenizer_c11`
+  - `make DIAG_LANG=ja test` は Parser 側の既存状態により失敗:
+    - `E3000: [decl] 構造体の単一式初期化は同型オブジェクトのみ対応です`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser 側作業と競合しない範囲で Tokenizer の残り generic 経路を個別化。
