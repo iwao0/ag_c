@@ -70,6 +70,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID: return "Invalid _Generic association type";
     case DIAG_ERR_PARSER_GENERIC_NO_MATCH: return "No matching association in _Generic";
     case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "Number is required";
+    case DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED: return "Undefined enumerator '%.*s'";
+    case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
+    case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "Missing corresponding closing parenthesis";
+    case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "Function definition is required";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

@@ -1,5 +1,6 @@
 #include "internal/semantic_ctx.h"
 #include "internal/diag.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -237,7 +238,8 @@ void psx_ctx_validate_goto_refs(void) {
       }
     }
     if (!found) {
-      psx_diag_ctx(g->tok, "goto", "未定義ラベル '%.*s' への goto です", g->len, g->name);
+      psx_diag_ctx(g->tok, "goto", diag_message_for(DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED),
+                   g->len, g->name);
     }
   }
 }

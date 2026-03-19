@@ -938,3 +938,41 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - enum/goto など可変文言を伴う診断のID化方針を整理。
+
+## Task 33: enum/goto 等の可変文言診断をID化
+- 日付: 2026-03-19
+- 目的:
+  - 識別子埋め込みを含む parser 診断を専用IDで管理し、翻訳切替の一貫性を高める。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3046` / `parser.enum_const_undefined`
+    - `E3047` / `parser.goto_label_undefined`
+    - `E3048` / `parser.missing_closing_paren`
+    - `E3049` / `parser.function_def_expected`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - 置換対象:
+    - `src/parser/parser.c`（enum未定義 / 閉じ括弧不足 / 関数定義必要）
+    - `src/parser/stmt.c`（enum未定義）
+    - `src/parser/semantic_ctx.c`（goto未定義ラベル）
+  - `semantic_ctx.c` に `diag_message_for` 利用のため `../diag/diag.h` を追加。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/parser.c`
+  - `src/parser/stmt.c`
+  - `src/parser/semantic_ctx.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `decl.c` の `%sには整数定数式が必要です` 形式（引数埋め込み）のID化方針を検討。

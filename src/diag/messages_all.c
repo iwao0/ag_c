@@ -70,6 +70,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID: return "_Generic の関連型が不正です";
     case DIAG_ERR_PARSER_GENERIC_NO_MATCH: return "_Generic に一致する関連がありません";
     case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "数値を期待しています";
+    case DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED: return "未定義の列挙子 '%.*s' です";
+    case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
+    case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "対応する閉じ括弧がありません";
+    case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "関数定義が必要です";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
@@ -147,6 +151,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID: return "Invalid _Generic association type";
     case DIAG_ERR_PARSER_GENERIC_NO_MATCH: return "No matching association in _Generic";
     case DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED: return "Number is required";
+    case DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED: return "Undefined enumerator '%.*s'";
+    case DIAG_ERR_PARSER_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
+    case DIAG_ERR_PARSER_MISSING_CLOSING_PAREN: return "Missing corresponding closing parenthesis";
+    case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "Function definition is required";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

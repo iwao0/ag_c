@@ -350,7 +350,8 @@ static long long parse_enum_const_primary(void) {
   if (id) {
     long long v = 0;
     if (!psx_ctx_find_enum_const(id->str, id->len, &v)) {
-      psx_diag_ctx(token, "enum", "未定義の列挙子 '%.*s' です", id->len, id->str);
+      psx_diag_ctx(token, "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
+                   id->len, id->str);
     }
     return v;
   }

@@ -645,7 +645,8 @@ static long long parse_enum_const_primary_toplevel(void) {
   if (id) {
     long long v = 0;
     if (!psx_ctx_find_enum_const(id->str, id->len, &v)) {
-      psx_diag_ctx(token, "enum", "未定義の列挙子 '%.*s' です", id->len, id->str);
+      psx_diag_ctx(token, "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
+                   id->len, id->str);
     }
     return v;
   }
@@ -868,7 +869,8 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
     }
     token = token->next;
   }
-  psx_diag_ctx(token, "param", "対応する閉じ括弧がありません");
+  psx_diag_ctx(token, "param", "%s",
+               diag_message_for(DIAG_ERR_PARSER_MISSING_CLOSING_PAREN));
 }
 
 static token_ident_t *parse_param_declarator_name(void) {
@@ -906,7 +908,8 @@ static node_t *funcdef(void) {
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
-    psx_diag_ctx(token, "funcdef", "関数定義が期待されます");
+    psx_diag_ctx(token, "funcdef", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
   }
   node_func_t *node = calloc(1, sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
