@@ -24,6 +24,8 @@ typedef struct {
   int is_pointer;
 } generic_type_t;
 
+static void consume_local_type_quals(token_t **cur);
+
 static int sizeof_expr_node(node_t *node) {
   int sz = psx_node_type_size(node);
   if (sz) return sz;
@@ -54,6 +56,7 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   while (t && t->kind == TK_MUL) {
     *is_pointer = 1;
     t = t->next;
+    consume_local_type_quals(&t);
   }
   if (t && t->kind == TK_IDENT) t = t->next; // named declaratorも許可
   if (!t || t->kind != TK_RPAREN) return 0;
@@ -84,6 +87,14 @@ static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
     *is_pointer = 1;
     *cur = (*cur)->next;
     consume_local_type_quals(cur);
+  }
+}
+
+static void consume_optional_int_after_sign_or_width(token_t **cur, token_kind_t base_kind) {
+  if (!cur || !*cur) return;
+  if ((base_kind == TK_SIGNED || base_kind == TK_UNSIGNED || base_kind == TK_SHORT || base_kind == TK_LONG) &&
+      (*cur)->kind == TK_INT) {
+    *cur = (*cur)->next;
   }
 }
 
@@ -373,6 +384,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         else if (*type_kind == TK_DOUBLE) *out_fp_kind = TK_FLOAT_KIND_DOUBLE;
       }
       t = t->next;
+      consume_optional_int_after_sign_or_width(&t, *type_kind);
     }
   } else if (psx_ctx_is_tag_keyword(t->kind)) {
     token_kind_t tag_kind = t->kind;
