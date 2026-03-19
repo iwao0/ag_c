@@ -410,7 +410,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       is_type = true;
     } else {
       diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, t,
-                     "_Complex/_Imaginary cast は浮動小数型のみ対応です");
+                     "%s",
+                     diag_message_for(DIAG_ERR_PARSER_COMPLEX_IMAGINARY_CAST_REQUIRES_FLOAT));
     }
   } else if ((t->kind == TK_FLOAT || t->kind == TK_DOUBLE || t->kind == TK_LONG) &&
              t->next && (t->next->kind == TK_COMPLEX || t->next->kind == TK_IMAGINARY)) {
@@ -418,7 +419,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       if (!t->next || t->next->kind != TK_DOUBLE || !t->next->next ||
           (t->next->next->kind != TK_COMPLEX && t->next->next->kind != TK_IMAGINARY)) {
         diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, t,
-                       "_Complex/_Imaginary cast は浮動小数型のみ対応です");
+                       "%s",
+                       diag_message_for(DIAG_ERR_PARSER_COMPLEX_IMAGINARY_CAST_REQUIRES_FLOAT));
       }
       *type_kind = TK_DOUBLE;
       if (out_elem_size) *out_elem_size = 8;

@@ -833,7 +833,8 @@ token_kind_t psx_consume_type_kind(void) {
   if (token == start) return TK_EOF;
   if ((saw_complex || saw_imaginary) && !(saw_float || saw_double)) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, start,
-                   "_Complex/_Imaginary は浮動小数型にのみ指定できます");
+                   "%s",
+                   diag_message_for(DIAG_ERR_PARSER_COMPLEX_IMAGINARY_TYPE_REQUIRES_FLOAT));
   }
   if (saw_void) return TK_VOID;
   if (saw_float) return TK_FLOAT;

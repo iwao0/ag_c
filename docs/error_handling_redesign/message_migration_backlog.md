@@ -23,6 +23,7 @@
   - `E3038-E3045`: `expr.c` の cast / generic / primary 系定型診断を専用ID化。
   - `E3046-E3049`: enum未定義 / goto未定義ラベル / 括弧不足 / 関数定義必須を専用ID化。
   - `E3050-E3051`: 非負整数定数式チェック（`%s` 埋め込み）を専用IDテンプレート化。
+  - `E3052-E3055`: `_Complex/_Imaginary` と `return` 文脈の定型診断を専用ID化。
 - `src/preprocess/preprocess.c` / `src/arch/arm64_apple.c`
   - 主要な日本語直書き診断を `diag_message_for(...)` ベースへ移行。
 
@@ -30,14 +31,9 @@
 - `src/parser/expr.c`
   - `"'->' の左辺は構造体/共用体ポインタである必要があります"`
   - `"'.' の左辺は構造体/共用体である必要があります"`
-  - `"_Complex/_Imaginary cast は浮動小数型のみ対応です"`（2箇所）
   - `"異なる接頭辞の文字列リテラルは連結できません"`
 - `src/parser/parser.c`
-  - `"_Complex/_Imaginary は浮動小数型にのみ指定できます"`
   - `"'...' は可変長引数リストの末尾にのみ指定できます"`
-- `src/parser/stmt.c`
-  - `"[stmt] void 以外の関数では return に式が必要です"`
-  - `"[stmt] void 関数では return に式を指定できません"`
 
 ## 優先度B: 文脈組み立てAPI側のテンプレート整理
 - `src/parser/diag.c`

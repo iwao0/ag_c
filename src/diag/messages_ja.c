@@ -76,6 +76,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED: return "関数定義が必要です";
     case DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED: return "%sには整数定数式が必要です";
     case DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED: return "%sは0以上である必要があります";
+    case DIAG_ERR_PARSER_COMPLEX_IMAGINARY_CAST_REQUIRES_FLOAT: return "_Complex/_Imaginary cast は浮動小数型のみ対応です";
+    case DIAG_ERR_PARSER_COMPLEX_IMAGINARY_TYPE_REQUIRES_FLOAT: return "_Complex/_Imaginary は浮動小数型にのみ指定できます";
+    case DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID: return "[stmt] void 以外の関数では return に式が必要です";
+    case DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID: return "[stmt] void 関数では return に式を指定できません";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

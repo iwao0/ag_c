@@ -589,7 +589,8 @@ static node_t *stmt_internal(void) {
     if (tk_consume(';')) {
       if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
         diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
-                       "[stmt] void 以外の関数では return に式が必要です");
+                       "%s",
+                       diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
       }
       node->lhs = NULL;
       node->fp_kind = psx_expr_current_func_ret_fp_kind();
@@ -598,7 +599,8 @@ static node_t *stmt_internal(void) {
     node->lhs = ps_expr();
     if (psx_expr_current_func_ret_token_kind() == TK_VOID) {
       diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
-                     "[stmt] void 関数では return に式を指定できません");
+                     "%s",
+                     diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
     }
     node->fp_kind = psx_expr_current_func_ret_fp_kind();
     tk_expect(';');

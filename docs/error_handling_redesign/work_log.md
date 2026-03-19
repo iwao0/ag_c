@@ -1007,3 +1007,40 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - parser 直書き文言の最終棚卸しと、残件を backlog に反映。
+
+## Task 35: _Complex と return 文脈の直書き診断をID化
+- 日付: 2026-03-19
+- 目的:
+  - 優先度A残件のうち `_Complex/_Imaginary` と `return` 文脈の直書き文言を専用ID化する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3052` / `parser.complex_imaginary_cast_requires_float`
+    - `E3053` / `parser.complex_imaginary_type_requires_float`
+    - `E3054` / `parser.return_value_required_nonvoid`
+    - `E3055` / `parser.return_value_forbidden_void`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - 置換:
+    - `src/parser/expr.c`（_Complex/_Imaginary cast 文言）
+    - `src/parser/parser.c`（_Complex/_Imaginary 型指定文言）
+    - `src/parser/stmt.c`（return 文脈文言）
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/expr.c`
+  - `src/parser/parser.c`
+  - `src/parser/stmt.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 残る優先度A（`->`/`.` 左辺制約、文字列接頭辞混在、可変長引数 `...` 位置）をID化。
