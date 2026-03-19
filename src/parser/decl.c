@@ -775,14 +775,20 @@ static node_t *parse_union_initializer(lvar_t *var) {
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
-  node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                       member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-  node_mem_t *assign_node = psx_node_new_assign(
-      lhs, parse_member_initializer(var, member_offset, member_type_size,
-                                    member_tag_kind, member_tag_name, member_tag_len,
-                                    member_is_tag_pointer, member_array_len));
-  assign_node->type_size = member_type_size;
-  node_t *init_chain = (node_t *)assign_node;
+  node_t *member_init = parse_member_initializer(var, member_offset, member_type_size,
+                                                 member_tag_kind, member_tag_name, member_tag_len,
+                                                 member_is_tag_pointer, member_array_len);
+  node_t *init_chain = NULL;
+  if ((member_array_len > 0 && !member_is_tag_pointer) ||
+      (!member_is_tag_pointer && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION))) {
+    init_chain = member_init;
+  } else {
+    node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
+                                         member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
+    assign_node->type_size = member_type_size;
+    init_chain = (node_t *)assign_node;
+  }
   if (has_brace) {
     if (tk_consume(',')) {
       if (tk_consume('}')) {
