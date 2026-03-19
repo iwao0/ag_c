@@ -30,6 +30,7 @@
   - `E3070-E3071`: `dynarray` の直接stderr出力を専用ID + `diag_emit_internalf` へ移行。
   - `E1001-E1026`: `preprocess` の `pp_error` 経路を採番化し、ID直指定へ移行。
   - `E2014-E2028`: tokenizer の残存直書き診断を専用ID化。
+  - `E4004-E4006`: codegen 制御フロー診断（break/continue/goto）を専用ID化。
 - `src/preprocess/preprocess.c` / `src/arch/arm64_apple.c`
   - 主要な日本語直書き診断を `diag_message_for(...)` ベースへ移行。
 
@@ -40,7 +41,8 @@
 - （現時点の優先度B残件なし）
 
 ## 優先度C: parser 以外の残件確認
-- （現時点の優先度C残件なし）
+- `src/main.c`
+  - CLI利用メッセージは `diag` 系の対象外とするか、運用方針を明確化する。
 
 ## 推奨移行手順
 1. `error_catalog.h/.c` に必要なIDを追加（parser は `3000` 番台を継続）。

@@ -141,6 +141,9 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
     case DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW: return "制御フローの使用位置が不正です";
+    case DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH: return "break はループまたはswitch内でのみ使用できます";
+    case DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP: return "continue はループ内でのみ使用できます";
+    case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
   }
   return NULL;
 }

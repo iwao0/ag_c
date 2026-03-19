@@ -1280,3 +1280,35 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `arch/main` 側の非カタログ文言を対象に最終棚卸し。
+
+## Task 43: codegen 制御フロー診断の追加採番化
+- 日付: 2026-03-19
+- 目的:
+  - `arm64_apple.c` の制御フロー直書き診断を専用IDへ移行する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E4004` / `codegen.break_outside_loop_or_switch`
+    - `E4005` / `codegen.continue_outside_loop`
+    - `E4006` / `codegen.goto_label_undefined`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/arch/arm64_apple.c` の該当箇所を
+    `diag_message_for(E4004-E4006)` ベースへ置換。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/arch/arm64_apple.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `main.c` のCLI向け `fprintf`（非diagnostic）を方針上どう扱うか判断する。

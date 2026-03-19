@@ -909,15 +909,15 @@ static void gen_stmt(node_t *node) {
   }
   case ND_BREAK:
     if (current_break_label() < 0) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW,
-                          "break はループまたはswitch内でのみ使用できます");
+      diag_emit_internalf(DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH, "%s",
+                          diag_message_for(DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH));
     }
     cg_emitf("  b .Lend%d\n", current_break_label());
     return;
   case ND_CONTINUE:
     if (current_continue_label() < 0) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW,
-                          "continue はループ内でのみ使用できます");
+      diag_emit_internalf(DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP, "%s",
+                          diag_message_for(DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP));
     }
     cg_emitf("  b .Lcont%d\n", current_continue_label());
     return;
@@ -925,8 +925,9 @@ static void gen_stmt(node_t *node) {
     node_jump_t *j = as_jump(node);
     int id = find_label_id(j->name, j->name_len);
     if (id < 0) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW,
-                          "未定義ラベル '%.*s' への goto です", j->name_len, j->name);
+      diag_emit_internalf(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED,
+                          diag_message_for(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED),
+                          j->name_len, j->name);
     }
     cg_emitf("  b .Luser%d\n", id);
     return;
