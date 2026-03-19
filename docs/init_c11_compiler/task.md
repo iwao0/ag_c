@@ -794,4 +794,5 @@
   - [x] `union` 非波括弧初期化の診断を文脈別（配列メンバ/非配列メンバ）に分割する
 - [x] 設定検証: parser config の組み合わせテストを体系化する
   - [x] `enable_*` フラグの ON/OFF 組み合わせを最小網羅で固定する
+  - [x] cast 系設定は scalar だけでなく pointer cast ケースも ON/OFF で固定する
   - [x] ドキュメント（README/grammar/walkthrough）に設定マトリクスを追加する

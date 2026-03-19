@@ -1641,7 +1641,9 @@ static void test_parse_invalid_diagnostics() {
 static void test_parser_config_matrix() {
   printf("test_parser_config_matrix...\n");
   const char *struct_scalar_cast = "main() { struct S { int x; int y; }; return ((struct S)7).x; }";
+  const char *struct_pointer_cast = "main() { struct S { int *p; int q; }; int x=3; return *((struct S)&x).p; }";
   const char *union_scalar_cast = "main() { union U { int x; char y; }; return ((union U)7).x; }";
+  const char *union_pointer_cast = "main() { union U { int *p; int q; }; int x=3; return ((union U)&x).p==&x; }";
   const char *union_nonbrace_init = "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }";
   const char *same_size_nonscalar_cast =
       "main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }";
@@ -1652,7 +1654,9 @@ static void test_parser_config_matrix() {
   ps_set_enable_union_array_member_nonbrace_init(true);
   ps_set_enable_size_compatible_nonscalar_cast(true);
   expect_parse_ok(struct_scalar_cast);
+  expect_parse_ok(struct_pointer_cast);
   expect_parse_ok(union_scalar_cast);
+  expect_parse_ok(union_pointer_cast);
   expect_parse_ok(union_nonbrace_init);
   expect_parse_ok(same_size_nonscalar_cast);
 
@@ -1662,7 +1666,9 @@ static void test_parser_config_matrix() {
   ps_set_enable_union_array_member_nonbrace_init(false);
   ps_set_enable_size_compatible_nonscalar_cast(false);
   expect_parse_fail(struct_scalar_cast);
+  expect_parse_fail(struct_pointer_cast);
   expect_parse_fail(union_scalar_cast);
+  expect_parse_fail(union_pointer_cast);
   expect_parse_fail(union_nonbrace_init);
   expect_parse_fail(same_size_nonscalar_cast);
 
