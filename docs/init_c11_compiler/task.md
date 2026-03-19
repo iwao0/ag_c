@@ -766,4 +766,4 @@
   - [x] 診断文言を `test_parser` で固定する
 - [ ] `union` 配列メンバの非波括弧初期化（例: `union U { int a[2]; int z; }; union U u={1,2};`）の扱いを明確化する
   - [x] 現状診断（`配列初期化は現在 '{...}' または文字列リテラルのみ対応です`）を維持する
-  - [x] 診断文言を `test_parser` で固定する
+  - [x] 採用方針に合わせて parser/e2e の回帰を整備する（`test_parser` の診断固定 + `test_e2e` compile-fail ケース追加）

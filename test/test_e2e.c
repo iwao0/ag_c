@@ -24,6 +24,12 @@ typedef struct {
   double expected_f;
 } test_case_t;
 
+typedef struct {
+  const char *name;
+  const char *input;
+  const char *expected_diag;
+} compile_fail_case_t;
+
 static void build_artifact_paths(const test_case_t *tc, char *dir, char *s_path, char *bin_path, char *drv_path) {
   snprintf(dir, PATH_MAX, "build/e2e/%s", tc->category);
   snprintf(s_path, PATH_MAX, "%s/%s.s", dir, tc->name);
@@ -316,6 +322,15 @@ static const test_case_t test_cases[] = {
     {"string", "char_var", CASE_INT, "int main() { char c = 42; return c; }", 42, 0},
 };
 
+static const compile_fail_case_t compile_fail_cases[] = {
+    {"cast_struct_from_scalar_rejected",
+     "int main() { struct S { int x; }; int a=0; return (struct S)a; }",
+     "[cast] struct 値へのキャストは未対応です（非スカラ型）"},
+    {"union_array_member_nonbrace_rejected",
+     "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
+     "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です"},
+};
+
 static int test_count = 0;
 static int pass_count = 0;
 
@@ -346,6 +361,47 @@ static int run_ag_c_to_s(const char *input, const char *s_path) {
   int status;
   waitpid(pid, &status, 0);
   if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
+  return 0;
+}
+
+static int run_ag_c_expect_fail_with_diag(const char *input, const char *expected_diag,
+                                          const char *log_path) {
+  int pipefd[2];
+  if (pipe(pipefd) != 0) return -1;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDERR_FILENO);
+    close(pipefd[1]);
+    freopen("/dev/null", "w", stdout);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[1]);
+
+  char diag_buf[8192];
+  size_t used = 0;
+  for (;;) {
+    ssize_t nread = read(pipefd[0], diag_buf + used, sizeof(diag_buf) - 1 - used);
+    if (nread <= 0) break;
+    used += (size_t)nread;
+    if (used >= sizeof(diag_buf) - 1) break;
+  }
+  close(pipefd[0]);
+  diag_buf[used] = '\0';
+
+  int status;
+  waitpid(pid, &status, 0);
+
+  FILE *log = fopen(log_path, "w");
+  if (log) {
+    fputs(diag_buf, log);
+    fclose(log);
+  }
+
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) return -1;
+  if (!strstr(diag_buf, expected_diag)) return -1;
   return 0;
 }
 
@@ -640,6 +696,19 @@ int main() {
     return 1;
   }
 
+  for (size_t i = 0; i < sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0]); i++) {
+    const compile_fail_case_t *tc = &compile_fail_cases[i];
+    char src_path[PATH_MAX];
+    char log_path[PATH_MAX];
+    snprintf(src_path, sizeof(src_path), "build/e2e/compile_fail/%s.c", tc->name);
+    snprintf(log_path, sizeof(log_path), "build/e2e/logs/compile_fail_%s.log", tc->name);
+    if (mkdir_p("build/e2e/compile_fail") != 0 || write_source_file(src_path, tc->input) != 0 ||
+        run_ag_c_expect_fail_with_diag(src_path, tc->expected_diag, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: %s (see %s)\n", tc->name, log_path);
+      return 1;
+    }
+  }
+
   size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
   const char **categories = calloc(max_cases, sizeof(const char *));
   pid_t *build_pids = calloc(max_cases, sizeof(pid_t));
@@ -702,7 +771,8 @@ int main() {
     }
   }
 
-  test_count = (int)(sizeof(test_cases) / sizeof(test_cases[0]));
+  test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])));
   pass_count = failed ? 0 : test_count;
 
   free(categories);
