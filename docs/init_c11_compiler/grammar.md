@@ -241,9 +241,10 @@ args       = expr ("," expr)*
   - `struct/union` 値への cast は「同一タグ型どうしのみ no-op 受理」を基本とし、`config.toml` の `[parser].enable_size_compatible_nonscalar_cast = true` 時は「同種かつ同サイズ」も段階受理
   - `struct` へのスカラ/ポインタ cast（例: `(struct S)7`, `(struct S)p`）は段階受理（先頭メンバ初期化へ lowering）
   - `union` へのスカラ cast（例: `(union U)7`）は段階受理（先頭メンバ初期化へ lowering）
-  - 非受理ケースは診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）を維持
+  - 非受理ケースは理由別に診断（型不整合: `[cast] ... 値へのキャストは未対応です（型不整合）` / 設定無効: `[cast] struct|union への scalar/pointer cast は設定で無効です`）
   - cast 型名は `const/volatile/restrict`・`_Atomic int`・`_Atomic(T)`・入れ子 `_Atomic(_Atomic(T))` を受理
   - cast 型名のストレージ指定子（例: `_Thread_local`）は診断（`[cast] cast 型名にストレージ指定子は使えません`）
+  - C制約に合わせ、`struct/union` 値への cast で非スカラ源（`struct/union`）を受ける範囲は「同一タグ」または「同種同サイズ（拡張ON時）」に限定
 
 ## 2026-03 C11準拠強化（Tokenizer/Parser）
 
