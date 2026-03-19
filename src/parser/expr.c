@@ -738,7 +738,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (type_kind == TK_CHAR) {
     return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xff));
   }
-  psx_diag_ctx(token, "cast", "この型へのキャストは未対応です");
+  // Guard rail for unexpected parser state: known cast kinds should be handled above.
+  psx_diag_ctx(token, "cast", "cast 型指定子の解釈に失敗しました");
   return operand;
 }
 
