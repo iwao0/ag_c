@@ -757,3 +757,37 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `psx_diag_ctx` 呼び出しのうち、定型化しやすいものを順次専用ID化。
+
+## Task 28: 宣言子まわり定型診断の専用ID化
+- 日付: 2026-03-19
+- 目的:
+  - 宣言子/typedef 系の定型エラーを専用IDへ寄せ、`psx_diag_ctx` の直書き文言を削減する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3013` / `parser.missing_func_decl_rparen`
+    - `E3014` / `parser.typedef_name_required`
+    - `E3015` / `parser.type_name_required`
+    - `E3016` / `parser.variable_name_required`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/parser.c` / `src/parser/stmt.c` の対象箇所を
+    `diag_emit_tokf(..., "%s", diag_message_for(...))` へ置換。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/parser.c`
+  - `src/parser/stmt.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - parser の残存 `psx_diag_ctx` 定型文を順次専用IDへ移行する。

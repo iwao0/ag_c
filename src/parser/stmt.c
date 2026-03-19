@@ -65,7 +65,10 @@ static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
   while (depth > 0) {
-    if (token->kind == TK_EOF) psx_diag_ctx(token, "typedef", "関数宣言子の ')' が不足しています");
+    if (token->kind == TK_EOF) {
+      diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, token, "%s",
+                     diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
+    }
     if (token->kind == TK_LPAREN) depth++;
     else if (token->kind == TK_RPAREN) depth--;
     token = token->next;
@@ -80,7 +83,10 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
     skip_ptr_qualifiers_stmt();
   }
   token_ident_t *name = tk_consume_ident();
-  if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+  if (!name) {
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED));
+  }
   while (open_parens-- > 0) tk_expect(')');
   while (token->kind == TK_LPAREN) {
     skip_func_params_stmt();
@@ -470,7 +476,8 @@ static void parse_typedef_decl(void) {
   int is_pointer_base = 0;
   token_kind_t base_kind = TK_EOF;
   if (!parse_decl_type_spec(&elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_pointer_base, &base_kind)) {
-    psx_diag_ctx(token, "typedef", "型名が必要です");
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
   }
   for (;;) {
     int is_ptr = is_pointer_base;

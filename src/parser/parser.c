@@ -265,13 +265,19 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
     skip_ptr_qualifiers();
   }
   token_ident_t *name = tk_consume_ident();
-  if (!name) psx_diag_ctx(token, "decl", "変数名が期待されます");
+  if (!name) {
+    diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+  }
   while (open_parens-- > 0) tk_expect(')');
   while (token->kind == TK_LPAREN) {
     int depth = 1;
     token = token->next;
     while (depth > 0) {
-      if (token->kind == TK_EOF) psx_diag_ctx(token, "decl", "関数宣言子の ')' が不足しています");
+      if (token->kind == TK_EOF) {
+        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, token, "%s",
+                       diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
+      }
       if (token->kind == TK_LPAREN) depth++;
       else if (token->kind == TK_RPAREN) depth--;
       token = token->next;
@@ -288,13 +294,19 @@ static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr) {
     skip_ptr_qualifiers();
   }
   token_ident_t *name = tk_consume_ident();
-  if (!name) psx_diag_ctx(token, "typedef", "typedef名が必要です");
+  if (!name) {
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED));
+  }
   while (open_parens-- > 0) tk_expect(')');
   while (token->kind == TK_LPAREN) {
     int depth = 1;
     token = token->next;
     while (depth > 0) {
-      if (token->kind == TK_EOF) psx_diag_ctx(token, "typedef", "関数宣言子の ')' が不足しています");
+      if (token->kind == TK_EOF) {
+        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, token, "%s",
+                       diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
+      }
       if (token->kind == TK_LPAREN) depth++;
       else if (token->kind == TK_RPAREN) depth--;
       token = token->next;
@@ -347,7 +359,8 @@ static void parse_toplevel_typedef_decl(void) {
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr_base);
     token = token->next;
   } else {
-    psx_diag_ctx(token, "typedef", "型名が必要です");
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
   }
 
   for (;;) {

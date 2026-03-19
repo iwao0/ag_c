@@ -37,6 +37,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST: return "_Static_assert の条件は整数定数式が必要です";
     case DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING: return "_Static_assert の第2引数は文字列リテラルが必要です";
     case DIAG_ERR_PARSER_STATIC_ASSERT_FAILED: return "_Static_assert が失敗しました";
+    case DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN: return "関数宣言子の ')' が不足しています";
+    case DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED: return "typedef名が必要です";
+    case DIAG_ERR_PARSER_TYPE_NAME_REQUIRED: return "型名が必要です";
+    case DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED: return "変数名が期待されます";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
@@ -81,6 +85,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST: return "_Static_assert condition must be an integer constant expression";
     case DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING: return "_Static_assert second argument must be a string literal";
     case DIAG_ERR_PARSER_STATIC_ASSERT_FAILED: return "_Static_assert failed";
+    case DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN: return "Missing ')' in function declarator";
+    case DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED: return "Typedef name is required";
+    case DIAG_ERR_PARSER_TYPE_NAME_REQUIRED: return "Type name is required";
+    case DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED: return "Variable name is required";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
