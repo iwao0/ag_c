@@ -1379,6 +1379,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
   expect_parse_fail("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }"); // 先頭配列メンバへ非波括弧初期化
   expect_parse_fail("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator
+  expect_parse_fail("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後のstruct重複designator
   expect_parse_fail("main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
   expect_parse_fail("main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator
 }
@@ -1403,6 +1404,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
 }
 
 int main() {
