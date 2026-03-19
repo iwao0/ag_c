@@ -300,6 +300,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "compound_literal_int", CASE_INT, "int main(){ return (int){3}; }", 3, 0},
     {"type_decl", "compound_literal_struct_stmt", CASE_INT, "int main(){ struct S { int x; int y; }; (struct S){1,2}; return 7; }", 7, 0},
     {"type_decl", "compound_literal_struct_member", CASE_INT, "int main(){ struct S { int x; int y; }; return ((struct S){.x=1,.y=2}).y; }", 2, 0},
+    {"type_decl", "compound_literal_struct_addr_arrow", CASE_INT, "int main(){ struct S { int x; }; return (&(struct S){3})->x; }", 3, 0},
     {"type_decl", "float1", CASE_FLOAT, "float ag_m() { float f = 7; return f; }", 0, 7.0},
     {"type_decl", "float2", CASE_FLOAT, "float ag_m() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
     {"type_decl", "float3", CASE_FLOAT, "float ag_m() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},

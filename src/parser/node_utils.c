@@ -15,6 +15,8 @@ int psx_node_type_size(node_t *node) {
     case ND_ADDR:
     case ND_STRING:
       return as_mem(node)->type_size;
+    case ND_COMMA:
+      return psx_node_type_size(node->rhs);
     default:
       return 0;
   }
@@ -29,6 +31,8 @@ int psx_node_deref_size(node_t *node) {
     case ND_ADDR:
     case ND_STRING:
       return as_mem(node)->deref_size;
+    case ND_COMMA:
+      return psx_node_deref_size(node->rhs);
     default:
       return 0;
   }
@@ -55,6 +59,9 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         name = as_mem(node)->tag_name;
         len = as_mem(node)->tag_len;
         ptr = as_mem(node)->is_tag_pointer;
+        break;
+      case ND_COMMA:
+        psx_node_get_tag_type(node->rhs, &kind, &name, &len, &ptr);
         break;
       default:
         break;

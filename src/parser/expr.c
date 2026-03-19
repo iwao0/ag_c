@@ -1239,9 +1239,29 @@ static node_t *unary(void) {
   }
   if (token->kind == TK_AMP) {
     token = token->next;
+    node_t *operand = unary();
+    if (operand && operand->kind == ND_COMMA && operand->rhs) {
+      node_mem_t *rhs_addr = calloc(1, sizeof(node_mem_t));
+      rhs_addr->base.kind = ND_ADDR;
+      rhs_addr->base.lhs = operand->rhs;
+      token_kind_t rhs_tag_kind = TK_EOF;
+      char *rhs_tag_name = NULL;
+      int rhs_tag_len = 0;
+      int rhs_is_tag_ptr = 0;
+      psx_node_get_tag_type(rhs_addr->base.lhs, &rhs_tag_kind, &rhs_tag_name, &rhs_tag_len, &rhs_is_tag_ptr);
+      if (rhs_tag_kind != TK_EOF && !rhs_is_tag_ptr) {
+        rhs_addr->tag_kind = rhs_tag_kind;
+        rhs_addr->tag_name = rhs_tag_name;
+        rhs_addr->tag_len = rhs_tag_len;
+        rhs_addr->is_tag_pointer = 1;
+        rhs_addr->deref_size = psx_node_type_size(rhs_addr->base.lhs);
+        rhs_addr->type_size = 8;
+      }
+      return psx_node_new_binary(ND_COMMA, operand->lhs, (node_t *)rhs_addr);
+    }
     node_mem_t *node = calloc(1, sizeof(node_mem_t));
     node->base.kind = ND_ADDR;
-    node->base.lhs = unary();
+    node->base.lhs = operand;
     token_kind_t tag_kind = TK_EOF;
     char *tag_name = NULL;
     int tag_len = 0;
