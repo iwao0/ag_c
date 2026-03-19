@@ -1,6 +1,6 @@
 #include "internal/allocator.h"
+#include "../diag/diag.h"
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,8 +32,7 @@ static void *arena_alloc(size_t size) {
     if (cap < size) cap = align_up(size, 4096);
     arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + cap);
     if (!chunk) {
-      fprintf(stderr, "メモリ確保に失敗しました\n");
-      exit(1);
+      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
     }
     chunk->next = arena_head;
     chunk->used = 0;
@@ -61,8 +60,7 @@ void tk_allocator_set_expected_size(size_t bytes) {
 /** @brief アリーナ確保 + ゼロ初期化を行う。 */
 void *tk_allocator_calloc(size_t n, size_t size) {
   if (n != 0 && size > SIZE_MAX / n) {
-    fprintf(stderr, "メモリ確保に失敗しました\n");
-    exit(1);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   size_t total = n * size;
   void *p = arena_alloc(total);

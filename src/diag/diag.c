@@ -56,6 +56,37 @@ const char *diag_message_for(diag_error_id_t id) {
 }
 
 /**
+ * @brief テキストIDに対応するテキストを現在ロケールに従って取得する。
+ * @param id テキストID。
+ * @return ローカライズ済みテキスト。未定義時は "unknown.text"。
+ */
+const char *diag_text_for(diag_text_id_t id) {
+  const char *msg = NULL;
+#if defined(DIAG_LANG_ALL)
+  if (strcmp(g_diag_locale, "en") == 0) {
+    msg = diag_text_en(id);
+    if (msg) return msg;
+    msg = diag_text_ja(id);
+    if (msg) return msg;
+  } else {
+    msg = diag_text_ja(id);
+    if (msg) return msg;
+    msg = diag_text_en(id);
+    if (msg) return msg;
+  }
+#elif defined(DIAG_LANG_EN)
+  (void)g_diag_locale;
+  msg = diag_text_en(id);
+  if (msg) return msg;
+#else
+  (void)g_diag_locale;
+  msg = diag_text_ja(id);
+  if (msg) return msg;
+#endif
+  return "unknown.text";
+}
+
+/**
  * @brief トークンの実際の値を補助表示する。
  * @param tok 表示対象トークン。
  * @return なし。

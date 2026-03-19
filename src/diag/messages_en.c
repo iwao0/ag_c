@@ -149,3 +149,17 @@ const char *diag_message_en(diag_error_id_t id) {
   }
   return NULL;
 }
+
+/**
+ * @brief テキストIDに対応する英語テキストを返す。
+ * @param id テキストID。
+ * @return 英語テキスト。未定義時は NULL。
+ */
+const char *diag_text_en(diag_text_id_t id) {
+  switch (id) {
+    case DIAG_TEXT_WARNING: return "warning";
+    case DIAG_TEXT_C11_AUDIT_PREFIX: return "c11-audit";
+    case DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION: return "binary literal extension";
+  }
+  return NULL;
+}

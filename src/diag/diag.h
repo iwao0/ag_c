@@ -2,6 +2,7 @@
 #define DIAG_DIAG_H
 
 #include "error_catalog.h"
+#include "messages.h"
 #include "../tokenizer/token.h"
 
 /**
@@ -22,6 +23,13 @@ const char *diag_get_locale(void);
  * @return エラーIDに対応するメッセージ文字列。未定義IDの場合は汎用メッセージ。
  */
 const char *diag_message_for(diag_error_id_t id);
+
+/**
+ * @brief テキストIDに対応するローカライズ済みテキストを取得する。
+ * @param id テキストID。
+ * @return ローカライズ済みテキスト。未定義時は "unknown.text"。
+ */
+const char *diag_text_for(diag_text_id_t id);
 
 /**
  * @brief 入力位置を指定して診断を出力し、プロセスを終了する。

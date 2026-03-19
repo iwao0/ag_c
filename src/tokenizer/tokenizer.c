@@ -566,11 +566,14 @@ static inline bool has_hex_float_marker(const char *p) {
   return false;
 }
 
-static void tk_audit_extension(char *loc, const char *msg) {
+static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
   if (!tk_get_enable_c11_audit_extensions()) return;
   int pos = (int)(loc - user_input);
   if (pos < 0) pos = 0;
-  fprintf(stderr, "[c11-audit] %s at offset %d\n", msg, pos);
+  fprintf(stderr, "[%s] %s: %s (offset %d)\n",
+          diag_text_for(DIAG_TEXT_WARNING),
+          diag_text_for(DIAG_TEXT_C11_AUDIT_PREFIX),
+          diag_text_for(text_id), pos);
 }
 
 static void parse_number_literal(char **pp, parsed_num_t *num) {
@@ -612,7 +615,7 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
     if (tk_get_strict_c11_mode() || !tk_get_enable_binary_literals()) {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
     }
-    tk_audit_extension(p, "binary literal extension");
+    tk_audit_extension(p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
     p += 2;
     if (*p != '0' && *p != '1')
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));

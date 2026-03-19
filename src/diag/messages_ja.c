@@ -149,3 +149,17 @@ const char *diag_message_ja(diag_error_id_t id) {
   }
   return NULL;
 }
+
+/**
+ * @brief テキストIDに対応する日本語テキストを返す。
+ * @param id テキストID。
+ * @return 日本語テキスト。未定義時は NULL。
+ */
+const char *diag_text_ja(diag_text_id_t id) {
+  switch (id) {
+    case DIAG_TEXT_WARNING: return "警告";
+    case DIAG_TEXT_C11_AUDIT_PREFIX: return "c11監査";
+    case DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION: return "2進数リテラル拡張";
+  }
+  return NULL;
+}

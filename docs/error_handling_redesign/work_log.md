@@ -1363,3 +1363,36 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 必要に応じて `messages_ja.c` / `messages_en.c` の生成・検証フロー（差分チェック）を検討する。
+
+## Task 46: allocator 採番化と C11監査ログ翻訳基盤の追加
+- 日付: 2026-03-19
+- 目的:
+  - Tokenizer allocator の OOM を採番済み診断へ統一する。
+  - C11監査ログを warning 系と同じ翻訳窓口で扱えるようにする。
+- 実施内容:
+  - `src/tokenizer/allocator.c`
+    - 直接 `fprintf/exit` を廃止し、`diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, ...)` に統一。
+  - `src/diag/messages.h`
+    - エラー以外の翻訳テキスト用 `diag_text_id_t` と `diag_text_ja/en(...)` を追加。
+  - `src/diag/diag.h` / `src/diag/diag.c`
+    - `diag_text_for(...)` を追加（`DIAG_LANG=ja/en/all` の既存方針に準拠）。
+  - `src/diag/messages_ja.c` / `src/diag/messages_en.c`
+    - warning / c11-audit 用テキストを追加。
+  - `src/tokenizer/tokenizer.c`
+    - C11監査ログを `diag_text_for(...)` 経由に変更。
+- 変更ファイル:
+  - `src/tokenizer/allocator.c`
+  - `src/tokenizer/tokenizer.c`
+  - `src/diag/messages.h`
+  - `src/diag/diag.h`
+  - `src/diag/diag.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+  - `make clean && make DIAG_LANG=en -j4 build/ag_c`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - warning/info 系ログの分類（warning/info/audit）と出力形式を段階的に統一する。
