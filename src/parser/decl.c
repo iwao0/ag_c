@@ -23,6 +23,7 @@ static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar
 static int is_supported_scalar_store_size(int size);
 static int is_same_tag_object_lvar(node_lvar_t *src, lvar_t *var);
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src);
+static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -283,6 +284,29 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
+static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len) {
+  if (!token || token->kind != TK_IDENT) return NULL;
+  token_ident_t *id = (token_ident_t *)token;
+  lvar_t *src = psx_decl_find_lvar(id->str, id->len);
+  if (!src || !src->is_array) return NULL;
+  if (src->elem_size != elem_size || src->size != elem_size * array_len) return NULL;
+  if (!token->next || (token->next->kind != TK_COMMA && token->next->kind != TK_RBRACE)) return NULL;
+
+  (void)psx_expr_assign();
+  node_t *init_chain = NULL;
+  for (int idx = 0; idx < array_len; idx++) {
+    node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
+    int src_elem_off = src->offset - src->size + (idx + 1) * src->elem_size;
+    node_t *rhs = psx_node_new_lvar_typed(src_elem_off, elem_size);
+    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+    assign_node->type_size = elem_size;
+    node_t *init_node = (node_t *)assign_node;
+    if (!init_chain) init_chain = init_node;
+    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src) {
   node_t *prefix = NULL;
   node_t *value = expr;
@@ -443,6 +467,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     }
     if (owner->tag_kind == TK_STRUCT) {
       // Brace elision for struct members: allow flat scalar list for array members.
+      node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
+      if (array_copy) return array_copy;
       node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
       node_mem_t *assign0 = psx_node_new_assign(lhs0, parse_scalar_brace_initializer());
       assign0->type_size = elem_size;

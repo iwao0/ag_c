@@ -1361,6 +1361,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
+  token = tk_tokenize("main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_COMMA, body->body[0]->kind);
+  ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
+  ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
+              (body->body[3] && body->body[3]->kind == ND_RETURN));
+
   token = tk_tokenize("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
