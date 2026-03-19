@@ -334,7 +334,7 @@ static const test_case_t test_cases[] = {
 static const compile_fail_case_t compile_fail_cases[] = {
     {"cast_struct_from_nonscalar_rejected",
      "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }",
-     "[cast] struct 値へのキャストは未対応です（非スカラ型）"},
+     "[cast] struct 値へのキャストは未対応です（型不整合）"},
 };
 
 static int test_count = 0;

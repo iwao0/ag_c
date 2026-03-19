@@ -139,6 +139,9 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "診断メッセージの生成に失敗しました";
     case DIAG_ERR_PARSER_DYNARRAY_INVALID_SIZE: return "配列サイズが不正です";
     case DIAG_ERR_PARSER_DYNARRAY_TOO_LARGE: return "配列サイズが大きすぎます";
+    case DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED: return "struct への scalar/pointer cast は設定で無効です";
+    case DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED: return "union への scalar/pointer cast は設定で無効です";
+    case DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH: return "%s 値へのキャストは未対応です（型不整合）";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

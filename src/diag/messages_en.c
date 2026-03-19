@@ -139,6 +139,9 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "Failed to format diagnostic message";
     case DIAG_ERR_PARSER_DYNARRAY_INVALID_SIZE: return "Invalid array size";
     case DIAG_ERR_PARSER_DYNARRAY_TOO_LARGE: return "Array size is too large";
+    case DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED: return "Scalar/pointer to struct cast is disabled by parser config";
+    case DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED: return "Scalar/pointer to union cast is disabled by parser config";
+    case DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH: return "Cast to %s value is not supported (type mismatch)";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

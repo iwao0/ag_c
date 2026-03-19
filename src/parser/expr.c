@@ -1094,35 +1094,35 @@ static node_t *unary(void) {
         return apply_postfix(operand);
       }
       if (cast_kind == TK_STRUCT) {
-        if (!ps_get_enable_struct_scalar_pointer_cast()) {
-          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
-                       "struct");
-        }
         token_kind_t op_tag_kind = TK_EOF;
         char *op_tag_name = NULL;
         int op_tag_len = 0;
         int op_is_tag_ptr = 0;
         psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
         if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
-          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
                        "struct");
+        }
+        if (!ps_get_enable_struct_scalar_pointer_cast()) {
+          psx_diag_ctx(token, "cast", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
         }
         return apply_postfix(lower_struct_value_cast(operand, cast_tag_kind, cast_tag_name, cast_tag_len,
                                                      cast_elem_size, cast_fp_kind));
       }
       if (cast_kind == TK_UNION) {
-        if (!ps_get_enable_union_scalar_pointer_cast()) {
-          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
-                       "union");
-        }
         token_kind_t op_tag_kind = TK_EOF;
         char *op_tag_name = NULL;
         int op_tag_len = 0;
         int op_is_tag_ptr = 0;
         psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
         if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
-          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
                        "union");
+        }
+        if (!ps_get_enable_union_scalar_pointer_cast()) {
+          psx_diag_ctx(token, "cast", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
         }
         // staged extension: allow scalar/pointer -> union value cast by
         // initializing the first union member, then yielding the union object.
