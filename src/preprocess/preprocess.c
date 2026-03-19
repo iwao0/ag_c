@@ -741,7 +741,8 @@ token_t *preprocess(token_t *tok) {
           free(alt);
         }
         if (!buf) {
-          diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "ファイルが見つかりません: %s", filename);
+          diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s: %s",
+                              diag_message_for(DIAG_ERR_PREPROCESS_GENERIC), filename);
           free(filename);
         }
 

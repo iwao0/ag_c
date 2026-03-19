@@ -675,3 +675,51 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `preprocess` / `codegen` の直書き文脈メッセージ整理へ展開。
+
+## Task 26: preprocess/codegen 直書き文言の整理
+- 日付: 2026-03-19
+- 目的:
+  - preprocess / codegen の残存直書き日本語文言を、カタログ文言ベースへ寄せる。
+- 実施内容:
+  - `src/preprocess/preprocess.c`
+    - include解決失敗時メッセージを
+      `diag_message_for(DIAG_ERR_PREPROCESS_GENERIC)` + `filename` 形式へ変更。
+  - `src/arch/arm64_apple.c`
+    - 重複 `default` 診断を
+      `diag_message_for(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW)` + 補足情報へ変更。
+    - 不正lvalue診断を
+      `diag_message_for(DIAG_ERR_CODEGEN_INVALID_LVALUE)` + 補足情報へ変更。
+- 変更ファイル:
+  - `src/preprocess/preprocess.c`
+  - `src/arch/arm64_apple.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - parser の `psx_diag_ctx(...)` 呼び出し群のテンプレート整理を継続。
+
+## Task 26: preprocess/codegen 直書き文言の整理
+- 日付: 2026-03-19
+- 目的:
+  - preprocess / codegen の残存直書き日本語文言を、カタログ文言ベースへ寄せる。
+- 実施内容:
+  - `src/preprocess/preprocess.c`
+    - include解決失敗時メッセージを
+      `diag_message_for(DIAG_ERR_PREPROCESS_GENERIC)` + `filename` 形式へ変更。
+  - `src/arch/arm64_apple.c`
+    - 重複 `default` 診断を
+      `diag_message_for(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW)` + 補足情報へ変更。
+    - 不正lvalue診断を
+      `diag_message_for(DIAG_ERR_CODEGEN_INVALID_LVALUE)` + 補足情報へ変更。
+- 変更ファイル:
+  - `src/preprocess/preprocess.c`
+  - `src/arch/arm64_apple.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - parser の `psx_diag_ctx(...)` 呼び出し群のテンプレート整理を継続。

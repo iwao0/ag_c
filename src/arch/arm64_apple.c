@@ -190,7 +190,8 @@ static void collect_switch_labels(node_t *node, switch_collect_t *sc) {
   }
   if (node->kind == ND_DEFAULT) {
     if (sc->default_node) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW, "default が重複しています");
+      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW, "%s (switch default)",
+                          diag_message_for(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW));
     }
     node_default_t *d = as_default(node);
     d->label_id = label_count++;
@@ -369,7 +370,8 @@ static void gen_lval(node_t *node) {
     return;
   }
   if (node->kind != ND_LVAR) {
-    diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_LVALUE, "代入の左辺値が変数ではありません");
+    diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_LVALUE, "%s (assignment target)",
+                        diag_message_for(DIAG_ERR_CODEGEN_INVALID_LVALUE));
   }
   cg_emitf("  add x0, x29, #%d\n", 16 + as_lvar(node)->offset);
   cg_emitf("  str x0, [sp, #-16]!\n");
