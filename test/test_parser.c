@@ -392,6 +392,11 @@ static void test_expr_sizeof() {
   node_t *c3 = ps_expr();
   ASSERT_EQ(ND_NUM, c3->kind);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, c3->fp_kind);
+
+  token = tk_tokenize("(long double)1");
+  node_t *c4 = ps_expr();
+  ASSERT_EQ(ND_NUM, c4->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, c4->fp_kind);
 }
 
 static void test_expr_inc_dec() {

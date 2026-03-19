@@ -244,6 +244,13 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     }
     is_type = true;
   }
+  if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE) {
+    *type_kind = TK_DOUBLE;
+    if (out_elem_size) *out_elem_size = 8;
+    if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_DOUBLE;
+    t = t->next->next;
+    is_type = true;
+  }
   if (is_type) {
     if (*type_kind == TK_EOF) {
       *type_kind = t->kind;
