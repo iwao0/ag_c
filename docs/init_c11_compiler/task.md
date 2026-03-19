@@ -703,8 +703,8 @@
   - [x] 実運用コードで頻出するパターン（同型 cast 等）を対象に、最小スコープを定義する（現状: 同型 `struct/union` value cast を no-op 受理）
   - [x] 受理しない範囲は現行診断維持をテストで固定する（非同型/スカラ→非スカラ cast は診断維持）
 - [x] `この型へのキャストは未対応です` の到達型を可視化する
-  - [x] 再現コードを列挙し、どの型カテゴリで落ちるかを一覧化する（調査結果: `struct/union` 値castは専用診断、`_Atomic(...)` cast は型名パース段で失敗し本診断には未到達）
-  - [x] 優先度の高い型カテゴリから段階解消計画を作成する（第1段: `long double` cast 型名受理【Parser受理まで完了】、第2段: `_Atomic(T)` cast 型名受理【完了】、第3段: 派生型cast（`const int`/`_Thread_local int`）のパース段失敗を明示テスト追加）
+  - [x] 再現コードを列挙し、どの型カテゴリで落ちるかを一覧化する（調査結果: `struct/union` 値castは専用診断、`_Atomic` 系 cast は段階受理を進めた結果、主に専用診断または受理へ分岐）
+  - [x] 優先度の高い型カテゴリから段階解消計画を作成する（第1段: `long double` cast 型名受理【完了】、第2段: `_Atomic(T)` cast 型名受理【完了】、第3段: 派生型cast（`const int`）受理と不正ストレージ指定子（`_Thread_local`）専用診断化）
 - [x] cast 型名の cv/restrict 修飾子を受理する
   - [x] `(const int)`, `(volatile int)`, `(restrict int*)` を parser で受理する
   - [x] cast 型名で不正なストレージ指定（`_Thread_local`）に cast 文脈の専用診断を出す
