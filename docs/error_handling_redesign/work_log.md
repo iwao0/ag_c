@@ -468,3 +468,37 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser/Codegen 側の定型文言も、可能なものから `diag_message_for(id)` ベースへ段階移行。
+
+## Task 20: メッセージ移行バックログ整備
+- 日付: 2026-03-19
+- 目的:
+  - 日本語直書きメッセージの残件を整理し、次フェーズの多言語化移行を安全に進める。
+- 実施内容:
+  - `docs/error_handling_redesign/message_migration_backlog.md` を新規追加。
+  - 残件を優先度A/B/Cで分類し、対象ファイル・文言・移行手順を明文化。
+- 変更ファイル:
+  - `docs/error_handling_redesign/message_migration_backlog.md`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - なし（ドキュメント整理のみ）
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 優先度Aの `E2006`（expected token）テンプレート化を実装。
+
+## Task 20: メッセージ移行バックログ整備
+- 日付: 2026-03-19
+- 目的:
+  - 日本語直書きメッセージの残件を整理し、次フェーズの多言語化移行を安全に進める。
+- 実施内容:
+  - `docs/error_handling_redesign/message_migration_backlog.md` を新規追加。
+  - 残件を優先度A/B/Cで分類し、対象ファイル・文言・移行手順を明文化。
+- 変更ファイル:
+  - `docs/error_handling_redesign/message_migration_backlog.md`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - なし（ドキュメント整理のみ）
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 優先度Aの `E2006`（expected token）テンプレート化を実装。
