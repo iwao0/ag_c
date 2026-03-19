@@ -1595,6 +1595,20 @@ static void test_parse_invalid_diagnostics() {
       "[cast] struct 値へのキャストは未対応です（非スカラ型）");
   ps_set_enable_size_compatible_nonscalar_cast(true);
 
+  // Parser拡張設定: union への scalar/pointer cast 受理を無効化できること。
+  ps_set_enable_union_scalar_pointer_cast(false);
+  expect_parse_fail_with_message(
+      "main() { union U { int x; char y; }; int a=0; return (union U)a; }",
+      "[cast] union 値へのキャストは未対応です（非スカラ型）");
+  ps_set_enable_union_scalar_pointer_cast(true);
+
+  // Parser拡張設定: union 先頭配列メンバの非波括弧初期化受理を無効化できること。
+  ps_set_enable_union_array_member_nonbrace_init(false);
+  expect_parse_fail_with_message(
+      "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
+      "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
+  ps_set_enable_union_array_member_nonbrace_init(true);
+
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
   // 将来 16-byte などの新スカラ型導入時は、ここを陽性診断テストへ置き換える。
   expect_parse_fail_without_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }",
