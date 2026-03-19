@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  load_config_toml();
+  load_config_toml(argv[1]);
 
   // トークナイズ
   tk_set_filename(argv[1]);

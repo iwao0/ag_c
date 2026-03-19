@@ -38,6 +38,28 @@ static bool parse_bool_value(const char *v, bool *out) {
   return false;
 }
 
+static FILE *open_config_file(const char *source_path) {
+  if (source_path && source_path[0] != '\0') {
+    const char *slash = strrchr(source_path, '/');
+    if (slash) {
+      size_t dir_len = (size_t)(slash - source_path);
+      const char *name = "config.toml";
+      size_t name_len = strlen(name);
+      size_t path_len = dir_len + 1 + name_len + 1;
+      char *cfg_path = (char *)malloc(path_len);
+      if (cfg_path) {
+        memcpy(cfg_path, source_path, dir_len);
+        cfg_path[dir_len] = '/';
+        memcpy(cfg_path + dir_len + 1, name, name_len + 1);
+        FILE *fp = fopen(cfg_path, "r");
+        free(cfg_path);
+        if (fp) return fp;
+      }
+    }
+  }
+  return fopen("config.toml", "r");
+}
+
 static void set_config_defaults(void) {
   diag_set_locale("ja");
   tk_set_strict_c11_mode(false);
@@ -378,8 +400,8 @@ static void apply_parsed_config(const parsed_config_t *cfg) {
   ps_set_enable_union_array_member_nonbrace_init(cfg->enable_union_array_member_nonbrace_init);
 }
 
-void load_config_toml(void) {
-  FILE *fp = fopen("config.toml", "r");
+void load_config_toml(const char *source_path) {
+  FILE *fp = open_config_file(source_path);
   set_config_defaults();
   if (!fp) return; // 設定ファイルがなければデフォルトで実行
 
