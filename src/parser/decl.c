@@ -912,6 +912,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     int var_size = is_pointer ? 8 : elem_size;
+    int total_pointer_levels = ptr_levels + (base_is_pointer ? 1 : 0);
+    int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
     int ptr_is_const_qualified = (ptr_const_mask & 1u) ? 1 : 0;
     int ptr_is_volatile_qualified = (ptr_volatile_mask & 1u) ? 1 : 0;
 
@@ -937,7 +939,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
         var->pointer_qual_levels = ptr_levels;
       } else {
-        var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size, is_pointer ? elem_size : var_size, 0);
+        var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size,
+                                           is_pointer ? pointer_deref_size : var_size, 0);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;

@@ -215,6 +215,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "char_add_eq", CASE_INT, "int main() { char c = 1; c += 2; return c; }", 3, 0},
     {"type_decl", "short_mul_eq", CASE_INT, "int main() { short s = 10; s *= 3; return s; }", 30, 0},
     {"type_decl", "ptr_deref_add_eq", CASE_INT, "int main() { int x = 5; int *p = &x; *p += 2; return x; }", 7, 0},
+    {"type_decl", "ptr_ptr_deref", CASE_INT, "int main() { int x=42; int *p=&x; int **pp=&p; return **pp; }", 42, 0},
     {"type_decl", "sizeof_int", CASE_INT, "int main() { return sizeof(int); }", 4, 0},
     {"type_decl", "sizeof_bool", CASE_INT, "int main() { return sizeof(_Bool); }", 1, 0},
     {"type_decl", "sizeof_int_ptr", CASE_INT, "int main() { return sizeof(int*); }", 8, 0},

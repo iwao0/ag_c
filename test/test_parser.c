@@ -1192,6 +1192,14 @@ static void test_type_decl() {
   ASSERT_EQ(2u, as_lvar(body->body[0]->lhs)->mem.pointer_volatile_qual_mask);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
+  token = tk_tokenize("main() { int x=42; int *p=&x; int **pp=&p; return **pp; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[3]->kind);
+
   token = tk_tokenize("main() { int a[3]={1,2,3}; return a[2]; }");
   parsed_code = ps_program();
   body = as_block(as_func(parsed_code[0])->base.rhs);
