@@ -830,7 +830,8 @@ token_t *tk_tokenize(char *p) {
       char *start = p;
       while (true) {
         if (*p == '\0' || *p == '\n') {
-          tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED, p, "文字列リテラルが閉じられていません");
+          tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED_LITERAL, p,
+                         "文字列リテラルが閉じられていません");
         }
         if (*p == '"') break;
         if (*p == '\\') {
@@ -873,7 +874,8 @@ token_t *tk_tokenize(char *p) {
       p += chr_prefix;
       p++; // 開きクォートをスキップ
       if (*p == '\0' || *p == '\n') {
-        tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED, p, "文字リテラルが閉じられていません");
+        tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED_LITERAL, p,
+                       "文字リテラルが閉じられていません");
       }
       if (*p == '\'') {
         tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_CHAR_LITERAL, p, "空の文字リテラルは使えません");

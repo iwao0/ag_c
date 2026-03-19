@@ -206,3 +206,30 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `literals.c` / `scanner.c` 側のメッセージ粒度を見直し、必要ならコードを更に分割。
+
+## Task 9: 未終端系エラーの細分化
+- 日付: 2026-03-19
+- 目的:
+  - 未終端エラーを「コメント」と「文字列/文字リテラル」に分けて識別可能にする。
+- 実施内容:
+  - エラーカタログに以下を追加:
+    - `E2009` (`tokenizer.unterminated_comment`)
+    - `E2010` (`tokenizer.unterminated_literal`)
+  - `scanner.c` の未終端コメントを `E2009` にマップ。
+  - `tokenizer.c` の未終端文字列/文字リテラルを `E2010` にマップ。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/scanner.c`
+  - `src/tokenizer/tokenizer.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer build/test_tokenizer_c11`
+  - `./build/test_tokenizer`
+  - `./build/test_tokenizer_c11`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `literals.c` のエスケープ系を用途別（hex/UCN/一般）で分割するか検討。
