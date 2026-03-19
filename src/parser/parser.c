@@ -935,7 +935,8 @@ static node_t *funcdef(void) {
         token = token->next;
         if (token->kind == ',') {
           diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
-                         "'...' は可変長引数リストの末尾にのみ指定できます");
+                         "%s",
+                         diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
         }
         done = true;
         continue;

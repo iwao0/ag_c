@@ -229,8 +229,10 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   psx_node_get_tag_type(base, &base_tag_kind, &base_tag_name, &base_tag_len, &base_is_ptr);
   if (base_tag_kind == TK_EOF || (!from_ptr && base_is_ptr) || (from_ptr && !base_is_ptr)) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, op_tok,
-                   from_ptr ? "'->' の左辺は構造体/共用体ポインタである必要があります"
-                            : "'.' の左辺は構造体/共用体である必要があります");
+                   "%s",
+                   diag_message_for(from_ptr
+                                        ? DIAG_ERR_PARSER_ARROW_LHS_REQUIRES_STRUCT_PTR
+                                        : DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT));
   }
 
   int off = 0, mem_size = 0, mem_deref = 0;
@@ -1382,7 +1384,8 @@ static node_t *primary(void) {
         merged_prefix_kind = st->str_prefix_kind;
       } else if (merged_width != st->char_width) {
         diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t,
-                       "異なる接頭辞の文字列リテラルは連結できません");
+                       "%s",
+                       diag_message_for(DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));
       }
       if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
         diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, t, "%s",

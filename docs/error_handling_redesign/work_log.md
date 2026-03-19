@@ -1044,3 +1044,38 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 残る優先度A（`->`/`.` 左辺制約、文字列接頭辞混在、可変長引数 `...` 位置）をID化。
+
+## Task 36: 優先度A残件（lhs制約/接頭辞混在/可変長引数位置）のID化
+- 日付: 2026-03-19
+- 目的:
+  - 優先度Aに残っていた parser 直書き文言を専用IDへ移行する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3056` / `parser.arrow_lhs_requires_struct_ptr`
+    - `E3057` / `parser.dot_lhs_requires_struct`
+    - `E3058` / `parser.string_prefix_mismatch`
+    - `E3059` / `parser.variadic_not_last`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - 置換:
+    - `src/parser/expr.c`（`->`/`.` 左辺制約、文字列接頭辞混在）
+    - `src/parser/parser.c`（可変長引数 `...` の位置制約）
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/expr.c`
+  - `src/parser/parser.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `parser/diag.c` など文脈組み立て層（優先度B）のテンプレート整理へ移行。

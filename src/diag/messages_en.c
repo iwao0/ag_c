@@ -80,6 +80,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_COMPLEX_IMAGINARY_TYPE_REQUIRES_FLOAT: return "_Complex/_Imaginary can be specified only with floating types";
     case DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID: return "Non-void function requires an expression in return";
     case DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID: return "Void function cannot return an expression";
+    case DIAG_ERR_PARSER_ARROW_LHS_REQUIRES_STRUCT_PTR: return "Left-hand side of '->' must be a struct/union pointer";
+    case DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT: return "Left-hand side of '.' must be a struct/union";
+    case DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH: return "String literals with different prefixes cannot be concatenated";
+    case DIAG_ERR_PARSER_VARIADIC_NOT_LAST: return "'...' can be specified only at the end of a variadic argument list";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
