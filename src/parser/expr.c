@@ -199,6 +199,10 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
 
   while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT)) t = t->next;
+  if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
+            t->kind == TK_AUTO || t->kind == TK_REGISTER || t->kind == TK_TYPEDEF)) {
+    psx_diag_ctx(t, "cast", "cast 型名にストレージ指定子は使えません");
+  }
 
   if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
     token_t *q = t->next->next;

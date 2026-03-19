@@ -1400,7 +1400,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }", "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
   expect_parse_fail_with_message("main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
   expect_parse_fail_with_message("main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
-  expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[primary] 数値を期待しています");
+  expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
 }

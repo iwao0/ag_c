@@ -707,4 +707,4 @@
   - [x] 優先度の高い型カテゴリから段階解消計画を作成する（第1段: `long double` cast 型名受理【Parser受理まで完了】、第2段: `_Atomic(T)` cast 型名受理【完了】、第3段: 派生型cast（`const int`/`_Thread_local int`）のパース段失敗を明示テスト追加）
 - [x] cast 型名の cv/restrict 修飾子を受理する
   - [x] `(const int)`, `(volatile int)`, `(restrict int*)` を parser で受理する
-  - [x] cast 型名で不正なストレージ指定（`_Thread_local`）は未対応診断のまま維持する
+  - [x] cast 型名で不正なストレージ指定（`_Thread_local`）に cast 文脈の専用診断を出す
