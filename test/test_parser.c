@@ -1457,6 +1457,13 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
   expect_parse_fail_without_message("main() { int x=1; return (_Atomic(_Atomic(int)))x; }", "[cast] この型へのキャストは未対応です");
   expect_parse_fail_without_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] この型へのキャストは未対応です");
+
+  // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
+  // 将来 16-byte などの新スカラ型導入時は、ここを陽性診断テストへ置き換える。
+  expect_parse_fail_without_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }",
+                                    "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
+  expect_parse_fail_without_message("main() { struct T { int f(int); }; return 0; }",
+                                    "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
 }
 
 int main() {
