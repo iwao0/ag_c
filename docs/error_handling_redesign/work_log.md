@@ -585,3 +585,49 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `parser/diag.c` の文脈付きメッセージをテンプレート化できる形に整理。
+
+## Task 24: parser/diag 文脈メッセージの整形見直し
+- 日付: 2026-03-19
+- 目的:
+  - `parser/diag.c` の日本語固定フレーズ依存を下げ、`diag_message_for(id)` ベースに寄せる。
+- 実施内容:
+  - `src/parser/diag.c`
+    - `psx_diag_ctx` の失敗時文言を `diag_message_for(...)` 参照へ変更。
+    - `psx_diag_missing` / `undefined_with_name` / `duplicate_with_name` / `only_in`
+      の出力フォーマットを、固定日本語文から
+      `diag_message_for(id)` + 追加情報（kind/name/scope）へ変更。
+  - `test/test_parser.c`
+    - 診断文言フォーマット変更に合わせて期待文字列を更新。
+- 変更ファイル:
+  - `src/parser/diag.c`
+  - `test/test_parser.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `switch_ctx.c` / `node_utils.c` の残る文脈付き直書きを同方針で整理。
+
+## Task 24: parser/diag 文脈メッセージの整形見直し
+- 日付: 2026-03-19
+- 目的:
+  - `parser/diag.c` の日本語固定フレーズ依存を下げ、`diag_message_for(id)` ベースに寄せる。
+- 実施内容:
+  - `src/parser/diag.c`
+    - `psx_diag_ctx` の失敗時文言を `diag_message_for(...)` 参照へ変更。
+    - `psx_diag_missing` / `undefined_with_name` / `duplicate_with_name` / `only_in`
+      の出力フォーマットを、固定日本語文から
+      `diag_message_for(id)` + 追加情報（kind/name/scope）へ変更。
+  - `test/test_parser.c`
+    - 診断文言フォーマット変更に合わせて期待文字列を更新。
+- 変更ファイル:
+  - `src/parser/diag.c`
+  - `test/test_parser.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `switch_ctx.c` / `node_utils.c` の残る文脈付き直書きを同方針で整理。

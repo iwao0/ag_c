@@ -1567,9 +1567,9 @@ static void test_parse_invalid() {
 static void test_parse_invalid_diagnostics() {
   printf("test_parse_invalid_diagnostics...\n");
   expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
-  expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "[parser] ラベル 'L1' が重複");
-  expect_parse_fail_with_message("main() { struct T x; return 0; }", "[parser] 未定義のタグ型 'T'");
-  expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "[parser] 未定義のタグ型 'T'");
+  expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "識別子が重複しています (ラベル): 'L1'");
+  expect_parse_fail_with_message("main() { struct T x; return 0; }", "未定義の識別子です (のタグ型): 'T'");
+  expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "未定義の識別子です (のタグ型): 'T'");
   expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)a; }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { struct S { int x; }; int *p=0; return (struct S)p; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");

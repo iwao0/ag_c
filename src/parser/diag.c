@@ -14,14 +14,15 @@ void psx_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
   va_end(ap2);
   if (len < 0) {
     va_end(ap);
-    diag_emit_tokf(DIAG_ERR_PARSER_GENERIC, tok, "[%s] 診断メッセージの生成に失敗しました",
-                   (char *)rule);
+    diag_emit_tokf(DIAG_ERR_PARSER_GENERIC, tok, "[%s] %s", (char *)rule,
+                   diag_message_for(DIAG_ERR_PARSER_GENERIC));
   }
 
   char *detail = calloc((size_t)len + 1, 1);
   if (!detail) {
     va_end(ap);
-    diag_emit_tokf(DIAG_ERR_INTERNAL_OOM, tok, "[%s] メモリ確保に失敗しました", (char *)rule);
+    diag_emit_tokf(DIAG_ERR_INTERNAL_OOM, tok, "[%s] %s", (char *)rule,
+                   diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   vsnprintf(detail, (size_t)len + 1, fmt, ap);
   va_end(ap);
@@ -30,20 +31,21 @@ void psx_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
 }
 
 void psx_diag_missing(token_t *tok, const char *what) {
-  diag_emit_tokf(DIAG_ERR_PARSER_EXPECTED_TOKEN, tok, "[parser] %sが必要です", what);
+  diag_emit_tokf(DIAG_ERR_PARSER_EXPECTED_TOKEN, tok, "%s: %s",
+                 diag_message_for(DIAG_ERR_PARSER_EXPECTED_TOKEN), what);
 }
 
 void psx_diag_undefined_with_name(token_t *tok, const char *kind, const char *name, int len) {
-  diag_emit_tokf(DIAG_ERR_PARSER_UNDEFINED_SYMBOL, tok, "[parser] 未定義%s '%.*s' です", kind, len,
-                 name);
+  diag_emit_tokf(DIAG_ERR_PARSER_UNDEFINED_SYMBOL, tok, "%s (%s): '%.*s'",
+                 diag_message_for(DIAG_ERR_PARSER_UNDEFINED_SYMBOL), kind, len, name);
 }
 
 void psx_diag_duplicate_with_name(token_t *tok, const char *kind, const char *name, int len) {
-  diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "[parser] %s '%.*s' が重複しています", kind,
-                 len, name);
+  diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_SYMBOL, tok, "%s (%s): '%.*s'",
+                 diag_message_for(DIAG_ERR_PARSER_DUPLICATE_SYMBOL), kind, len, name);
 }
 
 void psx_diag_only_in(token_t *tok, const char *what, const char *scope) {
-  diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok, "[parser] %s は %sでのみ使用できます", what,
-                 scope);
+  diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok, "%s: %s / %s",
+                 diag_message_for(DIAG_ERR_PARSER_INVALID_CONTEXT), what, scope);
 }
