@@ -5,6 +5,7 @@
 #include "internal/dynarray.h"
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
+#include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
@@ -983,7 +984,8 @@ static node_t *unary(void) {
         // same-tag non-scalar cast: treat as no-op for now
         return operand;
       }
-      if (is_size_compatible_nonscalar_expr(operand, cast_kind, cast_elem_size)) {
+      if (ps_get_enable_size_compatible_nonscalar_cast() &&
+          is_size_compatible_nonscalar_expr(operand, cast_kind, cast_elem_size)) {
         // minimal extension: same-kind and same-size non-scalar cast as no-op
         return operand;
       }

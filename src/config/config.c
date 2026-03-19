@@ -1,4 +1,5 @@
 #include "config.h"
+#include "../parser/config_runtime.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdbool.h>
 #include <stdlib.h>
@@ -40,6 +41,7 @@ void load_config_toml(void) {
   if (!fp) return; // 設定ファイルがなければデフォルトで実行
 
   bool in_tokenizer = false;
+  bool in_parser = false;
   char *line = NULL;
   size_t line_cap = 0;
   while (getline(&line, &line_cap, fp) != -1) {
@@ -54,9 +56,10 @@ void load_config_toml(void) {
 
     if (*p == '[') {
       in_tokenizer = (strcmp(p, "[tokenizer]") == 0);
+      in_parser = (strcmp(p, "[parser]") == 0);
       continue;
     }
-    if (!in_tokenizer) continue;
+    if (!in_tokenizer && !in_parser) continue;
 
     char *eq = strchr(p, '=');
     if (!eq) continue;
@@ -69,14 +72,22 @@ void load_config_toml(void) {
     bool b = false;
     if (!parse_bool_value(val, &b)) continue;
 
-    if (strcmp(key, "strict_c11") == 0) {
-      tk_set_strict_c11_mode(b);
-    } else if (strcmp(key, "enable_trigraphs") == 0) {
-      tk_set_enable_trigraphs(b);
-    } else if (strcmp(key, "enable_binary_literals") == 0) {
-      tk_set_enable_binary_literals(b);
-    } else if (strcmp(key, "enable_c11_audit_extensions") == 0) {
-      tk_set_enable_c11_audit_extensions(b);
+    if (in_tokenizer) {
+      if (strcmp(key, "strict_c11") == 0) {
+        tk_set_strict_c11_mode(b);
+      } else if (strcmp(key, "enable_trigraphs") == 0) {
+        tk_set_enable_trigraphs(b);
+      } else if (strcmp(key, "enable_binary_literals") == 0) {
+        tk_set_enable_binary_literals(b);
+      } else if (strcmp(key, "enable_c11_audit_extensions") == 0) {
+        tk_set_enable_c11_audit_extensions(b);
+      }
+      continue;
+    }
+    if (in_parser) {
+      if (strcmp(key, "enable_size_compatible_nonscalar_cast") == 0) {
+        ps_set_enable_size_compatible_nonscalar_cast(b);
+      }
     }
   }
   free(line);

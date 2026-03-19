@@ -10,3 +10,7 @@ enable_binary_literals = true
 
 # C11 audit mode for extension usage (logs when extension tokens are used)
 enable_c11_audit_extensions = false
+
+[parser]
+# Allow same-size struct/union cast as a parser extension (non-standard)
+enable_size_compatible_nonscalar_cast = true
