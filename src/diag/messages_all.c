@@ -94,6 +94,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DUPLICATE_WITH_KIND: return "識別子が重複しています (%s): '%.*s'";
     case DIAG_ERR_PARSER_ONLY_IN_SCOPE: return "この文脈では使用できません: %s / %s";
     case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "診断メッセージの生成に失敗しました";
+    case DIAG_ERR_PARSER_DYNARRAY_INVALID_SIZE: return "配列サイズが不正です";
+    case DIAG_ERR_PARSER_DYNARRAY_TOO_LARGE: return "配列サイズが大きすぎます";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
@@ -195,6 +197,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DUPLICATE_WITH_KIND: return "Duplicate symbol (%s): '%.*s'";
     case DIAG_ERR_PARSER_ONLY_IN_SCOPE: return "Invalid context: %s / %s";
     case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "Failed to format diagnostic message";
+    case DIAG_ERR_PARSER_DYNARRAY_INVALID_SIZE: return "Invalid array size";
+    case DIAG_ERR_PARSER_DYNARRAY_TOO_LARGE: return "Array size is too large";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

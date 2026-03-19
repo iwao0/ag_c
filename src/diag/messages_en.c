@@ -94,6 +94,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_DUPLICATE_WITH_KIND: return "Duplicate symbol (%s): '%.*s'";
     case DIAG_ERR_PARSER_ONLY_IN_SCOPE: return "Invalid context: %s / %s";
     case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "Failed to format diagnostic message";
+    case DIAG_ERR_PARSER_DYNARRAY_INVALID_SIZE: return "Invalid array size";
+    case DIAG_ERR_PARSER_DYNARRAY_TOO_LARGE: return "Array size is too large";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

@@ -1150,3 +1150,36 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - parser 診断メッセージ移行の全体残件を再棚卸しする。
+
+## Task 39: 優先度C（dynarray 直接stderr出力）のdiag化
+- 日付: 2026-03-19
+- 目的:
+  - `parser/internal/dynarray.h` の `fprintf(stderr, ...)` 直接出力を `diag` 経路へ統一する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3070` / `parser.dynarray_invalid_size`
+    - `E3071` / `parser.dynarray_too_large`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/internal/dynarray.h`
+    - `fprintf(stderr, ...)` + `exit(1)` を廃止。
+    - `diag_emit_internalf(...)` + `diag_message_for(...)` に置換。
+    - OOM は既存 `DIAG_ERR_INTERNAL_OOM` を再利用。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/internal/dynarray.h`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `preprocess.c` の `pp_error(...)` 経路は「採番不要」方針に沿って運用方針のみ文書化し、必要時に別タスク化。

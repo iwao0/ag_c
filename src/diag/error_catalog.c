@@ -94,6 +94,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_DUPLICATE_WITH_KIND, "E3067", "parser.duplicate_with_kind"},
     {DIAG_ERR_PARSER_ONLY_IN_SCOPE, "E3068", "parser.only_in_scope"},
     {DIAG_ERR_PARSER_DIAG_FORMAT_FAILED, "E3069", "parser.diag_format_failed"},
+    {DIAG_ERR_PARSER_DYNARRAY_INVALID_SIZE, "E3070", "parser.dynarray_invalid_size"},
+    {DIAG_ERR_PARSER_DYNARRAY_TOO_LARGE, "E3071", "parser.dynarray_too_large"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},
