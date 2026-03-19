@@ -271,6 +271,7 @@ args       = expr ("," expr)*
 > `struct/union` 値 cast の段階受理（同種同サイズ）も `config.toml` の `[parser]` セクション（`enable_size_compatible_nonscalar_cast`）で切り替え可能です。
 > `struct` のスカラ/ポインタ cast は `enable_struct_scalar_pointer_cast`、`union` のスカラ/ポインタ cast は `enable_union_scalar_pointer_cast` で切り替え可能です。
 > cast 後の postfix 連鎖（例: `((union U)&x).p`）を受理します。
+> 設定キーごとの代表挙動は README の `config.toml` 設定マトリクスを参照してください。
 > 接頭辞付き文字列/文字定数の幅情報は Codegen まで伝搬され、`char_width=1/2/4` に応じて `.byte/.hword/.word` で出力します。
 > 接頭辞付きマルチ文字定数は、現実装では 8-bit 単位で左シフトしながら畳み込む実装定義規則で値を形成します。
 > `l/L` 付き浮動小数点は `is_float=3`（long double）として意味分類します。現時点のCodegenは double 経路へ lowering します。

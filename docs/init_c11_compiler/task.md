@@ -793,5 +793,5 @@
   - [ ] `struct/union` cast 失敗時に「失敗理由（非スカラ源・無効設定・型不整合）」を区別できるようにする
   - [ ] `union` 非波括弧初期化の診断を文脈別（配列メンバ/非配列メンバ）に分割する
 - [ ] 設定検証: parser config の組み合わせテストを体系化する
-  - [ ] `enable_*` フラグの ON/OFF 組み合わせを最小網羅で固定する
-  - [ ] ドキュメント（README/grammar/walkthrough）に設定マトリクスを追加する
+  - [x] `enable_*` フラグの ON/OFF 組み合わせを最小網羅で固定する
+  - [x] ドキュメント（README/grammar/walkthrough）に設定マトリクスを追加する

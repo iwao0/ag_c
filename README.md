@@ -90,3 +90,12 @@ enable_union_array_member_nonbrace_init = true
 - `parser.enable_struct_scalar_pointer_cast`: スカラ/ポインタから `struct` 値 cast の段階受理を有効化
 - `parser.enable_union_scalar_pointer_cast`: スカラ/ポインタから `union` 値 cast の段階受理を有効化
 - `parser.enable_union_array_member_nonbrace_init`: `union` 先頭配列メンバの非波括弧初期化（`u={1,2}`）を有効化
+
+`[parser]` 設定マトリクス（代表ケース）:
+
+| 設定キー | `true` のとき | `false` のとき |
+|---|---|---|
+| `enable_size_compatible_nonscalar_cast` | `struct A`→`struct B`（同種同サイズ）cast を受理 | 同ケースを診断 |
+| `enable_struct_scalar_pointer_cast` | `(struct S)7` / `(struct S)p` を受理 | 同ケースを診断 |
+| `enable_union_scalar_pointer_cast` | `(union U)7` / `(union U)p` を受理 | 同ケースを診断 |
+| `enable_union_array_member_nonbrace_init` | `union U u={1,2};` を受理 | 同ケースを診断 |

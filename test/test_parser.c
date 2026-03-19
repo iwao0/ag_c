@@ -41,6 +41,22 @@ static void expect_parse_fail(const char *input) {
   ASSERT_TRUE(WEXITSTATUS(status) != 0);
 }
 
+static void expect_parse_ok(const char *input) {
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    token = tk_tokenize((char *)input);
+    parsed_code = ps_program();
+    _exit(0);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(0, WEXITSTATUS(status));
+}
+
 static void expect_parse_fail_with_message(const char *input, const char *needle) {
   int fds[2];
   ASSERT_TRUE(pipe(fds) == 0);
@@ -1622,6 +1638,41 @@ static void test_parse_invalid_diagnostics() {
                                     "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
 }
 
+static void test_parser_config_matrix() {
+  printf("test_parser_config_matrix...\n");
+  const char *struct_scalar_cast = "main() { struct S { int x; int y; }; return ((struct S)7).x; }";
+  const char *union_scalar_cast = "main() { union U { int x; char y; }; return ((union U)7).x; }";
+  const char *union_nonbrace_init = "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }";
+  const char *same_size_nonscalar_cast =
+      "main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }";
+
+  // baseline: all extensions enabled
+  ps_set_enable_struct_scalar_pointer_cast(true);
+  ps_set_enable_union_scalar_pointer_cast(true);
+  ps_set_enable_union_array_member_nonbrace_init(true);
+  ps_set_enable_size_compatible_nonscalar_cast(true);
+  expect_parse_ok(struct_scalar_cast);
+  expect_parse_ok(union_scalar_cast);
+  expect_parse_ok(union_nonbrace_init);
+  expect_parse_ok(same_size_nonscalar_cast);
+
+  // all extensions disabled: all extension snippets should fail
+  ps_set_enable_struct_scalar_pointer_cast(false);
+  ps_set_enable_union_scalar_pointer_cast(false);
+  ps_set_enable_union_array_member_nonbrace_init(false);
+  ps_set_enable_size_compatible_nonscalar_cast(false);
+  expect_parse_fail(struct_scalar_cast);
+  expect_parse_fail(union_scalar_cast);
+  expect_parse_fail(union_nonbrace_init);
+  expect_parse_fail(same_size_nonscalar_cast);
+
+  // restore defaults for subsequent tests
+  ps_set_enable_struct_scalar_pointer_cast(true);
+  ps_set_enable_union_scalar_pointer_cast(true);
+  ps_set_enable_union_array_member_nonbrace_init(true);
+  ps_set_enable_size_compatible_nonscalar_cast(true);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
@@ -1669,6 +1720,7 @@ int main() {
   test_multiple_funcdefs();
   test_parse_invalid();
   test_parse_invalid_diagnostics();
+  test_parser_config_matrix();
 
   printf("OK: All unit tests passed!\n");
   return 0;

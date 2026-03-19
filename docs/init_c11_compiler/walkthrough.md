@@ -71,6 +71,7 @@
    - `struct` へのスカラ/ポインタ cast（例: `(struct S)7`, `(struct S)p`）を、先頭メンバ初期化へ lowering する形で段階受理しました。
    - `union` へのスカラ cast（例: `(union U)7`）を、先頭メンバ初期化へ lowering する形で段階受理しました。
    - cast 式の直後に postfix を連鎖できるようにし、`((union U)&x).p` のような式を受理できるようにしました。
+   - Parser拡張の有効/無効切替は `config.toml` の `[parser]` で制御し、代表挙動は README の設定マトリクスに整理しました。
    - cast 型名で `const/volatile/restrict`、`_Atomic int`、`_Atomic(T)`、入れ子 `_Atomic(_Atomic(T))` を受理するように拡張しました。
    - cast 型名でのストレージ指定子（`_Thread_local` など）は `[cast]` 文脈の専用診断に統一しました。
    - 構造体/共用体メンバ初期化のサイズ制約を `1/2/4/8 byte` スカラ対応として明文化しました。
