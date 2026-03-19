@@ -1,6 +1,7 @@
 #ifndef TOKENIZER_H
 #define TOKENIZER_H
 
+#include "../diag/error_catalog.h"
 #include "token.h"
 #include <stddef.h>
 
@@ -11,6 +12,10 @@ extern token_t *token;
 void tk_error_at(char *loc, char *fmt, ...);
 /** @brief トークン情報ベースでエラーを報告して終了する。 */
 void tk_error_tok(token_t *tok, char *fmt, ...);
+/** @brief 入力位置ベースで指定エラーIDを付与して終了する。 */
+void tk_error_at_id(diag_error_id_t id, char *loc, char *fmt, ...);
+/** @brief トークン情報ベースで指定エラーIDを付与して終了する。 */
+void tk_error_tok_id(diag_error_id_t id, token_t *tok, char *fmt, ...);
 /** @brief token kind を可読文字列へ変換する。 */
 const char *tk_token_kind_str(token_kind_t kind, int *len);
 

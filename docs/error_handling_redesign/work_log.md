@@ -104,3 +104,22 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - parser/tokenizerの個別エラーID（generic以外）を段階的に拡充。
+
+## Task 5: tokenizer 個別エラーID導入（第一段）
+- 日付: 2026-03-19
+- 目的:
+  - Tokenizerのエラーを generic から段階的に個別コードへ移行する。
+- 実施内容:
+  - `tk_error_at_id` / `tk_error_tok_id` を追加し、互換APIは維持。
+  - `トークナイズできません` の経路を `E2001`（unexpected_char）へマッピング。
+- 変更ファイル:
+  - `src/tokenizer/tokenizer.h`
+  - `src/tokenizer/tokenizer.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer`
+  - `./build/test_tokenizer`
+  - `make DIAG_LANG=ja test`（All pass, E2E `256/256`）
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 数値/エスケープ/未終端文字列などを `E2002+` へ細分化。

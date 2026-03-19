@@ -129,6 +129,28 @@ static char *replace_trigraphs(const char *in) {
 }
 
 /** @brief 入力文字列上の位置を指してエラーを出力し終了する。 */
+void tk_error_at_id(diag_error_id_t id, char *loc, char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  va_list ap2;
+  va_copy(ap2, ap);
+  int len = vsnprintf(NULL, 0, fmt, ap2);
+  va_end(ap2);
+  if (len < 0) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  char *msg = calloc((size_t)len + 1, 1);
+  if (!msg) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  vsnprintf(msg, (size_t)len + 1, fmt, ap);
+  va_end(ap);
+  diag_emit_atf(id, user_input, loc, "%s", msg);
+}
+
+/** @brief トークン情報付きエラーを出力し終了する。 */
 void tk_error_at(char *loc, char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
@@ -148,6 +170,28 @@ void tk_error_at(char *loc, char *fmt, ...) {
   vsnprintf(msg, (size_t)len + 1, fmt, ap);
   va_end(ap);
   diag_emit_atf(DIAG_ERR_TOKENIZER_GENERIC, user_input, loc, "%s", msg);
+}
+
+/** @brief トークン情報付きエラーを出力し終了する。 */
+void tk_error_tok_id(diag_error_id_t id, token_t *tok, char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  va_list ap2;
+  va_copy(ap2, ap);
+  int len = vsnprintf(NULL, 0, fmt, ap2);
+  va_end(ap2);
+  if (len < 0) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  char *msg = calloc((size_t)len + 1, 1);
+  if (!msg) {
+    va_end(ap);
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  vsnprintf(msg, (size_t)len + 1, fmt, ap);
+  va_end(ap);
+  diag_emit_tokf(id, tok, "%s", msg);
 }
 
 /** @brief トークン情報付きエラーを出力し終了する。 */
@@ -951,7 +995,7 @@ token_t *tk_tokenize(char *p) {
       continue;
     }
 
-    tk_error_at(p, "トークナイズできません");
+    tk_error_at_id(DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR, p, "トークナイズできません");
   }
 
   new_token_simple(TK_EOF, cur, line_no, false, false);
