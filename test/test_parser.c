@@ -75,6 +75,41 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
   ASSERT_TRUE(strstr(buf, needle) != NULL);
 }
 
+static void expect_parse_fail_without_message(const char *input, const char *needle) {
+  int fds[2];
+  ASSERT_TRUE(pipe(fds) == 0);
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(fds[0]);
+    dup2(fds[1], STDERR_FILENO);
+    close(fds[1]);
+    freopen("/dev/null", "w", stdout);
+    token = tk_tokenize((char *)input);
+    parsed_code = ps_program();
+    _exit(0);
+  }
+
+  close(fds[1]);
+  char buf[4096];
+  size_t used = 0;
+  for (;;) {
+    ssize_t nread = read(fds[0], buf + used, sizeof(buf) - 1 - used);
+    if (nread <= 0) break;
+    used += (size_t)nread;
+    if (used >= sizeof(buf) - 1) break;
+  }
+  buf[used] = '\0';
+  close(fds[0]);
+
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+  ASSERT_TRUE(strstr(buf, needle) == NULL);
+}
+
 static void test_expr_number() {
   printf("test_expr_number...\n");
   token = tk_tokenize("42");
@@ -1417,6 +1452,11 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
+
+  // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
+  expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
+  expect_parse_fail_without_message("main() { int x=1; return (_Atomic(_Atomic(int)))x; }", "[cast] この型へのキャストは未対応です");
+  expect_parse_fail_without_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] この型へのキャストは未対応です");
 }
 
 int main() {
