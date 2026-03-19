@@ -1572,9 +1572,8 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct T x; return 0; }", "未定義の識別子です (のタグ型): 'T'");
   expect_parse_fail_with_message("main() { { struct T { int x; }; } struct T *p; return 0; }", "未定義の識別子です (のタグ型): 'T'");
   expect_parse_fail_with_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
-  expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)a; }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { struct S { int x; }; int *p=0; return (struct S)p; }", "[cast] struct 値へのキャストは未対応です（非スカラ型）");
-  expect_parse_fail_with_message("main() { union U { int x; char y; }; int a=0; return (union U)(a?1:2); }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
+  expect_parse_fail_with_message("main() { union U { int x; char y; }; struct S { int z; } s={1}; return (union U)s; }", "[cast] union 値へのキャストは未対応です（非スカラ型）");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
   expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[decl] 共用体初期化子は現状1要素のみ対応です");

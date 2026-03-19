@@ -588,6 +588,64 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   return ref;
 }
 
+static node_t *new_member_lvar_ref(lvar_t *owner, int member_offset, int member_type_size,
+                                   token_kind_t member_tag_kind, char *member_tag_name,
+                                   int member_tag_len, int member_is_tag_pointer) {
+  node_t *lvar = psx_node_new_lvar_typed(owner->offset + member_offset, member_type_size);
+  as_lvar(lvar)->mem.tag_kind = member_tag_kind;
+  as_lvar(lvar)->mem.tag_name = member_tag_name;
+  as_lvar(lvar)->mem.tag_len = member_tag_len;
+  as_lvar(lvar)->mem.is_tag_pointer = member_is_tag_pointer;
+  return lvar;
+}
+
+static node_t *lower_union_value_cast(node_t *operand,
+                                      token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
+                                      int cast_elem_size, tk_float_kind_t cast_fp_kind) {
+  int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
+  char *tmp_name = new_compound_lit_name();
+  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), base_elem, base_elem, 0);
+  var->tag_kind = cast_tag_kind;
+  var->tag_name = cast_tag_name;
+  var->tag_len = cast_tag_len;
+  var->is_tag_pointer = 0;
+  var->fp_kind = cast_fp_kind;
+
+  char *member_name = NULL;
+  int member_len = 0;
+  int member_offset = 0;
+  int member_type_size = 0;
+  int member_array_len = 0;
+  token_kind_t member_tag_kind = TK_EOF;
+  char *member_tag_name = NULL;
+  int member_tag_len = 0;
+  int member_is_tag_pointer = 0;
+  int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
+  bool found = false;
+  for (int ordinal = 0; ordinal < member_count; ordinal++) {
+    found = psx_ctx_get_tag_member_at(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal,
+                                      &member_name, &member_len,
+                                      &member_offset, &member_type_size, NULL, &member_array_len,
+                                      &member_tag_kind, &member_tag_name,
+                                      &member_tag_len, &member_is_tag_pointer);
+    if (!found) break;
+    if (member_len > 0) break;
+  }
+  if (!found || member_len <= 0) {
+    psx_diag_ctx(token, "cast", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+  }
+
+  node_t *lhs = new_member_lvar_ref(var, member_offset, member_type_size,
+                                    member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+  node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
+  assign_node->type_size = member_type_size;
+
+  node_t *ref = new_typed_lvar_ref(var, 0);
+  node_t *val = apply_postfix(ref);
+  return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, val);
+}
+
 static int parse_parenthesized_type_size(void) {
   // Minimal support for C11 complex/imaginary spellings in sizeof/alignof:
   //   _Complex float, _Imaginary double, float _Complex, double _Imaginary
@@ -988,6 +1046,21 @@ static node_t *unary(void) {
           is_size_compatible_nonscalar_expr(operand, cast_kind, cast_elem_size)) {
         // minimal extension: same-kind and same-size non-scalar cast as no-op
         return operand;
+      }
+      if (cast_kind == TK_UNION) {
+        token_kind_t op_tag_kind = TK_EOF;
+        char *op_tag_name = NULL;
+        int op_tag_len = 0;
+        int op_is_tag_ptr = 0;
+        psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
+        if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
+          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+                       "union");
+        }
+        // staged extension: allow scalar/pointer -> union value cast by
+        // initializing the first union member, then yielding the union object.
+        return lower_union_value_cast(operand, cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      cast_elem_size, cast_fp_kind);
       }
       const char *kind = (cast_kind == TK_STRUCT) ? "struct" : "union";
       psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
