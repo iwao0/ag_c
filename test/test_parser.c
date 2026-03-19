@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/parser/config_runtime.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <assert.h>
 #include <stdbool.h>
@@ -1589,6 +1590,13 @@ static void test_parse_invalid_diagnostics() {
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
   expect_parse_fail_without_message("main() { struct S { int x; }; int a=0; return (struct S)a; }", "[cast] この型へのキャストは未対応です");
+
+  // Parser拡張設定: 同種同サイズの非スカラcast受理を無効化できること。
+  ps_set_enable_size_compatible_nonscalar_cast(false);
+  expect_parse_fail_with_message(
+      "main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }",
+      "[cast] struct 値へのキャストは未対応です（非スカラ型）");
+  ps_set_enable_size_compatible_nonscalar_cast(true);
 
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
   // 将来 16-byte などの新スカラ型導入時は、ここを陽性診断テストへ置き換える。
