@@ -146,9 +146,10 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
       case '"': c = '"'; break;
       case '\\': c = '\\'; break;
       case 'u':
-      case 'U':
+      case 'U': {
         // Keep unicode escapes as-is (TOML parser minimal support).
-        if (j + 2 >= out_cap) {
+        size_t needed = (e == 'u') ? 6 : 10; // "\\u" + 4hex or "\\U" + 8hex
+        if (j + needed >= out_cap) {
           snprintf(err, err_cap, "string too long");
           return false;
         }
@@ -172,6 +173,7 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
           }
         }
         continue;
+      }
       default:
         snprintf(err, err_cap, "unsupported escape '\\%c'", e);
         return false;
