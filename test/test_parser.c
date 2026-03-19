@@ -300,6 +300,21 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NE, boolcast->kind);
   ASSERT_EQ(ND_NUM, boolcast->rhs->kind);
   ASSERT_EQ(0, as_num(boolcast->rhs)->val);
+
+  token = tk_tokenize("(const int)7");
+  node_t *const_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, const_cast->kind);
+  ASSERT_EQ(7, as_num(const_cast)->val);
+
+  token = tk_tokenize("(volatile int)8");
+  node_t *volatile_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, volatile_cast->kind);
+  ASSERT_EQ(8, as_num(volatile_cast)->val);
+
+  token = tk_tokenize("(restrict int*)0");
+  node_t *restrict_ptr_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);
+  ASSERT_EQ(0, as_num(restrict_ptr_cast)->val);
 }
 
 static void test_expr_generic() {
@@ -1343,7 +1358,6 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
   expect_parse_fail("main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
   expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
-  expect_parse_fail("main() { return (const int)1; }");         // cast型名の修飾子は未対応
   expect_parse_fail("main() { return (_Thread_local int)1; }"); // cast型名のストレージ指定は未対応
   expect_parse_fail("main() { int a[0]; return 0; }");          // 配列サイズは正数のみ
   expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
@@ -1386,7 +1400,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }", "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
   expect_parse_fail_with_message("main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
   expect_parse_fail_with_message("main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
-  expect_parse_fail_with_message("main() { return (const int)1; }", "[primary] 数値を期待しています");
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[primary] 数値を期待しています");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");

@@ -198,6 +198,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_elem_size) *out_elem_size = 8;
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
 
+  while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT)) t = t->next;
+
   if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
     token_t *q = t->next->next;
     token_kind_t inner_kind = TK_EOF;
@@ -207,6 +209,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     int inner_ptr = 0;
     int inner_elem = 8;
     tk_float_kind_t inner_fp = TK_FLOAT_KIND_NONE;
+    while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
+
     bool inner_is_type = false;
     bool q_is_type = false;
     if (q) psx_ctx_get_type_info(q->kind, &q_is_type, NULL);
