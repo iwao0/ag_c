@@ -51,10 +51,12 @@ relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 shift      = add ("<<" add | ">>" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary | "%" unary)*
-unary      = "(" (type | tag_type) "*"* ")" unary
+unary      = "(" cast_type ")" unary
            | "sizeof" ("(" type "*"* ")" | unary | "(" expr ")")
            | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
            | primary postfix*
+cast_type  = type_qual* (type | tag_type | typedef_name | "_Atomic" type | "_Atomic" "(" cast_type ")") "*"*
+type_qual  = "const" | "volatile" | "restrict"
 postfix    = ("[" expr "]" | "++" | "--")*
 primary    = ident "(" args? ")" | "(" expr ")" | ident | num | string | char_lit
 args       = expr ("," expr)*
@@ -235,7 +237,9 @@ args       = expr ("," expr)*
   - `{...}` は1要素のみ受理（designator含む）
   - 単一式は同型オブジェクトコピー、または先頭メンバへの初期化として処理
 - cast 方針:
-  - `struct/union` 値への cast は現状一律診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）
+  - `struct/union` 値への cast は「同一タグ型どうしのみ no-op 受理」、それ以外は診断（`[cast] ... 値へのキャストは未対応です（非スカラ型）`）
+  - cast 型名は `const/volatile/restrict`・`_Atomic int`・`_Atomic(T)`・入れ子 `_Atomic(_Atomic(T))` を受理
+  - cast 型名のストレージ指定子（例: `_Thread_local`）は診断（`[cast] cast 型名にストレージ指定子は使えません`）
 
 ## 2026-03 C11準拠強化（Tokenizer/Parser）
 
