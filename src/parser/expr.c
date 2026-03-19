@@ -78,6 +78,15 @@ static void consume_local_type_quals(token_t **cur) {
   }
 }
 
+static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
+  consume_local_type_quals(cur);
+  while (*cur && (*cur)->kind == TK_MUL) {
+    *is_pointer = 1;
+    *cur = (*cur)->next;
+    consume_local_type_quals(cur);
+  }
+}
+
 static generic_type_t infer_generic_control_type(node_t *control) {
   generic_type_t gt = {TK_INT, 0};
   if (!control) return gt;
@@ -285,11 +294,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       q = q->next;
     }
     if (!inner_is_type) return 0;
-    while (q && q->kind == TK_MUL) {
-      inner_ptr = 1;
-      q = q->next;
-    }
-    consume_local_type_quals(&q);
+    consume_cast_pointer_suffix(&q, &inner_ptr);
     while (nested_atomic_wrappers-- > 0) {
       if (!q || q->kind != TK_RPAREN) return 0;
       q = q->next;
@@ -407,12 +412,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
 
 cast_parse_postfix:
   if (*is_pointer != 1) *is_pointer = 0;
-  consume_local_type_quals(&t);
-  while (t && t->kind == TK_MUL) {
-    *is_pointer = 1;
-    t = t->next;
-  }
-  consume_local_type_quals(&t);
+  consume_cast_pointer_suffix(&t, is_pointer);
   parse_funcptr_abstract_decl(&t, is_pointer);
   if (!t || t->kind != TK_RPAREN) return 0;
   *after_rparen = t->next;
