@@ -115,16 +115,16 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
   }
 
   if (n_signed > 1 || n_unsigned > 1 || n_short > 1 || n_long > 2 || n_int > 1 || n_char > 1) {
-    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, start, "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
   }
   if (n_signed && n_unsigned) {
-    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, start, "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
   }
   if (n_short && n_long) {
-    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, start, "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
   }
   if (n_char && (n_short || n_long || n_int)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, start, "不正な型指定子の組み合わせです");
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, start, "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
   }
 
   token_kind_t kind = TK_INT;

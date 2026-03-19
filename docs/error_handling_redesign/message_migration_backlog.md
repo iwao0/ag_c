@@ -7,6 +7,9 @@
 - `src/tokenizer/tokenizer.c`
   - `E2006` expected token の日本語直書き（`"'%c' が必要です"`）を廃止。
   - 現在は `diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN)` と可変部 `'%c'` を組み合わせて出力。
+- `src/parser/expr.c` / `src/parser/parser.c`
+  - 型指定子組み合わせ不正を `E3006`（`parser.invalid_type_spec`）へ分離。
+  - 呼び出し側の固定文言は `diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC)` 参照に移行。
 
 ## 優先度B: 追加キー/テンプレート化が必要（文脈付き）
 - `src/parser/diag.c`
@@ -22,11 +25,8 @@
   - `"%s の対象は左辺値である必要があります"`
   - `"%s の対象は整数スカラーである必要があります"`
 - `src/parser/expr.c`
-  - `"不正な型指定子の組み合わせです"`
   - `"文字列リテラルが大きすぎます"`
   - `"文字列連結中にサイズが不正です"`
-- `src/parser/parser.c`
-  - `"不正な型指定子の組み合わせです"`
 
 ## 優先度C: Codegen / Preprocess の文脈特化メッセージ
 - `src/arch/arm64_apple.c`

@@ -30,6 +30,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_UNDEFINED_SYMBOL: return "Undefined symbol";
     case DIAG_ERR_PARSER_DUPLICATE_SYMBOL: return "Duplicate symbol";
     case DIAG_ERR_PARSER_INVALID_CONTEXT: return "Invalid context";
+    case DIAG_ERR_PARSER_INVALID_TYPE_SPEC: return "Invalid type specifier combination";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

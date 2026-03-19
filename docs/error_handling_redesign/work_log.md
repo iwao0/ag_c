@@ -522,3 +522,34 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser側で定型文（型指定子組み合わせ不正など）を同様に `diag_message_for(id)` ベースへ寄せる。
+
+## Task 22: Parser 型指定子不正のカタログ移行
+- 日付: 2026-03-19
+- 目的:
+  - Parser の定型文（型指定子組み合わせ不正）を専用ID化し、呼び出し側の直書きを削減する。
+- 実施内容:
+  - `E3006` / `parser.invalid_type_spec` を追加。
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/expr.c` / `src/parser/parser.c` の
+    `"不正な型指定子の組み合わせです"` を `E3006` + `diag_message_for` へ置換。
+  - `message_migration_backlog.md` を更新し、該当項目を完了済みへ移動。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/expr.c`
+  - `src/parser/parser.c`
+  - `docs/error_handling_redesign/message_migration_backlog.md`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser の残る定型文（文字列リテラルサイズ不正）の専用ID化を検討。
