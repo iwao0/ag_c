@@ -217,6 +217,9 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     int inner_ptr = 0;
     int inner_elem = 8;
     tk_float_kind_t inner_fp = TK_FLOAT_KIND_NONE;
+    if (q && q->kind == TK_ATOMIC && q->next && q->next->kind == TK_LPAREN) {
+      psx_diag_ctx(q, "cast", "入れ子の _Atomic(...) cast 型名は未対応です");
+    }
     if (q && q->kind == TK_ATOMIC && !(q->next && q->next->kind == TK_LPAREN)) q = q->next;
     while (q && (q->kind == TK_CONST || q->kind == TK_VOLATILE || q->kind == TK_RESTRICT)) q = q->next;
 

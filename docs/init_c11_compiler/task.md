@@ -711,3 +711,4 @@
 - [x] cast 型名で `_Atomic` 型指定子（`_Atomic int` 形式）を受理する
   - [x] `(_Atomic int)` / `(_Atomic const int)` を parser で受理する
   - [x] 既存の `_Atomic(T)` 受理と共存することを確認する（回帰）
+  - [x] 未対応の入れ子 `_Atomic(_Atomic(T))` は `[cast]` 文脈で専用診断を出す（`[primary]` への漏れを防止）
