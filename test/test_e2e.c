@@ -230,6 +230,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "cast_unsigned", CASE_INT, "int main() { return (unsigned)42; }", 42, 0},
     {"type_decl", "cast_enum", CASE_INT, "int main() { enum E { A=1 }; return (enum E)42; }", 42, 0},
     {"type_decl", "cast_tag_ptr", CASE_INT, "int main() { struct S { int x; }; struct S *p = 0; return ((struct S*)p)==0; }", 1, 0},
+    {"type_decl", "cast_struct_same_type", CASE_INT, "int main() { struct S { int x; }; struct S s=(struct S)(struct S){7}; return s.x; }", 7, 0},
     {"type_decl", "member_dot", CASE_INT, "int main() { struct S { int a; int b; }; struct S s; s.a=2; s.b=5; return s.a+s.b; }", 7, 0},
     {"type_decl", "member_arrow", CASE_INT, "int main() { struct S { int a; int b; }; struct S s; struct S *p=&s; p->a=3; p->b=4; return p->a+p->b; }", 7, 0},
     {"type_decl", "member_union", CASE_INT, "int main() { union U { int x; char y; }; union U u; u.x=7; return u.x; }", 7, 0},

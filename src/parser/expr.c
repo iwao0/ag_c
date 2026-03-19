@@ -731,7 +731,25 @@ static node_t *unary(void) {
       return psx_node_new_binary(ND_COMMA, init, val);
     }
     token = after_rparen;
-    return apply_cast(cast_kind, cast_is_ptr, unary());
+    node_t *operand = unary();
+    if (!cast_is_ptr && (cast_kind == TK_STRUCT || cast_kind == TK_UNION)) {
+      node_t *cast_src = operand;
+      while (cast_src && cast_src->kind == ND_COMMA) cast_src = cast_src->rhs;
+      token_kind_t op_tag_kind = TK_EOF;
+      char *op_tag_name = NULL;
+      int op_tag_len = 0;
+      int op_is_tag_ptr = 0;
+      psx_node_get_tag_type(cast_src, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
+      if (!op_is_tag_ptr && op_tag_kind == cast_kind && op_tag_len == cast_tag_len &&
+          strncmp(op_tag_name ? op_tag_name : "", cast_tag_name ? cast_tag_name : "",
+                  (size_t)cast_tag_len) == 0) {
+        // same-tag non-scalar cast: treat as no-op for now
+        return operand;
+      }
+      const char *kind = (cast_kind == TK_STRUCT) ? "struct" : "union";
+      psx_diag_ctx(token, "cast", "%s 値へのキャストは未対応です（非スカラ型）", kind);
+    }
+    return apply_cast(cast_kind, cast_is_ptr, operand);
   }
 
   if (token->kind == TK_SIZEOF) {
