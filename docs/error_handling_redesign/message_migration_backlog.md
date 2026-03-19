@@ -26,6 +26,7 @@
   - `E3052-E3055`: `_Complex/_Imaginary` と `return` 文脈の定型診断を専用ID化。
   - `E3056-E3059`: `->`/`.` 左辺制約、文字列接頭辞混在、可変長引数 `...` 位置制約を専用ID化。
   - `E3060-E3063`: `switch` 重複診断、lvalue/integer-scalar 要件を専用ID化。
+  - `E3064-E3069`: `parser/diag.c` の共通テンプレート（missing/undefined/duplicate/scope等）を専用ID化。
 - `src/preprocess/preprocess.c` / `src/arch/arm64_apple.c`
   - 主要な日本語直書き診断を `diag_message_for(...)` ベースへ移行。
 
@@ -33,12 +34,7 @@
 - （現時点の優先度A残件なし）
 
 ## 優先度B: 文脈組み立てAPI側のテンプレート整理
-- `src/parser/diag.c`
-  - `"[%s] 診断メッセージの生成に失敗しました"`
-  - `"[parser] %sが必要です"`
-  - `"[parser] 未定義%s '%.*s' です"`
-  - `"[parser] %s '%.*s' が重複しています"`
-  - `"[parser] %s は %sでのみ使用できます"`
+- （現時点の優先度B残件なし）
 
 ## 優先度C: parser 以外の残件確認
 - `src/preprocess/preprocess.c`

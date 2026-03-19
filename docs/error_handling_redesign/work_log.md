@@ -1114,3 +1114,39 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - `src/parser/diag.c` の文脈組み立てメッセージを専用IDへ整理する。
+
+## Task 38: 優先度B（parser/diag 共通テンプレート）のID化
+- 日付: 2026-03-19
+- 目的:
+  - `parser/diag.c` の共通文脈テンプレートを専用IDへ移行し、翻訳キー管理を一元化する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3064` / `parser.rule_detail`
+    - `E3065` / `parser.missing_item`
+    - `E3066` / `parser.undefined_with_kind`
+    - `E3067` / `parser.duplicate_with_kind`
+    - `E3068` / `parser.only_in_scope`
+    - `E3069` / `parser.diag_format_failed`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/diag.c` の `psx_diag_*` ヘルパーを
+    `diag_message_for(E3064-E3069)` ベースへ置換。
+  - 既存テスト互換のため、テンプレート文言は従来出力に合わせて維持。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/diag.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - parser 診断メッセージ移行の全体残件を再棚卸しする。

@@ -88,6 +88,12 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT: return "Duplicate symbol (switch default)";
     case DIAG_ERR_PARSER_LVALUE_REQUIRED: return "%s target must be an lvalue";
     case DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED: return "%s target must be an integer scalar";
+    case DIAG_ERR_PARSER_RULE_DETAIL: return "[%s] %s";
+    case DIAG_ERR_PARSER_MISSING_ITEM: return "Expected token is missing: %s";
+    case DIAG_ERR_PARSER_UNDEFINED_WITH_KIND: return "Undefined symbol (%s): '%.*s'";
+    case DIAG_ERR_PARSER_DUPLICATE_WITH_KIND: return "Duplicate symbol (%s): '%.*s'";
+    case DIAG_ERR_PARSER_ONLY_IN_SCOPE: return "Invalid context: %s / %s";
+    case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "Failed to format diagnostic message";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

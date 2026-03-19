@@ -88,6 +88,12 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT: return "識別子が重複しています (switch default)";
     case DIAG_ERR_PARSER_LVALUE_REQUIRED: return "%s の対象は左辺値である必要があります";
     case DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED: return "%s の対象は整数スカラーである必要があります";
+    case DIAG_ERR_PARSER_RULE_DETAIL: return "[%s] %s";
+    case DIAG_ERR_PARSER_MISSING_ITEM: return "必要なトークンがありません: %s";
+    case DIAG_ERR_PARSER_UNDEFINED_WITH_KIND: return "未定義の識別子です (%s): '%.*s'";
+    case DIAG_ERR_PARSER_DUPLICATE_WITH_KIND: return "識別子が重複しています (%s): '%.*s'";
+    case DIAG_ERR_PARSER_ONLY_IN_SCOPE: return "この文脈では使用できません: %s / %s";
+    case DIAG_ERR_PARSER_DIAG_FORMAT_FAILED: return "診断メッセージの生成に失敗しました";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";
