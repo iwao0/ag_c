@@ -448,6 +448,25 @@ static node_t *unary(void);
 static node_t *primary(void);
 static node_t *apply_postfix(node_t *node);
 
+static int is_same_tag_nonscalar_expr(node_t *expr, token_kind_t cast_kind, char *cast_tag_name, int cast_tag_len) {
+  if (!expr) return 0;
+  node_t *v = expr;
+  while (v && v->kind == ND_COMMA) v = v->rhs;
+  if (!v) return 0;
+  if (v->kind == ND_TERNARY) {
+    node_ctrl_t *t = (node_ctrl_t *)v;
+    return is_same_tag_nonscalar_expr(t->base.rhs, cast_kind, cast_tag_name, cast_tag_len) &&
+           is_same_tag_nonscalar_expr(t->els, cast_kind, cast_tag_name, cast_tag_len);
+  }
+  token_kind_t op_tag_kind = TK_EOF;
+  char *op_tag_name = NULL;
+  int op_tag_len = 0;
+  int op_is_tag_ptr = 0;
+  psx_node_get_tag_type(v, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
+  return !op_is_tag_ptr && op_tag_kind == cast_kind && op_tag_len == cast_tag_len &&
+         strncmp(op_tag_name ? op_tag_name : "", cast_tag_name ? cast_tag_name : "", (size_t)cast_tag_len) == 0;
+}
+
 static char *new_compound_lit_name(void) {
   int n = compound_lit_seq++;
   int len = snprintf(NULL, 0, "__compound_lit_%d", n);
@@ -863,16 +882,7 @@ static node_t *unary(void) {
     token = after_rparen;
     node_t *operand = unary();
     if (!cast_is_ptr && (cast_kind == TK_STRUCT || cast_kind == TK_UNION)) {
-      node_t *cast_src = operand;
-      while (cast_src && cast_src->kind == ND_COMMA) cast_src = cast_src->rhs;
-      token_kind_t op_tag_kind = TK_EOF;
-      char *op_tag_name = NULL;
-      int op_tag_len = 0;
-      int op_is_tag_ptr = 0;
-      psx_node_get_tag_type(cast_src, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
-      if (!op_is_tag_ptr && op_tag_kind == cast_kind && op_tag_len == cast_tag_len &&
-          strncmp(op_tag_name ? op_tag_name : "", cast_tag_name ? cast_tag_name : "",
-                  (size_t)cast_tag_len) == 0) {
+      if (is_same_tag_nonscalar_expr(operand, cast_kind, cast_tag_name, cast_tag_len)) {
         // same-tag non-scalar cast: treat as no-op for now
         return operand;
       }
