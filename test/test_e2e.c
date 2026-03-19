@@ -242,6 +242,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "cast_union_same_type", CASE_INT, "int main() { union U { int x; char y; }; union U u=(union U)(union U){.x=9}; return u.x; }", 9, 0},
     {"type_decl", "cast_union_diff_tag_same_size", CASE_INT, "int main() { union A { int x; }; union B { int x; }; union A a={.x=9}; union B b=(union B)a; return b.x; }", 9, 0},
     {"type_decl", "cast_union_from_scalar", CASE_INT, "int main() { union U { int x; char y; }; return ((union U)7).x; }", 7, 0},
+    {"type_decl", "cast_union_from_pointer_postfix", CASE_INT, "int main() { union U { int *p; int q; }; int x=3; return ((union U)&x).p==&x; }", 1, 0},
     {"type_decl", "cast_atomic_int", CASE_INT, "int main() { return (_Atomic(int))42; }", 42, 0},
     {"type_decl", "member_dot", CASE_INT, "int main() { struct S { int a; int b; }; struct S s; s.a=2; s.b=5; return s.a+s.b; }", 7, 0},
     {"type_decl", "member_arrow", CASE_INT, "int main() { struct S { int a; int b; }; struct S s; struct S *p=&s; p->a=3; p->b=4; return p->a+p->b; }", 7, 0},

@@ -1040,12 +1040,12 @@ static node_t *unary(void) {
     if (!cast_is_ptr && (cast_kind == TK_STRUCT || cast_kind == TK_UNION)) {
       if (is_same_tag_nonscalar_expr(operand, cast_kind, cast_tag_name, cast_tag_len)) {
         // same-tag non-scalar cast: treat as no-op for now
-        return operand;
+        return apply_postfix(operand);
       }
       if (ps_get_enable_size_compatible_nonscalar_cast() &&
           is_size_compatible_nonscalar_expr(operand, cast_kind, cast_elem_size)) {
         // minimal extension: same-kind and same-size non-scalar cast as no-op
-        return operand;
+        return apply_postfix(operand);
       }
       if (cast_kind == TK_UNION) {
         token_kind_t op_tag_kind = TK_EOF;
@@ -1066,7 +1066,7 @@ static node_t *unary(void) {
       psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                    kind);
     }
-    return apply_cast(cast_kind, cast_is_ptr, operand);
+    return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand));
   }
 
   if (token->kind == TK_SIZEOF) {
