@@ -232,13 +232,14 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   }
 
   int off = 0, mem_size = 0, mem_deref = 0;
+  int mem_array_len = 0;
   token_kind_t mem_tag_kind = TK_EOF;
   char *mem_tag_name = NULL;
   int mem_tag_len = 0;
   int mem_is_ptr = 0;
   if (!psx_ctx_find_tag_member(base_tag_kind, base_tag_name, base_tag_len,
                                member->str, member->len,
-                               &off, &mem_size, &mem_deref, NULL,
+                               &off, &mem_size, &mem_deref, &mem_array_len,
                                &mem_tag_kind, &mem_tag_name, &mem_tag_len, &mem_is_ptr)) {
     psx_diag_ctx(op_tok, "member", "メンバ '%.*s' は存在しません", member->len, member->str);
   }
@@ -257,6 +258,11 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   deref->base.lhs = addr;
   deref->type_size = mem_size ? mem_size : 8;
   deref->deref_size = mem_deref;
+  if (mem_array_len > 0 && !mem_is_ptr && mem_size > 0) {
+    // Keep array shape for postfix [] (e.g. s.a[1]).
+    deref->type_size = mem_size * mem_array_len;
+    deref->deref_size = mem_size;
+  }
   deref->tag_kind = mem_tag_kind;
   deref->tag_name = mem_tag_name;
   deref->tag_len = mem_tag_len;
@@ -1074,7 +1080,20 @@ static node_t *apply_postfix(node_t *node) {
       int ts = psx_node_type_size(node);
       int es = ds ? ds : (ts ? ts : 8);
       node_t *scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
-      node_t *addr = psx_node_new_binary(ND_ADD, node, scaled);
+      node_t *base_addr = node;
+      if (node->kind == ND_DEREF) {
+        node_mem_t *mem = (node_mem_t *)node;
+        // Array member access (`s.a[1]`): use element-base address directly.
+        if (mem->deref_size > 0 && mem->type_size > mem->deref_size) {
+          base_addr = node->lhs;
+        } else if (node->lhs && node->lhs->kind == ND_ADD &&
+                   node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
+          // Member lvalue (`s.m`) is represented as `*(base + off)`.
+          // Indexing should start from `base + off`, not from loaded `m` value.
+          base_addr = node->lhs;
+        }
+      }
+      node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
       node_mem_t *deref = calloc(1, sizeof(node_mem_t));
       deref->base.kind = ND_DEREF;
       deref->base.lhs = addr;
