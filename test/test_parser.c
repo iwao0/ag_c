@@ -366,6 +366,20 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NUM, funcptr_const_cast->kind);
   ASSERT_EQ(0, as_num(funcptr_const_cast)->val);
 
+  token = tk_tokenize("(long long)14");
+  node_t *long_long_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, long_long_cast->kind);
+  ASSERT_EQ(14, as_num(long_long_cast)->val);
+
+  token = tk_tokenize("(unsigned long)15");
+  node_t *unsigned_long_cast = ps_expr();
+  ASSERT_EQ(ND_NUM, unsigned_long_cast->kind);
+  ASSERT_EQ(15, as_num(unsigned_long_cast)->val);
+
+  token = tk_tokenize("(unsigned short int)16");
+  node_t *unsigned_short_int_cast = ps_expr();
+  ASSERT_EQ(ND_BITAND, unsigned_short_int_cast->kind);
+
   token = tk_tokenize("(restrict int*)0");
   node_t *restrict_ptr_cast = ps_expr();
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);

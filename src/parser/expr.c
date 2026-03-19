@@ -90,12 +90,56 @@ static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
   }
 }
 
-static void consume_optional_int_after_sign_or_width(token_t **cur, token_kind_t base_kind) {
-  if (!cur || !*cur) return;
-  if ((base_kind == TK_SIGNED || base_kind == TK_UNSIGNED || base_kind == TK_SHORT || base_kind == TK_LONG) &&
-      (*cur)->kind == TK_INT) {
-    *cur = (*cur)->next;
+static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_kind, int *out_elem_size,
+                                            token_t **out_next) {
+  if (!start) return 0;
+  if (start->kind != TK_SIGNED && start->kind != TK_UNSIGNED &&
+      start->kind != TK_SHORT && start->kind != TK_LONG && start->kind != TK_INT) {
+    return 0;
   }
+
+  int n_signed = 0, n_unsigned = 0, n_short = 0, n_long = 0, n_int = 0;
+  token_t *t = start;
+  while (t && (t->kind == TK_SIGNED || t->kind == TK_UNSIGNED ||
+               t->kind == TK_SHORT || t->kind == TK_LONG || t->kind == TK_INT)) {
+    if (t->kind == TK_SIGNED) n_signed++;
+    else if (t->kind == TK_UNSIGNED) n_unsigned++;
+    else if (t->kind == TK_SHORT) n_short++;
+    else if (t->kind == TK_LONG) n_long++;
+    else if (t->kind == TK_INT) n_int++;
+    t = t->next;
+  }
+
+  if (n_signed > 1 || n_unsigned > 1 || n_short > 1 || n_long > 2 || n_int > 1) {
+    tk_error_tok(start, "不正な型指定子の組み合わせです");
+  }
+  if (n_signed && n_unsigned) {
+    tk_error_tok(start, "不正な型指定子の組み合わせです");
+  }
+  if (n_short && n_long) {
+    tk_error_tok(start, "不正な型指定子の組み合わせです");
+  }
+
+  token_kind_t kind = TK_INT;
+  int elem = 4;
+  if (n_short) {
+    kind = TK_SHORT;
+    elem = 2;
+  } else if (n_long) {
+    kind = TK_LONG;
+    elem = 8;
+  } else if (n_unsigned) {
+    kind = TK_UNSIGNED;
+    elem = 4;
+  } else if (n_signed) {
+    kind = TK_SIGNED;
+    elem = 4;
+  }
+
+  if (out_kind) *out_kind = kind;
+  if (out_elem_size) *out_elem_size = elem;
+  if (out_next) *out_next = t;
+  return 1;
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
@@ -262,6 +306,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         inner_elem = 8;
         inner_fp = TK_FLOAT_KIND_DOUBLE;
         q = q->next->next;
+      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, &q)) {
+        inner_fp = TK_FLOAT_KIND_NONE;
       } else {
         inner_kind = q->kind;
         psx_ctx_get_type_info(inner_kind, NULL, &inner_elem);
@@ -377,14 +423,17 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   }
   if (is_type) {
     if (*type_kind == TK_EOF) {
-      *type_kind = t->kind;
-      if (out_elem_size) psx_ctx_get_type_info(*type_kind, NULL, out_elem_size);
-      if (out_fp_kind) {
-        if (*type_kind == TK_FLOAT) *out_fp_kind = TK_FLOAT_KIND_FLOAT;
-        else if (*type_kind == TK_DOUBLE) *out_fp_kind = TK_FLOAT_KIND_DOUBLE;
+      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, &t)) {
+        if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
+      } else {
+        *type_kind = t->kind;
+        if (out_elem_size) psx_ctx_get_type_info(*type_kind, NULL, out_elem_size);
+        if (out_fp_kind) {
+          if (*type_kind == TK_FLOAT) *out_fp_kind = TK_FLOAT_KIND_FLOAT;
+          else if (*type_kind == TK_DOUBLE) *out_fp_kind = TK_FLOAT_KIND_DOUBLE;
+        }
+        t = t->next;
       }
-      t = t->next;
-      consume_optional_int_after_sign_or_width(&t, *type_kind);
     }
   } else if (psx_ctx_is_tag_keyword(t->kind)) {
     token_kind_t tag_kind = t->kind;
