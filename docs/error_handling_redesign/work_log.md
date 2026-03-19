@@ -502,3 +502,23 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 優先度Aの `E2006`（expected token）テンプレート化を実装。
+
+## Task 21: E2006 の日本語直書き除去
+- 日付: 2026-03-19
+- 目的:
+  - 優先度Aとして、`tokenizer.c` の `E2006` 呼び出しから日本語直書きを除去する。
+- 実施内容:
+  - `tk_expect` の `E2006` 出力を以下へ変更:
+    - 変更前: `"'%c' が必要です"`
+    - 変更後: `"%s: '%c'", diag_message_for(E2006), op`
+  - `message_migration_backlog.md` の優先度A項目を完了済みに更新。
+- 変更ファイル:
+  - `src/tokenizer/tokenizer.c`
+  - `docs/error_handling_redesign/message_migration_backlog.md`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Parser側で定型文（型指定子組み合わせ不正など）を同様に `diag_message_for(id)` ベースへ寄せる。

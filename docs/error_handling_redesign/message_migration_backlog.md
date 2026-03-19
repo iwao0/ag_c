@@ -3,10 +3,10 @@
 本ドキュメントは、`diag_emit_*` 呼び出し時に残っている日本語直書きメッセージを
 多言語化しやすい形へ移行するためのバックログです。
 
-## 優先度A: 既存カタログで即移行可能（定型）
+## 完了済み
 - `src/tokenizer/tokenizer.c`
-  - `E2006` expected token (`"'%c' が必要です"`)。
-  - 方針: `%c` を引数として残せるテンプレート化（例: `tokenizer.expected_token_char`）を追加し、カタログ側へ移す。
+  - `E2006` expected token の日本語直書き（`"'%c' が必要です"`）を廃止。
+  - 現在は `diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN)` と可変部 `'%c'` を組み合わせて出力。
 
 ## 優先度B: 追加キー/テンプレート化が必要（文脈付き）
 - `src/parser/diag.c`

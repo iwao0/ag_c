@@ -294,7 +294,8 @@ token_ident_t *tk_consume_ident(void) {
 void tk_expect(char op) {
   token_kind_t kind = kind_for_char(op);
   if (kind == TK_EOF || token->kind != kind) {
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, token, "'%c' が必要です", op);
+    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, token, "%s: '%c'",
+                   diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
   }
   token = token->next;
 }
