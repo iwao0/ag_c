@@ -593,7 +593,7 @@ static unsigned long long parse_digits(char **pp, int base) {
     val = val * (unsigned long long)base + (unsigned long long)digit;
     p++;
   }
-  if (!has_digit) tk_error_at(*pp, "整数リテラルが不正です");
+  if (!has_digit) tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, *pp, "整数リテラルが不正です");
   *pp = p;
   return val;
 }
@@ -627,7 +627,7 @@ static bool try_parse_decimal_int_fast(char **pp, parsed_num_t *num) {
     choose_int_type(num, val, true, false, 0, *pp);
   }
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    tk_error_at(p, "数値リテラルが不正です");
+    tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, p, "数値リテラルが不正です");
   }
   *pp = p;
   return true;
@@ -669,7 +669,7 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
     if (has_hex_float_marker(p)) {
       char *end;
       num->fval = strtod(p, &end);
-      if (end == p) tk_error_at(p, "16進浮動小数点リテラルが不正です");
+      if (end == p) tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, p, "16進浮動小数点リテラルが不正です");
       if (*end == 'f' || *end == 'F') {
         num->fp_kind = TK_FLOAT_KIND_FLOAT;
         num->float_suffix_kind = TK_FLOAT_SUFFIX_F;
@@ -682,7 +682,8 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
         num->fp_kind = TK_FLOAT_KIND_DOUBLE;
         num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       }
-      if (tk_is_ident_start_byte(*end)) tk_error_at(end, "浮動小数点サフィックスが不正です");
+      if (tk_is_ident_start_byte(*end))
+        tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, end, "浮動小数点サフィックスが不正です");
       p = end;
     } else {
       p += 2;
@@ -700,7 +701,8 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
     }
     tk_audit_extension(p, "binary literal extension");
     p += 2;
-    if (*p != '0' && *p != '1') tk_error_at(p, "2進数リテラルが不正です");
+    if (*p != '0' && *p != '1')
+      tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, p, "2進数リテラルが不正です");
     unsigned long long val = parse_digits(&p, 2);
     num->uval = val;
     num->val = token_signed_from_u64(val);
@@ -709,7 +711,8 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
     num->int_base = 2;
     parse_int_suffix(num, &p, val, false, *pp);
   } else if (*p == '0' && tk_is_digit(p[1])) {
-    if (p[1] == '8' || p[1] == '9') tk_error_at(p, "8進数リテラルが不正です");
+    if (p[1] == '8' || p[1] == '9')
+      tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, p, "8進数リテラルが不正です");
     p++;
     unsigned long long val = 0;
     if (*p >= '0' && *p <= '7') {
@@ -743,7 +746,8 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
         num->fp_kind = TK_FLOAT_KIND_DOUBLE;
         num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       }
-      if (tk_is_ident_start_byte(*end)) tk_error_at(end, "浮動小数点サフィックスが不正です");
+      if (tk_is_ident_start_byte(*end))
+        tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, end, "浮動小数点サフィックスが不正です");
       p = end;
     } else {
       unsigned long long val = parse_digits(&p, 10);
@@ -757,7 +761,7 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
   }
 
   if (*p == '.' || tk_is_ident_continue_byte(*p)) {
-    tk_error_at(p, "数値リテラルが不正です");
+    tk_error_at_id(DIAG_ERR_TOKENIZER_INVALID_NUMBER, p, "数値リテラルが不正です");
   }
   *pp = p;
 }
@@ -825,7 +829,7 @@ token_t *tk_tokenize(char *p) {
       char *start = p;
       while (true) {
         if (*p == '\0' || *p == '\n') {
-          tk_error_at(p, "文字列リテラルが閉じられていません");
+          tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED, p, "文字列リテラルが閉じられていません");
         }
         if (*p == '"') break;
         if (*p == '\\') {
@@ -868,7 +872,7 @@ token_t *tk_tokenize(char *p) {
       p += chr_prefix;
       p++; // 開きクォートをスキップ
       if (*p == '\0' || *p == '\n') {
-        tk_error_at(p, "文字リテラルが閉じられていません");
+        tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED, p, "文字リテラルが閉じられていません");
       }
       if (*p == '\'') {
         tk_error_at(p, "空の文字リテラルは使えません");

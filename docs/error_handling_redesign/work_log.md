@@ -123,3 +123,34 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 数値/エスケープ/未終端文字列などを `E2002+` へ細分化。
+
+## Task 6: tokenizer 個別エラーID導入（第二段）
+- 日付: 2026-03-19
+- 目的:
+  - Tokenizerの主要エラーを `E2003`〜`E2005` へ振り分ける。
+- 実施内容:
+  - エラーカタログに以下を追加:
+    - `E2003` (`tokenizer.unterminated`)
+    - `E2004` (`tokenizer.invalid_number`)
+    - `E2005` (`tokenizer.invalid_escape`)
+  - `tokenizer.c` で数値不正系を `E2004`、未終端文字列/文字を `E2003` にマップ。
+  - `literals.c` のエスケープ不正系を `E2005` にマップ。
+  - `scanner.c` の未終端コメントを `E2003` にマップ。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/tokenizer.c`
+  - `src/tokenizer/literals.c`
+  - `src/tokenizer/scanner.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_tokenizer build/test_tokenizer_c11`
+  - `./build/test_tokenizer`
+  - `./build/test_tokenizer_c11`
+  - `make DIAG_LANG=ja test`（All pass, E2E `258/258`）
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `tk_error_tok` 系（expect系など）の個別コード化を段階導入。
