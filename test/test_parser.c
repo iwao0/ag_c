@@ -397,6 +397,14 @@ static void test_expr_sizeof() {
   node_t *c4 = ps_expr();
   ASSERT_EQ(ND_NUM, c4->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, c4->fp_kind);
+
+  token = tk_tokenize("(_Atomic(int))1");
+  node_t *c5 = ps_expr();
+  ASSERT_EQ(ND_NUM, c5->kind);
+
+  token = tk_tokenize("(_Atomic(int*))0");
+  node_t *c6 = ps_expr();
+  ASSERT_EQ(ND_NUM, c6->kind);
 }
 
 static void test_expr_inc_dec() {

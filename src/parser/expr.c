@@ -198,6 +198,84 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_elem_size) *out_elem_size = 8;
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
 
+  if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
+    token_t *q = t->next->next;
+    token_kind_t inner_kind = TK_EOF;
+    token_kind_t inner_tag_kind = TK_EOF;
+    char *inner_tag_name = NULL;
+    int inner_tag_len = 0;
+    int inner_ptr = 0;
+    int inner_elem = 8;
+    tk_float_kind_t inner_fp = TK_FLOAT_KIND_NONE;
+    bool inner_is_type = false;
+    bool q_is_type = false;
+    if (q) psx_ctx_get_type_info(q->kind, &q_is_type, NULL);
+    if (q_is_type) {
+      inner_is_type = true;
+      if (q->kind == TK_LONG && q->next && q->next->kind == TK_DOUBLE) {
+        inner_kind = TK_DOUBLE;
+        inner_elem = 8;
+        inner_fp = TK_FLOAT_KIND_DOUBLE;
+        q = q->next->next;
+      } else {
+        inner_kind = q->kind;
+        psx_ctx_get_type_info(inner_kind, NULL, &inner_elem);
+        if (inner_kind == TK_FLOAT) inner_fp = TK_FLOAT_KIND_FLOAT;
+        else if (inner_kind == TK_DOUBLE) inner_fp = TK_FLOAT_KIND_DOUBLE;
+        q = q->next;
+      }
+    } else if (q && psx_ctx_is_tag_keyword(q->kind)) {
+      token_kind_t tag_kind = q->kind;
+      q = q->next;
+      token_ident_t *tag = (token_ident_t *)q;
+      if (!q || q->kind != TK_IDENT) return 0;
+      if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
+        psx_diag_undefined_with_name(q, "のタグ型", tag->str, tag->len);
+      }
+      inner_kind = tag_kind;
+      inner_tag_kind = tag_kind;
+      inner_tag_name = tag->str;
+      inner_tag_len = tag->len;
+      inner_elem = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
+      inner_is_type = true;
+      q = q->next;
+    } else if (q && psx_ctx_is_typedef_name_token(q)) {
+      token_ident_t *id = (token_ident_t *)q;
+      token_kind_t td_base = TK_EOF;
+      int td_elem = 8;
+      tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+      token_kind_t td_tag = TK_EOF;
+      char *td_tag_name = NULL;
+      int td_tag_len = 0;
+      int td_ptr = 0;
+      psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+      inner_kind = (td_tag != TK_EOF) ? td_tag : td_base;
+      inner_tag_kind = td_tag;
+      inner_tag_name = td_tag_name;
+      inner_tag_len = td_tag_len;
+      inner_elem = td_elem;
+      inner_fp = td_fp;
+      inner_ptr = td_ptr;
+      inner_is_type = true;
+      q = q->next;
+    }
+    if (!inner_is_type) return 0;
+    while (q && q->kind == TK_MUL) {
+      inner_ptr = 1;
+      q = q->next;
+    }
+    if (!q || q->kind != TK_RPAREN) return 0;
+    *type_kind = inner_kind;
+    *is_pointer = inner_ptr;
+    if (out_tag_kind) *out_tag_kind = inner_tag_kind;
+    if (out_tag_name) *out_tag_name = inner_tag_name;
+    if (out_tag_len) *out_tag_len = inner_tag_len;
+    if (out_elem_size) *out_elem_size = inner_elem;
+    if (out_fp_kind) *out_fp_kind = inner_fp;
+    t = q->next;
+    goto cast_parse_postfix;
+  }
+
   bool is_type = false;
   psx_ctx_get_type_info(t->kind, &is_type, NULL);
   // Minimal support for C11 complex/imaginary cast spellings:
@@ -297,6 +375,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     return 0;
   }
 
+cast_parse_postfix:
   if (*is_pointer != 1) *is_pointer = 0;
   while (t && t->kind == TK_MUL) {
     *is_pointer = 1;
