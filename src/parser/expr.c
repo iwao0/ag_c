@@ -1048,6 +1048,10 @@ static node_t *unary(void) {
         return apply_postfix(operand);
       }
       if (cast_kind == TK_UNION) {
+        if (!ps_get_enable_union_scalar_pointer_cast()) {
+          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+                       "union");
+        }
         token_kind_t op_tag_kind = TK_EOF;
         char *op_tag_name = NULL;
         int op_tag_len = 0;

@@ -75,6 +75,8 @@ enable_c11_audit_extensions = false
 
 [parser]
 enable_size_compatible_nonscalar_cast = true
+enable_union_scalar_pointer_cast = true
+enable_union_array_member_nonbrace_init = true
 ```
 
 主な項目:
@@ -84,3 +86,5 @@ enable_size_compatible_nonscalar_cast = true
 - `tokenizer.enable_binary_literals`: GNU拡張の2進数整数リテラルを有効化
 - `tokenizer.enable_c11_audit_extensions`: 拡張トークン使用時の監査警告を出力
 - `parser.enable_size_compatible_nonscalar_cast`: 同サイズ `struct/union` キャスト拡張を有効化
+- `parser.enable_union_scalar_pointer_cast`: スカラ/ポインタから `union` 値 cast の段階受理を有効化
+- `parser.enable_union_array_member_nonbrace_init`: `union` 先頭配列メンバの非波括弧初期化（`u={1,2}`）を有効化

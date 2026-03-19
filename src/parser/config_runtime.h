@@ -6,4 +6,10 @@
 bool ps_get_enable_size_compatible_nonscalar_cast(void);
 void ps_set_enable_size_compatible_nonscalar_cast(bool enable);
 
+bool ps_get_enable_union_scalar_pointer_cast(void);
+void ps_set_enable_union_scalar_pointer_cast(bool enable);
+
+bool ps_get_enable_union_array_member_nonbrace_init(void);
+void ps_set_enable_union_array_member_nonbrace_init(bool enable);
+
 #endif
