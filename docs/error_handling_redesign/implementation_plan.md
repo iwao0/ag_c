@@ -37,7 +37,7 @@
   - `diag_emit_at(error_id_t id, char *loc, ...)`
   - `diag_emit_internal(error_id_t id, const char *detail, ...)`
 - 出力フォーマットを統一する。
-  - 例: `file.c:12: E3003: expected ';' (actual: 'if')`
+  - 例: `file.c:12: E3003: ';' が必要です (actual: 'if')`
 - 既存の `tk_error_*` / `psx_diag_*` は段階的にラッパー化し、最終的に共通APIへ寄せる。
 
 ### 3. 多言語化の拡張ポイントを先に埋める

@@ -362,7 +362,7 @@ static long primary(token_t **rest, token_t *tok) {
   if (tok->kind == TK_LPAREN) {
     long val = const_expr(&tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
-      pp_error("期待される )", NULL);
+      pp_error(") が必要です", NULL);
     }
     *rest = tok->next;
     return val;
@@ -723,7 +723,7 @@ token_t *preprocess(token_t *tok) {
             tok = tok->next;
           }
           if (tok->kind == TK_EOF) {
-            pp_error("期待される '>' がありません", NULL);
+            pp_error("'>' が必要です", NULL);
           }
           tok = tok->next; // '>' をスキップ
         }
