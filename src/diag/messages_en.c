@@ -33,6 +33,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_INVALID_TYPE_SPEC: return "Invalid type specifier combination";
     case DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE: return "String literal is too large";
     case DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID: return "Invalid size while concatenating string literals";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED: return "Expected _Static_assert";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST: return "_Static_assert condition must be an integer constant expression";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING: return "_Static_assert second argument must be a string literal";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_FAILED: return "_Static_assert failed";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

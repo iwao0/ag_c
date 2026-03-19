@@ -386,23 +386,27 @@ static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int 
 
 static void parse_static_assert_stmt(void) {
   if (token->kind != TK_STATIC_ASSERT) {
-    psx_diag_ctx(token, "static_assert", "'_Static_assert' が必要です");
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
   }
   token = token->next;
   tk_expect('(');
   node_t *cond = psx_expr_assign();
   if (cond->kind != ND_NUM) {
-    psx_diag_ctx(token, "static_assert", "_Static_assert の条件は整数定数式が必要です");
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
   }
   tk_expect(',');
   if (token->kind != TK_STRING) {
-    psx_diag_ctx(token, "static_assert", "_Static_assert の第2引数は文字列リテラルが必要です");
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
   }
   token = token->next;
   tk_expect(')');
   tk_expect(';');
   if (((node_num_t *)cond)->val == 0) {
-    psx_diag_ctx(token, "static_assert", "_Static_assert が失敗しました");
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
 }
 

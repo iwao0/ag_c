@@ -33,6 +33,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_INVALID_TYPE_SPEC: return "不正な型指定子の組み合わせです";
     case DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE: return "文字列リテラルが大きすぎます";
     case DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID: return "文字列連結中にサイズが不正です";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED: return "'_Static_assert' が必要です";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST: return "_Static_assert の条件は整数定数式が必要です";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING: return "_Static_assert の第2引数は文字列リテラルが必要です";
+    case DIAG_ERR_PARSER_STATIC_ASSERT_FAILED: return "_Static_assert が失敗しました";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

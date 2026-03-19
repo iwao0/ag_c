@@ -723,3 +723,37 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - parser の `psx_diag_ctx(...)` 呼び出し群のテンプレート整理を継続。
+
+## Task 27: static_assert 診断の専用ID化
+- 日付: 2026-03-19
+- 目的:
+  - `static_assert` 関連の定型文を専用ID化し、`psx_diag_ctx` 経由の日本語直書きを削減する。
+- 実施内容:
+  - 以下のエラーIDを追加:
+    - `E3009` / `parser.static_assert_expected`
+    - `E3010` / `parser.static_assert_cond_not_const`
+    - `E3011` / `parser.static_assert_msg_not_string`
+    - `E3012` / `parser.static_assert_failed`
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - `src/parser/parser.c` / `src/parser/stmt.c` の `static_assert` 診断を
+    `diag_message_for(E3009-E3012)` ベースへ置換。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/parser/parser.c`
+  - `src/parser/stmt.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `psx_diag_ctx` 呼び出しのうち、定型化しやすいものを順次専用ID化。
