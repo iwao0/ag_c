@@ -1344,3 +1344,22 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 全カテゴリ（internal/preprocess/tokenizer/parser/codegen）の採番網羅性を最終確認する。
+
+## Task 45: diag message 定義重複の解消
+- 日付: 2026-03-19
+- 目的:
+  - `diag_message_ja` / `diag_message_en` の二重定義をなくし、保守性を上げる。
+- 実施内容:
+  - `src/diag/messages_all.c` の重複実装を廃止。
+  - `messages_all.c` は `messages_ja.c` / `messages_en.c` を取り込む薄い集約ファイルへ変更。
+  - これによりメッセージ定義の実体は `messages_ja.c` / `messages_en.c` のみをソースオブトゥルース化。
+- 変更ファイル:
+  - `src/diag/messages_all.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make clean && make test`
+  - `make clean && make DIAG_LANG=all -j4`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - 必要に応じて `messages_ja.c` / `messages_en.c` の生成・検証フロー（差分チェック）を検討する。
