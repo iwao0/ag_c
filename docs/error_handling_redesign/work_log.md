@@ -294,3 +294,21 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser本体（`decl/stmt/expr`）の直接診断経路も段階的に `E300x` へ統一。
+
+## Task 12: parser 本体の個別コード化（第二段）
+- 日付: 2026-03-19
+- 目的:
+  - Parser 本体の直接エラー経路を `E300x` へ段階的に寄せる。
+- 実施内容:
+  - `switch_ctx.c` の重複 `case/default` を `E3004`（重複）へ移行。
+  - `stmt.c` の `return` 文脈エラーを `E3005`（文脈不正）へ移行。
+- 変更ファイル:
+  - `src/parser/switch_ctx.c`
+  - `src/parser/stmt.c`
+- テスト:
+  - `make DIAG_LANG=ja build/test_parser`
+  - `./build/test_parser`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `expr.c` / `parser.c` の `tk_error_tok` 経路を個別コード化（Parser作業再開タイミングで実施）。

@@ -8,6 +8,7 @@
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
 #include "internal/switch_ctx.h"
+#include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -566,7 +567,8 @@ static node_t *stmt_internal(void) {
     node->kind = ND_RETURN;
     if (tk_consume(';')) {
       if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
-        tk_error_tok(token, "void 以外の関数では return に式が必要です");
+        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+                       "[stmt] void 以外の関数では return に式が必要です");
       }
       node->lhs = NULL;
       node->fp_kind = psx_expr_current_func_ret_fp_kind();
@@ -574,7 +576,8 @@ static node_t *stmt_internal(void) {
     }
     node->lhs = ps_expr();
     if (psx_expr_current_func_ret_token_kind() == TK_VOID) {
-      tk_error_tok(token, "void 関数では return に式を指定できません");
+      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+                     "[stmt] void 関数では return に式を指定できません");
     }
     node->fp_kind = psx_expr_current_func_ret_fp_kind();
     tk_expect(';');
