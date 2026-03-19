@@ -572,18 +572,22 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     init_chain = build_struct_copy_chain_from_source(var, (node_lvar_t *)value);
   } else if (value && value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
-    node_lvar_t *then_src = (ternary->base.rhs && ternary->base.rhs->kind == ND_LVAR)
-                                ? (node_lvar_t *)ternary->base.rhs
-                                : NULL;
-    node_lvar_t *else_src = (ternary->els && ternary->els->kind == ND_LVAR) ? (node_lvar_t *)ternary->els : NULL;
+    node_t *then_prefix = NULL;
+    node_t *else_prefix = NULL;
+    node_lvar_t *then_src = NULL;
+    node_lvar_t *else_src = NULL;
+    resolve_copy_source_lvar(ternary->base.rhs, &then_prefix, &then_src);
+    resolve_copy_source_lvar(ternary->els, &else_prefix, &else_src);
     if (!is_same_tag_object_lvar(then_src, var) || !is_same_tag_object_lvar(else_src, var)) {
       psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");
     }
     node_ctrl_t *copy_select = calloc(1, sizeof(node_ctrl_t));
     copy_select->base.kind = ND_TERNARY;
     copy_select->base.lhs = ternary->base.lhs;
-    copy_select->base.rhs = build_struct_copy_chain_from_source(var, then_src);
-    copy_select->els = build_struct_copy_chain_from_source(var, else_src);
+    node_t *then_copy = build_struct_copy_chain_from_source(var, then_src);
+    node_t *else_copy = build_struct_copy_chain_from_source(var, else_src);
+    copy_select->base.rhs = then_prefix ? psx_node_new_binary(ND_COMMA, then_prefix, then_copy) : then_copy;
+    copy_select->els = else_prefix ? psx_node_new_binary(ND_COMMA, else_prefix, else_copy) : else_copy;
     init_chain = (node_t *)copy_select;
   } else {
     psx_diag_ctx(token, "decl", "構造体の単一式初期化は同型オブジェクトのみ対応です");

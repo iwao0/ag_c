@@ -375,6 +375,11 @@ static void test_expr_unary_ops() {
   node_t *nested_atomic_cast = ps_expr();
   ASSERT_EQ(ND_NUM, nested_atomic_cast->kind);
   ASSERT_EQ(11, as_num(nested_atomic_cast)->val);
+
+  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
+  parsed_code = ps_program();
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 }
 
 static void test_expr_generic() {
