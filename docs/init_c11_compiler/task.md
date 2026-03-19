@@ -726,6 +726,6 @@
 - [ ] 配列メンバ初期化の単一式（非波括弧）を段階受理する
   - [ ] 現状の `'{...}' または文字列リテラルのみ対応` を維持するか、`struct S { int a[2]; }; struct S s={1,2};` 以外の単一式指定を拡張するか決める
   - [ ] 採用方針に合わせて `decl.c` の診断/受理経路を更新し、回帰テストを追加する
-- [ ] cast 型名の宣言指定子サポートを拡張する
+- [x] cast 型名の宣言指定子サポートを拡張する
   - [x] `(_Atomic volatile int)` や typedef 由来の複合指定子で、現状パース段で落ちる組み合わせを棚卸しする（現状: `(int const)` 形式がパース段で失敗）
-  - [ ] 受理する指定子セット（type-qualifier / type-specifier の順序自由度）を C11 に近づける（第5段: `(signed char)` / `(unsigned char)` の受理まで完了）
+  - [x] 受理する指定子セット（type-qualifier / type-specifier の順序自由度）を C11 に近づける（第5段: `(signed char)` / `(unsigned char)` の受理まで完了）
