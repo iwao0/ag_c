@@ -3,6 +3,7 @@
 #include "internal/charclass.h"
 #include "internal/literals.h"
 #include "tokenizer.h"
+#include "../diag/diag.h"
 
 static inline bool tk_is_space_fast(char c) {
   // Hot path for typical ASCII whitespace.
@@ -49,7 +50,8 @@ static char *tk_skip_ignored_fallback(char *p, bool *at_bol, bool *has_space, in
       p++;
     }
     if (!closed) {
-      tk_error_at_id(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, p, "コメントが閉じられていません");
+      diag_emit_atf(DIAG_ERR_TOKENIZER_UNTERMINATED_COMMENT, tk_get_user_input(), p,
+                    "コメントが閉じられていません");
     }
     return p;
   }

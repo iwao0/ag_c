@@ -355,3 +355,31 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - Parser 以外（共通層・将来カテゴリ）の診断粒度見直しと追加コード体系の検討。
+
+## Task 15: Tokenizer の diag 専用 API 化
+- 日付: 2026-03-19
+- 目的:
+  - 旧 `tk_error_*` API を廃止し、診断出力を `diag_emit_*` に一本化する。
+- 実施内容:
+  - `src/tokenizer/tokenizer.c`
+    - `tk_error_at` / `tk_error_tok` / `tk_error_at_id` / `tk_error_tok_id` の実装を削除。
+    - `tk_expect` / `tk_expect_number` のエラー出力を `diag_emit_tokf` に置換。
+    - 数値・文字列・文字定数のエラー出力を `diag_emit_atf(..., user_input, ...)` に統一。
+  - `src/tokenizer/literals.c` / `src/tokenizer/scanner.c`
+    - `tk_error_at_id` 呼び出しを `diag_emit_atf(..., tk_get_user_input(), ...)` に置換。
+    - `diag` ヘッダを明示 include。
+  - `src/tokenizer/tokenizer.h`
+    - 旧 `tk_error_*` 宣言を削除し、公開APIから除外。
+    - `tokenize` の warning を診断API表現へ更新。
+- 変更ファイル:
+  - `src/tokenizer/tokenizer.c`
+  - `src/tokenizer/literals.c`
+  - `src/tokenizer/scanner.c`
+  - `src/tokenizer/tokenizer.h`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - Tokenizer 内で `diag_emit_atf(..., tk_get_user_input(), ...)` が多い箇所を薄い内部ヘルパーで整理するか検討。
