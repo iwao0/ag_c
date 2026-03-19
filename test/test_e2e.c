@@ -349,6 +349,62 @@ static int run_ag_c_to_s(const char *input, const char *s_path) {
   return 0;
 }
 
+static int run_clang_build(const char *bin_path, const char *s_path, const char *drv_path) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    if (drv_path) {
+      execlp("clang", "clang", "-o", bin_path, s_path, drv_path, (char *)NULL);
+    } else {
+      execlp("clang", "clang", "-o", bin_path, s_path, (char *)NULL);
+    }
+    _exit(1);
+  }
+  if (pid < 0) return -1;
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
+  return 0;
+}
+
+static int run_binary_exit_code(const char *bin_path, int *exit_code) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    execl(bin_path, bin_path, (char *)NULL);
+    _exit(1);
+  }
+  if (pid < 0) return -1;
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status)) return -1;
+  *exit_code = WEXITSTATUS(status);
+  return 0;
+}
+
+static int run_binary_read_stdout(const char *bin_path, char *buf, size_t buf_size) {
+  int pipefd[2];
+  if (pipe(pipefd) != 0) return -1;
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+    execl(bin_path, bin_path, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[1]);
+  if (pid < 0) {
+    close(pipefd[0]);
+    return -1;
+  }
+  ssize_t nread = read(pipefd[0], buf, buf_size - 1);
+  close(pipefd[0]);
+  int status;
+  waitpid(pid, &status, 0);
+  if (nread < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
+  buf[nread] = '\0';
+  return 0;
+}
+
 static int write_source_file(const char *path, const char *source) {
   FILE *fp = fopen(path, "w");
   if (!fp) return -1;
@@ -363,7 +419,6 @@ static int build_case(const test_case_t *tc) {
   char bin_path[PATH_MAX];
   char drv_path[PATH_MAX];
   char src_path[PATH_MAX];
-  char cmd[PATH_MAX * 2];
 
   build_artifact_paths(tc, dir, s_path, bin_path, drv_path);
   build_source_path(tc, src_path);
@@ -372,8 +427,7 @@ static int build_case(const test_case_t *tc) {
 
   if (tc->kind == CASE_INT) {
     if (run_ag_c_to_s(src_path, s_path) != 0) return -1;
-    snprintf(cmd, sizeof(cmd), "clang -o %s %s 2>&1", bin_path, s_path);
-    if (system(cmd) != 0) return -1;
+    if (run_clang_build(bin_path, s_path, NULL) != 0) return -1;
     return 0;
   }
 
@@ -388,8 +442,7 @@ static int build_case(const test_case_t *tc) {
   }
   fclose(fp);
 
-  snprintf(cmd, sizeof(cmd), "clang -o %s %s %s 2>&1", bin_path, s_path, drv_path);
-  if (system(cmd) != 0) return -1;
+  if (run_clang_build(bin_path, s_path, drv_path) != 0) return -1;
   return 0;
 }
 
@@ -399,18 +452,12 @@ static int run_case(const test_case_t *tc, FILE *log) {
   char bin_path[PATH_MAX];
   build_artifact_paths(tc, dir, s_path, bin_path, NULL);
   if (tc->kind == CASE_INT) {
-    int status = system(bin_path);
-    if (status == -1) {
+    int actual = 0;
+    if (run_binary_exit_code(bin_path, &actual) != 0) {
       fprintf(log, "  FAIL: %s could not run\n  input: %s\n  artifacts: s=%s bin=%s\n",
               tc->name, tc->input, s_path, bin_path);
       return -1;
     }
-    if (!WIFEXITED(status)) {
-      fprintf(log, "  FAIL: %s terminated unexpectedly\n  input: %s\n  artifacts: s=%s bin=%s\n",
-              tc->name, tc->input, s_path, bin_path);
-      return -1;
-    }
-    int actual = WEXITSTATUS(status);
     if (actual == tc->expected_i) {
       fprintf(log, "  OK: %s => %d\n", tc->name, actual);
       return 0;
@@ -420,22 +467,19 @@ static int run_case(const test_case_t *tc, FILE *log) {
     return -1;
   }
 
-  char cmd[PATH_MAX * 2];
-  snprintf(cmd, sizeof(cmd), "%s", bin_path);
-  FILE *out = popen(cmd, "r");
-  if (!out) {
+  char outbuf[128];
+  if (run_binary_read_stdout(bin_path, outbuf, sizeof(outbuf)) != 0) {
     fprintf(log, "  FAIL: %s could not run\n  artifacts: s=%s bin=%s\n", tc->name, s_path, bin_path);
     return -1;
   }
   double actual = 0.0;
   if (tc->kind == CASE_DOUBLE) {
-    fscanf(out, "%lf", &actual);
+    sscanf(outbuf, "%lf", &actual);
   } else {
     float f = 0.0f;
-    fscanf(out, "%f", &f);
+    sscanf(outbuf, "%f", &f);
     actual = f;
   }
-  pclose(out);
   if (actual > tc->expected_f - 0.001 && actual < tc->expected_f + 0.001) {
     fprintf(log, "  OK: %s => %.2f\n", tc->name, actual);
     return 0;
