@@ -229,7 +229,8 @@ void tk_decode_identifier_ucn(char *start, int len, char **out_str, int *out_len
     int consumed = 0;
     if (tk_parse_ucn_codepoint(start + i, &cp, &consumed)) {
       if (!tk_is_valid_ucn_codepoint(cp))
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_INVALID_ESCAPE_UCN, start + i, "識別子内のUCNが不正です");
+        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID, start + i, "%s",
+                    diag_message_for(DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID));
       char tmp[4];
       int n = tk_encode_utf8(cp, tmp);
       memcpy(buf + bi, tmp, (size_t)n);

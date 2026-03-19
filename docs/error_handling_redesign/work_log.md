@@ -1242,3 +1242,41 @@
   - （このセクション追加後にコミット）
 - 次アクション:
   - 必要に応じて preprocess 固有の診断ヘルパー（`PP_ERROR0/1` 等）導入を検討。
+
+## Task 42: tokenizer 直書き診断の追加採番化
+- 日付: 2026-03-19
+- 目的:
+  - Tokenizer の残存直書き診断を専用ID化し、多言語切替時の差し替えポイントを統一する。
+- 実施内容:
+  - 以下のエラーIDを追加（`E2014-E2028`）:
+    - トークン長（名称付き）/整数リテラル過大
+    - 整数サフィックス不正 / 整数・数値リテラル不正
+    - 16進浮動小数点不正 / 浮動小数点サフィックス不正
+    - 2進数 strict C11 未対応・不正 / 8進数不正
+    - 空文字リテラル / 文字リテラル不正
+    - 文字列リテラル未終端 / 識別子内UCN不正 / トークナイズ失敗
+  - カタログ・メッセージ定義を更新:
+    - `src/diag/error_catalog.h`
+    - `src/diag/error_catalog.c`
+    - `src/diag/messages_ja.c`
+    - `src/diag/messages_en.c`
+    - `src/diag/messages_all.c`
+  - 置換:
+    - `src/tokenizer/tokenizer.c` の `TK_DIAG_ATF(...)` 直書き文言を
+      `diag_message_for(E2014-E2028)` 経由へ移行。
+    - `src/tokenizer/literals.c` の UCN 診断を `E2027` へ移行。
+- 変更ファイル:
+  - `src/diag/error_catalog.h`
+  - `src/diag/error_catalog.c`
+  - `src/diag/messages_ja.c`
+  - `src/diag/messages_en.c`
+  - `src/diag/messages_all.c`
+  - `src/tokenizer/tokenizer.c`
+  - `src/tokenizer/literals.c`
+  - `docs/error_handling_redesign/work_log.md`
+- テスト:
+  - `make test`
+- コミット:
+  - （このセクション追加後にコミット）
+- 次アクション:
+  - `arch/main` 側の非カタログ文言を対象に最終棚卸し。
