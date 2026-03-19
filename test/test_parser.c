@@ -1627,7 +1627,7 @@ static void test_parse_invalid_diagnostics() {
   ps_set_enable_union_array_member_nonbrace_init(false);
   expect_parse_fail_with_message(
       "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
-      "[decl] 配列初期化は現在 '{...}' または文字列リテラルのみ対応です");
+      "[decl] 共用体の配列メンバ非波括弧初期化は設定で無効です");
   ps_set_enable_union_array_member_nonbrace_init(true);
 
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。

@@ -534,8 +534,13 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       }
       return init_chain;
     }
-    psx_diag_ctx(token, "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_UNSUPPORTED_FORM));
+    if (owner->tag_kind == TK_UNION) {
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED));
+    } else {
+      psx_diag_ctx(token, "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_UNSUPPORTED_FORM));
+    }
   }
   if (!member_is_tag_pointer && member_tag_kind == TK_STRUCT) {
     lvar_t nested = {0};
