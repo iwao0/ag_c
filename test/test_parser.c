@@ -178,6 +178,17 @@ static void test_expr_compound_literal() {
   ASSERT_EQ(ND_COMMA, node->kind);
 }
 
+static void test_expr_compound_literal_array_subscript() {
+  printf("test_expr_compound_literal_array_subscript...\n");
+  // 配列型複合リテラルへの添字アクセス: ((int[2]){1,2})[1]
+  token = tk_tokenize("((int[2]){1,2})[1]");
+  node_t *node = ps_expr();
+  // 外側 primary() の括弧グループ: ND_COMMA(init, ND_DEREF(...))
+  ASSERT_EQ(ND_COMMA, node->kind);
+  // rhs が添字アクセス結果 (ND_DEREF)
+  ASSERT_EQ(ND_DEREF, node->rhs->kind);
+}
+
 static void test_expr_add_sub() {
   printf("test_expr_add_sub...\n");
   token = tk_tokenize("1 + 2 - 3");
@@ -1764,6 +1775,7 @@ int main() {
   test_expr_float();
   test_expr_long_double_suffix_metadata();
   test_expr_compound_literal();
+  test_expr_compound_literal_array_subscript();
   test_type_decl();
   test_multiple_funcdefs();
   test_parse_invalid();

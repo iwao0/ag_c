@@ -278,7 +278,7 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
 
 static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen,
                            token_kind_t *out_tag_kind, char **out_tag_name, int *out_tag_len,
-                           int *out_elem_size, tk_float_kind_t *out_fp_kind) {
+                           int *out_elem_size, tk_float_kind_t *out_fp_kind, int *out_array_count) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
   token_t *t = tok->next;
   if (!t) return 0;
@@ -288,6 +288,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_tag_len) *out_tag_len = 0;
   if (out_elem_size) *out_elem_size = 8;
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
+  if (out_array_count) *out_array_count = 0;
 
   consume_local_type_quals(&t);
   if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
@@ -501,6 +502,18 @@ cast_parse_postfix:
   if (*is_pointer != 1) *is_pointer = 0;
   consume_cast_pointer_suffix(&t, is_pointer);
   parse_funcptr_abstract_decl(&t, is_pointer);
+  // 配列宣言子 [N] を受理する（非ポインタ型のみ）
+  if (!*is_pointer && t && t->kind == TK_LBRACKET) {
+    t = t->next;
+    int n = 0;
+    if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
+      n = (int)tk_as_num_int(t)->uval;
+      t = t->next;
+    }
+    if (!t || t->kind != TK_RBRACKET) return 0;
+    t = t->next;
+    if (out_array_count) *out_array_count = n;
+  }
   if (!t || t->kind != TK_RPAREN) return 0;
   *after_rparen = t->next;
   return 1;
@@ -1077,9 +1090,10 @@ static node_t *unary(void) {
   int cast_tag_len = 0;
   int cast_elem_size = 8;
   tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
+  int cast_array_count = 0;
   if (parse_cast_type(token, &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
-                      &cast_elem_size, &cast_fp_kind)) {
+                      &cast_elem_size, &cast_fp_kind, &cast_array_count)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       token = after_rparen;
       // Compound literal strategy (minimal):
@@ -1087,16 +1101,28 @@ static node_t *unary(void) {
       //   (init(hidden_obj), hidden_obj)
       // This gives block-lifetime behavior in function scope for current backend.
       int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
-      int var_size = cast_is_ptr ? 8 : base_elem;
+      int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
+      int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
       char *tmp_name = new_compound_lit_name();
-      lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), var_size, base_elem, 0);
+      lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), var_size, base_elem, is_arr);
       var->tag_kind = cast_tag_kind;
       var->tag_name = cast_tag_name;
       var->tag_len = cast_tag_len;
       var->is_tag_pointer = cast_is_ptr ? 1 : 0;
       var->fp_kind = cast_fp_kind;
       node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
-      node_t *ref = new_typed_lvar_ref(var, cast_is_ptr);
+      node_t *ref;
+      if (is_arr) {
+        // 配列型複合リテラル: primary() の配列変数参照と同様に ND_ADDR を生成する
+        node_mem_t *addr_node = calloc(1, sizeof(node_mem_t));
+        addr_node->base.kind = ND_ADDR;
+        addr_node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
+        addr_node->type_size = var->elem_size;
+        addr_node->deref_size = var->elem_size;
+        ref = (node_t *)addr_node;
+      } else {
+        ref = new_typed_lvar_ref(var, cast_is_ptr);
+      }
       node_t *val = apply_postfix(ref);
       return psx_node_new_binary(ND_COMMA, init, val);
     }
