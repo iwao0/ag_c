@@ -388,6 +388,27 @@ static const test_case_t test_cases[] = {
     {"vla", "sizeof_vla", CASE_INT,
      "int main() { int n = 3; int a[n]; return (int)sizeof(a); }",
      12, 0},
+    // 構造体引数渡し (ARM64 ABI)
+    {"struct_arg", "small_sum", CASE_INT,
+     "struct Point { int x; int y; };"
+     "int sum(struct Point p) { return p.x + p.y; }"
+     "int main() { struct Point pt = {3, 4}; return sum(pt); }",
+     7, 0},
+    {"struct_arg", "small_member", CASE_INT,
+     "struct Point { int x; int y; };"
+     "int get_y(struct Point p) { return p.y; }"
+     "int main() { struct Point pt = {10, 42}; return get_y(pt); }",
+     42, 0},
+    {"struct_arg", "mid_sum", CASE_INT,
+     "struct Mid { int a; int b; int c; };"
+     "int sum3(struct Mid p) { return p.a + p.b + p.c; }"
+     "int main() { struct Mid m = {10, 20, 12}; return sum3(m); }",
+     42, 0},
+    {"struct_arg", "large_sum", CASE_INT,
+     "struct Big { int a; int b; int c; int d; int e; };"
+     "int sum5(struct Big p) { return p.a + p.b + p.c + p.d + p.e; }"
+     "int main() { struct Big b = {1, 2, 3, 4, 5}; return sum5(b); }",
+     15, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

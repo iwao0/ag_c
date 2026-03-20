@@ -628,29 +628,75 @@ static void gen_expr(node_t *node) {
       return;
     }
 
+    // 間接呼び出し: calleeアドレスを引数評価前に x16 へ退避
     if (fn->callee) {
       gen_expr(fn->callee);
       cg_emitf("  ldr x16, [sp], #16\n");
-      // 引数を評価してレジスタに格納
-      for (int i = 0; i < fn->nargs; i++) {
-        gen_expr(fn->args[i]);
+    }
+
+    // 引数の ABI サイズを計算してレジスタ数を決定
+    // - ND_LVAR かつ type_size > 16: byref → 1レジスタ(アドレス)
+    // - ND_LVAR かつ type_size 9-16: 2レジスタ(low/highの2スロット)
+    // - その他: 1レジスタ(スカラー扱い)
+    int *arg_regs = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
+    int total_regs = 0;
+    for (int i = 0; i < fn->nargs; i++) {
+      node_t *a = fn->args[i];
+      int abi_sz = (a->kind == ND_LVAR) ? as_lvar(a)->mem.type_size : 0;
+      if (abi_sz > 16) {
+        arg_regs[i] = 1;  // byref: アドレス
+      } else if (abi_sz > 8) {
+        arg_regs[i] = 2;  // 2レジスタ
+      } else {
+        arg_regs[i] = 1;  // 1レジスタ
       }
-      // スタックからレジスタへ (逆順にポップ)
+      total_regs += arg_regs[i];
+    }
+
+    // 引数をソフトウェアスタックへプッシュ（順方向）
+    for (int i = 0; i < fn->nargs; i++) {
+      node_t *a = fn->args[i];
+      if (a->kind == ND_LVAR) {
+        int abi_sz = as_lvar(a)->mem.type_size;
+        int frame_off = 16 + as_lvar(a)->offset;
+        if (abi_sz > 16) {
+          // byref: フレームスロットのアドレスをプッシュ
+          cg_emitf("  add x0, x29, #%d\n", frame_off);
+          cg_emitf("  str x0, [sp, #-16]!\n");
+        } else if (abi_sz > 8) {
+          // 2レジスタ: highを先にプッシュ、lowを後 (pop時: low→x_reg, high→x_{reg+1})
+          cg_emitf("  ldr x0, [x29, #%d]\n", frame_off + 8);
+          cg_emitf("  str x0, [sp, #-16]!\n");
+          cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
+          cg_emitf("  str x0, [sp, #-16]!\n");
+        } else {
+          gen_expr(a);
+        }
+      } else {
+        gen_expr(a);
+      }
+    }
+
+    // ソフトウェアスタックからレジスタへ逆順にポップ
+    {
+      int reg = total_regs;
       for (int i = fn->nargs - 1; i >= 0; i--) {
-        cg_emitf("  ldr x%d, [sp], #16\n", i);
+        reg -= arg_regs[i];
+        if (arg_regs[i] == 2) {
+          cg_emitf("  ldr x%d, [sp], #16\n", reg);       // low → x_reg
+          cg_emitf("  ldr x%d, [sp], #16\n", reg + 1);   // high → x_{reg+1}
+        } else {
+          cg_emitf("  ldr x%d, [sp], #16\n", reg);
+        }
       }
+    }
+
+    if (fn->callee) {
       cg_emitf("  blr x16\n");
     } else {
-      // 引数を評価してレジスタに格納
-      for (int i = 0; i < fn->nargs; i++) {
-        gen_expr(fn->args[i]);
-      }
-      // スタックからレジスタへ (逆順にポップ)
-      for (int i = fn->nargs - 1; i >= 0; i--) {
-        cg_emitf("  ldr x%d, [sp], #16\n", i);
-      }
       cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
     }
+    free(arg_regs);
     // 戻り値をスタックにプッシュ
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
@@ -826,13 +872,33 @@ static void gen_stmt(node_t *node) {
     cg_emitf("  stp x29, x30, [sp]\n");
     cg_emitf("  mov x29, sp\n");
     // 仮引数をレジスタからローカル変数スロットへ保存
-    for (int i = 0; i < fn->nargs; i++) {
-      cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
-    }
-    // 可変長引数関数: 残りの引数レジスタ (x{nargs}..x7) を次のスロットに保存
-    if (fn->is_variadic) {
-      for (int i = fn->nargs; i < 8; i++) {
-        cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + i * 8);
+    // type_size > 16: byref (>16B 構造体の値渡し) → 1レジスタ (ポインタ)
+    // type_size 9-16: 2レジスタ構造体 → stp
+    // type_size ≤ 8: 1レジスタ (スカラー / ≤8B 構造体)
+    {
+      int reg = 0;
+      for (int i = 0; i < fn->nargs; i++) {
+        int abi_sz = as_lvar(fn->args[i])->mem.type_size;
+        int frame_off = 16 + as_lvar(fn->args[i])->offset;
+        if (abi_sz > 16) {
+          // >16B構造体: byref (1レジスタ, ポインタを保存)
+          cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
+          reg++;
+        } else if (abi_sz > 8) {
+          // 9-16B構造体: 2レジスタ → stp x_reg, x_{reg+1}
+          cg_emitf("  stp x%d, x%d, [x29, #%d]\n", reg, reg + 1, frame_off);
+          reg += 2;
+        } else {
+          // スカラー / ≤8B構造体: 1レジスタ
+          cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
+          reg++;
+        }
+      }
+      // 可変長引数関数: 残りの引数レジスタ (x{reg}..x7) を次のスロットに保存
+      if (fn->is_variadic) {
+        for (int i = reg; i < 8; i++) {
+          cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + i * 8);
+        }
       }
     }
     // 関数本体

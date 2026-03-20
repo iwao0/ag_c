@@ -12,7 +12,8 @@ struct lvar_t {
   int size;
   int elem_size;
   int is_array;
-  int is_vla;   // 1: 可変長配列 (VLA) - offsetはベースポインタスロット
+  int is_vla;          // 1: 可変長配列 (VLA) - offsetはベースポインタスロット
+  int is_byref_param;  // 1: >16バイト構造体の値渡し仮引数 - フレームスロットはポインタ(8B)、elemは実際の構造体サイズ
   tk_float_kind_t fp_kind;
   token_kind_t tag_kind;
   char *tag_name;
