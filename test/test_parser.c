@@ -1446,6 +1446,30 @@ static void test_type_decl() {
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
+
+  // 入れ子 designator: struct の配列メンバへの .member[idx]=val
+  token = tk_tokenize("main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
+  // 入れ子 designator: struct の配列メンバへの複数指定
+  token = tk_tokenize("main() { struct S { int a[2]; }; struct S s={.a[0]=1,.a[1]=2}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
+
+  // 入れ子 designator: union の配列メンバへの .member[idx]=val
+  token = tk_tokenize("main() { union U { int a[2]; int z; }; union U u={.a[1]=3}; return 0; }");
+  parsed_code = ps_program();
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 
 static void test_multiple_funcdefs() {
@@ -1643,6 +1667,10 @@ static void test_parse_invalid_diagnostics() {
       "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
       "[decl] 共用体の配列メンバ非波括弧初期化は設定で無効です");
   ps_set_enable_union_array_member_nonbrace_init(true);
+
+  // 入れ子 designator: 非配列メンバに .member[idx]=val は診断エラー
+  expect_parse_fail_with_message("main() { struct S { int x; }; struct S s={.x[0]=3}; return 0; }",
+                                 "入れ子designatorの対象が配列メンバではありません");
 
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
   // 将来 16-byte などの新スカラ型導入時は、ここを陽性診断テストへ置き換える。

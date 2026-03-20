@@ -803,9 +803,9 @@
   - [x] `test_parser` / `test_e2e` に `sizeof(struct S)` / `_Alignof(struct S)` の回帰を追加して固定する
 
 ## Parser未実装タスク（2026-03-19 追加棚卸し15）
-- [ ] 入れ子 designator（`.a[1]=...`）を初期化子で受理する
-  - [ ] `struct S { int a[2]; }; struct S s={.a[1]=3};` が `=` 期待で失敗する回帰を解消する
-  - [ ] `union U { int a[2]; int z; }; union U u={.a[1]=3};` でも同様に受理/診断方針を固定する
+- [x] 入れ子 designator（`.a[1]=...`）を初期化子で受理する
+  - [x] `struct S { int a[2]; }; struct S s={.a[1]=3};` が `=` 期待で失敗する回帰を解消する
+  - [x] `union U { int a[2]; int z; }; union U u={.a[1]=3};` でも同様に受理/診断方針を固定する
 - [ ] 配列の複合リテラル postfix（`((int[2]){1,2})[1]`）を受理する
   - [ ] 現状の `[primary] 数値が必要です` 回帰を解消する
   - [ ] `test_parser` / `test_e2e` に配列複合リテラル添字アクセスの回帰を追加する

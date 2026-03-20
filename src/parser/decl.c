@@ -593,7 +593,6 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       if (tk_consume('.')) {
         token_ident_t *id = tk_consume_ident();
         if (!id) psx_diag_missing(token, "メンバ名");
-        tk_expect('=');
         found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                         id->str, id->len,
                                         &member_offset, &member_type_size, NULL, &member_array_len,
@@ -601,6 +600,36 @@ static node_t *parse_struct_initializer(lvar_t *var) {
                                         &member_tag_len, &member_is_tag_pointer);
         member_name = id->str;
         member_len = id->len;
+        if (tk_consume('[')) {
+          // Nested designator: .member[idx] = val
+          if (!found || member_len <= 0) {
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+          }
+          if (member_array_len <= 0 || member_is_tag_pointer) {
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
+          }
+          int nested_idx = parse_nonneg_const_expr_decl("配列designator添字");
+          tk_expect(']');
+          tk_expect('=');
+          if (nested_idx < 0 || nested_idx >= member_array_len) {
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+          }
+          node_t *lhs = new_array_elem_lvar_at(var->offset + member_offset, member_type_size, nested_idx);
+          node_t *val = parse_scalar_brace_initializer();
+          node_mem_t *assign_node = psx_node_new_assign(lhs, val);
+          assign_node->type_size = member_type_size;
+          node_t *init_node = (node_t *)assign_node;
+          if (!init_chain) init_chain = init_node;
+          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+          if (tk_consume('}')) break;
+          tk_expect(',');
+          if (tk_consume('}')) break;
+          continue;
+        }
+        tk_expect('=');
       } else {
         while (ordinal < member_count) {
           found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
@@ -755,7 +784,6 @@ static node_t *parse_union_initializer(lvar_t *var) {
   if (tk_consume('.')) {
     token_ident_t *id = tk_consume_ident();
     if (!id) psx_diag_missing(token, "メンバ名");
-    tk_expect('=');
     found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                     id->str, id->len,
                                     &member_offset, &member_type_size, NULL, &member_array_len,
@@ -763,6 +791,35 @@ static node_t *parse_union_initializer(lvar_t *var) {
                                     &member_tag_len, &member_is_tag_pointer);
     member_name = id->str;
     member_len = id->len;
+    if (tk_consume('[')) {
+      // Nested designator: .member[idx] = val
+      if (!found || member_len <= 0) {
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+      }
+      if (member_array_len <= 0 || member_is_tag_pointer) {
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
+      }
+      int nested_idx = parse_nonneg_const_expr_decl("配列designator添字");
+      tk_expect(']');
+      tk_expect('=');
+      if (nested_idx < 0 || nested_idx >= member_array_len) {
+        psx_diag_ctx(token, "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      }
+      node_t *elem_lhs = new_array_elem_lvar_at(var->offset + member_offset, member_type_size, nested_idx);
+      node_t *val = parse_scalar_brace_initializer();
+      node_mem_t *assign_node = psx_node_new_assign(elem_lhs, val);
+      assign_node->type_size = member_type_size;
+      node_t *result = (node_t *)assign_node;
+      if (has_brace) {
+        tk_consume(',');
+        tk_expect('}');
+      }
+      return result;
+    }
+    tk_expect('=');
   } else {
     int ordinal = 0;
     while (ordinal < member_count) {

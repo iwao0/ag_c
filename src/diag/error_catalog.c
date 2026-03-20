@@ -143,6 +143,7 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED, "E3073", "parser.cast_union_scalar_pointer_disabled"},
     {DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH, "E3074", "parser.cast_nonscalar_type_mismatch"},
     {DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED, "E3075", "parser.union_array_member_nonbrace_unsupported"},
+    {DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY, "E3076", "parser.nested_desig_not_array"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

@@ -143,6 +143,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED: return "Scalar/pointer to union cast is disabled by parser config";
     case DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH: return "Cast to %s value is not supported (type mismatch)";
     case DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED: return "Non-braced initialization for union array member is disabled by parser config";
+    case DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY: return "Nested designator target is not an array member";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
