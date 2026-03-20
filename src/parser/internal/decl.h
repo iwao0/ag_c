@@ -24,12 +24,14 @@ struct lvar_t {
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
+  int align_bytes; // 0 = natural alignment
 };
 
 void psx_decl_reset_locals(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
+lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
 
 node_t *psx_decl_parse_declaration(void);
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,

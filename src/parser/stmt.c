@@ -37,6 +37,7 @@ static long long parse_enum_const_mul(void);
 static long long parse_enum_const_unary(void);
 static long long parse_enum_const_primary(void);
 static int parse_array_size_constexpr_stmt(void);
+static int parse_alignas_value_stmt(void);
 static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static int anonymous_tag_seq_stmt = 0;
 
@@ -109,6 +110,17 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
     token_kind_t member_tag_kind = TK_EOF;
     char *member_tag_name = NULL;
     int member_tag_len = 0;
+    int member_alignas = 0;
+    // skip leading qualifiers (const, volatile, _Alignas)
+    while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_ALIGNAS) {
+      if (token->kind == TK_ALIGNAS) {
+        token = token->next;
+        int av = parse_alignas_value_stmt();
+        if (av > member_alignas) member_alignas = av;
+      } else {
+        token = token->next;
+      }
+    }
     if (psx_ctx_is_type_token(token->kind)) {
       is_signed_type = (token->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(token->kind, NULL, &elem_size);
@@ -231,6 +243,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       int member_align = is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
+      if (member_alignas > member_align) member_align = member_alignas;
       if (member_align > agg_align) agg_align = member_align;
       int off = 0;
       if (tag_kind == TK_UNION) {
@@ -429,6 +442,23 @@ static int parse_array_size_constexpr_stmt(void) {
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
+}
+
+// _Alignas( constant-expression | type-name )
+static int parse_alignas_value_stmt(void) {
+  tk_expect('(');
+  int val = 1;
+  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+    int elem_size = 8;
+    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+    val = elem_size;
+    while (token->kind != TK_RPAREN && token->kind != TK_EOF) token = token->next;
+  } else {
+    long long v = parse_enum_const_expr();
+    val = (v > 0) ? (int)v : 1;
+  }
+  tk_expect(')');
+  return val;
 }
 
 static int parse_enum_members(void) {

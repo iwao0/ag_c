@@ -18,6 +18,7 @@ string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
+static int g_last_alignas_value = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -47,6 +48,7 @@ static long long parse_enum_const_primary_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static int parse_array_size_constexpr_toplevel(void);
+static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static int anonymous_tag_seq_toplevel = 0;
 
@@ -68,6 +70,7 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
 static void skip_cv_qualifiers(void) {
   g_last_type_const_qualified = 0;
   g_last_type_volatile_qualified = 0;
+  g_last_alignas_value = 0;
   while (is_decl_prefix_token(token->kind)) {
     if (token->kind == TK_CONST) g_last_type_const_qualified = 1;
     if (token->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
@@ -77,7 +80,8 @@ static void skip_cv_qualifiers(void) {
         psx_diag_ctx(token, "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
-      skip_balanced_group(TK_LPAREN, TK_RPAREN);
+      int av = parse_alignas_value_toplevel();
+      if (av > g_last_alignas_value) g_last_alignas_value = av;
       continue;
     }
     if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
@@ -90,6 +94,10 @@ static void skip_cv_qualifiers(void) {
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified) {
   if (is_const_qualified) *is_const_qualified = g_last_type_const_qualified;
   if (is_volatile_qualified) *is_volatile_qualified = g_last_type_volatile_qualified;
+}
+
+void psx_take_alignas_value(int *align) {
+  if (align) *align = g_last_alignas_value;
 }
 
 static void skip_ptr_qualifiers(void) {
@@ -405,6 +413,17 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
     token_kind_t member_tag_kind = TK_EOF;
     char *member_tag_name = NULL;
     int member_tag_len = 0;
+    int member_alignas = 0;
+    // skip leading qualifiers (const, volatile, _Alignas)
+    while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_ALIGNAS) {
+      if (token->kind == TK_ALIGNAS) {
+        token = token->next;
+        int av = parse_alignas_value_toplevel();
+        if (av > member_alignas) member_alignas = av;
+      } else {
+        token = token->next;
+      }
+    }
     if (psx_ctx_is_type_token(token->kind)) {
       is_signed_type = (token->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(token->kind, NULL, &elem_size);
@@ -534,6 +553,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       int member_align = is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
+      if (member_alignas > member_align) member_align = member_alignas;
       if (member_align > agg_align) agg_align = member_align;
       int off = 0;
       if (tag_kind == TK_UNION) {
@@ -926,6 +946,24 @@ static bool consume_type(void) {
     return true;
   }
   return false;
+}
+
+// _Alignas( constant-expression | type-name )
+static int parse_alignas_value_toplevel(void) {
+  tk_expect('(');
+  int val = 1;
+  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+    // _Alignas(type) — alignment = natural alignment of type
+    int elem_size = 8;
+    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+    val = elem_size;
+    while (token->kind != TK_RPAREN && token->kind != TK_EOF) token = token->next;
+  } else {
+    long long v = parse_enum_const_expr_toplevel();
+    val = (v > 0) ? (int)v : 1;
+  }
+  tk_expect(')');
+  return val;
 }
 
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {

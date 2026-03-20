@@ -842,14 +842,14 @@
   - [x] `test_e2e` にビットフィールドの読み書き回帰テストを追加する
 
 ## _Alignas 意味処理タスク（2026-03-20 棚卸し）
-- [ ] `_Alignas` によるローカル変数のスタックアライメント強制を実装する
-  - [ ] 現状は `skip_balanced_group` で読み飛ばしているだけ（`parser.c` 行 74-81）
-  - [ ] `_Alignas(N)` の値をパースして宣言ノードに保持する
-  - [ ] codegen 側でスタックオフセット計算時に指定アラインメントへ切り上げる
-  - [ ] `test_e2e` に `_Alignas(16)` 付き変数のアライメント確認テストを追加する
-- [ ] `_Alignas` による構造体メンバのアライメント指定を実装する
-  - [ ] `struct { _Alignas(16) int x; };` でメンバオフセットが指定値の倍数になることを保証する
-  - [ ] `sizeof` / `_Alignof` が正しい値を返すことをテストで確認する
+- [x] `_Alignas` によるローカル変数のスタックアライメント強制を実装する
+  - [x] 現状は `skip_balanced_group` で読み飛ばしているだけ（`parser.c` 行 74-81）
+  - [x] `_Alignas(N)` の値をパースして宣言ノードに保持する（`g_last_alignas_value` / `psx_take_alignas_value`）
+  - [x] `psx_decl_register_lvar_sized_align` でスタックオフセット計算時に指定アラインメントへ切り上げる
+  - [x] `test_e2e` に `_Alignas(16)` 付き変数のアライメント確認テストを追加する（alignas/lvar_align）
+- [x] `_Alignas` による構造体メンバのアライメント指定を実装する
+  - [x] `struct { _Alignas(8) int x; };` でメンバオフセットが指定値の倍数になることを保証する（parser.c / stmt.c）
+  - [x] `sizeof` が正しい値を返すことをテストで確認する（alignas/struct_member: sizeof(S)==16）
 
 ## 標準ヘッダスタブ整備タスク（2026-03-20 棚卸し）
 - [x] `<stddef.h>` を追加する

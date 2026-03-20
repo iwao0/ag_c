@@ -942,15 +942,23 @@ lvar_t *psx_decl_find_lvar(char *name, int len) {
 }
 
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
+  return psx_decl_register_lvar_sized_align(name, len, size, elem_size, is_array, 0);
+}
+
+lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align) {
   lvar_t *var = calloc(1, sizeof(lvar_t));
   var->next = locals;
   var->name = name;
   var->len = len;
   locals_offset += size;
+  if (align > 1) {
+    locals_offset = (locals_offset + align - 1) & ~(align - 1);
+  }
   var->offset = locals_offset;
   var->size = size;
   var->elem_size = elem_size;
   var->is_array = is_array;
+  var->align_bytes = align;
   locals = var;
   return var;
 }
@@ -996,6 +1004,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                               int base_is_pointer,
                                               int is_const_qualified, int is_volatile_qualified) {
   node_t *init_chain = NULL;
+  int alignas_val = 0;
+  psx_take_alignas_value(&alignas_val);
 
   for (;;) {
     int is_pointer = base_is_pointer;
@@ -1024,7 +1034,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           array_size *= parse_array_size_constexpr_decl();
           tk_expect(']');
         }
-        var = psx_decl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, array_size * elem_size, elem_size, 1, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;
@@ -1037,8 +1047,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
         var->pointer_qual_levels = ptr_levels;
       } else {
-        var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size,
-                                           is_pointer ? pointer_deref_size : var_size, 0);
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, var_size,
+                                           is_pointer ? pointer_deref_size : var_size, 0, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;

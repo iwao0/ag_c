@@ -351,6 +351,10 @@ static const test_case_t test_cases[] = {
     {"bitfield", "packing", CASE_INT, "int main(){ struct S { unsigned int a:3; unsigned int b:5; int c; }; return (int)sizeof(struct S); }", 8, 0},
     {"bitfield", "signed_neg", CASE_INT, "int main(){ struct S { int f:4; }; struct S s; s.f=-1; return (s.f < 0) ? 42 : 0; }", 42, 0},
     {"bitfield", "unsigned_wrap", CASE_INT, "int main(){ struct S { unsigned int f:3; }; struct S s; s.f=9; return s.f; }", 1, 0},
+    // _Alignas
+    {"alignas", "lvar_value",  CASE_INT, "int main() { _Alignas(16) int a = 42; return a; }", 42, 0},
+    {"alignas", "lvar_align",  CASE_INT, "int main() { int pad = 1; _Alignas(16) int a = 42; long addr = (long)&a; return addr % 16 == 0 ? a : 0; }", 42, 0},
+    {"alignas", "struct_member", CASE_INT, "int main() { struct S { char pad; _Alignas(8) int x; }; return (int)sizeof(struct S) == 16 ? 42 : 0; }", 42, 0},
     // 標準ヘッダ
     {"stdheader", "stdint_int32", CASE_INT, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }", 42, 0},
     {"stdheader", "stdint_uint8", CASE_INT, "#include <stdint.h>\nint main() { uint8_t x = 200; return (int)x; }", 200, 0},
