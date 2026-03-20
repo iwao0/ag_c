@@ -921,11 +921,11 @@
   - [ ] `sizeof(a)` が `sizeof(int*)` を返すことを確認する（C11 仕様）
 
 ### `inline` 関数
-- [ ] `inline` 指定子のセマンティクスを実装する
-  - [ ] `inline` キーワードを関数定義の前置指定子として受理する（字句解析・パーサー）
-  - [ ] 単一翻訳単位では通常の関数定義と同様にコード生成する（inline expansion は省略可）
-  - [ ] `extern inline` / `static inline` の連携ルールを仕様化する（現状: 未定義）
-  - [ ] `test_e2e` に `inline` 関数の呼び出し回帰テストを追加する
+- [x] `inline` 指定子のセマンティクスを実装する
+  - [x] `inline` キーワードは `is_decl_prefix_token` / `skip_cv_qualifiers` に含まれており、`psx_consume_type_kind()` 経由で自動スキップ → 追加実装不要
+  - [x] 単一翻訳単位では通常の関数定義と同様にコード生成される（inline expansion は省略）
+  - [x] `extern inline` / `static inline` も同様に `skip_cv_qualifiers` でスキップ → 通常関数として出力
+  - [x] `test_e2e` に `inline_func/{basic_inline, static_inline, extern_inline}` の 3 テストを追加して 319 テスト通過を確認
 
 ### `extern` 宣言・暫定定義
 - [ ] 関数スコープの `extern` 変数宣言を実装する（`extern int g;` をローカルスコープで使用）
