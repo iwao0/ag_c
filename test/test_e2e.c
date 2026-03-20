@@ -454,6 +454,19 @@ static const test_case_t test_cases[] = {
      "  for(i=0;i<n;i++) { int j; for(j=0;j<m;j++) sum+=a[i][j]; }"
      "  return sum;"   // 0..11 sum=66
      "}", 66, 0},
+    // 仮引数 VLA 宣言子: int a[n] → int *a (C11 6.7.6.3p7)
+    {"vla_param", "basic_access", CASE_INT,
+     "int sum_arr(int n, int a[n]) { int s=0; int i; for(i=0;i<n;i++) s+=a[i]; return s; }"
+     "int main() { int n=5; int a[n]; int i; for(i=0;i<n;i++) a[i]=i+1; return sum_arr(n,a); }",
+     15, 0},  // 1+2+3+4+5=15
+    {"vla_param", "sizeof_is_ptr", CASE_INT,
+     "int get_size(int n, int a[n]) { return (int)sizeof(a); }"
+     "int main() { int n=10; int a[n]; return get_size(n,a); }",
+     8, 0},  // sizeof(pointer)==8
+    {"vla_param", "write_through", CASE_INT,
+     "void fill(int n, int a[n], int v) { int i; for(i=0;i<n;i++) a[i]=v; }"
+     "int main() { int n=3; int a[n]; fill(n,a,14); return a[0]+a[1]+a[2]; }",
+     42, 0},  // 14*3=42
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
