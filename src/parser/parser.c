@@ -1052,6 +1052,7 @@ static node_t *funcdef(void) {
   node->funcname = tok->str;
   node->funcname_len = tok->len;
   psx_ctx_define_function_name(tok->str, tok->len);
+  psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
 
   // 関数ごとにローカル変数テーブルをリセット
   psx_decl_reset_locals();

@@ -426,6 +426,19 @@ static const test_case_t test_cases[] = {
      "int get_v(struct Val p) { return p.v; }"
      "int main() { return get_v(make_val(42)); }",
      42, 0},
+    // __func__ 定義済み識別子
+    {"func_name", "first_char_main", CASE_INT,
+     "int main() { return (int)__func__[0]; }",
+     109, 0},  // 'm' == 109
+    {"func_name", "first_char_helper", CASE_INT,
+     "int helper() { return (int)__func__[0]; }"
+     "int main() { return helper(); }",
+     104, 0},  // 'h' == 104
+    {"func_name", "each_func_distinct", CASE_INT,
+     "int fa() { return (int)__func__[1]; }"  // __func__[1]=='a'==97
+     "int fb() { return (int)__func__[1]; }"  // __func__[1]=='b'==98
+     "int main() { return fb() - fa() + 41; }",  // (98-97)+41 == 42
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

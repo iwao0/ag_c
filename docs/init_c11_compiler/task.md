@@ -896,9 +896,10 @@
 ## パーサーバックログ候補（2026-03-20 棚卸し）
 
 ### `__func__` 定義済み識別子
-- [ ] `__func__` を実装する（C99/C11 で各関数本体に暗黙定義される `const char[]`）
-  - [ ] `primary()` で `__func__` トークンを認識し、現在の関数名文字列リテラルに展開する
-  - [ ] `test_e2e` に `__func__` を使う回帰テストを追加する
+- [x] `__func__` を実装する（C99/C11 で各関数本体に暗黙定義される `const char[]`）
+  - [x] `g_current_funcname` を `expr.c` に追加し、`funcdef()` で関数名をセット（`psx_expr_set_current_funcname`）
+  - [x] `primary()` で `__func__` トークンを認識し、現在の関数名文字列リテラル（`.LC%d`）に展開する
+  - [x] `test_e2e` に func_name/{first_char_main, first_char_helper, each_func_distinct} の 3 テストを追加（312 テスト通過）
 
 ### VLA 拡張
 - [ ] 多次元 VLA（`int a[n][m]`）を実装する

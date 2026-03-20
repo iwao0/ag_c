@@ -15,6 +15,8 @@
 
 static token_kind_t g_current_ret_token_kind = TK_INT;
 static tk_float_kind_t g_current_ret_fp_kind = TK_FLOAT_KIND_NONE;
+static char *g_current_funcname = NULL;
+static int g_current_funcname_len = 0;
 static int string_label_count = 0;
 static int float_label_count = 0;
 static int compound_lit_seq = 0;
@@ -853,6 +855,11 @@ tk_float_kind_t psx_expr_current_func_ret_fp_kind(void) {
   return g_current_ret_fp_kind;
 }
 
+void psx_expr_set_current_funcname(char *name, int len) {
+  g_current_funcname = name;
+  g_current_funcname_len = len;
+}
+
 // expr = assign ("," assign)*
 node_t *psx_expr_expr(void) {
   return expr_internal();
@@ -1522,6 +1529,33 @@ static node_t *primary(void) {
 
   token_ident_t *tok = tk_consume_ident();
   if (tok) {
+    // __func__: C11 6.4.2.2 — 各関数本体に暗黙定義される const char[] の関数名
+    if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0) {
+      const char *fname = g_current_funcname ? g_current_funcname : "";
+      int flen = g_current_funcname ? g_current_funcname_len : 0;
+      char *fstr = calloc((size_t)flen + 1, 1);
+      memcpy(fstr, fname, (size_t)flen);
+      node_string_t *snode = calloc(1, sizeof(node_string_t));
+      snode->mem.base.kind = ND_STRING;
+      int id = string_label_count++;
+      int label_len = snprintf(NULL, 0, ".LC%d", id);
+      snode->string_label = calloc((size_t)label_len + 1, 1);
+      snprintf(snode->string_label, (size_t)label_len + 1, ".LC%d", id);
+      string_lit_t *lit = calloc(1, sizeof(string_lit_t));
+      lit->label = snode->string_label;
+      lit->str = fstr;
+      lit->len = flen;
+      lit->char_width = TK_CHAR_WIDTH_CHAR;
+      lit->str_prefix_kind = TK_STR_PREFIX_NONE;
+      lit->next = string_literals;
+      string_literals = lit;
+      snode->mem.type_size = 8;
+      snode->mem.deref_size = 1;
+      snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
+      snode->char_width = TK_CHAR_WIDTH_CHAR;
+      snode->str_prefix_kind = TK_STR_PREFIX_NONE;
+      return (node_t *)snode;
+    }
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
       long long enum_val = 0;
