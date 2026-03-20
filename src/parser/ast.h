@@ -70,6 +70,9 @@ struct node_mem_t {
   node_t base;
   int type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
   int deref_size;  // ポインタが指す先の要素サイズ
+  int bit_width;   // ビットフィールド幅（0: 非ビットフィールド）
+  int bit_offset;  // ビットフィールド開始ビット位置（ストレージユニット先頭から）
+  int bit_is_signed; // ビットフィールドの符号（1: signed, 0: unsigned）
   token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）
   char *tag_name;
   int tag_len;

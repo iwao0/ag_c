@@ -1095,6 +1095,32 @@ token_t *preprocess(token_t *tok) {
         diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", msg);
       }
 
+      if (is_dir(tok, "line")) {
+        tok = tok->next;
+        if (tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
+          long long new_line = tk_as_num_int(tok)->val;
+          tok = tok->next;
+          char *new_file = NULL;
+          if (tok && tok->kind == TK_STRING) {
+            token_string_t *st = as_string(tok);
+            new_file = my_strndup(st->str, st->len);
+            tok = tok->next;
+          }
+          while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
+          // patch line_no (and optionally file_name) of all remaining tokens
+          if (tok->kind != TK_EOF) {
+            long long offset = new_line - (long long)tok->line_no;
+            for (token_t *t = tok; t && t->kind != TK_EOF; t = t->next) {
+              t->line_no = (int)((long long)t->line_no + offset);
+              if (new_file) t->file_name = new_file;
+            }
+          }
+        } else {
+          while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
+        }
+        continue;
+      }
+
       if (is_dir(tok, "pragma")) {
         tok = tok->next;
         if (ident_is(tok, "once")) {

@@ -41,6 +41,10 @@ static const success_case_t success_cases[] = {
     {42, "int main() { char *t = __TIME__; return t[0] ? 42 : 0; }"},
     // #pragma once
     {42, "#include \"build/pragma_once.h\"\n#include \"build/pragma_once.h\"\nint main() { return once_func(); }"},
+    // #line ディレクティブ
+    {99, "#line 99\nint main() { return __LINE__; }"},
+    {42, "#line 41\nint x = 0;\nint main() { return __LINE__; }"},
+    {1,  "#line 1 \"myfile.c\"\nint main() { char *f = __FILE__; return f[0] == 'm' ? 1 : 0; }"},
     // 標準ヘッダ
     {42, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }"},
     {42, "#include <stdbool.h>\nint main() { _Bool b = 1; return b ? 42 : 0; }"},
