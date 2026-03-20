@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <time.h>
 
 typedef struct macro macro_t;
 struct macro {
@@ -151,6 +152,99 @@ static macro_t *find_macro(char *name) {
       return m;
   }
   return NULL;
+}
+
+// === pragma once ===
+typedef struct pragma_once_entry pragma_once_entry_t;
+struct pragma_once_entry {
+  pragma_once_entry_t *next;
+  char *path;
+};
+static pragma_once_entry_t *pragma_once_list = NULL;
+
+static bool pragma_once_seen(const char *path) {
+  for (pragma_once_entry_t *e = pragma_once_list; e; e = e->next) {
+    if (!strcmp(e->path, path)) return true;
+  }
+  return false;
+}
+
+static void pragma_once_add(const char *path) {
+  if (pragma_once_seen(path)) return;
+  pragma_once_entry_t *e = calloc(1, sizeof(pragma_once_entry_t));
+  e->path = my_strndup(path, strlen(path));
+  e->next = pragma_once_list;
+  pragma_once_list = e;
+}
+
+// === 定義済みマクロ初期化 ===
+static token_t *make_int_token(long long val, token_t *ref) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%lld", val);
+  int slen = (int)strlen(buf);
+  token_num_int_t *t = calloc(1, sizeof(token_num_int_t));
+  t->base.pp.base.kind = TK_NUM;
+  if (ref) {
+    t->base.pp.base.line_no  = ref->line_no;
+    t->base.pp.base.file_name = ref->file_name;
+    t->base.pp.base.at_bol   = ref->at_bol;
+    t->base.pp.base.has_space = ref->has_space;
+  }
+  t->base.str      = my_strndup(buf, slen);
+  t->base.len      = slen;
+  t->base.num_kind = TK_NUM_KIND_INT;
+  t->val           = val;
+  t->uval          = (unsigned long long)val;
+  t->int_size      = TK_INT_SIZE_INT;
+  t->int_base      = 10;
+  return (token_t *)t;
+}
+
+static token_t *make_string_token(const char *s, token_t *ref) {
+  int slen = (int)strlen(s);
+  token_string_t *t = calloc(1, sizeof(token_string_t));
+  t->pp.base.kind = TK_STRING;
+  if (ref) {
+    t->pp.base.line_no   = ref->line_no;
+    t->pp.base.file_name = ref->file_name;
+    t->pp.base.at_bol    = ref->at_bol;
+    t->pp.base.has_space = ref->has_space;
+  }
+  t->str             = my_strndup(s, slen);
+  t->len             = slen;
+  t->char_width      = TK_CHAR_WIDTH_CHAR;
+  t->str_prefix_kind = TK_STR_PREFIX_NONE;
+  return (token_t *)t;
+}
+
+static void add_int_macro(const char *name, long long val) {
+  token_t *tok = make_int_token(val, NULL);
+  add_macro(my_strndup(name, strlen(name)), false, NULL, 0, tok);
+}
+
+static void add_string_macro(const char *name, const char *s) {
+  token_t *tok = make_string_token(s, NULL);
+  add_macro(my_strndup(name, strlen(name)), false, NULL, 0, tok);
+}
+
+static void pp_init_predefined_macros(void) {
+  add_int_macro("__STDC__", 1);
+  add_int_macro("__STDC_VERSION__", 201112LL);
+
+  time_t now = time(NULL);
+  struct tm *tm_info = localtime(&now);
+  static const char *months[] = {
+    "Jan","Feb","Mar","Apr","May","Jun",
+    "Jul","Aug","Sep","Oct","Nov","Dec"
+  };
+  char date_buf[16];
+  char time_buf[10];
+  snprintf(date_buf, sizeof(date_buf), "%s %2d %4d",
+           months[tm_info->tm_mon], tm_info->tm_mday, tm_info->tm_year + 1900);
+  snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d",
+           tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
+  add_string_macro("__DATE__", date_buf);
+  add_string_macro("__TIME__", time_buf);
 }
 
 static hideset_t *new_hideset(char *name) {
@@ -667,6 +761,10 @@ static token_t *paste_tokens(token_t *tok) {
 
 // プリプロセッサのメイン処理
 token_t *preprocess(token_t *tok) {
+  if (include_depth == 0) {
+    pp_init_predefined_macros();
+  }
+
   token_t head;
   head.next = NULL;
   token_t *cur = &head;
@@ -729,6 +827,11 @@ token_t *preprocess(token_t *tok) {
           tok = tok->next; // '>' をスキップ
         }
         validate_include_path_or_die(filename);
+
+        if (pragma_once_seen(filename)) {
+          free(filename);
+          continue;
+        }
 
         char *buf = read_file(filename);
         if (!buf) {
@@ -991,7 +1094,19 @@ token_t *preprocess(token_t *tok) {
         }
         diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", msg);
       }
-      
+
+      if (is_dir(tok, "pragma")) {
+        tok = tok->next;
+        if (ident_is(tok, "once")) {
+          tok = tok->next;
+          if (include_stack) {
+            pragma_once_add(include_stack->path);
+          }
+        }
+        while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
+        continue;
+      }
+
       // ひとまず改行（次の行頭）またはEOFまでトークンを読み飛ばす
       while (tok->kind != TK_EOF && !tok->at_bol) {
         tok = tok->next;
@@ -1002,6 +1117,25 @@ token_t *preprocess(token_t *tok) {
     if (tok->kind == TK_IDENT) {
       token_ident_t *id = as_ident(tok);
       char *name = my_strndup(id->str, id->len);
+
+      if (!strcmp(name, "__LINE__")) {
+        free(name);
+        token_t *lt = make_int_token(tok->line_no, tok);
+        cur->next = lt;
+        cur = cur->next;
+        tok = tok->next;
+        continue;
+      }
+      if (!strcmp(name, "__FILE__")) {
+        free(name);
+        const char *fname = tok->file_name ? tok->file_name : "";
+        token_t *ft = make_string_token(fname, tok);
+        cur->next = ft;
+        cur = cur->next;
+        tok = tok->next;
+        continue;
+      }
+
       macro_t *m = find_macro(name);
       
       if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
