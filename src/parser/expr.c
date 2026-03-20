@@ -1125,7 +1125,7 @@ static node_t *unary(void) {
         // 配列型複合リテラル: primary() の配列変数参照と同様に ND_ADDR を生成する
         node_mem_t *addr_node = calloc(1, sizeof(node_mem_t));
         addr_node->base.kind = ND_ADDR;
-        addr_node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
+        addr_node->base.lhs = psx_node_new_lvar(var->offset);
         addr_node->type_size = var->elem_size;
         addr_node->deref_size = var->elem_size;
         ref = (node_t *)addr_node;
@@ -1196,6 +1196,17 @@ static node_t *unary(void) {
       token = token->next;
       int type_sz = parse_parenthesized_type_size();
       if (type_sz >= 0) return psx_node_new_num(type_sz);
+      // VLA: sizeof(vla_var) は実行時サイズロード
+      if (token->kind == TK_IDENT) {
+        token_ident_t *id = (token_ident_t *)token;
+        lvar_t *vla_var = psx_decl_find_lvar(id->str, id->len);
+        if (vla_var && vla_var->is_vla) {
+          token = token->next;
+          tk_expect(')');
+          // [x29+16+offset+8] にバイトサイズを格納してある
+          return psx_node_new_lvar_typed(vla_var->offset + 8, 8);
+        }
+      }
       node_t *node = expr_internal();
       tk_expect(')');
       return psx_node_new_num(sizeof_expr_node(node));
@@ -1559,10 +1570,10 @@ static node_t *primary(void) {
     if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }
-    if (var->is_array) {
+    if (var->is_array && !var->is_vla) {
       node_mem_t *node = calloc(1, sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
-      node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
+      node->base.lhs = psx_node_new_lvar(var->offset);
       node->type_size = var->elem_size;
       node->deref_size = var->elem_size;
       node->tag_kind = var->tag_kind;
@@ -1571,6 +1582,23 @@ static node_t *primary(void) {
       node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
       return (node_t *)node;
     }
+    // byref仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、
+    // ND_DEREF でラップして「struct値」として見せる。
+    // p.member → build_member_access(ND_DEREF(ptr_lvar), from_ptr=0)
+    //  → ND_ADDR(ND_DEREF(ptr_lvar)) = struct base ptr → offset → deref → member ✓
+    if (var->is_byref_param) {
+      node_t *ptr_lvar = psx_node_new_lvar_typed(var->offset, 8);  // loads ptr from frame
+      node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+      deref->base.kind = ND_DEREF;
+      deref->base.lhs = ptr_lvar;
+      deref->type_size = var->elem_size;  // 実際の構造体サイズ
+      deref->tag_kind = var->tag_kind;
+      deref->tag_name = var->tag_name;
+      deref->tag_len = var->tag_len;
+      deref->is_tag_pointer = 0;  // 値（構造体）であってポインタではない
+      return (node_t *)deref;
+    }
+    // VLA: フレームスロットからベースポインタを読み込む (ポインタ変数として扱う)
     node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
     as_lvar(n)->mem.deref_size = var->elem_size;
     as_lvar(n)->mem.tag_kind = var->tag_kind;

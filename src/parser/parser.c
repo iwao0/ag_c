@@ -18,6 +18,7 @@ string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
+static int g_last_alignas_value = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -26,6 +27,7 @@ static void parse_toplevel_typedef_decl(void);
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr);
 static int is_toplevel_function_signature(token_t *tok);
+static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(void);
@@ -47,6 +49,7 @@ static long long parse_enum_const_primary_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static int parse_array_size_constexpr_toplevel(void);
+static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static int anonymous_tag_seq_toplevel = 0;
 
@@ -68,6 +71,7 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
 static void skip_cv_qualifiers(void) {
   g_last_type_const_qualified = 0;
   g_last_type_volatile_qualified = 0;
+  g_last_alignas_value = 0;
   while (is_decl_prefix_token(token->kind)) {
     if (token->kind == TK_CONST) g_last_type_const_qualified = 1;
     if (token->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
@@ -77,7 +81,8 @@ static void skip_cv_qualifiers(void) {
         psx_diag_ctx(token, "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
-      skip_balanced_group(TK_LPAREN, TK_RPAREN);
+      int av = parse_alignas_value_toplevel();
+      if (av > g_last_alignas_value) g_last_alignas_value = av;
       continue;
     }
     if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
@@ -90,6 +95,10 @@ static void skip_cv_qualifiers(void) {
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified) {
   if (is_const_qualified) *is_const_qualified = g_last_type_const_qualified;
   if (is_volatile_qualified) *is_volatile_qualified = g_last_type_volatile_qualified;
+}
+
+void psx_take_alignas_value(int *align) {
+  if (align) *align = g_last_alignas_value;
 }
 
 static void skip_ptr_qualifiers(void) {
@@ -201,8 +210,11 @@ node_t **ps_program(void) {
       continue;
     }
     if (psx_ctx_is_tag_keyword(token->kind)) {
-      parse_toplevel_tag_decl();
-      continue;
+      if (!is_tag_return_function_signature(token)) {
+        parse_toplevel_tag_decl();
+        continue;
+      }
+      // struct/union Tag func(...) — 戻り値型がタグ型の関数定義: funcdef() へ fall through
     }
     if (token->kind == TK_TYPEDEF) {
       parse_toplevel_typedef_decl();
@@ -236,6 +248,17 @@ static int is_toplevel_function_signature(token_t *tok) {
   if (!t || (!psx_ctx_is_type_token(t->kind) && !psx_ctx_is_typedef_name_token(t))) return 0;
   t = t->next;
   while (t && t->kind == TK_MUL) t = t->next;
+  if (!t || t->kind != TK_IDENT) return 0;
+  return t->next && t->next->kind == TK_LPAREN;
+}
+
+// struct/union Tag [*] ident ( のパターンを検出（戻り値型がタグ型の関数定義）
+static int is_tag_return_function_signature(token_t *tok) {
+  if (!tok || !psx_ctx_is_tag_keyword(tok->kind)) return 0;
+  token_t *t = tok->next; // skip struct/union keyword
+  if (!t || t->kind != TK_IDENT) return 0;
+  t = t->next; // skip tag name
+  while (t && t->kind == TK_MUL) t = t->next; // skip optional pointer(s)
   if (!t || t->kind != TK_IDENT) return 0;
   return t->next && t->next->kind == TK_LPAREN;
 }
@@ -405,6 +428,17 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
     token_kind_t member_tag_kind = TK_EOF;
     char *member_tag_name = NULL;
     int member_tag_len = 0;
+    int member_alignas = 0;
+    // skip leading qualifiers (const, volatile, _Alignas)
+    while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_ALIGNAS) {
+      if (token->kind == TK_ALIGNAS) {
+        token = token->next;
+        int av = parse_alignas_value_toplevel();
+        if (av > member_alignas) member_alignas = av;
+      } else {
+        token = token->next;
+      }
+    }
     if (psx_ctx_is_type_token(token->kind)) {
       is_signed_type = (token->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(token->kind, NULL, &elem_size);
@@ -534,6 +568,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       int member_align = is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
+      if (member_alignas > member_align) member_align = member_alignas;
       if (member_align > agg_align) agg_align = member_align;
       int off = 0;
       if (tag_kind == TK_UNION) {
@@ -928,6 +963,24 @@ static bool consume_type(void) {
   return false;
 }
 
+// _Alignas( constant-expression | type-name )
+static int parse_alignas_value_toplevel(void) {
+  tk_expect('(');
+  int val = 1;
+  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+    // _Alignas(type) — alignment = natural alignment of type
+    int elem_size = 8;
+    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+    val = elem_size;
+    while (token->kind != TK_RPAREN && token->kind != TK_EOF) token = token->next;
+  } else {
+    long long v = parse_enum_const_expr_toplevel();
+    val = (v > 0) ? (int)v : 1;
+  }
+  tk_expect(')');
+  return val;
+}
+
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
   if (token->kind != lkind) return;
   int depth = 0;
@@ -973,11 +1026,21 @@ static token_ident_t *parse_param_declarator_name(void) {
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
-  token_kind_t ret_kind = psx_consume_type_kind(); // 戻り値の型（省略可）
-  token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
+  token_kind_t ret_kind;
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
-  if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    // 戻り値型が struct/union Tag [*] の関数定義
+    ret_kind = token->kind; // TK_STRUCT or TK_UNION
+    token = token->next;    // skip struct/union keyword
+    token_ident_t *ret_tag = tk_consume_ident(); // consume tag name
+    (void)ret_tag;
+    while (token->kind == TK_MUL) token = token->next; // skip optional pointer(s)
+  } else {
+    ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
+    if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  }
+  token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
@@ -1010,19 +1073,73 @@ static node_t *funcdef(void) {
                          "%s",
                          diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
         }
+        node->is_variadic = 1;
         done = true;
         continue;
       }
 
-      consume_type(); // 仮引数の型
+      // 仮引数の型解析（struct/union の値渡し/ポインタ渡しを含む）
+      skip_cv_qualifiers();
+      token_kind_t ptag_kind = TK_EOF;
+      char *ptag_name = NULL;
+      int ptag_len = 0;
+      int param_struct_size = 0;
+      if (psx_ctx_is_tag_keyword(token->kind)) {
+        // struct/union 型仮引数
+        ptag_kind = token->kind;
+        token = token->next;
+        token_ident_t *tag_ident = tk_consume_ident();
+        if (tag_ident) {
+          ptag_name = tag_ident->str;
+          ptag_len = tag_ident->len;
+          if (psx_ctx_has_tag_type(ptag_kind, ptag_name, ptag_len)) {
+            param_struct_size = psx_ctx_get_tag_size(ptag_kind, ptag_name, ptag_len);
+          }
+        }
+      } else {
+        consume_type();
+      }
+      // ポインタ修飾子を確認してから parse_param_declarator_name へ
+      int param_is_ptr = (token->kind == '*');
       token_ident_t *param = parse_param_declarator_name();
       if (param) {
         if (nargs >= arg_cap) {
           arg_cap = pda_next_cap(arg_cap, nargs + 1);
           node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
         }
-        lvar_t *var = psx_decl_register_lvar(param->str, param->len);
-        node->args[nargs++] = psx_node_new_lvar(var->offset);
+        lvar_t *var;
+        if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 16) {
+          // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
+          // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
+          var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, param_struct_size, 0, 0);
+          var->tag_kind = ptag_kind;
+          var->tag_name = ptag_name;
+          var->tag_len = ptag_len;
+          var->is_tag_pointer = 0;
+          var->is_byref_param = 1;
+        } else if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0) {
+          // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
+          var = psx_decl_register_lvar_sized_align(param->str, param->len, param_struct_size, param_struct_size, 0, 8);
+          var->tag_kind = ptag_kind;
+          var->tag_name = ptag_name;
+          var->tag_len = ptag_len;
+          var->is_tag_pointer = 0;
+        } else if (ptag_kind != TK_EOF && param_is_ptr) {
+          // struct/union へのポインタ仮引数
+          var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
+          var->tag_kind = ptag_kind;
+          var->tag_name = ptag_name;
+          var->tag_len = ptag_len;
+          var->is_tag_pointer = 1;
+        } else {
+          // スカラー型仮引数（既存の動作）
+          var = psx_decl_register_lvar(param->str, param->len);
+        }
+        // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
+        // codegen がレジスタ数（1 or 2）を判断するため
+        int abi_type_size = (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0)
+                            ? param_struct_size : 8;
+        node->args[nargs++] = psx_node_new_lvar_typed(var->offset, abi_type_size);
       }
 
       if (!tk_consume(',')) break;
@@ -1033,6 +1150,10 @@ static node_t *funcdef(void) {
     tk_expect(')');
   }
   node->nargs = nargs;
+  // 可変長引数関数: ローカル変数スペースを引数レジスタ保存領域の後ろに移動する
+  if (node->is_variadic) {
+    psx_decl_reserve_variadic_regs();
+  }
 
   // 関数プロトタイプ宣言（本体なし）
   if (tk_consume(';')) {

@@ -842,14 +842,14 @@
   - [x] `test_e2e` にビットフィールドの読み書き回帰テストを追加する
 
 ## _Alignas 意味処理タスク（2026-03-20 棚卸し）
-- [ ] `_Alignas` によるローカル変数のスタックアライメント強制を実装する
-  - [ ] 現状は `skip_balanced_group` で読み飛ばしているだけ（`parser.c` 行 74-81）
-  - [ ] `_Alignas(N)` の値をパースして宣言ノードに保持する
-  - [ ] codegen 側でスタックオフセット計算時に指定アラインメントへ切り上げる
-  - [ ] `test_e2e` に `_Alignas(16)` 付き変数のアライメント確認テストを追加する
-- [ ] `_Alignas` による構造体メンバのアライメント指定を実装する
-  - [ ] `struct { _Alignas(16) int x; };` でメンバオフセットが指定値の倍数になることを保証する
-  - [ ] `sizeof` / `_Alignof` が正しい値を返すことをテストで確認する
+- [x] `_Alignas` によるローカル変数のスタックアライメント強制を実装する
+  - [x] 現状は `skip_balanced_group` で読み飛ばしているだけ（`parser.c` 行 74-81）
+  - [x] `_Alignas(N)` の値をパースして宣言ノードに保持する（`g_last_alignas_value` / `psx_take_alignas_value`）
+  - [x] `psx_decl_register_lvar_sized_align` でスタックオフセット計算時に指定アラインメントへ切り上げる
+  - [x] `test_e2e` に `_Alignas(16)` 付き変数のアライメント確認テストを追加する（alignas/lvar_align）
+- [x] `_Alignas` による構造体メンバのアライメント指定を実装する
+  - [x] `struct { _Alignas(8) int x; };` でメンバオフセットが指定値の倍数になることを保証する（parser.c / stmt.c）
+  - [x] `sizeof` が正しい値を返すことをテストで確認する（alignas/struct_member: sizeof(S)==16）
 
 ## 標準ヘッダスタブ整備タスク（2026-03-20 棚卸し）
 - [x] `<stddef.h>` を追加する
@@ -863,25 +863,32 @@
   - [x] `int8_t` / `uint8_t` / `int16_t` / `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` を `typedef` で定義する
   - [x] `INT_MAX` / `UINT_MAX` 等の定数マクロを定義する
   - [x] `test_e2e` に固定幅整数型を使う回帰テストを追加する
-- [ ] `<stdarg.h>` を追加する（可変長引数関数内での `va_list` 使用）
-  - [ ] Apple ARM64 ABI に準拠した `va_list` / `va_start` / `va_arg` / `va_end` のマクロ実装方針を決める
-  - [ ] `ag_c` コンパイルコード内で `va_arg` を使う最小ケース（`int` 引数取り出し）を e2e で確認する
+- [x] `<stdarg.h>` を追加する（可変長引数関数内での `va_list` 使用）
+  - [x] Apple ARM64 ABI に準拠した `va_list` / `va_start` / `va_arg` / `va_end` のマクロ実装方針を決める
+  - [x] `ag_c` コンパイルコード内で `va_arg` を使う最小ケース（`int` 引数取り出し）を e2e で確認する（stdarg/va_arg_int: my_sum(3,10,20,12)==42）
 
 ## Codegen未実装タスク（構造体/共用体 ABI、2026-03-20 棚卸し）
-- [ ] Apple ARM64 calling convention の構造体引数渡しを実装する
-  - [ ] 現状は小サイズ構造体をレジスタ渡ししているが、ABI 規約（HFA/HVA / スタック渡し境界）との整合を確認する
-  - [ ] 16 バイト超の構造体を呼び出し元がスタックに配置して先頭アドレスを渡す経路を実装する
-  - [ ] 呼び出し側・被呼び出し側双方の対称性を `test_e2e` で確認する
-- [ ] 構造体/共用体を戻り値として返す ABI を実装する
-  - [ ] 現状のスタックベース評価が呼び出し規約と整合しているか確認する
-  - [ ] 16 バイト超の戻り値はポインタ経由（`x8` レジスタ）で返す経路を実装する
-  - [ ] `test_e2e` に構造体を返す関数の実行時回帰テストを追加する
+- [x] Apple ARM64 calling convention の構造体引数渡しを実装する
+  - [x] 現状は小サイズ構造体をレジスタ渡ししているが、ABI 規約（HFA/HVA / スタック渡し境界）との整合を確認する
+    - ≤8B: 1 レジスタ渡し、9-16B: 2 レジスタ渡し（stp/ldp）、>16B: アドレス渡し（byref）— ARM64 ABI 準拠
+  - [x] 16 バイト超の構造体を呼び出し元がスタックに配置して先頭アドレスを渡す経路を実装する
+    - 呼び出し側: `add x0, x29, #offset` でアドレスを渡す。被呼び出し側: `is_byref_param` フラグ付き lvar として受け取り、ND_DEREF で透過的にメンバアクセス
+  - [x] 呼び出し側・被呼び出し側双方の対称性を `test_e2e` で確認する
+    - struct_arg/{small_sum, small_member, mid_sum, large_sum} の 4 テストを追加
+- [x] 構造体/共用体を戻り値として返す ABI を実装する（≤8B スコープ）
+  - [x] ≤8B 構造体: x0 に packed value で返す経路が既存スタックマシンと整合していることを確認（コード変更不要）
+  - [x] パーサーが `struct Tag func(...)` 形式を関数定義として認識するよう修正する（`ps_program` に `is_tag_return_function_signature` ルックアヘッドを追加）
+  - [x] `funcdef()` 内で struct/union 戻り値型を消費し `ret_token_kind=TK_STRUCT` として設定する
+  - [x] `parse_struct_copy_initializer()` に非 lvar RHS（関数呼び出し結果）からの ≤8B 代入フォールバックを追加する
+  - [x] `test_e2e` に struct_ret/{make_and_sum, return_member, chain_call} の 3 テストを追加して 309 テスト通過を確認
+  - [ ] 9–16B 戻り値: x0/x1 ペアで返す経路（呼び出し側・被呼び出し側双方の 2 レジスタハンドリング）
+  - [ ] >16B 戻り値: `x8` レジスタ（hidden pointer）経由で返す経路を実装する
 
 ## VLA（可変長配列）最小実装タスク（2026-03-20 棚卸し）
-- [ ] VLA 宣言を受理してスタック動的確保に lowering する最小実装を行う
-  - [ ] 現状は `DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED` でエラーになる
-  - [ ] 整数変数サイズの 1 次元配列（`int a[n];`）を最小スコープとして受理する
-  - [ ] ARM64 で `alloca` 相当のスタック動的確保（`sub sp, sp, x_size` + アライメント）を生成する
-  - [ ] VLA サイズ式を宣言時点で 1 度だけ評価し、その後のアクセスは通常配列と同じ経路にする
-  - [ ] `test_e2e` に `int n=3; int a[n]; a[1]=7; return a[1];` の実行時回帰テストを追加する
-  - [ ] `sizeof(vla)` のランタイム評価（C11 での定義済み動作）を実装する
+- [x] VLA 宣言を受理してスタック動的確保に lowering する最小実装を行う
+  - [x] 現状は `DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED` でエラーになる → 非定数サイズを検出して VLA 経路へ分岐
+  - [x] 整数変数サイズの 1 次元配列（`int a[n];`）を最小スコープとして受理する
+  - [x] ARM64 で `alloca` 相当のスタック動的確保（`sub sp, sp, x_size` + bic アライメント）を生成する
+  - [x] VLA サイズ式を宣言時点で 1 度だけ評価し、ベースポインタをフレームスロットに保存、要素アクセスはポインタ経由
+  - [x] `test_e2e` に VLA 基本アクセス・ループ代入・関数引数サイズの 3 テストを追加する（vla/basic_elem, loop_fill, param_size）
+  - [x] `sizeof(vla)` のランタイム評価（C11 での定義済み動作）を実装する

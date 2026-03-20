@@ -351,6 +351,10 @@ static const test_case_t test_cases[] = {
     {"bitfield", "packing", CASE_INT, "int main(){ struct S { unsigned int a:3; unsigned int b:5; int c; }; return (int)sizeof(struct S); }", 8, 0},
     {"bitfield", "signed_neg", CASE_INT, "int main(){ struct S { int f:4; }; struct S s; s.f=-1; return (s.f < 0) ? 42 : 0; }", 42, 0},
     {"bitfield", "unsigned_wrap", CASE_INT, "int main(){ struct S { unsigned int f:3; }; struct S s; s.f=9; return s.f; }", 1, 0},
+    // _Alignas
+    {"alignas", "lvar_value",  CASE_INT, "int main() { _Alignas(16) int a = 42; return a; }", 42, 0},
+    {"alignas", "lvar_align",  CASE_INT, "int main() { int pad = 1; _Alignas(16) int a = 42; long addr = (long)&a; return addr % 16 == 0 ? a : 0; }", 42, 0},
+    {"alignas", "struct_member", CASE_INT, "int main() { struct S { char pad; _Alignas(8) int x; }; return (int)sizeof(struct S) == 16 ? 42 : 0; }", 42, 0},
     // 標準ヘッダ
     {"stdheader", "stdint_int32", CASE_INT, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }", 42, 0},
     {"stdheader", "stdint_uint8", CASE_INT, "#include <stdint.h>\nint main() { uint8_t x = 200; return (int)x; }", 200, 0},
@@ -358,6 +362,70 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdbool_false", CASE_INT, "#include <stdbool.h>\nint main() { bool b = false; return b ? 1 : 0; }", 0, 0},
     {"stdheader", "stddef_size_t", CASE_INT, "#include <stddef.h>\nint main() { size_t x = 10; return (int)x; }", 10, 0},
     {"stdheader", "stddef_null", CASE_INT, "#include <stddef.h>\nint main() { void *p = NULL; return p == NULL ? 42 : 0; }", 42, 0},
+    // stdarg
+    {"stdarg", "va_arg_int", CASE_INT,
+     "#include <stdarg.h>\n"
+     "int my_sum(int n, ...) {\n"
+     "  va_list ap; va_start(ap, n);\n"
+     "  int s = 0; int i;\n"
+     "  for (i = 0; i < n; i++) { s += va_arg(ap, int); }\n"
+     "  va_end(ap); return s;\n"
+     "}\n"
+     "int main() { return my_sum(3, 10, 20, 12); }",
+     42, 0},
+
+    // VLA (Variable Length Array)
+    {"vla", "basic_elem", CASE_INT,
+     "int main() { int n = 3; int a[n]; a[0] = 10; a[1] = 20; a[2] = 12; return a[0] + a[1] + a[2]; }",
+     42, 0},
+    {"vla", "loop_fill", CASE_INT,
+     "int main() { int n = 5; int a[n]; int i; for (i = 0; i < n; i++) a[i] = i; return a[0] + a[1] + a[2] + a[3] + a[4]; }",
+     10, 0},
+    {"vla", "param_size", CASE_INT,
+     "int sum(int n) { int a[n]; int i; for (i = 0; i < n; i++) a[i] = i + 1; int s = 0; for (i = 0; i < n; i++) s += a[i]; return s; }\n"
+     "int main() { return sum(4); }",
+     10, 0},
+    {"vla", "sizeof_vla", CASE_INT,
+     "int main() { int n = 3; int a[n]; return (int)sizeof(a); }",
+     12, 0},
+    // 構造体引数渡し (ARM64 ABI)
+    {"struct_arg", "small_sum", CASE_INT,
+     "struct Point { int x; int y; };"
+     "int sum(struct Point p) { return p.x + p.y; }"
+     "int main() { struct Point pt = {3, 4}; return sum(pt); }",
+     7, 0},
+    {"struct_arg", "small_member", CASE_INT,
+     "struct Point { int x; int y; };"
+     "int get_y(struct Point p) { return p.y; }"
+     "int main() { struct Point pt = {10, 42}; return get_y(pt); }",
+     42, 0},
+    {"struct_arg", "mid_sum", CASE_INT,
+     "struct Mid { int a; int b; int c; };"
+     "int sum3(struct Mid p) { return p.a + p.b + p.c; }"
+     "int main() { struct Mid m = {10, 20, 12}; return sum3(m); }",
+     42, 0},
+    {"struct_arg", "large_sum", CASE_INT,
+     "struct Big { int a; int b; int c; int d; int e; };"
+     "int sum5(struct Big p) { return p.a + p.b + p.c + p.d + p.e; }"
+     "int main() { struct Big b = {1, 2, 3, 4, 5}; return sum5(b); }",
+     15, 0},
+    // struct return value (≤8B)
+    {"struct_ret", "make_and_sum", CASE_INT,
+     "struct Point { int x; int y; };"
+     "struct Point make_point(int x, int y) { struct Point p = {x, y}; return p; }"
+     "int main() { struct Point r = make_point(10, 32); return r.x + r.y; }",
+     42, 0},
+    {"struct_ret", "return_member", CASE_INT,
+     "struct Pair { int a; int b; };"
+     "struct Pair swap(int a, int b) { struct Pair p = {b, a}; return p; }"
+     "int main() { struct Pair r = swap(7, 35); return r.a + r.b; }",
+     42, 0},
+    {"struct_ret", "chain_call", CASE_INT,
+     "struct Val { int v; };"
+     "struct Val make_val(int n) { struct Val v = {n}; return v; }"
+     "int get_v(struct Val p) { return p.v; }"
+     "int main() { return get_v(make_val(42)); }",
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

@@ -157,17 +157,26 @@ static void consume_pointer_chain_decl(int *is_pointer,
   }
 }
 
-static int parse_array_size_constexpr_decl(void) {
+// 配列サイズ式をパースし定数評価する。ok=0 なら VLA (可変長配列) を示す。
+static long long parse_array_size_expr_decl(node_t **out_node, int *out_ok) {
   node_t *n = psx_expr_assign();
+  if (out_node) *out_node = n;
   int ok = 1;
   long long v = eval_const_expr_decl(n, &ok);
+  if (out_ok) *out_ok = ok;
+  if (ok && v <= 0) {
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+  }
+  return v;
+}
+
+static int parse_array_size_constexpr_decl(void) {
+  int ok = 1;
+  long long v = parse_array_size_expr_decl(NULL, &ok);
   if (!ok) {
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED));
-  }
-  if (v <= 0) {
-    psx_diag_ctx(token, "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
 }
@@ -204,7 +213,7 @@ static node_t *parse_scalar_brace_initializer(void) {
 }
 
 static node_t *new_array_elem_lvar(lvar_t *var, int idx) {
-  int elem_off = var->offset - var->size + (idx + 1) * var->elem_size;
+  int elem_off = var->offset + idx * var->elem_size;
   node_t *lvar = psx_node_new_lvar_typed(elem_off, var->elem_size);
   lvar->fp_kind = var->fp_kind;
   ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
@@ -303,7 +312,7 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
   node_t *init_chain = NULL;
   for (int idx = 0; idx < array_len; idx++) {
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
-    int src_elem_off = src->offset - src->size + (idx + 1) * src->elem_size;
+    int src_elem_off = src->offset + idx * src->elem_size;
     node_t *rhs = psx_node_new_lvar_typed(src_elem_off, elem_size);
     node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
     assign_node->type_size = elem_size;
@@ -714,6 +723,12 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     copy_select->base.rhs = then_prefix ? psx_node_new_binary(ND_COMMA, then_prefix, then_copy) : then_copy;
     copy_select->els = else_prefix ? psx_node_new_binary(ND_COMMA, else_prefix, else_copy) : else_copy;
     init_chain = (node_t *)copy_select;
+  } else if (var->size <= 8 && value) {
+    // ≤8B struct: 関数呼び出し結果などの非lvar式を 8B assign で初期化
+    node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    assign_node->type_size = var->size;
+    init_chain = (node_t *)assign_node;
   } else {
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
@@ -932,6 +947,13 @@ void psx_decl_reset_locals(void) {
   locals_offset = 0;
 }
 
+// For variadic functions: reserve slots for all 8 argument registers
+// (8 regs × 8 bytes = 64 bytes at offsets 8..64) so that body-local
+// variables don't overlap with the variadic register save area.
+void psx_decl_reserve_variadic_regs(void) {
+  if (locals_offset < 64) locals_offset = 64;
+}
+
 lvar_t *psx_decl_find_lvar(char *name, int len) {
   for (lvar_t *var = locals; var; var = var->next) {
     if (var->len == len && memcmp(var->name, name, len) == 0) {
@@ -942,15 +964,23 @@ lvar_t *psx_decl_find_lvar(char *name, int len) {
 }
 
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
+  return psx_decl_register_lvar_sized_align(name, len, size, elem_size, is_array, 0);
+}
+
+lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align) {
   lvar_t *var = calloc(1, sizeof(lvar_t));
   var->next = locals;
   var->name = name;
   var->len = len;
+  if (align > 1) {
+    locals_offset = (locals_offset + align - 1) & ~(align - 1);
+  }
+  var->offset = locals_offset;  // BASE of variable (address = x29 + 16 + var->offset)
   locals_offset += size;
-  var->offset = locals_offset;
   var->size = size;
   var->elem_size = elem_size;
   var->is_array = is_array;
+  var->align_bytes = align;
   locals = var;
   return var;
 }
@@ -996,6 +1026,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                               int base_is_pointer,
                                               int is_const_qualified, int is_volatile_qualified) {
   node_t *init_chain = NULL;
+  int alignas_val = 0;
+  psx_take_alignas_value(&alignas_val);
 
   for (;;) {
     int is_pointer = base_is_pointer;
@@ -1018,13 +1050,33 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
       if (tk_consume('[')) {
-        int array_size = parse_array_size_constexpr_decl();
+        node_t *size_node = NULL;
+        int size_ok = 1;
+        long long array_size = parse_array_size_expr_decl(&size_node, &size_ok);
         tk_expect(']');
+        if (!size_ok) {
+          // 可変長配列 (VLA): 8バイトのポインタスロットを確保し、実行時に alloca する
+          // 多次元VLAは非サポート
+          while (tk_consume('[')) { parse_array_size_constexpr_decl(); tk_expect(']'); }
+          // 16バイト: [offset]=ベースポインタ, [offset+8]=バイトサイズ(sizeof用)
+          var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
+          var->is_vla = 1;
+          // VLA確保ノード: size_node * elem_size バイトをスタックに確保
+          node_t *byte_size = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(elem_size));
+          node_mem_t *alloc_node = calloc(1, sizeof(node_mem_t));
+          alloc_node->base.kind = ND_VLA_ALLOC;
+          alloc_node->base.lhs = byte_size;
+          alloc_node->type_size = var->offset; // ベースポインタを格納するフレームオフセット
+          if (!init_chain) init_chain = (node_t *)alloc_node;
+          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)alloc_node);
+          if (!tk_consume(',')) break;
+          continue;
+        }
         while (tk_consume('[')) {
           array_size *= parse_array_size_constexpr_decl();
           tk_expect(']');
         }
-        var = psx_decl_register_lvar_sized(tok->str, tok->len, array_size * elem_size, elem_size, 1);
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * elem_size, elem_size, 1, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;
@@ -1037,8 +1089,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
         var->pointer_qual_levels = ptr_levels;
       } else {
-        var = psx_decl_register_lvar_sized(tok->str, tok->len, var_size,
-                                           is_pointer ? pointer_deref_size : var_size, 0);
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, var_size,
+                                           is_pointer ? pointer_deref_size : var_size, 0, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;
