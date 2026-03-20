@@ -32,6 +32,19 @@ static const success_case_t success_cases[] = {
     {0, "#if 0\n#error \"This should not be evaluated\"\n#endif\nint main() { return 0; }"},
     {0, "#define STR(x) #x\nint main() { char *s = STR(hello world); if (s[0] == 'h') if (s[6] == 'w') return 0; return 1; }"},
     {42, "#define PASTE(a, b) a ## b\nint main() { int var123 = 42; return PASTE(var, 123); }"},
+    // 定義済みマクロ
+    {1,  "int main() { return __STDC__; }"},
+    {42, "#if __STDC_VERSION__ >= 201112L\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {1,  "int main() { return __LINE__; }"},
+    {42, "int main() { char *f = __FILE__; return f[0] ? 42 : 0; }"},
+    {42, "int main() { char *d = __DATE__; return d[0] ? 42 : 0; }"},
+    {42, "int main() { char *t = __TIME__; return t[0] ? 42 : 0; }"},
+    // #pragma once
+    {42, "#include \"build/pragma_once.h\"\n#include \"build/pragma_once.h\"\nint main() { return once_func(); }"},
+    // 標準ヘッダ
+    {42, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }"},
+    {42, "#include <stdbool.h>\nint main() { _Bool b = 1; return b ? 42 : 0; }"},
+    {42, "#include <stddef.h>\nint main() { size_t x = 42; return (int)x; }"},
 };
 
 static const char *fail_cases[] = {
@@ -252,6 +265,9 @@ int main(void) {
   FILE *h = fopen("build/test_inc.h", "w");
   fprintf(h, "int inc_func() { return 42; }\n");
   fclose(h);
+  FILE *honce = fopen("build/pragma_once.h", "w");
+  fprintf(honce, "#pragma once\nint once_func() { return 42; }\n");
+  fclose(honce);
   FILE *ha = fopen("build/cycle_a.h", "w");
   fprintf(ha, "#include \"build/cycle_b.h\"\n");
   fclose(ha);

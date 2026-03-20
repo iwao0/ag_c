@@ -814,17 +814,17 @@
   - [x] 複合リテラルの一時オブジェクト型情報（ポインタ/タグ）の伝搬を整理し、回帰テストで固定する
 
 ## Preprocessor未実装タスク（2026-03-20 棚卸し）
-- [ ] 定義済みマクロ（`__LINE__`, `__FILE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`）を実装する
-  - [ ] プリプロセス時に展開される組み込みマクロとして登録する仕組みを導入する
-  - [ ] `__LINE__` は展開時点のトークン行番号を整数リテラルとして生成する
-  - [ ] `__FILE__` は展開時点のファイル名を文字列リテラルとして生成する
-  - [ ] `__DATE__` / `__TIME__` はコンパイル開始時刻から生成する
-  - [ ] `__STDC__` は `1`、`__STDC_VERSION__` は `201112L` として定義する
-  - [ ] `test_preprocess` に展開結果の回帰テストを追加する
-- [ ] `#pragma once` を実装する
-  - [ ] インクルード済みファイルパスを記録し、2回目以降の `#pragma once` 付きファイルを読み飛ばす
-  - [ ] `#pragma` が未知の場合は無視する（C11 準拠の黙過）方針を明文化する
-  - [ ] `test_preprocess` に `#pragma once` の回帰テストを追加する
+- [x] 定義済みマクロ（`__LINE__`, `__FILE__`, `__DATE__`, `__TIME__`, `__STDC__`, `__STDC_VERSION__`）を実装する
+  - [x] プリプロセス時に展開される組み込みマクロとして登録する仕組みを導入する
+  - [x] `__LINE__` は展開時点のトークン行番号を整数リテラルとして生成する
+  - [x] `__FILE__` は展開時点のファイル名を文字列リテラルとして生成する
+  - [x] `__DATE__` / `__TIME__` はコンパイル開始時刻から生成する
+  - [x] `__STDC__` は `1`、`__STDC_VERSION__` は `201112L` として定義する
+  - [x] `test_preprocess` に展開結果の回帰テストを追加する
+- [x] `#pragma once` を実装する
+  - [x] インクルード済みファイルパスを記録し、2回目以降の `#pragma once` 付きファイルを読み飛ばす
+  - [x] `#pragma` が未知の場合は無視する（C11 準拠の黙過）方針を明文化する
+  - [x] `test_preprocess` に `#pragma once` の回帰テストを追加する
 - [ ] `#line` ディレクティブを実装する
   - [ ] `#line N` / `#line N "file"` でトークンの行番号・ファイル名を上書きできるようにする
   - [ ] `__LINE__` / `__FILE__` の展開結果に反映されることをテストで確認する
@@ -852,17 +852,17 @@
   - [ ] `sizeof` / `_Alignof` が正しい値を返すことをテストで確認する
 
 ## 標準ヘッダスタブ整備タスク（2026-03-20 棚卸し）
-- [ ] `<stddef.h>` を追加する
-  - [ ] `size_t`（`unsigned long`）、`ptrdiff_t`（`long`）、`NULL`（`(void*)0`）を定義する
-  - [ ] `offsetof(type, member)` を組み込み演算子として実装する、またはマクロで定義する
-  - [ ] `test_e2e` に `sizeof(size_t)` 等の確認テストを追加する
-- [ ] `<stdbool.h>` を追加する
-  - [ ] `bool`（`_Bool`）、`true`（`1`）、`false`（`0`）を定義する（`_Bool` 自体はすでに実装済み）
-  - [ ] `test_e2e` に `bool` 型変数を使う回帰テストを追加する
-- [ ] `<stdint.h>` を追加する
-  - [ ] `int8_t` / `uint8_t` / `int16_t` / `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` を `typedef` で定義する
-  - [ ] `INT_MAX` / `UINT_MAX` 等の定数マクロを定義する
-  - [ ] `test_e2e` に固定幅整数型を使う回帰テストを追加する
+- [x] `<stddef.h>` を追加する
+  - [x] `size_t`（`unsigned long`）、`ptrdiff_t`（`long`）、`NULL`（`(void*)0`）を定義する
+  - [x] `offsetof(type, member)` を組み込み演算子として実装する、またはマクロで定義する
+  - [x] `test_e2e` に `sizeof(size_t)` 等の確認テストを追加する
+- [x] `<stdbool.h>` を追加する
+  - [x] `bool`（`_Bool`）、`true`（`1`）、`false`（`0`）を定義する（`_Bool` 自体はすでに実装済み）
+  - [x] `test_e2e` に `bool` 型変数を使う回帰テストを追加する
+- [x] `<stdint.h>` を追加する
+  - [x] `int8_t` / `uint8_t` / `int16_t` / `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` を `typedef` で定義する
+  - [x] `INT_MAX` / `UINT_MAX` 等の定数マクロを定義する
+  - [x] `test_e2e` に固定幅整数型を使う回帰テストを追加する
 - [ ] `<stdarg.h>` を追加する（可変長引数関数内での `va_list` 使用）
   - [ ] Apple ARM64 ABI に準拠した `va_list` / `va_start` / `va_arg` / `va_end` のマクロ実装方針を決める
   - [ ] `ag_c` コンパイルコード内で `va_arg` を使う最小ケース（`int` 引数取り出し）を e2e で確認する
