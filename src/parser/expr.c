@@ -1559,7 +1559,7 @@ static node_t *primary(void) {
     if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }
-    if (var->is_array) {
+    if (var->is_array && !var->is_vla) {
       node_mem_t *node = calloc(1, sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
       node->base.lhs = psx_node_new_lvar(var->offset);
@@ -1571,6 +1571,7 @@ static node_t *primary(void) {
       node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
       return (node_t *)node;
     }
+    // VLA: フレームスロットからベースポインタを読み込む (ポインタ変数として扱う)
     node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
     as_lvar(n)->mem.deref_size = var->elem_size;
     as_lvar(n)->mem.tag_kind = var->tag_kind;

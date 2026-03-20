@@ -878,10 +878,10 @@
   - [ ] `test_e2e` に構造体を返す関数の実行時回帰テストを追加する
 
 ## VLA（可変長配列）最小実装タスク（2026-03-20 棚卸し）
-- [ ] VLA 宣言を受理してスタック動的確保に lowering する最小実装を行う
-  - [ ] 現状は `DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED` でエラーになる
-  - [ ] 整数変数サイズの 1 次元配列（`int a[n];`）を最小スコープとして受理する
-  - [ ] ARM64 で `alloca` 相当のスタック動的確保（`sub sp, sp, x_size` + アライメント）を生成する
-  - [ ] VLA サイズ式を宣言時点で 1 度だけ評価し、その後のアクセスは通常配列と同じ経路にする
-  - [ ] `test_e2e` に `int n=3; int a[n]; a[1]=7; return a[1];` の実行時回帰テストを追加する
+- [x] VLA 宣言を受理してスタック動的確保に lowering する最小実装を行う
+  - [x] 現状は `DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED` でエラーになる → 非定数サイズを検出して VLA 経路へ分岐
+  - [x] 整数変数サイズの 1 次元配列（`int a[n];`）を最小スコープとして受理する
+  - [x] ARM64 で `alloca` 相当のスタック動的確保（`sub sp, sp, x_size` + bic アライメント）を生成する
+  - [x] VLA サイズ式を宣言時点で 1 度だけ評価し、ベースポインタをフレームスロットに保存、要素アクセスはポインタ経由
+  - [x] `test_e2e` に VLA 基本アクセス・ループ代入・関数引数サイズの 3 テストを追加する（vla/basic_elem, loop_fill, param_size）
   - [ ] `sizeof(vla)` のランタイム評価（C11 での定義済み動作）を実装する

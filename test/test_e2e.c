@@ -373,6 +373,18 @@ static const test_case_t test_cases[] = {
      "}\n"
      "int main() { return my_sum(3, 10, 20, 12); }",
      42, 0},
+
+    // VLA (Variable Length Array)
+    {"vla", "basic_elem", CASE_INT,
+     "int main() { int n = 3; int a[n]; a[0] = 10; a[1] = 20; a[2] = 12; return a[0] + a[1] + a[2]; }",
+     42, 0},
+    {"vla", "loop_fill", CASE_INT,
+     "int main() { int n = 5; int a[n]; int i; for (i = 0; i < n; i++) a[i] = i; return a[0] + a[1] + a[2] + a[3] + a[4]; }",
+     10, 0},
+    {"vla", "param_size", CASE_INT,
+     "int sum(int n) { int a[n]; int i; for (i = 0; i < n; i++) a[i] = i + 1; int s = 0; for (i = 0; i < n; i++) s += a[i]; return s; }\n"
+     "int main() { return sum(4); }",
+     10, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

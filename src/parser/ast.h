@@ -49,6 +49,7 @@ typedef enum {
   ND_ADDR,    // アドレス取得 (&x)
   ND_STRING,  // 文字列リテラル
   ND_NUM,     // 整数
+  ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト), type_size=フレームオフセット
 } node_kind_t;
 
 // 抽象構文木のノードの型

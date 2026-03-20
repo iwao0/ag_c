@@ -157,17 +157,26 @@ static void consume_pointer_chain_decl(int *is_pointer,
   }
 }
 
-static int parse_array_size_constexpr_decl(void) {
+// 配列サイズ式をパースし定数評価する。ok=0 なら VLA (可変長配列) を示す。
+static long long parse_array_size_expr_decl(node_t **out_node, int *out_ok) {
   node_t *n = psx_expr_assign();
+  if (out_node) *out_node = n;
   int ok = 1;
   long long v = eval_const_expr_decl(n, &ok);
+  if (out_ok) *out_ok = ok;
+  if (ok && v <= 0) {
+    psx_diag_ctx(token, "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+  }
+  return v;
+}
+
+static int parse_array_size_constexpr_decl(void) {
+  int ok = 1;
+  long long v = parse_array_size_expr_decl(NULL, &ok);
   if (!ok) {
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED));
-  }
-  if (v <= 0) {
-    psx_diag_ctx(token, "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
 }
@@ -1035,13 +1044,32 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
       if (tk_consume('[')) {
-        int array_size = parse_array_size_constexpr_decl();
+        node_t *size_node = NULL;
+        int size_ok = 1;
+        long long array_size = parse_array_size_expr_decl(&size_node, &size_ok);
         tk_expect(']');
+        if (!size_ok) {
+          // 可変長配列 (VLA): 8バイトのポインタスロットを確保し、実行時に alloca する
+          // 多次元VLAは非サポート
+          while (tk_consume('[')) { parse_array_size_constexpr_decl(); tk_expect(']'); }
+          var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 1, 0);
+          var->is_vla = 1;
+          // VLA確保ノード: size_node * elem_size バイトをスタックに確保
+          node_t *byte_size = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(elem_size));
+          node_mem_t *alloc_node = calloc(1, sizeof(node_mem_t));
+          alloc_node->base.kind = ND_VLA_ALLOC;
+          alloc_node->base.lhs = byte_size;
+          alloc_node->type_size = var->offset; // ベースポインタを格納するフレームオフセット
+          if (!init_chain) init_chain = (node_t *)alloc_node;
+          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)alloc_node);
+          if (!tk_consume(',')) break;
+          continue;
+        }
         while (tk_consume('[')) {
           array_size *= parse_array_size_constexpr_decl();
           tk_expect(']');
         }
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, array_size * elem_size, elem_size, 1, alignas_val);
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * elem_size, elem_size, 1, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;

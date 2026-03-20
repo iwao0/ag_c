@@ -450,6 +450,19 @@ static void gen_expr(node_t *node) {
     cg_emitf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
+  case ND_VLA_ALLOC: {
+    // VLA動的スタック確保: lhs=バイトサイズ式, type_size=ベースポインタのフレームオフセット
+    gen_expr(node->lhs);               // x0 = size in bytes
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  add x0, x0, #15\n");  // 16バイトアライン
+    cg_emitf("  bic x0, x0, #15\n"); // 下位4ビットをクリア (= & ~15)
+    cg_emitf("  sub sp, sp, x0\n");   // alloca
+    cg_emitf("  mov x0, sp\n");       // spはstr源オペランドに使えないため一時レジスタ経由
+    cg_emitf("  str x0, [x29, #%d]\n", 16 + as_mem(node)->type_size); // ベースポインタを保存
+    cg_emitf("  mov x0, #0\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
+  }
   case ND_FUNCREF:
     cg_emitf("  adrp x0, _%.*s@PAGE\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
     cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
@@ -793,6 +806,7 @@ static void gen_stmt(node_t *node) {
       // void 関数の return; は戻り値レジスタを0で統一
       cg_emitf("  mov x0, #0\n");
     }
+    cg_emitf("  mov sp, x29\n");       // VLA等でspが動いた場合に固定フレーム先頭へ戻す
     cg_emitf("  ldp x29, x30, [sp]\n");
     cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
     cg_emitf("  ret\n");
@@ -826,6 +840,7 @@ static void gen_stmt(node_t *node) {
       cg_emitf("  mov x0, #0\n");
     }
     // エピローグ
+    cg_emitf("  mov sp, x29\n");       // VLA等でspが動いた場合に固定フレーム先頭へ戻す
     cg_emitf("  ldp x29, x30, [sp]\n");
     cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
     cg_emitf("  ret\n");
