@@ -426,6 +426,34 @@ static const test_case_t test_cases[] = {
      "int get_v(struct Val p) { return p.v; }"
      "int main() { return get_v(make_val(42)); }",
      42, 0},
+    // 2D VLA: constant inner dimension
+    {"vla_2d", "const_inner_read", CASE_INT,
+     "int main() {"
+     "  int n = 3; int a[n][4];"
+     "  a[0][0]=1; a[0][1]=2; a[1][0]=10; a[2][3]=100;"
+     "  return a[0][0]+a[0][1]+a[1][0]+a[2][3];"   // 1+2+10+100=113 → mod256=113
+     "}", 113, 0},
+    {"vla_2d", "const_inner_loop", CASE_INT,
+     "int main() {"
+     "  int n = 2; int sum = 0; int a[n][3];"
+     "  int i; for (i=0;i<n;i++) { int j; for(j=0;j<3;j++) a[i][j]=i*3+j; }"
+     "  for (i=0;i<n;i++) { int j; for(j=0;j<3;j++) sum+=a[i][j]; }"
+     "  return sum;"   // 0+1+2+3+4+5=15
+     "}", 15, 0},
+    // 2D VLA: runtime inner dimension
+    {"vla_2d", "runtime_inner_read", CASE_INT,
+     "int main() {"
+     "  int n = 2; int m = 3; int a[n][m];"
+     "  a[0][0]=10; a[0][2]=5; a[1][1]=20; a[1][2]=7;"
+     "  return a[0][0]+a[0][2]+a[1][1]+a[1][2];"   // 10+5+20+7=42
+     "}", 42, 0},
+    {"vla_2d", "runtime_inner_loop", CASE_INT,
+     "int main() {"
+     "  int n = 3; int m = 4; int sum = 0; int a[n][m];"
+     "  int i; for(i=0;i<n;i++) { int j; for(j=0;j<m;j++) a[i][j]=i*m+j; }"
+     "  for(i=0;i<n;i++) { int j; for(j=0;j<m;j++) sum+=a[i][j]; }"
+     "  return sum;"   // 0..11 sum=66
+     "}", 66, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

@@ -85,6 +85,9 @@ struct node_mem_t {
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
+  // 多次元配列サポート用
+  int inner_deref_size;         // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
+  int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=コンパイル時定数）
 };
 
 // 数値ノード

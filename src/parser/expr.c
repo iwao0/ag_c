@@ -1345,12 +1345,30 @@ static node_t *apply_postfix(node_t *node) {
       int ds = psx_node_deref_size(node);
       int ts = psx_node_type_size(node);
       int es = ds ? ds : (ts ? ts : 8);
-      node_t *scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
+      // 多次元VLA: 実行時ストライド・内側要素サイズを伝播
+      int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
+      int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
+      if (node->kind == ND_LVAR) {
+        vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
+        inner_ds = as_lvar(node)->mem.inner_deref_size;
+      } else if (node->kind == ND_DEREF) {
+        inner_ds = ((node_mem_t *)node)->inner_deref_size;
+      }
+      node_t *scaled;
+      if (vla_rsf) {
+        // 実行時ストライド: フレームスロットから行ストライドをロード
+        node_t *stride_node = psx_node_new_lvar_typed(vla_rsf, 8);
+        scaled = psx_node_new_binary(ND_MUL, idx, stride_node);
+        es = inner_ds ? inner_ds : 1; // type_size設定用 (実際は次段でderef_size経由で使用)
+      } else {
+        scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
+      }
       node_t *base_addr = node;
       if (node->kind == ND_DEREF) {
         node_mem_t *mem = (node_mem_t *)node;
-        // Array member access (`s.a[1]`): use element-base address directly.
-        if (mem->deref_size > 0 && mem->type_size > mem->deref_size) {
+        // 配列的アクセス: deref_size > 0 なら lhs (配列ベースアドレス) を直接使用
+        // (struct メンバ配列・多次元VLA サブスクリプト共通)
+        if (mem->deref_size > 0) {
           base_addr = node->lhs;
         } else if (node->lhs && node->lhs->kind == ND_ADD &&
                    node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
@@ -1364,6 +1382,7 @@ static node_t *apply_postfix(node_t *node) {
       deref->base.kind = ND_DEREF;
       deref->base.lhs = addr;
       deref->type_size = es;
+      deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
       token_kind_t tag_kind = TK_EOF;
       char *tag_name = NULL;
       int tag_len = 0;
@@ -1600,7 +1619,14 @@ static node_t *primary(void) {
     }
     // VLA: フレームスロットからベースポインタを読み込む (ポインタ変数として扱う)
     node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
-    as_lvar(n)->mem.deref_size = var->elem_size;
+    // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
+    // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
+    int vla_effective_deref = (var->outer_stride > 0) ? var->outer_stride : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
+    as_lvar(n)->mem.deref_size = vla_effective_deref;
+    // 2D VLA: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
+    int vla_is_multidim = (var->outer_stride != var->elem_size) || (var->vla_row_stride_frame_off != 0);
+    as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
+    as_lvar(n)->mem.vla_row_stride_frame_off = var->vla_row_stride_frame_off;
     as_lvar(n)->mem.tag_kind = var->tag_kind;
     as_lvar(n)->mem.tag_name = var->tag_name;
     as_lvar(n)->mem.tag_len = var->tag_len;

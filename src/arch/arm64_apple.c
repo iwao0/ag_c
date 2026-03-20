@@ -451,16 +451,30 @@ static void gen_expr(node_t *node) {
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   case ND_VLA_ALLOC: {
-    // VLA動的スタック確保: lhs=バイトサイズ式, type_size=ベースポインタのフレームオフセット
-    // フレームレイアウト: [x29+16+type_size]=ベースポインタ, [x29+16+type_size+8]=バイトサイズ(sizeof用)
-    gen_expr(node->lhs);               // x0 = size in bytes
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  str x0, [x29, #%d]\n", 16 + as_mem(node)->type_size + 8); // バイトサイズを保存 (sizeof用)
+    // VLA動的スタック確保
+    // フレームレイアウト: [x29+16+off]=baseptr, [x29+16+off+8]=bytesize
+    // 2D runtime: [x29+16+rsf]=row_stride (rsf = vla_row_stride_frame_off != 0)
+    int off = as_mem(node)->type_size; // ベースポインタのフレームオフセット
+    int rsf = as_mem(node)->vla_row_stride_frame_off; // 行ストライドのフレームオフセット (0=なし)
+    if (rsf) {
+      // 2D VLA runtime inner: rhs=row_stride_expr(m*elem), lhs=outer_count(n)
+      gen_expr(node->rhs);                            // x0 = row_stride = m * elem_size
+      cg_emitf("  ldr x0, [sp], #16\n");
+      cg_emitf("  str x0, [x29, #%d]\n", 16 + rsf);  // row_stride を保存
+      gen_expr(node->lhs);                            // x0 = outer_count = n
+      cg_emitf("  ldr x0, [sp], #16\n");
+      cg_emitf("  ldr x1, [x29, #%d]\n", 16 + rsf);  // x1 = row_stride
+      cg_emitf("  mul x0, x0, x1\n");                // x0 = n * row_stride = total byte_size
+    } else {
+      gen_expr(node->lhs);                            // x0 = total byte_size
+      cg_emitf("  ldr x0, [sp], #16\n");
+    }
+    cg_emitf("  str x0, [x29, #%d]\n", 16 + off + 8); // バイトサイズを保存 (sizeof用)
     cg_emitf("  add x0, x0, #15\n");  // 16バイトアライン
-    cg_emitf("  bic x0, x0, #15\n"); // 下位4ビットをクリア (= & ~15)
+    cg_emitf("  bic x0, x0, #15\n");  // 下位4ビットをクリア (= & ~15)
     cg_emitf("  sub sp, sp, x0\n");   // alloca
     cg_emitf("  mov x0, sp\n");       // spはstr源オペランドに使えないため一時レジスタ経由
-    cg_emitf("  str x0, [x29, #%d]\n", 16 + as_mem(node)->type_size); // ベースポインタを保存
+    cg_emitf("  str x0, [x29, #%d]\n", 16 + off); // ベースポインタを保存
     cg_emitf("  mov x0, #0\n");
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
