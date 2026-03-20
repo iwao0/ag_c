@@ -1052,7 +1052,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           // 可変長配列 (VLA): 8バイトのポインタスロットを確保し、実行時に alloca する
           // 多次元VLAは非サポート
           while (tk_consume('[')) { parse_array_size_constexpr_decl(); tk_expect(']'); }
-          var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 1, 0);
+          // 16バイト: [offset]=ベースポインタ, [offset+8]=バイトサイズ(sizeof用)
+          var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
           var->is_vla = 1;
           // VLA確保ノード: size_node * elem_size バイトをスタックに確保
           node_t *byte_size = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(elem_size));

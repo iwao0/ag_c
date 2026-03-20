@@ -385,6 +385,9 @@ static const test_case_t test_cases[] = {
      "int sum(int n) { int a[n]; int i; for (i = 0; i < n; i++) a[i] = i + 1; int s = 0; for (i = 0; i < n; i++) s += a[i]; return s; }\n"
      "int main() { return sum(4); }",
      10, 0},
+    {"vla", "sizeof_vla", CASE_INT,
+     "int main() { int n = 3; int a[n]; return (int)sizeof(a); }",
+     12, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

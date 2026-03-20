@@ -1196,6 +1196,17 @@ static node_t *unary(void) {
       token = token->next;
       int type_sz = parse_parenthesized_type_size();
       if (type_sz >= 0) return psx_node_new_num(type_sz);
+      // VLA: sizeof(vla_var) は実行時サイズロード
+      if (token->kind == TK_IDENT) {
+        token_ident_t *id = (token_ident_t *)token;
+        lvar_t *vla_var = psx_decl_find_lvar(id->str, id->len);
+        if (vla_var && vla_var->is_vla) {
+          token = token->next;
+          tk_expect(')');
+          // [x29+16+offset+8] にバイトサイズを格納してある
+          return psx_node_new_lvar_typed(vla_var->offset + 8, 8);
+        }
+      }
       node_t *node = expr_internal();
       tk_expect(')');
       return psx_node_new_num(sizeof_expr_node(node));

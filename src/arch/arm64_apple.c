@@ -452,8 +452,10 @@ static void gen_expr(node_t *node) {
     return;
   case ND_VLA_ALLOC: {
     // VLA動的スタック確保: lhs=バイトサイズ式, type_size=ベースポインタのフレームオフセット
+    // フレームレイアウト: [x29+16+type_size]=ベースポインタ, [x29+16+type_size+8]=バイトサイズ(sizeof用)
     gen_expr(node->lhs);               // x0 = size in bytes
     cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  str x0, [x29, #%d]\n", 16 + as_mem(node)->type_size + 8); // バイトサイズを保存 (sizeof用)
     cg_emitf("  add x0, x0, #15\n");  // 16バイトアライン
     cg_emitf("  bic x0, x0, #15\n"); // 下位4ビットをクリア (= & ~15)
     cg_emitf("  sub sp, sp, x0\n");   // alloca
