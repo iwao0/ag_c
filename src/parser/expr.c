@@ -1125,7 +1125,7 @@ static node_t *unary(void) {
         // 配列型複合リテラル: primary() の配列変数参照と同様に ND_ADDR を生成する
         node_mem_t *addr_node = calloc(1, sizeof(node_mem_t));
         addr_node->base.kind = ND_ADDR;
-        addr_node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
+        addr_node->base.lhs = psx_node_new_lvar(var->offset);
         addr_node->type_size = var->elem_size;
         addr_node->deref_size = var->elem_size;
         ref = (node_t *)addr_node;
@@ -1562,7 +1562,7 @@ static node_t *primary(void) {
     if (var->is_array) {
       node_mem_t *node = calloc(1, sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
-      node->base.lhs = psx_node_new_lvar(var->offset - var->size + var->elem_size);
+      node->base.lhs = psx_node_new_lvar(var->offset);
       node->type_size = var->elem_size;
       node->deref_size = var->elem_size;
       node->tag_kind = var->tag_kind;

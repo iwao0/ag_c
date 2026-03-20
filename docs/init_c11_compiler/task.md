@@ -863,9 +863,9 @@
   - [x] `int8_t` / `uint8_t` / `int16_t` / `uint16_t` / `int32_t` / `uint32_t` / `int64_t` / `uint64_t` を `typedef` で定義する
   - [x] `INT_MAX` / `UINT_MAX` 等の定数マクロを定義する
   - [x] `test_e2e` に固定幅整数型を使う回帰テストを追加する
-- [ ] `<stdarg.h>` を追加する（可変長引数関数内での `va_list` 使用）
-  - [ ] Apple ARM64 ABI に準拠した `va_list` / `va_start` / `va_arg` / `va_end` のマクロ実装方針を決める
-  - [ ] `ag_c` コンパイルコード内で `va_arg` を使う最小ケース（`int` 引数取り出し）を e2e で確認する
+- [x] `<stdarg.h>` を追加する（可変長引数関数内での `va_list` 使用）
+  - [x] Apple ARM64 ABI に準拠した `va_list` / `va_start` / `va_arg` / `va_end` のマクロ実装方針を決める
+  - [x] `ag_c` コンパイルコード内で `va_arg` を使う最小ケース（`int` 引数取り出し）を e2e で確認する（stdarg/va_arg_int: my_sum(3,10,20,12)==42）
 
 ## Codegen未実装タスク（構造体/共用体 ABI、2026-03-20 棚卸し）
 - [ ] Apple ARM64 calling convention の構造体引数渡しを実装する

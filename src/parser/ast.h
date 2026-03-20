@@ -128,6 +128,7 @@ struct node_func_t {
   node_t *callee;   // 間接呼び出し時のcallee式（直接呼び出しはNULL）
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
+  int is_variadic;  // 1: 可変長引数関数 (funcdef時のみ)
 };
 
 // 関数シンボル参照ノード

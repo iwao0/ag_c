@@ -204,7 +204,7 @@ static node_t *parse_scalar_brace_initializer(void) {
 }
 
 static node_t *new_array_elem_lvar(lvar_t *var, int idx) {
-  int elem_off = var->offset - var->size + (idx + 1) * var->elem_size;
+  int elem_off = var->offset + idx * var->elem_size;
   node_t *lvar = psx_node_new_lvar_typed(elem_off, var->elem_size);
   lvar->fp_kind = var->fp_kind;
   ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
@@ -303,7 +303,7 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
   node_t *init_chain = NULL;
   for (int idx = 0; idx < array_len; idx++) {
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
-    int src_elem_off = src->offset - src->size + (idx + 1) * src->elem_size;
+    int src_elem_off = src->offset + idx * src->elem_size;
     node_t *rhs = psx_node_new_lvar_typed(src_elem_off, elem_size);
     node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
     assign_node->type_size = elem_size;
@@ -932,6 +932,13 @@ void psx_decl_reset_locals(void) {
   locals_offset = 0;
 }
 
+// For variadic functions: reserve slots for all 8 argument registers
+// (8 regs × 8 bytes = 64 bytes at offsets 8..64) so that body-local
+// variables don't overlap with the variadic register save area.
+void psx_decl_reserve_variadic_regs(void) {
+  if (locals_offset < 64) locals_offset = 64;
+}
+
 lvar_t *psx_decl_find_lvar(char *name, int len) {
   for (lvar_t *var = locals; var; var = var->next) {
     if (var->len == len && memcmp(var->name, name, len) == 0) {
@@ -950,11 +957,11 @@ lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int el
   var->next = locals;
   var->name = name;
   var->len = len;
-  locals_offset += size;
   if (align > 1) {
     locals_offset = (locals_offset + align - 1) & ~(align - 1);
   }
-  var->offset = locals_offset;
+  var->offset = locals_offset;  // BASE of variable (address = x29 + 16 + var->offset)
+  locals_offset += size;
   var->size = size;
   var->elem_size = elem_size;
   var->is_array = is_array;

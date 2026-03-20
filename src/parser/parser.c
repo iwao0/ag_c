@@ -1048,6 +1048,7 @@ static node_t *funcdef(void) {
                          "%s",
                          diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
         }
+        node->is_variadic = 1;
         done = true;
         continue;
       }
@@ -1071,6 +1072,10 @@ static node_t *funcdef(void) {
     tk_expect(')');
   }
   node->nargs = nargs;
+  // 可変長引数関数: ローカル変数スペースを引数レジスタ保存領域の後ろに移動する
+  if (node->is_variadic) {
+    psx_decl_reserve_variadic_regs();
+  }
 
   // 関数プロトタイプ宣言（本体なし）
   if (tk_consume(';')) {

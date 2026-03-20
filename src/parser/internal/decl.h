@@ -28,6 +28,7 @@ struct lvar_t {
 };
 
 void psx_decl_reset_locals(void);
+void psx_decl_reserve_variadic_regs(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);

@@ -813,6 +813,12 @@ static void gen_stmt(node_t *node) {
     for (int i = 0; i < fn->nargs; i++) {
       cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + as_lvar(fn->args[i])->offset);
     }
+    // 可変長引数関数: 残りの引数レジスタ (x{nargs}..x7) を次のスロットに保存
+    if (fn->is_variadic) {
+      for (int i = fn->nargs; i < 8; i++) {
+        cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + i * 8);
+      }
+    }
     // 関数本体
     gen_stmt(fn->base.rhs);
     // main の return が無い場合は 0 を返す

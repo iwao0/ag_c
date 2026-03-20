@@ -612,7 +612,7 @@ static void test_expr_assign() {
 
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_EQ(ND_LVAR, node->lhs->kind);
-  ASSERT_TRUE(as_lvar(node->lhs)->offset > 0);
+  ASSERT_TRUE(as_lvar(node->lhs)->offset >= 0);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(3, as_num(node->rhs)->val);
 }
@@ -693,9 +693,9 @@ static void test_program_funcdef() {
   node_t *body = as_func(parsed_code[0])->base.rhs;
   ASSERT_EQ(ND_BLOCK, body->kind);
   ASSERT_EQ(ND_ASSIGN, as_block(body)->body[0]->kind);
-  ASSERT_EQ(8, as_lvar(as_block(body)->body[0]->lhs)->offset);
+  ASSERT_EQ(0, as_lvar(as_block(body)->body[0]->lhs)->offset);
   ASSERT_EQ(ND_ASSIGN, as_block(body)->body[1]->kind);
-  ASSERT_EQ(16, as_lvar(as_block(body)->body[1]->lhs)->offset);
+  ASSERT_EQ(8, as_lvar(as_block(body)->body[1]->lhs)->offset);
   ASSERT_EQ(ND_ADD, as_block(body)->body[2]->kind);
   ASSERT_TRUE(as_block(body)->body[3] == NULL);
   ASSERT_TRUE(parsed_code[1] == NULL);

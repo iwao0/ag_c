@@ -362,6 +362,17 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdbool_false", CASE_INT, "#include <stdbool.h>\nint main() { bool b = false; return b ? 1 : 0; }", 0, 0},
     {"stdheader", "stddef_size_t", CASE_INT, "#include <stddef.h>\nint main() { size_t x = 10; return (int)x; }", 10, 0},
     {"stdheader", "stddef_null", CASE_INT, "#include <stddef.h>\nint main() { void *p = NULL; return p == NULL ? 42 : 0; }", 42, 0},
+    // stdarg
+    {"stdarg", "va_arg_int", CASE_INT,
+     "#include <stdarg.h>\n"
+     "int my_sum(int n, ...) {\n"
+     "  va_list ap; va_start(ap, n);\n"
+     "  int s = 0; int i;\n"
+     "  for (i = 0; i < n; i++) { s += va_arg(ap, int); }\n"
+     "  va_end(ap); return s;\n"
+     "}\n"
+     "int main() { return my_sum(3, 10, 20, 12); }",
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
