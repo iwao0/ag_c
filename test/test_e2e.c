@@ -307,6 +307,12 @@ static const test_case_t test_cases[] = {
     {"type_decl", "compound_literal_array_subscript", CASE_INT, "int main(){ return ((int[2]){1,2})[1]; }", 2, 0},
     {"type_decl", "compound_literal_array_subscript0", CASE_INT, "int main(){ return ((int[3]){10,20,30})[0]; }", 10, 0},
     {"type_decl", "compound_literal_array_subscript2", CASE_INT, "int main(){ return ((int[3]){10,20,30})[2]; }", 30, 0},
+    // 外側括弧なし: unary() 内で直接 apply_postfix(ref) を呼ぶパス
+    {"type_decl", "compound_literal_array_subscript_direct", CASE_INT, "int main(){ return (int[3]){7,8,9}[2]; }", 9, 0},
+    // designator 初期化子との組み合わせ
+    {"type_decl", "compound_literal_array_subscript_designator", CASE_INT, "int main(){ return ((int[4]){[2]=99})[2]; }", 99, 0},
+    // 式中での複数利用
+    {"type_decl", "compound_literal_array_subscript_expr", CASE_INT, "int main(){ return ((int[2]){3,4})[0] + ((int[2]){3,4})[1]; }", 7, 0},
     {"type_decl", "float1", CASE_FLOAT, "float ag_m() { float f = 7; return f; }", 0, 7.0},
     {"type_decl", "float2", CASE_FLOAT, "float ag_m() { float f = 3.14; float g = 4.2; return f + g; }", 0, 7.34},
     {"type_decl", "float3", CASE_FLOAT, "float ag_m() { float f = 5.5; float g = 3.2; return f - g; }", 0, 2.3},
