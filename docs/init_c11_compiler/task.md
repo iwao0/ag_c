@@ -892,6 +892,14 @@
   - [x] VLA サイズ式を宣言時点で 1 度だけ評価し、ベースポインタをフレームスロットに保存、要素アクセスはポインタ経由
   - [x] `test_e2e` に VLA 基本アクセス・ループ代入・関数引数サイズの 3 テストを追加する（vla/basic_elem, loop_fill, param_size）
   - [x] `sizeof(vla)` のランタイム評価（C11 での定義済み動作）を実装する
+  - [x] 2 次元 VLA を実装する（`int a[n][M]` 定数内側、`int a[n][m]` 両方可変）
+    - [x] `lvar_t` に `outer_stride` / `vla_row_stride_frame_off` フィールドを追加
+    - [x] `node_mem_t` に `inner_deref_size` / `vla_row_stride_frame_off` フィールドを追加
+    - [x] `decl.c` VLA 分岐で内側次元を解析：定数内側は `outer_stride = M*elem`、可変内側は 24B フレームスロット
+    - [x] `expr.c primary()` で `deref_size = outer_stride`、`inner_deref_size = elem_size`（多次元時）を設定
+    - [x] `expr.c postfix()` でサブスクリプト条件を `deref_size > 0` に変更、`inner_deref_size` を伝播、実行時ストライドは `LVAR(vla_row_stride_frame_off)` で乗算
+    - [x] `arm64_apple.c ND_VLA_ALLOC` に 2D runtime 分岐（rhs=row_stride_expr → frame保存 → n×stride = total bytes）を追加
+    - [x] `test_e2e` に `vla_2d/{const_inner_read, const_inner_loop, runtime_inner_read, runtime_inner_loop}` の 4 テストを追加して 313 テスト通過を確認
 
 ## パーサーバックログ候補（2026-03-20 棚卸し）
 
@@ -902,10 +910,7 @@
   - [x] `test_e2e` に func_name/{first_char_main, first_char_helper, each_func_distinct} の 3 テストを追加（312 テスト通過）
 
 ### VLA 拡張
-- [ ] 多次元 VLA（`int a[n][m]`）を実装する
-  - [ ] 行サイズ `m * sizeof(elem)` を動的に算出してスタック確保するコードを生成する
-  - [ ] 要素アクセス `a[i][j]` が正しいオフセット計算になることを確認する
-  - [ ] `test_e2e` に 2 次元 VLA のアクセス回帰テストを追加する
+- [x] 多次元 VLA（`int a[n][m]`）を実装する（上記参照）
 - [ ] 仮引数 VLA 宣言子（`int f(int n, int a[n])`）を実装する
   - [ ] `a` が `int *` として渡されるが型情報として `n` に連動するサイズを保持する
   - [ ] `sizeof(a)` が `sizeof(int*)` を返すことを確認する（C11 仕様）

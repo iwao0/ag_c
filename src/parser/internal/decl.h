@@ -27,6 +27,9 @@ struct lvar_t {
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
   int align_bytes; // 0 = natural alignment
+  // 多次元配列サポート用
+  int outer_stride;             // 多次元配列の外側サブスクリプトストライド（内側次元のバイトサイズ）
+  int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=定数stride）
 };
 
 void psx_decl_reset_locals(void);
