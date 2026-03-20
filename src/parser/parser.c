@@ -27,6 +27,7 @@ static void parse_toplevel_typedef_decl(void);
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr);
 static int is_toplevel_function_signature(token_t *tok);
+static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(void);
@@ -209,8 +210,11 @@ node_t **ps_program(void) {
       continue;
     }
     if (psx_ctx_is_tag_keyword(token->kind)) {
-      parse_toplevel_tag_decl();
-      continue;
+      if (!is_tag_return_function_signature(token)) {
+        parse_toplevel_tag_decl();
+        continue;
+      }
+      // struct/union Tag func(...) — 戻り値型がタグ型の関数定義: funcdef() へ fall through
     }
     if (token->kind == TK_TYPEDEF) {
       parse_toplevel_typedef_decl();
@@ -244,6 +248,17 @@ static int is_toplevel_function_signature(token_t *tok) {
   if (!t || (!psx_ctx_is_type_token(t->kind) && !psx_ctx_is_typedef_name_token(t))) return 0;
   t = t->next;
   while (t && t->kind == TK_MUL) t = t->next;
+  if (!t || t->kind != TK_IDENT) return 0;
+  return t->next && t->next->kind == TK_LPAREN;
+}
+
+// struct/union Tag [*] ident ( のパターンを検出（戻り値型がタグ型の関数定義）
+static int is_tag_return_function_signature(token_t *tok) {
+  if (!tok || !psx_ctx_is_tag_keyword(tok->kind)) return 0;
+  token_t *t = tok->next; // skip struct/union keyword
+  if (!t || t->kind != TK_IDENT) return 0;
+  t = t->next; // skip tag name
+  while (t && t->kind == TK_MUL) t = t->next; // skip optional pointer(s)
   if (!t || t->kind != TK_IDENT) return 0;
   return t->next && t->next->kind == TK_LPAREN;
 }
@@ -1011,11 +1026,21 @@ static token_ident_t *parse_param_declarator_name(void) {
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
-  token_kind_t ret_kind = psx_consume_type_kind(); // 戻り値の型（省略可）
-  token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
+  token_kind_t ret_kind;
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
-  if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    // 戻り値型が struct/union Tag [*] の関数定義
+    ret_kind = token->kind; // TK_STRUCT or TK_UNION
+    token = token->next;    // skip struct/union keyword
+    token_ident_t *ret_tag = tk_consume_ident(); // consume tag name
+    (void)ret_tag;
+    while (token->kind == TK_MUL) token = token->next; // skip optional pointer(s)
+  } else {
+    ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
+    if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  }
+  token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {

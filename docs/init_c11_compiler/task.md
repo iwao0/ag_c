@@ -875,10 +875,14 @@
     - 呼び出し側: `add x0, x29, #offset` でアドレスを渡す。被呼び出し側: `is_byref_param` フラグ付き lvar として受け取り、ND_DEREF で透過的にメンバアクセス
   - [x] 呼び出し側・被呼び出し側双方の対称性を `test_e2e` で確認する
     - struct_arg/{small_sum, small_member, mid_sum, large_sum} の 4 テストを追加
-- [ ] 構造体/共用体を戻り値として返す ABI を実装する
-  - [ ] 現状のスタックベース評価が呼び出し規約と整合しているか確認する
-  - [ ] 16 バイト超の戻り値はポインタ経由（`x8` レジスタ）で返す経路を実装する
-  - [ ] `test_e2e` に構造体を返す関数の実行時回帰テストを追加する
+- [x] 構造体/共用体を戻り値として返す ABI を実装する（≤8B スコープ）
+  - [x] ≤8B 構造体: x0 に packed value で返す経路が既存スタックマシンと整合していることを確認（コード変更不要）
+  - [x] パーサーが `struct Tag func(...)` 形式を関数定義として認識するよう修正する（`ps_program` に `is_tag_return_function_signature` ルックアヘッドを追加）
+  - [x] `funcdef()` 内で struct/union 戻り値型を消費し `ret_token_kind=TK_STRUCT` として設定する
+  - [x] `parse_struct_copy_initializer()` に非 lvar RHS（関数呼び出し結果）からの ≤8B 代入フォールバックを追加する
+  - [x] `test_e2e` に struct_ret/{make_and_sum, return_member, chain_call} の 3 テストを追加して 309 テスト通過を確認
+  - [ ] 9–16B 戻り値: x0/x1 ペアで返す経路（呼び出し側・被呼び出し側双方の 2 レジスタハンドリング）
+  - [ ] >16B 戻り値: `x8` レジスタ（hidden pointer）経由で返す経路を実装する
 
 ## VLA（可変長配列）最小実装タスク（2026-03-20 棚卸し）
 - [x] VLA 宣言を受理してスタック動的確保に lowering する最小実装を行う

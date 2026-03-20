@@ -723,6 +723,12 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     copy_select->base.rhs = then_prefix ? psx_node_new_binary(ND_COMMA, then_prefix, then_copy) : then_copy;
     copy_select->els = else_prefix ? psx_node_new_binary(ND_COMMA, else_prefix, else_copy) : else_copy;
     init_chain = (node_t *)copy_select;
+  } else if (var->size <= 8 && value) {
+    // ≤8B struct: 関数呼び出し結果などの非lvar式を 8B assign で初期化
+    node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    assign_node->type_size = var->size;
+    init_chain = (node_t *)assign_node;
   } else {
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));

@@ -409,6 +409,23 @@ static const test_case_t test_cases[] = {
      "int sum5(struct Big p) { return p.a + p.b + p.c + p.d + p.e; }"
      "int main() { struct Big b = {1, 2, 3, 4, 5}; return sum5(b); }",
      15, 0},
+    // struct return value (≤8B)
+    {"struct_ret", "make_and_sum", CASE_INT,
+     "struct Point { int x; int y; };"
+     "struct Point make_point(int x, int y) { struct Point p = {x, y}; return p; }"
+     "int main() { struct Point r = make_point(10, 32); return r.x + r.y; }",
+     42, 0},
+    {"struct_ret", "return_member", CASE_INT,
+     "struct Pair { int a; int b; };"
+     "struct Pair swap(int a, int b) { struct Pair p = {b, a}; return p; }"
+     "int main() { struct Pair r = swap(7, 35); return r.a + r.b; }",
+     42, 0},
+    {"struct_ret", "chain_call", CASE_INT,
+     "struct Val { int v; };"
+     "struct Val make_val(int n) { struct Val v = {n}; return v; }"
+     "int get_v(struct Val p) { return p.v; }"
+     "int main() { return get_v(make_val(42)); }",
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
