@@ -394,15 +394,28 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
   int current_off = 0;
   int union_size = 0;
   int agg_align = 1;
+  // ビットフィールドパッキング状態
+  int bf_storage_offset = -1;   // 現在のストレージユニット先頭バイトオフセット（-1: なし）
+  int bf_storage_type_size = 0; // ストレージユニットの型サイズ
+  int bf_bits_used = 0;         // ストレージユニット内使用済みビット数
   #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
   while (!tk_consume('}')) {
     int elem_size = 8;
+    int is_signed_type = 1; // default: signed
     token_kind_t member_tag_kind = TK_EOF;
     char *member_tag_name = NULL;
     int member_tag_len = 0;
     if (psx_ctx_is_type_token(token->kind)) {
+      is_signed_type = (token->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(token->kind, NULL, &elem_size);
       token = token->next;
+      // handle "unsigned int", "signed int", etc.
+      while (psx_ctx_is_type_token(token->kind)) {
+        if (token->kind != TK_UNSIGNED && token->kind != TK_SIGNED) {
+          psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+        }
+        token = token->next;
+      }
     } else if (psx_ctx_is_tag_keyword(token->kind)) {
       member_tag_kind = token->kind;
       token = token->next;
@@ -441,7 +454,8 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       }
       token_ident_t *member = tk_consume_ident();
       int has_member_name = member != NULL;
-      if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
+      if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
+          && token->kind != TK_COLON) {
         psx_diag_missing(token, "メンバ名");
       }
       if (token->kind == TK_LPAREN) {
@@ -449,10 +463,66 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
         psx_diag_ctx(token, "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
       }
-      if (tk_consume(':')) {
-        if (!has_member_name) psx_diag_missing(token, "メンバ名");
-        (void)parse_enum_const_expr_toplevel();
+
+      int bit_width = 0;
+      int bit_field_offset_in_storage = 0;
+      if (token->kind == TK_COLON) {
+        token = token->next; // consume ':'
+        long long bw = parse_enum_const_expr_toplevel();
+        if (bw < 0) bw = 0;
+        bit_width = (int)bw;
+        int storage_size = is_ptr ? 8 : (elem_size > 0 ? elem_size : 4);
+        if (storage_size > 4) storage_size = 4; // max 32-bit storage unit for bit fields
+        int storage_bits = storage_size * 8;
+        if (bit_width == 0) {
+          // 幅0 → 次のストレージユニット境界に強制アライン
+          bf_storage_offset = -1;
+          bf_bits_used = 0;
+          if (tag_kind != TK_UNION)
+            current_off = ALIGN_UP(current_off, storage_size);
+          if (!has_member_name) { if (!tk_consume(',')) break; continue; }
+        }
+        if (tag_kind != TK_UNION) {
+          // 現在のストレージユニットに収まるか判定
+          if (bf_storage_offset < 0
+              || bf_storage_type_size != storage_size
+              || bf_bits_used + bit_width > storage_bits) {
+            // 新しいストレージユニットを開始
+            current_off = ALIGN_UP(current_off, storage_size);
+            bf_storage_offset = current_off;
+            bf_storage_type_size = storage_size;
+            bf_bits_used = 0;
+            current_off += storage_size;
+            if (storage_size > agg_align) agg_align = storage_size;
+          }
+          bit_field_offset_in_storage = bf_bits_used;
+          bf_bits_used += bit_width;
+        } else {
+          // union: 全メンバoffset=0, bit_offset=0
+          bit_field_offset_in_storage = 0;
+          bf_storage_offset = 0;
+          bf_storage_type_size = storage_size;
+          if (storage_size > union_size) union_size = storage_size;
+          if (storage_size > agg_align) agg_align = storage_size;
+        }
+        if (has_member_name) {
+          int storage_type_size = bf_storage_type_size > 0 ? bf_storage_type_size : 4;
+          psx_ctx_add_tag_member_bf(tag_kind, tag_name, tag_len,
+                                    member->str, member->len,
+                                    tag_kind == TK_UNION ? 0 : bf_storage_offset,
+                                    storage_type_size, 0, 0,
+                                    TK_EOF, NULL, 0, 0,
+                                    bit_width, bit_field_offset_in_storage, is_signed_type);
+          member_count++;
+        }
+        if (!tk_consume(',')) break;
+        continue; // next declarator in this declaration
       }
+
+      // 通常（非ビットフィールド）メンバ → ビットフィールド状態をリセット
+      bf_storage_offset = -1;
+      bf_bits_used = 0;
+
       int arr_size = 1;
       while (tk_consume('[')) {
         if (!has_member_name) psx_diag_missing(token, "メンバ名");
@@ -475,11 +545,13 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       char *member_name = has_member_name ? member->str : "";
       int member_len = has_member_name ? member->len : 0;
       int member_array_len = (is_ptr || arr_size <= 1) ? 0 : arr_size;
-      psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
-                             member_name, member_len, off, is_ptr ? 8 : elem_size, deref_size,
-                             member_array_len,
-                             member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
-      member_count++;
+      if (has_member_name || (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
+        psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
+                               member_name, member_len, off, is_ptr ? 8 : elem_size, deref_size,
+                               member_array_len,
+                               member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
+        member_count++;
+      }
       if (tag_kind == TK_UNION) {
         if (total_size > union_size) union_size = total_size;
       } else {

@@ -430,6 +430,15 @@ static void gen_expr(node_t *node) {
       cg_emitf("  ldr w0, [x0]\n");
     else
       cg_emitf("  ldr x0, [x0]\n");
+    // ビットフィールド抽出
+    if (as_mem(node)->bit_width > 0) {
+      int lsb = as_mem(node)->bit_offset;
+      int width = as_mem(node)->bit_width;
+      if (as_mem(node)->bit_is_signed)
+        cg_emitf("  sbfx x0, x0, #%d, #%d\n", lsb, width);
+      else
+        cg_emitf("  ubfx x0, x0, #%d, #%d\n", lsb, width);
+    }
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   case ND_ADDR:
@@ -464,7 +473,25 @@ static void gen_expr(node_t *node) {
     } else {
       cg_emitf("  ldr x1, [sp], #16\n");
       cg_emitf("  ldr x0, [sp], #16\n");
-      if (as_mem(node)->type_size == 1)
+      // ビットフィールド代入: read-modify-write with bfi
+      if (node->lhs && node->lhs->kind == ND_DEREF && as_mem(node->lhs)->bit_width > 0) {
+        int lsb = as_mem(node->lhs)->bit_offset;
+        int width = as_mem(node->lhs)->bit_width;
+        int sz = as_mem(node->lhs)->type_size;
+        if (sz == 1)
+          cg_emitf("  ldrb w2, [x0]\n");
+        else if (sz == 2)
+          cg_emitf("  ldrh w2, [x0]\n");
+        else
+          cg_emitf("  ldr w2, [x0]\n");
+        cg_emitf("  bfi w2, w1, #%d, #%d\n", lsb, width);
+        if (sz == 1)
+          cg_emitf("  strb w2, [x0]\n");
+        else if (sz == 2)
+          cg_emitf("  strh w2, [x0]\n");
+        else
+          cg_emitf("  str w2, [x0]\n");
+      } else if (as_mem(node)->type_size == 1)
         cg_emitf("  strb w1, [x0]\n");
       else if (as_mem(node)->type_size == 2)
         cg_emitf("  strh w1, [x0]\n");

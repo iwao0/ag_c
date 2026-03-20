@@ -250,6 +250,12 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
                  member->len, member->str);
   }
 
+  // ビットフィールドメタデータを取得
+  int bf_width = 0, bf_offset = 0, bf_is_signed = 0;
+  psx_ctx_get_tag_member_bf(base_tag_kind, base_tag_name, base_tag_len,
+                            member->str, member->len,
+                            &bf_width, &bf_offset, &bf_is_signed);
+
   node_t *addr_base = base;
   if (!from_ptr) {
     node_mem_t *addr = calloc(1, sizeof(node_mem_t));
@@ -273,6 +279,9 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   deref->tag_name = mem_tag_name;
   deref->tag_len = mem_tag_len;
   deref->is_tag_pointer = mem_is_ptr;
+  deref->bit_width = bf_width;
+  deref->bit_offset = bf_offset;
+  deref->bit_is_signed = bf_is_signed;
   return (node_t *)deref;
 }
 

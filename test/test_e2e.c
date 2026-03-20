@@ -344,6 +344,13 @@ static const test_case_t test_cases[] = {
     {"string", "buf_idx", CASE_INT, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[2]; }", 3, 0},
     {"string", "buf_sum", CASE_INT, "int main() { char buf[3]; buf[0]=1; buf[1]=2; buf[2]=3; return buf[0]+buf[1]+buf[2]; }", 6, 0},
     {"string", "char_var", CASE_INT, "int main() { char c = 42; return c; }", 42, 0},
+    // ビットフィールド
+    {"bitfield", "read",   CASE_INT, "int main(){ struct S { unsigned int a:3; unsigned int b:5; }; struct S s; s.a=5; s.b=10; return s.a; }", 5, 0},
+    {"bitfield", "read_b", CASE_INT, "int main(){ struct S { unsigned int a:3; unsigned int b:5; }; struct S s; s.a=5; s.b=10; return s.b; }", 10, 0},
+    {"bitfield", "write_masked", CASE_INT, "int main(){ struct S { unsigned int f:4; }; struct S s; s.f=15; return s.f; }", 15, 0},
+    {"bitfield", "packing", CASE_INT, "int main(){ struct S { unsigned int a:3; unsigned int b:5; int c; }; return (int)sizeof(struct S); }", 8, 0},
+    {"bitfield", "signed_neg", CASE_INT, "int main(){ struct S { int f:4; }; struct S s; s.f=-1; return (s.f < 0) ? 42 : 0; }", 42, 0},
+    {"bitfield", "unsigned_wrap", CASE_INT, "int main(){ struct S { unsigned int f:3; }; struct S s; s.f=9; return s.f; }", 1, 0},
     // 標準ヘッダ
     {"stdheader", "stdint_int32", CASE_INT, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }", 42, 0},
     {"stdheader", "stdint_uint8", CASE_INT, "#include <stdint.h>\nint main() { uint8_t x = 200; return (int)x; }", 200, 0},

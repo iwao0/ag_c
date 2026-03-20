@@ -22,6 +22,15 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             int type_size, int deref_size, int array_len,
                             token_kind_t member_tag_kind, char *member_tag_name,
                             int member_tag_len, int member_is_tag_pointer);
+void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
+                               char *member_name, int member_len, int offset,
+                               int type_size, int deref_size, int array_len,
+                               token_kind_t member_tag_kind, char *member_tag_name,
+                               int member_tag_len, int member_is_tag_pointer,
+                               int bit_width, int bit_offset, int bit_is_signed);
+bool psx_ctx_get_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
+                               char *member_name, int member_len,
+                               int *out_bit_width, int *out_bit_offset, int *out_bit_is_signed);
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
                              int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,

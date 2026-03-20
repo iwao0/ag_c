@@ -49,6 +49,9 @@ struct tag_member_t {
   char *member_tag_name;
   int member_tag_len;
   int member_is_tag_pointer;
+  int bit_width;    // ビットフィールド幅（0: 非ビットフィールド）
+  int bit_offset;   // ストレージユニット内ビット位置
+  int bit_is_signed;
   int decl_order;
   int scope_depth;
 };
@@ -302,11 +305,12 @@ int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len) {
   return -1;
 }
 
-void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                            char *member_name, int member_len, int offset,
-                            int type_size, int deref_size, int array_len,
-                            token_kind_t member_tag_kind, char *member_tag_name,
-                            int member_tag_len, int member_is_tag_pointer) {
+void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
+                               char *member_name, int member_len, int offset,
+                               int type_size, int deref_size, int array_len,
+                               token_kind_t member_tag_kind, char *member_tag_name,
+                               int member_tag_len, int member_is_tag_pointer,
+                               int bit_width, int bit_offset, int bit_is_signed) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
                      psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
   for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
@@ -323,6 +327,9 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->member_tag_name = member_tag_name;
       m->member_tag_len = member_tag_len;
       m->member_is_tag_pointer = member_is_tag_pointer;
+      m->bit_width = bit_width;
+      m->bit_offset = bit_offset;
+      m->bit_is_signed = bit_is_signed;
       return;
     }
   }
@@ -340,10 +347,44 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->member_tag_name = member_tag_name;
   m->member_tag_len = member_tag_len;
   m->member_is_tag_pointer = member_is_tag_pointer;
+  m->bit_width = bit_width;
+  m->bit_offset = bit_offset;
+  m->bit_is_signed = bit_is_signed;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
   tag_members_by_bucket[bucket] = m;
+}
+
+void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                            char *member_name, int member_len, int offset,
+                            int type_size, int deref_size, int array_len,
+                            token_kind_t member_tag_kind, char *member_tag_name,
+                            int member_tag_len, int member_is_tag_pointer) {
+  psx_ctx_add_tag_member_bf(tag_kind, tag_name, tag_len,
+                            member_name, member_len, offset,
+                            type_size, deref_size, array_len,
+                            member_tag_kind, member_tag_name, member_tag_len,
+                            member_is_tag_pointer, 0, 0, 0);
+}
+
+bool psx_ctx_get_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
+                               char *member_name, int member_len,
+                               int *out_bit_width, int *out_bit_offset, int *out_bit_is_signed) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      if (out_bit_width) *out_bit_width = m->bit_width;
+      if (out_bit_offset) *out_bit_offset = m->bit_offset;
+      if (out_bit_is_signed) *out_bit_is_signed = m->bit_is_signed;
+      return true;
+    }
+  }
+  return false;
 }
 
 static int cmp_tag_member_ptr(const void *a, const void *b) {
