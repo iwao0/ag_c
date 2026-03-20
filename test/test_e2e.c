@@ -480,6 +480,19 @@ static const test_case_t test_cases[] = {
      "void fill(int n, int a[n], int v) { int i; for(i=0;i<n;i++) a[i]=v; }"
      "int main() { int n=3; int a[n]; fill(n,a,14); return a[0]+a[1]+a[2]; }",
      42, 0},  // 14*3=42
+    // inline 指定子: 単一翻訳単位では通常関数と同様にコード生成 (C11 6.7.4)
+    {"inline_func", "basic_inline", CASE_INT,
+     "inline int add(int a, int b) { return a + b; }"
+     "int main() { return add(20, 22); }",
+     42, 0},
+    {"inline_func", "static_inline", CASE_INT,
+     "static inline int mul(int a, int b) { return a * b; }"
+     "int main() { return mul(6, 7); }",
+     42, 0},
+    {"inline_func", "extern_inline", CASE_INT,
+     "extern inline int sub(int a, int b) { return a - b; }"
+     "int main() { return sub(50, 8); }",
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
