@@ -900,6 +900,11 @@
     - [x] `expr.c postfix()` でサブスクリプト条件を `deref_size > 0` に変更、`inner_deref_size` を伝播、実行時ストライドは `LVAR(vla_row_stride_frame_off)` で乗算
     - [x] `arm64_apple.c ND_VLA_ALLOC` に 2D runtime 分岐（rhs=row_stride_expr → frame保存 → n×stride = total bytes）を追加
     - [x] `test_e2e` に `vla_2d/{const_inner_read, const_inner_loop, runtime_inner_read, runtime_inner_loop}` の 4 テストを追加して 313 テスト通過を確認
+  - [x] 仮引数 VLA 宣言子（`int f(int n, int a[n])`）を実装する
+    - [x] `parse_param_declarator_name` に `out_is_array_declarator` フラグを追加し `[...]` 後置を検出
+    - [x] funcdef で `param_elem_size` を取得し、配列宣言子時に `size=8, elem_size=実際のサイズ` でポインタとして登録
+    - [x] `sizeof(a)` が 8（ポインタサイズ）を返すことを確認（C11 6.7.6.3p7 準拠）
+    - [x] `test_e2e` に `vla_param/{basic_access, sizeof_is_ptr, write_through}` の 3 テストを追加して 316 テスト通過を確認
 
 ## パーサーバックログ候補（2026-03-20 棚卸し）
 

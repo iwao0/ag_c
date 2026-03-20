@@ -30,7 +30,7 @@ static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
-static token_ident_t *parse_param_declarator_name(void);
+static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator);
 static void parse_static_assert_toplevel(void);
 static long long parse_enum_const_expr_toplevel(void);
 static long long parse_enum_const_conditional_toplevel(void);
@@ -953,15 +953,6 @@ token_kind_t psx_consume_type_kind(void) {
   return TK_INT;
 }
 
-static bool consume_type(void) {
-  skip_cv_qualifiers();
-  if (psx_consume_type_kind() != TK_EOF) return true;
-  if (psx_ctx_is_typedef_name_token(token)) {
-    token = token->next;
-    return true;
-  }
-  return false;
-}
 
 // _Alignas( constant-expression | type-name )
 static int parse_alignas_value_toplevel(void) {
@@ -999,7 +990,8 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
                diag_message_for(DIAG_ERR_PARSER_MISSING_CLOSING_PAREN));
 }
 
-static token_ident_t *parse_param_declarator_name(void) {
+static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator) {
+  if (out_is_array_declarator) *out_is_array_declarator = 0;
   token_ident_t *param = NULL;
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
@@ -1017,6 +1009,8 @@ static token_ident_t *parse_param_declarator_name(void) {
     if (token->kind == TK_LPAREN) {
       skip_balanced_group(TK_LPAREN, TK_RPAREN);
     } else {
+      // 仮引数配列宣言子 int a[n] を検出: a は int* として扱う (C11 6.7.6.3p7)
+      if (out_is_array_declarator) *out_is_array_declarator = 1;
       skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
     }
   }
@@ -1085,6 +1079,7 @@ static node_t *funcdef(void) {
       char *ptag_name = NULL;
       int ptag_len = 0;
       int param_struct_size = 0;
+      int param_elem_size = 8; // スカラー型の要素サイズ（仮引数配列宣言子用）
       if (psx_ctx_is_tag_keyword(token->kind)) {
         // struct/union 型仮引数
         ptag_kind = token->kind;
@@ -1098,18 +1093,30 @@ static node_t *funcdef(void) {
           }
         }
       } else {
-        consume_type();
+        // スカラー型: 仮引数配列宣言子のelemサイズ取得のため型を明示消費
+        skip_cv_qualifiers();
+        token_kind_t param_type_kind = psx_consume_type_kind();
+        if (param_type_kind != TK_EOF) {
+          psx_ctx_get_type_info(param_type_kind, NULL, &param_elem_size);
+        } else if (psx_ctx_is_typedef_name_token(token)) {
+          token = token->next; // typedef名: elem_size は 8 のまま
+        }
       }
       // ポインタ修飾子を確認してから parse_param_declarator_name へ
       int param_is_ptr = (token->kind == '*');
-      token_ident_t *param = parse_param_declarator_name();
+      int param_is_array_declarator = 0;
+      token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator);
       if (param) {
         if (nargs >= arg_cap) {
           arg_cap = pda_next_cap(arg_cap, nargs + 1);
           node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
         }
         lvar_t *var;
-        if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 16) {
+        if (param_is_array_declarator && ptag_kind == TK_EOF && !param_is_ptr) {
+          // 仮引数 VLA 宣言子: int a[n] → int *a として扱う (C11 6.7.6.3p7)
+          // size=8 (pointer), elem_size=実際の要素サイズ, sizeof(a)==8
+          var = psx_decl_register_lvar_sized(param->str, param->len, 8, param_elem_size, 0);
+        } else if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 16) {
           // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
           // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
           var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, param_struct_size, 0, 0);
