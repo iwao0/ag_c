@@ -1655,6 +1655,22 @@ static node_t *primary(void) {
     if (!var) {
       for (global_var_t *gv = global_vars; gv; gv = gv->next) {
         if (gv->name_len == tok->len && memcmp(gv->name, tok->str, (size_t)tok->len) == 0) {
+          if (gv->is_array) {
+            // グローバル配列: アドレスをND_ADDRとして返す（ローカル配列と同様）
+            node_gvar_t *base = calloc(1, sizeof(node_gvar_t));
+            base->mem.base.kind = ND_GVAR;
+            base->mem.type_size = gv->type_size;
+            base->mem.deref_size = gv->deref_size;
+            base->name = gv->name;
+            base->name_len = gv->name_len;
+            node_mem_t *addr = calloc(1, sizeof(node_mem_t));
+            addr->base.kind = ND_ADDR;
+            addr->base.lhs = (node_t *)base;
+            addr->type_size = gv->deref_size;
+            addr->deref_size = gv->deref_size;
+            addr->is_pointer = 1;
+            return (node_t *)addr;
+          }
           node_gvar_t *gvar_node = calloc(1, sizeof(node_gvar_t));
           gvar_node->mem.base.kind = ND_GVAR;
           gvar_node->mem.type_size = gv->type_size;

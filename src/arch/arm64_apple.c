@@ -517,6 +517,12 @@ static void gen_expr_to_reg(node_t *node, int depth) {
       cg_emitf("  add x%d, x29, #%d\n", reg, 16 + as_lvar(node->lhs)->offset);
       return;
     }
+    if (node->lhs && node->lhs->kind == ND_GVAR) {
+      node_gvar_t *gv = (node_gvar_t *)node->lhs;
+      cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
+      cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
+      return;
+    }
     break; // 複雑なケースはフォールバック
 
   case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:

@@ -319,9 +319,12 @@ static void parse_toplevel_declarator_list(void) {
       psx_diag_ctx(token, "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
-    // 配列宣言子を消費（将来的に配列サイズをテーブルに記録することも可能）
+    // 配列宣言子を消費し、配列サイズを記録
+    int arr_total = 1;
+    int is_array = 0;
     while (tk_consume('[')) {
-      (void)parse_array_size_constexpr_toplevel();
+      arr_total *= parse_array_size_constexpr_toplevel();
+      is_array = 1;
       tk_expect(']');
     }
     if (!g_toplevel_decl_is_extern) {
@@ -329,8 +332,9 @@ static void parse_toplevel_declarator_list(void) {
       global_var_t *gv = calloc(1, sizeof(global_var_t));
       gv->name = name->str;
       gv->name_len = name->len;
-      gv->type_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
+      gv->type_size = is_ptr ? 8 : g_toplevel_decl_elem_size * arr_total;
       gv->deref_size = g_toplevel_decl_elem_size;
+      gv->is_array = is_array;
       if (tk_consume('=')) {
         node_t *init_expr = psx_expr_assign();
         if (init_expr && init_expr->kind == ND_NUM) {

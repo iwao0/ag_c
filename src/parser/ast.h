@@ -197,6 +197,7 @@ struct global_var_t {
   int name_len;
   int type_size;      // sizeof（ロード/ストアサイズ）
   int deref_size;     // ポインタ先の要素サイズ
+  int is_array;       // 1: 配列
   int is_extern_decl; // 1: extern宣言のみ（.comm不要）
   int has_init;       // 1: 初期化子あり
   long long init_val; // 初期値

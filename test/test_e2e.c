@@ -604,6 +604,12 @@ static const test_case_t test_cases[] = {
     {"global_var", "local_extern", CASE_INT,
      "int g = 42; int main() { extern int g; return g; }",
      42, 0},
+    {"global_var", "array_rw", CASE_INT,
+     "int g[3]; int main() { g[0]=10; g[1]=20; g[2]=30; return g[1]; }",
+     20, 0},
+    {"global_var", "array_sum", CASE_INT,
+     "int g[3]; int main() { g[0]=1; g[1]=2; g[2]=3; return g[0]+g[1]+g[2]; }",
+     6, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
