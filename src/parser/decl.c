@@ -1027,7 +1027,11 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
   ((node_lvar_t *)lvar)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   ((node_lvar_t *)lvar)->mem.pointer_qual_levels = var->pointer_qual_levels;
-  node_mem_t *assign_node = psx_node_new_assign(lvar, parse_scalar_brace_initializer());
+  node_t *init_expr = parse_scalar_brace_initializer();
+  if (is_pointer) {
+    psx_node_reject_const_qual_discard(lvar, init_expr);
+  }
+  node_mem_t *assign_node = psx_node_new_assign(lvar, init_expr);
   assign_node->type_size = is_pointer ? 8 : var->elem_size;
   assign_node->base.fp_kind = var->fp_kind;
   return (node_t *)assign_node;

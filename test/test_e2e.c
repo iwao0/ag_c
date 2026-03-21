@@ -612,6 +612,12 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"const_increment_rejected",
      "int main() { const int x = 5; x++; return 0; }",
      "const修飾された変数への代入はできません"},
+    {"const_qual_discard_init_rejected",
+     "int main() { const int x = 5; const int *cp = &x; int *p = cp; return 0; }",
+     "const修飾されたポインタからconst無しポインタへの暗黙変換はできません"},
+    {"const_qual_discard_assign_rejected",
+     "int main() { const int x = 5; const int *cp = &x; int *p; p = cp; return 0; }",
+     "const修飾されたポインタからconst無しポインタへの暗黙変換はできません"},
 };
 
 static int test_count = 0;

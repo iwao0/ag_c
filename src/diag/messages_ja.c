@@ -145,6 +145,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED: return "共用体の配列メンバ非波括弧初期化は設定で無効です";
     case DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY: return "入れ子designatorの対象が配列メンバではありません";
     case DIAG_ERR_PARSER_CONST_ASSIGNMENT: return "const修飾された変数への代入はできません";
+    case DIAG_ERR_PARSER_CONST_QUAL_DISCARD: return "const修飾されたポインタからconst無しポインタへの暗黙変換はできません";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

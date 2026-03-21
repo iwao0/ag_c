@@ -14,6 +14,7 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size);
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
 
 void psx_node_reject_const_assign(node_t *node, const char *op);
+void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs);
 void psx_node_expect_lvalue(node_t *node, const char *op);
 void psx_node_expect_incdec_target(node_t *node, const char *op);
 node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op);

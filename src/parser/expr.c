@@ -943,7 +943,9 @@ static node_t *assign(void) {
     case TK_ASSIGN: {
       psx_node_reject_const_assign(node, "=");
       token = token->next;
-      node_mem_t *assign_node = psx_node_new_assign(node, assign());
+      node_t *rhs = assign();
+      psx_node_reject_const_qual_discard(node, rhs);
+      node_mem_t *assign_node = psx_node_new_assign(node, rhs);
       assign_node->type_size = psx_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
       node = (node_t *)assign_node;

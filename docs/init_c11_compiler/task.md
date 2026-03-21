@@ -973,7 +973,10 @@
   - [x] `const int x = 1; x = 2;` を diagnostic error とする（`=` 代入）
   - [x] 複合代入（`+=` 等）・インクリメント/デクリメント（`++`/`--`）も同様にエラー
   - [x] `test_e2e` の診断テスト（compile_fail_cases）に const 違反 3 ケースを追加（348テスト通過）
-  - [ ] `int *p = const_ptr;` のような暗黙の const 外れを警告/エラーとする（未実装）
+  - [x] `int *p = const_ptr;` のような暗黙の const 外れをエラーとする（E3078: `DIAG_ERR_PARSER_CONST_QUAL_DISCARD`）
+    - 初期化パス（`psx_decl_parse_initializer_for_var`）と代入パス（`assign()` in expr.c）の両方でチェック
+    - `node_pointee_is_const()` ヘルパーで RHS の `is_tag_pointer && is_const_qualified` を判定
+    - compile-fail テスト 2 ケース追加（初期化・代入）、全 359 テスト通過
   - [ ] 関数プロトタイプの引数型で `const` 修飾を受理できるようにする（現状 `void *memcpy(void *dest, const void *src, size_t n);` がパース不可。include/string.h 等で const を省略する原因になっている）
   - [ ] 関数プロトタイプの引数型・戻り値型で typedef 名（`size_t`, `FILE *` 等）を使えるようにする（現状 `funcdef()` が typedef 名を戻り値型として認識できず、`is_toplevel_function_signature()` も複合型キーワード `unsigned long` 等を正しく検出できない。include/stdio.h で `FILE *` を `void *` に、include/string.h で `size_t` を `long` に代替する原因になっている）
 

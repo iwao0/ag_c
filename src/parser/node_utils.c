@@ -134,6 +134,37 @@ void psx_node_reject_const_assign(node_t *node, const char *op) {
   }
 }
 
+static int node_pointee_is_const(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR:
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING: {
+      node_mem_t *m = (node_mem_t *)node;
+      return m->is_tag_pointer && m->is_const_qualified;
+    }
+    case ND_COMMA:
+      return node_pointee_is_const(node->rhs);
+    default:
+      return 0;
+  }
+}
+
+void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs) {
+  if (!lhs || !rhs) return;
+  if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
+  node_mem_t *lhs_mem = as_mem(lhs);
+  if (!lhs_mem->is_tag_pointer) return;
+  if (lhs_mem->is_const_qualified) return;
+  if (node_pointee_is_const(rhs)) {
+    diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, token,
+                   diag_message_for(DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
+  }
+}
+
 void psx_node_expect_lvalue(node_t *node, const char *op) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF && node->kind != ND_GVAR)) {
     diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
