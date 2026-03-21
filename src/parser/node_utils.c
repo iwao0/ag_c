@@ -123,6 +123,17 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   return node;
 }
 
+void psx_node_reject_const_assign(node_t *node, const char *op) {
+  if (!node) return;
+  if (node->kind == ND_LVAR || node->kind == ND_GVAR) {
+    node_mem_t *mem = as_mem(node);
+    if (mem->is_const_qualified) {
+      diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, token,
+                     diag_message_for(DIAG_ERR_PARSER_CONST_ASSIGNMENT));
+    }
+  }
+}
+
 void psx_node_expect_lvalue(node_t *node, const char *op) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF && node->kind != ND_GVAR)) {
     diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
@@ -132,6 +143,7 @@ void psx_node_expect_lvalue(node_t *node, const char *op) {
 
 void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_expect_lvalue(node, op);
+  psx_node_reject_const_assign(node, op);
   if (node->fp_kind != TK_FLOAT_KIND_NONE) {
     diag_emit_tokf(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED, token,
                    diag_message_for(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED), (char *)op);
@@ -140,6 +152,7 @@ void psx_node_expect_incdec_target(node_t *node, const char *op) {
 
 node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {
   psx_node_expect_lvalue(lhs, op);
+  psx_node_reject_const_assign(lhs, op);
   node_t *op_expr = psx_node_new_binary(op_kind, lhs, rhs);
   node_mem_t *assign_node = psx_node_new_assign(lhs, op_expr);
   assign_node->type_size = psx_node_type_size(lhs);

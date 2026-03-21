@@ -588,6 +588,15 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"cast_struct_from_nonscalar_rejected",
      "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }",
      "[cast] struct 値へのキャストは未対応です（型不整合）"},
+    {"const_assign_rejected",
+     "int main() { const int x = 5; x = 10; return 0; }",
+     "const修飾された変数への代入はできません"},
+    {"const_compound_assign_rejected",
+     "int main() { const int x = 5; x += 1; return 0; }",
+     "const修飾された変数への代入はできません"},
+    {"const_increment_rejected",
+     "int main() { const int x = 5; x++; return 0; }",
+     "const修飾された変数への代入はできません"},
 };
 
 static int test_count = 0;

@@ -969,10 +969,11 @@
 ## 型修飾・制約チェック バックログ候補（2026-03-20 棚卸し）
 
 ### `const` 正確性（const-correctness）
-- [ ] `const` 変数への代入を診断する（現状: 未チェック）
-  - [ ] `const int x = 1; x = 2;` を diagnostic error とする
-  - [ ] `int *p = const_ptr;` のような暗黙の const 外れを警告/エラーとする
-  - [ ] `test_e2e` の診断テストに const 違反ケースを追加する
+- [x] `const` 変数への代入を診断する（E3077: DIAG_ERR_PARSER_CONST_ASSIGNMENT）
+  - [x] `const int x = 1; x = 2;` を diagnostic error とする（`=` 代入）
+  - [x] 複合代入（`+=` 等）・インクリメント/デクリメント（`++`/`--`）も同様にエラー
+  - [x] `test_e2e` の診断テスト（compile_fail_cases）に const 違反 3 ケースを追加（348テスト通過）
+  - [ ] `int *p = const_ptr;` のような暗黙の const 外れを警告/エラーとする（未実装）
 
 ### `restrict` 修飾子セマンティクス
 - [ ] `restrict` の制約チェック方針を仕様化する
