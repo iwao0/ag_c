@@ -334,6 +334,9 @@ static const test_case_t test_cases[] = {
 
     {"pointer", "deref", CASE_INT, "int main() { int x = 5; int *p = &x; return *p; }", 5, 0},
     {"pointer", "assign", CASE_INT, "int main() { int x = 5; int *p = &x; *p = 10; return x; }", 10, 0},
+    {"pointer", "arith_add", CASE_INT, "int main() { int a[4]; a[0]=10; a[1]=20; a[2]=30; a[3]=40; int *p=a; p=p+2; return *p; }", 30, 0},
+    {"pointer", "arith_sub", CASE_INT, "int main() { int a[4]; a[0]=10; a[1]=20; a[2]=30; a[3]=40; int *p=a; p=p+3; p=p-1; return *p; }", 30, 0},
+    {"pointer", "arith_char", CASE_INT, "int main() { char b[4]; b[0]=1; b[1]=2; b[2]=3; b[3]=4; char *p=b; p=p+2; return *p; }", 3, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},

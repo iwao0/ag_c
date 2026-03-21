@@ -599,6 +599,7 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   node_t *ref = psx_node_new_lvar_typed(var->offset, is_pointer ? 8 : var->elem_size);
   ref->fp_kind = var->fp_kind;
   as_lvar(ref)->mem.deref_size = var->elem_size;
+  as_lvar(ref)->mem.is_pointer = is_pointer;
   as_lvar(ref)->mem.tag_kind = var->tag_kind;
   as_lvar(ref)->mem.tag_name = var->tag_name;
   as_lvar(ref)->mem.tag_len = var->tag_len;
@@ -1083,10 +1084,26 @@ static node_t *add(void) {
   for (;;) {
     if (token->kind == TK_PLUS) {
       token = token->next;
-      node = psx_node_new_binary(ND_ADD, node, mul());
+      node_t *rhs = mul();
+      if (psx_node_is_pointer(node)) {
+        int ds = psx_node_deref_size(node);
+        if (ds > 1) {
+          // ポインタ + 整数: 整数を要素サイズ倍にスケーリング
+          rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+        }
+      }
+      node = psx_node_new_binary(ND_ADD, node, rhs);
     } else if (token->kind == TK_MINUS) {
       token = token->next;
-      node = psx_node_new_binary(ND_SUB, node, mul());
+      node_t *rhs = mul();
+      if (psx_node_is_pointer(node)) {
+        int ds = psx_node_deref_size(node);
+        if (ds > 1) {
+          // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
+          rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+        }
+      }
+      node = psx_node_new_binary(ND_SUB, node, rhs);
     }
     else return node;
   }
@@ -1662,6 +1679,7 @@ static node_t *primary(void) {
       node->tag_name = var->tag_name;
       node->tag_len = var->tag_len;
       node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
+      node->is_pointer = 1;
       return (node_t *)node;
     }
     // byref仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、
@@ -1694,6 +1712,7 @@ static node_t *primary(void) {
     as_lvar(n)->mem.tag_name = var->tag_name;
     as_lvar(n)->mem.tag_len = var->tag_len;
     as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
+    as_lvar(n)->mem.is_pointer = var->is_array || (var->size > var->elem_size);
     as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;
     as_lvar(n)->mem.is_volatile_qualified = var->is_volatile_qualified;
     as_lvar(n)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
