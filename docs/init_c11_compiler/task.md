@@ -915,8 +915,8 @@
   - [x] `test_e2e` に func_name/{first_char_main, first_char_helper, each_func_distinct} の 3 テストを追加（312 テスト通過）
 
 ### VLA 拡張
-- [x] 多次元 VLA（`int a[n][m]`）を実装する（上記参照）
-- [x] 仮引数 VLA 宣言子（`int f(int n, int a[n])`）を実装する（上記参照）
+- [x] 多次元 VLA（`int a[n][m]`）を実装する（「VLA（可変長配列）最小実装タスク」セクションで実装済み）
+- [x] 仮引数 VLA 宣言子（`int f(int n, int a[n])`）を実装する（「VLA（可変長配列）最小実装タスク」セクションで実装済み）
 
 ### `inline` 関数
 - [x] `inline` 指定子のセマンティクスを実装する
@@ -948,7 +948,8 @@
 
 ### 構造体/共用体 ABI 拡張
 - [ ] 構造体/共用体を戻り値として返す ABI を 9–16B・>16B へ拡張する
-  - （上記「Codegen未実装タスク」の `[ ]` 項目と同内容、参照先として記載）
+  - [ ] 9–16B 戻り値: x0/x1 ペアで返す経路を実装する
+  - [ ] >16B 戻り値: x8 に呼び出し元が確保したバッファアドレスを渡す indirect return を実装する
 
 ### 浮動小数点リテラル拡張
 - [ ] 16進浮動小数点リテラル（`0x1.8p+3` 形式）を実装する
@@ -976,7 +977,9 @@
   - [ ] 方針として「意味処理は実施しない（optimizer 向け hint として将来対応）」と明文化する
 
 ## 標準ヘッダ追加バックログ候補（2026-03-20 棚卸し）
-- [ ] `<limits.h>` を追加する（`INT_MAX`, `LONG_MAX` 等 — 現状は `<stdint.h>` 側のみ）
+- [x] `<limits.h>` を追加する（`INT_MAX`, `LONG_MAX` 等 — 現状は `<stdint.h>` 側のみ）
+  - [x] `include/limits.h` に `CHAR_BIT`, `SCHAR_MIN/MAX`, `CHAR_MIN/MAX`, `SHRT_MIN/MAX`, `INT_MIN/MAX`, `UINT_MAX`, `LONG_MIN/MAX`, `ULONG_MAX`, `LLONG_MIN/MAX`, `ULLONG_MAX` を定義
+  - [x] `test_e2e` に `limits_int_max`, `limits_int_min`, `limits_char_bit` の 3 テストを追加して 330 テスト通過を確認
 - [ ] `<float.h>` を追加する（`FLT_MAX`, `DBL_EPSILON` 等の浮動小数点定数）
 - [ ] `<string.h>` スタブを追加する（`memcpy`, `memset`, `strlen` 等の宣言のみ）
 - [ ] `<stdio.h>` スタブを追加する（`printf`, `fprintf`, `sprintf` 等の宣言のみ）
