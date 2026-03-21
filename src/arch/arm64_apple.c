@@ -20,12 +20,63 @@ static gen_output_line_fn gen_output_cb;
 static void *gen_output_user_data;
 // 浮動小数点定数用ラベルカウンタ
 
-static void cg_emit_line(const char *line, size_t len) {
+// ピープホール最適化: 直前の出力行をバッファリングし、
+// 冗長な str/ldr ペアを除去する
+#define PEEPHOLE_BUF_SIZE 128
+static char peephole_buf[PEEPHOLE_BUF_SIZE];
+static size_t peephole_len = 0;
+static int peephole_has_line = 0;
+
+static const char STR_X0_PUSH[] = "  str x0, [sp, #-16]!\n";
+static const char LDR_X0_POP[]  = "  ldr x0, [sp], #16\n";
+static const char LDR_X1_POP[]  = "  ldr x1, [sp], #16\n";
+static const char MOV_X1_X0[]   = "  mov x1, x0\n";
+
+static void cg_raw_emit(const char *line, size_t len) {
   if (gen_output_cb) {
     gen_output_cb(line, len, gen_output_user_data);
-    return;
+  } else {
+    fwrite(line, 1, len, stdout);
   }
-  fwrite(line, 1, len, stdout);
+}
+
+static void cg_flush_peephole(void) {
+  if (!peephole_has_line) return;
+  cg_raw_emit(peephole_buf, peephole_len);
+  peephole_has_line = 0;
+  peephole_len = 0;
+}
+
+static void cg_emit_line(const char *line, size_t len) {
+  if (peephole_has_line
+      && peephole_len == sizeof(STR_X0_PUSH) - 1
+      && memcmp(peephole_buf, STR_X0_PUSH, peephole_len) == 0) {
+    // str x0, [sp, #-16]! の直後に ldr x0, [sp], #16 → 両方除去
+    if (len == sizeof(LDR_X0_POP) - 1
+        && memcmp(line, LDR_X0_POP, len) == 0) {
+      peephole_has_line = 0;
+      peephole_len = 0;
+      return;
+    }
+    // str x0, [sp, #-16]! の直後に ldr x1, [sp], #16 → mov x1, x0 に置換
+    if (len == sizeof(LDR_X1_POP) - 1
+        && memcmp(line, LDR_X1_POP, len) == 0) {
+      peephole_has_line = 0;
+      peephole_len = 0;
+      cg_raw_emit(MOV_X1_X0, sizeof(MOV_X1_X0) - 1);
+      return;
+    }
+  }
+  // バッファにある前の行をフラッシュ
+  cg_flush_peephole();
+  // 現在の行をバッファに保存
+  if (len < PEEPHOLE_BUF_SIZE) {
+    memcpy(peephole_buf, line, len);
+    peephole_len = len;
+    peephole_has_line = 1;
+  } else {
+    cg_raw_emit(line, len);
+  }
 }
 
 static void cg_emitf(const char *fmt, ...) {
@@ -63,6 +114,8 @@ static void cg_emitf(const char *fmt, ...) {
 
 
 void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
+  // コールバック切り替え前にバッファをフラッシュ
+  cg_flush_peephole();
   gen_output_cb = cb;
   gen_output_user_data = user_data;
 }
