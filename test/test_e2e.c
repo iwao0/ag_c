@@ -345,6 +345,8 @@ static const test_case_t test_cases[] = {
     {"array", "sum", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }", 6, 0},
     {"array", "const_expr_size", CASE_INT, "int main() { int arr[1+2]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "multi_dim_decl", CASE_INT, "int main() { int arr[2][3]; return 7; }", 7, 0},
+    {"array", "multi_dim_init", CASE_INT, "int main() { int a[2][3]={{1,2,3},{4,5,6}}; return a[1][2]; }", 6, 0},
+    {"array", "multi_dim_init_sum", CASE_INT, "int main() { int a[2][3]={{1,2,3},{4,5,6}}; return a[0][0]+a[1][2]; }", 7, 0},
     {"array", "loop", CASE_INT, "int main() { int arr[10]; int i; for(i=0; i<10; i=i+1) arr[i]=i+1; int sum=0; for(i=0; i<10; i=i+1) sum=sum+arr[i]; return sum; }", 55, 0},
 
     {"string", "deref", CASE_INT, "int main() { char *s = \"AB\"; return *s; }", 65, 0},

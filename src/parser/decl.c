@@ -384,6 +384,7 @@ static node_t *parse_array_initializer(lvar_t *var) {
   int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
   if (tk_consume('{')) {
     int idx = 0;
+    int row_len = (var->outer_stride > 0 && var->elem_size > 0) ? var->outer_stride / var->elem_size : 0;
     bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
     if (!tk_consume('}')) {
       for (;;) {
@@ -392,24 +393,45 @@ static node_t *parse_array_initializer(lvar_t *var) {
           target_idx = parse_nonneg_const_expr_decl("配列designator添字");
           tk_expect(']');
           tk_expect('=');
+          if (row_len > 0) target_idx *= row_len;
         }
-        if (target_idx >= array_len) {
-          psx_diag_ctx(token, "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+        // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}}
+        if (row_len > 0 && tk_consume('{')) {
+          for (int ri = 0; ri < row_len; ri++) {
+            int flat_idx = target_idx + ri;
+            if (flat_idx < array_len) {
+              node_t *lhs = new_array_elem_lvar(var, flat_idx);
+              node_mem_t *assign_node = psx_node_new_assign(lhs, psx_expr_assign());
+              assign_node->type_size = var->elem_size;
+              assign_node->base.fp_kind = var->fp_kind;
+              if (!init_chain) init_chain = (node_t *)assign_node;
+              else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
+              assigned[flat_idx] = true;
+            }
+            if (tk_consume('}')) break;
+            tk_expect(',');
+            if (tk_consume('}')) break;
+          }
+          idx = target_idx + row_len;
+        } else {
+          if (target_idx >= array_len) {
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+          }
+          if (assigned[target_idx]) {
+            psx_diag_ctx(token, "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
+          }
+          node_t *lhs = new_array_elem_lvar(var, target_idx);
+          node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+          assign_node->type_size = var->elem_size;
+          assign_node->base.fp_kind = var->fp_kind;
+          node_t *init_node = (node_t *)assign_node;
+          if (!init_chain) init_chain = init_node;
+          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+          assigned[target_idx] = true;
+          idx = target_idx + 1;
         }
-        if (assigned[target_idx]) {
-          psx_diag_ctx(token, "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
-        }
-        node_t *lhs = new_array_elem_lvar(var, target_idx);
-        node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
-        assign_node->type_size = var->elem_size;
-        assign_node->base.fp_kind = var->fp_kind;
-        node_t *init_node = (node_t *)assign_node;
-        if (!init_chain) init_chain = init_node;
-        else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-        assigned[target_idx] = true;
-        idx = target_idx + 1;
         if (tk_consume('}')) break;
         tk_expect(',');
         if (tk_consume('}')) break;
@@ -1124,11 +1146,15 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           if (!tk_consume(',')) break;
           continue;
         }
+        int inner_dim_size = 0;  // 内側次元の要素数（0: 1次元配列）
         while (tk_consume('[')) {
-          array_size *= parse_array_size_constexpr_decl();
+          long long dim = parse_array_size_constexpr_decl();
+          if (!inner_dim_size) inner_dim_size = (int)dim;
+          array_size *= dim;
           tk_expect(']');
         }
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * elem_size, elem_size, 1, alignas_val);
+        if (inner_dim_size > 0) var->outer_stride = inner_dim_size * elem_size;
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;

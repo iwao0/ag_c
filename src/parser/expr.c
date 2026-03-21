@@ -1387,7 +1387,7 @@ static node_t *apply_postfix(node_t *node) {
       if (node->kind == ND_LVAR) {
         vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
         inner_ds = as_lvar(node)->mem.inner_deref_size;
-      } else if (node->kind == ND_DEREF) {
+      } else if (node->kind == ND_DEREF || node->kind == ND_ADDR) {
         inner_ds = ((node_mem_t *)node)->inner_deref_size;
       }
       node_t *scaled;
@@ -1689,8 +1689,10 @@ static node_t *primary(void) {
       node_mem_t *node = calloc(1, sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
       node->base.lhs = psx_node_new_lvar(var->offset);
-      node->type_size = var->elem_size;
-      node->deref_size = var->elem_size;
+      int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
+      node->type_size = stride;
+      node->deref_size = stride;
+      if (var->outer_stride > 0) node->inner_deref_size = var->elem_size;
       node->tag_kind = var->tag_kind;
       node->tag_name = var->tag_name;
       node->tag_len = var->tag_len;
