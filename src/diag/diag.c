@@ -55,6 +55,32 @@ const char *diag_message_for(diag_error_id_t id) {
   return diag_error_key(id);
 }
 
+const char *diag_warn_message_for(diag_warn_id_t id) {
+  const char *msg = NULL;
+#if defined(DIAG_LANG_ALL)
+  if (strcmp(g_diag_locale, "en") == 0) {
+    msg = diag_warn_message_en(id);
+    if (msg) return msg;
+    msg = diag_warn_message_ja(id);
+    if (msg) return msg;
+  } else {
+    msg = diag_warn_message_ja(id);
+    if (msg) return msg;
+    msg = diag_warn_message_en(id);
+    if (msg) return msg;
+  }
+#elif defined(DIAG_LANG_EN)
+  (void)g_diag_locale;
+  msg = diag_warn_message_en(id);
+  if (msg) return msg;
+#else
+  (void)g_diag_locale;
+  msg = diag_warn_message_ja(id);
+  if (msg) return msg;
+#endif
+  return diag_warn_key(id);
+}
+
 /**
  * @brief テキストIDに対応するテキストを現在ロケールに従って取得する。
  * @param id テキストID。
@@ -157,11 +183,11 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
   exit(1);
 }
 
-void diag_warn_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
+void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   if (tok && tok->file_name) fprintf(stderr, "%s:%d: ", tok->file_name, tok->line_no);
-  fprintf(stderr, "%s: %s: ", diag_error_code(id), diag_text_for(DIAG_TEXT_WARNING));
+  fprintf(stderr, "%s: %s: ", diag_warn_code(id), diag_text_for(DIAG_TEXT_WARNING));
   vfprintf(stderr, fmt, ap);
   fprintf(stderr, "\n");
   va_end(ap);

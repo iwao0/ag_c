@@ -1152,7 +1152,7 @@ static node_t *funcdef(void) {
   }
   if (ret_kind == TK_EOF) {
     diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, token,
-                   "%s", diag_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
+                   "%s", diag_warn_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
   }
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
@@ -1309,12 +1309,22 @@ static node_t *funcdef(void) {
   int i = 0;
   int body_cap = 16;
   body->body = calloc(body_cap, sizeof(node_t*));
+  int prev_terminates = 0;
   while (!tk_consume('}')) {
+    if (prev_terminates && token->kind != TK_CASE && token->kind != TK_DEFAULT &&
+        !(token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON)) {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, token,
+                     "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
+      prev_terminates = 0;
+    }
     if (i >= body_cap - 1) {
       body_cap = pda_next_cap(body_cap, i + 2);
       body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
     }
-    body->body[i++] = psx_stmt_stmt();
+    body->body[i] = psx_stmt_stmt();
+    node_kind_t k = body->body[i]->kind;
+    prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
+    i++;
   }
   body->body[i] = NULL;
   psx_ctx_leave_block_scope();

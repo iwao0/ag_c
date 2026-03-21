@@ -153,7 +153,14 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH: return "break はループまたはswitch内でのみ使用できます";
     case DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP: return "continue はループ内でのみ使用できます";
     case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
+  }
+  return NULL;
+}
+
+const char *diag_warn_message_ja(diag_warn_id_t id) {
+  switch (id) {
     case DIAG_WARN_PARSER_IMPLICIT_INT_RETURN: return "戻り値型が省略されています（暗黙の int）";
+    case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "到達不能なコードです";
   }
   return NULL;
 }

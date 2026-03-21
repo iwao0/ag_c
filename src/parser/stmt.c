@@ -615,12 +615,22 @@ static node_t *stmt_internal(void) {
     int i = 0;
     int cap = 16;
     node->body = calloc(cap, sizeof(node_t*));
+    int prev_terminates = 0;
     while (!tk_consume('}')) {
+      if (prev_terminates && token->kind != TK_CASE && token->kind != TK_DEFAULT &&
+          !(token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON)) {
+        diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, token,
+                       "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
+        prev_terminates = 0;
+      }
       if (i >= cap - 1) {
         cap = pda_next_cap(cap, i + 2);
         node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
       }
-      node->body[i++] = stmt_internal();
+      node->body[i] = stmt_internal();
+      node_kind_t k = node->body[i]->kind;
+      prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
+      i++;
     }
     node->body[i] = NULL;
     psx_ctx_leave_block_scope();

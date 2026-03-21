@@ -153,7 +153,14 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH: return "break can only be used inside loop or switch";
     case DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP: return "continue can only be used inside loop";
     case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
+  }
+  return NULL;
+}
+
+const char *diag_warn_message_en(diag_warn_id_t id) {
+  switch (id) {
     case DIAG_WARN_PARSER_IMPLICIT_INT_RETURN: return "return type omitted (implicit int)";
+    case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "unreachable code";
   }
   return NULL;
 }

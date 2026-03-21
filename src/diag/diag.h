@@ -2,6 +2,7 @@
 #define DIAG_DIAG_H
 
 #include "error_catalog.h"
+#include "warning_catalog.h"
 #include "messages.h"
 #include "../tokenizer/token.h"
 
@@ -23,6 +24,7 @@ const char *diag_get_locale(void);
  * @return エラーIDに対応するメッセージ文字列。未定義IDの場合は汎用メッセージ。
  */
 const char *diag_message_for(diag_error_id_t id);
+const char *diag_warn_message_for(diag_warn_id_t id);
 
 /**
  * @brief テキストIDに対応するローカライズ済みテキストを取得する。
@@ -58,7 +60,7 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
  * @param tok 警告位置を表すトークン。
  * @param fmt 可変引数付きフォーマット文字列。
  */
-void diag_warn_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...);
+void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...);
 
 /**
  * @brief 入力位置なしの内部診断を出力し、プロセスを終了する。
