@@ -11,6 +11,7 @@
 #include "internal/switch_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include "../pragma_pack.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -216,6 +217,26 @@ node_t **ps_program(void) {
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
+    if (token->kind == TK_PRAGMA_PACK_PUSH) {
+      pragma_pack_push((int)((token_num_int_t *)token)->val);
+      token = token->next;
+      continue;
+    }
+    if (token->kind == TK_PRAGMA_PACK_POP) {
+      pragma_pack_pop();
+      token = token->next;
+      continue;
+    }
+    if (token->kind == TK_PRAGMA_PACK_SET) {
+      pragma_pack_set((int)((token_num_int_t *)token)->val);
+      token = token->next;
+      continue;
+    }
+    if (token->kind == TK_PRAGMA_PACK_RESET) {
+      pragma_pack_reset();
+      token = token->next;
+      continue;
+    }
     if (token->kind == TK_STATIC_ASSERT) {
       parse_static_assert_toplevel();
       continue;
@@ -618,6 +639,8 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       int member_align = is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
+      int pack_align = pragma_pack_current;
+      if (pack_align > 0 && pack_align < member_align) member_align = pack_align;
       if (member_alignas > member_align) member_align = member_alignas;
       if (member_align > agg_align) agg_align = member_align;
       int off = 0;

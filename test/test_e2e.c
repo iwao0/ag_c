@@ -360,6 +360,37 @@ static const test_case_t test_cases[] = {
     {"alignas", "lvar_value",  CASE_INT, "int main() { _Alignas(16) int a = 42; return a; }", 42, 0},
     {"alignas", "lvar_align",  CASE_INT, "int main() { int pad = 1; _Alignas(16) int a = 42; long addr = (long)&a; return addr % 16 == 0 ? a : 0; }", 42, 0},
     {"alignas", "struct_member", CASE_INT, "int main() { struct S { char pad; _Alignas(8) int x; }; return (int)sizeof(struct S) == 16 ? 42 : 0; }", 42, 0},
+    // #pragma pack
+    {"pragma_pack", "pack1_sizeof", CASE_INT,
+     "#pragma pack(push, 1)\n"
+     "struct S { char a; int b; };\n"
+     "#pragma pack(pop)\n"
+     "int main() { return (int)sizeof(struct S); }",
+     5, 0},
+    {"pragma_pack", "pack1_offset", CASE_INT,
+     "#pragma pack(push, 1)\n"
+     "struct S { char a; int b; };\n"
+     "#pragma pack(pop)\n"
+     "int main() { struct S s; s.a = 1; s.b = 41; return s.a + s.b; }",
+     42, 0},
+    {"pragma_pack", "pack2_sizeof", CASE_INT,
+     "#pragma pack(push, 2)\n"
+     "struct S { char a; int b; };\n"
+     "#pragma pack(pop)\n"
+     "int main() { return (int)sizeof(struct S); }",
+     6, 0},
+    {"pragma_pack", "pop_restores", CASE_INT,
+     "#pragma pack(push, 1)\n"
+     "#pragma pack(pop)\n"
+     "struct S { char a; int b; };\n"
+     "int main() { return (int)sizeof(struct S); }",
+     8, 0},
+    {"pragma_pack", "pack_n_no_push", CASE_INT,
+     "#pragma pack(1)\n"
+     "struct S { char a; int b; };\n"
+     "#pragma pack()\n"
+     "int main() { return (int)sizeof(struct S); }",
+     5, 0},
     // 標準ヘッダ
     {"stdheader", "stdint_int32", CASE_INT, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }", 42, 0},
     {"stdheader", "stdint_uint8", CASE_INT, "#include <stdint.h>\nint main() { uint8_t x = 200; return (int)x; }", 200, 0},

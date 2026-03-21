@@ -157,6 +157,12 @@ typedef enum {
   TK_HASH,     // #
   TK_HASHHASH, // ##
   TK_DOT,      // .
+
+  // プリプロセッサ内部: #pragma pack マーカー
+  TK_PRAGMA_PACK_PUSH,  // push(N) — token_num_int_t::val にアライメント値
+  TK_PRAGMA_PACK_POP,   // pop
+  TK_PRAGMA_PACK_SET,   // pack(N) — token_num_int_t::val にアライメント値
+  TK_PRAGMA_PACK_RESET, // pack() — デフォルトに戻す
 } token_kind_t;
 
 typedef struct hideset_t hideset_t;

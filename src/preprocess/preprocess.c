@@ -1128,6 +1128,44 @@ token_t *preprocess(token_t *tok) {
           if (include_stack) {
             pragma_once_add(include_stack->path);
           }
+        } else if (ident_is(tok, "pack")) {
+          tok = tok->next;
+          if (tok->kind == TK_LPAREN) {
+            tok = tok->next;
+            if (ident_is(tok, "push")) {
+              tok = tok->next;
+              if (tok->kind == TK_COMMA) {
+                tok = tok->next;
+                if (tok->kind == TK_NUM) {
+                  token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
+                  marker->kind = TK_PRAGMA_PACK_PUSH;
+                  cur->next = marker;
+                  cur = cur->next;
+                  tok = tok->next;
+                }
+              }
+            } else if (ident_is(tok, "pop")) {
+              tok = tok->next;
+              token_t *marker = calloc(1, sizeof(token_t));
+              marker->kind = TK_PRAGMA_PACK_POP;
+              cur->next = marker;
+              cur = cur->next;
+            } else if (tok->kind == TK_NUM) {
+              token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
+              marker->kind = TK_PRAGMA_PACK_SET;
+              cur->next = marker;
+              cur = cur->next;
+              tok = tok->next;
+            } else if (tok->kind == TK_RPAREN) {
+              token_t *marker = calloc(1, sizeof(token_t));
+              marker->kind = TK_PRAGMA_PACK_RESET;
+              cur->next = marker;
+              cur = cur->next;
+            }
+            while (tok->kind != TK_RPAREN && tok->kind != TK_EOF && !tok->at_bol)
+              tok = tok->next;
+            if (tok->kind == TK_RPAREN) tok = tok->next;
+          }
         }
         while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
         continue;
