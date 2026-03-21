@@ -362,6 +362,9 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdbool_false", CASE_INT, "#include <stdbool.h>\nint main() { bool b = false; return b ? 1 : 0; }", 0, 0},
     {"stdheader", "stddef_size_t", CASE_INT, "#include <stddef.h>\nint main() { size_t x = 10; return (int)x; }", 10, 0},
     {"stdheader", "stddef_null", CASE_INT, "#include <stddef.h>\nint main() { void *p = NULL; return p == NULL ? 42 : 0; }", 42, 0},
+    {"stdheader", "limits_int_max", CASE_INT, "#include <limits.h>\nint main() { return INT_MAX == 2147483647 ? 42 : 0; }", 42, 0},
+    {"stdheader", "limits_int_min", CASE_INT, "#include <limits.h>\nint main() { return INT_MIN < 0 ? 42 : 0; }", 42, 0},
+    {"stdheader", "limits_char_bit", CASE_INT, "#include <limits.h>\nint main() { return CHAR_BIT == 8 ? 42 : 0; }", 42, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_INT,
      "#include <stdarg.h>\n"
@@ -426,6 +429,22 @@ static const test_case_t test_cases[] = {
      "int get_v(struct Val p) { return p.v; }"
      "int main() { return get_v(make_val(42)); }",
      42, 0},
+    // struct return value (9-16B: x0/x1 pair)
+    {"struct_ret", "ret_12b_sum", CASE_INT,
+     "struct Triple { int a; int b; int c; };"
+     "struct Triple make_triple(int x, int y, int z) { struct Triple t = {x, y, z}; return t; }"
+     "int main() { struct Triple r = make_triple(10, 20, 12); return r.a + r.b + r.c; }",
+     42, 0},
+    {"struct_ret", "ret_16b_sum", CASE_INT,
+     "struct Quad { int a; int b; int c; int d; };"
+     "struct Quad make_quad(int a, int b, int c, int d) { struct Quad q = {a, b, c, d}; return q; }"
+     "int main() { struct Quad r = make_quad(1, 2, 3, 36); return r.a + r.b + r.c + r.d; }",
+     42, 0},
+    {"struct_ret", "ret_12b_member_c", CASE_INT,
+     "struct Triple { int a; int b; int c; };"
+     "struct Triple make(int x) { struct Triple t = {x, x+1, x+2}; return t; }"
+     "int main() { struct Triple r = make(10); return r.c; }",
+     12, 0},
     // __func__ 定義済み識別子
     {"func_name", "first_char_main", CASE_INT,
      "int main() { return (int)__func__[0]; }",
