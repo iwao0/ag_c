@@ -1,0 +1,66 @@
+#ifndef AGC_FLOAT_H
+#define AGC_FLOAT_H
+
+/* Radix of exponent representation */
+#define FLT_RADIX      2
+
+/* Number of decimal digits of precision */
+#define FLT_DIG        6
+#define DBL_DIG        15
+
+/* Number of base-FLT_RADIX digits in the significand */
+#define FLT_MANT_DIG   24
+#define DBL_MANT_DIG   53
+
+/* Minimum negative integer such that FLT_RADIX raised to that power minus 1
+   is a normalized floating-point number */
+#define FLT_MIN_EXP    (-125)
+#define DBL_MIN_EXP    (-1021)
+
+/* Minimum negative integer such that 10 raised to that power is in the range
+   of normalized floating-point numbers */
+#define FLT_MIN_10_EXP (-37)
+#define DBL_MIN_10_EXP (-307)
+
+/* Maximum integer such that FLT_RADIX raised to that power minus 1
+   is a representable finite floating-point number */
+#define FLT_MAX_EXP    128
+#define DBL_MAX_EXP    1024
+
+/* Maximum integer such that 10 raised to that power is in the range
+   of representable finite floating-point numbers */
+#define FLT_MAX_10_EXP 38
+#define DBL_MAX_10_EXP 308
+
+/* Maximum representable finite floating-point number */
+#define FLT_MAX        3.40282347e+38F
+#define DBL_MAX        1.7976931348623157e+308
+
+/* Minimum normalized positive floating-point number */
+#define FLT_MIN        1.17549435e-38F
+#define DBL_MIN        2.2250738585072014e-308
+
+/* Difference between 1 and the least value greater than 1 */
+#define FLT_EPSILON    1.19209290e-07F
+#define DBL_EPSILON    2.2204460492503131e-16
+
+/* Rounding mode: round to nearest */
+#define FLT_ROUNDS     1
+
+/* Number of decimal digits needed to distinguish any two float/double values */
+#define FLT_DECIMAL_DIG  9
+#define DBL_DECIMAL_DIG  17
+#define DECIMAL_DIG      DBL_DECIMAL_DIG
+
+/* Whether rounding mode for float expressions is non-constant */
+#define FLT_EVAL_METHOD  0
+
+/* Whether subnormals are supported */
+#define FLT_HAS_SUBNORM  1
+#define DBL_HAS_SUBNORM  1
+
+/* Minimum positive subnormal floating-point number */
+#define FLT_TRUE_MIN   1.40129846e-45F
+#define DBL_TRUE_MIN   4.9406564584124654e-324
+
+#endif

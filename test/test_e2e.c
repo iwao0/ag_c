@@ -401,6 +401,9 @@ static const test_case_t test_cases[] = {
     {"stdheader", "limits_int_max", CASE_INT, "#include <limits.h>\nint main() { return INT_MAX == 2147483647 ? 42 : 0; }", 42, 0},
     {"stdheader", "limits_int_min", CASE_INT, "#include <limits.h>\nint main() { return INT_MIN < 0 ? 42 : 0; }", 42, 0},
     {"stdheader", "limits_char_bit", CASE_INT, "#include <limits.h>\nint main() { return CHAR_BIT == 8 ? 42 : 0; }", 42, 0},
+    {"stdheader", "float_flt_max", CASE_INT, "#include <float.h>\nint main() { float f = FLT_MAX; return f > 1.0F ? 42 : 0; }", 42, 0},
+    {"stdheader", "float_dbl_epsilon", CASE_INT, "#include <float.h>\nint main() { double e = DBL_EPSILON; return e > 0.0 && e < 1.0 ? 42 : 0; }", 42, 0},
+    {"stdheader", "float_flt_radix", CASE_INT, "#include <float.h>\nint main() { return FLT_RADIX == 2 ? 42 : 0; }", 42, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_INT,
      "#include <stdarg.h>\n"
