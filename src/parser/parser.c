@@ -1072,13 +1072,14 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator) 
 static node_t *funcdef(void) {
   token_kind_t ret_kind;
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
+  token_ident_t *ret_tag = NULL;
+  int ret_is_ptr = 0;
   if (psx_ctx_is_tag_keyword(token->kind)) {
     // 戻り値型が struct/union Tag [*] の関数定義
     ret_kind = token->kind; // TK_STRUCT or TK_UNION
     token = token->next;    // skip struct/union keyword
-    token_ident_t *ret_tag = tk_consume_ident(); // consume tag name
-    (void)ret_tag;
-    while (token->kind == TK_MUL) token = token->next; // skip optional pointer(s)
+    ret_tag = tk_consume_ident(); // consume tag name
+    while (token->kind == TK_MUL) { token = token->next; ret_is_ptr = 1; } // skip optional pointer(s)
   } else {
     ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
     if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
@@ -1086,6 +1087,17 @@ static node_t *funcdef(void) {
   }
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
+  // 構造体戻り値の場合、サイズを記録（ポインタ戻り値は除く）
+  if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr) {
+    if (ret_tag && psx_ctx_has_tag_type(ret_kind, ret_tag->str, ret_tag->len)) {
+      psx_expr_set_current_func_ret_struct_size(
+          psx_ctx_get_tag_size(ret_kind, ret_tag->str, ret_tag->len));
+    } else {
+      psx_expr_set_current_func_ret_struct_size(0);
+    }
+  } else {
+    psx_expr_set_current_func_ret_struct_size(0);
+  }
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
     psx_diag_ctx(token, "funcdef", "%s",
@@ -1095,7 +1107,8 @@ static node_t *funcdef(void) {
   node->base.kind = ND_FUNCDEF;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
-  psx_ctx_define_function_name(tok->str, tok->len);
+  psx_ctx_define_function_name_with_ret(tok->str, tok->len,
+                                         psx_expr_current_func_ret_struct_size());
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
 
   // 関数ごとにローカル変数テーブルをリセット

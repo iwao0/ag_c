@@ -509,6 +509,16 @@ static void gen_expr(node_t *node) {
   case ND_ASSIGN:
     gen_lval(node->lhs);
     gen_expr(node->rhs);
+    if (node->rhs && node->rhs->ret_struct_size > 8 && node->rhs->ret_struct_size <= 16) {
+      // 9-16B 構造体戻り値: スタックに x0(低),x1(高) の2スロットが積まれている
+      cg_emitf("  ldr x1, [sp], #16\n");  // x0: 低8B
+      cg_emitf("  ldr x2, [sp], #16\n");  // x1: 高8B
+      cg_emitf("  ldr x0, [sp], #16\n");  // lhs アドレス
+      cg_emitf("  str x1, [x0]\n");       // 低8B をストア
+      cg_emitf("  str x2, [x0, #8]\n");   // 高8B をストア
+      cg_emitf("  str x1, [sp, #-16]!\n"); // 式の結果値（低8B）
+      return;
+    }
     if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
       // float 代入
       gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0); // s0 に rhs をロード
@@ -735,7 +745,13 @@ static void gen_expr(node_t *node) {
     }
     free(arg_regs);
     // 戻り値をスタックにプッシュ
-    cg_emitf("  str x0, [sp, #-16]!\n");
+    if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
+      // 9-16B 構造体戻り値: x1(高8B)を先にプッシュ、x0(低8B)を後にプッシュ
+      cg_emitf("  str x1, [sp, #-16]!\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
+    } else {
+      cg_emitf("  str x0, [sp, #-16]!\n");
+    }
     return;
   }
   default:
@@ -871,12 +887,28 @@ static void gen_stmt(node_t *node) {
     return;
   case ND_RETURN:
     if (node->lhs) {
-      gen_expr(node->lhs);
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { // 関数の戻り値が float
+      if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
+        // 9-16B 構造体戻り値: フレームから x0/x1 ペアにロード
+        if (node->lhs->kind == ND_LVAR) {
+          node_lvar_t *lvar = (node_lvar_t *)node->lhs;
+          int frame_off = 16 + lvar->offset;
+          cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
+          cg_emitf("  ldr x1, [x29, #%d]\n", frame_off + 8);
+        } else {
+          // 式の結果（アドレス）からロード
+          gen_expr(node->lhs);
+          cg_emitf("  ldr x9, [sp], #16\n");
+          cg_emitf("  ldr x0, [x9]\n");
+          cg_emitf("  ldr x1, [x9, #8]\n");
+        }
+      } else if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { // 関数の戻り値が float
+        gen_expr(node->lhs);
         gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
       } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { // 関数の戻り値が double/long double(現状lowering)
+        gen_expr(node->lhs);
         gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
       } else {                               // 関数の戻り値が 整数
+        gen_expr(node->lhs);
         if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
           cg_emitf("  ldr s0, [sp], #16\n");
           cg_emitf("  fcvtzs x0, s0\n");       // float->int

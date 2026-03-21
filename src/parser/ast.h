@@ -64,6 +64,9 @@ struct node_t {
 
   // データ型判定用（演算結果の型）
   tk_float_kind_t fp_kind;
+
+  // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
+  int ret_struct_size;
 };
 
 // メモリ参照系ノード（型サイズ情報）

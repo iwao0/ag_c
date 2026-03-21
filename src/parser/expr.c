@@ -15,6 +15,7 @@
 
 static token_kind_t g_current_ret_token_kind = TK_INT;
 static tk_float_kind_t g_current_ret_fp_kind = TK_FLOAT_KIND_NONE;
+static int g_current_ret_struct_size = 0;
 static char *g_current_funcname = NULL;
 static int g_current_funcname_len = 0;
 static int string_label_count = 0;
@@ -847,6 +848,14 @@ void psx_expr_set_current_func_ret_type(token_kind_t ret_kind, tk_float_kind_t f
   g_current_ret_fp_kind = fp_kind;
 }
 
+void psx_expr_set_current_func_ret_struct_size(int size) {
+  g_current_ret_struct_size = size;
+}
+
+int psx_expr_current_func_ret_struct_size(void) {
+  return g_current_ret_struct_size;
+}
+
 token_kind_t psx_expr_current_func_ret_token_kind(void) {
   return g_current_ret_token_kind;
 }
@@ -1608,6 +1617,8 @@ static node_t *primary(void) {
           tk_expect(')');
         }
         node->nargs = nargs;
+        node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(
+            tok->str, tok->len);
         return (node_t *)node;
       }
     }
