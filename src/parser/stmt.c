@@ -697,6 +697,7 @@ static node_t *stmt_internal(void) {
                      diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
     }
     node->fp_kind = psx_expr_current_func_ret_fp_kind();
+    node->ret_struct_size = psx_expr_current_func_ret_struct_size();
     tk_expect(';');
     return node;
   }

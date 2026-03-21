@@ -977,7 +977,9 @@
   - [ ] 方針として「意味処理は実施しない（optimizer 向け hint として将来対応）」と明文化する
 
 ## 標準ヘッダ追加バックログ候補（2026-03-20 棚卸し）
-- [ ] `<limits.h>` を追加する（`INT_MAX`, `LONG_MAX` 等 — 現状は `<stdint.h>` 側のみ）
+- [x] `<limits.h>` を追加する（`INT_MAX`, `LONG_MAX` 等 — 現状は `<stdint.h>` 側のみ）
+  - [x] `include/limits.h` に `CHAR_BIT`, `SCHAR_MIN/MAX`, `CHAR_MIN/MAX`, `SHRT_MIN/MAX`, `INT_MIN/MAX`, `UINT_MAX`, `LONG_MIN/MAX`, `ULONG_MAX`, `LLONG_MIN/MAX`, `ULLONG_MAX` を定義
+  - [x] `test_e2e` に `limits_int_max`, `limits_int_min`, `limits_char_bit` の 3 テストを追加して 330 テスト通過を確認
 - [ ] `<float.h>` を追加する（`FLT_MAX`, `DBL_EPSILON` 等の浮動小数点定数）
 - [ ] `<string.h>` スタブを追加する（`memcpy`, `memset`, `strlen` 等の宣言のみ）
 - [ ] `<stdio.h>` スタブを追加する（`printf`, `fprintf`, `sprintf` 等の宣言のみ）

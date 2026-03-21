@@ -729,6 +729,12 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
+  } else if (var->size > 8 && var->size <= 16 && value && value->kind == ND_FUNCALL) {
+    // 9-16B struct: 関数呼び出し結果を x0/x1 ペアで受け取り、2ワード代入で初期化
+    node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    assign_node->type_size = var->size;
+    init_chain = (node_t *)assign_node;
   } else {
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));

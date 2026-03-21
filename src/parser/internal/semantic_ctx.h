@@ -52,7 +52,9 @@ bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
                                int *out_tag_len, int *out_is_pointer);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 void psx_ctx_define_function_name(char *name, int len);
+void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size);
 bool psx_ctx_has_function_name(char *name, int len);
+int psx_ctx_get_function_ret_struct_size(char *name, int len);
 
 bool psx_ctx_is_type_token(token_kind_t kind);
 bool psx_ctx_is_tag_keyword(token_kind_t kind);
