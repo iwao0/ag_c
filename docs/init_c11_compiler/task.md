@@ -1050,9 +1050,9 @@
   - トップレベル（parser.c）とローカル（stmt.c）の両方で `[]` をサイズ0として処理
 - [ ] 複合リテラルのスコープ規則を厳密化する
   - 現状ファイルスコープの複合リテラルが未定義動作を起こす可能性
-- [ ] `for` 文の初期化節でカンマ区切りの複数変数宣言を受理する
+- [x] `for` 文の初期化節でカンマ区切りの複数変数宣言を受理する
   - `for (int i = 0, j = 10; ...)` のような構文
-- [ ] 関数ポインタ型の typedef をパラメータ型として受理する
+- [x] 関数ポインタ型の typedef をパラメータ型として受理する
   - `typedef int (*callback_t)(int); void register(callback_t cb);` のような宣言
 
 ### 型システム強化
@@ -1072,9 +1072,9 @@
   - 現状: キーワード認識のみ。TLS（Thread-Local Storage）セグメントへの配置が未実装
 
 ### Codegen 改善
-- [ ] 関数呼び出しで 8 引数を超える場合のスタック渡しを実装する
+- [x] 関数呼び出しで 8 引数を超える場合のスタック渡しを実装する
   - AArch64 ABI: x0-x7 に収まらない引数はスタック経由で渡す
-- [ ] 浮動小数点レジスタ割り付けを実装する
+- [x] 浮動小数点レジスタ割り付けを実装する
   - 現状の gen_expr_to_reg は整数二項演算のみ対応。浮動小数点式は全てスタック経由
 - [ ] `long double` 対応を完全にする
   - AArch64 では `long double` は 128-bit（quad precision）。現状 `double`（64-bit）と同等扱い
@@ -1082,13 +1082,13 @@
   - 自己再帰関数で `b` 命令へ置換し、スタック消費を削減
 
 ### 標準ヘッダ拡充
-- [ ] `<ctype.h>` を追加する（`isalpha`, `isdigit`, `isalnum`, `isspace`, `toupper`, `tolower` 等）
-- [ ] `<math.h>` を追加する（`sin`, `cos`, `sqrt`, `fabs`, `pow`, `ceil`, `floor`, `log`, `exp` 等）
-- [ ] `<assert.h>` を追加する（`assert` マクロ）
-- [ ] `<errno.h>` を追加する（`errno`, `ERANGE`, `EDOM` 等）
-- [ ] `<signal.h>` を追加する（`signal`, `raise`, `SIGINT`, `SIGSEGV` 等）
-- [ ] `<time.h>` を追加する（`time`, `clock`, `difftime`, `struct tm` 等）
-- [ ] `<setjmp.h>` を追加する（`setjmp`, `longjmp`）
+- [x] `<ctype.h>` を追加する（`isalpha`, `isdigit`, `isalnum`, `isspace`, `toupper`, `tolower` 等）
+- [x] `<math.h>` を追加する（`sin`, `cos`, `sqrt`, `fabs`, `pow`, `ceil`, `floor`, `log`, `exp` 等）
+- [x] `<assert.h>` を追加する（`assert` マクロ）
+- [x] `<errno.h>` を追加する（`errno`, `ERANGE`, `EDOM` 等）
+- [x] `<signal.h>` を追加する（`signal`, `raise`, `SIGINT`, `SIGSEGV` 等）
+- [x] `<time.h>` を追加する（`time`, `clock`, `difftime`, `struct tm` 等）
+- [x] `<setjmp.h>` を追加する（`setjmp`, `longjmp`）
 
 ### 診断・エラー報告改善
 - [ ] 未使用変数の警告を追加する（`-Wunused-variable` 相当）

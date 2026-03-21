@@ -280,6 +280,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "typedef_in_func", CASE_INT, "int main() { typedef int myint; myint x=6; return x; }", 6, 0},
     {"type_decl", "typedef_funcptr", CASE_INT, "typedef int (*fp_t)(int); int main() { fp_t p; return 0; }", 0, 0},
     {"type_decl", "typedef_funcptr_nested", CASE_INT, "typedef int (((*fp_t)))(int); int main() { fp_t p; return 0; }", 0, 0},
+    {"type_decl", "typedef_funcptr_param", CASE_INT, "typedef int (*fp_t)(int); int dbl(int x){return x*2;} int apply(fp_t f,int x){return f(x);} int main(){return apply(dbl,7);}", 14, 0},
     {"type_decl", "typedef_ret_funcdef", CASE_INT, "typedef long mylong; mylong add(mylong a, mylong b) { return a+b; } int main() { return (int)add(3,4); }", 7, 0},
     {"type_decl", "typedef_ret_proto", CASE_INT, "typedef long size_t; size_t strlen(const char *s); int main() { return (int)strlen(\"hello\"); }", 5, 0},
     {"type_decl", "typedef_ptr_ret_proto", CASE_INT, "typedef void FILE; FILE *get_null(void); int main() { return 0; }", 0, 0},
@@ -428,6 +429,15 @@ static const test_case_t test_cases[] = {
      "#include <string.h>\n"
      "int main() { char buf[4]; memset(buf, 0, 4); return buf[0] == 0 && buf[3] == 0 ? 42 : 0; }",
      42, 0},
+    {"stdheader", "ctype_isdigit", CASE_INT, "#include <ctype.h>\nint main() { return isdigit('5') != 0 ? 42 : 0; }", 42, 0},
+    {"stdheader", "ctype_isalpha", CASE_INT, "#include <ctype.h>\nint main() { return isalpha('A') != 0 ? 42 : 0; }", 42, 0},
+    {"stdheader", "ctype_toupper", CASE_INT, "#include <ctype.h>\nint main() { return toupper('a'); }", 65, 0},
+    {"stdheader", "math_include", CASE_INT, "#include <math.h>\nint main() { return 42; }", 42, 0},
+    {"stdheader", "assert_include", CASE_INT, "#include <assert.h>\nint main() { assert(1); return 42; }", 42, 0},
+    {"stdheader", "errno_include", CASE_INT, "#include <errno.h>\nint main() { return EDOM == 33 ? 42 : 0; }", 42, 0},
+    {"stdheader", "signal_include", CASE_INT, "#include <signal.h>\nint main() { return SIGINT == 2 ? 42 : 0; }", 42, 0},
+    {"stdheader", "time_include", CASE_INT, "#include <time.h>\nint main() { time_t t = 0; return 42; }", 42, 0},
+    {"stdheader", "setjmp_include", CASE_INT, "#include <setjmp.h>\nint main() { return 42; }", 42, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_INT,
      "#include <stdarg.h>\n"
@@ -815,7 +825,14 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_fread") == 0 || strcmp(sym, "_fwrite") == 0 ||
             strcmp(sym, "_fputs") == 0 || strcmp(sym, "_fputc") == 0 ||
             strcmp(sym, "_fgetc") == 0 || strcmp(sym, "_fgets") == 0 ||
-            strcmp(sym, "_getchar") == 0 || strcmp(sym, "_putchar") == 0) {
+            strcmp(sym, "_getchar") == 0 || strcmp(sym, "_putchar") == 0 ||
+            strcmp(sym, "_isalnum") == 0 || strcmp(sym, "_isalpha") == 0 ||
+            strcmp(sym, "_isblank") == 0 || strcmp(sym, "_iscntrl") == 0 ||
+            strcmp(sym, "_isdigit") == 0 || strcmp(sym, "_isgraph") == 0 ||
+            strcmp(sym, "_islower") == 0 || strcmp(sym, "_isprint") == 0 ||
+            strcmp(sym, "_ispunct") == 0 || strcmp(sym, "_isspace") == 0 ||
+            strcmp(sym, "_isupper") == 0 || strcmp(sym, "_isxdigit") == 0 ||
+            strcmp(sym, "_tolower") == 0 || strcmp(sym, "_toupper") == 0) {
           fputs(sym, out);
         } else {
           fprintf(out, "_%s_%s", prefix, sym + 1);
