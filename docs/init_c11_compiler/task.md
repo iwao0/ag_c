@@ -991,7 +991,7 @@
   - [x] E2Eテストのシンボルリネーム処理に libc 関数ホワイトリストを追加
   - [x] パーサーの `funcdef()` でポインタ戻り値型（`void *`, `char *` 等）に対応
   - [x] `test_e2e` に `string_strlen`, `string_strcmp`, `string_memset` の 3 テストを追加（354テスト通過）
-- [ ] `<stdio.h>` スタブを追加する（`printf`, `fprintf`, `sprintf` 等の宣言のみ）
+- [x] `<stdio.h>` スタブを拡充する（`printf`, `fprintf`, `sprintf`, `snprintf`, `puts`, `putchar`, `fputs`, `fputc`, `getchar`, `fgetc`, `fgets`, `fopen`, `fclose`, `fflush`, `fread`, `fwrite`, `perror` の宣言。FILE * は void * で代替、const 修飾は省略、ヘッダ内コメントで明記）
 - [ ] `<stdlib.h>` スタブを追加する（`malloc`, `free`, `exit`, `atoi` 等の宣言のみ）
 - [x] include 以下のヘッダファイルを整備する
   - [x] インクルードガードの `AGC_` プレフィックスを `_ヘッダ名_H` 形式に変更（stdint.h, stddef.h, stdbool.h, stdio.h, limits.h, float.h, string.h の 7 ファイル。stdarg.h は既に `_STDARG_H`）
