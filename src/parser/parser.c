@@ -1105,6 +1105,7 @@ static node_t *funcdef(void) {
   }
   node_func_t *node = calloc(1, sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
+  node->base.ret_struct_size = psx_expr_current_func_ret_struct_size();
   node->funcname = tok->str;
   node->funcname_len = tok->len;
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,

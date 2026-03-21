@@ -72,6 +72,9 @@ void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
 // 26個の変数(a-z) * 8バイト = 208バイト + フレームポインタ/リンクレジスタ用16バイト = 224
 // 16バイトアラインメントに合わせる → 224
 #define STACK_SIZE 1024
+// >16B 構造体戻り値: x8 (indirect result pointer) の退避スロット
+// フレーム末尾の固定位置 [x29 + STACK_SIZE - 16]
+#define X8_SAVE_OFFSET (STACK_SIZE - 16)
 
 static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
@@ -507,6 +510,17 @@ static void gen_expr(node_t *node) {
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   case ND_ASSIGN:
+    if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
+      // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
+      // callee が x8 の指す先に直接書き込む
+      gen_lval(node->lhs);
+      cg_emitf("  ldr x8, [sp], #16\n");  // lhs アドレスを x8 に
+      gen_expr(node->rhs);                // funcall 実行（x8 は callee 内で使われる）
+      cg_emitf("  add sp, sp, #16\n");    // funcall がプッシュした dummy x0 を破棄
+      // 式の結果としてアドレスをプッシュ（使われないが整合性のため）
+      cg_emitf("  str x8, [sp, #-16]!\n");
+      return;
+    }
     gen_lval(node->lhs);
     gen_expr(node->rhs);
     if (node->rhs && node->rhs->ret_struct_size > 8 && node->rhs->ret_struct_size <= 16) {
@@ -887,7 +901,32 @@ static void gen_stmt(node_t *node) {
     return;
   case ND_RETURN:
     if (node->lhs) {
-      if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
+      if (node->ret_struct_size > 16) {
+        // >16B 構造体戻り値: x8 が指すバッファにローカル変数の内容をコピー
+        if (node->lhs->kind == ND_LVAR) {
+          node_lvar_t *lvar = (node_lvar_t *)node->lhs;
+          int frame_off = 16 + lvar->offset;
+          int size = node->ret_struct_size;
+          cg_emitf("  ldr x8, [x29, #%d]\n", X8_SAVE_OFFSET); // 退避した x8 を復元
+          int off = 0;
+          // 8バイト単位でコピー
+          for (; off + 8 <= size; off += 8) {
+            cg_emitf("  ldr x9, [x29, #%d]\n", frame_off + off);
+            cg_emitf("  str x9, [x8, #%d]\n", off);
+          }
+          // 残りの4バイト
+          if (off + 4 <= size) {
+            cg_emitf("  ldr w9, [x29, #%d]\n", frame_off + off);
+            cg_emitf("  str w9, [x8, #%d]\n", off);
+            off += 4;
+          }
+          // 残りの1バイト単位
+          for (; off < size; off++) {
+            cg_emitf("  ldrb w9, [x29, #%d]\n", frame_off + off);
+            cg_emitf("  strb w9, [x8, #%d]\n", off);
+          }
+        }
+      } else if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
         // 9-16B 構造体戻り値: フレームから x0/x1 ペアにロード
         if (node->lhs->kind == ND_LVAR) {
           node_lvar_t *lvar = (node_lvar_t *)node->lhs;
@@ -940,6 +979,10 @@ static void gen_stmt(node_t *node) {
     cg_emitf("  sub sp, sp, #%d\n", STACK_SIZE);
     cg_emitf("  stp x29, x30, [sp]\n");
     cg_emitf("  mov x29, sp\n");
+    // >16B 構造体戻り値: x8 (indirect result pointer) をフレームに退避
+    if (fn->base.ret_struct_size > 16) {
+      cg_emitf("  str x8, [x29, #%d]\n", X8_SAVE_OFFSET);
+    }
     // 仮引数をレジスタからローカル変数スロットへ保存
     // type_size > 16: byref (>16B 構造体の値渡し) → 1レジスタ (ポインタ)
     // type_size 9-16: 2レジスタ構造体 → stp

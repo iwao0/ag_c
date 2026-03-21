@@ -445,6 +445,22 @@ static const test_case_t test_cases[] = {
      "struct Triple make(int x) { struct Triple t = {x, x+1, x+2}; return t; }"
      "int main() { struct Triple r = make(10); return r.c; }",
      12, 0},
+    // struct return value (>16B: indirect return via x8)
+    {"struct_ret", "ret_20b_indirect", CASE_INT,
+     "struct Big { int a; int b; int c; int d; int e; };"
+     "struct Big make_big(int v) { struct Big b = {v, v+1, v+2, v+3, v+4}; return b; }"
+     "int main() { struct Big r = make_big(5); return r.a + r.b + r.c + r.d + r.e; }",
+     35, 0},
+    {"struct_ret", "ret_24b_member_f", CASE_INT,
+     "struct S6 { int a; int b; int c; int d; int e; int f; };"
+     "struct S6 make6(int x) { struct S6 s = {x, x+1, x+2, x+3, x+4, x+5}; return s; }"
+     "int main() { struct S6 r = make6(1); return r.f; }",
+     6, 0},
+    {"struct_ret", "ret_40b_sum", CASE_INT,
+     "struct Big10 { int a; int b; int c; int d; int e; int f; int g; int h; int i; int j; };"
+     "struct Big10 make10() { struct Big10 s = {1,2,3,4,5,6,7,8,9,10}; return s; }"
+     "int main() { struct Big10 r = make10(); return r.a+r.b+r.c+r.d+r.e+r.f+r.g+r.h+r.i+r.j; }",
+     55, 0},
     // __func__ 定義済み識別子
     {"func_name", "first_char_main", CASE_INT,
      "int main() { return (int)__func__[0]; }",
