@@ -993,7 +993,8 @@
   - [x] パーサーの `funcdef()` でポインタ戻り値型（`void *`, `char *` 等）に対応
   - [x] `test_e2e` に `string_strlen`, `string_strcmp`, `string_memset` の 3 テストを追加（354テスト通過）
 - [x] `<stdio.h>` スタブを拡充する（`printf`, `fprintf`, `sprintf`, `snprintf`, `puts`, `putchar`, `fputs`, `fputc`, `getchar`, `fgetc`, `fgets`, `fopen`, `fclose`, `fflush`, `fread`, `fwrite`, `perror` の宣言。FILE * は void * で代替、const 修飾は省略、ヘッダ内コメントで明記）
-- [ ] `<stdlib.h>` スタブを追加する（`malloc`, `free`, `exit`, `atoi` 等の宣言のみ）
+- [x] `<stdlib.h>` スタブを追加する（`malloc`, `calloc`, `realloc`, `free`, `exit`, `abort`, `atexit`, `atoi`, `atol`, `strtol`, `rand`, `srand`, `abs`, `labs`, `qsort`, `bsearch`, `getenv`, `system` の宣言。size_t は long で代替、const 修飾は省略、ヘッダ内コメントで明記）
+  - [x] `test_e2e` に `stdlib_malloc_free`, `stdlib_atoi`, `stdlib_abs` の 3 テストを追加（357テスト通過）
 - [x] include 以下のヘッダファイルを整備する
   - [x] インクルードガードの `AGC_` プレフィックスを `_ヘッダ名_H` 形式に変更（stdint.h, stddef.h, stdbool.h, stdio.h, limits.h, float.h, string.h の 7 ファイル。stdarg.h は既に `_STDARG_H`）
   - [x] 関数宣言の引数を明示（stdio.h: `printf(char *fmt, ...)`, `puts(char *s)`。string.h: 全 17 関数に引数型を記載。パーサー制約により const 修飾と size_t 戻り値型は省略、ヘッダ内にコメントで明記）

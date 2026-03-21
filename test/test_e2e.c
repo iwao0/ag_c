@@ -406,6 +406,12 @@ static const test_case_t test_cases[] = {
     {"stdheader", "float_flt_radix", CASE_INT, "#include <float.h>\nint main() { return FLT_RADIX == 2 ? 42 : 0; }", 42, 0},
     {"stdheader", "string_strlen", CASE_INT, "#include <string.h>\nint main() { return (int)strlen(\"hello\"); }", 5, 0},
     {"stdheader", "string_strcmp", CASE_INT, "#include <string.h>\nint main() { return strcmp(\"abc\", \"abc\") == 0 ? 42 : 0; }", 42, 0},
+    {"stdheader", "stdlib_malloc_free", CASE_INT,
+     "#include <stdlib.h>\n"
+     "int main() { int *p = malloc(8); *p = 42; int v = *p; free(p); return v; }",
+     42, 0},
+    {"stdheader", "stdlib_atoi", CASE_INT, "#include <stdlib.h>\nint main() { return atoi(\"42\"); }", 42, 0},
+    {"stdheader", "stdlib_abs", CASE_INT, "#include <stdlib.h>\nint main() { return abs(-42); }", 42, 0},
     {"stdheader", "string_memset", CASE_INT,
      "#include <string.h>\n"
      "int main() { char buf[4]; memset(buf, 0, 4); return buf[0] == 0 && buf[3] == 0 ? 42 : 0; }",
@@ -774,7 +780,18 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_atoi") == 0 || strcmp(sym, "_atol") == 0 ||
             strcmp(sym, "_puts") == 0 || strcmp(sym, "_fprintf") == 0 ||
             strcmp(sym, "_sprintf") == 0 || strcmp(sym, "_snprintf") == 0 ||
-            strcmp(sym, "_va_start") == 0 || strcmp(sym, "_va_end") == 0) {
+            strcmp(sym, "_va_start") == 0 || strcmp(sym, "_va_end") == 0 ||
+            strcmp(sym, "_abs") == 0 || strcmp(sym, "_labs") == 0 ||
+            strcmp(sym, "_rand") == 0 || strcmp(sym, "_srand") == 0 ||
+            strcmp(sym, "_qsort") == 0 || strcmp(sym, "_bsearch") == 0 ||
+            strcmp(sym, "_atexit") == 0 || strcmp(sym, "_getenv") == 0 ||
+            strcmp(sym, "_system") == 0 || strcmp(sym, "_strtol") == 0 ||
+            strcmp(sym, "_perror") == 0 || strcmp(sym, "_fopen") == 0 ||
+            strcmp(sym, "_fclose") == 0 || strcmp(sym, "_fflush") == 0 ||
+            strcmp(sym, "_fread") == 0 || strcmp(sym, "_fwrite") == 0 ||
+            strcmp(sym, "_fputs") == 0 || strcmp(sym, "_fputc") == 0 ||
+            strcmp(sym, "_fgetc") == 0 || strcmp(sym, "_fgets") == 0 ||
+            strcmp(sym, "_getchar") == 0 || strcmp(sym, "_putchar") == 0) {
           fputs(sym, out);
         } else {
           fprintf(out, "_%s_%s", prefix, sym + 1);
