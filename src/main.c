@@ -81,6 +81,8 @@ int main(int argc, char **argv) {
   // 文字列と浮動小数点数データの出力
   gen_string_literals();
   gen_float_literals();
+  // グローバル変数データの出力
+  gen_global_vars();
   gen_set_output_callback(NULL, NULL);
 
   free(source);

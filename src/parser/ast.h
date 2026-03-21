@@ -49,6 +49,7 @@ typedef enum {
   ND_ADDR,    // アドレス取得 (&x)
   ND_STRING,  // 文字列リテラル
   ND_NUM,     // 整数
+  ND_GVAR,    // グローバル変数参照
   ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト), type_size=フレームオフセット
 } node_kind_t;
 
@@ -175,6 +176,28 @@ struct node_jump_t {
   int name_len;
   int label_id;     // codegenで解決されるラベル番号
 };
+
+// グローバル変数参照ノード
+typedef struct node_gvar_t node_gvar_t;
+struct node_gvar_t {
+  node_mem_t mem;  // type_size, deref_size, tag info
+  char *name;
+  int name_len;
+};
+
+// グローバル変数テーブル（連結リスト）
+typedef struct global_var_t global_var_t;
+struct global_var_t {
+  global_var_t *next;
+  char *name;
+  int name_len;
+  int type_size;      // sizeof（ロード/ストアサイズ）
+  int deref_size;     // ポインタ先の要素サイズ
+  int is_extern_decl; // 1: extern宣言のみ（.comm不要）
+  int has_init;       // 1: 初期化子あり
+  long long init_val; // 初期値
+};
+extern global_var_t *global_vars;
 
 // 文字列リテラルテーブル（連結リスト）
 typedef struct string_lit_t string_lit_t;

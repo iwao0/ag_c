@@ -905,3 +905,13 @@
     - [x] funcdef で `param_elem_size` を取得し、配列宣言子時に `size=8, elem_size=実際のサイズ` でポインタとして登録
     - [x] `sizeof(a)` が 8（ポインタサイズ）を返すことを確認（C11 6.7.6.3p7 準拠）
     - [x] `test_e2e` に `vla_param/{basic_access, sizeof_is_ptr, write_through}` の 3 テストを追加して 316 テスト通過を確認
+
+## グローバル変数 + extern 宣言タスク（2026-03-21 棚卸し）
+- [x] グローバル変数のコード生成を実装する
+  - [x] `ND_GVAR` AST ノード型を追加し、`adrp`/`add @PAGE`/`@PAGEOFF` によるシンボルアドレス参照を生成する
+  - [x] `global_var_t` リンクリストでグローバル変数を管理する（tentative / initialized / extern）
+  - [x] `ps_program()` でトップレベル変数宣言をパースし `global_vars` テーブルに登録する
+  - [x] `primary()` でローカル変数未発見時に `global_vars` フォールバック → `ND_GVAR` ノードを返す
+  - [x] tentative 定義は `.comm` ディレクティブ、初期化済みは `.data` セクションで出力する
+  - [x] ローカルスコープの `extern int g;` をサポートする（`skip_cv_qualifiers` で `extern` フラグ検出）
+  - [x] `test_e2e` に `global_var/{tentative_rw, tentative_multi_func, initialized, initialized_modified, local_extern}` の 5 テストを追加して 319 テスト通過を確認

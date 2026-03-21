@@ -13,12 +13,17 @@
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
+global_var_t *global_vars = NULL;
 static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
 static int g_last_alignas_value = 0;
+static int g_last_decl_is_extern = 0;
+static int g_toplevel_decl_elem_size = 8;
+static int g_toplevel_decl_is_extern = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -72,9 +77,11 @@ static void skip_cv_qualifiers(void) {
   g_last_type_const_qualified = 0;
   g_last_type_volatile_qualified = 0;
   g_last_alignas_value = 0;
+  g_last_decl_is_extern = 0;
   while (is_decl_prefix_token(token->kind)) {
     if (token->kind == TK_CONST) g_last_type_const_qualified = 1;
     if (token->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
+    if (token->kind == TK_EXTERN) g_last_decl_is_extern = 1;
     if (token->kind == TK_ALIGNAS) {
       token = token->next;
       if (token->kind != TK_LPAREN) {
@@ -99,6 +106,10 @@ void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualifie
 
 void psx_take_alignas_value(int *align) {
   if (align) *align = g_last_alignas_value;
+}
+
+void psx_take_extern_flag(int *is_extern) {
+  if (is_extern) *is_extern = g_last_decl_is_extern;
 }
 
 static void skip_ptr_qualifiers(void) {
@@ -224,8 +235,13 @@ node_t **ps_program(void) {
         !is_toplevel_function_signature(token)) {
       if (psx_ctx_is_typedef_name_token(token)) {
         token = token->next;
+        g_toplevel_decl_elem_size = 8;
+        g_toplevel_decl_is_extern = 0;
       } else {
-        (void)psx_consume_type_kind();
+        token_kind_t tl_kind = psx_consume_type_kind();
+        g_toplevel_decl_elem_size = 8;
+        if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
+        g_toplevel_decl_is_extern = g_last_decl_is_extern;
       }
       parse_toplevel_decl_after_type();
       continue;
@@ -275,12 +291,46 @@ static void parse_toplevel_declarator_list(void) {
       psx_diag_ctx(token, "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
+    // 配列宣言子を消費（将来的に配列サイズをテーブルに記録することも可能）
     while (tk_consume('[')) {
       (void)parse_array_size_constexpr_toplevel();
       tk_expect(']');
     }
-    if (tk_consume('=')) {
-      psx_expr_assign();
+    if (!g_toplevel_decl_is_extern) {
+      // グローバル変数テーブルに登録
+      global_var_t *gv = calloc(1, sizeof(global_var_t));
+      gv->name = name->str;
+      gv->name_len = name->len;
+      gv->type_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
+      gv->deref_size = g_toplevel_decl_elem_size;
+      if (tk_consume('=')) {
+        node_t *init_expr = psx_expr_assign();
+        if (init_expr && init_expr->kind == ND_NUM) {
+          gv->has_init = 1;
+          gv->init_val = ((node_num_t *)init_expr)->val;
+        }
+      }
+      gv->next = global_vars;
+      global_vars = gv;
+    } else {
+      // extern宣言: テーブルに登録（is_extern_decl=1）
+      int found = 0;
+      for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+        if (gv->name_len == name->len && memcmp(gv->name, name->str, (size_t)name->len) == 0) {
+          found = 1; break;
+        }
+      }
+      if (!found) {
+        global_var_t *gv = calloc(1, sizeof(global_var_t));
+        gv->name = name->str;
+        gv->name_len = name->len;
+        gv->type_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
+        gv->deref_size = g_toplevel_decl_elem_size;
+        gv->is_extern_decl = 1;
+        gv->next = global_vars;
+        global_vars = gv;
+      }
+      if (tk_consume('=')) psx_expr_assign(); // 初期化子（extern宣言では通常ないが消費する）
     }
     if (!tk_consume(',')) break;
   }

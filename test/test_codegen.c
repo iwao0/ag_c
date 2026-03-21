@@ -8,6 +8,7 @@
 // test_codegen は parser.o をリンクしないため、string_literals のダミー定義が必要
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
+global_var_t *global_vars = NULL;
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 

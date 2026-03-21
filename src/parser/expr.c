@@ -1586,6 +1586,21 @@ static node_t *primary(void) {
       return (node_t *)fr;
     }
 
+    // グローバル変数テーブルを検索
+    if (!var) {
+      for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+        if (gv->name_len == tok->len && memcmp(gv->name, tok->str, (size_t)tok->len) == 0) {
+          node_gvar_t *gvar_node = calloc(1, sizeof(node_gvar_t));
+          gvar_node->mem.base.kind = ND_GVAR;
+          gvar_node->mem.type_size = gv->type_size;
+          gvar_node->mem.deref_size = gv->deref_size;
+          gvar_node->name = gv->name;
+          gvar_node->name_len = gv->name_len;
+          return (node_t *)gvar_node;
+        }
+      }
+    }
+
     if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }

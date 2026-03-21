@@ -369,6 +369,13 @@ static void gen_lval(node_t *node) {
     gen_expr(node->lhs);
     return;
   }
+  if (node->kind == ND_GVAR) {
+    node_gvar_t *gv = (node_gvar_t *)node;
+    cg_emitf("  adrp x0, _%.*s@PAGE\n", gv->name_len, gv->name);
+    cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", gv->name_len, gv->name);
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
+  }
   if (node->kind != ND_LVAR) {
     diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_LVALUE, "%s (assignment target)",
                         diag_message_for(DIAG_ERR_CODEGEN_INVALID_LVALUE));
@@ -419,6 +426,21 @@ static void gen_expr(node_t *node) {
       cg_emitf("  str x0, [sp, #-16]!\n");
     }
     return;
+  case ND_GVAR: {
+    gen_lval(node);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    int ts = ((node_gvar_t *)node)->mem.type_size;
+    if (ts == 1)
+      cg_emitf("  ldrb w0, [x0]\n");
+    else if (ts == 2)
+      cg_emitf("  ldrh w0, [x0]\n");
+    else if (ts == 4)
+      cg_emitf("  ldr w0, [x0]\n");
+    else
+      cg_emitf("  ldr x0, [x0]\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
+  }
   case ND_DEREF:
     gen_expr(node->lhs);
     cg_emitf("  ldr x0, [sp], #16\n");
@@ -544,6 +566,7 @@ static void gen_expr(node_t *node) {
     node_t *target = node->lhs;
     int type_size = 8;
     if (target->kind == ND_LVAR) type_size = as_lvar(target)->mem.type_size;
+    else if (target->kind == ND_GVAR) type_size = ((node_gvar_t *)target)->mem.type_size ? ((node_gvar_t *)target)->mem.type_size : 8;
     else if (target->kind == ND_DEREF) type_size = as_mem(target)->type_size ? as_mem(target)->type_size : 8;
 
     gen_lval(target);
@@ -1127,4 +1150,26 @@ void gen_float_literals(void) {
     }
   }
   cg_emitf(".text\n");
+}
+
+void gen_global_vars(void) {
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    if (gv->is_extern_decl) continue; // extern宣言のみ: emit不要
+    if (gv->has_init) {
+      // 初期化済みグローバル変数: .data セクション
+      cg_emitf(".section __DATA,__data\n");
+      cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+      cg_emitf(".align 2\n");
+      cg_emitf("_%.*s:\n", gv->name_len, gv->name);
+      if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
+      else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
+      else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
+      else cg_emitf("  .quad %lld\n", gv->init_val);
+    } else {
+      // 暫定定義: .comm
+      // .comm _name,size,log2align
+      int log2align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
+      cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+    }
+  }
 }
