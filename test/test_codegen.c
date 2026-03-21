@@ -158,7 +158,7 @@ static void test_gen_add(void) {
   capture_start();
   gen(n);
   char *out = capture_end();
-  ASSERT_TRUE(strstr(out, "add x0, x0, x1") != NULL);
+  ASSERT_TRUE(strstr(out, "add x0, x9, x10") != NULL);
   free(out);
 }
 
@@ -186,7 +186,7 @@ static void test_gen_sub(void) {
   capture_start();
   gen(n);
   char *out = capture_end();
-  ASSERT_TRUE(strstr(out, "sub x0, x0, x1") != NULL);
+  ASSERT_TRUE(strstr(out, "sub x0, x9, x10") != NULL);
   free(out);
 }
 
@@ -196,7 +196,7 @@ static void test_gen_mul(void) {
   capture_start();
   gen(n);
   char *out = capture_end();
-  ASSERT_TRUE(strstr(out, "mul x0, x0, x1") != NULL);
+  ASSERT_TRUE(strstr(out, "mul x0, x9, x10") != NULL);
   free(out);
 }
 
@@ -206,7 +206,7 @@ static void test_gen_div(void) {
   capture_start();
   gen(n);
   char *out = capture_end();
-  ASSERT_TRUE(strstr(out, "sdiv x0, x0, x1") != NULL);
+  ASSERT_TRUE(strstr(out, "sdiv x0, x9, x10") != NULL);
   free(out);
 }
 

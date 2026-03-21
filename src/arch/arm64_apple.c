@@ -441,6 +441,127 @@ static void gen_lval(node_t *node) {
   cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
+// レジスタ割り付け最適化のネスト防止フラグ
+// gen_expr_to_reg 実行中に gen_expr がフォールバック経由で再入した場合、
+// gen_expr 内部の register allocation が x9-x15 を上書きするのを防ぐ
+static int cg_inside_regalloc = 0;
+
+// レジスタ割り付け最適化: 式の部分木に関数呼び出しが含まれるか判定
+// (関数呼び出しは x9-x15 を破壊するため、含まれる場合はスタックモードにフォールバック)
+static int cg_has_funcall(node_t *node) {
+  if (!node) return 0;
+  if (node->kind == ND_FUNCALL) return 1;
+  if (node->kind == ND_TERNARY) {
+    node_ctrl_t *c = as_ctrl(node);
+    return cg_has_funcall(c->base.lhs) || cg_has_funcall(c->base.rhs) || cg_has_funcall(c->els);
+  }
+  return cg_has_funcall(node->lhs) || cg_has_funcall(node->rhs);
+}
+
+// レジスタ割り付け最適化: 式の結果を x(9+depth) に直接生成する
+// 利用可能レジスタ: x9-x15 (7本)。depth+1 >= 7 の場合はスタックにフォールバック。
+// 整数式専用 (FPU 演算は対象外)。部分木に funcall がないことが前提。
+#define CG_REGALLOC_DEPTH_MAX 7
+
+static void gen_expr_to_reg(node_t *node, int depth) {
+  int reg = 9 + depth;
+
+  switch (node->kind) {
+  case ND_NUM:
+    cg_emitf("  mov x%d, #%lld\n", reg, as_num(node)->val);
+    return;
+
+  case ND_LVAR: {
+    if (node->fp_kind) break; // FPU はフォールバック
+    int off = 16 + as_lvar(node)->offset;
+    int ts = as_lvar(node)->mem.type_size;
+    if (ts == 1)      cg_emitf("  ldrb w%d, [x29, #%d]\n", reg, off);
+    else if (ts == 2) cg_emitf("  ldrh w%d, [x29, #%d]\n", reg, off);
+    else if (ts == 4) cg_emitf("  ldr w%d, [x29, #%d]\n", reg, off);
+    else              cg_emitf("  ldr x%d, [x29, #%d]\n", reg, off);
+    return;
+  }
+
+  case ND_GVAR: {
+    node_gvar_t *gv = (node_gvar_t *)node;
+    int ts = gv->mem.type_size;
+    cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
+    cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
+    if (ts == 1)      cg_emitf("  ldrb w%d, [x%d]\n", reg, reg);
+    else if (ts == 2) cg_emitf("  ldrh w%d, [x%d]\n", reg, reg);
+    else if (ts == 4) cg_emitf("  ldr w%d, [x%d]\n", reg, reg);
+    else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
+    return;
+  }
+
+  case ND_DEREF: {
+    if (as_mem(node)->bit_width > 0) break; // ビットフィールドはフォールバック
+    gen_expr_to_reg(node->lhs, depth);
+    int ts = as_mem(node)->type_size;
+    if (ts == 1)      cg_emitf("  ldrb w%d, [x%d]\n", reg, reg);
+    else if (ts == 2) cg_emitf("  ldrh w%d, [x%d]\n", reg, reg);
+    else if (ts == 4) cg_emitf("  ldr w%d, [x%d]\n", reg, reg);
+    else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
+    return;
+  }
+
+  case ND_STRING: {
+    node_string_t *s = as_string(node);
+    cg_emitf("  adrp x%d, %s@PAGE\n", reg, s->string_label);
+    cg_emitf("  add x%d, x%d, %s@PAGEOFF\n", reg, reg, s->string_label);
+    return;
+  }
+
+  case ND_ADDR:
+    if (node->lhs && node->lhs->kind == ND_LVAR) {
+      cg_emitf("  add x%d, x29, #%d\n", reg, 16 + as_lvar(node->lhs)->offset);
+      return;
+    }
+    break; // 複雑なケースはフォールバック
+
+  case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
+  case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
+  case ND_BITAND: case ND_BITXOR: case ND_BITOR:
+  case ND_SHL: case ND_SHR: {
+    if (node->fp_kind) break; // FPU はフォールバック
+    if (depth + 1 >= CG_REGALLOC_DEPTH_MAX) break; // レジスタ不足
+
+    gen_expr_to_reg(node->lhs, depth);
+    gen_expr_to_reg(node->rhs, depth + 1);
+    int r0 = reg, r1 = reg + 1;
+
+    switch (node->kind) {
+    case ND_ADD: cg_emitf("  add x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_SUB: cg_emitf("  sub x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_MUL: cg_emitf("  mul x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_DIV: cg_emitf("  sdiv x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_MOD:
+      cg_emitf("  sdiv x0, x%d, x%d\n", r0, r1);
+      cg_emitf("  msub x%d, x0, x%d, x%d\n", r0, r1, r0);
+      break;
+    case ND_EQ:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, eq\n", r0); break;
+    case ND_NE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, ne\n", r0); break;
+    case ND_LT:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, lt\n", r0); break;
+    case ND_LE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, le\n", r0); break;
+    case ND_BITAND: cg_emitf("  and x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_BITXOR: cg_emitf("  eor x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_BITOR:  cg_emitf("  orr x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_SHL: cg_emitf("  lsl x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_SHR: cg_emitf("  asr x%d, x%d, x%d\n", r0, r0, r1); break;
+    default: break;
+    }
+    return;
+  }
+
+  default:
+    break;
+  }
+
+  // フォールバック: スタックモード経由でレジスタにロード
+  gen_expr(node);
+  cg_emitf("  ldr x%d, [sp], #16\n", reg);
+}
+
 static void gen_expr(node_t *node) {
   switch (node->kind) {
   case ND_NUM:
@@ -885,6 +1006,39 @@ static void gen_expr(node_t *node) {
   }
 
   // 整数二項演算
+  if (!cg_inside_regalloc && !cg_has_funcall(node)) {
+    // レジスタ割り付け最適化: 子ノードの結果を x9/x10 に直接生成
+    // cg_inside_regalloc を設定してフォールバック時の再入を防止
+    cg_inside_regalloc = 1;
+    gen_expr_to_reg(node->lhs, 0);
+    gen_expr_to_reg(node->rhs, 1);
+
+    switch (node->kind) {
+    case ND_ADD:    cg_emitf("  add x0, x9, x10\n"); break;
+    case ND_SUB:    cg_emitf("  sub x0, x9, x10\n"); break;
+    case ND_MUL:    cg_emitf("  mul x0, x9, x10\n"); break;
+    case ND_DIV:    cg_emitf("  sdiv x0, x9, x10\n"); break;
+    case ND_MOD:
+      cg_emitf("  sdiv x0, x9, x10\n");
+      cg_emitf("  msub x0, x0, x10, x9\n");
+      break;
+    case ND_EQ:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, eq\n"); break;
+    case ND_NE:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, ne\n"); break;
+    case ND_LT:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, lt\n"); break;
+    case ND_LE:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, le\n"); break;
+    case ND_BITAND: cg_emitf("  and x0, x9, x10\n"); break;
+    case ND_BITXOR: cg_emitf("  eor x0, x9, x10\n"); break;
+    case ND_BITOR:  cg_emitf("  orr x0, x9, x10\n"); break;
+    case ND_SHL:    cg_emitf("  lsl x0, x9, x10\n"); break;
+    case ND_SHR:    cg_emitf("  asr x0, x9, x10\n"); break;
+    default: break;
+    }
+    cg_inside_regalloc = 0;
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
+  }
+
+  // フォールバック: funcall を含む場合またはレジスタ割り付け中はスタックモード
   gen_expr(node->lhs);
   gen_expr(node->rhs);
 
@@ -892,55 +1046,24 @@ static void gen_expr(node_t *node) {
   cg_emitf("  ldr x0, [sp], #16\n");
 
   switch (node->kind) {
-  case ND_ADD:
-    cg_emitf("  add x0, x0, x1\n");
-    break;
-  case ND_SUB:
-    cg_emitf("  sub x0, x0, x1\n");
-    break;
-  case ND_MUL:
-    cg_emitf("  mul x0, x0, x1\n");
-    break;
-  case ND_DIV:
-    cg_emitf("  sdiv x0, x0, x1\n");
-    break;
+  case ND_ADD:    cg_emitf("  add x0, x0, x1\n"); break;
+  case ND_SUB:    cg_emitf("  sub x0, x0, x1\n"); break;
+  case ND_MUL:    cg_emitf("  mul x0, x0, x1\n"); break;
+  case ND_DIV:    cg_emitf("  sdiv x0, x0, x1\n"); break;
   case ND_MOD:
     cg_emitf("  sdiv x2, x0, x1\n");
     cg_emitf("  msub x0, x2, x1, x0\n");
     break;
-  case ND_EQ:
-    cg_emitf("  cmp x0, x1\n");
-    cg_emitf("  cset x0, eq\n");
-    break;
-  case ND_NE:
-    cg_emitf("  cmp x0, x1\n");
-    cg_emitf("  cset x0, ne\n");
-    break;
-  case ND_LT:
-    cg_emitf("  cmp x0, x1\n");
-    cg_emitf("  cset x0, lt\n");
-    break;
-  case ND_LE:
-    cg_emitf("  cmp x0, x1\n");
-    cg_emitf("  cset x0, le\n");
-    break;
-  case ND_BITAND:
-    cg_emitf("  and x0, x0, x1\n");
-    break;
-  case ND_BITXOR:
-    cg_emitf("  eor x0, x0, x1\n");
-    break;
-  case ND_BITOR:
-    cg_emitf("  orr x0, x0, x1\n");
-    break;
-  case ND_SHL:
-    cg_emitf("  lsl x0, x0, x1\n");
-    break;
-  case ND_SHR:
-    cg_emitf("  asr x0, x0, x1\n");
-    break;
-  default:
-    break;
+  case ND_EQ:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, eq\n"); break;
+  case ND_NE:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, ne\n"); break;
+  case ND_LT:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, lt\n"); break;
+  case ND_LE:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, le\n"); break;
+  case ND_BITAND: cg_emitf("  and x0, x0, x1\n"); break;
+  case ND_BITXOR: cg_emitf("  eor x0, x0, x1\n"); break;
+  case ND_BITOR:  cg_emitf("  orr x0, x0, x1\n"); break;
+  case ND_SHL:    cg_emitf("  lsl x0, x0, x1\n"); break;
+  case ND_SHR:    cg_emitf("  asr x0, x0, x1\n"); break;
+  default: break;
   }
 
   cg_emitf("  str x0, [sp, #-16]!\n");
