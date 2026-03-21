@@ -981,7 +981,12 @@
     - 調査の結果、`funcdef()` 内の `skip_cv_qualifiers()` により既にパース可能だった
     - include/string.h の全プロトタイプに `const` 修飾を追加（C11 標準準拠）
     - 不要になった NOTE コメントから const 未対応の記述を削除
-  - [ ] 関数プロトタイプの引数型・戻り値型で typedef 名（`size_t`, `FILE *` 等）を使えるようにする（現状 `funcdef()` が typedef 名を戻り値型として認識できず、`is_toplevel_function_signature()` も複合型キーワード `unsigned long` 等を正しく検出できない。include/stdio.h で `FILE *` を `void *` に、include/string.h で `size_t` を `long` に代替する原因になっている）
+  - [x] 関数プロトタイプの引数型・戻り値型で typedef 名（`size_t`, `FILE *` 等）を使えるようにする
+    - `funcdef()` で `psx_consume_type_kind()` が `TK_EOF` を返した場合に typedef 名をチェックし、基底型を解決するよう修正
+    - `is_toplevel_function_signature()` で複合型キーワード（`unsigned long` 等）を全てスキップするよう修正（関数定義の検出漏れを修正）
+    - `include/string.h`: `long` → `size_t` に変更、`#include <stddef.h>` を追加
+    - `include/stdio.h`: `void *` → `FILE *` に変更、`typedef void FILE` を定義、`const` 修飾追加、`#include <stddef.h>` を追加
+    - E2E テスト 4 ケース追加（typedef 戻り値型の関数定義・プロトタイプ、ポインタ戻り値 typedef、unsigned long 戻り値型関数定義）、全 363 テスト通過
 
 ### `restrict` 修飾子セマンティクス
 - [x] `restrict` の制約チェック方針を仕様化する

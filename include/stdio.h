@@ -1,40 +1,39 @@
 #ifndef _STDIO_H
 #define _STDIO_H
 
-/* NOTE: C11 標準では FILE * を使うが、現パーサーが typedef 名の
- * 引数型・戻り値型に未対応のため void * で代替している。
- * また const 修飾も省略している。 */
+#include <stddef.h>
 
-#define NULL ((void *)0)
+typedef void FILE;
+
 #define EOF  (-1)
 
 /* Formatted output */
-int printf(char *fmt, ...);
-int fprintf(void *stream, char *fmt, ...);
-int sprintf(char *buf, char *fmt, ...);
-int snprintf(char *buf, long size, char *fmt, ...);
+int printf(const char *fmt, ...);
+int fprintf(FILE *stream, const char *fmt, ...);
+int sprintf(char *buf, const char *fmt, ...);
+int snprintf(char *buf, size_t size, const char *fmt, ...);
 
 /* Character output */
-int puts(char *s);
+int puts(const char *s);
 int putchar(int c);
-int fputs(char *s, void *stream);
-int fputc(int c, void *stream);
+int fputs(const char *s, FILE *stream);
+int fputc(int c, FILE *stream);
 
 /* Character input */
 int getchar(void);
-int fgetc(void *stream);
-char *fgets(char *s, int size, void *stream);
+int fgetc(FILE *stream);
+char *fgets(char *s, int size, FILE *stream);
 
 /* File operations */
-void *fopen(char *path, char *mode);
-int fclose(void *stream);
-int fflush(void *stream);
+FILE *fopen(const char *path, const char *mode);
+int fclose(FILE *stream);
+int fflush(FILE *stream);
 
 /* Binary I/O */
-long fread(void *ptr, long size, long nmemb, void *stream);
-long fwrite(void *ptr, long size, long nmemb, void *stream);
+size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 
 /* Error */
-void perror(char *s);
+void perror(const char *s);
 
 #endif

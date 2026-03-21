@@ -282,8 +282,15 @@ node_t **ps_program(void) {
 static int is_toplevel_function_signature(token_t *tok) {
   if (!tok) return 0;
   token_t *t = skip_decl_prefix_lookahead(tok);
-  if (!t || (!psx_ctx_is_type_token(t->kind) && !psx_ctx_is_typedef_name_token(t))) return 0;
-  t = t->next;
+  if (!t) return 0;
+  if (psx_ctx_is_type_token(t->kind)) {
+    // 複合型キーワード（unsigned long 等）を全てスキップ
+    while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
+  } else if (psx_ctx_is_typedef_name_token(t)) {
+    t = t->next; // typedef 名は1トークン
+  } else {
+    return 0;
+  }
   while (t && t->kind == TK_MUL) t = t->next;
   if (!t || t->kind != TK_IDENT) return 0;
   return t->next && t->next->kind == TK_LPAREN;
@@ -1105,6 +1112,29 @@ static node_t *funcdef(void) {
     while (token->kind == TK_MUL) { token = token->next; ret_is_ptr = 1; } // skip optional pointer(s)
   } else {
     ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
+    if (ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(token)) {
+      // typedef 名を戻り値型として認識（size_t, FILE 等）
+      token_ident_t *td_id = (token_ident_t *)token;
+      token_kind_t td_base = TK_EOF;
+      int td_elem = 8;
+      tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+      token_kind_t td_tag = TK_EOF;
+      char *td_tag_name = NULL;
+      int td_tag_len = 0;
+      int td_is_ptr = 0;
+      psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
+                                &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr);
+      token = token->next;
+      ret_kind = td_base;
+      ret_fp_kind = td_fp;
+      if (td_is_ptr) ret_is_ptr = 1;
+      if (td_tag != TK_EOF) {
+        ret_tag = calloc(1, sizeof(token_ident_t));
+        ret_tag->str = td_tag_name;
+        ret_tag->len = td_tag_len;
+        ret_kind = td_tag; // struct/union として扱う
+      }
+    }
     if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
     else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
     while (token->kind == TK_MUL) { token = token->next; ret_is_ptr = 1; }
