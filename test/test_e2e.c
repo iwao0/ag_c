@@ -404,6 +404,12 @@ static const test_case_t test_cases[] = {
     {"stdheader", "float_flt_max", CASE_INT, "#include <float.h>\nint main() { float f = FLT_MAX; return f > 1.0F ? 42 : 0; }", 42, 0},
     {"stdheader", "float_dbl_epsilon", CASE_INT, "#include <float.h>\nint main() { double e = DBL_EPSILON; return e > 0.0 && e < 1.0 ? 42 : 0; }", 42, 0},
     {"stdheader", "float_flt_radix", CASE_INT, "#include <float.h>\nint main() { return FLT_RADIX == 2 ? 42 : 0; }", 42, 0},
+    {"stdheader", "string_strlen", CASE_INT, "#include <string.h>\nint main() { return (int)strlen(\"hello\"); }", 5, 0},
+    {"stdheader", "string_strcmp", CASE_INT, "#include <string.h>\nint main() { return strcmp(\"abc\", \"abc\") == 0 ? 42 : 0; }", 42, 0},
+    {"stdheader", "string_memset", CASE_INT,
+     "#include <string.h>\n"
+     "int main() { char buf[4]; memset(buf, 0, 4); return buf[0] == 0 && buf[3] == 0 ? 42 : 0; }",
+     42, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_INT,
      "#include <stdarg.h>\n"
@@ -752,7 +758,23 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
         if (strcmp(sym, "_printf") == 0 || (sym[1] == '_') ||
             strcmp(sym, "_TEXT") == 0 || strcmp(sym, "_cstring") == 0 ||
             strcmp(sym, "_literal4") == 0 || strcmp(sym, "_literal8") == 0 ||
-            strcmp(sym, "_literal16") == 0 || strcmp(sym, "_const") == 0) {
+            strcmp(sym, "_literal16") == 0 || strcmp(sym, "_const") == 0 ||
+            strcmp(sym, "_strcmp") == 0 || strcmp(sym, "_strncmp") == 0 ||
+            strcmp(sym, "_strlen") == 0 || strcmp(sym, "_strcpy") == 0 ||
+            strcmp(sym, "_strncpy") == 0 || strcmp(sym, "_strcat") == 0 ||
+            strcmp(sym, "_strncat") == 0 || strcmp(sym, "_strchr") == 0 ||
+            strcmp(sym, "_strrchr") == 0 || strcmp(sym, "_strstr") == 0 ||
+            strcmp(sym, "_strtok") == 0 || strcmp(sym, "_strerror") == 0 ||
+            strcmp(sym, "_memcpy") == 0 || strcmp(sym, "_memmove") == 0 ||
+            strcmp(sym, "_memcmp") == 0 || strcmp(sym, "_memchr") == 0 ||
+            strcmp(sym, "_memset") == 0 ||
+            strcmp(sym, "_malloc") == 0 || strcmp(sym, "_calloc") == 0 ||
+            strcmp(sym, "_realloc") == 0 || strcmp(sym, "_free") == 0 ||
+            strcmp(sym, "_exit") == 0 || strcmp(sym, "_abort") == 0 ||
+            strcmp(sym, "_atoi") == 0 || strcmp(sym, "_atol") == 0 ||
+            strcmp(sym, "_puts") == 0 || strcmp(sym, "_fprintf") == 0 ||
+            strcmp(sym, "_sprintf") == 0 || strcmp(sym, "_snprintf") == 0 ||
+            strcmp(sym, "_va_start") == 0 || strcmp(sym, "_va_end") == 0) {
           fputs(sym, out);
         } else {
           fprintf(out, "_%s_%s", prefix, sym + 1);

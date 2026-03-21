@@ -986,7 +986,10 @@
   - [x] `test_e2e` に `limits_int_max`, `limits_int_min`, `limits_char_bit` の 3 テストを追加して 330 テスト通過を確認
 - [x] `<float.h>` を追加する（`FLT_RADIX`, `FLT_DIG/DBL_DIG`, `FLT_MANT_DIG/DBL_MANT_DIG`, `FLT_MIN/MAX`, `DBL_MIN/MAX`, `FLT_EPSILON/DBL_EPSILON`, `FLT_ROUNDS`, `DECIMAL_DIG` 等 C11 準拠の浮動小数点定数を定義）
   - [x] `test_e2e` に `float_flt_max`, `float_dbl_epsilon`, `float_flt_radix` の 3 テストを追加（351テスト通過）
-- [ ] `<string.h>` スタブを追加する（`memcpy`, `memset`, `strlen` 等の宣言のみ）
+- [x] `<string.h>` スタブを追加する（`memcpy`, `memmove`, `strcpy`, `strncpy`, `strcat`, `strncat`, `memcmp`, `strcmp`, `strncmp`, `memchr`, `strchr`, `strrchr`, `strstr`, `strtok`, `memset`, `strlen`, `strerror` の宣言）
+  - [x] E2Eテストのシンボルリネーム処理に libc 関数ホワイトリストを追加
+  - [x] パーサーの `funcdef()` でポインタ戻り値型（`void *`, `char *` 等）に対応
+  - [x] `test_e2e` に `string_strlen`, `string_strcmp`, `string_memset` の 3 テストを追加（354テスト通過）
 - [ ] `<stdio.h>` スタブを追加する（`printf`, `fprintf`, `sprintf` 等の宣言のみ）
 - [ ] `<stdlib.h>` スタブを追加する（`malloc`, `free`, `exit`, `atoi` 等の宣言のみ）
 
