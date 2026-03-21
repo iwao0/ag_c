@@ -975,6 +975,7 @@
   - [x] `test_e2e` の診断テスト（compile_fail_cases）に const 違反 3 ケースを追加（348テスト通過）
   - [ ] `int *p = const_ptr;` のような暗黙の const 外れを警告/エラーとする（未実装）
   - [ ] 関数プロトタイプの引数型で `const` 修飾を受理できるようにする（現状 `void *memcpy(void *dest, const void *src, size_t n);` がパース不可。include/string.h 等で const を省略する原因になっている）
+  - [ ] 関数プロトタイプの引数型・戻り値型で typedef 名（`size_t`, `FILE *` 等）を使えるようにする（現状 `funcdef()` が typedef 名を戻り値型として認識できず、`is_toplevel_function_signature()` も複合型キーワード `unsigned long` 等を正しく検出できない。include/stdio.h で `FILE *` を `void *` に、include/string.h で `size_t` を `long` に代替する原因になっている）
 
 ### `restrict` 修飾子セマンティクス
 - [x] `restrict` の制約チェック方針を仕様化する
