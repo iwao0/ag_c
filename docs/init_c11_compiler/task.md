@@ -976,15 +976,16 @@
   - [ ] `int *p = const_ptr;` のような暗黙の const 外れを警告/エラーとする（未実装）
 
 ### `restrict` 修飾子セマンティクス
-- [ ] `restrict` の制約チェック方針を仕様化する
-  - [ ] 現状: パーサーで受理するのみ、意味処理なし
-  - [ ] 方針として「意味処理は実施しない（optimizer 向け hint として将来対応）」と明文化する
+- [x] `restrict` の制約チェック方針を仕様化する
+  - [x] 現状: パーサーで受理するのみ、意味処理なし
+  - [x] 方針: 意味処理は実施しない。C11 仕様上 `restrict` は optimizer 向け hint であり、違反は未定義動作だがコンパイルエラーではない。将来 optimizer を実装する際に alias analysis で活用する可能性はあるが、現段階では受理のみで十分。
 
 ## 標準ヘッダ追加バックログ候補（2026-03-20 棚卸し）
 - [x] `<limits.h>` を追加する（`INT_MAX`, `LONG_MAX` 等 — 現状は `<stdint.h>` 側のみ）
   - [x] `include/limits.h` に `CHAR_BIT`, `SCHAR_MIN/MAX`, `CHAR_MIN/MAX`, `SHRT_MIN/MAX`, `INT_MIN/MAX`, `UINT_MAX`, `LONG_MIN/MAX`, `ULONG_MAX`, `LLONG_MIN/MAX`, `ULLONG_MAX` を定義
   - [x] `test_e2e` に `limits_int_max`, `limits_int_min`, `limits_char_bit` の 3 テストを追加して 330 テスト通過を確認
-- [ ] `<float.h>` を追加する（`FLT_MAX`, `DBL_EPSILON` 等の浮動小数点定数）
+- [x] `<float.h>` を追加する（`FLT_RADIX`, `FLT_DIG/DBL_DIG`, `FLT_MANT_DIG/DBL_MANT_DIG`, `FLT_MIN/MAX`, `DBL_MIN/MAX`, `FLT_EPSILON/DBL_EPSILON`, `FLT_ROUNDS`, `DECIMAL_DIG` 等 C11 準拠の浮動小数点定数を定義）
+  - [x] `test_e2e` に `float_flt_max`, `float_dbl_epsilon`, `float_flt_radix` の 3 テストを追加（351テスト通過）
 - [ ] `<string.h>` スタブを追加する（`memcpy`, `memset`, `strlen` 等の宣言のみ）
 - [ ] `<stdio.h>` スタブを追加する（`printf`, `fprintf`, `sprintf` 等の宣言のみ）
 - [ ] `<stdlib.h>` スタブを追加する（`malloc`, `free`, `exit`, `atoi` 等の宣言のみ）
