@@ -82,9 +82,15 @@ bench: $(BENCH_TOKENIZER) $(BENCH_PARSER)
 	$(BENCH_TOKENIZER)
 	$(BENCH_PARSER)
 
+release: CFLAGS=-std=c11 -Oz -DNDEBUG -flto -Wall -Wextra
+release: CFLAGS+=$(if $(filter all,$(DIAG_LANG)),-DDIAG_LANG_ALL,$(if $(filter en,$(DIAG_LANG)),-DDIAG_LANG_EN,-DDIAG_LANG_JA))
+release: $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+	strip $(TARGET)
+
 clean:
 	rm -rf build
 
-.PHONY: test clean bench
+.PHONY: test clean bench release
 
 -include $(DEPS)

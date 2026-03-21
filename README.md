@@ -8,6 +8,17 @@ AntigravityとCodexで作ったCコンパイラ
 make
 ```
 
+リリースビルド（サイズ最適化: `-Oz` + LTO + `strip`）:
+
+```sh
+make release
+```
+
+| ビルド | サイズ | 説明 |
+|--------|--------|------|
+| `make` | 562 KB | デバッグ情報あり（`-g -O0`） |
+| `make release` | 406 KB | サイズ最適化（`-Oz -flto -DNDEBUG` + `strip`）、28%削減 |
+
 ビルド後の実行ファイル:
 
 - `build/ag_c`
