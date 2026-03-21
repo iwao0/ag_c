@@ -157,6 +157,16 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
   exit(1);
 }
 
+void diag_warn_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  if (tok && tok->file_name) fprintf(stderr, "%s:%d: ", tok->file_name, tok->line_no);
+  fprintf(stderr, "%s: %s: ", diag_error_code(id), diag_text_for(DIAG_TEXT_WARNING));
+  vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "\n");
+  va_end(ap);
+}
+
 /**
  * @brief 内部診断を出力して終了する。
  * @param id エラーID。

@@ -1150,6 +1150,10 @@ static node_t *funcdef(void) {
     else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
     while (token->kind == TK_MUL) { token = token->next; ret_is_ptr = 1; }
   }
+  if (ret_kind == TK_EOF) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, token,
+                   "%s", diag_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
+  }
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   // 構造体戻り値の場合、サイズを記録（ポインタ戻り値は除く）

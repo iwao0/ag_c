@@ -53,6 +53,14 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
     __attribute__((noreturn));
 
 /**
+ * @brief トークン位置を指定して警告を出力する（プロセスは終了しない）。
+ * @param id 警告ID。
+ * @param tok 警告位置を表すトークン。
+ * @param fmt 可変引数付きフォーマット文字列。
+ */
+void diag_warn_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...);
+
+/**
  * @brief 入力位置なしの内部診断を出力し、プロセスを終了する。
  * @param id 出力するエラーID。
  * @param fmt 可変引数付きフォーマット文字列。
