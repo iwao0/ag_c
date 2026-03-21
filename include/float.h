@@ -1,5 +1,5 @@
-#ifndef AGC_FLOAT_H
-#define AGC_FLOAT_H
+#ifndef _FLOAT_H
+#define _FLOAT_H
 
 /* Radix of exponent representation */
 #define FLT_RADIX      2

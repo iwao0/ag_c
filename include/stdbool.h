@@ -1,5 +1,5 @@
-#ifndef AGC_STDBOOL_H
-#define AGC_STDBOOL_H
+#ifndef _STDBOOL_H
+#define _STDBOOL_H
 
 #define bool  _Bool
 #define true  1

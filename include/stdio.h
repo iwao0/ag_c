@@ -1,7 +1,7 @@
-#ifndef AGC_STDIO_H
-#define AGC_STDIO_H
+#ifndef _STDIO_H
+#define _STDIO_H
 
-int printf();
-int puts();
+int printf(char *fmt, ...);
+int puts(char *s);
 
 #endif

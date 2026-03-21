@@ -1,5 +1,5 @@
-#ifndef AGC_STDDEF_H
-#define AGC_STDDEF_H
+#ifndef _STDDEF_H
+#define _STDDEF_H
 
 typedef unsigned long size_t;
 typedef long ptrdiff_t;

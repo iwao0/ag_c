@@ -1,5 +1,5 @@
-#ifndef AGC_LIMITS_H
-#define AGC_LIMITS_H
+#ifndef _LIMITS_H
+#define _LIMITS_H
 
 #define CHAR_BIT   8
 

@@ -974,6 +974,7 @@
   - [x] 複合代入（`+=` 等）・インクリメント/デクリメント（`++`/`--`）も同様にエラー
   - [x] `test_e2e` の診断テスト（compile_fail_cases）に const 違反 3 ケースを追加（348テスト通過）
   - [ ] `int *p = const_ptr;` のような暗黙の const 外れを警告/エラーとする（未実装）
+  - [ ] 関数プロトタイプの引数型で `const` 修飾を受理できるようにする（現状 `void *memcpy(void *dest, const void *src, size_t n);` がパース不可。include/string.h 等で const を省略する原因になっている）
 
 ### `restrict` 修飾子セマンティクス
 - [x] `restrict` の制約チェック方針を仕様化する
@@ -992,6 +993,9 @@
   - [x] `test_e2e` に `string_strlen`, `string_strcmp`, `string_memset` の 3 テストを追加（354テスト通過）
 - [ ] `<stdio.h>` スタブを追加する（`printf`, `fprintf`, `sprintf` 等の宣言のみ）
 - [ ] `<stdlib.h>` スタブを追加する（`malloc`, `free`, `exit`, `atoi` 等の宣言のみ）
+- [x] include 以下のヘッダファイルを整備する
+  - [x] インクルードガードの `AGC_` プレフィックスを `_ヘッダ名_H` 形式に変更（stdint.h, stddef.h, stdbool.h, stdio.h, limits.h, float.h, string.h の 7 ファイル。stdarg.h は既に `_STDARG_H`）
+  - [x] 関数宣言の引数を明示（stdio.h: `printf(char *fmt, ...)`, `puts(char *s)`。string.h: 全 17 関数に引数型を記載。パーサー制約により const 修飾と size_t 戻り値型は省略、ヘッダ内にコメントで明記）
 
 ## Codegen レジスタ割り付け最適化（2026-03-21 棚卸し）
 
