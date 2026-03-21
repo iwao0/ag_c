@@ -369,6 +369,9 @@ static const test_case_t test_cases[] = {
     {"alignas", "lvar_value",  CASE_INT, "int main() { _Alignas(16) int a = 42; return a; }", 42, 0},
     {"alignas", "lvar_align",  CASE_INT, "int main() { int pad = 1; _Alignas(16) int a = 42; long addr = (long)&a; return addr % 16 == 0 ? a : 0; }", 42, 0},
     {"alignas", "struct_member", CASE_INT, "int main() { struct S { char pad; _Alignas(8) int x; }; return (int)sizeof(struct S) == 16 ? 42 : 0; }", 42, 0},
+    // フレキシブル配列メンバー
+    {"flex_array", "sizeof_flex", CASE_INT, "int main() { struct F { int len; int data[]; }; return (int)sizeof(struct F); }", 4, 0},
+    {"flex_array", "parse_ok", CASE_INT, "int main() { struct F { int n; char buf[]; }; return 0; }", 0, 0},
     // #pragma pack
     {"pragma_pack", "pack1_sizeof", CASE_INT,
      "#pragma pack(push, 1)\n"

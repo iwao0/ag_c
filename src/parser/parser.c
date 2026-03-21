@@ -640,12 +640,19 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       bf_bits_used = 0;
 
       int arr_size = 1;
+      int is_flex_array = 0;
       while (tk_consume('[')) {
         if (!has_member_name) psx_diag_missing(token, "メンバ名");
-        arr_size *= parse_array_size_constexpr_toplevel();
+        if (token->kind == TK_RBRACKET) {
+          // フレキシブル配列メンバー: int data[];
+          is_flex_array = 1;
+          arr_size = 0;
+        } else {
+          arr_size *= parse_array_size_constexpr_toplevel();
+        }
         tk_expect(']');
       }
-      int total_size = is_ptr ? 8 : elem_size * arr_size;
+      int total_size = is_flex_array ? 0 : (is_ptr ? 8 : elem_size * arr_size);
       int deref_size = is_ptr ? elem_size : 0;
       int member_align = is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
