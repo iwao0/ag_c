@@ -10,6 +10,7 @@ int psx_node_type_size(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.type_size;
+    case ND_GVAR: return as_mem(node)->type_size;
     case ND_DEREF:
     case ND_ASSIGN:
     case ND_ADDR:
@@ -26,6 +27,7 @@ int psx_node_deref_size(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.deref_size;
+    case ND_GVAR: return as_mem(node)->deref_size;
     case ND_DEREF:
     case ND_ASSIGN:
     case ND_ADDR:
@@ -51,6 +53,7 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         len = as_lvar(node)->mem.tag_len;
         ptr = as_lvar(node)->mem.is_tag_pointer;
         break;
+      case ND_GVAR:
       case ND_DEREF:
       case ND_ASSIGN:
       case ND_ADDR:
@@ -121,7 +124,7 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
 }
 
 void psx_node_expect_lvalue(node_t *node, const char *op) {
-  if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF)) {
+  if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF && node->kind != ND_GVAR)) {
     diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
                    diag_message_for(DIAG_ERR_PARSER_LVALUE_REQUIRED), (char *)op);
   }

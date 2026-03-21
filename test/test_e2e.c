@@ -493,6 +493,24 @@ static const test_case_t test_cases[] = {
      "extern inline int sub(int a, int b) { return a - b; }"
      "int main() { return sub(50, 8); }",
      42, 0},
+    // グローバル変数: 暫定定義
+    {"global_var", "tentative_rw", CASE_INT,
+     "int g; int main() { g = 42; return g; }",
+     42, 0},
+    {"global_var", "tentative_multi_func", CASE_INT,
+     "int g; int set_g(int v) { g = v; return 0; } int main() { set_g(42); return g; }",
+     42, 0},
+    // グローバル変数: 初期化済み定義
+    {"global_var", "initialized", CASE_INT,
+     "int g = 42; int main() { return g; }",
+     42, 0},
+    {"global_var", "initialized_modified", CASE_INT,
+     "int g = 10; int main() { g = g + 32; return g; }",
+     42, 0},
+    // ローカルスコープのextern宣言
+    {"global_var", "local_extern", CASE_INT,
+     "int g = 42; int main() { extern int g; return g; }",
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

@@ -723,8 +723,8 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     copy_select->base.rhs = then_prefix ? psx_node_new_binary(ND_COMMA, then_prefix, then_copy) : then_copy;
     copy_select->els = else_prefix ? psx_node_new_binary(ND_COMMA, else_prefix, else_copy) : else_copy;
     init_chain = (node_t *)copy_select;
-  } else if (var->size <= 8 && value) {
-    // ≤8B struct: 関数呼び出し結果などの非lvar式を 8B assign で初期化
+  } else if (var->size <= 8 && value && value->kind == ND_FUNCALL) {
+    // ≤8B struct: 関数呼び出し結果の非lvar式を 8B assign で初期化
     node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     assign_node->type_size = var->size;
@@ -1165,11 +1165,61 @@ node_t *psx_decl_parse_declaration(void) {
   int is_const_qualified = 0;
   int is_volatile_qualified = 0;
   psx_take_type_qualifiers(&is_const_qualified, &is_volatile_qualified);
+  int is_extern_decl = 0;
+  psx_take_extern_flag(&is_extern_decl);
   int elem_size = 8;
   psx_ctx_get_type_info(type_kind, NULL, &elem_size);
   tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
   if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
+
+  if (is_extern_decl) {
+    // ローカルextern宣言: グローバルテーブルに登録してローカル変数は作らない
+    for (;;) {
+      int is_ptr = 0;
+      while (token->kind == TK_MUL) {
+        is_ptr = 1;
+        token = token->next;
+        while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT)
+          token = token->next;
+      }
+      if (token->kind != TK_IDENT) break;
+      token_ident_t *name = (token_ident_t *)token;
+      token = token->next;
+      // 配列宣言子を消費
+      while (token->kind == TK_LBRACKET) {
+        token = token->next;
+        while (token->kind != TK_RBRACKET && token->kind != TK_EOF) token = token->next;
+        if (token->kind == TK_RBRACKET) token = token->next;
+      }
+      // グローバルテーブルに登録（既存エントリがなければ）
+      int found = 0;
+      for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+        if (gv->name_len == name->len && memcmp(gv->name, name->str, (size_t)name->len) == 0) {
+          found = 1; break;
+        }
+      }
+      if (!found) {
+        global_var_t *gv = calloc(1, sizeof(global_var_t));
+        gv->name = name->str;
+        gv->name_len = name->len;
+        gv->type_size = is_ptr ? 8 : elem_size;
+        gv->deref_size = elem_size;
+        gv->is_extern_decl = 1;
+        gv->next = global_vars;
+        global_vars = gv;
+      }
+      if (token->kind == TK_ASSIGN) {
+        token = token->next;
+        psx_expr_assign();
+      }
+      if (token->kind != TK_COMMA) break;
+      token = token->next;
+    }
+    tk_expect(';');
+    return psx_node_new_num(0);
+  }
+
   return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0, 0,
                                                is_const_qualified, is_volatile_qualified);
 }

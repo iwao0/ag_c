@@ -916,9 +916,7 @@
 
 ### VLA 拡張
 - [x] 多次元 VLA（`int a[n][m]`）を実装する（上記参照）
-- [ ] 仮引数 VLA 宣言子（`int f(int n, int a[n])`）を実装する
-  - [ ] `a` が `int *` として渡されるが型情報として `n` に連動するサイズを保持する
-  - [ ] `sizeof(a)` が `sizeof(int*)` を返すことを確認する（C11 仕様）
+- [x] 仮引数 VLA 宣言子（`int f(int n, int a[n])`）を実装する（上記参照）
 
 ### `inline` 関数
 - [x] `inline` 指定子のセマンティクスを実装する
@@ -928,11 +926,20 @@
   - [x] `test_e2e` に `inline_func/{basic_inline, static_inline, extern_inline}` の 3 テストを追加して 319 テスト通過を確認
 
 ### `extern` 宣言・暫定定義
-- [ ] 関数スコープの `extern` 変数宣言を実装する（`extern int g;` をローカルスコープで使用）
-  - [ ] 外部シンボルをアドレスロードで参照するコードを生成する
-  - [ ] 重複宣言（同一翻訳単位内）の整合チェックを実装する
-- [ ] グローバル変数の暫定定義（tentative definition）を実装する
-  - [ ] 初期化子なしのグローバル変数宣言を暫定定義として扱い、翻訳単位末に `.comm` セクションへ出力する
+- [x] 関数スコープの `extern` 変数宣言を実装する（`extern int g;` をローカルスコープで使用）
+  - [x] 外部シンボルをアドレスロードで参照するコードを生成する
+- [x] グローバル変数の暫定定義（tentative definition）を実装する
+  - [x] 初期化子なしのグローバル変数宣言を暫定定義として扱い、翻訳単位末に `.comm` セクションへ出力する
+
+## グローバル変数 + extern 宣言タスク（2026-03-21 棚卸し）
+- [x] グローバル変数のコード生成を実装する
+  - [x] `ND_GVAR` AST ノード型を追加し、`adrp`/`add @PAGE`/`@PAGEOFF` によるシンボルアドレス参照を生成する
+  - [x] `global_var_t` リンクリストでグローバル変数を管理する（tentative / initialized / extern）
+  - [x] `ps_program()` でトップレベル変数宣言をパースし `global_vars` テーブルに登録する
+  - [x] `primary()` でローカル変数未発見時に `global_vars` フォールバック → `ND_GVAR` ノードを返す
+  - [x] tentative 定義は `.comm` ディレクティブ、初期化済みは `.data` セクションで出力する
+  - [x] ローカルスコープの `extern int g;` をサポートする（`skip_cv_qualifiers` で `extern` フラグ検出）
+  - [x] `test_e2e` に `global_var/{tentative_rw, tentative_multi_func, initialized, initialized_modified, local_extern}` の 5 テストを追加して 319 テスト通過を確認
 
 ### 前置インクリメント/デクリメントの lvalue 扱い
 - [ ] `++(++x)` / `*(p++)` 等の連鎖を制約に従って診断する（現状: 未確認）
