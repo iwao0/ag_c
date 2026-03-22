@@ -894,6 +894,18 @@ static const test_case_t test_cases[] = {
     {"evil", "static_assert_sizeof", CASE_INT,
      "int main() { _Static_assert(sizeof(int)==4, \"int is 4\"); return 0; }",
      0, 0},
+
+    // overflow / sign boundary tests
+    {"evil", "int_max_plus1_wraps", CASE_INT, "int main(){int x=2147483647;x=x+1;return x<0;}", 1, 0},
+    {"evil", "uint_max_plus1_zero", CASE_INT, "int main(){unsigned int x=4294967295u;x=x+1;return x==0;}", 1, 0},
+    {"evil", "uint_sub_wrap", CASE_INT, "int main(){unsigned int x=10;unsigned int y=20;unsigned int z=x-y;return z==4294967286u;}", 1, 0},
+    {"evil", "uint_mul_wrap", CASE_INT, "int main(){unsigned int x=65536u;unsigned int y=x*x;return y==0;}", 1, 0},
+    {"evil", "uint_shr_no_signext", CASE_INT, "int main(){unsigned int x=0x80000000u;unsigned int y=x>>1;return y==0x40000000u;}", 1, 0},
+    {"evil", "char_127_plus1", CASE_INT, "int main(){char c=127;c=c+1;return c==-128;}", 1, 0},
+    {"evil", "char_neg_to_uint", CASE_INT, "int main(){char c=-1;unsigned int u=(unsigned int)(unsigned char)c;return u==255;}", 1, 0},
+    {"evil", "neg_div_truncate", CASE_INT, "int main(){int x=-7;int y=2;return (x/y==-3)+(x%y==-1);}", 2, 0},
+    {"evil", "uint_div_large", CASE_INT, "int main(){unsigned int x=4294967295u;return x/2==2147483647u;}", 1, 0},
+    {"evil", "int_max_inc_wraps", CASE_INT, "int main(){int x=2147483647;x++;return x<0;}", 1, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
