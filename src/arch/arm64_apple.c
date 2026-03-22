@@ -439,8 +439,16 @@ static void gen_lval(node_t *node) {
   }
   if (node->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)node;
-    cg_emitf("  adrp x0, _%.*s@PAGE\n", gv->name_len, gv->name);
-    cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", gv->name_len, gv->name);
+    if (gv->is_thread_local) {
+      cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", gv->name_len, gv->name);
+      cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", gv->name_len, gv->name);
+      cg_emitf("  ldr x8, [x0]\n");
+      cg_emitf("  blr x8\n");
+      // resolver returns variable address in x0
+    } else {
+      cg_emitf("  adrp x0, _%.*s@PAGE\n", gv->name_len, gv->name);
+      cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", gv->name_len, gv->name);
+    }
     cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
@@ -497,6 +505,7 @@ static void gen_expr_to_reg(node_t *node, int depth) {
 
   case ND_GVAR: {
     node_gvar_t *gv = (node_gvar_t *)node;
+    if (gv->is_thread_local) break; // TLS uses blr -> fallback to stack mode
     int ts = gv->mem.type_size;
     int uns = gv->mem.is_unsigned;
     cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
@@ -534,6 +543,7 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     }
     if (node->lhs && node->lhs->kind == ND_GVAR) {
       node_gvar_t *gv = (node_gvar_t *)node->lhs;
+      if (gv->is_thread_local) break; // TLS uses blr -> fallback
       cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
       cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
       return;
@@ -653,10 +663,19 @@ static void gen_expr(node_t *node) {
     }
     return;
   case ND_GVAR: {
-    gen_lval(node);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    int ts = ((node_gvar_t *)node)->mem.type_size;
-    int is_uns = ((node_gvar_t *)node)->mem.is_unsigned;
+    node_gvar_t *gv_node = (node_gvar_t *)node;
+    if (gv_node->is_thread_local) {
+      // TLS access: resolve address via TLV descriptor
+      cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", gv_node->name_len, gv_node->name);
+      cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", gv_node->name_len, gv_node->name);
+      cg_emitf("  ldr x8, [x0]\n");
+      cg_emitf("  blr x8\n");
+    } else {
+      gen_lval(node);
+      cg_emitf("  ldr x0, [sp], #16\n");
+    }
+    int ts = gv_node->mem.type_size;
+    int is_uns = gv_node->mem.is_unsigned;
     if (ts == 1)
       cg_emitf(is_uns ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
     else if (ts == 2)
@@ -1653,7 +1672,27 @@ void gen_float_literals(void) {
 void gen_global_vars(void) {
   for (global_var_t *gv = global_vars; gv; gv = gv->next) {
     if (gv->is_extern_decl) continue; // extern宣言のみ: emit不要
-    if (gv->has_init) {
+    if (gv->is_thread_local) {
+      // _Thread_local: TLV descriptor + thread data/bss
+      if (gv->has_init) {
+        cg_emitf(".section __DATA,__thread_data\n");
+        cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
+        if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
+        else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
+        else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
+        else cg_emitf("  .quad %lld\n", gv->init_val);
+      } else {
+        cg_emitf(".section __DATA,__thread_bss\n");
+        cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
+        cg_emitf("  .space %d\n", gv->type_size);
+      }
+      cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
+      cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+      cg_emitf("_%.*s:\n", gv->name_len, gv->name);
+      cg_emitf("  .quad __tlv_bootstrap\n");
+      cg_emitf("  .quad 0\n");
+      cg_emitf("  .quad _%.*s$tlv$init\n", gv->name_len, gv->name);
+    } else if (gv->has_init) {
       // 初期化済みグローバル変数: .data セクション
       cg_emitf(".section __DATA,__data\n");
       cg_emitf(".global _%.*s\n", gv->name_len, gv->name);

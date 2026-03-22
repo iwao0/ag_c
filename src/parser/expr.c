@@ -1181,6 +1181,7 @@ static node_t *unary(void) {
         gvar_node->mem.deref_size = gv->deref_size;
         gvar_node->name = gv->name;
         gvar_node->name_len = gv->name_len;
+        gvar_node->is_thread_local = gv->is_thread_local;
         node_t *ref = (node_t *)gvar_node;
         return apply_postfix(ref);
       }
@@ -1699,6 +1700,7 @@ static node_t *primary(void) {
             base->mem.deref_size = gv->deref_size;
             base->name = gv->name;
             base->name_len = gv->name_len;
+            base->is_thread_local = gv->is_thread_local;
             node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
             addr->base.kind = ND_ADDR;
             addr->base.lhs = (node_t *)base;
@@ -1713,6 +1715,7 @@ static node_t *primary(void) {
           gvar_node->mem.deref_size = gv->deref_size;
           gvar_node->name = gv->name;
           gvar_node->name_len = gv->name_len;
+          gvar_node->is_thread_local = gv->is_thread_local;
           return (node_t *)gvar_node;
         }
       }

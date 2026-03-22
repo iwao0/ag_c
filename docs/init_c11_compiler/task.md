@@ -1077,8 +1077,13 @@
   - AArch64: `ldr` → `ldar`（load-acquire）、`str` → `stlr`（store-release）
   - [x] `is_atomic` フラグを `node_t`/`node_mem_t`/`lvar_t` に追加、パーサーで `_Atomic` qualifier 検出時に伝搬
   - [x] コードジェネレータで `ldar`/`ldarb`/`ldarh`（ロード）と `stlr`/`stlrb`/`stlrh`（ストア）を生成
-- [ ] `_Thread_local` のストレージ配置を実装する
-  - 現状: キーワード認識のみ。TLS（Thread-Local Storage）セグメントへの配置が未実装
+- [x] `_Thread_local` のストレージ配置を実装する
+  - macOS/AArch64 TLS ABI: `__DATA,__thread_vars` + `__DATA,__thread_data`/`__thread_bss` セクション使用
+  - TLV descriptor: `__tlv_bootstrap` resolver + key + init data pointer
+  - アクセスパターン: `adrp x0, @TLVPPAGE` / `ldr x0, [@TLVPPAGEOFF]` / `ldr x8, [x0]` / `blr x8` → x0に変数アドレス
+  - [x] パーサーで `_Thread_local` を検出し `global_var_t`/`node_gvar_t` に `is_thread_local` フラグを設定
+  - [x] コードジェネレータで TLV セクションへの配置と TLS resolver 経由のアクセスを生成
+  - [x] E2E テスト追加（init/store/arith の3ケース）
 
 ### Codegen 改善
 - [x] 関数呼び出しで 8 引数を超える場合のスタック渡しを実装する

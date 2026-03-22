@@ -193,6 +193,7 @@ struct node_gvar_t {
   node_mem_t mem;  // type_size, deref_size, tag info
   char *name;
   int name_len;
+  unsigned int is_thread_local : 1;
 };
 
 // グローバル変数テーブル（連結リスト）
@@ -206,6 +207,7 @@ struct global_var_t {
   unsigned int is_array : 1;       // 1: 配列
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int has_init : 1;       // 1: 初期化子あり
+  unsigned int is_thread_local : 1; // 1: _Thread_local
   long long init_val; // 初期値
 };
 extern global_var_t *global_vars;

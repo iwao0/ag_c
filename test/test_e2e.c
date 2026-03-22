@@ -321,6 +321,9 @@ static const test_case_t test_cases[] = {
     {"type_decl", "alignas_atomic_prefix", CASE_INT, "int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }", 7, 0},
     {"type_decl", "atomic_type_spec", CASE_INT, "int main() { _Atomic(int) z=5; return z; }", 5, 0},
     {"type_decl", "atomic_load_store", CASE_INT, "int main() { _Atomic int x=10; int y=x+32; return y; }", 42, 0},
+    {"type_decl", "thread_local_init", CASE_INT, "_Thread_local int tl_val=7; int main() { return tl_val; }", 7, 0},
+    {"type_decl", "thread_local_store", CASE_INT, "_Thread_local int tl_s=0; int main() { tl_s=99; return tl_s; }", 99, 0},
+    {"type_decl", "thread_local_arith", CASE_INT, "_Thread_local int tl_a=10; int main() { tl_a=tl_a+5; return tl_a; }", 15, 0},
     {"type_decl", "generic_int", CASE_INT, "int main() { return _Generic(1, int:11, default:22); }", 11, 0},
     {"type_decl", "generic_double", CASE_INT, "int main() { return _Generic(1.0, float:11, double:33, default:22); }", 33, 0},
     {"type_decl", "generic_ptr", CASE_INT, "int main() { int *p=0; return _Generic(p, int*:3, default:7); }", 3, 0},
@@ -803,10 +806,16 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
   char *line = NULL;
   size_t cap = 0;
   while (getline(&line, &cap, in) != -1) {
+    // .section ディレクティブはリネーム対象外（セクション名にシンボルが混在するため）
+    if (strncmp(line, ".section ", 9) == 0) {
+      fputs(line, out);
+      continue;
+    }
     size_t len = strlen(line);
     for (size_t i = 0; i < len; ) {
       if (line[i] == '_' && (i == 0 || line[i - 1] != '_') && i + 1 < len &&
-          ((line[i + 1] >= 'A' && line[i + 1] <= 'Z') || (line[i + 1] >= 'a' && line[i + 1] <= 'z'))) {
+          ((line[i + 1] >= 'A' && line[i + 1] <= 'Z') || (line[i + 1] >= 'a' && line[i + 1] <= 'z') ||
+           line[i + 1] == '_')) {
         size_t j = i + 1;
         while ((line[j] >= 'A' && line[j] <= 'Z') || (line[j] >= 'a' && line[j] <= 'z') ||
                (line[j] >= '0' && line[j] <= '9') || line[j] == '_') {

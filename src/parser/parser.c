@@ -26,6 +26,7 @@ static int g_last_alignas_value = 0;
 static int g_last_decl_is_extern = 0;
 static int g_toplevel_decl_elem_size = 8;
 static int g_toplevel_decl_is_extern = 0;
+static int g_toplevel_decl_is_thread_local = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -75,7 +76,8 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
   *out_len = len;
 }
 
-static int g_last_type_atomic;  // forward decl (defined below with other g_last_type_* vars)
+static int g_last_type_atomic;
+static int g_last_type_thread_local;
 
 static void skip_cv_qualifiers(void) {
   g_last_type_const_qualified = 0;
@@ -101,6 +103,9 @@ static void skip_cv_qualifiers(void) {
     }
     if (token->kind == TK_ATOMIC) {
       g_last_type_atomic = 1;
+    }
+    if (token->kind == TK_THREAD_LOCAL) {
+      g_last_type_thread_local = 1;
     }
     token = token->next;
   }
@@ -269,6 +274,7 @@ node_t **ps_program(void) {
         g_toplevel_decl_elem_size = 8;
         if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
         g_toplevel_decl_is_extern = g_last_decl_is_extern;
+        g_toplevel_decl_is_thread_local = g_last_type_thread_local;
       }
       parse_toplevel_decl_after_type();
       continue;
@@ -341,6 +347,7 @@ static void parse_toplevel_declarator_list(void) {
       gv->type_size = is_ptr ? 8 : g_toplevel_decl_elem_size * arr_total;
       gv->deref_size = g_toplevel_decl_elem_size;
       gv->is_array = is_array;
+      gv->is_thread_local = g_toplevel_decl_is_thread_local;
       if (tk_consume('=')) {
         node_t *init_expr = psx_expr_assign();
         if (init_expr && init_expr->kind == ND_NUM) {
@@ -933,6 +940,7 @@ token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
   g_last_type_complex = 0;
   g_last_type_atomic = 0;
+  g_last_type_thread_local = 0;
   skip_cv_qualifiers();
   if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
     g_last_type_atomic = 1;
