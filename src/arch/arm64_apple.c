@@ -1071,8 +1071,19 @@ static void gen_expr(node_t *node) {
 
   // _Complex 演算
   if (node->is_complex && fpu_op_type) {
-    gen_expr(node->lhs); // 16B スロット (実部+虚部)
-    gen_expr(node->rhs); // 16B スロット (実部+虚部)
+    gen_expr(node->lhs);
+    if (!node->lhs->is_complex) {
+      // スカラ→complex昇格: 虚部=0をスタックに追加
+      cg_emitf("  ldr d0, [sp], #16\n");
+      cg_emitf("  movi d1, #0\n");
+      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+    }
+    gen_expr(node->rhs);
+    if (!node->rhs->is_complex) {
+      cg_emitf("  ldr d0, [sp], #16\n");
+      cg_emitf("  movi d1, #0\n");
+      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+    }
     if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
       // _Complex double
       cg_emitf("  ldp d2, d3, [sp], #16\n"); // rhs: d2=実部, d3=虚部
