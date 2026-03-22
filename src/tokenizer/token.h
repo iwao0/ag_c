@@ -177,8 +177,8 @@ struct token_t {
   token_t *next;      // 次の入力トークン
   token_kind_t kind;  // トークンの型（hot）
   int line_no;        // 行番号
-  bool at_bol;        // 行頭(Beginning of Line)にあるか
-  bool has_space;     // 直前に空白文字があるか
+  unsigned int at_bol : 1;    // 行頭(Beginning of Line)にあるか
+  unsigned int has_space : 1; // 直前に空白文字があるか
   char *file_name;    // ファイル名（主にエラー表示）
 };
 

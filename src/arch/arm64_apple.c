@@ -1,5 +1,6 @@
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
+#include "../parser/internal/arena.h"
 #include "../parser/parser.h"
 #include "../tokenizer/internal/escape.h"
 #include <stdarg.h>
@@ -81,11 +82,12 @@ static void cg_emit_line(const char *line, size_t len) {
 }
 
 static void cg_emitf(const char *fmt, ...) {
+  char stack_buf[256];
   va_list ap;
   va_start(ap, fmt);
   va_list ap2;
   va_copy(ap2, ap);
-  int need_i = vsnprintf(NULL, 0, fmt, ap2);
+  int need_i = vsnprintf(stack_buf, sizeof(stack_buf), fmt, ap2);
   va_end(ap2);
   if (need_i < 0) {
     va_end(ap);
@@ -93,12 +95,17 @@ static void cg_emitf(const char *fmt, ...) {
                         diag_message_for(DIAG_ERR_CODEGEN_OUTPUT_FAILED));
   }
   size_t need = (size_t)need_i;
-  char *buf = malloc(need + 1);
-  if (!buf) {
-    va_end(ap);
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  char *buf = stack_buf;
+  char *heap_buf = NULL;
+  if (need >= sizeof(stack_buf)) {
+    heap_buf = malloc(need + 1);
+    if (!heap_buf) {
+      va_end(ap);
+      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    }
+    vsnprintf(heap_buf, need + 1, fmt, ap);
+    buf = heap_buf;
   }
-  vsnprintf(buf, need + 1, fmt, ap);
   va_end(ap);
   size_t start = 0;
   for (size_t i = 0; i < need; i++) {
@@ -110,7 +117,7 @@ static void cg_emitf(const char *fmt, ...) {
   if (start < need) {
     cg_emit_line(buf + start, need - start);
   }
-  free(buf);
+  free(heap_buf);
 }
 
 
@@ -207,7 +214,7 @@ static label_map_t *label_map_head = NULL;
 static void clear_label_map(void) { label_map_head = NULL; }
 
 static void add_label_map(char *name, int len, int id) {
-  label_map_t *m = calloc(1, sizeof(label_map_t));
+  label_map_t *m = arena_alloc(sizeof(label_map_t));
   m->name = name;
   m->len = len;
   m->id = id;
