@@ -119,25 +119,127 @@ const char *diag_text_for(diag_text_id_t id) {
  */
 static void print_token_actual(const token_t *tok) {
   if (!tok) return;
+  int is_ja = (strcmp(g_diag_locale, "ja") == 0);
+  const char *label = is_ja ? "実際のトークン" : "actual token";
   if (tok->kind == TK_IDENT) {
     const token_ident_t *id = (const token_ident_t *)tok;
     int n = id->len < 0 ? 0 : id->len;
-    fprintf(stderr, " (actual: '%.*s')", n, id->str);
+    fprintf(stderr, " (%s: '%.*s')", label, n, id->str);
     return;
   }
   if (tok->kind == TK_STRING) {
     const token_string_t *st = (const token_string_t *)tok;
     int n = st->len < 0 ? 0 : st->len;
-    fprintf(stderr, " (actual: '%.*s')", n, st->str);
+    fprintf(stderr, " (%s: '%.*s')", label, n, st->str);
     return;
   }
   if (tok->kind == TK_NUM) {
     const token_num_t *num = (const token_num_t *)tok;
     int n = num->len < 0 ? 0 : num->len;
-    fprintf(stderr, " (actual: '%.*s')", n, num->str);
+    fprintf(stderr, " (%s: '%.*s')", label, n, num->str);
     return;
   }
-  fprintf(stderr, " (actual-kind: %d)", (int)tok->kind);
+  const char *name = NULL;
+  switch (tok->kind) {
+  case TK_EOF: name = "EOF"; break;
+  case TK_IF: name = "if"; break;
+  case TK_ELSE: name = "else"; break;
+  case TK_WHILE: name = "while"; break;
+  case TK_FOR: name = "for"; break;
+  case TK_RETURN: name = "return"; break;
+  case TK_AUTO: name = "auto"; break;
+  case TK_BREAK: name = "break"; break;
+  case TK_CASE: name = "case"; break;
+  case TK_CONST: name = "const"; break;
+  case TK_CONTINUE: name = "continue"; break;
+  case TK_DEFAULT: name = "default"; break;
+  case TK_DO: name = "do"; break;
+  case TK_ENUM: name = "enum"; break;
+  case TK_EXTERN: name = "extern"; break;
+  case TK_GOTO: name = "goto"; break;
+  case TK_INLINE: name = "inline"; break;
+  case TK_INT: name = "int"; break;
+  case TK_REGISTER: name = "register"; break;
+  case TK_RESTRICT: name = "restrict"; break;
+  case TK_SIGNED: name = "signed"; break;
+  case TK_SIZEOF: name = "sizeof"; break;
+  case TK_STATIC: name = "static"; break;
+  case TK_STRUCT: name = "struct"; break;
+  case TK_SWITCH: name = "switch"; break;
+  case TK_TYPEDEF: name = "typedef"; break;
+  case TK_UNION: name = "union"; break;
+  case TK_UNSIGNED: name = "unsigned"; break;
+  case TK_VOLATILE: name = "volatile"; break;
+  case TK_CHAR: name = "char"; break;
+  case TK_VOID: name = "void"; break;
+  case TK_SHORT: name = "short"; break;
+  case TK_LONG: name = "long"; break;
+  case TK_FLOAT: name = "float"; break;
+  case TK_DOUBLE: name = "double"; break;
+  case TK_ALIGNAS: name = "_Alignas"; break;
+  case TK_ALIGNOF: name = "_Alignof"; break;
+  case TK_ATOMIC: name = "_Atomic"; break;
+  case TK_BOOL: name = "_Bool"; break;
+  case TK_COMPLEX: name = "_Complex"; break;
+  case TK_GENERIC: name = "_Generic"; break;
+  case TK_IMAGINARY: name = "_Imaginary"; break;
+  case TK_NORETURN: name = "_Noreturn"; break;
+  case TK_STATIC_ASSERT: name = "_Static_assert"; break;
+  case TK_THREAD_LOCAL: name = "_Thread_local"; break;
+  case TK_LPAREN: name = "("; break;
+  case TK_RPAREN: name = ")"; break;
+  case TK_LBRACE: name = "{"; break;
+  case TK_RBRACE: name = "}"; break;
+  case TK_LBRACKET: name = "["; break;
+  case TK_RBRACKET: name = "]"; break;
+  case TK_COMMA: name = ","; break;
+  case TK_SEMI: name = ";"; break;
+  case TK_ASSIGN: name = "="; break;
+  case TK_PLUS: name = "+"; break;
+  case TK_MINUS: name = "-"; break;
+  case TK_MUL: name = "*"; break;
+  case TK_DIV: name = "/"; break;
+  case TK_MOD: name = "%"; break;
+  case TK_BANG: name = "!"; break;
+  case TK_TILDE: name = "~"; break;
+  case TK_LT: name = "<"; break;
+  case TK_LE: name = "<="; break;
+  case TK_GT: name = ">"; break;
+  case TK_GE: name = ">="; break;
+  case TK_EQEQ: name = "=="; break;
+  case TK_NEQ: name = "!="; break;
+  case TK_ANDAND: name = "&&"; break;
+  case TK_OROR: name = "||"; break;
+  case TK_AMP: name = "&"; break;
+  case TK_PIPE: name = "|"; break;
+  case TK_CARET: name = "^"; break;
+  case TK_QUESTION: name = "?"; break;
+  case TK_COLON: name = ":"; break;
+  case TK_INC: name = "++"; break;
+  case TK_DEC: name = "--"; break;
+  case TK_SHL: name = "<<"; break;
+  case TK_SHR: name = ">>"; break;
+  case TK_ARROW: name = "->"; break;
+  case TK_PLUSEQ: name = "+="; break;
+  case TK_MINUSEQ: name = "-="; break;
+  case TK_MULEQ: name = "*="; break;
+  case TK_DIVEQ: name = "/="; break;
+  case TK_MODEQ: name = "%="; break;
+  case TK_SHLEQ: name = "<<="; break;
+  case TK_SHREQ: name = ">>="; break;
+  case TK_ANDEQ: name = "&="; break;
+  case TK_XOREQ: name = "^="; break;
+  case TK_OREQ: name = "|="; break;
+  case TK_ELLIPSIS: name = "..."; break;
+  case TK_HASH: name = "#"; break;
+  case TK_HASHHASH: name = "##"; break;
+  case TK_DOT: name = "."; break;
+  default: break;
+  }
+  if (name)
+    fprintf(stderr, " (%s: '%s')", label, name);
+  else
+    fprintf(stderr, is_ja ? " (実際のトークン種別: %d)" : " (actual token kind: %d)", (int)tok->kind);
 }
 
 /**
