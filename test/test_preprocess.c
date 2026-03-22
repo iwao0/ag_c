@@ -49,6 +49,40 @@ static const success_case_t success_cases[] = {
     {42, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }"},
     {42, "#include <stdbool.h>\nint main() { _Bool b = 1; return b ? 42 : 0; }"},
     {42, "#include <stddef.h>\nint main() { size_t x = 42; return (int)x; }"},
+    // 意地悪テスト: ネストした#if
+    {42, "#if 1\n#if 1\n#if 1\nint main() { return 42; }\n#endif\n#endif\n#endif"},
+    {42, "#if 1\n#if 0\nint main() { return 0; }\n#else\nint main() { return 42; }\n#endif\n#endif"},
+    {10, "#if 0\n#if 1\nint main() { return 0; }\n#endif\n#else\nint main() { return 10; }\n#endif"},
+    // 意地悪テスト: #elif チェーン
+    {30, "#if 0\nint main() { return 10; }\n#elif 0\nint main() { return 20; }\n#elif 1\nint main() { return 30; }\n#else\nint main() { return 40; }\n#endif"},
+    // 意地悪テスト: マクロの引数に括弧を含む
+    {42, "#define ADD(a, b) (a + b)\nint main() { return ADD((20+2), (18+2)); }"},
+    // 意地悪テスト: マクロの引数に別のマクロ
+    {42, "#define X 20\n#define Y 22\n#define ADD(a, b) (a + b)\nint main() { return ADD(X, Y); }"},
+    // 意地悪テスト: マクロ展開結果がさらにマクロを含む
+    {42, "#define A B\n#define B 42\nint main() { return A; }"},
+    // 意地悪テスト: 空マクロ本体
+    {0, "#define EMPTY\nint main() { EMPTY return 0; }"},
+    // 意地悪テスト: #define で括弧なし引数風の展開
+    {42, "#define FOO (42)\nint main() { return FOO; }"},
+    // 意地悪テスト: #if の複雑な式
+    {42, "#if (1 + 2) * 3 == 9\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#if 1 && (0 || 1)\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42, "#if !0 && !0\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    // 意地悪テスト: #ifdef/#ifndef 連鎖
+    {42, "#define X\n#ifdef X\n#ifndef Y\nint main() { return 42; }\n#endif\n#endif"},
+    // 意地悪テスト: #undef してから #ifndef
+    {42, "#define FOO\n#undef FOO\n#ifndef FOO\nint main() { return 42; }\n#endif"},
+    // 意地悪テスト: マクロ内の文字列化 (#)
+    {0, "#define CHECK(x) (x)\nint main() { return CHECK(0); }"},
+    // 意地悪テスト: トークン貼り合わせ (##) で関数名を生成
+    {42, "#define CALL(prefix) prefix##_func()\nint my_func() { return 42; }\nint main() { return CALL(my); }"},
+    // 意地悪テスト: defined() の複雑な使用
+    {42, "#define A\n#if defined(A) && !defined(B)\nint main() { return 42; }\n#endif"},
+    // 意地悪テスト: __LINE__ が正確に増える
+    {3, "int main() {\nreturn\n__LINE__;\n}"},
+    // 意地悪テスト: マクロの再帰的展開防止（自己参照）
+    {42, "#define X X\nint main() { int X = 42; return X; }"},
 };
 
 static const char *fail_cases[] = {

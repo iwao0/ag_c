@@ -713,6 +713,122 @@ static const test_case_t test_cases[] = {
     {"global_var", "array_sum", CASE_INT,
      "int g[3]; int main() { g[0]=1; g[1]=2; g[2]=3; return g[0]+g[1]+g[2]; }",
      6, 0},
+    // 意地悪テスト: do-while
+    {"evil", "dowhile_break", CASE_INT,
+     "int main() { int x = 0; do { x = x + 1; if (x == 3) break; } while (x < 10); return x; }",
+     3, 0},
+    {"evil", "dowhile_continue", CASE_INT,
+     "int main() { int s=0; int i=0; do { i=i+1; if (i%2==0) continue; s=s+i; } while(i<6); return s; }",
+     9, 0},
+    // 意地悪テスト: sizeof副作用なし
+    {"evil", "sizeof_no_eval", CASE_INT,
+     "int main() { int x=0; sizeof(x=99); return x; }",
+     0, 0},
+    // 意地悪テスト: ネストした構造体
+    {"evil", "nested_struct", CASE_INT,
+     "int main() { struct A { int x; struct B { int y; int z; } b; }; struct A a; a.x = 1; a.b.y = 2; a.b.z = 3; return a.x + a.b.y * 10 + a.b.z * 100; }",
+     65, 0},
+    // 意地悪テスト: 条件内代入
+    {"evil", "assign_in_cond", CASE_INT,
+     "int main() { int x; if (x = 5) { return x; } return 0; }",
+     5, 0},
+    // 意地悪テスト: 相互再帰
+    {"evil", "mutual_recursion", CASE_INT,
+     "int even(int n);\n"
+     "int odd(int n) { return n == 0 ? 0 : even(n - 1); }\n"
+     "int even(int n) { return n == 0 ? 1 : odd(n - 1); }\n"
+     "int main() { return even(10) * 10 + odd(7); }",
+     11, 0},
+    // 意地悪テスト: ネストした関数呼び出し
+    {"evil", "nested_call", CASE_INT,
+     "int f(int x) { return x + 1; }\n"
+     "int g(int x) { return x * 2; }\n"
+     "int h(int x) { return x - 3; }\n"
+     "int main() { return f(g(h(10))); }",
+     15, 0},
+    // 意地悪テスト: char演算
+    {"evil", "char_subtract", CASE_INT,
+     "int main() { char a='0'; char b='9'; return b-a; }",
+     9, 0},
+    {"evil", "char_overflow", CASE_INT,
+     "int main() { char c=127; c=c+1; return c<0; }",
+     1, 0},
+    // 意地悪テスト: 構造体配列メンバ
+    {"evil", "struct_array_member", CASE_INT,
+     "int main() { struct S { int arr[4]; int n; }; struct S s; s.n = 4; s.arr[0]=10; s.arr[1]=20; s.arr[2]=30; s.arr[3]=40; int sum=0; int i=0; for(i=0; i<s.n; i=i+1) sum=sum+s.arr[i]; return sum%256; }",
+     100, 0},
+    // 意地悪テスト: コラッツ風再帰
+    {"evil", "collatz_recursion", CASE_INT,
+     "int count(int n) { if (n <= 0) return 0; if (n == 1) return 1; if (n % 2 == 0) return 1 + count(n / 2); return 1 + count(n * 3 + 1); }\n"
+     "int main() { return count(6); }",
+     9, 0},
+    // 意地悪テスト: 複雑な式
+    {"evil", "complex_expr_8vars", CASE_INT,
+     "int main() { int a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8; return ((a+b)*(c+d)-(e+f))*(g-h)+100; }",
+     90, 0},
+    // 意地悪テスト: unsigned char ラップ
+    {"evil", "uchar_wrap", CASE_INT,
+     "int main() { unsigned char a = 200; unsigned char b = 100; unsigned char c = a + b; return c; }",
+     44, 0},
+    // 意地悪テスト: 複合ビットシフト
+    {"evil", "multi_shift", CASE_INT,
+     "int main() { int x = 1; int y = x << 1 | x << 2 | x << 3 | x << 4; return y; }",
+     30, 0},
+    // 意地悪テスト: グローバル副作用順序
+    {"evil", "global_sideeffect_seq", CASE_INT,
+     "int g_step = 0;\n"
+     "int next() { g_step = g_step + 1; return g_step; }\n"
+     "int main() { int a=next(); int b=next(); int c=next(); return a*100+b*10+c; }",
+     123, 0},
+    // 意地悪テスト: (*p).x と p->x の等価性
+    {"evil", "deref_dot_vs_arrow", CASE_INT,
+     "int main() { struct S { int x; }; struct S a = {5}; struct S *p = &a; return (*p).x + p->x; }",
+     10, 0},
+    // 意地悪テスト: *&*&*&x チェーン
+    {"evil", "addr_deref_chain", CASE_INT,
+     "int main() { int x = 42; int *p = &x; return *&*&*&x; }",
+     42, 0},
+    // 意地悪テスト: 論理NOT
+    {"evil", "logical_not_zero", CASE_INT,
+     "int main() { int x = 0; return !x; }",
+     1, 0},
+    {"evil", "logical_not_nonzero", CASE_INT,
+     "int main() { int x = 5; return !x; }",
+     0, 0},
+    // 意地悪テスト: ビットNOT
+    {"evil", "bitwise_not", CASE_INT,
+     "int main() { int x = 0xFF; return ~x & 0xFF; }",
+     0, 0},
+    // 意地悪テスト: キャスト
+    {"evil", "cast_uchar_neg", CASE_INT,
+     "int main() { return (int)(unsigned char)-1; }",
+     255, 0},
+    // 意地悪テスト: 構造体パディング
+    {"evil", "struct_padding_sizeof", CASE_INT,
+     "int main() { struct S { char a; int b; char c; }; return sizeof(struct S); }",
+     12, 0},
+    // 意地悪テスト: 構造体ポインタ再代入
+    {"evil", "struct_ptr_reassign", CASE_INT,
+     "int main() { struct S { int x; }; struct S a = {10}; struct S b = {20}; struct S *p; p = &a; int r1 = p->x; p = &b; int r2 = p->x; return r1 + r2; }",
+     30, 0},
+    // 意地悪テスト: ポインタ経由読み取り後クリア
+    {"evil", "ptr_read_then_clear", CASE_INT,
+     "int main() { int x = 42; int *p = &x; int y = *p; *p = 0; return y + x; }",
+     42, 0},
+    // 意地悪テスト: max3ネスト呼び出し
+    {"evil", "max3_nested", CASE_INT,
+     "int max(int a, int b) { return a > b ? a : b; }\n"
+     "int max3(int a, int b, int c) { return max(max(a,b),c); }\n"
+     "int main() { return max3(17, 42, 23); }",
+     42, 0},
+    // 意地悪テスト: ネストforループ
+    {"evil", "nested_for_loops", CASE_INT,
+     "int main() { int i = 0; int j = 0; int count = 0; for (i = 0; i < 3; i = i + 1) for (j = 0; j < 4; j = j + 1) count = count + 1; return count; }",
+     12, 0},
+    // 意地悪テスト: while(1) + break
+    {"evil", "while1_break", CASE_INT,
+     "int main() { int x = 1; while (1) { if (x > 50) break; x = x * 2; } return x; }",
+     64, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

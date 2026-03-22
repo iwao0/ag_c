@@ -1691,6 +1691,158 @@ static void test_parse_invalid_diagnostics() {
                                     "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
 }
 
+// 意地悪テスト: パーサーの境界ケース
+static void test_parse_evil_edge_cases() {
+  printf("test_parse_evil_edge_cases...\n");
+
+  // ネストした三項演算子: a?b?c:d:e は a?(b?c:d):e
+  token = tk_tokenize("1 ? 2 ? 3 : 4 : 5");
+  node_t *tn = ps_expr();
+  ASSERT_EQ(ND_TERNARY, tn->kind);
+  ASSERT_EQ(1, as_num(tn->lhs)->val);         // 条件: 1
+  ASSERT_EQ(ND_TERNARY, tn->rhs->kind);       // then: 2?3:4
+  ASSERT_EQ(2, as_num(tn->rhs->lhs)->val);    // 内側条件: 2
+  ASSERT_EQ(3, as_num(tn->rhs->rhs)->val);    // 内側then: 3
+  ASSERT_EQ(4, as_num(as_ctrl(tn->rhs)->els)->val); // 内側else: 4
+  ASSERT_EQ(5, as_num(as_ctrl(tn)->els)->val);      // 外側else: 5
+
+  // 複雑な優先順位: 1+2*3==7&&1||0 → (((1+(2*3))==7)&&1)||0
+  token = tk_tokenize("1+2*3==7&&1||0");
+  node_t *cp = ps_expr();
+  ASSERT_EQ(ND_LOGOR, cp->kind);
+  ASSERT_EQ(0, as_num(cp->rhs)->val);         // ||0
+  ASSERT_EQ(ND_LOGAND, cp->lhs->kind);
+  ASSERT_EQ(1, as_num(cp->lhs->rhs)->val);    // &&1
+  ASSERT_EQ(ND_EQ, cp->lhs->lhs->kind);       // ==
+  ASSERT_EQ(7, as_num(cp->lhs->lhs->rhs)->val); // ==7
+  ASSERT_EQ(ND_ADD, cp->lhs->lhs->lhs->kind); // 1+...
+  ASSERT_EQ(ND_MUL, cp->lhs->lhs->lhs->rhs->kind); // 2*3
+
+  // ビット演算と論理演算の優先順位: 1&2|3^4
+  // → (1&2) | (3^4) → ND_BITOR( ND_BITAND(1,2), ND_BITXOR(3,4) )
+  token = tk_tokenize("1&2|3^4");
+  node_t *bw = ps_expr();
+  ASSERT_EQ(ND_BITOR, bw->kind);
+  ASSERT_EQ(ND_BITAND, bw->lhs->kind);
+  ASSERT_EQ(1, as_num(bw->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(bw->lhs->rhs)->val);
+  ASSERT_EQ(ND_BITXOR, bw->rhs->kind);
+  ASSERT_EQ(3, as_num(bw->rhs->lhs)->val);
+  ASSERT_EQ(4, as_num(bw->rhs->rhs)->val);
+
+  // x+++y の式解析: (x++) + y
+  token = tk_tokenize("main() { int x=1; int y=2; return x+++y; }");
+  parsed_code = ps_program();
+  // パースが成功すればOK
+
+  // キャストと単項マイナスのネスト: (int)-(char)5
+  token = tk_tokenize("(int)-(char)5");
+  node_t *cn = ps_expr();
+  // (int)(0-(char)5) → ND_CAST(ND_SUB(0, ND_CAST(5)))のような構造
+  // パースが壊れずに完了することを確認
+  ASSERT_TRUE(cn != NULL);
+
+  // シフトと比較の優先順位: 1<<2<8 → (1<<2)<8
+  token = tk_tokenize("1<<2<8");
+  node_t *sh = ps_expr();
+  ASSERT_EQ(ND_LT, sh->kind);
+  ASSERT_EQ(ND_SHL, sh->lhs->kind);
+  ASSERT_EQ(1, as_num(sh->lhs->lhs)->val);
+  ASSERT_EQ(2, as_num(sh->lhs->rhs)->val);
+  ASSERT_EQ(8, as_num(sh->rhs)->val);
+
+  // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
+  token = tk_tokenize("main() { int a; int b; a=1,b=2; }");
+  parsed_code = ps_program();
+  // パースが成功すればOK
+
+  // 複雑な式文のパース
+  expect_parse_ok("main() { int x; x = 1 + 2 * 3 - 4 / 2 + (5 % 3); return x; }");
+  expect_parse_ok("main() { int a; int b; int c; a = b = c = 42; return a; }");
+  expect_parse_ok("main() { return 1?2:3?4:5?6:7; }");
+  expect_parse_ok("main() { int x=1; return x<<1|x<<2|x<<3; }");
+  expect_parse_ok("main() { int x=1; return !!!!!x; }");
+  expect_parse_ok("main() { int x=255; return ~~~x; }");
+
+  // sizeof内の型
+  expect_parse_ok("main() { return sizeof(int); }");
+  expect_parse_ok("main() { return sizeof(int*); }");
+
+  // 関数宣言のプロトタイプ
+  expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");
+
+  // for文の複雑な初期化
+  expect_parse_ok("main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");
+
+  // do-while の後に式文
+  expect_parse_ok("main() { int x=0; do { x=x+1; } while(x<3); return x; }");
+
+  // switch内のfall-through
+  expect_parse_ok("main() { int x=2; int r=0; switch(x) { case 1: r=10; case 2: r=r+20; case 3: r=r+30; default: r=r+1; } return r; }");
+
+  // ネストしたブロック
+  expect_parse_ok("main() { { { { int x=42; return x; } } } }");
+
+  // 意地悪テスト: 宣言・型の境界ケース
+
+  // typedefで作った型名の使用
+  expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
+
+  // 複数の変数宣言（カンマ区切り）
+  expect_parse_ok("main() { int a=1, b=2, c=3; return a+b+c; }");
+
+  // 関数ポインタ宣言
+  expect_parse_ok("int add(int a, int b) { return a+b; } int main() { int (*f)(int,int) = add; return f(20,22); }");
+
+  // enumの値パース
+  expect_parse_ok("main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");
+  // 匿名enumの値指定は既知のバグ（enum初期化子パース未対応）で現在パースエラー
+  // expect_parse_ok("main() { enum { A=10, B=20, C=30 }; return B; }");
+
+  // 構造体の前方参照と自己参照ポインタ
+  // 自己参照ポインタメンバは現在パースエラー（不完全型ポインタ未対応の可能性）
+  // expect_parse_ok("main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }");
+
+  // void* の宣言と使用
+  expect_parse_ok("main() { void *p = 0; return p == 0 ? 42 : 0; }");
+
+  // const修飾
+  expect_parse_ok("main() { const int x = 42; return x; }");
+  // 後置const (int const x) は変数宣言で現在パースエラー
+  // expect_parse_ok("main() { int const x = 42; return x; }");
+
+  // 配列の宣言と初期化
+  expect_parse_ok("main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }");
+
+  // 構造体のネストした初期化
+  expect_parse_ok("main() { struct P { int x; int y; }; struct R { struct P p; int z; }; struct R r = {{1,2},3}; return r.p.x + r.p.y + r.z; }");
+
+  // for文のスコープ付き変数宣言
+  expect_parse_ok("main() { int s=0; for (int i=0; i<5; i=i+1) s=s+i; return s; }");
+
+  // 構造体のサイズオフ
+  expect_parse_ok("main() { struct S { char a; int b; char c; }; return sizeof(struct S); }");
+
+  // union の基本使用
+  expect_parse_ok("main() { union U { int x; char c; }; union U u; u.x=42; return u.x; }");
+
+  // _Static_assert 正常系
+  // _Static_assert with sizeof==4 — 定数式評価で==未対応の可能性
+  // expect_parse_ok("_Static_assert(sizeof(int)==4, \"int is 4 bytes\"); int main() { return 42; }");
+
+  // _Generic の複雑なケース — 現在パースエラーの可能性
+  // expect_parse_ok("main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
+
+  // 複合リテラルの使用 — 現在パースエラーの可能性があるため個別検証
+  //expect_parse_ok("main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");
+
+  // 意地悪テスト: 異常系の追加
+  // 自己参照は不完全型エラーにならない（ポインタ非ポインタを問わずパース通過する可能性）
+  // expect_parse_fail("main() { struct S { int x; struct S s; }; return 0; }");
+  // 負のサイズは現在エラーにならない
+  // expect_parse_fail("main() { int a[-1]; return 0; }");
+}
+
 static void test_parser_config_matrix() {
   printf("test_parser_config_matrix...\n");
   const char *struct_scalar_cast = "main() { struct S { int x; int y; }; return ((struct S)7).x; }";
@@ -1780,6 +1932,7 @@ int main() {
   test_multiple_funcdefs();
   test_parse_invalid();
   test_parse_invalid_diagnostics();
+  test_parse_evil_edge_cases();
   test_parser_config_matrix();
 
   printf("OK: All unit tests passed!\n");

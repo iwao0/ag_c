@@ -697,6 +697,129 @@ static void test_tokenize_ucn_ident_and_trigraph() {
   tk_set_enable_trigraphs(true);
 }
 
+// 意地悪テスト: トークン分割の境界ケース
+static void test_tokenize_evil_edge_cases() {
+  printf("test_tokenize_evil_edge_cases...\n");
+
+  // x+++y → x ++ + y
+  token = tk_tokenize("x+++y");
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_INC, token->kind); token = token->next;
+  ASSERT_EQ(TK_PLUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // x---y → x -- - y
+  token = tk_tokenize("x---y");
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_DEC, token->kind); token = token->next;
+  ASSERT_EQ(TK_MINUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // x+++-y → x ++ + - y
+  token = tk_tokenize("x+++-y");
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_INC, token->kind); token = token->next;
+  ASSERT_EQ(TK_PLUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_MINUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_IDENT, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // <<=>> → <<= >> (最長一致)
+  token = tk_tokenize("<<=>>");
+  ASSERT_EQ(TK_SHLEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_SHR, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // &&|| → && ||
+  token = tk_tokenize("&&||");
+  ASSERT_EQ(TK_ANDAND, token->kind); token = token->next;
+  ASSERT_EQ(TK_OROR, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // ->* → -> *
+  token = tk_tokenize("->*");
+  ASSERT_EQ(TK_ARROW, token->kind); token = token->next;
+  ASSERT_EQ(TK_MUL, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // >=< → >= <
+  token = tk_tokenize(">=<");
+  ASSERT_EQ(TK_GE, token->kind); token = token->next;
+  ASSERT_EQ(TK_LT, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // !=== → != ==
+  token = tk_tokenize("!===");
+  ASSERT_EQ(TK_NEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_EQEQ, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 16進の境界値
+  token = tk_tokenize("0x0");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(0, as_num_i(token)->val);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  token = tk_tokenize("0xFFFFFFFF");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(0xFFFFFFFFULL, as_num_i(token)->uval);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 空白なしの連続演算
+  token = tk_tokenize("1+2*3-4/5%6");
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(1, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_PLUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(2, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_MUL, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(3, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_MINUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(4, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_DIV, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(5, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_MOD, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(6, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 文字列中の特殊文字の後にすぐトークン
+  token = tk_tokenize("\"abc\"+1");
+  ASSERT_EQ(TK_STRING, token->kind); token = token->next;
+  ASSERT_EQ(TK_PLUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // コメントの直後に演算子（空白なし）
+  token = tk_tokenize("1/**/+2");
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(1, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_PLUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); ASSERT_EQ(2, as_num_i(token)->val); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 文字リテラル直後に演算子
+  token = tk_tokenize("'a'+1");
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_PLUS, token->kind); token = token->next;
+  ASSERT_EQ(TK_NUM, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 文字列直後にセミコロン
+  token = tk_tokenize("\"abc\";");
+  ASSERT_EQ(TK_STRING, token->kind);
+  ASSERT_EQ(3, as_string(token)->len);
+  token = token->next;
+  ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+
+  // 連続するドット: .. は不正、... は省略記号
+  token = tk_tokenize("...;");
+  ASSERT_EQ(TK_ELLIPSIS, token->kind); token = token->next;
+  ASSERT_EQ(TK_SEMI, token->kind); token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+}
+
 static void test_strict_c11_mode() {
   printf("test_strict_c11_mode...\n");
   tk_set_strict_c11_mode(false);
@@ -740,6 +863,7 @@ int main() {
   test_tokenize_char_literal();
   test_tokenize_string_prefixes_and_ucn();
   test_tokenize_ucn_ident_and_trigraph();
+  test_tokenize_evil_edge_cases();
   test_strict_c11_mode();
   test_c11_audit_mode_flag();
   test_at_eof();

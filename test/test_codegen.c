@@ -344,6 +344,144 @@ static void test_gen_block(void) {
   free(out);
 }
 
+// 意地悪テスト: コード生成の境界ケース
+
+// 深くネストした二項演算: ((((1+2)+3)+4)+5)
+static void test_gen_deep_nested_binop(void) {
+  printf("test_gen_deep_nested_binop...\n");
+  node_t *n = make_num(1);
+  for (int i = 2; i <= 5; i++) {
+    n = make_binop(ND_ADD, n, make_num(i));
+  }
+  capture_start();
+  gen(n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "add x0, x9, x10") != NULL);
+  free(out);
+}
+
+// 全比較演算子の出力確認
+static void test_gen_all_comparisons(void) {
+  printf("test_gen_all_comparisons...\n");
+  node_kind_t kinds[] = {ND_EQ, ND_NE, ND_LT, ND_LE};
+  const char *conds[] = {"eq", "ne", "lt", "le"};
+  for (int i = 0; i < 4; i++) {
+    node_t *n = make_binop(kinds[i], make_num(1), make_num(2));
+    capture_start();
+    gen(n);
+    char *out = capture_end();
+    char expected[32];
+    snprintf(expected, sizeof(expected), "cset x0, %s", conds[i]);
+    ASSERT_TRUE(strstr(out, expected) != NULL);
+    free(out);
+  }
+}
+
+// MOD演算の出力確認
+static void test_gen_mod(void) {
+  printf("test_gen_mod...\n");
+  node_t *n = make_binop(ND_MOD, make_num(10), make_num(3));
+  capture_start();
+  gen(n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "sdiv") != NULL);
+  ASSERT_TRUE(strstr(out, "msub") != NULL);
+  free(out);
+}
+
+// 即値0のコード生成
+static void test_gen_num_zero(void) {
+  printf("test_gen_num_zero...\n");
+  node_t *n = make_num(0);
+  capture_start();
+  gen(n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "mov x0, #0") != NULL);
+  free(out);
+}
+
+// 大きな即値のコード生成 (AArch64で扱える上限付近)
+static void test_gen_num_large(void) {
+  printf("test_gen_num_large...\n");
+  node_t *n = make_num(65535);
+  capture_start();
+  gen(n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "mov x0, #65535") != NULL);
+  free(out);
+}
+
+// ネストしたif: if(1) { if(0) { 99 } else { 42 } }
+static void test_gen_nested_if(void) {
+  printf("test_gen_nested_if...\n");
+  node_ctrl_t *inner = calloc(1, sizeof(node_ctrl_t));
+  inner->base.kind = ND_IF;
+  inner->base.lhs = make_num(0);
+  inner->base.rhs = make_num(99);
+  inner->els = make_num(42);
+
+  node_ctrl_t *outer = calloc(1, sizeof(node_ctrl_t));
+  outer->base.kind = ND_IF;
+  outer->base.lhs = make_num(1);
+  outer->base.rhs = (node_t *)inner;
+  outer->els = make_num(0);
+
+  capture_start();
+  gen((node_t *)outer);
+  char *out = capture_end();
+  // 2つのcbz（外側と内側）
+  char *first_cbz = strstr(out, "cbz x0");
+  ASSERT_TRUE(first_cbz != NULL);
+  char *second_cbz = strstr(first_cbz + 1, "cbz x0");
+  ASSERT_TRUE(second_cbz != NULL);
+  free(out);
+}
+
+// 空ブロック（本体がNULLのみ）
+static void test_gen_empty_block(void) {
+  printf("test_gen_empty_block...\n");
+  node_block_t *n = calloc(1, sizeof(node_block_t));
+  n->base.kind = ND_BLOCK;
+  n->body = calloc(1, sizeof(node_t*));
+  n->body[0] = NULL;
+  capture_start();
+  gen((node_t *)n);
+  char *out = capture_end();
+  // クラッシュしないことが重要
+  ASSERT_TRUE(out != NULL);
+  free(out);
+}
+
+// 二項演算のオペランドにローカル変数
+static void test_gen_binop_with_lvar(void) {
+  printf("test_gen_binop_with_lvar...\n");
+  node_t *n = make_binop(ND_ADD, make_lvar(8), make_num(10));
+  capture_start();
+  gen(n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "add x0, x9, x10") != NULL);
+  free(out);
+}
+
+// 関数呼び出しの引数が多い（8引数）
+static void test_gen_funcall_many_args(void) {
+  printf("test_gen_funcall_many_args...\n");
+  node_func_t *n = calloc(1, sizeof(node_func_t));
+  n->base.kind = ND_FUNCALL;
+  n->funcname = "many";
+  n->funcname_len = 4;
+  n->nargs = 8;
+  n->args = calloc(8, sizeof(node_t*));
+  for (int i = 0; i < 8; i++) {
+    n->args[i] = make_num(i);
+  }
+  capture_start();
+  gen((node_t *)n);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "bl _many") != NULL);
+  free(out);
+}
+
 int main(void) {
   printf("Running tests for ARM64 Code Generator...\n");
 
@@ -366,6 +504,15 @@ int main(void) {
   test_gen_for();
   test_gen_return();
   test_gen_block();
+  test_gen_deep_nested_binop();
+  test_gen_all_comparisons();
+  test_gen_mod();
+  test_gen_num_zero();
+  test_gen_num_large();
+  test_gen_nested_if();
+  test_gen_empty_block();
+  test_gen_binop_with_lvar();
+  test_gen_funcall_many_args();
 
   printf("OK: All unit tests passed!\n");
   return 0;
