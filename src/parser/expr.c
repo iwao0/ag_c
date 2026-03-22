@@ -1141,14 +1141,44 @@ static node_t *unary(void) {
                       &cast_elem_size, &cast_fp_kind, &cast_array_count)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       token = after_rparen;
-      // Compound literal strategy (minimal):
-      // materialize as a hidden local stack object and lower to
-      //   (init(hidden_obj), hidden_obj)
-      // This gives block-lifetime behavior in function scope for current backend.
       int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
       int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
       int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
       char *tmp_name = new_compound_lit_name();
+
+      if (g_current_funcname == NULL) {
+        // ファイルスコープ: 静的ストレージ期間（C11 6.5.2.5p5）
+        // スカラー型の場合は定数値として返す
+        tk_expect('{');
+        node_t *init_expr = psx_expr_assign();
+        tk_expect('}');
+        if (!is_arr && init_expr && init_expr->kind == ND_NUM) {
+          return apply_postfix(init_expr);
+        }
+        // 配列・構造体等: グローバル変数として配置
+        global_var_t *gv = calloc(1, sizeof(global_var_t));
+        gv->name = tmp_name;
+        gv->name_len = (int)strlen(tmp_name);
+        gv->type_size = var_size;
+        gv->deref_size = base_elem;
+        gv->is_array = is_arr;
+        if (init_expr && init_expr->kind == ND_NUM) {
+          gv->has_init = 1;
+          gv->init_val = ((node_num_t *)init_expr)->val;
+        }
+        gv->next = global_vars;
+        global_vars = gv;
+        node_gvar_t *gvar_node = calloc(1, sizeof(node_gvar_t));
+        gvar_node->mem.base.kind = ND_GVAR;
+        gvar_node->mem.type_size = gv->type_size;
+        gvar_node->mem.deref_size = gv->deref_size;
+        gvar_node->name = gv->name;
+        gvar_node->name_len = gv->name_len;
+        node_t *ref = (node_t *)gvar_node;
+        return apply_postfix(ref);
+      }
+
+      // 関数スコープ: ブロックライフタイム（自動ストレージ期間）
       lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), var_size, base_elem, is_arr);
       var->tag_kind = cast_tag_kind;
       var->tag_name = cast_tag_name;
@@ -1158,7 +1188,6 @@ static node_t *unary(void) {
       node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
       node_t *ref;
       if (is_arr) {
-        // 配列型複合リテラル: primary() の配列変数参照と同様に ND_ADDR を生成する
         node_mem_t *addr_node = calloc(1, sizeof(node_mem_t));
         addr_node->base.kind = ND_ADDR;
         addr_node->base.lhs = psx_node_new_lvar(var->offset);
