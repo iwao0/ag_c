@@ -301,6 +301,20 @@ static void collect_switch_labels(node_t *node, switch_collect_t *sc) {
     }
     return;
   }
+  if (node->kind == ND_IF) {
+    node_ctrl_t *c = as_ctrl(node);
+    collect_switch_labels(c->base.rhs, sc);
+    collect_switch_labels(c->els, sc);
+    return;
+  }
+  if (node->kind == ND_WHILE || node->kind == ND_DO_WHILE || node->kind == ND_FOR) {
+    collect_switch_labels(node->rhs, sc);
+    return;
+  }
+  if (node->kind == ND_LABEL) {
+    collect_switch_labels(node->rhs, sc);
+    return;
+  }
 }
 
 static void collect_goto_labels(node_t *node) {
@@ -1647,6 +1661,18 @@ static void gen_stmt(node_t *node) {
     node_jump_t *j = as_jump(node);
     cg_emitf(".Luser%d:\n", j->label_id);
     gen_stmt(j->base.rhs);
+    return;
+  }
+  case ND_CASE: {
+    node_case_t *c = as_case(node);
+    cg_emitf(".Lcase%d:\n", c->label_id);
+    gen_stmt(c->base.rhs);
+    return;
+  }
+  case ND_DEFAULT: {
+    node_default_t *d = as_default(node);
+    cg_emitf(".Ldefault%d:\n", d->label_id);
+    gen_stmt(d->base.rhs);
     return;
   }
   default:

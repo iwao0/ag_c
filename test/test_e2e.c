@@ -175,6 +175,9 @@ static const test_case_t test_cases[] = {
     {"switch_edge", "goto_into_loop", CASE_INT, "int main() { int x=0; goto enter; while(x<100){x=x+1;enter:x=x+2;} return x; }", 101, 0},
     {"switch_edge", "continue_in_switch_for", CASE_INT, "int main() { int i=0;int s=0; for(i=0;i<10;i=i+1){switch(i%3){case 0:s=s+1;continue;case 1:s=s+10;continue;case 2:s=s+100;break;}s=s+1000;} return s%256; }", 6, 0},
     {"switch_edge", "nested_switch", CASE_INT, "int main() { int o=1; switch(o){case 1:{int in=2;switch(in){case 1:return 11;case 2:return 22;default:return 33;}}case 2:return 44;default:return 55;} }", 22, 0},
+    {"switch_edge", "case_in_block", CASE_INT, "int main() { switch(2){case 1:{case 2:return 20;}} return 0; }", 20, 0},
+    {"switch_edge", "duff_do_while", CASE_INT, "int main() { int x=0; switch(1){case 1:do{x=10;case 2:x=20;}while(0);} return x; }", 20, 0},
+    {"switch_edge", "duff_do_while_case2", CASE_INT, "int main() { int x=0; switch(2){case 1:do{x=10;case 2:x=20;}while(0);} return x; }", 20, 0},
 
     {"return", "literal", CASE_INT, "main() { return 42; }", 42, 0},
     {"return", "expr", CASE_INT, "main() { return 2+3; }", 5, 0},
