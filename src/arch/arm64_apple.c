@@ -528,7 +528,7 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     int uns = as_lvar(node)->mem.is_unsigned;
     if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x29, #%d]\n" : "  ldrsb x%d, [x29, #%d]\n", reg, off);
     else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x29, #%d]\n" : "  ldrsh x%d, [x29, #%d]\n", reg, off);
-    else if (ts == 4) cg_emitf("  ldr w%d, [x29, #%d]\n", reg, off);
+    else if (ts == 4) cg_emitf(uns ? "  ldr w%d, [x29, #%d]\n" : "  ldrsw x%d, [x29, #%d]\n", reg, off);
     else              cg_emitf("  ldr x%d, [x29, #%d]\n", reg, off);
     return;
   }
@@ -542,7 +542,7 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
     if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x%d]\n" : "  ldrsb x%d, [x%d]\n", reg, reg);
     else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x%d]\n" : "  ldrsh x%d, [x%d]\n", reg, reg);
-    else if (ts == 4) cg_emitf("  ldr w%d, [x%d]\n", reg, reg);
+    else if (ts == 4) cg_emitf(uns ? "  ldr w%d, [x%d]\n" : "  ldrsw x%d, [x%d]\n", reg, reg);
     else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
     return;
   }
@@ -686,7 +686,7 @@ static void gen_expr(node_t *node) {
       else if (as_lvar(node)->mem.type_size == 2)
         cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
       else if (as_lvar(node)->mem.type_size == 4)
-        cg_emitf("  ldr w0, [x0]\n");
+        cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldr w0, [x0]\n" : "  ldrsw x0, [x0]\n");
       else
         cg_emitf("  ldr x0, [x0]\n");
       cg_emitf("  str x0, [sp, #-16]!\n");
@@ -711,7 +711,7 @@ static void gen_expr(node_t *node) {
     else if (ts == 2)
       cg_emitf(is_uns ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
     else if (ts == 4)
-      cg_emitf("  ldr w0, [x0]\n");
+      cg_emitf(is_uns ? "  ldr w0, [x0]\n" : "  ldrsw x0, [x0]\n");
     else
       cg_emitf("  ldr x0, [x0]\n");
     cg_emitf("  str x0, [sp, #-16]!\n");
@@ -725,7 +725,7 @@ static void gen_expr(node_t *node) {
     else if (as_mem(node)->type_size == 2)
       cg_emitf(as_mem(node)->is_unsigned ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
     else if (as_mem(node)->type_size == 4)
-      cg_emitf("  ldr w0, [x0]\n");
+      cg_emitf(as_mem(node)->is_unsigned ? "  ldr w0, [x0]\n" : "  ldrsw x0, [x0]\n");
     else
       cg_emitf("  ldr x0, [x0]\n");
     // ビットフィールド抽出

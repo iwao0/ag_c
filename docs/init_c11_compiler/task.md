@@ -1064,10 +1064,10 @@
   - `for(int i=0;...)` のループ変数も外側の同名変数を上書きする
   - 原因: (1) 宣言時に同名変数が見つかると新スロットを確保せず再利用していた (2) ブロック退出時にローカル変数リストが復元されていなかった
   - 修正: `psx_decl_enter_scope`/`psx_decl_leave_scope` を追加し、ブロック・forスコープでローカル変数リストを保存/復元。宣言時は常に新変数を登録
-- [ ] `gen_expr_to_reg` の signed 比較で 32bit 値のゼロ拡張により符号が失われる
+- [x] `gen_expr_to_reg` の signed 比較で 32bit 値のゼロ拡張により符号が失われる
   - 再現コード: `int x=-1; return x>=0;` → 期待値0、実際1（無限ループの原因にもなる）
   - `ldr w10, [x29, #off]` が64bitゼロ拡張し、`cmp x9, x10` で unsigned 比較になる
-  - 修正案: 32bit 比較 `cmp w9, w10` を使うか、`ldrsw` で符号拡張する
+  - 修正: signed 32bit 変数のロードで `ldr w` を `ldrsw x` に変更（gen_expr_to_reg, gen_expr の ND_LVAR, ND_GVAR, ND_DEREF 全箇所）
 - [ ] 多次元配列ポインタ `int (*p)[3]` の添字アクセスで SIGSEGV が発生する
   - 再現コード: `int a[2][3]={{1,2,3},{4,5,6}}; int (*p)[3]=a; return p[1][2];`
   - 原因: 配列ポインタ型の宣言パースまたはポインタ添字のスケーリングが未対応

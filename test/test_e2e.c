@@ -867,6 +867,13 @@ static const test_case_t test_cases[] = {
     {"evil", "nested_shadow", CASE_INT,
      "int main() { int x = 1; { int x = 2; { int x = 3; } } return x; }",
      1, 0},
+    // signed 32bit 比較
+    {"evil", "signed_cmp_neg", CASE_INT,
+     "int main() { int x = -1; return x >= 0; }",
+     0, 0},
+    {"evil", "signed_cmp_lt", CASE_INT,
+     "int main() { int x = -5; int y = 3; return x < y; }",
+     1, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
