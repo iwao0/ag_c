@@ -1763,9 +1763,12 @@ void gen_global_vars(void) {
       // 初期化済みグローバル変数: .data セクション
       cg_emitf(".section __DATA,__data\n");
       cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-      cg_emitf(".align 2\n");
+      int align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
+      cg_emitf(".align %d\n", align);
       cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-      if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
+      if (gv->init_symbol) {
+        cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
+      } else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
       else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
       else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
       else cg_emitf("  .quad %lld\n", gv->init_val);

@@ -413,6 +413,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "hex_float_no_sign", CASE_DOUBLE, "double ag_m() { double d = 0x1p4; return d; }", 0, 16.0},
     {"type_decl", "hex_float_neg_exp", CASE_DOUBLE, "double ag_m() { double d = 0x1p-2; return d; }", 0, 0.25},
     {"type_decl", "hex_float_suffix_f", CASE_FLOAT, "float ag_m() { float f = 0x1.8p+3f; return f; }", 0, 12.0},
+    {"type_decl", "global_ptr_addr_init", CASE_INT, "int g=99; int *gp=&g; int main(){return *gp;}", 99, 0},
+    {"type_decl", "global_ptr_addr_write", CASE_INT, "int g=0; int *gp=&g; int main(){*gp=55;return g;}", 55, 0},
 
     {"pointer", "deref", CASE_INT, "int main() { int x = 5; int *p = &x; return *p; }", 5, 0},
     {"pointer", "assign", CASE_INT, "int main() { int x = 5; int *p = &x; *p = 10; return x; }", 10, 0},

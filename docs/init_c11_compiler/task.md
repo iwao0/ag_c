@@ -1054,9 +1054,10 @@
   - 原因1: deref ノード作成時に多段ポインタの is_pointer/deref_size を伝播していなかった
   - 原因2: サブスクリプト処理で deref_size>0 のとき is_pointer なデリファレンスも base_addr を unwrap してしまっていた
   - 修正: base_deref_size フィールドを追加し deref 時に pointer_qual_levels-1 で正しく型情報を伝播
-- [ ] グローバルポインタ変数のアドレス初期化で SIGSEGV が発生する
+- [x] グローバルポインタ変数のアドレス初期化で SIGSEGV が発生する
   - 再現コード: `int g=99; int *gp=&g; int main(){return *gp;}`
   - 原因: グローバル変数の初期化子が整数定数のみ対応で、アドレス式（リロケーション）が未実装
+  - 修正: global_var_t に init_symbol フィールドを追加し、ND_ADDR(ND_GVAR) 初期化式を認識、codegen で `.quad _symbol` を出力
 - [ ] ポインタの配列宣言（`int *ptrs[3]`）で SIGSEGV が発生する
   - 再現コード: `int a=1;int b=2;int c=3;int *ptrs[3];ptrs[0]=&a;ptrs[1]=&b;ptrs[2]=&c;`
   - 原因: 配列要素がポインタ型の場合の宣言パースまたはコード生成が未対応

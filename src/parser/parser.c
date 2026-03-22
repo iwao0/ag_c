@@ -349,6 +349,12 @@ static void parse_toplevel_declarator_list(void) {
         if (init_expr && init_expr->kind == ND_NUM) {
           gv->has_init = 1;
           gv->init_val = ((node_num_t *)init_expr)->val;
+        } else if (init_expr && init_expr->kind == ND_ADDR &&
+                   init_expr->lhs && init_expr->lhs->kind == ND_GVAR) {
+          node_gvar_t *ref = (node_gvar_t *)init_expr->lhs;
+          gv->has_init = 1;
+          gv->init_symbol = ref->name;
+          gv->init_symbol_len = ref->name_len;
         }
       }
       gv->next = global_vars;
