@@ -1,4 +1,5 @@
 #include "internal/stmt.h"
+#include "internal/arena.h"
 #include "internal/core.h"
 #include "internal/decl.h"
 #include "internal/diag.h"
@@ -610,7 +611,7 @@ static void parse_typedef_decl(void) {
 static node_t *stmt_internal(void) {
   if (tk_consume('{')) {
     psx_ctx_enter_block_scope();
-    node_block_t *node = calloc(1, sizeof(node_block_t));
+    node_block_t *node = arena_alloc(sizeof(node_block_t));
     node->base.kind = ND_BLOCK;
     int i = 0;
     int cap = 16;
@@ -695,7 +696,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_RETURN) {
     token = token->next;
-    node_t *node = calloc(1, sizeof(node_t));
+    node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_RETURN;
     if (tk_consume(';')) {
       if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
@@ -722,7 +723,7 @@ static node_t *stmt_internal(void) {
   if (token->kind == TK_IF) {
     token = token->next;
     tk_expect('(');
-    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_IF;
     node->base.lhs = ps_expr();
     tk_expect(')');
@@ -737,7 +738,7 @@ static node_t *stmt_internal(void) {
   if (token->kind == TK_WHILE) {
     token = token->next;
     tk_expect('(');
-    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_WHILE;
     node->base.lhs = ps_expr();
     tk_expect(')');
@@ -749,7 +750,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_DO) {
     token = token->next;
-    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_DO_WHILE;
     psx_loop_enter();
     node->base.rhs = stmt_internal();
@@ -768,7 +769,7 @@ static node_t *stmt_internal(void) {
   if (token->kind == TK_FOR) {
     token = token->next;
     tk_expect('(');
-    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
     if (!tk_consume(';')) {
       if (psx_ctx_is_type_token(token->kind) || is_decl_prefix_token_stmt(token->kind) || psx_ctx_is_typedef_name_token(token)) {
@@ -809,7 +810,7 @@ static node_t *stmt_internal(void) {
   if (token->kind == TK_SWITCH) {
     token = token->next;
     tk_expect('(');
-    node_ctrl_t *node = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_SWITCH;
     node->base.lhs = ps_expr();
     tk_expect(')');
@@ -821,7 +822,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_CASE) {
     token = token->next;
-    node_case_t *node = calloc(1, sizeof(node_case_t));
+    node_case_t *node = arena_alloc(sizeof(node_case_t));
     node->base.kind = ND_CASE;
     node->val = parse_enum_const_expr();
     psx_switch_register_case(node->val, token);
@@ -833,7 +834,7 @@ static node_t *stmt_internal(void) {
   if (token->kind == TK_DEFAULT) {
     token = token->next;
     psx_switch_register_default(token);
-    node_default_t *node = calloc(1, sizeof(node_default_t));
+    node_default_t *node = arena_alloc(sizeof(node_default_t));
     node->base.kind = ND_DEFAULT;
     tk_expect(':');
     node->base.rhs = stmt_internal();
@@ -845,7 +846,7 @@ static node_t *stmt_internal(void) {
       psx_diag_only_in(token, "break", "ループまたはswitch内");
     }
     token = token->next;
-    node_t *node = calloc(1, sizeof(node_t));
+    node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_BREAK;
     tk_expect(';');
     return node;
@@ -856,7 +857,7 @@ static node_t *stmt_internal(void) {
       psx_diag_only_in(token, "continue", "ループ内");
     }
     token = token->next;
-    node_t *node = calloc(1, sizeof(node_t));
+    node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_CONTINUE;
     tk_expect(';');
     return node;
@@ -869,7 +870,7 @@ static node_t *stmt_internal(void) {
     if (!ident) {
       psx_diag_missing(token, "goto の後のラベル名");
     }
-    node_jump_t *node = calloc(1, sizeof(node_jump_t));
+    node_jump_t *node = arena_alloc(sizeof(node_jump_t));
     node->base.kind = ND_GOTO;
     node->name = ident->str;
     node->name_len = ident->len;
@@ -881,7 +882,7 @@ static node_t *stmt_internal(void) {
   if (token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON) {
     token_ident_t *ident = tk_consume_ident();
     tk_expect(':');
-    node_jump_t *node = calloc(1, sizeof(node_jump_t));
+    node_jump_t *node = arena_alloc(sizeof(node_jump_t));
     node->base.kind = ND_LABEL;
     node->name = ident->str;
     node->name_len = ident->len;

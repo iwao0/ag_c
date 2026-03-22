@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "internal/arena.h"
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
 #include "internal/decl.h"
@@ -1180,7 +1181,7 @@ static node_t *funcdef(void) {
     psx_diag_ctx(token, "funcdef", "%s",
                  diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
   }
-  node_func_t *node = calloc(1, sizeof(node_func_t));
+  node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
   node->base.ret_struct_size = psx_expr_current_func_ret_struct_size();
   node->funcname = tok->str;
@@ -1312,7 +1313,7 @@ static node_t *funcdef(void) {
   // 関数本体 (ブロック)
   tk_expect('{');
   psx_ctx_enter_block_scope();
-  node_block_t *body = calloc(1, sizeof(node_block_t));
+  node_block_t *body = arena_alloc(sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
   int body_cap = 16;

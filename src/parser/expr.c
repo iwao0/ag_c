@@ -1,4 +1,5 @@
 #include "internal/expr.h"
+#include "internal/arena.h"
 #include "internal/core.h"
 #include "internal/decl.h"
 #include "internal/diag.h"
@@ -261,14 +262,14 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
 
   node_t *addr_base = base;
   if (!from_ptr) {
-    node_mem_t *addr = calloc(1, sizeof(node_mem_t));
+    node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
     addr->base.kind = ND_ADDR;
     addr->base.lhs = base;
     addr->type_size = 8;
     addr_base = (node_t *)addr;
   }
   node_t *addr = psx_node_new_binary(ND_ADD, addr_base, psx_node_new_num(off));
-  node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
   deref->base.kind = ND_DEREF;
   deref->base.lhs = addr;
   deref->type_size = mem_size ? mem_size : 8;
@@ -972,7 +973,7 @@ static node_t *conditional(void) {
   node_t *node = logical_or();
   if (token->kind == TK_QUESTION) {
     token = token->next;
-    node_ctrl_t *ternary = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *ternary = arena_alloc(sizeof(node_ctrl_t));
     ternary->base.kind = ND_TERNARY;
     ternary->base.lhs = node;
     ternary->base.rhs = expr_internal();
@@ -1169,7 +1170,7 @@ static node_t *unary(void) {
         }
         gv->next = global_vars;
         global_vars = gv;
-        node_gvar_t *gvar_node = calloc(1, sizeof(node_gvar_t));
+        node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
         gvar_node->mem.base.kind = ND_GVAR;
         gvar_node->mem.type_size = gv->type_size;
         gvar_node->mem.deref_size = gv->deref_size;
@@ -1189,7 +1190,7 @@ static node_t *unary(void) {
       node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
       node_t *ref;
       if (is_arr) {
-        node_mem_t *addr_node = calloc(1, sizeof(node_mem_t));
+        node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
         addr_node->base.kind = ND_ADDR;
         addr_node->base.lhs = psx_node_new_lvar(var->offset);
         addr_node->type_size = var->elem_size;
@@ -1295,7 +1296,7 @@ static node_t *unary(void) {
     token = token->next;
     node_t *target = unary();
     psx_node_expect_incdec_target(target, "++");
-    node_t *node = calloc(1, sizeof(node_t));
+    node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_PRE_INC;
     node->lhs = target;
     return node;
@@ -1304,7 +1305,7 @@ static node_t *unary(void) {
     token = token->next;
     node_t *target = unary();
     psx_node_expect_incdec_target(target, "--");
-    node_t *node = calloc(1, sizeof(node_t));
+    node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_PRE_DEC;
     node->lhs = target;
     return node;
@@ -1329,7 +1330,7 @@ static node_t *unary(void) {
   if (token->kind == TK_MUL) {
     token = token->next;
     node_t *operand = unary();
-    node_mem_t *node = calloc(1, sizeof(node_mem_t));
+    node_mem_t *node = arena_alloc(sizeof(node_mem_t));
     node->base.kind = ND_DEREF;
     node->base.lhs = operand;
     node->base.fp_kind = operand ? operand->fp_kind : 0;
@@ -1353,7 +1354,7 @@ static node_t *unary(void) {
     token = token->next;
     node_t *operand = unary();
     if (operand && operand->kind == ND_COMMA && operand->rhs) {
-      node_mem_t *rhs_addr = calloc(1, sizeof(node_mem_t));
+      node_mem_t *rhs_addr = arena_alloc(sizeof(node_mem_t));
       rhs_addr->base.kind = ND_ADDR;
       rhs_addr->base.lhs = operand->rhs;
       token_kind_t rhs_tag_kind = TK_EOF;
@@ -1371,7 +1372,7 @@ static node_t *unary(void) {
       }
       return psx_node_new_binary(ND_COMMA, operand->lhs, (node_t *)rhs_addr);
     }
-    node_mem_t *node = calloc(1, sizeof(node_mem_t));
+    node_mem_t *node = arena_alloc(sizeof(node_mem_t));
     node->base.kind = ND_ADDR;
     node->base.lhs = operand;
     token_kind_t tag_kind = TK_EOF;
@@ -1444,7 +1445,7 @@ static node_t *apply_postfix(node_t *node) {
         }
       }
       node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
-      node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+      node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
       deref->base.kind = ND_DEREF;
       deref->base.lhs = addr;
       deref->type_size = es;
@@ -1482,7 +1483,7 @@ static node_t *apply_postfix(node_t *node) {
     if (token->kind == TK_INC) {
       token = token->next;
       psx_node_expect_incdec_target(node, "++");
-      node_t *inc = calloc(1, sizeof(node_t));
+      node_t *inc = arena_alloc(sizeof(node_t));
       inc->kind = ND_POST_INC;
       inc->lhs = node;
       node = inc;
@@ -1491,7 +1492,7 @@ static node_t *apply_postfix(node_t *node) {
     if (token->kind == TK_DEC) {
       token = token->next;
       psx_node_expect_incdec_target(node, "--");
-      node_t *dec = calloc(1, sizeof(node_t));
+      node_t *dec = arena_alloc(sizeof(node_t));
       dec->kind = ND_POST_DEC;
       dec->lhs = node;
       node = dec;
@@ -1504,7 +1505,7 @@ static node_t *apply_postfix(node_t *node) {
 
 static node_t *parse_call_postfix(node_t *callee) {
   tk_expect('(');
-  node_func_t *node = calloc(1, sizeof(node_func_t));
+  node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCALL;
   node->callee = callee;
   int nargs = 0;
@@ -1571,7 +1572,7 @@ static node_t *primary(void) {
 
   if (token->kind == TK_NUM) {
     token_num_t *num = (token_num_t *)token;
-    node_num_t *node = calloc(1, sizeof(node_num_t));
+    node_num_t *node = arena_alloc(sizeof(node_num_t));
     node->base.kind = ND_NUM;
     if (num->num_kind == TK_NUM_KIND_INT) {
       node->base.fp_kind = TK_FLOAT_KIND_NONE;
@@ -1613,7 +1614,7 @@ static node_t *primary(void) {
       int flen = g_current_funcname ? g_current_funcname_len : 0;
       char *fstr = calloc((size_t)flen + 1, 1);
       memcpy(fstr, fname, (size_t)flen);
-      node_string_t *snode = calloc(1, sizeof(node_string_t));
+      node_string_t *snode = arena_alloc(sizeof(node_string_t));
       snode->mem.base.kind = ND_STRING;
       int id = string_label_count++;
       int label_len = snprintf(NULL, 0, ".LC%d", id);
@@ -1644,7 +1645,7 @@ static node_t *primary(void) {
     if (token->kind == TK_LPAREN) {
       if (!var) {
         token = token->next;
-        node_func_t *node = calloc(1, sizeof(node_func_t));
+        node_func_t *node = arena_alloc(sizeof(node_func_t));
         node->base.kind = ND_FUNCALL;
         node->callee = NULL;
         node->funcname = tok->str;
@@ -1674,7 +1675,7 @@ static node_t *primary(void) {
     }
 
     if (!var && psx_ctx_has_function_name(tok->str, tok->len)) {
-      node_funcref_t *fr = calloc(1, sizeof(node_funcref_t));
+      node_funcref_t *fr = arena_alloc(sizeof(node_funcref_t));
       fr->base.kind = ND_FUNCREF;
       fr->funcname = tok->str;
       fr->funcname_len = tok->len;
@@ -1687,13 +1688,13 @@ static node_t *primary(void) {
         if (gv->name_len == tok->len && memcmp(gv->name, tok->str, (size_t)tok->len) == 0) {
           if (gv->is_array) {
             // グローバル配列: アドレスをND_ADDRとして返す（ローカル配列と同様）
-            node_gvar_t *base = calloc(1, sizeof(node_gvar_t));
+            node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
             base->mem.base.kind = ND_GVAR;
             base->mem.type_size = gv->type_size;
             base->mem.deref_size = gv->deref_size;
             base->name = gv->name;
             base->name_len = gv->name_len;
-            node_mem_t *addr = calloc(1, sizeof(node_mem_t));
+            node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
             addr->base.kind = ND_ADDR;
             addr->base.lhs = (node_t *)base;
             addr->type_size = gv->deref_size;
@@ -1701,7 +1702,7 @@ static node_t *primary(void) {
             addr->is_pointer = 1;
             return (node_t *)addr;
           }
-          node_gvar_t *gvar_node = calloc(1, sizeof(node_gvar_t));
+          node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
           gvar_node->mem.base.kind = ND_GVAR;
           gvar_node->mem.type_size = gv->type_size;
           gvar_node->mem.deref_size = gv->deref_size;
@@ -1716,7 +1717,7 @@ static node_t *primary(void) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }
     if (var->is_array && !var->is_vla) {
-      node_mem_t *node = calloc(1, sizeof(node_mem_t));
+      node_mem_t *node = arena_alloc(sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
       node->base.lhs = psx_node_new_lvar(var->offset);
       int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
@@ -1736,7 +1737,7 @@ static node_t *primary(void) {
     //  → ND_ADDR(ND_DEREF(ptr_lvar)) = struct base ptr → offset → deref → member ✓
     if (var->is_byref_param) {
       node_t *ptr_lvar = psx_node_new_lvar_typed(var->offset, 8);  // loads ptr from frame
-      node_mem_t *deref = calloc(1, sizeof(node_mem_t));
+      node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
       deref->base.kind = ND_DEREF;
       deref->base.lhs = ptr_lvar;
       deref->type_size = var->elem_size;  // 実際の構造体サイズ
@@ -1816,7 +1817,7 @@ static node_t *primary(void) {
       token = token->next;
     }
 
-    node_string_t *node = calloc(1, sizeof(node_string_t));
+    node_string_t *node = arena_alloc(sizeof(node_string_t));
     node->mem.base.kind = ND_STRING;
     int id = string_label_count++;
     int label_len = snprintf(NULL, 0, ".LC%d", id);

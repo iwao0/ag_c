@@ -1,4 +1,5 @@
 #include "internal/decl.h"
+#include "internal/arena.h"
 #include "internal/core.h"
 #include "internal/diag.h"
 #include "internal/expr.h"
@@ -737,7 +738,7 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
       psx_diag_ctx(token, "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
     }
-    node_ctrl_t *copy_select = calloc(1, sizeof(node_ctrl_t));
+    node_ctrl_t *copy_select = arena_alloc(sizeof(node_ctrl_t));
     copy_select->base.kind = ND_TERNARY;
     copy_select->base.lhs = ternary->base.lhs;
     node_t *then_copy = build_struct_copy_chain_from_source(var, then_src);
@@ -1128,7 +1129,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           var->outer_stride = outer_stride;
           var->vla_row_stride_frame_off = vla_row_stride_frame_off;
           // VLA確保ノード
-          node_mem_t *alloc_node = calloc(1, sizeof(node_mem_t));
+          node_mem_t *alloc_node = arena_alloc(sizeof(node_mem_t));
           alloc_node->base.kind = ND_VLA_ALLOC;
           alloc_node->type_size = var->offset; // ベースポインタを格納するフレームオフセット
           alloc_node->vla_row_stride_frame_off = vla_row_stride_frame_off;

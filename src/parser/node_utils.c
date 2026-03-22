@@ -1,7 +1,7 @@
 #include "internal/node_utils.h"
+#include "internal/arena.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
-#include <stdlib.h>
 
 static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
@@ -106,7 +106,7 @@ static int node_is_unsigned(node_t *node) {
 }
 
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
-  node_t *node = calloc(1, sizeof(node_t));
+  node_t *node = arena_alloc(sizeof(node_t));
   node->kind = kind;
   node->lhs = lhs;
   node->rhs = rhs;
@@ -127,14 +127,14 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
 }
 
 node_t *psx_node_new_num(long long val) {
-  node_num_t *node = calloc(1, sizeof(node_num_t));
+  node_num_t *node = arena_alloc(sizeof(node_num_t));
   node->base.kind = ND_NUM;
   node->val = val;
   return (node_t *)node;
 }
 
 node_t *psx_node_new_lvar(int offset) {
-  node_lvar_t *node = calloc(1, sizeof(node_lvar_t));
+  node_lvar_t *node = arena_alloc(sizeof(node_lvar_t));
   node->mem.base.kind = ND_LVAR;
   node->offset = offset;
   node->mem.type_size = 8;
@@ -148,7 +148,7 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size) {
 }
 
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
-  node_mem_t *node = calloc(1, sizeof(node_mem_t));
+  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
   node->base.kind = ND_ASSIGN;
   node->base.lhs = lhs;
   node->base.rhs = rhs;
