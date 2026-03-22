@@ -6,84 +6,116 @@
 ## 対応済みの文法
 
 ```
-program    = external_decl*
-external_decl = funcdef
-             | "_Static_assert" "(" const_expr "," string ")" ";"
-             | "typedef" (type | tag_type) "*"* typedef_declarator ("," "*"* typedef_declarator)* ";"
-             | ("struct" | "union" | "enum") ident? "{" tag_member_list "}" ";"
-             | ("struct" | "union" | "enum") ident? "{" tag_member_list "}" declarator ("," declarator)* ";"
-             | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
-             | ("struct" | "union" | "enum") ident ";"
-             | type declarator ("," declarator)* ";"
-funcdef    = type? ident "(" params? ")" (";" | "{" stmt* "}")
-params     = param_decl ("," param_decl)* ("," "...")?
-           | "void"
-param_decl = type "*"* ident?
-           | tag_type "*"* ident?
-stmt       = "{" stmt* "}"
-           | "if" "(" expr ")" stmt ("else" stmt)?
-           | "while" "(" expr ")" stmt
-           | "do" stmt "while" "(" expr ")" ";"
-           | "for" "(" (expr | type declarator ("," declarator)*)? ";" expr? ";" expr? ")" stmt
-           | "switch" "(" expr ")" stmt
-           | "case" const_expr ":" stmt
-           | "default" ":" stmt
-           | "break" ";"
-           | "continue" ";"
-           | "goto" ident ";"
-           | ident ":" stmt
-           | "_Static_assert" "(" const_expr "," string ")" ";"
-           | "return" expr? ";"
-           | type declarator ("," declarator)* ";"                  // local variable declaration
-           | expr ";"
-           | ";"                                                    // null statement
-type       = type_qual* type_spec+ type_qual*
-type_spec  = "int" | "char" | "void" | "short" | "long" | "float" | "double"
-           | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic"
-           | typedef_name
-storage    = "static" | "extern" | "register" | "_Thread_local"
-tag_type   = ("struct" | "union" | "enum") ident
-typedef_declarator = ident ("[" num "]")*
-tag_member_list = tag_member_decl+
-tag_member_decl = (type | tag_type) "*"* ident ("[" num? "]")? (":" const_expr)?
-                  ("," "*"* ident ("[" num "]")? (":" const_expr)?)* ";"
-                | ident ("=" const_expr)? ("," ident ("=" const_expr)?)* ";"   // enum
-declarator = "*"* ident ("[" num "]")* ("=" initializer)?
-           | "*"* "(" "*" ident ")" "(" params? ")" ("=" initializer)?   // function pointer
-initializer = assign
-            | "{" initializer_list? "}"
+// ── 翻訳単位 ──────────────────────────────────────────
+program        = external_decl*
+external_decl  = func_def
+               | declaration
+               | "_Static_assert" "(" const_expr "," string ")" ";"
+
+// ── 宣言（C11 §6.7）─────────────────────────────────────
+func_def       = decl_spec declarator compound_stmt
+declaration    = decl_spec init_declarator_list? ";"
+               | "typedef" decl_spec typedef_declarator ("," typedef_declarator)* ";"
+
+decl_spec      = (storage_spec | type_spec | type_qual | func_spec | align_spec)+
+storage_spec   = "static" | "extern" | "register" | "auto" | "_Thread_local"
+type_spec      = "int" | "char" | "void" | "short" | "long" | "float" | "double"
+               | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic"
+               | struct_or_union_spec | enum_spec | typedef_name
+struct_or_union_spec = ("struct" | "union") ident? "{" member_list "}"
+                     | ("struct" | "union") ident
+enum_spec      = "enum" ident? "{" enumerator_list ","? "}"
+               | "enum" ident
+type_qual      = "const" | "volatile" | "restrict"
+func_spec      = "inline" | "_Noreturn"
+align_spec     = "_Alignas" "(" (type_name | const_expr) ")"
+
+init_declarator_list = init_declarator ("," init_declarator)*
+init_declarator = declarator ("=" initializer)?
+
+// ── 宣言子（C11 §6.7.6）─────────────────────────────────
+declarator     = pointer? direct_declarator
+direct_declarator = ident ("[" num? "]")*                           // variable / array
+                  | ident "(" params? ")"                           // function
+                  | "(" pointer? ident ")" "(" params? ")"          // function pointer: (*fp)(...)
+pointer        = ("*" type_qual*)+
+
+params         = param_decl ("," param_decl)* ("," "...")?
+               | "void"
+param_decl     = decl_spec (declarator | pointer?)
+
+typedef_declarator = pointer? ident ("[" num "]")*
+
+// ── 構造体・共用体メンバ（C11 §6.7.2.1）─────────────────
+member_list    = member_decl+
+member_decl    = decl_spec pointer? ident ("[" num? "]")? (":" const_expr)?
+                 ("," pointer? ident ("[" num "]")? (":" const_expr)?)* ";"
+
+// ── 列挙子（C11 §6.7.2.2）──────────────────────────────
+enumerator_list = enumerator ("," enumerator)*
+enumerator     = ident ("=" const_expr)?
+
+// ── 型名（C11 §6.7.7）──────────────────────────────────
+type_name      = decl_spec pointer?
+
+// ── 初期化子（C11 §6.7.9）──────────────────────────────
+initializer      = assign | "{" initializer_list? "}"
 initializer_list = designation? initializer ("," designation? initializer)* ","?
-designation = ("." ident | "[" const_expr "]")+ "="
-expr       = assign ("," assign)*
-assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
-conditional= logical_or ("?" expr ":" conditional)?
-logical_or = logical_and ("||" logical_and)*
-logical_and= bit_or ("&&" bit_or)*
-bit_or     = bit_xor ("|" bit_xor)*
-bit_xor    = bit_and ("^" bit_and)*
-bit_and    = equality ("&" equality)*
-equality   = relational ("==" relational | "!=" relational)*
-relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
-shift      = add ("<<" add | ">>" add)*
-add        = mul ("+" mul | "-" mul)*
-mul        = unary ("*" unary | "/" unary | "%" unary)*
-unary      = "(" cast_type ")" unary
-           | "(" cast_type ")" "{" initializer_list "}"             // compound literal
-           | "sizeof" ("(" cast_type ")" | unary | "(" expr ")")
-           | "_Alignof" "(" cast_type ")"
-           | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
-           | primary postfix*
-cast_type  = type_qual* (type | tag_type | typedef_name | "_Atomic" type | "_Atomic" "(" cast_type ")") "*"*
-type_qual  = "const" | "volatile" | "restrict"
-postfix    = ("[" expr "]" | "(" args? ")" | "." ident | "->" ident | "++" | "--")*
-primary    = "(" expr ")" | ident | num | string | char_lit
-           | "_Generic" "(" assign "," generic_assoc_list ")"
-args       = assign ("," assign)*
+designation      = ("." ident | "[" const_expr "]")+ "="
+
+// ── 文（C11 §6.8）──────────────────────────────────────
+compound_stmt  = "{" block_item* "}"
+block_item     = declaration
+               | "_Static_assert" "(" const_expr "," string ")" ";"
+               | stmt
+stmt           = compound_stmt
+               | "if" "(" expr ")" stmt ("else" stmt)?
+               | "while" "(" expr ")" stmt
+               | "do" stmt "while" "(" expr ")" ";"
+               | "for" "(" (declaration | expr? ";") expr? ";" expr? ")" stmt
+               | "switch" "(" expr ")" stmt
+               | "case" const_expr ":" stmt
+               | "default" ":" stmt
+               | "break" ";"
+               | "continue" ";"
+               | "goto" ident ";"
+               | ident ":" stmt
+               | "return" expr? ";"
+               | expr ";"
+               | ";"                                                // null statement
+
+// ── 式（C11 §6.5）──────────────────────────────────────
+expr           = assign ("," assign)*
+assign         = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%="
+               | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
+conditional    = logical_or ("?" expr ":" conditional)?
+logical_or     = logical_and ("||" logical_and)*
+logical_and    = bit_or ("&&" bit_or)*
+bit_or         = bit_xor ("|" bit_xor)*
+bit_xor        = bit_and ("^" bit_and)*
+bit_and        = equality ("&" equality)*
+equality       = relational ("==" relational | "!=" relational)*
+relational     = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
+shift          = add ("<<" add | ">>" add)*
+add            = mul ("+" mul | "-" mul)*
+mul            = cast ("*" cast | "/" cast | "%" cast)*
+cast           = "(" type_name ")" cast | unary
+unary          = "(" type_name ")" "{" initializer_list "}"         // compound literal
+               | "sizeof" ("(" type_name ")" | unary)
+               | "_Alignof" "(" type_name ")"
+               | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
+               | postfix
+postfix        = primary ("[" expr "]" | "(" args? ")" | "." ident | "->" ident | "++" | "--")*
+primary        = "(" expr ")" | ident | num | string | char_lit
+               | "_Generic" "(" assign "," generic_assoc_list ")"
+args           = assign ("," assign)*
 generic_assoc_list = generic_assoc ("," generic_assoc)*
-generic_assoc = (type | "default") ":" assign
-const_expr = (compile-time constant expression using enum_const_expr evaluator; supports
-              integer literals, sizeof, !, ~, +, -, *, /, %, <<, >>, &, |, ^, ==, !=,
-              <, <=, >, >=, &&, ||, ?:, and parenthesized sub-expressions)
+generic_assoc  = (type_name | "default") ":" assign
+
+// ── 定数式（C11 §6.6）──────────────────────────────────
+// compile-time constant expression using enum_const_expr evaluator
+const_expr     = integer literals, sizeof, !, ~, +, -, *, /, %, <<, >>, &, |, ^,
+                 ==, !=, <, <=, >, >=, &&, ||, ?:, parenthesized sub-expressions
 ```
 
 ### トークン定義

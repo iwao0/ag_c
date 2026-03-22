@@ -93,24 +93,24 @@
 | if/else 文 | `stmt = "if" "(" expr ")" stmt ("else" stmt)?` |
 | while 文 | `stmt = "while" "(" expr ")" stmt` |
 | do-while 文 | `stmt = "do" stmt "while" "(" expr ")" ";"` |
-| for 文 | `stmt = "for" "(" (expr \| type declarator)? ";" expr? ";" expr? ")" stmt`（宣言初期化・スコープ対応） |
-| switch/case/default | `stmt = "switch" "(" expr ")" stmt` / `stmt = "case" num ":" stmt` / `stmt = "default" ":" stmt` |
+| for 文 | `"for" "(" (declaration \| expr? ";") expr? ";" expr? ")" stmt`（宣言初期化・スコープ対応） |
+| switch/case/default | `stmt = "switch" "(" expr ")" stmt` / `"case" const_expr ":" stmt` / `"default" ":" stmt` |
 | break/continue | `stmt = "break" ";"` / `stmt = "continue" ";"` |
 | 論理演算 (`&&`, `||`) | `logical_or`, `logical_and`（短絡評価） |
 | 条件演算子 (`?:`) | `conditional = logical_or ("?" expr ":" conditional)?` |
 | 前置/後置インクリメント・デクリメント | `unary/postfix` の `++` / `--` |
-| return 文 | `stmt = "return" expr ";"` |
-| ブロック文 | `stmt = "{" stmt* "}"` |
-| 関数定義 | `funcdef = type? ident "(" params? ")" (";" \| "{" stmt* "}")` |
-| 最外部宣言 | `program = external_decl*`（関数/タグ宣言・定義/型付きグローバル宣言） |
+| return 文 | `"return" expr? ";"` |
+| ブロック文 / compound_stmt | `"{" block_item* "}"` |
+| 関数定義 | `func_def = decl_spec declarator compound_stmt` |
+| 宣言 | `declaration = decl_spec init_declarator_list? ";"` |
 | 関数呼び出し | `postfix = "(" args? ")"` |
-| 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double" \| "signed" \| "unsigned" \| "_Bool" \| "_Complex" \| "_Atomic"` |
-| タグ定義/参照 | `("struct"\|"union"\|"enum") ident?`（定義本体 `{...}` とブロックスコープに対応、匿名タグ・自己参照ポインタメンバ対応） |
-| タグ型ポインタcast | `unary = "(" tag_type "*"* ")" unary`（例: `(struct S*)p`） |
+| 型指定 | `decl_spec = (storage_spec \| type_spec \| type_qual \| func_spec \| align_spec)+` |
+| タグ定義/参照 | `struct_or_union_spec` / `enum_spec`（匿名タグ・自己参照ポインタメンバ対応） |
+| キャスト | `cast = "(" type_name ")" cast`（例: `(struct S*)p`） |
 | ポインタ (`*p`, `&x`) | `unary = ("*" \| "&") unary` |
 | 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
 | メンバアクセス (`s.m`, `p->m`) | `postfix = "." ident \| "->" ident` |
-| typedef | `"typedef" (type \| tag_type) "*"* ident ";"` |
+| typedef | `"typedef" decl_spec typedef_declarator ";"` |
 | 文字列リテラル (`"..."`) | `primary = ... \| string` |
 | 文字リテラル (`'A'`) | `TK_NUM` としてASCII値を格納 |
 | char型 1バイト対応 | `ldrb`/`strb` で char 変数・配列・文字列添字を処理 |
