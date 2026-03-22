@@ -850,6 +850,13 @@ static const test_case_t test_cases[] = {
     {"evil", "post_const_char", CASE_INT,
      "int main() { char const c = 65; return c; }",
      65, 0},
+    // 大きな即値（16bit超）
+    {"evil", "large_imm_mod", CASE_INT,
+     "int main() { return 100000 % 256; }",
+     160, 0},
+    {"evil", "large_imm_var", CASE_INT,
+     "int main() { int x = 1000000; return x % 256; }",
+     64, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

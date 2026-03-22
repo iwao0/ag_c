@@ -125,6 +125,33 @@ static void cg_emitf(const char *fmt, ...) {
 }
 
 
+// AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンスで生成する
+static void cg_emit_mov_imm(const char *reg, long long val) {
+  uint64_t uval = (uint64_t)val;
+  // 16bit に収まる場合（符号付き -65536..65535 もカバー）
+  if (val >= 0 && val <= 0xFFFF) {
+    cg_emitf("  mov %s, #%lld\n", reg, val);
+    return;
+  }
+  // 負の値で mov で扱える範囲（movn 相当）
+  if (val < 0 && val >= -0x10000) {
+    cg_emitf("  mov %s, #%lld\n", reg, val);
+    return;
+  }
+  // 一般ケース: movz + movk シーケンス
+  int first = 1;
+  for (int shift = 0; shift < 64; shift += 16) {
+    uint64_t chunk = (uval >> shift) & 0xFFFF;
+    if (chunk == 0 && !first) continue;
+    if (first) {
+      cg_emitf("  movz %s, #%llu, lsl #%d\n", reg, (unsigned long long)chunk, shift);
+      first = 0;
+    } else {
+      cg_emitf("  movk %s, #%llu, lsl #%d\n", reg, (unsigned long long)chunk, shift);
+    }
+  }
+}
+
 void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
   // コールバック切り替え前にバッファをフラッシュ
   cg_flush_peephole();
@@ -486,9 +513,12 @@ static void gen_expr_to_reg(node_t *node, int depth) {
   int reg = 9 + depth;
 
   switch (node->kind) {
-  case ND_NUM:
-    cg_emitf("  mov x%d, #%lld\n", reg, as_num(node)->val);
+  case ND_NUM: {
+    char regbuf[8];
+    snprintf(regbuf, sizeof(regbuf), "x%d", reg);
+    cg_emit_mov_imm(regbuf, as_num(node)->val);
     return;
+  }
 
   case ND_LVAR: {
     if (node->fp_kind) break; // FPU はフォールバック
@@ -610,7 +640,7 @@ static void gen_expr(node_t *node) {
         cg_emitf("  str d0, [sp, #-16]!\n");
       }
     } else {
-      cg_emitf("  mov x0, #%lld\n", as_num(node)->val);
+      cg_emit_mov_imm("x0", as_num(node)->val);
       cg_emitf("  str x0, [sp, #-16]!\n");
     }
     return;
@@ -1570,7 +1600,7 @@ static void gen_stmt(node_t *node) {
 
     for (int i = 0; i < sc.case_count; i++) {
       node_case_t *c = sc.cases[i];
-      cg_emitf("  mov x1, #%lld\n", c->val);
+      cg_emit_mov_imm("x1", c->val);
       cg_emitf("  cmp x0, x1\n");
       cg_emitf("  beq .Lcase%d\n", c->label_id);
     }
