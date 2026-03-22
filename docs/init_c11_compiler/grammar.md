@@ -16,37 +16,44 @@ external_decl = funcdef
              | ("struct" | "union" | "enum") ident ";"
              | type declarator ("," declarator)* ";"
 funcdef    = type? ident "(" params? ")" (";" | "{" stmt* "}")
-params     = type? ident ("," type? ident)*
+params     = param_decl ("," param_decl)* ("," "...")?
+           | "void"
+param_decl = type "*"* ident?
+           | tag_type "*"* ident?
 stmt       = "{" stmt* "}"
            | "if" "(" expr ")" stmt ("else" stmt)?
            | "while" "(" expr ")" stmt
            | "do" stmt "while" "(" expr ")" ";"
            | "for" "(" (expr | type declarator ("," declarator)*)? ";" expr? ";" expr? ")" stmt
            | "switch" "(" expr ")" stmt
-           | "case" num ":" stmt
+           | "case" const_expr ":" stmt
            | "default" ":" stmt
            | "break" ";"
            | "continue" ";"
            | "goto" ident ";"
            | ident ":" stmt
            | "_Static_assert" "(" const_expr "," string ")" ";"
-           | "return" expr ";"
+           | "return" expr? ";"
            | type declarator ("," declarator)* ";"                  // local variable declaration
            | expr ";"
            | ";"                                                    // null statement
-type       = type_qual* ("int" | "char" | "void" | "short" | "long" | "float" | "double"
+type       = type_qual* type_spec+ type_qual*
+type_spec  = "int" | "char" | "void" | "short" | "long" | "float" | "double"
            | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic"
-           | typedef_name) type_qual*
+           | typedef_name
 storage    = "static" | "extern" | "register" | "_Thread_local"
 tag_type   = ("struct" | "union" | "enum") ident
 typedef_declarator = ident ("[" num "]")*
 tag_member_list = tag_member_decl+
-tag_member_decl = (type | tag_type) "*"* ident ("[" num? "]")? ("," "*"* ident ("[" num "]")?)* ";"
+tag_member_decl = (type | tag_type) "*"* ident ("[" num? "]")? (":" const_expr)?
+                  ("," "*"* ident ("[" num "]")? (":" const_expr)?)* ";"
                 | ident ("=" const_expr)? ("," ident ("=" const_expr)?)* ";"   // enum
-declarator = "*"* ident ("[" num "]")? ("=" initializer)?
+declarator = "*"* ident ("[" num "]")* ("=" initializer)?
+           | "*"* "(" "*" ident ")" "(" params? ")" ("=" initializer)?   // function pointer
 initializer = assign
             | "{" initializer_list? "}"
-initializer_list = initializer ("," initializer)* ","?
+initializer_list = designation? initializer ("," designation? initializer)* ","?
+designation = ("." ident | "[" const_expr "]")+ "="
 expr       = assign ("," assign)*
 assign     = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 conditional= logical_or ("?" expr ":" conditional)?
@@ -61,6 +68,7 @@ shift      = add ("<<" add | ">>" add)*
 add        = mul ("+" mul | "-" mul)*
 mul        = unary ("*" unary | "/" unary | "%" unary)*
 unary      = "(" cast_type ")" unary
+           | "(" cast_type ")" "{" initializer_list "}"             // compound literal
            | "sizeof" ("(" cast_type ")" | unary | "(" expr ")")
            | "_Alignof" "(" cast_type ")"
            | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
@@ -70,7 +78,7 @@ type_qual  = "const" | "volatile" | "restrict"
 postfix    = ("[" expr "]" | "(" args? ")" | "." ident | "->" ident | "++" | "--")*
 primary    = "(" expr ")" | ident | num | string | char_lit
            | "_Generic" "(" assign "," generic_assoc_list ")"
-args       = expr ("," expr)*
+args       = assign ("," assign)*
 generic_assoc_list = generic_assoc ("," generic_assoc)*
 generic_assoc = (type | "default") ":" assign
 const_expr = (compile-time constant expression using enum_const_expr evaluator; supports
