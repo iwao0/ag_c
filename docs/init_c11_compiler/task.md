@@ -1045,6 +1045,11 @@
 - [x] 多次元配列の初期化子（`int a[2][3] = {{1,2,3},{4,5,6}};`）が正しい値を返さない
   - 宣言時に outer_stride を記録、初期化子パーサーでネスト波括弧対応、サブスクリプトで inner_deref_size 伝播を修正
 
+- [ ] Duff's device パターンで SIGSEGV が発生する
+  - switch 内の do-while ループに case ラベルが分散する構造（C標準準拠、clang で正常動作）
+  - 再現コード: `switch(n%4){case 0:do{sum+=1;case 3:sum+=1;case 2:sum+=1;case 1:sum+=1;}while(--i>0);}`
+  - 原因: switch の case/default ラベルが複合文（do-while）の内部にある場合のパース/コード生成が未対応
+
 ### パーサー機能拡張
 - [x] フレキシブル配列メンバー（C99/C11 6.7.2.1）を受理する
   - トップレベル（parser.c）とローカル（stmt.c）の両方で `[]` をサイズ0として処理
