@@ -781,6 +781,21 @@ static int parse_parenthesized_type_size(void) {
     return sz;
   }
 
+  // long double: 2トークン型名
+  if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE) {
+    token = token->next->next;
+    int sz = 8; // macOS/AArch64: long double == double (64-bit)
+    while (token->kind == TK_MUL) {
+      token = token->next;
+      sz = 8;
+    }
+    int fp_ptr = 0;
+    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    tk_expect(')');
+    return sz;
+  }
   bool is_type = false;
   int scalar_size = 8;
   token_kind_t type_kind = token->kind;

@@ -1090,8 +1090,10 @@
   - AArch64 ABI: x0-x7 に収まらない引数はスタック経由で渡す
 - [x] 浮動小数点レジスタ割り付けを実装する
   - 現状の gen_expr_to_reg は整数二項演算のみ対応。浮動小数点式は全てスタック経由
-- [ ] `long double` 対応を完全にする
-  - AArch64 では `long double` は 128-bit（quad precision）。現状 `double`（64-bit）と同等扱い
+- [x] `long double` 対応を完全にする
+  - macOS/AArch64 では `long double` は `double` と同一（64-bit IEEE 754）。現状の double lowering は正しい
+  - [x] `sizeof(long double)` のパースを修正（`long double` 2トークン型名の認識）
+  - [x] E2E テスト追加
 - [x] 末尾呼び出し最適化（TCO）の検討
   - 自己再帰関数で `return func(...)` パターンを検出し、引数を再設定後 `b .L_tco_` ラベルへジャンプ。スタック消費を O(1) に削減
 

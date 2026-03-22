@@ -306,6 +306,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "volatile_decl", CASE_INT, "int main() { volatile int x=9; return x; }", 9, 0},
     {"type_decl", "storage_specs_local", CASE_INT, "int main() { static int x=8; register int r=2; auto int a=1; int *restrict p=0; return x+r+a+(p==0); }", 12, 0},
     {"type_decl", "scalar_brace_init", CASE_INT, "int main() { int x={3}; return x; }", 3, 0},
+    {"type_decl", "long_double_sizeof", CASE_INT, "int main() { return sizeof(long double); }", 8, 0},
     {"type_decl", "complex_sizeof", CASE_INT, "int main() { return sizeof(_Complex double); }", 16, 0},
     {"type_decl", "complex_float_sizeof", CASE_INT, "int main() { return sizeof(_Complex float); }", 8, 0},
     {"type_decl", "complex_init_copy", CASE_INT, "int main() { _Complex double a = 3.0; _Complex double b = a; _Complex double c = 3.0; return b == c; }", 1, 0},
