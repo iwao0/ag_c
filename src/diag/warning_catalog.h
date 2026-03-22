@@ -5,6 +5,7 @@ typedef enum {
   DIAG_WARN_PARSER_IMPLICIT_INT_RETURN = 3001,
   DIAG_WARN_PARSER_UNREACHABLE_CODE = 3002,
   DIAG_WARN_PARSER_UNUSED_VARIABLE = 3003,
+  DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE = 3004,
 } diag_warn_id_t;
 
 const char *diag_warn_code(diag_warn_id_t id);

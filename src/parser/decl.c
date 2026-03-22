@@ -992,6 +992,13 @@ void psx_decl_reserve_variadic_regs(void) {
 
 lvar_t *psx_decl_get_locals(void) { return locals; }
 
+lvar_t *psx_decl_find_lvar_by_offset(int offset) {
+  for (lvar_t *var = locals; var; var = var->next) {
+    if (var->offset == offset) return var;
+  }
+  return NULL;
+}
+
 lvar_t *psx_decl_find_lvar(char *name, int len) {
   for (lvar_t *var = locals; var; var = var->next) {
     if (var->len == len && memcmp(var->name, name, len) == 0) {
@@ -1194,6 +1201,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     var->is_unsigned = decl_is_unsigned;
 
     if (tk_consume('=')) {
+      var->is_initialized = 1;
       node_t *init_node = psx_decl_parse_initializer_for_var(var, is_pointer);
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);

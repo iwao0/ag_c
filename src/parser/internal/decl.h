@@ -26,6 +26,7 @@ struct lvar_t {
   unsigned int is_unsigned : 1;       // 1: unsigned type
   unsigned int is_used : 1;           // 1: 参照された
   unsigned int is_param : 1;          // 1: 関数パラメータ
+  unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
@@ -39,6 +40,7 @@ void psx_decl_reset_locals(void);
 lvar_t *psx_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
+lvar_t *psx_decl_find_lvar_by_offset(int offset);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);

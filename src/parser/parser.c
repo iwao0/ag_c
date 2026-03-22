@@ -1286,6 +1286,7 @@ static node_t *funcdef(void) {
           var = psx_decl_register_lvar(param->str, param->len);
         }
         var->is_param = 1;
+        var->is_initialized = 1;
         // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
         // codegen がレジスタ数（1 or 2）を判断するため
         int abi_type_size = (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0)
@@ -1341,11 +1342,15 @@ static node_t *funcdef(void) {
   node->base.rhs = (node_t *)body;
   psx_ctx_validate_goto_refs();
 
-  // 未使用変数の警告
+  // 未使用変数・未初期化変数の警告
   for (lvar_t *v = psx_decl_get_locals(); v; v = v->next) {
     if (!v->is_used && !v->is_param && v->name[0] != '_') {
       diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, token,
                      diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
+                     v->len, v->name);
+    } else if (v->is_used && !v->is_initialized && !v->is_param && !v->is_array) {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, token,
+                     diag_warn_message_for(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE),
                      v->len, v->name);
     }
   }

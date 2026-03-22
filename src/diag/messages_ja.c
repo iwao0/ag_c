@@ -162,6 +162,7 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_IMPLICIT_INT_RETURN: return "戻り値型が省略されています（暗黙の int）";
     case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "到達不能なコードです";
     case DIAG_WARN_PARSER_UNUSED_VARIABLE: return "未使用の変数 '%.*s'";
+    case DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE: return "初期化されていない変数 '%.*s' が使用されています";
   }
   return NULL;
 }

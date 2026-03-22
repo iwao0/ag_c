@@ -162,6 +162,7 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_IMPLICIT_INT_RETURN: return "return type omitted (implicit int)";
     case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "unreachable code";
     case DIAG_WARN_PARSER_UNUSED_VARIABLE: return "unused variable '%.*s'";
+    case DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE: return "variable '%.*s' is used uninitialized";
   }
   return NULL;
 }
