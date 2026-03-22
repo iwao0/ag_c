@@ -1056,10 +1056,10 @@
   - `typedef int (*callback_t)(int); void register(callback_t cb);` のような宣言
 
 ### 型システム強化
-- [ ] 暗黙の型変換（integer promotion / usual arithmetic conversion）を実装する
-  - C11 6.3.1.1: `char`, `short` → `int` への自動昇格
-  - C11 6.3.1.8: 二項演算のオペランド型統一（`int + long` → `long`）
-  - 現状は codegen が `ldr w` / `ldr x` の選択で部分的に対応しているが、セマンティック解析として未実装
+- [x] 暗黙の型変換（integer promotion / usual arithmetic conversion）を実装する
+  - `lvar_t` と `node_mem_t` に `is_unsigned` フラグを追加
+  - signed char/short は `ldrsb x`/`ldrsh x`（64bit符号拡張）、unsigned は `ldrb w`/`ldrh w`（zero拡張）
+  - codegen の ND_LVAR, ND_GVAR, ND_DEREF の全ロードパスで signed/unsigned を区別
 - [ ] `unsigned` 型の演算セマンティクスを正確にする
   - 符号なし比較（`cmp` + `b.hs` / `b.hi`）の使用
   - 符号なし右シフト（`lsr` vs `asr`）の区別

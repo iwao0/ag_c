@@ -475,8 +475,9 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     if (node->fp_kind) break; // FPU はフォールバック
     int off = 16 + as_lvar(node)->offset;
     int ts = as_lvar(node)->mem.type_size;
-    if (ts == 1)      cg_emitf("  ldrb w%d, [x29, #%d]\n", reg, off);
-    else if (ts == 2) cg_emitf("  ldrh w%d, [x29, #%d]\n", reg, off);
+    int uns = as_lvar(node)->mem.is_unsigned;
+    if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x29, #%d]\n" : "  ldrsb x%d, [x29, #%d]\n", reg, off);
+    else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x29, #%d]\n" : "  ldrsh x%d, [x29, #%d]\n", reg, off);
     else if (ts == 4) cg_emitf("  ldr w%d, [x29, #%d]\n", reg, off);
     else              cg_emitf("  ldr x%d, [x29, #%d]\n", reg, off);
     return;
@@ -485,10 +486,11 @@ static void gen_expr_to_reg(node_t *node, int depth) {
   case ND_GVAR: {
     node_gvar_t *gv = (node_gvar_t *)node;
     int ts = gv->mem.type_size;
+    int uns = gv->mem.is_unsigned;
     cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
     cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
-    if (ts == 1)      cg_emitf("  ldrb w%d, [x%d]\n", reg, reg);
-    else if (ts == 2) cg_emitf("  ldrh w%d, [x%d]\n", reg, reg);
+    if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x%d]\n" : "  ldrsb x%d, [x%d]\n", reg, reg);
+    else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x%d]\n" : "  ldrsh x%d, [x%d]\n", reg, reg);
     else if (ts == 4) cg_emitf("  ldr w%d, [x%d]\n", reg, reg);
     else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
     return;
@@ -498,8 +500,9 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     if (as_mem(node)->bit_width > 0) break; // ビットフィールドはフォールバック
     gen_expr_to_reg(node->lhs, depth);
     int ts = as_mem(node)->type_size;
-    if (ts == 1)      cg_emitf("  ldrb w%d, [x%d]\n", reg, reg);
-    else if (ts == 2) cg_emitf("  ldrh w%d, [x%d]\n", reg, reg);
+    int uns = as_mem(node)->is_unsigned;
+    if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x%d]\n" : "  ldrsb x%d, [x%d]\n", reg, reg);
+    else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x%d]\n" : "  ldrsh x%d, [x%d]\n", reg, reg);
     else if (ts == 4) cg_emitf("  ldr w%d, [x%d]\n", reg, reg);
     else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
     return;
@@ -600,9 +603,9 @@ static void gen_expr(node_t *node) {
       cg_emitf("  str d0, [sp, #-16]!\n");
     } else {
       if (as_lvar(node)->mem.type_size == 1)
-        cg_emitf("  ldrb w0, [x0]\n");
+        cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
       else if (as_lvar(node)->mem.type_size == 2)
-        cg_emitf("  ldrh w0, [x0]\n");
+        cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
       else if (as_lvar(node)->mem.type_size == 4)
         cg_emitf("  ldr w0, [x0]\n");
       else
@@ -614,10 +617,11 @@ static void gen_expr(node_t *node) {
     gen_lval(node);
     cg_emitf("  ldr x0, [sp], #16\n");
     int ts = ((node_gvar_t *)node)->mem.type_size;
+    int is_uns = ((node_gvar_t *)node)->mem.is_unsigned;
     if (ts == 1)
-      cg_emitf("  ldrb w0, [x0]\n");
+      cg_emitf(is_uns ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
     else if (ts == 2)
-      cg_emitf("  ldrh w0, [x0]\n");
+      cg_emitf(is_uns ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
     else if (ts == 4)
       cg_emitf("  ldr w0, [x0]\n");
     else
@@ -629,9 +633,9 @@ static void gen_expr(node_t *node) {
     gen_expr(node->lhs);
     cg_emitf("  ldr x0, [sp], #16\n");
     if (as_mem(node)->type_size == 1)
-      cg_emitf("  ldrb w0, [x0]\n");
+      cg_emitf(as_mem(node)->is_unsigned ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
     else if (as_mem(node)->type_size == 2)
-      cg_emitf("  ldrh w0, [x0]\n");
+      cg_emitf(as_mem(node)->is_unsigned ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
     else if (as_mem(node)->type_size == 4)
       cg_emitf("  ldr w0, [x0]\n");
     else

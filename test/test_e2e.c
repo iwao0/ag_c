@@ -289,6 +289,11 @@ static const test_case_t test_cases[] = {
     {"type_decl", "unsigned_long_long_decl", CASE_INT, "int main() { unsigned long long v=12; return v; }", 12, 0},
     {"type_decl", "signed_short_decl", CASE_INT, "int main() { signed short v=13; return v; }", 13, 0},
     {"type_decl", "signed_char_decl", CASE_INT, "int main() { signed char v=13; return v; }", 13, 0},
+    // integer promotion: signed/unsigned 符号拡張 vs zero拡張
+    {"type_decl", "char_sign_extend", CASE_INT, "int main() { char c = 255; return (c < 0) ? 1 : 0; }", 1, 0},
+    {"type_decl", "unsigned_char_zero_extend", CASE_INT, "int main() { unsigned char c = 255; return c; }", 255, 0},
+    {"type_decl", "short_sign_extend", CASE_INT, "int main() { short s = 65535; return (s < 0) ? 1 : 0; }", 1, 0},
+    {"type_decl", "unsigned_short_zero_extend", CASE_INT, "int main() { unsigned short s = 200; return s; }", 200, 0},
     {"type_decl", "const_decl", CASE_INT, "int main() { const int x=8; return x; }", 8, 0},
     {"type_decl", "volatile_decl", CASE_INT, "int main() { volatile int x=9; return x; }", 9, 0},
     {"type_decl", "storage_specs_local", CASE_INT, "int main() { static int x=8; register int r=2; auto int a=1; int *restrict p=0; return x+r+a+(p==0); }", 12, 0},

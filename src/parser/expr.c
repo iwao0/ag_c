@@ -611,6 +611,7 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   as_lvar(ref)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
   as_lvar(ref)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   as_lvar(ref)->mem.pointer_qual_levels = var->pointer_qual_levels;
+  as_lvar(ref)->mem.is_unsigned = var->is_unsigned;
   return ref;
 }
 
@@ -1767,6 +1768,7 @@ static node_t *primary(void) {
     as_lvar(n)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
     as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
     as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
+    as_lvar(n)->mem.is_unsigned = var->is_unsigned;
     n->fp_kind = var->fp_kind;
     return n;
   }

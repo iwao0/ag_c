@@ -26,6 +26,7 @@ struct lvar_t {
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
+  int is_unsigned;       // 1: unsigned type
   int align_bytes; // 0 = natural alignment
   // 多次元配列サポート用
   int outer_stride;             // 多次元配列の外側サブスクリプトストライド（内側次元のバイトサイズ）

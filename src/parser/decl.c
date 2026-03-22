@@ -1065,6 +1065,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                               int is_const_qualified, int is_volatile_qualified) {
   node_t *init_chain = NULL;
   int alignas_val = 0;
+  int decl_is_unsigned = psx_last_type_is_unsigned();
   psx_take_alignas_value(&alignas_val);
 
   for (;;) {
@@ -1186,6 +1187,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     if (!is_pointer) {
       var->fp_kind = decl_fp_kind;
     }
+    var->is_unsigned = decl_is_unsigned;
 
     if (tk_consume('=')) {
       node_t *init_node = psx_decl_parse_initializer_for_var(var, is_pointer);
