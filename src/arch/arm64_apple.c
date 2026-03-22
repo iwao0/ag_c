@@ -599,6 +599,10 @@ static void gen_expr_to_reg(node_t *node, int depth) {
   case ND_BITAND: case ND_BITXOR: case ND_BITOR:
   case ND_SHL: case ND_SHR: {
     if (node->fp_kind) break; // FPU はフォールバック
+    // 比較演算の場合、オペランドが浮動小数点なら FPU パスへフォールバック
+    if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
+      if ((node->lhs && node->lhs->fp_kind) || (node->rhs && node->rhs->fp_kind)) break;
+    }
     if (depth + 1 >= CG_REGALLOC_DEPTH_MAX) break; // レジスタ不足
 
     gen_expr_to_reg(node->lhs, depth);
