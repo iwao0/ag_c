@@ -1090,9 +1090,9 @@
   - `is_array`, `is_extern_decl`, `has_init` の3個の `int`（計12B）を `:1` ビットフィールドにまとめ4Bに削減
 - [x] `node_t` base の小値域フィールドをパッキングする
   - `is_unsigned`（0/1）と `fp_kind`（小さい enum）をビットフィールド化
-- [ ] `type_size` / `deref_size` の型を `int`（4B）から `short`（2B）に縮小する
+- [x] `type_size` / `deref_size` の型を `int`（4B）から `short`（2B）に縮小する
   - 実際の値は 1/2/4/8 程度なので `short` で十分
-- [ ] `bit_width` / `bit_offset` の型を `int`（4B）から `unsigned char`（1B）に縮小する
+- [x] `bit_width` / `bit_offset` の型を `int`（4B）から `unsigned char`（1B）に縮小する
   - 値域は 0〜64 なので `unsigned char` で十分
 - [ ] ASTノードのアリーナアロケータを導入する
   - 現在全ノードが個別 `calloc` のため malloc ヘッダ（16〜32B/alloc）のオーバーヘッドが大きい

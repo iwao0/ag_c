@@ -74,10 +74,10 @@ struct node_t {
 typedef struct node_mem_t node_mem_t;
 struct node_mem_t {
   node_t base;
-  int type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
-  int deref_size;  // ポインタが指す先の要素サイズ
-  int bit_width;   // ビットフィールド幅（0: 非ビットフィールド）
-  int bit_offset;  // ビットフィールド開始ビット位置（ストレージユニット先頭から）
+  short type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
+  short deref_size;  // ポインタが指す先の要素サイズ
+  unsigned char bit_width;   // ビットフィールド幅（0: 非ビットフィールド, max 64）
+  unsigned char bit_offset;  // ビットフィールド開始ビット位置（ストレージユニット先頭から）
   token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）
   char *tag_name;
   int tag_len;
@@ -93,7 +93,7 @@ struct node_mem_t {
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
   // 多次元配列サポート用
-  int inner_deref_size;         // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
+  short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=コンパイル時定数）
 };
 
@@ -197,8 +197,8 @@ struct global_var_t {
   global_var_t *next;
   char *name;
   int name_len;
-  int type_size;      // sizeof（ロード/ストアサイズ）
-  int deref_size;     // ポインタ先の要素サイズ
+  short type_size;    // sizeof（ロード/ストアサイズ）
+  short deref_size;   // ポインタ先の要素サイズ
   unsigned int is_array : 1;       // 1: 配列
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int has_init : 1;       // 1: 初期化子あり
