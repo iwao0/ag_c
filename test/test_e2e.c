@@ -874,6 +874,10 @@ static const test_case_t test_cases[] = {
     {"evil", "signed_cmp_lt", CASE_INT,
      "int main() { int x = -5; int y = 3; return x < y; }",
      1, 0},
+    // 構造体の自己参照ポインタメンバ
+    {"evil", "self_ref_struct", CASE_INT,
+     "int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }",
+     42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

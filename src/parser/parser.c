@@ -563,10 +563,15 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
         nested_n = parse_tag_definition_body_toplevel(member_tag_kind, member_tag_name, member_tag_len, &nested_sz);
         psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len, nested_n, nested_sz);
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
-        psx_diag_undefined_with_name(token, "のタグ型", member_tag_name, member_tag_len);
+        // ポインタメンバの場合は不完全型（自己参照等）を許可する
+        if (token->kind != TK_MUL) {
+          psx_diag_undefined_with_name(token, "のタグ型", member_tag_name, member_tag_len);
+        }
       }
-      elem_size = psx_ctx_get_tag_size(member_tag_kind, member_tag_name, member_tag_len);
-      if (elem_size <= 0) {
+      if (psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
+        elem_size = psx_ctx_get_tag_size(member_tag_kind, member_tag_name, member_tag_len);
+      }
+      if (elem_size <= 0 && token->kind != TK_MUL) {
         psx_diag_ctx(token, "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN));
       }
