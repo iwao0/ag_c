@@ -320,6 +320,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "static_assert_stmt", CASE_INT, "int main() { _Static_assert(1, \"ok\"); return 7; }", 7, 0},
     {"type_decl", "alignas_atomic_prefix", CASE_INT, "int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }", 7, 0},
     {"type_decl", "atomic_type_spec", CASE_INT, "int main() { _Atomic(int) z=5; return z; }", 5, 0},
+    {"type_decl", "atomic_load_store", CASE_INT, "int main() { _Atomic int x=10; int y=x+32; return y; }", 42, 0},
     {"type_decl", "generic_int", CASE_INT, "int main() { return _Generic(1, int:11, default:22); }", 11, 0},
     {"type_decl", "generic_double", CASE_INT, "int main() { return _Generic(1.0, float:11, double:33, default:22); }", 33, 0},
     {"type_decl", "generic_ptr", CASE_INT, "int main() { int *p=0; return _Generic(p, int*:3, default:7); }", 3, 0},

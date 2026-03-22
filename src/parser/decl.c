@@ -1054,7 +1054,9 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
   ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
   ((node_lvar_t *)lvar)->mem.is_complex = var->is_complex;
+  ((node_lvar_t *)lvar)->mem.is_atomic = var->is_atomic;
   lvar->is_complex = var->is_complex;
+  lvar->is_atomic = var->is_atomic;
   ((node_lvar_t *)lvar)->mem.is_const_qualified = var->is_const_qualified;
   ((node_lvar_t *)lvar)->mem.is_volatile_qualified = var->is_volatile_qualified;
   ((node_lvar_t *)lvar)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
@@ -1080,6 +1082,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
   int alignas_val = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned();
   int decl_is_complex = psx_last_type_is_complex();
+  int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
 
   // _Complex 型: サイズを基底型の2倍にする（実部 + 虚部）
@@ -1208,6 +1211,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     }
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;
+    if (decl_is_atomic) var->is_atomic = 1;
 
     if (tk_consume('=')) {
       var->is_initialized = 1;

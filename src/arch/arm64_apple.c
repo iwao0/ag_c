@@ -484,6 +484,7 @@ static void gen_expr_to_reg(node_t *node, int depth) {
 
   case ND_LVAR: {
     if (node->fp_kind) break; // FPU はフォールバック
+    if (node->is_atomic) break; // atomic は ldar 必要 → フォールバック
     int off = 16 + as_lvar(node)->offset;
     int ts = as_lvar(node)->mem.type_size;
     int uns = as_lvar(node)->mem.is_unsigned;
@@ -628,6 +629,17 @@ static void gen_expr(node_t *node) {
     } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
       cg_emitf("  ldr d0, [x0]\n");
       cg_emitf("  str d0, [sp, #-16]!\n");
+    } else if (node->is_atomic) {
+      // _Atomic: load-acquire
+      if (as_lvar(node)->mem.type_size == 1)
+        cg_emitf("  ldarb w0, [x0]\n");
+      else if (as_lvar(node)->mem.type_size == 2)
+        cg_emitf("  ldarh w0, [x0]\n");
+      else if (as_lvar(node)->mem.type_size == 4)
+        cg_emitf("  ldar w0, [x0]\n");
+      else
+        cg_emitf("  ldar x0, [x0]\n");
+      cg_emitf("  str x0, [sp, #-16]!\n");
     } else {
       if (as_lvar(node)->mem.type_size == 1)
         cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
@@ -814,6 +826,16 @@ static void gen_expr(node_t *node) {
           cg_emitf("  strh w2, [x0]\n");
         else
           cg_emitf("  str w2, [x0]\n");
+      } else if (node->is_atomic) {
+        // _Atomic: store-release
+        if (as_mem(node)->type_size == 1)
+          cg_emitf("  stlrb w1, [x0]\n");
+        else if (as_mem(node)->type_size == 2)
+          cg_emitf("  stlrh w1, [x0]\n");
+        else if (as_mem(node)->type_size == 4)
+          cg_emitf("  stlr w1, [x0]\n");
+        else
+          cg_emitf("  stlr x1, [x0]\n");
       } else if (as_mem(node)->type_size == 1)
         cg_emitf("  strb w1, [x0]\n");
       else if (as_mem(node)->type_size == 2)

@@ -75,6 +75,8 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
   *out_len = len;
 }
 
+static int g_last_type_atomic;  // forward decl (defined below with other g_last_type_* vars)
+
 static void skip_cv_qualifiers(void) {
   g_last_type_const_qualified = 0;
   g_last_type_volatile_qualified = 0;
@@ -96,6 +98,9 @@ static void skip_cv_qualifiers(void) {
     }
     if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
       return;
+    }
+    if (token->kind == TK_ATOMIC) {
+      g_last_type_atomic = 1;
     }
     token = token->next;
   }
@@ -909,6 +914,7 @@ static void parse_toplevel_tag_decl(void) {
 
 static int g_last_type_unsigned = 0;
 static int g_last_type_complex = 0;
+// g_last_type_atomic is defined above (before skip_cv_qualifiers)
 
 int psx_last_type_is_unsigned(void) {
   return g_last_type_unsigned;
@@ -918,14 +924,25 @@ int psx_last_type_is_complex(void) {
   return g_last_type_complex;
 }
 
+int psx_last_type_is_atomic(void) {
+  return g_last_type_atomic;
+}
+
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
   g_last_type_complex = 0;
+  g_last_type_atomic = 0;
   skip_cv_qualifiers();
   if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
+    g_last_type_atomic = 1;
     token_kind_t inner = parse_atomic_type_specifier();
     if (inner != TK_EOF) return inner;
+  }
+  // qualifier-form: _Atomic int x;
+  if (token->kind == TK_ATOMIC) {
+    g_last_type_atomic = 1;
+    token = token->next;
   }
   token_t *start = token;
   int saw_signed = 0;

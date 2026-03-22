@@ -1777,7 +1777,9 @@ static node_t *primary(void) {
     as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
     as_lvar(n)->mem.is_unsigned = var->is_unsigned;
     as_lvar(n)->mem.is_complex = var->is_complex;
+    as_lvar(n)->mem.is_atomic = var->is_atomic;
     n->is_complex = var->is_complex;
+    n->is_atomic = var->is_atomic;
     n->fp_kind = var->fp_kind;
     return n;
   }

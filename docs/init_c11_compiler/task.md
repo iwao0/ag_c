@@ -1073,8 +1073,10 @@
   - [x] Phase 5: 乗除算（乗算: (ac-bd, ad+bc)、除算: 正規化公式）
   - [x] 等値・不等値比較（実部・虚部それぞれ比較して AND/OR）
   - Phase 6: `_Imaginary` 対応（C11 Annex G、オプション）— 未着手、多くのコンパイラが未実装のため優先度低
-- [ ] `_Atomic` 型の load/store セマンティクスを実装する
-  - 現状: 型修飾子として認識するのみ。`__atomic_load` / `__atomic_store` 相当の命令生成が未実装
+- [x] `_Atomic` 型の load/store セマンティクスを実装する
+  - AArch64: `ldr` → `ldar`（load-acquire）、`str` → `stlr`（store-release）
+  - [x] `is_atomic` フラグを `node_t`/`node_mem_t`/`lvar_t` に追加、パーサーで `_Atomic` qualifier 検出時に伝搬
+  - [x] コードジェネレータで `ldar`/`ldarb`/`ldarh`（ロード）と `stlr`/`stlrb`/`stlrh`（ストア）を生成
 - [ ] `_Thread_local` のストレージ配置を実装する
   - 現状: キーワード認識のみ。TLS（Thread-Local Storage）セグメントへの配置が未実装
 

@@ -160,6 +160,9 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   if (lhs && lhs->is_complex) {
     node->base.is_complex = 1;
   }
+  if (lhs && lhs->is_atomic) {
+    node->base.is_atomic = 1;
+  }
   return node;
 }
 
