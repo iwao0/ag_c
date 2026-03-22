@@ -13,6 +13,10 @@
 
 // ラベルの一意番号を生成するカウンタ
 static int label_count = 0;
+// TCO: 現在コード生成中の関数情報
+static char *cg_current_funcname = NULL;
+static int cg_current_funcname_len = 0;
+static int cg_current_nargs = 0;
 static int *break_labels;
 static int *continue_labels;
 static int control_cap = 0;
@@ -1094,6 +1098,27 @@ static void gen_stmt(node_t *node) {
     }
     return;
   case ND_RETURN:
+    // TCO: return self(args...) → 引数を再設定して関数先頭へジャンプ
+    if (node->lhs && node->lhs->kind == ND_FUNCALL && node->ret_struct_size == 0 &&
+        node->fp_kind == 0) {
+      node_func_t *call = as_func(node->lhs);
+      if (call->callee == NULL &&
+          call->funcname_len == cg_current_funcname_len &&
+          strncmp(call->funcname, cg_current_funcname, cg_current_funcname_len) == 0 &&
+          call->nargs == cg_current_nargs) {
+        // 引数を評価してスタックに積む
+        for (int i = 0; i < call->nargs; i++) {
+          gen_expr(call->args[i]);
+        }
+        // スタックから引数レジスタにポップ（逆順）
+        for (int i = call->nargs - 1; i >= 0; i--) {
+          cg_emitf("  ldr x%d, [sp], #16\n", i);
+        }
+        // 引数保存ラベルへジャンプ（プロローグをスキップ）
+        cg_emitf("  b .L_tco_%.*s\n", cg_current_funcname_len, cg_current_funcname);
+        return;
+      }
+    }
     if (node->lhs) {
       if (node->ret_struct_size > 16) {
         // >16B 構造体戻り値: x8 が指すバッファにローカル変数の内容をコピー
@@ -1163,6 +1188,9 @@ static void gen_stmt(node_t *node) {
     return;
   case ND_FUNCDEF: {
     node_func_t *fn = as_func(node);
+    cg_current_funcname = fn->funcname;
+    cg_current_funcname_len = fn->funcname_len;
+    cg_current_nargs = fn->nargs;
     clear_label_map();
     collect_goto_labels(fn->base.rhs);
     // 関数ラベルの出力
@@ -1177,6 +1205,8 @@ static void gen_stmt(node_t *node) {
     if (fn->base.ret_struct_size > 16) {
       cg_emitf("  str x8, [x29, #%d]\n", X8_SAVE_OFFSET);
     }
+    // TCO用ラベル: 末尾再帰時はここへジャンプして引数を再保存
+    cg_emitf(".L_tco_%.*s:\n", fn->funcname_len, fn->funcname);
     // 仮引数をレジスタからローカル変数スロットへ保存
     // type_size > 16: byref (>16B 構造体の値渡し) → 1レジスタ (ポインタ)
     // type_size 9-16: 2レジスタ構造体 → stp

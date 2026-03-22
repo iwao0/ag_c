@@ -171,6 +171,7 @@ static const test_case_t test_cases[] = {
     {"funcall", "twice", CASE_INT, "twice(a) { return a*2; } main() { return twice(5); }", 10, 0},
     {"funcall", "multi", CASE_INT, "add(a, b) { return a+b; } mul(a, b) { return a*b; } main() { return add(mul(3, 4), mul(3, 3)); }", 21, 0},
     {"funcall", "rec", CASE_INT, "fact(n) { if (n<=1) return 1; return n * fact(n-1); } main() { return fact(5); }", 120, 0},
+    {"funcall", "tail_rec", CASE_INT, "int sum(int n, int acc) { if (n <= 0) return acc; return sum(n-1, acc+n); } int main() { return sum(10, 0); }", 55, 0},
     {"funcall", "comma_arg", CASE_INT, "f(x,y){return x*10+y;} main(){ return f((1,2),3); }", 23, 0},
     {"funcall", "prototype_decl", CASE_INT, "int add(int a, int b); int add(int a, int b){ return a+b; } int main(){ return add(20,22); }", 42, 0},
     {"funcall", "param_funcptr_decl", CASE_INT, "int apply(int (*fp)(int), int x) { return x; } int main(){ return apply(0,7); }", 7, 0},
