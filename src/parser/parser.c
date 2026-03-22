@@ -1074,6 +1074,21 @@ token_kind_t psx_consume_type_kind(void) {
       token = token->next;
       continue;
     }
+    // 後置 cv 修飾子（int const, volatile int const など）
+    if (k == TK_CONST) {
+      g_last_type_const_qualified = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_VOLATILE) {
+      g_last_type_volatile_qualified = 1;
+      token = token->next;
+      continue;
+    }
+    if (k == TK_RESTRICT) {
+      token = token->next;
+      continue;
+    }
     break;
   }
 

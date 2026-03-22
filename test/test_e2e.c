@@ -843,6 +843,13 @@ static const test_case_t test_cases[] = {
     {"evil", "anon_enum_negative", CASE_INT,
      "int main() { enum { A=-3, B, C, D }; return D; }",
      0, 0},
+    // 後置const修飾
+    {"evil", "post_const_int", CASE_INT,
+     "int main() { int const x = 42; return x; }",
+     42, 0},
+    {"evil", "post_const_char", CASE_INT,
+     "int main() { char const c = 65; return c; }",
+     65, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

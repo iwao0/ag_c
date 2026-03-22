@@ -1085,10 +1085,11 @@
 - [ ] 構造体の自己参照ポインタメンバでパースエラーになる
   - 再現コード: `struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0;`
   - 原因: 構造体定義中に自身の型名をポインタメンバの型として参照する（不完全型へのポインタ）が未対応
-- [ ] 後置const修飾（`int const x`）が変数宣言でパースエラーになる
+- [x] 後置const修飾（`int const x`）が変数宣言でパースエラーになる
   - 再現コード: `int const x = 42; return x;`
   - `const int x` は正常動作するが、`int const x`（C標準で等価）は未対応
   - 原因: 型指定子の後に置かれた const 修飾子を変数宣言パスで認識していない
+  - 修正: `psx_consume_type_kind()` の型キーワードループ内で `const`/`volatile`/`restrict` をスキップ
 - [ ] `_Static_assert` の定数式で `sizeof(型)==値` がエラーになる
   - 再現コード: `_Static_assert(sizeof(int)==4, "int is 4 bytes");`
   - `_Static_assert(1, "ok")` は正常動作する
