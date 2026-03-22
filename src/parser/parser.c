@@ -1400,7 +1400,7 @@ static node_t *funcdef(void) {
   psx_ctx_validate_goto_refs();
 
   // 未使用変数・未初期化変数の警告
-  for (lvar_t *v = psx_decl_get_locals(); v; v = v->next) {
+  for (lvar_t *v = psx_decl_get_locals(); v; v = v->next_all) {
     if (!v->is_used && !v->is_param && v->name[0] != '_') {
       diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, token,
                      diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),

@@ -857,6 +857,16 @@ static const test_case_t test_cases[] = {
     {"evil", "large_imm_var", CASE_INT,
      "int main() { int x = 1000000; return x % 256; }",
      64, 0},
+    // ブロックスコープの変数シャドウイング
+    {"evil", "block_shadow", CASE_INT,
+     "int main() { int x = 10; { int x = 20; } return x; }",
+     10, 0},
+    {"evil", "for_scope_shadow", CASE_INT,
+     "int main() { int i = 99; for (int i = 0; i < 5; i = i + 1) {} return i; }",
+     99, 0},
+    {"evil", "nested_shadow", CASE_INT,
+     "int main() { int x = 1; { int x = 2; { int x = 3; } } return x; }",
+     1, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

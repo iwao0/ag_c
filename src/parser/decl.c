@@ -11,8 +11,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-static lvar_t *locals;
+static lvar_t *locals;       // 現在のスコープで見えるローカル変数リスト
+static lvar_t *all_locals;   // 全スコープのローカル変数リスト（未使用チェック用）
 static int locals_offset;
+
+// ブロックスコープのローカル変数リスト保存スタック
+#define LVAR_SCOPE_STACK_MAX 256
+static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
+static int lvar_scope_depth;
 static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
@@ -980,7 +986,24 @@ static token_ident_t *consume_decl_name(int *is_pointer,
 
 void psx_decl_reset_locals(void) {
   locals = NULL;
+  all_locals = NULL;
   locals_offset = 0;
+  lvar_scope_depth = 0;
+}
+
+void psx_decl_enter_scope(void) {
+  if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
+    lvar_scope_stack[lvar_scope_depth] = locals;
+  }
+  lvar_scope_depth++;
+}
+
+void psx_decl_leave_scope(void) {
+  if (lvar_scope_depth <= 0) return;
+  lvar_scope_depth--;
+  if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
+    locals = lvar_scope_stack[lvar_scope_depth];
+  }
 }
 
 // For variadic functions: reserve slots for all 8 argument registers
@@ -990,10 +1013,10 @@ void psx_decl_reserve_variadic_regs(void) {
   if (locals_offset < 64) locals_offset = 64;
 }
 
-lvar_t *psx_decl_get_locals(void) { return locals; }
+lvar_t *psx_decl_get_locals(void) { return all_locals; }
 
 lvar_t *psx_decl_find_lvar_by_offset(int offset) {
-  for (lvar_t *var = locals; var; var = var->next) {
+  for (lvar_t *var = all_locals; var; var = var->next_all) {
     if (var->offset == offset) return var;
   }
   return NULL;
@@ -1015,6 +1038,8 @@ lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_siz
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align) {
   lvar_t *var = calloc(1, sizeof(lvar_t));
   var->next = locals;
+  var->next_all = all_locals;
+  all_locals = var;
   var->name = name;
   var->len = len;
   if (align > 1) {
@@ -1108,8 +1133,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     int ptr_is_const_qualified = (ptr_const_mask & 1u) ? 1 : 0;
     int ptr_is_volatile_qualified = (ptr_volatile_mask & 1u) ? 1 : 0;
 
-    lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
-    if (!var) {
+    lvar_t *var = NULL;
+    {
       if (tk_consume('[')) {
         node_t *size_node = NULL;
         int size_ok = 1;

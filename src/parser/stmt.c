@@ -616,6 +616,7 @@ static node_t *stmt_internal(void) {
 
   if (tk_consume('{')) {
     psx_ctx_enter_block_scope();
+    psx_decl_enter_scope();
     node_block_t *node = arena_alloc(sizeof(node_block_t));
     node->base.kind = ND_BLOCK;
     int i = 0;
@@ -639,6 +640,7 @@ static node_t *stmt_internal(void) {
       i++;
     }
     node->body[i] = NULL;
+    psx_decl_leave_scope();
     psx_ctx_leave_block_scope();
     return (node_t *)node;
   }
@@ -784,8 +786,11 @@ static node_t *stmt_internal(void) {
     tk_expect('(');
     node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
+    int for_has_decl = 0;
     if (!tk_consume(';')) {
       if (psx_ctx_is_type_token(token->kind) || is_decl_prefix_token_stmt(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+        for_has_decl = 1;
+        psx_decl_enter_scope();
         if (psx_ctx_is_typedef_name_token(token)) {
           token_ident_t *id = (token_ident_t *)token;
           int elem_size = 8;
@@ -817,6 +822,7 @@ static node_t *stmt_internal(void) {
     psx_loop_enter();
     node->base.rhs = stmt_internal();
     psx_loop_leave();
+    if (for_has_decl) psx_decl_leave_scope();
     return (node_t *)node;
   }
 

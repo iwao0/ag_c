@@ -6,6 +6,7 @@
 typedef struct lvar_t lvar_t;
 struct lvar_t {
   lvar_t *next;
+  lvar_t *next_all;  // 全スコープの変数リスト（未使用チェック・offset検索用）
   char *name;
   int len;
   int offset;
@@ -39,6 +40,8 @@ struct lvar_t {
 };
 
 void psx_decl_reset_locals(void);
+void psx_decl_enter_scope(void);
+void psx_decl_leave_scope(void);
 lvar_t *psx_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
