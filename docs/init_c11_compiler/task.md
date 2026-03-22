@@ -1081,6 +1081,25 @@
 - [ ] 末尾呼び出し最適化（TCO）の検討
   - 自己再帰関数で `b` 命令へ置換し、スタック消費を削減
 
+### メモリ最適化
+- [ ] `node_mem_t` の boolean フィールドをビットフィールド化する
+  - `bit_is_signed`, `is_tag_pointer`, `is_pointer`, `is_unsigned`, `is_const_qualified`, `is_volatile_qualified`, `is_pointer_const_qualified`, `is_pointer_volatile_qualified` の8個の `int`（計32B）を `:1` ビットフィールドにまとめ4Bに削減
+- [ ] `lvar_t` の boolean フィールドをビットフィールド化する
+  - `is_array`, `is_vla`, `is_byref_param`, `is_tag_pointer`, `is_const_qualified`, `is_volatile_qualified`, `is_pointer_const_qualified`, `is_pointer_volatile_qualified`, `is_unsigned` の9個の `int`（計36B）を `:1` ビットフィールドにまとめ4Bに削減
+- [ ] `global_var_t` の boolean フィールドをビットフィールド化する
+  - `is_array`, `is_extern_decl`, `has_init` の3個の `int`（計12B）を `:1` ビットフィールドにまとめ4Bに削減
+- [ ] `node_t` base の小値域フィールドをパッキングする
+  - `is_unsigned`（0/1）と `fp_kind`（小さい enum）をビットフィールド化
+- [ ] `type_size` / `deref_size` の型を `int`（4B）から `short`（2B）に縮小する
+  - 実際の値は 1/2/4/8 程度なので `short` で十分
+- [ ] `bit_width` / `bit_offset` の型を `int`（4B）から `unsigned char`（1B）に縮小する
+  - 値域は 0〜64 なので `unsigned char` で十分
+- [ ] ASTノードのアリーナアロケータを導入する
+  - 現在全ノードが個別 `calloc` のため malloc ヘッダ（16〜32B/alloc）のオーバーヘッドが大きい
+  - 関数単位のアリーナで一括確保・一括解放すればヘッダ削減＋解放の高速化が可能
+- [ ] `tag_name` 文字列を intern（共有）する
+  - 同じ構造体/共用体タグを参照するノードが多数ある場合、重複した文字列ポインタを共有して削減
+
 ### 標準ヘッダ拡充
 - [x] `<ctype.h>` を追加する（`isalpha`, `isdigit`, `isalnum`, `isspace`, `toupper`, `tolower` 等）
 - [x] `<math.h>` を追加する（`sin`, `cos`, `sqrt`, `fabs`, `pow`, `ceil`, `floor`, `log`, `exp` 等）
