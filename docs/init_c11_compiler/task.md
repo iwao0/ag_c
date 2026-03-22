@@ -1093,10 +1093,11 @@
   - `const int x` は正常動作するが、`int const x`（C標準で等価）は未対応
   - 原因: 型指定子の後に置かれた const 修飾子を変数宣言パスで認識していない
   - 修正: `psx_consume_type_kind()` の型キーワードループ内で `const`/`volatile`/`restrict` をスキップ
-- [ ] `_Static_assert` の定数式で `sizeof(型)==値` がエラーになる
+- [x] `_Static_assert` の定数式で `sizeof(型)==値` がエラーになる
   - 再現コード: `_Static_assert(sizeof(int)==4, "int is 4 bytes");`
   - `_Static_assert(1, "ok")` は正常動作する
-  - 原因: `_Static_assert` の定数式評価で `==` 等の比較演算子が未対応の可能性
+  - 原因: `_Static_assert` が `psx_expr_assign()` で式をパースし ND_NUM のみ受理していた
+  - 修正: `parse_enum_const_expr` で定数式評価に変更し、`sizeof(type)` と `!` 演算子を定数式評価器に追加
 - [ ] `_Generic` でローカル変数を制御式に使うとパースエラーになる
   - 再現コード: `double d=1.0; return _Generic(d, int:0, double:42, default:99);`
   - `_Generic(1.0, ...)` のようなリテラル式では正常動作する

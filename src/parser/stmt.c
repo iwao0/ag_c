@@ -426,6 +426,37 @@ static long long parse_enum_const_unary(void) {
     token = token->next;
     return ~parse_enum_const_unary();
   }
+  if (token->kind == TK_BANG) {
+    token = token->next;
+    return !parse_enum_const_unary();
+  }
+  if (token->kind == TK_SIZEOF) {
+    token = token->next;
+    if (token->kind == TK_LPAREN) {
+      token = token->next;
+      int sz = 8;
+      if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_tag_keyword(token->kind)) {
+        psx_ctx_get_type_info(token->kind, NULL, &sz);
+        if (psx_ctx_is_tag_keyword(token->kind)) {
+          token_kind_t tk = token->kind;
+          token = token->next;
+          token_ident_t *tag = tk_consume_ident();
+          if (tag && psx_ctx_has_tag_type(tk, tag->str, tag->len)) {
+            sz = psx_ctx_get_tag_size(tk, tag->str, tag->len);
+          }
+        } else {
+          token = token->next;
+          // consume additional type specifiers (e.g., "unsigned long long")
+          while (psx_ctx_is_type_token(token->kind)) token = token->next;
+        }
+        // skip pointer stars
+        while (token->kind == TK_MUL) { sz = 8; token = token->next; }
+      }
+      tk_expect(')');
+      return sz;
+    }
+    return parse_enum_const_unary();
+  }
   return parse_enum_const_primary();
 }
 
@@ -511,11 +542,7 @@ static void parse_static_assert_stmt(void) {
   }
   token = token->next;
   tk_expect('(');
-  node_t *cond = psx_expr_assign();
-  if (cond->kind != ND_NUM) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST, token, "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
-  }
+  long long cond_val = parse_enum_const_expr();
   tk_expect(',');
   if (token->kind != TK_STRING) {
     diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, token, "%s",
@@ -524,7 +551,7 @@ static void parse_static_assert_stmt(void) {
   token = token->next;
   tk_expect(')');
   tk_expect(';');
-  if (((node_num_t *)cond)->val == 0) {
+  if (cond_val == 0) {
     diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, token, "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }

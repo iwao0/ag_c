@@ -878,6 +878,10 @@ static const test_case_t test_cases[] = {
     {"evil", "self_ref_struct", CASE_INT,
      "int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }",
      42, 0},
+    // _Static_assert with sizeof
+    {"evil", "static_assert_sizeof", CASE_INT,
+     "int main() { _Static_assert(sizeof(int)==4, \"int is 4\"); return 0; }",
+     0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
