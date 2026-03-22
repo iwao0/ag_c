@@ -63,8 +63,8 @@ struct node_t {
   node_t *rhs;      // 右辺 / then節 / ループ本体
 
   // データ型判定用（演算結果の型）
-  tk_float_kind_t fp_kind;
-  int is_unsigned;  // 1: unsigned演算
+  unsigned int fp_kind : 3;     // tk_float_kind_t (0..2)
+  unsigned int is_unsigned : 1; // 1: unsigned演算
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
@@ -78,17 +78,17 @@ struct node_mem_t {
   int deref_size;  // ポインタが指す先の要素サイズ
   int bit_width;   // ビットフィールド幅（0: 非ビットフィールド）
   int bit_offset;  // ビットフィールド開始ビット位置（ストレージユニット先頭から）
-  int bit_is_signed; // ビットフィールドの符号（1: signed, 0: unsigned）
   token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）
   char *tag_name;
   int tag_len;
-  int is_tag_pointer; // 1: tagへのポインタ値, 0: tag値そのもの
-  int is_pointer;     // 1: ポインタ型（ポインタ加算スケーリング対象）
-  int is_unsigned;    // 1: unsigned型
-  int is_const_qualified;
-  int is_volatile_qualified;
-  int is_pointer_const_qualified;
-  int is_pointer_volatile_qualified;
+  unsigned int bit_is_signed : 1;           // ビットフィールドの符号（1: signed, 0: unsigned）
+  unsigned int is_tag_pointer : 1;          // 1: tagへのポインタ値, 0: tag値そのもの
+  unsigned int is_pointer : 1;              // 1: ポインタ型（ポインタ加算スケーリング対象）
+  unsigned int is_unsigned : 1;             // 1: unsigned型
+  unsigned int is_const_qualified : 1;
+  unsigned int is_volatile_qualified : 1;
+  unsigned int is_pointer_const_qualified : 1;
+  unsigned int is_pointer_volatile_qualified : 1;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
@@ -199,9 +199,9 @@ struct global_var_t {
   int name_len;
   int type_size;      // sizeof（ロード/ストアサイズ）
   int deref_size;     // ポインタ先の要素サイズ
-  int is_array;       // 1: 配列
-  int is_extern_decl; // 1: extern宣言のみ（.comm不要）
-  int has_init;       // 1: 初期化子あり
+  unsigned int is_array : 1;       // 1: 配列
+  unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
+  unsigned int has_init : 1;       // 1: 初期化子あり
   long long init_val; // 初期値
 };
 extern global_var_t *global_vars;

@@ -1082,13 +1082,13 @@
   - 自己再帰関数で `b` 命令へ置換し、スタック消費を削減
 
 ### メモリ最適化
-- [ ] `node_mem_t` の boolean フィールドをビットフィールド化する
+- [x] `node_mem_t` の boolean フィールドをビットフィールド化する
   - `bit_is_signed`, `is_tag_pointer`, `is_pointer`, `is_unsigned`, `is_const_qualified`, `is_volatile_qualified`, `is_pointer_const_qualified`, `is_pointer_volatile_qualified` の8個の `int`（計32B）を `:1` ビットフィールドにまとめ4Bに削減
-- [ ] `lvar_t` の boolean フィールドをビットフィールド化する
+- [x] `lvar_t` の boolean フィールドをビットフィールド化する
   - `is_array`, `is_vla`, `is_byref_param`, `is_tag_pointer`, `is_const_qualified`, `is_volatile_qualified`, `is_pointer_const_qualified`, `is_pointer_volatile_qualified`, `is_unsigned` の9個の `int`（計36B）を `:1` ビットフィールドにまとめ4Bに削減
-- [ ] `global_var_t` の boolean フィールドをビットフィールド化する
+- [x] `global_var_t` の boolean フィールドをビットフィールド化する
   - `is_array`, `is_extern_decl`, `has_init` の3個の `int`（計12B）を `:1` ビットフィールドにまとめ4Bに削減
-- [ ] `node_t` base の小値域フィールドをパッキングする
+- [x] `node_t` base の小値域フィールドをパッキングする
   - `is_unsigned`（0/1）と `fp_kind`（小さい enum）をビットフィールド化
 - [ ] `type_size` / `deref_size` の型を `int`（4B）から `short`（2B）に縮小する
   - 実際の値は 1/2/4/8 程度なので `short` で十分

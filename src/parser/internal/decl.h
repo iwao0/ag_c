@@ -11,22 +11,22 @@ struct lvar_t {
   int offset;
   int size;
   int elem_size;
-  int is_array;
-  int is_vla;          // 1: 可変長配列 (VLA) - offsetはベースポインタスロット
-  int is_byref_param;  // 1: >16バイト構造体の値渡し仮引数 - フレームスロットはポインタ(8B)、elemは実際の構造体サイズ
   tk_float_kind_t fp_kind;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
-  int is_tag_pointer;
-  int is_const_qualified;
-  int is_volatile_qualified;
-  int is_pointer_const_qualified;
-  int is_pointer_volatile_qualified;
+  unsigned int is_array : 1;
+  unsigned int is_vla : 1;            // 1: 可変長配列 (VLA) - offsetはベースポインタスロット
+  unsigned int is_byref_param : 1;    // 1: >16バイト構造体の値渡し仮引数 - フレームスロットはポインタ(8B)、elemは実際の構造体サイズ
+  unsigned int is_tag_pointer : 1;
+  unsigned int is_const_qualified : 1;
+  unsigned int is_volatile_qualified : 1;
+  unsigned int is_pointer_const_qualified : 1;
+  unsigned int is_pointer_volatile_qualified : 1;
+  unsigned int is_unsigned : 1;       // 1: unsigned type
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
-  int is_unsigned;       // 1: unsigned type
   int align_bytes; // 0 = natural alignment
   // 多次元配列サポート用
   int outer_stride;             // 多次元配列の外側サブスクリプトストライド（内側次元のバイトサイズ）
