@@ -5,6 +5,7 @@
 
 token_kind_t psx_consume_type_kind(void);
 int psx_last_type_is_unsigned(void);
+int psx_last_type_is_complex(void);
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified);
 void psx_take_alignas_value(int *align);
 void psx_take_extern_flag(int *is_extern);

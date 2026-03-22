@@ -65,6 +65,7 @@ struct node_t {
   // データ型判定用（演算結果の型）
   unsigned int fp_kind : 3;     // tk_float_kind_t (0..2)
   unsigned int is_unsigned : 1; // 1: unsigned演算
+  unsigned int is_complex : 1;  // 1: _Complex型演算
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
@@ -88,6 +89,7 @@ struct node_mem_t {
   unsigned int is_const_qualified : 1;
   unsigned int is_volatile_qualified : 1;
   unsigned int is_pointer_const_qualified : 1;
+  unsigned int is_complex : 1;              // 1: _Complex型（実部+虚部）
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;

@@ -726,13 +726,13 @@ static int parse_parenthesized_type_size(void) {
     token = token->next;
     int sz = 0;
     if (token->kind == TK_FLOAT) {
-      sz = 4;
+      sz = 4 * 2; // _Complex float = 8B
       token = token->next;
     } else if (token->kind == TK_DOUBLE) {
-      sz = 8;
+      sz = 8 * 2; // _Complex double = 16B
       token = token->next;
     } else if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE) {
-      sz = 8;
+      sz = 8 * 2; // _Complex long double = 16B (lowering)
       token = token->next->next;
     } else {
       return -1;
@@ -750,7 +750,8 @@ static int parse_parenthesized_type_size(void) {
   }
   if ((token->kind == TK_FLOAT || token->kind == TK_DOUBLE) &&
       token->next && (token->next->kind == TK_COMPLEX || token->next->kind == TK_IMAGINARY)) {
-    int sz = (token->kind == TK_FLOAT) ? 4 : 8;
+    int base_sz = (token->kind == TK_FLOAT) ? 4 : 8;
+    int sz = base_sz * 2; // _Complex: 基底型の2倍
     token = token->next->next;
     while (token->kind == TK_MUL) {
       token = token->next;
@@ -766,7 +767,7 @@ static int parse_parenthesized_type_size(void) {
   if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE &&
       token->next->next &&
       (token->next->next->kind == TK_COMPLEX || token->next->next->kind == TK_IMAGINARY)) {
-    int sz = 8;
+    int sz = 8 * 2; // _Complex long double = 16B (lowering)
     token = token->next->next->next;
     while (token->kind == TK_MUL) {
       token = token->next;
@@ -1775,6 +1776,8 @@ static node_t *primary(void) {
     as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
     as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
     as_lvar(n)->mem.is_unsigned = var->is_unsigned;
+    as_lvar(n)->mem.is_complex = var->is_complex;
+    n->is_complex = var->is_complex;
     n->fp_kind = var->fp_kind;
     return n;
   }

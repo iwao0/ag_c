@@ -1064,8 +1064,15 @@
   - 符号なし比較（`cmp` + `b.hs` / `b.hi`）の使用
   - 符号なし右シフト（`lsr` vs `asr`）の区別
   - 符号なし除算（`udiv` vs `sdiv`）の区別
-- [ ] `_Complex` / `_Imaginary` 型の演算を実装する
-  - 現状: キーワード認識・型フラグ設定まで。加減乗除の実演算は未実装
+- [x] `_Complex` / `_Imaginary` 型の演算を実装する
+  - C11 仕様: `_Complex double` = 16B（実部 double + 虚部 double）、`_Complex float` = 8B（実部 float + 虚部 float）
+  - [x] Phase 1: 型表現の拡張（`is_complex` ビットフィールドを `node_t`/`node_mem_t`/`lvar_t` に追加、`type_size` 2倍化、`sizeof` 修正）
+  - [x] Phase 2: 変数宣言・メモリ配置（16B スタック領域確保、実部 offset+0/虚部 offset+8）
+  - [x] Phase 3: 代入と初期化（スカラ→_Complex: 実部代入+虚部0、_Complex→_Complex: 16B コピー）
+  - [x] Phase 4: 加減算（実部同士・虚部同士の fadd/fsub）
+  - [x] Phase 5: 乗除算（乗算: (ac-bd, ad+bc)、除算: 正規化公式）
+  - [x] 等値・不等値比較（実部・虚部それぞれ比較して AND/OR）
+  - Phase 6: `_Imaginary` 対応（C11 Annex G、オプション）— 未着手、多くのコンパイラが未実装のため優先度低
 - [ ] `_Atomic` 型の load/store セマンティクスを実装する
   - 現状: 型修飾子として認識するのみ。`__atomic_load` / `__atomic_store` 相当の命令生成が未実装
 - [ ] `_Thread_local` のストレージ配置を実装する

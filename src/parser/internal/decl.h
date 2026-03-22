@@ -27,6 +27,7 @@ struct lvar_t {
   unsigned int is_used : 1;           // 1: 参照された
   unsigned int is_param : 1;          // 1: 関数パラメータ
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
+  unsigned int is_complex : 1;       // 1: _Complex型
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;

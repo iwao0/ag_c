@@ -604,6 +604,22 @@ static void gen_expr(node_t *node) {
     }
     return;
   case ND_LVAR:
+    if (node->is_complex) {
+      // _Complex: 実部+虚部を16Bスロットとしてプッシュ
+      int coff = 16 + as_lvar(node)->offset;
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+        // _Complex float: 4B実部 + 4B虚部 → 8Bにパック
+        cg_emitf("  ldr s0, [x29, #%d]\n", coff);     // 実部
+        cg_emitf("  ldr s1, [x29, #%d]\n", coff + 4); // 虚部
+        cg_emitf("  stp s0, s1, [sp, #-16]!\n");
+      } else {
+        // _Complex double: 8B実部 + 8B虚部 → 16B
+        cg_emitf("  ldr d0, [x29, #%d]\n", coff);
+        cg_emitf("  ldr d1, [x29, #%d]\n", coff + 8);
+        cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+      }
+      return;
+    }
     gen_lval(node);
     cg_emitf("  ldr x0, [sp], #16\n");
     if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
@@ -727,6 +743,42 @@ static void gen_expr(node_t *node) {
       cg_emitf("  str x1, [x0]\n");       // 低8B をストア
       cg_emitf("  str x2, [x0, #8]\n");   // 高8B をストア
       cg_emitf("  str x1, [sp, #-16]!\n"); // 式の結果値（低8B）
+      return;
+    }
+    if (node->is_complex && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+      // _Complex double 代入
+      if (node->rhs && node->rhs->is_complex) {
+        // _Complex = _Complex: rhs は16Bスロット(実部d0+虚部d1)
+        cg_emitf("  ldp d0, d1, [sp], #16\n"); // rhs 実部,虚部
+        cg_emitf("  ldr x0, [sp], #16\n");     // lhs アドレス
+        cg_emitf("  str d0, [x0]\n");
+        cg_emitf("  str d1, [x0, #8]\n");
+      } else {
+        // スカラ → _Complex: 実部に代入、虚部は0
+        gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0);
+        cg_emitf("  ldr x0, [sp], #16\n");
+        cg_emitf("  str d0, [x0]\n");
+        cg_emitf("  movi d1, #0\n");
+        cg_emitf("  str d1, [x0, #8]\n");
+      }
+      cg_emitf("  stp d0, d1, [sp, #-16]!\n"); // 式の結果（16B _Complex）
+      return;
+    }
+    if (node->is_complex && node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+      // _Complex float 代入
+      if (node->rhs && node->rhs->is_complex) {
+        cg_emitf("  ldp s0, s1, [sp], #16\n");
+        cg_emitf("  ldr x0, [sp], #16\n");
+        cg_emitf("  str s0, [x0]\n");
+        cg_emitf("  str s1, [x0, #4]\n");
+      } else {
+        gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0);
+        cg_emitf("  ldr x0, [sp], #16\n");
+        cg_emitf("  str s0, [x0]\n");
+        cg_emitf("  movi d1, #0\n");
+        cg_emitf("  str s1, [x0, #4]\n");
+      }
+      cg_emitf("  stp s0, s1, [sp, #-16]!\n");
       return;
     }
     if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
@@ -974,6 +1026,131 @@ static void gen_expr(node_t *node) {
     // 比較演算の場合はオペランドの型を見る
     if (node->lhs && node->lhs->fp_kind > fpu_op_type) fpu_op_type = node->lhs->fp_kind;
     if (node->rhs && node->rhs->fp_kind > fpu_op_type) fpu_op_type = node->rhs->fp_kind;
+  }
+
+  // _Complex 演算
+  if (node->is_complex && fpu_op_type) {
+    gen_expr(node->lhs); // 16B スロット (実部+虚部)
+    gen_expr(node->rhs); // 16B スロット (実部+虚部)
+    if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
+      // _Complex double
+      cg_emitf("  ldp d2, d3, [sp], #16\n"); // rhs: d2=実部, d3=虚部
+      cg_emitf("  ldp d0, d1, [sp], #16\n"); // lhs: d0=実部, d1=虚部
+      switch (node->kind) {
+      case ND_ADD:
+        cg_emitf("  fadd d0, d0, d2\n");
+        cg_emitf("  fadd d1, d1, d3\n");
+        break;
+      case ND_SUB:
+        cg_emitf("  fsub d0, d0, d2\n");
+        cg_emitf("  fsub d1, d1, d3\n");
+        break;
+      case ND_MUL:
+        // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+        cg_emitf("  fmul d4, d0, d2\n"); // ac
+        cg_emitf("  fmul d5, d1, d3\n"); // bd
+        cg_emitf("  fmul d6, d0, d3\n"); // ad
+        cg_emitf("  fmul d7, d1, d2\n"); // bc
+        cg_emitf("  fsub d0, d4, d5\n"); // ac-bd
+        cg_emitf("  fadd d1, d6, d7\n"); // ad+bc
+        break;
+      case ND_DIV: {
+        // (a+bi)/(c+di) = ((ac+bd)/(c²+d²)) + ((bc-ad)/(c²+d²))i
+        cg_emitf("  fmul d4, d2, d2\n"); // c²
+        cg_emitf("  fmul d5, d3, d3\n"); // d²
+        cg_emitf("  fadd d4, d4, d5\n"); // c²+d²
+        cg_emitf("  fmul d5, d0, d2\n"); // ac
+        cg_emitf("  fmul d6, d1, d3\n"); // bd
+        cg_emitf("  fadd d5, d5, d6\n"); // ac+bd
+        cg_emitf("  fdiv d5, d5, d4\n"); // (ac+bd)/(c²+d²)
+        cg_emitf("  fmul d6, d1, d2\n"); // bc
+        cg_emitf("  fmul d7, d0, d3\n"); // ad
+        cg_emitf("  fsub d6, d6, d7\n"); // bc-ad
+        cg_emitf("  fdiv d1, d6, d4\n"); // (bc-ad)/(c²+d²)
+        cg_emitf("  fmov d0, d5\n");     // 実部
+        break;
+      }
+      case ND_EQ:
+        cg_emitf("  fcmp d0, d2\n");
+        cg_emitf("  cset x0, eq\n");
+        cg_emitf("  fcmp d1, d3\n");
+        cg_emitf("  cset x1, eq\n");
+        cg_emitf("  and x0, x0, x1\n");
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        return;
+      case ND_NE:
+        cg_emitf("  fcmp d0, d2\n");
+        cg_emitf("  cset x0, ne\n");
+        cg_emitf("  fcmp d1, d3\n");
+        cg_emitf("  cset x1, ne\n");
+        cg_emitf("  orr x0, x0, x1\n");
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        return;
+      default:
+        break;
+      }
+    } else {
+      // _Complex float
+      cg_emitf("  ldp s2, s3, [sp], #16\n");
+      cg_emitf("  ldp s0, s1, [sp], #16\n");
+      switch (node->kind) {
+      case ND_ADD:
+        cg_emitf("  fadd s0, s0, s2\n");
+        cg_emitf("  fadd s1, s1, s3\n");
+        break;
+      case ND_SUB:
+        cg_emitf("  fsub s0, s0, s2\n");
+        cg_emitf("  fsub s1, s1, s3\n");
+        break;
+      case ND_MUL:
+        cg_emitf("  fmul s4, s0, s2\n");
+        cg_emitf("  fmul s5, s1, s3\n");
+        cg_emitf("  fmul s6, s0, s3\n");
+        cg_emitf("  fmul s7, s1, s2\n");
+        cg_emitf("  fsub s0, s4, s5\n");
+        cg_emitf("  fadd s1, s6, s7\n");
+        break;
+      case ND_DIV:
+        cg_emitf("  fmul s4, s2, s2\n");
+        cg_emitf("  fmul s5, s3, s3\n");
+        cg_emitf("  fadd s4, s4, s5\n");
+        cg_emitf("  fmul s5, s0, s2\n");
+        cg_emitf("  fmul s6, s1, s3\n");
+        cg_emitf("  fadd s5, s5, s6\n");
+        cg_emitf("  fdiv s5, s5, s4\n");
+        cg_emitf("  fmul s6, s1, s2\n");
+        cg_emitf("  fmul s7, s0, s3\n");
+        cg_emitf("  fsub s6, s6, s7\n");
+        cg_emitf("  fdiv s1, s6, s4\n");
+        cg_emitf("  fmov s0, s5\n");
+        break;
+      case ND_EQ:
+        cg_emitf("  fcmp s0, s2\n");
+        cg_emitf("  cset x0, eq\n");
+        cg_emitf("  fcmp s1, s3\n");
+        cg_emitf("  cset x1, eq\n");
+        cg_emitf("  and x0, x0, x1\n");
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        return;
+      case ND_NE:
+        cg_emitf("  fcmp s0, s2\n");
+        cg_emitf("  cset x0, ne\n");
+        cg_emitf("  fcmp s1, s3\n");
+        cg_emitf("  cset x1, ne\n");
+        cg_emitf("  orr x0, x0, x1\n");
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        return;
+      default:
+        break;
+      }
+    }
+    // _Complex 結果を16Bスロットとしてプッシュ
+    if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
+      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+    } else {
+      cg_emitf("  stp s0, s1, [sp, #-16]!\n");
+    }
+    return;
   }
 
   if (fpu_op_type) {

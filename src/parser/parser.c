@@ -908,14 +908,20 @@ static void parse_toplevel_tag_decl(void) {
 }
 
 static int g_last_type_unsigned = 0;
+static int g_last_type_complex = 0;
 
 int psx_last_type_is_unsigned(void) {
   return g_last_type_unsigned;
 }
 
+int psx_last_type_is_complex(void) {
+  return g_last_type_complex;
+}
+
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
+  g_last_type_complex = 0;
   skip_cv_qualifiers();
   if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
     token_kind_t inner = parse_atomic_type_specifier();
@@ -1038,6 +1044,7 @@ token_kind_t psx_consume_type_kind(void) {
 
   if (token == start) return TK_EOF;
   g_last_type_unsigned = saw_unsigned;
+  g_last_type_complex = saw_complex;
   if ((saw_complex || saw_imaginary) && !(saw_float || saw_double)) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, start,
                    "%s",

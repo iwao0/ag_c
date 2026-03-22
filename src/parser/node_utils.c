@@ -123,6 +123,10 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   if (node_is_unsigned(lhs) || node_is_unsigned(rhs)) {
     node->is_unsigned = 1;
   }
+  // _Complex伝播: どちらかが_Complexなら結果も_Complex
+  if ((lhs && lhs->is_complex) || (rhs && rhs->is_complex)) {
+    node->is_complex = 1;
+  }
   return node;
 }
 
@@ -153,6 +157,9 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   node->base.lhs = lhs;
   node->base.rhs = rhs;
   node->base.fp_kind = lhs ? lhs->fp_kind : TK_FLOAT_KIND_NONE;
+  if (lhs && lhs->is_complex) {
+    node->base.is_complex = 1;
+  }
   return node;
 }
 
