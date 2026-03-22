@@ -896,24 +896,34 @@ static void parse_toplevel_tag_decl(void) {
   token_kind_t tag_kind = token->kind;
   token = token->next;
   token_ident_t *tag = tk_consume_ident();
-  if (!tag) psx_diag_missing(token, "タグ名");
+  // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
+  if (!tag && token->kind != TK_LBRACE) {
+    psx_diag_missing(token, "タグ名");
+  }
+  static int anon_tag_counter_tl = 0;
+  char anon_buf[32];
+  char *tag_name = tag ? tag->str : anon_buf;
+  int tag_len = tag ? tag->len : 0;
+  if (!tag) {
+    tag_len = snprintf(anon_buf, sizeof(anon_buf), "__anon_tl_%d", anon_tag_counter_tl++);
+  }
 
   if (tk_consume('{')) {
     int member_count = 0;
     int tag_size = 0;
-    member_count = parse_tag_definition_body_toplevel(tag_kind, tag->str, tag->len, &tag_size);
-    psx_ctx_define_tag_type_with_layout(tag_kind, tag->str, tag->len, member_count, tag_size);
+    member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
+    psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
     if (tk_consume(';')) return;
     parse_toplevel_declarator_list();
     tk_expect(';');
     return;
   }
   if (tk_consume(';')) {
-    psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
+    psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
     return;
   }
-  if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
-    psx_diag_undefined_with_name(token, "のタグ型", tag->str, tag->len);
+  if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
+    psx_diag_undefined_with_name(token, "のタグ型", tag_name, tag_len);
   }
   parse_toplevel_declarator_list();
   tk_expect(';');

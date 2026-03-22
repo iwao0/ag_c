@@ -836,6 +836,13 @@ static const test_case_t test_cases[] = {
     {"evil", "null_stmt_mixed", CASE_INT,
      "int main() { int x = 1; ; x = x + 2; ; ; return x; }",
      3, 0},
+    // 匿名enum + 値指定
+    {"evil", "anon_enum_assign", CASE_INT,
+     "int main() { enum { A=10, B=20, C=30 }; return B; }",
+     20, 0},
+    {"evil", "anon_enum_negative", CASE_INT,
+     "int main() { enum { A=-3, B, C, D }; return D; }",
+     0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

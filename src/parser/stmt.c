@@ -674,29 +674,37 @@ static node_t *stmt_internal(void) {
     token_kind_t tag_kind = token->kind;
     token = token->next;
     token_ident_t *tag = tk_consume_ident();
-    if (!tag) {
+    // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
+    if (!tag && token->kind != TK_LBRACE) {
       psx_diag_missing(token, "タグ名");
+    }
+    static int anon_tag_counter = 0;
+    char anon_buf[32];
+    char *tag_name = tag ? tag->str : anon_buf;
+    int tag_len = tag ? tag->len : 0;
+    if (!tag) {
+      tag_len = snprintf(anon_buf, sizeof(anon_buf), "__anon_%d", anon_tag_counter++);
     }
     if (tk_consume('{')) {
       int member_count = 0;
       int tag_size = 0;
-      member_count = parse_tag_definition_body(tag_kind, tag->str, tag->len, &tag_size);
-      psx_ctx_define_tag_type_with_layout(tag_kind, tag->str, tag->len, member_count, tag_size);
+      member_count = parse_tag_definition_body(tag_kind, tag_name, tag_len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
-      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0, 0, 0);
+      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0);
     }
     if (tk_consume(';')) {
-      psx_ctx_define_tag_type(tag_kind, tag->str, tag->len);
+      psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
       return psx_node_new_num(0);
     }
-    if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
-      psx_diag_undefined_with_name(token, "のタグ型", tag->str, tag->len);
+    if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
+      psx_diag_undefined_with_name(token, "のタグ型", tag_name, tag_len);
     }
-    int tag_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
+    int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
-                                                 TK_FLOAT_KIND_NONE, tag_kind, tag->str, tag->len, 0, 0, 0);
+                                                 TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0);
   }
 
   if (token->kind == TK_RETURN) {
