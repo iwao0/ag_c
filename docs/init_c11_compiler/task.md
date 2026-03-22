@@ -1060,7 +1060,7 @@
   - `lvar_t` と `node_mem_t` に `is_unsigned` フラグを追加
   - signed char/short は `ldrsb x`/`ldrsh x`（64bit符号拡張）、unsigned は `ldrb w`/`ldrh w`（zero拡張）
   - codegen の ND_LVAR, ND_GVAR, ND_DEREF の全ロードパスで signed/unsigned を区別
-- [ ] `unsigned` 型の演算セマンティクスを正確にする
+- [x] `unsigned` 型の演算セマンティクスを正確にする
   - 符号なし比較（`cmp` + `b.hs` / `b.hi`）の使用
   - 符号なし右シフト（`lsr` vs `asr`）の区別
   - 符号なし除算（`udiv` vs `sdiv`）の区別

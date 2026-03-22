@@ -543,20 +543,20 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     case ND_ADD: cg_emitf("  add x%d, x%d, x%d\n", r0, r0, r1); break;
     case ND_SUB: cg_emitf("  sub x%d, x%d, x%d\n", r0, r0, r1); break;
     case ND_MUL: cg_emitf("  mul x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_DIV: cg_emitf("  sdiv x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_DIV: cg_emitf(node->is_unsigned ? "  udiv x%d, x%d, x%d\n" : "  sdiv x%d, x%d, x%d\n", r0, r0, r1); break;
     case ND_MOD:
-      cg_emitf("  sdiv x0, x%d, x%d\n", r0, r1);
+      cg_emitf(node->is_unsigned ? "  udiv x0, x%d, x%d\n" : "  sdiv x0, x%d, x%d\n", r0, r1);
       cg_emitf("  msub x%d, x0, x%d, x%d\n", r0, r1, r0);
       break;
     case ND_EQ:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, eq\n", r0); break;
     case ND_NE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, ne\n", r0); break;
-    case ND_LT:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, lt\n", r0); break;
-    case ND_LE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, le\n", r0); break;
+    case ND_LT:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf(node->is_unsigned ? "  cset x%d, lo\n" : "  cset x%d, lt\n", r0); break;
+    case ND_LE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf(node->is_unsigned ? "  cset x%d, ls\n" : "  cset x%d, le\n", r0); break;
     case ND_BITAND: cg_emitf("  and x%d, x%d, x%d\n", r0, r0, r1); break;
     case ND_BITXOR: cg_emitf("  eor x%d, x%d, x%d\n", r0, r0, r1); break;
     case ND_BITOR:  cg_emitf("  orr x%d, x%d, x%d\n", r0, r0, r1); break;
     case ND_SHL: cg_emitf("  lsl x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_SHR: cg_emitf("  asr x%d, x%d, x%d\n", r0, r0, r1); break;
+    case ND_SHR: cg_emitf(node->is_unsigned ? "  lsr x%d, x%d, x%d\n" : "  asr x%d, x%d, x%d\n", r0, r0, r1); break;
     default: break;
     }
     return;
@@ -1027,20 +1027,20 @@ static void gen_expr(node_t *node) {
     case ND_ADD:    cg_emitf("  add x0, x9, x10\n"); break;
     case ND_SUB:    cg_emitf("  sub x0, x9, x10\n"); break;
     case ND_MUL:    cg_emitf("  mul x0, x9, x10\n"); break;
-    case ND_DIV:    cg_emitf("  sdiv x0, x9, x10\n"); break;
+    case ND_DIV:    cg_emitf(node->is_unsigned ? "  udiv x0, x9, x10\n" : "  sdiv x0, x9, x10\n"); break;
     case ND_MOD:
-      cg_emitf("  sdiv x0, x9, x10\n");
+      cg_emitf(node->is_unsigned ? "  udiv x0, x9, x10\n" : "  sdiv x0, x9, x10\n");
       cg_emitf("  msub x0, x0, x10, x9\n");
       break;
     case ND_EQ:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, eq\n"); break;
     case ND_NE:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, ne\n"); break;
-    case ND_LT:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, lt\n"); break;
-    case ND_LE:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, le\n"); break;
+    case ND_LT:     cg_emitf("  cmp x9, x10\n"); cg_emitf(node->is_unsigned ? "  cset x0, lo\n" : "  cset x0, lt\n"); break;
+    case ND_LE:     cg_emitf("  cmp x9, x10\n"); cg_emitf(node->is_unsigned ? "  cset x0, ls\n" : "  cset x0, le\n"); break;
     case ND_BITAND: cg_emitf("  and x0, x9, x10\n"); break;
     case ND_BITXOR: cg_emitf("  eor x0, x9, x10\n"); break;
     case ND_BITOR:  cg_emitf("  orr x0, x9, x10\n"); break;
     case ND_SHL:    cg_emitf("  lsl x0, x9, x10\n"); break;
-    case ND_SHR:    cg_emitf("  asr x0, x9, x10\n"); break;
+    case ND_SHR:    cg_emitf(node->is_unsigned ? "  lsr x0, x9, x10\n" : "  asr x0, x9, x10\n"); break;
     default: break;
     }
     cg_inside_regalloc = 0;
@@ -1059,20 +1059,20 @@ static void gen_expr(node_t *node) {
   case ND_ADD:    cg_emitf("  add x0, x0, x1\n"); break;
   case ND_SUB:    cg_emitf("  sub x0, x0, x1\n"); break;
   case ND_MUL:    cg_emitf("  mul x0, x0, x1\n"); break;
-  case ND_DIV:    cg_emitf("  sdiv x0, x0, x1\n"); break;
+  case ND_DIV:    cg_emitf(node->is_unsigned ? "  udiv x0, x0, x1\n" : "  sdiv x0, x0, x1\n"); break;
   case ND_MOD:
-    cg_emitf("  sdiv x2, x0, x1\n");
+    cg_emitf(node->is_unsigned ? "  udiv x2, x0, x1\n" : "  sdiv x2, x0, x1\n");
     cg_emitf("  msub x0, x2, x1, x0\n");
     break;
   case ND_EQ:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, eq\n"); break;
   case ND_NE:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, ne\n"); break;
-  case ND_LT:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, lt\n"); break;
-  case ND_LE:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, le\n"); break;
+  case ND_LT:     cg_emitf("  cmp x0, x1\n"); cg_emitf(node->is_unsigned ? "  cset x0, lo\n" : "  cset x0, lt\n"); break;
+  case ND_LE:     cg_emitf("  cmp x0, x1\n"); cg_emitf(node->is_unsigned ? "  cset x0, ls\n" : "  cset x0, le\n"); break;
   case ND_BITAND: cg_emitf("  and x0, x0, x1\n"); break;
   case ND_BITXOR: cg_emitf("  eor x0, x0, x1\n"); break;
   case ND_BITOR:  cg_emitf("  orr x0, x0, x1\n"); break;
   case ND_SHL:    cg_emitf("  lsl x0, x0, x1\n"); break;
-  case ND_SHR:    cg_emitf("  asr x0, x0, x1\n"); break;
+  case ND_SHR:    cg_emitf(node->is_unsigned ? "  lsr x0, x0, x1\n" : "  asr x0, x0, x1\n"); break;
   default: break;
   }
 

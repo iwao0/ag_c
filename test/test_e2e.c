@@ -294,6 +294,13 @@ static const test_case_t test_cases[] = {
     {"type_decl", "unsigned_char_zero_extend", CASE_INT, "int main() { unsigned char c = 255; return c; }", 255, 0},
     {"type_decl", "short_sign_extend", CASE_INT, "int main() { short s = 65535; return (s < 0) ? 1 : 0; }", 1, 0},
     {"type_decl", "unsigned_short_zero_extend", CASE_INT, "int main() { unsigned short s = 200; return s; }", 200, 0},
+    // unsigned演算セマンティクス
+    {"type_decl", "unsigned_div", CASE_INT, "int main() { unsigned int a = 100; unsigned int b = 7; return a / b; }", 14, 0},
+    {"type_decl", "unsigned_mod", CASE_INT, "int main() { unsigned int a = 100; unsigned int b = 7; return a % b; }", 2, 0},
+    {"type_decl", "unsigned_shr", CASE_INT, "int main() { unsigned int a = 0x80000000; return (a >> 31); }", 1, 0},
+    {"type_decl", "signed_shr_preserve", CASE_INT, "int main() { long a = -2; return (int)(a >> 1); }", 255, 0},
+    {"type_decl", "unsigned_cmp_lt", CASE_INT, "int main() { unsigned int a = (1u << 31) | 1; return (a > 1u) ? 1 : 0; }", 1, 0},
+    {"type_decl", "unsigned_cmp_le", CASE_INT, "int main() { unsigned int a = (1u << 31) | 1; unsigned int b = a; return (a <= b) ? 1 : 0; }", 1, 0},
     {"type_decl", "const_decl", CASE_INT, "int main() { const int x=8; return x; }", 8, 0},
     {"type_decl", "volatile_decl", CASE_INT, "int main() { volatile int x=9; return x; }", 9, 0},
     {"type_decl", "storage_specs_local", CASE_INT, "int main() { static int x=8; register int r=2; auto int a=1; int *restrict p=0; return x+r+a+(p==0); }", 12, 0},

@@ -93,6 +93,18 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
   if (is_tag_pointer) *is_tag_pointer = ptr;
 }
 
+static int node_is_unsigned(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.is_unsigned;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+      return as_mem(node)->is_unsigned;
+    default: return node->is_unsigned;
+  }
+}
+
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = calloc(1, sizeof(node_t));
   node->kind = kind;
@@ -106,6 +118,10 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
       kind == ND_BITAND || kind == ND_BITXOR || kind == ND_BITOR ||
       kind == ND_SHL || kind == ND_SHR) {
     node->fp_kind = TK_FLOAT_KIND_NONE;
+  }
+  // unsigned伝播: どちらかがunsignedなら結果もunsigned
+  if (node_is_unsigned(lhs) || node_is_unsigned(rhs)) {
+    node->is_unsigned = 1;
   }
   return node;
 }
