@@ -1103,12 +1103,43 @@
   - `_Generic(1.0, ...)` のようなリテラル式では正常動作する
   - 原因: `_Generic` の制御式でローカル変数参照時の型解決が未対応の可能性
 
-### パーサー機能拡張（C11文法との差分 — 2026-03-23 棚卸し）
-- [ ] cast 式を unary から分離して独立関数にする（C11 §6.5.4）
+### パーサー構造リファクタリング（C11文法との構造差分 — 2026-03-23 棚卸し）
+
+以下は動作に問題はないが、コード構造が C11 文法規則の分離に従っていない箇所。
+リファクタリングにより grammar.md の規則と 1:1 対応する関数構成にできる。
+
+- [ ] `cast` 式を `unary` から分離して独立関数にする（C11 §6.5.4）
   - C11 の演算子優先順位チェーンは `mul → cast → unary`
   - 現状: `mul()` が `unary()` を直接呼び、キャストは `unary()` 内部で処理
   - 修正方針: `cast()` 関数を新設し `"(" type_name ")" cast | unary` を実装、`mul()` の呼び出し先を `cast()` に変更
   - 対象ファイル: `src/parser/expr.c`
+- [ ] `compound_stmt` 内で `block_item`（宣言と文の区別）を導入する（C11 §6.8.2）
+  - 現状: `stmt_internal()` が宣言（型トークン判定）・`_Static_assert`・文をフラットに処理
+  - 修正方針: `block_item()` 関数を新設し、宣言判定を `stmt_internal()` から分離
+  - 対象ファイル: `src/parser/stmt.c`
+- [ ] `func_def` で `decl_spec` + `declarator` の構成にする（C11 §6.9.1）
+  - 現状: `funcdef()` が `skip_cv_qualifiers` → 型消費 → 識別子 → `(params)` → `{stmts}` をフラットに処理
+  - 修正方針: `decl_spec` パース結果を受け取り、`declarator`（`ident "(" params ")"` 含む）を再帰的に解析する構造にする
+  - 対象ファイル: `src/parser/parser.c`
+- [ ] `declaration` を `decl_spec` + `init_declarator_list` に統合する（C11 §6.7）
+  - 現状: トップレベル（`parser.c`）とローカル（`stmt.c`/`decl.c`）で別関数。`skip_cv_qualifiers` + `psx_consume_type_kind` の2段階処理
+  - 修正方針: `decl_spec()` 関数が `storage_spec`/`type_spec`/`type_qual`/`func_spec`/`align_spec` を統合的にパースし、結果を構造体で返す。トップレベル・ローカルで共用
+  - 対象ファイル: `src/parser/parser.c`, `src/parser/stmt.c`, `src/parser/decl.c`
+- [ ] `declarator` を再帰的構造にする（C11 §6.7.6）
+  - 現状: ポインタ・名前・配列サイズ・関数ポインタのパースが各所にインライン展開
+  - 修正方針: `declarator()` → `pointer?` + `direct_declarator()` の再帰構造にまとめる
+  - 対象ファイル: `src/parser/parser.c`, `src/parser/decl.c`
+- [ ] `type_name` をキャスト・sizeof・_Generic で統一する（C11 §6.7.7）
+  - 現状: `parse_cast_type()` が独自にパース。`decl_spec` 統合ではない
+  - 修正方針: `type_name()` = `decl_spec` + `pointer?` として統一パース関数を用意
+  - 対象ファイル: `src/parser/expr.c`
+- [ ] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
+  - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
+  - 修正方針: `param_decl()` 関数を新設し、`decl_spec` + `declarator` or `pointer?` を処理
+  - 対象ファイル: `src/parser/parser.c`
+
+### パーサー機能拡張（C11文法との機能差分 — 2026-03-23 棚卸し）
+
 - [ ] 抽象宣言子（abstract-declarator）を完全対応する（C11 §6.7.7）
   - `sizeof(int (*)(void))` のような名前なし関数ポインタ型の type-name が未対応
   - 現状は `type_name = decl_spec pointer?` のみ（ポインタ `*` は可だが括弧付き宣言子は不可）
