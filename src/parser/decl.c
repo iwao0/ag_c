@@ -967,7 +967,7 @@ static void skip_func_params(void) {
 
 static token_ident_t *consume_decl_name(int *is_pointer,
                                         unsigned int *const_mask, unsigned int *volatile_mask,
-                                        int *levels) {
+                                        int *levels, int *out_array_dim) {
   token_ident_t *tok = NULL;
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
@@ -977,7 +977,14 @@ static token_ident_t *consume_decl_name(int *is_pointer,
     psx_diag_ctx(token, "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
   }
+  int had_parens = open_parens;
   while (open_parens-- > 0) tk_expect(')');
+  // (*p)[N] パターン: 括弧付き宣言子の後の配列次元は「配列へのポインタ」
+  if (had_parens > 0 && out_array_dim && tk_consume('[')) {
+    long long dim = parse_array_size_constexpr_decl();
+    tk_expect(']');
+    *out_array_dim = (int)dim;
+  }
   while (token->kind == TK_LPAREN) {
     skip_func_params();
   }
@@ -1126,7 +1133,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                    diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
     }
 
-    token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
+    int paren_array_dim = 0;
+    token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
     int var_size = is_pointer ? 8 : elem_size;
     int total_pointer_levels = ptr_levels + (base_is_pointer ? 1 : 0);
     int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
@@ -1135,7 +1143,17 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     lvar_t *var = NULL;
     {
-      if (tk_consume('[')) {
+      if (paren_array_dim > 0) {
+        // (*p)[N] パターン: 配列へのポインタ
+        int row_size = paren_array_dim * elem_size;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);
+        var->tag_kind = tag_kind;
+        var->tag_name = tag_name;
+        var->tag_len = tag_len;
+        var->is_tag_pointer = 0;
+        var->base_deref_size = (short)elem_size;
+        var->outer_stride = row_size;
+      } else if (tk_consume('[')) {
         node_t *size_node = NULL;
         int size_ok = 1;
         long long array_size = parse_array_size_expr_decl(&size_node, &size_ok);
