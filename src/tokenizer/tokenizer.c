@@ -32,6 +32,7 @@ void tk_set_user_input(char *p) {
 }
 
 static char *current_filename;
+
 static tokenizer_stats_t tok_stats = {0};
 static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
@@ -322,7 +323,7 @@ bool tk_at_eof(void) { return token->kind == TK_EOF; }
 // 新しいトークンを作成して、curに繋げる
 static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
   tok->kind = kind;
-  tok->file_name = current_filename;
+  tok->file_name_id = tk_filename_intern(current_filename);
   tok->line_no = line_no;
 }
 

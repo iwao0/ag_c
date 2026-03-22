@@ -1105,8 +1105,8 @@
   - 13箇所の `calloc` をトークナイザの既存アリーナ (`tk_allocator_calloc`) に変更
 - [x] `hideset_t` をアリーナ割り当てに変更する
   - `calloc` → `tk_allocator_calloc` に変更してヘッダオーバーヘッドを削減
-- [ ] `macro_t` の `params` 配列を固定長バッファで代替する（低優先度）
-  - 初期 cap=8 で十分なケースが多く、効果が限定的
+- [x] `macro_t` の `params` 配列を固定長バッファで代替する
+  - 構造体内に `inline_params[8]` を埋め込み、8個以下はヒープ確保不要に
 
 #### コードジェネレータ
 - [x] `cg_emitf` の毎回 `malloc` + `free` を固定バッファ化する
@@ -1117,8 +1117,8 @@
 #### トークナイザ
 - [x] `token_t` base の `at_bol` / `has_space` をビットフィールド化する
   - `bool` × 2 を `unsigned int : 1` × 2 に変更しパディング削減
-- [ ] `token_t` base の `file_name` ポインタを intern（共有）する（低優先度）
-  - 既に同一ポインタを共有済み。`uint16_t` インデックス化は `diag.c` 等の広範な書き換えが必要
+- [x] `token_t` base の `file_name` ポインタを intern（共有）する
+  - `char *file_name`（8B）→ `uint16_t file_name_id`（2B）に縮小。ファイル名テーブルで管理
 
 ### 標準ヘッダ拡充
 - [x] `<ctype.h>` を追加する（`isalpha`, `isdigit`, `isalnum`, `isspace`, `toupper`, `tolower` 等）

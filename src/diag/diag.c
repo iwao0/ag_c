@@ -174,7 +174,8 @@ void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const
 void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  if (tok && tok->file_name) fprintf(stderr, "%s:%d: ", tok->file_name, tok->line_no);
+  { char *fn = tk_filename_lookup(tok ? tok->file_name_id : 0);
+    if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no); }
   fprintf(stderr, "%s: ", diag_error_code(id));
   vfprintf(stderr, fmt, ap);
   print_token_actual(tok);
@@ -186,7 +187,8 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
 void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  if (tok && tok->file_name) fprintf(stderr, "%s:%d: ", tok->file_name, tok->line_no);
+  { char *fn = tk_filename_lookup(tok ? tok->file_name_id : 0);
+    if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no); }
   fprintf(stderr, "%s: %s: ", diag_warn_code(id), diag_text_for(DIAG_TEXT_WARNING));
   vfprintf(stderr, fmt, ap);
   fprintf(stderr, "\n");

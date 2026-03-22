@@ -171,6 +171,10 @@ struct hideset_t {
   char *name;
 };
 
+// ファイル名テーブル: インデックスでファイル名を共有する
+uint16_t tk_filename_intern(char *name);
+char *tk_filename_lookup(uint16_t id);
+
 // 共通トークン型（最小限の共通フィールド）
 typedef struct token_t token_t;
 struct token_t {
@@ -179,7 +183,7 @@ struct token_t {
   int line_no;        // 行番号
   unsigned int at_bol : 1;    // 行頭(Beginning of Line)にあるか
   unsigned int has_space : 1; // 直前に空白文字があるか
-  char *file_name;    // ファイル名（主にエラー表示）
+  uint16_t file_name_id;     // ファイル名テーブルのインデックス
 };
 
 // プリプロセッサ用の共通拡張

@@ -9,6 +9,7 @@
 #include <time.h>
 
 typedef struct macro macro_t;
+#define MACRO_INLINE_PARAMS 8
 struct macro {
   macro_t *next;
   char *name;
@@ -16,6 +17,7 @@ struct macro {
   bool is_funclike;
   char **params;
   int num_params;
+  char *inline_params[MACRO_INLINE_PARAMS];
 };
 
 static macro_t *macros;
@@ -141,8 +143,13 @@ static void add_macro(char *name, bool is_funclike, char **params, int num_param
   m->name = name;
   m->body = body;
   m->is_funclike = is_funclike;
-  m->params = params;
   m->num_params = num_params;
+  if (num_params <= MACRO_INLINE_PARAMS) {
+    for (int i = 0; i < num_params; i++) m->inline_params[i] = params[i];
+    m->params = m->inline_params;
+  } else {
+    m->params = params;
+  }
   m->next = macros;
   macros = m;
 }
@@ -187,7 +194,7 @@ static token_t *make_int_token(long long val, token_t *ref) {
   t->base.pp.base.kind = TK_NUM;
   if (ref) {
     t->base.pp.base.line_no  = ref->line_no;
-    t->base.pp.base.file_name = ref->file_name;
+    t->base.pp.base.file_name_id = ref->file_name_id;
     t->base.pp.base.at_bol   = ref->at_bol;
     t->base.pp.base.has_space = ref->has_space;
   }
@@ -207,7 +214,7 @@ static token_t *make_string_token(const char *s, token_t *ref) {
   t->pp.base.kind = TK_STRING;
   if (ref) {
     t->pp.base.line_no   = ref->line_no;
-    t->pp.base.file_name = ref->file_name;
+    t->pp.base.file_name_id = ref->file_name_id;
     t->pp.base.at_bol    = ref->at_bol;
     t->pp.base.has_space = ref->has_space;
   }
@@ -704,7 +711,7 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
   res->pp.base.kind = TK_STRING;
   res->str = str_buf;
   res->len = len;
-  res->pp.base.file_name = macro_tok->file_name;
+  res->pp.base.file_name_id = macro_tok->file_name_id;
   res->pp.base.line_no = macro_tok->line_no;
   return (token_t *)res;
 }
@@ -747,7 +754,7 @@ static token_t *paste_tokens(token_t *tok) {
         merged = cur;
       } else {
         merged->next = rhs->next;
-        merged->file_name = cur->file_name;
+        merged->file_name_id = cur->file_name_id;
         merged->line_no = cur->line_no;
         cur = merged;
         prev->next = cur;
@@ -986,13 +993,19 @@ token_t *preprocess(token_t *tok) {
         if (tok->kind == TK_LPAREN && !tok->has_space) {
           is_funclike = true;
           tok = tok->next;
-          int cap = 8;
-          params = calloc(cap, sizeof(char*));
+          char *inline_buf[MACRO_INLINE_PARAMS];
+          int cap = MACRO_INLINE_PARAMS;
+          params = inline_buf;
           while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
             if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
             if (num_params >= cap) {
+              if (params == inline_buf) {
+                params = calloc((size_t)cap * 2, sizeof(char *));
+                for (int j = 0; j < num_params; j++) params[j] = inline_buf[j];
+              } else {
+                params = xreallocarray(params, (size_t)cap * 2, sizeof(char *));
+              }
               cap *= 2;
-              params = xreallocarray(params, (size_t)cap, sizeof(char *));
             }
             token_ident_t *pid = as_ident(tok);
             params[num_params++] = my_strndup(pid->str, pid->len);
@@ -1113,7 +1126,7 @@ token_t *preprocess(token_t *tok) {
             long long offset = new_line - (long long)tok->line_no;
             for (token_t *t = tok; t && t->kind != TK_EOF; t = t->next) {
               t->line_no = (int)((long long)t->line_no + offset);
-              if (new_file) t->file_name = new_file;
+              if (new_file) t->file_name_id = tk_filename_intern(new_file);
             }
           }
         } else {
@@ -1193,7 +1206,8 @@ token_t *preprocess(token_t *tok) {
       }
       if (!strcmp(name, "__FILE__")) {
         free(name);
-        const char *fname = tok->file_name ? tok->file_name : "";
+        char *fn = tk_filename_lookup(tok->file_name_id);
+        const char *fname = fn ? fn : "";
         token_t *ft = make_string_token(fname, tok);
         cur->next = ft;
         cur = cur->next;
