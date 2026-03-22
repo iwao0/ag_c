@@ -1,5 +1,6 @@
 #include "preprocess.h"
 #include "../diag/diag.h"
+#include "../tokenizer/internal/allocator.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -182,7 +183,7 @@ static token_t *make_int_token(long long val, token_t *ref) {
   char buf[32];
   snprintf(buf, sizeof(buf), "%lld", val);
   int slen = (int)strlen(buf);
-  token_num_int_t *t = calloc(1, sizeof(token_num_int_t));
+  token_num_int_t *t = tk_allocator_calloc(1, sizeof(token_num_int_t));
   t->base.pp.base.kind = TK_NUM;
   if (ref) {
     t->base.pp.base.line_no  = ref->line_no;
@@ -202,7 +203,7 @@ static token_t *make_int_token(long long val, token_t *ref) {
 
 static token_t *make_string_token(const char *s, token_t *ref) {
   int slen = (int)strlen(s);
-  token_string_t *t = calloc(1, sizeof(token_string_t));
+  token_string_t *t = tk_allocator_calloc(1, sizeof(token_string_t));
   t->pp.base.kind = TK_STRING;
   if (ref) {
     t->pp.base.line_no   = ref->line_no;
@@ -248,7 +249,7 @@ static void pp_init_predefined_macros(void) {
 }
 
 static hideset_t *new_hideset(char *name) {
-  hideset_t *hs = calloc(1, sizeof(hideset_t));
+  hideset_t *hs = tk_allocator_calloc(1, sizeof(hideset_t));
   hs->name = my_strndup(name, strlen(name));
   return hs;
 }
@@ -297,7 +298,7 @@ static token_t *copy_token(token_t *tok) {
   switch (tok->kind) {
     case TK_IDENT: {
       token_ident_t *src = as_ident(tok);
-      token_ident_t *dst = calloc(1, sizeof(token_ident_t));
+      token_ident_t *dst = tk_allocator_calloc(1, sizeof(token_ident_t));
       dst->pp.base = src->pp.base;
       dst->pp.hideset = src->pp.hideset;
       dst->str = src->str;
@@ -307,7 +308,7 @@ static token_t *copy_token(token_t *tok) {
     }
     case TK_STRING: {
       token_string_t *src = as_string(tok);
-      token_string_t *dst = calloc(1, sizeof(token_string_t));
+      token_string_t *dst = tk_allocator_calloc(1, sizeof(token_string_t));
       dst->pp.base = src->pp.base;
       dst->pp.hideset = src->pp.hideset;
       dst->str = src->str;
@@ -321,7 +322,7 @@ static token_t *copy_token(token_t *tok) {
       token_num_t *src = as_num(tok);
       if (src->num_kind == TK_NUM_KIND_INT) {
         token_num_int_t *src_i = tk_as_num_int(tok);
-        token_num_int_t *dst = calloc(1, sizeof(token_num_int_t));
+        token_num_int_t *dst = tk_allocator_calloc(1, sizeof(token_num_int_t));
         dst->base.pp.base = src_i->base.pp.base;
         dst->base.pp.hideset = src_i->base.pp.hideset;
         dst->base.str = src_i->base.str;
@@ -337,7 +338,7 @@ static token_t *copy_token(token_t *tok) {
         t = (token_t *)dst;
       } else {
         token_num_float_t *src_f = tk_as_num_float(tok);
-        token_num_float_t *dst = calloc(1, sizeof(token_num_float_t));
+        token_num_float_t *dst = tk_allocator_calloc(1, sizeof(token_num_float_t));
         dst->base.pp.base = src_f->base.pp.base;
         dst->base.pp.hideset = src_f->base.pp.hideset;
         dst->base.str = src_f->base.str;
@@ -352,7 +353,7 @@ static token_t *copy_token(token_t *tok) {
     }
     default: {
       token_pp_t *src = as_pp(tok);
-      token_pp_t *dst = calloc(1, sizeof(token_pp_t));
+      token_pp_t *dst = tk_allocator_calloc(1, sizeof(token_pp_t));
       dst->base = src->base;
       dst->hideset = src->hideset;
       t = (token_t *)dst;
@@ -598,7 +599,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
       cur = cur->next;
       tok = tok->next;
    }
-   cur->next = calloc(1, sizeof(token_t));
+   cur->next = tk_allocator_calloc(1, sizeof(token_t));
    cur->next->kind = TK_EOF;
    *rest_tok = tok;
 
@@ -626,7 +627,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
             t = t->next;
          }
          
-         token_num_int_t *num = calloc(1, sizeof(token_num_int_t));
+         token_num_int_t *num = tk_allocator_calloc(1, sizeof(token_num_int_t));
          num->base.pp.base.kind = TK_NUM;
          num->base.num_kind = TK_NUM_KIND_INT;
          num->base.str = "0"; // just dummy
@@ -644,7 +645,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
          t = t->next;
       }
    }
-   cur2->next = calloc(1, sizeof(token_t));
+   cur2->next = tk_allocator_calloc(1, sizeof(token_t));
    cur2->next->kind = TK_EOF;
 
    token_t *expanded = preprocess(head2.next);
@@ -699,7 +700,7 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
   char *str_buf = my_strndup(buf, len);
   free(buf);
   
-  token_string_t *res = calloc(1, sizeof(token_string_t));
+  token_string_t *res = tk_allocator_calloc(1, sizeof(token_string_t));
   res->pp.base.kind = TK_STRING;
   res->str = str_buf;
   res->len = len;
@@ -1146,7 +1147,7 @@ token_t *preprocess(token_t *tok) {
               }
             } else if (ident_is(tok, "pop")) {
               tok = tok->next;
-              token_t *marker = calloc(1, sizeof(token_t));
+              token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
               marker->kind = TK_PRAGMA_PACK_POP;
               cur->next = marker;
               cur = cur->next;
@@ -1157,7 +1158,7 @@ token_t *preprocess(token_t *tok) {
               cur = cur->next;
               tok = tok->next;
             } else if (tok->kind == TK_RPAREN) {
-              token_t *marker = calloc(1, sizeof(token_t));
+              token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
               marker->kind = TK_PRAGMA_PACK_RESET;
               cur->next = marker;
               cur = cur->next;
