@@ -829,6 +829,13 @@ static const test_case_t test_cases[] = {
     {"evil", "while1_break", CASE_INT,
      "int main() { int x = 1; while (1) { if (x > 50) break; x = x * 2; } return x; }",
      64, 0},
+    // 空文（null statement）
+    {"evil", "null_stmt", CASE_INT,
+     "int main() { ; ; ; return 0; }",
+     0, 0},
+    {"evil", "null_stmt_mixed", CASE_INT,
+     "int main() { int x = 1; ; x = x + 2; ; ; return x; }",
+     3, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

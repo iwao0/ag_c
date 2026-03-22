@@ -609,6 +609,11 @@ static void parse_typedef_decl(void) {
 }
 
 static node_t *stmt_internal(void) {
+  // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
+  if (tk_consume(';')) {
+    return psx_node_new_num(0);
+  }
+
   if (tk_consume('{')) {
     psx_ctx_enter_block_scope();
     node_block_t *node = arena_alloc(sizeof(node_block_t));
