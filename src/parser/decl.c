@@ -306,6 +306,7 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
   token_ident_t *id = (token_ident_t *)token;
   lvar_t *src = psx_decl_find_lvar(id->str, id->len);
   if (!src || !src->is_array) return NULL;
+  src->is_used = 1;
   if (src->elem_size != elem_size || src->size != elem_size * array_len) return NULL;
   if (!token->next || (token->next->kind != TK_COMMA && token->next->kind != TK_RBRACE)) return NULL;
 
@@ -988,6 +989,8 @@ void psx_decl_reset_locals(void) {
 void psx_decl_reserve_variadic_regs(void) {
   if (locals_offset < 64) locals_offset = 64;
 }
+
+lvar_t *psx_decl_get_locals(void) { return locals; }
 
 lvar_t *psx_decl_find_lvar(char *name, int len) {
   for (lvar_t *var = locals; var; var = var->next) {

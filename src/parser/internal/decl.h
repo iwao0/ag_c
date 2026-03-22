@@ -24,6 +24,8 @@ struct lvar_t {
   unsigned int is_pointer_const_qualified : 1;
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int is_unsigned : 1;       // 1: unsigned type
+  unsigned int is_used : 1;           // 1: 参照された
+  unsigned int is_param : 1;          // 1: 関数パラメータ
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
@@ -34,6 +36,7 @@ struct lvar_t {
 };
 
 void psx_decl_reset_locals(void);
+lvar_t *psx_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar(char *name, int len);

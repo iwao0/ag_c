@@ -1716,6 +1716,7 @@ static node_t *primary(void) {
     if (!var) {
       var = psx_decl_register_lvar(tok->str, tok->len);
     }
+    var->is_used = 1;
     if (var->is_array && !var->is_vla) {
       node_mem_t *node = arena_alloc(sizeof(node_mem_t));
       node->base.kind = ND_ADDR;
