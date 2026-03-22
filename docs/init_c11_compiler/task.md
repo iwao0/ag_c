@@ -1058,9 +1058,10 @@
   - 再現コード: `int g=99; int *gp=&g; int main(){return *gp;}`
   - 原因: グローバル変数の初期化子が整数定数のみ対応で、アドレス式（リロケーション）が未実装
   - 修正: global_var_t に init_symbol フィールドを追加し、ND_ADDR(ND_GVAR) 初期化式を認識、codegen で `.quad _symbol` を出力
-- [ ] ポインタの配列宣言（`int *ptrs[3]`）で SIGSEGV が発生する
+- [x] ポインタの配列宣言（`int *ptrs[3]`）で SIGSEGV が発生する
   - 再現コード: `int a=1;int b=2;int c=3;int *ptrs[3];ptrs[0]=&a;ptrs[1]=&b;ptrs[2]=&c;`
-  - 原因: 配列要素がポインタ型の場合の宣言パースまたはコード生成が未対応
+  - 原因: 配列要素サイズが elem_size=4(int) のままで 8(int*) でなかった。サブスクリプト結果にポインタ情報が伝播されていなかった
+  - 修正: ポインタ配列宣言時に arr_elem_size=8 を使用、サブスクリプト結果に is_pointer/deref_size を伝播
 - [x] ブロックスコープの変数シャドウイングが外側スコープに漏れる
   - 再現コード: `int x=10; { int x=20; } return x;` → 期待値10、実際20
   - `for(int i=0;...)` のループ変数も外側の同名変数を上書きする

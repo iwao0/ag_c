@@ -1493,6 +1493,17 @@ static node_t *apply_postfix(node_t *node) {
         deref->tag_len = tag_len;
         deref->is_tag_pointer = 0;
       }
+      // 配列要素がポインタ型の場合: サブスクリプト結果にポインタ情報を伝播
+      {
+        int pql = psx_node_pointer_qual_levels(node);
+        if (pql >= 1) {
+          deref->is_pointer = 1;
+          deref->pointer_qual_levels = pql;
+          int bds = psx_node_base_deref_size(node);
+          deref->base_deref_size = (short)bds;
+          deref->deref_size = (pql >= 2) ? 8 : (short)bds;
+        }
+      }
       node = (node_t *)deref;
       continue;
     }
@@ -1764,6 +1775,8 @@ static node_t *primary(void) {
       node->tag_len = var->tag_len;
       node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
       node->is_pointer = 1;
+      node->pointer_qual_levels = var->pointer_qual_levels;
+      node->base_deref_size = var->base_deref_size;
       return (node_t *)node;
     }
     // byref仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、

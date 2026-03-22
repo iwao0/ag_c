@@ -434,6 +434,8 @@ static const test_case_t test_cases[] = {
     {"pointer", "pp_arith_scale", CASE_INT, "int main(){int a[4]={10,20,30,40};int *p=a;int **pp=&p;*pp=*pp+2;return *p;}", 30, 0},
     {"pointer", "pp_deref_add", CASE_INT, "int main(){int a[4]={10,20,30,40};int *p=a;int **pp=&p;return *(*pp+2);}", 30, 0},
     {"pointer", "pp_subscript", CASE_INT, "int main(){int a[4]={10,20,30,40};int *p=a;int **pp=&p;return (*pp)[3];}", 40, 0},
+    {"pointer", "ptr_array", CASE_INT, "int main(){int a=1;int b=2;int c=3;int *ptrs[3];ptrs[0]=&a;ptrs[1]=&b;ptrs[2]=&c;return *ptrs[0]+*ptrs[1]+*ptrs[2];}", 6, 0},
+    {"pointer", "ptr_array_write", CASE_INT, "int main(){int x=0;int *ptrs[2];ptrs[0]=&x;ptrs[1]=&x;*ptrs[0]=10;*ptrs[1]=*ptrs[1]+5;return x;}", 15, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},

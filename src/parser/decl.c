@@ -1201,12 +1201,15 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           array_size *= dim;
           tk_expect(']');
         }
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * elem_size, elem_size, 1, alignas_val);
-        if (inner_dim_size > 0) var->outer_stride = inner_dim_size * elem_size;
+        {
+        int arr_elem_size = is_pointer ? 8 : elem_size;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
+        if (inner_dim_size > 0) var->outer_stride = inner_dim_size * arr_elem_size;
+        }
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
         var->tag_len = tag_len;
-        var->is_tag_pointer = 0;
+        var->is_tag_pointer = is_pointer ? 1 : 0;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
@@ -1214,6 +1217,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->pointer_const_qual_mask = ptr_const_mask;
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
         var->pointer_qual_levels = ptr_levels;
+        if (is_pointer) {
+          var->base_deref_size = (short)elem_size;
+        }
       } else {
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, var_size,
                                            is_pointer ? pointer_deref_size : var_size, 0, alignas_val);
