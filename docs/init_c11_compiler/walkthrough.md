@@ -93,7 +93,7 @@
 | if/else 文 | `stmt = "if" "(" expr ")" stmt ("else" stmt)?` |
 | while 文 | `stmt = "while" "(" expr ")" stmt` |
 | do-while 文 | `stmt = "do" stmt "while" "(" expr ")" ";"` |
-| for 文 | `stmt = "for" "(" expr? ";" expr? ";" expr? ")" stmt` |
+| for 文 | `stmt = "for" "(" (expr \| type declarator)? ";" expr? ";" expr? ")" stmt`（宣言初期化・スコープ対応） |
 | switch/case/default | `stmt = "switch" "(" expr ")" stmt` / `stmt = "case" num ":" stmt` / `stmt = "default" ":" stmt` |
 | break/continue | `stmt = "break" ";"` / `stmt = "continue" ";"` |
 | 論理演算 (`&&`, `||`) | `logical_or`, `logical_and`（短絡評価） |
@@ -104,8 +104,8 @@
 | 関数定義 | `funcdef = type? ident "(" params? ")" (";" \| "{" stmt* "}")` |
 | 最外部宣言 | `program = external_decl*`（関数/タグ宣言・定義/型付きグローバル宣言） |
 | 関数呼び出し | `primary = ident "(" args? ")"` |
-| 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double" \| "signed" \| "unsigned" \| "_Bool"` |
-| タグ定義/参照 | `("struct"\|"union"\|"enum") ident`（定義本体 `{...}` とブロックスコープに対応） |
+| 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double" \| "signed" \| "unsigned" \| "_Bool" \| "_Complex" \| "_Atomic"` |
+| タグ定義/参照 | `("struct"\|"union"\|"enum") ident?`（定義本体 `{...}` とブロックスコープに対応、匿名タグ・自己参照ポインタメンバ対応） |
 | タグ型ポインタcast | `unary = "(" tag_type "*"* ")" unary`（例: `(struct S*)p`） |
 | ポインタ (`*p`, `&x`) | `unary = ("*" \| "&") unary` |
 | 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
@@ -127,6 +127,18 @@
 | トライグラフ | `??=` 等のトライグラフ置換に対応 |
 | 隣接文字列連結 | `"a" "b"` を1つの文字列として扱う |
 | strict C11モード | `0b...` を禁止（デフォルトは拡張として許可） |
+| 空文 (null statement) | `stmt = ";"` |
+| `_Static_assert` | `_Static_assert(const_expr, string)`（`sizeof(type)` 対応の定数式評価器を使用） |
+| `_Generic` | `_Generic(expr, type: expr, ...)` リテラル式による型選択 |
+| `_Complex` 型 | 実部/虚部セマンティクス（`__real__`, `__imag__` アクセス） |
+| `_Atomic` 型 | load-acquire/store-release セマンティクス |
+| `_Thread_local` | macOS TLV descriptor 経由のスレッドローカル変数 |
+| ブロックスコープ変数シャドウイング | 内側ブロックで同名変数を再宣言可能 |
+| フレキシブル配列メンバ | `struct S { int n; int data[]; };`（C99/C11 6.7.2.1） |
+| unsigned 型演算 | `udiv`/`lsr`/符号なし比較による unsigned セマンティクス |
+| 整数昇格 | signed/unsigned のロード区別と型昇格 |
+| グローバル変数 | ファイルスコープ変数の宣言と `.data`/`.bss` セクション配置 |
+| 末尾呼び出し最適化 | 自己再帰関数の TCO |
 
 > [!NOTE]
 > 文法規則の完全な定義は [grammar.md](grammar.md) を参照してください。

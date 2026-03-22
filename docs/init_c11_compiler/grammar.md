@@ -8,10 +8,11 @@
 ```
 program    = external_decl*
 external_decl = funcdef
-             | ("struct" | "union" | "enum") ident ";"
-             | ("struct" | "union" | "enum") ident "{" tag_member_list "}" ";"
-             | ("struct" | "union" | "enum") ident "{" tag_member_list "}" declarator ("," declarator)* ";"
+             | "_Static_assert" "(" const_expr "," string ")" ";"
+             | ("struct" | "union" | "enum") ident? "{" tag_member_list "}" ";"
+             | ("struct" | "union" | "enum") ident? "{" tag_member_list "}" declarator ("," declarator)* ";"
              | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
+             | ("struct" | "union" | "enum") ident ";"
              | type declarator ("," declarator)* ";"
 funcdef    = type? ident "(" params? ")" (";" | "{" stmt* "}")
 params     = type? ident ("," type? ident)*
@@ -19,7 +20,7 @@ stmt       = "{" stmt* "}"
            | "if" "(" expr ")" stmt ("else" stmt)?
            | "while" "(" expr ")" stmt
            | "do" stmt "while" "(" expr ")" ";"
-           | "for" "(" expr? ";" expr? ";" expr? ")" stmt
+           | "for" "(" (expr | type declarator ("," declarator)*)? ";" expr? ";" expr? ")" stmt
            | "switch" "(" expr ")" stmt
            | "case" num ":" stmt
            | "default" ":" stmt
@@ -27,13 +28,17 @@ stmt       = "{" stmt* "}"
            | "continue" ";"
            | "goto" ident ";"
            | ident ":" stmt
+           | "_Static_assert" "(" const_expr "," string ")" ";"
            | "return" expr ";"
            | expr ";"
-type       = "int" | "char" | "void" | "short" | "long" | "float" | "double" | "signed" | "unsigned" | "_Bool"
+           | ";"                                                    // null statement
+type       = type_qual* ("int" | "char" | "void" | "short" | "long" | "float" | "double"
+           | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic") type_qual*
+storage    = "static" | "extern" | "register" | "_Thread_local"
 tag_type   = ("struct" | "union" | "enum") ident
 tag_member_list = tag_member_decl+
-tag_member_decl = (type | tag_type) "*"* ident ("[" num "]")? ("," "*"* ident ("[" num "]")?)* ";"
-                | ident ("=" expr)? ("," ident ("=" expr)?)* ";"   // enum
+tag_member_decl = (type | tag_type) "*"* ident ("[" num? "]")? ("," "*"* ident ("[" num "]")?)* ";"
+                | ident ("=" const_expr)? ("," ident ("=" const_expr)?)* ";"   // enum
 declarator = "*"* ident ("[" num "]")? ("=" initializer)?
 initializer = assign
             | "{" initializer_list? "}"
@@ -60,7 +65,13 @@ cast_type  = type_qual* (type | tag_type | typedef_name | "_Atomic" type | "_Ato
 type_qual  = "const" | "volatile" | "restrict"
 postfix    = ("[" expr "]" | "++" | "--")*
 primary    = ident "(" args? ")" | "(" expr ")" | ident | num | string | char_lit
+           | "_Generic" "(" assign "," generic_assoc_list ")"
 args       = expr ("," expr)*
+generic_assoc_list = generic_assoc ("," generic_assoc)*
+generic_assoc = (type | "default") ":" assign
+const_expr = (compile-time constant expression using enum_const_expr evaluator; supports
+              integer literals, sizeof, !, ~, +, -, *, /, %, <<, >>, &, |, ^, ==, !=,
+              <, <=, >, >=, &&, ||, ?:, and parenthesized sub-expressions)
 ```
 
 ### トークン定義
@@ -211,6 +222,9 @@ args       = expr ("," expr)*
 | `ND_ADDR` | アドレス取得 `&x`（`lhs`=変数） |
 | `ND_STRING` | 文字列リテラル（`string_label`=データラベル） |
 | `ND_NUM` | 整数リテラル |
+| `ND_GVAR` | グローバル変数参照 |
+| `ND_FUNCREF` | 関数シンボル参照（関数ポインタ値） |
+| `ND_VLA_ALLOC` | VLA動的スタック確保（`lhs`=サイズ式） |
 
 ## 未実装（今後の拡張候補）
 
@@ -218,9 +232,18 @@ args       = expr ("," expr)*
 - ~~`return` 文~~ → **実装済み**
 - ~~関数定義・関数呼び出し~~ → **実装済み**
 - ~~複数文字の変数名~~ → **実装済み**（英数字・アンダースコア対応）
-- ~~型宣言（`int`）~~ → **実装済み**（`int`/`char`/`void`/`short`/`long`/`float`/`double`/`signed`/`unsigned`/`_Bool`）
-- ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`）
+- ~~型宣言（`int`）~~ → **実装済み**（`int`/`char`/`void`/`short`/`long`/`float`/`double`/`signed`/`unsigned`/`_Bool`/`_Complex`/`_Atomic`）
+- ~~ポインタ・配列~~ → **実装済み**（`*p`, `&x`, `int arr[N]`, `arr[i]`、フレキシブル配列メンバ `int data[];`）
 - ~~文字列リテラル~~ → **実装済み**（`char *s = "..."`、添字アクセス `s[i]` 対応済み）
+- ~~`_Static_assert`~~ → **実装済み**（`sizeof(type)` を含む定数式に対応）
+- ~~`_Generic`~~ → **実装済み**（リテラル式の型選択に対応）
+- ~~`_Thread_local`~~ → **実装済み**（macOS TLV descriptor 経由）
+- ~~`_Complex`~~ → **実装済み**（実部/虚部セマンティクス）
+- ~~`_Atomic`~~ → **実装済み**（load-acquire/store-release セマンティクス）
+- ~~ブロックスコープ変数シャドウイング~~ → **実装済み**
+- ~~匿名タグ宣言~~ → **実装済み**（`enum { A, B };` 等のタグ名省略）
+- ~~空文~~ → **実装済み**（`;;` 等の null statement）
+- ~~for文の変数宣言~~ → **実装済み**（`for (int i=0; ...)` のスコープ付き宣言）
 - プリプロセッサ (`#include`, `#define`)
 
 ## 初期化子と診断の現行方針（2026-03時点）
