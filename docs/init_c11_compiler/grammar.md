@@ -98,9 +98,9 @@ equality       = relational ("==" relational | "!=" relational)*
 relational     = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 shift          = add ("<<" add | ">>" add)*
 add            = mul ("+" mul | "-" mul)*
-mul            = unary ("*" unary | "/" unary | "%" unary)*
+mul            = cast ("*" cast | "/" cast | "%" cast)*
+cast           = "(" type_name ")" cast | unary
 unary          = "(" type_name ")" "{" initializer_list "}"         // compound literal
-               | "(" type_name ")" unary                            // cast (C11 §6.5.4)
                | "sizeof" ("(" type_name ")" | unary)
                | "_Alignof" "(" type_name ")"
                | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary

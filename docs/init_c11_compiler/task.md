@@ -1104,6 +1104,11 @@
   - 原因: `_Generic` の制御式でローカル変数参照時の型解決が未対応の可能性
 
 ### パーサー機能拡張（C11文法との差分 — 2026-03-23 棚卸し）
+- [ ] cast 式を unary から分離して独立関数にする（C11 §6.5.4）
+  - C11 の演算子優先順位チェーンは `mul → cast → unary`
+  - 現状: `mul()` が `unary()` を直接呼び、キャストは `unary()` 内部で処理
+  - 修正方針: `cast()` 関数を新設し `"(" type_name ")" cast | unary` を実装、`mul()` の呼び出し先を `cast()` に変更
+  - 対象ファイル: `src/parser/expr.c`
 - [ ] 抽象宣言子（abstract-declarator）を完全対応する（C11 §6.7.7）
   - `sizeof(int (*)(void))` のような名前なし関数ポインタ型の type-name が未対応
   - 現状は `type_name = decl_spec pointer?` のみ（ポインタ `*` は可だが括弧付き宣言子は不可）
