@@ -1138,12 +1138,35 @@
   - 修正方針: `param_decl()` 関数を新設し、`decl_spec` + `declarator` or `pointer?` を処理
   - 対象ファイル: `src/parser/parser.c`
 
-### パーサー機能拡張（C11文法との機能差分 — 2026-03-23 棚卸し）
+### grammar.md の C11 仕様との差分（2026-03-23 棚卸し）
 
-- [ ] 抽象宣言子（abstract-declarator）を完全対応する（C11 §6.7.7）
-  - `sizeof(int (*)(void))` のような名前なし関数ポインタ型の type-name が未対応
-  - 現状は `type_name = decl_spec pointer?` のみ（ポインタ `*` は可だが括弧付き宣言子は不可）
-  - 影響範囲: `sizeof`、`_Alignof`、キャスト、`_Generic` の type-name パース
+以下は grammar.md の記述が C11 仕様と異なっている箇所。grammar.md の修正と、
+必要に応じて実装側の対応が必要。
+
+- [ ] `_Static_assert` を `declaration` の一種にする（C11 §6.7）
+  - C11: `declaration = decl_spec init_declarator_list? ";" | static_assert-declaration`
+  - 現状: `external_decl` と `block_item` に個別記載。`declaration` に含まれていない
+- [ ] `typedef` を `storage_spec` に統合する（C11 §6.7.1）
+  - C11: `typedef` は `storage-class-specifier` の一種。`declaration = decl_spec init_declarator_list? ";"` で統一
+  - 現状: `declaration` の独立選択肢として分離し、`typedef_declarator` という特別規則を使用
+- [ ] `direct_declarator` を再帰的にする（C11 §6.7.6）
+  - C11: `direct-declarator = ... | "(" declarator ")"`（再帰的）
+  - 現状: `"(" pointer? ident ")" "(" params ")"` で1段のみ。`int (**fpp)(int)` 等が表現不能
+- [ ] 配列宣言子で `assignment-expression` を許容する（C11 §6.7.6.2）
+  - C11: 配列サイズは `assignment-expression`（VLA）、`"static"` 修飾、`"*"`（不完全配列）が可能
+  - 現状: `num?` のみ。`int a[n]`（VLA）が文法上表現できない（実装はVLA対応済み）
+- [ ] `member_decl` で `declarator` を使う（C11 §6.7.2.1）
+  - C11: `struct-declarator = declarator | declarator? ":" constant-expression`
+  - 現状: `decl_spec pointer? ident ...` と直接記述。メンバの関数ポインタ（`int (*fp)(int);`）が表現不能
+- [ ] `type_name` に `abstract-declarator` を含める（C11 §6.7.7）
+  - C11: `type-name = specifier-qualifier-list abstract-declarator?`
+  - 現状: `type_name = decl_spec pointer?` のみ。`sizeof(int [10])` や `sizeof(int (*)(void))` が表現不能
+- [ ] 複合リテラルを `postfix` に移動する（C11 §6.5.2.5）
+  - C11: `postfix-expression = ... | "(" type-name ")" "{" initializer-list ","? "}"`
+  - 現状: `unary` の選択肢として記載。優先順位は正しいが位置が C11 と異なる
+- [ ] `_Atomic` を `type_qual` にも追記する（C11 §6.7.3）
+  - C11: `_Atomic "(" type-name ")"` は `type-specifier`（§6.7.2.4）、`_Atomic` 単体は `type-qualifier`（§6.7.3）
+  - 現状: `type_spec` にのみ記載。`type_qual` に `_Atomic` がない
 
 ### パーサー機能拡張（既存）
 - [x] フレキシブル配列メンバー（C99/C11 6.7.2.1）を受理する
