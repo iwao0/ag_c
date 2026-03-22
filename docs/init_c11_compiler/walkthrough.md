@@ -103,12 +103,14 @@
 | ブロック文 | `stmt = "{" stmt* "}"` |
 | 関数定義 | `funcdef = type? ident "(" params? ")" (";" \| "{" stmt* "}")` |
 | 最外部宣言 | `program = external_decl*`（関数/タグ宣言・定義/型付きグローバル宣言） |
-| 関数呼び出し | `primary = ident "(" args? ")"` |
+| 関数呼び出し | `postfix = "(" args? ")"` |
 | 型宣言 | `type = "int" \| "char" \| "void" \| "short" \| "long" \| "float" \| "double" \| "signed" \| "unsigned" \| "_Bool" \| "_Complex" \| "_Atomic"` |
 | タグ定義/参照 | `("struct"\|"union"\|"enum") ident?`（定義本体 `{...}` とブロックスコープに対応、匿名タグ・自己参照ポインタメンバ対応） |
 | タグ型ポインタcast | `unary = "(" tag_type "*"* ")" unary`（例: `(struct S*)p`） |
 | ポインタ (`*p`, `&x`) | `unary = ("*" \| "&") unary` |
 | 配列 (`arr[N]`, `arr[i]`) | `postfix = "[" expr "]"` |
+| メンバアクセス (`s.m`, `p->m`) | `postfix = "." ident \| "->" ident` |
+| typedef | `"typedef" (type \| tag_type) "*"* ident ";"` |
 | 文字列リテラル (`"..."`) | `primary = ... \| string` |
 | 文字リテラル (`'A'`) | `TK_NUM` としてASCII値を格納 |
 | char型 1バイト対応 | `ldrb`/`strb` で char 変数・配列・文字列添字を処理 |

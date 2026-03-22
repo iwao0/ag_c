@@ -9,6 +9,7 @@
 program    = external_decl*
 external_decl = funcdef
              | "_Static_assert" "(" const_expr "," string ")" ";"
+             | "typedef" (type | tag_type) "*"* typedef_declarator ("," "*"* typedef_declarator)* ";"
              | ("struct" | "union" | "enum") ident? "{" tag_member_list "}" ";"
              | ("struct" | "union" | "enum") ident? "{" tag_member_list "}" declarator ("," declarator)* ";"
              | ("struct" | "union" | "enum") ident declarator ("," declarator)* ";"
@@ -30,12 +31,15 @@ stmt       = "{" stmt* "}"
            | ident ":" stmt
            | "_Static_assert" "(" const_expr "," string ")" ";"
            | "return" expr ";"
+           | type declarator ("," declarator)* ";"                  // local variable declaration
            | expr ";"
            | ";"                                                    // null statement
 type       = type_qual* ("int" | "char" | "void" | "short" | "long" | "float" | "double"
-           | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic") type_qual*
+           | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic"
+           | typedef_name) type_qual*
 storage    = "static" | "extern" | "register" | "_Thread_local"
 tag_type   = ("struct" | "union" | "enum") ident
+typedef_declarator = ident ("[" num "]")*
 tag_member_list = tag_member_decl+
 tag_member_decl = (type | tag_type) "*"* ident ("[" num? "]")? ("," "*"* ident ("[" num "]")?)* ";"
                 | ident ("=" const_expr)? ("," ident ("=" const_expr)?)* ";"   // enum
@@ -63,8 +67,8 @@ unary      = "(" cast_type ")" unary
            | primary postfix*
 cast_type  = type_qual* (type | tag_type | typedef_name | "_Atomic" type | "_Atomic" "(" cast_type ")") "*"*
 type_qual  = "const" | "volatile" | "restrict"
-postfix    = ("[" expr "]" | "++" | "--")*
-primary    = ident "(" args? ")" | "(" expr ")" | ident | num | string | char_lit
+postfix    = ("[" expr "]" | "(" args? ")" | "." ident | "->" ident | "++" | "--")*
+primary    = "(" expr ")" | ident | num | string | char_lit
            | "_Generic" "(" assign "," generic_assoc_list ")"
 args       = expr ("," expr)*
 generic_assoc_list = generic_assoc ("," generic_assoc)*
