@@ -57,6 +57,40 @@ int psx_node_is_pointer(node_t *node) {
   }
 }
 
+int psx_node_pointer_qual_levels(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.pointer_qual_levels;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING:
+      return as_mem(node)->pointer_qual_levels;
+    case ND_COMMA:
+      return psx_node_pointer_qual_levels(node->rhs);
+    default:
+      return 0;
+  }
+}
+
+int psx_node_base_deref_size(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.base_deref_size;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING:
+      return as_mem(node)->base_deref_size;
+    case ND_COMMA:
+      return psx_node_base_deref_size(node->rhs);
+    default:
+      return 0;
+  }
+}
+
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer) {
   token_kind_t kind = TK_EOF;
   char *name = NULL;

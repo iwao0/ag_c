@@ -78,6 +78,7 @@ struct node_mem_t {
   node_t base;
   short type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
   short deref_size;  // ポインタが指す先の要素サイズ
+  short base_deref_size; // 多段ポインタの最内ポインタが指す要素サイズ（int**→4）
   unsigned char bit_width;   // ビットフィールド幅（0: 非ビットフィールド, max 64）
   unsigned char bit_offset;  // ビットフィールド開始ビット位置（ストレージユニット先頭から）
   token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）

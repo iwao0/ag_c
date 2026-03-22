@@ -1228,6 +1228,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->pointer_const_qual_mask = ptr_const_mask;
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
         var->pointer_qual_levels = ptr_levels;
+        if (is_pointer && total_pointer_levels >= 2) {
+          var->base_deref_size = (short)elem_size;
+        }
       }
     }
 

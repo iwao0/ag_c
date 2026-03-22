@@ -33,6 +33,7 @@ struct lvar_t {
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
+  short base_deref_size; // 多段ポインタの最内ポインタが指す要素サイズ（int**→4）
   int align_bytes; // 0 = natural alignment
   // 多次元配列サポート用
   int outer_stride;             // 多次元配列の外側サブスクリプトストライド（内側次元のバイトサイズ）

@@ -612,6 +612,7 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   as_lvar(ref)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
   as_lvar(ref)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   as_lvar(ref)->mem.pointer_qual_levels = var->pointer_qual_levels;
+  as_lvar(ref)->mem.base_deref_size = var->base_deref_size;
   as_lvar(ref)->mem.is_unsigned = var->is_unsigned;
   return ref;
 }
@@ -1369,6 +1370,16 @@ static node_t *unary(void) {
       node->is_tag_pointer = 0;
       node->deref_size = 0;
     }
+    // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播
+    int pql = psx_node_pointer_qual_levels(operand);
+    if (pql >= 2) {
+      node->is_pointer = 1;
+      int new_pql = pql - 1;
+      node->pointer_qual_levels = new_pql;
+      int bds = psx_node_base_deref_size(operand);
+      node->base_deref_size = (short)bds;
+      node->deref_size = (new_pql >= 2) ? 8 : (short)bds;
+    }
     return (node_t *)node;
   }
   if (token->kind == TK_AMP) {
@@ -1456,7 +1467,7 @@ static node_t *apply_postfix(node_t *node) {
         node_mem_t *mem = (node_mem_t *)node;
         // 配列的アクセス: deref_size > 0 なら lhs (配列ベースアドレス) を直接使用
         // (struct メンバ配列・多次元VLA サブスクリプト共通)
-        if (mem->deref_size > 0) {
+        if (mem->deref_size > 0 && !mem->is_pointer) {
           base_addr = node->lhs;
         } else if (node->lhs && node->lhs->kind == ND_ADD &&
                    node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
@@ -1793,6 +1804,7 @@ static node_t *primary(void) {
     as_lvar(n)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
     as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
     as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
+    as_lvar(n)->mem.base_deref_size = var->base_deref_size;
     as_lvar(n)->mem.is_unsigned = var->is_unsigned;
     as_lvar(n)->mem.is_complex = var->is_complex;
     as_lvar(n)->mem.is_atomic = var->is_atomic;

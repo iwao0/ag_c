@@ -1045,14 +1045,15 @@
 - [x] 多次元配列の初期化子（`int a[2][3] = {{1,2,3},{4,5,6}};`）が正しい値を返さない
   - 宣言時に outer_stride を記録、初期化子パーサーでネスト波括弧対応、サブスクリプトで inner_deref_size 伝播を修正
 
-- [ ] Duff's device パターンで SIGSEGV が発生する
+- [x] Duff's device パターンで SIGSEGV が発生する
   - switch 内の do-while ループに case ラベルが分散する構造（C標準準拠、clang で正常動作）
   - 再現コード: `switch(n%4){case 0:do{sum+=1;case 3:sum+=1;case 2:sum+=1;case 1:sum+=1;}while(--i>0);}`
-  - 原因: switch の case/default ラベルが複合文（do-while）の内部にある場合のパース/コード生成が未対応
-- [ ] 間接参照結果のポインタ演算でスケーリングが効かない
+  - 原因: collect_switch_labels が block/case/default のみ再帰し、if/while/do-while/for/label 内の case を収集しなかった。gen_stmt に ND_CASE/ND_DEFAULT ハンドラがなく NULL dereference
+- [x] 間接参照結果のポインタ演算でスケーリングが効かない
   - 再現コード: `int *p=a; int **pp=&p; *pp=*pp+2; return *p;` → 期待値30、実際0
-  - `*pp` の deref 結果が `int*` 型だが、`+2` のスケーリング（×sizeof(int)）が適用されない
-  - 同様に `(*pp)[1]` のような間接参照後の添字アクセスも不正な値を返す
+  - 原因1: deref ノード作成時に多段ポインタの is_pointer/deref_size を伝播していなかった
+  - 原因2: サブスクリプト処理で deref_size>0 のとき is_pointer なデリファレンスも base_addr を unwrap してしまっていた
+  - 修正: base_deref_size フィールドを追加し deref 時に pointer_qual_levels-1 で正しく型情報を伝播
 - [ ] グローバルポインタ変数のアドレス初期化で SIGSEGV が発生する
   - 再現コード: `int g=99; int *gp=&g; int main(){return *gp;}`
   - 原因: グローバル変数の初期化子が整数定数のみ対応で、アドレス式（リロケーション）が未実装

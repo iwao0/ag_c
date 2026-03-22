@@ -429,6 +429,9 @@ static const test_case_t test_cases[] = {
     {"pointer", "triple_write", CASE_INT, "int main() { int x=3; int *p=&x; int **pp=&p; int ***ppp=&pp; ***ppp=99; return x; }", 99, 0},
     {"pointer", "pp_inc_deref", CASE_INT, "int main() { int x=7; int *p=&x; int **pp=&p; (**pp)++; return x; }", 8, 0},
     {"pointer", "inc_via_pp_func", CASE_INT, "void inc(int **pp){(**pp)++;} int main(){int x=10;int *p=&x;inc(&p);inc(&p);return x;}", 12, 0},
+    {"pointer", "pp_arith_scale", CASE_INT, "int main(){int a[4]={10,20,30,40};int *p=a;int **pp=&p;*pp=*pp+2;return *p;}", 30, 0},
+    {"pointer", "pp_deref_add", CASE_INT, "int main(){int a[4]={10,20,30,40};int *p=a;int **pp=&p;return *(*pp+2);}", 30, 0},
+    {"pointer", "pp_subscript", CASE_INT, "int main(){int a[4]={10,20,30,40};int *p=a;int **pp=&p;return (*pp)[3];}", 40, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},
