@@ -557,6 +557,20 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_ptr_level_volatile->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_level_volatile->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_level_volatile->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ unsigned long ul=1; return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }");
+  node_t *ret_unsigned_long = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret_unsigned_long->kind);
+  ASSERT_EQ(ND_NUM, ret_unsigned_long->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_unsigned_long->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ long l=1; return _Generic(l, unsigned long:1, long:2, default:3); }");
+  node_t *ret_long_signed = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret_long_signed->kind);
+  ASSERT_EQ(ND_NUM, ret_long_signed->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_long_signed->lhs)->val);
 }
 
 static void test_expr_sizeof() {

@@ -1510,6 +1510,7 @@
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に多段ポインタ情報（`int**` など）を反映し、`int**` と `char**` を区別して関連型選択できるようにした
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に pointee の signed/unsigned 属性を反映し、`int*` と `unsigned int*`（typedef 経由を含む）を区別して関連型選択できるようにした
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に各レベルの `const/volatile` マスクを反映し、`int**` と `int * const *` / `int * volatile *` を区別して関連型選択できるようにした
+  - 進捗（2026-03-24）: `_Generic` の非ポインタ整数比較を token kind 一致から「符号属性 + 型サイズ」比較へ拡張し、`unsigned long` / `long` など複合整数指定子でも関連型選択できるようにした
   - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映
