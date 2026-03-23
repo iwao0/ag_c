@@ -784,6 +784,7 @@ static inline bool has_hex_float_marker(const char *p) {
   return false;
 }
 
+/** @brief 浮動小数点サフィックス（`f`/`F`/`l`/`L`）を解析して型情報へ反映する。 */
 static void parse_float_suffix(parsed_num_t *num, char **endp) {
   char *end = *endp;
   if (*end == 'f' || *end == 'F') {
@@ -805,6 +806,7 @@ static void parse_float_suffix(parsed_num_t *num, char **endp) {
   *endp = end;
 }
 
+/** @brief 10進/16進の浮動小数点リテラル本体を解析し、サフィックスも処理する。 */
 static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
   char *p = *pp;
   char *end = NULL;
@@ -817,6 +819,7 @@ static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
   *pp = end;
 }
 
+/** @brief 基数付き整数リテラルを解析し、整数型サフィックスまで解決する。 */
 static void parse_integer_literal_with_base(
     parsed_num_t *num, char **pp, int base, bool is_decimal, char *err_loc) {
   char *p = *pp;

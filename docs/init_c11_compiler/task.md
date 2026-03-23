@@ -585,8 +585,9 @@
 - [x] [P2] `tokenize_one` の分岐順を実測ベースで固定し、順序変更時の性能影響をベンチで記録する運用を追加する
   - [x] 進捗（2026-03-24）: `tokenizer_perf_report.md` に `tokenize_one` 分岐順変更時の記録ルール（CSV更新、差分要約、採用/ロールバック目安）を追記した
   - [x] `tokenizer_hotpath_daily.csv` との差分記録ルールを `tokenizer_perf_report.md` に追記する
-- [ ] [P3] Tokenizer内部ヘルパーのDoxygenを最小テンプレートで揃え、引数/副作用/失敗条件を簡潔に明記する
-  - [ ] `tokenize_*` / `parse_*` / `begin|end_tokenize_session` から優先適用する
+- [x] [P3] Tokenizer内部ヘルパーのDoxygenを最小テンプレートで揃え、引数/副作用/失敗条件を簡潔に明記する
+  - [x] 進捗（2026-03-24）: `tokenize_*` / `begin|end_tokenize_session` に加え、`parse_float_suffix` / `parse_float_literal` / `parse_integer_literal_with_base` のDoxygenコメントを追加した
+  - [x] `tokenize_*` / `parse_*` / `begin|end_tokenize_session` から優先適用する
 
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
