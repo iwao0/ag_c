@@ -16,6 +16,14 @@
 
 node_t *ps_expr(void);
 
+static inline token_t *curtok(void) {
+  return tk_get_current_token();
+}
+
+static inline void set_curtok(token_t *tok) {
+  tk_set_current_token(tok);
+}
+
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void parse_static_assert_stmt(void);
 static void parse_typedef_decl(void);
@@ -63,8 +71,8 @@ static void make_anonymous_tag_name_stmt(char **out_name, int *out_len) {
 }
 
 static void skip_ptr_qualifiers_stmt(void) {
-  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
-    token = token->next;
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+    set_curtok(curtok()->next);
   }
 }
 
@@ -72,13 +80,13 @@ static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
   while (depth > 0) {
-    if (token->kind == TK_EOF) {
-      diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, token, "%s",
+    if (curtok()->kind == TK_EOF) {
+      diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
                      diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
     }
-    if (token->kind == TK_LPAREN) depth++;
-    else if (token->kind == TK_RPAREN) depth--;
-    token = token->next;
+    if (curtok()->kind == TK_LPAREN) depth++;
+    else if (curtok()->kind == TK_RPAREN) depth--;
+    set_curtok(curtok()->next);
   }
 }
 
@@ -91,11 +99,11 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
   }
   token_ident_t *name = tk_consume_ident();
   if (!name) {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, token, "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED));
   }
   while (open_parens-- > 0) tk_expect(')');
-  while (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN) {
     skip_func_params_stmt();
   }
   return name;
@@ -113,7 +121,7 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   } else {
     name = tk_consume_ident();
   }
-  while (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN) {
     if (out_has_func_suffix) *out_has_func_suffix = 1;
     skip_func_params_stmt();
   }
