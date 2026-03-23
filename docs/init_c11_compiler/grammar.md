@@ -10,12 +10,11 @@
 program        = external_decl*
 external_decl  = func_def
                | declaration
-               | "_Static_assert" "(" const_expr "," string ")" ";"
 
 // ── 宣言（C11 §6.7）─────────────────────────────────────
 func_def       = decl_spec declarator compound_stmt
 declaration    = decl_spec init_declarator_list? ";"
-               | "typedef" decl_spec typedef_declarator ("," typedef_declarator)* ";"
+               | "_Static_assert" "(" const_expr "," string ")" ";"
 
 decl_spec      = (storage_spec | type_spec | type_qual | func_spec | align_spec)+
 storage_spec   = "static" | "extern" | "register" | "auto" | "_Thread_local"
@@ -43,8 +42,6 @@ pointer        = ("*" type_qual*)+
 params         = param_decl ("," param_decl)* ("," "...")?
                | "void"
 param_decl     = decl_spec (declarator | pointer?)
-
-typedef_declarator = pointer? ident ("[" num "]")*
 
 // ── 構造体・共用体メンバ（C11 §6.7.2.1）─────────────────
 member_list    = member_decl+

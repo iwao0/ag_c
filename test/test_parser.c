@@ -1839,6 +1839,7 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");
   expect_parse_ok("int (f)(int x) { return x; } int main() { return f(42); }");
   expect_parse_ok("int (*f(void))(int) { return 0; } int main() { return 0; }");
+  expect_parse_ok("int (*f(int n))(int) { return 0; } int main() { return 0; }");
   expect_parse_ok("int g=1; _Static_assert(sizeof(int)==4, \"ok\"); int main(){ return g; }");
   expect_parse_ok("typedef int myint; _Static_assert(1, \"ok\"); myint g=1; int main(){ return g; }");
   expect_parse_ok("typedef int myint; _Static_assert(sizeof(myint)==4, \"ok\"); int main(){ return 0; }");
