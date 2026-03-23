@@ -468,9 +468,6 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name) {
                      diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
   }
-  while (token->kind == TK_LBRACKET) {
-    skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
-  }
   return name;
 }
 
