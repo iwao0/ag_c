@@ -446,6 +446,15 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(3, as_num(ret->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "typedef int (*fp_t)(int); "
+      "int f(int x){ return x; } "
+      "main(){ fp_t p=f; return _Generic(p, int (*)(int): 13, default: 7); }");
+  node_t *ret_fp = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret_fp->kind);
+  ASSERT_EQ(ND_NUM, ret_fp->lhs->kind);
+  ASSERT_EQ(13, as_num(ret_fp->lhs)->val);
 }
 
 static void test_expr_sizeof() {
@@ -696,6 +705,11 @@ static void test_funcdef_with_params() {
   parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
+
+  // プロトタイプ宣言では名前なし仮引数を許容
+  parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(0, as_func(parsed_code[0])->nargs);
 }
 
 static void test_stmt_if() {
@@ -1455,6 +1469,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { int a[0]; return 0; }");          // 配列サイズは正数のみ
   expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
+  expect_parse_fail("int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
   expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
   expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
@@ -1493,6 +1508,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
   expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
@@ -1612,6 +1628,11 @@ static void test_parse_evil_edge_cases() {
 
   // 関数宣言のプロトタイプ
   expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");
+  expect_parse_ok("int (f)(int x) { return x; } int main() { return f(42); }");
+  expect_parse_ok("int g=1; _Static_assert(sizeof(int)==4, \"ok\"); int main(){ return g; }");
+  expect_parse_ok("typedef int myint; _Static_assert(1, \"ok\"); myint g=1; int main(){ return g; }");
+  expect_parse_ok("typedef int myint; _Static_assert(sizeof(myint)==4, \"ok\"); int main(){ return 0; }");
+  expect_parse_ok("typedef int A3[3]; _Static_assert(sizeof(A3)==12, \"ok\"); int main(){ return 0; }");
 
   // for文の複雑な初期化
   expect_parse_ok("main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");
@@ -1629,7 +1650,10 @@ static void test_parse_evil_edge_cases() {
 
   // typedefで作った型名の使用
   expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
+  expect_parse_ok("typedef int (*(*arr_t)[2])(int); int main() { arr_t p; return 0; }");
   expect_parse_ok("int main(){ typedef int (*(*fp_t))(int); return 0; }");
+  expect_parse_ok("int (*arr[2])(int); int main(){ return 0; }");
+  expect_parse_ok("int main(){ int (*arr[2])(int); return 0; }");
 
   // 複数の変数宣言（カンマ区切り）
   expect_parse_ok("main() { int a=1, b=2, c=3; return a+b+c; }");
@@ -1637,7 +1661,9 @@ static void test_parse_evil_edge_cases() {
   // 関数ポインタ宣言
   expect_parse_ok("int add(int a, int b) { return a+b; } int main() { int (*f)(int,int) = add; return f(20,22); }");
   expect_parse_ok("int inc(int x){return x+1;} int apply(int (**pp)(int), int x){ return (*pp)(x); } int main(){ int (*p)(int)=inc; int (**pp)(int)=&p; return apply(pp,41); }");
+  expect_parse_ok("int main(){ int (*(*pp))(int); return 0; }");
   expect_parse_ok("main() { struct S { int (*fp)(int); }; return 0; }");
+  expect_parse_ok("main() { struct S { int (*arr[2])(int); }; return 0; }");
 
   // enumの値パース
   expect_parse_ok("main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");

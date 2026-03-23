@@ -1468,6 +1468,7 @@
   - 現状: `funcdef()` が `skip_cv_qualifiers` → 型消費 → 識別子 → `(params)` → `{stmts}` をフラットに処理
   - 修正方針: `decl_spec` パース結果を受け取り、`declarator`（`ident "(" params ")"` 含む）を再帰的に解析する構造にする
   - 進捗（2026-03-23）: `funcdef()` の戻り値型側を `parse_func_decl_spec()`、関数名+仮引数側を `parse_func_declarator()` に分離して責務を分割（挙動は維持）
+  - 進捗（2026-03-24）: 関数名宣言子の取得を再帰化し、`int (f)(int)` のような括弧付き関数名 declarator を受理
   - 対象ファイル: `src/parser/parser.c`
 - [ ] `declaration` を `decl_spec` + `init_declarator_list` に統合する（C11 §6.7）
   - 現状: トップレベル（`parser.c`）とローカル（`stmt.c`/`decl.c`）で別関数。`skip_cv_qualifiers` + `psx_consume_type_kind` の2段階処理
@@ -1480,17 +1481,24 @@
   - 現状: ポインタ・名前・配列サイズ・関数ポインタのパースが各所にインライン展開
   - 修正方針: `declarator()` → `pointer?` + `direct_declarator()` の再帰構造にまとめる
   - 進捗（2026-03-24）: `stmt.c` の `parse_typedef_name_decl()` を再帰化し、ブロックスコープ `typedef int (*(*fp_t))(int);` を受理
+  - 進捗（2026-03-24）: `decl.c` の `consume_decl_name()` を再帰化し、ローカル宣言 `int (*(*pp))(int);` を受理
+  - 進捗（2026-03-24）: トップレベル宣言子の再帰で `(*arr[2])` 形を受理し、`int (*arr[2])(int);` を受理
+  - 進捗（2026-03-24）: ローカル宣言子でも括弧内配列後置 `(*arr[2])` を受理し、`int main(){ int (*arr[2])(int); }` を受理
   - 対象ファイル: `src/parser/parser.c`, `src/parser/decl.c`
 - [ ] `type_name` をキャスト・sizeof・_Generic で統一する（C11 §6.7.7）
   - 現状: `parse_cast_type()` が独自にパース。`decl_spec` 統合ではない
   - 修正方針: `type_name()` = `decl_spec` + `pointer?` として統一パース関数を用意
+  - 進捗（2026-03-24）: `_Generic` の関連型パースで抽象宣言子の一部（`int (*)(int)`, `int (*)[3]`）を受理し、cast/sizeof 側と同系統の type-name を扱えるようにした
+  - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
+  - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 対象ファイル: `src/parser/expr.c`
-- [ ] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
+- [x] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
   - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
   - 修正方針: `param_decl()` 関数を新設し、`decl_spec` + `declarator` or `pointer?` を処理
   - 進捗（2026-03-23）: `funcdef()` の仮引数1件分の処理を `parse_param_decl()` に切り出し（`parser.c`）。型解析・配列仮引数デカイ・構造体ABI分岐・`args[]` 登録を関数化
   - 進捗（2026-03-23）: `parse_param_decl()` の型側解析を `parse_param_decl_spec()` に分離し、`decl_spec` と `declarator` の責務分離を一段進めた
   - 進捗（2026-03-23）: `parse_param_declarator_name()` が括弧内 `*`（例: `struct S (*p)`）を `out_is_pointer_declarator` で返すようにして、`param_decl` のポインタ判定を宣言子由来に修正
+  - 進捗（2026-03-24）: `parse_param_decl()` が「decl-specあり・識別子なし」宣言子を抽象宣言子として扱えるようにし、関数プロトタイプ（`int f(int);`）を許容。関数定義（`int f(int){}`）では識別子必須の診断を追加
   - 対象ファイル: `src/parser/parser.c`
 
 ### grammar.md の C11 仕様との差分（2026-03-23 棚卸し）
@@ -1501,14 +1509,17 @@
 - [ ] `_Static_assert` を `declaration` の一種にする（C11 §6.7）
   - C11: `declaration = decl_spec init_declarator_list? ";" | static_assert-declaration`
   - 現状: `external_decl` と `block_item` に個別記載。`declaration` に含まれていない
+  - 進捗（2026-03-24）: トップレベルの宣言入口を `parse_toplevel_declaration_like()` に集約し、`_Static_assert` と通常宣言を同一経路で処理する構造へ整理
 - [ ] `typedef` を `storage_spec` に統合する（C11 §6.7.1）
   - C11: `typedef` は `storage-class-specifier` の一種。`declaration = decl_spec init_declarator_list? ";"` で統一
   - 現状: `declaration` の独立選択肢として分離し、`typedef_declarator` という特別規則を使用
+  - 進捗（2026-03-24）: トップレベル宣言入口 `parse_toplevel_declaration_like()` に `typedef` も取り込み、`_Static_assert`・通常宣言と同一の入口関数で分岐する構造へ整理
 - [ ] `direct_declarator` を再帰的にする（C11 §6.7.6）
   - C11: `direct-declarator = ... | "(" declarator ")"`（再帰的）
   - 現状: `"(" pointer? ident ")" "(" params ")"` で1段のみ。`int (**fpp)(int)` 等が表現不能
   - 進捗（2026-03-23）: トップレベル宣言名の取得を `parse_decl_name_recursive()` に置き換え、`int (*(*fpp))(int)` のような入れ子括弧 + ポインタ宣言子を受理
   - 進捗（2026-03-23）: 仮引数宣言子も `parse_param_declarator_name_recursive()` に置換し、`int (**pp)(int)` のような入れ子ポインタ宣言子を受理
+  - 進捗（2026-03-24）: `parse_decl_name_recursive()` で括弧付き宣言子後置の `[]` / `()` を再帰的に消費し、`typedef int (*(*arr_t)[2])(int);` を受理
 - [ ] 配列宣言子で `assignment-expression` を許容する（C11 §6.7.6.2）
   - C11: 配列サイズは `assignment-expression`（VLA）、`"static"` 修飾、`"*"`（不完全配列）が可能
   - 現状: `num?` のみ。`int a[n]`（VLA）が文法上表現できない（実装はVLA対応済み）
@@ -1516,6 +1527,7 @@
   - C11: `struct-declarator = declarator | declarator? ":" constant-expression`
   - 現状: `decl_spec pointer? ident ...` と直接記述。メンバの関数ポインタ（`int (*fp)(int);`）が表現不能
   - 進捗（2026-03-23）: メンバ宣言子の名前取得を再帰化し、`struct S { int (*fp)(int); };` を受理。`int f(int);` の関数型メンバ禁止診断は維持
+  - 進捗（2026-03-24）: 括弧付き宣言子内の配列後置（`(*arr[2])`）を受理し、`struct S { int (*arr[2])(int); };` を受理
 - [ ] `type_name` に `abstract-declarator` を含める（C11 §6.7.7）
   - C11: `type-name = specifier-qualifier-list abstract-declarator?`
   - 現状: `type_name = decl_spec pointer?` のみ。`sizeof(int [10])` や `sizeof(int (*)(void))` が表現不能

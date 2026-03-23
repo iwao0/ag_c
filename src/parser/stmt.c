@@ -126,6 +126,18 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix);
+    while (tk_consume('[')) {
+      int depth = 1;
+      while (depth > 0) {
+        if (curtok()->kind == TK_EOF) {
+          diag_emit_tokf(DIAG_ERR_PARSER_EXPECTED_TOKEN, curtok(), "%s",
+                         diag_message_for(DIAG_ERR_PARSER_EXPECTED_TOKEN));
+        }
+        if (curtok()->kind == TK_LBRACKET) depth++;
+        else if (curtok()->kind == TK_RBRACKET) depth--;
+        set_curtok(curtok()->next);
+      }
+    }
     tk_expect(')');
   } else {
     name = tk_consume_ident();
@@ -472,7 +484,8 @@ static long long parse_enum_const_unary(void) {
     if (curtok()->kind == TK_LPAREN) {
       set_curtok(curtok()->next);
       int sz = 8;
-      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind)) {
+      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind) ||
+          psx_ctx_is_typedef_name_token(curtok())) {
         psx_ctx_get_type_info(curtok()->kind, NULL, &sz);
         if (psx_ctx_is_tag_keyword(curtok()->kind)) {
           token_kind_t tk = curtok()->kind;
@@ -481,6 +494,21 @@ static long long parse_enum_const_unary(void) {
           if (tag && psx_ctx_has_tag_type(tk, tag->str, tag->len)) {
             sz = psx_ctx_get_tag_size(tk, tag->str, tag->len);
           }
+        } else if (psx_ctx_is_typedef_name_token(curtok())) {
+          token_ident_t *id = (token_ident_t *)curtok();
+          token_kind_t td_base = TK_EOF;
+          int td_elem = 8;
+          tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+          token_kind_t td_tag = TK_EOF;
+          char *td_tag_name = NULL;
+          int td_tag_len = 0;
+          int td_ptr = 0;
+          int td_sizeof = 8;
+          psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
+                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+          if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
+          else sz = td_ptr ? 8 : td_elem;
+          set_curtok(curtok()->next);
         } else {
           set_curtok(curtok()->next);
           // consume additional type specifiers (e.g., "unsigned long long")
@@ -667,11 +695,14 @@ static void parse_typedef_decl(void) {
       skip_ptr_qualifiers_stmt();
     }
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
+    int typedef_sizeof = is_ptr ? 8 : elem_size;
     while (tk_consume('[')) {
-      (void)parse_array_size_constexpr_stmt();
+      int n = parse_array_size_constexpr_stmt();
+      if (!is_ptr && n > 0) typedef_sizeof *= n;
       tk_expect(']');
     }
-    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
+                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof);
     if (!tk_consume(',')) break;
   }
   tk_expect(';');

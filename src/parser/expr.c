@@ -226,12 +226,6 @@ static int is_type_name_start_token(token_t *t) {
   return 0;
 }
 
-static void skip_ptr_qualifiers_expr(void) {
-  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
-    set_curtok(curtok()->next);
-  }
-}
-
 static void consume_local_type_quals(token_t **cur) {
   while (*cur && ((*cur)->kind == TK_CONST || (*cur)->kind == TK_VOLATILE || (*cur)->kind == TK_RESTRICT)) {
     *cur = (*cur)->next;
@@ -365,10 +359,15 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     if (tk == TK_EOF) return 0;
     out->kind = tk;
   }
-  while (tk_consume('*')) {
-    out->is_pointer = 1;
-    skip_ptr_qualifiers_expr();
-  }
+  token_t *t = curtok();
+  consume_cast_pointer_suffix(&t, &out->is_pointer);
+  // type-name の abstract-declarator の一部を受理:
+  //  - int (*)(int)
+  //  - int (*)[3]
+  // これにより _Generic の関連型でも cast/sizeof と同系統の型名を扱える。
+  (void)parse_funcptr_abstract_decl(&t, &out->is_pointer);
+  (void)parse_ptr_to_array_abstract_decl(&t, &out->is_pointer);
+  set_curtok(t);
   return 1;
 }
 
