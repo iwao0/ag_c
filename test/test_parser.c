@@ -1625,6 +1625,7 @@ static void test_parse_evil_edge_cases() {
   // sizeof内の型
   expect_parse_ok("main() { return sizeof(int); }");
   expect_parse_ok("main() { return sizeof(int*); }");
+  expect_parse_ok("main() { return sizeof(int (*[3])(int)); }");
 
   // 関数宣言のプロトタイプ
   expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");

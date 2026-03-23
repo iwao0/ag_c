@@ -418,6 +418,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "compound_literal_array_subscript2", CASE_INT, "int main(){ return ((int[3]){10,20,30})[2]; }", 30, 0},
     // 外側括弧なし: unary() 内で直接 apply_postfix(ref) を呼ぶパス
     {"type_decl", "compound_literal_array_subscript_direct", CASE_INT, "int main(){ return (int[3]){7,8,9}[2]; }", 9, 0},
+    {"type_decl", "sizeof_array_of_funcptr_type", CASE_INT, "int main(){ return sizeof(int (*[3])(int)); }", 24, 0},
     // designator 初期化子との組み合わせ
     {"type_decl", "compound_literal_array_subscript_designator", CASE_INT, "int main(){ return ((int[4]){[2]=99})[2]; }", 99, 0},
     // 式中での複数利用

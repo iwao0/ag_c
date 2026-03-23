@@ -193,6 +193,41 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   return 1;
 }
 
+static int parse_array_of_funcptr_abstract_decl(token_t **ptok, int *out_array_mul) {
+  token_t *t = *ptok;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  t = t->next;
+  consume_local_type_quals(&t);
+  if (!t || t->kind != TK_LBRACKET) return 0;
+
+  int array_mul = 1;
+  while (t && t->kind == TK_LBRACKET) {
+    token_t *open = t;
+    token_t *after = skip_balanced_bracket_token(open);
+    if (!after) return 0;
+    token_t *dim_tok = open->next;
+    if (!dim_tok || dim_tok->kind != TK_NUM || tk_as_num(dim_tok)->num_kind != TK_NUM_KIND_INT ||
+        !dim_tok->next || dim_tok->next->kind != TK_RBRACKET) {
+      return 0;
+    }
+    int dim = (int)tk_as_num_int(dim_tok)->uval;
+    if (dim <= 0) return 0;
+    array_mul *= dim;
+    t = after;
+  }
+
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  token_t *after_params = skip_balanced_paren_token(t);
+  if (!after_params) return 0;
+  *ptok = after_params;
+  if (out_array_mul) *out_array_mul = array_mul;
+  return 1;
+}
+
 static int parse_ptr_to_array_abstract_decl(token_t **ptok, int *is_pointer) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
@@ -364,6 +399,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   // type-name の abstract-declarator の一部を受理:
   //  - int (*)(int)
   //  - int (*)[3]
+  //  - int (*[3])(int)
   // これにより _Generic の関連型でも cast/sizeof と同系統の型名を扱える。
   (void)parse_funcptr_abstract_decl(&t, &out->is_pointer);
   (void)parse_ptr_to_array_abstract_decl(&t, &out->is_pointer);
@@ -903,6 +939,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -924,6 +964,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -945,6 +989,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -966,6 +1014,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -990,6 +1042,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1016,6 +1072,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1040,6 +1100,10 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     int fp_ptr = 0;
+    int fp_array_mul = 1;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }

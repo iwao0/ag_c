@@ -1491,6 +1491,7 @@
   - 進捗（2026-03-24）: `_Generic` の関連型パースで抽象宣言子の一部（`int (*)(int)`, `int (*)[3]`）を受理し、cast/sizeof 側と同系統の type-name を扱えるようにした
   - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
+  - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映
   - 対象ファイル: `src/parser/expr.c`
 - [x] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
   - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
