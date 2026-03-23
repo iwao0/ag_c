@@ -20,6 +20,8 @@ static char *user_input;
 
 // 現在着目しているトークン
 token_t *token;
+token_t *tk_get_current_token(void) { return token; }
+void tk_set_current_token(token_t *tok) { token = tok; }
 
 /** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
 char *tk_get_user_input(void) {

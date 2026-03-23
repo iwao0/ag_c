@@ -64,13 +64,13 @@ int main(int argc, char **argv) {
 
   // トークナイズ
   tk_set_filename(argv[1]);
-  token = tk_tokenize(source);
+  token_t *tok = tk_tokenize(source);
 
   // プリプロセス（マクロ展開やディレクティブ処理）
-  token = preprocess(token);
+  tok = preprocess(tok);
 
   // パースしてAST（抽象構文木）を構築（関数定義の列）
-  node_t **code = ps_program_from(token);
+  node_t **code = ps_program_from(tok);
   gen_set_output_callback(write_line_to_file, stdout);
 
   // 各関数定義のコード生成

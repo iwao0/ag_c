@@ -443,6 +443,7 @@
 - [x] 優先度P1: `tokenizer_context` 実装に着手する
   - [x] `token` グローバル依存を置き換える最小実装（`*_ctx` API + 互換ラッパー）を作る
   - [x] 既存Parser連携を壊さない移行順を確認する
+  - [x] 進捗（2026-03-23）: `tk_get_current_token` / `tk_set_current_token` を追加し、`main`・`preprocess`・`ps_program/ps_expr` 入口の直接 `token` 参照を削減した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
