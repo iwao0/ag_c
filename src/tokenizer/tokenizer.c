@@ -37,6 +37,11 @@ static tokenizer_stats_t tok_stats = {0};
 static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
 static size_t max_token_len_for_test = (size_t)INT_MAX;
+static tokenizer_context_t *active_ctx;
+
+static tokenizer_context_t *runtime_ctx(void) {
+  return active_ctx ? active_ctx : tk_get_default_context();
+}
 
 /** @brief 現在のファイル名（エラー表示用）を取得する。 */
 char *tk_get_filename(void) {
@@ -98,7 +103,7 @@ static char trigraph_to_char(char c) {
 
 // 翻訳フェーズ1: trigraph を置換する
 static char *replace_trigraphs(const char *in) {
-  if (!tk_get_enable_trigraphs()) return (char *)in;
+  if (!tk_ctx_get_enable_trigraphs(runtime_ctx())) return (char *)in;
   size_t n = strlen(in);
   bool has_trigraph = false;
   for (size_t i = 0; i + 2 < n; i++) {
@@ -465,7 +470,7 @@ static inline bool has_hex_float_marker(const char *p) {
 }
 
 static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
-  if (!tk_get_enable_c11_audit_extensions()) return;
+  if (!tk_ctx_get_enable_c11_audit_extensions(runtime_ctx())) return;
   int pos = (int)(loc - user_input);
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",
@@ -510,7 +515,7 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
       parse_int_suffix(num, &p, val, false, *pp);
     }
   } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
-    if (tk_get_strict_c11_mode() || !tk_get_enable_binary_literals()) {
+    if (tk_ctx_get_strict_c11_mode(runtime_ctx()) || !tk_ctx_get_enable_binary_literals(runtime_ctx())) {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
     }
     tk_audit_extension(p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
@@ -582,6 +587,12 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
 
 /** @brief 入力文字列をトークナイズし、先頭トークンを返す。 */
 token_t *tk_tokenize(char *p) {
+  return tk_tokenize_ctx(tk_get_default_context(), p);
+}
+
+token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p) {
+  tokenizer_context_t *prev_ctx = active_ctx;
+  active_ctx = ctx ? ctx : tk_get_default_context();
   tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);
   user_input = normalized;
@@ -818,5 +829,6 @@ token_t *tk_tokenize(char *p) {
   }
 
   new_token_simple(TK_EOF, cur, line_no, false, false);
+  active_ctx = prev_ctx;
   return head.next;
 }

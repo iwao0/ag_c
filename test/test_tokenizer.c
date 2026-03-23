@@ -926,6 +926,36 @@ static void test_runtime_mode_switch_boundaries() {
   ASSERT_EQ(5, as_num_i(token)->val);
 }
 
+static void test_tokenize_with_explicit_context() {
+  printf("test_tokenize_with_explicit_context...\n");
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(true);
+
+  tokenizer_context_t ctx;
+  tk_context_init(&ctx);
+  tk_ctx_set_strict_c11_mode(&ctx, true);
+  tk_ctx_set_enable_binary_literals(&ctx, true);
+
+  // default context では許可
+  token = tk_tokenize("0b101");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, as_num_i(token)->val);
+
+  // explicit context（strict=true）では拒否
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    tk_tokenize_ctx(&ctx, "0b101");
+    _exit(0);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -945,6 +975,7 @@ int main() {
   test_strict_c11_mode();
   test_c11_audit_mode_flag();
   test_runtime_mode_switch_boundaries();
+  test_tokenize_with_explicit_context();
   test_at_eof();
   test_consume();
   test_consume_str();

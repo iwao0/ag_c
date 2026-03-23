@@ -4,6 +4,16 @@
 #include "token.h"
 #include <stddef.h>
 
+typedef struct tokenizer_context_t tokenizer_context_t;
+
+/** @brief Tokenizerの実行時設定コンテキスト。 */
+struct tokenizer_context_t {
+  bool strict_c11_mode;
+  bool enable_trigraphs;
+  bool enable_binary_literals;
+  bool enable_c11_audit_extensions;
+};
+
 /** @brief 現在着目しているトークン。 */
 extern token_t *token;
 
@@ -35,6 +45,8 @@ bool tk_at_eof(void);
  * @warning 不正な字句を検出した場合は診断API（`diag_emit_*`）で終了する。
  */
 token_t *tk_tokenize(char *p);
+/** @brief 明示コンテキストでトークナイズして先頭トークンを返す。 */
+token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p);
 
 /** @brief 現在の入力文字列（エラー表示用）を取得する。 */
 char *tk_get_user_input(void);
@@ -68,6 +80,27 @@ void tk_set_enable_binary_literals(bool enable);
 bool tk_get_enable_c11_audit_extensions(void);
 /** @brief C11監査ログ（拡張使用検出）の有効/無効を設定する。 */
 void tk_set_enable_c11_audit_extensions(bool enable);
+
+/** @brief 既定のTokenizerコンテキストを返す。 */
+tokenizer_context_t *tk_get_default_context(void);
+/** @brief コンテキストを既定値で初期化する。 */
+void tk_context_init(tokenizer_context_t *ctx);
+/** @brief コンテキストのstrict C11有効/無効を取得する。 */
+bool tk_ctx_get_strict_c11_mode(const tokenizer_context_t *ctx);
+/** @brief コンテキストのstrict C11有効/無効を設定する。 */
+void tk_ctx_set_strict_c11_mode(tokenizer_context_t *ctx, bool strict);
+/** @brief コンテキストのトライグラフ置換有効/無効を取得する。 */
+bool tk_ctx_get_enable_trigraphs(const tokenizer_context_t *ctx);
+/** @brief コンテキストのトライグラフ置換有効/無効を設定する。 */
+void tk_ctx_set_enable_trigraphs(tokenizer_context_t *ctx, bool enable);
+/** @brief コンテキストの2進整数リテラル拡張有効/無効を取得する。 */
+bool tk_ctx_get_enable_binary_literals(const tokenizer_context_t *ctx);
+/** @brief コンテキストの2進整数リテラル拡張有効/無効を設定する。 */
+void tk_ctx_set_enable_binary_literals(tokenizer_context_t *ctx, bool enable);
+/** @brief コンテキストのC11監査ログ有効/無効を取得する。 */
+bool tk_ctx_get_enable_c11_audit_extensions(const tokenizer_context_t *ctx);
+/** @brief コンテキストのC11監査ログ有効/無効を設定する。 */
+void tk_ctx_set_enable_c11_audit_extensions(tokenizer_context_t *ctx, bool enable);
 
 /** @brief Tokenizerメモリアロケーション統計。 */
 typedef struct {
