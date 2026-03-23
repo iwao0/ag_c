@@ -592,8 +592,9 @@
   - [x] `tokenize_*` / `parse_*` / `begin|end_tokenize_session` から優先適用する
 
 ## Tokenizer 次ラウンド候補（2026-03-24）
-- [ ] [P2] `parse_number_literal` の 0始まり分岐（`0x`/`0b`/8進）を専用ディスパッチ関数へ抽出し、レビュー観点を固定する
-  - [ ] 目的: `parse_number_literal` 本体を「分岐選択のみ」に寄せる
+- [x] [P2] `parse_number_literal` の 0始まり分岐（`0x`/`0b`/8進）を専用ディスパッチ関数へ抽出し、レビュー観点を固定する
+  - [x] 進捗（2026-03-24）: `parse_zero_prefixed_number` を追加し、`parse_number_literal` 本体を「0始まり分岐 or それ以外」の二段構成へ整理した
+  - [x] 目的: `parse_number_literal` 本体を「分岐選択のみ」に寄せる
 - [ ] [P2] `test/bench_tokenizer.c` の hotpath ケースを `TOKENIZER_BENCH_MODE` 環境変数で選択可能にし、局所計測の反復を短縮する
   - [ ] 目的: `scanner`/`literals`/`punctuator` の単体反復時に不要ケースを省く
 - [ ] [P3] `tokenizer_hotpath_daily.csv` の列説明を `tokenizer_perf_report.md` に追記し、運用時の読み違いを防ぐ

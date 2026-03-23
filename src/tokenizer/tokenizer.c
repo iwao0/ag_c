@@ -845,42 +845,68 @@ static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
           diag_text_for(text_id), pos);
 }
 
-static void parse_number_literal(char **pp, parsed_num_t *num) {
+/** @brief `0` 始まりの数値（`0x`/`0b`/8進）を解析し、未該当なら false を返す。 */
+static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_loc) {
   char *p = *pp;
+  if (!(*p == '0')) return false;
 
-  // 16進数/2進数/8進数/10進数
-  if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
-    // 16進数 (整数 or 浮動小数点)
+  if (p[1] == 'x' || p[1] == 'X') {
     if (has_hex_float_marker(p)) {
       parse_float_literal(num, &p, true);
     } else {
       p += 2;
-      parse_integer_literal_with_base(num, &p, 16, false, *pp);
+      parse_integer_literal_with_base(num, &p, 16, false, err_loc);
     }
-  } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
+    *pp = p;
+    return true;
+  }
+
+  if (p[1] == 'b' || p[1] == 'B') {
     if (!tk_is_binary_literal_enabled_in_ctx()) {
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s",
+                  diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
     }
     tk_audit_extension(p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
     p += 2;
-    if (*p != '0' && *p != '1')
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
-    parse_integer_literal_with_base(num, &p, 2, false, *pp);
-  } else if (*p == '0' && tk_is_digit(p[1])) {
-    if (p[1] == '8' || p[1] == '9')
-      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
+    if (*p != '0' && *p != '1') {
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s",
+                  diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
+    }
+    parse_integer_literal_with_base(num, &p, 2, false, err_loc);
+    *pp = p;
+    return true;
+  }
+
+  if (tk_is_digit(p[1])) {
+    if (p[1] == '8' || p[1] == '9') {
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s",
+                  diag_message_for(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
+    }
     p++;
     if (*p >= '0' && *p <= '7') {
       p--;
-      parse_integer_literal_with_base(num, &p, 8, false, *pp);
+      parse_integer_literal_with_base(num, &p, 8, false, err_loc);
     } else {
       num->uval = 0;
       num->val = 0;
       num->fp_kind = TK_FLOAT_KIND_NONE;
       num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
       num->int_base = 8;
-      parse_int_suffix(num, &p, 0, false, *pp);
+      parse_int_suffix(num, &p, 0, false, err_loc);
     }
+    *pp = p;
+    return true;
+  }
+
+  return false;
+}
+
+static void parse_number_literal(char **pp, parsed_num_t *num) {
+  char *p = *pp;
+
+  if (parse_zero_prefixed_number(num, &p, *pp)) {
+    *pp = p;
+    return;
   } else {
     if (try_parse_decimal_int_fast(&p, num)) {
       *pp = p;
