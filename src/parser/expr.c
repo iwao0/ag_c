@@ -660,7 +660,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     char *tag_name = NULL;
     int tag_len = 0;
     int is_ptr = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
+    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len,
+                              &is_ptr, &base_const, &base_volatile);
     set_curtok(curtok()->next);
     out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
     out->is_pointer = is_ptr;
@@ -877,7 +878,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       char *td_tag_name = NULL;
       int td_tag_len = 0;
       int td_ptr = 0;
-      psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+      psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
+                                &td_ptr, NULL, NULL);
       inner_kind = (td_tag != TK_EOF) ? td_tag : td_base;
       inner_tag_kind = td_tag;
       inner_tag_name = td_tag_name;
@@ -1000,7 +1002,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     char *td_tag_name = NULL;
     int td_tag_len = 0;
     int td_ptr = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
+                              &td_ptr, NULL, NULL);
     *type_kind = (td_tag != TK_EOF) ? td_tag : td_base;
     if (out_tag_kind) *out_tag_kind = td_tag;
     if (out_tag_name) *out_tag_name = td_tag_name;
@@ -1528,7 +1531,8 @@ static int parse_parenthesized_type_size(void) {
     char *td_tag_name = NULL;
     int td_tag_len = 0;
     int td_ptr = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
+                              &td_ptr, NULL, NULL);
     t = t->next;
     int sz = td_ptr ? 8 : td_elem;
     while (t->kind == TK_MUL) {

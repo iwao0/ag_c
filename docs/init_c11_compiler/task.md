@@ -1505,6 +1505,8 @@
   - 進捗（2026-03-24）: `_Generic` の `struct`/`union` 関連型判定でタグ名一致まで比較するように修正し、同サイズ・同形状でも異なるタグ型は不一致として `default` へ落ちるようにした
   - 進捗（2026-03-24）: `_Generic` のポインタ関連型判定を詳細化し、`int*` / `char*` / `double*` / `struct S*` を区別して一致判定できるようにした（従来の「ポインタなら一律一致」を解消）
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に pointee の `const/volatile` 修飾を反映し、`const int*` と `int*` を区別して関連型選択できるようにした
+  - 進捗（2026-03-24）: `typedef` の型情報に pointee `const/volatile` 修飾を保持するよう拡張し、`typedef const int *T;` / `typedef volatile int *T;` 経由でも `_Generic` の関連型選択に修飾子差分を反映できるようにした
+  - 進捗（2026-03-24）: `typedef` 名を起点にした宣言解析で修飾子情報を宣言ノードへ伝播するようにし、`typedef` 経由ポインタと直接記述ポインタで `_Generic` 挙動が一致することを回帰テストで固定化した
   - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映

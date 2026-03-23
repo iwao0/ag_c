@@ -508,6 +508,20 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_ptr_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_const->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "typedef const int *cip_t; main(){ int x=0; cip_t p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
+  node_t *ret_typedef_const_ptr = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_typedef_const_ptr->kind);
+  ASSERT_EQ(ND_NUM, ret_typedef_const_ptr->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_typedef_const_ptr->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "typedef volatile int *vip_t; main(){ int x=0; vip_t p=&x; return _Generic(p, volatile int*:2, int*:1, default:3); }");
+  node_t *ret_typedef_volatile_ptr = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_typedef_volatile_ptr->kind);
+  ASSERT_EQ(ND_NUM, ret_typedef_volatile_ptr->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_typedef_volatile_ptr->lhs)->val);
 }
 
 static void test_expr_sizeof() {
