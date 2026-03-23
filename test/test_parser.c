@@ -1627,6 +1627,7 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("main() { return sizeof(int*); }");
   expect_parse_ok("main() { return sizeof(int (*[3])(int)); }");
   expect_parse_ok("main() { return sizeof(int (*[2])[3]); }");
+  expect_parse_ok("main() { return sizeof(int (*(*[2])[3])); }");
   expect_parse_ok("main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }");
 
   // 関数宣言のプロトタイプ

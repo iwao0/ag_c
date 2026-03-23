@@ -421,6 +421,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "compound_literal_array_subscript_direct", CASE_INT, "int main(){ return (int[3]){7,8,9}[2]; }", 9, 0},
     {"type_decl", "sizeof_array_of_funcptr_type", CASE_INT, "int main(){ return sizeof(int (*[3])(int)); }", 24, 0},
     {"type_decl", "sizeof_array_of_ptr_to_array_type", CASE_INT, "int main(){ return sizeof(int (*[2])[3]); }", 16, 0},
+    {"type_decl", "sizeof_array_of_ptr_to_array_of_ptr_type", CASE_INT, "int main(){ return sizeof(int (*(*[2])[3])); }", 16, 0},
     // designator 初期化子との組み合わせ
     {"type_decl", "compound_literal_array_subscript_designator", CASE_INT, "int main(){ return ((int[4]){[2]=99})[2]; }", 99, 0},
     // 式中での複数利用
