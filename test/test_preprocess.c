@@ -43,6 +43,7 @@ static const success_case_t success_cases[] = {
     {42, "int main() { char *t = __TIME__; return t[0] ? 42 : 0; }"},
     // #pragma once
     {42, "#include \"build/pragma_once.h\"\n#include \"build/pragma_once.h\"\nint main() { return once_func(); }"},
+    {42, "#include \"build/pragma_once_rel.h\"\n#include \"./build/pragma_once_rel.h\"\nint main() { return once_rel_func(); }"},
     // #line ディレクティブ
     {99, "#line 99\nint main() { return __LINE__; }"},
     {42, "#line 41\nint x = 0;\nint main() { return __LINE__; }"},
@@ -327,6 +328,9 @@ int main(void) {
   FILE *honce = fopen("build/pragma_once.h", "w");
   fprintf(honce, "#pragma once\nint once_func() { return 42; }\n");
   fclose(honce);
+  FILE *honce_rel = fopen("build/pragma_once_rel.h", "w");
+  fprintf(honce_rel, "#pragma once\nint once_rel_func() { return 42; }\n");
+  fclose(honce_rel);
   FILE *ha = fopen("build/cycle_a.h", "w");
   fprintf(ha, "#include \"build/cycle_b.h\"\n");
   fclose(ha);

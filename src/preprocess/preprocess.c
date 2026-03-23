@@ -81,6 +81,36 @@ static void validate_include_path_or_die(const char *path) {
   }
 }
 
+static char *normalize_include_path_or_die(const char *path) {
+  size_t n = strlen(path);
+  char *out = calloc(n + 1, 1);
+  if (!out) {
+    pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+  }
+  size_t j = 0;
+  size_t i = 0;
+
+  while (path[i] == '.' && path[i + 1] == '/') i += 2;
+
+  while (path[i]) {
+    if (path[i] == '/') {
+      out[j++] = '/';
+      while (path[i] == '/') i++;
+      if (path[i] == '.' && path[i + 1] == '/') {
+        i += 2;
+        continue;
+      }
+      continue;
+    }
+    out[j++] = path[i++];
+  }
+  if (j == 0) {
+    out[j++] = '.';
+  }
+  out[j] = '\0';
+  return out;
+}
+
 static void push_include_or_die(const char *path) {
   if (include_depth >= PP_MAX_INCLUDE_DEPTH) {
     pp_error(DIAG_ERR_PREPROCESS_INCLUDE_NEST_TOO_DEEP, NULL);
@@ -842,6 +872,9 @@ token_t *preprocess(token_t *tok) {
           tok = tok->next; // '>' をスキップ
         }
         validate_include_path_or_die(filename);
+        char *normalized = normalize_include_path_or_die(filename);
+        free(filename);
+        filename = normalized;
 
         if (pragma_once_seen(filename)) {
           free(filename);

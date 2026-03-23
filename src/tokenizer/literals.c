@@ -46,6 +46,8 @@ bool tk_is_valid_ucn_codepoint(uint32_t cp) {
   if (cp == 0x200E || cp == 0x200F || cp == 0x061C) return false;
   if (0x202A <= cp && cp <= 0x202E) return false;
   if (0x2066 <= cp && cp <= 0x2069) return false;
+  // Reject zero-width join controls to prevent visually confusable identifiers.
+  if (cp == 0x200C || cp == 0x200D) return false;
   return true;
 }
 
