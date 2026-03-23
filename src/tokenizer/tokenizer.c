@@ -18,8 +18,6 @@
 // 入力プログラム（エラーメッセージ表示用）
 static char *user_input;
 
-// 現在着目しているトークン（互換カーソル、公開は accessor 経由に限定）
-static token_t *token;
 static char *current_filename;
 
 static tokenizer_stats_t tok_stats = {0};
@@ -42,10 +40,7 @@ token_t *tk_get_current_token(void) {
 
 token_t *tk_get_current_token_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  if (use_ctx) {
-    token = use_ctx->current_token;
-  }
-  return token;
+  return use_ctx ? use_ctx->current_token : NULL;
 }
 
 void tk_set_current_token(token_t *tok) {
@@ -53,7 +48,6 @@ void tk_set_current_token(token_t *tok) {
 }
 
 void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
-  token = tok;
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   if (use_ctx) {
     use_ctx->current_token = tok;
@@ -199,12 +193,11 @@ bool tk_consume(char op) {
 
 bool tk_consume_ctx(tokenizer_context_t *ctx, char op) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : token;
+  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
   token_kind_t kind = kind_for_char(op);
-  if (kind == TK_EOF || cur->kind != kind)
+  if (!cur || kind == TK_EOF || cur->kind != kind)
     return false;
-  if (use_ctx) use_ctx->current_token = cur->next;
-  if (!ctx) token = cur->next;
+  use_ctx->current_token = cur->next;
   return true;
 }
 
@@ -215,12 +208,11 @@ bool tk_consume_str(char *op) {
 
 bool tk_consume_str_ctx(tokenizer_context_t *ctx, char *op) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : token;
+  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
   token_kind_t kind = punctuator_kind_for_str(op);
-  if (kind == TK_EOF || cur->kind != kind)
+  if (!cur || kind == TK_EOF || cur->kind != kind)
     return false;
-  if (use_ctx) use_ctx->current_token = cur->next;
-  if (!ctx) token = cur->next;
+  use_ctx->current_token = cur->next;
   return true;
 }
 
@@ -231,12 +223,11 @@ token_ident_t *tk_consume_ident(void) {
 
 token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : token;
-  if (cur->kind != TK_IDENT)
+  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
+  if (!cur || cur->kind != TK_IDENT)
     return NULL;
   token_ident_t *tok = (token_ident_t *)cur;
-  if (use_ctx) use_ctx->current_token = cur->next;
-  if (!ctx) token = cur->next;
+  use_ctx->current_token = cur->next;
   return tok;
 }
 
@@ -247,14 +238,13 @@ void tk_expect(char op) {
 
 void tk_expect_ctx(tokenizer_context_t *ctx, char op) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : token;
+  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
   token_kind_t kind = kind_for_char(op);
-  if (kind == TK_EOF || cur->kind != kind) {
+  if (!cur || kind == TK_EOF || cur->kind != kind) {
     diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, cur, "%s: '%c'",
                    diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
   }
-  if (use_ctx) use_ctx->current_token = cur->next;
-  if (!ctx) token = cur->next;
+  use_ctx->current_token = cur->next;
 }
 
 /** @brief 次トークンが整数であることを期待し int 値を返す。 */
@@ -264,8 +254,8 @@ int tk_expect_number(void) {
 
 int tk_expect_number_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : token;
-  if (cur->kind != TK_NUM) {
+  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
+  if (!cur || cur->kind != TK_NUM) {
     TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   if (tk_as_num(cur)->num_kind != TK_NUM_KIND_INT) {
@@ -276,8 +266,7 @@ int tk_expect_number_ctx(tokenizer_context_t *ctx) {
     TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   int val = (int)n;
-  if (use_ctx) use_ctx->current_token = cur->next;
-  if (!ctx) token = cur->next;
+  use_ctx->current_token = cur->next;
   return val;
 }
 
@@ -286,8 +275,8 @@ bool tk_at_eof(void) { return tk_at_eof_ctx(NULL); }
 
 bool tk_at_eof_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : token;
-  return cur->kind == TK_EOF;
+  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
+  return cur && cur->kind == TK_EOF;
 }
 
 // 新しいトークンを作成して、curに繋げる

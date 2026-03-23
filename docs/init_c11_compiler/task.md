@@ -480,7 +480,7 @@
   - [x] `tk_consume`/`tk_expect` 系 API の文脈受け渡し方針（互換ラッパ含む）を確定する
   - [x] `main`/`preprocess`/`parser` の呼び出しフローを context 明示渡しへ段階移行する
   - [x] 回帰テスト（`test_parser`/`test_preprocess`/`test_e2e`）で動作互換を確認する
-  - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `current_token` を追加し、`tk_get_current_token`/`tk_set_current_token` と `tk_consume`/`tk_expect` 系を context カーソル同期へ移行した（互換のため `extern token` は暫定維持）
+  - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `current_token` を追加し、`tk_get_current_token`/`tk_set_current_token` と `tk_consume`/`tk_expect` 系を context カーソル同期へ移行した（当時は互換のため `extern token` を暫定維持）
   - [x] 進捗（2026-03-23）: `tk_consume_ctx`/`tk_expect_ctx`/`tk_expect_number_ctx`/`tk_at_eof_ctx` を追加し、既存APIは互換ラッパとして維持した
   - [x] 進捗（2026-03-23）: `preprocess_ctx` を追加し、`main` と `preprocess` 内部の再トークナイズ経路（`#include`/`##`）を `tk_tokenize_ctx` ベースへ移行した
   - [x] 進捗（2026-03-23）: `ps_program_ctx`/`ps_expr_ctx` を追加し、`main` のパース入口を context 明示版APIへ切り替えた
@@ -490,6 +490,7 @@
   - [x] 進捗（2026-03-23）: `test_tokenizer` の直接 `token` 参照（`token->kind` / `token=token->next` / `as_* (token)`）を `tk_get_current_token` / `tk_set_current_token` ベースへ置換し、テスト側のグローバルカーソル依存を段階削減した
   - [x] 進捗（2026-03-23）: `test_tokenizer` と `bench_parser` の `token = tk_tokenize(...)` 初期化を `tk_set_current_token(tk_tokenize(...))` へ移行し、テスト/ベンチ入口の直接グローバル代入を解消した
   - [x] 進捗（2026-03-23）: `tokenizer.h` から `extern token` を撤去し、`tokenizer.c` 側の互換カーソルを `static` 化して公開境界を accessor API のみに整理した
+  - [x] 進捗（2026-03-23）: `tokenizer.c` の consume/expect/eof 経路を `tokenizer_context_t.current_token` 一元参照へ切り替え、内部のグローバル `token` 変数自体を削除した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
