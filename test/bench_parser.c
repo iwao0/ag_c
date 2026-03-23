@@ -45,7 +45,7 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
   struct timespec t_par1;
 
   clock_gettime(CLOCK_MONOTONIC, &t_tok0);
-  token = tk_tokenize(input);
+  tk_set_current_token(tk_tokenize(input));
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);

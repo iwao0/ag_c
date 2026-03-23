@@ -488,6 +488,7 @@
   - [x] 進捗（2026-03-23）: `ps_program_ctx`/`ps_expr_ctx` で parser 実行前後に `tk_set_current_token_ctx` 同期を追加し、context指定時のカーソル整合を保証した
   - [x] 進捗（2026-03-23）: `test_parser` の直接 `token` 参照を `tk_get_current_token()` へ置換し、テスト側の `extern token` 依存削減を開始した
   - [x] 進捗（2026-03-23）: `test_tokenizer` の直接 `token` 参照（`token->kind` / `token=token->next` / `as_* (token)`）を `tk_get_current_token` / `tk_set_current_token` ベースへ置換し、テスト側のグローバルカーソル依存を段階削減した
+  - [x] 進捗（2026-03-23）: `test_tokenizer` と `bench_parser` の `token = tk_tokenize(...)` 初期化を `tk_set_current_token(tk_tokenize(...))` へ移行し、テスト/ベンチ入口の直接グローバル代入を解消した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
