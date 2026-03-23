@@ -934,7 +934,7 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "[cast] struct 値へのキャストは未対応です（型不整合）"},
     {"const_assign_rejected",
      "int main() { const int x = 5; x = 10; return 0; }",
-     "const修飾された変数への代入はできません"},
+     "E3077"},
     {"const_compound_assign_rejected",
      "int main() { const int x = 5; x += 1; return 0; }",
      "const修飾された変数への代入はできません"},
@@ -1246,6 +1246,28 @@ static int write_large_single_line_unterminated_string(const char *path, size_t 
   }
   // Intentionally do not close with '"' to force tokenizer error on a huge single line.
   if (fputc('\n', fp) == EOF) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_macro_expansion_limit_source(const char *path, int levels) {
+  if (levels < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(fp, "#define X0 1\n") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 1; i <= levels; i++) {
+    if (fprintf(fp, "#define X%d (X%d + X%d)\n", i, i - 1, i - 1) < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "int main() { return X%d; }\n", levels) < 0) {
     fclose(fp);
     return -1;
   }
@@ -1624,6 +1646,26 @@ int main() {
     }
   }
   {
+    const char *tok_limit_path = "build/e2e/compile_fail/tokenizer_int_too_large.c";
+    const char *log_path = "build/e2e/logs/compile_fail_tokenizer_int_too_large.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file(tok_limit_path, "int main() { return 18446744073709551616; }\n") != 0 ||
+        run_ag_c_expect_fail_with_diag(tok_limit_path, "E2015", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: tokenizer_int_too_large (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *pp_limit_path = "build/e2e/compile_fail/macro_expansion_limit.c";
+    const char *log_path = "build/e2e/logs/compile_fail_macro_expansion_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_macro_expansion_limit_source(pp_limit_path, 16) != 0 ||
+        run_ag_c_expect_fail_with_diag(pp_limit_path, "E1029", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: macro_expansion_limit (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
     const char *nul_path = "build/e2e/compile_fail/nul_input.c";
     const char *log_path = "build/e2e/logs/compile_fail_nul_input.log";
     static const unsigned char nul_input[] = {
@@ -1744,7 +1786,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 9);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 11);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
