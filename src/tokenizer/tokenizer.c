@@ -206,11 +206,11 @@ bool tk_consume_ctx(tokenizer_context_t *ctx, char op) {
 }
 
 /** @brief 次トークンが指定記号文字列なら消費して true を返す。 */
-bool tk_consume_str(char *op) {
+bool tk_consume_str(const char *op) {
   return tk_consume_str_ctx(NULL, op);
 }
 
-bool tk_consume_str_ctx(tokenizer_context_t *ctx, char *op) {
+bool tk_consume_str_ctx(tokenizer_context_t *ctx, const char *op) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   token_t *cur = use_ctx ? use_ctx->current_token : NULL;
   token_kind_t kind = punctuator_kind_for_str(op);

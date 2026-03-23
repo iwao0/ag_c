@@ -32,9 +32,9 @@ bool tk_consume(char op);
 /** @brief 明示コンテキストで次トークンが1文字記号 op なら消費して true を返す。 */
 bool tk_consume_ctx(tokenizer_context_t *ctx, char op);
 /** @brief 次トークンが複数文字演算子 op なら消費して true を返す。 */
-bool tk_consume_str(char *op);
+bool tk_consume_str(const char *op);
 /** @brief 明示コンテキストで次トークンが複数文字演算子 op なら消費して true を返す。 */
-bool tk_consume_str_ctx(tokenizer_context_t *ctx, char *op);
+bool tk_consume_str_ctx(tokenizer_context_t *ctx, const char *op);
 /** @brief 次トークンが識別子なら消費して返す。 */
 token_ident_t *tk_consume_ident(void);
 /** @brief 明示コンテキストで次トークンが識別子なら消費して返す。 */
