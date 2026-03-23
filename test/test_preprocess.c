@@ -427,6 +427,28 @@ static void expect_macro_expansion_limit_fail(void) {
   free(input);
 }
 
+static void expect_line_filename_too_long_fail(void) {
+  const size_t filename_len = 300;
+  const char *prefix = "#line 1 \"";
+  const char *suffix = "\"\nint main() { return 0; }\n";
+  size_t cap = strlen(prefix) + filename_len + strlen(suffix) + 1;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate #line long filename input\n");
+    exit(1);
+  }
+
+  size_t pos = 0;
+  memcpy(input + pos, prefix, strlen(prefix));
+  pos += strlen(prefix);
+  memset(input + pos, 'a', filename_len);
+  pos += filename_len;
+  memcpy(input + pos, suffix, strlen(suffix));
+
+  expect_preprocess_fail_with_stderr_substr(input, "E1028");
+  free(input);
+}
+
 int main(void) {
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
@@ -510,6 +532,8 @@ int main(void) {
     expect_preprocess_fail(fail_cases[i]);
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
+  expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
+  expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
 
   printf("OK: Preprocessor tests passed!\n");

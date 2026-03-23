@@ -42,6 +42,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE: return "Error message is too large";
     case DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED: return "Function-like macro invocation arguments are not closed";
     case DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID: return "Invalid #line line number";
+    case DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID: return "Invalid #line filename";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";
