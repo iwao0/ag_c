@@ -429,13 +429,13 @@
 - [x] 優先度P2: `escape` 責務の配置を再評価する
   - [x] Tokenizer公開API維持と `common` 層移管の比較メモを作成する
   - [x] 影響範囲（codegen/preprocess/diagnostics）を整理する
-- [ ] 優先度P2: 設定の実行時切替テストを強化する
+- [x] 優先度P2: 設定の実行時切替テストを強化する
   - [x] `tk_set_*` の切替境界テスト（strict/trigraph/binary/audit）を追加する
   - [x] 既存テスト群で回帰がないことを確認する
-- [ ] 優先度P2: internal依存の自動検査をCIへ追加する
+- [x] 優先度P2: internal依存の自動検査をCIへ追加する
   - [x] Tokenizer外から `tokenizer/internal/*` を `#include` していないか検査するスクリプトを追加する
   - [x] CIジョブへ組み込み、違反時にfailする
-- [ ] 優先度P3: 文字/UCN異常系のテストを拡充する
+- [x] 優先度P3: 文字/UCN異常系のテストを拡充する
   - [x] 不正UCN境界・長大エスケープ列の異常系ケースを追加する
   - [x] C11チェックリストへ対応項目を追記する
 
