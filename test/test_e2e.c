@@ -1381,6 +1381,24 @@ int main() {
       return 1;
     }
   }
+  {
+    const char *blocked_path = "build/e2e/compile_fail/no_read_input.c";
+    const char *log_path = "build/e2e/logs/compile_fail_no_read_input.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 || write_source_file(blocked_path, "int main(){return 0;}") != 0) {
+      fprintf(stderr, "Compile-fail setup failed: no_read_input\n");
+      return 1;
+    }
+    if (chmod(blocked_path, 0000) != 0) {
+      fprintf(stderr, "Compile-fail setup failed: cannot chmod 000 (%s)\n", blocked_path);
+      return 1;
+    }
+    int rc = run_ag_c_expect_fail_with_diag(blocked_path, "入力ファイルを読み込めませんでした", log_path);
+    chmod(blocked_path, 0644);
+    if (rc != 0) {
+      fprintf(stderr, "Compile-fail case failed: no_read_input (see %s)\n", log_path);
+      return 1;
+    }
+  }
 
   size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
   const char **categories = calloc(max_cases, sizeof(const char *));
@@ -1445,7 +1463,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 2);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 3);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
