@@ -1,6 +1,6 @@
 #include "preprocess.h"
 #include "../diag/diag.h"
-#include "../tokenizer/internal/allocator.h"
+#include "../tokenizer/allocator.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

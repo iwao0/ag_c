@@ -395,6 +395,15 @@
   - [x] 本番公開ヘッダ（`tokenizer.h`）から test専用宣言を除去する
   - [x] `test_tokenizer` / `test_tokenizer_c11` を再実行し回帰がないことを確認する
 
+## Tokenizer 境界整備フォローアップ（2026-03-23）
+- [x] Tokenizer private API への越境依存を解消する
+  - [x] `src/preprocess/preprocess.c` の `../tokenizer/internal/allocator.h` 直接参照を解消する
+  - [x] 公開API経由または共通層への切り出し方針を決定して `implementation_plan.md` に追記する
+  - [x] `test_preprocess` と `test_e2e` で回帰確認する
+- [x] ベンチマーク系のヘッダ参照を現構成へ整合させる
+  - [x] `test/bench_keywords.c` の `../src/tokenizer/keywords.h` 参照を修正する
+  - [x] `make bench`（または `build/bench_tokenizer`, `build/bench_parser`）でビルド確認する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する

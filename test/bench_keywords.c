@@ -1,4 +1,4 @@
-#include "../src/tokenizer/keywords.h"
+#include "../src/tokenizer/internal/keywords.h"
 #include "../src/tokenizer/token.h"
 #include <stdio.h>
 #include <string.h>
