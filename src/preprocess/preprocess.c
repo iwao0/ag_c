@@ -29,6 +29,7 @@ static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
 #define PP_MAX_INCLUDE_DEPTH 64
+#define PP_MAX_MACRO_EXPANSIONS 20000
 
 typedef struct include_frame include_frame_t;
 struct include_frame {
@@ -38,6 +39,7 @@ struct include_frame {
 
 static include_frame_t *include_stack = NULL;
 static int include_depth = 0;
+static size_t macro_expand_steps = 0;
 
 static void *xrealloc(void *ptr, size_t size) {
   void *p = realloc(ptr, size);
@@ -136,6 +138,13 @@ static void pop_include(void) {
   include_stack = f->next;
   free(f);
   if (include_depth > 0) include_depth--;
+}
+
+static void count_macro_expansion_or_die(void) {
+  macro_expand_steps++;
+  if (macro_expand_steps > PP_MAX_MACRO_EXPANSIONS) {
+    pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+  }
 }
 
 static bool ident_is(token_t *tok, const char *s) {
@@ -807,6 +816,7 @@ static token_t *paste_tokens(token_t *tok) {
 // プリプロセッサのメイン処理
 token_t *preprocess(token_t *tok) {
   if (include_depth == 0) {
+    macro_expand_steps = 0;
     pp_init_predefined_macros();
   }
 
@@ -1261,6 +1271,7 @@ token_t *preprocess(token_t *tok) {
       macro_t *m = find_macro(name);
       
       if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
+        count_macro_expansion_or_die();
         if (m->is_funclike) {
            if (tok->next && tok->next->kind == TK_LPAREN) {
              token_t *macro_tok = tok;

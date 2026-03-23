@@ -324,6 +324,45 @@ static void expect_preprocess_fail(const char *input) {
   }
 }
 
+static void expect_macro_expansion_limit_fail(void) {
+  const int levels = 15;
+  size_t cap = 8192;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate macro expansion test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+
+  int n = snprintf(input + len, cap - len, "#define X0 1\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: macro expansion input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+
+  for (int i = 1; i <= levels; i++) {
+    n = snprintf(input + len, cap - len, "#define X%d (X%d + X%d)\n", i, i - 1, i - 1);
+    if (n < 0 || (size_t)n >= cap - len) {
+      fprintf(stderr, "  FAIL: macro expansion input overflow\n");
+      free(input);
+      exit(1);
+    }
+    len += (size_t)n;
+  }
+
+  n = snprintf(input + len, cap - len, "int main() { return X%d; }\n", levels);
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: macro expansion input overflow\n");
+    free(input);
+    exit(1);
+  }
+
+  expect_preprocess_fail(input);
+  free(input);
+}
+
 int main(void) {
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
@@ -374,6 +413,7 @@ int main(void) {
   for (size_t i = 0; i < sizeof(fail_cases) / sizeof(fail_cases[0]); i++) {
     expect_preprocess_fail(fail_cases[i]);
   }
+  expect_macro_expansion_limit_fail();
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;
