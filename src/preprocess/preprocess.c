@@ -94,11 +94,52 @@ static void validate_line_filename_or_die(const char *name, int len) {
   if (!name || len <= 0 || len > PP_MAX_LINE_FILENAME_LEN) {
     pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
   }
-  for (int i = 0; i < len; i++) {
+  for (int i = 0; i < len; ) {
     unsigned char c = (unsigned char)name[i];
     if (c < 0x20 || c == 0x7F) {
       pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
     }
+    if (c < 0x80) {
+      i++;
+      continue;
+    }
+    if ((c & 0xE0) == 0xC0) {
+      if (i + 1 >= len) pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      unsigned char c1 = (unsigned char)name[i + 1];
+      if ((c1 & 0xC0) != 0x80 || (c & 0xFE) == 0xC0) {
+        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      }
+      i += 2;
+      continue;
+    }
+    if ((c & 0xF0) == 0xE0) {
+      if (i + 2 >= len) pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      unsigned char c1 = (unsigned char)name[i + 1];
+      unsigned char c2 = (unsigned char)name[i + 2];
+      if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) {
+        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      }
+      if ((c == 0xE0 && c1 < 0xA0) || (c == 0xED && c1 >= 0xA0)) {
+        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      }
+      i += 3;
+      continue;
+    }
+    if ((c & 0xF8) == 0xF0) {
+      if (i + 3 >= len) pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      unsigned char c1 = (unsigned char)name[i + 1];
+      unsigned char c2 = (unsigned char)name[i + 2];
+      unsigned char c3 = (unsigned char)name[i + 3];
+      if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) {
+        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      }
+      if ((c == 0xF0 && c1 < 0x90) || (c == 0xF4 && c1 >= 0x90) || c > 0xF4) {
+        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      }
+      i += 4;
+      continue;
+    }
+    pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
   }
 }
 
