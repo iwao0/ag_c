@@ -34,6 +34,10 @@ static tokenizer_context_t *effective_ctx(tokenizer_context_t *ctx) {
   return ctx ? ctx : runtime_ctx();
 }
 
+static inline void advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
+  ctx->current_token = cur ? cur->next : NULL;
+}
+
 token_t *tk_get_current_token(void) {
   return tk_get_current_token_ctx(NULL);
 }
@@ -197,7 +201,7 @@ bool tk_consume_ctx(tokenizer_context_t *ctx, char op) {
   token_kind_t kind = kind_for_char(op);
   if (!cur || kind == TK_EOF || cur->kind != kind)
     return false;
-  use_ctx->current_token = cur->next;
+  advance_current_token(use_ctx, cur);
   return true;
 }
 
@@ -212,7 +216,7 @@ bool tk_consume_str_ctx(tokenizer_context_t *ctx, char *op) {
   token_kind_t kind = punctuator_kind_for_str(op);
   if (!cur || kind == TK_EOF || cur->kind != kind)
     return false;
-  use_ctx->current_token = cur->next;
+  advance_current_token(use_ctx, cur);
   return true;
 }
 
@@ -227,7 +231,7 @@ token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx) {
   if (!cur || cur->kind != TK_IDENT)
     return NULL;
   token_ident_t *tok = (token_ident_t *)cur;
-  use_ctx->current_token = cur->next;
+  advance_current_token(use_ctx, cur);
   return tok;
 }
 
@@ -244,7 +248,7 @@ void tk_expect_ctx(tokenizer_context_t *ctx, char op) {
     diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, cur, "%s: '%c'",
                    diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
   }
-  use_ctx->current_token = cur->next;
+  advance_current_token(use_ctx, cur);
 }
 
 /** @brief 次トークンが整数であることを期待し int 値を返す。 */
@@ -266,7 +270,7 @@ int tk_expect_number_ctx(tokenizer_context_t *ctx) {
     TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   int val = (int)n;
-  use_ctx->current_token = cur->next;
+  advance_current_token(use_ctx, cur);
   return val;
 }
 

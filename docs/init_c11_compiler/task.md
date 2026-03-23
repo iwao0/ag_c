@@ -491,6 +491,7 @@
   - [x] 進捗（2026-03-23）: `test_tokenizer` と `bench_parser` の `token = tk_tokenize(...)` 初期化を `tk_set_current_token(tk_tokenize(...))` へ移行し、テスト/ベンチ入口の直接グローバル代入を解消した
   - [x] 進捗（2026-03-23）: `tokenizer.h` から `extern token` を撤去し、`tokenizer.c` 側の互換カーソルを `static` 化して公開境界を accessor API のみに整理した
   - [x] 進捗（2026-03-23）: `tokenizer.c` の consume/expect/eof 経路を `tokenizer_context_t.current_token` 一元参照へ切り替え、内部のグローバル `token` 変数自体を削除した
+  - [x] 進捗（2026-03-23）: `tokenizer.c` の cursor 前進処理を `advance_current_token` ヘルパへ集約し、consume/expect 系の重複代入ロジックを削減した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
