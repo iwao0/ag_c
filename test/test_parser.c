@@ -364,6 +364,10 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NUM, post_const_cast->kind);
   ASSERT_EQ(12, as_num(post_const_cast)->val);
 
+    node_t *post_dup_const_cast = parse_expr_input("(int const const)21");
+  ASSERT_EQ(ND_NUM, post_dup_const_cast->kind);
+  ASSERT_EQ(21, as_num(post_dup_const_cast)->val);
+
     node_t *multi_ptr_qual_cast = parse_expr_input("(int const * volatile * restrict)0");
   ASSERT_EQ(ND_NUM, multi_ptr_qual_cast->kind);
   ASSERT_EQ(0, as_num(multi_ptr_qual_cast)->val);
@@ -396,6 +400,10 @@ static void test_expr_unary_ops() {
     node_t *restrict_ptr_cast = parse_expr_input("(restrict int*)0");
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);
   ASSERT_EQ(0, as_num(restrict_ptr_cast)->val);
+
+    node_t *dup_restrict_ptr_cast = parse_expr_input("(restrict restrict int*)0");
+  ASSERT_EQ(ND_NUM, dup_restrict_ptr_cast->kind);
+  ASSERT_EQ(0, as_num(dup_restrict_ptr_cast)->val);
 
     node_t *atomic_cast = parse_expr_input("(_Atomic int)9");
   ASSERT_EQ(ND_NUM, atomic_cast->kind);
@@ -1196,6 +1204,12 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
+
+  parsed_code = parse_program_input(
+      "int sumq(const const int a, volatile volatile int b, int *restrict restrict p){ return a+b+(p==0); }"
+      "main(){ return sumq(3,4,0); }");
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
   parsed_code = parse_program_input("main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);

@@ -375,6 +375,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "const_decl", CASE_INT, "int main() { const int x=8; return x; }", 8, 0},
     {"type_decl", "volatile_decl", CASE_INT, "int main() { volatile int x=9; return x; }", 9, 0},
     {"type_decl", "duplicate_qualifiers_decl", CASE_INT, "int main() { const const int x=8; volatile volatile int y=9; int *restrict restrict p=0; return x+y+(p==0); }", 18, 0},
+    {"type_decl", "duplicate_qualifiers_param", CASE_INT, "int sumq(const const int a, volatile volatile int b, int *restrict restrict p){ return a+b+(p==0); } int main(){ return sumq(3,4,0); }", 8, 0},
+    {"type_decl", "duplicate_postfix_const_cast", CASE_INT, "int main(){ return (int const const)21; }", 21, 0},
     {"type_decl", "storage_specs_local", CASE_INT, "int main() { static int x=8; register int r=2; auto int a=1; int *restrict p=0; return x+r+a+(p==0); }", 12, 0},
     {"type_decl", "scalar_brace_init", CASE_INT, "int main() { int x={3}; return x; }", 3, 0},
     {"type_decl", "long_double_sizeof", CASE_INT, "int main() { return sizeof(long double); }", 8, 0},
