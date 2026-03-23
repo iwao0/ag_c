@@ -3,18 +3,8 @@
 #include "../diag/diag.h"
 #include "../parser/config_runtime.h"
 #include "../tokenizer/tokenizer.h"
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-
-static void config_reportf(diag_error_id_t id, const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  fprintf(stderr, "%s: ", diag_error_code(id));
-  vfprintf(stderr, fmt, ap);
-  fprintf(stderr, "\n");
-  va_end(ap);
-}
 
 static void apply_config_values(const config_values_t *cfg) {
   diag_set_locale(cfg->locale);
@@ -135,10 +125,10 @@ void load_config_toml(const char *source_path) {
   char detail[512];
   format_config_toml_error(&err, diag_get_locale(), detail, sizeof(detail));
 
-  config_reportf(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED,
-                 diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED), detail);
-  config_reportf(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS,
-                 "%s", diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS));
+  diag_report_internalf(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED,
+                        diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED), detail);
+  diag_report_internalf(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS,
+                        "%s", diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS));
   config_values_init_defaults(&cfg);
   apply_config_values(&cfg);
 }

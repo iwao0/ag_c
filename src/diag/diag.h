@@ -70,4 +70,11 @@ void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...)
  */
 void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) __attribute__((noreturn));
 
+/**
+ * @brief 入力位置なしの内部診断を出力する（プロセスは終了しない）。
+ * @param id 出力するエラーID。
+ * @param fmt 可変引数付きフォーマット文字列。
+ */
+void diag_report_internalf(diag_error_id_t id, const char *fmt, ...);
+
 #endif

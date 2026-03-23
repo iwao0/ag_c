@@ -19,12 +19,14 @@
   - [x] `parse_nonneg_const_expr_decl(...)` の文言引数を `diag_text_for(...)` 化する
   - [x] `make test` が通ることを確認する
 
-- [ ] Task 6: `config/toml_reader.c` 詳細エラー文の翻訳戦略整備
-  - [ ] line情報つき詳細文を locale 切替可能にする設計を決める
-  - [ ] エラーカタログ（または専用テキスト層）へ移す実装方針を文書化する
+- [x] Task 6: `config/toml_reader.c` 詳細エラー文の翻訳戦略整備
+  - [x] line情報つき詳細文を locale 切替可能にする設計を決める
+  - [x] エラーカタログ（または専用テキスト層）へ移す実装方針を文書化する
+  - [ ] 補足: 現在のHEADで `make test` は `global_var` カテゴリ失敗（本タスク外の既知回帰）を確認
 
-- [ ] Task 7: warning採番ルールの明文化
-  - [ ] warning のカテゴリ帯・採番規則・追加手順を docs に追記する
+- [x] Task 7: warning採番ルールの明文化
+  - [x] warning のカテゴリ帯・採番規則・追加手順を docs に追記する
 
-- [ ] Task 8: 非致命diag APIの共通化検討
-  - [ ] `diag_emit_internalf`（終了あり）と非終了通知の責務分離案をまとめる
+- [x] Task 8: 非致命diag APIの共通化検討
+  - [x] `diag_emit_internalf`（終了あり）と非終了通知の責務分離案をまとめる
+  - [x] `diag_report_internalf`（非致命）を追加し、`config` 側の独自実装を統合する

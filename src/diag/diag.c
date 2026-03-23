@@ -190,3 +190,12 @@ void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) {
   va_end(ap);
   exit(1);
 }
+
+void diag_report_internalf(diag_error_id_t id, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  fprintf(stderr, "%s: ", diag_error_code(id));
+  vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "\n");
+  va_end(ap);
+}

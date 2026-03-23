@@ -11,6 +11,63 @@
   - コミット
   - 次アクション
 
+## Task 6: config.toml 詳細エラーの多言語化（構造化エラー導入）
+- 日付: 2026-03-23
+- 目的:
+  - `config/toml_reader.c` の詳細エラー（line情報つき）を locale 切替可能にする。
+- 実施内容:
+  - `config_toml_error_t`（`kind/line_no/arg1/arg2`）を導入し、パーサ側は構造化エラーを返す方式に変更。
+  - `config.c` 側で `diag_get_locale()` を使って ja/en の詳細文を組み立てて表示するよう変更。
+  - 従来の英語固定文字列を直接返す経路を廃止。
+- 変更ファイル:
+  - `src/config/toml_reader.h`
+  - `src/config/toml_reader.c`
+  - `src/config/config.c`
+- テスト:
+  - `./build/test_e2e global_var`（現行HEADでカテゴリ失敗を確認）
+  - `make test`（現行HEADで `global_var` カテゴリ失敗）
+- コミット:
+  - `59f059c` までに実装反映済み（本作業では追加コミットなし）
+- 次アクション:
+  - `global_var` 失敗の独立原因を切り分け、Task 7（warning採番ルール明文化）へ進む。
+
+## Task 7: warning採番ルールの明文化
+- 日付: 2026-03-23
+- 目的:
+  - warning コードの運用ルール（カテゴリ帯・採番規則・追加手順）を明確化する。
+- 実施内容:
+  - `error_code_spec.md` の「警告コード仕様」セクションを拡張。
+  - 運用ルール（再採番禁止・意味変更時の新番号発行・`E/W` 独立運用）を追記。
+  - 実装変更時の追加手順をチェックリスト化。
+- 変更ファイル:
+  - `docs/error_handling_redesign/error_code_spec.md`
+  - `docs/error_handling_redesign/task.md`
+- テスト:
+  - ドキュメント更新のみのため実行なし。
+- コミット:
+  - （未コミット）
+- 次アクション:
+  - Task 8（非致命diag APIの共通化検討）に着手。
+
+## Task 8: 非致命diag APIの共通化
+- 日付: 2026-03-23
+- 目的:
+  - 終了あり/なしの内部診断APIを `diag` 側で明示的に分離し、呼び出し側の独自実装を減らす。
+- 実施内容:
+  - `diag_report_internalf(...)`（非致命）を `diag` に追加。
+  - `config.c` のローカル `config_reportf(...)` を削除し、`diag_report_internalf(...)` へ置換。
+- 変更ファイル:
+  - `src/diag/diag.h`
+  - `src/diag/diag.c`
+  - `src/config/config.c`
+  - `docs/error_handling_redesign/task.md`
+- テスト:
+  - `make test`（現行HEAD既知の `global_var` カテゴリ失敗あり）
+- コミット:
+  - （未コミット）
+- 次アクション:
+  - `global_var` 失敗の独立切り分け後、必要なら warning/info 出力API統一を追加検討。
+
 ## Task 1: 計画・仕様ドキュメント作成
 - 日付: 2026-03-19
 - 目的:
