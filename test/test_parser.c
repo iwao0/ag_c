@@ -1864,10 +1864,14 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
   expect_parse_ok("typedef struct S S; struct S { int x; }; int main(){ S s; s.x=7; return s.x; }");
   expect_parse_ok("typedef struct { int x; } S; int main(){ S s; s.x=5; return s.x; }");
+  expect_parse_ok("typedef union U U; union U { int x; }; int main(){ U u; u.x=8; return u.x; }");
+  expect_parse_ok("typedef union { int x; } U; int main(){ U u; u.x=6; return u.x; }");
   expect_parse_ok("typedef int (*(*arr_t)[2])(int); int main() { arr_t p; return 0; }");
   expect_parse_ok("int main(){ typedef int (*(*fp_t))(int); return 0; }");
   expect_parse_ok("int main(){ typedef struct L L; return 0; }");
   expect_parse_ok("int main(){ typedef struct { int y; } L; L l; l.y=9; return l.y; }");
+  expect_parse_ok("int main(){ typedef union L L; return 0; }");
+  expect_parse_ok("int main(){ typedef union { int y; } L; L l; l.y=4; return l.y; }");
   expect_parse_ok("int (*arr[2])(int); int main(){ return 0; }");
   expect_parse_ok("int main(){ int (*arr[2])(int); return 0; }");
 

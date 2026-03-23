@@ -1548,6 +1548,7 @@
   - 進捗（2026-03-24）: ブロックスコープの `typedef` も `stmt.c` 専用実装から `decl.c::psx_decl_parse_declaration()` 経由へ移し、宣言処理経路を統一
   - 進捗（2026-03-24）: `typedef struct S S;` / `typedef union U U;` のような不完全型タグの typedef 前方宣言を受理（トップレベル・ローカル）
   - 進捗（2026-03-24）: `typedef struct { int x; } S;` / `typedef union { ... } U;` のような匿名タグ typedef をトップレベル・ローカルの両方で受理
+  - 進捗（2026-03-24）: `union` 側の typedef ケース（匿名/前方宣言、トップレベル/ローカル）も回帰テストを追加して固定化
 - [ ] `direct_declarator` を再帰的にする（C11 §6.7.6）
   - C11: `direct-declarator = ... | "(" declarator ")"`（再帰的）
   - 現状: `"(" pointer? ident ")" "(" params ")"` で1段のみ。`int (**fpp)(int)` 等が表現不能
