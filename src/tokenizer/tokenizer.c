@@ -784,6 +784,52 @@ static inline bool has_hex_float_marker(const char *p) {
   return false;
 }
 
+static void parse_float_suffix(parsed_num_t *num, char **endp) {
+  char *end = *endp;
+  if (*end == 'f' || *end == 'F') {
+    num->fp_kind = TK_FLOAT_KIND_FLOAT;
+    num->float_suffix_kind = TK_FLOAT_SUFFIX_F;
+    end++;
+  } else if (*end == 'l' || *end == 'L') {
+    num->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
+    num->float_suffix_kind = TK_FLOAT_SUFFIX_L;
+    end++;
+  } else {
+    num->fp_kind = TK_FLOAT_KIND_DOUBLE;
+    num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
+  }
+  if (tk_is_ident_start_byte(*end)) {
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
+  }
+  *endp = end;
+}
+
+static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
+  char *p = *pp;
+  char *end = NULL;
+  num->fval = strtod(p, &end);
+  if (is_hex && end == p) {
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID, p, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID));
+  }
+  parse_float_suffix(num, &end);
+  *pp = end;
+}
+
+static void parse_integer_literal_with_base(
+    parsed_num_t *num, char **pp, int base, bool is_decimal, char *err_loc) {
+  char *p = *pp;
+  unsigned long long val = parse_digits(&p, base);
+  num->uval = val;
+  num->val = token_signed_from_u64(val);
+  num->fp_kind = TK_FLOAT_KIND_NONE;
+  num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
+  num->int_base = (uint8_t)base;
+  parse_int_suffix(num, &p, val, is_decimal, err_loc);
+  *pp = p;
+}
+
 static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
   tokenizer_context_t *ctx = runtime_ctx();
   if (!tk_ctx_get_enable_c11_audit_extensions(ctx)) return;
@@ -803,33 +849,10 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
   if (*p == '0' && (p[1] == 'x' || p[1] == 'X')) {
     // 16進数 (整数 or 浮動小数点)
     if (has_hex_float_marker(p)) {
-      char *end;
-      num->fval = strtod(p, &end);
-      if (end == p) TK_DIAG_ATF(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_HEX_FLOAT_LITERAL_INVALID));
-      if (*end == 'f' || *end == 'F') {
-        num->fp_kind = TK_FLOAT_KIND_FLOAT;
-        num->float_suffix_kind = TK_FLOAT_SUFFIX_F;
-        end++;
-      } else if (*end == 'l' || *end == 'L') {
-        num->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
-        num->float_suffix_kind = TK_FLOAT_SUFFIX_L;
-        end++;
-      } else {
-        num->fp_kind = TK_FLOAT_KIND_DOUBLE;
-        num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-      }
-      if (tk_is_ident_start_byte(*end))
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s", diag_message_for(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
-      p = end;
+      parse_float_literal(num, &p, true);
     } else {
       p += 2;
-      unsigned long long val = parse_digits(&p, 16);
-      num->uval = val;
-      num->val = token_signed_from_u64(val);
-      num->fp_kind = TK_FLOAT_KIND_NONE;
-      num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-      num->int_base = 16;
-      parse_int_suffix(num, &p, val, false, *pp);
+      parse_integer_literal_with_base(num, &p, 16, false, *pp);
     }
   } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
     if (!tk_is_binary_literal_enabled_in_ctx()) {
@@ -839,28 +862,22 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
     p += 2;
     if (*p != '0' && *p != '1')
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_INVALID));
-    unsigned long long val = parse_digits(&p, 2);
-    num->uval = val;
-    num->val = token_signed_from_u64(val);
-    num->fp_kind = TK_FLOAT_KIND_NONE;
-    num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-    num->int_base = 2;
-    parse_int_suffix(num, &p, val, false, *pp);
+    parse_integer_literal_with_base(num, &p, 2, false, *pp);
   } else if (*p == '0' && tk_is_digit(p[1])) {
     if (p[1] == '8' || p[1] == '9')
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_OCT_LITERAL_INVALID));
     p++;
-    unsigned long long val = 0;
     if (*p >= '0' && *p <= '7') {
       p--;
-      val = parse_digits(&p, 8);
+      parse_integer_literal_with_base(num, &p, 8, false, *pp);
+    } else {
+      num->uval = 0;
+      num->val = 0;
+      num->fp_kind = TK_FLOAT_KIND_NONE;
+      num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
+      num->int_base = 8;
+      parse_int_suffix(num, &p, 0, false, *pp);
     }
-    num->uval = val;
-    num->val = token_signed_from_u64(val);
-    num->fp_kind = TK_FLOAT_KIND_NONE;
-    num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-    num->int_base = 8;
-    parse_int_suffix(num, &p, val, false, *pp);
   } else {
     if (try_parse_decimal_int_fast(&p, num)) {
       *pp = p;
@@ -868,31 +885,9 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
     }
 
     if (has_decimal_float_marker(p)) {
-      char *end;
-      num->fval = strtod(p, &end);
-      if (*end == 'f' || *end == 'F') {
-        num->fp_kind = TK_FLOAT_KIND_FLOAT;
-        num->float_suffix_kind = TK_FLOAT_SUFFIX_F;
-        end++;
-      } else if (*end == 'l' || *end == 'L') {
-        num->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE; // codegenでは現状double経路へlowering
-        num->float_suffix_kind = TK_FLOAT_SUFFIX_L;
-        end++;
-      } else {
-        num->fp_kind = TK_FLOAT_KIND_DOUBLE;
-        num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-      }
-      if (tk_is_ident_start_byte(*end))
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID, end, "%s", diag_message_for(DIAG_ERR_TOKENIZER_FLOAT_SUFFIX_INVALID));
-      p = end;
+      parse_float_literal(num, &p, false);
     } else {
-      unsigned long long val = parse_digits(&p, 10);
-      num->uval = val;
-      num->val = token_signed_from_u64(val);
-      num->fp_kind = TK_FLOAT_KIND_NONE;
-      num->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-      num->int_base = 10;
-      parse_int_suffix(num, &p, val, true, *pp);
+      parse_integer_literal_with_base(num, &p, 10, true, *pp);
     }
   }
 

@@ -579,8 +579,9 @@
 - [x] [P1] `tokenizer.c` 内の「実装定義動作（例: マルチ文字文字定数）」を1箇所に集約し、方針コメントを統一する
   - [x] 進捗（2026-03-24）: `tk_accept_multichar_char_constant` / `tk_is_binary_literal_enabled_in_ctx` を追加し、実装定義（マルチ文字文字定数）と拡張境界（2進整数）をヘルパーへ集約した
   - [x] C11準拠部分と実装拡張部分の境界を明示して、将来のstrict強化時の変更点を減らす
-- [ ] [P2] `parse_number_literal` を整数系/浮動系の補助関数へさらに分割し、レビューしやすい粒度にする
-  - [ ] 16進浮動/10進浮動/基数付き整数（2/8/16）の分岐責務を個別関数へ切り出す
+- [x] [P2] `parse_number_literal` を整数系/浮動系の補助関数へさらに分割し、レビューしやすい粒度にする
+  - [x] 進捗（2026-03-24）: `parse_float_suffix` / `parse_float_literal` / `parse_integer_literal_with_base` を導入し、16進浮動・10進浮動・基数付き整数（2/8/16/10）の分岐責務を補助関数へ分離した
+  - [x] 16進浮動/10進浮動/基数付き整数（2/8/16）の分岐責務を個別関数へ切り出す
 - [ ] [P2] `tokenize_one` の分岐順を実測ベースで固定し、順序変更時の性能影響をベンチで記録する運用を追加する
   - [ ] `tokenizer_hotpath_daily.csv` との差分記録ルールを `tokenizer_perf_report.md` に追記する
 - [ ] [P3] Tokenizer内部ヘルパーのDoxygenを最小テンプレートで揃え、引数/副作用/失敗条件を簡潔に明記する
