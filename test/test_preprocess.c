@@ -488,6 +488,91 @@ static void expect_preprocess_fail_with_stderr_substr_no_leak(const char *input,
   free(buf);
 }
 
+static void expect_preprocess_fail_with_stderr_sanitized(const char *input, const char *needle,
+                                                         const char *escaped1, const char *escaped2,
+                                                         const char *raw_forbidden1,
+                                                         const char *raw_forbidden2) {
+  const char *src_path = "build/tmp_cpp_input_fail_diag.c";
+  const char *err_path = "build/tmp_cpp_input_fail_diag.err";
+  if (write_input_file(src_path, input) != 0) {
+    fprintf(stderr, "  FAIL: cannot create input file\n");
+    exit(1);
+  }
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen(err_path, "w", stderr);
+    execl("./build/ag_c", "./build/ag_c", src_path, (char *)NULL);
+    _exit(1);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) {
+    fprintf(stderr, "  FAIL: expected preprocess error\n  input: %s\n", input);
+    exit(1);
+  }
+
+  FILE *fp = fopen(err_path, "r");
+  if (!fp) {
+    fprintf(stderr, "  FAIL: cannot open captured stderr\n");
+    exit(1);
+  }
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot seek captured stderr\n");
+    exit(1);
+  }
+  long sz = ftell(fp);
+  if (sz < 0) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot read captured stderr size\n");
+    exit(1);
+  }
+  rewind(fp);
+  char *buf = calloc((size_t)sz + 1, 1);
+  if (!buf) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot allocate stderr buffer\n");
+    exit(1);
+  }
+  if (sz > 0) (void)fread(buf, 1, (size_t)sz, fp);
+  fclose(fp);
+
+  if (!strstr(buf, needle)) {
+    fprintf(stderr, "  FAIL: expected diagnostic substring not found: %s\n", needle);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  if (escaped1 && escaped1[0] != '\0' && !strstr(buf, escaped1)) {
+    fprintf(stderr, "  FAIL: escaped diagnostic substring not found: %s\n", escaped1);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  if (escaped2 && escaped2[0] != '\0' && !strstr(buf, escaped2)) {
+    fprintf(stderr, "  FAIL: escaped diagnostic substring not found: %s\n", escaped2);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  if (raw_forbidden1 && raw_forbidden1[0] != '\0' && strstr(buf, raw_forbidden1)) {
+    fprintf(stderr, "  FAIL: raw dangerous substring leaked in stderr\n");
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  if (raw_forbidden2 && raw_forbidden2[0] != '\0' && strstr(buf, raw_forbidden2)) {
+    fprintf(stderr, "  FAIL: raw dangerous substring leaked in stderr\n");
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  free(buf);
+}
+
 static void expect_macro_expansion_limit_fail(void) {
   const int levels = 15;
   size_t cap = 8192;
@@ -833,6 +918,9 @@ int main(void) {
   fclose(huge);
   expect_preprocess_fail_with_stderr_substr("#include \"build/huge_include.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
+  expect_preprocess_fail_with_stderr_sanitized(
+      "#error \"attack\x1f\xe2\x80\xaetext\"\nint main() { return 0; }\n",
+      "E1033", "\\x1F", "\\u202E", "\x1f", "\xe2\x80\xae");
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n", "E1030");
