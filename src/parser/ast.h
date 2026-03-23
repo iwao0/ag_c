@@ -94,6 +94,7 @@ struct node_mem_t {
   unsigned int is_complex : 1;              // 1: _Complex型（実部+虚部）
   unsigned int is_atomic : 1;               // 1: _Atomic型（load-acquire/store-release）
   unsigned int is_pointer_volatile_qualified : 1;
+  unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;

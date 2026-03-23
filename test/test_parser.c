@@ -462,6 +462,12 @@ static void test_expr_generic() {
       "main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
   expect_parse_ok(
       "main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
+  expect_parse_ok(
+      "main(){ double d=1.0; double *p=&d; return _Generic(*p, double:42, default:99); }");
+  expect_parse_ok(
+      "main(){ float f=1.0f; float *p=&f; return _Generic(*p, float:11, default:99); }");
+  expect_parse_ok(
+      "main(){ double a[1]={1.0}; double *p=a; return _Generic(p[0], double:42, default:99); }");
 }
 
 static void test_expr_sizeof() {
@@ -1741,8 +1747,8 @@ static void test_parse_evil_edge_cases() {
   // _Static_assert with sizeof==4 — 定数式評価で==未対応の可能性
   // expect_parse_ok("_Static_assert(sizeof(int)==4, \"int is 4 bytes\"); int main() { return 42; }");
 
-  // _Generic の複雑なケース — 現在パースエラーの可能性
-  // expect_parse_ok("main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
+  // _Generic の複雑なケース
+  expect_parse_ok("main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
 
   // 複合リテラルの使用 — 現在パースエラーの可能性があるため個別検証
   //expect_parse_ok("main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");

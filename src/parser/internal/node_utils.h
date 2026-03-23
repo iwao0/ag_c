@@ -8,6 +8,7 @@ int psx_node_deref_size(node_t *node);
 int psx_node_is_pointer(node_t *node);
 int psx_node_pointer_qual_levels(node_t *node);
 int psx_node_base_deref_size(node_t *node);
+tk_float_kind_t psx_node_pointee_fp_kind(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer);
 
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);

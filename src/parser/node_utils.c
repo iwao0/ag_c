@@ -92,6 +92,23 @@ int psx_node_base_deref_size(node_t *node) {
   }
 }
 
+tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
+  if (!node) return TK_FLOAT_KIND_NONE;
+  switch (node->kind) {
+    case ND_LVAR: return (tk_float_kind_t)as_lvar(node)->mem.pointee_fp_kind;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING:
+      return (tk_float_kind_t)as_mem(node)->pointee_fp_kind;
+    case ND_COMMA:
+      return psx_node_pointee_fp_kind(node->rhs);
+    default:
+      return TK_FLOAT_KIND_NONE;
+  }
+}
+
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer) {
   token_kind_t kind = TK_EOF;
   char *name = NULL;

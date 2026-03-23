@@ -1986,7 +1986,7 @@ static node_t *unary(void) {
     node_mem_t *node = arena_alloc(sizeof(node_mem_t));
     node->base.kind = ND_DEREF;
     node->base.lhs = operand;
-    node->base.fp_kind = operand ? operand->fp_kind : 0;
+    node->base.fp_kind = TK_FLOAT_KIND_NONE;
     int ds = psx_node_deref_size(operand);
     node->type_size = ds ? ds : 8;
     token_kind_t tag_kind = TK_EOF;
@@ -2003,6 +2003,10 @@ static node_t *unary(void) {
     }
     // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播
     int pql = psx_node_pointer_qual_levels(operand);
+    tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(operand);
+    if (pql == 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
+      node->base.fp_kind = pointee_fp;
+    }
     if (pql >= 2) {
       node->is_pointer = 1;
       int new_pql = pql - 1;
@@ -2113,6 +2117,7 @@ static node_t *apply_postfix(node_t *node) {
       deref->base.lhs = addr;
       deref->type_size = es;
       deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
+      deref->base.fp_kind = TK_FLOAT_KIND_NONE;
       token_kind_t tag_kind = TK_EOF;
       char *tag_name = NULL;
       int tag_len = 0;
@@ -2133,6 +2138,12 @@ static node_t *apply_postfix(node_t *node) {
           int bds = psx_node_base_deref_size(node);
           deref->base_deref_size = (short)bds;
           deref->deref_size = (pql >= 2) ? 8 : (short)bds;
+        }
+        if (pql == 1) {
+          tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(node);
+          if (pointee_fp != TK_FLOAT_KIND_NONE) {
+            deref->base.fp_kind = pointee_fp;
+          }
         }
       }
       node = (node_t *)deref;
@@ -2403,6 +2414,7 @@ static node_t *primary(void) {
       int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
       node->type_size = stride;
       node->deref_size = stride;
+      node->pointee_fp_kind = var->pointee_fp_kind;
       if (var->outer_stride > 0) node->inner_deref_size = var->elem_size;
       node->tag_kind = var->tag_kind;
       node->tag_name = var->tag_name;
@@ -2452,6 +2464,7 @@ static node_t *primary(void) {
     as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
     as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
     as_lvar(n)->mem.base_deref_size = var->base_deref_size;
+    as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
     as_lvar(n)->mem.is_unsigned = var->is_unsigned;
     as_lvar(n)->mem.is_complex = var->is_complex;
     as_lvar(n)->mem.is_atomic = var->is_atomic;

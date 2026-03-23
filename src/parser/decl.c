@@ -1315,6 +1315,10 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     if (!is_pointer) {
       var->fp_kind = decl_fp_kind;
+      var->pointee_fp_kind = TK_FLOAT_KIND_NONE;
+    } else {
+      var->fp_kind = TK_FLOAT_KIND_NONE;
+      var->pointee_fp_kind = (total_pointer_levels == 1) ? decl_fp_kind : TK_FLOAT_KIND_NONE;
     }
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;

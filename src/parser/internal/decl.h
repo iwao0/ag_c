@@ -13,6 +13,7 @@ struct lvar_t {
   int size;
   int elem_size;
   tk_float_kind_t fp_kind;
+  tk_float_kind_t pointee_fp_kind;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
