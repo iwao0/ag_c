@@ -472,6 +472,14 @@
   - [x] 進捗（2026-03-23）: `decl.c` のローカル `extern` 宣言処理（ポインタ/配列宣言子消費・初期化子スキップ）を `curtok`/`set_curtok` ベースへ移行した
   - [x] 進捗（2026-03-23）: `decl.c` の配列/構造体初期化経路（`parse_array_initializer`/`parse_member_initializer`/`parse_struct_initializer`）の診断位置を `curtok` 参照へ統一した
   - [x] 進捗（2026-03-23）: `decl.c` の構造体/共用体コピー初期化・union指定子処理・宣言後半（`psx_decl_parse_initializer_for_var`/`psx_decl_parse_declaration_after_type` 含む）を `curtok` ベースへ移行し、`decl.c` の直接 `token` 参照を解消した
+  - [x] 進捗（2026-03-23）: `tokenizer` のカーソル公開境界を棚卸しし、`tk_get_current_token` / `tk_set_current_token` を中心に移行する計画を追加した（`extern token` は互換のため現状維持）
+
+- [ ] 優先度P1: Tokenizer内部のグローバルカーソルを完全に文脈化する
+  - [ ] 公開ヘッダの `extern token` を撤去し、アクセサ経由以外の直接参照経路を閉じる
+  - [ ] `tokenizer.c` の内部カーソルを `tokenizer_context` 側に保持し、ファイルスコープ可変状態を削減する
+  - [ ] `tk_consume`/`tk_expect` 系 API の文脈受け渡し方針（互換ラッパ含む）を確定する
+  - [ ] `main`/`preprocess`/`parser` の呼び出しフローを context 明示渡しへ段階移行する
+  - [ ] 回帰テスト（`test_parser`/`test_preprocess`/`test_e2e`）で動作互換を確認する
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
@@ -612,6 +620,14 @@
   - [x] [P2] 入力中に NUL バイトを含むバイナリ寄りソースで診断が破綻しないことを検証する
   - [x] [P3] 診断メッセージの情報漏えい（絶対パス・環境依存情報）を抑制する方針を明文化しテスト化する
   - [x] [P3] 巨大入力系テストに実行時間上限と失敗時の原因分類ログを追加し、CIハング耐性を上げる
+
+- [ ] セキュリティ追加候補（2026-03-23 追加3）
+  - [ ] [P1] 将来 `-I` 相当オプション追加時の allowlist 境界（`..` / symlink / `//` / 絶対パス混在）を事前に異常系テストで固定する
+  - [ ] [P1] 生成ログ・一時ファイルの命名衝突/予測可能パス利用を棚卸しし、並列実行・TOCTOU 耐性テストを追加する
+  - [ ] [P2] 診断メッセージの情報漏えい再点検（cwd / ユーザー名 / 実 tmp パス等）を網羅テスト化する
+  - [ ] [P2] 入力サイズ上限超過時の診断ID・終了コード・ログ形式を Tokenizer/Preprocess/Parser で統一し回帰テスト化する
+  - [ ] [P2] 再帰/ネスト系 DoS 耐性（`#include` 深さ・マクロ再帰・式ネスト・括弧ネスト）の上限値を明文化し、各上限到達ケースを追加する
+  - [ ] [P2] 異常バイト列（UTF-8 不正 / NUL / 制御文字）をソース本体・`#line`・`#include`・マクロ引数で横断検証する
 
 ## Parser未実装タスク（2026-03-17 確認）
 - [x] `struct/union/enum` のメンバ宣言をパース可能にする

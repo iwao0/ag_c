@@ -14,11 +14,11 @@ struct tokenizer_context_t {
   bool enable_c11_audit_extensions;
 };
 
-/** @brief 現在着目しているトークン。 */
+/** @brief 現在着目しているトークン（互換用、段階的廃止予定）。 */
 extern token_t *token;
-/** @brief 現在トークン（互換グローバル）の参照を取得する。 */
+/** @brief 現在トークンカーソルの参照を取得する。 */
 token_t *tk_get_current_token(void);
-/** @brief 現在トークン（互換グローバル）を更新する。 */
+/** @brief 現在トークンカーソルを更新する。 */
 void tk_set_current_token(token_t *tok);
 
 /** @brief token kind を可読文字列へ変換する。 */
