@@ -44,6 +44,7 @@ static const success_case_t success_cases[] = {
     // #pragma once
     {42, "#include \"build/pragma_once.h\"\n#include \"build/pragma_once.h\"\nint main() { return once_func(); }"},
     {42, "#include \"build/pragma_once_rel.h\"\n#include \"./build/pragma_once_rel.h\"\nint main() { return once_rel_func(); }"},
+    {42, "#include \"build/guard_a.h\"\nint main() { return guard_func(); }"},
     // #line ディレクティブ
     {99, "#line 99\nint main() { return __LINE__; }"},
     {42, "#line 41\nint x = 0;\nint main() { return __LINE__; }"},
@@ -445,6 +446,21 @@ int main(void) {
   FILE *honce_rel = fopen("build/pragma_once_rel.h", "w");
   fprintf(honce_rel, "#pragma once\nint once_rel_func() { return 42; }\n");
   fclose(honce_rel);
+  FILE *hguard_a = fopen("build/guard_a.h", "w");
+  fprintf(hguard_a,
+          "#ifndef GUARD_A_H\n"
+          "#define GUARD_A_H\n"
+          "#include \"build/guard_b.h\"\n"
+          "int guard_func() { return 42; }\n"
+          "#endif\n");
+  fclose(hguard_a);
+  FILE *hguard_b = fopen("build/guard_b.h", "w");
+  fprintf(hguard_b,
+          "#ifndef GUARD_B_H\n"
+          "#define GUARD_B_H\n"
+          "#include \"build/guard_a.h\"\n"
+          "#endif\n");
+  fclose(hguard_b);
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
   fprintf(hcycle_norm_a,
           "#pragma once\n"

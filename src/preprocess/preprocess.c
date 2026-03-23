@@ -117,11 +117,6 @@ static void push_include_or_die(const char *path) {
   if (include_depth >= PP_MAX_INCLUDE_DEPTH) {
     pp_error(DIAG_ERR_PREPROCESS_INCLUDE_NEST_TOO_DEEP, NULL);
   }
-  for (include_frame_t *f = include_stack; f; f = f->next) {
-    if (!strcmp(f->path, path)) {
-      pp_error(DIAG_ERR_PREPROCESS_INCLUDE_CYCLE_DETECTED, path);
-    }
-  }
   include_frame_t *f = calloc(1, sizeof(include_frame_t));
   if (!f) {
     pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
