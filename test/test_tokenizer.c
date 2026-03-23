@@ -861,6 +861,63 @@ static void test_c11_audit_mode_flag() {
   ASSERT_EQ(5, as_num_i(token)->val);
 }
 
+static void test_runtime_mode_switch_boundaries() {
+  printf("test_runtime_mode_switch_boundaries...\n");
+
+  // strict/binary の切替境界
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(true);
+  ASSERT_TRUE(!tk_get_strict_c11_mode());
+  ASSERT_TRUE(tk_get_enable_binary_literals());
+  token = tk_tokenize("0b11");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(3, as_num_i(token)->val);
+
+  tk_set_strict_c11_mode(true);
+  ASSERT_TRUE(tk_get_strict_c11_mode());
+  expect_tokenize_fail("0b11");
+
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(false);
+  ASSERT_TRUE(!tk_get_strict_c11_mode());
+  ASSERT_TRUE(!tk_get_enable_binary_literals());
+  expect_tokenize_fail("0b11");
+
+  tk_set_enable_binary_literals(true);
+  ASSERT_TRUE(tk_get_enable_binary_literals());
+  token = tk_tokenize("0b11");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(3, as_num_i(token)->val);
+
+  // trigraph の切替境界
+  tk_set_enable_trigraphs(false);
+  ASSERT_TRUE(!tk_get_enable_trigraphs());
+  token = tk_tokenize("?" "?=");
+  ASSERT_EQ(TK_QUESTION, token->kind);
+  token = token->next;
+  ASSERT_EQ(TK_QUESTION, token->kind);
+  token = token->next;
+  ASSERT_EQ(TK_ASSIGN, token->kind);
+
+  tk_set_enable_trigraphs(true);
+  ASSERT_TRUE(tk_get_enable_trigraphs());
+  token = tk_tokenize("?" "?=");
+  ASSERT_EQ(TK_HASH, token->kind);
+
+  // audit の切替境界（トークナイズが壊れないことを確認）
+  tk_set_enable_c11_audit_extensions(true);
+  ASSERT_TRUE(tk_get_enable_c11_audit_extensions());
+  token = tk_tokenize("0b101");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, as_num_i(token)->val);
+
+  tk_set_enable_c11_audit_extensions(false);
+  ASSERT_TRUE(!tk_get_enable_c11_audit_extensions());
+  token = tk_tokenize("0b101");
+  ASSERT_EQ(TK_NUM, token->kind);
+  ASSERT_EQ(5, as_num_i(token)->val);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -879,6 +936,7 @@ int main() {
   test_tokenize_evil_edge_cases();
   test_strict_c11_mode();
   test_c11_audit_mode_flag();
+  test_runtime_mode_switch_boundaries();
   test_at_eof();
   test_consume();
   test_consume_str();
