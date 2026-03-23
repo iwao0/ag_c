@@ -1033,6 +1033,72 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   return 0;
 }
 
+static int diag_has_error_code_prefix(const char *diag) {
+  if (!diag) return 0;
+  for (size_t i = 0; diag[i] != '\0'; i++) {
+    if (diag[i] != 'E') continue;
+    if (diag[i + 1] < '0' || diag[i + 1] > '9') continue;
+    if (diag[i + 2] < '0' || diag[i + 2] > '9') continue;
+    if (diag[i + 3] < '0' || diag[i + 3] > '9') continue;
+    if (diag[i + 4] < '0' || diag[i + 4] > '9') continue;
+    if (diag[i + 5] == ':') return 1;
+  }
+  return 0;
+}
+
+static int run_ag_c_expect_fail_profiled(const char *input, const char *expected_diag,
+                                         const char *log_path, size_t max_log_len) {
+  int pipefd[2];
+  if (pipe(pipefd) != 0) return -1;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDERR_FILENO);
+    close(pipefd[1]);
+    freopen("/dev/null", "w", stdout);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[1]);
+
+  char diag_buf[8192];
+  size_t used = 0;
+  for (;;) {
+    char sink[512];
+    char *dst = diag_buf + used;
+    size_t room = sizeof(diag_buf) - 1 - used;
+    if (room == 0) {
+      dst = sink;
+      room = sizeof(sink);
+    }
+    ssize_t nread = read(pipefd[0], dst, room);
+    if (nread <= 0) break;
+    if (used < sizeof(diag_buf) - 1) {
+      size_t keep = (size_t)nread;
+      if (keep > sizeof(diag_buf) - 1 - used) keep = sizeof(diag_buf) - 1 - used;
+      used += keep;
+    }
+  }
+  close(pipefd[0]);
+  diag_buf[used] = '\0';
+
+  int status;
+  waitpid(pid, &status, 0);
+
+  FILE *log = fopen(log_path, "w");
+  if (log) {
+    fputs(diag_buf, log);
+    fclose(log);
+  }
+
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 1) return -1;
+  if (!diag_has_error_code_prefix(diag_buf)) return -1;
+  if (expected_diag && expected_diag[0] != '\0' && !strstr(diag_buf, expected_diag)) return -1;
+  if (used > max_log_len) return -1;
+  return 0;
+}
+
 static int log_file_contains_substr(const char *path, const char *needle) {
   if (!needle || !*needle) return 1;
   FILE *fp = fopen(path, "r");
@@ -1268,6 +1334,50 @@ static int write_macro_expansion_limit_source(const char *path, int levels) {
     }
   }
   if (fprintf(fp, "int main() { return X%d; }\n", levels) < 0) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_pp_if_token_limit_source(const char *path, int terms) {
+  if (terms < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(fp, "#if ") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 0; i < terms; i++) {
+    if (fprintf(fp, "%s1", i == 0 ? "" : " + ") < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "\nint main(){return 0;}\n#endif\n") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_parser_decl_width_limit_source(const char *path, int ndecls) {
+  if (ndecls < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(fp, "int main(){ int ") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 0; i < ndecls; i++) {
+    if (fprintf(fp, "%sv%d", i == 0 ? "" : ",", i) < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "; return 0; }\n") < 0) {
     fclose(fp);
     return -1;
   }
@@ -1650,8 +1760,28 @@ int main() {
     const char *log_path = "build/e2e/logs/compile_fail_tokenizer_int_too_large.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
         write_source_file(tok_limit_path, "int main() { return 18446744073709551616; }\n") != 0 ||
-        run_ag_c_expect_fail_with_diag(tok_limit_path, "E2015", log_path) != 0) {
+        run_ag_c_expect_fail_profiled(tok_limit_path, "E2015", log_path, 1024) != 0) {
       fprintf(stderr, "Compile-fail case failed: tokenizer_int_too_large (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *pp_if_limit_path = "build/e2e/compile_fail/preprocess_if_token_limit.c";
+    const char *log_path = "build/e2e/logs/compile_fail_preprocess_if_token_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_pp_if_token_limit_source(pp_if_limit_path, 4200) != 0 ||
+        run_ag_c_expect_fail_profiled(pp_if_limit_path, "E1037", log_path, 1024) != 0) {
+      fprintf(stderr, "Compile-fail case failed: preprocess_if_token_limit (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *parser_width_path = "build/e2e/compile_fail/parser_decl_width_limit.c";
+    const char *log_path = "build/e2e/logs/compile_fail_parser_decl_width_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_parser_decl_width_limit_source(parser_width_path, 1300) != 0 ||
+        run_ag_c_expect_fail_profiled(parser_width_path, "E3064", log_path, 1024) != 0) {
+      fprintf(stderr, "Compile-fail case failed: parser_decl_width_limit (see %s)\n", log_path);
       return 1;
     }
   }
