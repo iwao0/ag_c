@@ -409,28 +409,23 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NUM, nested_atomic_cast->kind);
   ASSERT_EQ(11, as_num(nested_atomic_cast)->val);
 
-  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=(c?(struct S){3}:b); return s.x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=(c?(struct S){3}:b); return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}; struct S s=(a,(struct S){9}); return s.x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}; struct S s=(a,(struct S){9}); return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S t=(struct S)(c?a:b); return t.x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S t=(struct S)(c?a:b); return t.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U a={.x=1}, b={.x=2}; int c=1; union U t=(union U)(c?a:b); return t.x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U a={.x=1}, b={.x=2}; int c=1; union U t=(union U)(c?a:b); return t.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 }
@@ -446,8 +441,7 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_NUM, g2->kind);
   ASSERT_EQ(33, as_num(g2)->val);
 
-  token = tk_tokenize("main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
@@ -517,22 +511,19 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, a3->kind);
   ASSERT_EQ(16, as_num(a3)->val);
 
-  token = tk_tokenize("main() { int x; return sizeof(x); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int x; return sizeof(x); }");
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
-  token = tk_tokenize("main() { struct S { int x; }; return sizeof(struct S); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; return sizeof(struct S); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
-  token = tk_tokenize("main() { struct S { int x; }; return _Alignof(struct S); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; return _Alignof(struct S); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
@@ -647,8 +638,7 @@ static void test_expr_comma() {
 
 static void test_program_funcdef() {
   printf("test_program_funcdef...\n");
-  token = tk_tokenize("main() { a=1; b=2; a+b; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { a=1; b=2; a+b; }");
 
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
@@ -674,16 +664,14 @@ static void test_funcall() {
   ASSERT_EQ(1, as_num(as_func(node)->args[0])->val);
   ASSERT_EQ(2, as_num(as_func(node)->args[1])->val);
 
-  token = tk_tokenize("foo((1,2), 3)");
-  node = ps_expr_from(token);
+  node= parse_expr_input("foo((1,2), 3)");
   ASSERT_EQ(ND_FUNCALL, node->kind);
   ASSERT_EQ(2, as_func(node)->nargs);
   ASSERT_EQ(ND_COMMA, as_func(node)->args[0]->kind);
   ASSERT_EQ(ND_NUM, as_func(node)->args[1]->kind);
   ASSERT_EQ(3, as_num(as_func(node)->args[1])->val);
 
-  token = tk_tokenize("main() { int fp; fp(1); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int fp; fp(1); }");
   node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, stmt->kind);
   ASSERT_EQ(ND_LVAR, as_func(stmt)->callee->kind);
@@ -694,29 +682,25 @@ static void test_funcall() {
 
 static void test_funcdef_with_params() {
   printf("test_funcdef_with_params...\n");
-  token = tk_tokenize("int add(int a, int b) { return a+b; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int add(int a, int b) { return a+b; }");
 
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
   ASSERT_EQ(ND_LVAR, as_func(parsed_code[0])->args[0]->kind);
   ASSERT_EQ(ND_LVAR, as_func(parsed_code[0])->args[1]->kind);
 
-  token = tk_tokenize("int apply(int (*fp)(int), int x) { return x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int apply(int (*fp)(int), int x) { return x; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
 
-  token = tk_tokenize("int sum(int a[], int n) { return n; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
 }
 
 static void test_stmt_if() {
   printf("test_stmt_if...\n");
-  token = tk_tokenize("main() { if (1) 2; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { if (1) 2; }");
   node_t *body = as_func(parsed_code[0])->base.rhs;
   node_t *if_node = as_block(body)->body[0];
 
@@ -730,8 +714,7 @@ static void test_stmt_if() {
 
 static void test_stmt_if_else() {
   printf("test_stmt_if_else...\n");
-  token = tk_tokenize("main() { if (1) 2; else 3; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { if (1) 2; else 3; }");
   node_t *if_node = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
@@ -743,8 +726,7 @@ static void test_stmt_if_else() {
 
 static void test_stmt_while() {
   printf("test_stmt_while...\n");
-  token = tk_tokenize("main() { while (1) 2; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { while (1) 2; }");
   node_t *wh = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_WHILE, wh->kind);
@@ -754,8 +736,7 @@ static void test_stmt_while() {
 
 static void test_stmt_do_while() {
   printf("test_stmt_do_while...\n");
-  token = tk_tokenize("main() { do a=a+1; while (a<3); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { do a=a+1; while (a<3); }");
   node_t *dw = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_DO_WHILE, dw->kind);
@@ -765,8 +746,7 @@ static void test_stmt_do_while() {
 
 static void test_stmt_break_continue() {
   printf("test_stmt_break_continue...\n");
-  token = tk_tokenize("main() { while (1) { continue; break; } }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { while (1) { continue; break; } }");
   node_t *wh = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   node_t *body = wh->rhs;
 
@@ -778,8 +758,7 @@ static void test_stmt_break_continue() {
 
 static void test_stmt_switch_case_default() {
   printf("test_stmt_switch_case_default...\n");
-  token = tk_tokenize("main() { switch (a) { case 1: a=2; break; default: a=3; } }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { switch (a) { case 1: a=2; break; default: a=3; } }");
   node_t *sw = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_SWITCH, sw->kind);
@@ -793,8 +772,7 @@ static void test_stmt_switch_case_default() {
 
 static void test_stmt_for() {
   printf("test_stmt_for...\n");
-  token = tk_tokenize("main() { for (a=0; a<10; a=a+1) a; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { for (a=0; a<10; a=a+1) a; }");
   node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
@@ -806,8 +784,7 @@ static void test_stmt_for() {
 
 static void test_stmt_for_with_decl_init() {
   printf("test_stmt_for_with_decl_init...\n");
-  token = tk_tokenize("main() { for (int i=0; i<3; i=i+1) i; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { for (int i=0; i<3; i=i+1) i; }");
   node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
@@ -816,8 +793,7 @@ static void test_stmt_for_with_decl_init() {
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: i=i+1
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);              // 本体: i
 
-  token = tk_tokenize("main() { for (int i=0, j=2; i<j; i=i+1) i; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { for (int i=0, j=2; i<j; i=i+1) i; }");
   fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_COMMA, as_ctrl(fr)->init->kind);   // init: int i=0, j=2
@@ -825,16 +801,14 @@ static void test_stmt_for_with_decl_init() {
 
 static void test_stmt_return() {
   printf("test_stmt_return...\n");
-  token = tk_tokenize("main() { return 42; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { return 42; }");
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(42, as_num(ret->lhs)->val);
 
-  token = tk_tokenize("void noop() { return; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("void noop() { return; }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_TRUE(ret->lhs == NULL);
@@ -842,8 +816,7 @@ static void test_stmt_return() {
 
 static void test_stmt_block() {
   printf("test_stmt_block...\n");
-  token = tk_tokenize("main() { { 1; 2; } }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { { 1; 2; } }");
   node_t *blk = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_BLOCK, blk->kind);
@@ -856,8 +829,7 @@ static void test_stmt_block() {
 
 static void test_stmt_goto_label() {
   printf("test_stmt_goto_label...\n");
-  token = tk_tokenize("main() { goto L1; L1: return 42; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { goto L1; L1: return 42; }");
   node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_GOTO, body->body[0]->kind);
   ASSERT_EQ(ND_LABEL, body->body[1]->kind);
@@ -879,8 +851,7 @@ static void test_expr_deref_addr() {
 
 static void test_expr_member_access() {
   printf("test_expr_member_access...\n");
-  token = tk_tokenize("main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
   node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
   node_t *assign = body->body[2];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
@@ -892,16 +863,14 @@ static void test_expr_member_access() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_DEREF, ret->lhs->kind);
 
-  token = tk_tokenize("main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   assign = body->body[4];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
   ASSERT_EQ(ND_DEREF, assign->lhs->kind);
   ASSERT_EQ(4, as_mem(assign->lhs)->type_size);
 
-  token = tk_tokenize("main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
@@ -935,139 +904,118 @@ static void test_expr_concat_string() {
 static void test_type_decl() {
   printf("test_type_decl...\n");
   // int x = 5; → ND_ASSIGN
-  token = tk_tokenize("main() { int x = 5; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int x = 5; }");
   node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_LVAR, stmt->lhs->kind);
   ASSERT_EQ(5, as_num(stmt->rhs)->val);
 
   // int x; → ND_NUM(0) ダミー
-  token = tk_tokenize("main() { int x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int x; }");
   stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_NUM, stmt->kind);
   ASSERT_EQ(0, as_num(stmt)->val);
 
   // int a, b=1; → 初期化のある宣言子のみ式木に残る
-  token = tk_tokenize("main() { int a, b=1; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a, b=1; }");
   stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_NUM, stmt->rhs->kind);
   ASSERT_EQ(1, as_num(stmt->rhs)->val);
 
-  token = tk_tokenize("main() { int a=1, b=2; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a=1, b=2; }");
   stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_COMMA, stmt->kind);
 
-  token = tk_tokenize("main() { struct S; union U; enum E; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S; union U; enum E; return 0; }");
   node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_NUM, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { struct S; struct S *p; p=0; return p==0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S; struct S *p; p=0; return p==0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; }; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; } *p; p=0; return p==0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; enum E { A=1, B=2 }; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; enum E { A=1, B=2 }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { enum E { A=1, B, C=10 }; return A+B+C; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { enum E { A=1, B, C=10 }; return A+B+C; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("typedef int myint; main() { myint x = 3; return x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("typedef int myint; main() { myint x = 3; return x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("typedef int *intptr; main() { int a=7; intptr p=&a; return *p; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("typedef int *intptr; main() { int a=7; intptr p=&a; return *p; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("typedef int (*fp_t)(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("typedef int (*fp_t)(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
-  token = tk_tokenize("typedef int (((*fp_t)))(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("typedef int (((*fp_t)))(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
-  token = tk_tokenize("main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("typedef unsigned long long ull; main() { ull v = 5; return v; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("typedef unsigned long long ull; main() { ull v = 5; return v; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
@@ -1075,95 +1023,81 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
-  token = tk_tokenize("main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { _Atomic(int) z=5; return z; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { _Atomic(int) z=5; return z; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { _Atomic(int*) p=0; _Atomic int q=1; return q + (p==0); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { _Atomic(int*) p=0; _Atomic int q=1; return q + (p==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { _Complex double cx=1.0; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { _Complex double cx=1.0; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c!=0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c!=0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { int a[1+2]; a[0]=3; return a[0]; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a[1+2]; a[0]=3; return a[0]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { int a[2][3]; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a[2][3]; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { struct S { int x:3; int y; }; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x:3; int y; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { struct S { struct { int x; }; int y; }; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { struct { int x; }; int y; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { struct S { union { int x; char c; }; int y; }; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { union { int x; char c; }; int y; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { int x={3}; return x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int x={3}; return x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(0, as_lvar(body->body[0]->lhs)->mem.is_const_qualified);
   ASSERT_EQ(0, as_lvar(body->body[0]->lhs)->mem.is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { enum E { A=1 }; return (enum E)42; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { enum E { A=1 }; return (enum E)42; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { const int cx=1; volatile int vx=2; return cx+vx; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { const int cx=1; volatile int vx=2; return cx+vx; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(1, as_lvar(body->body[0]->lhs)->mem.is_const_qualified);
@@ -1173,8 +1107,7 @@ static void test_type_decl() {
   ASSERT_EQ(1, as_lvar(body->body[1]->lhs)->mem.is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(1, as_lvar(body->body[0]->lhs)->mem.is_pointer_const_qualified);
@@ -1184,8 +1117,7 @@ static void test_type_decl() {
   ASSERT_EQ(1, as_lvar(body->body[1]->lhs)->mem.is_pointer_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { int *const *volatile pp=0; return pp==0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int *const *volatile pp=0; return pp==0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(2, as_lvar(body->body[0]->lhs)->mem.pointer_qual_levels);
@@ -1193,49 +1125,42 @@ static void test_type_decl() {
   ASSERT_EQ(2u, as_lvar(body->body[0]->lhs)->mem.pointer_volatile_qual_mask);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { int x=42; int *p=&x; int **pp=&p; return **pp; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int x=42; int *p=&x; int **pp=&p; return **pp; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { int a[3]={1,2,3}; return a[2]; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a[3]={1,2,3}; return a[2]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { int a[2]=1; return a[0]+a[1]; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a[2]=1; return a[0]+a[1]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { char s[4]=\"abc\"; return s[2]; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { char s[4]=\"abc\"; return s[2]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; int y; }; struct S s={1,2}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S s={1,2}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=t; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
@@ -1243,24 +1168,21 @@ static void test_type_decl() {
   ASSERT_EQ(ND_TERNARY, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { struct S { int a[2]; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { struct I { int x; int y; }; struct S { struct I i; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct I { int x; int y; }; struct S { struct I i; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
@@ -1268,66 +1190,57 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U u={7}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U u=7; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u=7; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U v={7}; union U u=v; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U v={7}; union U u=v; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U u={.x=7}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U u={.x=7,.y=2}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=7,.y=2}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { struct S { int x; }; struct S s=(struct S)(struct S){1}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int x; }; struct S s=(struct S)(struct S){1}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=(struct B)a; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=(struct B)a; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   bool has_return = false;
@@ -1339,15 +1252,13 @@ static void test_type_decl() {
   }
   ASSERT_TRUE(has_return);
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U u=(union U)(union U){.x=7}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u=(union U)(union U){.x=7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { union A { int x; }; union B { int x; }; union A a={.x=1}; union B b=(union B)a; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union A { int x; }; union B { int x; }; union A a={.x=1}; union B b=(union B)a; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   has_return = false;
@@ -1359,83 +1270,72 @@ static void test_type_decl() {
   }
   ASSERT_TRUE(has_return);
 
-  token = tk_tokenize("main() { struct I { int x; int y; }; struct O { struct I i; int z; }; struct O o={{1,2},3}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct I { int x; int y; }; struct O { struct I i; int z; }; struct O o={{1,2},3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
-  token = tk_tokenize("main() { struct I { int x; int y; }; union U { struct I i; int raw; }; union U u={{4,5}}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct I { int x; int y; }; union U { struct I i; int raw; }; union U u={{4,5}}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
-  token = tk_tokenize("main() { union U { int x; char y; }; union U u={.x=1,.y=2}; return u.x; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=1,.y=2}; return u.x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { struct S { int a[2]; int z; }; struct S s={{1,2},3}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S s={{1,2},3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
-  token = tk_tokenize("main() { struct S { char a[4]; int z; }; struct S s={\"ab\",7}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { char a[4]; int z; }; struct S s={\"ab\",7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  token = tk_tokenize("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   // 入れ子 designator: struct の配列メンバへの .member[idx]=val
-  token = tk_tokenize("main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   // 入れ子 designator: struct の配列メンバへの複数指定
-  token = tk_tokenize("main() { struct S { int a[2]; }; struct S s={.a[0]=1,.a[1]=2}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={.a[0]=1,.a[1]=2}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   // 入れ子 designator: union の配列メンバへの .member[idx]=val
-  token = tk_tokenize("main() { union U { int a[2]; int z; }; union U u={.a[1]=3}; return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { union U { int a[2]; int z; }; union U u={.a[1]=3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
@@ -1444,8 +1344,7 @@ static void test_type_decl() {
 
 static void test_multiple_funcdefs() {
   printf("test_multiple_funcdefs...\n");
-  token = tk_tokenize("foo() { 1; } bar() { 2; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("foo() { 1; } bar() { 2; }");
 
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
@@ -1457,22 +1356,19 @@ static void test_multiple_funcdefs() {
 
   ASSERT_TRUE(parsed_code[2] == NULL);
 
-  token = tk_tokenize("int add(int a, int b); int add(int a, int b) { return a+b; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int add(int a, int b); int add(int a, int b) { return a+b; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
-  token = tk_tokenize("int log(const char *fmt, ...); int main() { return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int log(const char *fmt, ...); int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
-  token = tk_tokenize("int variadic(...){ return 0; } int main() { return variadic(); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "variadic", 8) == 0);
@@ -1480,36 +1376,31 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
-  token = tk_tokenize("int f(int a[static 3], int b[restrict static 2]) { return 7; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int f(int a[static 3], int b[restrict static 2]) { return 7; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "f", 1) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
-  token = tk_tokenize("struct S { int x; }; int main() { return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("struct S { int x; }; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
-  token = tk_tokenize("struct S { int x; } *gp; int main() { return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("struct S { int x; } *gp; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
-  token = tk_tokenize("int g=1; int main() { return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("int g=1; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
-  token = tk_tokenize("extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
@@ -1518,8 +1409,7 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
-  token = tk_tokenize("_Noreturn void die() { return; } int main() { return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("_Noreturn void die() { return; } int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "die", 3) == 0);
@@ -1528,8 +1418,7 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
-  token = tk_tokenize("_Static_assert(1, \"ok\"); int main() { return 0; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("_Static_assert(1, \"ok\"); int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
@@ -1687,8 +1576,7 @@ static void test_parse_evil_edge_cases() {
   ASSERT_EQ(4, as_num(bw->rhs->rhs)->val);
 
   // x+++y の式解析: (x++) + y
-  token = tk_tokenize("main() { int x=1; int y=2; return x+++y; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int x=1; int y=2; return x+++y; }");
   // パースが成功すればOK
 
   // キャストと単項マイナスのネスト: (int)-(char)5
@@ -1706,8 +1594,7 @@ static void test_parse_evil_edge_cases() {
   ASSERT_EQ(8, as_num(sh->rhs)->val);
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
-  token = tk_tokenize("main() { int a; int b; a=1,b=2; }");
-  parsed_code = ps_program_from(token);
+  parsed_code = parse_program_input("main() { int a; int b; a=1,b=2; }");
   // パースが成功すればOK
 
   // 複雑な式文のパース
