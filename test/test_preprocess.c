@@ -9,6 +9,13 @@ typedef struct {
   const char *input;
 } success_case_t;
 
+static void cleanup_preprocess_temp_artifacts(void) {
+  unlink("build/escape_symlink.h");
+  unlink("build/escape_tmp_symlink.h");
+  unlink("include/escape_tmp_symlink.h");
+  unlink("/tmp/ag_c_escape_preprocess.h");
+}
+
 static const success_case_t success_cases[] = {
     {42, "#include \"build/test_inc.h\"\nint main() { return inc_func(); }"},
     {42, "#include \"build/./dot_inc.h\"\nint main() { return dot_inc_func(); }"},
@@ -503,6 +510,7 @@ static void expect_line_filename_too_long_fail(void) {
 }
 
 int main(void) {
+  atexit(cleanup_preprocess_temp_artifacts);
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
 

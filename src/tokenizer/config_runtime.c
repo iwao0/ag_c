@@ -5,6 +5,7 @@ static tokenizer_context_t default_ctx = {
     .enable_trigraphs = true,
     .enable_binary_literals = true,
     .enable_c11_audit_extensions = false,
+    .current_token = NULL,
 };
 
 tokenizer_context_t *tk_get_default_context(void) {

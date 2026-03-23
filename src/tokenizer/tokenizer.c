@@ -20,8 +20,21 @@ static char *user_input;
 
 // 現在着目しているトークン
 token_t *token;
-token_t *tk_get_current_token(void) { return token; }
-void tk_set_current_token(token_t *tok) { token = tok; }
+static tokenizer_context_t *runtime_ctx(void);
+token_t *tk_get_current_token(void) {
+  tokenizer_context_t *ctx = runtime_ctx();
+  if (ctx) {
+    token = ctx->current_token;
+  }
+  return token;
+}
+void tk_set_current_token(token_t *tok) {
+  token = tok;
+  tokenizer_context_t *ctx = runtime_ctx();
+  if (ctx) {
+    ctx->current_token = tok;
+  }
+}
 
 /** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
 char *tk_get_user_input(void) {
@@ -169,60 +182,65 @@ static token_kind_t kind_for_char(char op) {
 
 /** @brief 次トークンが指定1文字なら消費して true を返す。 */
 bool tk_consume(char op) {
+  token_t *cur = tk_get_current_token();
   token_kind_t kind = kind_for_char(op);
-  if (kind == TK_EOF || token->kind != kind)
+  if (kind == TK_EOF || cur->kind != kind)
     return false;
-  token = token->next;
+  tk_set_current_token(cur->next);
   return true;
 }
 
 /** @brief 次トークンが指定記号文字列なら消費して true を返す。 */
 bool tk_consume_str(char *op) {
+  token_t *cur = tk_get_current_token();
   token_kind_t kind = punctuator_kind_for_str(op);
-  if (kind == TK_EOF || token->kind != kind)
+  if (kind == TK_EOF || cur->kind != kind)
     return false;
-  token = token->next;
+  tk_set_current_token(cur->next);
   return true;
 }
 
 /** @brief 次トークンが識別子なら消費して返す。 */
 token_ident_t *tk_consume_ident(void) {
-  if (token->kind != TK_IDENT)
+  token_t *cur = tk_get_current_token();
+  if (cur->kind != TK_IDENT)
     return NULL;
-  token_ident_t *tok = (token_ident_t *)token;
-  token = token->next;
+  token_ident_t *tok = (token_ident_t *)cur;
+  tk_set_current_token(cur->next);
   return tok;
 }
 
 /** @brief 次トークンが指定1文字であることを期待して消費する。 */
 void tk_expect(char op) {
+  token_t *cur = tk_get_current_token();
   token_kind_t kind = kind_for_char(op);
-  if (kind == TK_EOF || token->kind != kind) {
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, token, "%s: '%c'",
+  if (kind == TK_EOF || cur->kind != kind) {
+    diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, cur, "%s: '%c'",
                    diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
   }
-  token = token->next;
+  tk_set_current_token(cur->next);
 }
 
 /** @brief 次トークンが整数であることを期待し int 値を返す。 */
 int tk_expect_number(void) {
-  if (token->kind != TK_NUM) {
-    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token);
+  token_t *cur = tk_get_current_token();
+  if (cur->kind != TK_NUM) {
+    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
-  if (tk_as_num(token)->num_kind != TK_NUM_KIND_INT) {
-    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token);
+  if (tk_as_num(cur)->num_kind != TK_NUM_KIND_INT) {
+    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
-  long long n = tk_as_num_int(token)->val;
+  long long n = tk_as_num_int(cur)->val;
   if (n < INT_MIN || n > INT_MAX) {
-    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, token);
+    TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   int val = (int)n;
-  token = token->next;
+  tk_set_current_token(cur->next);
   return val;
 }
 
 /** @brief 現在トークンが EOF かを返す。 */
-bool tk_at_eof(void) { return token->kind == TK_EOF; }
+bool tk_at_eof(void) { return tk_get_current_token()->kind == TK_EOF; }
 
 // 新しいトークンを作成して、curに繋げる
 static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
@@ -595,6 +613,7 @@ token_t *tk_tokenize(char *p) {
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p) {
   tokenizer_context_t *prev_ctx = active_ctx;
   active_ctx = ctx ? ctx : tk_get_default_context();
+  tk_set_current_token(NULL);
   tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);
   user_input = normalized;
@@ -831,6 +850,7 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p) {
   }
 
   new_token_simple(TK_EOF, cur, line_no, false, false);
+  tk_set_current_token(head.next);
   active_ctx = prev_ctx;
   return head.next;
 }

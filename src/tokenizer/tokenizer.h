@@ -12,6 +12,7 @@ struct tokenizer_context_t {
   bool enable_trigraphs;
   bool enable_binary_literals;
   bool enable_c11_audit_extensions;
+  token_t *current_token;
 };
 
 /** @brief 現在着目しているトークン（互換用、段階的廃止予定）。 */
