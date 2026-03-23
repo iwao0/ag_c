@@ -467,6 +467,7 @@
   - [x] 進捗（2026-03-23）: `expr.c` の `parse_generic_assoc_type` / `build_member_access` を `curtok` ベースへ移行し、`expr.c` の直接 `token` 参照を解消した
   - [x] 進捗（2026-03-23）: `node_utils.c` の代入/インクリメント検証診断を `curtok` 参照へ切り替え、`token` 直接参照を解消した
   - [x] 進捗（2026-03-23）: `decl.c` に `curtok`/`set_curtok` を導入し、ポインタ修飾子スキップと配列サイズ/非負定数式/スカラ初期化子の診断位置を `curtok` ベースへ移行した
+  - [x] 進捗（2026-03-23）: `decl.c` の配列メンバ初期化最適化経路（copy/string）で `token` 直接参照を `curtok` ベースへ置換した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

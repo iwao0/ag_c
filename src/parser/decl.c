@@ -319,13 +319,13 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
 }
 
 static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len) {
-  if (!token || token->kind != TK_IDENT) return NULL;
-  token_ident_t *id = (token_ident_t *)token;
+  if (!curtok() || curtok()->kind != TK_IDENT) return NULL;
+  token_ident_t *id = (token_ident_t *)curtok();
   lvar_t *src = psx_decl_find_lvar(id->str, id->len);
   if (!src || !src->is_array) return NULL;
   src->is_used = 1;
   if (src->elem_size != elem_size || src->size != elem_size * array_len) return NULL;
-  if (!token->next || (token->next->kind != TK_COMMA && token->next->kind != TK_RBRACE)) return NULL;
+  if (!curtok()->next || (curtok()->next->kind != TK_COMMA && curtok()->next->kind != TK_RBRACE)) return NULL;
 
   (void)psx_expr_assign();
   node_t *init_chain = NULL;
@@ -344,7 +344,7 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
 
 static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len) {
   if (elem_size != 1) return NULL;
-  if (!token || token->kind != TK_STRING) return NULL;
+  if (!curtok() || curtok()->kind != TK_STRING) return NULL;
 
   node_t *rhs = psx_expr_assign();
   if (!rhs || rhs->kind != ND_STRING) return NULL;
@@ -352,7 +352,7 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
   node_string_t *s = (node_string_t *)rhs;
   string_lit_t *lit = find_string_lit_by_label(s->string_label);
   if (!lit) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
 
