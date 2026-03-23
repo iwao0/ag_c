@@ -338,6 +338,19 @@ struct tokenize_session_t {
   tokenizer_context_t *ctx;
 };
 
+/** @brief 実装定義: 通常/接頭辞付きともにマルチ文字文字定数を受理する。 */
+static inline bool tk_accept_multichar_char_constant(void) {
+  return true;
+}
+
+/** @brief 拡張: 2進整数リテラルを現在コンテキストで受理できるか判定する。 */
+static inline bool tk_is_binary_literal_enabled_in_ctx(void) {
+  tokenizer_context_t *ctx = runtime_ctx();
+  if (!ctx) return false;
+  if (tk_ctx_get_strict_c11_mode(ctx)) return false;
+  return tk_ctx_get_enable_binary_literals(ctx);
+}
+
 /** @brief 文字列リテラル（接頭辞含む）を読み取り、トークンを生成する。 */
 static bool tokenize_string_literal(
     char **pp,
@@ -413,6 +426,10 @@ static bool tokenize_char_literal(
   }
   unsigned long long ch = 0;
   int nchar = 0;
+  if (!tk_accept_multichar_char_constant()) {
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+  }
   while (*p && *p != '\'') {
     int one = 0;
     if (*p == '\\') {
@@ -815,7 +832,7 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
       parse_int_suffix(num, &p, val, false, *pp);
     }
   } else if (*p == '0' && (p[1] == 'b' || p[1] == 'B')) {
-    if (tk_ctx_get_strict_c11_mode(runtime_ctx()) || !tk_ctx_get_enable_binary_literals(runtime_ctx())) {
+    if (!tk_is_binary_literal_enabled_in_ctx()) {
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_BIN_LITERAL_STRICT_UNSUPPORTED));
     }
     tk_audit_extension(p, DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION);
