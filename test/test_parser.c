@@ -1728,6 +1728,33 @@ static void test_parser_config_matrix() {
   ps_set_enable_size_compatible_nonscalar_cast(true);
 }
 
+static char *build_nested_paren_program(int depth) {
+  if (depth <= 0) return NULL;
+  size_t cap = (size_t)depth * 2 + 64;
+  char *buf = calloc(cap, 1);
+  if (!buf) return NULL;
+  size_t pos = 0;
+  pos += (size_t)snprintf(buf + pos, cap - pos, "int main(){ return ");
+  for (int i = 0; i < depth; i++) buf[pos++] = '(';
+  buf[pos++] = '1';
+  for (int i = 0; i < depth; i++) buf[pos++] = ')';
+  pos += (size_t)snprintf(buf + pos, cap - pos, "; }\n");
+  return buf;
+}
+
+static void test_expr_nest_limits() {
+  printf("test_expr_nest_limits...\n");
+  char *ok = build_nested_paren_program(256);
+  ASSERT_TRUE(ok != NULL);
+  expect_parse_ok(ok);
+  free(ok);
+
+  char *too_deep = build_nested_paren_program(1300);
+  ASSERT_TRUE(too_deep != NULL);
+  expect_parse_fail_with_message(too_deep, "深すぎます");
+  free(too_deep);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
@@ -1778,6 +1805,7 @@ int main() {
   test_parse_invalid_diagnostics();
   test_parse_evil_edge_cases();
   test_parser_config_matrix();
+  test_expr_nest_limits();
 
   printf("OK: All unit tests passed!\n");
   return 0;

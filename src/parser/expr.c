@@ -22,6 +22,11 @@ static int g_current_funcname_len = 0;
 static int string_label_count = 0;
 static int float_label_count = 0;
 static int compound_lit_seq = 0;
+static int g_expr_nest_depth = 0;
+static int g_paren_nest_depth = 0;
+
+#define PS_MAX_EXPR_NEST_DEPTH 1024
+#define PS_MAX_PAREN_NEST_DEPTH 1024
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
@@ -37,6 +42,28 @@ static void consume_local_type_quals(token_t **cur);
 static long long eval_const_expr_type_size(node_t *n, int *ok);
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
+
+static void enter_expr_nest_or_die(void) {
+  g_expr_nest_depth++;
+  if (g_expr_nest_depth > PS_MAX_EXPR_NEST_DEPTH) {
+    psx_diag_ctx(curtok(), "expr", "式ネストが深すぎます（上限 %d）", PS_MAX_EXPR_NEST_DEPTH);
+  }
+}
+
+static void leave_expr_nest(void) {
+  if (g_expr_nest_depth > 0) g_expr_nest_depth--;
+}
+
+static void enter_paren_nest_or_die(void) {
+  g_paren_nest_depth++;
+  if (g_paren_nest_depth > PS_MAX_PAREN_NEST_DEPTH) {
+    psx_diag_ctx(curtok(), "paren", "括弧ネストが深すぎます（上限 %d）", PS_MAX_PAREN_NEST_DEPTH);
+  }
+}
+
+static void leave_paren_nest(void) {
+  if (g_paren_nest_depth > 0) g_paren_nest_depth--;
+}
 
 static int sizeof_expr_node(node_t *node) {
   int sz = psx_node_type_size(node);
@@ -1062,6 +1089,7 @@ node_t *psx_expr_assign(void) {
 }
 
 static node_t *expr_internal(void) {
+  enter_expr_nest_or_die();
   node_t *node = assign();
   while (curtok()->kind == TK_COMMA) {
     set_curtok(curtok()->next);
@@ -1070,6 +1098,7 @@ static node_t *expr_internal(void) {
     comma->fp_kind = rhs ? rhs->fp_kind : TK_FLOAT_KIND_NONE;
     node = comma;
   }
+  leave_expr_nest();
   return node;
 }
 
@@ -1809,9 +1838,11 @@ static node_t *primary(void) {
   }
 
   if (curtok()->kind == TK_LPAREN) {
+    enter_paren_nest_or_die();
     set_curtok(curtok()->next);
     node_t *node = expr_internal();
     tk_expect(')');
+    leave_paren_nest();
     return node;
   }
 
