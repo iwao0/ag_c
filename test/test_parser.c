@@ -529,6 +529,20 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_ptr_ptr_kind->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_ptr_kind->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_ptr_kind->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ int x=0; unsigned int u=0; unsigned int *pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
+  node_t *ret_ptr_unsigned = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
+  ASSERT_EQ(ND_RETURN, ret_ptr_unsigned->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_unsigned->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_unsigned->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "typedef unsigned int *uip_t; main(){ unsigned int u=0; uip_t pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
+  node_t *ret_ptr_unsigned_typedef = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_ptr_unsigned_typedef->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_unsigned_typedef->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_unsigned_typedef->lhs)->val);
 }
 
 static void test_expr_sizeof() {
