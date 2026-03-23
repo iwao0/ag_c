@@ -22,7 +22,7 @@
 - [x] Task 6: `config/toml_reader.c` 詳細エラー文の翻訳戦略整備
   - [x] line情報つき詳細文を locale 切替可能にする設計を決める
   - [x] エラーカタログ（または専用テキスト層）へ移す実装方針を文書化する
-  - [ ] 補足: 現在のHEADで `make test` は `global_var` カテゴリ失敗（本タスク外の既知回帰）を確認
+  - [x] 補足: `make test` / `./build/test_e2e global_var` の再確認で失敗解消を確認
 
 - [x] Task 7: warning採番ルールの明文化
   - [x] warning のカテゴリ帯・採番規則・追加手順を docs に追記する
