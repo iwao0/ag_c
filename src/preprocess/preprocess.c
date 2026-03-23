@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <limits.h>
 #include <time.h>
 
 typedef struct macro macro_t;
@@ -1119,6 +1120,9 @@ token_t *preprocess(token_t *tok) {
         tok = tok->next;
         if (tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
           long long new_line = tk_as_num_int(tok)->val;
+          if (new_line <= 0 || new_line > INT_MAX) {
+            pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+          }
           tok = tok->next;
           char *new_file = NULL;
           if (tok && tok->kind == TK_STRING) {
@@ -1231,6 +1235,8 @@ token_t *preprocess(token_t *tok) {
              
              token_t **args = calloc(m->num_params > 0 ? m->num_params : 1, sizeof(token_t*));
              int arg_cnt = 0;
+             int parsed_args = 0;
+             bool has_empty_arg = false;
              if (!(tok->kind == TK_RPAREN)) {
                while (tok->kind != TK_EOF) {
                  token_t head_arg; head_arg.next = NULL;
@@ -1244,6 +1250,8 @@ token_t *preprocess(token_t *tok) {
                    cur_arg = cur_arg->next;
                    tok = tok->next;
                  }
+                 parsed_args++;
+                 if (!head_arg.next) has_empty_arg = true;
                  if (arg_cnt < m->num_params) args[arg_cnt++] = head_arg.next;
                  if (tok->kind == TK_COMMA) tok = tok->next;
                  else break;
@@ -1252,7 +1260,25 @@ token_t *preprocess(token_t *tok) {
              if (tok->kind != TK_RPAREN) {
                pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
              }
+             if (parsed_args != m->num_params || has_empty_arg) {
+               pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+             }
              tok = tok->next; // skip ')'
+
+             token_t *prev_body = NULL;
+             for (token_t *bt = m->body; bt; bt = bt->next) {
+               if (bt->kind != TK_HASHHASH) {
+                 prev_body = bt;
+                 continue;
+               }
+               if (!prev_body || !bt->next) {
+                 pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+               }
+               if (prev_body->kind == TK_HASHHASH || bt->next->kind == TK_HASHHASH || bt->next->kind == TK_HASH) {
+                 pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+               }
+               prev_body = bt;
+             }
              
              token_t body_head; body_head.next = NULL;
              token_t *cur_body = &body_head;

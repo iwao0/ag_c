@@ -108,7 +108,15 @@ static const char *fail_cases[] = {
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
     "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
+    "#line 0\nint main() { return 0; }\n",
+    "#line 2147483648\nint main() { return 0; }\n",
     "#define FOO(x) x\nint main() { return FOO(1; }\n",
+    "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1); }\n",
+    "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1, 2, 3); }\n",
+    "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1,); }\n",
+    "#define BAD1(a) ##a\nint main() { return BAD1(42); }\n",
+    "#define BAD2(a) a##\nint main() { return BAD2(42); }\n",
+    "#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n",
     "#error \"forced\"\nint main() { return 0; }\n",
 };
 
