@@ -18,6 +18,7 @@ declaration    = decl_spec init_declarator_list? ";"
 
 decl_spec      = (storage_spec | type_spec | type_qual | func_spec | align_spec)+
 storage_spec   = "static" | "extern" | "register" | "auto" | "_Thread_local"
+               | "typedef"
 type_spec      = "int" | "char" | "void" | "short" | "long" | "float" | "double"
                | "signed" | "unsigned" | "_Bool" | "_Complex" | "_Atomic"
                | struct_or_union_spec | enum_spec | typedef_name
@@ -63,7 +64,6 @@ designation      = ("." ident | "[" const_expr "]")+ "="
 // ── 文（C11 §6.8）──────────────────────────────────────
 compound_stmt  = "{" block_item* "}"
 block_item     = declaration
-               | "_Static_assert" "(" const_expr "," string ")" ";"
                | stmt
 stmt           = compound_stmt
                | "if" "(" expr ")" stmt ("else" stmt)?
