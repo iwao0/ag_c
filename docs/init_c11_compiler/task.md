@@ -477,10 +477,11 @@
 - [ ] 優先度P1: Tokenizer内部のグローバルカーソルを完全に文脈化する
   - [ ] 公開ヘッダの `extern token` を撤去し、アクセサ経由以外の直接参照経路を閉じる
   - [x] `tokenizer.c` の内部カーソルを `tokenizer_context` 側に保持し、ファイルスコープ可変状態を削減する
-  - [ ] `tk_consume`/`tk_expect` 系 API の文脈受け渡し方針（互換ラッパ含む）を確定する
+  - [x] `tk_consume`/`tk_expect` 系 API の文脈受け渡し方針（互換ラッパ含む）を確定する
   - [ ] `main`/`preprocess`/`parser` の呼び出しフローを context 明示渡しへ段階移行する
   - [ ] 回帰テスト（`test_parser`/`test_preprocess`/`test_e2e`）で動作互換を確認する
   - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `current_token` を追加し、`tk_get_current_token`/`tk_set_current_token` と `tk_consume`/`tk_expect` 系を context カーソル同期へ移行した（互換のため `extern token` は暫定維持）
+  - [x] 進捗（2026-03-23）: `tk_consume_ctx`/`tk_expect_ctx`/`tk_expect_number_ctx`/`tk_at_eof_ctx` を追加し、既存APIは互換ラッパとして維持した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

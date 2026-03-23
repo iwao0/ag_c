@@ -27,13 +27,21 @@ const char *tk_token_kind_str(token_kind_t kind, int *len);
 
 /** @brief 次トークンが1文字記号 op なら消費して true を返す。 */
 bool tk_consume(char op);
+/** @brief 明示コンテキストで次トークンが1文字記号 op なら消費して true を返す。 */
+bool tk_consume_ctx(tokenizer_context_t *ctx, char op);
 /** @brief 次トークンが複数文字演算子 op なら消費して true を返す。 */
 bool tk_consume_str(char *op);
+/** @brief 明示コンテキストで次トークンが複数文字演算子 op なら消費して true を返す。 */
+bool tk_consume_str_ctx(tokenizer_context_t *ctx, char *op);
 /** @brief 次トークンが識別子なら消費して返す。 */
 token_ident_t *tk_consume_ident(void);
+/** @brief 明示コンテキストで次トークンが識別子なら消費して返す。 */
+token_ident_t *tk_consume_ident_ctx(tokenizer_context_t *ctx);
 
 /** @brief 次トークンが1文字記号 op であることを期待して消費する。 */
 void tk_expect(char op);
+/** @brief 明示コンテキストで次トークンが1文字記号 op であることを期待して消費する。 */
+void tk_expect_ctx(tokenizer_context_t *ctx, char op);
 
 /**
  * @brief 次トークンが整数リテラルであることを期待して int 値を返す。
@@ -41,9 +49,13 @@ void tk_expect(char op);
  * @warning 浮動小数点トークンや int 範囲外はエラー終了する。
  */
 int tk_expect_number(void);
+/** @brief 明示コンテキストで次トークンが整数リテラルであることを期待して int 値を返す。 */
+int tk_expect_number_ctx(tokenizer_context_t *ctx);
 
 /** @brief 現在トークンが EOF かを返す。 */
 bool tk_at_eof(void);
+/** @brief 明示コンテキストで現在トークンが EOF かを返す。 */
+bool tk_at_eof_ctx(tokenizer_context_t *ctx);
 
 /**
  * @brief 入力文字列をトークナイズして先頭トークンを返す。
