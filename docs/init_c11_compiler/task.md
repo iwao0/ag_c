@@ -639,6 +639,14 @@
   - [x] 進捗（2026-03-24）: `tokenizer_perf_report.md` に CSV各列の説明と、`*_tps`（E2E寄り）と `*_ops`（局所指標）を比較しない運用ルールを追記した
   - [x] 目的: `mixed_tps` と `*_ops` の意味差（E2E寄り指標 vs 局所指標）を明文化
 
+## Tokenizer 次スプリント候補（2026-03-24）
+- [ ] [P2] `TOKENIZER_BENCH_MODE` に `corpus-only` を追加し、実コード由来計測の反復を短縮する
+  - [ ] `TOKENIZER_BENCH_CORPUS_FILE` 未指定時の診断を明示する
+- [ ] [P2] `check_tokenizer_perf_light.sh` に `TOKENIZER_BENCH_MODE=hotpath` 利用を組み込み、軽量ゲート時間を短縮する
+  - [ ] 現行しきい値との互換を維持したまま段階導入する
+- [ ] [P3] `tokenizer.h` の設定API群（strict/trigraph/binary/audit）の説明を表形式で整理し、優先順位を一目で分かるようにする
+  - [ ] `strict=true` 時の優先関係を examples 付きで明記する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
