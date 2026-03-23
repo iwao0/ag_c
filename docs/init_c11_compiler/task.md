@@ -447,6 +447,7 @@
   - [x] 進捗（2026-03-23）: `stmt.c` の一部ユーティリティ（ポインタ修飾子/関数パラメータスキップ/typedef名宣言子）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
   - [x] 進捗（2026-03-23）: `stmt.c` の定数式評価系（`enum` 定数式、`_Alignas`/配列サイズ評価）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
   - [x] 進捗（2026-03-23）: `stmt.c` の文解析本体（`return/if/while/do/for/switch/case/default/break/continue/goto/label`）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
+  - [x] 進捗（2026-03-23）: `stmt.c` の宣言系処理（`typedef`/`_Static_assert`/tag宣言の入口）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

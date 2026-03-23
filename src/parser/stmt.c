@@ -539,7 +539,7 @@ static int parse_enum_members(void) {
   while (!tk_consume('}')) {
     token_ident_t *enumerator = tk_consume_ident();
     if (!enumerator) {
-      psx_diag_missing(token, diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
     }
     long long value = next_value;
     if (tk_consume('=')) {
@@ -564,23 +564,23 @@ static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int 
 }
 
 static void parse_static_assert_stmt(void) {
-  if (token->kind != TK_STATIC_ASSERT) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, token, "%s",
+  if (curtok()->kind != TK_STATIC_ASSERT) {
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
   }
-  token = token->next;
+  set_curtok(curtok()->next);
   tk_expect('(');
   long long cond_val = parse_enum_const_expr();
   tk_expect(',');
-  if (token->kind != TK_STRING) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, token, "%s",
+  if (curtok()->kind != TK_STRING) {
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
   }
-  token = token->next;
+  set_curtok(curtok()->next);
   tk_expect(')');
   tk_expect(';');
   if (cond_val == 0) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, token, "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
 }
@@ -604,12 +604,12 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     else if (builtin_kind == TK_DOUBLE) *fp_kind = TK_FLOAT_KIND_DOUBLE;
     return 1;
   }
-  if (psx_ctx_is_tag_keyword(token->kind)) {
-    *base_kind = token->kind;
-    *tag_kind = token->kind;
-    token = token->next;
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    *base_kind = curtok()->kind;
+    *tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
     token_ident_t *tag = tk_consume_ident();
-    if (!tag) psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
+    if (!tag) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
     *tag_name = tag->str;
     *tag_len = tag->len;
     if (tk_consume('{')) {
@@ -618,28 +618,28 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
       member_count = parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size);
     } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
-      psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), *tag_name, *tag_len);
+      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), *tag_name, *tag_len);
     }
     *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
     return 1;
   }
-  if (psx_ctx_is_typedef_name_token(token)) {
-    token_ident_t *id = (token_ident_t *)token;
+  if (psx_ctx_is_typedef_name_token(curtok())) {
+    token_ident_t *id = (token_ident_t *)curtok();
     if (!psx_ctx_find_typedef_name(id->str, id->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_pointer_base)) {
       return 0;
     }
-    token = token->next;
+    set_curtok(curtok()->next);
     return 1;
   }
   return 0;
 }
 
 static void parse_typedef_decl(void) {
-  if (token->kind != TK_TYPEDEF) {
-    psx_diag_ctx(token, "typedef", "%s",
+  if (curtok()->kind != TK_TYPEDEF) {
+    psx_diag_ctx(curtok(), "typedef", "%s",
                  diag_message_for(DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED));
   }
-  token = token->next;
+  set_curtok(curtok()->next);
   int elem_size = 8;
   tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
   token_kind_t tag_kind = TK_EOF;
@@ -648,7 +648,7 @@ static void parse_typedef_decl(void) {
   int is_pointer_base = 0;
   token_kind_t base_kind = TK_EOF;
   if (!parse_decl_type_spec(&elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_pointer_base, &base_kind)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, token, "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
   }
   for (;;) {
@@ -669,28 +669,28 @@ static void parse_typedef_decl(void) {
 }
 
 static int is_decl_like_start_stmt(void) {
-  if (token->kind == TK_TYPEDEF) return 1;
-  if (token->kind == TK_STATIC_ASSERT) return 1;
-  if (psx_ctx_is_type_token(token->kind) || is_decl_prefix_token_stmt(token->kind) ||
-      psx_ctx_is_typedef_name_token(token)) return 1;
-  if (psx_ctx_is_tag_keyword(token->kind)) return 1;
+  if (curtok()->kind == TK_TYPEDEF) return 1;
+  if (curtok()->kind == TK_STATIC_ASSERT) return 1;
+  if (psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) ||
+      psx_ctx_is_typedef_name_token(curtok())) return 1;
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) return 1;
   return 0;
 }
 
 static node_t *parse_decl_like_stmt(void) {
-  if (token->kind == TK_TYPEDEF) {
+  if (curtok()->kind == TK_TYPEDEF) {
     parse_typedef_decl();
     return psx_node_new_num(0);
   }
 
-  if (token->kind == TK_STATIC_ASSERT) {
+  if (curtok()->kind == TK_STATIC_ASSERT) {
     parse_static_assert_stmt();
     return psx_node_new_num(0);
   }
 
-  if (psx_ctx_is_type_token(token->kind) || is_decl_prefix_token_stmt(token->kind) || psx_ctx_is_typedef_name_token(token)) {
-    if (psx_ctx_is_typedef_name_token(token)) {
-      token_ident_t *id = (token_ident_t *)token;
+  if (psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) {
+    if (psx_ctx_is_typedef_name_token(curtok())) {
+      token_ident_t *id = (token_ident_t *)curtok();
       int elem_size = 8;
       tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
       token_kind_t tag_kind = TK_EOF;
@@ -699,19 +699,19 @@ static node_t *parse_decl_like_stmt(void) {
       int is_ptr = 0;
       token_kind_t base_kind = TK_EOF;
       psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
-      token = token->next;
+      set_curtok(curtok()->next);
       return psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr, 0, 0);
     }
     return psx_decl_parse_declaration();
   }
 
-  if (psx_ctx_is_tag_keyword(token->kind)) {
-    token_kind_t tag_kind = token->kind;
-    token = token->next;
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    token_kind_t tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
     token_ident_t *tag = tk_consume_ident();
     // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
-    if (!tag && token->kind != TK_LBRACE) {
-      psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
+    if (!tag && curtok()->kind != TK_LBRACE) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
     }
     static int anon_tag_counter = 0;
     char anon_buf[32];
@@ -735,7 +735,7 @@ static node_t *parse_decl_like_stmt(void) {
       return psx_node_new_num(0);
     }
     if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
