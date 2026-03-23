@@ -142,7 +142,7 @@ static void test_expr_number() {
     node_t *node = parse_expr_input("42");
   ASSERT_EQ(ND_NUM, node->kind);
   ASSERT_EQ(42, as_num(node)->val);
-  ASSERT_EQ(TK_EOF, token->kind);
+  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
 }
 
 static void test_expr_float() {
