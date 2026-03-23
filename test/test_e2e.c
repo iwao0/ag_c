@@ -424,6 +424,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "generic_ptr_kind_match", CASE_INT, "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; return _Generic(pc, int*:1, char*:2, default:3); }", 2, 0},
     {"type_decl", "generic_ptr_fp_match", CASE_INT, "int main(){ double d=1.0; double *pd=&d; return _Generic(pd, int*:1, double*:2, default:3); }", 2, 0},
     {"type_decl", "generic_ptr_struct_tag_match", CASE_INT, "int main(){ struct S{int x;}; struct T{int x;}; struct S s={1}; struct S *ps=&s; return _Generic(ps, struct T*:1, struct S*:2, default:3); }", 2, 0},
+    {"type_decl", "generic_ptr_const_pointee_match", CASE_INT, "int main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }", 2, 0},
     {"type_decl", "const_param", CASE_INT, "int id(const int x) { return x; } int main(){ return id(7); }", 7, 0},
     {"type_decl", "compound_literal_int", CASE_INT, "int main(){ return (int){3}; }", 3, 0},
     {"type_decl", "compound_literal_struct_stmt", CASE_INT, "int main(){ struct S { int x; int y; }; (struct S){1,2}; return 7; }", 7, 0},

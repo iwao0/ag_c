@@ -501,6 +501,13 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_ptr_tag->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_tag->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_tag->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
+  node_t *ret_ptr_const = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_ptr_const->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_const->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_const->lhs)->val);
 }
 
 static void test_expr_sizeof() {

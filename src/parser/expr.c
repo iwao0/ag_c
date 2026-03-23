@@ -41,6 +41,8 @@ typedef struct {
   int tag_len;
   int ptr_deref_size;
   tk_float_kind_t ptr_pointee_fp_kind;
+  int ptr_pointee_const;
+  int ptr_pointee_volatile;
 } generic_type_t;
 
 static void consume_local_type_quals(token_t **cur);
@@ -552,7 +554,7 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0, 0, TK_FLOAT_KIND_NONE};
+  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0, 0, TK_FLOAT_KIND_NONE, 0, 0};
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -580,6 +582,14 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.kind = TK_INT;
     gt.ptr_deref_size = ds;
     gt.ptr_pointee_fp_kind = psx_node_pointee_fp_kind(control);
+    if (control->kind == ND_LVAR) {
+      gt.ptr_pointee_const = ((node_lvar_t *)control)->mem.is_const_qualified;
+      gt.ptr_pointee_volatile = ((node_lvar_t *)control)->mem.is_volatile_qualified;
+    } else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
+               control->kind == ND_ADDR || control->kind == ND_STRING) {
+      gt.ptr_pointee_const = ((node_mem_t *)control)->is_const_qualified;
+      gt.ptr_pointee_volatile = ((node_mem_t *)control)->is_volatile_qualified;
+    }
     return gt;
   }
   if (ts == 1) gt.kind = TK_CHAR;
@@ -603,10 +613,14 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
     // 浮動小数点ポインタは pointee FP 種別で比較
     if (control.ptr_pointee_fp_kind != TK_FLOAT_KIND_NONE ||
         assoc.ptr_pointee_fp_kind != TK_FLOAT_KIND_NONE) {
-      return control.ptr_pointee_fp_kind == assoc.ptr_pointee_fp_kind;
+      return control.ptr_pointee_fp_kind == assoc.ptr_pointee_fp_kind &&
+             control.ptr_pointee_const == assoc.ptr_pointee_const &&
+             control.ptr_pointee_volatile == assoc.ptr_pointee_volatile;
     }
     // それ以外は pointee サイズで比較（int*/char*/short*/long* など）
-    return control.ptr_deref_size == assoc.ptr_deref_size;
+    return control.ptr_deref_size == assoc.ptr_deref_size &&
+           control.ptr_pointee_const == assoc.ptr_pointee_const &&
+           control.ptr_pointee_volatile == assoc.ptr_pointee_volatile;
   }
   if (control.kind == TK_STRUCT || control.kind == TK_UNION) {
     return control.kind == assoc.kind &&
@@ -626,8 +640,17 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   out->tag_len = 0;
   out->ptr_deref_size = 0;
   out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  out->ptr_pointee_const = 0;
+  out->ptr_pointee_volatile = 0;
   int base_elem_size = 8;
   tk_float_kind_t base_fp_kind = TK_FLOAT_KIND_NONE;
+  int base_const = 0;
+  int base_volatile = 0;
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
+    if (curtok()->kind == TK_CONST) base_const = 1;
+    if (curtok()->kind == TK_VOLATILE) base_volatile = 1;
+    set_curtok(curtok()->next);
+  }
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t base_kind = TK_EOF;
@@ -693,6 +716,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   if (out->is_pointer) {
     out->ptr_deref_size = base_elem_size;
     out->ptr_pointee_fp_kind = base_fp_kind;
+    out->ptr_pointee_const = base_const;
+    out->ptr_pointee_volatile = base_volatile;
   }
   set_curtok(t);
   return 1;
