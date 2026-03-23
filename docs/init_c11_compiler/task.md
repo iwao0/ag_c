@@ -423,9 +423,9 @@
   - [x] 設定反映タイミング（初期化時のみ / 実行中変更可）を明記する
 
 ## Tokenizer 追加改善候補（2026-03-23）
-- [ ] 優先度P1: `token` グローバル依存を縮小する
-  - [ ] Parser連携部を含めた `tokenizer_context` 実装移行計画を作成する
-  - [ ] 既存APIとの互換維持方針（段階移行）を確認する
+- [x] 優先度P1: `token` グローバル依存を縮小する
+  - [x] Parser連携部を含めた `tokenizer_context` 実装移行計画を作成する
+  - [x] 既存APIとの互換維持方針（段階移行）を確認する
 - [ ] 優先度P2: `escape` 責務の配置を再評価する
   - [ ] Tokenizer公開API維持と `common` 層移管の比較メモを作成する
   - [ ] 影響範囲（codegen/preprocess/diagnostics）を整理する
