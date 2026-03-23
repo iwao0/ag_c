@@ -597,7 +597,8 @@
 
 ## Tokenizer Doxygen強化（次ラウンド）
 - [ ] [P1] Tokenizer関連API/内部ヘルパーのDoxygenを「引数・戻り値・副作用」まで記述する
-  - [ ] 対象: `src/tokenizer/tokenizer.h` の公開API（`@param` / `@return` / `@note`）
+  - [x] 進捗（2026-03-24）: `src/tokenizer/tokenizer.h` の公開APIに `@param` / `@return` を追記し、`consume/expect/tokenize/context` 系の失敗時挙動を補足した
+  - [x] 対象: `src/tokenizer/tokenizer.h` の公開API（`@param` / `@return` / `@note`）
   - [ ] 対象: `src/tokenizer/tokenizer.c` の主要ヘルパー（`tokenize_*`, `parse_*`, `begin|end_tokenize_session`）
   - [ ] 方針: 失敗時挙動（診断終了/NULL返却/非破壊失敗）を `@note` または `@warning` で明示
   - [ ] 方針: `bool` 戻り値の意味（`true=消費/成功`, `false=非該当/未消費`）を統一記述
