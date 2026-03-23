@@ -33,6 +33,10 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 #define PP_MAX_INCLUDE_DEPTH 64
 #define PP_MAX_MACRO_EXPANSIONS 20000
 #define PP_MAX_LINE_FILENAME_LEN 1024
+static const char *k_include_search_roots[] = {
+    "",
+    "include/",
+};
 
 typedef struct include_frame include_frame_t;
 struct include_frame {
@@ -187,6 +191,23 @@ static char *read_include_file_secure(const char *candidate, const char *display
   buf[size] = '\0';
   fclose(fp);
   return buf;
+}
+
+static char *load_include_with_allowlist_or_die(const char *filename) {
+  for (size_t i = 0; i < sizeof(k_include_search_roots) / sizeof(k_include_search_roots[0]); i++) {
+    const char *root = k_include_search_roots[i];
+    size_t cand_len = strlen(root) + strlen(filename) + 1;
+    char *candidate = calloc(cand_len, 1);
+    if (!candidate) {
+      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    }
+    snprintf(candidate, cand_len, "%s%s", root, filename);
+    validate_include_realpath_or_die(candidate, filename);
+    char *buf = read_include_file_secure(candidate, filename);
+    free(candidate);
+    if (buf) return buf;
+  }
+  return NULL;
 }
 
 static char *normalize_include_path_or_die(const char *path) {
@@ -949,19 +970,7 @@ token_t *preprocess(token_t *tok) {
           continue;
         }
 
-        validate_include_realpath_or_die(filename, filename);
-        char *buf = read_include_file_secure(filename, filename);
-        if (!buf) {
-          size_t alt_len = strlen("include/") + strlen(filename) + 1;
-          char *alt = calloc(alt_len, 1);
-          if (!alt) {
-            diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-          }
-          snprintf(alt, alt_len, "include/%s", filename);
-          validate_include_realpath_or_die(alt, filename);
-          buf = read_include_file_secure(alt, filename);
-          free(alt);
-        }
+        char *buf = load_include_with_allowlist_or_die(filename);
         if (!buf) {
           diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED,
                               diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED), filename);
