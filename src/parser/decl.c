@@ -1490,7 +1490,12 @@ static node_t *parse_typedef_declaration_local(void) {
     tag_name = tag->str;
     tag_len = tag->len;
     if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+      // C11: typedef struct S S; のような不完全型タグ宣言を許可
+      if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+        psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
+      } else {
+        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+      }
     }
     elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
   } else {

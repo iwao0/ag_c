@@ -1862,8 +1862,10 @@ static void test_parse_evil_edge_cases() {
 
   // typedefで作った型名の使用
   expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
+  expect_parse_ok("typedef struct S S; struct S { int x; }; int main(){ S s; s.x=7; return s.x; }");
   expect_parse_ok("typedef int (*(*arr_t)[2])(int); int main() { arr_t p; return 0; }");
   expect_parse_ok("int main(){ typedef int (*(*fp_t))(int); return 0; }");
+  expect_parse_ok("int main(){ typedef struct L L; return 0; }");
   expect_parse_ok("int (*arr[2])(int); int main(){ return 0; }");
   expect_parse_ok("int main(){ int (*arr[2])(int); return 0; }");
 
