@@ -465,6 +465,7 @@
   - [x] 進捗（2026-03-23）: `expr.c` の `cast` 本体で `parse_cast_type` 呼び出し起点と `after_rparen` 適用を `curtok`/`set_curtok` 化し、非スカラcast診断の `token` 参照を追加で削減した
   - [x] 進捗（2026-03-23）: `expr.c` の `apply_postfix`/`parse_call_postfix`/`primary`（generic・数値・文字列・関数呼び出し）で `token` 直接更新を `curtok`/`set_curtok` へ段階移行した
   - [x] 進捗（2026-03-23）: `expr.c` の `parse_generic_assoc_type` / `build_member_access` を `curtok` ベースへ移行し、`expr.c` の直接 `token` 参照を解消した
+  - [x] 進捗（2026-03-23）: `node_utils.c` の代入/インクリメント検証診断を `curtok` 参照へ切り替え、`token` 直接参照を解消した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

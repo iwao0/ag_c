@@ -5,6 +5,7 @@
 
 static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
+static inline token_t *curtok(void) { return tk_get_current_token(); }
 
 int psx_node_type_size(node_t *node) {
   if (!node) return 0;
@@ -201,11 +202,12 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
 }
 
 void psx_node_reject_const_assign(node_t *node, const char *op) {
+  (void)op;
   if (!node) return;
   if (node->kind == ND_LVAR || node->kind == ND_GVAR) {
     node_mem_t *mem = as_mem(node);
     if (mem->is_const_qualified) {
-      diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, token,
+      diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, curtok(),
                      diag_message_for(DIAG_ERR_PARSER_CONST_ASSIGNMENT));
     }
   }
@@ -237,14 +239,14 @@ void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs) {
   if (!lhs_mem->is_tag_pointer) return;
   if (lhs_mem->is_const_qualified) return;
   if (node_pointee_is_const(rhs)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, token,
+    diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, curtok(),
                    diag_message_for(DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
   }
 }
 
 void psx_node_expect_lvalue(node_t *node, const char *op) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF && node->kind != ND_GVAR)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, token,
+    diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, curtok(),
                    diag_message_for(DIAG_ERR_PARSER_LVALUE_REQUIRED), (char *)op);
   }
 }
@@ -253,7 +255,7 @@ void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_expect_lvalue(node, op);
   psx_node_reject_const_assign(node, op);
   if (node->fp_kind != TK_FLOAT_KIND_NONE) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED, token,
+    diag_emit_tokf(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED, curtok(),
                    diag_message_for(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED), (char *)op);
   }
 }
