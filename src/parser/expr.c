@@ -666,6 +666,7 @@ static node_t *relational(void);
 static node_t *shift(void);
 static node_t *add(void);
 static node_t *mul(void);
+static node_t *cast(void);
 static node_t *unary(void);
 static node_t *primary(void);
 static node_t *apply_postfix(node_t *node);
@@ -1282,23 +1283,23 @@ static node_t *add(void) {
 }
 
 static node_t *mul(void) {
-  node_t *node = unary();
+  node_t *node = cast();
   for (;;) {
     if (token->kind == TK_MUL) {
       token = token->next;
-      node = psx_node_new_binary(ND_MUL, node, unary());
+      node = psx_node_new_binary(ND_MUL, node, cast());
     } else if (token->kind == TK_DIV) {
       token = token->next;
-      node = psx_node_new_binary(ND_DIV, node, unary());
+      node = psx_node_new_binary(ND_DIV, node, cast());
     } else if (token->kind == TK_MOD) {
       token = token->next;
-      node = psx_node_new_binary(ND_MOD, node, unary());
+      node = psx_node_new_binary(ND_MOD, node, cast());
     }
     else return node;
   }
 }
 
-static node_t *unary(void) {
+static node_t *cast(void) {
   token_kind_t cast_kind = TK_EOF;
   int cast_is_ptr = 0;
   token_t *after_rparen = NULL;
@@ -1374,7 +1375,7 @@ static node_t *unary(void) {
       return psx_node_new_binary(ND_COMMA, init, val);
     }
     token = after_rparen;
-    node_t *operand = unary();
+    node_t *operand = cast();
     if (!cast_is_ptr && (cast_kind == TK_STRUCT || cast_kind == TK_UNION)) {
       if (is_same_tag_nonscalar_expr(operand, cast_kind, cast_tag_name, cast_tag_len)) {
         // same-tag non-scalar cast: treat as no-op for now
@@ -1427,7 +1428,10 @@ static node_t *unary(void) {
     }
     return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand));
   }
+  return unary();
+}
 
+static node_t *unary(void) {
   if (token->kind == TK_SIZEOF) {
     token = token->next;
     if (token->kind == TK_LPAREN) {
@@ -1483,24 +1487,24 @@ static node_t *unary(void) {
   }
   if (token->kind == TK_PLUS) {
     token = token->next;
-    return unary();
+    return cast();
   }
   if (token->kind == TK_MINUS) {
     token = token->next;
-    return psx_node_new_binary(ND_SUB, psx_node_new_num(0), unary());
+    return psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());
   }
   if (token->kind == TK_BANG) {
     token = token->next;
-    return psx_node_new_binary(ND_EQ, unary(), psx_node_new_num(0));
+    return psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0));
   }
   if (token->kind == TK_TILDE) {
     token = token->next;
-    node_t *neg = psx_node_new_binary(ND_SUB, psx_node_new_num(0), unary());
+    node_t *neg = psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());
     return psx_node_new_binary(ND_SUB, neg, psx_node_new_num(1));
   }
   if (token->kind == TK_MUL) {
     token = token->next;
-    node_t *operand = unary();
+    node_t *operand = cast();
     node_mem_t *node = arena_alloc(sizeof(node_mem_t));
     node->base.kind = ND_DEREF;
     node->base.lhs = operand;
@@ -1533,7 +1537,7 @@ static node_t *unary(void) {
   }
   if (token->kind == TK_AMP) {
     token = token->next;
-    node_t *operand = unary();
+    node_t *operand = cast();
     if (operand && operand->kind == ND_COMMA && operand->rhs) {
       node_mem_t *rhs_addr = arena_alloc(sizeof(node_mem_t));
       rhs_addr->base.kind = ND_ADDR;

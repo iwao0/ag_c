@@ -103,7 +103,7 @@ cast           = "(" type_name ")" cast | unary
 unary          = "(" type_name ")" "{" initializer_list "}"         // compound literal
                | "sizeof" ("(" type_name ")" | unary)
                | "_Alignof" "(" type_name ")"
-               | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") unary
+               | ("++" | "--" | "+" | "-" | "!" | "~" | "*" | "&") cast
                | postfix
 postfix        = primary ("[" expr "]" | "(" args? ")" | "." ident | "->" ident | "++" | "--")*
 primary        = "(" expr ")" | ident | num | string | char_lit
