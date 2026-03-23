@@ -50,6 +50,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND, "E1034", "preprocess.include_not_found"},
     {DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED, "E1035", "preprocess.include_permission_denied"},
     {DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP, "E1036", "preprocess.include_symlink_loop"},
+    {DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED, "E1037", "preprocess.if_expr_token_limit_exceeded"},
+    {DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED, "E1038", "preprocess.if_expr_eval_limit_exceeded"},
     {DIAG_ERR_TOKENIZER_GENERIC, "E2000", "tokenizer.generic"},
     {DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR, "E2001", "tokenizer.unexpected_char"},
     {DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG, "E2002", "tokenizer.token_too_long"},

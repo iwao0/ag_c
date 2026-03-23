@@ -478,6 +478,75 @@ static void expect_macro_arg_nesting_limit_fail(void) {
   free(input);
 }
 
+static void expect_if_expr_token_limit_fail(void) {
+  const int terms = 4200;
+  size_t cap = (size_t)terms * 4 + 128;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate #if token-limit test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len, "#if ");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < terms; i++) {
+    n = snprintf(input + len, cap - len, i == 0 ? "1" : " + 1");
+    if (n < 0 || (size_t)n >= cap - len) {
+      fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
+      free(input);
+      exit(1);
+    }
+    len += (size_t)n;
+  }
+  n = snprintf(input + len, cap - len, "\nint main() { return 0; }\n#endif\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  expect_preprocess_fail_with_stderr_substr(input, "E1037");
+  free(input);
+}
+
+static void expect_if_expr_eval_limit_fail(void) {
+  const int bangs = 3000;
+  size_t cap = (size_t)bangs + 128;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate #if eval-limit test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len, "#if ");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < bangs; i++) {
+    if (len + 1 >= cap) {
+      fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+      free(input);
+      exit(1);
+    }
+    input[len++] = '!';
+  }
+  n = snprintf(input + len, cap - len, "1\nint main() { return 0; }\n#endif\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  expect_preprocess_fail_with_stderr_substr(input, "E1038");
+  free(input);
+}
+
 static void expect_line_filename_invalid_utf8_fail(void) {
   static const unsigned char input_bytes[] = {
       '#', 'l', 'i', 'n', 'e', ' ', '1', ' ', '"',
@@ -660,6 +729,8 @@ int main(void) {
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();
+  expect_if_expr_token_limit_fail();
+  expect_if_expr_eval_limit_fail();
   unlink(unique_tmp_header);
 
   printf("OK: Preprocessor tests passed!\n");

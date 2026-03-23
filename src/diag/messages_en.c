@@ -51,6 +51,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND: return "Include file not found: %s";
     case DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED: return "Permission denied for include file: %s";
     case DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP: return "Symlink loop detected in include file: %s";
+    case DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED: return "#if expression token count limit exceeded";
+    case DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED: return "#if expression evaluation step limit exceeded";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";
