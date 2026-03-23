@@ -1000,10 +1000,20 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   char diag_buf[8192];
   size_t used = 0;
   for (;;) {
-    ssize_t nread = read(pipefd[0], diag_buf + used, sizeof(diag_buf) - 1 - used);
+    char sink[512];
+    char *dst = diag_buf + used;
+    size_t room = sizeof(diag_buf) - 1 - used;
+    if (room == 0) {
+      dst = sink;
+      room = sizeof(sink);
+    }
+    ssize_t nread = read(pipefd[0], dst, room);
     if (nread <= 0) break;
-    used += (size_t)nread;
-    if (used >= sizeof(diag_buf) - 1) break;
+    if (used < sizeof(diag_buf) - 1) {
+      size_t keep = (size_t)nread;
+      if (keep > sizeof(diag_buf) - 1 - used) keep = sizeof(diag_buf) - 1 - used;
+      used += keep;
+    }
   }
   close(pipefd[0]);
   diag_buf[used] = '\0';
@@ -1018,7 +1028,7 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   }
 
   if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) return -1;
-  if (!strstr(diag_buf, expected_diag)) return -1;
+  if (expected_diag && expected_diag[0] != '\0' && !strstr(diag_buf, expected_diag)) return -1;
   return 0;
 }
 
@@ -1048,6 +1058,28 @@ static int write_source_file(const char *path, const char *source) {
   FILE *fp = fopen(path, "w");
   if (!fp) return -1;
   fputs(source, fp);
+  fclose(fp);
+  return 0;
+}
+
+static int write_large_single_line_unterminated_string(const char *path, size_t body_len) {
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fputc('"', fp) == EOF) {
+    fclose(fp);
+    return -1;
+  }
+  for (size_t i = 0; i < body_len; i++) {
+    if (fputc('a', fp) == EOF) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  // Intentionally do not close with '"' to force tokenizer error on a huge single line.
+  if (fputc('\n', fp) == EOF) {
+    fclose(fp);
+    return -1;
+  }
   fclose(fp);
   return 0;
 }
@@ -1399,6 +1431,16 @@ int main() {
       return 1;
     }
   }
+  {
+    const char *long_path = "build/e2e/compile_fail/huge_single_line.c";
+    const char *log_path = "build/e2e/logs/compile_fail_huge_single_line.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_large_single_line_unterminated_string(long_path, 4096) != 0 ||
+        run_ag_c_expect_fail_with_diag(long_path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: huge_single_line (see %s)\n", log_path);
+      return 1;
+    }
+  }
 
   size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
   const char **categories = calloc(max_cases, sizeof(const char *));
@@ -1463,7 +1505,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 3);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 4);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
