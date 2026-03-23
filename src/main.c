@@ -8,6 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const char *diag_display_path(const char *path) {
+  if (!path) return "";
+  if (path[0] != '/') return path;
+  const char *slash = strrchr(path, '/');
+  return (slash && slash[1] != '\0') ? slash + 1 : path;
+}
+
 static void write_line_to_file(const char *line, size_t len, void *user_data) {
   FILE *out = (FILE *)user_data;
   fwrite(line, 1, len, out);
@@ -47,23 +54,25 @@ static char *read_file_contents(const char *path) {
 }
 
 int main(int argc, char **argv) {
+  const char *prog_disp = (argc > 0) ? diag_display_path(argv[0]) : "ag_c";
   if (argc != 2) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
-                        diag_message_for(DIAG_ERR_INTERNAL_USAGE), argv[0]);
+                        diag_message_for(DIAG_ERR_INTERNAL_USAGE), prog_disp);
     return 1;
   }
 
+  const char *input_disp = diag_display_path(argv[1]);
   char *source = read_file_contents(argv[1]);
   if (!source) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_INPUT_READ_FAILED,
-                        diag_message_for(DIAG_ERR_INTERNAL_INPUT_READ_FAILED), argv[1]);
+                        diag_message_for(DIAG_ERR_INTERNAL_INPUT_READ_FAILED), input_disp);
     return 1;
   }
 
   load_config_toml(argv[1]);
 
   // トークナイズ
-  tk_set_filename(argv[1]);
+  tk_set_filename((char *)input_disp);
   token_t *tok = tk_tokenize(source);
 
   // プリプロセス（マクロ展開やディレクティブ処理）

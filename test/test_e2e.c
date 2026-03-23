@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1032,6 +1033,64 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   return 0;
 }
 
+static int log_file_contains_substr(const char *path, const char *needle) {
+  if (!needle || !*needle) return 1;
+  FILE *fp = fopen(path, "r");
+  if (!fp) return 0;
+  char buf[8192];
+  size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+  fclose(fp);
+  buf[n] = '\0';
+  return strstr(buf, needle) != NULL;
+}
+
+static int run_ag_c_expect_fail_with_diag_timeout(const char *input, const char *expected_diag,
+                                                  const char *log_path, int timeout_sec,
+                                                  const char *reason_tag) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen(log_path, "w", stderr);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    _exit(1);
+  }
+  if (pid < 0) return -1;
+
+  int status = 0;
+  int waited_ms = 0;
+  const int poll_ms = 10;
+  const int timeout_ms = timeout_sec * 1000;
+  while (waited_ms < timeout_ms) {
+    pid_t w = waitpid(pid, &status, WNOHANG);
+    if (w == pid) break;
+    if (w < 0) return -1;
+    usleep((useconds_t)poll_ms * 1000);
+    waited_ms += poll_ms;
+  }
+  if (waited_ms >= timeout_ms) {
+    kill(pid, SIGKILL);
+    waitpid(pid, &status, 0);
+    FILE *log = fopen(log_path, "a");
+    if (log) {
+      fprintf(log, "\n[timeout] case=%s timeout_sec=%d\n",
+              reason_tag ? reason_tag : "unknown", timeout_sec);
+      fclose(log);
+    }
+    return -1;
+  }
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) {
+    FILE *log = fopen(log_path, "a");
+    if (log) {
+      fprintf(log, "\n[unexpected] case=%s status=%d\n",
+              reason_tag ? reason_tag : "unknown", status);
+      fclose(log);
+    }
+    return -1;
+  }
+  if (expected_diag && !log_file_contains_substr(log_path, expected_diag)) return -1;
+  return 0;
+}
+
 static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char *arg2,
                                                    const char *expected_diag, const char *log_path) {
   int pipefd[2];
@@ -1509,6 +1568,18 @@ int main() {
     }
   }
   {
+    const char *missing_abs_path = "/tmp/__ag_c_missing_input_abs__.c";
+    const char *log_path = "build/e2e/logs/compile_fail_missing_input_abs.log";
+    if (run_ag_c_expect_fail_with_diag(missing_abs_path, "入力ファイルを読み込めませんでした", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: missing_input_abs (see %s)\n", log_path);
+      return 1;
+    }
+    if (log_file_contains_substr(log_path, "/tmp/")) {
+      fprintf(stderr, "Compile-fail case failed: missing_input_abs path leak (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
     const char *dir_path = ".";
     const char *log_path = "build/e2e/logs/compile_fail_directory_input.log";
     if (run_ag_c_expect_fail_with_diag(dir_path, "入力ファイルを読み込めませんでした", log_path) != 0) {
@@ -1539,7 +1610,8 @@ int main() {
     const char *log_path = "build/e2e/logs/compile_fail_huge_single_line.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
         write_large_single_line_unterminated_string(long_path, 4096) != 0 ||
-        run_ag_c_expect_fail_with_diag(long_path, NULL, log_path) != 0) {
+        run_ag_c_expect_fail_with_diag_timeout(long_path, NULL, log_path, 3,
+                                               "huge_single_line") != 0) {
       fprintf(stderr, "Compile-fail case failed: huge_single_line (see %s)\n", log_path);
       return 1;
     }
@@ -1641,7 +1713,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 8);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 9);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
