@@ -15,8 +15,6 @@ struct tokenizer_context_t {
   token_t *current_token;
 };
 
-/** @brief 現在着目しているトークン（互換用、段階的廃止予定）。 */
-extern token_t *token;
 /** @brief 現在トークンカーソルの参照を取得する。 */
 token_t *tk_get_current_token(void);
 /** @brief 明示コンテキストの現在トークンカーソルの参照を取得する。 */

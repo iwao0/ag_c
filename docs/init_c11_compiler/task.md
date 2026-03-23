@@ -474,12 +474,12 @@
   - [x] 進捗（2026-03-23）: `decl.c` の構造体/共用体コピー初期化・union指定子処理・宣言後半（`psx_decl_parse_initializer_for_var`/`psx_decl_parse_declaration_after_type` 含む）を `curtok` ベースへ移行し、`decl.c` の直接 `token` 参照を解消した
   - [x] 進捗（2026-03-23）: `tokenizer` のカーソル公開境界を棚卸しし、`tk_get_current_token` / `tk_set_current_token` を中心に移行する計画を追加した（`extern token` は互換のため現状維持）
 
-- [ ] 優先度P1: Tokenizer内部のグローバルカーソルを完全に文脈化する
-  - [ ] 公開ヘッダの `extern token` を撤去し、アクセサ経由以外の直接参照経路を閉じる
+- [x] 優先度P1: Tokenizer内部のグローバルカーソルを完全に文脈化する
+  - [x] 公開ヘッダの `extern token` を撤去し、アクセサ経由以外の直接参照経路を閉じる
   - [x] `tokenizer.c` の内部カーソルを `tokenizer_context` 側に保持し、ファイルスコープ可変状態を削減する
   - [x] `tk_consume`/`tk_expect` 系 API の文脈受け渡し方針（互換ラッパ含む）を確定する
-  - [ ] `main`/`preprocess`/`parser` の呼び出しフローを context 明示渡しへ段階移行する
-  - [ ] 回帰テスト（`test_parser`/`test_preprocess`/`test_e2e`）で動作互換を確認する
+  - [x] `main`/`preprocess`/`parser` の呼び出しフローを context 明示渡しへ段階移行する
+  - [x] 回帰テスト（`test_parser`/`test_preprocess`/`test_e2e`）で動作互換を確認する
   - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `current_token` を追加し、`tk_get_current_token`/`tk_set_current_token` と `tk_consume`/`tk_expect` 系を context カーソル同期へ移行した（互換のため `extern token` は暫定維持）
   - [x] 進捗（2026-03-23）: `tk_consume_ctx`/`tk_expect_ctx`/`tk_expect_number_ctx`/`tk_at_eof_ctx` を追加し、既存APIは互換ラッパとして維持した
   - [x] 進捗（2026-03-23）: `preprocess_ctx` を追加し、`main` と `preprocess` 内部の再トークナイズ経路（`#include`/`##`）を `tk_tokenize_ctx` ベースへ移行した
@@ -489,6 +489,7 @@
   - [x] 進捗（2026-03-23）: `test_parser` の直接 `token` 参照を `tk_get_current_token()` へ置換し、テスト側の `extern token` 依存削減を開始した
   - [x] 進捗（2026-03-23）: `test_tokenizer` の直接 `token` 参照（`token->kind` / `token=token->next` / `as_* (token)`）を `tk_get_current_token` / `tk_set_current_token` ベースへ置換し、テスト側のグローバルカーソル依存を段階削減した
   - [x] 進捗（2026-03-23）: `test_tokenizer` と `bench_parser` の `token = tk_tokenize(...)` 初期化を `tk_set_current_token(tk_tokenize(...))` へ移行し、テスト/ベンチ入口の直接グローバル代入を解消した
+  - [x] 進捗（2026-03-23）: `tokenizer.h` から `extern token` を撤去し、`tokenizer.c` 側の互換カーソルを `static` 化して公開境界を accessor API のみに整理した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

@@ -18,8 +18,8 @@
 // 入力プログラム（エラーメッセージ表示用）
 static char *user_input;
 
-// 現在着目しているトークン
-token_t *token;
+// 現在着目しているトークン（互換カーソル、公開は accessor 経由に限定）
+static token_t *token;
 static char *current_filename;
 
 static tokenizer_stats_t tok_stats = {0};
