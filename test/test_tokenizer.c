@@ -1078,6 +1078,30 @@ static void test_context_failure_path_isolation() {
   ASSERT_EQ(3, as_num_i(tok)->val);
 }
 
+static void test_context_failure_path_unterminated_and_invalid_token() {
+  printf("test_context_failure_path_unterminated_and_invalid_token...\n");
+
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(true);
+  tk_set_enable_trigraphs(true);
+
+  tokenizer_context_t ctx;
+  tk_context_init(&ctx);
+  tk_ctx_set_enable_trigraphs(&ctx, false);
+
+  expect_tokenize_ctx_fail(&ctx, "\"unterminated");
+  expect_tokenize_ctx_fail(&ctx, "@");
+
+  // failing ctx tokenize must not disturb default runtime config in parent process
+  ASSERT_TRUE(!tk_get_strict_c11_mode());
+  ASSERT_TRUE(tk_get_enable_binary_literals());
+  ASSERT_TRUE(tk_get_enable_trigraphs());
+
+  token_t *tok = tk_tokenize("1 + 2");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(1, as_num_i(tok)->val);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -1100,6 +1124,7 @@ int main() {
   test_tokenize_with_explicit_context();
   test_context_config_isolation_and_switch_timing();
   test_context_failure_path_isolation();
+  test_context_failure_path_unterminated_and_invalid_token();
   test_at_eof();
   test_consume();
   test_consume_str();

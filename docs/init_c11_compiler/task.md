@@ -573,9 +573,10 @@
   - [x] 進捗（2026-03-24）: `scripts/check_tokenizer_perf_light.sh` と `make check-tokenizer-perf-light` を追加し、`case` 指標 + `hotpath` 指標の軽量ゲートをローカルで実行可能にした
 
 ## Tokenizer 追加観点（2026-03-24）
-- [ ] [P1] `tk_tokenize_ctx` の異常終了経路で `active_ctx` 復元漏れが起きないことを、失敗系テストで固定する
+- [x] [P1] `tk_tokenize_ctx` の異常終了経路で `active_ctx` 復元漏れが起きないことを、失敗系テストで固定する
   - [x] 進捗（2026-03-24）: `test_context_failure_path_isolation` を追加し、`tk_tokenize_ctx` 失敗（strict contextでの `0b...`）後も親プロセスの既定コンテキスト設定と通常トークナイズが維持されることを固定した
-  - [ ] 例: 不正文字/未終端文字列で診断終了するケースの前後で、既定コンテキスト状態が壊れないことを検証する
+  - [x] 進捗（2026-03-24）: `test_context_failure_path_unterminated_and_invalid_token` を追加し、未終端文字列/不正トークンの失敗後も既定コンテキスト設定が維持されることを固定した
+  - [x] 例: 不正文字/未終端文字列で診断終了するケースの前後で、既定コンテキスト状態が壊れないことを検証する
 - [x] [P1] `tokenizer.c` 内の「実装定義動作（例: マルチ文字文字定数）」を1箇所に集約し、方針コメントを統一する
   - [x] 進捗（2026-03-24）: `tk_accept_multichar_char_constant` / `tk_is_binary_literal_enabled_in_ctx` を追加し、実装定義（マルチ文字文字定数）と拡張境界（2進整数）をヘルパーへ集約した
   - [x] C11準拠部分と実装拡張部分の境界を明示して、将来のstrict強化時の変更点を減らす
