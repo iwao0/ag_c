@@ -1112,6 +1112,7 @@ static int run_clang_build_many(const char *bin_path, const char **inputs, size_
 }
 
 static int write_source_file(const char *path, const char *source);
+static int write_source_file_bytes(const char *path, const unsigned char *data, size_t len);
 
 static int run_ag_c_parallel_smoke(void) {
   const int jobs = 8;
@@ -1149,6 +1150,17 @@ static int write_source_file(const char *path, const char *source) {
   FILE *fp = fopen(path, "w");
   if (!fp) return -1;
   fputs(source, fp);
+  fclose(fp);
+  return 0;
+}
+
+static int write_source_file_bytes(const char *path, const unsigned char *data, size_t len) {
+  FILE *fp = fopen(path, "wb");
+  if (!fp) return -1;
+  if (len > 0 && fwrite(data, 1, len, fp) != len) {
+    fclose(fp);
+    return -1;
+  }
   fclose(fp);
   return 0;
 }
@@ -1533,6 +1545,21 @@ int main() {
     }
   }
   {
+    const char *nul_path = "build/e2e/compile_fail/nul_input.c";
+    const char *log_path = "build/e2e/logs/compile_fail_nul_input.log";
+    static const unsigned char nul_input[] = {
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ' ', '{', ' ',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', ' ', '}', '\n',
+        0x00, 'x', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(nul_path, nul_input, sizeof(nul_input)) != 0 ||
+        run_ag_c_expect_fail_with_diag(nul_path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: nul_input (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
     const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag(NULL, NULL, "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_no_args (see %s)\n", log_path);
@@ -1614,7 +1641,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 7);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 8);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
