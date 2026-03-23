@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 typedef struct macro macro_t;
 #define MACRO_INLINE_PARAMS 8
@@ -34,6 +35,7 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 #define PP_MAX_INCLUDE_DEPTH 64
 #define PP_MAX_MACRO_EXPANSIONS 20000
 #define PP_MAX_LINE_FILENAME_LEN 1024
+#define PP_MAX_INCLUDE_FILE_BYTES (16 * 1024 * 1024)
 #define PP_MAX_IF_EXPR_TOKENS 4096
 #define PP_MAX_IF_EXPR_EVAL_STEPS 2048
 static const char *k_include_search_roots[] = {
@@ -204,13 +206,36 @@ static void validate_include_realpath_or_die(const char *candidate, const char *
 }
 
 static char *read_include_file_secure(const char *candidate, const char *display_path) {
-  FILE *fp = fopen(candidate, "r");
-  if (!fp) {
+  int fd = open(candidate, O_RDONLY | O_CLOEXEC);
+  if (fd < 0) {
     record_include_errno(errno);
     return NULL;
   }
 
-  int fd = fileno(fp);
+  struct stat st;
+  if (fstat(fd, &st) != 0) {
+    record_include_errno(errno);
+    close(fd);
+    return NULL;
+  }
+  if (!S_ISREG(st.st_mode)) {
+    record_include_errno(EINVAL);
+    close(fd);
+    return NULL;
+  }
+  if (st.st_size < 0 || (uintmax_t)st.st_size > PP_MAX_INCLUDE_FILE_BYTES) {
+    record_include_errno(EFBIG);
+    close(fd);
+    return NULL;
+  }
+
+  FILE *fp = fdopen(fd, "r");
+  if (!fp) {
+    record_include_errno(errno);
+    close(fd);
+    return NULL;
+  }
+
   char opened_path[PATH_MAX];
   bool have_opened_path = false;
 

@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1033,6 +1034,72 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   return 0;
 }
 
+static int diag_has_error_code_prefix(const char *diag) {
+  if (!diag) return 0;
+  for (size_t i = 0; diag[i] != '\0'; i++) {
+    if (diag[i] != 'E') continue;
+    if (diag[i + 1] < '0' || diag[i + 1] > '9') continue;
+    if (diag[i + 2] < '0' || diag[i + 2] > '9') continue;
+    if (diag[i + 3] < '0' || diag[i + 3] > '9') continue;
+    if (diag[i + 4] < '0' || diag[i + 4] > '9') continue;
+    if (diag[i + 5] == ':') return 1;
+  }
+  return 0;
+}
+
+static int run_ag_c_expect_fail_profiled(const char *input, const char *expected_diag,
+                                         const char *log_path, size_t max_log_len) {
+  int pipefd[2];
+  if (pipe(pipefd) != 0) return -1;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDERR_FILENO);
+    close(pipefd[1]);
+    freopen("/dev/null", "w", stdout);
+    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
+    _exit(1);
+  }
+  close(pipefd[1]);
+
+  char diag_buf[8192];
+  size_t used = 0;
+  for (;;) {
+    char sink[512];
+    char *dst = diag_buf + used;
+    size_t room = sizeof(diag_buf) - 1 - used;
+    if (room == 0) {
+      dst = sink;
+      room = sizeof(sink);
+    }
+    ssize_t nread = read(pipefd[0], dst, room);
+    if (nread <= 0) break;
+    if (used < sizeof(diag_buf) - 1) {
+      size_t keep = (size_t)nread;
+      if (keep > sizeof(diag_buf) - 1 - used) keep = sizeof(diag_buf) - 1 - used;
+      used += keep;
+    }
+  }
+  close(pipefd[0]);
+  diag_buf[used] = '\0';
+
+  int status;
+  waitpid(pid, &status, 0);
+
+  FILE *log = fopen(log_path, "w");
+  if (log) {
+    fputs(diag_buf, log);
+    fclose(log);
+  }
+
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 1) return -1;
+  if (!diag_has_error_code_prefix(diag_buf)) return -1;
+  if (expected_diag && expected_diag[0] != '\0' && !strstr(diag_buf, expected_diag)) return -1;
+  if (used > max_log_len) return -1;
+  return 0;
+}
+
 static int log_file_contains_substr(const char *path, const char *needle) {
   if (!needle || !*needle) return 1;
   FILE *fp = fopen(path, "r");
@@ -1155,6 +1222,32 @@ static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char 
   return run_ag_c_expect_fail_with_prog_args_and_diag(NULL, arg1, arg2, expected_diag, log_path);
 }
 
+static int count_open_fds_self(void) {
+  DIR *d = opendir("/dev/fd");
+  if (!d) return -1;
+  int count = 0;
+  struct dirent *ent;
+  while ((ent = readdir(d)) != NULL) {
+    if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+    count++;
+  }
+  closedir(d);
+  return count;
+}
+
+static int count_tmp_files_with_prefix(const char *prefix) {
+  DIR *d = opendir("/tmp");
+  if (!d) return -1;
+  int count = 0;
+  size_t n = strlen(prefix);
+  struct dirent *ent;
+  while ((ent = readdir(d)) != NULL) {
+    if (strncmp(ent->d_name, prefix, n) == 0) count++;
+  }
+  closedir(d);
+  return count;
+}
+
 static int run_clang_build_many(const char *bin_path, const char **inputs, size_t ninputs) {
   pid_t pid = fork();
   if (pid == 0) {
@@ -1268,6 +1361,50 @@ static int write_macro_expansion_limit_source(const char *path, int levels) {
     }
   }
   if (fprintf(fp, "int main() { return X%d; }\n", levels) < 0) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_pp_if_token_limit_source(const char *path, int terms) {
+  if (terms < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(fp, "#if ") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 0; i < terms; i++) {
+    if (fprintf(fp, "%s1", i == 0 ? "" : " + ") < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "\nint main(){return 0;}\n#endif\n") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_parser_decl_width_limit_source(const char *path, int ndecls) {
+  if (ndecls < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(fp, "int main(){ int ") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 0; i < ndecls; i++) {
+    if (fprintf(fp, "%sv%d", i == 0 ? "" : ",", i) < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "; return 0; }\n") < 0) {
     fclose(fp);
     return -1;
   }
@@ -1575,6 +1712,16 @@ int main() {
     fprintf(stderr, "Failed to create log directory\n");
     return 1;
   }
+  int fd_count_baseline = count_open_fds_self();
+  if (fd_count_baseline < 0) {
+    fprintf(stderr, "Failed to read fd baseline\n");
+    return 1;
+  }
+  int tmp_include_prefix_baseline = count_tmp_files_with_prefix("ag_c_e2e_include_");
+  if (tmp_include_prefix_baseline < 0) {
+    fprintf(stderr, "Failed to read /tmp include-prefix baseline\n");
+    return 1;
+  }
 
   for (size_t i = 0; i < sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0]); i++) {
     const compile_fail_case_t *tc = &compile_fail_cases[i];
@@ -1650,8 +1797,28 @@ int main() {
     const char *log_path = "build/e2e/logs/compile_fail_tokenizer_int_too_large.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
         write_source_file(tok_limit_path, "int main() { return 18446744073709551616; }\n") != 0 ||
-        run_ag_c_expect_fail_with_diag(tok_limit_path, "E2015", log_path) != 0) {
+        run_ag_c_expect_fail_profiled(tok_limit_path, "E2015", log_path, 1024) != 0) {
       fprintf(stderr, "Compile-fail case failed: tokenizer_int_too_large (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *pp_if_limit_path = "build/e2e/compile_fail/preprocess_if_token_limit.c";
+    const char *log_path = "build/e2e/logs/compile_fail_preprocess_if_token_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_pp_if_token_limit_source(pp_if_limit_path, 4200) != 0 ||
+        run_ag_c_expect_fail_profiled(pp_if_limit_path, "E1037", log_path, 1024) != 0) {
+      fprintf(stderr, "Compile-fail case failed: preprocess_if_token_limit (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *parser_width_path = "build/e2e/compile_fail/parser_decl_width_limit.c";
+    const char *log_path = "build/e2e/logs/compile_fail_parser_decl_width_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_parser_decl_width_limit_source(parser_width_path, 1300) != 0 ||
+        run_ag_c_expect_fail_profiled(parser_width_path, "E3064", log_path, 1024) != 0) {
+      fprintf(stderr, "Compile-fail case failed: parser_decl_width_limit (see %s)\n", log_path);
       return 1;
     }
   }
@@ -1728,6 +1895,65 @@ int main() {
     }
   }
   {
+    char cwd[PATH_MAX];
+    int tmp_prefix_before = count_tmp_files_with_prefix("ag_c_e2e_include_");
+    if (tmp_prefix_before < 0) {
+      fprintf(stderr, "Compile-fail setup failed: cannot count /tmp include-prefix files\n");
+      return 1;
+    }
+    if (!getcwd(cwd, sizeof(cwd))) {
+      fprintf(stderr, "Compile-fail setup failed: cannot get cwd for include leak check\n");
+      return 1;
+    }
+    char tmp_header[] = "/tmp/ag_c_e2e_include_XXXXXX";
+    int tmp_fd = mkstemp(tmp_header);
+    if (tmp_fd < 0) {
+      fprintf(stderr, "Compile-fail setup failed: cannot create temp include header\n");
+      return 1;
+    }
+    FILE *tmp_fp = fdopen(tmp_fd, "w");
+    if (!tmp_fp) {
+      close(tmp_fd);
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail setup failed: cannot open temp include header\n");
+      return 1;
+    }
+    fprintf(tmp_fp, "int leaked_tmp_header(void) { return 0; }\n");
+    fclose(tmp_fp);
+
+    const char *link_path = "build/e2e/compile_fail/include_tmp_leak.h";
+    unlink(link_path);
+    if (symlink(tmp_header, link_path) != 0) {
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail setup failed: cannot create include leak symlink\n");
+      return 1;
+    }
+
+    const char *src_path = "build/e2e/compile_fail/include_tmp_leak.c";
+    const char *log_path = "build/e2e/logs/compile_fail_include_tmp_leak.log";
+    if (write_source_file(src_path, "#include \"build/e2e/compile_fail/include_tmp_leak.h\"\nint main(){return 0;}\n") != 0 ||
+        run_ag_c_expect_fail_with_diag(src_path, "E1002", log_path) != 0) {
+      unlink(link_path);
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail case failed: include_tmp_leak (see %s)\n", log_path);
+      return 1;
+    }
+    if (log_file_contains_substr(log_path, tmp_header) || log_file_contains_substr(log_path, cwd) ||
+        log_file_contains_substr(log_path, "/tmp/ag_c_e2e_include_")) {
+      unlink(link_path);
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail case failed: include_tmp_leak path leak (see %s)\n", log_path);
+      return 1;
+    }
+    unlink(link_path);
+    unlink(tmp_header);
+    int tmp_prefix_after = count_tmp_files_with_prefix("ag_c_e2e_include_");
+    if (tmp_prefix_after < 0 || tmp_prefix_after != tmp_prefix_before) {
+      fprintf(stderr, "Compile-fail case failed: include_tmp_leak tmp artifact leak\n");
+      return 1;
+    }
+  }
+  {
     const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag(NULL, NULL, "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_no_args (see %s)\n", log_path);
@@ -1767,6 +1993,18 @@ int main() {
   }
   if (run_ag_c_parallel_smoke() != 0) {
     fprintf(stderr, "Concurrency smoke case failed: parallel ag_c invocation\n");
+    return 1;
+  }
+  int fd_count_after = count_open_fds_self();
+  if (fd_count_after < 0 || fd_count_after != fd_count_baseline) {
+    fprintf(stderr, "Resource leak check failed: fd count changed (before=%d after=%d)\n",
+            fd_count_baseline, fd_count_after);
+    return 1;
+  }
+  int tmp_include_prefix_after = count_tmp_files_with_prefix("ag_c_e2e_include_");
+  if (tmp_include_prefix_after < 0 || tmp_include_prefix_after != tmp_include_prefix_baseline) {
+    fprintf(stderr, "Resource leak check failed: /tmp include-prefix count changed (before=%d after=%d)\n",
+            tmp_include_prefix_baseline, tmp_include_prefix_after);
     return 1;
   }
 
