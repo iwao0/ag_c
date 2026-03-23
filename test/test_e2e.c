@@ -1032,6 +1032,63 @@ static int run_ag_c_expect_fail_with_diag(const char *input, const char *expecte
   return 0;
 }
 
+static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char *arg2,
+                                                   const char *expected_diag, const char *log_path) {
+  int pipefd[2];
+  if (pipe(pipefd) != 0) return -1;
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDERR_FILENO);
+    close(pipefd[1]);
+    freopen("/dev/null", "w", stdout);
+    if (arg1 && arg2) {
+      execl("./build/ag_c", "./build/ag_c", arg1, arg2, (char *)NULL);
+    } else if (arg1) {
+      execl("./build/ag_c", "./build/ag_c", arg1, (char *)NULL);
+    } else {
+      execl("./build/ag_c", "./build/ag_c", (char *)NULL);
+    }
+    _exit(1);
+  }
+  close(pipefd[1]);
+
+  char diag_buf[8192];
+  size_t used = 0;
+  for (;;) {
+    char sink[512];
+    char *dst = diag_buf + used;
+    size_t room = sizeof(diag_buf) - 1 - used;
+    if (room == 0) {
+      dst = sink;
+      room = sizeof(sink);
+    }
+    ssize_t nread = read(pipefd[0], dst, room);
+    if (nread <= 0) break;
+    if (used < sizeof(diag_buf) - 1) {
+      size_t keep = (size_t)nread;
+      if (keep > sizeof(diag_buf) - 1 - used) keep = sizeof(diag_buf) - 1 - used;
+      used += keep;
+    }
+  }
+  close(pipefd[0]);
+  diag_buf[used] = '\0';
+
+  int status;
+  waitpid(pid, &status, 0);
+
+  FILE *log = fopen(log_path, "w");
+  if (log) {
+    fputs(diag_buf, log);
+    fclose(log);
+  }
+
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) return -1;
+  if (!strstr(diag_buf, expected_diag)) return -1;
+  return 0;
+}
+
 static int run_clang_build_many(const char *bin_path, const char **inputs, size_t ninputs) {
   pid_t pid = fork();
   if (pid == 0) {
@@ -1441,6 +1498,20 @@ int main() {
       return 1;
     }
   }
+  {
+    const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
+    if (run_ag_c_expect_fail_with_args_and_diag(NULL, NULL, "使い方:", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: usage_no_args (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *log_path = "build/e2e/logs/compile_fail_usage_too_many_args.log";
+    if (run_ag_c_expect_fail_with_args_and_diag("a.c", "b.c", "使い方:", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: usage_too_many_args (see %s)\n", log_path);
+      return 1;
+    }
+  }
 
   size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
   const char **categories = calloc(max_cases, sizeof(const char *));
@@ -1505,7 +1576,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 4);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 6);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
