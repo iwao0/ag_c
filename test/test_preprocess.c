@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <limits.h>
 #include <unistd.h>
 
 typedef struct {
@@ -129,6 +130,9 @@ static const char *fail_cases[] = {
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include \"build/../../README.md\"\nint main() { return 0; }\n",
+    "#include \"build///../test_inc.h\"\nint main() { return 0; }\n",
+    "#include \"././../README.md\"\nint main() { return 0; }\n",
+    "#include <//tmp/blocked_absolute_path.h>\nint main() { return 0; }\n",
     "#include \"build/\"\nint main() { return 0; }\n",
     "#include \".\"\nint main() { return 0; }\n",
     "#include <../README.md>\nint main() { return 0; }\n",
@@ -514,6 +518,23 @@ int main(void) {
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
 
+  char unique_tmp_header[PATH_MAX];
+  snprintf(unique_tmp_header, sizeof(unique_tmp_header), "/tmp/ag_c_escape_preprocess_XXXXXX");
+  int unique_tmp_fd = mkstemp(unique_tmp_header);
+  if (unique_tmp_fd < 0) {
+    fprintf(stderr, "  FAIL: cannot create unique temp include file\n");
+    return 1;
+  }
+  FILE *unique_tmp_fp = fdopen(unique_tmp_fd, "w");
+  if (!unique_tmp_fp) {
+    close(unique_tmp_fd);
+    unlink(unique_tmp_header);
+    fprintf(stderr, "  FAIL: cannot open unique temp include stream\n");
+    return 1;
+  }
+  fprintf(unique_tmp_fp, "int escape_tmp_symlink(void) { return 0; }\n");
+  fclose(unique_tmp_fp);
+
   FILE *h = fopen("build/test_inc.h", "w");
   fprintf(h, "int inc_func() { return 42; }\n");
   fclose(h);
@@ -552,21 +573,16 @@ int main(void) {
     fprintf(stderr, "  FAIL: cannot create build/escape_symlink.h symlink\n");
     return 1;
   }
-  FILE *htmp = fopen("/tmp/ag_c_escape_preprocess.h", "w");
-  if (!htmp) {
-    fprintf(stderr, "  FAIL: cannot create /tmp/ag_c_escape_preprocess.h\n");
-    return 1;
-  }
-  fprintf(htmp, "int escape_tmp_symlink(void) { return 0; }\n");
-  fclose(htmp);
   unlink("build/escape_tmp_symlink.h");
-  if (symlink("/tmp/ag_c_escape_preprocess.h", "build/escape_tmp_symlink.h") != 0) {
+  if (symlink(unique_tmp_header, "build/escape_tmp_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/escape_tmp_symlink.h symlink\n");
+    unlink(unique_tmp_header);
     return 1;
   }
   unlink("include/escape_tmp_symlink.h");
-  if (symlink("/tmp/ag_c_escape_preprocess.h", "include/escape_tmp_symlink.h") != 0) {
+  if (symlink(unique_tmp_header, "include/escape_tmp_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create include/escape_tmp_symlink.h symlink\n");
+    unlink(unique_tmp_header);
     return 1;
   }
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
@@ -619,6 +635,7 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
   expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
@@ -627,6 +644,7 @@ int main(void) {
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();
+  unlink(unique_tmp_header);
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;

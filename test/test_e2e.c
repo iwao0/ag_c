@@ -934,7 +934,7 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "[cast] struct 値へのキャストは未対応です（型不整合）"},
     {"const_assign_rejected",
      "int main() { const int x = 5; x = 10; return 0; }",
-     "const修飾された変数への代入はできません"},
+     "E3077"},
     {"const_compound_assign_rejected",
      "int main() { const int x = 5; x += 1; return 0; }",
      "const修飾された変数への代入はできません"},
@@ -1091,8 +1091,10 @@ static int run_ag_c_expect_fail_with_diag_timeout(const char *input, const char 
   return 0;
 }
 
-static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char *arg2,
-                                                   const char *expected_diag, const char *log_path) {
+static int run_ag_c_expect_fail_with_prog_args_and_diag(const char *prog_path, const char *arg1,
+                                                        const char *arg2, const char *expected_diag,
+                                                        const char *log_path) {
+  const char *prog = prog_path ? prog_path : "./build/ag_c";
   int pipefd[2];
   if (pipe(pipefd) != 0) return -1;
 
@@ -1103,11 +1105,11 @@ static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char 
     close(pipefd[1]);
     freopen("/dev/null", "w", stdout);
     if (arg1 && arg2) {
-      execl("./build/ag_c", "./build/ag_c", arg1, arg2, (char *)NULL);
+      execl(prog, prog, arg1, arg2, (char *)NULL);
     } else if (arg1) {
-      execl("./build/ag_c", "./build/ag_c", arg1, (char *)NULL);
+      execl(prog, prog, arg1, (char *)NULL);
     } else {
-      execl("./build/ag_c", "./build/ag_c", (char *)NULL);
+      execl(prog, prog, (char *)NULL);
     }
     _exit(1);
   }
@@ -1146,6 +1148,11 @@ static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char 
   if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) return -1;
   if (!strstr(diag_buf, expected_diag)) return -1;
   return 0;
+}
+
+static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char *arg2,
+                                                   const char *expected_diag, const char *log_path) {
+  return run_ag_c_expect_fail_with_prog_args_and_diag(NULL, arg1, arg2, expected_diag, log_path);
 }
 
 static int run_clang_build_many(const char *bin_path, const char **inputs, size_t ninputs) {
@@ -1239,6 +1246,28 @@ static int write_large_single_line_unterminated_string(const char *path, size_t 
   }
   // Intentionally do not close with '"' to force tokenizer error on a huge single line.
   if (fputc('\n', fp) == EOF) {
+    fclose(fp);
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+static int write_macro_expansion_limit_source(const char *path, int levels) {
+  if (levels < 1) return -1;
+  FILE *fp = fopen(path, "w");
+  if (!fp) return -1;
+  if (fprintf(fp, "#define X0 1\n") < 0) {
+    fclose(fp);
+    return -1;
+  }
+  for (int i = 1; i <= levels; i++) {
+    if (fprintf(fp, "#define X%d (X%d + X%d)\n", i, i - 1, i - 1) < 0) {
+      fclose(fp);
+      return -1;
+    }
+  }
+  if (fprintf(fp, "int main() { return X%d; }\n", levels) < 0) {
     fclose(fp);
     return -1;
   }
@@ -1617,6 +1646,26 @@ int main() {
     }
   }
   {
+    const char *tok_limit_path = "build/e2e/compile_fail/tokenizer_int_too_large.c";
+    const char *log_path = "build/e2e/logs/compile_fail_tokenizer_int_too_large.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file(tok_limit_path, "int main() { return 18446744073709551616; }\n") != 0 ||
+        run_ag_c_expect_fail_with_diag(tok_limit_path, "E2015", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: tokenizer_int_too_large (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *pp_limit_path = "build/e2e/compile_fail/macro_expansion_limit.c";
+    const char *log_path = "build/e2e/logs/compile_fail_macro_expansion_limit.log";
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_macro_expansion_limit_source(pp_limit_path, 16) != 0 ||
+        run_ag_c_expect_fail_with_diag(pp_limit_path, "E1029", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: macro_expansion_limit (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
     const char *nul_path = "build/e2e/compile_fail/nul_input.c";
     const char *log_path = "build/e2e/logs/compile_fail_nul_input.log";
     static const unsigned char nul_input[] = {
@@ -1632,6 +1681,53 @@ int main() {
     }
   }
   {
+    const char *path = "build/e2e/compile_fail/control_char_line_filename.c";
+    const char *log_path = "build/e2e/logs/compile_fail_control_char_line_filename.log";
+    static const unsigned char src[] = {
+        '#', 'l', 'i', 'n', 'e', ' ', '1', ' ', '"',
+        'b', 'a', 'd', 0x1F, '.', 'c', '"', '\n',
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', '{',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', '}', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(path, src, sizeof(src)) != 0 ||
+        run_ag_c_expect_fail_with_diag(path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: control_char_line_filename (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *path = "build/e2e/compile_fail/invalid_utf8_include_filename.c";
+    const char *log_path = "build/e2e/logs/compile_fail_invalid_utf8_include_filename.log";
+    static const unsigned char src[] = {
+        '#', 'i', 'n', 'c', 'l', 'u', 'd', 'e', ' ', '"',
+        'b', 'u', 'i', 'l', 'd', '/', 0xC0, 0xAF, '.', 'h', '"', '\n',
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', '{',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', '}', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(path, src, sizeof(src)) != 0 ||
+        run_ag_c_expect_fail_with_diag(path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: invalid_utf8_include_filename (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *path = "build/e2e/compile_fail/invalid_utf8_macro_arg.c";
+    const char *log_path = "build/e2e/logs/compile_fail_invalid_utf8_macro_arg.log";
+    static const unsigned char src[] = {
+        '#', 'd', 'e', 'f', 'i', 'n', 'e', ' ', 'I', 'D', '(', 'x', ')', ' ', 'x', '\n',
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', '{',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', 'I', 'D', '(', 0xC0, 0xAF, ')', ';', '}', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(path, src, sizeof(src)) != 0 ||
+        run_ag_c_expect_fail_with_diag(path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: invalid_utf8_macro_arg (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
     const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag(NULL, NULL, "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_no_args (see %s)\n", log_path);
@@ -1642,6 +1738,30 @@ int main() {
     const char *log_path = "build/e2e/logs/compile_fail_usage_too_many_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag("a.c", "b.c", "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_too_many_args (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    char cwd[PATH_MAX];
+    if (!getcwd(cwd, sizeof(cwd))) {
+      fprintf(stderr, "Compile-fail setup failed: cannot get cwd for leak check\n");
+      return 1;
+    }
+    char abs_prog[PATH_MAX];
+    snprintf(abs_prog, sizeof(abs_prog), "%s/build/ag_c", cwd);
+    const char *log_path = "build/e2e/logs/compile_fail_usage_abs_prog_path.log";
+    if (run_ag_c_expect_fail_with_prog_args_and_diag(abs_prog, NULL, NULL, "使い方:", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: usage_abs_prog_path (see %s)\n", log_path);
+      return 1;
+    }
+    if (log_file_contains_substr(log_path, cwd) || log_file_contains_substr(log_path, "/tmp/") ||
+        log_file_contains_substr(log_path, abs_prog)) {
+      fprintf(stderr, "Compile-fail case failed: usage_abs_prog_path leak (see %s)\n", log_path);
+      return 1;
+    }
+    const char *user = getenv("USER");
+    if (user && *user && log_file_contains_substr(log_path, user)) {
+      fprintf(stderr, "Compile-fail case failed: usage_abs_prog_path user leak (see %s)\n", log_path);
       return 1;
     }
   }
@@ -1713,7 +1833,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 9);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 14);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
