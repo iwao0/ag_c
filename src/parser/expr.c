@@ -500,7 +500,7 @@ static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
 }
 
 static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_kind, int *out_elem_size,
-                                            token_t **out_next) {
+                                            int *out_is_unsigned, token_t **out_next) {
   if (!start) return 0;
   if (start->kind != TK_SIGNED && start->kind != TK_UNSIGNED &&
       start->kind != TK_SHORT && start->kind != TK_LONG &&
@@ -556,6 +556,7 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 
   if (out_kind) *out_kind = kind;
   if (out_elem_size) *out_elem_size = elem;
+  if (out_is_unsigned) *out_is_unsigned = n_unsigned ? 1 : 0;
   if (out_next) *out_next = t;
   return 1;
 }
@@ -587,7 +588,13 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   }
   int ts = psx_node_type_size(control);
   int ds = psx_node_deref_size(control);
-  if (ts == 8 && ds > 0) {
+  int is_ptr = 0;
+  if (control->kind == ND_LVAR) is_ptr = ((node_lvar_t *)control)->mem.is_pointer;
+  else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
+           control->kind == ND_ADDR || control->kind == ND_STRING) {
+    is_ptr = ((node_mem_t *)control)->is_pointer;
+  }
+  if (is_ptr) {
     gt.is_pointer = 1;
     gt.kind = TK_INT;
     gt.ptr_levels = psx_node_pointer_qual_levels(control);
@@ -665,7 +672,10 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
                    assoc.tag_name ? assoc.tag_name : "",
                    (size_t)control.tag_len) == 0;
   }
-  if (control.kind == TK_FLOAT || control.kind == TK_DOUBLE) return control.kind == assoc.kind;
+  if (control.kind == TK_FLOAT || control.kind == TK_DOUBLE ||
+      assoc.kind == TK_FLOAT || assoc.kind == TK_DOUBLE) {
+    return control.kind == assoc.kind;
+  }
   return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned;
 }
 
@@ -736,9 +746,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   } else {
     token_kind_t tk = TK_EOF;
     token_t *after = NULL;
-    if (parse_integer_cast_spec_sequence(curtok(), &tk, &base_elem_size, &after)) {
+    if (parse_integer_cast_spec_sequence(curtok(), &tk, &base_elem_size, &base_unsigned, &after)) {
       out->kind = tk;
-      base_unsigned = (tk == TK_UNSIGNED);
       set_curtok(after);
     } else {
       tk = psx_consume_type_kind();
@@ -921,7 +930,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         inner_elem = 8;
         inner_fp = TK_FLOAT_KIND_DOUBLE;
         q = q->next->next;
-      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, &q)) {
+      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q)) {
         inner_fp = TK_FLOAT_KIND_NONE;
       } else {
         inner_kind = q->kind;
@@ -1043,7 +1052,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   }
   if (is_type) {
     if (*type_kind == TK_EOF) {
-      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, &t)) {
+      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, NULL, &t)) {
         if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
       } else {
         *type_kind = t->kind;
@@ -1337,10 +1346,10 @@ static int parse_parenthesized_type_size(void) {
     } else {
       return -1;
     }
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
-    }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -1380,10 +1389,10 @@ static int parse_parenthesized_type_size(void) {
     int base_sz = (t->kind == TK_FLOAT) ? 4 : 8;
     int sz = base_sz * 2; // _Complex: 基底型の2倍
     t = t->next->next;
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
-    }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -1423,10 +1432,10 @@ static int parse_parenthesized_type_size(void) {
       (t->next->next->kind == TK_COMPLEX || t->next->next->kind == TK_IMAGINARY)) {
     int sz = 8 * 2; // _Complex long double = 16B (lowering)
     t = t->next->next->next;
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
-    }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -1466,10 +1475,10 @@ static int parse_parenthesized_type_size(void) {
   if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE) {
     t = t->next->next;
     int sz = 8; // macOS/AArch64: long double == double (64-bit)
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
-    }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -1512,10 +1521,10 @@ static int parse_parenthesized_type_size(void) {
     t = t->next;
     // Extension: treat sizeof(void) as 1 (GNU-compatible behavior).
     int sz = (type_kind == TK_VOID) ? 1 : scalar_size;
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
-    }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -1560,10 +1569,10 @@ static int parse_parenthesized_type_size(void) {
       psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE), tag->str, tag->len);
     }
     t = curtok();
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
-    }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -1607,14 +1616,18 @@ static int parse_parenthesized_type_size(void) {
     char *td_tag_name = NULL;
     int td_tag_len = 0;
     int td_ptr = 0;
+    int td_sizeof = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
                               &td_ptr, NULL, NULL);
     t = t->next;
     int sz = td_ptr ? 8 : td_elem;
-    while (t->kind == TK_MUL) {
-      t = t->next;
-      sz = 8;
+    if (!td_ptr && psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {
+      sz = td_sizeof;
     }
+    int decl_is_ptr = 0;
+    consume_local_type_quals(&t);
+    consume_cast_pointer_suffix(&t, &decl_is_ptr);
+    if (decl_is_ptr) sz = 8;
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
@@ -2396,7 +2409,8 @@ static node_t *primary(void) {
         node_t *expr_node = assign();
         if (!default_expr) default_expr = expr_node;
       } else {
-        generic_type_t assoc_ty = {TK_EOF, 0};
+        generic_type_t assoc_ty = {0};
+        assoc_ty.kind = TK_EOF;
         if (!parse_generic_assoc_type(&assoc_ty)) {
           psx_diag_ctx(curtok(), "generic", "%s",
                        diag_message_for(DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
@@ -2607,9 +2621,13 @@ static node_t *primary(void) {
     }
     // VLA: フレームスロットからベースポインタを読み込む (ポインタ変数として扱う)
     node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
+    int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 || (var->size > var->elem_size);
     // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
     // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
-    int vla_effective_deref = (var->outer_stride > 0) ? var->outer_stride : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
+    int vla_effective_deref = 0;
+    if (lvar_is_pointer) {
+      vla_effective_deref = (var->outer_stride > 0) ? var->outer_stride : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
+    }
     as_lvar(n)->mem.deref_size = vla_effective_deref;
     // 2D VLA: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
     int vla_is_multidim = (var->outer_stride != var->elem_size) || (var->vla_row_stride_frame_off != 0);
@@ -2619,7 +2637,7 @@ static node_t *primary(void) {
     as_lvar(n)->mem.tag_name = var->tag_name;
     as_lvar(n)->mem.tag_len = var->tag_len;
     as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
-    as_lvar(n)->mem.is_pointer = var->is_array || (var->size > var->elem_size);
+    as_lvar(n)->mem.is_pointer = lvar_is_pointer;
     as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;
     as_lvar(n)->mem.is_volatile_qualified = var->is_volatile_qualified;
     as_lvar(n)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
