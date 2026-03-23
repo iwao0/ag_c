@@ -245,8 +245,11 @@ static void test_tokenize_invalid() {
   expect_tokenize_fail("\"unterminated"); // 文字列未閉じ
   expect_tokenize_fail("\"\\x\"");    // 16進エスケープ不正
   expect_tokenize_fail("\"\\q\"");    // 不正エスケープ
+  expect_tokenize_fail("\"\\u202E\""); // bidi制御文字UCN
   expect_tokenize_fail("''");         // 空の文字リテラル
   expect_tokenize_fail("'\\x'");      // 16進エスケープ不正
+  expect_tokenize_fail("'\\u202E'");  // bidi制御文字UCN
+  expect_tokenize_fail("safe\\u202Ename"); // 識別子内bidi制御文字UCN
   expect_tokenize_fail("1.0f0");      // pp-number 連結
   expect_tokenize_fail("1..2");       // pp-number 連結
 

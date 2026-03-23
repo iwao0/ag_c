@@ -42,6 +42,10 @@ bool tk_is_valid_ucn_codepoint(uint32_t cp) {
   if (cp > 0x10FFFF) return false;
   if (0xD800 <= cp && cp <= 0xDFFF) return false;
   if (cp < 0xA0 && cp != '$' && cp != '@' && cp != '`') return false;
+  // Reject bidi controls that can visually reorder source and diagnostics.
+  if (cp == 0x200E || cp == 0x200F || cp == 0x061C) return false;
+  if (0x202A <= cp && cp <= 0x202E) return false;
+  if (0x2066 <= cp && cp <= 0x2069) return false;
   return true;
 }
 

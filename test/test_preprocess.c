@@ -99,6 +99,7 @@ static const char *fail_cases[] = {
     "#define FOO(a, 1) 1\nint main() { return FOO(1); }\n",
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
+    "#include \"build/\\u202Eevil.h\"\nint main() { return 0; }\n",
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
