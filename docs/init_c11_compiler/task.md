@@ -1117,9 +1117,10 @@
   - 修正方針: `cast()` 関数を新設し `"(" type_name ")" cast | unary` を実装、`mul()` の呼び出し先を `cast()` に変更
   - 進捗（2026-03-23）: `cast()` を新設し `mul()` からの呼び出しを切替。単項演算子（`*`, `&`, `+`, `-`, `!`, `~`）の再帰先も `cast()` に変更して、`&(struct S){...}` などの複合リテラル経路を維持
   - 対象ファイル: `src/parser/expr.c`
-- [ ] `compound_stmt` 内で `block_item`（宣言と文の区別）を導入する（C11 §6.8.2）
+- [x] `compound_stmt` 内で `block_item`（宣言と文の区別）を導入する（C11 §6.8.2）
   - 現状: `stmt_internal()` が宣言（型トークン判定）・`_Static_assert`・文をフラットに処理
   - 修正方針: `block_item()` 関数を新設し、宣言判定を `stmt_internal()` から分離
+  - 進捗（2026-03-23）: `stmt.c` に `block_item()` を新設し、`compound_stmt` の本体ループで `stmt_internal()` 直接呼び出しを `block_item()` に切替
   - 対象ファイル: `src/parser/stmt.c`
 - [ ] `func_def` で `decl_spec` + `declarator` の構成にする（C11 §6.9.1）
   - 現状: `funcdef()` が `skip_cv_qualifiers` → 型消費 → 識別子 → `(params)` → `{stmts}` をフラットに処理
@@ -1140,6 +1141,7 @@
 - [ ] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
   - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
   - 修正方針: `param_decl()` 関数を新設し、`decl_spec` + `declarator` or `pointer?` を処理
+  - 進捗（2026-03-23）: `funcdef()` の仮引数1件分の処理を `parse_param_decl()` に切り出し（`parser.c`）。型解析・配列仮引数デカイ・構造体ABI分岐・`args[]` 登録を関数化
   - 対象ファイル: `src/parser/parser.c`
 
 ### grammar.md の C11 仕様との差分（2026-03-23 棚卸し）

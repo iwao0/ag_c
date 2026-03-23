@@ -39,6 +39,7 @@ static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator);
+static void parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
 static void parse_static_assert_toplevel(void);
 static long long parse_enum_const_expr_toplevel(void);
 static long long parse_enum_const_conditional_toplevel(void);
@@ -1215,6 +1216,87 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator) 
   return param;
 }
 
+static void parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
+  // 仮引数の型解析（struct/union の値渡し/ポインタ渡しを含む）
+  skip_cv_qualifiers();
+  token_kind_t ptag_kind = TK_EOF;
+  char *ptag_name = NULL;
+  int ptag_len = 0;
+  int param_struct_size = 0;
+  int param_elem_size = 8; // スカラー型の要素サイズ（仮引数配列宣言子用）
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    // struct/union 型仮引数
+    ptag_kind = token->kind;
+    token = token->next;
+    token_ident_t *tag_ident = tk_consume_ident();
+    if (tag_ident) {
+      ptag_name = tag_ident->str;
+      ptag_len = tag_ident->len;
+      if (psx_ctx_has_tag_type(ptag_kind, ptag_name, ptag_len)) {
+        param_struct_size = psx_ctx_get_tag_size(ptag_kind, ptag_name, ptag_len);
+      }
+    }
+  } else {
+    // スカラー型: 仮引数配列宣言子のelemサイズ取得のため型を明示消費
+    skip_cv_qualifiers();
+    token_kind_t param_type_kind = psx_consume_type_kind();
+    if (param_type_kind != TK_EOF) {
+      psx_ctx_get_type_info(param_type_kind, NULL, &param_elem_size);
+    } else if (psx_ctx_is_typedef_name_token(token)) {
+      token = token->next; // typedef名: elem_size は 8 のまま
+    }
+  }
+  // ポインタ修飾子を確認してから parse_param_declarator_name へ
+  int param_is_ptr = (token->kind == '*');
+  int param_is_array_declarator = 0;
+  token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator);
+  if (!param) return;
+
+  if (*nargs >= *arg_cap) {
+    *arg_cap = pda_next_cap(*arg_cap, *nargs + 1);
+    node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
+  }
+  lvar_t *var;
+  if (param_is_array_declarator && ptag_kind == TK_EOF && !param_is_ptr) {
+    // 仮引数 VLA 宣言子: int a[n] → int *a として扱う (C11 6.7.6.3p7)
+    // size=8 (pointer), elem_size=実際の要素サイズ, sizeof(a)==8
+    var = psx_decl_register_lvar_sized(param->str, param->len, 8, param_elem_size, 0);
+  } else if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 16) {
+    // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
+    // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
+    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, param_struct_size, 0, 0);
+    var->tag_kind = ptag_kind;
+    var->tag_name = ptag_name;
+    var->tag_len = ptag_len;
+    var->is_tag_pointer = 0;
+    var->is_byref_param = 1;
+  } else if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0) {
+    // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
+    var = psx_decl_register_lvar_sized_align(param->str, param->len, param_struct_size, param_struct_size, 0, 8);
+    var->tag_kind = ptag_kind;
+    var->tag_name = ptag_name;
+    var->tag_len = ptag_len;
+    var->is_tag_pointer = 0;
+  } else if (ptag_kind != TK_EOF && param_is_ptr) {
+    // struct/union へのポインタ仮引数
+    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
+    var->tag_kind = ptag_kind;
+    var->tag_name = ptag_name;
+    var->tag_len = ptag_len;
+    var->is_tag_pointer = 1;
+  } else {
+    // スカラー型仮引数（既存の動作）
+    var = psx_decl_register_lvar(param->str, param->len);
+  }
+  var->is_param = 1;
+  var->is_initialized = 1;
+  // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
+  // codegen がレジスタ数（1 or 2）を判断するため
+  int abi_type_size = (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0)
+                      ? param_struct_size : 8;
+  node->args[(*nargs)++] = psx_node_new_lvar_typed(var->offset, abi_type_size);
+}
+
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
@@ -1313,84 +1395,7 @@ static node_t *funcdef(void) {
         continue;
       }
 
-      // 仮引数の型解析（struct/union の値渡し/ポインタ渡しを含む）
-      skip_cv_qualifiers();
-      token_kind_t ptag_kind = TK_EOF;
-      char *ptag_name = NULL;
-      int ptag_len = 0;
-      int param_struct_size = 0;
-      int param_elem_size = 8; // スカラー型の要素サイズ（仮引数配列宣言子用）
-      if (psx_ctx_is_tag_keyword(token->kind)) {
-        // struct/union 型仮引数
-        ptag_kind = token->kind;
-        token = token->next;
-        token_ident_t *tag_ident = tk_consume_ident();
-        if (tag_ident) {
-          ptag_name = tag_ident->str;
-          ptag_len = tag_ident->len;
-          if (psx_ctx_has_tag_type(ptag_kind, ptag_name, ptag_len)) {
-            param_struct_size = psx_ctx_get_tag_size(ptag_kind, ptag_name, ptag_len);
-          }
-        }
-      } else {
-        // スカラー型: 仮引数配列宣言子のelemサイズ取得のため型を明示消費
-        skip_cv_qualifiers();
-        token_kind_t param_type_kind = psx_consume_type_kind();
-        if (param_type_kind != TK_EOF) {
-          psx_ctx_get_type_info(param_type_kind, NULL, &param_elem_size);
-        } else if (psx_ctx_is_typedef_name_token(token)) {
-          token = token->next; // typedef名: elem_size は 8 のまま
-        }
-      }
-      // ポインタ修飾子を確認してから parse_param_declarator_name へ
-      int param_is_ptr = (token->kind == '*');
-      int param_is_array_declarator = 0;
-      token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator);
-      if (param) {
-        if (nargs >= arg_cap) {
-          arg_cap = pda_next_cap(arg_cap, nargs + 1);
-          node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
-        }
-        lvar_t *var;
-        if (param_is_array_declarator && ptag_kind == TK_EOF && !param_is_ptr) {
-          // 仮引数 VLA 宣言子: int a[n] → int *a として扱う (C11 6.7.6.3p7)
-          // size=8 (pointer), elem_size=実際の要素サイズ, sizeof(a)==8
-          var = psx_decl_register_lvar_sized(param->str, param->len, 8, param_elem_size, 0);
-        } else if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 16) {
-          // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
-          // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
-          var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, param_struct_size, 0, 0);
-          var->tag_kind = ptag_kind;
-          var->tag_name = ptag_name;
-          var->tag_len = ptag_len;
-          var->is_tag_pointer = 0;
-          var->is_byref_param = 1;
-        } else if (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0) {
-          // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
-          var = psx_decl_register_lvar_sized_align(param->str, param->len, param_struct_size, param_struct_size, 0, 8);
-          var->tag_kind = ptag_kind;
-          var->tag_name = ptag_name;
-          var->tag_len = ptag_len;
-          var->is_tag_pointer = 0;
-        } else if (ptag_kind != TK_EOF && param_is_ptr) {
-          // struct/union へのポインタ仮引数
-          var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
-          var->tag_kind = ptag_kind;
-          var->tag_name = ptag_name;
-          var->tag_len = ptag_len;
-          var->is_tag_pointer = 1;
-        } else {
-          // スカラー型仮引数（既存の動作）
-          var = psx_decl_register_lvar(param->str, param->len);
-        }
-        var->is_param = 1;
-        var->is_initialized = 1;
-        // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
-        // codegen がレジスタ数（1 or 2）を判断するため
-        int abi_type_size = (ptag_kind != TK_EOF && !param_is_ptr && param_struct_size > 0)
-                            ? param_struct_size : 8;
-        node->args[nargs++] = psx_node_new_lvar_typed(var->offset, abi_type_size);
-      }
+      parse_param_decl(node, &nargs, &arg_cap);
 
       if (!tk_consume(',')) break;
       if (token->kind == TK_RPAREN) {
