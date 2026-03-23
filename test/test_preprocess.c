@@ -568,6 +568,18 @@ int main(void) {
   FILE *hself = fopen("build/self_include.h", "w");
   fprintf(hself, "#include \"build/self_include.h\"\n");
   fclose(hself);
+  unlink("build/realpath_loop_a.h");
+  unlink("build/realpath_loop_b.h");
+  if (symlink("realpath_loop_b.h", "build/realpath_loop_a.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create build/realpath_loop_a.h symlink\n");
+    unlink(unique_tmp_header);
+    return 1;
+  }
+  if (symlink("realpath_loop_a.h", "build/realpath_loop_b.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create build/realpath_loop_b.h symlink\n");
+    unlink(unique_tmp_header);
+    return 1;
+  }
   unlink("build/escape_symlink.h");
   if (symlink("../README.md", "build/escape_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/escape_symlink.h symlink\n");
@@ -635,6 +647,8 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\xc0\xaf.c\"\nint main() { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
   expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
