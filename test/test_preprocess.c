@@ -136,6 +136,9 @@ static const char *fail_cases[] = {
     "#define BAD2(a) a##\nint main() { return BAD2(42); }\n",
     "#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n",
     "#define BAD4(a) a##+\nint main() { return BAD4(1); }\n",
+    "#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n",
+    "#define BAD6(a,b) a##b\nint main() { return BAD6(1,foo); }\n",
+    "#define BAD7(a,b) a##b\nint main() { return BAD7(&,&); }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
 };
