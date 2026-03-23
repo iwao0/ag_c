@@ -431,17 +431,17 @@ static void parse_toplevel_declarator_list(void) {
 
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
   token_ident_t *name = parse_decl_name_recursive(is_ptr, 1);
-  while (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN) {
     int depth = 1;
-    token = token->next;
+    set_curtok(curtok()->next);
     while (depth > 0) {
-      if (token->kind == TK_EOF) {
-        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, token, "%s",
+      if (curtok()->kind == TK_EOF) {
+        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
                        diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
       }
-      if (token->kind == TK_LPAREN) depth++;
-      else if (token->kind == TK_RPAREN) depth--;
-      token = token->next;
+      if (curtok()->kind == TK_LPAREN) depth++;
+      else if (curtok()->kind == TK_RPAREN) depth--;
+      set_curtok(curtok()->next);
     }
   }
   return name;
@@ -449,17 +449,17 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
 
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr) {
   token_ident_t *name = parse_decl_name_recursive(is_ptr, 1);
-  while (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN) {
     int depth = 1;
-    token = token->next;
+    set_curtok(curtok()->next);
     while (depth > 0) {
-      if (token->kind == TK_EOF) {
-        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, token, "%s",
+      if (curtok()->kind == TK_EOF) {
+        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
                        diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
       }
-      if (token->kind == TK_LPAREN) depth++;
-      else if (token->kind == TK_RPAREN) depth--;
-      token = token->next;
+      if (curtok()->kind == TK_LPAREN) depth++;
+      else if (curtok()->kind == TK_RPAREN) depth--;
+      set_curtok(curtok()->next);
     }
   }
   return name;
@@ -477,7 +477,7 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name) {
   } else {
     name = tk_consume_ident();
     if (!name && require_name) {
-      diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, token, "%s",
+      diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, curtok(), "%s",
                      diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
   }
@@ -496,7 +496,7 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
   } else {
     name = tk_consume_ident();
   }
-  while (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN) {
     if (out_has_func_suffix) *out_has_func_suffix = 1;
     skip_balanced_group(TK_LPAREN, TK_RPAREN);
   }
@@ -509,11 +509,11 @@ static void parse_toplevel_decl_after_type(void) {
 }
 
 static void parse_toplevel_typedef_decl(void) {
-  if (token->kind != TK_TYPEDEF) {
-    psx_diag_ctx(token, "typedef", "%s",
+  if (curtok()->kind != TK_TYPEDEF) {
+    psx_diag_ctx(curtok(), "typedef", "%s",
                  diag_message_for(DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED));
   }
-  token = token->next;
+  set_curtok(curtok()->next);
   token_kind_t base_kind = TK_EOF;
   int elem_size = 8;
   tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
@@ -528,12 +528,12 @@ static void parse_toplevel_typedef_decl(void) {
     psx_ctx_get_type_info(builtin_kind, NULL, &elem_size);
     if (builtin_kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
     else if (builtin_kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
-  } else if (psx_ctx_is_tag_keyword(token->kind)) {
-    base_kind = token->kind;
-    tag_kind = token->kind;
-    token = token->next;
+  } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    base_kind = curtok()->kind;
+    tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
     token_ident_t *tag = tk_consume_ident();
-    if (!tag) psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
+    if (!tag) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
     tag_name = tag->str;
     tag_len = tag->len;
     if (tk_consume('{')) {
@@ -542,15 +542,15 @@ static void parse_toplevel_typedef_decl(void) {
       member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
     } else if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
     }
     elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
-  } else if (psx_ctx_is_typedef_name_token(token)) {
-    token_ident_t *id = (token_ident_t *)token;
+  } else if (psx_ctx_is_typedef_name_token(curtok())) {
+    token_ident_t *id = (token_ident_t *)curtok();
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr_base);
-    token = token->next;
+    set_curtok(curtok()->next);
   } else {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, token, "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
   }
 
