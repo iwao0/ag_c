@@ -206,7 +206,11 @@ static void validate_include_realpath_or_die(const char *candidate, const char *
 }
 
 static char *read_include_file_secure(const char *candidate, const char *display_path) {
-  int fd = open(candidate, O_RDONLY | O_CLOEXEC);
+  int oflags = O_RDONLY | O_CLOEXEC;
+#ifdef O_NOFOLLOW
+  oflags |= O_NOFOLLOW;
+#endif
+  int fd = open(candidate, oflags);
   if (fd < 0) {
     record_include_errno(errno);
     return NULL;

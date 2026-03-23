@@ -127,6 +127,7 @@ static const char *fail_cases[] = {
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
     "#include \"build/escape_symlink.h\"\nint main() { return 0; }\n",
+    "#include \"build/nofollow_link.h\"\nint main() { return 0; }\n",
     "#include \"build/escape_tmp_symlink.h\"\nint main() { return 0; }\n",
     "#include <escape_tmp_symlink.h>\nint main() { return 0; }\n",
     "#include \"build/\\u202Eevil.h\"\nint main() { return 0; }\n",
@@ -740,6 +741,11 @@ int main(void) {
   unlink("build/escape_symlink.h");
   if (symlink("../README.md", "build/escape_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/escape_symlink.h symlink\n");
+    return 1;
+  }
+  unlink("build/nofollow_link.h");
+  if (symlink("test_inc.h", "build/nofollow_link.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create build/nofollow_link.h symlink\n");
     return 1;
   }
   unlink("build/escape_tmp_symlink.h");
