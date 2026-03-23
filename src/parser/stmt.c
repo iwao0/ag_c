@@ -145,35 +145,35 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
     int member_tag_len = 0;
     int member_alignas = 0;
     // skip leading qualifiers (const, volatile, _Alignas)
-    while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_ALIGNAS) {
-      if (token->kind == TK_ALIGNAS) {
-        token = token->next;
+    while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_ALIGNAS) {
+      if (curtok()->kind == TK_ALIGNAS) {
+        set_curtok(curtok()->next);
         int av = parse_alignas_value_stmt();
         if (av > member_alignas) member_alignas = av;
       } else {
-        token = token->next;
+        set_curtok(curtok()->next);
       }
     }
-    if (psx_ctx_is_type_token(token->kind)) {
-      is_signed_type = (token->kind != TK_UNSIGNED);
-      psx_ctx_get_type_info(token->kind, NULL, &elem_size);
-      token = token->next;
-      while (psx_ctx_is_type_token(token->kind)) {
-        if (token->kind != TK_UNSIGNED && token->kind != TK_SIGNED)
-          psx_ctx_get_type_info(token->kind, NULL, &elem_size);
-        token = token->next;
+    if (psx_ctx_is_type_token(curtok()->kind)) {
+      is_signed_type = (curtok()->kind != TK_UNSIGNED);
+      psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
+      set_curtok(curtok()->next);
+      while (psx_ctx_is_type_token(curtok()->kind)) {
+        if (curtok()->kind != TK_UNSIGNED && curtok()->kind != TK_SIGNED)
+          psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
+        set_curtok(curtok()->next);
       }
-    } else if (psx_ctx_is_tag_keyword(token->kind)) {
-      member_tag_kind = token->kind;
-      token = token->next;
+    } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+      member_tag_kind = curtok()->kind;
+      set_curtok(curtok()->next);
       token_ident_t *nested_tag = tk_consume_ident();
       if (nested_tag) {
         member_tag_name = nested_tag->str;
         member_tag_len = nested_tag->len;
-      } else if (token->kind == TK_LBRACE) {
+      } else if (curtok()->kind == TK_LBRACE) {
         make_anonymous_tag_name_stmt(&member_tag_name, &member_tag_len);
       } else {
-        psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
+        psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
       }
       if (tk_consume('{')) {
         int nested_n = 0;
@@ -182,19 +182,19 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len, nested_n, nested_sz);
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         // ポインタメンバの場合は不完全型（自己参照等）を許可する
-        if (token->kind != TK_MUL) {
-          psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), member_tag_name, member_tag_len);
+        if (curtok()->kind != TK_MUL) {
+          psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), member_tag_name, member_tag_len);
         }
       }
       if (psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         elem_size = psx_ctx_get_tag_size(member_tag_kind, member_tag_name, member_tag_len);
       }
-      if (elem_size <= 0 && token->kind != TK_MUL) {
-        psx_diag_ctx(token, "decl", "%s",
+      if (elem_size <= 0 && curtok()->kind != TK_MUL) {
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN));
       }
     } else {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
 
@@ -204,18 +204,18 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       token_ident_t *member = parse_member_decl_name_recursive_stmt(&is_ptr, &has_func_suffix);
       int has_member_name = member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
-          && token->kind != TK_COLON) {
-        psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+          && curtok()->kind != TK_COLON) {
+        psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
       if (has_func_suffix && !is_ptr) {
-        psx_diag_ctx(token, "decl", "%s",
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
       }
 
       int bit_width = 0;
       int bit_field_offset_in_storage = 0;
-      if (token->kind == TK_COLON) {
-        token = token->next;
+      if (curtok()->kind == TK_COLON) {
+        set_curtok(curtok()->next);
         long long bw = parse_enum_const_expr();
         if (bw < 0) bw = 0;
         bit_width = (int)bw;
@@ -269,8 +269,8 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       int arr_size = 1;
       int is_flex_array = 0;
       while (tk_consume('[')) {
-        if (!has_member_name) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
-        if (token->kind == TK_RBRACKET) {
+        if (!has_member_name) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+        if (curtok()->kind == TK_RBRACKET) {
           // フレキシブル配列メンバー: int data[];
           is_flex_array = 1;
           arr_size = 0;
@@ -308,7 +308,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       } else {
         current_off += total_size;
       }
-      if (!has_member_name && tk_consume(',')) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+      if (!has_member_name && tk_consume(',')) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       if (!tk_consume(',')) break;
     }
     tk_expect(';');
