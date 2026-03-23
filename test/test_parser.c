@@ -31,8 +31,8 @@ static void expect_parse_fail(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    token = tk_tokenize((char *)input);
-    parsed_code = ps_program();
+    token_t *head = tk_tokenize((char *)input);
+    parsed_code = ps_program_from(head);
     _exit(0);
   }
   int status;
@@ -47,8 +47,8 @@ static void expect_parse_ok(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    token = tk_tokenize((char *)input);
-    parsed_code = ps_program();
+    token_t *head = tk_tokenize((char *)input);
+    parsed_code = ps_program_from(head);
     _exit(0);
   }
   int status;
@@ -68,8 +68,8 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    token = tk_tokenize((char *)input);
-    parsed_code = ps_program();
+    token_t *head = tk_tokenize((char *)input);
+    parsed_code = ps_program_from(head);
     _exit(0);
   }
 
@@ -103,8 +103,8 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
-    token = tk_tokenize((char *)input);
-    parsed_code = ps_program();
+    token_t *head = tk_tokenize((char *)input);
+    parsed_code = ps_program_from(head);
     _exit(0);
   }
 
