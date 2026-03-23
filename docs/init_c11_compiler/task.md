@@ -531,6 +531,7 @@
   - [ ] 書き換え不要な `char *` 引数を棚卸しし、`const char *` へ統一する
   - [ ] 呼び出し側（parser/preprocess/test）で警告なくビルドできることを確認する
   - [x] 進捗（2026-03-23）: `user_input` / `filename` 系の context API と `tk_filename_intern/lookup` を `const` 契約へ更新し、`diag`/`preprocess`/`main` の呼び出し側型も追従した
+  - [x] 進捗（2026-03-23）: `tk_tokenize` / `tk_tokenize_ctx` の入力引数を `const char *` 化し、読み取り専用入力契約を公開APIへ反映した
 - [ ] 優先度P2: 設定反映タイミングの契約テストを拡充する
   - [ ] strict/trigraph/binary/audit の切替が反映される境界をテストで固定する
   - [ ] context 切替時の設定独立性（コンテキスト間の非干渉）をテスト化する

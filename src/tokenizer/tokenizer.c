@@ -657,18 +657,18 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
 }
 
 /** @brief 入力文字列をトークナイズし、先頭トークンを返す。 */
-token_t *tk_tokenize(char *p) {
+token_t *tk_tokenize(const char *p) {
   return tk_tokenize_ctx(tk_get_default_context(), p);
 }
 
-token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p) {
+token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
   tokenizer_context_t *prev_ctx = active_ctx;
   active_ctx = ctx ? ctx : tk_get_default_context();
   tk_set_current_token_ctx(active_ctx, NULL);
-  tk_allocator_set_expected_size(strlen(p));
-  char *normalized = replace_trigraphs(p);
+  tk_allocator_set_expected_size(strlen(in));
+  char *normalized = replace_trigraphs(in);
   tk_set_user_input_ctx(active_ctx, normalized);
-  p = normalized;
+  char *p = normalized;
   token_t head;
   head.next = NULL;
   token_t *cur = &head;

@@ -65,9 +65,9 @@ bool tk_at_eof_ctx(tokenizer_context_t *ctx);
  * @brief 入力文字列をトークナイズして先頭トークンを返す。
  * @warning 不正な字句を検出した場合は診断API（`diag_emit_*`）で終了する。
  */
-token_t *tk_tokenize(char *p);
+token_t *tk_tokenize(const char *p);
 /** @brief 明示コンテキストでトークナイズして先頭トークンを返す。 */
-token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p);
+token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *p);
 
 /** @brief 明示コンテキストの入力文字列（エラー表示用）を取得する。 */
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx);
