@@ -565,10 +565,24 @@
   - [x] 進捗（2026-03-24）: `tk_tokenize_ctx` から記号/識別子/数値の処理を `tokenize_punctuator` / `tokenize_ident_or_keyword` / `tokenize_number_literal` に抽出し、1ループあたりの分岐責務を分離した
   - [x] 進捗（2026-03-24）: `tk_tokenize_ctx` のセッション開始/終了処理を整理し、コンテキスト切替・入力正規化・終了復元の責務境界を明確化した
   - [x] 進捗（2026-03-24）: ループ内のトークン前処理フラグ操作を `take_tokenize_flags` に集約し、分岐処理の引数受け渡しを単純化した
+  - [x] 進捗（2026-03-24）: 1トークン分の分岐列を `tokenize_one` へ集約し、`tk_tokenize_ctx` 本体の可読性を向上した
+  - [x] 進捗（2026-03-24）: 実行時コンテキスト切替を `tokenize_session_t`（`begin_tokenize_session` / `end_tokenize_session`）へカプセル化した
 - [x] 次フェーズ候補P2: hotpathベンチ結果の定点記録を1日1回運用に固定
   - [x] 進捗（2026-03-24）: `scripts/log_tokenizer_hotpath_daily.sh` と `make log-tokenizer-hotpath-daily` を追加し、`tokenizer_hotpath_daily.csv` へ日次追記できる運用を固定した
 - [x] 次フェーズ候補P2: Tokenizer専用の軽量perfゲート（ローカル実行向け）を追加
   - [x] 進捗（2026-03-24）: `scripts/check_tokenizer_perf_light.sh` と `make check-tokenizer-perf-light` を追加し、`case` 指標 + `hotpath` 指標の軽量ゲートをローカルで実行可能にした
+
+## Tokenizer 追加観点（2026-03-24）
+- [ ] [P1] `tk_tokenize_ctx` の異常終了経路で `active_ctx` 復元漏れが起きないことを、失敗系テストで固定する
+  - [ ] 例: 不正文字/未終端文字列で診断終了するケースの前後で、既定コンテキスト状態が壊れないことを検証する
+- [ ] [P1] `tokenizer.c` 内の「実装定義動作（例: マルチ文字文字定数）」を1箇所に集約し、方針コメントを統一する
+  - [ ] C11準拠部分と実装拡張部分の境界を明示して、将来のstrict強化時の変更点を減らす
+- [ ] [P2] `parse_number_literal` を整数系/浮動系の補助関数へさらに分割し、レビューしやすい粒度にする
+  - [ ] 16進浮動/10進浮動/基数付き整数（2/8/16）の分岐責務を個別関数へ切り出す
+- [ ] [P2] `tokenize_one` の分岐順を実測ベースで固定し、順序変更時の性能影響をベンチで記録する運用を追加する
+  - [ ] `tokenizer_hotpath_daily.csv` との差分記録ルールを `tokenizer_perf_report.md` に追記する
+- [ ] [P3] Tokenizer内部ヘルパーのDoxygenを最小テンプレートで揃え、引数/副作用/失敗条件を簡潔に明記する
+  - [ ] `tokenize_*` / `parse_*` / `begin|end_tokenize_session` から優先適用する
 
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
