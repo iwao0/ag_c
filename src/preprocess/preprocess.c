@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <time.h>
+#include <unistd.h>
 
 typedef struct macro macro_t;
 #define MACRO_INLINE_PARAMS 8
@@ -30,7 +31,7 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
 #define PP_MAX_INCLUDE_DEPTH 64
 #define PP_MAX_MACRO_EXPANSIONS 20000
-#define PP_MAX_LINE_FILENAME_LEN 255
+#define PP_MAX_LINE_FILENAME_LEN 1024
 
 typedef struct include_frame include_frame_t;
 struct include_frame {
@@ -84,15 +85,44 @@ static void validate_include_path_or_die(const char *path) {
   }
 }
 
-static void validate_line_filename_or_die(const char *filename, size_t len) {
-  if (len == 0 || len > PP_MAX_LINE_FILENAME_LEN) {
+static void validate_line_filename_or_die(const char *name, int len) {
+  if (!name || len <= 0 || len > PP_MAX_LINE_FILENAME_LEN) {
     pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
   }
-  for (size_t i = 0; i < len; i++) {
-    unsigned char c = (unsigned char)filename[i];
-    if (c < 0x20 || c == 0x7f) {
+  for (int i = 0; i < len; i++) {
+    unsigned char c = (unsigned char)name[i];
+    if (c < 0x20 || c == 0x7F) {
       pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
     }
+  }
+}
+
+static bool path_is_within(const char *path, const char *base) {
+  size_t n = strlen(base);
+  if (n == 0) return false;
+  return strncmp(path, base, n) == 0 && (path[n] == '\0' || path[n] == '/');
+}
+
+static void validate_include_realpath_or_die(const char *candidate, const char *display_path) {
+  char resolved[PATH_MAX];
+  if (!realpath(candidate, resolved)) return;
+
+  static bool roots_initialized = false;
+  static char project_root[PATH_MAX];
+  static char include_root[PATH_MAX];
+  static bool have_project_root = false;
+  static bool have_include_root = false;
+
+  if (!roots_initialized) {
+    roots_initialized = true;
+    have_project_root = realpath(".", project_root) != NULL;
+    have_include_root = realpath("include", include_root) != NULL;
+  }
+
+  bool allowed = (have_project_root && path_is_within(resolved, project_root)) ||
+                 (have_include_root && path_is_within(resolved, include_root));
+  if (!allowed) {
+    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
 }
 
@@ -899,6 +929,7 @@ token_t *preprocess(token_t *tok) {
           continue;
         }
 
+        validate_include_realpath_or_die(filename, filename);
         char *buf = read_file(filename);
         if (!buf) {
           size_t alt_len = strlen("include/") + strlen(filename) + 1;
@@ -907,6 +938,7 @@ token_t *preprocess(token_t *tok) {
             diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
           }
           snprintf(alt, alt_len, "include/%s", filename);
+          validate_include_realpath_or_die(alt, filename);
           buf = read_file(alt);
           free(alt);
         }
@@ -1178,7 +1210,7 @@ token_t *preprocess(token_t *tok) {
           char *new_file = NULL;
           if (tok && tok->kind == TK_STRING) {
             token_string_t *st = as_string(tok);
-            validate_line_filename_or_die(st->str, (size_t)st->len);
+            validate_line_filename_or_die(st->str, st->len);
             new_file = my_strndup(st->str, st->len);
             tok = tok->next;
           }

@@ -255,6 +255,8 @@ static void test_tokenize_invalid() {
   expect_tokenize_fail("safe\\u200Cname"); // 識別子内ゼロ幅UCN
   expect_tokenize_fail("\"\\\n\\u202E\""); // 行継続 + bidi制御文字UCN
   expect_tokenize_fail("safe\\\n\\u200Cname"); // 行継続 + 識別子内ゼロ幅UCN
+  expect_tokenize_fail("\x80");        // 孤立したUTF-8継続バイト
+  expect_tokenize_fail("\xC0\xAF");    // 不正UTF-8シーケンス（overlong）
   expect_tokenize_fail("1.0f0");      // pp-number 連結
   expect_tokenize_fail("1..2");       // pp-number 連結
 

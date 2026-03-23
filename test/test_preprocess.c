@@ -113,18 +113,23 @@ static const char *fail_cases[] = {
     "#define FOO(a, 1) 1\nint main() { return FOO(1); }\n",
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
+    "#include \"build/escape_symlink.h\"\nint main() { return 0; }\n",
     "#include \"build/\\u202Eevil.h\"\nint main() { return 0; }\n",
     "#include \"build\\\\test_inc.h\"\nint main() { return 0; }\n",
     "#include \"C:/Windows/win.ini\"\nint main() { return 0; }\n",
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
+    "#include \"build/\"\nint main() { return 0; }\n",
+    "#include \".\"\nint main() { return 0; }\n",
     "#include <../README.md>\nint main() { return 0; }\n",
+    "#include \"build/self_include.h\"\nint main() { return 0; }\n",
     "#include \"build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
     "#include \"./build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
     "#line 0\nint main() { return 0; }\n",
     "#line 2147483648\nint main() { return 0; }\n",
+    "#line 10 \"bad\x01name.c\"\nint main() { return 0; }\n",
     "#define FOO(x) x\nint main() { return FOO(1; }\n",
     "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1); }\n",
     "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1, 2, 3); }\n",
@@ -133,6 +138,9 @@ static const char *fail_cases[] = {
     "#define BAD2(a) a##\nint main() { return BAD2(42); }\n",
     "#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n",
     "#define BAD4(a) a##+\nint main() { return BAD4(1); }\n",
+    "#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n",
+    "#define BAD6(a,b) a##b\nint main() { return BAD6(1,foo); }\n",
+    "#define BAD7(a,b) a##b\nint main() { return BAD7(&,&); }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
 };
@@ -427,23 +435,65 @@ static void expect_macro_expansion_limit_fail(void) {
   free(input);
 }
 
-static void expect_line_filename_too_long_fail(void) {
-  const size_t filename_len = 300;
-  const char *prefix = "#line 1 \"";
-  const char *suffix = "\"\nint main() { return 0; }\n";
-  size_t cap = strlen(prefix) + filename_len + strlen(suffix) + 1;
+static void expect_macro_arg_nesting_limit_fail(void) {
+  const int reps = 25050;
+  size_t cap = (size_t)reps * 6 + 256;
   char *input = calloc(cap, 1);
   if (!input) {
-    fprintf(stderr, "  FAIL: cannot allocate #line long filename input\n");
+    fprintf(stderr, "  FAIL: cannot allocate macro arg nesting input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len,
+                   "#define F0(x) x\n"
+                   "#define F1(x) F0(x)\n"
+                   "#define F2(x) F1(x)\n"
+                   "int main() { return ");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < reps; i++) {
+    if (i > 0) input[len++] = '+';
+    memcpy(input + len, "F2(0)", 5);
+    len += 5;
+  }
+  n = snprintf(input + len, cap - len, "; }\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
+    free(input);
     exit(1);
   }
 
-  size_t pos = 0;
-  memcpy(input + pos, prefix, strlen(prefix));
-  pos += strlen(prefix);
-  memset(input + pos, 'a', filename_len);
-  pos += filename_len;
-  memcpy(input + pos, suffix, strlen(suffix));
+  expect_preprocess_fail(input);
+  free(input);
+}
+
+static void expect_line_filename_too_long_fail(void) {
+  const int name_len = 1500;
+  size_t cap = (size_t)name_len + 64;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate line filename test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len, "#line 10 \"");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: line filename test input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < name_len; i++) input[len++] = 'a';
+  n = snprintf(input + len, cap - len, "\"\nint main() { return 0; }\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: line filename test input overflow\n");
+    free(input);
+    exit(1);
+  }
 
   expect_preprocess_fail_with_stderr_substr(input, "E1028");
   free(input);
@@ -483,6 +533,14 @@ int main(void) {
           "#include \"build/guard_a.h\"\n"
           "#endif\n");
   fclose(hguard_b);
+  FILE *hself = fopen("build/self_include.h", "w");
+  fprintf(hself, "#include \"build/self_include.h\"\n");
+  fclose(hself);
+  unlink("build/escape_symlink.h");
+  if (symlink("../README.md", "build/escape_symlink.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create build/escape_symlink.h symlink\n");
+    return 1;
+  }
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
   fprintf(hcycle_norm_a,
           "#pragma once\n"
@@ -535,6 +593,7 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
+  expect_macro_arg_nesting_limit_fail();
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;
