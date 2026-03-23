@@ -512,7 +512,7 @@
 - [x] 品質確認: `test_tokenizer` / `test_parser` / `test_preprocess` / `test_e2e` で回帰なしを確認
 
 ## Tokenizer 今後の改善候補（2026-03-23）
-- [ ] 優先度P1: `tokenizer_context_t` への状態集約を完了する
+- [x] 優先度P1: `tokenizer_context_t` への状態集約を完了する
   - [x] `user_input` と `current_filename` の保持先を context 側へ移し、再入性を強化する
   - [x] 既存APIの互換レイヤ（global相当アクセス）を段階的に縮小する
   - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `user_input` / `current_filename` を追加し、`tk_get/set_{user_input,filename}_ctx` を導入。`preprocess_ctx` の退避/復元も context 明示APIへ移行した
@@ -538,9 +538,10 @@
   - [x] strict/trigraph/binary/audit の切替が反映される境界をテストで固定する
   - [x] context 切替時の設定独立性（コンテキスト間の非干渉）をテスト化する
   - [x] 進捗（2026-03-23）: `test_context_config_isolation_and_switch_timing` を追加し、strict/trigraph/binary の context別挙動、設定切替の次回 tokenize 反映境界、context間の非干渉を回帰テスト化した
-- [ ] 優先度P2: 計測基盤を整備して最適化の継続性を高める
-  - [ ] `scanner` / `literals` / `punctuator` 単位のホットパス計測を追加する
-  - [ ] `tokenizer_perf_report.md` に継続比較テンプレートを用意する
+- [x] 優先度P2: 計測基盤を整備して最適化の継続性を高める
+  - [x] `scanner` / `literals` / `punctuator` 単位のホットパス計測を追加する
+  - [x] `tokenizer_perf_report.md` に継続比較テンプレートを用意する
+  - [x] 進捗（2026-03-24）: `build/bench_tokenizer` に `hotpath=scanner/literals/punctuator` 指標を追加し、`tokenizer_perf_report.md` に継続比較テンプレートと運用メモを追記した
 - [ ] 優先度P3: 公開/非公開境界の運用をさらに自動化する
   - [ ] `tokenizer/internal` 越境 `#include` チェックを定期実行対象として文書化する
   - [ ] Tokenizer変更時のドキュメント更新ルール（`task.md` / `implementation_plan.md`）を明文化する

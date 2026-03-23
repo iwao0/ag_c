@@ -23,6 +23,18 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 `check_tokenizer_perf.sh` は `case=mixed/ident/numeric/punct` の `tokens/sec` と `alloc_count` を検査します。  
 しきい値は環境変数（例: `MIXED_MIN_TPS`）で上書きできます。
 
+`build/bench_tokenizer` は継続計測用に次のホットパス指標も出力します。
+
+- `hotpath=scanner`: `tk_skip_ignored` + `tk_scan_ident_*` の `ops/sec`
+- `hotpath=literals`: `tk_skip_escape_in_literal` の `ops/sec`
+- `hotpath=punctuator`: `match_punctuator` / `punctuator_kind_for_str` の `ops/sec`
+
+## Ongoing Comparison Template
+
+| Date | Build | mixed 256KB (tokens/sec) | ident 256KB | numeric 256KB | punct 256KB | scanner hotpath (ops/sec) | literals hotpath (ops/sec) | punctuator hotpath (ops/sec) | alloc_count mixed | Notes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| YYYY-MM-DD | -O0 / -O2 | - | - | - | - | - | - | - | - | change summary |
+
 ## Baseline (Before Optimization)
 
 - 1KB: `1,399,168 tokens/sec`, `alloc_count=674`, `peak_alloc_bytes=40,313`

@@ -1,5 +1,8 @@
 #include "../src/tokenizer/tokenizer.h"
 #include "../src/tokenizer/token.h"
+#include "../src/tokenizer/internal/literals.h"
+#include "../src/tokenizer/internal/punctuator.h"
+#include "../src/tokenizer/internal/scanner.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -100,6 +103,107 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
   free(input);
 }
 
+static void run_hotpath_scanner_case(void) {
+  char *input = build_input_from_pattern(" \tfoo //c\nbar /*x*/ baz \\\nqux\n", 256 * 1024);
+  struct timespec t0;
+  struct timespec t1;
+  long long ops = 0;
+  int line_no = 1;
+  bool at_bol = true;
+  bool has_space = false;
+  char *p = input;
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  while (*p) {
+    p = tk_skip_ignored(p, &at_bol, &has_space, &line_no);
+    if (!*p) break;
+    int adv = 0;
+    if (tk_scan_ident_start(p, &adv)) {
+      p += adv;
+      ops++;
+      while (*p && tk_scan_ident_continue(p, &adv)) {
+        p += adv;
+        ops++;
+      }
+      continue;
+    }
+    p++;
+    ops++;
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+
+  double sec = elapsed_sec(t0, t1);
+  double ops_sec = sec > 0.0 ? (double)ops / sec : 0.0;
+  printf("hotpath=scanner input=%zub ops=%lld time=%.6fs ops/sec=%.0f\n",
+         strlen(input), ops, sec, ops_sec);
+  free(input);
+}
+
+static void run_hotpath_literals_case(void) {
+  char *input = build_input_from_pattern("\\n\\x41\\123\\u3042\\U0001F600", 128 * 1024);
+  struct timespec t0;
+  struct timespec t1;
+  long long ops = 0;
+  char *p = input;
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  while (*p) {
+    if (*p != '\\') {
+      p++;
+      continue;
+    }
+    p++;
+    tk_skip_escape_in_literal(&p);
+    ops++;
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+
+  double sec = elapsed_sec(t0, t1);
+  double ops_sec = sec > 0.0 ? (double)ops / sec : 0.0;
+  printf("hotpath=literals input=%zub ops=%lld time=%.6fs ops/sec=%.0f\n",
+         strlen(input), ops, sec, ops_sec);
+  free(input);
+}
+
+static void run_hotpath_punctuator_case(void) {
+  char *input = build_input_from_pattern(
+      "... <<= >>= ++ -- += -= *= /= %= == != <= >= && || << >> -> ## %:%: <::> <% %> ; , .\n",
+      256 * 1024);
+  struct timespec t0;
+  struct timespec t1;
+  long long ops = 0;
+  const char *p = input;
+
+  clock_gettime(CLOCK_MONOTONIC, &t0);
+  while (*p) {
+    token_kind_t kind = TK_EOF;
+    int len = 0;
+    if (match_punctuator(p, &kind, &len)) {
+      p += len;
+      ops++;
+      continue;
+    }
+    if (*p == '\n' || *p == ' ' || *p == '\t' || *p == '\r') {
+      p++;
+      continue;
+    }
+    token_kind_t one = punctuator_kind_for_str((char[2]){*p, '\0'});
+    if (one != TK_EOF) {
+      p++;
+      ops++;
+      continue;
+    }
+    p++;
+  }
+  clock_gettime(CLOCK_MONOTONIC, &t1);
+
+  double sec = elapsed_sec(t0, t1);
+  double ops_sec = sec > 0.0 ? (double)ops / sec : 0.0;
+  printf("hotpath=punctuator input=%zub ops=%lld time=%.6fs ops/sec=%.0f\n",
+         strlen(input), ops, sec, ops_sec);
+  free(input);
+}
+
 int main(void) {
   const char *mixed_pattern =
       "int main(){int x=0;for(int i=0;i<100;i++){x+=i;}if(x>=10){x=x-1;}return x;}\n";
@@ -121,6 +225,9 @@ int main(void) {
   run_case("ident", ident_pattern, 256 * 1024);
   run_case("numeric", numeric_pattern, 256 * 1024);
   run_case("punct", punct_pattern, 256 * 1024);
+  run_hotpath_scanner_case();
+  run_hotpath_literals_case();
+  run_hotpath_punctuator_case();
 
   const char *corpus = getenv("TOKENIZER_BENCH_CORPUS_FILE");
   if (corpus && corpus[0] != '\0') {
