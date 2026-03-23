@@ -591,6 +591,10 @@
   - [x] 進捗（2026-03-24）: `tokenize_*` / `begin|end_tokenize_session` に加え、`parse_float_suffix` / `parse_float_literal` / `parse_integer_literal_with_base` のDoxygenコメントを追加した
   - [x] `tokenize_*` / `parse_*` / `begin|end_tokenize_session` から優先適用する
 
+## Tokenizer 状態メモ（2026-03-24）
+- [x] 既存のTokenizer改善タスク（本ファイル内で定義した項目）は一通り完了
+- [x] 今後は「機能追加（C仕様拡張）」か「ベンチ目標更新」に合わせて、次ラウンドタスクを都度起票する運用へ移行
+
 ## Tokenizer 次ラウンド候補（2026-03-24）
 - [x] [P2] `parse_number_literal` の 0始まり分岐（`0x`/`0b`/8進）を専用ディスパッチ関数へ抽出し、レビュー観点を固定する
   - [x] 進捗（2026-03-24）: `parse_zero_prefixed_number` を追加し、`parse_number_literal` 本体を「0始まり分岐 or それ以外」の二段構成へ整理した
