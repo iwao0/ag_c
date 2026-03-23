@@ -987,6 +987,19 @@ static void skip_func_params(void) {
   }
 }
 
+static void skip_bracket_group(void) {
+  if (!tk_consume('[')) return;
+  int depth = 1;
+  while (depth > 0) {
+    if (curtok()->kind == TK_EOF) {
+      psx_diag_missing(curtok(), "]");
+    }
+    if (curtok()->kind == TK_LBRACKET) depth++;
+    else if (curtok()->kind == TK_RBRACKET) depth--;
+    set_curtok(curtok()->next);
+  }
+}
+
 static token_ident_t *consume_decl_name_recursive(int *is_pointer,
                                                   unsigned int *const_mask, unsigned int *volatile_mask,
                                                   int *levels, int *out_array_dim,
@@ -997,6 +1010,9 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   if (tk_consume('(')) {
     local_had_parens = 1;
     tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels, out_array_dim, NULL);
+    while (curtok()->kind == TK_LBRACKET) {
+      skip_bracket_group();
+    }
     tk_expect(')');
   } else {
     tok = tk_consume_ident();

@@ -1420,6 +1420,7 @@
   - 進捗（2026-03-24）: `stmt.c` の `parse_typedef_name_decl()` を再帰化し、ブロックスコープ `typedef int (*(*fp_t))(int);` を受理
   - 進捗（2026-03-24）: `decl.c` の `consume_decl_name()` を再帰化し、ローカル宣言 `int (*(*pp))(int);` を受理
   - 進捗（2026-03-24）: トップレベル宣言子の再帰で `(*arr[2])` 形を受理し、`int (*arr[2])(int);` を受理
+  - 進捗（2026-03-24）: ローカル宣言子でも括弧内配列後置 `(*arr[2])` を受理し、`int main(){ int (*arr[2])(int); }` を受理
   - 対象ファイル: `src/parser/parser.c`, `src/parser/decl.c`
 - [ ] `type_name` をキャスト・sizeof・_Generic で統一する（C11 §6.7.7）
   - 現状: `parse_cast_type()` が独自にパース。`decl_spec` 統合ではない
