@@ -10,6 +10,17 @@ typedef struct {
   const char *input;
 } success_case_t;
 
+static char g_unique_tmp_header[PATH_MAX];
+
+static void cleanup_preprocess_test_artifacts(void) {
+  unlink("include/escape_tmp_symlink.h");
+  unlink("build/escape_tmp_symlink.h");
+  if (g_unique_tmp_header[0] != '\0') {
+    unlink(g_unique_tmp_header);
+    g_unique_tmp_header[0] = '\0';
+  }
+}
+
 static const success_case_t success_cases[] = {
     {42, "#include \"build/test_inc.h\"\nint main() { return inc_func(); }"},
     {42, "#include \"build/./dot_inc.h\"\nint main() { return dot_inc_func(); }"},
@@ -589,9 +600,14 @@ int main(void) {
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
 
-  char unique_tmp_header[PATH_MAX];
-  snprintf(unique_tmp_header, sizeof(unique_tmp_header), "/tmp/ag_c_escape_preprocess_XXXXXX");
-  int unique_tmp_fd = mkstemp(unique_tmp_header);
+  memset(g_unique_tmp_header, 0, sizeof(g_unique_tmp_header));
+  if (atexit(cleanup_preprocess_test_artifacts) != 0) {
+    fprintf(stderr, "  FAIL: cannot register cleanup handler\n");
+    return 1;
+  }
+
+  snprintf(g_unique_tmp_header, sizeof(g_unique_tmp_header), "/tmp/ag_c_escape_preprocess_XXXXXX");
+  int unique_tmp_fd = mkstemp(g_unique_tmp_header);
   if (unique_tmp_fd < 0) {
     fprintf(stderr, "  FAIL: cannot create unique temp include file\n");
     return 1;
@@ -599,7 +615,6 @@ int main(void) {
   FILE *unique_tmp_fp = fdopen(unique_tmp_fd, "w");
   if (!unique_tmp_fp) {
     close(unique_tmp_fd);
-    unlink(unique_tmp_header);
     fprintf(stderr, "  FAIL: cannot open unique temp include stream\n");
     return 1;
   }
@@ -643,12 +658,10 @@ int main(void) {
   unlink("build/realpath_loop_b.h");
   if (symlink("realpath_loop_b.h", "build/realpath_loop_a.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/realpath_loop_a.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   if (symlink("realpath_loop_a.h", "build/realpath_loop_b.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/realpath_loop_b.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   unlink("build/escape_symlink.h");
@@ -657,15 +670,13 @@ int main(void) {
     return 1;
   }
   unlink("build/escape_tmp_symlink.h");
-  if (symlink(unique_tmp_header, "build/escape_tmp_symlink.h") != 0) {
+  if (symlink(g_unique_tmp_header, "build/escape_tmp_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/escape_tmp_symlink.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   unlink("include/escape_tmp_symlink.h");
-  if (symlink(unique_tmp_header, "include/escape_tmp_symlink.h") != 0) {
+  if (symlink(g_unique_tmp_header, "include/escape_tmp_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create include/escape_tmp_symlink.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
@@ -731,7 +742,6 @@ int main(void) {
   expect_macro_arg_nesting_limit_fail();
   expect_if_expr_token_limit_fail();
   expect_if_expr_eval_limit_fail();
-  unlink(unique_tmp_header);
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;
