@@ -1091,8 +1091,10 @@ static int run_ag_c_expect_fail_with_diag_timeout(const char *input, const char 
   return 0;
 }
 
-static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char *arg2,
-                                                   const char *expected_diag, const char *log_path) {
+static int run_ag_c_expect_fail_with_prog_args_and_diag(const char *prog_path, const char *arg1,
+                                                        const char *arg2, const char *expected_diag,
+                                                        const char *log_path) {
+  const char *prog = prog_path ? prog_path : "./build/ag_c";
   int pipefd[2];
   if (pipe(pipefd) != 0) return -1;
 
@@ -1103,11 +1105,11 @@ static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char 
     close(pipefd[1]);
     freopen("/dev/null", "w", stdout);
     if (arg1 && arg2) {
-      execl("./build/ag_c", "./build/ag_c", arg1, arg2, (char *)NULL);
+      execl(prog, prog, arg1, arg2, (char *)NULL);
     } else if (arg1) {
-      execl("./build/ag_c", "./build/ag_c", arg1, (char *)NULL);
+      execl(prog, prog, arg1, (char *)NULL);
     } else {
-      execl("./build/ag_c", "./build/ag_c", (char *)NULL);
+      execl(prog, prog, (char *)NULL);
     }
     _exit(1);
   }
@@ -1146,6 +1148,11 @@ static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char 
   if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) return -1;
   if (!strstr(diag_buf, expected_diag)) return -1;
   return 0;
+}
+
+static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char *arg2,
+                                                   const char *expected_diag, const char *log_path) {
+  return run_ag_c_expect_fail_with_prog_args_and_diag(NULL, arg1, arg2, expected_diag, log_path);
 }
 
 static int run_clang_build_many(const char *bin_path, const char **inputs, size_t ninputs) {
@@ -1642,6 +1649,30 @@ int main() {
     const char *log_path = "build/e2e/logs/compile_fail_usage_too_many_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag("a.c", "b.c", "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_too_many_args (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    char cwd[PATH_MAX];
+    if (!getcwd(cwd, sizeof(cwd))) {
+      fprintf(stderr, "Compile-fail setup failed: cannot get cwd for leak check\n");
+      return 1;
+    }
+    char abs_prog[PATH_MAX];
+    snprintf(abs_prog, sizeof(abs_prog), "%s/build/ag_c", cwd);
+    const char *log_path = "build/e2e/logs/compile_fail_usage_abs_prog_path.log";
+    if (run_ag_c_expect_fail_with_prog_args_and_diag(abs_prog, NULL, NULL, "使い方:", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: usage_abs_prog_path (see %s)\n", log_path);
+      return 1;
+    }
+    if (log_file_contains_substr(log_path, cwd) || log_file_contains_substr(log_path, "/tmp/") ||
+        log_file_contains_substr(log_path, abs_prog)) {
+      fprintf(stderr, "Compile-fail case failed: usage_abs_prog_path leak (see %s)\n", log_path);
+      return 1;
+    }
+    const char *user = getenv("USER");
+    if (user && *user && log_file_contains_substr(log_path, user)) {
+      fprintf(stderr, "Compile-fail case failed: usage_abs_prog_path user leak (see %s)\n", log_path);
       return 1;
     }
   }
