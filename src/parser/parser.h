@@ -3,15 +3,20 @@
 
 #include "ast.h"
 #include "../tokenizer/token.h"
+#include "../tokenizer/tokenizer.h"
 
 // プログラム全体をパースする（複数の文を返す）
 node_t **ps_program(void);
 // 先頭トークンを明示指定してプログラム全体をパースする
 node_t **ps_program_from(token_t *start);
+// Tokenizerコンテキストを明示してプログラム全体をパースする
+node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start);
 
 // 単一の式をパースしてASTのルートを返す
 node_t *ps_expr(void);
 // 先頭トークンを明示指定して単一式をパースする
 node_t *ps_expr_from(token_t *start);
+// Tokenizerコンテキストを明示して単一式をパースする
+node_t *ps_expr_ctx(tokenizer_context_t *tk_ctx, token_t *start);
 
 #endif

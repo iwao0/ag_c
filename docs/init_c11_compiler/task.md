@@ -483,6 +483,7 @@
   - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `current_token` を追加し、`tk_get_current_token`/`tk_set_current_token` と `tk_consume`/`tk_expect` 系を context カーソル同期へ移行した（互換のため `extern token` は暫定維持）
   - [x] 進捗（2026-03-23）: `tk_consume_ctx`/`tk_expect_ctx`/`tk_expect_number_ctx`/`tk_at_eof_ctx` を追加し、既存APIは互換ラッパとして維持した
   - [x] 進捗（2026-03-23）: `preprocess_ctx` を追加し、`main` と `preprocess` 内部の再トークナイズ経路（`#include`/`##`）を `tk_tokenize_ctx` ベースへ移行した
+  - [x] 進捗（2026-03-23）: `ps_program_ctx`/`ps_expr_ctx` を追加し、`main` のパース入口を context 明示版APIへ切り替えた
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

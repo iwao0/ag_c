@@ -270,7 +270,8 @@ static void parse_toplevel_decl_spec(void) {
 }
 
 // program = funcdef*
-node_t **ps_program_from(token_t *start) {
+node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
+  (void)tk_ctx; // 現時点はTokenizerカーソル同期のみ使用
   tk_set_current_token(start);
   int cap = 16;
   node_t **codes = calloc(cap, sizeof(node_t*));
@@ -329,8 +330,12 @@ node_t **ps_program_from(token_t *start) {
   return codes;
 }
 
+node_t **ps_program_from(token_t *start) {
+  return ps_program_ctx(NULL, start);
+}
+
 node_t **ps_program(void) {
-  return ps_program_from(tk_get_current_token());
+  return ps_program_ctx(NULL, tk_get_current_token());
 }
 
 static int is_toplevel_function_signature(token_t *tok) {
@@ -1555,12 +1560,17 @@ static node_t *funcdef(void) {
 }
 
 // expr = assign ("," assign)*
-node_t *ps_expr_from(token_t *start) {
+node_t *ps_expr_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
+  (void)tk_ctx; // 現時点はTokenizerカーソル同期のみ使用
   tk_set_current_token(start);
   node_t *node = psx_expr_expr();
   return node;
 }
 
+node_t *ps_expr_from(token_t *start) {
+  return ps_expr_ctx(NULL, start);
+}
+
 node_t *ps_expr(void) {
-  return ps_expr_from(tk_get_current_token());
+  return ps_expr_ctx(NULL, tk_get_current_token());
 }
