@@ -1525,43 +1525,105 @@ static token_ident_t *parse_func_name_declarator_recursive(void) {
 
 static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_unnamed_param,
                                             node_t ***out_args, int *out_nargs) {
-  token_ident_t *tok = parse_func_name_declarator_recursive();
-  if (!tok) {
-    psx_diag_ctx(curtok(), "funcdef", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
-  }
-  tk_expect('(');
-
   int arg_cap = 16;
   node_t **args = calloc(arg_cap, sizeof(node_t *));
   int nargs = 0;
   int is_variadic = 0;
   int has_unnamed_param = 0;
-  if (!tk_consume(')')) {
-    bool done = false;
-    node_func_t node_tmp = {0};
-    node_tmp.args = args;
-    while (!done) {
-      if (curtok()->kind == TK_ELLIPSIS) {
-        set_curtok(curtok()->next);
-        if (curtok()->kind == ',') {
-          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
-                         "%s",
-                         diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
+
+  token_ident_t *tok = NULL;
+  // function declarator returning function pointer:
+  //   int (*f(void))(int) { ... }
+  if (curtok()->kind == TK_LPAREN && curtok()->next && curtok()->next->kind == TK_MUL) {
+    tk_expect('(');
+    while (tk_consume('*')) {
+      // pointer depth for the outer declarator is not needed in current funcdef AST.
+    }
+    tok = parse_func_name_declarator_recursive();
+    if (!tok) {
+      psx_diag_ctx(curtok(), "funcdef", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+    }
+    tk_expect('(');
+    if (!tk_consume(')')) {
+      bool done = false;
+      node_func_t node_tmp = {0};
+      node_tmp.args = args;
+      while (!done) {
+        if (curtok()->kind == TK_ELLIPSIS) {
+          set_curtok(curtok()->next);
+          if (curtok()->kind == ',') {
+            diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
+                           "%s",
+                           diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
+          }
+          is_variadic = 1;
+          done = true;
+          continue;
         }
-        is_variadic = 1;
-        done = true;
-        continue;
+        if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
+        args = node_tmp.args;
+        if (!tk_consume(',')) break;
+        if (curtok()->kind == TK_RPAREN) {
+          psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
+        }
       }
-      if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
-      args = node_tmp.args;
-      if (!tk_consume(',')) break;
-      if (curtok()->kind == TK_RPAREN) {
-        psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
-      }
+      tk_expect(')');
     }
     tk_expect(')');
+    // consume trailing direct-declarator suffixes for returned function pointer type.
+    while (curtok()->kind == TK_LPAREN || curtok()->kind == TK_LBRACKET) {
+      if (tk_consume('(')) {
+        int depth = 1;
+        while (depth > 0) {
+          if (tk_consume('(')) {
+            depth++;
+          } else if (tk_consume(')')) {
+            depth--;
+          } else {
+            set_curtok(curtok()->next);
+          }
+        }
+        continue;
+      }
+      if (tk_consume('[')) {
+        while (!tk_consume(']')) set_curtok(curtok()->next);
+      }
+    }
+  } else {
+    tok = parse_func_name_declarator_recursive();
+    if (!tok) {
+      psx_diag_ctx(curtok(), "funcdef", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+    }
+    tk_expect('(');
+    if (!tk_consume(')')) {
+      bool done = false;
+      node_func_t node_tmp = {0};
+      node_tmp.args = args;
+      while (!done) {
+        if (curtok()->kind == TK_ELLIPSIS) {
+          set_curtok(curtok()->next);
+          if (curtok()->kind == ',') {
+            diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
+                           "%s",
+                           diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
+          }
+          is_variadic = 1;
+          done = true;
+          continue;
+        }
+        if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
+        args = node_tmp.args;
+        if (!tk_consume(',')) break;
+        if (curtok()->kind == TK_RPAREN) {
+          psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
+        }
+      }
+      tk_expect(')');
+    }
   }
+
   *out_is_variadic = is_variadic;
   *out_has_unnamed_param = has_unnamed_param;
   *out_args = args;
