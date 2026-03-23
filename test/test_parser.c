@@ -446,6 +446,15 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(3, as_num(ret->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "typedef int (*fp_t)(int); "
+      "int f(int x){ return x; } "
+      "main(){ fp_t p=f; return _Generic(p, int (*)(int): 13, default: 7); }");
+  node_t *ret_fp = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret_fp->kind);
+  ASSERT_EQ(ND_NUM, ret_fp->lhs->kind);
+  ASSERT_EQ(13, as_num(ret_fp->lhs)->val);
 }
 
 static void test_expr_sizeof() {

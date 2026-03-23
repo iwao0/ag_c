@@ -403,6 +403,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "generic_int", CASE_INT, "int main() { return _Generic(1, int:11, default:22); }", 11, 0},
     {"type_decl", "generic_double", CASE_INT, "int main() { return _Generic(1.0, float:11, double:33, default:22); }", 33, 0},
     {"type_decl", "generic_ptr", CASE_INT, "int main() { int *p=0; return _Generic(p, int*:3, default:7); }", 3, 0},
+    {"type_decl", "generic_funcptr_assoc", CASE_INT, "typedef int (*fp_t)(int); int id(int x){ return x; } int main(){ fp_t p=id; return _Generic(p, int (*)(int):13, default:7); }", 13, 0},
     {"type_decl", "const_param", CASE_INT, "int id(const int x) { return x; } int main(){ return id(7); }", 7, 0},
     {"type_decl", "compound_literal_int", CASE_INT, "int main(){ return (int){3}; }", 3, 0},
     {"type_decl", "compound_literal_struct_stmt", CASE_INT, "int main(){ struct S { int x; int y; }; (struct S){1,2}; return 7; }", 7, 0},

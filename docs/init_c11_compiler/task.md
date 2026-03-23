@@ -1423,6 +1423,7 @@
 - [ ] `type_name` をキャスト・sizeof・_Generic で統一する（C11 §6.7.7）
   - 現状: `parse_cast_type()` が独自にパース。`decl_spec` 統合ではない
   - 修正方針: `type_name()` = `decl_spec` + `pointer?` として統一パース関数を用意
+  - 進捗（2026-03-24）: `_Generic` の関連型パースで抽象宣言子の一部（`int (*)(int)`, `int (*)[3]`）を受理し、cast/sizeof 側と同系統の type-name を扱えるようにした
   - 対象ファイル: `src/parser/expr.c`
 - [x] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
   - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
