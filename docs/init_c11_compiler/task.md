@@ -1535,7 +1535,7 @@
 以下は grammar.md の記述が C11 仕様と異なっている箇所。grammar.md の修正と、
 必要に応じて実装側の対応が必要。
 
-- [ ] `_Static_assert` を `declaration` の一種にする（C11 §6.7）
+- [x] `_Static_assert` を `declaration` の一種にする（C11 §6.7）
   - C11: `declaration = decl_spec init_declarator_list? ";" | static_assert-declaration`
   - 現状: `external_decl` と `block_item` に個別記載。`declaration` に含まれていない
   - 進捗（2026-03-24）: トップレベルの宣言入口を `parse_toplevel_declaration_like()` に集約し、`_Static_assert` と通常宣言を同一経路で処理する構造へ整理
