@@ -33,6 +33,7 @@ typedef struct {
 static void consume_local_type_quals(token_t **cur);
 static long long eval_const_expr_type_size(node_t *n, int *ok);
 static void apply_array_abstract_suffix_size(int *sz);
+static int is_type_name_start_token(token_t *t);
 
 static int sizeof_expr_node(node_t *node) {
   int sz = psx_node_type_size(node);
@@ -184,6 +185,15 @@ static int parse_ptr_to_array_abstract_decl(token_t **ptok, int *is_pointer) {
   *ptok = after;
   *is_pointer = 1;
   return 1;
+}
+
+static int is_type_name_start_token(token_t *t) {
+  if (!t) return 0;
+  if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
+  if (t->kind == TK_STRUCT || t->kind == TK_UNION || t->kind == TK_ENUM) return 1;
+  if (psx_ctx_is_type_token(t->kind)) return 1;
+  if (psx_ctx_is_typedef_name_token(t)) return 1;
+  return 0;
 }
 
 static void skip_ptr_qualifiers_expr(void) {
@@ -832,6 +842,14 @@ static node_t *lower_struct_value_cast(node_t *operand,
 }
 
 static int parse_parenthesized_type_size(void) {
+  if (token->kind == TK_LPAREN && is_type_name_start_token(token->next)) {
+    token = token->next;
+    int sz = parse_parenthesized_type_size();
+    if (sz < 0) return -1;
+    tk_expect(')');
+    return sz;
+  }
+
   // Minimal support for C11 complex/imaginary spellings in sizeof/alignof:
   //   _Complex float, _Imaginary double, float _Complex, double _Imaginary
   if (token->kind == TK_COMPLEX || token->kind == TK_IMAGINARY) {
