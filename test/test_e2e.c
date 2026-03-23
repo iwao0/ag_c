@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1221,6 +1222,32 @@ static int run_ag_c_expect_fail_with_args_and_diag(const char *arg1, const char 
   return run_ag_c_expect_fail_with_prog_args_and_diag(NULL, arg1, arg2, expected_diag, log_path);
 }
 
+static int count_open_fds_self(void) {
+  DIR *d = opendir("/dev/fd");
+  if (!d) return -1;
+  int count = 0;
+  struct dirent *ent;
+  while ((ent = readdir(d)) != NULL) {
+    if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+    count++;
+  }
+  closedir(d);
+  return count;
+}
+
+static int count_tmp_files_with_prefix(const char *prefix) {
+  DIR *d = opendir("/tmp");
+  if (!d) return -1;
+  int count = 0;
+  size_t n = strlen(prefix);
+  struct dirent *ent;
+  while ((ent = readdir(d)) != NULL) {
+    if (strncmp(ent->d_name, prefix, n) == 0) count++;
+  }
+  closedir(d);
+  return count;
+}
+
 static int run_clang_build_many(const char *bin_path, const char **inputs, size_t ninputs) {
   pid_t pid = fork();
   if (pid == 0) {
@@ -1685,6 +1712,16 @@ int main() {
     fprintf(stderr, "Failed to create log directory\n");
     return 1;
   }
+  int fd_count_baseline = count_open_fds_self();
+  if (fd_count_baseline < 0) {
+    fprintf(stderr, "Failed to read fd baseline\n");
+    return 1;
+  }
+  int tmp_include_prefix_baseline = count_tmp_files_with_prefix("ag_c_e2e_include_");
+  if (tmp_include_prefix_baseline < 0) {
+    fprintf(stderr, "Failed to read /tmp include-prefix baseline\n");
+    return 1;
+  }
 
   for (size_t i = 0; i < sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0]); i++) {
     const compile_fail_case_t *tc = &compile_fail_cases[i];
@@ -1859,6 +1896,11 @@ int main() {
   }
   {
     char cwd[PATH_MAX];
+    int tmp_prefix_before = count_tmp_files_with_prefix("ag_c_e2e_include_");
+    if (tmp_prefix_before < 0) {
+      fprintf(stderr, "Compile-fail setup failed: cannot count /tmp include-prefix files\n");
+      return 1;
+    }
     if (!getcwd(cwd, sizeof(cwd))) {
       fprintf(stderr, "Compile-fail setup failed: cannot get cwd for include leak check\n");
       return 1;
@@ -1905,6 +1947,11 @@ int main() {
     }
     unlink(link_path);
     unlink(tmp_header);
+    int tmp_prefix_after = count_tmp_files_with_prefix("ag_c_e2e_include_");
+    if (tmp_prefix_after < 0 || tmp_prefix_after != tmp_prefix_before) {
+      fprintf(stderr, "Compile-fail case failed: include_tmp_leak tmp artifact leak\n");
+      return 1;
+    }
   }
   {
     const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
@@ -1946,6 +1993,18 @@ int main() {
   }
   if (run_ag_c_parallel_smoke() != 0) {
     fprintf(stderr, "Concurrency smoke case failed: parallel ag_c invocation\n");
+    return 1;
+  }
+  int fd_count_after = count_open_fds_self();
+  if (fd_count_after < 0 || fd_count_after != fd_count_baseline) {
+    fprintf(stderr, "Resource leak check failed: fd count changed (before=%d after=%d)\n",
+            fd_count_baseline, fd_count_after);
+    return 1;
+  }
+  int tmp_include_prefix_after = count_tmp_files_with_prefix("ag_c_e2e_include_");
+  if (tmp_include_prefix_after < 0 || tmp_include_prefix_after != tmp_include_prefix_baseline) {
+    fprintf(stderr, "Resource leak check failed: /tmp include-prefix count changed (before=%d after=%d)\n",
+            tmp_include_prefix_baseline, tmp_include_prefix_after);
     return 1;
   }
 
