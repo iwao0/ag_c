@@ -40,6 +40,8 @@ typedef struct {
   char *tag_name;
   int tag_len;
   int ptr_levels;
+  unsigned int ptr_const_mask;
+  unsigned int ptr_volatile_mask;
   int ptr_deref_size;
   int ptr_base_deref_size;
   tk_float_kind_t ptr_pointee_fp_kind;
@@ -557,7 +559,7 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
+  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -588,11 +590,15 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.ptr_base_deref_size = psx_node_base_deref_size(control);
     gt.ptr_pointee_fp_kind = psx_node_pointee_fp_kind(control);
     if (control->kind == ND_LVAR) {
+      gt.ptr_const_mask = ((node_lvar_t *)control)->mem.pointer_const_qual_mask;
+      gt.ptr_volatile_mask = ((node_lvar_t *)control)->mem.pointer_volatile_qual_mask;
       gt.ptr_pointee_unsigned = ((node_lvar_t *)control)->mem.is_unsigned;
       gt.ptr_pointee_const = ((node_lvar_t *)control)->mem.is_const_qualified;
       gt.ptr_pointee_volatile = ((node_lvar_t *)control)->mem.is_volatile_qualified;
     } else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
                control->kind == ND_ADDR || control->kind == ND_STRING) {
+      gt.ptr_const_mask = ((node_mem_t *)control)->pointer_const_qual_mask;
+      gt.ptr_volatile_mask = ((node_mem_t *)control)->pointer_volatile_qual_mask;
       gt.ptr_pointee_unsigned = ((node_mem_t *)control)->is_unsigned;
       gt.ptr_pointee_const = ((node_mem_t *)control)->is_const_qualified;
       gt.ptr_pointee_volatile = ((node_mem_t *)control)->is_volatile_qualified;
@@ -610,6 +616,10 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
   if (control.is_pointer != assoc.is_pointer) return 0;
   if (control.is_pointer) {
     if (control.ptr_levels && assoc.ptr_levels && control.ptr_levels != assoc.ptr_levels) return 0;
+    if (control.ptr_const_mask != assoc.ptr_const_mask ||
+        control.ptr_volatile_mask != assoc.ptr_volatile_mask) {
+      return 0;
+    }
     // struct/union ポインタはタグ一致で比較
     if (control.tag_kind != TK_EOF || assoc.tag_kind != TK_EOF) {
       return control.tag_kind == assoc.tag_kind &&
@@ -655,6 +665,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   out->tag_name = NULL;
   out->tag_len = 0;
   out->ptr_levels = 0;
+  out->ptr_const_mask = 0;
+  out->ptr_volatile_mask = 0;
   out->ptr_deref_size = 0;
   out->ptr_base_deref_size = 0;
   out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
@@ -717,8 +729,14 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   while (t && t->kind == TK_MUL) {
     out->is_pointer = 1;
     out->ptr_levels++;
+    int level = out->ptr_levels;
     t = t->next;
-    consume_local_type_quals(&t);
+    while (t && (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT ||
+                 (t->kind == TK_ATOMIC && !(t->next && t->next->kind == TK_LPAREN)))) {
+      if (t->kind == TK_CONST) out->ptr_const_mask |= (1u << (level - 1));
+      if (t->kind == TK_VOLATILE) out->ptr_volatile_mask |= (1u << (level - 1));
+      t = t->next;
+    }
   }
   // type-name の abstract-declarator の一部を受理:
   //  - int (*)(int)

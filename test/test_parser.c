@@ -543,6 +543,20 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned_typedef->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_unsigned_typedef->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_unsigned_typedef->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ int x=0; int *p=&x; int * const *pp=&p; return _Generic(pp, int**:1, int * const *:2, default:3); }");
+  node_t *ret_ptr_level_const = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
+  ASSERT_EQ(ND_RETURN, ret_ptr_level_const->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_level_const->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_level_const->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ int x=0; int *p=&x; int * volatile *pp=&p; return _Generic(pp, int**:1, int * volatile *:2, default:3); }");
+  node_t *ret_ptr_level_volatile = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
+  ASSERT_EQ(ND_RETURN, ret_ptr_level_volatile->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_level_volatile->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_level_volatile->lhs)->val);
 }
 
 static void test_expr_sizeof() {
