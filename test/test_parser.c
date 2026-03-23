@@ -538,6 +538,18 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
+  parsed_code = parse_program_input("main() { struct S { int x; }; return sizeof(struct S (*)[3]); }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(8, as_num(ret->lhs)->val);
+
+  parsed_code = parse_program_input("typedef int A3[3]; main() { return sizeof(A3 (*)[2]); }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(8, as_num(ret->lhs)->val);
+
     node_t *c1 = parse_expr_input("(char)300");
   ASSERT_EQ(ND_BITAND, c1->kind);
   ASSERT_EQ(0xff, as_num(c1->rhs)->val);

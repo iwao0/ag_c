@@ -1411,6 +1411,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
+      sz = 8;
+    }
     set_curtok(t);
     tk_expect(')');
     return sz;
@@ -1455,6 +1458,9 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
+      sz = 8;
+    }
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
     set_curtok(t);
