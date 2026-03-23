@@ -4,6 +4,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void set_error(config_toml_error_t *err, config_toml_error_kind_t kind, int line_no,
+                      const char *arg1, const char *arg2) {
+  if (!err) return;
+  err->kind = kind;
+  err->line_no = line_no;
+  err->arg1[0] = '\0';
+  err->arg2[0] = '\0';
+  if (arg1) {
+    strncpy(err->arg1, arg1, sizeof(err->arg1) - 1);
+    err->arg1[sizeof(err->arg1) - 1] = '\0';
+  }
+  if (arg2) {
+    strncpy(err->arg2, arg2, sizeof(err->arg2) - 1);
+    err->arg2[sizeof(err->arg2) - 1] = '\0';
+  }
+}
+
 static char *trim_left(char *s) {
   while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
   return s;
@@ -62,7 +79,7 @@ static bool is_hex_digit(char c) {
          (c >= 'A' && c <= 'F');
 }
 
-static bool strip_inline_comment(char *s, int line_no, char *err, size_t err_cap) {
+static bool strip_inline_comment(char *s, int line_no, config_toml_error_t *err) {
   bool in_basic_string = false;
   bool in_literal_string = false;
   bool escaped = false;
@@ -98,23 +115,23 @@ static bool strip_inline_comment(char *s, int line_no, char *err, size_t err_cap
   }
 
   if (in_basic_string || in_literal_string || escaped) {
-    snprintf(err, err_cap, "line %d: unterminated string", line_no);
+    set_error(err, CONFIG_TOML_ERR_UNTERMINATED_STRING, line_no, NULL, NULL);
     return false;
   }
   return true;
 }
 
-static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, size_t err_cap) {
+static bool parse_string_value(char *v, char *out, size_t out_cap, config_toml_error_t *err) {
   size_t n = strlen(v);
   if (n < 2) {
-    snprintf(err, err_cap, "string must be quoted");
+    set_error(err, CONFIG_TOML_ERR_STRING_MUST_BE_QUOTED, 0, NULL, NULL);
     return false;
   }
 
   if (v[0] == '\'' && v[n - 1] == '\'') {
     size_t len = n - 2;
     if (len + 1 > out_cap) {
-      snprintf(err, err_cap, "string too long");
+      set_error(err, CONFIG_TOML_ERR_STRING_TOO_LONG, 0, NULL, NULL);
       return false;
     }
     memcpy(out, v + 1, len);
@@ -123,7 +140,7 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
   }
 
   if (v[0] != '"' || v[n - 1] != '"') {
-    snprintf(err, err_cap, "string must be quoted");
+    set_error(err, CONFIG_TOML_ERR_STRING_MUST_BE_QUOTED, 0, NULL, NULL);
     return false;
   }
 
@@ -132,14 +149,14 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
     char c = v[i];
     if (c != '\\') {
       if (j + 1 >= out_cap) {
-        snprintf(err, err_cap, "string too long");
+        set_error(err, CONFIG_TOML_ERR_STRING_TOO_LONG, 0, NULL, NULL);
         return false;
       }
       out[j++] = c;
       continue;
     }
     if (i + 1 >= n - 1) {
-      snprintf(err, err_cap, "invalid escape");
+      set_error(err, CONFIG_TOML_ERR_INVALID_ESCAPE, 0, NULL, NULL);
       return false;
     }
     char e = v[++i];
@@ -155,7 +172,7 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
       case 'U': {
         size_t needed = (e == 'u') ? 6 : 10;
         if (j + needed >= out_cap) {
-          snprintf(err, err_cap, "string too long");
+          set_error(err, CONFIG_TOML_ERR_STRING_TOO_LONG, 0, NULL, NULL);
           return false;
         }
         out[j++] = '\\';
@@ -163,7 +180,7 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
         if (e == 'u') {
           for (int k = 0; k < 4; k++) {
             if (i + 1 >= n - 1 || !is_hex_digit(v[i + 1])) {
-              snprintf(err, err_cap, "invalid \\u escape");
+              set_error(err, CONFIG_TOML_ERR_INVALID_U_ESCAPE, 0, NULL, NULL);
               return false;
             }
             out[j++] = v[++i];
@@ -171,7 +188,7 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
         } else {
           for (int k = 0; k < 8; k++) {
             if (i + 1 >= n - 1 || !is_hex_digit(v[i + 1])) {
-              snprintf(err, err_cap, "invalid \\U escape");
+              set_error(err, CONFIG_TOML_ERR_INVALID_U8_ESCAPE, 0, NULL, NULL);
               return false;
             }
             out[j++] = v[++i];
@@ -180,17 +197,32 @@ static bool parse_string_value(char *v, char *out, size_t out_cap, char *err, si
         continue;
       }
       default:
-        snprintf(err, err_cap, "unsupported escape '\\%c'", e);
+        {
+          char esc[4] = {'\\', e, '\0', '\0'};
+          set_error(err, CONFIG_TOML_ERR_UNSUPPORTED_ESCAPE, 0, esc, NULL);
+        }
         return false;
     }
     if (j + 1 >= out_cap) {
-      snprintf(err, err_cap, "string too long");
+      set_error(err, CONFIG_TOML_ERR_STRING_TOO_LONG, 0, NULL, NULL);
       return false;
     }
     out[j++] = c;
   }
   out[j] = '\0';
   return true;
+}
+
+static const char *string_error_reason(config_toml_error_kind_t kind) {
+  switch (kind) {
+    case CONFIG_TOML_ERR_STRING_MUST_BE_QUOTED: return "string must be quoted";
+    case CONFIG_TOML_ERR_STRING_TOO_LONG: return "string too long";
+    case CONFIG_TOML_ERR_INVALID_ESCAPE: return "invalid escape";
+    case CONFIG_TOML_ERR_INVALID_U_ESCAPE: return "invalid \\u escape";
+    case CONFIG_TOML_ERR_INVALID_U8_ESCAPE: return "invalid \\U escape";
+    case CONFIG_TOML_ERR_UNSUPPORTED_ESCAPE: return "unsupported escape";
+    default: return "invalid value";
+  }
 }
 
 typedef enum config_section_t {
@@ -224,19 +256,19 @@ void config_values_init_defaults(config_values_t *cfg) {
   cfg->enable_union_array_member_nonbrace_init = true;
 }
 
-static bool set_once(bool *seen, char *err, size_t err_cap, int line_no, const char *full_key) {
+static bool set_once(bool *seen, config_toml_error_t *err, int line_no, const char *full_key) {
   if (*seen) {
-    snprintf(err, err_cap, "line %d: duplicate key '%s'", line_no, full_key);
+    set_error(err, CONFIG_TOML_ERR_DUPLICATE_KEY, line_no, full_key, NULL);
     return false;
   }
   *seen = true;
   return true;
 }
 
-static bool parse_section_header(char *p, config_section_t *sec, char *err, size_t err_cap, int line_no) {
+static bool parse_section_header(char *p, config_section_t *sec, config_toml_error_t *err, int line_no) {
   size_t n = strlen(p);
   if (n < 3 || p[0] != '[' || p[n - 1] != ']') {
-    snprintf(err, err_cap, "line %d: malformed section header", line_no);
+    set_error(err, CONFIG_TOML_ERR_MALFORMED_SECTION_HEADER, line_no, NULL, NULL);
     return false;
   }
   p[n - 1] = '\0';
@@ -255,37 +287,38 @@ static bool parse_section_header(char *p, config_section_t *sec, char *err, size
     *sec = SEC_PARSER;
     return true;
   }
-  snprintf(err, err_cap, "line %d: unknown section '[%s]'", line_no, name);
+  set_error(err, CONFIG_TOML_ERR_UNKNOWN_SECTION, line_no, name, NULL);
   return false;
 }
 
 static bool parse_key_value(config_section_t sec, char *key, char *val, int line_no,
                             config_values_t *cfg, seen_config_t *seen,
-                            char *err, size_t err_cap) {
+                            config_toml_error_t *err) {
   bool b = false;
   char s[16];
-  char str_err[96];
+  config_toml_error_t str_err = {0};
 
   if (sec == SEC_NONE) {
-    snprintf(err, err_cap, "line %d: key-value found before section header", line_no);
+    set_error(err, CONFIG_TOML_ERR_KEY_VALUE_BEFORE_SECTION, line_no, NULL, NULL);
     return false;
   }
 
   if (sec == SEC_GENERAL) {
     if (strcmp(key, "error_message_locale") != 0) {
-      snprintf(err, err_cap, "line %d: unknown key 'general.%s'", line_no, key);
+      char full_key[128];
+      snprintf(full_key, sizeof(full_key), "general.%s", key);
+      set_error(err, CONFIG_TOML_ERR_UNKNOWN_KEY, line_no, full_key, NULL);
       return false;
     }
-    if (!set_once(&seen->general_error_message_locale, err, err_cap, line_no,
+    if (!set_once(&seen->general_error_message_locale, err, line_no,
                   "general.error_message_locale")) return false;
-    if (!parse_string_value(val, s, sizeof(s), str_err, sizeof(str_err))) {
-      snprintf(err, err_cap, "line %d: invalid value for 'general.error_message_locale': %s",
-               line_no, str_err);
+    if (!parse_string_value(val, s, sizeof(s), &str_err)) {
+      set_error(err, CONFIG_TOML_ERR_INVALID_VALUE_FOR_KEY, line_no,
+                "general.error_message_locale", string_error_reason(str_err.kind));
       return false;
     }
     if (strcmp(s, "ja") != 0 && strcmp(s, "en") != 0) {
-      snprintf(err, err_cap, "line %d: unsupported locale '%s' (expected \"ja\" or \"en\")",
-               line_no, s);
+      set_error(err, CONFIG_TOML_ERR_UNSUPPORTED_LOCALE, line_no, s, NULL);
       return false;
     }
     strcpy(cfg->locale, s);
@@ -293,75 +326,89 @@ static bool parse_key_value(config_section_t sec, char *key, char *val, int line
   }
 
   if (!parse_bool_value(val, &b)) {
-    snprintf(err, err_cap, "line %d: '%s' must be true or false", line_no, key);
+    set_error(err, CONFIG_TOML_ERR_BOOL_REQUIRED, line_no, key, NULL);
     return false;
   }
 
   if (sec == SEC_TOKENIZER) {
     if (strcmp(key, "strict_c11") == 0) {
-      if (!set_once(&seen->tokenizer_strict_c11, err, err_cap, line_no,
+      if (!set_once(&seen->tokenizer_strict_c11, err, line_no,
                     "tokenizer.strict_c11")) return false;
       cfg->strict_c11 = b;
       return true;
     }
     if (strcmp(key, "enable_trigraphs") == 0) {
-      if (!set_once(&seen->tokenizer_enable_trigraphs, err, err_cap, line_no,
+      if (!set_once(&seen->tokenizer_enable_trigraphs, err, line_no,
                     "tokenizer.enable_trigraphs")) return false;
       cfg->enable_trigraphs = b;
       return true;
     }
     if (strcmp(key, "enable_binary_literals") == 0) {
-      if (!set_once(&seen->tokenizer_enable_binary_literals, err, err_cap, line_no,
+      if (!set_once(&seen->tokenizer_enable_binary_literals, err, line_no,
                     "tokenizer.enable_binary_literals")) return false;
       cfg->enable_binary_literals = b;
       return true;
     }
     if (strcmp(key, "enable_c11_audit_extensions") == 0) {
-      if (!set_once(&seen->tokenizer_enable_c11_audit_extensions, err, err_cap, line_no,
+      if (!set_once(&seen->tokenizer_enable_c11_audit_extensions, err, line_no,
                     "tokenizer.enable_c11_audit_extensions")) return false;
       cfg->enable_c11_audit_extensions = b;
       return true;
     }
-    snprintf(err, err_cap, "line %d: unknown key 'tokenizer.%s'", line_no, key);
+    {
+      char full_key[128];
+      snprintf(full_key, sizeof(full_key), "tokenizer.%s", key);
+      set_error(err, CONFIG_TOML_ERR_UNKNOWN_KEY, line_no, full_key, NULL);
+    }
     return false;
   }
 
   if (sec == SEC_PARSER) {
     if (strcmp(key, "enable_size_compatible_nonscalar_cast") == 0) {
-      if (!set_once(&seen->parser_enable_size_compatible_nonscalar_cast, err, err_cap, line_no,
+      if (!set_once(&seen->parser_enable_size_compatible_nonscalar_cast, err, line_no,
                     "parser.enable_size_compatible_nonscalar_cast")) return false;
       cfg->enable_size_compatible_nonscalar_cast = b;
       return true;
     }
     if (strcmp(key, "enable_struct_scalar_pointer_cast") == 0) {
-      if (!set_once(&seen->parser_enable_struct_scalar_pointer_cast, err, err_cap, line_no,
+      if (!set_once(&seen->parser_enable_struct_scalar_pointer_cast, err, line_no,
                     "parser.enable_struct_scalar_pointer_cast")) return false;
       cfg->enable_struct_scalar_pointer_cast = b;
       return true;
     }
     if (strcmp(key, "enable_union_scalar_pointer_cast") == 0) {
-      if (!set_once(&seen->parser_enable_union_scalar_pointer_cast, err, err_cap, line_no,
+      if (!set_once(&seen->parser_enable_union_scalar_pointer_cast, err, line_no,
                     "parser.enable_union_scalar_pointer_cast")) return false;
       cfg->enable_union_scalar_pointer_cast = b;
       return true;
     }
     if (strcmp(key, "enable_union_array_member_nonbrace_init") == 0) {
-      if (!set_once(&seen->parser_enable_union_array_member_nonbrace_init, err, err_cap, line_no,
+      if (!set_once(&seen->parser_enable_union_array_member_nonbrace_init, err, line_no,
                     "parser.enable_union_array_member_nonbrace_init")) return false;
       cfg->enable_union_array_member_nonbrace_init = b;
       return true;
     }
-    snprintf(err, err_cap, "line %d: unknown key 'parser.%s'", line_no, key);
+    {
+      char full_key[128];
+      snprintf(full_key, sizeof(full_key), "parser.%s", key);
+      set_error(err, CONFIG_TOML_ERR_UNKNOWN_KEY, line_no, full_key, NULL);
+    }
     return false;
   }
 
-  snprintf(err, err_cap, "line %d: internal parser state error", line_no);
+  set_error(err, CONFIG_TOML_ERR_INTERNAL_PARSER_STATE, line_no, NULL, NULL);
   return false;
 }
 
-bool config_toml_read(const char *source_path, config_values_t *cfg, char *err, size_t err_cap) {
+bool config_toml_read(const char *source_path, config_values_t *cfg, config_toml_error_t *err) {
   FILE *fp = open_config_file(source_path);
   if (!fp) return true;
+  if (err) {
+    err->kind = CONFIG_TOML_ERR_NONE;
+    err->line_no = 0;
+    err->arg1[0] = '\0';
+    err->arg2[0] = '\0';
+  }
 
   config_values_init_defaults(cfg);
   seen_config_t seen = {0};
@@ -376,7 +423,7 @@ bool config_toml_read(const char *source_path, config_values_t *cfg, char *err, 
     char *p = trim_left(line);
     if (*p == '\0' || *p == '#') continue;
 
-    if (!strip_inline_comment(p, line_no, err, err_cap)) {
+    if (!strip_inline_comment(p, line_no, err)) {
       ok = false;
       break;
     }
@@ -384,13 +431,13 @@ bool config_toml_read(const char *source_path, config_values_t *cfg, char *err, 
     if (*p == '\0') continue;
 
     if (*p == '[') {
-      if (!parse_section_header(p, &sec, err, err_cap, line_no)) ok = false;
+      if (!parse_section_header(p, &sec, err, line_no)) ok = false;
       continue;
     }
 
     char *eq = strchr(p, '=');
     if (!eq) {
-      snprintf(err, err_cap, "line %d: expected key = value", line_no);
+      set_error(err, CONFIG_TOML_ERR_EXPECTED_KEY_VALUE, line_no, NULL, NULL);
       ok = false;
       break;
     }
@@ -398,19 +445,19 @@ bool config_toml_read(const char *source_path, config_values_t *cfg, char *err, 
     char *key = trim_left(p);
     trim_right(key);
     if (*key == '\0') {
-      snprintf(err, err_cap, "line %d: empty key", line_no);
+      set_error(err, CONFIG_TOML_ERR_EMPTY_KEY, line_no, NULL, NULL);
       ok = false;
       break;
     }
     char *val = trim_left(eq + 1);
     trim_right(val);
     if (*val == '\0') {
-      snprintf(err, err_cap, "line %d: empty value for key '%s'", line_no, key);
+      set_error(err, CONFIG_TOML_ERR_EMPTY_VALUE_FOR_KEY, line_no, key, NULL);
       ok = false;
       break;
     }
 
-    if (!parse_key_value(sec, key, val, line_no, cfg, &seen, err, err_cap)) {
+    if (!parse_key_value(sec, key, val, line_no, cfg, &seen, err)) {
       ok = false;
       break;
     }

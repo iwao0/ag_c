@@ -220,7 +220,7 @@ void psx_ctx_register_label_def(char *name, int len, token_t *tok) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (label_def_t *d = label_defs_by_bucket[bucket]; d; d = d->next_hash) {
     if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
-      psx_diag_duplicate_with_name(tok, "ラベル", name, len);
+      psx_diag_duplicate_with_name(tok, diag_text_for(DIAG_TEXT_LABEL), name, len);
     }
   }
   label_def_t *d = calloc(1, sizeof(label_def_t));

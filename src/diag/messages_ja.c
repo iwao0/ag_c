@@ -180,6 +180,24 @@ const char *diag_text_ja(diag_text_id_t id) {
     case DIAG_TEXT_WARNING: return "警告";
     case DIAG_TEXT_C11_AUDIT_PREFIX: return "c11監査";
     case DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION: return "2進数リテラル拡張";
+    case DIAG_TEXT_TAG_NAME: return "タグ名";
+    case DIAG_TEXT_MEMBER_NAME: return "メンバ名";
+    case DIAG_TEXT_ENUMERATOR_NAME: return "列挙子名";
+    case DIAG_TEXT_PARAMETER: return "仮引数";
+    case DIAG_TEXT_TAG_TYPE_SUFFIX: return "のタグ型";
+    case DIAG_TEXT_TAG_TYPE: return "タグ型";
+    case DIAG_TEXT_BREAK: return "break";
+    case DIAG_TEXT_CONTINUE: return "continue";
+    case DIAG_TEXT_LOOP_OR_SWITCH_SCOPE: return "ループまたはswitch内";
+    case DIAG_TEXT_LOOP_SCOPE: return "ループ内";
+    case DIAG_TEXT_GOTO_LABEL_AFTER: return "goto の後のラベル名";
+    case DIAG_TEXT_SWITCH_SCOPE: return "switch 内";
+    case DIAG_TEXT_CASE: return "case";
+    case DIAG_TEXT_DEFAULT: return "default";
+    case DIAG_TEXT_LABEL: return "ラベル";
+    case DIAG_TEXT_ARRAY_DESIGNATOR_INDEX: return "配列designator添字";
+    case DIAG_TEXT_ARRAY_SIZE: return "配列サイズ";
+    case DIAG_TEXT_WHILE: return "'while'";
   }
   return NULL;
 }

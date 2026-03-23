@@ -1164,6 +1164,7 @@
 - [ ] `direct_declarator` を再帰的にする（C11 §6.7.6）
   - C11: `direct-declarator = ... | "(" declarator ")"`（再帰的）
   - 現状: `"(" pointer? ident ")" "(" params ")"` で1段のみ。`int (**fpp)(int)` 等が表現不能
+  - 進捗（2026-03-23）: トップレベル宣言名の取得を `parse_decl_name_recursive()` に置き換え、`int (*(*fpp))(int)` のような入れ子括弧 + ポインタ宣言子を受理
 - [ ] 配列宣言子で `assignment-expression` を許容する（C11 §6.7.6.2）
   - C11: 配列サイズは `assignment-expression`（VLA）、`"static"` 修飾、`"*"`（不完全配列）が可能
   - 現状: `num?` のみ。`int a[n]`（VLA）が文法上表現できない（実装はVLA対応済み）

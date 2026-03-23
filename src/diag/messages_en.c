@@ -180,6 +180,24 @@ const char *diag_text_en(diag_text_id_t id) {
     case DIAG_TEXT_WARNING: return "warning";
     case DIAG_TEXT_C11_AUDIT_PREFIX: return "c11-audit";
     case DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION: return "binary literal extension";
+    case DIAG_TEXT_TAG_NAME: return "tag name";
+    case DIAG_TEXT_MEMBER_NAME: return "member name";
+    case DIAG_TEXT_ENUMERATOR_NAME: return "enumerator name";
+    case DIAG_TEXT_PARAMETER: return "parameter";
+    case DIAG_TEXT_TAG_TYPE_SUFFIX: return "tag type";
+    case DIAG_TEXT_TAG_TYPE: return "tag type";
+    case DIAG_TEXT_BREAK: return "break";
+    case DIAG_TEXT_CONTINUE: return "continue";
+    case DIAG_TEXT_LOOP_OR_SWITCH_SCOPE: return "inside a loop or switch";
+    case DIAG_TEXT_LOOP_SCOPE: return "inside a loop";
+    case DIAG_TEXT_GOTO_LABEL_AFTER: return "label name after goto";
+    case DIAG_TEXT_SWITCH_SCOPE: return "inside switch";
+    case DIAG_TEXT_CASE: return "case";
+    case DIAG_TEXT_DEFAULT: return "default";
+    case DIAG_TEXT_LABEL: return "label";
+    case DIAG_TEXT_ARRAY_DESIGNATOR_INDEX: return "array designator index";
+    case DIAG_TEXT_ARRAY_SIZE: return "array size";
+    case DIAG_TEXT_WHILE: return "'while'";
   }
   return NULL;
 }

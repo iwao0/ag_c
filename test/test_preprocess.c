@@ -99,8 +99,10 @@ static const char *fail_cases[] = {
     "#define FOO(a, 1) 1\nint main() { return FOO(1); }\n",
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
+    "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
+    "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
     "#define FOO(x) x\nint main() { return FOO(1; }\n",
     "#error \"forced\"\nint main() { return 0; }\n",
 };
@@ -312,6 +314,21 @@ int main(void) {
   FILE *hb = fopen("build/cycle_b.h", "w");
   fprintf(hb, "#include \"build/cycle_a.h\"\n");
   fclose(hb);
+  for (int i = 0; i < 70; i++) {
+    char path[64];
+    snprintf(path, sizeof(path), "build/depth_%02d.h", i);
+    FILE *hd = fopen(path, "w");
+    if (!hd) {
+      fprintf(stderr, "  FAIL: cannot create %s\n", path);
+      return 1;
+    }
+    if (i + 1 < 70) {
+      fprintf(hd, "#include \"build/depth_%02d.h\"\n", i + 1);
+    } else {
+      fprintf(hd, "int depth_leaf(void) { return 0; }\n");
+    }
+    fclose(hd);
+  }
 
   int success_ret = run_success_cases_batched();
   if (success_ret != 0) {

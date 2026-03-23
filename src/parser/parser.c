@@ -35,6 +35,7 @@ static void parse_toplevel_tag_decl(void);
 static void parse_toplevel_typedef_decl(void);
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr);
+static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name);
 static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
@@ -413,18 +414,7 @@ static void parse_toplevel_declarator_list(void) {
 }
 
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
-  int open_parens = 0;
-  while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers();
-  }
-  token_ident_t *name = tk_consume_ident();
-  if (!name) {
-    diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, token, "%s",
-                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-  }
-  while (open_parens-- > 0) tk_expect(')');
+  token_ident_t *name = parse_decl_name_recursive(is_ptr, 1);
   while (token->kind == TK_LPAREN) {
     int depth = 1;
     token = token->next;
@@ -442,18 +432,7 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr) {
 }
 
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr) {
-  int open_parens = 0;
-  while (tk_consume('(')) open_parens++;
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers();
-  }
-  token_ident_t *name = tk_consume_ident();
-  if (!name) {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, token, "%s",
-                   diag_message_for(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED));
-  }
-  while (open_parens-- > 0) tk_expect(')');
+  token_ident_t *name = parse_decl_name_recursive(is_ptr, 1);
   while (token->kind == TK_LPAREN) {
     int depth = 1;
     token = token->next;
@@ -466,6 +445,28 @@ static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr) {
       else if (token->kind == TK_RPAREN) depth--;
       token = token->next;
     }
+  }
+  return name;
+}
+
+static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name) {
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers();
+  }
+  token_ident_t *name = NULL;
+  if (tk_consume('(')) {
+    name = parse_decl_name_recursive(is_ptr, require_name);
+    tk_expect(')');
+  } else {
+    name = tk_consume_ident();
+    if (!name && require_name) {
+      diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, token, "%s",
+                     diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+    }
+  }
+  while (token->kind == TK_LBRACKET) {
+    skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
   }
   return name;
 }
@@ -500,7 +501,7 @@ static void parse_toplevel_typedef_decl(void) {
     tag_kind = token->kind;
     token = token->next;
     token_ident_t *tag = tk_consume_ident();
-    if (!tag) psx_diag_missing(token, "タグ名");
+    if (!tag) psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
     tag_name = tag->str;
     tag_len = tag->len;
     if (tk_consume('{')) {
@@ -509,7 +510,7 @@ static void parse_toplevel_typedef_decl(void) {
       member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
     } else if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_diag_undefined_with_name(token, "のタグ型", tag_name, tag_len);
+      psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
     }
     elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
   } else if (psx_ctx_is_typedef_name_token(token)) {
@@ -586,7 +587,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       } else if (token->kind == TK_LBRACE) {
         make_anonymous_tag_name_toplevel(&member_tag_name, &member_tag_len);
       } else {
-        psx_diag_missing(token, "タグ名");
+        psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
       }
       if (tk_consume('{')) {
         int nested_n = 0;
@@ -596,7 +597,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         // ポインタメンバの場合は不完全型（自己参照等）を許可する
         if (token->kind != TK_MUL) {
-          psx_diag_undefined_with_name(token, "のタグ型", member_tag_name, member_tag_len);
+          psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), member_tag_name, member_tag_len);
         }
       }
       if (psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
@@ -621,7 +622,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       int has_member_name = member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && token->kind != TK_COLON) {
-        psx_diag_missing(token, "メンバ名");
+        psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
       if (token->kind == TK_LPAREN) {
         skip_balanced_group(TK_LPAREN, TK_RPAREN);
@@ -691,7 +692,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       int arr_size = 1;
       int is_flex_array = 0;
       while (tk_consume('[')) {
-        if (!has_member_name) psx_diag_missing(token, "メンバ名");
+        if (!has_member_name) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
         if (token->kind == TK_RBRACKET) {
           // フレキシブル配列メンバー: int data[];
           is_flex_array = 1;
@@ -732,7 +733,7 @@ static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, 
       } else {
         current_off += total_size;
       }
-      if (!has_member_name && tk_consume(',')) psx_diag_missing(token, "メンバ名");
+      if (!has_member_name && tk_consume(',')) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
       if (!tk_consume(',')) break;
     }
     tk_expect(';');
@@ -934,7 +935,7 @@ static int parse_enum_members_toplevel(void) {
   long long next_value = 0;
   while (!tk_consume('}')) {
     token_ident_t *enumerator = tk_consume_ident();
-    if (!enumerator) psx_diag_missing(token, "列挙子名");
+    if (!enumerator) psx_diag_missing(token, diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
     long long value = next_value;
     member_count++;
     if (tk_consume('=')) {
@@ -963,7 +964,7 @@ static void parse_toplevel_tag_decl(void) {
   token_ident_t *tag = tk_consume_ident();
   // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
   if (!tag && token->kind != TK_LBRACE) {
-    psx_diag_missing(token, "タグ名");
+    psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
   }
   static int anon_tag_counter_tl = 0;
   char anon_buf[32];
@@ -988,7 +989,7 @@ static void parse_toplevel_tag_decl(void) {
     return;
   }
   if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-    psx_diag_undefined_with_name(token, "のタグ型", tag_name, tag_len);
+    psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
   }
   parse_toplevel_declarator_list();
   tk_expect(';');
@@ -1410,7 +1411,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_
       args = node_tmp.args;
       if (!tk_consume(',')) break;
       if (token->kind == TK_RPAREN) {
-        psx_diag_missing(token, "仮引数");
+        psx_diag_missing(token, diag_text_for(DIAG_TEXT_PARAMETER));
       }
     }
     tk_expect(')');

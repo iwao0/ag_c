@@ -256,6 +256,18 @@ static void test_tokenize_invalid() {
   tk_set_max_token_len_for_test(0);
 }
 
+static void test_tokenize_len_guard_boundaries() {
+  printf("test_tokenize_len_guard_boundaries...\n");
+  tk_set_max_token_len_for_test(8);
+  token = tk_tokenize("abcdefgh");
+  ASSERT_EQ(TK_IDENT, token->kind);
+  ASSERT_EQ(8, as_ident(token)->len);
+  token = token->next;
+  ASSERT_EQ(TK_EOF, token->kind);
+  expect_tokenize_fail("abcdefghi");
+  tk_set_max_token_len_for_test(0);
+}
+
 // 1c. ローカル変数・複数文字識別子のテスト
 static void test_tokenize_ident() {
   printf("test_tokenize_ident...\n");
@@ -873,6 +885,7 @@ int main() {
   test_expect();
   test_expect_number();
   test_tokenize_float_literal();
+  test_tokenize_len_guard_boundaries();
 
   printf("OK: All unit tests passed!\n");
   return 0;

@@ -145,7 +145,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       } else if (token->kind == TK_LBRACE) {
         make_anonymous_tag_name_stmt(&member_tag_name, &member_tag_len);
       } else {
-        psx_diag_missing(token, "タグ名");
+        psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
       }
       if (tk_consume('{')) {
         int nested_n = 0;
@@ -155,7 +155,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         // ポインタメンバの場合は不完全型（自己参照等）を許可する
         if (token->kind != TK_MUL) {
-          psx_diag_undefined_with_name(token, "のタグ型", member_tag_name, member_tag_len);
+          psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), member_tag_name, member_tag_len);
         }
       }
       if (psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
@@ -180,7 +180,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       int has_member_name = member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && token->kind != TK_COLON) {
-        psx_diag_missing(token, "メンバ名");
+        psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
       if (token->kind == TK_LPAREN) {
         skip_func_params_stmt();
@@ -245,7 +245,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       int arr_size = 1;
       int is_flex_array = 0;
       while (tk_consume('[')) {
-        if (!has_member_name) psx_diag_missing(token, "メンバ名");
+        if (!has_member_name) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
         if (token->kind == TK_RBRACKET) {
           // フレキシブル配列メンバー: int data[];
           is_flex_array = 1;
@@ -284,7 +284,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       } else {
         current_off += total_size;
       }
-      if (!has_member_name && tk_consume(',')) psx_diag_missing(token, "メンバ名");
+      if (!has_member_name && tk_consume(',')) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
       if (!tk_consume(',')) break;
     }
     tk_expect(';');
@@ -515,7 +515,7 @@ static int parse_enum_members(void) {
   while (!tk_consume('}')) {
     token_ident_t *enumerator = tk_consume_ident();
     if (!enumerator) {
-      psx_diag_missing(token, "列挙子名");
+      psx_diag_missing(token, diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
     }
     long long value = next_value;
     if (tk_consume('=')) {
@@ -585,7 +585,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     *tag_kind = token->kind;
     token = token->next;
     token_ident_t *tag = tk_consume_ident();
-    if (!tag) psx_diag_missing(token, "タグ名");
+    if (!tag) psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
     *tag_name = tag->str;
     *tag_len = tag->len;
     if (tk_consume('{')) {
@@ -594,7 +594,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
       member_count = parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size);
     } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
-      psx_diag_undefined_with_name(token, "のタグ型", *tag_name, *tag_len);
+      psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), *tag_name, *tag_len);
     }
     *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
     return 1;
@@ -687,7 +687,7 @@ static node_t *parse_decl_like_stmt(void) {
     token_ident_t *tag = tk_consume_ident();
     // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
     if (!tag && token->kind != TK_LBRACE) {
-      psx_diag_missing(token, "タグ名");
+      psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
     }
     static int anon_tag_counter = 0;
     char anon_buf[32];
@@ -711,7 +711,7 @@ static node_t *parse_decl_like_stmt(void) {
       return psx_node_new_num(0);
     }
     if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_diag_undefined_with_name(token, "のタグ型", tag_name, tag_len);
+      psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
@@ -832,7 +832,7 @@ static node_t *stmt_internal(void) {
     node->base.rhs = stmt_internal();
     psx_loop_leave();
     if (token->kind != TK_WHILE) {
-      psx_diag_missing(token, "'while'");
+      psx_diag_missing(token, diag_text_for(DIAG_TEXT_WHILE));
     }
     token = token->next;
     tk_expect('(');
@@ -909,7 +909,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_BREAK) {
     if (psx_loop_depth() == 0 && !psx_switch_has_ctx()) {
-      psx_diag_only_in(token, "break", "ループまたはswitch内");
+      psx_diag_only_in(token, diag_text_for(DIAG_TEXT_BREAK), diag_text_for(DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
     }
     token = token->next;
     node_t *node = arena_alloc(sizeof(node_t));
@@ -920,7 +920,7 @@ static node_t *stmt_internal(void) {
 
   if (token->kind == TK_CONTINUE) {
     if (psx_loop_depth() == 0) {
-      psx_diag_only_in(token, "continue", "ループ内");
+      psx_diag_only_in(token, diag_text_for(DIAG_TEXT_CONTINUE), diag_text_for(DIAG_TEXT_LOOP_SCOPE));
     }
     token = token->next;
     node_t *node = arena_alloc(sizeof(node_t));
@@ -934,7 +934,7 @@ static node_t *stmt_internal(void) {
     token = token->next;
     token_ident_t *ident = tk_consume_ident();
     if (!ident) {
-      psx_diag_missing(token, "goto の後のラベル名");
+      psx_diag_missing(token, diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
     }
     node_jump_t *node = arena_alloc(sizeof(node_jump_t));
     node->base.kind = ND_GOTO;

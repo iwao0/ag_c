@@ -36,7 +36,7 @@ int psx_switch_has_ctx(void) {
 
 void psx_switch_register_case(long long v, token_t *tok) {
   if (!switch_ctx) {
-    psx_diag_only_in(tok, "case", "switch 内");
+    psx_diag_only_in(tok, diag_text_for(DIAG_TEXT_CASE), diag_text_for(DIAG_TEXT_SWITCH_SCOPE));
   }
   for (int i = 0; i < switch_ctx->ncase; i++) {
     if (switch_ctx->case_vals[i] == v) {
@@ -53,7 +53,7 @@ void psx_switch_register_case(long long v, token_t *tok) {
 
 void psx_switch_register_default(token_t *tok) {
   if (!switch_ctx) {
-    psx_diag_only_in(tok, "default", "switch 内");
+    psx_diag_only_in(tok, diag_text_for(DIAG_TEXT_DEFAULT), diag_text_for(DIAG_TEXT_SWITCH_SCOPE));
   }
   if (switch_ctx->has_default) {
     diag_emit_tokf(DIAG_ERR_PARSER_SWITCH_DUPLICATE_DEFAULT, tok, "%s",

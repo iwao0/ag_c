@@ -407,7 +407,7 @@ static node_t *parse_array_initializer(lvar_t *var) {
       for (;;) {
         int target_idx = idx;
         if (tk_consume('[')) {
-          target_idx = parse_nonneg_const_expr_decl("配列designator添字");
+          target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
           tk_expect(']');
           tk_expect('=');
           if (row_len > 0) target_idx *= row_len;
@@ -534,7 +534,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
         for (;;) {
           int target_idx = idx;
           if (tk_consume('[')) {
-            target_idx = parse_nonneg_const_expr_decl("配列designator添字");
+            target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
             tk_expect(']');
             tk_expect('=');
           }
@@ -640,7 +640,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       bool found = false;
       if (tk_consume('.')) {
         token_ident_t *id = tk_consume_ident();
-        if (!id) psx_diag_missing(token, "メンバ名");
+        if (!id) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
         found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                         id->str, id->len,
                                         &member_offset, &member_type_size, NULL, &member_array_len,
@@ -658,7 +658,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
             psx_diag_ctx(token, "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
           }
-          int nested_idx = parse_nonneg_const_expr_decl("配列designator添字");
+          int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
           tk_expect(']');
           tk_expect('=');
           if (nested_idx < 0 || nested_idx >= member_array_len) {
@@ -849,7 +849,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   bool found = false;
   if (tk_consume('.')) {
     token_ident_t *id = tk_consume_ident();
-    if (!id) psx_diag_missing(token, "メンバ名");
+    if (!id) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
     found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                     id->str, id->len,
                                     &member_offset, &member_type_size, NULL, &member_array_len,
@@ -867,7 +867,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
         psx_diag_ctx(token, "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
       }
-      int nested_idx = parse_nonneg_const_expr_decl("配列designator添字");
+      int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
       tk_expect(']');
       tk_expect('=');
       if (nested_idx < 0 || nested_idx >= member_array_len) {
@@ -928,7 +928,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
       }
       for (;;) {
         token_ident_t *id = tk_consume_ident();
-        if (!id) psx_diag_missing(token, "メンバ名");
+        if (!id) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
         tk_expect('=');
         found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                         id->str, id->len,

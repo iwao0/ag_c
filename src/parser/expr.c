@@ -103,7 +103,7 @@ static void apply_array_abstract_suffix_size(int *sz) {
     long long dim = eval_const_expr_type_size(dim_expr, &ok);
     if (!ok) {
       psx_diag_ctx(token, "sizeof", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
-                   "配列サイズ");
+                   diag_text_for(DIAG_TEXT_ARRAY_SIZE));
     }
     if (dim <= 0) {
       psx_diag_ctx(token, "sizeof", "%s",
@@ -345,7 +345,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
 static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
   token_ident_t *member = tk_consume_ident();
   if (!member) {
-    psx_diag_missing(token, "メンバ名");
+    psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
   }
 
   token_kind_t base_tag_kind = TK_EOF;
@@ -478,7 +478,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       token_ident_t *tag = (token_ident_t *)q;
       if (!q || q->kind != TK_IDENT) return 0;
       if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
-        psx_diag_undefined_with_name(q, "のタグ型", tag->str, tag->len);
+        psx_diag_undefined_with_name(q, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
       }
       inner_kind = tag_kind;
       inner_tag_kind = tag_kind;
@@ -602,7 +602,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     token_ident_t *tag = (token_ident_t *)t;
     if (!t || t->kind != TK_IDENT) return 0;
     if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
-      psx_diag_undefined_with_name(t, "のタグ型", tag->str, tag->len);
+      psx_diag_undefined_with_name(t, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
     }
     *type_kind = tag_kind;
     if (out_tag_kind) *out_tag_kind = tag_kind;
@@ -973,7 +973,7 @@ static int parse_parenthesized_type_size(void) {
     if (!tag) return -1;
     int sz = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
     if (sz <= 0) {
-      psx_diag_undefined_with_name((token_t *)tag, "タグ型", tag->str, tag->len);
+      psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE), tag->str, tag->len);
     }
     while (token->kind == TK_MUL) {
       token = token->next;
