@@ -244,13 +244,20 @@ static void test_tokenize_invalid() {
   expect_tokenize_fail("18446744073709551616"); // ULLONG_MAX+1
   expect_tokenize_fail("\"unterminated"); // 文字列未閉じ
   expect_tokenize_fail("\"\\x\"");    // 16進エスケープ不正
+  expect_tokenize_fail("\"\\xG\"");   // 16進エスケープ直後に非hex
   expect_tokenize_fail("\"\\q\"");    // 不正エスケープ
   expect_tokenize_fail("\"\\u202E\""); // bidi制御文字UCN
   expect_tokenize_fail("\"\\u200C\""); // ゼロ幅UCN
+  expect_tokenize_fail("\"\\U00110000\""); // Unicode上限超過
+  expect_tokenize_fail("\"\\U0000D800\""); // surrogate
+  expect_tokenize_fail("\"\\U0000001F\""); // 制御文字UCN
   expect_tokenize_fail("''");         // 空の文字リテラル
   expect_tokenize_fail("'\\x'");      // 16進エスケープ不正
+  expect_tokenize_fail("'\\xG'");     // 16進エスケープ直後に非hex
   expect_tokenize_fail("'\\u202E'");  // bidi制御文字UCN
   expect_tokenize_fail("'\\u200D'");  // ゼロ幅UCN
+  expect_tokenize_fail("'\\U00110000'"); // Unicode上限超過
+  expect_tokenize_fail("'\\U0000DFFF'"); // surrogate
   expect_tokenize_fail("safe\\u202Ename"); // 識別子内bidi制御文字UCN
   expect_tokenize_fail("safe\\u200Cname"); // 識別子内ゼロ幅UCN
   expect_tokenize_fail("\"\\\n\\u202E\""); // 行継続 + bidi制御文字UCN

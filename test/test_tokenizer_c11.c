@@ -246,6 +246,12 @@ static void test_c11_ucn_invalid_boundaries(void) {
   expect_tokenize_fail("\"\\u202E\"");
   // UCN桁不足
   expect_tokenize_fail("\"\\u123\"");
+  // Unicode上限超過
+  expect_tokenize_fail("\"\\U00110000\"");
+  // surrogate
+  expect_tokenize_fail("\"\\U0000D800\"");
+  // 制御文字領域（C11の許可外）
+  expect_tokenize_fail("\"\\U0000001F\"");
 }
 
 static void test_c11_long_escape_sequences(void) {
