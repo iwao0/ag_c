@@ -252,6 +252,44 @@ static int parse_ptr_to_array_abstract_decl(token_t **ptok, int *is_pointer) {
   return 1;
 }
 
+static int parse_array_of_ptr_to_array_abstract_decl(token_t **ptok, int *out_array_mul) {
+  token_t *t = *ptok;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  t = t->next;
+  consume_local_type_quals(&t);
+  if (!t || t->kind != TK_LBRACKET) return 0;
+
+  int array_mul = 1;
+  while (t && t->kind == TK_LBRACKET) {
+    token_t *open = t;
+    token_t *after = skip_balanced_bracket_token(open);
+    if (!after) return 0;
+    token_t *dim_tok = open->next;
+    if (!dim_tok || dim_tok->kind != TK_NUM || tk_as_num(dim_tok)->num_kind != TK_NUM_KIND_INT ||
+        !dim_tok->next || dim_tok->next->kind != TK_RBRACKET) {
+      return 0;
+    }
+    int dim = (int)tk_as_num_int(dim_tok)->uval;
+    if (dim <= 0) return 0;
+    array_mul *= dim;
+    t = after;
+  }
+
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_LBRACKET) return 0;
+  token_t *after = t;
+  while (after && after->kind == TK_LBRACKET) {
+    after = skip_balanced_bracket_token(after);
+    if (!after) return 0;
+  }
+  *ptok = after;
+  if (out_array_mul) *out_array_mul = array_mul;
+  return 1;
+}
+
 static int is_type_name_start_token(token_t *t) {
   if (!t) return 0;
   if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
@@ -404,6 +442,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   (void)parse_funcptr_abstract_decl(&t, &out->is_pointer);
   (void)parse_ptr_to_array_abstract_decl(&t, &out->is_pointer);
   (void)parse_array_of_funcptr_abstract_decl(&t, NULL);
+  (void)parse_array_of_ptr_to_array_abstract_decl(&t, NULL);
   set_curtok(t);
   return 1;
 }
@@ -944,6 +983,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -967,6 +1009,9 @@ static int parse_parenthesized_type_size(void) {
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
@@ -994,6 +1039,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1017,6 +1065,9 @@ static int parse_parenthesized_type_size(void) {
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
@@ -1045,6 +1096,9 @@ static int parse_parenthesized_type_size(void) {
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
@@ -1077,6 +1131,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1103,6 +1160,9 @@ static int parse_parenthesized_type_size(void) {
     int fp_ptr = 0;
     int fp_array_mul = 1;
     if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      sz = 8 * fp_array_mul;
+    }
+    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
