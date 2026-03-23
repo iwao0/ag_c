@@ -963,8 +963,8 @@ token_t *preprocess(token_t *tok) {
           free(alt);
         }
         if (!buf) {
-          diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s: %s",
-                              diag_message_for(DIAG_ERR_PREPROCESS_GENERIC), filename);
+          diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED,
+                              diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED), filename);
           free(filename);
         }
 
@@ -1216,7 +1216,12 @@ token_t *preprocess(token_t *tok) {
           }
           tok = tok->next;
         }
-        diag_emit_internalf(DIAG_ERR_PREPROCESS_GENERIC, "%s", msg);
+        const char *detail = msg;
+        if (strncmp(detail, prefix, pfx_len) == 0) {
+          detail += pfx_len;
+        }
+        diag_emit_internalf(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE,
+                            diag_message_for(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE), detail);
       }
 
       if (is_dir(tok, "line")) {
