@@ -213,21 +213,21 @@ static token_t *skip_decl_prefix_lookahead(token_t *t) {
 }
 
 static token_kind_t parse_atomic_type_specifier(void) {
-  if (token->kind != TK_ATOMIC) return TK_EOF;
-  token = token->next;
+  if (curtok()->kind != TK_ATOMIC) return TK_EOF;
+  set_curtok(curtok()->next);
   if (!tk_consume('(')) {
     // qualifier-form: "_Atomic int" は前置指定子として扱う
     return TK_EOF;
   }
   token_kind_t inner = psx_consume_type_kind();
   if (inner == TK_EOF) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED));
   }
   // Minimal support for derived declarators in _Atomic(type), e.g. _Atomic(int*).
   while (tk_consume('*')) {
-    while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
-      token = token->next;
+    while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+      set_curtok(curtok()->next);
     }
   }
   tk_expect(')');
@@ -237,15 +237,15 @@ static token_kind_t parse_atomic_type_specifier(void) {
 static int parse_array_size_constexpr_toplevel(void) {
   long long v = parse_enum_const_expr_toplevel();
   if (v <= 0) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
 }
 
 static void parse_toplevel_decl_spec(void) {
-  if (psx_ctx_is_typedef_name_token(token)) {
-    token_ident_t *id = (token_ident_t *)token;
+  if (psx_ctx_is_typedef_name_token(curtok())) {
+    token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t td_base = TK_EOF;
     int td_elem = 8;
     tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
@@ -255,7 +255,7 @@ static void parse_toplevel_decl_spec(void) {
     int td_is_ptr = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
                               &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr);
-    token = token->next;
+    set_curtok(curtok()->next);
     g_toplevel_decl_elem_size = td_elem;
     g_toplevel_decl_is_extern = 0;
     g_toplevel_decl_is_thread_local = 0;
@@ -276,43 +276,43 @@ node_t **ps_program_from(token_t *start) {
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
-    if (token->kind == TK_PRAGMA_PACK_PUSH) {
-      pragma_pack_push((int)((token_num_int_t *)token)->val);
-      token = token->next;
+    if (curtok()->kind == TK_PRAGMA_PACK_PUSH) {
+      pragma_pack_push((int)((token_num_int_t *)curtok())->val);
+      set_curtok(curtok()->next);
       continue;
     }
-    if (token->kind == TK_PRAGMA_PACK_POP) {
+    if (curtok()->kind == TK_PRAGMA_PACK_POP) {
       pragma_pack_pop();
-      token = token->next;
+      set_curtok(curtok()->next);
       continue;
     }
-    if (token->kind == TK_PRAGMA_PACK_SET) {
-      pragma_pack_set((int)((token_num_int_t *)token)->val);
-      token = token->next;
+    if (curtok()->kind == TK_PRAGMA_PACK_SET) {
+      pragma_pack_set((int)((token_num_int_t *)curtok())->val);
+      set_curtok(curtok()->next);
       continue;
     }
-    if (token->kind == TK_PRAGMA_PACK_RESET) {
+    if (curtok()->kind == TK_PRAGMA_PACK_RESET) {
       pragma_pack_reset();
-      token = token->next;
+      set_curtok(curtok()->next);
       continue;
     }
-    if (token->kind == TK_STATIC_ASSERT) {
+    if (curtok()->kind == TK_STATIC_ASSERT) {
       parse_static_assert_toplevel();
       continue;
     }
-    if (psx_ctx_is_tag_keyword(token->kind)) {
-      if (!is_tag_return_function_signature(token)) {
+    if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+      if (!is_tag_return_function_signature(curtok())) {
         parse_toplevel_tag_decl();
         continue;
       }
       // struct/union Tag func(...) — 戻り値型がタグ型の関数定義: funcdef() へ fall through
     }
-    if (token->kind == TK_TYPEDEF) {
+    if (curtok()->kind == TK_TYPEDEF) {
       parse_toplevel_typedef_decl();
       continue;
     }
-    if ((psx_ctx_is_type_token(token->kind) || is_decl_prefix_token(token->kind) || psx_ctx_is_typedef_name_token(token)) &&
-        !is_toplevel_function_signature(token)) {
+    if ((psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) &&
+        !is_toplevel_function_signature(curtok())) {
       parse_toplevel_decl_spec();
       parse_toplevel_decl_after_type();
       continue;
