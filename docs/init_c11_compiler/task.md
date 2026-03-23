@@ -1479,6 +1479,7 @@
   - 進捗（2026-03-23）: `decl.c` に `parse_local_decl_spec()` を追加し、`psx_decl_parse_declaration()` の先頭型解析（type/qualifier/extern/fp_kind/elem_size）を構造体化。`decl_spec` 共通化に向けた土台を整備
   - 進捗（2026-03-23）: `parser.c` でもトップレベル宣言入口を `parse_toplevel_decl_spec()` へ集約し、`ps_program()` の型先頭処理重複を削減（typedef名経路も同関数へ統合）
   - 進捗（2026-03-23）: `stmt.c` に `parse_decl_like_stmt()` / `is_decl_like_start_stmt()` を導入し、`block_item`・`stmt_internal`・`for` 初期化で宣言入口を統一
+  - 進捗（2026-03-24）: `decl.c` の `parse_local_decl_spec()` が typedef名開始の宣言を直接解決するようにし、`stmt.c` の typedef名専用分岐を削減（ローカル declaration 経路を一本化）
   - 対象ファイル: `src/parser/parser.c`, `src/parser/stmt.c`, `src/parser/decl.c`
 - [ ] `declarator` を再帰的構造にする（C11 §6.7.6）
   - 現状: ポインタ・名前・配列サイズ・関数ポインタのパースが各所にインライン展開

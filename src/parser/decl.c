@@ -41,8 +41,14 @@ typedef struct {
   token_kind_t type_kind;
   int elem_size;
   tk_float_kind_t fp_kind;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int base_is_pointer;
   int is_const_qualified;
   int is_volatile_qualified;
+  int td_pointee_const;
+  int td_pointee_volatile;
   int is_extern_decl;
 } local_decl_spec_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
@@ -1379,7 +1385,7 @@ node_t *psx_decl_parse_declaration(void) {
       if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
         psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
       }
-      int is_ptr = 0;
+      int is_ptr = ds.base_is_pointer;
       while (curtok()->kind == TK_MUL) {
         is_ptr = 1;
         set_curtok(curtok()->next);
@@ -1423,19 +1429,33 @@ node_t *psx_decl_parse_declaration(void) {
     return psx_node_new_num(0);
   }
 
-  return psx_decl_parse_declaration_after_type(ds.elem_size, ds.fp_kind, TK_EOF, NULL, 0, 0,
-                                               ds.is_const_qualified, ds.is_volatile_qualified);
+  return psx_decl_parse_declaration_after_type(ds.elem_size, ds.fp_kind,
+                                               ds.tag_kind, ds.tag_name, ds.tag_len,
+                                               ds.base_is_pointer,
+                                               ds.is_const_qualified ? 1 : ds.td_pointee_const,
+                                               ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile);
 }
 
 static int parse_local_decl_spec(local_decl_spec_t *out) {
   memset(out, 0, sizeof(*out));
   out->elem_size = 8;
   out->fp_kind = TK_FLOAT_KIND_NONE;
+  out->tag_kind = TK_EOF;
 
   out->type_kind = psx_consume_type_kind();
   psx_take_type_qualifiers(&out->is_const_qualified, &out->is_volatile_qualified);
   psx_take_extern_flag(&out->is_extern_decl);
-  if (out->type_kind == TK_EOF) return 0;
+  if (out->type_kind == TK_EOF) {
+    if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
+    token_ident_t *id = (token_ident_t *)curtok();
+    token_kind_t base_kind = TK_EOF;
+    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &out->elem_size, &out->fp_kind,
+                              &out->tag_kind, &out->tag_name, &out->tag_len, &out->base_is_pointer,
+                              &out->td_pointee_const, &out->td_pointee_volatile);
+    set_curtok(curtok()->next);
+    out->type_kind = base_kind;
+    return 1;
+  }
 
   psx_ctx_get_type_info(out->type_kind, NULL, &out->elem_size);
   if (out->type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;

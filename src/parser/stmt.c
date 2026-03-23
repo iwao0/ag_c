@@ -709,24 +709,6 @@ static node_t *parse_decl_like_stmt(void) {
   if (curtok()->kind == TK_STATIC_ASSERT ||
       psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) ||
       psx_ctx_is_typedef_name_token(curtok())) {
-    if (psx_ctx_is_typedef_name_token(curtok())) {
-      token_ident_t *id = (token_ident_t *)curtok();
-      int elem_size = 8;
-      tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
-      token_kind_t tag_kind = TK_EOF;
-      char *tag_name = NULL;
-      int tag_len = 0;
-      int is_ptr = 0;
-      int td_pointee_const = 0;
-      int td_pointee_volatile = 0;
-      token_kind_t base_kind = TK_EOF;
-      psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
-                                &tag_kind, &tag_name, &tag_len, &is_ptr,
-                                &td_pointee_const, &td_pointee_volatile);
-      set_curtok(curtok()->next);
-      return psx_decl_parse_declaration_after_type(elem_size, fp_kind, tag_kind, tag_name, tag_len,
-                                                   is_ptr, td_pointee_const, td_pointee_volatile);
-    }
     return psx_decl_parse_declaration();
   }
 
