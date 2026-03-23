@@ -1214,12 +1214,12 @@ token_kind_t psx_consume_type_kind(void) {
 static int parse_alignas_value_toplevel(void) {
   tk_expect('(');
   int val = 1;
-  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+  if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) {
     // _Alignas(type) — alignment = natural alignment of type
     int elem_size = 8;
-    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+    psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
     val = elem_size;
-    while (token->kind != TK_RPAREN && token->kind != TK_EOF) token = token->next;
+    while (curtok()->kind != TK_RPAREN && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
   } else {
     long long v = parse_enum_const_expr_toplevel();
     val = (v > 0) ? (int)v : 1;
@@ -1229,20 +1229,20 @@ static int parse_alignas_value_toplevel(void) {
 }
 
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
-  if (token->kind != lkind) return;
+  if (curtok()->kind != lkind) return;
   int depth = 0;
-  while (token && token->kind != TK_EOF) {
-    if (token->kind == lkind) depth++;
-    else if (token->kind == rkind) {
+  while (curtok() && curtok()->kind != TK_EOF) {
+    if (curtok()->kind == lkind) depth++;
+    else if (curtok()->kind == rkind) {
       depth--;
       if (depth == 0) {
-        token = token->next;
+        set_curtok(curtok()->next);
         return;
       }
     }
-    token = token->next;
+    set_curtok(curtok()->next);
   }
-  psx_diag_ctx(token, "param", "%s",
+  psx_diag_ctx(curtok(), "param", "%s",
                diag_message_for(DIAG_ERR_PARSER_MISSING_CLOSING_PAREN));
 }
 
@@ -1267,8 +1267,8 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   } else {
     name = tk_consume_ident();
   }
-  while (token->kind == TK_LPAREN || token->kind == TK_LBRACKET) {
-    if (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN || curtok()->kind == TK_LBRACKET) {
+    if (curtok()->kind == TK_LPAREN) {
       skip_balanced_group(TK_LPAREN, TK_RPAREN);
     } else {
       if (out_is_array_declarator) *out_is_array_declarator = 1;
@@ -1462,7 +1462,7 @@ static node_t *funcdef(void) {
   int ret_is_ptr = 0;
   parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr);
   if (ret_kind == TK_EOF) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, token,
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, curtok(),
                    "%s", diag_warn_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
   }
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
@@ -1518,9 +1518,9 @@ static node_t *funcdef(void) {
   body->body = calloc(body_cap, sizeof(node_t*));
   int prev_terminates = 0;
   while (!tk_consume('}')) {
-    if (prev_terminates && token->kind != TK_CASE && token->kind != TK_DEFAULT &&
-        !(token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON)) {
-      diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, token,
+    if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
+        !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
                      "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
       prev_terminates = 0;
     }
@@ -1541,11 +1541,11 @@ static node_t *funcdef(void) {
   // 未使用変数・未初期化変数の警告
   for (lvar_t *v = psx_decl_get_locals(); v; v = v->next_all) {
     if (!v->is_used && !v->is_param && v->name[0] != '_') {
-      diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, token,
+      diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, curtok(),
                      diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
                      v->len, v->name);
     } else if (v->is_used && !v->is_initialized && !v->is_param && !v->is_array) {
-      diag_warn_tokf(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, token,
+      diag_warn_tokf(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, curtok(),
                      diag_warn_message_for(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE),
                      v->len, v->name);
     }
