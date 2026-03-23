@@ -370,7 +370,7 @@ static void parse_toplevel_declarator_list(void) {
     }
     token_ident_t *name = parse_toplevel_decl_name(&is_ptr);
     if (!name) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
     // 配列宣言子を消費し、配列サイズを記録
@@ -987,12 +987,12 @@ static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_n
 }
 
 static void parse_toplevel_tag_decl(void) {
-  token_kind_t tag_kind = token->kind;
-  token = token->next;
+  token_kind_t tag_kind = curtok()->kind;
+  set_curtok(curtok()->next);
   token_ident_t *tag = tk_consume_ident();
   // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
-  if (!tag && token->kind != TK_LBRACE) {
-    psx_diag_missing(token, diag_text_for(DIAG_TEXT_TAG_NAME));
+  if (!tag && curtok()->kind != TK_LBRACE) {
+    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
   }
   static int anon_tag_counter_tl = 0;
   char anon_buf[32];
@@ -1017,7 +1017,7 @@ static void parse_toplevel_tag_decl(void) {
     return;
   }
   if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-    psx_diag_undefined_with_name(token, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+    psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
   }
   parse_toplevel_declarator_list();
   tk_expect(';');
