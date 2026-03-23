@@ -318,6 +318,120 @@ static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line
   return tok;
 }
 
+static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+static token_num_int_t *new_token_num_int(
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+
+/** @brief 文字列リテラル（接頭辞含む）を読み取り、トークンを生成する。 */
+static bool tokenize_string_literal(
+    char **pp,
+    token_t **cur_io,
+    int line_no,
+    bool at_bol,
+    bool has_space) {
+  char *p = *pp;
+  int str_prefix = 0;
+  tk_string_prefix_kind_t str_prefix_kind = TK_STR_PREFIX_NONE;
+  tk_char_width_t str_char_width = TK_CHAR_WIDTH_CHAR;
+  bool is_string_lit = (*p == '"');
+  tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
+  if (str_prefix > 0) is_string_lit = true;
+  if (!is_string_lit) return false;
+
+  if (*p == '"') {
+    str_prefix = 0;
+    str_prefix_kind = TK_STR_PREFIX_NONE;
+    str_char_width = TK_CHAR_WIDTH_CHAR;
+  }
+  p += str_prefix;
+  p++; // opening quote
+  char *start = p;
+  while (true) {
+    if (*p == '\0' || *p == '\n') {
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED, p, "%s",
+                  diag_message_for(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED));
+    }
+    if (*p == '"') break;
+    if (*p == '\\') {
+      p++;
+      tk_skip_escape_in_literal(&p);
+      continue;
+    }
+    p++;
+  }
+  int len = checked_span_len(start, p, "文字列リテラル");
+  p++; // closing quote
+  token_string_t *st = new_token_string(*cur_io, start, len, line_no, at_bol, has_space);
+  st->char_width = str_char_width;
+  st->str_prefix_kind = str_prefix_kind;
+  *cur_io = (token_t *)st;
+  *pp = p;
+  return true;
+}
+
+/** @brief 文字定数（接頭辞含む）を読み取り、数値トークンを生成する。 */
+static bool tokenize_char_literal(
+    char **pp,
+    token_t **cur_io,
+    int line_no,
+    bool at_bol,
+    bool has_space) {
+  char *p = *pp;
+  int chr_prefix = 0;
+  tk_char_prefix_kind_t chr_prefix_kind = TK_CHAR_PREFIX_NONE;
+  tk_char_width_t chr_char_width = TK_CHAR_WIDTH_CHAR;
+  bool is_char_lit = (*p == '\'');
+  tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
+  if (chr_prefix > 0) is_char_lit = true;
+  if (!is_char_lit) return false;
+
+  char *start = p;
+  p += chr_prefix;
+  p++; // opening quote
+  if (*p == '\0' || *p == '\n') {
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_UNTERMINATED_LITERAL, p, "文字リテラルが閉じられていません");
+  }
+  if (*p == '\'') {
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY, p, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY));
+  }
+  unsigned long long ch = 0;
+  int nchar = 0;
+  while (*p && *p != '\'') {
+    int one = 0;
+    if (*p == '\\') {
+      p++;
+      one = tk_read_escape_char(&p);
+    } else if (*p == '\n') {
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
+                  diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+    } else {
+      one = (unsigned char)*p;
+      p++;
+    }
+    ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
+    nchar++;
+  }
+  if (nchar == 0 || *p != '\'') {
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+  }
+  p++; // closing quote
+  int len = checked_span_len(start, p, "文字リテラル");
+  token_num_int_t *num = new_token_num_int(*cur_io, start, len, line_no, at_bol, has_space);
+  num->base.num_kind = TK_NUM_KIND_INT;
+  num->uval = ch;
+  num->val = (long long)ch;
+  num->int_base = 10;
+  num->is_unsigned = false;
+  num->int_size = TK_INT_SIZE_INT;
+  num->char_width = chr_char_width;
+  num->char_prefix_kind = chr_prefix_kind;
+  *cur_io = (token_t *)num;
+  *pp = p;
+  return true;
+}
+
 static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_string_t *tok = tcalloc(1, sizeof(token_string_t));
   init_token_base(&tok->pp.base, TK_STRING, line_no);
@@ -695,97 +809,11 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
       p += matched_len;
       continue;
     }
-    // 文字列リテラル（接頭辞 L/u/U/u8 を含む）
-    int str_prefix = 0;
-    tk_string_prefix_kind_t str_prefix_kind = TK_STR_PREFIX_NONE;
-    tk_char_width_t str_char_width = TK_CHAR_WIDTH_CHAR;
-    bool is_string_lit = (*p == '"');
-    tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
-    if (str_prefix > 0) {
-      is_string_lit = true;
-    }
-    if (is_string_lit) {
-      if (*p == '"') {
-        str_prefix = 0;
-        str_prefix_kind = TK_STR_PREFIX_NONE;
-        str_char_width = TK_CHAR_WIDTH_CHAR;
-      }
-      p += str_prefix;
-      p++; // 開き引用符をスキップ
-      char *start = p;
-      while (true) {
-        if (*p == '\0' || *p == '\n') {
-          TK_DIAG_ATF(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED));
-        }
-        if (*p == '"') break;
-        if (*p == '\\') {
-          p++;
-          tk_skip_escape_in_literal(&p);
-          continue;
-        }
-        p++;
-      }
-      int len = checked_span_len(start, p, "文字列リテラル");
-      p++; // 閉じ引用符をスキップ
-      token_string_t *st = new_token_string(cur, start, len, line_no, _at_bol, _has_space);
-      st->char_width = str_char_width;
-      st->str_prefix_kind = str_prefix_kind;
-      cur = (token_t *)st;
+    if (tokenize_string_literal(&p, &cur, line_no, _at_bol, _has_space)) {
       continue;
     }
 
-    // 文字リテラル（接頭辞 L/u/U を含む）
-    int chr_prefix = 0;
-    tk_char_prefix_kind_t chr_prefix_kind = TK_CHAR_PREFIX_NONE;
-    tk_char_width_t chr_char_width = TK_CHAR_WIDTH_CHAR;
-    bool is_char_lit = (*p == '\'');
-    tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
-    if (chr_prefix > 0) {
-      is_char_lit = true;
-    }
-    if (is_char_lit) {
-      char *start = p;
-      p += chr_prefix;
-      p++; // 開きクォートをスキップ
-      if (*p == '\0' || *p == '\n') {
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_UNTERMINATED_LITERAL, p,
-                       "文字リテラルが閉じられていません");
-      }
-      if (*p == '\'') {
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY));
-      }
-      unsigned long long ch = 0;
-      int nchar = 0;
-      // 通常/接頭辞付きのいずれも、複数文字定数は実装定義として受理する。
-      while (*p && *p != '\'') {
-        int one = 0;
-        if (*p == '\\') {
-          p++;
-          one = tk_read_escape_char(&p);
-        } else if (*p == '\n') {
-          TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
-        } else {
-          one = (unsigned char)*p;
-          p++;
-        }
-        ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
-        nchar++;
-      }
-      if (nchar == 0 || *p != '\'') {
-        TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
-      }
-      p++; // 閉じクォートをスキップ
-      int len = checked_span_len(start, p, "文字リテラル");
-      token_num_int_t *num = new_token_num_int(cur, start, len, line_no, _at_bol, _has_space);
-      num->base.num_kind = TK_NUM_KIND_INT;
-      num->uval = ch;
-      num->val = (long long)ch;
-      num->int_base = 10;
-      num->is_unsigned = false;
-      num->int_size = TK_INT_SIZE_INT;
-      num->char_width = chr_char_width;
-      num->char_prefix_kind = chr_prefix_kind;
-      cur = (token_t *)num;
+    if (tokenize_char_literal(&p, &cur, line_no, _at_bol, _has_space)) {
       continue;
     }
 

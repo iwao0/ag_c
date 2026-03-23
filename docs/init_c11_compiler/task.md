@@ -561,6 +561,7 @@
 - [x] perfレポート整備（継続比較テンプレート追加）
 - [x] 直近リファクタ（prefix判定の共通化: `tk_parse_string_prefix` / `tk_parse_char_prefix`）
 - [ ] 次フェーズ候補P1: `tokenizer.c` の大型関数分割（責務単位でさらに分離）
+  - [x] 進捗（2026-03-24）: `tk_tokenize_ctx` から文字列/文字定数の処理を `tokenize_string_literal` / `tokenize_char_literal` に抽出し、制御フローの見通しを改善した
 - [ ] 次フェーズ候補P2: hotpathベンチ結果の定点記録を1日1回運用に固定
 - [x] 次フェーズ候補P2: Tokenizer専用の軽量perfゲート（ローカル実行向け）を追加
   - [x] 進捗（2026-03-24）: `scripts/check_tokenizer_perf_light.sh` と `make check-tokenizer-perf-light` を追加し、`case` 指標 + `hotpath` 指標の軽量ゲートをローカルで実行可能にした
