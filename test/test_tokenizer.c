@@ -1102,6 +1102,32 @@ static void test_context_failure_path_unterminated_and_invalid_token() {
   ASSERT_EQ(1, as_num_i(tok)->val);
 }
 
+static void test_context_success_path_default_non_interference() {
+  printf("test_context_success_path_default_non_interference...\n");
+
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(true);
+  tk_set_enable_trigraphs(true);
+
+  tokenizer_context_t ctx;
+  tk_context_init(&ctx);
+  tk_ctx_set_strict_c11_mode(&ctx, true);
+  tk_ctx_set_enable_binary_literals(&ctx, false);
+  tk_ctx_set_enable_trigraphs(&ctx, false);
+
+  token_t *tok = tk_tokenize_ctx(&ctx, "?" "?=");
+  ASSERT_EQ(TK_QUESTION, tok->kind);
+  ASSERT_EQ(TK_QUESTION, tok->next->kind);
+
+  // explicit ctx tokenize must not change default runtime config
+  ASSERT_TRUE(!tk_get_strict_c11_mode());
+  ASSERT_TRUE(tk_get_enable_binary_literals());
+  ASSERT_TRUE(tk_get_enable_trigraphs());
+
+  tok = tk_tokenize("?" "?=");
+  ASSERT_EQ(TK_HASH, tok->kind);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -1125,6 +1151,7 @@ int main() {
   test_context_config_isolation_and_switch_timing();
   test_context_failure_path_isolation();
   test_context_failure_path_unterminated_and_invalid_token();
+  test_context_success_path_default_non_interference();
   test_at_eof();
   test_consume();
   test_consume_str();
