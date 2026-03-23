@@ -48,6 +48,9 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION: return "マクロ定義内の ## の位置が不正です";
     case DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED: return "include ファイルを読み込めませんでした: %s";
     case DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE: return "error: %s";
+    case DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND: return "include ファイルが見つかりません: %s";
+    case DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED: return "include ファイルへのアクセス権がありません: %s";
+    case DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP: return "include でシンボリックリンクの循環を検出しました: %s";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";

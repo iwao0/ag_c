@@ -48,6 +48,9 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION: return "Invalid ## position in macro definition";
     case DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED: return "Failed to read include file: %s";
     case DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE: return "error: %s";
+    case DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND: return "Include file not found: %s";
+    case DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED: return "Permission denied for include file: %s";
+    case DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP: return "Symlink loop detected in include file: %s";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";

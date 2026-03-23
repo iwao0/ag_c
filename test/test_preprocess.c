@@ -478,6 +478,16 @@ static void expect_macro_arg_nesting_limit_fail(void) {
   free(input);
 }
 
+static void expect_line_filename_invalid_utf8_fail(void) {
+  static const unsigned char input_bytes[] = {
+      '#', 'l', 'i', 'n', 'e', ' ', '1', ' ', '"',
+      'b', 'a', 'd', 0xC0, 0xAF, '.', 'c', '"', '\n',
+      'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', ' ', '{', ' ',
+      'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', ' ', '}', '\n', '\0',
+  };
+  expect_preprocess_fail_with_stderr_substr((const char *)input_bytes, "E1028");
+}
+
 static void expect_line_filename_too_long_fail(void) {
   const int name_len = 1500;
   size_t cap = (size_t)name_len + 64;
@@ -639,10 +649,10 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
-  expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\xc0\xaf.c\"\nint main() { return 0; }\n", "E1028");
-  expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1032");
+  expect_line_filename_invalid_utf8_fail();
+  expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1036");
   expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
-  expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1032");
+  expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1034");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");

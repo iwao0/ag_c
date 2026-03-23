@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <limits.h>
+#include <errno.h>
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -47,6 +48,23 @@ struct include_frame {
 static include_frame_t *include_stack = NULL;
 static int include_depth = 0;
 static size_t macro_expand_steps = 0;
+static int include_last_errno = 0;
+
+static void record_include_errno(int err) {
+  if (!err) return;
+  if (include_last_errno == 0) {
+    include_last_errno = err;
+    return;
+  }
+  if (err == ELOOP) {
+    include_last_errno = err;
+    return;
+  }
+  if ((include_last_errno == ENOENT || include_last_errno == ENOTDIR) &&
+      err != ENOENT && err != ENOTDIR) {
+    include_last_errno = err;
+  }
+}
 
 static void *xrealloc(void *ptr, size_t size) {
   void *p = realloc(ptr, size);
@@ -176,7 +194,10 @@ static void validate_include_realpath_or_die(const char *candidate, const char *
 
 static char *read_include_file_secure(const char *candidate, const char *display_path) {
   FILE *fp = fopen(candidate, "r");
-  if (!fp) return NULL;
+  if (!fp) {
+    record_include_errno(errno);
+    return NULL;
+  }
 
   int fd = fileno(fp);
   char opened_path[PATH_MAX];
@@ -189,6 +210,7 @@ static char *read_include_file_secure(const char *candidate, const char *display
 #endif
   if (!have_opened_path) {
     if (!realpath(candidate, opened_path)) {
+      record_include_errno(errno);
       fclose(fp);
       return NULL;
     }
@@ -200,11 +222,13 @@ static char *read_include_file_secure(const char *candidate, const char *display
   }
 
   if (fseek(fp, 0, SEEK_END) == -1) {
+    record_include_errno(errno);
     fclose(fp);
     return NULL;
   }
   long file_size = ftell(fp);
   if (file_size < 0) {
+    record_include_errno(errno);
     fclose(fp);
     return NULL;
   }
@@ -214,16 +238,19 @@ static char *read_include_file_secure(const char *candidate, const char *display
     return NULL;
   }
   if (fseek(fp, 0, SEEK_SET) == -1) {
+    record_include_errno(errno);
     fclose(fp);
     return NULL;
   }
 
   char *buf = calloc(1, size + 2);
   if (!buf) {
+    record_include_errno(ENOMEM);
     fclose(fp);
     return NULL;
   }
   if (fread(buf, 1, size, fp) != size) {
+    record_include_errno(errno ? errno : EIO);
     fclose(fp);
     free(buf);
     return NULL;
@@ -235,6 +262,7 @@ static char *read_include_file_secure(const char *candidate, const char *display
 }
 
 static char *load_include_with_allowlist_or_die(const char *filename) {
+  include_last_errno = 0;
   for (size_t i = 0; i < sizeof(k_include_search_roots) / sizeof(k_include_search_roots[0]); i++) {
     const char *root = k_include_search_roots[i];
     size_t cand_len = strlen(root) + strlen(filename) + 1;
@@ -1013,8 +1041,15 @@ token_t *preprocess(token_t *tok) {
 
         char *buf = load_include_with_allowlist_or_die(filename);
         if (!buf) {
-          diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED,
-                              diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED), filename);
+          diag_error_id_t id = DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED;
+          if (include_last_errno == ENOENT) {
+            id = DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND;
+          } else if (include_last_errno == EACCES || include_last_errno == EPERM) {
+            id = DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED;
+          } else if (include_last_errno == ELOOP) {
+            id = DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP;
+          }
+          diag_emit_internalf(id, diag_message_for(id), filename);
           free(filename);
         }
 
