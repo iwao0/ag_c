@@ -486,7 +486,9 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name) {
     skip_ptr_qualifiers();
   }
   token_ident_t *name = NULL;
+  int had_parens = 0;
   if (tk_consume('(')) {
+    had_parens = 1;
     name = parse_decl_name_recursive(is_ptr, require_name);
     tk_expect(')');
   } else {
@@ -494,6 +496,14 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name) {
     if (!name && require_name) {
       diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, curtok(), "%s",
                      diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+    }
+  }
+  if (had_parens) {
+    while (curtok()->kind == TK_LBRACKET) {
+      skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+    }
+    while (curtok()->kind == TK_LPAREN) {
+      skip_balanced_group(TK_LPAREN, TK_RPAREN);
     }
   }
   return name;
