@@ -126,6 +126,18 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix);
+    while (tk_consume('[')) {
+      int depth = 1;
+      while (depth > 0) {
+        if (curtok()->kind == TK_EOF) {
+          diag_emit_tokf(DIAG_ERR_PARSER_EXPECTED_TOKEN, curtok(), "%s",
+                         diag_message_for(DIAG_ERR_PARSER_EXPECTED_TOKEN));
+        }
+        if (curtok()->kind == TK_LBRACKET) depth++;
+        else if (curtok()->kind == TK_RBRACKET) depth--;
+        set_curtok(curtok()->next);
+      }
+    }
     tk_expect(')');
   } else {
     name = tk_consume_ident();

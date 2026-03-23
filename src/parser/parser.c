@@ -533,6 +533,9 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_toplevel(is_ptr, out_has_func_suffix);
+    while (curtok()->kind == TK_LBRACKET) {
+      skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+    }
     tk_expect(')');
   } else {
     name = tk_consume_ident();
