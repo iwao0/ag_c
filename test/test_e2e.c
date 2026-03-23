@@ -344,6 +344,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "typedef_ret_funcdef", CASE_INT, "typedef long mylong; mylong add(mylong a, mylong b) { return a+b; } int main() { return (int)add(3,4); }", 7, 0},
     {"type_decl", "typedef_ret_proto", CASE_INT, "typedef long size_t; size_t strlen(const char *s); int main() { return (int)strlen(\"hello\"); }", 5, 0},
     {"type_decl", "typedef_ptr_ret_proto", CASE_INT, "typedef void FILE; FILE *get_null(void); int main() { return 0; }", 0, 0},
+    {"type_decl", "unnamed_param_prototype", CASE_INT, "int proto(int); int main() { return 0; }", 0, 0},
     {"type_decl", "unsigned_long_ret_funcdef", CASE_INT, "unsigned long foo(int x) { return (unsigned long)x; } int main() { return (int)foo(42); }", 42, 0},
     {"type_decl", "unsigned_long_decl", CASE_INT, "int main() { unsigned long v=12; return v; }", 12, 0},
     {"type_decl", "unsigned_long_long_decl", CASE_INT, "int main() { unsigned long long v=12; return v; }", 12, 0},
@@ -956,6 +957,9 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"const_qual_discard_assign_rejected",
      "int main() { const int x = 5; const int *cp = &x; int *p; p = cp; return 0; }",
      "const修飾されたポインタからconst無しポインタへの暗黙変換はできません"},
+    {"funcdef_unnamed_param_rejected",
+     "int bad(int) { return 0; }",
+     "必要な項目がありません: 仮引数"},
 };
 
 static int test_count = 0;

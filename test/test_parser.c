@@ -696,6 +696,11 @@ static void test_funcdef_with_params() {
   parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
+
+  // プロトタイプ宣言では名前なし仮引数を許容
+  parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_EQ(0, as_func(parsed_code[0])->nargs);
 }
 
 static void test_stmt_if() {
@@ -1455,6 +1460,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { int a[0]; return 0; }");          // 配列サイズは正数のみ
   expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
+  expect_parse_fail("int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
   expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
   expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
@@ -1493,6 +1499,7 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
   expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
