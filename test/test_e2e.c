@@ -363,6 +363,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "static_assert_stmt", CASE_INT, "int main() { _Static_assert(1, \"ok\"); return 7; }", 7, 0},
     {"type_decl", "alignas_atomic_prefix", CASE_INT, "int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }", 7, 0},
     {"type_decl", "atomic_type_spec", CASE_INT, "int main() { _Atomic(int) z=5; return z; }", 5, 0},
+    {"type_decl", "atomic_type_qual_postfix", CASE_INT, "int main() { int _Atomic x=6; return x; }", 6, 0},
+    {"type_decl", "atomic_type_qual_postfix_ptr", CASE_INT, "int main() { int x=7; int _Atomic *p=&x; return *p; }", 7, 0},
     {"type_decl", "atomic_load_store", CASE_INT, "int main() { _Atomic int x=10; int y=x+32; return y; }", 42, 0},
     {"type_decl", "thread_local_init", CASE_INT, "_Thread_local int tl_val=7; int main() { return tl_val; }", 7, 0},
     {"type_decl", "thread_local_store", CASE_INT, "_Thread_local int tl_s=0; int main() { tl_s=99; return tl_s; }", 99, 0},

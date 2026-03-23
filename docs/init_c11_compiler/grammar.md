@@ -26,7 +26,7 @@ struct_or_union_spec = ("struct" | "union") ident? "{" member_list "}"
                      | ("struct" | "union") ident
 enum_spec      = "enum" ident? "{" enumerator_list ","? "}"
                | "enum" ident
-type_qual      = "const" | "volatile" | "restrict"
+type_qual      = "const" | "volatile" | "restrict" | "_Atomic"
 func_spec      = "inline" | "_Noreturn"
 align_spec     = "_Alignas" "(" (type_name | const_expr) ")"
 

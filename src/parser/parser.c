@@ -1125,6 +1125,11 @@ token_kind_t psx_consume_type_kind(void) {
       token = token->next;
       continue;
     }
+    if (k == TK_ATOMIC) {
+      g_last_type_atomic = 1;
+      token = token->next;
+      continue;
+    }
     break;
   }
 

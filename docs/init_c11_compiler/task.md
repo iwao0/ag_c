@@ -1167,9 +1167,9 @@
 - [ ] 複合リテラルを `postfix` に移動する（C11 §6.5.2.5）
   - C11: `postfix-expression = ... | "(" type-name ")" "{" initializer-list ","? "}"`
   - 現状: `unary` の選択肢として記載。優先順位は正しいが位置が C11 と異なる
-- [ ] `_Atomic` を `type_qual` にも追記する（C11 §6.7.3）
+- [x] `_Atomic` を `type_qual` にも追記する（C11 §6.7.3）
   - C11: `_Atomic "(" type-name ")"` は `type-specifier`（§6.7.2.4）、`_Atomic` 単体は `type-qualifier`（§6.7.3）
-  - 現状: `type_spec` にのみ記載。`type_qual` に `_Atomic` がない
+  - 対応: `int _Atomic x;` / `int _Atomic *p;` など後置 qualifier 形式を parser で受理し、回帰テストを追加
 
 ### パーサー機能拡張（既存）
 - [x] フレキシブル配列メンバー（C99/C11 6.7.2.1）を受理する
