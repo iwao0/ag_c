@@ -515,6 +515,16 @@ static inline tokenize_flags_t take_tokenize_flags(bool *at_bol, bool *has_space
   return f;
 }
 
+/** @brief 現在位置の1トークン分を切り出して進める。 */
+static bool tokenize_one(char **pp, token_t **cur_io, int line_no, tokenize_flags_t flags) {
+  if (tokenize_punctuator(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
+  if (tokenize_string_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
+  if (tokenize_char_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
+  if (tokenize_ident_or_keyword(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
+  if (tokenize_number_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
+  return false;
+}
+
 static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_string_t *tok = tcalloc(1, sizeof(token_string_t));
   init_token_base(&tok->pp.base, TK_STRING, line_no);
@@ -925,22 +935,7 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
     if (!*p) break;
 
     tokenize_flags_t flags = take_tokenize_flags(&at_bol, &has_space);
-
-    if (tokenize_punctuator(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
-      continue;
-    }
-    if (tokenize_string_literal(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
-      continue;
-    }
-
-    if (tokenize_char_literal(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
-      continue;
-    }
-
-    if (tokenize_ident_or_keyword(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
-      continue;
-    }
-    if (tokenize_number_literal(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
+    if (tokenize_one(&p, &cur, line_no, flags)) {
       continue;
     }
 
