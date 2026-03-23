@@ -6,6 +6,12 @@
 
 typedef struct tokenizer_context_t tokenizer_context_t;
 
+#if defined(__GNUC__) || defined(__clang__)
+#define TK_DEPRECATED(msg) __attribute__((deprecated(msg)))
+#else
+#define TK_DEPRECATED(msg)
+#endif
+
 /** @brief Tokenizerの実行時設定コンテキスト。 */
 struct tokenizer_context_t {
   bool strict_c11_mode;
@@ -70,19 +76,23 @@ token_t *tk_tokenize(char *p);
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p);
 
 /** @brief 現在の入力文字列（エラー表示用）を取得する。 */
+TK_DEPRECATED("use tk_get_user_input_ctx")
 char *tk_get_user_input(void);
 /** @brief 明示コンテキストの入力文字列（エラー表示用）を取得する。 */
 char *tk_get_user_input_ctx(tokenizer_context_t *ctx);
 /** @brief 現在の入力文字列（エラー表示用）を設定する。 */
+TK_DEPRECATED("use tk_set_user_input_ctx")
 void tk_set_user_input(char *p);
 /** @brief 明示コンテキストの入力文字列（エラー表示用）を設定する。 */
 void tk_set_user_input_ctx(tokenizer_context_t *ctx, char *p);
 
 /** @brief 現在のファイル名（エラー表示用）を取得する。 */
+TK_DEPRECATED("use tk_get_filename_ctx")
 char *tk_get_filename(void);
 /** @brief 明示コンテキストのファイル名（エラー表示用）を取得する。 */
 char *tk_get_filename_ctx(tokenizer_context_t *ctx);
 /** @brief 現在のファイル名（エラー表示用）を設定する。 */
+TK_DEPRECATED("use tk_set_filename_ctx")
 void tk_set_filename(char *name);
 /** @brief 明示コンテキストのファイル名（エラー表示用）を設定する。 */
 void tk_set_filename_ctx(tokenizer_context_t *ctx, char *name);
