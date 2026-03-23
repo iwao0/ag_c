@@ -1417,7 +1417,7 @@ static node_t *cast(void) {
                        "union");
         }
         if (!ps_get_enable_union_scalar_pointer_cast()) {
-          psx_diag_ctx(token, "cast", "%s",
+          psx_diag_ctx(curtok(), "cast", "%s",
                        diag_message_for(DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
         }
         // staged extension: allow scalar/pointer -> union value cast by
@@ -1426,7 +1426,7 @@ static node_t *cast(void) {
                                                     cast_elem_size, cast_fp_kind));
       }
       const char *kind = (cast_kind == TK_STRUCT) ? "struct" : "union";
-      psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+      psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                    kind);
     }
     return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand));
@@ -1435,18 +1435,18 @@ static node_t *cast(void) {
 }
 
 static node_t *unary(void) {
-  if (token->kind == TK_SIZEOF) {
-    token = token->next;
-    if (token->kind == TK_LPAREN) {
-      token = token->next;
+  if (curtok()->kind == TK_SIZEOF) {
+    set_curtok(curtok()->next);
+    if (curtok()->kind == TK_LPAREN) {
+      set_curtok(curtok()->next);
       int type_sz = parse_parenthesized_type_size();
       if (type_sz >= 0) return psx_node_new_num(type_sz);
       // VLA: sizeof(vla_var) は実行時サイズロード
-      if (token->kind == TK_IDENT) {
-        token_ident_t *id = (token_ident_t *)token;
+      if (curtok()->kind == TK_IDENT) {
+        token_ident_t *id = (token_ident_t *)curtok();
         lvar_t *vla_var = psx_decl_find_lvar(id->str, id->len);
         if (vla_var && vla_var->is_vla) {
-          token = token->next;
+          set_curtok(curtok()->next);
           tk_expect(')');
           // [x29+16+offset+8] にバイトサイズを格納してある
           return psx_node_new_lvar_typed(vla_var->offset + 8, 8);
@@ -1459,19 +1459,19 @@ static node_t *unary(void) {
     return psx_node_new_num(sizeof_expr_node(unary()));
   }
 
-  if (token->kind == TK_ALIGNOF) {
-    token = token->next;
+  if (curtok()->kind == TK_ALIGNOF) {
+    set_curtok(curtok()->next);
     tk_expect('(');
     int type_sz = parse_parenthesized_type_size();
     if (type_sz < 0) {
-      psx_diag_ctx(token, "alignof", "%s",
+      psx_diag_ctx(curtok(), "alignof", "%s",
                    diag_message_for(DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED));
     }
     return psx_node_new_num(type_sz);
   }
 
-  if (token->kind == TK_INC) {
-    token = token->next;
+  if (curtok()->kind == TK_INC) {
+    set_curtok(curtok()->next);
     node_t *target = unary();
     psx_node_expect_incdec_target(target, "++");
     node_t *node = arena_alloc(sizeof(node_t));
@@ -1479,8 +1479,8 @@ static node_t *unary(void) {
     node->lhs = target;
     return node;
   }
-  if (token->kind == TK_DEC) {
-    token = token->next;
+  if (curtok()->kind == TK_DEC) {
+    set_curtok(curtok()->next);
     node_t *target = unary();
     psx_node_expect_incdec_target(target, "--");
     node_t *node = arena_alloc(sizeof(node_t));
@@ -1488,25 +1488,25 @@ static node_t *unary(void) {
     node->lhs = target;
     return node;
   }
-  if (token->kind == TK_PLUS) {
-    token = token->next;
+  if (curtok()->kind == TK_PLUS) {
+    set_curtok(curtok()->next);
     return cast();
   }
-  if (token->kind == TK_MINUS) {
-    token = token->next;
+  if (curtok()->kind == TK_MINUS) {
+    set_curtok(curtok()->next);
     return psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());
   }
-  if (token->kind == TK_BANG) {
-    token = token->next;
+  if (curtok()->kind == TK_BANG) {
+    set_curtok(curtok()->next);
     return psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0));
   }
-  if (token->kind == TK_TILDE) {
-    token = token->next;
+  if (curtok()->kind == TK_TILDE) {
+    set_curtok(curtok()->next);
     node_t *neg = psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());
     return psx_node_new_binary(ND_SUB, neg, psx_node_new_num(1));
   }
-  if (token->kind == TK_MUL) {
-    token = token->next;
+  if (curtok()->kind == TK_MUL) {
+    set_curtok(curtok()->next);
     node_t *operand = cast();
     node_mem_t *node = arena_alloc(sizeof(node_mem_t));
     node->base.kind = ND_DEREF;
@@ -1538,8 +1538,8 @@ static node_t *unary(void) {
     }
     return (node_t *)node;
   }
-  if (token->kind == TK_AMP) {
-    token = token->next;
+  if (curtok()->kind == TK_AMP) {
+    set_curtok(curtok()->next);
     node_t *operand = cast();
     if (operand && operand->kind == ND_COMMA && operand->rhs) {
       node_mem_t *rhs_addr = arena_alloc(sizeof(node_mem_t));
