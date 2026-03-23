@@ -351,7 +351,16 @@ static inline bool tk_is_binary_literal_enabled_in_ctx(void) {
   return tk_ctx_get_enable_binary_literals(ctx);
 }
 
-/** @brief 文字列リテラル（接頭辞含む）を読み取り、トークンを生成する。 */
+/**
+ * @brief 文字列リテラル（接頭辞含む）を読み取り、トークンを生成する。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
+ * @param line_no 現在行番号。
+ * @param at_bol 行頭フラグ（生成トークンへ転写）。
+ * @param has_space 直前空白フラグ（生成トークンへ転写）。
+ * @return 文字列リテラルを受理した場合 `true`。非該当時は `false`（非破壊）。
+ * @warning 未終端文字列は診断終了する。
+ */
 static bool tokenize_string_literal(
     char **pp,
     token_t **cur_io,
@@ -398,7 +407,16 @@ static bool tokenize_string_literal(
   return true;
 }
 
-/** @brief 文字定数（接頭辞含む）を読み取り、数値トークンを生成する。 */
+/**
+ * @brief 文字定数（接頭辞含む）を読み取り、数値トークンを生成する。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
+ * @param line_no 現在行番号。
+ * @param at_bol 行頭フラグ（生成トークンへ転写）。
+ * @param has_space 直前空白フラグ（生成トークンへ転写）。
+ * @return 文字定数を受理した場合 `true`。非該当時は `false`（非破壊）。
+ * @warning 空文字/未終端/不正エスケープは診断終了する。
+ */
 static bool tokenize_char_literal(
     char **pp,
     token_t **cur_io,
@@ -465,7 +483,15 @@ static bool tokenize_char_literal(
   return true;
 }
 
-/** @brief 記号（最長一致の複数文字 + 1文字）を読み取り、トークンを生成する。 */
+/**
+ * @brief 記号（最長一致の複数文字 + 1文字）を読み取り、トークンを生成する。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
+ * @param line_no 現在行番号。
+ * @param at_bol 行頭フラグ（生成トークンへ転写）。
+ * @param has_space 直前空白フラグ（生成トークンへ転写）。
+ * @return 記号を受理した場合 `true`。非該当時は `false`（非破壊）。
+ */
 static bool tokenize_punctuator(
     char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
   char *p = *pp;
@@ -486,7 +512,15 @@ static bool tokenize_punctuator(
   return false;
 }
 
-/** @brief 識別子/キーワードを読み取り、該当トークンを生成する。 */
+/**
+ * @brief 識別子/キーワードを読み取り、該当トークンを生成する。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
+ * @param line_no 現在行番号。
+ * @param at_bol 行頭フラグ（生成トークンへ転写）。
+ * @param has_space 直前空白フラグ（生成トークンへ転写）。
+ * @return 識別子/キーワードを受理した場合 `true`。非該当時は `false`（非破壊）。
+ */
 static bool tokenize_ident_or_keyword(
     char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
   char *p = *pp;
@@ -526,11 +560,25 @@ static bool tokenize_ident_or_keyword(
   return true;
 }
 
-/** @brief 数値リテラルを読み取り、整数/浮動小数トークンを生成する。 */
+/**
+ * @brief 数値リテラルを読み取り、整数/浮動小数トークンを生成する。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
+ * @param line_no 現在行番号。
+ * @param at_bol 行頭フラグ（生成トークンへ転写）。
+ * @param has_space 直前空白フラグ（生成トークンへ転写）。
+ * @return 数値リテラルを受理した場合 `true`。非該当時は `false`（非破壊）。
+ * @warning 不正サフィックス/範囲外などは診断終了する。
+ */
 static bool tokenize_number_literal(
     char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space);
 
-/** @brief 現在の空白/BOLフラグを取り出し、次トークン向けにリセットする。 */
+/**
+ * @brief 現在の空白/BOLフラグを取り出し、次トークン向けにリセットする。
+ * @param at_bol 行頭フラグ。呼び出し後は `false` へリセットされる。
+ * @param has_space 空白フラグ。呼び出し後は `false` へリセットされる。
+ * @return 取り出したフラグ値。
+ */
 static inline tokenize_flags_t take_tokenize_flags(bool *at_bol, bool *has_space) {
   tokenize_flags_t f = {*at_bol, *has_space};
   *at_bol = false;
@@ -538,7 +586,11 @@ static inline tokenize_flags_t take_tokenize_flags(bool *at_bol, bool *has_space
   return f;
 }
 
-/** @brief Tokenizer実行セッションを開始し、active contextを切り替える。 */
+/**
+ * @brief Tokenizer実行セッションを開始し、active contextを切り替える。
+ * @param ctx 実行対象コンテキスト。`NULL` の場合は既定コンテキスト。
+ * @return 復元用のセッション情報。
+ */
 static tokenize_session_t begin_tokenize_session(tokenizer_context_t *ctx) {
   tokenize_session_t s = {0};
   s.prev_ctx = active_ctx;
@@ -548,7 +600,14 @@ static tokenize_session_t begin_tokenize_session(tokenizer_context_t *ctx) {
   return s;
 }
 
-/** @brief 現在位置の1トークン分を切り出して進める。 */
+/**
+ * @brief 現在位置の1トークン分を切り出して進める。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
+ * @param line_no 現在行番号。
+ * @param flags 生成トークンへ転写する行頭/空白フラグ。
+ * @return いずれかのトークナイズ規則に一致した場合 `true`。非該当時は `false`。
+ */
 static bool tokenize_one(char **pp, token_t **cur_io, int line_no, tokenize_flags_t flags) {
   if (tokenize_punctuator(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
   if (tokenize_string_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
@@ -558,7 +617,12 @@ static bool tokenize_one(char **pp, token_t **cur_io, int line_no, tokenize_flag
   return false;
 }
 
-/** @brief Tokenizer実行セッションを終了し、カーソル確定とcontext復元を行う。 */
+/**
+ * @brief Tokenizer実行セッションを終了し、カーソル確定とcontext復元を行う。
+ * @param s 開始時に取得したセッション情報。
+ * @param head_next 生成トークン列の先頭。
+ * @return `head_next` をそのまま返す。
+ */
 static token_t *end_tokenize_session(tokenize_session_t *s, token_t *head_next) {
   tk_set_current_token(head_next);
   active_ctx = s->prev_ctx;
@@ -784,7 +848,12 @@ static inline bool has_hex_float_marker(const char *p) {
   return false;
 }
 
-/** @brief 浮動小数点サフィックス（`f`/`F`/`l`/`L`）を解析して型情報へ反映する。 */
+/**
+ * @brief 浮動小数点サフィックス（`f`/`F`/`l`/`L`）を解析して型情報へ反映する。
+ * @param num 解析結果の出力先。
+ * @param endp サフィックス開始位置。解析後は消費後位置へ更新。
+ * @warning 不正サフィックス（識別子継続文字の連結）は診断終了する。
+ */
 static void parse_float_suffix(parsed_num_t *num, char **endp) {
   char *end = *endp;
   if (*end == 'f' || *end == 'F') {
@@ -806,7 +875,12 @@ static void parse_float_suffix(parsed_num_t *num, char **endp) {
   *endp = end;
 }
 
-/** @brief 10進/16進の浮動小数点リテラル本体を解析し、サフィックスも処理する。 */
+/**
+ * @brief 10進/16進の浮動小数点リテラル本体を解析し、サフィックスも処理する。
+ * @param num 解析結果の出力先。
+ * @param pp 入力カーソル。解析後は消費後位置へ更新。
+ * @param is_hex `true` の場合は16進浮動として妥当性を検証する。
+ */
 static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
   char *p = *pp;
   char *end = NULL;
@@ -819,7 +893,14 @@ static void parse_float_literal(parsed_num_t *num, char **pp, bool is_hex) {
   *pp = end;
 }
 
-/** @brief 基数付き整数リテラルを解析し、整数型サフィックスまで解決する。 */
+/**
+ * @brief 基数付き整数リテラルを解析し、整数型サフィックスまで解決する。
+ * @param num 解析結果の出力先。
+ * @param pp 入力カーソル。解析後は消費後位置へ更新。
+ * @param base 基数（2/8/10/16）。
+ * @param is_decimal 10進整数ルールを適用する場合 `true`。
+ * @param err_loc 診断位置基準。
+ */
 static void parse_integer_literal_with_base(
     parsed_num_t *num, char **pp, int base, bool is_decimal, char *err_loc) {
   char *p = *pp;
@@ -845,7 +926,13 @@ static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
           diag_text_for(text_id), pos);
 }
 
-/** @brief `0` 始まりの数値（`0x`/`0b`/8進）を解析し、未該当なら false を返す。 */
+/**
+ * @brief `0` 始まりの数値（`0x`/`0b`/8進）を解析する。
+ * @param num 解析結果の出力先。
+ * @param pp 入力カーソル。成功時は消費後位置へ更新。
+ * @param err_loc 診断位置基準。
+ * @return `0` 始まり規則に一致して処理した場合 `true`。未該当なら `false`（非破壊）。
+ */
 static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_loc) {
   char *p = *pp;
   if (!(*p == '0')) return false;
@@ -901,6 +988,12 @@ static bool parse_zero_prefixed_number(parsed_num_t *num, char **pp, char *err_l
   return false;
 }
 
+/**
+ * @brief 数値リテラル本体を解析し、整数/浮動の共通表現へ変換する。
+ * @param pp 入力カーソル。解析後は消費後位置へ更新。
+ * @param num 解析結果の出力先。
+ * @warning 不正な基数/サフィックス/範囲外は診断終了する。
+ */
 static void parse_number_literal(char **pp, parsed_num_t *num) {
   char *p = *pp;
 
