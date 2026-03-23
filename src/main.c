@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
   load_config_toml(argv[1]);
 
   // トークナイズ
-  tk_set_filename_ctx(tk_get_default_context(), (char *)input_disp);
+  tk_set_filename_ctx(tk_get_default_context(), input_disp);
   tokenizer_context_t *tk_ctx = tk_get_default_context();
   token_t *tok = tk_tokenize_ctx(tk_ctx, source);
 

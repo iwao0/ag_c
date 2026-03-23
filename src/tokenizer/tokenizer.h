@@ -13,8 +13,8 @@ struct tokenizer_context_t {
   bool enable_binary_literals;
   bool enable_c11_audit_extensions;
   token_t *current_token;
-  char *user_input;
-  char *current_filename;
+  const char *user_input;
+  const char *current_filename;
 };
 
 /** @brief 現在トークンカーソルの参照を取得する。 */
@@ -70,14 +70,14 @@ token_t *tk_tokenize(char *p);
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p);
 
 /** @brief 明示コンテキストの入力文字列（エラー表示用）を取得する。 */
-char *tk_get_user_input_ctx(tokenizer_context_t *ctx);
+const char *tk_get_user_input_ctx(tokenizer_context_t *ctx);
 /** @brief 明示コンテキストの入力文字列（エラー表示用）を設定する。 */
-void tk_set_user_input_ctx(tokenizer_context_t *ctx, char *p);
+void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p);
 
 /** @brief 明示コンテキストのファイル名（エラー表示用）を取得する。 */
-char *tk_get_filename_ctx(tokenizer_context_t *ctx);
+const char *tk_get_filename_ctx(tokenizer_context_t *ctx);
 /** @brief 明示コンテキストのファイル名（エラー表示用）を設定する。 */
-void tk_set_filename_ctx(tokenizer_context_t *ctx, char *name);
+void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name);
 
 /**
  * @brief strict C11 モードの有効/無効を取得する。

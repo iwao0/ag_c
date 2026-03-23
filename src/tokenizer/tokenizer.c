@@ -61,12 +61,12 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
   }
 }
 
-char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
+const char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   return use_ctx ? use_ctx->user_input : NULL;
 }
 
-void tk_set_user_input_ctx(tokenizer_context_t *ctx, char *p) {
+void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   if (use_ctx) {
     use_ctx->user_input = p;
@@ -90,12 +90,12 @@ tokenizer_stats_t tk_get_tokenizer_stats(void) {
   return tok_stats;
 }
 
-char *tk_get_filename_ctx(tokenizer_context_t *ctx) {
+const char *tk_get_filename_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   return use_ctx ? use_ctx->current_filename : NULL;
 }
 
-void tk_set_filename_ctx(tokenizer_context_t *ctx, char *name) {
+void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   if (use_ctx) {
     use_ctx->current_filename = name;
@@ -541,7 +541,7 @@ static inline bool has_hex_float_marker(const char *p) {
 static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
   tokenizer_context_t *ctx = runtime_ctx();
   if (!tk_ctx_get_enable_c11_audit_extensions(ctx)) return;
-  char *input = ctx ? ctx->user_input : NULL;
+  const char *input = ctx ? ctx->user_input : NULL;
   int pos = input ? (int)(loc - input) : 0;
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",

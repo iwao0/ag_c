@@ -972,8 +972,8 @@ static token_t *paste_tokens(token_t *tok) {
       memcpy(buf, s_l, (size_t)len_l);
       memcpy(buf + len_l, s_r, (size_t)len_r);
       
-      char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
-      char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
+      const char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
+      const char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
       token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
 
       tk_set_filename_ctx(g_preprocess_tk_ctx, "<paste>");
@@ -1099,8 +1099,8 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
           free(filename);
         }
 
-        char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
-        char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
+        const char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
+        const char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
         token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
 
         tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(filename, strlen(filename)));
@@ -1456,7 +1456,7 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
       }
       if (!strcmp(name, "__FILE__")) {
         free(name);
-        char *fn = tk_filename_lookup(tok->file_name_id);
+        const char *fn = tk_filename_lookup(tok->file_name_id);
         const char *fname = fn ? fn : "";
         token_t *ft = make_string_token(fname, tok);
         cur->next = ft;
