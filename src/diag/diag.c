@@ -1,5 +1,6 @@
 #include "diag.h"
 #include "messages.h"
+#include "ui_texts.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,7 +110,7 @@ const char *diag_text_for(diag_text_id_t id) {
   msg = diag_text_ja(id);
   if (msg) return msg;
 #endif
-  return "unknown.text";
+  return diag_ui_text_for(DIAG_UI_TEXT_UNKNOWN_TEXT, g_diag_locale);
 }
 
 /**
@@ -119,8 +120,7 @@ const char *diag_text_for(diag_text_id_t id) {
  */
 static void print_token_actual(const token_t *tok) {
   if (!tok) return;
-  int is_ja = (strcmp(g_diag_locale, "ja") == 0);
-  const char *label = is_ja ? "実際のトークン" : "actual token";
+  const char *label = diag_ui_text_for(DIAG_UI_TEXT_ACTUAL_TOKEN_LABEL, g_diag_locale);
   if (tok->kind == TK_IDENT) {
     const token_ident_t *id = (const token_ident_t *)tok;
     int n = id->len < 0 ? 0 : id->len;
@@ -239,7 +239,7 @@ static void print_token_actual(const token_t *tok) {
   if (name)
     fprintf(stderr, " (%s: '%s')", label, name);
   else
-    fprintf(stderr, is_ja ? " (実際のトークン種別: %d)" : " (actual token kind: %d)", (int)tok->kind);
+    fprintf(stderr, diag_ui_text_for(DIAG_UI_TEXT_ACTUAL_TOKEN_KIND_FMT, g_diag_locale), (int)tok->kind);
 }
 
 /**

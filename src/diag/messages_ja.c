@@ -1,4 +1,5 @@
 #include "messages.h"
+#include "ui_texts.h"
 #include <stddef.h>
 
 /**
@@ -177,6 +178,15 @@ const char *diag_text_ja(diag_text_id_t id) {
     case DIAG_TEXT_WARNING: return "警告";
     case DIAG_TEXT_C11_AUDIT_PREFIX: return "c11監査";
     case DIAG_TEXT_C11_AUDIT_BINARY_LITERAL_EXTENSION: return "2進数リテラル拡張";
+  }
+  return NULL;
+}
+
+const char *diag_ui_text_ja(diag_ui_text_id_t id) {
+  switch (id) {
+    case DIAG_UI_TEXT_UNKNOWN_TEXT: return "unknown.text";
+    case DIAG_UI_TEXT_ACTUAL_TOKEN_LABEL: return "実際のトークン";
+    case DIAG_UI_TEXT_ACTUAL_TOKEN_KIND_FMT: return " (実際のトークン種別: %d)";
   }
   return NULL;
 }
