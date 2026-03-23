@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <time.h>
+#include <unistd.h>
 
 typedef struct macro macro_t;
 #define MACRO_INLINE_PARAMS 8
@@ -93,6 +94,35 @@ static void validate_line_filename_or_die(const char *name, int len) {
     if (c < 0x20 || c == 0x7F) {
       pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
     }
+  }
+}
+
+static bool path_is_within(const char *path, const char *base) {
+  size_t n = strlen(base);
+  if (n == 0) return false;
+  return strncmp(path, base, n) == 0 && (path[n] == '\0' || path[n] == '/');
+}
+
+static void validate_include_realpath_or_die(const char *candidate, const char *display_path) {
+  char resolved[PATH_MAX];
+  if (!realpath(candidate, resolved)) return;
+
+  static bool roots_initialized = false;
+  static char project_root[PATH_MAX];
+  static char include_root[PATH_MAX];
+  static bool have_project_root = false;
+  static bool have_include_root = false;
+
+  if (!roots_initialized) {
+    roots_initialized = true;
+    have_project_root = realpath(".", project_root) != NULL;
+    have_include_root = realpath("include", include_root) != NULL;
+  }
+
+  bool allowed = (have_project_root && path_is_within(resolved, project_root)) ||
+                 (have_include_root && path_is_within(resolved, include_root));
+  if (!allowed) {
+    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
 }
 
@@ -899,6 +929,7 @@ token_t *preprocess(token_t *tok) {
           continue;
         }
 
+        validate_include_realpath_or_die(filename, filename);
         char *buf = read_file(filename);
         if (!buf) {
           size_t alt_len = strlen("include/") + strlen(filename) + 1;
@@ -907,6 +938,7 @@ token_t *preprocess(token_t *tok) {
             diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
           }
           snprintf(alt, alt_len, "include/%s", filename);
+          validate_include_realpath_or_die(alt, filename);
           buf = read_file(alt);
           free(alt);
         }

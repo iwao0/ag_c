@@ -113,6 +113,7 @@ static const char *fail_cases[] = {
     "#define FOO(a, 1) 1\nint main() { return FOO(1); }\n",
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
+    "#include \"build/escape_symlink.h\"\nint main() { return 0; }\n",
     "#include \"build/\\u202Eevil.h\"\nint main() { return 0; }\n",
     "#include \"build\\\\test_inc.h\"\nint main() { return 0; }\n",
     "#include \"C:/Windows/win.ini\"\nint main() { return 0; }\n",
@@ -535,6 +536,11 @@ int main(void) {
   FILE *hself = fopen("build/self_include.h", "w");
   fprintf(hself, "#include \"build/self_include.h\"\n");
   fclose(hself);
+  unlink("build/escape_symlink.h");
+  if (symlink("../README.md", "build/escape_symlink.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create build/escape_symlink.h symlink\n");
+    return 1;
+  }
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
   fprintf(hcycle_norm_a,
           "#pragma once\n"
