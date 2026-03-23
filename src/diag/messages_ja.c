@@ -44,6 +44,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID: return "#line の行番号が不正です";
     case DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID: return "#line のファイル名が不正です";
     case DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED: return "マクロ展開回数の上限を超えました";
+    case DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT: return "トークン連結結果が不正です";
+    case DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION: return "マクロ定義内の ## の位置が不正です";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";

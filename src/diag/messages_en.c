@@ -44,6 +44,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID: return "Invalid #line line number";
     case DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID: return "Invalid #line filename";
     case DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED: return "Macro expansion limit exceeded";
+    case DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT: return "Invalid token-paste result";
+    case DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION: return "Invalid ## position in macro definition";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";

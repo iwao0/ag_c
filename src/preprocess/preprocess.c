@@ -851,7 +851,7 @@ static token_t *paste_tokens(token_t *tok) {
       token_t *merged = tk_tokenize(buf);
       // Token-pasting must produce exactly one preprocessing token.
       if (merged->kind == TK_EOF || !merged->next || merged->next->kind != TK_EOF) {
-        pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+        pp_error(DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT, NULL);
       }
 
       tk_set_filename(saved_filename);
@@ -1377,10 +1377,10 @@ token_t *preprocess(token_t *tok) {
                  continue;
                }
                if (!prev_body || !bt->next) {
-                 pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+                 pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
                }
                if (prev_body->kind == TK_HASHHASH || bt->next->kind == TK_HASHHASH || bt->next->kind == TK_HASH) {
-                 pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+                 pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
                }
                prev_body = bt;
              }

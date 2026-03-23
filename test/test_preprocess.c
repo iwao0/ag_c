@@ -610,6 +610,9 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
+  expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
+  expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
+  expect_preprocess_fail_with_stderr_substr("#define BAD5(a,b) a##b\nint main() { return BAD5(1,+2); }\n", "E1030");
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();
