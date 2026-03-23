@@ -699,21 +699,10 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
     int str_prefix = 0;
     tk_string_prefix_kind_t str_prefix_kind = TK_STR_PREFIX_NONE;
     tk_char_width_t str_char_width = TK_CHAR_WIDTH_CHAR;
-    bool is_string_lit = false;
-    switch (*p) {
-      case '"':
-        is_string_lit = true;
-        break;
-      case 'L':
-        if (p[1] == '"') { is_string_lit = true; str_prefix = 1; str_prefix_kind = TK_STR_PREFIX_L; str_char_width = TK_CHAR_WIDTH_CHAR32; }
-        break;
-      case 'u':
-        if (p[1] == '8' && p[2] == '"') { is_string_lit = true; str_prefix = 2; str_prefix_kind = TK_STR_PREFIX_u8; str_char_width = TK_CHAR_WIDTH_CHAR; }
-        else if (p[1] == '"') { is_string_lit = true; str_prefix = 1; str_prefix_kind = TK_STR_PREFIX_u; str_char_width = TK_CHAR_WIDTH_CHAR16; }
-        break;
-      case 'U':
-        if (p[1] == '"') { is_string_lit = true; str_prefix = 1; str_prefix_kind = TK_STR_PREFIX_U; str_char_width = TK_CHAR_WIDTH_CHAR32; }
-        break;
+    bool is_string_lit = (*p == '"');
+    tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
+    if (str_prefix > 0) {
+      is_string_lit = true;
     }
     if (is_string_lit) {
       if (*p == '"') {
@@ -749,20 +738,10 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
     int chr_prefix = 0;
     tk_char_prefix_kind_t chr_prefix_kind = TK_CHAR_PREFIX_NONE;
     tk_char_width_t chr_char_width = TK_CHAR_WIDTH_CHAR;
-    bool is_char_lit = false;
-    switch (*p) {
-      case '\'':
-        is_char_lit = true;
-        break;
-      case 'L':
-        if (p[1] == '\'') { is_char_lit = true; chr_prefix = 1; chr_prefix_kind = TK_CHAR_PREFIX_L; chr_char_width = TK_CHAR_WIDTH_CHAR32; }
-        break;
-      case 'u':
-        if (p[1] == '\'') { is_char_lit = true; chr_prefix = 1; chr_prefix_kind = TK_CHAR_PREFIX_u; chr_char_width = TK_CHAR_WIDTH_CHAR16; }
-        break;
-      case 'U':
-        if (p[1] == '\'') { is_char_lit = true; chr_prefix = 1; chr_prefix_kind = TK_CHAR_PREFIX_U; chr_char_width = TK_CHAR_WIDTH_CHAR32; }
-        break;
+    bool is_char_lit = (*p == '\'');
+    tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
+    if (chr_prefix > 0) {
+      is_char_lit = true;
     }
     if (is_char_lit) {
       char *start = p;
