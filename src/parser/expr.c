@@ -403,6 +403,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   // これにより _Generic の関連型でも cast/sizeof と同系統の型名を扱える。
   (void)parse_funcptr_abstract_decl(&t, &out->is_pointer);
   (void)parse_ptr_to_array_abstract_decl(&t, &out->is_pointer);
+  (void)parse_array_of_funcptr_abstract_decl(&t, NULL);
   set_curtok(t);
   return 1;
 }
