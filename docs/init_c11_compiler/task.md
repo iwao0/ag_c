@@ -1539,6 +1539,7 @@
   - C11: `declaration = decl_spec init_declarator_list? ";" | static_assert-declaration`
   - 現状: `external_decl` と `block_item` に個別記載。`declaration` に含まれていない
   - 進捗（2026-03-24）: トップレベルの宣言入口を `parse_toplevel_declaration_like()` に集約し、`_Static_assert` と通常宣言を同一経路で処理する構造へ整理
+  - 進捗（2026-03-24）: ブロックスコープでも `parse_decl_like_stmt()` が `_Static_assert` を `psx_decl_parse_declaration()` へ委譲するようにし、`decl.c` 側で `static_assert-declaration` を処理する構造へ整理
 - [ ] `typedef` を `storage_spec` に統合する（C11 §6.7.1）
   - C11: `typedef` は `storage-class-specifier` の一種。`declaration = decl_spec init_declarator_list? ";"` で統一
   - 現状: `declaration` の独立選択肢として分離し、`typedef_declarator` という特別規則を使用

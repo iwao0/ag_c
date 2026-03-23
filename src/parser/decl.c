@@ -1341,6 +1341,30 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 }
 
 node_t *psx_decl_parse_declaration(void) {
+  if (curtok()->kind == TK_STATIC_ASSERT) {
+    set_curtok(curtok()->next);
+    tk_expect('(');
+    int const_ok = 1;
+    long long cond_val = eval_const_expr_decl(psx_expr_assign(), &const_ok);
+    tk_expect(',');
+    if (curtok()->kind != TK_STRING) {
+      diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
+    }
+    set_curtok(curtok()->next);
+    tk_expect(')');
+    tk_expect(';');
+    if (!const_ok) {
+      diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST, curtok(), "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
+    }
+    if (cond_val == 0) {
+      diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, curtok(), "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
+    }
+    return psx_node_new_num(0);
+  }
+
   local_decl_spec_t ds = {0};
   if (!parse_local_decl_spec(&ds)) {
     diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",

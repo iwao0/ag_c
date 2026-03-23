@@ -25,7 +25,6 @@ static inline void set_curtok(token_t *tok) {
 }
 
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
-static void parse_static_assert_stmt(void);
 static void parse_typedef_decl(void);
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -600,28 +599,6 @@ static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int 
   return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
 
-static void parse_static_assert_stmt(void) {
-  if (curtok()->kind != TK_STATIC_ASSERT) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
-  }
-  set_curtok(curtok()->next);
-  tk_expect('(');
-  long long cond_val = parse_enum_const_expr();
-  tk_expect(',');
-  if (curtok()->kind != TK_STRING) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
-  }
-  set_curtok(curtok()->next);
-  tk_expect(')');
-  tk_expect(';');
-  if (cond_val == 0) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
-  }
-}
-
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind) {
@@ -729,12 +706,9 @@ static node_t *parse_decl_like_stmt(void) {
     return psx_node_new_num(0);
   }
 
-  if (curtok()->kind == TK_STATIC_ASSERT) {
-    parse_static_assert_stmt();
-    return psx_node_new_num(0);
-  }
-
-  if (psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) {
+  if (curtok()->kind == TK_STATIC_ASSERT ||
+      psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) ||
+      psx_ctx_is_typedef_name_token(curtok())) {
     if (psx_ctx_is_typedef_name_token(curtok())) {
       token_ident_t *id = (token_ident_t *)curtok();
       int elem_size = 8;
