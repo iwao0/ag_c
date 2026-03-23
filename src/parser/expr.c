@@ -31,6 +31,8 @@ typedef struct {
 } generic_type_t;
 
 static void consume_local_type_quals(token_t **cur);
+static long long eval_const_expr_type_size(node_t *n, int *ok);
+static void apply_array_abstract_suffix_size(int *sz);
 
 static int sizeof_expr_node(node_t *node) {
   int sz = psx_node_type_size(node);
@@ -38,6 +40,77 @@ static int sizeof_expr_node(node_t *node) {
   if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
   if (node && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
   return 8;
+}
+
+static long long eval_const_expr_type_size(node_t *n, int *ok) {
+  if (!n) {
+    *ok = 0;
+    return 0;
+  }
+  switch (n->kind) {
+    case ND_NUM:
+      return ((node_num_t *)n)->val;
+    case ND_ADD: {
+      long long l = eval_const_expr_type_size(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_type_size(n->rhs, ok);
+      if (!*ok) return 0;
+      return l + r;
+    }
+    case ND_SUB: {
+      long long l = eval_const_expr_type_size(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_type_size(n->rhs, ok);
+      if (!*ok) return 0;
+      return l - r;
+    }
+    case ND_MUL: {
+      long long l = eval_const_expr_type_size(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_type_size(n->rhs, ok);
+      if (!*ok) return 0;
+      return l * r;
+    }
+    case ND_DIV: {
+      long long l = eval_const_expr_type_size(n->lhs, ok);
+      if (!*ok) return 0;
+      long long r = eval_const_expr_type_size(n->rhs, ok);
+      if (!*ok || r == 0) {
+        *ok = 0;
+        return 0;
+      }
+      return l / r;
+    }
+    case ND_COMMA:
+      (void)eval_const_expr_type_size(n->lhs, ok);
+      if (!*ok) return 0;
+      return eval_const_expr_type_size(n->rhs, ok);
+    default:
+      *ok = 0;
+      return 0;
+  }
+}
+
+static void apply_array_abstract_suffix_size(int *sz) {
+  while (tk_consume('[')) {
+    if (tk_consume(']')) {
+      psx_diag_ctx(token, "sizeof", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED));
+    }
+    node_t *dim_expr = psx_expr_assign();
+    int ok = 1;
+    long long dim = eval_const_expr_type_size(dim_expr, &ok);
+    if (!ok) {
+      psx_diag_ctx(token, "sizeof", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+                   "配列サイズ");
+    }
+    if (dim <= 0) {
+      psx_diag_ctx(token, "sizeof", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    }
+    tk_expect(']');
+    *sz *= (int)dim;
+  }
 }
 
 static token_t *skip_balanced_paren_token(token_t *start) {
@@ -746,6 +819,7 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
@@ -762,6 +836,7 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
@@ -778,6 +853,7 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
@@ -794,6 +870,7 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
@@ -813,6 +890,7 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
