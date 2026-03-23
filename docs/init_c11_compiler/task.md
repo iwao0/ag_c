@@ -471,6 +471,7 @@
   - [x] 進捗（2026-03-23）: `decl.c` の関数宣言子補助（`skip_func_params`/`consume_decl_name`）と union 初期化診断を `curtok`/`set_curtok` ベースへ移行した
   - [x] 進捗（2026-03-23）: `decl.c` のローカル `extern` 宣言処理（ポインタ/配列宣言子消費・初期化子スキップ）を `curtok`/`set_curtok` ベースへ移行した
   - [x] 進捗（2026-03-23）: `decl.c` の配列/構造体初期化経路（`parse_array_initializer`/`parse_member_initializer`/`parse_struct_initializer`）の診断位置を `curtok` 参照へ統一した
+  - [x] 進捗（2026-03-23）: `decl.c` の構造体/共用体コピー初期化・union指定子処理・宣言後半（`psx_decl_parse_initializer_for_var`/`psx_decl_parse_declaration_after_type` 含む）を `curtok` ベースへ移行し、`decl.c` の直接 `token` 参照を解消した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

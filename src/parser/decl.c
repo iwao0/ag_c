@@ -753,7 +753,7 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     resolve_copy_source_lvar(ternary->base.rhs, &then_prefix, &then_src);
     resolve_copy_source_lvar(ternary->els, &else_prefix, &else_src);
     if (!is_compatible_tag_object_lvar(then_src, var) || !is_compatible_tag_object_lvar(else_src, var)) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
     }
     node_ctrl_t *copy_select = arena_alloc(sizeof(node_ctrl_t));
@@ -783,7 +783,7 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
   } else {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
   }
   if (prefix) return psx_node_new_binary(ND_COMMA, prefix, init_chain);
@@ -828,7 +828,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
       if (member_len > 0) break;
     }
     if (!found || member_len <= 0) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
     node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
@@ -851,7 +851,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   bool found = false;
   if (tk_consume('.')) {
     token_ident_t *id = tk_consume_ident();
-    if (!id) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
     found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                     id->str, id->len,
                                     &member_offset, &member_type_size, NULL, &member_array_len,
@@ -862,18 +862,18 @@ static node_t *parse_union_initializer(lvar_t *var) {
     if (tk_consume('[')) {
       // Nested designator: .member[idx] = val
       if (!found || member_len <= 0) {
-        psx_diag_ctx(token, "decl", "%s",
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
       }
       if (member_array_len <= 0 || member_is_tag_pointer) {
-        psx_diag_ctx(token, "decl", "%s",
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
       }
       int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
       tk_expect(']');
       tk_expect('=');
       if (nested_idx < 0 || nested_idx >= member_array_len) {
-        psx_diag_ctx(token, "decl", "%s",
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       node_t *elem_lhs = new_array_elem_lvar_at(var->offset + member_offset, member_type_size, nested_idx);
@@ -902,7 +902,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     }
   }
   if (!found || member_len <= 0) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
   node_t *member_init = parse_member_initializer(var, member_offset, member_type_size,
@@ -925,12 +925,12 @@ static node_t *parse_union_initializer(lvar_t *var) {
         return init_chain;
       }
       if (!tk_consume('.')) {
-        psx_diag_ctx(token, "decl", "%s",
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
       }
       for (;;) {
         token_ident_t *id = tk_consume_ident();
-        if (!id) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+        if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
         tk_expect('=');
         found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                         id->str, id->len,
@@ -1082,7 +1082,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     return parse_array_initializer(var);
   }
   if (!is_pointer && var->tag_kind == TK_STRUCT) {
-    if (token->kind != TK_LBRACE) {
+    if (curtok()->kind != TK_LBRACE) {
       return parse_struct_copy_initializer(var);
     }
     return parse_struct_initializer(var);
@@ -1140,7 +1140,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     int ptr_levels = 0;
     consume_pointer_chain_decl(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     if (tag_kind != TK_EOF && !is_pointer && elem_size <= 0) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
     }
 
