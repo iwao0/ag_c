@@ -321,6 +321,10 @@ static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line
 static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
 static token_num_int_t *new_token_num_int(
     token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+static token_num_float_t *new_token_num_float(
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+typedef struct parsed_num_t parsed_num_t;
+static void parse_number_literal(char **pp, parsed_num_t *num);
 
 /** @brief 文字列リテラル（接頭辞含む）を読み取り、トークンを生成する。 */
 static bool tokenize_string_literal(
@@ -432,6 +436,71 @@ static bool tokenize_char_literal(
   return true;
 }
 
+/** @brief 記号（最長一致の複数文字 + 1文字）を読み取り、トークンを生成する。 */
+static bool tokenize_punctuator(
+    char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
+  char *p = *pp;
+  token_kind_t matched_kind = TK_EOF;
+  int matched_len = 0;
+  if (match_punctuator(p, &matched_kind, &matched_len) && matched_len >= 2) {
+    *cur_io = new_token_simple(matched_kind, *cur_io, line_no, at_bol, has_space);
+    *pp = p + matched_len;
+    return true;
+  }
+
+  if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {
+    token_kind_t kind = kind_for_char(*p);
+    *cur_io = new_token_simple(kind, *cur_io, line_no, at_bol, has_space);
+    *pp = p + 1;
+    return true;
+  }
+  return false;
+}
+
+/** @brief 識別子/キーワードを読み取り、該当トークンを生成する。 */
+static bool tokenize_ident_or_keyword(
+    char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
+  char *p = *pp;
+  int adv = 0;
+  if (!TK_LIKELY(tk_scan_ident_start(p, &adv))) {
+    return false;
+  }
+
+  char *start = p;
+  bool has_ucn_escape = (adv > 1);
+  p += adv;
+  while (tk_scan_ident_continue(p, &adv)) {
+    if (adv > 1) has_ucn_escape = true;
+    p += adv;
+  }
+
+  int len = checked_span_len(start, p, "識別子");
+  char *id_str = start;
+  int id_len = len;
+  bool has_ucn = false;
+  if (has_ucn_escape) {
+    tk_decode_identifier_ucn(start, len, &id_str, &id_len, &has_ucn);
+  }
+
+  token_kind_t kw_kind = TK_EOF;
+  if (!has_ucn) {
+    kw_kind = lookup_keyword(start, len);
+  }
+
+  if (kw_kind != TK_EOF) {
+    *cur_io = new_token_simple(kw_kind, *cur_io, line_no, at_bol, has_space);
+  } else {
+    token_ident_t *id = new_token_ident(*cur_io, id_str, id_len, line_no, at_bol, has_space);
+    *cur_io = (token_t *)id;
+  }
+  *pp = p;
+  return true;
+}
+
+/** @brief 数値リテラルを読み取り、整数/浮動小数トークンを生成する。 */
+static bool tokenize_number_literal(
+    char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space);
+
 static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_string_t *tok = tcalloc(1, sizeof(token_string_t));
   init_token_base(&tok->pp.base, TK_STRING, line_no);
@@ -443,7 +512,6 @@ static token_string_t *new_token_string(token_t *cur, char *str, int len, int li
   return tok;
 }
 
-typedef struct parsed_num_t parsed_num_t;
 struct parsed_num_t {
   long long val;
   unsigned long long uval;
@@ -770,6 +838,40 @@ static void parse_number_literal(char **pp, parsed_num_t *num) {
   *pp = p;
 }
 
+static bool tokenize_number_literal(
+    char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
+  char *p = *pp;
+  if (!(tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1])))) {
+    return false;
+  }
+
+  char *start = p;
+  parsed_num_t parsed = {0};
+  parse_number_literal(&p, &parsed);
+  int len = checked_span_len(start, p, "数値リテラル");
+  if (parsed.fp_kind == TK_FLOAT_KIND_NONE) {
+    token_num_int_t *num = new_token_num_int(*cur_io, start, len, line_no, at_bol, has_space);
+    num->base.num_kind = TK_NUM_KIND_INT;
+    num->val = parsed.val;
+    num->uval = parsed.uval;
+    num->is_unsigned = parsed.is_unsigned;
+    num->int_size = parsed.int_size;
+    num->int_base = parsed.int_base;
+    num->char_width = parsed.char_width;
+    num->char_prefix_kind = parsed.char_prefix_kind;
+    *cur_io = (token_t *)num;
+  } else {
+    token_num_float_t *num = new_token_num_float(*cur_io, start, len, line_no, at_bol, has_space);
+    num->base.num_kind = TK_NUM_KIND_FLOAT;
+    num->fval = parsed.fval;
+    num->fp_kind = parsed.fp_kind;
+    num->float_suffix_kind = parsed.float_suffix_kind;
+    *cur_io = (token_t *)num;
+  }
+  *pp = p;
+  return true;
+}
+
 /** @brief 入力文字列をトークナイズし、先頭トークンを返す。 */
 token_t *tk_tokenize(const char *p) {
   return tk_tokenize_ctx(tk_get_default_context(), p);
@@ -801,12 +903,7 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
     at_bol = false;
     has_space = false;
 
-    // 複数文字の演算子・記号（最長一致）
-    token_kind_t matched_kind = TK_EOF;
-    int matched_len = 0;
-    if (match_punctuator(p, &matched_kind, &matched_len) && matched_len >= 2) {
-      cur = new_token_simple(matched_kind, cur, line_no, _at_bol, _has_space);
-      p += matched_len;
+    if (tokenize_punctuator(&p, &cur, line_no, _at_bol, _has_space)) {
       continue;
     }
     if (tokenize_string_literal(&p, &cur, line_no, _at_bol, _has_space)) {
@@ -817,72 +914,10 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
       continue;
     }
 
-    // 1文字の記号 (+, -, *, /, %, (, ), <, >, ;, =, {, }, ,, &, [, ], #, ., !, ~, |, ^, ?, :)
-    if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {
-      token_kind_t kind = kind_for_char(*p);
-      cur = new_token_simple(kind, cur, line_no, _at_bol, _has_space);
-      p++;
+    if (tokenize_ident_or_keyword(&p, &cur, line_no, _at_bol, _has_space)) {
       continue;
     }
-
-    // 識別子またはキーワード (a〜z で始まる連続した英字)
-    // 識別子・キーワード（英字または_で始まり、英数字または_が続く）
-    int adv = 0;
-    if (TK_LIKELY(tk_scan_ident_start(p, &adv))) {
-      char *start = p;
-      bool has_ucn_escape = (adv > 1);
-      p += adv;
-      while (tk_scan_ident_continue(p, &adv)) {
-        if (adv > 1) has_ucn_escape = true;
-        p += adv;
-      }
-      int len = checked_span_len(start, p, "識別子");
-      char *id_str = start;
-      int id_len = len;
-      bool has_ucn = false;
-      if (has_ucn_escape) {
-        tk_decode_identifier_ucn(start, len, &id_str, &id_len, &has_ucn);
-      }
-
-      token_kind_t kw_kind = TK_EOF;
-      if (!has_ucn) {
-        kw_kind = lookup_keyword(start, len);
-      }
-
-      if (kw_kind != TK_EOF) {
-        cur = new_token_simple(kw_kind, cur, line_no, _at_bol, _has_space);
-      } else {
-        token_ident_t *id = new_token_ident(cur, id_str, id_len, line_no, _at_bol, _has_space);
-        cur = (token_t *)id;
-      }
-      continue;
-    }
-
-    // 数値リテラル (整数 または 浮動小数点数)
-    if (tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1]))) {
-      char *start = p; // Keep track of the start of the number for length calculation
-      parsed_num_t parsed = {0};
-      parse_number_literal(&p, &parsed);
-      int len = checked_span_len(start, p, "数値リテラル");
-      if (parsed.fp_kind == TK_FLOAT_KIND_NONE) {
-        token_num_int_t *num = new_token_num_int(cur, start, len, line_no, _at_bol, _has_space);
-        num->base.num_kind = TK_NUM_KIND_INT;
-        num->val = parsed.val;
-        num->uval = parsed.uval;
-        num->is_unsigned = parsed.is_unsigned;
-        num->int_size = parsed.int_size;
-        num->int_base = parsed.int_base;
-        num->char_width = parsed.char_width;
-        num->char_prefix_kind = parsed.char_prefix_kind;
-        cur = (token_t *)num;
-      } else {
-        token_num_float_t *num = new_token_num_float(cur, start, len, line_no, _at_bol, _has_space);
-        num->base.num_kind = TK_NUM_KIND_FLOAT;
-        num->fval = parsed.fval;
-        num->fp_kind = parsed.fp_kind;
-        num->float_suffix_kind = parsed.float_suffix_kind;
-        cur = (token_t *)num;
-      }
+    if (tokenize_number_literal(&p, &cur, line_no, _at_bol, _has_space)) {
       continue;
     }
 
