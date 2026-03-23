@@ -1164,7 +1164,7 @@ token_t *preprocess(token_t *tok) {
         if (tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
           long long new_line = tk_as_num_int(tok)->val;
           if (new_line <= 0 || new_line > INT_MAX) {
-            pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+            pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
           }
           tok = tok->next;
           char *new_file = NULL;

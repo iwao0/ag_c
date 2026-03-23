@@ -118,6 +118,7 @@ static const char *fail_cases[] = {
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
+    "#include \"./build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
     "#line 0\nint main() { return 0; }\n",
     "#line 2147483648\nint main() { return 0; }\n",
@@ -324,6 +325,66 @@ static void expect_preprocess_fail(const char *input) {
   }
 }
 
+static void expect_preprocess_fail_with_stderr_substr(const char *input, const char *needle) {
+  const char *src_path = "build/tmp_cpp_input_fail_diag.c";
+  const char *err_path = "build/tmp_cpp_input_fail_diag.err";
+  if (write_input_file(src_path, input) != 0) {
+    fprintf(stderr, "  FAIL: cannot create input file\n");
+    exit(1);
+  }
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen(err_path, "w", stderr);
+    execl("./build/ag_c", "./build/ag_c", src_path, (char *)NULL);
+    _exit(1);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) {
+    fprintf(stderr, "  FAIL: expected preprocess error\n  input: %s\n", input);
+    exit(1);
+  }
+
+  FILE *fp = fopen(err_path, "r");
+  if (!fp) {
+    fprintf(stderr, "  FAIL: cannot open captured stderr\n");
+    exit(1);
+  }
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot seek captured stderr\n");
+    exit(1);
+  }
+  long sz = ftell(fp);
+  if (sz < 0) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot read captured stderr size\n");
+    exit(1);
+  }
+  rewind(fp);
+  char *buf = calloc((size_t)sz + 1, 1);
+  if (!buf) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot allocate stderr buffer\n");
+    exit(1);
+  }
+  if (sz > 0) {
+    (void)fread(buf, 1, (size_t)sz, fp);
+  }
+  fclose(fp);
+
+  if (!strstr(buf, needle)) {
+    fprintf(stderr, "  FAIL: expected diagnostic substring not found: %s\n", needle);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  free(buf);
+}
+
 static void expect_macro_expansion_limit_fail(void) {
   const int levels = 15;
   size_t cap = 8192;
@@ -388,6 +449,12 @@ int main(void) {
   FILE *hb = fopen("build/cycle_b.h", "w");
   fprintf(hb, "#include \"build/cycle_a.h\"\n");
   fclose(hb);
+  FILE *hcn_a = fopen("build/cycle_norm_a.h", "w");
+  fprintf(hcn_a, "#include \"build//cycle_norm_b.h\"\n");
+  fclose(hcn_a);
+  FILE *hcn_b = fopen("build/cycle_norm_b.h", "w");
+  fprintf(hcn_b, "#include \"./build/cycle_norm_a.h\"\n");
+  fclose(hcn_b);
   for (int i = 0; i < 70; i++) {
     char path[64];
     snprintf(path, sizeof(path), "build/depth_%02d.h", i);
@@ -413,6 +480,7 @@ int main(void) {
   for (size_t i = 0; i < sizeof(fail_cases) / sizeof(fail_cases[0]); i++) {
     expect_preprocess_fail(fail_cases[i]);
   }
+  expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_macro_expansion_limit_fail();
 
   printf("OK: Preprocessor tests passed!\n");

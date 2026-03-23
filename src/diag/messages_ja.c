@@ -41,6 +41,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT: return "マクロの引数が不正です";
     case DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE: return "error メッセージが大きすぎます";
     case DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED: return "関数マクロ呼び出しの引数が閉じられていません";
+    case DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID: return "#line の行番号が不正です";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";
