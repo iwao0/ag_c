@@ -43,6 +43,16 @@ make log-tokenizer-hotpath-daily
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | YYYY-MM-DD | -O0 / -O2 | - | - | - | - | - | - | - | - | change summary |
 
+### Dispatch Order Change Rule (`tokenize_one`)
+
+- 対象: `tokenize_one` の分岐順（punct/string/char/ident/number）を変更したコミット
+- 必須記録:
+  - `make log-tokenizer-hotpath-daily` を実行して `tokenizer_hotpath_daily.csv` を更新する
+  - 変更前直近行と変更後行の差分を `Notes` に要約する（`mixed_tps`, `scanner_ops`, `punctuator_ops` を最低限含める）
+- 判定目安（ローカル運用）:
+  - `mixed_tps` が -5% 以下の低下なら順序変更は原則ロールバック候補
+  - `scanner_ops` / `punctuator_ops` のいずれかが +5% 以上改善し、`mixed_tps` が維持できる場合は採用候補
+
 ## Baseline (Before Optimization)
 
 - 1KB: `1,399,168 tokens/sec`, `alloc_count=674`, `peak_alloc_bytes=40,313`
