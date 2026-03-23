@@ -38,7 +38,7 @@ $(OBJROOT)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
-$(TEST_TOKENIZER): test/test_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
+$(TEST_TOKENIZER): test/test_tokenizer.c test/support/tokenizer_test_hook.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

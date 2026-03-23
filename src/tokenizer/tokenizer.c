@@ -77,7 +77,7 @@ static int checked_span_len(char *start, char *end, const char *what) {
   return (int)diff;
 }
 
-void tk_set_max_token_len_for_test(size_t max_len) {
+void tk_set_max_token_len_limit_for_test(size_t max_len) {
   max_token_len_for_test = (max_len == 0) ? (size_t)INT_MAX : max_len;
 }
 

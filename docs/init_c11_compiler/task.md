@@ -404,6 +404,24 @@
   - [x] `test/bench_keywords.c` の `../src/tokenizer/keywords.h` 参照を修正する
   - [x] `make bench`（または `build/bench_tokenizer`, `build/bench_parser`）でビルド確認する
 
+## Tokenizer 改善候補（再確認メモ / 2026-03-23）
+- [ ] 優先度P1: グローバル状態依存を段階的に縮小する
+  - [x] `token` / `user_input` / `current_filename` / 設定フラグの状態を `tokenizer_context` へ集約する設計案を作成する
+  - [x] 既存API互換を維持した移行手順（ラッパー経由）を定義する
+  - [x] 再入可能性（re-entrant）と並列実行可否の方針を明文化する
+- [ ] 優先度P2: 公開API拡大に伴う互換性ポリシーを明文化する
+  - [x] `escape.h` / `allocator.h` の互換性保証レベル（安定APIか暫定APIか）を決める
+  - [x] `implementation_plan.md` に API追加・変更時の互換性ルールを追記する
+- [ ] 優先度P2: test専用フックの実装分離を検討する
+  - [x] `tk_set_max_token_len_for_test` の実装を test用TUへ分離するか `#ifdef` 管理にするか決定する
+  - [x] 本番ビルドへの影響（サイズ・可読性・依存関係）を比較して採用案を決める
+- [ ] 優先度P3: internalヘッダ構成の最終整理を行う
+  - [ ] `internal/escape.h` / `internal/allocator.h` をラッパー維持するか直接公開ヘッダ参照へ統一するか決定する
+  - [ ] include規約（公開ヘッダ優先 / internal限定）の例をガイドとして記載する
+- [ ] 優先度P3: 設定責務境界を固定する
+  - [ ] `config_runtime.c`（ランタイム保持）と `src/config/config.c`（ファイル読込）の責務分離を文書化する
+  - [ ] 設定反映タイミング（初期化時のみ / 実行中変更可）を明記する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
