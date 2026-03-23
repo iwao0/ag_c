@@ -35,6 +35,8 @@ static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 
 typedef struct {
   token_kind_t kind;
+  int scalar_size;
+  int is_unsigned;
   int is_pointer;
   token_kind_t tag_kind;
   char *tag_name;
@@ -559,7 +561,7 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
+  generic_type_t gt = {TK_INT, 4, 0, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -569,15 +571,18 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   }
   if (control->kind == ND_STRING) {
     gt.kind = TK_CHAR;
+    gt.scalar_size = 1;
     gt.is_pointer = 1;
     return gt;
   }
   if (control->fp_kind == TK_FLOAT_KIND_FLOAT) {
     gt.kind = TK_FLOAT;
+    gt.scalar_size = 4;
     return gt;
   }
   if (control->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
     gt.kind = TK_DOUBLE;
+    gt.scalar_size = 8;
     return gt;
   }
   int ts = psx_node_type_size(control);
@@ -605,10 +610,15 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     }
     return gt;
   }
-  if (ts == 1) gt.kind = TK_CHAR;
-  else if (ts == 2) gt.kind = TK_SHORT;
-  else if (ts == 8) gt.kind = TK_LONG;
-  else gt.kind = TK_INT;
+  if (control->kind == ND_LVAR) gt.is_unsigned = ((node_lvar_t *)control)->mem.is_unsigned;
+  else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
+           control->kind == ND_ADDR || control->kind == ND_STRING) {
+    gt.is_unsigned = ((node_mem_t *)control)->is_unsigned;
+  } else {
+    gt.is_unsigned = control->is_unsigned;
+  }
+  gt.scalar_size = ts ? ts : 4;
+  gt.kind = gt.is_unsigned ? TK_UNSIGNED : TK_INT;
   return gt;
 }
 
@@ -655,11 +665,14 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
                    assoc.tag_name ? assoc.tag_name : "",
                    (size_t)control.tag_len) == 0;
   }
-  return control.kind == assoc.kind;
+  if (control.kind == TK_FLOAT || control.kind == TK_DOUBLE) return control.kind == assoc.kind;
+  return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned;
 }
 
 static int parse_generic_assoc_type(generic_type_t *out) {
   out->kind = TK_EOF;
+  out->scalar_size = 0;
+  out->is_unsigned = 0;
   out->is_pointer = 0;
   out->tag_kind = TK_EOF;
   out->tag_name = NULL;
@@ -678,11 +691,13 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   int base_unsigned = 0;
   int base_const = 0;
   int base_volatile = 0;
+  token_t *t = curtok();
   while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
     if (curtok()->kind == TK_CONST) base_const = 1;
     if (curtok()->kind == TK_VOLATILE) base_volatile = 1;
     set_curtok(curtok()->next);
   }
+  t = curtok();
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t base_kind = TK_EOF;
@@ -696,6 +711,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
                               &is_ptr, &base_const, &base_volatile);
     set_curtok(curtok()->next);
     out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
+    out->scalar_size = elem_size;
+    out->is_unsigned = (base_kind == TK_UNSIGNED);
     out->is_pointer = is_ptr;
     out->tag_kind = tag_kind;
     out->tag_name = tag_name;
@@ -717,15 +734,26 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     out->tag_len = tag->len;
     base_elem_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
   } else {
-    token_kind_t tk = psx_consume_type_kind();
-    if (tk == TK_EOF) return 0;
-    out->kind = tk;
-    psx_ctx_get_type_info(tk, NULL, &base_elem_size);
-    if (tk == TK_FLOAT) base_fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (tk == TK_DOUBLE) base_fp_kind = TK_FLOAT_KIND_DOUBLE;
-    base_unsigned = (tk == TK_UNSIGNED);
+    token_kind_t tk = TK_EOF;
+    token_t *after = NULL;
+    if (parse_integer_cast_spec_sequence(curtok(), &tk, &base_elem_size, &after)) {
+      out->kind = tk;
+      base_unsigned = (tk == TK_UNSIGNED);
+      set_curtok(after);
+    } else {
+      tk = psx_consume_type_kind();
+      if (tk == TK_EOF) return 0;
+      out->kind = tk;
+      psx_ctx_get_type_info(tk, NULL, &base_elem_size);
+      if (tk == TK_FLOAT) base_fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (tk == TK_DOUBLE) base_fp_kind = TK_FLOAT_KIND_DOUBLE;
+      base_unsigned = (tk == TK_UNSIGNED);
+    }
   }
-  token_t *t = curtok();
+  out->scalar_size = base_elem_size;
+  out->is_unsigned = base_unsigned;
+  if (out->scalar_size == 0) out->scalar_size = base_elem_size;
+  t = curtok();
   while (t && t->kind == TK_MUL) {
     out->is_pointer = 1;
     out->ptr_levels++;
