@@ -769,9 +769,9 @@ static node_t *stmt_internal(void) {
     node->body = calloc(cap, sizeof(node_t*));
     int prev_terminates = 0;
     while (!tk_consume('}')) {
-      if (prev_terminates && token->kind != TK_CASE && token->kind != TK_DEFAULT &&
-          !(token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON)) {
-        diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, token,
+      if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
+          !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
+        diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
                        "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
         prev_terminates = 0;
       }
@@ -794,13 +794,13 @@ static node_t *stmt_internal(void) {
     return parse_decl_like_stmt();
   }
 
-  if (token->kind == TK_RETURN) {
-    token = token->next;
+  if (curtok()->kind == TK_RETURN) {
+    set_curtok(curtok()->next);
     node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_RETURN;
     if (tk_consume(';')) {
       if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
                        "%s",
                        diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
       }
@@ -810,7 +810,7 @@ static node_t *stmt_internal(void) {
     }
     node->lhs = ps_expr();
     if (psx_expr_current_func_ret_token_kind() == TK_VOID) {
-      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
                      "%s",
                      diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
     }
@@ -820,23 +820,23 @@ static node_t *stmt_internal(void) {
     return node;
   }
 
-  if (token->kind == TK_IF) {
-    token = token->next;
+  if (curtok()->kind == TK_IF) {
+    set_curtok(curtok()->next);
     tk_expect('(');
     node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_IF;
     node->base.lhs = ps_expr();
     tk_expect(')');
     node->base.rhs = stmt_internal();
-    if (token->kind == TK_ELSE) {
-      token = token->next;
+    if (curtok()->kind == TK_ELSE) {
+      set_curtok(curtok()->next);
       node->els = stmt_internal();
     }
     return (node_t *)node;
   }
 
-  if (token->kind == TK_WHILE) {
-    token = token->next;
+  if (curtok()->kind == TK_WHILE) {
+    set_curtok(curtok()->next);
     tk_expect('(');
     node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_WHILE;
@@ -848,17 +848,17 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (token->kind == TK_DO) {
-    token = token->next;
+  if (curtok()->kind == TK_DO) {
+    set_curtok(curtok()->next);
     node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_DO_WHILE;
     psx_loop_enter();
     node->base.rhs = stmt_internal();
     psx_loop_leave();
-    if (token->kind != TK_WHILE) {
-      psx_diag_missing(token, diag_text_for(DIAG_TEXT_WHILE));
+    if (curtok()->kind != TK_WHILE) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_WHILE));
     }
-    token = token->next;
+    set_curtok(curtok()->next);
     tk_expect('(');
     node->base.lhs = ps_expr();
     tk_expect(')');
@@ -866,8 +866,8 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (token->kind == TK_FOR) {
-    token = token->next;
+  if (curtok()->kind == TK_FOR) {
+    set_curtok(curtok()->next);
     tk_expect('(');
     node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_FOR;
@@ -897,8 +897,8 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (token->kind == TK_SWITCH) {
-    token = token->next;
+  if (curtok()->kind == TK_SWITCH) {
+    set_curtok(curtok()->next);
     tk_expect('(');
     node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
     node->base.kind = ND_SWITCH;
@@ -910,20 +910,20 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (token->kind == TK_CASE) {
-    token = token->next;
+  if (curtok()->kind == TK_CASE) {
+    set_curtok(curtok()->next);
     node_case_t *node = arena_alloc(sizeof(node_case_t));
     node->base.kind = ND_CASE;
     node->val = parse_enum_const_expr();
-    psx_switch_register_case(node->val, token);
+    psx_switch_register_case(node->val, curtok());
     tk_expect(':');
     node->base.rhs = stmt_internal();
     return (node_t *)node;
   }
 
-  if (token->kind == TK_DEFAULT) {
-    token = token->next;
-    psx_switch_register_default(token);
+  if (curtok()->kind == TK_DEFAULT) {
+    set_curtok(curtok()->next);
+    psx_switch_register_default(curtok());
     node_default_t *node = arena_alloc(sizeof(node_default_t));
     node->base.kind = ND_DEFAULT;
     tk_expect(':');
@@ -931,34 +931,34 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (token->kind == TK_BREAK) {
+  if (curtok()->kind == TK_BREAK) {
     if (psx_loop_depth() == 0 && !psx_switch_has_ctx()) {
-      psx_diag_only_in(token, diag_text_for(DIAG_TEXT_BREAK), diag_text_for(DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
+      psx_diag_only_in(curtok(), diag_text_for(DIAG_TEXT_BREAK), diag_text_for(DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
     }
-    token = token->next;
+    set_curtok(curtok()->next);
     node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_BREAK;
     tk_expect(';');
     return node;
   }
 
-  if (token->kind == TK_CONTINUE) {
+  if (curtok()->kind == TK_CONTINUE) {
     if (psx_loop_depth() == 0) {
-      psx_diag_only_in(token, diag_text_for(DIAG_TEXT_CONTINUE), diag_text_for(DIAG_TEXT_LOOP_SCOPE));
+      psx_diag_only_in(curtok(), diag_text_for(DIAG_TEXT_CONTINUE), diag_text_for(DIAG_TEXT_LOOP_SCOPE));
     }
-    token = token->next;
+    set_curtok(curtok()->next);
     node_t *node = arena_alloc(sizeof(node_t));
     node->kind = ND_CONTINUE;
     tk_expect(';');
     return node;
   }
 
-  if (token->kind == TK_GOTO) {
-    token_t *goto_tok = token;
-    token = token->next;
+  if (curtok()->kind == TK_GOTO) {
+    token_t *goto_tok = curtok();
+    set_curtok(curtok()->next);
     token_ident_t *ident = tk_consume_ident();
     if (!ident) {
-      psx_diag_missing(token, diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
     }
     node_jump_t *node = arena_alloc(sizeof(node_jump_t));
     node->base.kind = ND_GOTO;
@@ -969,14 +969,14 @@ static node_t *stmt_internal(void) {
     return (node_t *)node;
   }
 
-  if (token->kind == TK_IDENT && token->next && token->next->kind == TK_COLON) {
+  if (curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON) {
     token_ident_t *ident = tk_consume_ident();
     tk_expect(':');
     node_jump_t *node = arena_alloc(sizeof(node_jump_t));
     node->base.kind = ND_LABEL;
     node->name = ident->str;
     node->name_len = ident->len;
-    psx_ctx_register_label_def(ident->str, ident->len, token);
+    psx_ctx_register_label_def(ident->str, ident->len, curtok());
     node->base.rhs = stmt_internal();
     return (node_t *)node;
   }

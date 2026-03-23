@@ -446,6 +446,7 @@
   - [x] 進捗（2026-03-23）: `tk_get_current_token` / `tk_set_current_token` を追加し、`main`・`preprocess`・`ps_program/ps_expr` 入口の直接 `token` 参照を削減した
   - [x] 進捗（2026-03-23）: `stmt.c` の一部ユーティリティ（ポインタ修飾子/関数パラメータスキップ/typedef名宣言子）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
   - [x] 進捗（2026-03-23）: `stmt.c` の定数式評価系（`enum` 定数式、`_Alignas`/配列サイズ評価）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
+  - [x] 進捗（2026-03-23）: `stmt.c` の文解析本体（`return/if/while/do/for/switch/case/default/break/continue/goto/label`）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
@@ -562,6 +563,12 @@
   - [x] マクロ展開ステップ数に上限を設け、過剰再帰・過剰入れ子でDoS的に時間消費しないことをテストで保証する
   - [x] `#line` の異常値に専用診断IDを追加し、`DIAG_ERR_PREPROCESS_GENERIC` 依存を減らして誤検知切り分けを容易にする
   - [x] `#include` 正規化後パス（`./`, `//` 畳み込み結果）を使った循環検出・`pragma once` 判定が常に一致する回帰テストを強化する
+- [ ] セキュリティ追加候補（2026-03-23 追補）
+  - [ ] `ag_c` 起動引数がディレクトリ（例: `.`）の場合に、入力読み込み失敗として診断されることを E2E で検証する
+  - [ ] `ag_c` 起動引数が権限なしファイル（`chmod 000`）の場合に、入力読み込み失敗として安全に終了することを検証する
+  - [ ] 極端に大きい単一行入力を与えたとき、メモリ/時間面で暴走せず診断終了できることを回帰テスト化する
+  - [ ] `#include <...>` 形式でも `../` など許可外参照が拒否されることを異常系テストで固定する
+  - [ ] `#pragma once` と正規化パス（`a//b.h` と `a/b.h`）が混在する循環ケースで判定一貫性を検証する
 
 ## Parser未実装タスク（2026-03-17 確認）
 - [x] `struct/union/enum` のメンバ宣言をパース可能にする
