@@ -372,7 +372,12 @@ static int is_tag_return_function_signature(token_t *tok) {
 }
 
 static void parse_toplevel_declarator_list(void) {
+  int declarator_count = 0;
   for (;;) {
+    declarator_count++;
+    if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
+      psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+    }
     int is_ptr = 0;
     while (tk_consume('*')) {
       is_ptr = 1;

@@ -10,11 +10,16 @@ typedef struct {
   const char *input;
 } success_case_t;
 
-static void cleanup_preprocess_temp_artifacts(void) {
+static char g_unique_tmp_header[PATH_MAX];
+
+static void cleanup_preprocess_test_artifacts(void) {
   unlink("build/escape_symlink.h");
-  unlink("build/escape_tmp_symlink.h");
   unlink("include/escape_tmp_symlink.h");
-  unlink("/tmp/ag_c_escape_preprocess.h");
+  unlink("build/escape_tmp_symlink.h");
+  if (g_unique_tmp_header[0] != '\0') {
+    unlink(g_unique_tmp_header);
+    g_unique_tmp_header[0] = '\0';
+  }
 }
 
 static const success_case_t success_cases[] = {
@@ -485,6 +490,85 @@ static void expect_macro_arg_nesting_limit_fail(void) {
   free(input);
 }
 
+static void expect_if_expr_token_limit_fail(void) {
+  const int terms = 4200;
+  size_t cap = (size_t)terms * 4 + 128;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate #if token-limit test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len, "#if ");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < terms; i++) {
+    n = snprintf(input + len, cap - len, i == 0 ? "1" : " + 1");
+    if (n < 0 || (size_t)n >= cap - len) {
+      fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
+      free(input);
+      exit(1);
+    }
+    len += (size_t)n;
+  }
+  n = snprintf(input + len, cap - len, "\nint main() { return 0; }\n#endif\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if token-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  expect_preprocess_fail_with_stderr_substr(input, "E1037");
+  free(input);
+}
+
+static void expect_if_expr_eval_limit_fail(void) {
+  const int bangs = 3000;
+  size_t cap = (size_t)bangs + 128;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate #if eval-limit test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len, "#if ");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < bangs; i++) {
+    if (len + 1 >= cap) {
+      fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+      free(input);
+      exit(1);
+    }
+    input[len++] = '!';
+  }
+  n = snprintf(input + len, cap - len, "1\nint main() { return 0; }\n#endif\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
+    free(input);
+    exit(1);
+  }
+  expect_preprocess_fail_with_stderr_substr(input, "E1038");
+  free(input);
+}
+
+static void expect_line_filename_invalid_utf8_fail(void) {
+  static const unsigned char input_bytes[] = {
+      '#', 'l', 'i', 'n', 'e', ' ', '1', ' ', '"',
+      'b', 'a', 'd', 0xC0, 0xAF, '.', 'c', '"', '\n',
+      'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', ' ', '{', ' ',
+      'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', ' ', '}', '\n', '\0',
+  };
+  expect_preprocess_fail_with_stderr_substr((const char *)input_bytes, "E1028");
+}
+
 static void expect_line_filename_too_long_fail(void) {
   const int name_len = 1500;
   size_t cap = (size_t)name_len + 64;
@@ -514,13 +598,17 @@ static void expect_line_filename_too_long_fail(void) {
 }
 
 int main(void) {
-  atexit(cleanup_preprocess_temp_artifacts);
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
 
-  char unique_tmp_header[PATH_MAX];
-  snprintf(unique_tmp_header, sizeof(unique_tmp_header), "/tmp/ag_c_escape_preprocess_XXXXXX");
-  int unique_tmp_fd = mkstemp(unique_tmp_header);
+  memset(g_unique_tmp_header, 0, sizeof(g_unique_tmp_header));
+  if (atexit(cleanup_preprocess_test_artifacts) != 0) {
+    fprintf(stderr, "  FAIL: cannot register cleanup handler\n");
+    return 1;
+  }
+
+  snprintf(g_unique_tmp_header, sizeof(g_unique_tmp_header), "/tmp/ag_c_escape_preprocess_XXXXXX");
+  int unique_tmp_fd = mkstemp(g_unique_tmp_header);
   if (unique_tmp_fd < 0) {
     fprintf(stderr, "  FAIL: cannot create unique temp include file\n");
     return 1;
@@ -528,7 +616,6 @@ int main(void) {
   FILE *unique_tmp_fp = fdopen(unique_tmp_fd, "w");
   if (!unique_tmp_fp) {
     close(unique_tmp_fd);
-    unlink(unique_tmp_header);
     fprintf(stderr, "  FAIL: cannot open unique temp include stream\n");
     return 1;
   }
@@ -572,12 +659,10 @@ int main(void) {
   unlink("build/realpath_loop_b.h");
   if (symlink("realpath_loop_b.h", "build/realpath_loop_a.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/realpath_loop_a.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   if (symlink("realpath_loop_a.h", "build/realpath_loop_b.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/realpath_loop_b.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   unlink("build/escape_symlink.h");
@@ -586,15 +671,13 @@ int main(void) {
     return 1;
   }
   unlink("build/escape_tmp_symlink.h");
-  if (symlink(unique_tmp_header, "build/escape_tmp_symlink.h") != 0) {
+  if (symlink(g_unique_tmp_header, "build/escape_tmp_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/escape_tmp_symlink.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   unlink("include/escape_tmp_symlink.h");
-  if (symlink(unique_tmp_header, "include/escape_tmp_symlink.h") != 0) {
+  if (symlink(g_unique_tmp_header, "include/escape_tmp_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create include/escape_tmp_symlink.h symlink\n");
-    unlink(unique_tmp_header);
     return 1;
   }
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
@@ -647,10 +730,10 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\x1fname.c\"\nint main() { return 0; }\n", "E1028");
-  expect_preprocess_fail_with_stderr_substr("#line 1 \"bad\xc0\xaf.c\"\nint main() { return 0; }\n", "E1028");
-  expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1032");
+  expect_line_filename_invalid_utf8_fail();
+  expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1036");
   expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
-  expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1032");
+  expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1034");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
@@ -658,7 +741,8 @@ int main(void) {
   expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();
-  unlink(unique_tmp_header);
+  expect_if_expr_token_limit_fail();
+  expect_if_expr_eval_limit_fail();
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;

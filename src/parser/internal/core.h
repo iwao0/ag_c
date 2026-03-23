@@ -3,6 +3,9 @@
 
 #include "../ast.h"
 
+#define PS_MAX_DECLARATOR_COUNT 1024
+#define PS_MAX_INITIALIZER_ELEMENTS 4096
+
 token_kind_t psx_consume_type_kind(void);
 int psx_last_type_is_unsigned(void);
 int psx_last_type_is_complex(void);

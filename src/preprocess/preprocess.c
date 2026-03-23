@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <limits.h>
+#include <errno.h>
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -33,6 +34,8 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 #define PP_MAX_INCLUDE_DEPTH 64
 #define PP_MAX_MACRO_EXPANSIONS 20000
 #define PP_MAX_LINE_FILENAME_LEN 1024
+#define PP_MAX_IF_EXPR_TOKENS 4096
+#define PP_MAX_IF_EXPR_EVAL_STEPS 2048
 static const char *k_include_search_roots[] = {
     "",
     "include/",
@@ -47,6 +50,32 @@ struct include_frame {
 static include_frame_t *include_stack = NULL;
 static int include_depth = 0;
 static size_t macro_expand_steps = 0;
+static int include_last_errno = 0;
+static size_t if_expr_eval_steps = 0;
+static void pp_error(diag_error_id_t id, const char *arg) __attribute__((noreturn));
+
+static void if_expr_step_or_die(void) {
+  if_expr_eval_steps++;
+  if (if_expr_eval_steps > PP_MAX_IF_EXPR_EVAL_STEPS) {
+    pp_error(DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED, NULL);
+  }
+}
+
+static void record_include_errno(int err) {
+  if (!err) return;
+  if (include_last_errno == 0) {
+    include_last_errno = err;
+    return;
+  }
+  if (err == ELOOP) {
+    include_last_errno = err;
+    return;
+  }
+  if ((include_last_errno == ENOENT || include_last_errno == ENOTDIR) &&
+      err != ENOENT && err != ENOTDIR) {
+    include_last_errno = err;
+  }
+}
 
 static void *xrealloc(void *ptr, size_t size) {
   void *p = realloc(ptr, size);
@@ -176,7 +205,10 @@ static void validate_include_realpath_or_die(const char *candidate, const char *
 
 static char *read_include_file_secure(const char *candidate, const char *display_path) {
   FILE *fp = fopen(candidate, "r");
-  if (!fp) return NULL;
+  if (!fp) {
+    record_include_errno(errno);
+    return NULL;
+  }
 
   int fd = fileno(fp);
   char opened_path[PATH_MAX];
@@ -189,6 +221,7 @@ static char *read_include_file_secure(const char *candidate, const char *display
 #endif
   if (!have_opened_path) {
     if (!realpath(candidate, opened_path)) {
+      record_include_errno(errno);
       fclose(fp);
       return NULL;
     }
@@ -200,11 +233,13 @@ static char *read_include_file_secure(const char *candidate, const char *display
   }
 
   if (fseek(fp, 0, SEEK_END) == -1) {
+    record_include_errno(errno);
     fclose(fp);
     return NULL;
   }
   long file_size = ftell(fp);
   if (file_size < 0) {
+    record_include_errno(errno);
     fclose(fp);
     return NULL;
   }
@@ -214,16 +249,19 @@ static char *read_include_file_secure(const char *candidate, const char *display
     return NULL;
   }
   if (fseek(fp, 0, SEEK_SET) == -1) {
+    record_include_errno(errno);
     fclose(fp);
     return NULL;
   }
 
   char *buf = calloc(1, size + 2);
   if (!buf) {
+    record_include_errno(ENOMEM);
     fclose(fp);
     return NULL;
   }
   if (fread(buf, 1, size, fp) != size) {
+    record_include_errno(errno ? errno : EIO);
     fclose(fp);
     free(buf);
     return NULL;
@@ -235,6 +273,7 @@ static char *read_include_file_secure(const char *candidate, const char *display
 }
 
 static char *load_include_with_allowlist_or_die(const char *filename) {
+  include_last_errno = 0;
   for (size_t i = 0; i < sizeof(k_include_search_roots) / sizeof(k_include_search_roots[0]); i++) {
     const char *root = k_include_search_roots[i];
     size_t cand_len = strlen(root) + strlen(filename) + 1;
@@ -628,6 +667,7 @@ static token_t *skip_cond_incl(token_t *tok) {
 static long const_expr(token_t **rest, token_t *tok);
 
 static long primary(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   if (tok->kind == TK_LPAREN) {
     long val = const_expr(&tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
@@ -652,6 +692,7 @@ static long primary(token_t **rest, token_t *tok) {
 }
 
 static long unary(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   if (tok->kind == TK_PLUS) {
     return unary(rest, tok->next);
   }
@@ -668,11 +709,14 @@ static long unary(token_t **rest, token_t *tok) {
 }
 
 static long mul(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   long val = unary(&tok, tok);
   for (;;) {
     if (tok->kind == TK_MUL) {
+      if_expr_step_or_die();
       val *= unary(&tok, tok->next);
     } else if (tok->kind == TK_DIV) {
+      if_expr_step_or_die();
       long rhs = unary(&tok, tok->next);
       if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
       val /= rhs;
@@ -684,11 +728,14 @@ static long mul(token_t **rest, token_t *tok) {
 }
 
 static long add(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   long val = mul(&tok, tok);
   for (;;) {
     if (tok->kind == TK_PLUS) {
+      if_expr_step_or_die();
       val += mul(&tok, tok->next);
     } else if (tok->kind == TK_MINUS) {
+      if_expr_step_or_die();
       val -= mul(&tok, tok->next);
     } else {
       *rest = tok;
@@ -698,15 +745,20 @@ static long add(token_t **rest, token_t *tok) {
 }
 
 static long relational(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   long val = add(&tok, tok);
   for (;;) {
     if (tok->kind == TK_LT) {
+      if_expr_step_or_die();
       val = val < add(&tok, tok->next);
     } else if (tok->kind == TK_LE) {
+      if_expr_step_or_die();
       val = val <= add(&tok, tok->next);
     } else if (tok->kind == TK_GT) {
+      if_expr_step_or_die();
       val = val > add(&tok, tok->next);
     } else if (tok->kind == TK_GE) {
+      if_expr_step_or_die();
       val = val >= add(&tok, tok->next);
     } else {
       *rest = tok;
@@ -716,11 +768,14 @@ static long relational(token_t **rest, token_t *tok) {
 }
 
 static long equality(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   long val = relational(&tok, tok);
   for (;;) {
     if (tok->kind == TK_EQEQ) {
+      if_expr_step_or_die();
       val = val == relational(&tok, tok->next);
     } else if (tok->kind == TK_NEQ) {
+      if_expr_step_or_die();
       val = val != relational(&tok, tok->next);
     } else {
       *rest = tok;
@@ -730,9 +785,11 @@ static long equality(token_t **rest, token_t *tok) {
 }
 
 static long logand(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   long val = equality(&tok, tok);
   for (;;) {
     if (tok->kind == TK_ANDAND) {
+      if_expr_step_or_die();
       long rhs = equality(&tok, tok->next);
       val = val && rhs;
     } else {
@@ -743,9 +800,11 @@ static long logand(token_t **rest, token_t *tok) {
 }
 
 static long logor(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
   long val = logand(&tok, tok);
   for (;;) {
     if (tok->kind == TK_OROR) {
+      if_expr_step_or_die();
       long rhs = logand(&tok, tok->next);
       val = val || rhs;
     } else {
@@ -767,8 +826,13 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    token_t head;
    head.next = NULL;
    token_t *cur = &head;
+   size_t if_expr_token_count = 0;
    
    while (tok->kind != TK_EOF && !tok->at_bol) {
+      if_expr_token_count++;
+      if (if_expr_token_count > PP_MAX_IF_EXPR_TOKENS) {
+        pp_error(DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED, NULL);
+      }
       cur->next = copy_token(tok);
       cur->next->at_bol = false; 
       cur = cur->next;
@@ -826,6 +890,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, head2.next);
 
    if (expanded->kind == TK_EOF) return false;
+   if_expr_eval_steps = 0;
    token_t *rest;
   long val = const_expr(&rest, expanded);
   if (rest->kind != TK_EOF) {
@@ -1022,8 +1087,15 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
 
         char *buf = load_include_with_allowlist_or_die(filename);
         if (!buf) {
-          diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED,
-                              diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED), filename);
+          diag_error_id_t id = DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED;
+          if (include_last_errno == ENOENT) {
+            id = DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND;
+          } else if (include_last_errno == EACCES || include_last_errno == EPERM) {
+            id = DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED;
+          } else if (include_last_errno == ELOOP) {
+            id = DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP;
+          }
+          diag_emit_internalf(id, diag_message_for(id), filename);
           free(filename);
         }
 
