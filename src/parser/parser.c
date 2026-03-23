@@ -56,6 +56,7 @@ static void parse_param_decl_spec(param_decl_spec_t *out);
 static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
                                  token_ident_t **ret_tag, int *ret_is_ptr);
 static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_args, int *out_nargs);
+static token_ident_t *parse_func_name_declarator_recursive(void);
 static void parse_static_assert_toplevel(void);
 static long long parse_enum_const_expr_toplevel(void);
 static long long parse_enum_const_conditional_toplevel(void);
@@ -356,8 +357,26 @@ static int is_toplevel_function_signature(token_t *tok) {
     return 0;
   }
   while (t && t->kind == TK_MUL) t = t->next;
-  if (!t || t->kind != TK_IDENT) return 0;
-  return t->next && t->next->kind == TK_LPAREN;
+  if (!t) return 0;
+  if (t->kind == TK_IDENT) {
+    return t->next && t->next->kind == TK_LPAREN;
+  }
+  // parenthesized function declarator name: int (f)(...)
+  if (t->kind == TK_LPAREN) {
+    int depth = 0;
+    while (t && t->kind == TK_LPAREN) {
+      depth++;
+      t = t->next;
+    }
+    if (!t || t->kind != TK_IDENT) return 0;
+    t = t->next;
+    while (depth-- > 0) {
+      if (!t || t->kind != TK_RPAREN) return 0;
+      t = t->next;
+    }
+    return t && t->kind == TK_LPAREN;
+  }
+  return 0;
 }
 
 // struct/union Tag [*] ident ( のパターンを検出（戻り値型がタグ型の関数定義）
@@ -1435,8 +1454,17 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   while (curtok()->kind == TK_MUL) { set_curtok(curtok()->next); *ret_is_ptr = 1; }
 }
 
+static token_ident_t *parse_func_name_declarator_recursive(void) {
+  if (tk_consume('(')) {
+    token_ident_t *name = parse_func_name_declarator_recursive();
+    tk_expect(')');
+    return name;
+  }
+  return tk_consume_ident();
+}
+
 static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_args, int *out_nargs) {
-  token_ident_t *tok = tk_consume_ident();
+  token_ident_t *tok = parse_func_name_declarator_recursive();
   if (!tok) {
     psx_diag_ctx(curtok(), "funcdef", "%s",
                  diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));

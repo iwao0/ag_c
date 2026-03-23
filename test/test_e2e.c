@@ -206,6 +206,7 @@ static const test_case_t test_cases[] = {
     {"funcall", "tail_rec", CASE_INT, "int sum(int n, int acc) { if (n <= 0) return acc; return sum(n-1, acc+n); } int main() { return sum(10, 0); }", 55, 0},
     {"funcall", "comma_arg", CASE_INT, "f(x,y){return x*10+y;} main(){ return f((1,2),3); }", 23, 0},
     {"funcall", "prototype_decl", CASE_INT, "int add(int a, int b); int add(int a, int b){ return a+b; } int main(){ return add(20,22); }", 42, 0},
+    {"funcall", "paren_name_funcdef", CASE_INT, "int (f)(int x) { return x; } int main(){ return f(42); }", 42, 0},
     {"funcall", "param_funcptr_decl", CASE_INT, "int apply(int (*fp)(int), int x) { return x; } int main(){ return apply(0,7); }", 7, 0},
     {"funcall", "param_array_decl", CASE_INT, "int f(int a[], int n) { return n; } int main(){ return f(0,5); }", 5, 0},
     {"funcall", "param_array_static_restrict", CASE_INT, "int f(int a[static 3], int b[restrict static 2]) { return 7; } int main(){ return f(0,0); }", 7, 0},
