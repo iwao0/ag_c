@@ -76,6 +76,7 @@ struct typedef_name_t {
   char *tag_name;
   int tag_len;
   int is_pointer;
+  int sizeof_size;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -492,7 +493,7 @@ bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
 
 void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                 char *tag_name, int tag_len, int is_pointer) {
+                                 char *tag_name, int tag_len, int is_pointer, int sizeof_size) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
     if (t->scope_depth == tag_scope_depth && t->len == len &&
@@ -504,6 +505,7 @@ void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, in
       t->tag_name = tag_name;
       t->tag_len = tag_len;
       t->is_pointer = is_pointer;
+      t->sizeof_size = sizeof_size;
       return;
     }
   }
@@ -517,9 +519,21 @@ void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, in
   t->tag_name = tag_name;
   t->tag_len = tag_len;
   t->is_pointer = is_pointer;
+  t->sizeof_size = sizeof_size;
   t->scope_depth = tag_scope_depth;
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
+}
+
+bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
+    if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
+      if (out_sizeof_size) *out_sizeof_size = t->sizeof_size;
+      return true;
+    }
+  }
+  return false;
 }
 
 bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,

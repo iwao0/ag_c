@@ -379,6 +379,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "extern_inline_funcspec", CASE_INT, "extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }", 7, 0},
     {"type_decl", "noreturn_spec_parse", CASE_INT, "_Noreturn void die() { return; } int main() { return 7; }", 7, 0},
     {"type_decl", "static_assert_toplevel", CASE_INT, "_Static_assert(1, \"ok\"); int main() { return 7; }", 7, 0},
+    {"type_decl", "static_assert_typedef_array_sizeof", CASE_INT, "typedef int A3[3]; _Static_assert(sizeof(A3)==12, \"ok\"); int main() { return 7; }", 7, 0},
     {"type_decl", "static_assert_stmt", CASE_INT, "int main() { _Static_assert(1, \"ok\"); return 7; }", 7, 0},
     {"type_decl", "alignas_atomic_prefix", CASE_INT, "int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }", 7, 0},
     {"type_decl", "atomic_type_spec", CASE_INT, "int main() { _Atomic(int) z=5; return z; }", 5, 0},

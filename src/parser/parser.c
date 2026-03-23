@@ -620,11 +620,14 @@ static void parse_toplevel_typedef_decl(void) {
       skip_ptr_qualifiers();
     }
     token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
+    int typedef_sizeof = is_ptr ? 8 : elem_size;
     while (tk_consume('[')) {
-      (void)parse_array_size_constexpr_toplevel();
+      int n = parse_array_size_constexpr_toplevel();
+      if (!is_ptr && n > 0) typedef_sizeof *= n;
       tk_expect(']');
     }
-    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len, is_ptr);
+    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
+                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof);
     if (!tk_consume(',')) break;
   }
   tk_expect(';');
@@ -994,9 +997,11 @@ static long long parse_enum_const_unary_toplevel(void) {
           char *td_tag_name = NULL;
           int td_tag_len = 0;
           int td_ptr = 0;
+          int td_sizeof = 8;
           psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
                                     &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
-          sz = td_ptr ? 8 : td_elem;
+          if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
+          else sz = td_ptr ? 8 : td_elem;
           set_curtok(curtok()->next);
         } else {
           set_curtok(curtok()->next);
