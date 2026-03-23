@@ -2,7 +2,7 @@
 #include "../diag/diag.h"
 #include "../parser/internal/arena.h"
 #include "../parser/parser.h"
-#include "../tokenizer/internal/escape.h"
+#include "../tokenizer/escape.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>

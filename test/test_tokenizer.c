@@ -1,4 +1,5 @@
 #include "../src/tokenizer/tokenizer.h"
+#include "../src/tokenizer/tokenizer_test.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>

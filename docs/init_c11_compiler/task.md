@@ -384,6 +384,17 @@
   - [x] 「Tokenizer新規関数はDoxygen必須」のルールを追記する
   - [x] 「公開API変更時はDoxygen更新必須」のルールを追記する
 
+## Tokenizer 公開境界の再整理（2026-03-23）
+- [x] `escape` の公開境界を明確化する
+  - [x] 方針A: `tk_parse_escape_value` を公開APIとして昇格し、`arch` から `tokenizer/internal` 参照をなくす
+  - [x] 代替方針B: 共通層へ移管（`src/common` など）し、Tokenizer内部依存を解消する（今回は非採用）
+  - [x] 採用方針を `implementation_plan.md` に明文化する
+  - [x] `test_e2e` を再実行し回帰がないことを確認する
+- [x] テスト専用APIの露出を分離する
+  - [x] `tk_set_max_token_len_for_test` を test専用ヘッダへ分離する
+  - [x] 本番公開ヘッダ（`tokenizer.h`）から test専用宣言を除去する
+  - [x] `test_tokenizer` / `test_tokenizer_c11` を再実行し回帰がないことを確認する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
