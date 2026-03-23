@@ -305,7 +305,8 @@ bool tk_at_eof_ctx(tokenizer_context_t *ctx) {
 // 新しいトークンを作成して、curに繋げる
 static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
   tok->kind = kind;
-  tok->file_name_id = tk_filename_intern(tk_get_filename());
+  tokenizer_context_t *ctx = runtime_ctx();
+  tok->file_name_id = tk_filename_intern(ctx ? ctx->current_filename : NULL);
   tok->line_no = line_no;
 }
 
@@ -550,8 +551,9 @@ static inline bool has_hex_float_marker(const char *p) {
 }
 
 static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
-  if (!tk_ctx_get_enable_c11_audit_extensions(runtime_ctx())) return;
-  char *input = tk_get_user_input();
+  tokenizer_context_t *ctx = runtime_ctx();
+  if (!tk_ctx_get_enable_c11_audit_extensions(ctx)) return;
+  char *input = ctx ? ctx->user_input : NULL;
   int pos = input ? (int)(loc - input) : 0;
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",
@@ -674,7 +676,7 @@ token_t *tk_tokenize(char *p) {
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p) {
   tokenizer_context_t *prev_ctx = active_ctx;
   active_ctx = ctx ? ctx : tk_get_default_context();
-  tk_set_current_token(NULL);
+  tk_set_current_token_ctx(active_ctx, NULL);
   tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);
   tk_set_user_input_ctx(active_ctx, normalized);

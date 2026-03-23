@@ -516,6 +516,7 @@
   - [x] `user_input` と `current_filename` の保持先を context 側へ移し、再入性を強化する
   - [ ] 既存APIの互換レイヤ（global相当アクセス）を段階的に縮小する
   - [x] 進捗（2026-03-23）: `tokenizer_context_t` に `user_input` / `current_filename` を追加し、`tk_get/set_{user_input,filename}_ctx` を導入。`preprocess_ctx` の退避/復元も context 明示APIへ移行した
+  - [x] 進捗（2026-03-23）: `main` の入力ファイル名設定を `tk_set_filename_ctx(tk_get_default_context(), ...)` へ移行し、`tokenizer.c` 内のファイル名/監査offset参照も runtime context 直接参照へ寄せた
 - [ ] 優先度P1: 異常系の防御と診断安定性を強化する
   - [ ] `current_token == NULL` 境界の診断メッセージを統一し、位置情報欠落時の表示仕様を固定する
   - [ ] consume/expect 系の失敗経路に対する回帰テストを追加する
