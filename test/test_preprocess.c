@@ -734,6 +734,18 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1036");
   expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
   expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1034");
+  FILE *huge = fopen("build/huge_include.h", "w");
+  if (!huge) {
+    fprintf(stderr, "  FAIL: cannot create build/huge_include.h\n");
+    return 1;
+  }
+  if (ftruncate(fileno(huge), 17 * 1024 * 1024) != 0) {
+    fclose(huge);
+    fprintf(stderr, "  FAIL: cannot extend build/huge_include.h\n");
+    return 1;
+  }
+  fclose(huge);
+  expect_preprocess_fail_with_stderr_substr("#include \"build/huge_include.h\"\nint main() { return 0; }\n", "E1032");
   expect_preprocess_fail_with_stderr_substr("#error \"forced\"\nint main() { return 0; }\n", "E1033");
   expect_preprocess_fail_with_stderr_substr("#define BAD1(a) ##a\nint main() { return BAD1(42); }\n", "E1031");
   expect_preprocess_fail_with_stderr_substr("#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n", "E1031");
