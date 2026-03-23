@@ -1,0 +1,2 @@
+date,mixed_tps,ident_tps,numeric_tps,punct_tps,mixed_alloc,scanner_ops,literals_ops,punctuator_ops
+2026-03-24,11604835,7962611,7874814,28354137,18,95334545,44305800,112915033

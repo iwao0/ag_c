@@ -21,6 +21,9 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 
 # 5) Tokenizer軽量perfゲート（ローカル向け）
 make check-tokenizer-perf-light
+
+# 6) 日次ホットパス記録（CSV追記）
+make log-tokenizer-hotpath-daily
 ```
 
 `check_tokenizer_perf.sh` は `case=mixed/ident/numeric/punct` の `tokens/sec` と `alloc_count` を検査します。  
@@ -32,6 +35,7 @@ make check-tokenizer-perf-light
 - `hotpath=literals`: `tk_skip_escape_in_literal` の `ops/sec`
 - `hotpath=punctuator`: `match_punctuator` / `punctuator_kind_for_str` の `ops/sec`
 - 軽量ゲートでは `check_tokenizer_perf.sh` に加え、上記 hotpath の最小 `ops/sec` も検査する
+- 日次ログは `docs/init_c11_compiler/tokenizer_hotpath_daily.csv` に追記する
 
 ## Ongoing Comparison Template
 

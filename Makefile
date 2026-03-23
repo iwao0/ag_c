@@ -87,6 +87,9 @@ check-tokenizer-boundary:
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
+log-tokenizer-hotpath-daily:
+	./scripts/log_tokenizer_hotpath_daily.sh
+
 test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK)
 	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
@@ -113,6 +116,6 @@ release: $(OBJS)
 clean:
 	rm -rf build
 
-.PHONY: test test-asan clean bench release check-tokenizer-boundary check-tokenizer-perf-light
+.PHONY: test test-asan clean bench release check-tokenizer-boundary check-tokenizer-perf-light log-tokenizer-hotpath-daily
 
 -include $(DEPS)
