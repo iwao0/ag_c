@@ -756,38 +756,20 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
       }
       unsigned long long ch = 0;
       int nchar = 0;
-      if (chr_prefix_kind == TK_CHAR_PREFIX_NONE) {
-        // 通常文字定数はマルチ文字定数を許可（実装定義）
-        while (*p && *p != '\'') {
-          int one = 0;
-          if (*p == '\\') {
-            p++;
-            one = tk_read_escape_char(&p);
-          } else if (*p == '\n') {
-            TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
-          } else {
-            one = (unsigned char)*p;
-            p++;
-          }
-          ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
-          nchar++;
+      // 通常/接頭辞付きのいずれも、複数文字定数は実装定義として受理する。
+      while (*p && *p != '\'') {
+        int one = 0;
+        if (*p == '\\') {
+          p++;
+          one = tk_read_escape_char(&p);
+        } else if (*p == '\n') {
+          TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
+        } else {
+          one = (unsigned char)*p;
+          p++;
         }
-      } else {
-        // 接頭辞付き文字定数の複数文字は実装定義として受理する。
-        while (*p && *p != '\'') {
-          int one = 0;
-          if (*p == '\\') {
-            p++;
-            one = tk_read_escape_char(&p);
-          } else if (*p == '\n') {
-            TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
-          } else {
-            one = (unsigned char)*p;
-            p++;
-          }
-          ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
-          nchar++;
-        }
+        ch = ((ch << 8) | (unsigned)(one & 0xFF)) & 0xFFFFFFFFULL;
+        nchar++;
       }
       if (nchar == 0 || *p != '\'') {
         TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_INVALID));
