@@ -1099,19 +1099,19 @@ token_t *preprocess(token_t *tok) {
         bool is_funclike = false;
         char **params = NULL;
         int num_params = 0;
+        char *inline_params_buf[MACRO_INLINE_PARAMS];
 
         if (tok->kind == TK_LPAREN && !tok->has_space) {
           is_funclike = true;
           tok = tok->next;
-          char *inline_buf[MACRO_INLINE_PARAMS];
           int cap = MACRO_INLINE_PARAMS;
-          params = inline_buf;
+          params = inline_params_buf;
           while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
             if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
             if (num_params >= cap) {
-              if (params == inline_buf) {
+              if (params == inline_params_buf) {
                 params = calloc((size_t)cap * 2, sizeof(char *));
-                for (int j = 0; j < num_params; j++) params[j] = inline_buf[j];
+                for (int j = 0; j < num_params; j++) params[j] = inline_params_buf[j];
               } else {
                 params = xreallocarray(params, (size_t)cap * 2, sizeof(char *));
               }

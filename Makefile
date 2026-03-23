@@ -1,5 +1,11 @@
 CFLAGS=-std=c11 -g -O0 -Wall -Wextra
 DEPFLAGS=-MMD -MP
+UNAME_S:=$(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+ASAN_SANITIZERS:=address
+else
+ASAN_SANITIZERS:=address,leak
+endif
 DIAG_LANG?=ja
 OBJROOT=build/obj/$(DIAG_LANG)
 DIAG_COMMON_SRCS=$(filter-out src/diag/messages_ja.c src/diag/messages_en.c src/diag/messages_all.c,$(wildcard src/diag/*.c))
@@ -82,6 +88,9 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CO
 	$(TEST_PREPROCESS)
 	$(TEST_E2E)
 
+test-asan: CFLAGS+=-fsanitize=$(ASAN_SANITIZERS) -fno-omit-frame-pointer
+test-asan: clean test
+
 bench: $(BENCH_TOKENIZER) $(BENCH_PARSER)
 	$(BENCH_TOKENIZER)
 	$(BENCH_PARSER)
@@ -95,6 +104,6 @@ release: $(OBJS)
 clean:
 	rm -rf build
 
-.PHONY: test clean bench release check-tokenizer-boundary
+.PHONY: test test-asan clean bench release check-tokenizer-boundary
 
 -include $(DEPS)
