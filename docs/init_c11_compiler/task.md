@@ -547,6 +547,23 @@
   - [x] Tokenizer変更時のドキュメント更新ルール（`task.md` / `implementation_plan.md`）を明文化する
   - [x] 進捗（2026-03-24）: `implementation_plan.md` に境界チェックの定期実行（ローカル/コミット前/リリース前）と、Tokenizer変更時の `task.md` / `implementation_plan.md` 更新トリガーを追記した
 
+## Tokenizerタスク整理（2026-03-24）
+- [x] C11準拠ギャップ解消（Tokenizer）
+- [x] strict C11デフォルト方針の明確化（デフォルト非strict）
+- [x] `tokenizer_context_t` への状態集約（`current_token` / `user_input` / `current_filename`）
+- [x] 非ctx accessor API撤去（`*_ctx` APIへ統一）
+- [x] 公開境界整理（`extern token` 撤去、internal越境チェック導入）
+- [x] `tk_` 接頭辞への公開API命名統一
+- [x] `tokenizer/internal` 依存の越境解消（preprocess/bench含む）
+- [x] Doxygen整備（公開APIと主要内部関数）
+- [x] ベンチ基盤整備（mixed/ident/numeric/punct/corpus）
+- [x] ホットパス計測追加（`scanner` / `literals` / `punctuator`）
+- [x] perfレポート整備（継続比較テンプレート追加）
+- [x] 直近リファクタ（prefix判定の共通化: `tk_parse_string_prefix` / `tk_parse_char_prefix`）
+- [ ] 次フェーズ候補P1: `tokenizer.c` の大型関数分割（責務単位でさらに分離）
+- [ ] 次フェーズ候補P2: hotpathベンチ結果の定点記録を1日1回運用に固定
+- [ ] 次フェーズ候補P2: Tokenizer専用の軽量perfゲート（ローカル実行向け）を追加
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
