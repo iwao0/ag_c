@@ -96,35 +96,43 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
 static int g_last_type_atomic;
 static int g_last_type_thread_local;
 
+static inline token_t *curtok(void) {
+  return tk_get_current_token();
+}
+
+static inline void set_curtok(token_t *tok) {
+  tk_set_current_token(tok);
+}
+
 static void skip_cv_qualifiers(void) {
   g_last_type_const_qualified = 0;
   g_last_type_volatile_qualified = 0;
   g_last_alignas_value = 0;
   g_last_decl_is_extern = 0;
-  while (is_decl_prefix_token(token->kind)) {
-    if (token->kind == TK_CONST) g_last_type_const_qualified = 1;
-    if (token->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
-    if (token->kind == TK_EXTERN) g_last_decl_is_extern = 1;
-    if (token->kind == TK_ALIGNAS) {
-      token = token->next;
-      if (token->kind != TK_LPAREN) {
-        psx_diag_ctx(token, "decl", "%s",
+  while (is_decl_prefix_token(curtok()->kind)) {
+    if (curtok()->kind == TK_CONST) g_last_type_const_qualified = 1;
+    if (curtok()->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
+    if (curtok()->kind == TK_EXTERN) g_last_decl_is_extern = 1;
+    if (curtok()->kind == TK_ALIGNAS) {
+      set_curtok(curtok()->next);
+      if (curtok()->kind != TK_LPAREN) {
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
       int av = parse_alignas_value_toplevel();
       if (av > g_last_alignas_value) g_last_alignas_value = av;
       continue;
     }
-    if (token->kind == TK_ATOMIC && token->next && token->next->kind == TK_LPAREN) {
+    if (curtok()->kind == TK_ATOMIC && curtok()->next && curtok()->next->kind == TK_LPAREN) {
       return;
     }
-    if (token->kind == TK_ATOMIC) {
+    if (curtok()->kind == TK_ATOMIC) {
       g_last_type_atomic = 1;
     }
-    if (token->kind == TK_THREAD_LOCAL) {
+    if (curtok()->kind == TK_THREAD_LOCAL) {
       g_last_type_thread_local = 1;
     }
-    token = token->next;
+    set_curtok(curtok()->next);
   }
 }
 
@@ -142,29 +150,29 @@ void psx_take_extern_flag(int *is_extern) {
 }
 
 static void skip_ptr_qualifiers(void) {
-  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
-    token = token->next;
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+    set_curtok(curtok()->next);
   }
 }
 
 static void parse_static_assert_toplevel(void) {
-  if (token->kind != TK_STATIC_ASSERT) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, token, "%s",
+  if (curtok()->kind != TK_STATIC_ASSERT) {
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
   }
-  token = token->next;
+  set_curtok(curtok()->next);
   tk_expect('(');
   long long cond_val = parse_enum_const_expr_toplevel();
   tk_expect(',');
-  if (token->kind != TK_STRING) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, token, "%s",
+  if (curtok()->kind != TK_STRING) {
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
   }
-  token = token->next;
+  set_curtok(curtok()->next);
   tk_expect(')');
   tk_expect(';');
   if (cond_val == 0) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, token, "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
 }
