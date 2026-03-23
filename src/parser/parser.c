@@ -40,6 +40,9 @@ static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_n
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator);
 static void parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
+static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
+                                 token_ident_t **ret_tag, int *ret_is_ptr);
+static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_args, int *out_nargs);
 static void parse_static_assert_toplevel(void);
 static long long parse_enum_const_expr_toplevel(void);
 static long long parse_enum_const_conditional_toplevel(void);
@@ -1297,6 +1300,93 @@ static void parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   node->args[(*nargs)++] = psx_node_new_lvar_typed(var->offset, abi_type_size);
 }
 
+static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
+                                 token_ident_t **ret_tag, int *ret_is_ptr) {
+  *ret_kind = TK_EOF;
+  *ret_fp_kind = TK_FLOAT_KIND_NONE;
+  *ret_tag = NULL;
+  *ret_is_ptr = 0;
+  if (psx_ctx_is_tag_keyword(token->kind)) {
+    // 戻り値型が struct/union Tag [*] の関数定義
+    *ret_kind = token->kind; // TK_STRUCT or TK_UNION
+    token = token->next;     // skip struct/union keyword
+    *ret_tag = tk_consume_ident(); // consume tag name
+    while (token->kind == TK_MUL) { token = token->next; *ret_is_ptr = 1; } // skip optional pointer(s)
+    return;
+  }
+
+  *ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
+  if (*ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(token)) {
+    // typedef 名を戻り値型として認識（size_t, FILE 等）
+    token_ident_t *td_id = (token_ident_t *)token;
+    token_kind_t td_base = TK_EOF;
+    int td_elem = 8;
+    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+    token_kind_t td_tag = TK_EOF;
+    char *td_tag_name = NULL;
+    int td_tag_len = 0;
+    int td_is_ptr = 0;
+    psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
+                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr);
+    token = token->next;
+    *ret_kind = td_base;
+    *ret_fp_kind = td_fp;
+    if (td_is_ptr) *ret_is_ptr = 1;
+    if (td_tag != TK_EOF) {
+      *ret_tag = calloc(1, sizeof(token_ident_t));
+      (*ret_tag)->str = td_tag_name;
+      (*ret_tag)->len = td_tag_len;
+      *ret_kind = td_tag; // struct/union として扱う
+    }
+  }
+  if (*ret_kind == TK_FLOAT) *ret_fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (*ret_kind == TK_DOUBLE) *ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  while (token->kind == TK_MUL) { token = token->next; *ret_is_ptr = 1; }
+}
+
+static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_args, int *out_nargs) {
+  token_ident_t *tok = tk_consume_ident();
+  if (!tok) {
+    psx_diag_ctx(token, "funcdef", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+  }
+  tk_expect('(');
+
+  int arg_cap = 16;
+  node_t **args = calloc(arg_cap, sizeof(node_t *));
+  int nargs = 0;
+  int is_variadic = 0;
+  if (!tk_consume(')')) {
+    bool done = false;
+    node_func_t node_tmp = {0};
+    node_tmp.args = args;
+    while (!done) {
+      if (token->kind == TK_ELLIPSIS) {
+        token = token->next;
+        if (token->kind == ',') {
+          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+                         "%s",
+                         diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
+        }
+        is_variadic = 1;
+        done = true;
+        continue;
+      }
+      parse_param_decl(&node_tmp, &nargs, &arg_cap);
+      args = node_tmp.args;
+      if (!tk_consume(',')) break;
+      if (token->kind == TK_RPAREN) {
+        psx_diag_missing(token, "仮引数");
+      }
+    }
+    tk_expect(')');
+  }
+  *out_is_variadic = is_variadic;
+  *out_args = args;
+  *out_nargs = nargs;
+  return tok;
+}
+
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 static node_t *funcdef(void) {
@@ -1304,41 +1394,7 @@ static node_t *funcdef(void) {
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
   token_ident_t *ret_tag = NULL;
   int ret_is_ptr = 0;
-  if (psx_ctx_is_tag_keyword(token->kind)) {
-    // 戻り値型が struct/union Tag [*] の関数定義
-    ret_kind = token->kind; // TK_STRUCT or TK_UNION
-    token = token->next;    // skip struct/union keyword
-    ret_tag = tk_consume_ident(); // consume tag name
-    while (token->kind == TK_MUL) { token = token->next; ret_is_ptr = 1; } // skip optional pointer(s)
-  } else {
-    ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
-    if (ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(token)) {
-      // typedef 名を戻り値型として認識（size_t, FILE 等）
-      token_ident_t *td_id = (token_ident_t *)token;
-      token_kind_t td_base = TK_EOF;
-      int td_elem = 8;
-      tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-      token_kind_t td_tag = TK_EOF;
-      char *td_tag_name = NULL;
-      int td_tag_len = 0;
-      int td_is_ptr = 0;
-      psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
-                                &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr);
-      token = token->next;
-      ret_kind = td_base;
-      ret_fp_kind = td_fp;
-      if (td_is_ptr) ret_is_ptr = 1;
-      if (td_tag != TK_EOF) {
-        ret_tag = calloc(1, sizeof(token_ident_t));
-        ret_tag->str = td_tag_name;
-        ret_tag->len = td_tag_len;
-        ret_kind = td_tag; // struct/union として扱う
-      }
-    }
-    if (ret_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (ret_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
-    while (token->kind == TK_MUL) { token = token->next; ret_is_ptr = 1; }
-  }
+  parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr);
   if (ret_kind == TK_EOF) {
     diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, token,
                    "%s", diag_warn_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
@@ -1356,11 +1412,15 @@ static node_t *funcdef(void) {
   } else {
     psx_expr_set_current_func_ret_struct_size(0);
   }
-  token_ident_t *tok = tk_consume_ident();
-  if (!tok) {
-    psx_diag_ctx(token, "funcdef", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
-  }
+  // 関数ごとにローカル変数テーブルをリセット
+  psx_decl_reset_locals();
+  psx_ctx_reset_function_scope();
+  psx_loop_reset();
+
+  int is_variadic = 0;
+  node_t **args = NULL;
+  int nargs = 0;
+  token_ident_t *tok = parse_func_declarator(&is_variadic, &args, &nargs);
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
   node->base.ret_struct_size = psx_expr_current_func_ret_struct_size();
@@ -1369,41 +1429,8 @@ static node_t *funcdef(void) {
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,
                                          psx_expr_current_func_ret_struct_size());
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
-
-  // 関数ごとにローカル変数テーブルをリセット
-  psx_decl_reset_locals();
-  psx_ctx_reset_function_scope();
-  psx_loop_reset();
-
-  tk_expect('(');
-  // 仮引数のパース
-  int arg_cap = 16;
-  node->args = calloc(arg_cap, sizeof(node_t*));
-  int nargs = 0;
-  if (!tk_consume(')')) {
-    bool done = false;
-    while (!done) {
-      if (token->kind == TK_ELLIPSIS) {
-        token = token->next;
-        if (token->kind == ',') {
-          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
-                         "%s",
-                         diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
-        }
-        node->is_variadic = 1;
-        done = true;
-        continue;
-      }
-
-      parse_param_decl(node, &nargs, &arg_cap);
-
-      if (!tk_consume(',')) break;
-      if (token->kind == TK_RPAREN) {
-        psx_diag_missing(token, "仮引数");
-      }
-    }
-    tk_expect(')');
-  }
+  node->args = args;
+  node->is_variadic = is_variadic;
   node->nargs = nargs;
   // 可変長引数関数: ローカル変数スペースを引数レジスタ保存領域の後ろに移動する
   if (node->is_variadic) {

@@ -1125,6 +1125,7 @@
 - [ ] `func_def` で `decl_spec` + `declarator` の構成にする（C11 §6.9.1）
   - 現状: `funcdef()` が `skip_cv_qualifiers` → 型消費 → 識別子 → `(params)` → `{stmts}` をフラットに処理
   - 修正方針: `decl_spec` パース結果を受け取り、`declarator`（`ident "(" params ")"` 含む）を再帰的に解析する構造にする
+  - 進捗（2026-03-23）: `funcdef()` の戻り値型側を `parse_func_decl_spec()`、関数名+仮引数側を `parse_func_declarator()` に分離して責務を分割（挙動は維持）
   - 対象ファイル: `src/parser/parser.c`
 - [ ] `declaration` を `decl_spec` + `init_declarator_list` に統合する（C11 §6.7）
   - 現状: トップレベル（`parser.c`）とローカル（`stmt.c`/`decl.c`）で別関数。`skip_cv_qualifiers` + `psx_consume_type_kind` の2段階処理
