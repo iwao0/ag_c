@@ -439,6 +439,19 @@
   - [x] 不正UCN境界・長大エスケープ列の異常系ケースを追加する
   - [x] C11チェックリストへ対応項目を追記する
 
+## Tokenizer 追加フォローアップ（2026-03-23）
+- [ ] 優先度P1: `tokenizer_context` 実装に着手する
+  - [ ] `token` グローバル依存を置き換える最小実装（`*_ctx` API + 互換ラッパー）を作る
+  - [ ] 既存Parser連携を壊さない移行順を確認する
+- [ ] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
+  - [ ] context化後を見据えた設定保持の責務（global/context）を定義する
+  - [ ] strict/trigraph/binary/audit の適用タイミングを文書化する
+- [ ] 優先度P2: `escape` の契約テストを追加する
+  - [ ] TokenizerとCodegenで同一エスケープ入力の解釈が一致することをテストで固定する
+  - [ ] 代表ケース（`\n`, `\xNN`, `\uXXXX`, octal）を回帰対象に含める
+- [ ] 優先度P3: 境界チェックの運用手順を追記する
+  - [ ] `scripts/check_tokenizer_internal_boundary.sh` をいつ実行するか（PR前/リリース前）を docs に追記する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
