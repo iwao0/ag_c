@@ -782,20 +782,20 @@ static token_t *paste_tokens(token_t *tok) {
 
       tk_set_filename("<paste>");
       token_t *merged = tk_tokenize(buf);
+      // Token-pasting must produce exactly one preprocessing token.
+      if (merged->kind == TK_EOF || !merged->next || merged->next->kind != TK_EOF) {
+        pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+      }
 
       tk_set_filename(saved_filename);
       tk_set_user_input(saved_input);
       token = saved_token;
 
-      if (merged->kind == TK_EOF) {
-        merged = cur;
-      } else {
-        merged->next = rhs->next;
-        merged->file_name_id = cur->file_name_id;
-        merged->line_no = cur->line_no;
-        cur = merged;
-        prev->next = cur;
-      }
+      merged->next = rhs->next;
+      merged->file_name_id = cur->file_name_id;
+      merged->line_no = cur->line_no;
+      cur = merged;
+      prev->next = cur;
     } else {
       prev = cur;
       cur = cur->next;
