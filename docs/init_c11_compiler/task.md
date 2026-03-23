@@ -502,6 +502,35 @@
 - [x] 優先度P3: 境界チェックの運用手順を追記する
   - [x] `scripts/check_tokenizer_internal_boundary.sh` をいつ実行するか（PR前/リリース前）を docs に追記する
 
+## Tokenizer改善サマリ（2026-03-23時点）
+- [x] 文脈化: `tokenizer_context_t` に `current_token` を持たせ、`tk_get_current_token(_ctx)` / `tk_set_current_token(_ctx)` / `tk_consume*` / `tk_expect*` を context 中心へ移行
+- [x] 公開境界整理: `tokenizer.h` の `extern token` を撤去し、内部グローバルカーソルも削除（accessor APIのみ公開）
+- [x] 呼び出し側移行: `main` / `preprocess` / `parser` の入口を context 明示APIへ段階移行
+- [x] テスト・ベンチ移行: `test_parser` / `test_tokenizer` / `bench_parser` の直接 `token` 参照・代入を accessor 経由へ統一
+- [x] 保守性向上: consume/expect のカーソル更新を `advance_current_token` へ集約し重複ロジックを削減
+- [x] API整合: `tk_consume_str` / `tk_consume_str_ctx` を `const char *` 化して const-correct に統一
+- [x] 品質確認: `test_tokenizer` / `test_parser` / `test_preprocess` / `test_e2e` で回帰なしを確認
+
+## Tokenizer 今後の改善候補（2026-03-23）
+- [ ] 優先度P1: `tokenizer_context_t` への状態集約を完了する
+  - [ ] `user_input` と `current_filename` の保持先を context 側へ移し、再入性を強化する
+  - [ ] 既存APIの互換レイヤ（global相当アクセス）を段階的に縮小する
+- [ ] 優先度P1: 異常系の防御と診断安定性を強化する
+  - [ ] `current_token == NULL` 境界の診断メッセージを統一し、位置情報欠落時の表示仕様を固定する
+  - [ ] consume/expect 系の失敗経路に対する回帰テストを追加する
+- [ ] 優先度P2: const-correctness を Tokenizer API 全体へ展開する
+  - [ ] 書き換え不要な `char *` 引数を棚卸しし、`const char *` へ統一する
+  - [ ] 呼び出し側（parser/preprocess/test）で警告なくビルドできることを確認する
+- [ ] 優先度P2: 設定反映タイミングの契約テストを拡充する
+  - [ ] strict/trigraph/binary/audit の切替が反映される境界をテストで固定する
+  - [ ] context 切替時の設定独立性（コンテキスト間の非干渉）をテスト化する
+- [ ] 優先度P2: 計測基盤を整備して最適化の継続性を高める
+  - [ ] `scanner` / `literals` / `punctuator` 単位のホットパス計測を追加する
+  - [ ] `tokenizer_perf_report.md` に継続比較テンプレートを用意する
+- [ ] 優先度P3: 公開/非公開境界の運用をさらに自動化する
+  - [ ] `tokenizer/internal` 越境 `#include` チェックを定期実行対象として文書化する
+  - [ ] Tokenizer変更時のドキュメント更新ルール（`task.md` / `implementation_plan.md`）を明文化する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
