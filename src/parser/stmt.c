@@ -25,6 +25,12 @@ static inline void set_curtok(token_t *tok) {
 }
 
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
+static void parse_typedef_decl(void);
+static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
+                                token_kind_t *tag_kind, char **tag_name, int *tag_len,
+                                int *is_pointer_base, token_kind_t *base_kind);
+static token_ident_t *parse_typedef_name_decl(int *is_ptr);
+static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix);
 static long long parse_enum_const_expr(void);
 static long long parse_enum_const_conditional(void);
@@ -82,6 +88,33 @@ static void skip_func_params_stmt(void) {
     else if (curtok()->kind == TK_RPAREN) depth--;
     set_curtok(curtok()->next);
   }
+}
+
+static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers_stmt();
+  }
+  token_ident_t *name = NULL;
+  if (tk_consume('(')) {
+    name = parse_typedef_name_decl_recursive(is_ptr);
+    tk_expect(')');
+  } else {
+    name = tk_consume_ident();
+  }
+  while (curtok()->kind == TK_LPAREN) {
+    skip_func_params_stmt();
+  }
+  return name;
+}
+
+static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
+  token_ident_t *name = parse_typedef_name_decl_recursive(is_ptr);
+  if (!name) {
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, curtok(), "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED));
+  }
+  return name;
 }
 
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix) {
@@ -566,6 +599,109 @@ static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int 
   return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
 
+static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
+                                token_kind_t *tag_kind, char **tag_name, int *tag_len,
+                                int *is_pointer_base, token_kind_t *base_kind) {
+  *elem_size = 8;
+  *fp_kind = TK_FLOAT_KIND_NONE;
+  *tag_kind = TK_EOF;
+  *tag_name = NULL;
+  *tag_len = 0;
+  *is_pointer_base = 0;
+  *base_kind = TK_EOF;
+
+  token_kind_t builtin_kind = psx_consume_type_kind();
+  if (builtin_kind != TK_EOF) {
+    *base_kind = builtin_kind;
+    psx_ctx_get_type_info(builtin_kind, NULL, elem_size);
+    if (builtin_kind == TK_FLOAT) *fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (builtin_kind == TK_DOUBLE) *fp_kind = TK_FLOAT_KIND_DOUBLE;
+    return 1;
+  }
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    *base_kind = curtok()->kind;
+    *tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
+    token_ident_t *tag = tk_consume_ident();
+    static int anon_typedef_tag_counter = 0;
+    char anon_buf[32];
+    if (!tag && curtok()->kind != TK_LBRACE) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+    }
+    *tag_name = tag ? tag->str : anon_buf;
+    *tag_len = tag ? tag->len : 0;
+    if (!tag) {
+      *tag_len = snprintf(anon_buf, sizeof(anon_buf), "__anon_typedef_%d", anon_typedef_tag_counter++);
+    }
+    if (tk_consume('{')) {
+      int member_count = 0;
+      int tag_size = 0;
+      member_count = parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size);
+    } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
+      if (*tag_kind == TK_STRUCT || *tag_kind == TK_UNION) {
+        psx_ctx_define_tag_type(*tag_kind, *tag_name, *tag_len);
+      } else {
+        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), *tag_name, *tag_len);
+      }
+    }
+    *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
+    return 1;
+  }
+  if (psx_ctx_is_typedef_name_token(curtok())) {
+    token_ident_t *id = (token_ident_t *)curtok();
+    if (!psx_ctx_find_typedef_name(id->str, id->len, base_kind, elem_size, fp_kind,
+                                   tag_kind, tag_name, tag_len, is_pointer_base, NULL, NULL)) {
+      return 0;
+    }
+    set_curtok(curtok()->next);
+    return 1;
+  }
+  return 0;
+}
+
+static void parse_typedef_decl(void) {
+  if (curtok()->kind != TK_TYPEDEF) {
+    psx_diag_ctx(curtok(), "typedef", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED));
+  }
+  set_curtok(curtok()->next);
+  int elem_size = 8;
+  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_pointer_base = 0;
+  token_kind_t base_kind = TK_EOF;
+  if (!parse_decl_type_spec(&elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_pointer_base, &base_kind)) {
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
+  }
+  int td_pointee_const = 0;
+  int td_pointee_volatile = 0;
+  psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
+
+  for (;;) {
+    int is_ptr = is_pointer_base;
+    while (tk_consume('*')) {
+      is_ptr = 1;
+      skip_ptr_qualifiers_stmt();
+    }
+    token_ident_t *name = parse_typedef_name_decl(&is_ptr);
+    int typedef_sizeof = is_ptr ? 8 : elem_size;
+    while (tk_consume('[')) {
+      int n = parse_array_size_constexpr_stmt();
+      if (!is_ptr && n > 0) typedef_sizeof *= n;
+      tk_expect(']');
+    }
+    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
+                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
+                                td_pointee_const, td_pointee_volatile);
+    if (!tk_consume(',')) break;
+  }
+  tk_expect(';');
+}
+
 static int is_decl_like_start_stmt(void) {
   if (curtok()->kind == TK_TYPEDEF) return 1;
   if (curtok()->kind == TK_STATIC_ASSERT) return 1;
@@ -576,8 +712,12 @@ static int is_decl_like_start_stmt(void) {
 }
 
 static node_t *parse_decl_like_stmt(void) {
+  if (curtok()->kind == TK_TYPEDEF) {
+    parse_typedef_decl();
+    return psx_node_new_num(0);
+  }
+
   if (curtok()->kind == TK_STATIC_ASSERT ||
-      curtok()->kind == TK_TYPEDEF ||
       psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) ||
       psx_ctx_is_typedef_name_token(curtok())) {
     return psx_decl_parse_declaration();

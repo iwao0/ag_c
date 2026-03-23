@@ -595,9 +595,13 @@ static void parse_toplevel_typedef_decl(void) {
     tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
     token_ident_t *tag = tk_consume_ident();
-    if (!tag) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-    tag_name = tag->str;
-    tag_len = tag->len;
+    if (!tag && curtok()->kind != TK_LBRACE) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+    if (tag) {
+      tag_name = tag->str;
+      tag_len = tag->len;
+    } else {
+      make_anonymous_tag_name_toplevel(&tag_name, &tag_len);
+    }
     if (tk_consume('{')) {
       int member_count = 0;
       int tag_size = 0;
