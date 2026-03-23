@@ -30,6 +30,7 @@ TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
+TEST_FUZZ_QUICK=build/test_fuzz_quick
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=$(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/token_kind.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o
@@ -68,6 +69,10 @@ $(TEST_PREPROCESS): test/test_preprocess.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_preprocess.c
 
+$(TEST_FUZZ_QUICK): test/test_fuzz_quick.c $(TARGET)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ test/test_fuzz_quick.c
+
 $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
@@ -79,13 +84,14 @@ $(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(
 check-tokenizer-boundary:
 	./scripts/check_tokenizer_internal_boundary.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK)
 	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
 	$(TEST_TOKENIZER_C11)
 	$(TEST_PARSER)
 	$(TEST_CODEGEN)
 	$(TEST_PREPROCESS)
+	$(TEST_FUZZ_QUICK)
 	$(TEST_E2E)
 
 test-asan: CFLAGS+=-fsanitize=$(ASAN_SANITIZERS) -fno-omit-frame-pointer
