@@ -39,6 +39,8 @@ typedef struct {
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
+  int ptr_deref_size;
+  tk_float_kind_t ptr_pointee_fp_kind;
 } generic_type_t;
 
 static void consume_local_type_quals(token_t **cur);
@@ -550,7 +552,7 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0};
+  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0, 0, TK_FLOAT_KIND_NONE};
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -576,6 +578,8 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   if (ts == 8 && ds > 0) {
     gt.is_pointer = 1;
     gt.kind = TK_INT;
+    gt.ptr_deref_size = ds;
+    gt.ptr_pointee_fp_kind = psx_node_pointee_fp_kind(control);
     return gt;
   }
   if (ts == 1) gt.kind = TK_CHAR;
@@ -587,7 +591,23 @@ static generic_type_t infer_generic_control_type(node_t *control) {
 
 static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
   if (control.is_pointer != assoc.is_pointer) return 0;
-  if (control.is_pointer) return 1;
+  if (control.is_pointer) {
+    // struct/union ポインタはタグ一致で比較
+    if (control.tag_kind != TK_EOF || assoc.tag_kind != TK_EOF) {
+      return control.tag_kind == assoc.tag_kind &&
+             control.tag_len == assoc.tag_len &&
+             strncmp(control.tag_name ? control.tag_name : "",
+                     assoc.tag_name ? assoc.tag_name : "",
+                     (size_t)control.tag_len) == 0;
+    }
+    // 浮動小数点ポインタは pointee FP 種別で比較
+    if (control.ptr_pointee_fp_kind != TK_FLOAT_KIND_NONE ||
+        assoc.ptr_pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+      return control.ptr_pointee_fp_kind == assoc.ptr_pointee_fp_kind;
+    }
+    // それ以外は pointee サイズで比較（int*/char*/short*/long* など）
+    return control.ptr_deref_size == assoc.ptr_deref_size;
+  }
   if (control.kind == TK_STRUCT || control.kind == TK_UNION) {
     return control.kind == assoc.kind &&
            control.tag_len == assoc.tag_len &&
@@ -604,6 +624,10 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   out->tag_kind = TK_EOF;
   out->tag_name = NULL;
   out->tag_len = 0;
+  out->ptr_deref_size = 0;
+  out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  int base_elem_size = 8;
+  tk_float_kind_t base_fp_kind = TK_FLOAT_KIND_NONE;
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t base_kind = TK_EOF;
@@ -620,6 +644,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     out->tag_kind = tag_kind;
     out->tag_name = tag_name;
     out->tag_len = tag_len;
+    base_elem_size = elem_size;
+    base_fp_kind = fp_kind;
   } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     token_kind_t tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
@@ -632,10 +658,14 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     out->tag_kind = tag_kind;
     out->tag_name = tag->str;
     out->tag_len = tag->len;
+    base_elem_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
   } else {
     token_kind_t tk = psx_consume_type_kind();
     if (tk == TK_EOF) return 0;
     out->kind = tk;
+    psx_ctx_get_type_info(tk, NULL, &base_elem_size);
+    if (tk == TK_FLOAT) base_fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (tk == TK_DOUBLE) base_fp_kind = TK_FLOAT_KIND_DOUBLE;
   }
   token_t *t = curtok();
   consume_cast_pointer_suffix(&t, &out->is_pointer);
@@ -659,6 +689,10 @@ static int parse_generic_assoc_type(generic_type_t *out) {
       if (!after) break;
       t = after;
     }
+  }
+  if (out->is_pointer) {
+    out->ptr_deref_size = base_elem_size;
+    out->ptr_pointee_fp_kind = base_fp_kind;
   }
   set_curtok(t);
   return 1;

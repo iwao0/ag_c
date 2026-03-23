@@ -481,6 +481,26 @@ static void test_expr_generic() {
       "main(){ float f=1.0f; float *p=&f; return _Generic(*p, float:11, default:99); }");
   expect_parse_ok(
       "main(){ double a[1]={1.0}; double *p=a; return _Generic(p[0], double:42, default:99); }");
+  parsed_code = parse_program_input(
+      "main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; return _Generic(pc, int*:1, char*:2, default:3); }");
+  node_t *ret_ptr_kind = as_block(as_func(parsed_code[0])->base.rhs)->body[4];
+  ASSERT_EQ(ND_RETURN, ret_ptr_kind->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_kind->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_kind->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ double d=1.0; double *pd=&d; return _Generic(pd, int*:1, double*:2, default:3); }");
+  node_t *ret_ptr_fp = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_ptr_fp->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_fp->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_fp->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ struct S{int x;}; struct T{int x;}; struct S s={1}; struct S *ps=&s; return _Generic(ps, struct T*:1, struct S*:2, default:3); }");
+  node_t *ret_ptr_tag = as_block(as_func(parsed_code[0])->base.rhs)->body[4];
+  ASSERT_EQ(ND_RETURN, ret_ptr_tag->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_tag->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_tag->lhs)->val);
 }
 
 static void test_expr_sizeof() {
