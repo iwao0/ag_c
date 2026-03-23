@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
   token = preprocess(token);
 
   // パースしてAST（抽象構文木）を構築（関数定義の列）
-  node_t **code = ps_program();
+  node_t **code = ps_program_from(token);
   gen_set_output_callback(write_line_to_file, stdout);
 
   // 各関数定義のコード生成

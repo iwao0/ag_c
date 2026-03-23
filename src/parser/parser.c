@@ -262,7 +262,8 @@ static void parse_toplevel_decl_spec(void) {
 }
 
 // program = funcdef*
-node_t **ps_program(void) {
+node_t **ps_program_from(token_t *start) {
+  token = start;
   int cap = 16;
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
@@ -318,6 +319,10 @@ node_t **ps_program(void) {
   }
   codes[i] = NULL;
   return codes;
+}
+
+node_t **ps_program(void) {
+  return ps_program_from(token);
 }
 
 static int is_toplevel_function_signature(token_t *tok) {
@@ -1542,7 +1547,12 @@ static node_t *funcdef(void) {
 }
 
 // expr = assign ("," assign)*
-node_t *ps_expr(void) {
+node_t *ps_expr_from(token_t *start) {
+  token = start;
   node_t *node = psx_expr_expr();
   return node;
+}
+
+node_t *ps_expr(void) {
+  return ps_expr_from(token);
 }
