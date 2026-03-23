@@ -23,6 +23,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind);
 static token_ident_t *parse_typedef_name_decl(int *is_ptr);
+static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix);
 static long long parse_enum_const_expr(void);
 static long long parse_enum_const_conditional(void);
 static long long parse_enum_const_logor(void);
@@ -100,6 +101,25 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
   return name;
 }
 
+static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix) {
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers_stmt();
+  }
+  token_ident_t *name = NULL;
+  if (tk_consume('(')) {
+    name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix);
+    tk_expect(')');
+  } else {
+    name = tk_consume_ident();
+  }
+  while (token->kind == TK_LPAREN) {
+    if (out_has_func_suffix) *out_has_func_suffix = 1;
+    skip_func_params_stmt();
+  }
+  return name;
+}
+
 static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   int member_count = 0;
   int current_off = 0;
@@ -172,18 +192,14 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
 
     for (;;) {
       int is_ptr = 0;
-      while (tk_consume('*')) {
-        is_ptr = 1;
-        skip_ptr_qualifiers_stmt();
-      }
-      token_ident_t *member = tk_consume_ident();
+      int has_func_suffix = 0;
+      token_ident_t *member = parse_member_decl_name_recursive_stmt(&is_ptr, &has_func_suffix);
       int has_member_name = member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && token->kind != TK_COLON) {
         psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
-      if (token->kind == TK_LPAREN) {
-        skip_func_params_stmt();
+      if (has_func_suffix && !is_ptr) {
         psx_diag_ctx(token, "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
       }

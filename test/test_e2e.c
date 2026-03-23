@@ -303,6 +303,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "cast_atomic_int", CASE_INT, "int main() { return (_Atomic(int))42; }", 42, 0},
     {"type_decl", "member_dot", CASE_INT, "int main() { struct S { int a; int b; }; struct S s; s.a=2; s.b=5; return s.a+s.b; }", 7, 0},
     {"type_decl", "member_arrow", CASE_INT, "int main() { struct S { int a; int b; }; struct S s; struct S *p=&s; p->a=3; p->b=4; return p->a+p->b; }", 7, 0},
+    {"type_decl", "member_funcptr", CASE_INT, "int inc(int x){ return x+1; } int main() { struct S { int (*fp)(int); }; struct S s; s.fp=inc; return s.fp(41); }", 42, 0},
     {"type_decl", "member_union", CASE_INT, "int main() { union U { int x; char y; }; union U u; u.x=7; return u.x; }", 7, 0},
     {"type_decl", "union_brace_init_value", CASE_INT, "int main() { union U { int x; char y; }; union U u={7}; return u.x; }", 7, 0},
     {"type_decl", "union_brace_init_designated", CASE_INT, "int main() { union U { int x; char y; }; union U u={.x=7}; return u.x; }", 7, 0},

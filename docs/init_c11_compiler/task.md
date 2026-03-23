@@ -1172,6 +1172,7 @@
 - [ ] `member_decl` で `declarator` を使う（C11 §6.7.2.1）
   - C11: `struct-declarator = declarator | declarator? ":" constant-expression`
   - 現状: `decl_spec pointer? ident ...` と直接記述。メンバの関数ポインタ（`int (*fp)(int);`）が表現不能
+  - 進捗（2026-03-23）: メンバ宣言子の名前取得を再帰化し、`struct S { int (*fp)(int); };` を受理。`int f(int);` の関数型メンバ禁止診断は維持
 - [ ] `type_name` に `abstract-declarator` を含める（C11 §6.7.7）
   - C11: `type-name = specifier-qualifier-list abstract-declarator?`
   - 現状: `type_name = decl_spec pointer?` のみ。`sizeof(int [10])` や `sizeof(int (*)(void))` が表現不能
