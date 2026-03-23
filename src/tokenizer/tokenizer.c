@@ -877,13 +877,26 @@ token_t *tk_tokenize(const char *p) {
   return tk_tokenize_ctx(tk_get_default_context(), p);
 }
 
+/** @brief 入力文字列を正規化し、診断用入力参照をコンテキストへ設定する。 */
+static char *tokenize_prepare_input(tokenizer_context_t *ctx, const char *in) {
+  tk_allocator_set_expected_size(strlen(in));
+  char *normalized = replace_trigraphs(in);
+  tk_set_user_input_ctx(ctx, normalized);
+  return normalized;
+}
+
+/** @brief トークナイズ終了時にカーソルを確定し、前の実行コンテキストへ戻す。 */
+static token_t *tokenize_end_session(tokenizer_context_t *prev_ctx, token_t *head_next) {
+  tk_set_current_token(head_next);
+  active_ctx = prev_ctx;
+  return head_next;
+}
+
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
   tokenizer_context_t *prev_ctx = active_ctx;
   active_ctx = ctx ? ctx : tk_get_default_context();
   tk_set_current_token_ctx(active_ctx, NULL);
-  tk_allocator_set_expected_size(strlen(in));
-  char *normalized = replace_trigraphs(in);
-  tk_set_user_input_ctx(active_ctx, normalized);
+  char *normalized = tokenize_prepare_input(active_ctx, in);
   char *p = normalized;
   token_t head;
   head.next = NULL;
@@ -925,7 +938,5 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
   }
 
   new_token_simple(TK_EOF, cur, line_no, false, false);
-  tk_set_current_token(head.next);
-  active_ctx = prev_ctx;
-  return head.next;
+  return tokenize_end_session(prev_ctx, head.next);
 }
