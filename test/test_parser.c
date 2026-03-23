@@ -522,6 +522,13 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_typedef_volatile_ptr->kind);
   ASSERT_EQ(ND_NUM, ret_typedef_volatile_ptr->lhs->kind);
   ASSERT_EQ(2, as_num(ret_typedef_volatile_ptr->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; int **ppi=&pi; return _Generic(ppi, char**:1, int**:2, default:3); }");
+  node_t *ret_ptr_ptr_kind = as_block(as_func(parsed_code[0])->base.rhs)->body[5];
+  ASSERT_EQ(ND_RETURN, ret_ptr_ptr_kind->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_ptr_kind->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_ptr_kind->lhs)->val);
 }
 
 static void test_expr_sizeof() {

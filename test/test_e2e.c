@@ -427,6 +427,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "generic_ptr_const_pointee_match", CASE_INT, "int main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }", 2, 0},
     {"type_decl", "generic_ptr_typedef_const_pointee_match", CASE_INT, "typedef const int *cip_t; int main(){ int x=0; cip_t p=&x; return _Generic(p, int*:1, const int*:2, default:3); }", 2, 0},
     {"type_decl", "generic_ptr_typedef_volatile_pointee_match", CASE_INT, "typedef volatile int *vip_t; int main(){ int x=0; vip_t p=&x; return _Generic(p, volatile int*:2, int*:1, default:3); }", 2, 0},
+    {"type_decl", "generic_ptr_ptr_kind_match", CASE_INT, "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; int **ppi=&pi; return _Generic(ppi, char**:1, int**:2, default:3); }", 2, 0},
     {"type_decl", "const_param", CASE_INT, "int id(const int x) { return x; } int main(){ return id(7); }", 7, 0},
     {"type_decl", "compound_literal_int", CASE_INT, "int main(){ return (int){3}; }", 3, 0},
     {"type_decl", "compound_literal_struct_stmt", CASE_INT, "int main(){ struct S { int x; int y; }; (struct S){1,2}; return 7; }", 7, 0},
