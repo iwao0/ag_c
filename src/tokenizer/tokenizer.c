@@ -20,35 +20,6 @@ static char *user_input;
 
 // 現在着目しているトークン
 token_t *token;
-static tokenizer_context_t *runtime_ctx(void);
-static tokenizer_context_t *effective_ctx(tokenizer_context_t *ctx) {
-  return ctx ? ctx : runtime_ctx();
-}
-token_t *tk_get_current_token(void) {
-  tokenizer_context_t *ctx = runtime_ctx();
-  if (ctx) {
-    token = ctx->current_token;
-  }
-  return token;
-}
-void tk_set_current_token(token_t *tok) {
-  token = tok;
-  tokenizer_context_t *ctx = runtime_ctx();
-  if (ctx) {
-    ctx->current_token = tok;
-  }
-}
-
-/** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
-char *tk_get_user_input(void) {
-  return user_input;
-}
-
-/** @brief 現在の入力バッファ（エラー表示用）を設定する。 */
-void tk_set_user_input(char *p) {
-  user_input = p;
-}
-
 static char *current_filename;
 
 static tokenizer_stats_t tok_stats = {0};
@@ -61,14 +32,42 @@ static tokenizer_context_t *runtime_ctx(void) {
   return active_ctx ? active_ctx : tk_get_default_context();
 }
 
-/** @brief 現在のファイル名（エラー表示用）を取得する。 */
-char *tk_get_filename(void) {
-  return current_filename;
+static tokenizer_context_t *effective_ctx(tokenizer_context_t *ctx) {
+  return ctx ? ctx : runtime_ctx();
 }
 
-/** @brief 現在のファイル名（エラー表示用）を設定する。 */
-void tk_set_filename(char *name) {
-  current_filename = name;
+token_t *tk_get_current_token(void) {
+  return tk_get_current_token_ctx(NULL);
+}
+
+token_t *tk_get_current_token_ctx(tokenizer_context_t *ctx) {
+  tokenizer_context_t *use_ctx = effective_ctx(ctx);
+  if (use_ctx) {
+    token = use_ctx->current_token;
+  }
+  return token;
+}
+
+void tk_set_current_token(token_t *tok) {
+  tk_set_current_token_ctx(NULL, tok);
+}
+
+void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
+  token = tok;
+  tokenizer_context_t *use_ctx = effective_ctx(ctx);
+  if (use_ctx) {
+    use_ctx->current_token = tok;
+  }
+}
+
+/** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
+char *tk_get_user_input(void) {
+  return user_input;
+}
+
+/** @brief 現在の入力バッファ（エラー表示用）を設定する。 */
+void tk_set_user_input(char *p) {
+  user_input = p;
 }
 
 /** @brief Tokenizer統計の計測基準点をリセットする。 */
@@ -86,6 +85,16 @@ tokenizer_stats_t tk_get_tokenizer_stats(void) {
   tok_stats.alloc_bytes = tk_allocator_total_reserved_bytes() - stats_base_reserved_bytes;
   tok_stats.peak_alloc_bytes = tok_stats.alloc_bytes;
   return tok_stats;
+}
+
+/** @brief 現在のファイル名（エラー表示用）を取得する。 */
+char *tk_get_filename(void) {
+  return current_filename;
+}
+
+/** @brief 現在のファイル名（エラー表示用）を設定する。 */
+void tk_set_filename(char *name) {
+  current_filename = name;
 }
 
 static void *tcalloc(size_t n, size_t size) {

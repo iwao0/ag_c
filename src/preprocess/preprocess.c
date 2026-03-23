@@ -868,7 +868,7 @@ static token_t *paste_tokens(token_t *tok) {
       
       char *saved_input = tk_get_user_input();
       char *saved_filename = tk_get_filename();
-      token_t *saved_token = tk_get_current_token();
+      token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
 
       tk_set_filename("<paste>");
       token_t *merged = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
@@ -879,7 +879,7 @@ static token_t *paste_tokens(token_t *tok) {
 
       tk_set_filename(saved_filename);
       tk_set_user_input(saved_input);
-      tk_set_current_token(saved_token);
+      tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
 
       merged->next = rhs->next;
       merged->file_name_id = cur->file_name_id;
@@ -988,7 +988,7 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
 
         char *saved_input = tk_get_user_input();
         char *saved_filename = tk_get_filename();
-        token_t *saved_token = tk_get_current_token();
+        token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
 
         tk_set_filename(my_strndup(filename, strlen(filename)));
         token_t *tok2 = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
@@ -998,7 +998,7 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
 
         tk_set_filename(saved_filename);
         tk_set_user_input(saved_input);
-        tk_set_current_token(saved_token);
+        tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
 
         if (tok2->kind != TK_EOF) {
           while (tok2->kind != TK_EOF) {

@@ -19,8 +19,12 @@ struct tokenizer_context_t {
 extern token_t *token;
 /** @brief 現在トークンカーソルの参照を取得する。 */
 token_t *tk_get_current_token(void);
+/** @brief 明示コンテキストの現在トークンカーソルの参照を取得する。 */
+token_t *tk_get_current_token_ctx(tokenizer_context_t *ctx);
 /** @brief 現在トークンカーソルを更新する。 */
 void tk_set_current_token(token_t *tok);
+/** @brief 明示コンテキストの現在トークンカーソルを更新する。 */
+void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok);
 
 /** @brief token kind を可読文字列へ変換する。 */
 const char *tk_token_kind_str(token_kind_t kind, int *len);
