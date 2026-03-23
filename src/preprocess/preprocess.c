@@ -719,6 +719,8 @@ static long const_expr(token_t **rest, token_t *tok) {
 }
 
 token_t *preprocess(token_t *tok); // front declaration
+token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok); // front declaration
+static tokenizer_context_t *g_preprocess_tk_ctx;
 
 static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    token_t head;
@@ -780,7 +782,7 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    cur2->next = tk_allocator_calloc(1, sizeof(token_t));
    cur2->next->kind = TK_EOF;
 
-   token_t *expanded = preprocess(head2.next);
+   token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, head2.next);
 
    if (expanded->kind == TK_EOF) return false;
    token_t *rest;
@@ -869,7 +871,7 @@ static token_t *paste_tokens(token_t *tok) {
       token_t *saved_token = tk_get_current_token();
 
       tk_set_filename("<paste>");
-      token_t *merged = tk_tokenize(buf);
+      token_t *merged = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
       // Token-pasting must produce exactly one preprocessing token.
       if (merged->kind == TK_EOF || !merged->next || merged->next->kind != TK_EOF) {
         pp_error(DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT, NULL);
@@ -894,6 +896,13 @@ static token_t *paste_tokens(token_t *tok) {
 
 // プリプロセッサのメイン処理
 token_t *preprocess(token_t *tok) {
+  return preprocess_ctx(tk_get_default_context(), tok);
+}
+
+// プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
+token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
+  tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
+  g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
   if (include_depth == 0) {
     macro_expand_steps = 0;
     pp_init_predefined_macros();
@@ -982,9 +991,9 @@ token_t *preprocess(token_t *tok) {
         token_t *saved_token = tk_get_current_token();
 
         tk_set_filename(my_strndup(filename, strlen(filename)));
-        token_t *tok2 = tk_tokenize(buf);
+        token_t *tok2 = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
         push_include_or_die(filename);
-        tok2 = preprocess(tok2);
+        tok2 = preprocess_ctx(g_preprocess_tk_ctx, tok2);
         pop_include();
 
         tk_set_filename(saved_filename);
@@ -1495,5 +1504,6 @@ token_t *preprocess(token_t *tok) {
   }
 
   cur->next = tok; // TK_EOF を繋ぐ
+  g_preprocess_tk_ctx = prev_tk_ctx;
   return head.next;
 }

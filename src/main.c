@@ -73,10 +73,11 @@ int main(int argc, char **argv) {
 
   // トークナイズ
   tk_set_filename((char *)input_disp);
-  token_t *tok = tk_tokenize(source);
+  tokenizer_context_t *tk_ctx = tk_get_default_context();
+  token_t *tok = tk_tokenize_ctx(tk_ctx, source);
 
   // プリプロセス（マクロ展開やディレクティブ処理）
-  tok = preprocess(tok);
+  tok = preprocess_ctx(tk_ctx, tok);
 
   // パースしてAST（抽象構文木）を構築（関数定義の列）
   node_t **code = ps_program_from(tok);
