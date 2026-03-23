@@ -1131,6 +1131,7 @@
   - 現状: トップレベル（`parser.c`）とローカル（`stmt.c`/`decl.c`）で別関数。`skip_cv_qualifiers` + `psx_consume_type_kind` の2段階処理
   - 修正方針: `decl_spec()` 関数が `storage_spec`/`type_spec`/`type_qual`/`func_spec`/`align_spec` を統合的にパースし、結果を構造体で返す。トップレベル・ローカルで共用
   - 進捗（2026-03-23）: `decl.c` に `parse_local_decl_spec()` を追加し、`psx_decl_parse_declaration()` の先頭型解析（type/qualifier/extern/fp_kind/elem_size）を構造体化。`decl_spec` 共通化に向けた土台を整備
+  - 進捗（2026-03-23）: `parser.c` でもトップレベル宣言入口を `parse_toplevel_decl_spec()` へ集約し、`ps_program()` の型先頭処理重複を削減（typedef名経路も同関数へ統合）
   - 対象ファイル: `src/parser/parser.c`, `src/parser/stmt.c`, `src/parser/decl.c`
 - [ ] `declarator` を再帰的構造にする（C11 §6.7.6）
   - 現状: ポインタ・名前・配列サイズ・関数ポインタのパースが各所にインライン展開

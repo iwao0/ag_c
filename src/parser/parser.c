@@ -30,6 +30,7 @@ static int g_toplevel_decl_is_thread_local = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
+static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
 static void parse_toplevel_typedef_decl(void);
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
@@ -230,6 +231,32 @@ static int parse_array_size_constexpr_toplevel(void) {
   return (int)v;
 }
 
+static void parse_toplevel_decl_spec(void) {
+  if (psx_ctx_is_typedef_name_token(token)) {
+    token_ident_t *id = (token_ident_t *)token;
+    token_kind_t td_base = TK_EOF;
+    int td_elem = 8;
+    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+    token_kind_t td_tag = TK_EOF;
+    char *td_tag_name = NULL;
+    int td_tag_len = 0;
+    int td_is_ptr = 0;
+    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
+                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr);
+    token = token->next;
+    g_toplevel_decl_elem_size = td_elem;
+    g_toplevel_decl_is_extern = 0;
+    g_toplevel_decl_is_thread_local = 0;
+    return;
+  }
+
+  token_kind_t tl_kind = psx_consume_type_kind();
+  g_toplevel_decl_elem_size = 8;
+  if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
+  g_toplevel_decl_is_extern = g_last_decl_is_extern;
+  g_toplevel_decl_is_thread_local = g_last_type_thread_local;
+}
+
 // program = funcdef*
 node_t **ps_program(void) {
   int cap = 16;
@@ -273,17 +300,7 @@ node_t **ps_program(void) {
     }
     if ((psx_ctx_is_type_token(token->kind) || is_decl_prefix_token(token->kind) || psx_ctx_is_typedef_name_token(token)) &&
         !is_toplevel_function_signature(token)) {
-      if (psx_ctx_is_typedef_name_token(token)) {
-        token = token->next;
-        g_toplevel_decl_elem_size = 8;
-        g_toplevel_decl_is_extern = 0;
-      } else {
-        token_kind_t tl_kind = psx_consume_type_kind();
-        g_toplevel_decl_elem_size = 8;
-        if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
-        g_toplevel_decl_is_extern = g_last_decl_is_extern;
-        g_toplevel_decl_is_thread_local = g_last_type_thread_local;
-      }
+      parse_toplevel_decl_spec();
       parse_toplevel_decl_after_type();
       continue;
     }
