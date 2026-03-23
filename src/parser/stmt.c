@@ -331,8 +331,8 @@ static long long parse_enum_const_conditional(void) {
 
 static long long parse_enum_const_logor(void) {
   long long v = parse_enum_const_logand();
-  while (token->kind == TK_OROR) {
-    token = token->next;
+  while (curtok()->kind == TK_OROR) {
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_logand();
     v = (v || r) ? 1 : 0;
   }
@@ -341,8 +341,8 @@ static long long parse_enum_const_logor(void) {
 
 static long long parse_enum_const_logand(void) {
   long long v = parse_enum_const_bitor();
-  while (token->kind == TK_ANDAND) {
-    token = token->next;
+  while (curtok()->kind == TK_ANDAND) {
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_bitor();
     v = (v && r) ? 1 : 0;
   }
@@ -351,8 +351,8 @@ static long long parse_enum_const_logand(void) {
 
 static long long parse_enum_const_bitor(void) {
   long long v = parse_enum_const_bitxor();
-  while (token->kind == TK_PIPE) {
-    token = token->next;
+  while (curtok()->kind == TK_PIPE) {
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_bitxor();
     v |= r;
   }
@@ -361,8 +361,8 @@ static long long parse_enum_const_bitor(void) {
 
 static long long parse_enum_const_bitxor(void) {
   long long v = parse_enum_const_bitand();
-  while (token->kind == TK_CARET) {
-    token = token->next;
+  while (curtok()->kind == TK_CARET) {
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_bitand();
     v ^= r;
   }
@@ -371,8 +371,8 @@ static long long parse_enum_const_bitxor(void) {
 
 static long long parse_enum_const_bitand(void) {
   long long v = parse_enum_const_eq();
-  while (token->kind == TK_AMP) {
-    token = token->next;
+  while (curtok()->kind == TK_AMP) {
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_eq();
     v &= r;
   }
@@ -381,9 +381,9 @@ static long long parse_enum_const_bitand(void) {
 
 static long long parse_enum_const_eq(void) {
   long long v = parse_enum_const_rel();
-  while (token->kind == TK_EQEQ || token->kind == TK_NEQ) {
-    token_kind_t op = token->kind;
-    token = token->next;
+  while (curtok()->kind == TK_EQEQ || curtok()->kind == TK_NEQ) {
+    token_kind_t op = curtok()->kind;
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_rel();
     v = (op == TK_EQEQ) ? (v == r) : (v != r);
   }
@@ -392,9 +392,9 @@ static long long parse_enum_const_eq(void) {
 
 static long long parse_enum_const_rel(void) {
   long long v = parse_enum_const_shift();
-  while (token->kind == TK_LT || token->kind == TK_LE || token->kind == TK_GT || token->kind == TK_GE) {
-    token_kind_t op = token->kind;
-    token = token->next;
+  while (curtok()->kind == TK_LT || curtok()->kind == TK_LE || curtok()->kind == TK_GT || curtok()->kind == TK_GE) {
+    token_kind_t op = curtok()->kind;
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_shift();
     switch (op) {
       case TK_LT: v = (v < r); break;
@@ -408,9 +408,9 @@ static long long parse_enum_const_rel(void) {
 
 static long long parse_enum_const_shift(void) {
   long long v = parse_enum_const_add();
-  while (token->kind == TK_SHL || token->kind == TK_SHR) {
-    token_kind_t op = token->kind;
-    token = token->next;
+  while (curtok()->kind == TK_SHL || curtok()->kind == TK_SHR) {
+    token_kind_t op = curtok()->kind;
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_add();
     v = (op == TK_SHL) ? (v << r) : (v >> r);
   }
@@ -419,9 +419,9 @@ static long long parse_enum_const_shift(void) {
 
 static long long parse_enum_const_add(void) {
   long long v = parse_enum_const_mul();
-  while (token->kind == TK_PLUS || token->kind == TK_MINUS) {
-    token_kind_t op = token->kind;
-    token = token->next;
+  while (curtok()->kind == TK_PLUS || curtok()->kind == TK_MINUS) {
+    token_kind_t op = curtok()->kind;
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_mul();
     v = (op == TK_PLUS) ? (v + r) : (v - r);
   }
@@ -430,9 +430,9 @@ static long long parse_enum_const_add(void) {
 
 static long long parse_enum_const_mul(void) {
   long long v = parse_enum_const_unary();
-  while (token->kind == TK_MUL || token->kind == TK_DIV || token->kind == TK_MOD) {
-    token_kind_t op = token->kind;
-    token = token->next;
+  while (curtok()->kind == TK_MUL || curtok()->kind == TK_DIV || curtok()->kind == TK_MOD) {
+    token_kind_t op = curtok()->kind;
+    set_curtok(curtok()->next);
     long long r = parse_enum_const_unary();
     if (op == TK_MUL) v *= r;
     else if (op == TK_DIV) v /= r;
@@ -442,43 +442,43 @@ static long long parse_enum_const_mul(void) {
 }
 
 static long long parse_enum_const_unary(void) {
-  if (token->kind == TK_PLUS) {
-    token = token->next;
+  if (curtok()->kind == TK_PLUS) {
+    set_curtok(curtok()->next);
     return parse_enum_const_unary();
   }
-  if (token->kind == TK_MINUS) {
-    token = token->next;
+  if (curtok()->kind == TK_MINUS) {
+    set_curtok(curtok()->next);
     return -parse_enum_const_unary();
   }
-  if (token->kind == TK_TILDE) {
-    token = token->next;
+  if (curtok()->kind == TK_TILDE) {
+    set_curtok(curtok()->next);
     return ~parse_enum_const_unary();
   }
-  if (token->kind == TK_BANG) {
-    token = token->next;
+  if (curtok()->kind == TK_BANG) {
+    set_curtok(curtok()->next);
     return !parse_enum_const_unary();
   }
-  if (token->kind == TK_SIZEOF) {
-    token = token->next;
-    if (token->kind == TK_LPAREN) {
-      token = token->next;
+  if (curtok()->kind == TK_SIZEOF) {
+    set_curtok(curtok()->next);
+    if (curtok()->kind == TK_LPAREN) {
+      set_curtok(curtok()->next);
       int sz = 8;
-      if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_tag_keyword(token->kind)) {
-        psx_ctx_get_type_info(token->kind, NULL, &sz);
-        if (psx_ctx_is_tag_keyword(token->kind)) {
-          token_kind_t tk = token->kind;
-          token = token->next;
+      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind)) {
+        psx_ctx_get_type_info(curtok()->kind, NULL, &sz);
+        if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+          token_kind_t tk = curtok()->kind;
+          set_curtok(curtok()->next);
           token_ident_t *tag = tk_consume_ident();
           if (tag && psx_ctx_has_tag_type(tk, tag->str, tag->len)) {
             sz = psx_ctx_get_tag_size(tk, tag->str, tag->len);
           }
         } else {
-          token = token->next;
+          set_curtok(curtok()->next);
           // consume additional type specifiers (e.g., "unsigned long long")
-          while (psx_ctx_is_type_token(token->kind)) token = token->next;
+          while (psx_ctx_is_type_token(curtok()->kind)) set_curtok(curtok()->next);
         }
         // skip pointer stars
-        while (token->kind == TK_MUL) { sz = 8; token = token->next; }
+        while (curtok()->kind == TK_MUL) { sz = 8; set_curtok(curtok()->next); }
       }
       tk_expect(')');
       return sz;
@@ -489,8 +489,8 @@ static long long parse_enum_const_unary(void) {
 }
 
 static long long parse_enum_const_primary(void) {
-  if (token->kind == TK_LPAREN) {
-    token = token->next;
+  if (curtok()->kind == TK_LPAREN) {
+    set_curtok(curtok()->next);
     long long v = parse_enum_const_expr();
     tk_expect(')');
     return v;
@@ -499,7 +499,7 @@ static long long parse_enum_const_primary(void) {
   if (id) {
     long long v = 0;
     if (!psx_ctx_find_enum_const(id->str, id->len, &v)) {
-      psx_diag_ctx(token, "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
+      psx_diag_ctx(curtok(), "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
                    id->len, id->str);
     }
     return v;
@@ -510,7 +510,7 @@ static long long parse_enum_const_primary(void) {
 static int parse_array_size_constexpr_stmt(void) {
   long long v = parse_enum_const_expr();
   if (v <= 0) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return (int)v;
@@ -520,11 +520,11 @@ static int parse_array_size_constexpr_stmt(void) {
 static int parse_alignas_value_stmt(void) {
   tk_expect('(');
   int val = 1;
-  if (psx_ctx_is_type_token(token->kind) || psx_ctx_is_typedef_name_token(token)) {
+  if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) {
     int elem_size = 8;
-    psx_ctx_get_type_info(token->kind, NULL, &elem_size);
+    psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
     val = elem_size;
-    while (token->kind != TK_RPAREN && token->kind != TK_EOF) token = token->next;
+    while (curtok()->kind != TK_RPAREN && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
   } else {
     long long v = parse_enum_const_expr();
     val = (v > 0) ? (int)v : 1;
