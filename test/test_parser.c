@@ -460,6 +460,19 @@ static void test_expr_generic() {
       "main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
   expect_parse_ok(
       "main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
+  parsed_code = parse_program_input(
+      "main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
+  node_t *ret_struct = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret_struct->kind);
+  ASSERT_EQ(ND_NUM, ret_struct->lhs->kind);
+  ASSERT_EQ(1, as_num(ret_struct->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ struct S{int x;}; struct T{int x;}; return _Generic((struct S){1}, struct T: 1, default: 2); }");
+  node_t *ret_struct_nomatch = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_struct_nomatch->kind);
+  ASSERT_EQ(ND_NUM, ret_struct_nomatch->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_struct_nomatch->lhs)->val);
   expect_parse_ok(
       "main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
   expect_parse_ok(

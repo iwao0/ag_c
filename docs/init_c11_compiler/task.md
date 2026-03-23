@@ -1502,6 +1502,7 @@
   - 進捗（2026-03-24）: `_Generic` の関連型で `struct S` / `union U` のタグ型 type-name を受理するようにし、typedef がタグ型を指す場合も関連型kindへ反映するようにした（現行の generic 判定粒度は維持）
   - 進捗（2026-03-24）: `_Generic` の関連型で `int[3]` のような配列 abstract-declarator 後置を受理し、cast/sizeof と同系統の type-name 受理範囲を拡張
   - 進捗（2026-03-24）: `_Generic(*p, ...)` / `_Generic(p[0], ...)` でポインタ先が `float`/`double` のときに default へ落ちる不具合を修正。ポインタノードへ pointee のFP型情報を保持し、`ND_DEREF` へ伝播するようにした
+  - 進捗（2026-03-24）: `_Generic` の `struct`/`union` 関連型判定でタグ名一致まで比較するように修正し、同サイズ・同形状でも異なるタグ型は不一致として `default` へ落ちるようにした
   - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映

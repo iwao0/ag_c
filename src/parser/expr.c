@@ -36,6 +36,9 @@ static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 typedef struct {
   token_kind_t kind;
   int is_pointer;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
 } generic_type_t;
 
 static void consume_local_type_quals(token_t **cur);
@@ -547,8 +550,14 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 0};
+  generic_type_t gt = {TK_INT, 0, TK_EOF, NULL, 0};
   if (!control) return gt;
+  int is_tag_ptr = 0;
+  psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
+  if (!is_tag_ptr && (gt.tag_kind == TK_STRUCT || gt.tag_kind == TK_UNION)) {
+    gt.kind = gt.tag_kind;
+    return gt;
+  }
   if (control->kind == ND_STRING) {
     gt.kind = TK_CHAR;
     gt.is_pointer = 1;
@@ -579,12 +588,22 @@ static generic_type_t infer_generic_control_type(node_t *control) {
 static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
   if (control.is_pointer != assoc.is_pointer) return 0;
   if (control.is_pointer) return 1;
+  if (control.kind == TK_STRUCT || control.kind == TK_UNION) {
+    return control.kind == assoc.kind &&
+           control.tag_len == assoc.tag_len &&
+           strncmp(control.tag_name ? control.tag_name : "",
+                   assoc.tag_name ? assoc.tag_name : "",
+                   (size_t)control.tag_len) == 0;
+  }
   return control.kind == assoc.kind;
 }
 
 static int parse_generic_assoc_type(generic_type_t *out) {
   out->kind = TK_EOF;
   out->is_pointer = 0;
+  out->tag_kind = TK_EOF;
+  out->tag_name = NULL;
+  out->tag_len = 0;
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t base_kind = TK_EOF;
@@ -598,6 +617,9 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     set_curtok(curtok()->next);
     out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
     out->is_pointer = is_ptr;
+    out->tag_kind = tag_kind;
+    out->tag_name = tag_name;
+    out->tag_len = tag_len;
   } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     token_kind_t tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
@@ -607,6 +629,9 @@ static int parse_generic_assoc_type(generic_type_t *out) {
       psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
     }
     out->kind = tag_kind;
+    out->tag_kind = tag_kind;
+    out->tag_name = tag->str;
+    out->tag_len = tag->len;
   } else {
     token_kind_t tk = psx_consume_type_kind();
     if (tk == TK_EOF) return 0;
