@@ -443,9 +443,9 @@
 - [ ] 優先度P1: `tokenizer_context` 実装に着手する
   - [ ] `token` グローバル依存を置き換える最小実装（`*_ctx` API + 互換ラッパー）を作る
   - [ ] 既存Parser連携を壊さない移行順を確認する
-- [ ] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
-  - [ ] context化後を見据えた設定保持の責務（global/context）を定義する
-  - [ ] strict/trigraph/binary/audit の適用タイミングを文書化する
+- [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
+  - [x] context化後を見据えた設定保持の責務（global/context）を定義する
+  - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
 - [x] 優先度P2: `escape` の契約テストを追加する
   - [x] TokenizerとCodegenで同一エスケープ入力の解釈が一致することをテストで固定する
   - [x] 代表ケース（`\n`, `\xNN`, `\uXXXX`, octal）を回帰対象に含める
