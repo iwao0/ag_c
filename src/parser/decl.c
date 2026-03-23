@@ -1295,7 +1295,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 node_t *psx_decl_parse_declaration(void) {
   local_decl_spec_t ds = {0};
   if (!parse_local_decl_spec(&ds)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, token, "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
   }
 
@@ -1303,20 +1303,20 @@ node_t *psx_decl_parse_declaration(void) {
     // ローカルextern宣言: グローバルテーブルに登録してローカル変数は作らない
     for (;;) {
       int is_ptr = 0;
-      while (token->kind == TK_MUL) {
+      while (curtok()->kind == TK_MUL) {
         is_ptr = 1;
-        token = token->next;
-        while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT)
-          token = token->next;
+        set_curtok(curtok()->next);
+        while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT)
+          set_curtok(curtok()->next);
       }
-      if (token->kind != TK_IDENT) break;
-      token_ident_t *name = (token_ident_t *)token;
-      token = token->next;
+      if (curtok()->kind != TK_IDENT) break;
+      token_ident_t *name = (token_ident_t *)curtok();
+      set_curtok(curtok()->next);
       // 配列宣言子を消費
-      while (token->kind == TK_LBRACKET) {
-        token = token->next;
-        while (token->kind != TK_RBRACKET && token->kind != TK_EOF) token = token->next;
-        if (token->kind == TK_RBRACKET) token = token->next;
+      while (curtok()->kind == TK_LBRACKET) {
+        set_curtok(curtok()->next);
+        while (curtok()->kind != TK_RBRACKET && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
+        if (curtok()->kind == TK_RBRACKET) set_curtok(curtok()->next);
       }
       // グローバルテーブルに登録（既存エントリがなければ）
       int found = 0;
@@ -1335,12 +1335,12 @@ node_t *psx_decl_parse_declaration(void) {
         gv->next = global_vars;
         global_vars = gv;
       }
-      if (token->kind == TK_ASSIGN) {
-        token = token->next;
+      if (curtok()->kind == TK_ASSIGN) {
+        set_curtok(curtok()->next);
         psx_expr_assign();
       }
-      if (token->kind != TK_COMMA) break;
-      token = token->next;
+      if (curtok()->kind != TK_COMMA) break;
+      set_curtok(curtok()->next);
     }
     tk_expect(';');
     return psx_node_new_num(0);
