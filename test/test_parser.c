@@ -1629,6 +1629,7 @@ static void test_parse_evil_edge_cases() {
 
   // typedefで作った型名の使用
   expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
+  expect_parse_ok("int main(){ typedef int (*(*fp_t))(int); return 0; }");
 
   // 複数の変数宣言（カンマ区切り）
   expect_parse_ok("main() { int a=1, b=2, c=3; return a+b+c; }");

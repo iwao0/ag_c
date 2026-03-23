@@ -31,6 +31,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind);
 static token_ident_t *parse_typedef_name_decl(int *is_ptr);
+static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix);
 static long long parse_enum_const_expr(void);
 static long long parse_enum_const_conditional(void);
@@ -90,21 +91,29 @@ static void skip_func_params_stmt(void) {
   }
 }
 
-static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
-  int open_parens = 0;
-  while (tk_consume('(')) open_parens++;
+static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
   while (tk_consume('*')) {
     *is_ptr = 1;
     skip_ptr_qualifiers_stmt();
   }
-  token_ident_t *name = tk_consume_ident();
+  token_ident_t *name = NULL;
+  if (tk_consume('(')) {
+    name = parse_typedef_name_decl_recursive(is_ptr);
+    tk_expect(')');
+  } else {
+    name = tk_consume_ident();
+  }
+  while (curtok()->kind == TK_LPAREN) {
+    skip_func_params_stmt();
+  }
+  return name;
+}
+
+static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
+  token_ident_t *name = parse_typedef_name_decl_recursive(is_ptr);
   if (!name) {
     diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, curtok(), "%s",
                    diag_message_for(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED));
-  }
-  while (open_parens-- > 0) tk_expect(')');
-  while (curtok()->kind == TK_LPAREN) {
-    skip_func_params_stmt();
   }
   return name;
 }
