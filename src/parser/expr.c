@@ -23,6 +23,9 @@ static int string_label_count = 0;
 static int float_label_count = 0;
 static int compound_lit_seq = 0;
 
+static inline token_t *curtok(void) { return tk_get_current_token(); }
+static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
+
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 
 typedef struct {
@@ -95,18 +98,18 @@ static long long eval_const_expr_type_size(node_t *n, int *ok) {
 static void apply_array_abstract_suffix_size(int *sz) {
   while (tk_consume('[')) {
     if (tk_consume(']')) {
-      psx_diag_ctx(token, "sizeof", "%s",
+      psx_diag_ctx(curtok(), "sizeof", "%s",
                    diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED));
     }
     node_t *dim_expr = psx_expr_assign();
     int ok = 1;
     long long dim = eval_const_expr_type_size(dim_expr, &ok);
     if (!ok) {
-      psx_diag_ctx(token, "sizeof", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+      psx_diag_ctx(curtok(), "sizeof", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
                    diag_text_for(DIAG_TEXT_ARRAY_SIZE));
     }
     if (dim <= 0) {
-      psx_diag_ctx(token, "sizeof", "%s",
+      psx_diag_ctx(curtok(), "sizeof", "%s",
                    diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
     tk_expect(']');
@@ -197,8 +200,8 @@ static int is_type_name_start_token(token_t *t) {
 }
 
 static void skip_ptr_qualifiers_expr(void) {
-  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
-    token = token->next;
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+    set_curtok(curtok()->next);
   }
 }
 
