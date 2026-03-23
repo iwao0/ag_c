@@ -591,6 +591,14 @@
   - [x] 進捗（2026-03-24）: `tokenize_*` / `begin|end_tokenize_session` に加え、`parse_float_suffix` / `parse_float_literal` / `parse_integer_literal_with_base` のDoxygenコメントを追加した
   - [x] `tokenize_*` / `parse_*` / `begin|end_tokenize_session` から優先適用する
 
+## Tokenizer 次ラウンド候補（2026-03-24）
+- [ ] [P2] `parse_number_literal` の 0始まり分岐（`0x`/`0b`/8進）を専用ディスパッチ関数へ抽出し、レビュー観点を固定する
+  - [ ] 目的: `parse_number_literal` 本体を「分岐選択のみ」に寄せる
+- [ ] [P2] `test/bench_tokenizer.c` の hotpath ケースを `TOKENIZER_BENCH_MODE` 環境変数で選択可能にし、局所計測の反復を短縮する
+  - [ ] 目的: `scanner`/`literals`/`punctuator` の単体反復時に不要ケースを省く
+- [ ] [P3] `tokenizer_hotpath_daily.csv` の列説明を `tokenizer_perf_report.md` に追記し、運用時の読み違いを防ぐ
+  - [ ] 目的: `mixed_tps` と `*_ops` の意味差（E2E寄り指標 vs 局所指標）を明文化
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
