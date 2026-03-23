@@ -422,6 +422,23 @@
   - [x] `config_runtime.c`（ランタイム保持）と `src/config/config.c`（ファイル読込）の責務分離を文書化する
   - [x] 設定反映タイミング（初期化時のみ / 実行中変更可）を明記する
 
+## Tokenizer 追加改善候補（2026-03-23）
+- [ ] 優先度P1: `token` グローバル依存を縮小する
+  - [ ] Parser連携部を含めた `tokenizer_context` 実装移行計画を作成する
+  - [ ] 既存APIとの互換維持方針（段階移行）を確認する
+- [ ] 優先度P2: `escape` 責務の配置を再評価する
+  - [ ] Tokenizer公開API維持と `common` 層移管の比較メモを作成する
+  - [ ] 影響範囲（codegen/preprocess/diagnostics）を整理する
+- [ ] 優先度P2: 設定の実行時切替テストを強化する
+  - [ ] `tk_set_*` の切替境界テスト（strict/trigraph/binary/audit）を追加する
+  - [ ] 既存テスト群で回帰がないことを確認する
+- [ ] 優先度P2: internal依存の自動検査をCIへ追加する
+  - [ ] Tokenizer外から `tokenizer/internal/*` を `#include` していないか検査するスクリプトを追加する
+  - [ ] CIジョブへ組み込み、違反時にfailする
+- [ ] 優先度P3: 文字/UCN異常系のテストを拡充する
+  - [ ] 不正UCN境界・長大エスケープ列の異常系ケースを追加する
+  - [ ] C11チェックリストへ対応項目を追記する
+
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
   - [x] Parserベンチを追加し、入力サイズ別の計測値（parse time / throughput）を記録する
