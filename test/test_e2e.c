@@ -411,6 +411,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "generic_int", CASE_INT, "int main() { return _Generic(1, int:11, default:22); }", 11, 0},
     {"type_decl", "generic_double", CASE_INT, "int main() { return _Generic(1.0, float:11, double:33, default:22); }", 33, 0},
     {"type_decl", "generic_ptr", CASE_INT, "int main() { int *p=0; return _Generic(p, int*:3, default:7); }", 3, 0},
+    {"type_decl", "generic_assoc_struct_type_parse", CASE_INT, "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }", 2, 0},
+    {"type_decl", "generic_assoc_union_type_parse", CASE_INT, "int main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }", 2, 0},
     {"type_decl", "generic_assoc_array_of_funcptr_type", CASE_INT, "int main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }", 2, 0},
     {"type_decl", "generic_assoc_ptr_to_func_returning_ptr_to_array_type", CASE_INT, "int main() { return _Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 1, default: 2); }", 2, 0},
     {"type_decl", "generic_funcptr_assoc", CASE_INT, "typedef int (*fp_t)(int); int id(int x){ return x; } int main(){ fp_t p=id; return _Generic(p, int (*)(int):13, default:7); }", 13, 0},

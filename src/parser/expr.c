@@ -596,8 +596,17 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     int is_ptr = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
     set_curtok(curtok()->next);
-    out->kind = base_kind;
+    out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
     out->is_pointer = is_ptr;
+  } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    token_kind_t tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) return 0;
+    if (!psx_ctx_has_tag_type(tag_kind, tag->str, tag->len)) {
+      psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
+    }
+    out->kind = tag_kind;
   } else {
     token_kind_t tk = psx_consume_type_kind();
     if (tk == TK_EOF) return 0;
