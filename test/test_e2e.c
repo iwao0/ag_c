@@ -1365,6 +1365,14 @@ int main() {
       return 1;
     }
   }
+  {
+    const char *missing_path = "build/e2e/compile_fail/__missing_input__.c";
+    const char *log_path = "build/e2e/logs/compile_fail_missing_input.log";
+    if (run_ag_c_expect_fail_with_diag(missing_path, "入力ファイルを読み込めませんでした", log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: missing_input (see %s)\n", log_path);
+      return 1;
+    }
+  }
 
   size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
   const char **categories = calloc(max_cases, sizeof(const char *));
@@ -1429,7 +1437,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])));
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 1);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
