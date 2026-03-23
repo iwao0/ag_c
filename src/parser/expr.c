@@ -1415,6 +1415,7 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     set_curtok(t);
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
@@ -1464,6 +1465,7 @@ static int parse_parenthesized_type_size(void) {
       sz = 8;
     }
     set_curtok(t);
+    apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
