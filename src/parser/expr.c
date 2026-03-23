@@ -1080,7 +1080,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
     const char *kind = (type_kind == TK_STRUCT) ? "struct" : "union";
-    psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
+    psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                  kind);
   }
   if (type_kind == TK_FLOAT) {
@@ -1321,11 +1321,11 @@ static node_t *cast(void) {
   int cast_elem_size = 8;
   tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
   int cast_array_count = 0;
-  if (parse_cast_type(token, &cast_kind, &cast_is_ptr, &after_rparen,
+  if (parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
-      token = after_rparen;
+      set_curtok(after_rparen);
       int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
       int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
       int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
@@ -1386,7 +1386,7 @@ static node_t *cast(void) {
       node_t *val = apply_postfix(ref);
       return psx_node_new_binary(ND_COMMA, init, val);
     }
-    token = after_rparen;
+    set_curtok(after_rparen);
     node_t *operand = cast();
     if (!cast_is_ptr && (cast_kind == TK_STRUCT || cast_kind == TK_UNION)) {
       if (is_same_tag_nonscalar_expr(operand, cast_kind, cast_tag_name, cast_tag_len)) {
@@ -1405,11 +1405,11 @@ static node_t *cast(void) {
         int op_is_tag_ptr = 0;
         psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
         if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
-          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
+          psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
                        "struct");
         }
         if (!ps_get_enable_struct_scalar_pointer_cast()) {
-          psx_diag_ctx(token, "cast", "%s",
+          psx_diag_ctx(curtok(), "cast", "%s",
                        diag_message_for(DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
         }
         return apply_postfix(lower_struct_value_cast(operand, cast_tag_kind, cast_tag_name, cast_tag_len,
@@ -1422,7 +1422,7 @@ static node_t *cast(void) {
         int op_is_tag_ptr = 0;
         psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
         if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
-          psx_diag_ctx(token, "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
+          psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
                        "union");
         }
         if (!ps_get_enable_union_scalar_pointer_cast()) {

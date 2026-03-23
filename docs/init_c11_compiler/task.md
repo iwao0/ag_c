@@ -462,6 +462,7 @@
   - [x] 進捗（2026-03-23）: `expr.c` の演算子優先順位パーサ（`assign`〜`mul`）を `curtok`/`set_curtok` へ移行し、式ホットパスの直接 `token` 更新を段階削減した
   - [x] 進捗（2026-03-23）: `expr.c` の `unary`（`sizeof`/`_Alignof`/前置演算子）と cast 診断の一部を `curtok` ベースへ移行した
   - [x] 進捗（2026-03-23）: `expr.c` の `parse_parenthesized_type_size` と `expr_internal` を `curtok`/`set_curtok` ベースへ移行し、型名サイズ解析の直接カーソル更新を縮小した
+  - [x] 進捗（2026-03-23）: `expr.c` の `cast` 本体で `parse_cast_type` 呼び出し起点と `after_rparen` 適用を `curtok`/`set_curtok` 化し、非スカラcast診断の `token` 参照を追加で削減した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
