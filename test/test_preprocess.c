@@ -117,6 +117,7 @@ static const char *fail_cases[] = {
     "#include \"C:/Windows/win.ini\"\nint main() { return 0; }\n",
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
+    "#include <../README.md>\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
     "#include \"./build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
