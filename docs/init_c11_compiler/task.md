@@ -596,35 +596,36 @@
 - [x] 今後は「機能追加（C仕様拡張）」か「ベンチ目標更新」に合わせて、次ラウンドタスクを都度起票する運用へ移行
 
 ## Tokenizer Doxygen強化（次ラウンド）
-- [ ] [P1] Tokenizer関連API/内部ヘルパーのDoxygenを「引数・戻り値・副作用」まで記述する
+- [x] [P1] Tokenizer関連API/内部ヘルパーのDoxygenを「引数・戻り値・副作用」まで記述する
   - [x] 進捗（2026-03-24）: `src/tokenizer/tokenizer.h` の公開APIに `@param` / `@return` を追記し、`consume/expect/tokenize/context` 系の失敗時挙動を補足した
   - [x] 対象: `src/tokenizer/tokenizer.h` の公開API（`@param` / `@return` / `@note`）
   - [x] 進捗（2026-03-24）: `src/tokenizer/tokenizer.c` の主要ヘルパー（`tokenize_*`, `parse_*`, `begin|end_tokenize_session`, `take_tokenize_flags`）に `@param` / `@return` / `@warning` を追記した
   - [x] 対象: `src/tokenizer/tokenizer.c` の主要ヘルパー（`tokenize_*`, `parse_*`, `begin|end_tokenize_session`）
-  - [ ] 方針: 失敗時挙動（診断終了/NULL返却/非破壊失敗）を `@note` または `@warning` で明示
-  - [ ] 方針: `bool` 戻り値の意味（`true=消費/成功`, `false=非該当/未消費`）を統一記述
-- [ ] [P2] Doxygen最小テンプレートを `implementation_plan.md` に追記し、運用ルールを固定する
-  - [ ] 新規関数は最低 `@brief`, `@param`, `@return`（戻り値なしなら省略可）を必須にする
-  - [ ] Tokenizer変更時に「コメント更新漏れ」をレビュー観点へ追加する
+  - [x] 方針: 失敗時挙動（診断終了/NULL返却/非破壊失敗）を `@note` または `@warning` で明示
+  - [x] 方針: `bool` 戻り値の意味（`true=消費/成功`, `false=非該当/未消費`）を統一記述
+- [x] [P2] Doxygen最小テンプレートを `implementation_plan.md` に追記し、運用ルールを固定する
+  - [x] 進捗（2026-03-24）: `implementation_plan.md` に Doxygen最小テンプレート v2（必須タグ/`bool`戻り値規約/レビュー運用）を追記した
+  - [x] 新規関数は最低 `@brief`, `@param`, `@return`（戻り値なしなら省略可）を必須にする
+  - [x] Tokenizer変更時に「コメント更新漏れ」をレビュー観点へ追加する
 - [ ] [P2] コメント品質の回帰防止
   - [ ] 代表関数をサンプルとして `tokenizer.h` / `tokenizer.c` に記述例を揃える
   - [ ] 既存コメントとの重複・矛盾（strict/extension条件など）を棚卸しして修正する
 
 ## Tokenizer 次ラウンド具体タスク（2026-03-24）
-- [ ] フェーズ1: 公開APIのDoxygen完全化
-  - [ ] `tk_tokenize` / `tk_tokenize_ctx`
-  - [ ] `tk_consume*` / `tk_expect*` / `tk_at_eof*`
-  - [ ] `tk_get/set_*_ctx` / `tk_ctx_get/set_*`
-- [ ] フェーズ2: 内部ヘルパーのDoxygen完全化
-  - [ ] `tokenize_one`, `tokenize_string_literal`, `tokenize_char_literal`
-  - [ ] `parse_number_literal`, `parse_zero_prefixed_number`, `parse_float_literal`
-  - [ ] `begin_tokenize_session`, `end_tokenize_session`, `take_tokenize_flags`
+- [x] フェーズ1: 公開APIのDoxygen完全化
+  - [x] `tk_tokenize` / `tk_tokenize_ctx`
+  - [x] `tk_consume*` / `tk_expect*` / `tk_at_eof*`
+  - [x] `tk_get/set_*_ctx` / `tk_ctx_get/set_*`
+- [x] フェーズ2: 内部ヘルパーのDoxygen完全化
+  - [x] `tokenize_one`, `tokenize_string_literal`, `tokenize_char_literal`
+  - [x] `parse_number_literal`, `parse_zero_prefixed_number`, `parse_float_literal`
+  - [x] `begin_tokenize_session`, `end_tokenize_session`, `take_tokenize_flags`
 - [ ] フェーズ3: 用語・戻り値規約の統一
   - [ ] 「consume」「expect」「parse」「tokenize」の語彙定義を統一
   - [ ] `@return` 記述を成功/失敗時の状態変化まで含めて統一
-- [ ] フェーズ4: 検証
-  - [ ] `build/test_tokenizer` / `build/test_tokenizer_c11` を実行し回帰なしを確認
-  - [ ] `task.md` に進捗ログを追記し、完了項目へチェックを反映
+- [x] フェーズ4: 検証
+  - [x] `build/test_tokenizer` / `build/test_tokenizer_c11` を実行し回帰なしを確認
+  - [x] `task.md` に進捗ログを追記し、完了項目へチェックを反映
 
 ## Tokenizer 次ラウンド候補（2026-03-24）
 - [x] [P2] `parse_number_literal` の 0始まり分岐（`0x`/`0b`/8進）を専用ディスパッチ関数へ抽出し、レビュー観点を固定する
