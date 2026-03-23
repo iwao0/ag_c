@@ -1111,6 +1111,40 @@ static int run_clang_build_many(const char *bin_path, const char **inputs, size_
   return 0;
 }
 
+static int write_source_file(const char *path, const char *source);
+
+static int run_ag_c_parallel_smoke(void) {
+  const int jobs = 8;
+  if (mkdir_p("build/e2e/concurrency") != 0) return -1;
+
+  pid_t pids[jobs];
+  for (int i = 0; i < jobs; i++) {
+    char src_path[PATH_MAX];
+    snprintf(src_path, sizeof(src_path), "build/e2e/concurrency/job_%d.c", i);
+    char src[128];
+    snprintf(src, sizeof(src), "int main(){ return %d; }\n", i);
+    if (write_source_file(src_path, src) != 0) return -1;
+
+    char s_path[PATH_MAX];
+    snprintf(s_path, sizeof(s_path), "build/e2e/concurrency/job_%d.s", i);
+    pid_t pid = fork();
+    if (pid == 0) {
+      freopen(s_path, "w", stdout);
+      execl("./build/ag_c", "./build/ag_c", src_path, (char *)NULL);
+      _exit(1);
+    }
+    if (pid < 0) return -1;
+    pids[i] = pid;
+  }
+
+  for (int i = 0; i < jobs; i++) {
+    int status;
+    waitpid(pids[i], &status, 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return -1;
+  }
+  return 0;
+}
+
 static int write_source_file(const char *path, const char *source) {
   FILE *fp = fopen(path, "w");
   if (!fp) return -1;
@@ -1512,6 +1546,10 @@ int main() {
       return 1;
     }
   }
+  if (run_ag_c_parallel_smoke() != 0) {
+    fprintf(stderr, "Concurrency smoke case failed: parallel ag_c invocation\n");
+    return 1;
+  }
 
   size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
   const char **categories = calloc(max_cases, sizeof(const char *));
@@ -1576,7 +1614,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 6);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 7);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
