@@ -15,11 +15,6 @@
 #include <string.h>
 #include <limits.h>
 
-// 入力プログラム（エラーメッセージ表示用）
-static char *user_input;
-
-static char *current_filename;
-
 static tokenizer_stats_t tok_stats = {0};
 static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
@@ -60,12 +55,24 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
 
 /** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
 char *tk_get_user_input(void) {
-  return user_input;
+  return tk_get_user_input_ctx(NULL);
 }
 
 /** @brief 現在の入力バッファ（エラー表示用）を設定する。 */
 void tk_set_user_input(char *p) {
-  user_input = p;
+  tk_set_user_input_ctx(NULL, p);
+}
+
+char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
+  tokenizer_context_t *use_ctx = effective_ctx(ctx);
+  return use_ctx ? use_ctx->user_input : NULL;
+}
+
+void tk_set_user_input_ctx(tokenizer_context_t *ctx, char *p) {
+  tokenizer_context_t *use_ctx = effective_ctx(ctx);
+  if (use_ctx) {
+    use_ctx->user_input = p;
+  }
 }
 
 /** @brief Tokenizer統計の計測基準点をリセットする。 */
@@ -87,12 +94,24 @@ tokenizer_stats_t tk_get_tokenizer_stats(void) {
 
 /** @brief 現在のファイル名（エラー表示用）を取得する。 */
 char *tk_get_filename(void) {
-  return current_filename;
+  return tk_get_filename_ctx(NULL);
 }
 
 /** @brief 現在のファイル名（エラー表示用）を設定する。 */
 void tk_set_filename(char *name) {
-  current_filename = name;
+  tk_set_filename_ctx(NULL, name);
+}
+
+char *tk_get_filename_ctx(tokenizer_context_t *ctx) {
+  tokenizer_context_t *use_ctx = effective_ctx(ctx);
+  return use_ctx ? use_ctx->current_filename : NULL;
+}
+
+void tk_set_filename_ctx(tokenizer_context_t *ctx, char *name) {
+  tokenizer_context_t *use_ctx = effective_ctx(ctx);
+  if (use_ctx) {
+    use_ctx->current_filename = name;
+  }
 }
 
 static void *tcalloc(size_t n, size_t size) {
@@ -286,7 +305,7 @@ bool tk_at_eof_ctx(tokenizer_context_t *ctx) {
 // 新しいトークンを作成して、curに繋げる
 static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
   tok->kind = kind;
-  tok->file_name_id = tk_filename_intern(current_filename);
+  tok->file_name_id = tk_filename_intern(tk_get_filename());
   tok->line_no = line_no;
 }
 
@@ -532,7 +551,8 @@ static inline bool has_hex_float_marker(const char *p) {
 
 static void tk_audit_extension(char *loc, diag_text_id_t text_id) {
   if (!tk_ctx_get_enable_c11_audit_extensions(runtime_ctx())) return;
-  int pos = (int)(loc - user_input);
+  char *input = tk_get_user_input();
+  int pos = input ? (int)(loc - input) : 0;
   if (pos < 0) pos = 0;
   fprintf(stderr, "[%s] %s: %s (offset %d)\n",
           diag_text_for(DIAG_TEXT_WARNING),
@@ -657,7 +677,7 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, char *p) {
   tk_set_current_token(NULL);
   tk_allocator_set_expected_size(strlen(p));
   char *normalized = replace_trigraphs(p);
-  user_input = normalized;
+  tk_set_user_input_ctx(active_ctx, normalized);
   p = normalized;
   token_t head;
   head.next = NULL;

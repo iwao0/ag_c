@@ -10,9 +10,6 @@
 
 #include "test_common.h"
 
-// tokenizer.c で定義されているがヘッダにない変数をextern
-extern char *user_input;
-
 static token_num_int_t *as_num_i(token_t *tok) { return (token_num_int_t *)tok; }
 static token_num_float_t *as_num_f(token_t *tok) { return (token_num_float_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
