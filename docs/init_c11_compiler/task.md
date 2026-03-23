@@ -454,6 +454,7 @@
   - [x] 進捗（2026-03-23）: `parser.c` のトップレベル宣言子名パース（`parse_toplevel_decl_name`/`parse_toplevel_typedef_name_decl`）と `typedef` 宣言入口を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
   - [x] 進捗（2026-03-23）: `parser.c` のトップレベル enum 定数式評価系（`parse_enum_const_*_toplevel`）を `tk_get_current_token` / `tk_set_current_token` 経由へ移行した
   - [x] 進捗（2026-03-23）: `parser.c` のトップレベル tag 宣言入口（`parse_toplevel_tag_decl`）と宣言子不足診断位置を `curtok` ベースへ移行した
+  - [x] 進捗（2026-03-23）: `parser.c` のトップレベル `struct/union` メンバレイアウト解析でも `token` 直接参照を `curtok` ベースへ移行した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する
