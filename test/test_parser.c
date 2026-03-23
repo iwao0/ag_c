@@ -579,6 +579,20 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_RETURN, ret_long_signed->kind);
   ASSERT_EQ(ND_NUM, ret_long_signed->lhs->kind);
   ASSERT_EQ(2, as_num(ret_long_signed->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ return _Generic(1, int const:2, default:3); }");
+  node_t *ret_int_post_const = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret_int_post_const->kind);
+  ASSERT_EQ(ND_NUM, ret_int_post_const->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_int_post_const->lhs)->val);
+
+  parsed_code = parse_program_input(
+      "main(){ int x=0; int const *p=&x; return _Generic(p, int const *:2, int *:1, default:3); }");
+  node_t *ret_ptr_post_const = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  ASSERT_EQ(ND_RETURN, ret_ptr_post_const->kind);
+  ASSERT_EQ(ND_NUM, ret_ptr_post_const->lhs->kind);
+  ASSERT_EQ(2, as_num(ret_ptr_post_const->lhs)->val);
 }
 
 static void test_expr_sizeof() {

@@ -762,6 +762,11 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   out->scalar_size = base_elem_size;
   out->is_unsigned = base_unsigned;
   if (out->scalar_size == 0) out->scalar_size = base_elem_size;
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+    if (curtok()->kind == TK_CONST) base_const = 1;
+    if (curtok()->kind == TK_VOLATILE) base_volatile = 1;
+    set_curtok(curtok()->next);
+  }
   t = curtok();
   while (t && t->kind == TK_MUL) {
     out->is_pointer = 1;

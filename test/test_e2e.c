@@ -440,6 +440,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "generic_ptr_level_volatile_match", CASE_INT, "int main(){ int x=0; int *p=&x; int * volatile *pp=&p; return _Generic(pp, int**:1, int * volatile *:2, default:3); }", 2, 0},
     {"type_decl", "generic_scalar_unsigned_long_match", CASE_INT, "int main(){ unsigned long ul=1; return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }", 2, 0},
     {"type_decl", "generic_scalar_long_signedness_match", CASE_INT, "int main(){ long l=1; return _Generic(l, unsigned long:1, long:2, default:3); }", 2, 0},
+    {"type_decl", "generic_scalar_post_const_match", CASE_INT, "int main(){ return _Generic(1, int const:2, default:3); }", 2, 0},
+    {"type_decl", "generic_ptr_post_const_match", CASE_INT, "int main(){ int x=0; int const *p=&x; return _Generic(p, int const *:2, int *:1, default:3); }", 2, 0},
     {"type_decl", "const_param", CASE_INT, "int id(const int x) { return x; } int main(){ return id(7); }", 7, 0},
     {"type_decl", "compound_literal_int", CASE_INT, "int main(){ return (int){3}; }", 3, 0},
     {"type_decl", "compound_literal_struct_stmt", CASE_INT, "int main(){ struct S { int x; int y; }; (struct S){1,2}; return 7; }", 7, 0},
