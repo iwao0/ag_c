@@ -434,11 +434,11 @@ static node_t *parse_array_initializer(lvar_t *var) {
           idx = target_idx + row_len;
         } else {
           if (target_idx >= array_len) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
           if (assigned[target_idx]) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
           }
           node_t *lhs = new_array_elem_lvar(var, target_idx);
@@ -465,7 +465,7 @@ static node_t *parse_array_initializer(lvar_t *var) {
     node_string_t *s = (node_string_t *)rhs;
     string_lit_t *lit = find_string_lit_by_label(s->string_label);
     if (!lit) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
     }
     int idx = 0;
@@ -541,11 +541,11 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             tk_expect('=');
           }
           if (target_idx >= array_len) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
           if (assigned[target_idx]) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
           }
           node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
@@ -585,10 +585,10 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       return init_chain;
     }
     if (owner->tag_kind == TK_UNION) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED));
     } else {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_UNSUPPORTED_FORM));
     }
   }
@@ -611,7 +611,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     return parse_union_initializer(&nested);
   }
   if (!is_supported_scalar_store_size(member_type_size)) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_AGGREGATE_INIT_SCALAR_SIZE_UNSUPPORTED));
   }
   return parse_scalar_brace_initializer();
@@ -619,7 +619,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
 
 static node_t *parse_struct_initializer(lvar_t *var) {
   if (!tk_consume('{')) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_AGGREGATE_INIT_BRACE_REQUIRED));
   }
   int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
@@ -642,7 +642,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       bool found = false;
       if (tk_consume('.')) {
         token_ident_t *id = tk_consume_ident();
-        if (!id) psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+        if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
         found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
                                         id->str, id->len,
                                         &member_offset, &member_type_size, NULL, &member_array_len,
@@ -653,18 +653,18 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         if (tk_consume('[')) {
           // Nested designator: .member[idx] = val
           if (!found || member_len <= 0) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
           }
           if (member_array_len <= 0 || member_is_tag_pointer) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
           }
           int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
           tk_expect(']');
           tk_expect('=');
           if (nested_idx < 0 || nested_idx >= member_array_len) {
-            psx_diag_ctx(token, "decl", "%s",
+            psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
           node_t *lhs = new_array_elem_lvar_at(var->offset + member_offset, member_type_size, nested_idx);
@@ -693,12 +693,12 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         }
       }
       if (!found || member_len <= 0) {
-        psx_diag_ctx(token, "decl", "%s",
+        psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
       for (int i = 0; i < assigned_n; i++) {
         if (assigned_lens[i] == member_len && strncmp(assigned_names[i], member_name, (size_t)member_len) == 0) {
-          psx_diag_ctx(token, "decl", "%s",
+          psx_diag_ctx(curtok(), "decl", "%s",
                        diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
         }
       }
