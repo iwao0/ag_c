@@ -392,6 +392,34 @@ static int parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(token
   return 1;
 }
 
+// Parse abstract declarator like: int (*(*)(void))(int)
+static int parse_ptr_to_func_returning_ptr_to_func_abstract_decl(token_t **ptok) {
+  token_t *t = *ptok;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  t = t->next;
+  consume_local_type_quals(&t);
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  t = t->next;
+  consume_local_type_quals(&t);
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  token_t *after_params = skip_balanced_paren_token(t);
+  if (!after_params) return 0;
+  t = after_params;
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  after_params = skip_balanced_paren_token(t);
+  if (!after_params) return 0;
+  *ptok = after_params;
+  return 1;
+}
+
 static int is_type_name_start_token(token_t *t) {
   if (!t) return 0;
   if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
@@ -548,6 +576,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
+  (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
   set_curtok(t);
   return 1;
 }
@@ -852,6 +881,7 @@ cast_parse_postfix:
   (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
+  (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
   // 配列宣言子 [N] を受理する（非ポインタ型のみ）
   if (!*is_pointer && t && t->kind == TK_LBRACKET) {
     t = t->next;
@@ -1106,6 +1136,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1142,6 +1175,9 @@ static int parse_parenthesized_type_size(void) {
     }
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
+    }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
@@ -1180,6 +1216,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1216,6 +1255,9 @@ static int parse_parenthesized_type_size(void) {
     }
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
+    }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
@@ -1256,6 +1298,9 @@ static int parse_parenthesized_type_size(void) {
     }
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
+    }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
@@ -1299,6 +1344,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
     }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
+    }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
@@ -1338,6 +1386,9 @@ static int parse_parenthesized_type_size(void) {
     }
     if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
       sz = 8 * fp_array_mul;
+    }
+    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+      sz = 8;
     }
     if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
