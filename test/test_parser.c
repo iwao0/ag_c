@@ -1629,6 +1629,7 @@ static void test_parse_evil_edge_cases() {
   // 関数宣言のプロトタイプ
   expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");
   expect_parse_ok("int (f)(int x) { return x; } int main() { return f(42); }");
+  expect_parse_ok("int g=1; _Static_assert(sizeof(int)==4, \"ok\"); int main(){ return g; }");
 
   // for文の複雑な初期化
   expect_parse_ok("main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");

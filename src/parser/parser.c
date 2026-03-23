@@ -30,6 +30,7 @@ static int g_toplevel_decl_is_thread_local = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
+static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
 static void parse_toplevel_typedef_decl(void);
@@ -303,10 +304,6 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
       set_curtok(curtok()->next);
       continue;
     }
-    if (curtok()->kind == TK_STATIC_ASSERT) {
-      parse_static_assert_toplevel();
-      continue;
-    }
     if (psx_ctx_is_tag_keyword(curtok()->kind)) {
       if (!is_tag_return_function_signature(curtok())) {
         parse_toplevel_tag_decl();
@@ -318,10 +315,7 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
       parse_toplevel_typedef_decl();
       continue;
     }
-    if ((psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) &&
-        !is_toplevel_function_signature(curtok())) {
-      parse_toplevel_decl_spec();
-      parse_toplevel_decl_after_type();
+    if (parse_toplevel_declaration_like()) {
       continue;
     }
     node_t *fn = funcdef();
@@ -553,6 +547,21 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
 static void parse_toplevel_decl_after_type(void) {
   parse_toplevel_declarator_list();
   tk_expect(';');
+}
+
+static int parse_toplevel_declaration_like(void) {
+  if (curtok()->kind == TK_STATIC_ASSERT) {
+    parse_static_assert_toplevel();
+    return 1;
+  }
+  if ((psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) ||
+       psx_ctx_is_typedef_name_token(curtok())) &&
+      !is_toplevel_function_signature(curtok())) {
+    parse_toplevel_decl_spec();
+    parse_toplevel_decl_after_type();
+    return 1;
+  }
+  return 0;
 }
 
 static void parse_toplevel_typedef_decl(void) {
