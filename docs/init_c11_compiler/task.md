@@ -520,6 +520,7 @@
   - [x] 進捗（2026-03-23）: Tokenizer内部診断マクロ（`TK_DIAG_AT*`）を `tk_get_user_input_ctx(NULL)` ベースへ切り替え、非ctxアクセサ依存を互換ラッパ本体のみに縮小した
   - [x] 進捗（2026-03-23）: `tk_get/set_{user_input,filename}` に `deprecated` 注記を追加し、`implementation_plan.md` に互換ラッパ縮小・撤去条件の運用ルールを明文化した
   - [x] 進捗（2026-03-23）: リポジトリ内の非ctxアクセサ呼び出しを棚卸しし、`tk_get/set_{user_input,filename}` は宣言/ラッパ本体のみ（実利用は `*_ctx` へ移行済み）であることを確認した
+  - [x] 進捗（2026-03-23）: `tk_get/set_{user_input,filename}` の互換ラッパ宣言/実装を削除し、非ctxアクセサAPIを完全撤去した（`*_ctx` APIへ統一）
 - [ ] 優先度P1: 異常系の防御と診断安定性を強化する
   - [ ] `current_token == NULL` 境界の診断メッセージを統一し、位置情報欠落時の表示仕様を固定する
   - [ ] consume/expect 系の失敗経路に対する回帰テストを追加する

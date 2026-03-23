@@ -53,16 +53,6 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
   }
 }
 
-/** @brief 現在の入力バッファ（エラー表示用）を取得する。 */
-char *tk_get_user_input(void) {
-  return tk_get_user_input_ctx(NULL);
-}
-
-/** @brief 現在の入力バッファ（エラー表示用）を設定する。 */
-void tk_set_user_input(char *p) {
-  tk_set_user_input_ctx(NULL, p);
-}
-
 char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
   return use_ctx ? use_ctx->user_input : NULL;
@@ -90,16 +80,6 @@ tokenizer_stats_t tk_get_tokenizer_stats(void) {
   tok_stats.alloc_bytes = tk_allocator_total_reserved_bytes() - stats_base_reserved_bytes;
   tok_stats.peak_alloc_bytes = tok_stats.alloc_bytes;
   return tok_stats;
-}
-
-/** @brief 現在のファイル名（エラー表示用）を取得する。 */
-char *tk_get_filename(void) {
-  return tk_get_filename_ctx(NULL);
-}
-
-/** @brief 現在のファイル名（エラー表示用）を設定する。 */
-void tk_set_filename(char *name) {
-  tk_set_filename_ctx(NULL, name);
 }
 
 char *tk_get_filename_ctx(tokenizer_context_t *ctx) {
