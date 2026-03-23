@@ -588,6 +588,18 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, n2->kind);
   ASSERT_EQ(8, as_num(n2)->val);
 
+    node_t *n2q1 = parse_expr_input("sizeof(int * const)");
+  ASSERT_EQ(ND_NUM, n2q1->kind);
+  ASSERT_EQ(8, as_num(n2q1)->val);
+
+    node_t *n2q2 = parse_expr_input("sizeof(int * volatile)");
+  ASSERT_EQ(ND_NUM, n2q2->kind);
+  ASSERT_EQ(8, as_num(n2q2)->val);
+
+    node_t *n2q3 = parse_expr_input("sizeof(int * restrict)");
+  ASSERT_EQ(ND_NUM, n2q3->kind);
+  ASSERT_EQ(8, as_num(n2q3)->val);
+
     node_t *n2a = parse_expr_input("sizeof(int[10])");
   ASSERT_EQ(ND_NUM, n2a->kind);
   ASSERT_EQ(40, as_num(n2a)->val);
@@ -1176,6 +1188,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
+
+  parsed_code = parse_program_input(
+      "main() { const const int x=3; volatile volatile int y=4; int *restrict restrict p=0; return x+y+(p==0); }");
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
