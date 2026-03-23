@@ -320,8 +320,8 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
 static int parse_generic_assoc_type(generic_type_t *out) {
   out->kind = TK_EOF;
   out->is_pointer = 0;
-  if (psx_ctx_is_typedef_name_token(token)) {
-    token_ident_t *id = (token_ident_t *)token;
+  if (psx_ctx_is_typedef_name_token(curtok())) {
+    token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t base_kind = TK_EOF;
     int elem_size = 8;
     tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
@@ -330,7 +330,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     int tag_len = 0;
     int is_ptr = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len, &is_ptr);
-    token = token->next;
+    set_curtok(curtok()->next);
     out->kind = base_kind;
     out->is_pointer = is_ptr;
   } else {
@@ -348,7 +348,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
 static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
   token_ident_t *member = tk_consume_ident();
   if (!member) {
-    psx_diag_missing(token, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
   }
 
   token_kind_t base_tag_kind = TK_EOF;
