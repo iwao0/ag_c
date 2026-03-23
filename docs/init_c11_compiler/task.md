@@ -1473,6 +1473,7 @@
   - 進捗（2026-03-24）: `int (*f(int n))(int)` のような仮引数つき関数ポインタ返却関数定義を回帰テストで固定化
   - 進捗（2026-03-24）: `int (*(*f(void))(int))[3]` のような入れ子 direct-declarator（関数ポインタ返却 + 配列ポインタ）を関数定義で受理することを回帰テストで固定化
   - 進捗（2026-03-24）: `struct S { ... } f(void) { ... }` のような「戻り値タグ型の inline 定義を伴う関数定義」を受理
+  - 進捗（2026-03-24）: `struct/union` 戻り値 + 括弧付き関数名 declarator（`struct S {...} (f)(void)`）を関数定義シグネチャ判定で受理
   - 対象ファイル: `src/parser/parser.c`
 - [ ] `declaration` を `decl_spec` + `init_declarator_list` に統合する（C11 §6.7）
   - 現状: トップレベル（`parser.c`）とローカル（`stmt.c`/`decl.c`）で別関数。`skip_cv_qualifiers` + `psx_consume_type_kind` の2段階処理

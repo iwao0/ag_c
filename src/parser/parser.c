@@ -460,8 +460,26 @@ static int is_tag_return_function_signature(token_t *tok) {
     if (!t) return 0;
   }
   while (t && t->kind == TK_MUL) t = t->next; // skip optional pointer(s)
-  if (!t || t->kind != TK_IDENT) return 0;
-  return t->next && t->next->kind == TK_LPAREN;
+  if (!t) return 0;
+  if (t->kind == TK_IDENT) {
+    return t->next && t->next->kind == TK_LPAREN;
+  }
+  // parenthesized function name declarator: struct S {...} (f)(...)
+  if (t->kind == TK_LPAREN) {
+    int depth = 0;
+    while (t && t->kind == TK_LPAREN) {
+      depth++;
+      t = t->next;
+    }
+    if (!t || t->kind != TK_IDENT) return 0;
+    t = t->next;
+    while (depth-- > 0) {
+      if (!t || t->kind != TK_RPAREN) return 0;
+      t = t->next;
+    }
+    return t && t->kind == TK_LPAREN;
+  }
+  return 0;
 }
 
 static void parse_toplevel_declarator_list(void) {

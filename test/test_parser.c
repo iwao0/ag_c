@@ -1841,6 +1841,8 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("int (*f(void))(int) { return 0; } int main() { return 0; }");
   expect_parse_ok("int (*f(int n))(int) { return 0; } int main() { return 0; }");
   expect_parse_ok("int (*(*f(void))(int))[3] { return 0; } int main() { return 0; }");
+  expect_parse_ok("struct S { int x; } (f)(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }");
+  expect_parse_ok("union U { int x; } (f)(void){ union U u; return u; } int main(){ return 0; }");
   expect_parse_ok("int g=1; _Static_assert(sizeof(int)==4, \"ok\"); int main(){ return g; }");
   expect_parse_ok("typedef int myint; _Static_assert(1, \"ok\"); myint g=1; int main(){ return g; }");
   expect_parse_ok("typedef int myint; _Static_assert(sizeof(myint)==4, \"ok\"); int main(){ return 0; }");
@@ -1863,6 +1865,7 @@ static void test_parse_evil_edge_cases() {
   // typedefで作った型名の使用
   expect_parse_ok("typedef int myint; myint add(myint a, myint b) { return a+b; } int main() { return add(20,22); }");
   expect_parse_ok("struct S { int x; } f(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }");
+  expect_parse_ok("union U { int x; } f(void){ union U u; return u; } int main(){ return 0; }");
   expect_parse_ok("typedef struct S S; struct S { int x; }; int main(){ S s; s.x=7; return s.x; }");
   expect_parse_ok("typedef struct { int x; } S; int main(){ S s; s.x=5; return s.x; }");
   expect_parse_ok("typedef union U U; union U { int x; }; int main(){ U u; u.x=8; return u.x; }");
