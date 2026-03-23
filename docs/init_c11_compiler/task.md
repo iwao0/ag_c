@@ -521,11 +521,12 @@
   - [x] 進捗（2026-03-23）: `tk_get/set_{user_input,filename}` に `deprecated` 注記を追加し、`implementation_plan.md` に互換ラッパ縮小・撤去条件の運用ルールを明文化した
   - [x] 進捗（2026-03-23）: リポジトリ内の非ctxアクセサ呼び出しを棚卸しし、`tk_get/set_{user_input,filename}` は宣言/ラッパ本体のみ（実利用は `*_ctx` へ移行済み）であることを確認した
   - [x] 進捗（2026-03-23）: `tk_get/set_{user_input,filename}` の互換ラッパ宣言/実装を削除し、非ctxアクセサAPIを完全撤去した（`*_ctx` APIへ統一）
-- [ ] 優先度P1: 異常系の防御と診断安定性を強化する
-  - [ ] `current_token == NULL` 境界の診断メッセージを統一し、位置情報欠落時の表示仕様を固定する
-  - [ ] consume/expect 系の失敗経路に対する回帰テストを追加する
+- [x] 優先度P1: 異常系の防御と診断安定性を強化する
+  - [x] `current_token == NULL` 境界の診断メッセージを統一し、位置情報欠落時の表示仕様を固定する
+  - [x] consume/expect 系の失敗経路に対する回帰テストを追加する
   - [x] 進捗（2026-03-23）: `tk_expect_ctx` / `tk_expect_number_ctx` に `require_current_token` ガードを導入し、NULLカーソル時の診断を即時・統一化した
   - [x] 進捗（2026-03-23）: `test_tokenizer` に `test_null_cursor_boundaries` を追加し、NULLカーソル時の `consume*` 非破壊動作と `expect*` 異常終了を回帰テスト化した
+  - [x] 進捗（2026-03-23）: `implementation_plan.md` に NULLカーソル時のTokenizer診断仕様（`expect*` は即時診断、`consume*` は非破壊失敗、`at_eof` は false、位置情報なし表示）を明文化した
 - [ ] 優先度P2: const-correctness を Tokenizer API 全体へ展開する
   - [ ] 書き換え不要な `char *` 引数を棚卸しし、`const char *` へ統一する
   - [ ] 呼び出し側（parser/preprocess/test）で警告なくビルドできることを確認する
