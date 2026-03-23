@@ -1144,6 +1144,7 @@
   - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
   - 修正方針: `param_decl()` 関数を新設し、`decl_spec` + `declarator` or `pointer?` を処理
   - 進捗（2026-03-23）: `funcdef()` の仮引数1件分の処理を `parse_param_decl()` に切り出し（`parser.c`）。型解析・配列仮引数デカイ・構造体ABI分岐・`args[]` 登録を関数化
+  - 進捗（2026-03-23）: `parse_param_decl()` の型側解析を `parse_param_decl_spec()` に分離し、`decl_spec` と `declarator` の責務分離を一段進めた
   - 対象ファイル: `src/parser/parser.c`
 
 ### grammar.md の C11 仕様との差分（2026-03-23 棚卸し）
