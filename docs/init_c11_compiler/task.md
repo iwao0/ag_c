@@ -446,11 +446,11 @@
 - [ ] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [ ] context化後を見据えた設定保持の責務（global/context）を定義する
   - [ ] strict/trigraph/binary/audit の適用タイミングを文書化する
-- [ ] 優先度P2: `escape` の契約テストを追加する
-  - [ ] TokenizerとCodegenで同一エスケープ入力の解釈が一致することをテストで固定する
-  - [ ] 代表ケース（`\n`, `\xNN`, `\uXXXX`, octal）を回帰対象に含める
-- [ ] 優先度P3: 境界チェックの運用手順を追記する
-  - [ ] `scripts/check_tokenizer_internal_boundary.sh` をいつ実行するか（PR前/リリース前）を docs に追記する
+- [x] 優先度P2: `escape` の契約テストを追加する
+  - [x] TokenizerとCodegenで同一エスケープ入力の解釈が一致することをテストで固定する
+  - [x] 代表ケース（`\n`, `\xNN`, `\uXXXX`, octal）を回帰対象に含める
+- [x] 優先度P3: 境界チェックの運用手順を追記する
+  - [x] `scripts/check_tokenizer_internal_boundary.sh` をいつ実行するか（PR前/リリース前）を docs に追記する
 
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する

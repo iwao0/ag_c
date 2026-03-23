@@ -1,5 +1,6 @@
 #include "../src/codegen_backend.h"
 #include "../src/parser/parser.h"
+#include "../src/tokenizer/escape.h"
 #include "test_common.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -482,6 +483,34 @@ static void test_gen_funcall_many_args(void) {
   free(out);
 }
 
+static void test_escape_decode_contract(void) {
+  printf("test_escape_decode_contract...\n");
+
+  int i = 0;
+  uint32_t out = 0;
+  ASSERT_TRUE(tk_parse_escape_value("\\n", 2, &i, &out) == 1);
+  ASSERT_EQ(2, i);
+  ASSERT_EQ('\n', (int)out);
+
+  i = 0;
+  out = 0;
+  ASSERT_TRUE(tk_parse_escape_value("\\x41", 4, &i, &out) == 1);
+  ASSERT_EQ(4, i);
+  ASSERT_EQ('A', (int)out);
+
+  i = 0;
+  out = 0;
+  ASSERT_TRUE(tk_parse_escape_value("\\u0041", 6, &i, &out) == 1);
+  ASSERT_EQ(6, i);
+  ASSERT_EQ(0x41, (int)out);
+
+  i = 0;
+  out = 0;
+  ASSERT_TRUE(tk_parse_escape_value("\\101", 4, &i, &out) == 1);
+  ASSERT_EQ(4, i);
+  ASSERT_EQ('A', (int)out);
+}
+
 int main(void) {
   printf("Running tests for ARM64 Code Generator...\n");
 
@@ -513,6 +542,7 @@ int main(void) {
   test_gen_empty_block();
   test_gen_binop_with_lvar();
   test_gen_funcall_many_args();
+  test_escape_decode_contract();
 
   printf("OK: All unit tests passed!\n");
   return 0;
