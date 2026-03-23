@@ -430,6 +430,42 @@ static void expect_macro_expansion_limit_fail(void) {
   free(input);
 }
 
+static void expect_macro_arg_nesting_limit_fail(void) {
+  const int reps = 25050;
+  size_t cap = (size_t)reps * 6 + 256;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate macro arg nesting input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len,
+                   "#define F0(x) x\n"
+                   "#define F1(x) F0(x)\n"
+                   "#define F2(x) F1(x)\n"
+                   "int main() { return ");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < reps; i++) {
+    if (i > 0) input[len++] = '+';
+    memcpy(input + len, "F2(0)", 5);
+    len += 5;
+  }
+  n = snprintf(input + len, cap - len, "; }\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
+    free(input);
+    exit(1);
+  }
+
+  expect_preprocess_fail(input);
+  free(input);
+}
+
 int main(void) {
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
@@ -517,6 +553,7 @@ int main(void) {
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
   expect_macro_expansion_limit_fail();
+  expect_macro_arg_nesting_limit_fail();
 
   printf("OK: Preprocessor tests passed!\n");
   return 0;
