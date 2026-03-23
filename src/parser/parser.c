@@ -271,7 +271,9 @@ static void parse_toplevel_decl_spec(void) {
 
 // program = funcdef*
 node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
-  (void)tk_ctx; // 現時点はTokenizerカーソル同期のみ使用
+  if (tk_ctx) {
+    tk_set_current_token_ctx(tk_ctx, start);
+  }
   tk_set_current_token(start);
   int cap = 16;
   node_t **codes = calloc(cap, sizeof(node_t*));
@@ -327,6 +329,9 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
     codes[i++] = fn;
   }
   codes[i] = NULL;
+  if (tk_ctx) {
+    tk_set_current_token_ctx(tk_ctx, tk_get_current_token());
+  }
   return codes;
 }
 
@@ -1561,9 +1566,14 @@ static node_t *funcdef(void) {
 
 // expr = assign ("," assign)*
 node_t *ps_expr_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
-  (void)tk_ctx; // 現時点はTokenizerカーソル同期のみ使用
+  if (tk_ctx) {
+    tk_set_current_token_ctx(tk_ctx, start);
+  }
   tk_set_current_token(start);
   node_t *node = psx_expr_expr();
+  if (tk_ctx) {
+    tk_set_current_token_ctx(tk_ctx, tk_get_current_token());
+  }
   return node;
 }
 
