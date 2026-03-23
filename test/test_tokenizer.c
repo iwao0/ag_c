@@ -1053,6 +1053,31 @@ static void test_context_config_isolation_and_switch_timing() {
   ASSERT_EQ(TK_NUM, tok->kind);
 }
 
+static void test_context_failure_path_isolation() {
+  printf("test_context_failure_path_isolation...\n");
+
+  tk_set_strict_c11_mode(false);
+  tk_set_enable_binary_literals(true);
+  tk_set_enable_trigraphs(true);
+
+  tokenizer_context_t ctx_fail;
+  tk_context_init(&ctx_fail);
+  tk_ctx_set_strict_c11_mode(&ctx_fail, true);
+  tk_ctx_set_enable_binary_literals(&ctx_fail, true);
+  tk_ctx_set_enable_trigraphs(&ctx_fail, false);
+
+  expect_tokenize_ctx_fail(&ctx_fail, "0b101");
+
+  // failing ctx tokenize must not disturb default runtime config in parent process
+  ASSERT_TRUE(!tk_get_strict_c11_mode());
+  ASSERT_TRUE(tk_get_enable_binary_literals());
+  ASSERT_TRUE(tk_get_enable_trigraphs());
+
+  token_t *tok = tk_tokenize("0b11");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(3, as_num_i(tok)->val);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -1074,6 +1099,7 @@ int main() {
   test_runtime_mode_switch_boundaries();
   test_tokenize_with_explicit_context();
   test_context_config_isolation_and_switch_timing();
+  test_context_failure_path_isolation();
   test_at_eof();
   test_consume();
   test_consume_str();
