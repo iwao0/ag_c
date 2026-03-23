@@ -35,6 +35,15 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
 static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len);
 static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len);
 static string_lit_t *find_string_lit_by_label(char *label);
+typedef struct {
+  token_kind_t type_kind;
+  int elem_size;
+  tk_float_kind_t fp_kind;
+  int is_const_qualified;
+  int is_volatile_qualified;
+  int is_extern_decl;
+} local_decl_spec_t;
+static int parse_local_decl_spec(local_decl_spec_t *out);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -1282,19 +1291,13 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 }
 
 node_t *psx_decl_parse_declaration(void) {
-  token_kind_t type_kind = psx_consume_type_kind();
-  int is_const_qualified = 0;
-  int is_volatile_qualified = 0;
-  psx_take_type_qualifiers(&is_const_qualified, &is_volatile_qualified);
-  int is_extern_decl = 0;
-  psx_take_extern_flag(&is_extern_decl);
-  int elem_size = 8;
-  psx_ctx_get_type_info(type_kind, NULL, &elem_size);
-  tk_float_kind_t decl_fp_kind = TK_FLOAT_KIND_NONE;
-  if (type_kind == TK_FLOAT) decl_fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (type_kind == TK_DOUBLE) decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  local_decl_spec_t ds = {0};
+  if (!parse_local_decl_spec(&ds)) {
+    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, token, "%s",
+                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
+  }
 
-  if (is_extern_decl) {
+  if (ds.is_extern_decl) {
     // ローカルextern宣言: グローバルテーブルに登録してローカル変数は作らない
     for (;;) {
       int is_ptr = 0;
@@ -1324,8 +1327,8 @@ node_t *psx_decl_parse_declaration(void) {
         global_var_t *gv = calloc(1, sizeof(global_var_t));
         gv->name = name->str;
         gv->name_len = name->len;
-        gv->type_size = is_ptr ? 8 : elem_size;
-        gv->deref_size = elem_size;
+        gv->type_size = is_ptr ? 8 : ds.elem_size;
+        gv->deref_size = ds.elem_size;
         gv->is_extern_decl = 1;
         gv->next = global_vars;
         global_vars = gv;
@@ -1341,6 +1344,22 @@ node_t *psx_decl_parse_declaration(void) {
     return psx_node_new_num(0);
   }
 
-  return psx_decl_parse_declaration_after_type(elem_size, decl_fp_kind, TK_EOF, NULL, 0, 0,
-                                               is_const_qualified, is_volatile_qualified);
+  return psx_decl_parse_declaration_after_type(ds.elem_size, ds.fp_kind, TK_EOF, NULL, 0, 0,
+                                               ds.is_const_qualified, ds.is_volatile_qualified);
+}
+
+static int parse_local_decl_spec(local_decl_spec_t *out) {
+  memset(out, 0, sizeof(*out));
+  out->elem_size = 8;
+  out->fp_kind = TK_FLOAT_KIND_NONE;
+
+  out->type_kind = psx_consume_type_kind();
+  psx_take_type_qualifiers(&out->is_const_qualified, &out->is_volatile_qualified);
+  psx_take_extern_flag(&out->is_extern_decl);
+  if (out->type_kind == TK_EOF) return 0;
+
+  psx_ctx_get_type_info(out->type_kind, NULL, &out->elem_size);
+  if (out->type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (out->type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  return 1;
 }
