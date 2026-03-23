@@ -1492,6 +1492,7 @@
   - 進捗（2026-03-24）: `_Generic` 関連型で `int (*[3])(int)`（関数ポインタ配列）を受理できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[2])[3])` のような「配列 of 配列ポインタ」abstract-declarator を受理し、型サイズ計算に反映
   - 進捗（2026-03-24）: `sizeof(int (*(*[2])[3]))` のような入れ子 abstract-declarator（配列 of 配列ポインタ of ポインタ）を受理し、型サイズ計算に反映
+  - 進捗（2026-03-24）: `sizeof(int (*(*)(void))[3])` のような「関数ポインタが返す配列ポインタ」抽象宣言子を受理し、型サイズ計算に反映
   - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映
