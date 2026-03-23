@@ -11,6 +11,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_INTERNAL_OOM, "E0001", "internal.out_of_memory"},
     {DIAG_ERR_INTERNAL_USAGE, "E0002", "internal.usage"},
     {DIAG_ERR_INTERNAL_INPUT_READ_FAILED, "E0003", "internal.input_read_failed"},
+    {DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED, "E0004", "internal.config_toml_parse_failed"},
+    {DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS, "E0005", "internal.config_toml_fallback_defaults"},
     {DIAG_ERR_PREPROCESS_GENERIC, "E1000", "preprocess.generic"},
     {DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, "E1001", "preprocess.invalid_include_filename"},
     {DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, "E1002", "preprocess.disallowed_include_path"},

@@ -3,7 +3,17 @@
 #include "../diag/diag.h"
 #include "../parser/config_runtime.h"
 #include "../tokenizer/tokenizer.h"
+#include <stdarg.h>
 #include <stdio.h>
+
+static void config_reportf(diag_error_id_t id, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  fprintf(stderr, "%s: ", diag_error_code(id));
+  vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "\n");
+  va_end(ap);
+}
 
 static void apply_config_values(const config_values_t *cfg) {
   diag_set_locale(cfg->locale);
@@ -28,8 +38,10 @@ void load_config_toml(const char *source_path) {
     return;
   }
 
-  fprintf(stderr, "config.toml parse error: %s\n", err);
-  fprintf(stderr, "config.toml load aborted. fallback to defaults.\n");
+  config_reportf(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED,
+                 diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED), err);
+  config_reportf(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS,
+                 "%s", diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS));
   config_values_init_defaults(&cfg);
   apply_config_values(&cfg);
 }

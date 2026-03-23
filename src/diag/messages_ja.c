@@ -12,6 +12,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_INTERNAL_OOM: return "メモリ確保に失敗しました";
     case DIAG_ERR_INTERNAL_USAGE: return "使い方: %s <input.c>";
     case DIAG_ERR_INTERNAL_INPUT_READ_FAILED: return "入力ファイルを読み込めませんでした: %s";
+    case DIAG_ERR_INTERNAL_CONFIG_TOML_PARSE_FAILED: return "config.toml の解析に失敗しました: %s";
+    case DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS: return "config.toml の読み込みを中止し、既定値を適用します";
     case DIAG_ERR_PREPROCESS_GENERIC: return "プリプロセッサエラーです";
     case DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME: return "不正な include ファイル名です";
     case DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH: return "許可されない include パスです: %s";
