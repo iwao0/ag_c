@@ -1728,6 +1728,55 @@ int main() {
     }
   }
   {
+    char cwd[PATH_MAX];
+    if (!getcwd(cwd, sizeof(cwd))) {
+      fprintf(stderr, "Compile-fail setup failed: cannot get cwd for include leak check\n");
+      return 1;
+    }
+    char tmp_header[] = "/tmp/ag_c_e2e_include_XXXXXX";
+    int tmp_fd = mkstemp(tmp_header);
+    if (tmp_fd < 0) {
+      fprintf(stderr, "Compile-fail setup failed: cannot create temp include header\n");
+      return 1;
+    }
+    FILE *tmp_fp = fdopen(tmp_fd, "w");
+    if (!tmp_fp) {
+      close(tmp_fd);
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail setup failed: cannot open temp include header\n");
+      return 1;
+    }
+    fprintf(tmp_fp, "int leaked_tmp_header(void) { return 0; }\n");
+    fclose(tmp_fp);
+
+    const char *link_path = "build/e2e/compile_fail/include_tmp_leak.h";
+    unlink(link_path);
+    if (symlink(tmp_header, link_path) != 0) {
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail setup failed: cannot create include leak symlink\n");
+      return 1;
+    }
+
+    const char *src_path = "build/e2e/compile_fail/include_tmp_leak.c";
+    const char *log_path = "build/e2e/logs/compile_fail_include_tmp_leak.log";
+    if (write_source_file(src_path, "#include \"build/e2e/compile_fail/include_tmp_leak.h\"\nint main(){return 0;}\n") != 0 ||
+        run_ag_c_expect_fail_with_diag(src_path, "E1002", log_path) != 0) {
+      unlink(link_path);
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail case failed: include_tmp_leak (see %s)\n", log_path);
+      return 1;
+    }
+    if (log_file_contains_substr(log_path, tmp_header) || log_file_contains_substr(log_path, cwd) ||
+        log_file_contains_substr(log_path, "/tmp/ag_c_e2e_include_")) {
+      unlink(link_path);
+      unlink(tmp_header);
+      fprintf(stderr, "Compile-fail case failed: include_tmp_leak path leak (see %s)\n", log_path);
+      return 1;
+    }
+    unlink(link_path);
+    unlink(tmp_header);
+  }
+  {
     const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag(NULL, NULL, "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_no_args (see %s)\n", log_path);

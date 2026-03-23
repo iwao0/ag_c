@@ -415,6 +415,78 @@ static void expect_preprocess_fail_with_stderr_substr(const char *input, const c
   free(buf);
 }
 
+static void expect_preprocess_fail_with_stderr_substr_no_leak(const char *input, const char *needle,
+                                                              const char *forbidden1,
+                                                              const char *forbidden2) {
+  const char *src_path = "build/tmp_cpp_input_fail_diag.c";
+  const char *err_path = "build/tmp_cpp_input_fail_diag.err";
+  if (write_input_file(src_path, input) != 0) {
+    fprintf(stderr, "  FAIL: cannot create input file\n");
+    exit(1);
+  }
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen(err_path, "w", stderr);
+    execl("./build/ag_c", "./build/ag_c", src_path, (char *)NULL);
+    _exit(1);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) == 0) {
+    fprintf(stderr, "  FAIL: expected preprocess error\n  input: %s\n", input);
+    exit(1);
+  }
+
+  FILE *fp = fopen(err_path, "r");
+  if (!fp) {
+    fprintf(stderr, "  FAIL: cannot open captured stderr\n");
+    exit(1);
+  }
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot seek captured stderr\n");
+    exit(1);
+  }
+  long sz = ftell(fp);
+  if (sz < 0) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot read captured stderr size\n");
+    exit(1);
+  }
+  rewind(fp);
+  char *buf = calloc((size_t)sz + 1, 1);
+  if (!buf) {
+    fclose(fp);
+    fprintf(stderr, "  FAIL: cannot allocate stderr buffer\n");
+    exit(1);
+  }
+  if (sz > 0) (void)fread(buf, 1, (size_t)sz, fp);
+  fclose(fp);
+
+  if (!strstr(buf, needle)) {
+    fprintf(stderr, "  FAIL: expected diagnostic substring not found: %s\n", needle);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  if (forbidden1 && forbidden1[0] != '\0' && strstr(buf, forbidden1)) {
+    fprintf(stderr, "  FAIL: forbidden stderr substring found: %s\n", forbidden1);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  if (forbidden2 && forbidden2[0] != '\0' && strstr(buf, forbidden2)) {
+    fprintf(stderr, "  FAIL: forbidden stderr substring found: %s\n", forbidden2);
+    fprintf(stderr, "  stderr: %s\n", buf);
+    free(buf);
+    exit(1);
+  }
+  free(buf);
+}
+
 static void expect_macro_expansion_limit_fail(void) {
   const int levels = 15;
   size_t cap = 8192;
@@ -734,6 +806,14 @@ int main(void) {
   expect_preprocess_fail_with_stderr_substr("#include \"build/realpath_loop_a.h\"\nint main() { return 0; }\n", "E1036");
   expect_preprocess_fail_with_stderr_substr("#include \"build/depth_00.h\"\nint main() { return 0; }\n", "E1004");
   expect_preprocess_fail_with_stderr_substr("#include \"build/not_found.h\"\nint main() { return 0; }\n", "E1034");
+  char cwd[PATH_MAX];
+  if (!getcwd(cwd, sizeof(cwd))) {
+    fprintf(stderr, "  FAIL: cannot get cwd for leak check\n");
+    return 1;
+  }
+  expect_preprocess_fail_with_stderr_substr_no_leak(
+      "#include \"build/escape_tmp_symlink.h\"\nint main() { return 0; }\n",
+      "E1002", "/tmp/ag_c_escape_preprocess_", cwd);
   FILE *huge = fopen("build/huge_include.h", "w");
   if (!huge) {
     fprintf(stderr, "  FAIL: cannot create build/huge_include.h\n");
