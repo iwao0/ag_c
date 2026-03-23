@@ -11,6 +11,8 @@ typedef struct {
 
 static const success_case_t success_cases[] = {
     {42, "#include \"build/test_inc.h\"\nint main() { return inc_func(); }"},
+    {42, "#include \"build/./dot_inc.h\"\nint main() { return dot_inc_func(); }"},
+    {42, "#include \"build//slash_inc.h\"\nint main() { return slash_inc_func(); }"},
     {42, "#define FOO 42\nint main() { return FOO; }"},
     {10, "#define A 5\n#define B A\nint main() { return A + B; }"},
     {15, "#define PLUS_FIVE + 5\nint main() { return 10 PLUS_FIVE; }"},
@@ -100,6 +102,8 @@ static const char *fail_cases[] = {
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
     "#include \"build/\\u202Eevil.h\"\nint main() { return 0; }\n",
+    "#include \"build\\\\test_inc.h\"\nint main() { return 0; }\n",
+    "#include \"C:/Windows/win.ini\"\nint main() { return 0; }\n",
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
@@ -306,6 +310,12 @@ int main(void) {
   FILE *h = fopen("build/test_inc.h", "w");
   fprintf(h, "int inc_func() { return 42; }\n");
   fclose(h);
+  FILE *hdot = fopen("build/dot_inc.h", "w");
+  fprintf(hdot, "int dot_inc_func() { return 42; }\n");
+  fclose(hdot);
+  FILE *hslash = fopen("build/slash_inc.h", "w");
+  fprintf(hslash, "int slash_inc_func() { return 42; }\n");
+  fclose(hslash);
   FILE *honce = fopen("build/pragma_once.h", "w");
   fprintf(honce, "#pragma once\nint once_func() { return 42; }\n");
   fclose(honce);

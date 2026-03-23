@@ -64,10 +64,16 @@ static void validate_include_path_or_die(const char *path) {
   if (!path || !*path) {
     pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
+  if (isalpha((unsigned char)path[0]) && path[1] == ':') {
+    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
+  }
   if (path[0] == '/' || path[0] == '\\') {
     pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
   }
   for (const char *p = path; *p; p++) {
+    if (*p == '\\') {
+      pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
+    }
     if ((p == path || p[-1] == '/') && p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
       pp_error(DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN, path);
     }
