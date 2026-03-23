@@ -118,6 +118,7 @@ static const char *fail_cases[] = {
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include <../README.md>\nint main() { return 0; }\n",
+    "#include \"build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
     "#include \"./build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
@@ -444,6 +445,17 @@ int main(void) {
   FILE *honce_rel = fopen("build/pragma_once_rel.h", "w");
   fprintf(honce_rel, "#pragma once\nint once_rel_func() { return 42; }\n");
   fclose(honce_rel);
+  FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
+  fprintf(hcycle_norm_a,
+          "#pragma once\n"
+          "#include \"build//cycle_norm_b.h\"\n"
+          "int cycle_norm_func() { return 42; }\n");
+  fclose(hcycle_norm_a);
+  FILE *hcycle_norm_b = fopen("build/cycle_norm_b.h", "w");
+  fprintf(hcycle_norm_b,
+          "#pragma once\n"
+          "#include \"build/cycle_norm_a.h\"\n");
+  fclose(hcycle_norm_b);
   FILE *ha = fopen("build/cycle_a.h", "w");
   fprintf(ha, "#include \"build/cycle_b.h\"\n");
   fclose(ha);
