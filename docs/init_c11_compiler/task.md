@@ -542,9 +542,10 @@
   - [x] `scanner` / `literals` / `punctuator` 単位のホットパス計測を追加する
   - [x] `tokenizer_perf_report.md` に継続比較テンプレートを用意する
   - [x] 進捗（2026-03-24）: `build/bench_tokenizer` に `hotpath=scanner/literals/punctuator` 指標を追加し、`tokenizer_perf_report.md` に継続比較テンプレートと運用メモを追記した
-- [ ] 優先度P3: 公開/非公開境界の運用をさらに自動化する
-  - [ ] `tokenizer/internal` 越境 `#include` チェックを定期実行対象として文書化する
-  - [ ] Tokenizer変更時のドキュメント更新ルール（`task.md` / `implementation_plan.md`）を明文化する
+- [x] 優先度P3: 公開/非公開境界の運用をさらに自動化する
+  - [x] `tokenizer/internal` 越境 `#include` チェックを定期実行対象として文書化する
+  - [x] Tokenizer変更時のドキュメント更新ルール（`task.md` / `implementation_plan.md`）を明文化する
+  - [x] 進捗（2026-03-24）: `implementation_plan.md` に境界チェックの定期実行（ローカル/コミット前/リリース前）と、Tokenizer変更時の `task.md` / `implementation_plan.md` 更新トリガーを追記した
 
 ## Parser最適化計画（保守性 + 実行速度）
 - [x] フェーズ1: 現状計測を固定する
