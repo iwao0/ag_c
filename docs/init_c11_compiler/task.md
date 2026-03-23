@@ -607,9 +607,10 @@
   - [x] 進捗（2026-03-24）: `implementation_plan.md` に Doxygen最小テンプレート v2（必須タグ/`bool`戻り値規約/レビュー運用）を追記した
   - [x] 新規関数は最低 `@brief`, `@param`, `@return`（戻り値なしなら省略可）を必須にする
   - [x] Tokenizer変更時に「コメント更新漏れ」をレビュー観点へ追加する
-- [ ] [P2] コメント品質の回帰防止
-  - [ ] 代表関数をサンプルとして `tokenizer.h` / `tokenizer.c` に記述例を揃える
-  - [ ] 既存コメントとの重複・矛盾（strict/extension条件など）を棚卸しして修正する
+- [x] [P2] コメント品質の回帰防止
+  - [x] 進捗（2026-03-24）: `implementation_plan.md` に `consume/expect/parse/tokenize` の記述サンプルと語彙規約を追記し、レビュー時の比較基準を固定した
+  - [x] 代表関数をサンプルとして `tokenizer.h` / `tokenizer.c` に記述例を揃える
+  - [x] 既存コメントとの重複・矛盾（strict/extension条件など）を棚卸しして修正する
 
 ## Tokenizer 次ラウンド具体タスク（2026-03-24）
 - [x] フェーズ1: 公開APIのDoxygen完全化
@@ -620,9 +621,9 @@
   - [x] `tokenize_one`, `tokenize_string_literal`, `tokenize_char_literal`
   - [x] `parse_number_literal`, `parse_zero_prefixed_number`, `parse_float_literal`
   - [x] `begin_tokenize_session`, `end_tokenize_session`, `take_tokenize_flags`
-- [ ] フェーズ3: 用語・戻り値規約の統一
-  - [ ] 「consume」「expect」「parse」「tokenize」の語彙定義を統一
-  - [ ] `@return` 記述を成功/失敗時の状態変化まで含めて統一
+- [x] フェーズ3: 用語・戻り値規約の統一
+  - [x] 「consume」「expect」「parse」「tokenize」の語彙定義を統一
+  - [x] `@return` 記述を成功/失敗時の状態変化まで含めて統一
 - [x] フェーズ4: 検証
   - [x] `build/test_tokenizer` / `build/test_tokenizer_c11` を実行し回帰なしを確認
   - [x] `task.md` に進捗ログを追記し、完了項目へチェックを反映
