@@ -311,10 +311,6 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
       }
       // struct/union Tag func(...) — 戻り値型がタグ型の関数定義: funcdef() へ fall through
     }
-    if (curtok()->kind == TK_TYPEDEF) {
-      parse_toplevel_typedef_decl();
-      continue;
-    }
     if (parse_toplevel_declaration_like()) {
       continue;
     }
@@ -553,6 +549,10 @@ static void parse_toplevel_decl_after_type(void) {
 }
 
 static int parse_toplevel_declaration_like(void) {
+  if (curtok()->kind == TK_TYPEDEF) {
+    parse_toplevel_typedef_decl();
+    return 1;
+  }
   if (curtok()->kind == TK_STATIC_ASSERT) {
     parse_static_assert_toplevel();
     return 1;
