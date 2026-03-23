@@ -24,6 +24,12 @@ make check-tokenizer-perf-light
 
 # 6) 日次ホットパス記録（CSV追記）
 make log-tokenizer-hotpath-daily
+
+# 7) 局所計測（hotpathのみ）
+TOKENIZER_BENCH_MODE=hotpath build/bench_tokenizer
+#    scannerのみ:    TOKENIZER_BENCH_MODE=scanner build/bench_tokenizer
+#    literalsのみ:   TOKENIZER_BENCH_MODE=literals build/bench_tokenizer
+#    punctuatorのみ: TOKENIZER_BENCH_MODE=punctuator build/bench_tokenizer
 ```
 
 `check_tokenizer_perf.sh` は `case=mixed/ident/numeric/punct` の `tokens/sec` と `alloc_count` を検査します。  

@@ -8,6 +8,10 @@
 #include <string.h>
 #include <time.h>
 
+static bool bench_mode_is(const char *mode, const char *name) {
+  return mode && strcmp(mode, name) == 0;
+}
+
 static size_t count_tokens(token_t *tok) {
   size_t n = 0;
   for (; tok; tok = tok->next) {
@@ -218,16 +222,40 @@ int main(void) {
   tk_set_enable_binary_literals(true);
   tk_set_enable_trigraphs(true);
 
+  const char *mode = getenv("TOKENIZER_BENCH_MODE");
+
   puts("Tokenizer benchmark");
-  run_case("mixed", mixed_pattern, 1024);
-  run_case("mixed", mixed_pattern, 16 * 1024);
-  run_case("mixed", mixed_pattern, 256 * 1024);
-  run_case("ident", ident_pattern, 256 * 1024);
-  run_case("numeric", numeric_pattern, 256 * 1024);
-  run_case("punct", punct_pattern, 256 * 1024);
-  run_hotpath_scanner_case();
-  run_hotpath_literals_case();
-  run_hotpath_punctuator_case();
+  if (!mode || bench_mode_is(mode, "all")) {
+    run_case("mixed", mixed_pattern, 1024);
+    run_case("mixed", mixed_pattern, 16 * 1024);
+    run_case("mixed", mixed_pattern, 256 * 1024);
+    run_case("ident", ident_pattern, 256 * 1024);
+    run_case("numeric", numeric_pattern, 256 * 1024);
+    run_case("punct", punct_pattern, 256 * 1024);
+    run_hotpath_scanner_case();
+    run_hotpath_literals_case();
+    run_hotpath_punctuator_case();
+  } else if (bench_mode_is(mode, "scanner")) {
+    run_hotpath_scanner_case();
+  } else if (bench_mode_is(mode, "literals")) {
+    run_hotpath_literals_case();
+  } else if (bench_mode_is(mode, "punctuator")) {
+    run_hotpath_punctuator_case();
+  } else if (bench_mode_is(mode, "hotpath")) {
+    run_hotpath_scanner_case();
+    run_hotpath_literals_case();
+    run_hotpath_punctuator_case();
+  } else if (bench_mode_is(mode, "cases")) {
+    run_case("mixed", mixed_pattern, 1024);
+    run_case("mixed", mixed_pattern, 16 * 1024);
+    run_case("mixed", mixed_pattern, 256 * 1024);
+    run_case("ident", ident_pattern, 256 * 1024);
+    run_case("numeric", numeric_pattern, 256 * 1024);
+    run_case("punct", punct_pattern, 256 * 1024);
+  } else {
+    fprintf(stderr, "unknown TOKENIZER_BENCH_MODE: %s\n", mode);
+    return 2;
+  }
 
   const char *corpus = getenv("TOKENIZER_BENCH_CORPUS_FILE");
   if (corpus && corpus[0] != '\0') {
