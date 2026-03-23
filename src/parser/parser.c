@@ -446,8 +446,19 @@ static int is_toplevel_function_signature(token_t *tok) {
 static int is_tag_return_function_signature(token_t *tok) {
   if (!tok || !psx_ctx_is_tag_keyword(tok->kind)) return 0;
   token_t *t = tok->next; // skip struct/union keyword
-  if (!t || t->kind != TK_IDENT) return 0;
-  t = t->next; // skip tag name
+  if (!t) return 0;
+  if (t->kind == TK_IDENT) t = t->next; // optional tag name
+  if (!t) return 0;
+  if (t->kind == TK_LBRACE) {
+    int depth = 1;
+    t = t->next;
+    while (t && depth > 0) {
+      if (t->kind == TK_LBRACE) depth++;
+      else if (t->kind == TK_RBRACE) depth--;
+      t = t->next;
+    }
+    if (!t) return 0;
+  }
   while (t && t->kind == TK_MUL) t = t->next; // skip optional pointer(s)
   if (!t || t->kind != TK_IDENT) return 0;
   return t->next && t->next->kind == TK_LPAREN;
@@ -1499,7 +1510,27 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
     // 戻り値型が struct/union Tag [*] の関数定義
     *ret_kind = curtok()->kind; // TK_STRUCT or TK_UNION
     set_curtok(curtok()->next); // skip struct/union keyword
-    *ret_tag = tk_consume_ident(); // consume tag name
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag && curtok()->kind != TK_LBRACE) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+    }
+    if (!tag) {
+      char *anon_name = NULL;
+      int anon_len = 0;
+      make_anonymous_tag_name_toplevel(&anon_name, &anon_len);
+      tag = calloc(1, sizeof(token_ident_t));
+      tag->str = anon_name;
+      tag->len = anon_len;
+    }
+    *ret_tag = tag;
+    if (tk_consume('{')) {
+      int member_count = 0;
+      int tag_size = 0;
+      member_count = parse_tag_definition_body_toplevel(*ret_kind, tag->str, tag->len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(*ret_kind, tag->str, tag->len, member_count, tag_size);
+    } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
+      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
+    }
     while (curtok()->kind == TK_MUL) { set_curtok(curtok()->next); *ret_is_ptr = 1; } // skip optional pointer(s)
     return;
   }

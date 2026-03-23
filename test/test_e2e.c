@@ -230,6 +230,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "int_func", CASE_INT, "int main() { return 42; }", 42, 0},
     {"type_decl", "int_var", CASE_INT, "int main() { int x = 3; return x; }", 3, 0},
     {"type_decl", "int_sum", CASE_INT, "int main() { int a = 3; int b = 4; return a+b; }", 7, 0},
+    {"type_decl", "funcdef_ret_inline_struct_tag", CASE_INT, "struct S { int x; } f(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }", 3, 0},
     {"type_decl", "int_args", CASE_INT, "int add(int a, int b) { return a+b; } int main() { return add(3, 7); }", 10, 0},
     {"type_decl", "int_init", CASE_INT, "int main() { int x; x = 5; return x; }", 5, 0},
     {"type_decl", "multi_decl_one_init", CASE_INT, "int main() { int a, b=7; return b; }", 7, 0},
