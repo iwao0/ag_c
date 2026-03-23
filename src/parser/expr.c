@@ -1594,16 +1594,16 @@ static node_t *unary(void) {
 
 static node_t *apply_postfix(node_t *node) {
   if (node && node->kind == ND_COMMA &&
-      (token->kind == TK_LBRACKET || token->kind == TK_LPAREN ||
-       token->kind == TK_DOT || token->kind == TK_ARROW ||
-       token->kind == TK_INC || token->kind == TK_DEC)) {
+      (curtok()->kind == TK_LBRACKET || curtok()->kind == TK_LPAREN ||
+       curtok()->kind == TK_DOT || curtok()->kind == TK_ARROW ||
+       curtok()->kind == TK_INC || curtok()->kind == TK_DEC)) {
     node->rhs = apply_postfix(node->rhs);
     return node;
   }
 
   for (;;) {
-    if (token->kind == TK_LBRACKET) {
-      token = token->next;
+    if (curtok()->kind == TK_LBRACKET) {
+      set_curtok(curtok()->next);
       node_t *idx = expr_internal();
       tk_expect(']');
       int ds = psx_node_deref_size(node);
@@ -1672,24 +1672,24 @@ static node_t *apply_postfix(node_t *node) {
       node = (node_t *)deref;
       continue;
     }
-    if (token->kind == TK_LPAREN) {
+    if (curtok()->kind == TK_LPAREN) {
       node = parse_call_postfix(node);
       continue;
     }
-    if (token->kind == TK_DOT) {
-      token_t *op_tok = token;
-      token = token->next;
+    if (curtok()->kind == TK_DOT) {
+      token_t *op_tok = curtok();
+      set_curtok(curtok()->next);
       node = build_member_access(node, 0, op_tok);
       continue;
     }
-    if (token->kind == TK_ARROW) {
-      token_t *op_tok = token;
-      token = token->next;
+    if (curtok()->kind == TK_ARROW) {
+      token_t *op_tok = curtok();
+      set_curtok(curtok()->next);
       node = build_member_access(node, 1, op_tok);
       continue;
     }
-    if (token->kind == TK_INC) {
-      token = token->next;
+    if (curtok()->kind == TK_INC) {
+      set_curtok(curtok()->next);
       psx_node_expect_incdec_target(node, "++");
       node_t *inc = arena_alloc(sizeof(node_t));
       inc->kind = ND_POST_INC;
@@ -1697,8 +1697,8 @@ static node_t *apply_postfix(node_t *node) {
       node = inc;
       continue;
     }
-    if (token->kind == TK_DEC) {
-      token = token->next;
+    if (curtok()->kind == TK_DEC) {
+      set_curtok(curtok()->next);
       psx_node_expect_incdec_target(node, "--");
       node_t *dec = arena_alloc(sizeof(node_t));
       dec->kind = ND_POST_DEC;
@@ -1719,12 +1719,12 @@ static node_t *parse_call_postfix(node_t *callee) {
   int nargs = 0;
   int arg_cap = 16;
   node->args = calloc(arg_cap, sizeof(node_t *));
-  if (token->kind == TK_RPAREN) {
-    token = token->next;
+  if (curtok()->kind == TK_RPAREN) {
+    set_curtok(curtok()->next);
   } else {
     node->args[nargs++] = assign();
-    while (token->kind == TK_COMMA) {
-      token = token->next;
+    while (curtok()->kind == TK_COMMA) {
+      set_curtok(curtok()->next);
       if (nargs >= arg_cap) {
         arg_cap = pda_next_cap(arg_cap, nargs + 1);
         node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
@@ -1738,8 +1738,8 @@ static node_t *parse_call_postfix(node_t *callee) {
 }
 
 static node_t *primary(void) {
-  if (token->kind == TK_GENERIC) {
-    token = token->next;
+  if (curtok()->kind == TK_GENERIC) {
+    set_curtok(curtok()->next);
     tk_expect('(');
     node_t *control = assign();
     generic_type_t control_ty = infer_generic_control_type(control);
@@ -1749,15 +1749,15 @@ static node_t *primary(void) {
     node_t *default_expr = NULL;
     int matched = 0;
     for (;;) {
-      if (token->kind == TK_DEFAULT) {
-        token = token->next;
+      if (curtok()->kind == TK_DEFAULT) {
+        set_curtok(curtok()->next);
         tk_expect(':');
         node_t *expr_node = assign();
         if (!default_expr) default_expr = expr_node;
       } else {
         generic_type_t assoc_ty = {TK_EOF, 0};
         if (!parse_generic_assoc_type(&assoc_ty)) {
-          psx_diag_ctx(token, "generic", "%s",
+          psx_diag_ctx(curtok(), "generic", "%s",
                        diag_message_for(DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
         }
         tk_expect(':');
@@ -1772,24 +1772,25 @@ static node_t *primary(void) {
     tk_expect(')');
     if (!selected) selected = default_expr;
     if (!selected) {
-      psx_diag_ctx(token, "generic", "%s",
+      psx_diag_ctx(curtok(), "generic", "%s",
                    diag_message_for(DIAG_ERR_PARSER_GENERIC_NO_MATCH));
     }
     return selected;
   }
 
-  if (token->kind == TK_NUM) {
-    token_num_t *num = (token_num_t *)token;
+  if (curtok()->kind == TK_NUM) {
+    token_t *tok = curtok();
+    token_num_t *num = (token_num_t *)tok;
     node_num_t *node = arena_alloc(sizeof(node_num_t));
     node->base.kind = ND_NUM;
     if (num->num_kind == TK_NUM_KIND_INT) {
       node->base.fp_kind = TK_FLOAT_KIND_NONE;
       node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-      node->val = tk_as_num_int(token)->val;
+      node->val = tk_as_num_int(tok)->val;
     } else {
-      node->base.fp_kind = tk_as_num_float(token)->fp_kind;
-      node->float_suffix_kind = tk_as_num_float(token)->float_suffix_kind;
-      node->fval = tk_as_num_float(token)->fval;
+      node->base.fp_kind = tk_as_num_float(tok)->fp_kind;
+      node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;
+      node->fval = tk_as_num_float(tok)->fval;
     }
 
     if (node->base.fp_kind) {
@@ -1803,12 +1804,12 @@ static node_t *primary(void) {
       node->fval_id = lit->id;
     }
 
-    token = token->next;
+    set_curtok(curtok()->next);
     return (node_t *)node;
   }
 
-  if (token->kind == TK_LPAREN) {
-    token = token->next;
+  if (curtok()->kind == TK_LPAREN) {
+    set_curtok(curtok()->next);
     node_t *node = expr_internal();
     tk_expect(')');
     return node;
@@ -1850,9 +1851,9 @@ static node_t *primary(void) {
         return psx_node_new_num(enum_val);
       }
     }
-    if (token->kind == TK_LPAREN) {
+    if (curtok()->kind == TK_LPAREN) {
       if (!var) {
-        token = token->next;
+        set_curtok(curtok()->next);
         node_func_t *node = arena_alloc(sizeof(node_func_t));
         node->base.kind = ND_FUNCALL;
         node->callee = NULL;
@@ -1861,12 +1862,12 @@ static node_t *primary(void) {
         int nargs = 0;
         int arg_cap = 16;
         node->args = calloc(arg_cap, sizeof(node_t*));
-        if (token->kind == TK_RPAREN) {
-          token = token->next;
+        if (curtok()->kind == TK_RPAREN) {
+          set_curtok(curtok()->next);
         } else {
           node->args[nargs++] = assign();
-          while (token->kind == TK_COMMA) {
-            token = token->next;
+          while (curtok()->kind == TK_COMMA) {
+            set_curtok(curtok()->next);
             if (nargs >= arg_cap) {
               arg_cap = pda_next_cap(arg_cap, nargs + 1);
               node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
@@ -1992,11 +1993,11 @@ static node_t *primary(void) {
     return n;
   }
 
-  if (token->kind == TK_STRING) {
+  if (curtok()->kind == TK_STRING) {
     tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
     tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
     size_t total_len = 0;
-    token_t *t = token;
+    token_t *t = curtok();
     while (t && t->kind == TK_STRING) {
       token_string_t *st = (token_string_t *)t;
       if (total_len == 0) {
@@ -2016,7 +2017,7 @@ static node_t *primary(void) {
     }
 
     if (total_len > (size_t)INT_MAX) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, token, "%s",
+      diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, curtok(), "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
     }
     char *merged = calloc(total_len + 1, 1);
@@ -2024,15 +2025,15 @@ static node_t *primary(void) {
       diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
     }
     size_t off = 0;
-    while (token && token->kind == TK_STRING) {
-      token_string_t *st = (token_string_t *)token;
+    while (curtok() && curtok()->kind == TK_STRING) {
+      token_string_t *st = (token_string_t *)curtok();
       if (st->len < 0 || (size_t)st->len > total_len - off) {
-        diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, token, "%s",
+        diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, curtok(), "%s",
                        diag_message_for(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
       }
       memcpy(merged + off, st->str, (size_t)st->len);
       off += (size_t)st->len;
-      token = token->next;
+      set_curtok(curtok()->next);
     }
 
     node_string_t *node = arena_alloc(sizeof(node_string_t));
@@ -2057,7 +2058,7 @@ static node_t *primary(void) {
     return (node_t *)node;
   }
 
-  psx_diag_ctx(token, "primary", "%s",
+  psx_diag_ctx(curtok(), "primary", "%s",
                diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
   return NULL;
 }
