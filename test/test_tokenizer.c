@@ -628,6 +628,44 @@ static void test_at_eof() {
   ASSERT_TRUE(tk_at_eof());
 }
 
+static void test_null_cursor_boundaries() {
+  printf("test_null_cursor_boundaries...\n");
+  tk_set_current_token(NULL);
+
+  ASSERT_TRUE(!tk_at_eof());
+  ASSERT_TRUE(!tk_consume('+'));
+  ASSERT_TRUE(!tk_consume_str("=="));
+  ASSERT_TRUE(tk_consume_ident() == NULL);
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    tk_set_current_token(NULL);
+    tk_expect('+');
+    _exit(0);
+  }
+  int status = 0;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+
+  fflush(NULL);
+  pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    tk_set_current_token(NULL);
+    tk_expect_number();
+    _exit(0);
+  }
+  status = 0;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+}
+
 // 1f. 文字リテラルのテスト
 static void test_tokenize_char_literal() {
   printf("test_tokenize_char_literal...\n");
@@ -988,6 +1026,7 @@ int main() {
   test_consume_ident();
   test_expect();
   test_expect_number();
+  test_null_cursor_boundaries();
   test_tokenize_float_literal();
   test_tokenize_len_guard_boundaries();
 

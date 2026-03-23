@@ -524,6 +524,8 @@
 - [ ] 優先度P1: 異常系の防御と診断安定性を強化する
   - [ ] `current_token == NULL` 境界の診断メッセージを統一し、位置情報欠落時の表示仕様を固定する
   - [ ] consume/expect 系の失敗経路に対する回帰テストを追加する
+  - [x] 進捗（2026-03-23）: `tk_expect_ctx` / `tk_expect_number_ctx` に `require_current_token` ガードを導入し、NULLカーソル時の診断を即時・統一化した
+  - [x] 進捗（2026-03-23）: `test_tokenizer` に `test_null_cursor_boundaries` を追加し、NULLカーソル時の `consume*` 非破壊動作と `expect*` 異常終了を回帰テスト化した
 - [ ] 優先度P2: const-correctness を Tokenizer API 全体へ展開する
   - [ ] 書き換え不要な `char *` 引数を棚卸しし、`const char *` へ統一する
   - [ ] 呼び出し側（parser/preprocess/test）で警告なくビルドできることを確認する

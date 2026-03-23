@@ -33,6 +33,14 @@ static inline void advance_current_token(tokenizer_context_t *ctx, token_t *cur)
   ctx->current_token = cur ? cur->next : NULL;
 }
 
+static token_t *require_current_token(tokenizer_context_t *ctx, diag_error_id_t id) {
+  token_t *cur = ctx ? ctx->current_token : NULL;
+  if (!cur) {
+    diag_emit_tokf(id, NULL, "%s", diag_message_for(id));
+  }
+  return cur;
+}
+
 token_t *tk_get_current_token(void) {
   return tk_get_current_token_ctx(NULL);
 }
@@ -241,9 +249,9 @@ void tk_expect(char op) {
 
 void tk_expect_ctx(tokenizer_context_t *ctx, char op) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
+  token_t *cur = require_current_token(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_TOKEN);
   token_kind_t kind = kind_for_char(op);
-  if (!cur || kind == TK_EOF || cur->kind != kind) {
+  if (kind == TK_EOF || cur->kind != kind) {
     diag_emit_tokf(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN, cur, "%s: '%c'",
                    diag_message_for(DIAG_ERR_TOKENIZER_EXPECTED_TOKEN), op);
   }
@@ -257,8 +265,8 @@ int tk_expect_number(void) {
 
 int tk_expect_number_ctx(tokenizer_context_t *ctx) {
   tokenizer_context_t *use_ctx = effective_ctx(ctx);
-  token_t *cur = use_ctx ? use_ctx->current_token : NULL;
-  if (!cur || cur->kind != TK_NUM) {
+  token_t *cur = require_current_token(use_ctx, DIAG_ERR_TOKENIZER_EXPECTED_INTEGER);
+  if (cur->kind != TK_NUM) {
     TK_DIAG_TOK(DIAG_ERR_TOKENIZER_EXPECTED_INTEGER, cur);
   }
   if (tk_as_num(cur)->num_kind != TK_NUM_KIND_INT) {
