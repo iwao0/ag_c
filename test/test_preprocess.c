@@ -72,6 +72,16 @@ static const success_case_t success_cases[] = {
     {42, "#if (1 + 2) * 3 == 9\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if 1 && (0 || 1)\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     {42, "#if !0 && !0\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
+    {42,
+     "#if "
+     "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+"
+     "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+"
+     "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+"
+     "1+1+1+1+1+1+1+1+1+1+1+1+1+1+1+1 == 64\n"
+     "int main() { return 42; }\n"
+     "#else\n"
+     "int main() { return 0; }\n"
+     "#endif"},
     // 意地悪テスト: #ifdef/#ifndef 連鎖
     {42, "#define X\n#ifdef X\n#ifndef Y\nint main() { return 42; }\n#endif\n#endif"},
     // 意地悪テスト: #undef してから #ifndef
@@ -118,6 +128,7 @@ static const char *fail_cases[] = {
     "#define BAD1(a) ##a\nint main() { return BAD1(42); }\n",
     "#define BAD2(a) a##\nint main() { return BAD2(42); }\n",
     "#define BAD3(a,b) a###b\nint main() { return BAD3(1,2); }\n",
+    "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
 };
 
