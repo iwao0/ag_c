@@ -433,8 +433,8 @@
   - [ ] `tk_set_*` の切替境界テスト（strict/trigraph/binary/audit）を追加する
   - [ ] 既存テスト群で回帰がないことを確認する
 - [ ] 優先度P2: internal依存の自動検査をCIへ追加する
-  - [ ] Tokenizer外から `tokenizer/internal/*` を `#include` していないか検査するスクリプトを追加する
-  - [ ] CIジョブへ組み込み、違反時にfailする
+  - [x] Tokenizer外から `tokenizer/internal/*` を `#include` していないか検査するスクリプトを追加する
+  - [x] CIジョブへ組み込み、違反時にfailする
 - [ ] 優先度P3: 文字/UCN異常系のテストを拡充する
   - [ ] 不正UCN境界・長大エスケープ列の異常系ケースを追加する
   - [ ] C11チェックリストへ対応項目を追記する

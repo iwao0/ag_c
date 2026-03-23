@@ -70,7 +70,11 @@ $(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
+check-tokenizer-boundary:
+	./scripts/check_tokenizer_internal_boundary.sh
+
 test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS)
+	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
 	$(TEST_TOKENIZER_C11)
 	$(TEST_PARSER)
@@ -91,6 +95,6 @@ release: $(OBJS)
 clean:
 	rm -rf build
 
-.PHONY: test clean bench release
+.PHONY: test clean bench release check-tokenizer-boundary
 
 -include $(DEPS)
