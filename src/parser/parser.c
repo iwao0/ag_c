@@ -502,6 +502,9 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name) {
   if (tk_consume('(')) {
     had_parens = 1;
     name = parse_decl_name_recursive(is_ptr, require_name);
+    while (curtok()->kind == TK_LBRACKET) {
+      skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+    }
     tk_expect(')');
   } else {
     name = tk_consume_ident();
