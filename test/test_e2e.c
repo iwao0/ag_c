@@ -1681,6 +1681,53 @@ int main() {
     }
   }
   {
+    const char *path = "build/e2e/compile_fail/control_char_line_filename.c";
+    const char *log_path = "build/e2e/logs/compile_fail_control_char_line_filename.log";
+    static const unsigned char src[] = {
+        '#', 'l', 'i', 'n', 'e', ' ', '1', ' ', '"',
+        'b', 'a', 'd', 0x1F, '.', 'c', '"', '\n',
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', '{',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', '}', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(path, src, sizeof(src)) != 0 ||
+        run_ag_c_expect_fail_with_diag(path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: control_char_line_filename (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *path = "build/e2e/compile_fail/invalid_utf8_include_filename.c";
+    const char *log_path = "build/e2e/logs/compile_fail_invalid_utf8_include_filename.log";
+    static const unsigned char src[] = {
+        '#', 'i', 'n', 'c', 'l', 'u', 'd', 'e', ' ', '"',
+        'b', 'u', 'i', 'l', 'd', '/', 0xC0, 0xAF, '.', 'h', '"', '\n',
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', '{',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', '0', ';', '}', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(path, src, sizeof(src)) != 0 ||
+        run_ag_c_expect_fail_with_diag(path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: invalid_utf8_include_filename (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
+    const char *path = "build/e2e/compile_fail/invalid_utf8_macro_arg.c";
+    const char *log_path = "build/e2e/logs/compile_fail_invalid_utf8_macro_arg.log";
+    static const unsigned char src[] = {
+        '#', 'd', 'e', 'f', 'i', 'n', 'e', ' ', 'I', 'D', '(', 'x', ')', ' ', 'x', '\n',
+        'i', 'n', 't', ' ', 'm', 'a', 'i', 'n', '(', ')', '{',
+        'r', 'e', 't', 'u', 'r', 'n', ' ', 'I', 'D', '(', 0xC0, 0xAF, ')', ';', '}', '\n',
+    };
+    if (mkdir_p("build/e2e/compile_fail") != 0 ||
+        write_source_file_bytes(path, src, sizeof(src)) != 0 ||
+        run_ag_c_expect_fail_with_diag(path, NULL, log_path) != 0) {
+      fprintf(stderr, "Compile-fail case failed: invalid_utf8_macro_arg (see %s)\n", log_path);
+      return 1;
+    }
+  }
+  {
     const char *log_path = "build/e2e/logs/compile_fail_usage_no_args.log";
     if (run_ag_c_expect_fail_with_args_and_diag(NULL, NULL, "使い方:", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: usage_no_args (see %s)\n", log_path);
@@ -1786,7 +1833,7 @@ int main() {
   }
 
   test_count = (int)((sizeof(test_cases) / sizeof(test_cases[0])) +
-                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 11);
+                     (sizeof(compile_fail_cases) / sizeof(compile_fail_cases[0])) + 14);
   pass_count = failed ? 0 : test_count;
 
   free(categories);
