@@ -244,7 +244,7 @@ static void pop_include(void) {
 static void count_macro_expansion_or_die(void) {
   macro_expand_steps++;
   if (macro_expand_steps > PP_MAX_MACRO_EXPANSIONS) {
-    pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+    pp_error(DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED, NULL);
   }
 }
 

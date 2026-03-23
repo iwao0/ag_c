@@ -42,6 +42,7 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, "E1026", "preprocess.func_macro_arg_not_closed"},
     {DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, "E1027", "preprocess.line_number_invalid"},
     {DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, "E1028", "preprocess.line_filename_invalid"},
+    {DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED, "E1029", "preprocess.macro_expansion_limit_exceeded"},
     {DIAG_ERR_TOKENIZER_GENERIC, "E2000", "tokenizer.generic"},
     {DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR, "E2001", "tokenizer.unexpected_char"},
     {DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG, "E2002", "tokenizer.token_too_long"},

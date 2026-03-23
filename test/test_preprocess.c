@@ -433,7 +433,7 @@ static void expect_macro_expansion_limit_fail(void) {
     exit(1);
   }
 
-  expect_preprocess_fail(input);
+  expect_preprocess_fail_with_stderr_substr(input, "E1029");
   free(input);
 }
 
@@ -469,7 +469,7 @@ static void expect_macro_arg_nesting_limit_fail(void) {
     exit(1);
   }
 
-  expect_preprocess_fail(input);
+  expect_preprocess_fail_with_stderr_substr(input, "E1029");
   free(input);
 }
 
