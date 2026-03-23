@@ -938,7 +938,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
                                         &member_tag_kind, &member_tag_name,
                                         &member_tag_len, &member_is_tag_pointer);
         if (!found || id->len <= 0) {
-          psx_diag_ctx(token, "decl", "%s",
+          psx_diag_ctx(curtok(), "decl", "%s",
                        diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
         }
         node_t *next_lhs = new_struct_member_lvar(var, member_offset, member_type_size,
@@ -952,7 +952,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
         if (tk_consume('}')) return init_chain;
         tk_expect(',');
         if (!tk_consume('.')) {
-          psx_diag_ctx(token, "decl", "%s",
+          psx_diag_ctx(curtok(), "decl", "%s",
                        diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
         }
       }
@@ -966,13 +966,13 @@ static void skip_func_params(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
   while (depth > 0) {
-    if (token->kind == TK_EOF) {
-      psx_diag_ctx(token, "decl", "%s",
+    if (curtok()->kind == TK_EOF) {
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
     }
-    if (token->kind == TK_LPAREN) depth++;
-    else if (token->kind == TK_RPAREN) depth--;
-    token = token->next;
+    if (curtok()->kind == TK_LPAREN) depth++;
+    else if (curtok()->kind == TK_RPAREN) depth--;
+    set_curtok(curtok()->next);
   }
 }
 
@@ -985,7 +985,7 @@ static token_ident_t *consume_decl_name(int *is_pointer,
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
   tok = tk_consume_ident();
   if (!tok) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
   }
   int had_parens = open_parens;
@@ -996,7 +996,7 @@ static token_ident_t *consume_decl_name(int *is_pointer,
     tk_expect(']');
     *out_array_dim = (int)dim;
   }
-  while (token->kind == TK_LPAREN) {
+  while (curtok()->kind == TK_LPAREN) {
     skip_func_params();
   }
   return tok;
