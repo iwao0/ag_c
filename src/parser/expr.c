@@ -846,6 +846,12 @@ cast_parse_postfix:
   if (*is_pointer != 1) *is_pointer = 0;
   consume_cast_pointer_suffix(&t, is_pointer);
   parse_funcptr_abstract_decl(&t, is_pointer);
+  (void)parse_ptr_to_array_abstract_decl(&t, is_pointer);
+  (void)parse_array_of_funcptr_abstract_decl(&t, NULL);
+  (void)parse_array_of_ptr_to_array_abstract_decl(&t, NULL);
+  (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
+  (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
+  (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
   // 配列宣言子 [N] を受理する（非ポインタ型のみ）
   if (!*is_pointer && t && t->kind == TK_LBRACKET) {
     t = t->next;
