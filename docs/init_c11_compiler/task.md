@@ -1165,6 +1165,7 @@
   - C11: `type-name = specifier-qualifier-list abstract-declarator?`
   - 現状: `type_name = decl_spec pointer?` のみ。`sizeof(int [10])` や `sizeof(int (*)(void))` が表現不能
   - 進捗（2026-03-23）: `sizeof(int[10])` / `_Alignof(int[10])` の配列 abstract-declarator を受理
+  - 進捗（2026-03-23）: `sizeof(int (*)[3])` / `_Alignof(int (*)[3])` の pointer-to-array abstract-declarator を受理
 - [ ] 複合リテラルを `postfix` に移動する（C11 §6.5.2.5）
   - C11: `postfix-expression = ... | "(" type-name ")" "{" initializer-list ","? "}"`
   - 現状: `unary` の選択肢として記載。優先順位は正しいが位置が C11 と異なる

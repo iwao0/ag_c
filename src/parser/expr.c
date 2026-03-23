@@ -127,6 +127,20 @@ static token_t *skip_balanced_paren_token(token_t *start) {
   return NULL;
 }
 
+static token_t *skip_balanced_bracket_token(token_t *start) {
+  if (!start || start->kind != TK_LBRACKET) return NULL;
+  int depth = 0;
+  for (token_t *t = start; t; t = t->next) {
+    if (t->kind == TK_LBRACKET) depth++;
+    else if (t->kind == TK_RBRACKET) {
+      depth--;
+      if (depth == 0) return t->next;
+    }
+    if (t->kind == TK_EOF) break;
+  }
+  return NULL;
+}
+
 static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
@@ -144,6 +158,30 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   token_t *after_params = skip_balanced_paren_token(t);
   if (!after_params) return 0;
   *ptok = after_params;
+  *is_pointer = 1;
+  return 1;
+}
+
+static int parse_ptr_to_array_abstract_decl(token_t **ptok, int *is_pointer) {
+  token_t *t = *ptok;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  while (t && t->kind == TK_MUL) {
+    *is_pointer = 1;
+    t = t->next;
+    consume_local_type_quals(&t);
+  }
+  if (t && t->kind == TK_IDENT) t = t->next;
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_LBRACKET) return 0;
+  token_t *after = t;
+  while (after && after->kind == TK_LBRACKET) {
+    after = skip_balanced_bracket_token(after);
+    if (!after) return 0;
+  }
+  *ptok = after;
   *is_pointer = 1;
   return 1;
 }
@@ -819,6 +857,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
@@ -834,6 +875,9 @@ static int parse_parenthesized_type_size(void) {
     }
     int fp_ptr = 0;
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
     apply_array_abstract_suffix_size(&sz);
@@ -853,6 +897,9 @@ static int parse_parenthesized_type_size(void) {
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
+    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
@@ -868,6 +915,9 @@ static int parse_parenthesized_type_size(void) {
     }
     int fp_ptr = 0;
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
     apply_array_abstract_suffix_size(&sz);
@@ -888,6 +938,9 @@ static int parse_parenthesized_type_size(void) {
     }
     int fp_ptr = 0;
     if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+      sz = 8;
+    }
+    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
       sz = 8;
     }
     apply_array_abstract_suffix_size(&sz);
