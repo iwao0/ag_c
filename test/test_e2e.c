@@ -209,6 +209,7 @@ static const test_case_t test_cases[] = {
     {"funcall", "paren_name_funcdef", CASE_INT, "int (f)(int x) { return x; } int main(){ return f(42); }", 42, 0},
     {"funcall", "funcdef_ret_funcptr", CASE_INT, "int (*f(void))(int) { return 0; } int main(){ return 0; }", 0, 0},
     {"funcall", "funcdef_ret_funcptr_with_param", CASE_INT, "int (*f(int n))(int) { return 0; } int main(){ return 0; }", 0, 0},
+    {"funcall", "funcdef_ret_nested_funcptr_arrayptr", CASE_INT, "int (*(*f(void))(int))[3] { return 0; } int main(){ return 0; }", 0, 0},
     {"funcall", "param_funcptr_decl", CASE_INT, "int apply(int (*fp)(int), int x) { return x; } int main(){ return apply(0,7); }", 7, 0},
     {"funcall", "param_array_decl", CASE_INT, "int f(int a[], int n) { return n; } int main(){ return f(0,5); }", 5, 0},
     {"funcall", "param_array_static_restrict", CASE_INT, "int f(int a[static 3], int b[restrict static 2]) { return 7; } int main(){ return f(0,0); }", 7, 0},
