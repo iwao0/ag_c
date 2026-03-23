@@ -84,6 +84,9 @@ $(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(
 check-tokenizer-boundary:
 	./scripts/check_tokenizer_internal_boundary.sh
 
+check-tokenizer-perf-light:
+	./scripts/check_tokenizer_perf_light.sh
+
 test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK)
 	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
@@ -110,6 +113,6 @@ release: $(OBJS)
 clean:
 	rm -rf build
 
-.PHONY: test test-asan clean bench release check-tokenizer-boundary
+.PHONY: test test-asan clean bench release check-tokenizer-boundary check-tokenizer-perf-light
 
 -include $(DEPS)

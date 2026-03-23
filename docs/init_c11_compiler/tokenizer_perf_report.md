@@ -18,6 +18,9 @@ bash scripts/check_tokenizer_perf.sh /tmp/agc_tb.out
 
 # 4) -O0 / -O2 比較ベンチ
 scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
+
+# 5) Tokenizer軽量perfゲート（ローカル向け）
+make check-tokenizer-perf-light
 ```
 
 `check_tokenizer_perf.sh` は `case=mixed/ident/numeric/punct` の `tokens/sec` と `alloc_count` を検査します。  
@@ -28,6 +31,7 @@ scripts/bench_tokenizer_opt_levels.sh /tmp/agc_tokenizer_bench
 - `hotpath=scanner`: `tk_skip_ignored` + `tk_scan_ident_*` の `ops/sec`
 - `hotpath=literals`: `tk_skip_escape_in_literal` の `ops/sec`
 - `hotpath=punctuator`: `match_punctuator` / `punctuator_kind_for_str` の `ops/sec`
+- 軽量ゲートでは `check_tokenizer_perf.sh` に加え、上記 hotpath の最小 `ops/sec` も検査する
 
 ## Ongoing Comparison Template
 
