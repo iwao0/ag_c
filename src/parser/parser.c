@@ -27,13 +27,21 @@ static int g_last_decl_is_extern = 0;
 static int g_toplevel_decl_elem_size = 8;
 static int g_toplevel_decl_is_extern = 0;
 static int g_toplevel_decl_is_thread_local = 0;
+static int g_toplevel_decl_is_typedef = 0;
+static token_kind_t g_toplevel_decl_base_kind = TK_EOF;
+static tk_float_kind_t g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
+static token_kind_t g_toplevel_decl_tag_kind = TK_EOF;
+static char *g_toplevel_decl_tag_name = NULL;
+static int g_toplevel_decl_tag_len = 0;
+static int g_toplevel_decl_base_is_ptr = 0;
+static int g_toplevel_decl_pointee_const = 0;
+static int g_toplevel_decl_pointee_volatile = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
-static void parse_toplevel_typedef_decl(void);
 static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name);
@@ -249,6 +257,57 @@ static int parse_array_size_constexpr_toplevel(void) {
 }
 
 static void parse_toplevel_decl_spec(void) {
+  g_toplevel_decl_is_typedef = 0;
+  g_toplevel_decl_base_kind = TK_EOF;
+  g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
+  g_toplevel_decl_tag_kind = TK_EOF;
+  g_toplevel_decl_tag_name = NULL;
+  g_toplevel_decl_tag_len = 0;
+  g_toplevel_decl_base_is_ptr = 0;
+  g_toplevel_decl_pointee_const = 0;
+  g_toplevel_decl_pointee_volatile = 0;
+
+  if (curtok()->kind == TK_TYPEDEF) {
+    g_toplevel_decl_is_typedef = 1;
+    set_curtok(curtok()->next);
+  }
+
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    g_toplevel_decl_base_kind = curtok()->kind;
+    g_toplevel_decl_tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag && curtok()->kind != TK_LBRACE) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+    if (tag) {
+      g_toplevel_decl_tag_name = tag->str;
+      g_toplevel_decl_tag_len = tag->len;
+    } else {
+      make_anonymous_tag_name_toplevel(&g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
+    }
+    if (tk_consume('{')) {
+      int member_count = 0;
+      int tag_size = 0;
+      member_count = parse_tag_definition_body_toplevel(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                                                        g_toplevel_decl_tag_len, &tag_size);
+      psx_ctx_define_tag_type_with_layout(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                                          g_toplevel_decl_tag_len, member_count, tag_size);
+    } else if (!psx_ctx_has_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len)) {
+      if (g_toplevel_decl_is_typedef &&
+          (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
+        psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+      } else {
+        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX),
+                                     g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+      }
+    }
+    g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
+                                                     g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+    psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
+    g_toplevel_decl_is_extern = g_last_decl_is_extern;
+    g_toplevel_decl_is_thread_local = g_last_type_thread_local;
+    return;
+  }
+
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t td_base = TK_EOF;
@@ -261,15 +320,26 @@ static void parse_toplevel_decl_spec(void) {
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
                               &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL);
     set_curtok(curtok()->next);
+    g_toplevel_decl_base_kind = td_base;
+    g_toplevel_decl_fp_kind = td_fp;
+    g_toplevel_decl_tag_kind = td_tag;
+    g_toplevel_decl_tag_name = td_tag_name;
+    g_toplevel_decl_tag_len = td_tag_len;
+    g_toplevel_decl_base_is_ptr = td_is_ptr;
     g_toplevel_decl_elem_size = td_elem;
     g_toplevel_decl_is_extern = 0;
     g_toplevel_decl_is_thread_local = 0;
+    psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
     return;
   }
 
   token_kind_t tl_kind = psx_consume_type_kind();
+  g_toplevel_decl_base_kind = tl_kind;
+  if (tl_kind == TK_FLOAT) g_toplevel_decl_fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (tl_kind == TK_DOUBLE) g_toplevel_decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
   g_toplevel_decl_elem_size = 8;
   if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
+  psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
   g_toplevel_decl_is_extern = g_last_decl_is_extern;
   g_toplevel_decl_is_thread_local = g_last_type_thread_local;
 }
@@ -547,20 +617,41 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
 }
 
 static void parse_toplevel_decl_after_type(void) {
+  if (g_toplevel_decl_is_typedef) {
+    for (;;) {
+      int is_ptr = g_toplevel_decl_base_is_ptr;
+      while (tk_consume('*')) {
+        is_ptr = 1;
+        skip_ptr_qualifiers();
+      }
+      token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
+      int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
+      while (tk_consume('[')) {
+        int n = parse_array_size_constexpr_toplevel();
+        if (!is_ptr && n > 0) typedef_sizeof *= n;
+        tk_expect(']');
+      }
+      psx_ctx_define_typedef_name(name->str, name->len, g_toplevel_decl_base_kind, g_toplevel_decl_elem_size,
+                                  g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
+                                  g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
+                                  is_ptr, typedef_sizeof,
+                                  g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile);
+      if (!tk_consume(',')) break;
+    }
+    tk_expect(';');
+    return;
+  }
   parse_toplevel_declarator_list();
   tk_expect(';');
 }
 
 static int parse_toplevel_declaration_like(void) {
-  if (curtok()->kind == TK_TYPEDEF) {
-    parse_toplevel_typedef_decl();
-    return 1;
-  }
   if (curtok()->kind == TK_STATIC_ASSERT) {
     parse_static_assert_toplevel();
     return 1;
   }
-  if ((psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) ||
+  if ((curtok()->kind == TK_TYPEDEF ||
+       psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) ||
        psx_ctx_is_typedef_name_token(curtok())) &&
       !is_toplevel_function_signature(curtok())) {
     parse_toplevel_decl_spec();
@@ -568,87 +659,6 @@ static int parse_toplevel_declaration_like(void) {
     return 1;
   }
   return 0;
-}
-
-static void parse_toplevel_typedef_decl(void) {
-  if (curtok()->kind != TK_TYPEDEF) {
-    psx_diag_ctx(curtok(), "typedef", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_TYPEDEF_KEYWORD_REQUIRED));
-  }
-  set_curtok(curtok()->next);
-  token_kind_t base_kind = TK_EOF;
-  int elem_size = 8;
-  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_ptr_base = 0;
-
-  token_kind_t builtin_kind = psx_consume_type_kind();
-  if (builtin_kind != TK_EOF) {
-    base_kind = builtin_kind;
-    psx_ctx_get_type_info(builtin_kind, NULL, &elem_size);
-    if (builtin_kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (builtin_kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
-  } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-    base_kind = curtok()->kind;
-    tag_kind = curtok()->kind;
-    set_curtok(curtok()->next);
-    token_ident_t *tag = tk_consume_ident();
-    if (!tag && curtok()->kind != TK_LBRACE) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-    if (tag) {
-      tag_name = tag->str;
-      tag_len = tag->len;
-    } else {
-      make_anonymous_tag_name_toplevel(&tag_name, &tag_len);
-    }
-    if (tk_consume('{')) {
-      int member_count = 0;
-      int tag_size = 0;
-      member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
-      psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
-    } else if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      // C11: typedef struct S S; のような不完全型タグ宣言を許可
-      if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
-        psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
-      } else {
-        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
-      }
-    }
-    elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
-  } else if (psx_ctx_is_typedef_name_token(curtok())) {
-    token_ident_t *id = (token_ident_t *)curtok();
-    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
-                              &tag_kind, &tag_name, &tag_len, &is_ptr_base, NULL, NULL);
-    set_curtok(curtok()->next);
-  } else {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
-  }
-
-  int td_pointee_const = 0;
-  int td_pointee_volatile = 0;
-  psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
-
-  for (;;) {
-    int is_ptr = is_ptr_base;
-    while (tk_consume('*')) {
-      is_ptr = 1;
-      skip_ptr_qualifiers();
-    }
-    token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
-    int typedef_sizeof = is_ptr ? 8 : elem_size;
-    while (tk_consume('[')) {
-      int n = parse_array_size_constexpr_toplevel();
-      if (!is_ptr && n > 0) typedef_sizeof *= n;
-      tk_expect(']');
-    }
-    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
-                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile);
-    if (!tk_consume(',')) break;
-  }
-  tk_expect(';');
 }
 
 static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
