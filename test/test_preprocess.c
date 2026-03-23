@@ -119,6 +119,7 @@ static const char *fail_cases[] = {
     "#include \"/tmp/blocked_absolute_path.h\"\nint main() { return 0; }\n",
     "#include \"../README.md\"\nint main() { return 0; }\n",
     "#include <../README.md>\nint main() { return 0; }\n",
+    "#include \"build/self_include.h\"\nint main() { return 0; }\n",
     "#include \"build/cycle_norm_a.h\"\nint main() { return 0; }\n",
     "#include \"build/cycle_a.h\"\nint main() { return 0; }\n",
     "#include \"./build/cycle_norm_a.h\"\nint main() { return 0; }\n",
@@ -461,6 +462,9 @@ int main(void) {
           "#include \"build/guard_a.h\"\n"
           "#endif\n");
   fclose(hguard_b);
+  FILE *hself = fopen("build/self_include.h", "w");
+  fprintf(hself, "#include \"build/self_include.h\"\n");
+  fclose(hself);
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
   fprintf(hcycle_norm_a,
           "#pragma once\n"
