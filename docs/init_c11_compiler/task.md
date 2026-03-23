@@ -1545,6 +1545,7 @@
   - C11: `typedef` は `storage-class-specifier` の一種。`declaration = decl_spec init_declarator_list? ";"` で統一
   - 現状: `declaration` の独立選択肢として分離し、`typedef_declarator` という特別規則を使用
   - 進捗（2026-03-24）: トップレベル宣言入口 `parse_toplevel_declaration_like()` に `typedef` も取り込み、`_Static_assert`・通常宣言と同一の入口関数で分岐する構造へ整理
+  - 進捗（2026-03-24）: ブロックスコープの `typedef` も `stmt.c` 専用実装から `decl.c::psx_decl_parse_declaration()` 経由へ移し、宣言処理経路を統一
 - [ ] `direct_declarator` を再帰的にする（C11 §6.7.6）
   - C11: `direct-declarator = ... | "(" declarator ")"`（再帰的）
   - 現状: `"(" pointer? ident ")" "(" params ")"` で1段のみ。`int (**fpp)(int)` 等が表現不能

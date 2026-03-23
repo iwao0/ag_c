@@ -52,6 +52,7 @@ typedef struct {
   int is_extern_decl;
 } local_decl_spec_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
+static node_t *parse_typedef_declaration_local(void);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -1347,6 +1348,10 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 }
 
 node_t *psx_decl_parse_declaration(void) {
+  if (curtok()->kind == TK_TYPEDEF) {
+    return parse_typedef_declaration_local();
+  }
+
   if (curtok()->kind == TK_STATIC_ASSERT) {
     set_curtok(curtok()->next);
     tk_expect('(');
@@ -1461,4 +1466,74 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
   if (out->type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (out->type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
   return 1;
+}
+
+static node_t *parse_typedef_declaration_local(void) {
+  set_curtok(curtok()->next); // consume typedef
+
+  token_kind_t base_kind = TK_EOF;
+  int elem_size = 8;
+  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_pointer_base = 0;
+
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    tag_kind = curtok()->kind;
+    base_kind = tag_kind;
+    set_curtok(curtok()->next);
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+    }
+    tag_name = tag->str;
+    tag_len = tag->len;
+    if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
+      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+    }
+    elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+  } else {
+    token_kind_t builtin_kind = psx_consume_type_kind();
+    if (builtin_kind != TK_EOF) {
+      base_kind = builtin_kind;
+      psx_ctx_get_type_info(builtin_kind, NULL, &elem_size);
+      if (builtin_kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (builtin_kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
+    } else if (psx_ctx_is_typedef_name_token(curtok())) {
+      token_ident_t *id = (token_ident_t *)curtok();
+      psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
+                                &tag_kind, &tag_name, &tag_len, &is_pointer_base, NULL, NULL);
+      set_curtok(curtok()->next);
+    } else {
+      diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
+                     diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
+    }
+  }
+
+  int td_pointee_const = 0;
+  int td_pointee_volatile = 0;
+  psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
+
+  for (;;) {
+    int is_ptr = is_pointer_base;
+    unsigned int ptr_const_mask = 0;
+    unsigned int ptr_volatile_mask = 0;
+    int ptr_levels = 0;
+    int paren_array_dim = 0;
+    consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
+    token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
+    int typedef_sizeof = is_ptr ? 8 : elem_size;
+    while (tk_consume('[')) {
+      int n = parse_array_size_constexpr_decl();
+      if (!is_ptr && n > 0) typedef_sizeof *= n;
+      tk_expect(']');
+    }
+    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
+                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
+                                td_pointee_const, td_pointee_volatile);
+    if (!tk_consume(',')) break;
+  }
+  tk_expect(';');
+  return psx_node_new_num(0);
 }
