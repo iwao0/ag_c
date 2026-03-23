@@ -628,6 +628,13 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
   (void)parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
+  if (!out->is_pointer) {
+    while (t && t->kind == TK_LBRACKET) {
+      token_t *after = skip_balanced_bracket_token(t);
+      if (!after) break;
+      t = after;
+    }
+  }
   set_curtok(t);
   return 1;
 }

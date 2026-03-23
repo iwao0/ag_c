@@ -460,6 +460,8 @@ static void test_expr_generic() {
       "main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
   expect_parse_ok(
       "main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
+  expect_parse_ok(
+      "main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
 }
 
 static void test_expr_sizeof() {
