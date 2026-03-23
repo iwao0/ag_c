@@ -786,7 +786,7 @@ static node_t *lower_union_value_cast(node_t *operand,
     if (member_len > 0) break;
   }
   if (!found || member_len <= 0) {
-    psx_diag_ctx(token, "cast", "%s",
+    psx_diag_ctx(curtok(), "cast", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
@@ -832,7 +832,7 @@ static node_t *lower_struct_value_cast(node_t *operand,
     if (member_len > 0) break;
   }
   if (!found || member_len <= 0) {
-    psx_diag_ctx(token, "cast", "%s",
+    psx_diag_ctx(curtok(), "cast", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
@@ -846,8 +846,9 @@ static node_t *lower_struct_value_cast(node_t *operand,
 }
 
 static int parse_parenthesized_type_size(void) {
-  if (token->kind == TK_LPAREN && is_type_name_start_token(token->next)) {
-    token = token->next;
+  token_t *t = curtok();
+  if (t->kind == TK_LPAREN && is_type_name_start_token(t->next)) {
+    set_curtok(t->next);
     int sz = parse_parenthesized_type_size();
     if (sz < 0) return -1;
     tk_expect(')');
@@ -856,141 +857,148 @@ static int parse_parenthesized_type_size(void) {
 
   // Minimal support for C11 complex/imaginary spellings in sizeof/alignof:
   //   _Complex float, _Imaginary double, float _Complex, double _Imaginary
-  if (token->kind == TK_COMPLEX || token->kind == TK_IMAGINARY) {
-    token = token->next;
+  if (t->kind == TK_COMPLEX || t->kind == TK_IMAGINARY) {
+    t = t->next;
     int sz = 0;
-    if (token->kind == TK_FLOAT) {
+    if (t->kind == TK_FLOAT) {
       sz = 4 * 2; // _Complex float = 8B
-      token = token->next;
-    } else if (token->kind == TK_DOUBLE) {
+      t = t->next;
+    } else if (t->kind == TK_DOUBLE) {
       sz = 8 * 2; // _Complex double = 16B
-      token = token->next;
-    } else if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE) {
+      t = t->next;
+    } else if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE) {
       sz = 8 * 2; // _Complex long double = 16B (lowering)
-      token = token->next->next;
+      t = t->next->next;
     } else {
       return -1;
     }
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
-    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
-  if ((token->kind == TK_FLOAT || token->kind == TK_DOUBLE) &&
-      token->next && (token->next->kind == TK_COMPLEX || token->next->kind == TK_IMAGINARY)) {
-    int base_sz = (token->kind == TK_FLOAT) ? 4 : 8;
+  if ((t->kind == TK_FLOAT || t->kind == TK_DOUBLE) &&
+      t->next && (t->next->kind == TK_COMPLEX || t->next->kind == TK_IMAGINARY)) {
+    int base_sz = (t->kind == TK_FLOAT) ? 4 : 8;
     int sz = base_sz * 2; // _Complex: 基底型の2倍
-    token = token->next->next;
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    t = t->next->next;
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
-    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
-  if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE &&
-      token->next->next &&
-      (token->next->next->kind == TK_COMPLEX || token->next->next->kind == TK_IMAGINARY)) {
+  if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE &&
+      t->next->next &&
+      (t->next->next->kind == TK_COMPLEX || t->next->next->kind == TK_IMAGINARY)) {
     int sz = 8 * 2; // _Complex long double = 16B (lowering)
-    token = token->next->next->next;
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    t = t->next->next->next;
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
-    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
 
   // long double: 2トークン型名
-  if (token->kind == TK_LONG && token->next && token->next->kind == TK_DOUBLE) {
-    token = token->next->next;
+  if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE) {
+    t = t->next->next;
     int sz = 8; // macOS/AArch64: long double == double (64-bit)
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
-    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
   bool is_type = false;
   int scalar_size = 8;
-  token_kind_t type_kind = token->kind;
+  token_kind_t type_kind = t->kind;
   psx_ctx_get_type_info(type_kind, &is_type, &scalar_size);
   if (is_type) {
-    token = token->next;
+    t = t->next;
     // Extension: treat sizeof(void) as 1 (GNU-compatible behavior).
     int sz = (type_kind == TK_VOID) ? 1 : scalar_size;
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
-    if (parse_ptr_to_array_abstract_decl(&token, &fp_ptr)) {
+    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     apply_array_abstract_suffix_size(&sz);
     tk_expect(')');
     return sz;
   }
-  if (token->kind == TK_STRUCT || token->kind == TK_UNION) {
-    token_kind_t tag_kind = token->kind;
-    token = token->next;
+  if (t->kind == TK_STRUCT || t->kind == TK_UNION) {
+    token_kind_t tag_kind = t->kind;
+    set_curtok(t->next);
     token_ident_t *tag = tk_consume_ident();
     if (!tag) return -1;
     int sz = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
     if (sz <= 0) {
       psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE), tag->str, tag->len);
     }
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    t = curtok();
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     tk_expect(')');
     return sz;
   }
-  if (psx_ctx_is_typedef_name_token(token)) {
-    token_ident_t *id = (token_ident_t *)token;
+  if (psx_ctx_is_typedef_name_token(t)) {
+    token_ident_t *id = (token_ident_t *)t;
     token_kind_t td_base = TK_EOF;
     int td_elem = 8;
     tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
@@ -999,16 +1007,17 @@ static int parse_parenthesized_type_size(void) {
     int td_tag_len = 0;
     int td_ptr = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
-    token = token->next;
+    t = t->next;
     int sz = td_ptr ? 8 : td_elem;
-    while (token->kind == TK_MUL) {
-      token = token->next;
+    while (t->kind == TK_MUL) {
+      t = t->next;
       sz = 8;
     }
     int fp_ptr = 0;
-    if (parse_funcptr_abstract_decl(&token, &fp_ptr)) {
+    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
       sz = 8;
     }
+    set_curtok(t);
     tk_expect(')');
     return sz;
   }
@@ -1054,8 +1063,8 @@ node_t *psx_expr_assign(void) {
 
 static node_t *expr_internal(void) {
   node_t *node = assign();
-  while (token->kind == TK_COMMA) {
-    token = token->next;
+  while (curtok()->kind == TK_COMMA) {
+    set_curtok(curtok()->next);
     node_t *rhs = assign();
     node_t *comma = psx_node_new_binary(ND_COMMA, node, rhs);
     comma->fp_kind = rhs ? rhs->fp_kind : TK_FLOAT_KIND_NONE;
