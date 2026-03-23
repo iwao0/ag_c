@@ -1513,6 +1513,7 @@
   - 進捗（2026-03-24）: `_Generic` の非ポインタ整数比較を token kind 一致から「符号属性 + 型サイズ」比較へ拡張し、`unsigned long` / `long` など複合整数指定子でも関連型選択できるようにした
   - 進捗（2026-03-24）: `_Generic` 関連型の type-name で後置 qualifier（`int const`, `int const *`）を受理し、前置 qualifier 形（`const int`）と同様に選択判定へ反映できるようにした
   - 進捗（2026-03-24）: `sizeof/_Alignof` の type-name で `*` 後の `const/volatile/restrict`（例: `sizeof(int * const)`）と後置 type qualifier（`int const`）を受理するようにした
+  - 進捗（2026-03-24）: `_Alignof(int * const)` / `_Alignof(int * volatile)` / `_Alignof(int * restrict)` の回帰テストを追加し、修飾付きポインタ型 type-name の受理を固定した
   - 進捗（2026-03-24）: `_Static_assert` 定数式パーサの `sizeof(type-name)` で typedef 名（`sizeof(myint)`）を受理するようにし、式パーサ側との整合を改善
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映

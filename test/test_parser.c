@@ -654,6 +654,18 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, a2->kind);
   ASSERT_EQ(8, as_num(a2)->val);
 
+    node_t *a2q1 = parse_expr_input("_Alignof(int * const)");
+  ASSERT_EQ(ND_NUM, a2q1->kind);
+  ASSERT_EQ(8, as_num(a2q1)->val);
+
+    node_t *a2q2 = parse_expr_input("_Alignof(int * volatile)");
+  ASSERT_EQ(ND_NUM, a2q2->kind);
+  ASSERT_EQ(8, as_num(a2q2)->val);
+
+    node_t *a2q3 = parse_expr_input("_Alignof(int * restrict)");
+  ASSERT_EQ(ND_NUM, a2q3->kind);
+  ASSERT_EQ(8, as_num(a2q3)->val);
+
     node_t *a2a = parse_expr_input("_Alignof(int[10])");
   ASSERT_EQ(ND_NUM, a2a->kind);
   ASSERT_EQ(40, as_num(a2a)->val);
