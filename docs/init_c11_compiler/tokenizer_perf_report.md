@@ -59,6 +59,21 @@ TOKENIZER_BENCH_MODE=hotpath build/bench_tokenizer
   - `mixed_tps` が -5% 以下の低下なら順序変更は原則ロールバック候補
   - `scanner_ops` / `punctuator_ops` のいずれかが +5% 以上改善し、`mixed_tps` が維持できる場合は採用候補
 
+### Daily CSV Columns (`tokenizer_hotpath_daily.csv`)
+
+- `date`: 計測日（`YYYY-MM-DD`）
+- `mixed_tps`: mixed 256KB の `tokens/sec`（E2E寄りの総合指標）
+- `ident_tps`: ident-heavy 256KB の `tokens/sec`
+- `numeric_tps`: numeric-heavy 256KB の `tokens/sec`
+- `punct_tps`: punct-heavy 256KB の `tokens/sec`
+- `mixed_alloc`: mixed 256KB 実行時の `alloc_count`
+- `scanner_ops`: `hotpath=scanner` の `ops/sec`（局所指標）
+- `literals_ops`: `hotpath=literals` の `ops/sec`（局所指標）
+- `punctuator_ops`: `hotpath=punctuator` の `ops/sec`（局所指標）
+
+`*_tps` はTokenizer全体の実行経路を含むため、`*_ops`（局所ホットパス）とは直接比較しない。  
+順序変更や局所最適化の判断では、`mixed_tps` を主指標、`scanner_ops` / `punctuator_ops` を補助指標として扱う。
+
 ## Baseline (Before Optimization)
 
 - 1KB: `1,399,168 tokens/sec`, `alloc_count=674`, `peak_alloc_bytes=40,313`
