@@ -459,6 +459,7 @@
   - [x] 進捗（2026-03-23）: `parser.c` の `skip_balanced_group` / `_Alignas` 処理 / `funcdef` 警告出力位置を `curtok` ベースへ移行した
   - [x] 進捗（2026-03-23）: `parser.c` の関数定義前段（`parse_param_decl_spec`/`parse_func_decl_spec`/`parse_func_declarator`）を `curtok` ベースへ移行し、`parser.c` の `token` 直接参照を解消した
   - [x] 進捗（2026-03-23）: `expr.c` に `curtok`/`set_curtok` ヘルパを導入し、型修飾子スキップと配列抽象宣言子サイズ診断の `token` 参照を `curtok` ベースへ置換した
+  - [x] 進捗（2026-03-23）: `expr.c` の演算子優先順位パーサ（`assign`〜`mul`）を `curtok`/`set_curtok` へ移行し、式ホットパスの直接 `token` 更新を段階削減した
 - [x] 優先度P2: `config_runtime` の状態固定タイミングを明文化する
   - [x] context化後を見据えた設定保持の責務（global/context）を定義する
   - [x] strict/trigraph/binary/audit の適用タイミングを文書化する

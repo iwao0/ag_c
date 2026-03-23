@@ -1105,17 +1105,17 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xff));
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
-  psx_diag_ctx(token, "cast", "%s",
+  psx_diag_ctx(curtok(), "cast", "%s",
                diag_message_for(DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED));
   return operand;
 }
 
 static node_t *assign(void) {
   node_t *node = conditional();
-  switch (token->kind) {
+  switch (curtok()->kind) {
     case TK_ASSIGN: {
       psx_node_reject_const_assign(node, "=");
-      token = token->next;
+      set_curtok(curtok()->next);
       node_t *rhs = assign();
       psx_node_reject_const_qual_discard(node, rhs);
       if (node->kind == ND_LVAR) {
@@ -1128,16 +1128,16 @@ static node_t *assign(void) {
       node = (node_t *)assign_node;
       break;
     }
-    case TK_PLUSEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_ADD, assign(), "+="); break;
-    case TK_MINUSEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_SUB, assign(), "-="); break;
-    case TK_MULEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_MUL, assign(), "*="); break;
-    case TK_DIVEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_DIV, assign(), "/="); break;
-    case TK_MODEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_MOD, assign(), "%="); break;
-    case TK_SHLEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_SHL, assign(), "<<="); break;
-    case TK_SHREQ: token = token->next; node = psx_node_new_compound_assign(node, ND_SHR, assign(), ">>="); break;
-    case TK_ANDEQ: token = token->next; node = psx_node_new_compound_assign(node, ND_BITAND, assign(), "&="); break;
-    case TK_XOREQ: token = token->next; node = psx_node_new_compound_assign(node, ND_BITXOR, assign(), "^="); break;
-    case TK_OREQ: token = token->next; node = psx_node_new_compound_assign(node, ND_BITOR, assign(), "|="); break;
+    case TK_PLUSEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_ADD, assign(), "+="); break;
+    case TK_MINUSEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_SUB, assign(), "-="); break;
+    case TK_MULEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_MUL, assign(), "*="); break;
+    case TK_DIVEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_DIV, assign(), "/="); break;
+    case TK_MODEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_MOD, assign(), "%="); break;
+    case TK_SHLEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_SHL, assign(), "<<="); break;
+    case TK_SHREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_SHR, assign(), ">>="); break;
+    case TK_ANDEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_BITAND, assign(), "&="); break;
+    case TK_XOREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_BITXOR, assign(), "^="); break;
+    case TK_OREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_BITOR, assign(), "|="); break;
     default: break;
   }
   return node;
@@ -1145,8 +1145,8 @@ static node_t *assign(void) {
 
 static node_t *conditional(void) {
   node_t *node = logical_or();
-  if (token->kind == TK_QUESTION) {
-    token = token->next;
+  if (curtok()->kind == TK_QUESTION) {
+    set_curtok(curtok()->next);
     node_ctrl_t *ternary = arena_alloc(sizeof(node_ctrl_t));
     ternary->base.kind = ND_TERNARY;
     ternary->base.lhs = node;
@@ -1164,8 +1164,8 @@ static node_t *conditional(void) {
 
 static node_t *logical_or(void) {
   node_t *node = logical_and();
-  while (token->kind == TK_OROR) {
-    token = token->next;
+  while (curtok()->kind == TK_OROR) {
+    set_curtok(curtok()->next);
     node = psx_node_new_binary(ND_LOGOR, node, logical_and());
   }
   return node;
@@ -1173,8 +1173,8 @@ static node_t *logical_or(void) {
 
 static node_t *logical_and(void) {
   node_t *node = bit_or();
-  while (token->kind == TK_ANDAND) {
-    token = token->next;
+  while (curtok()->kind == TK_ANDAND) {
+    set_curtok(curtok()->next);
     node = psx_node_new_binary(ND_LOGAND, node, bit_or());
   }
   return node;
@@ -1182,8 +1182,8 @@ static node_t *logical_and(void) {
 
 static node_t *bit_or(void) {
   node_t *node = bit_xor();
-  while (token->kind == TK_PIPE) {
-    token = token->next;
+  while (curtok()->kind == TK_PIPE) {
+    set_curtok(curtok()->next);
     node = psx_node_new_binary(ND_BITOR, node, bit_xor());
   }
   return node;
@@ -1191,8 +1191,8 @@ static node_t *bit_or(void) {
 
 static node_t *bit_xor(void) {
   node_t *node = bit_and();
-  while (token->kind == TK_CARET) {
-    token = token->next;
+  while (curtok()->kind == TK_CARET) {
+    set_curtok(curtok()->next);
     node = psx_node_new_binary(ND_BITXOR, node, bit_and());
   }
   return node;
@@ -1200,8 +1200,8 @@ static node_t *bit_xor(void) {
 
 static node_t *bit_and(void) {
   node_t *node = equality();
-  while (token->kind == TK_AMP) {
-    token = token->next;
+  while (curtok()->kind == TK_AMP) {
+    set_curtok(curtok()->next);
     node = psx_node_new_binary(ND_BITAND, node, equality());
   }
   return node;
@@ -1210,11 +1210,11 @@ static node_t *bit_and(void) {
 static node_t *equality(void) {
   node_t *node = relational();
   for (;;) {
-    if (token->kind == TK_EQEQ) {
-      token = token->next;
+    if (curtok()->kind == TK_EQEQ) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_EQ, node, relational());
-    } else if (token->kind == TK_NEQ) {
-      token = token->next;
+    } else if (curtok()->kind == TK_NEQ) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_NE, node, relational());
     }
     else return node;
@@ -1224,17 +1224,17 @@ static node_t *equality(void) {
 static node_t *relational(void) {
   node_t *node = shift();
   for (;;) {
-    if (token->kind == TK_LT) {
-      token = token->next;
+    if (curtok()->kind == TK_LT) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_LT, node, shift());
-    } else if (token->kind == TK_LE) {
-      token = token->next;
+    } else if (curtok()->kind == TK_LE) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_LE, node, shift());
-    } else if (token->kind == TK_GT) {
-      token = token->next;
+    } else if (curtok()->kind == TK_GT) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_LT, shift(), node);
-    } else if (token->kind == TK_GE) {
-      token = token->next;
+    } else if (curtok()->kind == TK_GE) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_LE, shift(), node);
     }
     else return node;
@@ -1244,11 +1244,11 @@ static node_t *relational(void) {
 static node_t *shift(void) {
   node_t *node = add();
   for (;;) {
-    if (token->kind == TK_SHL) {
-      token = token->next;
+    if (curtok()->kind == TK_SHL) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_SHL, node, add());
-    } else if (token->kind == TK_SHR) {
-      token = token->next;
+    } else if (curtok()->kind == TK_SHR) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_SHR, node, add());
     }
     else return node;
@@ -1258,8 +1258,8 @@ static node_t *shift(void) {
 static node_t *add(void) {
   node_t *node = mul();
   for (;;) {
-    if (token->kind == TK_PLUS) {
-      token = token->next;
+    if (curtok()->kind == TK_PLUS) {
+      set_curtok(curtok()->next);
       node_t *rhs = mul();
       if (psx_node_is_pointer(node)) {
         int ds = psx_node_deref_size(node);
@@ -1269,8 +1269,8 @@ static node_t *add(void) {
         }
       }
       node = psx_node_new_binary(ND_ADD, node, rhs);
-    } else if (token->kind == TK_MINUS) {
-      token = token->next;
+    } else if (curtok()->kind == TK_MINUS) {
+      set_curtok(curtok()->next);
       node_t *rhs = mul();
       if (psx_node_is_pointer(node)) {
         int ds = psx_node_deref_size(node);
@@ -1288,14 +1288,14 @@ static node_t *add(void) {
 static node_t *mul(void) {
   node_t *node = cast();
   for (;;) {
-    if (token->kind == TK_MUL) {
-      token = token->next;
+    if (curtok()->kind == TK_MUL) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_MUL, node, cast());
-    } else if (token->kind == TK_DIV) {
-      token = token->next;
+    } else if (curtok()->kind == TK_DIV) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_DIV, node, cast());
-    } else if (token->kind == TK_MOD) {
-      token = token->next;
+    } else if (curtok()->kind == TK_MOD) {
+      set_curtok(curtok()->next);
       node = psx_node_new_binary(ND_MOD, node, cast());
     }
     else return node;
