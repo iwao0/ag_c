@@ -560,10 +560,11 @@
 - [x] ホットパス計測追加（`scanner` / `literals` / `punctuator`）
 - [x] perfレポート整備（継続比較テンプレート追加）
 - [x] 直近リファクタ（prefix判定の共通化: `tk_parse_string_prefix` / `tk_parse_char_prefix`）
-- [ ] 次フェーズ候補P1: `tokenizer.c` の大型関数分割（責務単位でさらに分離）
+- [x] 次フェーズ候補P1: `tokenizer.c` の大型関数分割（責務単位でさらに分離）
   - [x] 進捗（2026-03-24）: `tk_tokenize_ctx` から文字列/文字定数の処理を `tokenize_string_literal` / `tokenize_char_literal` に抽出し、制御フローの見通しを改善した
   - [x] 進捗（2026-03-24）: `tk_tokenize_ctx` から記号/識別子/数値の処理を `tokenize_punctuator` / `tokenize_ident_or_keyword` / `tokenize_number_literal` に抽出し、1ループあたりの分岐責務を分離した
   - [x] 進捗（2026-03-24）: `tk_tokenize_ctx` のセッション開始/終了処理を整理し、コンテキスト切替・入力正規化・終了復元の責務境界を明確化した
+  - [x] 進捗（2026-03-24）: ループ内のトークン前処理フラグ操作を `take_tokenize_flags` に集約し、分岐処理の引数受け渡しを単純化した
 - [x] 次フェーズ候補P2: hotpathベンチ結果の定点記録を1日1回運用に固定
   - [x] 進捗（2026-03-24）: `scripts/log_tokenizer_hotpath_daily.sh` と `make log-tokenizer-hotpath-daily` を追加し、`tokenizer_hotpath_daily.csv` へ日次追記できる運用を固定した
 - [x] 次フェーズ候補P2: Tokenizer専用の軽量perfゲート（ローカル実行向け）を追加

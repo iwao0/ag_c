@@ -325,6 +325,12 @@ static token_num_float_t *new_token_num_float(
     token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
 typedef struct parsed_num_t parsed_num_t;
 static void parse_number_literal(char **pp, parsed_num_t *num);
+typedef struct tokenize_flags_t tokenize_flags_t;
+
+struct tokenize_flags_t {
+  bool at_bol;
+  bool has_space;
+};
 
 /** @brief 文字列リテラル（接頭辞含む）を読み取り、トークンを生成する。 */
 static bool tokenize_string_literal(
@@ -500,6 +506,14 @@ static bool tokenize_ident_or_keyword(
 /** @brief 数値リテラルを読み取り、整数/浮動小数トークンを生成する。 */
 static bool tokenize_number_literal(
     char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space);
+
+/** @brief 現在の空白/BOLフラグを取り出し、次トークン向けにリセットする。 */
+static inline tokenize_flags_t take_tokenize_flags(bool *at_bol, bool *has_space) {
+  tokenize_flags_t f = {*at_bol, *has_space};
+  *at_bol = false;
+  *has_space = false;
+  return f;
+}
 
 static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
   token_string_t *tok = tcalloc(1, sizeof(token_string_t));
@@ -910,27 +924,23 @@ token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
     p = tk_skip_ignored(p, &at_bol, &has_space, &line_no);
     if (!*p) break;
 
-    // 新しいトークンの処理前にフラグを覚えておく
-    bool _at_bol = at_bol;
-    bool _has_space = has_space;
-    at_bol = false;
-    has_space = false;
+    tokenize_flags_t flags = take_tokenize_flags(&at_bol, &has_space);
 
-    if (tokenize_punctuator(&p, &cur, line_no, _at_bol, _has_space)) {
+    if (tokenize_punctuator(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
       continue;
     }
-    if (tokenize_string_literal(&p, &cur, line_no, _at_bol, _has_space)) {
+    if (tokenize_string_literal(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
       continue;
     }
 
-    if (tokenize_char_literal(&p, &cur, line_no, _at_bol, _has_space)) {
+    if (tokenize_char_literal(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
       continue;
     }
 
-    if (tokenize_ident_or_keyword(&p, &cur, line_no, _at_bol, _has_space)) {
+    if (tokenize_ident_or_keyword(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
       continue;
     }
-    if (tokenize_number_literal(&p, &cur, line_no, _at_bol, _has_space)) {
+    if (tokenize_number_literal(&p, &cur, line_no, flags.at_bol, flags.has_space)) {
       continue;
     }
 
