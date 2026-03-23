@@ -426,6 +426,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "sizeof_ptr_to_func_returning_ptr_to_array_type", CASE_INT, "int main(){ return sizeof(int (*(*)(void))[3]); }", 8, 0},
     {"type_decl", "sizeof_array_of_ptr_to_func_returning_ptr_to_array_type", CASE_INT, "int main(){ return sizeof(int (*(*[2])(void))[3]); }", 16, 0},
     {"type_decl", "sizeof_ptr_to_func_returning_ptr_to_func_type", CASE_INT, "int main(){ return sizeof(int (*(*)(void))(int)); }", 8, 0},
+    {"type_decl", "sizeof_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_type", CASE_INT, "int main(){ return sizeof(int (*(*(*)(void))(int))[3]); }", 8, 0},
     // designator 初期化子との組み合わせ
     {"type_decl", "compound_literal_array_subscript_designator", CASE_INT, "int main(){ return ((int[4]){[2]=99})[2]; }", 99, 0},
     // 式中での複数利用

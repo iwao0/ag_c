@@ -1631,6 +1631,7 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("main() { return sizeof(int (*(*)(void))[3]); }");
   expect_parse_ok("main() { return sizeof(int (*(*[2])(void))[3]); }");
   expect_parse_ok("main() { return sizeof(int (*(*)(void))(int)); }");
+  expect_parse_ok("main() { return sizeof(int (*(*(*)(void))(int))[3]); }");
   expect_parse_ok("main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }");
   expect_parse_ok("main() { return _Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 1, default: 2); }");
 
