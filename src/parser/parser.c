@@ -39,7 +39,7 @@ static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
-static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator);
+static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator);
 static void parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
 typedef struct {
   token_kind_t tag_kind;
@@ -1217,12 +1217,14 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
                diag_message_for(DIAG_ERR_PARSER_MISSING_CLOSING_PAREN));
 }
 
-static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator) {
+static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator) {
   if (out_is_array_declarator) *out_is_array_declarator = 0;
+  if (out_is_pointer_declarator) *out_is_pointer_declarator = 0;
   token_ident_t *param = NULL;
   int open_parens = 0;
   while (tk_consume('(')) open_parens++;
   while (tk_consume('*')) {
+    if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
     skip_ptr_qualifiers();
   }
   param = tk_consume_ident();
@@ -1248,9 +1250,9 @@ static void parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   param_decl_spec_t ds = {0};
   parse_param_decl_spec(&ds);
   // ポインタ修飾子を確認してから parse_param_declarator_name へ
-  int param_is_ptr = (token->kind == '*');
+  int param_is_ptr = 0;
   int param_is_array_declarator = 0;
-  token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator);
+  token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator, &param_is_ptr);
   if (!param) return;
 
   if (*nargs >= *arg_cap) {

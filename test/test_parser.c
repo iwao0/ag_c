@@ -1793,6 +1793,7 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("main() { int x=1; return x<<1|x<<2|x<<3; }");
   expect_parse_ok("main() { int x=1; return !!!!!x; }");
   expect_parse_ok("main() { int x=255; return ~~~x; }");
+  expect_parse_ok("struct S { int x; }; int f(struct S (*p)) { return p->x; } int main() { struct S s={3}; return f(&s); }");
 
   // sizeof内の型
   expect_parse_ok("main() { return sizeof(int); }");
