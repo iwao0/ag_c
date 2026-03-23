@@ -975,7 +975,8 @@ static long long parse_enum_const_unary_toplevel(void) {
     if (curtok()->kind == TK_LPAREN) {
       set_curtok(curtok()->next);
       int sz = 8;
-      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind)) {
+      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind) ||
+          psx_ctx_is_typedef_name_token(curtok())) {
         psx_ctx_get_type_info(curtok()->kind, NULL, &sz);
         if (psx_ctx_is_tag_keyword(curtok()->kind)) {
           token_kind_t tk = curtok()->kind;
@@ -984,6 +985,19 @@ static long long parse_enum_const_unary_toplevel(void) {
           if (tag && psx_ctx_has_tag_type(tk, tag->str, tag->len)) {
             sz = psx_ctx_get_tag_size(tk, tag->str, tag->len);
           }
+        } else if (psx_ctx_is_typedef_name_token(curtok())) {
+          token_ident_t *id = (token_ident_t *)curtok();
+          token_kind_t td_base = TK_EOF;
+          int td_elem = 8;
+          tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+          token_kind_t td_tag = TK_EOF;
+          char *td_tag_name = NULL;
+          int td_tag_len = 0;
+          int td_ptr = 0;
+          psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
+                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr);
+          sz = td_ptr ? 8 : td_elem;
+          set_curtok(curtok()->next);
         } else {
           set_curtok(curtok()->next);
           while (psx_ctx_is_type_token(curtok()->kind)) set_curtok(curtok()->next);
