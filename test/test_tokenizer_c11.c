@@ -236,6 +236,28 @@ static void test_c11_invalid_suffixes(void) {
   expect_tokenize_fail("1lll");    // l 3つは不正
 }
 
+static void test_c11_ucn_invalid_boundaries(void) {
+  printf("test_c11_ucn_invalid_boundaries...\n");
+  // 識別子中: 制御文字領域 UCN
+  expect_tokenize_fail("foo\\u000A");
+  // 識別子中: surrogate
+  expect_tokenize_fail("bar\\uD800");
+  // 文字列中: bidi control は拒否
+  expect_tokenize_fail("\"\\u202E\"");
+  // UCN桁不足
+  expect_tokenize_fail("\"\\u123\"");
+}
+
+static void test_c11_long_escape_sequences(void) {
+  printf("test_c11_long_escape_sequences...\n");
+  // 長い16進エスケープ列でもトークナイズが破綻しないことを確認
+  token_t *tok = tk_tokenize("\"\\x123456789ABCDEF\"");
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_TRUE(((token_string_t *)tok)->len >= 1);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
 int main(void) {
   printf("Running C11-focused Tokenizer tests...\n");
   test_c11_ident_ucn();
@@ -248,6 +270,8 @@ int main(void) {
   test_c11_float_edge_cases();
   test_c11_int_suffix_mixed_case();
   test_c11_invalid_suffixes();
+  test_c11_ucn_invalid_boundaries();
+  test_c11_long_escape_sequences();
   printf("OK: Tokenizer C11-focused tests passed!\n");
   return 0;
 }
