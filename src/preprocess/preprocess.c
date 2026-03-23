@@ -9,6 +9,7 @@
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 typedef struct macro macro_t;
 #define MACRO_INLINE_PARAMS 8
@@ -103,10 +104,7 @@ static bool path_is_within(const char *path, const char *base) {
   return strncmp(path, base, n) == 0 && (path[n] == '\0' || path[n] == '/');
 }
 
-static void validate_include_realpath_or_die(const char *candidate, const char *display_path) {
-  char resolved[PATH_MAX];
-  if (!realpath(candidate, resolved)) return;
-
+static bool include_path_is_allowed(const char *resolved) {
   static bool roots_initialized = false;
   static char project_root[PATH_MAX];
   static char include_root[PATH_MAX];
@@ -119,11 +117,76 @@ static void validate_include_realpath_or_die(const char *candidate, const char *
     have_include_root = realpath("include", include_root) != NULL;
   }
 
-  bool allowed = (have_project_root && path_is_within(resolved, project_root)) ||
-                 (have_include_root && path_is_within(resolved, include_root));
-  if (!allowed) {
+  return (have_project_root && path_is_within(resolved, project_root)) ||
+         (have_include_root && path_is_within(resolved, include_root));
+}
+
+static void validate_include_realpath_or_die(const char *candidate, const char *display_path) {
+  char resolved[PATH_MAX];
+  if (!realpath(candidate, resolved)) return;
+  if (!include_path_is_allowed(resolved)) {
     pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
+}
+
+static char *read_include_file_secure(const char *candidate, const char *display_path) {
+  FILE *fp = fopen(candidate, "r");
+  if (!fp) return NULL;
+
+  int fd = fileno(fp);
+  char opened_path[PATH_MAX];
+  bool have_opened_path = false;
+
+#ifdef F_GETPATH
+  if (fd >= 0 && fcntl(fd, F_GETPATH, opened_path) == 0) {
+    have_opened_path = true;
+  }
+#endif
+  if (!have_opened_path) {
+    if (!realpath(candidate, opened_path)) {
+      fclose(fp);
+      return NULL;
+    }
+    have_opened_path = true;
+  }
+  if (have_opened_path && !include_path_is_allowed(opened_path)) {
+    fclose(fp);
+    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
+  }
+
+  if (fseek(fp, 0, SEEK_END) == -1) {
+    fclose(fp);
+    return NULL;
+  }
+  long file_size = ftell(fp);
+  if (file_size < 0) {
+    fclose(fp);
+    return NULL;
+  }
+  size_t size = (size_t)file_size;
+  if (size > SIZE_MAX - 2) {
+    fclose(fp);
+    return NULL;
+  }
+  if (fseek(fp, 0, SEEK_SET) == -1) {
+    fclose(fp);
+    return NULL;
+  }
+
+  char *buf = calloc(1, size + 2);
+  if (!buf) {
+    fclose(fp);
+    return NULL;
+  }
+  if (fread(buf, 1, size, fp) != size) {
+    fclose(fp);
+    free(buf);
+    return NULL;
+  }
+  if (size == 0 || buf[size - 1] != '\n') buf[size++] = '\n';
+  buf[size] = '\0';
+  fclose(fp);
+  return buf;
 }
 
 static char *normalize_include_path_or_die(const char *path) {
@@ -454,49 +517,6 @@ static token_t *copy_token(token_t *tok) {
 
   t->next = NULL;
   return t;
-}
-
-static char *read_file(char *path) {
-  FILE *fp = fopen(path, "r");
-  if (!fp)
-    return NULL;
-
-  if (fseek(fp, 0, SEEK_END) == -1) {
-    fclose(fp);
-    return NULL;
-  }
-  long file_size = ftell(fp);
-  if (file_size < 0) {
-    fclose(fp);
-    return NULL;
-  }
-  size_t size = (size_t)file_size;
-  if (size > SIZE_MAX - 2) {
-    fclose(fp);
-    return NULL;
-  }
-  if (fseek(fp, 0, SEEK_SET) == -1) {
-    fclose(fp);
-    return NULL;
-  }
-
-  char *buf = calloc(1, size + 2);
-  if (!buf) {
-    fclose(fp);
-    return NULL;
-  }
-  if (fread(buf, 1, size, fp) != size) {
-    fclose(fp);
-    free(buf);
-    return NULL;
-  }
-
-  // ファイルが必ず「\n\0」で終わるようにする
-  if (size == 0 || buf[size - 1] != '\n')
-    buf[size++] = '\n';
-  buf[size] = '\0';
-  fclose(fp);
-  return buf;
 }
 
 // === Conditional Compiliation State ===
@@ -930,7 +950,7 @@ token_t *preprocess(token_t *tok) {
         }
 
         validate_include_realpath_or_die(filename, filename);
-        char *buf = read_file(filename);
+        char *buf = read_include_file_secure(filename, filename);
         if (!buf) {
           size_t alt_len = strlen("include/") + strlen(filename) + 1;
           char *alt = calloc(alt_len, 1);
@@ -939,7 +959,7 @@ token_t *preprocess(token_t *tok) {
           }
           snprintf(alt, alt_len, "include/%s", filename);
           validate_include_realpath_or_die(alt, filename);
-          buf = read_file(alt);
+          buf = read_include_file_secure(alt, filename);
           free(alt);
         }
         if (!buf) {

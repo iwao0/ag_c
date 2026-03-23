@@ -114,6 +114,8 @@ static const char *fail_cases[] = {
     "#include <stdio.h\nint main() { return 0; }\n",
     "#include \"build/not_found.h\"\nint main() { return 0; }\n",
     "#include \"build/escape_symlink.h\"\nint main() { return 0; }\n",
+    "#include \"build/escape_tmp_symlink.h\"\nint main() { return 0; }\n",
+    "#include <escape_tmp_symlink.h>\nint main() { return 0; }\n",
     "#include \"build/\\u202Eevil.h\"\nint main() { return 0; }\n",
     "#include \"build\\\\test_inc.h\"\nint main() { return 0; }\n",
     "#include \"C:/Windows/win.ini\"\nint main() { return 0; }\n",
@@ -539,6 +541,23 @@ int main(void) {
   unlink("build/escape_symlink.h");
   if (symlink("../README.md", "build/escape_symlink.h") != 0) {
     fprintf(stderr, "  FAIL: cannot create build/escape_symlink.h symlink\n");
+    return 1;
+  }
+  FILE *htmp = fopen("/tmp/ag_c_escape_preprocess.h", "w");
+  if (!htmp) {
+    fprintf(stderr, "  FAIL: cannot create /tmp/ag_c_escape_preprocess.h\n");
+    return 1;
+  }
+  fprintf(htmp, "int escape_tmp_symlink(void) { return 0; }\n");
+  fclose(htmp);
+  unlink("build/escape_tmp_symlink.h");
+  if (symlink("/tmp/ag_c_escape_preprocess.h", "build/escape_tmp_symlink.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create build/escape_tmp_symlink.h symlink\n");
+    return 1;
+  }
+  unlink("include/escape_tmp_symlink.h");
+  if (symlink("/tmp/ag_c_escape_preprocess.h", "include/escape_tmp_symlink.h") != 0) {
+    fprintf(stderr, "  FAIL: cannot create include/escape_tmp_symlink.h symlink\n");
     return 1;
   }
   FILE *hcycle_norm_a = fopen("build/cycle_norm_a.h", "w");
