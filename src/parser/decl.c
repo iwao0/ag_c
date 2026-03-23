@@ -14,6 +14,8 @@
 static lvar_t *locals;       // 現在のスコープで見えるローカル変数リスト
 static lvar_t *all_locals;   // 全スコープのローカル変数リスト（未使用チェック用）
 static int locals_offset;
+static inline token_t *curtok(void) { return tk_get_current_token(); }
+static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 // ブロックスコープのローカル変数リスト保存スタック
 #define LVAR_SCOPE_STACK_MAX 256
@@ -147,10 +149,10 @@ static long long eval_const_expr_decl(node_t *n, int *ok) {
 }
 
 static void skip_ptr_qualifiers_decl(int *is_const_qualified, int *is_volatile_qualified) {
-  while (token->kind == TK_CONST || token->kind == TK_VOLATILE || token->kind == TK_RESTRICT) {
-    if (token->kind == TK_CONST && is_const_qualified) *is_const_qualified = 1;
-    if (token->kind == TK_VOLATILE && is_volatile_qualified) *is_volatile_qualified = 1;
-    token = token->next;
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+    if (curtok()->kind == TK_CONST && is_const_qualified) *is_const_qualified = 1;
+    if (curtok()->kind == TK_VOLATILE && is_volatile_qualified) *is_volatile_qualified = 1;
+    set_curtok(curtok()->next);
   }
 }
 
@@ -181,7 +183,7 @@ static long long parse_array_size_expr_decl(node_t **out_node, int *out_ok) {
   long long v = eval_const_expr_decl(n, &ok);
   if (out_ok) *out_ok = ok;
   if (ok && v <= 0) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
   return v;
@@ -191,7 +193,7 @@ static int parse_array_size_constexpr_decl(void) {
   int ok = 1;
   long long v = parse_array_size_expr_decl(NULL, &ok);
   if (!ok) {
-    psx_diag_ctx(token, "decl", "%s",
+    psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_CONSTEXPR_REQUIRED));
   }
   return (int)v;
@@ -202,11 +204,11 @@ static int parse_nonneg_const_expr_decl(const char *what) {
   int ok = 1;
   long long v = eval_const_expr_decl(n, &ok);
   if (!ok) {
-    psx_diag_ctx(token, "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+    psx_diag_ctx(curtok(), "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
                  what);
   }
   if (v < 0) {
-    psx_diag_ctx(token, "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
+    psx_diag_ctx(curtok(), "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
                  what);
   }
   return (int)v;
@@ -219,7 +221,7 @@ static node_t *parse_scalar_brace_initializer(void) {
   node_t *rhs = psx_expr_assign();
   if (tk_consume(',')) {
       if (!tk_consume('}')) {
-      psx_diag_ctx(token, "decl", "%s",
+      psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
       }
     return rhs;
