@@ -128,6 +128,7 @@ static const char *fail_cases[] = {
     "#include \"build/depth_00.h\"\nint main() { return 0; }\n",
     "#line 0\nint main() { return 0; }\n",
     "#line 2147483648\nint main() { return 0; }\n",
+    "#line 10 \"bad\x01name.c\"\nint main() { return 0; }\n",
     "#define FOO(x) x\nint main() { return FOO(1; }\n",
     "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1); }\n",
     "#define ADD(a, b) ((a) + (b))\nint main() { return ADD(1, 2, 3); }\n",
@@ -469,6 +470,34 @@ static void expect_macro_arg_nesting_limit_fail(void) {
   free(input);
 }
 
+static void expect_line_filename_too_long_fail(void) {
+  const int name_len = 1500;
+  size_t cap = (size_t)name_len + 64;
+  char *input = calloc(cap, 1);
+  if (!input) {
+    fprintf(stderr, "  FAIL: cannot allocate line filename test input\n");
+    exit(1);
+  }
+  size_t len = 0;
+  int n = snprintf(input + len, cap - len, "#line 10 \"");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: line filename test input overflow\n");
+    free(input);
+    exit(1);
+  }
+  len += (size_t)n;
+  for (int i = 0; i < name_len; i++) input[len++] = 'a';
+  n = snprintf(input + len, cap - len, "\"\nint main() { return 0; }\n");
+  if (n < 0 || (size_t)n >= cap - len) {
+    fprintf(stderr, "  FAIL: line filename test input overflow\n");
+    free(input);
+    exit(1);
+  }
+
+  expect_preprocess_fail(input);
+  free(input);
+}
+
 int main(void) {
   printf("Running Preprocessor tests...\n");
   fflush(stdout);
@@ -555,6 +584,7 @@ int main(void) {
     expect_preprocess_fail(fail_cases[i]);
   }
   expect_preprocess_fail_with_stderr_substr("#line 2147483648\nint main() { return 0; }\n", "E1027");
+  expect_line_filename_too_long_fail();
   expect_macro_expansion_limit_fail();
   expect_macro_arg_nesting_limit_fail();
 

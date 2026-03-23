@@ -30,6 +30,7 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
 #define PP_MAX_INCLUDE_DEPTH 64
 #define PP_MAX_MACRO_EXPANSIONS 20000
+#define PP_MAX_LINE_FILENAME_LEN 1024
 
 typedef struct include_frame include_frame_t;
 struct include_frame {
@@ -79,6 +80,18 @@ static void validate_include_path_or_die(const char *path) {
     }
     if ((p == path || p[-1] == '/') && p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
       pp_error(DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN, path);
+    }
+  }
+}
+
+static void validate_line_filename_or_die(const char *name, int len) {
+  if (!name || len <= 0 || len > PP_MAX_LINE_FILENAME_LEN) {
+    pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
+  }
+  for (int i = 0; i < len; i++) {
+    unsigned char c = (unsigned char)name[i];
+    if (c < 0x20 || c == 0x7F) {
+      pp_error(DIAG_ERR_PREPROCESS_GENERIC, NULL);
     }
   }
 }
@@ -1165,6 +1178,7 @@ token_t *preprocess(token_t *tok) {
           char *new_file = NULL;
           if (tok && tok->kind == TK_STRING) {
             token_string_t *st = as_string(tok);
+            validate_line_filename_or_die(st->str, st->len);
             new_file = my_strndup(st->str, st->len);
             tok = tok->next;
           }
