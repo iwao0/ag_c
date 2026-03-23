@@ -987,28 +987,40 @@ static void skip_func_params(void) {
   }
 }
 
-static token_ident_t *consume_decl_name(int *is_pointer,
-                                        unsigned int *const_mask, unsigned int *volatile_mask,
-                                        int *levels, int *out_array_dim) {
-  token_ident_t *tok = NULL;
-  int open_parens = 0;
-  while (tk_consume('(')) open_parens++;
+static token_ident_t *consume_decl_name_recursive(int *is_pointer,
+                                                  unsigned int *const_mask, unsigned int *volatile_mask,
+                                                  int *levels, int *out_array_dim,
+                                                  int *had_parens) {
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
-  tok = tk_consume_ident();
-  if (!tok) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+  token_ident_t *tok = NULL;
+  int local_had_parens = 0;
+  if (tk_consume('(')) {
+    local_had_parens = 1;
+    tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels, out_array_dim, NULL);
+    tk_expect(')');
+  } else {
+    tok = tk_consume_ident();
   }
-  int had_parens = open_parens;
-  while (open_parens-- > 0) tk_expect(')');
-  // (*p)[N] パターン: 括弧付き宣言子の後の配列次元は「配列へのポインタ」
-  if (had_parens > 0 && out_array_dim && tk_consume('[')) {
+  while (curtok()->kind == TK_LPAREN) {
+    skip_func_params();
+  }
+  if (local_had_parens && out_array_dim && tk_consume('[')) {
     long long dim = parse_array_size_constexpr_decl();
     tk_expect(']');
     *out_array_dim = (int)dim;
   }
-  while (curtok()->kind == TK_LPAREN) {
-    skip_func_params();
+  if (had_parens) *had_parens = local_had_parens;
+  return tok;
+}
+
+static token_ident_t *consume_decl_name(int *is_pointer,
+                                        unsigned int *const_mask, unsigned int *volatile_mask,
+                                        int *levels, int *out_array_dim) {
+  token_ident_t *tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask,
+                                                   levels, out_array_dim, NULL);
+  if (!tok) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
   }
   return tok;
 }
