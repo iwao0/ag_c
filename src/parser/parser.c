@@ -1341,10 +1341,10 @@ static void parse_param_decl_spec(param_decl_spec_t *out) {
 
   // 仮引数の型解析（struct/union の値渡し/ポインタ渡しを含む）
   skip_cv_qualifiers();
-  if (psx_ctx_is_tag_keyword(token->kind)) {
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     // struct/union 型仮引数
-    out->tag_kind = token->kind;
-    token = token->next;
+    out->tag_kind = curtok()->kind;
+    set_curtok(curtok()->next);
     token_ident_t *tag_ident = tk_consume_ident();
     if (tag_ident) {
       out->tag_name = tag_ident->str;
@@ -1361,8 +1361,8 @@ static void parse_param_decl_spec(param_decl_spec_t *out) {
   token_kind_t param_type_kind = psx_consume_type_kind();
   if (param_type_kind != TK_EOF) {
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
-  } else if (psx_ctx_is_typedef_name_token(token)) {
-    token = token->next; // typedef名: elem_size は 8 のまま
+  } else if (psx_ctx_is_typedef_name_token(curtok())) {
+    set_curtok(curtok()->next); // typedef名: elem_size は 8 のまま
   }
 }
 
@@ -1372,19 +1372,19 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   *ret_fp_kind = TK_FLOAT_KIND_NONE;
   *ret_tag = NULL;
   *ret_is_ptr = 0;
-  if (psx_ctx_is_tag_keyword(token->kind)) {
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     // 戻り値型が struct/union Tag [*] の関数定義
-    *ret_kind = token->kind; // TK_STRUCT or TK_UNION
-    token = token->next;     // skip struct/union keyword
+    *ret_kind = curtok()->kind; // TK_STRUCT or TK_UNION
+    set_curtok(curtok()->next); // skip struct/union keyword
     *ret_tag = tk_consume_ident(); // consume tag name
-    while (token->kind == TK_MUL) { token = token->next; *ret_is_ptr = 1; } // skip optional pointer(s)
+    while (curtok()->kind == TK_MUL) { set_curtok(curtok()->next); *ret_is_ptr = 1; } // skip optional pointer(s)
     return;
   }
 
   *ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
-  if (*ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(token)) {
+  if (*ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(curtok())) {
     // typedef 名を戻り値型として認識（size_t, FILE 等）
-    token_ident_t *td_id = (token_ident_t *)token;
+    token_ident_t *td_id = (token_ident_t *)curtok();
     token_kind_t td_base = TK_EOF;
     int td_elem = 8;
     tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
@@ -1394,7 +1394,7 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
     int td_is_ptr = 0;
     psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
                               &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr);
-    token = token->next;
+    set_curtok(curtok()->next);
     *ret_kind = td_base;
     *ret_fp_kind = td_fp;
     if (td_is_ptr) *ret_is_ptr = 1;
@@ -1407,13 +1407,13 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   }
   if (*ret_kind == TK_FLOAT) *ret_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (*ret_kind == TK_DOUBLE) *ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  while (token->kind == TK_MUL) { token = token->next; *ret_is_ptr = 1; }
+  while (curtok()->kind == TK_MUL) { set_curtok(curtok()->next); *ret_is_ptr = 1; }
 }
 
 static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_args, int *out_nargs) {
   token_ident_t *tok = tk_consume_ident();
   if (!tok) {
-    psx_diag_ctx(token, "funcdef", "%s",
+    psx_diag_ctx(curtok(), "funcdef", "%s",
                  diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
   }
   tk_expect('(');
@@ -1427,10 +1427,10 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_
     node_func_t node_tmp = {0};
     node_tmp.args = args;
     while (!done) {
-      if (token->kind == TK_ELLIPSIS) {
-        token = token->next;
-        if (token->kind == ',') {
-          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, token,
+      if (curtok()->kind == TK_ELLIPSIS) {
+        set_curtok(curtok()->next);
+        if (curtok()->kind == ',') {
+          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
                          "%s",
                          diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
         }
@@ -1441,8 +1441,8 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, node_t ***out_
       parse_param_decl(&node_tmp, &nargs, &arg_cap);
       args = node_tmp.args;
       if (!tk_consume(',')) break;
-      if (token->kind == TK_RPAREN) {
-        psx_diag_missing(token, diag_text_for(DIAG_TEXT_PARAMETER));
+      if (curtok()->kind == TK_RPAREN) {
+        psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
       }
     }
     tk_expect(')');
