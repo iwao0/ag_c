@@ -30,6 +30,21 @@ static void expect_tokenize_fail(const char *input) {
   ASSERT_TRUE(WEXITSTATUS(status) != 0);
 }
 
+static void expect_tokenize_ctx_fail(tokenizer_context_t *ctx, const char *input) {
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    freopen("/dev/null", "w", stdout);
+    freopen("/dev/null", "w", stderr);
+    tk_tokenize_ctx(ctx, input);
+    _exit(0);
+  }
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+}
+
 // 1. tk_tokenize() のテスト
 static void test_tokenize() {
   printf("test_tokenize...\n");
@@ -1000,6 +1015,44 @@ static void test_tokenize_with_explicit_context() {
   ASSERT_TRUE(WEXITSTATUS(status) != 0);
 }
 
+static void test_context_config_isolation_and_switch_timing() {
+  printf("test_context_config_isolation_and_switch_timing...\n");
+
+  tokenizer_context_t ctx_strict;
+  tokenizer_context_t ctx_relaxed;
+  tk_context_init(&ctx_strict);
+  tk_context_init(&ctx_relaxed);
+
+  tk_ctx_set_strict_c11_mode(&ctx_strict, true);
+  tk_ctx_set_enable_binary_literals(&ctx_strict, true);
+  tk_ctx_set_enable_trigraphs(&ctx_strict, false);
+  tk_ctx_set_enable_c11_audit_extensions(&ctx_strict, false);
+
+  tk_ctx_set_strict_c11_mode(&ctx_relaxed, false);
+  tk_ctx_set_enable_binary_literals(&ctx_relaxed, true);
+  tk_ctx_set_enable_trigraphs(&ctx_relaxed, true);
+  tk_ctx_set_enable_c11_audit_extensions(&ctx_relaxed, true);
+
+  // strict ctx では 0b を拒否、relaxed ctx では受理
+  expect_tokenize_ctx_fail(&ctx_strict, "0b101");
+  token_t *tok = tk_tokenize_ctx(&ctx_relaxed, "0b101");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(5, as_num_i(tok)->val);
+
+  // trigraph の設定は context ごとに独立
+  tok = tk_tokenize_ctx(&ctx_relaxed, "?" "?=");
+  ASSERT_EQ(TK_HASH, tok->kind);
+  tok = tk_tokenize_ctx(&ctx_strict, "?" "?=");
+  ASSERT_EQ(TK_QUESTION, tok->kind);
+
+  // 途中で strict を切り替えたら次回 tokenize から反映
+  tk_ctx_set_strict_c11_mode(&ctx_relaxed, true);
+  expect_tokenize_ctx_fail(&ctx_relaxed, "0b101");
+  tk_ctx_set_strict_c11_mode(&ctx_relaxed, false);
+  tok = tk_tokenize_ctx(&ctx_relaxed, "0b101");
+  ASSERT_EQ(TK_NUM, tok->kind);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -1020,6 +1073,7 @@ int main() {
   test_c11_audit_mode_flag();
   test_runtime_mode_switch_boundaries();
   test_tokenize_with_explicit_context();
+  test_context_config_isolation_and_switch_timing();
   test_at_eof();
   test_consume();
   test_consume_str();

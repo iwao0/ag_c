@@ -534,9 +534,10 @@
   - [x] 進捗（2026-03-23）: `tk_tokenize` / `tk_tokenize_ctx` の入力引数を `const char *` 化し、読み取り専用入力契約を公開APIへ反映した
   - [x] 進捗（2026-03-23）: Tokenizer内部の `char *` を棚卸しし、`source buffer`/`token text` の可変ポインタは仕様上必要、入力参照/ファイル名参照の公開境界は `const` 統一済みであることを確認した
   - [x] 進捗（2026-03-23）: `make build/test_tokenizer build/test_preprocess build/test_parser` を再確認し、const化追従後もコンパイラ警告が追加されていないことを確認した
-- [ ] 優先度P2: 設定反映タイミングの契約テストを拡充する
-  - [ ] strict/trigraph/binary/audit の切替が反映される境界をテストで固定する
-  - [ ] context 切替時の設定独立性（コンテキスト間の非干渉）をテスト化する
+- [x] 優先度P2: 設定反映タイミングの契約テストを拡充する
+  - [x] strict/trigraph/binary/audit の切替が反映される境界をテストで固定する
+  - [x] context 切替時の設定独立性（コンテキスト間の非干渉）をテスト化する
+  - [x] 進捗（2026-03-23）: `test_context_config_isolation_and_switch_timing` を追加し、strict/trigraph/binary の context別挙動、設定切替の次回 tokenize 反映境界、context間の非干渉を回帰テスト化した
 - [ ] 優先度P2: 計測基盤を整備して最適化の継続性を高める
   - [ ] `scanner` / `literals` / `punctuator` 単位のホットパス計測を追加する
   - [ ] `tokenizer_perf_report.md` に継続比較テンプレートを用意する
