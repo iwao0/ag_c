@@ -1755,6 +1755,68 @@ static void test_expr_nest_limits() {
   free(too_deep);
 }
 
+static char *build_many_declarators_program(int ndecls) {
+  if (ndecls <= 0) return NULL;
+  size_t cap = (size_t)ndecls * 16 + 64;
+  char *buf = calloc(cap, 1);
+  if (!buf) return NULL;
+  size_t pos = 0;
+  pos += (size_t)snprintf(buf + pos, cap - pos, "int main(){ int ");
+  for (int i = 0; i < ndecls; i++) {
+    int n = snprintf(buf + pos, cap - pos, i == 0 ? "v%d" : ",v%d", i);
+    if (n < 0 || (size_t)n >= cap - pos) {
+      free(buf);
+      return NULL;
+    }
+    pos += (size_t)n;
+  }
+  snprintf(buf + pos, cap - pos, "; return 0; }\n");
+  return buf;
+}
+
+static char *build_many_array_init_elements_program(int nelems) {
+  if (nelems <= 0) return NULL;
+  size_t cap = (size_t)nelems * 4 + 128;
+  char *buf = calloc(cap, 1);
+  if (!buf) return NULL;
+  size_t pos = 0;
+  pos += (size_t)snprintf(buf + pos, cap - pos, "int main(){ int a[%d]={", nelems);
+  for (int i = 0; i < nelems; i++) {
+    int n = snprintf(buf + pos, cap - pos, i == 0 ? "1" : ",1");
+    if (n < 0 || (size_t)n >= cap - pos) {
+      free(buf);
+      return NULL;
+    }
+    pos += (size_t)n;
+  }
+  snprintf(buf + pos, cap - pos, "}; return a[0]; }\n");
+  return buf;
+}
+
+static void test_parser_width_limits() {
+  printf("test_parser_width_limits...\n");
+
+  char *ok_decls = build_many_declarators_program(64);
+  ASSERT_TRUE(ok_decls != NULL);
+  expect_parse_ok(ok_decls);
+  free(ok_decls);
+
+  char *too_many_decls = build_many_declarators_program(1300);
+  ASSERT_TRUE(too_many_decls != NULL);
+  expect_parse_fail_with_message(too_many_decls, "宣言子列が多すぎます");
+  free(too_many_decls);
+
+  char *ok_inits = build_many_array_init_elements_program(128);
+  ASSERT_TRUE(ok_inits != NULL);
+  expect_parse_ok(ok_inits);
+  free(ok_inits);
+
+  char *too_many_inits = build_many_array_init_elements_program(5000);
+  ASSERT_TRUE(too_many_inits != NULL);
+  expect_parse_fail_with_message(too_many_inits, "初期化子要素数が多すぎます");
+  free(too_many_inits);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
@@ -1806,6 +1868,7 @@ int main() {
   test_parse_evil_edge_cases();
   test_parser_config_matrix();
   test_expr_nest_limits();
+  test_parser_width_limits();
 
   printf("OK: All unit tests passed!\n");
   return 0;

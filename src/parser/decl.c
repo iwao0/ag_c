@@ -400,6 +400,7 @@ static string_lit_t *find_string_lit_by_label(char *label) {
 
 static node_t *parse_array_initializer(lvar_t *var) {
   node_t *init_chain = NULL;
+  int init_elem_count = 0;
   int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
   if (tk_consume('{')) {
     int idx = 0;
@@ -417,6 +418,11 @@ static node_t *parse_array_initializer(lvar_t *var) {
         // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}}
         if (row_len > 0 && tk_consume('{')) {
           for (int ri = 0; ri < row_len; ri++) {
+            init_elem_count++;
+            if (init_elem_count > PS_MAX_INITIALIZER_ELEMENTS) {
+              psx_diag_ctx(curtok(), "decl", "初期化子要素数が多すぎます（上限 %d）",
+                           PS_MAX_INITIALIZER_ELEMENTS);
+            }
             int flat_idx = target_idx + ri;
             if (flat_idx < array_len) {
               node_t *lhs = new_array_elem_lvar(var, flat_idx);
@@ -433,6 +439,11 @@ static node_t *parse_array_initializer(lvar_t *var) {
           }
           idx = target_idx + row_len;
         } else {
+          init_elem_count++;
+          if (init_elem_count > PS_MAX_INITIALIZER_ELEMENTS) {
+            psx_diag_ctx(curtok(), "decl", "初期化子要素数が多すぎます（上限 %d）",
+                         PS_MAX_INITIALIZER_ELEMENTS);
+          }
           if (target_idx >= array_len) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
@@ -1133,7 +1144,12 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     elem_size *= 2;
   }
 
+  int declarator_count = 0;
   for (;;) {
+    declarator_count++;
+    if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
+      psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+    }
     int is_pointer = base_is_pointer;
     unsigned int ptr_const_mask = 0;
     unsigned int ptr_volatile_mask = 0;
@@ -1301,7 +1317,12 @@ node_t *psx_decl_parse_declaration(void) {
 
   if (ds.is_extern_decl) {
     // ローカルextern宣言: グローバルテーブルに登録してローカル変数は作らない
+    int declarator_count = 0;
     for (;;) {
+      declarator_count++;
+      if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
+        psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+      }
       int is_ptr = 0;
       while (curtok()->kind == TK_MUL) {
         is_ptr = 1;
