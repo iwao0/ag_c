@@ -59,6 +59,7 @@ static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
 static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
                                        tk_float_kind_t *out_fp_kind);
 static void init_local_decl_spec(local_decl_spec_t *out);
+static void take_local_decl_prefix_flags(local_decl_spec_t *out);
 static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_kind_t base_kind);
 static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out_elem_size,
                                            tk_float_kind_t *out_fp_kind,
@@ -84,6 +85,11 @@ static void init_local_decl_spec(local_decl_spec_t *out) {
   out->elem_size = 8;
   out->fp_kind = TK_FLOAT_KIND_NONE;
   out->tag_kind = TK_EOF;
+}
+
+static void take_local_decl_prefix_flags(local_decl_spec_t *out) {
+  psx_take_type_qualifiers(&out->is_const_qualified, &out->is_volatile_qualified);
+  psx_take_extern_flag(&out->is_extern_decl);
 }
 
 static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_kind_t base_kind) {
@@ -1561,8 +1567,7 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
 
   out->type_kind = psx_consume_type_kind();
   out->is_unsigned = psx_last_type_is_unsigned();
-  psx_take_type_qualifiers(&out->is_const_qualified, &out->is_volatile_qualified);
-  psx_take_extern_flag(&out->is_extern_decl);
+  take_local_decl_prefix_flags(out);
   if (out->type_kind == TK_EOF) {
     if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
     token_kind_t base_kind = TK_EOF;
