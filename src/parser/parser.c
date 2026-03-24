@@ -43,7 +43,6 @@ static void parse_toplevel_typedef_declaration_stmt(void);
 static void parse_toplevel_object_declaration_stmt(void);
 static void (*select_toplevel_decl_stmt_parser(void))(void);
 static void parse_toplevel_typedef_declarator_list(void);
-static void parse_one_toplevel_typedef_declarator(void);
 static int has_next_toplevel_declarator(void);
 static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void);
 typedef struct {
@@ -53,6 +52,8 @@ typedef struct {
 } toplevel_declarator_head_t;
 static toplevel_declarator_head_t new_toplevel_declarator_head(int base_is_ptr);
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name);
+static void parse_toplevel_declarator_list_with_apply(int base_is_ptr,
+                                                      void (*apply)(toplevel_declarator_head_t));
 static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
@@ -60,7 +61,6 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int is_ptr, int typedef_sizeof);
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind);
 static void guard_toplevel_declarator_count(int declarator_count);
-static void parse_toplevel_one_object_declarator(void);
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
 static void finalize_toplevel_object_declarator(global_var_t *gv);
 static void apply_toplevel_object_initializer(global_var_t *gv);
@@ -738,11 +738,17 @@ static int parse_toplevel_member_array_suffixes(int *out_is_flex_array) {
 }
 
 static void parse_toplevel_declarator_list(void) {
+  parse_toplevel_declarator_list_with_apply(0, apply_toplevel_object_from_head);
+}
+
+static void parse_toplevel_declarator_list_with_apply(int base_is_ptr,
+                                                      void (*apply)(toplevel_declarator_head_t)) {
   int declarator_count = 0;
   for (;;) {
     declarator_count++;
     guard_toplevel_declarator_count(declarator_count);
-    parse_toplevel_one_object_declarator();
+    toplevel_declarator_head_t head = parse_toplevel_declarator_head(base_is_ptr, 1);
+    apply(head);
     if (!has_next_toplevel_declarator()) break;
   }
 }
@@ -765,11 +771,6 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_symbol = ref->name;
     gv->init_symbol_len = ref->name_len;
   }
-}
-
-static void parse_toplevel_one_object_declarator(void) {
-  toplevel_declarator_head_t head = parse_toplevel_declarator_head(0, 1);
-  apply_toplevel_object_from_head(head);
 }
 
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
@@ -861,15 +862,8 @@ static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void) {
 }
 
 static void parse_toplevel_typedef_declarator_list(void) {
-  for (;;) {
-    parse_one_toplevel_typedef_declarator();
-    if (!has_next_toplevel_declarator()) break;
-  }
-}
-
-static void parse_one_toplevel_typedef_declarator(void) {
-  toplevel_declarator_head_t head = parse_toplevel_declarator_head(g_toplevel_decl_base_is_ptr, 1);
-  apply_toplevel_typedef_from_head(head);
+  parse_toplevel_declarator_list_with_apply(g_toplevel_decl_base_is_ptr,
+                                            apply_toplevel_typedef_from_head);
 }
 
 static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head) {
