@@ -1548,6 +1548,7 @@
   - 進捗（2026-03-24）: 着手。トップレベル宣言登録（extern/non-extern分岐）の重複を共通化するリファクタを開始
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_decl_name` / `parse_toplevel_typedef_name_decl` の重複を解消し、トップレベル宣言子名パース経路を一本化
   - 進捗（2026-03-24）: `parser.c` に `parse_toplevel_array_suffixes()` を導入し、トップレベル通常宣言と typedef 宣言で重複していた `[]` 後置処理（配列積算/不完全配列判定）を共通化
+  - 進捗（2026-03-24）: `decl.c` に `parse_decl_array_suffixes()` を導入し、ローカル `extern` 宣言とローカル `typedef` 宣言で重複していた `[]` 後置処理（配列積算/不完全配列判定）を共通化
 
 - [ ] [P1] `decl_spec` の情報源を単一化し、型情報伝播の分岐を減らす
   - 背景: `tag/typedef/funcall` 由来の型補完が複数箇所にあり、`sizeof/_Generic/member` の整合性維持コストが高い

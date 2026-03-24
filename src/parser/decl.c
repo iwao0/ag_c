@@ -217,6 +217,31 @@ static int parse_array_size_optional_constexpr_decl(int *out_has_size) {
   return parse_array_size_constexpr_decl();
 }
 
+typedef struct {
+  int arr_total;
+  int is_array;
+  int has_incomplete_array;
+} decl_array_suffix_t;
+
+static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
+  decl_array_suffix_t out = {0};
+  out.arr_total = (base_mul > 0) ? base_mul : 1;
+  out.is_array = (base_mul > 0);
+  out.has_incomplete_array = 0;
+  while (tk_consume('[')) {
+    int has_size = 0;
+    int n = parse_array_size_optional_constexpr_decl(&has_size);
+    if (!has_size) {
+      out.has_incomplete_array = 1;
+    } else {
+      out.arr_total *= n;
+    }
+    out.is_array = 1;
+    tk_expect(']');
+  }
+  return out;
+}
+
 static int parse_nonneg_const_expr_decl(const char *what) {
   node_t *n = psx_expr_assign();
   int ok = 1;
@@ -1422,30 +1447,16 @@ node_t *psx_decl_parse_declaration(void) {
       int paren_array_dim = 0;
       consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
       token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
-      int arr_total = (paren_array_dim > 0) ? paren_array_dim : 1;
-      int is_array = (paren_array_dim > 0);
-      int has_incomplete_array = 0;
-      while (tk_consume('[')) {
-        if (curtok()->kind == TK_RBRACKET) {
-          has_incomplete_array = 1;
-          is_array = 1;
-          tk_expect(']');
-          continue;
-        }
-        int n = parse_array_size_constexpr_decl();
-        arr_total *= n;
-        is_array = 1;
-        tk_expect(']');
-      }
+      decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_dim);
       // グローバルテーブルに登録（既存エントリがなければ）
       if (!find_global_var_decl(name->str, name->len)) {
         global_var_t *gv = calloc(1, sizeof(global_var_t));
         gv->name = name->str;
         gv->name_len = name->len;
-        gv->type_size = has_incomplete_array ? 0 :
-                        (is_array ? (is_ptr ? 8 : ds.elem_size) * arr_total : (is_ptr ? 8 : ds.elem_size));
+        gv->type_size = arr.has_incomplete_array ? 0 :
+                        (arr.is_array ? (is_ptr ? 8 : ds.elem_size) * arr.arr_total : (is_ptr ? 8 : ds.elem_size));
         gv->deref_size = ds.elem_size;
-        gv->is_array = is_array;
+        gv->is_array = arr.is_array;
         gv->is_extern_decl = 1;
         gv->next = global_vars;
         global_vars = gv;
@@ -1566,19 +1577,9 @@ static node_t *parse_typedef_declaration_local(void) {
     consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
-    int has_incomplete_array = 0;
-    if (!is_ptr && paren_array_mul > 0) typedef_sizeof *= paren_array_mul;
-    while (tk_consume('[')) {
-      int has_size = 0;
-      int n = parse_array_size_optional_constexpr_decl(&has_size);
-      if (!has_size) {
-        has_incomplete_array = 1;
-      } else if (!is_ptr && n > 0) {
-        typedef_sizeof *= n;
-      }
-      tk_expect(']');
-    }
-    if (!is_ptr && has_incomplete_array) typedef_sizeof = 0;
+    decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_mul);
+    if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
+    else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
     token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
     psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
