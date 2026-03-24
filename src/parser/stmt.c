@@ -56,6 +56,7 @@ typedef struct {
 } stmt_array_suffix_t;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static int parse_stmt_array_suffixes_constexpr_required(int base_mul);
+static int parse_stmt_member_array_suffixes(int *out_is_flex_array);
 static int parse_alignas_value_stmt(void);
 static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static node_t *stmt_internal(void);
@@ -288,19 +289,11 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       bf_storage_offset = -1;
       bf_bits_used = 0;
 
-      int arr_size = 1;
       int is_flex_array = 0;
-      while (tk_consume('[')) {
-        if (!has_member_name) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-        if (curtok()->kind == TK_RBRACKET) {
-          // フレキシブル配列メンバー: int data[];
-          is_flex_array = 1;
-          arr_size = 0;
-        } else {
-          arr_size *= parse_array_size_constexpr_stmt();
-        }
-        tk_expect(']');
+      if (curtok()->kind == TK_LBRACKET && !has_member_name) {
+        psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
+      int arr_size = parse_stmt_member_array_suffixes(&is_flex_array);
       if (paren_array_mul > 1) arr_size *= paren_array_mul;
       int member_elem_size = is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
@@ -591,6 +584,22 @@ static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
     if (n > 0) arr_total *= n;
     tk_expect(']');
   }
+  return arr_total;
+}
+
+static int parse_stmt_member_array_suffixes(int *out_is_flex_array) {
+  int arr_total = 1;
+  int is_flex_array = 0;
+  while (tk_consume('[')) {
+    if (curtok()->kind == TK_RBRACKET) {
+      is_flex_array = 1;
+      arr_total = 0;
+    } else {
+      arr_total *= parse_array_size_constexpr_stmt();
+    }
+    tk_expect(']');
+  }
+  if (out_is_flex_array) *out_is_flex_array = is_flex_array;
   return arr_total;
 }
 
