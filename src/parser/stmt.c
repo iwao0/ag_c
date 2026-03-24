@@ -33,6 +33,13 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
                                                             int *out_paren_array_mul);
+typedef struct {
+  token_ident_t *member;
+  int is_ptr;
+  int has_func_suffix;
+  int paren_array_mul;
+} stmt_member_decl_head_t;
+static stmt_member_decl_head_t parse_stmt_member_decl_head(void);
 static long long parse_enum_const_expr(void);
 static long long parse_enum_const_conditional(void);
 static long long parse_enum_const_logor(void);
@@ -150,6 +157,13 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   return name;
 }
 
+static stmt_member_decl_head_t parse_stmt_member_decl_head(void) {
+  stmt_member_decl_head_t out = {0};
+  out.paren_array_mul = 1;
+  out.member = parse_member_decl_name_recursive_stmt(&out.is_ptr, &out.has_func_suffix, &out.paren_array_mul);
+  return out;
+}
+
 static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   int member_count = 0;
   int current_off = 0;
@@ -221,16 +235,13 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
     }
 
     for (;;) {
-      int is_ptr = 0;
-      int has_func_suffix = 0;
-      int paren_array_mul = 1;
-      token_ident_t *member = parse_member_decl_name_recursive_stmt(&is_ptr, &has_func_suffix, &paren_array_mul);
-      int has_member_name = member != NULL;
+      stmt_member_decl_head_t head = parse_stmt_member_decl_head();
+      int has_member_name = head.member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && curtok()->kind != TK_COLON) {
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
-      if (has_func_suffix && !is_ptr) {
+      if (head.has_func_suffix && !head.is_ptr) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_FUNCTION_MEMBER_FORBIDDEN));
       }
@@ -242,7 +253,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         long long bw = parse_enum_const_expr();
         if (bw < 0) bw = 0;
         bit_width = (int)bw;
-        int storage_size = is_ptr ? 8 : (elem_size > 0 ? elem_size : 4);
+        int storage_size = head.is_ptr ? 8 : (elem_size > 0 ? elem_size : 4);
         if (storage_size > 4) storage_size = 4;
         int storage_bits = storage_size * 8;
         if (bit_width == 0) {
@@ -275,7 +286,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         if (has_member_name) {
           int storage_type_size = bf_storage_type_size > 0 ? bf_storage_type_size : 4;
           psx_ctx_add_tag_member_bf(tag_kind, tag_name, tag_len,
-                                    member->str, member->len,
+                                    head.member->str, head.member->len,
                                     tag_kind == TK_UNION ? 0 : bf_storage_offset,
                                     storage_type_size, 0, 0,
                                     TK_EOF, NULL, 0, 0,
@@ -294,11 +305,11 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
       int arr_size = parse_stmt_member_array_suffixes(&is_flex_array);
-      if (paren_array_mul > 1) arr_size *= paren_array_mul;
-      int member_elem_size = is_ptr ? 8 : elem_size;
+      if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
+      int member_elem_size = head.is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
-      int deref_size = is_ptr ? elem_size : 0;
-      int member_align = is_ptr ? 8 : elem_size;
+      int deref_size = head.is_ptr ? elem_size : 0;
+      int member_align = head.is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
       if (member_alignas > member_align) member_align = member_alignas;
@@ -310,14 +321,14 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         current_off = ALIGN_UP(current_off, member_align);
         off = current_off;
       }
-      char *member_name = has_member_name ? member->str : "";
-      int member_len = has_member_name ? member->len : 0;
+      char *member_name = has_member_name ? head.member->str : "";
+      int member_len = has_member_name ? head.member->len : 0;
       int member_array_len = (arr_size <= 1) ? 0 : arr_size;
       if (has_member_name || (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
-                               member_name, member_len, off, is_ptr ? 8 : elem_size, deref_size,
+                               member_name, member_len, off, head.is_ptr ? 8 : elem_size, deref_size,
                                member_array_len,
-                               member_tag_kind, member_tag_name, member_tag_len, is_ptr ? 1 : 0);
+                               member_tag_kind, member_tag_name, member_tag_len, head.is_ptr ? 1 : 0);
         member_count++;
       }
       if (tag_kind == TK_UNION) {
