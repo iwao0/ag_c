@@ -42,6 +42,8 @@ static void parse_toplevel_decl_after_type(void);
 static void parse_toplevel_typedef_declarator_list(void);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
+static void parse_toplevel_one_object_declarator(void);
+static void apply_toplevel_object_initializer(global_var_t *gv);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
@@ -659,47 +661,52 @@ static void parse_toplevel_declarator_list(void) {
     if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
       psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
     }
-    int is_ptr = 0;
-    while (tk_consume('*')) {
-      is_ptr = 1;
-      skip_ptr_qualifiers();
-    }
-    int paren_array_mul = 1;
-    token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
-    if (!name) {
-      psx_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-    }
-    toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
-    if (arr.has_incomplete_array && !g_toplevel_decl_is_extern) {
-      psx_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
-    }
-    if (!g_toplevel_decl_is_extern) {
-      // グローバル変数テーブルに登録
-      global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array,
-                                                        arr.arr_total, 0, arr.has_incomplete_array);
-      gv->is_thread_local = g_toplevel_decl_is_thread_local;
-      if (tk_consume('=')) {
-        node_t *init_expr = psx_expr_assign();
-        if (init_expr && init_expr->kind == ND_NUM) {
-          gv->has_init = 1;
-          gv->init_val = ((node_num_t *)init_expr)->val;
-        } else if (init_expr && init_expr->kind == ND_ADDR &&
-                   init_expr->lhs && init_expr->lhs->kind == ND_GVAR) {
-          node_gvar_t *ref = (node_gvar_t *)init_expr->lhs;
-          gv->has_init = 1;
-          gv->init_symbol = ref->name;
-          gv->init_symbol_len = ref->name_len;
-        }
-      }
-    } else {
-      // extern宣言: テーブルに登録（is_extern_decl=1）
-      (void)register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array, arr.arr_total, 1,
-                                          arr.has_incomplete_array);
-      if (tk_consume('=')) psx_expr_assign(); // 初期化子（extern宣言では通常ないが消費する）
-    }
+    parse_toplevel_one_object_declarator();
     if (!tk_consume(',')) break;
+  }
+}
+
+static void apply_toplevel_object_initializer(global_var_t *gv) {
+  if (!tk_consume('=')) return;
+  node_t *init_expr = psx_expr_assign();
+  if (init_expr && init_expr->kind == ND_NUM) {
+    gv->has_init = 1;
+    gv->init_val = ((node_num_t *)init_expr)->val;
+  } else if (init_expr && init_expr->kind == ND_ADDR &&
+             init_expr->lhs && init_expr->lhs->kind == ND_GVAR) {
+    node_gvar_t *ref = (node_gvar_t *)init_expr->lhs;
+    gv->has_init = 1;
+    gv->init_symbol = ref->name;
+    gv->init_symbol_len = ref->name_len;
+  }
+}
+
+static void parse_toplevel_one_object_declarator(void) {
+  int is_ptr = 0;
+  while (tk_consume('*')) {
+    is_ptr = 1;
+    skip_ptr_qualifiers();
+  }
+  int paren_array_mul = 1;
+  token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
+  if (!name) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+  }
+  toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
+  if (arr.has_incomplete_array && !g_toplevel_decl_is_extern) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+  }
+
+  global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array,
+                                                    arr.arr_total, g_toplevel_decl_is_extern ? 1 : 0,
+                                                    arr.has_incomplete_array);
+  if (!g_toplevel_decl_is_extern) {
+    gv->is_thread_local = g_toplevel_decl_is_thread_local;
+    apply_toplevel_object_initializer(gv);
+  } else if (tk_consume('=')) {
+    psx_expr_assign(); // extern宣言では通常ないが消費する
   }
 }
 
