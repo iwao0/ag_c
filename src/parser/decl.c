@@ -55,6 +55,13 @@ typedef struct {
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
 static global_var_t *find_global_var_decl(char *name, int len);
+static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
+
+static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind) {
+  if (type_kind == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
+  if (type_kind == TK_DOUBLE) return TK_FLOAT_KIND_DOUBLE;
+  return TK_FLOAT_KIND_NONE;
+}
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -1531,8 +1538,7 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
   }
 
   psx_ctx_get_type_info(out->type_kind, NULL, &out->elem_size);
-  if (out->type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (out->type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  out->fp_kind = fp_kind_for_type_kind(out->type_kind);
   return 1;
 }
 
@@ -1571,8 +1577,7 @@ static node_t *parse_typedef_declaration_local(void) {
     if (builtin_kind != TK_EOF) {
       base_kind = builtin_kind;
       psx_ctx_get_type_info(builtin_kind, NULL, &elem_size);
-      if (builtin_kind == TK_FLOAT) fp_kind = TK_FLOAT_KIND_FLOAT;
-      else if (builtin_kind == TK_DOUBLE) fp_kind = TK_FLOAT_KIND_DOUBLE;
+      fp_kind = fp_kind_for_type_kind(builtin_kind);
     } else if (psx_ctx_is_typedef_name_token(curtok())) {
       token_ident_t *id = (token_ident_t *)curtok();
       psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
