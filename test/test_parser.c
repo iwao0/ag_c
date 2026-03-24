@@ -1204,6 +1204,23 @@ static void test_type_decl() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
+  parsed_code = parse_program_input("extern int a[]; int main(){ return 0; }");
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  {
+    global_var_t *gv = global_vars;
+    int found = 0;
+    for (; gv; gv = gv->next) {
+      if (gv->name_len == 1 && gv->name[0] == 'a') {
+        found = 1;
+        ASSERT_EQ(1, gv->is_extern_decl);
+        ASSERT_EQ(1, gv->is_array);
+        ASSERT_EQ(0, gv->type_size);
+        break;
+      }
+    }
+    ASSERT_TRUE(found);
+  }
+
   parsed_code = parse_program_input("main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);

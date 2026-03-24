@@ -543,7 +543,8 @@ static global_var_t *find_global_var_by_name(char *name, int len) {
 }
 
 static global_var_t *register_toplevel_global_decl(char *name, int len, int is_ptr,
-                                                   int is_array, int arr_total, int is_extern_decl) {
+                                                   int is_array, int arr_total, int is_extern_decl,
+                                                   int has_incomplete_array) {
   if (is_extern_decl) {
     global_var_t *existing = find_global_var_by_name(name, len);
     if (existing) return existing;
@@ -552,7 +553,7 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->name = name;
   gv->name_len = len;
   int elem_store_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
-  gv->type_size = is_array ? (elem_store_size * arr_total) : elem_store_size;
+  gv->type_size = has_incomplete_array ? 0 : (is_array ? (elem_store_size * arr_total) : elem_store_size);
   gv->deref_size = elem_store_size;
   gv->is_array = is_array;
   gv->is_extern_decl = is_extern_decl;
@@ -621,7 +622,7 @@ static void parse_toplevel_declarator_list(void) {
     if (!g_toplevel_decl_is_extern) {
       // グローバル変数テーブルに登録
       global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, is_array,
-                                                        arr_total, 0);
+                                                        arr_total, 0, has_incomplete_array);
       gv->is_thread_local = g_toplevel_decl_is_thread_local;
       if (tk_consume('=')) {
         node_t *init_expr = psx_expr_assign();
@@ -638,7 +639,8 @@ static void parse_toplevel_declarator_list(void) {
       }
     } else {
       // extern宣言: テーブルに登録（is_extern_decl=1）
-      (void)register_toplevel_global_decl(name->str, name->len, is_ptr, is_array, arr_total, 1);
+      (void)register_toplevel_global_decl(name->str, name->len, is_ptr, is_array, arr_total, 1,
+                                          has_incomplete_array);
       if (tk_consume('=')) psx_expr_assign(); // 初期化子（extern宣言では通常ないが消費する）
     }
     if (!tk_consume(',')) break;
