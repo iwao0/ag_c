@@ -31,7 +31,8 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 int *is_pointer_base, token_kind_t *base_kind);
 static token_ident_t *parse_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
-static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix);
+static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
+                                                            int *out_paren_array_mul);
 static long long parse_enum_const_expr(void);
 static long long parse_enum_const_conditional(void);
 static long long parse_enum_const_logor(void);
@@ -117,25 +118,20 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
   return name;
 }
 
-static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix) {
+static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
+                                                            int *out_paren_array_mul) {
   while (tk_consume('*')) {
     *is_ptr = 1;
     skip_ptr_qualifiers_stmt();
   }
   token_ident_t *name = NULL;
+  int paren_array_mul = 1;
   if (tk_consume('(')) {
-    name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix);
+    name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix, &paren_array_mul);
     while (tk_consume('[')) {
-      int depth = 1;
-      while (depth > 0) {
-        if (curtok()->kind == TK_EOF) {
-          diag_emit_tokf(DIAG_ERR_PARSER_EXPECTED_TOKEN, curtok(), "%s",
-                         diag_message_for(DIAG_ERR_PARSER_EXPECTED_TOKEN));
-        }
-        if (curtok()->kind == TK_LBRACKET) depth++;
-        else if (curtok()->kind == TK_RBRACKET) depth--;
-        set_curtok(curtok()->next);
-      }
+      int n = parse_array_size_constexpr_stmt();
+      if (n > 0) paren_array_mul *= n;
+      tk_expect(']');
     }
     tk_expect(')');
   } else {
@@ -145,6 +141,7 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
     if (out_has_func_suffix) *out_has_func_suffix = 1;
     skip_func_params_stmt();
   }
+  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
   return name;
 }
 
@@ -221,7 +218,8 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
     for (;;) {
       int is_ptr = 0;
       int has_func_suffix = 0;
-      token_ident_t *member = parse_member_decl_name_recursive_stmt(&is_ptr, &has_func_suffix);
+      int paren_array_mul = 1;
+      token_ident_t *member = parse_member_decl_name_recursive_stmt(&is_ptr, &has_func_suffix, &paren_array_mul);
       int has_member_name = member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && curtok()->kind != TK_COLON) {
@@ -299,7 +297,9 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
         }
         tk_expect(']');
       }
-      int total_size = is_flex_array ? 0 : (is_ptr ? 8 : elem_size * arr_size);
+      if (paren_array_mul > 1) arr_size *= paren_array_mul;
+      int member_elem_size = is_ptr ? 8 : elem_size;
+      int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
       int deref_size = is_ptr ? elem_size : 0;
       int member_align = is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
@@ -315,7 +315,7 @@ static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag
       }
       char *member_name = has_member_name ? member->str : "";
       int member_len = has_member_name ? member->len : 0;
-      int member_array_len = (is_ptr || arr_size <= 1) ? 0 : arr_size;
+      int member_array_len = (arr_size <= 1) ? 0 : arr_size;
       if (has_member_name || (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
                                member_name, member_len, off, is_ptr ? 8 : elem_size, deref_size,

@@ -371,6 +371,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "toplevel_funcptr_array_decl", CASE_INT, "int (*arr[2])(int); int main() { return 0; }", 0, 0},
     {"type_decl", "toplevel_nested_funcptr_array_decl_parse_only", CASE_INT, "int (*(*arr[2]))(int); int main() { return 0; }", 0, 0},
     {"type_decl", "struct_member_funcptr_array_decl", CASE_INT, "int main() { struct S { int (*arr[2])(int); }; struct S s; return 0; }", 0, 0},
+    {"type_decl", "struct_member_funcptr_array_size", CASE_INT, "int main() { struct S { int (*arr[2])(int); }; return sizeof(struct S); }", 16, 0},
     {"type_decl", "typedef_funcptr_param", CASE_INT, "typedef int (*fp_t)(int); int dbl(int x){return x*2;} int apply(fp_t f,int x){return f(x);} int main(){return apply(dbl,7);}", 14, 0},
     {"type_decl", "typedef_ret_funcdef", CASE_INT, "typedef long mylong; mylong add(mylong a, mylong b) { return a+b; } int main() { return (int)add(3,4); }", 7, 0},
     {"type_decl", "typedef_ret_proto", CASE_INT, "typedef long size_t; size_t strlen(const char *s); int main() { return (int)strlen(\"hello\"); }", 5, 0},
