@@ -47,6 +47,9 @@ static void apply_toplevel_object_initializer(global_var_t *gv);
 static void consume_toplevel_extern_initializer_if_any(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
+static void reset_toplevel_decl_spec_state(void);
+static int parse_toplevel_tag_decl_spec(void);
+static int parse_toplevel_typedef_name_spec(void);
 static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
@@ -159,6 +162,62 @@ static void resolve_toplevel_typedef_ref(void) {
     int tag_sz = psx_ctx_get_tag_size(td_tag, td_tag_name, td_tag_len);
     if (tag_sz > 0) g_toplevel_decl_elem_size = tag_sz;
   }
+}
+
+static void reset_toplevel_decl_spec_state(void) {
+  g_toplevel_decl_is_typedef = 0;
+  g_toplevel_decl_base_kind = TK_EOF;
+  g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
+  g_toplevel_decl_tag_kind = TK_EOF;
+  g_toplevel_decl_tag_name = NULL;
+  g_toplevel_decl_tag_len = 0;
+  g_toplevel_decl_base_is_ptr = 0;
+  g_toplevel_decl_pointee_const = 0;
+  g_toplevel_decl_pointee_volatile = 0;
+}
+
+static int parse_toplevel_tag_decl_spec(void) {
+  if (!psx_ctx_is_tag_keyword(curtok()->kind)) return 0;
+  g_toplevel_decl_base_kind = curtok()->kind;
+  g_toplevel_decl_tag_kind = curtok()->kind;
+  set_curtok(curtok()->next);
+  token_ident_t *tag = tk_consume_ident();
+  if (!tag && curtok()->kind != TK_LBRACE) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+  if (tag) {
+    g_toplevel_decl_tag_name = tag->str;
+    g_toplevel_decl_tag_len = tag->len;
+  } else {
+    make_anonymous_tag_name_toplevel(&g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
+  }
+  if (tk_consume('{')) {
+    int member_count = 0;
+    int tag_size = 0;
+    member_count = parse_tag_definition_body_toplevel(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                                                      g_toplevel_decl_tag_len, &tag_size);
+    psx_ctx_define_tag_type_with_layout(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                                        g_toplevel_decl_tag_len, member_count, tag_size);
+  } else if (!psx_ctx_has_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len)) {
+    if (g_toplevel_decl_is_typedef &&
+        (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
+      psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+    } else {
+      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX),
+                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+    }
+  }
+  g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
+                                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+  apply_toplevel_decl_prefix_flags();
+  return 1;
+}
+
+static int parse_toplevel_typedef_name_spec(void) {
+  if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
+  resolve_toplevel_typedef_ref();
+  g_toplevel_decl_is_extern = 0;
+  g_toplevel_decl_is_thread_local = 0;
+  psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
+  return 1;
 }
 
 static bool is_decl_prefix_token(token_kind_t k) {
@@ -335,62 +394,16 @@ static int parse_array_size_optional_constexpr_toplevel(int *out_has_size) {
 }
 
 static void parse_toplevel_decl_spec(void) {
-  g_toplevel_decl_is_typedef = 0;
-  g_toplevel_decl_base_kind = TK_EOF;
-  g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
-  g_toplevel_decl_tag_kind = TK_EOF;
-  g_toplevel_decl_tag_name = NULL;
-  g_toplevel_decl_tag_len = 0;
-  g_toplevel_decl_base_is_ptr = 0;
-  g_toplevel_decl_pointee_const = 0;
-  g_toplevel_decl_pointee_volatile = 0;
+  reset_toplevel_decl_spec_state();
 
   if (curtok()->kind == TK_TYPEDEF) {
     g_toplevel_decl_is_typedef = 1;
     set_curtok(curtok()->next);
   }
 
-  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-    g_toplevel_decl_base_kind = curtok()->kind;
-    g_toplevel_decl_tag_kind = curtok()->kind;
-    set_curtok(curtok()->next);
-    token_ident_t *tag = tk_consume_ident();
-    if (!tag && curtok()->kind != TK_LBRACE) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-    if (tag) {
-      g_toplevel_decl_tag_name = tag->str;
-      g_toplevel_decl_tag_len = tag->len;
-    } else {
-      make_anonymous_tag_name_toplevel(&g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
-    }
-    if (tk_consume('{')) {
-      int member_count = 0;
-      int tag_size = 0;
-      member_count = parse_tag_definition_body_toplevel(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
-                                                        g_toplevel_decl_tag_len, &tag_size);
-      psx_ctx_define_tag_type_with_layout(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
-                                          g_toplevel_decl_tag_len, member_count, tag_size);
-    } else if (!psx_ctx_has_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len)) {
-      if (g_toplevel_decl_is_typedef &&
-          (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
-        psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-      } else {
-        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX),
-                                     g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-      }
-    }
-    g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
-                                                     g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-    apply_toplevel_decl_prefix_flags();
-    return;
-  }
+  if (parse_toplevel_tag_decl_spec()) return;
 
-  if (psx_ctx_is_typedef_name_token(curtok())) {
-    resolve_toplevel_typedef_ref();
-    g_toplevel_decl_is_extern = 0;
-    g_toplevel_decl_is_thread_local = 0;
-    psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
-    return;
-  }
+  if (parse_toplevel_typedef_name_spec()) return;
 
   token_kind_t tl_kind = psx_consume_type_kind();
   g_toplevel_decl_base_kind = tl_kind;
