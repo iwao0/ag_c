@@ -47,6 +47,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv);
 static void consume_toplevel_extern_initializer_if_any(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
+static int is_toplevel_decl_like_start(token_t *tok);
 static void reset_toplevel_decl_spec_state(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
@@ -850,15 +851,21 @@ static int parse_toplevel_declaration_like(void) {
     // struct/union/enum 開始は ps_program() 側の専用経路で処理する。
     return 0;
   }
-  if ((curtok()->kind == TK_TYPEDEF ||
-       psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) ||
-       psx_ctx_is_typedef_name_token(curtok())) &&
+  if (is_toplevel_decl_like_start(curtok()) &&
       !is_toplevel_function_signature(curtok())) {
     parse_toplevel_decl_spec();
     parse_toplevel_decl_after_type();
     return 1;
   }
   return 0;
+}
+
+static int is_toplevel_decl_like_start(token_t *tok) {
+  if (!tok) return 0;
+  return tok->kind == TK_TYPEDEF ||
+         psx_ctx_is_type_token(tok->kind) ||
+         is_decl_prefix_token(tok->kind) ||
+         psx_ctx_is_typedef_name_token(tok);
 }
 
 static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
