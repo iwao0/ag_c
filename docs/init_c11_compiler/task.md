@@ -1587,6 +1587,7 @@
   - 進捗（2026-03-24）: `parser.c` の `define_toplevel_typedef_from_declarator()` から `typedef_sizeof` 算出を `compute_toplevel_typedef_sizeof()` に抽出し、typedefサイズ計算責務を分離
   - 進捗（2026-03-24）: `parser.c` の通常トップレベル宣言子で先頭解析（pointer/name/paren-array）を `parse_toplevel_object_declarator_head()` に抽出
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_typedef_declarator_list()` から宣言子1件分の処理を `parse_one_toplevel_typedef_declarator()` に抽出
+  - 進捗（2026-03-24）: `parser.c` の object/typedef 宣言子先頭解析を `parse_toplevel_declarator_head(base_is_ptr, require_name)` に統合し、宣言子ヘッド読み取り責務を共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 
