@@ -43,6 +43,7 @@ static void parse_toplevel_typedef_declaration_stmt(void);
 static void parse_toplevel_object_declaration_stmt(void);
 static void (*select_toplevel_decl_stmt_parser(void))(void);
 static void parse_toplevel_typedef_declarator_list(void);
+static void parse_one_toplevel_typedef_declarator(void);
 static int has_next_toplevel_declarator(void);
 static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void);
 typedef struct {
@@ -832,13 +833,17 @@ static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void) {
 
 static void parse_toplevel_typedef_declarator_list(void) {
   for (;;) {
-    int is_ptr = g_toplevel_decl_base_is_ptr;
-    parse_toplevel_pointer_prefix(&is_ptr);
-    int paren_array_mul = 1;
-    token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
-    define_toplevel_typedef_from_declarator(name, is_ptr, paren_array_mul);
+    parse_one_toplevel_typedef_declarator();
     if (!has_next_toplevel_declarator()) break;
   }
+}
+
+static void parse_one_toplevel_typedef_declarator(void) {
+  int is_ptr = g_toplevel_decl_base_is_ptr;
+  parse_toplevel_pointer_prefix(&is_ptr);
+  int paren_array_mul = 1;
+  token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
+  define_toplevel_typedef_from_declarator(name, is_ptr, paren_array_mul);
 }
 
 static int has_next_toplevel_declarator(void) {
