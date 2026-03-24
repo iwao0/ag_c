@@ -45,6 +45,12 @@ static void (*select_toplevel_decl_stmt_parser(void))(void);
 static void parse_toplevel_typedef_declarator_list(void);
 static int has_next_toplevel_declarator(void);
 static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void);
+typedef struct {
+  token_ident_t *name;
+  int is_ptr;
+  int paren_array_mul;
+} toplevel_declarator_head_t;
+static toplevel_declarator_head_t parse_toplevel_object_declarator_head(void);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
 static void guard_toplevel_declarator_count(int declarator_count);
@@ -754,16 +760,21 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
 }
 
 static void parse_toplevel_one_object_declarator(void) {
-  int is_ptr = 0;
-  parse_toplevel_pointer_prefix(&is_ptr);
-  int paren_array_mul = 1;
-  token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
-  if (!name) emit_decl_name_required_diag();
-  toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
+  toplevel_declarator_head_t head = parse_toplevel_object_declarator_head();
+  toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
   validate_toplevel_object_array_suffix(arr);
 
-  global_var_t *gv = register_toplevel_object_from_declarator(name, is_ptr, arr);
+  global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
   finalize_toplevel_object_declarator(gv);
+}
+
+static toplevel_declarator_head_t parse_toplevel_object_declarator_head(void) {
+  toplevel_declarator_head_t out = {0};
+  out.paren_array_mul = 1;
+  parse_toplevel_pointer_prefix(&out.is_ptr);
+  out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
+  if (!out.name) emit_decl_name_required_diag();
+  return out;
 }
 
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr) {
