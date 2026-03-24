@@ -49,6 +49,9 @@ static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static int is_toplevel_decl_like_start(token_t *tok);
 static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind);
+static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, tk_float_kind_t td_fp,
+                                             token_kind_t td_tag, char *td_tag_name, int td_tag_len,
+                                             int td_is_ptr);
 static void reset_toplevel_decl_spec_state(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
@@ -152,6 +155,12 @@ static void resolve_toplevel_typedef_ref(void) {
   psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
                             &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
   set_curtok(curtok()->next);
+  apply_toplevel_typedef_decl_spec(td_base, td_elem, td_fp, td_tag, td_tag_name, td_tag_len, td_is_ptr);
+}
+
+static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, tk_float_kind_t td_fp,
+                                             token_kind_t td_tag, char *td_tag_name, int td_tag_len,
+                                             int td_is_ptr) {
   g_toplevel_decl_base_kind = td_base;
   g_toplevel_decl_fp_kind = td_fp;
   g_toplevel_decl_tag_kind = td_tag;

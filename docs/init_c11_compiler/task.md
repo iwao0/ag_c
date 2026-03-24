@@ -1566,6 +1566,7 @@
   - 進捗（2026-03-24）: `decl.c` のローカル `extern` 宣言処理を `parse_local_extern_declarator_list()` / `register_local_extern_decl()` に分割し、宣言子走査とシンボル登録責務を分離
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_declaration_like()` から宣言開始条件を `is_toplevel_decl_like_start()` に抽出し、トップレベル宣言入口の分岐責務を軽量化
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_decl_spec()` から builtin型→decl spec反映を `apply_toplevel_builtin_decl_spec()` へ抽出し、decl spec 情報整備の責務を分離
+  - 進捗（2026-03-24）: `parser.c` の `resolve_toplevel_typedef_ref()` から typedef由来の decl spec 反映を `apply_toplevel_typedef_decl_spec()` へ抽出し、情報源ごとの適用責務を分離
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 
