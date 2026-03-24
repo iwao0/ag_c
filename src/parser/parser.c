@@ -256,6 +256,17 @@ static int parse_array_size_constexpr_toplevel(void) {
   return (int)v;
 }
 
+static int parse_array_size_optional_constexpr_toplevel(int *out_has_size) {
+  if (tk_consume(']')) {
+    if (out_has_size) *out_has_size = 0;
+    return 0;
+  }
+  int n = parse_array_size_constexpr_toplevel();
+  if (out_has_size) *out_has_size = 1;
+  tk_expect(']');
+  return n;
+}
+
 static void parse_toplevel_decl_spec(void) {
   g_toplevel_decl_is_typedef = 0;
   g_toplevel_decl_base_kind = TK_EOF;
@@ -540,10 +551,20 @@ static void parse_toplevel_declarator_list(void) {
     // 配列宣言子を消費し、配列サイズを記録
     int arr_total = 1;
     int is_array = 0;
+    int has_incomplete_array = 0;
     while (tk_consume('[')) {
-      arr_total *= parse_array_size_constexpr_toplevel();
+      int has_size = 0;
+      int n = parse_array_size_optional_constexpr_toplevel(&has_size);
+      if (!has_size) {
+        has_incomplete_array = 1;
+      } else {
+        arr_total *= n;
+      }
       is_array = 1;
-      tk_expect(']');
+    }
+    if (has_incomplete_array && !g_toplevel_decl_is_extern) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
     }
     if (!g_toplevel_decl_is_extern) {
       // グローバル変数テーブルに登録
@@ -693,11 +714,17 @@ static void parse_toplevel_decl_after_type(void) {
       }
       token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr);
       int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
+      int has_incomplete_array = 0;
       while (tk_consume('[')) {
-        int n = parse_array_size_constexpr_toplevel();
+        int has_size = 0;
+        int n = parse_array_size_optional_constexpr_toplevel(&has_size);
+        if (!has_size) {
+          has_incomplete_array = 1;
+          continue;
+        }
         if (!is_ptr && n > 0) typedef_sizeof *= n;
-        tk_expect(']');
       }
+      if (has_incomplete_array && !is_ptr) typedef_sizeof = 0;
       token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
       if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) stored_base_kind = TK_UNSIGNED;
       psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,

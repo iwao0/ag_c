@@ -252,6 +252,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "global_tag_before_main", CASE_INT, "struct S { int x; }; int main() { return 7; }", 7, 0},
     {"type_decl", "global_tag_decl_with_var", CASE_INT, "struct S { int x; } *gp; int main() { return 7; }", 7, 0},
     {"type_decl", "global_int_var_decl", CASE_INT, "int g = 1; int main() { return 7; }", 7, 0},
+    {"type_decl", "global_extern_incomplete_array_decl", CASE_INT, "extern int a[]; int main() { return 7; }", 7, 0},
+    {"type_decl", "typedef_incomplete_array_type", CASE_INT, "typedef int A[]; int main() { A *p=0; return p==0; }", 1, 0},
     {"type_decl", "char", CASE_INT, "int main() { char c = 65; return c; }", 65, 0},
     {"type_decl", "void", CASE_INT, "void noop() { return; } int main() { noop(); return 42; }", 42, 0},
     {"type_decl", "short", CASE_INT, "int main() { short s = 10; return s; }", 10, 0},

@@ -1576,6 +1576,7 @@
 - [ ] 配列宣言子で `assignment-expression` を許容する（C11 §6.7.6.2）
   - C11: 配列サイズは `assignment-expression`（VLA）、`"static"` 修飾、`"*"`（不完全配列）が可能
   - 現状: `num?` のみ。`int a[n]`（VLA）が文法上表現できない（実装はVLA対応済み）
+  - 進捗（2026-03-24）: トップレベル宣言子で `[]`（サイズ省略）を受理し、`extern int a[];` と `typedef int A[];` を回帰テストで固定化
 - [ ] `member_decl` で `declarator` を使う（C11 §6.7.2.1）
   - C11: `struct-declarator = declarator | declarator? ":" constant-expression`
   - 現状: `decl_spec pointer? ident ...` と直接記述。メンバの関数ポインタ（`int (*fp)(int);`）が表現不能
