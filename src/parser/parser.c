@@ -39,10 +39,6 @@ static int g_toplevel_decl_pointee_volatile = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
-static void parse_toplevel_typedef_declaration_stmt(void);
-static void parse_toplevel_object_declaration_stmt(void);
-static void (*select_toplevel_decl_stmt_parser(void))(void);
-static void parse_toplevel_typedef_declarator_list(void);
 static int has_next_toplevel_declarator(void);
 static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void);
 typedef struct {
@@ -52,6 +48,8 @@ typedef struct {
 } toplevel_declarator_head_t;
 static toplevel_declarator_head_t new_toplevel_declarator_head(int base_is_ptr);
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name);
+static void parse_toplevel_declarator_stmt(int base_is_ptr,
+                                           void (*apply)(toplevel_declarator_head_t));
 static void parse_toplevel_declarator_list_with_apply(int base_is_ptr,
                                                       void (*apply)(toplevel_declarator_head_t));
 static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head);
@@ -861,11 +859,6 @@ static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void) {
   return stored_base_kind;
 }
 
-static void parse_toplevel_typedef_declarator_list(void) {
-  parse_toplevel_declarator_list_with_apply(g_toplevel_decl_base_is_ptr,
-                                            apply_toplevel_typedef_from_head);
-}
-
 static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head) {
   define_toplevel_typedef_from_declarator(head.name, head.is_ptr, head.paren_array_mul);
 }
@@ -948,23 +941,17 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
 }
 
 static void parse_toplevel_decl_after_type(void) {
-  void (*parse_decl_stmt)(void) = select_toplevel_decl_stmt_parser();
-  parse_decl_stmt();
+  if (g_toplevel_decl_is_typedef) {
+    parse_toplevel_declarator_stmt(g_toplevel_decl_base_is_ptr, apply_toplevel_typedef_from_head);
+    return;
+  }
+  parse_toplevel_declarator_stmt(0, apply_toplevel_object_from_head);
 }
 
-static void parse_toplevel_typedef_declaration_stmt(void) {
-  parse_toplevel_typedef_declarator_list();
+static void parse_toplevel_declarator_stmt(int base_is_ptr,
+                                           void (*apply)(toplevel_declarator_head_t)) {
+  parse_toplevel_declarator_list_with_apply(base_is_ptr, apply);
   tk_expect(';');
-}
-
-static void parse_toplevel_object_declaration_stmt(void) {
-  parse_toplevel_declarator_list();
-  tk_expect(';');
-}
-
-static void (*select_toplevel_decl_stmt_parser(void))(void) {
-  if (g_toplevel_decl_is_typedef) return parse_toplevel_typedef_declaration_stmt;
-  return parse_toplevel_object_declaration_stmt;
 }
 
 static int parse_toplevel_declaration_like(void) {
