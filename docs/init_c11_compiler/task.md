@@ -1583,6 +1583,7 @@
 - [ ] 複合リテラルを `postfix` に移動する（C11 §6.5.2.5）
   - C11: `postfix-expression = ... | "(" type-name ")" "{" initializer-list ","? "}"`
   - 現状: `unary` の選択肢として記載。優先順位は正しいが位置が C11 と異なる
+  - 進捗（2026-03-24）: `(type){...}` の生成本体を `primary` 側へ移し、`cast` では検出時に `unary→primary` へ委譲する構造へ変更（既存挙動・回帰テストは維持）
 - [x] `_Atomic` を `type_qual` にも追記する（C11 §6.7.3）
   - C11: `_Atomic "(" type-name ")"` は `type-specifier`（§6.7.2.4）、`_Atomic` 単体は `type-qualifier`（§6.7.3）
   - 対応: `int _Atomic x;` / `int _Atomic *p;` など後置 qualifier 形式を parser で受理し、回帰テストを追加

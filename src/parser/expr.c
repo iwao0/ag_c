@@ -58,6 +58,12 @@ static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
 static char *new_compound_lit_name(void);
 static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer);
+static node_t *apply_postfix(node_t *node);
+static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast_is_ptr,
+                                                token_t *after_rparen,
+                                                token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
+                                                int cast_elem_size, tk_float_kind_t cast_fp_kind,
+                                                int cast_array_count);
 
 static void enter_expr_nest_or_die(void) {
   g_expr_nest_depth++;
@@ -909,6 +915,66 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   deref->bit_offset = bf_offset;
   deref->bit_is_signed = bf_is_signed;
   return (node_t *)deref;
+}
+
+static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast_is_ptr,
+                                                token_t *after_rparen,
+                                                token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
+                                                int cast_elem_size, tk_float_kind_t cast_fp_kind,
+                                                int cast_array_count) {
+  set_curtok(after_rparen);
+  int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
+  int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
+  int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
+  char *tmp_name = new_compound_lit_name();
+  if (g_current_funcname == NULL) {
+    tk_expect('{');
+    node_t *init_expr = psx_expr_assign();
+    tk_expect('}');
+    if (!is_arr && init_expr && init_expr->kind == ND_NUM) {
+      return apply_postfix(init_expr);
+    }
+    global_var_t *gv = calloc(1, sizeof(global_var_t));
+    gv->name = tmp_name;
+    gv->name_len = (int)strlen(tmp_name);
+    gv->type_size = var_size;
+    gv->deref_size = base_elem;
+    gv->is_array = is_arr;
+    if (init_expr && init_expr->kind == ND_NUM) {
+      gv->has_init = 1;
+      gv->init_val = ((node_num_t *)init_expr)->val;
+    }
+    gv->next = global_vars;
+    global_vars = gv;
+    node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
+    gvar_node->mem.base.kind = ND_GVAR;
+    gvar_node->mem.type_size = gv->type_size;
+    gvar_node->mem.deref_size = gv->deref_size;
+    gvar_node->name = gv->name;
+    gvar_node->name_len = gv->name_len;
+    gvar_node->is_thread_local = gv->is_thread_local;
+    return apply_postfix((node_t *)gvar_node);
+  }
+  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), var_size, base_elem, is_arr);
+  var->tag_kind = cast_tag_kind;
+  var->tag_name = cast_tag_name;
+  var->tag_len = cast_tag_len;
+  var->is_tag_pointer = cast_is_ptr ? 1 : 0;
+  var->fp_kind = cast_fp_kind;
+  node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
+  node_t *ref;
+  if (is_arr) {
+    node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
+    addr_node->base.kind = ND_ADDR;
+    addr_node->base.lhs = psx_node_new_lvar(var->offset);
+    addr_node->type_size = var->elem_size;
+    addr_node->deref_size = var->elem_size;
+    ref = (node_t *)addr_node;
+  } else {
+    ref = new_typed_lvar_ref(var, cast_is_ptr);
+  }
+  (void)cast_kind;
+  return psx_node_new_binary(ND_COMMA, init, apply_postfix(ref));
 }
 
 static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen,
@@ -2002,66 +2068,8 @@ static node_t *cast(void) {
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
-      set_curtok(after_rparen);
-      int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
-      int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
-      int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
-      char *tmp_name = new_compound_lit_name();
-
-      if (g_current_funcname == NULL) {
-        // ファイルスコープ: 静的ストレージ期間（C11 6.5.2.5p5）
-        // スカラー型の場合は定数値として返す
-        tk_expect('{');
-        node_t *init_expr = psx_expr_assign();
-        tk_expect('}');
-        if (!is_arr && init_expr && init_expr->kind == ND_NUM) {
-          return apply_postfix(init_expr);
-        }
-        // 配列・構造体等: グローバル変数として配置
-        global_var_t *gv = calloc(1, sizeof(global_var_t));
-        gv->name = tmp_name;
-        gv->name_len = (int)strlen(tmp_name);
-        gv->type_size = var_size;
-        gv->deref_size = base_elem;
-        gv->is_array = is_arr;
-        if (init_expr && init_expr->kind == ND_NUM) {
-          gv->has_init = 1;
-          gv->init_val = ((node_num_t *)init_expr)->val;
-        }
-        gv->next = global_vars;
-        global_vars = gv;
-        node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
-        gvar_node->mem.base.kind = ND_GVAR;
-        gvar_node->mem.type_size = gv->type_size;
-        gvar_node->mem.deref_size = gv->deref_size;
-        gvar_node->name = gv->name;
-        gvar_node->name_len = gv->name_len;
-        gvar_node->is_thread_local = gv->is_thread_local;
-        node_t *ref = (node_t *)gvar_node;
-        return apply_postfix(ref);
-      }
-
-      // 関数スコープ: ブロックライフタイム（自動ストレージ期間）
-      lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), var_size, base_elem, is_arr);
-      var->tag_kind = cast_tag_kind;
-      var->tag_name = cast_tag_name;
-      var->tag_len = cast_tag_len;
-      var->is_tag_pointer = cast_is_ptr ? 1 : 0;
-      var->fp_kind = cast_fp_kind;
-      node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
-      node_t *ref;
-      if (is_arr) {
-        node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
-        addr_node->base.kind = ND_ADDR;
-        addr_node->base.lhs = psx_node_new_lvar(var->offset);
-        addr_node->type_size = var->elem_size;
-        addr_node->deref_size = var->elem_size;
-        ref = (node_t *)addr_node;
-      } else {
-        ref = new_typed_lvar_ref(var, cast_is_ptr);
-      }
-      node_t *val = apply_postfix(ref);
-      return psx_node_new_binary(ND_COMMA, init, val);
+      // compound literal は primary/postfix 側で処理する
+      return unary();
     }
     set_curtok(after_rparen);
     node_t *operand = cast();
@@ -2426,6 +2434,25 @@ static node_t *parse_call_postfix(node_t *callee) {
 }
 
 static node_t *primary(void) {
+  token_kind_t cast_kind = TK_EOF;
+  int cast_is_ptr = 0;
+  token_t *after_rparen = NULL;
+  token_kind_t cast_tag_kind = TK_EOF;
+  char *cast_tag_name = NULL;
+  int cast_tag_len = 0;
+  int cast_elem_size = 8;
+  tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
+  int cast_array_count = 0;
+  if (curtok()->kind == TK_LPAREN &&
+      parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
+                      &cast_tag_kind, &cast_tag_name, &cast_tag_len,
+                      &cast_elem_size, &cast_fp_kind, &cast_array_count) &&
+      after_rparen && after_rparen->kind == TK_LBRACE) {
+    return parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
+                                            cast_tag_kind, cast_tag_name, cast_tag_len,
+                                            cast_elem_size, cast_fp_kind, cast_array_count);
+  }
+
   if (curtok()->kind == TK_GENERIC) {
     set_curtok(curtok()->next);
     tk_expect('(');
