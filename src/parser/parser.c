@@ -59,6 +59,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int is_ptr, int typedef_sizeof);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void parse_toplevel_one_object_declarator(void);
+static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
 static void finalize_toplevel_object_declarator(global_var_t *gv);
 static void apply_toplevel_object_initializer(global_var_t *gv);
 static void consume_toplevel_extern_initializer_if_any(void);
@@ -765,9 +766,12 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
 
 static void parse_toplevel_one_object_declarator(void) {
   toplevel_declarator_head_t head = parse_toplevel_declarator_head(0, 1);
+  apply_toplevel_object_from_head(head);
+}
+
+static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
   validate_toplevel_object_array_suffix(arr);
-
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
   finalize_toplevel_object_declarator(gv);
 }
