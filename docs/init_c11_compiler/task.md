@@ -1560,6 +1560,8 @@
   - 進捗（2026-03-24）: `decl.c` の `parse_local_decl_spec()` で初期化と typedef 由来補正を `init_local_decl_spec()` / `adjust_local_decl_spec_from_typedef()` に分離し、`decl_spec` 情報整備の責務を局所化
   - 進捗（2026-03-24）: `decl.c` の `parse_local_decl_spec()` で接頭修飾子取り込みを `take_local_decl_prefix_flags()` に分離し、`decl_spec` 収集フェーズ（type/qualifier/storage）の責務を明確化
   - 進捗（2026-03-24）: `decl.c` のローカル `typedef` 宣言処理を `parse_local_typedef_declarator_list()` / `define_local_typedef_from_declarator()` に分割し、`parse_typedef_declaration_local()` の責務を `decl_spec` 解決に寄せた
+  - 進捗（2026-03-24）: `decl.c` のローカル `typedef` 型指定子解決を `resolve_local_typedef_decl_spec()` に分離し、`parse_typedef_declaration_local()` から `decl_spec` 取得フェーズを抽出
+  - 進捗（2026-03-24）: `decl.c` の `parse_local_decl_spec()` を `parse_local_decl_spec_from_typedef()` / `parse_local_decl_spec_from_builtin()` に分割し、情報源ごとの処理責務を明確化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 

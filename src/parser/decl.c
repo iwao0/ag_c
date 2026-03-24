@@ -53,6 +53,8 @@ typedef struct {
   int is_extern_decl;
 } local_decl_spec_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
+static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out);
+static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
 static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
                                             tk_float_kind_t *fp_kind,
@@ -1584,17 +1586,22 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
   out->type_kind = psx_consume_type_kind();
   out->is_unsigned = psx_last_type_is_unsigned();
   take_local_decl_prefix_flags(out);
-  if (out->type_kind == TK_EOF) {
-    if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
-    token_kind_t base_kind = TK_EOF;
-    resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
-                                   &out->tag_kind, &out->tag_name, &out->tag_len,
-                                   &out->base_is_pointer,
-                                   &out->td_pointee_const, &out->td_pointee_volatile, &out->is_unsigned);
-    adjust_local_decl_spec_from_typedef(out, base_kind);
-    return 1;
-  }
+  if (out->type_kind == TK_EOF) return parse_local_decl_spec_from_typedef(out);
+  return parse_local_decl_spec_from_builtin(out);
+}
 
+static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
+  if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
+  token_kind_t base_kind = TK_EOF;
+  resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
+                                 &out->tag_kind, &out->tag_name, &out->tag_len,
+                                 &out->base_is_pointer,
+                                 &out->td_pointee_const, &out->td_pointee_volatile, &out->is_unsigned);
+  adjust_local_decl_spec_from_typedef(out, base_kind);
+  return 1;
+}
+
+static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
