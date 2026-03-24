@@ -56,6 +56,8 @@ static void consume_local_type_quals(token_t **cur);
 static long long eval_const_expr_type_size(node_t *n, int *ok);
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
+static char *new_compound_lit_name(void);
+static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer);
 
 static void enter_expr_nest_or_die(void) {
   g_expr_nest_depth++;
@@ -834,6 +836,24 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
                                         : DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT));
   }
 
+  // rvalue struct/union (e.g. f().x): materialize once into a temporary object
+  // so member address can be formed as an lvalue.
+  if (!from_ptr && base->kind == ND_FUNCALL && !base_is_ptr) {
+    int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
+    if (obj_size <= 0) obj_size = psx_node_type_size(base);
+    if (obj_size <= 0) obj_size = 8;
+    char *tmp_name = new_compound_lit_name();
+    lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
+    var->tag_kind = base_tag_kind;
+    var->tag_name = base_tag_name;
+    var->tag_len = base_tag_len;
+    var->is_tag_pointer = 0;
+    node_t *lhs_obj = new_typed_lvar_ref(var, 0);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_obj, base);
+    assign_node->type_size = obj_size;
+    base = psx_node_new_binary(ND_COMMA, (node_t *)assign_node, new_typed_lvar_ref(var, 0));
+  }
+
   int off = 0, mem_size = 0, mem_deref = 0;
   int mem_array_len = 0;
   token_kind_t mem_tag_kind = TK_EOF;
@@ -856,11 +876,19 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
 
   node_t *addr_base = base;
   if (!from_ptr) {
-    node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-    addr->base.kind = ND_ADDR;
-    addr->base.lhs = base;
-    addr->type_size = 8;
-    addr_base = (node_t *)addr;
+    if (base->kind == ND_COMMA && base->rhs) {
+      node_mem_t *addr_rhs = arena_alloc(sizeof(node_mem_t));
+      addr_rhs->base.kind = ND_ADDR;
+      addr_rhs->base.lhs = base->rhs;
+      addr_rhs->type_size = 8;
+      addr_base = psx_node_new_binary(ND_COMMA, base->lhs, (node_t *)addr_rhs);
+    } else {
+      node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
+      addr->base.kind = ND_ADDR;
+      addr->base.lhs = base;
+      addr->type_size = 8;
+      addr_base = (node_t *)addr;
+    }
   }
   node_t *addr = psx_node_new_binary(ND_ADD, addr_base, psx_node_new_num(off));
   node_mem_t *deref = arena_alloc(sizeof(node_mem_t));

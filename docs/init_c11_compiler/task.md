@@ -1451,6 +1451,10 @@
   - 再現コード: `int main(){ typedef struct { int y; } L; L l; l.y=9; return l.y; }`
   - 原因: `stmt.c` の typedef 型指定解析で匿名タグ名をスタックバッファに保持して `typedef` テーブルへ登録しており、後続参照時にダングリングポインタ化していた
   - 修正: 匿名タグ名を `make_anonymous_tag_name_stmt()` でヒープ確保し、`typedef` 型情報に永続ポインタとして保持
+- [x] 構造体値を返す関数呼び出し直後のメンバアクセス（`f().x`）で左辺値生成に失敗する
+  - 再現コード: `struct S { int x; } f(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }`
+  - 原因: `.` 演算子の実装が `ND_ADDR(base)` を直接作るため、`base` が `ND_FUNCALL` のとき codegen `gen_lval` で不正左辺値（E4002）になっていた
+  - 修正: `build_member_access()` で `ND_FUNCALL` の struct/union 値を一時ローカルへ実体化し、`ND_COMMA(assign,tmp)` に下げてからメンバアドレスを構築。`ND_COMMA` ベースの `.` でも `rhs` 側へ `ND_ADDR` を掛けるようにした
 
 ### パーサー構造リファクタリング（C11文法との構造差分 — 2026-03-23 棚卸し）
 
