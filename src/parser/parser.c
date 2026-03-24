@@ -57,6 +57,7 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
                                                     int paren_array_mul);
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
                                            int is_ptr, int typedef_sizeof);
+static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void parse_toplevel_one_object_declarator(void);
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
@@ -828,7 +829,11 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                               g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
                               is_ptr, typedef_sizeof,
                               g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
-                              (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned());
+                              is_toplevel_typedef_unsigned(stored_base_kind));
+}
+
+static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind) {
+  return (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
 }
 
 static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr) {
