@@ -272,6 +272,28 @@ static void test_gen_assign(void) {
   free(out);
 }
 
+static void test_gen_complex_float_assign_scalar_zero_imag(void) {
+  printf("test_gen_complex_float_assign_scalar_zero_imag...\n");
+  node_mem_t *assign = calloc(1, sizeof(node_mem_t));
+  assign->base.kind = ND_ASSIGN;
+  assign->base.fp_kind = TK_FLOAT_KIND_FLOAT;
+  assign->base.is_complex = 1;
+  assign->base.lhs = make_lvar(8);
+  assign->base.rhs = make_num(1);
+  assign->base.rhs->fp_kind = TK_FLOAT_KIND_FLOAT;
+  as_num(assign->base.rhs)->fval = 1.0;
+  as_num(assign->base.rhs)->fval_id = 1;
+  assign->type_size = 8;
+
+  capture_start();
+  gen((node_t *)assign);
+  char *out = capture_end();
+  ASSERT_TRUE(strstr(out, "fmov s1, #0.0") != NULL);
+  ASSERT_TRUE(strstr(out, "str s1, [x0, #4]") != NULL);
+  ASSERT_TRUE(strstr(out, "movi d1, #0") == NULL);
+  free(out);
+}
+
 static void test_gen_if(void) {
   printf("test_gen_if...\n");
   node_ctrl_t *n = calloc(1, sizeof(node_ctrl_t));
@@ -528,6 +550,7 @@ int main(void) {
   test_gen_le();
   test_gen_lvar();
   test_gen_assign();
+  test_gen_complex_float_assign_scalar_zero_imag();
   test_gen_if();
   test_gen_while();
   test_gen_for();

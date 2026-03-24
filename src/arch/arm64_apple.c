@@ -854,7 +854,7 @@ static void gen_expr(node_t *node) {
         gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0);
         cg_emitf("  ldr x0, [sp], #16\n");
         cg_emitf("  str s0, [x0]\n");
-        cg_emitf("  movi d1, #0\n");
+        cg_emitf("  fmov s1, #0.0\n");
         cg_emitf("  str s1, [x0, #4]\n");
       }
       cg_emitf("  stp s0, s1, [sp, #-16]!\n");

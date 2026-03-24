@@ -1666,6 +1666,9 @@
   - [x] E2E テスト追加
 - [x] 末尾呼び出し最適化（TCO）の検討
   - 自己再帰関数で `return func(...)` パターンを検出し、引数を再設定後 `b .L_tco_` ラベルへジャンプ。スタック消費を O(1) に削減
+- [x] `_Complex float` へのスカラ代入で虚部ゼロ化を明示する
+  - 現状: `src/arch/arm64_apple.c` の `ND_ASSIGN` (`_Complex float` + scalar RHS) で `movi d1, #0` の後に `s1` を使用しており、虚部 0 の保証が曖昧
+  - 対応: `s1` を明示的に 0 化してから `str s1, [x0, #4]` / `stp s0, s1, [sp, #-16]!` を実行する
 
 ### メモリ最適化
 - [x] `node_mem_t` の boolean フィールドをビットフィールド化する
