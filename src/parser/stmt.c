@@ -55,6 +55,7 @@ typedef struct {
   int has_incomplete_array;
 } stmt_array_suffix_t;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
+static int parse_stmt_array_suffixes_constexpr_required(int base_mul);
 static int parse_alignas_value_stmt(void);
 static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static node_t *stmt_internal(void);
@@ -135,11 +136,7 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix, &paren_array_mul);
-    while (tk_consume('[')) {
-      int n = parse_array_size_constexpr_stmt();
-      if (n > 0) paren_array_mul *= n;
-      tk_expect(']');
-    }
+    paren_array_mul = parse_stmt_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {
     name = tk_consume_ident();
@@ -585,6 +582,16 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
     tk_expect(']');
   }
   return out;
+}
+
+static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
+  int arr_total = (base_mul > 0) ? base_mul : 1;
+  while (tk_consume('[')) {
+    int n = parse_array_size_constexpr_stmt();
+    if (n > 0) arr_total *= n;
+    tk_expect(']');
+  }
+  return arr_total;
 }
 
 // _Alignas( constant-expression | type-name )
