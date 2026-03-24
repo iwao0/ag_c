@@ -54,6 +54,18 @@ typedef struct {
 } local_decl_spec_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
+static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr, int paren_array_mul,
+                                                 token_kind_t base_kind, int elem_size,
+                                                 tk_float_kind_t fp_kind,
+                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                 int td_pointee_const, int td_pointee_volatile,
+                                                 int td_is_unsigned);
+static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
+                                                tk_float_kind_t fp_kind,
+                                                token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                int is_pointer_base,
+                                                int td_pointee_const, int td_pointee_volatile,
+                                                int td_is_unsigned);
 static global_var_t *find_global_var_decl(char *name, int len);
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
 static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
@@ -1633,6 +1645,35 @@ static node_t *parse_typedef_declaration_local(void) {
   psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
   int td_is_unsigned = (base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
 
+  parse_local_typedef_declarator_list(base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len,
+                                      is_pointer_base,
+                                      td_pointee_const, td_pointee_volatile, td_is_unsigned);
+  tk_expect(';');
+  return psx_node_new_num(0);
+}
+
+static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr, int paren_array_mul,
+                                                 token_kind_t base_kind, int elem_size,
+                                                 tk_float_kind_t fp_kind,
+                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                 int td_pointee_const, int td_pointee_volatile,
+                                                 int td_is_unsigned) {
+  int typedef_sizeof = is_ptr ? 8 : elem_size;
+  decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_mul);
+  if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
+  else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+  token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
+  psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+                              tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
+                              td_pointee_const, td_pointee_volatile, td_is_unsigned);
+}
+
+static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
+                                                tk_float_kind_t fp_kind,
+                                                token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                int is_pointer_base,
+                                                int td_pointee_const, int td_pointee_volatile,
+                                                int td_is_unsigned) {
   for (;;) {
     int is_ptr = is_pointer_base;
     unsigned int ptr_const_mask = 0;
@@ -1641,16 +1682,10 @@ static node_t *parse_typedef_declaration_local(void) {
     int paren_array_mul = 0;
     consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
-    int typedef_sizeof = is_ptr ? 8 : elem_size;
-    decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_mul);
-    if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
-    else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
-    token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
-    psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
-                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile, td_is_unsigned);
+    define_local_typedef_from_declarator(name, is_ptr, paren_array_mul,
+                                         base_kind, elem_size, fp_kind,
+                                         tag_kind, tag_name, tag_len,
+                                         td_pointee_const, td_pointee_volatile, td_is_unsigned);
     if (!tk_consume(',')) break;
   }
-  tk_expect(';');
-  return psx_node_new_num(0);
 }
