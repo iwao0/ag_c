@@ -42,7 +42,6 @@ static void parse_toplevel_decl_after_type(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
-static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr, int *out_paren_array_mul);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix);
@@ -645,24 +644,6 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array
   return name;
 }
 
-static token_ident_t *parse_toplevel_typedef_name_decl(int *is_ptr, int *out_paren_array_mul) {
-  token_ident_t *name = parse_decl_name_recursive(is_ptr, 1, out_paren_array_mul);
-  while (curtok()->kind == TK_LPAREN) {
-    int depth = 1;
-    set_curtok(curtok()->next);
-    while (depth > 0) {
-      if (curtok()->kind == TK_EOF) {
-        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
-                       diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
-      }
-      if (curtok()->kind == TK_LPAREN) depth++;
-      else if (curtok()->kind == TK_RPAREN) depth--;
-      set_curtok(curtok()->next);
-    }
-  }
-  return name;
-}
-
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul) {
   while (tk_consume('*')) {
     *is_ptr = 1;
@@ -727,7 +708,7 @@ static void parse_toplevel_decl_after_type(void) {
         skip_ptr_qualifiers();
       }
       int paren_array_mul = 1;
-      token_ident_t *name = parse_toplevel_typedef_name_decl(&is_ptr, &paren_array_mul);
+      token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
       int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
       int has_incomplete_array = 0;
       while (tk_consume('[')) {
