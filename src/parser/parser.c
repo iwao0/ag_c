@@ -70,6 +70,9 @@ typedef struct {
 static void parse_param_decl_spec(param_decl_spec_t *out);
 static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
                                  token_ident_t **ret_tag, int *ret_is_ptr);
+static void parse_pointer_suffix_flags(int *out_is_ptr);
+static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
+                                     token_ident_t **ret_tag, int *ret_is_ptr);
 static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_unnamed_param,
                                             node_t ***out_args, int *out_nargs);
 static token_ident_t *parse_func_name_declarator_recursive(void);
@@ -1669,37 +1672,47 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
     } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
       psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
     }
-    while (curtok()->kind == TK_MUL) { set_curtok(curtok()->next); *ret_is_ptr = 1; } // skip optional pointer(s)
+    parse_pointer_suffix_flags(ret_is_ptr); // skip optional pointer(s)
     return;
   }
 
   *ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
   if (*ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(curtok())) {
-    // typedef 名を戻り値型として認識（size_t, FILE 等）
-    token_ident_t *td_id = (token_ident_t *)curtok();
-    token_kind_t td_base = TK_EOF;
-    int td_elem = 8;
-    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-    token_kind_t td_tag = TK_EOF;
-    char *td_tag_name = NULL;
-    int td_tag_len = 0;
-    int td_is_ptr = 0;
-    psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
-                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
-    set_curtok(curtok()->next);
-    *ret_kind = td_base;
-    *ret_fp_kind = td_fp;
-    if (td_is_ptr) *ret_is_ptr = 1;
-    if (td_tag != TK_EOF) {
-      *ret_tag = calloc(1, sizeof(token_ident_t));
-      (*ret_tag)->str = td_tag_name;
-      (*ret_tag)->len = td_tag_len;
-      *ret_kind = td_tag; // struct/union として扱う
-    }
+    resolve_func_ret_typedef(ret_kind, ret_fp_kind, ret_tag, ret_is_ptr);
   }
-  if (*ret_kind == TK_FLOAT) *ret_fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (*ret_kind == TK_DOUBLE) *ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
-  while (curtok()->kind == TK_MUL) { set_curtok(curtok()->next); *ret_is_ptr = 1; }
+  *ret_fp_kind = fp_kind_for_type_kind_toplevel(*ret_kind);
+  parse_pointer_suffix_flags(ret_is_ptr);
+}
+
+static void parse_pointer_suffix_flags(int *out_is_ptr) {
+  while (curtok()->kind == TK_MUL) {
+    set_curtok(curtok()->next);
+    if (out_is_ptr) *out_is_ptr = 1;
+  }
+}
+
+static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
+                                     token_ident_t **ret_tag, int *ret_is_ptr) {
+  token_ident_t *td_id = (token_ident_t *)curtok();
+  token_kind_t td_base = TK_EOF;
+  int td_elem = 8;
+  tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+  token_kind_t td_tag = TK_EOF;
+  char *td_tag_name = NULL;
+  int td_tag_len = 0;
+  int td_is_ptr = 0;
+  psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
+                            &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
+  set_curtok(curtok()->next);
+  *ret_kind = td_base;
+  *ret_fp_kind = td_fp;
+  if (td_is_ptr) *ret_is_ptr = 1;
+  if (td_tag != TK_EOF) {
+    *ret_tag = calloc(1, sizeof(token_ident_t));
+    (*ret_tag)->str = td_tag_name;
+    (*ret_tag)->len = td_tag_len;
+    *ret_kind = td_tag;
+  }
 }
 
 static token_ident_t *parse_func_name_declarator_recursive(void) {
