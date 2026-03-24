@@ -50,6 +50,7 @@ static void parse_toplevel_decl_spec(void);
 static void reset_toplevel_decl_spec_state(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
+static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len);
 static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
@@ -178,17 +179,8 @@ static void reset_toplevel_decl_spec_state(void) {
 
 static int parse_toplevel_tag_decl_spec(void) {
   if (!psx_ctx_is_tag_keyword(curtok()->kind)) return 0;
-  g_toplevel_decl_base_kind = curtok()->kind;
-  g_toplevel_decl_tag_kind = curtok()->kind;
-  set_curtok(curtok()->next);
-  token_ident_t *tag = tk_consume_ident();
-  if (!tag && curtok()->kind != TK_LBRACE) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-  if (tag) {
-    g_toplevel_decl_tag_name = tag->str;
-    g_toplevel_decl_tag_len = tag->len;
-  } else {
-    make_anonymous_tag_name_toplevel(&g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
-  }
+  parse_toplevel_tag_head(&g_toplevel_decl_tag_kind, &g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
+  g_toplevel_decl_base_kind = g_toplevel_decl_tag_kind;
   if (tk_consume('{')) {
     int member_count = 0;
     int tag_size = 0;
@@ -209,6 +201,21 @@ static int parse_toplevel_tag_decl_spec(void) {
                                                    g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
   apply_toplevel_decl_prefix_flags();
   return 1;
+}
+
+static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len) {
+  *out_kind = curtok()->kind;
+  set_curtok(curtok()->next);
+  token_ident_t *tag = tk_consume_ident();
+  if (!tag && curtok()->kind != TK_LBRACE) {
+    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+  }
+  if (tag) {
+    *out_name = tag->str;
+    *out_len = tag->len;
+  } else {
+    make_anonymous_tag_name_toplevel(out_name, out_len);
+  }
 }
 
 static int parse_toplevel_typedef_name_spec(void) {
@@ -1281,20 +1288,10 @@ static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_n
 }
 
 static void parse_toplevel_tag_decl(void) {
-  token_kind_t tag_kind = curtok()->kind;
-  set_curtok(curtok()->next);
-  token_ident_t *tag = tk_consume_ident();
-  // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
-  if (!tag && curtok()->kind != TK_LBRACE) {
-    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-  }
-  static int anon_tag_counter_tl = 0;
-  char anon_buf[32];
-  char *tag_name = tag ? tag->str : anon_buf;
-  int tag_len = tag ? tag->len : 0;
-  if (!tag) {
-    tag_len = snprintf(anon_buf, sizeof(anon_buf), "__anon_tl_%d", anon_tag_counter_tl++);
-  }
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  parse_toplevel_tag_head(&tag_kind, &tag_name, &tag_len);
 
   if (tk_consume('{')) {
     int member_count = 0;
