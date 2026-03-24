@@ -217,6 +217,26 @@ static int parse_array_size_optional_constexpr_decl(int *out_has_size) {
   return parse_array_size_constexpr_decl();
 }
 
+static void parse_decl_skip_constexpr_array_suffixes(void) {
+  while (tk_consume('[')) {
+    (void)parse_array_size_constexpr_decl();
+    tk_expect(']');
+  }
+}
+
+static int parse_decl_constexpr_array_suffix_product(int *out_first_dim) {
+  int mul = 1;
+  int first = 0;
+  while (tk_consume('[')) {
+    int dim = parse_array_size_constexpr_decl();
+    tk_expect(']');
+    if (first == 0) first = dim;
+    if (dim > 0) mul *= dim;
+  }
+  if (out_first_dim) *out_first_dim = first;
+  return mul;
+}
+
 typedef struct {
   int arr_total;
   int is_array;
@@ -1286,7 +1306,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
             inner_const_size = parse_array_size_expr_decl(&inner_size_node, &inner_size_ok);
             tk_expect(']');
             // さらに多次元は非サポート (消費のみ)
-            while (tk_consume('[')) { parse_array_size_constexpr_decl(); tk_expect(']'); }
+            parse_decl_skip_constexpr_array_suffixes();
           }
           // VLA フレームスロット割り当て
           // 1D/2D定数内側: 16B ([offset]=baseptr, [offset+8]=bytesize)
@@ -1330,12 +1350,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           continue;
         }
         int inner_dim_size = 0;  // 内側次元の要素数（0: 1次元配列）
-        while (tk_consume('[')) {
-          long long dim = parse_array_size_constexpr_decl();
-          if (!inner_dim_size) inner_dim_size = (int)dim;
-          array_size *= dim;
-          tk_expect(']');
-        }
+        int trailing_mul = parse_decl_constexpr_array_suffix_product(&inner_dim_size);
+        array_size *= trailing_mul;
         {
         int arr_elem_size = is_pointer ? 8 : elem_size;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
