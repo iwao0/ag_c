@@ -44,6 +44,7 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
                                                     int paren_array_mul);
 static void parse_toplevel_one_object_declarator(void);
 static void apply_toplevel_object_initializer(global_var_t *gv);
+static void consume_toplevel_extern_initializer_if_any(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
@@ -111,6 +112,8 @@ typedef struct {
 } toplevel_array_suffix_t;
 static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
 static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
+static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
+                                                               toplevel_array_suffix_t arr);
 static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static inline token_t *curtok(void);
@@ -702,13 +705,23 @@ static void parse_toplevel_one_object_declarator(void) {
                  diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
   }
 
-  global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array,
-                                                    arr.arr_total, g_toplevel_decl_is_extern ? 1 : 0,
-                                                    arr.has_incomplete_array);
+  global_var_t *gv = register_toplevel_object_from_declarator(name, is_ptr, arr);
   if (!g_toplevel_decl_is_extern) {
     gv->is_thread_local = g_toplevel_decl_is_thread_local;
     apply_toplevel_object_initializer(gv);
-  } else if (tk_consume('=')) {
+  } else {
+    consume_toplevel_extern_initializer_if_any();
+  }
+}
+
+static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
+                                                               toplevel_array_suffix_t arr) {
+  return register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array, arr.arr_total,
+                                       g_toplevel_decl_is_extern ? 1 : 0, arr.has_incomplete_array);
+}
+
+static void consume_toplevel_extern_initializer_if_any(void) {
+  if (tk_consume('=')) {
     psx_expr_assign(); // extern宣言では通常ないが消費する
   }
 }
