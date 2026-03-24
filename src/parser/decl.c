@@ -1403,26 +1403,28 @@ node_t *psx_decl_parse_declaration(void) {
         psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
       }
       int is_ptr = ds.base_is_pointer;
-      while (curtok()->kind == TK_MUL) {
-        is_ptr = 1;
-        set_curtok(curtok()->next);
-        while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT)
-          set_curtok(curtok()->next);
-      }
-      if (curtok()->kind != TK_IDENT) break;
-      token_ident_t *name = (token_ident_t *)curtok();
-      set_curtok(curtok()->next);
-      // 配列宣言子を消費
-      while (curtok()->kind == TK_LBRACKET) {
-        skip_bracket_group();
+      unsigned int ptr_const_mask = 0;
+      unsigned int ptr_volatile_mask = 0;
+      int ptr_levels = 0;
+      int paren_array_dim = 0;
+      consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
+      token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
+      int arr_total = (paren_array_dim > 0) ? paren_array_dim : 1;
+      int is_array = (paren_array_dim > 0);
+      while (tk_consume('[')) {
+        int n = parse_array_size_constexpr_decl();
+        arr_total *= n;
+        is_array = 1;
+        tk_expect(']');
       }
       // グローバルテーブルに登録（既存エントリがなければ）
       if (!find_global_var_decl(name->str, name->len)) {
         global_var_t *gv = calloc(1, sizeof(global_var_t));
         gv->name = name->str;
         gv->name_len = name->len;
-        gv->type_size = is_ptr ? 8 : ds.elem_size;
+        gv->type_size = is_array ? (is_ptr ? 8 : ds.elem_size) * arr_total : (is_ptr ? 8 : ds.elem_size);
         gv->deref_size = ds.elem_size;
+        gv->is_array = is_array;
         gv->is_extern_decl = 1;
         gv->next = global_vars;
         global_vars = gv;
