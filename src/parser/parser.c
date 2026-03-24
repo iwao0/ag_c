@@ -95,6 +95,7 @@ typedef struct {
   int has_incomplete_array;
 } toplevel_array_suffix_t;
 static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
+static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static int anonymous_tag_seq_toplevel = 0;
@@ -603,6 +604,16 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
   return out;
 }
 
+static int parse_toplevel_array_suffixes_constexpr_required(int base_mul) {
+  int arr_total = (base_mul > 0) ? base_mul : 1;
+  while (tk_consume('[')) {
+    int has_size = 0;
+    int n = parse_array_size_optional_constexpr_toplevel(&has_size);
+    if (has_size && n > 0) arr_total *= n;
+  }
+  return arr_total;
+}
+
 static void parse_toplevel_declarator_list(void) {
   int declarator_count = 0;
   for (;;) {
@@ -671,11 +682,7 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
   if (tk_consume('(')) {
     had_parens = 1;
     name = parse_decl_name_recursive(is_ptr, require_name, &paren_array_mul);
-    while (tk_consume('[')) {
-      int has_size = 0;
-      int n = parse_array_size_optional_constexpr_toplevel(&has_size);
-      if (has_size && n > 0) paren_array_mul *= n;
-    }
+    paren_array_mul = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {
     name = tk_consume_ident();
@@ -703,11 +710,7 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_toplevel(is_ptr, out_has_func_suffix, &paren_array_mul);
-    while (tk_consume('[')) {
-      int has_size = 0;
-      int n = parse_array_size_optional_constexpr_toplevel(&has_size);
-      if (has_size && n > 0) paren_array_mul *= n;
-    }
+    paren_array_mul = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {
     name = tk_consume_ident();
