@@ -41,6 +41,7 @@ static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
 static void parse_toplevel_typedef_declaration_stmt(void);
 static void parse_toplevel_object_declaration_stmt(void);
+static void (*select_toplevel_decl_stmt_parser(void))(void);
 static void parse_toplevel_typedef_declarator_list(void);
 static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
@@ -893,11 +894,8 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
 }
 
 static void parse_toplevel_decl_after_type(void) {
-  if (g_toplevel_decl_is_typedef) {
-    parse_toplevel_typedef_declaration_stmt();
-    return;
-  }
-  parse_toplevel_object_declaration_stmt();
+  void (*parse_decl_stmt)(void) = select_toplevel_decl_stmt_parser();
+  parse_decl_stmt();
 }
 
 static void parse_toplevel_typedef_declaration_stmt(void) {
@@ -908,6 +906,11 @@ static void parse_toplevel_typedef_declaration_stmt(void) {
 static void parse_toplevel_object_declaration_stmt(void) {
   parse_toplevel_declarator_list();
   tk_expect(';');
+}
+
+static void (*select_toplevel_decl_stmt_parser(void))(void) {
+  if (g_toplevel_decl_is_typedef) return parse_toplevel_typedef_declaration_stmt;
+  return parse_toplevel_object_declaration_stmt;
 }
 
 static int parse_toplevel_declaration_like(void) {
