@@ -464,6 +464,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "compound_literal_int", CASE_INT, "int main(){ return (int){3}; }", 3, 0},
     {"type_decl", "compound_literal_struct_stmt", CASE_INT, "int main(){ struct S { int x; int y; }; (struct S){1,2}; return 7; }", 7, 0},
     {"type_decl", "compound_literal_struct_member", CASE_INT, "int main(){ struct S { int x; int y; }; return ((struct S){.x=1,.y=2}).y; }", 2, 0},
+    {"type_decl", "compound_literal_struct_member_lvalue_assign", CASE_INT, "int main(){ struct S { int x; }; return (((struct S){1}).x = 5); }", 5, 0},
     {"type_decl", "compound_literal_struct_addr_arrow", CASE_INT, "int main(){ struct S { int x; }; return (&(struct S){3})->x; }", 3, 0},
     {"type_decl", "compound_literal_array_subscript", CASE_INT, "int main(){ return ((int[2]){1,2})[1]; }", 2, 0},
     {"type_decl", "compound_literal_array_subscript0", CASE_INT, "int main(){ return ((int[3]){10,20,30})[0]; }", 10, 0},

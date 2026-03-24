@@ -1864,32 +1864,40 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
 
 static node_t *assign(void) {
   node_t *node = conditional();
+  node_t *lhs_prefix = NULL;
+  node_t *assign_target = node;
+  if (node && node->kind == ND_COMMA && node->rhs &&
+      (node->rhs->kind == ND_LVAR || node->rhs->kind == ND_DEREF || node->rhs->kind == ND_GVAR)) {
+    lhs_prefix = node->lhs;
+    assign_target = node->rhs;
+  }
   switch (curtok()->kind) {
     case TK_ASSIGN: {
-      psx_node_reject_const_assign(node, "=");
+      psx_node_reject_const_assign(assign_target, "=");
       set_curtok(curtok()->next);
       node_t *rhs = assign();
-      psx_node_reject_const_qual_discard(node, rhs);
-      if (node->kind == ND_LVAR) {
-        lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)node)->offset);
+      psx_node_reject_const_qual_discard(assign_target, rhs);
+      if (assign_target->kind == ND_LVAR) {
+        lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)assign_target)->offset);
         if (lv) lv->is_initialized = 1;
       }
-      node_mem_t *assign_node = psx_node_new_assign(node, rhs);
+      node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
       assign_node->type_size = psx_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
       node = (node_t *)assign_node;
+      if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node);
       break;
     }
-    case TK_PLUSEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_ADD, assign(), "+="); break;
-    case TK_MINUSEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_SUB, assign(), "-="); break;
-    case TK_MULEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_MUL, assign(), "*="); break;
-    case TK_DIVEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_DIV, assign(), "/="); break;
-    case TK_MODEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_MOD, assign(), "%="); break;
-    case TK_SHLEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_SHL, assign(), "<<="); break;
-    case TK_SHREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_SHR, assign(), ">>="); break;
-    case TK_ANDEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_BITAND, assign(), "&="); break;
-    case TK_XOREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_BITXOR, assign(), "^="); break;
-    case TK_OREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(node, ND_BITOR, assign(), "|="); break;
+    case TK_PLUSEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_ADD, assign(), "+="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_MINUSEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_SUB, assign(), "-="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_MULEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_MUL, assign(), "*="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_DIVEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_DIV, assign(), "/="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_MODEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_MOD, assign(), "%="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_SHLEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_SHL, assign(), "<<="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_SHREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_SHR, assign(), ">>="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_ANDEQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_BITAND, assign(), "&="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_XOREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_BITXOR, assign(), "^="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
+    case TK_OREQ: set_curtok(curtok()->next); node = psx_node_new_compound_assign(assign_target, ND_BITOR, assign(), "|="); if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node); break;
     default: break;
   }
   return node;

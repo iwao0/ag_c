@@ -1455,6 +1455,10 @@
   - 再現コード: `struct S { int x; } f(void){ struct S s; s.x=3; return s; } int main(){ return f().x; }`
   - 原因: `.` 演算子の実装が `ND_ADDR(base)` を直接作るため、`base` が `ND_FUNCALL` のとき codegen `gen_lval` で不正左辺値（E4002）になっていた
   - 修正: `build_member_access()` で `ND_FUNCALL` の struct/union 値を一時ローカルへ実体化し、`ND_COMMA(assign,tmp)` に下げてからメンバアドレスを構築。`ND_COMMA` ベースの `.` でも `rhs` 側へ `ND_ADDR` を掛けるようにした
+- [x] 複合リテラルのメンバ代入（`((struct S){1}).x = 5`）で左辺値扱いに失敗する
+  - 再現コード: `int main(){ struct S { int x; }; return (((struct S){1}).x = 5); }`
+  - 原因: 複合リテラルは内部で `ND_COMMA(init, lvalue)` に lower されるため、`assign()` が `ND_COMMA` 全体を代入先として扱い、最終的に codegen で `E4002` になっていた
+  - 修正: `assign()` で `ND_COMMA(prefix, lvalue)` を検出したら `lvalue` 側を代入先に使い、結果を `ND_COMMA(prefix, assign(...))` として再構成するようにした（`=`, `+=` 等を含む）
 
 ### パーサー構造リファクタリング（C11文法との構造差分 — 2026-03-23 棚卸し）
 
