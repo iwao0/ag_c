@@ -350,6 +350,13 @@ static void skip_ptr_qualifiers(void) {
   }
 }
 
+void psx_consume_pointer_prefix(int *is_ptr) {
+  while (tk_consume('*')) {
+    if (is_ptr) *is_ptr = 1;
+    skip_ptr_qualifiers();
+  }
+}
+
 static void parse_static_assert_toplevel(void) {
   if (curtok()->kind != TK_STATIC_ASSERT) {
     diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, curtok(), "%s",
@@ -868,10 +875,7 @@ static int has_next_toplevel_declarator(void) {
 }
 
 static void parse_toplevel_pointer_prefix(int *is_ptr) {
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers();
-  }
+  psx_consume_pointer_prefix(is_ptr);
 }
 
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul) {

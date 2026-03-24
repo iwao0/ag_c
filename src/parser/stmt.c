@@ -88,12 +88,6 @@ static void make_anonymous_tag_name_stmt(char **out_name, int *out_len) {
   *out_len = len;
 }
 
-static void skip_ptr_qualifiers_stmt(void) {
-  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
-    set_curtok(curtok()->next);
-  }
-}
-
 static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -109,10 +103,7 @@ static void skip_func_params_stmt(void) {
 }
 
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers_stmt();
-  }
+  psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
     name = parse_typedef_name_decl_recursive(is_ptr);
@@ -137,10 +128,7 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
 
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
                                                             int *out_paren_array_mul) {
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers_stmt();
-  }
+  psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
@@ -749,10 +737,7 @@ static void parse_typedef_decl(void) {
 
   for (;;) {
     int is_ptr = is_pointer_base;
-    while (tk_consume('*')) {
-      is_ptr = 1;
-      skip_ptr_qualifiers_stmt();
-    }
+    psx_consume_pointer_prefix(&is_ptr);
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
     stmt_array_suffix_t arr = parse_stmt_array_suffixes(0);

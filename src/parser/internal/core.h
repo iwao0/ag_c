@@ -13,5 +13,6 @@ int psx_last_type_is_atomic(void);
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified);
 void psx_take_alignas_value(int *align);
 void psx_take_extern_flag(int *is_extern);
+void psx_consume_pointer_prefix(int *is_ptr);
 
 #endif
