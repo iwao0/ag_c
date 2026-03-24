@@ -52,6 +52,7 @@ typedef struct {
   int paren_array_mul;
 } toplevel_declarator_head_t;
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name);
+static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
@@ -848,6 +849,10 @@ static void parse_toplevel_typedef_declarator_list(void) {
 
 static void parse_one_toplevel_typedef_declarator(void) {
   toplevel_declarator_head_t head = parse_toplevel_declarator_head(g_toplevel_decl_base_is_ptr, 1);
+  apply_toplevel_typedef_from_head(head);
+}
+
+static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head) {
   define_toplevel_typedef_from_declarator(head.name, head.is_ptr, head.paren_array_mul);
 }
 
