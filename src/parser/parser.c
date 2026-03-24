@@ -45,6 +45,7 @@ static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix);
+static void skip_toplevel_func_suffix_groups(int *out_has_func_suffix);
 static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
@@ -559,6 +560,23 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   return gv;
 }
 
+static void skip_toplevel_func_suffix_groups(int *out_has_func_suffix) {
+  while (curtok()->kind == TK_LPAREN) {
+    if (out_has_func_suffix) *out_has_func_suffix = 1;
+    int depth = 1;
+    set_curtok(curtok()->next);
+    while (depth > 0) {
+      if (curtok()->kind == TK_EOF) {
+        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
+                       diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
+      }
+      if (curtok()->kind == TK_LPAREN) depth++;
+      else if (curtok()->kind == TK_RPAREN) depth--;
+      set_curtok(curtok()->next);
+    }
+  }
+}
+
 static void parse_toplevel_declarator_list(void) {
   int declarator_count = 0;
   for (;;) {
@@ -628,19 +646,7 @@ static void parse_toplevel_declarator_list(void) {
 
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul) {
   token_ident_t *name = parse_decl_name_recursive(is_ptr, 1, out_paren_array_mul);
-  while (curtok()->kind == TK_LPAREN) {
-    int depth = 1;
-    set_curtok(curtok()->next);
-    while (depth > 0) {
-      if (curtok()->kind == TK_EOF) {
-        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
-                       diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
-      }
-      if (curtok()->kind == TK_LPAREN) depth++;
-      else if (curtok()->kind == TK_RPAREN) depth--;
-      set_curtok(curtok()->next);
-    }
-  }
+  skip_toplevel_func_suffix_groups(NULL);
   return name;
 }
 
@@ -692,10 +698,7 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
   } else {
     name = tk_consume_ident();
   }
-  while (curtok()->kind == TK_LPAREN) {
-    if (out_has_func_suffix) *out_has_func_suffix = 1;
-    skip_balanced_group(TK_LPAREN, TK_RPAREN);
-  }
+  skip_toplevel_func_suffix_groups(out_has_func_suffix);
   return name;
 }
 
