@@ -1593,6 +1593,7 @@
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_one_object_declarator()` から「宣言子ヘッド→object定義」連結を `apply_toplevel_object_from_head()` に抽出
   - 進捗（2026-03-24）: `parser.c` の typedef 登録時 unsigned 判定を `is_toplevel_typedef_unsigned()` に抽出し、`register_toplevel_typedef_name()` の引数整形責務を分離
   - 進捗（2026-03-24）: `parser.c` の object 登録時 `extern` フラグ整形を `current_toplevel_extern_flag()` に抽出し、`register_toplevel_object_from_declarator()` の責務を軽量化
+  - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_declarator_head()` から初期化処理を `new_toplevel_declarator_head()` に抽出し、宣言子ヘッド生成責務を分離
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 

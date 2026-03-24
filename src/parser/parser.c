@@ -51,6 +51,7 @@ typedef struct {
   int is_ptr;
   int paren_array_mul;
 } toplevel_declarator_head_t;
+static toplevel_declarator_head_t new_toplevel_declarator_head(int base_is_ptr);
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name);
 static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
@@ -779,12 +780,17 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
 }
 
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name) {
-  toplevel_declarator_head_t out = {0};
-  out.is_ptr = base_is_ptr;
-  out.paren_array_mul = 1;
+  toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
   parse_toplevel_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
+  return out;
+}
+
+static toplevel_declarator_head_t new_toplevel_declarator_head(int base_is_ptr) {
+  toplevel_declarator_head_t out = {0};
+  out.is_ptr = base_is_ptr;
+  out.paren_array_mul = 1;
   return out;
 }
 
