@@ -89,6 +89,12 @@ static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static int parse_array_size_constexpr_toplevel(void);
 static int parse_array_size_optional_constexpr_toplevel(int *out_has_size);
+typedef struct {
+  int arr_total;
+  int is_array;
+  int has_incomplete_array;
+} toplevel_array_suffix_t;
+static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
 static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static int anonymous_tag_seq_toplevel = 0;
@@ -579,6 +585,24 @@ static void skip_toplevel_func_suffix_groups(int *out_has_func_suffix) {
   }
 }
 
+static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
+  toplevel_array_suffix_t out = {0};
+  out.arr_total = (base_mul > 0) ? base_mul : 1;
+  out.is_array = (base_mul > 1);
+  out.has_incomplete_array = 0;
+  while (tk_consume('[')) {
+    int has_size = 0;
+    int n = parse_array_size_optional_constexpr_toplevel(&has_size);
+    if (!has_size) {
+      out.has_incomplete_array = 1;
+    } else {
+      out.arr_total *= n;
+    }
+    out.is_array = 1;
+  }
+  return out;
+}
+
 static void parse_toplevel_declarator_list(void) {
   int declarator_count = 0;
   for (;;) {
@@ -597,32 +621,15 @@ static void parse_toplevel_declarator_list(void) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
-    // 配列宣言子を消費し、配列サイズを記録
-    int arr_total = 1;
-    int is_array = 0;
-    int has_incomplete_array = 0;
-    while (tk_consume('[')) {
-      int has_size = 0;
-      int n = parse_array_size_optional_constexpr_toplevel(&has_size);
-      if (!has_size) {
-        has_incomplete_array = 1;
-      } else {
-        arr_total *= n;
-      }
-      is_array = 1;
-    }
-    if (paren_array_mul > 1) {
-      arr_total *= paren_array_mul;
-      is_array = 1;
-    }
-    if (has_incomplete_array && !g_toplevel_decl_is_extern) {
+    toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
+    if (arr.has_incomplete_array && !g_toplevel_decl_is_extern) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
     }
     if (!g_toplevel_decl_is_extern) {
       // グローバル変数テーブルに登録
-      global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, is_array,
-                                                        arr_total, 0, has_incomplete_array);
+      global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array,
+                                                        arr.arr_total, 0, arr.has_incomplete_array);
       gv->is_thread_local = g_toplevel_decl_is_thread_local;
       if (tk_consume('=')) {
         node_t *init_expr = psx_expr_assign();
@@ -639,8 +646,8 @@ static void parse_toplevel_declarator_list(void) {
       }
     } else {
       // extern宣言: テーブルに登録（is_extern_decl=1）
-      (void)register_toplevel_global_decl(name->str, name->len, is_ptr, is_array, arr_total, 1,
-                                          has_incomplete_array);
+      (void)register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array, arr.arr_total, 1,
+                                          arr.has_incomplete_array);
       if (tk_consume('=')) psx_expr_assign(); // 初期化子（extern宣言では通常ないが消費する）
     }
     if (!tk_consume(',')) break;
@@ -721,18 +728,9 @@ static void parse_toplevel_decl_after_type(void) {
       int paren_array_mul = 1;
       token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
       int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
-      int has_incomplete_array = 0;
-      while (tk_consume('[')) {
-        int has_size = 0;
-        int n = parse_array_size_optional_constexpr_toplevel(&has_size);
-        if (!has_size) {
-          has_incomplete_array = 1;
-          continue;
-        }
-        if (!is_ptr && n > 0) typedef_sizeof *= n;
-      }
-      if (has_incomplete_array && !is_ptr) typedef_sizeof = 0;
-      if (paren_array_mul > 1) typedef_sizeof *= paren_array_mul;
+      toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
+      if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
+      else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
       token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
       if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) stored_base_kind = TK_UNSIGNED;
       psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
