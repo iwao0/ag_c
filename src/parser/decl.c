@@ -56,6 +56,8 @@ static int parse_local_decl_spec(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
 static global_var_t *find_global_var_decl(char *name, int len);
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
+static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
+                                       tk_float_kind_t *out_fp_kind);
 static void init_local_decl_spec(local_decl_spec_t *out);
 static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_kind_t base_kind);
 static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out_elem_size,
@@ -69,6 +71,12 @@ static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind) {
   if (type_kind == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
   if (type_kind == TK_DOUBLE) return TK_FLOAT_KIND_DOUBLE;
   return TK_FLOAT_KIND_NONE;
+}
+
+static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
+                                       tk_float_kind_t *out_fp_kind) {
+  psx_ctx_get_type_info(type_kind, NULL, out_elem_size);
+  if (out_fp_kind) *out_fp_kind = fp_kind_for_type_kind(type_kind);
 }
 
 static void init_local_decl_spec(local_decl_spec_t *out) {
@@ -1566,8 +1574,7 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
     return 1;
   }
 
-  psx_ctx_get_type_info(out->type_kind, NULL, &out->elem_size);
-  out->fp_kind = fp_kind_for_type_kind(out->type_kind);
+  resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
 
@@ -1605,8 +1612,7 @@ static node_t *parse_typedef_declaration_local(void) {
     token_kind_t builtin_kind = psx_consume_type_kind();
     if (builtin_kind != TK_EOF) {
       base_kind = builtin_kind;
-      psx_ctx_get_type_info(builtin_kind, NULL, &elem_size);
-      fp_kind = fp_kind_for_type_kind(builtin_kind);
+      resolve_builtin_type_local(builtin_kind, &elem_size, &fp_kind);
     } else if (psx_ctx_is_typedef_name_token(curtok())) {
       resolve_typedef_name_ref_local(&base_kind, &elem_size, &fp_kind,
                                      &tag_kind, &tag_name, &tag_len, &is_pointer_base,
