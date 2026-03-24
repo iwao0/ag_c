@@ -359,6 +359,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "typedef_union_anon_top", CASE_INT, "typedef union { int x; } U; int main(){ U u; u.x=6; return u.x; }", 6, 0},
     {"type_decl", "typedef_ptr", CASE_INT, "typedef int *intptr; int main() { int a=11; intptr p=&a; return *p; }", 11, 0},
     {"type_decl", "typedef_in_func", CASE_INT, "int main() { typedef int myint; myint x=6; return x; }", 6, 0},
+    {"type_decl", "typedef_in_func_incomplete_array", CASE_INT, "int main() { typedef int A[]; A *p=0; return p==0; }", 1, 0},
     {"type_decl", "typedef_local_struct_forward_tag", CASE_INT, "int main(){ typedef struct L L; return 0; }", 0, 0},
     {"type_decl", "typedef_local_struct_anon", CASE_INT, "int main(){ typedef struct { int y; } L; L l; l.y=9; return l.y; }", 9, 0},
     {"type_decl", "typedef_local_union_forward_tag", CASE_INT, "int main(){ typedef union L L; return 0; }", 0, 0},

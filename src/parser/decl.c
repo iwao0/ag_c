@@ -208,6 +208,15 @@ static int parse_array_size_constexpr_decl(void) {
   return (int)v;
 }
 
+static int parse_array_size_optional_constexpr_decl(int *out_has_size) {
+  if (curtok()->kind == TK_RBRACKET) {
+    if (out_has_size) *out_has_size = 0;
+    return 0;
+  }
+  if (out_has_size) *out_has_size = 1;
+  return parse_array_size_constexpr_decl();
+}
+
 static int parse_nonneg_const_expr_decl(const char *what) {
   node_t *n = psx_expr_assign();
   int ok = 1;
@@ -1553,15 +1562,23 @@ static node_t *parse_typedef_declaration_local(void) {
     unsigned int ptr_const_mask = 0;
     unsigned int ptr_volatile_mask = 0;
     int ptr_levels = 0;
-    int paren_array_dim = 0;
+    int paren_array_mul = 0;
     consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
-    token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
+    token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
+    int has_incomplete_array = 0;
+    if (!is_ptr && paren_array_mul > 0) typedef_sizeof *= paren_array_mul;
     while (tk_consume('[')) {
-      int n = parse_array_size_constexpr_decl();
-      if (!is_ptr && n > 0) typedef_sizeof *= n;
+      int has_size = 0;
+      int n = parse_array_size_optional_constexpr_decl(&has_size);
+      if (!has_size) {
+        has_incomplete_array = 1;
+      } else if (!is_ptr && n > 0) {
+        typedef_sizeof *= n;
+      }
       tk_expect(']');
     }
+    if (!is_ptr && has_incomplete_array) typedef_sizeof = 0;
     token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
     psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
