@@ -54,6 +54,7 @@ typedef struct {
 } local_decl_spec_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
+static global_var_t *find_global_var_decl(char *name, int len);
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) {
@@ -1008,6 +1009,15 @@ static void skip_bracket_group(void) {
   }
 }
 
+static global_var_t *find_global_var_decl(char *name, int len) {
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0) {
+      return gv;
+    }
+  }
+  return NULL;
+}
+
 static token_ident_t *consume_decl_name_recursive(int *is_pointer,
                                                   unsigned int *const_mask, unsigned int *volatile_mask,
                                                   int *levels, int *out_array_dim,
@@ -1404,18 +1414,10 @@ node_t *psx_decl_parse_declaration(void) {
       set_curtok(curtok()->next);
       // 配列宣言子を消費
       while (curtok()->kind == TK_LBRACKET) {
-        set_curtok(curtok()->next);
-        while (curtok()->kind != TK_RBRACKET && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
-        if (curtok()->kind == TK_RBRACKET) set_curtok(curtok()->next);
+        skip_bracket_group();
       }
       // グローバルテーブルに登録（既存エントリがなければ）
-      int found = 0;
-      for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-        if (gv->name_len == name->len && memcmp(gv->name, name->str, (size_t)name->len) == 0) {
-          found = 1; break;
-        }
-      }
-      if (!found) {
+      if (!find_global_var_decl(name->str, name->len)) {
         global_var_t *gv = calloc(1, sizeof(global_var_t));
         gv->name = name->str;
         gv->name_len = name->len;
