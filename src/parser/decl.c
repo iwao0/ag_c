@@ -54,6 +54,10 @@ typedef struct {
 } local_decl_spec_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
+static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
+                                            tk_float_kind_t *fp_kind,
+                                            token_kind_t *tag_kind, char **tag_name, int *tag_len,
+                                            int *is_pointer_base);
 static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr, int paren_array_mul,
                                                  token_kind_t base_kind, int elem_size,
                                                  tk_float_kind_t fp_kind,
@@ -1605,40 +1609,8 @@ static node_t *parse_typedef_declaration_local(void) {
   char *tag_name = NULL;
   int tag_len = 0;
   int is_pointer_base = 0;
-
-  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-    tag_kind = curtok()->kind;
-    base_kind = tag_kind;
-    set_curtok(curtok()->next);
-    token_ident_t *tag = tk_consume_ident();
-    if (!tag) {
-      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-    }
-    tag_name = tag->str;
-    tag_len = tag->len;
-    if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      // C11: typedef struct S S; のような不完全型タグ宣言を許可
-      if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
-        psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
-      } else {
-        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
-      }
-    }
-    elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
-  } else {
-    token_kind_t builtin_kind = psx_consume_type_kind();
-    if (builtin_kind != TK_EOF) {
-      base_kind = builtin_kind;
-      resolve_builtin_type_local(builtin_kind, &elem_size, &fp_kind);
-    } else if (psx_ctx_is_typedef_name_token(curtok())) {
-      resolve_typedef_name_ref_local(&base_kind, &elem_size, &fp_kind,
-                                     &tag_kind, &tag_name, &tag_len, &is_pointer_base,
-                                     NULL, NULL, NULL);
-    } else {
-      diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
-    }
-  }
+  resolve_local_typedef_decl_spec(&base_kind, &elem_size, &fp_kind,
+                                  &tag_kind, &tag_name, &tag_len, &is_pointer_base);
 
   int td_pointee_const = 0;
   int td_pointee_volatile = 0;
@@ -1650,6 +1622,47 @@ static node_t *parse_typedef_declaration_local(void) {
                                       td_pointee_const, td_pointee_volatile, td_is_unsigned);
   tk_expect(';');
   return psx_node_new_num(0);
+}
+
+static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
+                                            tk_float_kind_t *fp_kind,
+                                            token_kind_t *tag_kind, char **tag_name, int *tag_len,
+                                            int *is_pointer_base) {
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    *tag_kind = curtok()->kind;
+    *base_kind = *tag_kind;
+    set_curtok(curtok()->next);
+    token_ident_t *tag = tk_consume_ident();
+    if (!tag) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+    }
+    *tag_name = tag->str;
+    *tag_len = tag->len;
+    if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
+      if (*tag_kind == TK_STRUCT || *tag_kind == TK_UNION) {
+        psx_ctx_define_tag_type(*tag_kind, *tag_name, *tag_len);
+      } else {
+        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), *tag_name, *tag_len);
+      }
+    }
+    *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
+    return;
+  }
+
+  token_kind_t builtin_kind = psx_consume_type_kind();
+  if (builtin_kind != TK_EOF) {
+    *base_kind = builtin_kind;
+    resolve_builtin_type_local(builtin_kind, elem_size, fp_kind);
+    return;
+  }
+  if (psx_ctx_is_typedef_name_token(curtok())) {
+    resolve_typedef_name_ref_local(base_kind, elem_size, fp_kind,
+                                   tag_kind, tag_name, tag_len, is_pointer_base,
+                                   NULL, NULL, NULL);
+    return;
+  }
+  diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
+                 diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
 }
 
 static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr, int paren_array_mul,
