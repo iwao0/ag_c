@@ -70,6 +70,7 @@ static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
 static void parse_toplevel_pointer_prefix(int *is_ptr);
 static token_ident_t *consume_decl_ident_or_error(int require_name);
+static void emit_decl_name_required_diag(void);
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens);
 static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
@@ -756,10 +757,7 @@ static void parse_toplevel_one_object_declarator(void) {
   parse_toplevel_pointer_prefix(&is_ptr);
   int paren_array_mul = 1;
   token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
-  if (!name) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-  }
+  if (!name) emit_decl_name_required_diag();
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
   validate_toplevel_object_array_suffix(arr);
 
@@ -867,6 +865,11 @@ static token_ident_t *consume_decl_ident_or_error(int require_name) {
                    diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
   }
   return name;
+}
+
+static void emit_decl_name_required_diag(void) {
+  diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, curtok(), "%s",
+                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
 }
 
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens) {
