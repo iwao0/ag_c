@@ -52,6 +52,7 @@ static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind);
 static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, tk_float_kind_t td_fp,
                                              token_kind_t td_tag, char *td_tag_name, int td_tag_len,
                                              int td_is_ptr);
+static void apply_toplevel_typedef_prefix_flags(void);
 static void reset_toplevel_decl_spec_state(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
@@ -232,10 +233,14 @@ static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int
 static int parse_toplevel_typedef_name_spec(void) {
   if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
   resolve_toplevel_typedef_ref();
+  apply_toplevel_typedef_prefix_flags();
+  return 1;
+}
+
+static void apply_toplevel_typedef_prefix_flags(void) {
   g_toplevel_decl_is_extern = 0;
   g_toplevel_decl_is_thread_local = 0;
   psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
-  return 1;
 }
 
 static bool is_decl_prefix_token(token_kind_t k) {
