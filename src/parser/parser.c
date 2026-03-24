@@ -39,6 +39,9 @@ static int g_toplevel_decl_pointee_volatile = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
+static void parse_toplevel_typedef_declarator_list(void);
+static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
+                                                    int paren_array_mul);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static void parse_toplevel_tag_decl(void);
@@ -697,6 +700,36 @@ static void parse_toplevel_declarator_list(void) {
   }
 }
 
+static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
+                                                    int paren_array_mul) {
+  int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
+  toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
+  if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
+  else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+  token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
+  if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) stored_base_kind = TK_UNSIGNED;
+  psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
+                              g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
+                              g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
+                              is_ptr, typedef_sizeof,
+                              g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
+                              (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned());
+}
+
+static void parse_toplevel_typedef_declarator_list(void) {
+  for (;;) {
+    int is_ptr = g_toplevel_decl_base_is_ptr;
+    while (tk_consume('*')) {
+      is_ptr = 1;
+      skip_ptr_qualifiers();
+    }
+    int paren_array_mul = 1;
+    token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
+    define_toplevel_typedef_from_declarator(name, is_ptr, paren_array_mul);
+    if (!tk_consume(',')) break;
+  }
+}
+
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul) {
   token_ident_t *name = parse_decl_name_recursive(is_ptr, 1, out_paren_array_mul);
   skip_toplevel_func_suffix_groups(NULL);
@@ -754,28 +787,7 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
 
 static void parse_toplevel_decl_after_type(void) {
   if (g_toplevel_decl_is_typedef) {
-    for (;;) {
-      int is_ptr = g_toplevel_decl_base_is_ptr;
-      while (tk_consume('*')) {
-        is_ptr = 1;
-        skip_ptr_qualifiers();
-      }
-      int paren_array_mul = 1;
-      token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
-      int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
-      toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
-      if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
-      else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
-      token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
-      if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) stored_base_kind = TK_UNSIGNED;
-      psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
-                                  g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
-                                  g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
-                                  is_ptr, typedef_sizeof,
-                                  g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
-                                  (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned());
-      if (!tk_consume(',')) break;
-    }
+    parse_toplevel_typedef_declarator_list();
     tk_expect(';');
     return;
   }
