@@ -222,6 +222,7 @@ typedef struct {
   int is_array;
   int has_incomplete_array;
 } decl_array_suffix_t;
+static int parse_decl_array_suffixes_constexpr_required(int base_mul);
 
 static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   decl_array_suffix_t out = {0};
@@ -240,6 +241,16 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
     tk_expect(']');
   }
   return out;
+}
+
+static int parse_decl_array_suffixes_constexpr_required(int base_mul) {
+  int arr_total = (base_mul > 0) ? base_mul : 1;
+  while (tk_consume('[')) {
+    int n = parse_array_size_constexpr_decl();
+    tk_expect(']');
+    if (n > 0) arr_total *= n;
+  }
+  return arr_total;
 }
 
 static int parse_nonneg_const_expr_decl(const char *what) {
@@ -1073,13 +1084,7 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
     skip_func_params();
   }
   if (local_had_parens && out_paren_array_mul) {
-    int paren_array_mul = 1;
-    while (tk_consume('[')) {
-      long long dim = parse_array_size_constexpr_decl();
-      tk_expect(']');
-      if (dim > 0) paren_array_mul *= (int)dim;
-    }
-    *out_paren_array_mul = paren_array_mul;
+    *out_paren_array_mul = parse_decl_array_suffixes_constexpr_required(1);
   }
   if (had_parens) *had_parens = local_had_parens;
   return tok;

@@ -1550,6 +1550,7 @@
   - 進捗（2026-03-24）: `parser.c` に `parse_toplevel_array_suffixes()` を導入し、トップレベル通常宣言と typedef 宣言で重複していた `[]` 後置処理（配列積算/不完全配列判定）を共通化
   - 進捗（2026-03-24）: `parser.c` に `parse_toplevel_array_suffixes_constexpr_required()` を導入し、トップレベルの再帰宣言子（通常/メンバ）で重複していた `[]` 後置の次元積算処理を共通化
   - 進捗（2026-03-24）: `decl.c` に `parse_decl_array_suffixes()` を導入し、ローカル `extern` 宣言とローカル `typedef` 宣言で重複していた `[]` 後置処理（配列積算/不完全配列判定）を共通化
+  - 進捗（2026-03-24）: `decl.c` に `parse_decl_array_suffixes_constexpr_required()` を導入し、ローカル再帰宣言子 `consume_decl_name_recursive()` 内の `[]` 次元積算処理を共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
 
 - [ ] [P1] `decl_spec` の情報源を単一化し、型情報伝播の分岐を減らす
