@@ -1568,6 +1568,7 @@
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_decl_spec()` から builtin型→decl spec反映を `apply_toplevel_builtin_decl_spec()` へ抽出し、decl spec 情報整備の責務を分離
   - 進捗（2026-03-24）: `parser.c` の `resolve_toplevel_typedef_ref()` から typedef由来の decl spec 反映を `apply_toplevel_typedef_decl_spec()` へ抽出し、情報源ごとの適用責務を分離
   - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_typedef_name_spec()` から typedef開始時の接頭フラグ適用を `apply_toplevel_typedef_prefix_flags()` に抽出し、typedef経路の責務を分離
+  - 進捗（2026-03-24）: `parser.c` の `parse_toplevel_tag_decl_spec()` からタグ定義/参照解決分岐を `resolve_toplevel_tag_decl_layout_or_ref()` へ抽出し、tag経路の責務を分離
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 

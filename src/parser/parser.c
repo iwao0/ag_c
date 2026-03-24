@@ -53,6 +53,7 @@ static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, 
                                              token_kind_t td_tag, char *td_tag_name, int td_tag_len,
                                              int td_is_ptr);
 static void apply_toplevel_typedef_prefix_flags(void);
+static void resolve_toplevel_tag_decl_layout_or_ref(void);
 static void reset_toplevel_decl_spec_state(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
@@ -193,6 +194,14 @@ static int parse_toplevel_tag_decl_spec(void) {
   if (!psx_ctx_is_tag_keyword(curtok()->kind)) return 0;
   parse_toplevel_tag_head(&g_toplevel_decl_tag_kind, &g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
   g_toplevel_decl_base_kind = g_toplevel_decl_tag_kind;
+  resolve_toplevel_tag_decl_layout_or_ref();
+  g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
+                                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+  apply_toplevel_decl_prefix_flags();
+  return 1;
+}
+
+static void resolve_toplevel_tag_decl_layout_or_ref(void) {
   if (tk_consume('{')) {
     int member_count = 0;
     int tag_size = 0;
@@ -200,19 +209,16 @@ static int parse_toplevel_tag_decl_spec(void) {
                                                       g_toplevel_decl_tag_len, &tag_size);
     psx_ctx_define_tag_type_with_layout(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
                                         g_toplevel_decl_tag_len, member_count, tag_size);
-  } else if (!psx_ctx_has_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len)) {
-    if (g_toplevel_decl_is_typedef &&
-        (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
-      psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-    } else {
-      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX),
-                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-    }
+    return;
   }
-  g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
-                                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-  apply_toplevel_decl_prefix_flags();
-  return 1;
+  if (psx_ctx_has_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len)) return;
+  if (g_toplevel_decl_is_typedef &&
+      (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
+    psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+    return;
+  }
+  psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX),
+                               g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
 }
 
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len) {
