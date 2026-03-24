@@ -134,6 +134,7 @@ typedef struct {
   int is_array;
   int has_incomplete_array;
 } toplevel_array_suffix_t;
+static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr);
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr);
 static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
 static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
@@ -794,10 +795,8 @@ static void consume_toplevel_extern_initializer_if_any(void) {
 
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul) {
-  int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
-  if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
-  else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+  int typedef_sizeof = compute_toplevel_typedef_sizeof(is_ptr, arr);
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
   psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
                               g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
@@ -805,6 +804,13 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
                               is_ptr, typedef_sizeof,
                               g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
                               (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned());
+}
+
+static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr) {
+  int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
+  if (!is_ptr && arr.has_incomplete_array) return 0;
+  if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+  return typedef_sizeof;
 }
 
 static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void) {
