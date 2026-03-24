@@ -90,6 +90,9 @@ static token_kind_t parse_atomic_type_specifier(void);
 static int parse_array_size_constexpr_toplevel(void);
 static int parse_array_size_optional_constexpr_toplevel(int *out_has_size);
 static int parse_toplevel_member_array_suffixes(int *out_is_flex_array);
+static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind);
+static void apply_toplevel_decl_prefix_flags(void);
+static void resolve_toplevel_typedef_ref(void);
 typedef struct {
   int arr_total;
   int is_array;
@@ -99,7 +102,50 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
 static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
+static inline token_t *curtok(void);
+static inline void set_curtok(token_t *tok);
 static int anonymous_tag_seq_toplevel = 0;
+static int g_last_type_atomic;
+static int g_last_type_thread_local;
+
+static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind) {
+  if (type_kind == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
+  if (type_kind == TK_DOUBLE) return TK_FLOAT_KIND_DOUBLE;
+  return TK_FLOAT_KIND_NONE;
+}
+
+static void apply_toplevel_decl_prefix_flags(void) {
+  psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
+  g_toplevel_decl_is_extern = g_last_decl_is_extern;
+  g_toplevel_decl_is_thread_local = g_last_type_thread_local;
+}
+
+static void resolve_toplevel_typedef_ref(void) {
+  token_ident_t *id = (token_ident_t *)curtok();
+  token_kind_t td_base = TK_EOF;
+  int td_elem = 8;
+  tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+  token_kind_t td_tag = TK_EOF;
+  char *td_tag_name = NULL;
+  int td_tag_len = 0;
+  int td_is_ptr = 0;
+  psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
+                            &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
+  set_curtok(curtok()->next);
+  g_toplevel_decl_base_kind = td_base;
+  g_toplevel_decl_fp_kind = td_fp;
+  g_toplevel_decl_tag_kind = td_tag;
+  g_toplevel_decl_tag_name = td_tag_name;
+  g_toplevel_decl_tag_len = td_tag_len;
+  g_toplevel_decl_base_is_ptr = td_is_ptr;
+  g_toplevel_decl_elem_size = td_elem;
+  if ((td_tag == TK_STRUCT || td_tag == TK_UNION) &&
+      td_tag_name && td_tag_len > 0 &&
+      psx_ctx_has_tag_type(td_tag, td_tag_name, td_tag_len)) {
+    int tag_sz = psx_ctx_get_tag_size(td_tag, td_tag_name, td_tag_len);
+    if (tag_sz > 0) g_toplevel_decl_elem_size = tag_sz;
+  }
+}
 
 static bool is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
@@ -115,9 +161,6 @@ static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
   *out_name = name;
   *out_len = len;
 }
-
-static int g_last_type_atomic;
-static int g_last_type_thread_local;
 
 static inline token_t *curtok(void) {
   return tk_get_current_token();
@@ -323,37 +366,12 @@ static void parse_toplevel_decl_spec(void) {
     }
     g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
                                                      g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
-    psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
-    g_toplevel_decl_is_extern = g_last_decl_is_extern;
-    g_toplevel_decl_is_thread_local = g_last_type_thread_local;
+    apply_toplevel_decl_prefix_flags();
     return;
   }
 
   if (psx_ctx_is_typedef_name_token(curtok())) {
-    token_ident_t *id = (token_ident_t *)curtok();
-    token_kind_t td_base = TK_EOF;
-    int td_elem = 8;
-    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-    token_kind_t td_tag = TK_EOF;
-    char *td_tag_name = NULL;
-    int td_tag_len = 0;
-    int td_is_ptr = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
-    set_curtok(curtok()->next);
-    g_toplevel_decl_base_kind = td_base;
-    g_toplevel_decl_fp_kind = td_fp;
-    g_toplevel_decl_tag_kind = td_tag;
-    g_toplevel_decl_tag_name = td_tag_name;
-    g_toplevel_decl_tag_len = td_tag_len;
-    g_toplevel_decl_base_is_ptr = td_is_ptr;
-    g_toplevel_decl_elem_size = td_elem;
-    if ((td_tag == TK_STRUCT || td_tag == TK_UNION) &&
-        td_tag_name && td_tag_len > 0 &&
-        psx_ctx_has_tag_type(td_tag, td_tag_name, td_tag_len)) {
-      int tag_sz = psx_ctx_get_tag_size(td_tag, td_tag_name, td_tag_len);
-      if (tag_sz > 0) g_toplevel_decl_elem_size = tag_sz;
-    }
+    resolve_toplevel_typedef_ref();
     g_toplevel_decl_is_extern = 0;
     g_toplevel_decl_is_thread_local = 0;
     psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
@@ -365,13 +383,10 @@ static void parse_toplevel_decl_spec(void) {
   if (tl_kind == TK_INT && psx_last_type_is_unsigned()) {
     g_toplevel_decl_base_kind = TK_UNSIGNED;
   }
-  if (tl_kind == TK_FLOAT) g_toplevel_decl_fp_kind = TK_FLOAT_KIND_FLOAT;
-  else if (tl_kind == TK_DOUBLE) g_toplevel_decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  g_toplevel_decl_fp_kind = fp_kind_for_type_kind_toplevel(tl_kind);
   g_toplevel_decl_elem_size = 8;
   if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
-  psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
-  g_toplevel_decl_is_extern = g_last_decl_is_extern;
-  g_toplevel_decl_is_thread_local = g_last_type_thread_local;
+  apply_toplevel_decl_prefix_flags();
 }
 
 // program = funcdef*
