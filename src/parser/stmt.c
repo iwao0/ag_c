@@ -504,7 +504,7 @@ static long long parse_enum_const_unary(void) {
           int td_ptr = 0;
           int td_sizeof = 8;
           psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr, NULL, NULL);
+                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr, NULL, NULL, NULL);
           if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
           else sz = td_ptr ? 8 : td_elem;
           set_curtok(curtok()->next);
@@ -651,7 +651,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     if (!psx_ctx_find_typedef_name(id->str, id->len, base_kind, elem_size, fp_kind,
-                                   tag_kind, tag_name, tag_len, is_pointer_base, NULL, NULL)) {
+                                   tag_kind, tag_name, tag_len, is_pointer_base, NULL, NULL, NULL)) {
       return 0;
     }
     set_curtok(curtok()->next);
@@ -680,6 +680,7 @@ static void parse_typedef_decl(void) {
   int td_pointee_const = 0;
   int td_pointee_volatile = 0;
   psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
+  int td_is_unsigned = (base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
 
   for (;;) {
     int is_ptr = is_pointer_base;
@@ -694,9 +695,10 @@ static void parse_typedef_decl(void) {
       if (!is_ptr && n > 0) typedef_sizeof *= n;
       tk_expect(']');
     }
-    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
+    token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
+    psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile);
+                                td_pointee_const, td_pointee_volatile, td_is_unsigned);
     if (!tk_consume(',')) break;
   }
   tk_expect(';');
@@ -746,7 +748,7 @@ static node_t *parse_decl_like_stmt(void) {
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
-      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0);
+      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
@@ -757,7 +759,7 @@ static node_t *parse_decl_like_stmt(void) {
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
-                                                 TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0);
+                                                 TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
   }
 
   return NULL;

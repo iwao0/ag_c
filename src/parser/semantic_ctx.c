@@ -79,6 +79,7 @@ struct typedef_name_t {
   int sizeof_size;
   int pointee_const_qualified;
   int pointee_volatile_qualified;
+  int is_unsigned;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -496,7 +497,8 @@ bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
 void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                  char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                 int pointee_const_qualified, int pointee_volatile_qualified) {
+                                 int pointee_const_qualified, int pointee_volatile_qualified,
+                                 int is_unsigned) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
     if (t->scope_depth == tag_scope_depth && t->len == len &&
@@ -511,6 +513,7 @@ void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, in
       t->sizeof_size = sizeof_size;
       t->pointee_const_qualified = pointee_const_qualified;
       t->pointee_volatile_qualified = pointee_volatile_qualified;
+      t->is_unsigned = is_unsigned;
       return;
     }
   }
@@ -527,6 +530,7 @@ void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, in
   t->sizeof_size = sizeof_size;
   t->pointee_const_qualified = pointee_const_qualified;
   t->pointee_volatile_qualified = pointee_volatile_qualified;
+  t->is_unsigned = is_unsigned;
   t->scope_depth = tag_scope_depth;
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
@@ -547,7 +551,8 @@ bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
                                int *out_elem_size, tk_float_kind_t *out_fp_kind,
                                token_kind_t *out_tag_kind, char **out_tag_name,
                                int *out_tag_len, int *out_is_pointer,
-                               int *out_pointee_const_qualified, int *out_pointee_volatile_qualified) {
+                               int *out_pointee_const_qualified, int *out_pointee_volatile_qualified,
+                               int *out_is_unsigned) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
     if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
@@ -560,6 +565,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
       if (out_is_pointer) *out_is_pointer = t->is_pointer;
       if (out_pointee_const_qualified) *out_pointee_const_qualified = t->pointee_const_qualified;
       if (out_pointee_volatile_qualified) *out_pointee_volatile_qualified = t->pointee_volatile_qualified;
+      if (out_is_unsigned) *out_is_unsigned = t->is_unsigned;
       return true;
     }
   }
@@ -569,7 +575,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
 bool psx_ctx_is_typedef_name_token(token_t *tok) {
   if (!tok || tok->kind != TK_IDENT) return false;
   token_ident_t *id = (token_ident_t *)tok;
-  return psx_ctx_find_typedef_name(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
+  return psx_ctx_find_typedef_name(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 }
 
 void psx_ctx_define_function_name(char *name, int len) {

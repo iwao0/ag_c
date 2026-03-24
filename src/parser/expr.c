@@ -717,19 +717,20 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     char *tag_name = NULL;
     int tag_len = 0;
     int is_ptr = 0;
+    int td_is_unsigned = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len,
-                              &is_ptr, &base_const, &base_volatile);
+                              &is_ptr, &base_const, &base_volatile, &td_is_unsigned);
     set_curtok(curtok()->next);
     out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
     out->scalar_size = elem_size;
-    out->is_unsigned = (base_kind == TK_UNSIGNED);
+    out->is_unsigned = td_is_unsigned;
     out->is_pointer = is_ptr;
     out->tag_kind = tag_kind;
     out->tag_name = tag_name;
     out->tag_len = tag_len;
     base_elem_size = elem_size;
     base_fp_kind = fp_kind;
-    base_unsigned = (base_kind == TK_UNSIGNED);
+    base_unsigned = td_is_unsigned;
   } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     token_kind_t tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
@@ -969,7 +970,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       int td_tag_len = 0;
       int td_ptr = 0;
       psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
-                                &td_ptr, NULL, NULL);
+                                &td_ptr, NULL, NULL, NULL);
       inner_kind = (td_tag != TK_EOF) ? td_tag : td_base;
       inner_tag_kind = td_tag;
       inner_tag_name = td_tag_name;
@@ -1093,7 +1094,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     int td_tag_len = 0;
     int td_ptr = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
-                              &td_ptr, NULL, NULL);
+                              &td_ptr, NULL, NULL, NULL);
     *type_kind = (td_tag != TK_EOF) ? td_tag : td_base;
     if (out_tag_kind) *out_tag_kind = td_tag;
     if (out_tag_name) *out_tag_name = td_tag_name;
@@ -1623,7 +1624,7 @@ static int parse_parenthesized_type_size(void) {
     int td_ptr = 0;
     int td_sizeof = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
-                              &td_ptr, NULL, NULL);
+                              &td_ptr, NULL, NULL, NULL);
     t = t->next;
     int sz = td_ptr ? 8 : td_elem;
     if (!td_ptr && psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {

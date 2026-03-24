@@ -318,7 +318,7 @@ static void parse_toplevel_decl_spec(void) {
     int td_tag_len = 0;
     int td_is_ptr = 0;
     psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL);
+                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
     set_curtok(curtok()->next);
     g_toplevel_decl_base_kind = td_base;
     g_toplevel_decl_fp_kind = td_fp;
@@ -335,6 +335,9 @@ static void parse_toplevel_decl_spec(void) {
 
   token_kind_t tl_kind = psx_consume_type_kind();
   g_toplevel_decl_base_kind = tl_kind;
+  if (tl_kind == TK_INT && psx_last_type_is_unsigned()) {
+    g_toplevel_decl_base_kind = TK_UNSIGNED;
+  }
   if (tl_kind == TK_FLOAT) g_toplevel_decl_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (tl_kind == TK_DOUBLE) g_toplevel_decl_fp_kind = TK_FLOAT_KIND_DOUBLE;
   g_toplevel_decl_elem_size = 8;
@@ -660,11 +663,14 @@ static void parse_toplevel_decl_after_type(void) {
         if (!is_ptr && n > 0) typedef_sizeof *= n;
         tk_expect(']');
       }
-      psx_ctx_define_typedef_name(name->str, name->len, g_toplevel_decl_base_kind, g_toplevel_decl_elem_size,
+      token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
+      if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) stored_base_kind = TK_UNSIGNED;
+      psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
                                   g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
                                   is_ptr, typedef_sizeof,
-                                  g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile);
+                                  g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
+                                  (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned());
       if (!tk_consume(',')) break;
     }
     tk_expect(';');
@@ -1056,7 +1062,7 @@ static long long parse_enum_const_unary_toplevel(void) {
           int td_ptr = 0;
           int td_sizeof = 8;
           psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr, NULL, NULL);
+                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr, NULL, NULL, NULL);
           if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
           else sz = td_ptr ? 8 : td_elem;
           set_curtok(curtok()->next);
@@ -1565,7 +1571,7 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
     int td_tag_len = 0;
     int td_is_ptr = 0;
     psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
-                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL);
+                              &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
     set_curtok(curtok()->next);
     *ret_kind = td_base;
     *ret_fp_kind = td_fp;

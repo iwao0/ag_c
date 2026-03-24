@@ -39,6 +39,7 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
 static string_lit_t *find_string_lit_by_label(char *label);
 typedef struct {
   token_kind_t type_kind;
+  int is_unsigned;
   int elem_size;
   tk_float_kind_t fp_kind;
   token_kind_t tag_kind;
@@ -1166,10 +1167,11 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
                                               token_kind_t tag_kind, char *tag_name, int tag_len,
                                               int base_is_pointer,
-                                              int is_const_qualified, int is_volatile_qualified) {
+                                              int is_const_qualified, int is_volatile_qualified,
+                                              int decl_is_unsigned_hint) {
   node_t *init_chain = NULL;
   int alignas_val = 0;
-  int decl_is_unsigned = psx_last_type_is_unsigned();
+  int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
   int decl_is_complex = psx_last_type_is_complex();
   int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
@@ -1438,7 +1440,8 @@ node_t *psx_decl_parse_declaration(void) {
                                                ds.tag_kind, ds.tag_name, ds.tag_len,
                                                ds.base_is_pointer,
                                                ds.is_const_qualified ? 1 : ds.td_pointee_const,
-                                               ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile);
+                                               ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile,
+                                               ds.is_unsigned);
 }
 
 static int parse_local_decl_spec(local_decl_spec_t *out) {
@@ -1448,6 +1451,7 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
   out->tag_kind = TK_EOF;
 
   out->type_kind = psx_consume_type_kind();
+  out->is_unsigned = psx_last_type_is_unsigned();
   psx_take_type_qualifiers(&out->is_const_qualified, &out->is_volatile_qualified);
   psx_take_extern_flag(&out->is_extern_decl);
   if (out->type_kind == TK_EOF) {
@@ -1456,9 +1460,10 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
     token_kind_t base_kind = TK_EOF;
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &out->elem_size, &out->fp_kind,
                               &out->tag_kind, &out->tag_name, &out->tag_len, &out->base_is_pointer,
-                              &out->td_pointee_const, &out->td_pointee_volatile);
+                              &out->td_pointee_const, &out->td_pointee_volatile, &out->is_unsigned);
     set_curtok(curtok()->next);
     out->type_kind = base_kind;
+    out->is_unsigned = (base_kind == TK_UNSIGNED);
     return 1;
   }
 
@@ -1508,7 +1513,7 @@ static node_t *parse_typedef_declaration_local(void) {
     } else if (psx_ctx_is_typedef_name_token(curtok())) {
       token_ident_t *id = (token_ident_t *)curtok();
       psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
-                                &tag_kind, &tag_name, &tag_len, &is_pointer_base, NULL, NULL);
+                                &tag_kind, &tag_name, &tag_len, &is_pointer_base, NULL, NULL, NULL);
       set_curtok(curtok()->next);
     } else {
       diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
@@ -1519,6 +1524,7 @@ static node_t *parse_typedef_declaration_local(void) {
   int td_pointee_const = 0;
   int td_pointee_volatile = 0;
   psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
+  int td_is_unsigned = (base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
 
   for (;;) {
     int is_ptr = is_pointer_base;
@@ -1534,9 +1540,10 @@ static node_t *parse_typedef_declaration_local(void) {
       if (!is_ptr && n > 0) typedef_sizeof *= n;
       tk_expect(']');
     }
-    psx_ctx_define_typedef_name(name->str, name->len, base_kind, elem_size, fp_kind,
+    token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
+    psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile);
+                                td_pointee_const, td_pointee_volatile, td_is_unsigned);
     if (!tk_consume(',')) break;
   }
   tk_expect(';');

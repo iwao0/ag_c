@@ -1515,6 +1515,7 @@
   - 進捗（2026-03-24）: `typedef` 名を起点にした宣言解析で修飾子情報を宣言ノードへ伝播するようにし、`typedef` 経由ポインタと直接記述ポインタで `_Generic` 挙動が一致することを回帰テストで固定化した
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に多段ポインタ情報（`int**` など）を反映し、`int**` と `char**` を区別して関連型選択できるようにした
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に pointee の signed/unsigned 属性を反映し、`int*` と `unsigned int*`（typedef 経由を含む）を区別して関連型選択できるようにした
+  - 進捗（2026-03-24）: `typedef unsigned int *T;` 経由のローカル宣言で unsigned 属性が宣言ノードへ落ちる不具合を修正し、`_Generic(T, int*:..., unsigned int*:...)` で `unsigned int*` 側を選択できるようにした
   - 進捗（2026-03-24）: `_Generic` のポインタ比較に各レベルの `const/volatile` マスクを反映し、`int**` と `int * const *` / `int * volatile *` を区別して関連型選択できるようにした
   - 進捗（2026-03-24）: `_Generic` の非ポインタ整数比較を token kind 一致から「符号属性 + 型サイズ」比較へ拡張し、`unsigned long` / `long` など複合整数指定子でも関連型選択できるようにした
   - 進捗（2026-03-24）: `_Generic` 関連型の type-name で後置 qualifier（`int const`, `int const *`）を受理し、前置 qualifier 形（`const int`）と同様に選択判定へ反映できるようにした
