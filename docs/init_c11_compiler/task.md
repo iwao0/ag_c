@@ -1447,6 +1447,10 @@
 - [x] `_Generic` でローカル変数を制御式に使うとパースエラーになる
   - 再現コード: `double d=1.0; return _Generic(d, int:0, double:42, default:99);`
   - 確認: 現バージョンでは正常動作する（過去の修正で解消済み）
+- [x] ブロックスコープ `typedef struct { ... } T;` の匿名タグ参照が後続宣言で壊れる
+  - 再現コード: `int main(){ typedef struct { int y; } L; L l; l.y=9; return l.y; }`
+  - 原因: `stmt.c` の typedef 型指定解析で匿名タグ名をスタックバッファに保持して `typedef` テーブルへ登録しており、後続参照時にダングリングポインタ化していた
+  - 修正: 匿名タグ名を `make_anonymous_tag_name_stmt()` でヒープ確保し、`typedef` 型情報に永続ポインタとして保持
 
 ### パーサー構造リファクタリング（C11文法との構造差分 — 2026-03-23 棚卸し）
 
