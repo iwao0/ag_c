@@ -128,6 +128,7 @@ typedef struct {
   int is_array;
   int has_incomplete_array;
 } toplevel_array_suffix_t;
+static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr);
 static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
 static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
@@ -755,13 +756,16 @@ static void parse_toplevel_one_object_declarator(void) {
                  diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
   }
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
-  if (arr.has_incomplete_array && !g_toplevel_decl_is_extern) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
-  }
+  validate_toplevel_object_array_suffix(arr);
 
   global_var_t *gv = register_toplevel_object_from_declarator(name, is_ptr, arr);
   finalize_toplevel_object_declarator(gv);
+}
+
+static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr) {
+  if (!arr.has_incomplete_array || g_toplevel_decl_is_extern) return;
+  psx_diag_ctx(curtok(), "decl", "%s",
+               diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
 }
 
 static void finalize_toplevel_object_declarator(global_var_t *gv) {
