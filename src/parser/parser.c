@@ -532,6 +532,34 @@ static int is_tag_return_function_signature(token_t *tok) {
   return 0;
 }
 
+static global_var_t *find_global_var_by_name(char *name, int len) {
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0) {
+      return gv;
+    }
+  }
+  return NULL;
+}
+
+static global_var_t *register_toplevel_global_decl(char *name, int len, int is_ptr,
+                                                   int is_array, int arr_total, int is_extern_decl) {
+  if (is_extern_decl) {
+    global_var_t *existing = find_global_var_by_name(name, len);
+    if (existing) return existing;
+  }
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->name = name;
+  gv->name_len = len;
+  int elem_store_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
+  gv->type_size = is_array ? (elem_store_size * arr_total) : elem_store_size;
+  gv->deref_size = elem_store_size;
+  gv->is_array = is_array;
+  gv->is_extern_decl = is_extern_decl;
+  gv->next = global_vars;
+  global_vars = gv;
+  return gv;
+}
+
 static void parse_toplevel_declarator_list(void) {
   int declarator_count = 0;
   for (;;) {
@@ -574,13 +602,8 @@ static void parse_toplevel_declarator_list(void) {
     }
     if (!g_toplevel_decl_is_extern) {
       // グローバル変数テーブルに登録
-      global_var_t *gv = calloc(1, sizeof(global_var_t));
-      gv->name = name->str;
-      gv->name_len = name->len;
-      int elem_store_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
-      gv->type_size = is_array ? (elem_store_size * arr_total) : elem_store_size;
-      gv->deref_size = elem_store_size;
-      gv->is_array = is_array;
+      global_var_t *gv = register_toplevel_global_decl(name->str, name->len, is_ptr, is_array,
+                                                        arr_total, 0);
       gv->is_thread_local = g_toplevel_decl_is_thread_local;
       if (tk_consume('=')) {
         node_t *init_expr = psx_expr_assign();
@@ -595,28 +618,9 @@ static void parse_toplevel_declarator_list(void) {
           gv->init_symbol_len = ref->name_len;
         }
       }
-      gv->next = global_vars;
-      global_vars = gv;
     } else {
       // extern宣言: テーブルに登録（is_extern_decl=1）
-      int found = 0;
-      for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-        if (gv->name_len == name->len && memcmp(gv->name, name->str, (size_t)name->len) == 0) {
-          found = 1; break;
-        }
-      }
-      if (!found) {
-        global_var_t *gv = calloc(1, sizeof(global_var_t));
-        gv->name = name->str;
-        gv->name_len = name->len;
-        int elem_store_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
-        gv->type_size = is_array ? (elem_store_size * arr_total) : elem_store_size;
-        gv->deref_size = elem_store_size;
-        gv->is_extern_decl = 1;
-        gv->is_array = is_array;
-        gv->next = global_vars;
-        global_vars = gv;
-      }
+      (void)register_toplevel_global_decl(name->str, name->len, is_ptr, is_array, arr_total, 1);
       if (tk_consume('=')) psx_expr_assign(); // 初期化子（extern宣言では通常ないが消費する）
     }
     if (!tk_consume(',')) break;

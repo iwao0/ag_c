@@ -1539,6 +1539,21 @@
   - 進捗（2026-03-24）: typedef 配列型（例: `typedef int A3[3];`）の `sizeof(A3)` を `_Static_assert` 定数式でも正しく評価できるようにした
   - 進捗（2026-03-24）: `sizeof(int (*[3])(int))` のような「関数ポインタ配列」の abstract-declarator を受理し、型サイズ計算に反映
   - 対象ファイル: `src/parser/expr.c`
+
+### Parser構造の優先改善タスク（2026-03-24 追加）
+
+- [ ] [P1] 宣言子パース経路を段階的に一元化する（`parser.c` / `decl.c` / `stmt.c`）
+  - 背景: トップレベル・ローカル・typedefで `pointer + direct_declarator` の処理が分散し、同種修正の取りこぼしが起きやすい
+  - 方針: まず `parser.c` 内の重複経路を共通ヘルパへ集約し、次に `decl.c` 側を合流させる
+  - 進捗（2026-03-24）: 着手。トップレベル宣言登録（extern/non-extern分岐）の重複を共通化するリファクタを開始
+
+- [ ] [P1] `decl_spec` の情報源を単一化し、型情報伝播の分岐を減らす
+  - 背景: `tag/typedef/funcall` 由来の型補完が複数箇所にあり、`sizeof/_Generic/member` の整合性維持コストが高い
+  - 方針: `decl_spec` 結果構造体を拡張し、後段は構造体フィールドのみ参照するように寄せる
+
+- [ ] [P2] `type_name` 判定・サイズ計算の共通入口を作る
+  - 背景: cast/sizeof/_Generic/_Static_assert の型名受理が拡張のたびに分岐増加している
+  - 方針: `type_name` 解析結果（kind/size/qualifier/pointer depth）を返す共通関数を導入して呼び出し側差分を薄くする
 - [x] `param_decl` を `decl_spec` + `declarator` にする（C11 §6.7.6.3）
   - 現状: `funcdef()` 内で型消費・ポインタ・名前をインラインで処理
   - 修正方針: `param_decl()` 関数を新設し、`decl_spec` + `declarator` or `pointer?` を処理
