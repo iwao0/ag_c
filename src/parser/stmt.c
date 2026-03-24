@@ -33,6 +33,7 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
                                                             int *out_paren_array_mul);
+static void consume_stmt_member_func_suffixes(int *out_has_func_suffix);
 typedef struct {
   token_ident_t *member;
   int is_ptr;
@@ -149,12 +150,16 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   } else {
     name = tk_consume_ident();
   }
+  consume_stmt_member_func_suffixes(out_has_func_suffix);
+  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
+  return name;
+}
+
+static void consume_stmt_member_func_suffixes(int *out_has_func_suffix) {
   while (curtok()->kind == TK_LPAREN) {
     if (out_has_func_suffix) *out_has_func_suffix = 1;
     skip_func_params_stmt();
   }
-  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
-  return name;
 }
 
 static stmt_member_decl_head_t parse_stmt_member_decl_head(void) {
