@@ -152,6 +152,7 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
 static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
                                                                toplevel_array_suffix_t arr);
+static int current_toplevel_extern_flag(void);
 static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static inline token_t *curtok(void);
@@ -805,7 +806,11 @@ static void finalize_toplevel_object_declarator(global_var_t *gv) {
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
                                                                toplevel_array_suffix_t arr) {
   return register_toplevel_global_decl(name->str, name->len, is_ptr, arr.is_array, arr.arr_total,
-                                       g_toplevel_decl_is_extern ? 1 : 0, arr.has_incomplete_array);
+                                       current_toplevel_extern_flag(), arr.has_incomplete_array);
+}
+
+static int current_toplevel_extern_flag(void) {
+  return g_toplevel_decl_is_extern ? 1 : 0;
 }
 
 static void consume_toplevel_extern_initializer_if_any(void) {
