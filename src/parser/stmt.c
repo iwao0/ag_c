@@ -49,6 +49,12 @@ static long long parse_enum_const_unary(void);
 static long long parse_enum_const_primary(void);
 static int parse_array_size_constexpr_stmt(void);
 static int parse_array_size_optional_constexpr_stmt(int *out_has_size);
+typedef struct {
+  int arr_total;
+  int is_array;
+  int has_incomplete_array;
+} stmt_array_suffix_t;
+static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static int parse_alignas_value_stmt(void);
 static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static node_t *stmt_internal(void);
@@ -562,6 +568,25 @@ static int parse_array_size_optional_constexpr_stmt(int *out_has_size) {
   return parse_array_size_constexpr_stmt();
 }
 
+static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
+  stmt_array_suffix_t out = {0};
+  out.arr_total = (base_mul > 0) ? base_mul : 1;
+  out.is_array = (base_mul > 0);
+  out.has_incomplete_array = 0;
+  while (tk_consume('[')) {
+    int has_size = 0;
+    int n = parse_array_size_optional_constexpr_stmt(&has_size);
+    if (!has_size) {
+      out.has_incomplete_array = 1;
+    } else {
+      out.arr_total *= n;
+    }
+    out.is_array = 1;
+    tk_expect(']');
+  }
+  return out;
+}
+
 // _Alignas( constant-expression | type-name )
 static int parse_alignas_value_stmt(void) {
   tk_expect('(');
@@ -698,18 +723,9 @@ static void parse_typedef_decl(void) {
     }
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
-    int has_incomplete_array = 0;
-    while (tk_consume('[')) {
-      int has_size = 0;
-      int n = parse_array_size_optional_constexpr_stmt(&has_size);
-      if (!has_size) {
-        has_incomplete_array = 1;
-      } else if (!is_ptr && n > 0) {
-        typedef_sizeof *= n;
-      }
-      tk_expect(']');
-    }
-    if (!is_ptr && has_incomplete_array) typedef_sizeof = 0;
+    stmt_array_suffix_t arr = parse_stmt_array_suffixes(0);
+    if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
+    else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
     token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
     psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
