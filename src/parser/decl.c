@@ -52,10 +52,18 @@ typedef struct {
   int td_pointee_volatile;
   int is_extern_decl;
 } local_decl_spec_t;
+typedef struct {
+  int arr_total;
+  int is_array;
+  int has_incomplete_array;
+} decl_array_suffix_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out);
 static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
+static void parse_local_extern_declarator_list(local_decl_spec_t *ds);
+static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_array_suffix_t arr,
+                                       int elem_size);
 static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
                                             tk_float_kind_t *fp_kind,
                                             token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -316,11 +324,6 @@ static int parse_decl_constexpr_array_suffix_product(int *out_first_dim) {
   return mul;
 }
 
-typedef struct {
-  int arr_total;
-  int is_array;
-  int has_incomplete_array;
-} decl_array_suffix_t;
 static int parse_decl_array_suffixes_constexpr_required(int base_mul);
 
 static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
@@ -1534,40 +1537,7 @@ node_t *psx_decl_parse_declaration(void) {
 
   if (ds.is_extern_decl) {
     // ローカルextern宣言: グローバルテーブルに登録してローカル変数は作らない
-    int declarator_count = 0;
-    for (;;) {
-      declarator_count++;
-      if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
-        psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
-      }
-      int is_ptr = ds.base_is_pointer;
-      unsigned int ptr_const_mask = 0;
-      unsigned int ptr_volatile_mask = 0;
-      int ptr_levels = 0;
-      int paren_array_dim = 0;
-      consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
-      token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
-      decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_dim);
-      // グローバルテーブルに登録（既存エントリがなければ）
-      if (!find_global_var_decl(name->str, name->len)) {
-        global_var_t *gv = calloc(1, sizeof(global_var_t));
-        gv->name = name->str;
-        gv->name_len = name->len;
-        gv->type_size = arr.has_incomplete_array ? 0 :
-                        (arr.is_array ? (is_ptr ? 8 : ds.elem_size) * arr.arr_total : (is_ptr ? 8 : ds.elem_size));
-        gv->deref_size = ds.elem_size;
-        gv->is_array = arr.is_array;
-        gv->is_extern_decl = 1;
-        gv->next = global_vars;
-        global_vars = gv;
-      }
-      if (curtok()->kind == TK_ASSIGN) {
-        set_curtok(curtok()->next);
-        psx_expr_assign();
-      }
-      if (curtok()->kind != TK_COMMA) break;
-      set_curtok(curtok()->next);
-    }
+    parse_local_extern_declarator_list(&ds);
     tk_expect(';');
     return psx_node_new_num(0);
   }
@@ -1604,6 +1574,46 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
 static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
+}
+
+static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
+  int declarator_count = 0;
+  for (;;) {
+    declarator_count++;
+    if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
+      psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+    }
+    int is_ptr = ds->base_is_pointer;
+    unsigned int ptr_const_mask = 0;
+    unsigned int ptr_volatile_mask = 0;
+    int ptr_levels = 0;
+    int paren_array_dim = 0;
+    consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
+    token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
+    decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_dim);
+    register_local_extern_decl(name, is_ptr, arr, ds->elem_size);
+    if (curtok()->kind == TK_ASSIGN) {
+      set_curtok(curtok()->next);
+      psx_expr_assign();
+    }
+    if (curtok()->kind != TK_COMMA) break;
+    set_curtok(curtok()->next);
+  }
+}
+
+static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_array_suffix_t arr,
+                                       int elem_size) {
+  if (find_global_var_decl(name->str, name->len)) return;
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->name = name->str;
+  gv->name_len = name->len;
+  gv->type_size = arr.has_incomplete_array ? 0 :
+                  (arr.is_array ? (is_ptr ? 8 : elem_size) * arr.arr_total : (is_ptr ? 8 : elem_size));
+  gv->deref_size = elem_size;
+  gv->is_array = arr.is_array;
+  gv->is_extern_decl = 1;
+  gv->next = global_vars;
+  global_vars = gv;
 }
 
 static node_t *parse_typedef_declaration_local(void) {
