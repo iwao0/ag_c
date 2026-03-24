@@ -1411,7 +1411,14 @@ node_t *psx_decl_parse_declaration(void) {
       token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
       int arr_total = (paren_array_dim > 0) ? paren_array_dim : 1;
       int is_array = (paren_array_dim > 0);
+      int has_incomplete_array = 0;
       while (tk_consume('[')) {
+        if (curtok()->kind == TK_RBRACKET) {
+          has_incomplete_array = 1;
+          is_array = 1;
+          tk_expect(']');
+          continue;
+        }
         int n = parse_array_size_constexpr_decl();
         arr_total *= n;
         is_array = 1;
@@ -1422,7 +1429,8 @@ node_t *psx_decl_parse_declaration(void) {
         global_var_t *gv = calloc(1, sizeof(global_var_t));
         gv->name = name->str;
         gv->name_len = name->len;
-        gv->type_size = is_array ? (is_ptr ? 8 : ds.elem_size) * arr_total : (is_ptr ? 8 : ds.elem_size);
+        gv->type_size = has_incomplete_array ? 0 :
+                        (is_array ? (is_ptr ? 8 : ds.elem_size) * arr_total : (is_ptr ? 8 : ds.elem_size));
         gv->deref_size = ds.elem_size;
         gv->is_array = is_array;
         gv->is_extern_decl = 1;

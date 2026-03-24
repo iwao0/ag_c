@@ -1878,6 +1878,7 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("int main(){ typedef union { int y; } L; L l; l.y=4; return l.y; }");
   expect_parse_ok("int main(){ extern int (*fp)(int); return 0; }");
   expect_parse_ok("int main(){ extern int (*arr[2])(int); return 0; }");
+  expect_parse_ok("int main(){ extern int a[]; return 0; }");
   expect_parse_ok("int (*arr[2])(int); int main(){ return 0; }");
   expect_parse_ok("int main(){ int (*arr[2])(int); return 0; }");
 
