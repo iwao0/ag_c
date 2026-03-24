@@ -1128,6 +1128,216 @@ static void test_context_success_path_default_non_interference() {
   ASSERT_EQ(TK_HASH, tok->kind);
 }
 
+static void test_c11_ident_ucn(void) {
+  printf("test_c11_ident_ucn...\n");
+  token_t *tok = tk_tokenize("foo\\u00A9");
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(5, as_ident(tok)->len);
+}
+
+static void test_c11_string_prefixes(void) {
+  printf("test_c11_string_prefixes...\n");
+  token_t *tok = tk_tokenize("L\"a\" u\"b\" U\"c\" u8\"d\"");
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, ((token_string_t *)tok)->char_width);
+  tok = tok->next;
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR16, ((token_string_t *)tok)->char_width);
+  tok = tok->next;
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR32, ((token_string_t *)tok)->char_width);
+  tok = tok->next;
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR, ((token_string_t *)tok)->char_width);
+}
+
+static void test_c11_binary_literal_strict_behavior(void) {
+  printf("test_c11_binary_literal_strict_behavior...\n");
+  tk_set_strict_c11_mode(false);
+  token_t *tok = tk_tokenize("0b101");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(5, as_num_i(tok)->val);
+
+  tk_set_strict_c11_mode(true);
+  expect_tokenize_fail("0b101");
+  tk_set_strict_c11_mode(false);
+}
+
+static void test_c11_float_suffix_metadata(void) {
+  printf("test_c11_float_suffix_metadata...\n");
+  token_t *tok = tk_tokenize("1.0f 2.0L");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num_f(tok)->float_suffix_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num_f(tok)->float_suffix_kind);
+}
+
+static void test_c11_keywords_tokenize(void) {
+  printf("test_c11_keywords_tokenize...\n");
+  token_t *tok = tk_tokenize("_Alignas _Alignof _Atomic _Bool _Complex _Generic _Imaginary _Noreturn _Static_assert _Thread_local");
+  ASSERT_EQ(TK_ALIGNAS, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_ALIGNOF, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_ATOMIC, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_BOOL, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_COMPLEX, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_GENERIC, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_IMAGINARY, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_NORETURN, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_STATIC_ASSERT, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_THREAD_LOCAL, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
+static void test_c11_keyword_like_idents(void) {
+  printf("test_c11_keyword_like_idents...\n");
+  token_t *tok = tk_tokenize("_Alignasx _Boolish _Atomicvar");
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(9, as_ident(tok)->len);
+  tok = tok->next;
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(8, as_ident(tok)->len);
+  tok = tok->next;
+  ASSERT_EQ(TK_IDENT, tok->kind);
+  ASSERT_EQ(10, as_ident(tok)->len);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
+static void test_c11_string_prefix_edge(void) {
+  printf("test_c11_string_prefix_edge...\n");
+  token_t *tok = tk_tokenize("u8\"abc\"");
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_EQ(TK_CHAR_WIDTH_CHAR, ((token_string_t *)tok)->char_width);
+  ASSERT_EQ(TK_STR_PREFIX_u8, ((token_string_t *)tok)->str_prefix_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+
+  tok = tk_tokenize("L'a'");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
+static void test_c11_float_edge_cases(void) {
+  printf("test_c11_float_edge_cases...\n");
+  token_t *tok = tk_tokenize("0.0f 0.0L");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num_f(tok)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, as_num_f(tok)->fp_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num_f(tok)->float_suffix_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, as_num_f(tok)->fp_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+
+  tok = tk_tokenize("1e10");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+
+  tok = tk_tokenize("1.0 2.0f 3.0L");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_NONE, as_num_f(tok)->float_suffix_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_F, as_num_f(tok)->float_suffix_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_FLOAT_SUFFIX_L, as_num_f(tok)->float_suffix_kind);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
+static void test_c11_int_suffix_mixed_case(void) {
+  printf("test_c11_int_suffix_mixed_case...\n");
+  token_t *tok = tk_tokenize("1U 2u 3L 4l 5UL 6ul 7ULL 8ull 9Ul 10uL 11uLL 12UlL");
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_INT, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(!as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_NUM, tok->kind);
+  ASSERT_TRUE(as_num_i(tok)->is_unsigned);
+  ASSERT_EQ(TK_INT_SIZE_LONG_LONG, as_num_i(tok)->int_size);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
+static void test_c11_invalid_suffixes(void) {
+  printf("test_c11_invalid_suffixes...\n");
+  expect_tokenize_fail("1uu");
+  expect_tokenize_fail("1lll");
+}
+
+static void test_c11_ucn_invalid_boundaries(void) {
+  printf("test_c11_ucn_invalid_boundaries...\n");
+  expect_tokenize_fail("foo\\u000A");
+  expect_tokenize_fail("bar\\uD800");
+  expect_tokenize_fail("\"\\u202E\"");
+  expect_tokenize_fail("\"\\u123\"");
+  expect_tokenize_fail("\"\\U00110000\"");
+  expect_tokenize_fail("\"\\U0000D800\"");
+  expect_tokenize_fail("\"\\U0000001F\"");
+}
+
+static void test_c11_long_escape_sequences(void) {
+  printf("test_c11_long_escape_sequences...\n");
+  token_t *tok = tk_tokenize("\"\\x123456789ABCDEF\"");
+  ASSERT_EQ(TK_STRING, tok->kind);
+  ASSERT_TRUE(((token_string_t *)tok)->len >= 1);
+  tok = tok->next;
+  ASSERT_EQ(TK_EOF, tok->kind);
+}
+
 int main() {
   printf("Running tests for Tokenizer...\n");
 
@@ -1152,6 +1362,18 @@ int main() {
   test_context_failure_path_isolation();
   test_context_failure_path_unterminated_and_invalid_token();
   test_context_success_path_default_non_interference();
+  test_c11_ident_ucn();
+  test_c11_string_prefixes();
+  test_c11_binary_literal_strict_behavior();
+  test_c11_float_suffix_metadata();
+  test_c11_keywords_tokenize();
+  test_c11_keyword_like_idents();
+  test_c11_string_prefix_edge();
+  test_c11_float_edge_cases();
+  test_c11_int_suffix_mixed_case();
+  test_c11_invalid_suffixes();
+  test_c11_ucn_invalid_boundaries();
+  test_c11_long_escape_sequences();
   test_at_eof();
   test_consume();
   test_consume_str();

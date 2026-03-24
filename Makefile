@@ -25,7 +25,6 @@ OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 TEST_TOKENIZER=build/test_tokenizer
-TEST_TOKENIZER_C11=build/test_tokenizer_c11
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
@@ -46,10 +45,6 @@ $(OBJROOT)/%.o: src/%.c
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(TEST_TOKENIZER): test/test_tokenizer.c test/support/tokenizer_test_hook.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
-	@mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $^
-
-$(TEST_TOKENIZER_C11): test/test_tokenizer_c11.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -90,10 +85,9 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_TOKENIZER_C11) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK)
 	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
-	$(TEST_TOKENIZER_C11)
 	$(TEST_PARSER)
 	$(TEST_CODEGEN)
 	$(TEST_PREPROCESS)
