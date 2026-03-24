@@ -327,6 +327,12 @@ static void parse_toplevel_decl_spec(void) {
     g_toplevel_decl_tag_len = td_tag_len;
     g_toplevel_decl_base_is_ptr = td_is_ptr;
     g_toplevel_decl_elem_size = td_elem;
+    if ((td_tag == TK_STRUCT || td_tag == TK_UNION) &&
+        td_tag_name && td_tag_len > 0 &&
+        psx_ctx_has_tag_type(td_tag, td_tag_name, td_tag_len)) {
+      int tag_sz = psx_ctx_get_tag_size(td_tag, td_tag_name, td_tag_len);
+      if (tag_sz > 0) g_toplevel_decl_elem_size = tag_sz;
+    }
     g_toplevel_decl_is_extern = 0;
     g_toplevel_decl_is_thread_local = 0;
     psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
@@ -426,6 +432,35 @@ static int is_toplevel_function_signature(token_t *tok) {
   if (!t) return 0;
   if (t->kind == TK_IDENT) {
     return t->next && t->next->kind == TK_LPAREN;
+  }
+  // function declarator returning function pointer:
+  //   int (*f(void))(int)
+  //   int (*(*f(void))(int))[3]
+  if (t->kind == TK_LPAREN && t->next && t->next->kind == TK_MUL) {
+    int depth = 0;
+    int saw_name = 0;
+    int saw_param = 0;
+    token_t *u = t;
+    while (u) {
+      if (u->kind == TK_LPAREN) {
+        if (depth >= 1 && saw_name && !saw_param) saw_param = 1;
+        depth++;
+      } else if (u->kind == TK_RPAREN) {
+        depth--;
+        if (depth == 0) {
+          u = u->next;
+          break;
+        }
+      } else if (depth >= 1 && !saw_name && u->kind == TK_IDENT) {
+        // name must be followed by a parameter list: f(...)
+        if (u->next && u->next->kind == TK_LPAREN) {
+          saw_name = 1;
+        }
+      }
+      u = u->next;
+    }
+    if (!saw_name || !saw_param || !u) return 0;
+    return u->kind == TK_LPAREN || u->kind == TK_LBRACKET;
   }
   // parenthesized function declarator name: int (f)(...)
   if (t->kind == TK_LPAREN) {
@@ -684,6 +719,10 @@ static int parse_toplevel_declaration_like(void) {
   if (curtok()->kind == TK_STATIC_ASSERT) {
     parse_static_assert_toplevel();
     return 1;
+  }
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    // struct/union/enum 開始は ps_program() 側の専用経路で処理する。
+    return 0;
   }
   if ((curtok()->kind == TK_TYPEDEF ||
        psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token(curtok()->kind) ||
@@ -1589,7 +1628,13 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
 }
 
 static token_ident_t *parse_func_name_declarator_recursive(void) {
+  while (tk_consume('*')) {
+    skip_ptr_qualifiers();
+  }
   if (tk_consume('(')) {
+    while (tk_consume('*')) {
+      skip_ptr_qualifiers();
+    }
     token_ident_t *name = parse_func_name_declarator_recursive();
     tk_expect(')');
     return name;
@@ -1604,6 +1649,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
   int nargs = 0;
   int is_variadic = 0;
   int has_unnamed_param = 0;
+  int parsed_nested_inner_params = 0;
 
   token_ident_t *tok = NULL;
   // function declarator returning function pointer:
@@ -1613,10 +1659,51 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
     while (tk_consume('*')) {
       // pointer depth for the outer declarator is not needed in current funcdef AST.
     }
-    tok = parse_func_name_declarator_recursive();
-    if (!tok) {
-      psx_diag_ctx(curtok(), "funcdef", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+    if (curtok()->kind == TK_LPAREN && curtok()->next && curtok()->next->kind == TK_MUL) {
+      // nested pointer declarator: (*(*f(void))(int))
+      tk_expect('(');
+      while (tk_consume('*')) {
+        // nested pointer depth is not needed in current funcdef AST.
+      }
+      tok = tk_consume_ident();
+      if (!tok) {
+        psx_diag_ctx(curtok(), "funcdef", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+      }
+      tk_expect('(');
+      if (!tk_consume(')')) {
+        bool done = false;
+        node_func_t node_tmp = {0};
+        node_tmp.args = args;
+        while (!done) {
+          if (curtok()->kind == TK_ELLIPSIS) {
+            set_curtok(curtok()->next);
+            if (curtok()->kind == ',') {
+              diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
+                             "%s",
+                             diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
+            }
+            is_variadic = 1;
+            done = true;
+            continue;
+          }
+          if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
+          args = node_tmp.args;
+          if (!tk_consume(',')) break;
+          if (curtok()->kind == TK_RPAREN) {
+            psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
+          }
+        }
+        tk_expect(')');
+      }
+      tk_expect(')');
+      parsed_nested_inner_params = 1;
+    } else {
+      tok = parse_func_name_declarator_recursive();
+      if (!tok) {
+        psx_diag_ctx(curtok(), "funcdef", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+      }
     }
     tk_expect('(');
     if (!tk_consume(')')) {
@@ -1635,7 +1722,9 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
           done = true;
           continue;
         }
-        if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
+        if (parse_param_decl(&node_tmp, &nargs, &arg_cap) && !parsed_nested_inner_params) {
+          has_unnamed_param = 1;
+        }
         args = node_tmp.args;
         if (!tk_consume(',')) break;
         if (curtok()->kind == TK_RPAREN) {
@@ -1747,6 +1836,9 @@ static node_t *funcdef(void) {
   node->funcname_len = tok->len;
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,
                                          psx_expr_current_func_ret_struct_size());
+  if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr && ret_tag) {
+    psx_ctx_set_function_ret_tag(tok->str, tok->len, ret_kind, ret_tag->str, ret_tag->len);
+  }
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
   node->args = args;
   node->is_variadic = is_variadic;

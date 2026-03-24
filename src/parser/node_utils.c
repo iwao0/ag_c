@@ -1,4 +1,5 @@
 #include "internal/node_utils.h"
+#include "internal/semantic_ctx.h"
 #include "internal/arena.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -135,6 +136,14 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
       case ND_COMMA:
         psx_node_get_tag_type(node->rhs, &kind, &name, &len, &ptr);
         break;
+      case ND_FUNCALL: {
+        node_func_t *fn = (node_func_t *)node;
+        if (fn->callee == NULL && fn->funcname) {
+          psx_ctx_get_function_ret_tag(fn->funcname, fn->funcname_len, &kind, &name, &len);
+          ptr = 0;
+        }
+        break;
+      }
       default:
         break;
     }

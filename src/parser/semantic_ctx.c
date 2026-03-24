@@ -88,6 +88,9 @@ struct func_name_t {
   char *name;
   int len;
   int ret_struct_size; // 構造体戻り値サイズ（0: 非構造体）
+  token_kind_t ret_tag_kind;
+  char *ret_tag_name;
+  int ret_tag_len;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -594,8 +597,23 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
   f->name = name;
   f->len = len;
   f->ret_struct_size = ret_struct_size;
+  f->ret_tag_kind = TK_EOF;
+  f->ret_tag_name = NULL;
+  f->ret_tag_len = 0;
   f->next_hash = func_names_by_bucket[bucket];
   func_names_by_bucket[bucket] = f;
+}
+
+void psx_ctx_set_function_ret_tag(char *name, int len, token_kind_t tag_kind, char *tag_name, int tag_len) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
+    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
+      f->ret_tag_kind = tag_kind;
+      f->ret_tag_name = tag_name;
+      f->ret_tag_len = tag_len;
+      return;
+    }
+  }
 }
 
 bool psx_ctx_has_function_name(char *name, int len) {
@@ -616,6 +634,22 @@ int psx_ctx_get_function_ret_struct_size(char *name, int len) {
     }
   }
   return 0;
+}
+
+void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
+                                  char **out_tag_name, int *out_tag_len) {
+  if (out_tag_kind) *out_tag_kind = TK_EOF;
+  if (out_tag_name) *out_tag_name = NULL;
+  if (out_tag_len) *out_tag_len = 0;
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
+    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
+      if (out_tag_kind) *out_tag_kind = f->ret_tag_kind;
+      if (out_tag_name) *out_tag_name = f->ret_tag_name;
+      if (out_tag_len) *out_tag_len = f->ret_tag_len;
+      return;
+    }
+  }
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {

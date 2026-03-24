@@ -1486,6 +1486,7 @@
   - 進捗（2026-03-24）: `int (*(*f(void))(int))[3]` のような入れ子 direct-declarator（関数ポインタ返却 + 配列ポインタ）を関数定義で受理することを回帰テストで固定化
   - 進捗（2026-03-24）: `struct S { ... } f(void) { ... }` のような「戻り値タグ型の inline 定義を伴う関数定義」を受理
   - 進捗（2026-03-24）: `struct/union` 戻り値 + 括弧付き関数名 declarator（`struct S {...} (f)(void)`）を関数定義シグネチャ判定で受理
+  - 進捗（2026-03-24）: 関数シンボルに `struct/union` 戻り値タグ情報を保持し、直接関数呼び出しノード（`ND_FUNCALL`）から戻り値タグ型を再取得できるようにした（`f().x` などの後続型解決で利用）
   - 対象ファイル: `src/parser/parser.c`
 - [ ] `declaration` を `decl_spec` + `init_declarator_list` に統合する（C11 §6.7）
   - 現状: トップレベル（`parser.c`）とローカル（`stmt.c`/`decl.c`）で別関数。`skip_cv_qualifiers` + `psx_consume_type_kind` の2段階処理
@@ -1494,6 +1495,7 @@
   - 進捗（2026-03-23）: `parser.c` でもトップレベル宣言入口を `parse_toplevel_decl_spec()` へ集約し、`ps_program()` の型先頭処理重複を削減（typedef名経路も同関数へ統合）
   - 進捗（2026-03-23）: `stmt.c` に `parse_decl_like_stmt()` / `is_decl_like_start_stmt()` を導入し、`block_item`・`stmt_internal`・`for` 初期化で宣言入口を統一
   - 進捗（2026-03-24）: `decl.c` の `parse_local_decl_spec()` が typedef名開始の宣言を直接解決するようにし、`stmt.c` の typedef名専用分岐を削減（ローカル declaration 経路を一本化）
+  - 進捗（2026-03-24）: typedef 由来の `struct/union` 型でタグ定義が後から完成した場合でも、`decl_spec` 解析時にタグレイアウトからサイズを再解決して宣言ノードへ反映するようにした（トップレベル/ローカルの両経路）
   - 対象ファイル: `src/parser/parser.c`, `src/parser/stmt.c`, `src/parser/decl.c`
 - [ ] `declarator` を再帰的構造にする（C11 §6.7.6）
   - 現状: ポインタ・名前・配列サイズ・関数ポインタのパースが各所にインライン展開

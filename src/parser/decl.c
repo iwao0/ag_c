@@ -1461,6 +1461,12 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
     psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &out->elem_size, &out->fp_kind,
                               &out->tag_kind, &out->tag_name, &out->tag_len, &out->base_is_pointer,
                               &out->td_pointee_const, &out->td_pointee_volatile, &out->is_unsigned);
+    if ((out->tag_kind == TK_STRUCT || out->tag_kind == TK_UNION) &&
+        out->tag_name && out->tag_len > 0 &&
+        psx_ctx_has_tag_type(out->tag_kind, out->tag_name, out->tag_len)) {
+      int tag_sz = psx_ctx_get_tag_size(out->tag_kind, out->tag_name, out->tag_len);
+      if (tag_sz > 0) out->elem_size = tag_sz;
+    }
     set_curtok(curtok()->next);
     out->type_kind = base_kind;
     out->is_unsigned = (base_kind == TK_UNSIGNED);
