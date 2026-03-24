@@ -69,6 +69,7 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array
 static void parse_toplevel_pointer_prefix(int *is_ptr);
 static token_ident_t *consume_decl_ident_or_error(int require_name);
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens);
+static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
                                                                 int *out_paren_array_mul);
@@ -844,8 +845,7 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
   if (tk_consume('(')) {
     had_parens = 1;
     name = parse_decl_name_recursive(is_ptr, require_name, &paren_array_mul);
-    paren_array_mul = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
-    tk_expect(')');
+    paren_array_mul = parse_toplevel_parenthesized_decl_suffix(paren_array_mul);
   } else {
     name = consume_decl_ident_or_error(require_name);
   }
@@ -870,6 +870,12 @@ static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens) {
   }
 }
 
+static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul) {
+  int out = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
+  tk_expect(')');
+  return out;
+}
+
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
                                                                 int *out_paren_array_mul) {
   parse_toplevel_pointer_prefix(is_ptr);
@@ -877,8 +883,7 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_toplevel(is_ptr, out_has_func_suffix, &paren_array_mul);
-    paren_array_mul = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
-    tk_expect(')');
+    paren_array_mul = parse_toplevel_parenthesized_decl_suffix(paren_array_mul);
   } else {
     name = tk_consume_ident();
   }
