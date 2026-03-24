@@ -48,6 +48,7 @@ static void consume_toplevel_extern_initializer_if_any(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static int is_toplevel_decl_like_start(token_t *tok);
+static void consume_toplevel_typedef_storage_class(void);
 static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind);
 static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, tk_float_kind_t td_fp,
                                              token_kind_t td_tag, char *td_tag_name, int td_tag_len,
@@ -424,11 +425,7 @@ static int parse_array_size_optional_constexpr_toplevel(int *out_has_size) {
 
 static void parse_toplevel_decl_spec(void) {
   reset_toplevel_decl_spec_state();
-
-  if (curtok()->kind == TK_TYPEDEF) {
-    g_toplevel_decl_is_typedef = 1;
-    set_curtok(curtok()->next);
-  }
+  consume_toplevel_typedef_storage_class();
 
   if (parse_toplevel_tag_decl_spec()) return;
 
@@ -437,6 +434,12 @@ static void parse_toplevel_decl_spec(void) {
   token_kind_t tl_kind = psx_consume_type_kind();
   apply_toplevel_builtin_decl_spec(tl_kind);
   apply_toplevel_decl_prefix_flags();
+}
+
+static void consume_toplevel_typedef_storage_class(void) {
+  if (curtok()->kind != TK_TYPEDEF) return;
+  g_toplevel_decl_is_typedef = 1;
+  set_curtok(curtok()->next);
 }
 
 static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind) {
