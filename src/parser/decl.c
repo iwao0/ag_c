@@ -1020,14 +1020,14 @@ static global_var_t *find_global_var_decl(char *name, int len) {
 
 static token_ident_t *consume_decl_name_recursive(int *is_pointer,
                                                   unsigned int *const_mask, unsigned int *volatile_mask,
-                                                  int *levels, int *out_array_dim,
+                                                  int *levels, int *out_paren_array_mul,
                                                   int *had_parens) {
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
   token_ident_t *tok = NULL;
   int local_had_parens = 0;
   if (tk_consume('(')) {
     local_had_parens = 1;
-    tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels, out_array_dim, NULL);
+    tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels, out_paren_array_mul, NULL);
     while (curtok()->kind == TK_LBRACKET) {
       skip_bracket_group();
     }
@@ -1038,10 +1038,14 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   while (curtok()->kind == TK_LPAREN) {
     skip_func_params();
   }
-  if (local_had_parens && out_array_dim && tk_consume('[')) {
-    long long dim = parse_array_size_constexpr_decl();
-    tk_expect(']');
-    *out_array_dim = (int)dim;
+  if (local_had_parens && out_paren_array_mul) {
+    int paren_array_mul = 1;
+    while (tk_consume('[')) {
+      long long dim = parse_array_size_constexpr_decl();
+      tk_expect(']');
+      if (dim > 0) paren_array_mul *= (int)dim;
+    }
+    *out_paren_array_mul = paren_array_mul;
   }
   if (had_parens) *had_parens = local_had_parens;
   return tok;
@@ -1049,9 +1053,9 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
 
 static token_ident_t *consume_decl_name(int *is_pointer,
                                         unsigned int *const_mask, unsigned int *volatile_mask,
-                                        int *levels, int *out_array_dim) {
+                                        int *levels, int *out_paren_array_mul) {
   token_ident_t *tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask,
-                                                   levels, out_array_dim, NULL);
+                                                   levels, out_paren_array_mul, NULL);
   if (!tok) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
@@ -1207,8 +1211,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                    diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
     }
 
-    int paren_array_dim = 0;
-    token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
+    int paren_array_mul = 0;
+    token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
     int var_size = is_pointer ? 8 : elem_size;
     int total_pointer_levels = ptr_levels + (base_is_pointer ? 1 : 0);
     int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
@@ -1217,9 +1221,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     lvar_t *var = NULL;
     {
-      if (paren_array_dim > 0) {
+      if (paren_array_mul > 0) {
         // (*p)[N] パターン: 配列へのポインタ
-        int row_size = paren_array_dim * elem_size;
+        int row_size = paren_array_mul * elem_size;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;

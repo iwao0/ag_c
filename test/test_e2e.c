@@ -369,6 +369,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "typedef_local_funcptr_nested", CASE_INT, "int main() { typedef int (*(*fp_t))(int); fp_t p; return 0; }", 0, 0},
     {"type_decl", "local_funcptr_nested_decl", CASE_INT, "int main() { int (*(*pp))(int); return 0; }", 0, 0},
     {"type_decl", "local_funcptr_array_decl", CASE_INT, "int main() { int (*arr[2])(int); return 0; }", 0, 0},
+    {"type_decl", "local_ptr_to_2d_array_sizeof", CASE_INT, "int main() { int (*p)[3][4]; return sizeof(*p); }", 48, 0},
     {"type_decl", "toplevel_funcptr_array_decl", CASE_INT, "int (*arr[2])(int); int main() { return 0; }", 0, 0},
     {"type_decl", "toplevel_nested_funcptr_array_decl_parse_only", CASE_INT, "int (*(*arr[2]))(int); int main() { return 0; }", 0, 0},
     {"type_decl", "struct_member_funcptr_array_decl", CASE_INT, "int main() { struct S { int (*arr[2])(int); }; struct S s; return 0; }", 0, 0},

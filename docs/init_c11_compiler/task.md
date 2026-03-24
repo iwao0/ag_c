@@ -1590,6 +1590,7 @@
   - 進捗（2026-03-23）: 仮引数宣言子も `parse_param_declarator_name_recursive()` に置換し、`int (**pp)(int)` のような入れ子ポインタ宣言子を受理
   - 進捗（2026-03-24）: `parse_decl_name_recursive()` で括弧付き宣言子後置の `[]` / `()` を再帰的に消費し、`typedef int (*(*arr_t)[2])(int);` を受理
   - 進捗（2026-03-24）: トップレベル宣言の `int (*(*arr[2]))(int);` で括弧内 `[]` 後置の配列次元がグローバルサイズへ反映されない不具合を修正し、`sizeof(arr)==16` を回帰テストで固定化
+  - 進捗（2026-03-24）: ローカル宣言子 `consume_decl_name_recursive()` でも括弧付き宣言子後置の多次元 `[]` を積算するようにし、`int (*p)[3][4]` の `sizeof(*p)==48` を回帰テストで固定化
 - [ ] 配列宣言子で `assignment-expression` を許容する（C11 §6.7.6.2）
   - C11: 配列サイズは `assignment-expression`（VLA）、`"static"` 修飾、`"*"`（不完全配列）が可能
   - 現状: `num?` のみ。`int a[n]`（VLA）が文法上表現できない（実装はVLA対応済み）
