@@ -69,6 +69,8 @@ typedef struct {
   int struct_size;
   int elem_size;
 } param_decl_spec_t;
+static int parse_param_tag_decl_spec(param_decl_spec_t *out);
+static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
 static void parse_param_decl_spec(param_decl_spec_t *out);
 static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
                                  token_ident_t **ret_tag, int *ret_is_ptr);
@@ -1622,22 +1624,30 @@ static void parse_param_decl_spec(param_decl_spec_t *out) {
 
   // 仮引数の型解析（struct/union の値渡し/ポインタ渡しを含む）
   skip_cv_qualifiers();
-  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-    // struct/union 型仮引数
-    out->tag_kind = curtok()->kind;
-    set_curtok(curtok()->next);
-    token_ident_t *tag_ident = tk_consume_ident();
-    if (tag_ident) {
-      out->tag_name = tag_ident->str;
-      out->tag_len = tag_ident->len;
-      if (psx_ctx_has_tag_type(out->tag_kind, out->tag_name, out->tag_len)) {
-        out->struct_size = psx_ctx_get_tag_size(out->tag_kind, out->tag_name, out->tag_len);
-      }
-    }
+  if (parse_param_tag_decl_spec(out)) {
     return;
   }
 
   // スカラー型: 仮引数配列宣言子のelemサイズ取得のため型を明示消費
+  parse_param_scalar_decl_spec(out);
+}
+
+static int parse_param_tag_decl_spec(param_decl_spec_t *out) {
+  if (!psx_ctx_is_tag_keyword(curtok()->kind)) return 0;
+  out->tag_kind = curtok()->kind;
+  set_curtok(curtok()->next);
+  token_ident_t *tag_ident = tk_consume_ident();
+  if (tag_ident) {
+    out->tag_name = tag_ident->str;
+    out->tag_len = tag_ident->len;
+    if (psx_ctx_has_tag_type(out->tag_kind, out->tag_name, out->tag_len)) {
+      out->struct_size = psx_ctx_get_tag_size(out->tag_kind, out->tag_name, out->tag_len);
+    }
+  }
+  return 1;
+}
+
+static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
   skip_cv_qualifiers();
   token_kind_t param_type_kind = psx_consume_type_kind();
   if (param_type_kind != TK_EOF) {
@@ -1645,7 +1655,7 @@ static void parse_param_decl_spec(param_decl_spec_t *out) {
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
   } else if (psx_ctx_is_typedef_name_token(curtok())) {
     out->saw_typedef_name = 1;
-    set_curtok(curtok()->next); // typedef名: elem_size は 8 のまま
+    set_curtok(curtok()->next);
   }
 }
 
