@@ -75,6 +75,7 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
 static void parse_pointer_suffix_flags(int *out_is_ptr);
 static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
                                      token_ident_t **ret_tag, int *ret_is_ptr);
+static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **ret_tag);
 static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_unnamed_param,
                                             node_t ***out_args, int *out_nargs);
 static token_ident_t *parse_func_name_declarator_recursive(void);
@@ -1655,30 +1656,7 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   *ret_tag = NULL;
   *ret_is_ptr = 0;
   if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-    // 戻り値型が struct/union Tag [*] の関数定義
-    *ret_kind = curtok()->kind; // TK_STRUCT or TK_UNION
-    set_curtok(curtok()->next); // skip struct/union keyword
-    token_ident_t *tag = tk_consume_ident();
-    if (!tag && curtok()->kind != TK_LBRACE) {
-      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
-    }
-    if (!tag) {
-      char *anon_name = NULL;
-      int anon_len = 0;
-      make_anonymous_tag_name_toplevel(&anon_name, &anon_len);
-      tag = calloc(1, sizeof(token_ident_t));
-      tag->str = anon_name;
-      tag->len = anon_len;
-    }
-    *ret_tag = tag;
-    if (tk_consume('{')) {
-      int member_count = 0;
-      int tag_size = 0;
-      member_count = parse_tag_definition_body_toplevel(*ret_kind, tag->str, tag->len, &tag_size);
-      psx_ctx_define_tag_type_with_layout(*ret_kind, tag->str, tag->len, member_count, tag_size);
-    } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
-      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
-    }
+    resolve_func_ret_tag_spec(ret_kind, ret_tag);
     parse_pointer_suffix_flags(ret_is_ptr); // skip optional pointer(s)
     return;
   }
@@ -1689,6 +1667,32 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   }
   *ret_fp_kind = fp_kind_for_type_kind_toplevel(*ret_kind);
   parse_pointer_suffix_flags(ret_is_ptr);
+}
+
+static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **ret_tag) {
+  *ret_kind = curtok()->kind;
+  set_curtok(curtok()->next);
+  token_ident_t *tag = tk_consume_ident();
+  if (!tag && curtok()->kind != TK_LBRACE) {
+    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
+  }
+  if (!tag) {
+    char *anon_name = NULL;
+    int anon_len = 0;
+    make_anonymous_tag_name_toplevel(&anon_name, &anon_len);
+    tag = calloc(1, sizeof(token_ident_t));
+    tag->str = anon_name;
+    tag->len = anon_len;
+  }
+  *ret_tag = tag;
+  if (tk_consume('{')) {
+    int member_count = 0;
+    int tag_size = 0;
+    member_count = parse_tag_definition_body_toplevel(*ret_kind, tag->str, tag->len, &tag_size);
+    psx_ctx_define_tag_type_with_layout(*ret_kind, tag->str, tag->len, member_count, tag_size);
+  } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
+    psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
+  }
 }
 
 static void parse_pointer_suffix_flags(int *out_is_ptr) {
