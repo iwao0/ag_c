@@ -1553,6 +1553,7 @@
   - 進捗（2026-03-24）: `decl.c` に `parse_decl_array_suffixes()` を導入し、ローカル `extern` 宣言とローカル `typedef` 宣言で重複していた `[]` 後置処理（配列積算/不完全配列判定）を共通化
   - 進捗（2026-03-24）: `decl.c` に `parse_decl_array_suffixes_constexpr_required()` を導入し、ローカル再帰宣言子 `consume_decl_name_recursive()` 内の `[]` 次元積算処理を共通化
   - 進捗（2026-03-24）: `decl.c` に `parse_decl_skip_constexpr_array_suffixes()` / `parse_decl_constexpr_array_suffix_product()` を導入し、ローカル配列宣言（VLA/定数配列）で重複していた後続 `[]` 走査処理を共通化
+  - 進捗（2026-03-24）: `decl.c` の `parse_local_decl_spec()` で初期化と typedef 由来補正を `init_local_decl_spec()` / `adjust_local_decl_spec_from_typedef()` に分離し、`decl_spec` 情報整備の責務を局所化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 

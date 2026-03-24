@@ -56,6 +56,8 @@ static int parse_local_decl_spec(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
 static global_var_t *find_global_var_decl(char *name, int len);
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
+static void init_local_decl_spec(local_decl_spec_t *out);
+static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_kind_t base_kind);
 static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out_elem_size,
                                            tk_float_kind_t *out_fp_kind,
                                            token_kind_t *out_tag_kind, char **out_tag_name,
@@ -67,6 +69,24 @@ static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind) {
   if (type_kind == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
   if (type_kind == TK_DOUBLE) return TK_FLOAT_KIND_DOUBLE;
   return TK_FLOAT_KIND_NONE;
+}
+
+static void init_local_decl_spec(local_decl_spec_t *out) {
+  memset(out, 0, sizeof(*out));
+  out->elem_size = 8;
+  out->fp_kind = TK_FLOAT_KIND_NONE;
+  out->tag_kind = TK_EOF;
+}
+
+static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_kind_t base_kind) {
+  if ((out->tag_kind == TK_STRUCT || out->tag_kind == TK_UNION) &&
+      out->tag_name && out->tag_len > 0 &&
+      psx_ctx_has_tag_type(out->tag_kind, out->tag_name, out->tag_len)) {
+    int tag_sz = psx_ctx_get_tag_size(out->tag_kind, out->tag_name, out->tag_len);
+    if (tag_sz > 0) out->elem_size = tag_sz;
+  }
+  out->type_kind = base_kind;
+  out->is_unsigned = (base_kind == TK_UNSIGNED);
 }
 
 static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out_elem_size,
@@ -1529,10 +1549,7 @@ node_t *psx_decl_parse_declaration(void) {
 }
 
 static int parse_local_decl_spec(local_decl_spec_t *out) {
-  memset(out, 0, sizeof(*out));
-  out->elem_size = 8;
-  out->fp_kind = TK_FLOAT_KIND_NONE;
-  out->tag_kind = TK_EOF;
+  init_local_decl_spec(out);
 
   out->type_kind = psx_consume_type_kind();
   out->is_unsigned = psx_last_type_is_unsigned();
@@ -1545,14 +1562,7 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
                                    &out->tag_kind, &out->tag_name, &out->tag_len,
                                    &out->base_is_pointer,
                                    &out->td_pointee_const, &out->td_pointee_volatile, &out->is_unsigned);
-    if ((out->tag_kind == TK_STRUCT || out->tag_kind == TK_UNION) &&
-        out->tag_name && out->tag_len > 0 &&
-        psx_ctx_has_tag_type(out->tag_kind, out->tag_name, out->tag_len)) {
-      int tag_sz = psx_ctx_get_tag_size(out->tag_kind, out->tag_name, out->tag_len);
-      if (tag_sz > 0) out->elem_size = tag_sz;
-    }
-    out->type_kind = base_kind;
-    out->is_unsigned = (base_kind == TK_UNSIGNED);
+    adjust_local_decl_spec_from_typedef(out, base_kind);
     return 1;
   }
 
