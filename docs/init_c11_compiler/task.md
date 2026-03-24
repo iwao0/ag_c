@@ -1576,6 +1576,7 @@
   - 進捗（2026-03-24）: `parser.c` の `define_toplevel_typedef_from_declarator()` から保存用基本型決定を `resolve_toplevel_typedef_base_kind_for_store()` へ抽出し、typedef登録時の責務を分離
   - 進捗（2026-03-24）: `parser.c` の通常トップレベル宣言子で `extern`/非`extern` 後段処理を `finalize_toplevel_object_declarator()` に抽出し、登録後の責務を分離
   - 進捗（2026-03-24）: `parser.c` の通常トップレベル宣言子で不完全配列禁止チェックを `validate_toplevel_object_array_suffix()` に抽出し、配列後置検証責務を分離
+  - 進捗（2026-03-24）: `parser.c` の再帰宣言子 (`parse_decl_name_recursive` / `parse_member_decl_name_recursive_toplevel`) で先頭 `*` 連鎖消費を `parse_toplevel_pointer_prefix()` 利用へ統一
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_array_suffixes()` / `parse_stmt_array_suffixes_constexpr_required()` を導入し、ブロックスコープ `typedef` と struct/union メンバ宣言子で重複していた `[]` 後置処理を段階的に共通化
   - 進捗（2026-03-24）: `stmt.c` に `parse_stmt_member_array_suffixes()` を導入し、ブロックスコープの struct/union メンバ宣言で重複していた `[]` 後置処理（フレキシブル配列判定を含む）を共通化
 

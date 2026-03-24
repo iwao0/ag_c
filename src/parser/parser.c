@@ -835,10 +835,7 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array
 }
 
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul) {
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers();
-  }
+  parse_toplevel_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   int had_parens = 0;
   int paren_array_mul = 1;
@@ -865,10 +862,7 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
 
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
                                                                 int *out_paren_array_mul) {
-  while (tk_consume('*')) {
-    *is_ptr = 1;
-    skip_ptr_qualifiers();
-  }
+  parse_toplevel_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
