@@ -39,6 +39,8 @@ static int g_toplevel_decl_pointee_volatile = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
+static void parse_toplevel_typedef_declaration_stmt(void);
+static void parse_toplevel_object_declaration_stmt(void);
 static void parse_toplevel_typedef_declarator_list(void);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
@@ -864,10 +866,18 @@ static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int
 
 static void parse_toplevel_decl_after_type(void) {
   if (g_toplevel_decl_is_typedef) {
-    parse_toplevel_typedef_declarator_list();
-    tk_expect(';');
+    parse_toplevel_typedef_declaration_stmt();
     return;
   }
+  parse_toplevel_object_declaration_stmt();
+}
+
+static void parse_toplevel_typedef_declaration_stmt(void) {
+  parse_toplevel_typedef_declarator_list();
+  tk_expect(';');
+}
+
+static void parse_toplevel_object_declaration_stmt(void) {
   parse_toplevel_declarator_list();
   tk_expect(';');
 }
