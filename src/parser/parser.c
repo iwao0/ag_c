@@ -44,6 +44,7 @@ static void parse_toplevel_object_declaration_stmt(void);
 static void parse_toplevel_typedef_declarator_list(void);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
+static void guard_toplevel_declarator_count(int declarator_count);
 static void parse_toplevel_one_object_declarator(void);
 static void apply_toplevel_object_initializer(global_var_t *gv);
 static void consume_toplevel_extern_initializer_if_any(void);
@@ -716,12 +717,15 @@ static void parse_toplevel_declarator_list(void) {
   int declarator_count = 0;
   for (;;) {
     declarator_count++;
-    if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
-    }
+    guard_toplevel_declarator_count(declarator_count);
     parse_toplevel_one_object_declarator();
     if (!tk_consume(',')) break;
   }
+}
+
+static void guard_toplevel_declarator_count(int declarator_count) {
+  if (declarator_count <= PS_MAX_DECLARATOR_COUNT) return;
+  psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
 }
 
 static void apply_toplevel_object_initializer(global_var_t *gv) {
