@@ -48,6 +48,7 @@ static void consume_toplevel_extern_initializer_if_any(void);
 static int parse_toplevel_declaration_like(void);
 static void parse_toplevel_decl_spec(void);
 static int is_toplevel_decl_like_start(token_t *tok);
+static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind);
 static void reset_toplevel_decl_spec_state(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
@@ -414,14 +415,18 @@ static void parse_toplevel_decl_spec(void) {
   if (parse_toplevel_typedef_name_spec()) return;
 
   token_kind_t tl_kind = psx_consume_type_kind();
-  g_toplevel_decl_base_kind = tl_kind;
-  if (tl_kind == TK_INT && psx_last_type_is_unsigned()) {
+  apply_toplevel_builtin_decl_spec(tl_kind);
+  apply_toplevel_decl_prefix_flags();
+}
+
+static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind) {
+  g_toplevel_decl_base_kind = type_kind;
+  if (type_kind == TK_INT && psx_last_type_is_unsigned()) {
     g_toplevel_decl_base_kind = TK_UNSIGNED;
   }
-  g_toplevel_decl_fp_kind = fp_kind_for_type_kind_toplevel(tl_kind);
+  g_toplevel_decl_fp_kind = fp_kind_for_type_kind_toplevel(type_kind);
   g_toplevel_decl_elem_size = 8;
-  if (tl_kind != TK_EOF) psx_ctx_get_type_info(tl_kind, NULL, &g_toplevel_decl_elem_size);
-  apply_toplevel_decl_prefix_flags();
+  if (type_kind != TK_EOF) psx_ctx_get_type_info(type_kind, NULL, &g_toplevel_decl_elem_size);
 }
 
 // program = funcdef*
