@@ -47,6 +47,7 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
                                                     int paren_array_mul);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void parse_toplevel_one_object_declarator(void);
+static void finalize_toplevel_object_declarator(global_var_t *gv);
 static void apply_toplevel_object_initializer(global_var_t *gv);
 static void consume_toplevel_extern_initializer_if_any(void);
 static int parse_toplevel_declaration_like(void);
@@ -760,12 +761,16 @@ static void parse_toplevel_one_object_declarator(void) {
   }
 
   global_var_t *gv = register_toplevel_object_from_declarator(name, is_ptr, arr);
-  if (!g_toplevel_decl_is_extern) {
-    gv->is_thread_local = g_toplevel_decl_is_thread_local;
-    apply_toplevel_object_initializer(gv);
-  } else {
+  finalize_toplevel_object_declarator(gv);
+}
+
+static void finalize_toplevel_object_declarator(global_var_t *gv) {
+  if (g_toplevel_decl_is_extern) {
     consume_toplevel_extern_initializer_if_any();
+    return;
   }
+  gv->is_thread_local = g_toplevel_decl_is_thread_local;
+  apply_toplevel_object_initializer(gv);
 }
 
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
