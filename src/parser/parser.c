@@ -54,6 +54,8 @@ typedef struct {
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
+static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
+                                           int is_ptr, int typedef_sizeof);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void parse_toplevel_one_object_declarator(void);
 static void finalize_toplevel_object_declarator(global_var_t *gv);
@@ -811,6 +813,11 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
   int typedef_sizeof = compute_toplevel_typedef_sizeof(is_ptr, arr);
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
+  register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof);
+}
+
+static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
+                                           int is_ptr, int typedef_sizeof) {
   psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
                               g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
                               g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
