@@ -727,7 +727,7 @@ static void parse_toplevel_declarator_list(void) {
     declarator_count++;
     guard_toplevel_declarator_count(declarator_count);
     parse_toplevel_one_object_declarator();
-    if (!tk_consume(',')) break;
+    if (!has_next_toplevel_declarator()) break;
   }
 }
 
