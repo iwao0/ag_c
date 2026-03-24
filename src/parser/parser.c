@@ -61,6 +61,7 @@ static int parse_toplevel_typedef_name_spec(void);
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len);
 static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
+static void parse_toplevel_pointer_prefix(int *is_ptr);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
                                                                 int *out_paren_array_mul);
@@ -738,10 +739,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
 
 static void parse_toplevel_one_object_declarator(void) {
   int is_ptr = 0;
-  while (tk_consume('*')) {
-    is_ptr = 1;
-    skip_ptr_qualifiers();
-  }
+  parse_toplevel_pointer_prefix(&is_ptr);
   int paren_array_mul = 1;
   token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
   if (!name) {
@@ -794,14 +792,18 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
 static void parse_toplevel_typedef_declarator_list(void) {
   for (;;) {
     int is_ptr = g_toplevel_decl_base_is_ptr;
-    while (tk_consume('*')) {
-      is_ptr = 1;
-      skip_ptr_qualifiers();
-    }
+    parse_toplevel_pointer_prefix(&is_ptr);
     int paren_array_mul = 1;
     token_ident_t *name = parse_toplevel_decl_name(&is_ptr, &paren_array_mul);
     define_toplevel_typedef_from_declarator(name, is_ptr, paren_array_mul);
     if (!tk_consume(',')) break;
+  }
+}
+
+static void parse_toplevel_pointer_prefix(int *is_ptr) {
+  while (tk_consume('*')) {
+    *is_ptr = 1;
+    skip_ptr_qualifiers();
   }
 }
 
