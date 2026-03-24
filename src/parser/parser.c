@@ -67,6 +67,7 @@ static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int
 static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
 static void parse_toplevel_pointer_prefix(int *is_ptr);
+static token_ident_t *consume_decl_ident_or_error(int require_name);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
                                                                 int *out_paren_array_mul);
@@ -845,11 +846,7 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
     paren_array_mul = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {
-    name = tk_consume_ident();
-    if (!name && require_name) {
-      diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-    }
+    name = consume_decl_ident_or_error(require_name);
   }
   if (had_parens) {
     while (curtok()->kind == TK_LPAREN) {
@@ -857,6 +854,15 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
     }
   }
   if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
+  return name;
+}
+
+static token_ident_t *consume_decl_ident_or_error(int require_name) {
+  token_ident_t *name = tk_consume_ident();
+  if (!name && require_name) {
+    diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, curtok(), "%s",
+                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+  }
   return name;
 }
 
