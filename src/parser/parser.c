@@ -42,6 +42,7 @@ static void parse_toplevel_decl_after_type(void);
 static void parse_toplevel_typedef_declaration_stmt(void);
 static void parse_toplevel_object_declaration_stmt(void);
 static void parse_toplevel_typedef_declarator_list(void);
+static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
 static void guard_toplevel_declarator_count(int declarator_count);
@@ -785,14 +786,19 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
   if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
   else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
-  token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
-  if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) stored_base_kind = TK_UNSIGNED;
+  token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
   psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
                               g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
                               g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
                               is_ptr, typedef_sizeof,
                               g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
                               (stored_base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned());
+}
+
+static token_kind_t resolve_toplevel_typedef_base_kind_for_store(void) {
+  token_kind_t stored_base_kind = g_toplevel_decl_base_kind;
+  if (stored_base_kind == TK_INT && psx_last_type_is_unsigned()) return TK_UNSIGNED;
+  return stored_base_kind;
 }
 
 static void parse_toplevel_typedef_declarator_list(void) {
