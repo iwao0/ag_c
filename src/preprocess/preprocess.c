@@ -1226,6 +1226,225 @@ static token_t *handle_include(token_t *tok, token_t **pcur) {
   return tok;
 }
 
+// #define MACRO_NAME [( params )] body...
+static token_t *handle_define(token_t *tok) {
+  tok = tok->next;
+  if (tok->kind != TK_IDENT) {
+    pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
+  }
+  token_ident_t *id = as_ident(tok);
+  char *name = my_strndup(id->str, id->len);
+  tok = tok->next;
+
+  bool is_funclike = false;
+  char **params = NULL;
+  int num_params = 0;
+  char *inline_params_buf[MACRO_INLINE_PARAMS];
+
+  if (tok->kind == TK_LPAREN && !tok->has_space) {
+    is_funclike = true;
+    tok = tok->next;
+    int cap = MACRO_INLINE_PARAMS;
+    params = inline_params_buf;
+    while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
+      if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+      if (num_params >= cap) {
+        if (params == inline_params_buf) {
+          params = calloc((size_t)cap * 2, sizeof(char *));
+          for (int j = 0; j < num_params; j++) params[j] = inline_params_buf[j];
+        } else {
+          params = xreallocarray(params, (size_t)cap * 2, sizeof(char *));
+        }
+        cap *= 2;
+      }
+      token_ident_t *pid = as_ident(tok);
+      params[num_params++] = my_strndup(pid->str, pid->len);
+      tok = tok->next;
+      if (tok->kind == TK_COMMA) tok = tok->next;
+    }
+    if (tok->kind == TK_RPAREN) tok = tok->next;
+  }
+
+  token_t head;
+  head.next = NULL;
+  token_t *cur_body = &head;
+  while (tok->kind != TK_EOF && !tok->at_bol) {
+    cur_body->next = copy_token(tok);
+    cur_body = cur_body->next;
+    tok = tok->next;
+  }
+  cur_body->next = NULL;
+
+  add_macro(name, is_funclike, params, num_params, head.next);
+  return tok;
+}
+
+// マクロを名前で連結リストから外す（freeはしない: name 文字列は他で保持される可能性）。
+static void remove_macro_by_name(const char *name) {
+  macro_t *prev = NULL;
+  for (macro_t *m = macros; m; prev = m, m = m->next) {
+    if (!strcmp(m->name, name)) {
+      if (prev) prev->next = m->next;
+      else macros = m->next;
+      break;
+    }
+  }
+}
+
+static token_t *handle_undef(token_t *tok) {
+  tok = tok->next;
+  char *name = consume_required_macro_name(&tok);
+  remove_macro_by_name(name);
+  free(name);
+  return skip_to_next_line(tok);
+}
+
+// #error directive: 残りトークンを文字列化して診断を出す。
+static token_t *handle_error(token_t *tok) {
+  tok = tok->next;
+  size_t cap = 64;
+  size_t len = 0;
+  char *msg = calloc(cap, 1);
+  if (!msg) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  const char *prefix = "error: ";
+  size_t pfx_len = strlen(prefix);
+  if (cap <= pfx_len) {
+    cap = pfx_len + 1;
+    msg = xrealloc(msg, cap);
+  }
+  memcpy(msg, prefix, pfx_len);
+  len = pfx_len;
+  while (tok->kind != TK_EOF && !tok->at_bol) {
+    int tlen = 0;
+    const char *ts = token_text(tok, &tlen);
+    char tmp[64];
+    tmp[0] = '\0';
+    if (tok->kind == TK_NUM) {
+      if (tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
+        snprintf(tmp, sizeof(tmp), "%lld", tk_as_num_int(tok)->val);
+      } else {
+        snprintf(tmp, sizeof(tmp), "%g", tk_as_num_float(tok)->fval);
+      }
+      ts = tmp;
+      tlen = (int)strlen(tmp);
+    }
+    if (ts && tlen > 0) {
+      size_t need = len + (size_t)tlen + 2;
+      while (need > cap) {
+        if (cap > SIZE_MAX / 2) pp_error(DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
+        cap *= 2;
+      }
+      msg = xrealloc(msg, cap);
+      memcpy(msg + len, ts, (size_t)tlen);
+      len += (size_t)tlen;
+      msg[len] = '\0';
+    }
+    if (tok->has_space) {
+      if (len + 2 > cap) {
+        if (cap > SIZE_MAX / 2) pp_error(DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
+        cap *= 2;
+        msg = xrealloc(msg, cap);
+      }
+      msg[len++] = ' ';
+      msg[len] = '\0';
+    }
+    tok = tok->next;
+  }
+  const char *detail = msg;
+  if (strncmp(detail, prefix, pfx_len) == 0) {
+    detail += pfx_len;
+  }
+  diag_emit_internalf(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE,
+                      diag_message_for(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE), detail);
+  return tok;
+}
+
+// #line N ["filename"]: 以降のトークンの line_no / file_name_id を書き換える。
+static token_t *handle_line(token_t *tok) {
+  tok = tok->next;
+  if (!(tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT)) {
+    return skip_to_next_line(tok);
+  }
+  long long new_line = tk_as_num_int(tok)->val;
+  if (new_line <= 0 || new_line > INT_MAX) {
+    pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+  }
+  tok = tok->next;
+  char *new_file = NULL;
+  if (tok && tok->kind == TK_STRING) {
+    token_string_t *st = as_string(tok);
+    validate_line_filename_or_die(st->str, st->len);
+    new_file = my_strndup(st->str, st->len);
+    tok = tok->next;
+  }
+  tok = skip_to_next_line(tok);
+  if (tok->kind != TK_EOF) {
+    long long offset = new_line - (long long)tok->line_no;
+    for (token_t *t = tok; t && t->kind != TK_EOF; t = t->next) {
+      t->line_no = (int)((long long)t->line_no + offset);
+      if (new_file) t->file_name_id = tk_filename_intern(new_file);
+    }
+  }
+  return tok;
+}
+
+// `#pragma pack(...)` の中身を解釈し、出力チェーンに pragma_pack マーカーを追加する。
+// tok は '(' の次を指す状態で呼ばれ、終了時には ')' を消費した後 (もしくは行末) を指す。
+static token_t *handle_pragma_pack_body(token_t *tok, token_t **pcur) {
+  if (ident_is(tok, "push")) {
+    tok = tok->next;
+    if (tok->kind == TK_COMMA) {
+      tok = tok->next;
+      if (tok->kind == TK_NUM) {
+        token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
+        marker->kind = TK_PRAGMA_PACK_PUSH;
+        (*pcur)->next = marker;
+        *pcur = (*pcur)->next;
+        tok = tok->next;
+      }
+    }
+  } else if (ident_is(tok, "pop")) {
+    tok = tok->next;
+    token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
+    marker->kind = TK_PRAGMA_PACK_POP;
+    (*pcur)->next = marker;
+    *pcur = (*pcur)->next;
+  } else if (tok->kind == TK_NUM) {
+    token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
+    marker->kind = TK_PRAGMA_PACK_SET;
+    (*pcur)->next = marker;
+    *pcur = (*pcur)->next;
+    tok = tok->next;
+  } else if (tok->kind == TK_RPAREN) {
+    token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
+    marker->kind = TK_PRAGMA_PACK_RESET;
+    (*pcur)->next = marker;
+    *pcur = (*pcur)->next;
+  }
+  while (tok->kind != TK_RPAREN && tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
+  if (tok->kind == TK_RPAREN) tok = tok->next;
+  return tok;
+}
+
+static token_t *handle_pragma(token_t *tok, token_t **pcur) {
+  tok = tok->next;
+  if (ident_is(tok, "once")) {
+    tok = tok->next;
+    if (include_stack) {
+      pragma_once_add(include_stack->path);
+    }
+  } else if (ident_is(tok, "pack")) {
+    tok = tok->next;
+    if (tok->kind == TK_LPAREN) {
+      tok = tok->next;
+      tok = handle_pragma_pack_body(tok, pcur);
+    }
+  }
+  return skip_to_next_line(tok);
+}
+
 // プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
 token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
@@ -1253,222 +1472,11 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
       if (is_dir(tok, "if"))     { tok = handle_if(tok);    continue; }
       if (is_dir(tok, "endif"))  { tok = handle_endif(tok); continue; }
       
-      if (is_dir(tok, "define")) {
-        tok = tok->next;
-        if (tok->kind != TK_IDENT) {
-          pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
-        }
-        token_ident_t *id = as_ident(tok);
-        char *name = my_strndup(id->str, id->len);
-        tok = tok->next;
-        
-        bool is_funclike = false;
-        char **params = NULL;
-        int num_params = 0;
-        char *inline_params_buf[MACRO_INLINE_PARAMS];
-
-        if (tok->kind == TK_LPAREN && !tok->has_space) {
-          is_funclike = true;
-          tok = tok->next;
-          int cap = MACRO_INLINE_PARAMS;
-          params = inline_params_buf;
-          while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
-            if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
-            if (num_params >= cap) {
-              if (params == inline_params_buf) {
-                params = calloc((size_t)cap * 2, sizeof(char *));
-                for (int j = 0; j < num_params; j++) params[j] = inline_params_buf[j];
-              } else {
-                params = xreallocarray(params, (size_t)cap * 2, sizeof(char *));
-              }
-              cap *= 2;
-            }
-            token_ident_t *pid = as_ident(tok);
-            params[num_params++] = my_strndup(pid->str, pid->len);
-            tok = tok->next;
-            if (tok->kind == TK_COMMA) tok = tok->next;
-          }
-          if (tok->kind == TK_RPAREN) tok = tok->next;
-        }
-
-        token_t head;
-        head.next = NULL;
-        token_t *cur_body = &head;
-        while (tok->kind != TK_EOF && !tok->at_bol) {
-          cur_body->next = copy_token(tok);
-          cur_body = cur_body->next;
-          tok = tok->next;
-        }
-        cur_body->next = NULL;
-
-        add_macro(name, is_funclike, params, num_params, head.next);
-        continue;
-      }
-
-      if (is_dir(tok, "undef")) {
-        tok = tok->next;
-        if (tok->kind != TK_IDENT) {
-          pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
-        }
-        token_ident_t *id = as_ident(tok);
-        char *name = my_strndup(id->str, id->len);
-        tok = tok->next;
-
-        macro_t *prev = NULL;
-        for (macro_t *m = macros; m; prev = m, m = m->next) {
-           if (!strcmp(m->name, name)) {
-              if (prev) prev->next = m->next;
-              else macros = m->next;
-              break;
-           }
-        }
-        free(name);
-
-        while (tok->kind != TK_EOF && !tok->at_bol) {
-          tok = tok->next;
-        }
-        continue;
-      }
-
-      if (is_dir(tok, "error")) {
-        tok = tok->next;
-        size_t cap = 64;
-        size_t len = 0;
-        char *msg = calloc(cap, 1);
-        if (!msg) {
-          diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-        }
-        const char *prefix = "error: ";
-        size_t pfx_len = strlen(prefix);
-        if (cap <= pfx_len) {
-          cap = pfx_len + 1;
-          msg = xrealloc(msg, cap);
-        }
-        memcpy(msg, prefix, pfx_len);
-        len = pfx_len;
-        while (tok->kind != TK_EOF && !tok->at_bol) {
-          int tlen = 0;
-          const char *ts = token_text(tok, &tlen);
-          char tmp[64];
-          tmp[0] = '\0';
-          if (tok->kind == TK_NUM) {
-            if (tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
-              snprintf(tmp, sizeof(tmp), "%lld", tk_as_num_int(tok)->val);
-            } else {
-              snprintf(tmp, sizeof(tmp), "%g", tk_as_num_float(tok)->fval);
-            }
-            ts = tmp;
-            tlen = (int)strlen(tmp);
-          }
-          if (ts && tlen > 0) {
-            size_t need = len + (size_t)tlen + 2;
-            while (need > cap) {
-              if (cap > SIZE_MAX / 2) pp_error(DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
-              cap *= 2;
-            }
-            msg = xrealloc(msg, cap);
-            memcpy(msg + len, ts, (size_t)tlen);
-            len += (size_t)tlen;
-            msg[len] = '\0';
-          }
-          if (tok->has_space) {
-            if (len + 2 > cap) {
-              if (cap > SIZE_MAX / 2) pp_error(DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
-              cap *= 2;
-              msg = xrealloc(msg, cap);
-            }
-            msg[len++] = ' ';
-            msg[len] = '\0';
-          }
-          tok = tok->next;
-        }
-        const char *detail = msg;
-        if (strncmp(detail, prefix, pfx_len) == 0) {
-          detail += pfx_len;
-        }
-        diag_emit_internalf(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE,
-                            diag_message_for(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE), detail);
-      }
-
-      if (is_dir(tok, "line")) {
-        tok = tok->next;
-        if (tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT) {
-          long long new_line = tk_as_num_int(tok)->val;
-          if (new_line <= 0 || new_line > INT_MAX) {
-            pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
-          }
-          tok = tok->next;
-          char *new_file = NULL;
-          if (tok && tok->kind == TK_STRING) {
-            token_string_t *st = as_string(tok);
-            validate_line_filename_or_die(st->str, st->len);
-            new_file = my_strndup(st->str, st->len);
-            tok = tok->next;
-          }
-          while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
-          // patch line_no (and optionally file_name) of all remaining tokens
-          if (tok->kind != TK_EOF) {
-            long long offset = new_line - (long long)tok->line_no;
-            for (token_t *t = tok; t && t->kind != TK_EOF; t = t->next) {
-              t->line_no = (int)((long long)t->line_no + offset);
-              if (new_file) t->file_name_id = tk_filename_intern(new_file);
-            }
-          }
-        } else {
-          while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
-        }
-        continue;
-      }
-
-      if (is_dir(tok, "pragma")) {
-        tok = tok->next;
-        if (ident_is(tok, "once")) {
-          tok = tok->next;
-          if (include_stack) {
-            pragma_once_add(include_stack->path);
-          }
-        } else if (ident_is(tok, "pack")) {
-          tok = tok->next;
-          if (tok->kind == TK_LPAREN) {
-            tok = tok->next;
-            if (ident_is(tok, "push")) {
-              tok = tok->next;
-              if (tok->kind == TK_COMMA) {
-                tok = tok->next;
-                if (tok->kind == TK_NUM) {
-                  token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
-                  marker->kind = TK_PRAGMA_PACK_PUSH;
-                  cur->next = marker;
-                  cur = cur->next;
-                  tok = tok->next;
-                }
-              }
-            } else if (ident_is(tok, "pop")) {
-              tok = tok->next;
-              token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
-              marker->kind = TK_PRAGMA_PACK_POP;
-              cur->next = marker;
-              cur = cur->next;
-            } else if (tok->kind == TK_NUM) {
-              token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
-              marker->kind = TK_PRAGMA_PACK_SET;
-              cur->next = marker;
-              cur = cur->next;
-              tok = tok->next;
-            } else if (tok->kind == TK_RPAREN) {
-              token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
-              marker->kind = TK_PRAGMA_PACK_RESET;
-              cur->next = marker;
-              cur = cur->next;
-            }
-            while (tok->kind != TK_RPAREN && tok->kind != TK_EOF && !tok->at_bol)
-              tok = tok->next;
-            if (tok->kind == TK_RPAREN) tok = tok->next;
-          }
-        }
-        while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
-        continue;
-      }
+      if (is_dir(tok, "define")) { tok = handle_define(tok); continue; }
+      if (is_dir(tok, "undef"))  { tok = handle_undef(tok);  continue; }
+      if (is_dir(tok, "error"))  { tok = handle_error(tok); }
+      if (is_dir(tok, "line"))   { tok = handle_line(tok);   continue; }
+      if (is_dir(tok, "pragma")) { tok = handle_pragma(tok, &cur); continue; }
 
       // ひとまず改行（次の行頭）またはEOFまでトークンを読み飛ばす
       while (tok->kind != TK_EOF && !tok->at_bol) {
