@@ -69,6 +69,10 @@ typedef struct {
   int td_pointee_const;
   int td_pointee_volatile;
   int is_extern_decl;
+  // typedef が配列型 (`typedef int M[2][3][4]`) のとき、その各次元 (dims[0] が最外側)
+  // と次元数。`M m;` 宣言で配列として lvar 登録するために宣言子側で参照する。
+  int td_array_dims[8];
+  int td_array_dim_count;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -78,6 +82,10 @@ typedef struct {
   // 仮引数 `M *p` の mid_stride を求める際に使う (= sizeof_size / first_dim)。
   // 不完全配列や 1 次元のみのときは 0。
   int first_dim;
+  // 多次元 typedef 用: 解析した各次元のサイズを左から順に保持。
+  // dim_count = 解析した `[N]` の個数。上限 8。
+  int dims[8];
+  int dim_count;
 } decl_array_suffix_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out);
@@ -163,6 +171,18 @@ static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out
                             out_tag_kind, out_tag_name, out_tag_len, out_base_is_pointer,
                             out_pointee_const, out_pointee_volatile, out_is_unsigned);
   set_curtok(curtok()->next);
+}
+
+// typedef 配列の dims[] と次元数を取得する補助。dims が無い場合は dim_count=0。
+static void resolve_typedef_array_dims(token_ident_t *id, int *out_dims, int *out_dim_count) {
+  int is_array = 0;
+  int sizeof_size = 0;
+  int first_dim = 0;
+  int dim_count = 0;
+  psx_ctx_find_typedef_name_ex3(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL,
+                                NULL, NULL, NULL, NULL, &is_array, &sizeof_size,
+                                &first_dim, out_dims, &dim_count, 8);
+  if (out_dim_count) *out_dim_count = (is_array && dim_count > 0) ? dim_count : 0;
 }
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
@@ -307,6 +327,7 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   out.is_array = (base_mul > 0);
   out.has_incomplete_array = 0;
   out.first_dim = 0;
+  out.dim_count = 0;
   int dim_count = 0;
   while (tk_consume('[')) {
     int has_size = 0;
@@ -317,10 +338,15 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
       out.arr_total *= n;
       if (dim_count == 0) out.first_dim = n;
     }
+    if (dim_count < 8) {
+      out.dims[dim_count] = has_size ? n : 0;
+    }
     dim_count++;
     out.is_array = 1;
     tk_expect(']');
   }
+  if (dim_count > 8) dim_count = 8;
+  out.dim_count = dim_count;
   return out;
 }
 
@@ -1494,6 +1520,19 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                               int base_is_pointer,
                                               int is_const_qualified, int is_volatile_qualified,
                                               int decl_is_unsigned_hint) {
+  return psx_decl_parse_declaration_after_type_ex(elem_size, decl_fp_kind,
+                                                  tag_kind, tag_name, tag_len,
+                                                  base_is_pointer,
+                                                  is_const_qualified, is_volatile_qualified,
+                                                  decl_is_unsigned_hint, NULL, 0);
+}
+
+node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
+                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                 int base_is_pointer,
+                                                 int is_const_qualified, int is_volatile_qualified,
+                                                 int decl_is_unsigned_hint,
+                                                 const int *td_array_dims, int td_array_dim_count) {
   node_t *init_chain = NULL;
   int alignas_val = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
@@ -1569,6 +1608,48 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var->is_tag_pointer = 0;
         var->base_deref_size = (short)elem_size;
         var->outer_stride = row_size;
+      } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
+        // typedef が配列型 (`typedef int M[2][3][4]; M m;`):
+        // td_array_dims をそのまま多次元配列の dims として扱い、
+        // outer_stride/mid_stride/extra_strides を計算する。
+        int arr_total = 1;
+        for (int di = 0; di < td_array_dim_count; di++) {
+          if (td_array_dims[di] > 0) arr_total *= td_array_dims[di];
+        }
+        int arr_elem_size = elem_size;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len,
+                                                  arr_total * arr_elem_size, arr_elem_size, 1, alignas_val);
+        if (td_array_dim_count >= 2) {
+          int outer_mul = 1;
+          for (int i = 1; i < td_array_dim_count; i++) {
+            if (td_array_dims[i] > 0) outer_mul *= td_array_dims[i];
+          }
+          var->outer_stride = outer_mul * arr_elem_size;
+        }
+        if (td_array_dim_count >= 3) {
+          int mid_mul = 1;
+          for (int i = 2; i < td_array_dim_count; i++) {
+            if (td_array_dims[i] > 0) mid_mul *= td_array_dims[i];
+          }
+          var->mid_stride = mid_mul * arr_elem_size;
+        }
+        if (td_array_dim_count >= 4) {
+          int idx_in_extras = 0;
+          for (int start = 3; start < td_array_dim_count && idx_in_extras < 5; start++) {
+            int rest_mul = 1;
+            for (int j = start; j < td_array_dim_count; j++) {
+              if (td_array_dims[j] > 0) rest_mul *= td_array_dims[j];
+            }
+            var->extra_strides[idx_in_extras++] = rest_mul * arr_elem_size;
+          }
+          var->extra_strides_count = (unsigned char)idx_in_extras;
+        }
+        var->tag_kind = tag_kind;
+        var->tag_name = tag_name;
+        var->tag_len = tag_len;
+        var->is_tag_pointer = 0;
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
       } else if (tk_consume('[')) {
         node_t *size_node = NULL;
         int size_ok = 1;
@@ -1793,12 +1874,13 @@ node_t *psx_decl_parse_declaration(void) {
     return psx_node_new_num(0);
   }
 
-  return psx_decl_parse_declaration_after_type(ds.elem_size, ds.fp_kind,
-                                               ds.tag_kind, ds.tag_name, ds.tag_len,
-                                               ds.base_is_pointer,
-                                               ds.is_const_qualified ? 1 : ds.td_pointee_const,
-                                               ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile,
-                                               ds.is_unsigned);
+  return psx_decl_parse_declaration_after_type_ex(ds.elem_size, ds.fp_kind,
+                                                  ds.tag_kind, ds.tag_name, ds.tag_len,
+                                                  ds.base_is_pointer,
+                                                  ds.is_const_qualified ? 1 : ds.td_pointee_const,
+                                                  ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile,
+                                                  ds.is_unsigned,
+                                                  ds.td_array_dims, ds.td_array_dim_count);
 }
 
 static int parse_local_decl_spec(local_decl_spec_t *out) {
@@ -1814,6 +1896,9 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
 static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
   if (!psx_ctx_is_typedef_name_token(curtok())) return 0;
   token_kind_t base_kind = TK_EOF;
+  token_ident_t *id = (token_ident_t *)curtok();
+  // 多次元配列 typedef (`typedef int M[2][3][4]`) の dims を取得して保持する。
+  resolve_typedef_array_dims(id, out->td_array_dims, &out->td_array_dim_count);
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
                                  &out->tag_kind, &out->tag_name, &out->tag_len,
                                  &out->base_is_pointer,
@@ -1948,10 +2033,11 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   // 不完全配列 `typedef int A[]` も is_array=1 (sizeof_size は 0)。
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
-  psx_ctx_define_typedef_name_ex2(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+  int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
+  psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                   tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
                                   td_pointee_const, td_pointee_volatile, td_is_unsigned,
-                                  td_is_array, td_first_dim);
+                                  td_is_array, td_first_dim, arr.dims, td_dim_count);
 }
 
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,

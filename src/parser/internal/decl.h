@@ -65,6 +65,14 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                               int base_is_pointer,
                                               int is_const_qualified, int is_volatile_qualified,
                                               int decl_is_unsigned_hint);
+// ex 版: typedef が配列型のとき、その dims を override で渡す
+// (`typedef int M[2][3][4]; M m;` で M m を int[2][3][4] と等価扱いする)。
+node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
+                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                 int base_is_pointer,
+                                                 int is_const_qualified, int is_volatile_qualified,
+                                                 int decl_is_unsigned_hint,
+                                                 const int *td_array_dims, int td_array_dim_count);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
 
 // `{ ... }` のトップレベル要素数を先読みで返す。curtok は変更しない。

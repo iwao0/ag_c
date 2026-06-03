@@ -62,7 +62,8 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
                                                     int paren_array_mul);
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
                                            int is_ptr, int typedef_sizeof, int td_is_array,
-                                           int td_first_dim);
+                                           int td_first_dim,
+                                           const int *td_dims, int td_dim_count);
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
@@ -117,6 +118,10 @@ typedef struct {
   // 多次元 typedef array (`typedef int M[3][4]`) のとき M *p で
   // mid_stride = sizeof_size / first_dim = 16 を計算するのに使う。
   int typedef_array_first_dim;
+  // 多次元 typedef array (3+ 次元) の dims を仮引数 (`M *p`) に
+  // 反映するため保持する。
+  int typedef_array_dims[8];
+  int typedef_array_dim_count;
   // float/double 仮引数を ABI に従い d0..d7 で受け取るための種別。
   tk_float_kind_t fp_kind;
 } param_decl_spec_t;
@@ -145,6 +150,9 @@ typedef struct {
   // 多次元 typedef array (`typedef int M[3][4]`) で M *p の mid_stride を
   // 求めるため、最も外側 [N] の N を保持する。
   int first_dim;
+  // 全次元のサイズを左から順に。dim_count = 個数 (上限 8)。
+  int dims[8];
+  int dim_count;
 } toplevel_array_suffix_t;
 static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr);
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr);
@@ -691,9 +699,14 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
       out.arr_total *= n;
       if (dim_count == 0) out.first_dim = n;
     }
+    if (dim_count < 8) {
+      out.dims[dim_count] = has_size ? n : 0;
+    }
     dim_count++;
     out.is_array = 1;
   }
+  if (dim_count > 8) dim_count = 8;
+  out.dim_count = dim_count;
   return out;
 }
 
@@ -793,20 +806,22 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
+  int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
   register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array,
-                                 td_first_dim);
+                                 td_first_dim, arr.dims, td_dim_count);
 }
 
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
                                            int is_ptr, int typedef_sizeof, int td_is_array,
-                                           int td_first_dim) {
-  psx_ctx_define_typedef_name_ex2(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
+                                           int td_first_dim,
+                                           const int *td_dims, int td_dim_count) {
+  psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
                                   g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
                                   is_ptr, typedef_sizeof,
                                   g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
                                   is_toplevel_typedef_unsigned(stored_base_kind), td_is_array,
-                                  td_first_dim);
+                                  td_first_dim, td_dims, td_dim_count);
 }
 
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind) {
@@ -1344,6 +1359,33 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
           var->mid_stride = second_dim_bytes;
         }
       }
+      // 3+ 次元 typedef array (`typedef int M[2][3][4]; M *p`):
+      // (*p)[i][j][k] のため、ローカル変数の outer/mid/extra strides と同等の
+      // 設定を行う。dims[0] は (*p) の最外側次元になる。
+      if (ds.typedef_array_dim_count >= 3) {
+        // outer / mid を dims から再計算する (上の sizeof_size 経由とほぼ等価)。
+        int outer_mul = 1;
+        for (int i = 1; i < ds.typedef_array_dim_count; i++) {
+          if (ds.typedef_array_dims[i] > 0) outer_mul *= ds.typedef_array_dims[i];
+        }
+        if (outer_mul > 0) var->outer_stride = outer_mul * ds.elem_size;
+        int mid_mul = 1;
+        for (int i = 2; i < ds.typedef_array_dim_count; i++) {
+          if (ds.typedef_array_dims[i] > 0) mid_mul *= ds.typedef_array_dims[i];
+        }
+        if (mid_mul > 0) var->mid_stride = mid_mul * ds.elem_size;
+        if (ds.typedef_array_dim_count >= 4) {
+          int idx_in_extras = 0;
+          for (int start = 3; start < ds.typedef_array_dim_count && idx_in_extras < 5; start++) {
+            int rest_mul = 1;
+            for (int j = start; j < ds.typedef_array_dim_count; j++) {
+              if (ds.typedef_array_dims[j] > 0) rest_mul *= ds.typedef_array_dims[j];
+            }
+            var->extra_strides[idx_in_extras++] = rest_mul * ds.elem_size;
+          }
+          var->extra_strides_count = (unsigned char)idx_in_extras;
+        }
+      }
     }
   } else {
     // スカラー型仮引数（既存の動作）
@@ -1422,13 +1464,16 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     int td_sizeof_size = 0;
     int td_first_dim = 0;
     tk_float_kind_t td_fp_kind = TK_FLOAT_KIND_NONE;
-    if (psx_ctx_find_typedef_name_ex2(id->str, id->len, NULL, &td_elem_size, &td_fp_kind,
+    int td_dim_count = 0;
+    if (psx_ctx_find_typedef_name_ex3(id->str, id->len, NULL, &td_elem_size, &td_fp_kind,
                                       NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                                      &td_is_array, &td_sizeof_size, &td_first_dim)) {
+                                      &td_is_array, &td_sizeof_size, &td_first_dim,
+                                      out->typedef_array_dims, &td_dim_count, 8)) {
       if (td_elem_size > 0) out->elem_size = td_elem_size;
       out->typedef_is_array = td_is_array;
       out->typedef_sizeof_size = td_sizeof_size;
       out->typedef_array_first_dim = td_first_dim;
+      out->typedef_array_dim_count = td_dim_count;
       if (td_fp_kind != TK_FLOAT_KIND_NONE) out->fp_kind = td_fp_kind;
     }
     set_curtok(curtok()->next);
