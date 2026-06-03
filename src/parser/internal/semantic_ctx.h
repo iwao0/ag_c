@@ -54,6 +54,20 @@ bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
                                int *out_tag_len, int *out_is_pointer,
                                int *out_pointee_const_qualified, int *out_pointee_volatile_qualified,
                                int *out_is_unsigned);
+// 拡張版: typedef した型が配列型か (`typedef int row_t[3]` 等) と sizeof_size を取得する。
+// `row_t *a` のような仮引数で正しい outer_stride を設定するために使う。
+bool psx_ctx_find_typedef_name_ex(char *name, int len, token_kind_t *out_base_kind,
+                                  int *out_elem_size, tk_float_kind_t *out_fp_kind,
+                                  token_kind_t *out_tag_kind, char **out_tag_name,
+                                  int *out_tag_len, int *out_is_pointer,
+                                  int *out_pointee_const_qualified,
+                                  int *out_pointee_volatile_qualified, int *out_is_unsigned,
+                                  int *out_is_array, int *out_sizeof_size);
+void psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind, int elem_size,
+                                    tk_float_kind_t fp_kind, token_kind_t tag_kind,
+                                    char *tag_name, int tag_len, int is_pointer, int sizeof_size,
+                                    int pointee_const_qualified, int pointee_volatile_qualified,
+                                    int is_unsigned, int is_array);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 void psx_ctx_define_function_name(char *name, int len);

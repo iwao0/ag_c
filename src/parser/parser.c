@@ -61,7 +61,7 @@ static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
-                                           int is_ptr, int typedef_sizeof);
+                                           int is_ptr, int typedef_sizeof, int td_is_array);
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
@@ -108,6 +108,11 @@ typedef struct {
   int tag_len;
   int struct_size;
   int elem_size;
+  // typedef した型が配列の場合に typedef 名から取り出した情報を保持する。
+  // 例: `typedef int row_t[3]` → typedef_is_array=1, typedef_sizeof_size=12
+  // 仮引数 `row_t *a` で pointer-to-array として扱うため。
+  int typedef_is_array;
+  int typedef_sizeof_size;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -773,17 +778,18 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
   int typedef_sizeof = compute_toplevel_typedef_sizeof(is_ptr, arr);
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
-  register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof);
+  int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
+  register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array);
 }
 
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
-                                           int is_ptr, int typedef_sizeof) {
-  psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
-                              g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
-                              g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
-                              is_ptr, typedef_sizeof,
-                              g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
-                              is_toplevel_typedef_unsigned(stored_base_kind));
+                                           int is_ptr, int typedef_sizeof, int td_is_array) {
+  psx_ctx_define_typedef_name_ex(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
+                                 g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
+                                 g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
+                                 is_ptr, typedef_sizeof,
+                                 g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
+                                 is_toplevel_typedef_unsigned(stored_base_kind), td_is_array);
 }
 
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind) {
@@ -1308,6 +1314,11 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
         var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds.elem_size;
         var->mid_stride = param_inner_second_dim * ds.elem_size;
       }
+    } else if (param_ptr_levels == 1 && ds.typedef_is_array && ds.typedef_sizeof_size > 0) {
+      // `typedef int row_t[N]; row_t *a` 形式: typedef した配列型を仮引数で
+      // 受けるとき、a[i] は pointee (= row_t) のサイズ単位で進む。
+      // → outer_stride = typedef_sizeof_size (= N*elem)、elem_size は ds.elem_size のまま。
+      var->outer_stride = ds.typedef_sizeof_size;
     }
   } else {
     // スカラー型仮引数（既存の動作）
@@ -1365,6 +1376,20 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
   } else if (psx_ctx_is_typedef_name_token(curtok())) {
     out->saw_typedef_name = 1;
+    // typedef 名の情報を仮引数解析に伝える。特に「配列型 typedef」が
+    // `typedef_name *a` の形でポインタ仮引数になるとき、配列の総バイト数を
+    // outer_stride として使うため。
+    token_ident_t *id = (token_ident_t *)curtok();
+    int td_elem_size = 0;
+    int td_is_array = 0;
+    int td_sizeof_size = 0;
+    if (psx_ctx_find_typedef_name_ex(id->str, id->len, NULL, &td_elem_size, NULL,
+                                     NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                                     &td_is_array, &td_sizeof_size)) {
+      if (td_elem_size > 0) out->elem_size = td_elem_size;
+      out->typedef_is_array = td_is_array;
+      out->typedef_sizeof_size = td_sizeof_size;
+    }
     set_curtok(curtok()->next);
   }
 }

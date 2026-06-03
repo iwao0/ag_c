@@ -1936,9 +1936,12 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
   else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
   token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
-  psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
-                              tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                              td_pointee_const, td_pointee_volatile, td_is_unsigned);
+  // `typedef int row_t[3]` のように配列型を typedef した場合は is_array=1 で記録する。
+  // 不完全配列 `typedef int A[]` も is_array=1 (sizeof_size は 0)。
+  int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
+  psx_ctx_define_typedef_name_ex(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
+                                 td_pointee_const, td_pointee_volatile, td_is_unsigned, td_is_array);
 }
 
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
