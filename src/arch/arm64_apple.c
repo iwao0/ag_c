@@ -788,6 +788,124 @@ static void gen_expr_funcref(node_t *node) {
   cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
+// Darwin/ARM64 では variadic 引数はレジスタではなくスタックで渡す必要があるため、
+// printf 系の呼び出しは別経路でハンドルする。
+static void gen_expr_funcall_printf(node_func_t *fn) {
+  gen_expr(fn->args[0]);
+  cg_emitf("  ldr x19, [sp], #16\n");
+
+  int var_count = fn->nargs - 1;
+  int stack_bytes = ((var_count + 1) / 2) * 16; // call時の16byte alignment維持
+  if (stack_bytes > 0) {
+    cg_emitf("  sub sp, sp, #%d\n", stack_bytes);
+  }
+  for (int i = 1; i < fn->nargs; i++) {
+    gen_expr(fn->args[i]);
+    cg_emitf("  ldr x9, [sp], #16\n");
+    cg_emitf("  str x9, [sp, #%d]\n", (i - 1) * 8);
+  }
+
+  cg_emitf("  mov x0, x19\n");
+  cg_emitf("  bl _printf\n");
+  if (stack_bytes > 0) {
+    cg_emitf("  add sp, sp, #%d\n", stack_bytes);
+  }
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+// 各引数が ABI 上で消費するレジスタ数を返す:
+//   ND_LVAR かつ type_size > 16: 1 (byref ポインタ)
+//   ND_LVAR かつ type_size 9-16: 2 (low/high の2レジスタ構造体)
+//   それ以外:                    1 (スカラ)
+static int arg_reg_count(node_t *a) {
+  int abi_sz = (a->kind == ND_LVAR) ? as_lvar(a)->mem.type_size : 0;
+  if (abi_sz > 16) return 1;
+  if (abi_sz > 8)  return 2;
+  return 1;
+}
+
+// 引数式をソフトウェアスタックへ順方向にプッシュ。
+// >16B 構造体: フレームスロットのアドレスを1スロットに
+// 9-16B 構造体: high→low の順に 2 スロットに
+// それ以外: gen_expr で 1 スロットに
+static void emit_funcall_push_args(node_func_t *fn) {
+  for (int i = 0; i < fn->nargs; i++) {
+    node_t *a = fn->args[i];
+    if (a->kind == ND_LVAR) {
+      int abi_sz = as_lvar(a)->mem.type_size;
+      int frame_off = 16 + as_lvar(a)->offset;
+      if (abi_sz > 16) {
+        cg_emitf("  add x0, x29, #%d\n", frame_off);
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        continue;
+      }
+      if (abi_sz > 8) {
+        cg_emitf("  ldr x0, [x29, #%d]\n", frame_off + 8);
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
+        cg_emitf("  str x0, [sp, #-16]!\n");
+        continue;
+      }
+    }
+    gen_expr(a);
+  }
+}
+
+// 積まれたソフトウェアスタックからレジスタへ逆順にポップ。
+// 2レジスタ引数は low→x_reg, high→x_{reg+1} の順で取り出す。
+static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, int total_regs) {
+  int reg = total_regs;
+  for (int i = fn->nargs - 1; i >= 0; i--) {
+    reg -= arg_regs[i];
+    if (arg_regs[i] == 2) {
+      cg_emitf("  ldr x%d, [sp], #16\n", reg);
+      cg_emitf("  ldr x%d, [sp], #16\n", reg + 1);
+    } else {
+      cg_emitf("  ldr x%d, [sp], #16\n", reg);
+    }
+  }
+}
+
+static void gen_expr_funcall(node_t *node) {
+  node_func_t *fn = as_func(node);
+  if (!fn->callee && is_printf_func(fn) && fn->nargs >= 1) {
+    gen_expr_funcall_printf(fn);
+    return;
+  }
+
+  // 間接呼び出し: callee アドレスを引数評価前に x16 へ退避
+  if (fn->callee) {
+    gen_expr(fn->callee);
+    cg_emitf("  ldr x16, [sp], #16\n");
+  }
+
+  int *arg_regs = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
+  int total_regs = 0;
+  for (int i = 0; i < fn->nargs; i++) {
+    arg_regs[i] = arg_reg_count(fn->args[i]);
+    total_regs += arg_regs[i];
+  }
+
+  emit_funcall_push_args(fn);
+  emit_funcall_pop_args_to_regs(fn, arg_regs, total_regs);
+
+  if (fn->callee) {
+    cg_emitf("  blr x16\n");
+  } else {
+    cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+  }
+  free(arg_regs);
+
+  // 戻り値をスタックにプッシュ
+  if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
+    // 9-16B 構造体戻り値: x1(高8B)を先にプッシュ、x0(低8B)を後にプッシュ
+    cg_emitf("  str x1, [sp, #-16]!\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+  } else {
+    cg_emitf("  str x0, [sp, #-16]!\n");
+  }
+}
+
 static void gen_expr_assign(node_t *node) {
   if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
     // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
@@ -995,112 +1113,7 @@ static void gen_expr(node_t *node) {
   case ND_LOGAND:  gen_expr_logand(node); return;
   case ND_LOGOR:   gen_expr_logor(node); return;
   case ND_TERNARY: gen_expr_ternary(as_ctrl(node)); return;
-  case ND_FUNCALL: {
-    node_func_t *fn = as_func(node);
-    if (!fn->callee && is_printf_func(fn) && fn->nargs >= 1) {
-      // Darwin/ARM64: variadic 引数はレジスタではなくスタックで受け渡す。
-      gen_expr(fn->args[0]);
-      cg_emitf("  ldr x19, [sp], #16\n");
-
-      int var_count = fn->nargs - 1;
-      int stack_bytes = ((var_count + 1) / 2) * 16; // call時の16byte alignment維持
-      if (stack_bytes > 0) {
-        cg_emitf("  sub sp, sp, #%d\n", stack_bytes);
-      }
-      for (int i = 1; i < fn->nargs; i++) {
-        gen_expr(fn->args[i]);
-        cg_emitf("  ldr x9, [sp], #16\n");
-        cg_emitf("  str x9, [sp, #%d]\n", (i - 1) * 8);
-      }
-
-      cg_emitf("  mov x0, x19\n");
-      cg_emitf("  bl _printf\n");
-      if (stack_bytes > 0) {
-        cg_emitf("  add sp, sp, #%d\n", stack_bytes);
-      }
-      cg_emitf("  str x0, [sp, #-16]!\n");
-      return;
-    }
-
-    // 間接呼び出し: calleeアドレスを引数評価前に x16 へ退避
-    if (fn->callee) {
-      gen_expr(fn->callee);
-      cg_emitf("  ldr x16, [sp], #16\n");
-    }
-
-    // 引数の ABI サイズを計算してレジスタ数を決定
-    // - ND_LVAR かつ type_size > 16: byref → 1レジスタ(アドレス)
-    // - ND_LVAR かつ type_size 9-16: 2レジスタ(low/highの2スロット)
-    // - その他: 1レジスタ(スカラー扱い)
-    int *arg_regs = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
-    int total_regs = 0;
-    for (int i = 0; i < fn->nargs; i++) {
-      node_t *a = fn->args[i];
-      int abi_sz = (a->kind == ND_LVAR) ? as_lvar(a)->mem.type_size : 0;
-      if (abi_sz > 16) {
-        arg_regs[i] = 1;  // byref: アドレス
-      } else if (abi_sz > 8) {
-        arg_regs[i] = 2;  // 2レジスタ
-      } else {
-        arg_regs[i] = 1;  // 1レジスタ
-      }
-      total_regs += arg_regs[i];
-    }
-
-    // 引数をソフトウェアスタックへプッシュ（順方向）
-    for (int i = 0; i < fn->nargs; i++) {
-      node_t *a = fn->args[i];
-      if (a->kind == ND_LVAR) {
-        int abi_sz = as_lvar(a)->mem.type_size;
-        int frame_off = 16 + as_lvar(a)->offset;
-        if (abi_sz > 16) {
-          // byref: フレームスロットのアドレスをプッシュ
-          cg_emitf("  add x0, x29, #%d\n", frame_off);
-          cg_emitf("  str x0, [sp, #-16]!\n");
-        } else if (abi_sz > 8) {
-          // 2レジスタ: highを先にプッシュ、lowを後 (pop時: low→x_reg, high→x_{reg+1})
-          cg_emitf("  ldr x0, [x29, #%d]\n", frame_off + 8);
-          cg_emitf("  str x0, [sp, #-16]!\n");
-          cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
-          cg_emitf("  str x0, [sp, #-16]!\n");
-        } else {
-          gen_expr(a);
-        }
-      } else {
-        gen_expr(a);
-      }
-    }
-
-    // ソフトウェアスタックからレジスタへ逆順にポップ
-    {
-      int reg = total_regs;
-      for (int i = fn->nargs - 1; i >= 0; i--) {
-        reg -= arg_regs[i];
-        if (arg_regs[i] == 2) {
-          cg_emitf("  ldr x%d, [sp], #16\n", reg);       // low → x_reg
-          cg_emitf("  ldr x%d, [sp], #16\n", reg + 1);   // high → x_{reg+1}
-        } else {
-          cg_emitf("  ldr x%d, [sp], #16\n", reg);
-        }
-      }
-    }
-
-    if (fn->callee) {
-      cg_emitf("  blr x16\n");
-    } else {
-      cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
-    }
-    free(arg_regs);
-    // 戻り値をスタックにプッシュ
-    if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
-      // 9-16B 構造体戻り値: x1(高8B)を先にプッシュ、x0(低8B)を後にプッシュ
-      cg_emitf("  str x1, [sp, #-16]!\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
-    } else {
-      cg_emitf("  str x0, [sp, #-16]!\n");
-    }
-    return;
-  }
+  case ND_FUNCALL: gen_expr_funcall(node); return;
   default:
     break;
   }
