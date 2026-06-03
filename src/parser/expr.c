@@ -652,35 +652,24 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
   return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned;
 }
 
-static int parse_generic_assoc_type(generic_type_t *out) {
-  out->kind = TK_EOF;
-  out->scalar_size = 0;
-  out->is_unsigned = 0;
-  out->is_pointer = 0;
-  out->tag_kind = TK_EOF;
-  out->tag_name = NULL;
-  out->tag_len = 0;
-  out->ptr_levels = 0;
-  out->ptr_const_mask = 0;
-  out->ptr_volatile_mask = 0;
-  out->ptr_deref_size = 0;
-  out->ptr_base_deref_size = 0;
-  out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
-  out->ptr_pointee_unsigned = 0;
-  out->ptr_pointee_const = 0;
-  out->ptr_pointee_volatile = 0;
-  int base_elem_size = 8;
-  tk_float_kind_t base_fp_kind = TK_FLOAT_KIND_NONE;
-  int base_unsigned = 0;
-  int base_const = 0;
-  int base_volatile = 0;
-  token_t *t = curtok();
-  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
-    if (curtok()->kind == TK_CONST) base_const = 1;
-    if (curtok()->kind == TK_VOLATILE) base_volatile = 1;
-    set_curtok(curtok()->next);
+// _Generic の関連型に出てくる CV 修飾子を読み飛ばしながら、
+// const/volatile が現れたかどうかを out_const / out_volatile に反映する。
+// include_restrict が true の場合は restrict も受理する（後置 cv 用）。
+static void consume_assoc_cv_quals(int *out_const, int *out_volatile, bool include_restrict) {
+  for (;;) {
+    token_kind_t k = curtok()->kind;
+    if (k == TK_CONST)        { *out_const = 1;    set_curtok(curtok()->next); continue; }
+    if (k == TK_VOLATILE)     { *out_volatile = 1; set_curtok(curtok()->next); continue; }
+    if (include_restrict && k == TK_RESTRICT) { set_curtok(curtok()->next); continue; }
+    return;
   }
-  t = curtok();
+}
+
+// _Generic 関連型のベース型 1 つを読む。typedef 名 / struct-or-union-or-enum タグ /
+// スカラ型の 3 経路。out / 各 base_* に結果を埋め、未認識なら 0 を返す。
+static int parse_assoc_base_type(generic_type_t *out,
+                                 int *base_elem_size, tk_float_kind_t *base_fp_kind,
+                                 int *base_unsigned, int *base_const, int *base_volatile) {
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
     token_kind_t base_kind = TK_EOF;
@@ -691,8 +680,9 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     int tag_len = 0;
     int is_ptr = 0;
     int td_is_unsigned = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind, &tag_kind, &tag_name, &tag_len,
-                              &is_ptr, &base_const, &base_volatile, &td_is_unsigned);
+    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
+                              &tag_kind, &tag_name, &tag_len,
+                              &is_ptr, base_const, base_volatile, &td_is_unsigned);
     set_curtok(curtok()->next);
     out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
     out->scalar_size = elem_size;
@@ -701,10 +691,12 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     out->tag_kind = tag_kind;
     out->tag_name = tag_name;
     out->tag_len = tag_len;
-    base_elem_size = elem_size;
-    base_fp_kind = fp_kind;
-    base_unsigned = td_is_unsigned;
-  } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
+    *base_elem_size = elem_size;
+    *base_fp_kind = fp_kind;
+    *base_unsigned = td_is_unsigned;
+    return 1;
+  }
+  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     token_kind_t tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
     token_ident_t *tag = tk_consume_ident();
@@ -716,32 +708,31 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     out->tag_kind = tag_kind;
     out->tag_name = tag->str;
     out->tag_len = tag->len;
-    base_elem_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
-  } else {
-    token_kind_t tk = TK_EOF;
-    token_t *after = NULL;
-    if (parse_integer_cast_spec_sequence(curtok(), &tk, &base_elem_size, &base_unsigned, &after)) {
-      out->kind = tk;
-      set_curtok(after);
-    } else {
-      tk = psx_consume_type_kind();
-      if (tk == TK_EOF) return 0;
-      out->kind = tk;
-      psx_ctx_get_type_info(tk, NULL, &base_elem_size);
-      if (tk == TK_FLOAT) base_fp_kind = TK_FLOAT_KIND_FLOAT;
-      else if (tk == TK_DOUBLE) base_fp_kind = TK_FLOAT_KIND_DOUBLE;
-      base_unsigned = (tk == TK_UNSIGNED);
-    }
+    *base_elem_size = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
+    return 1;
   }
-  out->scalar_size = base_elem_size;
-  out->is_unsigned = base_unsigned;
-  if (out->scalar_size == 0) out->scalar_size = base_elem_size;
-  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
-    if (curtok()->kind == TK_CONST) base_const = 1;
-    if (curtok()->kind == TK_VOLATILE) base_volatile = 1;
-    set_curtok(curtok()->next);
+  // スカラ型
+  token_kind_t tk = TK_EOF;
+  token_t *after = NULL;
+  if (parse_integer_cast_spec_sequence(curtok(), &tk, base_elem_size, base_unsigned, &after)) {
+    out->kind = tk;
+    set_curtok(after);
+    return 1;
   }
-  t = curtok();
+  tk = psx_consume_type_kind();
+  if (tk == TK_EOF) return 0;
+  out->kind = tk;
+  psx_ctx_get_type_info(tk, NULL, base_elem_size);
+  if (tk == TK_FLOAT) *base_fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (tk == TK_DOUBLE) *base_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  *base_unsigned = (tk == TK_UNSIGNED);
+  return 1;
+}
+
+// `*` 列を読み、各レベルに const/volatile/restrict/_Atomic 修飾を反映する。
+// _Atomic(T) 形式（次が '(') はポインタ修飾子ではないのでスキップ対象外。
+static void parse_pointer_levels_with_quals(generic_type_t *out, token_t **pt) {
+  token_t *t = *pt;
   while (t && t->kind == TK_MUL) {
     out->is_pointer = 1;
     out->ptr_levels++;
@@ -754,20 +745,43 @@ static int parse_generic_assoc_type(generic_type_t *out) {
       t = t->next;
     }
   }
-  // type-name の abstract-declarator の一部を受理:
-  //  - int (*)(int)
-  //  - int (*)[3]
-  //  - int (*[3])(int)
-  // これにより _Generic の関連型でも cast/sizeof と同系統の型名を扱える。
-  (void)parse_funcptr_abstract_decl(&t, &out->is_pointer);
-  (void)parse_ptr_to_array_abstract_decl(&t, &out->is_pointer);
-  (void)parse_array_of_funcptr_abstract_decl(&t, NULL);
-  (void)parse_array_of_ptr_to_array_abstract_decl(&t, NULL);
-  (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
-  (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
-  (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
-  (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
-  (void)parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
+  *pt = t;
+}
+
+// type-name の abstract-declarator のうち、_Generic 関連型で受理する形を順に試す。
+// 例: int (*)(int) / int (*)[3] / int (*[3])(int) など。
+static void try_parse_assoc_abstract_declarators(generic_type_t *out, token_t **pt) {
+  (void)parse_funcptr_abstract_decl(pt, &out->is_pointer);
+  (void)parse_ptr_to_array_abstract_decl(pt, &out->is_pointer);
+  (void)parse_array_of_funcptr_abstract_decl(pt, NULL);
+  (void)parse_array_of_ptr_to_array_abstract_decl(pt, NULL);
+  (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(pt, NULL);
+  (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(pt);
+  (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(pt, NULL);
+  (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(pt);
+  (void)parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(pt);
+}
+
+static int parse_generic_assoc_type(generic_type_t *out) {
+  *out = (generic_type_t){0};
+  out->kind = TK_EOF;
+  out->tag_kind = TK_EOF;
+  out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  int base_elem_size = 8;
+  tk_float_kind_t base_fp_kind = TK_FLOAT_KIND_NONE;
+  int base_unsigned = 0;
+  int base_const = 0;
+  int base_volatile = 0;
+  consume_assoc_cv_quals(&base_const, &base_volatile, false);
+  if (!parse_assoc_base_type(out, &base_elem_size, &base_fp_kind,
+                             &base_unsigned, &base_const, &base_volatile)) return 0;
+  out->scalar_size = base_elem_size;
+  out->is_unsigned = base_unsigned;
+  consume_assoc_cv_quals(&base_const, &base_volatile, true);
+  token_t *t = curtok();
+  parse_pointer_levels_with_quals(out, &t);
+  try_parse_assoc_abstract_declarators(out, &t);
+  // 配列サフィックス: ポインタとして扱わない場合のみ '[' 列を読み飛ばす。
   if (!out->is_pointer) {
     while (t && t->kind == TK_LBRACKET) {
       token_t *after = skip_balanced_bracket_token(t);
