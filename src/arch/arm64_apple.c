@@ -393,6 +393,8 @@ void gen_main_epilogue(void) {
 
 static void gen_expr(node_t *node);
 static void gen_stmt(node_t *node);
+static void emit_int_binop_op(node_t *node, const char *lhs, const char *rhs,
+                              const char *dst, const char *scratch);
 
 static int cg_can_use_fp_immediate_zero(double fval, tk_float_kind_t fp_kind) {
   if (fp_kind == TK_FLOAT_KIND_FLOAT) {
@@ -621,28 +623,11 @@ static void gen_expr_to_reg(node_t *node, int depth) {
 
     gen_expr_to_reg(node->lhs, depth);
     gen_expr_to_reg(node->rhs, depth + 1);
-    int r0 = reg, r1 = reg + 1;
-
-    switch (node->kind) {
-    case ND_ADD: cg_emitf("  add x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_SUB: cg_emitf("  sub x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_MUL: cg_emitf("  mul x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_DIV: cg_emitf(node->is_unsigned ? "  udiv x%d, x%d, x%d\n" : "  sdiv x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_MOD:
-      cg_emitf(node->is_unsigned ? "  udiv x0, x%d, x%d\n" : "  sdiv x0, x%d, x%d\n", r0, r1);
-      cg_emitf("  msub x%d, x0, x%d, x%d\n", r0, r1, r0);
-      break;
-    case ND_EQ:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, eq\n", r0); break;
-    case ND_NE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf("  cset x%d, ne\n", r0); break;
-    case ND_LT:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf(node->is_unsigned ? "  cset x%d, lo\n" : "  cset x%d, lt\n", r0); break;
-    case ND_LE:  cg_emitf("  cmp x%d, x%d\n", r0, r1); cg_emitf(node->is_unsigned ? "  cset x%d, ls\n" : "  cset x%d, le\n", r0); break;
-    case ND_BITAND: cg_emitf("  and x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_BITXOR: cg_emitf("  eor x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_BITOR:  cg_emitf("  orr x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_SHL: cg_emitf("  lsl x%d, x%d, x%d\n", r0, r0, r1); break;
-    case ND_SHR: cg_emitf(node->is_unsigned ? "  lsr x%d, x%d, x%d\n" : "  asr x%d, x%d, x%d\n", r0, r0, r1); break;
-    default: break;
-    }
+    // dst が lhs と被るが MOD 用の scratch は x0 を使う（呼び出し元が x0 を温存しない前提）。
+    char r0_buf[8], r1_buf[8];
+    snprintf(r0_buf, sizeof(r0_buf), "x%d", reg);
+    snprintf(r1_buf, sizeof(r1_buf), "x%d", reg + 1);
+    emit_int_binop_op(node, r0_buf, r1_buf, r0_buf, "x0");
     return;
   }
 
