@@ -84,6 +84,28 @@ int main(void) {
   run_ir_case("no_return",
               "int main(void) { int x = 1 + 2; }\n", 0);
 
+  /* Phase 3: 制御フロー */
+  run_ir_case("if_true",
+              "int main(void) { int x = 7; if (x < 10) return 1; return 0; }\n", 1);
+  run_ir_case("if_false",
+              "int main(void) { int x = 20; if (x < 10) return 1; return 2; }\n", 2);
+  run_ir_case("if_else",
+              "int main(void) { int x = 20; if (x < 10) return 1; else return 2; }\n", 2);
+  run_ir_case("while_sum",
+              "int main(void) { int i = 1; int s = 0; while (i <= 10) { s = s + i; i = i + 1; } return s; }\n", 55);
+  run_ir_case("for_factorial",
+              "int main(void) { int n = 5; int r = 1; int i; for (i = 1; i <= n; i = i + 1) r = r * i; return r; }\n", 120);
+  run_ir_case("break_loop",
+              "int main(void) { int i = 0; while (1) { if (i == 7) break; i = i + 1; } return i; }\n", 7);
+  run_ir_case("continue_loop",
+              "int main(void) { int i = 0; int s = 0; while (i < 10) { i = i + 1; if (i == 5) continue; s = s + i; } return s; }\n", 50);
+  run_ir_case("do_while",
+              "int main(void) { int i = 0; do { i = i + 1; } while (i < 5); return i; }\n", 5);
+  run_ir_case("nested_for",
+              "int main(void) { int s = 0; int i; int j; for (i = 0; i < 3; i = i + 1) for (j = 0; j < 3; j = j + 1) s = s + 1; return s; }\n", 9);
+  run_ir_case("eq_ne",
+              "int main(void) { int x = 5; if (x == 5) if (x != 0) return 7; return 0; }\n", 7);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

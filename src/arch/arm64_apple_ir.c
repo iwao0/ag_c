@@ -154,6 +154,36 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       store_val_from(ctx, inst->dst, "x9");
       return;
     }
+    case IR_LT:
+    case IR_LE:
+    case IR_EQ:
+    case IR_NE: {
+      load_val_to(ctx, inst->src1, "x9");
+      load_val_to(ctx, inst->src2, "x10");
+      cg_emitf("  cmp x9, x10\n");
+      const char *cond = "eq";
+      switch (inst->op) {
+        case IR_LT: cond = "lt"; break;
+        case IR_LE: cond = "le"; break;
+        case IR_EQ: cond = "eq"; break;
+        case IR_NE: cond = "ne"; break;
+        default: break;
+      }
+      cg_emitf("  cset x9, %s\n", cond);
+      store_val_from(ctx, inst->dst, "x9");
+      return;
+    }
+    case IR_BR:
+      cg_emitf("  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
+      return;
+    case IR_BR_COND:
+      load_val_to(ctx, inst->src1, "x9");
+      /* cbz/cbnz は 32bit/64bit のどちらでも動く。条件は 0/非0。 */
+      cg_emitf("  cbnz x9, .L%.*s_%d\n",
+                ctx->f->name_len, ctx->f->name, inst->label_id);
+      cg_emitf("  b .L%.*s_%d\n",
+                ctx->f->name_len, ctx->f->name, inst->else_label_id);
+      return;
     case IR_RET: {
       if (inst->src1.id != IR_VAL_NONE) {
         load_val_to(ctx, inst->src1, "x0");
