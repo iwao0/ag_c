@@ -30,11 +30,14 @@ TEST_E2E=build/test_e2e
 TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
 TEST_FUZZ_QUICK=build/test_fuzz_quick
+TEST_IR=build/test_ir
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=$(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/token_kind.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o
 PARSER_LIB_OBJS=$(OBJROOT)/parser/alignas_value.o $(OBJROOT)/parser/anon_tag.o $(OBJROOT)/parser/arena.o $(OBJROOT)/parser/array_suffixes.o $(OBJROOT)/parser/config_runtime.o $(OBJROOT)/parser/parser.o $(OBJROOT)/parser/decl.o $(OBJROOT)/parser/diag.o $(OBJROOT)/parser/enum_const.o $(OBJROOT)/parser/expr.o $(OBJROOT)/parser/loop_ctx.o $(OBJROOT)/parser/semantic_ctx.o $(OBJROOT)/parser/node_utils.o $(OBJROOT)/parser/stmt.o $(OBJROOT)/parser/struct_layout.o $(OBJROOT)/parser/switch_ctx.o $(OBJROOT)/parser/pragma_pack.o
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
+# IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
+IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_print.o
 
 
 $(TARGET): $(OBJS)
@@ -68,6 +71,10 @@ $(TEST_FUZZ_QUICK): test/test_fuzz_quick.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_fuzz_quick.c
 
+$(TEST_IR): test/test_ir.c $(IR_LIB_OBJS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
 $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
@@ -85,13 +92,14 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR)
 	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(TEST_CODEGEN)
 	$(TEST_PREPROCESS)
 	$(TEST_FUZZ_QUICK)
+	$(TEST_IR)
 	$(TEST_E2E)
 
 test-asan: CFLAGS+=-fsanitize=$(ASAN_SANITIZERS) -fno-omit-frame-pointer
