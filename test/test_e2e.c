@@ -572,6 +572,7 @@ static const test_case_t test_cases[] = {
     {"array", "inferred_size_brace", CASE_INT_FILE, "test/fixtures/array/inferred_size_brace.c", 100, 0},
     {"array", "inferred_size_brace_trailing_comma", CASE_INT_FILE, "test/fixtures/array/inferred_size_trailing_comma.c", 15, 0},
     {"array", "inferred_size_string", CASE_INT_FILE, "test/fixtures/array/inferred_size_string.c", 215, 0},
+    {"array", "inferred_size_char_brace", CASE_INT_FILE, "test/fixtures/array/inferred_size_char_brace.c", 209, 0},
     {"array", "inferred_size_string_concat", CASE_INT_FILE, "test/fixtures/array/inferred_size_string_concat.c", 199, 0},
     {"array", "inferred_size_designated", CASE_INT_FILE, "test/fixtures/array/inferred_size_designated.c", 111, 0},
     {"array", "inferred_size_2d_nested", CASE_INT_FILE, "test/fixtures/array/inferred_size_2d_nested.c", 7, 0},
