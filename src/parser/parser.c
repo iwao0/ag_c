@@ -92,10 +92,13 @@ static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
-                                                  int *out_pointer_levels);
+                                                  int *out_pointer_levels,
+                                                  int *out_inner_first_dim, int *out_inner_second_dim);
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
                                                             int *out_is_pointer_declarator,
-                                                            int *out_pointer_levels);
+                                                            int *out_pointer_levels,
+                                                            int *out_inner_first_dim,
+                                                            int *out_inner_second_dim);
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
 typedef struct {
   token_kind_t base_type_kind;
@@ -1143,19 +1146,26 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
 }
 
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
-                                                  int *out_pointer_levels) {
+                                                  int *out_pointer_levels,
+                                                  int *out_inner_first_dim, int *out_inner_second_dim) {
   if (out_is_array_declarator) *out_is_array_declarator = 0;
   if (out_is_pointer_declarator) *out_is_pointer_declarator = 0;
   if (out_pointer_levels) *out_pointer_levels = 0;
+  if (out_inner_first_dim) *out_inner_first_dim = 0;
+  if (out_inner_second_dim) *out_inner_second_dim = 0;
   token_ident_t *param = parse_param_declarator_name_recursive(out_is_array_declarator,
                                                                out_is_pointer_declarator,
-                                                               out_pointer_levels);
+                                                               out_pointer_levels,
+                                                               out_inner_first_dim,
+                                                               out_inner_second_dim);
   return param;
 }
 
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
                                                             int *out_is_pointer_declarator,
-                                                            int *out_pointer_levels) {
+                                                            int *out_pointer_levels,
+                                                            int *out_inner_first_dim,
+                                                            int *out_inner_second_dim) {
   while (tk_consume('*')) {
     if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
     if (out_pointer_levels) (*out_pointer_levels)++;
@@ -1164,17 +1174,33 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
     name = parse_param_declarator_name_recursive(out_is_array_declarator, out_is_pointer_declarator,
-                                                 out_pointer_levels);
+                                                 out_pointer_levels,
+                                                 out_inner_first_dim, out_inner_second_dim);
     tk_expect(')');
   } else {
     name = tk_consume_ident();
   }
+  int bracket_count = 0;
   while (curtok()->kind == TK_LPAREN || curtok()->kind == TK_LBRACKET) {
     if (curtok()->kind == TK_LPAREN) {
       skip_balanced_group(TK_LPAREN, TK_RPAREN);
     } else {
       if (out_is_array_declarator) *out_is_array_declarator = 1;
-      skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+      // C11 6.7.6.3p7: 仮引数の最も外側の `[N]` は pointer に「調整」されるため
+      // サイズは無関係。2 つ目以降の `[N]` は pointee の dim を表すので捕捉する。
+      if (bracket_count == 0) {
+        skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+      } else {
+        tk_consume('[');
+        int dim = 0;
+        if (curtok() && curtok()->kind != TK_RBRACKET) {
+          dim = psx_parse_array_size_constexpr();
+        }
+        tk_expect(']');
+        if (bracket_count == 1 && out_inner_first_dim) *out_inner_first_dim = dim;
+        else if (bracket_count == 2 && out_inner_second_dim) *out_inner_second_dim = dim;
+      }
+      bracket_count++;
     }
   }
   return name;
@@ -1187,8 +1213,12 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   int param_is_ptr = 0;
   int param_is_array_declarator = 0;
   int param_ptr_levels = 0;
+  int param_inner_first_dim = 0;
+  int param_inner_second_dim = 0;
   token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator, &param_is_ptr,
-                                                     &param_ptr_levels);
+                                                     &param_ptr_levels,
+                                                     &param_inner_first_dim,
+                                                     &param_inner_second_dim);
   if (!param) {
     // int f(void) の "void" は仮引数0件として扱う（C11 6.7.6.3）。
     if (ds.base_type_kind == TK_VOID && ds.tag_kind == TK_EOF && !ds.saw_typedef_name &&
@@ -1212,6 +1242,18 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     // 仮引数 VLA 宣言子: int a[n] → int *a として扱う (C11 6.7.6.3p7)
     // size=8 (pointer), elem_size=実際の要素サイズ, sizeof(a)==8
     var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds.elem_size, 0);
+    // 多次元配列パラメータ `int a[][N]` / `int a[][N][M]` は `int (*a)[N]` /
+    // `int (*a)[N][M]` と等価 (C11 6.7.6.3p7)。pointee が単純な int でなく
+    // 配列なので、outer_stride / mid_stride を設定して `a[i]` のステップを
+    // pointee 全体に揃える。
+    if (param_inner_first_dim > 0) {
+      var->outer_stride = param_inner_first_dim * ds.elem_size;
+      var->base_deref_size = (short)ds.elem_size;
+      if (param_inner_second_dim > 0) {
+        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds.elem_size;
+        var->mid_stride = param_inner_second_dim * ds.elem_size;
+      }
+    }
   } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 16) {
     // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
     // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ

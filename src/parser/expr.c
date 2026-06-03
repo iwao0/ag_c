@@ -2547,10 +2547,17 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
                             : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
   }
   as_lvar(n)->mem.deref_size = vla_effective_deref;
-  // 2D VLA: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
+  // 2D VLA / 多次元配列param: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
+  // 3D 配列パラメータ (mid_stride > 0) では inner_deref_size=mid_stride、
+  // next_deref_size=elem_size とすることで 2 段サブスクリプト後の要素アクセスに繋ぐ。
   int vla_is_multidim = (var->outer_stride != var->elem_size) ||
                         (var->vla_row_stride_frame_off != 0);
-  as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
+  if (var->mid_stride > 0) {
+    as_lvar(n)->mem.inner_deref_size = (short)var->mid_stride;
+    as_lvar(n)->mem.next_deref_size = (short)var->elem_size;
+  } else {
+    as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
+  }
   as_lvar(n)->mem.vla_row_stride_frame_off = var->vla_row_stride_frame_off;
   as_lvar(n)->mem.tag_kind = var->tag_kind;
   as_lvar(n)->mem.tag_name = var->tag_name;
