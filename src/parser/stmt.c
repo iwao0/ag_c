@@ -29,16 +29,12 @@ static inline void set_curtok(token_t *tok) {
   tk_set_current_token(tok);
 }
 
-static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void parse_typedef_decl(void);
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind);
 static token_ident_t *parse_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
-static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
-                                                            int *out_paren_array_mul);
-static member_decl_head_t parse_stmt_member_decl_head(void);
 typedef struct {
   int arr_total;
   int is_array;
@@ -72,30 +68,6 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr) {
   return name;
 }
 
-static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
-                                                            int *out_paren_array_mul) {
-  psx_consume_pointer_prefix(is_ptr);
-  token_ident_t *name = NULL;
-  int paren_array_mul = 1;
-  if (tk_consume('(')) {
-    name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix, &paren_array_mul);
-    paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
-    tk_expect(')');
-  } else {
-    name = tk_consume_ident();
-  }
-  psx_skip_func_suffix_groups(out_has_func_suffix);
-  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
-  return name;
-}
-
-static member_decl_head_t parse_stmt_member_decl_head(void) {
-  member_decl_head_t out = {0};
-  out.paren_array_mul = 1;
-  out.member = parse_member_decl_name_recursive_stmt(&out.is_ptr, &out.has_func_suffix, &out.paren_array_mul);
-  return out;
-}
-
 
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
   stmt_array_suffix_t out = {0};
@@ -118,9 +90,6 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
 
 // _Alignas( constant-expression | type-name )
 
-static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
-  return psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, out_size, parse_stmt_member_decl_head);
-}
 
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -157,7 +126,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     if (tk_consume('{')) {
       int member_count = 0;
       int tag_size = 0;
-      member_count = parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
+      member_count = psx_parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size);
     } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
       if (*tag_kind == TK_STRUCT || *tag_kind == TK_UNION) {
@@ -259,7 +228,7 @@ static node_t *parse_decl_like_stmt(void) {
     if (tk_consume('{')) {
       int member_count = 0;
       int tag_size = 0;
-      member_count = parse_tag_definition_body(tag_kind, tag_name, tag_len, &tag_size);
+      member_count = psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
       if (tk_consume(';')) {
         return psx_node_new_num(0);

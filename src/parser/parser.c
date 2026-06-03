@@ -87,14 +87,9 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array
 static token_ident_t *consume_decl_ident_or_error(int require_name);
 static void emit_decl_name_required_diag(void);
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens);
-static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul);
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul);
-static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
-                                                                int *out_paren_array_mul);
-static member_decl_head_t parse_toplevel_member_decl_head(void);
 static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
-static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator);
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
@@ -215,7 +210,7 @@ static void resolve_toplevel_tag_decl_layout_or_ref(void) {
   if (tk_consume('{')) {
     int member_count = 0;
     int tag_size = 0;
-    member_count = parse_tag_definition_body_toplevel(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+    member_count = psx_parse_tag_definition_body(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
                                                       g_toplevel_decl_tag_len, &tag_size);
     psx_ctx_define_tag_type_with_layout(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
                                         g_toplevel_decl_tag_len, member_count, tag_size);
@@ -816,7 +811,8 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
   if (tk_consume('(')) {
     had_parens = 1;
     name = parse_decl_name_recursive(is_ptr, require_name, &paren_array_mul);
-    paren_array_mul = parse_toplevel_parenthesized_decl_suffix(paren_array_mul);
+    paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
+    tk_expect(')');
   } else {
     name = consume_decl_ident_or_error(require_name);
   }
@@ -844,35 +840,6 @@ static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens) {
   while (curtok()->kind == TK_LPAREN) {
     skip_balanced_group(TK_LPAREN, TK_RPAREN);
   }
-}
-
-static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul) {
-  int out = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
-  tk_expect(')');
-  return out;
-}
-
-static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
-                                                                int *out_paren_array_mul) {
-  psx_consume_pointer_prefix(is_ptr);
-  token_ident_t *name = NULL;
-  int paren_array_mul = 1;
-  if (tk_consume('(')) {
-    name = parse_member_decl_name_recursive_toplevel(is_ptr, out_has_func_suffix, &paren_array_mul);
-    paren_array_mul = parse_toplevel_parenthesized_decl_suffix(paren_array_mul);
-  } else {
-    name = tk_consume_ident();
-  }
-  psx_skip_func_suffix_groups(out_has_func_suffix);
-  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
-  return name;
-}
-
-static member_decl_head_t parse_toplevel_member_decl_head(void) {
-  member_decl_head_t out = {0};
-  out.paren_array_mul = 1;
-  out.member = parse_member_decl_name_recursive_toplevel(&out.is_ptr, &out.has_func_suffix, &out.paren_array_mul);
-  return out;
 }
 
 static void parse_toplevel_decl_after_type(void) {
@@ -915,9 +882,6 @@ static int is_toplevel_decl_like_start(token_t *tok) {
          psx_ctx_is_typedef_name_token(tok);
 }
 
-static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
-  return psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, out_size, parse_toplevel_member_decl_head);
-}
 
 static void install_toplevel_tag_decl_globals(token_kind_t tag_kind, char *tag_name, int tag_len) {
   g_toplevel_decl_tag_kind = tag_kind;
@@ -936,7 +900,7 @@ static void parse_toplevel_tag_decl(void) {
   if (tk_consume('{')) {
     int member_count = 0;
     int tag_size = 0;
-    member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
+    member_count = psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, &tag_size);
     psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
     if (tk_consume(';')) return;
     install_toplevel_tag_decl_globals(tag_kind, tag_name, tag_len);
@@ -1346,7 +1310,7 @@ static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **re
   if (tk_consume('{')) {
     int member_count = 0;
     int tag_size = 0;
-    member_count = parse_tag_definition_body_toplevel(*ret_kind, tag->str, tag->len, &tag_size);
+    member_count = psx_parse_tag_definition_body(*ret_kind, tag->str, tag->len, &tag_size);
     psx_ctx_define_tag_type_with_layout(*ret_kind, tag->str, tag->len, member_count, tag_size);
   } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
     psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);

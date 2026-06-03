@@ -2,6 +2,7 @@
 #include "internal/alignas_value.h"
 #include "internal/anon_tag.h"
 #include "internal/array_suffixes.h"
+#include "internal/core.h"
 #include "internal/diag.h"
 #include "internal/enum_const.h"
 #include "internal/semantic_ctx.h"
@@ -14,18 +15,41 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
 
+static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
+                                                       int *out_paren_array_mul) {
+  psx_consume_pointer_prefix(is_ptr);
+  token_ident_t *name = NULL;
+  int paren_array_mul = 1;
+  if (tk_consume('(')) {
+    name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, &paren_array_mul);
+    paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
+    tk_expect(')');
+  } else {
+    name = tk_consume_ident();
+  }
+  psx_skip_func_suffix_groups(out_has_func_suffix);
+  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
+  return name;
+}
+
+member_decl_head_t psx_parse_member_decl_head(void) {
+  member_decl_head_t out = {0};
+  out.paren_array_mul = 1;
+  out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix, &out.paren_array_mul);
+  return out;
+}
+
 int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                  int *out_size, parse_member_decl_head_fn parse_head) {
+                                  int *out_size) {
   if (tag_kind == TK_ENUM) {
     if (out_size) *out_size = 4;
     return psx_parse_enum_members();
   }
-  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, parse_head);
+  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
 
 int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                             int *out_size,
-                                             parse_member_decl_head_fn parse_head) {
+                                             int *out_size) {
   int member_count = 0;
   int current_off = 0;
   int union_size = 0;
@@ -74,7 +98,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       if (tk_consume('{')) {
         int nested_n = 0;
         int nested_sz = 0;
-        nested_n = psx_parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len, &nested_sz, parse_head);
+        nested_n = psx_parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len, &nested_sz);
         psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len, nested_n, nested_sz);
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         if (curtok()->kind != TK_MUL) {
@@ -94,7 +118,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     }
 
     for (;;) {
-      member_decl_head_t head = parse_head();
+      member_decl_head_t head = psx_parse_member_decl_head();
       int has_member_name = head.member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && curtok()->kind != TK_COLON) {
