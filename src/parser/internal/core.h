@@ -16,5 +16,6 @@ void psx_take_alignas_value(int *align);
 void psx_take_extern_flag(int *is_extern);
 void psx_consume_pointer_prefix(int *is_ptr);
 bool psx_is_decl_prefix_token(token_kind_t k);
+void psx_skip_func_suffix_groups(int *out_has_func_suffix);
 
 #endif

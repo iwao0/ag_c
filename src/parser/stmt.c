@@ -38,7 +38,6 @@ static token_ident_t *parse_typedef_name_decl(int *is_ptr);
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
                                                             int *out_paren_array_mul);
-static void consume_stmt_member_func_suffixes(int *out_has_func_suffix);
 static member_decl_head_t parse_stmt_member_decl_head(void);
 static int parse_array_size_optional_constexpr_stmt(int *out_has_size);
 typedef struct {
@@ -53,20 +52,6 @@ static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
 static node_t *parse_decl_like_stmt(void);
 
-static void skip_func_params_stmt(void) {
-  if (!tk_consume('(')) return;
-  int depth = 1;
-  while (depth > 0) {
-    if (curtok()->kind == TK_EOF) {
-      diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
-    }
-    if (curtok()->kind == TK_LPAREN) depth++;
-    else if (curtok()->kind == TK_RPAREN) depth--;
-    set_curtok(curtok()->next);
-  }
-}
-
 static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
   psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
@@ -76,9 +61,7 @@ static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
   } else {
     name = tk_consume_ident();
   }
-  while (curtok()->kind == TK_LPAREN) {
-    skip_func_params_stmt();
-  }
+  psx_skip_func_suffix_groups(NULL);
   return name;
 }
 
@@ -103,16 +86,9 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   } else {
     name = tk_consume_ident();
   }
-  consume_stmt_member_func_suffixes(out_has_func_suffix);
+  psx_skip_func_suffix_groups(out_has_func_suffix);
   if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
   return name;
-}
-
-static void consume_stmt_member_func_suffixes(int *out_has_func_suffix) {
-  while (curtok()->kind == TK_LPAREN) {
-    if (out_has_func_suffix) *out_has_func_suffix = 1;
-    skip_func_params_stmt();
-  }
 }
 
 static member_decl_head_t parse_stmt_member_decl_head(void) {
