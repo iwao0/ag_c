@@ -191,6 +191,18 @@ int main(void) {
   run_ir_case("bitfield_read_b",
               "int main(void) { struct S { unsigned int a:3; unsigned int b:5; }; struct S s; s.a = 5; s.b = 10; return s.b; }\n", 10);
 
+  /* Phase 7c: switch */
+  run_ir_case("switch_basic",
+              "int main(void) { int x = 2; switch (x) { case 1: return 10; case 2: return 20; case 3: return 30; default: return 99; } }\n", 20);
+  run_ir_case("switch_default",
+              "int main(void) { int x = 7; switch (x) { case 1: return 10; case 2: return 20; default: return 99; } }\n", 99);
+  run_ir_case("switch_break",
+              "int main(void) { int x = 1; int r = 0; switch (x) { case 1: r = 10; break; case 2: r = 20; break; default: r = 99; } return r; }\n", 10);
+  run_ir_case("switch_fallthrough",
+              "int main(void) { int x = 1; int r = 0; switch (x) { case 1: r = r + 1; case 2: r = r + 2; case 3: r = r + 3; break; default: r = 99; } return r; }\n", 6);
+  run_ir_case("switch_no_default_no_match",
+              "int main(void) { int x = 7; int r = 5; switch (x) { case 1: r = 10; break; case 2: r = 20; break; } return r; }\n", 5);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

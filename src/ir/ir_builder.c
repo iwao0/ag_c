@@ -27,12 +27,21 @@
 
 #define MAX_LVARS 256
 #define MAX_LOOP_DEPTH 32
+#define MAX_CASES 256
 
 /* break/continue 用ループスタック。それぞれ「飛び先ブロック」。 */
 typedef struct {
   ir_block_t *continue_block;
   ir_block_t *break_block;
 } loop_ctx_t;
+
+/* 現在 build 中の switch 内で「AST の case/default node → IR block」のマップ。
+ * ND_CASE / ND_DEFAULT が body の中に現れたとき、対応する block へ
+ * switch_to_new_block する。switch はネスト可能なので退避用配列もある。 */
+typedef struct {
+  void *ast_node;       /* node_case_t* または node_default_t* */
+  ir_block_t *block;
+} case_map_entry_t;
 
 typedef struct {
   ir_module_t *m;
@@ -46,6 +55,8 @@ typedef struct {
   int lvar_count;
   loop_ctx_t loops[MAX_LOOP_DEPTH];
   int loop_depth;
+  case_map_entry_t case_map[MAX_CASES];
+  int case_map_count;
 } ir_build_ctx_t;
 
 static void fail(ir_build_ctx_t *ctx, const char *msg) {
@@ -625,6 +636,70 @@ static void pop_loop(ir_build_ctx_t *ctx) {
   if (ctx->loop_depth > 0) ctx->loop_depth--;
 }
 
+/* 現在の switch スコープに「AST node → IR block」を登録する。
+ * 同じ AST node には常に同じ block を返す。 */
+static ir_block_t *register_case_block(ir_build_ctx_t *ctx, void *ast_node) {
+  for (int i = 0; i < ctx->case_map_count; i++) {
+    if (ctx->case_map[i].ast_node == ast_node) return ctx->case_map[i].block;
+  }
+  if (ctx->case_map_count >= MAX_CASES) {
+    fail(ctx, "too many case labels in switch");
+    return NULL;
+  }
+  ir_block_t *b = ir_block_new(ctx->f);
+  ctx->case_map[ctx->case_map_count].ast_node = ast_node;
+  ctx->case_map[ctx->case_map_count].block = b;
+  ctx->case_map_count++;
+  return b;
+}
+
+static ir_block_t *find_case_block(ir_build_ctx_t *ctx, void *ast_node) {
+  for (int i = 0; i < ctx->case_map_count; i++) {
+    if (ctx->case_map[i].ast_node == ast_node) return ctx->case_map[i].block;
+  }
+  return NULL;
+}
+
+/* AST body を pre-walk して全 ND_CASE / ND_DEFAULT を集める。
+ * 各 case に IR block を割り当て (case_map に登録)、走査用の配列に詰める。 */
+static void collect_case_labels(ir_build_ctx_t *ctx, node_t *body,
+                                  node_case_t **cases, int *case_count,
+                                  node_default_t **out_default) {
+  if (!body) return;
+  if (body->kind == ND_SWITCH) return; /* ネストした switch は別スコープ */
+  if (body->kind == ND_CASE) {
+    if (*case_count < MAX_CASES) {
+      cases[(*case_count)++] = (node_case_t *)body;
+    }
+    register_case_block(ctx, body);
+    /* case ラベル自身は文を持たないことが多いが、ag_c の AST では
+     * 次の文へつながる構造になっているので fall-through 探索のため
+     * lhs/rhs を再帰する */
+  }
+  if (body->kind == ND_DEFAULT) {
+    *out_default = (node_default_t *)body;
+    register_case_block(ctx, body);
+  }
+  if (body->kind == ND_BLOCK) {
+    node_block_t *blk = (node_block_t *)body;
+    if (blk->body) {
+      for (int i = 0; blk->body[i]; i++) {
+        collect_case_labels(ctx, blk->body[i], cases, case_count, out_default);
+      }
+    }
+    return;
+  }
+  /* if/while/for/do-while の中の case も拾う (C 仕様上 switch スコープ内) */
+  if (body->lhs) collect_case_labels(ctx, body->lhs, cases, case_count, out_default);
+  if (body->rhs) collect_case_labels(ctx, body->rhs, cases, case_count, out_default);
+  if (body->kind == ND_IF || body->kind == ND_FOR) {
+    node_ctrl_t *c = (node_ctrl_t *)body;
+    if (c->els) collect_case_labels(ctx, c->els, cases, case_count, out_default);
+    if (c->init) collect_case_labels(ctx, c->init, cases, case_count, out_default);
+    if (c->inc) collect_case_labels(ctx, c->inc, cases, case_count, out_default);
+  }
+}
+
 static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
   if (!node || ctx->failed) return;
   switch (node->kind) {
@@ -776,6 +851,76 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
       }
       emit_br(ctx, cond_b);
       switch_to_new_block(ctx, exit_b);
+      return;
+    }
+    case ND_SWITCH: {
+      /* 制御値を eval。連続比較方式で各 case と比較し、一致すれば対応 block へ
+       * 飛ぶ。最後に default (なければ end) へ無条件 jump。
+       * body 内の ND_CASE/ND_DEFAULT は IR_LABEL として配置される。
+       * break はループスタックの break_block に登録した end_block へ。 */
+      ir_val_t control = build_expr(ctx, node->lhs);
+      if (ctx->failed) return;
+      /* 退避: 外側 switch の case_map を保存 */
+      case_map_entry_t saved[MAX_CASES];
+      int saved_count = ctx->case_map_count;
+      memcpy(saved, ctx->case_map, sizeof(case_map_entry_t) * (size_t)saved_count);
+      ctx->case_map_count = 0;
+      /* collect: body 内の case/default に block を割り当て */
+      node_case_t *cases[MAX_CASES];
+      int case_count = 0;
+      node_default_t *default_node = NULL;
+      collect_case_labels(ctx, node->rhs, cases, &case_count, &default_node);
+      ir_block_t *end_block = ir_block_new(ctx->f);
+      /* dispatch */
+      for (int i = 0; i < case_count; i++) {
+        int v_cmp = ir_func_new_vreg(ctx->f);
+        ir_inst_t *eq = ir_inst_new(IR_EQ);
+        eq->dst = ir_val_vreg(v_cmp, IR_TY_I32);
+        eq->src1 = control;
+        eq->src2 = ir_val_imm(IR_TY_I32, cases[i]->val);
+        ir_func_append_inst(ctx->f, eq);
+        ir_block_t *case_b = find_case_block(ctx, cases[i]);
+        ir_block_t *next_b = ir_block_new(ctx->f);
+        ir_inst_t *brc = ir_inst_new(IR_BR_COND);
+        brc->src1 = ir_val_vreg(v_cmp, IR_TY_I32);
+        brc->label_id = case_b->id;
+        brc->else_label_id = next_b->id;
+        ir_func_append_inst(ctx->f, brc);
+        switch_to_new_block(ctx, next_b);
+      }
+      /* 全 case 不一致なら default or end へ */
+      ir_block_t *fallback = default_node ? find_case_block(ctx, default_node) : end_block;
+      ir_inst_t *br = ir_inst_new(IR_BR);
+      br->label_id = fallback->id;
+      ir_func_append_inst(ctx->f, br);
+      /* body (case/default は build_stmt 内で switch_to_new_block)。
+       * switch 内の continue は外側ループの continue_block へ抜ける必要があるので、
+       * 外側のものを継承する。 */
+      ir_block_t *outer_cont = (ctx->loop_depth > 0)
+                                 ? ctx->loops[ctx->loop_depth - 1].continue_block
+                                 : NULL;
+      push_loop(ctx, outer_cont, end_block);
+      build_stmt(ctx, node->rhs);
+      pop_loop(ctx);
+      if (!ctx->failed) emit_br(ctx, end_block);
+      switch_to_new_block(ctx, end_block);
+      /* case_map を復元 */
+      ctx->case_map_count = saved_count;
+      memcpy(ctx->case_map, saved, sizeof(case_map_entry_t) * (size_t)saved_count);
+      return;
+    }
+    case ND_CASE:
+    case ND_DEFAULT: {
+      ir_block_t *case_b = find_case_block(ctx, node);
+      if (!case_b) {
+        fail(ctx, "case/default outside switch");
+        return;
+      }
+      emit_br(ctx, case_b);
+      switch_to_new_block(ctx, case_b);
+      /* ag_c の parser は `case N: stmt` を ND_CASE.rhs = stmt として格納する。
+       * rhs (= ラベル後の文) を続けて build する。 */
+      if (node->rhs) build_stmt(ctx, node->rhs);
       return;
     }
     case ND_BREAK: {
