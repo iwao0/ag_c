@@ -173,6 +173,30 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       store_val_from(ctx, inst->dst, "x9");
       return;
     }
+    case IR_PARAM: {
+      /* 第 n 仮引数を x0..x7 から受け取って dst slot に保存。 */
+      int idx = (int)inst->src1.imm;
+      if (idx < 0 || idx >= 8) {
+        fprintf(stderr, "gen_ir_inst: PARAM index out of range: %d\n", idx);
+        return;
+      }
+      cg_emitf("  str x%d, [x29, #%d]\n", idx, ctx->vreg_off[inst->dst.id]);
+      return;
+    }
+    case IR_CALL: {
+      /* args[i] を x0..x{nargs-1} にロードして bl _<sym>。戻り値 x0 を dst に store。
+       * load 順は左から右で、各 ldr/mov の dst は独立なので順序問題なし。 */
+      for (int i = 0; i < inst->nargs && i < 8; i++) {
+        char regname[8];
+        snprintf(regname, sizeof(regname), "x%d", i);
+        load_val_to(ctx, inst->args[i], regname);
+      }
+      cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+      if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+        cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      }
+      return;
+    }
     case IR_BR:
       cg_emitf("  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;

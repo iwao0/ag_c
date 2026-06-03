@@ -106,6 +106,18 @@ int main(void) {
   run_ir_case("eq_ne",
               "int main(void) { int x = 5; if (x == 5) if (x != 0) return 7; return 0; }\n", 7);
 
+  /* Phase 4a: 仮引数 + 直接呼び出し */
+  run_ir_case("call_add",
+              "int add(int a, int b) { return a + b; } int main(void) { return add(3, 4); }\n", 7);
+  run_ir_case("call_nested",
+              "int square(int x) { return x * x; } int cube(int x) { return x * square(x); } int main(void) { return cube(3); }\n", 27);
+  run_ir_case("call_recursive_fib",
+              "int fib(int n) { if (n < 2) return n; return fib(n - 1) + fib(n - 2); } int main(void) { return fib(10); }\n", 55);
+  run_ir_case("call_sum8",
+              "int sum8(int a, int b, int c, int d, int e, int f, int g, int h) { return a + b + c + d + e + f + g + h; } int main(void) { return sum8(1,2,3,4,5,6,7,8); }\n", 36);
+  run_ir_case("call_with_loop",
+              "int sum_to(int n) { int s = 0; int i; for (i = 1; i <= n; i = i + 1) s = s + i; return s; } int main(void) { return sum_to(10); }\n", 55);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

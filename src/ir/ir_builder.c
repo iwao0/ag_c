@@ -118,6 +118,38 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_func_append_inst(ctx->f, st);
       return rhs;
     }
+    case ND_FUNCALL: {
+      node_func_t *fn = (node_func_t *)node;
+      if (fn->callee) {
+        fail(ctx, "indirect function call (Phase 4a unsupported)");
+        return ir_val_none();
+      }
+      if (fn->is_variadic) {
+        fail(ctx, "variadic call (Phase 4a unsupported)");
+        return ir_val_none();
+      }
+      if (fn->nargs > 8) {
+        fail(ctx, "more than 8 arguments (Phase 4a unsupported)");
+        return ir_val_none();
+      }
+      ir_val_t *cargs = NULL;
+      if (fn->nargs > 0) {
+        cargs = calloc((size_t)fn->nargs, sizeof(ir_val_t));
+        for (int i = 0; i < fn->nargs; i++) {
+          cargs[i] = build_expr(ctx, fn->args[i]);
+          if (ctx->failed) return ir_val_none();
+        }
+      }
+      int v = ir_func_new_vreg(ctx->f);
+      ir_inst_t *call = ir_inst_new(IR_CALL);
+      call->dst = ir_val_vreg(v, IR_TY_I32);
+      call->sym = fn->funcname;
+      call->sym_len = fn->funcname_len;
+      call->args = cargs;
+      call->nargs = fn->nargs;
+      ir_func_append_inst(ctx->f, call);
+      return call->dst;
+    }
     case ND_ADD:
     case ND_SUB:
     case ND_MUL:
@@ -362,20 +394,55 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
-  if (fn->nargs > 0) {
-    fail(ctx, "function with parameters (Phase 2 unsupported)");
+  if (fn->is_variadic) {
+    fail(ctx, "variadic function (Phase 4a unsupported)");
     return 0;
   }
-  if (fn->is_variadic) {
-    fail(ctx, "variadic function (Phase 2 unsupported)");
+  if (fn->nargs > 8) {
+    fail(ctx, "function with more than 8 params (Phase 4a unsupported)");
     return 0;
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, IR_TY_I32);
   ctx->lvar_count = 0;
+  ctx->loop_depth = 0;
+  /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
+   * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */
+  for (int i = 0; i < fn->nargs; i++) {
+    node_t *arg = fn->args[i];
+    if (!arg || arg->kind != ND_LVAR) {
+      fail(ctx, "non-lvar parameter (Phase 4a unsupported)");
+      return 0;
+    }
+    node_lvar_t *lv = (node_lvar_t *)arg;
+    int param_vreg = ir_func_new_vreg(ctx->f);
+    ir_inst_t *p = ir_inst_new(IR_PARAM);
+    p->dst = ir_val_vreg(param_vreg, IR_TY_I32);
+    p->src1 = ir_val_imm(IR_TY_I32, i);
+    ir_func_append_inst(ctx->f, p);
+    int ptr_vreg = alloca_for_lvar(ctx, lv->offset, 4, 4);
+    if (ptr_vreg < 0) return 0;
+    ir_inst_t *st = ir_inst_new(IR_STORE);
+    st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+    st->src2 = ir_val_vreg(param_vreg, IR_TY_I32);
+    ir_func_append_inst(ctx->f, st);
+  }
   build_stmt(ctx, fn->base.rhs);
   if (ctx->failed) return 0;
-  /* main の暗黙 `return 0` を付与しておく (AST 直 codegen と同等の挙動) */
-  if (!ctx->f->cur_block || !ctx->f->cur_block->tail || ctx->f->cur_block->tail->op != IR_RET) {
+  /* 末尾に RET が無いとき、main は暗黙 `return 0` を補う (AST 直 codegen 互換)。
+   * それ以外の関数は補わない (未定義動作のままにしておく)。 */
+  int is_main = (fn->funcname_len == 4 &&
+                 fn->funcname && memcmp(fn->funcname, "main", 4) == 0);
+  if (is_main && (!ctx->f->cur_block || !ctx->f->cur_block->tail ||
+                  ctx->f->cur_block->tail->op != IR_RET)) {
+    ir_inst_t *r = ir_inst_new(IR_RET);
+    r->src1 = ir_val_imm(IR_TY_I32, 0);
+    ir_func_append_inst(ctx->f, r);
+  }
+  /* main 以外でも、末尾が分岐/return で終わってない場合は安全のため ret 0 を補う
+   * (ABI 上 caller が戻り値を期待していなければ実害なし)。 */
+  if (!is_main && (!ctx->f->cur_block || !ctx->f->cur_block->tail ||
+                   (ctx->f->cur_block->tail->op != IR_RET &&
+                    ctx->f->cur_block->tail->op != IR_BR))) {
     ir_inst_t *r = ir_inst_new(IR_RET);
     r->src1 = ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);
