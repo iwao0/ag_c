@@ -418,6 +418,20 @@ static int cg_emit_fp_literal_immediate_if_possible(const node_num_t *num, tk_fl
   return 1;
 }
 
+// addr_reg が指すサイズ size の整数を x0 にロードする。
+// 1/2/4 サイズで is_unsigned 偽なら符号拡張 (ldrsb/ldrsh/ldrsw)、真ならゼロ拡張 (ldrb/ldrh/ldr w)。
+// 8 のときは ldr x0。ND_LVAR/ND_GVAR/ND_DEREF 共通の load パターン。
+static void cg_emit_load_int_to_x0(int size, int is_unsigned, const char *addr_reg) {
+  if (size == 1)
+    cg_emitf(is_unsigned ? "  ldrb w0, [%s]\n" : "  ldrsb x0, [%s]\n", addr_reg, addr_reg);
+  else if (size == 2)
+    cg_emitf(is_unsigned ? "  ldrh w0, [%s]\n" : "  ldrsh x0, [%s]\n", addr_reg, addr_reg);
+  else if (size == 4)
+    cg_emitf(is_unsigned ? "  ldr w0, [%s]\n" : "  ldrsw x0, [%s]\n", addr_reg, addr_reg);
+  else
+    cg_emitf("  ldr x0, [%s]\n", addr_reg);
+}
+
 static void gen_load_x0_from_addr(int type_size) {
   if (type_size == 1)
     cg_emitf("  ldrb w0, [x1]\n");
@@ -641,165 +655,196 @@ static void gen_expr_to_reg(node_t *node, int depth) {
   cg_emitf("  ldr x%d, [sp], #16\n", reg);
 }
 
-static void gen_expr(node_t *node) {
-  switch (node->kind) {
-  case ND_NUM:
-    if (node->fp_kind) {
-      node_num_t *num = as_num(node);
-      if (cg_emit_fp_literal_immediate_if_possible(num, node->fp_kind)) return;
-      // 浮動小数点リテラルをデータセクションからロード
-      cg_emitf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
-      cg_emitf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-        cg_emitf("  ldr s0, [x0]\n");
-        cg_emitf("  str s0, [sp, #-16]!\n");
-      } else {
-        cg_emitf("  ldr d0, [x0]\n");
-        cg_emitf("  str d0, [sp, #-16]!\n");
-      }
-    } else {
-      cg_emit_mov_imm("x0", as_num(node)->val);
-      cg_emitf("  str x0, [sp, #-16]!\n");
-    }
-    return;
-  case ND_LVAR:
-    if (node->is_complex) {
-      // _Complex: 実部+虚部を16Bスロットとしてプッシュ
-      int coff = 16 + as_lvar(node)->offset;
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-        // _Complex float: 4B実部 + 4B虚部 → 8Bにパック
-        cg_emitf("  ldr s0, [x29, #%d]\n", coff);     // 実部
-        cg_emitf("  ldr s1, [x29, #%d]\n", coff + 4); // 虚部
-        cg_emitf("  stp s0, s1, [sp, #-16]!\n");
-      } else {
-        // _Complex double: 8B実部 + 8B虚部 → 16B
-        cg_emitf("  ldr d0, [x29, #%d]\n", coff);
-        cg_emitf("  ldr d1, [x29, #%d]\n", coff + 8);
-        cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-      }
-      return;
-    }
-    gen_lval(node);
-    cg_emitf("  ldr x0, [sp], #16\n");
+static void gen_expr_num(node_t *node) {
+  if (node->fp_kind) {
+    node_num_t *num = as_num(node);
+    if (cg_emit_fp_literal_immediate_if_possible(num, node->fp_kind)) return;
+    // 浮動小数点リテラルをデータセクションからロード
+    cg_emitf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
+    cg_emitf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
     if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
       cg_emitf("  ldr s0, [x0]\n");
       cg_emitf("  str s0, [sp, #-16]!\n");
-    } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    } else {
       cg_emitf("  ldr d0, [x0]\n");
       cg_emitf("  str d0, [sp, #-16]!\n");
-    } else if (node->is_atomic) {
-      // _Atomic: load-acquire
-      if (as_lvar(node)->mem.type_size == 1)
-        cg_emitf("  ldarb w0, [x0]\n");
-      else if (as_lvar(node)->mem.type_size == 2)
-        cg_emitf("  ldarh w0, [x0]\n");
-      else if (as_lvar(node)->mem.type_size == 4)
-        cg_emitf("  ldar w0, [x0]\n");
-      else
-        cg_emitf("  ldar x0, [x0]\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
-    } else {
-      if (as_lvar(node)->mem.type_size == 1)
-        cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
-      else if (as_lvar(node)->mem.type_size == 2)
-        cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
-      else if (as_lvar(node)->mem.type_size == 4)
-        cg_emitf(as_lvar(node)->mem.is_unsigned ? "  ldr w0, [x0]\n" : "  ldrsw x0, [x0]\n");
-      else
-        cg_emitf("  ldr x0, [x0]\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
     }
-    return;
-  case ND_GVAR: {
-    node_gvar_t *gv_node = (node_gvar_t *)node;
-    if (gv_node->is_thread_local) {
-      // TLS access: resolve address via TLV descriptor
-      cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", gv_node->name_len, gv_node->name);
-      cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", gv_node->name_len, gv_node->name);
-      cg_emitf("  ldr x8, [x0]\n");
-      cg_emitf("  blr x8\n");
-    } else {
-      gen_lval(node);
-      cg_emitf("  ldr x0, [sp], #16\n");
-    }
-    int ts = gv_node->mem.type_size;
-    int is_uns = gv_node->mem.is_unsigned;
-    if (ts == 1)
-      cg_emitf(is_uns ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
-    else if (ts == 2)
-      cg_emitf(is_uns ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
-    else if (ts == 4)
-      cg_emitf(is_uns ? "  ldr w0, [x0]\n" : "  ldrsw x0, [x0]\n");
-    else
-      cg_emitf("  ldr x0, [x0]\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
-  case ND_DEREF:
-    gen_expr(node->lhs);
+  cg_emit_mov_imm("x0", as_num(node)->val);
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_lvar(node_t *node) {
+  if (node->is_complex) {
+    // _Complex: 実部+虚部を16Bスロットとしてプッシュ
+    int coff = 16 + as_lvar(node)->offset;
+    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+      // _Complex float: 4B実部 + 4B虚部 → 8Bにパック
+      cg_emitf("  ldr s0, [x29, #%d]\n", coff);     // 実部
+      cg_emitf("  ldr s1, [x29, #%d]\n", coff + 4); // 虚部
+      cg_emitf("  stp s0, s1, [sp, #-16]!\n");
+    } else {
+      // _Complex double: 8B実部 + 8B虚部 → 16B
+      cg_emitf("  ldr d0, [x29, #%d]\n", coff);
+      cg_emitf("  ldr d1, [x29, #%d]\n", coff + 8);
+      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+    }
+    return;
+  }
+  gen_lval(node);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    cg_emitf("  ldr s0, [x0]\n");
+    cg_emitf("  str s0, [sp, #-16]!\n");
+  } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    cg_emitf("  ldr d0, [x0]\n");
+    cg_emitf("  str d0, [sp, #-16]!\n");
+  } else if (node->is_atomic) {
+    // _Atomic: load-acquire
+    int sz = as_lvar(node)->mem.type_size;
+    if (sz == 1)      cg_emitf("  ldarb w0, [x0]\n");
+    else if (sz == 2) cg_emitf("  ldarh w0, [x0]\n");
+    else if (sz == 4) cg_emitf("  ldar w0, [x0]\n");
+    else              cg_emitf("  ldar x0, [x0]\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+  } else {
+    cg_emit_load_int_to_x0(as_lvar(node)->mem.type_size,
+                           as_lvar(node)->mem.is_unsigned, "x0");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+  }
+}
+
+static void gen_expr_gvar(node_t *node) {
+  node_gvar_t *gv_node = (node_gvar_t *)node;
+  if (gv_node->is_thread_local) {
+    // TLS access: resolve address via TLV descriptor
+    cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", gv_node->name_len, gv_node->name);
+    cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", gv_node->name_len, gv_node->name);
+    cg_emitf("  ldr x8, [x0]\n");
+    cg_emitf("  blr x8\n");
+  } else {
+    gen_lval(node);
     cg_emitf("  ldr x0, [sp], #16\n");
-    if (as_mem(node)->type_size == 1)
-      cg_emitf(as_mem(node)->is_unsigned ? "  ldrb w0, [x0]\n" : "  ldrsb x0, [x0]\n");
-    else if (as_mem(node)->type_size == 2)
-      cg_emitf(as_mem(node)->is_unsigned ? "  ldrh w0, [x0]\n" : "  ldrsh x0, [x0]\n");
-    else if (as_mem(node)->type_size == 4)
-      cg_emitf(as_mem(node)->is_unsigned ? "  ldr w0, [x0]\n" : "  ldrsw x0, [x0]\n");
-    else
-      cg_emitf("  ldr x0, [x0]\n");
-    // ビットフィールド抽出
-    if (as_mem(node)->bit_width > 0) {
-      int lsb = as_mem(node)->bit_offset;
-      int width = as_mem(node)->bit_width;
-      if (as_mem(node)->bit_is_signed)
-        cg_emitf("  sbfx x0, x0, #%d, #%d\n", lsb, width);
-      else
-        cg_emitf("  ubfx x0, x0, #%d, #%d\n", lsb, width);
-    }
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  case ND_ADDR:
-    gen_lval(node->lhs);
-    return;
-  case ND_STRING:
-    // 文字列ラベルのアドレスをロード
-    cg_emitf("  adrp x0, %s@PAGE\n", as_string(node)->string_label);
-    cg_emitf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  case ND_VLA_ALLOC: {
-    // VLA動的スタック確保
-    // フレームレイアウト: [x29+16+off]=baseptr, [x29+16+off+8]=bytesize
-    // 2D runtime: [x29+16+rsf]=row_stride (rsf = vla_row_stride_frame_off != 0)
-    int off = as_mem(node)->type_size; // ベースポインタのフレームオフセット
-    int rsf = as_mem(node)->vla_row_stride_frame_off; // 行ストライドのフレームオフセット (0=なし)
-    if (rsf) {
-      // 2D VLA runtime inner: rhs=row_stride_expr(m*elem), lhs=outer_count(n)
-      gen_expr(node->rhs);                            // x0 = row_stride = m * elem_size
-      cg_emitf("  ldr x0, [sp], #16\n");
-      cg_emitf("  str x0, [x29, #%d]\n", 16 + rsf);  // row_stride を保存
-      gen_expr(node->lhs);                            // x0 = outer_count = n
-      cg_emitf("  ldr x0, [sp], #16\n");
-      cg_emitf("  ldr x1, [x29, #%d]\n", 16 + rsf);  // x1 = row_stride
-      cg_emitf("  mul x0, x0, x1\n");                // x0 = n * row_stride = total byte_size
-    } else {
-      gen_expr(node->lhs);                            // x0 = total byte_size
-      cg_emitf("  ldr x0, [sp], #16\n");
-    }
-    cg_emitf("  str x0, [x29, #%d]\n", 16 + off + 8); // バイトサイズを保存 (sizeof用)
-    cg_emitf("  add x0, x0, #15\n");  // 16バイトアライン
-    cg_emitf("  bic x0, x0, #15\n");  // 下位4ビットをクリア (= & ~15)
-    cg_emitf("  sub sp, sp, x0\n");   // alloca
-    cg_emitf("  mov x0, sp\n");       // spはstr源オペランドに使えないため一時レジスタ経由
-    cg_emitf("  str x0, [x29, #%d]\n", 16 + off); // ベースポインタを保存
-    cg_emitf("  mov x0, #0\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
   }
-  case ND_FUNCREF:
-    cg_emitf("  adrp x0, _%.*s@PAGE\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
-    cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
+  cg_emit_load_int_to_x0(gv_node->mem.type_size, gv_node->mem.is_unsigned, "x0");
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_deref(node_t *node) {
+  gen_expr(node->lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emit_load_int_to_x0(as_mem(node)->type_size, as_mem(node)->is_unsigned, "x0");
+  // ビットフィールド抽出
+  if (as_mem(node)->bit_width > 0) {
+    int lsb = as_mem(node)->bit_offset;
+    int width = as_mem(node)->bit_width;
+    if (as_mem(node)->bit_is_signed)
+      cg_emitf("  sbfx x0, x0, #%d, #%d\n", lsb, width);
+    else
+      cg_emitf("  ubfx x0, x0, #%d, #%d\n", lsb, width);
+  }
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_string(node_t *node) {
+  cg_emitf("  adrp x0, %s@PAGE\n", as_string(node)->string_label);
+  cg_emitf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_vla_alloc(node_t *node) {
+  // VLA動的スタック確保
+  // フレームレイアウト: [x29+16+off]=baseptr, [x29+16+off+8]=bytesize
+  // 2D runtime: [x29+16+rsf]=row_stride (rsf = vla_row_stride_frame_off != 0)
+  int off = as_mem(node)->type_size; // ベースポインタのフレームオフセット
+  int rsf = as_mem(node)->vla_row_stride_frame_off; // 行ストライドのフレームオフセット (0=なし)
+  if (rsf) {
+    // 2D VLA runtime inner: rhs=row_stride_expr(m*elem), lhs=outer_count(n)
+    gen_expr(node->rhs);                            // x0 = row_stride = m * elem_size
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  str x0, [x29, #%d]\n", 16 + rsf);  // row_stride を保存
+    gen_expr(node->lhs);                            // x0 = outer_count = n
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  ldr x1, [x29, #%d]\n", 16 + rsf);  // x1 = row_stride
+    cg_emitf("  mul x0, x0, x1\n");                // x0 = n * row_stride = total byte_size
+  } else {
+    gen_expr(node->lhs);                            // x0 = total byte_size
+    cg_emitf("  ldr x0, [sp], #16\n");
+  }
+  cg_emitf("  str x0, [x29, #%d]\n", 16 + off + 8); // バイトサイズを保存 (sizeof用)
+  cg_emitf("  add x0, x0, #15\n");  // 16バイトアライン
+  cg_emitf("  bic x0, x0, #15\n");  // 下位4ビットをクリア (= & ~15)
+  cg_emitf("  sub sp, sp, x0\n");   // alloca
+  cg_emitf("  mov x0, sp\n");       // spはstr源オペランドに使えないため一時レジスタ経由
+  cg_emitf("  str x0, [x29, #%d]\n", 16 + off); // ベースポインタを保存
+  cg_emitf("  mov x0, #0\n");
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_funcref(node_t *node) {
+  cg_emitf("  adrp x0, _%.*s@PAGE\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
+  cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_logand(node_t *node) {
+  int false_lbl = label_count++;
+  int end_lbl = label_count++;
+  gen_expr(node->lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
+  gen_expr(node->rhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
+  cg_emitf("  mov x0, #1\n");
+  cg_emitf("  b .Lend%d\n", end_lbl);
+  cg_emitf(".Lfalse%d:\n", false_lbl);
+  cg_emitf("  mov x0, #0\n");
+  cg_emitf(".Lend%d:\n", end_lbl);
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_logor(node_t *node) {
+  int true_lbl = label_count++;
+  int end_lbl = label_count++;
+  gen_expr(node->lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
+  gen_expr(node->rhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
+  cg_emitf("  mov x0, #0\n");
+  cg_emitf("  b .Lend%d\n", end_lbl);
+  cg_emitf(".Ltrue%d:\n", true_lbl);
+  cg_emitf("  mov x0, #1\n");
+  cg_emitf(".Lend%d:\n", end_lbl);
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_ternary(node_ctrl_t *ctrl) {
+  int else_lbl = label_count++;
+  int end_lbl = label_count++;
+  gen_expr(ctrl->base.lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbz x0, .Lelse%d\n", else_lbl);
+  gen_expr(ctrl->base.rhs);
+  cg_emitf("  b .Lend%d\n", end_lbl);
+  cg_emitf(".Lelse%d:\n", else_lbl);
+  gen_expr(ctrl->els);
+  cg_emitf(".Lend%d:\n", end_lbl);
+}
+
+static void gen_expr(node_t *node) {
+  switch (node->kind) {
+  case ND_NUM:       gen_expr_num(node); return;
+  case ND_LVAR:      gen_expr_lvar(node); return;
+  case ND_GVAR:      gen_expr_gvar(node); return;
+  case ND_DEREF:     gen_expr_deref(node); return;
+  case ND_ADDR:      gen_lval(node->lhs); return;
+  case ND_STRING:    gen_expr_string(node); return;
+  case ND_VLA_ALLOC: gen_expr_vla_alloc(node); return;
+  case ND_FUNCREF:   gen_expr_funcref(node); return;
   case ND_ASSIGN:
     if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
       // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
@@ -951,54 +996,9 @@ static void gen_expr(node_t *node) {
       cg_emitf("  str x0, [sp, #-16]!\n");
     return;
   }
-  case ND_LOGAND: {
-    int false_lbl = label_count++;
-    int end_lbl = label_count++;
-    gen_expr(node->lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
-    gen_expr(node->rhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
-    cg_emitf("  mov x0, #1\n");
-    cg_emitf("  b .Lend%d\n", end_lbl);
-    cg_emitf(".Lfalse%d:\n", false_lbl);
-    cg_emitf("  mov x0, #0\n");
-    cg_emitf(".Lend%d:\n", end_lbl);
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  case ND_LOGOR: {
-    int true_lbl = label_count++;
-    int end_lbl = label_count++;
-    gen_expr(node->lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
-    gen_expr(node->rhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
-    cg_emitf("  mov x0, #0\n");
-    cg_emitf("  b .Lend%d\n", end_lbl);
-    cg_emitf(".Ltrue%d:\n", true_lbl);
-    cg_emitf("  mov x0, #1\n");
-    cg_emitf(".Lend%d:\n", end_lbl);
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  case ND_TERNARY: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int else_lbl = label_count++;
-    int end_lbl = label_count++;
-    gen_expr(ctrl->base.lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbz x0, .Lelse%d\n", else_lbl);
-    gen_expr(ctrl->base.rhs);
-    cg_emitf("  b .Lend%d\n", end_lbl);
-    cg_emitf(".Lelse%d:\n", else_lbl);
-    gen_expr(ctrl->els);
-    cg_emitf(".Lend%d:\n", end_lbl);
-    return;
-  }
+  case ND_LOGAND:  gen_expr_logand(node); return;
+  case ND_LOGOR:   gen_expr_logor(node); return;
+  case ND_TERNARY: gen_expr_ternary(as_ctrl(node)); return;
   case ND_FUNCALL: {
     node_func_t *fn = as_func(node);
     if (!fn->callee && is_printf_func(fn) && fn->nargs >= 1) {
