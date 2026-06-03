@@ -711,196 +711,69 @@ static const test_case_t test_cases[] = {
     {"global_var", "local_extern", CASE_INT_FILE, "test/fixtures/global_var/local_extern.c", 42, 0},
     {"global_var", "array_rw", CASE_INT_FILE, "test/fixtures/global_var/array_rw.c", 20, 0},
     {"global_var", "array_sum", CASE_INT_FILE, "test/fixtures/global_var/array_sum.c", 6, 0},
-    // 意地悪テスト: do-while
-    {"evil", "dowhile_break", CASE_INT,
-     "int main() { int x = 0; do { x = x + 1; if (x == 3) break; } while (x < 10); return x; }",
-     3, 0},
-    {"evil", "dowhile_continue", CASE_INT,
-     "int main() { int s=0; int i=0; do { i=i+1; if (i%2==0) continue; s=s+i; } while(i<6); return s; }",
-     9, 0},
-    // 意地悪テスト: sizeof副作用なし
-    {"evil", "sizeof_no_eval", CASE_INT,
-     "int main() { int x=0; sizeof(x=99); return x; }",
-     0, 0},
-    // 意地悪テスト: ネストした構造体
-    {"evil", "nested_struct", CASE_INT,
-     "int main() { struct A { int x; struct B { int y; int z; } b; }; struct A a; a.x = 1; a.b.y = 2; a.b.z = 3; return a.x + a.b.y * 10 + a.b.z * 100; }",
-     65, 0},
-    // 意地悪テスト: 条件内代入
-    {"evil", "assign_in_cond", CASE_INT,
-     "int main() { int x; if (x = 5) { return x; } return 0; }",
-     5, 0},
-    // 意地悪テスト: 相互再帰
-    {"evil", "mutual_recursion", CASE_INT,
-     "int even(int n);\n"
-     "int odd(int n) { return n == 0 ? 0 : even(n - 1); }\n"
-     "int even(int n) { return n == 0 ? 1 : odd(n - 1); }\n"
-     "int main() { return even(10) * 10 + odd(7); }",
-     11, 0},
-    // 意地悪テスト: ネストした関数呼び出し
-    {"evil", "nested_call", CASE_INT,
-     "int f(int x) { return x + 1; }\n"
-     "int g(int x) { return x * 2; }\n"
-     "int h(int x) { return x - 3; }\n"
-     "int main() { return f(g(h(10))); }",
-     15, 0},
-    // 意地悪テスト: char演算
-    {"evil", "char_subtract", CASE_INT,
-     "int main() { char a='0'; char b='9'; return b-a; }",
-     9, 0},
-    {"evil", "char_overflow", CASE_INT,
-     "int main() { char c=127; c=c+1; return c<0; }",
-     1, 0},
-    // 意地悪テスト: 構造体配列メンバ
-    {"evil", "struct_array_member", CASE_INT,
-     "int main() { struct S { int arr[4]; int n; }; struct S s; s.n = 4; s.arr[0]=10; s.arr[1]=20; s.arr[2]=30; s.arr[3]=40; int sum=0; int i=0; for(i=0; i<s.n; i=i+1) sum=sum+s.arr[i]; return sum%256; }",
-     100, 0},
-    // 意地悪テスト: コラッツ風再帰
-    {"evil", "collatz_recursion", CASE_INT,
-     "int count(int n) { if (n <= 0) return 0; if (n == 1) return 1; if (n % 2 == 0) return 1 + count(n / 2); return 1 + count(n * 3 + 1); }\n"
-     "int main() { return count(6); }",
-     9, 0},
-    // 意地悪テスト: 複雑な式
-    {"evil", "complex_expr_8vars", CASE_INT,
-     "int main() { int a=1,b=2,c=3,d=4,e=5,f=6,g=7,h=8; return ((a+b)*(c+d)-(e+f))*(g-h)+100; }",
-     90, 0},
-    // 意地悪テスト: unsigned char ラップ
-    {"evil", "uchar_wrap", CASE_INT,
-     "int main() { unsigned char a = 200; unsigned char b = 100; unsigned char c = a + b; return c; }",
-     44, 0},
-    // 意地悪テスト: 複合ビットシフト
-    {"evil", "multi_shift", CASE_INT,
-     "int main() { int x = 1; int y = x << 1 | x << 2 | x << 3 | x << 4; return y; }",
-     30, 0},
-    // 意地悪テスト: グローバル副作用順序
-    {"evil", "global_sideeffect_seq", CASE_INT,
-     "int g_step = 0;\n"
-     "int next() { g_step = g_step + 1; return g_step; }\n"
-     "int main() { int a=next(); int b=next(); int c=next(); return a*100+b*10+c; }",
-     123, 0},
-    // 意地悪テスト: (*p).x と p->x の等価性
-    {"evil", "deref_dot_vs_arrow", CASE_INT,
-     "int main() { struct S { int x; }; struct S a = {5}; struct S *p = &a; return (*p).x + p->x; }",
-     10, 0},
-    // 意地悪テスト: *&*&*&x チェーン
-    {"evil", "addr_deref_chain", CASE_INT,
-     "int main() { int x = 42; int *p = &x; return *&*&*&x; }",
-     42, 0},
-    // 意地悪テスト: 論理NOT
-    {"evil", "logical_not_zero", CASE_INT,
-     "int main() { int x = 0; return !x; }",
-     1, 0},
-    {"evil", "logical_not_nonzero", CASE_INT,
-     "int main() { int x = 5; return !x; }",
-     0, 0},
-    // 意地悪テスト: ビットNOT
-    {"evil", "bitwise_not", CASE_INT,
-     "int main() { int x = 0xFF; return ~x & 0xFF; }",
-     0, 0},
-    // 意地悪テスト: キャスト
-    {"evil", "cast_uchar_neg", CASE_INT,
-     "int main() { return (int)(unsigned char)-1; }",
-     255, 0},
-    // 意地悪テスト: 構造体パディング
-    {"evil", "struct_padding_sizeof", CASE_INT,
-     "int main() { struct S { char a; int b; char c; }; return sizeof(struct S); }",
-     12, 0},
-    // 意地悪テスト: 構造体ポインタ再代入
-    {"evil", "struct_ptr_reassign", CASE_INT,
-     "int main() { struct S { int x; }; struct S a = {10}; struct S b = {20}; struct S *p; p = &a; int r1 = p->x; p = &b; int r2 = p->x; return r1 + r2; }",
-     30, 0},
-    // 意地悪テスト: ポインタ経由読み取り後クリア
-    {"evil", "ptr_read_then_clear", CASE_INT,
-     "int main() { int x = 42; int *p = &x; int y = *p; *p = 0; return y + x; }",
-     42, 0},
-    // 意地悪テスト: max3ネスト呼び出し
-    {"evil", "max3_nested", CASE_INT,
-     "int max(int a, int b) { return a > b ? a : b; }\n"
-     "int max3(int a, int b, int c) { return max(max(a,b),c); }\n"
-     "int main() { return max3(17, 42, 23); }",
-     42, 0},
-    // 意地悪テスト: ネストforループ
-    {"evil", "nested_for_loops", CASE_INT,
-     "int main() { int i = 0; int j = 0; int count = 0; for (i = 0; i < 3; i = i + 1) for (j = 0; j < 4; j = j + 1) count = count + 1; return count; }",
-     12, 0},
-    // 意地悪テスト: while(1) + break
-    {"evil", "while1_break", CASE_INT,
-     "int main() { int x = 1; while (1) { if (x > 50) break; x = x * 2; } return x; }",
-     64, 0},
-    // 空文（null statement）
-    {"evil", "null_stmt", CASE_INT,
-     "int main() { ; ; ; return 0; }",
-     0, 0},
-    {"evil", "null_stmt_mixed", CASE_INT,
-     "int main() { int x = 1; ; x = x + 2; ; ; return x; }",
-     3, 0},
-    // 匿名enum + 値指定
-    {"evil", "anon_enum_assign", CASE_INT,
-     "int main() { enum { A=10, B=20, C=30 }; return B; }",
-     20, 0},
-    {"evil", "anon_enum_negative", CASE_INT,
-     "int main() { enum { A=-3, B, C, D }; return D; }",
-     0, 0},
-    // 後置const修飾
-    {"evil", "post_const_int", CASE_INT,
-     "int main() { int const x = 42; return x; }",
-     42, 0},
-    {"evil", "post_const_char", CASE_INT,
-     "int main() { char const c = 65; return c; }",
-     65, 0},
-    // 大きな即値（16bit超）
-    {"evil", "large_imm_mod", CASE_INT,
-     "int main() { return 100000 % 256; }",
-     160, 0},
-    {"evil", "large_imm_var", CASE_INT,
-     "int main() { int x = 1000000; return x % 256; }",
-     64, 0},
-    // ブロックスコープの変数シャドウイング
-    {"evil", "block_shadow", CASE_INT,
-     "int main() { int x = 10; { int x = 20; } return x; }",
-     10, 0},
-    {"evil", "for_scope_shadow", CASE_INT,
-     "int main() { int i = 99; for (int i = 0; i < 5; i = i + 1) {} return i; }",
-     99, 0},
-    {"evil", "nested_shadow", CASE_INT,
-     "int main() { int x = 1; { int x = 2; { int x = 3; } } return x; }",
-     1, 0},
-    // signed 32bit 比較
-    {"evil", "signed_cmp_neg", CASE_INT,
-     "int main() { int x = -1; return x >= 0; }",
-     0, 0},
-    {"evil", "signed_cmp_lt", CASE_INT,
-     "int main() { int x = -5; int y = 3; return x < y; }",
-     1, 0},
-    // 構造体の自己参照ポインタメンバ
-    {"evil", "self_ref_struct", CASE_INT,
-     "int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }",
-     42, 0},
-    // _Static_assert with sizeof
-    {"evil", "static_assert_sizeof", CASE_INT,
-     "int main() { _Static_assert(sizeof(int)==4, \"int is 4\"); return 0; }",
-     0, 0},
-
+    // 意地悪テスト: 各種エッジケース (fixture 化済み)
+    {"evil", "dowhile_break", CASE_INT_FILE, "test/fixtures/evil/dowhile_break.c", 3, 0},
+    {"evil", "dowhile_continue", CASE_INT_FILE, "test/fixtures/evil/dowhile_continue.c", 9, 0},
+    {"evil", "sizeof_no_eval", CASE_INT_FILE, "test/fixtures/evil/sizeof_no_eval.c", 0, 0},
+    {"evil", "nested_struct", CASE_INT_FILE, "test/fixtures/evil/nested_struct.c", 65, 0},
+    {"evil", "assign_in_cond", CASE_INT_FILE, "test/fixtures/evil/assign_in_cond.c", 5, 0},
+    {"evil", "mutual_recursion", CASE_INT_FILE, "test/fixtures/evil/mutual_recursion.c", 11, 0},
+    {"evil", "nested_call", CASE_INT_FILE, "test/fixtures/evil/nested_call.c", 15, 0},
+    {"evil", "char_subtract", CASE_INT_FILE, "test/fixtures/evil/char_subtract.c", 9, 0},
+    {"evil", "char_overflow", CASE_INT_FILE, "test/fixtures/evil/char_overflow.c", 1, 0},
+    {"evil", "struct_array_member", CASE_INT_FILE, "test/fixtures/evil/struct_array_member.c", 100, 0},
+    {"evil", "collatz_recursion", CASE_INT_FILE, "test/fixtures/evil/collatz_recursion.c", 9, 0},
+    {"evil", "complex_expr_8vars", CASE_INT_FILE, "test/fixtures/evil/complex_expr_8vars.c", 90, 0},
+    {"evil", "uchar_wrap", CASE_INT_FILE, "test/fixtures/evil/uchar_wrap.c", 44, 0},
+    {"evil", "multi_shift", CASE_INT_FILE, "test/fixtures/evil/multi_shift.c", 30, 0},
+    {"evil", "global_sideeffect_seq", CASE_INT_FILE, "test/fixtures/evil/global_sideeffect_seq.c", 123, 0},
+    {"evil", "deref_dot_vs_arrow", CASE_INT_FILE, "test/fixtures/evil/deref_dot_vs_arrow.c", 10, 0},
+    {"evil", "addr_deref_chain", CASE_INT_FILE, "test/fixtures/evil/addr_deref_chain.c", 42, 0},
+    {"evil", "logical_not_zero", CASE_INT_FILE, "test/fixtures/evil/logical_not_zero.c", 1, 0},
+    {"evil", "logical_not_nonzero", CASE_INT_FILE, "test/fixtures/evil/logical_not_nonzero.c", 0, 0},
+    {"evil", "bitwise_not", CASE_INT_FILE, "test/fixtures/evil/bitwise_not.c", 0, 0},
+    {"evil", "cast_uchar_neg", CASE_INT_FILE, "test/fixtures/evil/cast_uchar_neg.c", 255, 0},
+    {"evil", "struct_padding_sizeof", CASE_INT_FILE, "test/fixtures/evil/struct_padding_sizeof.c", 12, 0},
+    {"evil", "struct_ptr_reassign", CASE_INT_FILE, "test/fixtures/evil/struct_ptr_reassign.c", 30, 0},
+    {"evil", "ptr_read_then_clear", CASE_INT_FILE, "test/fixtures/evil/ptr_read_then_clear.c", 42, 0},
+    {"evil", "max3_nested", CASE_INT_FILE, "test/fixtures/evil/max3_nested.c", 42, 0},
+    {"evil", "nested_for_loops", CASE_INT_FILE, "test/fixtures/evil/nested_for_loops.c", 12, 0},
+    {"evil", "while1_break", CASE_INT_FILE, "test/fixtures/evil/while1_break.c", 64, 0},
+    {"evil", "null_stmt", CASE_INT_FILE, "test/fixtures/evil/null_stmt.c", 0, 0},
+    {"evil", "null_stmt_mixed", CASE_INT_FILE, "test/fixtures/evil/null_stmt_mixed.c", 3, 0},
+    {"evil", "anon_enum_assign", CASE_INT_FILE, "test/fixtures/evil/anon_enum_assign.c", 20, 0},
+    {"evil", "anon_enum_negative", CASE_INT_FILE, "test/fixtures/evil/anon_enum_negative.c", 0, 0},
+    {"evil", "post_const_int", CASE_INT_FILE, "test/fixtures/evil/post_const_int.c", 42, 0},
+    {"evil", "post_const_char", CASE_INT_FILE, "test/fixtures/evil/post_const_char.c", 65, 0},
+    {"evil", "large_imm_mod", CASE_INT_FILE, "test/fixtures/evil/large_imm_mod.c", 160, 0},
+    {"evil", "large_imm_var", CASE_INT_FILE, "test/fixtures/evil/large_imm_var.c", 64, 0},
+    {"evil", "block_shadow", CASE_INT_FILE, "test/fixtures/evil/block_shadow.c", 10, 0},
+    {"evil", "for_scope_shadow", CASE_INT_FILE, "test/fixtures/evil/for_scope_shadow.c", 99, 0},
+    {"evil", "nested_shadow", CASE_INT_FILE, "test/fixtures/evil/nested_shadow.c", 1, 0},
+    {"evil", "signed_cmp_neg", CASE_INT_FILE, "test/fixtures/evil/signed_cmp_neg.c", 0, 0},
+    {"evil", "signed_cmp_lt", CASE_INT_FILE, "test/fixtures/evil/signed_cmp_lt.c", 1, 0},
+    {"evil", "self_ref_struct", CASE_INT_FILE, "test/fixtures/evil/self_ref_struct.c", 42, 0},
+    {"evil", "static_assert_sizeof", CASE_INT_FILE, "test/fixtures/evil/static_assert_sizeof.c", 0, 0},
     // overflow / sign boundary tests
-    {"evil", "int_max_plus1_wraps", CASE_INT, "int main(){int x=2147483647;x=x+1;return x<0;}", 1, 0},
-    {"evil", "uint_max_plus1_zero", CASE_INT, "int main(){unsigned int x=4294967295u;x=x+1;return x==0;}", 1, 0},
-    {"evil", "uint_sub_wrap", CASE_INT, "int main(){unsigned int x=10;unsigned int y=20;unsigned int z=x-y;return z==4294967286u;}", 1, 0},
-    {"evil", "uint_mul_wrap", CASE_INT, "int main(){unsigned int x=65536u;unsigned int y=x*x;return y==0;}", 1, 0},
-    {"evil", "uint_shr_no_signext", CASE_INT, "int main(){unsigned int x=0x80000000u;unsigned int y=x>>1;return y==0x40000000u;}", 1, 0},
-    {"evil", "char_127_plus1", CASE_INT, "int main(){char c=127;c=c+1;return c==-128;}", 1, 0},
-    {"evil", "char_neg_to_uint", CASE_INT, "int main(){char c=-1;unsigned int u=(unsigned int)(unsigned char)c;return u==255;}", 1, 0},
-    {"evil", "neg_div_truncate", CASE_INT, "int main(){int x=-7;int y=2;return (x/y==-3)+(x%y==-1);}", 2, 0},
-    {"evil", "uint_div_large", CASE_INT, "int main(){unsigned int x=4294967295u;return x/2==2147483647u;}", 1, 0},
-    {"evil", "int_max_inc_wraps", CASE_INT, "int main(){int x=2147483647;x++;return x<0;}", 1, 0},
+    {"evil", "int_max_plus1_wraps", CASE_INT_FILE, "test/fixtures/evil/int_max_plus1_wraps.c", 1, 0},
+    {"evil", "uint_max_plus1_zero", CASE_INT_FILE, "test/fixtures/evil/uint_max_plus1_zero.c", 1, 0},
+    {"evil", "uint_sub_wrap", CASE_INT_FILE, "test/fixtures/evil/uint_sub_wrap.c", 1, 0},
+    {"evil", "uint_mul_wrap", CASE_INT_FILE, "test/fixtures/evil/uint_mul_wrap.c", 1, 0},
+    {"evil", "uint_shr_no_signext", CASE_INT_FILE, "test/fixtures/evil/uint_shr_no_signext.c", 1, 0},
+    {"evil", "char_127_plus1", CASE_INT_FILE, "test/fixtures/evil/char_127_plus1.c", 1, 0},
+    {"evil", "char_neg_to_uint", CASE_INT_FILE, "test/fixtures/evil/char_neg_to_uint.c", 1, 0},
+    {"evil", "neg_div_truncate", CASE_INT_FILE, "test/fixtures/evil/neg_div_truncate.c", 2, 0},
+    {"evil", "uint_div_large", CASE_INT_FILE, "test/fixtures/evil/uint_div_large.c", 1, 0},
+    {"evil", "int_max_inc_wraps", CASE_INT_FILE, "test/fixtures/evil/int_max_inc_wraps.c", 1, 0},
     // NaN / Infinity edge cases
-    {"evil", "nan_ne_self", CASE_INT, "int main(){double x=0.0/0.0;return x!=x;}", 1, 0},
-    {"evil", "nan_eq_self_false", CASE_INT, "int main(){double x=0.0/0.0;return !(x==x);}", 1, 0},
-    {"evil", "nan_lt_false", CASE_INT, "int main(){double x=0.0/0.0;return !(x<0.0);}", 1, 0},
-    {"evil", "nan_gt_false", CASE_INT, "int main(){double x=0.0/0.0;return !(x>0.0);}", 1, 0},
-    {"evil", "nan_ge_false", CASE_INT, "int main(){double x=0.0/0.0;return !(x>=0.0);}", 1, 0},
-    {"evil", "inf_positive", CASE_INT, "int main(){double x=1.0/0.0;return x>1000000.0;}", 1, 0},
-    {"evil", "inf_negative", CASE_INT, "int main(){double x=-1.0/0.0;return x<-1000000.0;}", 1, 0},
-    {"evil", "inf_plus_neginf_nan", CASE_INT, "int main(){double a=1.0/0.0;double b=-1.0/0.0;double c=a+b;return c!=c;}", 1, 0},
+    {"evil", "nan_ne_self", CASE_INT_FILE, "test/fixtures/evil/nan_ne_self.c", 1, 0},
+    {"evil", "nan_eq_self_false", CASE_INT_FILE, "test/fixtures/evil/nan_eq_self_false.c", 1, 0},
+    {"evil", "nan_lt_false", CASE_INT_FILE, "test/fixtures/evil/nan_lt_false.c", 1, 0},
+    {"evil", "nan_gt_false", CASE_INT_FILE, "test/fixtures/evil/nan_gt_false.c", 1, 0},
+    {"evil", "nan_ge_false", CASE_INT_FILE, "test/fixtures/evil/nan_ge_false.c", 1, 0},
+    {"evil", "inf_positive", CASE_INT_FILE, "test/fixtures/evil/inf_positive.c", 1, 0},
+    {"evil", "inf_negative", CASE_INT_FILE, "test/fixtures/evil/inf_negative.c", 1, 0},
+    {"evil", "inf_plus_neginf_nan", CASE_INT_FILE, "test/fixtures/evil/inf_plus_neginf_nan.c", 1, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

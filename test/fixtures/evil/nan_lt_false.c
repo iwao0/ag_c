@@ -1,0 +1,6 @@
+// NaN < 0.0 は偽 (順序不定)
+// 期待: exit=1
+int main(void) {
+    double x = 0.0 / 0.0;
+    return !(x < 0.0);
+}
