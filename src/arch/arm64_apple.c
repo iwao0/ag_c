@@ -906,6 +906,242 @@ static void gen_expr_funcall(node_t *node) {
   }
 }
 
+// 二項演算で使う「結果型」(FPU op type) を決める。
+// 算術/論理: node->fp_kind (結果型)。比較: オペランドの fp_kind の大きい方。
+static tk_float_kind_t compute_binop_fpu_op_type(node_t *node) {
+  tk_float_kind_t t = node->fp_kind;
+  if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
+    if (node->lhs && node->lhs->fp_kind > t) t = node->lhs->fp_kind;
+    if (node->rhs && node->rhs->fp_kind > t) t = node->rhs->fp_kind;
+  }
+  return t;
+}
+
+// スタックトップの単一スカラ d0 を (実部 d0, 虚部 d1=0) の 2 要素にプロモートして再プッシュ。
+static void emit_promote_scalar_to_complex_double(void) {
+  cg_emitf("  ldr d0, [sp], #16\n");
+  cg_emitf("  movi d1, #0\n");
+  cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+}
+
+// 整数二項演算の核を出力する。lhs/rhs/dst のレジスタ名と、MOD で必要な scratch を指定。
+// dst が lhs/rhs と被る場合は scratch を別レジスタにする必要がある(MOD のため)。
+static void emit_int_binop_op(node_t *node, const char *lhs, const char *rhs,
+                              const char *dst, const char *scratch) {
+  switch (node->kind) {
+  case ND_ADD:    cg_emitf("  add %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_SUB:    cg_emitf("  sub %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_MUL:    cg_emitf("  mul %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_DIV:
+    cg_emitf(node->is_unsigned ? "  udiv %s, %s, %s\n" : "  sdiv %s, %s, %s\n", dst, lhs, rhs);
+    break;
+  case ND_MOD:
+    cg_emitf(node->is_unsigned ? "  udiv %s, %s, %s\n" : "  sdiv %s, %s, %s\n", scratch, lhs, rhs);
+    cg_emitf("  msub %s, %s, %s, %s\n", dst, scratch, rhs, lhs);
+    break;
+  case ND_EQ:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf("  cset %s, eq\n", dst); break;
+  case ND_NE:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf("  cset %s, ne\n", dst); break;
+  case ND_LT:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf(node->is_unsigned ? "  cset %s, lo\n" : "  cset %s, lt\n", dst); break;
+  case ND_LE:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf(node->is_unsigned ? "  cset %s, ls\n" : "  cset %s, le\n", dst); break;
+  case ND_BITAND: cg_emitf("  and %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_BITXOR: cg_emitf("  eor %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_BITOR:  cg_emitf("  orr %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_SHL:    cg_emitf("  lsl %s, %s, %s\n", dst, lhs, rhs); break;
+  case ND_SHR:    cg_emitf(node->is_unsigned ? "  lsr %s, %s, %s\n" : "  asr %s, %s, %s\n", dst, lhs, rhs); break;
+  default: break;
+  }
+}
+
+// _Complex double の二項演算: スタックに lhs (実d0+虚d1), rhs (実d2+虚d3) が積まれている前提。
+// 戻り値が true なら最終 push 済み（比較演算）、false なら d0,d1 に結果が入っているので呼び出し側で push。
+static bool emit_complex_double_binop(node_t *node) {
+  cg_emitf("  ldp d2, d3, [sp], #16\n"); // rhs: d2=実部, d3=虚部
+  cg_emitf("  ldp d0, d1, [sp], #16\n"); // lhs: d0=実部, d1=虚部
+  switch (node->kind) {
+  case ND_ADD:
+    cg_emitf("  fadd d0, d0, d2\n");
+    cg_emitf("  fadd d1, d1, d3\n");
+    return false;
+  case ND_SUB:
+    cg_emitf("  fsub d0, d0, d2\n");
+    cg_emitf("  fsub d1, d1, d3\n");
+    return false;
+  case ND_MUL:
+    // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
+    cg_emitf("  fmul d4, d0, d2\n"); // ac
+    cg_emitf("  fmul d5, d1, d3\n"); // bd
+    cg_emitf("  fmul d6, d0, d3\n"); // ad
+    cg_emitf("  fmul d7, d1, d2\n"); // bc
+    cg_emitf("  fsub d0, d4, d5\n"); // ac-bd
+    cg_emitf("  fadd d1, d6, d7\n"); // ad+bc
+    return false;
+  case ND_DIV:
+    // (a+bi)/(c+di) = ((ac+bd)/(c²+d²)) + ((bc-ad)/(c²+d²))i
+    cg_emitf("  fmul d4, d2, d2\n"); // c²
+    cg_emitf("  fmul d5, d3, d3\n"); // d²
+    cg_emitf("  fadd d4, d4, d5\n"); // c²+d²
+    cg_emitf("  fmul d5, d0, d2\n"); // ac
+    cg_emitf("  fmul d6, d1, d3\n"); // bd
+    cg_emitf("  fadd d5, d5, d6\n"); // ac+bd
+    cg_emitf("  fdiv d5, d5, d4\n"); // (ac+bd)/(c²+d²)
+    cg_emitf("  fmul d6, d1, d2\n"); // bc
+    cg_emitf("  fmul d7, d0, d3\n"); // ad
+    cg_emitf("  fsub d6, d6, d7\n"); // bc-ad
+    cg_emitf("  fdiv d1, d6, d4\n"); // (bc-ad)/(c²+d²)
+    cg_emitf("  fmov d0, d5\n");
+    return false;
+  case ND_EQ:
+    cg_emitf("  fcmp d0, d2\n");
+    cg_emitf("  cset x0, eq\n");
+    cg_emitf("  fcmp d1, d3\n");
+    cg_emitf("  cset x1, eq\n");
+    cg_emitf("  and x0, x0, x1\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return true;
+  case ND_NE:
+    cg_emitf("  fcmp d0, d2\n");
+    cg_emitf("  cset x0, ne\n");
+    cg_emitf("  fcmp d1, d3\n");
+    cg_emitf("  cset x1, ne\n");
+    cg_emitf("  orr x0, x0, x1\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return true;
+  default:
+    return false;
+  }
+}
+
+// _Complex float 版。double 版とほぼ同型だがレジスタ命名 (s*) と DIV で fmov を省く点が違う。
+static bool emit_complex_float_binop(node_t *node) {
+  cg_emitf("  ldp s2, s3, [sp], #16\n");
+  cg_emitf("  ldp s0, s1, [sp], #16\n");
+  switch (node->kind) {
+  case ND_ADD:
+    cg_emitf("  fadd s0, s0, s2\n");
+    cg_emitf("  fadd s1, s1, s3\n");
+    return false;
+  case ND_SUB:
+    cg_emitf("  fsub s0, s0, s2\n");
+    cg_emitf("  fsub s1, s1, s3\n");
+    return false;
+  case ND_MUL:
+    cg_emitf("  fmul s4, s0, s2\n");
+    cg_emitf("  fmul s5, s1, s3\n");
+    cg_emitf("  fmul s6, s0, s3\n");
+    cg_emitf("  fmul s7, s1, s2\n");
+    cg_emitf("  fsub s0, s4, s5\n");
+    cg_emitf("  fadd s1, s6, s7\n");
+    return false;
+  case ND_DIV:
+    cg_emitf("  fmul s4, s2, s2\n");
+    cg_emitf("  fmul s5, s3, s3\n");
+    cg_emitf("  fadd s4, s4, s5\n");
+    cg_emitf("  fmul s5, s0, s2\n");
+    cg_emitf("  fmul s6, s1, s3\n");
+    cg_emitf("  fadd s5, s5, s6\n");
+    cg_emitf("  fdiv s5, s5, s4\n");
+    cg_emitf("  fmul s6, s1, s2\n");
+    cg_emitf("  fmul s7, s0, s3\n");
+    cg_emitf("  fsub s6, s6, s7\n");
+    cg_emitf("  fdiv s1, s6, s4\n");
+    cg_emitf("  fmov s0, s5\n");
+    return false;
+  case ND_EQ:
+    cg_emitf("  fcmp s0, s2\n");
+    cg_emitf("  cset x0, eq\n");
+    cg_emitf("  fcmp s1, s3\n");
+    cg_emitf("  cset x1, eq\n");
+    cg_emitf("  and x0, x0, x1\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return true;
+  case ND_NE:
+    cg_emitf("  fcmp s0, s2\n");
+    cg_emitf("  cset x0, ne\n");
+    cg_emitf("  fcmp s1, s3\n");
+    cg_emitf("  cset x1, ne\n");
+    cg_emitf("  orr x0, x0, x1\n");
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return true;
+  default:
+    return false;
+  }
+}
+
+static void gen_binop_complex(node_t *node, tk_float_kind_t fpu_op_type) {
+  gen_expr(node->lhs);
+  if (!node->lhs->is_complex) emit_promote_scalar_to_complex_double();
+  gen_expr(node->rhs);
+  if (!node->rhs->is_complex) emit_promote_scalar_to_complex_double();
+  bool pushed = (fpu_op_type >= TK_FLOAT_KIND_DOUBLE)
+                ? emit_complex_double_binop(node)
+                : emit_complex_float_binop(node);
+  if (pushed) return;
+  // 結果を 16B (実+虚) としてプッシュ
+  if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
+    cg_emitf("  stp d0, d1, [sp, #-16]!\n");
+  } else {
+    cg_emitf("  stp s0, s1, [sp, #-16]!\n");
+  }
+}
+
+static void gen_binop_fpu(node_t *node, tk_float_kind_t fpu_op_type) {
+  gen_expr(node->lhs);
+  gen_expr(node->rhs);
+  const char *r0 = freg(fpu_op_type, 0);
+  const char *r1 = freg(fpu_op_type, 1);
+  gen_pop_fpu(fpu_op_type, node->rhs->fp_kind, 1); // rhs を r1 に
+  gen_pop_fpu(fpu_op_type, node->lhs->fp_kind, 0); // lhs を r0 に
+  switch (node->kind) {
+  case ND_ADD: cg_emitf("  fadd %s, %s, %s\n", r0, r0, r1); break;
+  case ND_SUB: cg_emitf("  fsub %s, %s, %s\n", r0, r0, r1); break;
+  case ND_MUL: cg_emitf("  fmul %s, %s, %s\n", r0, r0, r1); break;
+  case ND_DIV: cg_emitf("  fdiv %s, %s, %s\n", r0, r0, r1); break;
+  case ND_EQ: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, eq\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
+  case ND_NE: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, ne\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
+  case ND_LT: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, lo\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
+  case ND_LE: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, ls\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
+  default: break;
+  }
+  cg_emitf("  str %s, [sp, #-16]!\n", r0);
+}
+
+// 整数二項演算の最適化版: 子の結果を x9/x10 へ直接生成。dst=x0、scratch=x0 (=dst) で OK。
+static void gen_binop_int_regalloc(node_t *node) {
+  cg_inside_regalloc = 1;
+  gen_expr_to_reg(node->lhs, 0);
+  gen_expr_to_reg(node->rhs, 1);
+  emit_int_binop_op(node, "x9", "x10", "x0", "x0");
+  cg_inside_regalloc = 0;
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+// 整数二項演算のフォールバック: スタック経由。dst が lhs と被るので scratch は別レジスタ x2。
+static void gen_binop_int_stack(node_t *node) {
+  gen_expr(node->lhs);
+  gen_expr(node->rhs);
+  cg_emitf("  ldr x1, [sp], #16\n");
+  cg_emitf("  ldr x0, [sp], #16\n");
+  emit_int_binop_op(node, "x0", "x1", "x0", "x2");
+  cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
+static void gen_expr_binop(node_t *node) {
+  tk_float_kind_t fpu_op_type = compute_binop_fpu_op_type(node);
+  if (node->is_complex && fpu_op_type) {
+    gen_binop_complex(node, fpu_op_type);
+    return;
+  }
+  if (fpu_op_type) {
+    gen_binop_fpu(node, fpu_op_type);
+    return;
+  }
+  if (!cg_inside_regalloc && !cg_has_funcall(node)) {
+    gen_binop_int_regalloc(node);
+    return;
+  }
+  gen_binop_int_stack(node);
+}
+
 static void gen_expr_assign(node_t *node) {
   if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
     // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
@@ -1115,265 +1351,9 @@ static void gen_expr(node_t *node) {
   case ND_TERNARY: gen_expr_ternary(as_ctrl(node)); return;
   case ND_FUNCALL: gen_expr_funcall(node); return;
   default:
-    break;
-  }
-
-  // 二項演算
-  tk_float_kind_t fpu_op_type = node->fp_kind; // ADD/SUB/MUL/DIV の場合は結果型
-  if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
-    // 比較演算の場合はオペランドの型を見る
-    if (node->lhs && node->lhs->fp_kind > fpu_op_type) fpu_op_type = node->lhs->fp_kind;
-    if (node->rhs && node->rhs->fp_kind > fpu_op_type) fpu_op_type = node->rhs->fp_kind;
-  }
-
-  // _Complex 演算
-  if (node->is_complex && fpu_op_type) {
-    gen_expr(node->lhs);
-    if (!node->lhs->is_complex) {
-      // スカラ→complex昇格: 虚部=0をスタックに追加
-      cg_emitf("  ldr d0, [sp], #16\n");
-      cg_emitf("  movi d1, #0\n");
-      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-    }
-    gen_expr(node->rhs);
-    if (!node->rhs->is_complex) {
-      cg_emitf("  ldr d0, [sp], #16\n");
-      cg_emitf("  movi d1, #0\n");
-      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-    }
-    if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
-      // _Complex double
-      cg_emitf("  ldp d2, d3, [sp], #16\n"); // rhs: d2=実部, d3=虚部
-      cg_emitf("  ldp d0, d1, [sp], #16\n"); // lhs: d0=実部, d1=虚部
-      switch (node->kind) {
-      case ND_ADD:
-        cg_emitf("  fadd d0, d0, d2\n");
-        cg_emitf("  fadd d1, d1, d3\n");
-        break;
-      case ND_SUB:
-        cg_emitf("  fsub d0, d0, d2\n");
-        cg_emitf("  fsub d1, d1, d3\n");
-        break;
-      case ND_MUL:
-        // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
-        cg_emitf("  fmul d4, d0, d2\n"); // ac
-        cg_emitf("  fmul d5, d1, d3\n"); // bd
-        cg_emitf("  fmul d6, d0, d3\n"); // ad
-        cg_emitf("  fmul d7, d1, d2\n"); // bc
-        cg_emitf("  fsub d0, d4, d5\n"); // ac-bd
-        cg_emitf("  fadd d1, d6, d7\n"); // ad+bc
-        break;
-      case ND_DIV: {
-        // (a+bi)/(c+di) = ((ac+bd)/(c²+d²)) + ((bc-ad)/(c²+d²))i
-        cg_emitf("  fmul d4, d2, d2\n"); // c²
-        cg_emitf("  fmul d5, d3, d3\n"); // d²
-        cg_emitf("  fadd d4, d4, d5\n"); // c²+d²
-        cg_emitf("  fmul d5, d0, d2\n"); // ac
-        cg_emitf("  fmul d6, d1, d3\n"); // bd
-        cg_emitf("  fadd d5, d5, d6\n"); // ac+bd
-        cg_emitf("  fdiv d5, d5, d4\n"); // (ac+bd)/(c²+d²)
-        cg_emitf("  fmul d6, d1, d2\n"); // bc
-        cg_emitf("  fmul d7, d0, d3\n"); // ad
-        cg_emitf("  fsub d6, d6, d7\n"); // bc-ad
-        cg_emitf("  fdiv d1, d6, d4\n"); // (bc-ad)/(c²+d²)
-        cg_emitf("  fmov d0, d5\n");     // 実部
-        break;
-      }
-      case ND_EQ:
-        cg_emitf("  fcmp d0, d2\n");
-        cg_emitf("  cset x0, eq\n");
-        cg_emitf("  fcmp d1, d3\n");
-        cg_emitf("  cset x1, eq\n");
-        cg_emitf("  and x0, x0, x1\n");
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        return;
-      case ND_NE:
-        cg_emitf("  fcmp d0, d2\n");
-        cg_emitf("  cset x0, ne\n");
-        cg_emitf("  fcmp d1, d3\n");
-        cg_emitf("  cset x1, ne\n");
-        cg_emitf("  orr x0, x0, x1\n");
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        return;
-      default:
-        break;
-      }
-    } else {
-      // _Complex float
-      cg_emitf("  ldp s2, s3, [sp], #16\n");
-      cg_emitf("  ldp s0, s1, [sp], #16\n");
-      switch (node->kind) {
-      case ND_ADD:
-        cg_emitf("  fadd s0, s0, s2\n");
-        cg_emitf("  fadd s1, s1, s3\n");
-        break;
-      case ND_SUB:
-        cg_emitf("  fsub s0, s0, s2\n");
-        cg_emitf("  fsub s1, s1, s3\n");
-        break;
-      case ND_MUL:
-        cg_emitf("  fmul s4, s0, s2\n");
-        cg_emitf("  fmul s5, s1, s3\n");
-        cg_emitf("  fmul s6, s0, s3\n");
-        cg_emitf("  fmul s7, s1, s2\n");
-        cg_emitf("  fsub s0, s4, s5\n");
-        cg_emitf("  fadd s1, s6, s7\n");
-        break;
-      case ND_DIV:
-        cg_emitf("  fmul s4, s2, s2\n");
-        cg_emitf("  fmul s5, s3, s3\n");
-        cg_emitf("  fadd s4, s4, s5\n");
-        cg_emitf("  fmul s5, s0, s2\n");
-        cg_emitf("  fmul s6, s1, s3\n");
-        cg_emitf("  fadd s5, s5, s6\n");
-        cg_emitf("  fdiv s5, s5, s4\n");
-        cg_emitf("  fmul s6, s1, s2\n");
-        cg_emitf("  fmul s7, s0, s3\n");
-        cg_emitf("  fsub s6, s6, s7\n");
-        cg_emitf("  fdiv s1, s6, s4\n");
-        cg_emitf("  fmov s0, s5\n");
-        break;
-      case ND_EQ:
-        cg_emitf("  fcmp s0, s2\n");
-        cg_emitf("  cset x0, eq\n");
-        cg_emitf("  fcmp s1, s3\n");
-        cg_emitf("  cset x1, eq\n");
-        cg_emitf("  and x0, x0, x1\n");
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        return;
-      case ND_NE:
-        cg_emitf("  fcmp s0, s2\n");
-        cg_emitf("  cset x0, ne\n");
-        cg_emitf("  fcmp s1, s3\n");
-        cg_emitf("  cset x1, ne\n");
-        cg_emitf("  orr x0, x0, x1\n");
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        return;
-      default:
-        break;
-      }
-    }
-    // _Complex 結果を16Bスロットとしてプッシュ
-    if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
-      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-    } else {
-      cg_emitf("  stp s0, s1, [sp, #-16]!\n");
-    }
+    gen_expr_binop(node);
     return;
   }
-
-  if (fpu_op_type) {
-    // FPU 演算
-    gen_expr(node->lhs);
-    gen_expr(node->rhs);
-    const char *r0 = freg(fpu_op_type, 0);
-    const char *r1 = freg(fpu_op_type, 1);
-    
-    gen_pop_fpu(fpu_op_type, node->rhs->fp_kind, 1); // rhs を r1 に
-    gen_pop_fpu(fpu_op_type, node->lhs->fp_kind, 0); // lhs を r0 に
-
-    switch (node->kind) {
-    case ND_ADD:
-      cg_emitf("  fadd %s, %s, %s\n", r0, r0, r1);
-      break;
-    case ND_SUB:
-      cg_emitf("  fsub %s, %s, %s\n", r0, r0, r1);
-      break;
-    case ND_MUL:
-      cg_emitf("  fmul %s, %s, %s\n", r0, r0, r1);
-      break;
-    case ND_DIV:
-      cg_emitf("  fdiv %s, %s, %s\n", r0, r0, r1);
-      break;
-    case ND_EQ:
-      cg_emitf("  fcmp %s, %s\n", r0, r1);
-      cg_emitf("  cset x0, eq\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
-      return;
-    case ND_NE:
-      cg_emitf("  fcmp %s, %s\n", r0, r1);
-      cg_emitf("  cset x0, ne\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
-      return;
-    case ND_LT:
-      cg_emitf("  fcmp %s, %s\n", r0, r1);
-      cg_emitf("  cset x0, lo\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
-      return;
-    case ND_LE:
-      cg_emitf("  fcmp %s, %s\n", r0, r1);
-      cg_emitf("  cset x0, ls\n");
-      cg_emitf("  str x0, [sp, #-16]!\n");
-      return;
-    default:
-      break;
-    }
-    cg_emitf("  str %s, [sp, #-16]!\n", r0);
-    return;
-  }
-
-  // 整数二項演算
-  if (!cg_inside_regalloc && !cg_has_funcall(node)) {
-    // レジスタ割り付け最適化: 子ノードの結果を x9/x10 に直接生成
-    // cg_inside_regalloc を設定してフォールバック時の再入を防止
-    cg_inside_regalloc = 1;
-    gen_expr_to_reg(node->lhs, 0);
-    gen_expr_to_reg(node->rhs, 1);
-
-    switch (node->kind) {
-    case ND_ADD:    cg_emitf("  add x0, x9, x10\n"); break;
-    case ND_SUB:    cg_emitf("  sub x0, x9, x10\n"); break;
-    case ND_MUL:    cg_emitf("  mul x0, x9, x10\n"); break;
-    case ND_DIV:    cg_emitf(node->is_unsigned ? "  udiv x0, x9, x10\n" : "  sdiv x0, x9, x10\n"); break;
-    case ND_MOD:
-      cg_emitf(node->is_unsigned ? "  udiv x0, x9, x10\n" : "  sdiv x0, x9, x10\n");
-      cg_emitf("  msub x0, x0, x10, x9\n");
-      break;
-    case ND_EQ:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, eq\n"); break;
-    case ND_NE:     cg_emitf("  cmp x9, x10\n"); cg_emitf("  cset x0, ne\n"); break;
-    case ND_LT:     cg_emitf("  cmp x9, x10\n"); cg_emitf(node->is_unsigned ? "  cset x0, lo\n" : "  cset x0, lt\n"); break;
-    case ND_LE:     cg_emitf("  cmp x9, x10\n"); cg_emitf(node->is_unsigned ? "  cset x0, ls\n" : "  cset x0, le\n"); break;
-    case ND_BITAND: cg_emitf("  and x0, x9, x10\n"); break;
-    case ND_BITXOR: cg_emitf("  eor x0, x9, x10\n"); break;
-    case ND_BITOR:  cg_emitf("  orr x0, x9, x10\n"); break;
-    case ND_SHL:    cg_emitf("  lsl x0, x9, x10\n"); break;
-    case ND_SHR:    cg_emitf(node->is_unsigned ? "  lsr x0, x9, x10\n" : "  asr x0, x9, x10\n"); break;
-    default: break;
-    }
-    cg_inside_regalloc = 0;
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-
-  // フォールバック: funcall を含む場合またはレジスタ割り付け中はスタックモード
-  gen_expr(node->lhs);
-  gen_expr(node->rhs);
-
-  cg_emitf("  ldr x1, [sp], #16\n");
-  cg_emitf("  ldr x0, [sp], #16\n");
-
-  switch (node->kind) {
-  case ND_ADD:    cg_emitf("  add x0, x0, x1\n"); break;
-  case ND_SUB:    cg_emitf("  sub x0, x0, x1\n"); break;
-  case ND_MUL:    cg_emitf("  mul x0, x0, x1\n"); break;
-  case ND_DIV:    cg_emitf(node->is_unsigned ? "  udiv x0, x0, x1\n" : "  sdiv x0, x0, x1\n"); break;
-  case ND_MOD:
-    cg_emitf(node->is_unsigned ? "  udiv x2, x0, x1\n" : "  sdiv x2, x0, x1\n");
-    cg_emitf("  msub x0, x2, x1, x0\n");
-    break;
-  case ND_EQ:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, eq\n"); break;
-  case ND_NE:     cg_emitf("  cmp x0, x1\n"); cg_emitf("  cset x0, ne\n"); break;
-  case ND_LT:     cg_emitf("  cmp x0, x1\n"); cg_emitf(node->is_unsigned ? "  cset x0, lo\n" : "  cset x0, lt\n"); break;
-  case ND_LE:     cg_emitf("  cmp x0, x1\n"); cg_emitf(node->is_unsigned ? "  cset x0, ls\n" : "  cset x0, le\n"); break;
-  case ND_BITAND: cg_emitf("  and x0, x0, x1\n"); break;
-  case ND_BITXOR: cg_emitf("  eor x0, x0, x1\n"); break;
-  case ND_BITOR:  cg_emitf("  orr x0, x0, x1\n"); break;
-  case ND_SHL:    cg_emitf("  lsl x0, x0, x1\n"); break;
-  case ND_SHR:    cg_emitf(node->is_unsigned ? "  lsr x0, x0, x1\n" : "  asr x0, x0, x1\n"); break;
-  default: break;
-  }
-
-  cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
 // 関数末尾の標準エピローグ。VLA で sp が動いた場合に備えて x29 から復帰させる。
