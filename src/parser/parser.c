@@ -6,6 +6,7 @@
 #include "internal/core.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
+#include "internal/enum_const.h"
 #include "internal/expr.h"
 #include "internal/loop_ctx.h"
 #include "internal/stmt.h"
@@ -120,20 +121,6 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
                                             node_t ***out_args, int *out_nargs);
 static token_ident_t *parse_func_name_declarator_recursive(void);
 static void parse_static_assert_toplevel(void);
-static long long parse_enum_const_expr_toplevel(void);
-static long long parse_enum_const_conditional_toplevel(void);
-static long long parse_enum_const_logor_toplevel(void);
-static long long parse_enum_const_logand_toplevel(void);
-static long long parse_enum_const_bitor_toplevel(void);
-static long long parse_enum_const_bitxor_toplevel(void);
-static long long parse_enum_const_bitand_toplevel(void);
-static long long parse_enum_const_eq_toplevel(void);
-static long long parse_enum_const_rel_toplevel(void);
-static long long parse_enum_const_shift_toplevel(void);
-static long long parse_enum_const_add_toplevel(void);
-static long long parse_enum_const_mul_toplevel(void);
-static long long parse_enum_const_unary_toplevel(void);
-static long long parse_enum_const_primary_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static int parse_array_size_constexpr_toplevel(void);
@@ -366,7 +353,7 @@ static void parse_static_assert_toplevel(void) {
   }
   set_curtok(curtok()->next);
   tk_expect('(');
-  long long cond_val = parse_enum_const_expr_toplevel();
+  long long cond_val = psx_parse_enum_const_expr();
   tk_expect(',');
   if (curtok()->kind != TK_STRING) {
     diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
@@ -439,7 +426,7 @@ static token_kind_t parse_atomic_type_specifier(void) {
 }
 
 static int parse_array_size_constexpr_toplevel(void) {
-  long long v = parse_enum_const_expr_toplevel();
+  long long v = psx_parse_enum_const_expr();
   if (v <= 0) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
@@ -1002,215 +989,12 @@ static const struct_member_layout_ops_t toplevel_struct_layout_ops = {
   .make_anonymous_tag_name    = make_anonymous_tag_name_toplevel,
   .parse_tag_definition_body  = parse_tag_definition_body_toplevel,
   .parse_member_decl_head     = parse_toplevel_member_decl_head,
-  .parse_enum_const_expr      = parse_enum_const_expr_toplevel,
+  .parse_enum_const_expr      = psx_parse_enum_const_expr,
   .parse_member_array_suffixes = parse_toplevel_member_array_suffixes_thunk,
 };
 
 static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, &toplevel_struct_layout_ops);
-}
-
-static long long parse_enum_const_expr_toplevel(void) { return parse_enum_const_conditional_toplevel(); }
-
-static long long parse_enum_const_conditional_toplevel(void) {
-  long long cond = parse_enum_const_logor_toplevel();
-  if (!tk_consume('?')) return cond;
-  long long then_v = parse_enum_const_expr_toplevel();
-  tk_expect(':');
-  long long else_v = parse_enum_const_conditional_toplevel();
-  return cond ? then_v : else_v;
-}
-
-static long long parse_enum_const_logor_toplevel(void) {
-  long long v = parse_enum_const_logand_toplevel();
-  while (curtok()->kind == TK_OROR) {
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_logand_toplevel();
-    v = (v || r) ? 1 : 0;
-  }
-  return v;
-}
-
-static long long parse_enum_const_logand_toplevel(void) {
-  long long v = parse_enum_const_bitor_toplevel();
-  while (curtok()->kind == TK_ANDAND) {
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_bitor_toplevel();
-    v = (v && r) ? 1 : 0;
-  }
-  return v;
-}
-
-static long long parse_enum_const_bitor_toplevel(void) {
-  long long v = parse_enum_const_bitxor_toplevel();
-  while (curtok()->kind == TK_PIPE) {
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_bitxor_toplevel();
-    v |= r;
-  }
-  return v;
-}
-
-static long long parse_enum_const_bitxor_toplevel(void) {
-  long long v = parse_enum_const_bitand_toplevel();
-  while (curtok()->kind == TK_CARET) {
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_bitand_toplevel();
-    v ^= r;
-  }
-  return v;
-}
-
-static long long parse_enum_const_bitand_toplevel(void) {
-  long long v = parse_enum_const_eq_toplevel();
-  while (curtok()->kind == TK_AMP) {
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_eq_toplevel();
-    v &= r;
-  }
-  return v;
-}
-
-static long long parse_enum_const_eq_toplevel(void) {
-  long long v = parse_enum_const_rel_toplevel();
-  while (curtok()->kind == TK_EQEQ || curtok()->kind == TK_NEQ) {
-    token_kind_t op = curtok()->kind;
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_rel_toplevel();
-    v = (op == TK_EQEQ) ? (v == r) : (v != r);
-  }
-  return v;
-}
-
-static long long parse_enum_const_rel_toplevel(void) {
-  long long v = parse_enum_const_shift_toplevel();
-  while (curtok()->kind == TK_LT || curtok()->kind == TK_LE || curtok()->kind == TK_GT || curtok()->kind == TK_GE) {
-    token_kind_t op = curtok()->kind;
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_shift_toplevel();
-    switch (op) {
-      case TK_LT: v = (v < r); break;
-      case TK_LE: v = (v <= r); break;
-      case TK_GT: v = (v > r); break;
-      default: v = (v >= r); break;
-    }
-  }
-  return v;
-}
-
-static long long parse_enum_const_shift_toplevel(void) {
-  long long v = parse_enum_const_add_toplevel();
-  while (curtok()->kind == TK_SHL || curtok()->kind == TK_SHR) {
-    token_kind_t op = curtok()->kind;
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_add_toplevel();
-    v = (op == TK_SHL) ? (v << r) : (v >> r);
-  }
-  return v;
-}
-
-static long long parse_enum_const_add_toplevel(void) {
-  long long v = parse_enum_const_mul_toplevel();
-  while (curtok()->kind == TK_PLUS || curtok()->kind == TK_MINUS) {
-    token_kind_t op = curtok()->kind;
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_mul_toplevel();
-    v = (op == TK_PLUS) ? (v + r) : (v - r);
-  }
-  return v;
-}
-
-static long long parse_enum_const_mul_toplevel(void) {
-  long long v = parse_enum_const_unary_toplevel();
-  while (curtok()->kind == TK_MUL || curtok()->kind == TK_DIV || curtok()->kind == TK_MOD) {
-    token_kind_t op = curtok()->kind;
-    set_curtok(curtok()->next);
-    long long r = parse_enum_const_unary_toplevel();
-    if (op == TK_MUL) v *= r;
-    else if (op == TK_DIV) v /= r;
-    else v %= r;
-  }
-  return v;
-}
-
-static long long parse_enum_const_unary_toplevel(void) {
-  if (curtok()->kind == TK_PLUS) {
-    set_curtok(curtok()->next);
-    return parse_enum_const_unary_toplevel();
-  }
-  if (curtok()->kind == TK_MINUS) {
-    set_curtok(curtok()->next);
-    return -parse_enum_const_unary_toplevel();
-  }
-  if (curtok()->kind == TK_TILDE) {
-    set_curtok(curtok()->next);
-    return ~parse_enum_const_unary_toplevel();
-  }
-  if (curtok()->kind == TK_BANG) {
-    set_curtok(curtok()->next);
-    return !parse_enum_const_unary_toplevel();
-  }
-  if (curtok()->kind == TK_SIZEOF) {
-    set_curtok(curtok()->next);
-    if (curtok()->kind == TK_LPAREN) {
-      set_curtok(curtok()->next);
-      int sz = 8;
-      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind) ||
-          psx_ctx_is_typedef_name_token(curtok())) {
-        psx_ctx_get_type_info(curtok()->kind, NULL, &sz);
-        if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-          token_kind_t tk = curtok()->kind;
-          set_curtok(curtok()->next);
-          token_ident_t *tag = tk_consume_ident();
-          if (tag && psx_ctx_has_tag_type(tk, tag->str, tag->len)) {
-            sz = psx_ctx_get_tag_size(tk, tag->str, tag->len);
-          }
-        } else if (psx_ctx_is_typedef_name_token(curtok())) {
-          token_ident_t *id = (token_ident_t *)curtok();
-          token_kind_t td_base = TK_EOF;
-          int td_elem = 8;
-          tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-          token_kind_t td_tag = TK_EOF;
-          char *td_tag_name = NULL;
-          int td_tag_len = 0;
-          int td_ptr = 0;
-          int td_sizeof = 8;
-          psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr, NULL, NULL, NULL);
-          if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
-          else sz = td_ptr ? 8 : td_elem;
-          set_curtok(curtok()->next);
-        } else {
-          set_curtok(curtok()->next);
-          while (psx_ctx_is_type_token(curtok()->kind)) set_curtok(curtok()->next);
-        }
-        while (curtok()->kind == TK_MUL) { sz = 8; set_curtok(curtok()->next); }
-      }
-      tk_expect(')');
-      return sz;
-    }
-    return parse_enum_const_unary_toplevel();
-  }
-  return parse_enum_const_primary_toplevel();
-}
-
-static long long parse_enum_const_primary_toplevel(void) {
-  if (curtok()->kind == TK_LPAREN) {
-    set_curtok(curtok()->next);
-    long long v = parse_enum_const_expr_toplevel();
-    tk_expect(')');
-    return v;
-  }
-  token_ident_t *id = tk_consume_ident();
-  if (id) {
-    long long v = 0;
-    if (!psx_ctx_find_enum_const(id->str, id->len, &v)) {
-      psx_diag_ctx(curtok(), "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
-                   id->len, id->str);
-    }
-    return v;
-  }
-  return tk_expect_number();
 }
 
 static int parse_enum_members_toplevel(void) {
@@ -1222,7 +1006,7 @@ static int parse_enum_members_toplevel(void) {
     long long value = next_value;
     member_count++;
     if (tk_consume('=')) {
-      value = parse_enum_const_expr_toplevel();
+      value = psx_parse_enum_const_expr();
     }
     psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
     next_value = value + 1;
@@ -1466,7 +1250,7 @@ static int parse_alignas_value_toplevel(void) {
     val = elem_size;
     while (curtok()->kind != TK_RPAREN && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
   } else {
-    long long v = parse_enum_const_expr_toplevel();
+    long long v = psx_parse_enum_const_expr();
     val = (v > 0) ? (int)v : 1;
   }
   tk_expect(')');
