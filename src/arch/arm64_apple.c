@@ -1367,6 +1367,119 @@ static void gen_expr(node_t *node) {
   cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
+static void gen_stmt_if(node_ctrl_t *ctrl) {
+  int lbl = label_count++;
+  gen_expr(ctrl->base.lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbz x0, .Lelse%d\n", lbl);
+  gen_stmt(ctrl->base.rhs);
+  if (ctrl->els) {
+    cg_emitf("  b .Lend%d\n", lbl);
+    cg_emitf(".Lelse%d:\n", lbl);
+    gen_stmt(ctrl->els);
+    cg_emitf(".Lend%d:\n", lbl);
+  } else {
+    cg_emitf("  b .Lend%d\n", lbl);
+    cg_emitf(".Lelse%d:\n", lbl);
+    cg_emitf(".Lend%d:\n", lbl);
+  }
+}
+
+static void gen_stmt_while(node_ctrl_t *ctrl) {
+  int begin_lbl = label_count++;
+  int cont_lbl = label_count++;
+  int end_lbl = label_count++;
+  push_control_labels(end_lbl, cont_lbl);
+  cg_emitf(".Lbegin%d:\n", begin_lbl);
+  cg_emitf(".Lcont%d:\n", cont_lbl);
+  gen_expr(ctrl->base.lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
+  gen_stmt(ctrl->base.rhs);
+  cg_emitf("  b .Lbegin%d\n", begin_lbl);
+  cg_emitf(".Lend%d:\n", end_lbl);
+  pop_control_labels();
+}
+
+static void gen_stmt_do_while(node_ctrl_t *ctrl) {
+  int begin_lbl = label_count++;
+  int cont_lbl = label_count++;
+  int end_lbl = label_count++;
+  push_control_labels(end_lbl, cont_lbl);
+  cg_emitf(".Lbegin%d:\n", begin_lbl);
+  gen_stmt(ctrl->base.rhs);
+  cg_emitf(".Lcont%d:\n", cont_lbl);
+  gen_expr(ctrl->base.lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+  cg_emitf("  cbnz x0, .Lbegin%d\n", begin_lbl);
+  cg_emitf(".Lend%d:\n", end_lbl);
+  pop_control_labels();
+}
+
+static void gen_stmt_for(node_ctrl_t *ctrl) {
+  int begin_lbl = label_count++;
+  int cont_lbl = label_count++;
+  int end_lbl = label_count++;
+  push_control_labels(end_lbl, cont_lbl);
+  if (ctrl->init) {
+    gen_expr(ctrl->init);
+    cg_emitf("  add sp, sp, #16\n");
+  }
+  cg_emitf(".Lbegin%d:\n", begin_lbl);
+  if (ctrl->base.lhs) {
+    gen_expr(ctrl->base.lhs);
+    cg_emitf("  ldr x0, [sp], #16\n");
+    cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
+  }
+  gen_stmt(ctrl->base.rhs);
+  cg_emitf(".Lcont%d:\n", cont_lbl);
+  if (ctrl->inc) {
+    gen_expr(ctrl->inc);
+    cg_emitf("  add sp, sp, #16\n");
+  }
+  cg_emitf("  b .Lbegin%d\n", begin_lbl);
+  cg_emitf(".Lend%d:\n", end_lbl);
+  pop_control_labels();
+}
+
+static void gen_stmt_switch(node_ctrl_t *ctrl) {
+  int end_lbl = label_count++;
+  gen_expr(ctrl->base.lhs);
+  cg_emitf("  ldr x0, [sp], #16\n");
+
+  switch_collect_t sc = {0};
+  collect_switch_labels(ctrl->base.rhs, &sc);
+
+  for (int i = 0; i < sc.case_count; i++) {
+    node_case_t *c = sc.cases[i];
+    cg_emit_mov_imm("x1", c->val);
+    cg_emitf("  cmp x0, x1\n");
+    cg_emitf("  beq .Lcase%d\n", c->label_id);
+  }
+  if (sc.default_node) {
+    cg_emitf("  b .Ldefault%d\n", sc.default_node->label_id);
+  } else {
+    cg_emitf("  b .Lend%d\n", end_lbl);
+  }
+
+  push_control_labels(end_lbl, -1); // switch は continue 対象外
+  gen_switch_body(ctrl->base.rhs);
+  pop_control_labels();
+
+  cg_emitf(".Lend%d:\n", end_lbl);
+  free(sc.cases);
+}
+
+static void gen_stmt_goto(node_jump_t *j) {
+  int id = find_label_id(j->name, j->name_len);
+  if (id < 0) {
+    diag_emit_internalf(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED,
+                        diag_message_for(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED),
+                        j->name_len, j->name);
+  }
+  cg_emitf("  b .Luser%d\n", id);
+}
+
 static void gen_stmt(node_t *node) {
   switch (node->kind) {
   case ND_BLOCK:
@@ -1527,115 +1640,11 @@ static void gen_stmt(node_t *node) {
     cg_emitf("  ret\n");
     return;
   }
-  case ND_IF: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int lbl = label_count++;
-    gen_expr(ctrl->base.lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbz x0, .Lelse%d\n", lbl);
-    gen_stmt(ctrl->base.rhs);
-    if (ctrl->els) {
-      cg_emitf("  b .Lend%d\n", lbl);
-      cg_emitf(".Lelse%d:\n", lbl);
-      gen_stmt(ctrl->els);
-      cg_emitf(".Lend%d:\n", lbl);
-    } else {
-      cg_emitf("  b .Lend%d\n", lbl);
-      cg_emitf(".Lelse%d:\n", lbl);
-      cg_emitf(".Lend%d:\n", lbl);
-    }
-    return;
-  }
-  case ND_WHILE: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int begin_lbl = label_count++;
-    int cont_lbl = label_count++;
-    int end_lbl = label_count++;
-    push_control_labels(end_lbl, cont_lbl);
-    cg_emitf(".Lbegin%d:\n", begin_lbl);
-    cg_emitf(".Lcont%d:\n", cont_lbl);
-    gen_expr(ctrl->base.lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
-    gen_stmt(ctrl->base.rhs);
-    cg_emitf("  b .Lbegin%d\n", begin_lbl);
-    cg_emitf(".Lend%d:\n", end_lbl);
-    pop_control_labels();
-    return;
-  }
-  case ND_DO_WHILE: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int begin_lbl = label_count++;
-    int cont_lbl = label_count++;
-    int end_lbl = label_count++;
-    push_control_labels(end_lbl, cont_lbl);
-    cg_emitf(".Lbegin%d:\n", begin_lbl);
-    gen_stmt(ctrl->base.rhs);
-    cg_emitf(".Lcont%d:\n", cont_lbl);
-    gen_expr(ctrl->base.lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbnz x0, .Lbegin%d\n", begin_lbl);
-    cg_emitf(".Lend%d:\n", end_lbl);
-    pop_control_labels();
-    return;
-  }
-  case ND_FOR: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int begin_lbl = label_count++;
-    int cont_lbl = label_count++;
-    int end_lbl = label_count++;
-    push_control_labels(end_lbl, cont_lbl);
-    if (ctrl->init) {
-      gen_expr(ctrl->init);
-      cg_emitf("  add sp, sp, #16\n");
-    }
-    cg_emitf(".Lbegin%d:\n", begin_lbl);
-    if (ctrl->base.lhs) {
-      gen_expr(ctrl->base.lhs);
-      cg_emitf("  ldr x0, [sp], #16\n");
-      cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
-    }
-    gen_stmt(ctrl->base.rhs);
-    cg_emitf(".Lcont%d:\n", cont_lbl);
-    if (ctrl->inc) {
-      gen_expr(ctrl->inc);
-      cg_emitf("  add sp, sp, #16\n");
-    }
-    cg_emitf("  b .Lbegin%d\n", begin_lbl);
-    cg_emitf(".Lend%d:\n", end_lbl);
-    pop_control_labels();
-    return;
-  }
-  case ND_SWITCH: {
-    node_ctrl_t *ctrl = as_ctrl(node);
-    int end_lbl = label_count++;
-
-    gen_expr(ctrl->base.lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-
-    switch_collect_t sc = {0};
-    collect_switch_labels(ctrl->base.rhs, &sc);
-
-    for (int i = 0; i < sc.case_count; i++) {
-      node_case_t *c = sc.cases[i];
-      cg_emit_mov_imm("x1", c->val);
-      cg_emitf("  cmp x0, x1\n");
-      cg_emitf("  beq .Lcase%d\n", c->label_id);
-    }
-    if (sc.default_node) {
-      cg_emitf("  b .Ldefault%d\n", sc.default_node->label_id);
-    } else {
-      cg_emitf("  b .Lend%d\n", end_lbl);
-    }
-
-    push_control_labels(end_lbl, -1); // switch は continue 対象外
-    gen_switch_body(ctrl->base.rhs);
-    pop_control_labels();
-
-    cg_emitf(".Lend%d:\n", end_lbl);
-    free(sc.cases);
-    return;
-  }
+  case ND_IF:       gen_stmt_if(as_ctrl(node)); return;
+  case ND_WHILE:    gen_stmt_while(as_ctrl(node)); return;
+  case ND_DO_WHILE: gen_stmt_do_while(as_ctrl(node)); return;
+  case ND_FOR:      gen_stmt_for(as_ctrl(node)); return;
+  case ND_SWITCH:   gen_stmt_switch(as_ctrl(node)); return;
   case ND_BREAK:
     if (current_break_label() < 0) {
       diag_emit_internalf(DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH, "%s",
@@ -1650,17 +1659,9 @@ static void gen_stmt(node_t *node) {
     }
     cg_emitf("  b .Lcont%d\n", current_continue_label());
     return;
-  case ND_GOTO: {
-    node_jump_t *j = as_jump(node);
-    int id = find_label_id(j->name, j->name_len);
-    if (id < 0) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED,
-                          diag_message_for(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED),
-                          j->name_len, j->name);
-    }
-    cg_emitf("  b .Luser%d\n", id);
+  case ND_GOTO:
+    gen_stmt_goto(as_jump(node));
     return;
-  }
   case ND_LABEL: {
     node_jump_t *j = as_jump(node);
     cg_emitf(".Luser%d:\n", j->label_id);
