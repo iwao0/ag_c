@@ -34,8 +34,10 @@ Cソースを入力してアセンブリを出力:
 例:
 
 ```sh
-./build/ag_c test/fixtures/basic.c > basic.s
+./build/ag_c test/fixtures/array/inferred_size_brace.c > basic.s
 ```
+
+> `inferred_size_brace.c` は `int a[]={10,20,30,40};` の合計を返す最小ケース（exit=100）。
 
 ## 出力アセンブリをmacOS実行可能ファイルにする
 
@@ -54,7 +56,7 @@ clang -o basic basic.s
 1コマンドで行う場合:
 
 ```sh
-./build/ag_c test/fixtures/basic.c > basic.s && clang -o basic basic.s && ./basic
+./build/ag_c test/fixtures/array/inferred_size_brace.c > basic.s && clang -o basic basic.s && ./basic
 ```
 
 ビルド例（アーキテクチャ指定）:
@@ -112,3 +114,32 @@ enable_union_array_member_nonbrace_init = true
 | `enable_struct_scalar_pointer_cast` | `(struct S)7` / `(struct S)p` を受理 | 同ケースを診断 |
 | `enable_union_scalar_pointer_cast` | `(union U)7` / `(union U)p` を受理 | 同ケースを診断 |
 | `enable_union_array_member_nonbrace_init` | `union U u={1,2};` を受理 | 同ケースを診断 |
+
+## テスト用 fixture
+
+`test/fixtures/` 配下に、過去にバグや未実装だった機能の「動くことを示す最小ケース」を C ソースとして保存しています。各ファイルは単体で `ag_c → clang → 実行` を通り、期待 exit code をファイル先頭コメントに明記してあります。
+
+ディレクトリはカテゴリごとに分割されています（カテゴリ名は `test/test_e2e.c` のカテゴリと一致）:
+
+```
+test/fixtures/
+├── array/        配列宣言・初期化に関する fixture
+│   └── inferred_size_brace.c        int a[]={...} の要素数推定
+│   └── ...
+└── type_decl/    型宣言・複合リテラル系
+    └── compound_literal_array_inferred_size.c
+    └── ...
+```
+
+新しい fixture を追加するときは、対応する e2e カテゴリのサブディレクトリを使ってください（無ければ新規作成）。ファイル先頭には「修正前の症状」「期待 exit」をコメントとして残します。
+
+実行例:
+
+```sh
+./build/ag_c test/fixtures/array/inferred_size_brace.c > /tmp/out.s \
+  && clang -arch arm64 -o /tmp/out /tmp/out.s \
+  && /tmp/out; echo "exit=$?"
+# => exit=100
+```
+
+なお、fixture ファイル自体を `make test` で自動実行する仕組みは現状ありません。等価ケースは `test/test_e2e.c` のインライン文字列として網羅され、`make test` で検証されます。
