@@ -72,6 +72,10 @@ static void build_source_path(const test_case_t *tc, char *src_path) {
 static const test_case_t test_cases[] = {
     {"integer", "zero", CASE_INT_FILE, "test/fixtures/integer/zero.c", 0, 0},
     {"integer", "literal", CASE_INT_FILE, "test/fixtures/integer/literal.c", 42, 0},
+    {"integer", "hex_literal", CASE_INT_FILE, "test/fixtures/integer/hex_literal.c", 255, 0},
+    {"integer", "oct_literal", CASE_INT_FILE, "test/fixtures/integer/oct_literal.c", 255, 0},
+    {"integer", "bin_literal", CASE_INT_FILE, "test/fixtures/integer/bin_literal.c", 42, 0},
+    {"integer", "suffix_LL_U", CASE_INT_FILE, "test/fixtures/integer/suffix_LL_U.c", 6, 0},
 
     {"arithmetic", "add_sub", CASE_INT_FILE, "test/fixtures/arithmetic/add_sub.c", 21, 0},
     {"arithmetic", "spaces", CASE_INT_FILE, "test/fixtures/arithmetic/spaces.c", 41, 0},
@@ -169,6 +173,7 @@ static const test_case_t test_cases[] = {
     {"for", "sum10", CASE_INT_FILE, "test/fixtures/for/sum10.c", 55, 0},
     {"for", "inc", CASE_INT_FILE, "test/fixtures/for/inc.c", 10, 0},
     {"for", "post_inc_expr", CASE_INT_FILE, "test/fixtures/for/post_inc_expr.c", 5, 0},
+    {"for", "empty_for", CASE_INT_FILE, "test/fixtures/for/empty_for.c", 5, 0},
 
     {"bitwise", "bit_and", CASE_INT_FILE, "test/fixtures/bitwise/bit_and.c", 2, 0},
     {"bitwise", "bit_xor", CASE_INT_FILE, "test/fixtures/bitwise/bit_xor.c", 5, 0},
@@ -624,9 +629,11 @@ static const test_case_t test_cases[] = {
     {"alignas", "lvar_value",  CASE_INT_FILE, "test/fixtures/alignas/lvar_value.c", 42, 0},
     {"alignas", "lvar_align",  CASE_INT_FILE, "test/fixtures/alignas/lvar_align.c", 42, 0},
     {"alignas", "struct_member", CASE_INT_FILE, "test/fixtures/alignas/struct_member.c", 42, 0},
+    {"alignas", "global_var", CASE_INT_FILE, "test/fixtures/alignas/global_var.c", 7, 0},
     // フレキシブル配列メンバー
     {"flex_array", "sizeof_flex", CASE_INT_FILE, "test/fixtures/flex_array/sizeof_flex.c", 4, 0},
     {"flex_array", "parse_ok", CASE_INT_FILE, "test/fixtures/flex_array/parse_ok.c", 0, 0},
+    {"flex_array", "alloc_and_use", CASE_INT_FILE, "test/fixtures/flex_array/alloc_and_use.c", 42, 0},
     // #pragma pack
     {"pragma_pack", "pack1_sizeof", CASE_INT_FILE, "test/fixtures/pragma_pack/pack1_sizeof.c", 5, 0},
     {"pragma_pack", "pack1_offset", CASE_INT_FILE, "test/fixtures/pragma_pack/pack1_offset.c", 42, 0},
@@ -704,6 +711,7 @@ static const test_case_t test_cases[] = {
     {"inline_func", "basic_inline", CASE_INT_FILE, "test/fixtures/inline_func/basic_inline.c", 42, 0},
     {"inline_func", "static_inline", CASE_INT_FILE, "test/fixtures/inline_func/static_inline.c", 42, 0},
     {"inline_func", "extern_inline", CASE_INT_FILE, "test/fixtures/inline_func/extern_inline.c", 42, 0},
+    {"inline_func", "multi_inline", CASE_INT_FILE, "test/fixtures/inline_func/multi_inline.c", 17, 0},
     // グローバル変数: 暫定定義
     {"global_var", "tentative_rw", CASE_INT_FILE, "test/fixtures/global_var/tentative_rw.c", 42, 0},
     {"global_var", "tentative_multi_func", CASE_INT_FILE, "test/fixtures/global_var/tentative_multi_func.c", 42, 0},
