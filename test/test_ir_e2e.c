@@ -203,6 +203,18 @@ int main(void) {
   run_ir_case("switch_no_default_no_match",
               "int main(void) { int x = 7; int r = 5; switch (x) { case 1: r = 10; break; case 2: r = 20; break; } return r; }\n", 5);
 
+  /* Phase 7d: float/double 基本 (ローカル変数 + 算術 + 比較 + 変換) */
+  run_ir_case("float_basic",
+              "int main(void) { float x = 1.5; float y = 2.5; return (int)(x + y); }\n", 4);
+  run_ir_case("double_mul",
+              "int main(void) { double x = 1.5; double y = 2.75; return (int)(x * y); }\n", 4);
+  run_ir_case("double_cmp",
+              "int main(void) { double x = 3.5; if (x > 3.0) return 7; return 0; }\n", 7);
+  run_ir_case("int_double_mix",
+              "int main(void) { int i = 3; double x = 2.5; return (int)(i + x); }\n", 5);
+  run_ir_case("double_sub_div",
+              "int main(void) { double a = 10.0; double b = 3.0; return (int)(a / b - 1.0); }\n", 2);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

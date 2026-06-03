@@ -100,8 +100,16 @@ static ir_type_t elem_value_type(int type_size) {
 }
 
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
+  /* float/double 変数は base.fp_kind で判定 */
+  unsigned fpk = lv->mem.base.fp_kind;
+  if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
   return elem_value_type(elem);
+}
+
+static int is_fp_type(ir_type_t t) {
+  return t == IR_TY_F32 || t == IR_TY_F64;
 }
 
 /* owner (= lvar_t の親) に対して ALLOCA を 1 回だけ確保し、その vreg を返す。
@@ -184,6 +192,16 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
   switch (node->kind) {
     case ND_NUM: {
       node_num_t *n = (node_num_t *)node;
+      /* float/double リテラル */
+      if (n->base.fp_kind > 0) {
+        ir_type_t ty = (n->base.fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+        int v = ir_func_new_vreg(ctx->f);
+        ir_inst_t *inst = ir_inst_new(IR_LOAD_FP_IMM);
+        inst->dst = ir_val_vreg(v, ty);
+        inst->src1 = ir_val_fp_imm(ty, n->fval);
+        ir_func_append_inst(ctx->f, inst);
+        return inst->dst;
+      }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD_IMM);
       inst->dst = ir_val_vreg(v, IR_TY_I32);
@@ -338,6 +356,15 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         if (ptr_vreg < 0) return ir_val_none();
         ir_val_t rhs = build_expr(ctx, node->rhs);
         if (ctx->failed) return ir_val_none();
+        /* float ↔ double の暗黙変換 */
+        if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
+          int v = ir_func_new_vreg(ctx->f);
+          ir_inst_t *cv = ir_inst_new(IR_F2F);
+          cv->dst = ir_val_vreg(v, vty);
+          cv->src1 = rhs;
+          ir_func_append_inst(ctx->f, cv);
+          rhs = ir_val_vreg(v, vty);
+        }
         /* bitfield 書き込み:
          *   v_old   = *ptr
          *   inv     = ~((mask) << bit_offset)
@@ -561,24 +588,81 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       if (ctx->failed) return ir_val_none();
       ir_val_t r = build_expr(ctx, node->rhs);
       if (ctx->failed) return ir_val_none();
+      int is_fp = is_fp_type(l.type) || is_fp_type(r.type);
       ir_op_t op = IR_ADD;
       switch (node->kind) {
-        case ND_ADD: op = IR_ADD; break;
-        case ND_SUB: op = IR_SUB; break;
-        case ND_MUL: op = IR_MUL; break;
-        case ND_DIV: op = IR_DIV; break;
-        case ND_MOD: op = IR_MOD; break;
-        case ND_LT:  op = IR_LT;  break;
-        case ND_LE:  op = IR_LE;  break;
-        case ND_EQ:  op = IR_EQ;  break;
-        case ND_NE:  op = IR_NE;  break;
+        case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;
+        case ND_SUB: op = is_fp ? IR_FSUB : IR_SUB; break;
+        case ND_MUL: op = is_fp ? IR_FMUL : IR_MUL; break;
+        case ND_DIV: op = is_fp ? IR_FDIV : IR_DIV; break;
+        case ND_MOD: op = IR_MOD; break;  /* float mod は未対応 */
+        case ND_LT:  op = is_fp ? IR_FLT : IR_LT; break;
+        case ND_LE:  op = is_fp ? IR_FLE : IR_LE; break;
+        case ND_EQ:  op = is_fp ? IR_FEQ : IR_EQ; break;
+        case ND_NE:  op = is_fp ? IR_FNE : IR_NE; break;
         default: break;
+      }
+      ir_type_t result_ty;
+      if (node->kind == ND_LT || node->kind == ND_LE ||
+          node->kind == ND_EQ || node->kind == ND_NE) {
+        result_ty = IR_TY_I32;
+      } else if (is_fp) {
+        result_ty = (l.type == IR_TY_F64 || r.type == IR_TY_F64) ? IR_TY_F64 : IR_TY_F32;
+      } else {
+        result_ty = IR_TY_I32;
+      }
+      /* 浮動小数点演算: 整数 src を float に昇格 */
+      if (is_fp) {
+        ir_type_t fp_ty = (node->kind == ND_LT || node->kind == ND_LE ||
+                           node->kind == ND_EQ || node->kind == ND_NE)
+                            ? ((l.type == IR_TY_F64 || r.type == IR_TY_F64) ? IR_TY_F64 : IR_TY_F32)
+                            : result_ty;
+        if (!is_fp_type(l.type)) {
+          int v = ir_func_new_vreg(ctx->f);
+          ir_inst_t *cv = ir_inst_new(IR_I2F);
+          cv->dst = ir_val_vreg(v, fp_ty);
+          cv->src1 = l;
+          ir_func_append_inst(ctx->f, cv);
+          l = ir_val_vreg(v, fp_ty);
+        } else if (l.type != fp_ty) {
+          int v = ir_func_new_vreg(ctx->f);
+          ir_inst_t *cv = ir_inst_new(IR_F2F);
+          cv->dst = ir_val_vreg(v, fp_ty);
+          cv->src1 = l;
+          ir_func_append_inst(ctx->f, cv);
+          l = ir_val_vreg(v, fp_ty);
+        }
+        if (!is_fp_type(r.type)) {
+          int v = ir_func_new_vreg(ctx->f);
+          ir_inst_t *cv = ir_inst_new(IR_I2F);
+          cv->dst = ir_val_vreg(v, fp_ty);
+          cv->src1 = r;
+          ir_func_append_inst(ctx->f, cv);
+          r = ir_val_vreg(v, fp_ty);
+        } else if (r.type != fp_ty) {
+          int v = ir_func_new_vreg(ctx->f);
+          ir_inst_t *cv = ir_inst_new(IR_F2F);
+          cv->dst = ir_val_vreg(v, fp_ty);
+          cv->src1 = r;
+          ir_func_append_inst(ctx->f, cv);
+          r = ir_val_vreg(v, fp_ty);
+        }
       }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(op);
-      inst->dst = ir_val_vreg(v, IR_TY_I32);
+      inst->dst = ir_val_vreg(v, result_ty);
       inst->src1 = l;
       inst->src2 = r;
+      ir_func_append_inst(ctx->f, inst);
+      return inst->dst;
+    }
+    case ND_FP_TO_INT: {
+      ir_val_t v = build_expr(ctx, node->lhs);
+      if (ctx->failed) return ir_val_none();
+      int dst = ir_func_new_vreg(ctx->f);
+      ir_inst_t *inst = ir_inst_new(IR_F2I);
+      inst->dst = ir_val_vreg(dst, IR_TY_I32);
+      inst->src1 = v;
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
     }

@@ -200,6 +200,99 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       release_dst(ctx, inst->dst, d, spill);
       return;
     }
+    case IR_LOAD_FP_IMM: {
+      /* float/double 即値: int として一旦 x9 にロードし、fmov で fp reg に転送、
+       * frame に str する。dst は spill 扱い。 */
+      if (inst->dst.id < 0 || inst->dst.id >= ctx->f->next_vreg_id) return;
+      if (inst->dst.type == IR_TY_F32) {
+        union { float f; uint32_t i; } u = { .f = (float)inst->src1.fp_imm };
+        cg_emit_mov_imm("x9", (long long)u.i);
+        cg_emitf("  fmov s0, w9\n");
+        cg_emitf("  str s0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      } else {
+        union { double d; uint64_t i; } u = { .d = inst->src1.fp_imm };
+        cg_emit_mov_imm("x9", (long long)u.i);
+        cg_emitf("  fmov d0, x9\n");
+        cg_emitf("  str d0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      }
+      return;
+    }
+    case IR_FADD:
+    case IR_FSUB:
+    case IR_FMUL:
+    case IR_FDIV: {
+      /* float vreg は frame 経由。d0/d1 (or s0/s1) にロード、演算、frame に str。 */
+      int is_double = (inst->dst.type == IR_TY_F64);
+      const char *suf = is_double ? "d" : "s";
+      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
+      cg_emitf("  ldr %s1, [x29, #%d]\n", suf, ctx->vreg_off[inst->src2.id]);
+      const char *op = "fadd";
+      switch (inst->op) {
+        case IR_FADD: op = "fadd"; break;
+        case IR_FSUB: op = "fsub"; break;
+        case IR_FMUL: op = "fmul"; break;
+        case IR_FDIV: op = "fdiv"; break;
+        default: break;
+      }
+      cg_emitf("  %s %s0, %s0, %s1\n", op, suf, suf, suf);
+      cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+      return;
+    }
+    case IR_FEQ:
+    case IR_FNE:
+    case IR_FLT:
+    case IR_FLE: {
+      int src_double = (inst->src1.type == IR_TY_F64) || (inst->src2.type == IR_TY_F64);
+      const char *suf = src_double ? "d" : "s";
+      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
+      cg_emitf("  ldr %s1, [x29, #%d]\n", suf, ctx->vreg_off[inst->src2.id]);
+      cg_emitf("  fcmp %s0, %s1\n", suf, suf);
+      const char *cond = "eq";
+      switch (inst->op) {
+        case IR_FEQ: cond = "eq"; break;
+        case IR_FNE: cond = "ne"; break;
+        case IR_FLT: cond = "mi"; break;
+        case IR_FLE: cond = "ls"; break;
+        default: break;
+      }
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  cset %s, %s\n", d, cond);
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_F2I: {
+      int src_double = (inst->src1.type == IR_TY_F64);
+      const char *suf = src_double ? "d" : "s";
+      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  fcvtzs %s, %s0\n", d, suf);
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_I2F: {
+      char b1[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      int is_double = (inst->dst.type == IR_TY_F64);
+      const char *suf = is_double ? "d" : "s";
+      cg_emitf("  scvtf %s0, %s\n", suf, s1);
+      cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+      return;
+    }
+    case IR_F2F: {
+      /* float ↔ double 変換: fcvt */
+      int src_double = (inst->src1.type == IR_TY_F64);
+      int dst_double = (inst->dst.type == IR_TY_F64);
+      const char *src_suf = src_double ? "d" : "s";
+      const char *dst_suf = dst_double ? "d" : "s";
+      cg_emitf("  ldr %s0, [x29, #%d]\n", src_suf, ctx->vreg_off[inst->src1.id]);
+      cg_emitf("  fcvt %s1, %s0\n", dst_suf, src_suf);
+      cg_emitf("  str %s1, [x29, #%d]\n", dst_suf, ctx->vreg_off[inst->dst.id]);
+      return;
+    }
     case IR_ALLOCA: {
       int sz = inst->alloca_size > 0 ? inst->alloca_size : 8;
       int al = inst->alloca_align > 0 ? inst->alloca_align : 8;
@@ -217,8 +310,20 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       return;
     }
     case IR_LOAD: {
-      char bp[8], bd[8];
+      char bp[8];
       const char *ptr = ensure_val_in(ctx, inst->src1, "x9", bp, sizeof(bp));
+      /* float/double: frame に書く (spill 経路で統一) */
+      if (inst->dst.type == IR_TY_F32) {
+        cg_emitf("  ldr s0, [%s]\n", ptr);
+        cg_emitf("  str s0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        return;
+      }
+      if (inst->dst.type == IR_TY_F64) {
+        cg_emitf("  ldr d0, [%s]\n", ptr);
+        cg_emitf("  str d0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        return;
+      }
+      char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x10", bd, sizeof(bd), &spill);
       switch (inst->dst.type) {
@@ -231,8 +336,24 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       return;
     }
     case IR_STORE: {
-      char bp[8], bv[8];
+      char bp[8];
       const char *ptr = ensure_val_in(ctx, inst->src1, "x9", bp, sizeof(bp));
+      /* float/double store: src2 vreg は frame 上にある (spill 経路)。 */
+      if (inst->src2.type == IR_TY_F32) {
+        if (inst->src2.id >= 0 && inst->src2.id < ctx->f->next_vreg_id) {
+          cg_emitf("  ldr s0, [x29, #%d]\n", ctx->vreg_off[inst->src2.id]);
+        }
+        cg_emitf("  str s0, [%s]\n", ptr);
+        return;
+      }
+      if (inst->src2.type == IR_TY_F64) {
+        if (inst->src2.id >= 0 && inst->src2.id < ctx->f->next_vreg_id) {
+          cg_emitf("  ldr d0, [x29, #%d]\n", ctx->vreg_off[inst->src2.id]);
+        }
+        cg_emitf("  str d0, [%s]\n", ptr);
+        return;
+      }
+      char bv[8];
       const char *val = ensure_val_in(ctx, inst->src2, "x10", bv, sizeof(bv));
       char wval[8];
       to_w_name(val, wval, sizeof(wval));
