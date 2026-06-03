@@ -2021,130 +2021,140 @@ static node_t *unary(void) {
   return apply_postfix(primary());
 }
 
+// 配列添字 `[idx]` 用のスケール倍率と次段の要素サイズ (inner_ds) を計算する。
+// 多次元 VLA では実行時ストライドをフレームから読む経路がある。
+static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
+                                            int *out_es, int *out_inner_ds) {
+  int ds = psx_node_deref_size(node);
+  int ts = psx_node_type_size(node);
+  int es = ds ? ds : (ts ? ts : 8);
+  int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
+  int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
+  if (node->kind == ND_LVAR) {
+    vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
+    inner_ds = as_lvar(node)->mem.inner_deref_size;
+  } else if (node->kind == ND_DEREF || node->kind == ND_ADDR) {
+    inner_ds = ((node_mem_t *)node)->inner_deref_size;
+  }
+  node_t *scaled;
+  if (vla_rsf) {
+    // 実行時ストライド: フレームスロットから行ストライドをロード
+    node_t *stride_node = psx_node_new_lvar_typed(vla_rsf, 8);
+    scaled = psx_node_new_binary(ND_MUL, idx, stride_node);
+    es = inner_ds ? inner_ds : 1; // type_size設定用 (実際は次段でderef_size経由で使用)
+  } else {
+    scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
+  }
+  *out_es = es;
+  *out_inner_ds = inner_ds;
+  return scaled;
+}
+
+// 添字対象が ND_DEREF のとき、配列・メンバ配列・多次元 VLA では
+// 「base + offset」 (lhs) を使う方が効率的かつ正しい。
+static node_t *subscript_base_address_of(node_t *node) {
+  if (node->kind != ND_DEREF) return node;
+  node_mem_t *mem = (node_mem_t *)node;
+  if (mem->deref_size > 0 && !mem->is_pointer) return node->lhs;
+  if (node->lhs && node->lhs->kind == ND_ADD &&
+      node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
+    // Member lvalue (`s.m`) is represented as `*(base + off)`.
+    return node->lhs;
+  }
+  return node;
+}
+
+// `base[idx]` を表す ND_DEREF ノードを構築する。tag / 多段ポインタ伝播を行う。
+static node_t *build_subscript_deref(node_t *node, node_t *idx) {
+  int es = 0, inner_ds = 0;
+  node_t *scaled = make_subscript_scaled_offset(node, idx, &es, &inner_ds);
+  node_t *base_addr = subscript_base_address_of(node);
+  node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
+  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
+  deref->base.kind = ND_DEREF;
+  deref->base.lhs = addr;
+  deref->type_size = es;
+  deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
+  deref->base.fp_kind = TK_FLOAT_KIND_NONE;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_tag_ptr = 0;
+  psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+  if (tag_kind != TK_EOF && is_tag_ptr) {
+    deref->tag_kind = tag_kind;
+    deref->tag_name = tag_name;
+    deref->tag_len = tag_len;
+    deref->is_tag_pointer = 0;
+  }
+  // 配列要素がポインタ型の場合: サブスクリプト結果にポインタ情報を伝播
+  int pql = psx_node_pointer_qual_levels(node);
+  if (pql >= 1) {
+    deref->is_pointer = 1;
+    deref->pointer_qual_levels = pql;
+    int bds = psx_node_base_deref_size(node);
+    deref->base_deref_size = (short)bds;
+    deref->deref_size = (pql >= 2) ? 8 : (short)bds;
+  }
+  if (pql == 1) {
+    tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(node);
+    if (pointee_fp != TK_FLOAT_KIND_NONE) {
+      deref->base.fp_kind = pointee_fp;
+    }
+  }
+  return (node_t *)deref;
+}
+
+static node_t *build_post_inc_dec_node(node_kind_t kind, node_t *operand, const char *op) {
+  psx_node_expect_incdec_target(operand, op);
+  node_t *n = arena_alloc(sizeof(node_t));
+  n->kind = kind;
+  n->lhs = operand;
+  return n;
+}
+
+static bool is_postfix_op_token(token_kind_t k) {
+  return k == TK_LBRACKET || k == TK_LPAREN || k == TK_DOT ||
+         k == TK_ARROW || k == TK_INC || k == TK_DEC;
+}
+
 static node_t *apply_postfix(node_t *node) {
-  if (node && node->kind == ND_COMMA &&
-      (curtok()->kind == TK_LBRACKET || curtok()->kind == TK_LPAREN ||
-       curtok()->kind == TK_DOT || curtok()->kind == TK_ARROW ||
-       curtok()->kind == TK_INC || curtok()->kind == TK_DEC)) {
+  // 後置演算がコンマ式の rhs 側に適用される: `(a, b)++` ⇒ `(a, b++)`。
+  if (node && node->kind == ND_COMMA && is_postfix_op_token(curtok()->kind)) {
     node->rhs = apply_postfix(node->rhs);
     return node;
   }
-
   for (;;) {
-    if (curtok()->kind == TK_LBRACKET) {
+    token_kind_t k = curtok()->kind;
+    if (k == TK_LBRACKET) {
       set_curtok(curtok()->next);
       node_t *idx = expr_internal();
       tk_expect(']');
-      int ds = psx_node_deref_size(node);
-      int ts = psx_node_type_size(node);
-      int es = ds ? ds : (ts ? ts : 8);
-      // 多次元VLA: 実行時ストライド・内側要素サイズを伝播
-      int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
-      int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
-      if (node->kind == ND_LVAR) {
-        vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
-        inner_ds = as_lvar(node)->mem.inner_deref_size;
-      } else if (node->kind == ND_DEREF || node->kind == ND_ADDR) {
-        inner_ds = ((node_mem_t *)node)->inner_deref_size;
-      }
-      node_t *scaled;
-      if (vla_rsf) {
-        // 実行時ストライド: フレームスロットから行ストライドをロード
-        node_t *stride_node = psx_node_new_lvar_typed(vla_rsf, 8);
-        scaled = psx_node_new_binary(ND_MUL, idx, stride_node);
-        es = inner_ds ? inner_ds : 1; // type_size設定用 (実際は次段でderef_size経由で使用)
-      } else {
-        scaled = psx_node_new_binary(ND_MUL, idx, psx_node_new_num(es));
-      }
-      node_t *base_addr = node;
-      if (node->kind == ND_DEREF) {
-        node_mem_t *mem = (node_mem_t *)node;
-        // 配列的アクセス: deref_size > 0 なら lhs (配列ベースアドレス) を直接使用
-        // (struct メンバ配列・多次元VLA サブスクリプト共通)
-        if (mem->deref_size > 0 && !mem->is_pointer) {
-          base_addr = node->lhs;
-        } else if (node->lhs && node->lhs->kind == ND_ADD &&
-                   node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
-          // Member lvalue (`s.m`) is represented as `*(base + off)`.
-          // Indexing should start from `base + off`, not from loaded `m` value.
-          base_addr = node->lhs;
-        }
-      }
-      node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
-      node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
-      deref->base.kind = ND_DEREF;
-      deref->base.lhs = addr;
-      deref->type_size = es;
-      deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
-      deref->base.fp_kind = TK_FLOAT_KIND_NONE;
-      token_kind_t tag_kind = TK_EOF;
-      char *tag_name = NULL;
-      int tag_len = 0;
-      int is_tag_ptr = 0;
-      psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-      if (tag_kind != TK_EOF && is_tag_ptr) {
-        deref->tag_kind = tag_kind;
-        deref->tag_name = tag_name;
-        deref->tag_len = tag_len;
-        deref->is_tag_pointer = 0;
-      }
-      // 配列要素がポインタ型の場合: サブスクリプト結果にポインタ情報を伝播
-      {
-        int pql = psx_node_pointer_qual_levels(node);
-        if (pql >= 1) {
-          deref->is_pointer = 1;
-          deref->pointer_qual_levels = pql;
-          int bds = psx_node_base_deref_size(node);
-          deref->base_deref_size = (short)bds;
-          deref->deref_size = (pql >= 2) ? 8 : (short)bds;
-        }
-        if (pql == 1) {
-          tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(node);
-          if (pointee_fp != TK_FLOAT_KIND_NONE) {
-            deref->base.fp_kind = pointee_fp;
-          }
-        }
-      }
-      node = (node_t *)deref;
+      node = build_subscript_deref(node, idx);
       continue;
     }
-    if (curtok()->kind == TK_LPAREN) {
+    if (k == TK_LPAREN) {
       node = parse_call_postfix(node);
       continue;
     }
-    if (curtok()->kind == TK_DOT) {
+    if (k == TK_DOT || k == TK_ARROW) {
       token_t *op_tok = curtok();
       set_curtok(curtok()->next);
-      node = build_member_access(node, 0, op_tok);
+      node = build_member_access(node, k == TK_ARROW ? 1 : 0, op_tok);
       continue;
     }
-    if (curtok()->kind == TK_ARROW) {
-      token_t *op_tok = curtok();
+    if (k == TK_INC) {
       set_curtok(curtok()->next);
-      node = build_member_access(node, 1, op_tok);
+      node = build_post_inc_dec_node(ND_POST_INC, node, "++");
       continue;
     }
-    if (curtok()->kind == TK_INC) {
+    if (k == TK_DEC) {
       set_curtok(curtok()->next);
-      psx_node_expect_incdec_target(node, "++");
-      node_t *inc = arena_alloc(sizeof(node_t));
-      inc->kind = ND_POST_INC;
-      inc->lhs = node;
-      node = inc;
+      node = build_post_inc_dec_node(ND_POST_DEC, node, "--");
       continue;
     }
-    if (curtok()->kind == TK_DEC) {
-      set_curtok(curtok()->next);
-      psx_node_expect_incdec_target(node, "--");
-      node_t *dec = arena_alloc(sizeof(node_t));
-      dec->kind = ND_POST_DEC;
-      dec->lhs = node;
-      node = dec;
-      continue;
-    }
-    break;
+    return node;
   }
-  return node;
 }
 
 static node_t *parse_call_postfix(node_t *callee) {
