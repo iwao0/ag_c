@@ -1419,6 +1419,51 @@ static node_t *lower_struct_value_cast(node_t *operand,
   return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, ref);
 }
 
+// 型名トークン直後の共通サフィックス処理。
+// 流れ: 後置 cv 修飾子 → ポインタ '*' → 各種抽象宣言子（関数ポインタ/配列等）
+//      → 配列サフィックス '[N]' → 閉じ ')'。
+// sz には呼び出し側で型の素サイズが入っており、ポインタ化されたら 8、
+// 配列マルチプライヤがあれば乗算されたサイズに書き換えられる。
+static int finish_parenthesized_type_size(token_t *t, int sz) {
+  int decl_is_ptr = 0;
+  consume_local_type_quals(&t);
+  consume_cast_pointer_suffix(&t, &decl_is_ptr);
+  if (decl_is_ptr) sz = 8;
+  int fp_ptr = 0;
+  int fp_array_mul = 1;
+  if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+    sz = 8 * fp_array_mul;
+  }
+  if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
+    sz = 8 * fp_array_mul;
+  }
+  if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
+    sz = 8 * fp_array_mul;
+  }
+  if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
+    sz = 8;
+  }
+  if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
+    sz = 8 * fp_array_mul;
+  }
+  if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
+    sz = 8;
+  }
+  if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
+    sz = 8;
+  }
+  if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
+    sz = 8;
+  }
+  if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
+    sz = 8;
+  }
+  set_curtok(t);
+  apply_array_abstract_suffix_size(&sz);
+  tk_expect(')');
+  return sz;
+}
+
 static int parse_parenthesized_type_size(void) {
   token_t *t = curtok();
   if (t->kind == TK_LPAREN && is_type_name_start_token(t->next)) {
@@ -1446,172 +1491,28 @@ static int parse_parenthesized_type_size(void) {
     } else {
       return -1;
     }
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
   if ((t->kind == TK_FLOAT || t->kind == TK_DOUBLE) &&
       t->next && (t->next->kind == TK_COMPLEX || t->next->kind == TK_IMAGINARY)) {
     int base_sz = (t->kind == TK_FLOAT) ? 4 : 8;
     int sz = base_sz * 2; // _Complex: 基底型の2倍
     t = t->next->next;
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
   if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE &&
       t->next->next &&
       (t->next->next->kind == TK_COMPLEX || t->next->next->kind == TK_IMAGINARY)) {
     int sz = 8 * 2; // _Complex long double = 16B (lowering)
     t = t->next->next->next;
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
 
   // long double: 2トークン型名
   if (t->kind == TK_LONG && t->next && t->next->kind == TK_DOUBLE) {
     t = t->next->next;
     int sz = 8; // macOS/AArch64: long double == double (64-bit)
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
   bool is_type = false;
   int scalar_size = 8;
@@ -1621,43 +1522,7 @@ static int parse_parenthesized_type_size(void) {
     t = t->next;
     // Extension: treat sizeof(void) as 1 (GNU-compatible behavior).
     int sz = (type_kind == TK_VOID) ? 1 : scalar_size;
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
   if (t->kind == TK_STRUCT || t->kind == TK_UNION) {
     token_kind_t tag_kind = t->kind;
@@ -1669,43 +1534,7 @@ static int parse_parenthesized_type_size(void) {
       psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE), tag->str, tag->len);
     }
     t = curtok();
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
   if (psx_ctx_is_typedef_name_token(t)) {
     token_ident_t *id = (token_ident_t *)t;
@@ -1724,43 +1553,7 @@ static int parse_parenthesized_type_size(void) {
     if (!td_ptr && psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {
       sz = td_sizeof;
     }
-    int decl_is_ptr = 0;
-    consume_local_type_quals(&t);
-    consume_cast_pointer_suffix(&t, &decl_is_ptr);
-    if (decl_is_ptr) sz = 8;
-    int fp_ptr = 0;
-    int fp_array_mul = 1;
-    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, &fp_array_mul)) {
-      sz = 8 * fp_array_mul;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
-      sz = 8;
-    }
-    if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
-      sz = 8;
-    }
-    set_curtok(t);
-    apply_array_abstract_suffix_size(&sz);
-    tk_expect(')');
-    return sz;
+    return finish_parenthesized_type_size(t, sz);
   }
   return -1;
 }
