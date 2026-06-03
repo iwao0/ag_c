@@ -682,6 +682,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "setjmp_include", CASE_INT_FILE, "test/fixtures/stdheader/setjmp_include.c", 42, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_int.c", 42, 0},
+    {"stdarg", "va_copy", CASE_INT_FILE, "test/fixtures/stdarg/va_copy.c", 12, 0},
 
     // VLA (Variable Length Array)
     {"vla", "basic_elem", CASE_INT_FILE, "test/fixtures/vla/basic_elem.c", 42, 0},

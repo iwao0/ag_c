@@ -31,4 +31,8 @@ typedef char *va_list;
 /* No-op cleanup. */
 #define va_end(ap) ((void)(ap))
 
+/* Copy current state of src ap into dest ap. C11 7.16.1.2.
+ * ap は単一ポインタなので単純コピーで十分。 */
+#define va_copy(dest, src) ((dest) = (src))
+
 #endif /* _STDARG_H */
