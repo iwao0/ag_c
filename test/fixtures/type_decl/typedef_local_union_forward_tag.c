@@ -1,0 +1,6 @@
+// ローカル typedef + union 前方宣言
+// 期待: exit=0
+int main(void) {
+    typedef union L L;
+    return 0;
+}
