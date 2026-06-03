@@ -96,51 +96,31 @@ static int sizeof_expr_node(node_t *node) {
 }
 
 static long long eval_const_expr_type_size(node_t *n, int *ok) {
-  if (!n) {
-    *ok = 0;
-    return 0;
-  }
+  if (!n) { *ok = 0; return 0; }
   switch (n->kind) {
-    case ND_NUM:
-      return ((node_num_t *)n)->val;
-    case ND_ADD: {
-      long long l = eval_const_expr_type_size(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_type_size(n->rhs, ok);
-      if (!*ok) return 0;
-      return l + r;
-    }
-    case ND_SUB: {
-      long long l = eval_const_expr_type_size(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_type_size(n->rhs, ok);
-      if (!*ok) return 0;
-      return l - r;
-    }
-    case ND_MUL: {
-      long long l = eval_const_expr_type_size(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_type_size(n->rhs, ok);
-      if (!*ok) return 0;
-      return l * r;
-    }
-    case ND_DIV: {
-      long long l = eval_const_expr_type_size(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_type_size(n->rhs, ok);
-      if (!*ok || r == 0) {
-        *ok = 0;
-        return 0;
-      }
-      return l / r;
-    }
-    case ND_COMMA:
-      (void)eval_const_expr_type_size(n->lhs, ok);
-      if (!*ok) return 0;
-      return eval_const_expr_type_size(n->rhs, ok);
-    default:
-      *ok = 0;
-      return 0;
+  case ND_NUM:
+    return ((node_num_t *)n)->val;
+  case ND_COMMA:
+    (void)eval_const_expr_type_size(n->lhs, ok);
+    if (!*ok) return 0;
+    return eval_const_expr_type_size(n->rhs, ok);
+  case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV:
+    break;
+  default:
+    *ok = 0; return 0;
+  }
+  long long l = eval_const_expr_type_size(n->lhs, ok);
+  if (!*ok) return 0;
+  long long r = eval_const_expr_type_size(n->rhs, ok);
+  if (!*ok) return 0;
+  switch (n->kind) {
+  case ND_ADD: return l + r;
+  case ND_SUB: return l - r;
+  case ND_MUL: return l * r;
+  case ND_DIV:
+    if (r == 0) { *ok = 0; return 0; }
+    return l / r;
+  default:     *ok = 0; return 0;
   }
 }
 
