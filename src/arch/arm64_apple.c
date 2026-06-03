@@ -788,6 +788,140 @@ static void gen_expr_funcref(node_t *node) {
   cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
+static void gen_expr_assign(node_t *node) {
+  if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
+    // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
+    // callee が x8 の指す先に直接書き込む
+    gen_lval(node->lhs);
+    cg_emitf("  ldr x8, [sp], #16\n");  // lhs アドレスを x8 に
+    gen_expr(node->rhs);                // funcall 実行（x8 は callee 内で使われる）
+    cg_emitf("  add sp, sp, #16\n");    // funcall がプッシュした dummy x0 を破棄
+    // 式の結果としてアドレスをプッシュ（使われないが整合性のため）
+    cg_emitf("  str x8, [sp, #-16]!\n");
+    return;
+  }
+  gen_lval(node->lhs);
+  gen_expr(node->rhs);
+  if (node->rhs && node->rhs->ret_struct_size > 8 && node->rhs->ret_struct_size <= 16) {
+    // 9-16B 構造体戻り値: スタックに x0(低),x1(高) の2スロットが積まれている
+    cg_emitf("  ldr x1, [sp], #16\n");  // x0: 低8B
+    cg_emitf("  ldr x2, [sp], #16\n");  // x1: 高8B
+    cg_emitf("  ldr x0, [sp], #16\n");  // lhs アドレス
+    cg_emitf("  str x1, [x0]\n");       // 低8B をストア
+    cg_emitf("  str x2, [x0, #8]\n");   // 高8B をストア
+    cg_emitf("  str x1, [sp, #-16]!\n"); // 式の結果値（低8B）
+    return;
+  }
+  if (node->is_complex && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    // _Complex double 代入
+    if (node->rhs && node->rhs->is_complex) {
+      // _Complex = _Complex: rhs は16Bスロット(実部d0+虚部d1)
+      cg_emitf("  ldp d0, d1, [sp], #16\n"); // rhs 実部,虚部
+      cg_emitf("  ldr x0, [sp], #16\n");     // lhs アドレス
+      cg_emitf("  str d0, [x0]\n");
+      cg_emitf("  str d1, [x0, #8]\n");
+    } else {
+      // スカラ → _Complex: 実部に代入、虚部は0
+      gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0);
+      cg_emitf("  ldr x0, [sp], #16\n");
+      cg_emitf("  str d0, [x0]\n");
+      cg_emitf("  movi d1, #0\n");
+      cg_emitf("  str d1, [x0, #8]\n");
+    }
+    cg_emitf("  stp d0, d1, [sp, #-16]!\n"); // 式の結果（16B _Complex）
+    return;
+  }
+  if (node->is_complex && node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    // _Complex float 代入
+    if (node->rhs && node->rhs->is_complex) {
+      cg_emitf("  ldp s0, s1, [sp], #16\n");
+      cg_emitf("  ldr x0, [sp], #16\n");
+      cg_emitf("  str s0, [x0]\n");
+      cg_emitf("  str s1, [x0, #4]\n");
+    } else {
+      gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0);
+      cg_emitf("  ldr x0, [sp], #16\n");
+      cg_emitf("  str s0, [x0]\n");
+      cg_emitf("  fmov s1, #0.0\n");
+      cg_emitf("  str s1, [x0, #4]\n");
+    }
+    cg_emitf("  stp s0, s1, [sp, #-16]!\n");
+    return;
+  }
+  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    // float 代入
+    gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0); // s0 に rhs をロード
+    cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
+    cg_emitf("  str s0, [x0]\n");
+    cg_emitf("  str s0, [sp, #-16]!\n");
+    return;
+  }
+  if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    // double/long double(現状lowering) 代入
+    gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0); // d0 に rhs をロード
+    cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
+    cg_emitf("  str d0, [x0]\n");
+    cg_emitf("  str d0, [sp, #-16]!\n");
+    return;
+  }
+  // 整数代入
+  cg_emitf("  ldr x1, [sp], #16\n");
+  cg_emitf("  ldr x0, [sp], #16\n");
+  // ビットフィールド代入: read-modify-write with bfi
+  if (node->lhs && node->lhs->kind == ND_DEREF && as_mem(node->lhs)->bit_width > 0) {
+    int lsb = as_mem(node->lhs)->bit_offset;
+    int width = as_mem(node->lhs)->bit_width;
+    int sz = as_mem(node->lhs)->type_size;
+    if (sz == 1)      cg_emitf("  ldrb w2, [x0]\n");
+    else if (sz == 2) cg_emitf("  ldrh w2, [x0]\n");
+    else              cg_emitf("  ldr w2, [x0]\n");
+    cg_emitf("  bfi w2, w1, #%d, #%d\n", lsb, width);
+    if (sz == 1)      cg_emitf("  strb w2, [x0]\n");
+    else if (sz == 2) cg_emitf("  strh w2, [x0]\n");
+    else              cg_emitf("  str w2, [x0]\n");
+  } else if (node->is_atomic) {
+    // _Atomic: store-release
+    int sz = as_mem(node)->type_size;
+    if (sz == 1)      cg_emitf("  stlrb w1, [x0]\n");
+    else if (sz == 2) cg_emitf("  stlrh w1, [x0]\n");
+    else if (sz == 4) cg_emitf("  stlr w1, [x0]\n");
+    else              cg_emitf("  stlr x1, [x0]\n");
+  } else {
+    int sz = as_mem(node)->type_size;
+    if (sz == 1)      cg_emitf("  strb w1, [x0]\n");
+    else if (sz == 2) cg_emitf("  strh w1, [x0]\n");
+    else if (sz == 4) cg_emitf("  str w1, [x0]\n");
+    else              cg_emitf("  str x1, [x0]\n");
+  }
+  cg_emitf("  str x1, [sp, #-16]!\n");
+}
+
+static void gen_expr_inc_dec(node_t *node) {
+  node_t *target = node->lhs;
+  int type_size = 8;
+  if (target->kind == ND_LVAR) type_size = as_lvar(target)->mem.type_size;
+  else if (target->kind == ND_GVAR) type_size = ((node_gvar_t *)target)->mem.type_size ? ((node_gvar_t *)target)->mem.type_size : 8;
+  else if (target->kind == ND_DEREF) type_size = as_mem(target)->type_size ? as_mem(target)->type_size : 8;
+
+  gen_lval(target);
+  cg_emitf("  ldr x1, [sp], #16\n"); // x1: addr
+  gen_load_x0_from_addr(type_size);   // x0: old value
+
+  bool is_post = (node->kind == ND_POST_INC || node->kind == ND_POST_DEC);
+  bool is_inc  = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
+
+  if (is_post) {
+    cg_emitf("  mov x2, x0\n");         // x2: return old value
+  }
+  if (is_inc) cg_emitf("  add x0, x0, #1\n");
+  else        cg_emitf("  sub x0, x0, #1\n");
+
+  gen_store_x0_to_addr(type_size);    // store updated value
+
+  if (is_post) cg_emitf("  str x2, [sp, #-16]!\n");
+  else         cg_emitf("  str x0, [sp, #-16]!\n");
+}
+
 static void gen_expr_logand(node_t *node) {
   int false_lbl = label_count++;
   int end_lbl = label_count++;
@@ -845,120 +979,7 @@ static void gen_expr(node_t *node) {
   case ND_STRING:    gen_expr_string(node); return;
   case ND_VLA_ALLOC: gen_expr_vla_alloc(node); return;
   case ND_FUNCREF:   gen_expr_funcref(node); return;
-  case ND_ASSIGN:
-    if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
-      // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
-      // callee が x8 の指す先に直接書き込む
-      gen_lval(node->lhs);
-      cg_emitf("  ldr x8, [sp], #16\n");  // lhs アドレスを x8 に
-      gen_expr(node->rhs);                // funcall 実行（x8 は callee 内で使われる）
-      cg_emitf("  add sp, sp, #16\n");    // funcall がプッシュした dummy x0 を破棄
-      // 式の結果としてアドレスをプッシュ（使われないが整合性のため）
-      cg_emitf("  str x8, [sp, #-16]!\n");
-      return;
-    }
-    gen_lval(node->lhs);
-    gen_expr(node->rhs);
-    if (node->rhs && node->rhs->ret_struct_size > 8 && node->rhs->ret_struct_size <= 16) {
-      // 9-16B 構造体戻り値: スタックに x0(低),x1(高) の2スロットが積まれている
-      cg_emitf("  ldr x1, [sp], #16\n");  // x0: 低8B
-      cg_emitf("  ldr x2, [sp], #16\n");  // x1: 高8B
-      cg_emitf("  ldr x0, [sp], #16\n");  // lhs アドレス
-      cg_emitf("  str x1, [x0]\n");       // 低8B をストア
-      cg_emitf("  str x2, [x0, #8]\n");   // 高8B をストア
-      cg_emitf("  str x1, [sp, #-16]!\n"); // 式の結果値（低8B）
-      return;
-    }
-    if (node->is_complex && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-      // _Complex double 代入
-      if (node->rhs && node->rhs->is_complex) {
-        // _Complex = _Complex: rhs は16Bスロット(実部d0+虚部d1)
-        cg_emitf("  ldp d0, d1, [sp], #16\n"); // rhs 実部,虚部
-        cg_emitf("  ldr x0, [sp], #16\n");     // lhs アドレス
-        cg_emitf("  str d0, [x0]\n");
-        cg_emitf("  str d1, [x0, #8]\n");
-      } else {
-        // スカラ → _Complex: 実部に代入、虚部は0
-        gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0);
-        cg_emitf("  ldr x0, [sp], #16\n");
-        cg_emitf("  str d0, [x0]\n");
-        cg_emitf("  movi d1, #0\n");
-        cg_emitf("  str d1, [x0, #8]\n");
-      }
-      cg_emitf("  stp d0, d1, [sp, #-16]!\n"); // 式の結果（16B _Complex）
-      return;
-    }
-    if (node->is_complex && node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      // _Complex float 代入
-      if (node->rhs && node->rhs->is_complex) {
-        cg_emitf("  ldp s0, s1, [sp], #16\n");
-        cg_emitf("  ldr x0, [sp], #16\n");
-        cg_emitf("  str s0, [x0]\n");
-        cg_emitf("  str s1, [x0, #4]\n");
-      } else {
-        gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0);
-        cg_emitf("  ldr x0, [sp], #16\n");
-        cg_emitf("  str s0, [x0]\n");
-        cg_emitf("  fmov s1, #0.0\n");
-        cg_emitf("  str s1, [x0, #4]\n");
-      }
-      cg_emitf("  stp s0, s1, [sp, #-16]!\n");
-      return;
-    }
-    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      // float 代入
-      gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0); // s0 に rhs をロード
-      cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
-      cg_emitf("  str s0, [x0]\n");
-      cg_emitf("  str s0, [sp, #-16]!\n");
-    } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-      // double/long double(現状lowering) 代入
-      gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0); // d0 に rhs をロード
-      cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
-      cg_emitf("  str d0, [x0]\n");
-      cg_emitf("  str d0, [sp, #-16]!\n");
-    } else {
-      cg_emitf("  ldr x1, [sp], #16\n");
-      cg_emitf("  ldr x0, [sp], #16\n");
-      // ビットフィールド代入: read-modify-write with bfi
-      if (node->lhs && node->lhs->kind == ND_DEREF && as_mem(node->lhs)->bit_width > 0) {
-        int lsb = as_mem(node->lhs)->bit_offset;
-        int width = as_mem(node->lhs)->bit_width;
-        int sz = as_mem(node->lhs)->type_size;
-        if (sz == 1)
-          cg_emitf("  ldrb w2, [x0]\n");
-        else if (sz == 2)
-          cg_emitf("  ldrh w2, [x0]\n");
-        else
-          cg_emitf("  ldr w2, [x0]\n");
-        cg_emitf("  bfi w2, w1, #%d, #%d\n", lsb, width);
-        if (sz == 1)
-          cg_emitf("  strb w2, [x0]\n");
-        else if (sz == 2)
-          cg_emitf("  strh w2, [x0]\n");
-        else
-          cg_emitf("  str w2, [x0]\n");
-      } else if (node->is_atomic) {
-        // _Atomic: store-release
-        if (as_mem(node)->type_size == 1)
-          cg_emitf("  stlrb w1, [x0]\n");
-        else if (as_mem(node)->type_size == 2)
-          cg_emitf("  stlrh w1, [x0]\n");
-        else if (as_mem(node)->type_size == 4)
-          cg_emitf("  stlr w1, [x0]\n");
-        else
-          cg_emitf("  stlr x1, [x0]\n");
-      } else if (as_mem(node)->type_size == 1)
-        cg_emitf("  strb w1, [x0]\n");
-      else if (as_mem(node)->type_size == 2)
-        cg_emitf("  strh w1, [x0]\n");
-      else if (as_mem(node)->type_size == 4)
-        cg_emitf("  str w1, [x0]\n");
-      else
-        cg_emitf("  str x1, [x0]\n");
-      cg_emitf("  str x1, [sp, #-16]!\n");
-    }
-    return;
+  case ND_ASSIGN:  gen_expr_assign(node); return;
   case ND_COMMA:
     gen_expr(node->lhs);
     // lhs の値は式値としては不要
@@ -968,34 +989,9 @@ static void gen_expr(node_t *node) {
   case ND_PRE_INC:
   case ND_PRE_DEC:
   case ND_POST_INC:
-  case ND_POST_DEC: {
-    node_t *target = node->lhs;
-    int type_size = 8;
-    if (target->kind == ND_LVAR) type_size = as_lvar(target)->mem.type_size;
-    else if (target->kind == ND_GVAR) type_size = ((node_gvar_t *)target)->mem.type_size ? ((node_gvar_t *)target)->mem.type_size : 8;
-    else if (target->kind == ND_DEREF) type_size = as_mem(target)->type_size ? as_mem(target)->type_size : 8;
-
-    gen_lval(target);
-    cg_emitf("  ldr x1, [sp], #16\n"); // x1: addr
-    gen_load_x0_from_addr(type_size);   // x0: old value
-
-    if (node->kind == ND_POST_INC || node->kind == ND_POST_DEC) {
-      cg_emitf("  mov x2, x0\n");         // x2: return old value
-    }
-
-    if (node->kind == ND_PRE_INC || node->kind == ND_POST_INC)
-      cg_emitf("  add x0, x0, #1\n");
-    else
-      cg_emitf("  sub x0, x0, #1\n");
-
-    gen_store_x0_to_addr(type_size);    // store updated value
-
-    if (node->kind == ND_POST_INC || node->kind == ND_POST_DEC)
-      cg_emitf("  str x2, [sp, #-16]!\n");
-    else
-      cg_emitf("  str x0, [sp, #-16]!\n");
+  case ND_POST_DEC:
+    gen_expr_inc_dec(node);
     return;
-  }
   case ND_LOGAND:  gen_expr_logand(node); return;
   case ND_LOGOR:   gen_expr_logor(node); return;
   case ND_TERNARY: gen_expr_ternary(as_ctrl(node)); return;
