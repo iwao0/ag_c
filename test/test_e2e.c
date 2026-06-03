@@ -320,6 +320,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "sizeof_typedef_ptr_to_array_type", CASE_INT_FILE, "test/fixtures/type_decl/sizeof_typedef_ptr_to_array_type.c", 8, 0},
     {"type_decl", "sizeof_typedef_array_type_2d", CASE_INT_FILE, "test/fixtures/type_decl/sizeof_typedef_array_type_2d.c", 24, 0},
     {"type_decl", "cast_chain", CASE_INT_FILE, "test/fixtures/type_decl/cast_chain.c", 42, 0},
+    {"type_decl", "cast_double_to_int", CASE_INT_FILE, "test/fixtures/type_decl/cast_double_to_int.c", 7, 0},
     {"type_decl", "void_ptr_roundtrip", CASE_INT_FILE, "test/fixtures/type_decl/void_ptr_roundtrip.c", 5, 0},
     {"type_decl", "comma_expr_init", CASE_INT_FILE, "test/fixtures/type_decl/comma_expr_init.c", 5, 0},
     {"type_decl", "comma_sideeffect", CASE_INT_FILE, "test/fixtures/type_decl/comma_sideeffect.c", 47, 0},

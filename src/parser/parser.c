@@ -1705,6 +1705,10 @@ static node_t *funcdef(void) {
   node->funcname_len = tok->len;
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,
                                          psx_expr_current_func_ret_struct_size());
+  // float / double 戻り値型を記録 → call 経路で fcvtzs を挿入できるようにする
+  if (ret_fp_kind != TK_FLOAT_KIND_NONE) {
+    psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, ret_fp_kind);
+  }
   if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr && ret_tag) {
     psx_ctx_set_function_ret_tag(tok->str, tok->len, ret_kind, ret_tag->str, ret_tag->len);
   }

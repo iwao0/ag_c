@@ -890,6 +890,12 @@ static void gen_expr_funcall(node_t *node) {
     // 9-16B 構造体戻り値: x1(高8B)を先にプッシュ、x0(低8B)を後にプッシュ
     cg_emitf("  str x1, [sp, #-16]!\n");
     cg_emitf("  str x0, [sp, #-16]!\n");
+  } else if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    // float 戻り値: 値は s0 にある。s0 を 16B スロットの下位 8B に書く。
+    cg_emitf("  str s0, [sp, #-16]!\n");
+  } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    // double 戻り値: 値は d0 にある。
+    cg_emitf("  str d0, [sp, #-16]!\n");
   } else {
     cg_emitf("  str x0, [sp, #-16]!\n");
   }
@@ -1321,6 +1327,20 @@ static void gen_expr(node_t *node) {
   case ND_ADDR:      gen_lval(node->lhs); return;
   case ND_STRING:    gen_expr_string(node); return;
   case ND_VLA_ALLOC: gen_expr_vla_alloc(node); return;
+  case ND_FP_TO_INT: {
+    // float/double 式を整数に変換する。lhs を評価して d0/s0 にロードし、
+    // fcvtzs で x0 に変換、改めて x0 を push する。
+    gen_expr(node->lhs);
+    if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
+      cg_emitf("  ldr s0, [sp], #16\n");
+      cg_emitf("  fcvtzs x0, s0\n");
+    } else {
+      cg_emitf("  ldr d0, [sp], #16\n");
+      cg_emitf("  fcvtzs x0, d0\n");
+    }
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
+  }
   case ND_FUNCREF:   gen_expr_funcref(node); return;
   case ND_ASSIGN:  gen_expr_assign(node); return;
   case ND_COMMA:

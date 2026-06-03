@@ -91,6 +91,10 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
 void psx_ctx_set_function_ret_tag(char *name, int len, token_kind_t tag_kind, char *tag_name, int tag_len);
 bool psx_ctx_has_function_name(char *name, int len);
 int psx_ctx_get_function_ret_struct_size(char *name, int len);
+// 関数戻り値の浮動小数点種別 (float/double) を取得/設定する。
+// `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
+void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind);
+tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

@@ -98,6 +98,9 @@ struct func_name_t {
   token_kind_t ret_tag_kind;
   char *ret_tag_name;
   int ret_tag_len;
+  // 戻り値が float/double のときに保持する。`(int)f()` キャストで
+  // codegen に ND_FP_TO_INT (fcvtzs) を挿入させるために必要。
+  tk_float_kind_t ret_fp_kind;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -719,6 +722,17 @@ bool psx_ctx_has_function_name(char *name, int len) {
 int psx_ctx_get_function_ret_struct_size(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_struct_size : 0;
+}
+
+void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->ret_fp_kind = fp_kind;
+}
+
+tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_fp_kind : TK_FLOAT_KIND_NONE;
 }
 
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,

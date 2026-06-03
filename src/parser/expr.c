@@ -1621,8 +1621,20 @@ static node_t *expr_internal(void) {
   return node;
 }
 
+// 浮動小数式を整数へ変換するため ND_FP_TO_INT でラップ。fp_kind==NONE なら no-op。
+// `(int)d`/`(char)d`/`(long)d` 等で codegen に fcvtzs を出させるために使う。
+static node_t *wrap_fp_to_int_if_needed(node_t *operand) {
+  if (!operand || operand->fp_kind == TK_FLOAT_KIND_NONE) return operand;
+  node_t *cvt = arena_alloc(sizeof(node_t));
+  cvt->kind = ND_FP_TO_INT;
+  cvt->lhs = operand;
+  cvt->fp_kind = TK_FLOAT_KIND_NONE;
+  return cvt;
+}
+
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand) {
   if (is_pointer || type_kind == TK_LONG) {
+    operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }
@@ -1640,10 +1652,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return operand;
   }
   if (type_kind == TK_INT || type_kind == TK_ENUM) {
+    operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }
   if (type_kind == TK_SIGNED || type_kind == TK_UNSIGNED) {
+    operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     return operand;
   }
@@ -1656,9 +1670,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return operand;
   }
   if (type_kind == TK_SHORT) {
+    operand = wrap_fp_to_int_if_needed(operand);
     return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffff));
   }
   if (type_kind == TK_CHAR) {
+    operand = wrap_fp_to_int_if_needed(operand);
     return psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xff));
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
@@ -2463,6 +2479,9 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
   }
   node->nargs = nargs;
   node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(tok->str, tok->len);
+  // 関数戻り値が float/double のときは call ノードに fp_kind を設定し、
+  // `(int)call()` キャストで apply_cast が ND_FP_TO_INT を挿入できるようにする。
+  node->base.fp_kind = psx_ctx_get_function_ret_fp_kind(tok->str, tok->len);
   return (node_t *)node;
 }
 

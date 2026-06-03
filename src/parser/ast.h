@@ -51,6 +51,7 @@ typedef enum {
   ND_NUM,     // 整数
   ND_GVAR,    // グローバル変数参照
   ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト), type_size=フレームオフセット
+  ND_FP_TO_INT, // 浮動小数点 → 整数キャスト: lhs=FP式 (fp_kind が float/double を保持)
 } node_kind_t;
 
 // 抽象構文木のノードの型
