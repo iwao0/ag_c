@@ -130,8 +130,9 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
 static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
   int arr_total = (base_mul > 0) ? base_mul : 1;
   while (tk_consume('[')) {
-    int n = psx_parse_array_size_constexpr();
-    if (n > 0) arr_total *= n;
+    int has_size = 0;
+    int n = parse_array_size_optional_constexpr_stmt(&has_size);
+    if (has_size && n > 0) arr_total *= n;
     tk_expect(']');
   }
   return arr_total;
