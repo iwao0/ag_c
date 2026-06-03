@@ -174,6 +174,45 @@ static token_t *skip_balanced_bracket_token(token_t *start) {
   return NULL;
 }
 
+// "[N1][N2]..." の連続を読み、各 N (>0 の整数リテラル) を掛け合わせて *out_mul に入れる。
+// 1 つも [...] が無いか不正なら false を返し、*pt は変更しない（失敗時の巻き戻しは呼び出し側が return 0 で行う想定）。
+// 成功時は *pt を最後の ']' の次まで進める。
+static bool consume_const_dim_brackets(token_t **pt, int *out_mul) {
+  token_t *t = *pt;
+  if (!t || t->kind != TK_LBRACKET) return false;
+  int array_mul = 1;
+  while (t && t->kind == TK_LBRACKET) {
+    token_t *open = t;
+    token_t *after = skip_balanced_bracket_token(open);
+    if (!after) return false;
+    token_t *dim_tok = open->next;
+    if (!dim_tok || dim_tok->kind != TK_NUM || tk_as_num(dim_tok)->num_kind != TK_NUM_KIND_INT ||
+        !dim_tok->next || dim_tok->next->kind != TK_RBRACKET) {
+      return false;
+    }
+    int dim = (int)tk_as_num_int(dim_tok)->uval;
+    if (dim <= 0) return false;
+    array_mul *= dim;
+    t = after;
+  }
+  *pt = t;
+  if (out_mul) *out_mul = array_mul;
+  return true;
+}
+
+// "[...]+" の連続を読み飛ばす（次元サイズは見ない）。
+// 1 つも [...] が無いか balanced ペアが壊れていれば false。
+static bool skip_bracket_sequence(token_t **pt) {
+  token_t *t = *pt;
+  if (!t || t->kind != TK_LBRACKET) return false;
+  while (t && t->kind == TK_LBRACKET) {
+    t = skip_balanced_bracket_token(t);
+    if (!t) return false;
+  }
+  *pt = t;
+  return true;
+}
+
 static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
@@ -202,24 +241,8 @@ static int parse_array_of_funcptr_abstract_decl(token_t **ptok, int *out_array_m
   if (!t || t->kind != TK_MUL) return 0;
   t = t->next;
   consume_local_type_quals(&t);
-  if (!t || t->kind != TK_LBRACKET) return 0;
-
   int array_mul = 1;
-  while (t && t->kind == TK_LBRACKET) {
-    token_t *open = t;
-    token_t *after = skip_balanced_bracket_token(open);
-    if (!after) return 0;
-    token_t *dim_tok = open->next;
-    if (!dim_tok || dim_tok->kind != TK_NUM || tk_as_num(dim_tok)->num_kind != TK_NUM_KIND_INT ||
-        !dim_tok->next || dim_tok->next->kind != TK_RBRACKET) {
-      return 0;
-    }
-    int dim = (int)tk_as_num_int(dim_tok)->uval;
-    if (dim <= 0) return 0;
-    array_mul *= dim;
-    t = after;
-  }
-
+  if (!consume_const_dim_brackets(&t, &array_mul)) return 0;
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
   if (!t || t->kind != TK_LPAREN) return 0;
@@ -243,13 +266,8 @@ static int parse_ptr_to_array_abstract_decl(token_t **ptok, int *is_pointer) {
   if (t && t->kind == TK_IDENT) t = t->next;
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
-  if (!t || t->kind != TK_LBRACKET) return 0;
-  token_t *after = t;
-  while (after && after->kind == TK_LBRACKET) {
-    after = skip_balanced_bracket_token(after);
-    if (!after) return 0;
-  }
-  *ptok = after;
+  if (!skip_bracket_sequence(&t)) return 0;
+  *ptok = t;
   *is_pointer = 1;
   return 1;
 }
@@ -261,33 +279,12 @@ static int parse_array_of_ptr_to_array_abstract_decl(token_t **ptok, int *out_ar
   if (!t || t->kind != TK_MUL) return 0;
   t = t->next;
   consume_local_type_quals(&t);
-  if (!t || t->kind != TK_LBRACKET) return 0;
-
   int array_mul = 1;
-  while (t && t->kind == TK_LBRACKET) {
-    token_t *open = t;
-    token_t *after = skip_balanced_bracket_token(open);
-    if (!after) return 0;
-    token_t *dim_tok = open->next;
-    if (!dim_tok || dim_tok->kind != TK_NUM || tk_as_num(dim_tok)->num_kind != TK_NUM_KIND_INT ||
-        !dim_tok->next || dim_tok->next->kind != TK_RBRACKET) {
-      return 0;
-    }
-    int dim = (int)tk_as_num_int(dim_tok)->uval;
-    if (dim <= 0) return 0;
-    array_mul *= dim;
-    t = after;
-  }
-
+  if (!consume_const_dim_brackets(&t, &array_mul)) return 0;
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
-  if (!t || t->kind != TK_LBRACKET) return 0;
-  token_t *after = t;
-  while (after && after->kind == TK_LBRACKET) {
-    after = skip_balanced_bracket_token(after);
-    if (!after) return 0;
-  }
-  *ptok = after;
+  if (!skip_bracket_sequence(&t)) return 0;
+  *ptok = t;
   if (out_array_mul) *out_array_mul = array_mul;
   return 1;
 }
@@ -346,11 +343,7 @@ static int parse_ptr_to_func_returning_ptr_to_array_abstract_decl(token_t **ptok
   t = after_params;
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
-  if (!t || t->kind != TK_LBRACKET) return 0;
-  while (t && t->kind == TK_LBRACKET) {
-    t = skip_balanced_bracket_token(t);
-    if (!t) return 0;
-  }
+  if (!skip_bracket_sequence(&t)) return 0;
   *ptok = t;
   return 1;
 }
@@ -384,11 +377,7 @@ static int parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(token
   t = after_params;
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
-  if (!t || t->kind != TK_LBRACKET) return 0;
-  while (t && t->kind == TK_LBRACKET) {
-    t = skip_balanced_bracket_token(t);
-    if (!t) return 0;
-  }
+  if (!skip_bracket_sequence(&t)) return 0;
   *ptok = t;
   if (out_array_mul) *out_array_mul = n;
   return 1;
@@ -454,11 +443,7 @@ static int parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstra
   t = after;
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
-  if (!t || t->kind != TK_LBRACKET) return 0;
-  while (t && t->kind == TK_LBRACKET) {
-    t = skip_balanced_bracket_token(t);
-    if (!t) return 0;
-  }
+  if (!skip_bracket_sequence(&t)) return 0;
   *ptok = t;
   return 1;
 }
