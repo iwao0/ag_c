@@ -58,6 +58,27 @@ static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
   return -1;
 }
 
+/* LVAR ノードから「保存サイズ」「ロード値の IR 型」を決める。
+ * type_size > 0 を信頼。ポインタ/8B 整数は IR_TY_PTR (8B 等価) として扱う。 */
+static int lvar_size_from_node(node_lvar_t *lv) {
+  int sz = lv->mem.type_size;
+  if (sz <= 0) return 4; /* 防御的に int 既定 */
+  return sz;
+}
+
+static ir_type_t lvar_value_type(node_lvar_t *lv) {
+  int sz = lvar_size_from_node(lv);
+  if (sz >= 8) return IR_TY_PTR;
+  if (sz == 4) return IR_TY_I32;
+  if (sz == 2) return IR_TY_I16;
+  return IR_TY_I8;
+}
+
+static int lvar_align(node_lvar_t *lv) {
+  int sz = lvar_size_from_node(lv);
+  return (sz >= 8) ? 8 : (sz >= 4 ? 4 : (sz >= 2 ? 2 : 1));
+}
+
 static int alloca_for_lvar(ir_build_ctx_t *ctx, int offset, int size, int align) {
   int existing = find_alloca_vreg(ctx, offset);
   if (existing >= 0) return existing;
@@ -92,31 +113,81 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     }
     case ND_LVAR: {
       node_lvar_t *lv = (node_lvar_t *)node;
-      int ptr_vreg = alloca_for_lvar(ctx, lv->offset, 4, 4);
+      int sz = lvar_size_from_node(lv);
+      int al = lvar_align(lv);
+      ir_type_t vty = lvar_value_type(lv);
+      int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
       if (ptr_vreg < 0) return ir_val_none();
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
-      inst->dst = ir_val_vreg(v, IR_TY_I32);
+      inst->dst = ir_val_vreg(v, vty);
       inst->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
     }
     case ND_ASSIGN: {
-      /* lhs は LVAR を想定 */
+      if (!node->lhs) {
+        fail(ctx, "assign without target");
+        return ir_val_none();
+      }
+      if (node->lhs->kind == ND_LVAR) {
+        node_lvar_t *lv = (node_lvar_t *)node->lhs;
+        int sz = lvar_size_from_node(lv);
+        int al = lvar_align(lv);
+        ir_type_t vty = lvar_value_type(lv);
+        int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
+        if (ptr_vreg < 0) return ir_val_none();
+        ir_val_t rhs = build_expr(ctx, node->rhs);
+        if (ctx->failed) return ir_val_none();
+        /* rhs の型をターゲット型に揃える */
+        rhs.type = vty;
+        ir_inst_t *st = ir_inst_new(IR_STORE);
+        st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+        st->src2 = rhs;
+        ir_func_append_inst(ctx->f, st);
+        return rhs;
+      }
+      if (node->lhs->kind == ND_DEREF) {
+        /* *p = rhs */
+        ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
+        if (ctx->failed) return ir_val_none();
+        ir_val_t rhs = build_expr(ctx, node->rhs);
+        if (ctx->failed) return ir_val_none();
+        /* DEREF 先の型は Phase 4b では i32 を既定にする (int への
+         * ポインタのみ想定)。今後 char/short/double 等のポインタを
+         * 扱うときに node の型情報から引く。 */
+        rhs.type = IR_TY_I32;
+        ir_inst_t *st = ir_inst_new(IR_STORE);
+        st->src1 = ptr;
+        st->src2 = rhs;
+        ir_func_append_inst(ctx->f, st);
+        return rhs;
+      }
+      fail(ctx, "assign target is not LVAR or DEREF");
+      return ir_val_none();
+    }
+    case ND_ADDR: {
       if (!node->lhs || node->lhs->kind != ND_LVAR) {
-        fail(ctx, "assign target is not LVAR");
+        fail(ctx, "& of non-lvar (Phase 4b unsupported)");
         return ir_val_none();
       }
       node_lvar_t *lv = (node_lvar_t *)node->lhs;
-      int ptr_vreg = alloca_for_lvar(ctx, lv->offset, 4, 4);
+      int sz = lvar_size_from_node(lv);
+      int al = lvar_align(lv);
+      int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
       if (ptr_vreg < 0) return ir_val_none();
-      ir_val_t rhs = build_expr(ctx, node->rhs);
+      return ir_val_vreg(ptr_vreg, IR_TY_PTR);
+    }
+    case ND_DEREF: {
+      ir_val_t ptr = build_expr(ctx, node->lhs);
       if (ctx->failed) return ir_val_none();
-      ir_inst_t *st = ir_inst_new(IR_STORE);
-      st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-      st->src2 = rhs;
-      ir_func_append_inst(ctx->f, st);
-      return rhs;
+      int v = ir_func_new_vreg(ctx->f);
+      ir_inst_t *inst = ir_inst_new(IR_LOAD);
+      /* Phase 4b: int* のみ前提 (deref 結果は i32) */
+      inst->dst = ir_val_vreg(v, IR_TY_I32);
+      inst->src1 = ptr;
+      ir_func_append_inst(ctx->f, inst);
+      return inst->dst;
     }
     case ND_FUNCALL: {
       node_func_t *fn = (node_func_t *)node;
@@ -414,16 +485,19 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
       return 0;
     }
     node_lvar_t *lv = (node_lvar_t *)arg;
+    int sz = lvar_size_from_node(lv);
+    int al = lvar_align(lv);
+    ir_type_t vty = lvar_value_type(lv);
     int param_vreg = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);
-    p->dst = ir_val_vreg(param_vreg, IR_TY_I32);
+    p->dst = ir_val_vreg(param_vreg, vty);
     p->src1 = ir_val_imm(IR_TY_I32, i);
     ir_func_append_inst(ctx->f, p);
-    int ptr_vreg = alloca_for_lvar(ctx, lv->offset, 4, 4);
+    int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
     if (ptr_vreg < 0) return 0;
     ir_inst_t *st = ir_inst_new(IR_STORE);
     st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-    st->src2 = ir_val_vreg(param_vreg, IR_TY_I32);
+    st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
   }
   build_stmt(ctx, fn->base.rhs);

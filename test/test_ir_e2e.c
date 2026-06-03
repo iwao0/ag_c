@@ -118,6 +118,18 @@ int main(void) {
   run_ir_case("call_with_loop",
               "int sum_to(int n) { int s = 0; int i; for (i = 1; i <= n; i = i + 1) s = s + i; return s; } int main(void) { return sum_to(10); }\n", 55);
 
+  /* Phase 4b: ポインタ */
+  run_ir_case("ptr_deref",
+              "int main(void) { int x = 5; int *p = &x; return *p; }\n", 5);
+  run_ir_case("ptr_write",
+              "int main(void) { int x = 0; int *p = &x; *p = 42; return x; }\n", 42);
+  run_ir_case("ptr_param_inc",
+              "void inc(int *p) { *p = *p + 1; } int main(void) { int x = 5; inc(&x); inc(&x); inc(&x); return x; }\n", 8);
+  run_ir_case("ptr_swap",
+              "void swap(int *a, int *b) { int t = *a; *a = *b; *b = t; } int main(void) { int x = 3; int y = 7; swap(&x, &y); return x * 10 + y; }\n", 73);
+  run_ir_case("ptr_via_pointer",
+              "int read_int(int *p) { return *p; } int main(void) { int x = 99; return read_int(&x); }\n", 99);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;
