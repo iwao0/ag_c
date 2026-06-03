@@ -572,6 +572,8 @@ static const test_case_t test_cases[] = {
     {"array", "four_dim_nested_init", CASE_INT, "int main() { int a[2][2][2][3]={{{{1,2,3},{4,5,6}},{{7,8,9},{10,11,12}}},{{{13,14,15},{16,17,18}},{{19,20,21},{22,23,24}}}}; return a[1][1][1][2]; }", 24, 0},
     {"array", "four_dim_inferred_outer", CASE_INT, "int main() { int a[][2][2][3]={{{{1,2,3},{4,5,6}},{{7,8,9},{10,11,12}}},{{{13,14,15},{16,17,18}},{{19,20,21},{22,23,24}}}}; return a[1][0][1][2]; }", 18, 0},
     {"array", "five_dim_assign_read", CASE_INT, "int main() { int a[2][2][2][2][3]; a[1][1][1][1][2]=77; return a[1][1][1][1][2]; }", 77, 0},
+    {"array", "param_explicit_ptr_to_2d", CASE_INT, "int get(int (*a)[3], int i, int j){return a[i][j];} int main(){int b[2][3]={{1,2,3},{4,5,6}}; return get(b,1,2);}", 6, 0},
+    {"array", "param_explicit_ptr_to_3d", CASE_INT, "int get(int (*a)[2][3], int i, int j, int k){return a[i][j][k];} int main(){int b[2][2][3]={{{1,2,3},{4,5,6}},{{7,8,9},{10,11,12}}}; return get(b,1,0,2);}", 9, 0},
     {"array", "sum", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[0]+arr[1]+arr[2]; }", 6, 0},
     {"array", "const_expr_size", CASE_INT, "int main() { int arr[1+2]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "multi_dim_decl", CASE_INT, "int main() { int arr[2][3]; return 7; }", 7, 0},

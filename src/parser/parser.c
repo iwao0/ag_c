@@ -1172,11 +1172,18 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
     skip_ptr_qualifiers();
   }
   token_ident_t *name = NULL;
+  // 括弧内に *p があるか (= 「ポインタを括弧で覆って配列にする」`(*p)[N]` 形式) を
+  // 判定する。recursive 呼び出し前後で pointer level の変化を見れば判別できる。
+  int levels_before_paren = out_pointer_levels ? *out_pointer_levels : 0;
+  bool paren_made_pointer = false;
   if (tk_consume('(')) {
     name = parse_param_declarator_name_recursive(out_is_array_declarator, out_is_pointer_declarator,
                                                  out_pointer_levels,
                                                  out_inner_first_dim, out_inner_second_dim);
     tk_expect(')');
+    if (out_pointer_levels && *out_pointer_levels > levels_before_paren) {
+      paren_made_pointer = true;
+    }
   } else {
     name = tk_consume_ident();
   }
@@ -1186,9 +1193,12 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
       skip_balanced_group(TK_LPAREN, TK_RPAREN);
     } else {
       if (out_is_array_declarator) *out_is_array_declarator = 1;
-      // C11 6.7.6.3p7: 仮引数の最も外側の `[N]` は pointer に「調整」されるため
-      // サイズは無関係。2 つ目以降の `[N]` は pointee の dim を表すので捕捉する。
-      if (bracket_count == 0) {
+      // C11 6.7.6.3p7: 通常の仮引数 `int a[N][M]` では最も外側の `[N]` が
+      // pointer 調整によりサイズが無関係になる。一方 `int (*a)[N][M]` は
+      // ポインタが既に括弧内で適用されており、続く `[N][M]` は pointee の
+      // dim を表すため最初の bracket も捕捉する。
+      bool skip_first = (bracket_count == 0) && !paren_made_pointer;
+      if (skip_first) {
         skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
       } else {
         tk_consume('[');
@@ -1197,8 +1207,11 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
           dim = psx_parse_array_size_constexpr();
         }
         tk_expect(']');
-        if (bracket_count == 1 && out_inner_first_dim) *out_inner_first_dim = dim;
-        else if (bracket_count == 2 && out_inner_second_dim) *out_inner_second_dim = dim;
+        // paren_made_pointer 時は bracket 0/1/... が全て pointee dim。
+        // 通常時は bracket 1/2/... が pointee dim。
+        int dim_pos = paren_made_pointer ? bracket_count : (bracket_count - 1);
+        if (dim_pos == 0 && out_inner_first_dim) *out_inner_first_dim = dim;
+        else if (dim_pos == 1 && out_inner_second_dim) *out_inner_second_dim = dim;
       }
       bracket_count++;
     }
@@ -1286,6 +1299,16 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     int pointee_size = (param_ptr_levels >= 2) ? 8 : ds.elem_size;
     var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
     var->base_deref_size = (short)ds.elem_size;
+    // `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
+    // captured inner dims を使って outer_stride / mid_stride を設定する。
+    // これにより a[i] のステップが pointee 1 つ分（= N*elem や N*M*elem）に揃う。
+    if (param_is_array_declarator && param_inner_first_dim > 0) {
+      var->outer_stride = param_inner_first_dim * ds.elem_size;
+      if (param_inner_second_dim > 0) {
+        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds.elem_size;
+        var->mid_stride = param_inner_second_dim * ds.elem_size;
+      }
+    }
   } else {
     // スカラー型仮引数（既存の動作）
     var = psx_decl_register_lvar(param->str, param->len);
