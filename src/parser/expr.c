@@ -2072,20 +2072,28 @@ static node_t *unary(void) {
 // 多次元 VLA では実行時ストライドをフレームから読む経路がある。
 static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
                                             int *out_es, int *out_inner_ds,
-                                            int *out_next_ds) {
+                                            int *out_next_ds,
+                                            int *out_extras, int *out_extras_count) {
   int ds = psx_node_deref_size(node);
   int ts = psx_node_type_size(node);
   int es = ds ? ds : (ts ? ts : 8);
   int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
   int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
   int next_ds = 0;  // さらに次の次元の要素サイズ (3D 用、0=なし)
+  int extras[5] = {0};
+  int extras_count = 0;
   if (node->kind == ND_LVAR) {
     vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
     inner_ds = as_lvar(node)->mem.inner_deref_size;
     next_ds = as_lvar(node)->mem.next_deref_size;
+    extras_count = as_lvar(node)->mem.extra_strides_count;
+    for (int i = 0; i < extras_count && i < 5; i++) extras[i] = as_lvar(node)->mem.extra_strides[i];
   } else if (node->kind == ND_DEREF || node->kind == ND_ADDR) {
-    inner_ds = ((node_mem_t *)node)->inner_deref_size;
-    next_ds = ((node_mem_t *)node)->next_deref_size;
+    node_mem_t *m = (node_mem_t *)node;
+    inner_ds = m->inner_deref_size;
+    next_ds = m->next_deref_size;
+    extras_count = m->extra_strides_count;
+    for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
   }
   node_t *scaled;
   if (vla_rsf) {
@@ -2099,6 +2107,10 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   *out_es = es;
   *out_inner_ds = inner_ds;
   if (out_next_ds) *out_next_ds = next_ds;
+  if (out_extras && out_extras_count) {
+    *out_extras_count = extras_count;
+    for (int i = 0; i < extras_count && i < 5; i++) out_extras[i] = extras[i];
+  }
   return scaled;
 }
 
@@ -2119,7 +2131,10 @@ static node_t *subscript_base_address_of(node_t *node) {
 // `base[idx]` を表す ND_DEREF ノードを構築する。tag / 多段ポインタ伝播を行う。
 static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   int es = 0, inner_ds = 0, next_ds = 0;
-  node_t *scaled = make_subscript_scaled_offset(node, idx, &es, &inner_ds, &next_ds);
+  int extras[5] = {0};
+  int extras_count = 0;
+  node_t *scaled = make_subscript_scaled_offset(node, idx, &es, &inner_ds, &next_ds,
+                                                extras, &extras_count);
   node_t *base_addr = subscript_base_address_of(node);
   node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
   node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
@@ -2128,6 +2143,15 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   deref->type_size = es;
   deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
   deref->inner_deref_size = (short)next_ds; // さらに次段のストライド (3D 用)
+  // 4 次元以上: extra_strides[0..n-1] を 1 段シフトして new node に格納。
+  // current.extra_strides[0] が新しい next_deref_size に、以降が新しい extra_strides になる。
+  if (extras_count > 0) {
+    deref->next_deref_size = (short)extras[0];
+    for (int i = 1; i < extras_count && (i - 1) < 5; i++) {
+      deref->extra_strides[i - 1] = extras[i];
+    }
+    deref->extra_strides_count = (unsigned char)(extras_count - 1);
+  }
   deref->base.fp_kind = TK_FLOAT_KIND_NONE;
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
@@ -2497,9 +2521,21 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
     // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
     //     next_deref_size = elem_size （2段サブスクリプト後の要素）
+    // 4D 以上: 上記に加えて extra_strides を node 側にコピー。
+    //         3 段目で使うストライド = extra_strides[0]、最後が elem_size。
     if (var->mid_stride > 0) {
       node->inner_deref_size = (short)var->mid_stride;
-      node->next_deref_size = (short)var->elem_size;
+      if (var->extra_strides_count > 0) {
+        // 4D+: 3 段目ストライド = extra_strides[0]、残りは node->extra_strides に
+        node->next_deref_size = (short)var->extra_strides[0];
+        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
+          node->extra_strides[i - 1] = var->extra_strides[i];
+        }
+        node->extra_strides[var->extra_strides_count - 1] = var->elem_size;
+        node->extra_strides_count = var->extra_strides_count;
+      } else {
+        node->next_deref_size = (short)var->elem_size;
+      }
     } else {
       node->inner_deref_size = (short)var->elem_size;
     }

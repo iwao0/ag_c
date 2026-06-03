@@ -101,6 +101,11 @@ struct node_mem_t {
   // 多次元配列サポート用
   short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
   short next_deref_size;        // 3D 配列での 2 段サブスクリプト後の要素サイズ。0=2D 以下。
+  // 4 次元以上の追加ストライド: サブスクリプト 1 回ごとに deref_size ← inner_deref_size,
+  // inner_deref_size ← next_deref_size, next_deref_size ← extra_strides[0] と
+  // シフトさせる。最大 8 次元（3 + 5 段）まで対応。
+  int extra_strides[5];
+  unsigned char extra_strides_count;
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=コンパイル時定数）
 };
 

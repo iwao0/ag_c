@@ -39,6 +39,12 @@ struct lvar_t {
   // 多次元配列サポート用
   int outer_stride;             // 1次サブスクリプトのストライド（直下の次元 1 つ分のバイトサイズ）
   int mid_stride;               // 3D 配列 `a[N1][N2][N3]` の 2 次サブスクリプトのストライド（=N3*elem）。0=2D以下。
+  // 4 次元以上の追加ストライド: extra_strides[i] は (3+i+1) 段目サブスクリプトの
+  // ストライド。例: 4D `a[N1][N2][N3][N4]` では outer=N2*N3*N4*e, mid=N3*N4*e、
+  // 3 段目で使う N4*e は next_deref_size 経由で運ばれ、extra_strides は最後の
+  // elem ストライドのみ (count=1) を持つ。5D ならさらに 1 段追加。
+  int extra_strides[5];         // 最大 8 次元 (3 + 5) まで対応
+  unsigned char extra_strides_count;
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=定数stride）
 };
 

@@ -278,21 +278,20 @@ static void parse_decl_skip_constexpr_array_suffixes(void) {
   }
 }
 
-// 多次元配列の trailing dim 列 `[N2][N3]...` を読み、最初の 2 つの dim と
-// 全 trailing dim の積を返す（3D まで対応）。dim が無いときは 0/0/1 を返す。
-static int parse_decl_constexpr_array_suffix_product_2(int *out_first_dim, int *out_second_dim) {
-  int mul = 1, first = 0, second = 0;
+// 多次元配列の trailing dim 列 `[N2][N3][N4]...` を読み、各 dim を out_dims に
+// 格納し、全 trailing dim の積を返す（最大 max_dims 個まで、それ以降は積に
+// だけ寄与）。dim が無いときは out_dims=0 のまま 1 を返す。
+static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_dims, int *out_count) {
+  int mul = 1;
   int count = 0;
   while (tk_consume('[')) {
     int dim = parse_array_size_constexpr_decl();
     tk_expect(']');
-    if (count == 0) first = dim;
-    else if (count == 1) second = dim;
+    if (count < max_dims) out_dims[count] = dim;
     count++;
     if (dim > 0) mul *= dim;
   }
-  if (out_first_dim) *out_first_dim = first;
-  if (out_second_dim) *out_second_dim = second;
+  if (out_count) *out_count = count;
   return mul;
 }
 
@@ -633,6 +632,8 @@ static string_lit_t *find_string_lit_by_label(char *label) {
 }
 
 static node_t *append_to_init_chain(node_t *init_chain, node_t *init_node);
+static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *assigned, int array_len,
+                                      int start_idx, const int *chunk_sizes, int depth);
 
 // `var->arr[idx] = value` を表す ASSIGN ノードを構築する。
 // type_size と fp_kind は var の要素型から複製する。
@@ -703,42 +704,24 @@ static node_t *parse_array_initializer(lvar_t *var) {
           if (row_len > 0) target_idx *= row_len;
         }
         // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}} など。
-        // 3D `int a[N1][N2][N3]={{{...},{...}}, {{...},{...}}}` ではさらに内側で
-        // 波括弧が現れるので、sub_row_len > 0 のとき再帰的に処理する。
+        // 3D / 4D / 5D ... と更にネストが深くなり得るので、各次元のチャンクサイズ
+        // を組み立てて parse_array_init_chunk へ委譲する。
         if (row_len > 0 && tk_consume('{')) {
-          int sub_row_len = (var->mid_stride > 0 && var->elem_size > 0)
-                                ? var->mid_stride / var->elem_size : 0;
-          int ri = 0;
-          while (ri < row_len) {
-            if (sub_row_len > 0 && curtok() && curtok()->kind == TK_LBRACE) {
-              // 3D の中段 `{...}`: sub_row_len 個まとめて読む。
-              tk_consume('{');
-              for (int rj = 0; rj < sub_row_len; rj++) {
-                bump_initializer_count(&init_elem_count);
-                int flat_idx = target_idx + ri + rj;
-                if (flat_idx < array_len) {
-                  init_chain = append_to_init_chain(init_chain,
-                      build_array_elem_assign(var, flat_idx, psx_expr_assign()));
-                  assigned[flat_idx] = true;
-                }
-                if (tk_consume('}')) break;
-                tk_expect(',');
-                if (tk_consume('}')) break;
-              }
-              ri += sub_row_len;
-            } else {
-              bump_initializer_count(&init_elem_count);
-              int flat_idx = target_idx + ri;
-              if (flat_idx < array_len) {
-                init_chain = append_to_init_chain(init_chain,
-                    build_array_elem_assign(var, flat_idx, psx_expr_assign()));
-                assigned[flat_idx] = true;
-              }
-              ri++;
+          int chunk_sizes[8] = {0};
+          int depth = 0;
+          chunk_sizes[depth++] = row_len;
+          if (var->mid_stride > 0 && var->elem_size > 0) {
+            chunk_sizes[depth++] = var->mid_stride / var->elem_size;
+          }
+          for (int i = 0; i < var->extra_strides_count && depth < 8; i++) {
+            if (var->elem_size > 0) {
+              chunk_sizes[depth++] = var->extra_strides[i] / var->elem_size;
             }
-            if (tk_consume('}')) break;
-            tk_expect(',');
-            if (tk_consume('}')) break;
+          }
+          node_t *sub = parse_array_init_chunk(var, &init_elem_count, assigned, array_len,
+                                               target_idx, chunk_sizes, depth);
+          if (sub) {
+            init_chain = init_chain ? psx_node_new_binary(ND_COMMA, init_chain, sub) : sub;
           }
           idx = target_idx + row_len;
         } else {
@@ -942,6 +925,41 @@ static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
 static node_t *append_to_init_chain(node_t *init_chain, node_t *init_node) {
   if (!init_chain) return init_node;
   return psx_node_new_binary(ND_COMMA, init_chain, init_node);
+}
+
+// 多次元配列のネスト初期化子 `{...}` を 1 段分処理する。呼び出し時点で
+// 該当階層の `{` は既に消費済み。
+// `chunk_sizes[0]` がこの階層のチャンク長、`chunk_sizes[1]` がさらに 1 段
+// 内側のチャンク長、... `depth` は呼出側が用意した chunk_sizes の有効長。
+// `{` を再度見たら 1 段深く再帰する。
+static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *assigned, int array_len,
+                                      int start_idx, const int *chunk_sizes, int depth) {
+  node_t *init_chain = NULL;
+  int chunk_len = chunk_sizes[0];
+  int ci = 0;
+  while (ci < chunk_len) {
+    if (depth > 1 && curtok() && curtok()->kind == TK_LBRACE) {
+      // さらに内側のネスト `{...}`
+      tk_consume('{');
+      node_t *sub = parse_array_init_chunk(var, init_elem_count, assigned, array_len,
+                                           start_idx + ci, chunk_sizes + 1, depth - 1);
+      if (sub) init_chain = init_chain ? psx_node_new_binary(ND_COMMA, init_chain, sub) : sub;
+      ci += chunk_sizes[1];
+    } else {
+      bump_initializer_count(init_elem_count);
+      int flat_idx = start_idx + ci;
+      if (flat_idx < array_len) {
+        init_chain = append_to_init_chain(init_chain,
+            build_array_elem_assign(var, flat_idx, psx_expr_assign()));
+        assigned[flat_idx] = true;
+      }
+      ci++;
+    }
+    if (tk_consume('}')) return init_chain;
+    tk_expect(',');
+    if (tk_consume('}')) return init_chain;
+  }
+  return init_chain;
 }
 
 // .name[idx] = val の組み立て。lhs は member の offset+idx 要素を指す lvar。
@@ -1605,9 +1623,11 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           if (!tk_consume(',')) break;
           continue;
         }
-        int inner_dim_size = 0;  // 内側次元の要素数（0: 1次元配列）
-        int third_dim_size = 0;  // 3D 配列の最内側次元 (0: 2D 以下)
-        int trailing_mul = parse_decl_constexpr_array_suffix_product_2(&inner_dim_size, &third_dim_size);
+        // 多次元配列の trailing dim 列を全て読む（最大 7 段、配列全体では 8 次元まで）。
+        int trailing_dims[7] = {0};
+        int trailing_count = 0;
+        int trailing_mul = parse_decl_constexpr_array_suffix_product_n(trailing_dims, 7, &trailing_count);
+        int inner_dim_size = trailing_count >= 1 ? trailing_dims[0] : 0; // 内側次元の要素数（0: 1次元配列）
         if (size_inferred_from_init) {
           // 外側 `[]` を初期化子から推定する。trailing dims を消費した直後の
           // curtok 位置（`=` を指す）で推定するため、ここで呼ぶ必要がある。
@@ -1633,13 +1653,33 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
         if (inner_dim_size > 0) {
           // outer_stride = 1 次サブスクリプトのストライド (= 内側全体のバイト数)。
-          // 2D: outer_stride = inner_dim_size * elem ( = trailing_mul * elem )
-          // 3D: outer_stride = inner_dim_size * third_dim_size * elem ( = trailing_mul * elem )
+          // 2D: outer_stride = N2 * elem
+          // 3D: outer_stride = N2 * N3 * elem
+          // 4D: outer_stride = N2 * N3 * N4 * elem = trailing_mul * elem
           var->outer_stride = trailing_mul * arr_elem_size;
         }
-        if (third_dim_size > 0) {
-          // 3D: mid_stride = 2 次サブスクリプトのストライド (= 最内側次元 * elem)
-          var->mid_stride = third_dim_size * arr_elem_size;
+        if (trailing_count >= 2) {
+          // mid_stride = 2 次サブスクリプトのストライド = trailing_dims[1..]*elem。
+          // 3D: mid_stride = N3 * elem
+          // 4D: mid_stride = N3 * N4 * elem
+          int mid_mul = 1;
+          for (int i = 1; i < trailing_count; i++) {
+            if (trailing_dims[i] > 0) mid_mul *= trailing_dims[i];
+          }
+          var->mid_stride = mid_mul * arr_elem_size;
+        }
+        // 4 次元以上: 3 段目以降のストライドを順に extra_strides に格納する。
+        // extra_strides[k] = trailing_dims[(k+2)..end] の積 * elem。
+        if (trailing_count >= 3) {
+          int idx_in_extras = 0;
+          for (int start = 2; start < trailing_count && idx_in_extras < 5; start++) {
+            int rest_mul = 1;
+            for (int j = start; j < trailing_count; j++) {
+              if (trailing_dims[j] > 0) rest_mul *= trailing_dims[j];
+            }
+            var->extra_strides[idx_in_extras++] = rest_mul * arr_elem_size;
+          }
+          var->extra_strides_count = (unsigned char)idx_in_extras;
         }
         }
         var->tag_kind = tag_kind;
