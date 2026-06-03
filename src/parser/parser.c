@@ -1025,6 +1025,14 @@ static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_n
   return parse_struct_or_union_members_layout_toplevel(tag_kind, tag_name, tag_len, out_size);
 }
 
+static void install_toplevel_tag_decl_globals(token_kind_t tag_kind, char *tag_name, int tag_len) {
+  g_toplevel_decl_tag_kind = tag_kind;
+  g_toplevel_decl_tag_name = tag_name;
+  g_toplevel_decl_tag_len = tag_len;
+  g_toplevel_decl_base_kind = tag_kind;
+  g_toplevel_decl_elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+}
+
 static void parse_toplevel_tag_decl(void) {
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
@@ -1037,6 +1045,7 @@ static void parse_toplevel_tag_decl(void) {
     member_count = parse_tag_definition_body_toplevel(tag_kind, tag_name, tag_len, &tag_size);
     psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size);
     if (tk_consume(';')) return;
+    install_toplevel_tag_decl_globals(tag_kind, tag_name, tag_len);
     parse_toplevel_declarator_list();
     tk_expect(';');
     return;
@@ -1048,6 +1057,7 @@ static void parse_toplevel_tag_decl(void) {
   if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
     psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
   }
+  install_toplevel_tag_decl_globals(tag_kind, tag_name, tag_len);
   parse_toplevel_declarator_list();
   tk_expect(';');
 }
