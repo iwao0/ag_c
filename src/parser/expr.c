@@ -2199,7 +2199,9 @@ static node_t *parse_call_postfix(node_t *callee) {
   return (node_t *)node;
 }
 
-static node_t *primary(void) {
+// TK_LPAREN を見たときの compound literal `(T){...}` 試行。
+// パースできたら結果ノードを返し、できなければ NULL（呼び出し側は通常の式へ）。
+static node_t *try_parse_compound_literal(void) {
   token_kind_t cast_kind = TK_EOF;
   int cast_is_ptr = 0;
   token_t *after_rparen = NULL;
@@ -2218,77 +2220,167 @@ static node_t *primary(void) {
                                             cast_tag_kind, cast_tag_name, cast_tag_len,
                                             cast_elem_size, cast_fp_kind, cast_array_count);
   }
+  return NULL;
+}
 
-  if (curtok()->kind == TK_GENERIC) {
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    node_t *control = assign();
-    generic_type_t control_ty = infer_generic_control_type(control);
-    tk_expect(',');
+// _Generic( ctrl, T1: e1, T2: e2, ..., default: ed ) を評価して選択された式ノードを返す。
+static node_t *parse_generic_selection(void) {
+  set_curtok(curtok()->next); // skip TK_GENERIC
+  tk_expect('(');
+  node_t *control = assign();
+  generic_type_t control_ty = infer_generic_control_type(control);
+  tk_expect(',');
 
-    node_t *selected = NULL;
-    node_t *default_expr = NULL;
-    int matched = 0;
-    for (;;) {
-      if (curtok()->kind == TK_DEFAULT) {
-        set_curtok(curtok()->next);
-        tk_expect(':');
-        node_t *expr_node = assign();
-        if (!default_expr) default_expr = expr_node;
-      } else {
-        generic_type_t assoc_ty = {0};
-        assoc_ty.kind = TK_EOF;
-        if (!parse_generic_assoc_type(&assoc_ty)) {
-          psx_diag_ctx(curtok(), "generic", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
-        }
-        tk_expect(':');
-        node_t *expr_node = assign();
-        if (!matched && generic_type_matches(control_ty, assoc_ty)) {
-          selected = expr_node;
-          matched = 1;
-        }
-      }
-      if (!tk_consume(',')) break;
-    }
-    tk_expect(')');
-    if (!selected) selected = default_expr;
-    if (!selected) {
-      psx_diag_ctx(curtok(), "generic", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_GENERIC_NO_MATCH));
-    }
-    return selected;
-  }
-
-  if (curtok()->kind == TK_NUM) {
-    token_t *tok = curtok();
-    token_num_t *num = (token_num_t *)tok;
-    node_num_t *node = arena_alloc(sizeof(node_num_t));
-    node->base.kind = ND_NUM;
-    if (num->num_kind == TK_NUM_KIND_INT) {
-      node->base.fp_kind = TK_FLOAT_KIND_NONE;
-      node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
-      node->val = tk_as_num_int(tok)->val;
+  node_t *selected = NULL;
+  node_t *default_expr = NULL;
+  int matched = 0;
+  for (;;) {
+    if (curtok()->kind == TK_DEFAULT) {
+      set_curtok(curtok()->next);
+      tk_expect(':');
+      node_t *expr_node = assign();
+      if (!default_expr) default_expr = expr_node;
     } else {
-      node->base.fp_kind = tk_as_num_float(tok)->fp_kind;
-      node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;
-      node->fval = tk_as_num_float(tok)->fval;
+      generic_type_t assoc_ty = {0};
+      assoc_ty.kind = TK_EOF;
+      if (!parse_generic_assoc_type(&assoc_ty)) {
+        psx_diag_ctx(curtok(), "generic", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
+      }
+      tk_expect(':');
+      node_t *expr_node = assign();
+      if (!matched && generic_type_matches(control_ty, assoc_ty)) {
+        selected = expr_node;
+        matched = 1;
+      }
     }
-
-    if (node->base.fp_kind) {
-      float_lit_t *lit = calloc(1, sizeof(float_lit_t));
-      lit->id = float_label_count++;
-      lit->fval = node->fval;
-      lit->fp_kind = node->base.fp_kind;
-      lit->float_suffix_kind = node->float_suffix_kind;
-      lit->next = float_literals;
-      float_literals = lit;
-      node->fval_id = lit->id;
-    }
-
-    set_curtok(curtok()->next);
-    return (node_t *)node;
+    if (!tk_consume(',')) break;
   }
+  tk_expect(')');
+  if (!selected) selected = default_expr;
+  if (!selected) {
+    psx_diag_ctx(curtok(), "generic", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_GENERIC_NO_MATCH));
+  }
+  return selected;
+}
+
+// TK_NUM を node_num_t に変換。浮動小数点なら float_literals テーブルにも登録。
+static node_t *parse_num_literal(void) {
+  token_t *tok = curtok();
+  token_num_t *num = (token_num_t *)tok;
+  node_num_t *node = arena_alloc(sizeof(node_num_t));
+  node->base.kind = ND_NUM;
+  if (num->num_kind == TK_NUM_KIND_INT) {
+    node->base.fp_kind = TK_FLOAT_KIND_NONE;
+    node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
+    node->val = tk_as_num_int(tok)->val;
+  } else {
+    node->base.fp_kind = tk_as_num_float(tok)->fp_kind;
+    node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;
+    node->fval = tk_as_num_float(tok)->fval;
+  }
+  if (node->base.fp_kind) {
+    float_lit_t *lit = calloc(1, sizeof(float_lit_t));
+    lit->id = float_label_count++;
+    lit->fval = node->fval;
+    lit->fp_kind = node->base.fp_kind;
+    lit->float_suffix_kind = node->float_suffix_kind;
+    lit->next = float_literals;
+    float_literals = lit;
+    node->fval_id = lit->id;
+  }
+  set_curtok(curtok()->next);
+  return (node_t *)node;
+}
+
+// 内容文字列・幅・プレフィックスから ND_STRING ノードと .LC ラベルを生成する。
+// str はコピーせず lit->str に直接渡されるので、呼び出し側で alloc 済みであること。
+static node_string_t *make_string_lit_node(char *str, int len,
+                                           tk_char_width_t char_width,
+                                           tk_string_prefix_kind_t prefix_kind) {
+  node_string_t *snode = arena_alloc(sizeof(node_string_t));
+  snode->mem.base.kind = ND_STRING;
+  int id = string_label_count++;
+  int label_len = snprintf(NULL, 0, ".LC%d", id);
+  snode->string_label = calloc((size_t)label_len + 1, 1);
+  snprintf(snode->string_label, (size_t)label_len + 1, ".LC%d", id);
+  string_lit_t *lit = calloc(1, sizeof(string_lit_t));
+  lit->label = snode->string_label;
+  lit->str = str;
+  lit->len = len;
+  lit->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
+  lit->str_prefix_kind = prefix_kind;
+  lit->next = string_literals;
+  string_literals = lit;
+  snode->mem.type_size = 8;
+  snode->mem.deref_size = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
+  snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
+  snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
+  snode->str_prefix_kind = prefix_kind;
+  return snode;
+}
+
+// C11 6.4.2.2 __func__: 各関数本体に暗黙定義される const char[] の関数名。
+static node_t *make_func_name_string_node(void) {
+  const char *fname = g_current_funcname ? g_current_funcname : "";
+  int flen = g_current_funcname ? g_current_funcname_len : 0;
+  char *fstr = calloc((size_t)flen + 1, 1);
+  memcpy(fstr, fname, (size_t)flen);
+  return (node_t *)make_string_lit_node(fstr, flen, TK_CHAR_WIDTH_CHAR, TK_STR_PREFIX_NONE);
+}
+
+// 連続する TK_STRING リテラルを結合して 1 つの ND_STRING ノードを返す。
+static node_t *parse_string_literal_sequence(void) {
+  tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
+  tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
+  size_t total_len = 0;
+  token_t *t = curtok();
+  while (t && t->kind == TK_STRING) {
+    token_string_t *st = (token_string_t *)t;
+    if (total_len == 0) {
+      merged_width = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
+      merged_prefix_kind = st->str_prefix_kind;
+    } else if (merged_width != st->char_width) {
+      diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));
+    }
+    if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
+      diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, t, "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
+    }
+    total_len += (size_t)st->len;
+    t = t->next;
+  }
+  if (total_len > (size_t)INT_MAX) {
+    diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, curtok(), "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
+  }
+  char *merged = calloc(total_len + 1, 1);
+  if (!merged) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  size_t off = 0;
+  while (curtok() && curtok()->kind == TK_STRING) {
+    token_string_t *st = (token_string_t *)curtok();
+    if (st->len < 0 || (size_t)st->len > total_len - off) {
+      diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, curtok(), "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
+    }
+    memcpy(merged + off, st->str, (size_t)st->len);
+    off += (size_t)st->len;
+    set_curtok(curtok()->next);
+  }
+  return (node_t *)make_string_lit_node(merged, (int)total_len, merged_width, merged_prefix_kind);
+}
+
+static node_t *primary(void) {
+  node_t *cl = try_parse_compound_literal();
+  if (cl) return cl;
+
+  if (curtok()->kind == TK_GENERIC) return parse_generic_selection();
+
+  if (curtok()->kind == TK_NUM) return parse_num_literal();
 
   if (curtok()->kind == TK_LPAREN) {
     enter_paren_nest_or_die();
@@ -2301,32 +2393,8 @@ static node_t *primary(void) {
 
   token_ident_t *tok = tk_consume_ident();
   if (tok) {
-    // __func__: C11 6.4.2.2 — 各関数本体に暗黙定義される const char[] の関数名
     if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0) {
-      const char *fname = g_current_funcname ? g_current_funcname : "";
-      int flen = g_current_funcname ? g_current_funcname_len : 0;
-      char *fstr = calloc((size_t)flen + 1, 1);
-      memcpy(fstr, fname, (size_t)flen);
-      node_string_t *snode = arena_alloc(sizeof(node_string_t));
-      snode->mem.base.kind = ND_STRING;
-      int id = string_label_count++;
-      int label_len = snprintf(NULL, 0, ".LC%d", id);
-      snode->string_label = calloc((size_t)label_len + 1, 1);
-      snprintf(snode->string_label, (size_t)label_len + 1, ".LC%d", id);
-      string_lit_t *lit = calloc(1, sizeof(string_lit_t));
-      lit->label = snode->string_label;
-      lit->str = fstr;
-      lit->len = flen;
-      lit->char_width = TK_CHAR_WIDTH_CHAR;
-      lit->str_prefix_kind = TK_STR_PREFIX_NONE;
-      lit->next = string_literals;
-      string_literals = lit;
-      snode->mem.type_size = 8;
-      snode->mem.deref_size = 1;
-      snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
-      snode->char_width = TK_CHAR_WIDTH_CHAR;
-      snode->str_prefix_kind = TK_STR_PREFIX_NONE;
-      return (node_t *)snode;
+      return make_func_name_string_node();
     }
     lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
     if (!var) {
@@ -2484,68 +2552,7 @@ static node_t *primary(void) {
   }
 
   if (curtok()->kind == TK_STRING) {
-    tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
-    tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
-    size_t total_len = 0;
-    token_t *t = curtok();
-    while (t && t->kind == TK_STRING) {
-      token_string_t *st = (token_string_t *)t;
-      if (total_len == 0) {
-        merged_width = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
-        merged_prefix_kind = st->str_prefix_kind;
-      } else if (merged_width != st->char_width) {
-        diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t,
-                       "%s",
-                       diag_message_for(DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));
-      }
-      if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
-        diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, t, "%s",
-                       diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
-      }
-      total_len += (size_t)st->len;
-      t = t->next;
-    }
-
-    if (total_len > (size_t)INT_MAX) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
-    }
-    char *merged = calloc(total_len + 1, 1);
-    if (!merged) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-    }
-    size_t off = 0;
-    while (curtok() && curtok()->kind == TK_STRING) {
-      token_string_t *st = (token_string_t *)curtok();
-      if (st->len < 0 || (size_t)st->len > total_len - off) {
-        diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, curtok(), "%s",
-                       diag_message_for(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
-      }
-      memcpy(merged + off, st->str, (size_t)st->len);
-      off += (size_t)st->len;
-      set_curtok(curtok()->next);
-    }
-
-    node_string_t *node = arena_alloc(sizeof(node_string_t));
-    node->mem.base.kind = ND_STRING;
-    int id = string_label_count++;
-    int label_len = snprintf(NULL, 0, ".LC%d", id);
-    node->string_label = calloc((size_t)label_len + 1, 1);
-    snprintf(node->string_label, (size_t)label_len + 1, ".LC%d", id);
-    string_lit_t *lit = calloc(1, sizeof(string_lit_t));
-    lit->label = node->string_label;
-    lit->str = merged;
-    lit->len = (int)total_len;
-    lit->char_width = merged_width;
-    lit->str_prefix_kind = merged_prefix_kind;
-    lit->next = string_literals;
-    string_literals = lit;
-    node->mem.type_size = 8;
-    node->mem.deref_size = merged_width;
-    node->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
-    node->char_width = merged_width;
-    node->str_prefix_kind = merged_prefix_kind;
-    return (node_t *)node;
+    return parse_string_literal_sequence();
   }
 
   psx_diag_ctx(curtok(), "primary", "%s",
