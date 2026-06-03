@@ -878,8 +878,11 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
   node_t *init_chain = NULL;
   int ordinal = 0;
+  // assigned_kind[i]: 0=full assignment ('.m = v' or ordinal), 1=indexed-only ('.m[i]=v')。
+  // 完全代入とインデックス指定が同じメンバ名で混在したら重複と扱う。
   char **assigned_names = calloc((size_t)(member_count > 0 ? member_count : 1), sizeof(char *));
   int *assigned_lens = calloc((size_t)(member_count > 0 ? member_count : 1), sizeof(int));
+  int *assigned_kind = calloc((size_t)(member_count > 0 ? member_count : 1), sizeof(int));
   int assigned_n = 0;
   if (!tk_consume('}')) {
     for (;;) {
@@ -907,8 +910,23 @@ static node_t *parse_struct_initializer(lvar_t *var) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
+          // 同名 full 代入の後にこの indexed が来ているなら重複。
+          // indexed 同士は別 index の可能性があるので許す。
+          for (int i = 0; i < assigned_n; i++) {
+            if (assigned_kind[i] == 0 &&
+                assigned_lens[i] == info.len &&
+                strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
+              psx_diag_ctx(curtok(), "decl", "%s",
+                           diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
+              break;
+            }
+          }
           init_chain = append_to_init_chain(init_chain,
               build_nested_array_designator_assign(var, &info, nested_idx));
+          assigned_names[assigned_n] = info.name;
+          assigned_lens[assigned_n] = info.len;
+          assigned_kind[assigned_n] = 1; // indexed-only
+          assigned_n++;
           if (tk_consume('}')) break;
           tk_expect(',');
           if (tk_consume('}')) break;
@@ -922,10 +940,12 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
+      // full 代入: 同名の full または indexed が既にあれば重複。
       for (int i = 0; i < assigned_n; i++) {
         if (assigned_lens[i] == info.len && strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
           psx_diag_ctx(curtok(), "decl", "%s",
                        diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
+          break;
         }
       }
       node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
@@ -935,6 +955,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
           wrap_member_init_as_assign(var, &info, member_init));
       assigned_names[assigned_n] = info.name;
       assigned_lens[assigned_n] = info.len;
+      assigned_kind[assigned_n] = 0; // full assignment
       assigned_n++;
       if (tk_consume('}')) break;
       tk_expect(',');
@@ -943,6 +964,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   }
   free(assigned_names);
   free(assigned_lens);
+  free(assigned_kind);
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
