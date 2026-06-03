@@ -162,6 +162,31 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       store_val_from(ctx, inst->dst, "x9");
       return;
     }
+    case IR_MEMCPY: {
+      /* src1=dst ptr, src2=src ptr, alloca_size=バイト数。
+       * 8 byte 単位で順次コピー、端数は 1 byte ずつ。 */
+      load_val_to(ctx, inst->src1, "x9");   /* dst */
+      load_val_to(ctx, inst->src2, "x10");  /* src */
+      int n = inst->alloca_size;
+      int off = 0;
+      for (; off + 8 <= n; off += 8) {
+        cg_emitf("  ldr x11, [x10, #%d]\n", off);
+        cg_emitf("  str x11, [x9, #%d]\n", off);
+      }
+      for (; off + 4 <= n; off += 4) {
+        cg_emitf("  ldr w11, [x10, #%d]\n", off);
+        cg_emitf("  str w11, [x9, #%d]\n", off);
+      }
+      for (; off + 2 <= n; off += 2) {
+        cg_emitf("  ldrh w11, [x10, #%d]\n", off);
+        cg_emitf("  strh w11, [x9, #%d]\n", off);
+      }
+      for (; off < n; off++) {
+        cg_emitf("  ldrb w11, [x10, #%d]\n", off);
+        cg_emitf("  strb w11, [x9, #%d]\n", off);
+      }
+      return;
+    }
     case IR_LT:
     case IR_LE:
     case IR_EQ:

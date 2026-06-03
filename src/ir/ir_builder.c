@@ -170,6 +170,46 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         fail(ctx, "assign without target");
         return ir_val_none();
       }
+      /* struct 値代入: ND_ASSIGN.type_size が要素サイズを超えるなら memcpy 経路。
+       * struct のサイズは node_mem_t.type_size に parser が入れている。 */
+      {
+        node_mem_t *amem = (node_mem_t *)node;
+        int assign_size = amem->type_size;
+        if (assign_size > 8) {
+          /* dst のアドレスを得る */
+          int dst_ptr_vreg = -1;
+          if (node->lhs->kind == ND_LVAR) {
+            dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+          } else if (node->lhs->kind == ND_DEREF) {
+            ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
+            if (ctx->failed) return ir_val_none();
+            if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
+          } else {
+            fail(ctx, "struct assign dst not LVAR/DEREF");
+            return ir_val_none();
+          }
+          if (dst_ptr_vreg < 0) return ir_val_none();
+          /* src のアドレスを得る */
+          int src_ptr_vreg = -1;
+          if (node->rhs && node->rhs->kind == ND_LVAR) {
+            src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->rhs)->offset);
+          } else if (node->rhs && node->rhs->kind == ND_DEREF) {
+            ir_val_t ptr = build_expr(ctx, node->rhs->lhs);
+            if (ctx->failed) return ir_val_none();
+            if (ptr.id >= 0) src_ptr_vreg = ptr.id;
+          } else {
+            fail(ctx, "struct assign src not LVAR/DEREF");
+            return ir_val_none();
+          }
+          if (src_ptr_vreg < 0) return ir_val_none();
+          ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+          cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+          cp->src2 = ir_val_vreg(src_ptr_vreg, IR_TY_PTR);
+          cp->alloca_size = assign_size;
+          ir_func_append_inst(ctx->f, cp);
+          return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+        }
+      }
       if (node->lhs->kind == ND_LVAR) {
         node_lvar_t *lv = (node_lvar_t *)node->lhs;
         ir_type_t vty = lvar_value_type(lv);
@@ -249,8 +289,33 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       if (fn->nargs > 0) {
         cargs = calloc((size_t)fn->nargs, sizeof(ir_val_t));
         for (int i = 0; i < fn->nargs; i++) {
-          cargs[i] = build_expr(ctx, fn->args[i]);
-          if (ctx->failed) return ir_val_none();
+          node_t *arg = fn->args[i];
+          int arg_full_size = 0;
+          if (arg && arg->kind == ND_LVAR) {
+            lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
+            if (owner) arg_full_size = owner->size;
+            if (arg_full_size == 0) arg_full_size = ((node_lvar_t *)arg)->mem.type_size;
+          }
+          if (arg_full_size > 8) {
+            /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。 */
+            int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+            if (src_ptr < 0) return ir_val_none();
+            int tmp_vreg = ir_func_new_vreg(ctx->f);
+            ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+            ia->dst = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+            ia->alloca_size = arg_full_size;
+            ia->alloca_align = 8;
+            ir_func_append_inst(ctx->f, ia);
+            ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+            cp->src1 = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+            cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
+            cp->alloca_size = arg_full_size;
+            ir_func_append_inst(ctx->f, cp);
+            cargs[i] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+          } else {
+            cargs[i] = build_expr(ctx, arg);
+            if (ctx->failed) return ir_val_none();
+          }
         }
       }
       int v = ir_func_new_vreg(ctx->f);
@@ -530,6 +595,26 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
       return 0;
     }
     node_lvar_t *lv = (node_lvar_t *)arg;
+    lvar_t *owner = find_owning_lvar(ctx, lv->offset);
+    int param_full_size = owner && owner->size > 0 ? owner->size : lv->mem.type_size;
+    if (param_full_size > 8) {
+      /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
+       * したポインタを x{i} で渡してくる前提。callee は struct slot を確保し、
+       * IR_MEMCPY で値を取り込む。 */
+      int param_vreg = ir_func_new_vreg(ctx->f);
+      ir_inst_t *p = ir_inst_new(IR_PARAM);
+      p->dst = ir_val_vreg(param_vreg, IR_TY_PTR);
+      p->src1 = ir_val_imm(IR_TY_I32, i);
+      ir_func_append_inst(ctx->f, p);
+      int slot_vreg = address_of_lvar(ctx, lv->offset);
+      if (slot_vreg < 0) return 0;
+      ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+      cp->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      cp->src2 = ir_val_vreg(param_vreg, IR_TY_PTR);
+      cp->alloca_size = param_full_size;
+      ir_func_append_inst(ctx->f, cp);
+      continue;
+    }
     ir_type_t vty = lvar_value_type(lv);
     int param_vreg = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);

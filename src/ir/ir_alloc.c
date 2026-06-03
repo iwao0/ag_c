@@ -75,6 +75,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_STORE:        return "store";
     case IR_ALLOCA:       return "alloca";
     case IR_LEA:          return "lea";
+    case IR_MEMCPY:       return "memcpy";
     case IR_LOAD_IMM:     return "load_imm";
     case IR_LOAD_FP_IMM:  return "load_fp_imm";
     case IR_LOAD_STR:     return "load_str";

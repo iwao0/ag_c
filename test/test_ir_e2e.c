@@ -156,6 +156,20 @@ int main(void) {
   run_ir_case("struct_addr_member_ptr_walk",
               "struct S { int a; int b; }; int main(void) { struct S s; s.a = 10; s.b = 20; int *p = &s.a; return p[0] + p[1]; }\n", 30);
 
+  /* Phase 4d-2: struct 値代入と引数渡し */
+  run_ir_case("struct_value_assign_8B",
+              "struct S { int a; int b; }; int main(void) { struct S s1; s1.a = 7; s1.b = 35; struct S s2; s2 = s1; return s2.a + s2.b; }\n", 42);
+  run_ir_case("struct_value_assign_12B",
+              "struct P { int x; int y; int z; }; int main(void) { struct P a; a.x = 1; a.y = 2; a.z = 3; struct P b; b = a; a.x = 99; return b.x + b.y + b.z; }\n", 6);
+  run_ir_case("struct_arg_8B",
+              "struct S { int a; int b; }; int sum(struct S s) { return s.a + s.b; } int main(void) { struct S s; s.a = 20; s.b = 22; return sum(s); }\n", 42);
+  run_ir_case("struct_arg_12B",
+              "struct P { int a; int b; int c; }; int sum(struct P p) { return p.a + p.b + p.c; } int main(void) { struct P p; p.a = 10; p.b = 12; p.c = 20; return sum(p); }\n", 42);
+  run_ir_case("struct_arg_16B",
+              "struct Q { int a; int b; int c; int d; }; int sum(struct Q q) { return q.a + q.b + q.c + q.d; } int main(void) { struct Q q; q.a = 10; q.b = 10; q.c = 10; q.d = 12; return sum(q); }\n", 42);
+  run_ir_case("struct_arg_24B",
+              "struct R { int a; int b; int c; int d; int e; int f; }; int sum(struct R r) { return r.a + r.b + r.c + r.d + r.e + r.f; } int main(void) { struct R r; r.a = 7; r.b = 7; r.c = 7; r.d = 7; r.e = 7; r.f = 7; return sum(r); }\n", 42);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

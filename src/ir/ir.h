@@ -63,6 +63,8 @@ typedef enum {
   IR_STORE,
   IR_ALLOCA,
   IR_LEA,
+  /* 構造体コピー (memcpy 相当)。src1=dst ptr, src2=src ptr, alloca_size=バイト数。 */
+  IR_MEMCPY,
 
   /* 即値ロード */
   IR_LOAD_IMM, IR_LOAD_FP_IMM, IR_LOAD_STR, IR_LOAD_SYM,
