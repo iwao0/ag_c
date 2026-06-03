@@ -1367,6 +1367,182 @@ static void gen_expr(node_t *node) {
   cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
+// 関数末尾の標準エピローグ。VLA で sp が動いた場合に備えて x29 から復帰させる。
+static void emit_func_epilogue(void) {
+  cg_emitf("  mov sp, x29\n");
+  cg_emitf("  ldp x29, x30, [sp]\n");
+  cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
+  cg_emitf("  ret\n");
+}
+
+// `return self(args...);` を末尾呼び出しに展開できるなら出力して true を返す。
+// 展開できない場合は何も書かずに false を返す。
+static bool try_emit_tail_call(node_t *node) {
+  if (!(node->lhs && node->lhs->kind == ND_FUNCALL && node->ret_struct_size == 0 &&
+        node->fp_kind == 0)) {
+    return false;
+  }
+  node_func_t *call = as_func(node->lhs);
+  if (call->callee != NULL ||
+      call->funcname_len != cg_current_funcname_len ||
+      strncmp(call->funcname, cg_current_funcname, cg_current_funcname_len) != 0 ||
+      call->nargs != cg_current_nargs) {
+    return false;
+  }
+  // 引数を評価してスタックに積む
+  for (int i = 0; i < call->nargs; i++) {
+    gen_expr(call->args[i]);
+  }
+  // スタックから引数レジスタにポップ（逆順）
+  for (int i = call->nargs - 1; i >= 0; i--) {
+    cg_emitf("  ldr x%d, [sp], #16\n", i);
+  }
+  // 引数保存ラベルへジャンプ（プロローグをスキップ）
+  cg_emitf("  b .L_tco_%.*s\n", cg_current_funcname_len, cg_current_funcname);
+  return true;
+}
+
+// >16B 構造体戻り値: ローカル変数からのコピーを x8 が指すバッファへ書き出す。
+// lvar 以外（式由来）の場合は何も書かない（呼び出し元での失敗ケース）。
+static void emit_return_large_struct(node_t *node) {
+  if (node->lhs->kind != ND_LVAR) return;
+  node_lvar_t *lvar = (node_lvar_t *)node->lhs;
+  int frame_off = 16 + lvar->offset;
+  int size = node->ret_struct_size;
+  cg_emitf("  ldr x8, [x29, #%d]\n", X8_SAVE_OFFSET); // 退避した x8 を復元
+  int off = 0;
+  for (; off + 8 <= size; off += 8) {
+    cg_emitf("  ldr x9, [x29, #%d]\n", frame_off + off);
+    cg_emitf("  str x9, [x8, #%d]\n", off);
+  }
+  if (off + 4 <= size) {
+    cg_emitf("  ldr w9, [x29, #%d]\n", frame_off + off);
+    cg_emitf("  str w9, [x8, #%d]\n", off);
+    off += 4;
+  }
+  for (; off < size; off++) {
+    cg_emitf("  ldrb w9, [x29, #%d]\n", frame_off + off);
+    cg_emitf("  strb w9, [x8, #%d]\n", off);
+  }
+}
+
+// 9-16B 構造体戻り値: x0/x1 ペアへロード。
+static void emit_return_pair_struct(node_t *node) {
+  if (node->lhs->kind == ND_LVAR) {
+    node_lvar_t *lvar = (node_lvar_t *)node->lhs;
+    int frame_off = 16 + lvar->offset;
+    cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
+    cg_emitf("  ldr x1, [x29, #%d]\n", frame_off + 8);
+  } else {
+    // 式の結果（アドレス）からロード
+    gen_expr(node->lhs);
+    cg_emitf("  ldr x9, [sp], #16\n");
+    cg_emitf("  ldr x0, [x9]\n");
+    cg_emitf("  ldr x1, [x9, #8]\n");
+  }
+}
+
+// スカラー戻り値: 関数の戻り値型 (fp_kind) と式の fp_kind から
+// s0/d0/x0 のどれにロードするかを決める。式が浮動小数で戻り値が整数の場合は fcvtzs。
+static void emit_return_scalar(node_t *node) {
+  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    gen_expr(node->lhs);
+    gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
+    return;
+  }
+  if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    gen_expr(node->lhs);
+    gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
+    return;
+  }
+  // 戻り値型が整数
+  gen_expr(node->lhs);
+  if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    cg_emitf("  ldr s0, [sp], #16\n");
+    cg_emitf("  fcvtzs x0, s0\n");
+  } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    cg_emitf("  ldr d0, [sp], #16\n");
+    cg_emitf("  fcvtzs x0, d0\n");
+  } else {
+    cg_emitf("  ldr x0, [sp], #16\n");
+  }
+}
+
+static void gen_stmt_return(node_t *node) {
+  if (try_emit_tail_call(node)) return;
+  if (node->lhs) {
+    if (node->ret_struct_size > 16) {
+      emit_return_large_struct(node);
+    } else if (node->ret_struct_size > 8) {
+      emit_return_pair_struct(node);
+    } else {
+      emit_return_scalar(node);
+    }
+  } else {
+    // void 関数の return; は戻り値レジスタを0で統一
+    cg_emitf("  mov x0, #0\n");
+  }
+  emit_func_epilogue();
+}
+
+// 仮引数 (x0..xN-1) を ABI に従ってフレームスロットへ保存。
+// type_size > 16: byref (1 レジスタにポインタ)
+// type_size  9-16: 2 レジスタ構造体 → stp で2スロット保存
+// type_size ≤ 8: 1 レジスタ (スカラ / ≤8B 構造体)
+// 可変長引数関数では消費しなかった残りの x{reg}..x7 を次のスロットに保存する。
+static void emit_param_save_to_frame(node_func_t *fn) {
+  int reg = 0;
+  for (int i = 0; i < fn->nargs; i++) {
+    int abi_sz = as_lvar(fn->args[i])->mem.type_size;
+    int frame_off = 16 + as_lvar(fn->args[i])->offset;
+    if (abi_sz > 16) {
+      cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
+      reg++;
+    } else if (abi_sz > 8) {
+      cg_emitf("  stp x%d, x%d, [x29, #%d]\n", reg, reg + 1, frame_off);
+      reg += 2;
+    } else {
+      cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
+      reg++;
+    }
+  }
+  if (fn->is_variadic) {
+    for (int i = reg; i < 8; i++) {
+      cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + i * 8);
+    }
+  }
+}
+
+static void gen_stmt_funcdef(node_func_t *fn) {
+  cg_current_funcname = fn->funcname;
+  cg_current_funcname_len = fn->funcname_len;
+  cg_current_nargs = fn->nargs;
+  clear_label_map();
+  collect_goto_labels(fn->base.rhs);
+  // 関数ラベル
+  cg_emitf(".global _%.*s\n", fn->funcname_len, fn->funcname);
+  cg_emitf(".align 2\n");
+  cg_emitf("_%.*s:\n", fn->funcname_len, fn->funcname);
+  // プロローグ
+  cg_emitf("  sub sp, sp, #%d\n", STACK_SIZE);
+  cg_emitf("  stp x29, x30, [sp]\n");
+  cg_emitf("  mov x29, sp\n");
+  // >16B 構造体戻り値: x8 (indirect result pointer) をフレームに退避
+  if (fn->base.ret_struct_size > 16) {
+    cg_emitf("  str x8, [x29, #%d]\n", X8_SAVE_OFFSET);
+  }
+  // TCO 用ラベル: 末尾再帰時はここへ
+  cg_emitf(".L_tco_%.*s:\n", fn->funcname_len, fn->funcname);
+  emit_param_save_to_frame(fn);
+  // 関数本体
+  gen_stmt(fn->base.rhs);
+  // main の return が無い場合は 0
+  if (is_main_func(fn)) {
+    cg_emitf("  mov x0, #0\n");
+  }
+  emit_func_epilogue();
+}
+
 static void gen_stmt_if(node_ctrl_t *ctrl) {
   int lbl = label_count++;
   gen_expr(ctrl->base.lhs);
@@ -1487,159 +1663,8 @@ static void gen_stmt(node_t *node) {
       gen_stmt(as_block(node)->body[i]);
     }
     return;
-  case ND_RETURN:
-    // TCO: return self(args...) → 引数を再設定して関数先頭へジャンプ
-    if (node->lhs && node->lhs->kind == ND_FUNCALL && node->ret_struct_size == 0 &&
-        node->fp_kind == 0) {
-      node_func_t *call = as_func(node->lhs);
-      if (call->callee == NULL &&
-          call->funcname_len == cg_current_funcname_len &&
-          strncmp(call->funcname, cg_current_funcname, cg_current_funcname_len) == 0 &&
-          call->nargs == cg_current_nargs) {
-        // 引数を評価してスタックに積む
-        for (int i = 0; i < call->nargs; i++) {
-          gen_expr(call->args[i]);
-        }
-        // スタックから引数レジスタにポップ（逆順）
-        for (int i = call->nargs - 1; i >= 0; i--) {
-          cg_emitf("  ldr x%d, [sp], #16\n", i);
-        }
-        // 引数保存ラベルへジャンプ（プロローグをスキップ）
-        cg_emitf("  b .L_tco_%.*s\n", cg_current_funcname_len, cg_current_funcname);
-        return;
-      }
-    }
-    if (node->lhs) {
-      if (node->ret_struct_size > 16) {
-        // >16B 構造体戻り値: x8 が指すバッファにローカル変数の内容をコピー
-        if (node->lhs->kind == ND_LVAR) {
-          node_lvar_t *lvar = (node_lvar_t *)node->lhs;
-          int frame_off = 16 + lvar->offset;
-          int size = node->ret_struct_size;
-          cg_emitf("  ldr x8, [x29, #%d]\n", X8_SAVE_OFFSET); // 退避した x8 を復元
-          int off = 0;
-          // 8バイト単位でコピー
-          for (; off + 8 <= size; off += 8) {
-            cg_emitf("  ldr x9, [x29, #%d]\n", frame_off + off);
-            cg_emitf("  str x9, [x8, #%d]\n", off);
-          }
-          // 残りの4バイト
-          if (off + 4 <= size) {
-            cg_emitf("  ldr w9, [x29, #%d]\n", frame_off + off);
-            cg_emitf("  str w9, [x8, #%d]\n", off);
-            off += 4;
-          }
-          // 残りの1バイト単位
-          for (; off < size; off++) {
-            cg_emitf("  ldrb w9, [x29, #%d]\n", frame_off + off);
-            cg_emitf("  strb w9, [x8, #%d]\n", off);
-          }
-        }
-      } else if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
-        // 9-16B 構造体戻り値: フレームから x0/x1 ペアにロード
-        if (node->lhs->kind == ND_LVAR) {
-          node_lvar_t *lvar = (node_lvar_t *)node->lhs;
-          int frame_off = 16 + lvar->offset;
-          cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
-          cg_emitf("  ldr x1, [x29, #%d]\n", frame_off + 8);
-        } else {
-          // 式の結果（アドレス）からロード
-          gen_expr(node->lhs);
-          cg_emitf("  ldr x9, [sp], #16\n");
-          cg_emitf("  ldr x0, [x9]\n");
-          cg_emitf("  ldr x1, [x9, #8]\n");
-        }
-      } else if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { // 関数の戻り値が float
-        gen_expr(node->lhs);
-        gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
-      } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { // 関数の戻り値が double/long double(現状lowering)
-        gen_expr(node->lhs);
-        gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
-      } else {                               // 関数の戻り値が 整数
-        gen_expr(node->lhs);
-        if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
-          cg_emitf("  ldr s0, [sp], #16\n");
-          cg_emitf("  fcvtzs x0, s0\n");       // float->int
-        } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-          cg_emitf("  ldr d0, [sp], #16\n");
-          cg_emitf("  fcvtzs x0, d0\n");       // double->int
-        } else {
-          cg_emitf("  ldr x0, [sp], #16\n");   // そのまま int
-        }
-      }
-    } else {
-      // void 関数の return; は戻り値レジスタを0で統一
-      cg_emitf("  mov x0, #0\n");
-    }
-    cg_emitf("  mov sp, x29\n");       // VLA等でspが動いた場合に固定フレーム先頭へ戻す
-    cg_emitf("  ldp x29, x30, [sp]\n");
-    cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
-    cg_emitf("  ret\n");
-    return;
-  case ND_FUNCDEF: {
-    node_func_t *fn = as_func(node);
-    cg_current_funcname = fn->funcname;
-    cg_current_funcname_len = fn->funcname_len;
-    cg_current_nargs = fn->nargs;
-    clear_label_map();
-    collect_goto_labels(fn->base.rhs);
-    // 関数ラベルの出力
-    cg_emitf(".global _%.*s\n", fn->funcname_len, fn->funcname);
-    cg_emitf(".align 2\n");
-    cg_emitf("_%.*s:\n", fn->funcname_len, fn->funcname);
-    // プロローグ
-    cg_emitf("  sub sp, sp, #%d\n", STACK_SIZE);
-    cg_emitf("  stp x29, x30, [sp]\n");
-    cg_emitf("  mov x29, sp\n");
-    // >16B 構造体戻り値: x8 (indirect result pointer) をフレームに退避
-    if (fn->base.ret_struct_size > 16) {
-      cg_emitf("  str x8, [x29, #%d]\n", X8_SAVE_OFFSET);
-    }
-    // TCO用ラベル: 末尾再帰時はここへジャンプして引数を再保存
-    cg_emitf(".L_tco_%.*s:\n", fn->funcname_len, fn->funcname);
-    // 仮引数をレジスタからローカル変数スロットへ保存
-    // type_size > 16: byref (>16B 構造体の値渡し) → 1レジスタ (ポインタ)
-    // type_size 9-16: 2レジスタ構造体 → stp
-    // type_size ≤ 8: 1レジスタ (スカラー / ≤8B 構造体)
-    {
-      int reg = 0;
-      for (int i = 0; i < fn->nargs; i++) {
-        int abi_sz = as_lvar(fn->args[i])->mem.type_size;
-        int frame_off = 16 + as_lvar(fn->args[i])->offset;
-        if (abi_sz > 16) {
-          // >16B構造体: byref (1レジスタ, ポインタを保存)
-          cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
-          reg++;
-        } else if (abi_sz > 8) {
-          // 9-16B構造体: 2レジスタ → stp x_reg, x_{reg+1}
-          cg_emitf("  stp x%d, x%d, [x29, #%d]\n", reg, reg + 1, frame_off);
-          reg += 2;
-        } else {
-          // スカラー / ≤8B構造体: 1レジスタ
-          cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
-          reg++;
-        }
-      }
-      // 可変長引数関数: 残りの引数レジスタ (x{reg}..x7) を次のスロットに保存
-      if (fn->is_variadic) {
-        for (int i = reg; i < 8; i++) {
-          cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + i * 8);
-        }
-      }
-    }
-    // 関数本体
-    gen_stmt(fn->base.rhs);
-    // main の return が無い場合は 0 を返す
-    if (is_main_func(fn)) {
-      cg_emitf("  mov x0, #0\n");
-    }
-    // エピローグ
-    cg_emitf("  mov sp, x29\n");       // VLA等でspが動いた場合に固定フレーム先頭へ戻す
-    cg_emitf("  ldp x29, x30, [sp]\n");
-    cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
-    cg_emitf("  ret\n");
-    return;
-  }
+  case ND_RETURN:  gen_stmt_return(node); return;
+  case ND_FUNCDEF: gen_stmt_funcdef(as_func(node)); return;
   case ND_IF:       gen_stmt_if(as_ctrl(node)); return;
   case ND_WHILE:    gen_stmt_while(as_ctrl(node)); return;
   case ND_DO_WHILE: gen_stmt_do_while(as_ctrl(node)); return;
