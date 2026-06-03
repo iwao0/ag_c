@@ -45,7 +45,6 @@ typedef struct {
   int has_incomplete_array;
 } stmt_array_suffix_t;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
-static int parse_stmt_array_suffixes_constexpr_required(int base_mul);
 static node_t *stmt_internal(void);
 static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
@@ -80,7 +79,7 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     name = parse_member_decl_name_recursive_stmt(is_ptr, out_has_func_suffix, &paren_array_mul);
-    paren_array_mul = parse_stmt_array_suffixes_constexpr_required(paren_array_mul);
+    paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {
     name = tk_consume_ident();
@@ -116,15 +115,6 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
   return out;
 }
 
-static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
-  int arr_total = (base_mul > 0) ? base_mul : 1;
-  while (tk_consume('[')) {
-    int has_size = 0;
-    int n = psx_parse_array_size_optional_constexpr(&has_size);
-    if (has_size && n > 0) arr_total *= n;
-  }
-  return arr_total;
-}
 
 // _Alignas( constant-expression | type-name )
 

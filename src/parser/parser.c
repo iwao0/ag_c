@@ -135,7 +135,6 @@ typedef struct {
 static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr);
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr);
 static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
-static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
                                                                toplevel_array_suffix_t arr);
 static int current_toplevel_extern_flag(void);
@@ -671,16 +670,6 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
   return out;
 }
 
-static int parse_toplevel_array_suffixes_constexpr_required(int base_mul) {
-  int arr_total = (base_mul > 0) ? base_mul : 1;
-  while (tk_consume('[')) {
-    int has_size = 0;
-    int n = psx_parse_array_size_optional_constexpr(&has_size);
-    if (has_size && n > 0) arr_total *= n;
-  }
-  return arr_total;
-}
-
 static void parse_toplevel_declarator_list(void) {
   parse_toplevel_declarator_list_with_apply(0, apply_toplevel_object_from_head);
 }
@@ -858,7 +847,7 @@ static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens) {
 }
 
 static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul) {
-  int out = parse_toplevel_array_suffixes_constexpr_required(paren_array_mul);
+  int out = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
   tk_expect(')');
   return out;
 }

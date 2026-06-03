@@ -26,6 +26,16 @@ int psx_parse_array_size_optional_constexpr(int *out_has_size) {
   return n;
 }
 
+int psx_parse_array_suffixes_constexpr_required(int base_mul) {
+  int arr_total = (base_mul > 0) ? base_mul : 1;
+  while (tk_consume('[')) {
+    int has_size = 0;
+    int n = psx_parse_array_size_optional_constexpr(&has_size);
+    if (has_size && n > 0) arr_total *= n;
+  }
+  return arr_total;
+}
+
 int psx_parse_member_array_suffixes(int *out_is_flex_array) {
   int arr_total = 1;
   int is_flex_array = 0;
