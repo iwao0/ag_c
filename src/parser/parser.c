@@ -944,25 +944,8 @@ static int is_toplevel_decl_like_start(token_t *tok) {
          psx_ctx_is_typedef_name_token(tok);
 }
 
-static const struct_member_layout_ops_t toplevel_struct_layout_ops = {
-  .parse_alignas_value        = psx_parse_alignas_value,
-  .make_anonymous_tag_name    = psx_make_anonymous_tag_name,
-  .parse_tag_definition_body  = parse_tag_definition_body_toplevel,
-  .parse_member_decl_head     = parse_toplevel_member_decl_head,
-  .parse_enum_const_expr      = psx_parse_enum_const_expr,
-  .parse_member_array_suffixes = psx_parse_member_array_suffixes,
-};
-
-static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
-  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, &toplevel_struct_layout_ops);
-}
-
 static int parse_tag_definition_body_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
-  if (tag_kind == TK_ENUM) {
-    if (out_size) *out_size = 4;
-    return psx_parse_enum_members();
-  }
-  return parse_struct_or_union_members_layout_toplevel(tag_kind, tag_name, tag_len, out_size);
+  return psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, out_size, parse_toplevel_member_decl_head);
 }
 
 static void install_toplevel_tag_decl_globals(token_kind_t tag_kind, char *tag_name, int tag_len) {

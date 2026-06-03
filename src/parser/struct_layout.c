@@ -1,5 +1,9 @@
 #include "internal/struct_layout.h"
+#include "internal/alignas_value.h"
+#include "internal/anon_tag.h"
+#include "internal/array_suffixes.h"
 #include "internal/diag.h"
+#include "internal/enum_const.h"
 #include "internal/semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -10,9 +14,18 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
 
+int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                  int *out_size, parse_member_decl_head_fn parse_head) {
+  if (tag_kind == TK_ENUM) {
+    if (out_size) *out_size = 4;
+    return psx_parse_enum_members();
+  }
+  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, parse_head);
+}
+
 int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len,
                                              int *out_size,
-                                             const struct_member_layout_ops_t *ops) {
+                                             parse_member_decl_head_fn parse_head) {
   int member_count = 0;
   int current_off = 0;
   int union_size = 0;
@@ -30,7 +43,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_ALIGNAS) {
       if (curtok()->kind == TK_ALIGNAS) {
         set_curtok(curtok()->next);
-        int av = ops->parse_alignas_value();
+        int av = psx_parse_alignas_value();
         if (av > member_alignas) member_alignas = av;
       } else {
         set_curtok(curtok()->next);
@@ -54,14 +67,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         member_tag_name = nested_tag->str;
         member_tag_len = nested_tag->len;
       } else if (curtok()->kind == TK_LBRACE) {
-        ops->make_anonymous_tag_name(&member_tag_name, &member_tag_len);
+        psx_make_anonymous_tag_name(&member_tag_name, &member_tag_len);
       } else {
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
       }
       if (tk_consume('{')) {
         int nested_n = 0;
         int nested_sz = 0;
-        nested_n = ops->parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len, &nested_sz);
+        nested_n = psx_parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len, &nested_sz, parse_head);
         psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len, nested_n, nested_sz);
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         if (curtok()->kind != TK_MUL) {
@@ -81,7 +94,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     }
 
     for (;;) {
-      member_decl_head_t head = ops->parse_member_decl_head();
+      member_decl_head_t head = parse_head();
       int has_member_name = head.member != NULL;
       if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
           && curtok()->kind != TK_COLON) {
@@ -96,7 +109,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int bit_field_offset_in_storage = 0;
       if (curtok()->kind == TK_COLON) {
         set_curtok(curtok()->next);
-        long long bw = ops->parse_enum_const_expr();
+        long long bw = psx_parse_enum_const_expr();
         if (bw < 0) bw = 0;
         bit_width = (int)bw;
         int storage_size = head.is_ptr ? 8 : (elem_size > 0 ? elem_size : 4);
@@ -150,7 +163,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       if (curtok()->kind == TK_LBRACKET && !has_member_name) {
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
-      int arr_size = ops->parse_member_array_suffixes(&is_flex_array);
+      int arr_size = psx_parse_member_array_suffixes(&is_flex_array);
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
       int member_elem_size = head.is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);

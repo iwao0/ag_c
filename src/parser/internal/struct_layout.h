@@ -10,17 +10,13 @@ typedef struct {
   int paren_array_mul;
 } member_decl_head_t;
 
-typedef struct {
-  int (*parse_alignas_value)(void);
-  void (*make_anonymous_tag_name)(char **out_name, int *out_len);
-  int (*parse_tag_definition_body)(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size);
-  member_decl_head_t (*parse_member_decl_head)(void);
-  long long (*parse_enum_const_expr)(void);
-  int (*parse_member_array_suffixes)(int *out_is_flex_array);
-} struct_member_layout_ops_t;
+typedef member_decl_head_t (*parse_member_decl_head_fn)(void);
 
 int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len,
                                              int *out_size,
-                                             const struct_member_layout_ops_t *ops);
+                                             parse_member_decl_head_fn parse_head);
+
+int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                  int *out_size, parse_member_decl_head_fn parse_head);
 
 #endif

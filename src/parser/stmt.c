@@ -128,18 +128,6 @@ static member_decl_head_t parse_stmt_member_decl_head(void) {
   return out;
 }
 
-static const struct_member_layout_ops_t stmt_struct_layout_ops = {
-  .parse_alignas_value        = psx_parse_alignas_value,
-  .make_anonymous_tag_name    = psx_make_anonymous_tag_name,
-  .parse_tag_definition_body  = parse_tag_definition_body,
-  .parse_member_decl_head     = parse_stmt_member_decl_head,
-  .parse_enum_const_expr      = psx_parse_enum_const_expr,
-  .parse_member_array_suffixes = psx_parse_member_array_suffixes,
-};
-
-static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
-  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, &stmt_struct_layout_ops);
-}
 
 static int parse_array_size_optional_constexpr_stmt(int *out_has_size) {
   if (curtok()->kind == TK_RBRACKET) {
@@ -182,11 +170,7 @@ static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
 // _Alignas( constant-expression | type-name )
 
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
-  if (tag_kind == TK_ENUM) {
-    if (out_size) *out_size = 4;
-    return psx_parse_enum_members();
-  }
-  return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
+  return psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, out_size, parse_stmt_member_decl_head);
 }
 
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
