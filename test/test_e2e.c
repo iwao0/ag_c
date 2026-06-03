@@ -541,6 +541,7 @@ static const test_case_t test_cases[] = {
     {"pointer", "funcptr_array_assign_and_call", CASE_INT, "int add(int a,int b){return a+b;} int sub(int a,int b){return a-b;} int main(){int (*ops[2])(int,int); ops[0]=add; ops[1]=sub; return ops[0](10,3)+ops[1](10,3);}", 20, 0},
     {"pointer", "funcptr_array_brace_init", CASE_INT, "int add(int a,int b){return a+b;} int sub(int a,int b){return a-b;} int main(){int (*ops[2])(int,int)={add,sub}; return ops[0](10,3)+ops[1](10,3);}", 20, 0},
     {"pointer", "funcptr_array_typedef_brace_init", CASE_INT, "typedef int (*binop_t)(int,int); int add(int a,int b){return a+b;} int mul(int a,int b){return a*b;} int main(){binop_t ops[2]={add,mul}; return ops[0](3,4)+ops[1](2,5);}", 17, 0},
+    {"pointer", "funcptr_array_inferred_size", CASE_INT, "int add(int a,int b){return a+b;} int sub(int a,int b){return a-b;} int mul(int a,int b){return a*b;} int main(){int (*ops[])(int,int)={add,sub,mul}; return ops[0](2,3)+ops[1](10,4)+ops[2](3,7);}", 32, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},

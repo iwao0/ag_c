@@ -1210,16 +1210,20 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
     tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels,
                                       out_paren_array_mul, NULL, out_inner_array_mul);
     // パレン内の `[N]` を捕捉する: `int (*ops[N])(...)` の N は関数ポインタ配列の要素数。
+    // 空 `[]` の場合は -1 を伝え、呼び出し側で初期化子から推定させる。
     while (curtok()->kind == TK_LBRACKET) {
       if (out_inner_array_mul && tk_consume('[')) {
+        bool empty_bracket = (curtok() && curtok()->kind == TK_RBRACKET);
         int n = 0;
-        if (curtok() && curtok()->kind != TK_RBRACKET) {
+        if (!empty_bracket) {
           n = parse_array_size_constexpr_decl();
         }
         tk_expect(']');
-        if (n > 0) {
+        if (empty_bracket) {
+          *out_inner_array_mul = -1; // size unspecified
+        } else if (n > 0) {
           if (*out_inner_array_mul == 0) *out_inner_array_mul = 1;
-          *out_inner_array_mul *= n;
+          if (*out_inner_array_mul > 0) *out_inner_array_mul *= n;
         }
       } else {
         skip_bracket_group();
@@ -1425,10 +1429,23 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     lvar_t *var = NULL;
     {
-      if (inner_array_mul > 0 && is_pointer) {
+      if ((inner_array_mul > 0 || inner_array_mul == -1) && is_pointer) {
         // `int (*ops[N])(int,int)` パターン: 関数ポインタの配列。
         // 各要素は 8 バイトの関数ポインタなので elem_size=8 で is_array を立てる。
-        int arr_total_bytes = inner_array_mul * 8;
+        // inner_array_mul==-1 は `int (*ops[])(...)={f,g,...}` の形で、
+        // 要素数を初期化子から推定する必要がある。
+        int effective_count = inner_array_mul;
+        if (inner_array_mul == -1) {
+          long long inferred = infer_array_count_from_initializer(8);
+          if (inferred > 0) {
+            effective_count = (int)inferred;
+          } else {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+            effective_count = 1;
+          }
+        }
+        int arr_total_bytes = effective_count * 8;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, arr_total_bytes, 8, 1, alignas_val);
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;
