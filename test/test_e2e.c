@@ -649,6 +649,8 @@ static const test_case_t test_cases[] = {
     {"tokenizer", "string_concat_prefix", CASE_INT_FILE, "test/fixtures/tokenizer/string_concat_prefix.c", 133, 0},
     {"tokenizer", "ucn_string", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_string.c", 108, 0},
     {"tokenizer", "ucn_string_3byte", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_string_3byte.c", 230, 0},
+    {"tokenizer", "ucn_string_u16_surrogate", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_string_u16_surrogate.c", 222, 0},
+    {"tokenizer", "ucn_string_u32", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_string_u32.c", 246, 0},
     {"tokenizer", "ucn_ident", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_ident.c", 7, 0},
     {"tokenizer", "trigraph_or", CASE_INT_FILE, "test/fixtures/tokenizer/trigraph_or.c", 7, 0},
     {"tokenizer", "trigraph_xor", CASE_INT_FILE, "test/fixtures/tokenizer/trigraph_xor.c", 6, 0},
@@ -688,6 +690,8 @@ static const test_case_t test_cases[] = {
     {"stdheader", "setjmp_include", CASE_INT_FILE, "test/fixtures/stdheader/setjmp_include.c", 42, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_int.c", 42, 0},
+    {"stdarg", "va_arg_double", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_double.c", 3, 0},
+    {"stdarg", "va_arg_mix", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_mix.c", 19, 0},
     {"stdarg", "va_copy", CASE_INT_FILE, "test/fixtures/stdarg/va_copy.c", 12, 0},
 
     // VLA (Variable Length Array)

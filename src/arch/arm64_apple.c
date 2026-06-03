@@ -1796,8 +1796,19 @@ void gen(node_t *node) {
 
 void gen_string_literals(void) {
   if (!string_literals) return;
-  cg_emitf(".section __TEXT,__cstring\n");
+  // narrow char 文字列のみ __TEXT,__cstring に置く。
+  // u"..." / U"..." は内部にゼロバイトを含む (UTF-16 LE のサロゲートや UTF-32 の
+  // 上位 0 バイト) ため、cstring セクションだとリンカが途中で切ってしまう。
+  // 別途 __DATA,__const に出力する。
+  int has_narrow = 0;
+  int has_wide = 0;
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    if (lit->char_width == TK_CHAR_WIDTH_CHAR) has_narrow = 1;
+    else has_wide = 1;
+  }
+  if (has_narrow) cg_emitf(".section __TEXT,__cstring\n");
+  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    if (lit->char_width != TK_CHAR_WIDTH_CHAR) continue;
     cg_emitf("%s:\n", lit->label);
     int i = 0;
     while (i < lit->len) {
@@ -1827,14 +1838,45 @@ void gen_string_literals(void) {
           cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
           cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
         }
-      } else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
-        cg_emitf("  .hword %u\n", (unsigned)(v & 0xFFFF));
+      }
+    }
+    cg_emitf("  .byte 0\n");
+  }
+  // u"..." (UTF-16) / U"..." (UTF-32) / L"..." リテラル: 内部にゼロバイトを
+  // 含み得るので cstring ではなく __DATA,__const に置く。
+  if (has_wide) {
+    cg_emitf(".section __DATA,__const\n");
+    cg_emitf(".align 2\n");
+  }
+  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    if (lit->char_width == TK_CHAR_WIDTH_CHAR) continue;
+    cg_emitf("%s:\n", lit->label);
+    int i = 0;
+    while (i < lit->len) {
+      uint32_t v = 0;
+      if (lit->str[i] == '\\') {
+        tk_parse_escape_value(lit->str, lit->len, &i, &v);
+      } else {
+        v = (unsigned char)lit->str[i];
+        i++;
+      }
+      if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
+        // UTF-16: BMP (U+0000..U+FFFF) は 1 hword、SMP 以上はサロゲートペア。
+        // 修正前は `v & 0xFFFF` で U+10000 以上を切り詰めていた。
+        if (v < 0x10000) {
+          cg_emitf("  .hword %u\n", (unsigned)v);
+        } else {
+          uint32_t u = v - 0x10000;
+          unsigned hi = 0xD800u | ((u >> 10) & 0x3FFu);
+          unsigned lo = 0xDC00u | (u & 0x3FFu);
+          cg_emitf("  .hword %u\n", hi);
+          cg_emitf("  .hword %u\n", lo);
+        }
       } else {
         cg_emitf("  .word %u\n", (unsigned)v);
       }
     }
-    if (lit->char_width == TK_CHAR_WIDTH_CHAR) cg_emitf("  .byte 0\n");
-    else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword 0\n");
+    if (lit->char_width == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword 0\n");
     else cg_emitf("  .word 0\n");
   }
   cg_emitf(".text\n");
