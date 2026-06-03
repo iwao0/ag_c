@@ -180,6 +180,14 @@ int main(void) {
   run_ir_case("struct_ret_with_args",
               "struct V { int x; int y; int z; }; struct V make(int a, int b, int c) { struct V v; v.x = a; v.y = b; v.z = c; return v; } int main(void) { struct V v = make(10, 13, 19); return v.x + v.y + v.z; }\n", 42);
 
+  /* Phase 7b: bitfield */
+  run_ir_case("bitfield_basic",
+              "int main(void) { struct S { unsigned int a:3; unsigned int b:5; }; struct S s; s.a = 5; s.b = 10; return s.a; }\n", 5);
+  run_ir_case("bitfield_unsigned_wrap",
+              "int main(void) { struct S { unsigned int f:3; }; struct S s; s.f = 9; return s.f; }\n", 1);
+  run_ir_case("bitfield_read_b",
+              "int main(void) { struct S { unsigned int a:3; unsigned int b:5; }; struct S s; s.a = 5; s.b = 10; return s.b; }\n", 10);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

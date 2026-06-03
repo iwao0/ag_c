@@ -282,7 +282,12 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_SUB:
     case IR_MUL:
     case IR_DIV:
-    case IR_MOD: {
+    case IR_MOD:
+    case IR_AND:
+    case IR_OR:
+    case IR_XOR:
+    case IR_SHL:
+    case IR_SHR: {
       char b1[8], b2[8], bd[8];
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
@@ -294,10 +299,14 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_MUL: cg_emitf("  mul %s, %s, %s\n", d, s1, s2); break;
         case IR_DIV: cg_emitf("  sdiv %s, %s, %s\n", d, s1, s2); break;
         case IR_MOD:
-          /* d = s1 - (s1/s2)*s2、x11 を一時に使う */
           cg_emitf("  sdiv x11, %s, %s\n", s1, s2);
           cg_emitf("  msub %s, x11, %s, %s\n", d, s2, s1);
           break;
+        case IR_AND: cg_emitf("  and %s, %s, %s\n", d, s1, s2); break;
+        case IR_OR:  cg_emitf("  orr %s, %s, %s\n", d, s1, s2); break;
+        case IR_XOR: cg_emitf("  eor %s, %s, %s\n", d, s1, s2); break;
+        case IR_SHL: cg_emitf("  lsl %s, %s, %s\n", d, s1, s2); break;
+        case IR_SHR: cg_emitf("  lsr %s, %s, %s\n", d, s1, s2); break;
         default: break;
       }
       release_dst(ctx, inst->dst, d, spill);

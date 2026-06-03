@@ -123,6 +123,28 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
   return v;
 }
 
+/* 整数即値を LOAD_IMM で生成し vreg を返す。 */
+__attribute__((unused))
+static int emit_load_imm(ir_build_ctx_t *ctx, long long imm, ir_type_t ty) {
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *inst = ir_inst_new(IR_LOAD_IMM);
+  inst->dst = ir_val_vreg(v, ty);
+  inst->src1 = ir_val_imm(ty, imm);
+  ir_func_append_inst(ctx->f, inst);
+  return v;
+}
+
+/* 2 項演算を emit して結果 vreg を返す。 */
+static int emit_binop(ir_build_ctx_t *ctx, ir_op_t op, ir_val_t a, ir_val_t b, ir_type_t ty) {
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *inst = ir_inst_new(op);
+  inst->dst = ir_val_vreg(v, ty);
+  inst->src1 = a;
+  inst->src2 = b;
+  ir_func_append_inst(ctx->f, inst);
+  return v;
+}
+
 /* ND_LVAR.offset → 「実際にアクセスすべきアドレスを持つ vreg」を返す。
  * struct メンバの場合は owner ALLOCA + delta (= IR_LEA) を構築する。 */
 static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
@@ -163,6 +185,37 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_type_t vty = lvar_value_type(lv);
       int ptr_vreg = address_of_lvar(ctx, lv->offset);
       if (ptr_vreg < 0) return ir_val_none();
+      /* bitfield 読み出し:
+       *   v_load   = *ptr  (storage unit、通常 i32)
+       *   v_shr    = v_load >> bit_offset
+       *   v_masked = v_shr & ((1<<bw)-1)
+       *   signed: さらに sign extend ((v ^ sign_bit) - sign_bit) */
+      int bw = lv->mem.bit_width;
+      if (bw > 0) {
+        int v_load = ir_func_new_vreg(ctx->f);
+        ir_inst_t *ld = ir_inst_new(IR_LOAD);
+        ld->dst = ir_val_vreg(v_load, IR_TY_I32);
+        ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+        ir_func_append_inst(ctx->f, ld);
+        int bo = lv->mem.bit_offset;
+        ir_val_t cur = ir_val_vreg(v_load, IR_TY_I32);
+        if (bo > 0) {
+          int v_shr = emit_binop(ctx, IR_SHR, cur, ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
+          cur = ir_val_vreg(v_shr, IR_TY_I32);
+        }
+        long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
+        int v_masked = emit_binop(ctx, IR_AND, cur, ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
+        cur = ir_val_vreg(v_masked, IR_TY_I32);
+        if (lv->mem.bit_is_signed && bw < 32) {
+          long long sign_bit = 1LL << (bw - 1);
+          int v_xor = emit_binop(ctx, IR_XOR, cur, ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
+          int v_sub = emit_binop(ctx, IR_SUB,
+                                  ir_val_vreg(v_xor, IR_TY_I32),
+                                  ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
+          cur = ir_val_vreg(v_sub, IR_TY_I32);
+        }
+        return cur;
+      }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
       inst->dst = ir_val_vreg(v, vty);
@@ -274,7 +327,48 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         if (ptr_vreg < 0) return ir_val_none();
         ir_val_t rhs = build_expr(ctx, node->rhs);
         if (ctx->failed) return ir_val_none();
-        /* rhs の型をターゲット型に揃える */
+        /* bitfield 書き込み:
+         *   v_old   = *ptr
+         *   inv     = ~((mask) << bit_offset)
+         *   v_clr   = v_old & inv
+         *   v_rhs_m = rhs & mask
+         *   v_shl   = v_rhs_m << bit_offset
+         *   v_new   = v_clr | v_shl
+         *   *ptr    = v_new
+         * 代入式の値は rhs (masking 前)。 */
+        int bw = lv->mem.bit_width;
+        if (bw > 0) {
+          int bo = lv->mem.bit_offset;
+          long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
+          long long shifted_mask = mask << bo;
+          long long inv_mask = ~shifted_mask;
+          int v_old = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ld = ir_inst_new(IR_LOAD);
+          ld->dst = ir_val_vreg(v_old, IR_TY_I32);
+          ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+          ir_func_append_inst(ctx->f, ld);
+          int v_clr = emit_binop(ctx, IR_AND,
+                                  ir_val_vreg(v_old, IR_TY_I32),
+                                  ir_val_imm(IR_TY_I32, inv_mask), IR_TY_I32);
+          ir_val_t rhs_int = rhs;
+          rhs_int.type = IR_TY_I32;
+          int v_rhs_m = emit_binop(ctx, IR_AND, rhs_int,
+                                    ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
+          ir_val_t cur = ir_val_vreg(v_rhs_m, IR_TY_I32);
+          if (bo > 0) {
+            int v_shl = emit_binop(ctx, IR_SHL, cur,
+                                    ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
+            cur = ir_val_vreg(v_shl, IR_TY_I32);
+          }
+          int v_new = emit_binop(ctx, IR_OR,
+                                  ir_val_vreg(v_clr, IR_TY_I32), cur, IR_TY_I32);
+          ir_inst_t *st = ir_inst_new(IR_STORE);
+          st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+          st->src2 = ir_val_vreg(v_new, IR_TY_I32);
+          ir_func_append_inst(ctx->f, st);
+          return rhs;
+        }
+        /* 通常のスカラ代入 */
         rhs.type = vty;
         ir_inst_t *st = ir_inst_new(IR_STORE);
         st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
@@ -283,14 +377,44 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         return rhs;
       }
       if (node->lhs->kind == ND_DEREF) {
-        /* *p = rhs */
+        /* *p = rhs。p が struct メンバアクセス由来なら bit_width が乗る。 */
+        node_mem_t *mm = (node_mem_t *)node->lhs;
+        int bw = mm->bit_width;
         ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
         if (ctx->failed) return ir_val_none();
         ir_val_t rhs = build_expr(ctx, node->rhs);
         if (ctx->failed) return ir_val_none();
-        /* DEREF 先の型は Phase 4b では i32 を既定にする (int への
-         * ポインタのみ想定)。今後 char/short/double 等のポインタを
-         * 扱うときに node の型情報から引く。 */
+        if (bw > 0) {
+          int bo = mm->bit_offset;
+          long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
+          long long shifted_mask = mask << bo;
+          long long inv_mask = ~shifted_mask;
+          int v_old = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ld = ir_inst_new(IR_LOAD);
+          ld->dst = ir_val_vreg(v_old, IR_TY_I32);
+          ld->src1 = ptr;
+          ir_func_append_inst(ctx->f, ld);
+          int v_clr = emit_binop(ctx, IR_AND,
+                                  ir_val_vreg(v_old, IR_TY_I32),
+                                  ir_val_imm(IR_TY_I32, inv_mask), IR_TY_I32);
+          ir_val_t rhs_int = rhs;
+          rhs_int.type = IR_TY_I32;
+          int v_rhs_m = emit_binop(ctx, IR_AND, rhs_int,
+                                    ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
+          ir_val_t cur = ir_val_vreg(v_rhs_m, IR_TY_I32);
+          if (bo > 0) {
+            int v_shl = emit_binop(ctx, IR_SHL, cur,
+                                    ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
+            cur = ir_val_vreg(v_shl, IR_TY_I32);
+          }
+          int v_new = emit_binop(ctx, IR_OR,
+                                  ir_val_vreg(v_clr, IR_TY_I32), cur, IR_TY_I32);
+          ir_inst_t *st = ir_inst_new(IR_STORE);
+          st->src1 = ptr;
+          st->src2 = ir_val_vreg(v_new, IR_TY_I32);
+          ir_func_append_inst(ctx->f, st);
+          return rhs;
+        }
         rhs.type = IR_TY_I32;
         ir_inst_t *st = ir_inst_new(IR_STORE);
         st->src1 = ptr;
@@ -320,6 +444,34 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_DEREF: {
       ir_val_t ptr = build_expr(ctx, node->lhs);
       if (ctx->failed) return ir_val_none();
+      /* bitfield 読み出し: bit_width > 0 のとき struct メンバが bitfield。 */
+      node_mem_t *mm = (node_mem_t *)node;
+      int bw = mm->bit_width;
+      if (bw > 0) {
+        int v_load = ir_func_new_vreg(ctx->f);
+        ir_inst_t *ld = ir_inst_new(IR_LOAD);
+        ld->dst = ir_val_vreg(v_load, IR_TY_I32);
+        ld->src1 = ptr;
+        ir_func_append_inst(ctx->f, ld);
+        int bo = mm->bit_offset;
+        ir_val_t cur = ir_val_vreg(v_load, IR_TY_I32);
+        if (bo > 0) {
+          int v_shr = emit_binop(ctx, IR_SHR, cur, ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
+          cur = ir_val_vreg(v_shr, IR_TY_I32);
+        }
+        long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
+        int v_masked = emit_binop(ctx, IR_AND, cur, ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
+        cur = ir_val_vreg(v_masked, IR_TY_I32);
+        if (mm->bit_is_signed && bw < 32) {
+          long long sign_bit = 1LL << (bw - 1);
+          int v_xor = emit_binop(ctx, IR_XOR, cur, ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
+          int v_sub = emit_binop(ctx, IR_SUB,
+                                  ir_val_vreg(v_xor, IR_TY_I32),
+                                  ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
+          cur = ir_val_vreg(v_sub, IR_TY_I32);
+        }
+        return cur;
+      }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
       /* Phase 4b: int* のみ前提 (deref 結果は i32) */
