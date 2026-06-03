@@ -1,4 +1,5 @@
 #include "internal/stmt.h"
+#include "internal/alignas_value.h"
 #include "internal/arena.h"
 #include "internal/core.h"
 #include "internal/decl.h"
@@ -47,7 +48,6 @@ typedef struct {
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static int parse_stmt_array_suffixes_constexpr_required(int base_mul);
 static int parse_stmt_member_array_suffixes(int *out_is_flex_array);
-static int parse_alignas_value_stmt(void);
 static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static node_t *stmt_internal(void);
 static node_t *block_item(void);
@@ -144,7 +144,7 @@ static int parse_stmt_member_array_suffixes_thunk(int *out_is_flex_array) {
 }
 
 static const struct_member_layout_ops_t stmt_struct_layout_ops = {
-  .parse_alignas_value        = parse_alignas_value_stmt,
+  .parse_alignas_value        = psx_parse_alignas_value,
   .make_anonymous_tag_name    = make_anonymous_tag_name_stmt,
   .parse_tag_definition_body  = parse_tag_definition_body,
   .parse_member_decl_head     = parse_stmt_member_decl_head,
@@ -220,22 +220,6 @@ static int parse_stmt_member_array_suffixes(int *out_is_flex_array) {
 }
 
 // _Alignas( constant-expression | type-name )
-static int parse_alignas_value_stmt(void) {
-  tk_expect('(');
-  int val = 1;
-  if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) {
-    int elem_size = 8;
-    psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
-    val = elem_size;
-    while (curtok()->kind != TK_RPAREN && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
-  } else {
-    long long v = psx_parse_enum_const_expr();
-    val = (v > 0) ? (int)v : 1;
-  }
-  tk_expect(')');
-  return val;
-}
-
 static int parse_enum_members(void) {
   int member_count = 0;
   long long next_value = 0;

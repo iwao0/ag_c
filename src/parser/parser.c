@@ -4,6 +4,7 @@
 #include "internal/semantic_ctx.h"
 #include "internal/decl.h"
 #include "internal/core.h"
+#include "internal/alignas_value.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
 #include "internal/enum_const.h"
@@ -141,7 +142,6 @@ static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
                                                                toplevel_array_suffix_t arr);
 static int current_toplevel_extern_flag(void);
-static int parse_alignas_value_toplevel(void);
 static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static inline token_t *curtok(void);
 static inline void set_curtok(token_t *tok);
@@ -303,7 +303,7 @@ static void skip_cv_qualifiers(void) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
-      int av = parse_alignas_value_toplevel();
+      int av = psx_parse_alignas_value();
       if (av > g_last_alignas_value) g_last_alignas_value = av;
       continue;
     }
@@ -985,7 +985,7 @@ static int parse_toplevel_member_array_suffixes_thunk(int *out_is_flex_array) {
 }
 
 static const struct_member_layout_ops_t toplevel_struct_layout_ops = {
-  .parse_alignas_value        = parse_alignas_value_toplevel,
+  .parse_alignas_value        = psx_parse_alignas_value,
   .make_anonymous_tag_name    = make_anonymous_tag_name_toplevel,
   .parse_tag_definition_body  = parse_tag_definition_body_toplevel,
   .parse_member_decl_head     = parse_toplevel_member_decl_head,
@@ -1250,23 +1250,6 @@ token_kind_t psx_consume_type_kind(void) {
 
 
 // _Alignas( constant-expression | type-name )
-static int parse_alignas_value_toplevel(void) {
-  tk_expect('(');
-  int val = 1;
-  if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_typedef_name_token(curtok())) {
-    // _Alignas(type) — alignment = natural alignment of type
-    int elem_size = 8;
-    psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
-    val = elem_size;
-    while (curtok()->kind != TK_RPAREN && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
-  } else {
-    long long v = psx_parse_enum_const_expr();
-    val = (v > 0) ? (int)v : 1;
-  }
-  tk_expect(')');
-  return val;
-}
-
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
   if (curtok()->kind != lkind) return;
   int depth = 0;
