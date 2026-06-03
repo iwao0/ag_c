@@ -534,6 +534,10 @@ static const test_case_t test_cases[] = {
     {"pointer", "struct_ptr_param_paren", CASE_INT, "struct S { int x; }; int get(struct S (*p)) { return p->x; } int main(){ struct S s={42}; return get(&s); }", 42, 0},
     {"pointer", "array_ptr_2d", CASE_INT, "int main(){int a[2][3]={{1,2,3},{4,5,6}};int (*p)[3]=a;return p[1][2];}", 6, 0},
     {"pointer", "array_ptr_2d_first", CASE_INT, "int main(){int a[2][3]={{1,2,3},{4,5,6}};int (*p)[3]=a;return p[0][1];}", 2, 0},
+    {"pointer", "param_int_ptr_subscript", CASE_INT, "int sum5(int *p){return p[0]+p[1]+p[2]+p[3]+p[4];} int main(){int a[5];a[0]=1;a[1]=2;a[2]=3;a[3]=4;a[4]=5;return sum5(a);}", 15, 0},
+    {"pointer", "param_char_ptr_subscript", CASE_INT, "int sum3(char *p){return p[0]+p[1]+p[2];} int main(){char a[3];a[0]=1;a[1]=2;a[2]=3;return sum3(a);}", 6, 0},
+    {"pointer", "param_short_ptr_subscript", CASE_INT, "int sum3(short *p){return p[0]+p[1]+p[2];} int main(){short a[3];a[0]=4;a[1]=5;a[2]=6;return sum3(a);}", 15, 0},
+    {"pointer", "param_int_pp_double_deref", CASE_INT, "void inc(int **pp){(**pp)++;} int main(){int x=10;int *p=&x;inc(&p);inc(&p);return x;}", 12, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},

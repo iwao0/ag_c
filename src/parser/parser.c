@@ -91,9 +91,11 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
 static int is_toplevel_function_signature(token_t *tok);
 static int is_tag_return_function_signature(token_t *tok);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
-static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator);
+static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
+                                                  int *out_pointer_levels);
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
-                                                            int *out_is_pointer_declarator);
+                                                            int *out_is_pointer_declarator,
+                                                            int *out_pointer_levels);
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
 typedef struct {
   token_kind_t base_type_kind;
@@ -1140,23 +1142,29 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
                diag_message_for(DIAG_ERR_PARSER_MISSING_CLOSING_PAREN));
 }
 
-static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator) {
+static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
+                                                  int *out_pointer_levels) {
   if (out_is_array_declarator) *out_is_array_declarator = 0;
   if (out_is_pointer_declarator) *out_is_pointer_declarator = 0;
+  if (out_pointer_levels) *out_pointer_levels = 0;
   token_ident_t *param = parse_param_declarator_name_recursive(out_is_array_declarator,
-                                                               out_is_pointer_declarator);
+                                                               out_is_pointer_declarator,
+                                                               out_pointer_levels);
   return param;
 }
 
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
-                                                            int *out_is_pointer_declarator) {
+                                                            int *out_is_pointer_declarator,
+                                                            int *out_pointer_levels) {
   while (tk_consume('*')) {
     if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
+    if (out_pointer_levels) (*out_pointer_levels)++;
     skip_ptr_qualifiers();
   }
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
-    name = parse_param_declarator_name_recursive(out_is_array_declarator, out_is_pointer_declarator);
+    name = parse_param_declarator_name_recursive(out_is_array_declarator, out_is_pointer_declarator,
+                                                 out_pointer_levels);
     tk_expect(')');
   } else {
     name = tk_consume_ident();
@@ -1178,7 +1186,9 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   // ポインタ修飾子を確認してから parse_param_declarator_name へ
   int param_is_ptr = 0;
   int param_is_array_declarator = 0;
-  token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator, &param_is_ptr);
+  int param_ptr_levels = 0;
+  token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator, &param_is_ptr,
+                                                     &param_ptr_levels);
   if (!param) {
     // int f(void) の "void" は仮引数0件として扱う（C11 6.7.6.3）。
     if (ds.base_type_kind == TK_VOID && ds.tag_kind == TK_EOF && !ds.saw_typedef_name &&
@@ -1225,6 +1235,15 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     var->tag_name = ds.tag_name;
     var->tag_len = ds.tag_len;
     var->is_tag_pointer = 1;
+  } else if (param_is_ptr && ds.tag_kind == TK_EOF) {
+    // スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）
+    // size=8（ポインタ自身の格納サイズ）
+    // elem_size = 多段ポインタなら 8（pointee は別のポインタ）, さもなくば ds.elem_size
+    // ローカル変数の `int *p` / `int **pp` と同じ表現にすることで、p[i]/**p の
+    // スケーリングと load 幅を pointee サイズに揃える。
+    int pointee_size = (param_ptr_levels >= 2) ? 8 : ds.elem_size;
+    var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
+    var->base_deref_size = (short)ds.elem_size;
   } else {
     // スカラー型仮引数（既存の動作）
     var = psx_decl_register_lvar(param->str, param->len);
