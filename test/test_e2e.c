@@ -634,6 +634,18 @@ static const test_case_t test_cases[] = {
     {"flex_array", "sizeof_flex", CASE_INT_FILE, "test/fixtures/flex_array/sizeof_flex.c", 4, 0},
     {"flex_array", "parse_ok", CASE_INT_FILE, "test/fixtures/flex_array/parse_ok.c", 0, 0},
     {"flex_array", "alloc_and_use", CASE_INT_FILE, "test/fixtures/flex_array/alloc_and_use.c", 42, 0},
+    // tokenizer 拡張機能: 文字列接頭辞、UCN、トライグラフ
+    {"tokenizer", "wide_string_L", CASE_INT_FILE, "test/fixtures/tokenizer/wide_string_L.c", 65, 0},
+    {"tokenizer", "u8_string", CASE_INT_FILE, "test/fixtures/tokenizer/u8_string.c", 132, 0},
+    {"tokenizer", "u_string", CASE_INT_FILE, "test/fixtures/tokenizer/u_string.c", 65, 0},
+    {"tokenizer", "u32_string", CASE_INT_FILE, "test/fixtures/tokenizer/u32_string.c", 65, 0},
+    {"tokenizer", "charlit_L", CASE_INT_FILE, "test/fixtures/tokenizer/charlit_L.c", 65, 0},
+    {"tokenizer", "charlit_u", CASE_INT_FILE, "test/fixtures/tokenizer/charlit_u.c", 65, 0},
+    {"tokenizer", "string_concat_prefix", CASE_INT_FILE, "test/fixtures/tokenizer/string_concat_prefix.c", 133, 0},
+    {"tokenizer", "ucn_string", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_string.c", 233, 0},
+    {"tokenizer", "ucn_ident", CASE_INT_FILE, "test/fixtures/tokenizer/ucn_ident.c", 7, 0},
+    {"tokenizer", "trigraph_or", CASE_INT_FILE, "test/fixtures/tokenizer/trigraph_or.c", 7, 0},
+    {"tokenizer", "trigraph_xor", CASE_INT_FILE, "test/fixtures/tokenizer/trigraph_xor.c", 6, 0},
     // #pragma pack
     {"pragma_pack", "pack1_sizeof", CASE_INT_FILE, "test/fixtures/pragma_pack/pack1_sizeof.c", 5, 0},
     {"pragma_pack", "pack1_offset", CASE_INT_FILE, "test/fixtures/pragma_pack/pack1_offset.c", 42, 0},
