@@ -2,6 +2,7 @@
 #include "../diag/diag.h"
 #include "../parser/internal/arena.h"
 #include "../parser/parser.h"
+#include "../parser/internal/semantic_ctx.h"
 #include "../tokenizer/escape.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -377,10 +378,6 @@ static void gen_switch_body(node_t *node) {
 
 static int is_main_func(const node_func_t *fn) {
   return fn->funcname_len == 4 && strncmp(fn->funcname, "main", 4) == 0;
-}
-
-static int is_printf_func(const node_func_t *fn) {
-  return fn->funcname_len == 6 && strncmp(fn->funcname, "printf", 6) == 0;
 }
 
 void gen_main_prologue(void) {
@@ -777,31 +774,6 @@ static void gen_expr_funcref(node_t *node) {
   cg_emitf("  str x0, [sp, #-16]!\n");
 }
 
-// Darwin/ARM64 では variadic 引数はレジスタではなくスタックで渡す必要があるため、
-// printf 系の呼び出しは別経路でハンドルする。
-static void gen_expr_funcall_printf(node_func_t *fn) {
-  gen_expr(fn->args[0]);
-  cg_emitf("  ldr x19, [sp], #16\n");
-
-  int var_count = fn->nargs - 1;
-  int stack_bytes = ((var_count + 1) / 2) * 16; // call時の16byte alignment維持
-  if (stack_bytes > 0) {
-    cg_emitf("  sub sp, sp, #%d\n", stack_bytes);
-  }
-  for (int i = 1; i < fn->nargs; i++) {
-    gen_expr(fn->args[i]);
-    cg_emitf("  ldr x9, [sp], #16\n");
-    cg_emitf("  str x9, [sp, #%d]\n", (i - 1) * 8);
-  }
-
-  cg_emitf("  mov x0, x19\n");
-  cg_emitf("  bl _printf\n");
-  if (stack_bytes > 0) {
-    cg_emitf("  add sp, sp, #%d\n", stack_bytes);
-  }
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
 // 各引数が ABI 上で消費するレジスタ数を返す:
 //   ND_LVAR かつ type_size > 16: 1 (byref ポインタ)
 //   ND_LVAR かつ type_size 9-16: 2 (low/high の2レジスタ構造体)
@@ -817,8 +789,11 @@ static int arg_reg_count(node_t *a) {
 // >16B 構造体: フレームスロットのアドレスを1スロットに
 // 9-16B 構造体: high→low の順に 2 スロットに
 // それ以外: gen_expr で 1 スロットに
-static void emit_funcall_push_args(node_func_t *fn) {
-  for (int i = 0; i < fn->nargs; i++) {
+// fn->args[0..end_idx) をソフトウェアスタックに push する。
+// variadic 関数の register 部分のみ対象にしたい呼び出し側があるので
+// 範囲指定可能にしてある。
+static void emit_funcall_push_args_range(node_func_t *fn, int end_idx) {
+  for (int i = 0; i < end_idx; i++) {
     node_t *a = fn->args[i];
     if (a->kind == ND_LVAR) {
       int abi_sz = as_lvar(a)->mem.type_size;
@@ -840,17 +815,24 @@ static void emit_funcall_push_args(node_func_t *fn) {
   }
 }
 
+static void emit_funcall_push_args(node_func_t *fn) {
+  emit_funcall_push_args_range(fn, fn->nargs);
+}
+
 // 積まれたソフトウェアスタックからレジスタへ逆順にポップ。
 // 整数引数は x_reg、float/double 引数は d_reg/s_reg と独立レジスタ集合に分ける
 // (ARM64 ABI)。2レジスタ引数は low→x_reg, high→x_{reg+1}。
-static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, int total_regs) {
+// 範囲 [0..end_idx) のみを処理 (variadic 関数の named 部分のみ register に置く用)。
+static void emit_funcall_pop_args_to_regs_range(node_func_t *fn, const int *arg_regs,
+                                                 int end_idx) {
+  if (end_idx <= 0) return;
   // 各引数に「割り当てる整数 reg」「割り当てる FP reg」を先に決定する。
   // ポップ順は逆だが、レジスタ番号は引数順 (左から右) に振る必要がある。
-  int *assigned_int_reg = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
-  int *assigned_fp_reg = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
+  int *assigned_int_reg = calloc((size_t)end_idx, sizeof(int));
+  int *assigned_fp_reg = calloc((size_t)end_idx, sizeof(int));
   int next_int = 0;
   int next_fp = 0;
-  for (int i = 0; i < fn->nargs; i++) {
+  for (int i = 0; i < end_idx; i++) {
     tk_float_kind_t afp = fn->args[i]->fp_kind;
     if (afp != TK_FLOAT_KIND_NONE) {
       assigned_int_reg[i] = -1;
@@ -861,7 +843,7 @@ static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, 
       next_int += arg_regs[i];
     }
   }
-  for (int i = fn->nargs - 1; i >= 0; i--) {
+  for (int i = end_idx - 1; i >= 0; i--) {
     tk_float_kind_t afp = fn->args[i]->fp_kind;
     if (afp == TK_FLOAT_KIND_FLOAT) {
       cg_emitf("  ldr s%d, [sp], #16\n", assigned_fp_reg[i]);
@@ -876,15 +858,15 @@ static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, 
   }
   free(assigned_int_reg);
   free(assigned_fp_reg);
+}
+
+static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, int total_regs) {
   (void)total_regs;
+  emit_funcall_pop_args_to_regs_range(fn, arg_regs, fn->nargs);
 }
 
 static void gen_expr_funcall(node_t *node) {
   node_func_t *fn = as_func(node);
-  if (!fn->callee && is_printf_func(fn) && fn->nargs >= 1) {
-    gen_expr_funcall_printf(fn);
-    return;
-  }
 
   // 間接呼び出し: callee アドレスを引数評価前に x16 へ退避
   if (fn->callee) {
@@ -899,13 +881,61 @@ static void gen_expr_funcall(node_t *node) {
     total_regs += arg_regs[i];
   }
 
-  emit_funcall_push_args(fn);
-  emit_funcall_pop_args_to_regs(fn, arg_regs, total_regs);
+  // Apple ARM64 ABI: variadic 関数の `...` 部分の引数は全て stack に置く。
+  // 直接呼び出しのとき、対象関数の prototype が variadic かを semantic_ctx から問い合わせる。
+  int is_variadic_call = 0;
+  int nargs_fixed = fn->nargs;
+  if (!fn->callee) {
+    int fixed = 0;
+    if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
+        fixed < fn->nargs) {
+      is_variadic_call = 1;
+      nargs_fixed = fixed;
+    }
+  }
 
-  if (fn->callee) {
-    cg_emitf("  blr x16\n");
+  if (is_variadic_call) {
+    int nargs_var = fn->nargs - nargs_fixed;
+    // 16-byte aligned stack area for variadic args (each arg = 8B slot).
+    int stack_bytes = ((nargs_var + 1) / 2) * 16;
+    cg_emitf("  sub sp, sp, #%d\n", stack_bytes);
+    // 各 variadic 引数を評価し、対応する 8B スロットに格納する。
+    // (左から右に評価しても、互いに副作用順は変わらない)
+    for (int i = nargs_fixed; i < fn->nargs; i++) {
+      node_t *a = fn->args[i];
+      int slot_off = (i - nargs_fixed) * 8;
+      gen_expr(a);
+      tk_float_kind_t afp = a->fp_kind;
+      if (afp == TK_FLOAT_KIND_FLOAT) {
+        // float は引数渡しで double に促進される。
+        cg_emitf("  ldr s0, [sp], #16\n");
+        cg_emitf("  fcvt d0, s0\n");
+        cg_emitf("  str d0, [sp, #%d]\n", slot_off);
+      } else if (afp >= TK_FLOAT_KIND_DOUBLE) {
+        cg_emitf("  ldr d0, [sp], #16\n");
+        cg_emitf("  str d0, [sp, #%d]\n", slot_off);
+      } else {
+        cg_emitf("  ldr x9, [sp], #16\n");
+        cg_emitf("  str x9, [sp, #%d]\n", slot_off);
+      }
+    }
+    // 固定引数を register に積む。
+    emit_funcall_push_args_range(fn, nargs_fixed);
+    emit_funcall_pop_args_to_regs_range(fn, arg_regs, nargs_fixed);
+    if (fn->callee) {
+      cg_emitf("  blr x16\n");
+    } else {
+      cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+    }
+    cg_emitf("  add sp, sp, #%d\n", stack_bytes);
   } else {
-    cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+    emit_funcall_push_args(fn);
+    emit_funcall_pop_args_to_regs(fn, arg_regs, total_regs);
+    if (fn->callee) {
+      cg_emitf("  blr x16\n");
+    } else {
+      cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
+    }
   }
   free(arg_regs);
 
@@ -1351,6 +1381,20 @@ static void gen_expr(node_t *node) {
   case ND_ADDR:      gen_lval(node->lhs); return;
   case ND_STRING:    gen_expr_string(node); return;
   case ND_VLA_ALLOC: gen_expr_vla_alloc(node); return;
+  case ND_VA_ARG_AREA: {
+    // stdarg.h の va_start マクロから参照される ag_c 固有 builtin。
+    // Apple ARM64 ABI では variadic 引数はすべて stack に積まれて渡される。
+    // その先頭アドレスは呼び出し側の sp == 我々の x29 + STACK_SIZE。
+    cg_emitf("  add x0, x29, #%d\n", STACK_SIZE);
+    cg_emitf("  str x0, [sp, #-16]!\n");
+    return;
+  }
+  case ND_PTR_CAST: {
+    // (float*)/(double*) ポインタキャスト。値はそのまま (pointee_fp_kind を保持して
+    // 後段 deref で FP load を選ばせるためのラッパ)。lhs を評価するだけ。
+    gen_expr(node->lhs);
+    return;
+  }
   case ND_FP_TO_INT: {
     // float/double 式を整数に変換する。lhs を評価して d0/s0 にロードし、
     // fcvtzs で x0 に変換、改めて x0 を push する。
@@ -1511,7 +1555,8 @@ static void gen_stmt_return(node_t *node) {
 // type_size > 16: byref (1 レジスタにポインタ)
 // type_size  9-16: 2 レジスタ構造体 → stp で2スロット保存
 // type_size ≤ 8: 1 レジスタ (スカラ / ≤8B 構造体)
-// 可変長引数関数では消費しなかった残りの x{reg}..x7 を次のスロットに保存する。
+// Apple ARM64 ABI では variadic 引数は呼び出し側が stack に置くため、
+// callee 側で register 保存する必要はない (`__va_arg_area` = x29 + STACK_SIZE)。
 static void emit_param_save_to_frame(node_func_t *fn) {
   int reg = 0;     // 整数引数レジスタ x0..x7 のカウンタ
   int fp_reg = 0;  // 浮動小数引数レジスタ d0..d7 のカウンタ (ARM64 ABI で独立)
@@ -1542,11 +1587,8 @@ static void emit_param_save_to_frame(node_func_t *fn) {
       reg++;
     }
   }
-  if (fn->is_variadic) {
-    for (int i = reg; i < 8; i++) {
-      cg_emitf("  str x%d, [x29, #%d]\n", i, 16 + i * 8);
-    }
-  }
+  // Apple ABI: variadic 引数は caller の stack 上に置かれているため
+  // ここで register を frame に退避する必要はない。
 }
 
 static void gen_stmt_funcdef(node_func_t *fn) {

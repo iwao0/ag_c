@@ -52,6 +52,10 @@ typedef enum {
   ND_GVAR,    // グローバル変数参照
   ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト), type_size=フレームオフセット
   ND_FP_TO_INT, // 浮動小数点 → 整数キャスト: lhs=FP式 (fp_kind が float/double を保持)
+  ND_VA_ARG_AREA, // 識別子 `__va_arg_area`: stack 上の variadic 引数領域の先頭アドレス。
+                  // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
+  ND_PTR_CAST,    // `(T*)expr` ポインタキャスト。codegen は lhs をそのまま評価する。
+                  // node_mem_t の pointee_fp_kind 等を保持して、後段の deref に伝播させる。
 } node_kind_t;
 
 // 抽象構文木のノードの型

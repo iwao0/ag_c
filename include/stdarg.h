@@ -1,19 +1,23 @@
-/* stdarg.h - ag_c simplified variadic argument support (Apple ARM64)
+/* stdarg.h - ag_c variadic argument support (Apple ARM64 ABI)
  *
- * Calling convention (ag_c-specific):
- *   Named params and the first (8 - nnamed) variadic args are passed in
- *   x0..x7.  In a variadic funcdef prologue the compiler saves all of
- *   x0..x7 to consecutive 8-byte slots starting at [x29, #24]:
- *     param[i] -> [x29, #16 + (i+1)*8]  (i = 0..nnamed-1)
- *     vararg[j] -> [x29, #16 + (nnamed+j+1)*8]  (j = 0..7-nnamed)
+ * Apple ARM64 calling convention for variadic functions:
+ *   - Named parameters are passed in x0..x7 / d0..d7 per ARM64 ABI.
+ *   - All variadic arguments are passed on the STACK (each occupies an
+ *     8-byte slot), starting at the caller's stack pointer at call time.
+ *   - From the callee's perspective, this is the address x29 + STACK_SIZE
+ *     after the standard prologue. The compiler-provided identifier
+ *     `__va_arg_area` resolves to that address at runtime.
+ *
+ * va_list:
+ *   Single pointer (char*) walking the contiguous stack array of
+ *   variadic arguments.
  *
  * va_start(ap, last_named):
- *   ap = &last_named + 8  (next 8-byte slot after the last named param)
+ *   Sets ap to the start of the variadic stack area. `last_named` is
+ *   unused with this convention; we accept it for source compatibility.
  *
  * va_arg(ap, type):
- *   advances ap by 8 bytes, returns *(type *)(old_ap)
- *
- * Supports up to 8 total arguments (named + variadic).
+ *   Reads *(type *)ap, then advances ap by 8 bytes (one slot).
  */
 
 #ifndef _STDARG_H
@@ -21,18 +25,13 @@
 
 typedef char *va_list;
 
-/* Set ap to point at the first variadic argument.
- * Uses integer arithmetic (via long) to avoid pointer-size ambiguity. */
-#define va_start(ap, last) ((ap) = (va_list)((long)&(last) + 8))
+#define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
 
-/* Fetch the next variadic argument of the given type and advance ap. */
 #define va_arg(ap, type) (*(type *)((long)(ap += 8) - 8))
 
-/* No-op cleanup. */
 #define va_end(ap) ((void)(ap))
 
-/* Copy current state of src ap into dest ap. C11 7.16.1.2.
- * ap は単一ポインタなので単純コピーで十分。 */
+/* Copy current state of src ap into dest ap. C11 7.16.1.2. */
 #define va_copy(dest, src) ((dest) = (src))
 
 #endif /* _STDARG_H */

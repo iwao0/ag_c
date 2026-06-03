@@ -1636,6 +1636,21 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    // `(float*)X` / `(double*)X` の場合、後段の `*` deref が FP load を出せる
+    // よう pointee_fp_kind を保持する ND_PTR_CAST でラップする。
+    if (is_pointer && (type_kind == TK_FLOAT || type_kind == TK_DOUBLE)) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->pointee_fp_kind = (type_kind == TK_FLOAT) ? TK_FLOAT_KIND_FLOAT
+                                                     : TK_FLOAT_KIND_DOUBLE;
+      wrap->deref_size = (type_kind == TK_FLOAT) ? 4 : 8;
+      wrap->type_size = 8; // pointer 値そのもの
+      wrap->is_pointer = 1;
+      wrap->pointer_qual_levels = 1;
+      wrap->base_deref_size = (type_kind == TK_FLOAT) ? 4 : 8;
+      return (node_t *)wrap;
+    }
     return operand;
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
@@ -2647,6 +2662,15 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
 static node_t *resolve_identifier(token_ident_t *tok) {
   if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0) {
     return make_func_name_string_node();
+  }
+  // stdarg.h の va_start マクロが参照する ag_c 固有 builtin。
+  // codegen で `add x?, x29, #STACK_SIZE` を出して variadic 引数領域の
+  // 先頭アドレスを返す。
+  if (tok->len == 13 && memcmp(tok->str, "__va_arg_area", 13) == 0) {
+    node_t *n = arena_alloc(sizeof(node_t));
+    n->kind = ND_VA_ARG_AREA;
+    n->fp_kind = TK_FLOAT_KIND_NONE;
+    return n;
   }
   lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
   if (!var) {

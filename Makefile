@@ -52,7 +52,7 @@ $(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DI
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_CODEGEN): test/test_codegen.c $(OBJROOT)/arch/arm64_apple.o $(OBJROOT)/parser/arena.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/token_kind.o $(DIAG_LIB_OBJS)
+$(TEST_CODEGEN): test/test_codegen.c $(OBJROOT)/arch/arm64_apple.o $(OBJROOT)/parser/arena.o $(OBJROOT)/parser/semantic_ctx.o $(OBJROOT)/parser/diag.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/token_kind.o $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

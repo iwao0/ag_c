@@ -95,6 +95,11 @@ int psx_ctx_get_function_ret_struct_size(char *name, int len);
 // `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
 void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind);
 tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len);
+// 関数が variadic (`...` を持つ) かどうかと固定引数の個数を保持する。
+// Apple ARM64 ABI で variadic 引数を stack に積むため、呼び出し側 codegen が
+// `nargs_fixed` を境に register / stack を切り替えるのに使う。
+void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
+bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

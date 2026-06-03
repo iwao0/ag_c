@@ -17,6 +17,7 @@ int psx_node_type_size(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
+    case ND_PTR_CAST:
       return as_mem(node)->type_size;
     case ND_COMMA:
       return psx_node_type_size(node->rhs);
@@ -34,6 +35,7 @@ int psx_node_deref_size(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
+    case ND_PTR_CAST:
       return as_mem(node)->deref_size;
     case ND_COMMA:
       return psx_node_deref_size(node->rhs);
@@ -51,6 +53,7 @@ int psx_node_is_pointer(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
+    case ND_PTR_CAST:
       return as_mem(node)->is_pointer;
     case ND_COMMA:
       return psx_node_is_pointer(node->rhs);
@@ -68,6 +71,7 @@ int psx_node_pointer_qual_levels(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
+    case ND_PTR_CAST:
       return as_mem(node)->pointer_qual_levels;
     case ND_COMMA:
       return psx_node_pointer_qual_levels(node->rhs);
@@ -85,6 +89,7 @@ int psx_node_base_deref_size(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
+    case ND_PTR_CAST:
       return as_mem(node)->base_deref_size;
     case ND_COMMA:
       return psx_node_base_deref_size(node->rhs);
@@ -102,6 +107,7 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
+    case ND_PTR_CAST:
       return (tk_float_kind_t)as_mem(node)->pointee_fp_kind;
     case ND_COMMA:
       return psx_node_pointee_fp_kind(node->rhs);
@@ -128,6 +134,7 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
       case ND_ASSIGN:
       case ND_ADDR:
       case ND_STRING:
+      case ND_PTR_CAST:
         kind = as_mem(node)->tag_kind;
         name = as_mem(node)->tag_name;
         len = as_mem(node)->tag_len;
@@ -247,7 +254,8 @@ static int node_pointee_is_const(node_t *node) {
     case ND_DEREF:
     case ND_ASSIGN:
     case ND_ADDR:
-    case ND_STRING: {
+    case ND_STRING:
+    case ND_PTR_CAST: {
       node_mem_t *m = (node_mem_t *)node;
       return m->is_tag_pointer && m->is_const_qualified;
     }

@@ -1725,6 +1725,10 @@ static node_t *funcdef(void) {
   if (ret_fp_kind != TK_FLOAT_KIND_NONE) {
     psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, ret_fp_kind);
   }
+  // variadic 情報を記録 → caller 側で variadic 引数を stack に積むのに使う
+  if (is_variadic) {
+    psx_ctx_set_function_variadic(tok->str, tok->len, 1, nargs);
+  }
   if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr && ret_tag) {
     psx_ctx_set_function_ret_tag(tok->str, tok->len, ret_kind, ret_tag->str, ret_tag->len);
   }
