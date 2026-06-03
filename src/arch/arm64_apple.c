@@ -86,7 +86,8 @@ static void cg_emit_line(const char *line, size_t len) {
   }
 }
 
-static void cg_emitf(const char *fmt, ...) {
+/* IR バックエンド (arm64_apple_ir.c) から共有するため非 static。 */
+void cg_emitf(const char *fmt, ...) {
   char stack_buf[256];
   va_list ap;
   va_start(ap, fmt);

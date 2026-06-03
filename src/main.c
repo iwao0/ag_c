@@ -4,6 +4,9 @@
 #include "tokenizer/tokenizer.h"
 #include "preprocess/preprocess.h"
 #include "diag/diag.h"
+#include "ir/ir.h"
+#include "ir/ir_builder.h"
+#include "arch/arm64_apple_ir.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,9 +86,25 @@ int main(int argc, char **argv) {
   node_t **code = ps_program_ctx(tk_ctx, tok);
   gen_set_output_callback(write_line_to_file, stdout);
 
-  // 各関数定義のコード生成
-  for (int i = 0; code[i]; i++) {
-    gen(code[i]);
+  // IR 経由のコード生成 (AG_USE_IR=1 のとき有効)。
+  // 失敗 (= サポート外 node を含む) ときは AST 直 codegen にフォールバックする。
+  const char *use_ir = getenv("AG_USE_IR");
+  int used_ir = 0;
+  if (use_ir && strcmp(use_ir, "1") == 0) {
+    ir_module_t *m = ir_build_module(code);
+    if (m) {
+      gen_ir_module(m);
+      used_ir = 1;
+    } else {
+      fprintf(stderr, "AG_USE_IR=1: AST contains unsupported nodes; falling back to AST codegen\n");
+    }
+  }
+
+  if (!used_ir) {
+    // 各関数定義のコード生成
+    for (int i = 0; code[i]; i++) {
+      gen(code[i]);
+    }
   }
 
   // 文字列と浮動小数点数データの出力

@@ -20,7 +20,7 @@ DIAG_MSG_SRCS=src/diag/messages_ja.c
 CFLAGS+=-DDIAG_LANG_JA
 endif
 
-SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
+SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
@@ -31,6 +31,7 @@ TEST_CODEGEN=build/test_codegen
 TEST_PREPROCESS=build/test_preprocess
 TEST_FUZZ_QUICK=build/test_fuzz_quick
 TEST_IR=build/test_ir
+TEST_IR_E2E=build/test_ir_e2e
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=$(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/token_kind.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o
@@ -75,6 +76,10 @@ $(TEST_IR): test/test_ir.c $(IR_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
+$(TEST_IR_E2E): test/test_ir_e2e.c $(TARGET)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ test/test_ir_e2e.c
+
 $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
@@ -92,7 +97,7 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_IR_E2E)
 	$(MAKE) check-tokenizer-boundary
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
@@ -100,6 +105,7 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_CODEGEN) $(TEST_E2E) $(T
 	$(TEST_PREPROCESS)
 	$(TEST_FUZZ_QUICK)
 	$(TEST_IR)
+	$(TEST_IR_E2E)
 	$(TEST_E2E)
 
 test-asan: CFLAGS+=-fsanitize=$(ASAN_SANITIZERS) -fno-omit-frame-pointer
