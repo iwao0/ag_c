@@ -1940,6 +1940,12 @@ static node_t *funcdef(void) {
     }
   }
 
+  /* IR builder (Phase 4d-1〜) が関数ごとの lvar リストを必要とするため、
+   * 関数解析完了時点の all_locals 先頭を node に保存しておく。
+   * psx_decl_reset_locals は次の関数開始時に呼ばれるが、それは静的変数を
+   * NULL に戻すだけで、既存 lvar_t は arena/calloc されたまま残る。 */
+  node->lvars = psx_decl_get_locals();
+
   return (node_t *)node;
 }
 

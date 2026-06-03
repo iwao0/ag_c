@@ -154,6 +154,14 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       store_val_from(ctx, inst->dst, "x9");
       return;
     }
+    case IR_LEA: {
+      /* dst = src1 + src2 (アドレス計算)。src1 がポインタ、src2 が int オフセット。 */
+      load_val_to(ctx, inst->src1, "x9");
+      load_val_to(ctx, inst->src2, "x10");
+      cg_emitf("  add x9, x9, x10\n");
+      store_val_from(ctx, inst->dst, "x9");
+      return;
+    }
     case IR_LT:
     case IR_LE:
     case IR_EQ:

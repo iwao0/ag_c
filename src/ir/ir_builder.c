@@ -37,6 +37,8 @@ typedef struct {
 typedef struct {
   ir_module_t *m;
   ir_func_t *f;
+  /* 現在処理中の関数 AST。lvars リストを引くため。 */
+  node_func_t *cur_fn;
   int failed;
   /* offset → ALLOCA vreg (ポインタ) のマップ */
   int lvar_offset[MAX_LVARS];
@@ -59,47 +61,82 @@ static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
   return -1;
 }
 
-/* LVAR ノードから「フレーム上の確保サイズ」を決める。
- * 配列の場合は lvar_t.size (= 配列全体)、スカラの場合は mem.type_size。
- * ND_LVAR.mem.type_size は要素サイズしか持たないので、lvar_t を引いて補正する。 */
-static int lvar_size_from_node(node_lvar_t *lv) {
-  lvar_t *var = psx_decl_find_lvar_by_offset(lv->offset);
-  if (var && var->size > 0) return var->size;
-  int sz = lv->mem.type_size;
-  return sz > 0 ? sz : 4;
+/* ND_LVAR.offset を含む lvar_t (= 親 owner) を探す。struct メンバアクセスでは
+ * `s.m` の ND_LVAR が (s.offset + member_offset) を持つので、ここで `s` 全体を
+ * 引き当てる。スカラ lvar は自分自身を返す (delta = 0)。
+ * 現在処理中の関数の lvars リスト (parser が保存) を walk する。 */
+static lvar_t *find_owning_lvar(ir_build_ctx_t *ctx, int offset) {
+  lvar_t *head = ctx && ctx->cur_fn ? ctx->cur_fn->lvars : NULL;
+  for (lvar_t *var = head; var; var = var->next_all) {
+    int sz = var->size > 0 ? var->size : 1;
+    if (var->offset <= offset && offset < var->offset + sz) return var;
+  }
+  return NULL;
 }
 
-/* スカラ LVAR の「ロード時の値の IR 型」。配列の場合は呼び出し側 (build_array
- * lvar parsing) で別経路を通るので、ここではスカラを想定。 */
-static ir_type_t lvar_value_type(node_lvar_t *lv) {
-  int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
-  if (elem >= 8) return IR_TY_PTR;
-  if (elem == 4) return IR_TY_I32;
-  if (elem == 2) return IR_TY_I16;
+/* スカラ要素 (struct member 含む) の「ロード時の値の IR 型」。
+ * mem.type_size を見る。配列名は別経路 (ND_ADDR 経由) を通る。 */
+static ir_type_t elem_value_type(int type_size) {
+  if (type_size >= 8) return IR_TY_PTR;
+  if (type_size == 4) return IR_TY_I32;
+  if (type_size == 2) return IR_TY_I16;
   return IR_TY_I8;
 }
 
-static int lvar_align(node_lvar_t *lv) {
+static ir_type_t lvar_value_type(node_lvar_t *lv) {
   int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
-  return (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
+  return elem_value_type(elem);
 }
 
-static int alloca_for_lvar(ir_build_ctx_t *ctx, int offset, int size, int align) {
-  int existing = find_alloca_vreg(ctx, offset);
+/* owner (= lvar_t の親) に対して ALLOCA を 1 回だけ確保し、その vreg を返す。
+ * 同じ owner offset で再度呼ばれたら既存 vreg を返す。 */
+static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
+  if (!var) {
+    fail(ctx, "owning lvar not found");
+    return -1;
+  }
+  int existing = find_alloca_vreg(ctx, var->offset);
   if (existing >= 0) return existing;
   if (ctx->lvar_count >= MAX_LVARS) {
     fail(ctx, "too many local variables");
     return -1;
   }
+  int size = var->size > 0 ? var->size : 4;
+  int elem = var->elem_size > 0 ? var->elem_size : 4;
+  int align = (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
+  /* struct のような複合型は 8B align を優先 (簡略化) */
+  if (size >= 8 && align < 8) align = 8;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_ALLOCA);
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
   inst->alloca_size = size;
   inst->alloca_align = align;
   ir_func_append_inst(ctx->f, inst);
-  ctx->lvar_offset[ctx->lvar_count] = offset;
+  ctx->lvar_offset[ctx->lvar_count] = var->offset;
   ctx->lvar_vreg[ctx->lvar_count] = v;
   ctx->lvar_count++;
+  return v;
+}
+
+/* ND_LVAR.offset → 「実際にアクセスすべきアドレスを持つ vreg」を返す。
+ * struct メンバの場合は owner ALLOCA + delta (= IR_LEA) を構築する。 */
+static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
+  lvar_t *owner = find_owning_lvar(ctx, offset);
+  if (!owner) {
+    fail(ctx, "lvar not found");
+    return -1;
+  }
+  int base_vreg = alloca_for_owner(ctx, owner);
+  if (base_vreg < 0) return -1;
+  int delta = offset - owner->offset;
+  if (delta == 0) return base_vreg;
+  /* base + delta */
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *lea = ir_inst_new(IR_LEA);
+  lea->dst = ir_val_vreg(v, IR_TY_PTR);
+  lea->src1 = ir_val_vreg(base_vreg, IR_TY_PTR);
+  lea->src2 = ir_val_imm(IR_TY_I64, delta);
+  ir_func_append_inst(ctx->f, lea);
   return v;
 }
 
@@ -118,10 +155,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     }
     case ND_LVAR: {
       node_lvar_t *lv = (node_lvar_t *)node;
-      int sz = lvar_size_from_node(lv);
-      int al = lvar_align(lv);
       ir_type_t vty = lvar_value_type(lv);
-      int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
+      int ptr_vreg = address_of_lvar(ctx, lv->offset);
       if (ptr_vreg < 0) return ir_val_none();
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
@@ -137,10 +172,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       }
       if (node->lhs->kind == ND_LVAR) {
         node_lvar_t *lv = (node_lvar_t *)node->lhs;
-        int sz = lvar_size_from_node(lv);
-        int al = lvar_align(lv);
         ir_type_t vty = lvar_value_type(lv);
-        int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
+        int ptr_vreg = address_of_lvar(ctx, lv->offset);
         if (ptr_vreg < 0) return ir_val_none();
         ir_val_t rhs = build_expr(ctx, node->rhs);
         if (ctx->failed) return ir_val_none();
@@ -172,14 +205,18 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       return ir_val_none();
     }
     case ND_ADDR: {
+      /* &*x = x: ag_c の AST では `s.m` が `*(&s + off)` で表現され、
+       * `&s.m` は ND_ADDR(ND_DEREF(...)) になる。これを deref キャンセルで
+       * ポインタ式に展開する。 */
+      if (node->lhs && node->lhs->kind == ND_DEREF) {
+        return build_expr(ctx, node->lhs->lhs);
+      }
       if (!node->lhs || node->lhs->kind != ND_LVAR) {
         fail(ctx, "& of non-lvar (Phase 4b unsupported)");
         return ir_val_none();
       }
       node_lvar_t *lv = (node_lvar_t *)node->lhs;
-      int sz = lvar_size_from_node(lv);
-      int al = lvar_align(lv);
-      int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
+      int ptr_vreg = address_of_lvar(ctx, lv->offset);
       if (ptr_vreg < 0) return ir_val_none();
       return ir_val_vreg(ptr_vreg, IR_TY_PTR);
     }
@@ -343,7 +380,9 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
     case ND_NUM:
       /* 副作用のない単独式 (= 宣言由来のプレースホルダなど) */
       return;
-    case ND_ASSIGN: {
+    case ND_ASSIGN:
+    case ND_FUNCALL: {
+      /* 式文 stmt: 式を評価して値を捨てる */
       (void)build_expr(ctx, node);
       return;
     }
@@ -479,6 +518,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     return 0;
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, IR_TY_I32);
+  ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
   /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
@@ -490,15 +530,13 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
       return 0;
     }
     node_lvar_t *lv = (node_lvar_t *)arg;
-    int sz = lvar_size_from_node(lv);
-    int al = lvar_align(lv);
     ir_type_t vty = lvar_value_type(lv);
     int param_vreg = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);
     p->dst = ir_val_vreg(param_vreg, vty);
     p->src1 = ir_val_imm(IR_TY_I32, i);
     ir_func_append_inst(ctx->f, p);
-    int ptr_vreg = alloca_for_lvar(ctx, lv->offset, sz, al);
+    int ptr_vreg = address_of_lvar(ctx, lv->offset);
     if (ptr_vreg < 0) return 0;
     ir_inst_t *st = ir_inst_new(IR_STORE);
     st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);

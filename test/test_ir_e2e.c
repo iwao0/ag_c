@@ -142,6 +142,20 @@ int main(void) {
   run_ir_case("arr_bubble",
               "int main(void) { int a[5]; a[0] = 5; a[1] = 3; a[2] = 1; a[3] = 4; a[4] = 2; int i, j; for (i = 0; i < 4; i = i + 1) { for (j = 0; j < 4 - i; j = j + 1) { if (a[j] > a[j+1]) { int t = a[j]; a[j] = a[j+1]; a[j+1] = t; } } } return a[0] * 10000 + a[1] * 1000 + a[2] * 100 + a[3] * 10 + a[4]; }\n", 57);
 
+  /* Phase 4d-1: 構造体メンバアクセス */
+  run_ir_case("struct_basic",
+              "struct S { int a; int b; }; int main(void) { struct S s; s.a = 10; s.b = 20; return s.a + s.b; }\n", 30);
+  run_ir_case("struct_three_members",
+              "struct P { int x; int y; int z; }; int main(void) { struct P p; p.x = 100; p.y = 20; p.z = 3; return p.x + p.y + p.z; }\n", 123);
+  run_ir_case("struct_ptr_arrow",
+              "struct S { int a; int b; }; int sum(struct S *p) { return p->a + p->b; } int main(void) { struct S s; s.a = 12; s.b = 30; return sum(&s); }\n", 42);
+  run_ir_case("struct_ptr_set",
+              "struct S { int a; int b; }; void set(struct S *p, int x, int y) { p->a = x; p->b = y; } int main(void) { struct S s; set(&s, 7, 35); return s.a + s.b; }\n", 42);
+  run_ir_case("struct_member_array",
+              "struct Vec { int data[3]; }; int main(void) { struct Vec v; v.data[0] = 5; v.data[1] = 7; v.data[2] = 30; return v.data[0] + v.data[1] + v.data[2]; }\n", 42);
+  run_ir_case("struct_addr_member_ptr_walk",
+              "struct S { int a; int b; }; int main(void) { struct S s; s.a = 10; s.b = 20; int *p = &s.a; return p[0] + p[1]; }\n", 30);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

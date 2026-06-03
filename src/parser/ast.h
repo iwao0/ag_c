@@ -157,6 +157,10 @@ struct node_func_t {
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
   int is_variadic;  // 1: 可変長引数関数 (funcdef時のみ)
+  // 関数定義のローカル変数連結リスト (next_all で辿る)。
+  // 関数解析完了時に保存し、IR builder 等が後段で参照する。
+  // 既存 AST 直 codegen には影響しない (未参照のまま動く)。
+  struct lvar_t *lvars;
 };
 
 // 関数シンボル参照ノード
