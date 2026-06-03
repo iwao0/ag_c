@@ -17,7 +17,27 @@ typedef enum {
   CASE_INT,
   CASE_FLOAT,
   CASE_DOUBLE,
+  // `_FILE` バリアントは `input` をインライン C ソースではなく、
+  // `test/fixtures/<...>` 配下のファイルパスとして解釈する。
+  // 期待値の解釈 (INT/FLOAT/DOUBLE) は対応する非 _FILE 版と同じ。
+  CASE_INT_FILE,
+  CASE_FLOAT_FILE,
+  CASE_DOUBLE_FILE,
 } case_kind_t;
+
+static inline bool case_kind_is_file(case_kind_t k) {
+  return k == CASE_INT_FILE || k == CASE_FLOAT_FILE || k == CASE_DOUBLE_FILE;
+}
+
+// 比較ロジックに使う「値の種類」を返す。`_FILE` バリアントは対応する非 _FILE 版に正規化する。
+static inline case_kind_t case_kind_value_kind(case_kind_t k) {
+  switch (k) {
+    case CASE_INT_FILE: return CASE_INT;
+    case CASE_FLOAT_FILE: return CASE_FLOAT;
+    case CASE_DOUBLE_FILE: return CASE_DOUBLE;
+    default: return k;
+  }
+}
 
 typedef struct {
   const char *category;
@@ -549,7 +569,7 @@ static const test_case_t test_cases[] = {
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},
     {"array", "brace_init_designated", CASE_INT, "int main() { int arr[4]={[2]=7,[0]=1}; return arr[0]+arr[2]; }", 8, 0},
     {"array", "char_array_string_init", CASE_INT, "int main() { char s[4]=\"abc\"; return s[2]+s[3]; }", 99, 0},
-    {"array", "inferred_size_brace", CASE_INT, "int main() { int a[]={10,20,30,40}; return a[0]+a[1]+a[2]+a[3]; }", 100, 0},
+    {"array", "inferred_size_brace", CASE_INT_FILE, "test/fixtures/array/inferred_size_brace.c", 100, 0},
     {"array", "inferred_size_brace_trailing_comma", CASE_INT, "int main() { int a[]={1,2,3,4,5,}; int s=0; for(int i=0;i<5;i++) s+=a[i]; return s; }", 15, 0},
     {"array", "inferred_size_string", CASE_INT, "int main() { char s[]=\"hello\"; return s[0]+s[4]+(s[5]==0?1:0); }", 104+111+1, 0},
     {"array", "inferred_size_string_concat", CASE_INT, "int main() { char s[]=\"abc\" \"def\"; return s[0]+s[5]+(s[6]==0?1:0); }", 97+102+1, 0},
@@ -1497,6 +1517,34 @@ static int write_source_file(const char *path, const char *source) {
   return 0;
 }
 
+// `tc->input` がファイルパス (`_FILE` バリアント) のときに、その内容を
+// 既存パイプラインが期待する `build/e2e/<cat>/<name>.c` へコピーする。
+static int copy_source_file(const char *src_path, const char *dst_path) {
+  FILE *in = fopen(src_path, "rb");
+  if (!in) return -1;
+  FILE *out = fopen(dst_path, "wb");
+  if (!out) { fclose(in); return -1; }
+  char buf[4096];
+  size_t n;
+  while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+    if (fwrite(buf, 1, n, out) != n) {
+      fclose(in); fclose(out);
+      return -1;
+    }
+  }
+  fclose(in);
+  fclose(out);
+  return 0;
+}
+
+// 入力を準備する。インラインなら write、ファイルなら copy。
+static int prepare_test_source(const test_case_t *tc, const char *dst_path) {
+  if (case_kind_is_file(tc->kind)) {
+    return copy_source_file(tc->input, dst_path);
+  }
+  return write_source_file(dst_path, tc->input);
+}
+
 static int write_source_file_bytes(const char *path, const unsigned char *data, size_t len) {
   FILE *fp = fopen(path, "wb");
   if (!fp) return -1;
@@ -1752,7 +1800,7 @@ static int build_category(const char *category) {
     build_source_path(tc, src_path);
     snprintf(rs_path, sizeof(rs_path), "%s/%s.renamed.s", dir, tc->name);
 
-    if (mkdir_p(dir) != 0 || write_source_file(src_path, tc->input) != 0 || run_ag_c_to_s(src_path, s_path) != 0) {
+    if (mkdir_p(dir) != 0 || prepare_test_source(tc, src_path) != 0 || run_ag_c_to_s(src_path, s_path) != 0) {
       fprintf(log, "  FAIL: build %s\n  input: %s\n  artifacts: s=%s\n", tc->name, tc->input, s_path);
       fclose(drv);
       fclose(log);
@@ -1785,9 +1833,10 @@ static int build_category(const char *category) {
     }
     input_count++;
 
-    if (tc->kind == CASE_INT) {
+    case_kind_t vk = case_kind_value_kind(tc->kind);
+    if (vk == CASE_INT) {
       fprintf(drv, "  extern int %s_main(void);\n", fn_sym);
-    } else if (tc->kind == CASE_DOUBLE) {
+    } else if (vk == CASE_DOUBLE) {
       fprintf(drv, "  extern double %s_ag_m(void);\n", fn_sym);
     } else {
       fprintf(drv, "  extern float %s_ag_m(void);\n", fn_sym);
@@ -1803,7 +1852,7 @@ static int build_category(const char *category) {
     sanitize_symbol(tc->name, name_sym, sizeof(name_sym));
     snprintf(fn_sym, sizeof(fn_sym), "agc_%s_%s", cat_sym, name_sym);
 
-    if (tc->kind == CASE_INT) {
+    if (case_kind_value_kind(tc->kind) == CASE_INT) {
       fprintf(drv, "  { int actual = (%s_main() & 255); if (actual != %d) { failed = 1; printf(\"FAIL %s expected %d got %%d\\n\", actual); } else { printf(\"OK %s => %%d\\n\", actual); } }\n",
               fn_sym, tc->expected_i, tc->name, tc->expected_i, tc->name);
     } else {
