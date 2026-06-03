@@ -187,6 +187,8 @@ static void to_w_name(const char *xname, char *out, size_t sz) {
 
 static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
   switch (inst->op) {
+    case IR_NOP:
+      return;
     case IR_LABEL:
       cg_emitf(".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;
@@ -435,6 +437,10 @@ static void gen_func(ir_func_t *f) {
 
 void gen_ir_module(ir_module_t *m) {
   if (!m) return;
+  /* Phase 6: 最適化パス。const fold で即値伝播と算術畳み込みを行い、
+   * DCE で使われない命令 (LOAD_IMM だけ残ったものなど) を IR_NOP に置換。 */
+  ir_opt_const_fold(m);
+  ir_opt_dce(m);
   for (ir_func_t *f = m->funcs; f; f = f->next) {
     gen_func(f);
   }

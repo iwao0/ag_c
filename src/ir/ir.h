@@ -233,9 +233,14 @@ size_t ir_print_module_to_buf(ir_module_t *m, char *buf, size_t buf_size);
 /* ------------------------------------------------------------------ */
 
 /* Phase 5: 関数単位の線形スキャンレジスタ割り付け。
- * ブロック内で last use を計算し、x9..x15 (7 個の caller-saved) を割り当てる。
- * ブロック境界と関数呼び出しの前後では全 vreg を spill する保守的版。
- * 実行後、f->vreg_phys_reg[v] が -1 なら spill、>=0 なら物理レジスタ番号 (9..15)。 */
+ * 関数全体で last use を計算し、x19..x28 (10 個の callee-saved) を割り当てる。
+ * ループバック検出で live range を延長する。
+ * 実行後、f->vreg_phys_reg[v] が -1 なら spill、>=0 なら物理レジスタ番号 (19..28)。 */
 void ir_regalloc_function(ir_func_t *f);
+
+/* Phase 6: モジュール全体の最適化パス。 */
+void ir_opt_const_fold(ir_module_t *m);     /* 即値伝播 + 算術畳み込み */
+void ir_opt_copy_propagate(ir_module_t *m); /* 現状 const_fold が兼ねる */
+void ir_opt_dce(ir_module_t *m);            /* 副作用なしで dst が使われない命令を NOP 化 */
 
 #endif /* AG_IR_H */
