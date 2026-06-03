@@ -123,7 +123,7 @@ static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch
                                   char *out_buf, size_t out_size) {
   if (v.id == IR_VAL_IMM) {
     snprintf(out_buf, out_size, "%s", scratch);
-    cg_emitf("  mov %s, #%lld\n", scratch, v.imm);
+    cg_emit_mov_imm(scratch, v.imm);
     return out_buf;
   }
   if (v.id == IR_VAL_NONE) {
@@ -196,7 +196,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-      cg_emitf("  mov %s, #%lld\n", d, inst->src1.imm);
+      cg_emit_mov_imm(d, inst->src1.imm);
       release_dst(ctx, inst->dst, d, spill);
       return;
     }

@@ -51,7 +51,12 @@ typedef struct {
 static void fail(ir_build_ctx_t *ctx, const char *msg) {
   if (ctx->failed) return;
   ctx->failed = 1;
-  fprintf(stderr, "ir_build: unsupported: %s\n", msg);
+  /* AG_USE_IR=1 が明示されたときのみ verbose にメッセージを出す。
+   * default では silent に fallback (Phase 7a 以降)。 */
+  const char *use_ir = getenv("AG_USE_IR");
+  if (use_ir && strcmp(use_ir, "1") == 0) {
+    fprintf(stderr, "ir_build: unsupported: %s\n", msg);
+  }
 }
 
 static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {

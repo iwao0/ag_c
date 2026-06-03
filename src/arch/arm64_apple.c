@@ -128,7 +128,8 @@ void cg_emitf(const char *fmt, ...) {
 
 
 // AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンスで生成する
-static void cg_emit_mov_imm(const char *reg, long long val) {
+// IR バックエンドからも共有するため非 static。
+void cg_emit_mov_imm(const char *reg, long long val) {
   uint64_t uval = (uint64_t)val;
   // 16bit に収まる場合（符号付き -65536..65535 もカバー）
   if (val >= 0 && val <= 0xFFFF) {

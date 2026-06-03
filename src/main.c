@@ -87,7 +87,9 @@ int main(int argc, char **argv) {
   gen_set_output_callback(write_line_to_file, stdout);
 
   // IR 経由のコード生成 (AG_USE_IR=1 のとき有効)。
-  // 失敗 (= サポート外 node を含む) ときは AST 直 codegen にフォールバックする。
+  // 失敗 (= サポート外 node を含む) ときは AST 直 codegen に fallback する。
+  // 将来は default を IR に切り替える予定だが、現状は IR の AST 対応範囲が
+  // 限定的で、対応外ケースが多い (bitfield 等で挙動差が出る) ため明示利用のみ。
   const char *use_ir = getenv("AG_USE_IR");
   int used_ir = 0;
   if (use_ir && strcmp(use_ir, "1") == 0) {
