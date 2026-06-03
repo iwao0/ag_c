@@ -124,7 +124,6 @@ static token_ident_t *parse_func_name_declarator_recursive(void);
 static void parse_static_assert_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
-static int parse_array_size_optional_constexpr_toplevel(int *out_has_size);
 static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind);
 static void apply_toplevel_decl_prefix_flags(void);
 static void resolve_toplevel_typedef_ref(void);
@@ -412,17 +411,6 @@ static token_kind_t parse_atomic_type_specifier(void) {
   return inner;
 }
 
-static int parse_array_size_optional_constexpr_toplevel(int *out_has_size) {
-  if (tk_consume(']')) {
-    if (out_has_size) *out_has_size = 0;
-    return 0;
-  }
-  int n = psx_parse_array_size_constexpr();
-  if (out_has_size) *out_has_size = 1;
-  tk_expect(']');
-  return n;
-}
-
 static void parse_toplevel_decl_spec(void) {
   reset_toplevel_decl_spec_state();
   consume_toplevel_typedef_storage_class();
@@ -672,7 +660,7 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
   out.has_incomplete_array = 0;
   while (tk_consume('[')) {
     int has_size = 0;
-    int n = parse_array_size_optional_constexpr_toplevel(&has_size);
+    int n = psx_parse_array_size_optional_constexpr(&has_size);
     if (!has_size) {
       out.has_incomplete_array = 1;
     } else {
@@ -687,7 +675,7 @@ static int parse_toplevel_array_suffixes_constexpr_required(int base_mul) {
   int arr_total = (base_mul > 0) ? base_mul : 1;
   while (tk_consume('[')) {
     int has_size = 0;
-    int n = parse_array_size_optional_constexpr_toplevel(&has_size);
+    int n = psx_parse_array_size_optional_constexpr(&has_size);
     if (has_size && n > 0) arr_total *= n;
   }
   return arr_total;

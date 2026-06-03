@@ -15,6 +15,17 @@ int psx_parse_array_size_constexpr(void) {
   return (int)v;
 }
 
+int psx_parse_array_size_optional_constexpr(int *out_has_size) {
+  if (tk_consume(']')) {
+    if (out_has_size) *out_has_size = 0;
+    return 0;
+  }
+  int n = psx_parse_array_size_constexpr();
+  if (out_has_size) *out_has_size = 1;
+  tk_expect(']');
+  return n;
+}
+
 int psx_parse_member_array_suffixes(int *out_is_flex_array) {
   int arr_total = 1;
   int is_flex_array = 0;

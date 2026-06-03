@@ -39,7 +39,6 @@ static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr);
 static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *out_has_func_suffix,
                                                             int *out_paren_array_mul);
 static member_decl_head_t parse_stmt_member_decl_head(void);
-static int parse_array_size_optional_constexpr_stmt(int *out_has_size);
 typedef struct {
   int arr_total;
   int is_array;
@@ -99,15 +98,6 @@ static member_decl_head_t parse_stmt_member_decl_head(void) {
 }
 
 
-static int parse_array_size_optional_constexpr_stmt(int *out_has_size) {
-  if (curtok()->kind == TK_RBRACKET) {
-    if (out_has_size) *out_has_size = 0;
-    return 0;
-  }
-  if (out_has_size) *out_has_size = 1;
-  return psx_parse_array_size_constexpr();
-}
-
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
   stmt_array_suffix_t out = {0};
   out.arr_total = (base_mul > 0) ? base_mul : 1;
@@ -115,14 +105,13 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
   out.has_incomplete_array = 0;
   while (tk_consume('[')) {
     int has_size = 0;
-    int n = parse_array_size_optional_constexpr_stmt(&has_size);
+    int n = psx_parse_array_size_optional_constexpr(&has_size);
     if (!has_size) {
       out.has_incomplete_array = 1;
     } else {
       out.arr_total *= n;
     }
     out.is_array = 1;
-    tk_expect(']');
   }
   return out;
 }
@@ -131,9 +120,8 @@ static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
   int arr_total = (base_mul > 0) ? base_mul : 1;
   while (tk_consume('[')) {
     int has_size = 0;
-    int n = parse_array_size_optional_constexpr_stmt(&has_size);
+    int n = psx_parse_array_size_optional_constexpr(&has_size);
     if (has_size && n > 0) arr_total *= n;
-    tk_expect(']');
   }
   return arr_total;
 }
