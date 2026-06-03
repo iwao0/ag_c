@@ -1034,6 +1034,88 @@ token_t *preprocess(token_t *tok) {
   return preprocess_ctx(tk_get_default_context(), tok);
 }
 
+// 行頭（at_bol）まで進める。ディレクティブの末尾余剰トークンの読み飛ばし用。
+static token_t *skip_to_next_line(token_t *tok) {
+  while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
+  return tok;
+}
+
+// 識別子トークンを必須として取り出し、my_strndup したコピーを返す。
+// 失敗時は pp_error で中断。
+static char *consume_required_macro_name(token_t **ptok) {
+  if ((*ptok)->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
+  token_ident_t *id = as_ident(*ptok);
+  char *name = my_strndup(id->str, id->len);
+  *ptok = (*ptok)->next;
+  return name;
+}
+
+// 条件分岐スタックに新しいエントリを push。
+static void push_cond_incl(bool included) {
+  cond_incl_t *ci = calloc(1, sizeof(cond_incl_t));
+  ci->ctx = IN_THEN;
+  ci->included = included;
+  ci->next = cond_incl;
+  cond_incl = ci;
+}
+
+// #ifdef / #ifndef: マクロ定義の有無で then/else を選択。negated=true で #ifndef。
+static token_t *handle_ifdef_or_ifndef(token_t *tok, bool negated) {
+  tok = tok->next; // skip directive name
+  char *name = consume_required_macro_name(&tok);
+  bool defined = find_macro(name) != NULL;
+  free(name);
+  bool is_true = negated ? !defined : defined;
+  push_cond_incl(is_true);
+  tok = skip_to_next_line(tok);
+  if (!is_true) tok = skip_cond_incl(tok);
+  return tok;
+}
+
+static token_t *handle_else(token_t *tok) {
+  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  cond_incl->ctx = IN_ELSE;
+  tok = skip_to_next_line(tok->next);
+  if (cond_incl->included) {
+    tok = skip_cond_incl(tok);
+  } else {
+    cond_incl->included = true;
+  }
+  return tok;
+}
+
+static token_t *handle_elif(token_t *tok) {
+  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
+  cond_incl->ctx = IN_ELIF;
+  tok = tok->next;
+  if (cond_incl->included) {
+    tok = skip_to_next_line(tok);
+    return skip_cond_incl(tok);
+  }
+  bool is_true = evaluate_constexpr(&tok, tok);
+  if (is_true) cond_incl->included = true;
+  if (!is_true) tok = skip_cond_incl(tok);
+  return tok;
+}
+
+static token_t *handle_if(token_t *tok) {
+  tok = tok->next;
+  bool is_true = evaluate_constexpr(&tok, tok);
+  push_cond_incl(is_true);
+  if (!is_true) tok = skip_cond_incl(tok);
+  return tok;
+}
+
+static token_t *handle_endif(token_t *tok) {
+  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
+  cond_incl_t *ci = cond_incl;
+  cond_incl = cond_incl->next;
+  free(ci);
+  return skip_to_next_line(tok->next);
+}
+
 // プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
 token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
@@ -1153,99 +1235,12 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
         continue;
       }
 
-      if (is_dir(tok, "ifdef")) {
-        tok = tok->next;
-        if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
-        token_ident_t *id = as_ident(tok);
-        char *name = my_strndup(id->str, id->len);
-        bool is_true = find_macro(name) != NULL;
-        free(name);
-        
-        cond_incl_t *ci = calloc(1, sizeof(cond_incl_t));
-        ci->ctx = IN_THEN;
-        ci->included = is_true;
-        ci->next = cond_incl;
-        cond_incl = ci;
-        
-        tok = tok->next; // skip macro name
-        while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next; // skip to eol
-        if (!is_true) tok = skip_cond_incl(tok);
-        continue;
-      }
-      
-      if (is_dir(tok, "ifndef")) {
-        tok = tok->next;
-        if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
-        token_ident_t *id = as_ident(tok);
-        char *name = my_strndup(id->str, id->len);
-        bool is_true = find_macro(name) == NULL;
-        free(name);
-        
-        cond_incl_t *ci = calloc(1, sizeof(cond_incl_t));
-        ci->ctx = IN_THEN;
-        ci->included = is_true;
-        ci->next = cond_incl;
-        cond_incl = ci;
-        
-        tok = tok->next; // skip macro name
-        while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next; // skip to eol
-        if (!is_true) tok = skip_cond_incl(tok);
-        continue;
-      }
-      
-      if (is_dir(tok, "else")) {
-        if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
-        if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
-        cond_incl->ctx = IN_ELSE;
-        tok = tok->next;
-        while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next; // skip to eol
-        
-        if (cond_incl->included) {
-           tok = skip_cond_incl(tok);
-        } else {
-           cond_incl->included = true;
-        }
-        continue;
-      }
-      
-      if (is_dir(tok, "elif")) {
-        if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
-        if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
-        cond_incl->ctx = IN_ELIF;
-        tok = tok->next;
-        
-        if (cond_incl->included) {
-           while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
-           tok = skip_cond_incl(tok);
-        } else {
-           bool is_true = evaluate_constexpr(&tok, tok);
-           if (is_true) cond_incl->included = true;
-           if (!is_true) tok = skip_cond_incl(tok);
-        }
-        continue;
-      }
-      
-      if (is_dir(tok, "if")) {
-        tok = tok->next;
-        bool is_true = evaluate_constexpr(&tok, tok);
-        cond_incl_t *ci = calloc(1, sizeof(cond_incl_t));
-        ci->ctx = IN_THEN;
-        ci->included = is_true;
-        ci->next = cond_incl;
-        cond_incl = ci;
-        if (!is_true) tok = skip_cond_incl(tok);
-        continue;
-      }
-      
-      if (is_dir(tok, "endif")) {
-        if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
-        cond_incl_t *ci = cond_incl;
-        cond_incl = cond_incl->next;
-        free(ci);
-        tok = tok->next;
-        while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next; // skip to eol
-        continue;
-      }
+      if (is_dir(tok, "ifdef"))  { tok = handle_ifdef_or_ifndef(tok, false); continue; }
+      if (is_dir(tok, "ifndef")) { tok = handle_ifdef_or_ifndef(tok, true);  continue; }
+      if (is_dir(tok, "else"))   { tok = handle_else(tok);  continue; }
+      if (is_dir(tok, "elif"))   { tok = handle_elif(tok);  continue; }
+      if (is_dir(tok, "if"))     { tok = handle_if(tok);    continue; }
+      if (is_dir(tok, "endif"))  { tok = handle_endif(tok); continue; }
       
       if (is_dir(tok, "define")) {
         tok = tok->next;
