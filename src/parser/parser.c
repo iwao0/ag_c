@@ -5,6 +5,7 @@
 #include "internal/decl.h"
 #include "internal/core.h"
 #include "internal/alignas_value.h"
+#include "internal/array_suffixes.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
 #include "internal/enum_const.h"
@@ -124,9 +125,7 @@ static token_ident_t *parse_func_name_declarator_recursive(void);
 static void parse_static_assert_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
-static int parse_array_size_constexpr_toplevel(void);
 static int parse_array_size_optional_constexpr_toplevel(int *out_has_size);
-static int parse_toplevel_member_array_suffixes(int *out_is_flex_array);
 static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind);
 static void apply_toplevel_decl_prefix_flags(void);
 static void resolve_toplevel_typedef_ref(void);
@@ -425,21 +424,12 @@ static token_kind_t parse_atomic_type_specifier(void) {
   return inner;
 }
 
-static int parse_array_size_constexpr_toplevel(void) {
-  long long v = psx_parse_enum_const_expr();
-  if (v <= 0) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-  }
-  return (int)v;
-}
-
 static int parse_array_size_optional_constexpr_toplevel(int *out_has_size) {
   if (tk_consume(']')) {
     if (out_has_size) *out_has_size = 0;
     return 0;
   }
-  int n = parse_array_size_constexpr_toplevel();
+  int n = psx_parse_array_size_constexpr();
   if (out_has_size) *out_has_size = 1;
   tk_expect(']');
   return n;
@@ -715,22 +705,6 @@ static int parse_toplevel_array_suffixes_constexpr_required(int base_mul) {
   return arr_total;
 }
 
-static int parse_toplevel_member_array_suffixes(int *out_is_flex_array) {
-  int arr_total = 1;
-  int is_flex_array = 0;
-  while (tk_consume('[')) {
-    if (curtok()->kind == TK_RBRACKET) {
-      is_flex_array = 1;
-      arr_total = 0;
-    } else {
-      arr_total *= parse_array_size_constexpr_toplevel();
-    }
-    tk_expect(']');
-  }
-  if (out_is_flex_array) *out_is_flex_array = is_flex_array;
-  return arr_total;
-}
-
 static void parse_toplevel_declarator_list(void) {
   parse_toplevel_declarator_list_with_apply(0, apply_toplevel_object_from_head);
 }
@@ -980,17 +954,13 @@ static int is_toplevel_decl_like_start(token_t *tok) {
          psx_ctx_is_typedef_name_token(tok);
 }
 
-static int parse_toplevel_member_array_suffixes_thunk(int *out_is_flex_array) {
-  return parse_toplevel_member_array_suffixes(out_is_flex_array);
-}
-
 static const struct_member_layout_ops_t toplevel_struct_layout_ops = {
   .parse_alignas_value        = psx_parse_alignas_value,
   .make_anonymous_tag_name    = make_anonymous_tag_name_toplevel,
   .parse_tag_definition_body  = parse_tag_definition_body_toplevel,
   .parse_member_decl_head     = parse_toplevel_member_decl_head,
   .parse_enum_const_expr      = psx_parse_enum_const_expr,
-  .parse_member_array_suffixes = parse_toplevel_member_array_suffixes_thunk,
+  .parse_member_array_suffixes = psx_parse_member_array_suffixes,
 };
 
 static int parse_struct_or_union_members_layout_toplevel(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {

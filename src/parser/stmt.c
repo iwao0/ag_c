@@ -1,6 +1,7 @@
 #include "internal/stmt.h"
 #include "internal/alignas_value.h"
 #include "internal/arena.h"
+#include "internal/array_suffixes.h"
 #include "internal/core.h"
 #include "internal/decl.h"
 #include "internal/diag.h"
@@ -38,7 +39,6 @@ static token_ident_t *parse_member_decl_name_recursive_stmt(int *is_ptr, int *ou
                                                             int *out_paren_array_mul);
 static void consume_stmt_member_func_suffixes(int *out_has_func_suffix);
 static member_decl_head_t parse_stmt_member_decl_head(void);
-static int parse_array_size_constexpr_stmt(void);
 static int parse_array_size_optional_constexpr_stmt(int *out_has_size);
 typedef struct {
   int arr_total;
@@ -47,7 +47,6 @@ typedef struct {
 } stmt_array_suffix_t;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static int parse_stmt_array_suffixes_constexpr_required(int base_mul);
-static int parse_stmt_member_array_suffixes(int *out_is_flex_array);
 static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static node_t *stmt_internal(void);
 static node_t *block_item(void);
@@ -139,30 +138,17 @@ static member_decl_head_t parse_stmt_member_decl_head(void) {
   return out;
 }
 
-static int parse_stmt_member_array_suffixes_thunk(int *out_is_flex_array) {
-  return parse_stmt_member_array_suffixes(out_is_flex_array);
-}
-
 static const struct_member_layout_ops_t stmt_struct_layout_ops = {
   .parse_alignas_value        = psx_parse_alignas_value,
   .make_anonymous_tag_name    = make_anonymous_tag_name_stmt,
   .parse_tag_definition_body  = parse_tag_definition_body,
   .parse_member_decl_head     = parse_stmt_member_decl_head,
   .parse_enum_const_expr      = psx_parse_enum_const_expr,
-  .parse_member_array_suffixes = parse_stmt_member_array_suffixes_thunk,
+  .parse_member_array_suffixes = psx_parse_member_array_suffixes,
 };
 
 static int parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, &stmt_struct_layout_ops);
-}
-
-static int parse_array_size_constexpr_stmt(void) {
-  long long v = psx_parse_enum_const_expr();
-  if (v <= 0) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-  }
-  return (int)v;
 }
 
 static int parse_array_size_optional_constexpr_stmt(int *out_has_size) {
@@ -171,7 +157,7 @@ static int parse_array_size_optional_constexpr_stmt(int *out_has_size) {
     return 0;
   }
   if (out_has_size) *out_has_size = 1;
-  return parse_array_size_constexpr_stmt();
+  return psx_parse_array_size_constexpr();
 }
 
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
@@ -196,26 +182,10 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
 static int parse_stmt_array_suffixes_constexpr_required(int base_mul) {
   int arr_total = (base_mul > 0) ? base_mul : 1;
   while (tk_consume('[')) {
-    int n = parse_array_size_constexpr_stmt();
+    int n = psx_parse_array_size_constexpr();
     if (n > 0) arr_total *= n;
     tk_expect(']');
   }
-  return arr_total;
-}
-
-static int parse_stmt_member_array_suffixes(int *out_is_flex_array) {
-  int arr_total = 1;
-  int is_flex_array = 0;
-  while (tk_consume('[')) {
-    if (curtok()->kind == TK_RBRACKET) {
-      is_flex_array = 1;
-      arr_total = 0;
-    } else {
-      arr_total *= parse_array_size_constexpr_stmt();
-    }
-    tk_expect(']');
-  }
-  if (out_is_flex_array) *out_is_flex_array = is_flex_array;
   return arr_total;
 }
 
