@@ -936,6 +936,11 @@ int psx_last_type_is_atomic(void) {
   return g_last_type_atomic;
 }
 
+static void emit_invalid_type_spec_diag(void) {
+  diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s",
+                 diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+}
+
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
 token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
@@ -971,7 +976,7 @@ token_kind_t psx_consume_type_kind(void) {
     token_kind_t k = curtok()->kind;
     if (k == TK_COMPLEX) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_complex = 1;
       set_curtok(curtok()->next);
@@ -979,7 +984,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_IMAGINARY) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_imaginary = 1;
       set_curtok(curtok()->next);
@@ -987,7 +992,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_SIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_signed = 1;
       set_curtok(curtok()->next);
@@ -995,7 +1000,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_UNSIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_unsigned = 1;
       set_curtok(curtok()->next);
@@ -1003,7 +1008,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_LONG) {
       if (saw_char || saw_short || saw_void || saw_float || saw_bool || long_count >= 2) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       long_count++;
       set_curtok(curtok()->next);
@@ -1011,7 +1016,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_SHORT) {
       if (saw_char || saw_short || long_count || saw_void || saw_float || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_short = 1;
       set_curtok(curtok()->next);
@@ -1019,7 +1024,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_INT) {
       if (saw_int || saw_char || saw_void || saw_float || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_int = 1;
       set_curtok(curtok()->next);
@@ -1027,7 +1032,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_CHAR) {
       if (saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_char = 1;
       set_curtok(curtok()->next);
@@ -1035,7 +1040,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_VOID) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_float || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_void = 1;
       set_curtok(curtok()->next);
@@ -1043,7 +1048,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_FLOAT) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_double || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_float = 1;
       set_curtok(curtok()->next);
@@ -1051,7 +1056,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_DOUBLE) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int || saw_void || saw_float || saw_bool) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_double = 1;
       set_curtok(curtok()->next);
@@ -1059,7 +1064,7 @@ token_kind_t psx_consume_type_kind(void) {
     }
     if (k == TK_BOOL) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+        emit_invalid_type_spec_diag();
       }
       saw_bool = 1;
       set_curtok(curtok()->next);
