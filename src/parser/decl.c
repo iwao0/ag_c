@@ -162,103 +162,52 @@ static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out
 }
 
 static long long eval_const_expr_decl(node_t *n, int *ok) {
-  if (!n) {
-    *ok = 0;
-    return 0;
-  }
+  if (!n) { *ok = 0; return 0; }
   switch (n->kind) {
-    case ND_NUM:
-      return ((node_num_t *)n)->val;
-    case ND_ADD: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l + r;
-    }
-    case ND_SUB: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l - r;
-    }
-    case ND_MUL: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l * r;
-    }
-    case ND_DIV: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l / r;
-    }
-    case ND_MOD: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l % r;
-    }
-    case ND_SHL: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l << r;
-    }
-    case ND_SHR: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l >> r;
-    }
-    case ND_BITAND: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l & r;
-    }
-    case ND_BITXOR: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l ^ r;
-    }
-    case ND_BITOR: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      return l | r;
-    }
-    case ND_EQ:
-    case ND_NE:
-    case ND_LT:
-    case ND_LE:
-    case ND_LOGAND:
-    case ND_LOGOR: {
-      long long l = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      long long r = eval_const_expr_decl(n->rhs, ok);
-      if (n->kind == ND_EQ) return l == r;
-      if (n->kind == ND_NE) return l != r;
-      if (n->kind == ND_LT) return l < r;
-      if (n->kind == ND_LE) return l <= r;
-      if (n->kind == ND_LOGAND) return (l && r) ? 1 : 0;
-      return (l || r) ? 1 : 0;
-    }
-    case ND_COMMA:
-      (void)eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      return eval_const_expr_decl(n->rhs, ok);
-    case ND_TERNARY: {
-      long long c = eval_const_expr_decl(n->lhs, ok);
-      if (!*ok) return 0;
-      node_t *then_expr = n->rhs;
-      node_t *else_expr = ((node_ctrl_t *)n)->els;
-      return c ? eval_const_expr_decl(then_expr, ok) : eval_const_expr_decl(else_expr, ok);
-    }
-    default:
-      *ok = 0;
-      return 0;
+  case ND_NUM:
+    return ((node_num_t *)n)->val;
+  case ND_COMMA:
+    (void)eval_const_expr_decl(n->lhs, ok);
+    if (!*ok) return 0;
+    return eval_const_expr_decl(n->rhs, ok);
+  case ND_TERNARY: {
+    long long c = eval_const_expr_decl(n->lhs, ok);
+    if (!*ok) return 0;
+    node_t *then_expr = n->rhs;
+    node_t *else_expr = ((node_ctrl_t *)n)->els;
+    return c ? eval_const_expr_decl(then_expr, ok) : eval_const_expr_decl(else_expr, ok);
+  }
+  case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
+  case ND_SHL: case ND_SHR:
+  case ND_BITAND: case ND_BITXOR: case ND_BITOR:
+  case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
+  case ND_LOGAND: case ND_LOGOR:
+    break;
+  default:
+    *ok = 0; return 0;
+  }
+  // 二項演算共通: 左→右の順で評価し、op を適用。
+  long long l = eval_const_expr_decl(n->lhs, ok);
+  if (!*ok) return 0;
+  long long r = eval_const_expr_decl(n->rhs, ok);
+  switch (n->kind) {
+  case ND_ADD:    return l + r;
+  case ND_SUB:    return l - r;
+  case ND_MUL:    return l * r;
+  case ND_DIV:    return l / r;
+  case ND_MOD:    return l % r;
+  case ND_SHL:    return l << r;
+  case ND_SHR:    return l >> r;
+  case ND_BITAND: return l & r;
+  case ND_BITXOR: return l ^ r;
+  case ND_BITOR:  return l | r;
+  case ND_EQ:     return l == r;
+  case ND_NE:     return l != r;
+  case ND_LT:     return l < r;
+  case ND_LE:     return l <= r;
+  case ND_LOGAND: return (l && r) ? 1 : 0;
+  case ND_LOGOR:  return (l || r) ? 1 : 0;
+  default:        *ok = 0; return 0;
   }
 }
 
