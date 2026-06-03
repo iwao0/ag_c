@@ -378,6 +378,19 @@ long long psx_decl_count_brace_init_elements(token_t *brace_tok) {
   return max_seen + 1;
 }
 
+// `=` 直後 `{` の中身がもう一段の `{` で始まるか（ネスト初期化子）を判定する。
+// 2D 推定 `int a[][N]={{...},{...}}` をフラット形式 `{1,2,3,...}` と区別するために使う。
+// curtok は変更しない。
+static bool init_first_element_is_brace(void) {
+  token_t *t = curtok();
+  if (!t || t->kind != TK_ASSIGN) return false;
+  t = t->next;
+  if (!t || t->kind != TK_LBRACE) return false;
+  t = t->next;
+  // 簡略化のため、先頭の指定初期化子 (`[N]=` `.name=`) はスキップせず、直接判定する。
+  return t && t->kind == TK_LBRACE;
+}
+
 // `int a[] = ...` の `[]` で要素数を初期化子から推定するためのトークン先読みヘルパ。
 // curtok は変更しない。`=` で始まる初期化子を想定し、推定できなければ 0 を返す。
 // elem_size==1 の場合は文字列リテラル初期化子（NUL を含む長さ）にも対応する。
@@ -1442,17 +1455,6 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                    ? 1
                                    : parse_array_size_expr_decl(&size_node, &size_ok);
         tk_expect(']');
-        if (size_inferred_from_init) {
-          // `int a[] = {...}` / `char s[] = "..."` 形式: 初期化子から要素数を推定する。
-          // 推定不可なら 1（既存挙動相当）にフォールバックして診断に任せる。
-          long long inferred = infer_array_count_from_initializer(elem_size);
-          if (inferred > 0) {
-            array_size = inferred;
-          } else {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-          }
-        }
         if (!size_ok) {
           // 可変長配列 (VLA)
           // 内側次元を確認 (2D VLA サポート)
@@ -1509,7 +1511,26 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         }
         int inner_dim_size = 0;  // 内側次元の要素数（0: 1次元配列）
         int trailing_mul = parse_decl_constexpr_array_suffix_product(&inner_dim_size);
-        array_size *= trailing_mul;
+        if (size_inferred_from_init) {
+          // 外側 `[]` を初期化子から推定する。trailing dims を消費した直後の
+          // curtok 位置（`=` を指す）で推定するため、ここで呼ぶ必要がある。
+          long long top_count = infer_array_count_from_initializer(elem_size);
+          if (top_count <= 0) {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+            array_size = 1; // フォールバック
+          } else if (inner_dim_size > 0 && !init_first_element_is_brace()) {
+            // 多次元配列のフラット初期化 `int a[][3]={1,2,3,4,5,6}`:
+            // 推定値は総要素数なので trailing_mul を掛けない。
+            array_size = top_count;
+          } else {
+            // ネスト初期化 `{{...},{...}}` または 1D `int a[]={...}`:
+            // top_count は外側次元の要素数なので trailing_mul を掛ける。
+            array_size = top_count * trailing_mul;
+          }
+        } else {
+          array_size *= trailing_mul;
+        }
         {
         int arr_elem_size = is_pointer ? 8 : elem_size;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
