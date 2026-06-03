@@ -1187,15 +1187,30 @@ static global_var_t *find_global_var_decl(char *name, int len) {
 static token_ident_t *consume_decl_name_recursive(int *is_pointer,
                                                   unsigned int *const_mask, unsigned int *volatile_mask,
                                                   int *levels, int *out_paren_array_mul,
-                                                  int *had_parens) {
+                                                  int *had_parens,
+                                                  int *out_inner_array_mul) {
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
   token_ident_t *tok = NULL;
   int local_had_parens = 0;
   if (tk_consume('(')) {
     local_had_parens = 1;
-    tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels, out_paren_array_mul, NULL);
+    tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels,
+                                      out_paren_array_mul, NULL, out_inner_array_mul);
+    // パレン内の `[N]` を捕捉する: `int (*ops[N])(...)` の N は関数ポインタ配列の要素数。
     while (curtok()->kind == TK_LBRACKET) {
-      skip_bracket_group();
+      if (out_inner_array_mul && tk_consume('[')) {
+        int n = 0;
+        if (curtok() && curtok()->kind != TK_RBRACKET) {
+          n = parse_array_size_constexpr_decl();
+        }
+        tk_expect(']');
+        if (n > 0) {
+          if (*out_inner_array_mul == 0) *out_inner_array_mul = 1;
+          *out_inner_array_mul *= n;
+        }
+      } else {
+        skip_bracket_group();
+      }
     }
     tk_expect(')');
   } else {
@@ -1211,11 +1226,25 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   return tok;
 }
 
+static token_ident_t *consume_decl_name_ex(int *is_pointer,
+                                           unsigned int *const_mask, unsigned int *volatile_mask,
+                                           int *levels, int *out_paren_array_mul,
+                                           int *out_inner_array_mul) {
+  token_ident_t *tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask,
+                                                   levels, out_paren_array_mul, NULL,
+                                                   out_inner_array_mul);
+  if (!tok) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+  }
+  return tok;
+}
+
 static token_ident_t *consume_decl_name(int *is_pointer,
                                         unsigned int *const_mask, unsigned int *volatile_mask,
                                         int *levels, int *out_paren_array_mul) {
   token_ident_t *tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask,
-                                                   levels, out_paren_array_mul, NULL);
+                                                   levels, out_paren_array_mul, NULL, NULL);
   if (!tok) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
@@ -1372,7 +1401,9 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
     }
 
     int paren_array_mul = 0;
-    token_ident_t *tok = consume_decl_name(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
+    int inner_array_mul = 0;
+    token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
+                                              &paren_array_mul, &inner_array_mul);
     int var_size = is_pointer ? 8 : elem_size;
     int total_pointer_levels = ptr_levels + (base_is_pointer ? 1 : 0);
     int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
@@ -1381,7 +1412,19 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
     lvar_t *var = NULL;
     {
-      if (paren_array_mul > 0) {
+      if (inner_array_mul > 0 && is_pointer) {
+        // `int (*ops[N])(int,int)` パターン: 関数ポインタの配列。
+        // 各要素は 8 バイトの関数ポインタなので elem_size=8 で is_array を立てる。
+        int arr_total_bytes = inner_array_mul * 8;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, arr_total_bytes, 8, 1, alignas_val);
+        var->tag_kind = tag_kind;
+        var->tag_name = tag_name;
+        var->tag_len = tag_len;
+        var->is_tag_pointer = (tag_kind != TK_EOF) ? 1 : 0;
+        var->base_deref_size = 8;
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
+      } else if (paren_array_mul > 0) {
         // (*p)[N] パターン: 配列へのポインタ
         int row_size = paren_array_mul * elem_size;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);

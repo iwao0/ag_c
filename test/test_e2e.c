@@ -538,6 +538,9 @@ static const test_case_t test_cases[] = {
     {"pointer", "param_char_ptr_subscript", CASE_INT, "int sum3(char *p){return p[0]+p[1]+p[2];} int main(){char a[3];a[0]=1;a[1]=2;a[2]=3;return sum3(a);}", 6, 0},
     {"pointer", "param_short_ptr_subscript", CASE_INT, "int sum3(short *p){return p[0]+p[1]+p[2];} int main(){short a[3];a[0]=4;a[1]=5;a[2]=6;return sum3(a);}", 15, 0},
     {"pointer", "param_int_pp_double_deref", CASE_INT, "void inc(int **pp){(**pp)++;} int main(){int x=10;int *p=&x;inc(&p);inc(&p);return x;}", 12, 0},
+    {"pointer", "funcptr_array_assign_and_call", CASE_INT, "int add(int a,int b){return a+b;} int sub(int a,int b){return a-b;} int main(){int (*ops[2])(int,int); ops[0]=add; ops[1]=sub; return ops[0](10,3)+ops[1](10,3);}", 20, 0},
+    {"pointer", "funcptr_array_brace_init", CASE_INT, "int add(int a,int b){return a+b;} int sub(int a,int b){return a-b;} int main(){int (*ops[2])(int,int)={add,sub}; return ops[0](10,3)+ops[1](10,3);}", 20, 0},
+    {"pointer", "funcptr_array_typedef_brace_init", CASE_INT, "typedef int (*binop_t)(int,int); int add(int a,int b){return a+b;} int mul(int a,int b){return a*b;} int main(){binop_t ops[2]={add,mul}; return ops[0](3,4)+ops[1](2,5);}", 17, 0},
 
     {"array", "idx", CASE_INT, "int main() { int arr[3]; arr[0]=1; arr[1]=2; arr[2]=3; return arr[2]; }", 3, 0},
     {"array", "brace_init", CASE_INT, "int main() { int arr[3]={1,2,3}; return arr[2]; }", 3, 0},
