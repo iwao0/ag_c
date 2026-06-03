@@ -255,14 +255,19 @@ void psx_ctx_validate_goto_refs(void) {
   }
 }
 
-bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
+// tag_types_by_bucket から (kind, name, len) に一致するエントリを返す。なければ NULL。
+static tag_type_t *find_tag_type(token_kind_t kind, char *name, int len) {
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
   for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
     if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      return true;
+      return t;
     }
   }
-  return false;
+  return NULL;
+}
+
+bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
+  return find_tag_type(kind, name, len) != NULL;
 }
 
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
@@ -274,14 +279,13 @@ void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len
 }
 
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len, int member_count, int tag_size) {
-  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
-  for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
-    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      if (member_count > t->member_count) t->member_count = member_count;
-      if (tag_size > t->size) t->size = tag_size;
-      return;
-    }
+  tag_type_t *existing = find_tag_type(kind, name, len);
+  if (existing) {
+    if (member_count > existing->member_count) existing->member_count = member_count;
+    if (tag_size > existing->size) existing->size = tag_size;
+    return;
   }
+  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
   tag_type_t *t = calloc(1, sizeof(tag_type_t));
   t->kind = kind;
   t->name = name;
@@ -294,23 +298,13 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
 }
 
 int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
-  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
-  for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
-    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      return t->member_count;
-    }
-  }
-  return -1;
+  tag_type_t *t = find_tag_type(kind, name, len);
+  return t ? t->member_count : -1;
 }
 
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len) {
-  unsigned bucket = psx_ctx_hash_tag(kind, name, len);
-  for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
-    if (t->kind == kind && t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      return t->size;
-    }
-  }
-  return -1;
+  tag_type_t *t = find_tag_type(kind, name, len);
+  return t ? t->size : -1;
 }
 
 void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -468,15 +462,36 @@ bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   return false;
 }
 
-void psx_ctx_define_enum_const(char *name, int len, long long value) {
+// 任意のスコープから名前一致の enum_const を返す。なければ NULL。
+static enum_const_t *find_enum_const(char *name, int len) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
+    if (e->len == len && strncmp(e->name, name, (size_t)len) == 0) {
+      return e;
+    }
+  }
+  return NULL;
+}
+
+// 現スコープ深度に限った検索（同名再定義の検出用）。
+static enum_const_t *find_enum_const_in_current_scope(char *name, int len) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
     if (e->scope_depth == tag_scope_depth && e->len == len &&
         strncmp(e->name, name, (size_t)len) == 0) {
-      e->value = value;
-      return;
+      return e;
     }
   }
+  return NULL;
+}
+
+void psx_ctx_define_enum_const(char *name, int len, long long value) {
+  enum_const_t *existing = find_enum_const_in_current_scope(name, len);
+  if (existing) {
+    existing->value = value;
+    return;
+  }
+  unsigned bucket = psx_ctx_hash_name(name, len);
   enum_const_t *e = calloc(1, sizeof(enum_const_t));
   e->name = name;
   e->len = len;
@@ -487,42 +502,40 @@ void psx_ctx_define_enum_const(char *name, int len, long long value) {
 }
 
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
-    if (e->len == len && strncmp(e->name, name, (size_t)len) == 0) {
-      if (out_value) *out_value = e->value;
-      return true;
-    }
-  }
-  return false;
+  enum_const_t *e = find_enum_const(name, len);
+  if (!e) return false;
+  if (out_value) *out_value = e->value;
+  return true;
 }
 
-void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
-                                 tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                 char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                 int pointee_const_qualified, int pointee_volatile_qualified,
-                                 int is_unsigned) {
+// 任意のスコープから名前一致の typedef を返す。なければ NULL。
+static typedef_name_t *find_typedef(char *name, int len) {
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
+    if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
+      return t;
+    }
+  }
+  return NULL;
+}
+
+// 現スコープ深度に限った検索（同名再定義の検出用）。
+static typedef_name_t *find_typedef_in_current_scope(char *name, int len) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
     if (t->scope_depth == tag_scope_depth && t->len == len &&
         strncmp(t->name, name, (size_t)len) == 0) {
-      t->base_kind = base_kind;
-      t->elem_size = elem_size;
-      t->fp_kind = fp_kind;
-      t->tag_kind = tag_kind;
-      t->tag_name = tag_name;
-      t->tag_len = tag_len;
-      t->is_pointer = is_pointer;
-      t->sizeof_size = sizeof_size;
-      t->pointee_const_qualified = pointee_const_qualified;
-      t->pointee_volatile_qualified = pointee_volatile_qualified;
-      t->is_unsigned = is_unsigned;
-      return;
+      return t;
     }
   }
-  typedef_name_t *t = calloc(1, sizeof(typedef_name_t));
-  t->name = name;
-  t->len = len;
+  return NULL;
+}
+
+static void assign_typedef_fields(typedef_name_t *t, token_kind_t base_kind, int elem_size,
+                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,
+                                  char *tag_name, int tag_len, int is_pointer, int sizeof_size,
+                                  int pointee_const_qualified, int pointee_volatile_qualified,
+                                  int is_unsigned) {
   t->base_kind = base_kind;
   t->elem_size = elem_size;
   t->fp_kind = fp_kind;
@@ -534,20 +547,37 @@ void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, in
   t->pointee_const_qualified = pointee_const_qualified;
   t->pointee_volatile_qualified = pointee_volatile_qualified;
   t->is_unsigned = is_unsigned;
+}
+
+void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
+                                 tk_float_kind_t fp_kind, token_kind_t tag_kind,
+                                 char *tag_name, int tag_len, int is_pointer, int sizeof_size,
+                                 int pointee_const_qualified, int pointee_volatile_qualified,
+                                 int is_unsigned) {
+  typedef_name_t *existing = find_typedef_in_current_scope(name, len);
+  if (existing) {
+    assign_typedef_fields(existing, base_kind, elem_size, fp_kind, tag_kind,
+                          tag_name, tag_len, is_pointer, sizeof_size,
+                          pointee_const_qualified, pointee_volatile_qualified, is_unsigned);
+    return;
+  }
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  typedef_name_t *t = calloc(1, sizeof(typedef_name_t));
+  t->name = name;
+  t->len = len;
+  assign_typedef_fields(t, base_kind, elem_size, fp_kind, tag_kind,
+                        tag_name, tag_len, is_pointer, sizeof_size,
+                        pointee_const_qualified, pointee_volatile_qualified, is_unsigned);
   t->scope_depth = tag_scope_depth;
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
 }
 
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
-    if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      if (out_sizeof_size) *out_sizeof_size = t->sizeof_size;
-      return true;
-    }
-  }
-  return false;
+  typedef_name_t *t = find_typedef(name, len);
+  if (!t) return false;
+  if (out_sizeof_size) *out_sizeof_size = t->sizeof_size;
+  return true;
 }
 
 bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
@@ -556,23 +586,19 @@ bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
                                int *out_tag_len, int *out_is_pointer,
                                int *out_pointee_const_qualified, int *out_pointee_volatile_qualified,
                                int *out_is_unsigned) {
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
-    if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
-      if (out_base_kind) *out_base_kind = t->base_kind;
-      if (out_elem_size) *out_elem_size = t->elem_size;
-      if (out_fp_kind) *out_fp_kind = t->fp_kind;
-      if (out_tag_kind) *out_tag_kind = t->tag_kind;
-      if (out_tag_name) *out_tag_name = t->tag_name;
-      if (out_tag_len) *out_tag_len = t->tag_len;
-      if (out_is_pointer) *out_is_pointer = t->is_pointer;
-      if (out_pointee_const_qualified) *out_pointee_const_qualified = t->pointee_const_qualified;
-      if (out_pointee_volatile_qualified) *out_pointee_volatile_qualified = t->pointee_volatile_qualified;
-      if (out_is_unsigned) *out_is_unsigned = t->is_unsigned;
-      return true;
-    }
-  }
-  return false;
+  typedef_name_t *t = find_typedef(name, len);
+  if (!t) return false;
+  if (out_base_kind) *out_base_kind = t->base_kind;
+  if (out_elem_size) *out_elem_size = t->elem_size;
+  if (out_fp_kind) *out_fp_kind = t->fp_kind;
+  if (out_tag_kind) *out_tag_kind = t->tag_kind;
+  if (out_tag_name) *out_tag_name = t->tag_name;
+  if (out_tag_len) *out_tag_len = t->tag_len;
+  if (out_is_pointer) *out_is_pointer = t->is_pointer;
+  if (out_pointee_const_qualified) *out_pointee_const_qualified = t->pointee_const_qualified;
+  if (out_pointee_volatile_qualified) *out_pointee_volatile_qualified = t->pointee_volatile_qualified;
+  if (out_is_unsigned) *out_is_unsigned = t->is_unsigned;
+  return true;
 }
 
 bool psx_ctx_is_typedef_name_token(token_t *tok) {
@@ -585,14 +611,24 @@ void psx_ctx_define_function_name(char *name, int len) {
   psx_ctx_define_function_name_with_ret(name, len, 0);
 }
 
-void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
+// 任意のスコープから名前一致の関数名エントリを返す。なければ NULL。
+static func_name_t *find_function_name(char *name, int len) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
     if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
-      f->ret_struct_size = ret_struct_size; // 更新
-      return;
+      return f;
     }
   }
+  return NULL;
+}
+
+void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
+  func_name_t *existing = find_function_name(name, len);
+  if (existing) {
+    existing->ret_struct_size = ret_struct_size; // 更新
+    return;
+  }
+  unsigned bucket = psx_ctx_hash_name(name, len);
   func_name_t *f = calloc(1, sizeof(func_name_t));
   f->name = name;
   f->len = len;
@@ -605,35 +641,20 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
 }
 
 void psx_ctx_set_function_ret_tag(char *name, int len, token_kind_t tag_kind, char *tag_name, int tag_len) {
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
-    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
-      f->ret_tag_kind = tag_kind;
-      f->ret_tag_name = tag_name;
-      f->ret_tag_len = tag_len;
-      return;
-    }
-  }
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->ret_tag_kind = tag_kind;
+  f->ret_tag_name = tag_name;
+  f->ret_tag_len = tag_len;
 }
 
 bool psx_ctx_has_function_name(char *name, int len) {
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
-    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
-      return true;
-    }
-  }
-  return false;
+  return find_function_name(name, len) != NULL;
 }
 
 int psx_ctx_get_function_ret_struct_size(char *name, int len) {
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
-    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
-      return f->ret_struct_size;
-    }
-  }
-  return 0;
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_struct_size : 0;
 }
 
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
@@ -641,15 +662,11 @@ void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kin
   if (out_tag_kind) *out_tag_kind = TK_EOF;
   if (out_tag_name) *out_tag_name = NULL;
   if (out_tag_len) *out_tag_len = 0;
-  unsigned bucket = psx_ctx_hash_name(name, len);
-  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
-    if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
-      if (out_tag_kind) *out_tag_kind = f->ret_tag_kind;
-      if (out_tag_name) *out_tag_name = f->ret_tag_name;
-      if (out_tag_len) *out_tag_len = f->ret_tag_len;
-      return;
-    }
-  }
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  if (out_tag_kind) *out_tag_kind = f->ret_tag_kind;
+  if (out_tag_name) *out_tag_name = f->ret_tag_name;
+  if (out_tag_len) *out_tag_len = f->ret_tag_len;
 }
 
 bool psx_ctx_is_type_token(token_kind_t kind) {
