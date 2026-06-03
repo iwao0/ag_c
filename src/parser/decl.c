@@ -21,6 +21,24 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 #define LVAR_SCOPE_STACK_MAX 256
 static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
 static int lvar_scope_depth;
+// 集合体メンバの所在を取り回すためのまとめ構造。
+// 個別の out 引数（name/len/offset/...）を毎回展開していたところで使う。
+typedef struct {
+  char *name;
+  int len;
+  int offset;
+  int type_size;
+  int array_len;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int is_tag_pointer;
+} aggregate_member_info_t;
+
+static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out);
+static bool tag_get_member_at(lvar_t *var, int ordinal, aggregate_member_info_t *out);
+static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
+                                      aggregate_member_info_t *out);
 static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
@@ -784,6 +802,74 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
   return parse_scalar_brace_initializer();
 }
 
+static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out) {
+  out->name = name;
+  out->len = len;
+  return psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len, name, len,
+                                 &out->offset, &out->type_size, NULL, &out->array_len,
+                                 &out->tag_kind, &out->tag_name, &out->tag_len,
+                                 &out->is_tag_pointer);
+}
+
+static bool tag_get_member_at(lvar_t *var, int ordinal, aggregate_member_info_t *out) {
+  return psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+                                   &out->name, &out->len,
+                                   &out->offset, &out->type_size, NULL, &out->array_len,
+                                   &out->tag_kind, &out->tag_name, &out->tag_len,
+                                   &out->is_tag_pointer);
+}
+
+// 次の名前付きメンバまで ordinal を前進。見つかれば true。
+// 見つからなかった場合の最終 ordinal は member_count（または途中で「found=false」になった値）。
+static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
+                                      aggregate_member_info_t *out) {
+  int ordinal = *ordinal_inout;
+  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
+  while (ordinal < member_count) {
+    bool found = tag_get_member_at(var, ordinal, out);
+    ordinal++;
+    if (!found) { *ordinal_inout = ordinal; return false; }
+    if (out->len > 0) { *ordinal_inout = ordinal; return true; }
+  }
+  *ordinal_inout = ordinal;
+  return false;
+}
+
+// チェーン末尾に init_node を追加する。先頭時は init_node 自身が新しい先頭。
+static node_t *append_to_init_chain(node_t *init_chain, node_t *init_node) {
+  if (!init_chain) return init_node;
+  return psx_node_new_binary(ND_COMMA, init_chain, init_node);
+}
+
+// .name[idx] = val の組み立て。lhs は member の offset+idx 要素を指す lvar。
+static node_t *build_nested_array_designator_assign(lvar_t *var,
+                                                    const aggregate_member_info_t *info,
+                                                    int nested_idx) {
+  node_t *lhs = new_array_elem_lvar_at(var->offset + info->offset, info->type_size, nested_idx);
+  node_t *val = parse_scalar_brace_initializer();
+  node_mem_t *assign_node = psx_node_new_assign(lhs, val);
+  assign_node->type_size = info->type_size;
+  return (node_t *)assign_node;
+}
+
+// member_init の意味を見て、必要なら ASSIGN ノードで包む。
+// 配列メンバや struct/union メンバの場合、parse_member_initializer が
+// すでに代入チェーンを返しているのでそのまま使う。
+static node_t *wrap_member_init_as_assign(lvar_t *var,
+                                          const aggregate_member_info_t *info,
+                                          node_t *member_init) {
+  if ((info->array_len > 0 && !info->is_tag_pointer) ||
+      (!info->is_tag_pointer && (info->tag_kind == TK_STRUCT || info->tag_kind == TK_UNION))) {
+    return member_init;
+  }
+  node_t *lhs = new_struct_member_lvar(var, info->offset, info->type_size,
+                                       info->tag_kind, info->tag_name, info->tag_len,
+                                       info->is_tag_pointer);
+  node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
+  assign_node->type_size = info->type_size;
+  return (node_t *)assign_node;
+}
+
 static node_t *parse_struct_initializer(lvar_t *var) {
   if (!tk_consume('{')) {
     psx_diag_ctx(curtok(), "decl", "%s",
@@ -797,50 +883,32 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   int assigned_n = 0;
   if (!tk_consume('}')) {
     for (;;) {
-      char *member_name = NULL;
-      int member_len = 0;
-      int member_offset = 0;
-      int member_type_size = 0;
-      int member_array_len = 0;
-      token_kind_t member_tag_kind = TK_EOF;
-      char *member_tag_name = NULL;
-      int member_tag_len = 0;
-      int member_is_tag_pointer = 0;
+      aggregate_member_info_t info = {0};
+      info.tag_kind = TK_EOF;
       bool found = false;
       if (tk_consume('.')) {
         token_ident_t *id = tk_consume_ident();
         if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-        found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
-                                        id->str, id->len,
-                                        &member_offset, &member_type_size, NULL, &member_array_len,
-                                        &member_tag_kind, &member_tag_name,
-                                        &member_tag_len, &member_is_tag_pointer);
-        member_name = id->str;
-        member_len = id->len;
+        found = tag_find_member(var, id->str, id->len, &info);
         if (tk_consume('[')) {
           // Nested designator: .member[idx] = val
-          if (!found || member_len <= 0) {
+          if (!found || info.len <= 0) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
           }
-          if (member_array_len <= 0 || member_is_tag_pointer) {
+          if (info.array_len <= 0 || info.is_tag_pointer) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
           }
           int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
           tk_expect(']');
           tk_expect('=');
-          if (nested_idx < 0 || nested_idx >= member_array_len) {
+          if (nested_idx < 0 || nested_idx >= info.array_len) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
-          node_t *lhs = new_array_elem_lvar_at(var->offset + member_offset, member_type_size, nested_idx);
-          node_t *val = parse_scalar_brace_initializer();
-          node_mem_t *assign_node = psx_node_new_assign(lhs, val);
-          assign_node->type_size = member_type_size;
-          node_t *init_node = (node_t *)assign_node;
-          if (!init_chain) init_chain = init_node;
-          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+          init_chain = append_to_init_chain(init_chain,
+              build_nested_array_designator_assign(var, &info, nested_idx));
           if (tk_consume('}')) break;
           tk_expect(',');
           if (tk_consume('}')) break;
@@ -848,46 +916,25 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         }
         tk_expect('=');
       } else {
-        while (ordinal < member_count) {
-          found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                            &member_name, &member_len,
-                                            &member_offset, &member_type_size, NULL, &member_array_len,
-                                            &member_tag_kind, &member_tag_name,
-                                            &member_tag_len, &member_is_tag_pointer);
-          ordinal++;
-          if (!found) break;
-          if (member_len > 0) break;
-        }
+        found = tag_get_next_named_member(var, &ordinal, &info);
       }
-      if (!found || member_len <= 0) {
+      if (!found || info.len <= 0) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
       for (int i = 0; i < assigned_n; i++) {
-        if (assigned_lens[i] == member_len && strncmp(assigned_names[i], member_name, (size_t)member_len) == 0) {
+        if (assigned_lens[i] == info.len && strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
           psx_diag_ctx(curtok(), "decl", "%s",
                        diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
         }
       }
-      node_t *member_init = parse_member_initializer(var, member_offset, member_type_size,
-                                                     member_tag_kind, member_tag_name, member_tag_len,
-                                                     member_is_tag_pointer, member_array_len);
-      node_t *init_node = NULL;
-      if ((member_array_len > 0 && !member_is_tag_pointer) ||
-          (!member_is_tag_pointer && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION))) {
-        // parse_member_initializer already returns assignment chain for aggregate members.
-        init_node = member_init;
-      } else {
-        node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                             member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-        node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
-        assign_node->type_size = member_type_size;
-        init_node = (node_t *)assign_node;
-      }
-      if (!init_chain) init_chain = init_node;
-      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
-      assigned_names[assigned_n] = member_name;
-      assigned_lens[assigned_n] = member_len;
+      node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
+                                                     info.tag_kind, info.tag_name, info.tag_len,
+                                                     info.is_tag_pointer, info.array_len);
+      init_chain = append_to_init_chain(init_chain,
+          wrap_member_init_as_assign(var, &info, member_init));
+      assigned_names[assigned_n] = info.name;
+      assigned_lens[assigned_n] = info.len;
       assigned_n++;
       if (tk_consume('}')) break;
       tk_expect(',');
@@ -957,176 +1004,115 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
   return init_chain;
 }
 
+// 波カッコなしの `union U u = expr;` 経路。
+//  - 互換型からの copy 初期化を試みる
+//  - そうでなければ scalar 値を最初の名前付きメンバへ代入
+static node_t *parse_union_initializer_no_brace(lvar_t *var) {
+  node_t *rhs = psx_expr_assign();
+  node_t *prefix = NULL;
+  node_lvar_t *src = NULL;
+  if (resolve_copy_source_lvar(rhs, &prefix, &src)) {
+    if (is_compatible_tag_object_lvar(src, var)) {
+      node_t *copy = build_byte_copy_chain(var->offset, src->offset, var->size, NULL);
+      if (prefix) return psx_node_new_binary(ND_COMMA, prefix, copy);
+      return copy;
+    }
+  }
+  // Fallback: scalar が先頭の名前付きメンバを初期化する。
+  aggregate_member_info_t info = {0};
+  info.tag_kind = TK_EOF;
+  int ordinal = 0;
+  bool found = tag_get_next_named_member(var, &ordinal, &info);
+  if (!found || info.len <= 0) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+  }
+  node_t *lhs = new_struct_member_lvar(var, info.offset, info.type_size,
+                                       info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
+  node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+  assign_node->type_size = info.type_size;
+  return (node_t *)assign_node;
+}
+
 static node_t *parse_union_initializer(lvar_t *var) {
   bool has_brace = tk_consume('{');
   if (has_brace && tk_consume('}')) return psx_node_new_num(0);
+  if (!has_brace) return parse_union_initializer_no_brace(var);
 
-  if (!has_brace) {
-    node_t *rhs = psx_expr_assign();
-    node_t *prefix = NULL;
-    node_lvar_t *src = NULL;
-    if (resolve_copy_source_lvar(rhs, &prefix, &src)) {
-      if (is_compatible_tag_object_lvar(src, var)) {
-        node_t *copy = build_byte_copy_chain(var->offset, src->offset, var->size, NULL);
-        if (prefix) return psx_node_new_binary(ND_COMMA, prefix, copy);
-        return copy;
-      }
-    }
-
-    // Fallback: scalar expression initializes the first union member.
-    char *member_name = NULL;
-    int member_len = 0;
-    int member_offset = 0;
-    int member_type_size = 0;
-    int member_array_len = 0;
-    token_kind_t member_tag_kind = TK_EOF;
-    char *member_tag_name = NULL;
-    int member_tag_len = 0;
-    int member_is_tag_pointer = 0;
-    int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
-    bool found = false;
-    for (int ordinal = 0; ordinal < member_count; ordinal++) {
-      found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                        &member_name, &member_len,
-                                        &member_offset, &member_type_size, NULL, &member_array_len,
-                                        &member_tag_kind, &member_tag_name,
-                                        &member_tag_len, &member_is_tag_pointer);
-      if (!found) break;
-      if (member_len > 0) break;
-    }
-    if (!found || member_len <= 0) {
-      psx_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
-    }
-    node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                         member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
-    assign_node->type_size = member_type_size;
-    return (node_t *)assign_node;
-  }
-
-  char *member_name = NULL;
-  int member_len = 0;
-  int member_offset = 0;
-  int member_type_size = 0;
-  int member_array_len = 0;
-  token_kind_t member_tag_kind = TK_EOF;
-  char *member_tag_name = NULL;
-  int member_tag_len = 0;
-  int member_is_tag_pointer = 0;
-  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
+  aggregate_member_info_t info = {0};
+  info.tag_kind = TK_EOF;
   bool found = false;
   if (tk_consume('.')) {
     token_ident_t *id = tk_consume_ident();
     if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-    found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
-                                    id->str, id->len,
-                                    &member_offset, &member_type_size, NULL, &member_array_len,
-                                    &member_tag_kind, &member_tag_name,
-                                    &member_tag_len, &member_is_tag_pointer);
-    member_name = id->str;
-    member_len = id->len;
+    found = tag_find_member(var, id->str, id->len, &info);
     if (tk_consume('[')) {
       // Nested designator: .member[idx] = val
-      if (!found || member_len <= 0) {
+      if (!found || info.len <= 0) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
       }
-      if (member_array_len <= 0 || member_is_tag_pointer) {
+      if (info.array_len <= 0 || info.is_tag_pointer) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
       }
       int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
       tk_expect(']');
       tk_expect('=');
-      if (nested_idx < 0 || nested_idx >= member_array_len) {
+      if (nested_idx < 0 || nested_idx >= info.array_len) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
-      node_t *elem_lhs = new_array_elem_lvar_at(var->offset + member_offset, member_type_size, nested_idx);
-      node_t *val = parse_scalar_brace_initializer();
-      node_mem_t *assign_node = psx_node_new_assign(elem_lhs, val);
-      assign_node->type_size = member_type_size;
-      node_t *result = (node_t *)assign_node;
-      if (has_brace) {
-        tk_consume(',');
-        tk_expect('}');
-      }
+      node_t *result = build_nested_array_designator_assign(var, &info, nested_idx);
+      tk_consume(',');
+      tk_expect('}');
       return result;
     }
     tk_expect('=');
   } else {
     int ordinal = 0;
-    while (ordinal < member_count) {
-      found = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                        &member_name, &member_len,
-                                        &member_offset, &member_type_size, NULL, &member_array_len,
-                                        &member_tag_kind, &member_tag_name,
-                                        &member_tag_len, &member_is_tag_pointer);
-      ordinal++;
-      if (!found) break;
-      if (member_len > 0) break;
-    }
+    found = tag_get_next_named_member(var, &ordinal, &info);
   }
-  if (!found || member_len <= 0) {
+  if (!found || info.len <= 0) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
-  node_t *member_init = parse_member_initializer(var, member_offset, member_type_size,
-                                                 member_tag_kind, member_tag_name, member_tag_len,
-                                                 member_is_tag_pointer, member_array_len);
-  node_t *init_chain = NULL;
-  if ((member_array_len > 0 && !member_is_tag_pointer) ||
-      (!member_is_tag_pointer && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION))) {
-    init_chain = member_init;
-  } else {
-    node_t *lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                         member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
-    assign_node->type_size = member_type_size;
-    init_chain = (node_t *)assign_node;
-  }
-  if (has_brace) {
-    if (tk_consume(',')) {
-      if (tk_consume('}')) {
-        return init_chain;
-      }
-      if (!tk_consume('.')) {
-        psx_diag_ctx(curtok(), "decl", "%s",
-                     diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
-      }
-      for (;;) {
-        token_ident_t *id = tk_consume_ident();
-        if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-        tk_expect('=');
-        found = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len,
-                                        id->str, id->len,
-                                        &member_offset, &member_type_size, NULL, &member_array_len,
-                                        &member_tag_kind, &member_tag_name,
-                                        &member_tag_len, &member_is_tag_pointer);
-        if (!found || id->len <= 0) {
-          psx_diag_ctx(curtok(), "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
-        }
-        node_t *next_lhs = new_struct_member_lvar(var, member_offset, member_type_size,
-                                                  member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-        node_mem_t *next_assign = psx_node_new_assign(
-            next_lhs, parse_member_initializer(var, member_offset, member_type_size,
-                                               member_tag_kind, member_tag_name, member_tag_len,
-                                               member_is_tag_pointer, member_array_len));
-        next_assign->type_size = member_type_size;
-        init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)next_assign);
-        if (tk_consume('}')) return init_chain;
-        tk_expect(',');
-        if (!tk_consume('.')) {
-          psx_diag_ctx(curtok(), "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
-        }
-      }
-    }
+  node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
+                                                 info.tag_kind, info.tag_name, info.tag_len,
+                                                 info.is_tag_pointer, info.array_len);
+  node_t *init_chain = wrap_member_init_as_assign(var, &info, member_init);
+  if (!tk_consume(',')) {
     tk_expect('}');
+    return init_chain;
   }
-  return init_chain;
+  if (tk_consume('}')) return init_chain;
+  // 仕様外: `{ .a = 1, .b = 2 }` のように union に複数初期化子。
+  // 各エントリは診断を出しつつパースを継続する。
+  if (!tk_consume('.')) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
+  }
+  for (;;) {
+    token_ident_t *id = tk_consume_ident();
+    if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    tk_expect('=');
+    found = tag_find_member(var, id->str, id->len, &info);
+    if (!found || info.len <= 0) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+    }
+    node_t *extra_init = parse_member_initializer(var, info.offset, info.type_size,
+                                                  info.tag_kind, info.tag_name, info.tag_len,
+                                                  info.is_tag_pointer, info.array_len);
+    node_t *extra_assign = wrap_member_init_as_assign(var, &info, extra_init);
+    init_chain = append_to_init_chain(init_chain, extra_assign);
+    if (tk_consume('}')) return init_chain;
+    tk_expect(',');
+    if (!tk_consume('.')) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
+    }
+  }
 }
 
 static void skip_func_params(void) {
