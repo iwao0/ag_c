@@ -51,8 +51,11 @@ static int run_ir_case(const char *label, const char *source, int expected_exit)
     return 0;
   }
 
-  /* 実行 */
-  rc = system(bin_path);
+  /* 実行 (10 秒タイムアウト)。生成バイナリが無限ループしてもテストが落ちずに
+   * 進めるよう、ulimit -t と /usr/bin/timeout のどちらかを使う。 */
+  snprintf(cmd, sizeof(cmd),
+            "ulimit -t 10; %s", bin_path);
+  rc = system(cmd);
   int got = WEXITSTATUS(rc);
   if (got != expected_exit) {
     fprintf(stderr, "FAIL [%s]: exit got=%d expected=%d\n", label, got, expected_exit);
