@@ -1894,32 +1894,109 @@ static node_t *cast(void) {
   return unary();
 }
 
-static node_t *unary(void) {
-  if (curtok()->kind == TK_SIZEOF) {
+// sizeof (expr) / sizeof (type) を処理する。`sizeof` トークンは呼び出し前に消費済み。
+// VLA: sizeof(vla_var) は実行時バイトサイズ ([x29+16+offset+8]) をロード。
+static node_t *parse_sizeof_operand(void) {
+  if (curtok()->kind == TK_LPAREN) {
     set_curtok(curtok()->next);
-    if (curtok()->kind == TK_LPAREN) {
-      set_curtok(curtok()->next);
-      int type_sz = parse_parenthesized_type_size();
-      if (type_sz >= 0) return psx_node_new_num(type_sz);
-      // VLA: sizeof(vla_var) は実行時サイズロード
-      if (curtok()->kind == TK_IDENT) {
-        token_ident_t *id = (token_ident_t *)curtok();
-        lvar_t *vla_var = psx_decl_find_lvar(id->str, id->len);
-        if (vla_var && vla_var->is_vla) {
-          set_curtok(curtok()->next);
-          tk_expect(')');
-          // [x29+16+offset+8] にバイトサイズを格納してある
-          return psx_node_new_lvar_typed(vla_var->offset + 8, 8);
-        }
+    int type_sz = parse_parenthesized_type_size();
+    if (type_sz >= 0) return psx_node_new_num(type_sz);
+    if (curtok()->kind == TK_IDENT) {
+      token_ident_t *id = (token_ident_t *)curtok();
+      lvar_t *vla_var = psx_decl_find_lvar(id->str, id->len);
+      if (vla_var && vla_var->is_vla) {
+        set_curtok(curtok()->next);
+        tk_expect(')');
+        return psx_node_new_lvar_typed(vla_var->offset + 8, 8);
       }
-      node_t *node = expr_internal();
-      tk_expect(')');
-      return psx_node_new_num(sizeof_expr_node(node));
     }
-    return psx_node_new_num(sizeof_expr_node(unary()));
+    node_t *node = expr_internal();
+    tk_expect(')');
+    return psx_node_new_num(sizeof_expr_node(node));
   }
+  return psx_node_new_num(sizeof_expr_node(unary()));
+}
 
-  if (curtok()->kind == TK_ALIGNOF) {
+static node_t *build_pre_inc_dec_node(node_kind_t kind, const char *op) {
+  node_t *target = unary();
+  psx_node_expect_incdec_target(target, op);
+  node_t *node = arena_alloc(sizeof(node_t));
+  node->kind = kind;
+  node->lhs = target;
+  return node;
+}
+
+// `*operand` を表す ND_DEREF ノードを構築する。tag/pointer-qual の伝播も行う。
+static node_t *build_unary_deref_node(node_t *operand) {
+  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
+  node->base.kind = ND_DEREF;
+  node->base.lhs = operand;
+  node->base.fp_kind = TK_FLOAT_KIND_NONE;
+  int ds = psx_node_deref_size(operand);
+  node->type_size = ds ? ds : 8;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_tag_ptr = 0;
+  psx_node_get_tag_type(operand, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+  if (tag_kind != TK_EOF && is_tag_ptr) {
+    node->tag_kind = tag_kind;
+    node->tag_name = tag_name;
+    node->tag_len = tag_len;
+    node->is_tag_pointer = 0;
+    node->deref_size = 0;
+  }
+  // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播
+  int pql = psx_node_pointer_qual_levels(operand);
+  tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(operand);
+  if (pql == 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
+    node->base.fp_kind = pointee_fp;
+  }
+  if (pql >= 2) {
+    node->is_pointer = 1;
+    int new_pql = pql - 1;
+    node->pointer_qual_levels = new_pql;
+    int bds = psx_node_base_deref_size(operand);
+    node->base_deref_size = (short)bds;
+    node->deref_size = (new_pql >= 2) ? 8 : (short)bds;
+  }
+  return (node_t *)node;
+}
+
+// `&operand` を ND_ADDR でラップする。
+// オペランドが struct タグを持っていれば is_tag_pointer/deref_size/type_size を設定。
+static node_t *wrap_as_addr(node_t *operand) {
+  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
+  node->base.kind = ND_ADDR;
+  node->base.lhs = operand;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_tag_ptr = 0;
+  psx_node_get_tag_type(operand, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
+  if (tag_kind != TK_EOF && !is_tag_ptr) {
+    node->tag_kind = tag_kind;
+    node->tag_name = tag_name;
+    node->tag_len = tag_len;
+    node->is_tag_pointer = 1;
+    node->deref_size = psx_node_type_size(operand);
+    node->type_size = 8;
+  }
+  return (node_t *)node;
+}
+
+// `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
+static node_t *build_unary_addr_node(node_t *operand) {
+  if (operand && operand->kind == ND_COMMA && operand->rhs) {
+    return psx_node_new_binary(ND_COMMA, operand->lhs, wrap_as_addr(operand->rhs));
+  }
+  return wrap_as_addr(operand);
+}
+
+static node_t *unary(void) {
+  token_kind_t k = curtok()->kind;
+  if (k == TK_SIZEOF)  { set_curtok(curtok()->next); return parse_sizeof_operand(); }
+  if (k == TK_ALIGNOF) {
     set_curtok(curtok()->next);
     tk_expect('(');
     int type_sz = parse_parenthesized_type_size();
@@ -1929,122 +2006,19 @@ static node_t *unary(void) {
     }
     return psx_node_new_num(type_sz);
   }
-
-  if (curtok()->kind == TK_INC) {
-    set_curtok(curtok()->next);
-    node_t *target = unary();
-    psx_node_expect_incdec_target(target, "++");
-    node_t *node = arena_alloc(sizeof(node_t));
-    node->kind = ND_PRE_INC;
-    node->lhs = target;
-    return node;
-  }
-  if (curtok()->kind == TK_DEC) {
-    set_curtok(curtok()->next);
-    node_t *target = unary();
-    psx_node_expect_incdec_target(target, "--");
-    node_t *node = arena_alloc(sizeof(node_t));
-    node->kind = ND_PRE_DEC;
-    node->lhs = target;
-    return node;
-  }
-  if (curtok()->kind == TK_PLUS) {
-    set_curtok(curtok()->next);
-    return cast();
-  }
-  if (curtok()->kind == TK_MINUS) {
-    set_curtok(curtok()->next);
-    return psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());
-  }
-  if (curtok()->kind == TK_BANG) {
-    set_curtok(curtok()->next);
-    return psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0));
-  }
-  if (curtok()->kind == TK_TILDE) {
+  if (k == TK_INC) { set_curtok(curtok()->next); return build_pre_inc_dec_node(ND_PRE_INC, "++"); }
+  if (k == TK_DEC) { set_curtok(curtok()->next); return build_pre_inc_dec_node(ND_PRE_DEC, "--"); }
+  if (k == TK_PLUS)  { set_curtok(curtok()->next); return cast(); }
+  if (k == TK_MINUS) { set_curtok(curtok()->next); return psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast()); }
+  if (k == TK_BANG)  { set_curtok(curtok()->next); return psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0)); }
+  if (k == TK_TILDE) {
     set_curtok(curtok()->next);
     node_t *neg = psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());
     return psx_node_new_binary(ND_SUB, neg, psx_node_new_num(1));
   }
-  if (curtok()->kind == TK_MUL) {
-    set_curtok(curtok()->next);
-    node_t *operand = cast();
-    node_mem_t *node = arena_alloc(sizeof(node_mem_t));
-    node->base.kind = ND_DEREF;
-    node->base.lhs = operand;
-    node->base.fp_kind = TK_FLOAT_KIND_NONE;
-    int ds = psx_node_deref_size(operand);
-    node->type_size = ds ? ds : 8;
-    token_kind_t tag_kind = TK_EOF;
-    char *tag_name = NULL;
-    int tag_len = 0;
-    int is_tag_ptr = 0;
-    psx_node_get_tag_type(operand, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-    if (tag_kind != TK_EOF && is_tag_ptr) {
-      node->tag_kind = tag_kind;
-      node->tag_name = tag_name;
-      node->tag_len = tag_len;
-      node->is_tag_pointer = 0;
-      node->deref_size = 0;
-    }
-    // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播
-    int pql = psx_node_pointer_qual_levels(operand);
-    tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(operand);
-    if (pql == 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
-      node->base.fp_kind = pointee_fp;
-    }
-    if (pql >= 2) {
-      node->is_pointer = 1;
-      int new_pql = pql - 1;
-      node->pointer_qual_levels = new_pql;
-      int bds = psx_node_base_deref_size(operand);
-      node->base_deref_size = (short)bds;
-      node->deref_size = (new_pql >= 2) ? 8 : (short)bds;
-    }
-    return (node_t *)node;
-  }
-  if (curtok()->kind == TK_AMP) {
-    set_curtok(curtok()->next);
-    node_t *operand = cast();
-    if (operand && operand->kind == ND_COMMA && operand->rhs) {
-      node_mem_t *rhs_addr = arena_alloc(sizeof(node_mem_t));
-      rhs_addr->base.kind = ND_ADDR;
-      rhs_addr->base.lhs = operand->rhs;
-      token_kind_t rhs_tag_kind = TK_EOF;
-      char *rhs_tag_name = NULL;
-      int rhs_tag_len = 0;
-      int rhs_is_tag_ptr = 0;
-      psx_node_get_tag_type(rhs_addr->base.lhs, &rhs_tag_kind, &rhs_tag_name, &rhs_tag_len, &rhs_is_tag_ptr);
-      if (rhs_tag_kind != TK_EOF && !rhs_is_tag_ptr) {
-        rhs_addr->tag_kind = rhs_tag_kind;
-        rhs_addr->tag_name = rhs_tag_name;
-        rhs_addr->tag_len = rhs_tag_len;
-        rhs_addr->is_tag_pointer = 1;
-        rhs_addr->deref_size = psx_node_type_size(rhs_addr->base.lhs);
-        rhs_addr->type_size = 8;
-      }
-      return psx_node_new_binary(ND_COMMA, operand->lhs, (node_t *)rhs_addr);
-    }
-    node_mem_t *node = arena_alloc(sizeof(node_mem_t));
-    node->base.kind = ND_ADDR;
-    node->base.lhs = operand;
-    token_kind_t tag_kind = TK_EOF;
-    char *tag_name = NULL;
-    int tag_len = 0;
-    int is_tag_ptr = 0;
-    psx_node_get_tag_type(node->base.lhs, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-    if (tag_kind != TK_EOF && !is_tag_ptr) {
-      node->tag_kind = tag_kind;
-      node->tag_name = tag_name;
-      node->tag_len = tag_len;
-      node->is_tag_pointer = 1;
-      node->deref_size = psx_node_type_size(node->base.lhs);
-      node->type_size = 8;
-    }
-    return (node_t *)node;
-  }
-
-  node_t *node = primary();
-  return apply_postfix(node);
+  if (k == TK_MUL) { set_curtok(curtok()->next); return build_unary_deref_node(cast()); }
+  if (k == TK_AMP) { set_curtok(curtok()->next); return build_unary_addr_node(cast()); }
+  return apply_postfix(primary());
 }
 
 static node_t *apply_postfix(node_t *node) {
