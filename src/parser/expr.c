@@ -2071,17 +2071,21 @@ static node_t *unary(void) {
 // 配列添字 `[idx]` 用のスケール倍率と次段の要素サイズ (inner_ds) を計算する。
 // 多次元 VLA では実行時ストライドをフレームから読む経路がある。
 static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
-                                            int *out_es, int *out_inner_ds) {
+                                            int *out_es, int *out_inner_ds,
+                                            int *out_next_ds) {
   int ds = psx_node_deref_size(node);
   int ts = psx_node_type_size(node);
   int es = ds ? ds : (ts ? ts : 8);
   int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
   int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
+  int next_ds = 0;  // さらに次の次元の要素サイズ (3D 用、0=なし)
   if (node->kind == ND_LVAR) {
     vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
     inner_ds = as_lvar(node)->mem.inner_deref_size;
+    next_ds = as_lvar(node)->mem.next_deref_size;
   } else if (node->kind == ND_DEREF || node->kind == ND_ADDR) {
     inner_ds = ((node_mem_t *)node)->inner_deref_size;
+    next_ds = ((node_mem_t *)node)->next_deref_size;
   }
   node_t *scaled;
   if (vla_rsf) {
@@ -2094,6 +2098,7 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   }
   *out_es = es;
   *out_inner_ds = inner_ds;
+  if (out_next_ds) *out_next_ds = next_ds;
   return scaled;
 }
 
@@ -2113,8 +2118,8 @@ static node_t *subscript_base_address_of(node_t *node) {
 
 // `base[idx]` を表す ND_DEREF ノードを構築する。tag / 多段ポインタ伝播を行う。
 static node_t *build_subscript_deref(node_t *node, node_t *idx) {
-  int es = 0, inner_ds = 0;
-  node_t *scaled = make_subscript_scaled_offset(node, idx, &es, &inner_ds);
+  int es = 0, inner_ds = 0, next_ds = 0;
+  node_t *scaled = make_subscript_scaled_offset(node, idx, &es, &inner_ds, &next_ds);
   node_t *base_addr = subscript_base_address_of(node);
   node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
   node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
@@ -2122,6 +2127,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   deref->base.lhs = addr;
   deref->type_size = es;
   deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
+  deref->inner_deref_size = (short)next_ds; // さらに次段のストライド (3D 用)
   deref->base.fp_kind = TK_FLOAT_KIND_NONE;
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
@@ -2487,7 +2493,17 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->type_size = stride;
   node->deref_size = stride;
   node->pointee_fp_kind = var->pointee_fp_kind;
-  if (var->outer_stride > 0) node->inner_deref_size = var->elem_size;
+  if (var->outer_stride > 0) {
+    // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
+    // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
+    //     next_deref_size = elem_size （2段サブスクリプト後の要素）
+    if (var->mid_stride > 0) {
+      node->inner_deref_size = (short)var->mid_stride;
+      node->next_deref_size = (short)var->elem_size;
+    } else {
+      node->inner_deref_size = (short)var->elem_size;
+    }
+  }
   node->tag_kind = var->tag_kind;
   node->tag_name = var->tag_name;
   node->tag_len = var->tag_len;

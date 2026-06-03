@@ -278,16 +278,21 @@ static void parse_decl_skip_constexpr_array_suffixes(void) {
   }
 }
 
-static int parse_decl_constexpr_array_suffix_product(int *out_first_dim) {
-  int mul = 1;
-  int first = 0;
+// 多次元配列の trailing dim 列 `[N2][N3]...` を読み、最初の 2 つの dim と
+// 全 trailing dim の積を返す（3D まで対応）。dim が無いときは 0/0/1 を返す。
+static int parse_decl_constexpr_array_suffix_product_2(int *out_first_dim, int *out_second_dim) {
+  int mul = 1, first = 0, second = 0;
+  int count = 0;
   while (tk_consume('[')) {
     int dim = parse_array_size_constexpr_decl();
     tk_expect(']');
-    if (first == 0) first = dim;
+    if (count == 0) first = dim;
+    else if (count == 1) second = dim;
+    count++;
     if (dim > 0) mul *= dim;
   }
   if (out_first_dim) *out_first_dim = first;
+  if (out_second_dim) *out_second_dim = second;
   return mul;
 }
 
@@ -697,15 +702,39 @@ static node_t *parse_array_initializer(lvar_t *var) {
           tk_expect('=');
           if (row_len > 0) target_idx *= row_len;
         }
-        // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}}
+        // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}} など。
+        // 3D `int a[N1][N2][N3]={{{...},{...}}, {{...},{...}}}` ではさらに内側で
+        // 波括弧が現れるので、sub_row_len > 0 のとき再帰的に処理する。
         if (row_len > 0 && tk_consume('{')) {
-          for (int ri = 0; ri < row_len; ri++) {
-            bump_initializer_count(&init_elem_count);
-            int flat_idx = target_idx + ri;
-            if (flat_idx < array_len) {
-              init_chain = append_to_init_chain(init_chain,
-                  build_array_elem_assign(var, flat_idx, psx_expr_assign()));
-              assigned[flat_idx] = true;
+          int sub_row_len = (var->mid_stride > 0 && var->elem_size > 0)
+                                ? var->mid_stride / var->elem_size : 0;
+          int ri = 0;
+          while (ri < row_len) {
+            if (sub_row_len > 0 && curtok() && curtok()->kind == TK_LBRACE) {
+              // 3D の中段 `{...}`: sub_row_len 個まとめて読む。
+              tk_consume('{');
+              for (int rj = 0; rj < sub_row_len; rj++) {
+                bump_initializer_count(&init_elem_count);
+                int flat_idx = target_idx + ri + rj;
+                if (flat_idx < array_len) {
+                  init_chain = append_to_init_chain(init_chain,
+                      build_array_elem_assign(var, flat_idx, psx_expr_assign()));
+                  assigned[flat_idx] = true;
+                }
+                if (tk_consume('}')) break;
+                tk_expect(',');
+                if (tk_consume('}')) break;
+              }
+              ri += sub_row_len;
+            } else {
+              bump_initializer_count(&init_elem_count);
+              int flat_idx = target_idx + ri;
+              if (flat_idx < array_len) {
+                init_chain = append_to_init_chain(init_chain,
+                    build_array_elem_assign(var, flat_idx, psx_expr_assign()));
+                assigned[flat_idx] = true;
+              }
+              ri++;
             }
             if (tk_consume('}')) break;
             tk_expect(',');
@@ -1577,7 +1606,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
           continue;
         }
         int inner_dim_size = 0;  // 内側次元の要素数（0: 1次元配列）
-        int trailing_mul = parse_decl_constexpr_array_suffix_product(&inner_dim_size);
+        int third_dim_size = 0;  // 3D 配列の最内側次元 (0: 2D 以下)
+        int trailing_mul = parse_decl_constexpr_array_suffix_product_2(&inner_dim_size, &third_dim_size);
         if (size_inferred_from_init) {
           // 外側 `[]` を初期化子から推定する。trailing dims を消費した直後の
           // curtok 位置（`=` を指す）で推定するため、ここで呼ぶ必要がある。
@@ -1601,7 +1631,16 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
         {
         int arr_elem_size = is_pointer ? 8 : elem_size;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
-        if (inner_dim_size > 0) var->outer_stride = inner_dim_size * arr_elem_size;
+        if (inner_dim_size > 0) {
+          // outer_stride = 1 次サブスクリプトのストライド (= 内側全体のバイト数)。
+          // 2D: outer_stride = inner_dim_size * elem ( = trailing_mul * elem )
+          // 3D: outer_stride = inner_dim_size * third_dim_size * elem ( = trailing_mul * elem )
+          var->outer_stride = trailing_mul * arr_elem_size;
+        }
+        if (third_dim_size > 0) {
+          // 3D: mid_stride = 2 次サブスクリプトのストライド (= 最内側次元 * elem)
+          var->mid_stride = third_dim_size * arr_elem_size;
+        }
         }
         var->tag_kind = tag_kind;
         var->tag_name = tag_name;

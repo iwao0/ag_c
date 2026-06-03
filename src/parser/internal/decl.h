@@ -37,7 +37,8 @@ struct lvar_t {
   short base_deref_size; // 多段ポインタの最内ポインタが指す要素サイズ（int**→4）
   int align_bytes; // 0 = natural alignment
   // 多次元配列サポート用
-  int outer_stride;             // 多次元配列の外側サブスクリプトストライド（内側次元のバイトサイズ）
+  int outer_stride;             // 1次サブスクリプトのストライド（直下の次元 1 つ分のバイトサイズ）
+  int mid_stride;               // 3D 配列 `a[N1][N2][N3]` の 2 次サブスクリプトのストライド（=N3*elem）。0=2D以下。
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=定数stride）
 };
 

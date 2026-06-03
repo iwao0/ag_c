@@ -100,6 +100,7 @@ struct node_mem_t {
   int pointer_qual_levels;
   // 多次元配列サポート用
   short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
+  short next_deref_size;        // 3D 配列での 2 段サブスクリプト後の要素サイズ。0=2D 以下。
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=コンパイル時定数）
 };
 
