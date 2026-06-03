@@ -207,8 +207,14 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       return;
     }
     case IR_PARAM: {
-      /* 第 n 仮引数を x0..x7 から受け取って dst slot に保存。 */
+      /* 第 n 仮引数を受け取って dst slot に保存。
+       * idx >= 0 → x0..x7 (通常引数)
+       * idx == -1 → x8 (struct 戻り値領域ポインタ、Apple ABI 隠し引数) */
       int idx = (int)inst->src1.imm;
+      if (idx == -1) {
+        cg_emitf("  str x8, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        return;
+      }
       if (idx < 0 || idx >= 8) {
         fprintf(stderr, "gen_ir_inst: PARAM index out of range: %d\n", idx);
         return;
@@ -223,6 +229,10 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
         char regname[8];
         snprintf(regname, sizeof(regname), "x%d", i);
         load_val_to(ctx, inst->args[i], regname);
+      }
+      /* struct 戻り値: x8 に戻り値領域ポインタをロードして呼び出す */
+      if (inst->ret_struct_size > 0 && inst->ret_struct_area.id != IR_VAL_NONE) {
+        load_val_to(ctx, inst->ret_struct_area, "x8");
       }
       cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {

@@ -121,8 +121,12 @@ typedef struct ir_inst_t {
   int sym_len;
   ir_val_t *args;     /* CALL の実引数列 */
   int nargs;
-  int alloca_size;    /* ALLOCA: スロットサイズ (バイト) */
+  int alloca_size;    /* ALLOCA / MEMCPY: スロットサイズ (バイト) */
   int alloca_align;   /* ALLOCA: アライメント (バイト) */
+  /* IR_CALL で戻り値が struct の場合: x8 に渡すバッファのアドレス vreg。
+   * ret_struct_size > 0 のときに ret_struct_area が有効。 */
+  int ret_struct_size;
+  ir_val_t ret_struct_area;
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */
@@ -152,6 +156,12 @@ typedef struct ir_func_t {
   int is_variadic;
   int nargs_fixed;
   ir_type_t ret_type;
+  /* 戻り値が struct のときのサイズ (Apple ABI で x8 隠し引数を使う条件)。
+   * 0 = struct 戻り値ではない。 */
+  int ret_struct_size;
+  /* 関数 prologue で x8 (= caller の戻り値領域ポインタ) を受け取る vreg。
+   * ret_struct_size > 0 のときのみ有効。 */
+  int ret_area_vreg;
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */

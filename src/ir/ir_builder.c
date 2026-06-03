@@ -189,7 +189,59 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
             return ir_val_none();
           }
           if (dst_ptr_vreg < 0) return ir_val_none();
-          /* src のアドレスを得る */
+          /* rhs が >8B struct 戻り値の関数呼び出しなら、戻り値を dst へ直接書かせる。 */
+          if (node->rhs && node->rhs->kind == ND_FUNCALL &&
+              node->rhs->ret_struct_size > 8) {
+            node_func_t *callee = (node_func_t *)node->rhs;
+            if (callee->callee || callee->is_variadic || callee->nargs > 8) {
+              fail(ctx, "indirect/variadic/many-arg struct-return call");
+              return ir_val_none();
+            }
+            ir_val_t *cargs = NULL;
+            if (callee->nargs > 0) {
+              cargs = calloc((size_t)callee->nargs, sizeof(ir_val_t));
+              for (int i = 0; i < callee->nargs; i++) {
+                node_t *arg = callee->args[i];
+                int arg_full_size = 0;
+                if (arg && arg->kind == ND_LVAR) {
+                  lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
+                  if (owner) arg_full_size = owner->size;
+                  if (arg_full_size == 0) arg_full_size = ((node_lvar_t *)arg)->mem.type_size;
+                }
+                if (arg_full_size > 8) {
+                  int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+                  if (src_ptr < 0) return ir_val_none();
+                  int tmp = ir_func_new_vreg(ctx->f);
+                  ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+                  ia->dst = ir_val_vreg(tmp, IR_TY_PTR);
+                  ia->alloca_size = arg_full_size;
+                  ia->alloca_align = 8;
+                  ir_func_append_inst(ctx->f, ia);
+                  ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+                  cp->src1 = ir_val_vreg(tmp, IR_TY_PTR);
+                  cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
+                  cp->alloca_size = arg_full_size;
+                  ir_func_append_inst(ctx->f, cp);
+                  cargs[i] = ir_val_vreg(tmp, IR_TY_PTR);
+                } else {
+                  cargs[i] = build_expr(ctx, arg);
+                  if (ctx->failed) return ir_val_none();
+                }
+              }
+            }
+            int v = ir_func_new_vreg(ctx->f);
+            ir_inst_t *call = ir_inst_new(IR_CALL);
+            call->dst = ir_val_vreg(v, IR_TY_I32);
+            call->sym = callee->funcname;
+            call->sym_len = callee->funcname_len;
+            call->args = cargs;
+            call->nargs = callee->nargs;
+            call->ret_struct_size = node->rhs->ret_struct_size;
+            call->ret_struct_area = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+            ir_func_append_inst(ctx->f, call);
+            return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+          }
+          /* src のアドレスを得る (通常の struct から struct コピー) */
           int src_ptr_vreg = -1;
           if (node->rhs && node->rhs->kind == ND_LVAR) {
             src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->rhs)->offset);
@@ -430,6 +482,30 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
       return;
     }
     case ND_RETURN: {
+      /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
+      if (ctx->f->ret_struct_size > 0 && node->lhs) {
+        int src_ptr = -1;
+        if (node->lhs->kind == ND_LVAR) {
+          src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+        } else if (node->lhs->kind == ND_DEREF) {
+          ir_val_t p = build_expr(ctx, node->lhs->lhs);
+          if (ctx->failed) return;
+          src_ptr = p.id;
+        } else {
+          fail(ctx, "struct return value is not LVAR/DEREF");
+          return;
+        }
+        if (src_ptr < 0) return;
+        ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+        cp->src1 = ir_val_vreg(ctx->f->ret_area_vreg, IR_TY_PTR);
+        cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
+        cp->alloca_size = ctx->f->ret_struct_size;
+        ir_func_append_inst(ctx->f, cp);
+        ir_inst_t *inst = ir_inst_new(IR_RET);
+        inst->src1 = ir_val_none();
+        ir_func_append_inst(ctx->f, inst);
+        return;
+      }
       ir_val_t v = ir_val_none();
       if (node->lhs) {
         v = build_expr(ctx, node->lhs);
@@ -586,6 +662,18 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
+  /* >8B struct 戻り値の関数では prologue で x8 を受け取る (Apple ARM64 ABI 簡略版)。
+   * ≤8B struct はそのまま x0 で 1 レジスタ返却 (= scalar 経路と同じ動作)。 */
+  ctx->f->ret_struct_size = fn->base.ret_struct_size > 8 ? fn->base.ret_struct_size : 0;
+  if (ctx->f->ret_struct_size > 0) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *p = ir_inst_new(IR_PARAM);
+    p->dst = ir_val_vreg(v, IR_TY_PTR);
+    /* src1.imm = -1 で「x8 を受け取る」を表す。codegen で特別扱い。 */
+    p->src1 = ir_val_imm(IR_TY_I32, -1);
+    ir_func_append_inst(ctx->f, p);
+    ctx->f->ret_area_vreg = v;
+  }
   /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
    * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */
   for (int i = 0; i < fn->nargs; i++) {

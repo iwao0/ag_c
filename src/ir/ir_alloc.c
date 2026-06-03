@@ -131,6 +131,7 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t
   f->ret_type = ret_type;
   f->next_vreg_id = 0;
   f->next_block_id = 0;
+  f->ret_area_vreg = -1;
   /* entry ブロックを最初から確保しておく */
   ir_block_t *entry = ir_block_new(f);
   f->entry = entry;
@@ -167,6 +168,7 @@ ir_inst_t *ir_inst_new(ir_op_t op) {
   i->src2 = ir_val_none();
   i->label_id = -1;
   i->else_label_id = -1;
+  i->ret_struct_area = ir_val_none();
   return i;
 }
 

@@ -170,6 +170,16 @@ int main(void) {
   run_ir_case("struct_arg_24B",
               "struct R { int a; int b; int c; int d; int e; int f; }; int sum(struct R r) { return r.a + r.b + r.c + r.d + r.e + r.f; } int main(void) { struct R r; r.a = 7; r.b = 7; r.c = 7; r.d = 7; r.e = 7; r.f = 7; return sum(r); }\n", 42);
 
+  /* Phase 4d-3: struct 戻り値 */
+  run_ir_case("struct_ret_8B",
+              "struct S { int a; int b; }; struct S make(int x, int y) { struct S s; s.a = x; s.b = y; return s; } int main(void) { struct S s = make(15, 27); return s.a + s.b; }\n", 42);
+  run_ir_case("struct_ret_16B",
+              "struct Q { int a; int b; int c; int d; }; struct Q make(void) { struct Q q; q.a = 10; q.b = 10; q.c = 10; q.d = 12; return q; } int main(void) { struct Q q = make(); return q.a + q.b + q.c + q.d; }\n", 42);
+  run_ir_case("struct_ret_24B",
+              "struct R { int a; int b; int c; int d; int e; int f; }; struct R make(void) { struct R r; r.a = 7; r.b = 7; r.c = 7; r.d = 7; r.e = 7; r.f = 7; return r; } int main(void) { struct R r = make(); return r.a + r.b + r.c + r.d + r.e + r.f; }\n", 42);
+  run_ir_case("struct_ret_with_args",
+              "struct V { int x; int y; int z; }; struct V make(int a, int b, int c) { struct V v; v.x = a; v.y = b; v.z = c; return v; } int main(void) { struct V v = make(10, 13, 19); return v.x + v.y + v.z; }\n", 42);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;
