@@ -630,6 +630,7 @@ static const test_case_t test_cases[] = {
     {"alignas", "lvar_align",  CASE_INT_FILE, "test/fixtures/alignas/lvar_align.c", 42, 0},
     {"alignas", "struct_member", CASE_INT_FILE, "test/fixtures/alignas/struct_member.c", 42, 0},
     {"alignas", "global_var", CASE_INT_FILE, "test/fixtures/alignas/global_var.c", 7, 0},
+    {"alignas", "alignas_alignof", CASE_INT_FILE, "test/fixtures/alignas/alignas_alignof.c", 42, 0},
     // フレキシブル配列メンバー
     {"flex_array", "sizeof_flex", CASE_INT_FILE, "test/fixtures/flex_array/sizeof_flex.c", 4, 0},
     {"flex_array", "parse_ok", CASE_INT_FILE, "test/fixtures/flex_array/parse_ok.c", 0, 0},

@@ -161,7 +161,10 @@ static long long parse_unary(void) {
     set_curtok(curtok()->next);
     return !parse_unary();
   }
-  if (curtok()->kind == TK_SIZEOF) {
+  // sizeof / _Alignof: ag_c では基本型に対して両者は同じ値を返すので、
+  // 定数式評価器ではトークンだけ違う形で共通の処理を通す。
+  // `_Alignas(_Alignof(T))` のネストでも _Alignof が定数として扱えるようにする。
+  if (curtok()->kind == TK_SIZEOF || curtok()->kind == TK_ALIGNOF) {
     set_curtok(curtok()->next);
     if (curtok()->kind == TK_LPAREN) {
       set_curtok(curtok()->next);
