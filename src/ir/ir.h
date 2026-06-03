@@ -162,6 +162,10 @@ typedef struct ir_func_t {
   /* 関数 prologue で x8 (= caller の戻り値領域ポインタ) を受け取る vreg。
    * ret_struct_size > 0 のときのみ有効。 */
   int ret_area_vreg;
+  /* Phase 5: vreg → 物理レジスタ番号 (-1 = spill / frame に置く)。
+   * 物理レジスタ番号は実際の x{n} の n。長さ = next_vreg_id。
+   * NULL のとき regalloc 未実行 (codegen は全 vreg を frame に置く既存挙動)。 */
+  int *vreg_phys_reg;
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */
@@ -223,5 +227,15 @@ void ir_print_module(ir_module_t *m);
 
 /* バッファに書き出す版 (テスト用)。buf の残量を超えたら切り詰める。 */
 size_t ir_print_module_to_buf(ir_module_t *m, char *buf, size_t buf_size);
+
+/* ------------------------------------------------------------------ */
+/* レジスタ割り付け                                                    */
+/* ------------------------------------------------------------------ */
+
+/* Phase 5: 関数単位の線形スキャンレジスタ割り付け。
+ * ブロック内で last use を計算し、x9..x15 (7 個の caller-saved) を割り当てる。
+ * ブロック境界と関数呼び出しの前後では全 vreg を spill する保守的版。
+ * 実行後、f->vreg_phys_reg[v] が -1 なら spill、>=0 なら物理レジスタ番号 (9..15)。 */
+void ir_regalloc_function(ir_func_t *f);
 
 #endif /* AG_IR_H */

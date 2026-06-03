@@ -1,15 +1,16 @@
 /*
- * ARM64 Apple ABI: IR → ASM 出力 (Phase 2 最小版)。
+ * ARM64 Apple ABI: IR → ASM 出力 (Phase 5: regalloc 対応版)。
  *
  * フレームレイアウト:
- *   [x29 + 0 ..16]      saved x29, x30
+ *   [x29 + 0 .. 16]      saved x29, x30
  *   [x29 + 16 .. 16+N*8] vreg slots (8B 単位、N = func->next_vreg_id)
- *   [x29 + 16+N*8 ..]   ALLOCA 領域
+ *   [x29 + 16+N*8 ..]    ALLOCA 領域
  *
- * Phase 2 では「全 vreg をフレームスロットに割り付ける」だけの最小実装。
- * 動作確認用なので生成コードは冗長 (Phase 5 でレジスタ割り付けに置換予定)。
+ * vreg は ir_regalloc_function が以下に分類:
+ *   - vreg_phys_reg[v] >= 0 (物理レジスタ x9..x15) → frame slot を経由しない
+ *   - vreg_phys_reg[v] == -1 (spill) → frame slot をロード/ストア
  *
- * サポート命令: LOAD_IMM, LOAD, STORE, ALLOCA, ADD, SUB, MUL, DIV, MOD, RET。
+ * 対応命令: 全 IR 命令 (Phase 1〜4d までで導入したもの全部)。
  */
 
 #include "arm64_apple_ir.h"
@@ -21,13 +22,15 @@
 
 typedef struct {
   ir_func_t *f;
-  int *vreg_off;      /* vreg id → frame offset (x29 からの正のオフセット) */
-  int alloca_base;    /* ALLOCA 領域の開始 offset */
-  int total_size;     /* フレーム合計 (16-byte align 済み) */
-  /* alloca: ALLOCA 命令のたびに alloca_next を進める。dst.vreg にその開始 offset を入れる。
-   * alloca_dst_off[i] = i 番目の vreg が ALLOCA で確保した領域の x29 オフセット */
+  int *vreg_off;
+  int alloca_base;
+  int total_size;
   int *alloca_region_off;
   int alloca_next;
+  /* x19..x28 (10 個 callee-saved) のうち、この関数が使った reg のフラグ */
+  int reg_used[10];
+  int saved_count;
+  int saved_area_size;  /* prologue で確保する saved area のバイト数 */
 } gen_ctx_t;
 
 static int round_up(int v, int a) {
@@ -49,51 +52,152 @@ static int scan_alloca_total(ir_func_t *f) {
   return total;
 }
 
+static void scan_used_regs(gen_ctx_t *ctx) {
+  ir_func_t *f = ctx->f;
+  if (!f->vreg_phys_reg) return;
+  for (int v = 0; v < f->next_vreg_id; v++) {
+    int r = f->vreg_phys_reg[v];
+    if (r >= 19 && r <= 28) {
+      ctx->reg_used[r - 19] = 1;
+    }
+  }
+  for (int i = 0; i < 10; i++) {
+    if (ctx->reg_used[i]) ctx->saved_count++;
+  }
+  /* 16-byte align するため偶数に切り上げ */
+  int count = ctx->saved_count;
+  if (count & 1) count++;
+  ctx->saved_area_size = count * 8;
+}
+
 static void layout_frame(gen_ctx_t *ctx) {
+  scan_used_regs(ctx);
   int nvregs = ctx->f->next_vreg_id;
   ctx->vreg_off = calloc((size_t)(nvregs > 0 ? nvregs : 1), sizeof(int));
+  /* layout: [x29 +0..16] saved x29/x30, [x29 +16..+16+S] saved x19..x28,
+   * [x29 +16+S..] vreg slots, それ以降 alloca */
+  int vreg_base = 16 + ctx->saved_area_size;
   for (int i = 0; i < nvregs; i++) {
-    ctx->vreg_off[i] = 16 + i * 8;
+    ctx->vreg_off[i] = vreg_base + i * 8;
   }
-  ctx->alloca_base = 16 + nvregs * 8;
+  ctx->alloca_base = vreg_base + nvregs * 8;
   ctx->alloca_next = ctx->alloca_base;
   ctx->alloca_region_off = calloc((size_t)(nvregs > 0 ? nvregs : 1), sizeof(int));
   int alloca_total = scan_alloca_total(ctx->f);
-  /* フレーム合計を 16-byte align */
   int raw = ctx->alloca_base + alloca_total;
   ctx->total_size = round_up(raw, 16);
-  /* 最小 32 byte は確保 (空関数でも prologue/epilogue が動くように) */
   if (ctx->total_size < 32) ctx->total_size = 32;
 }
 
-/* vreg を x9 にロードする。即値ならその値、vreg ならフレームから ldr。 */
-static void load_val_to(gen_ctx_t *ctx, ir_val_t v, const char *reg) {
-  if (v.id == IR_VAL_IMM) {
-    cg_emitf("  mov %s, #%lld\n", reg, v.imm);
-    return;
+/* prologue: x29/x30 のあと、使われた callee-saved reg を保存する。 */
+static void emit_save_regs(gen_ctx_t *ctx) {
+  int off = 16;
+  for (int i = 0; i < 10; i++) {
+    if (!ctx->reg_used[i]) continue;
+    cg_emitf("  str x%d, [x29, #%d]\n", 19 + i, off);
+    off += 8;
   }
-  if (v.id >= 0 && v.id < ctx->f->next_vreg_id) {
-    cg_emitf("  ldr %s, [x29, #%d]\n", reg, ctx->vreg_off[v.id]);
-    return;
-  }
-  /* IR_VAL_NONE: undefined */
-  cg_emitf("  mov %s, #0\n", reg);
 }
 
-static void store_val_from(gen_ctx_t *ctx, ir_val_t dst, const char *reg) {
+/* epilogue: 保存した reg を復元する。 */
+static void emit_restore_regs(gen_ctx_t *ctx) {
+  int off = 16;
+  for (int i = 0; i < 10; i++) {
+    if (!ctx->reg_used[i]) continue;
+    cg_emitf("  ldr x%d, [x29, #%d]\n", 19 + i, off);
+    off += 8;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* レジスタ名解決ヘルパ                                                */
+/* ------------------------------------------------------------------ */
+
+/* val を「使える x レジスタ」にロードして、そのレジスタ名 (`x9` 等) を返す。
+ * out_buf に書く。
+ *   - imm: scratch に mov を出して scratch を返す
+ *   - vreg with phys: そのレジスタ名を返す (新規 emit なし)
+ *   - vreg spilled: scratch に ldr を出して scratch を返す
+ *   - VAL_NONE: scratch に 0 をロードして返す */
+static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch,
+                                  char *out_buf, size_t out_size) {
+  if (v.id == IR_VAL_IMM) {
+    snprintf(out_buf, out_size, "%s", scratch);
+    cg_emitf("  mov %s, #%lld\n", scratch, v.imm);
+    return out_buf;
+  }
+  if (v.id == IR_VAL_NONE) {
+    snprintf(out_buf, out_size, "%s", scratch);
+    cg_emitf("  mov %s, #0\n", scratch);
+    return out_buf;
+  }
+  int vv = v.id;
+  if (ctx->f->vreg_phys_reg && vv >= 0 && vv < ctx->f->next_vreg_id &&
+      ctx->f->vreg_phys_reg[vv] >= 0) {
+    snprintf(out_buf, out_size, "x%d", ctx->f->vreg_phys_reg[vv]);
+    return out_buf;
+  }
+  if (vv >= 0 && vv < ctx->f->next_vreg_id) {
+    snprintf(out_buf, out_size, "%s", scratch);
+    cg_emitf("  ldr %s, [x29, #%d]\n", scratch, ctx->vreg_off[vv]);
+    return out_buf;
+  }
+  snprintf(out_buf, out_size, "%s", scratch);
+  cg_emitf("  mov %s, #0\n", scratch);
+  return out_buf;
+}
+
+/* dst の書き先レジスタ名を返す。
+ *   - vreg with phys: そのレジスタ名 (release_dst で spill しない)
+ *   - vreg spilled or 不正: scratch (release_dst で frame に store する) */
+static const char *acquire_dst(gen_ctx_t *ctx, ir_val_t dst, const char *scratch,
+                                char *out_buf, size_t out_size, int *out_needs_spill) {
+  *out_needs_spill = 0;
+  if (dst.id < 0 || dst.id >= ctx->f->next_vreg_id) {
+    snprintf(out_buf, out_size, "%s", scratch);
+    return out_buf;
+  }
+  if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[dst.id] >= 0) {
+    snprintf(out_buf, out_size, "x%d", ctx->f->vreg_phys_reg[dst.id]);
+    return out_buf;
+  }
+  *out_needs_spill = 1;
+  snprintf(out_buf, out_size, "%s", scratch);
+  return out_buf;
+}
+
+static void release_dst(gen_ctx_t *ctx, ir_val_t dst, const char *reg, int needs_spill) {
+  if (!needs_spill) return;
   if (dst.id < 0 || dst.id >= ctx->f->next_vreg_id) return;
   cg_emitf("  str %s, [x29, #%d]\n", reg, ctx->vreg_off[dst.id]);
 }
+
+/* "x9" → "w9" の変換。phys reg / scratch 共通。out 長 8 想定。 */
+static void to_w_name(const char *xname, char *out, size_t sz) {
+  if (xname[0] == 'x') {
+    snprintf(out, sz, "w%s", xname + 1);
+  } else {
+    snprintf(out, sz, "%s", xname);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 命令生成                                                            */
+/* ------------------------------------------------------------------ */
 
 static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
   switch (inst->op) {
     case IR_LABEL:
       cg_emitf(".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;
-    case IR_LOAD_IMM:
-      load_val_to(ctx, inst->src1, "x9");
-      store_val_from(ctx, inst->dst, "x9");
+    case IR_LOAD_IMM: {
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  mov %s, #%lld\n", d, inst->src1.imm);
+      release_dst(ctx, inst->dst, d, spill);
       return;
+    }
     case IR_ALLOCA: {
       int sz = inst->alloca_size > 0 ? inst->alloca_size : 8;
       int al = inst->alloca_align > 0 ? inst->alloca_align : 8;
@@ -103,33 +207,72 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
         ctx->alloca_region_off[inst->dst.id] = off;
       }
-      /* dst.vreg = x29 + off (アドレス) */
-      cg_emitf("  add x9, x29, #%d\n", off);
-      store_val_from(ctx, inst->dst, "x9");
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  add %s, x29, #%d\n", d, off);
+      release_dst(ctx, inst->dst, d, spill);
       return;
     }
     case IR_LOAD: {
-      /* dst = *src1 */
-      load_val_to(ctx, inst->src1, "x9");  /* ptr */
-      /* 型に応じてロードサイズ */
+      char bp[8], bd[8];
+      const char *ptr = ensure_val_in(ctx, inst->src1, "x9", bp, sizeof(bp));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x10", bd, sizeof(bd), &spill);
       switch (inst->dst.type) {
-        case IR_TY_I8:  cg_emitf("  ldrsb x10, [x9]\n"); break;
-        case IR_TY_I16: cg_emitf("  ldrsh x10, [x9]\n"); break;
-        case IR_TY_I32: cg_emitf("  ldrsw x10, [x9]\n"); break;
-        default:        cg_emitf("  ldr x10, [x9]\n"); break;
+        case IR_TY_I8:  cg_emitf("  ldrsb %s, [%s]\n", d, ptr); break;
+        case IR_TY_I16: cg_emitf("  ldrsh %s, [%s]\n", d, ptr); break;
+        case IR_TY_I32: cg_emitf("  ldrsw %s, [%s]\n", d, ptr); break;
+        default:        cg_emitf("  ldr %s, [%s]\n", d, ptr); break;
       }
-      store_val_from(ctx, inst->dst, "x10");
+      release_dst(ctx, inst->dst, d, spill);
       return;
     }
     case IR_STORE: {
-      /* *src1 = src2 */
-      load_val_to(ctx, inst->src1, "x9");   /* ptr */
-      load_val_to(ctx, inst->src2, "x10");  /* val */
+      char bp[8], bv[8];
+      const char *ptr = ensure_val_in(ctx, inst->src1, "x9", bp, sizeof(bp));
+      const char *val = ensure_val_in(ctx, inst->src2, "x10", bv, sizeof(bv));
+      char wval[8];
+      to_w_name(val, wval, sizeof(wval));
       switch (inst->src2.type) {
-        case IR_TY_I8:  cg_emitf("  strb w10, [x9]\n"); break;
-        case IR_TY_I16: cg_emitf("  strh w10, [x9]\n"); break;
-        case IR_TY_I32: cg_emitf("  str w10, [x9]\n"); break;
-        default:        cg_emitf("  str x10, [x9]\n"); break;
+        case IR_TY_I8:  cg_emitf("  strb %s, [%s]\n", wval, ptr); break;
+        case IR_TY_I16: cg_emitf("  strh %s, [%s]\n", wval, ptr); break;
+        case IR_TY_I32: cg_emitf("  str %s, [%s]\n", wval, ptr); break;
+        default:        cg_emitf("  str %s, [%s]\n", val, ptr); break;
+      }
+      return;
+    }
+    case IR_LEA: {
+      char b1[8], b2[8], bd[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  add %s, %s, %s\n", d, s1, s2);
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_MEMCPY: {
+      char bp1[8], bp2[8];
+      const char *dst_ptr = ensure_val_in(ctx, inst->src1, "x9", bp1, sizeof(bp1));
+      const char *src_ptr = ensure_val_in(ctx, inst->src2, "x10", bp2, sizeof(bp2));
+      int n = inst->alloca_size;
+      int off = 0;
+      for (; off + 8 <= n; off += 8) {
+        cg_emitf("  ldr x11, [%s, #%d]\n", src_ptr, off);
+        cg_emitf("  str x11, [%s, #%d]\n", dst_ptr, off);
+      }
+      for (; off + 4 <= n; off += 4) {
+        cg_emitf("  ldr w11, [%s, #%d]\n", src_ptr, off);
+        cg_emitf("  str w11, [%s, #%d]\n", dst_ptr, off);
+      }
+      for (; off + 2 <= n; off += 2) {
+        cg_emitf("  ldrh w11, [%s, #%d]\n", src_ptr, off);
+        cg_emitf("  strh w11, [%s, #%d]\n", dst_ptr, off);
+      }
+      for (; off < n; off++) {
+        cg_emitf("  ldrb w11, [%s, #%d]\n", src_ptr, off);
+        cg_emitf("  strb w11, [%s, #%d]\n", dst_ptr, off);
       }
       return;
     }
@@ -138,62 +281,36 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_MUL:
     case IR_DIV:
     case IR_MOD: {
-      load_val_to(ctx, inst->src1, "x9");
-      load_val_to(ctx, inst->src2, "x10");
+      char b1[8], b2[8], bd[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
       switch (inst->op) {
-        case IR_ADD: cg_emitf("  add x9, x9, x10\n"); break;
-        case IR_SUB: cg_emitf("  sub x9, x9, x10\n"); break;
-        case IR_MUL: cg_emitf("  mul x9, x9, x10\n"); break;
-        case IR_DIV: cg_emitf("  sdiv x9, x9, x10\n"); break;
+        case IR_ADD: cg_emitf("  add %s, %s, %s\n", d, s1, s2); break;
+        case IR_SUB: cg_emitf("  sub %s, %s, %s\n", d, s1, s2); break;
+        case IR_MUL: cg_emitf("  mul %s, %s, %s\n", d, s1, s2); break;
+        case IR_DIV: cg_emitf("  sdiv %s, %s, %s\n", d, s1, s2); break;
         case IR_MOD:
-          cg_emitf("  sdiv x11, x9, x10\n");
-          cg_emitf("  msub x9, x11, x10, x9\n");
+          /* d = s1 - (s1/s2)*s2、x11 を一時に使う */
+          cg_emitf("  sdiv x11, %s, %s\n", s1, s2);
+          cg_emitf("  msub %s, x11, %s, %s\n", d, s2, s1);
           break;
         default: break;
       }
-      store_val_from(ctx, inst->dst, "x9");
-      return;
-    }
-    case IR_LEA: {
-      /* dst = src1 + src2 (アドレス計算)。src1 がポインタ、src2 が int オフセット。 */
-      load_val_to(ctx, inst->src1, "x9");
-      load_val_to(ctx, inst->src2, "x10");
-      cg_emitf("  add x9, x9, x10\n");
-      store_val_from(ctx, inst->dst, "x9");
-      return;
-    }
-    case IR_MEMCPY: {
-      /* src1=dst ptr, src2=src ptr, alloca_size=バイト数。
-       * 8 byte 単位で順次コピー、端数は 1 byte ずつ。 */
-      load_val_to(ctx, inst->src1, "x9");   /* dst */
-      load_val_to(ctx, inst->src2, "x10");  /* src */
-      int n = inst->alloca_size;
-      int off = 0;
-      for (; off + 8 <= n; off += 8) {
-        cg_emitf("  ldr x11, [x10, #%d]\n", off);
-        cg_emitf("  str x11, [x9, #%d]\n", off);
-      }
-      for (; off + 4 <= n; off += 4) {
-        cg_emitf("  ldr w11, [x10, #%d]\n", off);
-        cg_emitf("  str w11, [x9, #%d]\n", off);
-      }
-      for (; off + 2 <= n; off += 2) {
-        cg_emitf("  ldrh w11, [x10, #%d]\n", off);
-        cg_emitf("  strh w11, [x9, #%d]\n", off);
-      }
-      for (; off < n; off++) {
-        cg_emitf("  ldrb w11, [x10, #%d]\n", off);
-        cg_emitf("  strb w11, [x9, #%d]\n", off);
-      }
+      release_dst(ctx, inst->dst, d, spill);
       return;
     }
     case IR_LT:
     case IR_LE:
     case IR_EQ:
     case IR_NE: {
-      load_val_to(ctx, inst->src1, "x9");
-      load_val_to(ctx, inst->src2, "x10");
-      cg_emitf("  cmp x9, x10\n");
+      char b1[8], b2[8], bd[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  cmp %s, %s\n", s1, s2);
       const char *cond = "eq";
       switch (inst->op) {
         case IR_LT: cond = "lt"; break;
@@ -202,39 +319,54 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_NE: cond = "ne"; break;
         default: break;
       }
-      cg_emitf("  cset x9, %s\n", cond);
-      store_val_from(ctx, inst->dst, "x9");
+      cg_emitf("  cset %s, %s\n", d, cond);
+      release_dst(ctx, inst->dst, d, spill);
       return;
     }
     case IR_PARAM: {
-      /* 第 n 仮引数を受け取って dst slot に保存。
-       * idx >= 0 → x0..x7 (通常引数)
-       * idx == -1 → x8 (struct 戻り値領域ポインタ、Apple ABI 隠し引数) */
       int idx = (int)inst->src1.imm;
-      if (idx == -1) {
-        cg_emitf("  str x8, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
-        return;
+      /* idx == -1 → x8 (struct return area)、それ以外 x0..x7 */
+      const char *src_reg = (idx == -1) ? "x8" : NULL;
+      char src_buf[8];
+      if (!src_reg) {
+        snprintf(src_buf, sizeof(src_buf), "x%d", idx);
+        src_reg = src_buf;
       }
-      if (idx < 0 || idx >= 8) {
-        fprintf(stderr, "gen_ir_inst: PARAM index out of range: %d\n", idx);
-        return;
+      /* dst が phys なら mov、なければ frame に str */
+      if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+        if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
+          int r = ctx->f->vreg_phys_reg[inst->dst.id];
+          if (r != idx && !(idx == -1 && r == 8)) {
+            cg_emitf("  mov x%d, %s\n", r, src_reg);
+          }
+        } else {
+          cg_emitf("  str %s, [x29, #%d]\n", src_reg, ctx->vreg_off[inst->dst.id]);
+        }
       }
-      cg_emitf("  str x%d, [x29, #%d]\n", idx, ctx->vreg_off[inst->dst.id]);
       return;
     }
     case IR_CALL: {
-      /* args[i] を x0..x{nargs-1} にロードして bl _<sym>。戻り値 x0 を dst に store。
-       * load 順は左から右で、各 ldr/mov の dst は独立なので順序問題なし。 */
+      /* args[i] を x0..x7 にロード。
+       * 物理 reg にある args は mov、imm は mov、spilled は ldr。 */
       for (int i = 0; i < inst->nargs && i < 8; i++) {
-        char regname[8];
-        snprintf(regname, sizeof(regname), "x%d", i);
-        load_val_to(ctx, inst->args[i], regname);
+        char xname[8];
+        snprintf(xname, sizeof(xname), "x%d", i);
+        char buf[8];
+        const char *src = ensure_val_in(ctx, inst->args[i], xname, buf, sizeof(buf));
+        if (strcmp(src, xname) != 0) {
+          cg_emitf("  mov %s, %s\n", xname, src);
+        }
       }
-      /* struct 戻り値: x8 に戻り値領域ポインタをロードして呼び出す */
+      /* struct return: ret_area を x8 にロード */
       if (inst->ret_struct_size > 0 && inst->ret_struct_area.id != IR_VAL_NONE) {
-        load_val_to(ctx, inst->ret_struct_area, "x8");
+        char buf[8];
+        const char *src = ensure_val_in(ctx, inst->ret_struct_area, "x8", buf, sizeof(buf));
+        if (strcmp(src, "x8") != 0) {
+          cg_emitf("  mov x8, %s\n", src);
+        }
       }
       cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+      /* 戻り値 x0 を dst slot へ。dst は regalloc 上 spill 扱い (Phase 5)。 */
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
         cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
       }
@@ -243,20 +375,26 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_BR:
       cg_emitf("  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;
-    case IR_BR_COND:
-      load_val_to(ctx, inst->src1, "x9");
-      /* cbz/cbnz は 32bit/64bit のどちらでも動く。条件は 0/非0。 */
-      cg_emitf("  cbnz x9, .L%.*s_%d\n",
+    case IR_BR_COND: {
+      char b1[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      cg_emitf("  cbnz %s, .L%.*s_%d\n", s1,
                 ctx->f->name_len, ctx->f->name, inst->label_id);
       cg_emitf("  b .L%.*s_%d\n",
                 ctx->f->name_len, ctx->f->name, inst->else_label_id);
       return;
+    }
     case IR_RET: {
       if (inst->src1.id != IR_VAL_NONE) {
-        load_val_to(ctx, inst->src1, "x0");
+        char buf[8];
+        const char *src = ensure_val_in(ctx, inst->src1, "x0", buf, sizeof(buf));
+        if (strcmp(src, "x0") != 0) {
+          cg_emitf("  mov x0, %s\n", src);
+        }
       } else {
         cg_emitf("  mov x0, #0\n");
       }
+      emit_restore_regs(ctx);
       cg_emitf("  mov sp, x29\n");
       cg_emitf("  ldp x29, x30, [sp]\n");
       cg_emitf("  add sp, sp, #%d\n", ctx->total_size);
@@ -270,6 +408,9 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_func(ir_func_t *f) {
+  /* レジスタ割り付け */
+  ir_regalloc_function(f);
+
   gen_ctx_t ctx = {0};
   ctx.f = f;
   layout_frame(&ctx);
@@ -277,18 +418,16 @@ static void gen_func(ir_func_t *f) {
   cg_emitf(".global _%.*s\n", f->name_len, f->name);
   cg_emitf(".align 2\n");
   cg_emitf("_%.*s:\n", f->name_len, f->name);
-  /* prologue */
   cg_emitf("  sub sp, sp, #%d\n", ctx.total_size);
   cg_emitf("  stp x29, x30, [sp]\n");
   cg_emitf("  mov x29, sp\n");
+  emit_save_regs(&ctx);
 
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       gen_inst(&ctx, i);
     }
   }
-  /* 末尾に ret が無ければ補う (safety) */
-  /* (Phase 2 では IR_RET が build 時に必ず挿入されている前提) */
 
   free(ctx.vreg_off);
   free(ctx.alloca_region_off);
