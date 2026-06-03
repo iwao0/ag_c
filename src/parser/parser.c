@@ -84,7 +84,6 @@ static int parse_toplevel_typedef_name_spec(void);
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len);
 static void parse_toplevel_tag_decl(void);
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul);
-static void parse_toplevel_pointer_prefix(int *is_ptr);
 static token_ident_t *consume_decl_ident_or_error(int require_name);
 static void emit_decl_name_required_diag(void);
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens);
@@ -739,7 +738,7 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
 
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name) {
   toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
-  parse_toplevel_pointer_prefix(&out.is_ptr);
+  psx_consume_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
   return out;
@@ -826,10 +825,6 @@ static int has_next_toplevel_declarator(void) {
   return tk_consume(',');
 }
 
-static void parse_toplevel_pointer_prefix(int *is_ptr) {
-  psx_consume_pointer_prefix(is_ptr);
-}
-
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul) {
   token_ident_t *name = parse_decl_name_recursive(is_ptr, 1, out_paren_array_mul);
   psx_skip_func_suffix_groups(NULL);
@@ -837,7 +832,7 @@ static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array
 }
 
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul) {
-  parse_toplevel_pointer_prefix(is_ptr);
+  psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   int had_parens = 0;
   int paren_array_mul = 1;
@@ -882,7 +877,7 @@ static int parse_toplevel_parenthesized_decl_suffix(int paren_array_mul) {
 
 static token_ident_t *parse_member_decl_name_recursive_toplevel(int *is_ptr, int *out_has_func_suffix,
                                                                 int *out_paren_array_mul) {
-  parse_toplevel_pointer_prefix(is_ptr);
+  psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
