@@ -263,7 +263,7 @@ static void apply_toplevel_typedef_prefix_flags(void) {
   psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
 }
 
-static bool is_decl_prefix_token(token_kind_t k) {
+bool psx_is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
@@ -282,7 +282,7 @@ static void skip_cv_qualifiers(void) {
   g_last_type_volatile_qualified = 0;
   g_last_alignas_value = 0;
   g_last_decl_is_extern = 0;
-  while (is_decl_prefix_token(curtok()->kind)) {
+  while (psx_is_decl_prefix_token(curtok()->kind)) {
     if (curtok()->kind == TK_CONST) g_last_type_const_qualified = 1;
     if (curtok()->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
     if (curtok()->kind == TK_EXTERN) g_last_decl_is_extern = 1;
@@ -358,7 +358,7 @@ static void parse_static_assert_toplevel(void) {
 }
 
 static token_t *skip_decl_prefix_lookahead(token_t *t) {
-  while (t && is_decl_prefix_token(t->kind)) {
+  while (t && psx_is_decl_prefix_token(t->kind)) {
     if (t->kind == TK_ALIGNAS) {
       t = t->next;
       if (!t || t->kind != TK_LPAREN) return t;
@@ -940,7 +940,7 @@ static int is_toplevel_decl_like_start(token_t *tok) {
   if (!tok) return 0;
   return tok->kind == TK_TYPEDEF ||
          psx_ctx_is_type_token(tok->kind) ||
-         is_decl_prefix_token(tok->kind) ||
+         psx_is_decl_prefix_token(tok->kind) ||
          psx_ctx_is_typedef_name_token(tok);
 }
 

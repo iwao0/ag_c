@@ -53,12 +53,6 @@ static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
 static node_t *parse_decl_like_stmt(void);
 
-static bool is_decl_prefix_token_stmt(token_kind_t k) {
-  return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
-         k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
-         k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
-}
-
 static void skip_func_params_stmt(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
@@ -274,7 +268,7 @@ static void parse_typedef_decl(void) {
 static int is_decl_like_start_stmt(void) {
   if (curtok()->kind == TK_TYPEDEF) return 1;
   if (curtok()->kind == TK_STATIC_ASSERT) return 1;
-  if (psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) ||
+  if (psx_ctx_is_type_token(curtok()->kind) || psx_is_decl_prefix_token(curtok()->kind) ||
       psx_ctx_is_typedef_name_token(curtok())) return 1;
   if (psx_ctx_is_tag_keyword(curtok()->kind)) return 1;
   return 0;
@@ -287,7 +281,7 @@ static node_t *parse_decl_like_stmt(void) {
   }
 
   if (curtok()->kind == TK_STATIC_ASSERT ||
-      psx_ctx_is_type_token(curtok()->kind) || is_decl_prefix_token_stmt(curtok()->kind) ||
+      psx_ctx_is_type_token(curtok()->kind) || psx_is_decl_prefix_token(curtok()->kind) ||
       psx_ctx_is_typedef_name_token(curtok())) {
     return psx_decl_parse_declaration();
   }
