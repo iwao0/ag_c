@@ -521,6 +521,27 @@ static string_lit_t *find_string_lit_by_label(char *label) {
   return NULL;
 }
 
+static node_t *append_to_init_chain(node_t *init_chain, node_t *init_node);
+
+// `var->arr[idx] = value` を表す ASSIGN ノードを構築する。
+// type_size と fp_kind は var の要素型から複製する。
+static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
+  node_t *lhs = new_array_elem_lvar(var, idx);
+  node_mem_t *assign_node = psx_node_new_assign(lhs, value);
+  assign_node->type_size = var->elem_size;
+  assign_node->base.fp_kind = var->fp_kind;
+  return (node_t *)assign_node;
+}
+
+// 初期化子の要素数を 1 増やし、上限を超えていれば診断を出す。
+static void bump_initializer_count(int *count) {
+  (*count)++;
+  if (*count > PS_MAX_INITIALIZER_ELEMENTS) {
+    psx_diag_ctx(curtok(), "decl", "初期化子要素数が多すぎます（上限 %d）",
+                 PS_MAX_INITIALIZER_ELEMENTS);
+  }
+}
+
 static node_t *parse_array_initializer(lvar_t *var) {
   node_t *init_chain = NULL;
   int init_elem_count = 0;
@@ -541,19 +562,11 @@ static node_t *parse_array_initializer(lvar_t *var) {
         // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}}
         if (row_len > 0 && tk_consume('{')) {
           for (int ri = 0; ri < row_len; ri++) {
-            init_elem_count++;
-            if (init_elem_count > PS_MAX_INITIALIZER_ELEMENTS) {
-              psx_diag_ctx(curtok(), "decl", "初期化子要素数が多すぎます（上限 %d）",
-                           PS_MAX_INITIALIZER_ELEMENTS);
-            }
+            bump_initializer_count(&init_elem_count);
             int flat_idx = target_idx + ri;
             if (flat_idx < array_len) {
-              node_t *lhs = new_array_elem_lvar(var, flat_idx);
-              node_mem_t *assign_node = psx_node_new_assign(lhs, psx_expr_assign());
-              assign_node->type_size = var->elem_size;
-              assign_node->base.fp_kind = var->fp_kind;
-              if (!init_chain) init_chain = (node_t *)assign_node;
-              else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
+              init_chain = append_to_init_chain(init_chain,
+                  build_array_elem_assign(var, flat_idx, psx_expr_assign()));
               assigned[flat_idx] = true;
             }
             if (tk_consume('}')) break;
@@ -562,11 +575,7 @@ static node_t *parse_array_initializer(lvar_t *var) {
           }
           idx = target_idx + row_len;
         } else {
-          init_elem_count++;
-          if (init_elem_count > PS_MAX_INITIALIZER_ELEMENTS) {
-            psx_diag_ctx(curtok(), "decl", "初期化子要素数が多すぎます（上限 %d）",
-                         PS_MAX_INITIALIZER_ELEMENTS);
-          }
+          bump_initializer_count(&init_elem_count);
           if (target_idx >= array_len) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
@@ -575,13 +584,8 @@ static node_t *parse_array_initializer(lvar_t *var) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
           }
-          node_t *lhs = new_array_elem_lvar(var, target_idx);
-          node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
-          assign_node->type_size = var->elem_size;
-          assign_node->base.fp_kind = var->fp_kind;
-          node_t *init_node = (node_t *)assign_node;
-          if (!init_chain) init_chain = init_node;
-          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+          init_chain = append_to_init_chain(init_chain,
+              build_array_elem_assign(var, target_idx, parse_scalar_brace_initializer()));
           assigned[target_idx] = true;
           idx = target_idx + 1;
         }
@@ -604,40 +608,23 @@ static node_t *parse_array_initializer(lvar_t *var) {
     }
     int idx = 0;
     for (; idx < lit->len && idx < array_len; idx++) {
-      node_t *lhs = new_array_elem_lvar(var, idx);
-      node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)lit->str[idx]));
-      assign_node->type_size = var->elem_size;
-      assign_node->base.fp_kind = var->fp_kind;
-      node_t *init_node = (node_t *)assign_node;
-      if (!init_chain) init_chain = init_node;
-      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      init_chain = append_to_init_chain(init_chain,
+          build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)lit->str[idx])));
     }
     if (idx < array_len) {
-      node_t *lhs = new_array_elem_lvar(var, idx);
-      node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
-      assign_node->type_size = var->elem_size;
-      assign_node->base.fp_kind = var->fp_kind;
-      node_t *init_node = (node_t *)assign_node;
-      if (!init_chain) init_chain = init_node;
-      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      // 文字列が配列長より短い場合は残りに NUL を1つ入れる。
+      init_chain = append_to_init_chain(init_chain,
+          build_array_elem_assign(var, idx, psx_node_new_num(0)));
     }
     return init_chain ? init_chain : psx_node_new_num(0);
   }
   // Extension: scalar expression for array init
   //   int a[3] = 1;  => a[0]=1, a[1]=0, a[2]=0
   if (array_len > 0) {
-    node_t *lhs0 = new_array_elem_lvar(var, 0);
-    node_mem_t *assign0 = psx_node_new_assign(lhs0, rhs);
-    assign0->type_size = var->elem_size;
-    assign0->base.fp_kind = var->fp_kind;
-    init_chain = (node_t *)assign0;
+    init_chain = build_array_elem_assign(var, 0, rhs);
     for (int idx = 1; idx < array_len; idx++) {
-      node_t *lhs = new_array_elem_lvar(var, idx);
-      node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
-      assign_node->type_size = var->elem_size;
-      assign_node->base.fp_kind = var->fp_kind;
-      node_t *init_node = (node_t *)assign_node;
-      init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+      init_chain = append_to_init_chain(init_chain,
+          build_array_elem_assign(var, idx, psx_node_new_num(0)));
     }
     return init_chain;
   }
