@@ -903,6 +903,17 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                 int cast_array_count) {
   set_curtok(after_rparen);
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
+  // `(T[]){...}` の空サイズは初期化子から要素数を推定する。
+  if (!cast_is_ptr && cast_array_count < 0) {
+    long long inferred = psx_decl_count_brace_init_elements(after_rparen);
+    if (inferred <= 0) {
+      psx_diag_ctx(curtok(), "expr",
+                   "複合リテラル `(T[]){...}` の要素数を初期化子から推定できません");
+      cast_array_count = 1;
+    } else {
+      cast_array_count = (int)inferred;
+    }
+  }
   int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
   int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
   char *tmp_name = new_compound_lit_name();
@@ -1193,10 +1204,13 @@ cast_parse_postfix:
   (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
   (void)parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
   // 配列宣言子 [N] を受理する（非ポインタ型のみ）
+  // 空 `[]` は -1 を返し、呼び出し側で初期化子から要素数を推定させる。
   if (!*is_pointer && t && t->kind == TK_LBRACKET) {
     t = t->next;
     int n = 0;
-    if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
+    if (t && t->kind == TK_RBRACKET) {
+      n = -1; // size unspecified, infer from initializer
+    } else if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
       n = (int)tk_as_num_int(t)->uval;
       t = t->next;
     }

@@ -322,6 +322,81 @@ static int parse_decl_array_suffixes_constexpr_required(int base_mul) {
   return arr_total;
 }
 
+// 波括弧初期化子 `{ ... }` のトップレベル要素数を数えるトークン先読みヘルパ。
+// `brace_tok` は `{` を指している必要がある。curtok は変更しない。
+// 指定初期化子 `[N]=` で位置がジャンプする場合は、最大位置+1 を返す。
+// 推定不可（空、複雑な指定子、トークン不整合）なら 0。
+long long psx_decl_count_brace_init_elements(token_t *brace_tok) {
+  if (!brace_tok || brace_tok->kind != TK_LBRACE) return 0;
+  token_t *t = brace_tok->next; // skip '{'
+  if (t && t->kind == TK_RBRACE) return 0; // 空 `{}` は推定不可
+
+  long long idx = 0;
+  long long max_seen = -1;
+  int depth = 0;
+  bool seen_content = false;
+  while (t) {
+    if (depth == 0) {
+      if (t->kind == TK_RBRACE) {
+        if (seen_content && idx > max_seen) max_seen = idx;
+        break;
+      }
+      if (t->kind == TK_COMMA) {
+        if (seen_content) {
+          if (idx > max_seen) max_seen = idx;
+          idx++;
+          seen_content = false;
+        }
+        t = t->next;
+        continue;
+      }
+      if (!seen_content && t->kind == TK_LBRACKET) {
+        // 指定初期化子 `[N]=...`
+        t = t->next;
+        if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
+          idx = (long long)tk_as_num_int(t)->uval;
+          t = t->next;
+        } else {
+          return 0; // 複雑な式は未対応
+        }
+        if (!t || t->kind != TK_RBRACKET) return 0;
+        t = t->next;
+        if (t && t->kind == TK_ASSIGN) t = t->next;
+        continue;
+      }
+    }
+    if (t->kind == TK_LBRACE || t->kind == TK_LPAREN || t->kind == TK_LBRACKET) {
+      depth++;
+    } else if (t->kind == TK_RBRACE || t->kind == TK_RPAREN || t->kind == TK_RBRACKET) {
+      depth--;
+      if (depth < 0) return 0; // 異常: 開きより閉じが多い
+    }
+    seen_content = true;
+    t = t->next;
+  }
+  if (max_seen < 0) return 0;
+  return max_seen + 1;
+}
+
+// `int a[] = ...` の `[]` で要素数を初期化子から推定するためのトークン先読みヘルパ。
+// curtok は変更しない。`=` で始まる初期化子を想定し、推定できなければ 0 を返す。
+// elem_size==1 の場合は文字列リテラル初期化子（NUL を含む長さ）にも対応する。
+static long long infer_array_count_from_initializer(int elem_size) {
+  token_t *t = curtok();
+  if (!t || t->kind != TK_ASSIGN) return 0;
+  t = t->next;
+  if (!t) return 0;
+  if (t->kind == TK_STRING && elem_size == 1) {
+    long long total = 0;
+    while (t && t->kind == TK_STRING) {
+      total += ((token_string_t *)t)->len;
+      t = t->next;
+    }
+    return total + 1; // 終端 NUL
+  }
+  return psx_decl_count_brace_init_elements(t);
+}
+
 static int parse_nonneg_const_expr_decl(const char *what) {
   node_t *n = psx_expr_assign();
   int ok = 1;
@@ -1319,8 +1394,22 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
       } else if (tk_consume('[')) {
         node_t *size_node = NULL;
         int size_ok = 1;
-        long long array_size = parse_array_size_expr_decl(&size_node, &size_ok);
+        bool size_inferred_from_init = (curtok() && curtok()->kind == TK_RBRACKET);
+        long long array_size = size_inferred_from_init
+                                   ? 1
+                                   : parse_array_size_expr_decl(&size_node, &size_ok);
         tk_expect(']');
+        if (size_inferred_from_init) {
+          // `int a[] = {...}` / `char s[] = "..."` 形式: 初期化子から要素数を推定する。
+          // 推定不可なら 1（既存挙動相当）にフォールバックして診断に任せる。
+          long long inferred = infer_array_count_from_initializer(elem_size);
+          if (inferred > 0) {
+            array_size = inferred;
+          } else {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+          }
+        }
         if (!size_ok) {
           // 可変長配列 (VLA)
           // 内側次元を確認 (2D VLA サポート)
