@@ -5,6 +5,7 @@
 #include "internal/decl.h"
 #include "internal/core.h"
 #include "internal/alignas_value.h"
+#include "internal/anon_tag.h"
 #include "internal/array_suffixes.h"
 #include "internal/diag.h"
 #include "internal/dynarray.h"
@@ -141,10 +142,8 @@ static int parse_toplevel_array_suffixes_constexpr_required(int base_mul);
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
                                                                toplevel_array_suffix_t arr);
 static int current_toplevel_extern_flag(void);
-static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len);
 static inline token_t *curtok(void);
 static inline void set_curtok(token_t *tok);
-static int anonymous_tag_seq_toplevel = 0;
 static int g_last_type_atomic;
 static int g_last_type_thread_local;
 
@@ -247,7 +246,7 @@ static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int
     *out_name = tag->str;
     *out_len = tag->len;
   } else {
-    make_anonymous_tag_name_toplevel(out_name, out_len);
+    psx_make_anonymous_tag_name(out_name, out_len);
   }
 }
 
@@ -268,15 +267,6 @@ static bool is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
-}
-
-static void make_anonymous_tag_name_toplevel(char **out_name, int *out_len) {
-  int seq = anonymous_tag_seq_toplevel++;
-  int len = snprintf(NULL, 0, "__anon_tag_top_%d", seq);
-  char *name = calloc((size_t)len + 1, 1);
-  snprintf(name, (size_t)len + 1, "__anon_tag_top_%d", seq);
-  *out_name = name;
-  *out_len = len;
 }
 
 static inline token_t *curtok(void) {
@@ -956,7 +946,7 @@ static int is_toplevel_decl_like_start(token_t *tok) {
 
 static const struct_member_layout_ops_t toplevel_struct_layout_ops = {
   .parse_alignas_value        = psx_parse_alignas_value,
-  .make_anonymous_tag_name    = make_anonymous_tag_name_toplevel,
+  .make_anonymous_tag_name    = psx_make_anonymous_tag_name,
   .parse_tag_definition_body  = parse_tag_definition_body_toplevel,
   .parse_member_decl_head     = parse_toplevel_member_decl_head,
   .parse_enum_const_expr      = psx_parse_enum_const_expr,
@@ -1393,7 +1383,7 @@ static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **re
   if (!tag) {
     char *anon_name = NULL;
     int anon_len = 0;
-    make_anonymous_tag_name_toplevel(&anon_name, &anon_len);
+    psx_make_anonymous_tag_name(&anon_name, &anon_len);
     tag = calloc(1, sizeof(token_ident_t));
     tag->str = anon_name;
     tag->len = anon_len;

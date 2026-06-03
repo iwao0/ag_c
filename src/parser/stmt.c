@@ -1,5 +1,6 @@
 #include "internal/stmt.h"
 #include "internal/alignas_value.h"
+#include "internal/anon_tag.h"
 #include "internal/arena.h"
 #include "internal/array_suffixes.h"
 #include "internal/core.h"
@@ -47,26 +48,15 @@ typedef struct {
 } stmt_array_suffix_t;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static int parse_stmt_array_suffixes_constexpr_required(int base_mul);
-static void make_anonymous_tag_name_stmt(char **out_name, int *out_len);
 static node_t *stmt_internal(void);
 static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
 static node_t *parse_decl_like_stmt(void);
-static int anonymous_tag_seq_stmt = 0;
 
 static bool is_decl_prefix_token_stmt(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
-}
-
-static void make_anonymous_tag_name_stmt(char **out_name, int *out_len) {
-  int seq = anonymous_tag_seq_stmt++;
-  int len = snprintf(NULL, 0, "__anon_tag_stmt_%d", seq);
-  char *name = calloc((size_t)len + 1, 1);
-  snprintf(name, (size_t)len + 1, "__anon_tag_stmt_%d", seq);
-  *out_name = name;
-  *out_len = len;
 }
 
 static void skip_func_params_stmt(void) {
@@ -140,7 +130,7 @@ static member_decl_head_t parse_stmt_member_decl_head(void) {
 
 static const struct_member_layout_ops_t stmt_struct_layout_ops = {
   .parse_alignas_value        = psx_parse_alignas_value,
-  .make_anonymous_tag_name    = make_anonymous_tag_name_stmt,
+  .make_anonymous_tag_name    = psx_make_anonymous_tag_name,
   .parse_tag_definition_body  = parse_tag_definition_body,
   .parse_member_decl_head     = parse_stmt_member_decl_head,
   .parse_enum_const_expr      = psx_parse_enum_const_expr,
@@ -229,7 +219,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     *tag_name = tag ? tag->str : NULL;
     *tag_len = tag ? tag->len : 0;
     if (!tag) {
-      make_anonymous_tag_name_stmt(tag_name, tag_len);
+      psx_make_anonymous_tag_name(tag_name, tag_len);
     }
     if (tk_consume('{')) {
       int member_count = 0;
