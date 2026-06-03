@@ -905,7 +905,26 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
   // `(T[]){...}` の空サイズは初期化子から要素数を推定する。
   if (!cast_is_ptr && cast_array_count < 0) {
-    long long inferred = psx_decl_count_brace_init_elements(after_rparen);
+    long long inferred = 0;
+    // 特例: `(char[]){"abc" "def" ...}` のように波括弧で文字列リテラル列を
+    // 包んでいる場合は、文字列内容長 + 1 を要素数として採用する。
+    if (base_elem == 1 && after_rparen && after_rparen->kind == TK_LBRACE) {
+      token_t *t = after_rparen->next;
+      if (t && t->kind == TK_STRING) {
+        long long total = 0;
+        token_t *cur = t;
+        while (cur && cur->kind == TK_STRING) {
+          total += ((token_string_t *)cur)->len;
+          cur = cur->next;
+        }
+        if (cur && cur->kind == TK_RBRACE) {
+          inferred = total + 1; // 終端 NUL
+        }
+      }
+    }
+    if (inferred <= 0) {
+      inferred = psx_decl_count_brace_init_elements(after_rparen);
+    }
     if (inferred <= 0) {
       psx_diag_ctx(curtok(), "expr",
                    "複合リテラル `(T[]){...}` の要素数を初期化子から推定できません");

@@ -391,21 +391,39 @@ static bool init_first_element_is_brace(void) {
   return t && t->kind == TK_LBRACE;
 }
 
+// 文字列リテラル列の合計内容長 + 1 (NUL) を返す。t は文字列開始トークン。
+// 文字列の終端後のトークンが終端記号 (`}` または NULL ライク) でなければ
+// 単純な文字列初期化と見なせないので 0 を返す。
+static long long count_char_init_from_string_seq(token_t *t, bool require_rbrace_terminator) {
+  long long total = 0;
+  while (t && t->kind == TK_STRING) {
+    total += ((token_string_t *)t)->len;
+    t = t->next;
+  }
+  if (require_rbrace_terminator) {
+    if (!t || t->kind != TK_RBRACE) return 0;
+  }
+  return total + 1; // 終端 NUL
+}
+
 // `int a[] = ...` の `[]` で要素数を初期化子から推定するためのトークン先読みヘルパ。
 // curtok は変更しない。`=` で始まる初期化子を想定し、推定できなければ 0 を返す。
 // elem_size==1 の場合は文字列リテラル初期化子（NUL を含む長さ）にも対応する。
+// 波括弧で囲まれた `{"..."}` 形式も同じく文字列初期化として扱う。
 static long long infer_array_count_from_initializer(int elem_size) {
   token_t *t = curtok();
   if (!t || t->kind != TK_ASSIGN) return 0;
   t = t->next;
   if (!t) return 0;
   if (t->kind == TK_STRING && elem_size == 1) {
-    long long total = 0;
-    while (t && t->kind == TK_STRING) {
-      total += ((token_string_t *)t)->len;
-      t = t->next;
+    return count_char_init_from_string_seq(t, false);
+  }
+  if (elem_size == 1 && t->kind == TK_LBRACE) {
+    token_t *inside = t->next;
+    if (inside && inside->kind == TK_STRING) {
+      long long n = count_char_init_from_string_seq(inside, true);
+      if (n > 0) return n;
     }
-    return total + 1; // 終端 NUL
   }
   return psx_decl_count_brace_init_elements(t);
 }
@@ -634,6 +652,38 @@ static node_t *parse_array_initializer(lvar_t *var) {
   node_t *init_chain = NULL;
   int init_elem_count = 0;
   int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
+  // 特例: `char a[] = {"hello"};` のように波括弧で囲まれた文字列リテラル
+  // (隣接連結も含む) は C11 6.7.9p14 により素の文字列初期化と同じに扱う。
+  if (var->elem_size == 1 && curtok() && curtok()->kind == TK_LBRACE) {
+    token_t *peek = curtok()->next;
+    if (peek && peek->kind == TK_STRING) {
+      token_t *p = peek;
+      while (p && p->kind == TK_STRING) p = p->next;
+      if (p && p->kind == TK_RBRACE) {
+        tk_consume('{');
+        node_t *str_node = psx_expr_assign(); // 連結を含めて1つの ND_STRING になる
+        tk_expect('}');
+        if (str_node && str_node->kind == ND_STRING) {
+          node_string_t *s = (node_string_t *)str_node;
+          string_lit_t *lit = find_string_lit_by_label(s->string_label);
+          if (!lit) {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+          }
+          int i = 0;
+          for (; i < lit->len && i < array_len; i++) {
+            init_chain = append_to_init_chain(init_chain,
+                build_array_elem_assign(var, i, psx_node_new_num((unsigned char)lit->str[i])));
+          }
+          if (i < array_len) {
+            init_chain = append_to_init_chain(init_chain,
+                build_array_elem_assign(var, i, psx_node_new_num(0)));
+          }
+          return init_chain ? init_chain : psx_node_new_num(0);
+        }
+      }
+    }
+  }
   if (tk_consume('{')) {
     int idx = 0;
     int row_len = (var->outer_stride > 0 && var->elem_size > 0) ? var->outer_stride / var->elem_size : 0;
