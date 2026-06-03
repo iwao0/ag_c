@@ -223,3 +223,25 @@ static long long parse_primary(void) {
   }
   return tk_expect_number();
 }
+
+int psx_parse_enum_members(void) {
+  int member_count = 0;
+  long long next_value = 0;
+  while (!tk_consume('}')) {
+    token_ident_t *enumerator = tk_consume_ident();
+    if (!enumerator) {
+      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
+    }
+    long long value = next_value;
+    if (tk_consume('=')) {
+      value = psx_parse_enum_const_expr();
+    }
+    psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
+    next_value = value + 1;
+    member_count++;
+    if (tk_consume('}')) break;
+    tk_expect(',');
+    if (tk_consume('}')) break;
+  }
+  return member_count;
+}

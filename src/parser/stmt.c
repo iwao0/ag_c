@@ -220,32 +220,11 @@ static int parse_stmt_member_array_suffixes(int *out_is_flex_array) {
 }
 
 // _Alignas( constant-expression | type-name )
-static int parse_enum_members(void) {
-  int member_count = 0;
-  long long next_value = 0;
-  while (!tk_consume('}')) {
-    token_ident_t *enumerator = tk_consume_ident();
-    if (!enumerator) {
-      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
-    }
-    long long value = next_value;
-    if (tk_consume('=')) {
-      value = psx_parse_enum_const_expr();
-    }
-    psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
-    next_value = value + 1;
-    member_count++;
-    if (tk_consume('}')) break;
-    tk_expect(',');
-    if (tk_consume('}')) break;
-  }
-  return member_count;
-}
 
 static int parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len, int *out_size) {
   if (tag_kind == TK_ENUM) {
     if (out_size) *out_size = 4;
-    return parse_enum_members();
+    return psx_parse_enum_members();
   }
   return parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
 }
