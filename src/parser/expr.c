@@ -2569,9 +2569,29 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
       addr->base.kind = ND_ADDR;
       addr->base.lhs = (node_t *)base;
-      addr->type_size = gv->deref_size;
-      addr->deref_size = gv->deref_size;
+      // 多次元配列: outer_stride を 1 次サブスクリプトのステップとして使う。
+      // ローカル配列の build_array_lvar_addr_node と同じレイアウト。
+      int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
+      addr->type_size = stride;
+      addr->deref_size = stride;
       addr->is_pointer = 1;
+      if (gv->outer_stride > 0) {
+        if (gv->mid_stride > 0) {
+          addr->inner_deref_size = (short)gv->mid_stride;
+          if (gv->extra_strides_count > 0) {
+            addr->next_deref_size = (short)gv->extra_strides[0];
+            for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
+              addr->extra_strides[i - 1] = gv->extra_strides[i];
+            }
+            addr->extra_strides[gv->extra_strides_count - 1] = gv->deref_size;
+            addr->extra_strides_count = gv->extra_strides_count;
+          } else {
+            addr->next_deref_size = (short)gv->deref_size;
+          }
+        } else {
+          addr->inner_deref_size = (short)gv->deref_size;
+        }
+      }
       return (node_t *)addr;
     }
     node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));

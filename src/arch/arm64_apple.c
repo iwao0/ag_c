@@ -1930,10 +1930,27 @@ void gen_global_vars(void) {
       // 初期化済みグローバル変数: .data セクション
       cg_emitf(".section __DATA,__data\n");
       cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-      int align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
+      // 配列初期化子のときは要素サイズ (= deref_size) を基準に alignment を決める。
+      int align_size = (gv->init_count > 0 && gv->deref_size > 0)
+                          ? gv->deref_size : (int)gv->type_size;
+      int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
       cg_emitf(".align %d\n", align);
       cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-      if (gv->init_symbol) {
+      if (gv->init_count > 0) {
+        // 配列の brace 初期化子。要素サイズで .byte/.short/.long/.quad を選ぶ。
+        int elem = gv->deref_size > 0 ? gv->deref_size : 4;
+        int total_elems = gv->type_size / elem;
+        for (int i = 0; i < gv->init_count && i < total_elems; i++) {
+          long long v = gv->init_values[i];
+          if (elem == 1) cg_emitf("  .byte %lld\n", v);
+          else if (elem == 2) cg_emitf("  .short %lld\n", v);
+          else if (elem == 4) cg_emitf("  .long %lld\n", v);
+          else cg_emitf("  .quad %lld\n", v);
+        }
+        // 不足分は 0 で埋める (C 仕様: 残り要素は 0 初期化)。
+        int remain = total_elems - gv->init_count;
+        if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
+      } else if (gv->init_symbol) {
         cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
       } else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
       else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);

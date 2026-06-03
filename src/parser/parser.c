@@ -41,6 +41,11 @@ static int g_toplevel_decl_tag_len = 0;
 static int g_toplevel_decl_base_is_ptr = 0;
 static int g_toplevel_decl_pointee_const = 0;
 static int g_toplevel_decl_pointee_volatile = 0;
+// typedef 由来の配列型の dims (使用側 `M2 g;` で typedef の `[2][3]` を保持)。
+// reset_toplevel_decl_spec_state でクリア、resolve_toplevel_typedef_ref で
+// 設定。parse_toplevel_array_suffixes が dims を append する。
+static int g_toplevel_decl_td_array_dims[8] = {0};
+static int g_toplevel_decl_td_array_dim_count = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -186,8 +191,15 @@ static void resolve_toplevel_typedef_ref(void) {
   char *td_tag_name = NULL;
   int td_tag_len = 0;
   int td_is_ptr = 0;
-  psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                            &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
+  int td_is_array = 0;
+  int td_sizeof = 0;
+  int td_first = 0;
+  int td_dim_count = 0;
+  psx_ctx_find_typedef_name_ex3(id->str, id->len, &td_base, &td_elem, &td_fp,
+                                &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr,
+                                NULL, NULL, NULL, &td_is_array, &td_sizeof,
+                                &td_first, g_toplevel_decl_td_array_dims, &td_dim_count, 8);
+  g_toplevel_decl_td_array_dim_count = (td_is_array && td_dim_count > 0) ? td_dim_count : 0;
   set_curtok(curtok()->next);
   apply_toplevel_typedef_decl_spec(td_base, td_elem, td_fp, td_tag, td_tag_name, td_tag_len, td_is_ptr);
 }
@@ -220,6 +232,8 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_base_is_ptr = 0;
   g_toplevel_decl_pointee_const = 0;
   g_toplevel_decl_pointee_volatile = 0;
+  g_toplevel_decl_td_array_dim_count = 0;
+  for (int i = 0; i < 8; i++) g_toplevel_decl_td_array_dims[i] = 0;
 }
 
 static int parse_toplevel_tag_decl_spec(void) {
@@ -705,6 +719,20 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
     dim_count++;
     out.is_array = 1;
   }
+  // 使用側 typedef 配列 (`typedef int M[3][4]; M g;`) では typedef dims を後ろに
+  // 連結する。`M g[2];` のときは [2] が外側、typedef dims が内側で合計 [2][3][4]。
+  if (!g_toplevel_decl_is_typedef && g_toplevel_decl_td_array_dim_count > 0) {
+    for (int di = 0; di < g_toplevel_decl_td_array_dim_count && dim_count < 8; di++) {
+      int dim = g_toplevel_decl_td_array_dims[di];
+      if (dim > 0) {
+        out.arr_total *= dim;
+        if (dim_count == 0) out.first_dim = dim;
+        out.dims[dim_count] = dim;
+        dim_count++;
+      }
+    }
+    out.is_array = 1;
+  }
   if (dim_count > 8) dim_count = 8;
   out.dim_count = dim_count;
   return out;
@@ -731,8 +759,44 @@ static void guard_toplevel_declarator_count(int declarator_count) {
   psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
 }
 
+// グローバル変数の `{...}` 初期化子を再帰的に flatten して gv->init_values に
+// 行優先で詰める。ネストした brace は単に下りる: `{{1,2},{3,4}}` も `{1,2,3,4}` と
+// 同じ列になる (多次元配列のメモリレイアウトは行優先)。
+// 各要素は ND_NUM のみ受け付け、定数式評価は未対応 (ND_NUM 以外は 0 をプレースする)。
+static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
+  tk_expect('{');
+  if (tk_consume('}')) return;
+  for (;;) {
+    if (curtok()->kind == TK_LBRACE) {
+      parse_global_brace_init_flat(gv, cap);
+    } else {
+      node_t *e = psx_expr_assign();
+      long long v = 0;
+      if (e && e->kind == ND_NUM) v = ((node_num_t *)e)->val;
+      if (gv->init_count >= *cap) {
+        *cap *= 2;
+        gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
+      }
+      gv->init_values[gv->init_count++] = v;
+    }
+    if (!tk_consume(',')) break;
+    if (curtok()->kind == TK_RBRACE) break;  // 末尾カンマ許容
+  }
+  tk_expect('}');
+}
+
 static void apply_toplevel_object_initializer(global_var_t *gv) {
   if (!tk_consume('=')) return;
+  // `T arr[N] = {a,b,c,...}` 形式のグローバル配列初期化子。
+  // 1D と多次元 (ネスト brace) の両方を flat 化して保持する。
+  if (curtok()->kind == TK_LBRACE) {
+    gv->has_init = 1;
+    int cap = 16;
+    gv->init_values = calloc((size_t)cap, sizeof(long long));
+    gv->init_count = 0;
+    parse_global_brace_init_flat(gv, &cap);
+    return;
+  }
   node_t *init_expr = psx_expr_assign();
   if (init_expr && init_expr->kind == ND_NUM) {
     gv->has_init = 1;
@@ -746,10 +810,43 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   }
 }
 
+// 多次元配列の各次元 dims[0..count-1] から outer/mid/extra strides を計算して
+// global_var_t に書き込む (lvar の多次元配列と同じ計算)。
+static void apply_global_multidim_strides(global_var_t *gv, const int *dims, int dim_count,
+                                          int elem_size) {
+  if (dim_count < 2 || elem_size <= 0) return;
+  int outer_mul = 1;
+  for (int i = 1; i < dim_count; i++) {
+    if (dims[i] > 0) outer_mul *= dims[i];
+  }
+  gv->outer_stride = outer_mul * elem_size;
+  if (dim_count >= 3) {
+    int mid_mul = 1;
+    for (int i = 2; i < dim_count; i++) {
+      if (dims[i] > 0) mid_mul *= dims[i];
+    }
+    gv->mid_stride = mid_mul * elem_size;
+  }
+  if (dim_count >= 4) {
+    int idx_in_extras = 0;
+    for (int start = 3; start < dim_count && idx_in_extras < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < dim_count; j++) {
+        if (dims[j] > 0) rest_mul *= dims[j];
+      }
+      gv->extra_strides[idx_in_extras++] = rest_mul * elem_size;
+    }
+    gv->extra_strides_count = (unsigned char)idx_in_extras;
+  }
+}
+
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
+  if (gv && !head.is_ptr && arr.is_array && arr.dim_count >= 2) {
+    apply_global_multidim_strides(gv, arr.dims, arr.dim_count, g_toplevel_decl_elem_size);
+  }
   finalize_toplevel_object_declarator(gv);
 }
 

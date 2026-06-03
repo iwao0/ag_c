@@ -221,9 +221,22 @@ struct global_var_t {
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
-  long long init_val; // 初期値（整数定数）
+  long long init_val; // 初期値（整数定数、スカラ用）
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   int init_symbol_len;
+  // 配列の `{...}` 初期化子: flat 化した値列を保持する。
+  // 多次元 `{{1,2,3},{4,5,6}}` も行優先で平らに並べる。
+  // init_count > 0 のとき codegen は init_values[] を要素サイズ単位で出力する。
+  long long *init_values;
+  int init_count;
+  // 多次元配列の subscript strides (ローカル配列 lvar_t と同等の意味)。
+  //   outer_stride: 1 次サブスクリプトのステップ (= 直下の次元 1 つ分のサイズ)
+  //   mid_stride:   2 次サブスクリプトのステップ
+  //   extra_strides: 3 次以降。N 次元配列なら N-1 個の stride をフラットに保持。
+  int outer_stride;
+  int mid_stride;
+  int extra_strides[5];
+  unsigned char extra_strides_count;
 };
 extern global_var_t *global_vars;
 
