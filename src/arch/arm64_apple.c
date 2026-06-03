@@ -587,12 +587,9 @@ static void gen_expr_to_reg(node_t *node, int depth) {
   case ND_DEREF: {
     if (as_mem(node)->bit_width > 0) break; // ビットフィールドはフォールバック
     gen_expr_to_reg(node->lhs, depth);
-    int ts = as_mem(node)->type_size;
-    int uns = as_mem(node)->is_unsigned;
-    if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x%d]\n" : "  ldrsb x%d, [x%d]\n", reg, reg);
-    else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x%d]\n" : "  ldrsh x%d, [x%d]\n", reg, reg);
-    else if (ts == 4) cg_emitf("  ldr w%d, [x%d]\n", reg, reg);
-    else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
+    char addr[8];
+    snprintf(addr, sizeof(addr), "x%d", reg);
+    cg_emit_load_int_to_xreg(reg, as_mem(node)->type_size, as_mem(node)->is_unsigned, addr);
     return;
   }
 
