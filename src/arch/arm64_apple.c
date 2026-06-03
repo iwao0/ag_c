@@ -1709,7 +1709,24 @@ void gen_string_literals(void) {
         i++;
       }
       if (lit->char_width == TK_CHAR_WIDTH_CHAR) {
-        cg_emitf("  .byte %u\n", (unsigned)(v & 0xFF));
+        // narrow char 文字列では codepoint を UTF-8 エンコードする。
+        // 修正前は `(unsigned)(v & 0xFF)` で下位 1 バイトに切り詰めていたため
+        // `"あ"` 等が `0x42` ('B') になっていた。
+        if (v < 0x80) {
+          cg_emitf("  .byte %u\n", (unsigned)v);
+        } else if (v < 0x800) {
+          cg_emitf("  .byte %u\n", (unsigned)(0xC0 | (v >> 6)));
+          cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+        } else if (v < 0x10000) {
+          cg_emitf("  .byte %u\n", (unsigned)(0xE0 | (v >> 12)));
+          cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
+          cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+        } else {
+          cg_emitf("  .byte %u\n", (unsigned)(0xF0 | (v >> 18)));
+          cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 12) & 0x3F)));
+          cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
+          cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+        }
       } else if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
         cg_emitf("  .hword %u\n", (unsigned)(v & 0xFFFF));
       } else {
