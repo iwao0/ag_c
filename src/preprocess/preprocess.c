@@ -1116,6 +1116,116 @@ static token_t *handle_endif(token_t *tok) {
   return skip_to_next_line(tok->next);
 }
 
+// "name.h" や <name.h> 形式のファイル名トークンを読み取り、calloc 済みの
+// バッファに正規化前の文字列を組み立てて返す。tok は閉じ '>' or 文字列の次へ進む。
+static char *consume_include_filename(token_t **ptok) {
+  token_t *tok = *ptok;
+  size_t filename_cap = 64;
+  size_t filename_len = 0;
+  char *filename = calloc(filename_cap, 1);
+  if (!filename) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  if (tok->kind == TK_STRING) {
+    token_string_t *st = as_string(tok);
+    size_t need = (size_t)st->len + 1;
+    if (st->len < 0 || need == 0) {
+      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    }
+    if (need > filename_cap) {
+      filename_cap = need;
+      filename = xrealloc(filename, filename_cap);
+    }
+    memcpy(filename, st->str, (size_t)st->len);
+    filename[st->len] = '\0';
+    filename_len = (size_t)st->len;
+    (void)filename_len;
+    tok = tok->next;
+  } else if (tok->kind == TK_LT) {
+    tok = tok->next;
+    while (tok->kind != TK_EOF && tok->kind != TK_GT) {
+      int tlen = 0;
+      const char *ts = token_text(tok, &tlen);
+      if (!ts) ts = "";
+      if (tlen < 0 || (size_t)tlen > SIZE_MAX - filename_len - 1) {
+        pp_error(DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
+      }
+      size_t need = filename_len + (size_t)tlen + 1;
+      if (need > filename_cap) {
+        while (filename_cap < need) {
+          if (filename_cap > SIZE_MAX / 2) {
+            pp_error(DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
+          }
+          filename_cap *= 2;
+        }
+        filename = xrealloc(filename, filename_cap);
+      }
+      memcpy(filename + filename_len, ts, (size_t)tlen);
+      filename_len += (size_t)tlen;
+      filename[filename_len] = '\0';
+      tok = tok->next;
+    }
+    if (tok->kind == TK_EOF) {
+      pp_error(DIAG_ERR_PREPROCESS_GT_REQUIRED, NULL);
+    }
+    tok = tok->next; // '>' をスキップ
+  }
+  *ptok = tok;
+  return filename;
+}
+
+// include_last_errno に応じて適切な診断 ID を選ぶ。
+static diag_error_id_t include_read_failure_diag_id(void) {
+  if (include_last_errno == ENOENT) return DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND;
+  if (include_last_errno == EACCES || include_last_errno == EPERM) return DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED;
+  if (include_last_errno == ELOOP) return DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP;
+  return DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED;
+}
+
+// インクルードしたファイルをトークナイズ・前処理し、結果を **pcur のチェーン末尾へ
+// 連結する。tk_ctx の filename/input/current_token は呼び出し前後で保存・復元される。
+static void include_and_splice(char *filename, token_t **pcur) {
+  char *buf = load_include_with_allowlist_or_die(filename);
+  if (!buf) {
+    diag_error_id_t id = include_read_failure_diag_id();
+    diag_emit_internalf(id, diag_message_for(id), filename);
+    free(filename);
+  }
+  const char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
+  const char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
+  token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
+  tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(filename, strlen(filename)));
+  token_t *tok2 = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
+  push_include_or_die(filename);
+  tok2 = preprocess_ctx(g_preprocess_tk_ctx, tok2);
+  pop_include();
+  tk_set_filename_ctx(g_preprocess_tk_ctx, saved_filename);
+  tk_set_user_input_ctx(g_preprocess_tk_ctx, saved_input);
+  tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
+  while (tok2->kind != TK_EOF) {
+    (*pcur)->next = copy_token(tok2);
+    *pcur = (*pcur)->next;
+    tok2 = tok2->next;
+  }
+}
+
+// #include "name.h" または #include <name.h>
+static token_t *handle_include(token_t *tok, token_t **pcur) {
+  tok = tok->next; // skip "include"
+  char *filename = consume_include_filename(&tok);
+  validate_include_path_or_die(filename);
+  char *normalized = normalize_include_path_or_die(filename);
+  free(filename);
+  filename = normalized;
+  if (pragma_once_seen(filename)) {
+    free(filename);
+    return tok;
+  }
+  include_and_splice(filename, pcur);
+  free(filename);
+  return tok;
+}
+
 // プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
 token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
@@ -1134,106 +1244,7 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
     if (tok->at_bol && tok->kind == TK_HASH) {
       tok = tok->next; // '#' をスキップ
       
-      if (is_dir(tok, "include")) {
-        tok = tok->next;
-        size_t filename_cap = 64;
-        size_t filename_len = 0;
-        char *filename = calloc(filename_cap, 1);
-        if (!filename) {
-          diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-        }
-        
-        if (tok->kind == TK_STRING) {
-          token_string_t *st = as_string(tok);
-          size_t need = (size_t)st->len + 1;
-          if (st->len < 0 || need == 0) {
-            pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
-          }
-          if (need > filename_cap) {
-            filename_cap = need;
-            filename = xrealloc(filename, filename_cap);
-          }
-          memcpy(filename, st->str, (size_t)st->len);
-          filename[st->len] = '\0';
-          filename_len = (size_t)st->len;
-          tok = tok->next;
-        } else if (tok->kind == TK_LT) {
-          tok = tok->next;
-          while (tok->kind != TK_EOF && tok->kind != TK_GT) {
-            int tlen = 0;
-            const char *ts = token_text(tok, &tlen);
-            if (!ts) ts = "";
-            if (tlen < 0 || (size_t)tlen > SIZE_MAX - filename_len - 1) {
-              pp_error(DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
-            }
-            size_t need = filename_len + (size_t)tlen + 1;
-            if (need > filename_cap) {
-              while (filename_cap < need) {
-                if (filename_cap > SIZE_MAX / 2) {
-                  pp_error(DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
-                }
-                filename_cap *= 2;
-              }
-              filename = xrealloc(filename, filename_cap);
-            }
-            memcpy(filename + filename_len, ts, (size_t)tlen);
-            filename_len += (size_t)tlen;
-            filename[filename_len] = '\0';
-            tok = tok->next;
-          }
-          if (tok->kind == TK_EOF) {
-            pp_error(DIAG_ERR_PREPROCESS_GT_REQUIRED, NULL);
-          }
-          tok = tok->next; // '>' をスキップ
-        }
-        validate_include_path_or_die(filename);
-        char *normalized = normalize_include_path_or_die(filename);
-        free(filename);
-        filename = normalized;
-
-        if (pragma_once_seen(filename)) {
-          free(filename);
-          continue;
-        }
-
-        char *buf = load_include_with_allowlist_or_die(filename);
-        if (!buf) {
-          diag_error_id_t id = DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED;
-          if (include_last_errno == ENOENT) {
-            id = DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND;
-          } else if (include_last_errno == EACCES || include_last_errno == EPERM) {
-            id = DIAG_ERR_PREPROCESS_INCLUDE_PERMISSION_DENIED;
-          } else if (include_last_errno == ELOOP) {
-            id = DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP;
-          }
-          diag_emit_internalf(id, diag_message_for(id), filename);
-          free(filename);
-        }
-
-        const char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
-        const char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
-        token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
-
-        tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(filename, strlen(filename)));
-        token_t *tok2 = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
-        push_include_or_die(filename);
-        tok2 = preprocess_ctx(g_preprocess_tk_ctx, tok2);
-        pop_include();
-
-        tk_set_filename_ctx(g_preprocess_tk_ctx, saved_filename);
-        tk_set_user_input_ctx(g_preprocess_tk_ctx, saved_input);
-        tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
-
-        if (tok2->kind != TK_EOF) {
-          while (tok2->kind != TK_EOF) {
-            cur->next = copy_token(tok2);
-            cur = cur->next;
-            tok2 = tok2->next;
-          }
-        }
-        free(filename);
-        continue;
-      }
+      if (is_dir(tok, "include")) { tok = handle_include(tok, &cur); continue; }
 
       if (is_dir(tok, "ifdef"))  { tok = handle_ifdef_or_ifndef(tok, false); continue; }
       if (is_dir(tok, "ifndef")) { tok = handle_ifdef_or_ifndef(tok, true);  continue; }
