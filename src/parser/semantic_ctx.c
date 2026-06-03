@@ -84,6 +84,9 @@ struct typedef_name_t {
   // 不完全配列 `typedef int A[]` でも 1（sizeof_size は 0）。
   // 仮引数 `row_t *a` を `(*a)[N]` 相当として扱うため、判別が必要。
   int is_array;
+  // 配列の最も外側 `[N]` の N。多次元 `typedef int M[3][4]` で
+  // 仮引数 `M *p` の mid_stride を求めるのに使う (= sizeof_size / first_dim)。
+  int array_first_dim;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -539,7 +542,7 @@ static void assign_typedef_fields(typedef_name_t *t, token_kind_t base_kind, int
                                   tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                   char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                   int pointee_const_qualified, int pointee_volatile_qualified,
-                                  int is_unsigned, int is_array) {
+                                  int is_unsigned, int is_array, int array_first_dim) {
   t->base_kind = base_kind;
   t->elem_size = elem_size;
   t->fp_kind = fp_kind;
@@ -552,6 +555,7 @@ static void assign_typedef_fields(typedef_name_t *t, token_kind_t base_kind, int
   t->pointee_volatile_qualified = pointee_volatile_qualified;
   t->is_unsigned = is_unsigned;
   t->is_array = is_array;
+  t->array_first_dim = array_first_dim;
 }
 
 void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
@@ -570,12 +574,23 @@ void psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind,
                                     char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                     int pointee_const_qualified, int pointee_volatile_qualified,
                                     int is_unsigned, int is_array) {
+  psx_ctx_define_typedef_name_ex2(name, len, base_kind, elem_size, fp_kind, tag_kind,
+                                  tag_name, tag_len, is_pointer, sizeof_size,
+                                  pointee_const_qualified, pointee_volatile_qualified,
+                                  is_unsigned, is_array, 0);
+}
+
+void psx_ctx_define_typedef_name_ex2(char *name, int len, token_kind_t base_kind, int elem_size,
+                                     tk_float_kind_t fp_kind, token_kind_t tag_kind,
+                                     char *tag_name, int tag_len, int is_pointer, int sizeof_size,
+                                     int pointee_const_qualified, int pointee_volatile_qualified,
+                                     int is_unsigned, int is_array, int array_first_dim) {
   typedef_name_t *existing = find_typedef_in_current_scope(name, len);
   if (existing) {
     assign_typedef_fields(existing, base_kind, elem_size, fp_kind, tag_kind,
                           tag_name, tag_len, is_pointer, sizeof_size,
                           pointee_const_qualified, pointee_volatile_qualified, is_unsigned,
-                          is_array);
+                          is_array, array_first_dim);
     return;
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
@@ -585,7 +600,7 @@ void psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind,
   assign_typedef_fields(t, base_kind, elem_size, fp_kind, tag_kind,
                         tag_name, tag_len, is_pointer, sizeof_size,
                         pointee_const_qualified, pointee_volatile_qualified, is_unsigned,
-                        is_array);
+                        is_array, array_first_dim);
   t->scope_depth = tag_scope_depth;
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
@@ -617,6 +632,21 @@ bool psx_ctx_find_typedef_name_ex(char *name, int len, token_kind_t *out_base_ki
                                   int *out_pointee_const_qualified,
                                   int *out_pointee_volatile_qualified, int *out_is_unsigned,
                                   int *out_is_array, int *out_sizeof_size) {
+  return psx_ctx_find_typedef_name_ex2(name, len, out_base_kind, out_elem_size, out_fp_kind,
+                                       out_tag_kind, out_tag_name, out_tag_len, out_is_pointer,
+                                       out_pointee_const_qualified,
+                                       out_pointee_volatile_qualified, out_is_unsigned,
+                                       out_is_array, out_sizeof_size, NULL);
+}
+
+bool psx_ctx_find_typedef_name_ex2(char *name, int len, token_kind_t *out_base_kind,
+                                   int *out_elem_size, tk_float_kind_t *out_fp_kind,
+                                   token_kind_t *out_tag_kind, char **out_tag_name,
+                                   int *out_tag_len, int *out_is_pointer,
+                                   int *out_pointee_const_qualified,
+                                   int *out_pointee_volatile_qualified, int *out_is_unsigned,
+                                   int *out_is_array, int *out_sizeof_size,
+                                   int *out_array_first_dim) {
   typedef_name_t *t = find_typedef(name, len);
   if (!t) return false;
   if (out_base_kind) *out_base_kind = t->base_kind;
@@ -631,6 +661,7 @@ bool psx_ctx_find_typedef_name_ex(char *name, int len, token_kind_t *out_base_ki
   if (out_is_unsigned) *out_is_unsigned = t->is_unsigned;
   if (out_is_array) *out_is_array = t->is_array;
   if (out_sizeof_size) *out_sizeof_size = t->sizeof_size;
+  if (out_array_first_dim) *out_array_first_dim = t->array_first_dim;
   return true;
 }
 

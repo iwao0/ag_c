@@ -61,7 +61,8 @@ static void apply_toplevel_typedef_from_head(toplevel_declarator_head_t head);
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul);
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
-                                           int is_ptr, int typedef_sizeof, int td_is_array);
+                                           int is_ptr, int typedef_sizeof, int td_is_array,
+                                           int td_first_dim);
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
@@ -113,6 +114,9 @@ typedef struct {
   // 仮引数 `row_t *a` で pointer-to-array として扱うため。
   int typedef_is_array;
   int typedef_sizeof_size;
+  // 多次元 typedef array (`typedef int M[3][4]`) のとき M *p で
+  // mid_stride = sizeof_size / first_dim = 16 を計算するのに使う。
+  int typedef_array_first_dim;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -136,6 +140,9 @@ typedef struct {
   int arr_total;
   int is_array;
   int has_incomplete_array;
+  // 多次元 typedef array (`typedef int M[3][4]`) で M *p の mid_stride を
+  // 求めるため、最も外側 [N] の N を保持する。
+  int first_dim;
 } toplevel_array_suffix_t;
 static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr);
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr);
@@ -671,6 +678,8 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
   out.arr_total = (base_mul > 0) ? base_mul : 1;
   out.is_array = (base_mul > 1);
   out.has_incomplete_array = 0;
+  out.first_dim = 0;
+  int dim_count = 0;
   while (tk_consume('[')) {
     int has_size = 0;
     int n = psx_parse_array_size_optional_constexpr(&has_size);
@@ -678,7 +687,9 @@ static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul) {
       out.has_incomplete_array = 1;
     } else {
       out.arr_total *= n;
+      if (dim_count == 0) out.first_dim = n;
     }
+    dim_count++;
     out.is_array = 1;
   }
   return out;
@@ -779,17 +790,21 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   int typedef_sizeof = compute_toplevel_typedef_sizeof(is_ptr, arr);
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
-  register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array);
+  int td_first_dim = td_is_array ? arr.first_dim : 0;
+  register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array,
+                                 td_first_dim);
 }
 
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,
-                                           int is_ptr, int typedef_sizeof, int td_is_array) {
-  psx_ctx_define_typedef_name_ex(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
-                                 g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
-                                 g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
-                                 is_ptr, typedef_sizeof,
-                                 g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
-                                 is_toplevel_typedef_unsigned(stored_base_kind), td_is_array);
+                                           int is_ptr, int typedef_sizeof, int td_is_array,
+                                           int td_first_dim) {
+  psx_ctx_define_typedef_name_ex2(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
+                                  g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
+                                  g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
+                                  is_ptr, typedef_sizeof,
+                                  g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
+                                  is_toplevel_typedef_unsigned(stored_base_kind), td_is_array,
+                                  td_first_dim);
 }
 
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind) {
@@ -1319,6 +1334,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
       // 受けるとき、a[i] は pointee (= row_t) のサイズ単位で進む。
       // → outer_stride = typedef_sizeof_size (= N*elem)、elem_size は ds.elem_size のまま。
       var->outer_stride = ds.typedef_sizeof_size;
+      // 多次元 typedef array (`typedef int M[3][4]; M *p`) の場合、
+      // 2 段目サブスクリプト用に mid_stride = sizeof_size / first_dim を設定する。
+      if (ds.typedef_array_first_dim > 0) {
+        int second_dim_bytes = ds.typedef_sizeof_size / ds.typedef_array_first_dim;
+        if (second_dim_bytes > 0 && second_dim_bytes != ds.elem_size) {
+          var->mid_stride = second_dim_bytes;
+        }
+      }
     }
   } else {
     // スカラー型仮引数（既存の動作）
@@ -1383,12 +1406,14 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     int td_elem_size = 0;
     int td_is_array = 0;
     int td_sizeof_size = 0;
-    if (psx_ctx_find_typedef_name_ex(id->str, id->len, NULL, &td_elem_size, NULL,
-                                     NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-                                     &td_is_array, &td_sizeof_size)) {
+    int td_first_dim = 0;
+    if (psx_ctx_find_typedef_name_ex2(id->str, id->len, NULL, &td_elem_size, NULL,
+                                      NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                                      &td_is_array, &td_sizeof_size, &td_first_dim)) {
       if (td_elem_size > 0) out->elem_size = td_elem_size;
       out->typedef_is_array = td_is_array;
       out->typedef_sizeof_size = td_sizeof_size;
+      out->typedef_array_first_dim = td_first_dim;
     }
     set_curtok(curtok()->next);
   }

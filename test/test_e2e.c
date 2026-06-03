@@ -602,6 +602,7 @@ static const test_case_t test_cases[] = {
     {"array", "param_explicit_ptr_to_3d", CASE_INT_FILE, "test/fixtures/array/param_explicit_ptr_to_3d.c", 9, 0},
     {"array", "param_typedef_array_ptr", CASE_INT_FILE, "test/fixtures/array/param_typedef_array_ptr.c", 6, 0},
     {"array", "param_typedef_array_ptr_sum", CASE_INT_FILE, "test/fixtures/array/param_typedef_array_ptr_sum.c", 45, 0},
+    {"array", "param_typedef_2d_array_ptr", CASE_INT_FILE, "test/fixtures/array/param_typedef_2d_array_ptr.c", 23, 0},
     {"array", "sum", CASE_INT_FILE, "test/fixtures/array/sum.c", 6, 0},
     {"array", "const_expr_size", CASE_INT_FILE, "test/fixtures/array/const_expr_size.c", 3, 0},
     {"array", "multi_dim_decl", CASE_INT_FILE, "test/fixtures/array/multi_dim_decl.c", 7, 0},

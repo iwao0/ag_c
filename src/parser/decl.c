@@ -74,6 +74,10 @@ typedef struct {
   int arr_total;
   int is_array;
   int has_incomplete_array;
+  // 最初の `[N]` の N。複数次元 `typedef int M[3][4]` で
+  // 仮引数 `M *p` の mid_stride を求める際に使う (= sizeof_size / first_dim)。
+  // 不完全配列や 1 次元のみのときは 0。
+  int first_dim;
 } decl_array_suffix_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out);
@@ -302,6 +306,8 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   out.arr_total = (base_mul > 0) ? base_mul : 1;
   out.is_array = (base_mul > 0);
   out.has_incomplete_array = 0;
+  out.first_dim = 0;
+  int dim_count = 0;
   while (tk_consume('[')) {
     int has_size = 0;
     int n = parse_array_size_optional_constexpr_decl(&has_size);
@@ -309,7 +315,9 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
       out.has_incomplete_array = 1;
     } else {
       out.arr_total *= n;
+      if (dim_count == 0) out.first_dim = n;
     }
+    dim_count++;
     out.is_array = 1;
     tk_expect(']');
   }
@@ -1939,9 +1947,11 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   // `typedef int row_t[3]` のように配列型を typedef した場合は is_array=1 で記録する。
   // 不完全配列 `typedef int A[]` も is_array=1 (sizeof_size は 0)。
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
-  psx_ctx_define_typedef_name_ex(name->str, name->len, stored_base_kind, elem_size, fp_kind,
-                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                 td_pointee_const, td_pointee_volatile, td_is_unsigned, td_is_array);
+  int td_first_dim = td_is_array ? arr.first_dim : 0;
+  psx_ctx_define_typedef_name_ex2(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+                                  tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
+                                  td_pointee_const, td_pointee_volatile, td_is_unsigned,
+                                  td_is_array, td_first_dim);
 }
 
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
