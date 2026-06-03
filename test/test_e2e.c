@@ -625,36 +625,11 @@ static const test_case_t test_cases[] = {
     {"flex_array", "sizeof_flex", CASE_INT_FILE, "test/fixtures/flex_array/sizeof_flex.c", 4, 0},
     {"flex_array", "parse_ok", CASE_INT_FILE, "test/fixtures/flex_array/parse_ok.c", 0, 0},
     // #pragma pack
-    {"pragma_pack", "pack1_sizeof", CASE_INT,
-     "#pragma pack(push, 1)\n"
-     "struct S { char a; int b; };\n"
-     "#pragma pack(pop)\n"
-     "int main() { return (int)sizeof(struct S); }",
-     5, 0},
-    {"pragma_pack", "pack1_offset", CASE_INT,
-     "#pragma pack(push, 1)\n"
-     "struct S { char a; int b; };\n"
-     "#pragma pack(pop)\n"
-     "int main() { struct S s; s.a = 1; s.b = 41; return s.a + s.b; }",
-     42, 0},
-    {"pragma_pack", "pack2_sizeof", CASE_INT,
-     "#pragma pack(push, 2)\n"
-     "struct S { char a; int b; };\n"
-     "#pragma pack(pop)\n"
-     "int main() { return (int)sizeof(struct S); }",
-     6, 0},
-    {"pragma_pack", "pop_restores", CASE_INT,
-     "#pragma pack(push, 1)\n"
-     "#pragma pack(pop)\n"
-     "struct S { char a; int b; };\n"
-     "int main() { return (int)sizeof(struct S); }",
-     8, 0},
-    {"pragma_pack", "pack_n_no_push", CASE_INT,
-     "#pragma pack(1)\n"
-     "struct S { char a; int b; };\n"
-     "#pragma pack()\n"
-     "int main() { return (int)sizeof(struct S); }",
-     5, 0},
+    {"pragma_pack", "pack1_sizeof", CASE_INT_FILE, "test/fixtures/pragma_pack/pack1_sizeof.c", 5, 0},
+    {"pragma_pack", "pack1_offset", CASE_INT_FILE, "test/fixtures/pragma_pack/pack1_offset.c", 42, 0},
+    {"pragma_pack", "pack2_sizeof", CASE_INT_FILE, "test/fixtures/pragma_pack/pack2_sizeof.c", 6, 0},
+    {"pragma_pack", "pop_restores", CASE_INT_FILE, "test/fixtures/pragma_pack/pop_restores.c", 8, 0},
+    {"pragma_pack", "pack_n_no_push", CASE_INT_FILE, "test/fixtures/pragma_pack/pack_n_no_push.c", 5, 0},
     // 標準ヘッダ
     {"stdheader", "stdint_int32", CASE_INT, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }", 42, 0},
     {"stdheader", "stdint_uint8", CASE_INT, "#include <stdint.h>\nint main() { uint8_t x = 200; return (int)x; }", 200, 0},
@@ -690,192 +665,58 @@ static const test_case_t test_cases[] = {
     {"stdheader", "time_include", CASE_INT, "#include <time.h>\nint main() { time_t t = 0; return 42; }", 42, 0},
     {"stdheader", "setjmp_include", CASE_INT, "#include <setjmp.h>\nint main() { return 42; }", 42, 0},
     // stdarg
-    {"stdarg", "va_arg_int", CASE_INT,
-     "#include <stdarg.h>\n"
-     "int my_sum(int n, ...) {\n"
-     "  va_list ap; va_start(ap, n);\n"
-     "  int s = 0; int i;\n"
-     "  for (i = 0; i < n; i++) { s += va_arg(ap, int); }\n"
-     "  va_end(ap); return s;\n"
-     "}\n"
-     "int main() { return my_sum(3, 10, 20, 12); }",
-     42, 0},
+    {"stdarg", "va_arg_int", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_int.c", 42, 0},
 
     // VLA (Variable Length Array)
-    {"vla", "basic_elem", CASE_INT,
-     "int main() { int n = 3; int a[n]; a[0] = 10; a[1] = 20; a[2] = 12; return a[0] + a[1] + a[2]; }",
-     42, 0},
-    {"vla", "loop_fill", CASE_INT,
-     "int main() { int n = 5; int a[n]; int i; for (i = 0; i < n; i++) a[i] = i; return a[0] + a[1] + a[2] + a[3] + a[4]; }",
-     10, 0},
-    {"vla", "param_size", CASE_INT,
-     "int sum(int n) { int a[n]; int i; for (i = 0; i < n; i++) a[i] = i + 1; int s = 0; for (i = 0; i < n; i++) s += a[i]; return s; }\n"
-     "int main() { return sum(4); }",
-     10, 0},
-    {"vla", "sizeof_vla", CASE_INT,
-     "int main() { int n = 3; int a[n]; return (int)sizeof(a); }",
-     12, 0},
+    {"vla", "basic_elem", CASE_INT_FILE, "test/fixtures/vla/basic_elem.c", 42, 0},
+    {"vla", "loop_fill", CASE_INT_FILE, "test/fixtures/vla/loop_fill.c", 10, 0},
+    {"vla", "param_size", CASE_INT_FILE, "test/fixtures/vla/param_size.c", 10, 0},
+    {"vla", "sizeof_vla", CASE_INT_FILE, "test/fixtures/vla/sizeof_vla.c", 12, 0},
     // 構造体引数渡し (ARM64 ABI)
-    {"struct_arg", "small_sum", CASE_INT,
-     "struct Point { int x; int y; };"
-     "int sum(struct Point p) { return p.x + p.y; }"
-     "int main() { struct Point pt = {3, 4}; return sum(pt); }",
-     7, 0},
-    {"struct_arg", "small_member", CASE_INT,
-     "struct Point { int x; int y; };"
-     "int get_y(struct Point p) { return p.y; }"
-     "int main() { struct Point pt = {10, 42}; return get_y(pt); }",
-     42, 0},
-    {"struct_arg", "mid_sum", CASE_INT,
-     "struct Mid { int a; int b; int c; };"
-     "int sum3(struct Mid p) { return p.a + p.b + p.c; }"
-     "int main() { struct Mid m = {10, 20, 12}; return sum3(m); }",
-     42, 0},
-    {"struct_arg", "large_sum", CASE_INT,
-     "struct Big { int a; int b; int c; int d; int e; };"
-     "int sum5(struct Big p) { return p.a + p.b + p.c + p.d + p.e; }"
-     "int main() { struct Big b = {1, 2, 3, 4, 5}; return sum5(b); }",
-     15, 0},
+    {"struct_arg", "small_sum", CASE_INT_FILE, "test/fixtures/struct_arg/small_sum.c", 7, 0},
+    {"struct_arg", "small_member", CASE_INT_FILE, "test/fixtures/struct_arg/small_member.c", 42, 0},
+    {"struct_arg", "mid_sum", CASE_INT_FILE, "test/fixtures/struct_arg/mid_sum.c", 42, 0},
+    {"struct_arg", "large_sum", CASE_INT_FILE, "test/fixtures/struct_arg/large_sum.c", 15, 0},
     // struct return value (≤8B)
-    {"struct_ret", "make_and_sum", CASE_INT,
-     "struct Point { int x; int y; };"
-     "struct Point make_point(int x, int y) { struct Point p = {x, y}; return p; }"
-     "int main() { struct Point r = make_point(10, 32); return r.x + r.y; }",
-     42, 0},
-    {"struct_ret", "return_member", CASE_INT,
-     "struct Pair { int a; int b; };"
-     "struct Pair swap(int a, int b) { struct Pair p = {b, a}; return p; }"
-     "int main() { struct Pair r = swap(7, 35); return r.a + r.b; }",
-     42, 0},
-    {"struct_ret", "chain_call", CASE_INT,
-     "struct Val { int v; };"
-     "struct Val make_val(int n) { struct Val v = {n}; return v; }"
-     "int get_v(struct Val p) { return p.v; }"
-     "int main() { return get_v(make_val(42)); }",
-     42, 0},
+    {"struct_ret", "make_and_sum", CASE_INT_FILE, "test/fixtures/struct_ret/make_and_sum.c", 42, 0},
+    {"struct_ret", "return_member", CASE_INT_FILE, "test/fixtures/struct_ret/return_member.c", 42, 0},
+    {"struct_ret", "chain_call", CASE_INT_FILE, "test/fixtures/struct_ret/chain_call.c", 42, 0},
     // struct return value (9-16B: x0/x1 pair)
-    {"struct_ret", "ret_12b_sum", CASE_INT,
-     "struct Triple { int a; int b; int c; };"
-     "struct Triple make_triple(int x, int y, int z) { struct Triple t = {x, y, z}; return t; }"
-     "int main() { struct Triple r = make_triple(10, 20, 12); return r.a + r.b + r.c; }",
-     42, 0},
-    {"struct_ret", "ret_16b_sum", CASE_INT,
-     "struct Quad { int a; int b; int c; int d; };"
-     "struct Quad make_quad(int a, int b, int c, int d) { struct Quad q = {a, b, c, d}; return q; }"
-     "int main() { struct Quad r = make_quad(1, 2, 3, 36); return r.a + r.b + r.c + r.d; }",
-     42, 0},
-    {"struct_ret", "ret_12b_member_c", CASE_INT,
-     "struct Triple { int a; int b; int c; };"
-     "struct Triple make(int x) { struct Triple t = {x, x+1, x+2}; return t; }"
-     "int main() { struct Triple r = make(10); return r.c; }",
-     12, 0},
+    {"struct_ret", "ret_12b_sum", CASE_INT_FILE, "test/fixtures/struct_ret/ret_12b_sum.c", 42, 0},
+    {"struct_ret", "ret_16b_sum", CASE_INT_FILE, "test/fixtures/struct_ret/ret_16b_sum.c", 42, 0},
+    {"struct_ret", "ret_12b_member_c", CASE_INT_FILE, "test/fixtures/struct_ret/ret_12b_member_c.c", 12, 0},
     // struct return value (>16B: indirect return via x8)
-    {"struct_ret", "ret_20b_indirect", CASE_INT,
-     "struct Big { int a; int b; int c; int d; int e; };"
-     "struct Big make_big(int v) { struct Big b = {v, v+1, v+2, v+3, v+4}; return b; }"
-     "int main() { struct Big r = make_big(5); return r.a + r.b + r.c + r.d + r.e; }",
-     35, 0},
-    {"struct_ret", "ret_24b_member_f", CASE_INT,
-     "struct S6 { int a; int b; int c; int d; int e; int f; };"
-     "struct S6 make6(int x) { struct S6 s = {x, x+1, x+2, x+3, x+4, x+5}; return s; }"
-     "int main() { struct S6 r = make6(1); return r.f; }",
-     6, 0},
-    {"struct_ret", "ret_40b_sum", CASE_INT,
-     "struct Big10 { int a; int b; int c; int d; int e; int f; int g; int h; int i; int j; };"
-     "struct Big10 make10() { struct Big10 s = {1,2,3,4,5,6,7,8,9,10}; return s; }"
-     "int main() { struct Big10 r = make10(); return r.a+r.b+r.c+r.d+r.e+r.f+r.g+r.h+r.i+r.j; }",
-     55, 0},
+    {"struct_ret", "ret_20b_indirect", CASE_INT_FILE, "test/fixtures/struct_ret/ret_20b_indirect.c", 35, 0},
+    {"struct_ret", "ret_24b_member_f", CASE_INT_FILE, "test/fixtures/struct_ret/ret_24b_member_f.c", 6, 0},
+    {"struct_ret", "ret_40b_sum", CASE_INT_FILE, "test/fixtures/struct_ret/ret_40b_sum.c", 55, 0},
     // __func__ 定義済み識別子
-    {"func_name", "first_char_main", CASE_INT,
-     "int main() { return (int)__func__[0]; }",
-     109, 0},  // 'm' == 109
-    {"func_name", "first_char_helper", CASE_INT,
-     "int helper() { return (int)__func__[0]; }"
-     "int main() { return helper(); }",
-     104, 0},  // 'h' == 104
-    {"func_name", "each_func_distinct", CASE_INT,
-     "int fa() { return (int)__func__[1]; }"  // __func__[1]=='a'==97
-     "int fb() { return (int)__func__[1]; }"  // __func__[1]=='b'==98
-     "int main() { return fb() - fa() + 41; }",  // (98-97)+41 == 42
-     42, 0},
+    {"func_name", "first_char_main", CASE_INT_FILE, "test/fixtures/func_name/first_char_main.c", 109, 0},
+    {"func_name", "first_char_helper", CASE_INT_FILE, "test/fixtures/func_name/first_char_helper.c", 104, 0},
+    {"func_name", "each_func_distinct", CASE_INT_FILE, "test/fixtures/func_name/each_func_distinct.c", 42, 0},
     // 2D VLA: constant inner dimension
-    {"vla_2d", "const_inner_read", CASE_INT,
-     "int main() {"
-     "  int n = 3; int a[n][4];"
-     "  a[0][0]=1; a[0][1]=2; a[1][0]=10; a[2][3]=100;"
-     "  return a[0][0]+a[0][1]+a[1][0]+a[2][3];"   // 1+2+10+100=113 → mod256=113
-     "}", 113, 0},
-    {"vla_2d", "const_inner_loop", CASE_INT,
-     "int main() {"
-     "  int n = 2; int sum = 0; int a[n][3];"
-     "  int i; for (i=0;i<n;i++) { int j; for(j=0;j<3;j++) a[i][j]=i*3+j; }"
-     "  for (i=0;i<n;i++) { int j; for(j=0;j<3;j++) sum+=a[i][j]; }"
-     "  return sum;"   // 0+1+2+3+4+5=15
-     "}", 15, 0},
+    {"vla_2d", "const_inner_read", CASE_INT_FILE, "test/fixtures/vla_2d/const_inner_read.c", 113, 0},
+    {"vla_2d", "const_inner_loop", CASE_INT_FILE, "test/fixtures/vla_2d/const_inner_loop.c", 15, 0},
     // 2D VLA: runtime inner dimension
-    {"vla_2d", "runtime_inner_read", CASE_INT,
-     "int main() {"
-     "  int n = 2; int m = 3; int a[n][m];"
-     "  a[0][0]=10; a[0][2]=5; a[1][1]=20; a[1][2]=7;"
-     "  return a[0][0]+a[0][2]+a[1][1]+a[1][2];"   // 10+5+20+7=42
-     "}", 42, 0},
-    {"vla_2d", "runtime_inner_loop", CASE_INT,
-     "int main() {"
-     "  int n = 3; int m = 4; int sum = 0; int a[n][m];"
-     "  int i; for(i=0;i<n;i++) { int j; for(j=0;j<m;j++) a[i][j]=i*m+j; }"
-     "  for(i=0;i<n;i++) { int j; for(j=0;j<m;j++) sum+=a[i][j]; }"
-     "  return sum;"   // 0..11 sum=66
-     "}", 66, 0},
+    {"vla_2d", "runtime_inner_read", CASE_INT_FILE, "test/fixtures/vla_2d/runtime_inner_read.c", 42, 0},
+    {"vla_2d", "runtime_inner_loop", CASE_INT_FILE, "test/fixtures/vla_2d/runtime_inner_loop.c", 66, 0},
     // 仮引数 VLA 宣言子: int a[n] → int *a (C11 6.7.6.3p7)
-    {"vla_param", "basic_access", CASE_INT,
-     "int sum_arr(int n, int a[n]) { int s=0; int i; for(i=0;i<n;i++) s+=a[i]; return s; }"
-     "int main() { int n=5; int a[n]; int i; for(i=0;i<n;i++) a[i]=i+1; return sum_arr(n,a); }",
-     15, 0},  // 1+2+3+4+5=15
-    {"vla_param", "sizeof_is_ptr", CASE_INT,
-     "int get_size(int n, int a[n]) { return (int)sizeof(a); }"
-     "int main() { int n=10; int a[n]; return get_size(n,a); }",
-     8, 0},  // sizeof(pointer)==8
-    {"vla_param", "write_through", CASE_INT,
-     "void fill(int n, int a[n], int v) { int i; for(i=0;i<n;i++) a[i]=v; }"
-     "int main() { int n=3; int a[n]; fill(n,a,14); return a[0]+a[1]+a[2]; }",
-     42, 0},  // 14*3=42
+    {"vla_param", "basic_access", CASE_INT_FILE, "test/fixtures/vla_param/basic_access.c", 15, 0},
+    {"vla_param", "sizeof_is_ptr", CASE_INT_FILE, "test/fixtures/vla_param/sizeof_is_ptr.c", 8, 0},
+    {"vla_param", "write_through", CASE_INT_FILE, "test/fixtures/vla_param/write_through.c", 42, 0},
     // inline 指定子: 単一翻訳単位では通常関数と同様にコード生成 (C11 6.7.4)
-    {"inline_func", "basic_inline", CASE_INT,
-     "inline int add(int a, int b) { return a + b; }"
-     "int main() { return add(20, 22); }",
-     42, 0},
-    {"inline_func", "static_inline", CASE_INT,
-     "static inline int mul(int a, int b) { return a * b; }"
-     "int main() { return mul(6, 7); }",
-     42, 0},
-    {"inline_func", "extern_inline", CASE_INT,
-     "extern inline int sub(int a, int b) { return a - b; }"
-     "int main() { return sub(50, 8); }",
-     42, 0},
+    {"inline_func", "basic_inline", CASE_INT_FILE, "test/fixtures/inline_func/basic_inline.c", 42, 0},
+    {"inline_func", "static_inline", CASE_INT_FILE, "test/fixtures/inline_func/static_inline.c", 42, 0},
+    {"inline_func", "extern_inline", CASE_INT_FILE, "test/fixtures/inline_func/extern_inline.c", 42, 0},
     // グローバル変数: 暫定定義
-    {"global_var", "tentative_rw", CASE_INT,
-     "int g; int main() { g = 42; return g; }",
-     42, 0},
-    {"global_var", "tentative_multi_func", CASE_INT,
-     "int g; int set_g(int v) { g = v; return 0; } int main() { set_g(42); return g; }",
-     42, 0},
+    {"global_var", "tentative_rw", CASE_INT_FILE, "test/fixtures/global_var/tentative_rw.c", 42, 0},
+    {"global_var", "tentative_multi_func", CASE_INT_FILE, "test/fixtures/global_var/tentative_multi_func.c", 42, 0},
     // グローバル変数: 初期化済み定義
-    {"global_var", "initialized", CASE_INT,
-     "int g = 42; int main() { return g; }",
-     42, 0},
-    {"global_var", "initialized_modified", CASE_INT,
-     "int g = 10; int main() { g = g + 32; return g; }",
-     42, 0},
+    {"global_var", "initialized", CASE_INT_FILE, "test/fixtures/global_var/initialized.c", 42, 0},
+    {"global_var", "initialized_modified", CASE_INT_FILE, "test/fixtures/global_var/initialized_modified.c", 42, 0},
     // ローカルスコープのextern宣言
-    {"global_var", "local_extern", CASE_INT,
-     "int g = 42; int main() { extern int g; return g; }",
-     42, 0},
-    {"global_var", "array_rw", CASE_INT,
-     "int g[3]; int main() { g[0]=10; g[1]=20; g[2]=30; return g[1]; }",
-     20, 0},
-    {"global_var", "array_sum", CASE_INT,
-     "int g[3]; int main() { g[0]=1; g[1]=2; g[2]=3; return g[0]+g[1]+g[2]; }",
-     6, 0},
+    {"global_var", "local_extern", CASE_INT_FILE, "test/fixtures/global_var/local_extern.c", 42, 0},
+    {"global_var", "array_rw", CASE_INT_FILE, "test/fixtures/global_var/array_rw.c", 20, 0},
+    {"global_var", "array_sum", CASE_INT_FILE, "test/fixtures/global_var/array_sum.c", 6, 0},
     // 意地悪テスト: do-while
     {"evil", "dowhile_break", CASE_INT,
      "int main() { int x = 0; do { x = x + 1; if (x == 3) break; } while (x < 10); return x; }",
