@@ -274,6 +274,8 @@ static node_t *stmt_internal(void) {
     node->body = calloc(cap, sizeof(node_t*));
     int prev_terminates = 0;
     while (!tk_consume('}')) {
+      // #pragma pack マーカーはブロック内でも透過的に処理（AST には載せない）。
+      if (psx_try_consume_pragma_pack_marker()) continue;
       if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
           !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
         diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),

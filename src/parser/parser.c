@@ -434,6 +434,34 @@ static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind) {
   if (type_kind != TK_EOF) psx_ctx_get_type_info(type_kind, NULL, &g_toplevel_decl_elem_size);
 }
 
+// 現在のトークンが #pragma pack マーカーなら対応する関数を呼んで消費し true を返す。
+// プリプロセッサはマーカーを出現位置に挿入するだけなので、トップレベルだけでなく
+// 関数本体のブロック内でも遭遇しうる。透過的に処理する。
+bool psx_try_consume_pragma_pack_marker(void) {
+  token_kind_t k = curtok()->kind;
+  if (k == TK_PRAGMA_PACK_PUSH) {
+    pragma_pack_push((int)((token_num_int_t *)curtok())->val);
+    set_curtok(curtok()->next);
+    return true;
+  }
+  if (k == TK_PRAGMA_PACK_POP) {
+    pragma_pack_pop();
+    set_curtok(curtok()->next);
+    return true;
+  }
+  if (k == TK_PRAGMA_PACK_SET) {
+    pragma_pack_set((int)((token_num_int_t *)curtok())->val);
+    set_curtok(curtok()->next);
+    return true;
+  }
+  if (k == TK_PRAGMA_PACK_RESET) {
+    pragma_pack_reset();
+    set_curtok(curtok()->next);
+    return true;
+  }
+  return false;
+}
+
 // program = funcdef*
 node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
   if (tk_ctx) {
@@ -444,26 +472,7 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
   while (!tk_at_eof()) {
-    if (curtok()->kind == TK_PRAGMA_PACK_PUSH) {
-      pragma_pack_push((int)((token_num_int_t *)curtok())->val);
-      set_curtok(curtok()->next);
-      continue;
-    }
-    if (curtok()->kind == TK_PRAGMA_PACK_POP) {
-      pragma_pack_pop();
-      set_curtok(curtok()->next);
-      continue;
-    }
-    if (curtok()->kind == TK_PRAGMA_PACK_SET) {
-      pragma_pack_set((int)((token_num_int_t *)curtok())->val);
-      set_curtok(curtok()->next);
-      continue;
-    }
-    if (curtok()->kind == TK_PRAGMA_PACK_RESET) {
-      pragma_pack_reset();
-      set_curtok(curtok()->next);
-      continue;
-    }
+    if (psx_try_consume_pragma_pack_marker()) continue;
     if (psx_ctx_is_tag_keyword(curtok()->kind)) {
       if (!is_tag_return_function_signature(curtok())) {
         parse_toplevel_tag_decl();
@@ -1593,6 +1602,8 @@ static node_t *funcdef(void) {
   body->body = calloc(body_cap, sizeof(node_t*));
   int prev_terminates = 0;
   while (!tk_consume('}')) {
+    // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
+    if (psx_try_consume_pragma_pack_marker()) continue;
     if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
         !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
       diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
