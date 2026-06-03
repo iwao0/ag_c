@@ -2038,23 +2038,33 @@ static node_t *build_unary_deref_node(node_t *operand) {
     node->base_deref_size = (short)bds;
     node->deref_size = (new_pql >= 2) ? 8 : (short)bds;
   }
-  // 仮引数 typedef 配列ポインタ (`typedef int M[2][3][4]; void f(M *p)`):
-  // p (ND_LVAR) は outer/mid/extra strides を持つので、`*p` の結果に伝播する。
-  // ag_c では「`*p` の deref_size」が「次のサブスクリプトのステップ」を表すので、
-  // outer_stride を deref_size、mid_stride を inner_deref_size、以降を順次格納する。
+  // 仮引数 typedef 配列ポインタ (`typedef int M[D0][D1]...; void f(M *p)`):
+  // p (ND_LVAR) は M のサイズと strides を保持しているが、
+  //   outer_stride = sizeof(M) (= p[i] のステップ、つまり M 全体)
+  //   mid_stride   = M の 1 段目のステップ
+  //   extra_strides = それ以降の段
+  // ということに注意。`*p` の結果は M 自身であり、subscript するときの
+  // ステップは「M の 1 段目」(= p->mid_stride) になる。よって 1 段スライドして
+  // 継承する: deref_size ← mid_stride、inner_deref_size ← extra_strides[0]、…
   if (operand && operand->kind == ND_LVAR) {
     lvar_t *src = psx_decl_find_lvar_by_offset(((node_lvar_t *)operand)->offset);
-    if (src && src->outer_stride > 0) {
-      node->deref_size = (short)src->outer_stride;
-      if (src->mid_stride > 0) {
-        node->inner_deref_size = (short)src->mid_stride;
-        if (src->extra_strides_count > 0) {
-          node->next_deref_size = (short)src->extra_strides[0];
-          for (int i = 1; i < src->extra_strides_count && (i - 1) < 5; i++) {
-            node->extra_strides[i - 1] = src->extra_strides[i];
+    if (src && src->outer_stride > 0 && src->mid_stride > 0) {
+      // 2D 以上 (`*p` の結果が配列)
+      node->deref_size = (short)src->mid_stride;
+      if (src->extra_strides_count > 0) {
+        node->inner_deref_size = (short)src->extra_strides[0];
+        if (src->extra_strides_count > 1) {
+          node->next_deref_size = (short)src->extra_strides[1];
+          for (int i = 2; i < src->extra_strides_count && (i - 2) < 5; i++) {
+            node->extra_strides[i - 2] = src->extra_strides[i];
           }
-          node->extra_strides[src->extra_strides_count - 1] = src->elem_size;
-          node->extra_strides_count = src->extra_strides_count;
+          // 末尾要素 stride = elem_size
+          if (src->extra_strides_count - 2 < 5) {
+            node->extra_strides[src->extra_strides_count - 2] = src->elem_size;
+            node->extra_strides_count = (unsigned char)(src->extra_strides_count - 1);
+          } else {
+            node->extra_strides_count = (unsigned char)(src->extra_strides_count - 2);
+          }
         } else {
           node->next_deref_size = (short)src->elem_size;
         }

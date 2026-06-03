@@ -1359,32 +1359,35 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
           var->mid_stride = second_dim_bytes;
         }
       }
-      // 3+ 次元 typedef array (`typedef int M[2][3][4]; M *p`):
-      // (*p)[i][j][k] のため、ローカル変数の outer/mid/extra strides と同等の
-      // 設定を行う。dims[0] は (*p) の最外側次元になる。
+      // 3+ 次元 typedef array (`typedef int M[2][3][4]; M *p`) では、
+      // (*p)[i][j][k] の各サブスクリプト stride を全部記録する。
+      // 配置:
+      //   var->outer_stride       = sizeof(M) = D0*D1*..*elem  (p[i] のステップ)
+      //   var->mid_stride         = D1*..*elem                 ((*p)[j] のステップ)
+      //   var->extra_strides[0]   = D2*..*elem                 ((*p)[j][k] のステップ)
+      //   var->extra_strides[1]   = D3*..*elem
+      //   ...
+      //   var->extra_strides[N-2] = elem                       (最深 stride)
+      // build_unary_deref_node が *p で 1 段スライドして deref/inner/next/extra
+      // を順に復元する。
       if (ds.typedef_array_dim_count >= 3) {
-        // outer / mid を dims から再計算する (上の sizeof_size 経由とほぼ等価)。
-        int outer_mul = 1;
-        for (int i = 1; i < ds.typedef_array_dim_count; i++) {
-          if (ds.typedef_array_dims[i] > 0) outer_mul *= ds.typedef_array_dims[i];
-        }
-        if (outer_mul > 0) var->outer_stride = outer_mul * ds.elem_size;
+        // outer = sizeof(M) は既に上で typedef_sizeof_size から設定済み (= 正しい)。
+        // mid = D1 以降の積 * elem
         int mid_mul = 1;
-        for (int i = 2; i < ds.typedef_array_dim_count; i++) {
+        for (int i = 1; i < ds.typedef_array_dim_count; i++) {
           if (ds.typedef_array_dims[i] > 0) mid_mul *= ds.typedef_array_dims[i];
         }
         if (mid_mul > 0) var->mid_stride = mid_mul * ds.elem_size;
-        if (ds.typedef_array_dim_count >= 4) {
-          int idx_in_extras = 0;
-          for (int start = 3; start < ds.typedef_array_dim_count && idx_in_extras < 5; start++) {
-            int rest_mul = 1;
-            for (int j = start; j < ds.typedef_array_dim_count; j++) {
-              if (ds.typedef_array_dims[j] > 0) rest_mul *= ds.typedef_array_dims[j];
-            }
-            var->extra_strides[idx_in_extras++] = rest_mul * ds.elem_size;
+        // extra_strides[k] = D(k+2) 以降の積 * elem (k = 0..)、末尾は elem 単体
+        int idx_in_extras = 0;
+        for (int start = 2; start < ds.typedef_array_dim_count && idx_in_extras < 5; start++) {
+          int rest_mul = 1;
+          for (int j = start; j < ds.typedef_array_dim_count; j++) {
+            if (ds.typedef_array_dims[j] > 0) rest_mul *= ds.typedef_array_dims[j];
           }
-          var->extra_strides_count = (unsigned char)idx_in_extras;
+          var->extra_strides[idx_in_extras++] = rest_mul * ds.elem_size;
         }
+        var->extra_strides_count = (unsigned char)idx_in_extras;
       }
     }
   } else {

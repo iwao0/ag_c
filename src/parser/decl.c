@@ -1716,6 +1716,18 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         int trailing_dims[7] = {0};
         int trailing_count = 0;
         int trailing_mul = parse_decl_constexpr_array_suffix_product_n(trailing_dims, 7, &trailing_count);
+        // typedef が配列型のとき (`typedef int M[3][4]; M arr[2];`) は、
+        // ユーザーが書いた suffix `[2]` の後ろに typedef dims `[3][4]` を連結する。
+        // これにより arr は int[2][3][4] として扱われる。
+        if (!is_pointer && td_array_dim_count > 0) {
+          for (int di = 0; di < td_array_dim_count && trailing_count < 7; di++) {
+            int dim = td_array_dims[di];
+            if (dim > 0) {
+              trailing_dims[trailing_count++] = dim;
+              trailing_mul *= dim;
+            }
+          }
+        }
         int inner_dim_size = trailing_count >= 1 ? trailing_dims[0] : 0; // 内側次元の要素数（0: 1次元配列）
         if (size_inferred_from_init) {
           // 外側 `[]` を初期化子から推定する。trailing dims を消費した直後の

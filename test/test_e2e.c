@@ -452,6 +452,8 @@ static const test_case_t test_cases[] = {
     {"type_decl", "inline_array_addr_cast", CASE_INT_FILE, "test/fixtures/type_decl/inline_array_addr_cast.c", 99, 0},
     {"type_decl", "typedef_array_addr_cast", CASE_INT_FILE, "test/fixtures/type_decl/typedef_array_addr_cast.c", 99, 0},
     {"type_decl", "typedef_array_addr_func_arg", CASE_INT_FILE, "test/fixtures/type_decl/typedef_array_addr_func_arg.c", 123, 0},
+    {"type_decl", "typedef_array_user_suffix", CASE_INT_FILE, "test/fixtures/type_decl/typedef_array_user_suffix.c", 123, 0},
+    {"type_decl", "typedef_array_ptr_param_3d", CASE_INT_FILE, "test/fixtures/type_decl/typedef_array_ptr_param_3d.c", 123, 0},
     {"type_decl", "static_assert_stmt", CASE_INT_FILE, "test/fixtures/type_decl/static_assert_stmt.c", 7, 0},
     {"type_decl", "alignas_atomic_prefix", CASE_INT_FILE, "test/fixtures/type_decl/alignas_atomic_prefix.c", 7, 0},
     {"type_decl", "atomic_type_spec", CASE_INT_FILE, "test/fixtures/type_decl/atomic_type_spec.c", 5, 0},
