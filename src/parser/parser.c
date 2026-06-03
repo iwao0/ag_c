@@ -117,6 +117,8 @@ typedef struct {
   // 多次元 typedef array (`typedef int M[3][4]`) のとき M *p で
   // mid_stride = sizeof_size / first_dim = 16 を計算するのに使う。
   int typedef_array_first_dim;
+  // float/double 仮引数を ABI に従い d0..d7 で受け取るための種別。
+  tk_float_kind_t fp_kind;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -1349,11 +1351,21 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   }
   var->is_param = 1;
   var->is_initialized = 1;
+  // float/double 仮引数は ABI に従い d0..d7 で受け取るため fp_kind を保持。
+  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr) {
+    var->fp_kind = ds.fp_kind;
+  }
   // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
   // codegen がレジスタ数（1 or 2）を判断するため
   int abi_type_size = (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0)
                       ? ds.struct_size : 8;
-  node->args[(*nargs)++] = psx_node_new_lvar_typed(var->offset, abi_type_size);
+  node_t *param_node = psx_node_new_lvar_typed(var->offset, abi_type_size);
+  // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
+  // args[i] ノードにも fp_kind を残す。
+  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr) {
+    param_node->fp_kind = ds.fp_kind;
+  }
+  node->args[(*nargs)++] = param_node;
   return 0;
 }
 
@@ -1397,6 +1409,8 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
   if (param_type_kind != TK_EOF) {
     out->base_type_kind = param_type_kind;
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
+    if (param_type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (param_type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
   } else if (psx_ctx_is_typedef_name_token(curtok())) {
     out->saw_typedef_name = 1;
     // typedef 名の情報を仮引数解析に伝える。特に「配列型 typedef」が
@@ -1407,13 +1421,15 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     int td_is_array = 0;
     int td_sizeof_size = 0;
     int td_first_dim = 0;
-    if (psx_ctx_find_typedef_name_ex2(id->str, id->len, NULL, &td_elem_size, NULL,
+    tk_float_kind_t td_fp_kind = TK_FLOAT_KIND_NONE;
+    if (psx_ctx_find_typedef_name_ex2(id->str, id->len, NULL, &td_elem_size, &td_fp_kind,
                                       NULL, NULL, NULL, NULL, NULL, NULL, NULL,
                                       &td_is_array, &td_sizeof_size, &td_first_dim)) {
       if (td_elem_size > 0) out->elem_size = td_elem_size;
       out->typedef_is_array = td_is_array;
       out->typedef_sizeof_size = td_sizeof_size;
       out->typedef_array_first_dim = td_first_dim;
+      if (td_fp_kind != TK_FLOAT_KIND_NONE) out->fp_kind = td_fp_kind;
     }
     set_curtok(curtok()->next);
   }

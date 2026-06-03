@@ -841,18 +841,42 @@ static void emit_funcall_push_args(node_func_t *fn) {
 }
 
 // 積まれたソフトウェアスタックからレジスタへ逆順にポップ。
-// 2レジスタ引数は low→x_reg, high→x_{reg+1} の順で取り出す。
+// 整数引数は x_reg、float/double 引数は d_reg/s_reg と独立レジスタ集合に分ける
+// (ARM64 ABI)。2レジスタ引数は low→x_reg, high→x_{reg+1}。
 static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, int total_regs) {
-  int reg = total_regs;
-  for (int i = fn->nargs - 1; i >= 0; i--) {
-    reg -= arg_regs[i];
-    if (arg_regs[i] == 2) {
-      cg_emitf("  ldr x%d, [sp], #16\n", reg);
-      cg_emitf("  ldr x%d, [sp], #16\n", reg + 1);
+  // 各引数に「割り当てる整数 reg」「割り当てる FP reg」を先に決定する。
+  // ポップ順は逆だが、レジスタ番号は引数順 (左から右) に振る必要がある。
+  int *assigned_int_reg = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
+  int *assigned_fp_reg = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
+  int next_int = 0;
+  int next_fp = 0;
+  for (int i = 0; i < fn->nargs; i++) {
+    tk_float_kind_t afp = fn->args[i]->fp_kind;
+    if (afp != TK_FLOAT_KIND_NONE) {
+      assigned_int_reg[i] = -1;
+      assigned_fp_reg[i] = next_fp++;
     } else {
-      cg_emitf("  ldr x%d, [sp], #16\n", reg);
+      assigned_int_reg[i] = next_int;
+      assigned_fp_reg[i] = -1;
+      next_int += arg_regs[i];
     }
   }
+  for (int i = fn->nargs - 1; i >= 0; i--) {
+    tk_float_kind_t afp = fn->args[i]->fp_kind;
+    if (afp == TK_FLOAT_KIND_FLOAT) {
+      cg_emitf("  ldr s%d, [sp], #16\n", assigned_fp_reg[i]);
+    } else if (afp >= TK_FLOAT_KIND_DOUBLE) {
+      cg_emitf("  ldr d%d, [sp], #16\n", assigned_fp_reg[i]);
+    } else if (arg_regs[i] == 2) {
+      cg_emitf("  ldr x%d, [sp], #16\n", assigned_int_reg[i]);
+      cg_emitf("  ldr x%d, [sp], #16\n", assigned_int_reg[i] + 1);
+    } else {
+      cg_emitf("  ldr x%d, [sp], #16\n", assigned_int_reg[i]);
+    }
+  }
+  free(assigned_int_reg);
+  free(assigned_fp_reg);
+  (void)total_regs;
 }
 
 static void gen_expr_funcall(node_t *node) {
@@ -1489,10 +1513,24 @@ static void gen_stmt_return(node_t *node) {
 // type_size ≤ 8: 1 レジスタ (スカラ / ≤8B 構造体)
 // 可変長引数関数では消費しなかった残りの x{reg}..x7 を次のスロットに保存する。
 static void emit_param_save_to_frame(node_func_t *fn) {
-  int reg = 0;
+  int reg = 0;     // 整数引数レジスタ x0..x7 のカウンタ
+  int fp_reg = 0;  // 浮動小数引数レジスタ d0..d7 のカウンタ (ARM64 ABI で独立)
   for (int i = 0; i < fn->nargs; i++) {
     int abi_sz = as_lvar(fn->args[i])->mem.type_size;
     int frame_off = 16 + as_lvar(fn->args[i])->offset;
+    tk_float_kind_t pfp = fn->args[i]->fp_kind;
+    if (pfp == TK_FLOAT_KIND_FLOAT) {
+      // float 仮引数は s0..s7 で受け取り、フレームスロット (8 byte) の
+      // 下位 4 byte に保存。
+      cg_emitf("  str s%d, [x29, #%d]\n", fp_reg, frame_off);
+      fp_reg++;
+      continue;
+    }
+    if (pfp >= TK_FLOAT_KIND_DOUBLE) {
+      cg_emitf("  str d%d, [x29, #%d]\n", fp_reg, frame_off);
+      fp_reg++;
+      continue;
+    }
     if (abi_sz > 16) {
       cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
       reg++;
