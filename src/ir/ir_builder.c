@@ -20,6 +20,7 @@
 #include "ir_builder.h"
 #include "ir.h"
 #include "../parser/ast.h"
+#include "../parser/internal/decl.h"   /* lvar_t / psx_decl_find_lvar_by_offset */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,25 +59,29 @@ static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
   return -1;
 }
 
-/* LVAR ノードから「保存サイズ」「ロード値の IR 型」を決める。
- * type_size > 0 を信頼。ポインタ/8B 整数は IR_TY_PTR (8B 等価) として扱う。 */
+/* LVAR ノードから「フレーム上の確保サイズ」を決める。
+ * 配列の場合は lvar_t.size (= 配列全体)、スカラの場合は mem.type_size。
+ * ND_LVAR.mem.type_size は要素サイズしか持たないので、lvar_t を引いて補正する。 */
 static int lvar_size_from_node(node_lvar_t *lv) {
+  lvar_t *var = psx_decl_find_lvar_by_offset(lv->offset);
+  if (var && var->size > 0) return var->size;
   int sz = lv->mem.type_size;
-  if (sz <= 0) return 4; /* 防御的に int 既定 */
-  return sz;
+  return sz > 0 ? sz : 4;
 }
 
+/* スカラ LVAR の「ロード時の値の IR 型」。配列の場合は呼び出し側 (build_array
+ * lvar parsing) で別経路を通るので、ここではスカラを想定。 */
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
-  int sz = lvar_size_from_node(lv);
-  if (sz >= 8) return IR_TY_PTR;
-  if (sz == 4) return IR_TY_I32;
-  if (sz == 2) return IR_TY_I16;
+  int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
+  if (elem >= 8) return IR_TY_PTR;
+  if (elem == 4) return IR_TY_I32;
+  if (elem == 2) return IR_TY_I16;
   return IR_TY_I8;
 }
 
 static int lvar_align(node_lvar_t *lv) {
-  int sz = lvar_size_from_node(lv);
-  return (sz >= 8) ? 8 : (sz >= 4 ? 4 : (sz >= 2 ? 2 : 1));
+  int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
+  return (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
 }
 
 static int alloca_for_lvar(ir_build_ctx_t *ctx, int offset, int size, int align) {

@@ -130,6 +130,18 @@ int main(void) {
   run_ir_case("ptr_via_pointer",
               "int read_int(int *p) { return *p; } int main(void) { int x = 99; return read_int(&x); }\n", 99);
 
+  /* Phase 4c: 配列 */
+  run_ir_case("arr_1d",
+              "int main(void) { int arr[3]; arr[0] = 10; arr[1] = 20; arr[2] = 12; return arr[0] + arr[1] + arr[2]; }\n", 42);
+  run_ir_case("arr_2d",
+              "int main(void) { int m[2][3]; int i, j; for (i = 0; i < 2; i = i + 1) for (j = 0; j < 3; j = j + 1) m[i][j] = i * 10 + j; return m[1][2]; }\n", 12);
+  run_ir_case("arr_3d_sum",
+              "int main(void) { int t[2][2][2]; int i, j, k; int s = 0; for (i = 0; i < 2; i = i + 1) for (j = 0; j < 2; j = j + 1) for (k = 0; k < 2; k = k + 1) { t[i][j][k] = i * 100 + j * 10 + k; s = s + t[i][j][k]; } return s; }\n", 188);
+  run_ir_case("arr_as_ptr",
+              "int sum(int *p, int n) { int s = 0; int i; for (i = 0; i < n; i = i + 1) s = s + p[i]; return s; } int main(void) { int arr[5]; arr[0] = 1; arr[1] = 2; arr[2] = 3; arr[3] = 4; arr[4] = 5; return sum(arr, 5); }\n", 15);
+  run_ir_case("arr_bubble",
+              "int main(void) { int a[5]; a[0] = 5; a[1] = 3; a[2] = 1; a[3] = 4; a[4] = 2; int i, j; for (i = 0; i < 4; i = i + 1) { for (j = 0; j < 4 - i; j = j + 1) { if (a[j] > a[j+1]) { int t = a[j]; a[j] = a[j+1]; a[j+1] = t; } } } return a[0] * 10000 + a[1] * 1000 + a[2] * 100 + a[3] * 10 + a[4]; }\n", 57);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;
