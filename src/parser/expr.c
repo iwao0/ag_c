@@ -2093,6 +2093,15 @@ static node_t *build_unary_addr_node(node_t *operand) {
   if (operand && operand->kind == ND_COMMA && operand->rhs) {
     return psx_node_new_binary(ND_COMMA, operand->lhs, wrap_as_addr(operand->rhs));
   }
+  // C 仕様: 配列名 `arr` は (sizeof/&/レジスタ変数を除く) 文脈ではポインタ崩壊する。
+  // `&arr` ではアドレス値はそのまま (型だけ `int(*)[N]` に変わる)。
+  // ag_c では配列ローカル変数の参照は build_array_lvar_addr_node により
+  // ND_ADDR(ND_LVAR) として表現されているため、`&arr` でさらに ND_ADDR でラップすると
+  // codegen の `gen_lval` が ND_ADDR を受理せず E4002 になる。
+  // 既に ND_ADDR で表現されているアドレス値はそのまま返す。
+  if (operand && operand->kind == ND_ADDR) {
+    return operand;
+  }
   return wrap_as_addr(operand);
 }
 
