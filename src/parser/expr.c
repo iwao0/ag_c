@@ -2374,6 +2374,197 @@ static node_t *parse_string_literal_sequence(void) {
   return (node_t *)make_string_lit_node(merged, (int)total_len, merged_width, merged_prefix_kind);
 }
 
+// 名前が宣言済みでない (var==NULL) 識別子の直後に '(' が来ている場合の通常関数呼び出し。
+// 戻り値型 (ret_struct_size 等) は psx_ctx から引く。
+static node_t *build_unqualified_call(token_ident_t *tok) {
+  set_curtok(curtok()->next); // skip '('
+  node_func_t *node = arena_alloc(sizeof(node_func_t));
+  node->base.kind = ND_FUNCALL;
+  node->callee = NULL;
+  node->funcname = tok->str;
+  node->funcname_len = tok->len;
+  int nargs = 0;
+  int arg_cap = 16;
+  node->args = calloc(arg_cap, sizeof(node_t *));
+  if (curtok()->kind == TK_RPAREN) {
+    set_curtok(curtok()->next);
+  } else {
+    node->args[nargs++] = assign();
+    while (curtok()->kind == TK_COMMA) {
+      set_curtok(curtok()->next);
+      if (nargs >= arg_cap) {
+        arg_cap = pda_next_cap(arg_cap, nargs + 1);
+        node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
+      }
+      node->args[nargs++] = assign();
+    }
+    tk_expect(')');
+  }
+  node->nargs = nargs;
+  node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(tok->str, tok->len);
+  return (node_t *)node;
+}
+
+// 関数名識別子（呼び出しじゃなく値として使われる場合）の ND_FUNCREF ノード。
+static node_t *build_funcref_node(token_ident_t *tok) {
+  node_funcref_t *fr = arena_alloc(sizeof(node_funcref_t));
+  fr->base.kind = ND_FUNCREF;
+  fr->funcname = tok->str;
+  fr->funcname_len = tok->len;
+  return (node_t *)fr;
+}
+
+// グローバル変数表から名前を引く。見つからなければ NULL。
+// 配列のときは ND_ADDR でラップして返す。
+static node_t *try_build_global_var_node(token_ident_t *tok) {
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    if (gv->name_len != tok->len || memcmp(gv->name, tok->str, (size_t)tok->len) != 0) continue;
+    if (gv->is_array) {
+      node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
+      base->mem.base.kind = ND_GVAR;
+      base->mem.type_size = gv->type_size;
+      base->mem.deref_size = gv->deref_size;
+      base->name = gv->name;
+      base->name_len = gv->name_len;
+      base->is_thread_local = gv->is_thread_local;
+      node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
+      addr->base.kind = ND_ADDR;
+      addr->base.lhs = (node_t *)base;
+      addr->type_size = gv->deref_size;
+      addr->deref_size = gv->deref_size;
+      addr->is_pointer = 1;
+      return (node_t *)addr;
+    }
+    node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
+    gvar_node->mem.base.kind = ND_GVAR;
+    gvar_node->mem.type_size = gv->type_size;
+    gvar_node->mem.deref_size = gv->deref_size;
+    gvar_node->name = gv->name;
+    gvar_node->name_len = gv->name_len;
+    gvar_node->is_thread_local = gv->is_thread_local;
+    return (node_t *)gvar_node;
+  }
+  return NULL;
+}
+
+// 配列ローカル変数（非 VLA）: ベースアドレスを ND_ADDR(ND_LVAR) として返す。
+static node_t *build_array_lvar_addr_node(lvar_t *var) {
+  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
+  node->base.kind = ND_ADDR;
+  node->base.lhs = psx_node_new_lvar(var->offset);
+  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
+  node->type_size = stride;
+  node->deref_size = stride;
+  node->pointee_fp_kind = var->pointee_fp_kind;
+  if (var->outer_stride > 0) node->inner_deref_size = var->elem_size;
+  node->tag_kind = var->tag_kind;
+  node->tag_name = var->tag_name;
+  node->tag_len = var->tag_len;
+  node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
+  node->is_pointer = 1;
+  node->pointer_qual_levels = var->pointer_qual_levels;
+  node->base_deref_size = var->base_deref_size;
+  return (node_t *)node;
+}
+
+// byref 仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、
+// ND_DEREF でラップして「struct値」として見せる。
+//   p.member → build_member_access(ND_DEREF(ptr_lvar), from_ptr=0)
+//     → ND_ADDR(ND_DEREF(ptr_lvar)) = struct base ptr → offset → deref → member ✓
+static node_t *build_byref_param_node(lvar_t *var) {
+  node_t *ptr_lvar = psx_node_new_lvar_typed(var->offset, 8); // loads ptr from frame
+  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
+  deref->base.kind = ND_DEREF;
+  deref->base.lhs = ptr_lvar;
+  deref->type_size = var->elem_size; // 実際の構造体サイズ
+  deref->tag_kind = var->tag_kind;
+  deref->tag_name = var->tag_name;
+  deref->tag_len = var->tag_len;
+  deref->is_tag_pointer = 0; // 値（構造体）であってポインタではない
+  return (node_t *)deref;
+}
+
+// 通常のローカル変数 / VLA: lvar から型属性をコピーした ND_LVAR ノードを作る。
+// VLA や配列は「ポインタとして扱う」分岐があり、deref_size / inner_deref_size が
+// 多次元 VLA / outer_stride によって変わる。
+static node_t *build_lvar_or_vla_node(lvar_t *var) {
+  node_t *n = psx_node_new_lvar_typed(var->offset,
+      var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
+  int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
+                        (var->size > var->elem_size);
+  // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
+  // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
+  int vla_effective_deref = 0;
+  if (lvar_is_pointer) {
+    vla_effective_deref = (var->outer_stride > 0) ? var->outer_stride
+                            : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
+  }
+  as_lvar(n)->mem.deref_size = vla_effective_deref;
+  // 2D VLA: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
+  int vla_is_multidim = (var->outer_stride != var->elem_size) ||
+                        (var->vla_row_stride_frame_off != 0);
+  as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
+  as_lvar(n)->mem.vla_row_stride_frame_off = var->vla_row_stride_frame_off;
+  as_lvar(n)->mem.tag_kind = var->tag_kind;
+  as_lvar(n)->mem.tag_name = var->tag_name;
+  as_lvar(n)->mem.tag_len = var->tag_len;
+  as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
+  as_lvar(n)->mem.is_pointer = lvar_is_pointer;
+  as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;
+  as_lvar(n)->mem.is_volatile_qualified = var->is_volatile_qualified;
+  as_lvar(n)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
+  as_lvar(n)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
+  as_lvar(n)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
+  as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
+  as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
+  as_lvar(n)->mem.base_deref_size = var->base_deref_size;
+  as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
+  as_lvar(n)->mem.is_unsigned = var->is_unsigned;
+  as_lvar(n)->mem.is_complex = var->is_complex;
+  as_lvar(n)->mem.is_atomic = var->is_atomic;
+  n->is_complex = var->is_complex;
+  n->is_atomic = var->is_atomic;
+  n->fp_kind = var->fp_kind;
+  return n;
+}
+
+// 識別子トークン tok を解決して node を返す:
+//   1. __func__ → 暗黙文字列リテラル
+//   2. 未定義 + enum const → 定数
+//   3. 未定義 + '(' → 関数呼び出し
+//   4. 未定義 + 既登録関数名 → 関数参照
+//   5. 未定義 + グローバル変数 → ND_GVAR
+//   6. それ以外 → ローカル変数 (必要なら新規登録)
+static node_t *resolve_identifier(token_ident_t *tok) {
+  if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0) {
+    return make_func_name_string_node();
+  }
+  lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
+  if (!var) {
+    long long enum_val = 0;
+    if (psx_ctx_find_enum_const(tok->str, tok->len, &enum_val)) {
+      return psx_node_new_num(enum_val);
+    }
+  }
+  if (curtok()->kind == TK_LPAREN && !var) {
+    return build_unqualified_call(tok);
+  }
+  if (!var && psx_ctx_has_function_name(tok->str, tok->len)) {
+    return build_funcref_node(tok);
+  }
+  if (!var) {
+    node_t *gv = try_build_global_var_node(tok);
+    if (gv) return gv;
+  }
+  if (!var) {
+    var = psx_decl_register_lvar(tok->str, tok->len);
+  }
+  var->is_used = 1;
+  if (var->is_array && !var->is_vla) return build_array_lvar_addr_node(var);
+  if (var->is_byref_param) return build_byref_param_node(var);
+  return build_lvar_or_vla_node(var);
+}
+
 static node_t *primary(void) {
   node_t *cl = try_parse_compound_literal();
   if (cl) return cl;
@@ -2392,164 +2583,7 @@ static node_t *primary(void) {
   }
 
   token_ident_t *tok = tk_consume_ident();
-  if (tok) {
-    if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0) {
-      return make_func_name_string_node();
-    }
-    lvar_t *var = psx_decl_find_lvar(tok->str, tok->len);
-    if (!var) {
-      long long enum_val = 0;
-      if (psx_ctx_find_enum_const(tok->str, tok->len, &enum_val)) {
-        return psx_node_new_num(enum_val);
-      }
-    }
-    if (curtok()->kind == TK_LPAREN) {
-      if (!var) {
-        set_curtok(curtok()->next);
-        node_func_t *node = arena_alloc(sizeof(node_func_t));
-        node->base.kind = ND_FUNCALL;
-        node->callee = NULL;
-        node->funcname = tok->str;
-        node->funcname_len = tok->len;
-        int nargs = 0;
-        int arg_cap = 16;
-        node->args = calloc(arg_cap, sizeof(node_t*));
-        if (curtok()->kind == TK_RPAREN) {
-          set_curtok(curtok()->next);
-        } else {
-          node->args[nargs++] = assign();
-          while (curtok()->kind == TK_COMMA) {
-            set_curtok(curtok()->next);
-            if (nargs >= arg_cap) {
-              arg_cap = pda_next_cap(arg_cap, nargs + 1);
-              node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
-            }
-            node->args[nargs++] = assign();
-          }
-          tk_expect(')');
-        }
-        node->nargs = nargs;
-        node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(
-            tok->str, tok->len);
-        return (node_t *)node;
-      }
-    }
-
-    if (!var && psx_ctx_has_function_name(tok->str, tok->len)) {
-      node_funcref_t *fr = arena_alloc(sizeof(node_funcref_t));
-      fr->base.kind = ND_FUNCREF;
-      fr->funcname = tok->str;
-      fr->funcname_len = tok->len;
-      return (node_t *)fr;
-    }
-
-    // グローバル変数テーブルを検索
-    if (!var) {
-      for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-        if (gv->name_len == tok->len && memcmp(gv->name, tok->str, (size_t)tok->len) == 0) {
-          if (gv->is_array) {
-            // グローバル配列: アドレスをND_ADDRとして返す（ローカル配列と同様）
-            node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
-            base->mem.base.kind = ND_GVAR;
-            base->mem.type_size = gv->type_size;
-            base->mem.deref_size = gv->deref_size;
-            base->name = gv->name;
-            base->name_len = gv->name_len;
-            base->is_thread_local = gv->is_thread_local;
-            node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-            addr->base.kind = ND_ADDR;
-            addr->base.lhs = (node_t *)base;
-            addr->type_size = gv->deref_size;
-            addr->deref_size = gv->deref_size;
-            addr->is_pointer = 1;
-            return (node_t *)addr;
-          }
-          node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
-          gvar_node->mem.base.kind = ND_GVAR;
-          gvar_node->mem.type_size = gv->type_size;
-          gvar_node->mem.deref_size = gv->deref_size;
-          gvar_node->name = gv->name;
-          gvar_node->name_len = gv->name_len;
-          gvar_node->is_thread_local = gv->is_thread_local;
-          return (node_t *)gvar_node;
-        }
-      }
-    }
-
-    if (!var) {
-      var = psx_decl_register_lvar(tok->str, tok->len);
-    }
-    var->is_used = 1;
-    if (var->is_array && !var->is_vla) {
-      node_mem_t *node = arena_alloc(sizeof(node_mem_t));
-      node->base.kind = ND_ADDR;
-      node->base.lhs = psx_node_new_lvar(var->offset);
-      int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
-      node->type_size = stride;
-      node->deref_size = stride;
-      node->pointee_fp_kind = var->pointee_fp_kind;
-      if (var->outer_stride > 0) node->inner_deref_size = var->elem_size;
-      node->tag_kind = var->tag_kind;
-      node->tag_name = var->tag_name;
-      node->tag_len = var->tag_len;
-      node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
-      node->is_pointer = 1;
-      node->pointer_qual_levels = var->pointer_qual_levels;
-      node->base_deref_size = var->base_deref_size;
-      return (node_t *)node;
-    }
-    // byref仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、
-    // ND_DEREF でラップして「struct値」として見せる。
-    // p.member → build_member_access(ND_DEREF(ptr_lvar), from_ptr=0)
-    //  → ND_ADDR(ND_DEREF(ptr_lvar)) = struct base ptr → offset → deref → member ✓
-    if (var->is_byref_param) {
-      node_t *ptr_lvar = psx_node_new_lvar_typed(var->offset, 8);  // loads ptr from frame
-      node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
-      deref->base.kind = ND_DEREF;
-      deref->base.lhs = ptr_lvar;
-      deref->type_size = var->elem_size;  // 実際の構造体サイズ
-      deref->tag_kind = var->tag_kind;
-      deref->tag_name = var->tag_name;
-      deref->tag_len = var->tag_len;
-      deref->is_tag_pointer = 0;  // 値（構造体）であってポインタではない
-      return (node_t *)deref;
-    }
-    // VLA: フレームスロットからベースポインタを読み込む (ポインタ変数として扱う)
-    node_t *n = psx_node_new_lvar_typed(var->offset, var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
-    int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 || (var->size > var->elem_size);
-    // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
-    // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
-    int vla_effective_deref = 0;
-    if (lvar_is_pointer) {
-      vla_effective_deref = (var->outer_stride > 0) ? var->outer_stride : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
-    }
-    as_lvar(n)->mem.deref_size = vla_effective_deref;
-    // 2D VLA: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
-    int vla_is_multidim = (var->outer_stride != var->elem_size) || (var->vla_row_stride_frame_off != 0);
-    as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
-    as_lvar(n)->mem.vla_row_stride_frame_off = var->vla_row_stride_frame_off;
-    as_lvar(n)->mem.tag_kind = var->tag_kind;
-    as_lvar(n)->mem.tag_name = var->tag_name;
-    as_lvar(n)->mem.tag_len = var->tag_len;
-    as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
-    as_lvar(n)->mem.is_pointer = lvar_is_pointer;
-    as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;
-    as_lvar(n)->mem.is_volatile_qualified = var->is_volatile_qualified;
-    as_lvar(n)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
-    as_lvar(n)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
-    as_lvar(n)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
-    as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
-    as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
-    as_lvar(n)->mem.base_deref_size = var->base_deref_size;
-    as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
-    as_lvar(n)->mem.is_unsigned = var->is_unsigned;
-    as_lvar(n)->mem.is_complex = var->is_complex;
-    as_lvar(n)->mem.is_atomic = var->is_atomic;
-    n->is_complex = var->is_complex;
-    n->is_atomic = var->is_atomic;
-    n->fp_kind = var->fp_kind;
-    return n;
-  }
+  if (tok) return resolve_identifier(tok);
 
   if (curtok()->kind == TK_STRING) {
     return parse_string_literal_sequence();
