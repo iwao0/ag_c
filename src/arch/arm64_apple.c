@@ -420,18 +420,27 @@ static int cg_emit_fp_literal_immediate_if_possible(const node_num_t *num, tk_fl
   return 1;
 }
 
-// addr_reg が指すサイズ size の整数を x0 にロードする。
+// dst_reg 番目の汎用レジスタへ、addr_expr が指すサイズ size の整数をロードする。
 // 1/2/4 サイズで is_unsigned 偽なら符号拡張 (ldrsb/ldrsh/ldrsw)、真ならゼロ拡張 (ldrb/ldrh/ldr w)。
-// 8 のときは ldr x0。ND_LVAR/ND_GVAR/ND_DEREF 共通の load パターン。
-static void cg_emit_load_int_to_x0(int size, int is_unsigned, const char *addr_reg) {
+// 8 のときは ldr x{dst_reg}。addr_expr は呼び出し側で組み立てた文字列で、
+// "x0" のような単一レジスタでも "x29, #16" のような frame-offset でも使える。
+static void cg_emit_load_int_to_xreg(int dst_reg, int size, int is_unsigned, const char *addr_expr) {
   if (size == 1)
-    cg_emitf(is_unsigned ? "  ldrb w0, [%s]\n" : "  ldrsb x0, [%s]\n", addr_reg, addr_reg);
+    cg_emitf(is_unsigned ? "  ldrb w%d, [%s]\n" : "  ldrsb x%d, [%s]\n",
+             dst_reg, addr_expr, dst_reg, addr_expr);
   else if (size == 2)
-    cg_emitf(is_unsigned ? "  ldrh w0, [%s]\n" : "  ldrsh x0, [%s]\n", addr_reg, addr_reg);
+    cg_emitf(is_unsigned ? "  ldrh w%d, [%s]\n" : "  ldrsh x%d, [%s]\n",
+             dst_reg, addr_expr, dst_reg, addr_expr);
   else if (size == 4)
-    cg_emitf(is_unsigned ? "  ldr w0, [%s]\n" : "  ldrsw x0, [%s]\n", addr_reg, addr_reg);
+    cg_emitf(is_unsigned ? "  ldr w%d, [%s]\n" : "  ldrsw x%d, [%s]\n",
+             dst_reg, addr_expr, dst_reg, addr_expr);
   else
-    cg_emitf("  ldr x0, [%s]\n", addr_reg);
+    cg_emitf("  ldr x%d, [%s]\n", dst_reg, addr_expr);
+}
+
+// x0 への load — 既存呼び出し側との互換薄ラッパ。
+static void cg_emit_load_int_to_x0(int size, int is_unsigned, const char *addr_reg) {
+  cg_emit_load_int_to_xreg(0, size, is_unsigned, addr_reg);
 }
 
 static void gen_load_x0_from_addr(int type_size) {
@@ -556,10 +565,9 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     int off = 16 + as_lvar(node)->offset;
     int ts = as_lvar(node)->mem.type_size;
     int uns = as_lvar(node)->mem.is_unsigned;
-    if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x29, #%d]\n" : "  ldrsb x%d, [x29, #%d]\n", reg, off);
-    else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x29, #%d]\n" : "  ldrsh x%d, [x29, #%d]\n", reg, off);
-    else if (ts == 4) cg_emitf(uns ? "  ldr w%d, [x29, #%d]\n" : "  ldrsw x%d, [x29, #%d]\n", reg, off);
-    else              cg_emitf("  ldr x%d, [x29, #%d]\n", reg, off);
+    char addr[32];
+    snprintf(addr, sizeof(addr), "x29, #%d", off);
+    cg_emit_load_int_to_xreg(reg, ts, uns, addr);
     return;
   }
 
@@ -570,10 +578,9 @@ static void gen_expr_to_reg(node_t *node, int depth) {
     int uns = gv->mem.is_unsigned;
     cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
     cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
-    if (ts == 1)      cg_emitf(uns ? "  ldrb w%d, [x%d]\n" : "  ldrsb x%d, [x%d]\n", reg, reg);
-    else if (ts == 2) cg_emitf(uns ? "  ldrh w%d, [x%d]\n" : "  ldrsh x%d, [x%d]\n", reg, reg);
-    else if (ts == 4) cg_emitf(uns ? "  ldr w%d, [x%d]\n" : "  ldrsw x%d, [x%d]\n", reg, reg);
-    else              cg_emitf("  ldr x%d, [x%d]\n", reg, reg);
+    char addr[8];
+    snprintf(addr, sizeof(addr), "x%d", reg);
+    cg_emit_load_int_to_xreg(reg, ts, uns, addr);
     return;
   }
 
