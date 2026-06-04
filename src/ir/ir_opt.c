@@ -171,6 +171,10 @@ static void count_uses(ir_inst_t *inst, int *use_cnt, int nvregs) {
   if (inst->ret_struct_area.id >= 0 && inst->ret_struct_area.id < nvregs) {
     use_cnt[inst->ret_struct_area.id]++;
   }
+  /* 間接呼び出しの callee も use として数える */
+  if (inst->callee.id >= 0 && inst->callee.id < nvregs) {
+    use_cnt[inst->callee.id]++;
+  }
 }
 
 /* inst を block から外す。実際にはオペコードを IR_NOP にする (連結リストを保つため)。 */

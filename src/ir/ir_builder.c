@@ -611,10 +611,14 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
-      /* deref 後の型は node の fp_kind で判定。`*(double*)p` なら F64。 */
+      /* deref 後の型: fp_kind を最優先。それ以外は type_size で判定
+       * (関数ポインタ配列等で 8B 要素を i32 と誤判定しないように)。 */
       ir_type_t load_ty = IR_TY_I32;
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) load_ty = IR_TY_F32;
       else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) load_ty = IR_TY_F64;
+      else if (mm->type_size >= 8) load_ty = IR_TY_PTR;
+      else if (mm->type_size == 2) load_ty = IR_TY_I16;
+      else if (mm->type_size == 1) load_ty = IR_TY_I8;
       inst->dst = ir_val_vreg(v, load_ty);
       inst->src1 = ptr;
       ir_func_append_inst(ctx->f, inst);
@@ -622,14 +626,19 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     }
     case ND_FUNCALL: {
       node_func_t *fn = (node_func_t *)node;
+      /* 間接呼び出し: callee 式を pre-evaluate しておく (引数評価より先に
+       * vreg に確定させる方が安全)。AST 経路と同じ評価順序を守るため。
+       * 間接呼び出しは現状 variadic 非対応とする (関数ポインタ型に variadic
+       * 情報が乗っていない簡略化)。 */
+      ir_val_t callee_v = ir_val_none();
       if (fn->callee) {
-        fail(ctx, "indirect function call (Phase 4a unsupported)");
-        return ir_val_none();
+        callee_v = build_expr(ctx, fn->callee);
+        if (ctx->failed) return ir_val_none();
       }
-      /* callee が variadic か prototype から確認 (Phase 7e) */
+      /* callee が variadic か prototype から確認 (Phase 7e)。間接呼出は skip。 */
       int is_variadic_call = 0;
       int nargs_fixed = fn->nargs;
-      {
+      if (!fn->callee) {
         int fixed = 0;
         if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
             fixed < fn->nargs) {
@@ -685,8 +694,14 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) ret_ty = IR_TY_F32;
       else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) ret_ty = IR_TY_F64;
       call->dst = ir_val_vreg(v, ret_ty);
-      call->sym = fn->funcname;
-      call->sym_len = fn->funcname_len;
+      if (fn->callee) {
+        call->callee = callee_v;
+        call->sym = NULL;
+        call->sym_len = 0;
+      } else {
+        call->sym = fn->funcname;
+        call->sym_len = fn->funcname_len;
+      }
       call->args = cargs;
       call->nargs = fn->nargs;
       call->is_variadic_call = is_variadic_call;
@@ -852,6 +867,17 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
        * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
       if (node->lhs) return build_expr(ctx, node->lhs);
       return ir_val_none();
+    }
+    case ND_FUNCREF: {
+      /* 関数シンボル参照 (関数ポインタ値)。`_<funcname>` のアドレスを vreg に。 */
+      node_funcref_t *fr = (node_funcref_t *)node;
+      int v = ir_func_new_vreg(ctx->f);
+      ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+      sym->dst = ir_val_vreg(v, IR_TY_PTR);
+      sym->sym = fr->funcname;
+      sym->sym_len = fr->funcname_len;
+      ir_func_append_inst(ctx->f, sym);
+      return ir_val_vreg(v, IR_TY_PTR);
     }
     case ND_LOGAND:
     case ND_LOGOR: {

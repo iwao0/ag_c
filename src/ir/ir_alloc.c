@@ -169,6 +169,7 @@ ir_inst_t *ir_inst_new(ir_op_t op) {
   i->label_id = -1;
   i->else_label_id = -1;
   i->ret_struct_area = ir_val_none();
+  i->callee = ir_val_none();
   return i;
 }
 

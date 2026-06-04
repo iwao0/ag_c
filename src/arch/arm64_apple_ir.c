@@ -609,7 +609,16 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
           cg_emitf("  mov x8, %s\n", src);
         }
       }
-      cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+      if (inst->callee.id != IR_VAL_NONE) {
+        /* 間接呼び出し: callee を x16 (= ip0、ABI 上 caller-saved の scratch)
+         * にロードして blr。引数 reg (x0..x7) とは衝突しない。 */
+        char buf[8];
+        const char *src = ensure_val_in(ctx, inst->callee, "x16", buf, sizeof(buf));
+        if (strcmp(src, "x16") != 0) cg_emitf("  mov x16, %s\n", src);
+        cg_emitf("  blr x16\n");
+      } else {
+        cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+      }
       /* variadic で stack を使った分を戻す */
       if (var_stack_bytes > 0) {
         cg_emitf("  add sp, sp, #%d\n", var_stack_bytes);

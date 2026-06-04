@@ -28,6 +28,10 @@ static void mark_uses(ir_inst_t *inst, int *last_use, int nvregs, int n) {
   if (inst->ret_struct_area.id >= 0 && inst->ret_struct_area.id < nvregs) {
     last_use[inst->ret_struct_area.id] = n;
   }
+  /* 間接呼び出しの callee も use として扱う (regalloc 用) */
+  if (inst->callee.id >= 0 && inst->callee.id < nvregs) {
+    last_use[inst->callee.id] = n;
+  }
 }
 
 /* (caller-saved 用、現在未使用) 各 vreg が「ブロック境界を跨いで使われる」

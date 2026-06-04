@@ -131,6 +131,9 @@ typedef struct ir_inst_t {
    * is_variadic_call > 0 のとき、args[nargs_fixed..nargs-1] は stack に置く。 */
   int is_variadic_call;
   int nargs_fixed;
+  /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
+   * sym ではなく callee vreg を blr する。 */
+  ir_val_t callee;
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */

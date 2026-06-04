@@ -95,6 +95,14 @@ int main(int argc, char **argv) {
   if (use_ir && strcmp(use_ir, "1") == 0) {
     ir_module_t *m = ir_build_module(code);
     if (m) {
+      /* AG_DUMP_IR=1: stderr に IR ダンプ (デバッグ用) */
+      const char *dump_ir = getenv("AG_DUMP_IR");
+      if (dump_ir && strcmp(dump_ir, "1") == 0) {
+        char *buf = malloc(1 << 16);
+        ir_print_module_to_buf(m, buf, 1 << 16);
+        fprintf(stderr, "%s", buf);
+        free(buf);
+      }
       gen_ir_module(m);
       used_ir = 1;
     } else {
