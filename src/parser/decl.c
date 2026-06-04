@@ -1558,6 +1558,22 @@ lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_siz
 }
 
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align) {
+  /* C11 6.7p3: 同一スコープで同名のオブジェクト/関数を重複宣言してはならない。
+   * 現在のスコープは locals 連結リストの head から、1 段外側のスコープに
+   * 入る直前の locals (= lvar_scope_stack[lvar_scope_depth - 1]) まで。
+   * lvar_scope_depth == 0 のとき (関数引数列など) はリスト全体を見る。
+   *
+   * psx_decl_find_lvar を使うと外側スコープまで見てしまうのでここでは
+   * 自前に scope を walk して同名を探す。 */
+  lvar_t *scope_end = (lvar_scope_depth > 0 && lvar_scope_depth <= LVAR_SCOPE_STACK_MAX)
+                         ? lvar_scope_stack[lvar_scope_depth - 1] : NULL;
+  for (lvar_t *v = locals; v != scope_end; v = v->next) {
+    if (v->len == len && memcmp(v->name, name, (size_t)len) == 0) {
+      psx_diag_duplicate_with_name(curtok(), "variable", name, len);
+      /* psx_diag_duplicate_with_name は exit するため後続には到達しない */
+    }
+  }
+
   lvar_t *var = calloc(1, sizeof(lvar_t));
   var->next = locals;
   var->next_all = all_locals;
