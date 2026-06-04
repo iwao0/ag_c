@@ -1,7 +1,7 @@
 // 変数間コピー
 // 期待: exit=1
-main() {
-    a = 1;
-    b = a;
+int main(void) {
+    int a = 1;
+    int b = a;
     return b;
 }

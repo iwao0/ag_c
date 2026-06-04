@@ -1,9 +1,9 @@
 // do-while 内の continue
 // a が 3, 4 のときだけ b += a → 3 + 4 = 7
 // 期待: exit=7
-main() {
-    a = 0;
-    b = 0;
+int main(void) {
+    int a = 0;
+    int b = 0;
     do {
         a = a + 1;
         if (a < 3) continue;
