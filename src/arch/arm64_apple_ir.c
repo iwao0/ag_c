@@ -227,6 +227,49 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       }
       return;
     }
+    case IR_ZEXT:
+    case IR_SEXT:
+    case IR_TRUNC: {
+      /* 整数の幅変換。
+       *   ZEXT i32→i64 : uxtw x_dst, w_src    (高 32bit ゼロ)
+       *   SEXT i32→i64 : sxtw x_dst, w_src
+       *   TRUNC i64→i32: mov  w_dst, w_src    (高 32bit は捨てる)
+       * 現状 i32 ↔ i64 の双方向のみ。 */
+      char b1[8], bd[8];
+      const char *src = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x10", bd, sizeof(bd), &spill);
+      char w_src[8], w_dst[8];
+      to_w_name(src, w_src, sizeof(w_src));
+      to_w_name(d, w_dst, sizeof(w_dst));
+      if (inst->op == IR_ZEXT) {
+        cg_emitf("  uxtw %s, %s\n", d, w_src);
+      } else if (inst->op == IR_SEXT) {
+        cg_emitf("  sxtw %s, %s\n", d, w_src);
+      } else {
+        cg_emitf("  mov %s, %s\n", w_dst, w_src);
+      }
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_VLA_ALLOC: {
+      /* VLA 動的スタック確保: src1 = バイトサイズ (i32 のことが多い)。
+       *   ldr/mov 経由で x9 にロード
+       *   x9 = (x9 + 15) & ~15   ; 16-byte align
+       *   sub sp, sp, x9
+       *   dst (frame slot) = sp  */
+      char b1[8];
+      const char *src = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      if (strcmp(src, "x9") != 0) cg_emitf("  mov x9, %s\n", src);
+      cg_emitf("  add x9, x9, #15\n");
+      cg_emitf("  and x9, x9, #-16\n");
+      cg_emitf("  sub sp, sp, x9\n");
+      cg_emitf("  mov x9, sp\n");
+      if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+        cg_emitf("  str x9, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      }
+      return;
+    }
     case IR_VA_ARG_AREA: {
       /* stack 上の variadic 引数領域の先頭 = x29 + total_size。
        * dst は spill (frame slot に書く)。 */
