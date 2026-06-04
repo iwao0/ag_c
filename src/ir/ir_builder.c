@@ -29,6 +29,7 @@
 #define MAX_LVARS 256
 #define MAX_LOOP_DEPTH 32
 #define MAX_CASES 256
+#define MAX_LABELS 64
 
 /* break/continue 用ループスタック。それぞれ「飛び先ブロック」。 */
 typedef struct {
@@ -44,6 +45,14 @@ typedef struct {
   ir_block_t *block;
 } case_map_entry_t;
 
+/* goto/label 解決用: 関数内の label 名 → IR block マップ。
+ * 関数 build 開始時に AST 内の全 ND_LABEL を pre-walk して登録する。 */
+typedef struct {
+  const char *name;
+  int name_len;
+  ir_block_t *block;
+} label_map_entry_t;
+
 typedef struct {
   ir_module_t *m;
   ir_func_t *f;
@@ -58,6 +67,8 @@ typedef struct {
   int loop_depth;
   case_map_entry_t case_map[MAX_CASES];
   int case_map_count;
+  label_map_entry_t labels[MAX_LABELS];
+  int label_count;
 } ir_build_ctx_t;
 
 static void fail(ir_build_ctx_t *ctx, const char *msg) {
@@ -186,6 +197,12 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
   ir_func_append_inst(ctx->f, lea);
   return v;
 }
+
+/* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
+static void emit_br(ir_build_ctx_t *ctx, ir_block_t *target);
+static void emit_br_cond(ir_build_ctx_t *ctx, ir_val_t cond,
+                          ir_block_t *t_block, ir_block_t *f_block);
+static void switch_to_new_block(ir_build_ctx_t *ctx, ir_block_t *b);
 
 /* 式を IR にビルドし、結果値 (vreg or immediate) を返す。 */
 static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
@@ -836,6 +853,129 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       if (node->lhs) return build_expr(ctx, node->lhs);
       return ir_val_none();
     }
+    case ND_LOGAND:
+    case ND_LOGOR: {
+      /* 短絡評価。結果は i32 (0/1)。temp slot に書いて merge で LOAD。
+       *   a && b: 既定 0、a が真なら b、b が真なら 1。
+       *   a || b: 既定 1、a が偽なら b、b が真なら 1。 */
+      int is_and = (node->kind == ND_LOGAND);
+      int slot_vreg = ir_func_new_vreg(ctx->f);
+      ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+      al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      al->alloca_size = 4;
+      al->alloca_align = 4;
+      ir_func_append_inst(ctx->f, al);
+      /* 既定値を STORE */
+      ir_inst_t *st0 = ir_inst_new(IR_STORE);
+      st0->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      st0->src2 = ir_val_imm(IR_TY_I32, is_and ? 0 : 1);
+      ir_func_append_inst(ctx->f, st0);
+      ir_block_t *eval_rhs_b = ir_block_new(ctx->f);
+      ir_block_t *merge_b = ir_block_new(ctx->f);
+      ir_val_t l = build_expr(ctx, node->lhs);
+      if (ctx->failed) return ir_val_none();
+      if (is_and) {
+        emit_br_cond(ctx, l, eval_rhs_b, merge_b);
+      } else {
+        emit_br_cond(ctx, l, merge_b, eval_rhs_b);
+      }
+      switch_to_new_block(ctx, eval_rhs_b);
+      ir_val_t r = build_expr(ctx, node->rhs);
+      if (ctx->failed) return ir_val_none();
+      /* 0/1 に正規化: r != 0 */
+      int v_norm = emit_binop(ctx, IR_NE, r, ir_val_imm(r.type, 0), IR_TY_I32);
+      ir_inst_t *st1 = ir_inst_new(IR_STORE);
+      st1->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      st1->src2 = ir_val_vreg(v_norm, IR_TY_I32);
+      ir_func_append_inst(ctx->f, st1);
+      emit_br(ctx, merge_b);
+      switch_to_new_block(ctx, merge_b);
+      int v_res = ir_func_new_vreg(ctx->f);
+      ir_inst_t *ld = ir_inst_new(IR_LOAD);
+      ld->dst = ir_val_vreg(v_res, IR_TY_I32);
+      ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      ir_func_append_inst(ctx->f, ld);
+      return ir_val_vreg(v_res, IR_TY_I32);
+    }
+    case ND_TERNARY: {
+      /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
+       * 結果型は fp_kind から推定 (整数のみ or float/double)。
+       * struct ternary 等は今のところサポート外で fall through する。 */
+      node_ctrl_t *c = (node_ctrl_t *)node;
+      if (!c->els) {
+        fail(ctx, "ternary without else");
+        return ir_val_none();
+      }
+      ir_type_t res_ty = IR_TY_I32;
+      int slot_size = 4;
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { res_ty = IR_TY_F32; slot_size = 4; }
+      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { res_ty = IR_TY_F64; slot_size = 8; }
+      int slot_vreg = ir_func_new_vreg(ctx->f);
+      ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+      al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      al->alloca_size = slot_size;
+      al->alloca_align = slot_size >= 8 ? 8 : 4;
+      ir_func_append_inst(ctx->f, al);
+      ir_val_t cond = build_expr(ctx, node->lhs);
+      if (ctx->failed) return ir_val_none();
+      ir_block_t *then_b = ir_block_new(ctx->f);
+      ir_block_t *else_b = ir_block_new(ctx->f);
+      ir_block_t *merge_b = ir_block_new(ctx->f);
+      emit_br_cond(ctx, cond, then_b, else_b);
+      /* then */
+      switch_to_new_block(ctx, then_b);
+      ir_val_t vt = build_expr(ctx, node->rhs);
+      if (ctx->failed) return ir_val_none();
+      /* 型変換: 結果型が fp で値が int なら I2F、逆も */
+      if (is_fp_type(res_ty) && !is_fp_type(vt.type)) {
+        int v = ir_func_new_vreg(ctx->f);
+        ir_inst_t *cv = ir_inst_new(IR_I2F);
+        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
+        ir_func_append_inst(ctx->f, cv);
+        vt = ir_val_vreg(v, res_ty);
+      } else if (is_fp_type(res_ty) && is_fp_type(vt.type) && vt.type != res_ty) {
+        int v = ir_func_new_vreg(ctx->f);
+        ir_inst_t *cv = ir_inst_new(IR_F2F);
+        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
+        ir_func_append_inst(ctx->f, cv);
+        vt = ir_val_vreg(v, res_ty);
+      }
+      ir_inst_t *st_t = ir_inst_new(IR_STORE);
+      st_t->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      st_t->src2 = vt;
+      ir_func_append_inst(ctx->f, st_t);
+      emit_br(ctx, merge_b);
+      /* else */
+      switch_to_new_block(ctx, else_b);
+      ir_val_t ve = build_expr(ctx, c->els);
+      if (ctx->failed) return ir_val_none();
+      if (is_fp_type(res_ty) && !is_fp_type(ve.type)) {
+        int v = ir_func_new_vreg(ctx->f);
+        ir_inst_t *cv = ir_inst_new(IR_I2F);
+        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
+        ir_func_append_inst(ctx->f, cv);
+        ve = ir_val_vreg(v, res_ty);
+      } else if (is_fp_type(res_ty) && is_fp_type(ve.type) && ve.type != res_ty) {
+        int v = ir_func_new_vreg(ctx->f);
+        ir_inst_t *cv = ir_inst_new(IR_F2F);
+        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
+        ir_func_append_inst(ctx->f, cv);
+        ve = ir_val_vreg(v, res_ty);
+      }
+      ir_inst_t *st_e = ir_inst_new(IR_STORE);
+      st_e->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      st_e->src2 = ve;
+      ir_func_append_inst(ctx->f, st_e);
+      emit_br(ctx, merge_b);
+      /* merge */
+      switch_to_new_block(ctx, merge_b);
+      int v_res = ir_func_new_vreg(ctx->f);
+      ir_inst_t *ld = ir_inst_new(IR_LOAD);
+      ld->dst = ir_val_vreg(v_res, res_ty);
+      ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+      ir_func_append_inst(ctx->f, ld);
+      return ir_val_vreg(v_res, res_ty);
+    }
     default:
       fail(ctx, "unsupported expression node");
       return ir_val_none();
@@ -951,6 +1091,61 @@ static void collect_case_labels(ir_build_ctx_t *ctx, node_t *body,
     if (c->els) collect_case_labels(ctx, c->els, cases, case_count, out_default);
     if (c->init) collect_case_labels(ctx, c->init, cases, case_count, out_default);
     if (c->inc) collect_case_labels(ctx, c->inc, cases, case_count, out_default);
+  }
+}
+
+/* label 名 → IR block の検索/登録。pre-walk 中に新規 ND_LABEL を見つけたら
+ * 新しい block を割り当てて登録する。同名は同じ block を返す。 */
+static ir_block_t *lookup_label_block(ir_build_ctx_t *ctx, const char *name, int name_len) {
+  for (int i = 0; i < ctx->label_count; i++) {
+    if (ctx->labels[i].name_len == name_len &&
+        memcmp(ctx->labels[i].name, name, (size_t)name_len) == 0) {
+      return ctx->labels[i].block;
+    }
+  }
+  return NULL;
+}
+
+static ir_block_t *register_label_block(ir_build_ctx_t *ctx, const char *name, int name_len) {
+  ir_block_t *existing = lookup_label_block(ctx, name, name_len);
+  if (existing) return existing;
+  if (ctx->label_count >= MAX_LABELS) {
+    fail(ctx, "too many labels in function");
+    return NULL;
+  }
+  ir_block_t *b = ir_block_new(ctx->f);
+  ctx->labels[ctx->label_count].name = name;
+  ctx->labels[ctx->label_count].name_len = name_len;
+  ctx->labels[ctx->label_count].block = b;
+  ctx->label_count++;
+  return b;
+}
+
+/* 関数本体を pre-walk して全 ND_LABEL に IR block を割り当てる。
+ * (goto が前方参照する label にも対応するため。) */
+static void collect_labels(ir_build_ctx_t *ctx, node_t *body) {
+  if (!body || ctx->failed) return;
+  if (body->kind == ND_LABEL) {
+    node_jump_t *j = (node_jump_t *)body;
+    register_label_block(ctx, j->name, j->name_len);
+  }
+  if (body->kind == ND_BLOCK) {
+    node_block_t *blk = (node_block_t *)body;
+    if (blk->body) {
+      for (int i = 0; blk->body[i]; i++) collect_labels(ctx, blk->body[i]);
+    }
+    return;
+  }
+  if (body->lhs) collect_labels(ctx, body->lhs);
+  if (body->rhs) collect_labels(ctx, body->rhs);
+  if (body->kind == ND_IF || body->kind == ND_FOR) {
+    node_ctrl_t *c = (node_ctrl_t *)body;
+    if (c->els) collect_labels(ctx, c->els);
+    if (c->init) collect_labels(ctx, c->init);
+    if (c->inc) collect_labels(ctx, c->inc);
+  }
+  if (body->kind == ND_CASE || body->kind == ND_DEFAULT) {
+    /* case/default 内も body へ展開される (rhs を walk 済み) */
   }
 }
 
@@ -1200,6 +1395,32 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
       switch_to_new_block(ctx, dead);
       return;
     }
+    case ND_GOTO: {
+      node_jump_t *j = (node_jump_t *)node;
+      ir_block_t *target = lookup_label_block(ctx, j->name, j->name_len);
+      if (!target) {
+        /* 通常は collect_labels で登録済みのはず。未登録の goto は不正。 */
+        fail(ctx, "goto target label not found");
+        return;
+      }
+      emit_br(ctx, target);
+      ir_block_t *dead = ir_block_new(ctx->f);
+      switch_to_new_block(ctx, dead);
+      return;
+    }
+    case ND_LABEL: {
+      node_jump_t *j = (node_jump_t *)node;
+      ir_block_t *target = lookup_label_block(ctx, j->name, j->name_len);
+      if (!target) {
+        target = register_label_block(ctx, j->name, j->name_len);
+        if (!target) return;
+      }
+      emit_br(ctx, target);
+      switch_to_new_block(ctx, target);
+      /* ラベル直後の文 (parser は `label: stmt` を ND_LABEL.rhs に格納) */
+      if (node->rhs) build_stmt(ctx, node->rhs);
+      return;
+    }
     default:
       /* それ以外は「副作用ありの式文」として扱う。build_expr が unsupported
        * なら failed が立って fallback。 */
@@ -1223,6 +1444,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
+  ctx->label_count = 0;
   /* >8B struct 戻り値の関数では prologue で x8 を受け取る (Apple ARM64 ABI 簡略版)。
    * ≤8B struct はそのまま x0 で 1 レジスタ返却 (= scalar 経路と同じ動作)。 */
   ctx->f->ret_struct_size = fn->base.ret_struct_size > 8 ? fn->base.ret_struct_size : 0;
@@ -1279,6 +1501,9 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
   }
+  /* goto 前方参照対応: 本体内の全 ND_LABEL に IR block を事前割り当て */
+  collect_labels(ctx, fn->base.rhs);
+  if (ctx->failed) return 0;
   build_stmt(ctx, fn->base.rhs);
   if (ctx->failed) return 0;
   /* 末尾に RET が無いとき、main は暗黙 `return 0` を補う (AST 直 codegen 互換)。
