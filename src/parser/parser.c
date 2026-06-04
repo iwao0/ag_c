@@ -316,11 +316,22 @@ static void skip_cv_qualifiers(void) {
   g_last_alignas_value = 0;
   g_last_decl_is_extern = 0;
   g_last_decl_is_static = 0;
+  /* C11 6.7.1p2: 宣言指定子に storage class 指定子は高々 1 個。
+   * 例外として _Thread_local は static / extern と一緒に書ける。 */
+  int storage_count = 0;
+  int saw_thread_local = 0;
+  token_t *first_storage_tok = NULL;
   while (psx_is_decl_prefix_token(curtok()->kind)) {
     if (curtok()->kind == TK_CONST) g_last_type_const_qualified = 1;
     if (curtok()->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
     if (curtok()->kind == TK_EXTERN) g_last_decl_is_extern = 1;
     if (curtok()->kind == TK_STATIC) g_last_decl_is_static = 1;
+    if (curtok()->kind == TK_EXTERN || curtok()->kind == TK_STATIC ||
+        curtok()->kind == TK_AUTO || curtok()->kind == TK_REGISTER) {
+      if (!first_storage_tok) first_storage_tok = curtok();
+      storage_count++;
+    }
+    if (curtok()->kind == TK_THREAD_LOCAL) saw_thread_local = 1;
     if (curtok()->kind == TK_ALIGNAS) {
       set_curtok(curtok()->next);
       if (curtok()->kind != TK_LPAREN) {
@@ -342,6 +353,14 @@ static void skip_cv_qualifiers(void) {
     }
     set_curtok(curtok()->next);
   }
+  /* storage class が 2 個以上同時指定されているとエラー。
+   * `_Thread_local` 単独は storage_count に数えていないので
+   * `_Thread_local int x;` は 0 で通り、`static _Thread_local int x;` は 1 で通る。 */
+  if (storage_count > 1) {
+    psx_diag_ctx(first_storage_tok, "decl",
+                 "storage class 指定子は1つまでです (C11 6.7.1p2)");
+  }
+  (void)saw_thread_local;
 }
 
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified) {
