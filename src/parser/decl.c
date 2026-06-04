@@ -778,6 +778,18 @@ static node_t *parse_array_initializer(lvar_t *var) {
         if (tk_consume('}')) break;
       }
     }
+    /* C11 6.7.9p21: 部分初期化や指定初期化子で書かれなかった要素は 0 で
+     * 初期化される。`int a[5] = {1, 2}` → a[2..4] = 0。
+     * `int a[5] = {[2] = 100}` → a[0, 1, 3, 4] = 0。
+     * elem_size が 1 を超えるスカラ要素 (int/short/long 等) のみ対応。
+     * ネストした構造体配列は assigned[] が要素単位でないので未対応。 */
+    if (array_len > 0 && var->elem_size > 0) {
+      for (int i = 0; i < array_len; i++) {
+        if (assigned[i]) continue;
+        init_chain = append_to_init_chain(init_chain,
+            build_array_elem_assign(var, i, psx_node_new_num(0)));
+      }
+    }
     free(assigned);
     return init_chain ? init_chain : psx_node_new_num(0);
   }
@@ -1116,6 +1128,34 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       tk_expect(',');
       if (tk_consume('}')) break;
     }
+  }
+  /* C11 6.7.9p21: 部分初期化や指定初期化子で書かれなかったメンバは 0 で
+   * 初期化される (struct S s = {10, 20}; なら c, d = 0)。
+   * スカラ (is_supported_scalar_store_size を満たす) メンバのみ 0 を書く。
+   * 構造体メンバや配列メンバはこの実装では未対応。 */
+  for (int o = 0; o < member_count; o++) {
+    aggregate_member_info_t info = {0};
+    info.tag_kind = TK_EOF;
+    int probe_ordinal = o;
+    int probe_value = o;
+    if (!tag_get_next_named_member(var, &probe_ordinal, &info)) continue;
+    if (info.len <= 0) continue;
+    if (probe_ordinal != probe_value + 1) {
+      /* 無名 padding 等で 1 ordinal 進まなかったらスキップ */
+    }
+    int already = 0;
+    for (int i = 0; i < assigned_n; i++) {
+      if (assigned_lens[i] == info.len &&
+          strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
+        already = 1; break;
+      }
+    }
+    if (already) continue;
+    if (!is_supported_scalar_store_size(info.type_size)) continue;
+    if (info.array_len > 0 || info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) continue;
+    node_t *zero = psx_node_new_num(0);
+    init_chain = append_to_init_chain(init_chain,
+        wrap_member_init_as_assign(var, &info, zero));
   }
   free(assigned_names);
   free(assigned_lens);

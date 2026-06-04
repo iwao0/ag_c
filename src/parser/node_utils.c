@@ -39,6 +39,13 @@ int psx_node_deref_size(node_t *node) {
       return as_mem(node)->deref_size;
     case ND_COMMA:
       return psx_node_deref_size(node->rhs);
+    /* ND_ADD/SUB の結果がポインタなら、ポインタ側の deref_size を引き継ぐ。 */
+    case ND_ADD:
+    case ND_SUB: {
+      int l = psx_node_deref_size(node->lhs);
+      if (l > 0) return l;
+      return psx_node_deref_size(node->rhs);
+    }
     default:
       return 0;
   }
@@ -57,6 +64,16 @@ int psx_node_is_pointer(node_t *node) {
       return as_mem(node)->is_pointer;
     case ND_COMMA:
       return psx_node_is_pointer(node->rhs);
+    /* C11 6.5.6: ポインタ + 整数 / 整数 + ポインタ / ポインタ - 整数 の結果
+     * もポインタ。新規 ND_ADD/SUB ノードに is_pointer 属性を直接書けない
+     * (psx_node_new_binary は node_t を作る) ので、子を見て判定する。 */
+    case ND_ADD:
+      return psx_node_is_pointer(node->lhs) || psx_node_is_pointer(node->rhs);
+    case ND_SUB:
+      /* ポインタ - ポインタ は ptrdiff_t (整数) なので除外。
+       * ポインタ - 整数 のみポインタ扱い。 */
+      if (psx_node_is_pointer(node->lhs) && psx_node_is_pointer(node->rhs)) return 0;
+      return psx_node_is_pointer(node->lhs);
     default:
       return 0;
   }

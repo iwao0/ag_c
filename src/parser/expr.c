@@ -1868,14 +1868,25 @@ static node_t *add(void) {
     } else if (curtok()->kind == TK_MINUS) {
       set_curtok(curtok()->next);
       node_t *rhs = mul();
-      if (psx_node_is_pointer(node)) {
+      int both_ptr = psx_node_is_pointer(node) && psx_node_is_pointer(rhs);
+      if (both_ptr) {
+        // ポインタ - ポインタ (C11 6.5.6p9): 結果は要素数 (= ptrdiff_t)。
+        // (p - q) / sizeof(*p) を生成する。両辺が同じ型を指す前提。
         int ds = psx_node_deref_size(node);
-        if (ds > 1) {
-          // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
-          rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+        node_t *diff = psx_node_new_binary(ND_SUB, node, rhs);
+        node = (ds > 1)
+                 ? psx_node_new_binary(ND_DIV, diff, psx_node_new_num(ds))
+                 : diff;
+      } else {
+        if (psx_node_is_pointer(node)) {
+          int ds = psx_node_deref_size(node);
+          if (ds > 1) {
+            // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
+            rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+          }
         }
+        node = psx_node_new_binary(ND_SUB, node, rhs);
       }
-      node = psx_node_new_binary(ND_SUB, node, rhs);
     }
     else return node;
   }
@@ -1981,11 +1992,25 @@ static node_t *parse_sizeof_operand(void) {
     if (type_sz >= 0) return psx_node_new_num(type_sz);
     if (curtok()->kind == TK_IDENT) {
       token_ident_t *id = (token_ident_t *)curtok();
-      lvar_t *vla_var = psx_decl_find_lvar(id->str, id->len);
-      if (vla_var && vla_var->is_vla) {
+      lvar_t *arr_var = psx_decl_find_lvar(id->str, id->len);
+      if (arr_var && arr_var->is_vla) {
         set_curtok(curtok()->next);
         tk_expect(')');
-        return psx_node_new_lvar_typed(vla_var->offset + 8, 8);
+        return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
+      }
+      /* sizeof(arr) where arr is a non-VLA array: C 仕様で array → pointer
+       * の decay は起きないので、配列の合計サイズ (var->size) を返す。
+       * 通常の式解析では `arr` が ND_ADDR(int) (= 4 バイト) になってしまうので
+       * ここで先回りする。 */
+      if (arr_var && arr_var->is_array) {
+        token_t *peek = curtok()->next;
+        if (peek && peek->kind == TK_RPAREN) {
+          set_curtok(peek->next);
+          return psx_node_new_num(arr_var->size);
+        }
+      }
+      if (0) {  /* keep brace structure (revisit if VLA path is restructured) */
+        return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
       }
     }
     node_t *node = expr_internal();
@@ -2078,6 +2103,8 @@ static node_t *build_unary_deref_node(node_t *operand) {
 
 // `&operand` を ND_ADDR でラップする。
 // オペランドが struct タグを持っていれば is_tag_pointer/deref_size/type_size を設定。
+// 非タグ型 (int / char / 関数ポインタ等) でも is_pointer=1 と deref_size を立てる
+// — ポインタ - ポインタ や ポインタ + 整数 の判定に使われる。
 static node_t *wrap_as_addr(node_t *operand) {
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
   node->base.kind = ND_ADDR;
@@ -2093,6 +2120,14 @@ static node_t *wrap_as_addr(node_t *operand) {
     node->tag_len = tag_len;
     node->is_tag_pointer = 1;
     node->deref_size = psx_node_type_size(operand);
+    node->type_size = 8;
+    return (node_t *)node;
+  }
+  /* タグなしオペランド: operand の型サイズが pointee サイズ */
+  int ts = psx_node_type_size(operand);
+  if (ts > 0) {
+    node->deref_size = ts;
+    node->is_pointer = 1;
     node->type_size = 8;
   }
   return (node_t *)node;
