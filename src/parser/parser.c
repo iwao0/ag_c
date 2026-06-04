@@ -928,13 +928,15 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int is_ptr, int typedef_sizeof, int td_is_array,
                                            int td_first_dim,
                                            const int *td_dims, int td_dim_count) {
-  psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
+  if (!psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
                                   g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
                                   g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
                                   is_ptr, typedef_sizeof,
                                   g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
                                   is_toplevel_typedef_unsigned(stored_base_kind), td_is_array,
-                                  td_first_dim, td_dims, td_dim_count);
+                                  td_first_dim, td_dims, td_dim_count)) {
+    psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
+  }
 }
 
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind) {

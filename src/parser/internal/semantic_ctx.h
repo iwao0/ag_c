@@ -45,7 +45,9 @@ bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_le
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value);
-void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
+/* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、
+ * 0 = 既存と型が異なる衝突。呼び出し元で 0 のとき診断を出す。 */
+int psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                  char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                  int pointee_const_qualified, int pointee_volatile_qualified,
@@ -65,7 +67,7 @@ bool psx_ctx_find_typedef_name_ex(char *name, int len, token_kind_t *out_base_ki
                                   int *out_pointee_const_qualified,
                                   int *out_pointee_volatile_qualified, int *out_is_unsigned,
                                   int *out_is_array, int *out_sizeof_size);
-void psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind, int elem_size,
                                     tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                     char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                     int pointee_const_qualified, int pointee_volatile_qualified,
@@ -81,14 +83,14 @@ bool psx_ctx_find_typedef_name_ex2(char *name, int len, token_kind_t *out_base_k
                                    int *out_pointee_volatile_qualified, int *out_is_unsigned,
                                    int *out_is_array, int *out_sizeof_size,
                                    int *out_array_first_dim);
-void psx_ctx_define_typedef_name_ex2(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name_ex2(char *name, int len, token_kind_t base_kind, int elem_size,
                                      tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                      char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                      int pointee_const_qualified, int pointee_volatile_qualified,
                                      int is_unsigned, int is_array, int array_first_dim);
 // ex3: 多次元 typedef 配列の全次元を保存。array_dims[0] が最も外側、count=次元数。
 // array_dim_count=0 のときは互換用 (1 次元 or 非配列扱い)。
-void psx_ctx_define_typedef_name_ex3(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name_ex3(char *name, int len, token_kind_t base_kind, int elem_size,
                                      tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                      char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                      int pointee_const_qualified, int pointee_volatile_qualified,

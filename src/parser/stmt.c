@@ -181,9 +181,11 @@ static void parse_typedef_decl(void) {
     if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
     else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
     token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
-    psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+    if (!psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile, td_is_unsigned);
+                                td_pointee_const, td_pointee_volatile, td_is_unsigned)) {
+      psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
+    }
     if (!tk_consume(',')) break;
   }
   tk_expect(';');

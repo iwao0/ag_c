@@ -575,56 +575,81 @@ static void assign_typedef_fields(typedef_name_t *t, token_kind_t base_kind, int
   t->array_first_dim = array_first_dim;
 }
 
-void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                  char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                  int pointee_const_qualified, int pointee_volatile_qualified,
                                  int is_unsigned) {
-  psx_ctx_define_typedef_name_ex(name, len, base_kind, elem_size, fp_kind, tag_kind,
+  return psx_ctx_define_typedef_name_ex(name, len, base_kind, elem_size, fp_kind, tag_kind,
                                  tag_name, tag_len, is_pointer, sizeof_size,
                                  pointee_const_qualified, pointee_volatile_qualified,
                                  is_unsigned, 0);
 }
 
-void psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind, int elem_size,
                                     tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                     char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                     int pointee_const_qualified, int pointee_volatile_qualified,
                                     int is_unsigned, int is_array) {
-  psx_ctx_define_typedef_name_ex2(name, len, base_kind, elem_size, fp_kind, tag_kind,
+  return psx_ctx_define_typedef_name_ex2(name, len, base_kind, elem_size, fp_kind, tag_kind,
                                   tag_name, tag_len, is_pointer, sizeof_size,
                                   pointee_const_qualified, pointee_volatile_qualified,
                                   is_unsigned, is_array, 0);
 }
 
-void psx_ctx_define_typedef_name_ex2(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name_ex2(char *name, int len, token_kind_t base_kind, int elem_size,
                                      tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                      char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                      int pointee_const_qualified, int pointee_volatile_qualified,
                                      int is_unsigned, int is_array, int array_first_dim) {
-  psx_ctx_define_typedef_name_ex3(name, len, base_kind, elem_size, fp_kind, tag_kind,
+  return psx_ctx_define_typedef_name_ex3(name, len, base_kind, elem_size, fp_kind, tag_kind,
                                   tag_name, tag_len, is_pointer, sizeof_size,
                                   pointee_const_qualified, pointee_volatile_qualified,
                                   is_unsigned, is_array, array_first_dim, NULL, 0);
 }
 
-void psx_ctx_define_typedef_name_ex3(char *name, int len, token_kind_t base_kind, int elem_size,
+int psx_ctx_define_typedef_name_ex3(char *name, int len, token_kind_t base_kind, int elem_size,
                                      tk_float_kind_t fp_kind, token_kind_t tag_kind,
                                      char *tag_name, int tag_len, int is_pointer, int sizeof_size,
                                      int pointee_const_qualified, int pointee_volatile_qualified,
                                      int is_unsigned, int is_array, int array_first_dim,
                                      const int *array_dims, int array_dim_count) {
   typedef_name_t *existing = find_typedef_in_current_scope(name, len);
-  typedef_name_t *t = existing;
-  if (!t) {
-    unsigned bucket = psx_ctx_hash_name(name, len);
-    t = calloc(1, sizeof(typedef_name_t));
-    t->name = name;
-    t->len = len;
-    t->scope_depth = tag_scope_depth;
-    t->next_hash = typedefs_by_bucket[bucket];
-    typedefs_by_bucket[bucket] = t;
+  /* C11 6.7p3: typedef は同じ型なら再宣言可。違う型なら error。
+   * 比較するフィールドは「型の identity」を成すもの。tag_name は同じ ptr で
+   * あるはずなので ptr 比較で十分 (parser が tag を共有させている)。 */
+  if (existing) {
+    int n_new = (array_dim_count < 0) ? 0 : array_dim_count;
+    if (n_new > 8) n_new = 8;
+    int same = (existing->base_kind == base_kind &&
+                existing->elem_size == elem_size &&
+                existing->fp_kind == fp_kind &&
+                existing->tag_kind == tag_kind &&
+                existing->tag_name == tag_name &&
+                existing->tag_len == tag_len &&
+                existing->is_pointer == is_pointer &&
+                existing->sizeof_size == sizeof_size &&
+                existing->pointee_const_qualified == pointee_const_qualified &&
+                existing->pointee_volatile_qualified == pointee_volatile_qualified &&
+                existing->is_unsigned == is_unsigned &&
+                existing->is_array == is_array &&
+                existing->array_first_dim == array_first_dim &&
+                existing->array_dim_count == n_new);
+    if (same && array_dims) {
+      for (int i = 0; i < n_new; i++) {
+        if (existing->array_dims[i] != array_dims[i]) { same = 0; break; }
+      }
+    }
+    if (!same) return 0;
+    return 1;  /* 同じ型なら登録済みのままで OK */
   }
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  typedef_name_t *t = calloc(1, sizeof(typedef_name_t));
+  t->name = name;
+  t->len = len;
+  t->scope_depth = tag_scope_depth;
+  t->next_hash = typedefs_by_bucket[bucket];
+  typedefs_by_bucket[bucket] = t;
   assign_typedef_fields(t, base_kind, elem_size, fp_kind, tag_kind,
                         tag_name, tag_len, is_pointer, sizeof_size,
                         pointee_const_qualified, pointee_volatile_qualified, is_unsigned,
@@ -634,6 +659,7 @@ void psx_ctx_define_typedef_name_ex3(char *name, int len, token_kind_t base_kind
   t->array_dim_count = n;
   for (int i = 0; i < n; i++) t->array_dims[i] = array_dims ? array_dims[i] : 0;
   for (int i = n; i < 8; i++) t->array_dims[i] = 0;
+  return 1;
 }
 
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {

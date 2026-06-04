@@ -2271,10 +2271,12 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
-  psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+  if (!psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                   tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
                                   td_pointee_const, td_pointee_volatile, td_is_unsigned,
-                                  td_is_array, td_first_dim, arr.dims, td_dim_count);
+                                  td_is_array, td_first_dim, arr.dims, td_dim_count)) {
+    psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
+  }
 }
 
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
