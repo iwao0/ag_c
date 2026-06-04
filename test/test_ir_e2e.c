@@ -215,6 +215,16 @@ int main(void) {
   run_ir_case("double_sub_div",
               "int main(void) { double a = 10.0; double b = 3.0; return (int)(a / b - 1.0); }\n", 2);
 
+  /* Phase 7d-2: float 関数引数 / 戻り値 */
+  run_ir_case("fp_func_square",
+              "double square(double x) { return x * x; } int main(void) { double r = square(3.0); return (int)r; }\n", 9);
+  run_ir_case("fp_func_multi_arg",
+              "double mix(double a, double b, double c) { return a * b + c; } int main(void) { return (int)mix(2.0, 3.5, 1.0); }\n", 8);
+  run_ir_case("fp_func_mix_int_double",
+              "double pow2(int n, double base) { double r = 1.0; int i; for (i = 0; i < n; i = i + 1) r = r * base; return r; } int main(void) { return (int)pow2(3, 2.5); }\n", 15);
+  run_ir_case("fp_func_div_chain",
+              "double half(double x) { return x / 2.0; } int main(void) { return (int)(half(8.0) + half(4.0)); }\n", 6);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

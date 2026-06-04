@@ -121,6 +121,7 @@ static void emit_restore_regs(gen_ctx_t *ctx) {
  *   - VAL_NONE: scratch に 0 をロードして返す */
 static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch,
                                   char *out_buf, size_t out_size) {
+  int is_fp = (v.type == IR_TY_F32 || v.type == IR_TY_F64);
   if (v.id == IR_VAL_IMM) {
     snprintf(out_buf, out_size, "%s", scratch);
     cg_emit_mov_imm(scratch, v.imm);
@@ -132,7 +133,7 @@ static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch
     return out_buf;
   }
   int vv = v.id;
-  if (ctx->f->vreg_phys_reg && vv >= 0 && vv < ctx->f->next_vreg_id &&
+  if (!is_fp && ctx->f->vreg_phys_reg && vv >= 0 && vv < ctx->f->next_vreg_id &&
       ctx->f->vreg_phys_reg[vv] >= 0) {
     snprintf(out_buf, out_size, "x%d", ctx->f->vreg_phys_reg[vv]);
     return out_buf;
@@ -457,16 +458,23 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     }
     case IR_PARAM: {
       int idx = (int)inst->src1.imm;
-      /* idx == -1 → x8 (struct return area)、それ以外 x0..x7 */
-      const char *src_reg = (idx == -1) ? "x8" : NULL;
+      /* idx == -1 → x8 (struct return area)。
+       * float/double → s{idx}/d{idx}、整数 → x{idx}。 */
+      int is_fp = (inst->dst.type == IR_TY_F32 || inst->dst.type == IR_TY_F64);
       char src_buf[8];
-      if (!src_reg) {
+      const char *src_reg;
+      if (idx == -1) {
+        src_reg = "x8";
+      } else if (is_fp) {
+        const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
+        snprintf(src_buf, sizeof(src_buf), "%s%d", suf, idx);
+        src_reg = src_buf;
+      } else {
         snprintf(src_buf, sizeof(src_buf), "x%d", idx);
         src_reg = src_buf;
       }
-      /* dst が phys なら mov、なければ frame に str */
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-        if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
+        if (!is_fp && ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
           int r = ctx->f->vreg_phys_reg[inst->dst.id];
           if (r != idx && !(idx == -1 && r == 8)) {
             cg_emitf("  mov x%d, %s\n", r, src_reg);
@@ -478,15 +486,28 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       return;
     }
     case IR_CALL: {
-      /* args[i] を x0..x7 にロード。
-       * 物理 reg にある args は mov、imm は mov、spilled は ldr。 */
-      for (int i = 0; i < inst->nargs && i < 8; i++) {
-        char xname[8];
-        snprintf(xname, sizeof(xname), "x%d", i);
+      /* Apple ARM64 ABI: 整数引数は x0..x7、float/double は d0..d7。
+       * 独立カウンタで進める。 */
+      int int_idx = 0;
+      int fp_idx = 0;
+      for (int i = 0; i < inst->nargs && (int_idx < 8 || fp_idx < 8); i++) {
+        ir_val_t arg = inst->args[i];
+        int is_fp = (arg.type == IR_TY_F32 || arg.type == IR_TY_F64);
+        char regname[8];
+        if (is_fp) {
+          const char *suf = (arg.type == IR_TY_F64) ? "d" : "s";
+          snprintf(regname, sizeof(regname), "%s%d", suf, fp_idx++);
+        } else {
+          snprintf(regname, sizeof(regname), "x%d", int_idx++);
+        }
         char buf[8];
-        const char *src = ensure_val_in(ctx, inst->args[i], xname, buf, sizeof(buf));
-        if (strcmp(src, xname) != 0) {
-          cg_emitf("  mov %s, %s\n", xname, src);
+        const char *src = ensure_val_in(ctx, arg, regname, buf, sizeof(buf));
+        if (strcmp(src, regname) != 0) {
+          if (is_fp) {
+            cg_emitf("  fmov %s, %s\n", regname, src);
+          } else {
+            cg_emitf("  mov %s, %s\n", regname, src);
+          }
         }
       }
       /* struct return: ret_area を x8 にロード */
@@ -498,9 +519,15 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
         }
       }
       cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
-      /* 戻り値 x0 を dst slot へ。dst は regalloc 上 spill 扱い (Phase 5)。 */
+      /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-        cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        if (inst->dst.type == IR_TY_F32) {
+          cg_emitf("  str s0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        } else if (inst->dst.type == IR_TY_F64) {
+          cg_emitf("  str d0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        } else {
+          cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        }
       }
       return;
     }
@@ -518,10 +545,18 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     }
     case IR_RET: {
       if (inst->src1.id != IR_VAL_NONE) {
-        char buf[8];
-        const char *src = ensure_val_in(ctx, inst->src1, "x0", buf, sizeof(buf));
-        if (strcmp(src, "x0") != 0) {
-          cg_emitf("  mov x0, %s\n", src);
+        if (inst->src1.type == IR_TY_F32) {
+          char buf[8];
+          const char *src = ensure_val_in(ctx, inst->src1, "s0", buf, sizeof(buf));
+          if (strcmp(src, "s0") != 0) cg_emitf("  fmov s0, %s\n", src);
+        } else if (inst->src1.type == IR_TY_F64) {
+          char buf[8];
+          const char *src = ensure_val_in(ctx, inst->src1, "d0", buf, sizeof(buf));
+          if (strcmp(src, "d0") != 0) cg_emitf("  fmov d0, %s\n", src);
+        } else {
+          char buf[8];
+          const char *src = ensure_val_in(ctx, inst->src1, "x0", buf, sizeof(buf));
+          if (strcmp(src, "x0") != 0) cg_emitf("  mov x0, %s\n", src);
         }
       } else {
         cg_emitf("  mov x0, #0\n");

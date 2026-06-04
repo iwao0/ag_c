@@ -567,7 +567,11 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *call = ir_inst_new(IR_CALL);
-      call->dst = ir_val_vreg(v, IR_TY_I32);
+      /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
+      ir_type_t ret_ty = IR_TY_I32;
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) ret_ty = IR_TY_F32;
+      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) ret_ty = IR_TY_F64;
+      call->dst = ir_val_vreg(v, ret_ty);
       call->sym = fn->funcname;
       call->sym_len = fn->funcname_len;
       call->args = cargs;
@@ -1044,7 +1048,11 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     fail(ctx, "function with more than 8 params (Phase 4a unsupported)");
     return 0;
   }
-  ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, IR_TY_I32);
+  /* 関数戻り値型: fp_kind 対応 */
+  ir_type_t ret_ty = IR_TY_I32;
+  if (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) ret_ty = IR_TY_F32;
+  else if (fn->base.fp_kind >= TK_FLOAT_KIND_DOUBLE) ret_ty = IR_TY_F64;
+  ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
@@ -1062,6 +1070,8 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   }
   /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
    * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */
+  int int_arg_idx = 0;
+  int fp_arg_idx = 0;
   for (int i = 0; i < fn->nargs; i++) {
     node_t *arg = fn->args[i];
     if (!arg || arg->kind != ND_LVAR) {
@@ -1073,12 +1083,11 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     int param_full_size = owner && owner->size > 0 ? owner->size : lv->mem.type_size;
     if (param_full_size > 8) {
       /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
-       * したポインタを x{i} で渡してくる前提。callee は struct slot を確保し、
-       * IR_MEMCPY で値を取り込む。 */
+       * したポインタを x{int_idx} で渡してくる前提。 */
       int param_vreg = ir_func_new_vreg(ctx->f);
       ir_inst_t *p = ir_inst_new(IR_PARAM);
       p->dst = ir_val_vreg(param_vreg, IR_TY_PTR);
-      p->src1 = ir_val_imm(IR_TY_I32, i);
+      p->src1 = ir_val_imm(IR_TY_I32, int_arg_idx++);
       ir_func_append_inst(ctx->f, p);
       int slot_vreg = address_of_lvar(ctx, lv->offset);
       if (slot_vreg < 0) return 0;
@@ -1090,10 +1099,11 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
       continue;
     }
     ir_type_t vty = lvar_value_type(lv);
+    int reg_idx = is_fp_type(vty) ? fp_arg_idx++ : int_arg_idx++;
     int param_vreg = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);
     p->dst = ir_val_vreg(param_vreg, vty);
-    p->src1 = ir_val_imm(IR_TY_I32, i);
+    p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
     int ptr_vreg = address_of_lvar(ctx, lv->offset);
     if (ptr_vreg < 0) return 0;
