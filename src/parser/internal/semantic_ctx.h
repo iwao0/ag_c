@@ -122,6 +122,10 @@ tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len);
 // `nargs_fixed` を境に register / stack を切り替えるのに使う。
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
+/* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での
+ * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
+void psx_ctx_set_function_ret_void(char *name, int len, int is_void);
+bool psx_ctx_is_function_ret_void(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

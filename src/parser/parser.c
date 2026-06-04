@@ -1907,6 +1907,10 @@ static node_t *funcdef(void) {
   if (ret_fp_kind != TK_FLOAT_KIND_NONE) {
     psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, ret_fp_kind);
   }
+  // 戻り値型が void かどうかを記録。代入/初期化での void 値使用検出に使う。
+  if (ret_kind == TK_VOID && !ret_is_ptr) {
+    psx_ctx_set_function_ret_void(tok->str, tok->len, 1);
+  }
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。
   // 非 variadic 関数でも nargs_fixed を記録するため常に呼ぶ。

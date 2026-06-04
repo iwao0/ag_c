@@ -1,6 +1,7 @@
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
 #include "internal/arena.h"
+#include "internal/diag.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 
@@ -251,6 +252,17 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size) {
 }
 
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
+  /* C11 6.5.16: 代入の RHS は void 型であってはならない。
+   * 直接呼び出し ND_FUNCALL のみチェック (間接呼び出しは型情報未保持)。 */
+  if (rhs && rhs->kind == ND_FUNCALL) {
+    node_func_t *fn = (node_func_t *)rhs;
+    if (fn->callee == NULL && fn->funcname &&
+        psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len)) {
+      psx_diag_ctx(tk_get_current_token(), "assign",
+                   "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
+                   fn->funcname_len, fn->funcname);
+    }
+  }
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
   node->base.kind = ND_ASSIGN;
   node->base.lhs = lhs;

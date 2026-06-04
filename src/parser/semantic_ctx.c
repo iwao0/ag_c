@@ -112,6 +112,8 @@ struct func_name_t {
   // 呼び出し側 codegen で nargs_fixed を境に register / stack を切り替える。
   int is_variadic;
   int nargs_fixed;
+  /* 1: 戻り値型が void。代入や初期化での使用を検出するのに使う (C11 6.5.16)。 */
+  int is_ret_void;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -819,6 +821,17 @@ void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nar
   if (!f) return;
   f->is_variadic = is_variadic;
   f->nargs_fixed = nargs_fixed;
+}
+
+void psx_ctx_set_function_ret_void(char *name, int len, int is_void) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->is_ret_void = is_void ? 1 : 0;
+}
+
+bool psx_ctx_is_function_ret_void(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f && f->is_ret_void != 0;
 }
 
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed) {
