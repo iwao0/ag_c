@@ -78,7 +78,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int base_is_pointer,
                                                  int is_const_qualified, int is_volatile_qualified,
                                                  int decl_is_unsigned_hint,
-                                                 const int *td_array_dims, int td_array_dim_count);
+                                                 const int *td_array_dims, int td_array_dim_count,
+                                                 int decl_base_is_void);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
 
 // `{ ... }` のトップレベル要素数を先読みで返す。curtok は変更しない。

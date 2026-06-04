@@ -1646,7 +1646,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                                   tag_kind, tag_name, tag_len,
                                                   base_is_pointer,
                                                   is_const_qualified, is_volatile_qualified,
-                                                  decl_is_unsigned_hint, NULL, 0);
+                                                  decl_is_unsigned_hint, NULL, 0,
+                                                  /* decl_base_is_void = */ 0);
 }
 
 /* `static int n = 5;` のような単純スカラ static ローカルをグローバルに lowering する。
@@ -1729,7 +1730,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int base_is_pointer,
                                                  int is_const_qualified, int is_volatile_qualified,
                                                  int decl_is_unsigned_hint,
-                                                 const int *td_array_dims, int td_array_dim_count) {
+                                                 const int *td_array_dims, int td_array_dim_count,
+                                                 int decl_base_is_void) {
   node_t *init_chain = NULL;
   int alignas_val = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
@@ -1769,6 +1771,14 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
     int ptr_is_const_qualified = (ptr_const_mask & 1u) ? 1 : 0;
     int ptr_is_volatile_qualified = (ptr_volatile_mask & 1u) ? 1 : 0;
+
+    /* C11 6.7.2p2: void は不完全型なので、それ自体でオブジェクトを宣言できない。
+     * `void x;` はエラー、`void *p;` は可。is_pointer は宣言子のポインタチェーン
+     * (`*` 列) を含んだ後の値なので、ここで判定できる。 */
+    if (decl_base_is_void && !is_pointer) {
+      psx_diag_ctx(curtok(), "decl", "void 型のオブジェクトは宣言できません: '%.*s'",
+                   tok ? tok->len : 0, tok ? tok->str : "");
+    }
 
     /* `static` ローカル: 配列や struct でない単純スカラ (int/long/short/char/pointer)
      * はグローバルに lowering する。配列・struct 等の複雑形は現状フォールバック
@@ -2106,7 +2116,8 @@ node_t *psx_decl_parse_declaration(void) {
                                                   ds.is_const_qualified ? 1 : ds.td_pointee_const,
                                                   ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile,
                                                   ds.is_unsigned,
-                                                  ds.td_array_dims, ds.td_array_dim_count);
+                                                  ds.td_array_dims, ds.td_array_dim_count,
+                                                  ds.type_kind == TK_VOID ? 1 : 0);
 }
 
 static int parse_local_decl_spec(local_decl_spec_t *out) {
