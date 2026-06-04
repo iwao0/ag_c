@@ -247,6 +247,21 @@ int main(void) {
   run_ir_case("string_literal_arg",
               "#include <stdio.h>\nint main(void) { char *s = \"world\"; printf(\"hello %s, %d\\n\", s, 42); return 0; }\n", 0);
 
+  /* Phase 7g: bit 演算 / 単項 / inc-dec / enum */
+  run_ir_case("bit_and_or",
+              "int main(void) { int x = 0xF0; int y = 0x0F; return (x | y) & 0xFF; }\n", 255);
+  run_ir_case("bit_shift",
+              "int main(void) { int x = 1; return (x << 3) | (x << 1); }\n", 10);
+  run_ir_case("bit_xor",
+              "int main(void) { int x = 0xAA; int y = 0xFF; return (x ^ y) & 0xFF; }\n", 0x55);
+  run_ir_case("incdec_pre_post",
+              "int main(void) { int i = 5; int a = i++; int b = ++i; return a + b + i; }\n", 19);
+  run_ir_case("enum_basic",
+              "enum { A = 10, B, C = 20 }; int main(void) { return A + B + C; }\n", 41);
+  /* shift_chain: 1365 = 0x555、WEXITSTATUS で & 0xff → 0x55 = 85 */
+  run_ir_case("shift_chain",
+              "int main(void) { int x = 0x55; return (x >> 2) | (x << 4); }\n", 85);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

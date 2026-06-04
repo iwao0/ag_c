@@ -682,6 +682,11 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_MUL:
     case ND_DIV:
     case ND_MOD:
+    case ND_BITAND:
+    case ND_BITOR:
+    case ND_BITXOR:
+    case ND_SHL:
+    case ND_SHR:
     case ND_LT:
     case ND_LE:
     case ND_EQ:
@@ -698,6 +703,11 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         case ND_MUL: op = is_fp ? IR_FMUL : IR_MUL; break;
         case ND_DIV: op = is_fp ? IR_FDIV : IR_DIV; break;
         case ND_MOD: op = IR_MOD; break;  /* float mod は未対応 */
+        case ND_BITAND: op = IR_AND; break;
+        case ND_BITOR:  op = IR_OR;  break;
+        case ND_BITXOR: op = IR_XOR; break;
+        case ND_SHL:    op = IR_SHL; break;
+        case ND_SHR:    op = IR_SHR; break;
         case ND_LT:  op = is_fp ? IR_FLT : IR_LT; break;
         case ND_LE:  op = is_fp ? IR_FLE : IR_LE; break;
         case ND_EQ:  op = is_fp ? IR_FEQ : IR_EQ; break;
@@ -767,6 +777,40 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       inst->src1 = v;
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
+    }
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC: {
+      /* ++x / x++ / --x / x-- — target は ND_LVAR を想定 (Phase 7g 範囲)。
+       * pointer の inc/dec は parser が scale 済みであることに依存。 */
+      node_t *target = node->lhs;
+      if (!target || target->kind != ND_LVAR) {
+        fail(ctx, "inc/dec target not LVAR (Phase 7g unsupported)");
+        return ir_val_none();
+      }
+      node_lvar_t *lv = (node_lvar_t *)target;
+      ir_type_t vty = lvar_value_type(lv);
+      int ptr_vreg = address_of_lvar(ctx, lv->offset);
+      if (ptr_vreg < 0) return ir_val_none();
+      /* load 現在値 */
+      int v_old = ir_func_new_vreg(ctx->f);
+      ir_inst_t *ld = ir_inst_new(IR_LOAD);
+      ld->dst = ir_val_vreg(v_old, vty);
+      ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+      ir_func_append_inst(ctx->f, ld);
+      /* step = 1 (pointer の scale は parser でなされている前提) */
+      int is_inc = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
+      ir_op_t binop = is_inc ? IR_ADD : IR_SUB;
+      int v_new = emit_binop(ctx, binop,
+                              ir_val_vreg(v_old, vty),
+                              ir_val_imm(vty, 1), vty);
+      ir_inst_t *st = ir_inst_new(IR_STORE);
+      st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+      st->src2 = ir_val_vreg(v_new, vty);
+      ir_func_append_inst(ctx->f, st);
+      int is_pre = (node->kind == ND_PRE_INC || node->kind == ND_PRE_DEC);
+      return is_pre ? ir_val_vreg(v_new, vty) : ir_val_vreg(v_old, vty);
     }
     case ND_VA_ARG_AREA: {
       /* stdarg.h の va_start マクロが参照する builtin。

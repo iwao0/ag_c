@@ -396,6 +396,32 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       }
       return;
     }
+    case IR_NEG: {
+      char b1[8], bd[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  neg %s, %s\n", d, s1);
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_NOT: {
+      char b1[8], bd[8];
+      const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  mvn %s, %s\n", d, s1);
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_FNEG: {
+      int is_double = (inst->dst.type == IR_TY_F64);
+      const char *suf = is_double ? "d" : "s";
+      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
+      cg_emitf("  fneg %s0, %s0\n", suf, suf);
+      cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+      return;
+    }
     case IR_LEA: {
       char b1[8], b2[8], bd[8];
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
