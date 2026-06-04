@@ -225,6 +225,14 @@ int main(void) {
   run_ir_case("fp_func_div_chain",
               "double half(double x) { return x / 2.0; } int main(void) { return (int)(half(8.0) + half(4.0)); }\n", 6);
 
+  /* Phase 7e: variadic (caller + callee) */
+  run_ir_case("variadic_sum_int",
+              "#include <stdarg.h>\nint sum(int n, ...) { va_list ap; va_start(ap, n); int s = 0; int i; for (i = 0; i < n; i = i + 1) s = s + va_arg(ap, int); va_end(ap); return s; }\nint main(void) { return sum(3, 10, 20, 12); }\n", 42);
+  run_ir_case("variadic_avg_double",
+              "#include <stdarg.h>\nint avg(int n, ...) { va_list ap; va_start(ap, n); double s = 0.0; int i; for (i = 0; i < n; i = i + 1) s = s + va_arg(ap, double); va_end(ap); return (int)(s / n); }\nint main(void) { return avg(3, 1.0, 2.0, 6.0); }\n", 3);
+  run_ir_case("variadic_va_copy",
+              "#include <stdarg.h>\nint twice(int n, ...) { va_list ap, cp; va_start(ap, n); va_copy(cp, ap); int s = 0, t = 0; int i; for (i = 0; i < n; i = i + 1) s = s + va_arg(ap, int); for (i = 0; i < n; i = i + 1) t = t + va_arg(cp, int); va_end(ap); va_end(cp); return s + t; }\nint main(void) { return twice(3, 10, 20, 30); }\n", 120);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

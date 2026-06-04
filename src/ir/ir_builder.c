@@ -21,6 +21,7 @@
 #include "ir.h"
 #include "../parser/ast.h"
 #include "../parser/internal/decl.h"   /* lvar_t / psx_decl_find_lvar_by_offset */
+#include "../parser/internal/semantic_ctx.h"  /* psx_ctx_get_function_is_variadic */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -512,8 +513,11 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
-      /* Phase 4b: int* のみ前提 (deref 結果は i32) */
-      inst->dst = ir_val_vreg(v, IR_TY_I32);
+      /* deref 後の型は node の fp_kind で判定。`*(double*)p` なら F64。 */
+      ir_type_t load_ty = IR_TY_I32;
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) load_ty = IR_TY_F32;
+      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) load_ty = IR_TY_F64;
+      inst->dst = ir_val_vreg(v, load_ty);
       inst->src1 = ptr;
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
@@ -524,12 +528,23 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         fail(ctx, "indirect function call (Phase 4a unsupported)");
         return ir_val_none();
       }
-      if (fn->is_variadic) {
-        fail(ctx, "variadic call (Phase 4a unsupported)");
+      /* callee が variadic か prototype から確認 (Phase 7e) */
+      int is_variadic_call = 0;
+      int nargs_fixed = fn->nargs;
+      {
+        int fixed = 0;
+        if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
+            fixed < fn->nargs) {
+          is_variadic_call = 1;
+          nargs_fixed = fixed;
+        }
+      }
+      if (!is_variadic_call && fn->nargs > 8) {
+        fail(ctx, "more than 8 arguments (Phase 4a unsupported)");
         return ir_val_none();
       }
-      if (fn->nargs > 8) {
-        fail(ctx, "more than 8 arguments (Phase 4a unsupported)");
+      if (is_variadic_call && nargs_fixed > 8) {
+        fail(ctx, "more than 8 fixed args in variadic call (Phase 7e unsupported)");
         return ir_val_none();
       }
       ir_val_t *cargs = NULL;
@@ -576,6 +591,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       call->sym_len = fn->funcname_len;
       call->args = cargs;
       call->nargs = fn->nargs;
+      call->is_variadic_call = is_variadic_call;
+      call->nargs_fixed = nargs_fixed;
       ir_func_append_inst(ctx->f, call);
       return call->dst;
     }
@@ -669,6 +686,30 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       inst->src1 = v;
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
+    }
+    case ND_VA_ARG_AREA: {
+      /* stdarg.h の va_start マクロが参照する builtin。
+       * stack 上の variadic 引数領域 = x29 + total_size (callee の frame の top)。 */
+      int v = ir_func_new_vreg(ctx->f);
+      ir_inst_t *inst = ir_inst_new(IR_VA_ARG_AREA);
+      inst->dst = ir_val_vreg(v, IR_TY_PTR);
+      ir_func_append_inst(ctx->f, inst);
+      return inst->dst;
+    }
+    case ND_COMMA: {
+      /* (a, b): a を評価して値を捨て、b を評価してその値を返す */
+      if (node->lhs) {
+        (void)build_expr(ctx, node->lhs);
+        if (ctx->failed) return ir_val_none();
+      }
+      if (node->rhs) return build_expr(ctx, node->rhs);
+      return ir_val_none();
+    }
+    case ND_PTR_CAST: {
+      /* (type *)expr ポインタキャスト。値は変えず、後段の deref 用に
+       * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
+      if (node->lhs) return build_expr(ctx, node->lhs);
+      return ir_val_none();
     }
     default:
       fail(ctx, "unsupported expression node");
@@ -842,7 +883,8 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
       /* 副作用のない単独式 (= 宣言由来のプレースホルダなど) */
       return;
     case ND_ASSIGN:
-    case ND_FUNCALL: {
+    case ND_FUNCALL:
+    case ND_COMMA: {
       /* 式文 stmt: 式を評価して値を捨てる */
       (void)build_expr(ctx, node);
       return;
@@ -1034,16 +1076,14 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
       return;
     }
     default:
-      fail(ctx, "unsupported statement node");
+      /* それ以外は「副作用ありの式文」として扱う。build_expr が unsupported
+       * なら failed が立って fallback。 */
+      (void)build_expr(ctx, node);
       return;
   }
 }
 
 static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
-  if (fn->is_variadic) {
-    fail(ctx, "variadic function (Phase 4a unsupported)");
-    return 0;
-  }
   if (fn->nargs > 8) {
     fail(ctx, "function with more than 8 params (Phase 4a unsupported)");
     return 0;
@@ -1053,6 +1093,8 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   if (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) ret_ty = IR_TY_F32;
   else if (fn->base.fp_kind >= TK_FLOAT_KIND_DOUBLE) ret_ty = IR_TY_F64;
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
+  ctx->f->is_variadic = fn->is_variadic;
+  ctx->f->nargs_fixed = fn->nargs;
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;

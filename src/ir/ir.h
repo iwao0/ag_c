@@ -127,6 +127,10 @@ typedef struct ir_inst_t {
    * ret_struct_size > 0 のときに ret_struct_area が有効。 */
   int ret_struct_size;
   ir_val_t ret_struct_area;
+  /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
+   * is_variadic_call > 0 のとき、args[nargs_fixed..nargs-1] は stack に置く。 */
+  int is_variadic_call;
+  int nargs_fixed;
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */

@@ -190,6 +190,16 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
   switch (inst->op) {
     case IR_NOP:
       return;
+    case IR_VA_ARG_AREA: {
+      /* stack 上の variadic 引数領域の先頭 = x29 + total_size。
+       * dst は spill (frame slot に書く)。 */
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  add %s, x29, #%d\n", d, ctx->total_size);
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
     case IR_LABEL:
       cg_emitf(".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;
@@ -486,11 +496,46 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       return;
     }
     case IR_CALL: {
-      /* Apple ARM64 ABI: 整数引数は x0..x7、float/double は d0..d7。
-       * 独立カウンタで進める。 */
+      /* Apple ARM64 ABI:
+       *   - 通常: 整数引数 x0..x7、float/double 引数 s0..d7 (独立カウンタ)。
+       *   - variadic: 固定引数のみ通常レジスタ、可変引数は全て stack に置く。
+       *     stack は 16-byte align、各 variadic arg は 8B スロット。
+       *     float は引数渡しで double に促進。 */
+      int var_stack_bytes = 0;
+      int fixed_limit = inst->is_variadic_call ? inst->nargs_fixed : inst->nargs;
+      if (inst->is_variadic_call) {
+        int nargs_var = inst->nargs - inst->nargs_fixed;
+        var_stack_bytes = ((nargs_var + 1) / 2) * 16;
+        if (var_stack_bytes > 0) {
+          cg_emitf("  sub sp, sp, #%d\n", var_stack_bytes);
+        }
+        /* 可変引数を stack slot に書く */
+        for (int i = inst->nargs_fixed; i < inst->nargs; i++) {
+          ir_val_t arg = inst->args[i];
+          int slot_off = (i - inst->nargs_fixed) * 8;
+          if (arg.type == IR_TY_F32) {
+            /* float → double に昇格して書く */
+            char buf[8];
+            const char *src = ensure_val_in(ctx, arg, "s0", buf, sizeof(buf));
+            if (strcmp(src, "s0") != 0) cg_emitf("  fmov s0, %s\n", src);
+            cg_emitf("  fcvt d0, s0\n");
+            cg_emitf("  str d0, [sp, #%d]\n", slot_off);
+          } else if (arg.type == IR_TY_F64) {
+            char buf[8];
+            const char *src = ensure_val_in(ctx, arg, "d0", buf, sizeof(buf));
+            if (strcmp(src, "d0") != 0) cg_emitf("  fmov d0, %s\n", src);
+            cg_emitf("  str d0, [sp, #%d]\n", slot_off);
+          } else {
+            char buf[8];
+            const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
+            cg_emitf("  str %s, [sp, #%d]\n", src, slot_off);
+          }
+        }
+      }
+      /* 固定引数を通常レジスタに積む */
       int int_idx = 0;
       int fp_idx = 0;
-      for (int i = 0; i < inst->nargs && (int_idx < 8 || fp_idx < 8); i++) {
+      for (int i = 0; i < fixed_limit && (int_idx < 8 || fp_idx < 8); i++) {
         ir_val_t arg = inst->args[i];
         int is_fp = (arg.type == IR_TY_F32 || arg.type == IR_TY_F64);
         char regname[8];
@@ -519,6 +564,10 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
         }
       }
       cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+      /* variadic で stack を使った分を戻す */
+      if (var_stack_bytes > 0) {
+        cg_emitf("  add sp, sp, #%d\n", var_stack_bytes);
+      }
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
       if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
         if (inst->dst.type == IR_TY_F32) {
