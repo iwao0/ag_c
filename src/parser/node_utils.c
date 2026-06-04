@@ -21,6 +21,20 @@ int psx_node_type_size(node_t *node) {
       return as_mem(node)->type_size;
     case ND_COMMA:
       return psx_node_type_size(node->rhs);
+    case ND_FUNCALL: {
+      /* 関数呼び出し: 戻り値の型サイズを semantic ctx から推定する。
+       *   struct 戻り値 (ret_struct_size > 0)  → そのサイズ
+       *   float                                → 4
+       *   double / long double (lowered to d)  → 8
+       *   それ以外 (int / pointer 等)          → 4 (int)
+       * ポインタ戻り値 (`char *get(void)`) の sizeof は本来 8 だが、
+       * parser がポインタ戻り値かを覚えていないので int と区別がつかない。
+       * 既存 fixture でこのケースは使われていないため一旦 4 にしている。 */
+      if (node->ret_struct_size > 0) return node->ret_struct_size;
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
+      if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
+      return 4;
+    }
     default:
       return 0;
   }

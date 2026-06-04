@@ -1182,10 +1182,11 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_PRE_DEC:
     case ND_POST_INC:
     case ND_POST_DEC: {
-      /* ++x / x++ / --x / x-- — target は ND_LVAR か ND_DEREF を許可する。
+      /* ++x / x++ / --x / x-- — target は ND_LVAR / ND_DEREF / ND_GVAR を許可する。
        *   ND_LVAR : address_of_lvar で frame アドレスを得る。
        *   ND_DEREF: target->lhs を eval して得たポインタをそのまま使う
        *             ((**pp)++ や cast 経由の `((T*)p)->m++` がここに来る)。
+       *   ND_GVAR : @PAGE/PAGEOFF (TLS なら TLV) でアドレスを取る。
        * pointer の inc/dec は parser が +/- step を scale 済みであることに依存。 */
       node_t *target = node->lhs;
       if (!target) {
@@ -1210,8 +1211,23 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         else if (mm->type_size == 2) vty = IR_TY_I16;
         else if (mm->type_size == 1) vty = IR_TY_I8;
         else vty = IR_TY_I32;
+      } else if (target->kind == ND_GVAR) {
+        node_gvar_t *gv = (node_gvar_t *)target;
+        if (target->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
+        else if (target->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
+        else {
+          int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+          vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+        }
+        int v_addr = ir_func_new_vreg(ctx->f);
+        ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
+        sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+        sym->sym = gv->name;
+        sym->sym_len = gv->name_len;
+        ir_func_append_inst(ctx->f, sym);
+        ptr_vreg = v_addr;
       } else {
-        fail(ctx, "inc/dec target not LVAR/DEREF");
+        fail(ctx, "inc/dec target not LVAR/DEREF/GVAR");
         return ir_val_none();
       }
       if (ptr_vreg < 0) return ir_val_none();
