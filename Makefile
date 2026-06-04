@@ -86,6 +86,11 @@ $(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(
 check-tokenizer-boundary:
 	./scripts/check_tokenizer_internal_boundary.sh
 
+# 「cc は拒否するが ag_c が受け入れてしまう」C ソースを test/fixtures/should_reject/
+# 配下に集めている。レポート専用 (CI を red にしない)。
+check-should-reject: $(TARGET)
+	./scripts/check_should_reject.sh
+
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
@@ -118,6 +123,6 @@ release: $(OBJS)
 clean:
 	rm -rf build
 
-.PHONY: test test-asan clean bench release check-tokenizer-boundary check-tokenizer-perf-light log-tokenizer-hotpath-daily
+.PHONY: test test-asan clean bench release check-tokenizer-boundary check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject
 
 -include $(DEPS)
