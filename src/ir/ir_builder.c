@@ -156,6 +156,74 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
   return v;
 }
 
+/* v を target_ty に変換した vreg を返す。型が同じならそのまま。
+ * 整数⇔浮動小数点は IR_I2F / IR_F2I、float⇔double は IR_F2F、
+ * i32 → i64 等の整数幅変換は SEXT/ZEXT/TRUNC。
+ * ポインタ型は他とは混ぜず、unsigned 拡張は呼び出し元の責任とする。 */
+static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target_ty) {
+  if (v.type == target_ty) return v;
+  int v_is_fp = is_fp_type(v.type);
+  int t_is_fp = is_fp_type(target_ty);
+  /* int → float */
+  if (!v_is_fp && t_is_fp) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_I2F);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
+  /* float → int */
+  if (v_is_fp && !t_is_fp) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_F2I);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
+  /* float ↔ float (f32 ↔ f64) */
+  if (v_is_fp && t_is_fp) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_F2F);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
+  /* 整数同士の幅変換 (PTR <-> i32/i64 もここ通る; 実体は同じ 64bit reg なので
+   * 値だけ流用)。型 tag は新しい dst でラップする。 */
+  if (target_ty == IR_TY_PTR || v.type == IR_TY_PTR) {
+    return ir_val_vreg(v.id, target_ty);
+  }
+  /* i32 → i64 系。即値はそのまま type 更新で OK (mov w/x で再ロードされる)。 */
+  if (v.id == IR_VAL_IMM) {
+    v.type = target_ty;
+    return v;
+  }
+  /* 32 → 64 拡張: SEXT を入れる (符号情報なしのとき signed 拡張で C 規約に合う)。 */
+  if (ir_type_size(target_ty) > ir_type_size(v.type)) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_SEXT);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
+  /* 64 → 32 縮小: TRUNC を入れる。 */
+  if (ir_type_size(target_ty) < ir_type_size(v.type)) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_TRUNC);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
+  /* fall-through: 同サイズなら tag だけ更新 (例: 内部表現の都合) */
+  v.type = target_ty;
+  return v;
+}
+
 /* 整数即値を LOAD_IMM で生成し vreg を返す。 */
 __attribute__((unused))
 static int emit_load_imm(ir_build_ctx_t *ctx, long long imm, ir_type_t ty) {
@@ -679,8 +747,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
           ir_func_append_inst(ctx->f, st);
           return rhs;
         }
-        /* 通常のスカラ代入 */
-        rhs.type = vty;
+        /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
+        rhs = coerce_to_type(ctx, rhs, vty);
         ir_inst_t *st = ir_inst_new(IR_STORE);
         st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
         st->src2 = rhs;
@@ -705,7 +773,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         ir_func_append_inst(ctx->f, sym);
         ir_val_t rhs = build_expr(ctx, node->rhs);
         if (ctx->failed) return ir_val_none();
-        rhs.type = vty;
+        rhs = coerce_to_type(ctx, rhs, vty);
         ir_inst_t *st = ir_inst_new(IR_STORE);
         st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
         st->src2 = rhs;

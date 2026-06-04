@@ -1,33 +1,36 @@
+/*
+ * arm64 Apple ABI: 共有インフラとデータセクション出力。
+ *
+ * ag_c は AST → IR → ASM の経路で関数本体を生成する (arm64_apple_ir.c)。
+ * このファイルは IR バックエンドと main.c が共有する以下を提供する:
+ *   - cg_emitf / cg_emit_mov_imm: 低レベル emit ヘルパ (str/ldr 連を peephole で
+ *     潰すバッファ付き)
+ *   - gen_set_output_callback: stdout 以外への出力切り替え
+ *   - gen_string_literals / gen_float_literals / gen_global_vars: parser が登録
+ *     した文字列 / 浮動小数点定数 / グローバル変数のデータセクション emit
+ *
+ * 旧 AST 直 codegen (gen / gen_stmt / gen_expr ...) はここから削除済み。
+ * Phase 7o で IR 経路が fixture 100% を通過したため、AST 経路は不要になった。
+ */
+
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
-#include "../parser/internal/arena.h"
 #include "../parser/parser.h"
-#include "../parser/internal/semantic_ctx.h"
 #include "../tokenizer/escape.h"
 #include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
 #include <stdint.h>
-#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
+#include <string.h>
 
-// ラベルの一意番号を生成するカウンタ
-static int label_count = 0;
-// TCO: 現在コード生成中の関数情報
-static char *cg_current_funcname = NULL;
-static int cg_current_funcname_len = 0;
-static int cg_current_nargs = 0;
-static int *break_labels;
-static int *continue_labels;
-static int control_cap = 0;
-static int control_depth = 0;
 static gen_output_line_fn gen_output_cb;
 static void *gen_output_user_data;
-// 浮動小数点定数用ラベルカウンタ
 
-// ピープホール最適化: 直前の出力行をバッファリングし、
-// 冗長な str/ldr ペアを除去する
+/* ピープホール最適化: 直前の出力行をバッファして、
+ *   str x0, [sp, #-16]!  +  ldr x0, [sp], #16  → 両方除去
+ *   str x0, [sp, #-16]!  +  ldr x1, [sp], #16  → mov x1, x0
+ * のような自明な push/pop ペアを潰す。IR 経路でもこの 2 パターンは出るので
+ * 残しておく価値がある。 */
 #define PEEPHOLE_BUF_SIZE 128
 static char peephole_buf[PEEPHOLE_BUF_SIZE];
 static size_t peephole_len = 0;
@@ -37,7 +40,6 @@ static const char STR_X0_PUSH[] = "  str x0, [sp, #-16]!\n";
 static const char LDR_X0_POP[]  = "  ldr x0, [sp], #16\n";
 static const char LDR_X1_POP[]  = "  ldr x1, [sp], #16\n";
 static const char MOV_X1_X0[]   = "  mov x1, x0\n";
-
 
 static void cg_raw_emit(const char *line, size_t len) {
   if (gen_output_cb) {
@@ -58,14 +60,12 @@ static void cg_emit_line(const char *line, size_t len) {
   if (peephole_has_line
       && peephole_len == sizeof(STR_X0_PUSH) - 1
       && memcmp(peephole_buf, STR_X0_PUSH, peephole_len) == 0) {
-    // str x0, [sp, #-16]! の直後に ldr x0, [sp], #16 → 両方除去
     if (len == sizeof(LDR_X0_POP) - 1
         && memcmp(line, LDR_X0_POP, len) == 0) {
       peephole_has_line = 0;
       peephole_len = 0;
       return;
     }
-    // str x0, [sp, #-16]! の直後に ldr x1, [sp], #16 → mov x1, x0 に置換
     if (len == sizeof(LDR_X1_POP) - 1
         && memcmp(line, LDR_X1_POP, len) == 0) {
       peephole_has_line = 0;
@@ -74,9 +74,7 @@ static void cg_emit_line(const char *line, size_t len) {
       return;
     }
   }
-  // バッファにある前の行をフラッシュ
   cg_flush_peephole();
-  // 現在の行をバッファに保存
   if (len < PEEPHOLE_BUF_SIZE) {
     memcpy(peephole_buf, line, len);
     peephole_len = len;
@@ -86,7 +84,7 @@ static void cg_emit_line(const char *line, size_t len) {
   }
 }
 
-/* IR バックエンド (arm64_apple_ir.c) から共有するため非 static。 */
+/* IR バックエンド (arm64_apple_ir.c) からも呼ばれるため非 static。 */
 void cg_emitf(const char *fmt, ...) {
   char stack_buf[256];
   va_list ap;
@@ -126,22 +124,18 @@ void cg_emitf(const char *fmt, ...) {
   free(heap_buf);
 }
 
-
-// AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンスで生成する
-// IR バックエンドからも共有するため非 static。
+/* AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンス。
+ * IR バックエンドからも共有するため非 static。 */
 void cg_emit_mov_imm(const char *reg, long long val) {
   uint64_t uval = (uint64_t)val;
-  // 16bit に収まる場合（符号付き -65536..65535 もカバー）
   if (val >= 0 && val <= 0xFFFF) {
     cg_emitf("  mov %s, #%lld\n", reg, val);
     return;
   }
-  // 負の値で mov で扱える範囲（movn 相当）
   if (val < 0 && val >= -0x10000) {
     cg_emitf("  mov %s, #%lld\n", reg, val);
     return;
   }
-  // 一般ケース: movz + movk シーケンス
   int first = 1;
   for (int shift = 0; shift < 64; shift += 16) {
     uint64_t chunk = (uval >> shift) & 0xFFFF;
@@ -156,1652 +150,19 @@ void cg_emit_mov_imm(const char *reg, long long val) {
 }
 
 void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
-  // コールバック切り替え前にバッファをフラッシュ
   cg_flush_peephole();
   gen_output_cb = cb;
   gen_output_user_data = user_data;
 }
 
-// Apple Silicon (ARM64) 向けのアセンブリコード生成
-
-// 26個の変数(a-z) * 8バイト = 208バイト + フレームポインタ/リンクレジスタ用16バイト = 224
-// 16バイトアラインメントに合わせる → 224
-#define STACK_SIZE 1024
-// >16B 構造体戻り値: x8 (indirect result pointer) の退避スロット
-// フレーム末尾の固定位置 [x29 + STACK_SIZE - 16]
-#define X8_SAVE_OFFSET (STACK_SIZE - 16)
-
-static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
-static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
-static node_num_t *as_num(node_t *node) { return (node_num_t *)node; }
-static node_block_t *as_block(node_t *node) { return (node_block_t *)node; }
-static node_func_t *as_func(node_t *node) { return (node_func_t *)node; }
-static node_ctrl_t *as_ctrl(node_t *node) { return (node_ctrl_t *)node; }
-static node_string_t *as_string(node_t *node) { return (node_string_t *)node; }
-static node_funcref_t *as_funcref(node_t *node) { return (node_funcref_t *)node; }
-static node_case_t *as_case(node_t *node) { return (node_case_t *)node; }
-static node_default_t *as_default(node_t *node) { return (node_default_t *)node; }
-static node_jump_t *as_jump(node_t *node) { return (node_jump_t *)node; }
-
-static void ensure_control_capacity(int need) {
-  if (control_cap >= need) return;
-  int new_cap = control_cap ? control_cap : 16;
-  while (new_cap < need) new_cap *= 2;
-  int *new_break_labels = malloc(sizeof(int) * (size_t)new_cap);
-  int *new_continue_labels = malloc(sizeof(int) * (size_t)new_cap);
-  if (!new_break_labels || !new_continue_labels) {
-    free(new_break_labels);
-    free(new_continue_labels);
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-  }
-  if (control_depth > 0) {
-    memcpy(new_break_labels, break_labels, sizeof(int) * (size_t)control_depth);
-    memcpy(new_continue_labels, continue_labels, sizeof(int) * (size_t)control_depth);
-  }
-  free(break_labels);
-  free(continue_labels);
-  break_labels = new_break_labels;
-  continue_labels = new_continue_labels;
-  control_cap = new_cap;
-}
-
-static void push_control_labels(int break_lbl, int continue_lbl) {
-  ensure_control_capacity(control_depth + 1);
-  break_labels[control_depth] = break_lbl;
-  continue_labels[control_depth] = continue_lbl;
-  control_depth++;
-}
-
-static void pop_control_labels(void) {
-  if (control_depth > 0) control_depth--;
-}
-
-static int current_break_label(void) {
-  if (control_depth == 0) return -1;
-  return break_labels[control_depth - 1];
-}
-
-static int current_continue_label(void) {
-  for (int i = control_depth - 1; i >= 0; i--) {
-    if (continue_labels[i] >= 0) return continue_labels[i];
-  }
-  return -1;
-}
-
-typedef struct {
-  node_case_t **cases;
-  int case_count;
-  int case_cap;
-  node_default_t *default_node;
-} switch_collect_t;
-
-typedef struct label_map_t label_map_t;
-struct label_map_t {
-  label_map_t *next;
-  char *name;
-  int len;
-  int id;
-};
-
-static label_map_t *label_map_head = NULL;
-
-static void clear_label_map(void) { label_map_head = NULL; }
-
-static void add_label_map(char *name, int len, int id) {
-  label_map_t *m = arena_alloc(sizeof(label_map_t));
-  m->name = name;
-  m->len = len;
-  m->id = id;
-  m->next = label_map_head;
-  label_map_head = m;
-}
-
-static int find_label_id(char *name, int len) {
-  for (label_map_t *m = label_map_head; m; m = m->next) {
-    if (m->len == len && strncmp(m->name, name, (size_t)len) == 0) return m->id;
-  }
-  return -1;
-}
-
-static void switch_collect_add_case(switch_collect_t *sc, node_case_t *c) {
-  if (sc->case_count >= sc->case_cap) {
-    sc->case_cap = sc->case_cap ? sc->case_cap * 2 : 8;
-    node_case_t **new_cases = realloc(sc->cases, sizeof(node_case_t *) * (size_t)sc->case_cap);
-    if (!new_cases) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-    }
-    sc->cases = new_cases;
-  }
-  sc->cases[sc->case_count++] = c;
-}
-
-static void collect_switch_labels(node_t *node, switch_collect_t *sc) {
-  if (!node) return;
-  if (node->kind == ND_SWITCH) return; // ネストしたswitchは別スコープ
-
-  if (node->kind == ND_CASE) {
-    node_case_t *c = as_case(node);
-    c->label_id = label_count++;
-    switch_collect_add_case(sc, c);
-    collect_switch_labels(c->base.rhs, sc);
-    return;
-  }
-  if (node->kind == ND_DEFAULT) {
-    if (sc->default_node) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW, "%s (switch default)",
-                          diag_message_for(DIAG_ERR_CODEGEN_INVALID_CONTROL_FLOW));
-    }
-    node_default_t *d = as_default(node);
-    d->label_id = label_count++;
-    sc->default_node = d;
-    collect_switch_labels(d->base.rhs, sc);
-    return;
-  }
-  if (node->kind == ND_BLOCK) {
-    node_block_t *b = as_block(node);
-    for (int i = 0; b->body[i]; i++) {
-      collect_switch_labels(b->body[i], sc);
-    }
-    return;
-  }
-  if (node->kind == ND_IF) {
-    node_ctrl_t *c = as_ctrl(node);
-    collect_switch_labels(c->base.rhs, sc);
-    collect_switch_labels(c->els, sc);
-    return;
-  }
-  if (node->kind == ND_WHILE || node->kind == ND_DO_WHILE || node->kind == ND_FOR) {
-    collect_switch_labels(node->rhs, sc);
-    return;
-  }
-  if (node->kind == ND_LABEL) {
-    collect_switch_labels(node->rhs, sc);
-    return;
-  }
-}
-
-static void collect_goto_labels(node_t *node) {
-  if (!node) return;
-  if (node->kind == ND_LABEL) {
-    node_jump_t *j = as_jump(node);
-    if (j->label_id <= 0) {
-      j->label_id = label_count++;
-      add_label_map(j->name, j->name_len, j->label_id);
-    }
-    collect_goto_labels(j->base.rhs);
-    return;
-  }
-  if (node->kind == ND_BLOCK) {
-    node_block_t *b = as_block(node);
-    for (int i = 0; b->body[i]; i++) collect_goto_labels(b->body[i]);
-    return;
-  }
-  if (node->kind == ND_IF) {
-    node_ctrl_t *c = as_ctrl(node);
-    collect_goto_labels(c->base.rhs);
-    collect_goto_labels(c->els);
-    return;
-  }
-  if (node->kind == ND_WHILE || node->kind == ND_DO_WHILE || node->kind == ND_FOR || node->kind == ND_SWITCH) {
-    collect_goto_labels(node->rhs);
-    return;
-  }
-  if (node->kind == ND_CASE || node->kind == ND_DEFAULT) {
-    collect_goto_labels(node->rhs);
-    return;
-  }
-}
-
-static void gen_stmt(node_t *node);
-
-static void gen_switch_body(node_t *node) {
-  if (!node) return;
-  if (node->kind == ND_BLOCK) {
-    node_block_t *b = as_block(node);
-    for (int i = 0; b->body[i]; i++) {
-      gen_switch_body(b->body[i]);
-    }
-    return;
-  }
-  if (node->kind == ND_CASE) {
-    node_case_t *c = as_case(node);
-    cg_emitf(".Lcase%d:\n", c->label_id);
-    gen_stmt(c->base.rhs);
-    return;
-  }
-  if (node->kind == ND_DEFAULT) {
-    node_default_t *d = as_default(node);
-    cg_emitf(".Ldefault%d:\n", d->label_id);
-    gen_stmt(d->base.rhs);
-    return;
-  }
-  gen_stmt(node);
-}
-
-static int is_main_func(const node_func_t *fn) {
-  return fn->funcname_len == 4 && strncmp(fn->funcname, "main", 4) == 0;
-}
-
-void gen_main_prologue(void) {
-  // 関数定義で生成するため空にする（互換性維持）
-}
-
-void gen_main_epilogue(void) {
-  // 関数定義で生成するため空にする（互換性維持）
-}
-
-static void gen_expr(node_t *node);
-static void gen_stmt(node_t *node);
-static void emit_int_binop_op(node_t *node, const char *lhs, const char *rhs,
-                              const char *dst, const char *scratch);
-
-static int cg_can_use_fp_immediate_zero(double fval, tk_float_kind_t fp_kind) {
-  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
-    float v = (float)fval;
-    return v == 0.0f && !signbit(v);
-  }
-  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    double v = fval;
-    return v == 0.0 && !signbit(v);
-  }
-  return 0;
-}
-
-static int cg_emit_fp_literal_immediate_if_possible(const node_num_t *num, tk_float_kind_t fp_kind) {
-  if (!cg_can_use_fp_immediate_zero(num->fval, fp_kind)) return 0;
-  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
-    cg_emitf("  fmov s0, #0.0\n");
-    cg_emitf("  str s0, [sp, #-16]!\n");
-  } else {
-    cg_emitf("  fmov d0, #0.0\n");
-    cg_emitf("  str d0, [sp, #-16]!\n");
-  }
-  return 1;
-}
-
-// dst_reg 番目の汎用レジスタへ、addr_expr が指すサイズ size の整数をロードする。
-// 1/2/4 サイズで is_unsigned 偽なら符号拡張 (ldrsb/ldrsh/ldrsw)、真ならゼロ拡張 (ldrb/ldrh/ldr w)。
-// 8 のときは ldr x{dst_reg}。addr_expr は呼び出し側で組み立てた文字列で、
-// "x0" のような単一レジスタでも "x29, #16" のような frame-offset でも使える。
-static void cg_emit_load_int_to_xreg(int dst_reg, int size, int is_unsigned, const char *addr_expr) {
-  if (size == 1)
-    cg_emitf(is_unsigned ? "  ldrb w%d, [%s]\n" : "  ldrsb x%d, [%s]\n",
-             dst_reg, addr_expr, dst_reg, addr_expr);
-  else if (size == 2)
-    cg_emitf(is_unsigned ? "  ldrh w%d, [%s]\n" : "  ldrsh x%d, [%s]\n",
-             dst_reg, addr_expr, dst_reg, addr_expr);
-  else if (size == 4)
-    cg_emitf(is_unsigned ? "  ldr w%d, [%s]\n" : "  ldrsw x%d, [%s]\n",
-             dst_reg, addr_expr, dst_reg, addr_expr);
-  else
-    cg_emitf("  ldr x%d, [%s]\n", dst_reg, addr_expr);
-}
-
-// x0 への load — 既存呼び出し側との互換薄ラッパ。
-static void cg_emit_load_int_to_x0(int size, int is_unsigned, const char *addr_reg) {
-  cg_emit_load_int_to_xreg(0, size, is_unsigned, addr_reg);
-}
-
-static void gen_load_x0_from_addr(int type_size) {
-  if (type_size == 1)
-    cg_emitf("  ldrb w0, [x1]\n");
-  else if (type_size == 2)
-    cg_emitf("  ldrh w0, [x1]\n");
-  else if (type_size == 4)
-    cg_emitf("  ldr w0, [x1]\n");
-  else
-    cg_emitf("  ldr x0, [x1]\n");
-}
-
-static void gen_store_x0_to_addr(int type_size) {
-  if (type_size == 1)
-    cg_emitf("  strb w0, [x1]\n");
-  else if (type_size == 2)
-    cg_emitf("  strh w0, [x1]\n");
-  else if (type_size == 4)
-    cg_emitf("  str w0, [x1]\n");
-  else
-    cg_emitf("  str x0, [x1]\n");
-}
-
-// レジスタ名取得ヘルパー
-static const char *freg(int fp_kind, int reg_idx) {
-  if (fp_kind == TK_FLOAT_KIND_FLOAT) return (reg_idx == 0) ? "s0" : "s1";
-  return (reg_idx == 0) ? "d0" : "d1";
-}
-
-// child_type の値をスタックからポップし、target_type にキャストして FPU レジスタ (s0/d0 または s1/d1) にロードする
-static void gen_pop_fpu(int target_type, int child_type, int reg_idx) {
-  const char *s = (reg_idx == 0) ? "s0" : "s1";
-  const char *d = (reg_idx == 0) ? "d0" : "d1";
-  
-  if (child_type == TK_FLOAT_KIND_FLOAT) { // float がプッシュされている
-    cg_emitf("  ldr %s, [sp], #16\n", s);
-    if (target_type >= TK_FLOAT_KIND_DOUBLE) {
-      cg_emitf("  fcvt %s, %s\n", d, s); // float -> double
-    }
-  } else if (child_type >= TK_FLOAT_KIND_DOUBLE) { // double/long double(現状lowering) がプッシュされている
-    cg_emitf("  ldr %s, [sp], #16\n", d);
-    if (target_type == TK_FLOAT_KIND_FLOAT) {
-      cg_emitf("  fcvt %s, %s\n", s, d); // double -> float
-    }
-  } else {                      // int がプッシュされている
-    cg_emitf("  ldr x%d, [sp], #16\n", reg_idx);
-    if (target_type == TK_FLOAT_KIND_FLOAT) {
-      cg_emitf("  scvtf %s, x%d\n", s, reg_idx); // int -> float
-    } else {
-      cg_emitf("  scvtf %s, x%d\n", d, reg_idx); // int -> double
-    }
-  }
-}
-
-// 左辺値（変数のアドレス）をスタックへプッシュする
-static void gen_lval(node_t *node) {
-  if (node->kind == ND_DEREF) {
-    // *p = x の左辺値: p の値（アドレス）をプッシュ
-    gen_expr(node->lhs);
-    return;
-  }
-  if (node->kind == ND_GVAR) {
-    node_gvar_t *gv = (node_gvar_t *)node;
-    if (gv->is_thread_local) {
-      cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", gv->name_len, gv->name);
-      cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", gv->name_len, gv->name);
-      cg_emitf("  ldr x8, [x0]\n");
-      cg_emitf("  blr x8\n");
-      // resolver returns variable address in x0
-    } else {
-      cg_emitf("  adrp x0, _%.*s@PAGE\n", gv->name_len, gv->name);
-      cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", gv->name_len, gv->name);
-    }
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  if (node->kind != ND_LVAR) {
-    diag_emit_internalf(DIAG_ERR_CODEGEN_INVALID_LVALUE, "%s (assignment target)",
-                        diag_message_for(DIAG_ERR_CODEGEN_INVALID_LVALUE));
-  }
-  cg_emitf("  add x0, x29, #%d\n", 16 + as_lvar(node)->offset);
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-// レジスタ割り付け最適化のネスト防止フラグ
-// gen_expr_to_reg 実行中に gen_expr がフォールバック経由で再入した場合、
-// gen_expr 内部の register allocation が x9-x15 を上書きするのを防ぐ
-static int cg_inside_regalloc = 0;
-
-// レジスタ割り付け最適化: 式の部分木に関数呼び出しが含まれるか判定
-// (関数呼び出しは x9-x15 を破壊するため、含まれる場合はスタックモードにフォールバック)
-static int cg_has_funcall(node_t *node) {
-  if (!node) return 0;
-  if (node->kind == ND_FUNCALL) return 1;
-  if (node->kind == ND_TERNARY) {
-    node_ctrl_t *c = as_ctrl(node);
-    return cg_has_funcall(c->base.lhs) || cg_has_funcall(c->base.rhs) || cg_has_funcall(c->els);
-  }
-  return cg_has_funcall(node->lhs) || cg_has_funcall(node->rhs);
-}
-
-// レジスタ割り付け最適化: 式の結果を x(9+depth) に直接生成する
-// 利用可能レジスタ: x9-x15 (7本)。depth+1 >= 7 の場合はスタックにフォールバック。
-// 整数式専用 (FPU 演算は対象外)。部分木に funcall がないことが前提。
-#define CG_REGALLOC_DEPTH_MAX 7
-
-static void gen_expr_to_reg(node_t *node, int depth) {
-  int reg = 9 + depth;
-
-  switch (node->kind) {
-  case ND_NUM: {
-    char regbuf[8];
-    snprintf(regbuf, sizeof(regbuf), "x%d", reg);
-    cg_emit_mov_imm(regbuf, as_num(node)->val);
-    return;
-  }
-
-  case ND_LVAR: {
-    if (node->fp_kind) break; // FPU はフォールバック
-    if (node->is_atomic) break; // atomic は ldar 必要 → フォールバック
-    int off = 16 + as_lvar(node)->offset;
-    int ts = as_lvar(node)->mem.type_size;
-    int uns = as_lvar(node)->mem.is_unsigned;
-    char addr[32];
-    snprintf(addr, sizeof(addr), "x29, #%d", off);
-    cg_emit_load_int_to_xreg(reg, ts, uns, addr);
-    return;
-  }
-
-  case ND_GVAR: {
-    node_gvar_t *gv = (node_gvar_t *)node;
-    if (gv->is_thread_local) break; // TLS uses blr -> fallback to stack mode
-    int ts = gv->mem.type_size;
-    int uns = gv->mem.is_unsigned;
-    cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
-    cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
-    char addr[8];
-    snprintf(addr, sizeof(addr), "x%d", reg);
-    cg_emit_load_int_to_xreg(reg, ts, uns, addr);
-    return;
-  }
-
-  case ND_DEREF: {
-    if (as_mem(node)->bit_width > 0) break; // ビットフィールドはフォールバック
-    gen_expr_to_reg(node->lhs, depth);
-    char addr[8];
-    snprintf(addr, sizeof(addr), "x%d", reg);
-    cg_emit_load_int_to_xreg(reg, as_mem(node)->type_size, as_mem(node)->is_unsigned, addr);
-    return;
-  }
-
-  case ND_STRING: {
-    node_string_t *s = as_string(node);
-    cg_emitf("  adrp x%d, %s@PAGE\n", reg, s->string_label);
-    cg_emitf("  add x%d, x%d, %s@PAGEOFF\n", reg, reg, s->string_label);
-    return;
-  }
-
-  case ND_ADDR:
-    if (node->lhs && node->lhs->kind == ND_LVAR) {
-      cg_emitf("  add x%d, x29, #%d\n", reg, 16 + as_lvar(node->lhs)->offset);
-      return;
-    }
-    if (node->lhs && node->lhs->kind == ND_GVAR) {
-      node_gvar_t *gv = (node_gvar_t *)node->lhs;
-      if (gv->is_thread_local) break; // TLS uses blr -> fallback
-      cg_emitf("  adrp x%d, _%.*s@PAGE\n", reg, gv->name_len, gv->name);
-      cg_emitf("  add x%d, x%d, _%.*s@PAGEOFF\n", reg, reg, gv->name_len, gv->name);
-      return;
-    }
-    break; // 複雑なケースはフォールバック
-
-  case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
-  case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
-  case ND_BITAND: case ND_BITXOR: case ND_BITOR:
-  case ND_SHL: case ND_SHR: {
-    if (node->fp_kind) break; // FPU はフォールバック
-    // 比較演算の場合、オペランドが浮動小数点なら FPU パスへフォールバック
-    if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
-      if ((node->lhs && node->lhs->fp_kind) || (node->rhs && node->rhs->fp_kind)) break;
-    }
-    if (depth + 1 >= CG_REGALLOC_DEPTH_MAX) break; // レジスタ不足
-
-    gen_expr_to_reg(node->lhs, depth);
-    gen_expr_to_reg(node->rhs, depth + 1);
-    // dst が lhs と被るが MOD 用の scratch は x0 を使う（呼び出し元が x0 を温存しない前提）。
-    char r0_buf[8], r1_buf[8];
-    snprintf(r0_buf, sizeof(r0_buf), "x%d", reg);
-    snprintf(r1_buf, sizeof(r1_buf), "x%d", reg + 1);
-    emit_int_binop_op(node, r0_buf, r1_buf, r0_buf, "x0");
-    return;
-  }
-
-  default:
-    break;
-  }
-
-  // フォールバック: スタックモード経由でレジスタにロード
-  gen_expr(node);
-  cg_emitf("  ldr x%d, [sp], #16\n", reg);
-}
-
-static void gen_expr_num(node_t *node) {
-  if (node->fp_kind) {
-    node_num_t *num = as_num(node);
-    if (cg_emit_fp_literal_immediate_if_possible(num, node->fp_kind)) return;
-    // 浮動小数点リテラルをデータセクションからロード
-    cg_emitf("  adrp x0, .LCF%d@PAGE\n", num->fval_id);
-    cg_emitf("  add x0, x0, .LCF%d@PAGEOFF\n", num->fval_id);
-    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      cg_emitf("  ldr s0, [x0]\n");
-      cg_emitf("  str s0, [sp, #-16]!\n");
-    } else {
-      cg_emitf("  ldr d0, [x0]\n");
-      cg_emitf("  str d0, [sp, #-16]!\n");
-    }
-    return;
-  }
-  cg_emit_mov_imm("x0", as_num(node)->val);
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_lvar(node_t *node) {
-  if (node->is_complex) {
-    // _Complex: 実部+虚部を16Bスロットとしてプッシュ
-    int coff = 16 + as_lvar(node)->offset;
-    if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      // _Complex float: 4B実部 + 4B虚部 → 8Bにパック
-      cg_emitf("  ldr s0, [x29, #%d]\n", coff);     // 実部
-      cg_emitf("  ldr s1, [x29, #%d]\n", coff + 4); // 虚部
-      cg_emitf("  stp s0, s1, [sp, #-16]!\n");
-    } else {
-      // _Complex double: 8B実部 + 8B虚部 → 16B
-      cg_emitf("  ldr d0, [x29, #%d]\n", coff);
-      cg_emitf("  ldr d1, [x29, #%d]\n", coff + 8);
-      cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-    }
-    return;
-  }
-  gen_lval(node);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    cg_emitf("  ldr s0, [x0]\n");
-    cg_emitf("  str s0, [sp, #-16]!\n");
-  } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    cg_emitf("  ldr d0, [x0]\n");
-    cg_emitf("  str d0, [sp, #-16]!\n");
-  } else if (node->is_atomic) {
-    // _Atomic: load-acquire
-    int sz = as_lvar(node)->mem.type_size;
-    if (sz == 1)      cg_emitf("  ldarb w0, [x0]\n");
-    else if (sz == 2) cg_emitf("  ldarh w0, [x0]\n");
-    else if (sz == 4) cg_emitf("  ldar w0, [x0]\n");
-    else              cg_emitf("  ldar x0, [x0]\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-  } else {
-    cg_emit_load_int_to_x0(as_lvar(node)->mem.type_size,
-                           as_lvar(node)->mem.is_unsigned, "x0");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-  }
-}
-
-static void gen_expr_gvar(node_t *node) {
-  node_gvar_t *gv_node = (node_gvar_t *)node;
-  if (gv_node->is_thread_local) {
-    // TLS access: resolve address via TLV descriptor
-    cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", gv_node->name_len, gv_node->name);
-    cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", gv_node->name_len, gv_node->name);
-    cg_emitf("  ldr x8, [x0]\n");
-    cg_emitf("  blr x8\n");
-  } else {
-    gen_lval(node);
-    cg_emitf("  ldr x0, [sp], #16\n");
-  }
-  cg_emit_load_int_to_x0(gv_node->mem.type_size, gv_node->mem.is_unsigned, "x0");
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_deref(node_t *node) {
-  gen_expr(node->lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emit_load_int_to_x0(as_mem(node)->type_size, as_mem(node)->is_unsigned, "x0");
-  // ビットフィールド抽出
-  if (as_mem(node)->bit_width > 0) {
-    int lsb = as_mem(node)->bit_offset;
-    int width = as_mem(node)->bit_width;
-    if (as_mem(node)->bit_is_signed)
-      cg_emitf("  sbfx x0, x0, #%d, #%d\n", lsb, width);
-    else
-      cg_emitf("  ubfx x0, x0, #%d, #%d\n", lsb, width);
-  }
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_string(node_t *node) {
-  cg_emitf("  adrp x0, %s@PAGE\n", as_string(node)->string_label);
-  cg_emitf("  add x0, x0, %s@PAGEOFF\n", as_string(node)->string_label);
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_vla_alloc(node_t *node) {
-  // VLA動的スタック確保
-  // フレームレイアウト: [x29+16+off]=baseptr, [x29+16+off+8]=bytesize
-  // 2D runtime: [x29+16+rsf]=row_stride (rsf = vla_row_stride_frame_off != 0)
-  int off = as_mem(node)->type_size; // ベースポインタのフレームオフセット
-  int rsf = as_mem(node)->vla_row_stride_frame_off; // 行ストライドのフレームオフセット (0=なし)
-  if (rsf) {
-    // 2D VLA runtime inner: rhs=row_stride_expr(m*elem), lhs=outer_count(n)
-    gen_expr(node->rhs);                            // x0 = row_stride = m * elem_size
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  str x0, [x29, #%d]\n", 16 + rsf);  // row_stride を保存
-    gen_expr(node->lhs);                            // x0 = outer_count = n
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  ldr x1, [x29, #%d]\n", 16 + rsf);  // x1 = row_stride
-    cg_emitf("  mul x0, x0, x1\n");                // x0 = n * row_stride = total byte_size
-  } else {
-    gen_expr(node->lhs);                            // x0 = total byte_size
-    cg_emitf("  ldr x0, [sp], #16\n");
-  }
-  cg_emitf("  str x0, [x29, #%d]\n", 16 + off + 8); // バイトサイズを保存 (sizeof用)
-  cg_emitf("  add x0, x0, #15\n");  // 16バイトアライン
-  cg_emitf("  bic x0, x0, #15\n");  // 下位4ビットをクリア (= & ~15)
-  cg_emitf("  sub sp, sp, x0\n");   // alloca
-  cg_emitf("  mov x0, sp\n");       // spはstr源オペランドに使えないため一時レジスタ経由
-  cg_emitf("  str x0, [x29, #%d]\n", 16 + off); // ベースポインタを保存
-  cg_emitf("  mov x0, #0\n");
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_funcref(node_t *node) {
-  cg_emitf("  adrp x0, _%.*s@PAGE\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
-  cg_emitf("  add x0, x0, _%.*s@PAGEOFF\n", as_funcref(node)->funcname_len, as_funcref(node)->funcname);
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-// 各引数が ABI 上で消費するレジスタ数を返す:
-//   ND_LVAR かつ type_size > 16: 1 (byref ポインタ)
-//   ND_LVAR かつ type_size 9-16: 2 (low/high の2レジスタ構造体)
-//   それ以外:                    1 (スカラ)
-static int arg_reg_count(node_t *a) {
-  int abi_sz = (a->kind == ND_LVAR) ? as_lvar(a)->mem.type_size : 0;
-  if (abi_sz > 16) return 1;
-  if (abi_sz > 8)  return 2;
-  return 1;
-}
-
-// 引数式をソフトウェアスタックへ順方向にプッシュ。
-// >16B 構造体: フレームスロットのアドレスを1スロットに
-// 9-16B 構造体: high→low の順に 2 スロットに
-// それ以外: gen_expr で 1 スロットに
-// fn->args[0..end_idx) をソフトウェアスタックに push する。
-// variadic 関数の register 部分のみ対象にしたい呼び出し側があるので
-// 範囲指定可能にしてある。
-static void emit_funcall_push_args_range(node_func_t *fn, int end_idx) {
-  for (int i = 0; i < end_idx; i++) {
-    node_t *a = fn->args[i];
-    if (a->kind == ND_LVAR) {
-      int abi_sz = as_lvar(a)->mem.type_size;
-      int frame_off = 16 + as_lvar(a)->offset;
-      if (abi_sz > 16) {
-        cg_emitf("  add x0, x29, #%d\n", frame_off);
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        continue;
-      }
-      if (abi_sz > 8) {
-        cg_emitf("  ldr x0, [x29, #%d]\n", frame_off + 8);
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
-        cg_emitf("  str x0, [sp, #-16]!\n");
-        continue;
-      }
-    }
-    gen_expr(a);
-  }
-}
-
-static void emit_funcall_push_args(node_func_t *fn) {
-  emit_funcall_push_args_range(fn, fn->nargs);
-}
-
-// 積まれたソフトウェアスタックからレジスタへ逆順にポップ。
-// 整数引数は x_reg、float/double 引数は d_reg/s_reg と独立レジスタ集合に分ける
-// (ARM64 ABI)。2レジスタ引数は low→x_reg, high→x_{reg+1}。
-// 範囲 [0..end_idx) のみを処理 (variadic 関数の named 部分のみ register に置く用)。
-static void emit_funcall_pop_args_to_regs_range(node_func_t *fn, const int *arg_regs,
-                                                 int end_idx) {
-  if (end_idx <= 0) return;
-  // 各引数に「割り当てる整数 reg」「割り当てる FP reg」を先に決定する。
-  // ポップ順は逆だが、レジスタ番号は引数順 (左から右) に振る必要がある。
-  int *assigned_int_reg = calloc((size_t)end_idx, sizeof(int));
-  int *assigned_fp_reg = calloc((size_t)end_idx, sizeof(int));
-  int next_int = 0;
-  int next_fp = 0;
-  for (int i = 0; i < end_idx; i++) {
-    tk_float_kind_t afp = fn->args[i]->fp_kind;
-    if (afp != TK_FLOAT_KIND_NONE) {
-      assigned_int_reg[i] = -1;
-      assigned_fp_reg[i] = next_fp++;
-    } else {
-      assigned_int_reg[i] = next_int;
-      assigned_fp_reg[i] = -1;
-      next_int += arg_regs[i];
-    }
-  }
-  for (int i = end_idx - 1; i >= 0; i--) {
-    tk_float_kind_t afp = fn->args[i]->fp_kind;
-    if (afp == TK_FLOAT_KIND_FLOAT) {
-      cg_emitf("  ldr s%d, [sp], #16\n", assigned_fp_reg[i]);
-    } else if (afp >= TK_FLOAT_KIND_DOUBLE) {
-      cg_emitf("  ldr d%d, [sp], #16\n", assigned_fp_reg[i]);
-    } else if (arg_regs[i] == 2) {
-      cg_emitf("  ldr x%d, [sp], #16\n", assigned_int_reg[i]);
-      cg_emitf("  ldr x%d, [sp], #16\n", assigned_int_reg[i] + 1);
-    } else {
-      cg_emitf("  ldr x%d, [sp], #16\n", assigned_int_reg[i]);
-    }
-  }
-  free(assigned_int_reg);
-  free(assigned_fp_reg);
-}
-
-static void emit_funcall_pop_args_to_regs(node_func_t *fn, const int *arg_regs, int total_regs) {
-  (void)total_regs;
-  emit_funcall_pop_args_to_regs_range(fn, arg_regs, fn->nargs);
-}
-
-static void gen_expr_funcall(node_t *node) {
-  node_func_t *fn = as_func(node);
-
-  // 間接呼び出し: callee アドレスを引数評価前に x16 へ退避
-  if (fn->callee) {
-    gen_expr(fn->callee);
-    cg_emitf("  ldr x16, [sp], #16\n");
-  }
-
-  int *arg_regs = fn->nargs > 0 ? calloc((size_t)fn->nargs, sizeof(int)) : NULL;
-  int total_regs = 0;
-  for (int i = 0; i < fn->nargs; i++) {
-    arg_regs[i] = arg_reg_count(fn->args[i]);
-    total_regs += arg_regs[i];
-  }
-
-  // Apple ARM64 ABI: variadic 関数の `...` 部分の引数は全て stack に置く。
-  // 直接呼び出しのとき、対象関数の prototype が variadic かを semantic_ctx から問い合わせる。
-  int is_variadic_call = 0;
-  int nargs_fixed = fn->nargs;
-  if (!fn->callee) {
-    int fixed = 0;
-    if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
-        fixed < fn->nargs) {
-      is_variadic_call = 1;
-      nargs_fixed = fixed;
-    }
-  }
-
-  if (is_variadic_call) {
-    int nargs_var = fn->nargs - nargs_fixed;
-    // 16-byte aligned stack area for variadic args (each arg = 8B slot).
-    int stack_bytes = ((nargs_var + 1) / 2) * 16;
-    cg_emitf("  sub sp, sp, #%d\n", stack_bytes);
-    // 各 variadic 引数を評価し、対応する 8B スロットに格納する。
-    // (左から右に評価しても、互いに副作用順は変わらない)
-    for (int i = nargs_fixed; i < fn->nargs; i++) {
-      node_t *a = fn->args[i];
-      int slot_off = (i - nargs_fixed) * 8;
-      gen_expr(a);
-      tk_float_kind_t afp = a->fp_kind;
-      if (afp == TK_FLOAT_KIND_FLOAT) {
-        // float は引数渡しで double に促進される。
-        cg_emitf("  ldr s0, [sp], #16\n");
-        cg_emitf("  fcvt d0, s0\n");
-        cg_emitf("  str d0, [sp, #%d]\n", slot_off);
-      } else if (afp >= TK_FLOAT_KIND_DOUBLE) {
-        cg_emitf("  ldr d0, [sp], #16\n");
-        cg_emitf("  str d0, [sp, #%d]\n", slot_off);
-      } else {
-        cg_emitf("  ldr x9, [sp], #16\n");
-        cg_emitf("  str x9, [sp, #%d]\n", slot_off);
-      }
-    }
-    // 固定引数を register に積む。
-    emit_funcall_push_args_range(fn, nargs_fixed);
-    emit_funcall_pop_args_to_regs_range(fn, arg_regs, nargs_fixed);
-    if (fn->callee) {
-      cg_emitf("  blr x16\n");
-    } else {
-      cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
-    }
-    cg_emitf("  add sp, sp, #%d\n", stack_bytes);
-  } else {
-    emit_funcall_push_args(fn);
-    emit_funcall_pop_args_to_regs(fn, arg_regs, total_regs);
-    if (fn->callee) {
-      cg_emitf("  blr x16\n");
-    } else {
-      cg_emitf("  bl _%.*s\n", fn->funcname_len, fn->funcname);
-    }
-  }
-  free(arg_regs);
-
-  // 戻り値をスタックにプッシュ
-  if (node->ret_struct_size > 8 && node->ret_struct_size <= 16) {
-    // 9-16B 構造体戻り値: x1(高8B)を先にプッシュ、x0(低8B)を後にプッシュ
-    cg_emitf("  str x1, [sp, #-16]!\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-  } else if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    // float 戻り値: 値は s0 にある。s0 を 16B スロットの下位 8B に書く。
-    cg_emitf("  str s0, [sp, #-16]!\n");
-  } else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    // double 戻り値: 値は d0 にある。
-    cg_emitf("  str d0, [sp, #-16]!\n");
-  } else {
-    cg_emitf("  str x0, [sp, #-16]!\n");
-  }
-}
-
-// 二項演算で使う「結果型」(FPU op type) を決める。
-// 算術/論理: node->fp_kind (結果型)。比較: オペランドの fp_kind の大きい方。
-static tk_float_kind_t compute_binop_fpu_op_type(node_t *node) {
-  tk_float_kind_t t = node->fp_kind;
-  if (node->kind == ND_EQ || node->kind == ND_NE || node->kind == ND_LT || node->kind == ND_LE) {
-    if (node->lhs && node->lhs->fp_kind > t) t = node->lhs->fp_kind;
-    if (node->rhs && node->rhs->fp_kind > t) t = node->rhs->fp_kind;
-  }
-  return t;
-}
-
-// スタックトップの単一スカラ d0 を (実部 d0, 虚部 d1=0) の 2 要素にプロモートして再プッシュ。
-static void emit_promote_scalar_to_complex_double(void) {
-  cg_emitf("  ldr d0, [sp], #16\n");
-  cg_emitf("  movi d1, #0\n");
-  cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-}
-
-// 整数二項演算の核を出力する。lhs/rhs/dst のレジスタ名と、MOD で必要な scratch を指定。
-// dst が lhs/rhs と被る場合は scratch を別レジスタにする必要がある(MOD のため)。
-static void emit_int_binop_op(node_t *node, const char *lhs, const char *rhs,
-                              const char *dst, const char *scratch) {
-  switch (node->kind) {
-  case ND_ADD:    cg_emitf("  add %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_SUB:    cg_emitf("  sub %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_MUL:    cg_emitf("  mul %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_DIV:
-    cg_emitf(node->is_unsigned ? "  udiv %s, %s, %s\n" : "  sdiv %s, %s, %s\n", dst, lhs, rhs);
-    break;
-  case ND_MOD:
-    cg_emitf(node->is_unsigned ? "  udiv %s, %s, %s\n" : "  sdiv %s, %s, %s\n", scratch, lhs, rhs);
-    cg_emitf("  msub %s, %s, %s, %s\n", dst, scratch, rhs, lhs);
-    break;
-  case ND_EQ:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf("  cset %s, eq\n", dst); break;
-  case ND_NE:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf("  cset %s, ne\n", dst); break;
-  case ND_LT:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf(node->is_unsigned ? "  cset %s, lo\n" : "  cset %s, lt\n", dst); break;
-  case ND_LE:     cg_emitf("  cmp %s, %s\n", lhs, rhs); cg_emitf(node->is_unsigned ? "  cset %s, ls\n" : "  cset %s, le\n", dst); break;
-  case ND_BITAND: cg_emitf("  and %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_BITXOR: cg_emitf("  eor %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_BITOR:  cg_emitf("  orr %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_SHL:    cg_emitf("  lsl %s, %s, %s\n", dst, lhs, rhs); break;
-  case ND_SHR:    cg_emitf(node->is_unsigned ? "  lsr %s, %s, %s\n" : "  asr %s, %s, %s\n", dst, lhs, rhs); break;
-  default: break;
-  }
-}
-
-// _Complex double の二項演算: スタックに lhs (実d0+虚d1), rhs (実d2+虚d3) が積まれている前提。
-// 戻り値が true なら最終 push 済み（比較演算）、false なら d0,d1 に結果が入っているので呼び出し側で push。
-static bool emit_complex_double_binop(node_t *node) {
-  cg_emitf("  ldp d2, d3, [sp], #16\n"); // rhs: d2=実部, d3=虚部
-  cg_emitf("  ldp d0, d1, [sp], #16\n"); // lhs: d0=実部, d1=虚部
-  switch (node->kind) {
-  case ND_ADD:
-    cg_emitf("  fadd d0, d0, d2\n");
-    cg_emitf("  fadd d1, d1, d3\n");
-    return false;
-  case ND_SUB:
-    cg_emitf("  fsub d0, d0, d2\n");
-    cg_emitf("  fsub d1, d1, d3\n");
-    return false;
-  case ND_MUL:
-    // (a+bi)(c+di) = (ac-bd) + (ad+bc)i
-    cg_emitf("  fmul d4, d0, d2\n"); // ac
-    cg_emitf("  fmul d5, d1, d3\n"); // bd
-    cg_emitf("  fmul d6, d0, d3\n"); // ad
-    cg_emitf("  fmul d7, d1, d2\n"); // bc
-    cg_emitf("  fsub d0, d4, d5\n"); // ac-bd
-    cg_emitf("  fadd d1, d6, d7\n"); // ad+bc
-    return false;
-  case ND_DIV:
-    // (a+bi)/(c+di) = ((ac+bd)/(c²+d²)) + ((bc-ad)/(c²+d²))i
-    cg_emitf("  fmul d4, d2, d2\n"); // c²
-    cg_emitf("  fmul d5, d3, d3\n"); // d²
-    cg_emitf("  fadd d4, d4, d5\n"); // c²+d²
-    cg_emitf("  fmul d5, d0, d2\n"); // ac
-    cg_emitf("  fmul d6, d1, d3\n"); // bd
-    cg_emitf("  fadd d5, d5, d6\n"); // ac+bd
-    cg_emitf("  fdiv d5, d5, d4\n"); // (ac+bd)/(c²+d²)
-    cg_emitf("  fmul d6, d1, d2\n"); // bc
-    cg_emitf("  fmul d7, d0, d3\n"); // ad
-    cg_emitf("  fsub d6, d6, d7\n"); // bc-ad
-    cg_emitf("  fdiv d1, d6, d4\n"); // (bc-ad)/(c²+d²)
-    cg_emitf("  fmov d0, d5\n");
-    return false;
-  case ND_EQ:
-    cg_emitf("  fcmp d0, d2\n");
-    cg_emitf("  cset x0, eq\n");
-    cg_emitf("  fcmp d1, d3\n");
-    cg_emitf("  cset x1, eq\n");
-    cg_emitf("  and x0, x0, x1\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return true;
-  case ND_NE:
-    cg_emitf("  fcmp d0, d2\n");
-    cg_emitf("  cset x0, ne\n");
-    cg_emitf("  fcmp d1, d3\n");
-    cg_emitf("  cset x1, ne\n");
-    cg_emitf("  orr x0, x0, x1\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return true;
-  default:
-    return false;
-  }
-}
-
-// _Complex float 版。double 版とほぼ同型だがレジスタ命名 (s*) と DIV で fmov を省く点が違う。
-static bool emit_complex_float_binop(node_t *node) {
-  cg_emitf("  ldp s2, s3, [sp], #16\n");
-  cg_emitf("  ldp s0, s1, [sp], #16\n");
-  switch (node->kind) {
-  case ND_ADD:
-    cg_emitf("  fadd s0, s0, s2\n");
-    cg_emitf("  fadd s1, s1, s3\n");
-    return false;
-  case ND_SUB:
-    cg_emitf("  fsub s0, s0, s2\n");
-    cg_emitf("  fsub s1, s1, s3\n");
-    return false;
-  case ND_MUL:
-    cg_emitf("  fmul s4, s0, s2\n");
-    cg_emitf("  fmul s5, s1, s3\n");
-    cg_emitf("  fmul s6, s0, s3\n");
-    cg_emitf("  fmul s7, s1, s2\n");
-    cg_emitf("  fsub s0, s4, s5\n");
-    cg_emitf("  fadd s1, s6, s7\n");
-    return false;
-  case ND_DIV:
-    cg_emitf("  fmul s4, s2, s2\n");
-    cg_emitf("  fmul s5, s3, s3\n");
-    cg_emitf("  fadd s4, s4, s5\n");
-    cg_emitf("  fmul s5, s0, s2\n");
-    cg_emitf("  fmul s6, s1, s3\n");
-    cg_emitf("  fadd s5, s5, s6\n");
-    cg_emitf("  fdiv s5, s5, s4\n");
-    cg_emitf("  fmul s6, s1, s2\n");
-    cg_emitf("  fmul s7, s0, s3\n");
-    cg_emitf("  fsub s6, s6, s7\n");
-    cg_emitf("  fdiv s1, s6, s4\n");
-    cg_emitf("  fmov s0, s5\n");
-    return false;
-  case ND_EQ:
-    cg_emitf("  fcmp s0, s2\n");
-    cg_emitf("  cset x0, eq\n");
-    cg_emitf("  fcmp s1, s3\n");
-    cg_emitf("  cset x1, eq\n");
-    cg_emitf("  and x0, x0, x1\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return true;
-  case ND_NE:
-    cg_emitf("  fcmp s0, s2\n");
-    cg_emitf("  cset x0, ne\n");
-    cg_emitf("  fcmp s1, s3\n");
-    cg_emitf("  cset x1, ne\n");
-    cg_emitf("  orr x0, x0, x1\n");
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return true;
-  default:
-    return false;
-  }
-}
-
-static void gen_binop_complex(node_t *node, tk_float_kind_t fpu_op_type) {
-  gen_expr(node->lhs);
-  if (!node->lhs->is_complex) emit_promote_scalar_to_complex_double();
-  gen_expr(node->rhs);
-  if (!node->rhs->is_complex) emit_promote_scalar_to_complex_double();
-  bool pushed = (fpu_op_type >= TK_FLOAT_KIND_DOUBLE)
-                ? emit_complex_double_binop(node)
-                : emit_complex_float_binop(node);
-  if (pushed) return;
-  // 結果を 16B (実+虚) としてプッシュ
-  if (fpu_op_type >= TK_FLOAT_KIND_DOUBLE) {
-    cg_emitf("  stp d0, d1, [sp, #-16]!\n");
-  } else {
-    cg_emitf("  stp s0, s1, [sp, #-16]!\n");
-  }
-}
-
-static void gen_binop_fpu(node_t *node, tk_float_kind_t fpu_op_type) {
-  gen_expr(node->lhs);
-  gen_expr(node->rhs);
-  const char *r0 = freg(fpu_op_type, 0);
-  const char *r1 = freg(fpu_op_type, 1);
-  gen_pop_fpu(fpu_op_type, node->rhs->fp_kind, 1); // rhs を r1 に
-  gen_pop_fpu(fpu_op_type, node->lhs->fp_kind, 0); // lhs を r0 に
-  switch (node->kind) {
-  case ND_ADD: cg_emitf("  fadd %s, %s, %s\n", r0, r0, r1); break;
-  case ND_SUB: cg_emitf("  fsub %s, %s, %s\n", r0, r0, r1); break;
-  case ND_MUL: cg_emitf("  fmul %s, %s, %s\n", r0, r0, r1); break;
-  case ND_DIV: cg_emitf("  fdiv %s, %s, %s\n", r0, r0, r1); break;
-  case ND_EQ: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, eq\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
-  case ND_NE: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, ne\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
-  case ND_LT: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, lo\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
-  case ND_LE: cg_emitf("  fcmp %s, %s\n", r0, r1); cg_emitf("  cset x0, ls\n"); cg_emitf("  str x0, [sp, #-16]!\n"); return;
-  default: break;
-  }
-  cg_emitf("  str %s, [sp, #-16]!\n", r0);
-}
-
-// 整数二項演算の最適化版: 子の結果を x9/x10 へ直接生成。dst=x0、scratch=x0 (=dst) で OK。
-static void gen_binop_int_regalloc(node_t *node) {
-  cg_inside_regalloc = 1;
-  gen_expr_to_reg(node->lhs, 0);
-  gen_expr_to_reg(node->rhs, 1);
-  emit_int_binop_op(node, "x9", "x10", "x0", "x0");
-  cg_inside_regalloc = 0;
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-// 整数二項演算のフォールバック: スタック経由。dst が lhs と被るので scratch は別レジスタ x2。
-static void gen_binop_int_stack(node_t *node) {
-  gen_expr(node->lhs);
-  gen_expr(node->rhs);
-  cg_emitf("  ldr x1, [sp], #16\n");
-  cg_emitf("  ldr x0, [sp], #16\n");
-  emit_int_binop_op(node, "x0", "x1", "x0", "x2");
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_binop(node_t *node) {
-  tk_float_kind_t fpu_op_type = compute_binop_fpu_op_type(node);
-  if (node->is_complex && fpu_op_type) {
-    gen_binop_complex(node, fpu_op_type);
-    return;
-  }
-  if (fpu_op_type) {
-    gen_binop_fpu(node, fpu_op_type);
-    return;
-  }
-  if (!cg_inside_regalloc && !cg_has_funcall(node)) {
-    gen_binop_int_regalloc(node);
-    return;
-  }
-  gen_binop_int_stack(node);
-}
-
-static void gen_expr_assign(node_t *node) {
-  if (node->rhs && node->rhs->ret_struct_size > 16 && node->rhs->kind == ND_FUNCALL) {
-    // >16B 構造体戻り値: lhs アドレスを x8 にセットしてから funcall
-    // callee が x8 の指す先に直接書き込む
-    gen_lval(node->lhs);
-    cg_emitf("  ldr x8, [sp], #16\n");  // lhs アドレスを x8 に
-    gen_expr(node->rhs);                // funcall 実行（x8 は callee 内で使われる）
-    cg_emitf("  add sp, sp, #16\n");    // funcall がプッシュした dummy x0 を破棄
-    // 式の結果としてアドレスをプッシュ（使われないが整合性のため）
-    cg_emitf("  str x8, [sp, #-16]!\n");
-    return;
-  }
-  gen_lval(node->lhs);
-  gen_expr(node->rhs);
-  if (node->rhs && node->rhs->ret_struct_size > 8 && node->rhs->ret_struct_size <= 16) {
-    // 9-16B 構造体戻り値: スタックに x0(低),x1(高) の2スロットが積まれている
-    cg_emitf("  ldr x1, [sp], #16\n");  // x0: 低8B
-    cg_emitf("  ldr x2, [sp], #16\n");  // x1: 高8B
-    cg_emitf("  ldr x0, [sp], #16\n");  // lhs アドレス
-    cg_emitf("  str x1, [x0]\n");       // 低8B をストア
-    cg_emitf("  str x2, [x0, #8]\n");   // 高8B をストア
-    cg_emitf("  str x1, [sp, #-16]!\n"); // 式の結果値（低8B）
-    return;
-  }
-  if (node->is_complex && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    // _Complex double 代入
-    if (node->rhs && node->rhs->is_complex) {
-      // _Complex = _Complex: rhs は16Bスロット(実部d0+虚部d1)
-      cg_emitf("  ldp d0, d1, [sp], #16\n"); // rhs 実部,虚部
-      cg_emitf("  ldr x0, [sp], #16\n");     // lhs アドレス
-      cg_emitf("  str d0, [x0]\n");
-      cg_emitf("  str d1, [x0, #8]\n");
-    } else {
-      // スカラ → _Complex: 実部に代入、虚部は0
-      gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0);
-      cg_emitf("  ldr x0, [sp], #16\n");
-      cg_emitf("  str d0, [x0]\n");
-      cg_emitf("  movi d1, #0\n");
-      cg_emitf("  str d1, [x0, #8]\n");
-    }
-    cg_emitf("  stp d0, d1, [sp, #-16]!\n"); // 式の結果（16B _Complex）
-    return;
-  }
-  if (node->is_complex && node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    // _Complex float 代入
-    if (node->rhs && node->rhs->is_complex) {
-      cg_emitf("  ldp s0, s1, [sp], #16\n");
-      cg_emitf("  ldr x0, [sp], #16\n");
-      cg_emitf("  str s0, [x0]\n");
-      cg_emitf("  str s1, [x0, #4]\n");
-    } else {
-      gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0);
-      cg_emitf("  ldr x0, [sp], #16\n");
-      cg_emitf("  str s0, [x0]\n");
-      cg_emitf("  fmov s1, #0.0\n");
-      cg_emitf("  str s1, [x0, #4]\n");
-    }
-    cg_emitf("  stp s0, s1, [sp, #-16]!\n");
-    return;
-  }
-  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    // float 代入
-    gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->rhs->fp_kind, 0); // s0 に rhs をロード
-    cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
-    cg_emitf("  str s0, [x0]\n");
-    cg_emitf("  str s0, [sp, #-16]!\n");
-    return;
-  }
-  if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    // double/long double(現状lowering) 代入
-    gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->rhs->fp_kind, 0); // d0 に rhs をロード
-    cg_emitf("  ldr x0, [sp], #16\n"); // lhs アドレス
-    cg_emitf("  str d0, [x0]\n");
-    cg_emitf("  str d0, [sp, #-16]!\n");
-    return;
-  }
-  // 整数代入
-  cg_emitf("  ldr x1, [sp], #16\n");
-  cg_emitf("  ldr x0, [sp], #16\n");
-  // ビットフィールド代入: read-modify-write with bfi
-  if (node->lhs && node->lhs->kind == ND_DEREF && as_mem(node->lhs)->bit_width > 0) {
-    int lsb = as_mem(node->lhs)->bit_offset;
-    int width = as_mem(node->lhs)->bit_width;
-    int sz = as_mem(node->lhs)->type_size;
-    if (sz == 1)      cg_emitf("  ldrb w2, [x0]\n");
-    else if (sz == 2) cg_emitf("  ldrh w2, [x0]\n");
-    else              cg_emitf("  ldr w2, [x0]\n");
-    cg_emitf("  bfi w2, w1, #%d, #%d\n", lsb, width);
-    if (sz == 1)      cg_emitf("  strb w2, [x0]\n");
-    else if (sz == 2) cg_emitf("  strh w2, [x0]\n");
-    else              cg_emitf("  str w2, [x0]\n");
-  } else if (node->is_atomic) {
-    // _Atomic: store-release
-    int sz = as_mem(node)->type_size;
-    if (sz == 1)      cg_emitf("  stlrb w1, [x0]\n");
-    else if (sz == 2) cg_emitf("  stlrh w1, [x0]\n");
-    else if (sz == 4) cg_emitf("  stlr w1, [x0]\n");
-    else              cg_emitf("  stlr x1, [x0]\n");
-  } else {
-    int sz = as_mem(node)->type_size;
-    if (sz == 1)      cg_emitf("  strb w1, [x0]\n");
-    else if (sz == 2) cg_emitf("  strh w1, [x0]\n");
-    else if (sz == 4) cg_emitf("  str w1, [x0]\n");
-    else              cg_emitf("  str x1, [x0]\n");
-  }
-  cg_emitf("  str x1, [sp, #-16]!\n");
-}
-
-static void gen_expr_inc_dec(node_t *node) {
-  node_t *target = node->lhs;
-  int type_size = 8;
-  if (target->kind == ND_LVAR) type_size = as_lvar(target)->mem.type_size;
-  else if (target->kind == ND_GVAR) type_size = ((node_gvar_t *)target)->mem.type_size ? ((node_gvar_t *)target)->mem.type_size : 8;
-  else if (target->kind == ND_DEREF) type_size = as_mem(target)->type_size ? as_mem(target)->type_size : 8;
-
-  gen_lval(target);
-  cg_emitf("  ldr x1, [sp], #16\n"); // x1: addr
-  gen_load_x0_from_addr(type_size);   // x0: old value
-
-  bool is_post = (node->kind == ND_POST_INC || node->kind == ND_POST_DEC);
-  bool is_inc  = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
-
-  if (is_post) {
-    cg_emitf("  mov x2, x0\n");         // x2: return old value
-  }
-  if (is_inc) cg_emitf("  add x0, x0, #1\n");
-  else        cg_emitf("  sub x0, x0, #1\n");
-
-  gen_store_x0_to_addr(type_size);    // store updated value
-
-  if (is_post) cg_emitf("  str x2, [sp, #-16]!\n");
-  else         cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_logand(node_t *node) {
-  int false_lbl = label_count++;
-  int end_lbl = label_count++;
-  gen_expr(node->lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
-  gen_expr(node->rhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbz x0, .Lfalse%d\n", false_lbl);
-  cg_emitf("  mov x0, #1\n");
-  cg_emitf("  b .Lend%d\n", end_lbl);
-  cg_emitf(".Lfalse%d:\n", false_lbl);
-  cg_emitf("  mov x0, #0\n");
-  cg_emitf(".Lend%d:\n", end_lbl);
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_logor(node_t *node) {
-  int true_lbl = label_count++;
-  int end_lbl = label_count++;
-  gen_expr(node->lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
-  gen_expr(node->rhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbnz x0, .Ltrue%d\n", true_lbl);
-  cg_emitf("  mov x0, #0\n");
-  cg_emitf("  b .Lend%d\n", end_lbl);
-  cg_emitf(".Ltrue%d:\n", true_lbl);
-  cg_emitf("  mov x0, #1\n");
-  cg_emitf(".Lend%d:\n", end_lbl);
-  cg_emitf("  str x0, [sp, #-16]!\n");
-}
-
-static void gen_expr_ternary(node_ctrl_t *ctrl) {
-  int else_lbl = label_count++;
-  int end_lbl = label_count++;
-  gen_expr(ctrl->base.lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbz x0, .Lelse%d\n", else_lbl);
-  gen_expr(ctrl->base.rhs);
-  cg_emitf("  b .Lend%d\n", end_lbl);
-  cg_emitf(".Lelse%d:\n", else_lbl);
-  gen_expr(ctrl->els);
-  cg_emitf(".Lend%d:\n", end_lbl);
-}
-
-static void gen_expr(node_t *node) {
-  switch (node->kind) {
-  case ND_NUM:       gen_expr_num(node); return;
-  case ND_LVAR:      gen_expr_lvar(node); return;
-  case ND_GVAR:      gen_expr_gvar(node); return;
-  case ND_DEREF:     gen_expr_deref(node); return;
-  case ND_ADDR:      gen_lval(node->lhs); return;
-  case ND_STRING:    gen_expr_string(node); return;
-  case ND_VLA_ALLOC: gen_expr_vla_alloc(node); return;
-  case ND_VA_ARG_AREA: {
-    // stdarg.h の va_start マクロから参照される ag_c 固有 builtin。
-    // Apple ARM64 ABI では variadic 引数はすべて stack に積まれて渡される。
-    // その先頭アドレスは呼び出し側の sp == 我々の x29 + STACK_SIZE。
-    cg_emitf("  add x0, x29, #%d\n", STACK_SIZE);
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  case ND_PTR_CAST: {
-    // (float*)/(double*) ポインタキャスト。値はそのまま (pointee_fp_kind を保持して
-    // 後段 deref で FP load を選ばせるためのラッパ)。lhs を評価するだけ。
-    gen_expr(node->lhs);
-    return;
-  }
-  case ND_FP_TO_INT: {
-    // float/double 式を整数に変換する。lhs を評価して d0/s0 にロードし、
-    // fcvtzs で x0 に変換、改めて x0 を push する。
-    gen_expr(node->lhs);
-    if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      cg_emitf("  ldr s0, [sp], #16\n");
-      cg_emitf("  fcvtzs x0, s0\n");
-    } else {
-      cg_emitf("  ldr d0, [sp], #16\n");
-      cg_emitf("  fcvtzs x0, d0\n");
-    }
-    cg_emitf("  str x0, [sp, #-16]!\n");
-    return;
-  }
-  case ND_FUNCREF:   gen_expr_funcref(node); return;
-  case ND_ASSIGN:  gen_expr_assign(node); return;
-  case ND_COMMA:
-    gen_expr(node->lhs);
-    // lhs の値は式値としては不要
-    cg_emitf("  add sp, sp, #16\n");
-    gen_expr(node->rhs);
-    return;
-  case ND_PRE_INC:
-  case ND_PRE_DEC:
-  case ND_POST_INC:
-  case ND_POST_DEC:
-    gen_expr_inc_dec(node);
-    return;
-  case ND_LOGAND:  gen_expr_logand(node); return;
-  case ND_LOGOR:   gen_expr_logor(node); return;
-  case ND_TERNARY: gen_expr_ternary(as_ctrl(node)); return;
-  case ND_FUNCALL: gen_expr_funcall(node); return;
-  default:
-    gen_expr_binop(node);
-    return;
-  }
-}
-
-// 関数末尾の標準エピローグ。VLA で sp が動いた場合に備えて x29 から復帰させる。
-static void emit_func_epilogue(void) {
-  cg_emitf("  mov sp, x29\n");
-  cg_emitf("  ldp x29, x30, [sp]\n");
-  cg_emitf("  add sp, sp, #%d\n", STACK_SIZE);
-  cg_emitf("  ret\n");
-}
-
-// `return self(args...);` を末尾呼び出しに展開できるなら出力して true を返す。
-// 展開できない場合は何も書かずに false を返す。
-static bool try_emit_tail_call(node_t *node) {
-  if (!(node->lhs && node->lhs->kind == ND_FUNCALL && node->ret_struct_size == 0 &&
-        node->fp_kind == 0)) {
-    return false;
-  }
-  node_func_t *call = as_func(node->lhs);
-  if (call->callee != NULL ||
-      call->funcname_len != cg_current_funcname_len ||
-      strncmp(call->funcname, cg_current_funcname, cg_current_funcname_len) != 0 ||
-      call->nargs != cg_current_nargs) {
-    return false;
-  }
-  // 引数を評価してスタックに積む
-  for (int i = 0; i < call->nargs; i++) {
-    gen_expr(call->args[i]);
-  }
-  // スタックから引数レジスタにポップ（逆順）
-  for (int i = call->nargs - 1; i >= 0; i--) {
-    cg_emitf("  ldr x%d, [sp], #16\n", i);
-  }
-  // 引数保存ラベルへジャンプ（プロローグをスキップ）
-  cg_emitf("  b .L_tco_%.*s\n", cg_current_funcname_len, cg_current_funcname);
-  return true;
-}
-
-// >16B 構造体戻り値: ローカル変数からのコピーを x8 が指すバッファへ書き出す。
-// lvar 以外（式由来）の場合は何も書かない（呼び出し元での失敗ケース）。
-static void emit_return_large_struct(node_t *node) {
-  if (node->lhs->kind != ND_LVAR) return;
-  node_lvar_t *lvar = (node_lvar_t *)node->lhs;
-  int frame_off = 16 + lvar->offset;
-  int size = node->ret_struct_size;
-  cg_emitf("  ldr x8, [x29, #%d]\n", X8_SAVE_OFFSET); // 退避した x8 を復元
-  int off = 0;
-  for (; off + 8 <= size; off += 8) {
-    cg_emitf("  ldr x9, [x29, #%d]\n", frame_off + off);
-    cg_emitf("  str x9, [x8, #%d]\n", off);
-  }
-  if (off + 4 <= size) {
-    cg_emitf("  ldr w9, [x29, #%d]\n", frame_off + off);
-    cg_emitf("  str w9, [x8, #%d]\n", off);
-    off += 4;
-  }
-  for (; off < size; off++) {
-    cg_emitf("  ldrb w9, [x29, #%d]\n", frame_off + off);
-    cg_emitf("  strb w9, [x8, #%d]\n", off);
-  }
-}
-
-// 9-16B 構造体戻り値: x0/x1 ペアへロード。
-static void emit_return_pair_struct(node_t *node) {
-  if (node->lhs->kind == ND_LVAR) {
-    node_lvar_t *lvar = (node_lvar_t *)node->lhs;
-    int frame_off = 16 + lvar->offset;
-    cg_emitf("  ldr x0, [x29, #%d]\n", frame_off);
-    cg_emitf("  ldr x1, [x29, #%d]\n", frame_off + 8);
-  } else {
-    // 式の結果（アドレス）からロード
-    gen_expr(node->lhs);
-    cg_emitf("  ldr x9, [sp], #16\n");
-    cg_emitf("  ldr x0, [x9]\n");
-    cg_emitf("  ldr x1, [x9, #8]\n");
-  }
-}
-
-// スカラー戻り値: 関数の戻り値型 (fp_kind) と式の fp_kind から
-// s0/d0/x0 のどれにロードするかを決める。式が浮動小数で戻り値が整数の場合は fcvtzs。
-static void emit_return_scalar(node_t *node) {
-  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    gen_expr(node->lhs);
-    gen_pop_fpu(TK_FLOAT_KIND_FLOAT, node->lhs->fp_kind, 0); // s0 にロード
-    return;
-  }
-  if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    gen_expr(node->lhs);
-    gen_pop_fpu(TK_FLOAT_KIND_DOUBLE, node->lhs->fp_kind, 0); // d0 にロード
-    return;
-  }
-  // 戻り値型が整数
-  gen_expr(node->lhs);
-  if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    cg_emitf("  ldr s0, [sp], #16\n");
-    cg_emitf("  fcvtzs x0, s0\n");
-  } else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    cg_emitf("  ldr d0, [sp], #16\n");
-    cg_emitf("  fcvtzs x0, d0\n");
-  } else {
-    cg_emitf("  ldr x0, [sp], #16\n");
-  }
-}
-
-static void gen_stmt_return(node_t *node) {
-  if (try_emit_tail_call(node)) return;
-  if (node->lhs) {
-    if (node->ret_struct_size > 16) {
-      emit_return_large_struct(node);
-    } else if (node->ret_struct_size > 8) {
-      emit_return_pair_struct(node);
-    } else {
-      emit_return_scalar(node);
-    }
-  } else {
-    // void 関数の return; は戻り値レジスタを0で統一
-    cg_emitf("  mov x0, #0\n");
-  }
-  emit_func_epilogue();
-}
-
-// 仮引数 (x0..xN-1) を ABI に従ってフレームスロットへ保存。
-// type_size > 16: byref (1 レジスタにポインタ)
-// type_size  9-16: 2 レジスタ構造体 → stp で2スロット保存
-// type_size ≤ 8: 1 レジスタ (スカラ / ≤8B 構造体)
-// Apple ARM64 ABI では variadic 引数は呼び出し側が stack に置くため、
-// callee 側で register 保存する必要はない (`__va_arg_area` = x29 + STACK_SIZE)。
-static void emit_param_save_to_frame(node_func_t *fn) {
-  int reg = 0;     // 整数引数レジスタ x0..x7 のカウンタ
-  int fp_reg = 0;  // 浮動小数引数レジスタ d0..d7 のカウンタ (ARM64 ABI で独立)
-  for (int i = 0; i < fn->nargs; i++) {
-    int abi_sz = as_lvar(fn->args[i])->mem.type_size;
-    int frame_off = 16 + as_lvar(fn->args[i])->offset;
-    tk_float_kind_t pfp = fn->args[i]->fp_kind;
-    if (pfp == TK_FLOAT_KIND_FLOAT) {
-      // float 仮引数は s0..s7 で受け取り、フレームスロット (8 byte) の
-      // 下位 4 byte に保存。
-      cg_emitf("  str s%d, [x29, #%d]\n", fp_reg, frame_off);
-      fp_reg++;
-      continue;
-    }
-    if (pfp >= TK_FLOAT_KIND_DOUBLE) {
-      cg_emitf("  str d%d, [x29, #%d]\n", fp_reg, frame_off);
-      fp_reg++;
-      continue;
-    }
-    if (abi_sz > 16) {
-      cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
-      reg++;
-    } else if (abi_sz > 8) {
-      cg_emitf("  stp x%d, x%d, [x29, #%d]\n", reg, reg + 1, frame_off);
-      reg += 2;
-    } else {
-      cg_emitf("  str x%d, [x29, #%d]\n", reg, frame_off);
-      reg++;
-    }
-  }
-  // Apple ABI: variadic 引数は caller の stack 上に置かれているため
-  // ここで register を frame に退避する必要はない。
-}
-
-static void gen_stmt_funcdef(node_func_t *fn) {
-  cg_current_funcname = fn->funcname;
-  cg_current_funcname_len = fn->funcname_len;
-  cg_current_nargs = fn->nargs;
-  clear_label_map();
-  collect_goto_labels(fn->base.rhs);
-  // 関数ラベル
-  cg_emitf(".global _%.*s\n", fn->funcname_len, fn->funcname);
-  cg_emitf(".align 2\n");
-  cg_emitf("_%.*s:\n", fn->funcname_len, fn->funcname);
-  // プロローグ
-  cg_emitf("  sub sp, sp, #%d\n", STACK_SIZE);
-  cg_emitf("  stp x29, x30, [sp]\n");
-  cg_emitf("  mov x29, sp\n");
-  // >16B 構造体戻り値: x8 (indirect result pointer) をフレームに退避
-  if (fn->base.ret_struct_size > 16) {
-    cg_emitf("  str x8, [x29, #%d]\n", X8_SAVE_OFFSET);
-  }
-  // TCO 用ラベル: 末尾再帰時はここへ
-  cg_emitf(".L_tco_%.*s:\n", fn->funcname_len, fn->funcname);
-  emit_param_save_to_frame(fn);
-  // 関数本体
-  gen_stmt(fn->base.rhs);
-  // main の return が無い場合は 0
-  if (is_main_func(fn)) {
-    cg_emitf("  mov x0, #0\n");
-  }
-  emit_func_epilogue();
-}
-
-static void gen_stmt_if(node_ctrl_t *ctrl) {
-  int lbl = label_count++;
-  gen_expr(ctrl->base.lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbz x0, .Lelse%d\n", lbl);
-  gen_stmt(ctrl->base.rhs);
-  if (ctrl->els) {
-    cg_emitf("  b .Lend%d\n", lbl);
-    cg_emitf(".Lelse%d:\n", lbl);
-    gen_stmt(ctrl->els);
-    cg_emitf(".Lend%d:\n", lbl);
-  } else {
-    cg_emitf("  b .Lend%d\n", lbl);
-    cg_emitf(".Lelse%d:\n", lbl);
-    cg_emitf(".Lend%d:\n", lbl);
-  }
-}
-
-static void gen_stmt_while(node_ctrl_t *ctrl) {
-  int begin_lbl = label_count++;
-  int cont_lbl = label_count++;
-  int end_lbl = label_count++;
-  push_control_labels(end_lbl, cont_lbl);
-  cg_emitf(".Lbegin%d:\n", begin_lbl);
-  cg_emitf(".Lcont%d:\n", cont_lbl);
-  gen_expr(ctrl->base.lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
-  gen_stmt(ctrl->base.rhs);
-  cg_emitf("  b .Lbegin%d\n", begin_lbl);
-  cg_emitf(".Lend%d:\n", end_lbl);
-  pop_control_labels();
-}
-
-static void gen_stmt_do_while(node_ctrl_t *ctrl) {
-  int begin_lbl = label_count++;
-  int cont_lbl = label_count++;
-  int end_lbl = label_count++;
-  push_control_labels(end_lbl, cont_lbl);
-  cg_emitf(".Lbegin%d:\n", begin_lbl);
-  gen_stmt(ctrl->base.rhs);
-  cg_emitf(".Lcont%d:\n", cont_lbl);
-  gen_expr(ctrl->base.lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-  cg_emitf("  cbnz x0, .Lbegin%d\n", begin_lbl);
-  cg_emitf(".Lend%d:\n", end_lbl);
-  pop_control_labels();
-}
-
-static void gen_stmt_for(node_ctrl_t *ctrl) {
-  int begin_lbl = label_count++;
-  int cont_lbl = label_count++;
-  int end_lbl = label_count++;
-  push_control_labels(end_lbl, cont_lbl);
-  if (ctrl->init) {
-    gen_expr(ctrl->init);
-    cg_emitf("  add sp, sp, #16\n");
-  }
-  cg_emitf(".Lbegin%d:\n", begin_lbl);
-  if (ctrl->base.lhs) {
-    gen_expr(ctrl->base.lhs);
-    cg_emitf("  ldr x0, [sp], #16\n");
-    cg_emitf("  cbz x0, .Lend%d\n", end_lbl);
-  }
-  gen_stmt(ctrl->base.rhs);
-  cg_emitf(".Lcont%d:\n", cont_lbl);
-  if (ctrl->inc) {
-    gen_expr(ctrl->inc);
-    cg_emitf("  add sp, sp, #16\n");
-  }
-  cg_emitf("  b .Lbegin%d\n", begin_lbl);
-  cg_emitf(".Lend%d:\n", end_lbl);
-  pop_control_labels();
-}
-
-static void gen_stmt_switch(node_ctrl_t *ctrl) {
-  int end_lbl = label_count++;
-  gen_expr(ctrl->base.lhs);
-  cg_emitf("  ldr x0, [sp], #16\n");
-
-  switch_collect_t sc = {0};
-  collect_switch_labels(ctrl->base.rhs, &sc);
-
-  for (int i = 0; i < sc.case_count; i++) {
-    node_case_t *c = sc.cases[i];
-    cg_emit_mov_imm("x1", c->val);
-    cg_emitf("  cmp x0, x1\n");
-    cg_emitf("  beq .Lcase%d\n", c->label_id);
-  }
-  if (sc.default_node) {
-    cg_emitf("  b .Ldefault%d\n", sc.default_node->label_id);
-  } else {
-    cg_emitf("  b .Lend%d\n", end_lbl);
-  }
-
-  push_control_labels(end_lbl, -1); // switch は continue 対象外
-  gen_switch_body(ctrl->base.rhs);
-  pop_control_labels();
-
-  cg_emitf(".Lend%d:\n", end_lbl);
-  free(sc.cases);
-}
-
-static void gen_stmt_goto(node_jump_t *j) {
-  int id = find_label_id(j->name, j->name_len);
-  if (id < 0) {
-    diag_emit_internalf(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED,
-                        diag_message_for(DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED),
-                        j->name_len, j->name);
-  }
-  cg_emitf("  b .Luser%d\n", id);
-}
-
-static void gen_stmt(node_t *node) {
-  switch (node->kind) {
-  case ND_BLOCK:
-    for (int i = 0; as_block(node)->body[i]; i++) {
-      gen_stmt(as_block(node)->body[i]);
-    }
-    return;
-  case ND_RETURN:  gen_stmt_return(node); return;
-  case ND_FUNCDEF: gen_stmt_funcdef(as_func(node)); return;
-  case ND_IF:       gen_stmt_if(as_ctrl(node)); return;
-  case ND_WHILE:    gen_stmt_while(as_ctrl(node)); return;
-  case ND_DO_WHILE: gen_stmt_do_while(as_ctrl(node)); return;
-  case ND_FOR:      gen_stmt_for(as_ctrl(node)); return;
-  case ND_SWITCH:   gen_stmt_switch(as_ctrl(node)); return;
-  case ND_BREAK:
-    if (current_break_label() < 0) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH, "%s",
-                          diag_message_for(DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH));
-    }
-    cg_emitf("  b .Lend%d\n", current_break_label());
-    return;
-  case ND_CONTINUE:
-    if (current_continue_label() < 0) {
-      diag_emit_internalf(DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP, "%s",
-                          diag_message_for(DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP));
-    }
-    cg_emitf("  b .Lcont%d\n", current_continue_label());
-    return;
-  case ND_GOTO:
-    gen_stmt_goto(as_jump(node));
-    return;
-  case ND_LABEL: {
-    node_jump_t *j = as_jump(node);
-    cg_emitf(".Luser%d:\n", j->label_id);
-    gen_stmt(j->base.rhs);
-    return;
-  }
-  case ND_CASE: {
-    node_case_t *c = as_case(node);
-    cg_emitf(".Lcase%d:\n", c->label_id);
-    gen_stmt(c->base.rhs);
-    return;
-  }
-  case ND_DEFAULT: {
-    node_default_t *d = as_default(node);
-    cg_emitf(".Ldefault%d:\n", d->label_id);
-    gen_stmt(d->base.rhs);
-    return;
-  }
-  default:
-    gen_expr(node);
-    cg_emitf("  add sp, sp, #16\n");
-    return;
-  }
-}
-
-void gen(node_t *node) {
-  gen_stmt(node);
-}
+/* ------------------------------------------------------------------ */
+/* データセクション (parser が tokenize/parse 中に登録したテーブルを emit) */
+/* ------------------------------------------------------------------ */
 
 void gen_string_literals(void) {
   if (!string_literals) return;
-  // narrow char 文字列のみ __TEXT,__cstring に置く。
-  // u"..." / U"..." は内部にゼロバイトを含む (UTF-16 LE のサロゲートや UTF-32 の
-  // 上位 0 バイト) ため、cstring セクションだとリンカが途中で切ってしまう。
-  // 別途 __DATA,__const に出力する。
+  /* narrow char 文字列のみ __TEXT,__cstring に置く。
+   * u"..." / U"..." / L"..." は内部にゼロバイトを含み得るため __DATA,__const へ。 */
   int has_narrow = 0;
   int has_wide = 0;
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
@@ -1821,31 +182,26 @@ void gen_string_literals(void) {
         v = (unsigned char)lit->str[i];
         i++;
       }
-      if (lit->char_width == TK_CHAR_WIDTH_CHAR) {
-        // narrow char 文字列では codepoint を UTF-8 エンコードする。
-        // 修正前は `(unsigned)(v & 0xFF)` で下位 1 バイトに切り詰めていたため
-        // `"あ"` 等が `0x42` ('B') になっていた。
-        if (v < 0x80) {
-          cg_emitf("  .byte %u\n", (unsigned)v);
-        } else if (v < 0x800) {
-          cg_emitf("  .byte %u\n", (unsigned)(0xC0 | (v >> 6)));
-          cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-        } else if (v < 0x10000) {
-          cg_emitf("  .byte %u\n", (unsigned)(0xE0 | (v >> 12)));
-          cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
-          cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-        } else {
-          cg_emitf("  .byte %u\n", (unsigned)(0xF0 | (v >> 18)));
-          cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 12) & 0x3F)));
-          cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
-          cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-        }
+      /* codepoint を UTF-8 エンコード。 */
+      if (v < 0x80) {
+        cg_emitf("  .byte %u\n", (unsigned)v);
+      } else if (v < 0x800) {
+        cg_emitf("  .byte %u\n", (unsigned)(0xC0 | (v >> 6)));
+        cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+      } else if (v < 0x10000) {
+        cg_emitf("  .byte %u\n", (unsigned)(0xE0 | (v >> 12)));
+        cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
+        cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+      } else {
+        cg_emitf("  .byte %u\n", (unsigned)(0xF0 | (v >> 18)));
+        cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 12) & 0x3F)));
+        cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
+        cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
       }
     }
     cg_emitf("  .byte 0\n");
   }
-  // u"..." (UTF-16) / U"..." (UTF-32) / L"..." リテラル: 内部にゼロバイトを
-  // 含み得るので cstring ではなく __DATA,__const に置く。
+  /* u"..." (UTF-16) / U"..." (UTF-32) / L"..." リテラル */
   if (has_wide) {
     cg_emitf(".section __DATA,__const\n");
     cg_emitf(".align 2\n");
@@ -1863,8 +219,6 @@ void gen_string_literals(void) {
         i++;
       }
       if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
-        // UTF-16: BMP (U+0000..U+FFFF) は 1 hword、SMP 以上はサロゲートペア。
-        // 修正前は `v & 0xFFFF` で U+10000 以上を切り詰めていた。
         if (v < 0x10000) {
           cg_emitf("  .hword %u\n", (unsigned)v);
         } else {
@@ -1889,15 +243,12 @@ void gen_float_literals(void) {
   cg_emitf(".section __DATA,__data\n");
   cg_emitf(".align 3\n");
   for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
-    if (cg_can_use_fp_immediate_zero(lit->fval, lit->fp_kind)) continue;
     cg_emitf(".LCF%d:\n", lit->id);
     if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      // float (32bit) 定数出力: IEEE754 format
       union { float f; uint32_t i; } u = { .f = (float)lit->fval };
       cg_emitf("  .word %u\n", u.i);
     } else {
-      // double (64bit) 定数出力。
-      // note: long double is currently lowered to double in codegen.
+      /* note: long double is currently lowered to double. */
       union { double d; uint64_t i; } u = { .d = lit->fval };
       cg_emitf("  .quad %llu\n", (unsigned long long)u.i);
     }
@@ -1907,9 +258,9 @@ void gen_float_literals(void) {
 
 void gen_global_vars(void) {
   for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    if (gv->is_extern_decl) continue; // extern宣言のみ: emit不要
+    if (gv->is_extern_decl) continue;
     if (gv->is_thread_local) {
-      // _Thread_local: TLV descriptor + thread data/bss
+      /* _Thread_local: TLV descriptor + thread data/bss */
       if (gv->has_init) {
         cg_emitf(".section __DATA,__thread_data\n");
         cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
@@ -1929,17 +280,14 @@ void gen_global_vars(void) {
       cg_emitf("  .quad 0\n");
       cg_emitf("  .quad _%.*s$tlv$init\n", gv->name_len, gv->name);
     } else if (gv->has_init) {
-      // 初期化済みグローバル変数: .data セクション
       cg_emitf(".section __DATA,__data\n");
       cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-      // 配列初期化子のときは要素サイズ (= deref_size) を基準に alignment を決める。
       int align_size = (gv->init_count > 0 && gv->deref_size > 0)
                           ? gv->deref_size : (int)gv->type_size;
       int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
       cg_emitf(".align %d\n", align);
       cg_emitf("_%.*s:\n", gv->name_len, gv->name);
       if (gv->init_count > 0) {
-        // 配列の brace 初期化子。要素サイズで .byte/.short/.long/.quad を選ぶ。
         int elem = gv->deref_size > 0 ? gv->deref_size : 4;
         int total_elems = gv->type_size / elem;
         for (int i = 0; i < gv->init_count && i < total_elems; i++) {
@@ -1949,7 +297,6 @@ void gen_global_vars(void) {
           else if (elem == 4) cg_emitf("  .long %lld\n", v);
           else cg_emitf("  .quad %lld\n", v);
         }
-        // 不足分は 0 で埋める (C 仕様: 残り要素は 0 初期化)。
         int remain = total_elems - gv->init_count;
         if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
       } else if (gv->init_symbol) {
@@ -1959,8 +306,7 @@ void gen_global_vars(void) {
       else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
       else cg_emitf("  .quad %lld\n", gv->init_val);
     } else {
-      // 暫定定義: .comm
-      // .comm _name,size,log2align
+      /* 暫定定義: .comm _name,size,log2align */
       int log2align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
       cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
     }

@@ -3,13 +3,10 @@
 
 #include <stddef.h>
 
-struct node_t;
 typedef void (*gen_output_line_fn)(const char *line, size_t len, void *user_data);
 
-// コード生成関数 (arch/ 以下で実装)
-void gen_main_prologue(void);
-void gen_main_epilogue(void);
-void gen(struct node_t *node);
+/* arch/arm64_apple.c が提供する共有ヘルパ。
+ * 関数本体の codegen は IR 経路 (arm64_apple_ir.c の gen_ir_module) で行う。 */
 void gen_string_literals(void);
 void gen_float_literals(void);
 void gen_global_vars(void);

@@ -86,41 +86,28 @@ int main(int argc, char **argv) {
   node_t **code = ps_program_ctx(tk_ctx, tok);
   gen_set_output_callback(write_line_to_file, stdout);
 
-  // IR 経由のコード生成 (AG_USE_IR=1 のとき有効)。
-  // 失敗 (= サポート外 node を含む) ときは AST 直 codegen に fallback する。
-  // 将来は default を IR に切り替える予定だが、現状は IR の AST 対応範囲が
-  // 限定的で、対応外ケースが多い (bitfield 等で挙動差が出る) ため明示利用のみ。
-  const char *use_ir = getenv("AG_USE_IR");
-  int used_ir = 0;
-  if (use_ir && strcmp(use_ir, "1") == 0) {
-    ir_module_t *m = ir_build_module(code);
-    if (m) {
-      /* AG_DUMP_IR=1: stderr に IR ダンプ (デバッグ用) */
-      const char *dump_ir = getenv("AG_DUMP_IR");
-      if (dump_ir && strcmp(dump_ir, "1") == 0) {
-        char *buf = malloc(1 << 16);
-        ir_print_module_to_buf(m, buf, 1 << 16);
-        fprintf(stderr, "%s", buf);
-        free(buf);
-      }
-      gen_ir_module(m);
-      used_ir = 1;
-    } else {
-      fprintf(stderr, "AG_USE_IR=1: AST contains unsupported nodes; falling back to AST codegen\n");
-    }
+  // AST → IR → ASM のコード生成。
+  // Phase 7o で fixture 100% を IR 経路で通過させたため、AST 直 codegen は削除し
+  // 常に IR 経由とした。AG_DUMP_IR=1 で stderr に IR ダンプを出す。
+  ir_module_t *m = ir_build_module(code);
+  if (!m) {
+    fprintf(stderr, "ir_build_module failed\n");
+    free(source);
+    return 1;
   }
-
-  if (!used_ir) {
-    // 各関数定義のコード生成
-    for (int i = 0; code[i]; i++) {
-      gen(code[i]);
-    }
+  const char *dump_ir = getenv("AG_DUMP_IR");
+  if (dump_ir && strcmp(dump_ir, "1") == 0) {
+    char *buf = malloc(1 << 16);
+    ir_print_module_to_buf(m, buf, 1 << 16);
+    fprintf(stderr, "%s", buf);
+    free(buf);
   }
+  gen_ir_module(m);
 
-  // 文字列と浮動小数点数データの出力
+  // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
+  // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)
   gen_string_literals();
   gen_float_literals();
-  // グローバル変数データの出力
   gen_global_vars();
   gen_set_output_callback(NULL, NULL);
 
