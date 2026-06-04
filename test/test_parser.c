@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/parser/internal/decl.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <assert.h>
@@ -16,7 +17,19 @@ extern string_lit_t *string_literals;
 
 static node_t **parsed_code;
 
+/* parse_expr_input は単体式パースのため、main 関数の宣言ブロックを通らない。
+ * ag_c は未宣言識別子をエラー扱いするので、テストで多用する短い名前を
+ * あらかじめローカル変数として登録しておく。 */
+static void preregister_test_locals(void) {
+  static char names[] = "abcdefghijklmnopqrstuvwxyz";
+  for (int i = 0; i < 26; i++) {
+    psx_decl_register_lvar(&names[i], 1);
+  }
+}
+
 static node_t *parse_expr_input(const char *input) {
+  psx_decl_reset_locals();
+  preregister_test_locals();
   token_t *head = tk_tokenize((char *)input);
   return ps_expr_from(head);
 }
@@ -833,7 +846,7 @@ static void test_expr_comma() {
 
 static void test_program_funcdef() {
   printf("test_program_funcdef...\n");
-  parsed_code = parse_program_input("main() { a=1; b=2; a+b; }");
+  parsed_code = parse_program_input("int main(void) { int a=1; int b=2; a+b; }");
 
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
@@ -844,7 +857,7 @@ static void test_program_funcdef() {
   ASSERT_EQ(ND_ASSIGN, as_block(body)->body[0]->kind);
   ASSERT_EQ(0, as_lvar(as_block(body)->body[0]->lhs)->offset);
   ASSERT_EQ(ND_ASSIGN, as_block(body)->body[1]->kind);
-  ASSERT_EQ(8, as_lvar(as_block(body)->body[1]->lhs)->offset);
+  ASSERT_EQ(4, as_lvar(as_block(body)->body[1]->lhs)->offset);
   ASSERT_EQ(ND_ADD, as_block(body)->body[2]->kind);
   ASSERT_TRUE(as_block(body)->body[3] == NULL);
   ASSERT_TRUE(parsed_code[1] == NULL);
@@ -936,8 +949,9 @@ static void test_stmt_while() {
 
 static void test_stmt_do_while() {
   printf("test_stmt_do_while...\n");
-  parsed_code = parse_program_input("main() { do a=a+1; while (a<3); }");
-  node_t *dw = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  parsed_code = parse_program_input("int main(void) { int a = 0; do a=a+1; while (a<3); }");
+  /* body[0] は int a=0 の初期化代入、body[1] が do-while */
+  node_t *dw = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
 
   ASSERT_EQ(ND_DO_WHILE, dw->kind);
   ASSERT_EQ(ND_ASSIGN, dw->rhs->kind);  // 本体: a=a+1
@@ -958,8 +972,9 @@ static void test_stmt_break_continue() {
 
 static void test_stmt_switch_case_default() {
   printf("test_stmt_switch_case_default...\n");
-  parsed_code = parse_program_input("main() { switch (a) { case 1: a=2; break; default: a=3; } }");
-  node_t *sw = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  parsed_code = parse_program_input("int main(void) { int a = 0; switch (a) { case 1: a=2; break; default: a=3; } }");
+  /* body[0] は int a = 0、body[1] が switch */
+  node_t *sw = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
 
   ASSERT_EQ(ND_SWITCH, sw->kind);
   ASSERT_EQ(ND_LVAR, sw->lhs->kind);
@@ -972,8 +987,9 @@ static void test_stmt_switch_case_default() {
 
 static void test_stmt_for() {
   printf("test_stmt_for...\n");
-  parsed_code = parse_program_input("main() { for (a=0; a<10; a=a+1) a; }");
-  node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  parsed_code = parse_program_input("int main(void) { int a; for (a=0; a<10; a=a+1) a; }");
+  /* body[0] は int a; (宣言のみで初期化なし → ND_NUM ダミー)、body[1] が for */
+  node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
 
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: a=0

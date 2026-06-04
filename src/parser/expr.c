@@ -2814,6 +2814,12 @@ static node_t *resolve_identifier(token_ident_t *tok) {
     if (gv) return gv;
   }
   if (!var) {
+    /* C89/C99/C11: 変数は必ず宣言が必要。未宣言識別子はエラー。
+     * (旧 ag_c は暗黙のローカル変数として自動登録していたが、これは
+     *  非標準動作なので削除した。tok を渡して位置情報を診断に含める。) */
+    psx_diag_undefined_with_name((token_t *)tok, "variable", tok->str, tok->len);
+    /* diag_emit_tokf は exit するためここには到達しないが、
+     * 解析を続けたい場合のフォールバックとして lvar 登録しておく。 */
     var = psx_decl_register_lvar(tok->str, tok->len);
   }
   var->is_used = 1;
