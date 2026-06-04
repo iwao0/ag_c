@@ -2577,6 +2577,20 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
     tk_expect(')');
   }
   node->nargs = nargs;
+  /* C11 6.5.2.2p2: 呼び出しの実引数数は仮引数数と一致 (non-variadic)、
+   * または >= 固定引数数 (variadic) でなければならない。
+   * 既に登録されている関数のみチェック (未宣言識別子は別エラーで弾かれる)。 */
+  if (psx_ctx_has_function_name(tok->str, tok->len)) {
+    int expected = 0;
+    int is_variadic = psx_ctx_get_function_is_variadic(tok->str, tok->len, &expected) ? 1 : 0;
+    int mismatch = is_variadic ? (nargs < expected) : (nargs != expected);
+    if (mismatch) {
+      psx_diag_ctx(curtok(), "funcall",
+                   "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
+                   tok->len, tok->str,
+                   is_variadic ? "≥" : "", expected, nargs);
+    }
+  }
   node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(tok->str, tok->len);
   // 関数戻り値が float/double のときは call ノードに fp_kind を設定し、
   // `(int)call()` キャストで apply_cast が ND_FP_TO_INT を挿入できるようにする。
