@@ -35,6 +35,9 @@ struct lvar_t {
   //    static_global_name のグローバル変数に lowering される。
   //    識別子解決時に ND_LVAR ではなく ND_GVAR を返すフラグ。
   unsigned int is_static_local : 1;
+  // 1: ポインタの pointee 型が void (`void *p` 等)。
+  //    deref のエラー検出に使う (C11 6.5.3.2)。
+  unsigned int pointee_is_void : 1;
   char *static_global_name;
   int static_global_name_len;
   unsigned int pointer_const_qual_mask;

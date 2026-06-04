@@ -2051,6 +2051,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;
     if (decl_is_atomic) var->is_atomic = 1;
+    /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。
+     * deref のエラー検出 (C11 6.5.3.2) で必要。 */
+    if (decl_base_is_void && is_pointer && total_pointer_levels == 1) {
+      var->pointee_is_void = 1;
+    }
 
     if (tk_consume('=')) {
       var->is_initialized = 1;

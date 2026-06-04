@@ -1663,6 +1663,20 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->base_deref_size = (type_kind == TK_FLOAT) ? 4 : 8;
       return (node_t *)wrap;
     }
+    /* `(int *)void_p` などポインタ型キャスト: 元の operand に pointee_is_void
+     * が立っている場合、後続 deref エラーを誤発生させないよう ND_PTR_CAST で
+     * ラップして pointee_is_void をクリアする。 */
+    if (is_pointer && operand->kind == ND_LVAR &&
+        ((node_lvar_t *)operand)->mem.pointee_is_void) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->is_pointer = 1;
+      wrap->pointer_qual_levels = 1;
+      wrap->type_size = 8;
+      /* pointee_is_void は明示的にデフォルト (0) のままにする */
+      return (node_t *)wrap;
+    }
     return operand;
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
@@ -2046,7 +2060,8 @@ static node_t *build_unary_deref_node(node_t *operand) {
   /* C11 6.5.3.2p2: 単項 `*` のオペランドはポインタ型でなければならない。
    * 明確に「小さな整数スカラ」(ND_LVAR/ND_GVAR で type_size < 8 かつ
    * 非ポインタ非配列) を deref するときだけエラーにする。8B 値は関数ポインタ
-   * や long も含まれるので保守的に許容する。 */
+   * や long も含まれるので保守的に許容する。
+   * また pointee_is_void が立っているとき (`void *p`) は deref 不可。 */
   if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
                   operand->kind == ND_NUM)) {
     int looks_ptr = psx_node_is_pointer(operand) ||
@@ -2057,6 +2072,14 @@ static node_t *build_unary_deref_node(node_t *operand) {
     if (!looks_ptr && ts > 0 && ts < 8) {
       psx_diag_ctx(curtok(), "deref",
                    "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
+    }
+    /* void* の deref は不正 (pointee の型が不完全)。 */
+    int pointee_void = 0;
+    if (operand->kind == ND_LVAR) pointee_void = ((node_lvar_t *)operand)->mem.pointee_is_void;
+    else if (operand->kind == ND_GVAR) pointee_void = ((node_mem_t *)operand)->pointee_is_void;
+    if (pointee_void) {
+      psx_diag_ctx(curtok(), "deref",
+                   "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
     }
   }
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
@@ -2834,6 +2857,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
   as_lvar(n)->mem.is_complex = var->is_complex;
   as_lvar(n)->mem.is_atomic = var->is_atomic;
+  as_lvar(n)->mem.pointee_is_void = var->pointee_is_void;
   n->is_complex = var->is_complex;
   n->is_atomic = var->is_atomic;
   n->fp_kind = var->fp_kind;
