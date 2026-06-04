@@ -41,7 +41,9 @@ bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_le
                                int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
                                token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                                int *out_member_tag_len, int *out_member_is_tag_pointer);
-void psx_ctx_define_enum_const(char *name, int len, long long value);
+/* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
+ * 呼び出し元で 0 のとき診断を出す。 */
+int psx_ctx_define_enum_const(char *name, int len, long long value);
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value);
 void psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,

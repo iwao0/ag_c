@@ -239,7 +239,11 @@ int psx_parse_enum_members(void) {
     if (tk_consume('=')) {
       value = psx_parse_enum_const_expr();
     }
-    psx_ctx_define_enum_const(enumerator->str, enumerator->len, value);
+    if (!psx_ctx_define_enum_const(enumerator->str, enumerator->len, value)) {
+      /* 同一スコープで同名 enum 定数が既に登録されている (C11 6.7.2.2)。 */
+      psx_diag_duplicate_with_name(curtok(), "enum constant",
+                                   enumerator->str, enumerator->len);
+    }
     next_value = value + 1;
     member_count++;
     if (tk_consume('}')) break;

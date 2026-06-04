@@ -506,11 +506,13 @@ static enum_const_t *find_enum_const_in_current_scope(char *name, int len) {
   return NULL;
 }
 
-void psx_ctx_define_enum_const(char *name, int len, long long value) {
+/* enum 定数を登録する。
+ * 戻り値: 1 = 新規登録に成功、0 = 同名定数が既に同スコープにあった (重複)。
+ * 重複時はテーブルを変更しない (呼び出し元で診断を出す)。 */
+int psx_ctx_define_enum_const(char *name, int len, long long value) {
   enum_const_t *existing = find_enum_const_in_current_scope(name, len);
   if (existing) {
-    existing->value = value;
-    return;
+    return 0;
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
   enum_const_t *e = calloc(1, sizeof(enum_const_t));
@@ -520,6 +522,7 @@ void psx_ctx_define_enum_const(char *name, int len, long long value) {
   e->scope_depth = tag_scope_depth;
   e->next_hash = enum_consts_by_bucket[bucket];
   enum_consts_by_bucket[bucket] = e;
+  return 1;
 }
 
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
