@@ -142,6 +142,8 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
   int align = (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
   /* struct のような複合型は 8B align を優先 (簡略化) */
   if (size >= 8 && align < 8) align = 8;
+  /* _Alignas(N) で明示指定された align は natural より強い (大きい) ものを尊重。 */
+  if (var->align_bytes > align) align = var->align_bytes;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_ALLOCA);
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
@@ -1907,6 +1909,15 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
     st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
+  }
+  /* 全ローカル変数の ALLOCA をエントリブロックで前もって発行する。
+   * 遅延発行だと「最初の参照が分岐内」のとき、未到達経路では vreg が
+   * 未初期化となり、別経路から参照すると壊れる (struct ternary 等)。
+   * fn->lvars には全スコープの lvar が next_all で連なっている。 */
+  for (lvar_t *var = fn->lvars; var; var = var->next_all) {
+    if (var->is_param) continue;  /* parameter は既に param/alloca/store した */
+    (void)alloca_for_owner(ctx, var);
+    if (ctx->failed) return 0;
   }
   /* goto 前方参照対応: 本体内の全 ND_LABEL に IR block を事前割り当て */
   collect_labels(ctx, fn->base.rhs);
