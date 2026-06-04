@@ -8,6 +8,7 @@
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1632,6 +1633,81 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                                   decl_is_unsigned_hint, NULL, 0);
 }
 
+/* `static int n = 5;` のような単純スカラ static ローカルをグローバルに lowering する。
+ * 戻り値: 1 = 処理した (登録 + alias 作成済)、0 = 非対応形式なので呼び出し側で fallback。
+ * 対応範囲: スカラ整数 / 浮動小数点 / ポインタ。`=` の右辺は ND_NUM 定数のみ。
+ * 配列・struct・union・複合型は未対応。 */
+static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int deref_size,
+                                          tk_float_kind_t fp_kind, int is_unsigned) {
+  if (var_size <= 0) return 0;
+  /* mangled name: `<funcname>.<varname>.<seq>` を arena に組み立てる。seq は重複防止用。 */
+  static int g_static_seq = 0;
+  char *funcname = NULL;
+  int funcname_len = 0;
+  psx_expr_get_current_funcname(&funcname, &funcname_len);
+  int seq = g_static_seq++;
+  char seq_buf[12];
+  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "%d", seq);
+  /* funcname (or "anon") + "." + tok->name + "." + seq */
+  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
+  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
+  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
+  char *mangled = arena_alloc((size_t)total_len + 1);
+  int off = 0;
+  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
+  mangled[off] = '\0';
+
+  /* 初期化子 (`= N`) があれば NUM をパースして init_val に取り込む。 */
+  long long init_val = 0;
+  int has_init = 0;
+  if (tk_consume('=')) {
+    node_t *e = psx_expr_assign();
+    if (e && e->kind == ND_NUM) {
+      init_val = ((node_num_t *)e)->val;
+      has_init = 1;
+    } else {
+      /* 非定数 init は未対応 — silently 0 で初期化 (将来課題)。 */
+      has_init = 1;
+    }
+  }
+
+  /* global_var_t を作って global_vars に追加。 */
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->name = mangled;
+  gv->name_len = total_len;
+  gv->type_size = (short)var_size;
+  gv->deref_size = (short)deref_size;
+  gv->has_init = has_init;
+  gv->init_val = init_val;
+  gv->next = global_vars;
+  global_vars = gv;
+
+  /* lvar を「alias」として登録 — frame には置かないが、short name で引けるよう
+   * locals に挿入する。is_static_local を立てて、識別子解決時に ND_GVAR に
+   * 切り替える。size=0、offset は意味を持たない (=0)。 */
+  lvar_t *var = calloc(1, sizeof(lvar_t));
+  var->next = locals;
+  var->next_all = all_locals;
+  all_locals = var;
+  var->name = tok->str;
+  var->len = tok->len;
+  var->offset = 0;
+  var->size = var_size;
+  var->elem_size = deref_size;
+  var->fp_kind = fp_kind;
+  var->is_unsigned = is_unsigned ? 1 : 0;
+  var->is_static_local = 1;
+  var->is_initialized = 1;
+  var->static_global_name = mangled;
+  var->static_global_name_len = total_len;
+  locals = var;
+  return 1;
+}
+
 node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int base_is_pointer,
@@ -1644,6 +1720,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   int decl_is_complex = psx_last_type_is_complex();
   int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
+  int decl_is_static = 0;
+  psx_take_static_flag(&decl_is_static);
 
   // _Complex 型: サイズを基底型の2倍にする（実部 + 虚部）
   if (decl_is_complex && !base_is_pointer) {
@@ -1675,6 +1753,21 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
     int ptr_is_const_qualified = (ptr_const_mask & 1u) ? 1 : 0;
     int ptr_is_volatile_qualified = (ptr_volatile_mask & 1u) ? 1 : 0;
+
+    /* `static` ローカル: 配列や struct でない単純スカラ (int/long/short/char/pointer)
+     * はグローバルに lowering する。配列・struct 等の複雑形は現状フォールバック
+     * (= 既存の auto と同じ挙動になる; 既知の制約)。 */
+    if (decl_is_static && tag_kind == TK_EOF &&
+        inner_array_mul == 0 && paren_array_mul == 0 &&
+        curtok()->kind != TK_LBRACKET && td_array_dim_count == 0) {
+      if (try_lower_static_local_scalar(tok, var_size,
+                                         is_pointer ? pointer_deref_size : var_size,
+                                         is_pointer ? TK_FLOAT_KIND_NONE : decl_fp_kind,
+                                         decl_is_unsigned)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
 
     lvar_t *var = NULL;
     {

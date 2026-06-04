@@ -1232,9 +1232,12 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
+  /* static ローカル変数はグローバル変数として lowering されるため、
+   * 関数本体にはダミーの ND_NUM(0) だけが残る (init はデータセクションで行う)。
+   * 続く register/auto/restrict 宣言は通常どおり ND_ASSIGN を生成。 */
   parsed_code = parse_program_input("main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
-  ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
+  ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);

@@ -31,6 +31,12 @@ struct lvar_t {
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int is_complex : 1;       // 1: _Complex型
   unsigned int is_atomic : 1;        // 1: _Atomic型
+  // 1: `static` 付きで宣言されたローカル変数。フレーム上には配置されず、
+  //    static_global_name のグローバル変数に lowering される。
+  //    識別子解決時に ND_LVAR ではなく ND_GVAR を返すフラグ。
+  unsigned int is_static_local : 1;
+  char *static_global_name;
+  int static_global_name_len;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;

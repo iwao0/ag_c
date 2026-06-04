@@ -1597,6 +1597,11 @@ void psx_expr_set_current_funcname(char *name, int len) {
   g_current_funcname_len = len;
 }
 
+void psx_expr_get_current_funcname(char **out_name, int *out_len) {
+  if (out_name) *out_name = g_current_funcname;
+  if (out_len) *out_len = g_current_funcname_len;
+}
+
 // expr = assign ("," assign)*
 node_t *psx_expr_expr(void) {
   return expr_internal();
@@ -2709,6 +2714,21 @@ static node_t *build_byref_param_node(lvar_t *var) {
 // VLA や配列は「ポインタとして扱う」分岐があり、deref_size / inner_deref_size が
 // 多次元 VLA / outer_stride によって変わる。
 static node_t *build_lvar_or_vla_node(lvar_t *var) {
+  /* `static` ローカル: 実体はグローバルに lowering されているので、
+   * ローカル参照ではなく ND_GVAR を返す。 */
+  if (var->is_static_local && var->static_global_name) {
+    node_gvar_t *gv = arena_alloc(sizeof(node_gvar_t));
+    gv->mem.base.kind = ND_GVAR;
+    int sz = var->size > 0 ? var->size : var->elem_size;
+    gv->mem.type_size = (short)sz;
+    gv->mem.deref_size = (short)(var->elem_size > 0 ? var->elem_size : sz);
+    gv->mem.is_unsigned = var->is_unsigned;
+    gv->mem.base.fp_kind = var->fp_kind;
+    gv->name = var->static_global_name;
+    gv->name_len = var->static_global_name_len;
+    var->is_used = 1;
+    return (node_t *)gv;
+  }
   node_t *n = psx_node_new_lvar_typed(var->offset,
       var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
   int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||

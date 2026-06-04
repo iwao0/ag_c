@@ -152,6 +152,8 @@ static const test_case_t test_cases[] = {
     {"local_variables", "sum3", CASE_INT_FILE, "test/fixtures/local_variables/sum3.c", 6, 0},
     {"local_variables", "mul2", CASE_INT_FILE, "test/fixtures/local_variables/mul2.c", 10, 0},
     {"local_variables", "copy", CASE_INT_FILE, "test/fixtures/local_variables/copy.c", 1, 0},
+    {"local_variables", "static_counter", CASE_INT_FILE, "test/fixtures/local_variables/static_counter.c", 3, 0},
+    {"local_variables", "static_separate_funcs", CASE_INT_FILE, "test/fixtures/local_variables/static_separate_funcs.c", 204, 0},
 
     {"if_else", "if_true", CASE_INT_FILE, "test/fixtures/if_else/if_true.c", 3, 0},
     {"if_else", "if_false", CASE_INT_FILE, "test/fixtures/if_else/if_false.c", 0, 0},

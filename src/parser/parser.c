@@ -29,6 +29,7 @@ static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
 static int g_last_alignas_value = 0;
 static int g_last_decl_is_extern = 0;
+static int g_last_decl_is_static = 0;
 static int g_toplevel_decl_elem_size = 8;
 static int g_toplevel_decl_is_extern = 0;
 static int g_toplevel_decl_is_thread_local = 0;
@@ -314,10 +315,12 @@ static void skip_cv_qualifiers(void) {
   g_last_type_volatile_qualified = 0;
   g_last_alignas_value = 0;
   g_last_decl_is_extern = 0;
+  g_last_decl_is_static = 0;
   while (psx_is_decl_prefix_token(curtok()->kind)) {
     if (curtok()->kind == TK_CONST) g_last_type_const_qualified = 1;
     if (curtok()->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
     if (curtok()->kind == TK_EXTERN) g_last_decl_is_extern = 1;
+    if (curtok()->kind == TK_STATIC) g_last_decl_is_static = 1;
     if (curtok()->kind == TK_ALIGNAS) {
       set_curtok(curtok()->next);
       if (curtok()->kind != TK_LPAREN) {
@@ -352,6 +355,11 @@ void psx_take_alignas_value(int *align) {
 
 void psx_take_extern_flag(int *is_extern) {
   if (is_extern) *is_extern = g_last_decl_is_extern;
+}
+
+void psx_take_static_flag(int *is_static) {
+  if (is_static) *is_static = g_last_decl_is_static;
+  g_last_decl_is_static = 0;
 }
 
 static void skip_ptr_qualifiers(void) {

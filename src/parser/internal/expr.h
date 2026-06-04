@@ -12,5 +12,8 @@ tk_float_kind_t psx_expr_current_func_ret_fp_kind(void);
 void psx_expr_set_current_func_ret_struct_size(int size);
 int psx_expr_current_func_ret_struct_size(void);
 void psx_expr_set_current_funcname(char *name, int len);
+/* g_current_funcname を読む。`static int n` を `<funcname>__n` に
+ * mangle するために必要。 */
+void psx_expr_get_current_funcname(char **out_name, int *out_len);
 
 #endif
