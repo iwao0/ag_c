@@ -536,6 +536,9 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
     tk_set_current_token_ctx(tk_ctx, start);
   }
   tk_set_current_token(start);
+  /* 翻訳単位境界で関数名テーブルを初期化。
+   * テストが同プロセスで複数プログラムを処理しても前回の登録が漏れないようにする。 */
+  psx_ctx_reset_function_names();
   int cap = 16;
   node_t **codes = calloc(cap, sizeof(node_t*));
   int i = 0;
@@ -1875,6 +1878,7 @@ static node_t *funcdef(void) {
   }
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
+  psx_expr_set_current_func_ret_is_pointer(ret_is_ptr);
   // 構造体戻り値の場合、サイズを記録（ポインタ戻り値は除く）
   if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr) {
     if (ret_tag && psx_ctx_has_tag_type(ret_kind, ret_tag->str, ret_tag->len)) {
@@ -1910,6 +1914,12 @@ static node_t *funcdef(void) {
   // 戻り値型が void かどうかを記録。代入/初期化での void 値使用検出に使う。
   if (ret_kind == TK_VOID && !ret_is_ptr) {
     psx_ctx_set_function_ret_void(tok->str, tok->len, 1);
+  }
+  /* C11 6.7p3: 同名関数の再宣言で戻り値型が異なるとエラー。 */
+  if (!psx_ctx_track_function_ret_type(tok->str, tok->len, ret_token_kind, ret_is_ptr)) {
+    psx_diag_ctx(curtok(), "funcdef",
+                 "関数 '%.*s' の戻り値型が以前の宣言と異なります (C11 6.7p3)",
+                 tok->len, tok->str);
   }
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。

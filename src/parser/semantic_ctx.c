@@ -114,6 +114,11 @@ struct func_name_t {
   int nargs_fixed;
   /* 1: 戻り値型が void。代入や初期化での使用を検出するのに使う (C11 6.5.16)。 */
   int is_ret_void;
+  /* 戻り値型の基底情報。再宣言で型が異なる場合のエラー検出 (C11 6.7p3) に使う。
+   * ret_set_once が 0 のうちは比較せず初回値として記録する。 */
+  int ret_set_once;
+  token_kind_t ret_token_kind;
+  int ret_is_pointer;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -141,6 +146,13 @@ static unsigned psx_ctx_hash_tag(token_kind_t kind, const char *name, int len) {
     h = (h * 33u) ^ (unsigned char)name[i];
   }
   return h & (PCTX_HASH_BUCKETS - 1u);
+}
+
+/* 翻訳単位 (program) の境界で関数名テーブルを初期化する。
+ * テストでは fork() 経由で複数のプログラムを 1 プロセス内で解析するため、
+ * 関数戻り値型チェック等が前テストの登録に引きずられないようにする。 */
+void psx_ctx_reset_function_names(void) {
+  memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
 }
 
 void psx_ctx_reset_function_scope(void) {
@@ -832,6 +844,26 @@ void psx_ctx_set_function_ret_void(char *name, int len, int is_void) {
 bool psx_ctx_is_function_ret_void(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f && f->is_ret_void != 0;
+}
+
+/* 関数の戻り値型 (基底 token_kind と pointer フラグ) を登録/比較する。
+ * 既に同名で登録があれば、新しい値と異なるか確認する。
+ * 戻り値: 1 = OK (新規 or 互換)、0 = 衝突 (呼び出し元で診断発行)。 */
+int psx_ctx_track_function_ret_type(char *name, int len,
+                                     token_kind_t ret_token_kind, int ret_is_pointer) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return 1;
+  if (!f->ret_set_once) {
+    f->ret_set_once = 1;
+    f->ret_token_kind = ret_token_kind;
+    f->ret_is_pointer = ret_is_pointer ? 1 : 0;
+    return 1;
+  }
+  if (f->ret_token_kind == ret_token_kind &&
+      f->ret_is_pointer == (ret_is_pointer ? 1 : 0)) {
+    return 1;
+  }
+  return 0;
 }
 
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed) {

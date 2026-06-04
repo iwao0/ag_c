@@ -323,6 +323,19 @@ static node_t *stmt_internal(void) {
                      "%s",
                      diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
     }
+    /* C11 6.8.6.4 / 6.5.16.1: ポインタ戻り値型の関数で非ゼロ整数値を返すのは
+     * 互換性のない型の制約違反 (NULL ポインタ定数 0 は許可)。
+     * 明示キャスト (int*)x は apply_cast が is_pointer を設定するためここでは通る。 */
+    if (psx_expr_current_func_ret_is_pointer() && node->lhs) {
+      if (node->lhs->kind == ND_NUM) {
+        node_num_t *num = (node_num_t *)node->lhs;
+        if (num->val != 0) {
+          psx_diag_ctx(curtok(), "return",
+                       "ポインタを返す関数から非ゼロ整数定数 (%lld) を返却できません (C11 6.8.6.4)",
+                       num->val);
+        }
+      }
+    }
     node->fp_kind = psx_expr_current_func_ret_fp_kind();
     node->ret_struct_size = psx_expr_current_func_ret_struct_size();
     tk_expect(';');

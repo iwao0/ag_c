@@ -17,6 +17,7 @@
 static token_kind_t g_current_ret_token_kind = TK_INT;
 static tk_float_kind_t g_current_ret_fp_kind = TK_FLOAT_KIND_NONE;
 static int g_current_ret_struct_size = 0;
+static int g_current_ret_is_pointer = 0;
 static char *g_current_funcname = NULL;
 static int g_current_funcname_len = 0;
 static int string_label_count = 0;
@@ -1599,6 +1600,14 @@ tk_float_kind_t psx_expr_current_func_ret_fp_kind(void) {
   return g_current_ret_fp_kind;
 }
 
+void psx_expr_set_current_func_ret_is_pointer(int is_pointer) {
+  g_current_ret_is_pointer = is_pointer ? 1 : 0;
+}
+
+int psx_expr_current_func_ret_is_pointer(void) {
+  return g_current_ret_is_pointer;
+}
+
 void psx_expr_set_current_funcname(char *name, int len) {
   g_current_funcname = name;
   g_current_funcname_len = len;
@@ -1677,6 +1686,17 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       /* pointee_is_void は明示的にデフォルト (0) のままにする */
       return (node_t *)wrap;
     }
+    /* (long)ptr のようにポインタ→long の明示キャスト: 結果は整数なので
+     * node_mem_t の is_pointer をクリアし、後段の代入/初期化制約検査が
+     * 誤発火しないようにする。 */
+    if (!is_pointer && type_kind == TK_LONG) {
+      if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
+          operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
+          operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
+          operand->kind == ND_ASSIGN) {
+        ((node_mem_t *)operand)->is_pointer = 0;
+      }
+    }
     return operand;
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
@@ -1695,11 +1715,25 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (type_kind == TK_INT || type_kind == TK_ENUM) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    /* ポインタ→整数の明示キャストでは初期化/代入時の制約違反検査を回避するため、
+     * node_mem_t を持つノードの is_pointer をクリアする。 */
+    if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
+        operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
+        operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
+        operand->kind == ND_ASSIGN) {
+      ((node_mem_t *)operand)->is_pointer = 0;
+    }
     return operand;
   }
   if (type_kind == TK_SIGNED || type_kind == TK_UNSIGNED) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
+        operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
+        operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
+        operand->kind == ND_ASSIGN) {
+      ((node_mem_t *)operand)->is_pointer = 0;
+    }
     return operand;
   }
   if (type_kind == TK_BOOL) {

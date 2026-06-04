@@ -5,6 +5,7 @@
 #include <stdbool.h>
 
 void psx_ctx_reset_function_scope(void);
+void psx_ctx_reset_function_names(void);
 void psx_ctx_enter_block_scope(void);
 void psx_ctx_leave_block_scope(void);
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok);
@@ -126,6 +127,9 @@ bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed)
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
 void psx_ctx_set_function_ret_void(char *name, int len, int is_void);
 bool psx_ctx_is_function_ret_void(char *name, int len);
+/* 関数の戻り値型を track する。既存と異なる型なら 0 を返す。 */
+int psx_ctx_track_function_ret_type(char *name, int len,
+                                     token_kind_t ret_token_kind, int ret_is_pointer);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

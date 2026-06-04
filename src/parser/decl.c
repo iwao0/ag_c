@@ -1630,6 +1630,39 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   node_t *init_expr = parse_scalar_brace_initializer();
   if (is_pointer) {
     psx_node_reject_const_qual_discard(lvar, init_expr);
+    /* C11 6.5.16.1: ポインタ変数を非ゼロ整数定数で初期化するのは制約違反。
+     * NULL ポインタ定数 (整数 0) のみ例外として許可する。 */
+    if (init_expr && init_expr->kind == ND_NUM) {
+      node_num_t *num = (node_num_t *)init_expr;
+      if (num->val != 0) {
+        psx_diag_ctx(curtok(), "init",
+                     "ポインタ変数を非ゼロ整数定数 (%lld) で初期化できません (C11 6.5.16.1)",
+                     num->val);
+      }
+    }
+  } else if (var->tag_kind == TK_EOF && !var->is_array && init_expr) {
+    /* C11 6.5.16.1: スカラ非ポインタ変数を文字列リテラル (char*) など
+     * ポインタ型で初期化するのは互換性のない型の制約違反。
+     * 明示キャスト (int)"hello" は apply_cast で is_pointer がクリアされるので
+     * ここでは psx_node_is_pointer を見て暗黙変換のみを検出する。 */
+    if (psx_node_is_pointer(init_expr)) {
+      psx_diag_ctx(curtok(), "init",
+                   "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
+    }
+    /* C11 6.5.16.1: struct/union 値をスカラに代入することはできない。
+     * RHS の node_mem_t::tag_kind が TK_STRUCT/TK_UNION かつ is_tag_pointer=0
+     * の場合、構造体実体を整数に変換しようとしているので拒否する。 */
+    if ((init_expr->kind == ND_LVAR || init_expr->kind == ND_GVAR ||
+         init_expr->kind == ND_DEREF || init_expr->kind == ND_FUNCALL) &&
+        (init_expr->kind != ND_FUNCALL)) {
+      node_mem_t *m = (node_mem_t *)init_expr;
+      if ((m->tag_kind == TK_STRUCT || m->tag_kind == TK_UNION) &&
+          !m->is_tag_pointer && !m->is_pointer) {
+        psx_diag_ctx(curtok(), "init",
+                     "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
+                     m->tag_kind == TK_STRUCT ? "struct" : "union");
+      }
+    }
   }
   node_mem_t *assign_node = psx_node_new_assign(lvar, init_expr);
   assign_node->type_size = is_pointer ? 8 : var->elem_size;
