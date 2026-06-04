@@ -603,6 +603,8 @@ static const test_case_t test_cases[] = {
     {"array", "brace_init_partial_zeroed", CASE_INT_FILE, "test/fixtures/array/brace_init_partial_zeroed.c", 3, 0},
     {"array", "brace_init_designated_gap", CASE_INT_FILE, "test/fixtures/array/brace_init_designated_gap.c", 101, 0},
     {"array", "sizeof_array_div_elem", CASE_INT_FILE, "test/fixtures/array/sizeof_array_div_elem.c", 10, 0},
+    {"array", "struct_array_brace_init", CASE_INT_FILE, "test/fixtures/array/struct_array_brace_init.c", 11, 0},
+    {"array", "struct_array_brace_partial", CASE_INT_FILE, "test/fixtures/array/struct_array_brace_partial.c", 60, 0},
     {"array", "char_array_string_init", CASE_INT_FILE, "test/fixtures/array/char_array_string_init.c", 99, 0},
     {"array", "inferred_size_brace", CASE_INT_FILE, "test/fixtures/array/inferred_size_brace.c", 100, 0},
     {"array", "inferred_size_brace_trailing_comma", CASE_INT_FILE, "test/fixtures/array/inferred_size_trailing_comma.c", 15, 0},
