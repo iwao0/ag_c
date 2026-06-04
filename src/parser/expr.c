@@ -2043,6 +2043,22 @@ static node_t *build_pre_inc_dec_node(node_kind_t kind, const char *op) {
 
 // `*operand` を表す ND_DEREF ノードを構築する。tag/pointer-qual の伝播も行う。
 static node_t *build_unary_deref_node(node_t *operand) {
+  /* C11 6.5.3.2p2: 単項 `*` のオペランドはポインタ型でなければならない。
+   * 明確に「小さな整数スカラ」(ND_LVAR/ND_GVAR で type_size < 8 かつ
+   * 非ポインタ非配列) を deref するときだけエラーにする。8B 値は関数ポインタ
+   * や long も含まれるので保守的に許容する。 */
+  if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
+                  operand->kind == ND_NUM)) {
+    int looks_ptr = psx_node_is_pointer(operand) ||
+                    psx_node_pointer_qual_levels(operand) > 0;
+    int ts = psx_node_type_size(operand);
+    /* type_size が 1/2/4 (char/short/int) で pointer 指示がなければ明確に
+     * スカラ整数 → deref はエラー。 */
+    if (!looks_ptr && ts > 0 && ts < 8) {
+      psx_diag_ctx(curtok(), "deref",
+                   "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
+    }
+  }
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
   node->base.kind = ND_DEREF;
   node->base.lhs = operand;
