@@ -233,6 +233,20 @@ int main(void) {
   run_ir_case("variadic_va_copy",
               "#include <stdarg.h>\nint twice(int n, ...) { va_list ap, cp; va_start(ap, n); va_copy(cp, ap); int s = 0, t = 0; int i; for (i = 0; i < n; i = i + 1) s = s + va_arg(ap, int); for (i = 0; i < n; i = i + 1) t = t + va_arg(cp, int); va_end(ap); va_end(cp); return s + t; }\nint main(void) { return twice(3, 10, 20, 30); }\n", 120);
 
+  /* Phase 7f: 文字列リテラル + グローバル変数 + ローカル配列初期化子 */
+  run_ir_case("printf_format",
+              "#include <stdio.h>\nint main(void) { printf(\"hello %d\\n\", 42); return 0; }\n", 0);
+  run_ir_case("global_scalar_read",
+              "int x = 42;\nint main(void) { return x; }\n", 42);
+  run_ir_case("global_scalar_write",
+              "int g = 0;\nint main(void) { g = 99; return g; }\n", 99);
+  run_ir_case("global_array_read",
+              "int g[3] = {1, 5, 36};\nint main(void) { return g[0] + g[1] + g[2]; }\n", 42);
+  run_ir_case("local_array_init",
+              "int main(void) { int arr[3] = {10, 20, 12}; return arr[0] + arr[1] + arr[2]; }\n", 42);
+  run_ir_case("string_literal_arg",
+              "#include <stdio.h>\nint main(void) { char *s = \"world\"; printf(\"hello %s, %d\\n\", s, 42); return 0; }\n", 0);
+
   if (failures > 0) {
     fprintf(stderr, "IR Phase 2 E2E: %d/%d failed\n", failures, total);
     return 1;

@@ -191,6 +191,46 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
 static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
   if (!node || ctx->failed) return ir_val_none();
   switch (node->kind) {
+    case ND_STRING: {
+      /* 文字列リテラル: コンパイル時に登録された .LC<id> ラベルのアドレスを返す。 */
+      node_string_t *s = (node_string_t *)node;
+      int v = ir_func_new_vreg(ctx->f);
+      ir_inst_t *inst = ir_inst_new(IR_LOAD_STR);
+      inst->dst = ir_val_vreg(v, IR_TY_PTR);
+      inst->sym = s->string_label;
+      inst->sym_len = s->string_label ? (int)strlen(s->string_label) : 0;
+      ir_func_append_inst(ctx->f, inst);
+      return inst->dst;
+    }
+    case ND_GVAR: {
+      /* グローバル変数 (スカラ): _<name>@PAGE/@PAGEOFF でアドレスを取って load。
+       * 配列 / 構造体のグローバル変数は parser が ND_ADDR(ND_GVAR) で包む。 */
+      node_gvar_t *gv = (node_gvar_t *)node;
+      if (gv->is_thread_local) {
+        fail(ctx, "thread-local global variable");
+        return ir_val_none();
+      }
+      int v_addr = ir_func_new_vreg(ctx->f);
+      ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+      sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+      sym->sym = gv->name;
+      sym->sym_len = gv->name_len;
+      ir_func_append_inst(ctx->f, sym);
+      /* load (型は node の fp_kind / type_size から判定) */
+      ir_type_t load_ty = IR_TY_I32;
+      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) load_ty = IR_TY_F32;
+      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) load_ty = IR_TY_F64;
+      else {
+        int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+        load_ty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+      }
+      int v = ir_func_new_vreg(ctx->f);
+      ir_inst_t *ld = ir_inst_new(IR_LOAD);
+      ld->dst = ir_val_vreg(v, load_ty);
+      ld->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
+      ir_func_append_inst(ctx->f, ld);
+      return ld->dst;
+    }
     case ND_NUM: {
       node_num_t *n = (node_num_t *)node;
       /* float/double リテラル */
@@ -415,6 +455,34 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         ir_func_append_inst(ctx->f, st);
         return rhs;
       }
+      if (node->lhs->kind == ND_GVAR) {
+        node_gvar_t *gv = (node_gvar_t *)node->lhs;
+        if (gv->is_thread_local) {
+          fail(ctx, "thread-local global variable assign");
+          return ir_val_none();
+        }
+        ir_type_t vty = IR_TY_I32;
+        if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
+        else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
+        else {
+          int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+          vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+        }
+        int v_addr = ir_func_new_vreg(ctx->f);
+        ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+        sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+        sym->sym = gv->name;
+        sym->sym_len = gv->name_len;
+        ir_func_append_inst(ctx->f, sym);
+        ir_val_t rhs = build_expr(ctx, node->rhs);
+        if (ctx->failed) return ir_val_none();
+        rhs.type = vty;
+        ir_inst_t *st = ir_inst_new(IR_STORE);
+        st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
+        st->src2 = rhs;
+        ir_func_append_inst(ctx->f, st);
+        return rhs;
+      }
       if (node->lhs->kind == ND_DEREF) {
         /* *p = rhs。p が struct メンバアクセス由来なら bit_width が乗る。 */
         node_mem_t *mm = (node_mem_t *)node->lhs;
@@ -465,11 +533,24 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       return ir_val_none();
     }
     case ND_ADDR: {
-      /* &*x = x: ag_c の AST では `s.m` が `*(&s + off)` で表現され、
-       * `&s.m` は ND_ADDR(ND_DEREF(...)) になる。これを deref キャンセルで
-       * ポインタ式に展開する。 */
+      /* &*x = x */
       if (node->lhs && node->lhs->kind == ND_DEREF) {
         return build_expr(ctx, node->lhs->lhs);
+      }
+      /* &gvar: グローバル変数のアドレス (= LOAD_SYM のみ、load しない) */
+      if (node->lhs && node->lhs->kind == ND_GVAR) {
+        node_gvar_t *gv = (node_gvar_t *)node->lhs;
+        if (gv->is_thread_local) {
+          fail(ctx, "thread-local global variable address");
+          return ir_val_none();
+        }
+        int v = ir_func_new_vreg(ctx->f);
+        ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+        sym->dst = ir_val_vreg(v, IR_TY_PTR);
+        sym->sym = gv->name;
+        sym->sym_len = gv->name_len;
+        ir_func_append_inst(ctx->f, sym);
+        return sym->dst;
       }
       if (!node->lhs || node->lhs->kind != ND_LVAR) {
         fail(ctx, "& of non-lvar (Phase 4b unsupported)");

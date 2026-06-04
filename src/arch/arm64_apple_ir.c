@@ -190,6 +190,26 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
   switch (inst->op) {
     case IR_NOP:
       return;
+    case IR_LOAD_STR: {
+      /* 文字列リテラルのラベルアドレス (.LC<id>) を vreg に */
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  adrp %s, %.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+      cg_emitf("  add %s, %s, %.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
+    case IR_LOAD_SYM: {
+      /* グローバル変数のアドレス (_<name>@PAGE/PAGEOFF) を vreg に */
+      char bd[8];
+      int spill = 0;
+      const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      cg_emitf("  adrp %s, _%.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+      cg_emitf("  add %s, %s, _%.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      release_dst(ctx, inst->dst, d, spill);
+      return;
+    }
     case IR_VA_ARG_AREA: {
       /* stack 上の variadic 引数領域の先頭 = x29 + total_size。
        * dst は spill (frame slot に書く)。 */
