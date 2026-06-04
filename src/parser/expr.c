@@ -885,6 +885,10 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
     // Keep array shape for postfix [] (e.g. s.a[1]).
     deref->type_size = mem_size * mem_array_len;
     deref->deref_size = mem_size;
+    /* メンバが配列のとき、その参照は (式中で) 配列名と同じくポインタへ崩壊する。
+     * 後続の `[...]` サブスクリプトや `+` 算術が pointer arith として処理される
+     * ために is_pointer を立てておく。 */
+    deref->is_pointer = 1;
   }
   deref->tag_kind = mem_tag_kind;
   deref->tag_name = mem_tag_name;
@@ -978,6 +982,9 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     addr_node->base.lhs = psx_node_new_lvar(var->offset);
     addr_node->type_size = var->elem_size;
     addr_node->deref_size = var->elem_size;
+    /* `(int[N]){...}` 複合リテラルは配列名と同じくポインタへ崩壊する。
+     * 後続の `[i]` サブスクリプトを通すために is_pointer を立てる。 */
+    addr_node->is_pointer = 1;
     ref = (node_t *)addr_node;
   } else {
     ref = new_typed_lvar_ref(var, cast_is_ptr);
@@ -2255,6 +2262,20 @@ static node_t *subscript_base_address_of(node_t *node) {
 
 // `base[idx]` を表す ND_DEREF ノードを構築する。tag / 多段ポインタ伝播を行う。
 static node_t *build_subscript_deref(node_t *node, node_t *idx) {
+  /* C11 6.5.2.1p1: `a[b]` は `*(a + b)` の構文糖。
+   * a または b のどちらかがポインタ (または配列) でなければならない。
+   * ND_DEREF (メンバアクセスや多次元 subscript の中間結果) は flex 配列等
+   * メタ情報が落ちる場合があるので、kind 単独で許容する (誤検出を避ける)。
+   * 明確に「スカラ int を subscript している」ケース (両辺とも非ポインタの
+   * 単純 LVAR/GVAR/NUM) のみ弾く。 */
+  int node_ok = psx_node_is_pointer(node) || node->kind == ND_DEREF ||
+                node->kind == ND_ADDR;
+  int idx_ok = psx_node_is_pointer(idx) || idx->kind == ND_DEREF ||
+               idx->kind == ND_ADDR;
+  if (!node_ok && !idx_ok) {
+    psx_diag_ctx(curtok(), "subscript",
+                 "サブスクリプトの両辺ともポインタ/配列ではありません (C11 6.5.2.1p1)");
+  }
   int es = 0, inner_ds = 0, next_ds = 0;
   int extras[5] = {0};
   int extras_count = 0;
@@ -2501,6 +2522,9 @@ static node_string_t *make_string_lit_node(char *str, int len,
   string_literals = lit;
   snode->mem.type_size = 8;
   snode->mem.deref_size = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
+  /* 文字列リテラルは char (または wchar) 配列で、式中ではポインタに decay する。
+   * `"abc"[1]` の subscript チェックや (ptr + n) のスケーリングに使う。 */
+  snode->mem.is_pointer = 1;
   snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
   snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   snode->str_prefix_kind = prefix_kind;
