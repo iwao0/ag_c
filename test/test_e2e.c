@@ -568,6 +568,7 @@ static const test_case_t test_cases[] = {
     {"pointer", "arith_sub", CASE_INT_FILE, "test/fixtures/pointer/arith_sub.c", 30, 0},
     {"pointer", "ptr_subtract", CASE_INT_FILE, "test/fixtures/pointer/ptr_subtract.c", 3, 0},
     {"pointer", "array_decay_diff", CASE_INT_FILE, "test/fixtures/pointer/array_decay_diff.c", 9, 0},
+    {"pointer", "global_funcptr_array", CASE_INT_FILE, "test/fixtures/pointer/global_funcptr_array.c", 25, 0},
     {"pointer", "arith_char", CASE_INT_FILE, "test/fixtures/pointer/arith_char.c", 3, 0},
     {"pointer", "triple_deref", CASE_INT_FILE, "test/fixtures/pointer/triple_deref.c", 42, 0},
     {"pointer", "write_via_pp", CASE_INT_FILE, "test/fixtures/pointer/write_via_pp.c", 77, 0},

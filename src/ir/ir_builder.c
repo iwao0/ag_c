@@ -819,7 +819,15 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
           ir_func_append_inst(ctx->f, st);
           return rhs;
         }
-        rhs.type = IR_TY_I32;
+        /* DEREF の type_size と fp_kind から書き込み幅を決める。
+         * 8B = PTR (関数ポインタ・long 等)、4B = I32、2B = I16、1B = I8。 */
+        ir_type_t vty = IR_TY_I32;
+        if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
+        else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
+        else if (mm->type_size >= 8) vty = IR_TY_PTR;
+        else if (mm->type_size == 2) vty = IR_TY_I16;
+        else if (mm->type_size == 1) vty = IR_TY_I8;
+        rhs = coerce_to_type(ctx, rhs, vty);
         ir_inst_t *st = ir_inst_new(IR_STORE);
         st->src1 = ptr;
         st->src2 = rhs;
