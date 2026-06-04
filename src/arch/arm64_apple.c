@@ -16,7 +16,9 @@
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
 #include "../parser/parser.h"
+#include "../parser/internal/semantic_ctx.h"
 #include "../tokenizer/escape.h"
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -287,7 +289,29 @@ void gen_global_vars(void) {
       int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
       cg_emitf(".align %d\n", align);
       cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-      if (gv->init_count > 0) {
+      if (gv->init_count > 0 && gv->tag_kind != TK_EOF && !gv->is_array) {
+        /* struct / union global with brace init: 各メンバの型サイズに合わせて
+         * init_values[i] を出力。メンバ間の padding は .space で埋める。
+         * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。 */
+        int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+        int prev_end = 0;
+        for (int i = 0; i < n_members && i < gv->init_count; i++) {
+          char *mn = NULL; int ml = 0;
+          int off = 0, ts = 0, ds = 0, alen = 0;
+          token_kind_t mtk = TK_EOF; char *mtn = NULL; int mtl = 0; int mtp = 0;
+          if (!psx_ctx_get_tag_member_at(gv->tag_kind, gv->tag_name, gv->tag_len, i,
+                                         &mn, &ml, &off, &ts, &ds, &alen,
+                                         &mtk, &mtn, &mtl, &mtp)) break;
+          if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
+          long long v = gv->init_values[i];
+          if (ts == 1) cg_emitf("  .byte %lld\n", v);
+          else if (ts == 2) cg_emitf("  .short %lld\n", v);
+          else if (ts == 4) cg_emitf("  .long %lld\n", v);
+          else cg_emitf("  .quad %lld\n", v);
+          prev_end = off + ts;
+        }
+        if (prev_end < gv->type_size) cg_emitf("  .space %d\n", gv->type_size - prev_end);
+      } else if (gv->init_count > 0) {
         int elem = gv->deref_size > 0 ? gv->deref_size : 4;
         int total_elems = gv->type_size / elem;
         for (int i = 0; i < gv->init_count && i < total_elems; i++) {

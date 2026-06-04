@@ -2633,6 +2633,11 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.base.kind = ND_GVAR;
     gvar_node->mem.type_size = gv->type_size;
     gvar_node->mem.deref_size = gv->deref_size;
+    /* タグ情報 (struct / union): build_member_access が `.x` を解決するときに
+     * psx_node_get_tag_type 経由でここを読む。 */
+    gvar_node->mem.tag_kind = gv->tag_kind;
+    gvar_node->mem.tag_name = gv->tag_name;
+    gvar_node->mem.tag_len = gv->tag_len;
     gvar_node->name = gv->name;
     gvar_node->name_len = gv->name_len;
     gvar_node->is_thread_local = gv->is_thread_local;

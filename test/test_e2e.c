@@ -777,6 +777,8 @@ static const test_case_t test_cases[] = {
     {"global_var", "local_extern", CASE_INT_FILE, "test/fixtures/global_var/local_extern.c", 42, 0},
     {"global_var", "array_rw", CASE_INT_FILE, "test/fixtures/global_var/array_rw.c", 20, 0},
     {"global_var", "array_sum", CASE_INT_FILE, "test/fixtures/global_var/array_sum.c", 6, 0},
+    {"global_var", "global_struct_init", CASE_INT_FILE, "test/fixtures/global_var/global_struct_init.c", 42, 0},
+    {"global_var", "global_struct_assign", CASE_INT_FILE, "test/fixtures/global_var/global_struct_assign.c", 42, 0},
     // 意地悪テスト: 各種エッジケース (fixture 化済み)
     {"evil", "dowhile_break", CASE_INT_FILE, "test/fixtures/evil/dowhile_break.c", 3, 0},
     {"evil", "dowhile_continue", CASE_INT_FILE, "test/fixtures/evil/dowhile_continue.c", 9, 0},

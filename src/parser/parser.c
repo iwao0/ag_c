@@ -675,6 +675,14 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->deref_size = elem_store_size;
   gv->is_array = is_array;
   gv->is_extern_decl = is_extern_decl;
+  /* tag (struct / union) 情報を decl spec から引き継ぐ。is_ptr のとき
+   * gvar 自身はポインタ値なので tag は持たない (member access 時にエラーにする
+   * ため未設定にしておく)。 */
+  if (!is_ptr) {
+    gv->tag_kind = g_toplevel_decl_tag_kind;
+    gv->tag_name = g_toplevel_decl_tag_name;
+    gv->tag_len = g_toplevel_decl_tag_len;
+  }
   gv->next = global_vars;
   global_vars = gv;
   return gv;

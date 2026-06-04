@@ -225,6 +225,11 @@ struct global_var_t {
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
+  // tag (struct / union) 情報。tag_kind == TK_EOF のとき非タグ型。
+  // build_member_access が `gvar.member` でタグメンバを引くのに使う。
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
   long long init_val; // 初期値（整数定数、スカラ用）
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   int init_symbol_len;
