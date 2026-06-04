@@ -42,9 +42,11 @@ const char *ir_type_name(ir_type_t t);
 typedef enum {
   IR_NOP = 0,
 
-  /* 整数算術 */
+  /* 整数算術。SHR は算術シフト (signed)。LSR は論理シフト (unsigned)。
+   * UDIV/UMOD は unsigned 除算/剰余。 */
   IR_ADD, IR_SUB, IR_MUL, IR_DIV, IR_MOD,
-  IR_AND, IR_OR,  IR_XOR, IR_SHL, IR_SHR,
+  IR_UDIV, IR_UMOD,
+  IR_AND, IR_OR,  IR_XOR, IR_SHL, IR_SHR, IR_LSR,
   IR_NEG, IR_NOT,
 
   /* 比較 (signed)。unsigned は ULT/ULE で区別。結果は IR_TY_I32 (0/1) */
@@ -142,6 +144,10 @@ typedef struct ir_inst_t {
   /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
    * sym ではなく callee vreg を blr する。 */
   ir_val_t callee;
+  /* IR_LOAD: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
+   * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
+   * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
+  unsigned char is_unsigned_load;
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */

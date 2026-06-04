@@ -89,6 +89,9 @@ const char *ir_op_name(ir_op_t op) {
     case IR_PARAM:        return "param";
     case IR_VA_ARG_AREA:  return "va_arg_area";
     case IR_VLA_ALLOC:    return "vla_alloc";
+    case IR_UDIV:         return "udiv";
+    case IR_UMOD:         return "umod";
+    case IR_LSR:          return "lsr";
     default:              return "?";
   }
 }

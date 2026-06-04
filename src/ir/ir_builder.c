@@ -428,6 +428,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *ld = ir_inst_new(IR_LOAD);
       ld->dst = ir_val_vreg(v, load_ty);
       ld->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
+      ld->is_unsigned_load = gv->mem.is_unsigned ? 1 : 0;
       ir_func_append_inst(ctx->f, ld);
       return ld->dst;
     }
@@ -490,6 +491,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
       inst->dst = ir_val_vreg(v, vty);
       inst->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+      inst->is_unsigned_load = lv->mem.is_unsigned ? 1 : 0;
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
     }
@@ -826,6 +828,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       else if (mm->type_size == 1) load_ty = IR_TY_I8;
       inst->dst = ir_val_vreg(v, load_ty);
       inst->src1 = ptr;
+      inst->is_unsigned_load = mm->is_unsigned ? 1 : 0;
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
     }
@@ -1009,20 +1012,26 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_val_t r = build_expr(ctx, node->rhs);
       if (ctx->failed) return ir_val_none();
       int is_fp = is_fp_type(l.type) || is_fp_type(r.type);
+      /* unsigned 演算は SHR→LSR、DIV→UDIV、MOD→UMOD、LT/LE→ULT/ULE に振り分ける。
+       * 結果型の is_unsigned (parser が伝播) と、片側が unsigned LVAR/GVAR/...
+       * の場合の両方を考慮する。 */
+      int unsig = node->is_unsigned ||
+                  (node->lhs && node->lhs->is_unsigned) ||
+                  (node->rhs && node->rhs->is_unsigned);
       ir_op_t op = IR_ADD;
       switch (node->kind) {
         case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;
         case ND_SUB: op = is_fp ? IR_FSUB : IR_SUB; break;
         case ND_MUL: op = is_fp ? IR_FMUL : IR_MUL; break;
-        case ND_DIV: op = is_fp ? IR_FDIV : IR_DIV; break;
-        case ND_MOD: op = IR_MOD; break;  /* float mod は未対応 */
+        case ND_DIV: op = is_fp ? IR_FDIV : (unsig ? IR_UDIV : IR_DIV); break;
+        case ND_MOD: op = unsig ? IR_UMOD : IR_MOD; break;  /* float mod は未対応 */
         case ND_BITAND: op = IR_AND; break;
         case ND_BITOR:  op = IR_OR;  break;
         case ND_BITXOR: op = IR_XOR; break;
         case ND_SHL:    op = IR_SHL; break;
-        case ND_SHR:    op = IR_SHR; break;
-        case ND_LT:  op = is_fp ? IR_FLT : IR_LT; break;
-        case ND_LE:  op = is_fp ? IR_FLE : IR_LE; break;
+        case ND_SHR:    op = unsig ? IR_LSR : IR_SHR; break;
+        case ND_LT:  op = is_fp ? IR_FLT : (unsig ? IR_ULT : IR_LT); break;
+        case ND_LE:  op = is_fp ? IR_FLE : (unsig ? IR_ULE : IR_LE); break;
         case ND_EQ:  op = is_fp ? IR_FEQ : IR_EQ; break;
         case ND_NE:  op = is_fp ? IR_FNE : IR_NE; break;
         default: break;

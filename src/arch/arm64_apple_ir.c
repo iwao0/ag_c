@@ -417,11 +417,23 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x10", bd, sizeof(bd), &spill);
-      switch (inst->dst.type) {
-        case IR_TY_I8:  cg_emitf("  ldrsb %s, [%s]\n", d, ptr); break;
-        case IR_TY_I16: cg_emitf("  ldrsh %s, [%s]\n", d, ptr); break;
-        case IR_TY_I32: cg_emitf("  ldrsw %s, [%s]\n", d, ptr); break;
-        default:        cg_emitf("  ldr %s, [%s]\n", d, ptr); break;
+      char w_d[8];
+      to_w_name(d, w_d, sizeof(w_d));
+      if (inst->is_unsigned_load) {
+        switch (inst->dst.type) {
+          /* unsigned: ldrb/ldrh/ldr w は自動で zero-extend する */
+          case IR_TY_I8:  cg_emitf("  ldrb %s, [%s]\n", w_d, ptr); break;
+          case IR_TY_I16: cg_emitf("  ldrh %s, [%s]\n", w_d, ptr); break;
+          case IR_TY_I32: cg_emitf("  ldr %s, [%s]\n", w_d, ptr); break;
+          default:        cg_emitf("  ldr %s, [%s]\n", d, ptr); break;
+        }
+      } else {
+        switch (inst->dst.type) {
+          case IR_TY_I8:  cg_emitf("  ldrsb %s, [%s]\n", d, ptr); break;
+          case IR_TY_I16: cg_emitf("  ldrsh %s, [%s]\n", d, ptr); break;
+          case IR_TY_I32: cg_emitf("  ldrsw %s, [%s]\n", d, ptr); break;
+          default:        cg_emitf("  ldr %s, [%s]\n", d, ptr); break;
+        }
       }
       release_dst(ctx, inst->dst, d, spill);
       return;
@@ -520,12 +532,15 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_SUB:
     case IR_MUL:
     case IR_DIV:
+    case IR_UDIV:
     case IR_MOD:
+    case IR_UMOD:
     case IR_AND:
     case IR_OR:
     case IR_XOR:
     case IR_SHL:
-    case IR_SHR: {
+    case IR_SHR:
+    case IR_LSR: {
       char b1[8], b2[8], bd[8];
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
@@ -536,15 +551,21 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_SUB: cg_emitf("  sub %s, %s, %s\n", d, s1, s2); break;
         case IR_MUL: cg_emitf("  mul %s, %s, %s\n", d, s1, s2); break;
         case IR_DIV: cg_emitf("  sdiv %s, %s, %s\n", d, s1, s2); break;
+        case IR_UDIV: cg_emitf("  udiv %s, %s, %s\n", d, s1, s2); break;
         case IR_MOD:
           cg_emitf("  sdiv x11, %s, %s\n", s1, s2);
+          cg_emitf("  msub %s, x11, %s, %s\n", d, s2, s1);
+          break;
+        case IR_UMOD:
+          cg_emitf("  udiv x11, %s, %s\n", s1, s2);
           cg_emitf("  msub %s, x11, %s, %s\n", d, s2, s1);
           break;
         case IR_AND: cg_emitf("  and %s, %s, %s\n", d, s1, s2); break;
         case IR_OR:  cg_emitf("  orr %s, %s, %s\n", d, s1, s2); break;
         case IR_XOR: cg_emitf("  eor %s, %s, %s\n", d, s1, s2); break;
         case IR_SHL: cg_emitf("  lsl %s, %s, %s\n", d, s1, s2); break;
-        case IR_SHR: cg_emitf("  lsr %s, %s, %s\n", d, s1, s2); break;
+        case IR_SHR: cg_emitf("  asr %s, %s, %s\n", d, s1, s2); break;
+        case IR_LSR: cg_emitf("  lsr %s, %s, %s\n", d, s1, s2); break;
         default: break;
       }
       release_dst(ctx, inst->dst, d, spill);
@@ -552,6 +573,8 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     }
     case IR_LT:
     case IR_LE:
+    case IR_ULT:
+    case IR_ULE:
     case IR_EQ:
     case IR_NE: {
       char b1[8], b2[8], bd[8];
@@ -562,10 +585,12 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       cg_emitf("  cmp %s, %s\n", s1, s2);
       const char *cond = "eq";
       switch (inst->op) {
-        case IR_LT: cond = "lt"; break;
-        case IR_LE: cond = "le"; break;
-        case IR_EQ: cond = "eq"; break;
-        case IR_NE: cond = "ne"; break;
+        case IR_LT:  cond = "lt"; break;
+        case IR_LE:  cond = "le"; break;
+        case IR_ULT: cond = "lo"; break;   /* unsigned <  : C clear */
+        case IR_ULE: cond = "ls"; break;   /* unsigned <= : C clear || Z set */
+        case IR_EQ:  cond = "eq"; break;
+        case IR_NE:  cond = "ne"; break;
         default: break;
       }
       cg_emitf("  cset %s, %s\n", d, cond);
