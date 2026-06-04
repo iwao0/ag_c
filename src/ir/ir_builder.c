@@ -221,14 +221,12 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     }
     case ND_GVAR: {
       /* グローバル変数 (スカラ): _<name>@PAGE/@PAGEOFF でアドレスを取って load。
-       * 配列 / 構造体のグローバル変数は parser が ND_ADDR(ND_GVAR) で包む。 */
+       * 配列 / 構造体のグローバル変数は parser が ND_ADDR(ND_GVAR) で包む。
+       * thread_local の場合は @TLVPPAGE 経由で動的にアドレス解決する。 */
       node_gvar_t *gv = (node_gvar_t *)node;
-      if (gv->is_thread_local) {
-        fail(ctx, "thread-local global variable");
-        return ir_val_none();
-      }
       int v_addr = ir_func_new_vreg(ctx->f);
-      ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+      ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
+                                                       : IR_LOAD_SYM);
       sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
       sym->sym = gv->name;
       sym->sym_len = gv->name_len;
@@ -474,10 +472,6 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       }
       if (node->lhs->kind == ND_GVAR) {
         node_gvar_t *gv = (node_gvar_t *)node->lhs;
-        if (gv->is_thread_local) {
-          fail(ctx, "thread-local global variable assign");
-          return ir_val_none();
-        }
         ir_type_t vty = IR_TY_I32;
         if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
         else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
@@ -486,7 +480,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
           vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
         }
         int v_addr = ir_func_new_vreg(ctx->f);
-        ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+        ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
+                                                         : IR_LOAD_SYM);
         sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
         sym->sym = gv->name;
         sym->sym_len = gv->name_len;
@@ -557,12 +552,9 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       /* &gvar: グローバル変数のアドレス (= LOAD_SYM のみ、load しない) */
       if (node->lhs && node->lhs->kind == ND_GVAR) {
         node_gvar_t *gv = (node_gvar_t *)node->lhs;
-        if (gv->is_thread_local) {
-          fail(ctx, "thread-local global variable address");
-          return ir_val_none();
-        }
         int v = ir_func_new_vreg(ctx->f);
-        ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+        ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
+                                                         : IR_LOAD_SYM);
         sym->dst = ir_val_vreg(v, IR_TY_PTR);
         sym->sym = gv->name;
         sym->sym_len = gv->name_len;

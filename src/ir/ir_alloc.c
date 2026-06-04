@@ -80,6 +80,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_LOAD_FP_IMM:  return "load_fp_imm";
     case IR_LOAD_STR:     return "load_str";
     case IR_LOAD_SYM:     return "load_sym";
+    case IR_LOAD_TLV_ADDR:return "load_tlv_addr";
     case IR_BR:           return "br";
     case IR_BR_COND:      return "br_cond";
     case IR_LABEL:        return "label";

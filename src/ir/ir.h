@@ -68,6 +68,10 @@ typedef enum {
 
   /* 即値ロード */
   IR_LOAD_IMM, IR_LOAD_FP_IMM, IR_LOAD_STR, IR_LOAD_SYM,
+  /* Apple ARM64 TLS: _<sym>@TLVPPAGE 経由で thread-local 変数のアドレスを解決。
+   * 内部で __tlv_bootstrap (関数ポインタ) を blr するため、IR_CALL と同様に
+   * caller-saved レジスタを clobber する。dst は PTR (TLS 変数のアドレス)。 */
+  IR_LOAD_TLV_ADDR,
 
   /* 制御フロー */
   IR_BR, IR_BR_COND, IR_LABEL, IR_RET,

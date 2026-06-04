@@ -210,6 +210,23 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
       release_dst(ctx, inst->dst, d, spill);
       return;
     }
+    case IR_LOAD_TLV_ADDR: {
+      /* Apple ARM64 thread-local 解決:
+       *   adrp x0, _<sym>@TLVPPAGE
+       *   ldr  x0, [x0, _<sym>@TLVPPAGEOFF]   ; descriptor pointer
+       *   ldr  x8, [x0]                       ; bootstrap function pointer
+       *   blr  x8                             ; returns TLS address in x0
+       * 戻り値 (TLS のアドレス) を dst slot へ。CALL 同様 caller-saved を
+       * 全 clobber する想定 (regalloc/DCE は callee 相当として扱う)。 */
+      cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", inst->sym_len, inst->sym ? inst->sym : "");
+      cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", inst->sym_len, inst->sym ? inst->sym : "");
+      cg_emitf("  ldr x8, [x0]\n");
+      cg_emitf("  blr x8\n");
+      if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+        cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      }
+      return;
+    }
     case IR_VA_ARG_AREA: {
       /* stack 上の variadic 引数領域の先頭 = x29 + total_size。
        * dst は spill (frame slot に書く)。 */
