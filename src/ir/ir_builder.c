@@ -1095,16 +1095,38 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_PRE_DEC:
     case ND_POST_INC:
     case ND_POST_DEC: {
-      /* ++x / x++ / --x / x-- — target は ND_LVAR を想定 (Phase 7g 範囲)。
-       * pointer の inc/dec は parser が scale 済みであることに依存。 */
+      /* ++x / x++ / --x / x-- — target は ND_LVAR か ND_DEREF を許可する。
+       *   ND_LVAR : address_of_lvar で frame アドレスを得る。
+       *   ND_DEREF: target->lhs を eval して得たポインタをそのまま使う
+       *             ((**pp)++ や cast 経由の `((T*)p)->m++` がここに来る)。
+       * pointer の inc/dec は parser が +/- step を scale 済みであることに依存。 */
       node_t *target = node->lhs;
-      if (!target || target->kind != ND_LVAR) {
-        fail(ctx, "inc/dec target not LVAR (Phase 7g unsupported)");
+      if (!target) {
+        fail(ctx, "inc/dec without target");
         return ir_val_none();
       }
-      node_lvar_t *lv = (node_lvar_t *)target;
-      ir_type_t vty = lvar_value_type(lv);
-      int ptr_vreg = address_of_lvar(ctx, lv->offset);
+      int ptr_vreg = -1;
+      ir_type_t vty = IR_TY_I32;
+      if (target->kind == ND_LVAR) {
+        node_lvar_t *lv = (node_lvar_t *)target;
+        vty = lvar_value_type(lv);
+        ptr_vreg = address_of_lvar(ctx, lv->offset);
+      } else if (target->kind == ND_DEREF) {
+        ir_val_t p = build_expr(ctx, target->lhs);
+        if (ctx->failed) return ir_val_none();
+        ptr_vreg = p.id;
+        /* load/store 幅は DEREF node の mem.type_size と fp_kind から決める。 */
+        node_mem_t *mm = (node_mem_t *)target;
+        if (target->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
+        else if (target->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
+        else if (mm->type_size >= 8) vty = IR_TY_PTR;
+        else if (mm->type_size == 2) vty = IR_TY_I16;
+        else if (mm->type_size == 1) vty = IR_TY_I8;
+        else vty = IR_TY_I32;
+      } else {
+        fail(ctx, "inc/dec target not LVAR/DEREF");
+        return ir_val_none();
+      }
       if (ptr_vreg < 0) return ir_val_none();
       /* load 現在値 */
       int v_old = ir_func_new_vreg(ctx->f);
