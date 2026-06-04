@@ -2140,6 +2140,16 @@ static node_t *wrap_as_addr(node_t *operand) {
 
 // `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
 static node_t *build_unary_addr_node(node_t *operand) {
+  /* C11 6.5.3.2p1: bitfield のアドレスは取得できない。
+   * `s.f` (bitfield) は ND_DEREF にラップされて bit_width が立っているので
+   * ここで弾く。 */
+  if (operand && operand->kind == ND_DEREF) {
+    node_mem_t *mm = (node_mem_t *)operand;
+    if (mm->bit_width > 0) {
+      psx_diag_ctx(curtok(), "addr",
+                   "ビットフィールドのアドレスは取得できません (C11 6.5.3.2p1)");
+    }
+  }
   if (operand && operand->kind == ND_COMMA && operand->rhs) {
     return psx_node_new_binary(ND_COMMA, operand->lhs, wrap_as_addr(operand->rhs));
   }
