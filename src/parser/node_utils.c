@@ -36,6 +36,37 @@ int psx_node_type_size(node_t *node) {
       if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
       return 4;
     }
+    /* 算術/論理演算: ポインタ算術 (ptr ± int) なら 8、それ以外は
+     * C11 6.3.1.8 通常算術変換に従い、両オペランドのうち広い方を返す。
+     * ND_NUM のように type_size を持たないノードでは 0 が返るので、int (4) に
+     * 落とす。`sizeof(a+b)` や `sizeof(n++)` で 8 になる誤りを防ぐ。 */
+    case ND_ADD:
+    case ND_SUB:
+    case ND_MUL:
+    case ND_DIV:
+    case ND_MOD:
+    case ND_BITAND:
+    case ND_BITOR:
+    case ND_BITXOR:
+    case ND_SHL:
+    case ND_SHR: {
+      if (psx_node_is_pointer(node)) return 8;
+      int l = psx_node_type_size(node->lhs);
+      int r = psx_node_type_size(node->rhs);
+      int m = l > r ? l : r;
+      return m > 0 ? m : 4;
+    }
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC: {
+      int s = psx_node_type_size(node->lhs);
+      return s > 0 ? s : 4;
+    }
+    case ND_LT: case ND_LE:
+    case ND_EQ: case ND_NE:
+    case ND_LOGAND: case ND_LOGOR:
+      return 4; /* 比較/論理結果は int (C11 6.5.8/9) */
     default:
       return 0;
   }
