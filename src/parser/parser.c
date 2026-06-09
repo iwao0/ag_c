@@ -833,6 +833,12 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_values = calloc((size_t)cap, sizeof(long long));
     gv->init_count = 0;
     parse_global_brace_init_flat(gv, &cap);
+    /* C11 6.7.6.2p1: `T a[] = {...}` 形式は要素数を初期化子から推論する。
+     * register 時には has_incomplete_array で type_size=0 にされているので
+     * ここで埋め直す。 */
+    if (gv->type_size == 0 && gv->is_array && gv->deref_size > 0 && gv->init_count > 0) {
+      gv->type_size = gv->init_count * gv->deref_size;
+    }
     return;
   }
   node_t *init_expr = psx_expr_assign();
@@ -845,6 +851,29 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->has_init = 1;
     gv->init_symbol = ref->name;
     gv->init_symbol_len = ref->name_len;
+  } else if (init_expr && init_expr->kind == ND_STRING) {
+    /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` 形式。文字列の各バイトと
+     * null 終端を init_values へ展開し、type_size を確定する。
+     * char 以外 (wchar_t など) は未対応。 */
+    node_string_t *s = (node_string_t *)init_expr;
+    int elem = gv->deref_size > 0 ? gv->deref_size : 1;
+    if (elem == 1) {
+      int total = s->byte_len + 1; /* null 終端を含む */
+      gv->has_init = 1;
+      gv->init_values = calloc((size_t)total, sizeof(long long));
+      string_lit_t *lit = NULL;
+      for (string_lit_t *l = string_literals; l; l = l->next) {
+        if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
+      }
+      if (lit) {
+        for (int i = 0; i < s->byte_len; i++) {
+          gv->init_values[i] = (unsigned char)lit->str[i];
+        }
+      }
+      gv->init_values[s->byte_len] = 0;
+      gv->init_count = total;
+      if (gv->type_size == 0 && gv->is_array) gv->type_size = total;
+    }
   }
 }
 
@@ -905,6 +934,9 @@ static toplevel_declarator_head_t new_toplevel_declarator_head(int base_is_ptr) 
 
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr) {
   if (!arr.has_incomplete_array || g_toplevel_decl_is_extern) return;
+  /* C11 6.7.6.2p1: 初期化子がある場合、配列のサイズは初期化子から推論できる。
+   * 後段の apply_toplevel_object_initializer で type_size を再計算する。 */
+  if (curtok() && curtok()->kind == TK_ASSIGN) return;
   psx_diag_ctx(curtok(), "decl", "%s",
                diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
 }

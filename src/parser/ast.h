@@ -139,6 +139,8 @@ struct node_string_t {
   char *string_label; // 文字列リテラルのデータラベル
   tk_char_width_t char_width;
   tk_string_prefix_kind_t str_prefix_kind;
+  int byte_len;       // 文字列の内容バイト数 (null 終端を含まない)。
+                      // `char a[] = "hi"` で配列サイズを推論するのに使う。
 };
 
 // ブロックノード

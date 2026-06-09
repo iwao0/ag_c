@@ -2156,6 +2156,20 @@ static node_t *build_unary_deref_node(node_t *operand) {
   // ということに注意。`*p` の結果は M 自身であり、subscript するときの
   // ステップは「M の 1 段目」(= p->mid_stride) になる。よって 1 段スライドして
   // 継承する: deref_size ← mid_stride、inner_deref_size ← extra_strides[0]、…
+  /* `int (*p)[N]` (1D 配列へのポインタ) の `*p` および `*(p+k)` を解決する。
+   * operand が ND_LVAR 直接、または ND_ADD(p, ...) の場合に、p の outer_stride>0
+   * かつ非配列なら、ND_DEREF の deref_size を elem_size にセットして
+   * subscript_base_address_of が load を skip できるようにする。 */
+  {
+    node_t *probe = operand;
+    while (probe && probe->kind == ND_ADD) probe = probe->lhs;
+    if (probe && probe->kind == ND_LVAR) {
+      lvar_t *src = psx_decl_find_lvar_by_offset(((node_lvar_t *)probe)->offset);
+      if (src && src->outer_stride > 0 && src->mid_stride == 0 && !src->is_array) {
+        node->deref_size = (short)src->elem_size;
+      }
+    }
+  }
   if (operand && operand->kind == ND_LVAR) {
     lvar_t *src = psx_decl_find_lvar_by_offset(((node_lvar_t *)operand)->offset);
     if (src && src->outer_stride > 0 && src->mid_stride > 0) {
@@ -2601,6 +2615,7 @@ static node_string_t *make_string_lit_node(char *str, int len,
   snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
   snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   snode->str_prefix_kind = prefix_kind;
+  snode->byte_len = len;
   return snode;
 }
 
