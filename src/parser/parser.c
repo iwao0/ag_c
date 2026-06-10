@@ -814,7 +814,8 @@ static void guard_toplevel_declarator_count(int declarator_count) {
 // 行優先で詰める。ネストした brace は単に下りる: `{{1,2},{3,4}}` も `{1,2,3,4}` と
 // 同じ列になる (多次元配列のメモリレイアウトは行優先)。
 // 各要素は ND_NUM のみ受け付け、定数式評価は未対応 (ND_NUM 以外は 0 をプレースする)。
-static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
+/* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
+void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
   tk_expect('{');
   if (tk_consume('}')) return;
   int cur_idx = 0;  /* 次に書き込む論理位置 (designator [N]= でジャンプ可) */
@@ -848,7 +849,7 @@ static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
       gv->init_count++;
     }
     if (curtok()->kind == TK_LBRACE) {
-      parse_global_brace_init_flat(gv, cap);
+      psx_parse_global_brace_init_flat(gv, cap);
     } else {
       node_t *e = psx_expr_assign();
       long long v = 0;
@@ -923,7 +924,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
       gv->init_fvalues = calloc((size_t)cap, sizeof(double));
     }
     gv->init_count = 0;
-    parse_global_brace_init_flat(gv, &cap);
+    psx_parse_global_brace_init_flat(gv, &cap);
     /* C11 6.7.6.2p1: `T a[] = {...}` 形式は要素数を初期化子から推論する。
      * register 時には has_incomplete_array で type_size=0 にされているので
      * ここで埋め直す。 */

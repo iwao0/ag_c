@@ -869,6 +869,7 @@ static const test_case_t test_cases[] = {
     {"probes", "int_plus_pointer", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_plus_pointer.c", 0, 0},
     {"probes", "scalar_pointer_member_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/scalar_pointer_member_subscript.c", 144, 0},
     {"probes", "struct_array_param", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_array_param.c", 100, 0},
+    {"probes", "static_local_int_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_int_array.c", 147, 0},
     {"probes", "global_char_array_string_size", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_char_array_string_size.c", 209, 0},
     {"probes", "global_designator", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_designator.c", 30, 0},
     {"probes", "global_const_int_expr_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_const_int_expr_init.c", 35, 0},

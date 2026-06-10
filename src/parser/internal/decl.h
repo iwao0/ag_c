@@ -101,4 +101,9 @@ long long psx_decl_eval_const_int(node_t *n, int *ok);
 // 推定不可なら 0。指定初期化子 `[N]=` で位置がジャンプする場合は最大位置+1 を返す。
 long long psx_decl_count_brace_init_elements(token_t *brace_tok);
 
+/* parser.c の brace init flat パーサ。global_var_t の init_values[] /
+ * init_value_symbols[] / init_value_symbol_lens[] / init_fvalues[] を埋める。
+ * static local 配列の lowering (decl.c) からも再利用する。 */
+void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap);
+
 #endif

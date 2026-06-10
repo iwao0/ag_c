@@ -2950,6 +2950,48 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
   return NULL;
 }
 
+/* static local 配列のベースアドレスを ND_ADDR(ND_GVAR) として返す。
+ * 配列は decl.c の try_lower_static_local_array でグローバルにリダイレクトされ、
+ * alias lvar (is_static_local=1, static_global_name=mangled) を持つ。
+ * alias は size=0 で frame 割当を抑制しているため、サイズ情報は global_vars
+ * から名前で引く。1D 整数配列のみ scope に入る (outer/mid stride は 0 のまま)。 */
+static node_t *build_static_local_array_addr_node(lvar_t *var) {
+  /* global_vars リストから名前で引いて type_size を取る。 */
+  short gv_type_size = (short)var->elem_size;
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    if (gv->name_len == var->static_global_name_len &&
+        memcmp(gv->name, var->static_global_name, (size_t)gv->name_len) == 0) {
+      gv_type_size = gv->type_size;
+      break;
+    }
+  }
+  node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
+  base->mem.base.kind = ND_GVAR;
+  base->mem.type_size = gv_type_size;
+  base->mem.deref_size = (short)var->elem_size;
+  base->mem.is_unsigned = var->is_unsigned;
+  base->name = var->static_global_name;
+  base->name_len = var->static_global_name_len;
+  node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
+  addr->base.kind = ND_ADDR;
+  addr->base.lhs = (node_t *)base;
+  int stride = var->elem_size; /* 1D limited */
+  addr->type_size = stride;
+  addr->deref_size = stride;
+  addr->is_pointer = 1;
+  return (node_t *)addr;
+}
+
+/* alias lvar が「static local 配列」を表すかを判別。
+ * try_lower_static_local_array が is_static_local=1 + static_global_name +
+ * elem_size>0 + size=0 + is_array=0 の組合せで登録する。スカラ static_local
+ * (try_lower_static_local_scalar) は size>0 / fp_kind / pointer 等で別経路。 */
+static int lvar_is_static_local_array(lvar_t *var) {
+  return var->is_static_local && var->static_global_name &&
+         var->elem_size > 0 && var->size == 0 && !var->is_vla &&
+         !var->is_param;
+}
+
 // 配列ローカル変数（非 VLA）: ベースアドレスを ND_ADDR(ND_LVAR) として返す。
 static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
@@ -3141,6 +3183,12 @@ static node_t *resolve_identifier(token_ident_t *tok) {
     var = psx_decl_register_lvar(tok->str, tok->len);
   }
   var->is_used = 1;
+  /* static local 配列はグローバルに lowering 済み (decl.c:try_lower_static_local_array)。
+   * alias lvar の offset=0 は意味を持たないので、build_array_lvar_addr_node が
+   * フレーム上の偽アドレスを base にしないよう専用経路で ND_ADDR(ND_GVAR) を返す。 */
+  if (lvar_is_static_local_array(var)) {
+    return build_static_local_array_addr_node(var);
+  }
   if (var->is_array && !var->is_vla) return build_array_lvar_addr_node(var);
   if (var->is_byref_param) return build_byref_param_node(var);
   return build_lvar_or_vla_node(var);

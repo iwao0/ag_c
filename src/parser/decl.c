@@ -2005,6 +2005,148 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   return 1;
 }
 
+/* `static int t[N] = {...};` の 1D 整数配列 static local をグローバルに lowering する。
+ * スコープ: 1D 整数配列 (`int/long/short/char [unsigned]`)、ゼロ初期化 or brace init。
+ * 文字列リテラル init / FP / 多次元 / struct / 関数ポインタは fallback (0 を返す)。
+ * 0 を返すときは curtok を変えない (呼び出し側の auto array 経路に流す)。
+ *
+ * 前提:
+ *   - curtok() == TK_LBRACKET ('[' の直前)
+ *   - tag_kind == TK_EOF、is_pointer == 0、fp_kind == TK_FLOAT_KIND_NONE
+ *   - 多次元・struct 等は呼び出し側ゲートで除外済み */
+static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
+                                         int is_unsigned) {
+  if (elem_size <= 0) return 0;
+  /* --- peek フェーズ: curtok 不変で scope 内/外を判定する。--- */
+  token_t *p = curtok();
+  if (!p || p->kind != TK_LBRACKET) return 0;
+  /* `[` の次は数値リテラル or `]` (要素数推定) のみ受け付ける。複雑な式は fallback。 */
+  token_t *after_lb = p->next;
+  if (!after_lb) return 0;
+  int has_size_token = 0;
+  long long arr_count = 0;
+  token_t *after_rb = NULL;
+  if (after_lb->kind == TK_RBRACKET) {
+    after_rb = after_lb->next;
+  } else if (after_lb->kind == TK_NUM) {
+    /* num の次がすぐ `]` であること。`[3+1]` などは fallback。 */
+    token_t *after_num = after_lb->next;
+    if (!after_num || after_num->kind != TK_RBRACKET) return 0;
+    has_size_token = 1;
+    /* TK_NUM は num_kind で int/float 分岐。配列サイズは整数のみ受け付ける。 */
+    if (((token_num_t *)after_lb)->num_kind != TK_NUM_KIND_INT) return 0;
+    arr_count = ((token_num_int_t *)after_lb)->val;
+    if (arr_count <= 0) return 0;
+    after_rb = after_num->next;
+  } else {
+    return 0;
+  }
+  if (!after_rb) return 0;
+  /* 多次元は scope 外。 */
+  if (after_rb->kind == TK_LBRACKET) return 0;
+  /* `=` の後の形を peek。`{`= brace OK、`TK_STRING` = fallback、その他は fallback。 */
+  int has_init = 0;
+  if (after_rb->kind == TK_ASSIGN) {
+    token_t *after_eq = after_rb->next;
+    if (!after_eq) return 0;
+    if (after_eq->kind != TK_LBRACE) return 0; /* 文字列/スカラ式は fallback */
+    has_init = 1;
+  } else if (after_rb->kind == TK_COMMA || after_rb->kind == TK_SEMI) {
+    has_init = 0;
+  } else {
+    return 0;
+  }
+
+  /* --- 実処理フェーズ。--- */
+  tk_expect('[');
+  if (has_size_token) {
+    set_curtok(curtok()->next); /* skip NUM */
+  }
+  tk_expect(']');
+
+  /* global_var_t を構築。 */
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->deref_size = (short)elem_size;
+  gv->is_array = 1;
+  gv->tag_kind = TK_EOF;
+  gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
+  if (has_size_token) {
+    gv->type_size = (short)((int)arr_count * elem_size);
+  } else {
+    gv->type_size = 0; /* brace 後に確定 */
+  }
+
+  if (has_init) {
+    tk_expect('=');
+    gv->has_init = 1;
+    int cap = 16;
+    gv->init_values = calloc((size_t)cap, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    gv->init_count = 0;
+    psx_parse_global_brace_init_flat(gv, &cap);
+    if (gv->type_size == 0 && gv->init_count > 0) {
+      gv->type_size = (short)(gv->init_count * elem_size);
+    }
+  }
+  if (gv->type_size == 0) {
+    /* サイズが確定できないケース (`[];` で init もなし) は scope 外として
+     * 受け付けたくない — gv を破棄して呼び出し側 fallback に戻したいが、
+     * curtok は既に進めてしまっているため戻せない。診断を出して 0 で続行。 */
+    gv->type_size = (short)elem_size; /* 暫定 1 要素 */
+  }
+
+  /* mangled name: スカラ版と同じ "funcname.varname.<seq>" スキーム。配列用に
+   * 'a' プレフィックスを付けてスカラの seq と衝突を避ける。 */
+  static int g_static_arr_seq = 0;
+  char *funcname = NULL;
+  int funcname_len = 0;
+  psx_expr_get_current_funcname(&funcname, &funcname_len);
+  int seq = g_static_arr_seq++;
+  char seq_buf[12];
+  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "a%d", seq);
+  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
+  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
+  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
+  char *mangled = arena_alloc((size_t)total_len + 1);
+  int off = 0;
+  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
+  mangled[off] = '\0';
+
+  gv->name = mangled;
+  gv->name_len = total_len;
+  gv->next = global_vars;
+  global_vars = gv;
+
+  /* alias lvar を locals に登録。`is_array=0, size=0` にすることで
+   * codegen のフレーム割当 (auto array 経路) を抑制する。
+   * resolve_identifier は is_static_local + static_global_name + elem_size>0
+   * の組み合わせで「配列の static_local」を識別し、global_vars から
+   * 名前で gv を引いて size 等を取得する。 */
+  lvar_t *var = calloc(1, sizeof(lvar_t));
+  var->next = locals;
+  var->next_all = all_locals;
+  all_locals = var;
+  var->name = tok->str;
+  var->len = tok->len;
+  var->offset = 0;
+  var->size = 0;
+  var->elem_size = elem_size; /* 0 だとスカラ扱いになるので elem_size を残す */
+  var->is_array = 0;          /* frame 割当抑制のため敢えて 0 */
+  var->is_static_local = 1;
+  var->is_initialized = 1;
+  var->is_unsigned = is_unsigned ? 1 : 0;
+  var->fp_kind = TK_FLOAT_KIND_NONE;
+  var->static_global_name = mangled;
+  var->static_global_name_len = total_len;
+  locals = var;
+  return 1;
+}
+
 node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int base_is_pointer,
@@ -2071,6 +2213,20 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                          is_pointer ? pointer_deref_size : var_size,
                                          is_pointer ? TK_FLOAT_KIND_NONE : decl_fp_kind,
                                          decl_is_unsigned)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
+    /* `static int t[N] = {...};` 1D 整数配列 static local をグローバル化。
+     * curtok が '[' のときのみ試行 (struct/typedef-array/pointer は除外)。
+     * 関数は peek だけして scope 外なら 0 を返し curtok を変えないため、
+     * 既存の auto 配列経路 (line 2297 `tk_consume('[')`) に安全に fall through する。 */
+    if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
+        inner_array_mul == 0 && paren_array_mul == 0 &&
+        td_array_dim_count == 0 &&
+        decl_fp_kind == TK_FLOAT_KIND_NONE &&
+        curtok()->kind == TK_LBRACKET) {
+      if (try_lower_static_local_array(tok, elem_size, decl_is_unsigned)) {
         if (!tk_consume(',')) break;
         continue;
       }
