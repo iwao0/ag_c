@@ -100,6 +100,7 @@ struct node_mem_t {
   unsigned int is_atomic : 1;               // 1: _Atomic型（load-acquire/store-release）
   unsigned int pointee_is_void : 1;         // 1: pointee 型が void（`void *p`）
   unsigned int is_bool : 1;                  // 1: _Bool 型 (代入を 0/1 に正規化する)
+  unsigned int pointee_is_bool : 1;          // 1: pointee 型が _Bool（_Bool 配列等）
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
   unsigned int pointer_const_qual_mask;

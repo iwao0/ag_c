@@ -2494,6 +2494,17 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       deref->base.fp_kind = pointee_fp;
     }
   }
+  /* `_Bool a[5]` の subscript 結果は _Bool スカラ。代入時に rhs を `!= 0` で
+   * 正規化させるため is_bool を立てる。配列ベース node が pointee_is_bool を
+   * 持っていればそれを引き継ぐ。 */
+  {
+    node_mem_t *base_mem = (node_t *)node && (node->kind == ND_ADDR || node->kind == ND_LVAR ||
+                                              node->kind == ND_GVAR || node->kind == ND_DEREF)
+                              ? (node_mem_t *)node : NULL;
+    if (base_mem && base_mem->pointee_is_bool && pql == 0) {
+      deref->is_bool = 1;
+    }
+  }
   return (node_t *)deref;
 }
 
@@ -2901,6 +2912,9 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
                              ? var->pointee_fp_kind
                              : var->fp_kind;
+  /* `_Bool a[5]` の要素アクセスを正規化するために、配列ベースの ND_ADDR にも
+   * pointee_is_bool を伝播する (build_subscript_deref が deref に引き継ぐ)。 */
+  node->pointee_is_bool = var->is_bool ? 1 : 0;
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
     // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
