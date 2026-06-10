@@ -1566,6 +1566,15 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
         var->extra_strides_count = (unsigned char)idx_in_extras;
       }
     }
+  } else if (!param_is_ptr && ds.tag_kind == TK_EOF && ds.typedef_is_array &&
+             ds.typedef_sizeof_size > 0) {
+    /* `typedef int Vec3[3]; int sum(Vec3 v)` の仮引数:
+     * C11 6.7.6.3p7 により配列型は pointer に adjust される。
+     * 形式は `int (*v)[3]` ではなく `int *v` (decay先頭要素ポインタ) なので、
+     * elem_size = ds.elem_size、size = 8、outer_stride 等は設定しない。
+     * これで `v[i]` が elem_size 単位で steping し、subscript チェックも通る。 */
+    var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds.elem_size, 0);
+    var->base_deref_size = (short)ds.elem_size;
   } else {
     // スカラー型仮引数（既存の動作）
     var = psx_decl_register_lvar(param->str, param->len);
