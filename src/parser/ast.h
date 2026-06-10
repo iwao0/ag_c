@@ -242,6 +242,10 @@ struct global_var_t {
   // 多次元 `{{1,2,3},{4,5,6}}` も行優先で平らに並べる。
   // init_count > 0 のとき codegen は init_values[] を要素サイズ単位で出力する。
   long long *init_values;
+  /* 各 init slot ごとのシンボル参照 (関数名 や グローバル変数名)。NULL なら数値。
+   * `struct Op { int (*f)(int); } gop = {sq};` のような funcptr メンバ初期化で使う。 */
+  char **init_value_symbols;
+  int *init_value_symbol_lens;
   int init_count;
   // 多次元配列の subscript strides (ローカル配列 lvar_t と同等の意味)。
   //   outer_stride: 1 次サブスクリプトのステップ (= 直下の次元 1 つ分のサイズ)

@@ -829,22 +829,53 @@ static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
       if (gv->init_count >= *cap) {
         *cap *= 2;
         gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
+        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)*cap * sizeof(char *));
+        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)*cap * sizeof(int));
       }
-      gv->init_values[gv->init_count++] = 0;
+      gv->init_values[gv->init_count] = 0;
+      gv->init_value_symbols[gv->init_count] = NULL;
+      gv->init_value_symbol_lens[gv->init_count] = 0;
+      gv->init_count++;
     }
     if (curtok()->kind == TK_LBRACE) {
       parse_global_brace_init_flat(gv, cap);
     } else {
       node_t *e = psx_expr_assign();
       long long v = 0;
+      char *sym = NULL;
+      int sym_len = 0;
       int ok = 1;
       if (e && e->kind == ND_NUM) v = ((node_num_t *)e)->val;
-      else if (e) v = psx_decl_eval_const_int(e, &ok);
+      else if (e && e->kind == ND_FUNCREF) {
+        /* `struct Op gop = {sq};` 等の関数ポインタメンバ初期化。 */
+        node_funcref_t *fr = (node_funcref_t *)e;
+        sym = fr->funcname;
+        sym_len = fr->funcname_len;
+      } else if (e && e->kind == ND_ADDR && e->lhs && e->lhs->kind == ND_GVAR) {
+        /* `&g` 形式: グローバル変数のアドレスをメンバに置く。 */
+        node_gvar_t *ref = (node_gvar_t *)e->lhs;
+        sym = ref->name;
+        sym_len = ref->name_len;
+      } else if (e && e->kind == ND_STRING) {
+        /* `const char *arr[] = {"abc", ...};` の文字列リテラル要素。
+         * 文字列の .LC<n> ラベルをそのまま symbol として保持し、
+         * codegen 側で `_` プレフィックスなしで `.quad <label>` を出力する。
+         * sym_len=0 でも sym!=NULL の状態を表現する苦しいフォーマットなので、
+         * 別途識別するため init_value_symbol_lens を -1 にしておく。 */
+        node_string_t *s = (node_string_t *)e;
+        sym = s->string_label;
+        sym_len = -1; /* sentinel: emit raw label (no `_` prefix) */
+      } else if (e) v = psx_decl_eval_const_int(e, &ok);
       if (gv->init_count >= *cap) {
         *cap *= 2;
         gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
+        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)*cap * sizeof(char *));
+        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)*cap * sizeof(int));
       }
-      gv->init_values[gv->init_count++] = v;
+      gv->init_values[gv->init_count] = v;
+      gv->init_value_symbols[gv->init_count] = sym;
+      gv->init_value_symbol_lens[gv->init_count] = sym_len;
+      gv->init_count++;
     }
     cur_idx = gv->init_count;
     if (!tk_consume(',')) break;
@@ -861,6 +892,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->has_init = 1;
     int cap = 16;
     gv->init_values = calloc((size_t)cap, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
     gv->init_count = 0;
     parse_global_brace_init_flat(gv, &cap);
     /* C11 6.7.6.2p1: `T a[] = {...}` 形式は要素数を初期化子から推論する。

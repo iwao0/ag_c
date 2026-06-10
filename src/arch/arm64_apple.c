@@ -303,11 +303,19 @@ void gen_global_vars(void) {
                                          &mn, &ml, &off, &ts, &ds, &alen,
                                          &mtk, &mtn, &mtl, &mtp)) break;
           if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
-          long long v = gv->init_values[i];
-          if (ts == 1) cg_emitf("  .byte %lld\n", v);
-          else if (ts == 2) cg_emitf("  .short %lld\n", v);
-          else if (ts == 4) cg_emitf("  .long %lld\n", v);
-          else cg_emitf("  .quad %lld\n", v);
+          /* メンバが関数ポインタ等 (init_value_symbols[i] が設定済み) のときは
+           * `.quad _<sym>` を出力。 */
+          char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
+          int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
+          if (sym_i && sym_i_len > 0) {
+            cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
+          } else {
+            long long v = gv->init_values[i];
+            if (ts == 1) cg_emitf("  .byte %lld\n", v);
+            else if (ts == 2) cg_emitf("  .short %lld\n", v);
+            else if (ts == 4) cg_emitf("  .long %lld\n", v);
+            else cg_emitf("  .quad %lld\n", v);
+          }
           prev_end = off + ts;
         }
         if (prev_end < gv->type_size) cg_emitf("  .space %d\n", gv->type_size - prev_end);
@@ -343,6 +351,17 @@ void gen_global_vars(void) {
         int elem = gv->deref_size > 0 ? gv->deref_size : 4;
         int total_elems = gv->type_size / elem;
         for (int i = 0; i < gv->init_count && i < total_elems; i++) {
+          char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
+          int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
+          if (sym_i && sym_i_len < 0) {
+            /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。 */
+            cg_emitf("  .quad %s\n", sym_i);
+            continue;
+          }
+          if (sym_i && sym_i_len > 0) {
+            cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
+            continue;
+          }
           long long v = gv->init_values[i];
           if (elem == 1) cg_emitf("  .byte %lld\n", v);
           else if (elem == 2) cg_emitf("  .short %lld\n", v);
