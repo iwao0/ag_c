@@ -35,6 +35,7 @@ typedef struct {
   char *tag_name;
   int tag_len;
   int is_tag_pointer;
+  tk_float_kind_t fp_kind;  // float/double メンバ。codegen に FP load/store を出させる
 } aggregate_member_info_t;
 
 static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out);
@@ -1076,18 +1077,28 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
 static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out) {
   out->name = name;
   out->len = len;
-  return psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len, name, len,
+  bool ok = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len, name, len,
                                  &out->offset, &out->type_size, NULL, &out->array_len,
                                  &out->tag_kind, &out->tag_name, &out->tag_len,
                                  &out->is_tag_pointer);
+  if (ok) {
+    out->fp_kind = psx_ctx_get_tag_member_fp_kind(var->tag_kind, var->tag_name, var->tag_len,
+                                                    name, len);
+  }
+  return ok;
 }
 
 static bool tag_get_member_at(lvar_t *var, int ordinal, aggregate_member_info_t *out) {
-  return psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
+  bool ok = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
                                    &out->name, &out->len,
                                    &out->offset, &out->type_size, NULL, &out->array_len,
                                    &out->tag_kind, &out->tag_name, &out->tag_len,
                                    &out->is_tag_pointer);
+  if (ok && out->len > 0) {
+    out->fp_kind = psx_ctx_get_tag_member_fp_kind(var->tag_kind, var->tag_name, var->tag_len,
+                                                    out->name, out->len);
+  }
+  return ok;
 }
 
 // 次の名前付きメンバまで ordinal を前進。見つかれば true。
@@ -1173,6 +1184,12 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
                                        info->is_tag_pointer);
   node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
   assign_node->type_size = info->type_size;
+  /* float/double メンバなら lhs と assign に fp_kind を伝播し、
+   * IR が FP store を出すようにする。 */
+  if (info->fp_kind != TK_FLOAT_KIND_NONE) {
+    lhs->fp_kind = info->fp_kind;
+    assign_node->base.fp_kind = info->fp_kind;
+  }
   return (node_t *)assign_node;
 }
 

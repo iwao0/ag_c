@@ -52,6 +52,7 @@ struct tag_member_t {
   int bit_width;    // ビットフィールド幅（0: 非ビットフィールド）
   int bit_offset;   // ストレージユニット内ビット位置
   int bit_is_signed;
+  tk_float_kind_t fp_kind;  // float/double メンバの種別 (FP store/load 用)
   int decl_order;
   int scope_depth;
 };
@@ -422,6 +423,37 @@ bool psx_ctx_get_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_le
     }
   }
   return false;
+}
+
+void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                     char *member_name, int member_len,
+                                     tk_float_kind_t fp_kind) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      m->fp_kind = fp_kind;
+      return;
+    }
+  }
+}
+
+tk_float_kind_t psx_ctx_get_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                 char *member_name, int member_len) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      return m->fp_kind;
+    }
+  }
+  return TK_FLOAT_KIND_NONE;
 }
 
 static int cmp_tag_member_ptr(const void *a, const void *b) {

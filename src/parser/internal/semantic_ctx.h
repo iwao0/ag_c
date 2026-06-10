@@ -32,6 +32,13 @@ void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_le
 bool psx_ctx_get_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
                                char *member_name, int member_len,
                                int *out_bit_width, int *out_bit_offset, int *out_bit_is_signed);
+/* struct/union メンバの float/double 種別を後付けで設定/取得する。
+ * tag_member_t を増設せずに add_tag_member_bf の追加引数を避けるための分離 API。 */
+void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                     char *member_name, int member_len,
+                                     tk_float_kind_t fp_kind);
+tk_float_kind_t psx_ctx_get_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                 char *member_name, int member_len);
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
                              int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,

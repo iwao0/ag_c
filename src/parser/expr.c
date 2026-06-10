@@ -906,6 +906,13 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   deref->bit_width = bf_width;
   deref->bit_offset = bf_offset;
   deref->bit_is_signed = bf_is_signed;
+  /* float/double メンバなら fp_kind を deref に伝播。IR が FP load/store を
+   * 出すように、struct メンバ double 等を正しく扱う。 */
+  tk_float_kind_t mem_fp = psx_ctx_get_tag_member_fp_kind(base_tag_kind, base_tag_name, base_tag_len,
+                                                          member->str, member->len);
+  if (mem_fp != TK_FLOAT_KIND_NONE) {
+    deref->base.fp_kind = mem_fp;
+  }
   return (node_t *)deref;
 }
 

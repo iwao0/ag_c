@@ -73,14 +73,19 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         set_curtok(curtok()->next);
       }
     }
+    tk_float_kind_t member_fp_kind = TK_FLOAT_KIND_NONE;
     if (psx_ctx_is_type_token(curtok()->kind)) {
       is_signed_type = (curtok()->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
+      if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
       set_curtok(curtok()->next);
       while (psx_ctx_is_type_token(curtok()->kind)) {
         if (curtok()->kind != TK_UNSIGNED && curtok()->kind != TK_SIGNED) {
           psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
         }
+        if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
+        else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
         set_curtok(curtok()->next);
       }
     } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
@@ -239,6 +244,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                member_name, member_len, off, head.is_ptr ? 8 : elem_size, deref_size,
                                member_array_len,
                                member_tag_kind, member_tag_name, member_tag_len, head.is_ptr ? 1 : 0);
+        if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
+          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
+                                          member_name, member_len, member_fp_kind);
+        }
         member_count++;
       }
       /* C11 6.7.2.1p13: 匿名 struct/union (タグ名なし、メンバ名なし) の場合、
