@@ -371,7 +371,12 @@ void gen_global_vars(void) {
         int remain = total_elems - gv->init_count;
         if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
       } else if (gv->init_symbol) {
-        cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
+        if (gv->init_symbol_len < 0) {
+          /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。 */
+          cg_emitf("  .quad %s\n", gv->init_symbol);
+        } else {
+          cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
+        }
       } else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
       else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
       else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);

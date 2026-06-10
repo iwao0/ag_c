@@ -847,6 +847,33 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
     assign_node->type_size = obj_size;
     base = psx_node_new_binary(ND_COMMA, (node_t *)assign_node, new_typed_lvar_ref(var, 0));
   }
+  /* `(cond ? a : b).v` の struct ternary rvalue: 一時オブジェクトに代入してから
+   * メンバアドレスを取れるようにする。両分岐 (a, b) は同型 struct lvalue 前提。 */
+  if (!from_ptr && base->kind == ND_TERNARY && !base_is_ptr &&
+      base_tag_kind != TK_EOF) {
+    node_ctrl_t *tern = (node_ctrl_t *)base;
+    int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
+    if (obj_size <= 0) obj_size = 8;
+    char *tmp_name = new_compound_lit_name();
+    lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
+    var->tag_kind = base_tag_kind;
+    var->tag_name = base_tag_name;
+    var->tag_len = base_tag_len;
+    var->is_tag_pointer = 0;
+    node_t *lhs_then = new_typed_lvar_ref(var, 0);
+    node_mem_t *assign_then = psx_node_new_assign(lhs_then, tern->base.rhs);
+    assign_then->type_size = obj_size;
+    node_t *lhs_else = new_typed_lvar_ref(var, 0);
+    node_mem_t *assign_else = psx_node_new_assign(lhs_else, tern->els);
+    assign_else->type_size = obj_size;
+    /* cond ? (tmp = a) : (tmp = b) を新しい ternary として作り、結果は tmp 参照。 */
+    node_ctrl_t *select = arena_alloc(sizeof(node_ctrl_t));
+    select->base.kind = ND_TERNARY;
+    select->base.lhs = tern->base.lhs;
+    select->base.rhs = (node_t *)assign_then;
+    select->els = (node_t *)assign_else;
+    base = psx_node_new_binary(ND_COMMA, (node_t *)select, new_typed_lvar_ref(var, 0));
+  }
 
   int off = 0, mem_size = 0, mem_deref = 0;
   int mem_array_len = 0;

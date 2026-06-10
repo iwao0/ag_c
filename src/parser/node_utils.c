@@ -235,6 +235,16 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
           psx_node_get_tag_type(node->rhs, &kind, &name, &len, &ptr);
         }
         break;
+      /* `(cond ? a : b).x` 等の struct ternary 結果からメンバアクセスする際、
+       * 両分岐は同型 struct のはずなので then 側から tag を引く。 */
+      case ND_TERNARY: {
+        node_ctrl_t *t = (node_ctrl_t *)node;
+        psx_node_get_tag_type(t->base.rhs, &kind, &name, &len, &ptr);
+        if (kind == TK_EOF && t->els) {
+          psx_node_get_tag_type(t->els, &kind, &name, &len, &ptr);
+        }
+        break;
+      }
       case ND_FUNCALL: {
         node_func_t *fn = (node_func_t *)node;
         if (fn->callee == NULL && fn->funcname) {

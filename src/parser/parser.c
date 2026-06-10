@@ -710,7 +710,10 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->name_len = len;
   int elem_store_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
   gv->type_size = has_incomplete_array ? 0 : (is_array ? (elem_store_size * arr_total) : elem_store_size);
-  gv->deref_size = elem_store_size;
+  /* deref_size はスカラ単体 (is_array=0) のポインタ変数では pointee サイズ。
+   * `char *p` なら 1、`int *p` なら 4。subscript / `p[i]` のステップに使う。
+   * 配列 (`int arr[N]`) の場合は要素サイズ (elem_store_size) を保持する。 */
+  gv->deref_size = (is_ptr && !is_array) ? g_toplevel_decl_elem_size : elem_store_size;
   gv->is_array = is_array;
   gv->is_extern_decl = is_extern_decl;
   /* tag (struct / union) 情報を decl spec から引き継ぐ。
@@ -933,27 +936,35 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_symbol = fr->funcname;
     gv->init_symbol_len = fr->funcname_len;
   } else if (init_expr && init_expr->kind == ND_STRING) {
-    /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` 形式。文字列の各バイトと
-     * null 終端を init_values へ展開し、type_size を確定する。
-     * char 以外 (wchar_t など) は未対応。 */
     node_string_t *s = (node_string_t *)init_expr;
-    int elem = gv->deref_size > 0 ? gv->deref_size : 1;
-    if (elem == 1) {
-      int total = s->byte_len + 1; /* null 終端を含む */
+    /* `char *p = "...";` のようなポインタ変数 (配列ではない) では、
+     * 文字列ラベル `.LCn` のアドレスを `.quad` で書き出す。 */
+    if (!gv->is_array && gv->type_size == 8) {
       gv->has_init = 1;
-      gv->init_values = calloc((size_t)total, sizeof(long long));
-      string_lit_t *lit = NULL;
-      for (string_lit_t *l = string_literals; l; l = l->next) {
-        if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
-      }
-      if (lit) {
-        for (int i = 0; i < s->byte_len; i++) {
-          gv->init_values[i] = (unsigned char)lit->str[i];
+      gv->init_symbol = s->string_label;
+      gv->init_symbol_len = -1;  /* sentinel: emit raw label (no `_` prefix) */
+    } else {
+      /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` 形式。文字列の各バイトと
+       * null 終端を init_values へ展開し、type_size を確定する。
+       * char 以外 (wchar_t など) は未対応。 */
+      int elem = gv->deref_size > 0 ? gv->deref_size : 1;
+      if (elem == 1) {
+        int total = s->byte_len + 1; /* null 終端を含む */
+        gv->has_init = 1;
+        gv->init_values = calloc((size_t)total, sizeof(long long));
+        string_lit_t *lit = NULL;
+        for (string_lit_t *l = string_literals; l; l = l->next) {
+          if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
         }
+        if (lit) {
+          for (int i = 0; i < s->byte_len; i++) {
+            gv->init_values[i] = (unsigned char)lit->str[i];
+          }
+        }
+        gv->init_values[s->byte_len] = 0;
+        gv->init_count = total;
+        if (gv->type_size == 0 && gv->is_array) gv->type_size = total;
       }
-      gv->init_values[s->byte_len] = 0;
-      gv->init_count = total;
-      if (gv->type_size == 0 && gv->is_array) gv->type_size = total;
     }
   }
 }
