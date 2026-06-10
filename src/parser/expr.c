@@ -944,10 +944,16 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   if (mem_fp != TK_FLOAT_KIND_NONE) {
     deref->base.fp_kind = mem_fp;
   }
-  /* _Bool メンバ: deref に is_bool を伝播し、後段の代入で 0/1 正規化させる。 */
+  /* _Bool メンバ: deref に is_bool を伝播し、後段の代入で 0/1 正規化させる。
+   * 配列メンバの場合、deref 自身は配列ベース (= ポインタ扱い) なので is_bool
+   * ではなく pointee_is_bool を立て、subscript の結果に正規化を引き継がせる。 */
   if (psx_ctx_get_tag_member_is_bool(base_tag_kind, base_tag_name, base_tag_len,
                                        member->str, member->len)) {
-    deref->is_bool = 1;
+    if (mem_array_len > 0 && mem_size > 0) {
+      deref->pointee_is_bool = 1;
+    } else {
+      deref->is_bool = 1;
+    }
   }
   return (node_t *)deref;
 }
