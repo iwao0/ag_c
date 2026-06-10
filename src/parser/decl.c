@@ -8,6 +8,7 @@
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include "../tokenizer/escape.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -433,10 +434,30 @@ static bool init_first_element_is_brace(void) {
 // 文字列リテラル列の合計内容長 + 1 (NUL) を返す。t は文字列開始トークン。
 // 文字列の終端後のトークンが終端記号 (`}` または NULL ライク) でなければ
 // 単純な文字列初期化と見なせないので 0 を返す。
+/* C11 5.1.1.2: 文字列中のエスケープシーケンス (`\t` `\xNN` `\NNN` 等) は
+ * 1 文字にデコードされるので、配列要素数は decode 後の文字数で数える。
+ * 生バイト長 (raw len) を返してしまうと `char s[] = "\t"` で要素数が 3 (raw '\','t',NUL)
+ * になり過剰確保 + 値もズレる。 */
+static long long count_decoded_chars_in_string(const char *s, int len) {
+  long long n = 0;
+  int i = 0;
+  while (i < len) {
+    if (s[i] == '\\') {
+      uint32_t cp = 0;
+      if (!tk_parse_escape_value(s, len, &i, &cp)) i++;
+    } else {
+      i++;
+    }
+    n++;
+  }
+  return n;
+}
+
 static long long count_char_init_from_string_seq(token_t *t, bool require_rbrace_terminator) {
   long long total = 0;
   while (t && t->kind == TK_STRING) {
-    total += ((token_string_t *)t)->len;
+    token_string_t *st = (token_string_t *)t;
+    total += count_decoded_chars_in_string(st->str, st->len);
     t = t->next;
   }
   if (require_rbrace_terminator) {
@@ -625,14 +646,28 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
   }
 
   node_t *init_chain = NULL;
-  int idx = 0;
-  for (; idx < lit->len && idx < array_len; idx++) {
+  int idx = 0;       /* 配列に書き込んだバイト数 */
+  int src_pos = 0;   /* lit->str を走査するインデックス */
+  while (src_pos < lit->len && idx < array_len) {
+    /* C11 5.1.1.2: 文字列リテラル中のエスケープシーケンスは
+     * 1 文字にデコードしてから配列に格納する。 */
+    uint32_t cp = 0;
+    if (lit->str[src_pos] == '\\') {
+      if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
+        cp = (unsigned char)lit->str[src_pos];
+        src_pos++;
+      }
+    } else {
+      cp = (unsigned char)lit->str[src_pos];
+      src_pos++;
+    }
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)lit->str[idx]));
+    node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)cp));
     assign_node->type_size = elem_size;
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
+    idx++;
   }
   if (idx < array_len) {
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
@@ -767,9 +802,21 @@ static node_t *parse_array_initializer(lvar_t *var) {
                          diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
           }
           int i = 0;
-          for (; i < lit->len && i < array_len; i++) {
+          int src_pos = 0;
+          while (src_pos < lit->len && i < array_len) {
+            uint32_t cp = 0;
+            if (lit->str[src_pos] == '\\') {
+              if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
+                cp = (unsigned char)lit->str[src_pos];
+                src_pos++;
+              }
+            } else {
+              cp = (unsigned char)lit->str[src_pos];
+              src_pos++;
+            }
             init_chain = append_to_init_chain(init_chain,
-                build_array_elem_assign(var, i, psx_node_new_num((unsigned char)lit->str[i])));
+                build_array_elem_assign(var, i, psx_node_new_num((unsigned char)cp)));
+            i++;
           }
           if (i < array_len) {
             init_chain = append_to_init_chain(init_chain,
@@ -869,9 +916,21 @@ static node_t *parse_array_initializer(lvar_t *var) {
                    diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
     }
     int idx = 0;
-    for (; idx < lit->len && idx < array_len; idx++) {
+    int src_pos = 0;
+    while (src_pos < lit->len && idx < array_len) {
+      uint32_t cp = 0;
+      if (lit->str[src_pos] == '\\') {
+        if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
+          cp = (unsigned char)lit->str[src_pos];
+          src_pos++;
+        }
+      } else {
+        cp = (unsigned char)lit->str[src_pos];
+        src_pos++;
+      }
       init_chain = append_to_init_chain(init_chain,
-          build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)lit->str[idx])));
+          build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)cp)));
+      idx++;
     }
     if (idx < array_len) {
       // 文字列が配列長より短い場合は残りに NUL を1つ入れる。
