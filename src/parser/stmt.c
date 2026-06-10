@@ -350,6 +350,13 @@ static node_t *stmt_internal(void) {
         }
       }
     }
+    /* C11 6.3.1.2: 関数戻り値型が _Bool なら return 値も (rhs != 0) に正規化。
+     * `_Bool f() { return 200; }` で 200 をそのまま返すと caller が真偽以外の
+     * 値を見て誤動作する (`flag * 7` が 1400 になる等)。 */
+    if (psx_expr_current_func_ret_token_kind() == TK_BOOL &&
+        !psx_expr_current_func_ret_is_pointer() && node->lhs) {
+      node->lhs = psx_node_new_binary(ND_NE, node->lhs, psx_node_new_num(0));
+    }
     node->fp_kind = psx_expr_current_func_ret_fp_kind();
     node->ret_struct_size = psx_expr_current_func_ret_struct_size();
     tk_expect(';');
