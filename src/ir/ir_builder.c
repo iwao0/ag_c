@@ -894,6 +894,13 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         }
         return cur;
       }
+      /* `s.v` 形式で v が配列メンバの場合、ND_DEREF は「配列実体」を表すが、
+       * 式中では配列はポインタへ崩壊する。load せずに address (ptr) をそのまま
+       * 返すことで `int *p = s.v;` や `s.v[i]` の正しい挙動になる。
+       * 判定: deref_size>0 かつ is_pointer=1 かつ type_size>8 (= 配列全体サイズ)。 */
+      if (mm->is_pointer && mm->deref_size > 0 && mm->type_size > 8) {
+        return ptr;
+      }
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
       /* deref 後の型: fp_kind を最優先。それ以外は type_size で判定

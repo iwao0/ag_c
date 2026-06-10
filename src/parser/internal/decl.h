@@ -87,6 +87,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int decl_base_is_void,
                                                  int decl_base_is_bool);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
+/* AST 上の式ノードを定数畳み込みして long long を返す。
+ * ok=1 を返した時のみ結果は有効。ND_NUM, ND_ADD/SUB/..., 三項などを扱う。 */
+long long psx_decl_eval_const_int(node_t *n, int *ok);
 
 // `{ ... }` のトップレベル要素数を先読みで返す。curtok は変更しない。
 // 推定不可なら 0。指定初期化子 `[N]=` で位置がジャンプする場合は最大位置+1 を返す。

@@ -311,6 +311,34 @@ void gen_global_vars(void) {
           prev_end = off + ts;
         }
         if (prev_end < gv->type_size) cg_emitf("  .space %d\n", gv->type_size - prev_end);
+      } else if (gv->init_count > 0 && gv->is_array && gv->tag_kind != TK_EOF) {
+        /* struct/union 配列のグローバル brace init: 各要素を member 毎に
+         * その型サイズで出力する。`struct {int x; int y;} a[3] = {{1,2},...}`
+         * は .long 1; .long 2; .long 3; ... と展開する。 */
+        int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+        int elem_size = gv->deref_size;
+        int total_elems = elem_size > 0 ? gv->type_size / elem_size : 0;
+        int val_idx = 0;
+        for (int e = 0; e < total_elems; e++) {
+          int prev_end = 0;
+          for (int i = 0; i < n_members; i++) {
+            char *mn = NULL; int ml = 0;
+            int off = 0, ts = 0, ds = 0, alen = 0;
+            token_kind_t mtk = TK_EOF; char *mtn = NULL; int mtl = 0; int mtp = 0;
+            if (!psx_ctx_get_tag_member_at(gv->tag_kind, gv->tag_name, gv->tag_len, i,
+                                           &mn, &ml, &off, &ts, &ds, &alen,
+                                           &mtk, &mtn, &mtl, &mtp)) break;
+            if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
+            long long v = (val_idx < gv->init_count) ? gv->init_values[val_idx] : 0;
+            val_idx++;
+            if (ts == 1) cg_emitf("  .byte %lld\n", v);
+            else if (ts == 2) cg_emitf("  .short %lld\n", v);
+            else if (ts == 4) cg_emitf("  .long %lld\n", v);
+            else cg_emitf("  .quad %lld\n", v);
+            prev_end = off + ts;
+          }
+          if (prev_end < elem_size) cg_emitf("  .space %d\n", elem_size - prev_end);
+        }
       } else if (gv->init_count > 0) {
         int elem = gv->deref_size > 0 ? gv->deref_size : 4;
         int total_elems = gv->type_size / elem;

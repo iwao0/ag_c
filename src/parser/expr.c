@@ -2747,12 +2747,21 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       base->mem.base.kind = ND_GVAR;
       base->mem.type_size = gv->type_size;
       base->mem.deref_size = gv->deref_size;
+      /* struct 配列の要素はタグ型なので、ND_GVAR と外側 ND_ADDR の両方に
+       * tag 情報を伝播させて `gpts[i].x` の member access を解決できるようにする。 */
+      base->mem.tag_kind = gv->tag_kind;
+      base->mem.tag_name = gv->tag_name;
+      base->mem.tag_len = gv->tag_len;
       base->name = gv->name;
       base->name_len = gv->name_len;
       base->is_thread_local = gv->is_thread_local;
       node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
       addr->base.kind = ND_ADDR;
       addr->base.lhs = (node_t *)base;
+      addr->tag_kind = gv->tag_kind;
+      addr->tag_name = gv->tag_name;
+      addr->tag_len = gv->tag_len;
+      if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
       // 多次元配列: outer_stride を 1 次サブスクリプトのステップとして使う。
       // ローカル配列の build_array_lvar_addr_node と同じレイアウト。
       int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
@@ -2787,6 +2796,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.tag_kind = gv->tag_kind;
     gvar_node->mem.tag_name = gv->tag_name;
     gvar_node->mem.tag_len = gv->tag_len;
+    gvar_node->mem.is_tag_pointer = gv->is_tag_pointer;
+    if (gv->is_tag_pointer) gvar_node->mem.is_pointer = 1;
     gvar_node->name = gv->name;
     gvar_node->name_len = gv->name_len;
     gvar_node->is_thread_local = gv->is_thread_local;

@@ -228,6 +228,7 @@ struct global_var_t {
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
+  unsigned int is_tag_pointer : 1;  // 1: tag へのポインタ (`struct P *pp`)
   // tag (struct / union) 情報。tag_kind == TK_EOF のとき非タグ型。
   // build_member_access が `gvar.member` でタグメンバを引くのに使う。
   token_kind_t tag_kind;

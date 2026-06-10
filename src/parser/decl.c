@@ -187,6 +187,12 @@ static void resolve_typedef_array_dims(token_ident_t *id, int *out_dims, int *ou
   if (out_dim_count) *out_dim_count = (is_array && dim_count > 0) ? dim_count : 0;
 }
 
+static long long eval_const_expr_decl(node_t *n, int *ok);
+
+long long psx_decl_eval_const_int(node_t *n, int *ok) {
+  return eval_const_expr_decl(n, ok);
+}
+
 static long long eval_const_expr_decl(node_t *n, int *ok) {
   if (!n) { *ok = 0; return 0; }
   switch (n->kind) {

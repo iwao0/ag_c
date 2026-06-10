@@ -705,14 +705,13 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->deref_size = elem_store_size;
   gv->is_array = is_array;
   gv->is_extern_decl = is_extern_decl;
-  /* tag (struct / union) 情報を decl spec から引き継ぐ。is_ptr のとき
-   * gvar 自身はポインタ値なので tag は持たない (member access 時にエラーにする
-   * ため未設定にしておく)。 */
-  if (!is_ptr) {
-    gv->tag_kind = g_toplevel_decl_tag_kind;
-    gv->tag_name = g_toplevel_decl_tag_name;
-    gv->tag_len = g_toplevel_decl_tag_len;
-  }
+  /* tag (struct / union) 情報を decl spec から引き継ぐ。
+   * is_ptr のときは is_tag_pointer=1 を立て、`pp->x` のメンバアクセスで
+   * build_member_access が tag を引けるようにする。 */
+  gv->tag_kind = g_toplevel_decl_tag_kind;
+  gv->tag_name = g_toplevel_decl_tag_name;
+  gv->tag_len = g_toplevel_decl_tag_len;
+  gv->is_tag_pointer = is_ptr ? 1 : 0;
   gv->next = global_vars;
   global_vars = gv;
   return gv;
@@ -842,9 +841,16 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     return;
   }
   node_t *init_expr = psx_expr_assign();
+  /* `int g = -42;` のように unary minus を含む式は ND_NUM ではなく
+   * ND_SUB(0, 42) になる。const 畳み込みできる式は折りたたんで init_val に格納する。 */
+  int const_ok = 1;
+  long long folded = init_expr ? psx_decl_eval_const_int(init_expr, &const_ok) : 0;
   if (init_expr && init_expr->kind == ND_NUM) {
     gv->has_init = 1;
     gv->init_val = ((node_num_t *)init_expr)->val;
+  } else if (init_expr && const_ok) {
+    gv->has_init = 1;
+    gv->init_val = folded;
   } else if (init_expr && init_expr->kind == ND_ADDR &&
              init_expr->lhs && init_expr->lhs->kind == ND_GVAR) {
     node_gvar_t *ref = (node_gvar_t *)init_expr->lhs;

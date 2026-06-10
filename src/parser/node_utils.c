@@ -371,6 +371,14 @@ void psx_node_expect_incdec_target(node_t *node, const char *op) {
 node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {
   psx_node_expect_lvalue(lhs, op);
   psx_node_reject_const_assign(lhs, op);
+  /* C11 6.5.16.2p3: `p += n` でポインタ算術するときは、rhs を要素サイズ倍に
+   * スケーリングする。`add()` 経路と挙動を揃える。 */
+  if ((op_kind == ND_ADD || op_kind == ND_SUB) && psx_node_is_pointer(lhs)) {
+    int ds = psx_node_deref_size(lhs);
+    if (ds > 1) {
+      rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+    }
+  }
   node_t *op_expr = psx_node_new_binary(op_kind, lhs, rhs);
   node_mem_t *assign_node = psx_node_new_assign(lhs, op_expr);
   assign_node->type_size = psx_node_type_size(lhs);
