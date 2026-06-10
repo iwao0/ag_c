@@ -1574,7 +1574,9 @@ static void test_type_decl() {
   parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
-  ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
+  // brace init 開始で struct 全体を 0 で埋める処理が入り、init_chain は
+  // ND_COMMA チェイン (zero-fills → 明示 .a[1]=3) になる。
+  ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   // 入れ子 designator: struct の配列メンバへの複数指定
