@@ -1767,7 +1767,10 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   }
   // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
   // codegen がレジスタ数（1 or 2）を判断するため
-  int abi_type_size = (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0)
+  // 配列宣言子の struct パラメータ (`struct V arr[]`) はポインタに adjust される
+  // ので、ABI サイズは 8 (pointer) であり struct_size ではない。
+  int abi_type_size = (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0 &&
+                       !param_is_array_declarator)
                       ? ds.struct_size : 8;
   node_t *param_node = psx_node_new_lvar_typed(var->offset, abi_type_size);
   // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
