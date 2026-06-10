@@ -204,6 +204,25 @@ static long long eval_const_expr_decl(node_t *n, int *ok) {
   switch (n->kind) {
   case ND_NUM:
     return ((node_num_t *)n)->val;
+  case ND_GVAR: {
+    /* グローバル変数参照: 整数定数で初期化された const gvar は ICE として
+     * 折り畳む (例: `const int A = 5; const int C = A * 7;`)。
+     * 厳密な C 標準では ICE に該当しないが ag_c は寛容に扱う。
+     * シンボルアドレス初期 / 浮動小数 / 配列は除外。 */
+    node_gvar_t *gv = (node_gvar_t *)n;
+    for (global_var_t *g = global_vars; g; g = g->next) {
+      if (g->name_len == gv->name_len &&
+          memcmp(g->name, gv->name, (size_t)g->name_len) == 0) {
+        if (g->has_init && !g->init_symbol && !g->init_values && !g->init_fvalues &&
+            g->fp_kind == TK_FLOAT_KIND_NONE && !g->is_array) {
+          return g->init_val;
+        }
+        break;
+      }
+    }
+    *ok = 0;
+    return 0;
+  }
   case ND_COMMA:
     (void)eval_const_expr_decl(n->lhs, ok);
     if (!*ok) return 0;

@@ -864,6 +864,7 @@ static const test_case_t test_cases[] = {
     {"probes", "integer_indexes_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/integer_indexes_array.c", 8, 0},
     {"probes", "global_char_array_string_size", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_char_array_string_size.c", 209, 0},
     {"probes", "global_designator", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_designator.c", 30, 0},
+    {"probes", "global_const_int_expr_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_const_int_expr_init.c", 35, 0},
     {"probes", "global_double_scalar", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_double_scalar.c", 14, 0},
     {"probes", "global_double_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_double_array.c", 17, 0},
     {"probes", "designator_nested", CASE_INT_FILE, "test/fixtures/probes_found_bugs/designator_nested.c", 21, 0},
