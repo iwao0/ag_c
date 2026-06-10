@@ -820,6 +820,49 @@ static void guard_toplevel_declarator_count(int declarator_count) {
 // 行優先で詰める。ネストした brace は単に下りる: `{{1,2},{3,4}}` も `{1,2,3,4}` と
 // 同じ列になる (多次元配列のメモリレイアウトは行優先)。
 // 各要素は ND_NUM のみ受け付け、定数式評価は未対応 (ND_NUM 以外は 0 をプレースする)。
+/* グローバル double/float 初期化用の定数式畳み込み。
+ * ND_NUM (fval) / ND_ADD / ND_SUB / ND_MUL / ND_DIV / 単項マイナスを再帰評価する。
+ * 整数リテラル (ND_NUM with fp_kind=NONE) も double に昇格して評価。
+ * 評価不可なら *ok=0。 */
+static double psx_eval_const_fp(node_t *n, int *ok) {
+  if (!n) { *ok = 0; return 0.0; }
+  switch (n->kind) {
+    case ND_NUM: {
+      node_num_t *num = (node_num_t *)n;
+      if (num->base.fp_kind != TK_FLOAT_KIND_NONE) return num->fval;
+      return (double)num->val;
+    }
+    case ND_ADD: {
+      double l = psx_eval_const_fp(n->lhs, ok);
+      if (!*ok) return 0.0;
+      double r = psx_eval_const_fp(n->rhs, ok);
+      return *ok ? l + r : 0.0;
+    }
+    case ND_SUB: {
+      double l = psx_eval_const_fp(n->lhs, ok);
+      if (!*ok) return 0.0;
+      double r = psx_eval_const_fp(n->rhs, ok);
+      return *ok ? l - r : 0.0;
+    }
+    case ND_MUL: {
+      double l = psx_eval_const_fp(n->lhs, ok);
+      if (!*ok) return 0.0;
+      double r = psx_eval_const_fp(n->rhs, ok);
+      return *ok ? l * r : 0.0;
+    }
+    case ND_DIV: {
+      double l = psx_eval_const_fp(n->lhs, ok);
+      if (!*ok) return 0.0;
+      double r = psx_eval_const_fp(n->rhs, ok);
+      if (!*ok || r == 0.0) { *ok = 0; return 0.0; }
+      return l / r;
+    }
+    default:
+      *ok = 0;
+      return 0.0;
+  }
+}
+
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
   tk_expect('{');
@@ -944,6 +987,13 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
    * ND_SUB(0, 42) になる。const 畳み込みできる式は折りたたんで init_val に格納する。 */
   int const_ok = 1;
   long long folded = init_expr ? psx_decl_eval_const_int(init_expr, &const_ok) : 0;
+  /* グローバル double/float 用の定数式畳み込み (`double v = 1.5 + 2.5;`)。
+   * 各 ND_NUM の fval を取り、ND_ADD/SUB/MUL/DIV/単項マイナスを再帰評価する。 */
+  int fp_const_ok = (gv->fp_kind != TK_FLOAT_KIND_NONE);
+  double fp_folded = 0.0;
+  if (fp_const_ok && init_expr) {
+    fp_folded = psx_eval_const_fp(init_expr, &fp_const_ok);
+  }
   if (init_expr && init_expr->kind == ND_NUM) {
     gv->has_init = 1;
     node_num_t *n = (node_num_t *)init_expr;
@@ -953,6 +1003,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
       gv->fval = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
     }
+  } else if (init_expr && gv->fp_kind != TK_FLOAT_KIND_NONE && fp_const_ok) {
+    /* 浮動小数の定数式 (`1.5 + 2.5`): fp_folded を fval に保存。 */
+    gv->has_init = 1;
+    gv->fval = fp_folded;
   } else if (init_expr && const_ok) {
     gv->has_init = 1;
     gv->init_val = folded;
