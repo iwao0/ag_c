@@ -1328,9 +1328,16 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     copy_select->base.rhs = then_prefix ? psx_node_new_binary(ND_COMMA, then_prefix, then_copy) : then_copy;
     copy_select->els = else_prefix ? psx_node_new_binary(ND_COMMA, else_prefix, else_copy) : else_copy;
     init_chain = (node_t *)copy_select;
-  } else if (var->size <= 8 && value && value->kind == ND_FUNCALL) {
-    // ≤8B struct: 関数呼び出し結果の非lvar式を 8B assign で初期化
+  } else if (var->size <= 8 && value &&
+             (value->kind == ND_FUNCALL || value->kind == ND_DEREF)) {
+    /* ≤8B struct: 関数呼び出し結果や `*ptr` deref の非 lvar 値を
+     * 1 ワード assign でコピー初期化する。 */
     node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
+    if (value->kind == ND_DEREF) {
+      /* ND_DEREF の type_size を struct サイズに揃えて、codegen が
+       * struct 全体を 1 ワードで load するようにする。 */
+      ((node_mem_t *)value)->type_size = var->size;
+    }
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
@@ -1695,6 +1702,11 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   ((node_lvar_t *)lvar)->mem.pointer_qual_levels = var->pointer_qual_levels;
   node_t *init_expr = parse_scalar_brace_initializer();
+  /* C11 6.3.1.2: _Bool への変換は (x != 0) を 0/1 で表現したもの。
+   * `_Bool b = 42;` を 1 にするため、ND_NE で wrap してから store する。 */
+  if (var->is_bool && init_expr) {
+    init_expr = psx_node_new_binary(ND_NE, init_expr, psx_node_new_num(0));
+  }
   if (is_pointer) {
     psx_node_reject_const_qual_discard(lvar, init_expr);
     /* C11 6.5.16.1: ポインタ変数を非ゼロ整数定数で初期化するのは制約違反。
@@ -1747,7 +1759,8 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                                   base_is_pointer,
                                                   is_const_qualified, is_volatile_qualified,
                                                   decl_is_unsigned_hint, NULL, 0,
-                                                  /* decl_base_is_void = */ 0);
+                                                  /* decl_base_is_void = */ 0,
+                                                  /* decl_base_is_bool = */ 0);
 }
 
 /* `static int n = 5;` のような単純スカラ static ローカルをグローバルに lowering する。
@@ -1831,7 +1844,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int is_const_qualified, int is_volatile_qualified,
                                                  int decl_is_unsigned_hint,
                                                  const int *td_array_dims, int td_array_dim_count,
-                                                 int decl_base_is_void) {
+                                                 int decl_base_is_void,
+                                                 int decl_base_is_bool) {
   node_t *init_chain = NULL;
   int alignas_val = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
@@ -2151,6 +2165,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;
     if (decl_is_atomic) var->is_atomic = 1;
+    /* `_Bool b = expr;` 代入/初期化時に rhs を 0/1 に正規化するため。 */
+    if (decl_base_is_bool && !is_pointer) var->is_bool = 1;
     /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。
      * deref のエラー検出 (C11 6.5.3.2) で必要。 */
     if (decl_base_is_void && is_pointer && total_pointer_levels == 1) {
@@ -2222,7 +2238,8 @@ node_t *psx_decl_parse_declaration(void) {
                                                   ds.is_volatile_qualified ? 1 : ds.td_pointee_volatile,
                                                   ds.is_unsigned,
                                                   ds.td_array_dims, ds.td_array_dim_count,
-                                                  ds.type_kind == TK_VOID ? 1 : 0);
+                                                  ds.type_kind == TK_VOID ? 1 : 0,
+                                                  ds.type_kind == TK_BOOL ? 1 : 0);
 }
 
 static int parse_local_decl_spec(local_decl_spec_t *out) {

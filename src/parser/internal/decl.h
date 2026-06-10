@@ -31,6 +31,8 @@ struct lvar_t {
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int is_complex : 1;       // 1: _Complex型
   unsigned int is_atomic : 1;        // 1: _Atomic型
+  // 1: _Bool 型。代入/初期化時に rhs を `(rhs != 0) ? 1 : 0` に正規化する (C11 6.3.1.2)
+  unsigned int is_bool : 1;
   // 1: `static` 付きで宣言されたローカル変数。フレーム上には配置されず、
   //    static_global_name のグローバル変数に lowering される。
   //    識別子解決時に ND_LVAR ではなく ND_GVAR を返すフラグ。
@@ -82,7 +84,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int is_const_qualified, int is_volatile_qualified,
                                                  int decl_is_unsigned_hint,
                                                  const int *td_array_dims, int td_array_dim_count,
-                                                 int decl_base_is_void);
+                                                 int decl_base_is_void,
+                                                 int decl_base_is_bool);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
 
 // `{ ... }` のトップレベル要素数を先読みで返す。curtok は変更しない。

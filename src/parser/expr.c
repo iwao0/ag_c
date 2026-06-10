@@ -89,6 +89,14 @@ static void leave_paren_nest(void) {
 }
 
 static int sizeof_expr_node(node_t *node) {
+  /* C11 6.5.3.4p2: sizeof は対象式が「配列型」のときは配列全体のサイズを返す。
+   * `"hello"` の sizeof は `char[6]` の 6 であって、decay 後のポインタサイズ
+   * (= 8) ではない。 */
+  if (node && node->kind == ND_STRING) {
+    node_string_t *s = (node_string_t *)node;
+    int elem = s->char_width ? (int)s->char_width : 1;
+    return (s->byte_len + 1) * elem;
+  }
   int sz = psx_node_type_size(node);
   if (sz) return sz;
   if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
