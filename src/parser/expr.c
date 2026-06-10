@@ -1987,6 +1987,14 @@ static node_t *add(void) {
     if (curtok()->kind == TK_PLUS) {
       set_curtok(curtok()->next);
       node_t *rhs = mul();
+      /* C11 6.5.6p2: 加算では「ポインタ + 整数」と「整数 + ポインタ」が
+       * 共に許される。左が非ポインタで右がポインタなら可換性で swap し、
+       * 既存の「左 = ポインタ, 右 = 整数 (scaling 対象)」経路に乗せる。
+       * 修正前は `2 + a` で左辺 (整数) を見るだけで scaling されず、
+       * `2 + a` が整数加算 → 不正アドレス deref で garbage 値を返していた。 */
+      if (!psx_node_is_pointer(node) && psx_node_is_pointer(rhs)) {
+        node_t *tmp = node; node = rhs; rhs = tmp;
+      }
       if (psx_node_is_pointer(node)) {
         int ds = psx_node_deref_size(node);
         if (ds > 1) {
