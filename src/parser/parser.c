@@ -851,6 +851,13 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->has_init = 1;
     gv->init_symbol = ref->name;
     gv->init_symbol_len = ref->name_len;
+  } else if (init_expr && init_expr->kind == ND_FUNCREF) {
+    /* `int (*gp)(int,int) = add;` グローバル関数ポインタ初期化。
+     * codegen は init_symbol を `.quad _<funcname>` として出力する。 */
+    node_funcref_t *fr = (node_funcref_t *)init_expr;
+    gv->has_init = 1;
+    gv->init_symbol = fr->funcname;
+    gv->init_symbol_len = fr->funcname_len;
   } else if (init_expr && init_expr->kind == ND_STRING) {
     /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` 形式。文字列の各バイトと
      * null 終端を init_values へ展開し、type_size を確定する。

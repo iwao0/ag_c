@@ -216,6 +216,31 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                member_tag_kind, member_tag_name, member_tag_len, head.is_ptr ? 1 : 0);
         member_count++;
       }
+      /* C11 6.7.2.1p13: 匿名 struct/union (タグ名なし、メンバ名なし) の場合、
+       * 内側のメンバを外側 tag に直接見えるように昇格 (promote) する。
+       * 外側からは `outer.inner_member` の形でアクセスできる。 */
+      if (!has_member_name && !head.is_ptr &&
+          (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
+          member_tag_name) {
+        int inner_count = psx_ctx_get_tag_member_count(member_tag_kind, member_tag_name, member_tag_len);
+        for (int i = 0; i < inner_count; i++) {
+          char *im_name = NULL;
+          int im_len = 0, im_off = 0, im_ts = 0, im_ds = 0, im_al = 0;
+          token_kind_t im_tk = TK_EOF;
+          char *im_tn = NULL;
+          int im_tl = 0, im_tp = 0;
+          if (psx_ctx_get_tag_member_at(member_tag_kind, member_tag_name, member_tag_len, i,
+                                         &im_name, &im_len, &im_off, &im_ts, &im_ds, &im_al,
+                                         &im_tk, &im_tn, &im_tl, &im_tp)) {
+            if (im_len == 0) continue; /* 匿名同士の連鎖は今回対象外 */
+            psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
+                                   im_name, im_len, off + im_off,
+                                   im_ts, im_ds, im_al,
+                                   im_tk, im_tn, im_tl, im_tp);
+            member_count++;
+          }
+        }
+      }
       if (tag_kind == TK_UNION) {
         if (total_size > union_size) union_size = total_size;
       } else {

@@ -2868,7 +2868,10 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   node_t *n = psx_node_new_lvar_typed(var->offset,
       var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
   int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
-                        (var->size > var->elem_size);
+                        (var->size > var->elem_size) ||
+                        /* `struct T *p` 仮引数: size == elem_size == 8 でも
+                         * is_tag_pointer が立つのでこれをポインタとして認識する。 */
+                        var->is_tag_pointer;
   // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
   // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
   int vla_effective_deref = 0;
@@ -2941,6 +2944,11 @@ static node_t *resolve_identifier(token_ident_t *tok) {
     }
   }
   if (curtok()->kind == TK_LPAREN && !var) {
+    /* `gp(...)` でグローバル関数ポインタを呼び出す場合は、まずグローバル変数として
+     * 解決して間接呼び出しに回す。global var として見つからなければ通常の
+     * unqualified function call として処理する。 */
+    node_t *gv = try_build_global_var_node(tok);
+    if (gv) return gv;
     return build_unqualified_call(tok);
   }
   if (!var && psx_ctx_has_function_name(tok->str, tok->len)) {
