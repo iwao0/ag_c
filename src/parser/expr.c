@@ -2427,6 +2427,13 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     psx_diag_ctx(curtok(), "subscript",
                  "サブスクリプトの両辺ともポインタ/配列ではありません (C11 6.5.2.1p1)");
   }
+  /* C11 6.5.2.1p1: `a[b]` ≡ `b[a]`。左がポインタ/配列でないが右がそうなら入れ替えて
+   * 「左 = base, 右 = index」前提の以降のロジックに乗せる。
+   * 例: `3[arr]` → `arr[3]` 相当に正規化。 */
+  if (!node_ok && idx_ok) {
+    node_t *tmp = node; node = idx; idx = tmp;
+    int tmp_ok = node_ok; node_ok = idx_ok; idx_ok = tmp_ok;
+  }
   int es = 0, inner_ds = 0, next_ds = 0;
   int extras[5] = {0};
   int extras_count = 0;
