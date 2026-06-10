@@ -754,51 +754,15 @@ static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
  * 書かれなかったメンバはここでは 0 埋めしない (C 仕様上は 0 だが、現状
  * struct 要素の初期化漏れは未対応とする)。 */
 static node_t *parse_array_elem_struct_brace_init(lvar_t *var, int idx) {
-  tk_expect('{');
-  int elem_off = var->offset + idx * var->elem_size;
-  node_t *chain = NULL;
-  int ordinal = 0;
-  if (!tk_consume('}')) {
-    for (;;) {
-      aggregate_member_info_t info = {0};
-      info.tag_kind = TK_EOF;
-      bool found = tag_get_next_named_member(var, &ordinal, &info);
-      if (!found || info.len <= 0) {
-        psx_diag_ctx(curtok(), "decl", "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-      }
-      node_t *value = parse_scalar_brace_initializer();
-      int abs_off = elem_off + info.offset;
-      node_t *lhs = psx_node_new_lvar_typed(abs_off, info.type_size);
-      ((node_lvar_t *)lhs)->mem.tag_kind = info.tag_kind;
-      ((node_lvar_t *)lhs)->mem.tag_name = info.tag_name;
-      ((node_lvar_t *)lhs)->mem.tag_len = info.tag_len;
-      ((node_lvar_t *)lhs)->mem.is_tag_pointer = info.is_tag_pointer;
-      node_mem_t *assign = psx_node_new_assign(lhs, value);
-      assign->type_size = info.type_size;
-      chain = append_to_init_chain(chain, (node_t *)assign);
-      if (tk_consume('}')) break;
-      tk_expect(',');
-      if (tk_consume('}')) break;
-    }
-  }
-  /* C11 6.7.9p21: ネスト初期化子で書かれなかった残りのメンバは 0 埋め。
-   * `{10}` で y が省略されたら y = 0。スカラ非タグ非配列メンバのみ対象。 */
-  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
-  for (int o = ordinal; o < member_count; o++) {
-    aggregate_member_info_t info = {0};
-    info.tag_kind = TK_EOF;
-    int probe = o;
-    if (!tag_get_next_named_member(var, &probe, &info) || info.len <= 0) continue;
-    if (!is_supported_scalar_store_size(info.type_size)) continue;
-    if (info.array_len > 0 || info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) continue;
-    int abs_off = elem_off + info.offset;
-    node_t *lhs = psx_node_new_lvar_typed(abs_off, info.type_size);
-    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
-    assign->type_size = info.type_size;
-    chain = append_to_init_chain(chain, (node_t *)assign);
-  }
-  return chain ? chain : psx_node_new_num(0);
+  /* `struct V arr[N] = { ..., [k] = {.a=1, .b=2}, ... }` の `{...}` 部分を、
+   * 配列要素 (idx 番目) を target とした struct 初期化として処理する。
+   * 自前で member 順次パースしていた旧実装は struct designator (`.a=`) を
+   * 受け付けず E3064 を出していた (p280)。parse_struct_initializer に委譲
+   * することで designator も positional も両形に対応する。 */
+  lvar_t nested = *var;
+  nested.offset = var->offset + idx * var->elem_size;
+  nested.size = var->elem_size; /* parse_struct_initializer の zero-fill 範囲を要素 1 つに制限 */
+  return parse_struct_initializer(&nested);
 }
 
 // 初期化子の要素数を 1 増やし、上限を超えていれば診断を出す。
