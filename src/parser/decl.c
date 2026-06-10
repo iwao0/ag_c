@@ -36,6 +36,11 @@ typedef struct {
   int tag_len;
   int is_tag_pointer;
   tk_float_kind_t fp_kind;  // float/double メンバ。codegen に FP load/store を出させる
+  // bitfield メンバ用: brace 初期化子で lhs lvar ノードに伝播し、IR の bitfield
+  // store 経路 (read-modify-write w/ mask) を発火させる。bit_width=0 で非 bitfield。
+  int bit_width;
+  int bit_offset;
+  int bit_is_signed;
 } aggregate_member_info_t;
 
 static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out);
@@ -1084,6 +1089,8 @@ static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_i
   if (ok) {
     out->fp_kind = psx_ctx_get_tag_member_fp_kind(var->tag_kind, var->tag_name, var->tag_len,
                                                     name, len);
+    psx_ctx_get_tag_member_bf(var->tag_kind, var->tag_name, var->tag_len, name, len,
+                                       &out->bit_width, &out->bit_offset, &out->bit_is_signed);
   }
   return ok;
 }
@@ -1097,6 +1104,9 @@ static bool tag_get_member_at(lvar_t *var, int ordinal, aggregate_member_info_t 
   if (ok && out->len > 0) {
     out->fp_kind = psx_ctx_get_tag_member_fp_kind(var->tag_kind, var->tag_name, var->tag_len,
                                                     out->name, out->len);
+    psx_ctx_get_tag_member_bf(var->tag_kind, var->tag_name, var->tag_len,
+                                       out->name, out->len,
+                                       &out->bit_width, &out->bit_offset, &out->bit_is_signed);
   }
   return ok;
 }
@@ -1189,6 +1199,14 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   if (info->fp_kind != TK_FLOAT_KIND_NONE) {
     lhs->fp_kind = info->fp_kind;
     assign_node->base.fp_kind = info->fp_kind;
+  }
+  /* bitfield メンバ: lhs lvar に bit_width / bit_offset / bit_is_signed を載せ、
+   * IR builder の ND_ASSIGN(ND_LVAR) で bitfield 書き込み経路 (mask preserve) を
+   * 通す。これがないと storage 全体を上書きして他フィールドを破壊する。 */
+  if (info->bit_width > 0) {
+    ((node_lvar_t *)lhs)->mem.bit_width = info->bit_width;
+    ((node_lvar_t *)lhs)->mem.bit_offset = info->bit_offset;
+    ((node_lvar_t *)lhs)->mem.bit_is_signed = info->bit_is_signed;
   }
   return (node_t *)assign_node;
 }
