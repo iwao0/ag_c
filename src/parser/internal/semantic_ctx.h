@@ -141,6 +141,8 @@ bool psx_ctx_is_function_ret_void(char *name, int len);
 /* 関数の戻り値型を track する。既存と異なる型なら 0 を返す。 */
 int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer);
+/* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
+int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

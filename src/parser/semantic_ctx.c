@@ -912,6 +912,11 @@ bool psx_ctx_is_function_ret_void(char *name, int len) {
 /* 関数の戻り値型 (基底 token_kind と pointer フラグ) を登録/比較する。
  * 既に同名で登録があれば、新しい値と異なるか確認する。
  * 戻り値: 1 = OK (新規 or 互換)、0 = 衝突 (呼び出し元で診断発行)。 */
+int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return (f && f->ret_set_once) ? f->ret_is_pointer : 0;
+}
+
 int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer) {
   func_name_t *f = find_function_name(name, len);

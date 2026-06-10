@@ -127,6 +127,18 @@ int psx_node_is_pointer(node_t *node) {
        * ポインタ - 整数 のみポインタ扱い。 */
       if (psx_node_is_pointer(node->lhs) && psx_node_is_pointer(node->rhs)) return 0;
       return psx_node_is_pointer(node->lhs);
+    /* 関数呼び出しの戻り値型がポインタ (`int *get(void); get()[0]`) なら、
+     * その式は配列/ポインタ。subscript チェックを通すために 1 を返す。 */
+    case ND_FUNCALL: {
+      node_func_t *fn = (node_func_t *)node;
+      if (fn->callee == NULL && fn->funcname) {
+        return psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len);
+      }
+      return 0;
+    }
+    case ND_FUNCREF:
+      /* 関数シンボルは関数ポインタ値。 */
+      return 1;
     default:
       return 0;
   }
@@ -212,6 +224,16 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         break;
       case ND_COMMA:
         psx_node_get_tag_type(node->rhs, &kind, &name, &len, &ptr);
+        break;
+      /* `p + n` のようなポインタ算術: tag info を pointer 側 (lhs) から継承する。
+       * `(p+1)->x` や `(p+i).x` (`.` は通常 lvalue のみだが parser が許す形) で
+       * tag が引けないと arrow/dot がエラーになる。 */
+      case ND_ADD:
+      case ND_SUB:
+        psx_node_get_tag_type(node->lhs, &kind, &name, &len, &ptr);
+        if (kind == TK_EOF) {
+          psx_node_get_tag_type(node->rhs, &kind, &name, &len, &ptr);
+        }
         break;
       case ND_FUNCALL: {
         node_func_t *fn = (node_func_t *)node;

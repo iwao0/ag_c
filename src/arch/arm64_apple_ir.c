@@ -622,6 +622,16 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
           }
         }
         return;
+      } else if (is_fp && idx >= 8) {
+        /* stack-passed float/double arg: 8B slot に置かれている。
+         * d0 を scratch として使い、slot へ転送。 */
+        int stack_off = ctx->total_size + (idx - 8) * 8;
+        const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
+        cg_emitf("  ldr %s0, [x29, #%d]\n", suf, stack_off);
+        if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+          cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+        }
+        return;
       } else if (is_fp) {
         const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
         snprintf(src_buf, sizeof(src_buf), "%s%d", suf, idx);
@@ -650,24 +660,48 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
        *     float は引数渡しで double に促進。 */
       int var_stack_bytes = 0;
       int fixed_limit = inst->is_variadic_call ? inst->nargs_fixed : inst->nargs;
-      /* 非 variadic で 9 個以降の int 引数: stack 渡し (Apple ARM64 ABI)。
-       * 一旦カウントして fixed_limit を 8 に絞り、register に乗らない分を後で
-       * stack に積む。float/double が境界を跨ぐ複雑な場合は未対応。 */
+      /* 非 variadic で 9 個以降の引数: stack 渡し (Apple ARM64 ABI 簡略版)。
+       * 引数を整数/FP で分類し、それぞれ register が 8 個を超えた分のみ stack に
+       * 積む。実際の ABI では int と FP の register カウンタは独立しているので、
+       * "9 個目" は両カテゴリ別々に判定する必要がある。 */
       int extra_stack_args = 0;
-      if (!inst->is_variadic_call && inst->nargs > 8) {
-        extra_stack_args = inst->nargs - 8;
-        var_stack_bytes = ((extra_stack_args + 1) / 2) * 16;
-        if (var_stack_bytes > 0) {
+      if (!inst->is_variadic_call && inst->nargs > 0) {
+        /* どの引数が stack に乗るか先に決める。 */
+        int int_count = 0, fp_count = 0;
+        int stack_idx[64];
+        int stack_n = 0;
+        for (int i = 0; i < inst->nargs; i++) {
+          int is_fp = (inst->args[i].type == IR_TY_F32 || inst->args[i].type == IR_TY_F64);
+          if (is_fp) {
+            if (fp_count < 8) fp_count++;
+            else stack_idx[stack_n++] = i;
+          } else {
+            if (int_count < 8) int_count++;
+            else stack_idx[stack_n++] = i;
+          }
+        }
+        if (stack_n > 0) {
+          extra_stack_args = stack_n;
+          var_stack_bytes = ((extra_stack_args + 1) / 2) * 16;
           cg_emitf("  sub sp, sp, #%d\n", var_stack_bytes);
+          for (int k = 0; k < stack_n; k++) {
+            ir_val_t arg = inst->args[stack_idx[k]];
+            int slot_off = k * 8;
+            int is_fp = (arg.type == IR_TY_F32 || arg.type == IR_TY_F64);
+            char buf[8];
+            if (is_fp) {
+              const char *suf = (arg.type == IR_TY_F64) ? "d" : "s";
+              char tmp_reg[8];
+              snprintf(tmp_reg, sizeof(tmp_reg), "%s0", suf);
+              const char *src = ensure_val_in(ctx, arg, tmp_reg, buf, sizeof(buf));
+              if (strcmp(src, tmp_reg) != 0) cg_emitf("  fmov %s, %s\n", tmp_reg, src);
+              cg_emitf("  str %s, [sp, #%d]\n", tmp_reg, slot_off);
+            } else {
+              const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
+              cg_emitf("  str %s, [sp, #%d]\n", src, slot_off);
+            }
+          }
         }
-        for (int i = 8; i < inst->nargs; i++) {
-          ir_val_t arg = inst->args[i];
-          int slot_off = (i - 8) * 8;
-          char buf[8];
-          const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
-          cg_emitf("  str %s, [sp, #%d]\n", src, slot_off);
-        }
-        fixed_limit = 8;
       }
       if (inst->is_variadic_call) {
         int nargs_var = inst->nargs - inst->nargs_fixed;
@@ -698,12 +732,15 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
           }
         }
       }
-      /* 固定引数を通常レジスタに積む */
+      /* 固定引数を通常レジスタに積む (int は x0-x7, FP は d0-d7)。
+       * 9 個目以降は既に stack に積んだので、register が満杯なら skip する。 */
       int int_idx = 0;
       int fp_idx = 0;
-      for (int i = 0; i < fixed_limit && (int_idx < 8 || fp_idx < 8); i++) {
+      for (int i = 0; i < fixed_limit; i++) {
         ir_val_t arg = inst->args[i];
         int is_fp = (arg.type == IR_TY_F32 || arg.type == IR_TY_F64);
+        if (is_fp && fp_idx >= 8) continue;
+        if (!is_fp && int_idx >= 8) continue;
         char regname[8];
         if (is_fp) {
           const char *suf = (arg.type == IR_TY_F64) ? "d" : "s";
