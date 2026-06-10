@@ -121,6 +121,12 @@ struct func_name_t {
   int ret_set_once;
   token_kind_t ret_token_kind;
   int ret_is_pointer;
+  /* 仮引数 i の fp_kind (float/double/none) を保持。呼び出し側 IR builder が
+   * `f(1)` のような int 実引数を double 仮引数に渡すケースで I2F キャスト
+   * を挿入するために使う。 16 個まで track (それ以降は NONE のままで暗黙
+   * 変換なし — 既存挙動)。 */
+  unsigned char param_fp_kinds[16];
+  int param_fp_kinds_count;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -889,6 +895,24 @@ void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_ki
 tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_fp_kind : TK_FLOAT_KIND_NONE;
+}
+
+void psx_ctx_set_function_param_fp_kind(char *name, int len, int param_idx,
+                                         tk_float_kind_t fp_kind) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  if (param_idx < 0 || param_idx >= 16) return;
+  f->param_fp_kinds[param_idx] = (unsigned char)fp_kind;
+  if (param_idx + 1 > f->param_fp_kinds_count) {
+    f->param_fp_kinds_count = param_idx + 1;
+  }
+}
+
+tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int param_idx) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return TK_FLOAT_KIND_NONE;
+  if (param_idx < 0 || param_idx >= f->param_fp_kinds_count) return TK_FLOAT_KIND_NONE;
+  return (tk_float_kind_t)f->param_fp_kinds[param_idx];
 }
 
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed) {

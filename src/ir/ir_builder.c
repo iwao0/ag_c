@@ -984,6 +984,19 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
           } else {
             cargs[i] = build_expr(ctx, arg);
             if (ctx->failed) return ir_val_none();
+            /* 直接呼び出しで、callee の i 番目仮引数が float/double なら
+             * 実引数を I2F / F2F で変換する (`f(1)` で 1 を double に昇格)。
+             * 可変長部分 (idx >= nargs_fixed) は default argument promotion の
+             * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
+             * 渡される現状実装と整合が取れないため触らない。 */
+            if (!fn->callee && i < nargs_fixed) {
+              tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
+                  fn->funcname, fn->funcname_len, i);
+              if (pfk != TK_FLOAT_KIND_NONE) {
+                ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+                cargs[i] = coerce_to_type(ctx, cargs[i], target);
+              }
+            }
           }
         }
       }

@@ -132,6 +132,11 @@ tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len);
 // 関数が variadic (`...` を持つ) かどうかと固定引数の個数を保持する。
 // Apple ARM64 ABI で variadic 引数を stack に積むため、呼び出し側 codegen が
 // `nargs_fixed` を境に register / stack を切り替えるのに使う。
+/* 仮引数 i の fp_kind を記録/取得。呼び出し側 IR が int 実引数→double 仮引数
+ * の暗黙変換に I2F キャストを挿入するために使う。track は最初の 16 引数まで。 */
+void psx_ctx_set_function_param_fp_kind(char *name, int len, int param_idx,
+                                         tk_float_kind_t fp_kind);
+tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int param_idx);
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 /* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での

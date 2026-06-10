@@ -876,6 +876,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_struct_pointer", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_struct_pointer.c", 42, 0},
     {"probes", "global_struct_with_funcptr", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_struct_with_funcptr.c", 49, 0},
     {"probes", "many_double_params", CASE_INT_FILE, "test/fixtures/probes_found_bugs/many_double_params.c", 55, 0},
+    {"probes", "int_arg_to_double_param", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_arg_to_double_param.c", 55, 0},
     {"probes", "many_int_params", CASE_INT_FILE, "test/fixtures/probes_found_bugs/many_int_params.c", 55, 0},
     {"probes", "negative_global", CASE_INT_FILE, "test/fixtures/probes_found_bugs/negative_global.c", 42, 0},
     {"probes", "nested_compound_literal", CASE_INT_FILE, "test/fixtures/probes_found_bugs/nested_compound_literal.c", 50, 0},
