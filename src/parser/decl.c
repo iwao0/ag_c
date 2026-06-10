@@ -1698,7 +1698,11 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   while (curtok()->kind == TK_LPAREN) {
     skip_func_params();
   }
-  if (local_had_parens && out_paren_array_mul) {
+  /* paren-grouped 宣言子 `(*p)...` の後ろに `[N]` が続くのは `int (*p)[N]`
+   * (配列へのポインタ) 専用形式。`[` が来ていないなら paren_array_mul を立てない
+   * (parse_decl_array_suffixes_constexpr_required は初期値 1 をそのまま返すため、
+   * 立ててしまうと `int (**pp)(int)` 等が `(*p)[N]` 分岐で誤登録される)。 */
+  if (local_had_parens && out_paren_array_mul && curtok()->kind == TK_LBRACKET) {
     *out_paren_array_mul = parse_decl_array_suffixes_constexpr_required(1);
   }
   if (had_parens) *had_parens = local_had_parens;
