@@ -295,7 +295,8 @@ void gen_global_vars(void) {
          * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。 */
         int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
         int prev_end = 0;
-        for (int i = 0; i < n_members && i < gv->init_count; i++) {
+        int val_idx = 0;
+        for (int i = 0; i < n_members && val_idx < gv->init_count; i++) {
           char *mn = NULL; int ml = 0;
           int off = 0, ts = 0, ds = 0, alen = 0;
           token_kind_t mtk = TK_EOF; char *mtn = NULL; int mtl = 0; int mtp = 0;
@@ -303,19 +304,38 @@ void gen_global_vars(void) {
                                          &mn, &ml, &off, &ts, &ds, &alen,
                                          &mtk, &mtn, &mtl, &mtp)) break;
           if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
+          /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。
+           * 修正前は 1 メンバ = 1 init_values[] 要素として扱っていたため、
+           * `{ {10, 20, 30}, 60 }` で values[0]=10、その後 total に 20 が
+           * 入り、30 と 60 が捨てられていた。
+           * struct_layout は配列メンバの type_size (ts) を「要素サイズ」で
+           * 登録するため (struct_layout.c:247)、全体サイズは ts*alen。 */
+          if (alen > 0) {
+            int sub_ts = ts; /* 要素 1 つのサイズ */
+            for (int k = 0; k < alen && val_idx < gv->init_count; k++) {
+              long long v = gv->init_values[val_idx++];
+              if (sub_ts == 1) cg_emitf("  .byte %lld\n", v);
+              else if (sub_ts == 2) cg_emitf("  .short %lld\n", v);
+              else if (sub_ts == 4) cg_emitf("  .long %lld\n", v);
+              else cg_emitf("  .quad %lld\n", v);
+            }
+            prev_end = off + ts * alen;
+            continue;
+          }
           /* メンバが関数ポインタ等 (init_value_symbols[i] が設定済み) のときは
            * `.quad _<sym>` を出力。 */
-          char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
-          int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
+          char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[val_idx] : NULL;
+          int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[val_idx] : 0;
           if (sym_i && sym_i_len > 0) {
             cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
           } else {
-            long long v = gv->init_values[i];
+            long long v = gv->init_values[val_idx];
             if (ts == 1) cg_emitf("  .byte %lld\n", v);
             else if (ts == 2) cg_emitf("  .short %lld\n", v);
             else if (ts == 4) cg_emitf("  .long %lld\n", v);
             else cg_emitf("  .quad %lld\n", v);
           }
+          val_idx++;
           prev_end = off + ts;
         }
         if (prev_end < gv->type_size) cg_emitf("  .space %d\n", gv->type_size - prev_end);
