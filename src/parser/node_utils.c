@@ -352,7 +352,15 @@ void psx_node_reject_const_assign(node_t *node, const char *op) {
   if (!node) return;
   if (node->kind == ND_LVAR || node->kind == ND_GVAR) {
     node_mem_t *mem = as_mem(node);
-    if (mem->is_const_qualified) {
+    /* ag_c の慣習: ポインタ変数の is_const_qualified は「pointee の const」を
+     * 表す (_Generic の判定等で利用)。「変数自身の const」は
+     * pointer_const_qual_mask の bit 0 で保持される。
+     * したがって p = q を拒否するのはこのビットが立っているときのみ
+     * (`int * const p;` のケース)。非ポインタ変数は従来通り
+     * is_const_qualified を見る (`const int x = 5; x = 10;` を拒否)。 */
+    int self_const = mem->is_pointer ? (int)(mem->pointer_const_qual_mask & 1u)
+                                      : mem->is_const_qualified;
+    if (self_const) {
       diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, curtok(),
                      diag_message_for(DIAG_ERR_PARSER_CONST_ASSIGNMENT));
     }
