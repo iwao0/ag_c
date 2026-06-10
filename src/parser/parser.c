@@ -28,6 +28,10 @@ global_var_t *global_vars = NULL;
 static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
 static int g_last_alignas_value = 0;
+/* funcdef の外側 declarator (`int (*f(...))(...)`) で `(*` を見たら 1。
+ * 戻り値型を関数ポインタ (= ポインタ) として扱うため、parse_func_declarator
+ * から funcdef へ伝える。各 funcdef 開始時にリセットする。 */
+static int g_last_outer_declarator_is_ptr = 0;
 static int g_last_decl_is_extern = 0;
 static int g_last_decl_is_static = 0;
 static int g_toplevel_decl_elem_size = 8;
@@ -1808,13 +1812,16 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
   if (curtok()->kind == TK_LPAREN && curtok()->next && curtok()->next->kind == TK_MUL) {
     tk_expect('(');
     while (tk_consume('*')) {
-      // pointer depth for the outer declarator is not needed in current funcdef AST.
+      /* `int (*choose(...))(int)` のように外側 declarator が `(*` を含むとき、
+       * 戻り値型は宣言子としてはポインタ (関数ポインタ) になる。
+       * funcdef 側に戻り値ポインタを伝えるため、g_last_outer_is_ptr を立てる。 */
+      g_last_outer_declarator_is_ptr = 1;
     }
     if (curtok()->kind == TK_LPAREN && curtok()->next && curtok()->next->kind == TK_MUL) {
       // nested pointer declarator: (*(*f(void))(int))
       tk_expect('(');
       while (tk_consume('*')) {
-        // nested pointer depth is not needed in current funcdef AST.
+        g_last_outer_declarator_is_ptr = 1;
       }
       tok = tk_consume_ident();
       if (!tok) {
@@ -1952,6 +1959,7 @@ static node_t *funcdef(void) {
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
   token_ident_t *ret_tag = NULL;
   int ret_is_ptr = 0;
+  g_last_outer_declarator_is_ptr = 0;
   parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr);
   if (ret_kind == TK_EOF) {
     diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, curtok(),
@@ -1981,6 +1989,12 @@ static node_t *funcdef(void) {
   node_t **args = NULL;
   int nargs = 0;
   token_ident_t *tok = parse_func_declarator(&is_variadic, &has_unnamed_param, &args, &nargs);
+  /* declarator が `(*` を含めば、戻り値型は関数ポインタ。ret_is_ptr を立てて
+   * 既に伝播していた ret_is_pointer / track_function_ret_type を更新。 */
+  if (g_last_outer_declarator_is_ptr) {
+    ret_is_ptr = 1;
+    psx_expr_set_current_func_ret_is_pointer(1);
+  }
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
   node->base.ret_struct_size = psx_expr_current_func_ret_struct_size();

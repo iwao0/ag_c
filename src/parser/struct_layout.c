@@ -74,11 +74,13 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       }
     }
     tk_float_kind_t member_fp_kind = TK_FLOAT_KIND_NONE;
+    int member_is_bool = 0;
     if (psx_ctx_is_type_token(curtok()->kind)) {
       is_signed_type = (curtok()->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
       if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
       else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
+      else if (curtok()->kind == TK_BOOL) member_is_bool = 1;
       set_curtok(curtok()->next);
       while (psx_ctx_is_type_token(curtok()->kind)) {
         if (curtok()->kind != TK_UNSIGNED && curtok()->kind != TK_SIGNED) {
@@ -86,6 +88,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         }
         if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
         else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
+        else if (curtok()->kind == TK_BOOL) member_is_bool = 1;
         set_curtok(curtok()->next);
       }
     } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
@@ -247,6 +250,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
                                           member_name, member_len, member_fp_kind);
+        }
+        if (has_member_name && !head.is_ptr && member_is_bool) {
+          psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len,
+                                          member_name, member_len, 1);
         }
         member_count++;
       }

@@ -890,14 +890,18 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   deref->base.lhs = addr;
   deref->type_size = mem_size ? mem_size : 8;
   deref->deref_size = mem_deref;
-  if (mem_array_len > 0 && !mem_is_ptr && mem_size > 0) {
-    // Keep array shape for postfix [] (e.g. s.a[1]).
+  if (mem_array_len > 0 && mem_size > 0) {
+    /* メンバが配列 (ポインタ配列も含む): 式中では配列名がポインタへ崩壊する。
+     * 後続 subscript / pointer arith のため、type_size を配列全体、deref_size を
+     * 1 要素サイズに合わせ、is_pointer=1 を立てる。
+     * `int *arr[N]` のような配列メンバではこの経路で `arr[i]` が 8 byte step に
+     * なる (mem_size = 8 = sizeof(int*) なので)。 */
     deref->type_size = mem_size * mem_array_len;
     deref->deref_size = mem_size;
-    /* メンバが配列のとき、その参照は (式中で) 配列名と同じくポインタへ崩壊する。
-     * 後続の `[...]` サブスクリプトや `+` 算術が pointer arith として処理される
-     * ために is_pointer を立てておく。 */
     deref->is_pointer = 1;
+    /* ポインタ配列の各要素は単一ポインタ (例: int (*)(int))。subscript 後の
+     * 1 段 deref ではポインタ qual_levels を引き継ぐ。 */
+    if (mem_is_ptr) deref->is_tag_pointer = 0;
   }
   deref->tag_kind = mem_tag_kind;
   deref->tag_name = mem_tag_name;
@@ -912,6 +916,11 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
                                                           member->str, member->len);
   if (mem_fp != TK_FLOAT_KIND_NONE) {
     deref->base.fp_kind = mem_fp;
+  }
+  /* _Bool メンバ: deref に is_bool を伝播し、後段の代入で 0/1 正規化させる。 */
+  if (psx_ctx_get_tag_member_is_bool(base_tag_kind, base_tag_name, base_tag_len,
+                                       member->str, member->len)) {
+    deref->is_bool = 1;
   }
   return (node_t *)deref;
 }
@@ -1792,6 +1801,19 @@ static node_t *assign(void) {
         lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)assign_target)->offset);
         if (lv) lv->is_initialized = 1;
       }
+      /* C11 6.3.1.2: _Bool への代入は (rhs != 0) を 0/1 で表す。
+       * struct メンバ `s.b` (ND_DEREF で mem.is_bool が立っている) や、
+       * _Bool ローカル変数 (ND_LVAR で lvar の is_bool) の場合に正規化する。 */
+      int lhs_is_bool = 0;
+      if (assign_target) {
+        if (assign_target->kind == ND_DEREF || assign_target->kind == ND_GVAR ||
+            assign_target->kind == ND_LVAR) {
+          lhs_is_bool = ((node_mem_t *)assign_target)->is_bool;
+        }
+      }
+      if (lhs_is_bool && rhs) {
+        rhs = psx_node_new_binary(ND_NE, rhs, psx_node_new_num(0));
+      }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
       assign_node->type_size = psx_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
@@ -2406,7 +2428,10 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   int tag_len = 0;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-  if (tag_kind != TK_EOF && is_tag_ptr) {
+  if (tag_kind != TK_EOF) {
+    /* tag を持つ配列 (struct[N]) や struct ポインタを subscript した結果は
+     * tag 要素そのもの。is_tag_ptr フラグの有無を問わず tag を deref へ伝播し、
+     * `arr[i].member` の解決を可能にする。is_tag_pointer は 0 (実体)。 */
     deref->tag_kind = tag_kind;
     deref->tag_name = tag_name;
     deref->tag_len = tag_len;
@@ -2950,6 +2975,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.is_complex = var->is_complex;
   as_lvar(n)->mem.is_atomic = var->is_atomic;
   as_lvar(n)->mem.pointee_is_void = var->pointee_is_void;
+  as_lvar(n)->mem.is_bool = var->is_bool;
   n->is_complex = var->is_complex;
   n->is_atomic = var->is_atomic;
   n->fp_kind = var->fp_kind;

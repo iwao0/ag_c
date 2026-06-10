@@ -39,6 +39,10 @@ void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int t
                                      tk_float_kind_t fp_kind);
 tk_float_kind_t psx_ctx_get_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  char *member_name, int member_len);
+void psx_ctx_set_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                     char *member_name, int member_len, int is_bool);
+int psx_ctx_get_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                    char *member_name, int member_len);
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
                              int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,

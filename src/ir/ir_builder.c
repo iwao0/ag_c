@@ -22,6 +22,7 @@
 #include "../parser/ast.h"
 #include "../parser/internal/decl.h"   /* lvar_t / psx_decl_find_lvar_by_offset */
 #include "../parser/internal/semantic_ctx.h"  /* psx_ctx_get_function_is_variadic */
+#include "../parser/internal/node_utils.h"     /* psx_node_is_pointer / deref_size */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1244,12 +1245,18 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ld->dst = ir_val_vreg(v_old, vty);
       ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
       ir_func_append_inst(ctx->f, ld);
-      /* step = 1 (pointer の scale は parser でなされている前提) */
+      /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
+       * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
+      long long step = 1;
+      if (psx_node_is_pointer(target)) {
+        int ds = psx_node_deref_size(target);
+        if (ds > 1) step = ds;
+      }
       int is_inc = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
       ir_op_t binop = is_inc ? IR_ADD : IR_SUB;
       int v_new = emit_binop(ctx, binop,
                               ir_val_vreg(v_old, vty),
-                              ir_val_imm(vty, 1), vty);
+                              ir_val_imm(vty, step), vty);
       ir_inst_t *st = ir_inst_new(IR_STORE);
       st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
       st->src2 = ir_val_vreg(v_new, vty);
@@ -1418,6 +1425,14 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       int slot_size = 4;
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { res_ty = IR_TY_F32; slot_size = 4; }
       else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { res_ty = IR_TY_F64; slot_size = 8; }
+      /* ポインタ三項 (関数ポインタや int* など): 8 バイト slot で扱う。
+       * 子ノードのいずれかがポインタなら結果もポインタ。 */
+      else if (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
+               node->rhs->kind == ND_FUNCREF ||
+               (c->els && c->els->kind == ND_FUNCREF)) {
+        res_ty = IR_TY_PTR;
+        slot_size = 8;
+      }
       int slot_vreg = ir_func_new_vreg(ctx->f);
       ir_inst_t *al = ir_inst_new(IR_ALLOCA);
       al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
