@@ -107,14 +107,16 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, 
                                                   int *out_pointer_levels,
                                                   int *out_inner_first_dim, int *out_inner_second_dim,
                                                   token_ident_t **out_inner_first_dim_ident,
-                                                  token_ident_t **out_inner_second_dim_ident);
+                                                  token_ident_t **out_inner_second_dim_ident,
+                                                  int *out_has_func_suffix);
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
                                                             int *out_is_pointer_declarator,
                                                             int *out_pointer_levels,
                                                             int *out_inner_first_dim,
                                                             int *out_inner_second_dim,
                                                             token_ident_t **out_inner_first_dim_ident,
-                                                            token_ident_t **out_inner_second_dim_ident);
+                                                            token_ident_t **out_inner_second_dim_ident,
+                                                            int *out_has_func_suffix);
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
 typedef struct {
   token_kind_t base_type_kind;
@@ -1480,7 +1482,8 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, 
                                                   int *out_pointer_levels,
                                                   int *out_inner_first_dim, int *out_inner_second_dim,
                                                   token_ident_t **out_inner_first_dim_ident,
-                                                  token_ident_t **out_inner_second_dim_ident) {
+                                                  token_ident_t **out_inner_second_dim_ident,
+                                                  int *out_has_func_suffix) {
   if (out_is_array_declarator) *out_is_array_declarator = 0;
   if (out_is_pointer_declarator) *out_is_pointer_declarator = 0;
   if (out_pointer_levels) *out_pointer_levels = 0;
@@ -1488,13 +1491,15 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, 
   if (out_inner_second_dim) *out_inner_second_dim = 0;
   if (out_inner_first_dim_ident) *out_inner_first_dim_ident = NULL;
   if (out_inner_second_dim_ident) *out_inner_second_dim_ident = NULL;
+  if (out_has_func_suffix) *out_has_func_suffix = 0;
   token_ident_t *param = parse_param_declarator_name_recursive(out_is_array_declarator,
                                                                out_is_pointer_declarator,
                                                                out_pointer_levels,
                                                                out_inner_first_dim,
                                                                out_inner_second_dim,
                                                                out_inner_first_dim_ident,
-                                                               out_inner_second_dim_ident);
+                                                               out_inner_second_dim_ident,
+                                                               out_has_func_suffix);
   return param;
 }
 
@@ -1504,7 +1509,8 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
                                                             int *out_inner_first_dim,
                                                             int *out_inner_second_dim,
                                                             token_ident_t **out_inner_first_dim_ident,
-                                                            token_ident_t **out_inner_second_dim_ident) {
+                                                            token_ident_t **out_inner_second_dim_ident,
+                                                            int *out_has_func_suffix) {
   while (tk_consume('*')) {
     if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
     if (out_pointer_levels) (*out_pointer_levels)++;
@@ -1520,7 +1526,8 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
                                                  out_pointer_levels,
                                                  out_inner_first_dim, out_inner_second_dim,
                                                  out_inner_first_dim_ident,
-                                                 out_inner_second_dim_ident);
+                                                 out_inner_second_dim_ident,
+                                                 out_has_func_suffix);
     tk_expect(')');
     if (out_pointer_levels && *out_pointer_levels > levels_before_paren) {
       paren_made_pointer = true;
@@ -1531,6 +1538,9 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   int bracket_count = 0;
   while (curtok()->kind == TK_LPAREN || curtok()->kind == TK_LBRACKET) {
     if (curtok()->kind == TK_LPAREN) {
+      /* 関数 suffix `(...)`: `int (*ops[])(int)` の最後の `(int)` 等を skip。
+       * 仮引数登録経路で「関数ポインタ配列」を識別するためフラグを立てる。 */
+      if (out_has_func_suffix) *out_has_func_suffix = 1;
       skip_balanced_group(TK_LPAREN, TK_RPAREN);
     } else {
       if (out_is_array_declarator) *out_is_array_declarator = 1;
@@ -1586,12 +1596,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   int param_inner_second_dim = 0;
   token_ident_t *param_inner_first_dim_ident = NULL;
   token_ident_t *param_inner_second_dim_ident = NULL;
+  int param_has_func_suffix = 0;
   token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator, &param_is_ptr,
                                                      &param_ptr_levels,
                                                      &param_inner_first_dim,
                                                      &param_inner_second_dim,
                                                      &param_inner_first_dim_ident,
-                                                     &param_inner_second_dim_ident);
+                                                     &param_inner_second_dim_ident,
+                                                     &param_has_func_suffix);
   if (!param) {
     // int f(void) の "void" は仮引数0件として扱う（C11 6.7.6.3）。
     if (ds.base_type_kind == TK_VOID && ds.tag_kind == TK_EOF && !ds.saw_typedef_name &&
@@ -1611,7 +1623,18 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
   }
   lvar_t *var;
-  if (param_is_array_declarator && ds.tag_kind == TK_EOF && !param_is_ptr) {
+  if (param_is_array_declarator && param_is_ptr && param_has_func_suffix &&
+      ds.tag_kind == TK_EOF) {
+    /* `int (*ops[])(int)` 形式の関数ポインタ配列パラメータ。
+     * C11 6.7.6.3p7 で配列 → ポインタへ adjust される (= `int (**ops)(int)` 相当)。
+     * 各要素は関数ポインタ (8 byte) なので elem_size=8 で登録。
+     * pointer_qual_levels=1 で lvar_is_pointer (expr.c:3115) を発火させ、
+     * subscript 経路が動くようにする。 */
+    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
+    var->is_tag_pointer = 0;
+    var->base_deref_size = 8;
+    var->pointer_qual_levels = 1;
+  } else if (param_is_array_declarator && ds.tag_kind == TK_EOF && !param_is_ptr) {
     // 仮引数 VLA 宣言子: int a[n] → int *a として扱う (C11 6.7.6.3p7)
     // size=8 (pointer), elem_size=実際の要素サイズ, sizeof(a)==8
     var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds.elem_size, 0);
