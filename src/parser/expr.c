@@ -2414,6 +2414,14 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     deref->base_deref_size = (short)bds;
     deref->deref_size = (pql >= 2) ? 8 : (short)bds;
   }
+  /* 配列 (pql=0 でも pointee_fp_kind を持つ ND_ADDR) の subscript 結果も
+   * FP load にするため、pointee_fp_kind を見て fp_kind を引き継ぐ。 */
+  {
+    tk_float_kind_t arr_pointee_fp = psx_node_pointee_fp_kind(node);
+    if (arr_pointee_fp != TK_FLOAT_KIND_NONE && pql == 0) {
+      deref->base.fp_kind = arr_pointee_fp;
+    }
+  }
   if (pql == 1) {
     tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(node);
     if (pointee_fp != TK_FLOAT_KIND_NONE) {
@@ -2814,7 +2822,13 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
   node->type_size = stride;
   node->deref_size = stride;
-  node->pointee_fp_kind = var->pointee_fp_kind;
+  /* `double a[3]` のような配列は要素型が float/double のとき、
+   * pointee_fp_kind を要素型として伝播する (subscript 結果が FP load になるよう
+   * build_subscript_deref が見る)。配列パラメータでは var->pointee_fp_kind が
+   * 使われるので両方を fall-through する。 */
+  node->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
+                             ? var->pointee_fp_kind
+                             : var->fp_kind;
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
     // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）

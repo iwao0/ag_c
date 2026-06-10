@@ -803,19 +803,46 @@ static void guard_toplevel_declarator_count(int declarator_count) {
 static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
   tk_expect('{');
   if (tk_consume('}')) return;
+  int cur_idx = 0;  /* 次に書き込む論理位置 (designator [N]= でジャンプ可) */
   for (;;) {
+    /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
+     * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
+    if (curtok()->kind == TK_LBRACKET) {
+      set_curtok(curtok()->next);
+      node_t *idx_node = psx_expr_assign();
+      int const_ok = 1;
+      long long idx_val = psx_decl_eval_const_int(idx_node, &const_ok);
+      if (!const_ok || idx_val < 0) {
+        psx_diag_ctx(curtok(), "decl",
+                     "配列指定初期化子の添字は非負の定数式である必要があります");
+      }
+      tk_expect(']');
+      tk_expect('=');
+      cur_idx = (int)idx_val;
+    }
+    /* 必要なら init_values をパディング (cur_idx より前を 0 で埋める) */
+    while (gv->init_count < cur_idx) {
+      if (gv->init_count >= *cap) {
+        *cap *= 2;
+        gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
+      }
+      gv->init_values[gv->init_count++] = 0;
+    }
     if (curtok()->kind == TK_LBRACE) {
       parse_global_brace_init_flat(gv, cap);
     } else {
       node_t *e = psx_expr_assign();
       long long v = 0;
+      int ok = 1;
       if (e && e->kind == ND_NUM) v = ((node_num_t *)e)->val;
+      else if (e) v = psx_decl_eval_const_int(e, &ok);
       if (gv->init_count >= *cap) {
         *cap *= 2;
         gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
       }
       gv->init_values[gv->init_count++] = v;
     }
+    cur_idx = gv->init_count;
     if (!tk_consume(',')) break;
     if (curtok()->kind == TK_RBRACE) break;  // 末尾カンマ許容
   }
