@@ -600,12 +600,28 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_PARAM: {
       int idx = (int)inst->src1.imm;
       /* idx == -1 → x8 (struct return area)。
-       * float/double → s{idx}/d{idx}、整数 → x{idx}。 */
+       * float/double → s{idx}/d{idx}、整数 → x{idx}。
+       * 整数 idx >= 8 → 呼び出し側が stack に積んだ 9 個目以降の引数を
+       *   [x29 + total_size + (idx-8)*8] から load する (Apple ARM64 ABI)。 */
       int is_fp = (inst->dst.type == IR_TY_F32 || inst->dst.type == IR_TY_F64);
       char src_buf[8];
       const char *src_reg;
       if (idx == -1) {
         src_reg = "x8";
+      } else if (!is_fp && idx >= 8) {
+        /* stack-passed integer arg: ldr to a scratch reg then write to slot. */
+        int stack_off = ctx->total_size + (idx - 8) * 8;
+        const char *tmp = "x9";
+        cg_emitf("  ldr %s, [x29, #%d]\n", tmp, stack_off);
+        if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+          if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
+            int r = ctx->f->vreg_phys_reg[inst->dst.id];
+            cg_emitf("  mov x%d, %s\n", r, tmp);
+          } else {
+            cg_emitf("  str %s, [x29, #%d]\n", tmp, ctx->vreg_off[inst->dst.id]);
+          }
+        }
+        return;
       } else if (is_fp) {
         const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
         snprintf(src_buf, sizeof(src_buf), "%s%d", suf, idx);
@@ -634,6 +650,25 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
        *     float は引数渡しで double に促進。 */
       int var_stack_bytes = 0;
       int fixed_limit = inst->is_variadic_call ? inst->nargs_fixed : inst->nargs;
+      /* 非 variadic で 9 個以降の int 引数: stack 渡し (Apple ARM64 ABI)。
+       * 一旦カウントして fixed_limit を 8 に絞り、register に乗らない分を後で
+       * stack に積む。float/double が境界を跨ぐ複雑な場合は未対応。 */
+      int extra_stack_args = 0;
+      if (!inst->is_variadic_call && inst->nargs > 8) {
+        extra_stack_args = inst->nargs - 8;
+        var_stack_bytes = ((extra_stack_args + 1) / 2) * 16;
+        if (var_stack_bytes > 0) {
+          cg_emitf("  sub sp, sp, #%d\n", var_stack_bytes);
+        }
+        for (int i = 8; i < inst->nargs; i++) {
+          ir_val_t arg = inst->args[i];
+          int slot_off = (i - 8) * 8;
+          char buf[8];
+          const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
+          cg_emitf("  str %s, [sp, #%d]\n", src, slot_off);
+        }
+        fixed_limit = 8;
+      }
       if (inst->is_variadic_call) {
         int nargs_var = inst->nargs - inst->nargs_fixed;
         var_stack_bytes = ((nargs_var + 1) / 2) * 16;
