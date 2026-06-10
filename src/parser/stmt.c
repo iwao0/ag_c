@@ -206,6 +206,20 @@ static node_t *parse_decl_like_stmt(void) {
     return psx_node_new_num(0);
   }
 
+  /* `const struct T x;` のように cv 修飾子 / storage class を先に書いてから
+   * struct/union/enum が続く場合、修飾子をスキップして tag-keyword 経路に
+   * 入れるようにする。psx_decl_parse_declaration は struct を type-spec
+   * として直接処理できないため、ここで先に分岐する必要がある。 */
+  {
+    token_t *peek = curtok();
+    while (peek && psx_is_decl_prefix_token(peek->kind)) peek = peek->next;
+    if (peek && psx_ctx_is_tag_keyword(peek->kind)) {
+      /* 修飾子を先に飲み込む (parse_decl_like 側の cv 状態を更新する) */
+      while (psx_is_decl_prefix_token(curtok()->kind)) set_curtok(curtok()->next);
+      /* tag 経路へフォールスルー */
+    }
+  }
+
   if (curtok()->kind == TK_STATIC_ASSERT ||
       psx_ctx_is_type_token(curtok()->kind) || psx_is_decl_prefix_token(curtok()->kind) ||
       psx_ctx_is_typedef_name_token(curtok())) {

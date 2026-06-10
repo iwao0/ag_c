@@ -92,6 +92,13 @@ int psx_node_deref_size(node_t *node) {
       if (l > 0) return l;
       return psx_node_deref_size(node->rhs);
     }
+    /* `p++` 等の inc/dec はオペランドの deref_size をそのまま継承する。
+     * `*p++` で deref のロード幅 (= pointee サイズ) を正しく決めるのに必要。 */
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return psx_node_deref_size(node->lhs);
     default:
       return 0;
   }

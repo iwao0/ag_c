@@ -112,6 +112,31 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_MEMBER_FORBIDDEN));
       }
+    } else if (psx_ctx_is_typedef_name_token(curtok())) {
+      /* `typedef struct Node Node; struct Node { ... Node *next; };` のように
+       * typedef 名が struct メンバ型として現れるケース。typedef を解決して
+       * 基底型 / tag 情報を取り出し、後続の `*` や宣言子と一緒に処理する。 */
+      token_ident_t *td = (token_ident_t *)curtok();
+      token_kind_t td_base = TK_EOF;
+      int td_elem = 0;
+      tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
+      token_kind_t td_tag = TK_EOF;
+      char *td_tn = NULL;
+      int td_tl = 0;
+      int td_isptr = 0, td_pcq = 0, td_pvq = 0, td_isu = 0;
+      psx_ctx_find_typedef_name(td->str, td->len, &td_base, &td_elem, &td_fp,
+                                 &td_tag, &td_tn, &td_tl, &td_isptr,
+                                 &td_pcq, &td_pvq, &td_isu);
+      if (td_tag != TK_EOF) {
+        member_tag_kind = td_tag;
+        member_tag_name = td_tn;
+        member_tag_len = td_tl;
+      }
+      if (td_elem > 0) elem_size = td_elem;
+      else if (td_tag != TK_EOF && psx_ctx_has_tag_type(td_tag, td_tn, td_tl)) {
+        elem_size = psx_ctx_get_tag_size(td_tag, td_tn, td_tl);
+      }
+      set_curtok(curtok()->next);
     } else {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
