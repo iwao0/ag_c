@@ -57,6 +57,12 @@ struct lvar_t {
   int extra_strides[5];         // 最大 8 次元 (3 + 5) まで対応
   unsigned char extra_strides_count;
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=定数stride）
+  /* 2D VLA 関数パラメータ (`int g[n][m]`): 関数 entry 時に
+   *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * vla_row_stride_elem_size
+   * を計算する。src は同一関数内で先に登録された別パラメータ (内側 dim 識別子)。
+   * 0 = この機構を使わない (通常の VLA / 定数 dim)。 */
+  int vla_row_stride_src_offset;
+  short vla_row_stride_elem_size;
 };
 
 void psx_decl_reset_locals(void);

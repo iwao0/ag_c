@@ -2021,6 +2021,42 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
   }
+  /* 2D VLA-as-param (`int g[n][m]`) のため row stride を関数 entry で計算:
+   *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * elem_size
+   * src は先行パラメータ (例 m) で、既に上のループで frame slot に格納済み。
+   * subscript の make_subscript_scaled_offset が vla_rsf 経路で読む。 */
+  for (lvar_t *var = fn->lvars; var; var = var->next_all) {
+    if (!var->is_param) continue;
+    if (!var->is_vla) continue;
+    if (var->vla_row_stride_src_offset == 0) continue;
+    if (var->vla_row_stride_frame_off == 0) continue;
+    /* m を frame からロード */
+    int src_ptr = address_of_lvar(ctx, var->vla_row_stride_src_offset);
+    if (src_ptr < 0) return 0;
+    int v_m = ir_func_new_vreg(ctx->f);
+    ir_inst_t *ld = ir_inst_new(IR_LOAD);
+    ld->dst = ir_val_vreg(v_m, IR_TY_I32);
+    ld->src1 = ir_val_vreg(src_ptr, IR_TY_PTR);
+    ir_func_append_inst(ctx->f, ld);
+    /* v_stride = m * elem_size (i32 域内で計算) */
+    int v_stride = emit_binop(ctx, IR_MUL,
+                              ir_val_vreg(v_m, IR_TY_I32),
+                              ir_val_imm(IR_TY_I32, var->vla_row_stride_elem_size),
+                              IR_TY_I32);
+    /* zero-extend to i64 for store as pointer-step (frame slot は 8B) */
+    int v_s64 = ir_func_new_vreg(ctx->f);
+    ir_inst_t *zx = ir_inst_new(IR_ZEXT);
+    zx->dst = ir_val_vreg(v_s64, IR_TY_I64);
+    zx->src1 = ir_val_vreg(v_stride, IR_TY_I32);
+    ir_func_append_inst(ctx->f, zx);
+    /* row stride スロットへ store */
+    int rs_ptr = address_of_lvar(ctx, var->vla_row_stride_frame_off);
+    if (rs_ptr < 0) return 0;
+    ir_inst_t *st2 = ir_inst_new(IR_STORE);
+    st2->src1 = ir_val_vreg(rs_ptr, IR_TY_PTR);
+    st2->src2 = ir_val_vreg(v_s64, IR_TY_I64);
+    ir_func_append_inst(ctx->f, st2);
+  }
   /* 全ローカル変数の ALLOCA をエントリブロックで前もって発行する。
    * 遅延発行だと「最初の参照が分岐内」のとき、未到達経路では vreg が
    * 未初期化となり、別経路から参照すると壊れる (struct ternary 等)。

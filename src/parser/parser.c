@@ -105,12 +105,16 @@ static int is_tag_return_function_signature(token_t *tok);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
                                                   int *out_pointer_levels,
-                                                  int *out_inner_first_dim, int *out_inner_second_dim);
+                                                  int *out_inner_first_dim, int *out_inner_second_dim,
+                                                  token_ident_t **out_inner_first_dim_ident,
+                                                  token_ident_t **out_inner_second_dim_ident);
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
                                                             int *out_is_pointer_declarator,
                                                             int *out_pointer_levels,
                                                             int *out_inner_first_dim,
-                                                            int *out_inner_second_dim);
+                                                            int *out_inner_second_dim,
+                                                            token_ident_t **out_inner_first_dim_ident,
+                                                            token_ident_t **out_inner_second_dim_ident);
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
 typedef struct {
   token_kind_t base_type_kind;
@@ -1431,17 +1435,23 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
 
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
                                                   int *out_pointer_levels,
-                                                  int *out_inner_first_dim, int *out_inner_second_dim) {
+                                                  int *out_inner_first_dim, int *out_inner_second_dim,
+                                                  token_ident_t **out_inner_first_dim_ident,
+                                                  token_ident_t **out_inner_second_dim_ident) {
   if (out_is_array_declarator) *out_is_array_declarator = 0;
   if (out_is_pointer_declarator) *out_is_pointer_declarator = 0;
   if (out_pointer_levels) *out_pointer_levels = 0;
   if (out_inner_first_dim) *out_inner_first_dim = 0;
   if (out_inner_second_dim) *out_inner_second_dim = 0;
+  if (out_inner_first_dim_ident) *out_inner_first_dim_ident = NULL;
+  if (out_inner_second_dim_ident) *out_inner_second_dim_ident = NULL;
   token_ident_t *param = parse_param_declarator_name_recursive(out_is_array_declarator,
                                                                out_is_pointer_declarator,
                                                                out_pointer_levels,
                                                                out_inner_first_dim,
-                                                               out_inner_second_dim);
+                                                               out_inner_second_dim,
+                                                               out_inner_first_dim_ident,
+                                                               out_inner_second_dim_ident);
   return param;
 }
 
@@ -1449,7 +1459,9 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
                                                             int *out_is_pointer_declarator,
                                                             int *out_pointer_levels,
                                                             int *out_inner_first_dim,
-                                                            int *out_inner_second_dim) {
+                                                            int *out_inner_second_dim,
+                                                            token_ident_t **out_inner_first_dim_ident,
+                                                            token_ident_t **out_inner_second_dim_ident) {
   while (tk_consume('*')) {
     if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
     if (out_pointer_levels) (*out_pointer_levels)++;
@@ -1463,7 +1475,9 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   if (tk_consume('(')) {
     name = parse_param_declarator_name_recursive(out_is_array_declarator, out_is_pointer_declarator,
                                                  out_pointer_levels,
-                                                 out_inner_first_dim, out_inner_second_dim);
+                                                 out_inner_first_dim, out_inner_second_dim,
+                                                 out_inner_first_dim_ident,
+                                                 out_inner_second_dim_ident);
     tk_expect(')');
     if (out_pointer_levels && *out_pointer_levels > levels_before_paren) {
       paren_made_pointer = true;
@@ -1487,15 +1501,30 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
       } else {
         tk_consume('[');
         int dim = 0;
+        token_ident_t *dim_ident = NULL;
         if (curtok() && curtok()->kind != TK_RBRACKET) {
-          dim = psx_parse_array_size_constexpr();
+          /* C99 6.7.6.3p7 VLA-as-param: `int g[n][m]` の内側 dim が単純な
+           * パラメータ識別子のとき、constexpr 評価を試みずに識別子トークンを
+           * 捕捉する。それ以外は従来の定数式評価へ。 */
+          if (curtok()->kind == TK_IDENT &&
+              curtok()->next && curtok()->next->kind == TK_RBRACKET) {
+            dim_ident = (token_ident_t *)curtok();
+            set_curtok(curtok()->next);
+          } else {
+            dim = psx_parse_array_size_constexpr();
+          }
         }
         tk_expect(']');
         // paren_made_pointer 時は bracket 0/1/... が全て pointee dim。
         // 通常時は bracket 1/2/... が pointee dim。
         int dim_pos = paren_made_pointer ? bracket_count : (bracket_count - 1);
-        if (dim_pos == 0 && out_inner_first_dim) *out_inner_first_dim = dim;
-        else if (dim_pos == 1 && out_inner_second_dim) *out_inner_second_dim = dim;
+        if (dim_pos == 0) {
+          if (out_inner_first_dim) *out_inner_first_dim = dim;
+          if (out_inner_first_dim_ident) *out_inner_first_dim_ident = dim_ident;
+        } else if (dim_pos == 1) {
+          if (out_inner_second_dim) *out_inner_second_dim = dim;
+          if (out_inner_second_dim_ident) *out_inner_second_dim_ident = dim_ident;
+        }
       }
       bracket_count++;
     }
@@ -1512,10 +1541,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   int param_ptr_levels = 0;
   int param_inner_first_dim = 0;
   int param_inner_second_dim = 0;
+  token_ident_t *param_inner_first_dim_ident = NULL;
+  token_ident_t *param_inner_second_dim_ident = NULL;
   token_ident_t *param = parse_param_declarator_name(&param_is_array_declarator, &param_is_ptr,
                                                      &param_ptr_levels,
                                                      &param_inner_first_dim,
-                                                     &param_inner_second_dim);
+                                                     &param_inner_second_dim,
+                                                     &param_inner_first_dim_ident,
+                                                     &param_inner_second_dim_ident);
   if (!param) {
     // int f(void) の "void" は仮引数0件として扱う（C11 6.7.6.3）。
     if (ds.base_type_kind == TK_VOID && ds.tag_kind == TK_EOF && !ds.saw_typedef_name &&
@@ -1549,6 +1582,34 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
       if (param_inner_second_dim > 0) {
         var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds.elem_size;
         var->mid_stride = param_inner_second_dim * ds.elem_size;
+      }
+    } else if (param_inner_first_dim_ident) {
+      /* C99 6.7.6.3p7 VLA-as-param: `int g[n][m]` の内側 dim が他のパラメータ。
+       * row stride スロットを確保し、関数 entry で
+       *   *[rs_slot] = *[src_param] * elem_size
+       * を計算する。これにより subscript の vla_rsf 経路 (expr.c) が
+       * runtime stride を読んで `g[i]` を正しく steping できる。 */
+      lvar_t *src = psx_decl_find_lvar(param_inner_first_dim_ident->str,
+                                       param_inner_first_dim_ident->len);
+      if (!src || !src->is_param) {
+        psx_diag_ctx(curtok(), "param",
+                     "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                     param_inner_first_dim_ident->len, param_inner_first_dim_ident->str);
+      } else {
+        /* row stride スロットを匿名で確保。名前は param 名 + "__rs" で
+         * 衝突しないようにする (実体は VLA param 内部用)。 */
+        static char rs_name_buf[64];
+        int rs_name_len = snprintf(rs_name_buf, sizeof(rs_name_buf),
+                                    "__rs_%.*s", param->len, param->str);
+        char *rs_name = arena_alloc((size_t)rs_name_len + 1);
+        memcpy(rs_name, rs_name_buf, (size_t)rs_name_len);
+        rs_name[rs_name_len] = '\0';
+        lvar_t *rs = psx_decl_register_lvar_sized(rs_name, rs_name_len, 8, 8, 0);
+        var->is_vla = 1;
+        var->vla_row_stride_frame_off = rs->offset;
+        var->vla_row_stride_src_offset = src->offset;
+        var->vla_row_stride_elem_size = (short)ds.elem_size;
+        var->base_deref_size = (short)ds.elem_size;
       }
     }
   } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 16) {
