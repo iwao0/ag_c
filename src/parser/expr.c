@@ -2139,6 +2139,23 @@ static node_t *parse_sizeof_operand(void) {
           return psx_node_new_num(arr_var->size);
         }
       }
+      /* ローカル lvar が見つからなければ global 配列を探す。`int g[] = {...}`
+       * のような要素数推定後の type_size (apply_toplevel_object_initializer で
+       * 確定済み) を全体サイズとして返す。 */
+      if (!arr_var) {
+        for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+          if (gv->name_len != id->len ||
+              memcmp(gv->name, id->str, (size_t)id->len) != 0) continue;
+          if (gv->is_array && gv->type_size > 0) {
+            token_t *peek = curtok()->next;
+            if (peek && peek->kind == TK_RPAREN) {
+              set_curtok(peek->next);
+              return psx_node_new_num(gv->type_size);
+            }
+          }
+          break;
+        }
+      }
       if (0) {  /* keep brace structure (revisit if VLA path is restructured) */
         return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
       }
