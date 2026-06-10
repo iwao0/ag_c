@@ -1718,10 +1718,28 @@ static node_t *wrap_fp_to_int_if_needed(node_t *operand) {
   return cvt;
 }
 
-static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand) {
+static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
+                          token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len) {
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    /* `(struct V *)x` / `(union U *)x`: tag 情報を後段の `->` 等が読めるよう
+     * ND_PTR_CAST でラップする (operand 自体は他から共有される可能性があるので
+     * 直接書き換えない)。これで `((struct V*)0)->b` のような offsetof 風や
+     * `((struct V*)void_ptr)->m` が動く。 */
+    if (is_pointer && (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION)) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->tag_kind = cast_tag_kind;
+      wrap->tag_name = cast_tag_name;
+      wrap->tag_len = cast_tag_len;
+      wrap->is_tag_pointer = 1;
+      wrap->is_pointer = 1;
+      wrap->type_size = 8;
+      wrap->pointer_qual_levels = 1;
+      return (node_t *)wrap;
+    }
     // `(float*)X` / `(double*)X` の場合、後段の `*` deref が FP load を出せる
     // よう pointee_fp_kind を保持する ND_PTR_CAST でラップする。
     if (is_pointer && (type_kind == TK_FLOAT || type_kind == TK_DOUBLE)) {
@@ -2124,7 +2142,8 @@ static node_t *cast(void) {
       psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                    kind);
     }
-    return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand));
+    return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand,
+                                     cast_tag_kind, cast_tag_name, cast_tag_len));
   }
   return unary();
 }
