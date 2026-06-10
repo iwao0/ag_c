@@ -1650,6 +1650,17 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
         var->base_deref_size = (short)ds.elem_size;
       }
     }
+  } else if (param_is_array_declarator && ds.tag_kind != TK_EOF && !param_is_ptr) {
+    /* struct/union 配列パラメータ `struct V arr[]` は C11 6.7.6.3p7 で
+     * `struct V *arr` に adjust される。tag_kind を保持しつつ pointer 扱い。
+     * 修正前は ≤16B struct 値渡し経路に流れ、`arr[i].x` で subscript
+     * エラー (両辺ポインタじゃないと判定) になっていた。 */
+    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds.struct_size, 0, 0);
+    var->tag_kind = ds.tag_kind;
+    var->tag_name = ds.tag_name;
+    var->tag_len = ds.tag_len;
+    var->is_tag_pointer = 1;
+    var->base_deref_size = (short)ds.struct_size;
   } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 16) {
     // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
     // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
