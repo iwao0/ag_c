@@ -1038,15 +1038,23 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     lvar_t nested = {0};
     nested.offset = owner->offset + member_offset;
     nested.elem_size = member_type_size;
+    nested.size = member_type_size;
     nested.tag_kind = TK_STRUCT;
     nested.tag_name = member_tag_name;
     nested.tag_len = member_tag_len;
+    /* C11 6.7.9: struct メンバの初期化は `{...}` または同型の式 (compound
+     * literal や struct lvar) で行える。`{` 以外で始まるときは式として解析し、
+     * 結果が互換なら member-wise copy で初期化する。 */
+    if (curtok() && curtok()->kind != TK_LBRACE) {
+      return parse_struct_copy_initializer(&nested);
+    }
     return parse_struct_initializer(&nested);
   }
   if (!member_is_tag_pointer && member_tag_kind == TK_UNION) {
     lvar_t nested = {0};
     nested.offset = owner->offset + member_offset;
     nested.elem_size = member_type_size;
+    nested.size = member_type_size;
     nested.tag_kind = TK_UNION;
     nested.tag_name = member_tag_name;
     nested.tag_len = member_tag_len;
