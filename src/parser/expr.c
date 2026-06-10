@@ -1003,8 +1003,16 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       cast_array_count = (int)inferred;
     }
   }
-  int is_arr = (!cast_is_ptr && cast_array_count > 0) ? 1 : 0;
-  int var_size = cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem);
+  /* `(int (*[N])(args)){f1, f2, ...}` の関数ポインタ配列 compound literal を
+   * 「配列実体」(size=N*8, elem=8 byte ポインタ要素) として登録する。
+   * cast_is_ptr=1 + cast_array_count>0 で識別。修正前は cast_is_ptr=1 だけ
+   * 見て「スカラポインタ」扱いし、初期化子経路がスカラ brace と誤認していた
+   * (p304: 2 要素 brace で E3025)。 */
+  int is_funcptr_array = (cast_is_ptr && cast_array_count > 0) ? 1 : 0;
+  int is_arr = ((!cast_is_ptr && cast_array_count > 0) || is_funcptr_array) ? 1 : 0;
+  if (is_funcptr_array) base_elem = 8;
+  int var_size = is_funcptr_array ? (8 * cast_array_count)
+                : (cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem));
   char *tmp_name = new_compound_lit_name();
   if (g_current_funcname == NULL) {
     tk_expect('{');
@@ -1038,7 +1046,15 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   var->tag_kind = cast_tag_kind;
   var->tag_name = cast_tag_name;
   var->tag_len = cast_tag_len;
-  var->is_tag_pointer = cast_is_ptr ? 1 : 0;
+  /* 関数ポインタ配列は tag (struct/union) ではないので is_tag_pointer=0。
+   * base_deref_size=8 はローカル `int (*ops[N])(args)` 登録 (decl.c:2259) と
+   * 同じ。subscript の `ops[i]` を関数ポインタ値として load するために要る。 */
+  if (is_funcptr_array) {
+    var->is_tag_pointer = 0;
+    var->base_deref_size = 8;
+  } else {
+    var->is_tag_pointer = cast_is_ptr ? 1 : 0;
+  }
   var->fp_kind = cast_fp_kind;
   node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
   node_t *ref;
@@ -1288,7 +1304,17 @@ cast_parse_postfix:
   consume_cast_pointer_suffix(&t, is_pointer);
   parse_funcptr_abstract_decl(&t, is_pointer);
   (void)parse_ptr_to_array_abstract_decl(&t, is_pointer);
-  (void)parse_array_of_funcptr_abstract_decl(&t, NULL);
+  /* `(int (*[N])(args)){...}` のような関数ポインタ配列 compound literal の
+   * 配列サイズ N を out_array_count に保存。修正前は NULL で破棄され、
+   * compound literal 経路がスカラ初期化子と誤認していた (p304)。 */
+  {
+    int fp_array_mul = 0;
+    if (parse_array_of_funcptr_abstract_decl(&t, &fp_array_mul)) {
+      if (fp_array_mul > 0 && out_array_count) {
+        *out_array_count = fp_array_mul;
+      }
+    }
+  }
   (void)parse_array_of_ptr_to_array_abstract_decl(&t, NULL);
   (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);

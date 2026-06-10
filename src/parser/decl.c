@@ -939,6 +939,26 @@ static node_t *parse_array_initializer(lvar_t *var) {
     }
     return init_chain ? init_chain : psx_node_new_num(0);
   }
+  /* Extension: `int arr[N] = (T[N]){...}` 形式 (compound literal で配列初期化)。
+   * parse_compound_literal_from_type は ND_COMMA(init_chain, ND_ADDR(lvar)) を
+   * 返すので、その lvar から要素ごとに arr へ copy する init_chain を生成する。
+   * Clang/GCC が拡張で受け付ける形式で、p304 (関数ポインタ配列の compound
+   * literal init) の最終段でこの経路が要る。 */
+  if (array_len > 0 && rhs && rhs->kind == ND_COMMA &&
+      rhs->rhs && rhs->rhs->kind == ND_ADDR &&
+      rhs->rhs->lhs && rhs->rhs->lhs->kind == ND_LVAR) {
+    node_lvar_t *src = (node_lvar_t *)rhs->rhs->lhs;
+    int elem_size = var->elem_size;
+    init_chain = rhs->lhs; /* compound literal の init 部分 */
+    for (int i = 0; i < array_len; i++) {
+      node_t *dst = new_array_elem_lvar_at(var->offset, elem_size, i);
+      node_t *src_node = psx_node_new_lvar_typed(src->offset + i * elem_size, elem_size);
+      node_mem_t *assign = psx_node_new_assign(dst, src_node);
+      assign->type_size = elem_size;
+      init_chain = append_to_init_chain(init_chain, (node_t *)assign);
+    }
+    return init_chain;
+  }
   // Extension: scalar expression for array init
   //   int a[3] = 1;  => a[0]=1, a[1]=0, a[2]=0
   if (array_len > 0) {
