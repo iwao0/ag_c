@@ -929,6 +929,14 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
     /* ポインタ配列の各要素は単一ポインタ (例: int (*)(int))。subscript 後の
      * 1 段 deref ではポインタ qual_levels を引き継ぐ。 */
     if (mem_is_ptr) deref->is_tag_pointer = 0;
+  } else if (mem_is_ptr && mem_size > 0) {
+    /* スカラポインタメンバ (例: `char *name`): subscript や pointer 算術で
+     * is_pointer 判定が要るため立てておく。修正前は `s.name[0]` が ND_DEREF
+     * の is_pointer=0 で base アドレス扱いされ、メンバ slot の下位 1 byte
+     * (= ポインタ値の LSB) を読んでしまっていた。
+     * is_scalar_ptr_member を立てて配列メンバの decay 表現と区別する。 */
+    deref->is_pointer = 1;
+    deref->is_scalar_ptr_member = 1;
   }
   deref->tag_kind = mem_tag_kind;
   deref->tag_name = mem_tag_name;
@@ -2434,6 +2442,12 @@ static node_t *subscript_base_address_of(node_t *node) {
   if (node->kind != ND_DEREF) return node;
   node_mem_t *mem = (node_mem_t *)node;
   if (mem->deref_size > 0 && !mem->is_pointer) return node->lhs;
+  /* スカラポインタメンバ (`struct S { char *name; }; s.name[0]`) を subscript
+   * する場合、base は「ポインタ値の load」(= ND_DEREF をそのまま使う) でなければ
+   * いけない。配列メンバとは違って ND_ADD (= メンバスロットのアドレス) を base に
+   * 使うと、ポインタ値ではなくスロット自身のアドレスから byte を読んでしまう。
+   * 配列メンバの decay 表現とは is_scalar_ptr_member で区別する。 */
+  if (mem->is_scalar_ptr_member) return node;
   if (node->lhs && node->lhs->kind == ND_ADD &&
       node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
     // Member lvalue (`s.m`) is represented as `*(base + off)`.

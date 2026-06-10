@@ -103,6 +103,12 @@ struct node_mem_t {
   unsigned int pointee_is_bool : 1;          // 1: pointee 型が _Bool（_Bool 配列等）
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
+  // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
+  // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。
+  // subscript_base_address_of がスカラポインタ deref の場合 ND_DEREF を返し
+  // (= ポインタ値 load を引き起こす)、配列メンバの場合 ND_ADD (アドレス計算)
+  // を返す挙動を切り替えるために使う。
+  unsigned int is_scalar_ptr_member : 1;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
