@@ -101,6 +101,11 @@ struct node_mem_t {
   unsigned int pointee_is_void : 1;         // 1: pointee 型が void（`void *p`）
   unsigned int is_bool : 1;                  // 1: _Bool 型 (代入を 0/1 に正規化する)
   unsigned int pointee_is_bool : 1;          // 1: pointee 型が _Bool（_Bool 配列等）
+  // 配列要素 (各スロット) がスカラポインタ (`char *names[N]`, `int *vals[N]`) で
+  // あることを示す。subscript の結果 ND_DEREF に is_scalar_ptr_member を
+  // 立てるための上流フラグ。グローバル配列で deref_size = ポインタサイズ (8) と
+  // pointee 要素サイズ (例: 1 for char) が異なるケースを表現する。
+  unsigned int pointee_is_scalar_ptr : 1;
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
   // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
@@ -232,6 +237,10 @@ struct global_var_t {
   int name_len;
   short type_size;    // sizeof（ロード/ストアサイズ）
   short deref_size;   // ポインタ先の要素サイズ
+  // ポインタ配列 (`char *names[N]`) の場合、pointee 要素の素のサイズ (char なら 1)。
+  // deref_size は ポインタサイズ (8) になるため、pointee 区別用に保持する。
+  // 0 のときは「pointee がスカラポインタではない」(通常配列等) ことを意味する。
+  short pointee_elem_size;
   unsigned int is_array : 1;       // 1: 配列
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
   unsigned int has_init : 1;       // 1: 初期化子あり

@@ -2557,6 +2557,28 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
         deref->pointee_is_bool = 1;
       }
     }
+    /* `char *names[N]` 等: グローバルポインタ配列の要素 subscript 結果は
+     * 「スカラポインタ値の load」(= struct メンバ char* と同じ semantics)。
+     * is_scalar_ptr_member を立てて subscript_base_address_of が ND_DEREF を
+     * そのまま返し、次段の subscript でポインタ値を base として使うようにする。 */
+    if (base_mem && base_mem->pointee_is_scalar_ptr && pql == 0) {
+      deref->is_scalar_ptr_member = 1;
+      deref->is_pointer = 1;
+      /* deref_size を pointee の素のサイズに更新 (char* なら 1)。
+       * gv->pointee_elem_size から伝播するため、ND_ADDR/ND_GVAR を辿って取得する。 */
+      if (node->kind == ND_ADDR && node->lhs && node->lhs->kind == ND_GVAR) {
+        node_gvar_t *gv_node = (node_gvar_t *)node->lhs;
+        for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+          if (gv->name_len == gv_node->name_len &&
+              memcmp(gv->name, gv_node->name, (size_t)gv->name_len) == 0) {
+            if (gv->pointee_elem_size > 0) {
+              deref->deref_size = gv->pointee_elem_size;
+            }
+            break;
+          }
+        }
+      }
+    }
   }
   return (node_t *)deref;
 }
@@ -2909,6 +2931,15 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       /* `double a[5]` 等: 要素型 fp_kind を pointee_fp_kind に伝播し、
        * build_subscript_deref が FP load を組み立てられるようにする。 */
       addr->pointee_fp_kind = gv->fp_kind;
+      /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
+       * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
+       * を立てて、struct メンバ char* (commit 6a663ed) と同じく ND_DEREF をそのまま
+       * subscript base にしてポインタ値の load を引き起こす。
+       * 関数ポインタ配列 (`int (*ops[N])(int)`) は ops[i](val) で deref→call され、
+       * 2 段 subscript はしない (= pointee_elem_size を見ない) ので影響なし。 */
+      if (gv->pointee_elem_size > 0 && gv->tag_kind == TK_EOF) {
+        addr->pointee_is_scalar_ptr = 1;
+      }
       if (gv->outer_stride > 0) {
         if (gv->mid_stride > 0) {
           addr->inner_deref_size = (short)gv->mid_stride;

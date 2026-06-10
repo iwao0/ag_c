@@ -714,6 +714,10 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
    * `char *p` なら 1、`int *p` なら 4。subscript / `p[i]` のステップに使う。
    * 配列 (`int arr[N]`) の場合は要素サイズ (elem_store_size) を保持する。 */
   gv->deref_size = (is_ptr && !is_array) ? g_toplevel_decl_elem_size : elem_store_size;
+  /* `char *names[N]` のような「ポインタ配列」では、各要素 (ポインタ値) の deref_size
+   * は要素サイズ (8) になり、pointee の素のサイズ (char なら 1) が失われる。
+   * 2 段 subscript (names[i][j]) が正しく動くよう pointee 要素サイズを保存する。 */
+  gv->pointee_elem_size = (is_ptr && is_array) ? g_toplevel_decl_elem_size : 0;
   gv->is_array = is_array;
   gv->is_extern_decl = is_extern_decl;
   /* tag (struct / union) 情報を decl spec から引き継ぐ。
