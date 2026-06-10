@@ -1174,8 +1174,18 @@ static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *a
       bump_initializer_count(init_elem_count);
       int flat_idx = start_idx + ci;
       if (flat_idx < array_len) {
-        init_chain = append_to_init_chain(init_chain,
-            build_array_elem_assign(var, flat_idx, psx_expr_assign()));
+        /* 多次元 struct/union 配列の最内側要素が `{...}` で始まるとき:
+         * `struct P g[2][2] = {{{1,2},{3,4}}, ...}` の `{1,2}` をパースする。
+         * 通常の psx_expr_assign では `{` を数値として読もうとして失敗する。 */
+        if (curtok() && curtok()->kind == TK_LBRACE &&
+            !var->is_tag_pointer &&
+            (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
+          init_chain = append_to_init_chain(init_chain,
+              parse_array_elem_struct_brace_init(var, flat_idx));
+        } else {
+          init_chain = append_to_init_chain(init_chain,
+              build_array_elem_assign(var, flat_idx, psx_expr_assign()));
+        }
         assigned[flat_idx] = true;
       }
       ci++;
