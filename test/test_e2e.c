@@ -874,6 +874,7 @@ static const test_case_t test_cases[] = {
     {"probes", "designator_nested", CASE_INT_FILE, "test/fixtures/probes_found_bugs/designator_nested.c", 21, 0},
     {"probes", "struct_partial_init_zerofill", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_partial_init_zerofill.c", 0, 0},
     {"probes", "struct_2d_array_nested_brace", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_2d_array_nested_brace.c", 9, 0},
+    {"probes", "char_array_string_partial_zerofill", CASE_INT_FILE, "test/fixtures/probes_found_bugs/char_array_string_partial_zerofill.c", 209, 0},
     {"probes", "global_funcptr_call", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_funcptr_call.c", 42, 0},
     {"probes", "global_str_ptr_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_str_ptr_array.c", 14, 0},
     {"probes", "global_string_ptr", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_string_ptr.c", 11, 0},

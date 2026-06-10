@@ -849,9 +849,11 @@ static node_t *parse_array_initializer(lvar_t *var) {
                 build_array_elem_assign(var, i, psx_node_new_num((unsigned char)cp)));
             i++;
           }
-          if (i < array_len) {
+          /* 残り全てを 0 で埋める (C11 6.7.9p21)。修正前は 1 個だけだった。 */
+          while (i < array_len) {
             init_chain = append_to_init_chain(init_chain,
                 build_array_elem_assign(var, i, psx_node_new_num(0)));
+            i++;
           }
           return init_chain ? init_chain : psx_node_new_num(0);
         }
@@ -963,10 +965,13 @@ static node_t *parse_array_initializer(lvar_t *var) {
           build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)cp)));
       idx++;
     }
-    if (idx < array_len) {
-      // 文字列が配列長より短い場合は残りに NUL を1つ入れる。
+    /* 文字列が配列長より短い場合 (`char a[10] = "hi"`) は残り全てを 0 で埋める
+     * (C11 6.7.9p21)。修正前は 1 個だけ NUL を書いていたため、a[3..9] が
+     * 未初期化スタック値のまま残っていた。 */
+    while (idx < array_len) {
       init_chain = append_to_init_chain(init_chain,
           build_array_elem_assign(var, idx, psx_node_new_num(0)));
+      idx++;
     }
     return init_chain ? init_chain : psx_node_new_num(0);
   }
