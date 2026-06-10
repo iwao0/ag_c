@@ -856,6 +856,7 @@ static const test_case_t test_cases[] = {
     {"probes", "bool_normalization", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_normalization.c", 2, 0},
     {"probes", "bool_array_element_normalize", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_array_element_normalize.c", 13, 0},
     {"probes", "bool_struct_array_member_normalize", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_struct_array_member_normalize.c", 35, 0},
+    {"probes", "bool_2d_array_normalize", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_2d_array_normalize.c", 4, 0},
     {"probes", "bool_struct_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_struct_member.c", 41, 0},
     {"probes", "bitfield_brace_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bitfield_brace_init.c", 89, 0},
     {"probes", "char_ptr_postinc_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/char_ptr_postinc_deref.c", 6, 0},

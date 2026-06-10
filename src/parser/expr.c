@@ -2502,13 +2502,21 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   }
   /* `_Bool a[5]` の subscript 結果は _Bool スカラ。代入時に rhs を `!= 0` で
    * 正規化させるため is_bool を立てる。配列ベース node が pointee_is_bool を
-   * 持っていればそれを引き継ぐ。 */
+   * 持っていればそれを引き継ぐ。多次元配列 (`_Bool m[2][3]`) では 1 段目の
+   * subscript 結果が「内側配列」(まだ要素ではない) として返るため、
+   * pointee_is_bool を引き継いで次の subscript に渡せるようにする。 */
   {
     node_mem_t *base_mem = (node_t *)node && (node->kind == ND_ADDR || node->kind == ND_LVAR ||
                                               node->kind == ND_GVAR || node->kind == ND_DEREF)
                               ? (node_mem_t *)node : NULL;
-    if (base_mem && base_mem->pointee_is_bool && pql == 0) {
-      deref->is_bool = 1;
+    if (base_mem && base_mem->pointee_is_bool) {
+      if (pql == 0 && inner_ds == 0) {
+        /* 最終要素まで到達: 代入正規化用に is_bool を立てる。 */
+        deref->is_bool = 1;
+      } else {
+        /* 中間配列 (まだ要素ではない): 次段 subscript へ pointee_is_bool を伝播。 */
+        deref->pointee_is_bool = 1;
+      }
     }
   }
   return (node_t *)deref;
