@@ -350,6 +350,10 @@ void gen_global_vars(void) {
       } else if (gv->init_count > 0) {
         int elem = gv->deref_size > 0 ? gv->deref_size : 4;
         int total_elems = gv->type_size / elem;
+        int is_fp_arr = (gv->init_fvalues != NULL) &&
+                        (gv->fp_kind == TK_FLOAT_KIND_FLOAT ||
+                         gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
+                         gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
         for (int i = 0; i < gv->init_count && i < total_elems; i++) {
           char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
           int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
@@ -360,6 +364,21 @@ void gen_global_vars(void) {
           }
           if (sym_i && sym_i_len > 0) {
             cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
+            continue;
+          }
+          if (is_fp_arr) {
+            /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
+            double d = gv->init_fvalues[i];
+            if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+              float f = (float)d;
+              uint32_t bits;
+              memcpy(&bits, &f, sizeof(bits));
+              cg_emitf("  .long %u\n", (unsigned)bits);
+            } else {
+              uint64_t bits;
+              memcpy(&bits, &d, sizeof(bits));
+              cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+            }
             continue;
           }
           long long v = gv->init_values[i];
@@ -377,7 +396,21 @@ void gen_global_vars(void) {
         } else {
           cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
         }
-      } else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
+      } else if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+        /* float スカラ: fval を 32bit IEEE-754 ビットパターンで出力する。 */
+        float f = (float)gv->fval;
+        uint32_t bits;
+        memcpy(&bits, &f, sizeof(bits));
+        cg_emitf("  .long %u\n", (unsigned)bits);
+      } else if (gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
+                 gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
+        /* double スカラ: fval を 64bit IEEE-754 ビットパターンで出力する。 */
+        double d = gv->fval;
+        uint64_t bits;
+        memcpy(&bits, &d, sizeof(bits));
+        cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+      }
+      else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
       else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
       else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
       else cg_emitf("  .quad %lld\n", gv->init_val);

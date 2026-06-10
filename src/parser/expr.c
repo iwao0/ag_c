@@ -2835,6 +2835,9 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->type_size = stride;
       addr->deref_size = stride;
       addr->is_pointer = 1;
+      /* `double a[5]` 等: 要素型 fp_kind を pointee_fp_kind に伝播し、
+       * build_subscript_deref が FP load を組み立てられるようにする。 */
+      addr->pointee_fp_kind = gv->fp_kind;
       if (gv->outer_stride > 0) {
         if (gv->mid_stride > 0) {
           addr->inner_deref_size = (short)gv->mid_stride;
@@ -2865,6 +2868,9 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.tag_len = gv->tag_len;
     gvar_node->mem.is_tag_pointer = gv->is_tag_pointer;
     if (gv->is_tag_pointer) gvar_node->mem.is_pointer = 1;
+    /* 浮動小数スカラのグローバル: fp_kind を node に伝播。IR builder が
+     * これを見て IR_TY_F32/F64 として load を発行する。 */
+    gvar_node->mem.base.fp_kind = gv->fp_kind;
     gvar_node->name = gv->name;
     gvar_node->name_len = gv->name_len;
     gvar_node->is_thread_local = gv->is_thread_local;

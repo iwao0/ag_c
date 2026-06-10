@@ -723,6 +723,9 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->tag_name = g_toplevel_decl_tag_name;
   gv->tag_len = g_toplevel_decl_tag_len;
   gv->is_tag_pointer = is_ptr ? 1 : 0;
+  /* 浮動小数スカラのとき fp_kind を引き継ぐ。ポインタは整数として扱う。 */
+  gv->fp_kind = is_ptr ? (unsigned char)TK_FLOAT_KIND_NONE
+                       : (unsigned char)g_toplevel_decl_fp_kind;
   gv->next = global_vars;
   global_vars = gv;
   return gv;
@@ -849,10 +852,17 @@ static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
     } else {
       node_t *e = psx_expr_assign();
       long long v = 0;
+      double fv = 0.0;
       char *sym = NULL;
       int sym_len = 0;
       int ok = 1;
-      if (e && e->kind == ND_NUM) v = ((node_num_t *)e)->val;
+      if (e && e->kind == ND_NUM) {
+        node_num_t *n = (node_num_t *)e;
+        v = n->val;
+        /* float/double 要素のグローバル配列では fval を保存。整数リテラルが
+         * 混ざっていても (`double a[] = {1, 2.5}`) 宣言型 fp_kind を優先する。 */
+        fv = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
+      }
       else if (e && e->kind == ND_FUNCREF) {
         /* `struct Op gop = {sq};` 等の関数ポインタメンバ初期化。 */
         node_funcref_t *fr = (node_funcref_t *)e;
@@ -874,14 +884,20 @@ static void parse_global_brace_init_flat(global_var_t *gv, int *cap) {
         sym_len = -1; /* sentinel: emit raw label (no `_` prefix) */
       } else if (e) v = psx_decl_eval_const_int(e, &ok);
       if (gv->init_count >= *cap) {
-        *cap *= 2;
-        gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
-        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)*cap * sizeof(char *));
-        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)*cap * sizeof(int));
+        int new_cap = *cap * 2;
+        gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+        if (gv->init_fvalues) {
+          gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+          for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
+        }
+        *cap = new_cap;
       }
       gv->init_values[gv->init_count] = v;
       gv->init_value_symbols[gv->init_count] = sym;
       gv->init_value_symbol_lens[gv->init_count] = sym_len;
+      if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = fv;
       gv->init_count++;
     }
     cur_idx = gv->init_count;
@@ -901,6 +917,11 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_values = calloc((size_t)cap, sizeof(long long));
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    /* 浮動小数要素の配列 (`double a[5] = {...}`) では fvalues も並行確保。
+     * 要素ごとに fval を保存し、codegen がビットパターンで出す。 */
+    if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+      gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    }
     gv->init_count = 0;
     parse_global_brace_init_flat(gv, &cap);
     /* C11 6.7.6.2p1: `T a[] = {...}` 形式は要素数を初期化子から推論する。
@@ -918,7 +939,13 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   long long folded = init_expr ? psx_decl_eval_const_int(init_expr, &const_ok) : 0;
   if (init_expr && init_expr->kind == ND_NUM) {
     gv->has_init = 1;
-    gv->init_val = ((node_num_t *)init_expr)->val;
+    node_num_t *n = (node_num_t *)init_expr;
+    gv->init_val = n->val;
+    /* グローバル変数が浮動小数スカラなら fval をビット出力用に保存する。
+     * `double v = 3;` のように整数リテラルでも、宣言型 fp_kind を優先する。 */
+    if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+      gv->fval = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
+    }
   } else if (init_expr && const_ok) {
     gv->has_init = 1;
     gv->init_val = folded;

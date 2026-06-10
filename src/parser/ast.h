@@ -236,12 +236,20 @@ struct global_var_t {
   char *tag_name;
   int tag_len;
   long long init_val; // 初期値（整数定数、スカラ用）
+  // 浮動小数スカラ用: 宣言型の fp_kind と初期値 fval。
+  // fp_kind != TK_FLOAT_KIND_NONE のとき、codegen はビットパターンで出力する。
+  // 配列は未対応 (今は init_values[] が long long のため)。
+  unsigned char fp_kind;
+  double fval;
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   int init_symbol_len;
   // 配列の `{...}` 初期化子: flat 化した値列を保持する。
   // 多次元 `{{1,2,3},{4,5,6}}` も行優先で平らに並べる。
   // init_count > 0 のとき codegen は init_values[] を要素サイズ単位で出力する。
   long long *init_values;
+  // 浮動小数配列用 (要素型 float/double のときのみ非NULL)。fvalues[i] が真の値で、
+  // codegen はこちらをビットパターンで出す。init_values[i] は未使用。
+  double *init_fvalues;
   /* 各 init slot ごとのシンボル参照 (関数名 や グローバル変数名)。NULL なら数値。
    * `struct Op { int (*f)(int); } gop = {sq};` のような funcptr メンバ初期化で使う。 */
   char **init_value_symbols;
