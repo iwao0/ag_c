@@ -17,7 +17,7 @@
 
 ### A3: 型/フラグ伝播ヘルパ化 (commit 数: 3)
 - [x] **A3-1** `ir_type_from_node` 抽出 (ir_builder.c) — 3960179 (2026-06-11)
-- [ ] **A3-2** `build_expr` 内 8 箇所を `ir_type_from_node` に置換
+- [x] **A3-2** `build_expr` 内 9 箇所を `ir_type_from_node` に置換 — f2ca9e8 (2026-06-11)
 - [ ] **A3-3** `propagate_pointee_flags` 抽出 + parser 側 3 箇所移行
 
 **Phase A 完了時**:
