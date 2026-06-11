@@ -53,6 +53,36 @@ bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_le
                                int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
                                token_kind_t *out_member_tag_kind, char **out_member_tag_name,
                                int *out_member_tag_len, int *out_member_is_tag_pointer);
+
+/* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
+ * (docs/code_refactoring_2026 Phase A1)。
+ *
+ * 既存の 5 つに分散した getter (`_at` / `_bf` / `_fp_kind` / `_is_bool` / `_count`)
+ * の wrapper として実装され、呼び出し側で `(tag_kind, tag_name, tag_len)` の
+ * 3-tuple を毎回繰り返し渡す冗長性を解消する。
+ *
+ * 取得失敗 (member 不存在) なら false。bitfield/fp_kind/is_bool は 0 で
+ * 初期化されるので、struct メンバが bitfield でないとき bit_width=0 等を返す。 */
+typedef struct {
+  char *name;
+  int len;
+  int offset;
+  int type_size;
+  int deref_size;
+  int array_len;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int is_tag_pointer;
+  int bit_width;
+  int bit_offset;
+  int bit_is_signed;
+  tk_float_kind_t fp_kind;
+  int is_bool;
+} tag_member_info_t;
+
+bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
+                                  tag_member_info_t *out);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);

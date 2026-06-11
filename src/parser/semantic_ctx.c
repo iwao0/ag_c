@@ -540,6 +540,37 @@ bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_le
   return true;
 }
 
+/* 全属性を 1 回のクエリで取得する統合 API (Phase A1 リファクタリング)。
+ * 既存 5 getter (_at / _bf / _fp_kind / _is_bool) を内部で順次呼ぶ wrapper。
+ * 取得成功時、bitfield/fp_kind/is_bool は対応 setter 未呼出なら 0 が入る。 */
+bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
+                                  tag_member_info_t *out) {
+  if (!out) return false;
+  /* 初期化 (全フィールド 0) */
+  out->name = NULL; out->len = 0;
+  out->offset = 0; out->type_size = 0; out->deref_size = 0; out->array_len = 0;
+  out->tag_kind = TK_EOF; out->tag_name = NULL; out->tag_len = 0; out->is_tag_pointer = 0;
+  out->bit_width = 0; out->bit_offset = 0; out->bit_is_signed = 0;
+  out->fp_kind = TK_FLOAT_KIND_NONE;
+  out->is_bool = 0;
+  /* 基本情報 (offset / type_size / deref_size / array_len / tag_*) */
+  if (!psx_ctx_get_tag_member_at(kind, name, len, index,
+                                  &out->name, &out->len,
+                                  &out->offset, &out->type_size, &out->deref_size, &out->array_len,
+                                  &out->tag_kind, &out->tag_name, &out->tag_len,
+                                  &out->is_tag_pointer)) {
+    return false;
+  }
+  /* bitfield 情報 (bit_width=0 なら非 bitfield) */
+  if (out->len > 0) {
+    psx_ctx_get_tag_member_bf(kind, name, len, out->name, out->len,
+                               &out->bit_width, &out->bit_offset, &out->bit_is_signed);
+    out->fp_kind = psx_ctx_get_tag_member_fp_kind(kind, name, len, out->name, out->len);
+    out->is_bool = psx_ctx_get_tag_member_is_bool(kind, name, len, out->name, out->len);
+  }
+  return true;
+}
+
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
                              int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
