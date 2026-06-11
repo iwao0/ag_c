@@ -297,12 +297,9 @@ void gen_global_vars(void) {
         int prev_end = 0;
         int val_idx = 0;
         for (int i = 0; i < n_members && val_idx < gv->init_count; i++) {
-          char *mn = NULL; int ml = 0;
-          int off = 0, ts = 0, ds = 0, alen = 0;
-          token_kind_t mtk = TK_EOF; char *mtn = NULL; int mtl = 0; int mtp = 0;
-          if (!psx_ctx_get_tag_member_at(gv->tag_kind, gv->tag_name, gv->tag_len, i,
-                                         &mn, &ml, &off, &ts, &ds, &alen,
-                                         &mtk, &mtn, &mtl, &mtp)) break;
+          tag_member_info_t mi = {0};
+          if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
+          int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
           if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
           /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。
            * 修正前は 1 メンバ = 1 init_values[] 要素として扱っていたため、
@@ -350,12 +347,9 @@ void gen_global_vars(void) {
         for (int e = 0; e < total_elems; e++) {
           int prev_end = 0;
           for (int i = 0; i < n_members; i++) {
-            char *mn = NULL; int ml = 0;
-            int off = 0, ts = 0, ds = 0, alen = 0;
-            token_kind_t mtk = TK_EOF; char *mtn = NULL; int mtl = 0; int mtp = 0;
-            if (!psx_ctx_get_tag_member_at(gv->tag_kind, gv->tag_name, gv->tag_len, i,
-                                           &mn, &ml, &off, &ts, &ds, &alen,
-                                           &mtk, &mtn, &mtl, &mtp)) break;
+            tag_member_info_t mi = {0};
+            if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
+            int off = mi.offset, ts = mi.type_size;
             if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
             long long v = (val_idx < gv->init_count) ? gv->init_values[val_idx] : 0;
             val_idx++;

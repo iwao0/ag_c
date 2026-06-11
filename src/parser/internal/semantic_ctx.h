@@ -29,30 +29,13 @@ void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_le
                                token_kind_t member_tag_kind, char *member_tag_name,
                                int member_tag_len, int member_is_tag_pointer,
                                int bit_width, int bit_offset, int bit_is_signed);
-bool psx_ctx_get_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
-                               char *member_name, int member_len,
-                               int *out_bit_width, int *out_bit_offset, int *out_bit_is_signed);
-/* struct/union メンバの float/double 種別を後付けで設定/取得する。
- * tag_member_t を増設せずに add_tag_member_bf の追加引数を避けるための分離 API。 */
+/* struct/union メンバの float/double 種別を後付けで設定する。
+ * 取得は psx_ctx_get_tag_member_info / _find_tag_member_info 経由。 */
 void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
                                      char *member_name, int member_len,
                                      tk_float_kind_t fp_kind);
-tk_float_kind_t psx_ctx_get_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                 char *member_name, int member_len);
 void psx_ctx_set_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
                                      char *member_name, int member_len, int is_bool);
-int psx_ctx_get_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                    char *member_name, int member_len);
-bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                             char *member_name, int member_len,
-                             int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
-                             token_kind_t *out_member_tag_kind, char **out_member_tag_name,
-                             int *out_member_tag_len, int *out_member_is_tag_pointer);
-bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_len, int index,
-                               char **out_member_name, int *out_member_len,
-                               int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
-                               token_kind_t *out_member_tag_kind, char **out_member_tag_name,
-                               int *out_member_tag_len, int *out_member_is_tag_pointer);
 
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。

@@ -265,19 +265,13 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           member_tag_name) {
         int inner_count = psx_ctx_get_tag_member_count(member_tag_kind, member_tag_name, member_tag_len);
         for (int i = 0; i < inner_count; i++) {
-          char *im_name = NULL;
-          int im_len = 0, im_off = 0, im_ts = 0, im_ds = 0, im_al = 0;
-          token_kind_t im_tk = TK_EOF;
-          char *im_tn = NULL;
-          int im_tl = 0, im_tp = 0;
-          if (psx_ctx_get_tag_member_at(member_tag_kind, member_tag_name, member_tag_len, i,
-                                         &im_name, &im_len, &im_off, &im_ts, &im_ds, &im_al,
-                                         &im_tk, &im_tn, &im_tl, &im_tp)) {
-            if (im_len == 0) continue; /* 匿名同士の連鎖は今回対象外 */
+          tag_member_info_t im = {0};
+          if (psx_ctx_get_tag_member_info(member_tag_kind, member_tag_name, member_tag_len, i, &im)) {
+            if (im.len == 0) continue; /* 匿名同士の連鎖は今回対象外 */
             psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
-                                   im_name, im_len, off + im_off,
-                                   im_ts, im_ds, im_al,
-                                   im_tk, im_tn, im_tl, im_tp);
+                                   im.name, im.len, off + im.offset,
+                                   im.type_size, im.deref_size, im.array_len,
+                                   im.tag_kind, im.tag_name, im.tag_len, im.is_tag_pointer);
             member_count++;
           }
         }
