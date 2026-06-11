@@ -571,6 +571,31 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
   return true;
 }
 
+/* 名前検索版の統合 API (Phase A1)。
+ * `psx_ctx_find_tag_member` + bf + fp_kind + is_bool を 1 回のクエリに集約。 */
+bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
+                                   char *member_name, int member_len,
+                                   tag_member_info_t *out) {
+  if (!out) return false;
+  out->name = member_name; out->len = member_len;
+  out->offset = 0; out->type_size = 0; out->deref_size = 0; out->array_len = 0;
+  out->tag_kind = TK_EOF; out->tag_name = NULL; out->tag_len = 0; out->is_tag_pointer = 0;
+  out->bit_width = 0; out->bit_offset = 0; out->bit_is_signed = 0;
+  out->fp_kind = TK_FLOAT_KIND_NONE;
+  out->is_bool = 0;
+  if (!psx_ctx_find_tag_member(kind, name, len, member_name, member_len,
+                                &out->offset, &out->type_size, &out->deref_size, &out->array_len,
+                                &out->tag_kind, &out->tag_name, &out->tag_len,
+                                &out->is_tag_pointer)) {
+    return false;
+  }
+  psx_ctx_get_tag_member_bf(kind, name, len, member_name, member_len,
+                             &out->bit_width, &out->bit_offset, &out->bit_is_signed);
+  out->fp_kind = psx_ctx_get_tag_member_fp_kind(kind, name, len, member_name, member_len);
+  out->is_bool = psx_ctx_get_tag_member_is_bool(kind, name, len, member_name, member_len);
+  return true;
+}
+
 bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                              char *member_name, int member_len,
                              int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,

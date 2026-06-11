@@ -83,6 +83,12 @@ typedef struct {
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
                                   tag_member_info_t *out);
+/* 名前検索版の統合 API。`psx_ctx_get_tag_member_info` と対になる。
+ * 取得失敗 (member 不存在) なら false。bitfield/fp_kind/is_bool は 0 で
+ * 初期化される。 */
+bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
+                                   char *member_name, int member_len,
+                                   tag_member_info_t *out);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);

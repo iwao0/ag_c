@@ -23,30 +23,13 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 #define LVAR_SCOPE_STACK_MAX 256
 static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
 static int lvar_scope_depth;
-// 集合体メンバの所在を取り回すためのまとめ構造。
-// 個別の out 引数（name/len/offset/...）を毎回展開していたところで使う。
-typedef struct {
-  char *name;
-  int len;
-  int offset;
-  int type_size;
-  int array_len;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int is_tag_pointer;
-  tk_float_kind_t fp_kind;  // float/double メンバ。codegen に FP load/store を出させる
-  // bitfield メンバ用: brace 初期化子で lhs lvar ノードに伝播し、IR の bitfield
-  // store 経路 (read-modify-write w/ mask) を発火させる。bit_width=0 で非 bitfield。
-  int bit_width;
-  int bit_offset;
-  int bit_is_signed;
-} aggregate_member_info_t;
+/* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
+ * そのまま再利用する (Phase A1 リファクタリング)。 */
 
-static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out);
-static bool tag_get_member_at(lvar_t *var, int ordinal, aggregate_member_info_t *out);
+static bool tag_find_member(lvar_t *var, char *name, int len, tag_member_info_t *out);
+static bool tag_get_member_at(lvar_t *var, int ordinal, tag_member_info_t *out);
 static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
-                                      aggregate_member_info_t *out);
+                                      tag_member_info_t *out);
 static node_t *parse_scalar_brace_initializer(void);
 static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
@@ -605,35 +588,23 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
   int member_count = psx_ctx_get_tag_member_count(dst->tag_kind, dst->tag_name, dst->tag_len);
   node_t *init_chain = NULL;
   for (int ordinal = 0; ordinal < member_count; ordinal++) {
-    char *member_name = NULL;
-    int member_len = 0;
-    int member_offset = 0;
-    int member_type_size = 0;
-    int member_array_len = 0;
-    token_kind_t member_tag_kind = TK_EOF;
-    char *member_tag_name = NULL;
-    int member_tag_len = 0;
-    int member_is_tag_pointer = 0;
-    bool found = psx_ctx_get_tag_member_at(dst->tag_kind, dst->tag_name, dst->tag_len, ordinal,
-                                           &member_name, &member_len,
-                                           &member_offset, &member_type_size, NULL, &member_array_len,
-                                           &member_tag_kind, &member_tag_name,
-                                           &member_tag_len, &member_is_tag_pointer);
-    if (!found || member_len <= 0) continue;
-    if (is_supported_scalar_store_size(member_type_size)) {
-      node_t *lhs = new_struct_member_lvar(dst, member_offset, member_type_size,
-                                           member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
-      node_t *rhs_member = new_struct_member_lvar(&src_var, member_offset, member_type_size,
-                                                  member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+    tag_member_info_t info = {0};
+    bool found = psx_ctx_get_tag_member_info(dst->tag_kind, dst->tag_name, dst->tag_len, ordinal, &info);
+    if (!found || info.len <= 0) continue;
+    if (is_supported_scalar_store_size(info.type_size)) {
+      node_t *lhs = new_struct_member_lvar(dst, info.offset, info.type_size,
+                                           info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
+      node_t *rhs_member = new_struct_member_lvar(&src_var, info.offset, info.type_size,
+                                                  info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
       node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
-      assign_node->type_size = member_type_size;
+      assign_node->type_size = info.type_size;
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
       continue;
     }
-    init_chain = build_byte_copy_chain(dst->offset + member_offset, src_var.offset + member_offset,
-                                       member_type_size, init_chain);
+    init_chain = build_byte_copy_chain(dst->offset + info.offset, src_var.offset + info.offset,
+                                       info.type_size, init_chain);
   }
   return init_chain ? init_chain : psx_node_new_num(0);
 }
@@ -1087,42 +1058,19 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
   return parse_scalar_brace_initializer();
 }
 
-static bool tag_find_member(lvar_t *var, char *name, int len, aggregate_member_info_t *out) {
-  out->name = name;
-  out->len = len;
-  bool ok = psx_ctx_find_tag_member(var->tag_kind, var->tag_name, var->tag_len, name, len,
-                                 &out->offset, &out->type_size, NULL, &out->array_len,
-                                 &out->tag_kind, &out->tag_name, &out->tag_len,
-                                 &out->is_tag_pointer);
-  if (ok) {
-    out->fp_kind = psx_ctx_get_tag_member_fp_kind(var->tag_kind, var->tag_name, var->tag_len,
-                                                    name, len);
-    psx_ctx_get_tag_member_bf(var->tag_kind, var->tag_name, var->tag_len, name, len,
-                                       &out->bit_width, &out->bit_offset, &out->bit_is_signed);
-  }
-  return ok;
+static bool tag_find_member(lvar_t *var, char *name, int len, tag_member_info_t *out) {
+  return psx_ctx_find_tag_member_info(var->tag_kind, var->tag_name, var->tag_len,
+                                       name, len, out);
 }
 
-static bool tag_get_member_at(lvar_t *var, int ordinal, aggregate_member_info_t *out) {
-  bool ok = psx_ctx_get_tag_member_at(var->tag_kind, var->tag_name, var->tag_len, ordinal,
-                                   &out->name, &out->len,
-                                   &out->offset, &out->type_size, NULL, &out->array_len,
-                                   &out->tag_kind, &out->tag_name, &out->tag_len,
-                                   &out->is_tag_pointer);
-  if (ok && out->len > 0) {
-    out->fp_kind = psx_ctx_get_tag_member_fp_kind(var->tag_kind, var->tag_name, var->tag_len,
-                                                    out->name, out->len);
-    psx_ctx_get_tag_member_bf(var->tag_kind, var->tag_name, var->tag_len,
-                                       out->name, out->len,
-                                       &out->bit_width, &out->bit_offset, &out->bit_is_signed);
-  }
-  return ok;
+static bool tag_get_member_at(lvar_t *var, int ordinal, tag_member_info_t *out) {
+  return psx_ctx_get_tag_member_info(var->tag_kind, var->tag_name, var->tag_len, ordinal, out);
 }
 
 // 次の名前付きメンバまで ordinal を前進。見つかれば true。
 // 見つからなかった場合の最終 ordinal は member_count（または途中で「found=false」になった値）。
 static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
-                                      aggregate_member_info_t *out) {
+                                      tag_member_info_t *out) {
   int ordinal = *ordinal_inout;
   int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
   while (ordinal < member_count) {
@@ -1188,7 +1136,7 @@ static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *a
 
 // .name[idx] = val の組み立て。lhs は member の offset+idx 要素を指す lvar。
 static node_t *build_nested_array_designator_assign(lvar_t *var,
-                                                    const aggregate_member_info_t *info,
+                                                    const tag_member_info_t *info,
                                                     int nested_idx) {
   node_t *lhs = new_array_elem_lvar_at(var->offset + info->offset, info->type_size, nested_idx);
   node_t *val = parse_scalar_brace_initializer();
@@ -1201,7 +1149,7 @@ static node_t *build_nested_array_designator_assign(lvar_t *var,
 // 配列メンバや struct/union メンバの場合、parse_member_initializer が
 // すでに代入チェーンを返しているのでそのまま使う。
 static node_t *wrap_member_init_as_assign(lvar_t *var,
-                                          const aggregate_member_info_t *info,
+                                          const tag_member_info_t *info,
                                           node_t *member_init) {
   if ((info->array_len > 0 && !info->is_tag_pointer) ||
       (!info->is_tag_pointer && (info->tag_kind == TK_STRUCT || info->tag_kind == TK_UNION))) {
@@ -1278,7 +1226,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   int assigned_n = 0;
   if (!tk_consume('}')) {
     for (;;) {
-      aggregate_member_info_t info = {0};
+      tag_member_info_t info = {0};
       info.tag_kind = TK_EOF;
       bool found = false;
       if (tk_consume('.')) {
@@ -1292,14 +1240,14 @@ static node_t *parse_struct_initializer(lvar_t *var) {
             (info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) &&
             !info.is_tag_pointer) {
           int cumulative_offset = info.offset;
-          aggregate_member_info_t cur_info = info;
+          tag_member_info_t cur_info = info;
           while (curtok()->kind == TK_DOT &&
                  (cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
                  !cur_info.is_tag_pointer) {
             tk_consume('.');
             token_ident_t *id2 = tk_consume_ident();
             if (!id2) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-            aggregate_member_info_t sub_info = {0};
+            tag_member_info_t sub_info = {0};
             sub_info.tag_kind = TK_EOF;
             lvar_t nested_owner = {0};
             nested_owner.tag_kind = cur_info.tag_kind;
@@ -1418,7 +1366,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
    * スカラ (is_supported_scalar_store_size を満たす) メンバのみ 0 を書く。
    * 構造体メンバや配列メンバはこの実装では未対応。 */
   for (int o = 0; o < member_count; o++) {
-    aggregate_member_info_t info = {0};
+    tag_member_info_t info = {0};
     info.tag_kind = TK_EOF;
     int probe_ordinal = o;
     int probe_value = o;
@@ -1527,7 +1475,7 @@ static node_t *parse_union_initializer_no_brace(lvar_t *var) {
     }
   }
   // Fallback: scalar が先頭の名前付きメンバを初期化する。
-  aggregate_member_info_t info = {0};
+  tag_member_info_t info = {0};
   info.tag_kind = TK_EOF;
   int ordinal = 0;
   bool found = tag_get_next_named_member(var, &ordinal, &info);
@@ -1547,7 +1495,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   if (has_brace && tk_consume('}')) return psx_node_new_num(0);
   if (!has_brace) return parse_union_initializer_no_brace(var);
 
-  aggregate_member_info_t info = {0};
+  tag_member_info_t info = {0};
   info.tag_kind = TK_EOF;
   bool found = false;
   if (tk_consume('.')) {
