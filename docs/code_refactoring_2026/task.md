@@ -8,7 +8,7 @@
 - [x] **A1-1** `tag_member_info_t` 構造体と `psx_ctx_get_tag_member_info` 新規追加 (2026-06-11)
 - [x] **A1-2** `src/parser/decl.c` の呼び出し移行 (tag_find_member, tag_get_member_at) — f47982d (2026-06-11)
 - [x] **A1-3** `src/parser/expr.c` と `src/ir/ir_builder.c` の呼び出し移行 — 2fbd3ce (2026-06-11) ※ir_builder.c は該当呼出なし
-- [ ] **A1-4** 旧 5 API のうち unused になったもの削除
+- [x] **A1-4** 旧 5 API のうち unused になったもの削除 — 2065e0c (2026-06-11)
 
 ### A2: lvar/var タグ設定ヘルパ化 (commit 数: 3)
 - [ ] **A2-1** `psx_decl_set_var_tag` / `psx_decl_set_gvar_tag` ヘルパ定義
