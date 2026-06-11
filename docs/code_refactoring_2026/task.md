@@ -6,7 +6,7 @@
 
 ### A1: tag_member API 統合 (commit 数: 4)
 - [x] **A1-1** `tag_member_info_t` 構造体と `psx_ctx_get_tag_member_info` 新規追加 (2026-06-11)
-- [ ] **A1-2** `src/parser/decl.c` の呼び出し移行 (tag_find_member, tag_get_member_at)
+- [x] **A1-2** `src/parser/decl.c` の呼び出し移行 (tag_find_member, tag_get_member_at) — f47982d (2026-06-11)
 - [ ] **A1-3** `src/parser/expr.c` と `src/ir/ir_builder.c` の呼び出し移行
 - [ ] **A1-4** 旧 5 API のうち unused になったもの削除
 
