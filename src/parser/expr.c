@@ -875,25 +875,23 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
     base = psx_node_new_binary(ND_COMMA, (node_t *)select, new_typed_lvar_ref(var, 0));
   }
 
-  int off = 0, mem_size = 0, mem_deref = 0;
-  int mem_array_len = 0;
-  token_kind_t mem_tag_kind = TK_EOF;
-  char *mem_tag_name = NULL;
-  int mem_tag_len = 0;
-  int mem_is_ptr = 0;
-  if (!psx_ctx_find_tag_member(base_tag_kind, base_tag_name, base_tag_len,
-                               member->str, member->len,
-                               &off, &mem_size, &mem_deref, &mem_array_len,
-                               &mem_tag_kind, &mem_tag_name, &mem_tag_len, &mem_is_ptr)) {
+  tag_member_info_t mem_info = {0};
+  if (!psx_ctx_find_tag_member_info(base_tag_kind, base_tag_name, base_tag_len,
+                                     member->str, member->len, &mem_info)) {
     psx_diag_ctx(op_tok, "member", diag_message_for(DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
                  member->len, member->str);
   }
-
-  // ビットフィールドメタデータを取得
-  int bf_width = 0, bf_offset = 0, bf_is_signed = 0;
-  psx_ctx_get_tag_member_bf(base_tag_kind, base_tag_name, base_tag_len,
-                            member->str, member->len,
-                            &bf_width, &bf_offset, &bf_is_signed);
+  int off = mem_info.offset;
+  int mem_size = mem_info.type_size;
+  int mem_deref = mem_info.deref_size;
+  int mem_array_len = mem_info.array_len;
+  token_kind_t mem_tag_kind = mem_info.tag_kind;
+  char *mem_tag_name = mem_info.tag_name;
+  int mem_tag_len = mem_info.tag_len;
+  int mem_is_ptr = mem_info.is_tag_pointer;
+  int bf_width = mem_info.bit_width;
+  int bf_offset = mem_info.bit_offset;
+  int bf_is_signed = mem_info.bit_is_signed;
 
   node_t *addr_base = base;
   if (!from_ptr) {
@@ -947,16 +945,13 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   deref->bit_is_signed = bf_is_signed;
   /* float/double メンバなら fp_kind を deref に伝播。IR が FP load/store を
    * 出すように、struct メンバ double 等を正しく扱う。 */
-  tk_float_kind_t mem_fp = psx_ctx_get_tag_member_fp_kind(base_tag_kind, base_tag_name, base_tag_len,
-                                                          member->str, member->len);
-  if (mem_fp != TK_FLOAT_KIND_NONE) {
-    deref->base.fp_kind = mem_fp;
+  if (mem_info.fp_kind != TK_FLOAT_KIND_NONE) {
+    deref->base.fp_kind = mem_info.fp_kind;
   }
   /* _Bool メンバ: deref に is_bool を伝播し、後段の代入で 0/1 正規化させる。
    * 配列メンバの場合、deref 自身は配列ベース (= ポインタ扱い) なので is_bool
    * ではなく pointee_is_bool を立て、subscript の結果に正規化を引き継がせる。 */
-  if (psx_ctx_get_tag_member_is_bool(base_tag_kind, base_tag_name, base_tag_len,
-                                       member->str, member->len)) {
+  if (mem_info.is_bool) {
     if (mem_array_len > 0 && mem_size > 0) {
       deref->pointee_is_bool = 1;
     } else {
@@ -1450,35 +1445,23 @@ static node_t *lower_union_value_cast(node_t *operand,
   var->is_tag_pointer = 0;
   var->fp_kind = cast_fp_kind;
 
-  char *member_name = NULL;
-  int member_len = 0;
-  int member_offset = 0;
-  int member_type_size = 0;
-  int member_array_len = 0;
-  token_kind_t member_tag_kind = TK_EOF;
-  char *member_tag_name = NULL;
-  int member_tag_len = 0;
-  int member_is_tag_pointer = 0;
+  tag_member_info_t info = {0};
   int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
   bool found = false;
   for (int ordinal = 0; ordinal < member_count; ordinal++) {
-    found = psx_ctx_get_tag_member_at(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal,
-                                      &member_name, &member_len,
-                                      &member_offset, &member_type_size, NULL, &member_array_len,
-                                      &member_tag_kind, &member_tag_name,
-                                      &member_tag_len, &member_is_tag_pointer);
+    found = psx_ctx_get_tag_member_info(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal, &info);
     if (!found) break;
-    if (member_len > 0) break;
+    if (info.len > 0) break;
   }
-  if (!found || member_len <= 0) {
+  if (!found || info.len <= 0) {
     psx_diag_ctx(curtok(), "cast", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
-  node_t *lhs = new_member_lvar_ref(var, member_offset, member_type_size,
-                                    member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+  node_t *lhs = new_member_lvar_ref(var, info.offset, info.type_size,
+                                    info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
   node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
-  assign_node->type_size = member_type_size;
+  assign_node->type_size = info.type_size;
 
   node_t *ref = new_typed_lvar_ref(var, 0);
   return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, ref);
@@ -1496,35 +1479,23 @@ static node_t *lower_struct_value_cast(node_t *operand,
   var->is_tag_pointer = 0;
   var->fp_kind = cast_fp_kind;
 
-  char *member_name = NULL;
-  int member_len = 0;
-  int member_offset = 0;
-  int member_type_size = 0;
-  int member_array_len = 0;
-  token_kind_t member_tag_kind = TK_EOF;
-  char *member_tag_name = NULL;
-  int member_tag_len = 0;
-  int member_is_tag_pointer = 0;
+  tag_member_info_t info = {0};
   int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
   bool found = false;
   for (int ordinal = 0; ordinal < member_count; ordinal++) {
-    found = psx_ctx_get_tag_member_at(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal,
-                                      &member_name, &member_len,
-                                      &member_offset, &member_type_size, NULL, &member_array_len,
-                                      &member_tag_kind, &member_tag_name,
-                                      &member_tag_len, &member_is_tag_pointer);
+    found = psx_ctx_get_tag_member_info(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal, &info);
     if (!found) break;
-    if (member_len > 0) break;
+    if (info.len > 0) break;
   }
-  if (!found || member_len <= 0) {
+  if (!found || info.len <= 0) {
     psx_diag_ctx(curtok(), "cast", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
-  node_t *lhs = new_member_lvar_ref(var, member_offset, member_type_size,
-                                    member_tag_kind, member_tag_name, member_tag_len, member_is_tag_pointer);
+  node_t *lhs = new_member_lvar_ref(var, info.offset, info.type_size,
+                                    info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
   node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
-  assign_node->type_size = member_type_size;
+  assign_node->type_size = info.type_size;
 
   node_t *ref = new_typed_lvar_ref(var, 0);
   return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, ref);
