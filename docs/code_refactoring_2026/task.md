@@ -16,7 +16,7 @@
 - [x] **A2-3** `src/parser/parser.c` の 4 箇所置換 (+ gv 1 箇所) — 2987fe4 (2026-06-11)
 
 ### A3: 型/フラグ伝播ヘルパ化 (commit 数: 3)
-- [ ] **A3-1** `ir_type_from_node` 抽出 (ir_builder.c)
+- [x] **A3-1** `ir_type_from_node` 抽出 (ir_builder.c) — 3960179 (2026-06-11)
 - [ ] **A3-2** `build_expr` 内 8 箇所を `ir_type_from_node` に置換
 - [ ] **A3-3** `propagate_pointee_flags` 抽出 + parser 側 3 箇所移行
 
