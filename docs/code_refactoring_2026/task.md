@@ -18,7 +18,14 @@
 ### A3: 型/フラグ伝播ヘルパ化 (commit 数: 3)
 - [x] **A3-1** `ir_type_from_node` 抽出 (ir_builder.c) — 3960179 (2026-06-11)
 - [x] **A3-2** `build_expr` 内 9 箇所を `ir_type_from_node` に置換 — f2ca9e8 (2026-06-11)
-- [ ] **A3-3** `propagate_pointee_flags` 抽出 + parser 側 3 箇所移行
+- [~] **A3-3** `propagate_pointee_flags` 抽出 — **スキップ** (2026-06-11)
+  - 理由: 実 expr.c には計画前提の「fp_kind / is_scalar_ptr_member /
+    pointee_is_bool の 3 フィールド一括コピー」パターンが存在せず、各 site は
+    個別 flag を異なる条件で立てている。`is_scalar_ptr_member =` の代入は
+    expr.c:937 / 2581 の 2 箇所のみで、いずれも単独 `= 1`。`pointee_is_bool =`
+    も expr.c:956 / 2573 の 2 箇所のみで、それぞれ別文脈。実態に合わない抽出は
+    複雑化のリスクがあるためスキップ。`build_lvar_or_vla_node` の lvar→mem
+    フィールド転写ヘルパ化は計画と別物なので別途検討。
 
 **Phase A 完了時**:
 - [ ] `phase_a_walkthrough.md` 作成 (commit hash 一覧、削減指標)
