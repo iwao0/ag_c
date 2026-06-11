@@ -125,6 +125,15 @@ static int is_fp_type(ir_type_t t) {
   return t == IR_TY_F32 || t == IR_TY_F64;
 }
 
+/* node->fp_kind から IR の浮動小数型を返すヘルパ (Phase A3 リファクタリング)。
+ * 非浮動小数 (TK_FLOAT_KIND_NONE) なら IR_TY_I32 を返す。
+ * 呼び出し側で type_size に応じた整数型 (I8/I16/I32/PTR) に上書きすること。 */
+static ir_type_t ir_type_from_node(node_t *node) {
+  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
+  return IR_TY_I32;
+}
+
 /* owner (= lvar_t の親) に対して ALLOCA を 1 回だけ確保し、その vreg を返す。
  * 同じ owner offset で再度呼ばれたら既存 vreg を返す。 */
 static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
