@@ -11,7 +11,7 @@
 - [x] **A1-4** 旧 5 API のうち unused になったもの削除 — 2065e0c (2026-06-11)
 
 ### A2: lvar/var タグ設定ヘルパ化 (commit 数: 3)
-- [ ] **A2-1** `psx_decl_set_var_tag` / `psx_decl_set_gvar_tag` ヘルパ定義
+- [x] **A2-1** `psx_decl_set_var_tag` / `psx_decl_set_gvar_tag` ヘルパ定義 — b383df5 (2026-06-11)
 - [ ] **A2-2** `src/parser/decl.c` の 5 箇所置換
 - [ ] **A2-3** `src/parser/parser.c` の 4 箇所置換
 
