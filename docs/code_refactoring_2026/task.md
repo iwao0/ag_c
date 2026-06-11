@@ -13,7 +13,7 @@
 ### A2: lvar/var タグ設定ヘルパ化 (commit 数: 3)
 - [x] **A2-1** `psx_decl_set_var_tag` / `psx_decl_set_gvar_tag` ヘルパ定義 — b383df5 (2026-06-11)
 - [x] **A2-2** `src/parser/decl.c` の 5 箇所置換 — b18ae86 (2026-06-11)
-- [ ] **A2-3** `src/parser/parser.c` の 4 箇所置換
+- [x] **A2-3** `src/parser/parser.c` の 4 箇所置換 (+ gv 1 箇所) — 2987fe4 (2026-06-11)
 
 ### A3: 型/フラグ伝播ヘルパ化 (commit 数: 3)
 - [ ] **A3-1** `ir_type_from_node` 抽出 (ir_builder.c)
