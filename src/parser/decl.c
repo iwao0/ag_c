@@ -2188,10 +2188,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         }
         int arr_total_bytes = effective_count * 8;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, arr_total_bytes, 8, 1, alignas_val);
-        var->tag_kind = tag_kind;
-        var->tag_name = tag_name;
-        var->tag_len = tag_len;
-        var->is_tag_pointer = (tag_kind != TK_EOF) ? 1 : 0;
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, tag_kind != TK_EOF);
         var->base_deref_size = 8;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
@@ -2199,10 +2196,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         // (*p)[N] パターン: 配列へのポインタ
         int row_size = paren_array_mul * elem_size;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);
-        var->tag_kind = tag_kind;
-        var->tag_name = tag_name;
-        var->tag_len = tag_len;
-        var->is_tag_pointer = 0;
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
         var->base_deref_size = (short)elem_size;
         var->outer_stride = row_size;
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
@@ -2241,10 +2235,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           }
           var->extra_strides_count = (unsigned char)idx_in_extras;
         }
-        var->tag_kind = tag_kind;
-        var->tag_name = tag_name;
-        var->tag_len = tag_len;
-        var->is_tag_pointer = 0;
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
       } else if (tk_consume('[')) {
@@ -2380,10 +2371,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           var->extra_strides_count = (unsigned char)idx_in_extras;
         }
         }
-        var->tag_kind = tag_kind;
-        var->tag_name = tag_name;
-        var->tag_len = tag_len;
-        var->is_tag_pointer = is_pointer ? 1 : 0;
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, is_pointer);
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
@@ -2397,10 +2385,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       } else {
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, var_size,
                                            is_pointer ? pointer_deref_size : var_size, 0, alignas_val);
-        var->tag_kind = tag_kind;
-        var->tag_name = tag_name;
-        var->tag_len = tag_len;
-        var->is_tag_pointer = is_pointer ? 1 : 0;
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, is_pointer);
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
