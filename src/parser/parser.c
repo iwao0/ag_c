@@ -725,10 +725,8 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   /* tag (struct / union) 情報を decl spec から引き継ぐ。
    * is_ptr のときは is_tag_pointer=1 を立て、`pp->x` のメンバアクセスで
    * build_member_access が tag を引けるようにする。 */
-  gv->tag_kind = g_toplevel_decl_tag_kind;
-  gv->tag_name = g_toplevel_decl_tag_name;
-  gv->tag_len = g_toplevel_decl_tag_len;
-  gv->is_tag_pointer = is_ptr ? 1 : 0;
+  psx_decl_set_gvar_tag(gv, g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                         g_toplevel_decl_tag_len, is_ptr);
   /* 浮動小数スカラのとき fp_kind を引き継ぐ。ポインタは整数として扱う。 */
   gv->fp_kind = is_ptr ? (unsigned char)TK_FLOAT_KIND_NONE
                        : (unsigned char)g_toplevel_decl_fp_kind;
@@ -1738,34 +1736,22 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
      * 修正前は ≤16B struct 値渡し経路に流れ、`arr[i].x` で subscript
      * エラー (両辺ポインタじゃないと判定) になっていた。 */
     var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds.struct_size, 0, 0);
-    var->tag_kind = ds.tag_kind;
-    var->tag_name = ds.tag_name;
-    var->tag_len = ds.tag_len;
-    var->is_tag_pointer = 1;
+    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 1);
     var->base_deref_size = (short)ds.struct_size;
   } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 16) {
     // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
     // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
     var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds.struct_size, 0, 0);
-    var->tag_kind = ds.tag_kind;
-    var->tag_name = ds.tag_name;
-    var->tag_len = ds.tag_len;
-    var->is_tag_pointer = 0;
+    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 0);
     var->is_byref_param = 1;
   } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0) {
     // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
     var = psx_decl_register_lvar_sized_align(param->str, param->len, ds.struct_size, ds.struct_size, 0, 8);
-    var->tag_kind = ds.tag_kind;
-    var->tag_name = ds.tag_name;
-    var->tag_len = ds.tag_len;
-    var->is_tag_pointer = 0;
+    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 0);
   } else if (ds.tag_kind != TK_EOF && param_is_ptr) {
     // struct/union へのポインタ仮引数
     var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
-    var->tag_kind = ds.tag_kind;
-    var->tag_name = ds.tag_name;
-    var->tag_len = ds.tag_len;
-    var->is_tag_pointer = 1;
+    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 1);
   } else if (param_is_ptr && ds.tag_kind == TK_EOF) {
     // スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）
     // size=8（ポインタ自身の格納サイズ）
