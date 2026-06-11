@@ -497,10 +497,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       sym->sym_len = gv->name_len;
       ir_func_append_inst(ctx->f, sym);
       /* load (型は node の fp_kind / type_size から判定) */
-      ir_type_t load_ty = IR_TY_I32;
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) load_ty = IR_TY_F32;
-      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) load_ty = IR_TY_F64;
-      else {
+      ir_type_t load_ty = ir_type_from_node(node);
+      if (load_ty == IR_TY_I32) {
         int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
         load_ty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
       }
@@ -516,7 +514,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       node_num_t *n = (node_num_t *)node;
       /* float/double リテラル */
       if (n->base.fp_kind > 0) {
-        ir_type_t ty = (n->base.fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+        ir_type_t ty = ir_type_from_node(&n->base);
         int v = ir_func_new_vreg(ctx->f);
         ir_inst_t *inst = ir_inst_new(IR_LOAD_FP_IMM);
         inst->dst = ir_val_vreg(v, ty);
@@ -583,7 +581,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       /* _Complex 代入: rhs を 2 成分として lhs slot に書き込む。
        * 算術 (a+b) も build_complex_to が再帰的に temp slot 経由で評価する。 */
       if (node->is_complex) {
-        ir_type_t fp_ty = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+        ir_type_t fp_ty = ir_type_from_node(node);
         int half = (fp_ty == IR_TY_F32) ? 4 : 8;
         int dst_ptr_vreg = -1;
         if (node->lhs->kind == ND_LVAR) {
@@ -767,10 +765,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       }
       if (node->lhs->kind == ND_GVAR) {
         node_gvar_t *gv = (node_gvar_t *)node->lhs;
-        ir_type_t vty = IR_TY_I32;
-        if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
-        else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
-        else {
+        ir_type_t vty = ir_type_from_node(node->lhs);
+        if (vty == IR_TY_I32) {
           int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
           vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
         }
@@ -831,12 +827,12 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         }
         /* DEREF の type_size と fp_kind から書き込み幅を決める。
          * 8B = PTR (関数ポインタ・long 等)、4B = I32、2B = I16、1B = I8。 */
-        ir_type_t vty = IR_TY_I32;
-        if (node->lhs->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
-        else if (node->lhs->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
-        else if (mm->type_size >= 8) vty = IR_TY_PTR;
-        else if (mm->type_size == 2) vty = IR_TY_I16;
-        else if (mm->type_size == 1) vty = IR_TY_I8;
+        ir_type_t vty = ir_type_from_node(node->lhs);
+        if (vty == IR_TY_I32) {
+          if (mm->type_size >= 8) vty = IR_TY_PTR;
+          else if (mm->type_size == 2) vty = IR_TY_I16;
+          else if (mm->type_size == 1) vty = IR_TY_I8;
+        }
         rhs = coerce_to_type(ctx, rhs, vty);
         ir_inst_t *st = ir_inst_new(IR_STORE);
         st->src1 = ptr;
@@ -915,12 +911,12 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *inst = ir_inst_new(IR_LOAD);
       /* deref 後の型: fp_kind を最優先。それ以外は type_size で判定
        * (関数ポインタ配列等で 8B 要素を i32 と誤判定しないように)。 */
-      ir_type_t load_ty = IR_TY_I32;
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) load_ty = IR_TY_F32;
-      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) load_ty = IR_TY_F64;
-      else if (mm->type_size >= 8) load_ty = IR_TY_PTR;
-      else if (mm->type_size == 2) load_ty = IR_TY_I16;
-      else if (mm->type_size == 1) load_ty = IR_TY_I8;
+      ir_type_t load_ty = ir_type_from_node(node);
+      if (load_ty == IR_TY_I32) {
+        if (mm->type_size >= 8) load_ty = IR_TY_PTR;
+        else if (mm->type_size == 2) load_ty = IR_TY_I16;
+        else if (mm->type_size == 1) load_ty = IR_TY_I8;
+      }
       inst->dst = ir_val_vreg(v, load_ty);
       inst->src1 = ptr;
       inst->is_unsigned_load = mm->is_unsigned ? 1 : 0;
@@ -1012,9 +1008,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       int v = ir_func_new_vreg(ctx->f);
       ir_inst_t *call = ir_inst_new(IR_CALL);
       /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
-      ir_type_t ret_ty = IR_TY_I32;
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) ret_ty = IR_TY_F32;
-      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) ret_ty = IR_TY_F64;
+      ir_type_t ret_ty = ir_type_from_node(node);
       call->dst = ir_val_vreg(v, ret_ty);
       if (fn->callee) {
         call->callee = callee_v;
@@ -1234,17 +1228,16 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         ptr_vreg = p.id;
         /* load/store 幅は DEREF node の mem.type_size と fp_kind から決める。 */
         node_mem_t *mm = (node_mem_t *)target;
-        if (target->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
-        else if (target->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
-        else if (mm->type_size >= 8) vty = IR_TY_PTR;
-        else if (mm->type_size == 2) vty = IR_TY_I16;
-        else if (mm->type_size == 1) vty = IR_TY_I8;
-        else vty = IR_TY_I32;
+        vty = ir_type_from_node(target);
+        if (vty == IR_TY_I32) {
+          if (mm->type_size >= 8) vty = IR_TY_PTR;
+          else if (mm->type_size == 2) vty = IR_TY_I16;
+          else if (mm->type_size == 1) vty = IR_TY_I8;
+        }
       } else if (target->kind == ND_GVAR) {
         node_gvar_t *gv = (node_gvar_t *)target;
-        if (target->fp_kind == TK_FLOAT_KIND_FLOAT) vty = IR_TY_F32;
-        else if (target->fp_kind >= TK_FLOAT_KIND_DOUBLE) vty = IR_TY_F64;
-        else {
+        vty = ir_type_from_node(target);
+        if (vty == IR_TY_I32) {
           int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
           vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
         }
@@ -1442,15 +1435,14 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
         fail(ctx, "ternary without else");
         return ir_val_none();
       }
-      ir_type_t res_ty = IR_TY_I32;
-      int slot_size = 4;
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) { res_ty = IR_TY_F32; slot_size = 4; }
-      else if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) { res_ty = IR_TY_F64; slot_size = 8; }
+      ir_type_t res_ty = ir_type_from_node(node);
+      int slot_size = (res_ty == IR_TY_F64) ? 8 : 4;
       /* ポインタ三項 (関数ポインタや int* など): 8 バイト slot で扱う。
        * 子ノードのいずれかがポインタなら結果もポインタ。 */
-      else if (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
-               node->rhs->kind == ND_FUNCREF ||
-               (c->els && c->els->kind == ND_FUNCREF)) {
+      if (res_ty == IR_TY_I32 &&
+          (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
+           node->rhs->kind == ND_FUNCREF ||
+           (c->els && c->els->kind == ND_FUNCREF))) {
         res_ty = IR_TY_PTR;
         slot_size = 8;
       }
@@ -1977,9 +1969,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
-  ir_type_t ret_ty = IR_TY_I32;
-  if (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) ret_ty = IR_TY_F32;
-  else if (fn->base.fp_kind >= TK_FLOAT_KIND_DOUBLE) ret_ty = IR_TY_F64;
+  ir_type_t ret_ty = ir_type_from_node(&fn->base);
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
   ctx->f->is_variadic = fn->is_variadic;
   ctx->f->nargs_fixed = fn->nargs;
