@@ -48,8 +48,8 @@
 
 ### B3: `psx_decl_parse_declaration_after_type_ex` 分解 (commit 数: 3)
 - [x] **B3-1** VLA 分岐を helper 化 — ecbcc83 (2026-06-11) 関数 349→302 (計画 "function-declarator" 該当なしのため VLA に振替)
-- [ ] **B3-2** array/pointer 抽出
-- [ ] **B3-3** init-declarator 抽出
+- [x] **B3-2** 多次元 [N] 配列分岐を helper 化 — 57afc2d (2026-06-11) 関数 302→238
+- [x] **B3-3** typedef-配列分岐を helper 化 — 2257113 (2026-06-11) 関数 238→207 (累計 349→207、< 150 目標は未達だが残余は小ブランチ集合)
 
 ### B4: `gen_global_vars` 分割 (commit 数: 1)
 - [ ] **B4-1** `emit_global_aggregate_init` helper 抽出
