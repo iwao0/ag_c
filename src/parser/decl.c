@@ -1177,6 +1177,37 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   return (node_t *)assign_node;
 }
 
+/* parse_struct_initializer 末尾の未割当スカラメンバ補完。
+ * assigned_names/assigned_lens に登録済みでなく、is_supported_scalar_store_size を
+ * 満たすスカラ (= 配列/集約でない) メンバを ordinal 順に探し、明示 0 代入を append する
+ * (C11 6.7.9p21)。集約 (struct/union/array) メンバはこの実装では別経路でゼロ化済み
+ * (append_struct_zero_fill_chain) なのでここではスキップする。 */
+static node_t *append_unassigned_scalar_zero_fills(lvar_t *var, int member_count,
+                                                    char **assigned_names, int *assigned_lens,
+                                                    int assigned_n, node_t *init_chain) {
+  for (int o = 0; o < member_count; o++) {
+    tag_member_info_t info = {0};
+    info.tag_kind = TK_EOF;
+    int probe_ordinal = o;
+    if (!tag_get_next_named_member(var, &probe_ordinal, &info)) continue;
+    if (info.len <= 0) continue;
+    int already = 0;
+    for (int i = 0; i < assigned_n; i++) {
+      if (assigned_lens[i] == info.len &&
+          strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
+        already = 1; break;
+      }
+    }
+    if (already) continue;
+    if (!is_supported_scalar_store_size(info.type_size)) continue;
+    if (info.array_len > 0 || info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) continue;
+    node_t *zero = psx_node_new_num(0);
+    init_chain = append_to_init_chain(init_chain,
+        wrap_member_init_as_assign(var, &info, zero));
+  }
+  return init_chain;
+}
+
 /* var の全 bytes を 8/4/2/1 単位の 0 store チェーンで埋める。
  * struct brace init 冒頭で呼び、部分指定の場合に未代入メンバが
  * garbage 残りしないようにする (C11 6.7.9p21)。 */
@@ -1367,33 +1398,10 @@ static node_t *parse_struct_initializer(lvar_t *var) {
     }
   }
   /* C11 6.7.9p21: 部分初期化や指定初期化子で書かれなかったメンバは 0 で
-   * 初期化される (struct S s = {10, 20}; なら c, d = 0)。
-   * スカラ (is_supported_scalar_store_size を満たす) メンバのみ 0 を書く。
-   * 構造体メンバや配列メンバはこの実装では未対応。 */
-  for (int o = 0; o < member_count; o++) {
-    tag_member_info_t info = {0};
-    info.tag_kind = TK_EOF;
-    int probe_ordinal = o;
-    int probe_value = o;
-    if (!tag_get_next_named_member(var, &probe_ordinal, &info)) continue;
-    if (info.len <= 0) continue;
-    if (probe_ordinal != probe_value + 1) {
-      /* 無名 padding 等で 1 ordinal 進まなかったらスキップ */
-    }
-    int already = 0;
-    for (int i = 0; i < assigned_n; i++) {
-      if (assigned_lens[i] == info.len &&
-          strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
-        already = 1; break;
-      }
-    }
-    if (already) continue;
-    if (!is_supported_scalar_store_size(info.type_size)) continue;
-    if (info.array_len > 0 || info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) continue;
-    node_t *zero = psx_node_new_num(0);
-    init_chain = append_to_init_chain(init_chain,
-        wrap_member_init_as_assign(var, &info, zero));
-  }
+   * 初期化される (struct S s = {10, 20}; なら c, d = 0)。スカラのみ対応。 */
+  init_chain = append_unassigned_scalar_zero_fills(var, member_count,
+                                                    assigned_names, assigned_lens,
+                                                    assigned_n, init_chain);
   free(assigned_names);
   free(assigned_lens);
   free(assigned_kind);
