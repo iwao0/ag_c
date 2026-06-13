@@ -308,6 +308,20 @@ static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node);
 
+/* build_stmt の case 別ヘルパ群 (build_expr 分割と同パターン)。 */
+static void build_stmt_block(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_if(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_while(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_do_while(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_for(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_switch(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_case_default(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_break(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_continue(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_goto(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node);
+
 /* _Complex 用ヘルパ: 式 `node` の値 (実部, 虚部) を *dst, *(dst + half) に書く。
  * fp_ty = IR_TY_F64 または IR_TY_F32、half = 8 or 4。
  * node が is_complex=0 のスカラ式なら虚部に 0.0 を書く (scalar→complex promotion)。 */
@@ -1746,281 +1760,291 @@ static void collect_labels(ir_build_ctx_t *ctx, node_t *body) {
 static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
   if (!node || ctx->failed) return;
   switch (node->kind) {
-    case ND_BLOCK: {
-      node_block_t *b = (node_block_t *)node;
-      if (b->body) {
-        for (int i = 0; b->body[i]; i++) {
-          build_stmt(ctx, b->body[i]);
-          if (ctx->failed) return;
-        }
-      }
-      return;
-    }
-    case ND_RETURN: {
-      /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
-      if (ctx->f->ret_struct_size > 0 && node->lhs) {
-        int src_ptr = -1;
-        if (node->lhs->kind == ND_LVAR) {
-          src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
-        } else if (node->lhs->kind == ND_DEREF) {
-          ir_val_t p = build_expr(ctx, node->lhs->lhs);
-          if (ctx->failed) return;
-          src_ptr = p.id;
-        } else {
-          fail(ctx, "struct return value is not LVAR/DEREF");
-          return;
-        }
-        if (src_ptr < 0) return;
-        ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-        cp->src1 = ir_val_vreg(ctx->f->ret_area_vreg, IR_TY_PTR);
-        cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
-        cp->alloca_size = ctx->f->ret_struct_size;
-        ir_func_append_inst(ctx->f, cp);
-        ir_inst_t *inst = ir_inst_new(IR_RET);
-        inst->src1 = ir_val_none();
-        ir_func_append_inst(ctx->f, inst);
-        return;
-      }
-      ir_val_t v = ir_val_none();
-      if (node->lhs) {
-        v = build_expr(ctx, node->lhs);
-        if (ctx->failed) return;
-      } else {
-        v = ir_val_imm(IR_TY_I32, 0);
-      }
-      ir_inst_t *inst = ir_inst_new(IR_RET);
-      inst->src1 = v;
-      ir_func_append_inst(ctx->f, inst);
-      return;
-    }
-    case ND_NUM:
-      /* 副作用のない単独式 (= 宣言由来のプレースホルダなど) */
-      return;
+    case ND_BLOCK:    build_stmt_block(ctx, node); return;
+    case ND_RETURN:   build_stmt_return(ctx, node); return;
+    case ND_NUM:      /* 副作用のない単独式 (宣言由来のプレースホルダ等) */ return;
     case ND_ASSIGN:
     case ND_FUNCALL:
-    case ND_COMMA: {
-      /* 式文 stmt: 式を評価して値を捨てる */
-      (void)build_expr(ctx, node);
-      return;
-    }
-    case ND_IF: {
-      node_ctrl_t *c = (node_ctrl_t *)node;
-      ir_val_t cond = build_expr(ctx, node->lhs);
-      if (ctx->failed) return;
-      ir_block_t *then_b = ir_block_new(ctx->f);
-      ir_block_t *merge_b = ir_block_new(ctx->f);
-      ir_block_t *else_b = c->els ? ir_block_new(ctx->f) : merge_b;
-      emit_br_cond(ctx, cond, then_b, else_b);
-      /* then 節 */
-      switch_to_new_block(ctx, then_b);
-      build_stmt(ctx, node->rhs);
-      if (ctx->failed) return;
-      emit_br(ctx, merge_b);
-      /* else 節 */
-      if (c->els) {
-        switch_to_new_block(ctx, else_b);
-        build_stmt(ctx, c->els);
-        if (ctx->failed) return;
-        emit_br(ctx, merge_b);
-      }
-      switch_to_new_block(ctx, merge_b);
-      return;
-    }
-    case ND_WHILE: {
-      ir_block_t *cond_b = ir_block_new(ctx->f);
-      ir_block_t *body_b = ir_block_new(ctx->f);
-      ir_block_t *exit_b = ir_block_new(ctx->f);
-      emit_br(ctx, cond_b);
-      switch_to_new_block(ctx, cond_b);
-      ir_val_t cv = build_expr(ctx, node->lhs);
-      if (ctx->failed) return;
-      emit_br_cond(ctx, cv, body_b, exit_b);
-      push_loop(ctx, cond_b, exit_b);
-      switch_to_new_block(ctx, body_b);
-      build_stmt(ctx, node->rhs);
-      pop_loop(ctx);
-      if (ctx->failed) return;
-      emit_br(ctx, cond_b);
-      switch_to_new_block(ctx, exit_b);
-      return;
-    }
-    case ND_DO_WHILE: {
-      ir_block_t *body_b = ir_block_new(ctx->f);
-      ir_block_t *cond_b = ir_block_new(ctx->f);
-      ir_block_t *exit_b = ir_block_new(ctx->f);
-      emit_br(ctx, body_b);
-      push_loop(ctx, cond_b, exit_b);
-      switch_to_new_block(ctx, body_b);
-      build_stmt(ctx, node->rhs);
-      pop_loop(ctx);
-      if (ctx->failed) return;
-      emit_br(ctx, cond_b);
-      switch_to_new_block(ctx, cond_b);
-      ir_val_t cv = build_expr(ctx, node->lhs);
-      if (ctx->failed) return;
-      emit_br_cond(ctx, cv, body_b, exit_b);
-      switch_to_new_block(ctx, exit_b);
-      return;
-    }
-    case ND_FOR: {
-      node_ctrl_t *c = (node_ctrl_t *)node;
-      if (c->init) {
-        build_stmt(ctx, c->init);
-        if (ctx->failed) return;
-      }
-      ir_block_t *cond_b = ir_block_new(ctx->f);
-      ir_block_t *body_b = ir_block_new(ctx->f);
-      ir_block_t *step_b = ir_block_new(ctx->f);
-      ir_block_t *exit_b = ir_block_new(ctx->f);
-      emit_br(ctx, cond_b);
-      switch_to_new_block(ctx, cond_b);
-      if (node->lhs) {
-        ir_val_t cv = build_expr(ctx, node->lhs);
-        if (ctx->failed) return;
-        emit_br_cond(ctx, cv, body_b, exit_b);
-      } else {
-        /* 条件式なし: 無条件で body へ */
-        emit_br(ctx, body_b);
-      }
-      push_loop(ctx, step_b, exit_b);
-      switch_to_new_block(ctx, body_b);
-      build_stmt(ctx, node->rhs);
-      pop_loop(ctx);
-      if (ctx->failed) return;
-      emit_br(ctx, step_b);
-      switch_to_new_block(ctx, step_b);
-      if (c->inc) {
-        build_stmt(ctx, c->inc);
-        if (ctx->failed) return;
-      }
-      emit_br(ctx, cond_b);
-      switch_to_new_block(ctx, exit_b);
-      return;
-    }
-    case ND_SWITCH: {
-      /* 制御値を eval。連続比較方式で各 case と比較し、一致すれば対応 block へ
-       * 飛ぶ。最後に default (なければ end) へ無条件 jump。
-       * body 内の ND_CASE/ND_DEFAULT は IR_LABEL として配置される。
-       * break はループスタックの break_block に登録した end_block へ。 */
-      ir_val_t control = build_expr(ctx, node->lhs);
-      if (ctx->failed) return;
-      /* 退避: 外側 switch の case_map を保存 */
-      case_map_entry_t saved[MAX_CASES];
-      int saved_count = ctx->case_map_count;
-      memcpy(saved, ctx->case_map, sizeof(case_map_entry_t) * (size_t)saved_count);
-      ctx->case_map_count = 0;
-      /* collect: body 内の case/default に block を割り当て */
-      node_case_t *cases[MAX_CASES];
-      int case_count = 0;
-      node_default_t *default_node = NULL;
-      collect_case_labels(ctx, node->rhs, cases, &case_count, &default_node);
-      ir_block_t *end_block = ir_block_new(ctx->f);
-      /* dispatch */
-      for (int i = 0; i < case_count; i++) {
-        int v_cmp = ir_func_new_vreg(ctx->f);
-        ir_inst_t *eq = ir_inst_new(IR_EQ);
-        eq->dst = ir_val_vreg(v_cmp, IR_TY_I32);
-        eq->src1 = control;
-        eq->src2 = ir_val_imm(IR_TY_I32, cases[i]->val);
-        ir_func_append_inst(ctx->f, eq);
-        ir_block_t *case_b = find_case_block(ctx, cases[i]);
-        ir_block_t *next_b = ir_block_new(ctx->f);
-        ir_inst_t *brc = ir_inst_new(IR_BR_COND);
-        brc->src1 = ir_val_vreg(v_cmp, IR_TY_I32);
-        brc->label_id = case_b->id;
-        brc->else_label_id = next_b->id;
-        ir_func_append_inst(ctx->f, brc);
-        switch_to_new_block(ctx, next_b);
-      }
-      /* 全 case 不一致なら default or end へ */
-      ir_block_t *fallback = default_node ? find_case_block(ctx, default_node) : end_block;
-      ir_inst_t *br = ir_inst_new(IR_BR);
-      br->label_id = fallback->id;
-      ir_func_append_inst(ctx->f, br);
-      /* body (case/default は build_stmt 内で switch_to_new_block)。
-       * switch 内の continue は外側ループの continue_block へ抜ける必要があるので、
-       * 外側のものを継承する。 */
-      ir_block_t *outer_cont = (ctx->loop_depth > 0)
-                                 ? ctx->loops[ctx->loop_depth - 1].continue_block
-                                 : NULL;
-      push_loop(ctx, outer_cont, end_block);
-      build_stmt(ctx, node->rhs);
-      pop_loop(ctx);
-      if (!ctx->failed) emit_br(ctx, end_block);
-      switch_to_new_block(ctx, end_block);
-      /* case_map を復元 */
-      ctx->case_map_count = saved_count;
-      memcpy(ctx->case_map, saved, sizeof(case_map_entry_t) * (size_t)saved_count);
-      return;
-    }
+    case ND_COMMA:    /* 式文 stmt: 式を評価して値を捨てる */
+                      (void)build_expr(ctx, node); return;
+    case ND_IF:       build_stmt_if(ctx, node); return;
+    case ND_WHILE:    build_stmt_while(ctx, node); return;
+    case ND_DO_WHILE: build_stmt_do_while(ctx, node); return;
+    case ND_FOR:      build_stmt_for(ctx, node); return;
+    case ND_SWITCH:   build_stmt_switch(ctx, node); return;
     case ND_CASE:
-    case ND_DEFAULT: {
-      ir_block_t *case_b = find_case_block(ctx, node);
-      if (!case_b) {
-        fail(ctx, "case/default outside switch");
-        return;
-      }
-      emit_br(ctx, case_b);
-      switch_to_new_block(ctx, case_b);
-      /* ag_c の parser は `case N: stmt` を ND_CASE.rhs = stmt として格納する。
-       * rhs (= ラベル後の文) を続けて build する。 */
-      if (node->rhs) build_stmt(ctx, node->rhs);
-      return;
-    }
-    case ND_BREAK: {
-      if (ctx->loop_depth == 0) {
-        fail(ctx, "break outside loop");
-        return;
-      }
-      emit_br(ctx, ctx->loops[ctx->loop_depth - 1].break_block);
-      /* break 以降の文は到達不能だが、Phase 3 では特に対応せず
-       * 新しいブロックに移動して残りの文を別に保持しておく */
-      ir_block_t *dead = ir_block_new(ctx->f);
-      switch_to_new_block(ctx, dead);
-      return;
-    }
-    case ND_CONTINUE: {
-      if (ctx->loop_depth == 0) {
-        fail(ctx, "continue outside loop");
-        return;
-      }
-      emit_br(ctx, ctx->loops[ctx->loop_depth - 1].continue_block);
-      ir_block_t *dead = ir_block_new(ctx->f);
-      switch_to_new_block(ctx, dead);
-      return;
-    }
-    case ND_GOTO: {
-      node_jump_t *j = (node_jump_t *)node;
-      ir_block_t *target = lookup_label_block(ctx, j->name, j->name_len);
-      if (!target) {
-        /* 通常は collect_labels で登録済みのはず。未登録の goto は不正。 */
-        fail(ctx, "goto target label not found");
-        return;
-      }
-      emit_br(ctx, target);
-      ir_block_t *dead = ir_block_new(ctx->f);
-      switch_to_new_block(ctx, dead);
-      return;
-    }
-    case ND_LABEL: {
-      node_jump_t *j = (node_jump_t *)node;
-      ir_block_t *target = lookup_label_block(ctx, j->name, j->name_len);
-      if (!target) {
-        target = register_label_block(ctx, j->name, j->name_len);
-        if (!target) return;
-      }
-      emit_br(ctx, target);
-      switch_to_new_block(ctx, target);
-      /* ラベル直後の文 (parser は `label: stmt` を ND_LABEL.rhs に格納) */
-      if (node->rhs) build_stmt(ctx, node->rhs);
-      return;
-    }
+    case ND_DEFAULT:  build_stmt_case_default(ctx, node); return;
+    case ND_BREAK:    build_stmt_break(ctx, node); return;
+    case ND_CONTINUE: build_stmt_continue(ctx, node); return;
+    case ND_GOTO:     build_stmt_goto(ctx, node); return;
+    case ND_LABEL:    build_stmt_label(ctx, node); return;
     default:
       /* それ以外は「副作用ありの式文」として扱う。build_expr が unsupported
        * なら failed が立って fallback。 */
       (void)build_expr(ctx, node);
       return;
   }
+}
+
+/* -------- build_stmt の case ヘルパ -------- */
+
+static void build_stmt_block(ir_build_ctx_t *ctx, node_t *node) {
+  node_block_t *b = (node_block_t *)node;
+  if (b->body) {
+    for (int i = 0; b->body[i]; i++) {
+      build_stmt(ctx, b->body[i]);
+      if (ctx->failed) return;
+    }
+  }
+}
+
+static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
+  /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
+  if (ctx->f->ret_struct_size > 0 && node->lhs) {
+    int src_ptr = -1;
+    if (node->lhs->kind == ND_LVAR) {
+      src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+    } else if (node->lhs->kind == ND_DEREF) {
+      ir_val_t p = build_expr(ctx, node->lhs->lhs);
+      if (ctx->failed) return;
+      src_ptr = p.id;
+    } else {
+      fail(ctx, "struct return value is not LVAR/DEREF");
+      return;
+    }
+    if (src_ptr < 0) return;
+    ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+    cp->src1 = ir_val_vreg(ctx->f->ret_area_vreg, IR_TY_PTR);
+    cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
+    cp->alloca_size = ctx->f->ret_struct_size;
+    ir_func_append_inst(ctx->f, cp);
+    ir_inst_t *inst = ir_inst_new(IR_RET);
+    inst->src1 = ir_val_none();
+    ir_func_append_inst(ctx->f, inst);
+    return;
+  }
+  ir_val_t v = ir_val_none();
+  if (node->lhs) {
+    v = build_expr(ctx, node->lhs);
+    if (ctx->failed) return;
+  } else {
+    v = ir_val_imm(IR_TY_I32, 0);
+  }
+  ir_inst_t *inst = ir_inst_new(IR_RET);
+  inst->src1 = v;
+  ir_func_append_inst(ctx->f, inst);
+}
+
+static void build_stmt_if(ir_build_ctx_t *ctx, node_t *node) {
+  node_ctrl_t *c = (node_ctrl_t *)node;
+  ir_val_t cond = build_expr(ctx, node->lhs);
+  if (ctx->failed) return;
+  ir_block_t *then_b = ir_block_new(ctx->f);
+  ir_block_t *merge_b = ir_block_new(ctx->f);
+  ir_block_t *else_b = c->els ? ir_block_new(ctx->f) : merge_b;
+  emit_br_cond(ctx, cond, then_b, else_b);
+  /* then 節 */
+  switch_to_new_block(ctx, then_b);
+  build_stmt(ctx, node->rhs);
+  if (ctx->failed) return;
+  emit_br(ctx, merge_b);
+  /* else 節 */
+  if (c->els) {
+    switch_to_new_block(ctx, else_b);
+    build_stmt(ctx, c->els);
+    if (ctx->failed) return;
+    emit_br(ctx, merge_b);
+  }
+  switch_to_new_block(ctx, merge_b);
+}
+
+static void build_stmt_while(ir_build_ctx_t *ctx, node_t *node) {
+  ir_block_t *cond_b = ir_block_new(ctx->f);
+  ir_block_t *body_b = ir_block_new(ctx->f);
+  ir_block_t *exit_b = ir_block_new(ctx->f);
+  emit_br(ctx, cond_b);
+  switch_to_new_block(ctx, cond_b);
+  ir_val_t cv = build_expr(ctx, node->lhs);
+  if (ctx->failed) return;
+  emit_br_cond(ctx, cv, body_b, exit_b);
+  push_loop(ctx, cond_b, exit_b);
+  switch_to_new_block(ctx, body_b);
+  build_stmt(ctx, node->rhs);
+  pop_loop(ctx);
+  if (ctx->failed) return;
+  emit_br(ctx, cond_b);
+  switch_to_new_block(ctx, exit_b);
+}
+
+static void build_stmt_do_while(ir_build_ctx_t *ctx, node_t *node) {
+  ir_block_t *body_b = ir_block_new(ctx->f);
+  ir_block_t *cond_b = ir_block_new(ctx->f);
+  ir_block_t *exit_b = ir_block_new(ctx->f);
+  emit_br(ctx, body_b);
+  push_loop(ctx, cond_b, exit_b);
+  switch_to_new_block(ctx, body_b);
+  build_stmt(ctx, node->rhs);
+  pop_loop(ctx);
+  if (ctx->failed) return;
+  emit_br(ctx, cond_b);
+  switch_to_new_block(ctx, cond_b);
+  ir_val_t cv = build_expr(ctx, node->lhs);
+  if (ctx->failed) return;
+  emit_br_cond(ctx, cv, body_b, exit_b);
+  switch_to_new_block(ctx, exit_b);
+}
+
+static void build_stmt_for(ir_build_ctx_t *ctx, node_t *node) {
+  node_ctrl_t *c = (node_ctrl_t *)node;
+  if (c->init) {
+    build_stmt(ctx, c->init);
+    if (ctx->failed) return;
+  }
+  ir_block_t *cond_b = ir_block_new(ctx->f);
+  ir_block_t *body_b = ir_block_new(ctx->f);
+  ir_block_t *step_b = ir_block_new(ctx->f);
+  ir_block_t *exit_b = ir_block_new(ctx->f);
+  emit_br(ctx, cond_b);
+  switch_to_new_block(ctx, cond_b);
+  if (node->lhs) {
+    ir_val_t cv = build_expr(ctx, node->lhs);
+    if (ctx->failed) return;
+    emit_br_cond(ctx, cv, body_b, exit_b);
+  } else {
+    /* 条件式なし: 無条件で body へ */
+    emit_br(ctx, body_b);
+  }
+  push_loop(ctx, step_b, exit_b);
+  switch_to_new_block(ctx, body_b);
+  build_stmt(ctx, node->rhs);
+  pop_loop(ctx);
+  if (ctx->failed) return;
+  emit_br(ctx, step_b);
+  switch_to_new_block(ctx, step_b);
+  if (c->inc) {
+    build_stmt(ctx, c->inc);
+    if (ctx->failed) return;
+  }
+  emit_br(ctx, cond_b);
+  switch_to_new_block(ctx, exit_b);
+}
+
+static void build_stmt_switch(ir_build_ctx_t *ctx, node_t *node) {
+  /* 制御値を eval。連続比較方式で各 case と比較し、一致すれば対応 block へ
+   * 飛ぶ。最後に default (なければ end) へ無条件 jump。
+   * body 内の ND_CASE/ND_DEFAULT は IR_LABEL として配置される。
+   * break はループスタックの break_block に登録した end_block へ。 */
+  ir_val_t control = build_expr(ctx, node->lhs);
+  if (ctx->failed) return;
+  /* 退避: 外側 switch の case_map を保存 */
+  case_map_entry_t saved[MAX_CASES];
+  int saved_count = ctx->case_map_count;
+  memcpy(saved, ctx->case_map, sizeof(case_map_entry_t) * (size_t)saved_count);
+  ctx->case_map_count = 0;
+  /* collect: body 内の case/default に block を割り当て */
+  node_case_t *cases[MAX_CASES];
+  int case_count = 0;
+  node_default_t *default_node = NULL;
+  collect_case_labels(ctx, node->rhs, cases, &case_count, &default_node);
+  ir_block_t *end_block = ir_block_new(ctx->f);
+  /* dispatch */
+  for (int i = 0; i < case_count; i++) {
+    int v_cmp = ir_func_new_vreg(ctx->f);
+    ir_inst_t *eq = ir_inst_new(IR_EQ);
+    eq->dst = ir_val_vreg(v_cmp, IR_TY_I32);
+    eq->src1 = control;
+    eq->src2 = ir_val_imm(IR_TY_I32, cases[i]->val);
+    ir_func_append_inst(ctx->f, eq);
+    ir_block_t *case_b = find_case_block(ctx, cases[i]);
+    ir_block_t *next_b = ir_block_new(ctx->f);
+    ir_inst_t *brc = ir_inst_new(IR_BR_COND);
+    brc->src1 = ir_val_vreg(v_cmp, IR_TY_I32);
+    brc->label_id = case_b->id;
+    brc->else_label_id = next_b->id;
+    ir_func_append_inst(ctx->f, brc);
+    switch_to_new_block(ctx, next_b);
+  }
+  /* 全 case 不一致なら default or end へ */
+  ir_block_t *fallback = default_node ? find_case_block(ctx, default_node) : end_block;
+  ir_inst_t *br = ir_inst_new(IR_BR);
+  br->label_id = fallback->id;
+  ir_func_append_inst(ctx->f, br);
+  /* body (case/default は build_stmt 内で switch_to_new_block)。
+   * switch 内の continue は外側ループの continue_block へ抜ける必要があるので、
+   * 外側のものを継承する。 */
+  ir_block_t *outer_cont = (ctx->loop_depth > 0)
+                             ? ctx->loops[ctx->loop_depth - 1].continue_block
+                             : NULL;
+  push_loop(ctx, outer_cont, end_block);
+  build_stmt(ctx, node->rhs);
+  pop_loop(ctx);
+  if (!ctx->failed) emit_br(ctx, end_block);
+  switch_to_new_block(ctx, end_block);
+  /* case_map を復元 */
+  ctx->case_map_count = saved_count;
+  memcpy(ctx->case_map, saved, sizeof(case_map_entry_t) * (size_t)saved_count);
+}
+
+static void build_stmt_case_default(ir_build_ctx_t *ctx, node_t *node) {
+  ir_block_t *case_b = find_case_block(ctx, node);
+  if (!case_b) {
+    fail(ctx, "case/default outside switch");
+    return;
+  }
+  emit_br(ctx, case_b);
+  switch_to_new_block(ctx, case_b);
+  /* ag_c の parser は `case N: stmt` を ND_CASE.rhs = stmt として格納する。
+   * rhs (= ラベル後の文) を続けて build する。 */
+  if (node->rhs) build_stmt(ctx, node->rhs);
+}
+
+static void build_stmt_break(ir_build_ctx_t *ctx, node_t *node) {
+  (void)node;
+  if (ctx->loop_depth == 0) {
+    fail(ctx, "break outside loop");
+    return;
+  }
+  emit_br(ctx, ctx->loops[ctx->loop_depth - 1].break_block);
+  /* break 以降の文は到達不能だが、新しいブロックに移動して残りの文を別に保持。 */
+  ir_block_t *dead = ir_block_new(ctx->f);
+  switch_to_new_block(ctx, dead);
+}
+
+static void build_stmt_continue(ir_build_ctx_t *ctx, node_t *node) {
+  (void)node;
+  if (ctx->loop_depth == 0) {
+    fail(ctx, "continue outside loop");
+    return;
+  }
+  emit_br(ctx, ctx->loops[ctx->loop_depth - 1].continue_block);
+  ir_block_t *dead = ir_block_new(ctx->f);
+  switch_to_new_block(ctx, dead);
+}
+
+static void build_stmt_goto(ir_build_ctx_t *ctx, node_t *node) {
+  node_jump_t *j = (node_jump_t *)node;
+  ir_block_t *target = lookup_label_block(ctx, j->name, j->name_len);
+  if (!target) {
+    /* 通常は collect_labels で登録済みのはず。未登録の goto は不正。 */
+    fail(ctx, "goto target label not found");
+    return;
+  }
+  emit_br(ctx, target);
+  ir_block_t *dead = ir_block_new(ctx->f);
+  switch_to_new_block(ctx, dead);
+}
+
+static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node) {
+  node_jump_t *j = (node_jump_t *)node;
+  ir_block_t *target = lookup_label_block(ctx, j->name, j->name_len);
+  if (!target) {
+    target = register_label_block(ctx, j->name, j->name_len);
+    if (!target) return;
+  }
+  emit_br(ctx, target);
+  switch_to_new_block(ctx, target);
+  /* ラベル直後の文 (parser は `label: stmt` を ND_LABEL.rhs に格納) */
+  if (node->rhs) build_stmt(ctx, node->rhs);
 }
 
 static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
