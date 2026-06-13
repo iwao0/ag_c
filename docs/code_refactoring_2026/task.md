@@ -66,7 +66,7 @@
 - [x] **C1-1** `symtab.h` 切り出し + ast.h shim 化 — 50715bd (2026-06-11) ast.h 308→238、symtab.h 新規 86 行
 - [x] **C1-2** parser 内 include 個別化 — 294dec9 (2026-06-11) core.h は ast.h→token.h、decl.h は symtab.h を明示追加
 - [x] **C1-3** ir/arch include 個別化 — 1dec010 (2026-06-11) arm64_apple.c は parser.h→symtab.h、ir_builder.c は据置 (AST のみ使用)
-- [ ] **C1-4** shim 撤去
+- [x] **C1-4** shim 撤去 — a538103 (2026-06-11) ast.h 238→237、symtab 境界確定
 
 ### C2: parser → IR public I/F 抽出 (commit 数: 3)
 - [ ] **C2-1** `parser_public.h` 新設
