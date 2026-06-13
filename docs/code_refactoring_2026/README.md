@@ -82,3 +82,40 @@ x86_64 バックエンド追加時の作業 (Phase 8 内部):
 
 本計画 Phase C 完了時点で 1 の素地は揃っている (parser 側の API
 `codegen_iter_globals` / `parser_public.h` は backend を問わず利用可能)。
+
+---
+
+## 全 Phase 完了報告 (2026-06-11)
+
+Phase A / B / C 全ステップを完了。詳細は各 `phase_*_walkthrough.md` と
+`metrics.md` の達成度サマリを参照。
+
+### 主要な数値達成
+
+- `build_expr` 1055 → **34 行** (97% 削減、目標 < 300 を大幅クリア)
+- `gen_global_vars` 177 → **109 行** (目標 < 150 達成)
+- tag_member 取得系 public API **5 → 3** (count + get_info + find_info)
+- `var->tag_kind = ` 4 行重複 **9 → 0**
+- ir_builder.c の fp_kind 判定 **9 → 1** (ヘルパに集約)
+- `ast.h` から symtab 分離 (308 行混在 → 237 行 AST のみ + 86 行 symtab.h)
+- IR / arch から `parser/internal/` への直接 include **0 件** (parser_public.h 経由)
+- arm64_apple.c から `global_vars` 変数直接参照 **0 件** (visitor 経由)
+
+### 計画通り達成しなかった項目
+
+- `psx_decl_parse_declaration_after_type_ex` < 150 行: 207 行で停止 (43% 削減)。
+  残る分岐は個別小ブロックの集合体で、これ以上の helper 化は call-site の
+  シグネチャ膨張が savings を上回ると判断
+- A3-3 `propagate_pointee_flags`: 実コードに該当パターンが存在せずスキップ
+
+### 全 commit 統計
+
+| Phase | refactor commit | docs commit | 合計 |
+|---|---:|---:|---:|
+| Phase A | 9 | 10 (初期計画含む) | 19 |
+| Phase B | 11 | 12 | 23 |
+| Phase C | 9 | 11 | 20 |
+| **合計** | **29** | **33** | **62** |
+
+全 commit で e2e 820/820、/tmp/probes 246 件 diverged=0、ag_c の生成
+asm に変化なし。IR Phase 8 (マルチターゲット準備) 着手の前提が揃った。

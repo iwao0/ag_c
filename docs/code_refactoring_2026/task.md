@@ -81,16 +81,16 @@
 - [x] **C4-1** Phase 8 計画と本計画の整合性記録 (docs のみ) — b94b174 (2026-06-11) README.md に接続節を追加
 
 **Phase C 完了時**:
-- [ ] `phase_c_walkthrough.md` 作成
-- [ ] `metrics.md` 最終更新
+- [x] `phase_c_walkthrough.md` 作成 — 2026-06-11
+- [x] `metrics.md` 最終更新 — 2026-06-11
 
 ---
 
 ## 全 Phase 完了時
 
-- [ ] 全 Phase 完了報告を README.md 末尾に追記
-- [ ] `metrics.md` に達成度サマリ
-- [ ] (任意) ag_c の git tag `refactor-2026-complete` を作成
+- [x] 全 Phase 完了報告を README.md 末尾に追記 — 2026-06-11
+- [x] `metrics.md` に達成度サマリ — 2026-06-11
+- [ ] (任意) ag_c の git tag `refactor-2026-complete` を作成 (ユーザ判断)
 
 ## 各 Step の commit メッセージテンプレート
 
