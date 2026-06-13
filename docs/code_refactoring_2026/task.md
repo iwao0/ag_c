@@ -36,7 +36,7 @@
 ## Phase B: 巨大関数分割 (commit 数: 11, 16-26h)
 
 ### B1: `build_expr` 分割 (commit 数: 4)
-- [ ] **B1-1** dispatch 骨格 + lvalue 系 (8 種) 抽出
+- [x] **B1-1** dispatch 骨格 + lvalue 系 (8 種) 抽出 — 5897581 (2026-06-11) build_expr 1047→594
 - [ ] **B1-2** 算術系 (10 種) 抽出
 - [ ] **B1-3** 制御系 (6 種) 抽出
 - [ ] **B1-4** 残余抽出 + switch 削除
