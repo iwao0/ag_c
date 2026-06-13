@@ -294,6 +294,15 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_num(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node);
+/* build_node_assign の分岐別サブヘルパ */
+static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
+/* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
+static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
+                                     int bit_width, int bit_offset);
 static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node);
@@ -652,270 +661,253 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
     fail(ctx, "assign without target");
     return ir_val_none();
   }
-  /* _Complex 代入: rhs を 2 成分として lhs slot に書き込む。
-   * 算術 (a+b) も build_complex_to が再帰的に temp slot 経由で評価する。 */
-  if (node->is_complex) {
-    ir_type_t fp_ty = ir_type_from_node(node);
-    int half = (fp_ty == IR_TY_F32) ? 4 : 8;
-    int dst_ptr_vreg = -1;
-    if (node->lhs->kind == ND_LVAR) {
-      dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
-    } else if (node->lhs->kind == ND_DEREF) {
-      ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
-      if (ctx->failed) return ir_val_none();
-      if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
-    } else if (node->lhs->kind == ND_GVAR) {
-      node_gvar_t *gv = (node_gvar_t *)node->lhs;
-      int v_addr = ir_func_new_vreg(ctx->f);
-      ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
-      sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-      sym->sym = gv->name; sym->sym_len = gv->name_len;
-      ir_func_append_inst(ctx->f, sym);
-      dst_ptr_vreg = v_addr;
-    } else {
-      fail(ctx, "complex assign dst not LVAR/DEREF/GVAR");
+  if (node->is_complex) return build_assign_complex(ctx, node);
+  /* struct 値代入: ND_ASSIGN.type_size が要素サイズを超えるなら memcpy 経路。 */
+  if (((node_mem_t *)node)->type_size > 8) return build_assign_struct(ctx, node);
+  switch (node->lhs->kind) {
+    case ND_LVAR:  return build_assign_to_lvar(ctx, node);
+    case ND_GVAR:  return build_assign_to_gvar(ctx, node);
+    case ND_DEREF: return build_assign_to_deref(ctx, node);
+    default:
+      fail(ctx, "assign target is not LVAR or DEREF");
       return ir_val_none();
-    }
-    if (dst_ptr_vreg < 0) return ir_val_none();
-    build_complex_to(ctx, node->rhs, dst_ptr_vreg, fp_ty, half);
-    return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
   }
-  /* struct 値代入: ND_ASSIGN.type_size が要素サイズを超えるなら memcpy 経路。
-   * struct のサイズは node_mem_t.type_size に parser が入れている。 */
-  {
-    node_mem_t *amem = (node_mem_t *)node;
-    int assign_size = amem->type_size;
-    if (assign_size > 8) {
-      /* dst のアドレスを得る */
-      int dst_ptr_vreg = -1;
-      if (node->lhs->kind == ND_LVAR) {
-        dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
-      } else if (node->lhs->kind == ND_DEREF) {
-        ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
-        if (ctx->failed) return ir_val_none();
-        if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
-      } else {
-        fail(ctx, "struct assign dst not LVAR/DEREF");
-        return ir_val_none();
-      }
-      if (dst_ptr_vreg < 0) return ir_val_none();
-      /* rhs が >8B struct 戻り値の関数呼び出しなら、戻り値を dst へ直接書かせる。 */
-      if (node->rhs && node->rhs->kind == ND_FUNCALL &&
-          node->rhs->ret_struct_size > 8) {
-        node_func_t *callee = (node_func_t *)node->rhs;
-        if (callee->callee || callee->is_variadic || callee->nargs > 8) {
-          fail(ctx, "indirect/variadic/many-arg struct-return call");
-          return ir_val_none();
-        }
-        ir_val_t *cargs = NULL;
-        if (callee->nargs > 0) {
-          cargs = calloc((size_t)callee->nargs, sizeof(ir_val_t));
-          for (int i = 0; i < callee->nargs; i++) {
-            node_t *arg = callee->args[i];
-            int arg_full_size = 0;
-            if (arg && arg->kind == ND_LVAR) {
-              lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
-              if (owner) arg_full_size = owner->size;
-              if (arg_full_size == 0) arg_full_size = ((node_lvar_t *)arg)->mem.type_size;
-            }
-            if (arg_full_size > 8) {
-              int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
-              if (src_ptr < 0) return ir_val_none();
-              int tmp = ir_func_new_vreg(ctx->f);
-              ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
-              ia->dst = ir_val_vreg(tmp, IR_TY_PTR);
-              ia->alloca_size = arg_full_size;
-              ia->alloca_align = 8;
-              ir_func_append_inst(ctx->f, ia);
-              ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-              cp->src1 = ir_val_vreg(tmp, IR_TY_PTR);
-              cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
-              cp->alloca_size = arg_full_size;
-              ir_func_append_inst(ctx->f, cp);
-              cargs[i] = ir_val_vreg(tmp, IR_TY_PTR);
-            } else {
-              cargs[i] = build_expr(ctx, arg);
-              if (ctx->failed) return ir_val_none();
-            }
-          }
-        }
-        int v = ir_func_new_vreg(ctx->f);
-        ir_inst_t *call = ir_inst_new(IR_CALL);
-        call->dst = ir_val_vreg(v, IR_TY_I32);
-        call->sym = callee->funcname;
-        call->sym_len = callee->funcname_len;
-        call->args = cargs;
-        call->nargs = callee->nargs;
-        call->ret_struct_size = node->rhs->ret_struct_size;
-        call->ret_struct_area = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-        ir_func_append_inst(ctx->f, call);
-        return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-      }
-      /* src のアドレスを得る (通常の struct から struct コピー) */
-      int src_ptr_vreg = -1;
-      if (node->rhs && node->rhs->kind == ND_LVAR) {
-        src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->rhs)->offset);
-      } else if (node->rhs && node->rhs->kind == ND_DEREF) {
-        ir_val_t ptr = build_expr(ctx, node->rhs->lhs);
-        if (ctx->failed) return ir_val_none();
-        if (ptr.id >= 0) src_ptr_vreg = ptr.id;
-      } else {
-        fail(ctx, "struct assign src not LVAR/DEREF");
-        return ir_val_none();
-      }
-      if (src_ptr_vreg < 0) return ir_val_none();
-      ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-      cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-      cp->src2 = ir_val_vreg(src_ptr_vreg, IR_TY_PTR);
-      cp->alloca_size = assign_size;
-      ir_func_append_inst(ctx->f, cp);
-      return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-    }
+}
+
+/* bitfield 書き込みの共通実装:
+ *   v_old   = *ptr
+ *   v_clr   = v_old & ~(mask << bit_offset)
+ *   v_rhs_m = rhs & mask
+ *   v_shl   = v_rhs_m << bit_offset
+ *   *ptr    = v_clr | v_shl
+ * 代入式の値は rhs (masking 前) を返す。 */
+static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
+                                     int bit_width, int bit_offset) {
+  long long mask = (bit_width >= 64) ? -1LL : ((1LL << bit_width) - 1);
+  long long inv_mask = ~(mask << bit_offset);
+  int v_old = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v_old, IR_TY_I32);
+  ld->src1 = ptr;
+  ir_func_append_inst(ctx->f, ld);
+  int v_clr = emit_binop(ctx, IR_AND,
+                          ir_val_vreg(v_old, IR_TY_I32),
+                          ir_val_imm(IR_TY_I32, inv_mask), IR_TY_I32);
+  ir_val_t rhs_int = rhs;
+  rhs_int.type = IR_TY_I32;
+  int v_rhs_m = emit_binop(ctx, IR_AND, rhs_int,
+                            ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
+  ir_val_t cur = ir_val_vreg(v_rhs_m, IR_TY_I32);
+  if (bit_offset > 0) {
+    int v_shl = emit_binop(ctx, IR_SHL, cur,
+                            ir_val_imm(IR_TY_I32, bit_offset), IR_TY_I32);
+    cur = ir_val_vreg(v_shl, IR_TY_I32);
   }
+  int v_new = emit_binop(ctx, IR_OR,
+                          ir_val_vreg(v_clr, IR_TY_I32), cur, IR_TY_I32);
+  ir_inst_t *st = ir_inst_new(IR_STORE);
+  st->src1 = ptr;
+  st->src2 = ir_val_vreg(v_new, IR_TY_I32);
+  ir_func_append_inst(ctx->f, st);
+  return rhs;
+}
+
+/* _Complex 代入: rhs を 2 成分として lhs slot に書き込む。
+ * 算術 (a+b) も build_complex_to が再帰的に temp slot 経由で評価する。 */
+static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node) {
+  ir_type_t fp_ty = ir_type_from_node(node);
+  int half = (fp_ty == IR_TY_F32) ? 4 : 8;
+  int dst_ptr_vreg = -1;
   if (node->lhs->kind == ND_LVAR) {
-    node_lvar_t *lv = (node_lvar_t *)node->lhs;
-    ir_type_t vty = lvar_value_type(lv);
-    int ptr_vreg = address_of_lvar(ctx, lv->offset);
-    if (ptr_vreg < 0) return ir_val_none();
-    ir_val_t rhs = build_expr(ctx, node->rhs);
-    if (ctx->failed) return ir_val_none();
-    /* float ↔ double の暗黙変換 */
-    if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
-      int v = ir_func_new_vreg(ctx->f);
-      ir_inst_t *cv = ir_inst_new(IR_F2F);
-      cv->dst = ir_val_vreg(v, vty);
-      cv->src1 = rhs;
-      ir_func_append_inst(ctx->f, cv);
-      rhs = ir_val_vreg(v, vty);
-    }
-    /* bitfield 書き込み:
-     *   v_old   = *ptr
-     *   inv     = ~((mask) << bit_offset)
-     *   v_clr   = v_old & inv
-     *   v_rhs_m = rhs & mask
-     *   v_shl   = v_rhs_m << bit_offset
-     *   v_new   = v_clr | v_shl
-     *   *ptr    = v_new
-     * 代入式の値は rhs (masking 前)。 */
-    int bw = lv->mem.bit_width;
-    if (bw > 0) {
-      int bo = lv->mem.bit_offset;
-      long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
-      long long shifted_mask = mask << bo;
-      long long inv_mask = ~shifted_mask;
-      int v_old = ir_func_new_vreg(ctx->f);
-      ir_inst_t *ld = ir_inst_new(IR_LOAD);
-      ld->dst = ir_val_vreg(v_old, IR_TY_I32);
-      ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-      ir_func_append_inst(ctx->f, ld);
-      int v_clr = emit_binop(ctx, IR_AND,
-                              ir_val_vreg(v_old, IR_TY_I32),
-                              ir_val_imm(IR_TY_I32, inv_mask), IR_TY_I32);
-      ir_val_t rhs_int = rhs;
-      rhs_int.type = IR_TY_I32;
-      int v_rhs_m = emit_binop(ctx, IR_AND, rhs_int,
-                                ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
-      ir_val_t cur = ir_val_vreg(v_rhs_m, IR_TY_I32);
-      if (bo > 0) {
-        int v_shl = emit_binop(ctx, IR_SHL, cur,
-                                ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
-        cur = ir_val_vreg(v_shl, IR_TY_I32);
-      }
-      int v_new = emit_binop(ctx, IR_OR,
-                              ir_val_vreg(v_clr, IR_TY_I32), cur, IR_TY_I32);
-      ir_inst_t *st = ir_inst_new(IR_STORE);
-      st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-      st->src2 = ir_val_vreg(v_new, IR_TY_I32);
-      ir_func_append_inst(ctx->f, st);
-      return rhs;
-    }
-    /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
-    rhs = coerce_to_type(ctx, rhs, vty);
-    ir_inst_t *st = ir_inst_new(IR_STORE);
-    st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-    st->src2 = rhs;
-    ir_func_append_inst(ctx->f, st);
-    return rhs;
-  }
-  if (node->lhs->kind == ND_GVAR) {
-    node_gvar_t *gv = (node_gvar_t *)node->lhs;
-    ir_type_t vty = ir_type_from_node(node->lhs);
-    if (vty == IR_TY_I32) {
-      int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-      vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
-    }
-    int v_addr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
-                                                     : IR_LOAD_SYM);
-    sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-    sym->sym = gv->name;
-    sym->sym_len = gv->name_len;
-    ir_func_append_inst(ctx->f, sym);
-    ir_val_t rhs = build_expr(ctx, node->rhs);
-    if (ctx->failed) return ir_val_none();
-    rhs = coerce_to_type(ctx, rhs, vty);
-    ir_inst_t *st = ir_inst_new(IR_STORE);
-    st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
-    st->src2 = rhs;
-    ir_func_append_inst(ctx->f, st);
-    return rhs;
-  }
-  if (node->lhs->kind == ND_DEREF) {
-    /* *p = rhs。p が struct メンバアクセス由来なら bit_width が乗る。 */
-    node_mem_t *mm = (node_mem_t *)node->lhs;
-    int bw = mm->bit_width;
+    dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+  } else if (node->lhs->kind == ND_DEREF) {
     ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
     if (ctx->failed) return ir_val_none();
-    ir_val_t rhs = build_expr(ctx, node->rhs);
-    if (ctx->failed) return ir_val_none();
-    if (bw > 0) {
-      int bo = mm->bit_offset;
-      long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
-      long long shifted_mask = mask << bo;
-      long long inv_mask = ~shifted_mask;
-      int v_old = ir_func_new_vreg(ctx->f);
-      ir_inst_t *ld = ir_inst_new(IR_LOAD);
-      ld->dst = ir_val_vreg(v_old, IR_TY_I32);
-      ld->src1 = ptr;
-      ir_func_append_inst(ctx->f, ld);
-      int v_clr = emit_binop(ctx, IR_AND,
-                              ir_val_vreg(v_old, IR_TY_I32),
-                              ir_val_imm(IR_TY_I32, inv_mask), IR_TY_I32);
-      ir_val_t rhs_int = rhs;
-      rhs_int.type = IR_TY_I32;
-      int v_rhs_m = emit_binop(ctx, IR_AND, rhs_int,
-                                ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
-      ir_val_t cur = ir_val_vreg(v_rhs_m, IR_TY_I32);
-      if (bo > 0) {
-        int v_shl = emit_binop(ctx, IR_SHL, cur,
-                                ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
-        cur = ir_val_vreg(v_shl, IR_TY_I32);
-      }
-      int v_new = emit_binop(ctx, IR_OR,
-                              ir_val_vreg(v_clr, IR_TY_I32), cur, IR_TY_I32);
-      ir_inst_t *st = ir_inst_new(IR_STORE);
-      st->src1 = ptr;
-      st->src2 = ir_val_vreg(v_new, IR_TY_I32);
-      ir_func_append_inst(ctx->f, st);
-      return rhs;
-    }
-    /* DEREF の type_size と fp_kind から書き込み幅を決める。
-     * 8B = PTR (関数ポインタ・long 等)、4B = I32、2B = I16、1B = I8。 */
-    ir_type_t vty = ir_type_from_node(node->lhs);
-    if (vty == IR_TY_I32) {
-      if (mm->type_size >= 8) vty = IR_TY_PTR;
-      else if (mm->type_size == 2) vty = IR_TY_I16;
-      else if (mm->type_size == 1) vty = IR_TY_I8;
-    }
-    rhs = coerce_to_type(ctx, rhs, vty);
-    ir_inst_t *st = ir_inst_new(IR_STORE);
-    st->src1 = ptr;
-    st->src2 = rhs;
-    ir_func_append_inst(ctx->f, st);
-    return rhs;
+    if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
+  } else if (node->lhs->kind == ND_GVAR) {
+    node_gvar_t *gv = (node_gvar_t *)node->lhs;
+    int v_addr = ir_func_new_vreg(ctx->f);
+    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
+    sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+    sym->sym = gv->name; sym->sym_len = gv->name_len;
+    ir_func_append_inst(ctx->f, sym);
+    dst_ptr_vreg = v_addr;
+  } else {
+    fail(ctx, "complex assign dst not LVAR/DEREF/GVAR");
+    return ir_val_none();
   }
-  fail(ctx, "assign target is not LVAR or DEREF");
-  return ir_val_none();
+  if (dst_ptr_vreg < 0) return ir_val_none();
+  build_complex_to(ctx, node->rhs, dst_ptr_vreg, fp_ty, half);
+  return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+}
+
+/* struct (>8B) 値代入。dst/src アドレスを得て memcpy。
+ * rhs が >8B struct 戻り値の関数呼出なら戻り値を dst へ直接書かせる。 */
+static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
+  int assign_size = ((node_mem_t *)node)->type_size;
+  int dst_ptr_vreg = -1;
+  if (node->lhs->kind == ND_LVAR) {
+    dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
+  } else if (node->lhs->kind == ND_DEREF) {
+    ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
+    if (ctx->failed) return ir_val_none();
+    if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
+  } else {
+    fail(ctx, "struct assign dst not LVAR/DEREF");
+    return ir_val_none();
+  }
+  if (dst_ptr_vreg < 0) return ir_val_none();
+  /* rhs が >8B struct 戻り値の関数呼び出しなら、戻り値を dst へ直接書かせる。 */
+  if (node->rhs && node->rhs->kind == ND_FUNCALL &&
+      node->rhs->ret_struct_size > 8) {
+    node_func_t *callee = (node_func_t *)node->rhs;
+    if (callee->callee || callee->is_variadic || callee->nargs > 8) {
+      fail(ctx, "indirect/variadic/many-arg struct-return call");
+      return ir_val_none();
+    }
+    ir_val_t *cargs = NULL;
+    if (callee->nargs > 0) {
+      cargs = calloc((size_t)callee->nargs, sizeof(ir_val_t));
+      for (int i = 0; i < callee->nargs; i++) {
+        node_t *arg = callee->args[i];
+        int arg_full_size = 0;
+        if (arg && arg->kind == ND_LVAR) {
+          lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
+          if (owner) arg_full_size = owner->size;
+          if (arg_full_size == 0) arg_full_size = ((node_lvar_t *)arg)->mem.type_size;
+        }
+        if (arg_full_size > 8) {
+          int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+          if (src_ptr < 0) return ir_val_none();
+          int tmp = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+          ia->dst = ir_val_vreg(tmp, IR_TY_PTR);
+          ia->alloca_size = arg_full_size;
+          ia->alloca_align = 8;
+          ir_func_append_inst(ctx->f, ia);
+          ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+          cp->src1 = ir_val_vreg(tmp, IR_TY_PTR);
+          cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
+          cp->alloca_size = arg_full_size;
+          ir_func_append_inst(ctx->f, cp);
+          cargs[i] = ir_val_vreg(tmp, IR_TY_PTR);
+        } else {
+          cargs[i] = build_expr(ctx, arg);
+          if (ctx->failed) return ir_val_none();
+        }
+      }
+    }
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *call = ir_inst_new(IR_CALL);
+    call->dst = ir_val_vreg(v, IR_TY_I32);
+    call->sym = callee->funcname;
+    call->sym_len = callee->funcname_len;
+    call->args = cargs;
+    call->nargs = callee->nargs;
+    call->ret_struct_size = node->rhs->ret_struct_size;
+    call->ret_struct_area = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+    ir_func_append_inst(ctx->f, call);
+    return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+  }
+  /* src のアドレスを得る (通常の struct から struct コピー) */
+  int src_ptr_vreg = -1;
+  if (node->rhs && node->rhs->kind == ND_LVAR) {
+    src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->rhs)->offset);
+  } else if (node->rhs && node->rhs->kind == ND_DEREF) {
+    ir_val_t ptr = build_expr(ctx, node->rhs->lhs);
+    if (ctx->failed) return ir_val_none();
+    if (ptr.id >= 0) src_ptr_vreg = ptr.id;
+  } else {
+    fail(ctx, "struct assign src not LVAR/DEREF");
+    return ir_val_none();
+  }
+  if (src_ptr_vreg < 0) return ir_val_none();
+  ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+  cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+  cp->src2 = ir_val_vreg(src_ptr_vreg, IR_TY_PTR);
+  cp->alloca_size = assign_size;
+  ir_func_append_inst(ctx->f, cp);
+  return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+}
+
+static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
+  node_lvar_t *lv = (node_lvar_t *)node->lhs;
+  ir_type_t vty = lvar_value_type(lv);
+  int ptr_vreg = address_of_lvar(ctx, lv->offset);
+  if (ptr_vreg < 0) return ir_val_none();
+  ir_val_t rhs = build_expr(ctx, node->rhs);
+  if (ctx->failed) return ir_val_none();
+  /* float ↔ double の暗黙変換 */
+  if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *cv = ir_inst_new(IR_F2F);
+    cv->dst = ir_val_vreg(v, vty);
+    cv->src1 = rhs;
+    ir_func_append_inst(ctx->f, cv);
+    rhs = ir_val_vreg(v, vty);
+  }
+  int bw = lv->mem.bit_width;
+  if (bw > 0) {
+    return emit_bitfield_store(ctx, ir_val_vreg(ptr_vreg, IR_TY_PTR), rhs,
+                                bw, lv->mem.bit_offset);
+  }
+  /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
+  rhs = coerce_to_type(ctx, rhs, vty);
+  ir_inst_t *st = ir_inst_new(IR_STORE);
+  st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+  st->src2 = rhs;
+  ir_func_append_inst(ctx->f, st);
+  return rhs;
+}
+
+static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
+  node_gvar_t *gv = (node_gvar_t *)node->lhs;
+  ir_type_t vty = ir_type_from_node(node->lhs);
+  if (vty == IR_TY_I32) {
+    int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+    vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+  }
+  int v_addr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
+                                                   : IR_LOAD_SYM);
+  sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+  sym->sym = gv->name;
+  sym->sym_len = gv->name_len;
+  ir_func_append_inst(ctx->f, sym);
+  ir_val_t rhs = build_expr(ctx, node->rhs);
+  if (ctx->failed) return ir_val_none();
+  rhs = coerce_to_type(ctx, rhs, vty);
+  ir_inst_t *st = ir_inst_new(IR_STORE);
+  st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
+  st->src2 = rhs;
+  ir_func_append_inst(ctx->f, st);
+  return rhs;
+}
+
+static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
+  /* *p = rhs。p が struct メンバアクセス由来なら bit_width が乗る。 */
+  node_mem_t *mm = (node_mem_t *)node->lhs;
+  int bw = mm->bit_width;
+  ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
+  if (ctx->failed) return ir_val_none();
+  ir_val_t rhs = build_expr(ctx, node->rhs);
+  if (ctx->failed) return ir_val_none();
+  if (bw > 0) {
+    return emit_bitfield_store(ctx, ptr, rhs, bw, mm->bit_offset);
+  }
+  /* DEREF の type_size と fp_kind から書き込み幅を決める。 */
+  ir_type_t vty = ir_type_from_node(node->lhs);
+  if (vty == IR_TY_I32) {
+    if (mm->type_size >= 8) vty = IR_TY_PTR;
+    else if (mm->type_size == 2) vty = IR_TY_I16;
+    else if (mm->type_size == 1) vty = IR_TY_I8;
+  }
+  rhs = coerce_to_type(ctx, rhs, vty);
+  ir_inst_t *st = ir_inst_new(IR_STORE);
+  st->src1 = ptr;
+  st->src2 = rhs;
+  ir_func_append_inst(ctx->f, st);
+  return rhs;
 }
 
 static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
