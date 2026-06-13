@@ -1647,6 +1647,88 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   return name;
 }
 
+/* 仮引数 VLA / 多次元配列宣言子の lvar 登録 (`int a[n]` / `int a[][N]` /
+ * `int a[][N][M]` / VLA dim that's another param 等)。
+ * C11 6.7.6.3p7 により int *a として扱われるが、pointee が配列の場合は
+ * outer_stride / mid_stride 等を立てて `a[i]` の steping を pointee 全体に揃える。 */
+static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t *ds,
+                                         int inner_first_dim, int inner_second_dim,
+                                         token_ident_t *inner_first_dim_ident) {
+  // size=8 (pointer), elem_size=実際の要素サイズ
+  lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
+  if (inner_first_dim > 0) {
+    var->outer_stride = inner_first_dim * ds->elem_size;
+    var->base_deref_size = (short)ds->elem_size;
+    if (inner_second_dim > 0) {
+      var->outer_stride = inner_first_dim * inner_second_dim * ds->elem_size;
+      var->mid_stride = inner_second_dim * ds->elem_size;
+    }
+    return var;
+  }
+  if (!inner_first_dim_ident) return var;
+  /* C99 6.7.6.3p7 VLA-as-param: `int g[n][m]` の内側 dim が他のパラメータ。
+   * row stride スロットを確保し、関数 entry で
+   *   *[rs_slot] = *[src_param] * elem_size
+   * を計算する。これにより subscript の vla_rsf 経路 (expr.c) が
+   * runtime stride を読んで `g[i]` を正しく steping できる。 */
+  lvar_t *src = psx_decl_find_lvar(inner_first_dim_ident->str,
+                                   inner_first_dim_ident->len);
+  if (!src || !src->is_param) {
+    psx_diag_ctx(curtok(), "param",
+                 "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                 inner_first_dim_ident->len, inner_first_dim_ident->str);
+    return var;
+  }
+  /* row stride スロットを匿名で確保。名前は param 名 + "__rs" で
+   * 衝突しないようにする (実体は VLA param 内部用)。 */
+  static char rs_name_buf[64];
+  int rs_name_len = snprintf(rs_name_buf, sizeof(rs_name_buf),
+                              "__rs_%.*s", param->len, param->str);
+  char *rs_name = arena_alloc((size_t)rs_name_len + 1);
+  memcpy(rs_name, rs_name_buf, (size_t)rs_name_len);
+  rs_name[rs_name_len] = '\0';
+  lvar_t *rs = psx_decl_register_lvar_sized(rs_name, rs_name_len, 8, 8, 0);
+  var->is_vla = 1;
+  var->vla_row_stride_frame_off = rs->offset;
+  var->vla_row_stride_src_offset = src->offset;
+  var->vla_row_stride_elem_size = (short)ds->elem_size;
+  var->base_deref_size = (short)ds->elem_size;
+  return var;
+}
+
+/* `typedef int M[2][3][4]; M *p` のように pointee が typedef した配列型の
+ * 仮引数で、(*p)[i][j][k] の各サブスクリプト stride を設定する:
+ *   var->outer_stride       = sizeof(M) = D0*D1*..*elem  (p[i] のステップ)
+ *   var->mid_stride         = D1*..*elem                 ((*p)[j] のステップ)
+ *   var->extra_strides[0..] = D2*..*elem, D3*..*elem, ...
+ * build_unary_deref_node が *p で 1 段スライドして復元する。 */
+static void apply_typedef_array_pointee_strides(lvar_t *var, param_decl_spec_t *ds) {
+  var->outer_stride = ds->typedef_sizeof_size;
+  if (ds->typedef_array_first_dim > 0) {
+    int second_dim_bytes = ds->typedef_sizeof_size / ds->typedef_array_first_dim;
+    if (second_dim_bytes > 0 && second_dim_bytes != ds->elem_size) {
+      var->mid_stride = second_dim_bytes;
+    }
+  }
+  if (ds->typedef_array_dim_count < 3) return;
+  // mid = D1 以降の積 * elem
+  int mid_mul = 1;
+  for (int i = 1; i < ds->typedef_array_dim_count; i++) {
+    if (ds->typedef_array_dims[i] > 0) mid_mul *= ds->typedef_array_dims[i];
+  }
+  if (mid_mul > 0) var->mid_stride = mid_mul * ds->elem_size;
+  // extra_strides[k] = D(k+2) 以降の積 * elem
+  int idx_in_extras = 0;
+  for (int start = 2; start < ds->typedef_array_dim_count && idx_in_extras < 5; start++) {
+    int rest_mul = 1;
+    for (int j = start; j < ds->typedef_array_dim_count; j++) {
+      if (ds->typedef_array_dims[j] > 0) rest_mul *= ds->typedef_array_dims[j];
+    }
+    var->extra_strides[idx_in_extras++] = rest_mul * ds->elem_size;
+  }
+  var->extra_strides_count = (unsigned char)idx_in_extras;
+}
+
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   param_decl_spec_t ds = {0};
   parse_param_decl_spec(&ds);
@@ -1697,49 +1779,11 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     var->base_deref_size = 8;
     var->pointer_qual_levels = 1;
   } else if (param_is_array_declarator && ds.tag_kind == TK_EOF && !param_is_ptr) {
-    // 仮引数 VLA 宣言子: int a[n] → int *a として扱う (C11 6.7.6.3p7)
-    // size=8 (pointer), elem_size=実際の要素サイズ, sizeof(a)==8
-    var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds.elem_size, 0);
-    // 多次元配列パラメータ `int a[][N]` / `int a[][N][M]` は `int (*a)[N]` /
-    // `int (*a)[N][M]` と等価 (C11 6.7.6.3p7)。pointee が単純な int でなく
-    // 配列なので、outer_stride / mid_stride を設定して `a[i]` のステップを
-    // pointee 全体に揃える。
-    if (param_inner_first_dim > 0) {
-      var->outer_stride = param_inner_first_dim * ds.elem_size;
-      var->base_deref_size = (short)ds.elem_size;
-      if (param_inner_second_dim > 0) {
-        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds.elem_size;
-        var->mid_stride = param_inner_second_dim * ds.elem_size;
-      }
-    } else if (param_inner_first_dim_ident) {
-      /* C99 6.7.6.3p7 VLA-as-param: `int g[n][m]` の内側 dim が他のパラメータ。
-       * row stride スロットを確保し、関数 entry で
-       *   *[rs_slot] = *[src_param] * elem_size
-       * を計算する。これにより subscript の vla_rsf 経路 (expr.c) が
-       * runtime stride を読んで `g[i]` を正しく steping できる。 */
-      lvar_t *src = psx_decl_find_lvar(param_inner_first_dim_ident->str,
-                                       param_inner_first_dim_ident->len);
-      if (!src || !src->is_param) {
-        psx_diag_ctx(curtok(), "param",
-                     "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
-                     param_inner_first_dim_ident->len, param_inner_first_dim_ident->str);
-      } else {
-        /* row stride スロットを匿名で確保。名前は param 名 + "__rs" で
-         * 衝突しないようにする (実体は VLA param 内部用)。 */
-        static char rs_name_buf[64];
-        int rs_name_len = snprintf(rs_name_buf, sizeof(rs_name_buf),
-                                    "__rs_%.*s", param->len, param->str);
-        char *rs_name = arena_alloc((size_t)rs_name_len + 1);
-        memcpy(rs_name, rs_name_buf, (size_t)rs_name_len);
-        rs_name[rs_name_len] = '\0';
-        lvar_t *rs = psx_decl_register_lvar_sized(rs_name, rs_name_len, 8, 8, 0);
-        var->is_vla = 1;
-        var->vla_row_stride_frame_off = rs->offset;
-        var->vla_row_stride_src_offset = src->offset;
-        var->vla_row_stride_elem_size = (short)ds.elem_size;
-        var->base_deref_size = (short)ds.elem_size;
-      }
-    }
+    /* 仮引数 VLA / 多次元配列宣言子 (`int a[n]` / `int a[][N]` 等)。
+     * C11 6.7.6.3p7 により pointer (or pointer-to-array) に adjust される。 */
+    var = register_vla_array_param(param, &ds, param_inner_first_dim,
+                                    param_inner_second_dim,
+                                    param_inner_first_dim_ident);
   } else if (param_is_array_declarator && ds.tag_kind != TK_EOF && !param_is_ptr) {
     /* struct/union 配列パラメータ `struct V arr[]` は C11 6.7.6.3p7 で
      * `struct V *arr` に adjust される。tag_kind を保持しつつ pointer 扱い。
@@ -1781,48 +1825,10 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
         var->mid_stride = param_inner_second_dim * ds.elem_size;
       }
     } else if (param_ptr_levels == 1 && ds.typedef_is_array && ds.typedef_sizeof_size > 0) {
-      // `typedef int row_t[N]; row_t *a` 形式: typedef した配列型を仮引数で
-      // 受けるとき、a[i] は pointee (= row_t) のサイズ単位で進む。
-      // → outer_stride = typedef_sizeof_size (= N*elem)、elem_size は ds.elem_size のまま。
-      var->outer_stride = ds.typedef_sizeof_size;
-      // 多次元 typedef array (`typedef int M[3][4]; M *p`) の場合、
-      // 2 段目サブスクリプト用に mid_stride = sizeof_size / first_dim を設定する。
-      if (ds.typedef_array_first_dim > 0) {
-        int second_dim_bytes = ds.typedef_sizeof_size / ds.typedef_array_first_dim;
-        if (second_dim_bytes > 0 && second_dim_bytes != ds.elem_size) {
-          var->mid_stride = second_dim_bytes;
-        }
-      }
-      // 3+ 次元 typedef array (`typedef int M[2][3][4]; M *p`) では、
-      // (*p)[i][j][k] の各サブスクリプト stride を全部記録する。
-      // 配置:
-      //   var->outer_stride       = sizeof(M) = D0*D1*..*elem  (p[i] のステップ)
-      //   var->mid_stride         = D1*..*elem                 ((*p)[j] のステップ)
-      //   var->extra_strides[0]   = D2*..*elem                 ((*p)[j][k] のステップ)
-      //   var->extra_strides[1]   = D3*..*elem
-      //   ...
-      //   var->extra_strides[N-2] = elem                       (最深 stride)
-      // build_unary_deref_node が *p で 1 段スライドして deref/inner/next/extra
-      // を順に復元する。
-      if (ds.typedef_array_dim_count >= 3) {
-        // outer = sizeof(M) は既に上で typedef_sizeof_size から設定済み (= 正しい)。
-        // mid = D1 以降の積 * elem
-        int mid_mul = 1;
-        for (int i = 1; i < ds.typedef_array_dim_count; i++) {
-          if (ds.typedef_array_dims[i] > 0) mid_mul *= ds.typedef_array_dims[i];
-        }
-        if (mid_mul > 0) var->mid_stride = mid_mul * ds.elem_size;
-        // extra_strides[k] = D(k+2) 以降の積 * elem (k = 0..)、末尾は elem 単体
-        int idx_in_extras = 0;
-        for (int start = 2; start < ds.typedef_array_dim_count && idx_in_extras < 5; start++) {
-          int rest_mul = 1;
-          for (int j = start; j < ds.typedef_array_dim_count; j++) {
-            if (ds.typedef_array_dims[j] > 0) rest_mul *= ds.typedef_array_dims[j];
-          }
-          var->extra_strides[idx_in_extras++] = rest_mul * ds.elem_size;
-        }
-        var->extra_strides_count = (unsigned char)idx_in_extras;
-      }
+      /* `typedef int row_t[N]; row_t *a` / 多次元版 (`typedef int M[2][3][4]; M *p`)
+       * 形式: pointee が typedef した配列なので outer/mid/extra_strides を
+       * pointee 全体に揃える。 */
+      apply_typedef_array_pointee_strides(var, &ds);
     }
   } else if (!param_is_ptr && ds.tag_kind == TK_EOF && ds.typedef_is_array &&
              ds.typedef_sizeof_size > 0) {
