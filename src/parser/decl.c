@@ -2103,6 +2103,47 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   return 1;
 }
 
+/* typedef が配列型 (`typedef int M[2][3][4]; M m;`) のときの lvar 登録。
+ * td_array_dims をそのまま多次元配列の dims として扱い、
+ * outer_stride / mid_stride / extra_strides (8 次元まで) を計算する。 */
+static lvar_t *register_typedef_array_lvar(token_ident_t *tok, int elem_size,
+                                            const int *td_array_dims, int td_array_dim_count,
+                                            int alignas_val) {
+  int arr_total = 1;
+  for (int di = 0; di < td_array_dim_count; di++) {
+    if (td_array_dims[di] > 0) arr_total *= td_array_dims[di];
+  }
+  int arr_elem_size = elem_size;
+  lvar_t *var = psx_decl_register_lvar_sized_align(tok->str, tok->len,
+      arr_total * arr_elem_size, arr_elem_size, 1, alignas_val);
+  if (td_array_dim_count >= 2) {
+    int outer_mul = 1;
+    for (int i = 1; i < td_array_dim_count; i++) {
+      if (td_array_dims[i] > 0) outer_mul *= td_array_dims[i];
+    }
+    var->outer_stride = outer_mul * arr_elem_size;
+  }
+  if (td_array_dim_count >= 3) {
+    int mid_mul = 1;
+    for (int i = 2; i < td_array_dim_count; i++) {
+      if (td_array_dims[i] > 0) mid_mul *= td_array_dims[i];
+    }
+    var->mid_stride = mid_mul * arr_elem_size;
+  }
+  if (td_array_dim_count >= 4) {
+    int idx_in_extras = 0;
+    for (int start = 3; start < td_array_dim_count && idx_in_extras < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < td_array_dim_count; j++) {
+        if (td_array_dims[j] > 0) rest_mul *= td_array_dims[j];
+      }
+      var->extra_strides[idx_in_extras++] = rest_mul * arr_elem_size;
+    }
+    var->extra_strides_count = (unsigned char)idx_in_extras;
+  }
+  return var;
+}
+
 /* 多次元配列 `[N1][N2][N3]...` の trailing dim 列を読み、stride を含めた lvar を
  * 登録する (最大 8 次元)。outer `[N1]` は呼出側が消費済みで、array_size_inout に
  * その個数が入っている。size_inferred_from_init=true なら `[]` で初期化子から推定。
@@ -2355,41 +2396,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->base_deref_size = (short)elem_size;
         var->outer_stride = row_size;
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
-        // typedef が配列型 (`typedef int M[2][3][4]; M m;`):
-        // td_array_dims をそのまま多次元配列の dims として扱い、
-        // outer_stride/mid_stride/extra_strides を計算する。
-        int arr_total = 1;
-        for (int di = 0; di < td_array_dim_count; di++) {
-          if (td_array_dims[di] > 0) arr_total *= td_array_dims[di];
-        }
-        int arr_elem_size = elem_size;
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len,
-                                                  arr_total * arr_elem_size, arr_elem_size, 1, alignas_val);
-        if (td_array_dim_count >= 2) {
-          int outer_mul = 1;
-          for (int i = 1; i < td_array_dim_count; i++) {
-            if (td_array_dims[i] > 0) outer_mul *= td_array_dims[i];
-          }
-          var->outer_stride = outer_mul * arr_elem_size;
-        }
-        if (td_array_dim_count >= 3) {
-          int mid_mul = 1;
-          for (int i = 2; i < td_array_dim_count; i++) {
-            if (td_array_dims[i] > 0) mid_mul *= td_array_dims[i];
-          }
-          var->mid_stride = mid_mul * arr_elem_size;
-        }
-        if (td_array_dim_count >= 4) {
-          int idx_in_extras = 0;
-          for (int start = 3; start < td_array_dim_count && idx_in_extras < 5; start++) {
-            int rest_mul = 1;
-            for (int j = start; j < td_array_dim_count; j++) {
-              if (td_array_dims[j] > 0) rest_mul *= td_array_dims[j];
-            }
-            var->extra_strides[idx_in_extras++] = rest_mul * arr_elem_size;
-          }
-          var->extra_strides_count = (unsigned char)idx_in_extras;
-        }
+        /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
+         * そのまま使って stride を計算しつつ lvar を登録する。 */
+        var = register_typedef_array_lvar(tok, elem_size, td_array_dims,
+                                           td_array_dim_count, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
