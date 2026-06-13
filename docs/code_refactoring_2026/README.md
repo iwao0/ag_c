@@ -54,3 +54,31 @@ ag_c (C11 コンパイラ) の構造的リファクタリング計画。Phase A 
 - Phase A 完了: 保守性改善 (重複削減、API 統合、ヘルパ抽出) で 820/820 維持
 - Phase B 完了: 巨大関数分割で最大関数 < 300 行
 - Phase C 完了: モジュール境界明確化で IR Phase 8 着手可能
+
+## IR Phase 8 (マルチターゲット準備) との接続
+
+`docs/ir_intermediate_representation/implementation_plan.md` の Phase 8
+「マルチターゲット準備」は以下を目的とする:
+
+- IR→ASM のインターフェースを明確化 (`codegen_backend.h` を IR ベースで再定義)
+- x86_64 バックエンドの骨格を追加 (実装は別フェーズ)
+
+本計画 Phase C の成果で、Phase 8 着手の前提が揃った:
+
+| Phase 8 の前提 | 本計画での解消 |
+|---|---|
+| codegen から parser 内部表現への依存を断つ | C2 で `parser_public.h` が窓口、C3 で `codegen_iter_globals` 経由化 |
+| parser/IR の境界が明確 (将来 IR を再設計しても parser に波及しない) | C2-1〜C2-3 で `internal/` 直接 include を IR/arch から排除 |
+| `ast.h` がシンボルテーブルと混在しない | C1 で `symtab.h` に分離、ast.h は AST node 定義のみ |
+| 任意の arch backend が global_vars リストを走査するための共通 API | C3-1 で `codegen_iter_globals` visitor を新設 (arm64 専用ではなく `parser_public.h` 経由) |
+
+x86_64 バックエンド追加時の作業 (Phase 8 内部):
+1. `src/codegen_backend.h` を arch-agnostic に再整理 (現状 arm64_apple.c
+   のヘルパ宣言で兼ねている `gen_string_literals` / `_global_vars` 等を、
+   backend が実装すべきインターフェースとして再定義)
+2. `src/arch/x86_64_*.c` の骨格追加
+3. 関数本体 codegen は IR 経由 (`arm64_apple_ir.c` のような IR→ASM ファイル)
+   を backend ごとに用意
+
+本計画 Phase C 完了時点で 1 の素地は揃っている (parser 側の API
+`codegen_iter_globals` / `parser_public.h` は backend を問わず利用可能)。
