@@ -19,10 +19,10 @@
 
 #include "ir_builder.h"
 #include "ir.h"
-#include "../parser/ast.h"
-#include "../parser/internal/decl.h"   /* lvar_t / psx_decl_find_lvar_by_offset */
-#include "../parser/internal/semantic_ctx.h"  /* psx_ctx_get_function_is_variadic */
-#include "../parser/internal/node_utils.h"     /* psx_node_is_pointer / deref_size */
+/* Phase C2: parser の公開 API は parser_public.h 1 本に集約。
+ * internal ヘッダへの直接 include は禁止 (parser_public.h が必要に応じて
+ * transitively 取り込む形で内部実装の変更を吸収する)。 */
+#include "../parser/parser_public.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
