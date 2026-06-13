@@ -71,7 +71,7 @@
 ### C2: parser → IR public I/F 抽出 (commit 数: 3)
 - [x] **C2-1** `parser_public.h` 新設 — 3ef039c (2026-06-11) IR が必要とする 4 関数 + lvar_t 型を集約
 - [x] **C2-2** IR の include 切替 (`../parser/internal/` → `../parser/parser_public.h`) — b6bf9bb (2026-06-11) grep parser/internal src/ir/ = 0
-- [ ] **C2-3** internal/ ヘッダの visibility 強化
+- [x] **C2-3** internal/ ヘッダの visibility 強化 — 1f26d4d (2026-06-11) arm64_apple.c も parser_public.h 経由化、parser 外部から internal/ への include は 0 件
 
 ### C3: codegen と global_vars の結合緩和 (commit 数: 2)
 - [ ] **C3-1** `codegen_iter_globals` iterator API 新設
