@@ -42,7 +42,7 @@
 - [x] **B1-4** 残余 5 case 抽出 — d6cce8a (2026-06-11) build_expr 197→34 (累計 1047→34)
 
 ### B2: brace 初期化系の分解 (commit 数: 3)
-- [ ] **B2-1** `brace_init_walker_t` 構造体抽出
+- [x] **B2-1** struct zero-fill helper 抽出 — c60840f (2026-06-11) 計画の walker 構造体は実態に合わず、自己完結ブロック抽出に方針変更。parse_struct_initializer 217→189
 - [ ] **B2-2** スカラ/集約分岐分離
 - [ ] **B2-3** 指示子と文字列リテラル分離
 
