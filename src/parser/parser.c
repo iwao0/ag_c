@@ -2190,6 +2190,57 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
 
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
+/* 関数本体の `{ ... }` を 1 つの node_block_t にパースする。
+ * 既に opening `{` は呼出側が consume 済みの前提。block scope を enter / leave し、
+ * 未到達コード警告 (DIAG_WARN_PARSER_UNREACHABLE_CODE) も内部で発火する。
+ * pragma pack マーカーは透過に消費する。 */
+static node_block_t *parse_funcdef_body_block(void) {
+  psx_ctx_enter_block_scope();
+  node_block_t *body = arena_alloc(sizeof(node_block_t));
+  body->base.kind = ND_BLOCK;
+  int i = 0;
+  int body_cap = 16;
+  body->body = calloc(body_cap, sizeof(node_t *));
+  int prev_terminates = 0;
+  while (!tk_consume('}')) {
+    // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
+    if (psx_try_consume_pragma_pack_marker()) continue;
+    if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
+        !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
+                     "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
+      prev_terminates = 0;
+    }
+    if (i >= body_cap - 1) {
+      body_cap = pda_next_cap(body_cap, i + 2);
+      body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
+    }
+    body->body[i] = psx_stmt_stmt();
+    node_kind_t k = body->body[i]->kind;
+    prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
+    i++;
+  }
+  body->body[i] = NULL;
+  psx_ctx_leave_block_scope();
+  return body;
+}
+
+/* 関数本体パース完了後、未使用変数・未初期化変数の警告を出す。
+ * 仮引数 / underscore-prefix / 配列は対象外。 */
+static void warn_unused_uninit_locals(void) {
+  for (lvar_t *v = psx_decl_get_locals(); v; v = v->next_all) {
+    if (!v->is_used && !v->is_param && v->name[0] != '_') {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, curtok(),
+                     diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
+                     v->len, v->name);
+    } else if (v->is_used && !v->is_initialized && !v->is_param && !v->is_array) {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, curtok(),
+                     diag_warn_message_for(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE),
+                     v->len, v->name);
+    }
+  }
+}
+
 static node_t *funcdef(void) {
   token_kind_t ret_kind;
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
@@ -2287,48 +2338,11 @@ static node_t *funcdef(void) {
 
   // 関数本体 (ブロック)
   tk_expect('{');
-  psx_ctx_enter_block_scope();
-  node_block_t *body = arena_alloc(sizeof(node_block_t));
-  body->base.kind = ND_BLOCK;
-  int i = 0;
-  int body_cap = 16;
-  body->body = calloc(body_cap, sizeof(node_t*));
-  int prev_terminates = 0;
-  while (!tk_consume('}')) {
-    // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
-    if (psx_try_consume_pragma_pack_marker()) continue;
-    if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
-        !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
-      diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
-                     "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
-      prev_terminates = 0;
-    }
-    if (i >= body_cap - 1) {
-      body_cap = pda_next_cap(body_cap, i + 2);
-      body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
-    }
-    body->body[i] = psx_stmt_stmt();
-    node_kind_t k = body->body[i]->kind;
-    prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
-    i++;
-  }
-  body->body[i] = NULL;
-  psx_ctx_leave_block_scope();
+  node_block_t *body = parse_funcdef_body_block();
   node->base.rhs = (node_t *)body;
   psx_ctx_validate_goto_refs();
 
-  // 未使用変数・未初期化変数の警告
-  for (lvar_t *v = psx_decl_get_locals(); v; v = v->next_all) {
-    if (!v->is_used && !v->is_param && v->name[0] != '_') {
-      diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, curtok(),
-                     diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
-                     v->len, v->name);
-    } else if (v->is_used && !v->is_initialized && !v->is_param && !v->is_array) {
-      diag_warn_tokf(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE, curtok(),
-                     diag_warn_message_for(DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE),
-                     v->len, v->name);
-    }
-  }
+  warn_unused_uninit_locals();
 
   /* IR builder (Phase 4d-1〜) が関数ごとの lvar リストを必要とするため、
    * 関数解析完了時点の all_locals 先頭を node に保存しておく。
