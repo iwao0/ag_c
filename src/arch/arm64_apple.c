@@ -15,11 +15,11 @@
 
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
-/* arm64_apple.c は AST node 型を使わない。Phase C1-3:
- * parser.h ではなくシンボルテーブル (symtab.h) を直接 include する。
- * tag_member_info_t / psx_ctx_* は semantic_ctx.h 経由。 */
+/* arm64_apple.c は AST node 型を使わない。
+ * Phase C1-3: parser.h ではなくシンボルテーブル (symtab.h) を直接 include。
+ * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由に切替。 */
 #include "../parser/symtab.h"
-#include "../parser/internal/semantic_ctx.h"
+#include "../parser/parser_public.h"
 #include "../tokenizer/escape.h"
 #include <stdbool.h>
 #include <stdarg.h>
