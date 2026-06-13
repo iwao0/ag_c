@@ -52,7 +52,7 @@
 - [x] **B3-3** typedef-配列分岐を helper 化 — 2257113 (2026-06-11) 関数 238→207 (累計 349→207、< 150 目標は未達だが残余は小ブランチ集合)
 
 ### B4: `gen_global_vars` 分割 (commit 数: 1)
-- [ ] **B4-1** `emit_global_aggregate_init` helper 抽出
+- [x] **B4-1** struct/struct-array brace init helper 抽出 — 11e5919 (2026-06-11) gen_global_vars 177→109 (< 150 達成)
 
 **Phase B 完了時**:
 - [ ] `phase_b_walkthrough.md` 作成
