@@ -63,7 +63,7 @@
 ## Phase C: モジュール境界 (commit 数: 10, 11-17h)
 
 ### C1: `ast.h` 分割 (commit 数: 4)
-- [ ] **C1-1** `symtab.h` 切り出し + ast.h shim 化
+- [x] **C1-1** `symtab.h` 切り出し + ast.h shim 化 — 50715bd (2026-06-11) ast.h 308→238、symtab.h 新規 86 行
 - [ ] **C1-2** parser 内 include 個別化
 - [ ] **C1-3** ir/arch include 個別化
 - [ ] **C1-4** shim 撤去
