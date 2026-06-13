@@ -75,7 +75,7 @@
 
 ### C3: codegen と global_vars の結合緩和 (commit 数: 2)
 - [x] **C3-1** `codegen_iter_globals` iterator API 新設 — b790945 (2026-06-11) parser_public.h に visitor 型、parser.c に実装
-- [ ] **C3-2** arm64_apple.c 移行
+- [x] **C3-2** arm64_apple.c 移行 — 788374c (2026-06-11) gen_global_vars が codegen_iter_globals 経由化、global_vars 直接参照は消滅
 
 ### C4: IR Phase 8 との整合確認 (commit 数: 1)
 - [ ] **C4-1** Phase 8 計画と本計画の整合性記録 (docs のみ)
