@@ -1351,6 +1351,36 @@ static void emit_invalid_type_spec_diag(void) {
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
+/* 後置 cv/atomic 修飾子トークンを 1 つ消費する。const/volatile/restrict/atomic
+ * いずれも同じ「対応 flag を立てて trailing トークンを進める」パターンなので
+ * 集約する。消費したら 1、該当しなければ 0 (呼出側で loop を抜ける)。 */
+static int try_consume_post_cv_qualifier(token_kind_t k) {
+  switch (k) {
+    case TK_CONST:    g_last_type_const_qualified = 1; break;
+    case TK_VOLATILE: g_last_type_volatile_qualified = 1; break;
+    case TK_RESTRICT: break;
+    case TK_ATOMIC:   g_last_type_atomic = 1; break;
+    default: return 0;
+  }
+  set_curtok(curtok()->next);
+  return 1;
+}
+
+/* saw_* flag 群から最終的な型 token_kind_t を決定する。
+ * 優先度: void > float > double > bool > char > short > long > int。 */
+static token_kind_t resolve_type_kind_from_flags(int saw_void, int saw_float, int saw_double,
+                                                  int saw_bool, int saw_char, int saw_short,
+                                                  int long_count) {
+  if (saw_void) return TK_VOID;
+  if (saw_float) return TK_FLOAT;
+  if (saw_double) return TK_DOUBLE;
+  if (saw_bool) return TK_BOOL;
+  if (saw_char) return TK_CHAR;
+  if (saw_short) return TK_SHORT;
+  if (long_count > 0) return TK_LONG;
+  return TK_INT;
+}
+
 token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
   g_last_type_complex = 0;
@@ -1479,26 +1509,8 @@ token_kind_t psx_consume_type_kind(void) {
       set_curtok(curtok()->next);
       continue;
     }
-    // 後置 cv 修飾子（int const, volatile int const など）
-    if (k == TK_CONST) {
-      g_last_type_const_qualified = 1;
-      set_curtok(curtok()->next);
-      continue;
-    }
-    if (k == TK_VOLATILE) {
-      g_last_type_volatile_qualified = 1;
-      set_curtok(curtok()->next);
-      continue;
-    }
-    if (k == TK_RESTRICT) {
-      set_curtok(curtok()->next);
-      continue;
-    }
-    if (k == TK_ATOMIC) {
-      g_last_type_atomic = 1;
-      set_curtok(curtok()->next);
-      continue;
-    }
+    // 後置 cv 修飾子（int const, volatile int const など）は同じ形なので集約。
+    if (try_consume_post_cv_qualifier(k)) continue;
     break;
   }
 
@@ -1510,14 +1522,8 @@ token_kind_t psx_consume_type_kind(void) {
                    "%s",
                    diag_message_for(DIAG_ERR_PARSER_COMPLEX_IMAGINARY_TYPE_REQUIRES_FLOAT));
   }
-  if (saw_void) return TK_VOID;
-  if (saw_float) return TK_FLOAT;
-  if (saw_double) return TK_DOUBLE;
-  if (saw_bool) return TK_BOOL;
-  if (saw_char) return TK_CHAR;
-  if (saw_short) return TK_SHORT;
-  if (long_count > 0) return TK_LONG;
-  return TK_INT;
+  return resolve_type_kind_from_flags(saw_void, saw_float, saw_double, saw_bool,
+                                      saw_char, saw_short, long_count);
 }
 
 
