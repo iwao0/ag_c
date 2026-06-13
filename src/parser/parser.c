@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "parser_public.h"  /* codegen_iter_globals prototype */
 #include "internal/arena.h"
 #include "internal/node_utils.h"
 #include "internal/semantic_ctx.h"
@@ -25,6 +26,15 @@
 string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 global_var_t *global_vars = NULL;
+
+/* parser_public.h で宣言した visitor の実装 (Phase C3-1)。
+ * codegen 側が global_vars リストを直接舐めるのを廃して、
+ * 走査経路を 1 箇所にまとめる。 */
+void codegen_iter_globals(global_var_visitor_t fn, void *user) {
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    fn(gv, user);
+  }
+}
 static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
 static int g_last_alignas_value = 0;

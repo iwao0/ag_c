@@ -22,6 +22,7 @@
  */
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
+#include "symtab.h"     /* global_var_t */
 #include "internal/decl.h"  /* lvar_t — Phase C2 では内部含むが、IR からは
                               本ヘッダ越しにしか触らない契約とする */
 #include <stdbool.h>
@@ -29,6 +30,12 @@
 /* node_utils.h からの公開 */
 int psx_node_is_pointer(node_t *n);
 int psx_node_deref_size(node_t *n);
+
+/* グローバル変数リスト走査 (Phase C3)。
+ * codegen は global_vars リストを直接舐めず、本 visitor 経由で iterate する。
+ * 走査順序は parser が登録した順 (FIFO ではなく LIFO: 後で登録した方が先)。 */
+typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
+void codegen_iter_globals(global_var_visitor_t fn, void *user);
 
 /* semantic_ctx.h からの公開:
  * - 関数呼出側 IR が必要とする psx_ctx_get_function_is_variadic /
