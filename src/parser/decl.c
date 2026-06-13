@@ -1177,6 +1177,39 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   return (node_t *)assign_node;
 }
 
+/* var の全 bytes を 8/4/2/1 単位の 0 store チェーンで埋める。
+ * struct brace init 冒頭で呼び、部分指定の場合に未代入メンバが
+ * garbage 残りしないようにする (C11 6.7.9p21)。 */
+static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
+  int total = var->size > 0 ? var->size : var->elem_size;
+  int off = 0;
+  while (off + 8 <= total) {
+    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 8);
+    init_chain = append_to_init_chain(init_chain,
+        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    off += 8;
+  }
+  while (off + 4 <= total) {
+    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 4);
+    init_chain = append_to_init_chain(init_chain,
+        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    off += 4;
+  }
+  while (off + 2 <= total) {
+    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 2);
+    init_chain = append_to_init_chain(init_chain,
+        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    off += 2;
+  }
+  while (off + 1 <= total) {
+    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 1);
+    init_chain = append_to_init_chain(init_chain,
+        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    off += 1;
+  }
+  return init_chain;
+}
+
 static node_t *parse_struct_initializer(lvar_t *var) {
   if (!tk_consume('{')) {
     psx_diag_ctx(curtok(), "decl", "%s",
@@ -1188,36 +1221,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   /* C11 6.7.9p21: brace 指定がない要素は 0 として初期化される。
    * 既存の「末尾でスカラ未指定メンバを 0 で埋める」処理は struct/union/array
    * メンバを skip するため、部分指定だと struct メンバが garbage のままだった。
-   * 確実にゼロ化するため struct 全体を 8/4 バイトの 0 ストアで埋めてから、
-   * 明示代入で上書きする。 */
-  {
-    int total = var->size > 0 ? var->size : var->elem_size;
-    int off = 0;
-    while (off + 8 <= total) {
-      node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 8);
-      init_chain = append_to_init_chain(init_chain,
-          (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
-      off += 8;
-    }
-    while (off + 4 <= total) {
-      node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 4);
-      init_chain = append_to_init_chain(init_chain,
-          (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
-      off += 4;
-    }
-    while (off + 2 <= total) {
-      node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 2);
-      init_chain = append_to_init_chain(init_chain,
-          (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
-      off += 2;
-    }
-    while (off + 1 <= total) {
-      node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 1);
-      init_chain = append_to_init_chain(init_chain,
-          (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
-      off += 1;
-    }
-  }
+   * 確実にゼロ化するため struct 全体を 0 ストアで埋めてから、明示代入で上書きする。 */
+  init_chain = append_struct_zero_fill_chain(var, init_chain);
   // assigned_kind[i]: 0=full assignment ('.m = v' or ordinal), 1=indexed-only ('.m[i]=v')。
   // 完全代入とインデックス指定が同じメンバ名で混在したら重複と扱う。
   char **assigned_names = calloc((size_t)(member_count > 0 ? member_count : 1), sizeof(char *));
