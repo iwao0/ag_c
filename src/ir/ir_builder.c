@@ -298,6 +298,10 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_comma(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node);
 
 /* _Complex 用ヘルパ: 式 `node` の値 (実部, 虚部) を *dst, *(dst + half) に書く。
  * fp_ty = IR_TY_F64 または IR_TY_F32、half = 8 or 4。
@@ -493,108 +497,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_ASSIGN: return build_node_assign(ctx, node);
     case ND_ADDR: return build_node_addr(ctx, node);
     case ND_DEREF: return build_node_deref(ctx, node);
-    case ND_FUNCALL: {
-      node_func_t *fn = (node_func_t *)node;
-      /* 間接呼び出し: callee 式を pre-evaluate しておく (引数評価より先に
-       * vreg に確定させる方が安全)。AST 経路と同じ評価順序を守るため。
-       * 間接呼び出しは現状 variadic 非対応とする (関数ポインタ型に variadic
-       * 情報が乗っていない簡略化)。 */
-      ir_val_t callee_v = ir_val_none();
-      if (fn->callee) {
-        callee_v = build_expr(ctx, fn->callee);
-        if (ctx->failed) return ir_val_none();
-      }
-      /* callee が variadic か prototype から確認 (Phase 7e)。間接呼出は skip。 */
-      int is_variadic_call = 0;
-      int nargs_fixed = fn->nargs;
-      if (!fn->callee) {
-        int fixed = 0;
-        if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
-            fixed < fn->nargs) {
-          is_variadic_call = 1;
-          nargs_fixed = fixed;
-        }
-      }
-      /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは
-       * 制限せず通す (Apple ARM64 ABI)。float/double が 9 番目以降になる場合は
-       * 未対応のままだが、本テスト用途では int のみ。 */
-      if (is_variadic_call && nargs_fixed > 8) {
-        fail(ctx, "more than 8 fixed args in variadic call (Phase 7e unsupported)");
-        return ir_val_none();
-      }
-      ir_val_t *cargs = NULL;
-      if (fn->nargs > 0) {
-        cargs = calloc((size_t)fn->nargs, sizeof(ir_val_t));
-        for (int i = 0; i < fn->nargs; i++) {
-          node_t *arg = fn->args[i];
-          int arg_full_size = 0;
-          if (arg && arg->kind == ND_LVAR) {
-            node_lvar_t *lv = (node_lvar_t *)arg;
-            /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
-             * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
-            if (!lv->mem.is_pointer) {
-              lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-              if (owner) arg_full_size = owner->size;
-              if (arg_full_size == 0) arg_full_size = lv->mem.type_size;
-            } else {
-              arg_full_size = lv->mem.type_size;
-            }
-          }
-          if (arg_full_size > 8) {
-            /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。 */
-            int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
-            if (src_ptr < 0) return ir_val_none();
-            int tmp_vreg = ir_func_new_vreg(ctx->f);
-            ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
-            ia->dst = ir_val_vreg(tmp_vreg, IR_TY_PTR);
-            ia->alloca_size = arg_full_size;
-            ia->alloca_align = 8;
-            ir_func_append_inst(ctx->f, ia);
-            ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-            cp->src1 = ir_val_vreg(tmp_vreg, IR_TY_PTR);
-            cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
-            cp->alloca_size = arg_full_size;
-            ir_func_append_inst(ctx->f, cp);
-            cargs[i] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
-          } else {
-            cargs[i] = build_expr(ctx, arg);
-            if (ctx->failed) return ir_val_none();
-            /* 直接呼び出しで、callee の i 番目仮引数が float/double なら
-             * 実引数を I2F / F2F で変換する (`f(1)` で 1 を double に昇格)。
-             * 可変長部分 (idx >= nargs_fixed) は default argument promotion の
-             * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
-             * 渡される現状実装と整合が取れないため触らない。 */
-            if (!fn->callee && i < nargs_fixed) {
-              tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
-                  fn->funcname, fn->funcname_len, i);
-              if (pfk != TK_FLOAT_KIND_NONE) {
-                ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-                cargs[i] = coerce_to_type(ctx, cargs[i], target);
-              }
-            }
-          }
-        }
-      }
-      int v = ir_func_new_vreg(ctx->f);
-      ir_inst_t *call = ir_inst_new(IR_CALL);
-      /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
-      ir_type_t ret_ty = ir_type_from_node(node);
-      call->dst = ir_val_vreg(v, ret_ty);
-      if (fn->callee) {
-        call->callee = callee_v;
-        call->sym = NULL;
-        call->sym_len = 0;
-      } else {
-        call->sym = fn->funcname;
-        call->sym_len = fn->funcname_len;
-      }
-      call->args = cargs;
-      call->nargs = fn->nargs;
-      call->is_variadic_call = is_variadic_call;
-      call->nargs_fixed = nargs_fixed;
-      ir_func_append_inst(ctx->f, call);
-      return call->dst;
-    }
+    case ND_FUNCALL: return build_node_funcall(ctx, node);
     case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
     case ND_BITAND: case ND_BITOR: case ND_BITXOR:
     case ND_SHL: case ND_SHR:
@@ -696,15 +599,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
       ir_func_append_inst(ctx->f, inst);
       return inst->dst;
     }
-    case ND_COMMA: {
-      /* (a, b): a を評価して値を捨て、b を評価してその値を返す */
-      if (node->lhs) {
-        (void)build_expr(ctx, node->lhs);
-        if (ctx->failed) return ir_val_none();
-      }
-      if (node->rhs) return build_expr(ctx, node->rhs);
-      return ir_val_none();
-    }
+    case ND_COMMA: return build_node_comma(ctx, node);
     case ND_PTR_CAST: {
       /* (type *)expr ポインタキャスト。値は変えず、後段の deref 用に
        * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
@@ -782,135 +677,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     }
     case ND_FUNCREF: return build_node_funcref(ctx, node);
     case ND_LOGAND:
-    case ND_LOGOR: {
-      /* 短絡評価。結果は i32 (0/1)。temp slot に書いて merge で LOAD。
-       *   a && b: 既定 0、a が真なら b、b が真なら 1。
-       *   a || b: 既定 1、a が偽なら b、b が真なら 1。 */
-      int is_and = (node->kind == ND_LOGAND);
-      int slot_vreg = ir_func_new_vreg(ctx->f);
-      ir_inst_t *al = ir_inst_new(IR_ALLOCA);
-      al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      al->alloca_size = 4;
-      al->alloca_align = 4;
-      ir_func_append_inst(ctx->f, al);
-      /* 既定値を STORE */
-      ir_inst_t *st0 = ir_inst_new(IR_STORE);
-      st0->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      st0->src2 = ir_val_imm(IR_TY_I32, is_and ? 0 : 1);
-      ir_func_append_inst(ctx->f, st0);
-      ir_block_t *eval_rhs_b = ir_block_new(ctx->f);
-      ir_block_t *merge_b = ir_block_new(ctx->f);
-      ir_val_t l = build_expr(ctx, node->lhs);
-      if (ctx->failed) return ir_val_none();
-      if (is_and) {
-        emit_br_cond(ctx, l, eval_rhs_b, merge_b);
-      } else {
-        emit_br_cond(ctx, l, merge_b, eval_rhs_b);
-      }
-      switch_to_new_block(ctx, eval_rhs_b);
-      ir_val_t r = build_expr(ctx, node->rhs);
-      if (ctx->failed) return ir_val_none();
-      /* 0/1 に正規化: r != 0 */
-      int v_norm = emit_binop(ctx, IR_NE, r, ir_val_imm(r.type, 0), IR_TY_I32);
-      ir_inst_t *st1 = ir_inst_new(IR_STORE);
-      st1->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      st1->src2 = ir_val_vreg(v_norm, IR_TY_I32);
-      ir_func_append_inst(ctx->f, st1);
-      emit_br(ctx, merge_b);
-      switch_to_new_block(ctx, merge_b);
-      int v_res = ir_func_new_vreg(ctx->f);
-      ir_inst_t *ld = ir_inst_new(IR_LOAD);
-      ld->dst = ir_val_vreg(v_res, IR_TY_I32);
-      ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      ir_func_append_inst(ctx->f, ld);
-      return ir_val_vreg(v_res, IR_TY_I32);
-    }
-    case ND_TERNARY: {
-      /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
-       * 結果型は fp_kind から推定 (整数のみ or float/double)。
-       * struct ternary 等は今のところサポート外で fall through する。 */
-      node_ctrl_t *c = (node_ctrl_t *)node;
-      if (!c->els) {
-        fail(ctx, "ternary without else");
-        return ir_val_none();
-      }
-      ir_type_t res_ty = ir_type_from_node(node);
-      int slot_size = (res_ty == IR_TY_F64) ? 8 : 4;
-      /* ポインタ三項 (関数ポインタや int* など): 8 バイト slot で扱う。
-       * 子ノードのいずれかがポインタなら結果もポインタ。 */
-      if (res_ty == IR_TY_I32 &&
-          (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
-           node->rhs->kind == ND_FUNCREF ||
-           (c->els && c->els->kind == ND_FUNCREF))) {
-        res_ty = IR_TY_PTR;
-        slot_size = 8;
-      }
-      int slot_vreg = ir_func_new_vreg(ctx->f);
-      ir_inst_t *al = ir_inst_new(IR_ALLOCA);
-      al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      al->alloca_size = slot_size;
-      al->alloca_align = slot_size >= 8 ? 8 : 4;
-      ir_func_append_inst(ctx->f, al);
-      ir_val_t cond = build_expr(ctx, node->lhs);
-      if (ctx->failed) return ir_val_none();
-      ir_block_t *then_b = ir_block_new(ctx->f);
-      ir_block_t *else_b = ir_block_new(ctx->f);
-      ir_block_t *merge_b = ir_block_new(ctx->f);
-      emit_br_cond(ctx, cond, then_b, else_b);
-      /* then */
-      switch_to_new_block(ctx, then_b);
-      ir_val_t vt = build_expr(ctx, node->rhs);
-      if (ctx->failed) return ir_val_none();
-      /* 型変換: 結果型が fp で値が int なら I2F、逆も */
-      if (is_fp_type(res_ty) && !is_fp_type(vt.type)) {
-        int v = ir_func_new_vreg(ctx->f);
-        ir_inst_t *cv = ir_inst_new(IR_I2F);
-        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
-        ir_func_append_inst(ctx->f, cv);
-        vt = ir_val_vreg(v, res_ty);
-      } else if (is_fp_type(res_ty) && is_fp_type(vt.type) && vt.type != res_ty) {
-        int v = ir_func_new_vreg(ctx->f);
-        ir_inst_t *cv = ir_inst_new(IR_F2F);
-        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
-        ir_func_append_inst(ctx->f, cv);
-        vt = ir_val_vreg(v, res_ty);
-      }
-      ir_inst_t *st_t = ir_inst_new(IR_STORE);
-      st_t->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      st_t->src2 = vt;
-      ir_func_append_inst(ctx->f, st_t);
-      emit_br(ctx, merge_b);
-      /* else */
-      switch_to_new_block(ctx, else_b);
-      ir_val_t ve = build_expr(ctx, c->els);
-      if (ctx->failed) return ir_val_none();
-      if (is_fp_type(res_ty) && !is_fp_type(ve.type)) {
-        int v = ir_func_new_vreg(ctx->f);
-        ir_inst_t *cv = ir_inst_new(IR_I2F);
-        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
-        ir_func_append_inst(ctx->f, cv);
-        ve = ir_val_vreg(v, res_ty);
-      } else if (is_fp_type(res_ty) && is_fp_type(ve.type) && ve.type != res_ty) {
-        int v = ir_func_new_vreg(ctx->f);
-        ir_inst_t *cv = ir_inst_new(IR_F2F);
-        cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
-        ir_func_append_inst(ctx->f, cv);
-        ve = ir_val_vreg(v, res_ty);
-      }
-      ir_inst_t *st_e = ir_inst_new(IR_STORE);
-      st_e->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      st_e->src2 = ve;
-      ir_func_append_inst(ctx->f, st_e);
-      emit_br(ctx, merge_b);
-      /* merge */
-      switch_to_new_block(ctx, merge_b);
-      int v_res = ir_func_new_vreg(ctx->f);
-      ir_inst_t *ld = ir_inst_new(IR_LOAD);
-      ld->dst = ir_val_vreg(v_res, res_ty);
-      ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-      ir_func_append_inst(ctx->f, ld);
-      return ir_val_vreg(v_res, res_ty);
-    }
+    case ND_LOGOR: return build_node_logand_or(ctx, node);
+    case ND_TERNARY: return build_node_ternary(ctx, node);
     default:
       fail(ctx, "unsupported expression node");
       return ir_val_none();
@@ -1542,6 +1310,252 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   inst->src2 = r;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
+}
+
+/* -------- Phase B1: build_expr の制御系 case ヘルパ -------- */
+
+static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
+  node_func_t *fn = (node_func_t *)node;
+  /* 間接呼び出し: callee 式を pre-evaluate しておく (引数評価より先に
+   * vreg に確定させる方が安全)。AST 経路と同じ評価順序を守るため。
+   * 間接呼び出しは現状 variadic 非対応とする (関数ポインタ型に variadic
+   * 情報が乗っていない簡略化)。 */
+  ir_val_t callee_v = ir_val_none();
+  if (fn->callee) {
+    callee_v = build_expr(ctx, fn->callee);
+    if (ctx->failed) return ir_val_none();
+  }
+  /* callee が variadic か prototype から確認 (Phase 7e)。間接呼出は skip。 */
+  int is_variadic_call = 0;
+  int nargs_fixed = fn->nargs;
+  if (!fn->callee) {
+    int fixed = 0;
+    if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
+        fixed < fn->nargs) {
+      is_variadic_call = 1;
+      nargs_fixed = fixed;
+    }
+  }
+  /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは
+   * 制限せず通す (Apple ARM64 ABI)。float/double が 9 番目以降になる場合は
+   * 未対応のままだが、本テスト用途では int のみ。 */
+  if (is_variadic_call && nargs_fixed > 8) {
+    fail(ctx, "more than 8 fixed args in variadic call (Phase 7e unsupported)");
+    return ir_val_none();
+  }
+  ir_val_t *cargs = NULL;
+  if (fn->nargs > 0) {
+    cargs = calloc((size_t)fn->nargs, sizeof(ir_val_t));
+    for (int i = 0; i < fn->nargs; i++) {
+      node_t *arg = fn->args[i];
+      int arg_full_size = 0;
+      if (arg && arg->kind == ND_LVAR) {
+        node_lvar_t *lv = (node_lvar_t *)arg;
+        /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
+         * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
+        if (!lv->mem.is_pointer) {
+          lvar_t *owner = find_owning_lvar(ctx, lv->offset);
+          if (owner) arg_full_size = owner->size;
+          if (arg_full_size == 0) arg_full_size = lv->mem.type_size;
+        } else {
+          arg_full_size = lv->mem.type_size;
+        }
+      }
+      if (arg_full_size > 8) {
+        /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。 */
+        int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+        if (src_ptr < 0) return ir_val_none();
+        int tmp_vreg = ir_func_new_vreg(ctx->f);
+        ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+        ia->dst = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+        ia->alloca_size = arg_full_size;
+        ia->alloca_align = 8;
+        ir_func_append_inst(ctx->f, ia);
+        ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+        cp->src1 = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+        cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
+        cp->alloca_size = arg_full_size;
+        ir_func_append_inst(ctx->f, cp);
+        cargs[i] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+      } else {
+        cargs[i] = build_expr(ctx, arg);
+        if (ctx->failed) return ir_val_none();
+        /* 直接呼び出しで、callee の i 番目仮引数が float/double なら
+         * 実引数を I2F / F2F で変換する (`f(1)` で 1 を double に昇格)。
+         * 可変長部分 (idx >= nargs_fixed) は default argument promotion の
+         * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
+         * 渡される現状実装と整合が取れないため触らない。 */
+        if (!fn->callee && i < nargs_fixed) {
+          tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
+              fn->funcname, fn->funcname_len, i);
+          if (pfk != TK_FLOAT_KIND_NONE) {
+            ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+            cargs[i] = coerce_to_type(ctx, cargs[i], target);
+          }
+        }
+      }
+    }
+  }
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *call = ir_inst_new(IR_CALL);
+  /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
+  ir_type_t ret_ty = ir_type_from_node(node);
+  call->dst = ir_val_vreg(v, ret_ty);
+  if (fn->callee) {
+    call->callee = callee_v;
+    call->sym = NULL;
+    call->sym_len = 0;
+  } else {
+    call->sym = fn->funcname;
+    call->sym_len = fn->funcname_len;
+  }
+  call->args = cargs;
+  call->nargs = fn->nargs;
+  call->is_variadic_call = is_variadic_call;
+  call->nargs_fixed = nargs_fixed;
+  ir_func_append_inst(ctx->f, call);
+  return call->dst;
+}
+
+static ir_val_t build_node_comma(ir_build_ctx_t *ctx, node_t *node) {
+  /* (a, b): a を評価して値を捨て、b を評価してその値を返す */
+  if (node->lhs) {
+    (void)build_expr(ctx, node->lhs);
+    if (ctx->failed) return ir_val_none();
+  }
+  if (node->rhs) return build_expr(ctx, node->rhs);
+  return ir_val_none();
+}
+
+static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node) {
+  /* 短絡評価。結果は i32 (0/1)。temp slot に書いて merge で LOAD。
+   *   a && b: 既定 0、a が真なら b、b が真なら 1。
+   *   a || b: 既定 1、a が偽なら b、b が真なら 1。 */
+  int is_and = (node->kind == ND_LOGAND);
+  int slot_vreg = ir_func_new_vreg(ctx->f);
+  ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+  al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  al->alloca_size = 4;
+  al->alloca_align = 4;
+  ir_func_append_inst(ctx->f, al);
+  /* 既定値を STORE */
+  ir_inst_t *st0 = ir_inst_new(IR_STORE);
+  st0->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  st0->src2 = ir_val_imm(IR_TY_I32, is_and ? 0 : 1);
+  ir_func_append_inst(ctx->f, st0);
+  ir_block_t *eval_rhs_b = ir_block_new(ctx->f);
+  ir_block_t *merge_b = ir_block_new(ctx->f);
+  ir_val_t l = build_expr(ctx, node->lhs);
+  if (ctx->failed) return ir_val_none();
+  if (is_and) {
+    emit_br_cond(ctx, l, eval_rhs_b, merge_b);
+  } else {
+    emit_br_cond(ctx, l, merge_b, eval_rhs_b);
+  }
+  switch_to_new_block(ctx, eval_rhs_b);
+  ir_val_t r = build_expr(ctx, node->rhs);
+  if (ctx->failed) return ir_val_none();
+  /* 0/1 に正規化: r != 0 */
+  int v_norm = emit_binop(ctx, IR_NE, r, ir_val_imm(r.type, 0), IR_TY_I32);
+  ir_inst_t *st1 = ir_inst_new(IR_STORE);
+  st1->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  st1->src2 = ir_val_vreg(v_norm, IR_TY_I32);
+  ir_func_append_inst(ctx->f, st1);
+  emit_br(ctx, merge_b);
+  switch_to_new_block(ctx, merge_b);
+  int v_res = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v_res, IR_TY_I32);
+  ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld);
+  return ir_val_vreg(v_res, IR_TY_I32);
+}
+
+static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
+  /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
+   * 結果型は fp_kind から推定 (整数のみ or float/double)。
+   * struct ternary 等は今のところサポート外で fall through する。 */
+  node_ctrl_t *c = (node_ctrl_t *)node;
+  if (!c->els) {
+    fail(ctx, "ternary without else");
+    return ir_val_none();
+  }
+  ir_type_t res_ty = ir_type_from_node(node);
+  int slot_size = (res_ty == IR_TY_F64) ? 8 : 4;
+  /* ポインタ三項 (関数ポインタや int* など): 8 バイト slot で扱う。
+   * 子ノードのいずれかがポインタなら結果もポインタ。 */
+  if (res_ty == IR_TY_I32 &&
+      (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
+       node->rhs->kind == ND_FUNCREF ||
+       (c->els && c->els->kind == ND_FUNCREF))) {
+    res_ty = IR_TY_PTR;
+    slot_size = 8;
+  }
+  int slot_vreg = ir_func_new_vreg(ctx->f);
+  ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+  al->dst = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  al->alloca_size = slot_size;
+  al->alloca_align = slot_size >= 8 ? 8 : 4;
+  ir_func_append_inst(ctx->f, al);
+  ir_val_t cond = build_expr(ctx, node->lhs);
+  if (ctx->failed) return ir_val_none();
+  ir_block_t *then_b = ir_block_new(ctx->f);
+  ir_block_t *else_b = ir_block_new(ctx->f);
+  ir_block_t *merge_b = ir_block_new(ctx->f);
+  emit_br_cond(ctx, cond, then_b, else_b);
+  /* then */
+  switch_to_new_block(ctx, then_b);
+  ir_val_t vt = build_expr(ctx, node->rhs);
+  if (ctx->failed) return ir_val_none();
+  /* 型変換: 結果型が fp で値が int なら I2F、逆も */
+  if (is_fp_type(res_ty) && !is_fp_type(vt.type)) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *cv = ir_inst_new(IR_I2F);
+    cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
+    ir_func_append_inst(ctx->f, cv);
+    vt = ir_val_vreg(v, res_ty);
+  } else if (is_fp_type(res_ty) && is_fp_type(vt.type) && vt.type != res_ty) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *cv = ir_inst_new(IR_F2F);
+    cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
+    ir_func_append_inst(ctx->f, cv);
+    vt = ir_val_vreg(v, res_ty);
+  }
+  ir_inst_t *st_t = ir_inst_new(IR_STORE);
+  st_t->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  st_t->src2 = vt;
+  ir_func_append_inst(ctx->f, st_t);
+  emit_br(ctx, merge_b);
+  /* else */
+  switch_to_new_block(ctx, else_b);
+  ir_val_t ve = build_expr(ctx, c->els);
+  if (ctx->failed) return ir_val_none();
+  if (is_fp_type(res_ty) && !is_fp_type(ve.type)) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *cv = ir_inst_new(IR_I2F);
+    cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
+    ir_func_append_inst(ctx->f, cv);
+    ve = ir_val_vreg(v, res_ty);
+  } else if (is_fp_type(res_ty) && is_fp_type(ve.type) && ve.type != res_ty) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *cv = ir_inst_new(IR_F2F);
+    cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
+    ir_func_append_inst(ctx->f, cv);
+    ve = ir_val_vreg(v, res_ty);
+  }
+  ir_inst_t *st_e = ir_inst_new(IR_STORE);
+  st_e->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  st_e->src2 = ve;
+  ir_func_append_inst(ctx->f, st_e);
+  emit_br(ctx, merge_b);
+  /* merge */
+  switch_to_new_block(ctx, merge_b);
+  int v_res = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v_res, res_ty);
+  ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld);
+  return ir_val_vreg(v_res, res_ty);
 }
 
 /* 現在ブロックの末尾に「分岐 / return」が無ければ自動で BR を補う。
