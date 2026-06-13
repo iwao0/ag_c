@@ -2103,6 +2103,66 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   return 1;
 }
 
+/* 可変長配列 (VLA) 宣言子の登録。`int a[n]` / `int a[n][M]` / `int a[n][m]` の
+ * 3 形態に応じてフレームスロット (16B or 24B) を確保し、ND_VLA_ALLOC ノードを
+ * init_chain に append する。 outer `[` は呼出側が消費済み、size_node は
+ * その式 (size_ok=0 だった場合の AST)。inner `[...]` はこの helper 内で消費する。
+ * 戻り値: 登録した lvar_t (is_vla=1 が立つ)。 */
+static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_size,
+                                                   node_t *size_node, node_t **init_chain_inout) {
+  // 内側次元を確認 (2D VLA サポート)
+  node_t *inner_size_node = NULL;
+  int inner_size_ok = 1;
+  long long inner_const_size = 0;
+  int has_inner_dim = tk_consume('[') != 0;
+  if (has_inner_dim) {
+    inner_const_size = parse_array_size_expr_decl(&inner_size_node, &inner_size_ok);
+    tk_expect(']');
+    // さらに多次元は非サポート (消費のみ)
+    parse_decl_skip_constexpr_array_suffixes();
+  }
+  // VLA フレームスロット割り当て
+  // 1D/2D定数内側: 16B ([offset]=baseptr, [offset+8]=bytesize)
+  // 2D実行時内側:  24B ([offset]=baseptr, [offset+8]=bytesize, [offset+16]=row_stride)
+  int vla_row_stride_frame_off = 0;
+  int outer_stride = 0;
+  lvar_t *var;
+  if (!has_inner_dim) {
+    // 1D VLA: int a[n]
+    outer_stride = elem_size;
+    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
+  } else if (inner_size_ok) {
+    // 2D VLA constant inner: int a[n][M]
+    outer_stride = (int)inner_const_size * elem_size;
+    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
+  } else {
+    // 2D VLA runtime inner: int a[n][m]
+    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 24, elem_size, 1, 0);
+    vla_row_stride_frame_off = var->offset + 16;
+  }
+  var->is_vla = 1;
+  var->outer_stride = outer_stride;
+  var->vla_row_stride_frame_off = vla_row_stride_frame_off;
+  // VLA確保ノード
+  node_mem_t *alloc_node = arena_alloc(sizeof(node_mem_t));
+  alloc_node->base.kind = ND_VLA_ALLOC;
+  alloc_node->type_size = var->offset; // ベースポインタを格納するフレームオフセット
+  alloc_node->vla_row_stride_frame_off = vla_row_stride_frame_off;
+  if (!has_inner_dim || inner_size_ok) {
+    // 1D: byte_size = n * elem_size
+    // 2D constant: byte_size = n * outer_stride
+    int stride = outer_stride ? outer_stride : elem_size;
+    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(stride));
+  } else {
+    // 2D runtime: lhs=outer_count(n), rhs=row_stride_expr(m*elem_size)
+    alloc_node->base.lhs = size_node;
+    alloc_node->base.rhs = psx_node_new_binary(ND_MUL, inner_size_node, psx_node_new_num(elem_size));
+  }
+  if (!*init_chain_inout) *init_chain_inout = (node_t *)alloc_node;
+  else *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, (node_t *)alloc_node);
+  return var;
+}
+
 node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int base_is_pointer,
@@ -2267,56 +2327,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                    : parse_array_size_expr_decl(&size_node, &size_ok);
         tk_expect(']');
         if (!size_ok) {
-          // 可変長配列 (VLA)
-          // 内側次元を確認 (2D VLA サポート)
-          node_t *inner_size_node = NULL;
-          int inner_size_ok = 1;
-          long long inner_const_size = 0;
-          int has_inner_dim = tk_consume('[') != 0;
-          if (has_inner_dim) {
-            inner_const_size = parse_array_size_expr_decl(&inner_size_node, &inner_size_ok);
-            tk_expect(']');
-            // さらに多次元は非サポート (消費のみ)
-            parse_decl_skip_constexpr_array_suffixes();
-          }
-          // VLA フレームスロット割り当て
-          // 1D/2D定数内側: 16B ([offset]=baseptr, [offset+8]=bytesize)
-          // 2D実行時内側:  24B ([offset]=baseptr, [offset+8]=bytesize, [offset+16]=row_stride)
-          int vla_row_stride_frame_off = 0;
-          int outer_stride = 0;
-          if (!has_inner_dim) {
-            // 1D VLA: int a[n]
-            outer_stride = elem_size;
-            var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
-          } else if (inner_size_ok) {
-            // 2D VLA constant inner: int a[n][M]
-            outer_stride = (int)inner_const_size * elem_size;
-            var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
-          } else {
-            // 2D VLA runtime inner: int a[n][m]
-            var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 24, elem_size, 1, 0);
-            vla_row_stride_frame_off = var->offset + 16;
-          }
-          var->is_vla = 1;
-          var->outer_stride = outer_stride;
-          var->vla_row_stride_frame_off = vla_row_stride_frame_off;
-          // VLA確保ノード
-          node_mem_t *alloc_node = arena_alloc(sizeof(node_mem_t));
-          alloc_node->base.kind = ND_VLA_ALLOC;
-          alloc_node->type_size = var->offset; // ベースポインタを格納するフレームオフセット
-          alloc_node->vla_row_stride_frame_off = vla_row_stride_frame_off;
-          if (!has_inner_dim || inner_size_ok) {
-            // 1D: byte_size = n * elem_size
-            // 2D constant: byte_size = n * outer_stride
-            int stride = outer_stride ? outer_stride : elem_size;
-            alloc_node->base.lhs = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(stride));
-          } else {
-            // 2D runtime: lhs=outer_count(n), rhs=row_stride_expr(m*elem_size)
-            alloc_node->base.lhs = size_node;
-            alloc_node->base.rhs = psx_node_new_binary(ND_MUL, inner_size_node, psx_node_new_num(elem_size));
-          }
-          if (!init_chain) init_chain = (node_t *)alloc_node;
-          else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)alloc_node);
+          /* 可変長配列 (VLA): フレームスロット (1D/2D 定数=16B, 2D 実行時=24B)
+           * を確保し、ND_VLA_ALLOC ノードを init_chain に append する。 */
+          var = register_vla_lvar_and_append_alloc(tok, elem_size, size_node, &init_chain);
           if (!tk_consume(',')) break;
           continue;
         }
