@@ -43,7 +43,7 @@
 
 ### B2: brace 初期化系の分解 (commit 数: 3)
 - [x] **B2-1** struct zero-fill helper 抽出 — c60840f (2026-06-11) 計画の walker 構造体は実態に合わず、自己完結ブロック抽出に方針変更。parse_struct_initializer 217→189
-- [ ] **B2-2** スカラ/集約分岐分離
+- [x] **B2-2** 未割当スカラ補完を helper 化 — fb64010 (2026-06-11) parse_struct_initializer 189→166
 - [ ] **B2-3** 指示子と文字列リテラル分離
 
 ### B3: `psx_decl_parse_declaration_after_type_ex` 分解 (commit 数: 3)
