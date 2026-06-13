@@ -2,10 +2,9 @@
 #define AST_H
 
 #include "../tokenizer/token.h"
-/* Phase C1: シンボルテーブル (global_var_t, string_lit_t, float_lit_t) は
- * symtab.h へ分離した。ast.h は AST node 定義のみを担う。後方互換のため
- * symtab.h を include する shim を残す (Phase C1-4 で撤去予定)。 */
-#include "symtab.h"
+/* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
+ * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
+ * symtab 型を使うファイルは symtab.h を個別に include すること。 */
 
 // 抽象構文木 (AST) のノードの種類
 typedef enum {
