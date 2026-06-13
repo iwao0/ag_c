@@ -2103,6 +2103,81 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   return 1;
 }
 
+/* 多次元配列 `[N1][N2][N3]...` の trailing dim 列を読み、stride を含めた lvar を
+ * 登録する (最大 8 次元)。outer `[N1]` は呼出側が消費済みで、array_size_inout に
+ * その個数が入っている。size_inferred_from_init=true なら `[]` で初期化子から推定。
+ * typedef array (td_array_dims) が指定されていれば trailing dims に追加連結する。 */
+static lvar_t *register_multidim_array_lvar(token_ident_t *tok, int elem_size,
+                                             long long *array_size_inout,
+                                             bool size_inferred_from_init, int is_pointer,
+                                             int td_array_dim_count, const int *td_array_dims,
+                                             int alignas_val) {
+  // 多次元配列の trailing dim 列を全て読む（最大 7 段、配列全体では 8 次元まで）。
+  int trailing_dims[7] = {0};
+  int trailing_count = 0;
+  int trailing_mul = parse_decl_constexpr_array_suffix_product_n(trailing_dims, 7, &trailing_count);
+  // typedef が配列型のとき (`typedef int M[3][4]; M arr[2];`) は、
+  // ユーザーが書いた suffix `[2]` の後ろに typedef dims `[3][4]` を連結する。
+  if (!is_pointer && td_array_dim_count > 0) {
+    for (int di = 0; di < td_array_dim_count && trailing_count < 7; di++) {
+      int dim = td_array_dims[di];
+      if (dim > 0) {
+        trailing_dims[trailing_count++] = dim;
+        trailing_mul *= dim;
+      }
+    }
+  }
+  int inner_dim_size = trailing_count >= 1 ? trailing_dims[0] : 0; // 内側次元の要素数（0: 1次元配列）
+  long long array_size = *array_size_inout;
+  if (size_inferred_from_init) {
+    // 外側 `[]` を初期化子から推定する。
+    long long top_count = infer_array_count_from_initializer(elem_size);
+    if (top_count <= 0) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+      array_size = 1; // フォールバック
+    } else if (inner_dim_size > 0 && !init_first_element_is_brace()) {
+      // 多次元のフラット初期化 `int a[][3]={1,2,3,4,5,6}`: 推定値は総要素数。
+      array_size = top_count;
+    } else {
+      // ネスト初期化 `{{...},{...}}` または 1D `int a[]={...}`:
+      // top_count は外側次元の要素数なので trailing_mul を掛ける。
+      array_size = top_count * trailing_mul;
+    }
+  } else {
+    array_size *= trailing_mul;
+  }
+  *array_size_inout = array_size;
+  int arr_elem_size = is_pointer ? 8 : elem_size;
+  lvar_t *var = psx_decl_register_lvar_sized_align(tok->str, tok->len,
+      (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
+  if (inner_dim_size > 0) {
+    // outer_stride = 1 次サブスクリプトのストライド (= 内側全体のバイト数)。
+    var->outer_stride = trailing_mul * arr_elem_size;
+  }
+  if (trailing_count >= 2) {
+    // mid_stride = 2 次サブスクリプトのストライド = trailing_dims[1..]*elem。
+    int mid_mul = 1;
+    for (int i = 1; i < trailing_count; i++) {
+      if (trailing_dims[i] > 0) mid_mul *= trailing_dims[i];
+    }
+    var->mid_stride = mid_mul * arr_elem_size;
+  }
+  // 4 次元以上: 3 段目以降のストライドを順に extra_strides に格納する。
+  if (trailing_count >= 3) {
+    int idx_in_extras = 0;
+    for (int start = 2; start < trailing_count && idx_in_extras < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < trailing_count; j++) {
+        if (trailing_dims[j] > 0) rest_mul *= trailing_dims[j];
+      }
+      var->extra_strides[idx_in_extras++] = rest_mul * arr_elem_size;
+    }
+    var->extra_strides_count = (unsigned char)idx_in_extras;
+  }
+  return var;
+}
+
 /* 可変長配列 (VLA) 宣言子の登録。`int a[n]` / `int a[n][M]` / `int a[n][m]` の
  * 3 形態に応じてフレームスロット (16B or 24B) を確保し、ND_VLA_ALLOC ノードを
  * init_chain に append する。 outer `[` は呼出側が消費済み、size_node は
@@ -2333,77 +2408,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           if (!tk_consume(',')) break;
           continue;
         }
-        // 多次元配列の trailing dim 列を全て読む（最大 7 段、配列全体では 8 次元まで）。
-        int trailing_dims[7] = {0};
-        int trailing_count = 0;
-        int trailing_mul = parse_decl_constexpr_array_suffix_product_n(trailing_dims, 7, &trailing_count);
-        // typedef が配列型のとき (`typedef int M[3][4]; M arr[2];`) は、
-        // ユーザーが書いた suffix `[2]` の後ろに typedef dims `[3][4]` を連結する。
-        // これにより arr は int[2][3][4] として扱われる。
-        if (!is_pointer && td_array_dim_count > 0) {
-          for (int di = 0; di < td_array_dim_count && trailing_count < 7; di++) {
-            int dim = td_array_dims[di];
-            if (dim > 0) {
-              trailing_dims[trailing_count++] = dim;
-              trailing_mul *= dim;
-            }
-          }
-        }
-        int inner_dim_size = trailing_count >= 1 ? trailing_dims[0] : 0; // 内側次元の要素数（0: 1次元配列）
-        if (size_inferred_from_init) {
-          // 外側 `[]` を初期化子から推定する。trailing dims を消費した直後の
-          // curtok 位置（`=` を指す）で推定するため、ここで呼ぶ必要がある。
-          long long top_count = infer_array_count_from_initializer(elem_size);
-          if (top_count <= 0) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-            array_size = 1; // フォールバック
-          } else if (inner_dim_size > 0 && !init_first_element_is_brace()) {
-            // 多次元配列のフラット初期化 `int a[][3]={1,2,3,4,5,6}`:
-            // 推定値は総要素数なので trailing_mul を掛けない。
-            array_size = top_count;
-          } else {
-            // ネスト初期化 `{{...},{...}}` または 1D `int a[]={...}`:
-            // top_count は外側次元の要素数なので trailing_mul を掛ける。
-            array_size = top_count * trailing_mul;
-          }
-        } else {
-          array_size *= trailing_mul;
-        }
-        {
-        int arr_elem_size = is_pointer ? 8 : elem_size;
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, (int)array_size * arr_elem_size, arr_elem_size, 1, alignas_val);
-        if (inner_dim_size > 0) {
-          // outer_stride = 1 次サブスクリプトのストライド (= 内側全体のバイト数)。
-          // 2D: outer_stride = N2 * elem
-          // 3D: outer_stride = N2 * N3 * elem
-          // 4D: outer_stride = N2 * N3 * N4 * elem = trailing_mul * elem
-          var->outer_stride = trailing_mul * arr_elem_size;
-        }
-        if (trailing_count >= 2) {
-          // mid_stride = 2 次サブスクリプトのストライド = trailing_dims[1..]*elem。
-          // 3D: mid_stride = N3 * elem
-          // 4D: mid_stride = N3 * N4 * elem
-          int mid_mul = 1;
-          for (int i = 1; i < trailing_count; i++) {
-            if (trailing_dims[i] > 0) mid_mul *= trailing_dims[i];
-          }
-          var->mid_stride = mid_mul * arr_elem_size;
-        }
-        // 4 次元以上: 3 段目以降のストライドを順に extra_strides に格納する。
-        // extra_strides[k] = trailing_dims[(k+2)..end] の積 * elem。
-        if (trailing_count >= 3) {
-          int idx_in_extras = 0;
-          for (int start = 2; start < trailing_count && idx_in_extras < 5; start++) {
-            int rest_mul = 1;
-            for (int j = start; j < trailing_count; j++) {
-              if (trailing_dims[j] > 0) rest_mul *= trailing_dims[j];
-            }
-            var->extra_strides[idx_in_extras++] = rest_mul * arr_elem_size;
-          }
-          var->extra_strides_count = (unsigned char)idx_in_extras;
-        }
-        }
+        /* 多次元配列 `[N1][N2][N3]...` の dim 列と stride 計算を集約。
+         * outer `[N1]` 部分は呼出側で消費済み (array_size に格納)。
+         * helper は trailing dims (`[N2][N3]...`) を消費しつつ lvar を登録し、
+         * outer_stride / mid_stride / extra_strides を設定する。 */
+        var = register_multidim_array_lvar(tok, elem_size, &array_size,
+                                            size_inferred_from_init, is_pointer,
+                                            td_array_dim_count, td_array_dims, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, is_pointer);
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
