@@ -85,9 +85,68 @@
 
 ---
 
-## Phase A 完了時 (記入予定)
+## Phase A 完了時 (2026-06-11, commit `176fcee`)
 
-<!-- A1, A2, A3 完了時に追記 -->
+### ファイルサイズ (`wc -l`)
+
+| ファイル | 着手前 | Phase A 完了 | 差分 |
+|---|---:|---:|---:|
+| src/parser/expr.c | 3300 | 3271 | -29 |
+| src/parser/decl.c | 2735 | 2668 | -67 |
+| src/parser/parser.c | 2353 | 2339 | -14 |
+| src/ir/ir_builder.c | 2122 | 2121 | -1 |
+| src/parser/semantic_ctx.c | 1046 | 1110 | +64 (新 API 2 つ追加) |
+| src/arch/arm64_apple.c | 443 | 437 | -6 |
+| src/parser/struct_layout.c | 299 | 293 | -6 |
+
+### ヘッダサイズ
+
+| ファイル | 着手前 | Phase A 完了 | 差分 |
+|---|---:|---:|---:|
+| src/parser/internal/semantic_ctx.h | 159 | 178 | +19 (新 API +2 / 旧 API -5) |
+| src/parser/internal/decl.h | 109 | 129 | +20 (set helper +2) |
+
+### 巨大関数
+
+| 関数 | 着手前 | Phase A 完了 | 差分 |
+|---|---:|---:|---:|
+| `build_expr` | 1055 | 1047 | -8 |
+| `psx_decl_parse_declaration_after_type_ex` | 364 | 349 | -15 |
+
+(Phase B での本格分割は未着手)
+
+### API 数
+
+| API グループ | 着手前 | Phase A 完了 |
+|---|---:|---:|
+| `psx_ctx_get_tag_member_*` (public 取得系) | 5 | **3** (`_count`, `_get_info`, `_find_info`) |
+| - 旧 `_at` / `_bf` / `_fp_kind` / `_is_bool` / `_find` | 5 (public) | 5 (file-scope static, 内部実装のみ) |
+
+### 重複パターン
+
+| パターン | 着手前 | Phase A 完了 |
+|---|---:|---:|
+| `var->tag_kind = ` 4 行ブロック (decl.c) | 5 | **0** |
+| `var->tag_kind = ` 4 行ブロック (parser.c) | 4 | **0** |
+| `fp_kind == TK_FLOAT_KIND_FLOAT` 判定 (ir_builder.c) | 9 | **1** (ヘルパ内のみ) |
+
+### モジュール境界
+
+(Phase C 着手前なので状態維持)
+
+| 項目 | 値 |
+|---|---|
+| `src/ir/ir_builder.c` が include する parser ファイル | `../parser/ast.h`, `../parser/internal/semantic_ctx.h` |
+| `src/arch/arm64_apple.c` が直接アクセスする parser 内部変数 | `global_vars` (グローバルリスト) |
+
+### テスト状態
+
+| 指標 | 値 |
+|---|---|
+| e2e | 820/820 |
+| /tmp/probes | 246 件 diverged=0 |
+| Phase A 最終 commit | `176fcee` |
+
 
 ## Phase B 完了時 (記入予定)
 

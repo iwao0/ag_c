@@ -28,8 +28,8 @@
     フィールド転写ヘルパ化は計画と別物なので別途検討。
 
 **Phase A 完了時**:
-- [ ] `phase_a_walkthrough.md` 作成 (commit hash 一覧、削減指標)
-- [ ] `metrics.md` 更新
+- [x] `phase_a_walkthrough.md` 作成 (commit hash 一覧、削減指標) — 2026-06-11
+- [x] `metrics.md` 更新 — 2026-06-11
 
 ---
 
