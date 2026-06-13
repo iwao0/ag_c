@@ -47,7 +47,7 @@
 - [x] **B2-3** char[] 文字列リテラル経路を helper 化 — 82c3b58 (2026-06-11) parse_array_initializer 197→157
 
 ### B3: `psx_decl_parse_declaration_after_type_ex` 分解 (commit 数: 3)
-- [ ] **B3-1** function-declarator 抽出
+- [x] **B3-1** VLA 分岐を helper 化 — ecbcc83 (2026-06-11) 関数 349→302 (計画 "function-declarator" 該当なしのため VLA に振替)
 - [ ] **B3-2** array/pointer 抽出
 - [ ] **B3-3** init-declarator 抽出
 
