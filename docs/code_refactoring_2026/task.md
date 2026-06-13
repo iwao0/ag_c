@@ -39,7 +39,7 @@
 - [x] **B1-1** dispatch 骨格 + lvalue 系 (8 種) 抽出 — 5897581 (2026-06-11) build_expr 1047→594
 - [x] **B1-2** 算術/比較系 (14 種) 抽出 — 4deb283 (2026-06-11) build_expr 594→433
 - [x] **B1-3** 制御系 (FUNCALL/COMMA/LOGAND/LOGOR/TERNARY) 抽出 — 14e9b1b (2026-06-11) build_expr 433→197
-- [ ] **B1-4** 残余抽出 + switch 削除
+- [x] **B1-4** 残余 5 case 抽出 — d6cce8a (2026-06-11) build_expr 197→34 (累計 1047→34)
 
 ### B2: brace 初期化系の分解 (commit 数: 3)
 - [ ] **B2-1** `brace_init_walker_t` 構造体抽出
