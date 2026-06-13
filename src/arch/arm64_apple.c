@@ -335,112 +335,119 @@ static void emit_global_struct_array_init(global_var_t *gv) {
   }
 }
 
-void gen_global_vars(void) {
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    if (gv->is_extern_decl) continue;
-    if (gv->is_thread_local) {
-      /* _Thread_local: TLV descriptor + thread data/bss */
-      if (gv->has_init) {
-        cg_emitf(".section __DATA,__thread_data\n");
-        cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
-        if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
-        else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
-        else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
-        else cg_emitf("  .quad %lld\n", gv->init_val);
-      } else {
-        cg_emitf(".section __DATA,__thread_bss\n");
-        cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
-        cg_emitf("  .space %d\n", gv->type_size);
-      }
-      cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
-      cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-      cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-      cg_emitf("  .quad __tlv_bootstrap\n");
-      cg_emitf("  .quad 0\n");
-      cg_emitf("  .quad _%.*s$tlv$init\n", gv->name_len, gv->name);
-    } else if (gv->has_init) {
-      cg_emitf(".section __DATA,__data\n");
-      cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-      int align_size = (gv->init_count > 0 && gv->deref_size > 0)
-                          ? gv->deref_size : (int)gv->type_size;
-      int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
-      cg_emitf(".align %d\n", align);
-      cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-      if (gv->init_count > 0 && gv->tag_kind != TK_EOF && !gv->is_array) {
-        emit_global_struct_init(gv);
-      } else if (gv->init_count > 0 && gv->is_array && gv->tag_kind != TK_EOF) {
-        emit_global_struct_array_init(gv);
-      } else if (gv->init_count > 0) {
-        int elem = gv->deref_size > 0 ? gv->deref_size : 4;
-        int total_elems = gv->type_size / elem;
-        int is_fp_arr = (gv->init_fvalues != NULL) &&
-                        (gv->fp_kind == TK_FLOAT_KIND_FLOAT ||
-                         gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
-                         gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
-        for (int i = 0; i < gv->init_count && i < total_elems; i++) {
-          char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
-          int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
-          if (sym_i && sym_i_len < 0) {
-            /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。 */
-            cg_emitf("  .quad %s\n", sym_i);
-            continue;
-          }
-          if (sym_i && sym_i_len > 0) {
-            cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
-            continue;
-          }
-          if (is_fp_arr) {
-            /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
-            double d = gv->init_fvalues[i];
-            if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
-              float f = (float)d;
-              uint32_t bits;
-              memcpy(&bits, &f, sizeof(bits));
-              cg_emitf("  .long %u\n", (unsigned)bits);
-            } else {
-              uint64_t bits;
-              memcpy(&bits, &d, sizeof(bits));
-              cg_emitf("  .quad %llu\n", (unsigned long long)bits);
-            }
-            continue;
-          }
-          long long v = gv->init_values[i];
-          if (elem == 1) cg_emitf("  .byte %lld\n", v);
-          else if (elem == 2) cg_emitf("  .short %lld\n", v);
-          else if (elem == 4) cg_emitf("  .long %lld\n", v);
-          else cg_emitf("  .quad %lld\n", v);
-        }
-        int remain = total_elems - gv->init_count;
-        if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
-      } else if (gv->init_symbol) {
-        if (gv->init_symbol_len < 0) {
-          /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。 */
-          cg_emitf("  .quad %s\n", gv->init_symbol);
-        } else {
-          cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
-        }
-      } else if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
-        /* float スカラ: fval を 32bit IEEE-754 ビットパターンで出力する。 */
-        float f = (float)gv->fval;
-        uint32_t bits;
-        memcpy(&bits, &f, sizeof(bits));
-        cg_emitf("  .long %u\n", (unsigned)bits);
-      } else if (gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
-                 gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
-        /* double スカラ: fval を 64bit IEEE-754 ビットパターンで出力する。 */
-        double d = gv->fval;
-        uint64_t bits;
-        memcpy(&bits, &d, sizeof(bits));
-        cg_emitf("  .quad %llu\n", (unsigned long long)bits);
-      }
-      else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
+/* gen_global_vars の本体: 1 つの global_var_t を assembly directive に
+ * 落とす visitor 関数 (Phase C3-2 で codegen_iter_globals に切替)。 */
+static void emit_one_global_var(global_var_t *gv, void *user) {
+  (void)user;
+  if (gv->is_extern_decl) return;
+  if (gv->is_thread_local) {
+    /* _Thread_local: TLV descriptor + thread data/bss */
+    if (gv->has_init) {
+      cg_emitf(".section __DATA,__thread_data\n");
+      cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
+      if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
       else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
       else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
       else cg_emitf("  .quad %lld\n", gv->init_val);
     } else {
-      /* 暫定定義: .comm _name,size,log2align */
-      int log2align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
-      cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+      cg_emitf(".section __DATA,__thread_bss\n");
+      cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
+      cg_emitf("  .space %d\n", gv->type_size);
     }
+    cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
+    cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+    cg_emitf("_%.*s:\n", gv->name_len, gv->name);
+    cg_emitf("  .quad __tlv_bootstrap\n");
+    cg_emitf("  .quad 0\n");
+    cg_emitf("  .quad _%.*s$tlv$init\n", gv->name_len, gv->name);
+    return;
   }
+  if (gv->has_init) {
+    cg_emitf(".section __DATA,__data\n");
+    cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+    int align_size = (gv->init_count > 0 && gv->deref_size > 0)
+                        ? gv->deref_size : (int)gv->type_size;
+    int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
+    cg_emitf(".align %d\n", align);
+    cg_emitf("_%.*s:\n", gv->name_len, gv->name);
+    if (gv->init_count > 0 && gv->tag_kind != TK_EOF && !gv->is_array) {
+      emit_global_struct_init(gv);
+    } else if (gv->init_count > 0 && gv->is_array && gv->tag_kind != TK_EOF) {
+      emit_global_struct_array_init(gv);
+    } else if (gv->init_count > 0) {
+      int elem = gv->deref_size > 0 ? gv->deref_size : 4;
+      int total_elems = gv->type_size / elem;
+      int is_fp_arr = (gv->init_fvalues != NULL) &&
+                      (gv->fp_kind == TK_FLOAT_KIND_FLOAT ||
+                       gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
+                       gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
+      for (int i = 0; i < gv->init_count && i < total_elems; i++) {
+        char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
+        int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
+        if (sym_i && sym_i_len < 0) {
+          /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。 */
+          cg_emitf("  .quad %s\n", sym_i);
+          continue;
+        }
+        if (sym_i && sym_i_len > 0) {
+          cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
+          continue;
+        }
+        if (is_fp_arr) {
+          /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
+          double d = gv->init_fvalues[i];
+          if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+            float f = (float)d;
+            uint32_t bits;
+            memcpy(&bits, &f, sizeof(bits));
+            cg_emitf("  .long %u\n", (unsigned)bits);
+          } else {
+            uint64_t bits;
+            memcpy(&bits, &d, sizeof(bits));
+            cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+          }
+          continue;
+        }
+        long long v = gv->init_values[i];
+        if (elem == 1) cg_emitf("  .byte %lld\n", v);
+        else if (elem == 2) cg_emitf("  .short %lld\n", v);
+        else if (elem == 4) cg_emitf("  .long %lld\n", v);
+        else cg_emitf("  .quad %lld\n", v);
+      }
+      int remain = total_elems - gv->init_count;
+      if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
+    } else if (gv->init_symbol) {
+      if (gv->init_symbol_len < 0) {
+        /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。 */
+        cg_emitf("  .quad %s\n", gv->init_symbol);
+      } else {
+        cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
+      }
+    } else if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+      /* float スカラ: fval を 32bit IEEE-754 ビットパターンで出力する。 */
+      float f = (float)gv->fval;
+      uint32_t bits;
+      memcpy(&bits, &f, sizeof(bits));
+      cg_emitf("  .long %u\n", (unsigned)bits);
+    } else if (gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
+               gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
+      /* double スカラ: fval を 64bit IEEE-754 ビットパターンで出力する。 */
+      double d = gv->fval;
+      uint64_t bits;
+      memcpy(&bits, &d, sizeof(bits));
+      cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+    }
+    else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
+    else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
+    else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
+    else cg_emitf("  .quad %lld\n", gv->init_val);
+    return;
+  }
+  /* 暫定定義: .comm _name,size,log2align */
+  int log2align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
+  cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+}
+
+void gen_global_vars(void) {
+  codegen_iter_globals(emit_one_global_var, NULL);
 }
