@@ -74,7 +74,7 @@
 - [x] **C2-3** internal/ ヘッダの visibility 強化 — 1f26d4d (2026-06-11) arm64_apple.c も parser_public.h 経由化、parser 外部から internal/ への include は 0 件
 
 ### C3: codegen と global_vars の結合緩和 (commit 数: 2)
-- [ ] **C3-1** `codegen_iter_globals` iterator API 新設
+- [x] **C3-1** `codegen_iter_globals` iterator API 新設 — b790945 (2026-06-11) parser_public.h に visitor 型、parser.c に実装
 - [ ] **C3-2** arm64_apple.c 移行
 
 ### C4: IR Phase 8 との整合確認 (commit 数: 1)
