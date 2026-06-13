@@ -38,7 +38,7 @@
 ### B1: `build_expr` 分割 (commit 数: 4)
 - [x] **B1-1** dispatch 骨格 + lvalue 系 (8 種) 抽出 — 5897581 (2026-06-11) build_expr 1047→594
 - [x] **B1-2** 算術/比較系 (14 種) 抽出 — 4deb283 (2026-06-11) build_expr 594→433
-- [ ] **B1-3** 制御系 (6 種) 抽出
+- [x] **B1-3** 制御系 (FUNCALL/COMMA/LOGAND/LOGOR/TERNARY) 抽出 — 14e9b1b (2026-06-11) build_expr 433→197
 - [ ] **B1-4** 残余抽出 + switch 削除
 
 ### B2: brace 初期化系の分解 (commit 数: 3)
