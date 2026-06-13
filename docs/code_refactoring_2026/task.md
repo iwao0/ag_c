@@ -69,7 +69,7 @@
 - [x] **C1-4** shim 撤去 — a538103 (2026-06-11) ast.h 238→237、symtab 境界確定
 
 ### C2: parser → IR public I/F 抽出 (commit 数: 3)
-- [ ] **C2-1** `parser_public.h` 新設
+- [x] **C2-1** `parser_public.h` 新設 — 3ef039c (2026-06-11) IR が必要とする 4 関数 + lvar_t 型を集約
 - [ ] **C2-2** IR の include 切替 (`../parser/internal/` → `../parser/parser_public.h`)
 - [ ] **C2-3** internal/ ヘッダの visibility 強化
 
