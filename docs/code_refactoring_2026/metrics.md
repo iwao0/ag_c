@@ -148,9 +148,54 @@
 | Phase A 最終 commit | `176fcee` |
 
 
-## Phase B 完了時 (記入予定)
+## Phase B 完了時 (2026-06-11, commit `b2c58d0`)
 
-<!-- B1, B2, B3, B4 完了時に追記 -->
+### 巨大関数 (実測)
+
+| 関数 | 着手前 | Phase A 完了 | Phase B 完了 | 削減 |
+|---|---:|---:|---:|---:|
+| `build_expr` | 1055 | 1047 | **34** | -1021 (97%) |
+| `psx_decl_parse_declaration_after_type_ex` | 364 | 349 | **207** | -157 (43%) |
+| `parse_struct_initializer` | 217 | 217 | **166** | -51 (24%) |
+| `parse_array_initializer` | 197 | 197 | **157** | -40 (20%) |
+| `gen_global_vars` | 177 | 177 | **109** | -68 (38%) |
+
+**目標達成**: 「最大関数行数 1055 → < 300」を build_expr で達成 (34 行)。
+
+### ファイルサイズ (`wc -l`)
+
+| ファイル | 着手前 | Phase B 完了 | 差分 |
+|---|---:|---:|---:|
+| src/parser/expr.c | 3300 | 3271 | -29 |
+| src/parser/decl.c | 2735 | 2722 | -13 |
+| src/parser/parser.c | 2353 | 2339 | -14 |
+| src/ir/ir_builder.c | 2122 | 2179 | +57 (helper 追加分) |
+| src/parser/semantic_ctx.c | 1046 | 1110 | +64 (新 API 追加分) |
+| src/arch/arm64_apple.c | 443 | 443 | 0 |
+| src/parser/struct_layout.c | 299 | 293 | -6 |
+
+### 新設 helper 関数
+
+Phase B で 24 個の static helper を新設 (内訳は phase_b_walkthrough.md
+を参照)。最大の貢献は build_expr 分割の 18 helper。
+
+### モジュール境界
+
+(Phase C 着手前なので変化なし)
+
+| 項目 | 値 |
+|---|---|
+| `src/ir/ir_builder.c` が include する parser ファイル | `../parser/ast.h`, `../parser/internal/semantic_ctx.h` |
+| `src/arch/arm64_apple.c` が直接アクセスする parser 内部変数 | `global_vars` (グローバルリスト) |
+
+### テスト状態
+
+| 指標 | 値 |
+|---|---|
+| e2e | 820/820 |
+| /tmp/probes | 246 件 diverged=0 |
+| Phase B 最終 commit | `b2c58d0` |
+
 
 ## Phase C 完了時 (記入予定)
 

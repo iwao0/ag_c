@@ -55,8 +55,8 @@
 - [x] **B4-1** struct/struct-array brace init helper 抽出 — 11e5919 (2026-06-11) gen_global_vars 177→109 (< 150 達成)
 
 **Phase B 完了時**:
-- [ ] `phase_b_walkthrough.md` 作成
-- [ ] `metrics.md` 更新
+- [x] `phase_b_walkthrough.md` 作成 — 2026-06-11
+- [x] `metrics.md` 更新 — 2026-06-11
 
 ---
 
