@@ -302,6 +302,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_comma(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node);
 
 /* _Complex 用ヘルパ: 式 `node` の値 (実部, 虚部) を *dst, *(dst + half) に書く。
  * fp_ty = IR_TY_F64 または IR_TY_F32、half = 8 or 4。
@@ -503,178 +508,15 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_SHL: case ND_SHR:
     case ND_LT: case ND_LE: case ND_EQ: case ND_NE:
       return build_node_binop(ctx, node);
-    case ND_FP_TO_INT: {
-      ir_val_t v = build_expr(ctx, node->lhs);
-      if (ctx->failed) return ir_val_none();
-      int dst = ir_func_new_vreg(ctx->f);
-      ir_inst_t *inst = ir_inst_new(IR_F2I);
-      inst->dst = ir_val_vreg(dst, IR_TY_I32);
-      inst->src1 = v;
-      ir_func_append_inst(ctx->f, inst);
-      return inst->dst;
-    }
+    case ND_FP_TO_INT: return build_node_fp_to_int(ctx, node);
     case ND_PRE_INC:
     case ND_PRE_DEC:
     case ND_POST_INC:
-    case ND_POST_DEC: {
-      /* ++x / x++ / --x / x-- — target は ND_LVAR / ND_DEREF / ND_GVAR を許可する。
-       *   ND_LVAR : address_of_lvar で frame アドレスを得る。
-       *   ND_DEREF: target->lhs を eval して得たポインタをそのまま使う
-       *             ((**pp)++ や cast 経由の `((T*)p)->m++` がここに来る)。
-       *   ND_GVAR : @PAGE/PAGEOFF (TLS なら TLV) でアドレスを取る。
-       * pointer の inc/dec は parser が +/- step を scale 済みであることに依存。 */
-      node_t *target = node->lhs;
-      if (!target) {
-        fail(ctx, "inc/dec without target");
-        return ir_val_none();
-      }
-      int ptr_vreg = -1;
-      ir_type_t vty = IR_TY_I32;
-      if (target->kind == ND_LVAR) {
-        node_lvar_t *lv = (node_lvar_t *)target;
-        vty = lvar_value_type(lv);
-        ptr_vreg = address_of_lvar(ctx, lv->offset);
-      } else if (target->kind == ND_DEREF) {
-        ir_val_t p = build_expr(ctx, target->lhs);
-        if (ctx->failed) return ir_val_none();
-        ptr_vreg = p.id;
-        /* load/store 幅は DEREF node の mem.type_size と fp_kind から決める。 */
-        node_mem_t *mm = (node_mem_t *)target;
-        vty = ir_type_from_node(target);
-        if (vty == IR_TY_I32) {
-          if (mm->type_size >= 8) vty = IR_TY_PTR;
-          else if (mm->type_size == 2) vty = IR_TY_I16;
-          else if (mm->type_size == 1) vty = IR_TY_I8;
-        }
-      } else if (target->kind == ND_GVAR) {
-        node_gvar_t *gv = (node_gvar_t *)target;
-        vty = ir_type_from_node(target);
-        if (vty == IR_TY_I32) {
-          int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-          vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
-        }
-        int v_addr = ir_func_new_vreg(ctx->f);
-        ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
-        sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-        sym->sym = gv->name;
-        sym->sym_len = gv->name_len;
-        ir_func_append_inst(ctx->f, sym);
-        ptr_vreg = v_addr;
-      } else {
-        fail(ctx, "inc/dec target not LVAR/DEREF/GVAR");
-        return ir_val_none();
-      }
-      if (ptr_vreg < 0) return ir_val_none();
-      /* load 現在値 */
-      int v_old = ir_func_new_vreg(ctx->f);
-      ir_inst_t *ld = ir_inst_new(IR_LOAD);
-      ld->dst = ir_val_vreg(v_old, vty);
-      ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-      ir_func_append_inst(ctx->f, ld);
-      /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
-       * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
-      long long step = 1;
-      if (psx_node_is_pointer(target)) {
-        int ds = psx_node_deref_size(target);
-        if (ds > 1) step = ds;
-      }
-      int is_inc = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
-      ir_op_t binop = is_inc ? IR_ADD : IR_SUB;
-      int v_new = emit_binop(ctx, binop,
-                              ir_val_vreg(v_old, vty),
-                              ir_val_imm(vty, step), vty);
-      ir_inst_t *st = ir_inst_new(IR_STORE);
-      st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-      st->src2 = ir_val_vreg(v_new, vty);
-      ir_func_append_inst(ctx->f, st);
-      int is_pre = (node->kind == ND_PRE_INC || node->kind == ND_PRE_DEC);
-      return is_pre ? ir_val_vreg(v_new, vty) : ir_val_vreg(v_old, vty);
-    }
-    case ND_VA_ARG_AREA: {
-      /* stdarg.h の va_start マクロが参照する builtin。
-       * stack 上の variadic 引数領域 = x29 + total_size (callee の frame の top)。 */
-      int v = ir_func_new_vreg(ctx->f);
-      ir_inst_t *inst = ir_inst_new(IR_VA_ARG_AREA);
-      inst->dst = ir_val_vreg(v, IR_TY_PTR);
-      ir_func_append_inst(ctx->f, inst);
-      return inst->dst;
-    }
+    case ND_POST_DEC: return build_node_inc_dec(ctx, node);
+    case ND_VA_ARG_AREA: return build_node_va_arg_area(ctx, node);
     case ND_COMMA: return build_node_comma(ctx, node);
-    case ND_PTR_CAST: {
-      /* (type *)expr ポインタキャスト。値は変えず、後段の deref 用に
-       * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
-      if (node->lhs) return build_expr(ctx, node->lhs);
-      return ir_val_none();
-    }
-    case ND_VLA_ALLOC: {
-      /* VLA 動的確保: parser は ND_VLA_ALLOC を init_chain (comma) の一部として
-       * 配置する。type_size = descriptor lvar の frame offset。
-       *   slot[0] = base pointer
-       *   slot[8] = byte size  (sizeof(vla) で読まれる)
-       *   slot[16]= row stride (2D runtime inner のみ。rsf != 0)
-       *   1D     : lhs = total bytes (n * elem_size)
-       *   2D const: lhs = total bytes (n * outer_stride)
-       *   2D rt  : lhs = outer_count(n), rhs = row_stride(m * elem) */
-      node_mem_t *am = (node_mem_t *)node;
-      int desc_offset = am->type_size;
-      int rsf = am->vla_row_stride_frame_off;
-      int desc_ptr = address_of_lvar(ctx, desc_offset);
-      if (desc_ptr < 0) return ir_val_none();
-      ir_val_t total_size;
-      if (rsf > 0) {
-        ir_val_t row_stride = build_expr(ctx, node->rhs);
-        if (ctx->failed) return ir_val_none();
-        ir_val_t outer_count = build_expr(ctx, node->lhs);
-        if (ctx->failed) return ir_val_none();
-        int v_total = emit_binop(ctx, IR_MUL, outer_count, row_stride, IR_TY_I32);
-        total_size = ir_val_vreg(v_total, IR_TY_I32);
-        /* row_stride を desc+16 へ */
-        int rs_ptr = address_of_lvar(ctx, rsf);
-        if (rs_ptr < 0) return ir_val_none();
-        /* i32 → i64 にゼロ拡張してから 8B store */
-        int v_rs64 = ir_func_new_vreg(ctx->f);
-        ir_inst_t *zext = ir_inst_new(IR_ZEXT);
-        zext->dst = ir_val_vreg(v_rs64, IR_TY_I64);
-        zext->src1 = row_stride;
-        ir_func_append_inst(ctx->f, zext);
-        ir_inst_t *st_rs = ir_inst_new(IR_STORE);
-        st_rs->src1 = ir_val_vreg(rs_ptr, IR_TY_PTR);
-        st_rs->src2 = ir_val_vreg(v_rs64, IR_TY_I64);
-        ir_func_append_inst(ctx->f, st_rs);
-      } else {
-        total_size = build_expr(ctx, node->lhs);
-        if (ctx->failed) return ir_val_none();
-      }
-      /* total_size を i64 に拡張して slot+8 に store */
-      int v_sz64 = ir_func_new_vreg(ctx->f);
-      ir_inst_t *zext_sz = ir_inst_new(IR_ZEXT);
-      zext_sz->dst = ir_val_vreg(v_sz64, IR_TY_I64);
-      zext_sz->src1 = total_size;
-      ir_func_append_inst(ctx->f, zext_sz);
-      int size_slot_ptr = ir_func_new_vreg(ctx->f);
-      ir_inst_t *lea_sz = ir_inst_new(IR_LEA);
-      lea_sz->dst = ir_val_vreg(size_slot_ptr, IR_TY_PTR);
-      lea_sz->src1 = ir_val_vreg(desc_ptr, IR_TY_PTR);
-      lea_sz->src2 = ir_val_imm(IR_TY_I32, 8);
-      ir_func_append_inst(ctx->f, lea_sz);
-      ir_inst_t *st_sz = ir_inst_new(IR_STORE);
-      st_sz->src1 = ir_val_vreg(size_slot_ptr, IR_TY_PTR);
-      st_sz->src2 = ir_val_vreg(v_sz64, IR_TY_I64);
-      ir_func_append_inst(ctx->f, st_sz);
-      /* IR_VLA_ALLOC: sp 動的確保。dst = 新しい base pointer。 */
-      int v_base = ir_func_new_vreg(ctx->f);
-      ir_inst_t *va = ir_inst_new(IR_VLA_ALLOC);
-      va->dst = ir_val_vreg(v_base, IR_TY_PTR);
-      va->src1 = total_size;
-      ir_func_append_inst(ctx->f, va);
-      /* base ptr を slot[0] に store */
-      ir_inst_t *st_base = ir_inst_new(IR_STORE);
-      st_base->src1 = ir_val_vreg(desc_ptr, IR_TY_PTR);
-      st_base->src2 = ir_val_vreg(v_base, IR_TY_PTR);
-      ir_func_append_inst(ctx->f, st_base);
-      /* AST 経路では式として 0 を返すので合わせる。 */
-      return ir_val_imm(IR_TY_I32, 0);
-    }
+    case ND_PTR_CAST: return build_node_ptr_cast(ctx, node);
+    case ND_VLA_ALLOC: return build_node_vla_alloc(ctx, node);
     case ND_FUNCREF: return build_node_funcref(ctx, node);
     case ND_LOGAND:
     case ND_LOGOR: return build_node_logand_or(ctx, node);
@@ -1556,6 +1398,182 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   ld->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
   ir_func_append_inst(ctx->f, ld);
   return ir_val_vreg(v_res, res_ty);
+}
+
+/* -------- Phase B1: build_expr の残余 case ヘルパ -------- */
+
+static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
+  ir_val_t v = build_expr(ctx, node->lhs);
+  if (ctx->failed) return ir_val_none();
+  int dst = ir_func_new_vreg(ctx->f);
+  ir_inst_t *inst = ir_inst_new(IR_F2I);
+  inst->dst = ir_val_vreg(dst, IR_TY_I32);
+  inst->src1 = v;
+  ir_func_append_inst(ctx->f, inst);
+  return inst->dst;
+}
+
+static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
+  /* ++x / x++ / --x / x-- — target は ND_LVAR / ND_DEREF / ND_GVAR を許可する。
+   *   ND_LVAR : address_of_lvar で frame アドレスを得る。
+   *   ND_DEREF: target->lhs を eval して得たポインタをそのまま使う
+   *             ((**pp)++ や cast 経由の `((T*)p)->m++` がここに来る)。
+   *   ND_GVAR : @PAGE/PAGEOFF (TLS なら TLV) でアドレスを取る。
+   * pointer の inc/dec は parser が +/- step を scale 済みであることに依存。 */
+  node_t *target = node->lhs;
+  if (!target) {
+    fail(ctx, "inc/dec without target");
+    return ir_val_none();
+  }
+  int ptr_vreg = -1;
+  ir_type_t vty = IR_TY_I32;
+  if (target->kind == ND_LVAR) {
+    node_lvar_t *lv = (node_lvar_t *)target;
+    vty = lvar_value_type(lv);
+    ptr_vreg = address_of_lvar(ctx, lv->offset);
+  } else if (target->kind == ND_DEREF) {
+    ir_val_t p = build_expr(ctx, target->lhs);
+    if (ctx->failed) return ir_val_none();
+    ptr_vreg = p.id;
+    /* load/store 幅は DEREF node の mem.type_size と fp_kind から決める。 */
+    node_mem_t *mm = (node_mem_t *)target;
+    vty = ir_type_from_node(target);
+    if (vty == IR_TY_I32) {
+      if (mm->type_size >= 8) vty = IR_TY_PTR;
+      else if (mm->type_size == 2) vty = IR_TY_I16;
+      else if (mm->type_size == 1) vty = IR_TY_I8;
+    }
+  } else if (target->kind == ND_GVAR) {
+    node_gvar_t *gv = (node_gvar_t *)target;
+    vty = ir_type_from_node(target);
+    if (vty == IR_TY_I32) {
+      int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+      vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+    }
+    int v_addr = ir_func_new_vreg(ctx->f);
+    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
+    sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+    sym->sym = gv->name;
+    sym->sym_len = gv->name_len;
+    ir_func_append_inst(ctx->f, sym);
+    ptr_vreg = v_addr;
+  } else {
+    fail(ctx, "inc/dec target not LVAR/DEREF/GVAR");
+    return ir_val_none();
+  }
+  if (ptr_vreg < 0) return ir_val_none();
+  /* load 現在値 */
+  int v_old = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v_old, vty);
+  ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld);
+  /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
+   * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
+  long long step = 1;
+  if (psx_node_is_pointer(target)) {
+    int ds = psx_node_deref_size(target);
+    if (ds > 1) step = ds;
+  }
+  int is_inc = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
+  ir_op_t binop = is_inc ? IR_ADD : IR_SUB;
+  int v_new = emit_binop(ctx, binop,
+                          ir_val_vreg(v_old, vty),
+                          ir_val_imm(vty, step), vty);
+  ir_inst_t *st = ir_inst_new(IR_STORE);
+  st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
+  st->src2 = ir_val_vreg(v_new, vty);
+  ir_func_append_inst(ctx->f, st);
+  int is_pre = (node->kind == ND_PRE_INC || node->kind == ND_PRE_DEC);
+  return is_pre ? ir_val_vreg(v_new, vty) : ir_val_vreg(v_old, vty);
+}
+
+static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node) {
+  (void)node;
+  /* stdarg.h の va_start マクロが参照する builtin。
+   * stack 上の variadic 引数領域 = x29 + total_size (callee の frame の top)。 */
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *inst = ir_inst_new(IR_VA_ARG_AREA);
+  inst->dst = ir_val_vreg(v, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, inst);
+  return inst->dst;
+}
+
+static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node) {
+  /* (type *)expr ポインタキャスト。値は変えず、後段の deref 用に
+   * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
+  if (node->lhs) return build_expr(ctx, node->lhs);
+  return ir_val_none();
+}
+
+static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {
+  /* VLA 動的確保: parser は ND_VLA_ALLOC を init_chain (comma) の一部として
+   * 配置する。type_size = descriptor lvar の frame offset。
+   *   slot[0] = base pointer
+   *   slot[8] = byte size  (sizeof(vla) で読まれる)
+   *   slot[16]= row stride (2D runtime inner のみ。rsf != 0)
+   *   1D     : lhs = total bytes (n * elem_size)
+   *   2D const: lhs = total bytes (n * outer_stride)
+   *   2D rt  : lhs = outer_count(n), rhs = row_stride(m * elem) */
+  node_mem_t *am = (node_mem_t *)node;
+  int desc_offset = am->type_size;
+  int rsf = am->vla_row_stride_frame_off;
+  int desc_ptr = address_of_lvar(ctx, desc_offset);
+  if (desc_ptr < 0) return ir_val_none();
+  ir_val_t total_size;
+  if (rsf > 0) {
+    ir_val_t row_stride = build_expr(ctx, node->rhs);
+    if (ctx->failed) return ir_val_none();
+    ir_val_t outer_count = build_expr(ctx, node->lhs);
+    if (ctx->failed) return ir_val_none();
+    int v_total = emit_binop(ctx, IR_MUL, outer_count, row_stride, IR_TY_I32);
+    total_size = ir_val_vreg(v_total, IR_TY_I32);
+    /* row_stride を desc+16 へ */
+    int rs_ptr = address_of_lvar(ctx, rsf);
+    if (rs_ptr < 0) return ir_val_none();
+    /* i32 → i64 にゼロ拡張してから 8B store */
+    int v_rs64 = ir_func_new_vreg(ctx->f);
+    ir_inst_t *zext = ir_inst_new(IR_ZEXT);
+    zext->dst = ir_val_vreg(v_rs64, IR_TY_I64);
+    zext->src1 = row_stride;
+    ir_func_append_inst(ctx->f, zext);
+    ir_inst_t *st_rs = ir_inst_new(IR_STORE);
+    st_rs->src1 = ir_val_vreg(rs_ptr, IR_TY_PTR);
+    st_rs->src2 = ir_val_vreg(v_rs64, IR_TY_I64);
+    ir_func_append_inst(ctx->f, st_rs);
+  } else {
+    total_size = build_expr(ctx, node->lhs);
+    if (ctx->failed) return ir_val_none();
+  }
+  /* total_size を i64 に拡張して slot+8 に store */
+  int v_sz64 = ir_func_new_vreg(ctx->f);
+  ir_inst_t *zext_sz = ir_inst_new(IR_ZEXT);
+  zext_sz->dst = ir_val_vreg(v_sz64, IR_TY_I64);
+  zext_sz->src1 = total_size;
+  ir_func_append_inst(ctx->f, zext_sz);
+  int size_slot_ptr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *lea_sz = ir_inst_new(IR_LEA);
+  lea_sz->dst = ir_val_vreg(size_slot_ptr, IR_TY_PTR);
+  lea_sz->src1 = ir_val_vreg(desc_ptr, IR_TY_PTR);
+  lea_sz->src2 = ir_val_imm(IR_TY_I32, 8);
+  ir_func_append_inst(ctx->f, lea_sz);
+  ir_inst_t *st_sz = ir_inst_new(IR_STORE);
+  st_sz->src1 = ir_val_vreg(size_slot_ptr, IR_TY_PTR);
+  st_sz->src2 = ir_val_vreg(v_sz64, IR_TY_I64);
+  ir_func_append_inst(ctx->f, st_sz);
+  /* IR_VLA_ALLOC: sp 動的確保。dst = 新しい base pointer。 */
+  int v_base = ir_func_new_vreg(ctx->f);
+  ir_inst_t *va = ir_inst_new(IR_VLA_ALLOC);
+  va->dst = ir_val_vreg(v_base, IR_TY_PTR);
+  va->src1 = total_size;
+  ir_func_append_inst(ctx->f, va);
+  /* base ptr を slot[0] に store */
+  ir_inst_t *st_base = ir_inst_new(IR_STORE);
+  st_base->src1 = ir_val_vreg(desc_ptr, IR_TY_PTR);
+  st_base->src2 = ir_val_vreg(v_base, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, st_base);
+  /* AST 経路では式として 0 を返すので合わせる。 */
+  return ir_val_imm(IR_TY_I32, 0);
 }
 
 /* 現在ブロックの末尾に「分岐 / return」が無ければ自動で BR を補う。
