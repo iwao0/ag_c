@@ -78,7 +78,7 @@
 - [x] **C3-2** arm64_apple.c 移行 — 788374c (2026-06-11) gen_global_vars が codegen_iter_globals 経由化、global_vars 直接参照は消滅
 
 ### C4: IR Phase 8 との整合確認 (commit 数: 1)
-- [ ] **C4-1** Phase 8 計画と本計画の整合性記録 (docs のみ)
+- [x] **C4-1** Phase 8 計画と本計画の整合性記録 (docs のみ) — b94b174 (2026-06-11) README.md に接続節を追加
 
 **Phase C 完了時**:
 - [ ] `phase_c_walkthrough.md` 作成
