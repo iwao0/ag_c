@@ -2612,9 +2612,19 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
    * 「スカラにポインタを代入」と E3064 拒否されていた (pp8/pp1/pp5)。 */
   if (pql >= 1 && bds > 0) {
     deref->is_pointer = 1;
-    deref->pointer_qual_levels = pql;
+    /* genuine ポインタ変数 (`int **pp`, ND_LVAR/ND_GVAR) の subscript は 1 段の
+     * ポインタを消費するので結果の pql を 1 減らす (`pp[i]` は int*、pql=1)。
+     * 配列 (`int *arr[N]`, ND_ADDR decay) は配列次元を消費し要素の pql を保つ
+     * (`arr[i]` は int*、pql=1)。pql を減らさないと `*pp[0]` がポインタ扱いの
+     * ままになり、スカラ初期化 `int u=*pp[0];` が誤って弾かれ、算術も pointer 化
+     * していた。 */
+    int result_pql = pql;
+    if ((node->kind == ND_LVAR || node->kind == ND_GVAR) && pql >= 2) {
+      result_pql = pql - 1;
+    }
+    deref->pointer_qual_levels = result_pql;
     deref->base_deref_size = (short)bds;
-    deref->deref_size = (pql >= 2) ? 8 : (short)bds;
+    deref->deref_size = (result_pql >= 2) ? 8 : (short)bds;
     /* 要素が struct/union ポインタ (`struct N *arr[N]`) の場合、subscript 結果は
      * struct ポインタ値なので is_tag_pointer を立てる (`arr[i]->m` の解決に必要)。 */
     if (deref->tag_kind != TK_EOF) {
