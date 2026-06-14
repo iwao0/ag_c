@@ -1199,6 +1199,22 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   inst->src1 = l;
   inst->src2 = r;
   ir_func_append_inst(ctx->f, inst);
+  /* unsigned int (32bit) の加減乗・左シフトは上位ビットへ桁上がり/桁あふれし得る。
+   * codegen は 64bit レジスタで演算するため、結果を 0xFFFFFFFF でマスクして 32bit へ
+   * 折り返す (C11 6.2.5p9: 符号なしは 2^32 で wrap)。これをしないと `(x+1)==0`
+   * (x=0xFFFFFFFF) のように格納/キャストを経ない直接使用で値が壊れる。
+   * 符号付きはオーバーフローが UB なので対象外 (符号拡張のまま)。 */
+  if (result_ty == IR_TY_I32 && uac_unsig &&
+      (node->kind == ND_ADD || node->kind == ND_SUB ||
+       node->kind == ND_MUL || node->kind == ND_SHL)) {
+    int vm = ir_func_new_vreg(ctx->f);
+    ir_inst_t *mask = ir_inst_new(IR_AND);
+    mask->dst = ir_val_vreg(vm, IR_TY_I32);
+    mask->src1 = inst->dst;
+    mask->src2 = ir_val_imm(IR_TY_I32, 0xFFFFFFFF);
+    ir_func_append_inst(ctx->f, mask);
+    return mask->dst;
+  }
   return inst->dst;
 }
 
