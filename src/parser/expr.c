@@ -2623,7 +2623,12 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       result_pql = pql - 1;
     }
     deref->pointer_qual_levels = result_pql;
-    deref->base_deref_size = (short)bds;
+    /* base_deref_size は「結果がさらに内側ポインタを持つか」を表す。結果が単段
+     * ポインタ (result_pql==1, 例 int**→int*) なら pointee はスカラなので 0。
+     * 多段のまま (result_pql>=2, 例 int***→int**) なら内側 scalar size を保つ。
+     * ここを常に bds にしていたため、`int **m` の `m[i]` が bds=4 を持ち、
+     * `m[i][j]` が誤ってポインタ扱い (4 倍スケール) されていた。 */
+    deref->base_deref_size = (result_pql >= 2) ? (short)bds : 0;
     deref->deref_size = (result_pql >= 2) ? 8 : (short)bds;
     /* 要素が struct/union ポインタ (`struct N *arr[N]`) の場合、subscript 結果は
      * struct ポインタ値なので is_tag_pointer を立てる (`arr[i]->m` の解決に必要)。 */

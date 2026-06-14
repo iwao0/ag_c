@@ -965,6 +965,7 @@ static const test_case_t test_cases[] = {
     {"probes", "long_pointer_param_and_call", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_pointer_param_and_call.c", 42, 0},
     {"probes", "scalar_init_from_pointer_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/scalar_init_from_pointer_subscript.c", 42, 0},
     {"probes", "double_pointer_subscript_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/double_pointer_subscript_deref.c", 42, 0},
+    {"probes", "double_pointer_double_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/double_pointer_double_subscript.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
