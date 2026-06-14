@@ -2715,6 +2715,19 @@ static node_t *parse_call_postfix(node_t *callee) {
   tk_expect('(');
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCALL;
+  /* `(*fp)(args)` / `(**fp)(args)`: 関数ポインタの「単項 deref」は関数へ戻り即座に
+   * 関数ポインタへ減衰するので `fp(args)` と等価。単項 deref を辿って最下層が関数
+   * ポインタ lvar (pointer_qual_levels<=1) なら全段剥がす。
+   * subscript の結果 (`ops[i]`, lhs=ND_ADD で最下層が lvar にならない) や、
+   * ポインタ→関数ポインタ (`int(**pp)(); (*pp)()`, pql>=2) は実体 deref なので除外。 */
+  if (callee && callee->kind == ND_DEREF) {
+    node_t *base = callee;
+    while (base && base->kind == ND_DEREF) base = base->lhs;
+    if (base && (base->kind == ND_LVAR || base->kind == ND_GVAR) &&
+        psx_node_pointer_qual_levels(base) <= 1) {
+      callee = base;
+    }
+  }
   node->callee = callee;
   int nargs = 0;
   int arg_cap = 16;
