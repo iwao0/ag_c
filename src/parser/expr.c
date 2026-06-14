@@ -811,6 +811,117 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   return 1;
 }
 
+/* rvalue struct (`f().x`): 一時 lvar に代入してメンバアドレス取得可能にする。
+ * 戻り値は `(tmp = base, tmp)` 形の ND_COMMA。 */
+static node_t *materialize_struct_rvalue_funcall(node_t *base,
+                                                  token_kind_t base_tag_kind,
+                                                  char *base_tag_name, int base_tag_len) {
+  int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
+  if (obj_size <= 0) obj_size = psx_node_type_size(base);
+  if (obj_size <= 0) obj_size = 8;
+  char *tmp_name = new_compound_lit_name();
+  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
+  psx_decl_set_var_tag(var, base_tag_kind, base_tag_name, base_tag_len, 0);
+  node_t *lhs_obj = new_typed_lvar_ref(var, 0);
+  node_mem_t *assign_node = psx_node_new_assign(lhs_obj, base);
+  assign_node->type_size = obj_size;
+  return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, new_typed_lvar_ref(var, 0));
+}
+
+/* `(cond ? a : b).v` 形の struct ternary rvalue: 一時 lvar への代入を
+ * 両分岐に挟み込み、`(cond ? (tmp=a) : (tmp=b), tmp)` 形の ND_COMMA に変換。 */
+static node_t *materialize_struct_rvalue_ternary(node_t *base,
+                                                  token_kind_t base_tag_kind,
+                                                  char *base_tag_name, int base_tag_len) {
+  node_ctrl_t *tern = (node_ctrl_t *)base;
+  int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
+  if (obj_size <= 0) obj_size = 8;
+  char *tmp_name = new_compound_lit_name();
+  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
+  psx_decl_set_var_tag(var, base_tag_kind, base_tag_name, base_tag_len, 0);
+  node_t *lhs_then = new_typed_lvar_ref(var, 0);
+  node_mem_t *assign_then = psx_node_new_assign(lhs_then, tern->base.rhs);
+  assign_then->type_size = obj_size;
+  node_t *lhs_else = new_typed_lvar_ref(var, 0);
+  node_mem_t *assign_else = psx_node_new_assign(lhs_else, tern->els);
+  assign_else->type_size = obj_size;
+  node_ctrl_t *select = arena_alloc(sizeof(node_ctrl_t));
+  select->base.kind = ND_TERNARY;
+  select->base.lhs = tern->base.lhs;
+  select->base.rhs = (node_t *)assign_then;
+  select->els = (node_t *)assign_else;
+  return psx_node_new_binary(ND_COMMA, (node_t *)select, new_typed_lvar_ref(var, 0));
+}
+
+/* `base.member` / `base->member` の deref node を組み立てる。
+ * base アドレス + member offset を ADD して DEREF。
+ * mem_info から type_size / deref_size / 配列メンバ / スカラポインタメンバ /
+ * bitfield / fp_kind / _Bool 等の伝播を全て担う。
+ * from_ptr=0 (struct .) のとき base 自身のアドレスを取って加算する。 */
+static node_t *build_member_deref_node(node_t *base, int from_ptr,
+                                        const tag_member_info_t *mem_info) {
+  node_t *addr_base = base;
+  if (!from_ptr) {
+    if (base->kind == ND_COMMA && base->rhs) {
+      node_mem_t *addr_rhs = arena_alloc(sizeof(node_mem_t));
+      addr_rhs->base.kind = ND_ADDR;
+      addr_rhs->base.lhs = base->rhs;
+      addr_rhs->type_size = 8;
+      addr_base = psx_node_new_binary(ND_COMMA, base->lhs, (node_t *)addr_rhs);
+    } else {
+      node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
+      addr->base.kind = ND_ADDR;
+      addr->base.lhs = base;
+      addr->type_size = 8;
+      addr_base = (node_t *)addr;
+    }
+  }
+  node_t *addr = psx_node_new_binary(ND_ADD, addr_base, psx_node_new_num(mem_info->offset));
+  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
+  deref->base.kind = ND_DEREF;
+  deref->base.lhs = addr;
+  int mem_size = mem_info->type_size;
+  int mem_array_len = mem_info->array_len;
+  int mem_is_ptr = mem_info->is_tag_pointer;
+  deref->type_size = mem_size ? mem_size : 8;
+  deref->deref_size = mem_info->deref_size;
+  if (mem_array_len > 0 && mem_size > 0) {
+    /* メンバが配列 (ポインタ配列も含む): 式中では配列名がポインタへ崩壊する。
+     * 後続 subscript / pointer arith のため、type_size を配列全体、deref_size を
+     * 1 要素サイズに合わせ、is_pointer=1 を立てる。
+     * `int *arr[N]` のような配列メンバではこの経路で `arr[i]` が 8 byte step に
+     * なる (mem_size = 8 = sizeof(int*) なので)。 */
+    deref->type_size = mem_size * mem_array_len;
+    deref->deref_size = mem_size;
+    deref->is_pointer = 1;
+    /* ポインタ配列の各要素は単一ポインタ。subscript 後の 1 段 deref では qual_levels を引き継ぐ。 */
+    if (mem_is_ptr) deref->is_tag_pointer = 0;
+  } else if (mem_is_ptr && mem_size > 0) {
+    /* スカラポインタメンバ (`char *name`): subscript や pointer 算術で
+     * is_pointer 判定が要るため立てておく。is_scalar_ptr_member を立てて
+     * 配列メンバの decay 表現と区別する。 */
+    deref->is_pointer = 1;
+    deref->is_scalar_ptr_member = 1;
+  }
+  deref->tag_kind = mem_info->tag_kind;
+  deref->tag_name = mem_info->tag_name;
+  deref->tag_len = mem_info->tag_len;
+  deref->is_tag_pointer = mem_is_ptr;
+  deref->bit_width = mem_info->bit_width;
+  deref->bit_offset = mem_info->bit_offset;
+  deref->bit_is_signed = mem_info->bit_is_signed;
+  /* float/double メンバなら fp_kind を deref に伝播。 */
+  if (mem_info->fp_kind != TK_FLOAT_KIND_NONE) {
+    deref->base.fp_kind = mem_info->fp_kind;
+  }
+  /* _Bool メンバ: 配列メンバなら pointee_is_bool、それ以外は is_bool。 */
+  if (mem_info->is_bool) {
+    if (mem_array_len > 0 && mem_size > 0) deref->pointee_is_bool = 1;
+    else                                    deref->is_bool = 1;
+  }
+  return (node_t *)deref;
+}
+
 static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
   token_ident_t *member = tk_consume_ident();
   if (!member) {
@@ -830,49 +941,14 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
                                         : DIAG_ERR_PARSER_DOT_LHS_REQUIRES_STRUCT));
   }
 
-  // rvalue struct/union (e.g. f().x): materialize once into a temporary object
+  // rvalue struct/union (e.g. f().x, (cond?a:b).v): materialize once into a tmp
   // so member address can be formed as an lvalue.
   if (!from_ptr && base->kind == ND_FUNCALL && !base_is_ptr) {
-    int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
-    if (obj_size <= 0) obj_size = psx_node_type_size(base);
-    if (obj_size <= 0) obj_size = 8;
-    char *tmp_name = new_compound_lit_name();
-    lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
-    var->tag_kind = base_tag_kind;
-    var->tag_name = base_tag_name;
-    var->tag_len = base_tag_len;
-    var->is_tag_pointer = 0;
-    node_t *lhs_obj = new_typed_lvar_ref(var, 0);
-    node_mem_t *assign_node = psx_node_new_assign(lhs_obj, base);
-    assign_node->type_size = obj_size;
-    base = psx_node_new_binary(ND_COMMA, (node_t *)assign_node, new_typed_lvar_ref(var, 0));
+    base = materialize_struct_rvalue_funcall(base, base_tag_kind, base_tag_name, base_tag_len);
   }
-  /* `(cond ? a : b).v` の struct ternary rvalue: 一時オブジェクトに代入してから
-   * メンバアドレスを取れるようにする。両分岐 (a, b) は同型 struct lvalue 前提。 */
   if (!from_ptr && base->kind == ND_TERNARY && !base_is_ptr &&
       base_tag_kind != TK_EOF) {
-    node_ctrl_t *tern = (node_ctrl_t *)base;
-    int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
-    if (obj_size <= 0) obj_size = 8;
-    char *tmp_name = new_compound_lit_name();
-    lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
-    var->tag_kind = base_tag_kind;
-    var->tag_name = base_tag_name;
-    var->tag_len = base_tag_len;
-    var->is_tag_pointer = 0;
-    node_t *lhs_then = new_typed_lvar_ref(var, 0);
-    node_mem_t *assign_then = psx_node_new_assign(lhs_then, tern->base.rhs);
-    assign_then->type_size = obj_size;
-    node_t *lhs_else = new_typed_lvar_ref(var, 0);
-    node_mem_t *assign_else = psx_node_new_assign(lhs_else, tern->els);
-    assign_else->type_size = obj_size;
-    /* cond ? (tmp = a) : (tmp = b) を新しい ternary として作り、結果は tmp 参照。 */
-    node_ctrl_t *select = arena_alloc(sizeof(node_ctrl_t));
-    select->base.kind = ND_TERNARY;
-    select->base.lhs = tern->base.lhs;
-    select->base.rhs = (node_t *)assign_then;
-    select->els = (node_t *)assign_else;
-    base = psx_node_new_binary(ND_COMMA, (node_t *)select, new_typed_lvar_ref(var, 0));
+    base = materialize_struct_rvalue_ternary(base, base_tag_kind, base_tag_name, base_tag_len);
   }
 
   tag_member_info_t mem_info = {0};
@@ -881,84 +957,7 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
     psx_diag_ctx(op_tok, "member", diag_message_for(DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
                  member->len, member->str);
   }
-  int off = mem_info.offset;
-  int mem_size = mem_info.type_size;
-  int mem_deref = mem_info.deref_size;
-  int mem_array_len = mem_info.array_len;
-  token_kind_t mem_tag_kind = mem_info.tag_kind;
-  char *mem_tag_name = mem_info.tag_name;
-  int mem_tag_len = mem_info.tag_len;
-  int mem_is_ptr = mem_info.is_tag_pointer;
-  int bf_width = mem_info.bit_width;
-  int bf_offset = mem_info.bit_offset;
-  int bf_is_signed = mem_info.bit_is_signed;
-
-  node_t *addr_base = base;
-  if (!from_ptr) {
-    if (base->kind == ND_COMMA && base->rhs) {
-      node_mem_t *addr_rhs = arena_alloc(sizeof(node_mem_t));
-      addr_rhs->base.kind = ND_ADDR;
-      addr_rhs->base.lhs = base->rhs;
-      addr_rhs->type_size = 8;
-      addr_base = psx_node_new_binary(ND_COMMA, base->lhs, (node_t *)addr_rhs);
-    } else {
-      node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-      addr->base.kind = ND_ADDR;
-      addr->base.lhs = base;
-      addr->type_size = 8;
-      addr_base = (node_t *)addr;
-    }
-  }
-  node_t *addr = psx_node_new_binary(ND_ADD, addr_base, psx_node_new_num(off));
-  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
-  deref->base.kind = ND_DEREF;
-  deref->base.lhs = addr;
-  deref->type_size = mem_size ? mem_size : 8;
-  deref->deref_size = mem_deref;
-  if (mem_array_len > 0 && mem_size > 0) {
-    /* メンバが配列 (ポインタ配列も含む): 式中では配列名がポインタへ崩壊する。
-     * 後続 subscript / pointer arith のため、type_size を配列全体、deref_size を
-     * 1 要素サイズに合わせ、is_pointer=1 を立てる。
-     * `int *arr[N]` のような配列メンバではこの経路で `arr[i]` が 8 byte step に
-     * なる (mem_size = 8 = sizeof(int*) なので)。 */
-    deref->type_size = mem_size * mem_array_len;
-    deref->deref_size = mem_size;
-    deref->is_pointer = 1;
-    /* ポインタ配列の各要素は単一ポインタ (例: int (*)(int))。subscript 後の
-     * 1 段 deref ではポインタ qual_levels を引き継ぐ。 */
-    if (mem_is_ptr) deref->is_tag_pointer = 0;
-  } else if (mem_is_ptr && mem_size > 0) {
-    /* スカラポインタメンバ (例: `char *name`): subscript や pointer 算術で
-     * is_pointer 判定が要るため立てておく。修正前は `s.name[0]` が ND_DEREF
-     * の is_pointer=0 で base アドレス扱いされ、メンバ slot の下位 1 byte
-     * (= ポインタ値の LSB) を読んでしまっていた。
-     * is_scalar_ptr_member を立てて配列メンバの decay 表現と区別する。 */
-    deref->is_pointer = 1;
-    deref->is_scalar_ptr_member = 1;
-  }
-  deref->tag_kind = mem_tag_kind;
-  deref->tag_name = mem_tag_name;
-  deref->tag_len = mem_tag_len;
-  deref->is_tag_pointer = mem_is_ptr;
-  deref->bit_width = bf_width;
-  deref->bit_offset = bf_offset;
-  deref->bit_is_signed = bf_is_signed;
-  /* float/double メンバなら fp_kind を deref に伝播。IR が FP load/store を
-   * 出すように、struct メンバ double 等を正しく扱う。 */
-  if (mem_info.fp_kind != TK_FLOAT_KIND_NONE) {
-    deref->base.fp_kind = mem_info.fp_kind;
-  }
-  /* _Bool メンバ: deref に is_bool を伝播し、後段の代入で 0/1 正規化させる。
-   * 配列メンバの場合、deref 自身は配列ベース (= ポインタ扱い) なので is_bool
-   * ではなく pointee_is_bool を立て、subscript の結果に正規化を引き継がせる。 */
-  if (mem_info.is_bool) {
-    if (mem_array_len > 0 && mem_size > 0) {
-      deref->pointee_is_bool = 1;
-    } else {
-      deref->is_bool = 1;
-    }
-  }
-  return (node_t *)deref;
+  return build_member_deref_node(base, from_ptr, &mem_info);
 }
 
 static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast_is_ptr,
