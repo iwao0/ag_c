@@ -68,6 +68,7 @@ static int g_toplevel_decl_is_extern = 0;
 static int g_toplevel_decl_is_thread_local = 0;
 static int g_toplevel_decl_is_typedef = 0;
 static token_kind_t g_toplevel_decl_base_kind = TK_EOF;
+static int g_toplevel_decl_is_unsigned = 0;
 static tk_float_kind_t g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
 static token_kind_t g_toplevel_decl_tag_kind = TK_EOF;
 static char *g_toplevel_decl_tag_name = NULL;
@@ -265,6 +266,7 @@ static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, 
 static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_is_typedef = 0;
   g_toplevel_decl_base_kind = TK_EOF;
+  g_toplevel_decl_is_unsigned = 0;
   g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
   g_toplevel_decl_tag_kind = TK_EOF;
   g_toplevel_decl_tag_name = NULL;
@@ -533,6 +535,9 @@ static void consume_toplevel_typedef_storage_class(void) {
 
 static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind) {
   g_toplevel_decl_base_kind = type_kind;
+  /* unsigned 修飾を保持する。`unsigned int` は base_kind=TK_UNSIGNED にするが、
+   * `unsigned long/char/short` は base_kind=TK_LONG 等のままなので別フラグで覚える。 */
+  g_toplevel_decl_is_unsigned = (type_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
   if (type_kind == TK_INT && psx_last_type_is_unsigned()) {
     g_toplevel_decl_base_kind = TK_UNSIGNED;
   }
@@ -761,10 +766,10 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
                        : (unsigned char)g_toplevel_decl_fp_kind;
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
   gv->is_bool = (!is_ptr && !is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
-  /* unsigned スカラ: load を zero-extend するため記録する。設定しないと
-   * `unsigned g=0xFFFFFFFF;` が ldrsw で符号拡張され `g==0xFFFFFFFFu` が偽に
-   * なっていた。 */
-  gv->is_unsigned = (!is_ptr && !is_array && g_toplevel_decl_base_kind == TK_UNSIGNED) ? 1 : 0;
+  /* unsigned スカラ: load を zero-extend / 比較を unsigned にするため記録する。
+   * 設定しないと `unsigned g=0xFFFFFFFF;` が ldrsw で符号拡張され `g==0xFFFFFFFFu`
+   * が偽に、`unsigned long g` の比較が signed になっていた。 */
+  gv->is_unsigned = (!is_ptr && !is_array && g_toplevel_decl_is_unsigned) ? 1 : 0;
   gv->next = global_vars;
   global_vars = gv;
   return gv;

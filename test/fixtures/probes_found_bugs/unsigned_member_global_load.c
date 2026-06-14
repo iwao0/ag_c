@@ -12,11 +12,18 @@ unsigned gu = 0xFFFFFFFFu;
 struct S { unsigned u; int s; };
 union  U { int i; unsigned u; };
 struct S gs = {0xFFFFFFFFu, -1};
+unsigned long  gul = 0xFFFFFFFFFFFFFFFFUL;    // unsigned long も対象
+unsigned char  guc = 250;
+unsigned short gus = 60000;
 
 int main(void) {
     // (1) unsigned グローバル
     if (!(gu == 0xFFFFFFFFu)) return 1;
     if (gu <= 0x7FFFFFFFu) return 2;          // unsigned: 0xFFFFFFFF > 0x7FFFFFFF
+
+    // (1b) unsigned long/char/short グローバル (base_kind != TK_UNSIGNED)
+    if (gul <= 0x7FFFFFFFFFFFFFFFUL) return 7; // unsigned long の比較
+    if (guc <= 200 || gus <= 30000) return 8;
 
     // (2) unsigned struct メンバ (ローカル)
     struct S x; x.u = 0xFFFFFFFFu;
