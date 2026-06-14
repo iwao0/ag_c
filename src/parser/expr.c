@@ -2430,6 +2430,11 @@ static node_t *build_unary_addr_node(node_t *operand) {
   if (operand && operand->kind == ND_ADDR) {
     return operand;
   }
+  /* `&f` (f は関数): 関数のアドレスは関数ポインタそのもの (= `f`)。ND_FUNCREF を
+   * そのまま返す (ND_ADDR でラップすると IR builder が扱えず失敗する)。 */
+  if (operand && operand->kind == ND_FUNCREF) {
+    return operand;
+  }
   return wrap_as_addr(operand);
 }
 
