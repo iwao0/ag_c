@@ -1018,7 +1018,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
                                         int member_array_len, int member_outer_stride) {
-  if (member_array_len > 0 && !member_is_tag_pointer) {
+  if (member_array_len > 0) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
     node_t *init_chain = NULL;
@@ -1260,7 +1260,12 @@ static node_t *build_nested_array_designator_assign(lvar_t *var,
 static node_t *wrap_member_init_as_assign(lvar_t *var,
                                           const tag_member_info_t *info,
                                           node_t *member_init) {
-  if ((info->array_len > 0 && !info->is_tag_pointer) ||
+  /* 配列メンバ (array_len>0) は member_init が既に要素単位の代入チェーンなので
+   * そのまま返す。is_tag_pointer は要素がポインタかどうかであって配列であることとは
+   * 独立 (`int (*ops[2])(int,int)` / `struct N *arr[2]` のポインタ配列メンバも配列)。
+   * 以前は `!is_tag_pointer` を要求しており、ポインタ配列メンバで init_chain の
+   * 最終値を member スロットへ余分に代入し先頭要素を破壊していた。 */
+  if (info->array_len > 0 ||
       (!info->is_tag_pointer && (info->tag_kind == TK_STRUCT || info->tag_kind == TK_UNION))) {
     return member_init;
   }

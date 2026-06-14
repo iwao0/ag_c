@@ -980,6 +980,7 @@ static const test_case_t test_cases[] = {
     {"probes", "unsigned_member_global_load", CASE_INT_FILE, "test/fixtures/probes_found_bugs/unsigned_member_global_load.c", 42, 0},
     {"probes", "unsigned_array_pointer_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/unsigned_array_pointer_deref.c", 42, 0},
     {"probes", "typedef_unsigned_global", CASE_INT_FILE, "test/fixtures/probes_found_bugs/typedef_unsigned_global.c", 42, 0},
+    {"probes", "funcptr_array_member_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_array_member_init.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
