@@ -1714,6 +1714,26 @@ static node_t *wrap_fp_to_int_if_needed(node_t *operand) {
   return cvt;
 }
 
+/* `(float)x` / `(double)x` キャスト。operand が目的のFP型と異なる (整数、または
+ * float↔double の別幅) 場合に ND_INT_TO_FP でラップし、codegen が I2F/F2F 変換を
+ * 発行できるようにする。同じFP型なら no-op で素通りさせる。 */
+static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
+  if (!operand) return operand;
+  if (operand->fp_kind == target) return operand;
+  // float(4) と double/long double(8) は同幅グループで判定する。
+  bool op_is_double = operand->fp_kind >= TK_FLOAT_KIND_DOUBLE;
+  bool tgt_is_double = target >= TK_FLOAT_KIND_DOUBLE;
+  if (operand->fp_kind != TK_FLOAT_KIND_NONE && op_is_double == tgt_is_double) {
+    operand->fp_kind = target;
+    return operand;
+  }
+  node_t *cvt = arena_alloc(sizeof(node_t));
+  cvt->kind = ND_INT_TO_FP;
+  cvt->lhs = operand;
+  cvt->fp_kind = target;
+  return cvt;
+}
+
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len) {
   if (is_pointer || type_kind == TK_LONG) {
@@ -1784,12 +1804,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
                  kind);
   }
   if (type_kind == TK_FLOAT) {
-    operand->fp_kind = TK_FLOAT_KIND_FLOAT;
-    return operand;
+    return wrap_to_fp(operand, TK_FLOAT_KIND_FLOAT);
   }
   if (type_kind == TK_DOUBLE) {
-    operand->fp_kind = TK_FLOAT_KIND_DOUBLE;
-    return operand;
+    return wrap_to_fp(operand, TK_FLOAT_KIND_DOUBLE);
   }
   if (type_kind == TK_INT || type_kind == TK_ENUM) {
     operand = wrap_fp_to_int_if_needed(operand);

@@ -741,17 +741,21 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_BITAND, c1->kind);
   ASSERT_EQ(0xff, as_num(c1->rhs)->val);
 
+    // 整数リテラルの fp キャストは ND_INT_TO_FP でラップされ、codegen が I2F を発行する。
     node_t *c2 = parse_expr_input("(_Complex double)1");
-  ASSERT_EQ(ND_NUM, c2->kind);
+  ASSERT_EQ(ND_INT_TO_FP, c2->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, c2->fp_kind);
+  ASSERT_EQ(ND_NUM, c2->lhs->kind);
 
     node_t *c3 = parse_expr_input("(float _Imaginary)1");
-  ASSERT_EQ(ND_NUM, c3->kind);
+  ASSERT_EQ(ND_INT_TO_FP, c3->kind);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, c3->fp_kind);
+  ASSERT_EQ(ND_NUM, c3->lhs->kind);
 
     node_t *c4 = parse_expr_input("(long double)1");
-  ASSERT_EQ(ND_NUM, c4->kind);
+  ASSERT_EQ(ND_INT_TO_FP, c4->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, c4->fp_kind);
+  ASSERT_EQ(ND_NUM, c4->lhs->kind);
 
     node_t *c5 = parse_expr_input("(_Atomic(int))1");
   ASSERT_EQ(ND_NUM, c5->kind);

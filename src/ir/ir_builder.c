@@ -312,6 +312,7 @@ static ir_val_t build_node_comma(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node);
@@ -532,6 +533,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_LT: case ND_LE: case ND_EQ: case ND_NE:
       return build_node_binop(ctx, node);
     case ND_FP_TO_INT: return build_node_fp_to_int(ctx, node);
+    case ND_INT_TO_FP: return build_node_int_to_fp(ctx, node);
     case ND_PRE_INC:
     case ND_PRE_DEC:
     case ND_POST_INC:
@@ -1442,6 +1444,15 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
   inst->src1 = v;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
+}
+
+/* `(double)i` / `(float)x` — 整数または別幅FPを目的のFP型へ変換する。
+ * coerce_to_type が int→fp は IR_I2F、float↔double は IR_F2F、同型は no-op を担う。 */
+static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node) {
+  ir_val_t v = build_expr(ctx, node->lhs);
+  if (ctx->failed) return ir_val_none();
+  ir_type_t target = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  return coerce_to_type(ctx, v, target);
 }
 
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
