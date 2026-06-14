@@ -1837,6 +1837,37 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   return operand;
 }
 
+static bool is_compound_assign_token(token_kind_t k) {
+  return k == TK_PLUSEQ || k == TK_MINUSEQ || k == TK_MULEQ || k == TK_DIVEQ ||
+         k == TK_MODEQ || k == TK_SHLEQ || k == TK_SHREQ || k == TK_ANDEQ ||
+         k == TK_XOREQ || k == TK_OREQ;
+}
+
+/* 複合代入 (`a[i++] += v` 等) の左辺は C11 6.5.16.2p3 で「一度だけ評価」する
+ * 規定。左辺が ND_DEREF (subscript / ポインタ deref) の場合、そのアドレス式には
+ * `i++` や `p++`、関数呼び出しといった副作用が埋もれ得る。複合代入は内部で左辺を
+ * 読み出し用と書き込み用に 2 回展開するため、アドレスをそのまま共有すると副作用が
+ * 二重評価される。ここでアドレスを temp ポインタへ一度だけ退避し、戻り値はその temp
+ * 経由の DEREF (副作用なし) にする。退避代入は *prefix_io に連結する。 */
+static node_t *hoist_compound_assign_lvalue(node_t *target, node_t **prefix_io) {
+  if (!target || target->kind != ND_DEREF || !target->lhs) return target;
+  node_t *addr = target->lhs; /* 副作用を含み得るアドレス式 */
+  char *tmp_name = new_compound_lit_name();
+  lvar_t *t = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), 8, 8, 0);
+  /* t = &target (アドレスを一度だけ評価) */
+  node_mem_t *t_assign = psx_node_new_assign(new_typed_lvar_ref(t, 1), addr);
+  t_assign->type_size = 8;
+  /* target のメタ情報を複製し、アドレス部だけ副作用のない temp 参照へ差し替える。 */
+  node_mem_t *via = arena_alloc(sizeof(node_mem_t));
+  *via = *(node_mem_t *)target;
+  via->base.lhs = new_typed_lvar_ref(t, 1);
+  if (*prefix_io)
+    *prefix_io = psx_node_new_binary(ND_COMMA, *prefix_io, (node_t *)t_assign);
+  else
+    *prefix_io = (node_t *)t_assign;
+  return (node_t *)via;
+}
+
 static node_t *assign(void) {
   node_t *node = conditional();
   node_t *lhs_prefix = NULL;
@@ -1845,6 +1876,9 @@ static node_t *assign(void) {
       (node->rhs->kind == ND_LVAR || node->rhs->kind == ND_DEREF || node->rhs->kind == ND_GVAR)) {
     lhs_prefix = node->lhs;
     assign_target = node->rhs;
+  }
+  if (is_compound_assign_token(curtok()->kind)) {
+    assign_target = hoist_compound_assign_lvalue(assign_target, &lhs_prefix);
   }
   switch (curtok()->kind) {
     case TK_ASSIGN: {
