@@ -164,100 +164,115 @@ void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
 /* データセクション (parser が tokenize/parse 中に登録したテーブルを emit) */
 /* ------------------------------------------------------------------ */
 
+/* string_literals walk 用の状態 (visitor 経由で渡す)。 */
+typedef struct {
+  int has_narrow;
+  int has_wide;
+} string_lit_kind_scan_t;
+
+static void scan_string_lit_kinds(string_lit_t *lit, void *user) {
+  string_lit_kind_scan_t *s = user;
+  if (lit->char_width == TK_CHAR_WIDTH_CHAR) s->has_narrow = 1;
+  else s->has_wide = 1;
+}
+
+static void emit_narrow_string_literal(string_lit_t *lit, void *user) {
+  (void)user;
+  if (lit->char_width != TK_CHAR_WIDTH_CHAR) return;
+  cg_emitf("%s:\n", lit->label);
+  int i = 0;
+  while (i < lit->len) {
+    uint32_t v = 0;
+    if (lit->str[i] == '\\') {
+      tk_parse_escape_value(lit->str, lit->len, &i, &v);
+    } else {
+      v = (unsigned char)lit->str[i];
+      i++;
+    }
+    /* codepoint を UTF-8 エンコード。 */
+    if (v < 0x80) {
+      cg_emitf("  .byte %u\n", (unsigned)v);
+    } else if (v < 0x800) {
+      cg_emitf("  .byte %u\n", (unsigned)(0xC0 | (v >> 6)));
+      cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+    } else if (v < 0x10000) {
+      cg_emitf("  .byte %u\n", (unsigned)(0xE0 | (v >> 12)));
+      cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
+      cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+    } else {
+      cg_emitf("  .byte %u\n", (unsigned)(0xF0 | (v >> 18)));
+      cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 12) & 0x3F)));
+      cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
+      cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
+    }
+  }
+  cg_emitf("  .byte 0\n");
+}
+
+static void emit_wide_string_literal(string_lit_t *lit, void *user) {
+  (void)user;
+  if (lit->char_width == TK_CHAR_WIDTH_CHAR) return;
+  cg_emitf("%s:\n", lit->label);
+  int i = 0;
+  while (i < lit->len) {
+    uint32_t v = 0;
+    if (lit->str[i] == '\\') {
+      tk_parse_escape_value(lit->str, lit->len, &i, &v);
+    } else {
+      v = (unsigned char)lit->str[i];
+      i++;
+    }
+    if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
+      if (v < 0x10000) {
+        cg_emitf("  .hword %u\n", (unsigned)v);
+      } else {
+        uint32_t u = v - 0x10000;
+        unsigned hi = 0xD800u | ((u >> 10) & 0x3FFu);
+        unsigned lo = 0xDC00u | (u & 0x3FFu);
+        cg_emitf("  .hword %u\n", hi);
+        cg_emitf("  .hword %u\n", lo);
+      }
+    } else {
+      cg_emitf("  .word %u\n", (unsigned)v);
+    }
+  }
+  if (lit->char_width == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword 0\n");
+  else cg_emitf("  .word 0\n");
+}
+
 void gen_string_literals(void) {
-  if (!string_literals) return;
   /* narrow char 文字列のみ __TEXT,__cstring に置く。
    * u"..." / U"..." / L"..." は内部にゼロバイトを含み得るため __DATA,__const へ。 */
-  int has_narrow = 0;
-  int has_wide = 0;
-  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    if (lit->char_width == TK_CHAR_WIDTH_CHAR) has_narrow = 1;
-    else has_wide = 1;
-  }
-  if (has_narrow) cg_emitf(".section __TEXT,__cstring\n");
-  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    if (lit->char_width != TK_CHAR_WIDTH_CHAR) continue;
-    cg_emitf("%s:\n", lit->label);
-    int i = 0;
-    while (i < lit->len) {
-      uint32_t v = 0;
-      if (lit->str[i] == '\\') {
-        tk_parse_escape_value(lit->str, lit->len, &i, &v);
-      } else {
-        v = (unsigned char)lit->str[i];
-        i++;
-      }
-      /* codepoint を UTF-8 エンコード。 */
-      if (v < 0x80) {
-        cg_emitf("  .byte %u\n", (unsigned)v);
-      } else if (v < 0x800) {
-        cg_emitf("  .byte %u\n", (unsigned)(0xC0 | (v >> 6)));
-        cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-      } else if (v < 0x10000) {
-        cg_emitf("  .byte %u\n", (unsigned)(0xE0 | (v >> 12)));
-        cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
-        cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-      } else {
-        cg_emitf("  .byte %u\n", (unsigned)(0xF0 | (v >> 18)));
-        cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 12) & 0x3F)));
-        cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
-        cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-      }
-    }
-    cg_emitf("  .byte 0\n");
-  }
-  /* u"..." (UTF-16) / U"..." (UTF-32) / L"..." リテラル */
-  if (has_wide) {
+  string_lit_kind_scan_t scan = {0};
+  if (!codegen_iter_string_literals(scan_string_lit_kinds, &scan)) return;
+  if (scan.has_narrow) cg_emitf(".section __TEXT,__cstring\n");
+  codegen_iter_string_literals(emit_narrow_string_literal, NULL);
+  if (scan.has_wide) {
     cg_emitf(".section __DATA,__const\n");
     cg_emitf(".align 2\n");
-  }
-  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    if (lit->char_width == TK_CHAR_WIDTH_CHAR) continue;
-    cg_emitf("%s:\n", lit->label);
-    int i = 0;
-    while (i < lit->len) {
-      uint32_t v = 0;
-      if (lit->str[i] == '\\') {
-        tk_parse_escape_value(lit->str, lit->len, &i, &v);
-      } else {
-        v = (unsigned char)lit->str[i];
-        i++;
-      }
-      if (lit->char_width == TK_CHAR_WIDTH_CHAR16) {
-        if (v < 0x10000) {
-          cg_emitf("  .hword %u\n", (unsigned)v);
-        } else {
-          uint32_t u = v - 0x10000;
-          unsigned hi = 0xD800u | ((u >> 10) & 0x3FFu);
-          unsigned lo = 0xDC00u | (u & 0x3FFu);
-          cg_emitf("  .hword %u\n", hi);
-          cg_emitf("  .hword %u\n", lo);
-        }
-      } else {
-        cg_emitf("  .word %u\n", (unsigned)v);
-      }
-    }
-    if (lit->char_width == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword 0\n");
-    else cg_emitf("  .word 0\n");
+    codegen_iter_string_literals(emit_wide_string_literal, NULL);
   }
   cg_emitf(".text\n");
 }
 
+static void emit_one_float_literal(float_lit_t *lit, void *user) {
+  (void)user;
+  cg_emitf(".LCF%d:\n", lit->id);
+  if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    union { float f; uint32_t i; } u = { .f = (float)lit->fval };
+    cg_emitf("  .word %u\n", u.i);
+  } else {
+    /* note: long double is currently lowered to double. */
+    union { double d; uint64_t i; } u = { .d = lit->fval };
+    cg_emitf("  .quad %llu\n", (unsigned long long)u.i);
+  }
+}
+
 void gen_float_literals(void) {
-  if (!float_literals) return;
+  if (!codegen_has_float_literals()) return;
   cg_emitf(".section __DATA,__data\n");
   cg_emitf(".align 3\n");
-  for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
-    cg_emitf(".LCF%d:\n", lit->id);
-    if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
-      union { float f; uint32_t i; } u = { .f = (float)lit->fval };
-      cg_emitf("  .word %u\n", u.i);
-    } else {
-      /* note: long double is currently lowered to double. */
-      union { double d; uint64_t i; } u = { .d = lit->fval };
-      cg_emitf("  .quad %llu\n", (unsigned long long)u.i);
-    }
-  }
+  codegen_iter_float_literals(emit_one_float_literal, NULL);
   cg_emitf(".text\n");
 }
 

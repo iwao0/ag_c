@@ -37,6 +37,18 @@ int psx_node_deref_size(node_t *n);
 typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
 void codegen_iter_globals(global_var_visitor_t fn, void *user);
 
+/* 文字列リテラル / 浮動小数リテラルテーブル走査。global_vars 同様、
+ * codegen は本 visitor 経由で iterate する。リストが空なら fn は呼ばれない。
+ * 戻り値: リストが 1 つでもあれば true。preflight (section header を出すか
+ * 判断する) で空判定に使う。 */
+typedef void (*string_lit_visitor_t)(string_lit_t *lit, void *user);
+typedef void (*float_lit_visitor_t)(float_lit_t *lit, void *user);
+bool codegen_iter_string_literals(string_lit_visitor_t fn, void *user);
+bool codegen_iter_float_literals(float_lit_visitor_t fn, void *user);
+/* 空判定クエリ (リスト走査前に section header を出すかを判断するのに使う)。 */
+bool codegen_has_string_literals(void);
+bool codegen_has_float_literals(void);
+
 /* semantic_ctx.h からの公開:
  * - 関数呼出側 IR が必要とする psx_ctx_get_function_is_variadic /
  *   _get_function_param_fp_kind

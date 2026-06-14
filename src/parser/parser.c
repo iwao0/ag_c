@@ -28,13 +28,32 @@ float_lit_t *float_literals = NULL;
 global_var_t *global_vars = NULL;
 
 /* parser_public.h で宣言した visitor の実装 (Phase C3-1)。
- * codegen 側が global_vars リストを直接舐めるのを廃して、
- * 走査経路を 1 箇所にまとめる。 */
+ * codegen 側が global_vars / string_literals / float_literals リストを
+ * 直接舐めるのを廃して、走査経路を 1 箇所にまとめる。 */
 void codegen_iter_globals(global_var_visitor_t fn, void *user) {
   for (global_var_t *gv = global_vars; gv; gv = gv->next) {
     fn(gv, user);
   }
 }
+
+bool codegen_iter_string_literals(string_lit_visitor_t fn, void *user) {
+  if (!string_literals) return false;
+  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    fn(lit, user);
+  }
+  return true;
+}
+
+bool codegen_iter_float_literals(float_lit_visitor_t fn, void *user) {
+  if (!float_literals) return false;
+  for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
+    fn(lit, user);
+  }
+  return true;
+}
+
+bool codegen_has_string_literals(void) { return string_literals != NULL; }
+bool codegen_has_float_literals(void) { return float_literals != NULL; }
 static int g_last_type_const_qualified = 0;
 static int g_last_type_volatile_qualified = 0;
 static int g_last_alignas_value = 0;
