@@ -2309,7 +2309,9 @@ static node_t *build_unary_deref_node(node_t *operand) {
   // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播
   int pql = psx_node_pointer_qual_levels(operand);
   tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(operand);
-  if (pql == 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
+  /* `double *a` 仮引数のように pql を持たず pointee_fp_kind だけで fp ポインタを
+   * 表す場合も含め、単段 (pql<=1) の deref 結果に fp 種別を引き継ぐ。 */
+  if (pql <= 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
     node->base.fp_kind = pointee_fp;
   }
   if (pql >= 2) {
@@ -3192,7 +3194,11 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
                         (var->size > var->elem_size) ||
                         /* `struct T *p` 仮引数: size == elem_size == 8 でも
                          * is_tag_pointer が立つのでこれをポインタとして認識する。 */
-                        var->is_tag_pointer;
+                        var->is_tag_pointer ||
+                        /* `double *p` / `float *p`: size == elem_size == 8 で上の
+                         * size>elem_size 判定に漏れるため、fp ポインタの印である
+                         * pointee_fp_kind でポインタと認識する。 */
+                        var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
   // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
   // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
   int vla_effective_deref = 0;

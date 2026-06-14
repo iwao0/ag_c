@@ -1928,6 +1928,10 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     int pointee_size = (param_ptr_levels >= 2) ? 8 : ds->elem_size;
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
     var->base_deref_size = (short)ds->elem_size;
+    /* `double *a` / `float *a` の単段ポインタ仮引数: pointee の fp 種別を伝播し、
+     * `*a` / `a[i]` が fp load/store になるようにする (未設定だと整数 load + scvtf に
+     * なって値が壊れていた)。 */
+    var->pointee_fp_kind = (param_ptr_levels == 1) ? ds->fp_kind : TK_FLOAT_KIND_NONE;
     /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
      * captured inner dims を使って outer_stride / mid_stride を設定する。 */
     if (param_is_array_declarator && param_inner_first_dim > 0) {

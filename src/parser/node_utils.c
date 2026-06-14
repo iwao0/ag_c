@@ -210,6 +210,19 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
       return (tk_float_kind_t)as_mem(node)->pointee_fp_kind;
     case ND_COMMA:
       return psx_node_pointee_fp_kind(node->rhs);
+    /* ポインタ算術 (`a + 1`) / inc・dec (`a++`) の結果も同じ pointee を指す。
+     * `*(a+1)` 等の deref が fp load になるよう pointee_fp_kind を継承する。 */
+    case ND_ADD:
+    case ND_SUB: {
+      tk_float_kind_t l = psx_node_pointee_fp_kind(node->lhs);
+      if (l != TK_FLOAT_KIND_NONE) return l;
+      return psx_node_pointee_fp_kind(node->rhs);
+    }
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return psx_node_pointee_fp_kind(node->lhs);
     default:
       return TK_FLOAT_KIND_NONE;
   }

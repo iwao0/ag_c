@@ -952,6 +952,7 @@ static const test_case_t test_cases[] = {
     {"probes", "array_of_struct_pointers_arrow", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_of_struct_pointers_arrow.c", 42, 0},
     {"probes", "struct_ptr_compound_assign_and_double_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_ptr_compound_assign_and_double_deref.c", 42, 0},
     {"probes", "ternary_address_pointer_truncation", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ternary_address_pointer_truncation.c", 42, 0},
+    {"probes", "fp_pointer_parameter", CASE_INT_FILE, "test/fixtures/probes_found_bugs/fp_pointer_parameter.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
