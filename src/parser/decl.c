@@ -792,10 +792,26 @@ static node_t *try_parse_array_braced_string_initializer(lvar_t *var, int array_
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
+/* 多次元配列の指定初期化子 [i0][i1]... の第 d 次サブスクリプトの要素単位
+ * ストライド。d=0 は outer_stride、d=1 は mid_stride、d>=2 は extra_strides から
+ * 求め、該当ストライドが無い最内次元は 1 を返す (chunk_sizes 構築と同じ規則)。
+ * 1D 配列は outer_stride=0 なので 1 を返し、従来の単一指定子と一致する。
+ * 注意: extra_strides の意味付け上 2D/3D を正しく扱える。4D 以上の深い指定子は
+ * best-effort (従来は構文エラーだったため退行ではない)。 */
+static int array_desig_elem_stride(const lvar_t *var, int d) {
+  if (var->elem_size <= 0) return 1;
+  if (d == 0) return var->outer_stride > 0 ? var->outer_stride / var->elem_size : 1;
+  if (d == 1) return var->mid_stride > 0 ? var->mid_stride / var->elem_size : 1;
+  int i = d - 2;
+  if (i < (int)var->extra_strides_count) return var->extra_strides[i] / var->elem_size;
+  return 1;
+}
+
 /* `{ elem, elem, ... }` 形の配列 brace 初期化。
  * 呼出側は冒頭 `{` をまだ消費していない前提 (本ヘルパが consume する)。
- * designator `[idx] = val` / 多次元ネスト `{{...},{...}}` / 要素 struct
- * 初期化子 / 未指定要素の 0 補完 (C11 6.7.9p21) を全て担う。 */
+ * designator `[idx] = val` / 多次元ネスト指定子 `[i][j] = val` /
+ * 多次元ネスト brace `{{...},{...}}` / 要素 struct 初期化子 /
+ * 未指定要素の 0 補完 (C11 6.7.9p21) を全て担う。 */
 static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
   tk_consume('{');
   node_t *init_chain = NULL;
@@ -807,10 +823,20 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
     for (;;) {
       int target_idx = idx;
       if (tk_consume('[')) {
-        target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
-        tk_expect(']');
+        /* 多次元ネスト指定子 [i0][i1]... を平坦化インデックスに畳む。各次元の
+         * 要素ストライドを掛けて加算する。単一 [i] のときは stride0 = row_len
+         * なので従来の `idx * row_len` と一致する。 */
+        int d = 0;
+        int flat = 0;
+        for (;;) {
+          int di = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+          tk_expect(']');
+          flat += di * array_desig_elem_stride(var, d);
+          d++;
+          if (!tk_consume('[')) break;
+        }
         tk_expect('=');
-        if (row_len > 0) target_idx *= row_len;
+        target_idx = flat;
       }
       /* 多次元配列のネスト brace: {{1,2,3},{4,5,6}} など。
        * 3D/4D/5D... のチャンクサイズを組み立てて parse_array_init_chunk へ委譲。 */

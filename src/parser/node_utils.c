@@ -275,6 +275,11 @@ static int node_is_unsigned(node_t *node) {
   }
 }
 
+/* node_is_unsigned の公開ラッパ。IR builder が比較の符号 (通常算術変換) を
+ * 決める際、オペランドの符号を ND_LVAR の mem.is_unsigned まで含めて判定する
+ * ために使う。生の node->is_unsigned は LVAR/GVAR では 0 のままなので不可。 */
+int psx_node_is_unsigned(node_t *node) { return node_is_unsigned(node); }
+
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = arena_alloc(sizeof(node_t));
   node->kind = kind;
