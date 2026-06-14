@@ -2323,6 +2323,9 @@ static node_t *funcdef(void) {
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
   node->base.ret_struct_size = psx_expr_current_func_ret_struct_size();
+  /* 戻り型の fp_kind をノードへ記録。IR builder の ir_type_from_node が
+   * 関数の戻り型 (IR_TY_F32/F64) を決定し、callee が fp レジスタで返すために必要。 */
+  node->base.fp_kind = ret_fp_kind;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,

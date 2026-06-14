@@ -1855,6 +1855,9 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   if (node->lhs) {
     v = build_expr(ctx, node->lhs);
     if (ctx->failed) return;
+    /* 戻り値を関数の戻り型へ変換する (C11 6.8.6.4: 代入と同じ変換)。
+     * `double f(){ return 7; }` の int→double (I2F) などがここで挟まる。 */
+    v = coerce_to_type(ctx, v, ctx->f->ret_type);
   } else {
     v = ir_val_imm(IR_TY_I32, 0);
   }

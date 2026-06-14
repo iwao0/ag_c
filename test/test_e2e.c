@@ -933,6 +933,7 @@ static const test_case_t test_cases[] = {
     {"probes", "macro_arg_nested_same_name", CASE_INT_FILE, "test/fixtures/probes_found_bugs/macro_arg_nested_same_name.c", 10, 0},
     {"probes", "variadic_macro_forward", CASE_INT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_forward.c", 42, 0},
     {"probes", "cast_int_to_double", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cast_int_to_double.c", 35, 0},
+    {"probes", "return_int_to_double", CASE_INT_FILE, "test/fixtures/probes_found_bugs/return_int_to_double.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
