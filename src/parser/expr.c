@@ -2301,7 +2301,9 @@ static node_t *build_unary_deref_node(node_t *operand) {
     node->tag_kind = tag_kind;
     node->tag_name = tag_name;
     node->tag_len = tag_len;
-    node->is_tag_pointer = 0;
+    /* `*p` (p=struct N*) は struct 実体だが、`*pp` (pp=struct N**) の結果は
+     * まだ struct ポインタ。多段ポインタ (pql>=2) なら is_tag_pointer を維持する。 */
+    node->is_tag_pointer = (psx_node_pointer_qual_levels(operand) >= 2) ? 1 : 0;
     node->deref_size = 0;
   }
   // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播

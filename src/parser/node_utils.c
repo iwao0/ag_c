@@ -230,7 +230,6 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         break;
       case ND_GVAR:
       case ND_DEREF:
-      case ND_ASSIGN:
       case ND_ADDR:
       case ND_STRING:
       case ND_PTR_CAST:
@@ -238,6 +237,17 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         name = as_mem(node)->tag_name;
         len = as_mem(node)->tag_len;
         ptr = as_mem(node)->is_tag_pointer;
+        break;
+      case ND_ASSIGN:
+        /* 代入式の結果は左辺の型。ノード自身に tag が無い (複合代入 `p += n` 等)
+         * 場合は左辺から継承して `(p += n)->m` を解決できるようにする。 */
+        kind = as_mem(node)->tag_kind;
+        name = as_mem(node)->tag_name;
+        len = as_mem(node)->tag_len;
+        ptr = as_mem(node)->is_tag_pointer;
+        if (kind == TK_EOF) {
+          psx_node_get_tag_type(node->lhs, &kind, &name, &len, &ptr);
+        }
         break;
       case ND_COMMA:
         psx_node_get_tag_type(node->rhs, &kind, &name, &len, &ptr);
