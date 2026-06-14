@@ -37,6 +37,7 @@ static node_t *parse_union_initializer(lvar_t *var);
 static node_t *parse_struct_copy_initializer(lvar_t *var);
 static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value);
 static node_t *parse_struct_member_no_brace(lvar_t *nested);
+static bool elision_consume_separator(void);
 static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member_type_size,
                                       token_kind_t member_tag_kind, char *member_tag_name,
                                       int member_tag_len, int member_is_tag_pointer);
@@ -880,6 +881,15 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
             (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
           init_chain = append_to_init_chain(init_chain,
               parse_array_elem_struct_brace_init(var, target_idx));
+        } else if (!var->is_tag_pointer && var->tag_kind == TK_STRUCT) {
+          /* struct 配列要素の brace 省略 (`struct P a[2] = {1, 2, 3, 4}` で
+           * a[0]={1,2}, a[1]={3,4})。要素を nested struct とみなし、scalar 始まりなら
+           * 内側メンバを取り込み、互換 struct 式ならコピー初期化する。 */
+          lvar_t nested = *var;
+          nested.offset = var->offset + target_idx * var->elem_size;
+          nested.size = var->elem_size;
+          init_chain = append_to_init_chain(init_chain,
+              parse_struct_member_no_brace(&nested));
         } else {
           init_chain = append_to_init_chain(init_chain,
               build_array_elem_assign(var, target_idx, parse_scalar_brace_initializer()));
@@ -1105,7 +1115,10 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       assign0->type_size = elem_size;
       init_chain = (node_t *)assign0;
       for (int idx = 1; idx < array_len; idx++) {
-        if (!tk_consume(',')) break;
+        /* comma の次が designator (`.m`) / 終端 (`}`) ならこの配列メンバの省略充填は
+         * 終了し、comma は親の初期化子ループが消費する (`{1,2,.a={3,4}}` で a を
+         * 途中まで埋めてから .a で上書きするケース)。 */
+        if (!elision_consume_separator()) break;
         node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, idx);
         node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
         assign_node->type_size = elem_size;
