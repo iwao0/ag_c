@@ -2602,10 +2602,17 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   }
   // 配列要素がポインタ型の場合: サブスクリプト結果にポインタ情報を伝播
   int pql = psx_node_pointer_qual_levels(node);
-  if (pql >= 1) {
+  int bds = psx_node_base_deref_size(node);
+  /* subscript 結果がポインタになるのは「要素自体がポインタ」のときだけ:
+   *   int **pp     (pql>=2, bds>0)     → pp[i] は int*
+   *   int *arr[N]  (配列, pql=1, bds>0) → arr[i] は int*
+   * 単段ポインタ int *p / long *p / char *p (pql=1, bds=0) の p[i] はスカラ。
+   * base_deref_size>0 が「要素がさらにポインタ」の指標 (pointee が pointee を持つ)。
+   * bds==0 も含め pql>=1 だけで判定していたため、`int x = p[0];` が誤って
+   * 「スカラにポインタを代入」と E3064 拒否されていた (pp8/pp1/pp5)。 */
+  if (pql >= 1 && bds > 0) {
     deref->is_pointer = 1;
     deref->pointer_qual_levels = pql;
-    int bds = psx_node_base_deref_size(node);
     deref->base_deref_size = (short)bds;
     deref->deref_size = (pql >= 2) ? 8 : (short)bds;
     /* 要素が struct/union ポインタ (`struct N *arr[N]`) の場合、subscript 結果は
