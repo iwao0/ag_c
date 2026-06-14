@@ -903,7 +903,16 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
       deref->inner_deref_size = (short)mem_size;
     }
     /* ポインタ配列の各要素は単一ポインタ。subscript 後の 1 段 deref では qual_levels を引き継ぐ。 */
-    if (mem_is_ptr) deref->is_tag_pointer = 0;
+    if (mem_is_ptr) {
+      deref->is_tag_pointer = 0;
+      /* ポインタ配列メンバ (`T *arr[N]`) の各要素は単段ポインタ。ローカルの
+       * `T *arr[N]` と同じく pql=1 / base_deref_size=要素 pointee サイズ を立て、
+       * build_subscript_deref の「要素がポインタ」分岐に乗せる。これにより
+       * `struct N *arr[N]` の `arr[i]` 結果に is_tag_pointer が立ち、`arr[i]->m`
+       * が解決できる (それまで struct 値扱いで E3005)。 */
+      deref->pointer_qual_levels = 1;
+      deref->base_deref_size = (short)mem_info->deref_size;
+    }
   } else if (mem_is_ptr && mem_size > 0) {
     /* スカラポインタメンバ (`char *name`): subscript や pointer 算術で
      * is_pointer 判定が要るため立てておく。is_scalar_ptr_member を立てて

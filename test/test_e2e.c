@@ -981,6 +981,7 @@ static const test_case_t test_cases[] = {
     {"probes", "unsigned_array_pointer_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/unsigned_array_pointer_deref.c", 42, 0},
     {"probes", "typedef_unsigned_global", CASE_INT_FILE, "test/fixtures/probes_found_bugs/typedef_unsigned_global.c", 42, 0},
     {"probes", "funcptr_array_member_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_array_member_init.c", 42, 0},
+    {"probes", "struct_ptr_array_member_access", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_ptr_array_member_access.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
