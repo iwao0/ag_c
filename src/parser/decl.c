@@ -1484,6 +1484,15 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
   node_t *init_chain = NULL;
   if (value && value->kind == ND_LVAR && is_compatible_tag_object_lvar((node_lvar_t *)value, var)) {
     init_chain = build_struct_copy_chain_from_source(var, (node_lvar_t *)value);
+  } else if (value && value->kind == ND_GVAR &&
+             is_compatible_tag_object_lvar((node_lvar_t *)value, var)) {
+    /* グローバル構造体からのコピー初期化 `struct S t = g;`。構造体全体を 1 つの
+     * ND_ASSIGN でコピーする (代入文 `t = g` と同じ memcpy 経路)。node_gvar_t は
+     * node_lvar_t と同じく先頭が node_mem_t なので互換判定を共用できる。 */
+    node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    assign_node->type_size = var->size;
+    init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
     node_t *then_prefix = NULL;

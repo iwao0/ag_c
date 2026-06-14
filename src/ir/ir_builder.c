@@ -278,6 +278,17 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
   return v;
 }
 
+/* グローバル変数 (ND_GVAR) のアドレスをシンボルロードで得て vreg を返す。 */
+static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
+  int v_addr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
+  sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
+  sym->sym = gv->name;
+  sym->sym_len = gv->name_len;
+  ir_func_append_inst(ctx->f, sym);
+  return v_addr;
+}
+
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
 static void emit_br(ir_build_ctx_t *ctx, ir_block_t *target);
 static void emit_br_cond(ir_build_ctx_t *ctx, ir_val_t cond,
@@ -754,8 +765,10 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
+  } else if (node->lhs->kind == ND_GVAR) {
+    dst_ptr_vreg = address_of_gvar(ctx, (node_gvar_t *)node->lhs);
   } else {
-    fail(ctx, "struct assign dst not LVAR/DEREF");
+    fail(ctx, "struct assign dst not LVAR/DEREF/GVAR");
     return ir_val_none();
   }
   if (dst_ptr_vreg < 0) return ir_val_none();
@@ -819,8 +832,10 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     ir_val_t ptr = build_expr(ctx, node->rhs->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) src_ptr_vreg = ptr.id;
+  } else if (node->rhs && node->rhs->kind == ND_GVAR) {
+    src_ptr_vreg = address_of_gvar(ctx, (node_gvar_t *)node->rhs);
   } else {
-    fail(ctx, "struct assign src not LVAR/DEREF");
+    fail(ctx, "struct assign src not LVAR/DEREF/GVAR");
     return ir_val_none();
   }
   if (src_ptr_vreg < 0) return ir_val_none();
