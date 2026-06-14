@@ -892,6 +892,30 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
   }
 }
 
+/* struct/union 型のフラット初期化スロット数 (スカラ要素の総数) を再帰的に数える。
+ * 入れ子 struct メンバは内側スカラ数だけスロットを占める (`struct In{int p,q;}` は 2)。
+ * グローバル designator の slot 計算で先行メンバの正しいスロット数を得るのに使う。 */
+static int global_flat_slot_count(token_kind_t tk, char *tn, int tl);
+
+static int global_member_flat_slots(const tag_member_info_t *mi) {
+  int per = 1;
+  if (mi->tag_kind == TK_STRUCT && !mi->is_tag_pointer) {
+    per = global_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
+  }
+  return (mi->array_len > 0) ? mi->array_len * per : per;
+}
+
+static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int slots = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    slots += global_member_flat_slots(&mi);
+  }
+  return slots;
+}
+
 /* グローバル struct/union の `.member` designator を解決する。
  * struct: そのメンバの flat slot index (先行メンバの slot 数の総和) を返す。
  * union : 0 を返し *out_ordinal に活性メンバ序数を入れる (codegen がその型で出力)。
@@ -907,19 +931,22 @@ static int resolve_global_member_designator(global_var_t *gv, char *mname, int m
       if (out_ordinal) *out_ordinal = i;
       return (gv->tag_kind == TK_UNION) ? 0 : slot;
     }
-    slot += (mi.array_len > 0) ? mi.array_len : 1;
+    /* 入れ子 struct メンバは内側スカラ数だけ slot を進める (`i` は 2 slot)。 */
+    slot += global_member_flat_slots(&mi);
   }
   return -1;
 }
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
-void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
+void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
   tk_expect('{');
   if (tk_consume('}')) return;
   /* 書き込み位置はフラットな絶対 index。ネスト brace の再帰でも連続して
    * 追記できるよう、現在の充填位置 (init_count) から開始する。
-   * designator [N]= で cur_idx をジャンプできる (後方ジャンプも可)。 */
-  int cur_idx = gv->init_count;
+   * designator [N]=/.member= で外側が cur_idx をジャンプ済みのときは、その slot
+   * (start_idx) から書き始める (`{.z=14, .i={12,13}}` で .i の brace を slot 0 へ)。
+   * start_idx < 0 は「init_count から」を意味する (トップレベル呼出)。 */
+  int cur_idx = (start_idx >= 0) ? start_idx : gv->init_count;
   for (;;) {
     /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
      * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
@@ -934,7 +961,15 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
       }
       tk_expect(']');
       tk_expect('=');
-      cur_idx = (int)idx_val;
+      /* struct 要素配列の `[N]=` は要素 1 つが内側スカラ数だけ slot を占めるので
+       * N にその数を掛ける (`struct P g[3]={[2]={5,6}}` の [2] は flat slot 4)。
+       * scalar 要素配列は 1 slot なので従来どおり N。 */
+      int elem_slots = 1;
+      if (gv->tag_kind == TK_STRUCT) {
+        elem_slots = global_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+        if (elem_slots < 1) elem_slots = 1;
+      }
+      cur_idx = (int)idx_val * elem_slots;
     }
     /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
      * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
@@ -975,7 +1010,9 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
       gv->init_count++;
     }
     if (curtok()->kind == TK_LBRACE) {
-      psx_parse_global_brace_init_flat(gv, cap);
+      /* 入れ子 brace は外側の現在位置 cur_idx から書き始める (designator で
+       * 後方ジャンプ済みのときも正しい slot へ)。 */
+      psx_parse_global_brace_init_flat(gv, cap, cur_idx);
       cur_idx = gv->init_count;
     } else {
       node_t *e = psx_expr_assign();
@@ -1094,7 +1131,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
       gv->init_fvalues = calloc((size_t)cap, sizeof(double));
     }
     gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap);
+    psx_parse_global_brace_init_flat(gv, &cap, -1);
     /* C11 6.7.6.2p1: `T a[] = {...}` 形式は要素数を初期化子から推論する。
      * register 時には has_incomplete_array で type_size=0 にされているので
      * ここで埋め直す。 */

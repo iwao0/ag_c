@@ -127,6 +127,6 @@ long long psx_decl_count_brace_init_elements(token_t *brace_tok);
 /* parser.c の brace init flat パーサ。global_var_t の init_values[] /
  * init_value_symbols[] / init_value_symbol_lens[] / init_fvalues[] を埋める。
  * static local 配列の lowering (decl.c) からも再利用する。 */
-void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap);
+void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx);
 
 #endif

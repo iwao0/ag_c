@@ -2260,7 +2260,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
     gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap);
+    psx_parse_global_brace_init_flat(gv, &cap, -1);
     if (gv->type_size == 0 && gv->init_count > 0) {
       gv->type_size = (short)(gv->init_count * elem_size);
     }
