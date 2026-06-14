@@ -2045,32 +2045,10 @@ static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node) {
   if (node->rhs) build_stmt(ctx, node->rhs);
 }
 
-static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
-  /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
-   * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
-  /* 関数戻り値型: fp_kind 対応 */
-  ir_type_t ret_ty = ir_type_from_node(&fn->base);
-  ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
-  ctx->f->is_variadic = fn->is_variadic;
-  ctx->f->nargs_fixed = fn->nargs;
-  ctx->cur_fn = fn;
-  ctx->lvar_count = 0;
-  ctx->loop_depth = 0;
-  ctx->label_count = 0;
-  /* >8B struct 戻り値の関数では prologue で x8 を受け取る (Apple ARM64 ABI 簡略版)。
-   * ≤8B struct はそのまま x0 で 1 レジスタ返却 (= scalar 経路と同じ動作)。 */
-  ctx->f->ret_struct_size = fn->base.ret_struct_size > 8 ? fn->base.ret_struct_size : 0;
-  if (ctx->f->ret_struct_size > 0) {
-    int v = ir_func_new_vreg(ctx->f);
-    ir_inst_t *p = ir_inst_new(IR_PARAM);
-    p->dst = ir_val_vreg(v, IR_TY_PTR);
-    /* src1.imm = -1 で「x8 を受け取る」を表す。codegen で特別扱い。 */
-    p->src1 = ir_val_imm(IR_TY_I32, -1);
-    ir_func_append_inst(ctx->f, p);
-    ctx->f->ret_area_vreg = v;
-  }
-  /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
-   * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */
+/* 仮引数を IR_PARAM で受け取り、frame slot に保存する (ALLOCA + STORE)。
+ * struct 引数は呼び出し側がポインタを渡してくる前提で MEMCPY する。
+ * 戻り値: 失敗時 0、成功時 1 (ctx->failed を立てるので 0 だけで判断可)。 */
+static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
   int int_arg_idx = 0;
   int fp_arg_idx = 0;
   for (int i = 0; i < fn->nargs; i++) {
@@ -2113,16 +2091,19 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
   }
-  /* 2D VLA-as-param (`int g[n][m]`) のため row stride を関数 entry で計算:
-   *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * elem_size
-   * src は先行パラメータ (例 m) で、既に上のループで frame slot に格納済み。
-   * subscript の make_subscript_scaled_offset が vla_rsf 経路で読む。 */
+  return 1;
+}
+
+/* 2D VLA-as-param (`int g[n][m]`) のため row stride を関数 entry で計算:
+ *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * elem_size
+ * src は先行パラメータ (例 m) で、既に setup_function_params で frame slot に
+ * 格納済み。subscript の make_subscript_scaled_offset が vla_rsf 経路で読む。 */
+static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) {
   for (lvar_t *var = fn->lvars; var; var = var->next_all) {
     if (!var->is_param) continue;
     if (!var->is_vla) continue;
     if (var->vla_row_stride_src_offset == 0) continue;
     if (var->vla_row_stride_frame_off == 0) continue;
-    /* m を frame からロード */
     int src_ptr = address_of_lvar(ctx, var->vla_row_stride_src_offset);
     if (src_ptr < 0) return 0;
     int v_m = ir_func_new_vreg(ctx->f);
@@ -2141,7 +2122,6 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     zx->dst = ir_val_vreg(v_s64, IR_TY_I64);
     zx->src1 = ir_val_vreg(v_stride, IR_TY_I32);
     ir_func_append_inst(ctx->f, zx);
-    /* row stride スロットへ store */
     int rs_ptr = address_of_lvar(ctx, var->vla_row_stride_frame_off);
     if (rs_ptr < 0) return 0;
     ir_inst_t *st2 = ir_inst_new(IR_STORE);
@@ -2149,6 +2129,56 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     st2->src2 = ir_val_vreg(v_s64, IR_TY_I64);
     ir_func_append_inst(ctx->f, st2);
   }
+  return 1;
+}
+
+/* 関数本体末尾に必要に応じて暗黙 `return 0` を補う。
+ * main: 末尾が IR_RET でなければ補う (AST 直 codegen 互換)。
+ * main 以外: 末尾が IR_RET / IR_BR でなければ安全のため補う
+ *           (ABI 上 caller が戻り値を期待していなければ実害なし)。 */
+static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn) {
+  int is_main = (fn->funcname_len == 4 &&
+                 fn->funcname && memcmp(fn->funcname, "main", 4) == 0);
+  ir_inst_t *tail = ctx->f->cur_block ? ctx->f->cur_block->tail : NULL;
+  ir_op_t tail_op = tail ? tail->op : IR_NOP;
+  int needs_ret = is_main
+      ? (!tail || tail_op != IR_RET)
+      : (!tail || (tail_op != IR_RET && tail_op != IR_BR));
+  if (needs_ret) {
+    ir_inst_t *r = ir_inst_new(IR_RET);
+    r->src1 = ir_val_imm(IR_TY_I32, 0);
+    ir_func_append_inst(ctx->f, r);
+  }
+}
+
+static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
+  /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
+   * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
+  /* 関数戻り値型: fp_kind 対応 */
+  ir_type_t ret_ty = ir_type_from_node(&fn->base);
+  ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
+  ctx->f->is_variadic = fn->is_variadic;
+  ctx->f->nargs_fixed = fn->nargs;
+  ctx->cur_fn = fn;
+  ctx->lvar_count = 0;
+  ctx->loop_depth = 0;
+  ctx->label_count = 0;
+  /* >8B struct 戻り値の関数では prologue で x8 を受け取る (Apple ARM64 ABI 簡略版)。
+   * ≤8B struct はそのまま x0 で 1 レジスタ返却 (= scalar 経路と同じ動作)。 */
+  ctx->f->ret_struct_size = fn->base.ret_struct_size > 8 ? fn->base.ret_struct_size : 0;
+  if (ctx->f->ret_struct_size > 0) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *p = ir_inst_new(IR_PARAM);
+    p->dst = ir_val_vreg(v, IR_TY_PTR);
+    /* src1.imm = -1 で「x8 を受け取る」を表す。codegen で特別扱い。 */
+    p->src1 = ir_val_imm(IR_TY_I32, -1);
+    ir_func_append_inst(ctx->f, p);
+    ctx->f->ret_area_vreg = v;
+  }
+  /* 仮引数: IR_PARAM で第 i 引数を受け取り、ALLOCA + STORE で frame slot に保存。
+   * 以降の本体で LVAR 参照されたときに通常の LOAD が走るようになる。 */
+  if (!setup_function_params(ctx, fn)) return 0;
+  if (!emit_vla_row_stride_for_params(ctx, fn)) return 0;
   /* 全ローカル変数の ALLOCA をエントリブロックで前もって発行する。
    * 遅延発行だと「最初の参照が分岐内」のとき、未到達経路では vreg が
    * 未初期化となり、別経路から参照すると壊れる (struct ternary 等)。
@@ -2163,25 +2193,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   if (ctx->failed) return 0;
   build_stmt(ctx, fn->base.rhs);
   if (ctx->failed) return 0;
-  /* 末尾に RET が無いとき、main は暗黙 `return 0` を補う (AST 直 codegen 互換)。
-   * それ以外の関数は補わない (未定義動作のままにしておく)。 */
-  int is_main = (fn->funcname_len == 4 &&
-                 fn->funcname && memcmp(fn->funcname, "main", 4) == 0);
-  if (is_main && (!ctx->f->cur_block || !ctx->f->cur_block->tail ||
-                  ctx->f->cur_block->tail->op != IR_RET)) {
-    ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = ir_val_imm(IR_TY_I32, 0);
-    ir_func_append_inst(ctx->f, r);
-  }
-  /* main 以外でも、末尾が分岐/return で終わってない場合は安全のため ret 0 を補う
-   * (ABI 上 caller が戻り値を期待していなければ実害なし)。 */
-  if (!is_main && (!ctx->f->cur_block || !ctx->f->cur_block->tail ||
-                   (ctx->f->cur_block->tail->op != IR_RET &&
-                    ctx->f->cur_block->tail->op != IR_BR))) {
-    ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = ir_val_imm(IR_TY_I32, 0);
-    ir_func_append_inst(ctx->f, r);
-  }
+  emit_implicit_return_if_missing(ctx, fn);
   return 1;
 }
 
