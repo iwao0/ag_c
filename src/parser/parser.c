@@ -1912,9 +1912,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     return var;
   }
   if (ds->tag_kind != TK_EOF && param_is_ptr) {
-    // struct/union へのポインタ仮引数
-    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
+    /* struct/union へのポインタ仮引数。`a[i]` / `a+i` のスケーリングに pointee
+     * (= struct サイズ) が必要なので deref_size に struct_size を入れる。多段
+     * ポインタ (`struct N **a`) の pointee はポインタ (8) なので除外する。
+     * 修正前は常に 8 で、4 バイト構造体の subscript が誤スケールしていた。 */
+    int pointee = (param_ptr_levels <= 1 && ds->struct_size > 0) ? ds->struct_size : 8;
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, pointee, 0, 0);
     psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 1);
+    var->base_deref_size = (short)pointee;
     return var;
   }
   if (param_is_ptr && ds->tag_kind == TK_EOF) {
