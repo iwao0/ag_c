@@ -868,10 +868,9 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
           psx_diag_ctx(curtok(), "decl", "%s",
                        diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
         }
-        if (assigned[target_idx]) {
-          psx_diag_ctx(curtok(), "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
-        }
+        /* C11 6.7.9p19: 同一 subobject への複数の指定初期化子は「後勝ち」で
+         * 上書きされる (エラーではない)。逐次代入を順に発行すれば最後の代入が
+         * 残るため重複を拒否しない。 */
         /* 配列要素が struct/union で初期化子が `{...}` (`struct P a[3] = {{1, 2}, ...}`):
          * 要素単位の代入式チェーンに展開する。 */
         if (curtok() && curtok()->kind == TK_LBRACE &&
@@ -1075,10 +1074,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
-          if (assigned[target_idx]) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
-          }
+          /* C11 6.7.9p19: 同一要素への複数指定初期化子は後勝ち (エラーではない)。 */
           node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
           node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
           assign_node->type_size = elem_size;
@@ -1458,17 +1454,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
           continue;
         }
         if (tk_consume('[')) {
-          /* indexed designator `.member[idx] = val`。同名 full との重複は診断。
-           * indexed 同士は別 index の可能性があるので許す。 */
-          for (int i = 0; i < assigned_n; i++) {
-            if (assigned_kind[i] == 0 &&
-                assigned_lens[i] == info.len &&
-                strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
-              psx_diag_ctx(curtok(), "decl", "%s",
-                           diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
-              break;
-            }
-          }
+          /* indexed designator `.member[idx] = val`。C11 6.7.9p19 により同一
+           * subobject への複数指定初期化子は後勝ち (エラーではない)。 */
           init_chain = append_to_init_chain(init_chain,
               consume_indexed_designator_and_build_assign(var, info, found));
           assigned_names[assigned_n] = info.name;
@@ -1488,14 +1475,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
-      // full 代入: 同名の full または indexed が既にあれば重複。
-      for (int i = 0; i < assigned_n; i++) {
-        if (assigned_lens[i] == info.len && strncmp(assigned_names[i], info.name, (size_t)info.len) == 0) {
-          psx_diag_ctx(curtok(), "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_DUPLICATE_MEMBER));
-          break;
-        }
-      }
+      /* C11 6.7.9p19: 同名メンバへの複数指定初期化子は後勝ち (エラーではない)。
+       * 逐次代入を順に発行すれば最後の代入が残る。 */
       node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                      info.tag_kind, info.tag_name, info.tag_len,
                                                      info.is_tag_pointer, info.array_len, info.outer_stride);

@@ -1727,10 +1727,11 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
   expect_parse_fail("main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
   expect_parse_fail("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
-  expect_parse_fail("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator
-  expect_parse_fail("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後のstruct重複designator
   expect_parse_fail("main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
-  expect_parse_fail("main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator
+  // C11 6.7.9p19: 同一 subobject への複数指定初期化子は後勝ちで受理される。
+  expect_parse_ok("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator (後勝ち)
+  expect_parse_ok("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後の上書き
+  expect_parse_ok("main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator (後勝ち)
 }
 
 static void test_parse_invalid_diagnostics() {
@@ -1751,7 +1752,6 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
   expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
-  expect_parse_fail_with_message("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }", "[decl] 構造体初期化子で同一メンバが重複指定されています");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
