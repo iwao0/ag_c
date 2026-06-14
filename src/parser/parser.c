@@ -1754,6 +1754,97 @@ static void apply_typedef_array_pointee_strides(lvar_t *var, param_decl_spec_t *
   var->extra_strides_count = (unsigned char)idx_in_extras;
 }
 
+/* 仮引数宣言子の形式 (funcptr-array / VLA / struct array / >16B byref struct /
+ * ≤16B struct value / struct pointer / scalar pointer / typedef-array decay /
+ * plain scalar) に応じて lvar_t を登録する。
+ * 各分岐は parse_param_declarator_name の出力 (is_ptr / is_array_declarator /
+ * inner dims / func_suffix etc) と param_decl_spec_t を使って判別する。 */
+static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t *ds_in,
+                                    int param_is_ptr, int param_is_array_declarator,
+                                    int param_ptr_levels, int param_has_func_suffix,
+                                    int param_inner_first_dim, int param_inner_second_dim,
+                                    token_ident_t *param_inner_first_dim_ident) {
+  /* register_vla_array_param / apply_typedef_array_pointee_strides は ds を非const
+   * の param_decl_spec_t * で受け取るため、内部的にキャストする。値は変更しない。 */
+  param_decl_spec_t *ds = (param_decl_spec_t *)ds_in;
+  if (param_is_array_declarator && param_is_ptr && param_has_func_suffix &&
+      ds->tag_kind == TK_EOF) {
+    /* `int (*ops[])(int)` 形式の関数ポインタ配列パラメータ。
+     * C11 6.7.6.3p7 で配列 → ポインタへ adjust される (= `int (**ops)(int)` 相当)。
+     * 各要素は関数ポインタ (8 byte) なので elem_size=8 で登録。
+     * pointer_qual_levels=1 で lvar_is_pointer (expr.c) を発火させ、subscript 経路を動かす。 */
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
+    var->is_tag_pointer = 0;
+    var->base_deref_size = 8;
+    var->pointer_qual_levels = 1;
+    return var;
+  }
+  if (param_is_array_declarator && ds->tag_kind == TK_EOF && !param_is_ptr) {
+    /* 仮引数 VLA / 多次元配列宣言子 (`int a[n]` / `int a[][N]` 等)。
+     * C11 6.7.6.3p7 により pointer (or pointer-to-array) に adjust される。 */
+    return register_vla_array_param(param, ds, param_inner_first_dim,
+                                     param_inner_second_dim,
+                                     param_inner_first_dim_ident);
+  }
+  if (param_is_array_declarator && ds->tag_kind != TK_EOF && !param_is_ptr) {
+    /* struct/union 配列パラメータ `struct V arr[]` は C11 6.7.6.3p7 で
+     * `struct V *arr` に adjust される。tag_kind を保持しつつ pointer 扱い。 */
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds->struct_size, 0, 0);
+    psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 1);
+    var->base_deref_size = (short)ds->struct_size;
+    return var;
+  }
+  if (ds->tag_kind != TK_EOF && !param_is_ptr && ds->struct_size > 16) {
+    // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds->struct_size, 0, 0);
+    psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 0);
+    var->is_byref_param = 1;
+    return var;
+  }
+  if (ds->tag_kind != TK_EOF && !param_is_ptr && ds->struct_size > 0) {
+    // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, ds->struct_size, ds->struct_size, 0, 8);
+    psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 0);
+    return var;
+  }
+  if (ds->tag_kind != TK_EOF && param_is_ptr) {
+    // struct/union へのポインタ仮引数
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
+    psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 1);
+    return var;
+  }
+  if (param_is_ptr && ds->tag_kind == TK_EOF) {
+    /* スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）。
+     * 多段ポインタなら pointee_size=8、それ以外は ds->elem_size。 */
+    int pointee_size = (param_ptr_levels >= 2) ? 8 : ds->elem_size;
+    lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
+    var->base_deref_size = (short)ds->elem_size;
+    /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
+     * captured inner dims を使って outer_stride / mid_stride を設定する。 */
+    if (param_is_array_declarator && param_inner_first_dim > 0) {
+      var->outer_stride = param_inner_first_dim * ds->elem_size;
+      if (param_inner_second_dim > 0) {
+        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds->elem_size;
+        var->mid_stride = param_inner_second_dim * ds->elem_size;
+      }
+    } else if (param_ptr_levels == 1 && ds->typedef_is_array && ds->typedef_sizeof_size > 0) {
+      /* `typedef int row_t[N]; row_t *a` / 多次元版 (`typedef int M[2][3][4]; M *p`)。 */
+      apply_typedef_array_pointee_strides(var, ds);
+    }
+    return var;
+  }
+  if (!param_is_ptr && ds->tag_kind == TK_EOF && ds->typedef_is_array &&
+      ds->typedef_sizeof_size > 0) {
+    /* `typedef int Vec3[3]; int sum(Vec3 v)` の仮引数:
+     * C11 6.7.6.3p7 により配列型は pointer に adjust される (decay 先頭要素ポインタ)。 */
+    lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
+    var->base_deref_size = (short)ds->elem_size;
+    return var;
+  }
+  // スカラー型仮引数（既存の動作）
+  return psx_decl_register_lvar(param->str, param->len);
+}
+
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   param_decl_spec_t ds = {0};
   parse_param_decl_spec(&ds);
@@ -1791,83 +1882,11 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     *arg_cap = pda_next_cap(*arg_cap, *nargs + 1);
     node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
   }
-  lvar_t *var;
-  if (param_is_array_declarator && param_is_ptr && param_has_func_suffix &&
-      ds.tag_kind == TK_EOF) {
-    /* `int (*ops[])(int)` 形式の関数ポインタ配列パラメータ。
-     * C11 6.7.6.3p7 で配列 → ポインタへ adjust される (= `int (**ops)(int)` 相当)。
-     * 各要素は関数ポインタ (8 byte) なので elem_size=8 で登録。
-     * pointer_qual_levels=1 で lvar_is_pointer (expr.c:3115) を発火させ、
-     * subscript 経路が動くようにする。 */
-    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
-    var->is_tag_pointer = 0;
-    var->base_deref_size = 8;
-    var->pointer_qual_levels = 1;
-  } else if (param_is_array_declarator && ds.tag_kind == TK_EOF && !param_is_ptr) {
-    /* 仮引数 VLA / 多次元配列宣言子 (`int a[n]` / `int a[][N]` 等)。
-     * C11 6.7.6.3p7 により pointer (or pointer-to-array) に adjust される。 */
-    var = register_vla_array_param(param, &ds, param_inner_first_dim,
-                                    param_inner_second_dim,
-                                    param_inner_first_dim_ident);
-  } else if (param_is_array_declarator && ds.tag_kind != TK_EOF && !param_is_ptr) {
-    /* struct/union 配列パラメータ `struct V arr[]` は C11 6.7.6.3p7 で
-     * `struct V *arr` に adjust される。tag_kind を保持しつつ pointer 扱い。
-     * 修正前は ≤16B struct 値渡し経路に流れ、`arr[i].x` で subscript
-     * エラー (両辺ポインタじゃないと判定) になっていた。 */
-    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds.struct_size, 0, 0);
-    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 1);
-    var->base_deref_size = (short)ds.struct_size;
-  } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 16) {
-    // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
-    // フレームスロットはポインタ(8B)、elem_size=実際の構造体サイズ
-    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds.struct_size, 0, 0);
-    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 0);
-    var->is_byref_param = 1;
-  } else if (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0) {
-    // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
-    var = psx_decl_register_lvar_sized_align(param->str, param->len, ds.struct_size, ds.struct_size, 0, 8);
-    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 0);
-  } else if (ds.tag_kind != TK_EOF && param_is_ptr) {
-    // struct/union へのポインタ仮引数
-    var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, 8, 0, 0);
-    psx_decl_set_var_tag(var, ds.tag_kind, ds.tag_name, ds.tag_len, 1);
-  } else if (param_is_ptr && ds.tag_kind == TK_EOF) {
-    // スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）
-    // size=8（ポインタ自身の格納サイズ）
-    // elem_size = 多段ポインタなら 8（pointee は別のポインタ）, さもなくば ds.elem_size
-    // ローカル変数の `int *p` / `int **pp` と同じ表現にすることで、p[i]/**p の
-    // スケーリングと load 幅を pointee サイズに揃える。
-    int pointee_size = (param_ptr_levels >= 2) ? 8 : ds.elem_size;
-    var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
-    var->base_deref_size = (short)ds.elem_size;
-    // `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
-    // captured inner dims を使って outer_stride / mid_stride を設定する。
-    // これにより a[i] のステップが pointee 1 つ分（= N*elem や N*M*elem）に揃う。
-    if (param_is_array_declarator && param_inner_first_dim > 0) {
-      var->outer_stride = param_inner_first_dim * ds.elem_size;
-      if (param_inner_second_dim > 0) {
-        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds.elem_size;
-        var->mid_stride = param_inner_second_dim * ds.elem_size;
-      }
-    } else if (param_ptr_levels == 1 && ds.typedef_is_array && ds.typedef_sizeof_size > 0) {
-      /* `typedef int row_t[N]; row_t *a` / 多次元版 (`typedef int M[2][3][4]; M *p`)
-       * 形式: pointee が typedef した配列なので outer/mid/extra_strides を
-       * pointee 全体に揃える。 */
-      apply_typedef_array_pointee_strides(var, &ds);
-    }
-  } else if (!param_is_ptr && ds.tag_kind == TK_EOF && ds.typedef_is_array &&
-             ds.typedef_sizeof_size > 0) {
-    /* `typedef int Vec3[3]; int sum(Vec3 v)` の仮引数:
-     * C11 6.7.6.3p7 により配列型は pointer に adjust される。
-     * 形式は `int (*v)[3]` ではなく `int *v` (decay先頭要素ポインタ) なので、
-     * elem_size = ds.elem_size、size = 8、outer_stride 等は設定しない。
-     * これで `v[i]` が elem_size 単位で steping し、subscript チェックも通る。 */
-    var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds.elem_size, 0);
-    var->base_deref_size = (short)ds.elem_size;
-  } else {
-    // スカラー型仮引数（既存の動作）
-    var = psx_decl_register_lvar(param->str, param->len);
-  }
+  lvar_t *var = register_param_lvar(param, &ds,
+                                     param_is_ptr, param_is_array_declarator,
+                                     param_ptr_levels, param_has_func_suffix,
+                                     param_inner_first_dim, param_inner_second_dim,
+                                     param_inner_first_dim_ident);
   var->is_param = 1;
   var->is_initialized = 1;
   // float/double 仮引数は ABI に従い d0..d7 で受け取るため fp_kind を保持。
