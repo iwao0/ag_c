@@ -935,6 +935,7 @@ static const test_case_t test_cases[] = {
     {"probes", "cast_int_to_double", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cast_int_to_double.c", 35, 0},
     {"probes", "return_int_to_double", CASE_INT_FILE, "test/fixtures/probes_found_bugs/return_int_to_double.c", 42, 0},
     {"probes", "float_inc_dec", CASE_INT_FILE, "test/fixtures/probes_found_bugs/float_inc_dec.c", 42, 0},
+    {"probes", "struct_copy_init_array_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_copy_init_array_member.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

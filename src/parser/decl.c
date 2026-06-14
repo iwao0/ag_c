@@ -591,7 +591,11 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
     tag_member_info_t info = {0};
     bool found = psx_ctx_get_tag_member_info(dst->tag_kind, dst->tag_name, dst->tag_len, ordinal, &info);
     if (!found || info.len <= 0) continue;
-    if (is_supported_scalar_store_size(info.type_size)) {
+    /* 配列メンバは type_size が要素サイズなので全体サイズへ換算する。
+     * スカラ(非配列)で 1/2/4/8B のときだけ 1 ワード assign、それ以外
+     * (配列メンバ・ネスト struct 等) はバイトコピーで全体を複製する。 */
+    int full_size = (info.array_len > 0) ? info.type_size * info.array_len : info.type_size;
+    if (info.array_len <= 0 && is_supported_scalar_store_size(info.type_size)) {
       node_t *lhs = new_struct_member_lvar(dst, info.offset, info.type_size,
                                            info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
       node_t *rhs_member = new_struct_member_lvar(&src_var, info.offset, info.type_size,
@@ -604,7 +608,7 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
       continue;
     }
     init_chain = build_byte_copy_chain(dst->offset + info.offset, src_var.offset + info.offset,
-                                       info.type_size, init_chain);
+                                       full_size, init_chain);
   }
   return init_chain ? init_chain : psx_node_new_num(0);
 }
