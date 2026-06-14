@@ -830,7 +830,10 @@ static bool try_parse_decimal_int_fast(char **pp, parsed_num_t *num) {
 
 static long long token_signed_from_u64(unsigned long long uval) {
   if (uval <= (unsigned long long)LLONG_MAX) return (long long)uval;
-  return (long long)(uval & (unsigned long long)LLONG_MAX);
+  // bit63 が立つ値 (uval > LLONG_MAX) は 2 の補数としてそのまま再解釈する。
+  // 以前は `uval & LLONG_MAX` で bit63 を捨てており、0xFFFFFFFFFFFFFFFF が
+  // 0x7FFFFFFFFFFFFFFF に化けていた (probes/int_literal_top_bit_set)。
+  return (long long)(uval - (unsigned long long)LLONG_MAX - 1ULL) + LLONG_MIN;
 }
 
 static inline bool has_decimal_float_marker(const char *p) {

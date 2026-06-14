@@ -927,6 +927,7 @@ static const test_case_t test_cases[] = {
     {"probes", "array_designator_brace_mix", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_designator_brace_mix.c", 44, 0},
     {"probes", "div_wide_signed_by_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/div_wide_signed_by_unsigned.c", 48, 0},
     {"probes", "mod_wide_signed_by_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/mod_wide_signed_by_unsigned.c", 99, 0},
+    {"probes", "int_literal_top_bit_set", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_literal_top_bit_set.c", 15, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
