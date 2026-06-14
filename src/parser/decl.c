@@ -2481,6 +2481,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           /* 可変長配列 (VLA): フレームスロット (1D/2D 定数=16B, 2D 実行時=24B)
            * を確保し、ND_VLA_ALLOC ノードを init_chain に append する。 */
           var = register_vla_lvar_and_append_alloc(tok, elem_size, size_node, &init_chain);
+          /* VLA は continue で下の fp_kind/is_unsigned 設定をスキップする。VLA 記述子
+           * 自体はベースポインタ (整数) なので fp_kind は NONE のまま、要素型は
+           * pointee_fp_kind に入れて subscript の fp load/store に伝播させる。 */
+          var->pointee_fp_kind = decl_fp_kind;
+          var->is_unsigned = decl_is_unsigned;
           if (!tk_consume(',')) break;
           continue;
         }
