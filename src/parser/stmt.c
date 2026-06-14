@@ -495,7 +495,7 @@ static node_t *parse_stmt_case(void) {
   set_curtok(curtok()->next);
   node_case_t *node = arena_alloc(sizeof(node_case_t));
   node->base.kind = ND_CASE;
-  node->val = psx_parse_enum_const_expr();
+  node->val = psx_parse_case_const_expr();
   psx_switch_register_case(node->val, curtok());
   tk_expect(':');
   node->base.rhs = stmt_internal();

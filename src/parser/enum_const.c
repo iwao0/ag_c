@@ -21,7 +21,21 @@ static long long parse_mul(void);
 static long long parse_unary(void);
 static long long parse_primary(void);
 
+/* case ラベル評価中のみ true。INT_MAX を超える整数リテラルを long long として
+ * 受理する (C11 6.8.4.2: case の式は整数定数式でよく int に収まる必要はない)。
+ * enum 定数・配列次元・_Alignas・ビットフィールド幅の経路は従来どおり
+ * tk_expect_number() で int に制約する (それぞれの文脈では int が正しい)。 */
+static int s_allow_wide_const = 0;
+
 long long psx_parse_enum_const_expr(void) { return parse_conditional(); }
+
+long long psx_parse_case_const_expr(void) {
+  int saved = s_allow_wide_const;
+  s_allow_wide_const = 1;
+  long long v = parse_conditional();
+  s_allow_wide_const = saved;
+  return v;
+}
 
 static long long parse_conditional(void) {
   long long cond = parse_logor();
@@ -222,6 +236,13 @@ static long long parse_primary(void) {
       psx_diag_ctx(curtok(), "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
                    id->len, id->str);
     }
+    return v;
+  }
+  /* case ラベル文脈では int 範囲外の整数リテラルも long long として受理する。 */
+  if (s_allow_wide_const && curtok()->kind == TK_NUM &&
+      tk_as_num(curtok())->num_kind == TK_NUM_KIND_INT) {
+    long long v = tk_as_num_int(curtok())->val;
+    set_curtok(curtok()->next);
     return v;
   }
   return tk_expect_number();

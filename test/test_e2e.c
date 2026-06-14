@@ -929,6 +929,7 @@ static const test_case_t test_cases[] = {
     {"probes", "mod_wide_signed_by_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/mod_wide_signed_by_unsigned.c", 99, 0},
     {"probes", "int_literal_top_bit_set", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_literal_top_bit_set.c", 15, 0},
     {"probes", "compound_assign_index_side_effect", CASE_INT_FILE, "test/fixtures/probes_found_bugs/compound_assign_index_side_effect.c", 15, 0},
+    {"probes", "switch_case_long_label", CASE_INT_FILE, "test/fixtures/probes_found_bugs/switch_case_long_label.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
