@@ -274,259 +274,292 @@ static node_t *block_item(void) {
   return stmt_internal();
 }
 
+/* 文 (statement) 分岐ヘルパ群: stmt_internal の dispatch から呼ばれる。
+ * 各ヘルパは対応するキーワードトークンを消費して文を構築する。
+ * (block / return / if / while / do-while / for / switch / case /
+ *  default / break / continue / goto / label) */
+static node_t *parse_stmt_block(void);
+static node_t *parse_stmt_return(void);
+static node_t *parse_stmt_if(void);
+static node_t *parse_stmt_while(void);
+static node_t *parse_stmt_do_while(void);
+static node_t *parse_stmt_for(void);
+static node_t *parse_stmt_switch(void);
+static node_t *parse_stmt_case(void);
+static node_t *parse_stmt_default(void);
+static node_t *parse_stmt_break(void);
+static node_t *parse_stmt_continue(void);
+static node_t *parse_stmt_goto(void);
+static node_t *parse_stmt_label(void);
+
 static node_t *stmt_internal(void) {
   // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
-  if (tk_consume(';')) {
-    return psx_node_new_num(0);
+  if (tk_consume(';')) return psx_node_new_num(0);
+  if (curtok()->kind == TK_LBRACE) return parse_stmt_block();
+  if (is_decl_like_start_stmt()) return parse_decl_like_stmt();
+  switch (curtok()->kind) {
+    case TK_RETURN:   return parse_stmt_return();
+    case TK_IF:       return parse_stmt_if();
+    case TK_WHILE:    return parse_stmt_while();
+    case TK_DO:       return parse_stmt_do_while();
+    case TK_FOR:      return parse_stmt_for();
+    case TK_SWITCH:   return parse_stmt_switch();
+    case TK_CASE:     return parse_stmt_case();
+    case TK_DEFAULT:  return parse_stmt_default();
+    case TK_BREAK:    return parse_stmt_break();
+    case TK_CONTINUE: return parse_stmt_continue();
+    case TK_GOTO:     return parse_stmt_goto();
+    default: break;
   }
-
-  if (tk_consume('{')) {
-    psx_ctx_enter_block_scope();
-    psx_decl_enter_scope();
-    node_block_t *node = arena_alloc(sizeof(node_block_t));
-    node->base.kind = ND_BLOCK;
-    int i = 0;
-    int cap = 16;
-    node->body = calloc(cap, sizeof(node_t*));
-    int prev_terminates = 0;
-    while (!tk_consume('}')) {
-      // #pragma pack マーカーはブロック内でも透過的に処理（AST には載せない）。
-      if (psx_try_consume_pragma_pack_marker()) continue;
-      if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
-          !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
-        diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
-                       "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
-        prev_terminates = 0;
-      }
-      if (i >= cap - 1) {
-        cap = pda_next_cap(cap, i + 2);
-        node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
-      }
-      node->body[i] = block_item();
-      node_kind_t k = node->body[i]->kind;
-      prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
-      i++;
-    }
-    node->body[i] = NULL;
-    psx_decl_leave_scope();
-    psx_ctx_leave_block_scope();
-    return (node_t *)node;
-  }
-
-  if (is_decl_like_start_stmt()) {
-    return parse_decl_like_stmt();
-  }
-
-  if (curtok()->kind == TK_RETURN) {
-    set_curtok(curtok()->next);
-    node_t *node = arena_alloc(sizeof(node_t));
-    node->kind = ND_RETURN;
-    if (tk_consume(';')) {
-      if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
-        diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
-                       "%s",
-                       diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
-      }
-      node->lhs = NULL;
-      node->fp_kind = psx_expr_current_func_ret_fp_kind();
-      return node;
-    }
-    node->lhs = ps_expr();
-    if (psx_expr_current_func_ret_token_kind() == TK_VOID) {
-      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
-                     "%s",
-                     diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
-    }
-    /* C11 6.8.6.4 / 6.5.16.1: ポインタ戻り値型の関数で非ゼロ整数値を返すのは
-     * 互換性のない型の制約違反 (NULL ポインタ定数 0 は許可)。
-     * 明示キャスト (int*)x は apply_cast が is_pointer を設定するためここでは通る。 */
-    if (psx_expr_current_func_ret_is_pointer() && node->lhs) {
-      if (node->lhs->kind == ND_NUM) {
-        node_num_t *num = (node_num_t *)node->lhs;
-        if (num->val != 0) {
-          psx_diag_ctx(curtok(), "return",
-                       "ポインタを返す関数から非ゼロ整数定数 (%lld) を返却できません (C11 6.8.6.4)",
-                       num->val);
-        }
-      }
-    }
-    /* C11 6.3.1.2: 関数戻り値型が _Bool なら return 値も (rhs != 0) に正規化。
-     * `_Bool f() { return 200; }` で 200 をそのまま返すと caller が真偽以外の
-     * 値を見て誤動作する (`flag * 7` が 1400 になる等)。 */
-    if (psx_expr_current_func_ret_token_kind() == TK_BOOL &&
-        !psx_expr_current_func_ret_is_pointer() && node->lhs) {
-      node->lhs = psx_node_new_binary(ND_NE, node->lhs, psx_node_new_num(0));
-    }
-    node->fp_kind = psx_expr_current_func_ret_fp_kind();
-    node->ret_struct_size = psx_expr_current_func_ret_struct_size();
-    tk_expect(';');
-    return node;
-  }
-
-  if (curtok()->kind == TK_IF) {
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
-    node->base.kind = ND_IF;
-    node->base.lhs = ps_expr();
-    tk_expect(')');
-    node->base.rhs = stmt_internal();
-    if (curtok()->kind == TK_ELSE) {
-      set_curtok(curtok()->next);
-      node->els = stmt_internal();
-    }
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_WHILE) {
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
-    node->base.kind = ND_WHILE;
-    node->base.lhs = ps_expr();
-    tk_expect(')');
-    psx_loop_enter();
-    node->base.rhs = stmt_internal();
-    psx_loop_leave();
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_DO) {
-    set_curtok(curtok()->next);
-    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
-    node->base.kind = ND_DO_WHILE;
-    psx_loop_enter();
-    node->base.rhs = stmt_internal();
-    psx_loop_leave();
-    if (curtok()->kind != TK_WHILE) {
-      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_WHILE));
-    }
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    node->base.lhs = ps_expr();
-    tk_expect(')');
-    tk_expect(';');
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_FOR) {
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
-    node->base.kind = ND_FOR;
-    int for_has_decl = 0;
-    if (!tk_consume(';')) {
-      if (is_decl_like_start_stmt()) {
-        for_has_decl = 1;
-        psx_decl_enter_scope();
-        node->init = parse_decl_like_stmt();
-      } else {
-        node->init = ps_expr();
-        tk_expect(';');
-      }
-    }
-    if (!tk_consume(';')) {
-      node->base.lhs = ps_expr();
-      tk_expect(';');
-    }
-    if (!tk_consume(')')) {
-      node->inc = ps_expr();
-      tk_expect(')');
-    }
-    psx_loop_enter();
-    node->base.rhs = stmt_internal();
-    psx_loop_leave();
-    if (for_has_decl) psx_decl_leave_scope();
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_SWITCH) {
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
-    node->base.kind = ND_SWITCH;
-    node->base.lhs = ps_expr();
-    tk_expect(')');
-    psx_switch_push_ctx();
-    node->base.rhs = stmt_internal();
-    psx_switch_pop_ctx();
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_CASE) {
-    set_curtok(curtok()->next);
-    node_case_t *node = arena_alloc(sizeof(node_case_t));
-    node->base.kind = ND_CASE;
-    node->val = psx_parse_enum_const_expr();
-    psx_switch_register_case(node->val, curtok());
-    tk_expect(':');
-    node->base.rhs = stmt_internal();
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_DEFAULT) {
-    set_curtok(curtok()->next);
-    psx_switch_register_default(curtok());
-    node_default_t *node = arena_alloc(sizeof(node_default_t));
-    node->base.kind = ND_DEFAULT;
-    tk_expect(':');
-    node->base.rhs = stmt_internal();
-    return (node_t *)node;
-  }
-
-  if (curtok()->kind == TK_BREAK) {
-    if (psx_loop_depth() == 0 && !psx_switch_has_ctx()) {
-      psx_diag_only_in(curtok(), diag_text_for(DIAG_TEXT_BREAK), diag_text_for(DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
-    }
-    set_curtok(curtok()->next);
-    node_t *node = arena_alloc(sizeof(node_t));
-    node->kind = ND_BREAK;
-    tk_expect(';');
-    return node;
-  }
-
-  if (curtok()->kind == TK_CONTINUE) {
-    if (psx_loop_depth() == 0) {
-      psx_diag_only_in(curtok(), diag_text_for(DIAG_TEXT_CONTINUE), diag_text_for(DIAG_TEXT_LOOP_SCOPE));
-    }
-    set_curtok(curtok()->next);
-    node_t *node = arena_alloc(sizeof(node_t));
-    node->kind = ND_CONTINUE;
-    tk_expect(';');
-    return node;
-  }
-
-  if (curtok()->kind == TK_GOTO) {
-    token_t *goto_tok = curtok();
-    set_curtok(curtok()->next);
-    token_ident_t *ident = tk_consume_ident();
-    if (!ident) {
-      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
-    }
-    node_jump_t *node = arena_alloc(sizeof(node_jump_t));
-    node->base.kind = ND_GOTO;
-    node->name = ident->str;
-    node->name_len = ident->len;
-    psx_ctx_register_goto_ref(ident->str, ident->len, goto_tok);
-    tk_expect(';');
-    return (node_t *)node;
-  }
-
+  /* `<ident>:` 形のラベル文 */
   if (curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON) {
-    token_ident_t *ident = tk_consume_ident();
-    tk_expect(':');
-    node_jump_t *node = arena_alloc(sizeof(node_jump_t));
-    node->base.kind = ND_LABEL;
-    node->name = ident->str;
-    node->name_len = ident->len;
-    psx_ctx_register_label_def(ident->str, ident->len, curtok());
-    node->base.rhs = stmt_internal();
-    return (node_t *)node;
+    return parse_stmt_label();
   }
-
+  /* 式文 (式を評価して結果を捨てる) */
   node_t *node = ps_expr();
   tk_expect(';');
   return node;
+}
+
+static node_t *parse_stmt_block(void) {
+  tk_consume('{');
+  psx_ctx_enter_block_scope();
+  psx_decl_enter_scope();
+  node_block_t *node = arena_alloc(sizeof(node_block_t));
+  node->base.kind = ND_BLOCK;
+  int i = 0;
+  int cap = 16;
+  node->body = calloc(cap, sizeof(node_t*));
+  int prev_terminates = 0;
+  while (!tk_consume('}')) {
+    // #pragma pack マーカーはブロック内でも透過的に処理（AST には載せない）。
+    if (psx_try_consume_pragma_pack_marker()) continue;
+    if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
+        !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
+      diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
+                     "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
+      prev_terminates = 0;
+    }
+    if (i >= cap - 1) {
+      cap = pda_next_cap(cap, i + 2);
+      node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
+    }
+    node->body[i] = block_item();
+    node_kind_t k = node->body[i]->kind;
+    prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
+    i++;
+  }
+  node->body[i] = NULL;
+  psx_decl_leave_scope();
+  psx_ctx_leave_block_scope();
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_return(void) {
+  set_curtok(curtok()->next);
+  node_t *node = arena_alloc(sizeof(node_t));
+  node->kind = ND_RETURN;
+  if (tk_consume(';')) {
+    if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
+      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
+                     "%s",
+                     diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
+    }
+    node->lhs = NULL;
+    node->fp_kind = psx_expr_current_func_ret_fp_kind();
+    return node;
+  }
+  node->lhs = ps_expr();
+  if (psx_expr_current_func_ret_token_kind() == TK_VOID) {
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
+                   "%s",
+                   diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
+  }
+  /* C11 6.8.6.4 / 6.5.16.1: ポインタ戻り値型の関数で非ゼロ整数値を返すのは
+   * 互換性のない型の制約違反 (NULL ポインタ定数 0 は許可)。
+   * 明示キャスト (int*)x は apply_cast が is_pointer を設定するためここでは通る。 */
+  if (psx_expr_current_func_ret_is_pointer() && node->lhs) {
+    if (node->lhs->kind == ND_NUM) {
+      node_num_t *num = (node_num_t *)node->lhs;
+      if (num->val != 0) {
+        psx_diag_ctx(curtok(), "return",
+                     "ポインタを返す関数から非ゼロ整数定数 (%lld) を返却できません (C11 6.8.6.4)",
+                     num->val);
+      }
+    }
+  }
+  /* C11 6.3.1.2: 関数戻り値型が _Bool なら return 値も (rhs != 0) に正規化。
+   * `_Bool f() { return 200; }` で 200 をそのまま返すと caller が真偽以外の
+   * 値を見て誤動作する (`flag * 7` が 1400 になる等)。 */
+  if (psx_expr_current_func_ret_token_kind() == TK_BOOL &&
+      !psx_expr_current_func_ret_is_pointer() && node->lhs) {
+    node->lhs = psx_node_new_binary(ND_NE, node->lhs, psx_node_new_num(0));
+  }
+  node->fp_kind = psx_expr_current_func_ret_fp_kind();
+  node->ret_struct_size = psx_expr_current_func_ret_struct_size();
+  tk_expect(';');
+  return node;
+}
+
+static node_t *parse_stmt_if(void) {
+  set_curtok(curtok()->next);
+  tk_expect('(');
+  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node->base.kind = ND_IF;
+  node->base.lhs = ps_expr();
+  tk_expect(')');
+  node->base.rhs = stmt_internal();
+  if (curtok()->kind == TK_ELSE) {
+    set_curtok(curtok()->next);
+    node->els = stmt_internal();
+  }
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_while(void) {
+  set_curtok(curtok()->next);
+  tk_expect('(');
+  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node->base.kind = ND_WHILE;
+  node->base.lhs = ps_expr();
+  tk_expect(')');
+  psx_loop_enter();
+  node->base.rhs = stmt_internal();
+  psx_loop_leave();
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_do_while(void) {
+  set_curtok(curtok()->next);
+  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node->base.kind = ND_DO_WHILE;
+  psx_loop_enter();
+  node->base.rhs = stmt_internal();
+  psx_loop_leave();
+  if (curtok()->kind != TK_WHILE) {
+    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_WHILE));
+  }
+  set_curtok(curtok()->next);
+  tk_expect('(');
+  node->base.lhs = ps_expr();
+  tk_expect(')');
+  tk_expect(';');
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_for(void) {
+  set_curtok(curtok()->next);
+  tk_expect('(');
+  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node->base.kind = ND_FOR;
+  int for_has_decl = 0;
+  if (!tk_consume(';')) {
+    if (is_decl_like_start_stmt()) {
+      for_has_decl = 1;
+      psx_decl_enter_scope();
+      node->init = parse_decl_like_stmt();
+    } else {
+      node->init = ps_expr();
+      tk_expect(';');
+    }
+  }
+  if (!tk_consume(';')) {
+    node->base.lhs = ps_expr();
+    tk_expect(';');
+  }
+  if (!tk_consume(')')) {
+    node->inc = ps_expr();
+    tk_expect(')');
+  }
+  psx_loop_enter();
+  node->base.rhs = stmt_internal();
+  psx_loop_leave();
+  if (for_has_decl) psx_decl_leave_scope();
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_switch(void) {
+  set_curtok(curtok()->next);
+  tk_expect('(');
+  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node->base.kind = ND_SWITCH;
+  node->base.lhs = ps_expr();
+  tk_expect(')');
+  psx_switch_push_ctx();
+  node->base.rhs = stmt_internal();
+  psx_switch_pop_ctx();
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_case(void) {
+  set_curtok(curtok()->next);
+  node_case_t *node = arena_alloc(sizeof(node_case_t));
+  node->base.kind = ND_CASE;
+  node->val = psx_parse_enum_const_expr();
+  psx_switch_register_case(node->val, curtok());
+  tk_expect(':');
+  node->base.rhs = stmt_internal();
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_default(void) {
+  set_curtok(curtok()->next);
+  psx_switch_register_default(curtok());
+  node_default_t *node = arena_alloc(sizeof(node_default_t));
+  node->base.kind = ND_DEFAULT;
+  tk_expect(':');
+  node->base.rhs = stmt_internal();
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_break(void) {
+  if (psx_loop_depth() == 0 && !psx_switch_has_ctx()) {
+    psx_diag_only_in(curtok(), diag_text_for(DIAG_TEXT_BREAK), diag_text_for(DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
+  }
+  set_curtok(curtok()->next);
+  node_t *node = arena_alloc(sizeof(node_t));
+  node->kind = ND_BREAK;
+  tk_expect(';');
+  return node;
+}
+
+static node_t *parse_stmt_continue(void) {
+  if (psx_loop_depth() == 0) {
+    psx_diag_only_in(curtok(), diag_text_for(DIAG_TEXT_CONTINUE), diag_text_for(DIAG_TEXT_LOOP_SCOPE));
+  }
+  set_curtok(curtok()->next);
+  node_t *node = arena_alloc(sizeof(node_t));
+  node->kind = ND_CONTINUE;
+  tk_expect(';');
+  return node;
+}
+
+static node_t *parse_stmt_goto(void) {
+  token_t *goto_tok = curtok();
+  set_curtok(curtok()->next);
+  token_ident_t *ident = tk_consume_ident();
+  if (!ident) {
+    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
+  }
+  node_jump_t *node = arena_alloc(sizeof(node_jump_t));
+  node->base.kind = ND_GOTO;
+  node->name = ident->str;
+  node->name_len = ident->len;
+  psx_ctx_register_goto_ref(ident->str, ident->len, goto_tok);
+  tk_expect(';');
+  return (node_t *)node;
+}
+
+static node_t *parse_stmt_label(void) {
+  token_ident_t *ident = tk_consume_ident();
+  tk_expect(':');
+  node_jump_t *node = arena_alloc(sizeof(node_jump_t));
+  node->base.kind = ND_LABEL;
+  node->name = ident->str;
+  node->name_len = ident->len;
+  psx_ctx_register_label_def(ident->str, ident->len, curtok());
+  node->base.rhs = stmt_internal();
+  return (node_t *)node;
 }
 
 node_t *psx_stmt_stmt(void) {
