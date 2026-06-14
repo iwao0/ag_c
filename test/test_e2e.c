@@ -949,6 +949,7 @@ static const test_case_t test_cases[] = {
     {"probes", "funcall_struct_ptr_arrow", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcall_struct_ptr_arrow.c", 42, 0},
     {"probes", "struct_ptr_param_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_ptr_param_subscript.c", 42, 0},
     {"probes", "struct_ptr_incdec_and_typedef_arrow", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_ptr_incdec_and_typedef_arrow.c", 42, 0},
+    {"probes", "array_of_struct_pointers_arrow", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_of_struct_pointers_arrow.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

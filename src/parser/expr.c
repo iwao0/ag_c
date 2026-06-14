@@ -2591,6 +2591,11 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     int bds = psx_node_base_deref_size(node);
     deref->base_deref_size = (short)bds;
     deref->deref_size = (pql >= 2) ? 8 : (short)bds;
+    /* 要素が struct/union ポインタ (`struct N *arr[N]`) の場合、subscript 結果は
+     * struct ポインタ値なので is_tag_pointer を立てる (`arr[i]->m` の解決に必要)。 */
+    if (deref->tag_kind != TK_EOF) {
+      deref->is_tag_pointer = 1;
+    }
   }
   /* 配列 (pql=0 でも pointee_fp_kind を持つ ND_ADDR) の subscript 結果も
    * FP load にするため、pointee_fp_kind を見て fp_kind を引き継ぐ。 */
