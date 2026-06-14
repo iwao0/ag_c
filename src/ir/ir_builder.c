@@ -201,15 +201,17 @@ static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target
     ir_func_append_inst(ctx->f, inst);
     return ir_val_vreg(dst, target_ty);
   }
+  /* 即値: 型 tag を更新するだけで良い (mov w/x で適切な幅にロードされる)。
+   * PTR 特殊ケースより前に処理しないと、ir_val_vreg(IR_VAL_IMM, ...) で imm 値を
+   * 失い、`p = c ? &x : 0` の null 分岐が garbage になる。 */
+  if (v.id == IR_VAL_IMM) {
+    v.type = target_ty;
+    return v;
+  }
   /* 整数同士の幅変換 (PTR <-> i32/i64 もここ通る; 実体は同じ 64bit reg なので
    * 値だけ流用)。型 tag は新しい dst でラップする。 */
   if (target_ty == IR_TY_PTR || v.type == IR_TY_PTR) {
     return ir_val_vreg(v.id, target_ty);
-  }
-  /* i32 → i64 系。即値はそのまま type 更新で OK (mov w/x で再ロードされる)。 */
-  if (v.id == IR_VAL_IMM) {
-    v.type = target_ty;
-    return v;
   }
   /* 32 → 64 拡張: SEXT を入れる (符号情報なしのとき signed 拡張で C 規約に合う)。 */
   if (ir_type_size(target_ty) > ir_type_size(v.type)) {
@@ -1429,6 +1431,12 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, cv);
     vt = ir_val_vreg(v, res_ty);
   }
+  /* ポインタ三項で分岐値が狭い整数 (例 null pointer constant `0` = i32) の場合、
+   * slot は 8 バイトなので 8 バイト幅へ拡張してから STORE する。さもないと
+   * 4 バイトのみ書かれ、merge の 8 バイト LOAD で上位 4 バイトが garbage になる。 */
+  if (res_ty == IR_TY_PTR && vt.type != IR_TY_PTR) {
+    vt = coerce_to_type(ctx, vt, IR_TY_PTR);
+  }
   ir_inst_t *st_t = ir_inst_new(IR_STORE);
   st_t->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
   st_t->src2 = vt;
@@ -1450,6 +1458,9 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
     cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
     ir_func_append_inst(ctx->f, cv);
     ve = ir_val_vreg(v, res_ty);
+  }
+  if (res_ty == IR_TY_PTR && ve.type != IR_TY_PTR) {
+    ve = coerce_to_type(ctx, ve, IR_TY_PTR);
   }
   ir_inst_t *st_e = ir_inst_new(IR_STORE);
   st_e->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
