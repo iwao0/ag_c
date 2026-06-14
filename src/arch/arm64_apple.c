@@ -293,18 +293,53 @@ static void cg_emit_int_directive(int size, long long value) {
 /* グローバル struct/union メンバ 1 個分のスカラ初期値を出力する。
  *   sym_len < 0 : 文字列リテラルラベル (`.quad .LCn`、`_` なし)
  *   sym_len > 0 : グローバル変数/関数シンボル (`.quad _sym`)
+ *   float/double: fv を IEEE-754 ビットパターンで出力
  *   それ以外    : 数値 (メンバ型サイズ ts で出力)。 */
-static void emit_global_init_member_scalar(char *sym, int sym_len, int ts, long long v) {
+static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind_t fp_kind,
+                                           int ts, long long v, double fv) {
   if (sym && sym_len < 0) {
     cg_emitf("  .quad %s\n", sym);
   } else if (sym && sym_len > 0) {
     cg_emitf("  .quad _%.*s\n", sym_len, sym);
+  } else if (fp_kind == TK_FLOAT_KIND_FLOAT) {
+    float f = (float)fv;
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    cg_emitf("  .long %u\n", (unsigned)bits);
+  } else if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    uint64_t bits;
+    memcpy(&bits, &fv, sizeof(bits));
+    cg_emitf("  .quad %llu\n", (unsigned long long)bits);
   } else {
     cg_emit_int_directive(ts, v);
   }
 }
 
 static void emit_global_struct_init(global_var_t *gv) {
+  /* union: 活性メンバ (union_init_ordinal, 既定 0=先頭) だけをその型で出力し、
+   * 残りを type_size まで 0 で埋める。`{.f=1.5f}` 等の designated 初期化に対応。 */
+  if (gv->tag_kind == TK_UNION) {
+    tag_member_info_t mi = {0};
+    int ord = gv->union_init_ordinal;
+    if (gv->init_count > 0 &&
+        psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ord, &mi)) {
+      char *sym = gv->init_value_symbols ? gv->init_value_symbols[0] : NULL;
+      int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[0] : 0;
+      double fv = gv->init_fvalues ? gv->init_fvalues[0] : 0.0;
+      emit_global_init_member_scalar(sym, sym_len, mi.fp_kind, mi.type_size,
+                                     gv->init_values[0], fv);
+      int emitted = sym ? 8
+                        : (mi.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4
+                        : (mi.fp_kind >= TK_FLOAT_KIND_DOUBLE) ? 8
+                        : mi.type_size;
+      if (emitted < (int)gv->type_size) {
+        cg_emitf("  .space %d\n", (int)gv->type_size - emitted);
+      }
+    } else {
+      cg_emitf("  .space %d\n", (int)gv->type_size);
+    }
+    return;
+  }
   int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
   int prev_end = 0;
   int val_idx = 0;
@@ -329,7 +364,8 @@ static void emit_global_struct_init(global_var_t *gv) {
      * `.quad _<sym>` を出力。 */
     char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[val_idx] : NULL;
     int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[val_idx] : 0;
-    emit_global_init_member_scalar(sym_i, sym_i_len, ts, gv->init_values[val_idx]);
+    double fv_i = gv->init_fvalues ? gv->init_fvalues[val_idx] : 0.0;
+    emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, gv->init_values[val_idx], fv_i);
     val_idx++;
     prev_end = off + ts;
   }
@@ -356,7 +392,8 @@ static void emit_global_struct_array_init(global_var_t *gv) {
       int sym_i_len = (val_idx < gv->init_count && gv->init_value_symbol_lens)
                           ? gv->init_value_symbol_lens[val_idx] : 0;
       long long v = (val_idx < gv->init_count) ? gv->init_values[val_idx] : 0;
-      emit_global_init_member_scalar(sym_i, sym_i_len, ts, v);
+      double fv_i = (val_idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[val_idx] : 0.0;
+      emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, v, fv_i);
       val_idx++;
       prev_end = off + ts;
     }

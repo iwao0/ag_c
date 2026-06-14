@@ -941,6 +941,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_pointer_array_offset_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_pointer_array_offset_init.c", 42, 0},
     {"probes", "global_array_designated_out_of_order", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_array_designated_out_of_order.c", 42, 0},
     {"probes", "global_struct_string_ptr_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_struct_string_ptr_member.c", 42, 0},
+    {"probes", "global_struct_designated_and_fp_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_struct_designated_and_fp_member.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

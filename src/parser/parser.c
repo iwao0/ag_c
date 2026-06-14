@@ -890,6 +890,26 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
   }
 }
 
+/* グローバル struct/union の `.member` designator を解決する。
+ * struct: そのメンバの flat slot index (先行メンバの slot 数の総和) を返す。
+ * union : 0 を返し *out_ordinal に活性メンバ序数を入れる (codegen がその型で出力)。
+ * 見つからなければ -1。 */
+static int resolve_global_member_designator(global_var_t *gv, char *mname, int mlen,
+                                            int *out_ordinal) {
+  int n = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+  int slot = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
+    if (mi.len == mlen && mi.name && strncmp(mi.name, mname, (size_t)mlen) == 0) {
+      if (out_ordinal) *out_ordinal = i;
+      return (gv->tag_kind == TK_UNION) ? 0 : slot;
+    }
+    slot += (mi.array_len > 0) ? mi.array_len : 1;
+  }
+  return -1;
+}
+
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
   tk_expect('{');
@@ -913,6 +933,23 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
       tk_expect(']');
       tk_expect('=');
       cur_idx = (int)idx_val;
+    }
+    /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
+     * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
+    else if (curtok()->kind == TK_DOT) {
+      set_curtok(curtok()->next);
+      token_ident_t *m = tk_consume_ident();
+      if (!m || gv->tag_kind == TK_EOF) {
+        psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子が不正です");
+      }
+      int ordinal = 0;
+      int slot = resolve_global_member_designator(gv, m->str, m->len, &ordinal);
+      if (slot < 0) {
+        psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子のメンバが見つかりません");
+      }
+      tk_expect('=');
+      cur_idx = slot;
+      if (gv->tag_kind == TK_UNION) gv->union_init_ordinal = ordinal;
     }
     /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
     while (*cap <= cur_idx) {
@@ -1048,9 +1085,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_values = calloc((size_t)cap, sizeof(long long));
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
-    /* 浮動小数要素の配列 (`double a[5] = {...}`) では fvalues も並行確保。
-     * 要素ごとに fval を保存し、codegen がビットパターンで出す。 */
-    if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+    /* 浮動小数要素の配列 (`double a[5] = {...}`) や、float/double メンバを持ち得る
+     * struct/union では fvalues も並行確保する。要素ごとに fval を保存し、codegen が
+     * 浮動小数メンバをビットパターンで出力する。 */
+    if (gv->fp_kind != TK_FLOAT_KIND_NONE || gv->tag_kind != TK_EOF) {
       gv->init_fvalues = calloc((size_t)cap, sizeof(double));
     }
     gv->init_count = 0;
