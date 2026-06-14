@@ -59,6 +59,7 @@ struct global_var_t {
   int mid_stride;
   int extra_strides[5];
   unsigned char extra_strides_count;
+  unsigned char is_bool;  // _Bool スカラ: 代入/初期化を 0/1 に正規化する
 };
 extern global_var_t *global_vars;
 

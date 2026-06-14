@@ -759,6 +759,8 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   /* 浮動小数スカラのとき fp_kind を引き継ぐ。ポインタは整数として扱う。 */
   gv->fp_kind = is_ptr ? (unsigned char)TK_FLOAT_KIND_NONE
                        : (unsigned char)g_toplevel_decl_fp_kind;
+  /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
+  gv->is_bool = (!is_ptr && !is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
   gv->next = global_vars;
   global_vars = gv;
   return gv;
@@ -1179,6 +1181,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
         if (gv->type_size == 0 && gv->is_array) gv->type_size = total;
       }
     }
+  }
+  /* C11 6.3.1.2: _Bool スカラの初期化子は 0/1 に正規化する (`_Bool b = 5;` → 1)。 */
+  if (gv->is_bool && gv->has_init) {
+    gv->init_val = (gv->init_val != 0) ? 1 : 0;
   }
 }
 

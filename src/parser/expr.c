@@ -3040,6 +3040,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     /* 浮動小数スカラのグローバル: fp_kind を node に伝播。IR builder が
      * これを見て IR_TY_F32/F64 として load を発行する。 */
     gvar_node->mem.base.fp_kind = gv->fp_kind;
+    /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
+    gvar_node->mem.is_bool = gv->is_bool;
     gvar_node->name = gv->name;
     gvar_node->name_len = gv->name_len;
     gvar_node->is_thread_local = gv->is_thread_local;
