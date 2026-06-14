@@ -3214,8 +3214,6 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     var->is_used = 1;
     return (node_t *)gv;
   }
-  node_t *n = psx_node_new_lvar_typed(var->offset,
-      var->is_array ? 8 : (var->size > var->elem_size ? 8 : var->elem_size));
   int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
                         (var->size > var->elem_size) ||
                         /* `struct T *p` 仮引数: size == elem_size == 8 でも
@@ -3225,6 +3223,11 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
                          * size>elem_size 判定に漏れるため、fp ポインタの印である
                          * pointee_fp_kind でポインタと認識する。 */
                         var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
+  /* type_size はポインタなら 8。`struct T *p` は elem_size に pointee の struct
+   * サイズ (例 16) が入っているため、is_tag_pointer を見ずに elem_size を使うと
+   * sizeof が誤り、代入が struct コピー扱いされ隣接スタックを破壊する。 */
+  node_t *n = psx_node_new_lvar_typed(var->offset,
+      lvar_is_pointer ? 8 : var->elem_size);
   // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
   // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
   int vla_effective_deref = 0;
