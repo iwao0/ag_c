@@ -1785,6 +1785,12 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
                                          token_ident_t *inner_first_dim_ident) {
   // size=8 (pointer), elem_size=実際の要素サイズ
   lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
+  /* 1D の fp 要素配列引数 (`double a[n]`): pointee の fp 種別を伝播。size==elem_size
+   * (=8) で lvar_is_pointer の size>elem_size 判定に漏れる double 要素でも、これで
+   * ポインタ認識され subscript が fp load になる (int a[n] は size>elem_size で OK)。 */
+  if (inner_first_dim == 0 && ds->fp_kind != TK_FLOAT_KIND_NONE) {
+    var->pointee_fp_kind = ds->fp_kind;
+  }
   if (inner_first_dim > 0) {
     var->outer_stride = inner_first_dim * ds->elem_size;
     var->base_deref_size = (short)ds->elem_size;
@@ -2003,7 +2009,9 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
   var->is_param = 1;
   var->is_initialized = 1;
   // float/double 仮引数は ABI に従い d0..d7 で受け取るため fp_kind を保持。
-  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr) {
+  // ただし配列宣言子 (`double a[n]`) はポインタへ adjust され整数レジスタ渡しに
+  // なるので fp_kind は付けない (付けると d レジスタ受けになり ABI が壊れる)。
+  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
     var->fp_kind = ds.fp_kind;
   }
   // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
@@ -2015,8 +2023,8 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
                       ? ds.struct_size : 8;
   node_t *param_node = psx_node_new_lvar_typed(var->offset, abi_type_size);
   // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
-  // args[i] ノードにも fp_kind を残す。
-  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr) {
+  // args[i] ノードにも fp_kind を残す。配列宣言子はポインタ (整数レジスタ) なので除外。
+  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
     param_node->fp_kind = ds.fp_kind;
   }
   node->args[(*nargs)++] = param_node;
