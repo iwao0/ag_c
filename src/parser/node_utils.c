@@ -329,6 +329,21 @@ static int node_is_unsigned(node_t *node) {
  * ために使う。生の node->is_unsigned は LVAR/GVAR では 0 のままなので不可。 */
 int psx_node_is_unsigned(node_t *node) { return node_is_unsigned(node); }
 
+/* node の符号フラグを設定する (node_is_unsigned が読むフィールドに一致させる)。
+ * `(int)u` / `(unsigned)i` キャストで結果の符号を確定するのに使う。 */
+void psx_node_set_unsigned(node_t *node, int is_unsigned) {
+  if (!node) return;
+  int u = is_unsigned ? 1 : 0;
+  switch (node->kind) {
+    case ND_LVAR: as_lvar(node)->mem.is_unsigned = u; break;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+      as_mem(node)->is_unsigned = u; break;
+    default: node->is_unsigned = u; break;
+  }
+}
+
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = arena_alloc(sizeof(node_t));
   node->kind = kind;

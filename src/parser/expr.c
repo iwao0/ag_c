@@ -1827,6 +1827,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
         operand->kind == ND_ASSIGN) {
       ((node_mem_t *)operand)->is_pointer = 0;
+      /* `(int)u` は符号付き int。終端値ノードでは is_unsigned をクリアして後段の
+       * 比較/除算を signed にする (`i < (int)n` が unsigned 比較になっていた)。
+       * binop ノード (シフト等) は is_unsigned が LSR/ASR など自身の演算も兼ねる
+       * ため触れない (`(int)(u>>60)` の LSR を ASR に変えてしまう)。 */
+      psx_node_set_unsigned(operand, 0);
     }
     return operand;
   }
@@ -1838,6 +1843,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
         operand->kind == ND_ASSIGN) {
       ((node_mem_t *)operand)->is_pointer = 0;
+      psx_node_set_unsigned(operand, type_kind == TK_UNSIGNED ? 1 : 0);
     }
     return operand;
   }
