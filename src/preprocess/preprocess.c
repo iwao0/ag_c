@@ -851,6 +851,30 @@ token_t *preprocess(token_t *tok); // front declaration
 token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok); // front declaration
 static tokenizer_context_t *g_preprocess_tk_ctx;
 
+/* 関数マクロの実引数を、代入前に独立して完全マクロ展開する (C11 6.10.3.1)。
+ * 戻り値は TK_EOF 終端の展開済みリスト。include_depth を一時的に上げて
+ * macro_expand_steps のリセットや定義済みマクロ再初期化を回避する
+ * (展開ステップの暴走ガードは維持される)。 */
+static token_t *pp_expand_arg(token_t *arg) {
+  token_t *copy = copy_token_list(arg); // NULL 終端の深いコピー
+  token_t *eof = tk_allocator_calloc(1, sizeof(token_t));
+  eof->kind = TK_EOF;
+  token_t *list;
+  if (copy) {
+    token_t *tail = copy;
+    while (tail->next) tail = tail->next;
+    tail->next = eof;
+    list = copy;
+  } else {
+    list = eof;
+  }
+  int saved_depth = include_depth;
+  include_depth++;
+  token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, list);
+  include_depth = saved_depth;
+  return expanded;
+}
+
 static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    token_t head;
    head.next = NULL;
@@ -1593,7 +1617,14 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
                    }
                  }
                  if (p_idx != -1) {
-                   for (token_t *a = args[p_idx]; a; a = a->next) {
+                   /* C11 6.10.3.1: 実引数は # / ## の対象でない限り、代入前に
+                    * 完全展開する。## に隣接する場合は未展開のまま代入する。 */
+                   token_t *pv = NULL;
+                   for (token_t *b = m->body; b && b != t; b = b->next) pv = b;
+                   bool paste_operand = (t->next && t->next->kind == TK_HASHHASH) ||
+                                        (pv && pv->kind == TK_HASHHASH);
+                   token_t *sub = paste_operand ? args[p_idx] : pp_expand_arg(args[p_idx]);
+                   for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
                      cur_body->next = copy_token(a);
                      cur_body = cur_body->next;
                    }
