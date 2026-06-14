@@ -1093,20 +1093,39 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   int unsig = node->is_unsigned ||
               (node->lhs && node->lhs->is_unsigned) ||
               (node->rhs && node->rhs->is_unsigned);
+  /* 比較 (LT/LE) と除算/剰余 (DIV/MOD) の符号は C11 6.3.1.8 の通常算術変換に
+   * 従って別途決める。上の unsig (どちらかが unsigned なら unsigned) は rank を
+   * 無視しており、`long < unsigned int` や `long / unsigned int`、
+   * `unsigned char < int` を誤って符号なし演算にしてしまう。
+   * 整数昇格: int 未満 (i8/i16) は符号付き int になるので幅<4 は符号付き 4byte 扱い。
+   * 両辺の符号が異なる場合、符号なし側の幅が符号付き側の幅以上のときのみ符号なし。
+   * 広い符号付き型は狭い符号なし型の全値を表現できるため符号付き演算になる。 */
+  int lsz = ir_type_size(l.type), rsz = ir_type_size(r.type);
+  int lu = (lsz >= 4) && psx_node_is_unsigned(node->lhs);
+  int ru = (rsz >= 4) && psx_node_is_unsigned(node->rhs);
+  int lw = lsz < 4 ? 4 : lsz, rw = rsz < 4 ? 4 : rsz;
+  int uac_unsig;  /* 通常算術変換 (usual arithmetic conversion) の符号 */
+  if (lu == ru) {
+    uac_unsig = lu;
+  } else {
+    int uw = lu ? lw : rw;  /* 符号なし側の幅 */
+    int sw = lu ? rw : lw;  /* 符号付き側の幅 */
+    uac_unsig = uw >= sw;
+  }
   ir_op_t op = IR_ADD;
   switch (node->kind) {
     case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;
     case ND_SUB: op = is_fp ? IR_FSUB : IR_SUB; break;
     case ND_MUL: op = is_fp ? IR_FMUL : IR_MUL; break;
-    case ND_DIV: op = is_fp ? IR_FDIV : (unsig ? IR_UDIV : IR_DIV); break;
-    case ND_MOD: op = unsig ? IR_UMOD : IR_MOD; break;  /* float mod は未対応 */
+    case ND_DIV: op = is_fp ? IR_FDIV : (uac_unsig ? IR_UDIV : IR_DIV); break;
+    case ND_MOD: op = uac_unsig ? IR_UMOD : IR_MOD; break;  /* float mod は未対応 */
     case ND_BITAND: op = IR_AND; break;
     case ND_BITOR:  op = IR_OR;  break;
     case ND_BITXOR: op = IR_XOR; break;
     case ND_SHL:    op = IR_SHL; break;
     case ND_SHR:    op = unsig ? IR_LSR : IR_SHR; break;
-    case ND_LT:  op = is_fp ? IR_FLT : (unsig ? IR_ULT : IR_LT); break;
-    case ND_LE:  op = is_fp ? IR_FLE : (unsig ? IR_ULE : IR_LE); break;
+    case ND_LT:  op = is_fp ? IR_FLT : (uac_unsig ? IR_ULT : IR_LT); break;
+    case ND_LE:  op = is_fp ? IR_FLE : (uac_unsig ? IR_ULE : IR_LE); break;
     case ND_EQ:  op = is_fp ? IR_FEQ : IR_EQ; break;
     case ND_NE:  op = is_fp ? IR_FNE : IR_NE; break;
     default: break;

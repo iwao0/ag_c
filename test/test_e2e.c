@@ -919,6 +919,14 @@ static const test_case_t test_cases[] = {
     {"probes", "struct_with_double", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_with_double.c", 4, 0},
     {"probes", "typedef_array_param", CASE_INT_FILE, "test/fixtures/probes_found_bugs/typedef_array_param.c", 6, 0},
     {"probes", "vla_2d_param", CASE_INT_FILE, "test/fixtures/probes_found_bugs/vla_2d_param.c", 21, 0},
+    {"probes", "cmp_wide_signed_vs_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cmp_wide_signed_vs_unsigned.c", 15, 0},
+    {"probes", "cmp_narrow_unsigned_promote", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cmp_narrow_unsigned_promote.c", 53, 0},
+    {"probes", "cmp_same_width_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cmp_same_width_unsigned.c", 62, 0},
+    {"probes", "array_nested_designator_2d", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_nested_designator_2d.c", 20, 0},
+    {"probes", "array_nested_designator_3d", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_nested_designator_3d.c", 43, 0},
+    {"probes", "array_designator_brace_mix", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_designator_brace_mix.c", 44, 0},
+    {"probes", "div_wide_signed_by_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/div_wide_signed_by_unsigned.c", 48, 0},
+    {"probes", "mod_wide_signed_by_unsigned", CASE_INT_FILE, "test/fixtures/probes_found_bugs/mod_wide_signed_by_unsigned.c", 99, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
