@@ -1040,6 +1040,13 @@ int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
   return (f && f->ret_set_once) ? f->ret_is_pointer : 0;
 }
 
+/* 関数の戻り値型トークン (TK_INT / TK_LONG 等) を返す。未登録なら TK_EOF。
+ * IR builder が戻り値の幅 (long → 8 バイト) を決めるのに使う。 */
+token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return (f && f->ret_set_once) ? f->ret_token_kind : TK_EOF;
+}
+
 int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer) {
   func_name_t *f = find_function_name(name, len);

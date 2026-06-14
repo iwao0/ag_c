@@ -2283,6 +2283,14 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
       psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
     ret_ty = IR_TY_PTR;
   }
+  /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
+   * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
+  if (ret_ty == IR_TY_I32) {
+    token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
+    if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) {
+      ret_ty = IR_TY_I64;
+    }
+  }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
   ctx->f->is_variadic = fn->is_variadic;
   ctx->f->nargs_fixed = fn->nargs;
