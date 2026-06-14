@@ -290,6 +290,20 @@ static void cg_emit_int_directive(int size, long long value) {
  * init_values[] を出力。メンバ間の padding は .space で埋める。
  * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
  * 配列メンバは alen 個連続出力する。 */
+/* グローバル struct/union メンバ 1 個分のスカラ初期値を出力する。
+ *   sym_len < 0 : 文字列リテラルラベル (`.quad .LCn`、`_` なし)
+ *   sym_len > 0 : グローバル変数/関数シンボル (`.quad _sym`)
+ *   それ以外    : 数値 (メンバ型サイズ ts で出力)。 */
+static void emit_global_init_member_scalar(char *sym, int sym_len, int ts, long long v) {
+  if (sym && sym_len < 0) {
+    cg_emitf("  .quad %s\n", sym);
+  } else if (sym && sym_len > 0) {
+    cg_emitf("  .quad _%.*s\n", sym_len, sym);
+  } else {
+    cg_emit_int_directive(ts, v);
+  }
+}
+
 static void emit_global_struct_init(global_var_t *gv) {
   int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
   int prev_end = 0;
@@ -315,12 +329,7 @@ static void emit_global_struct_init(global_var_t *gv) {
      * `.quad _<sym>` を出力。 */
     char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[val_idx] : NULL;
     int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[val_idx] : 0;
-    if (sym_i && sym_i_len > 0) {
-      cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
-    } else {
-      long long v = gv->init_values[val_idx];
-      cg_emit_int_directive(ts, v);
-    }
+    emit_global_init_member_scalar(sym_i, sym_i_len, ts, gv->init_values[val_idx]);
     val_idx++;
     prev_end = off + ts;
   }
@@ -342,9 +351,13 @@ static void emit_global_struct_array_init(global_var_t *gv) {
       if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
       int off = mi.offset, ts = mi.type_size;
       if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
+      char *sym_i = (val_idx < gv->init_count && gv->init_value_symbols)
+                        ? gv->init_value_symbols[val_idx] : NULL;
+      int sym_i_len = (val_idx < gv->init_count && gv->init_value_symbol_lens)
+                          ? gv->init_value_symbol_lens[val_idx] : 0;
       long long v = (val_idx < gv->init_count) ? gv->init_values[val_idx] : 0;
+      emit_global_init_member_scalar(sym_i, sym_i_len, ts, v);
       val_idx++;
-      cg_emit_int_directive(ts, v);
       prev_end = off + ts;
     }
     if (prev_end < elem_size) cg_emitf("  .space %d\n", elem_size - prev_end);
