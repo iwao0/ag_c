@@ -1006,75 +1006,81 @@ static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
 
 /* -------- Phase B1: build_expr の算術/比較系 case ヘルパ -------- */
 
+/* _Complex EQ/NE 比較: 両辺を 2 成分 (実部/虚部) として temp slot に書き出してから
+ * (re == re) && (im == im) を計算する。ND_NE は最後に XOR で反転。
+ * ND_LT/LE は _Complex に対して未定義なので扱わない (build_node_binop で
+ * EQ/NE のときだけ呼ばれる)。 */
+static ir_val_t build_complex_cmp(ir_build_ctx_t *ctx, node_t *node) {
+  unsigned fpk = (node->lhs ? node->lhs->fp_kind : 0);
+  if (node->rhs && node->rhs->fp_kind > fpk) fpk = node->rhs->fp_kind;
+  ir_type_t fp_ty = (fpk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  int half = (fp_ty == IR_TY_F32) ? 4 : 8;
+  int slot_size = 2 * half;
+  int l_slot = ir_func_new_vreg(ctx->f);
+  ir_inst_t *al_l = ir_inst_new(IR_ALLOCA);
+  al_l->dst = ir_val_vreg(l_slot, IR_TY_PTR);
+  al_l->alloca_size = slot_size; al_l->alloca_align = 8;
+  ir_func_append_inst(ctx->f, al_l);
+  build_complex_to(ctx, node->lhs, l_slot, fp_ty, half);
+  if (ctx->failed) return ir_val_none();
+  int r_slot = ir_func_new_vreg(ctx->f);
+  ir_inst_t *al_r = ir_inst_new(IR_ALLOCA);
+  al_r->dst = ir_val_vreg(r_slot, IR_TY_PTR);
+  al_r->alloca_size = slot_size; al_r->alloca_align = 8;
+  ir_func_append_inst(ctx->f, al_r);
+  build_complex_to(ctx, node->rhs, r_slot, fp_ty, half);
+  if (ctx->failed) return ir_val_none();
+  /* load 4 components and compare */
+  int v_lr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld1 = ir_inst_new(IR_LOAD);
+  ld1->dst = ir_val_vreg(v_lr, fp_ty); ld1->src1 = ir_val_vreg(l_slot, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld1);
+  int v_rr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld2 = ir_inst_new(IR_LOAD);
+  ld2->dst = ir_val_vreg(v_rr, fp_ty); ld2->src1 = ir_val_vreg(r_slot, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld2);
+  int l_im_ptr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *lea_li = ir_inst_new(IR_LEA);
+  lea_li->dst = ir_val_vreg(l_im_ptr, IR_TY_PTR);
+  lea_li->src1 = ir_val_vreg(l_slot, IR_TY_PTR);
+  lea_li->src2 = ir_val_imm(IR_TY_I32, half);
+  ir_func_append_inst(ctx->f, lea_li);
+  int v_li = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld3 = ir_inst_new(IR_LOAD);
+  ld3->dst = ir_val_vreg(v_li, fp_ty); ld3->src1 = ir_val_vreg(l_im_ptr, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld3);
+  int r_im_ptr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *lea_ri = ir_inst_new(IR_LEA);
+  lea_ri->dst = ir_val_vreg(r_im_ptr, IR_TY_PTR);
+  lea_ri->src1 = ir_val_vreg(r_slot, IR_TY_PTR);
+  lea_ri->src2 = ir_val_imm(IR_TY_I32, half);
+  ir_func_append_inst(ctx->f, lea_ri);
+  int v_ri = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld4 = ir_inst_new(IR_LOAD);
+  ld4->dst = ir_val_vreg(v_ri, fp_ty); ld4->src1 = ir_val_vreg(r_im_ptr, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld4);
+  int cmp_re = emit_binop(ctx, IR_FEQ,
+                           ir_val_vreg(v_lr, fp_ty), ir_val_vreg(v_rr, fp_ty), IR_TY_I32);
+  int cmp_im = emit_binop(ctx, IR_FEQ,
+                           ir_val_vreg(v_li, fp_ty), ir_val_vreg(v_ri, fp_ty), IR_TY_I32);
+  int eq = emit_binop(ctx, IR_AND,
+                       ir_val_vreg(cmp_re, IR_TY_I32),
+                       ir_val_vreg(cmp_im, IR_TY_I32), IR_TY_I32);
+  if (node->kind == ND_NE) {
+    /* != is logical NOT of EQ: XOR with 1 */
+    int neq = emit_binop(ctx, IR_XOR,
+                          ir_val_vreg(eq, IR_TY_I32),
+                          ir_val_imm(IR_TY_I32, 1), IR_TY_I32);
+    return ir_val_vreg(neq, IR_TY_I32);
+  }
+  return ir_val_vreg(eq, IR_TY_I32);
+}
+
 static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
-  /* _Complex 比較: 両辺を temp slot に build_complex_to で書き出してから
-   * (re == re) && (im == im) を計算する。ND_NE は否定。
-   * 注: ND_LT/LE は _Complex に対して未定義なので扱わない。 */
+  /* _Complex EQ/NE 比較は専用経路 (build_complex_cmp) に分岐。 */
   if ((node->kind == ND_EQ || node->kind == ND_NE) &&
       ((node->lhs && node->lhs->is_complex) || (node->rhs && node->rhs->is_complex))) {
-    unsigned fpk = (node->lhs ? node->lhs->fp_kind : 0);
-    if (node->rhs && node->rhs->fp_kind > fpk) fpk = node->rhs->fp_kind;
-    ir_type_t fp_ty = (fpk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-    int half = (fp_ty == IR_TY_F32) ? 4 : 8;
-    int slot_size = 2 * half;
-    int l_slot = ir_func_new_vreg(ctx->f);
-    ir_inst_t *al_l = ir_inst_new(IR_ALLOCA);
-    al_l->dst = ir_val_vreg(l_slot, IR_TY_PTR);
-    al_l->alloca_size = slot_size; al_l->alloca_align = 8;
-    ir_func_append_inst(ctx->f, al_l);
-    build_complex_to(ctx, node->lhs, l_slot, fp_ty, half);
-    if (ctx->failed) return ir_val_none();
-    int r_slot = ir_func_new_vreg(ctx->f);
-    ir_inst_t *al_r = ir_inst_new(IR_ALLOCA);
-    al_r->dst = ir_val_vreg(r_slot, IR_TY_PTR);
-    al_r->alloca_size = slot_size; al_r->alloca_align = 8;
-    ir_func_append_inst(ctx->f, al_r);
-    build_complex_to(ctx, node->rhs, r_slot, fp_ty, half);
-    if (ctx->failed) return ir_val_none();
-    /* load 4 components and compare */
-    int v_lr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ld1 = ir_inst_new(IR_LOAD);
-    ld1->dst = ir_val_vreg(v_lr, fp_ty); ld1->src1 = ir_val_vreg(l_slot, IR_TY_PTR);
-    ir_func_append_inst(ctx->f, ld1);
-    int v_rr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ld2 = ir_inst_new(IR_LOAD);
-    ld2->dst = ir_val_vreg(v_rr, fp_ty); ld2->src1 = ir_val_vreg(r_slot, IR_TY_PTR);
-    ir_func_append_inst(ctx->f, ld2);
-    int l_im_ptr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *lea_li = ir_inst_new(IR_LEA);
-    lea_li->dst = ir_val_vreg(l_im_ptr, IR_TY_PTR);
-    lea_li->src1 = ir_val_vreg(l_slot, IR_TY_PTR);
-    lea_li->src2 = ir_val_imm(IR_TY_I32, half);
-    ir_func_append_inst(ctx->f, lea_li);
-    int v_li = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ld3 = ir_inst_new(IR_LOAD);
-    ld3->dst = ir_val_vreg(v_li, fp_ty); ld3->src1 = ir_val_vreg(l_im_ptr, IR_TY_PTR);
-    ir_func_append_inst(ctx->f, ld3);
-    int r_im_ptr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *lea_ri = ir_inst_new(IR_LEA);
-    lea_ri->dst = ir_val_vreg(r_im_ptr, IR_TY_PTR);
-    lea_ri->src1 = ir_val_vreg(r_slot, IR_TY_PTR);
-    lea_ri->src2 = ir_val_imm(IR_TY_I32, half);
-    ir_func_append_inst(ctx->f, lea_ri);
-    int v_ri = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ld4 = ir_inst_new(IR_LOAD);
-    ld4->dst = ir_val_vreg(v_ri, fp_ty); ld4->src1 = ir_val_vreg(r_im_ptr, IR_TY_PTR);
-    ir_func_append_inst(ctx->f, ld4);
-    int cmp_re = emit_binop(ctx, IR_FEQ,
-                             ir_val_vreg(v_lr, fp_ty), ir_val_vreg(v_rr, fp_ty), IR_TY_I32);
-    int cmp_im = emit_binop(ctx, IR_FEQ,
-                             ir_val_vreg(v_li, fp_ty), ir_val_vreg(v_ri, fp_ty), IR_TY_I32);
-    int eq = emit_binop(ctx, IR_AND,
-                         ir_val_vreg(cmp_re, IR_TY_I32),
-                         ir_val_vreg(cmp_im, IR_TY_I32), IR_TY_I32);
-    if (node->kind == ND_NE) {
-      /* != is logical NOT of EQ: XOR with 1 */
-      int neq = emit_binop(ctx, IR_XOR,
-                            ir_val_vreg(eq, IR_TY_I32),
-                            ir_val_imm(IR_TY_I32, 1), IR_TY_I32);
-      return ir_val_vreg(neq, IR_TY_I32);
-    }
-    return ir_val_vreg(eq, IR_TY_I32);
+    return build_complex_cmp(ctx, node);
   }
   ir_val_t l = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
