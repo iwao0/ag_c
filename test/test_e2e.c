@@ -957,6 +957,7 @@ static const test_case_t test_cases[] = {
     {"probes", "funcptr_address_of_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_address_of_init.c", 42, 0},
     {"probes", "unsigned_int_overflow_wrap", CASE_INT_FILE, "test/fixtures/probes_found_bugs/unsigned_int_overflow_wrap.c", 42, 0},
     {"probes", "fp_array_parameter", CASE_INT_FILE, "test/fixtures/probes_found_bugs/fp_array_parameter.c", 42, 0},
+    {"probes", "struct_multidim_array_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_multidim_array_member.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

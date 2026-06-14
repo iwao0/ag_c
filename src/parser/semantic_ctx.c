@@ -54,6 +54,7 @@ struct tag_member_t {
   int bit_is_signed;
   tk_float_kind_t fp_kind;  // float/double メンバの種別 (FP store/load 用)
   int is_bool;              // 1: _Bool メンバ (代入を 0/1 に正規化する)
+  int outer_stride;         // 多次元配列メンバの最外次元バイトストライド（0: 非多次元）
   int decl_order;
   int scope_depth;
 };
@@ -465,6 +466,36 @@ void psx_ctx_set_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int t
   }
 }
 
+void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                          char *member_name, int member_len, int outer_stride) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      m->outer_stride = outer_stride;
+      return;
+    }
+  }
+}
+
+static int psx_ctx_get_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                        char *member_name, int member_len) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      return m->outer_stride;
+    }
+  }
+  return 0;
+}
+
 static int psx_ctx_get_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
                                     char *member_name, int member_len) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -555,6 +586,7 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
   out->bit_width = 0; out->bit_offset = 0; out->bit_is_signed = 0;
   out->fp_kind = TK_FLOAT_KIND_NONE;
   out->is_bool = 0;
+  out->outer_stride = 0;
   /* 基本情報 (offset / type_size / deref_size / array_len / tag_*) */
   if (!psx_ctx_get_tag_member_at(kind, name, len, index,
                                   &out->name, &out->len,
@@ -569,6 +601,7 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
                                &out->bit_width, &out->bit_offset, &out->bit_is_signed);
     out->fp_kind = psx_ctx_get_tag_member_fp_kind(kind, name, len, out->name, out->len);
     out->is_bool = psx_ctx_get_tag_member_is_bool(kind, name, len, out->name, out->len);
+    out->outer_stride = psx_ctx_get_tag_member_outer_stride(kind, name, len, out->name, out->len);
   }
   return true;
 }
@@ -591,6 +624,7 @@ bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
   out->bit_width = 0; out->bit_offset = 0; out->bit_is_signed = 0;
   out->fp_kind = TK_FLOAT_KIND_NONE;
   out->is_bool = 0;
+  out->outer_stride = 0;
   if (!psx_ctx_find_tag_member(kind, name, len, member_name, member_len,
                                 &out->offset, &out->type_size, &out->deref_size, &out->array_len,
                                 &out->tag_kind, &out->tag_name, &out->tag_len,
@@ -601,6 +635,7 @@ bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
                              &out->bit_width, &out->bit_offset, &out->bit_is_signed);
   out->fp_kind = psx_ctx_get_tag_member_fp_kind(kind, name, len, member_name, member_len);
   out->is_bool = psx_ctx_get_tag_member_is_bool(kind, name, len, member_name, member_len);
+  out->outer_stride = psx_ctx_get_tag_member_outer_stride(kind, name, len, member_name, member_len);
   return true;
 }
 

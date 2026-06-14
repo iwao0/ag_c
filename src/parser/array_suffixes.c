@@ -36,18 +36,28 @@ int psx_parse_array_suffixes_constexpr_required(int base_mul) {
   return arr_total;
 }
 
-int psx_parse_member_array_suffixes(int *out_is_flex_array) {
+int psx_parse_member_array_suffixes(int *out_is_flex_array,
+                                    int *out_dim_count, int *out_first_dim) {
   int arr_total = 1;
   int is_flex_array = 0;
+  int dim_count = 0;
+  int first_dim = 0;
   while (tk_consume('[')) {
+    int dim;
     if (curtok()->kind == TK_RBRACKET) {
       is_flex_array = 1;
       arr_total = 0;
+      dim = 0;
     } else {
-      arr_total *= psx_parse_array_size_constexpr();
+      dim = psx_parse_array_size_constexpr();
+      arr_total *= dim;
     }
+    if (dim_count == 0) first_dim = dim;
+    dim_count++;
     tk_expect(']');
   }
   if (out_is_flex_array) *out_is_flex_array = is_flex_array;
+  if (out_dim_count) *out_dim_count = dim_count;
+  if (out_first_dim) *out_first_dim = first_dim;
   return arr_total;
 }

@@ -1006,12 +1006,61 @@ static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
-                                        int member_array_len) {
+                                        int member_array_len, int member_outer_stride) {
   if (member_array_len > 0 && !member_is_tag_pointer) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
     node_t *init_chain = NULL;
     if (tk_consume('{')) {
+      /* 多次元配列メンバ (`int a[2][2]`): ネスト brace `{{1,2},{3,4}}` を行優先で
+       * フラット展開する。member_outer_stride は 1 行のバイトサイズなので
+       * 行要素数 inner_len = outer_stride / elem_size。各行 brace の不足要素は
+       * struct 全体の zero-fill に委ねる (行頭スナップで桁をずらす)。 */
+      if (member_outer_stride > 0 && elem_size > 0) {
+        int inner_len = member_outer_stride / elem_size;
+        if (inner_len < 1) inner_len = 1;
+        int flat = 0;
+        if (!tk_consume('}')) {
+          for (;;) {
+            if (tk_consume('{')) {
+              int row = flat / inner_len;
+              flat = row * inner_len;            /* 行頭へスナップ */
+              int k = 0;
+              if (!tk_consume('}')) {
+                for (;;) {
+                  node_t *val = parse_scalar_brace_initializer();
+                  if (k < inner_len && flat < array_len) {
+                    node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
+                    node_mem_t *an = psx_node_new_assign(lhs, val);
+                    an->type_size = elem_size;
+                    if (!init_chain) init_chain = (node_t *)an;
+                    else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an);
+                    flat++; k++;
+                  }
+                  if (tk_consume('}')) break;
+                  tk_expect(',');
+                  if (tk_consume('}')) break;
+                }
+              }
+              flat = (row + 1) * inner_len;       /* 次の行頭へ (残りは 0) */
+            } else {
+              node_t *val = parse_scalar_brace_initializer();
+              if (flat < array_len) {
+                node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
+                node_mem_t *an = psx_node_new_assign(lhs, val);
+                an->type_size = elem_size;
+                if (!init_chain) init_chain = (node_t *)an;
+                else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an);
+                flat++;
+              }
+            }
+            if (tk_consume('}')) break;
+            tk_expect(',');
+            if (tk_consume('}')) break;
+          }
+        }
+        return init_chain ? init_chain : psx_node_new_num(0);
+      }
       int idx = 0;
       bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
       if (!tk_consume('}')) {
@@ -1449,7 +1498,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       }
       node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                      info.tag_kind, info.tag_name, info.tag_len,
-                                                     info.is_tag_pointer, info.array_len);
+                                                     info.is_tag_pointer, info.array_len, info.outer_stride);
       init_chain = append_to_init_chain(init_chain,
           wrap_member_init_as_assign(var, &info, member_init));
       assigned_names[assigned_n] = info.name;
@@ -1621,7 +1670,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   }
   node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                  info.tag_kind, info.tag_name, info.tag_len,
-                                                 info.is_tag_pointer, info.array_len);
+                                                 info.is_tag_pointer, info.array_len, info.outer_stride);
   node_t *init_chain = wrap_member_init_as_assign(var, &info, member_init);
   if (!tk_consume(',')) {
     tk_expect('}');
@@ -1645,7 +1694,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     }
     node_t *extra_init = parse_member_initializer(var, info.offset, info.type_size,
                                                   info.tag_kind, info.tag_name, info.tag_len,
-                                                  info.is_tag_pointer, info.array_len);
+                                                  info.is_tag_pointer, info.array_len, info.outer_stride);
     node_t *extra_assign = wrap_member_init_as_assign(var, &info, extra_init);
     init_chain = append_to_init_chain(init_chain, extra_assign);
     if (tk_consume('}')) return init_chain;

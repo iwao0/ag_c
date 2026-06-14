@@ -894,6 +894,14 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     deref->type_size = mem_size * mem_array_len;
     deref->deref_size = mem_size;
     deref->is_pointer = 1;
+    /* 多次元配列メンバ (`int a[2][2]`): 第1サブスクリプトは行ストライド
+     * (outer_stride) でステップし、その結果が要素サイズ (mem_size) で添字できる
+     * よう inner_deref_size に要素サイズを置く。ローカル多次元配列の decay と同じ
+     * 表現 (deref_size=行ストライド, inner_deref_size=要素)。 */
+    if (mem_info->outer_stride > 0) {
+      deref->deref_size = mem_info->outer_stride;
+      deref->inner_deref_size = (short)mem_size;
+    }
     /* ポインタ配列の各要素は単一ポインタ。subscript 後の 1 段 deref では qual_levels を引き継ぐ。 */
     if (mem_is_ptr) deref->is_tag_pointer = 0;
   } else if (mem_is_ptr && mem_size > 0) {

@@ -220,7 +220,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       if (curtok()->kind == TK_LBRACKET && !has_member_name) {
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
-      int arr_size = psx_parse_member_array_suffixes(&is_flex_array);
+      int arr_dim_count = 0, arr_first_dim = 0;
+      int arr_size = psx_parse_member_array_suffixes(&is_flex_array,
+                                                     &arr_dim_count, &arr_first_dim);
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
       int member_elem_size = head.is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
@@ -254,6 +256,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (has_member_name && !head.is_ptr && member_is_bool) {
           psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len,
                                           member_name, member_len, 1);
+        }
+        /* 多次元配列メンバ (例 int a[2][2]) は最外次元のバイトストライドを保存し、
+         * メンバアクセス時に多段 subscript を正しくスケールできるようにする。 */
+        if (has_member_name && !head.is_ptr && !is_flex_array &&
+            arr_dim_count >= 2 && arr_first_dim > 0) {
+          int inner_count = arr_size / arr_first_dim;   /* 第1次元を除く要素数 */
+          psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
+                                              member_name, member_len,
+                                              inner_count * member_elem_size);
         }
         member_count++;
       }
