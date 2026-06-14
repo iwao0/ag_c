@@ -2073,8 +2073,11 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     int td_first_dim = 0;
     tk_float_kind_t td_fp_kind = TK_FLOAT_KIND_NONE;
     int td_dim_count = 0;
+    token_kind_t td_tag_kind = TK_EOF;
+    char *td_tag_name = NULL;
+    int td_tag_len = 0;
     if (psx_ctx_find_typedef_name_ex3(id->str, id->len, NULL, &td_elem_size, &td_fp_kind,
-                                      NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                                      &td_tag_kind, &td_tag_name, &td_tag_len, NULL, NULL, NULL, NULL,
                                       &td_is_array, &td_sizeof_size, &td_first_dim,
                                       out->typedef_array_dims, &td_dim_count, 8)) {
       if (td_elem_size > 0) out->elem_size = td_elem_size;
@@ -2083,6 +2086,15 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
       out->typedef_array_first_dim = td_first_dim;
       out->typedef_array_dim_count = td_dim_count;
       if (td_fp_kind != TK_FLOAT_KIND_NONE) out->fp_kind = td_fp_kind;
+      /* struct/union typedef (`typedef struct {...} T; T *t`) のタグを伝播し、
+       * `t->m` のメンバアクセスと subscript スケーリングを解決できるようにする。 */
+      if (td_tag_kind == TK_STRUCT || td_tag_kind == TK_UNION) {
+        out->tag_kind = td_tag_kind;
+        out->tag_name = td_tag_name;
+        out->tag_len = td_tag_len;
+        int ts = psx_ctx_get_tag_size(td_tag_kind, td_tag_name, td_tag_len);
+        if (ts > 0) out->struct_size = ts;
+      }
     }
     set_curtok(curtok()->next);
   }

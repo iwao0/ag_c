@@ -272,6 +272,13 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         }
         break;
       }
+      /* `(++p)->m` / `(p++)->m`: inc/dec はオペランドと同じ型なので tag を継承する。 */
+      case ND_PRE_INC:
+      case ND_PRE_DEC:
+      case ND_POST_INC:
+      case ND_POST_DEC:
+        psx_node_get_tag_type(node->lhs, &kind, &name, &len, &ptr);
+        break;
       default:
         break;
     }
