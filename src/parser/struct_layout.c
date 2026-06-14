@@ -170,7 +170,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (bw < 0) bw = 0;
         bit_width = (int)bw;
         int storage_size = head.is_ptr ? 8 : (elem_size > 0 ? elem_size : 4);
-        if (storage_size > 4) storage_size = 4;
+        /* long / long long bitfield は 8 バイトのストレージユニットを使う。
+         * 以前は 4 にクランプしており `unsigned long a:40` が 32bit ユニットに
+         * 収まらず、後続フィールドの bit_offset 計算が破綻して重複配置していた。
+         * codegen 側 (emit_bitfield_load/store) は offset+width>32 で 64bit 単位を
+         * 扱えるようにしてある。 */
+        if (storage_size > 8) storage_size = 8;
         int storage_bits = storage_size * 8;
         if (bit_width == 0) {
           bf_storage_offset = -1;

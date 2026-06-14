@@ -316,6 +316,10 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
 /* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
                                      int bit_width, int bit_offset);
+/* bitfield load: *ptr の bit[bo, bo+bw) を取り出す (符号付きなら sign extend)。
+ * bit_offset+bit_width が 32 を超える (long bitfield) ときは 64bit で扱う。 */
+static ir_val_t emit_bitfield_load(ir_build_ctx_t *ctx, ir_val_t ptr,
+                                    int bit_width, int bit_offset, int is_signed);
 static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node);
@@ -645,29 +649,8 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
    *   signed: さらに sign extend ((v ^ sign_bit) - sign_bit) */
   int bw = lv->mem.bit_width;
   if (bw > 0) {
-    int v_load = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ld = ir_inst_new(IR_LOAD);
-    ld->dst = ir_val_vreg(v_load, IR_TY_I32);
-    ld->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-    ir_func_append_inst(ctx->f, ld);
-    int bo = lv->mem.bit_offset;
-    ir_val_t cur = ir_val_vreg(v_load, IR_TY_I32);
-    if (bo > 0) {
-      int v_shr = emit_binop(ctx, IR_SHR, cur, ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
-      cur = ir_val_vreg(v_shr, IR_TY_I32);
-    }
-    long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
-    int v_masked = emit_binop(ctx, IR_AND, cur, ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
-    cur = ir_val_vreg(v_masked, IR_TY_I32);
-    if (lv->mem.bit_is_signed && bw < 32) {
-      long long sign_bit = 1LL << (bw - 1);
-      int v_xor = emit_binop(ctx, IR_XOR, cur, ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
-      int v_sub = emit_binop(ctx, IR_SUB,
-                              ir_val_vreg(v_xor, IR_TY_I32),
-                              ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
-      cur = ir_val_vreg(v_sub, IR_TY_I32);
-    }
-    return cur;
+    return emit_bitfield_load(ctx, ir_val_vreg(ptr_vreg, IR_TY_PTR),
+                              bw, lv->mem.bit_offset, lv->mem.bit_is_signed);
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_LOAD);
@@ -703,33 +686,82 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
  *   v_shl   = v_rhs_m << bit_offset
  *   *ptr    = v_clr | v_shl
  * 代入式の値は rhs (masking 前) を返す。 */
+/* bitfield のストレージユニットを 32bit で扱うか 64bit で扱うか。
+ * bit_offset+bit_width が 32 を超えるフィールド (unsigned long a:40 等) は
+ * 32bit ロード/ストアでは上位ビットを失うため 64bit で扱う。 */
+static ir_type_t bitfield_unit_type(int bit_width, int bit_offset) {
+  return (bit_offset + bit_width > 32) ? IR_TY_I64 : IR_TY_I32;
+}
+
+/* bitfield の mask 定数を生成する。64bit 単位 (long bitfield) では大きなマスク
+ * (例 0xFFFFFF0000000000) を AND/OR の即値オペランドに直接渡すと codegen が
+ * 下位 32bit しか materialize できず隣接フィールドを破壊するため、LOAD_IMM で
+ * レジスタに展開してから渡す。32bit 単位は従来どおり即値で良い。 */
+static ir_val_t bf_const(ir_build_ctx_t *ctx, ir_type_t ty, long long v) {
+  if (ty != IR_TY_I64) return ir_val_imm(ty, v);
+  int r = ir_func_new_vreg(ctx->f);
+  ir_inst_t *li = ir_inst_new(IR_LOAD_IMM);
+  li->dst = ir_val_vreg(r, ty);
+  li->src1 = ir_val_imm(ty, v);
+  ir_func_append_inst(ctx->f, li);
+  return ir_val_vreg(r, ty);
+}
+
+static ir_val_t emit_bitfield_load(ir_build_ctx_t *ctx, ir_val_t ptr,
+                                    int bit_width, int bit_offset, int is_signed) {
+  ir_type_t ty = bitfield_unit_type(bit_width, bit_offset);
+  int ty_bits = (ty == IR_TY_I64) ? 64 : 32;
+  int v_load = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v_load, ty);
+  ld->src1 = ptr;
+  ir_func_append_inst(ctx->f, ld);
+  ir_val_t cur = ir_val_vreg(v_load, ty);
+  if (bit_offset > 0) {
+    int v_shr = emit_binop(ctx, IR_SHR, cur, ir_val_imm(ty, bit_offset), ty);
+    cur = ir_val_vreg(v_shr, ty);
+  }
+  long long mask = (bit_width >= 64) ? -1LL : ((1LL << bit_width) - 1);
+  int v_masked = emit_binop(ctx, IR_AND, cur, bf_const(ctx, ty, mask), ty);
+  cur = ir_val_vreg(v_masked, ty);
+  if (is_signed && bit_width < ty_bits) {
+    long long sign_bit = 1LL << (bit_width - 1);
+    int v_xor = emit_binop(ctx, IR_XOR, cur, bf_const(ctx, ty, sign_bit), ty);
+    int v_sub = emit_binop(ctx, IR_SUB,
+                            ir_val_vreg(v_xor, ty), bf_const(ctx, ty, sign_bit), ty);
+    cur = ir_val_vreg(v_sub, ty);
+  }
+  return cur;
+}
+
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
                                      int bit_width, int bit_offset) {
+  ir_type_t ty = bitfield_unit_type(bit_width, bit_offset);
   long long mask = (bit_width >= 64) ? -1LL : ((1LL << bit_width) - 1);
   long long inv_mask = ~(mask << bit_offset);
   int v_old = ir_func_new_vreg(ctx->f);
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
-  ld->dst = ir_val_vreg(v_old, IR_TY_I32);
+  ld->dst = ir_val_vreg(v_old, ty);
   ld->src1 = ptr;
   ir_func_append_inst(ctx->f, ld);
   int v_clr = emit_binop(ctx, IR_AND,
-                          ir_val_vreg(v_old, IR_TY_I32),
-                          ir_val_imm(IR_TY_I32, inv_mask), IR_TY_I32);
+                          ir_val_vreg(v_old, ty),
+                          bf_const(ctx, ty, inv_mask), ty);
   ir_val_t rhs_int = rhs;
-  rhs_int.type = IR_TY_I32;
+  rhs_int.type = ty;
   int v_rhs_m = emit_binop(ctx, IR_AND, rhs_int,
-                            ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
-  ir_val_t cur = ir_val_vreg(v_rhs_m, IR_TY_I32);
+                            bf_const(ctx, ty, mask), ty);
+  ir_val_t cur = ir_val_vreg(v_rhs_m, ty);
   if (bit_offset > 0) {
     int v_shl = emit_binop(ctx, IR_SHL, cur,
-                            ir_val_imm(IR_TY_I32, bit_offset), IR_TY_I32);
-    cur = ir_val_vreg(v_shl, IR_TY_I32);
+                            ir_val_imm(ty, bit_offset), ty);
+    cur = ir_val_vreg(v_shl, ty);
   }
   int v_new = emit_binop(ctx, IR_OR,
-                          ir_val_vreg(v_clr, IR_TY_I32), cur, IR_TY_I32);
+                          ir_val_vreg(v_clr, ty), cur, ty);
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ptr;
-  st->src2 = ir_val_vreg(v_new, IR_TY_I32);
+  st->src2 = ir_val_vreg(v_new, ty);
   ir_func_append_inst(ctx->f, st);
   return rhs;
 }
@@ -970,29 +1002,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   node_mem_t *mm = (node_mem_t *)node;
   int bw = mm->bit_width;
   if (bw > 0) {
-    int v_load = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ld = ir_inst_new(IR_LOAD);
-    ld->dst = ir_val_vreg(v_load, IR_TY_I32);
-    ld->src1 = ptr;
-    ir_func_append_inst(ctx->f, ld);
-    int bo = mm->bit_offset;
-    ir_val_t cur = ir_val_vreg(v_load, IR_TY_I32);
-    if (bo > 0) {
-      int v_shr = emit_binop(ctx, IR_SHR, cur, ir_val_imm(IR_TY_I32, bo), IR_TY_I32);
-      cur = ir_val_vreg(v_shr, IR_TY_I32);
-    }
-    long long mask = (bw >= 64) ? -1LL : ((1LL << bw) - 1);
-    int v_masked = emit_binop(ctx, IR_AND, cur, ir_val_imm(IR_TY_I32, mask), IR_TY_I32);
-    cur = ir_val_vreg(v_masked, IR_TY_I32);
-    if (mm->bit_is_signed && bw < 32) {
-      long long sign_bit = 1LL << (bw - 1);
-      int v_xor = emit_binop(ctx, IR_XOR, cur, ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
-      int v_sub = emit_binop(ctx, IR_SUB,
-                              ir_val_vreg(v_xor, IR_TY_I32),
-                              ir_val_imm(IR_TY_I32, sign_bit), IR_TY_I32);
-      cur = ir_val_vreg(v_sub, IR_TY_I32);
-    }
-    return cur;
+    return emit_bitfield_load(ctx, ptr, bw, mm->bit_offset, mm->bit_is_signed);
   }
   /* `s.v` 形式で v が配列メンバの場合、ND_DEREF は「配列実体」を表すが、
    * 式中では配列はポインタへ崩壊する。load せずに address (ptr) をそのまま
