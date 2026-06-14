@@ -20,8 +20,9 @@ struct macro {
   char *name;
   token_t *body;
   bool is_funclike;
+  bool is_variadic;  // 末尾が `...` (合成パラメータ "__VA_ARGS__") の可変長マクロ
   char **params;
-  int num_params;
+  int num_params;    // 可変長時は合成 __VA_ARGS__ スロットを含む
   char *inline_params[MACRO_INLINE_PARAMS];
 };
 
@@ -415,11 +416,12 @@ static char *my_strndup(const char *s, size_t n) {
   return p;
 }
 
-static void add_macro(char *name, bool is_funclike, char **params, int num_params, token_t *body) {
+static void add_macro(char *name, bool is_funclike, bool is_variadic, char **params, int num_params, token_t *body) {
   macro_t *m = calloc(1, sizeof(macro_t));
   m->name = name;
   m->body = body;
   m->is_funclike = is_funclike;
+  m->is_variadic = is_variadic;
   m->num_params = num_params;
   if (num_params <= MACRO_INLINE_PARAMS) {
     for (int i = 0; i < num_params; i++) m->inline_params[i] = params[i];
@@ -504,12 +506,12 @@ static token_t *make_string_token(const char *s, token_t *ref) {
 
 static void add_int_macro(const char *name, long long val) {
   token_t *tok = make_int_token(val, NULL);
-  add_macro(my_strndup(name, strlen(name)), false, NULL, 0, tok);
+  add_macro(my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
 static void add_string_macro(const char *name, const char *s) {
   token_t *tok = make_string_token(s, NULL);
-  add_macro(my_strndup(name, strlen(name)), false, NULL, 0, tok);
+  add_macro(my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
 static void pp_init_predefined_macros(void) {
@@ -1261,6 +1263,7 @@ static token_t *handle_define(token_t *tok) {
   tok = tok->next;
 
   bool is_funclike = false;
+  bool is_variadic = false;
   char **params = NULL;
   int num_params = 0;
   char *inline_params_buf[MACRO_INLINE_PARAMS];
@@ -1271,7 +1274,7 @@ static token_t *handle_define(token_t *tok) {
     int cap = MACRO_INLINE_PARAMS;
     params = inline_params_buf;
     while (tok->kind != TK_EOF && tok->kind != TK_RPAREN) {
-      if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+      // 容量拡張は ident / `...` のどちらの追記より前に行う。
       if (num_params >= cap) {
         if (params == inline_params_buf) {
           params = calloc((size_t)cap * 2, sizeof(char *));
@@ -1281,6 +1284,17 @@ static token_t *handle_define(token_t *tok) {
         }
         cap *= 2;
       }
+      if (tok->kind == TK_ELLIPSIS) {
+        // C99 6.10.3: `...` は最後のパラメータでなければならない。
+        if (tok->next->kind != TK_RPAREN) {
+          pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+        }
+        params[num_params++] = my_strndup("__VA_ARGS__", 11);
+        is_variadic = true;
+        tok = tok->next; // `)` へ
+        break;
+      }
+      if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
       token_ident_t *pid = as_ident(tok);
       params[num_params++] = my_strndup(pid->str, pid->len);
       tok = tok->next;
@@ -1299,7 +1313,7 @@ static token_t *handle_define(token_t *tok) {
   }
   cur_body->next = NULL;
 
-  add_macro(name, is_funclike, params, num_params, head.next);
+  add_macro(name, is_funclike, is_variadic, params, num_params, head.next);
   return tok;
 }
 
@@ -1545,13 +1559,19 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
              int arg_cnt = 0;
              int parsed_args = 0;
              bool has_empty_arg = false;
+             // 可変長マクロでは末尾の合成 __VA_ARGS__ スロットを除いた数が名前付き引数。
+             int num_named = m->is_variadic ? m->num_params - 1 : m->num_params;
              if (!(tok->kind == TK_RPAREN)) {
                while (tok->kind != TK_EOF) {
                  token_t head_arg; head_arg.next = NULL;
                  token_t *cur_arg = &head_arg;
                  int nest = 0;
+                 // 名前付き引数を埋め終えた可変長マクロでは、このグループが
+                 // __VA_ARGS__ の本体。トップレベルのカンマも取り込み `)` まで集約する。
+                 bool collecting_va = m->is_variadic && (arg_cnt >= num_named);
                  while (tok->kind != TK_EOF) {
-                   if (nest == 0 && (tok->kind == TK_COMMA || tok->kind == TK_RPAREN)) break;
+                   if (nest == 0 && tok->kind == TK_RPAREN) break;
+                   if (nest == 0 && tok->kind == TK_COMMA && !collecting_va) break;
                    if (tok->kind == TK_LPAREN) nest++;
                    if (tok->kind == TK_RPAREN) nest--;
                    cur_arg->next = copy_token(tok);
@@ -1559,8 +1579,9 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
                    tok = tok->next;
                  }
                  parsed_args++;
-                 if (!head_arg.next) has_empty_arg = true;
+                 if (!head_arg.next && !collecting_va) has_empty_arg = true;
                  if (arg_cnt < m->num_params) args[arg_cnt++] = head_arg.next;
+                 if (collecting_va) break; // 可変長部を `)` まで集約済み
                  if (tok->kind == TK_COMMA) tok = tok->next;
                  else break;
                }
@@ -1568,8 +1589,15 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
              if (tok->kind != TK_RPAREN) {
                pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
              }
-             if (parsed_args != m->num_params || has_empty_arg) {
-               pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+             if (m->is_variadic) {
+               // 厳密C11 6.10.3p4: 可変長部に最低1引数 (名前付き数より多い引数) が必要。
+               if (parsed_args <= num_named || has_empty_arg) {
+                 pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+               }
+             } else {
+               if (parsed_args != m->num_params || has_empty_arg) {
+                 pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+               }
              }
              tok = tok->next; // skip ')'
 

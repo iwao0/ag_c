@@ -110,6 +110,18 @@ static const success_case_t success_cases[] = {
     {3, "int main() {\nreturn\n__LINE__;\n}"},
     // 意地悪テスト: マクロの再帰的展開防止（自己参照）
     {42, "#define X X\nint main() { int X = 42; return X; }"},
+    // 可変長マクロ: __VA_ARGS__ を関数呼び出しへ転送
+    {6, "#define SUM(...) sum(__VA_ARGS__)\nint sum(int a,int b,int c){return a+b+c;}\nint main(){return SUM(1,2,3);}"},
+    // 可変長マクロ: 名前付き引数 + __VA_ARGS__
+    {3, "#define ADD(a,...) ((a)+sum2(__VA_ARGS__))\nint sum2(int x,int y){return x+y;}\nint main(){return ADD(0,1,2);}"},
+    // 可変長マクロ: __VA_ARGS__ の引数はプリ展開される
+    {42, "#define ID(...) __VA_ARGS__\n#define N 42\nint main(){return ID(N);}"},
+    // 可変長マクロ: 名前付き引数の置換は __VA_ARGS__ の影響を受けない
+    {42, "#define PICK(a,b,...) b\nint main(){return PICK(1,42,3,4);}"},
+    // 可変長マクロ: a##__VA_ARGS__ (paste は生のまま)
+    {42, "#define CAT(a,...) a##__VA_ARGS__\nint x42(){return 42;}\nint main(){return CAT(x4,2)();}"},
+    // 可変長マクロ: #__VA_ARGS__ はカンマ込みで文字列化
+    {7, "#define STR(...) #__VA_ARGS__\nint main(){char*s=STR(a,b);return (s[0]=='a'&&s[1]==','&&s[2]=='b')?7:1;}"},
 };
 
 static const char *fail_cases[] = {
@@ -163,6 +175,15 @@ static const char *fail_cases[] = {
     "#define BAD7(a,b) a##b\nint main() { return BAD7(&,&); }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
+    // 可変長マクロ (厳密C11): 可変長部に最低1引数が必要
+    "#define F(a, ...) (a)\nint main() { return F(1); }\n",
+    "#define F(...) 0\nint main() { return F(); }\n",
+    // 可変長マクロ: 名前付き引数が不足
+    "#define F(a, b, ...) (a)\nint main() { return F(1); }\n",
+    // 可変長マクロ: 名前付き引数が空
+    "#define F(a, ...) (a)\nint main() { return F(,1); }\n",
+    // 可変長マクロ: `...` が最後でない
+    "#define F(a, ..., b) (a)\nint main() { return F(1, 2, 3); }\n",
 };
 
 static int write_input_file(const char *path, const char *input) {

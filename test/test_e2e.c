@@ -931,6 +931,7 @@ static const test_case_t test_cases[] = {
     {"probes", "compound_assign_index_side_effect", CASE_INT_FILE, "test/fixtures/probes_found_bugs/compound_assign_index_side_effect.c", 15, 0},
     {"probes", "switch_case_long_label", CASE_INT_FILE, "test/fixtures/probes_found_bugs/switch_case_long_label.c", 42, 0},
     {"probes", "macro_arg_nested_same_name", CASE_INT_FILE, "test/fixtures/probes_found_bugs/macro_arg_nested_same_name.c", 10, 0},
+    {"probes", "variadic_macro_forward", CASE_INT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_forward.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
