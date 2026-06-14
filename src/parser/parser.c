@@ -766,10 +766,10 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
                        : (unsigned char)g_toplevel_decl_fp_kind;
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
   gv->is_bool = (!is_ptr && !is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
-  /* unsigned スカラ: load を zero-extend / 比較を unsigned にするため記録する。
-   * 設定しないと `unsigned g=0xFFFFFFFF;` が ldrsw で符号拡張され `g==0xFFFFFFFFu`
-   * が偽に、`unsigned long g` の比較が signed になっていた。 */
-  gv->is_unsigned = (!is_ptr && !is_array && g_toplevel_decl_is_unsigned) ? 1 : 0;
+  /* unsigned スカラ/配列要素: load を zero-extend / 比較を unsigned にするため記録。
+   * スカラは node の is_unsigned、配列は pointee_is_unsigned に使う (ポインタ値
+   * 自体は unsigned ではないので is_ptr は除外)。 */
+  gv->is_unsigned = (!is_ptr && g_toplevel_decl_is_unsigned) ? 1 : 0;
   gv->next = global_vars;
   global_vars = gv;
   return gv;

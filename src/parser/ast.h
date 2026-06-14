@@ -105,6 +105,7 @@ struct node_mem_t {
   unsigned int pointee_is_void : 1;         // 1: pointee 型が void（`void *p`）
   unsigned int is_bool : 1;                  // 1: _Bool 型 (代入を 0/1 に正規化する)
   unsigned int pointee_is_bool : 1;          // 1: pointee 型が _Bool（_Bool 配列等）
+  unsigned int pointee_is_unsigned : 1;      // 1: pointee 型が unsigned（unsigned 配列/ポインタ）
   // 配列要素 (各スロット) がスカラポインタ (`char *names[N]`, `int *vals[N]`) で
   // あることを示す。subscript の結果 ND_DEREF に is_scalar_ptr_member を
   // 立てるための上流フラグ。グローバル配列で deref_size = ポインタサイズ (8) と

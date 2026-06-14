@@ -2333,6 +2333,16 @@ static node_t *build_unary_deref_node(node_t *operand) {
   if (pql <= 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
     node->base.fp_kind = pointee_fp;
   }
+  /* `unsigned *p` の `*p`: pointee が unsigned なら deref 結果も unsigned
+   * (zero-extend load)。pointee_is_unsigned は build_lvar_or_vla_node が立てる。 */
+  if (pql <= 1) {
+    int pointee_uns = 0;
+    if (operand->kind == ND_LVAR) pointee_uns = as_lvar(operand)->mem.pointee_is_unsigned;
+    else if (operand->kind == ND_GVAR || operand->kind == ND_DEREF ||
+             operand->kind == ND_ADDR || operand->kind == ND_PTR_CAST)
+      pointee_uns = ((node_mem_t *)operand)->pointee_is_unsigned;
+    if (pointee_uns) node->is_unsigned = 1;
+  }
   if (pql >= 2) {
     node->is_pointer = 1;
     int new_pql = pql - 1;
@@ -2678,6 +2688,12 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
         /* 中間配列 (まだ要素ではない): 次段 subscript へ pointee_is_bool を伝播。 */
         deref->pointee_is_bool = 1;
       }
+    }
+    /* unsigned 配列/ポインタの subscript 結果: 最終要素なら is_unsigned (zero-extend
+     * load)、中間配列なら次段へ pointee_is_unsigned を伝播。 */
+    if (base_mem && base_mem->pointee_is_unsigned) {
+      if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
+      else                           deref->pointee_is_unsigned = 1;
     }
     /* `char *names[N]` 等: グローバルポインタ配列の要素 subscript 結果は
      * 「スカラポインタ値の load」(= struct メンバ char* と同じ semantics)。
@@ -3066,6 +3082,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       /* `double a[5]` 等: 要素型 fp_kind を pointee_fp_kind に伝播し、
        * build_subscript_deref が FP load を組み立てられるようにする。 */
       addr->pointee_fp_kind = gv->fp_kind;
+      /* unsigned グローバル配列: 要素 subscript 結果を zero-extend load させる。 */
+      addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
        * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
        * を立てて、struct メンバ char* (commit 6a663ed) と同じく ND_DEREF をそのまま
@@ -3180,6 +3198,9 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   /* `_Bool a[5]` の要素アクセスを正規化するために、配列ベースの ND_ADDR にも
    * pointee_is_bool を伝播する (build_subscript_deref が deref に引き継ぐ)。 */
   node->pointee_is_bool = var->is_bool ? 1 : 0;
+  /* `unsigned a[5]` / `unsigned *p`: 要素/pointee が unsigned なら subscript/deref
+   * 結果を zero-extend load させるため pointee_is_unsigned を伝播する。 */
+  node->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
     // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
@@ -3298,6 +3319,9 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.base_deref_size = var->base_deref_size;
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
+  /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を
+   * 伝播する (var->is_unsigned は基底型 unsigned を表すのでポインタにも乗る)。 */
+  as_lvar(n)->mem.pointee_is_unsigned = var->is_unsigned;
   as_lvar(n)->mem.is_complex = var->is_complex;
   as_lvar(n)->mem.is_atomic = var->is_atomic;
   as_lvar(n)->mem.pointee_is_void = var->pointee_is_void;
