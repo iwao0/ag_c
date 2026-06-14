@@ -315,6 +315,45 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
   }
 }
 
+/* struct のメンバを宣言順にフラット出力する (init_values を val_idx から消費)。
+ * 入れ子 struct メンバ (`struct Out{struct In i; int z;}`) は再帰して内側メンバを
+ * 展開する。これをしないと内側 struct を 1 つの .quad として出力し、フラット値が
+ * ずれていた (`{1,2,3}` が i.p=1,i.q=0,z=2 になる)。
+ * struct_size まで末尾を 0 padding する。 */
+static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
+                                           int struct_size, global_var_t *gv, int *val_idx) {
+  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int prev_end = 0;
+  for (int i = 0; i < n_members && *val_idx < gv->init_count; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
+    if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
+    /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
+    if (alen > 0) {
+      for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
+        cg_emit_int_directive(ts, gv->init_values[(*val_idx)++]);
+      }
+      prev_end = off + ts * alen;
+      continue;
+    }
+    /* 入れ子 struct メンバ: 再帰してフラット展開する。 */
+    if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+      emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+      prev_end = off + ts;
+      continue;
+    }
+    /* スカラ / ポインタ / 関数ポインタメンバ。 */
+    char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
+    int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
+    double fv_i = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
+    emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, gv->init_values[*val_idx], fv_i);
+    (*val_idx)++;
+    prev_end = off + ts;
+  }
+  if (prev_end < struct_size) cg_emitf("  .space %d\n", struct_size - prev_end);
+}
+
 static void emit_global_struct_init(global_var_t *gv) {
   /* union: 活性メンバ (union_init_ordinal, 既定 0=先頭) だけをその型で出力し、
    * 残りを type_size まで 0 で埋める。`{.f=1.5f}` 等の designated 初期化に対応。 */
@@ -340,36 +379,9 @@ static void emit_global_struct_init(global_var_t *gv) {
     }
     return;
   }
-  int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
-  int prev_end = 0;
   int val_idx = 0;
-  for (int i = 0; i < n_members && val_idx < gv->init_count; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
-    int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
-    if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
-    /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。
-     * struct_layout は配列メンバの type_size (ts) を「要素サイズ」で
-     * 登録するため (struct_layout.c:247)、全体サイズは ts*alen。 */
-    if (alen > 0) {
-      int sub_ts = ts;
-      for (int k = 0; k < alen && val_idx < gv->init_count; k++) {
-        long long v = gv->init_values[val_idx++];
-        cg_emit_int_directive(sub_ts, v);
-      }
-      prev_end = off + ts * alen;
-      continue;
-    }
-    /* メンバが関数ポインタ等 (init_value_symbols[i] が設定済み) のときは
-     * `.quad _<sym>` を出力。 */
-    char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[val_idx] : NULL;
-    int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[val_idx] : 0;
-    double fv_i = gv->init_fvalues ? gv->init_fvalues[val_idx] : 0.0;
-    emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, gv->init_values[val_idx], fv_i);
-    val_idx++;
-    prev_end = off + ts;
-  }
-  if (prev_end < gv->type_size) cg_emitf("  .space %d\n", gv->type_size - prev_end);
+  emit_global_struct_members_rec(gv->tag_kind, gv->tag_name, gv->tag_len,
+                                 (int)gv->type_size, gv, &val_idx);
 }
 
 /* struct/union 配列のグローバル brace init: 各要素を member 毎に
