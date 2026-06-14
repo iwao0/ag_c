@@ -35,6 +35,8 @@ static node_t *parse_array_initializer(lvar_t *var);
 static node_t *parse_struct_initializer(lvar_t *var);
 static node_t *parse_union_initializer(lvar_t *var);
 static node_t *parse_struct_copy_initializer(lvar_t *var);
+static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value);
+static node_t *parse_struct_member_no_brace(lvar_t *nested);
 static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member_type_size,
                                       token_kind_t member_tag_kind, char *member_tag_name,
                                       int member_tag_len, int member_is_tag_pointer);
@@ -1127,11 +1129,11 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     nested.tag_kind = TK_STRUCT;
     nested.tag_name = member_tag_name;
     nested.tag_len = member_tag_len;
-    /* C11 6.7.9: struct メンバの初期化は `{...}` または同型の式 (compound
-     * literal や struct lvar) で行える。`{` 以外で始まるときは式として解析し、
-     * 結果が互換なら member-wise copy で初期化する。 */
+    /* C11 6.7.9: struct メンバの初期化は `{...}`、同型の式 (compound literal や
+     * struct lvar) によるコピー、または brace 省略 (`{1,2,3}` の内側展開) で行える。
+     * `{` 以外で始まるときは copy か brace 省略かを式の型で判断する。 */
     if (curtok() && curtok()->kind != TK_LBRACE) {
-      return parse_struct_copy_initializer(&nested);
+      return parse_struct_member_no_brace(&nested);
     }
     return parse_struct_initializer(&nested);
   }
@@ -1407,6 +1409,20 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
   return init_chain;
 }
 
+/* zero-fill 対象判定用に member を assigned 集合へ記録する。既に記録済み (C11
+ * 6.7.9p19 の後勝ち重複) なら何もしない。これをしないと重複 designator で
+ * assigned_n が member_count (= 配列容量) を超えてバッファ溢れする。 */
+static void record_assigned_member(char **names, int *lens, int *kinds, int *n,
+                                   int cap, char *name, int len, int kind) {
+  if (!name || len <= 0) return;
+  for (int i = 0; i < *n; i++) {
+    if (lens[i] == len && strncmp(names[i], name, (size_t)len) == 0) return;
+  }
+  if (*n < cap) {
+    names[*n] = name; lens[*n] = len; kinds[*n] = kind; (*n)++;
+  }
+}
+
 static node_t *parse_struct_initializer(lvar_t *var) {
   if (!tk_consume('{')) {
     psx_diag_ctx(curtok(), "decl", "%s",
@@ -1456,12 +1472,9 @@ static node_t *parse_struct_initializer(lvar_t *var) {
             !info.is_tag_pointer) {
           init_chain = append_to_init_chain(init_chain,
               consume_nested_designator_and_build_assign(var, info));
-          /* トップレベル `a` への部分代入として記録: `.a.x=1, .a.y=2` 混在を許す。
-           * indexed-only と同じ扱い (full 代入との重複だけ弾く)。 */
-          assigned_names[assigned_n] = info.name;
-          assigned_lens[assigned_n] = info.len;
-          assigned_kind[assigned_n] = 1;
-          assigned_n++;
+          /* トップレベル `a` への部分代入として記録 (`.a.x=1, .a.y=2` 混在を許す)。 */
+          record_assigned_member(assigned_names, assigned_lens, assigned_kind,
+                                 &assigned_n, member_count, info.name, info.len, 1);
           if (tk_consume('}')) break;
           tk_expect(',');
           if (tk_consume('}')) break;
@@ -1472,10 +1485,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
            * subobject への複数指定初期化子は後勝ち (エラーではない)。 */
           init_chain = append_to_init_chain(init_chain,
               consume_indexed_designator_and_build_assign(var, info, found));
-          assigned_names[assigned_n] = info.name;
-          assigned_lens[assigned_n] = info.len;
-          assigned_kind[assigned_n] = 1; // indexed-only
-          assigned_n++;
+          record_assigned_member(assigned_names, assigned_lens, assigned_kind,
+                                 &assigned_n, member_count, info.name, info.len, 1);
           if (tk_consume('}')) break;
           tk_expect(',');
           if (tk_consume('}')) break;
@@ -1496,10 +1507,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
                                                      info.is_tag_pointer, info.array_len, info.outer_stride);
       init_chain = append_to_init_chain(init_chain,
           wrap_member_init_as_assign(var, &info, member_init));
-      assigned_names[assigned_n] = info.name;
-      assigned_lens[assigned_n] = info.len;
-      assigned_kind[assigned_n] = 0; // full assignment
-      assigned_n++;
+      record_assigned_member(assigned_names, assigned_lens, assigned_kind,
+                             &assigned_n, member_count, info.name, info.len, 0);
       if (tk_consume('}')) break;
       tk_expect(',');
       if (tk_consume('}')) break;
@@ -1516,15 +1525,9 @@ static node_t *parse_struct_initializer(lvar_t *var) {
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
-static node_t *parse_struct_copy_initializer(lvar_t *var) {
-  node_t *rhs = psx_expr_assign();
-  node_t *prefix = NULL;
-  node_t *value = rhs;
-  while (value && value->kind == ND_COMMA) {
-    if (!prefix) prefix = value->lhs;
-    else prefix = psx_node_new_binary(ND_COMMA, prefix, value->lhs);
-    value = value->rhs;
-  }
+/* 解析済みの value から struct コピー初期化チェーンを構築する。互換型でない
+ * (= scalar 等) なら NULL を返す (呼び出し側が brace 省略やエラーを判断する)。 */
+static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
   node_t *init_chain = NULL;
   if (value && value->kind == ND_LVAR && is_compatible_tag_object_lvar((node_lvar_t *)value, var)) {
     init_chain = build_struct_copy_chain_from_source(var, (node_lvar_t *)value);
@@ -1582,12 +1585,106 @@ static node_t *parse_struct_copy_initializer(lvar_t *var) {
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
-  } else {
+  }
+  return init_chain;  // 互換型でなければ NULL
+}
+
+/* value から先頭の ND_COMMA prefix を剥がす (`(a, b, structval)` の副作用部)。 */
+static node_t *strip_comma_prefix(node_t *rhs, node_t **out_prefix) {
+  node_t *prefix = NULL;
+  node_t *value = rhs;
+  while (value && value->kind == ND_COMMA) {
+    prefix = prefix ? psx_node_new_binary(ND_COMMA, prefix, value->lhs) : value->lhs;
+    value = value->rhs;
+  }
+  *out_prefix = prefix;
+  return value;
+}
+
+static node_t *parse_struct_copy_initializer(lvar_t *var) {
+  node_t *prefix = NULL;
+  node_t *value = strip_comma_prefix(psx_expr_assign(), &prefix);
+  node_t *init_chain = build_struct_copy_from_value(var, value);
+  if (!init_chain) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
   }
   if (prefix) return psx_node_new_binary(ND_COMMA, prefix, init_chain);
   return init_chain;
+}
+
+/* 次の内側メンバ取り込みを継続して良いか (comma があり、その先が designator や
+ * 終端でない)。継続するなら comma を消費して true。 */
+static bool elision_consume_separator(void) {
+  if (!curtok() || curtok()->kind != TK_COMMA) return false;
+  token_t *nx = curtok()->next;
+  /* 次が designator (`.m`) / 終端 (`}`) なら取り込み終了。comma は親が消費する。 */
+  if (nx && (nx->kind == TK_DOT || nx->kind == TK_RBRACE)) return false;
+  tk_consume(',');
+  return true;
+}
+
+/* brace 省略 (純 scalar 始まり): 親のフラットリストから内側 struct の名前付き
+ * メンバを宣言順に取り込む。各メンバを parse_member_initializer で処理するため
+ * 入れ子集約 (`struct C{struct B{struct A a; int z;} b; int w;}` の `{1,2,3,4}`) も
+ * 再帰的に展開される。 */
+static node_t *struct_member_elision(lvar_t *nested) {
+  int member_count = psx_ctx_get_tag_member_count(nested->tag_kind, nested->tag_name, nested->tag_len);
+  node_t *chain = NULL;
+  int ordinal = 0;
+  while (ordinal < member_count) {
+    if (chain && !elision_consume_separator()) break;
+    tag_member_info_t mi = {0};
+    if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
+    node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
+                                             mi.tag_kind, mi.tag_name, mi.tag_len,
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride);
+    node_t *as = wrap_member_init_as_assign(nested, &mi, minit);
+    chain = chain ? psx_node_new_binary(ND_COMMA, chain, as) : as;
+    if (curtok() && curtok()->kind == TK_RBRACE) break;
+  }
+  return chain;
+}
+
+/* `{` 無しの struct メンバ初期化。C11 6.7.9:
+ *  - 互換 struct 式 (`m.i = innerVar` 等) ならメンバ単位 copy 初期化。
+ *  - scalar から始まるなら brace 省略 (struct_member_elision)。
+ * 識別子/`(` 始まりは copy の可能性があるので 1 式だけ先読みして判定する。
+ * その他 (数値/文字/文字列/演算子) は純 scalar 省略とみなし先読みせず再帰展開する
+ * (先頭メンバが集約でも parse_member_initializer が正しく消費するため)。 */
+static node_t *parse_struct_member_no_brace(lvar_t *nested) {
+  token_t *t = curtok();
+  if (!(t && (t->kind == TK_IDENT || t->kind == TK_LPAREN))) {
+    return struct_member_elision(nested);
+  }
+  node_t *prefix = NULL;
+  node_t *first = strip_comma_prefix(psx_expr_assign(), &prefix);
+  node_t *copy = build_struct_copy_from_value(nested, first);
+  if (copy) {
+    return prefix ? psx_node_new_binary(ND_COMMA, prefix, copy) : copy;
+  }
+  /* 識別子だが互換 struct でない (scalar 変数等): 先読みした first を内側メンバ 0
+   * (scalar 前提) に入れ、残りメンバを継続。 */
+  int member_count = psx_ctx_get_tag_member_count(nested->tag_kind, nested->tag_name, nested->tag_len);
+  tag_member_info_t info = {0};
+  int ordinal = 0;
+  if (!tag_get_next_named_member(nested, &ordinal, &info) || info.len <= 0) return first;
+  node_t *lhs0 = new_struct_member_lvar(nested, info.offset, info.type_size,
+                                        info.tag_kind, info.tag_name, info.tag_len,
+                                        info.is_tag_pointer);
+  node_mem_t *a0 = psx_node_new_assign(lhs0, first);
+  a0->type_size = info.type_size;
+  node_t *chain = prefix ? psx_node_new_binary(ND_COMMA, prefix, (node_t *)a0) : (node_t *)a0;
+  while (ordinal < member_count) {
+    if (!elision_consume_separator()) break;
+    tag_member_info_t mi = {0};
+    if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
+    node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
+                                             mi.tag_kind, mi.tag_name, mi.tag_len,
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride);
+    chain = psx_node_new_binary(ND_COMMA, chain, wrap_member_init_as_assign(nested, &mi, minit));
+  }
+  return chain;
 }
 
 // 波カッコなしの `union U u = expr;` 経路。

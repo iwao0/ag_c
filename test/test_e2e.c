@@ -969,6 +969,7 @@ static const test_case_t test_cases[] = {
     {"probes", "long_bitfield", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_bitfield.c", 42, 0},
     {"probes", "duplicate_designator_override", CASE_INT_FILE, "test/fixtures/probes_found_bugs/duplicate_designator_override.c", 42, 0},
     {"probes", "designator_then_positional", CASE_INT_FILE, "test/fixtures/probes_found_bugs/designator_then_positional.c", 42, 0},
+    {"probes", "nested_struct_brace_elision", CASE_INT_FILE, "test/fixtures/probes_found_bugs/nested_struct_brace_elision.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
