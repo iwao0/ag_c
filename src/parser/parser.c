@@ -894,7 +894,10 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
   tk_expect('{');
   if (tk_consume('}')) return;
-  int cur_idx = 0;  /* 次に書き込む論理位置 (designator [N]= でジャンプ可) */
+  /* 書き込み位置はフラットな絶対 index。ネスト brace の再帰でも連続して
+   * 追記できるよう、現在の充填位置 (init_count) から開始する。
+   * designator [N]= で cur_idx をジャンプできる (後方ジャンプも可)。 */
+  int cur_idx = gv->init_count;
   for (;;) {
     /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
      * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
@@ -911,21 +914,30 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
       tk_expect('=');
       cur_idx = (int)idx_val;
     }
-    /* 必要なら init_values をパディング (cur_idx より前を 0 で埋める) */
-    while (gv->init_count < cur_idx) {
-      if (gv->init_count >= *cap) {
-        *cap *= 2;
-        gv->init_values = realloc(gv->init_values, (size_t)*cap * sizeof(long long));
-        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)*cap * sizeof(char *));
-        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)*cap * sizeof(int));
+    /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
+    while (*cap <= cur_idx) {
+      int new_cap = *cap * 2;
+      gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+      gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+      gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+      if (gv->init_fvalues) {
+        gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+        for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
       }
+      *cap = new_cap;
+    }
+    /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
+     * 後方ジャンプ (cur_idx < init_count) では既存 slot なので何もしない。 */
+    while (gv->init_count < cur_idx) {
       gv->init_values[gv->init_count] = 0;
       gv->init_value_symbols[gv->init_count] = NULL;
       gv->init_value_symbol_lens[gv->init_count] = 0;
+      if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = 0.0;
       gv->init_count++;
     }
     if (curtok()->kind == TK_LBRACE) {
       psx_parse_global_brace_init_flat(gv, cap);
+      cur_idx = gv->init_count;
     } else {
       node_t *e = psx_expr_assign();
       long long v = 0;
@@ -960,28 +972,70 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap) {
         sym = s->string_label;
         sym_len = -1; /* sentinel: emit raw label (no `_` prefix) */
       } else if (e) v = psx_decl_eval_const_int(e, &ok);
-      if (gv->init_count >= *cap) {
-        int new_cap = *cap * 2;
-        gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
-        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
-        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
-        if (gv->init_fvalues) {
-          gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
-          for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
-        }
-        *cap = new_cap;
-      }
-      gv->init_values[gv->init_count] = v;
-      gv->init_value_symbols[gv->init_count] = sym;
-      gv->init_value_symbol_lens[gv->init_count] = sym_len;
-      if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = fv;
-      gv->init_count++;
+      /* 書き込み位置は cur_idx (designator でジャンプ済み)。init_count は
+       * 充填済みの最大要素数として追跡する。 */
+      gv->init_values[cur_idx] = v;
+      gv->init_value_symbols[cur_idx] = sym;
+      gv->init_value_symbol_lens[cur_idx] = sym_len;
+      if (gv->init_fvalues) gv->init_fvalues[cur_idx] = fv;
+      cur_idx++;
+      if (cur_idx > gv->init_count) gv->init_count = cur_idx;
     }
-    cur_idx = gv->init_count;
     if (!tk_consume(',')) break;
     if (curtok()->kind == TK_RBRACE) break;  // 末尾カンマ許容
   }
   tk_expect('}');
+}
+
+/* グローバルポインタ初期化子のアドレス式を (シンボル, バイトオフセット) へ解決する。
+ *   &x / x(配列decay)          → (x, 0)
+ *   a + n / &a[n]              → (a, n*sizeof(elem))
+ *   &a[n] (= &*(a+n))          → DEREF を剥がして再帰
+ * 解決できれば 1 を返し sym・sym_len・off を設定する。 */
+static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off) {
+  if (!e) return 0;
+  switch (e->kind) {
+    case ND_ADDR:
+      if (e->lhs && e->lhs->kind == ND_GVAR) {
+        node_gvar_t *g = (node_gvar_t *)e->lhs;
+        *sym = g->name; *sym_len = g->name_len;
+        return 1;
+      }
+      if (e->lhs && e->lhs->kind == ND_DEREF) {
+        return resolve_global_addr_init(e->lhs->lhs, sym, sym_len, off);
+      }
+      return 0;
+    case ND_GVAR: {
+      node_gvar_t *g = (node_gvar_t *)e;
+      *sym = g->name; *sym_len = g->name_len;
+      return 1;
+    }
+    case ND_ADD: {
+      int ok = 1;
+      if (resolve_global_addr_init(e->lhs, sym, sym_len, off)) {
+        long long c = psx_decl_eval_const_int(e->rhs, &ok);
+        if (!ok) return 0;
+        *off += c; return 1;
+      }
+      if (resolve_global_addr_init(e->rhs, sym, sym_len, off)) {
+        long long c = psx_decl_eval_const_int(e->lhs, &ok);
+        if (!ok) return 0;
+        *off += c; return 1;
+      }
+      return 0;
+    }
+    case ND_SUB: {
+      int ok = 1;
+      if (resolve_global_addr_init(e->lhs, sym, sym_len, off)) {
+        long long c = psx_decl_eval_const_int(e->rhs, &ok);
+        if (!ok) return 0;
+        *off -= c; return 1;
+      }
+      return 0;
+    }
+    default:
+      return 0;
+  }
 }
 
 static void apply_toplevel_object_initializer(global_var_t *gv) {
@@ -1037,12 +1091,18 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   } else if (init_expr && const_ok) {
     gv->has_init = 1;
     gv->init_val = folded;
-  } else if (init_expr && init_expr->kind == ND_ADDR &&
-             init_expr->lhs && init_expr->lhs->kind == ND_GVAR) {
-    node_gvar_t *ref = (node_gvar_t *)init_expr->lhs;
-    gv->has_init = 1;
-    gv->init_symbol = ref->name;
-    gv->init_symbol_len = ref->name_len;
+  } else if (init_expr &&
+             (init_expr->kind == ND_ADDR || init_expr->kind == ND_GVAR ||
+              init_expr->kind == ND_ADD || init_expr->kind == ND_SUB)) {
+    /* `int *p = &x;` / `int *p = a + 1;` / `int *p = &a[1];` 等の
+     * グローバル/配列アドレス + オフセット初期化。 */
+    char *asym = NULL; int asym_len = 0; long long aoff = 0;
+    if (resolve_global_addr_init(init_expr, &asym, &asym_len, &aoff)) {
+      gv->has_init = 1;
+      gv->init_symbol = asym;
+      gv->init_symbol_len = asym_len;
+      gv->init_symbol_offset = aoff;
+    }
   } else if (init_expr && init_expr->kind == ND_FUNCREF) {
     /* `int (*gp)(int,int) = add;` グローバル関数ポインタ初期化。
      * codegen は init_symbol を `.quad _<funcname>` として出力する。 */

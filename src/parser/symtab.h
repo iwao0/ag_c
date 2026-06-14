@@ -37,6 +37,7 @@ struct global_var_t {
   double fval;
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   int init_symbol_len;
+  long long init_symbol_offset;  // `&a[1]` / `a+1` のシンボルからのバイトオフセット
   // 配列の `{...}` 初期化子: flat 化した値列を保持する。
   // 多次元 `{{1,2,3},{4,5,6}}` も行優先で平らに並べる。
   // init_count > 0 のとき codegen は init_values[] を要素サイズ単位で出力する。

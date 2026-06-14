@@ -430,6 +430,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       if (gv->init_symbol_len < 0) {
         /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。 */
         cg_emitf("  .quad %s\n", gv->init_symbol);
+      } else if (gv->init_symbol_offset != 0) {
+        /* `&a[1]` / `a+1`: シンボル + バイトオフセット。 */
+        cg_emitf("  .quad _%.*s + %lld\n", gv->init_symbol_len, gv->init_symbol,
+                 gv->init_symbol_offset);
       } else {
         cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
       }
