@@ -261,6 +261,16 @@ void gen_float_literals(void) {
   cg_emitf(".text\n");
 }
 
+/* 整数値を指定サイズの assembly directive で出力する。
+ *   size=1 → .byte / size=2 → .short / size=4 → .long / その他 → .quad
+ * gen_global_vars 系で同形ブロックが 6 箇所重複していたのを集約。 */
+static void cg_emit_int_directive(int size, long long value) {
+  if (size == 1)      cg_emitf("  .byte %lld\n", value);
+  else if (size == 2) cg_emitf("  .short %lld\n", value);
+  else if (size == 4) cg_emitf("  .long %lld\n", value);
+  else                cg_emitf("  .quad %lld\n", value);
+}
+
 /* struct / union global with brace init: 各メンバの型サイズに合わせて
  * init_values[] を出力。メンバ間の padding は .space で埋める。
  * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
@@ -281,10 +291,7 @@ static void emit_global_struct_init(global_var_t *gv) {
       int sub_ts = ts;
       for (int k = 0; k < alen && val_idx < gv->init_count; k++) {
         long long v = gv->init_values[val_idx++];
-        if (sub_ts == 1) cg_emitf("  .byte %lld\n", v);
-        else if (sub_ts == 2) cg_emitf("  .short %lld\n", v);
-        else if (sub_ts == 4) cg_emitf("  .long %lld\n", v);
-        else cg_emitf("  .quad %lld\n", v);
+        cg_emit_int_directive(sub_ts, v);
       }
       prev_end = off + ts * alen;
       continue;
@@ -297,10 +304,7 @@ static void emit_global_struct_init(global_var_t *gv) {
       cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
     } else {
       long long v = gv->init_values[val_idx];
-      if (ts == 1) cg_emitf("  .byte %lld\n", v);
-      else if (ts == 2) cg_emitf("  .short %lld\n", v);
-      else if (ts == 4) cg_emitf("  .long %lld\n", v);
-      else cg_emitf("  .quad %lld\n", v);
+      cg_emit_int_directive(ts, v);
     }
     val_idx++;
     prev_end = off + ts;
@@ -325,10 +329,7 @@ static void emit_global_struct_array_init(global_var_t *gv) {
       if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
       long long v = (val_idx < gv->init_count) ? gv->init_values[val_idx] : 0;
       val_idx++;
-      if (ts == 1) cg_emitf("  .byte %lld\n", v);
-      else if (ts == 2) cg_emitf("  .short %lld\n", v);
-      else if (ts == 4) cg_emitf("  .long %lld\n", v);
-      else cg_emitf("  .quad %lld\n", v);
+      cg_emit_int_directive(ts, v);
       prev_end = off + ts;
     }
     if (prev_end < elem_size) cg_emitf("  .space %d\n", elem_size - prev_end);
@@ -345,10 +346,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     if (gv->has_init) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
-      if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
-      else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
-      else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
-      else cg_emitf("  .quad %lld\n", gv->init_val);
+      cg_emit_int_directive(gv->type_size, gv->init_val);
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
       cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
@@ -409,10 +407,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           continue;
         }
         long long v = gv->init_values[i];
-        if (elem == 1) cg_emitf("  .byte %lld\n", v);
-        else if (elem == 2) cg_emitf("  .short %lld\n", v);
-        else if (elem == 4) cg_emitf("  .long %lld\n", v);
-        else cg_emitf("  .quad %lld\n", v);
+        cg_emit_int_directive(elem, v);
       }
       int remain = total_elems - gv->init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
@@ -436,11 +431,9 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       uint64_t bits;
       memcpy(&bits, &d, sizeof(bits));
       cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+    } else {
+      cg_emit_int_directive(gv->type_size, gv->init_val);
     }
-    else if (gv->type_size == 1) cg_emitf("  .byte %lld\n", gv->init_val);
-    else if (gv->type_size == 2) cg_emitf("  .short %lld\n", gv->init_val);
-    else if (gv->type_size == 4) cg_emitf("  .long %lld\n", gv->init_val);
-    else cg_emitf("  .quad %lld\n", gv->init_val);
     return;
   }
   /* 暫定定義: .comm _name,size,log2align */
