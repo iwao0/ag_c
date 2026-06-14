@@ -1374,10 +1374,12 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   int slot_size = (res_ty == IR_TY_F64) ? 8 : 4;
   /* ポインタ三項 (関数ポインタや int* など): 8 バイト slot で扱う。
    * 子ノードのいずれかがポインタなら結果もポインタ。 */
+  /* `&x` (ND_ADDR) は常にポインタ値だが is_pointer フラグを持たないことがあるため
+   * 明示的に判定に加える (`(c ? &a : &b)->m` が 8 バイトで扱われるように)。 */
   if (res_ty == IR_TY_I32 &&
       (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
-       node->rhs->kind == ND_FUNCREF ||
-       (c->els && c->els->kind == ND_FUNCREF))) {
+       node->rhs->kind == ND_FUNCREF || node->rhs->kind == ND_ADDR ||
+       (c->els && (c->els->kind == ND_FUNCREF || c->els->kind == ND_ADDR)))) {
     res_ty = IR_TY_PTR;
     slot_size = 8;
   }
