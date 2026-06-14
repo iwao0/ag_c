@@ -1303,10 +1303,26 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         } else {
           arg_full_size = lv->mem.type_size;
         }
+      } else if (arg && arg->kind == ND_DEREF) {
+        /* struct 値の subscript / メンバアクセス (`arr[i]`, `s.member`) は ND_DEREF。
+         * tag を持ち >8B ならアドレス渡しの struct 引数として扱う。 */
+        node_mem_t *m = (node_mem_t *)arg;
+        if (m->tag_kind != TK_EOF && !m->is_tag_pointer && !m->is_pointer) {
+          arg_full_size = m->type_size;
+        }
       }
       if (arg_full_size > 8) {
-        /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。 */
-        int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+        /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。
+         * src アドレスは ND_LVAR なら lvar slot、ND_DEREF ならその lhs (= 計算済み
+         * アドレス式) を評価して得る。 */
+        int src_ptr;
+        if (arg->kind == ND_DEREF) {
+          ir_val_t a = build_expr(ctx, arg->lhs);
+          if (ctx->failed) return ir_val_none();
+          src_ptr = a.id;
+        } else {
+          src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+        }
         if (src_ptr < 0) return ir_val_none();
         int tmp_vreg = ir_func_new_vreg(ctx->f);
         ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
@@ -1958,10 +1974,18 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
   if (ctx->f->ret_struct_size > 0 && node->lhs) {
     int src_ptr = -1;
-    if (node->lhs->kind == ND_LVAR) {
-      src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
-    } else if (node->lhs->kind == ND_DEREF) {
-      ir_val_t p = build_expr(ctx, node->lhs->lhs);
+    node_t *src = node->lhs;
+    /* compound literal `return (struct V){...};` は ND_COMMA(init, struct lvalue)。
+     * init (要素ストア) を評価してから rhs を struct ソースとして扱う。 */
+    if (src->kind == ND_COMMA && src->rhs) {
+      (void)build_expr(ctx, src->lhs);
+      if (ctx->failed) return;
+      src = src->rhs;
+    }
+    if (src->kind == ND_LVAR) {
+      src_ptr = address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
+    } else if (src->kind == ND_DEREF) {
+      ir_val_t p = build_expr(ctx, src->lhs);
       if (ctx->failed) return;
       src_ptr = p.id;
     } else {
