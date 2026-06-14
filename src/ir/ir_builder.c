@@ -1310,6 +1310,17 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         if (m->tag_kind != TK_EOF && !m->is_tag_pointer && !m->is_pointer) {
           arg_full_size = m->type_size;
         }
+      } else if (arg && arg->kind == ND_FUNCALL && arg->ret_struct_size > 8) {
+        /* >8B struct を返す関数呼び出しを直接 struct 引数に (`sum(make())`)。
+         * build_node_funcall が ret_area を確保しそのアドレスを返すので、それを
+         * そのまま渡す (新規 area なので memcpy 不要)。 */
+        arg_full_size = arg->ret_struct_size;
+      }
+      if (arg->kind == ND_FUNCALL && arg_full_size > 8) {
+        ir_val_t a = build_expr(ctx, arg);
+        if (ctx->failed) return ir_val_none();
+        cargs[i] = ir_val_vreg(a.id, IR_TY_PTR);
+        continue;
       }
       if (arg_full_size > 8) {
         /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。
@@ -1383,7 +1394,22 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->nargs = fn->nargs;
   call->is_variadic_call = is_variadic_call;
   call->nargs_fixed = nargs_fixed;
+  /* >8B struct 戻り値を値文脈 (引数 / 式) で使う場合: 呼び出し側で ret_area を
+   * 確保し x8 で渡す。戻り値はその area のアドレス (PTR)。struct 代入の直接 rhs は
+   * build_assign_struct がインラインで処理するためここには来ない。 */
+  int struct_ret_area = -1;
+  if (node->ret_struct_size > 8 && !fn->callee) {
+    struct_ret_area = ir_func_new_vreg(ctx->f);
+    ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+    ia->dst = ir_val_vreg(struct_ret_area, IR_TY_PTR);
+    ia->alloca_size = node->ret_struct_size;
+    ia->alloca_align = 8;
+    ir_func_append_inst(ctx->f, ia);
+    call->ret_struct_size = node->ret_struct_size;
+    call->ret_struct_area = ir_val_vreg(struct_ret_area, IR_TY_PTR);
+  }
   ir_func_append_inst(ctx->f, call);
+  if (struct_ret_area >= 0) return ir_val_vreg(struct_ret_area, IR_TY_PTR);
   return call->dst;
 }
 

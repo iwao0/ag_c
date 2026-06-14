@@ -1,11 +1,13 @@
-// 8 バイトを超える struct 値の受け渡しで 2 つの経路が漏れていたバグ。
+// 8 バイトを超える struct 値の受け渡しで 3 つの経路が漏れていたバグ。
 // (1) 引数: struct 配列要素 `arr[i]` やメンバ `s.m` (= ND_DEREF) の >8B struct を
 //     関数へ値渡しすると、ポインタ渡し経路 (ND_LVAR 限定) を通らず先頭 8B を値
 //     ロードして渡し、後半メンバが落ち SIGSEGV/値破壊していた。
 // (2) 戻り値: `return (struct V){...};` (compound literal = ND_COMMA) が
 //     「struct return value is not LVAR/DEREF」で ir_build_module 失敗していた。
-// 修正: 引数は ND_DEREF の struct 値もアドレス渡しに、戻り値は ND_COMMA を展開して
-//   compound literal の init を評価してから struct ソースとして扱う。
+// (3) `sum(make())`: >8B struct を返す関数の戻り値を直接 struct 引数に渡すと、
+//     呼び出し側で ret_area を確保せず値破壊していた。
+// 修正: 引数は ND_DEREF / ND_FUNCALL の struct 値もアドレス渡しに、戻り値は
+//   ND_COMMA を展開し、build_node_funcall は値文脈で ret_area を確保する。
 // 期待: exit=42
 struct V { int a, b, c; };       // 12 バイト
 
@@ -28,6 +30,9 @@ int main(void) {
     // 返した struct を変数経由で値渡し
     struct V m2 = make(3);           // {3,6,9}
     if (sum(m2) != 18) return 4;
+
+    // >8B struct を返す関数の戻り値を直接 struct 引数に (ND_FUNCALL 引数)
+    if (sum(make(4)) != 24) return 5;     // {4,8,12} -> 24
 
     return sum(arr[1]) + sum(w.v) + 15;   // 15 + 12 + 15 = 42
 }
