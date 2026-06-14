@@ -234,12 +234,12 @@ static node_t *parse_decl_like_stmt(void) {
     if (!tag && curtok()->kind != TK_LBRACE) {
       psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
     }
-    static int anon_tag_counter = 0;
-    char anon_buf[32];
-    char *tag_name = tag ? tag->str : anon_buf;
+    /* 無名タグ名は永続確保する。スタックバッファだと宣言文の解析後に解放され、
+     * 後続文での `u.member` アクセス時にタグ検索が dangling ポインタを引いて失敗する。 */
+    char *tag_name = tag ? tag->str : NULL;
     int tag_len = tag ? tag->len : 0;
     if (!tag) {
-      tag_len = snprintf(anon_buf, sizeof(anon_buf), "__anon_%d", anon_tag_counter++);
+      psx_make_anonymous_tag_name(&tag_name, &tag_len);
     }
     if (tk_consume('{')) {
       int member_count = 0;
