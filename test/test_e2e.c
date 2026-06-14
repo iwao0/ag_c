@@ -946,6 +946,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_bool_normalize", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_bool_normalize.c", 42, 0},
     {"probes", "anon_struct_union_local", CASE_INT_FILE, "test/fixtures/probes_found_bugs/anon_struct_union_local.c", 42, 0},
     {"probes", "vla_double_element", CASE_INT_FILE, "test/fixtures/probes_found_bugs/vla_double_element.c", 42, 0},
+    {"probes", "funcall_struct_ptr_arrow", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcall_struct_ptr_arrow.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

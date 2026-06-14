@@ -2460,7 +2460,10 @@ static node_t *funcdef(void) {
       psx_ctx_set_function_param_fp_kind(tok->str, tok->len, i, pfk);
     }
   }
-  if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr && ret_tag) {
+  /* struct/union を返す関数のタグを記録する。ポインタ返し (`struct N *get(void)`)
+   * でも記録し、`get()->m` のメンバアクセスを解決できるようにする。ポインタ性は
+   * psx_ctx_get_function_ret_is_pointer で別途参照される。 */
+  if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && ret_tag) {
     psx_ctx_set_function_ret_tag(tok->str, tok->len, ret_kind, ret_tag->str, ret_tag->len);
   }
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
