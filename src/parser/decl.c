@@ -1184,6 +1184,78 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   return (node_t *)assign_node;
 }
 
+/* parse_struct_initializer の `.a.b.c = val` (ネスト designator) 経路。
+ * 呼出時に最初の `.a` は消費済みで info に格納されている前提。さらに `.b.c...`
+ * を辿って累積 offset を計算し、最深メンバの型で assign node を作って返す。
+ * `=` と rhs もここで消費する (parse_scalar_brace_initializer)。 */
+static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_member_info_t info) {
+  int cumulative_offset = info.offset;
+  tag_member_info_t cur_info = info;
+  while (curtok()->kind == TK_DOT &&
+         (cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
+         !cur_info.is_tag_pointer) {
+    tk_consume('.');
+    token_ident_t *id2 = tk_consume_ident();
+    if (!id2) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    tag_member_info_t sub_info = {0};
+    sub_info.tag_kind = TK_EOF;
+    lvar_t nested_owner = {0};
+    nested_owner.tag_kind = cur_info.tag_kind;
+    nested_owner.tag_name = cur_info.tag_name;
+    nested_owner.tag_len = cur_info.tag_len;
+    if (!tag_find_member(&nested_owner, id2->str, id2->len, &sub_info)) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+      break;
+    }
+    cumulative_offset += sub_info.offset;
+    cur_info = sub_info;
+  }
+  tk_expect('=');
+  node_t *lhs = psx_node_new_lvar_typed(var->offset + cumulative_offset, cur_info.type_size);
+  ((node_lvar_t *)lhs)->mem.tag_kind = cur_info.tag_kind;
+  ((node_lvar_t *)lhs)->mem.tag_name = cur_info.tag_name;
+  ((node_lvar_t *)lhs)->mem.tag_len = cur_info.tag_len;
+  ((node_lvar_t *)lhs)->mem.is_tag_pointer = cur_info.is_tag_pointer;
+  if (cur_info.bit_width > 0) {
+    ((node_lvar_t *)lhs)->mem.bit_width = cur_info.bit_width;
+    ((node_lvar_t *)lhs)->mem.bit_offset = cur_info.bit_offset;
+    ((node_lvar_t *)lhs)->mem.bit_is_signed = cur_info.bit_is_signed;
+  }
+  node_t *rhs_val = parse_scalar_brace_initializer();
+  node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_val);
+  assign_node->type_size = cur_info.type_size;
+  if (cur_info.fp_kind != TK_FLOAT_KIND_NONE) {
+    lhs->fp_kind = cur_info.fp_kind;
+    assign_node->base.fp_kind = cur_info.fp_kind;
+  }
+  return (node_t *)assign_node;
+}
+
+/* parse_struct_initializer の `.member[idx] = val` 経路。
+ * 呼出時に最初の `.member` は消費済みで info、`[` は呼出側が確認済み。
+ * このヘルパで `[idx] = val` を消費し、assign node を返す。
+ * info.array_len と idx の境界、未存在メンバ、tag pointer 拒否を内部で診断する。 */
+static node_t *consume_indexed_designator_and_build_assign(lvar_t *var, tag_member_info_t info,
+                                                            bool found) {
+  if (!found || info.len <= 0) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+  }
+  if (info.array_len <= 0 || info.is_tag_pointer) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
+  }
+  int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+  tk_expect(']');
+  tk_expect('=');
+  if (nested_idx < 0 || nested_idx >= info.array_len) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+  }
+  return build_nested_array_designator_assign(var, &info, nested_idx);
+}
+
 /* parse_struct_initializer 末尾の未割当スカラメンバ補完。
  * assigned_names/assigned_lens に登録済みでなく、is_supported_scalar_store_size を
  * 満たすスカラ (= 配列/集約でない) メンバを ordinal 順に探し、明示 0 代入を append する
@@ -1276,54 +1348,13 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         token_ident_t *id = tk_consume_ident();
         if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
         found = tag_find_member(var, id->str, id->len, &info);
-        /* ネストした designator `.a.b = val` (C11 6.7.9p6 + 6.7.9p17):
-         * a が struct/union メンバなら `.b` をさらに辿り、累積 offset と
-         * 最深メンバの型で代入ノードを作る。`.a.b.c = ...` のチェインにも対応。 */
+        /* ネスト designator `.a.b = val` (C11 6.7.9p6 + 6.7.9p17): a が
+         * struct/union メンバなら `.b` を辿り、累積 offset の lhs と代入を作る。 */
         if (found && curtok()->kind == TK_DOT &&
             (info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) &&
             !info.is_tag_pointer) {
-          int cumulative_offset = info.offset;
-          tag_member_info_t cur_info = info;
-          while (curtok()->kind == TK_DOT &&
-                 (cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
-                 !cur_info.is_tag_pointer) {
-            tk_consume('.');
-            token_ident_t *id2 = tk_consume_ident();
-            if (!id2) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-            tag_member_info_t sub_info = {0};
-            sub_info.tag_kind = TK_EOF;
-            lvar_t nested_owner = {0};
-            nested_owner.tag_kind = cur_info.tag_kind;
-            nested_owner.tag_name = cur_info.tag_name;
-            nested_owner.tag_len = cur_info.tag_len;
-            if (!tag_find_member(&nested_owner, id2->str, id2->len, &sub_info)) {
-              psx_diag_ctx(curtok(), "decl", "%s",
-                           diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-              break;
-            }
-            cumulative_offset += sub_info.offset;
-            cur_info = sub_info;
-          }
-          tk_expect('=');
-          node_t *lhs = psx_node_new_lvar_typed(var->offset + cumulative_offset,
-                                                cur_info.type_size);
-          ((node_lvar_t *)lhs)->mem.tag_kind = cur_info.tag_kind;
-          ((node_lvar_t *)lhs)->mem.tag_name = cur_info.tag_name;
-          ((node_lvar_t *)lhs)->mem.tag_len = cur_info.tag_len;
-          ((node_lvar_t *)lhs)->mem.is_tag_pointer = cur_info.is_tag_pointer;
-          if (cur_info.bit_width > 0) {
-            ((node_lvar_t *)lhs)->mem.bit_width = cur_info.bit_width;
-            ((node_lvar_t *)lhs)->mem.bit_offset = cur_info.bit_offset;
-            ((node_lvar_t *)lhs)->mem.bit_is_signed = cur_info.bit_is_signed;
-          }
-          node_t *rhs_val = parse_scalar_brace_initializer();
-          node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_val);
-          assign_node->type_size = cur_info.type_size;
-          if (cur_info.fp_kind != TK_FLOAT_KIND_NONE) {
-            lhs->fp_kind = cur_info.fp_kind;
-            assign_node->base.fp_kind = cur_info.fp_kind;
-          }
-          init_chain = append_to_init_chain(init_chain, (node_t *)assign_node);
+          init_chain = append_to_init_chain(init_chain,
+              consume_nested_designator_and_build_assign(var, info));
           /* トップレベル `a` への部分代入として記録: `.a.x=1, .a.y=2` 混在を許す。
            * indexed-only と同じ扱い (full 代入との重複だけ弾く)。 */
           assigned_names[assigned_n] = info.name;
@@ -1336,24 +1367,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
           continue;
         }
         if (tk_consume('[')) {
-          // Nested designator: .member[idx] = val
-          if (!found || info.len <= 0) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-          }
-          if (info.array_len <= 0 || info.is_tag_pointer) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
-          }
-          int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
-          tk_expect(']');
-          tk_expect('=');
-          if (nested_idx < 0 || nested_idx >= info.array_len) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
-          }
-          // 同名 full 代入の後にこの indexed が来ているなら重複。
-          // indexed 同士は別 index の可能性があるので許す。
+          /* indexed designator `.member[idx] = val`。同名 full との重複は診断。
+           * indexed 同士は別 index の可能性があるので許す。 */
           for (int i = 0; i < assigned_n; i++) {
             if (assigned_kind[i] == 0 &&
                 assigned_lens[i] == info.len &&
@@ -1364,7 +1379,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
             }
           }
           init_chain = append_to_init_chain(init_chain,
-              build_nested_array_designator_assign(var, &info, nested_idx));
+              consume_indexed_designator_and_build_assign(var, info, found));
           assigned_names[assigned_n] = info.name;
           assigned_lens[assigned_n] = info.len;
           assigned_kind[assigned_n] = 1; // indexed-only
