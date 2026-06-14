@@ -960,6 +960,7 @@ static const test_case_t test_cases[] = {
     {"probes", "struct_multidim_array_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_multidim_array_member.c", 42, 0},
     {"probes", "struct_pointer_var_size", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_pointer_var_size.c", 42, 0},
     {"probes", "ternary_pointer_null_branch", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ternary_pointer_null_branch.c", 42, 0},
+    {"probes", "ternary_long_branch", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ternary_long_branch.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

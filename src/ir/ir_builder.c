@@ -620,8 +620,15 @@ static ir_val_t build_node_num(ir_build_ctx_t *ctx, node_t *node) {
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_LOAD_IMM);
-  inst->dst = ir_val_vreg(v, IR_TY_I32);
-  inst->src1 = ir_val_imm(IR_TY_I32, n->val);
+  /* 32bit に収まらないリテラル (long / long long) は i64 で生成する。i32 のままだと
+   * 後段で 64bit へ拡張する際 sxtw が下位 32bit を符号拡張して上位を捨ててしまう。
+   * 境界は [INT32_MIN, UINT32_MAX]: この範囲は 32bit レジスタのビットパターンで
+   * 符号付き/符号なしどちらにも解釈でき、既存の 32bit unsigned リテラル
+   * (0xFFFFFFFFu 等) の扱いを変えない。 */
+  ir_type_t ity = (n->val > 0xFFFFFFFFLL || n->val < (-2147483647LL - 1))
+                    ? IR_TY_I64 : IR_TY_I32;
+  inst->dst = ir_val_vreg(v, ity);
+  inst->src1 = ir_val_imm(ity, n->val);
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -1156,7 +1163,11 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   } else if (is_fp) {
     result_ty = (l.type == IR_TY_F64 || r.type == IR_TY_F64) ? IR_TY_F64 : IR_TY_F32;
   } else {
-    result_ty = IR_TY_I32;
+    /* 整数演算: いずれかのオペランドが 64bit (long / long long / pointer) なら
+     * 結果も 64bit。さもないと i32。i32 のままだと後段で 64bit へ拡張する際に
+     * sxtw が下位 32bit へ切り詰めてしまう (例 `(c)? a+a : 0`、a が long)。 */
+    int wide = (ir_type_size(l.type) >= 8) || (ir_type_size(r.type) >= 8);
+    result_ty = wide ? IR_TY_I64 : IR_TY_I32;
   }
   /* 浮動小数点演算: 整数 src を float に昇格 */
   if (is_fp) {
@@ -1379,6 +1390,21 @@ static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(v_res, IR_TY_I32);
 }
 
+/* 三項演算子の分岐値が 64bit 整数 (long / long long、または 32bit に収まらない
+ * リテラル) かを判定する。ポインタ・浮動小数は別経路で扱うので対象外。
+ * 64bit 分岐があるのに結果型を i32 と誤判定すると、8 バイト値が 4 バイト slot へ
+ * 切り詰められる (例 `(c)?5:10000000000L` が下位 32bit になる)。 */
+static int ternary_branch_is_wide_int(node_t *n) {
+  if (!n) return 0;
+  if (n->fp_kind != TK_FLOAT_KIND_NONE) return 0;
+  if (n->kind == ND_NUM) {
+    long long v = ((node_num_t *)n)->val;
+    /* build_node_num と同じ境界: [INT32_MIN, UINT32_MAX] は 32bit で扱う。 */
+    return v > 0xFFFFFFFFLL || v < (-2147483647LL - 1);
+  }
+  return psx_node_type_size(n) >= 8;
+}
+
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
    * 結果型は fp_kind から推定 (整数のみ or float/double)。
@@ -1399,6 +1425,12 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
        node->rhs->kind == ND_FUNCREF || node->rhs->kind == ND_ADDR ||
        (c->els && (c->els->kind == ND_FUNCREF || c->els->kind == ND_ADDR)))) {
     res_ty = IR_TY_PTR;
+    slot_size = 8;
+  }
+  /* long / long long 分岐: 結果は 64bit 整数。8 バイト slot で扱う。 */
+  if (res_ty == IR_TY_I32 &&
+      (ternary_branch_is_wide_int(node->rhs) || ternary_branch_is_wide_int(c->els))) {
+    res_ty = IR_TY_I64;
     slot_size = 8;
   }
   int slot_vreg = ir_func_new_vreg(ctx->f);
@@ -1431,11 +1463,12 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, cv);
     vt = ir_val_vreg(v, res_ty);
   }
-  /* ポインタ三項で分岐値が狭い整数 (例 null pointer constant `0` = i32) の場合、
-   * slot は 8 バイトなので 8 バイト幅へ拡張してから STORE する。さもないと
-   * 4 バイトのみ書かれ、merge の 8 バイト LOAD で上位 4 バイトが garbage になる。 */
-  if (res_ty == IR_TY_PTR && vt.type != IR_TY_PTR) {
-    vt = coerce_to_type(ctx, vt, IR_TY_PTR);
+  /* 8 バイト結果 (ポインタ / long) で分岐値が狭い整数 (例 null pointer constant
+   * `0` = i32、または int 分岐) の場合、slot は 8 バイトなので 8 バイト幅へ拡張
+   * してから STORE する。さもないと 4 バイトのみ書かれ、merge の 8 バイト LOAD で
+   * 上位 4 バイトが garbage になる。 */
+  if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && vt.type != res_ty) {
+    vt = coerce_to_type(ctx, vt, res_ty);
   }
   ir_inst_t *st_t = ir_inst_new(IR_STORE);
   st_t->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
@@ -1459,8 +1492,8 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, cv);
     ve = ir_val_vreg(v, res_ty);
   }
-  if (res_ty == IR_TY_PTR && ve.type != IR_TY_PTR) {
-    ve = coerce_to_type(ctx, ve, IR_TY_PTR);
+  if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && ve.type != res_ty) {
+    ve = coerce_to_type(ctx, ve, res_ty);
   }
   ir_inst_t *st_e = ir_inst_new(IR_STORE);
   st_e->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
@@ -2243,6 +2276,13 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
   ir_type_t ret_ty = ir_type_from_node(&fn->base);
+  /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
+   * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
+   * 上位 32bit を捨ててしまう。 */
+  if (ret_ty == IR_TY_I32 &&
+      psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
+    ret_ty = IR_TY_PTR;
+  }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
   ctx->f->is_variadic = fn->is_variadic;
   ctx->f->nargs_fixed = fn->nargs;
