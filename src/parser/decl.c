@@ -1435,6 +1435,20 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         token_ident_t *id = tk_consume_ident();
         if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
         found = tag_find_member(var, id->str, id->len, &info);
+        /* C11 6.7.9p17: designator の後に続く位置指定初期化子は、その designated
+         * member の「次」のメンバから継続する。positional 用 ordinal を designated
+         * member の index+1 に同期する (`{.b=2, 3, 4}` の 3 は c、4 は d)。 */
+        if (found) {
+          tag_member_info_t probe = {0};
+          for (int o = 0; o < member_count; o++) {
+            if (tag_get_member_at(var, o, &probe) && probe.len == info.len &&
+                probe.len > 0 && info.name &&
+                strncmp(probe.name, info.name, (size_t)info.len) == 0) {
+              ordinal = o + 1;
+              break;
+            }
+          }
+        }
         /* ネスト designator `.a.b = val` (C11 6.7.9p6 + 6.7.9p17): a が
          * struct/union メンバなら `.b` を辿り、累積 offset の lhs と代入を作る。 */
         if (found && curtok()->kind == TK_DOT &&
