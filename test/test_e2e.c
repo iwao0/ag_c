@@ -973,6 +973,8 @@ static const test_case_t test_cases[] = {
     {"probes", "struct_array_brace_elision", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_array_brace_elision.c", 42, 0},
     {"probes", "global_nested_struct_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_nested_struct_init.c", 42, 0},
     {"probes", "global_designator_nested_slot", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_designator_nested_slot.c", 42, 0},
+    {"probes", "nested_ternary_long", CASE_INT_FILE, "test/fixtures/probes_found_bugs/nested_ternary_long.c", 42, 0},
+    {"probes", "compound_literal_struct_arg", CASE_INT_FILE, "test/fixtures/probes_found_bugs/compound_literal_struct_arg.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

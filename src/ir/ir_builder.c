@@ -1277,6 +1277,20 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     cargs = calloc((size_t)fn->nargs, sizeof(ir_val_t));
     for (int i = 0; i < fn->nargs; i++) {
       node_t *arg = fn->args[i];
+      /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
+       * struct 値引数のときは init (要素ストア) を先に評価してから temp lvar を
+       * struct 引数として扱う。これをしないと先頭 8B を値ロードして渡し、9-16B
+       * struct の x1 分 (= 後半メンバ) が落ちていた。 */
+      if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
+        node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
+        lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
+        int cl_sz = owner_cl ? owner_cl->size : rlv->mem.type_size;
+        if (cl_sz > 8 && !rlv->mem.is_pointer) {
+          (void)build_expr(ctx, arg->lhs);
+          if (ctx->failed) return ir_val_none();
+          arg = arg->rhs;
+        }
+      }
       int arg_full_size = 0;
       if (arg && arg->kind == ND_LVAR) {
         node_lvar_t *lv = (node_lvar_t *)arg;
@@ -1422,6 +1436,12 @@ static int ternary_branch_is_wide_int(node_t *n) {
     long long v = ((node_num_t *)n)->val;
     /* build_node_num と同じ境界: [INT32_MIN, UINT32_MAX] は 32bit で扱う。 */
     return v > 0xFFFFFFFFLL || v < (-2147483647LL - 1);
+  }
+  /* 入れ子三項 (`a ? x : (b ? bigL : y)`): 内側の分岐に 64bit があれば結果も 64bit。
+   * psx_node_type_size は NUM リテラルを 0 とみなすため、再帰でリテラルを拾う。 */
+  if (n->kind == ND_TERNARY) {
+    return ternary_branch_is_wide_int(n->rhs) ||
+           ternary_branch_is_wide_int(((node_ctrl_t *)n)->els);
   }
   return psx_node_type_size(n) >= 8;
 }
