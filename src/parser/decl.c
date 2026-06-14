@@ -792,131 +792,143 @@ static node_t *try_parse_array_braced_string_initializer(lvar_t *var, int array_
   return init_chain ? init_chain : psx_node_new_num(0);
 }
 
-static node_t *parse_array_initializer(lvar_t *var) {
+/* `{ elem, elem, ... }` 形の配列 brace 初期化。
+ * 呼出側は冒頭 `{` をまだ消費していない前提 (本ヘルパが consume する)。
+ * designator `[idx] = val` / 多次元ネスト `{{...},{...}}` / 要素 struct
+ * 初期化子 / 未指定要素の 0 補完 (C11 6.7.9p21) を全て担う。 */
+static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
+  tk_consume('{');
   node_t *init_chain = NULL;
   int init_elem_count = 0;
+  int idx = 0;
+  int row_len = (var->outer_stride > 0 && var->elem_size > 0) ? var->outer_stride / var->elem_size : 0;
+  bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
+  if (!tk_consume('}')) {
+    for (;;) {
+      int target_idx = idx;
+      if (tk_consume('[')) {
+        target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+        tk_expect(']');
+        tk_expect('=');
+        if (row_len > 0) target_idx *= row_len;
+      }
+      /* 多次元配列のネスト brace: {{1,2,3},{4,5,6}} など。
+       * 3D/4D/5D... のチャンクサイズを組み立てて parse_array_init_chunk へ委譲。 */
+      if (row_len > 0 && tk_consume('{')) {
+        int chunk_sizes[8] = {0};
+        int depth = 0;
+        chunk_sizes[depth++] = row_len;
+        if (var->mid_stride > 0 && var->elem_size > 0) {
+          chunk_sizes[depth++] = var->mid_stride / var->elem_size;
+        }
+        for (int i = 0; i < var->extra_strides_count && depth < 8; i++) {
+          if (var->elem_size > 0) {
+            chunk_sizes[depth++] = var->extra_strides[i] / var->elem_size;
+          }
+        }
+        node_t *sub = parse_array_init_chunk(var, &init_elem_count, assigned, array_len,
+                                             target_idx, chunk_sizes, depth);
+        if (sub) {
+          init_chain = init_chain ? psx_node_new_binary(ND_COMMA, init_chain, sub) : sub;
+        }
+        idx = target_idx + row_len;
+      } else {
+        bump_initializer_count(&init_elem_count);
+        if (target_idx >= array_len) {
+          psx_diag_ctx(curtok(), "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+        }
+        if (assigned[target_idx]) {
+          psx_diag_ctx(curtok(), "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
+        }
+        /* 配列要素が struct/union で初期化子が `{...}` (`struct P a[3] = {{1, 2}, ...}`):
+         * 要素単位の代入式チェーンに展開する。 */
+        if (curtok() && curtok()->kind == TK_LBRACE &&
+            !var->is_tag_pointer &&
+            (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
+          init_chain = append_to_init_chain(init_chain,
+              parse_array_elem_struct_brace_init(var, target_idx));
+        } else {
+          init_chain = append_to_init_chain(init_chain,
+              build_array_elem_assign(var, target_idx, parse_scalar_brace_initializer()));
+        }
+        assigned[target_idx] = true;
+        idx = target_idx + 1;
+      }
+      if (tk_consume('}')) break;
+      tk_expect(',');
+      if (tk_consume('}')) break;
+    }
+  }
+  /* C11 6.7.9p21: 部分初期化や指定初期化子で書かれなかった要素は 0 で初期化。
+   * elem_size が 1 を超えるスカラ要素のみ対応 (ネスト struct 配列は assigned[]
+   * が要素単位でないので未対応)。 */
+  if (array_len > 0 && var->elem_size > 0) {
+    for (int i = 0; i < array_len; i++) {
+      if (assigned[i]) continue;
+      init_chain = append_to_init_chain(init_chain,
+          build_array_elem_assign(var, i, psx_node_new_num(0)));
+    }
+  }
+  free(assigned);
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
+/* `char a[N] = "hello"` 形の raw 文字列リテラル初期化 (C11 6.7.9p14)。
+ * 各文字を psx_node_new_num で elem ごとに assign し、配列長より短ければ
+ * 残りを 0 で埋める (p21)。 */
+static node_t *build_array_string_initializer(lvar_t *var, node_string_t *s, int array_len) {
+  node_t *init_chain = NULL;
+  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  if (!lit) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+  }
+  int idx = 0;
+  int src_pos = 0;
+  while (src_pos < lit->len && idx < array_len) {
+    uint32_t cp = 0;
+    if (lit->str[src_pos] == '\\') {
+      if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
+        cp = (unsigned char)lit->str[src_pos];
+        src_pos++;
+      }
+    } else {
+      cp = (unsigned char)lit->str[src_pos];
+      src_pos++;
+    }
+    init_chain = append_to_init_chain(init_chain,
+        build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)cp)));
+    idx++;
+  }
+  /* 文字列が配列長より短い場合 (`char a[10] = "hi"`) は残り全てを 0 で埋める。 */
+  while (idx < array_len) {
+    init_chain = append_to_init_chain(init_chain,
+        build_array_elem_assign(var, idx, psx_node_new_num(0)));
+    idx++;
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
+static node_t *parse_array_initializer(lvar_t *var) {
   int array_len = var->elem_size > 0 ? (var->size / var->elem_size) : 0;
-  // 特例: `char a[] = {"hello"};` のように波括弧で囲まれた文字列リテラル
+  // 特例: `char a[] = {"hello"};` 形の波括弧で囲まれた文字列リテラル
   // (隣接連結も含む) は C11 6.7.9p14 により素の文字列初期化と同じに扱う。
   {
     node_t *str_init = try_parse_array_braced_string_initializer(var, array_len);
     if (str_init) return str_init;
   }
-  if (tk_consume('{')) {
-    int idx = 0;
-    int row_len = (var->outer_stride > 0 && var->elem_size > 0) ? var->outer_stride / var->elem_size : 0;
-    bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
-    if (!tk_consume('}')) {
-      for (;;) {
-        int target_idx = idx;
-        if (tk_consume('[')) {
-          target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
-          tk_expect(']');
-          tk_expect('=');
-          if (row_len > 0) target_idx *= row_len;
-        }
-        // 多次元配列のネストされた波括弧: {{1,2,3},{4,5,6}} など。
-        // 3D / 4D / 5D ... と更にネストが深くなり得るので、各次元のチャンクサイズ
-        // を組み立てて parse_array_init_chunk へ委譲する。
-        if (row_len > 0 && tk_consume('{')) {
-          int chunk_sizes[8] = {0};
-          int depth = 0;
-          chunk_sizes[depth++] = row_len;
-          if (var->mid_stride > 0 && var->elem_size > 0) {
-            chunk_sizes[depth++] = var->mid_stride / var->elem_size;
-          }
-          for (int i = 0; i < var->extra_strides_count && depth < 8; i++) {
-            if (var->elem_size > 0) {
-              chunk_sizes[depth++] = var->extra_strides[i] / var->elem_size;
-            }
-          }
-          node_t *sub = parse_array_init_chunk(var, &init_elem_count, assigned, array_len,
-                                               target_idx, chunk_sizes, depth);
-          if (sub) {
-            init_chain = init_chain ? psx_node_new_binary(ND_COMMA, init_chain, sub) : sub;
-          }
-          idx = target_idx + row_len;
-        } else {
-          bump_initializer_count(&init_elem_count);
-          if (target_idx >= array_len) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
-          }
-          if (assigned[target_idx]) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_DUPLICATE_ELEMENT));
-          }
-          /* 配列要素が struct/union で、初期化子が `{...}` 形式のとき:
-           * `struct P a[3] = {{1, 2}, ...}` のような nested brace。
-           * 要素単位の代入式チェーンに展開する。 */
-          if (curtok() && curtok()->kind == TK_LBRACE &&
-              !var->is_tag_pointer &&
-              (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
-            init_chain = append_to_init_chain(init_chain,
-                parse_array_elem_struct_brace_init(var, target_idx));
-          } else {
-            init_chain = append_to_init_chain(init_chain,
-                build_array_elem_assign(var, target_idx, parse_scalar_brace_initializer()));
-          }
-          assigned[target_idx] = true;
-          idx = target_idx + 1;
-        }
-        if (tk_consume('}')) break;
-        tk_expect(',');
-        if (tk_consume('}')) break;
-      }
-    }
-    /* C11 6.7.9p21: 部分初期化や指定初期化子で書かれなかった要素は 0 で
-     * 初期化される。`int a[5] = {1, 2}` → a[2..4] = 0。
-     * `int a[5] = {[2] = 100}` → a[0, 1, 3, 4] = 0。
-     * elem_size が 1 を超えるスカラ要素 (int/short/long 等) のみ対応。
-     * ネストした構造体配列は assigned[] が要素単位でないので未対応。 */
-    if (array_len > 0 && var->elem_size > 0) {
-      for (int i = 0; i < array_len; i++) {
-        if (assigned[i]) continue;
-        init_chain = append_to_init_chain(init_chain,
-            build_array_elem_assign(var, i, psx_node_new_num(0)));
-      }
-    }
-    free(assigned);
-    return init_chain ? init_chain : psx_node_new_num(0);
+  if (curtok() && curtok()->kind == TK_LBRACE) {
+    return parse_array_braced_init(var, array_len);
   }
 
   node_t *rhs = psx_expr_assign();
+  /* `char a[N] = "hello"` 形 (波括弧なし raw 文字列): 各文字を要素 assign。 */
   if (var->elem_size == 1 && rhs->kind == ND_STRING) {
-    node_string_t *s = (node_string_t *)rhs;
-    string_lit_t *lit = find_string_lit_by_label(s->string_label);
-    if (!lit) {
-      psx_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
-    }
-    int idx = 0;
-    int src_pos = 0;
-    while (src_pos < lit->len && idx < array_len) {
-      uint32_t cp = 0;
-      if (lit->str[src_pos] == '\\') {
-        if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
-          cp = (unsigned char)lit->str[src_pos];
-          src_pos++;
-        }
-      } else {
-        cp = (unsigned char)lit->str[src_pos];
-        src_pos++;
-      }
-      init_chain = append_to_init_chain(init_chain,
-          build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)cp)));
-      idx++;
-    }
-    /* 文字列が配列長より短い場合 (`char a[10] = "hi"`) は残り全てを 0 で埋める
-     * (C11 6.7.9p21)。修正前は 1 個だけ NUL を書いていたため、a[3..9] が
-     * 未初期化スタック値のまま残っていた。 */
-    while (idx < array_len) {
-      init_chain = append_to_init_chain(init_chain,
-          build_array_elem_assign(var, idx, psx_node_new_num(0)));
-      idx++;
-    }
-    return init_chain ? init_chain : psx_node_new_num(0);
+    return build_array_string_initializer(var, (node_string_t *)rhs, array_len);
   }
+  node_t *init_chain = NULL;
   /* Extension: `int arr[N] = (T[N]){...}` 形式 (compound literal で配列初期化)。
    * parse_compound_literal_from_type は ND_COMMA(init_chain, ND_ADDR(lvar)) を
    * 返すので、その lvar から要素ごとに arr へ copy する init_chain を生成する。
