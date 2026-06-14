@@ -977,6 +977,7 @@ static const test_case_t test_cases[] = {
     {"probes", "compound_literal_struct_arg", CASE_INT_FILE, "test/fixtures/probes_found_bugs/compound_literal_struct_arg.c", 42, 0},
     {"probes", "struct_value_arg_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_value_arg_return.c", 42, 0},
     {"probes", "cast_to_signed_comparison", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cast_to_signed_comparison.c", 42, 0},
+    {"probes", "unsigned_member_global_load", CASE_INT_FILE, "test/fixtures/probes_found_bugs/unsigned_member_global_load.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

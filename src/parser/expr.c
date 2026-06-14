@@ -927,6 +927,11 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     if (mem_array_len > 0 && mem_size > 0) deref->pointee_is_bool = 1;
     else                                    deref->is_bool = 1;
   }
+  /* unsigned メンバ: load を zero-extend させるため is_unsigned を伝播
+   * (配列メンバは要素 subscript 後に判定するのでスカラメンバのみ)。 */
+  if (mem_info->is_unsigned && !(mem_array_len > 0 && mem_size > 0)) {
+    deref->is_unsigned = 1;
+  }
   return (node_t *)deref;
 }
 
@@ -3105,6 +3110,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.base.fp_kind = gv->fp_kind;
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
+    /* unsigned スカラ: load を zero-extend するため is_unsigned を伝播。 */
+    gvar_node->mem.is_unsigned = gv->is_unsigned;
     gvar_node->name = gv->name;
     gvar_node->name_len = gv->name_len;
     gvar_node->is_thread_local = gv->is_thread_local;

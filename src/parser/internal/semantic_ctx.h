@@ -36,6 +36,8 @@ void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int t
                                      tk_float_kind_t fp_kind);
 void psx_ctx_set_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
                                      char *member_name, int member_len, int is_bool);
+void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                        char *member_name, int member_len, int is_unsigned);
 void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
                                           char *member_name, int member_len, int outer_stride);
 
@@ -64,6 +66,7 @@ typedef struct {
   int bit_is_signed;
   tk_float_kind_t fp_kind;
   int is_bool;
+  int is_unsigned;
   int outer_stride;
 } tag_member_info_t;
 

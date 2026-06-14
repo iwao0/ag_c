@@ -60,6 +60,7 @@ struct global_var_t {
   int extra_strides[5];
   unsigned char extra_strides_count;
   unsigned char is_bool;  // _Bool スカラ: 代入/初期化を 0/1 に正規化する
+  unsigned char is_unsigned;  // unsigned スカラ: load を zero-extend (符号拡張しない)
 };
 extern global_var_t *global_vars;
 
