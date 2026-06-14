@@ -1934,6 +1934,17 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     int pointee_size = (param_ptr_levels >= 2) ? 8 : ds->elem_size;
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
     var->base_deref_size = (short)ds->elem_size;
+    /* `long *a` / `unsigned long *a` / scalar `T **a` のように pointee が 8 バイトの
+     * ポインタ仮引数は size==elem_size==8 となり、lvar_is_pointer の size>elem_size
+     * 判定に漏れる。pointer_qual_levels を立ててポインタと認識させ subscript `a[i]`
+     * を通す。
+     * 注意: int* など pointee<8 では size>elem_size 判定が既に効いておりポインタ
+     * 認識されている。そこへ pql を立てると subscript の結果型が誤って pointer 化し
+     * `p[i]` が壊れる (arr_as_ptr 回帰)。よって pointee_size>=8 のときだけ立てる。
+     * fp 単段ポインタ (`double *a`) は pointee_fp_kind 経路で処理済みなので除外。 */
+    if (pointee_size >= 8 && !(param_ptr_levels == 1 && ds->fp_kind != TK_FLOAT_KIND_NONE)) {
+      var->pointer_qual_levels = param_ptr_levels;
+    }
     /* `double *a` / `float *a` の単段ポインタ仮引数: pointee の fp 種別を伝播し、
      * `*a` / `a[i]` が fp load/store になるようにする (未設定だと整数 load + scvtf に
      * なって値が壊れていた)。 */

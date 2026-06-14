@@ -962,6 +962,7 @@ static const test_case_t test_cases[] = {
     {"probes", "ternary_pointer_null_branch", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ternary_pointer_null_branch.c", 42, 0},
     {"probes", "ternary_long_branch", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ternary_long_branch.c", 42, 0},
     {"probes", "long_return_value", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_return_value.c", 42, 0},
+    {"probes", "long_pointer_param_and_call", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_pointer_param_and_call.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

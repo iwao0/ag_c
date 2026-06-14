@@ -1319,6 +1319,17 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *call = ir_inst_new(IR_CALL);
   /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
   ir_type_t ret_ty = ir_type_from_node(node);
+  /* 直接呼び出しで戻り値が long / pointer のとき、呼び出し側でも 8 バイト値として
+   * 扱う。i32 のままだと `h(x) * 2` のように戻り値を使う演算が 32bit で行われ
+   * 上位ビットが落ちる (h が long を返す場合)。 */
+  if (ret_ty == IR_TY_I32 && !fn->callee && fn->funcname) {
+    if (psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
+      ret_ty = IR_TY_PTR;
+    } else {
+      token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
+      if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) ret_ty = IR_TY_I64;
+    }
+  }
   call->dst = ir_val_vreg(v, ret_ty);
   if (fn->callee) {
     call->callee = callee_v;
