@@ -414,10 +414,8 @@ void psx_node_expect_lvalue(node_t *node, const char *op) {
 void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_expect_lvalue(node, op);
   psx_node_reject_const_assign(node, op);
-  if (node->fp_kind != TK_FLOAT_KIND_NONE) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED, curtok(),
-                   diag_message_for(DIAG_ERR_PARSER_INTEGER_SCALAR_REQUIRED), (char *)op);
-  }
+  /* C11 6.5.2.4 / 6.5.3.1: ++ / -- の対象は実数型 (整数・浮動小数点) または
+   * ポインタ型でよい。float / double も許可する。 */
 }
 
 node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {

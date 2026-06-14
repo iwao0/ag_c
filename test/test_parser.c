@@ -1695,8 +1695,8 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
   expect_parse_fail("main() { ++1; }");                  // lvalueでない
   expect_parse_fail("main() { 1++; }");                  // lvalueでない
-  expect_parse_fail("main() { float f=1.0; ++f; }");     // 非整数スカラー
-  expect_parse_fail("main() { double d=1.0; d--; }");    // 非整数スカラー
+  expect_parse_ok("main() { float f=1.0; ++f; }");       // C11: 浮動小数点の ++ は合法
+  expect_parse_ok("main() { double d=1.0; d--; }");      // C11: 浮動小数点の -- は合法
   expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
   expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return

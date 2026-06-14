@@ -1518,10 +1518,20 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
     if (ds > 1) step = ds;
   }
   int is_inc = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);
-  ir_op_t binop = is_inc ? IR_ADD : IR_SUB;
-  int v_new = emit_binop(ctx, binop,
-                          ir_val_vreg(v_old, vty),
-                          ir_val_imm(vty, step), vty);
+  /* float / double の ++/-- は fp 専用オペコード (IR_FADD/IR_FSUB) を使い、step は
+   * 1.0 とする。整数 1 を I2F で fp へ変換した値を加減算する (整数即値をそのまま
+   * fadd するとビットパターンとして誤解釈されるため)。 */
+  ir_op_t binop;
+  ir_val_t step_val;
+  if (is_fp_type(vty)) {
+    binop = is_inc ? IR_FADD : IR_FSUB;
+    int one_v = emit_load_imm(ctx, 1, IR_TY_I32);
+    step_val = coerce_to_type(ctx, ir_val_vreg(one_v, IR_TY_I32), vty);
+  } else {
+    binop = is_inc ? IR_ADD : IR_SUB;
+    step_val = ir_val_imm(vty, step);
+  }
+  int v_new = emit_binop(ctx, binop, ir_val_vreg(v_old, vty), step_val, vty);
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
   st->src2 = ir_val_vreg(v_new, vty);
