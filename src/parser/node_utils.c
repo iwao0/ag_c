@@ -447,6 +447,15 @@ node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *r
     }
   }
   node_t *op_expr = psx_node_new_binary(op_kind, lhs, rhs);
+  /* C11 6.3.1.2: _Bool への (複合) 代入は結果を 0/1 に正規化する。
+   * 通常代入と同様、op の結果を (result != 0) で包む。 */
+  int lhs_is_bool = 0;
+  if (lhs && (lhs->kind == ND_LVAR || lhs->kind == ND_DEREF || lhs->kind == ND_GVAR)) {
+    lhs_is_bool = ((node_mem_t *)lhs)->is_bool;
+  }
+  if (lhs_is_bool) {
+    op_expr = psx_node_new_binary(ND_NE, op_expr, psx_node_new_num(0));
+  }
   node_mem_t *assign_node = psx_node_new_assign(lhs, op_expr);
   assign_node->type_size = psx_node_type_size(lhs);
   assign_node->base.fp_kind = lhs ? lhs->fp_kind : 0;
