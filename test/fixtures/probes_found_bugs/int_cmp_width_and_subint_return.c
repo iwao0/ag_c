@@ -11,6 +11,8 @@ char trunc_char(int x){ return x; }       // sub-int 戻り
 short trunc_short(int x){ return x; }
 unsigned uret(void){ return 0xFFFFFFFFu; }
 int iret(void){ return -42; }
+unsigned char  uc_ret(int x){ return x; }   // unsigned sub-int 戻りはゼロ拡張
+unsigned short us_ret(int x){ return x; }
 
 int main(void) {
   int r = 0;
@@ -38,6 +40,12 @@ int main(void) {
   // (int)/(unsigned) キャストと funcall の相互作用 (符号ラベルの取り扱い)
   if ((int)uret() != -1) r |= 4096;         // (int)0xFFFFFFFF = -1
   if ((unsigned)iret() != 4294967254u) r |= 8192; // (unsigned)(-42)
+
+  // unsigned char/short 戻りはゼロ拡張 (符号拡張で負に化けない)
+  if (uc_ret(200) != 200) r |= 16384;       // (unsigned char)200 = 200
+  if (uc_ret(300) != 44) r |= 32768;        // 300 & 0xff
+  if (us_ret(40000) != 40000) r |= 65536;   // bit15 立っても正値
+  if (us_ret(70000) != 4464) r |= 131072;   // 70000 & 0xffff
 
   return r == 0 ? 42 : r;
 }

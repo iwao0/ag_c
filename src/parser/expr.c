@@ -18,6 +18,7 @@ static token_kind_t g_current_ret_token_kind = TK_INT;
 static tk_float_kind_t g_current_ret_fp_kind = TK_FLOAT_KIND_NONE;
 static int g_current_ret_struct_size = 0;
 static int g_current_ret_is_pointer = 0;
+static int g_current_ret_is_unsigned = 0;
 /* 1 のとき parse_parenthesized_type_size は型の「サイズ」ではなく「アラインメント」を
  * 返す (_Alignof 用)。struct は agg_align、配列は要素アラインメント (要素数を掛けない)。 */
 static int g_parse_type_alignof_mode = 0;
@@ -1720,6 +1721,14 @@ void psx_expr_set_current_func_ret_is_pointer(int is_pointer) {
 
 int psx_expr_current_func_ret_is_pointer(void) {
   return g_current_ret_is_pointer;
+}
+
+void psx_expr_set_current_func_ret_is_unsigned(int is_unsigned) {
+  g_current_ret_is_unsigned = is_unsigned ? 1 : 0;
+}
+
+int psx_expr_current_func_ret_is_unsigned(void) {
+  return g_current_ret_is_unsigned;
 }
 
 void psx_expr_set_current_funcname(char *name, int len) {

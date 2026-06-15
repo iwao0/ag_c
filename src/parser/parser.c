@@ -2523,6 +2523,7 @@ static node_t *funcdef(void) {
   int ret_is_unsigned = !ret_is_ptr && psx_last_type_is_unsigned();
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   psx_expr_set_current_func_ret_is_pointer(ret_is_ptr);
+  psx_expr_set_current_func_ret_is_unsigned(ret_is_unsigned);
   // 構造体戻り値の場合、サイズを記録（ポインタ戻り値は除く）
   if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr) {
     if (ret_tag && psx_ctx_has_tag_type(ret_kind, ret_tag->str, ret_tag->len)) {

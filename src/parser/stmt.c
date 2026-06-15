@@ -419,12 +419,22 @@ static node_t *parse_stmt_return(void) {
     token_kind_t rk = psx_expr_current_func_ret_token_kind();
     if (!psx_expr_current_func_ret_is_pointer() && node->lhs &&
         (rk == TK_CHAR || rk == TK_SHORT)) {
-      int sh = (rk == TK_CHAR) ? 56 : 48;
-      node_t *shl = psx_node_new_binary(ND_SHL, node->lhs, psx_node_new_num(sh));
-      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
-      psx_node_set_unsigned(shl, 0);
-      psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) */
-      node->lhs = shr;
+      if (psx_expr_current_func_ret_is_unsigned()) {
+        /* unsigned char/short: ゼロ拡張 (& 0xff / 0xffff)。符号拡張すると bit 7/15 が
+         * 立つ値 (`unsigned short f(){return 40000;}`) が負に化ける。 */
+        long long mask = (rk == TK_CHAR) ? 0xffLL : 0xffffLL;
+        node_t *m = psx_node_new_binary(ND_BITAND, node->lhs, psx_node_new_num(mask));
+        psx_node_set_unsigned(m, 1);
+        node->lhs = m;
+      } else {
+        /* signed char/short: 算術シフトで符号拡張。 */
+        int sh = (rk == TK_CHAR) ? 56 : 48;
+        node_t *shl = psx_node_new_binary(ND_SHL, node->lhs, psx_node_new_num(sh));
+        node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
+        psx_node_set_unsigned(shl, 0);
+        psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) */
+        node->lhs = shr;
+      }
     }
   }
   node->fp_kind = psx_expr_current_func_ret_fp_kind();

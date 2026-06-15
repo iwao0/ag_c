@@ -13,6 +13,8 @@ void psx_expr_set_current_func_ret_struct_size(int size);
 int psx_expr_current_func_ret_struct_size(void);
 void psx_expr_set_current_func_ret_is_pointer(int is_pointer);
 int psx_expr_current_func_ret_is_pointer(void);
+void psx_expr_set_current_func_ret_is_unsigned(int is_unsigned);
+int psx_expr_current_func_ret_is_unsigned(void);
 void psx_expr_set_current_funcname(char *name, int len);
 /* g_current_funcname を読む。`static int n` を `<funcname>__n` に
  * mangle するために必要。 */
