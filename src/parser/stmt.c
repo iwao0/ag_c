@@ -409,6 +409,24 @@ static node_t *parse_stmt_return(void) {
       !psx_expr_current_func_ret_is_pointer() && node->lhs) {
     node->lhs = psx_node_new_binary(ND_NE, node->lhs, psx_node_new_num(0));
   }
+  /* C11 6.8.6.4: sub-int (char/short) 戻り型は宣言幅へ変換して返す。codegen は値を
+   * 64bit レジスタで持ち戻り型を I32 へ widening するため自動で切り詰めず、callee が
+   * int 値をそのまま返していた (`char f(int x){return x;}` の f(300) が 300 を返し
+   * 比較が化ける)。明示 (char)/(short) と同じ 64bit 算術シフトで低 8/16bit を符号拡張。
+   * plain char は本 ABI で signed。unsigned char/short は戻り型トークンが TK_INT に
+   * 潰れて TK_CHAR/TK_SHORT にならないため対象外 (符号拡張で改悪しない)。 */
+  {
+    token_kind_t rk = psx_expr_current_func_ret_token_kind();
+    if (!psx_expr_current_func_ret_is_pointer() && node->lhs &&
+        (rk == TK_CHAR || rk == TK_SHORT)) {
+      int sh = (rk == TK_CHAR) ? 56 : 48;
+      node_t *shl = psx_node_new_binary(ND_SHL, node->lhs, psx_node_new_num(sh));
+      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
+      psx_node_set_unsigned(shl, 0);
+      psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) */
+      node->lhs = shr;
+    }
+  }
   node->fp_kind = psx_expr_current_func_ret_fp_kind();
   node->ret_struct_size = psx_expr_current_func_ret_struct_size();
   tk_expect(';');

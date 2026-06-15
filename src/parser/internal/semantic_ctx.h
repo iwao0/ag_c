@@ -177,6 +177,9 @@ int psx_ctx_track_function_ret_type(char *name, int len,
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等)。未登録は TK_EOF。 */
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
+/* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */
+void psx_ctx_set_function_ret_unsigned(char *name, int len, int is_unsigned);
+int psx_ctx_get_function_ret_is_unsigned(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

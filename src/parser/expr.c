@@ -1917,6 +1917,13 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * でも低 32bit 抽出は無害)。 */
     if ((psx_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
         !psx_node_is_pointer(operand)) {
+      /* operand が unsigned 戻り値の funcall (例 `unsigned f()`) だと、SHL が符号なし
+       * 演算と見なされ ir_builder の 32bit ラップマスク (& 0xffffffff) が入り、
+       * `(getu()<<32)` が 0 に潰れてシフトが壊れる。`(int)` は結果を符号付きにするので
+       * funcall の unsigned ラベルをクリアして算術シフトを保つ。binop ノード (`u>>60`
+       * 等のシフト) は is_unsigned が LSR/ASR を兼ねるため触らない (触ると論理シフトが
+       * 算術シフトに化ける)。 */
+      if (operand->kind == ND_FUNCALL) psx_node_set_unsigned(operand, 0);
       node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
       psx_node_set_unsigned(shl, 0);
@@ -3291,6 +3298,12 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
   // 関数戻り値が float/double のときは call ノードに fp_kind を設定し、
   // `(int)call()` キャストで apply_cast が ND_FP_TO_INT を挿入できるようにする。
   node->base.fp_kind = psx_ctx_get_function_ret_fp_kind(tok->str, tok->len);
+  /* 戻り値型が unsigned のとき call ノードに is_unsigned を立てる。これがないと
+   * `unsigned f(); f() <= 100` が符号付き比較 (LE) になり、32bit 比較で 0xFFFFFFFF を
+   * 負数扱いして誤判定する (戻り値の符号性が funcall ノードへ伝播していなかった)。 */
+  if (psx_ctx_get_function_ret_is_unsigned(tok->str, tok->len)) {
+    node->base.is_unsigned = 1;
+  }
   return (node_t *)node;
 }
 

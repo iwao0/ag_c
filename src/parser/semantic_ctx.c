@@ -124,6 +124,10 @@ struct func_name_t {
   int ret_set_once;
   token_kind_t ret_token_kind;
   int ret_is_pointer;
+  /* 1: 戻り値型が unsigned。`unsigned` は ret_token_kind が TK_INT に正規化され
+   * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
+   * (ULT/ULE 比較選択) に使う。 */
+  int ret_is_unsigned;
   /* 仮引数 i の fp_kind (float/double/none) を保持。呼び出し側 IR builder が
    * `f(1)` のような int 実引数を double 仮引数に渡すケースで I2F キャスト
    * を挿入するために使う。 16 個まで track (それ以降は NONE のままで暗黙
@@ -1096,6 +1100,17 @@ int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return (f && f->ret_set_once) ? f->ret_token_kind : TK_EOF;
+}
+
+/* 戻り値型の unsigned 性を記録/取得する。ret_token_kind とは別管理 (unsigned は
+ * TK_INT に潰れるため)。 */
+void psx_ctx_set_function_ret_unsigned(char *name, int len, int is_unsigned) {
+  func_name_t *f = find_function_name(name, len);
+  if (f) f->ret_is_unsigned = is_unsigned ? 1 : 0;
+}
+int psx_ctx_get_function_ret_is_unsigned(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_is_unsigned : 0;
 }
 
 int psx_ctx_track_function_ret_type(char *name, int len,

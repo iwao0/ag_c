@@ -2517,6 +2517,10 @@ static node_t *funcdef(void) {
                    "%s", diag_warn_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
   }
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
+  /* 戻り値型の unsigned 性を捕捉する (`unsigned` は ret_kind が TK_INT に潰れ
+   * 符号性が落ちるため別管理)。parse_func_decl_spec 直後に読む (parse_func_declarator
+   * が g_last_type_unsigned を変えるより前)。後段で関数名判明後に記録する。 */
+  int ret_is_unsigned = !ret_is_ptr && psx_last_type_is_unsigned();
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   psx_expr_set_current_func_ret_is_pointer(ret_is_ptr);
   // 構造体戻り値の場合、サイズを記録（ポインタ戻り値は除く）
@@ -2570,6 +2574,7 @@ static node_t *funcdef(void) {
                  "関数 '%.*s' の戻り値型が以前の宣言と異なります (C11 6.7p3)",
                  tok->len, tok->str);
   }
+  if (ret_is_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。
   // 非 variadic 関数でも nargs_fixed を記録するため常に呼ぶ。

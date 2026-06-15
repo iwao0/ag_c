@@ -637,6 +637,18 @@ static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      /* オペランドが両方 i32 以下なら 32bit 比較 (w レジスタ) を出す。codegen は値を
+       * 64bit レジスタで保持するが、計算結果の i32 (TRUNC や funcall 戻り値) は上位
+       * 32bit が未定義で、64bit 比較すると負の int が大きな正値に化ける。int の関係/
+       * 等価比較は 32bit で行うのが C 準拠 (`int f(int x){return x-1;} f(0)!=-1` 等)。
+       * 符号は IR が ULT/ULE か LT/LE かで既に振り分け済み (operand の is_unsigned)。
+       * ポインタ / long (i64) は従来どおり 64bit 比較。 */
+      char w1[8], w2[8];
+      if (ir_type_size(inst->src1.type) <= 4 && ir_type_size(inst->src2.type) <= 4) {
+        to_w_name(s1, w1, sizeof(w1));
+        to_w_name(s2, w2, sizeof(w2));
+        s1 = w1; s2 = w2;
+      }
       cg_emitf("  cmp %s, %s\n", s1, s2);
       const char *cond = "eq";
       switch (inst->op) {
