@@ -3036,6 +3036,11 @@ static node_t *parse_num_literal(void) {
     node->base.fp_kind = TK_FLOAT_KIND_NONE;
     node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
     node->val = tk_as_num_int(tok)->val;
+    /* long / long long サフィックス付き整数リテラルは値が 32bit に収まっても i64 と
+     * して扱う (`2L * u` 等が 32bit 演算で wrap しないように)。unsigned サフィックスも
+     * 比較/除算の符号判定のため node に伝播する。 */
+    node->int_is_long = (tk_as_num_int(tok)->int_size != TK_INT_SIZE_INT) ? 1 : 0;
+    node->base.is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
   } else {
     node->base.fp_kind = tk_as_num_float(tok)->fp_kind;
     node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;

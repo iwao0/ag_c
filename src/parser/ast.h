@@ -145,6 +145,9 @@ struct node_num_t {
   double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
   tk_float_suffix_kind_t float_suffix_kind;
+  // 整数リテラルが long / long long サフィックスを持つ (= 値が 32bit に収まっても
+  // i64 として扱う)。`2L * u` が 32bit 演算で wrap するのを防ぐ。
+  unsigned char int_is_long;
 };
 
 // ローカル変数ノード

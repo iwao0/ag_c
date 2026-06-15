@@ -629,7 +629,8 @@ static ir_val_t build_node_num(ir_build_ctx_t *ctx, node_t *node) {
    * 境界は [INT32_MIN, UINT32_MAX]: この範囲は 32bit レジスタのビットパターンで
    * 符号付き/符号なしどちらにも解釈でき、既存の 32bit unsigned リテラル
    * (0xFFFFFFFFu 等) の扱いを変えない。 */
-  ir_type_t ity = (n->val > 0xFFFFFFFFLL || n->val < (-2147483647LL - 1))
+  ir_type_t ity = (n->int_is_long || n->val > 0xFFFFFFFFLL ||
+                   n->val < (-2147483647LL - 1))
                     ? IR_TY_I64 : IR_TY_I32;
   inst->dst = ir_val_vreg(v, ity);
   inst->src1 = ir_val_imm(ity, n->val);
