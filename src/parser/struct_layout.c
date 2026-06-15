@@ -295,6 +295,18 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                    im.name, im.len, off + im.offset,
                                    im.type_size, im.deref_size, im.array_len,
                                    im.tag_kind, im.tag_name, im.tag_len, im.is_tag_pointer);
+            /* 昇格メンバの fp_kind / is_bool / is_unsigned / outer_stride も伝播する。
+             * add_tag_member は基本属性のみ渡すため、これがないと匿名 union/struct の
+             * float/double メンバ (`struct { union { int n; float f; }; };` の f) が
+             * fp_kind を失い整数 load/store され値が化けていた。 */
+            if (im.fp_kind != TK_FLOAT_KIND_NONE)
+              psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len, im.name, im.len, im.fp_kind);
+            if (im.is_bool)
+              psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len, im.name, im.len, 1);
+            if (im.is_unsigned)
+              psx_ctx_set_tag_member_is_unsigned(tag_kind, tag_name, tag_len, im.name, im.len, 1);
+            if (im.outer_stride > 0)
+              psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len, im.name, im.len, im.outer_stride);
             member_count++;
           }
         }
