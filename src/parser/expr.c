@@ -1853,6 +1853,24 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (type_kind == TK_INT || type_kind == TK_ENUM) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    /* 定数の (int) キャスト: 32bit 符号付きへ切り詰める。これがないと
+     * `(int)0x100000000L == 0` が定数畳み込みで 0x100000000==0 と評価され偽になっていた
+     * (戻り値や代入では store 幅で切り詰められ偶然合っていた)。 */
+    if (operand->kind == ND_NUM) {
+      return psx_node_new_num((long long)(int)((node_num_t *)operand)->val);
+    }
+    /* int 幅超 (long, 8B) の非ポインタ値の (int) キャスト: 32bit 符号付きへ切り詰める。
+     * `(x << 32) >> 32` (算術右シフト) で低 32bit を 64bit へ符号拡張するため、後段の
+     * 比較/演算が 64bit 幅でも正しい値になる。代入では store 幅で偶然合っていたが
+     * `(int)long_var == 0` 等のインライン比較が 64bit 比較で誤っていた。
+     * ポインタ→int は稀かつ別経路 (is_pointer クリア) のためここでは触れない。 */
+    if (psx_node_type_size(operand) > 4 && !psx_node_is_pointer(operand)) {
+      node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
+      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
+      psx_node_set_unsigned(shl, 0);
+      psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) を強制 */
+      return shr;
+    }
     /* ポインタ→整数の明示キャストでは初期化/代入時の制約違反検査を回避するため、
      * node_mem_t を持つノードの is_pointer をクリアする。 */
     if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
@@ -1876,6 +1894,24 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
     int target_unsigned = (type_kind == TK_UNSIGNED) ? 1 : 0;
+    /* 定数の (signed/unsigned) キャスト: 32bit へ切り詰める (TK_INT と同じ理由)。 */
+    if (operand->kind == ND_NUM) {
+      long long v = ((node_num_t *)operand)->val;
+      node_t *n = psx_node_new_num(target_unsigned ? (long long)(unsigned)v
+                                                    : (long long)(int)v);
+      if (target_unsigned) psx_node_set_unsigned(n, 1);
+      return n;
+    }
+    /* int 幅超 (long, 8B) の非ポインタ値の (signed/unsigned) キャスト: 32bit へ
+     * 切り詰める。`(x<<32)>>32` で低 32bit を 64bit へ拡張 (unsigned は論理シフトで
+     * ゼロ拡張、signed は算術シフトで符号拡張) する。 */
+    if (psx_node_type_size(operand) > 4 && !psx_node_is_pointer(operand)) {
+      node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
+      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
+      psx_node_set_unsigned(shl, target_unsigned);
+      psx_node_set_unsigned(shr, target_unsigned);
+      return shr;
+    }
     /* sub-int (char/short) を (unsigned) へ: operand 自身の load 符号性 (ldrsh/ldrh)
      * を保ったまま 32bit unsigned 値へ昇格する必要がある。is_unsigned を直接立てると
      * load 拡張が変わり値が化ける。代わりに & 0xffffffff で 64bit reg 上の load 済み
