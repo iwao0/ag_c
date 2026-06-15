@@ -1983,6 +1983,19 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, pointee, 0, 0);
     psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 1);
     var->base_deref_size = (short)pointee;
+    /* `struct V (*p)[N]` 配列へのポインタ仮引数: 上の is_tag_pointer=1 のままだと
+     * 1 要素 (struct サイズ) ずつしか進まず行を跨げない。outer_stride を 1 行 (N 要素)
+     * に設定し is_tag_pointer をクリアして、ローカルの `struct V (*p)[N]` と同じ
+     * 「配列へのポインタ」表現にする (`p[i][j].m` が正しくスケールする)。 */
+    if (param_is_array_declarator && param_inner_first_dim > 0 && ds->struct_size > 0) {
+      var->is_tag_pointer = 0;
+      var->base_deref_size = (short)ds->struct_size;
+      var->outer_stride = param_inner_first_dim * ds->struct_size;
+      if (param_inner_second_dim > 0) {
+        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds->struct_size;
+        var->mid_stride = param_inner_second_dim * ds->struct_size;
+      }
+    }
     return var;
   }
   if (param_is_ptr && ds->tag_kind == TK_EOF) {
@@ -1999,7 +2012,12 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
      * 認識されている。そこへ pql を立てると subscript の結果型が誤って pointer 化し
      * `p[i]` が壊れる (arr_as_ptr 回帰)。よって pointee_size>=8 のときだけ立てる。
      * fp 単段ポインタ (`double *a`) は pointee_fp_kind 経路で処理済みなので除外。 */
-    if (pointee_size >= 8 && !(param_ptr_levels == 1 && ds->fp_kind != TK_FLOAT_KIND_NONE)) {
+    if (pointee_size >= 8 && !(param_ptr_levels == 1 && ds->fp_kind != TK_FLOAT_KIND_NONE) &&
+        /* 配列へのポインタ `T (*p)[N]` (pointee が配列) は除外。pql を立てると
+         * subscript が単段ポインタ (T*) 扱いになり outer_stride を無視して 1 要素
+         * 分しか進まない。要素 struct が 8B 以上のときだけ pointee_size>=8 に該当し
+         * 壊れていた (int(*)[N] は pointee<8 で元から pql 非設定)。 */
+        !(param_is_array_declarator && param_inner_first_dim > 0)) {
       var->pointer_qual_levels = param_ptr_levels;
     }
     /* `double *a` / `float *a` の単段ポインタ仮引数: pointee の fp 種別を伝播し、

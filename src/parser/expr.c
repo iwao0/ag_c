@@ -3425,6 +3425,10 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   }
   int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
                         (var->size > var->elem_size) ||
+                        /* 配列へのポインタ `T (*p)[N]`: size==8、outer_stride>0。
+                         * 要素 struct が 8B のとき `size > elem_size` (8>8) が偽になり
+                         * ポインタと認識されず subscript が E3064 になっていた。 */
+                        (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
                         /* `struct T *p` 仮引数: size == elem_size == 8 でも
                          * is_tag_pointer が立つのでこれをポインタとして認識する。 */
                         var->is_tag_pointer ||
