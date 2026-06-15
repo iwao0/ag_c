@@ -3520,6 +3520,13 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     gv->mem.deref_size = (short)(var->elem_size > 0 ? var->elem_size : sz);
     gv->mem.is_unsigned = var->is_unsigned;
     gv->mem.base.fp_kind = var->fp_kind;
+    /* `static struct S a` の tag 情報を ND_GVAR に伝播して `a.member` の
+     * メンバアクセスを解決可能にする (tag を落とすと build_member_access が
+     * 失敗する)。is_tag_pointer は実体 (= 0)。 */
+    gv->mem.tag_kind = var->tag_kind;
+    gv->mem.tag_name = var->tag_name;
+    gv->mem.tag_len = var->tag_len;
+    gv->mem.is_tag_pointer = 0;
     gv->name = var->static_global_name;
     gv->name_len = var->static_global_name_len;
     var->is_used = 1;

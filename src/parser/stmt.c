@@ -210,12 +210,23 @@ static node_t *parse_decl_like_stmt(void) {
    * struct/union/enum が続く場合、修飾子をスキップして tag-keyword 経路に
    * 入れるようにする。psx_decl_parse_declaration は struct を type-spec
    * として直接処理できないため、ここで先に分岐する必要がある。 */
+  int tag_path_saw_static = 0;
   {
     token_t *peek = curtok();
     while (peek && psx_is_decl_prefix_token(peek->kind)) peek = peek->next;
     if (peek && psx_ctx_is_tag_keyword(peek->kind)) {
-      /* 修飾子を先に飲み込む (parse_decl_like 側の cv 状態を更新する) */
-      while (psx_is_decl_prefix_token(curtok()->kind)) set_curtok(curtok()->next);
+      /* 修飾子を先に飲み込む (parse_decl_like 側の cv 状態を更新する)。
+       * `static struct T x;` の storage class はここで素通りスキップすると
+       * skip_cv_qualifiers を経由せず g_last_decl_is_static が立たない。static を
+       * 検出して記録し、tag (定義) パース後に psx_set_static_flag で復元する
+       * (インライン定義 `static struct {..} s` のメンバ解析が skip_cv_qualifiers で
+       * フラグをリセットするため、after_type 呼出直前に再適用する)。これがないと
+       * static struct/union 局所がグローバルへ lowering されず auto 扱いで
+       * 呼び出し跨ぎで永続しなかった。 */
+      while (psx_is_decl_prefix_token(curtok()->kind)) {
+        if (curtok()->kind == TK_STATIC) tag_path_saw_static = 1;
+        set_curtok(curtok()->next);
+      }
       /* tag 経路へフォールスルー */
     }
   }
@@ -249,6 +260,8 @@ static node_t *parse_decl_like_stmt(void) {
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
+      /* メンバ定義の解析で skip_cv_qualifiers が static フラグをリセットするため復元。 */
+      if (tag_path_saw_static) psx_set_static_flag(1);
       return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
     }
     if (tk_consume(';')) {
@@ -259,6 +272,7 @@ static node_t *parse_decl_like_stmt(void) {
       psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+    if (tag_path_saw_static) psx_set_static_flag(1);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
                                                  TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
   }

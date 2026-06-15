@@ -2376,6 +2376,103 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   return 1;
 }
 
+/* `static struct S a = {...};` / `static union U u = {...};` の struct/union
+ * static local をグローバルに lowering する。スカラ/配列の static local と同じく
+ * mangled global へ実体を置き、識別子は alias lvar (is_static_local) 経由で
+ * ND_GVAR に解決する。これがないと auto 局所として扱われ呼び出し跨ぎで永続せず、
+ * 毎回初期化子で再初期化されていた。
+ * 初期化子 (`= {...}`) はトップレベル global struct と同じ psx_parse_global_brace_init_flat
+ * で flat 値列へ落とし、codegen の emit_global_struct_init がレイアウトに沿って出力する。
+ * ポインタ・配列の struct (`static struct S *p` / `static struct S arr[N]`) は呼び出し側
+ * ゲートで除外済み。前提: tag_kind が struct/union、is_pointer==0、配列でない。 */
+static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_kind,
+                                          char *tag_name, int tag_len) {
+  int struct_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+  if (struct_size <= 0) return 0;
+  /* 関数内でインライン定義された匿名タグ (`static struct { int n; } s`) は
+   * codegen (全パース後のグローバル出力) 時点で関数スコープのタグテーブルから
+   * 消えており、emit_global_struct_members_rec のメンバ照会が失敗して初期化子を
+   * ゼロ出力してしまう。lowering せず 0 を返して従来の auto 経路に委ね、誤った
+   * ゼロ初期化を避ける (file-scope の named タグは codegen まで残るので対象)。
+   * curtok を消費する前に判定するので auto 経路へ安全に戻せる。 */
+  if (tag_name && tag_len >= 11 && memcmp(tag_name, "__anon_tag_", 11) == 0) {
+    return 0;
+  }
+
+  /* global_var_t を構築。tag 情報と struct サイズを設定する。 */
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->tag_kind = tag_kind;
+  gv->tag_name = tag_name;
+  gv->tag_len = tag_len;
+  gv->type_size = (short)struct_size;
+  gv->deref_size = (short)struct_size;
+  gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
+
+  if (curtok()->kind == TK_ASSIGN && curtok()->next &&
+      curtok()->next->kind == TK_LBRACE) {
+    tk_expect('=');
+    gv->has_init = 1;
+    int cap = 16;
+    gv->init_values = calloc((size_t)cap, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    /* struct は float/double メンバを持ち得るので fvalues も並行確保する
+     * (トップレベル global struct と同じ。codegen が fp メンバをビット出力)。 */
+    gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    gv->init_count = 0;
+    psx_parse_global_brace_init_flat(gv, &cap, -1);
+  }
+  /* `= 式` (非 brace) の struct コピー初期化や init 無しは has_init=0 のまま
+   * (codegen が .zero でゼロ初期化)。前者は将来課題。 */
+
+  /* mangled name: 配列版と同じスキームで 's' プレフィックス。 */
+  static int g_static_struct_seq = 0;
+  char *funcname = NULL;
+  int funcname_len = 0;
+  psx_expr_get_current_funcname(&funcname, &funcname_len);
+  int seq = g_static_struct_seq++;
+  char seq_buf[12];
+  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "s%d", seq);
+  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
+  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
+  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
+  char *mangled = arena_alloc((size_t)total_len + 1);
+  int off = 0;
+  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
+  mangled[off] = '\0';
+
+  gv->name = mangled;
+  gv->name_len = total_len;
+  gv->next = global_vars;
+  global_vars = gv;
+
+  /* alias lvar を locals に登録。size=struct_size, elem_size=struct_size で、
+   * is_static_local + static_global_name + tag 情報を持たせる。識別子解決は
+   * build_lvar_or_vla_node の static_local 分岐で ND_GVAR (tag 付き) を返す。 */
+  lvar_t *var = calloc(1, sizeof(lvar_t));
+  var->next = locals;
+  var->next_all = all_locals;
+  all_locals = var;
+  var->name = tok->str;
+  var->len = tok->len;
+  var->offset = 0;
+  var->size = struct_size;
+  var->elem_size = struct_size;
+  var->is_array = 0;
+  var->is_static_local = 1;
+  var->is_initialized = 1;
+  var->fp_kind = TK_FLOAT_KIND_NONE;
+  psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
+  var->static_global_name = mangled;
+  var->static_global_name_len = total_len;
+  locals = var;
+  return 1;
+}
+
 /* typedef が配列型 (`typedef int M[2][3][4]; M m;`) のときの lvar 登録。
  * td_array_dims をそのまま多次元配列の dims として扱い、
  * outer_stride / mid_stride / extra_strides (8 次元まで) を計算する。 */
@@ -2634,6 +2731,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         decl_fp_kind == TK_FLOAT_KIND_NONE &&
         curtok()->kind == TK_LBRACKET) {
       if (try_lower_static_local_array(tok, elem_size, decl_is_unsigned)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
+    /* `static struct S a = {...};` / `static union U u = {...};` の struct/union
+     * static local をグローバル化。ポインタ (`static struct S *p`、上の scalar 経路で
+     * 処理) や struct 配列 (`static struct S arr[N]`、curtok=='[') は除外する。 */
+    if (decl_is_static && (tag_kind == TK_STRUCT || tag_kind == TK_UNION) &&
+        !is_pointer && inner_array_mul == 0 && paren_array_mul == 0 &&
+        td_array_dim_count == 0 && curtok()->kind != TK_LBRACKET) {
+      if (try_lower_static_local_struct(tok, tag_kind, tag_name, tag_len)) {
         if (!tk_consume(',')) break;
         continue;
       }

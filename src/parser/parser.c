@@ -425,6 +425,13 @@ void psx_take_static_flag(int *is_static) {
   g_last_decl_is_static = 0;
 }
 
+/* `static struct T x;` のように storage class を tag-keyword 経路 (stmt.c) で
+ * 手動スキップする場合、skip_cv_qualifiers を経由しないため g_last_decl_is_static が
+ * 立たない。スキップ時に static を検出したらこの setter で記録する。 */
+void psx_set_static_flag(int is_static) {
+  g_last_decl_is_static = is_static ? 1 : 0;
+}
+
 static void skip_ptr_qualifiers(void) {
   while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
     set_curtok(curtok()->next);
