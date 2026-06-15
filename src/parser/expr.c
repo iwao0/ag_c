@@ -2810,11 +2810,20 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     }
   }
   /* 配列 (pql=0 でも pointee_fp_kind を持つ ND_ADDR) の subscript 結果も
-   * FP load にするため、pointee_fp_kind を見て fp_kind を引き継ぐ。 */
+   * FP load にするため、pointee_fp_kind を見て fp_kind を引き継ぐ。多次元配列
+   * (`float m[2][3]`) の 1 段目 subscript 結果はまだ配列なので、base.fp_kind では
+   * なく pointee_fp_kind に伝播して次段 subscript が fp load になるようにする
+   * (is_bool と同じ分岐)。これがないと `m[i][j]` が整数 load になっていた。 */
   {
     tk_float_kind_t arr_pointee_fp = psx_node_pointee_fp_kind(node);
     if (arr_pointee_fp != TK_FLOAT_KIND_NONE && pql == 0) {
-      deref->base.fp_kind = arr_pointee_fp;
+      /* 結果がまだ多次元配列の「行」(要素サイズ es が次段ストライド inner_ds より
+       * 大きい) なら pointee_fp_kind に伝播して次段 subscript を fp load にする。
+       * 最終スカラ要素 (es <= inner_ds、または inner_ds==0) なら base.fp_kind。
+       * 1D の `float *a` 仮引数は inner_ds=elem_size が立つことがあるので es>inner_ds
+       * で「多次元の中間」かどうかを区別する。 */
+      if (inner_ds > 0 && es > inner_ds) deref->pointee_fp_kind = arr_pointee_fp;
+      else                                deref->base.fp_kind = arr_pointee_fp;
     }
   }
   if (pql == 1) {

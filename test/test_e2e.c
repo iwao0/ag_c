@@ -1000,6 +1000,7 @@ static const test_case_t test_cases[] = {
     {"probes", "float_truthiness_condition", CASE_INT_FILE, "test/fixtures/probes_found_bugs/float_truthiness_condition.c", 42, 0},
     {"probes", "float_logical_operand", CASE_INT_FILE, "test/fixtures/probes_found_bugs/float_logical_operand.c", 42, 0},
     {"probes", "static_local_float_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_float_init.c", 42, 0},
+    {"probes", "multidim_float_array_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/multidim_float_array_subscript.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
