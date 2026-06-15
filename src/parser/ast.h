@@ -119,6 +119,10 @@ struct node_mem_t {
   // (= ポインタ値 load を引き起こす)、配列メンバの場合 ND_ADD (アドレス計算)
   // を返す挙動を切り替えるために使う。
   unsigned int is_scalar_ptr_member : 1;
+  // 1: ND_PTR_CAST が「lhs を I64 へ zero-extend する」ラッパであることを示す。
+  // `(long)unsigned_int` の zero-extend を IR_ZEXT で明示挿入するために使う
+  // (coerce_to_type は常に SEXT のため unsigned の widen に乗れない)。
+  unsigned int widen_zext_i64 : 1;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;

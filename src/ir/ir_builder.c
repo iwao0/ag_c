@@ -1757,8 +1757,22 @@ static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node) {
   /* (type *)expr ポインタキャスト。値は変えず、後段の deref 用に
    * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
-  if (node->lhs) return build_expr(ctx, node->lhs);
-  return ir_val_none();
+  if (!node->lhs) return ir_val_none();
+  ir_val_t v = build_expr(ctx, node->lhs);
+  if (ctx->failed) return ir_val_none();
+  /* `(long)unsigned_int` の zero-extend ラッパ: lhs (I32) を I64 へ ZEXT する。
+   * coerce_to_type は常に SEXT なので unsigned widen には使えず、ここで明示挿入する。
+   * これにより `(long)u + (long)u` の二項演算が I64 で計算され (I32 ラップマスク回避)、
+   * 2^32 を超える和が正しくなる。 */
+  if (((node_mem_t *)node)->widen_zext_i64 && v.type != IR_TY_I64 && !is_fp_type(v.type)) {
+    int d = ir_func_new_vreg(ctx->f);
+    ir_inst_t *zx = ir_inst_new(IR_ZEXT);
+    zx->dst = ir_val_vreg(d, IR_TY_I64);
+    zx->src1 = v;
+    ir_func_append_inst(ctx->f, zx);
+    return ir_val_vreg(d, IR_TY_I64);
+  }
+  return v;
 }
 
 static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {

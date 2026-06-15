@@ -992,6 +992,7 @@ static const test_case_t test_cases[] = {
     {"probes", "inline_pointer_cast_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/inline_pointer_cast_deref.c", 42, 0},
     {"probes", "int_cast_truncates_long", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_cast_truncates_long.c", 42, 0},
     {"probes", "int_cast_truncates_long_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_cast_truncates_long_return.c", 42, 0},
+    {"probes", "long_cast_unsigned_zero_extend", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_cast_unsigned_zero_extend.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

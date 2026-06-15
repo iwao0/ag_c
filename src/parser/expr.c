@@ -1762,6 +1762,23 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    /* `(long)unsigned_int` (int 未満幅の unsigned も含む): I64 へ zero-extend する。
+     * `(long)` は通常 no-op だが、その場合 `(long)u + (long)u` の二項演算が I32 のまま
+     * 計算され、符号なし 32bit ラップマスクで 2^32 を超える和が切り詰められていた。
+     * ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入する (coerce は常に SEXT
+     * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
+     * 対象外。ポインタ・8B 以上・fp は対象外。 */
+    if (!is_pointer && type_kind == TK_LONG && !psx_node_is_pointer(operand) &&
+        operand->fp_kind == TK_FLOAT_KIND_NONE && psx_node_is_unsigned(operand) &&
+        psx_node_type_size(operand) >= 1 && psx_node_type_size(operand) < 8) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->type_size = 8;
+      wrap->is_unsigned = 1;
+      wrap->widen_zext_i64 = 1;
+      return (node_t *)wrap;
+    }
     /* `(struct V *)x` / `(union U *)x`: tag 情報を後段の `->` 等が読めるよう
      * ND_PTR_CAST でラップする (operand 自体は他から共有される可能性があるので
      * 直接書き換えない)。これで `((struct V*)0)->b` のような offsetof 風や
