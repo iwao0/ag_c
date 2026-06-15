@@ -1006,9 +1006,46 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
       if (slot < 0) {
         psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子のメンバが見つかりません");
       }
-      tk_expect('=');
       cur_idx = slot;
       if (gv->tag_kind == TK_UNION) gv->union_init_ordinal = ordinal;
+      /* `.member[idx]` / `.member.sub` の designator チェーンを辿る (C11 6.7.9p6)。
+       * 現メンバの型情報 cmi を持ち、[idx] は要素 slot 数だけ、.sub は内側メンバの
+       * slot offset だけ cur_idx を進める。これがないと `struct W w={.arr[1]=7}`
+       * (グローバル) が E2006 で拒否されていた。 */
+      tag_member_info_t cmi = {0};
+      psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ordinal, &cmi);
+      for (;;) {
+        if (curtok()->kind == TK_LBRACKET) {
+          set_curtok(curtok()->next);
+          int iok = 1;
+          long long iv = psx_decl_eval_const_int(psx_expr_assign(), &iok);
+          tk_expect(']');
+          if (!iok || iv < 0) psx_diag_ctx(curtok(), "decl", "配列指定初期化子の添字が不正です");
+          int per = (cmi.tag_kind == TK_STRUCT && !cmi.is_tag_pointer)
+                        ? global_flat_slot_count(cmi.tag_kind, cmi.tag_name, cmi.tag_len) : 1;
+          cur_idx += (int)iv * per;
+          cmi.array_len = 0; /* 添字を 1 段消費 */
+        } else if (curtok()->kind == TK_DOT) {
+          set_curtok(curtok()->next);
+          token_ident_t *sm = tk_consume_ident();
+          if (!sm || cmi.tag_kind == TK_EOF)
+            psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子が不正です");
+          int sub_n = psx_ctx_get_tag_member_count(cmi.tag_kind, cmi.tag_name, cmi.tag_len);
+          int sub_slot = 0, found = 0;
+          for (int si = 0; si < sub_n; si++) {
+            tag_member_info_t smi = {0};
+            if (!psx_ctx_get_tag_member_info(cmi.tag_kind, cmi.tag_name, cmi.tag_len, si, &smi)) break;
+            if (smi.len == sm->len && smi.name &&
+                strncmp(smi.name, sm->str, (size_t)sm->len) == 0) {
+              cur_idx += (cmi.tag_kind == TK_UNION) ? 0 : sub_slot;
+              cmi = smi; found = 1; break;
+            }
+            sub_slot += global_member_flat_slots(&smi);
+          }
+          if (!found) psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子のメンバが見つかりません");
+        } else break;
+      }
+      tk_expect('=');
     }
     /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
     while (*cap <= cur_idx) {
