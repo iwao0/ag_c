@@ -2432,6 +2432,33 @@ static node_t *build_unary_deref_node(node_t *operand) {
       }
     }
   }
+  /* 通常の多次元配列 `int m[3][4]` は build_array_lvar_addr_node により
+   * ND_ADDR(deref_size=行ストライド, inner_deref_size=要素) として表現される
+   * (上の ND_LVAR 専用ブロックには該当しない)。`*m` / `*(m+k)` の operand を
+   * ND_ADD を辿って基底まで下り、inner_deref_size>0 (= まだ多次元) なら結果の
+   * 「行」に内側ストライドを 1 段シフトして引き継ぐ。これがないと結果 deref_size=0
+   * のままで build_node_deref の配列崩壊判定 (deref_size>0 && type_size>8) に乗らず、
+   * 行を値ロードして garbage を返す (`int *q=m[0]` 相当の `*m` / `*(m+k)`)。 */
+  if (node->deref_size == 0 && node->type_size > 8) {
+    node_t *probe = operand;
+    while (probe && (probe->kind == ND_ADD || probe->kind == ND_SUB)) probe = probe->lhs;
+    node_mem_t *pm = NULL;
+    if (probe && probe->kind == ND_LVAR) pm = &as_lvar(probe)->mem;
+    else if (probe && (probe->kind == ND_ADDR || probe->kind == ND_GVAR ||
+                       probe->kind == ND_DEREF || probe->kind == ND_PTR_CAST ||
+                       probe->kind == ND_STRING)) pm = (node_mem_t *)probe;
+    if (pm && pm->inner_deref_size > 0) {
+      node->deref_size = pm->inner_deref_size;
+      node->inner_deref_size = pm->next_deref_size;
+      if (pm->extra_strides_count > 0) {
+        node->next_deref_size = (short)pm->extra_strides[0];
+        for (int i = 1; i < pm->extra_strides_count && (i - 1) < 5; i++)
+          node->extra_strides[i - 1] = pm->extra_strides[i];
+        node->extra_strides_count = (unsigned char)(pm->extra_strides_count - 1);
+      }
+      node->is_pointer = 1;
+    }
+  }
   return (node_t *)node;
 }
 

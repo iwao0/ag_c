@@ -1004,11 +1004,14 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   if (bw > 0) {
     return emit_bitfield_load(ctx, ptr, bw, mm->bit_offset, mm->bit_is_signed);
   }
-  /* `s.v` 形式で v が配列メンバの場合、ND_DEREF は「配列実体」を表すが、
-   * 式中では配列はポインタへ崩壊する。load せずに address (ptr) をそのまま
-   * 返すことで `int *p = s.v;` や `s.v[i]` の正しい挙動になる。
-   * 判定: deref_size>0 かつ is_pointer=1 かつ type_size>8 (= 配列全体サイズ)。 */
-  if (mm->is_pointer && mm->deref_size > 0 && mm->type_size > 8) {
+  /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。
+   *  - struct の配列メンバ `s.v` (is_pointer=1, deref_size>0, type_size>8)
+   *  - 多次元配列の途中次元 `m[i]` / `*m` (例 `int m[3][4]` の行): subscript/
+   *    unary deref が is_pointer を立てないが、type_size>8 (= 配列全体サイズ)
+   *    かつ deref_size>0 (要素ストライドを持つ=配列実体) なら同様に崩壊させる。
+   * これにより `int *q = m[0];` / `*(*(m+1)+2)` / `**m` が正しく動く。struct 値は
+   * deref_size=0 なのでここに該当せず、従来どおり値ロードされる。 */
+  if (mm->deref_size > 0 && mm->type_size > 8) {
     return ptr;
   }
   int v = ir_func_new_vreg(ctx->f);
