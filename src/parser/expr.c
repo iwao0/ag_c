@@ -556,9 +556,14 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     return gt;
   }
   if (control->kind == ND_STRING) {
+    /* 文字列リテラルは _Generic では char[] が char* へ decay した型として扱われる
+     * (clang/gcc 準拠)。pointee サイズ (= 文字幅) を ptr_deref_size に入れないと
+     * `char*` association と一致せず default に落ちていた。 */
+    int char_w = psx_node_deref_size(control);
     gt.kind = TK_CHAR;
     gt.scalar_size = 1;
     gt.is_pointer = 1;
+    gt.ptr_deref_size = char_w > 0 ? char_w : 1;
     return gt;
   }
   if (control->fp_kind == TK_FLOAT_KIND_FLOAT) {
@@ -610,6 +615,11 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.is_unsigned = control->is_unsigned;
   }
   gt.scalar_size = ts ? ts : 4;
+  /* long/long long サフィックス付き整数リテラル (`42L`) は long (8B) として扱い、
+   * _Generic の `long:` association と一致させる (int_is_long は parse_num_literal が立てる)。 */
+  if (control->kind == ND_NUM && ((node_num_t *)control)->int_is_long) {
+    gt.scalar_size = 8;
+  }
   gt.kind = gt.is_unsigned ? TK_UNSIGNED : TK_INT;
   return gt;
 }
