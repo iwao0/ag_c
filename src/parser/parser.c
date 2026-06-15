@@ -957,6 +957,8 @@ static int resolve_global_member_designator(global_var_t *gv, char *mname, int m
   return -1;
 }
 
+static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
+
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
   tk_expect('{');
@@ -1053,11 +1055,19 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
         node_funcref_t *fr = (node_funcref_t *)e;
         sym = fr->funcname;
         sym_len = fr->funcname_len;
-      } else if (e && e->kind == ND_ADDR && e->lhs && e->lhs->kind == ND_GVAR) {
-        /* `&g` 形式: グローバル変数のアドレスをメンバに置く。 */
-        node_gvar_t *ref = (node_gvar_t *)e->lhs;
-        sym = ref->name;
-        sym_len = ref->name_len;
+      } else if (e && (e->kind == ND_ADDR || e->kind == ND_ADD || e->kind == ND_SUB)) {
+        /* `&g` / `&data[n]` / `data + n` 形式: グローバル変数 (配列要素) のアドレスを
+         * 要素に置く。resolve_global_addr_init が (シンボル, バイトオフセット) へ
+         * 解決する。オフセットは init_values に格納し、codegen が `_sym+off` を出力する。
+         * これがないと `int *arr[]={&data[0],&data[2]}` が const int 評価で 0 になり
+         * NULL ポインタ配列になっていた (deref で SIGSEGV)。 */
+        long long off = 0;
+        if (resolve_global_addr_init(e, &sym, &sym_len, &off)) {
+          v = off;
+        } else {
+          int ok2 = 1;
+          v = psx_decl_eval_const_int(e, &ok2);
+        }
       } else if (e && e->kind == ND_STRING) {
         /* `const char *arr[] = {"abc", ...};` の文字列リテラル要素。
          * 文字列の .LC<n> ラベルをそのまま symbol として保持し、

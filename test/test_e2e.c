@@ -1010,6 +1010,7 @@ static const test_case_t test_cases[] = {
     {"probes", "static_local_struct_persist", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_struct_persist.c", 42, 0},
     {"probes", "int_cmp_width_and_subint_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_cmp_width_and_subint_return.c", 42, 0},
     {"probes", "anon_member_fp_unsigned_promote", CASE_INT_FILE, "test/fixtures/probes_found_bugs/anon_member_fp_unsigned_promote.c", 42, 0},
+    {"probes", "global_ptr_array_addr_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_ptr_array_addr_init.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

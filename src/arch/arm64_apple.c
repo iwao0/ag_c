@@ -300,7 +300,9 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
   if (sym && sym_len < 0) {
     cg_emitf("  .quad %s\n", sym);
   } else if (sym && sym_len > 0) {
-    cg_emitf("  .quad _%.*s\n", sym_len, sym);
+    /* `&data[n]` 由来は v にバイトオフセットを持つ (`_data+off`)。 */
+    if (v != 0) cg_emitf("  .quad _%.*s+%lld\n", sym_len, sym, v);
+    else        cg_emitf("  .quad _%.*s\n", sym_len, sym);
   } else if (fp_kind == TK_FLOAT_KIND_FLOAT) {
     float f = (float)fv;
     uint32_t bits;
@@ -340,9 +342,19 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         }
       } else {
         for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
-          long long ev = gv->init_values[(*val_idx)++];
-          if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
-          cg_emit_int_directive(ts, ev);
+          char *esym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
+          int esym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
+          long long ev = gv->init_values[*val_idx];
+          double efv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
+          (*val_idx)++;
+          /* ポインタ配列メンバ `int *ptrs[N] = {&data[i], ...}` のシンボル+オフセット要素や
+           * 文字列/関数ポインタ要素も emit_global_init_member_scalar で処理する。 */
+          if (esym) {
+            emit_global_init_member_scalar(esym, esym_len, mi.fp_kind, ts, ev, efv);
+          } else {
+            if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
+            cg_emit_int_directive(ts, ev);
+          }
         }
       }
       prev_end = off + ts * alen;
@@ -478,7 +490,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           continue;
         }
         if (sym_i && sym_i_len > 0) {
-          cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
+          /* `&data[n]` 由来のシンボル+オフセット。init_values[i] にバイトオフセット。 */
+          long long soff = gv->init_values ? gv->init_values[i] : 0;
+          if (soff != 0) cg_emitf("  .quad _%.*s+%lld\n", sym_i_len, sym_i, soff);
+          else           cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
           continue;
         }
         if (is_fp_arr) {
