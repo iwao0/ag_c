@@ -2181,13 +2181,17 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
   mangled[off] = '\0';
 
-  /* 初期化子 (`= N`) があれば NUM をパースして init_val に取り込む。 */
+  /* 初期化子 (`= N`) があれば NUM をパースして init_val に取り込む。
+   * float/double の static ローカルはリテラル値が ->fval にあるので、整数 ->val だけ
+   * 見ると 0 で初期化され `.long 0` が出力されていた (値が化ける)。fp なら fval を使う。 */
   long long init_val = 0;
+  double init_fval = 0;
   int has_init = 0;
   if (tk_consume('=')) {
     node_t *e = psx_expr_assign();
     if (e && e->kind == ND_NUM) {
-      init_val = ((node_num_t *)e)->val;
+      if (fp_kind != TK_FLOAT_KIND_NONE) init_fval = ((node_num_t *)e)->fval;
+      else                               init_val = ((node_num_t *)e)->val;
       has_init = 1;
     } else {
       /* 非定数 init は未対応 — silently 0 で初期化 (将来課題)。 */
@@ -2203,6 +2207,8 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   gv->deref_size = (short)deref_size;
   gv->has_init = has_init;
   gv->init_val = init_val;
+  gv->fp_kind = (unsigned char)fp_kind;
+  gv->fval = init_fval;
   gv->next = global_vars;
   global_vars = gv;
 
