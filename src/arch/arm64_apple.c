@@ -332,7 +332,9 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
       for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
-        cg_emit_int_directive(ts, gv->init_values[(*val_idx)++]);
+        long long ev = gv->init_values[(*val_idx)++];
+        if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
+        cg_emit_int_directive(ts, ev);
       }
       prev_end = off + ts * alen;
       continue;
@@ -347,7 +349,9 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
     int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
     double fv_i = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
-    emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, gv->init_values[*val_idx], fv_i);
+    long long mv = gv->init_values[*val_idx];
+    if (mi.is_bool) mv = (mv != 0);  /* C11 6.3.1.2: _Bool スカラメンバは 0/1 に正規化 */
+    emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, mv, fv_i);
     (*val_idx)++;
     prev_end = off + ts;
   }

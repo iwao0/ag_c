@@ -24,6 +24,7 @@ struct global_var_t {
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
   unsigned int is_tag_pointer : 1;  // 1: tag へのポインタ (`struct P *pp`)
+  unsigned int elem_is_bool : 1;    // 1: 要素型が _Bool (`_Bool a[N]`)。init_values を 0/1 に正規化。
   // tag (struct / union) 情報。tag_kind == TK_EOF のとき非タグ型。
   // build_member_access が `gvar.member` でタグメンバを引くのに使う。
   token_kind_t tag_kind;

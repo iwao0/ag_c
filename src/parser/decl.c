@@ -718,6 +718,12 @@ static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *a
 // type_size と fp_kind は var の要素型から複製する。
 static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
   node_t *lhs = new_array_elem_lvar(var, idx);
+  /* C11 6.3.1.2: `_Bool` 配列の要素初期化子は (value != 0) に正規化して 0/1 を
+   * 格納する (スカラ `_Bool b = 42;` と同じ。配列初期化子では生値が入っていた
+   * ため `_Bool f[]={5}` が 5 のままだった)。 */
+  if (var->is_bool && value) {
+    value = psx_node_new_binary(ND_NE, value, psx_node_new_num(0));
+  }
   node_mem_t *assign_node = psx_node_new_assign(lhs, value);
   assign_node->type_size = var->elem_size;
   assign_node->base.fp_kind = var->fp_kind;
@@ -1014,10 +1020,17 @@ static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member
   return lvar;
 }
 
+/* _Bool 要素/メンバの初期化子を (v != 0) に正規化 (C11 6.3.1.2)。is_bool=0 なら素通し。 */
+static node_t *bool_normalize_if(node_t *v, int is_bool) {
+  if (is_bool && v) return psx_node_new_binary(ND_NE, v, psx_node_new_num(0));
+  return v;
+}
+
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
-                                        int member_array_len, int member_outer_stride) {
+                                        int member_array_len, int member_outer_stride,
+                                        int member_is_bool) {
   if (member_array_len > 0) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
@@ -1039,7 +1052,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               int k = 0;
               if (!tk_consume('}')) {
                 for (;;) {
-                  node_t *val = parse_scalar_brace_initializer();
+                  node_t *val = bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool);
                   if (k < inner_len && flat < array_len) {
                     node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
                     node_mem_t *an = psx_node_new_assign(lhs, val);
@@ -1055,7 +1068,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               }
               flat = (row + 1) * inner_len;       /* 次の行頭へ (残りは 0) */
             } else {
-              node_t *val = parse_scalar_brace_initializer();
+              node_t *val = bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool);
               if (flat < array_len) {
                 node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
                 node_mem_t *an = psx_node_new_assign(lhs, val);
@@ -1088,7 +1101,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           }
           /* C11 6.7.9p19: 同一要素への複数指定初期化子は後勝ち (エラーではない)。 */
           node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
-          node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+          node_mem_t *assign_node = psx_node_new_assign(lhs,
+              bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
           assign_node->type_size = elem_size;
           node_t *init_node = (node_t *)assign_node;
           if (!init_chain) init_chain = init_node;
@@ -1111,7 +1125,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_copy) return array_copy;
       node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
-      node_mem_t *assign0 = psx_node_new_assign(lhs0, parse_scalar_brace_initializer());
+      node_mem_t *assign0 = psx_node_new_assign(lhs0,
+          bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
       assign0->type_size = elem_size;
       init_chain = (node_t *)assign0;
       for (int idx = 1; idx < array_len; idx++) {
@@ -1120,7 +1135,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
          * 途中まで埋めてから .a で上書きするケース)。 */
         if (!elision_consume_separator()) break;
         node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, idx);
-        node_mem_t *assign_node = psx_node_new_assign(lhs, parse_scalar_brace_initializer());
+        node_mem_t *assign_node = psx_node_new_assign(lhs,
+            bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
         assign_node->type_size = elem_size;
         init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
       }
@@ -1268,6 +1284,11 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   if (info->array_len > 0 ||
       (!info->is_tag_pointer && (info->tag_kind == TK_STRUCT || info->tag_kind == TK_UNION))) {
     return member_init;
+  }
+  /* _Bool スカラメンバ初期化子: rhs を (x != 0) に正規化 (C11 6.3.1.2)。
+   * これがないと `struct{_Bool b;} s = {5};` で b が 5 のままだった。 */
+  if (info->is_bool) {
+    member_init = psx_node_new_binary(ND_NE, member_init, psx_node_new_num(0));
   }
   node_t *lhs = new_struct_member_lvar(var, info->offset, info->type_size,
                                        info->tag_kind, info->tag_name, info->tag_len,
@@ -1516,7 +1537,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
        * 逐次代入を順に発行すれば最後の代入が残る。 */
       node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                      info.tag_kind, info.tag_name, info.tag_len,
-                                                     info.is_tag_pointer, info.array_len, info.outer_stride);
+                                                     info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool);
       init_chain = append_to_init_chain(init_chain,
           wrap_member_init_as_assign(var, &info, member_init));
       record_assigned_member(assigned_names, assigned_lens, assigned_kind,
@@ -1650,7 +1671,7 @@ static node_t *struct_member_elision(lvar_t *nested) {
     if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
     node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
                                              mi.tag_kind, mi.tag_name, mi.tag_len,
-                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride);
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool);
     node_t *as = wrap_member_init_as_assign(nested, &mi, minit);
     chain = chain ? psx_node_new_binary(ND_COMMA, chain, as) : as;
     if (curtok() && curtok()->kind == TK_RBRACE) break;
@@ -1693,7 +1714,7 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
     if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
     node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
                                              mi.tag_kind, mi.tag_name, mi.tag_len,
-                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride);
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool);
     chain = psx_node_new_binary(ND_COMMA, chain, wrap_member_init_as_assign(nested, &mi, minit));
   }
   return chain;
@@ -1774,7 +1795,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   }
   node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                  info.tag_kind, info.tag_name, info.tag_len,
-                                                 info.is_tag_pointer, info.array_len, info.outer_stride);
+                                                 info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool);
   node_t *init_chain = wrap_member_init_as_assign(var, &info, member_init);
   if (!tk_consume(',')) {
     tk_expect('}');
@@ -1798,7 +1819,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     }
     node_t *extra_init = parse_member_initializer(var, info.offset, info.type_size,
                                                   info.tag_kind, info.tag_name, info.tag_len,
-                                                  info.is_tag_pointer, info.array_len, info.outer_stride);
+                                                  info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool);
     node_t *extra_assign = wrap_member_init_as_assign(var, &info, extra_init);
     init_chain = append_to_init_chain(init_chain, extra_assign);
     if (tk_consume('}')) return init_chain;

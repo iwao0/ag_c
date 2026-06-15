@@ -769,6 +769,7 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
                        : (unsigned char)g_toplevel_decl_fp_kind;
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
   gv->is_bool = (!is_ptr && !is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
+  gv->elem_is_bool = (!is_ptr && is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
   /* unsigned スカラ/配列要素: load を zero-extend / 比較を unsigned にするため記録。
    * スカラは node の is_unsigned、配列は pointee_is_unsigned に使う (ポインタ値
    * 自体は unsigned ではないので is_ptr は除外)。 */
@@ -1149,6 +1150,13 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
      * ここで埋め直す。 */
     if (gv->type_size == 0 && gv->is_array && gv->deref_size > 0 && gv->init_count > 0) {
       gv->type_size = gv->init_count * gv->deref_size;
+    }
+    /* C11 6.3.1.2: `_Bool a[N]={...}` の各要素初期化子を 0/1 に正規化する。
+     * (配列ブランチはここで早期 return するため末尾のスカラ正規化には到達しない。) */
+    if (gv->elem_is_bool && gv->init_values) {
+      for (int i = 0; i < gv->init_count; i++) {
+        gv->init_values[i] = (gv->init_values[i] != 0) ? 1 : 0;
+      }
     }
     return;
   }
