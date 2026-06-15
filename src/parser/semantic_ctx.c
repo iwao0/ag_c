@@ -31,6 +31,7 @@ struct tag_type_t {
   int len;
   int member_count;
   int size;
+  int align;       // struct/union のアラインメント (_Alignof 用、agg_align)。0 = 未設定。
   int scope_depth;
 };
 typedef struct tag_member_t tag_member_t;
@@ -323,11 +324,20 @@ void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len
   psx_ctx_define_tag_type_with_layout(kind, name, len, member_count, member_count > 0 ? 8 : 0);
 }
 
+/* struct/union レイアウト計算 (struct_layout.c) が agg_align をここへ預け、直後の
+ * psx_ctx_define_tag_type_with_layout が tag に書き込む。tag がテーブルに登録される
+ * のは define 時なので、レイアウト中に直接 tag へ書けない。 */
+static int g_pending_tag_align = 0;
+void psx_ctx_set_pending_tag_align(int align) { g_pending_tag_align = align; }
+
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len, int member_count, int tag_size) {
+  int pending_align = g_pending_tag_align;
+  g_pending_tag_align = 0;
   tag_type_t *existing = find_tag_type(kind, name, len);
   if (existing) {
     if (member_count > existing->member_count) existing->member_count = member_count;
     if (tag_size > existing->size) existing->size = tag_size;
+    if (pending_align > existing->align) existing->align = pending_align;
     return;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
@@ -337,6 +347,7 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
   t->len = len;
   t->member_count = member_count;
   t->size = tag_size;
+  t->align = pending_align;
   t->scope_depth = tag_scope_depth;
   t->next_hash = tag_types_by_bucket[bucket];
   tag_types_by_bucket[bucket] = t;
@@ -350,6 +361,11 @@ int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type(kind, name, len);
   return t ? t->size : -1;
+}
+
+int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len) {
+  tag_type_t *t = find_tag_type(kind, name, len);
+  return (t && t->align > 0) ? t->align : -1;
 }
 
 void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,

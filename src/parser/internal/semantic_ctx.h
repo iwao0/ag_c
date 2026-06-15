@@ -18,6 +18,8 @@ void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len
 int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len, int member_count, int tag_size);
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
+void psx_ctx_set_pending_tag_align(int align);
+int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
 void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             char *member_name, int member_len, int offset,
                             int type_size, int deref_size, int array_len,

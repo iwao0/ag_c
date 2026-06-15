@@ -18,6 +18,9 @@ static token_kind_t g_current_ret_token_kind = TK_INT;
 static tk_float_kind_t g_current_ret_fp_kind = TK_FLOAT_KIND_NONE;
 static int g_current_ret_struct_size = 0;
 static int g_current_ret_is_pointer = 0;
+/* 1 のとき parse_parenthesized_type_size は型の「サイズ」ではなく「アラインメント」を
+ * 返す (_Alignof 用)。struct は agg_align、配列は要素アラインメント (要素数を掛けない)。 */
+static int g_parse_type_alignof_mode = 0;
 static char *g_current_funcname = NULL;
 static int g_current_funcname_len = 0;
 static int string_label_count = 0;
@@ -1566,7 +1569,14 @@ static int finish_parenthesized_type_size(token_t *t, int sz) {
     sz = 8;
   }
   set_curtok(t);
-  apply_array_abstract_suffix_size(&sz);
+  /* _Alignof では配列のアラインメント = 要素のアラインメントなので、要素数を掛けない。 */
+  if (!g_parse_type_alignof_mode) {
+    apply_array_abstract_suffix_size(&sz);
+  } else {
+    /* 配列添字は消費だけして size には反映しない (要素アラインメントを保つ)。 */
+    int dummy = 1;
+    apply_array_abstract_suffix_size(&dummy);
+  }
   tk_expect(')');
   return sz;
 }
@@ -1639,6 +1649,11 @@ static int parse_parenthesized_type_size(void) {
     int sz = psx_ctx_get_tag_size(tag_kind, tag->str, tag->len);
     if (sz <= 0) {
       psx_diag_undefined_with_name((token_t *)tag, diag_text_for(DIAG_TEXT_TAG_TYPE), tag->str, tag->len);
+    }
+    /* _Alignof(struct/union T): サイズではなくアラインメントを返す。 */
+    if (g_parse_type_alignof_mode) {
+      int al = psx_ctx_get_tag_align(tag_kind, tag->str, tag->len);
+      if (al > 0) sz = al;
     }
     t = curtok();
     return finish_parenthesized_type_size(t, sz);
@@ -2625,7 +2640,9 @@ static node_t *unary(void) {
   if (k == TK_ALIGNOF) {
     set_curtok(curtok()->next);
     tk_expect('(');
+    g_parse_type_alignof_mode = 1;
     int type_sz = parse_parenthesized_type_size();
+    g_parse_type_alignof_mode = 0;
     if (type_sz < 0) {
       psx_diag_ctx(curtok(), "alignof", "%s",
                    diag_message_for(DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED));

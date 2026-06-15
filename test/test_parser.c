@@ -681,7 +681,8 @@ static void test_expr_sizeof() {
 
     node_t *a2a = parse_expr_input("_Alignof(int[10])");
   ASSERT_EQ(ND_NUM, a2a->kind);
-  ASSERT_EQ(40, as_num(a2a)->val);
+  /* 配列のアラインメントは要素のアラインメント (= 4)。sizeof (40) ではない。 */
+  ASSERT_EQ(4, as_num(a2a)->val);
 
     node_t *a2b = parse_expr_input("_Alignof(int (*)[3])");
   ASSERT_EQ(ND_NUM, a2b->kind);
@@ -689,7 +690,8 @@ static void test_expr_sizeof() {
 
     node_t *a2c = parse_expr_input("_Alignof((int[3]))");
   ASSERT_EQ(ND_NUM, a2c->kind);
-  ASSERT_EQ(12, as_num(a2c)->val);
+  /* 配列のアラインメントは要素のアラインメント (= 4)、sizeof (12) ではない。 */
+  ASSERT_EQ(4, as_num(a2c)->val);
 
     node_t *a3 = parse_expr_input("_Alignof(_Imaginary double)");
   ASSERT_EQ(ND_NUM, a3->kind);

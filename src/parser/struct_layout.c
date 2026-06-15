@@ -310,6 +310,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     tk_expect(';');
   }
   *out_size = (tag_kind == TK_UNION) ? ALIGN_UP(union_size, agg_align) : ALIGN_UP(current_off, agg_align);
+  /* `_Alignof(struct T)` 用にアラインメント (agg_align) を pending に預ける。
+   * 直後の呼び出し元 psx_ctx_define_tag_type_with_layout が tag に書き込む
+   * (size とは異なる: 例 `{char;double}` は size 16 / align 8)。 */
+  psx_ctx_set_pending_tag_align(agg_align);
   return member_count;
 }
 

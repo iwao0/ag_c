@@ -311,9 +311,9 @@ static const test_case_t test_cases[] = {
     {"type_decl", "alignof_ptr_const", CASE_INT_FILE, "test/fixtures/type_decl/alignof_ptr_const.c", 8, 0},
     {"type_decl", "alignof_ptr_volatile", CASE_INT_FILE, "test/fixtures/type_decl/alignof_ptr_volatile.c", 8, 0},
     {"type_decl", "alignof_ptr_restrict", CASE_INT_FILE, "test/fixtures/type_decl/alignof_ptr_restrict.c", 8, 0},
-    {"type_decl", "alignof_int_array_type", CASE_INT_FILE, "test/fixtures/type_decl/alignof_int_array_type.c", 40, 0},
+    {"type_decl", "alignof_int_array_type", CASE_INT_FILE, "test/fixtures/type_decl/alignof_int_array_type.c", 4, 0},
     {"type_decl", "alignof_ptr_to_array_type", CASE_INT_FILE, "test/fixtures/type_decl/alignof_ptr_to_array_type.c", 8, 0},
-    {"type_decl", "alignof_parenthesized_array_type", CASE_INT_FILE, "test/fixtures/type_decl/alignof_parenthesized_array_type.c", 12, 0},
+    {"type_decl", "alignof_parenthesized_array_type", CASE_INT_FILE, "test/fixtures/type_decl/alignof_parenthesized_array_type.c", 4, 0},
     {"type_decl", "sizeof_expr_var", CASE_INT_FILE, "test/fixtures/type_decl/sizeof_expr_var.c", 4, 0},
     {"type_decl", "sizeof_struct_type", CASE_INT_FILE, "test/fixtures/type_decl/sizeof_struct_type.c", 4, 0},
     {"type_decl", "alignof_struct_type", CASE_INT_FILE, "test/fixtures/type_decl/alignof_struct_type.c", 4, 0},
@@ -1001,6 +1001,7 @@ static const test_case_t test_cases[] = {
     {"probes", "float_logical_operand", CASE_INT_FILE, "test/fixtures/probes_found_bugs/float_logical_operand.c", 42, 0},
     {"probes", "static_local_float_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_float_init.c", 42, 0},
     {"probes", "multidim_float_array_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/multidim_float_array_subscript.c", 42, 0},
+    {"probes", "alignof_aggregate", CASE_INT_FILE, "test/fixtures/probes_found_bugs/alignof_aggregate.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
