@@ -1757,7 +1757,8 @@ static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
 }
 
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
-                          token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len) {
+                          token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
+                          int cast_elem_size) {
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
@@ -1805,6 +1806,24 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->pointer_qual_levels = 1;
       wrap->type_size = 8;
       /* pointee_is_void は明示的にデフォルト (0) のままにする */
+      return (node_t *)wrap;
+    }
+    /* `(int *)x` / `(char *)x` など、スカラ整数型への (単段) ポインタキャスト:
+     * 後段の deref / ポインタ算術が新しい要素サイズを使うよう ND_PTR_CAST で
+     * deref_size を更新する。これがないとインライン `*(int*)(cp+4)` が元 operand の
+     * char サイズ (1) で 1 バイトしかロードしていなかった (変数に代入した場合は
+     * 変数の型で正しく動いていた)。多段ポインタ (`int**`) は operand 側の表現を
+     * 優先するためここでは触れない (cast_elem_size は基底型サイズで段数を持たない)。 */
+    if (is_pointer && cast_elem_size > 0 &&
+        psx_node_is_pointer(operand) &&
+        psx_node_pointer_qual_levels(operand) <= 1) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->is_pointer = 1;
+      wrap->pointer_qual_levels = 1;
+      wrap->type_size = 8;
+      wrap->deref_size = (short)cast_elem_size;
       return (node_t *)wrap;
     }
     /* (long)ptr のようにポインタ→long の明示キャスト: 結果は整数なので
@@ -2252,7 +2271,8 @@ static node_t *cast(void) {
                    kind);
     }
     return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand,
-                                     cast_tag_kind, cast_tag_name, cast_tag_len));
+                                     cast_tag_kind, cast_tag_name, cast_tag_len,
+                                     cast_elem_size));
   }
   return unary();
 }
