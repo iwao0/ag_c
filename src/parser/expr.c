@@ -1844,20 +1844,43 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       /* `(int)u` は符号付き int。終端値ノードでは is_unsigned をクリアして後段の
        * 比較/除算を signed にする (`i < (int)n` が unsigned 比較になっていた)。
        * binop ノード (シフト等) は is_unsigned が LSR/ASR など自身の演算も兼ねる
-       * ため触れない (`(int)(u>>60)` の LSR を ASR に変えてしまう)。 */
-      psx_node_set_unsigned(operand, 0);
+       * ため触れない (`(int)(u>>60)` の LSR を ASR に変えてしまう)。
+       * ただし char/short など int 未満幅の operand では is_unsigned が load の
+       * 符号拡張 (ldrsh/ldrh) も兼ねるため、ここで書き換えると値そのものが化ける
+       * (`(int)(unsigned short)0xFFFF` が -1 に、`(unsigned)(short)-1` が 65535 に)。
+       * sub-int operand は元の load 符号性を保ち、暗黙変換と同じ正しい昇格に任せる。 */
+      if (psx_node_type_size(operand) >= 4) psx_node_set_unsigned(operand, 0);
     }
     return operand;
   }
   if (type_kind == TK_SIGNED || type_kind == TK_UNSIGNED) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    int target_unsigned = (type_kind == TK_UNSIGNED) ? 1 : 0;
+    /* sub-int (char/short) を (unsigned) へ: operand 自身の load 符号性 (ldrsh/ldrh)
+     * を保ったまま 32bit unsigned 値へ昇格する必要がある。is_unsigned を直接立てると
+     * load 拡張が変わり値が化ける。代わりに & 0xffffffff で 64bit reg 上の load 済み
+     * 値を低 32bit へ折り返し、結果ノードに unsigned を付ける。これで
+     * `(unsigned)(short)-1` が 0xffffffff になり、符号混在のインライン比較/除算も
+     * 正しく unsigned 扱いになる (operand 幅<4 は UAC で signed 昇格扱いだった)。 */
+    /* op_sz が 1/2 = 真の char/short load のみ対象。NUM 等は type_size 0 を返すので
+     * 除外する (`(unsigned)13` を ND_BITAND で包んで誤って AST 形を変えないため)。 */
+    int op_sz = psx_node_type_size(operand);
+    if (target_unsigned && op_sz >= 1 && op_sz < 4 &&
+        operand->fp_kind == TK_FLOAT_KIND_NONE && !psx_node_is_pointer(operand)) {
+      node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffffffffLL));
+      psx_node_set_unsigned(masked, 1);
+      return masked;
+    }
     if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
         operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
         operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
         operand->kind == ND_ASSIGN) {
       ((node_mem_t *)operand)->is_pointer = 0;
-      psx_node_set_unsigned(operand, type_kind == TK_UNSIGNED ? 1 : 0);
+      /* sub-int operand では is_unsigned 書き換えが load 拡張を壊すため触れない
+       * (上の TK_INT と同じ理由)。int 幅以上のみ符号ラベルを更新する。 */
+      if (psx_node_type_size(operand) >= 4)
+        psx_node_set_unsigned(operand, target_unsigned);
     }
     return operand;
   }
