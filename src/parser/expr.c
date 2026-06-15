@@ -1863,8 +1863,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * `(x << 32) >> 32` (算術右シフト) で低 32bit を 64bit へ符号拡張するため、後段の
      * 比較/演算が 64bit 幅でも正しい値になる。代入では store 幅で偶然合っていたが
      * `(int)long_var == 0` 等のインライン比較が 64bit 比較で誤っていた。
-     * ポインタ→int は稀かつ別経路 (is_pointer クリア) のためここでは触れない。 */
-    if (psx_node_type_size(operand) > 4 && !psx_node_is_pointer(operand)) {
+     * ポインタ→int は稀かつ別経路 (is_pointer クリア) のためここでは触れない。
+     * 関数呼び出しは戻り値型幅を parser が覚えておらず type_size=4 と推定するが、
+     * long 戻り値は x0 に 64bit で返るため `(int)long_fn()` も切り詰める (int 戻り値
+     * でも低 32bit 抽出は無害)。 */
+    if ((psx_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
+        !psx_node_is_pointer(operand)) {
       node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
       psx_node_set_unsigned(shl, 0);
@@ -1904,8 +1908,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     }
     /* int 幅超 (long, 8B) の非ポインタ値の (signed/unsigned) キャスト: 32bit へ
      * 切り詰める。`(x<<32)>>32` で低 32bit を 64bit へ拡張 (unsigned は論理シフトで
-     * ゼロ拡張、signed は算術シフトで符号拡張) する。 */
-    if (psx_node_type_size(operand) > 4 && !psx_node_is_pointer(operand)) {
+     * ゼロ拡張、signed は算術シフトで符号拡張) する。関数呼び出しも long 戻り値が
+     * 64bit で返るため対象にする (type_size は 4 と推定される)。 */
+    if ((psx_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
+        !psx_node_is_pointer(operand)) {
       node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
       psx_node_set_unsigned(shl, target_unsigned);
