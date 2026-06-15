@@ -2248,20 +2248,18 @@ static node_t *shift(void) {
  * 効かず byte 単位になっていた。タグポインタもポインタとして扱う。 */
 static int node_is_ptr_for_arith(node_t *n) {
   if (psx_node_is_pointer(n)) return 1;
-  /* 2 次元配列の「行」(`int m[3][4]` の `m[i]`、`int(*p)[4]` の `*(p+k)` / `p[i]`) は
-   * ND_DEREF/ND_ADDR で表現され、値文脈ではポインタ (= 行先頭アドレス) へ decay する。
-   * is_pointer を立てると subscript_base_address_of が行をポインタ値として load してしまい
-   * 多次元 subscript が壊れるため、算術スケール用の判定だけここで拾う。
-   * 行は type_size (= 行全体のバイト数) > deref_size (= 要素サイズ) で見分ける
-   * (スカラ要素 `int *p` の `p[i]` は type_size == deref_size == 要素サイズ)。
-   * 要素がスカラ (inner_deref_size==0) の行に限る: 3 次元以上の中間行 (要素がさらに配列、
-   * inner_deref_size>0) は `*(t[i]+k)` 後段の多段ストライド伝播が別経路で未対応なため
-   * 対象外とし従来挙動を維持する。スケールは add() 側で psx_node_deref_size(n) を使う。
-   * これがないと `m[i] + k` / `*(p+k) + j` が byte 加算になり不正アドレスを deref していた。 */
+  /* 多次元配列の「行」(`int m[3][4]` の `m[i]`、`int(*p)[4]` の `*(p+k)` / `p[i]`、
+   * 3D 以上の中間行 `int t[2][2][2]` の `t[i]` / `*(t[i]+k)`) は ND_DEREF/ND_ADDR で
+   * 表現され、値文脈ではポインタ (= 行先頭アドレス) へ decay する。is_pointer を立てると
+   * subscript_base_address_of が行をポインタ値として load してしまい多次元 subscript が
+   * 壊れるため、算術スケール用の判定だけここで拾う。行は type_size (= 行全体のバイト数) >
+   * deref_size (= 次段ストライド) で見分ける (スカラ要素 `int *p` の `p[i]` は
+   * type_size == deref_size == 要素サイズ)。スケールは add() 側で psx_node_deref_size(n)
+   * (= 次段ストライド) を使う。これがないと `m[i] + k` / `*(t[i]+k) + j` が byte 加算に
+   * なり不正アドレスを deref していた。 */
   if ((n->kind == ND_DEREF || n->kind == ND_ADDR) && !psx_node_is_pointer(n)) {
     int ds = psx_node_deref_size(n);
-    if (ds > 0 && psx_node_type_size(n) > ds &&
-        ((node_mem_t *)n)->inner_deref_size == 0)
+    if (ds > 0 && psx_node_type_size(n) > ds)
       return 1;
   }
   token_kind_t tk = TK_EOF; char *tn = NULL; int tl = 0, is_tp = 0;
@@ -2602,9 +2600,15 @@ static node_t *build_unary_deref_node(node_t *operand) {
    * (上の ND_LVAR 専用ブロックには該当しない)。`*m` / `*(m+k)` の operand を
    * ND_ADD を辿って基底まで下り、inner_deref_size>0 (= まだ多次元) なら結果の
    * 「行」に内側ストライドを 1 段シフトして引き継ぐ。これがないと結果 deref_size=0
-   * のままで build_node_deref の配列崩壊判定 (deref_size>0 && type_size>8) に乗らず、
-   * 行を値ロードして garbage を返す (`int *q=m[0]` 相当の `*m` / `*(m+k)`)。 */
-  if (node->deref_size == 0 && node->type_size > 8) {
+   * のままで build_node_deref の配列崩壊判定に乗らず、行を値ロードして garbage を返す
+   * (`int *q=m[0]` 相当の `*m` / `*(m+k)`)。
+   * 旧実装は `node->type_size > 8` を門にしていたが、それだと行全体が 8 バイト以下に
+   * なる 3 次元以上の中間行 (`int t[2][2][2]` の `*(t[i]+k)` = int[2] = 8B) で伝播が
+   * 漏れ SIGSEGV していた。pm->inner_deref_size>0 自体が「結果がまだ配列」の指標なので
+   * type_size 門は不要。is_pointer は立てない: subscript 経路の行と統一し !is_pointer の
+   * まま扱う。崩壊は build_node_deref の小行節、算術スケールは node_is_ptr_for_arith に
+   * 委ねる (is_pointer を立てると loaded ポインタ値と区別できず崩壊判定が壊れる)。 */
+  if (node->deref_size == 0) {
     node_t *probe = operand;
     while (probe && (probe->kind == ND_ADD || probe->kind == ND_SUB)) probe = probe->lhs;
     node_mem_t *pm = NULL;
@@ -2621,7 +2625,6 @@ static node_t *build_unary_deref_node(node_t *operand) {
           node->extra_strides[i - 1] = pm->extra_strides[i];
         node->extra_strides_count = (unsigned char)(pm->extra_strides_count - 1);
       }
-      node->is_pointer = 1;
     }
   }
   return (node_t *)node;
