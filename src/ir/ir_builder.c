@@ -1053,8 +1053,15 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
    *    unary deref が is_pointer を立てないが、type_size>8 (= 配列全体サイズ)
    *    かつ deref_size>0 (要素ストライドを持つ=配列実体) なら同様に崩壊させる。
    * これにより `int *q = m[0];` / `*(*(m+1)+2)` / `**m` が正しく動く。struct 値は
-   * deref_size=0 なのでここに該当せず、従来どおり値ロードされる。 */
-  if (mm->deref_size > 0 && mm->type_size > 8) {
+   * deref_size=0 なのでここに該当せず、従来どおり値ロードされる。
+   *  - 行全体が 8 バイト以下の小さい配列の行 (`int m[2][2]` の `m[i]` = 8B、
+   *    `char c[2][3]` の `c[i]` = 3B 等) は type_size>8 から漏れ、行をスカラとして
+   *    load し不正アドレスを deref していた。プレーン配列の行は is_pointer=0 かつ
+   *    type_size (= 行全体) > deref_size (= 要素サイズ) で見分けて崩壊させる
+   *    (loaded ポインタ値 `*pp` は is_pointer=1 なので除外され従来どおり load)。 */
+  if (mm->deref_size > 0 &&
+      (mm->type_size > 8 ||
+       (!mm->is_pointer && mm->type_size > mm->deref_size))) {
     return ptr;
   }
   int v = ir_func_new_vreg(ctx->f);

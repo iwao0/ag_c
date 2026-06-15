@@ -2248,6 +2248,22 @@ static node_t *shift(void) {
  * 効かず byte 単位になっていた。タグポインタもポインタとして扱う。 */
 static int node_is_ptr_for_arith(node_t *n) {
   if (psx_node_is_pointer(n)) return 1;
+  /* 2 次元配列の「行」(`int m[3][4]` の `m[i]`、`int(*p)[4]` の `*(p+k)` / `p[i]`) は
+   * ND_DEREF/ND_ADDR で表現され、値文脈ではポインタ (= 行先頭アドレス) へ decay する。
+   * is_pointer を立てると subscript_base_address_of が行をポインタ値として load してしまい
+   * 多次元 subscript が壊れるため、算術スケール用の判定だけここで拾う。
+   * 行は type_size (= 行全体のバイト数) > deref_size (= 要素サイズ) で見分ける
+   * (スカラ要素 `int *p` の `p[i]` は type_size == deref_size == 要素サイズ)。
+   * 要素がスカラ (inner_deref_size==0) の行に限る: 3 次元以上の中間行 (要素がさらに配列、
+   * inner_deref_size>0) は `*(t[i]+k)` 後段の多段ストライド伝播が別経路で未対応なため
+   * 対象外とし従来挙動を維持する。スケールは add() 側で psx_node_deref_size(n) を使う。
+   * これがないと `m[i] + k` / `*(p+k) + j` が byte 加算になり不正アドレスを deref していた。 */
+  if ((n->kind == ND_DEREF || n->kind == ND_ADDR) && !psx_node_is_pointer(n)) {
+    int ds = psx_node_deref_size(n);
+    if (ds > 0 && psx_node_type_size(n) > ds &&
+        ((node_mem_t *)n)->inner_deref_size == 0)
+      return 1;
+  }
   token_kind_t tk = TK_EOF; char *tn = NULL; int tl = 0, is_tp = 0;
   psx_node_get_tag_type(n, &tk, &tn, &tl, &is_tp);
   return is_tp;

@@ -1004,6 +1004,7 @@ static const test_case_t test_cases[] = {
     {"probes", "alignof_aggregate", CASE_INT_FILE, "test/fixtures/probes_found_bugs/alignof_aggregate.c", 42, 0},
     {"probes", "generic_string_and_long", CASE_INT_FILE, "test/fixtures/probes_found_bugs/generic_string_and_long.c", 42, 0},
     {"probes", "cast_short_char_sign_extend", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cast_short_char_sign_extend.c", 42, 0},
+    {"probes", "array_row_decay_pointer_arith", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_pointer_arith.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
