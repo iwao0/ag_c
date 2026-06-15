@@ -1298,25 +1298,53 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
 static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_member_info_t info) {
   int cumulative_offset = info.offset;
   tag_member_info_t cur_info = info;
-  while (curtok()->kind == TK_DOT &&
-         (cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
-         !cur_info.is_tag_pointer) {
-    tk_consume('.');
-    token_ident_t *id2 = tk_consume_ident();
-    if (!id2) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-    tag_member_info_t sub_info = {0};
-    sub_info.tag_kind = TK_EOF;
-    lvar_t nested_owner = {0};
-    nested_owner.tag_kind = cur_info.tag_kind;
-    nested_owner.tag_name = cur_info.tag_name;
-    nested_owner.tag_len = cur_info.tag_len;
-    if (!tag_find_member(&nested_owner, id2->str, id2->len, &sub_info)) {
-      psx_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-      break;
+  /* C11 6.7.9p6+p17: designator は `.member` と `[idx]` を任意に連ねた subobject
+   * パスを表せる (`.m.x[1].b`)。`.` なら struct/union メンバへ、`[` なら配列要素へ
+   * 降りて累積 offset を更新し、`=` に達するまで辿る。 */
+  while (curtok()->kind == TK_DOT || curtok()->kind == TK_LBRACKET) {
+    if (curtok()->kind == TK_DOT) {
+      if (!((cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
+            !cur_info.is_tag_pointer)) {
+        /* `.member` の左辺が struct/union でない (スカラ/ポインタ/未降下の配列)。 */
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+        break;
+      }
+      tk_consume('.');
+      token_ident_t *id2 = tk_consume_ident();
+      if (!id2) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+      tag_member_info_t sub_info = {0};
+      sub_info.tag_kind = TK_EOF;
+      lvar_t nested_owner = {0};
+      nested_owner.tag_kind = cur_info.tag_kind;
+      nested_owner.tag_name = cur_info.tag_name;
+      nested_owner.tag_len = cur_info.tag_len;
+      if (!tag_find_member(&nested_owner, id2->str, id2->len, &sub_info)) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+        break;
+      }
+      cumulative_offset += sub_info.offset;
+      cur_info = sub_info;
+    } else {
+      /* `[idx]`: cur_info が配列メンバ (array_len>0、ポインタ配列でない) のときだけ
+       * 要素へ降りる。stride は要素サイズ (type_size)。降下後は単一要素なので
+       * array_len を 0 にし、後続の `.member` がそのまま tag を引けるようにする。 */
+      if (cur_info.array_len <= 0 || cur_info.is_tag_pointer) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
+        break;
+      }
+      tk_consume('[');
+      int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+      tk_expect(']');
+      if (nested_idx < 0 || nested_idx >= cur_info.array_len) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      }
+      cumulative_offset += nested_idx * cur_info.type_size;
+      cur_info.array_len = 0;
     }
-    cumulative_offset += sub_info.offset;
-    cur_info = sub_info;
   }
   tk_expect('=');
   node_t *lhs = psx_node_new_lvar_typed(var->offset + cumulative_offset, cur_info.type_size);
@@ -1337,30 +1365,6 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
     assign_node->base.fp_kind = cur_info.fp_kind;
   }
   return (node_t *)assign_node;
-}
-
-/* parse_struct_initializer の `.member[idx] = val` 経路。
- * 呼出時に最初の `.member` は消費済みで info、`[` は呼出側が確認済み。
- * このヘルパで `[idx] = val` を消費し、assign node を返す。
- * info.array_len と idx の境界、未存在メンバ、tag pointer 拒否を内部で診断する。 */
-static node_t *consume_indexed_designator_and_build_assign(lvar_t *var, tag_member_info_t info,
-                                                            bool found) {
-  if (!found || info.len <= 0) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-  }
-  if (info.array_len <= 0 || info.is_tag_pointer) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
-  }
-  int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
-  tk_expect(']');
-  tk_expect('=');
-  if (nested_idx < 0 || nested_idx >= info.array_len) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
-  }
-  return build_nested_array_designator_assign(var, &info, nested_idx);
 }
 
 /* parse_struct_initializer 末尾の未割当スカラメンバ補完。
@@ -1483,26 +1487,16 @@ static node_t *parse_struct_initializer(lvar_t *var) {
             }
           }
         }
-        /* ネスト designator `.a.b = val` (C11 6.7.9p6 + 6.7.9p17): a が
-         * struct/union メンバなら `.b` を辿り、累積 offset の lhs と代入を作る。 */
-        if (found && curtok()->kind == TK_DOT &&
-            (info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) &&
-            !info.is_tag_pointer) {
+        /* designator のサブパス (C11 6.7.9p6 + 6.7.9p17): `.member` の後に `.x` や
+         * `[i]` が続けば subobject へ降りるパス指定 (`.a.b`, `.a[i]`, `.m.x[1].b`,
+         * `.arr[i].f` など)。consume_nested_designator_and_build_assign が `.`/`[` の
+         * 連鎖を辿り累積 offset の lhs と代入を作る。`.member = val` (続きなし) は
+         * 下の tk_expect('=') へ。C11 6.7.9p19 により同一 subobject への重複指定は
+         * 後勝ち (エラーではない)。 */
+        if (found && (curtok()->kind == TK_DOT || curtok()->kind == TK_LBRACKET)) {
           init_chain = append_to_init_chain(init_chain,
               consume_nested_designator_and_build_assign(var, info));
-          /* トップレベル `a` への部分代入として記録 (`.a.x=1, .a.y=2` 混在を許す)。 */
-          record_assigned_member(assigned_names, assigned_lens, assigned_kind,
-                                 &assigned_n, member_count, info.name, info.len, 1);
-          if (tk_consume('}')) break;
-          tk_expect(',');
-          if (tk_consume('}')) break;
-          continue;
-        }
-        if (tk_consume('[')) {
-          /* indexed designator `.member[idx] = val`。C11 6.7.9p19 により同一
-           * subobject への複数指定初期化子は後勝ち (エラーではない)。 */
-          init_chain = append_to_init_chain(init_chain,
-              consume_indexed_designator_and_build_assign(var, info, found));
+          /* トップレベル `member` への部分代入として記録 (`.a.x=1, .a.y=2` 混在を許す)。 */
           record_assigned_member(assigned_names, assigned_lens, assigned_kind,
                                  &assigned_n, member_count, info.name, info.len, 1);
           if (tk_consume('}')) break;
