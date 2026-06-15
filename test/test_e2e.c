@@ -986,6 +986,7 @@ static const test_case_t test_cases[] = {
     {"probes", "cast_subint_to_int_signedness", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cast_subint_to_int_signedness.c", 42, 0},
     {"probes", "multidim_array_explicit_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/multidim_array_explicit_deref.c", 42, 0},
     {"probes", "bool_initializer_normalization", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_initializer_normalization.c", 42, 0},
+    {"probes", "struct_pointer_arithmetic", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_pointer_arithmetic.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

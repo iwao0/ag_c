@@ -2106,6 +2106,16 @@ static node_t *shift(void) {
   }
 }
 
+/* C11 6.5.6 のポインタ算術判定。struct/union タグポインタは is_pointer ではなく
+ * is_tag_pointer で表現されるため、`&s[i] - &s[j]` や `sp + n` のスケーリング/差分が
+ * 効かず byte 単位になっていた。タグポインタもポインタとして扱う。 */
+static int node_is_ptr_for_arith(node_t *n) {
+  if (psx_node_is_pointer(n)) return 1;
+  token_kind_t tk = TK_EOF; char *tn = NULL; int tl = 0, is_tp = 0;
+  psx_node_get_tag_type(n, &tk, &tn, &tl, &is_tp);
+  return is_tp;
+}
+
 static node_t *add(void) {
   node_t *node = mul();
   for (;;) {
@@ -2117,10 +2127,10 @@ static node_t *add(void) {
        * 既存の「左 = ポインタ, 右 = 整数 (scaling 対象)」経路に乗せる。
        * 修正前は `2 + a` で左辺 (整数) を見るだけで scaling されず、
        * `2 + a` が整数加算 → 不正アドレス deref で garbage 値を返していた。 */
-      if (!psx_node_is_pointer(node) && psx_node_is_pointer(rhs)) {
+      if (!node_is_ptr_for_arith(node) && node_is_ptr_for_arith(rhs)) {
         node_t *tmp = node; node = rhs; rhs = tmp;
       }
-      if (psx_node_is_pointer(node)) {
+      if (node_is_ptr_for_arith(node)) {
         int ds = psx_node_deref_size(node);
         if (ds > 1) {
           // ポインタ + 整数: 整数を要素サイズ倍にスケーリング
@@ -2131,7 +2141,7 @@ static node_t *add(void) {
     } else if (curtok()->kind == TK_MINUS) {
       set_curtok(curtok()->next);
       node_t *rhs = mul();
-      int both_ptr = psx_node_is_pointer(node) && psx_node_is_pointer(rhs);
+      int both_ptr = node_is_ptr_for_arith(node) && node_is_ptr_for_arith(rhs);
       if (both_ptr) {
         // ポインタ - ポインタ (C11 6.5.6p9): 結果は要素数 (= ptrdiff_t)。
         // (p - q) / sizeof(*p) を生成する。両辺が同じ型を指す前提。
@@ -2141,7 +2151,7 @@ static node_t *add(void) {
                  ? psx_node_new_binary(ND_DIV, diff, psx_node_new_num(ds))
                  : diff;
       } else {
-        if (psx_node_is_pointer(node)) {
+        if (node_is_ptr_for_arith(node)) {
           int ds = psx_node_deref_size(node);
           if (ds > 1) {
             // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
