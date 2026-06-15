@@ -401,14 +401,19 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NUM, unsigned_long_cast->kind);
   ASSERT_EQ(15, as_num(unsigned_long_cast)->val);
 
+    // 定数の short/char キャストは目的幅へ切り詰めて ND_NUM へ定数畳み込みする
+    // (16/17/18 は範囲内なので値は不変)。
     node_t *unsigned_short_int_cast = parse_expr_input("(unsigned short int)16");
-  ASSERT_EQ(ND_BITAND, unsigned_short_int_cast->kind);
+  ASSERT_EQ(ND_NUM, unsigned_short_int_cast->kind);
+  ASSERT_EQ(16, as_num(unsigned_short_int_cast)->val);
 
     node_t *signed_char_cast = parse_expr_input("(signed char)17");
-  ASSERT_EQ(ND_BITAND, signed_char_cast->kind);
+  ASSERT_EQ(ND_NUM, signed_char_cast->kind);
+  ASSERT_EQ(17, as_num(signed_char_cast)->val);
 
     node_t *unsigned_char_cast = parse_expr_input("(unsigned char)18");
-  ASSERT_EQ(ND_BITAND, unsigned_char_cast->kind);
+  ASSERT_EQ(ND_NUM, unsigned_char_cast->kind);
+  ASSERT_EQ(18, as_num(unsigned_char_cast)->val);
 
     node_t *restrict_ptr_cast = parse_expr_input("(restrict int*)0");
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);
@@ -739,9 +744,10 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(24, as_num(ret->lhs)->val);
 
+    // (char)300: signed char へ切り詰めて ND_NUM へ畳み込む (300 → 44)。
     node_t *c1 = parse_expr_input("(char)300");
-  ASSERT_EQ(ND_BITAND, c1->kind);
-  ASSERT_EQ(0xff, as_num(c1->rhs)->val);
+  ASSERT_EQ(ND_NUM, c1->kind);
+  ASSERT_EQ(44, as_num(c1)->val);
 
     // 整数リテラルの fp キャストは ND_INT_TO_FP でラップされ、codegen が I2F を発行する。
     node_t *c2 = parse_expr_input("(_Complex double)1");
