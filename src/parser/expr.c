@@ -3029,6 +3029,18 @@ static node_t *parse_call_postfix(node_t *callee) {
     }
   }
   node->callee = callee;
+  /* 間接呼び出しで callee が関数ポインタ変数 (lvar/gvar) のとき、その pointee fp_kind
+   * (= 関数戻り型の fp_kind。`double (*d)(double)` は宣言時 `double *d` と同じく
+   * pointee_fp_kind=double が立つ) を funcall ノードに載せる。これがないと
+   * ir_builder が戻り値型を整数 (I32) と判定し戻り値を x0 で読んでいた
+   * (FP 戻り値は d0 に返るため化けていた)。呼び出し文脈なので callee は関数
+   * ポインタであり、データポインタ `double *p` の pointee と取り違える心配はない。
+   * 配列要素 `ops[i]` / struct メンバ `s.f` (ND_DEREF) は戻り型 fp_kind を伝播して
+   * いないため未対応 (別途 subscript/メンバ経路への配線が要る)。 */
+  if (callee && (callee->kind == ND_LVAR || callee->kind == ND_GVAR)) {
+    tk_float_kind_t ret_fp = psx_node_pointee_fp_kind(callee);
+    if (ret_fp != TK_FLOAT_KIND_NONE) node->base.fp_kind = ret_fp;
+  }
   int nargs = 0;
   int arg_cap = 16;
   node->args = calloc(arg_cap, sizeof(node_t *));

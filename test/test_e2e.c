@@ -1006,6 +1006,7 @@ static const test_case_t test_cases[] = {
     {"probes", "cast_short_char_sign_extend", CASE_INT_FILE, "test/fixtures/probes_found_bugs/cast_short_char_sign_extend.c", 42, 0},
     {"probes", "array_row_decay_pointer_arith", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_pointer_arith.c", 42, 0},
     {"probes", "array_row_decay_3d_pointer_arith", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_3d_pointer_arith.c", 42, 0},
+    {"probes", "funcptr_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_fp_return.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
