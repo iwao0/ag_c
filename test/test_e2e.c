@@ -995,6 +995,7 @@ static const test_case_t test_cases[] = {
     {"probes", "long_cast_unsigned_zero_extend", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_cast_unsigned_zero_extend.c", 42, 0},
     {"probes", "long_literal_width", CASE_INT_FILE, "test/fixtures/probes_found_bugs/long_literal_width.c", 42, 0},
     {"probes", "struct_pointer_to_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_pointer_to_array.c", 42, 0},
+    {"probes", "local_pointer_to_2d_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/local_pointer_to_2d_array.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

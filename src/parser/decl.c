@@ -340,6 +340,12 @@ static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_di
 
 static int parse_decl_array_suffixes_constexpr_required(int base_mul);
 
+/* `T (*p)[N][M]...` (配列へのポインタ) 局所宣言子で、paren の後ろの `[N][M]` の
+ * 先頭次元 (N) と次元数を捕捉する。outer_stride に加え mid_stride を計算するのに使う。
+ * consume_decl_name_recursive が paren-array を消費するときにセットする。 */
+static int g_paren_array_first_dim = 0;
+static int g_paren_array_dim_count = 0;
+
 static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   decl_array_suffix_t out = {0};
   out.arr_total = (base_mul > 0) ? base_mul : 1;
@@ -1927,7 +1933,12 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
    * (parse_decl_array_suffixes_constexpr_required は初期値 1 をそのまま返すため、
    * 立ててしまうと `int (**pp)(int)` 等が `(*p)[N]` 分岐で誤登録される)。 */
   if (local_had_parens && out_paren_array_mul && curtok()->kind == TK_LBRACKET) {
-    *out_paren_array_mul = parse_decl_array_suffixes_constexpr_required(1);
+    /* 多次元 inner (`(*p)[N][M]`) の mid_stride 計算のため先頭次元と次元数を捕捉する。
+     * arr_total は全次元の積で従来の paren_array_mul と一致。 */
+    decl_array_suffix_t pa = parse_decl_array_suffixes(1);
+    *out_paren_array_mul = pa.arr_total > 0 ? pa.arr_total : 1;
+    g_paren_array_first_dim = pa.first_dim;
+    g_paren_array_dim_count = pa.dim_count;
   }
   if (had_parens) *had_parens = local_had_parens;
   return tok;
@@ -2575,6 +2586,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
 
     int paren_array_mul = 0;
     int inner_array_mul = 0;
+    g_paren_array_first_dim = 0;
+    g_paren_array_dim_count = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
     int var_size = is_pointer ? 8 : elem_size;
@@ -2651,6 +2664,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
         var->base_deref_size = (short)elem_size;
         var->outer_stride = row_size;
+        /* 多次元 inner (`(*p)[N][M]`): p[i] は [N][M] 全体 (outer_stride)、p[i][j] は
+         * 内側 1 行 ([M]) ぶん進む。mid_stride = (積/先頭次元)*elem を設定する。 */
+        if (g_paren_array_dim_count >= 2 && g_paren_array_first_dim > 0) {
+          var->mid_stride = (paren_array_mul / g_paren_array_first_dim) * elem_size;
+        }
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
         /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
          * そのまま使って stride を計算しつつ lvar を登録する。 */
