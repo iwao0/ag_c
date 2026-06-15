@@ -988,6 +988,7 @@ static const test_case_t test_cases[] = {
     {"probes", "bool_initializer_normalization", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bool_initializer_normalization.c", 42, 0},
     {"probes", "struct_pointer_arithmetic", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_pointer_arithmetic.c", 42, 0},
     {"probes", "array_of_struct_member_init", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_of_struct_member_init.c", 42, 0},
+    {"probes", "struct_subint_by_value", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_subint_by_value.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

@@ -661,14 +661,24 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
   return inst->dst;
 }
 
+/* struct/union 値を「間接 (memcpy / ret_area / アドレス渡し)」で扱うべきサイズか。
+ * 1/2/4/8 バイトは 1 つのレジスタにきれいに収まり値ロードできるが、3/5/6/7 や >8 は
+ * 先頭メンバ幅しか復元できず壊れるため間接経路に回す。3/5/6/7 は scalar に存在しない
+ * サイズなので struct/union/配列を一意に表す。 */
+static int cg_size_needs_indirect_struct(int sz) {
+  return sz > 0 && sz != 1 && sz != 2 && sz != 4 && sz != 8;
+}
+
 static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
   if (!node->lhs) {
     fail(ctx, "assign without target");
     return ir_val_none();
   }
   if (node->is_complex) return build_assign_complex(ctx, node);
-  /* struct 値代入: ND_ASSIGN.type_size が要素サイズを超えるなら memcpy 経路。 */
-  if (((node_mem_t *)node)->type_size > 8) return build_assign_struct(ctx, node);
+  /* struct 値代入: ND_ASSIGN.type_size が要素サイズを超える (>8) か、レジスタに
+   * きれいに乗らないサイズ (3/5/6/7) なら memcpy 経路。 */
+  if (cg_size_needs_indirect_struct(((node_mem_t *)node)->type_size))
+    return build_assign_struct(ctx, node);
   switch (node->lhs->kind) {
     case ND_LVAR:  return build_assign_to_lvar(ctx, node);
     case ND_GVAR:  return build_assign_to_gvar(ctx, node);
@@ -813,9 +823,10 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_none();
   }
   if (dst_ptr_vreg < 0) return ir_val_none();
-  /* rhs が >8B struct 戻り値の関数呼び出しなら、戻り値を dst へ直接書かせる。 */
+  /* rhs が間接返し (>8B / 3/5/6/7B) struct 戻り値の関数呼び出しなら、戻り値を dst へ
+   * 直接書かせる。 */
   if (node->rhs && node->rhs->kind == ND_FUNCALL &&
-      node->rhs->ret_struct_size > 8) {
+      cg_size_needs_indirect_struct(node->rhs->ret_struct_size)) {
     node_func_t *callee = (node_func_t *)node->rhs;
     if (callee->callee || callee->is_variadic || callee->nargs > 8) {
       fail(ctx, "indirect/variadic/many-arg struct-return call");
@@ -826,13 +837,27 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
       cargs = calloc((size_t)callee->nargs, sizeof(ir_val_t));
       for (int i = 0; i < callee->nargs; i++) {
         node_t *arg = callee->args[i];
+        /* compound literal `(struct V){...}` (ND_COMMA(init, temp lvar)): init を
+         * 評価してから temp lvar を struct ソースとして扱う (主 funcall 経路と同じ)。 */
+        if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
+          node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
+          lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
+          int cl_sz = owner_cl ? owner_cl->size : rlv->mem.type_size;
+          if (!rlv->mem.is_pointer &&
+              (cl_sz > 8 || cg_size_needs_indirect_struct(cl_sz))) {
+            (void)build_expr(ctx, arg->lhs);
+            if (ctx->failed) return ir_val_none();
+            arg = arg->rhs;
+          }
+        }
         int arg_full_size = 0;
         if (arg && arg->kind == ND_LVAR) {
           lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
           if (owner) arg_full_size = owner->size;
           if (arg_full_size == 0) arg_full_size = ((node_lvar_t *)arg)->mem.type_size;
         }
-        if (arg_full_size > 8) {
+        if (cg_size_needs_indirect_struct(arg_full_size) &&
+            arg && arg->kind == ND_LVAR) {
           int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
           if (src_ptr < 0) return ir_val_none();
           int tmp = ir_func_new_vreg(ctx->f);
@@ -1288,13 +1313,18 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
         int cl_sz = owner_cl ? owner_cl->size : rlv->mem.type_size;
-        if (cl_sz > 8 && !rlv->mem.is_pointer) {
+        if (cg_size_needs_indirect_struct(cl_sz) && !rlv->mem.is_pointer) {
           (void)build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           arg = arg->rhs;
         }
       }
       int arg_full_size = 0;
+      /* struct/union 値で、サイズが 1/2/4/8 の clean なスカラロードに乗らない
+       * (3/5/6/7 バイト) ものは、値ロードすると先頭メンバ幅しか読めず壊れる
+       * (`{char;short;uchar}` の 6B が 1B 扱い)。これを >8B と同様にアドレス渡し
+       * させるためのフラグ。 */
+      int struct_needs_ptr = 0;
       if (arg && arg->kind == ND_LVAR) {
         node_lvar_t *lv = (node_lvar_t *)arg;
         /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
@@ -1303,6 +1333,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
           if (owner) arg_full_size = owner->size;
           if (arg_full_size == 0) arg_full_size = lv->mem.type_size;
+          /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
+             確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
+          if ((!owner || (!owner->is_array && owner->pointer_qual_levels == 0)) &&
+              cg_size_needs_indirect_struct(arg_full_size) && arg_full_size <= 8) {
+            struct_needs_ptr = 1;
+          }
         } else {
           arg_full_size = lv->mem.type_size;
         }
@@ -1312,6 +1348,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         node_mem_t *m = (node_mem_t *)arg;
         if (m->tag_kind != TK_EOF && !m->is_tag_pointer && !m->is_pointer) {
           arg_full_size = m->type_size;
+          if (arg_full_size != 1 && arg_full_size != 2 &&
+              arg_full_size != 4 && arg_full_size != 8) {
+            struct_needs_ptr = 1;
+          }
         }
       } else if (arg && arg->kind == ND_FUNCALL && arg->ret_struct_size > 8) {
         /* >8B struct を返す関数呼び出しを直接 struct 引数に (`sum(make())`)。
@@ -1325,7 +1365,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         cargs[i] = ir_val_vreg(a.id, IR_TY_PTR);
         continue;
       }
-      if (arg_full_size > 8) {
+      if (arg_full_size > 8 || struct_needs_ptr) {
         /* struct 引数: 一時 frame slot に memcpy し、そのアドレスを渡す。
          * src アドレスは ND_LVAR なら lvar slot、ND_DEREF ならその lhs (= 計算済み
          * アドレス式) を評価して得る。 */
@@ -1401,7 +1441,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * 確保し x8 で渡す。戻り値はその area のアドレス (PTR)。struct 代入の直接 rhs は
    * build_assign_struct がインラインで処理するためここには来ない。 */
   int struct_ret_area = -1;
-  if (node->ret_struct_size > 8 && !fn->callee) {
+  if (cg_size_needs_indirect_struct(node->ret_struct_size) && !fn->callee) {
     struct_ret_area = ir_func_new_vreg(ctx->f);
     ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
     ia->dst = ir_val_vreg(struct_ret_area, IR_TY_PTR);
@@ -2274,7 +2314,14 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     node_lvar_t *lv = (node_lvar_t *)arg;
     lvar_t *owner = find_owning_lvar(ctx, lv->offset);
     int param_full_size = owner && owner->size > 0 ? owner->size : lv->mem.type_size;
-    if (param_full_size > 8) {
+    /* caller と同じ判定: struct/union 値で 1/2/4/8 でないサイズ (3/5/6/7) は
+     * アドレス渡しで受け取る (register 値ロードだと先頭メンバ幅しか復元できない)。 */
+    int struct_param_needs_ptr =
+        owner && owner->tag_kind != TK_EOF && !owner->is_tag_pointer &&
+        !owner->is_array && owner->pointer_qual_levels == 0 &&
+        param_full_size != 1 && param_full_size != 2 &&
+        param_full_size != 4 && param_full_size != 8;
+    if (param_full_size > 8 || struct_param_needs_ptr) {
       /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
        * したポインタを x{int_idx} で渡してくる前提。 */
       int param_vreg = ir_func_new_vreg(ctx->f);
@@ -2392,9 +2439,12 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
   ctx->label_count = 0;
-  /* >8B struct 戻り値の関数では prologue で x8 を受け取る (Apple ARM64 ABI 簡略版)。
-   * ≤8B struct はそのまま x0 で 1 レジスタ返却 (= scalar 経路と同じ動作)。 */
-  ctx->f->ret_struct_size = fn->base.ret_struct_size > 8 ? fn->base.ret_struct_size : 0;
+  /* >8B struct 戻り値 (および 3/5/6/7B の非 clean サイズ) の関数では prologue で
+   * x8 を受け取る (Apple ARM64 ABI 簡略版)。1/2/4/8B のみ x0 で 1 レジスタ返却。
+   * 非 clean サイズを scalar 返ししていたため `{char;short;uchar}` 戻り値が先頭
+   * メンバ幅 (1B) しか復元できず壊れていた。 */
+  ctx->f->ret_struct_size =
+      cg_size_needs_indirect_struct(fn->base.ret_struct_size) ? fn->base.ret_struct_size : 0;
   if (ctx->f->ret_struct_size > 0) {
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);
