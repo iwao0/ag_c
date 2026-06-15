@@ -338,8 +338,6 @@ static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_di
   return mul;
 }
 
-static int parse_decl_array_suffixes_constexpr_required(int base_mul);
-
 /* `T (*p)[N][M]...` (配列へのポインタ) 局所宣言子で、paren の後ろの `[N][M]` の
  * 先頭次元 (N) と次元数を捕捉する。outer_stride に加え mid_stride を計算するのに使う。
  * consume_decl_name_recursive が paren-array を消費するときにセットする。 */
@@ -375,15 +373,6 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   return out;
 }
 
-static int parse_decl_array_suffixes_constexpr_required(int base_mul) {
-  int arr_total = (base_mul > 0) ? base_mul : 1;
-  while (tk_consume('[')) {
-    int n = parse_array_size_constexpr_decl();
-    tk_expect(']');
-    if (n > 0) arr_total *= n;
-  }
-  return arr_total;
-}
 
 // 波括弧初期化子 `{ ... }` のトップレベル要素数を数えるトークン先読みヘルパ。
 // `brace_tok` は `{` を指している必要がある。curtok は変更しない。
@@ -1032,11 +1021,25 @@ static node_t *bool_normalize_if(node_t *v, int is_bool) {
   return v;
 }
 
+/* 配列メンバの 1 要素代入を構築する。_Bool 正規化と float/double の fp_kind 伝播
+ * (float 配列メンバ `float v[4]` の要素 store を fp store にする) をまとめて行う。 */
+static node_mem_t *build_member_array_elem_assign_node(node_t *lhs, node_t *value, int elem_size,
+                                                       tk_float_kind_t fp_kind, int is_bool) {
+  value = bool_normalize_if(value, is_bool);
+  node_mem_t *an = psx_node_new_assign(lhs, value);
+  an->type_size = elem_size;
+  if (fp_kind != TK_FLOAT_KIND_NONE) {
+    lhs->fp_kind = fp_kind;
+    an->base.fp_kind = fp_kind;
+  }
+  return an;
+}
+
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
                                         int member_array_len, int member_outer_stride,
-                                        int member_is_bool) {
+                                        int member_is_bool, tk_float_kind_t member_fp_kind) {
   if (member_array_len > 0) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
@@ -1058,11 +1061,11 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               int k = 0;
               if (!tk_consume('}')) {
                 for (;;) {
-                  node_t *val = bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool);
+                  node_t *val = parse_scalar_brace_initializer();
                   if (k < inner_len && flat < array_len) {
                     node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
-                    node_mem_t *an = psx_node_new_assign(lhs, val);
-                    an->type_size = elem_size;
+                    node_mem_t *an = build_member_array_elem_assign_node(lhs, val, elem_size,
+                        member_fp_kind, member_is_bool);
                     if (!init_chain) init_chain = (node_t *)an;
                     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an);
                     flat++; k++;
@@ -1074,11 +1077,11 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               }
               flat = (row + 1) * inner_len;       /* 次の行頭へ (残りは 0) */
             } else {
-              node_t *val = bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool);
+              node_t *val = parse_scalar_brace_initializer();
               if (flat < array_len) {
                 node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
-                node_mem_t *an = psx_node_new_assign(lhs, val);
-                an->type_size = elem_size;
+                node_mem_t *an = build_member_array_elem_assign_node(lhs, val, elem_size,
+                    member_fp_kind, member_is_bool);
                 if (!init_chain) init_chain = (node_t *)an;
                 else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an);
                 flat++;
@@ -1122,9 +1125,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             init_node = parse_struct_initializer(&nested);
           } else {
             node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
-            node_mem_t *assign_node = psx_node_new_assign(lhs,
-                bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
-            assign_node->type_size = elem_size;
+            node_mem_t *assign_node = build_member_array_elem_assign_node(lhs,
+                parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
             init_node = (node_t *)assign_node;
           }
           if (!init_chain) init_chain = init_node;
@@ -1147,9 +1149,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_copy) return array_copy;
       node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
-      node_mem_t *assign0 = psx_node_new_assign(lhs0,
-          bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
-      assign0->type_size = elem_size;
+      node_mem_t *assign0 = build_member_array_elem_assign_node(lhs0,
+          parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
       init_chain = (node_t *)assign0;
       for (int idx = 1; idx < array_len; idx++) {
         /* comma の次が designator (`.m`) / 終端 (`}`) ならこの配列メンバの省略充填は
@@ -1157,9 +1158,8 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
          * 途中まで埋めてから .a で上書きするケース)。 */
         if (!elision_consume_separator()) break;
         node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, idx);
-        node_mem_t *assign_node = psx_node_new_assign(lhs,
-            bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
-        assign_node->type_size = elem_size;
+        node_mem_t *assign_node = build_member_array_elem_assign_node(lhs,
+            parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
         init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
       }
       return init_chain;
@@ -1559,7 +1559,7 @@ static node_t *parse_struct_initializer(lvar_t *var) {
        * 逐次代入を順に発行すれば最後の代入が残る。 */
       node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                      info.tag_kind, info.tag_name, info.tag_len,
-                                                     info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool);
+                                                     info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind);
       init_chain = append_to_init_chain(init_chain,
           wrap_member_init_as_assign(var, &info, member_init));
       record_assigned_member(assigned_names, assigned_lens, assigned_kind,
@@ -1693,7 +1693,7 @@ static node_t *struct_member_elision(lvar_t *nested) {
     if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
     node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
                                              mi.tag_kind, mi.tag_name, mi.tag_len,
-                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool);
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool, mi.fp_kind);
     node_t *as = wrap_member_init_as_assign(nested, &mi, minit);
     chain = chain ? psx_node_new_binary(ND_COMMA, chain, as) : as;
     if (curtok() && curtok()->kind == TK_RBRACE) break;
@@ -1736,7 +1736,7 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
     if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
     node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
                                              mi.tag_kind, mi.tag_name, mi.tag_len,
-                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool);
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool, mi.fp_kind);
     chain = psx_node_new_binary(ND_COMMA, chain, wrap_member_init_as_assign(nested, &mi, minit));
   }
   return chain;
@@ -1817,7 +1817,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
   }
   node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                  info.tag_kind, info.tag_name, info.tag_len,
-                                                 info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool);
+                                                 info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind);
   node_t *init_chain = wrap_member_init_as_assign(var, &info, member_init);
   if (!tk_consume(',')) {
     tk_expect('}');
@@ -1841,7 +1841,7 @@ static node_t *parse_union_initializer(lvar_t *var) {
     }
     node_t *extra_init = parse_member_initializer(var, info.offset, info.type_size,
                                                   info.tag_kind, info.tag_name, info.tag_len,
-                                                  info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool);
+                                                  info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind);
     node_t *extra_assign = wrap_member_init_as_assign(var, &info, extra_init);
     init_chain = append_to_init_chain(init_chain, extra_assign);
     if (tk_consume('}')) return init_chain;

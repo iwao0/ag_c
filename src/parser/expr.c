@@ -927,9 +927,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
   deref->bit_is_signed = mem_info->bit_is_signed;
-  /* float/double メンバなら fp_kind を deref に伝播。 */
+  /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
+   * 式中でポインタへ decay するので pointee_fp_kind に入れて subscript 結果を fp load
+   * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと
+   * `s.v[i]` が整数 load になり float 値が化けていた。 */
   if (mem_info->fp_kind != TK_FLOAT_KIND_NONE) {
-    deref->base.fp_kind = mem_info->fp_kind;
+    if (mem_array_len > 0 && mem_size > 0) deref->pointee_fp_kind = mem_info->fp_kind;
+    else                                    deref->base.fp_kind = mem_info->fp_kind;
   }
   /* _Bool メンバ: 配列メンバなら pointee_is_bool、それ以外は is_bool。 */
   if (mem_info->is_bool) {
