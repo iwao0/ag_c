@@ -258,6 +258,23 @@ static int emit_binop(ir_build_ctx_t *ctx, ir_op_t op, ir_val_t a, ir_val_t b, i
   return v;
 }
 
+/* val を i32 の真偽値 (val != 0) に変換する。fp 値は FNE against 0.0 で比較する
+ * (整数 NE のまま分岐/正規化すると codegen が fp の bit を整数再解釈し、spill された
+ * 4B float を 8B load して 0.0 を真と誤判定していた)。整数はそのまま NE。 */
+static ir_val_t emit_truthiness(ir_build_ctx_t *ctx, ir_val_t val) {
+  if (is_fp_type(val.type)) {
+    int zero = ir_func_new_vreg(ctx->f);
+    ir_inst_t *zi = ir_inst_new(IR_LOAD_FP_IMM);
+    zi->dst = ir_val_vreg(zero, val.type);
+    zi->src1 = ir_val_fp_imm(val.type, 0.0);
+    ir_func_append_inst(ctx->f, zi);
+    int b = emit_binop(ctx, IR_FNE, val, ir_val_vreg(zero, val.type), IR_TY_I32);
+    return ir_val_vreg(b, IR_TY_I32);
+  }
+  int b = emit_binop(ctx, IR_NE, val, ir_val_imm(val.type, 0), IR_TY_I32);
+  return ir_val_vreg(b, IR_TY_I32);
+}
+
 /* ND_LVAR.offset → 「実際にアクセスすべきアドレスを持つ vreg」を返す。
  * struct メンバの場合は owner ALLOCA + delta (= IR_LEA) を構築する。 */
 static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
@@ -1495,11 +1512,11 @@ static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node) {
   switch_to_new_block(ctx, eval_rhs_b);
   ir_val_t r = build_expr(ctx, node->rhs);
   if (ctx->failed) return ir_val_none();
-  /* 0/1 に正規化: r != 0 */
-  int v_norm = emit_binop(ctx, IR_NE, r, ir_val_imm(r.type, 0), IR_TY_I32);
+  /* 0/1 に正規化: r != 0 (fp は FNE で比較)。 */
+  ir_val_t v_norm = emit_truthiness(ctx, r);
   ir_inst_t *st1 = ir_inst_new(IR_STORE);
   st1->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
-  st1->src2 = ir_val_vreg(v_norm, IR_TY_I32);
+  st1->src2 = v_norm;
   ir_func_append_inst(ctx->f, st1);
   emit_br(ctx, merge_b);
   switch_to_new_block(ctx, merge_b);
@@ -1869,18 +1886,7 @@ static void emit_br_cond(ir_build_ctx_t *ctx, ir_val_t cond,
    * float の bit を整数として再解釈し (spill された 4B float を 8B 整数 load して
    * 上位 32bit に garbage を拾い) 0.0 が真と判定されることがあった。 */
   if (is_fp_type(cond.type)) {
-    int zero = ir_func_new_vreg(ctx->f);
-    ir_inst_t *zi = ir_inst_new(IR_LOAD_FP_IMM);
-    zi->dst = ir_val_vreg(zero, cond.type);
-    zi->src1 = ir_val_fp_imm(cond.type, 0.0);
-    ir_func_append_inst(ctx->f, zi);
-    int b = ir_func_new_vreg(ctx->f);
-    ir_inst_t *ne = ir_inst_new(IR_FNE);
-    ne->dst = ir_val_vreg(b, IR_TY_I32);
-    ne->src1 = cond;
-    ne->src2 = ir_val_vreg(zero, cond.type);
-    ir_func_append_inst(ctx->f, ne);
-    cond = ir_val_vreg(b, IR_TY_I32);
+    cond = emit_truthiness(ctx, cond);
   }
   ir_inst_t *br = ir_inst_new(IR_BR_COND);
   br->src1 = cond;
