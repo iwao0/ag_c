@@ -1100,11 +1100,27 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
           }
           /* C11 6.7.9p19: 同一要素への複数指定初期化子は後勝ち (エラーではない)。 */
-          node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
-          node_mem_t *assign_node = psx_node_new_assign(lhs,
-              bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
-          assign_node->type_size = elem_size;
-          node_t *init_node = (node_t *)assign_node;
+          node_t *init_node;
+          if ((member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
+              !member_is_tag_pointer) {
+            /* struct/union 配列メンバの 1 要素 `{...}` を、要素 target_idx を target と
+             * した struct 初期化として処理する (`.pts={{1,2},{3,4}}` / `[k]={.x=1}`)。
+             * parse_struct_initializer が designator も positional も両形に対応。 */
+            lvar_t nested = {0};
+            nested.offset = owner->offset + member_offset + target_idx * elem_size;
+            nested.size = elem_size;
+            nested.elem_size = elem_size;
+            nested.tag_kind = member_tag_kind;
+            nested.tag_name = member_tag_name;
+            nested.tag_len = member_tag_len;
+            init_node = parse_struct_initializer(&nested);
+          } else {
+            node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
+            node_mem_t *assign_node = psx_node_new_assign(lhs,
+                bool_normalize_if(parse_scalar_brace_initializer(), member_is_bool));
+            assign_node->type_size = elem_size;
+            init_node = (node_t *)assign_node;
+          }
           if (!init_chain) init_chain = init_node;
           else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
           assigned[target_idx] = true;

@@ -331,10 +331,19 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
-      for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
-        long long ev = gv->init_values[(*val_idx)++];
-        if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
-        cg_emit_int_directive(ts, ev);
+      if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+        /* struct/union 配列メンバ (`struct P pts[2]`): 各要素を再帰してメンバ単位で
+         * 出力する。これをしないと要素 1 つを ts バイトのスカラとして出力し、
+         * `{{10,20},{30,40}}` が .quad 10/.quad 20 と化けていた。 */
+        for (int k = 0; k < alen; k++) {
+          emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+        }
+      } else {
+        for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
+          long long ev = gv->init_values[(*val_idx)++];
+          if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
+          cg_emit_int_directive(ts, ev);
+        }
       }
       prev_end = off + ts * alen;
       continue;
