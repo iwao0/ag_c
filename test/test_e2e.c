@@ -997,6 +997,7 @@ static const test_case_t test_cases[] = {
     {"probes", "struct_pointer_to_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_pointer_to_array.c", 42, 0},
     {"probes", "local_pointer_to_2d_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/local_pointer_to_2d_array.c", 42, 0},
     {"probes", "float_array_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/float_array_member.c", 42, 0},
+    {"probes", "float_truthiness_condition", CASE_INT_FILE, "test/fixtures/probes_found_bugs/float_truthiness_condition.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

@@ -1864,6 +1864,24 @@ static void emit_br(ir_build_ctx_t *ctx, ir_block_t *target) {
 static void emit_br_cond(ir_build_ctx_t *ctx, ir_val_t cond,
                           ir_block_t *t_block, ir_block_t *f_block) {
   if (cur_block_is_terminated(ctx->f)) return;
+  /* fp 値を条件に使う (`f ? a : b` / `if (f)` / `while (f)`) 場合は (cond != 0.0) に
+   * 変換してから分岐する。fp vreg をそのまま整数条件として分岐に渡すと codegen が
+   * float の bit を整数として再解釈し (spill された 4B float を 8B 整数 load して
+   * 上位 32bit に garbage を拾い) 0.0 が真と判定されることがあった。 */
+  if (is_fp_type(cond.type)) {
+    int zero = ir_func_new_vreg(ctx->f);
+    ir_inst_t *zi = ir_inst_new(IR_LOAD_FP_IMM);
+    zi->dst = ir_val_vreg(zero, cond.type);
+    zi->src1 = ir_val_fp_imm(cond.type, 0.0);
+    ir_func_append_inst(ctx->f, zi);
+    int b = ir_func_new_vreg(ctx->f);
+    ir_inst_t *ne = ir_inst_new(IR_FNE);
+    ne->dst = ir_val_vreg(b, IR_TY_I32);
+    ne->src1 = cond;
+    ne->src2 = ir_val_vreg(zero, cond.type);
+    ir_func_append_inst(ctx->f, ne);
+    cond = ir_val_vreg(b, IR_TY_I32);
+  }
   ir_inst_t *br = ir_inst_new(IR_BR_COND);
   br->src1 = cond;
   br->label_id = t_block->id;
