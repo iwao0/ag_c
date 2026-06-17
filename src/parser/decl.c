@@ -1390,6 +1390,21 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
     }
   }
   tk_expect('=');
+  /* leaf が struct 集約で `{...}` が続くとき (`.arr[1] = {7, 9}`) は、その subobject を
+   * target とした struct 初期化へ委譲する。これがないと parse_scalar_brace_initializer が
+   * スカラ扱いし `{7,9}` を E3064 で拒否していた。union leaf は union 配列要素 brace init
+   * 自体が別経路で未対応 (誤値になる) ため対象外とし、従来どおり E3064 に委ねる。 */
+  if (curtok()->kind == TK_LBRACE &&
+      cur_info.tag_kind == TK_STRUCT && !cur_info.is_tag_pointer) {
+    lvar_t nested = {0};
+    nested.offset = var->offset + cumulative_offset;
+    nested.size = cur_info.type_size;
+    nested.elem_size = cur_info.type_size;
+    nested.tag_kind = cur_info.tag_kind;
+    nested.tag_name = cur_info.tag_name;
+    nested.tag_len = cur_info.tag_len;
+    return parse_struct_initializer(&nested);
+  }
   node_t *lhs = psx_node_new_lvar_typed(var->offset + cumulative_offset, cur_info.type_size);
   ((node_lvar_t *)lhs)->mem.tag_kind = cur_info.tag_kind;
   ((node_lvar_t *)lhs)->mem.tag_name = cur_info.tag_name;
