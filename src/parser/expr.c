@@ -2648,6 +2648,18 @@ static node_t *build_unary_deref_node(node_t *operand) {
       }
     }
   }
+  /* deref 結果がまだ「行」(配列) の場合 (`(*dp)[j]` の *dp、`*m`/`*(m+k)` 等)、要素 fp 種別を
+   * pointee_fp_kind にも伝播し、後続 subscript `(*dp)[j]` が要素を fp load できるようにする。
+   * 上の `pql<=1` 分岐 (2549) は `double *p` のスカラ deref を想定して base.fp_kind を立てるが、
+   * 配列へのポインタや多次元配列の行 deref では結果はスカラでなく行なので、subscript 経路は
+   * pointee_fp_kind を見る。base.fp_kind は残す: スカラ deref `*p` を `_Generic(*p, double:..)`
+   * が control->fp_kind で判定するため (クリアすると double* deref が default に落ちる)。
+   * deref_size>0 が「結果がまだ subscript 可能な配列/行」の指標。これがないと double の
+   * `(*dp)[j]` が整数 load になり値が化けていた (local/global 共通)。 */
+  if (node->deref_size > 0 && node->base.fp_kind != TK_FLOAT_KIND_NONE &&
+      node->inner_deref_size == 0 && node->pointee_fp_kind == TK_FLOAT_KIND_NONE) {
+    node->pointee_fp_kind = node->base.fp_kind;
+  }
   return (node_t *)node;
 }
 
