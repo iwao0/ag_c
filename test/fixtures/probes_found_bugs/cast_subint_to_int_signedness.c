@@ -7,33 +7,29 @@
 // 32bit unsigned へ折り返すことで両方を解決する。
 #include <assert.h>
 int main(void) {
-  int t = 0;
-
   short s = -1;
   unsigned u1 = (unsigned)s;        // 4294967295
-  t += (u1 == 4294967295u);         // +1
+  assert(u1 == 4294967295u);
 
   unsigned short us = 0xFFFF;
   int i1 = (int)us;                 // 65535
-  t += (i1 == 65535);               // +1
+  assert(i1 == 65535);
 
   signed char sc = (signed char)0xFF; // -1
   unsigned u2 = (unsigned)sc;       // 4294967295
-  t += (u2 == 4294967295u);         // +1
+  assert(u2 == 4294967295u);
 
   // インライン符号混在: (unsigned)(short)-1 は 4294967295 > 5
-  t += ((unsigned)s > 5);           // +1
+  assert((unsigned)s > 5);
 
   // インライン除算: 4294967295 / 2 = 2147483647 > 1e9
-  t += ((unsigned)s / 2u > 1000000000u); // +1
+  assert((unsigned)s / 2u > 1000000000u);
 
   // signed ターゲットは値・符号とも従来通り正しい
   signed v = (signed)s;             // -1
-  t += (v == -1);                   // +1
+  assert(v == -1);
 
   // (unsigned) の unsigned short はそのまま 65535 (< 100000)
-  t += ((unsigned)us < 100000u);    // +1
-
-  assert(t * 6 == 42);                     // 7 * 6 = 42
+  assert((unsigned)us < 100000u);
   return 0;
 }

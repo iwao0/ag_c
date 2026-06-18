@@ -12,8 +12,14 @@ int main(void) {
     struct S t = g;                          // グローバルからのコピー初期化
     struct S u;
     u = g;                                   // グローバルからの代入
-    int sum = t.a + t.x[2] + u.x[0];         // 9 + 12 + 10 = 31
-    assert(sum == 31);
+    // コピー初期化 t と代入 u の全要素を個別に検査 (合計だと取りこぼしを見逃す)。
+    assert(t.a == 9);
+    assert(t.x[0] == 10);
     assert(t.x[1] == 11);
+    assert(t.x[2] == 12);
+    assert(u.a == 9);
+    assert(u.x[0] == 10);
+    assert(u.x[1] == 11);
+    assert(u.x[2] == 12);
     return 0;
 }

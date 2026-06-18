@@ -16,6 +16,8 @@ int main(void) {
     struct N *q = &n;
     struct N **pp = &q;
     int c = (*pp)->v;           // 10
-    assert(a + b + c == 42);
+    assert(a == 12);   // (p += 2)->v
+    assert(b == 20);   // (p -= 1)->v
+    assert(c == 10);   // (*pp)->v
     return 0;
 }

@@ -10,8 +10,11 @@ struct S { int a; int x[3]; };
 int main(void) {
     struct S s = {9, {10, 20, 30}};
     struct S t = s;                 // コピー初期化
-    int sum = t.a + t.x[0] + t.x[1] + t.x[2];  // 9+10+20+30 = 69
-    assert(sum == 69);
+    // 配列メンバが全要素コピーされることを要素ごとに検査 (合計だと x[1]/x[2] の取りこぼしを
+    // 他要素の値で相殺して見逃す恐れがある)。
+    assert(t.a == 9);
+    assert(t.x[0] == 10);
+    assert(t.x[1] == 20);
     assert(t.x[2] == 30);
     return 0;
 }

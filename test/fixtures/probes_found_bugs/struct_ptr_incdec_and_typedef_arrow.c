@@ -19,8 +19,12 @@ int main(void) {
     int viz = (++p)->v;            // ++p -> arr[1] = 20
     viz += (p--)->v;              // p-- は arr[1] を読んでから arr[0] へ (20)
     // sumv = 10+20+12 = 42; ここでは別途検証
-    int total = sumv(arr, 3);     // 42
+    int total = sumv(arr, 3);     // 42 (typedef struct ポインタ仮引数で各要素を加算)
+    // 配列内容を直接検査してから sumv の合計を確認 (合計だけだと要素取り違えを見逃す)。
+    assert(arr[0].v == 10);
+    assert(arr[1].v == 20);
+    assert(arr[2].v == 12);
     assert(total == 42);
-    assert(viz == 40);
+    assert(viz == 40);            // (++p)->v(20) + (p--)->v(20)
     return 0;
 }

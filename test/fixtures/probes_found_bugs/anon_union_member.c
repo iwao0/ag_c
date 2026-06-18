@@ -7,7 +7,8 @@ struct N {
 int main(void) {
   struct N n;
   n.kind = 1; n.i = 42;
-  assert(n.kind * 10 + n.i == 52);
+  assert(n.kind == 1);
+  assert(n.i == 42);
   return 0;
 }
 // 期待: 52

@@ -12,6 +12,9 @@ int main(void) {
     u.i = 0x00020001;            // lo=1, hi=2 (little-endian)
     struct { int a; int b; } s;
     s.a = 30; s.b = 9;
-    assert(u.lo + u.hi + s.a + s.b == 42);   // 1 + 2 + 30 + 9 = 42
+    assert(u.lo == 1);
+    assert(u.hi == 2);
+    assert(s.a == 30);
+    assert(s.b == 9);
     return 0;
 }

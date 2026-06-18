@@ -11,22 +11,22 @@ struct Small { char a, b; };          // align 1, size 2
 union U { char c; long l; };          // align 8
 
 int main(void) {
-  int t = 0;
-
-  t += (_Alignof(struct P) == 4);
-  t += (_Alignof(struct Q) == 8);
-  t += (_Alignof(struct A) == 16);
-  t += (_Alignof(struct Small) == 1);
-  t += (_Alignof(union U) == 8);
-  t += (_Alignof(int[10]) == 4);          // 配列 = 要素アラインメント
-  t += (_Alignof(struct Q[3]) == 8);
+  assert(_Alignof(struct P) == 4);
+  assert(_Alignof(struct Q) == 8);
+  assert(_Alignof(struct A) == 16);
+  assert(_Alignof(struct Small) == 1);
+  assert(_Alignof(union U) == 8);
+  assert(_Alignof(int[10]) == 4);          // 配列 = 要素アラインメント
+  assert(_Alignof(struct Q[3]) == 8);
 
   // 基本型は従来通り
-  t += (_Alignof(char) == 1) + (_Alignof(int) == 4) + (_Alignof(double) == 8) + (_Alignof(int*) == 8);
+  assert(_Alignof(char) == 1);
+  assert(_Alignof(int) == 4);
+  assert(_Alignof(double) == 8);
+  assert(_Alignof(int*) == 8);
 
   // sizeof は変わらない
-  t += (sizeof(struct P) == 8) + (sizeof(struct A) == 32);
-
-  assert(t + 29 == 42);  // 13 checks -> 13+29 = 42
+  assert(sizeof(struct P) == 8);
+  assert(sizeof(struct A) == 32);
   return 0;
 }
