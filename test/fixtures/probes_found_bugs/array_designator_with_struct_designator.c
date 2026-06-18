@@ -8,6 +8,7 @@
 // 委譲。配列要素の offset (var->offset + idx * elem_size) と要素 1 つ分の
 // size を nested lvar にセットして呼び出すだけで、designator も positional
 // も両形に対応する。zero-fill 範囲も要素 1 つに制限される。
+#include <assert.h>
 struct V { int a; int b; };
 int main(void) {
   struct V arr[3] = {
@@ -15,7 +16,12 @@ int main(void) {
     [2] = {.a = 10, .b = 20}
     // arr[1] = {0, 0} (zero-fill)
   };
-  return arr[0].a + arr[0].b + arr[1].a + arr[1].b + arr[2].a + arr[2].b;
-  // 1+2 + 0+0 + 10+20 = 33
+  assert(arr[0].a == 1);
+  assert(arr[0].b == 2);
+  assert(arr[1].a == 0);   // zero-fill
+  assert(arr[1].b == 0);
+  assert(arr[2].a == 10);
+  assert(arr[2].b == 20);
+  return 0;
 }
 // 期待: 33

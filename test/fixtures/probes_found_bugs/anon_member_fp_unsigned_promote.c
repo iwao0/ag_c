@@ -3,6 +3,7 @@
 // load/store され、unsigned メンバが符号付き比較になっていた。
 // 例: `struct { union { int n; float f; }; }` の `s.f` が整数扱いで値が化けた。
 // struct_layout の昇格処理でこれらの属性も setter で伝播するよう修正。
+#include <assert.h>
 struct Mixed {
   union { int n; float f; double d; };  // 匿名 union
   struct { unsigned u; short sh; };     // 匿名 struct
@@ -10,28 +11,27 @@ struct Mixed {
 };
 int main(void) {
   struct Mixed s;
-  int r = 0;
 
   // 匿名 union の float/double メンバ (fp_kind 伝播)
   s.f = 2.5f;
-  if (s.f != 2.5f) r |= 1;
+  assert(!(s.f != 2.5f));
   s.d = 123.625;
-  if (s.d != 123.625) r |= 2;
+  assert(!(s.d != 123.625));
   // 型 punning: int で書いて float で読む (2.0f のビットパターン)
   s.n = 0x40000000;
-  if (s.f != 2.0f) r |= 4;
+  assert(!(s.f != 2.0f));
 
   // 匿名 struct の unsigned メンバ (is_unsigned 伝播 → 符号なし比較)
   s.u = 0xFFFFFFFFu;
-  if (s.u != 0xFFFFFFFFu) r |= 8;
-  if (s.u <= 100) r |= 16;          // unsigned: 0xFFFFFFFF >u 100
-  if (!(s.u > 0x7FFFFFFFu)) r |= 32;
+  assert(!(s.u != 0xFFFFFFFFu));
+  assert(!(s.u <= 100));          // unsigned: 0xFFFFFFFF >u 100
+  assert(!(!(s.u > 0x7FFFFFFFu)));
 
   // 匿名 struct の short メンバと末尾 tag のオフセット
   s.sh = -300;
-  if (s.sh != -300) r |= 64;
+  assert(!(s.sh != -300));
   s.tag = 77;
-  if (s.tag != 77) r |= 128;
+  assert(!(s.tag != 77));
 
-  return r == 0 ? 42 : r;
+  return 0;
 }
