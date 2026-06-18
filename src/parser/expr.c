@@ -2915,8 +2915,24 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
        * 最終スカラ要素 (es <= inner_ds、または inner_ds==0) なら base.fp_kind。
        * 1D の `float *a` 仮引数は inner_ds=elem_size が立つことがあるので es>inner_ds
        * で「多次元の中間」かどうかを区別する。 */
-      if (inner_ds > 0 && es > inner_ds) deref->pointee_fp_kind = arr_pointee_fp;
-      else                                deref->base.fp_kind = arr_pointee_fp;
+      if (inner_ds > 0 && es > inner_ds) {
+        deref->pointee_fp_kind = arr_pointee_fp;
+      } else if (inner_ds == 0 && bds > 0) {
+        /* 関数ポインタ配列の要素 (`double (*ops[N])(double)` の `ops[i]`): 要素は
+         * 8B の関数ポインタ値であって double 値ではない。base.fp_kind に載せると
+         * subscript 結果を double としてロードしてしまうため、is_pointer を立てて
+         * ポインタ値としてロードし、戻り型 fp_kind を pointee_fp_kind に運ぶ
+         * (呼び出し側 parse_call_postfix がこれを見て戻り値を d0 で読む)。配列要素は
+         * pql=0 で登録され (line 2777 の funcptr 配列分岐)、bds>0 が「要素がポインタ」、
+         * inner_ds==0 が「要素を更に添字できない不透明ポインタ」の指標。fp ポインタ
+         * 仮引数 `double *a` は a[i] が fp スカラで inner_ds==es>0 になるため除外され、
+         * 純粋な fp スカラ配列は bds==0 で下の else に落ちる。 */
+        deref->pointee_fp_kind = arr_pointee_fp;
+        deref->is_pointer = 1;
+        deref->deref_size = 8;
+      } else {
+        deref->base.fp_kind = arr_pointee_fp;
+      }
     }
   }
   if (pql == 1) {
@@ -3045,15 +3061,16 @@ static node_t *parse_call_postfix(node_t *callee) {
     }
   }
   node->callee = callee;
-  /* 間接呼び出しで callee が関数ポインタ変数 (lvar/gvar) のとき、その pointee fp_kind
-   * (= 関数戻り型の fp_kind。`double (*d)(double)` は宣言時 `double *d` と同じく
-   * pointee_fp_kind=double が立つ) を funcall ノードに載せる。これがないと
-   * ir_builder が戻り値型を整数 (I32) と判定し戻り値を x0 で読んでいた
-   * (FP 戻り値は d0 に返るため化けていた)。呼び出し文脈なので callee は関数
-   * ポインタであり、データポインタ `double *p` の pointee と取り違える心配はない。
-   * 配列要素 `ops[i]` / struct メンバ `s.f` (ND_DEREF) は戻り型 fp_kind を伝播して
-   * いないため未対応 (別途 subscript/メンバ経路への配線が要る)。 */
-  if (callee && (callee->kind == ND_LVAR || callee->kind == ND_GVAR)) {
+  /* 間接呼び出しで callee の pointee fp_kind (= 関数戻り型の fp_kind。
+   * `double (*d)(double)` は宣言時 `double *d` と同じく pointee_fp_kind=double が
+   * 立つ) を funcall ノードに載せる。これがないと ir_builder が戻り値型を整数
+   * (I32) と判定し戻り値を x0 で読んでいた (FP 戻り値は d0 に返るため化けていた)。
+   * 呼び出し文脈なので callee は関数ポインタであり、データポインタ `double *p` の
+   * pointee と取り違える心配はない。関数ポインタ変数 (ND_LVAR/ND_GVAR) に加え、
+   * 関数ポインタ配列の要素 `ops[i]` (ND_DEREF、build_subscript_deref が pointee_fp_kind
+   * を設定済み) も拾う。struct メンバ `s.f` (ND_DEREF) は tag メンバ経路で戻り型
+   * fp_kind を伝播していないため未対応。 */
+  if (callee) {
     tk_float_kind_t ret_fp = psx_node_pointee_fp_kind(callee);
     if (ret_fp != TK_FLOAT_KIND_NONE) node->base.fp_kind = ret_fp;
   }
