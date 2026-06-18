@@ -703,6 +703,8 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdbool_false", CASE_INT_FILE, "test/fixtures/stdheader/stdbool_false.c", 0, 0},
     {"stdheader", "stddef_size_t", CASE_INT_FILE, "test/fixtures/stdheader/stddef_size_t.c", 10, 0},
     {"stdheader", "stddef_null", CASE_INT_FILE, "test/fixtures/stdheader/stddef_null.c", 42, 0},
+    {"stdheader", "stddef_wchar_t", CASE_INT_FILE, "test/fixtures/stdheader/stddef_wchar_t.c", 42, 0},
+    {"stdheader", "stddef_max_align_t", CASE_INT_FILE, "test/fixtures/stdheader/stddef_max_align_t.c", 42, 0},
     {"stdheader", "limits_int_max", CASE_INT_FILE, "test/fixtures/stdheader/limits_int_max.c", 42, 0},
     {"stdheader", "limits_int_min", CASE_INT_FILE, "test/fixtures/stdheader/limits_int_min.c", 42, 0},
     {"stdheader", "limits_char_bit", CASE_INT_FILE, "test/fixtures/stdheader/limits_char_bit.c", 42, 0},
