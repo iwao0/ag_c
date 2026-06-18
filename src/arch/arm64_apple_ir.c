@@ -89,6 +89,19 @@ static void layout_frame(gen_ctx_t *ctx) {
   if (ctx->total_size < 32) ctx->total_size = 32;
 }
 
+/* `add/sub dst, src, #imm` を emit する。ARM64 の add/sub 即値は imm12 (0..4095) または
+ * imm12<<12 (4096 の倍数) しか符号化できず、`sub sp, sp, #4112` や `add x19, x29, #8576`
+ * のような 4095 超の即値は無効命令になる (大きいスタックフレームで発生)。4095 を超える場合は
+ * 4096 の倍数部 (lsl #12) と端数の 2 命令に分割する (clang と同じ)。imm は非負・16MB 未満を想定。 */
+static void emit_addsub_imm(const char *op, const char *dst, const char *src, int imm) {
+  if (imm <= 4095) {
+    cg_emitf("  %s %s, %s, #%d\n", op, dst, src, imm);
+    return;
+  }
+  cg_emitf("  %s %s, %s, #%d, lsl #12\n", op, dst, src, (imm >> 12) & 0xfff);
+  if (imm & 0xfff) cg_emitf("  %s %s, %s, #%d\n", op, dst, dst, imm & 0xfff);
+}
+
 /* prologue: x29/x30 のあと、使われた callee-saved reg を保存する。 */
 static void emit_save_regs(gen_ctx_t *ctx) {
   int off = 16;
@@ -357,7 +370,7 @@ static void gen_inst_va_arg_area(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  add %s, x29, #%d\n", d, ctx->total_size);
+  emit_addsub_imm("add", d, "x29", ctx->total_size);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -468,7 +481,7 @@ static void gen_inst_alloca(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  add %s, x29, #%d\n", d, off);
+  emit_addsub_imm("add", d, "x29", off);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -889,7 +902,7 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
       emit_restore_regs(ctx);
       cg_emitf("  mov sp, x29\n");
       cg_emitf("  ldp x29, x30, [sp]\n");
-      cg_emitf("  add sp, sp, #%d\n", ctx->total_size);
+      emit_addsub_imm("add", "sp", "sp", ctx->total_size);
   cg_emitf("  ret\n");
 }
 
@@ -904,7 +917,7 @@ static void gen_func(ir_func_t *f) {
   cg_emitf(".global _%.*s\n", f->name_len, f->name);
   cg_emitf(".align 2\n");
   cg_emitf("_%.*s:\n", f->name_len, f->name);
-  cg_emitf("  sub sp, sp, #%d\n", ctx.total_size);
+  emit_addsub_imm("sub", "sp", "sp", ctx.total_size);
   cg_emitf("  stp x29, x30, [sp]\n");
   cg_emitf("  mov x29, sp\n");
   emit_save_regs(&ctx);
