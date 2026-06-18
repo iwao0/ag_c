@@ -2657,7 +2657,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
    * deref_size>0 が「結果がまだ subscript 可能な配列/行」の指標。これがないと double の
    * `(*dp)[j]` が整数 load になり値が化けていた (local/global 共通)。 */
   if (node->deref_size > 0 && node->base.fp_kind != TK_FLOAT_KIND_NONE &&
-      node->inner_deref_size == 0 && node->pointee_fp_kind == TK_FLOAT_KIND_NONE) {
+      node->pointee_fp_kind == TK_FLOAT_KIND_NONE) {
     node->pointee_fp_kind = node->base.fp_kind;
   }
   return (node_t *)node;
@@ -3431,14 +3431,28 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.base.kind = ND_GVAR;
     gvar_node->mem.type_size = gv->type_size;
     gvar_node->mem.deref_size = gv->deref_size;
-    /* 配列へのポインタ `T (*pa)[N]` グローバル: gv は 8B スカラポインタ (type_size=8) で
-     * outer_stride>0。第1subscript `pa[i]` は pointee 1 行 (outer_stride) をステップし、
-     * 第2subscript `pa[i][j]` は要素 (deref_size) をステップする。ローカル `(*p)[N]` の
-     * lvar ノード (deref_size=outer_stride, inner_deref_size=elem) と同じ表現にする。
+    /* 配列へのポインタ `T (*pa)[N]...` グローバル: gv は 8B スカラポインタ (type_size=8) で
+     * outer_stride>0。第1subscript `pa[i]` は pointee 全体 (outer_stride) をステップし、以降
+     * mid_stride / extra_strides / deref_size(=elem) で内側次元をステップする。多次元配列の
+     * 配列分岐 (上の ND_ADDR) と同じ outer/mid/extra マッピングを scalar ND_GVAR に適用する。
      * pa のポインタ値は type_size=8 でロードされ、それに添字が加算される。 */
     if (gv->outer_stride > 0 && !gv->is_array) {
       gvar_node->mem.deref_size = (short)gv->outer_stride;
-      gvar_node->mem.inner_deref_size = (short)gv->deref_size;
+      if (gv->mid_stride > 0) {
+        gvar_node->mem.inner_deref_size = (short)gv->mid_stride;
+        if (gv->extra_strides_count > 0) {
+          gvar_node->mem.next_deref_size = (short)gv->extra_strides[0];
+          for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
+            gvar_node->mem.extra_strides[i - 1] = gv->extra_strides[i];
+          }
+          gvar_node->mem.extra_strides[gv->extra_strides_count - 1] = gv->deref_size;
+          gvar_node->mem.extra_strides_count = gv->extra_strides_count;
+        } else {
+          gvar_node->mem.next_deref_size = (short)gv->deref_size;
+        }
+      } else {
+        gvar_node->mem.inner_deref_size = (short)gv->deref_size;
+      }
     }
     /* タグ情報 (struct / union): build_member_access が `.x` を解決するときに
      * psx_node_get_tag_type 経由でここを読む。 */

@@ -1364,14 +1364,16 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
    * **pointee 配列**の次元。parse_toplevel_array_suffixes は `[N]` を arr.is_array=1 /
    * arr_total=N にするため、`int *pa[N]` (ポインタの配列) と同一に登録され、pa が
    * 「N 要素配列」と誤って扱われて subscript が pa のポインタ値をロードせず &pa を base に
-   * して隣接メモリを読んでいた (SIGSEGV / 誤値)。配列扱いを解除し、pointee row を
-   * outer_stride に記録する (ローカル decl.c の `(*p)[N]` 分岐と同じ表現)。関数ポインタ
-   * (`(*f)(args)`) は has_func_suffix で除外。多次元 pointee `(*pa)[N][M]` は dim_count>=2
-   * で別途ストライドが要るため当面 1 次元 pointee に限定する。 */
+   * して隣接メモリを読んでいた (SIGSEGV / 誤値)。配列扱いを解除し、pointee の各次元を
+   * subscript ストライドに記録する (ローカル decl.c の `(*p)[N]...` 分岐と同じ表現)。関数
+   * ポインタ (`(*f)(args)`) は has_func_suffix で除外。 */
   int is_ptr_to_array = (head.is_ptr && g_toplevel_decl_ptr_in_paren_group &&
                          !g_toplevel_decl_has_func_suffix && arr.is_array &&
-                         arr.dim_count == 1 && !arr.has_incomplete_array);
-  int pointee_row_dim = arr.arr_total;
+                         arr.dim_count >= 1 && !arr.has_incomplete_array);
+  int pointee_total = arr.arr_total;        /* pointee 全要素数 (= 全次元の積) */
+  int pointee_dims[8];
+  int pointee_dim_count = arr.dim_count;
+  for (int i = 0; i < arr.dim_count && i < 8; i++) pointee_dims[i] = arr.dims[i];
   if (is_ptr_to_array) {
     arr.is_array = 0;
     arr.arr_total = 1;
@@ -1380,10 +1382,21 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
   if (gv && is_ptr_to_array) {
-    /* outer_stride = pointee 1 行ぶん (N*elem)。第1subscript `pa[i]` のステップ。
-     * deref_size は register が elem に設定済みで、第2subscript `pa[i][j]` のステップ。
-     * try_build_global_var_node のスカラ分岐がこれを node に反映する。 */
-    gv->outer_stride = pointee_row_dim * g_toplevel_decl_elem_size;
+    /* 第1subscript `pa[i]` は pointee 全体 (pointee_total*elem) をステップ。多次元 pointee
+     * `(*pa)[N][M]` では pa[i][j]=行 (M*elem)、pa[i][j][k]=要素 (elem)。これは「先頭に
+     * ポインタ index の仮想次元を 1 つ足した多次元配列」のストライドと一致するので、仮想
+     * 次元 1 を先頭に付けた dims で apply_global_multidim_strides を再利用する (outer_stride
+     * = pointee 全体、mid_stride 以降が内側)。deref_size(=elem) は register 設定済み。
+     * try_build_global_var_node のスカラ分岐が outer/mid/extra を node に反映する。 */
+    int elem = g_toplevel_decl_elem_size;
+    if (pointee_dim_count >= 2) {
+      int vdims[9];
+      vdims[0] = 1;
+      for (int i = 0; i < pointee_dim_count && i + 1 < 9; i++) vdims[i + 1] = pointee_dims[i];
+      apply_global_multidim_strides(gv, vdims, pointee_dim_count + 1, elem);
+    } else {
+      gv->outer_stride = pointee_total * elem;
+    }
   }
   if (gv && !head.is_ptr && arr.is_array && arr.dim_count >= 2) {
     apply_global_multidim_strides(gv, arr.dims, arr.dim_count, g_toplevel_decl_elem_size);
