@@ -89,6 +89,11 @@ static int g_toplevel_decl_ptr_levels = 0;
  * 「配列へのポインタ」(`int (*pa)[3]`) と「ポインタの配列」(`int *pa[3]`) を区別する。
  * 宣言子ごとに parse_toplevel_declarator_head でリセットする。 */
 static int g_toplevel_decl_ptr_in_paren_group = 0;
+/* 現在パース中のトップレベル宣言子で、括弧内に配列サフィックス `[N]` が現れたか
+ * (`int (*g[N])(...)` のような「関数ポインタ/ポインタの配列」)。paren_array_mul は積を
+ * 返すだけで N==1 と「配列なし」を区別できないため、要素数 1 の配列 `(*g[1])(...)` が
+ * スカラ誤登録されて crash していた。このフラグで配列を保証する。宣言子ごとにリセット。 */
+static int g_toplevel_decl_paren_array_present = 0;
 static int g_toplevel_decl_pointee_const = 0;
 static int g_toplevel_decl_pointee_volatile = 0;
 // typedef 由来の配列型の dims (使用側 `M2 g;` で typedef の `[2][3]` を保持)。
@@ -1379,6 +1384,16 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     arr.arr_total = 1;
     arr.dim_count = 0;
   }
+  /* 要素数 1 の括弧内配列 `(*g[1])(...)` / `(*g[1])`: paren_array_mul=1 だと
+   * arr.is_array が立たず (is_array = base_mul>1)、スカラ funcptr/ポインタとして誤登録され
+   * subscript `g[0]` が crash していた。括弧内に配列サフィックスがあれば要素数によらず
+   * 配列として登録する。pointer-to-array (trailing `[N]`) は is_ptr_to_array で別処理済み。 */
+  if (!is_ptr_to_array && g_toplevel_decl_paren_array_present && !arr.is_array) {
+    arr.is_array = 1;
+    arr.arr_total = (head.paren_array_mul > 0) ? head.paren_array_mul : 1;
+    arr.dim_count = 1;
+    arr.dims[0] = arr.arr_total;
+  }
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
   if (gv && is_ptr_to_array) {
@@ -1427,6 +1442,7 @@ static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr
   g_toplevel_decl_has_func_suffix = 0;
   g_toplevel_decl_ptr_levels = 0;
   g_toplevel_decl_ptr_in_paren_group = 0;
+  g_toplevel_decl_paren_array_present = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
@@ -1544,6 +1560,8 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
     /* 括弧内で初めて `*` が立った (`(*pa)`): 配列へのポインタ / 関数ポインタの指標。
      * 後続の `[N]` サフィックスと合わせて pointer-to-array を識別する。 */
     if (*is_ptr && !ptr_before_inner) g_toplevel_decl_ptr_in_paren_group = 1;
+    /* 括弧内に `[N]` があるか (要素数 1 でも配列扱いにするため、積ではなく有無を記録)。 */
+    if (curtok()->kind == TK_LBRACKET) g_toplevel_decl_paren_array_present = 1;
     paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {

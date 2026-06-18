@@ -1015,6 +1015,7 @@ static const test_case_t test_cases[] = {
     {"probes", "ptr_to_array_deref_fp", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ptr_to_array_deref_fp.c", 42, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 42, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 42, 0},
+    {"probes", "global_size1_funcptr_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 42, 0},
     {"probes", "static_local_struct_persist", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_struct_persist.c", 42, 0},
     {"probes", "int_cmp_width_and_subint_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_cmp_width_and_subint_return.c", 42, 0},
     {"probes", "anon_member_fp_unsigned_promote", CASE_INT_FILE, "test/fixtures/probes_found_bugs/anon_member_fp_unsigned_promote.c", 42, 0},
