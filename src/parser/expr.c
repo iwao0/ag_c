@@ -2751,7 +2751,22 @@ static node_t *unary(void) {
   if (k == TK_INC) { set_curtok(curtok()->next); return build_pre_inc_dec_node(ND_PRE_INC, "++"); }
   if (k == TK_DEC) { set_curtok(curtok()->next); return build_pre_inc_dec_node(ND_PRE_DEC, "--"); }
   if (k == TK_PLUS)  { set_curtok(curtok()->next); return cast(); }
-  if (k == TK_MINUS) { set_curtok(curtok()->next); return psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast()); }
+  if (k == TK_MINUS) {
+    set_curtok(curtok()->next);
+    node_t *operand = cast();
+    /* 浮動小数の単項マイナスは符号ビット反転 (ND_FNEG → IR_FNEG)。`0.0 - x` だと
+     * x が +0.0 のとき結果が +0.0 になり (IEEE)、本来の -0.0 (符号反転) と異なる。
+     * `-0.0` 定数 / `1.0/-0.0` = -inf / signbit 等のため正しく -0.0 を生成する。
+     * 整数は従来どおり `0 - x`。 */
+    if (operand && operand->fp_kind != TK_FLOAT_KIND_NONE) {
+      node_t *neg = arena_alloc(sizeof(node_t));
+      neg->kind = ND_FNEG;
+      neg->lhs = operand;
+      neg->fp_kind = operand->fp_kind;
+      return neg;
+    }
+    return psx_node_new_binary(ND_SUB, psx_node_new_num(0), operand);
+  }
   if (k == TK_BANG)  { set_curtok(curtok()->next); return psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0)); }
   if (k == TK_TILDE) {
     set_curtok(curtok()->next);

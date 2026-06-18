@@ -56,6 +56,8 @@ typedef enum {
   ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト), type_size=フレームオフセット
   ND_FP_TO_INT, // 浮動小数点 → 整数キャスト: lhs=FP式 (fp_kind が float/double を保持)
   ND_INT_TO_FP, // 整数/別幅FP → 浮動小数点キャスト: lhs=式、fp_kind が変換先(float/double)を保持
+  ND_FNEG,      // 浮動小数点の単項マイナス (-x): lhs=FP式、fp_kind が float/double を保持。
+                // 符号ビット反転 (IR_FNEG)。`0.0 - x` だと -0.0 が +0.0 になるため専用ノード。
   ND_VA_ARG_AREA, // 識別子 `__va_arg_area`: stack 上の variadic 引数領域の先頭アドレス。
                   // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
   ND_PTR_CAST,    // `(T*)expr` ポインタキャスト。codegen は lhs をそのまま評価する。
