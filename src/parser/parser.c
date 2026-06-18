@@ -1411,6 +1411,14 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
       g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
     gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
   }
+  /* 関数ポインタ配列グローバル `double (*gops[N])(double)`: 戻り型 fp_kind を pointee_fp_kind
+   * に保存する (funcptr スカラ global と同じ。fp_kind は配列ではビットパターン出力に使えない)。
+   * try_build_global_var_node の配列分岐がこれを ND_ADDR の pointee_fp_kind に伝播し、
+   * `gops[i](x)` の funcall が戻り値を d0 で読む。 */
+  if (gv && head.is_ptr && arr.is_array && g_toplevel_decl_has_func_suffix &&
+      g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
+    gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
+  }
   finalize_toplevel_object_declarator(gv);
 }
 

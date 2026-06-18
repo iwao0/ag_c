@@ -3395,8 +3395,18 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->deref_size = stride;
       addr->is_pointer = 1;
       /* `double a[5]` 等: 要素型 fp_kind を pointee_fp_kind に伝播し、
-       * build_subscript_deref が FP load を組み立てられるようにする。 */
-      addr->pointee_fp_kind = gv->fp_kind;
+       * build_subscript_deref が FP load を組み立てられるようにする。
+       * 関数ポインタ配列 `double (*gops[N])(double)` は要素自体がポインタなので gv->fp_kind は
+       * NONE で、戻り型 fp は gv->pointee_fp_kind に入る。これを pointee_fp_kind に伝播し、
+       * かつ base_deref_size=要素ポインタサイズ(8) を立てて build_subscript_deref の
+       * 「不透明な関数ポインタ要素」分岐 (inner_ds==0 && bds>0) に乗せる。`gops[i]()` の戻り値が
+       * d0 で読まれるようになる (ローカル funcptr 配列と同じ表現)。 */
+      if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+        addr->pointee_fp_kind = gv->fp_kind;
+      } else if (gv->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+        addr->pointee_fp_kind = (tk_float_kind_t)gv->pointee_fp_kind;
+        addr->base_deref_size = 8;
+      }
       /* unsigned グローバル配列: 要素 subscript 結果を zero-extend load させる。 */
       addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
