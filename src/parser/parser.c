@@ -79,6 +79,11 @@ static int g_toplevel_decl_base_is_ptr = 0;
  * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
  * 宣言子ごとに parse_toplevel_declarator_head でリセットされる。 */
 static int g_toplevel_decl_has_func_suffix = 0;
+/* 現在パース中のトップレベル宣言子のポインタ段数 (`double *dp`=1, `double **dpp`=2)。
+ * psx_consume_pointer_prefix が消費した `*` の数を積算する。宣言子ごとに
+ * parse_toplevel_declarator_head でリセットする。単段ポインタ (`double *dp`) に限って
+ * pointee fp_kind を保存する判定に使う (多段の pointee は double ではないため)。 */
+static int g_toplevel_decl_ptr_levels = 0;
 static int g_toplevel_decl_pointee_const = 0;
 static int g_toplevel_decl_pointee_volatile = 0;
 // typedef 由来の配列型の dims (使用側 `M2 g;` で typedef の `[2][3]` を保持)。
@@ -446,6 +451,10 @@ static void skip_ptr_qualifiers(void) {
 void psx_consume_pointer_prefix(int *is_ptr) {
   while (tk_consume('*')) {
     if (is_ptr) *is_ptr = 1;
+    /* トップレベル宣言子のポインタ段数を積算する (他経路の呼び出しでも増えるが、
+     * g_toplevel_decl_ptr_levels は parse_toplevel_declarator_head でのリセット後に
+     * register_toplevel_global_decl が読むだけなので影響しない)。 */
+    g_toplevel_decl_ptr_levels++;
     skip_ptr_qualifiers();
   }
 }
@@ -780,9 +789,12 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->fp_kind = is_ptr ? (unsigned char)TK_FLOAT_KIND_NONE
                        : (unsigned char)g_toplevel_decl_fp_kind;
   /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型の fp_kind を pointee_fp_kind
-   * に保存する (fp_kind は codegen がビットパターン出力に使うので流用不可)。
-   * has_func_suffix で関数ポインタに限定し、データポインタ `double *dp` は対象外。 */
-  gv->pointee_fp_kind = (is_ptr && g_toplevel_decl_has_func_suffix)
+   * に保存する (fp_kind は codegen がビットパターン出力に使うので流用不可)。単段ポインタ
+   * (ptr_levels==1) かつ has_func_suffix に限定。データポインタ `double *dp` の pointee
+   * fp_kind は apply_toplevel_object_from_head が設定する (pointer-to-array `double (*pa)[N]`
+   * を除外するため head.paren_array_mul を見る必要がある)。 */
+  gv->pointee_fp_kind = (is_ptr && g_toplevel_decl_has_func_suffix &&
+                         g_toplevel_decl_ptr_levels == 1)
                             ? (unsigned char)g_toplevel_decl_fp_kind
                             : (unsigned char)TK_FLOAT_KIND_NONE;
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
@@ -1347,12 +1359,23 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   if (gv && !head.is_ptr && arr.is_array && arr.dim_count >= 2) {
     apply_global_multidim_strides(gv, arr.dims, arr.dim_count, g_toplevel_decl_elem_size);
   }
+  /* スカラデータポインタ `double *dp`: pointee スカラの fp_kind を保存し、`*dp` / `dp[i]`
+   * の deref を fp load にする (ローカル `double *a` と同じ)。単段ポインタ (ptr_levels==1)
+   * で配列でなく関数ポインタでもない場合に限定する。pointer-to-array `double (*pa)[N]`
+   * (head.paren_array_mul>1) は pointee がスカラ double でないため除外。funcptr は
+   * register_toplevel_global_decl が既に設定済み。 */
+  if (gv && head.is_ptr && !arr.is_array && head.paren_array_mul <= 1 &&
+      !g_toplevel_decl_has_func_suffix && g_toplevel_decl_ptr_levels == 1 &&
+      g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
+    gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
+  }
   finalize_toplevel_object_declarator(gv);
 }
 
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name) {
   toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
   g_toplevel_decl_has_func_suffix = 0;
+  g_toplevel_decl_ptr_levels = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
