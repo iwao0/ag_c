@@ -9,6 +9,7 @@
 //      へ伝播し、parse_call_postfix が funcall に載せて戻り値を d0 で読む。
 // 修正前: 戻り値破損 (x0 を読む)
 // 期待: exit=42
+#include <assert.h>
 double dbl(double x){ return x * 2.0; }
 float  mulf(float x){ return x * 3.0f; }
 double half(double x){ return x / 2.0; }
@@ -25,5 +26,9 @@ int main(void){
     double r3 = ga(8.0);     // 4.0
     double r4 = gb(0.5);     // 1.0
     int a = (int)r1, b = (int)r2, c = (int)r3, d = (int)r4;
-    return (a == 42 && b == 42 && c == 4 && d == 1) ? 42 : 0;
+    assert(a == 42);
+    assert(b == 42);
+    assert(c == 4);
+    assert(d == 1);
+    return 0;
 }

@@ -6,6 +6,7 @@
 //      跨がず収まるなら、そのユニット (ALIGN_DOWN) へ詰める (AAPCS)。跨ぐ場合は整列。
 // 修正前: sizeof 過大 (char;int:20 が 8)
 // 期待: exit=42
+#include <assert.h>
 struct C  { char c; int x:20; };           // clang sizeof=4 (char@bit0-7, x@bit8-27)
 struct D  { short s; int x:20; };           // 16+20=36>32 -> 別ユニット, sizeof=8
 struct E  { char c; char x:4; };            // sizeof=2
@@ -16,5 +17,7 @@ int main(void){
     int layout = (sizeof(struct C)==4) && (sizeof(struct D)==8)
               && (sizeof(struct E)==2) && (sizeof(struct F)==8);
     int values = (v.c=='A') && (v.x==-12345);   // 同一ユニットでも値が壊れない
-    return (layout && values) ? 42 : 0;
+    assert(layout);
+    assert(values);
+    return 0;
 }

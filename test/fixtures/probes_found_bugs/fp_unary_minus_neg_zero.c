@@ -6,21 +6,21 @@
 //      整数は従来どおり `0 - x`。
 // 修正前: -0.0 が +0.0 になり 1.0/-0.0 が +inf
 // 期待: exit=42
+#include <assert.h>
 int main(void){
     double nz = -0.0;
     double pz = 0.0;
-    int ok = 1;
-    ok &= (1.0 / nz < -1e300);     // 1.0 / -0.0 = -inf
-    ok &= (1.0 / pz > 1e300);      // 1.0 / +0.0 = +inf
-    ok &= (nz == pz);              // -0.0 == 0.0 (値比較は等しい)
+    assert(1.0 / nz < -1e300);     // 1.0 / -0.0 = -inf
+    assert(1.0 / pz > 1e300);      // 1.0 / +0.0 = +inf
+    assert(nz == pz);              // -0.0 == 0.0 (値比較は等しい)
     double z = 0.0;
-    ok &= (1.0 / -z < -1e300);     // 実行時 negate も -0.0
+    assert(1.0 / -z < -1e300);     // 実行時 negate も -0.0
     // 通常の負号は不変
     double a = 3.5;
-    ok &= (-a == -3.5);
+    assert(-a == -3.5);
     float f = 2.25f;
-    ok &= (-f == -2.25f);
+    assert(-f == -2.25f);
     int i = 5;
-    ok &= (-i == -5);              // 整数経路
-    return ok ? 42 : 0;
+    assert(-i == -5);              // 整数経路
+    return 0;
 }

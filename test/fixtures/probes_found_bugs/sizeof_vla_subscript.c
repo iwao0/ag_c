@@ -6,6 +6,7 @@
 // 修正: VLA 分岐も ident 直後が `)` のときだけ全体サイズ扱いにし、それ以外は式として評価する。
 // 修正前: E2006 (コンパイルエラー)
 // 期待: exit=42
+#include <assert.h>
 int main(void){
     int n = 10;
     int a[n];                       // VLA
@@ -14,6 +15,9 @@ int main(void){
     int cnt = whole / elem;         // 10
     // 4 + 10 = 14; さらに a[2] を使う sizeof
     int e2 = (int)sizeof(a[2]);     // 4
-    // elem(4) + cnt(10) + e2(4) = 18; + 24 = 42
-    return elem + cnt + e2 + 24;
+    assert(elem == 4);    // sizeof(a[0]) = sizeof(int)
+    assert(whole == 40);  // sizeof(a) = 10 * 4
+    assert(cnt == 10);
+    assert(e2 == 4);      // sizeof(a[2])
+    return 0;
 }

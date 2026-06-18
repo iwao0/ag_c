@@ -23,16 +23,22 @@ typedef enum {
   CASE_INT_FILE,
   CASE_FLOAT_FILE,
   CASE_DOUBLE_FILE,
+  // assert 自己検証 fixture。fixture 内の assert(...) が期待を自己記述し、成功時は
+  // main が 0 を返す (失敗時は assert が abort)。期待値は常に 0 なので test_e2e.c に
+  // マジックな期待値を書かない (expected_i は 0 固定で無視)。値種別は CASE_INT。
+  CASE_ASSERT_FILE,
 } case_kind_t;
 
 static inline bool case_kind_is_file(case_kind_t k) {
-  return k == CASE_INT_FILE || k == CASE_FLOAT_FILE || k == CASE_DOUBLE_FILE;
+  return k == CASE_INT_FILE || k == CASE_FLOAT_FILE || k == CASE_DOUBLE_FILE ||
+         k == CASE_ASSERT_FILE;
 }
 
 // 比較ロジックに使う「値の種類」を返す。`_FILE` バリアントは対応する非 _FILE 版に正規化する。
 static inline case_kind_t case_kind_value_kind(case_kind_t k) {
   switch (k) {
     case CASE_INT_FILE: return CASE_INT;
+    case CASE_ASSERT_FILE: return CASE_INT;  // 成功 = main が 0 を返す
     case CASE_FLOAT_FILE: return CASE_FLOAT;
     case CASE_DOUBLE_FILE: return CASE_DOUBLE;
     default: return k;
@@ -1009,21 +1015,21 @@ static const test_case_t test_cases[] = {
     {"probes", "array_row_decay_pointer_arith", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_pointer_arith.c", 42, 0},
     {"probes", "array_row_decay_3d_pointer_arith", CASE_INT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_3d_pointer_arith.c", 42, 0},
     {"probes", "funcptr_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_fp_return.c", 42, 0},
-    {"probes", "funcptr_array_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_array_fp_return.c", 42, 0},
-    {"probes", "funcptr_member_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_member_fp_return.c", 42, 0},
-    {"probes", "funcptr_global_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_fp_return.c", 42, 0},
-    {"probes", "global_fp_data_pointer_deref", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_fp_data_pointer_deref.c", 42, 0},
-    {"probes", "global_ptr_to_array_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_array_subscript.c", 42, 0},
-    {"probes", "ptr_to_array_deref_fp", CASE_INT_FILE, "test/fixtures/probes_found_bugs/ptr_to_array_deref_fp.c", 42, 0},
-    {"probes", "global_ptr_to_multidim_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 42, 0},
-    {"probes", "funcptr_global_array_fp_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 42, 0},
-    {"probes", "global_size1_funcptr_array", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 42, 0},
-    {"probes", "sizeof_vla_subscript", CASE_INT_FILE, "test/fixtures/probes_found_bugs/sizeof_vla_subscript.c", 42, 0},
-    {"probes", "generic_scalar_cast_control", CASE_INT_FILE, "test/fixtures/probes_found_bugs/generic_scalar_cast_control.c", 42, 0},
-    {"probes", "bitfield_pack_after_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bitfield_pack_after_member.c", 42, 0},
-    {"probes", "fp_unary_minus_neg_zero", CASE_INT_FILE, "test/fixtures/probes_found_bugs/fp_unary_minus_neg_zero.c", 42, 0},
-    {"probes", "variadic_unnamed_proto_fixed_args", CASE_INT_FILE, "test/fixtures/probes_found_bugs/variadic_unnamed_proto_fixed_args.c", 42, 0},
-    {"probes", "line_macro_in_expansion", CASE_INT_FILE, "test/fixtures/probes_found_bugs/line_macro_in_expansion.c", 42, 0},
+    {"probes", "funcptr_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_array_fp_return.c", 0, 0},
+    {"probes", "funcptr_member_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_member_fp_return.c", 0, 0},
+    {"probes", "funcptr_global_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_fp_return.c", 0, 0},
+    {"probes", "global_fp_data_pointer_deref", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_fp_data_pointer_deref.c", 0, 0},
+    {"probes", "global_ptr_to_array_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_array_subscript.c", 0, 0},
+    {"probes", "ptr_to_array_deref_fp", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ptr_to_array_deref_fp.c", 0, 0},
+    {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
+    {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
+    {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},
+    {"probes", "sizeof_vla_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_vla_subscript.c", 0, 0},
+    {"probes", "generic_scalar_cast_control", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_scalar_cast_control.c", 0, 0},
+    {"probes", "bitfield_pack_after_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_pack_after_member.c", 0, 0},
+    {"probes", "fp_unary_minus_neg_zero", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_unary_minus_neg_zero.c", 0, 0},
+    {"probes", "variadic_unnamed_proto_fixed_args", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_unnamed_proto_fixed_args.c", 0, 0},
+    {"probes", "line_macro_in_expansion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/line_macro_in_expansion.c", 0, 0},
     {"probes", "static_local_struct_persist", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_struct_persist.c", 42, 0},
     {"probes", "int_cmp_width_and_subint_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_cmp_width_and_subint_return.c", 42, 0},
     {"probes", "anon_member_fp_unsigned_promote", CASE_INT_FILE, "test/fixtures/probes_found_bugs/anon_member_fp_unsigned_promote.c", 42, 0},

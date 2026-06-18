@@ -10,6 +10,7 @@
 //      に伝播 (inner_deref_size>0 の多次元行も含む)。
 // 修正前: SIGSEGV / 誤値
 // 期待: exit=42
+#include <assert.h>
 int    icube[2][2][3] = {{{1, 2, 3}, {4, 5, 6}}, {{7, 8, 9}, {10, 11, 12}}};
 double dcube[2][2][2] = {{{1.5, 2.5}, {3.5, 4.5}}, {{5.5, 6.5}, {7.5, 8.5}}};
 int    (*ip)[2][3] = icube;
@@ -20,6 +21,9 @@ int main(void){
     int b = (*ip)[1][2];        // icube[0][1][2] = 6
     int c = (int)dp[1][1][0];   // dcube[1][1][0] = 7.5 -> 7
     int d = (int)(*dp)[0][1];   // dcube[0][0][1] = 2.5 -> 2
-    // 9 + 6 + 7 + 2 = 24; + 18 = 42
-    return a + b + c + d + 18;
+    assert(a == 9);   // ip[1][0][2]
+    assert(b == 6);   // (*ip)[1][2]
+    assert(c == 7);   // dp[1][1][0]
+    assert(d == 2);   // (*dp)[0][1]
+    return 0;
 }

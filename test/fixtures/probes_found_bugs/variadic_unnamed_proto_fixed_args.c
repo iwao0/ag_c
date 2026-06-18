@@ -11,10 +11,12 @@
 // 期待: exit=42
 // 同名定義がある場合は定義 (名前付き) が nargs を上書きするため、本バグは「定義なしの
 // 外部可変長関数 + 無名プロトタイプ」で顕在化する。ここでは libc の snprintf を使う。
+#include <assert.h>
 int snprintf(char *, unsigned long, const char *, ...);   // 固定引数 3 個すべて無名
 int main(void){
     char buf[16];
     int n = snprintf(buf, sizeof(buf), "%d-%d", 12, 30);   // n=5, buf="12-30"
-    int ok = (n == 5) && buf[0]=='1' && buf[1]=='2' && buf[2]=='-' && buf[3]=='3' && buf[4]=='0';
-    return ok ? 42 : 0;
+    assert(n == 5);
+    assert(buf[0]=='1' && buf[1]=='2' && buf[2]=='-' && buf[3]=='3' && buf[4]=='0');
+    return 0;
 }

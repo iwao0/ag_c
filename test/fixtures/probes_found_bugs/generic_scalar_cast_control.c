@@ -8,16 +8,15 @@
 //      使う。ポインタ/関数/タグ型は従来どおり infer に委ねる (複雑型の照合維持)。
 // 修正前: char/short/unsigned char キャストが int/default にマッチ
 // 期待: exit=42
+#include <assert.h>
 int main(void){
     int i = 1;
-    int r = 0;
-    r += _Generic((char)i,          char:1,          int:90, default:900);   // 1
-    r += _Generic((short)i,         short:2,         int:90, default:900);   // 2
-    r += _Generic((unsigned char)i, unsigned char:4, int:90, default:900);   // 4
-    r += _Generic((unsigned)i,      unsigned:8,      int:90, default:900);   // 8
-    r += _Generic((char)0,          char:16,         int:90, default:900);   // 16 (定数)
-    // 複雑な式は昇格で int (従来どおり)
-    r += _Generic((char)i + 0,      char:900,        int:11, default:900);   // 11
-    // 1+2+4+8+16+11 = 42
-    return r;
+    assert(_Generic((char)i,          char:1, int:0, default:0) == 1);          // char にマッチ
+    assert(_Generic((short)i,         short:1, int:0, default:0) == 1);         // short にマッチ
+    assert(_Generic((unsigned char)i, unsigned char:1, int:0, default:0) == 1); // unsigned char にマッチ
+    assert(_Generic((unsigned)i,      unsigned:1, int:0, default:0) == 1);      // unsigned にマッチ
+    assert(_Generic((char)0,          char:1, int:0, default:0) == 1);          // 定数キャストも char
+    // 複雑な式は昇格で int (従来どおり infer に委ねる)
+    assert(_Generic((char)i + 0,      char:0, int:1, default:0) == 1);          // int にマッチ
+    return 0;
 }

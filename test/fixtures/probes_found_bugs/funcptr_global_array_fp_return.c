@@ -12,6 +12,7 @@
 // 期待: exit=42
 // 補足: 要素数 1 の配列 `(*g[1])(double)` は別の既存バグ (paren 内 [1] が is_array を立てず
 //      スカラ funcptr として誤登録、int/double 問わず crash) で本修正外。N>=2 を対象とする。
+#include <assert.h>
 double add1(double x){ return x + 1.0; }
 double add2(double x){ return x + 2.0; }
 float  mulf(float x){ return x * 3.0f; }
@@ -25,5 +26,7 @@ int main(void){
     int i = 0;
     float fr = gfops[i](14.0f);                  // 42.0f
     int b = (int)fr;                             // 42
-    return (a == 42 && b == 42) ? 42 : 0;
+    assert(a == 42);
+    assert(b == 42);
+    return 0;
 }

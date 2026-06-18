@@ -7,6 +7,7 @@
 //      伝播する (base.fp_kind は `_Generic(*p,...)` 等のスカラ deref のため保持)。
 // 修正前: 値破損
 // 期待: exit=42
+#include <assert.h>
 double g_drows[2][2] = {{1.5, 2.5}, {3.5, 4.5}};
 float  g_frows[2][2] = {{1.5f, 2.5f}, {3.5f, 4.5f}};
 double (*g_dp)[2] = g_drows;
@@ -26,6 +27,10 @@ int main(void){
     // dp[i][j] 形 (回帰確認)
     int e = (int)(dp[1][0]);       // drows[1][0] = 3.5 -> 3
 
-    // 2 + 1 + 10 + 4 + 3 = 20; + 22 = 42
-    return a + b + c + d + e + 22;
+    assert(a == 2);    // (*g_dp)[1]
+    assert(b == 1);    // (*g_fp)[0]
+    assert(c == 10);   // (*dp)[0]
+    assert(d == 4);    // (*(dp + 1))[1]
+    assert(e == 3);    // dp[1][0]
+    return 0;
 }

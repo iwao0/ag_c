@@ -5,6 +5,7 @@
 //      にしていたため、再走査時の __LINE__ ハンドラが定義行を返していた。
 // 修正: 展開した本体トークンの line_no/file_name_id を呼び出し位置に再配置する。
 // 期待: exit=42
+#include <assert.h>
 #define FLN() __LINE__
 #define OLN __LINE__
 int main(void){
@@ -13,5 +14,8 @@ int main(void){
     int c = OLN;     // さらに次 (b より 1 大きい)
     int d = __LINE__;            // 直接 __LINE__ (c より 1 大きい)
     // 絶対行番号に依存せず、各行で 1 ずつ増えることを確認 (バグ時は全て同じ #define 行)
-    return (b - a == 1 && c - b == 1 && d - c == 1) ? 42 : 0;
+    assert(b - a == 1);
+    assert(c - b == 1);
+    assert(d - c == 1);
+    return 0;
 }

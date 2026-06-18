@@ -15,6 +15,7 @@
 // 期待: exit=42
 // 補足: double の `(*dp)[j]` (単項 deref + subscript 形) の fp load は別経路
 //      (build_unary_deref_node) の未対応で本修正外。`dp[i][j]` 形は動く。
+#include <assert.h>
 int    irows[2][3] = {{1, 2, 3}, {4, 5, 6}};
 double drows[2][2] = {{1.5, 2.5}, {3.5, 4.5}};
 int    (*ip)[3] = irows;
@@ -30,6 +31,10 @@ int main(void){
     int c = (int)dp[1][0];     // drows[1][0] = 3.5 -> 3
     int d = (int)dp[0][1];     // drows[0][1] = 2.5 -> 2
     int e = *qa[0] + *qa[1];   // 7 + 9 = 16
-    // 5 + 3 + 3 + 2 + 16 = 29; + 13 = 42
-    return a + b + c + d + e + 13;
+    assert(a == 5);    // ip[1][1]
+    assert(b == 3);    // (*ip)[2]
+    assert(c == 3);    // dp[1][0]
+    assert(d == 2);    // dp[0][1]
+    assert(e == 16);   // *qa[0] + *qa[1]
+    return 0;
 }

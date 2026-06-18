@@ -9,6 +9,7 @@
 //      全般の pointee_fp_kind を funcall に載せて戻り値を d0 で読む。
 // 修正前: 戻り値破損 (x0 を読む)
 // 期待: exit=42
+#include <assert.h>
 double add1(double x){ return x + 1.0; }
 double add2(double x){ return x + 2.0; }
 float  mulf(float x){ return x * 3.0f; }
@@ -25,5 +26,7 @@ int main(void){
     float fr = fops[i](14.0f);                 // 42.0f
     int b = (int)fr;                           // 42
 
-    return (a == 42 && b == 42) ? 42 : 0;
+    assert(a == 42);
+    assert(b == 42);
+    return 0;
 }

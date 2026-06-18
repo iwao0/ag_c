@@ -7,6 +7,7 @@
 //      よらず配列として登録する。pointer-to-array (trailing `[N]`) とは別経路。
 // 修正前: SIGSEGV / 誤値
 // 期待: exit=42
+#include <assert.h>
 int  iadd(int x){ return x + 1; }
 double dadd(double x){ return x + 1.5; }
 int    va = 40, vb = 9;
@@ -20,5 +21,8 @@ int main(void){
     int a = gi[0](41);              // 42
     int b = (int)(gd[0](40.5));     // 42.0 -> 42
     int c = *gp[0] + *gq[0];        // 40 + 9 = 49
-    return (a == 42 && b == 42 && c == 49) ? 42 : 0;
+    assert(a == 42);
+    assert(b == 42);
+    assert(c == 49);
+    return 0;
 }

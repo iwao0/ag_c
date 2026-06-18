@@ -9,6 +9,7 @@
 //      ND_GVAR 解決でノードへ伝播し、`*dp` / `dp[i]` が fp load になる。
 // 修正前: 値破損
 // 期待: exit=42
+#include <assert.h>
 double dvals[3] = {10.5, 20.5, 11.0};
 float  fvals[2] = {1.5f, 2.5f};
 double *dp = dvals;       // double データポインタ (配列を指す)
@@ -23,5 +24,8 @@ int main(void){
     int a = (int)s;                   // 42
     int b = (int)f;                   // 4
     int c = (int)u;                   // 1
-    return (a == 42 && b == 4 && c == 1) ? 42 : 0;
+    assert(a == 42);
+    assert(b == 4);
+    assert(c == 1);
+    return 0;
 }

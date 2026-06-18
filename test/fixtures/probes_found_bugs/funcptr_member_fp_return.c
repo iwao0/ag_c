@@ -9,6 +9,7 @@
 //      callee の pointee_fp_kind を funcall に載せて戻り値を d0 で読む。
 // 修正前: 戻り値破損 (x0 を読む)
 // 期待: exit=42
+#include <assert.h>
 struct Ops {
     double (*d)(double);
     float  (*f)(float);
@@ -32,5 +33,8 @@ int main(void){
     int a = (int)r1;                // 42
     int b = (int)r2;                // 41
     int c = (int)r3;                // 1
-    return (a == 42 && b == 41 && c == 1) ? 42 : 0;
+    assert(a == 42);
+    assert(b == 41);
+    assert(c == 1);
+    return 0;
 }
