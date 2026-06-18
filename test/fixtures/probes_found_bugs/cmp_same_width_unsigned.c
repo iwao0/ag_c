@@ -3,11 +3,12 @@
 // 広い符号付き型を符号付き比較に直した修正が、同幅ケースまで符号付きに
 // しないことを保証する回帰テスト。
 // 期待: exit=62
+#include <assert.h>
 int main(void) {
   int s = -1;
   unsigned int u = 1;
-  int r = 0;
-  if (s < u)  r |= 1;   // (unsigned) huge < 1 => false
-  if (s >= u) r |= 2;   // (unsigned) huge >= 1 => true
-  return r + 60;        // 2 + 60 = 62
+  // 同幅 int vs unsigned は符号なし比較: -1 は巨大値になる
+  assert(s >= u);    // huge >= 1 => true
+  assert(!(s < u));  // huge < 1 => false (符号付き比較に直してはいけない回帰確認)
+  return 0;
 }

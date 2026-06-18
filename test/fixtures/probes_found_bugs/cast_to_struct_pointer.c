@@ -7,11 +7,14 @@
 // is_pointer + cast_tag_kind が TK_STRUCT/TK_UNION のとき ND_PTR_CAST で
 // 結果をラップして tag 情報と is_tag_pointer=1 を伝播する。
 // (struct V*)void_ptr のようなパターンも動く。
+#include <assert.h>
 struct V { char a; int b; char c; long d; };
 int main(void) {
   // offsetof 風: ヌルポインタを struct V * にキャストして member offset を取る
-  long off_b = (long)&((struct V*)0)->b; // 4
-  long off_d = (long)&((struct V*)0)->d; // 16
-  return (int)(off_b + off_d); // 20
+  long off_b = (long)&((struct V*)0)->b;
+  long off_d = (long)&((struct V*)0)->d;
+  assert(off_b == 4);    // char a(0) + pad -> int b at 4
+  assert(off_d == 16);   // long d at 16
+  return 0;
 }
 // 期待: 20

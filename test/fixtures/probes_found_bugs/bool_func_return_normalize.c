@@ -5,13 +5,13 @@
 //
 // parse_return で current_func_ret_token_kind == TK_BOOL の場合に
 // `lhs != 0` を被せて 0/1 に正規化する。
+#include <assert.h>
 _Bool always_big(int x) { (void)x; return 200; }
 _Bool is_pos(int x) { return x > 0; }
 int main(void) {
-  int r = 0;
-  if (is_pos(5)) r += 10;       // 10
-  if (is_pos(-3)) r += 100;
-  r += always_big(0) * 7;        // 1 * 7
-  return r; // 17
+  assert(is_pos(5));            // true
+  assert(!is_pos(-3));          // false
+  assert(always_big(0) == 1);   // 200 が _Bool 戻りで 0/1 に正規化される
+  return 0;
 }
 // 期待: 17
