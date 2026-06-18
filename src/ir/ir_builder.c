@@ -2103,6 +2103,13 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
       ir_val_t p = build_expr(ctx, src->lhs);
       if (ctx->failed) return;
       src_ptr = p.id;
+    } else if (src->kind == ND_FUNCALL) {
+      /* `return make(...)`: >8B struct を返す funccall を直接 return する。
+       * build_node_funcall は間接 struct 戻り値で ret_area を確保しそのアドレス (PTR)
+       * を返すので、それを memcpy ソースにする (一旦変数へ入れると動いていた)。 */
+      ir_val_t p = build_expr(ctx, src);
+      if (ctx->failed) return;
+      src_ptr = p.id;
     } else {
       fail(ctx, "struct return value is not LVAR/DEREF");
       return;
