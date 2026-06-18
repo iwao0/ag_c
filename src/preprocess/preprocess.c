@@ -1668,6 +1668,11 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
              hideset_t *hs = hideset_union(as_pp(macro_tok)->hideset, new_hideset(name));
              for (token_t *t = body_copy; t; t = t->next) {
                as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+               /* 展開結果はマクロ呼び出し位置にあるものとして再配置する (C11 6.10.3)。
+                * これがないとマクロ本体内の __LINE__/__FILE__ が #define の位置を指していた
+                * (本体トークンの line_no が定義行のままだったため)。 */
+               t->line_no = macro_tok->line_no;
+               t->file_name_id = macro_tok->file_name_id;
              }
              if (body_copy) {
                body_copy->at_bol = macro_tok->at_bol;
@@ -1686,10 +1691,14 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
         } else {
            token_t *body_copy = copy_token_list(m->body);
            body_copy = paste_tokens(body_copy);
-           
+
            hideset_t *hs = hideset_union(as_pp(tok)->hideset, new_hideset(name));
            for (token_t *t = body_copy; t; t = t->next) {
              as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+             /* 展開結果はマクロ呼び出し位置にあるものとして再配置 (C11 6.10.3)。
+              * オブジェクト形式マクロ本体内の __LINE__/__FILE__ も呼び出し行を指すようにする。 */
+             t->line_no = tok->line_no;
+             t->file_name_id = tok->file_name_id;
            }
 
            if (body_copy) {

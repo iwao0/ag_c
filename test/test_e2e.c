@@ -1023,6 +1023,7 @@ static const test_case_t test_cases[] = {
     {"probes", "bitfield_pack_after_member", CASE_INT_FILE, "test/fixtures/probes_found_bugs/bitfield_pack_after_member.c", 42, 0},
     {"probes", "fp_unary_minus_neg_zero", CASE_INT_FILE, "test/fixtures/probes_found_bugs/fp_unary_minus_neg_zero.c", 42, 0},
     {"probes", "variadic_unnamed_proto_fixed_args", CASE_INT_FILE, "test/fixtures/probes_found_bugs/variadic_unnamed_proto_fixed_args.c", 42, 0},
+    {"probes", "line_macro_in_expansion", CASE_INT_FILE, "test/fixtures/probes_found_bugs/line_macro_in_expansion.c", 42, 0},
     {"probes", "static_local_struct_persist", CASE_INT_FILE, "test/fixtures/probes_found_bugs/static_local_struct_persist.c", 42, 0},
     {"probes", "int_cmp_width_and_subint_return", CASE_INT_FILE, "test/fixtures/probes_found_bugs/int_cmp_width_and_subint_return.c", 42, 0},
     {"probes", "anon_member_fp_unsigned_promote", CASE_INT_FILE, "test/fixtures/probes_found_bugs/anon_member_fp_unsigned_promote.c", 42, 0},
