@@ -20,30 +20,30 @@ int main(void){
   for(int i=0;i<2;i++)for(int j=0;j<2;j++)for(int k=0;k<2;k++) t[i][j][k]=i*100+j*10+k;
 
   // 各種 3D 行算術 (ローカル)
-  assert(!(*(*(t[1]+1)+0) != 110));     // t[1][1][0]
-  assert(!(*(*(t[0]+1)+1) != 11));     // t[0][1][1]
-  assert(!(*(*(t[1]+0)+0) != 100));     // t[1][0][0] (オフセット 0)
-  assert(!((*(t[1]+1))[1] != 111));     // 中間行 decay + subscript
-  assert(!(*(t[1][0]+1) != 101));    // 最内行 (int[2]) の算術
+  assert(*(*(t[1]+1)+0) == 110);     // t[1][1][0]
+  assert(*(*(t[0]+1)+1) == 11);     // t[0][1][1]
+  assert(*(*(t[1]+0)+0) == 100);     // t[1][0][0] (オフセット 0)
+  assert((*(t[1]+1))[1] == 111);     // 中間行 decay + subscript
+  assert(*(t[1][0]+1) == 101);    // 最内行 (int[2]) の算術
 
   // 通常の 3 重 subscript は不変
   int s = 0;
   for(int i=0;i<2;i++)for(int j=0;j<2;j++)for(int k=0;k<2;k++) s += t[i][j][k];
-  assert(!(s != 444));
+  assert(s == 444);
 
   // 3D pointer-to-array 仮引数
   for(int i=0;i<2;i++)for(int j=0;j<2;j++)for(int k=0;k<2;k++) t[i][j][k]=1;
-  assert(!(sum3(t, 2) != 8));
+  assert(sum3(t, 2) == 8);
 
   // global 3D の行算術
   for(int i=0;i<2;i++)for(int j=0;j<2;j++)for(int k=0;k<2;k++) g3[i][j][k]=i*4+j*2+k;
-  assert(!(*(*(g3[1]+1)+1) != 7));    // g3[1][1][1] = 4+2+1
+  assert(*(*(g3[1]+1)+1) == 7);    // g3[1][1][1] = 4+2+1
 
   // 4D も中間行が連鎖的に decay する
   int q[2][2][2][2];
   for(int a=0;a<2;a++)for(int b=0;b<2;b++)for(int c=0;c<2;c++)for(int d=0;d<2;d++)
     q[a][b][c][d]=a*1000+b*100+c*10+d;
-  assert(!(*(*(*(q[1]+1)+1)+1) != 1111));
+  assert(*(*(*(q[1]+1)+1)+1) == 1111);
 
   return 0;
 }

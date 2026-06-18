@@ -14,24 +14,24 @@ int main(void) {
 
   // 匿名 union の float/double メンバ (fp_kind 伝播)
   s.f = 2.5f;
-  assert(!(s.f != 2.5f));
+  assert(s.f == 2.5f);
   s.d = 123.625;
-  assert(!(s.d != 123.625));
+  assert(s.d == 123.625);
   // 型 punning: int で書いて float で読む (2.0f のビットパターン)
   s.n = 0x40000000;
-  assert(!(s.f != 2.0f));
+  assert(s.f == 2.0f);
 
   // 匿名 struct の unsigned メンバ (is_unsigned 伝播 → 符号なし比較)
   s.u = 0xFFFFFFFFu;
-  assert(!(s.u != 0xFFFFFFFFu));
-  assert(!(s.u <= 100));          // unsigned: 0xFFFFFFFF >u 100
-  assert(!(!(s.u > 0x7FFFFFFFu)));
+  assert(s.u == 0xFFFFFFFFu);
+  assert(s.u > 100);          // unsigned: 0xFFFFFFFF >u 100
+  assert(s.u > 0x7FFFFFFFu);
 
   // 匿名 struct の short メンバと末尾 tag のオフセット
   s.sh = -300;
-  assert(!(s.sh != -300));
+  assert(s.sh == -300);
   s.tag = 77;
-  assert(!(s.tag != 77));
+  assert(s.tag == 77);
 
   return 0;
 }
