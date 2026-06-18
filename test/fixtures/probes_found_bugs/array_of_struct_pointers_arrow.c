@@ -4,11 +4,14 @@
 // 修正: 要素がポインタ型 (pql>=1) かつ tag を持つとき is_tag_pointer を立てる。
 // 修正前: E3005 でコンパイル失敗
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; };
 int main(void) {
     struct N a = {10}, b = {20}, c = {12};
     struct N *arr[3] = {&a, &b, &c};
     int s = 0;
     for (int i = 0; i < 3; i++) s += arr[i]->v;   // 10+20+12 = 42
-    return (s == 42 && (*arr[1]).v == 20) ? 42 : 0;
+    assert(s == 42);
+    assert((*arr[1]).v == 20);
+    return 0;
 }

@@ -7,6 +7,7 @@
 // (`ops[i]`) やポインタ→fp (`(*pp)`, pql>=2) の実体 deref は除外。
 // 修正前: garbage (関数コードを呼ぶ)
 // 期待: exit=42
+#include <assert.h>
 int sub(int a, int b) { return a - b; }
 int add(int a, int b) { return a + b; }
 int main(void) {
@@ -17,5 +18,9 @@ int main(void) {
     int r2 = (**fp)(50, 8);       // 同上 = 42 (多段 deref も畳む)
     int r3 = ops[0](40, 2);       // add(40,2) = 42 (subscript は据え置き)
     int r4 = (*pp)(50, 8);        // *pp = fp -> sub(50,8) = 42
-    return (r1 == 42 && r2 == 42 && r3 == 42 && r4 == 42) ? 42 : 0;
+    assert(r1 == 42);
+    assert(r2 == 42);
+    assert(r3 == 42);
+    assert(r4 == 42);
+    return 0;
 }

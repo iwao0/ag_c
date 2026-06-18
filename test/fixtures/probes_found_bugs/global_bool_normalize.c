@@ -5,11 +5,15 @@
 // C11 6.3.1.2: _Bool への変換/代入は 0/1 に正規化される。
 // 修正前: exit=他の値 (5, 7, 11 等)
 // 期待: exit=42
+#include <assert.h>
 _Bool a = 5;     // 初期化 -> 1
 _Bool b = 0;
 _Bool c = 1;
 int main(void) {
     b = 7;        // 通常代入 -> 1
     c += 10;      // 複合代入 -> 1
-    return (a == 1 && b == 1 && c == 1) ? 42 : 0;
+    assert(a == 1);
+    assert(b == 1);
+    assert(c == 1);
+    return 0;
 }

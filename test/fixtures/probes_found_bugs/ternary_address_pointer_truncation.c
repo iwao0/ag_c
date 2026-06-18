@@ -5,6 +5,7 @@
 // 修正: 三項の分岐が ND_ADDR なら結果をポインタ (8B slot) として扱う。
 // 修正前: exit=139 等 (garbage)
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; };
 int main(void) {
     struct N a = {42}, b = {7};
@@ -12,5 +13,7 @@ int main(void) {
     struct N *p = (c ? &a : &b);     // &a
     int via_var = p->v;              // 42 (制御: 変数経由)
     int via_direct = (c ? &a : &b)->v;   // 42 (直接 ->)
-    return (via_var == 42 && via_direct == 42) ? 42 : 0;
+    assert(via_var == 42);
+    assert(via_direct == 42);
+    return 0;
 }

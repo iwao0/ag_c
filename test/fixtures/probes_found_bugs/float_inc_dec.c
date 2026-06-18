@@ -5,6 +5,7 @@
 // 修正前(2): codegen が整数 IR_ADD と整数即値 1 を使い、fp として誤コード生成。
 //            (fp は IR_FADD/IR_FSUB と 1.0 = I2F(1) を使う必要がある)
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     float f = 3.5f;
     f++;                 // 4.5
@@ -13,5 +14,7 @@ int main(void) {
     double arr[2] = {1.0, 2.0};
     arr[1]++;            // 3.0
     int post = (int)(f * 10);   // 45 (post ++ は古い値ではなく、ここでは更新後の f を読む)
-    return ((int)(f + d + arr[1]) == 16 && post == 45) ? 42 : 0;
+    assert((int)(f + d + arr[1]) == 16);
+    assert(post == 45);
+    return 0;
 }

@@ -5,6 +5,7 @@
 //     is_tag_pointer=0 にされ E3005。多段ポインタ (pql>=2) なら is_tag_pointer を維持。
 // 修正前: E3005 でコンパイル失敗
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; };
 int main(void) {
     struct N arr[3] = {{10}, {20}, {12}};
@@ -15,5 +16,6 @@ int main(void) {
     struct N *q = &n;
     struct N **pp = &q;
     int c = (*pp)->v;           // 10
-    return (a + b + c == 42) ? 42 : 0;
+    assert(a + b + c == 42);
+    return 0;
 }

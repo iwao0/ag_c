@@ -4,10 +4,13 @@
 // C11 6.5.15: 条件演算子の結果は両オペランドがポインタならポインタ型。
 // 修正前: E3064 でコンパイル失敗
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     int n = 5;
     char c = (n % 2 ? "odd" : "even")[0];   // "odd"[0] = 'o' = 111
     int a[3] = {7, 8, 9}, b[3] = {40, 41, 42};
     int v = (0 ? a : b)[2];                 // b[2] = 42
-    return (c == 'o' && v == 42) ? 42 : 0;
+    assert(c == 'o');
+    assert(v == 42);
+    return 0;
 }

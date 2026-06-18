@@ -4,6 +4,7 @@
 // (= `f`) なので、ND_FUNCREF をそのまま返す。
 // 修正前: ir_build_module failed
 // 期待: exit=42
+#include <assert.h>
 int add(int a, int b) { return a + b; }
 int main(void) {
     int (*fp)(int, int) = &add;       // &f で初期化
@@ -11,5 +12,7 @@ int main(void) {
     gp = &add;                        // &f で代入
     int r1 = fp(40, 2);               // 42
     int r2 = (*gp)(40, 2);            // 42 (&f 初期化 + 明示 deref 呼び出し)
-    return (r1 == 42 && r2 == 42) ? 42 : 0;
+    assert(r1 == 42);
+    assert(r2 == 42);
+    return 0;
 }

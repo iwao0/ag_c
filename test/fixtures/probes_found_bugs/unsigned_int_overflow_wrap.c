@@ -7,6 +7,7 @@
 // (C11 6.2.5p9)。符号付きは UB なので対象外、long(64bit) は元から正しい。
 // 修正前: exit=0
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     unsigned a = 0xFFFFFFFFu;
     unsigned b = 0x80000000u;
@@ -16,5 +17,6 @@ int main(void) {
              ((b << 1) == 0) &&            // 左シフト: bit31 が押し出され 0
              ((a >> 4) == 0x0FFFFFFFu) &&  // 右シフト (LSR) は元から正しい
              ((a + 1) < 5u);               // wrap 後の比較
-    return ok ? 42 : 0;
+    assert(ok);
+    return 0;
 }

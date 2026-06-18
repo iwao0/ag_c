@@ -4,6 +4,7 @@
 // C11 6.3.1.2: _Bool への代入は 0/1 に正規化される。
 // 修正前: exit=11 等
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     _Bool a = 1;  a += 10;   // (1+10)!=0 -> 1
     _Bool b = 0;  b |= 4;    // (0|4)!=0  -> 1
@@ -11,5 +12,10 @@ int main(void) {
     _Bool d = 1;  d -= 1;    // (1-1)==0  -> 0
     _Bool e = 3;  e *= 0;    // 0         -> 0
     // a..c = 1, d,e = 0
-    return (a && b && c && !d && !e) ? 42 : 0;
+    assert(a);
+    assert(b);
+    assert(c);
+    assert(!d);
+    assert(!e);
+    return 0;
 }

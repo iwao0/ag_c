@@ -5,10 +5,13 @@
 // 修正: 配列メンバ (array_len>0) は全体サイズ type_size*array_len をバイトコピー。
 // 修正前: exit=0 (t.x[1]/t.x[2] がゴミ)
 // 期待: exit=42
+#include <assert.h>
 struct S { int a; int x[3]; };
 int main(void) {
     struct S s = {9, {10, 20, 30}};
     struct S t = s;                 // コピー初期化
     int sum = t.a + t.x[0] + t.x[1] + t.x[2];  // 9+10+20+30 = 69
-    return (sum == 69 && t.x[2] == 30) ? 42 : 0;
+    assert(sum == 69);
+    assert(t.x[2] == 30);
+    return 0;
 }

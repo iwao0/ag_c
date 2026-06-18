@@ -6,6 +6,7 @@
 //     捨てており、仮引数にタグ・struct_size が伝わっていなかった。
 // 修正前: E3005 でコンパイル失敗
 // 期待: exit=42
+#include <assert.h>
 typedef struct { int v; } T;
 int sumv(T *a, int n) {            // typedef struct ポインタ仮引数
     int s = 0;
@@ -19,5 +20,7 @@ int main(void) {
     viz += (p--)->v;              // p-- は arr[1] を読んでから arr[0] へ (20)
     // sumv = 10+20+12 = 42; ここでは別途検証
     int total = sumv(arr, 3);     // 42
-    return (total == 42 && viz == 40) ? 42 : 0;
+    assert(total == 42);
+    assert(viz == 40);
+    return 0;
 }

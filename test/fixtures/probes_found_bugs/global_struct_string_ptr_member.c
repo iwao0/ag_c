@@ -7,6 +7,7 @@
 // 修正: 両方で sym_len<0 (文字列ラベル) / sym_len>0 (シンボル) を .quad 出力。
 // 修正前: exit=139 等 (garbage)
 // 期待: exit=42
+#include <assert.h>
 struct S { char *name; int id; };
 struct S one = {"hi", 5};
 struct S arr[2] = {{"ab", 1}, {"cd", 2}};
@@ -15,5 +16,6 @@ int main(void) {
     int ok = (one.name[0] == 'h' && one.id == 5 &&
               arr[0].name[0] == 'a' && arr[1].name[0] == 'c' &&
               arr[1].id == 2);
-    return ok ? 42 : 0;
+    assert(ok);
+    return 0;
 }
