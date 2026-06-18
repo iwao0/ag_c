@@ -1880,6 +1880,11 @@ static int run_category(const char *category) {
   if (pid == 0) {
     close(pipefd[0]);
     dup2(pipefd[1], STDOUT_FILENO);
+    /* stderr もカテゴリログへ捕捉する。CASE_ASSERT_FILE の assert 失敗時、__assert_rtn が
+     * stderr に "Assertion failed: (expr), function f, file ..., line N." を書いて abort する。
+     * これを拾えないとログが "Summary: FAILED" だけになり、どの fixture が落ちたか分からない。
+     * (stderr は無バッファなので abort 前に確実にパイプへ出る。) */
+    dup2(pipefd[1], STDERR_FILENO);
     close(pipefd[1]);
     execl(bin_path, bin_path, (char *)NULL);
     _exit(1);
