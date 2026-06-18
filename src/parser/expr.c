@@ -946,8 +946,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
    * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと
    * `s.v[i]` が整数 load になり float 値が化けていた。 */
   if (mem_info->fp_kind != TK_FLOAT_KIND_NONE) {
-    if (mem_array_len > 0 && mem_size > 0) deref->pointee_fp_kind = mem_info->fp_kind;
-    else                                    deref->base.fp_kind = mem_info->fp_kind;
+    if (mem_array_len > 0 && mem_size > 0)      deref->pointee_fp_kind = mem_info->fp_kind;
+    /* ポインタメンバ (関数ポインタ `double (*f)(double)`): fp_kind は「指す先 /
+     * 戻り型」の種別なので pointee_fp_kind に載せる (base.fp_kind に載せると 8B の
+     * ポインタ値を double としてロードしてしまう)。呼び出し側 parse_call_postfix が
+     * pointee_fp_kind を funcall に伝播し、戻り値を d0 で読む。 */
+    else if (mem_is_ptr && mem_size > 0)        deref->pointee_fp_kind = mem_info->fp_kind;
+    else                                         deref->base.fp_kind = mem_info->fp_kind;
   }
   /* _Bool メンバ: 配列メンバなら pointee_is_bool、それ以外は is_bool。 */
   if (mem_info->is_bool) {
