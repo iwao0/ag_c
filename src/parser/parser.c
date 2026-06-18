@@ -167,7 +167,7 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
                                                             token_ident_t **out_inner_first_dim_ident,
                                                             token_ident_t **out_inner_second_dim_ident,
                                                             int *out_has_func_suffix);
-static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap);
+static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed);
 typedef struct {
   token_kind_t base_type_kind;
   int saw_typedef_name;
@@ -2215,7 +2215,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   return psx_decl_register_lvar(param->str, param->len);
 }
 
-static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
+static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed) {
   param_decl_spec_t ds = {0};
   parse_param_decl_spec(&ds);
   // ポインタ修飾子を確認してから parse_param_declarator_name へ
@@ -2243,6 +2243,25 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap) {
     // decl-specifier はあるが識別子が無い仮引数（例: int f(int);）は
     // プロトタイプでは許容し、関数定義時のみ呼び出し元で診断する。
     if (ds.base_type_kind != TK_EOF || ds.tag_kind != TK_EOF || ds.saw_typedef_name) {
+      /* count_unnamed のとき、無名でも固定引数として nargs に数える。これがないと
+       * 可変長プロトタイプ (`int printf(const char*, ...)` のように引数名を省く一般的な
+       * 書き方) で固定引数数が 0 と誤算され、可変長呼び出し ABI で format 等までスタックに
+       * 積まれ x0 が未設定になって crash していた (Apple ARM64)。args[] には fp_kind を持つ
+       * プレースホルダを置き、固定 fp 引数の ABI 情報も index 整合させて保つ。プロトタイプ
+       * 専用 (定義で無名引数は下流で診断) なので args[] のプレースホルダは codegen に出ない。
+       * count_unnamed=0 は入れ子宣言子 (`int (*(*f(void))(int))[3]` の内側 `(int)` 等) で、
+       * これらは関数 f 自身の引数ではないため f の nargs に数えてはならない。 */
+      if (count_unnamed) {
+        if (*nargs >= *arg_cap) {
+          *arg_cap = pda_next_cap(*arg_cap, *nargs + 1);
+          node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
+        }
+        node_t *ph = psx_node_new_num(0);
+        if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
+          ph->fp_kind = ds.fp_kind;
+        }
+        node->args[(*nargs)++] = ph;
+      }
       return 1;
     }
     psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
@@ -2503,7 +2522,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
             done = true;
             continue;
           }
-          if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
+          if (parse_param_decl(&node_tmp, &nargs, &arg_cap, 0)) has_unnamed_param = 1;
           args = node_tmp.args;
           if (!tk_consume(',')) break;
           if (curtok()->kind == TK_RPAREN) {
@@ -2538,7 +2557,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
           done = true;
           continue;
         }
-        if (parse_param_decl(&node_tmp, &nargs, &arg_cap) && !parsed_nested_inner_params) {
+        if (parse_param_decl(&node_tmp, &nargs, &arg_cap, 0) && !parsed_nested_inner_params) {
           has_unnamed_param = 1;
         }
         args = node_tmp.args;
@@ -2592,7 +2611,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
           done = true;
           continue;
         }
-        if (parse_param_decl(&node_tmp, &nargs, &arg_cap)) has_unnamed_param = 1;
+        if (parse_param_decl(&node_tmp, &nargs, &arg_cap, 1)) has_unnamed_param = 1;
         args = node_tmp.args;
         if (!tk_consume(',')) break;
         if (curtok()->kind == TK_RPAREN) {
