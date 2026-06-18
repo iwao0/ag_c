@@ -191,11 +191,25 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           if (bf_storage_offset < 0
               || bf_storage_type_size != storage_size
               || bf_bits_used + bit_width > storage_bits) {
-            current_off = ALIGN_UP(current_off, storage_size);
-            bf_storage_offset = current_off;
-            bf_storage_type_size = storage_size;
-            bf_bits_used = 0;
-            current_off += storage_size;
+            /* 新しい bitfield run の開始 (直前が非 bitfield メンバ等で bf_storage_offset<0)。
+             * AAPCS: 直前メンバに続く現在位置を含む storage ユニット内に、sizeof(T) 境界を
+             * 跨がず収まるなら、そのユニットへ詰める (`char c; int x:20;` の x は c と同じ
+             * 4B ユニットの bit 8 以降に入り sizeof=4)。跨ぐ場合・run のオーバーフロー時・
+             * 型が変わる時は次の sizeof(T) 境界へ整列する。 */
+            int container_start = current_off - (current_off % storage_size);
+            int bits_before = (current_off - container_start) * 8;
+            if (bf_storage_offset < 0 && bits_before + bit_width <= storage_bits) {
+              bf_storage_offset = container_start;
+              bf_storage_type_size = storage_size;
+              bf_bits_used = bits_before;
+              current_off = container_start + storage_size;
+            } else {
+              current_off = ALIGN_UP(current_off, storage_size);
+              bf_storage_offset = current_off;
+              bf_storage_type_size = storage_size;
+              bf_bits_used = 0;
+              current_off += storage_size;
+            }
             if (storage_size > agg_align) agg_align = storage_size;
           }
           bit_field_offset_in_storage = bf_bits_used;
