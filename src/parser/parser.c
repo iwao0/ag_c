@@ -84,6 +84,11 @@ static int g_toplevel_decl_has_func_suffix = 0;
  * parse_toplevel_declarator_head でリセットする。単段ポインタ (`double *dp`) に限って
  * pointee fp_kind を保存する判定に使う (多段の pointee は double ではないため)。 */
 static int g_toplevel_decl_ptr_levels = 0;
+/* 現在パース中のトップレベル宣言子で、ポインタ `*` が括弧グループ内に宣言されたか
+ * (`int (*pa)[3]` は 1、`int *pa[3]` は 0)。後続の `[N]` 配列サフィックスと組み合わせて
+ * 「配列へのポインタ」(`int (*pa)[3]`) と「ポインタの配列」(`int *pa[3]`) を区別する。
+ * 宣言子ごとに parse_toplevel_declarator_head でリセットする。 */
+static int g_toplevel_decl_ptr_in_paren_group = 0;
 static int g_toplevel_decl_pointee_const = 0;
 static int g_toplevel_decl_pointee_volatile = 0;
 // typedef 由来の配列型の dims (使用側 `M2 g;` で typedef の `[2][3]` を保持)。
@@ -1354,8 +1359,32 @@ static void apply_global_multidim_strides(global_var_t *gv, const int *dims, int
 
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
+  /* `T (*pa)[N]` (配列へのポインタ): `*` が括弧内 (ptr_in_paren_group) で、外側に `[N]`
+   * 配列サフィックス (arr.is_array) が付く形。pa は 8B のスカラポインタで、`[N]` は
+   * **pointee 配列**の次元。parse_toplevel_array_suffixes は `[N]` を arr.is_array=1 /
+   * arr_total=N にするため、`int *pa[N]` (ポインタの配列) と同一に登録され、pa が
+   * 「N 要素配列」と誤って扱われて subscript が pa のポインタ値をロードせず &pa を base に
+   * して隣接メモリを読んでいた (SIGSEGV / 誤値)。配列扱いを解除し、pointee row を
+   * outer_stride に記録する (ローカル decl.c の `(*p)[N]` 分岐と同じ表現)。関数ポインタ
+   * (`(*f)(args)`) は has_func_suffix で除外。多次元 pointee `(*pa)[N][M]` は dim_count>=2
+   * で別途ストライドが要るため当面 1 次元 pointee に限定する。 */
+  int is_ptr_to_array = (head.is_ptr && g_toplevel_decl_ptr_in_paren_group &&
+                         !g_toplevel_decl_has_func_suffix && arr.is_array &&
+                         arr.dim_count == 1 && !arr.has_incomplete_array);
+  int pointee_row_dim = arr.arr_total;
+  if (is_ptr_to_array) {
+    arr.is_array = 0;
+    arr.arr_total = 1;
+    arr.dim_count = 0;
+  }
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
+  if (gv && is_ptr_to_array) {
+    /* outer_stride = pointee 1 行ぶん (N*elem)。第1subscript `pa[i]` のステップ。
+     * deref_size は register が elem に設定済みで、第2subscript `pa[i][j]` のステップ。
+     * try_build_global_var_node のスカラ分岐がこれを node に反映する。 */
+    gv->outer_stride = pointee_row_dim * g_toplevel_decl_elem_size;
+  }
   if (gv && !head.is_ptr && arr.is_array && arr.dim_count >= 2) {
     apply_global_multidim_strides(gv, arr.dims, arr.dim_count, g_toplevel_decl_elem_size);
   }
@@ -1376,6 +1405,7 @@ static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr
   toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
   g_toplevel_decl_has_func_suffix = 0;
   g_toplevel_decl_ptr_levels = 0;
+  g_toplevel_decl_ptr_in_paren_group = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
@@ -1488,7 +1518,11 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     had_parens = 1;
+    int ptr_before_inner = *is_ptr;
     name = parse_decl_name_recursive(is_ptr, require_name, &paren_array_mul);
+    /* 括弧内で初めて `*` が立った (`(*pa)`): 配列へのポインタ / 関数ポインタの指標。
+     * 後続の `[N]` サフィックスと合わせて pointer-to-array を識別する。 */
+    if (*is_ptr && !ptr_before_inner) g_toplevel_decl_ptr_in_paren_group = 1;
     paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {

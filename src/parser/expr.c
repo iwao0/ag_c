@@ -2765,7 +2765,11 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     next_ds = as_lvar(node)->mem.next_deref_size;
     extras_count = as_lvar(node)->mem.extra_strides_count;
     for (int i = 0; i < extras_count && i < 5; i++) extras[i] = as_lvar(node)->mem.extra_strides[i];
-  } else if (node->kind == ND_DEREF || node->kind == ND_ADDR) {
+  } else if (node->kind == ND_DEREF || node->kind == ND_ADDR || node->kind == ND_GVAR) {
+    /* ND_GVAR も node_mem_t を先頭メンバに持つので同じキャストで読める。配列へのポインタ
+     * グローバル `T (*pa)[N]` は inner_deref_size=elem を持ち、第1subscript `pa[i]` の
+     * 結果 (行) が第2subscript `pa[i][j]` 用の要素ストライドを引き継げるようにする
+     * (これがないと inner_ds=0 で第2subscript が行ストライドのまま誤ロードしていた)。 */
     node_mem_t *m = (node_mem_t *)node;
     inner_ds = m->inner_deref_size;
     next_ds = m->next_deref_size;
@@ -3415,6 +3419,15 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.base.kind = ND_GVAR;
     gvar_node->mem.type_size = gv->type_size;
     gvar_node->mem.deref_size = gv->deref_size;
+    /* 配列へのポインタ `T (*pa)[N]` グローバル: gv は 8B スカラポインタ (type_size=8) で
+     * outer_stride>0。第1subscript `pa[i]` は pointee 1 行 (outer_stride) をステップし、
+     * 第2subscript `pa[i][j]` は要素 (deref_size) をステップする。ローカル `(*p)[N]` の
+     * lvar ノード (deref_size=outer_stride, inner_deref_size=elem) と同じ表現にする。
+     * pa のポインタ値は type_size=8 でロードされ、それに添字が加算される。 */
+    if (gv->outer_stride > 0 && !gv->is_array) {
+      gvar_node->mem.deref_size = (short)gv->outer_stride;
+      gvar_node->mem.inner_deref_size = (short)gv->deref_size;
+    }
     /* タグ情報 (struct / union): build_member_access が `.x` を解決するときに
      * psx_node_get_tag_type 経由でここを読む。 */
     gvar_node->mem.tag_kind = gv->tag_kind;
