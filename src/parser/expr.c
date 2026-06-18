@@ -2441,7 +2441,13 @@ static node_t *parse_sizeof_operand(void) {
     if (curtok()->kind == TK_IDENT) {
       token_ident_t *id = (token_ident_t *)curtok();
       lvar_t *arr_var = psx_decl_find_lvar(id->str, id->len);
-      if (arr_var && arr_var->is_vla) {
+      /* `sizeof(vla)` は VLA 全体のランタイムサイズ (offset+8 のスロット) を返す。
+       * ただし `sizeof(vla[0])` 等、ident の後に postfix (`[`/`.`/`->` など) が続く形は
+       * 式として評価しなければならない。ident 直後が `)` のときだけ全体サイズ扱いにする
+       * (非 VLA 配列分岐と同じく peek で確認。これがないと `sizeof(a[0])` が `a` を消費して
+       * `)` を期待し E2006 になっていた)。 */
+      if (arr_var && arr_var->is_vla &&
+          curtok()->next && curtok()->next->kind == TK_RPAREN) {
         set_curtok(curtok()->next);
         tk_expect(')');
         return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
