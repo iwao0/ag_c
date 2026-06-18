@@ -1014,6 +1014,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_designator_member_index", CASE_INT_FILE, "test/fixtures/probes_found_bugs/global_designator_member_index.c", 42, 0},
     {"probes", "local_designator_aggregate_leaf", CASE_INT_FILE, "test/fixtures/probes_found_bugs/local_designator_aggregate_leaf.c", 42, 0},
     {"probes", "return_struct_funccall", CASE_INT_FILE, "test/fixtures/probes_found_bugs/return_struct_funccall.c", 42, 0},
+    {"probes", "struct_init_from_ternary_funccall", CASE_INT_FILE, "test/fixtures/probes_found_bugs/struct_init_from_ternary_funccall.c", 42, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
