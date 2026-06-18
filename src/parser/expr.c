@@ -3150,8 +3150,42 @@ static node_t *try_parse_compound_literal(void) {
 static node_t *parse_generic_selection(void) {
   set_curtok(curtok()->next); // skip TK_GENERIC
   tk_expect('(');
-  node_t *control = assign();
-  generic_type_t control_ty = infer_generic_control_type(control);
+  /* 制御式が純粋なキャスト `(T)operand` で直後が ',' の形なら、キャスト先の型 T を静的型
+   * として使う。apply_cast は sub-int/int キャストを値計算ノード (`(x<<56)>>56` 等) に
+   * lower し char/short/unsigned char の型幅・符号を AST に残さないため、
+   * `_Generic((char)x, char:..)` 等が int 扱いになっていた。型を assoc 型と同じ
+   * parse_generic_assoc_type で解釈するので表現が一致し確実にマッチする。型トレイト idiom
+   * `(T)0` をカバー。複雑な式 (`(char)x + 0` 等、結果型は昇格で int) は従来どおり下の
+   * infer_generic_control_type に委ねる。複合リテラル `(T){..}` は `{` を見て除外。 */
+  generic_type_t control_ty;
+  int got_cast_ty = 0;
+  if (curtok()->kind == TK_LPAREN) {
+    token_t *save = curtok();
+    set_curtok(curtok()->next); // skip '('
+    generic_type_t cty = {0};
+    cty.kind = TK_EOF;
+    cty.tag_kind = TK_EOF;
+    cty.ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+    /* キャスト型はスカラ算術型 (char/short/int/long/unsigned/float/double 等、非ポインタ
+     * 非タグ) のときだけ採用する。関数ポインタ / 配列 / struct ポインタ等の複雑型は assoc
+     * 側の型照合が不完全で、捕捉すると `(int(*)(int))0` が array-of-funcptr assoc に誤マッチ
+     * する回帰が出たため、従来どおり下の infer に委ねる。 */
+    if (parse_generic_assoc_type(&cty) && curtok()->kind == TK_RPAREN &&
+        curtok()->next && curtok()->next->kind != TK_LBRACE &&
+        !cty.is_pointer && cty.tag_kind == TK_EOF) {
+      set_curtok(curtok()->next); // skip ')'
+      cast();                     // 制御式は未評価 (C11 6.5.1.1) なので operand の値は捨てる
+      if (curtok()->kind == TK_COMMA) {
+        control_ty = cty;
+        got_cast_ty = 1;
+      }
+    }
+    if (!got_cast_ty) set_curtok(save); // 純粋なキャストでなければ巻き戻して通常解析
+  }
+  if (!got_cast_ty) {
+    node_t *control = assign();
+    control_ty = infer_generic_control_type(control);
+  }
   tk_expect(',');
 
   node_t *selected = NULL;
