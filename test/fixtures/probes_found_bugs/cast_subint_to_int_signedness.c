@@ -5,6 +5,7 @@
 // さらに符号混在のインライン比較/除算では sub-int が UAC で signed 昇格扱いになり
 // 符号が誤っていた。sub-int の load 符号性を保ちつつ (unsigned) は & 0xffffffff で
 // 32bit unsigned へ折り返すことで両方を解決する。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -33,5 +34,6 @@ int main(void) {
   // (unsigned) の unsigned short はそのまま 65535 (< 100000)
   t += ((unsigned)us < 100000u);    // +1
 
-  return t * 6;                     // 7 * 6 = 42
+  assert(t * 6 == 42);                     // 7 * 6 = 42
+  return 0;
 }

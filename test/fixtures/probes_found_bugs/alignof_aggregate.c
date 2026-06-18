@@ -3,6 +3,7 @@
 // `int[10]` (size 40/align 4)、`_Alignas(16) int` を含む struct で誤っていた。
 // struct のアラインメント (agg_align) を tag テーブルへ保存し、_Alignof は配列で
 // 要素数を掛けず、struct はその align を返すよう修正。
+#include <assert.h>
 struct P { int x, y; };               // align 4, size 8
 struct Q { char a; double b; };       // align 8, size 16
 struct A { char c; _Alignas(16) int x; }; // align 16, size 32
@@ -26,5 +27,6 @@ int main(void) {
   // sizeof は変わらない
   t += (sizeof(struct P) == 8) + (sizeof(struct A) == 32);
 
-  return t + 29;  // 13 checks -> 13+29 = 42
+  assert(t + 29 == 42);  // 13 checks -> 13+29 = 42
+  return 0;
 }

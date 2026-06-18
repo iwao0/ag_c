@@ -6,10 +6,12 @@
 // 修正: 永続確保する psx_make_anonymous_tag_name を使う (typedef 経路と同じ)。
 // 修正前: E3064 でコンパイル失敗
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     union { int i; struct { short lo, hi; }; } u;
     u.i = 0x00020001;            // lo=1, hi=2 (little-endian)
     struct { int a; int b; } s;
     s.a = 30; s.b = 9;
-    return u.lo + u.hi + s.a + s.b;   // 1 + 2 + 30 + 9 = 42
+    assert(u.lo + u.hi + s.a + s.b == 42);   // 1 + 2 + 30 + 9 = 42
+    return 0;
 }
