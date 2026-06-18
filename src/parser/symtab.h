@@ -35,6 +35,11 @@ struct global_var_t {
   // fp_kind != TK_FLOAT_KIND_NONE のとき、codegen はビットパターンで出力する。
   // 配列は未対応 (今は init_values[] が long long のため)。
   unsigned char fp_kind;
+  // 関数ポインタグローバル `double (*gops)(double)` の戻り型 fp_kind。
+  // メンバ/ローカル funcptr と同じく、ポインタ自体の fp_kind は NONE のまま戻り fp を
+  // ここに保持し、識別子解決時に ND_GVAR ノードの pointee_fp_kind へ伝播する。
+  // これがないと `gops(x)` の funcall が戻り値を x0 で読み float/double が化ける。
+  unsigned char pointee_fp_kind;
   double fval;
   char *init_symbol;  // アドレス初期化子のシンボル名（&g → "g"）
   int init_symbol_len;

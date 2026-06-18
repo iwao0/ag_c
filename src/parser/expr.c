@@ -3425,6 +3425,9 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     /* 浮動小数スカラのグローバル: fp_kind を node に伝播。IR builder が
      * これを見て IR_TY_F32/F64 として load を発行する。 */
     gvar_node->mem.base.fp_kind = gv->fp_kind;
+    /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型 fp_kind を pointee_fp_kind
+     * に伝播。parse_call_postfix がこれを funcall に載せ、戻り値を d0 で読む。 */
+    gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
     /* unsigned スカラ: load を zero-extend するため is_unsigned を伝播。 */

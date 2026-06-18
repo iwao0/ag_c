@@ -74,6 +74,11 @@ static token_kind_t g_toplevel_decl_tag_kind = TK_EOF;
 static char *g_toplevel_decl_tag_name = NULL;
 static int g_toplevel_decl_tag_len = 0;
 static int g_toplevel_decl_base_is_ptr = 0;
+/* 現在パース中のトップレベル宣言子が関数サフィックス `(...)` を持つか。
+ * `double (*gops)(double)` のような関数ポインタグローバルを `double *dp` のような
+ * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
+ * 宣言子ごとに parse_toplevel_declarator_head でリセットされる。 */
+static int g_toplevel_decl_has_func_suffix = 0;
 static int g_toplevel_decl_pointee_const = 0;
 static int g_toplevel_decl_pointee_volatile = 0;
 // typedef 由来の配列型の dims (使用側 `M2 g;` で typedef の `[2][3]` を保持)。
@@ -774,6 +779,12 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   /* 浮動小数スカラのとき fp_kind を引き継ぐ。ポインタは整数として扱う。 */
   gv->fp_kind = is_ptr ? (unsigned char)TK_FLOAT_KIND_NONE
                        : (unsigned char)g_toplevel_decl_fp_kind;
+  /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型の fp_kind を pointee_fp_kind
+   * に保存する (fp_kind は codegen がビットパターン出力に使うので流用不可)。
+   * has_func_suffix で関数ポインタに限定し、データポインタ `double *dp` は対象外。 */
+  gv->pointee_fp_kind = (is_ptr && g_toplevel_decl_has_func_suffix)
+                            ? (unsigned char)g_toplevel_decl_fp_kind
+                            : (unsigned char)TK_FLOAT_KIND_NONE;
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
   gv->is_bool = (!is_ptr && !is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
   gv->elem_is_bool = (!is_ptr && is_array && g_toplevel_decl_base_kind == TK_BOOL) ? 1 : 0;
@@ -1341,6 +1352,7 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
 
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name) {
   toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
+  g_toplevel_decl_has_func_suffix = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
@@ -1481,6 +1493,9 @@ static void emit_decl_name_required_diag(void) {
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens) {
   if (!had_parens) return;
   while (curtok()->kind == TK_LPAREN) {
+    /* `(*gops)(double)` の `(double)` 関数サフィックス: 関数ポインタ宣言子の指標。
+     * 戻り型 fp_kind の保存判定 (register_toplevel_global_decl) に使う。 */
+    g_toplevel_decl_has_func_suffix = 1;
     skip_balanced_group(TK_LPAREN, TK_RPAREN);
   }
 }
