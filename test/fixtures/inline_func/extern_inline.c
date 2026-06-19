@@ -1,6 +1,7 @@
 // extern inline 関数の呼び出し
-// 期待: exit=42 (50-8)
+#include <assert.h>
 extern inline int sub(int a, int b) { return a - b; }
 int main(void) {
-    return sub(50, 8);
+    assert(sub(50, 8) == 42);
+    return 0;
 }

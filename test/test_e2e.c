@@ -764,9 +764,9 @@ static const test_case_t test_cases[] = {
     {"struct_ret", "ret_24b_member_f", CASE_INT_FILE, "test/fixtures/struct_ret/ret_24b_member_f.c", 6, 0},
     {"struct_ret", "ret_40b_sum", CASE_INT_FILE, "test/fixtures/struct_ret/ret_40b_sum.c", 55, 0},
     // __func__ 定義済み識別子
-    {"func_name", "first_char_main", CASE_INT_FILE, "test/fixtures/func_name/first_char_main.c", 109, 0},
-    {"func_name", "first_char_helper", CASE_INT_FILE, "test/fixtures/func_name/first_char_helper.c", 104, 0},
-    {"func_name", "each_func_distinct", CASE_INT_FILE, "test/fixtures/func_name/each_func_distinct.c", 42, 0},
+    {"func_name", "first_char_main", CASE_ASSERT_FILE, "test/fixtures/func_name/first_char_main.c", 0, 0},
+    {"func_name", "first_char_helper", CASE_ASSERT_FILE, "test/fixtures/func_name/first_char_helper.c", 0, 0},
+    {"func_name", "each_func_distinct", CASE_ASSERT_FILE, "test/fixtures/func_name/each_func_distinct.c", 0, 0},
     // 2D VLA: constant inner dimension
     {"vla_2d", "const_inner_read", CASE_ASSERT_FILE, "test/fixtures/vla_2d/const_inner_read.c", 0, 0},
     {"vla_2d", "const_inner_loop", CASE_ASSERT_FILE, "test/fixtures/vla_2d/const_inner_loop.c", 0, 0},
@@ -778,10 +778,10 @@ static const test_case_t test_cases[] = {
     {"vla_param", "sizeof_is_ptr", CASE_ASSERT_FILE, "test/fixtures/vla_param/sizeof_is_ptr.c", 0, 0},
     {"vla_param", "write_through", CASE_ASSERT_FILE, "test/fixtures/vla_param/write_through.c", 0, 0},
     // inline 指定子: 単一翻訳単位では通常関数と同様にコード生成 (C11 6.7.4)
-    {"inline_func", "basic_inline", CASE_INT_FILE, "test/fixtures/inline_func/basic_inline.c", 42, 0},
-    {"inline_func", "static_inline", CASE_INT_FILE, "test/fixtures/inline_func/static_inline.c", 42, 0},
-    {"inline_func", "extern_inline", CASE_INT_FILE, "test/fixtures/inline_func/extern_inline.c", 42, 0},
-    {"inline_func", "multi_inline", CASE_INT_FILE, "test/fixtures/inline_func/multi_inline.c", 17, 0},
+    {"inline_func", "basic_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/basic_inline.c", 0, 0},
+    {"inline_func", "static_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/static_inline.c", 0, 0},
+    {"inline_func", "extern_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/extern_inline.c", 0, 0},
+    {"inline_func", "multi_inline", CASE_ASSERT_FILE, "test/fixtures/inline_func/multi_inline.c", 0, 0},
     // グローバル変数: 暫定定義
     {"global_var", "tentative_rw", CASE_ASSERT_FILE, "test/fixtures/global_var/tentative_rw.c", 0, 0},
     {"global_var", "tentative_multi_func", CASE_ASSERT_FILE, "test/fixtures/global_var/tentative_multi_func.c", 0, 0},
