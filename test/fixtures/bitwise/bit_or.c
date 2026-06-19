@@ -1,3 +1,4 @@
 // ビット OR: 6 | 3 = 111 = 7
 // 期待: exit=7
-main() { return 6 | 3; }
+#include <assert.h>
+main() { assert((6 | 3) == 7); return 0; }

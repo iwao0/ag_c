@@ -1,6 +1,7 @@
 // for ループ内で break と continue を併用
 // i=0,1,3,4 を s に加算 (i==2 で skip、i==5 で break) → 0+1+3+4 = 8
 // 期待: exit=8
+#include <assert.h>
 int main(void) {
     int i;
     int s = 0;
@@ -9,5 +10,6 @@ int main(void) {
         if (i == 5) break;
         s = s + i;
     }
-    return s;
+    assert(s == 8);
+    return 0;
 }

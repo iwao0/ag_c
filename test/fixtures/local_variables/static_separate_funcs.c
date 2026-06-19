@@ -5,8 +5,18 @@
 // 実際: f() = 1, g() = 100, f() = 2 (前回 1 を覚えている), g() = 101
 //   sum = 1 + 100 + 2 + 101 = 204
 // 期待: exit=204
+#include <assert.h>
 int f(void) { static int n = 0; return ++n; }
 int g(void) { static int n = 99; return ++n; }
 int main(void) {
-    return f() + g() + f() + g();
+    int f1 = f();
+    int g1 = g();
+    int f2 = f();
+    int g2 = g();
+    assert(f1 == 1);
+    assert(g1 == 100);
+    assert(f2 == 2);
+    assert(g2 == 101);
+    assert(f1 + g1 + f2 + g2 == 204);
+    return 0;
 }

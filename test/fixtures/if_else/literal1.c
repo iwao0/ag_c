@@ -1,6 +1,10 @@
 // 定数 1 を条件にすると if 側
 // 期待: exit=2
+#include <assert.h>
 main() {
-    if (1) return 2;
-    else return 3;
+    int r;
+    if (1) r = 2;
+    else r = 3;
+    assert(r == 2);
+    return 0;
 }
