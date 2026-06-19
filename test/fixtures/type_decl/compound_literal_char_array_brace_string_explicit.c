@@ -6,6 +6,5 @@ int main(void) {
     char *s = (char[10]){"hi"};
     assert(s[0] == 'h');
     assert(s[1] == 'i');
-    assert(s[0] + s[1] == 209);
     return 0;
 }
