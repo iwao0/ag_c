@@ -1065,6 +1065,7 @@ static const test_case_t test_cases[] = {
     {"probes", "fp_pointer_cast_deref", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_pointer_cast_deref.c", 0, 0},
     {"probes", "fp_cast_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_cast_subscript.c", 0, 0},
     {"probes", "real_imag_operators", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/real_imag_operators.c", 0, 0},
+    {"probes", "complex_float_double_convert", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_float_double_convert.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

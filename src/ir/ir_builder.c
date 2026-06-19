@@ -424,6 +424,56 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     ir_func_append_inst(ctx->f, st_im);
     return;
   }
+  /* 源と先で fp 種別が異なる複素数 (double _Complex ↔ float _Complex 変換)。
+   * まず源の fp 種別で temp slot に materialize し (この再帰呼び出しでは
+   * src_fp_ty == fp_ty となり下の通常経路に乗る)、各成分を F2F 変換して dst へ
+   * 格納する。これにより memcpy が壊す変換を全ノード種別で正しく扱う。 */
+  ir_type_t src_fp_ty = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  if (src_fp_ty != fp_ty) {
+    int src_half = (src_fp_ty == IR_TY_F32) ? 4 : 8;
+    int slot = ir_func_new_vreg(ctx->f);
+    ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+    al->dst = ir_val_vreg(slot, IR_TY_PTR);
+    al->alloca_size = 2 * src_half;
+    al->alloca_align = 8;
+    ir_func_append_inst(ctx->f, al);
+    build_complex_to(ctx, node, slot, src_fp_ty, src_half);
+    if (ctx->failed) return;
+    for (int part = 0; part < 2; part++) {
+      int src_p = slot, dst_p = dst_ptr_vreg;
+      if (part == 1) {
+        int sp = ir_func_new_vreg(ctx->f);
+        ir_inst_t *ls = ir_inst_new(IR_LEA);
+        ls->dst = ir_val_vreg(sp, IR_TY_PTR);
+        ls->src1 = ir_val_vreg(slot, IR_TY_PTR);
+        ls->src2 = ir_val_imm(IR_TY_I32, src_half);
+        ir_func_append_inst(ctx->f, ls);
+        src_p = sp;
+        int dp = ir_func_new_vreg(ctx->f);
+        ir_inst_t *ld = ir_inst_new(IR_LEA);
+        ld->dst = ir_val_vreg(dp, IR_TY_PTR);
+        ld->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+        ld->src2 = ir_val_imm(IR_TY_I32, half);
+        ir_func_append_inst(ctx->f, ld);
+        dst_p = dp;
+      }
+      int vsrc = ir_func_new_vreg(ctx->f);
+      ir_inst_t *lo = ir_inst_new(IR_LOAD);
+      lo->dst = ir_val_vreg(vsrc, src_fp_ty);
+      lo->src1 = ir_val_vreg(src_p, IR_TY_PTR);
+      ir_func_append_inst(ctx->f, lo);
+      int vcv = ir_func_new_vreg(ctx->f);
+      ir_inst_t *cv = ir_inst_new(IR_F2F);
+      cv->dst = ir_val_vreg(vcv, fp_ty);
+      cv->src1 = ir_val_vreg(vsrc, src_fp_ty);
+      ir_func_append_inst(ctx->f, cv);
+      ir_inst_t *so = ir_inst_new(IR_STORE);
+      so->src1 = ir_val_vreg(dst_p, IR_TY_PTR);
+      so->src2 = ir_val_vreg(vcv, fp_ty);
+      ir_func_append_inst(ctx->f, so);
+    }
+    return;
+  }
   /* LVAR / DEREF / GVAR: src のアドレスを得て 2*half バイト memcpy */
   if (node->kind == ND_LVAR) {
     int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node)->offset);
