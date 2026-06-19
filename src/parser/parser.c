@@ -550,9 +550,27 @@ static token_kind_t parse_atomic_type_specifier(void) {
   return inner;
 }
 
+/* 先頭の storage-class / cv 修飾子を読み飛ばした先に tag キーワード
+ * (struct/union/enum) が来るか先読みする。`static struct S g` のように
+ * 修飾子が tag の前にある形を判定する。builtin 型 (`static int`) は
+ * psx_consume_type_kind が内部で skip するためここでは対象にしない。 */
+static int toplevel_prefix_precedes_tag(void) {
+  if (!psx_is_decl_prefix_token(curtok()->kind)) return 0;
+  token_t *t = curtok();
+  while (t && psx_is_decl_prefix_token(t->kind)) t = t->next;
+  return t && psx_ctx_is_tag_keyword(t->kind);
+}
+
 static void parse_toplevel_decl_spec(void) {
   reset_toplevel_decl_spec_state();
   consume_toplevel_typedef_storage_class();
+
+  /* `static struct S g;` 等、storage class が tag の前にある場合は先に修飾子を
+   * 消費する。これをしないと parse_toplevel_tag_decl_spec が tag キーワードを
+   * 見つけられず E3016 になっていた (static int 等の builtin 経路は別処理)。 */
+  if (toplevel_prefix_precedes_tag()) {
+    skip_cv_qualifiers();
+  }
 
   if (parse_toplevel_tag_decl_spec()) return;
 
