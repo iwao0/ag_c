@@ -760,9 +760,9 @@ static const test_case_t test_cases[] = {
     {"struct_ret", "ret_16b_sum", CASE_ASSERT_FILE, "test/fixtures/struct_ret/ret_16b_sum.c", 0, 0},
     {"struct_ret", "ret_12b_member_c", CASE_ASSERT_FILE, "test/fixtures/struct_ret/ret_12b_member_c.c", 0, 0},
     // struct return value (>16B: indirect return via x8)
-    {"struct_ret", "ret_20b_indirect", CASE_INT_FILE, "test/fixtures/struct_ret/ret_20b_indirect.c", 35, 0},
-    {"struct_ret", "ret_24b_member_f", CASE_INT_FILE, "test/fixtures/struct_ret/ret_24b_member_f.c", 6, 0},
-    {"struct_ret", "ret_40b_sum", CASE_INT_FILE, "test/fixtures/struct_ret/ret_40b_sum.c", 55, 0},
+    {"struct_ret", "ret_20b_indirect", CASE_ASSERT_FILE, "test/fixtures/struct_ret/ret_20b_indirect.c", 0, 0},
+    {"struct_ret", "ret_24b_member_f", CASE_ASSERT_FILE, "test/fixtures/struct_ret/ret_24b_member_f.c", 0, 0},
+    {"struct_ret", "ret_40b_sum", CASE_ASSERT_FILE, "test/fixtures/struct_ret/ret_40b_sum.c", 0, 0},
     // __func__ 定義済み識別子
     {"func_name", "first_char_main", CASE_ASSERT_FILE, "test/fixtures/func_name/first_char_main.c", 0, 0},
     {"func_name", "first_char_helper", CASE_ASSERT_FILE, "test/fixtures/func_name/first_char_helper.c", 0, 0},
