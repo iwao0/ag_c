@@ -17,8 +17,9 @@
 //   を設定。これで struct メンバ char* (commit 6a663ed) と同じ semantics
 //   になり、subscript_base_address_of が ND_DEREF をそのまま返してポインタ値
 //   load を引き起こす。
+#include <assert.h>
 char *names[3] = {"abc", "de", "fghi"};
 int main(void) {
-  return names[0][0] + names[1][1] + names[2][3]; // 'a'+'e'+'i' = 97+101+105 = 303 → 47
+  assert(names[0][0] == 'a'); assert(names[1][1] == 'e'); assert(names[2][3] == 'i'); return 0; // 'a'+'e'+'i' = 97+101+105 = 303 → 47
 }
 // 期待: 47

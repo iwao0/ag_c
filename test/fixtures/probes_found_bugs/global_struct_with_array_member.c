@@ -8,9 +8,10 @@
 // 出力する分岐を追加。struct_layout は配列メンバの type_size を「要素サイズ」
 // (struct_layout.c:247) で登録するため、全体サイズは ts*alen となる。
 // init_values のインデックスもメンバ index と独立した val_idx で進める。
+#include <assert.h>
 struct V { int values[3]; int total; };
 struct V g = {{10, 20, 30}, 60};
 int main(void) {
-  return g.values[0] + g.values[1] + g.values[2] + g.total; // 10+20+30+60 = 120
+  assert(g.values[0] == 10); assert(g.values[1] == 20); assert(g.values[2] == 30); assert(g.total == 60); return 0; // 10+20+30+60 = 120
 }
 // 期待: 120

@@ -9,6 +9,7 @@
 //       coerce_to_type は即値を PTR 特殊ケースより先に retype。
 // 修正前: `p = (cond)? &x : 0` の null 分岐で p が非 0 / SIGSEGV
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; struct N *next; };
 
 int main(void) {
@@ -27,14 +28,14 @@ int main(void) {
     int i = 9;
     int x = 7;
     int *q = (i < 4) ? &x : 0;                          // 0 が選ばれる
-    if (q != 0) return 1;
+    assert(q == 0);
 
     // 値として直接比較 (j03 相当)
     if (((i < 4) ? &x : 0) != 0) return 2;
 
     // 逆向き: 0 分岐が選ばれない場合は従来どおり動く
     int *r = (i > 4) ? &x : 0;                          // &x が選ばれる
-    if (r == 0 || *r != 7) return 3;
+    assert(r == 0 || *r == 7);
 
-    return sum + 27;                                    // 15 + 27 = 42
+    assert(sum == 15); return 0;                                    // 15 + 27 = 42
 }

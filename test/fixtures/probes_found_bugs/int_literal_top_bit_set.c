@@ -3,7 +3,8 @@
 // 0xFFFFFFFFFFFFFFFF が 0x7FFFFFFFFFFFFFFF として格納されていた。
 // 修正前: (0xFFFF...F >> 60) が 7 になる (正しくは 15)。
 // 期待: exit=15
+#include <assert.h>
 int main(void) {
     unsigned long u = 0xFFFFFFFFFFFFFFFFUL;
-    return (int)(u >> 60);
+    assert((int)(u >> 60) == 15); return 0;
 }

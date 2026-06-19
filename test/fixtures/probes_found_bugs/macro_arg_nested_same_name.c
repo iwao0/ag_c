@@ -4,7 +4,8 @@
 // 限られ、引数のプリスキャンには及ばない。
 // 修正前: 内側 ADD が未展開で残り、未定義シンボル _ADD でリンク失敗。
 // 期待: exit=10  (((1)+(2)) と ((3)+(4)) に展開され 3+7)
+#include <assert.h>
 #define ADD(a, b) ((a) + (b))
 int main(void) {
-    return ADD(ADD(1, 2), ADD(3, 4));
+    assert(ADD(ADD(1, 2), ADD(3, 4)) == 10); return 0;
 }

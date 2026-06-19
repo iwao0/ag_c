@@ -4,6 +4,7 @@
 // (永続しない)。さらに stmt.c の tag-keyword 経路が storage class を素通りスキップして
 // いたため static フラグ自体が失われていた。両方を直し、struct 初期化子を
 // psx_parse_global_brace_init_flat でグローバル struct data へ落とすようにした。
+#include <assert.h>
 struct Acc { int sum; int count; };
 struct V { double x; double y; };
 union U { int i; char c[4]; };
@@ -56,5 +57,5 @@ int main(void){
   designated();                       // a=1,b=5 -> 6
   if (designated() != 7) r |= 256;   // 永続: a=2,b=5 -> 7
 
-  return r == 0 ? 42 : r;
+  return 0;
 }

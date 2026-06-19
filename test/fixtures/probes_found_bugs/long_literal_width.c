@@ -2,6 +2,7 @@
 // 扱われ、`u * 2L` や `i * 2L` が 32bit 演算になり 2^32 超で wrap していた。
 // parser が token の int_size (long サフィックス) を node_num_t.int_is_long へ伝え、
 // build_node_num が long リテラルを i64 で生成するよう修正。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -25,5 +26,5 @@ int main(void) {
   unsigned w = 3000000000u;
   t += (w * 2u == 1705032704u);       // unsigned int * 2u wraps at 2^32
 
-  return t + 34;  // 8 checks -> 8+34 = 42
+  assert(t == 8); return 0;  // 8 checks -> 8+34 = 42
 }

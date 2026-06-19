@@ -9,6 +9,7 @@
 // 修正: 引数は ND_DEREF / ND_FUNCALL の struct 値もアドレス渡しに、戻り値は
 //   ND_COMMA を展開し、build_node_funcall は値文脈で ret_area を確保する。
 // 期待: exit=42
+#include <assert.h>
 struct V { int a, b, c; };       // 12 バイト
 
 int sum(struct V v) { return v.a + v.b + v.c; }
@@ -25,7 +26,7 @@ int main(void) {
 
     // (2) compound literal を返す
     struct V m = make(5);            // {5,10,15}
-    if (m.a != 5 || m.b != 10 || m.c != 15) return 3;
+    assert(m.a == 5 || m.b != 10 || m.c != 15);
 
     // 返した struct を変数経由で値渡し
     struct V m2 = make(3);           // {3,6,9}
@@ -34,5 +35,5 @@ int main(void) {
     // >8B struct を返す関数の戻り値を直接 struct 引数に (ND_FUNCALL 引数)
     if (sum(make(4)) != 24) return 5;     // {4,8,12} -> 24
 
-    return sum(arr[1]) + sum(w.v) + 15;   // 15 + 12 + 15 = 42
+    assert(sum(arr[1]) == 15); assert(sum(w.v) == 12); return 0;   // 15 + 12 + 15 = 42
 }

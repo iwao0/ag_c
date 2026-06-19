@@ -8,6 +8,7 @@
 //       設定 (ローカル多次元配列と同じ表現)。初期化子側も行優先でフラット展開。
 // 修正前: アクセスで exit=139、ネスト初期化で E3064
 // 期待: exit=42
+#include <assert.h>
 struct M { int a[2][2]; int b[2][3]; };
 
 int sum_all(struct M *p) {           // ポインタ (`->`) 経由の多段アクセス
@@ -42,5 +43,5 @@ int main(void) {
     int s3 = k.a[1][0] + k.a[1][1];  // 7 + 8 = 15
 
     int extra = m.b[1][2];           // = 1
-    return s1 + s2 + s3 + extra;     // 16 + 10 + 15 + 1 = 42
+    assert(s1 == 16); assert(s2 == 10); assert(s3 == 15); assert(extra == 1); return 0;     // 16 + 10 + 15 + 1 = 42
 }

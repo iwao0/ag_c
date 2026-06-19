@@ -6,6 +6,7 @@
 // 修正: psx_ctx_find_typedef_name_ex3 の out_is_unsigned を捕捉し、
 //   apply_toplevel_typedef_decl_spec に渡して g_toplevel_decl_is_unsigned に設定する。
 // 期待: exit=42
+#include <assert.h>
 typedef unsigned       u32;
 typedef unsigned long  u64;
 typedef unsigned char  u8;
@@ -20,5 +21,5 @@ int main(void) {
     if (g64 <= 0x7FFFFFFFFFFFFFFFUL) return 3; // unsigned long 比較
     if (g8 <= 200) return 4;
 
-    return 42;
+    return 0;
 }

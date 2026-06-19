@@ -6,6 +6,7 @@
 //           (stride = 1 要素) で行を跨げなかった。
 // 局所は outer_stride>0&&size==8 でポインタ認識、引数は is_tag_pointer をクリアし
 // outer_stride を 1 行に設定して修正。
+#include <assert.h>
 struct Cell { int v; char tag; };   // 8 bytes (4B struct では元から動いた)
 
 int sumrow(struct Cell (*row)[2], int rows) {
@@ -33,5 +34,5 @@ int main(void) {
   // 関数引数: 配列へのポインタ
   t += sumrow(grid, 3);      // 0+1+2+30+4+5 = 42 (grid[1][1] was set to 30)
 
-  return t - 36;  // 5+0+30+1+42-36 = 42
+  assert(t == 78); return 0;  // 5+0+30+1+42-36 = 42
 }

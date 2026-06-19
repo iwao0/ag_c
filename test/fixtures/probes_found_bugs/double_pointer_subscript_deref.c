@@ -8,6 +8,7 @@
 //   要素の pql を保つ。
 // 修正前: `int u=*pp[0];` が E3064 / `*pp[0]+*pp[1]` が誤値
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     int arr[3] = {10, 20, 12};
     int x = 3;
@@ -17,11 +18,11 @@ int main(void) {
     // 二重 deref のスカラ初期化 (修正前 E3064)
     int u = *pp[0];          // *(&x) = 3
     int v = *pp[1];          // *arr  = 10
-    if (u != 3 || v != 10) return 1;
+    assert(u == 3 || v != 10);
 
     // 算術でも pointer スケールされない (修正前 3 + 10*4 = 43)
     int s = *pp[0] + *pp[1]; // 3 + 10 = 13
-    if (s != 13) return 2;
+    assert(s == 13);
 
     // 三重ポインタも段数どおり
     int w = 7;
@@ -29,7 +30,7 @@ int main(void) {
     int **pp3 = &p3;
     int ***ppp = &pp3;
     int t = **ppp[0];        // = w = 7
-    if (t != 7) return 3;
+    assert(t == 7);
 
-    return u + v + s + t + 9;   // 3 + 10 + 13 + 7 + 9 = 42
+    assert(u == 3); assert(v == 10); assert(s == 13); assert(t == 7); return 0;   // 3 + 10 + 13 + 7 + 9 = 42
 }

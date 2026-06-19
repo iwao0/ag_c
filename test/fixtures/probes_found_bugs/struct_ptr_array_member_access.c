@@ -2,6 +2,7 @@
 // struct ポインタと認識されず `h.arr[i]->v` が E3005 になっていた回帰テスト。
 // build_member_deref_node がポインタ配列メンバに pql/base_deref_size を立てる
 // ことで、build_subscript_deref が要素を単段ポインタと認識する。
+#include <assert.h>
 struct N { int v; struct N *nx; };
 struct Holder { struct N *arr[3]; };
 
@@ -18,5 +19,5 @@ int main(void) {
   h.arr[0]->nx->v = 30;                          // チェーン -> 経由の書き込み (b.v=30)
   s += h.arr[0]->nx->v;                          // +30 = 36
   s += b.v;                                      // +30 = 66
-  return s - 24;                                 // 42
+  assert(s == 66); return 0;                                 // 42
 }

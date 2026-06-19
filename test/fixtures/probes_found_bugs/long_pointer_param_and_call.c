@@ -9,6 +9,7 @@
 //     修正: funcall 結果型を、呼出先が long を返すなら i64 にする。
 // 修正前: (1) コンパイルエラー (2) 戻り値演算が下位 32bit に化ける
 // 期待: exit=42
+#include <assert.h>
 long sum(long *a, int n) {          // (1) long* 仮引数 subscript
     long s = 0;
     for (int i = 0; i < n; i++) s += a[i];
@@ -20,15 +21,15 @@ long plus1(long x)   { return x + 1; }
 int main(void) {
     long a[3] = {3000000000L, 3000000000L, 4000000000L};   // 合計 10000000000
     long total = sum(a, 3);
-    if (total != 10000000000L) return 1;
+    assert(total == 10000000000L);
 
     // (2) 戻り値を使った演算がネストしても 64bit を保つ
     long r = doubled(plus1(5000000000L));                  // (5e9+1)*2 = 10000000002
-    if (r != 10000000002L) return 2;
+    assert(r == 10000000002L);
 
     // unsigned long* も同様に subscript できる
     unsigned long u[2] = {0x100000000UL, 0x200000000UL};
-    if (u[0] + u[1] != 0x300000000UL) return 3;
+    assert(u[0] + u[1] == 0x300000000UL);
 
-    return (int)(total / 1000000000L) + 32;                // 10 + 32 = 42
+    assert(total == 10000000000L); return 0;                // 10 + 32 = 42
 }

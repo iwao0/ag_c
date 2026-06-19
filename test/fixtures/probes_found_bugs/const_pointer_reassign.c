@@ -6,11 +6,12 @@
 //
 // ポインタ変数の場合は pointer_const_qual_mask の bit 0
 // (= ポインタ自身の const、`int * const p` のケース) を見るように修正。
+#include <assert.h>
 int main(void) {
   int x = 7;
   int y = 13;
   const int *p = &x;
   p = &y;
-  return *p; // 13
+  assert(*p == 13); return 0; // 13
 }
 // 期待: 13

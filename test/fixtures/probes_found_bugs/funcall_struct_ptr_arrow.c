@@ -7,11 +7,12 @@
 //       psx_ctx_get_function_ret_is_pointer から取得する。
 // 修正前: E3005 でコンパイル失敗
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; };
 struct N g = {30};
 struct N *get(void) { return &g; }          // ポインタ返し (グローバル)
 struct N *idp(struct N *p) { return p; }     // ポインタ返し (引数)
 int main(void) {
     struct N x = {12};
-    return get()->v + idp(&x)->v;            // 30 + 12 = 42
+    assert(get()->v == 30); assert(idp(&x)->v == 12); return 0;            // 30 + 12 = 42
 }

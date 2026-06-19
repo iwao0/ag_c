@@ -2,6 +2,7 @@
 // レジスタ圧で fp 値が spill されたとき codegen が 4B float を 8B 整数として load し、
 // 上位 32bit に garbage を拾って 0.0 が真と誤判定されることがあった。
 // emit_br_cond で fp 条件を (cond != 0.0) (IR_FNE) に変換してから分岐するよう修正。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -36,5 +37,5 @@ int main(void) {
   // 比較で値が正しいことも確認 (b,c,d,e がライブ)
   t += (b + c + d + e == 7.5f); // 1
 
-  return t + 31;  // 11 checks -> 11+31 = 42
+  assert(t == 11); return 0;  // 11 checks -> 11+31 = 42
 }

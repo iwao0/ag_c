@@ -4,6 +4,7 @@
 // 広げない no-op で、二項演算の result_ty が I32 になるのが原因。
 // `(long)unsigned` を ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入して修正
 // (signed の (long) は coerce の SEXT で従来通り正しい)。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -33,5 +34,5 @@ int main(void) {
   // (int)(long)u の往復 (truncate)
   t += ((int)((long)u) == (int)3000000000u);
 
-  return t + 34;  // 8 checks -> 8+34 = 42
+  assert(t == 8); return 0;  // 8 checks -> 8+34 = 42
 }

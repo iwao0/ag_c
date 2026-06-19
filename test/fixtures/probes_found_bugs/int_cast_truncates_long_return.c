@@ -3,6 +3,7 @@
 // 返るため、`(int)bigval() == 7` が 64bit 比較で偽になっていた。
 // (int)/(unsigned) キャストの切り詰め対象に ND_FUNCALL を含めて修正
 // (int 戻り値関数でも低 32bit 抽出は無害)。
+#include <assert.h>
 long bigval(void){ return 0x100000007L; }      // low32 = 7
 long negval(void){ return 0x1FFFFFFFFL; }       // low32 = -1
 int geti(void){ return -42; }
@@ -27,5 +28,5 @@ int main(void) {
   t += (bigval() == 0x100000007L);
   t += (bigval() + bigval() == 0x20000000EL);
 
-  return t + 33;  // 9 checks -> 9+33 = 42
+  assert(t == 9); return 0;  // 9 checks -> 9+33 = 42
 }

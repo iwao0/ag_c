@@ -1,4 +1,5 @@
 // 構造体配列パラメータ
+#include <assert.h>
 struct P { int x; int y; };
 int sum_x(struct P *arr, int n) {
   int s = 0;
@@ -7,6 +8,6 @@ int sum_x(struct P *arr, int n) {
 }
 int main(void) {
   struct P pts[3] = { {1,2}, {3,4}, {5,6} };
-  return sum_x(pts, 3);
+  assert(sum_x(pts, 3) == 9); return 0;
 }
 // 期待: 1+3+5 = 9

@@ -1,6 +1,7 @@
 // `&&` / `||` の浮動小数オペランドが整数 NE で 0/1 正規化されていたため、float の bit を
 // 整数として比較し、spill 時に上位 garbage を拾って 0.0 が真と誤判定されることがあった。
 // build_node_logand_or の右辺正規化を emit_truthiness (fp は FNE against 0.0) に統一して修正。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -26,5 +27,5 @@ int main(void) {
   t += ((x || y) == 1);   // 0 || 7 -> 1
   t += ((x && y) == 0);   // 0 && _ -> 0
 
-  return t + 30;  // 12 checks -> 12+30 = 42
+  assert(t == 12); return 0;  // 12 checks -> 12+30 = 42
 }

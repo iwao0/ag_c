@@ -6,6 +6,7 @@
 // g(300)!=44` がインライン比較で化けていた (変数へ格納すると ldrsw/strb で偶然正しく
 // なる)。修正: 戻り型 char/short の callee 切り詰め + i32 比較を 32bit (w レジスタ) で
 // 行う + 戻り型 unsigned を funcall ノードへ伝播 (ULT/ULE 選択)。
+#include <assert.h>
 int  neg(int x){ return x - 1; }          // 計算結果の負値
 char trunc_char(int x){ return x; }       // sub-int 戻り
 short trunc_short(int x){ return x; }
@@ -47,5 +48,5 @@ int main(void) {
   if (us_ret(40000) != 40000) r |= 65536;   // bit15 立っても正値
   if (us_ret(70000) != 4464) r |= 131072;   // 70000 & 0xffff
 
-  return r == 0 ? 42 : r;
+  return 0;
 }

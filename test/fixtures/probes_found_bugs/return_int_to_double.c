@@ -6,10 +6,11 @@
 // `return 7.0` (既に double) だけは偶然動いていた。
 // 修正前: exit=0
 // 期待: exit=42  (sumi(20,22)=42 を double で返し int へ)
+#include <assert.h>
 double sumi(int a, int b) { return a + b; }   // int 式 -> double 戻り
 double seven(void) { return 7; }              // int リテラル -> double 戻り
 int main(void) {
     double s = sumi(20, 22);                  // 42.0
     int t = (int)seven();                     // 7
-    return (s == 42.0 && t == 7) ? (int)s : 0;
+    assert(s == 42.0); assert(t == 7); return 0;
 }

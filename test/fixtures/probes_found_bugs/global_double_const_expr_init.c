@@ -6,8 +6,9 @@
 // 修正: psx_eval_const_fp を parser.c に追加。ND_NUM / ND_ADD/SUB/MUL/DIV を
 // 再帰評価して double を返す。グローバル fp_kind != NONE のとき、ND_NUM
 // 経路の後に「fp 定数式」経路を追加して fp_folded を fval に保存。
+#include <assert.h>
 double v = 1.5 + 2.5;  // 4.0
 int main(void) {
-  return (int)(v * 10); // 40
+  assert((int)(v * 10) == 40); return 0; // 40
 }
 // 期待: 40

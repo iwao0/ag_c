@@ -9,6 +9,7 @@
 //   (local/global) に立て、build_subscript_deref / build_unary_deref_node が
 //   結果 ND_DEREF の is_unsigned に引き継ぐ。
 // 期待: exit=42
+#include <assert.h>
 unsigned garr[3] = {0xFFFFFFFFu, 1, 2};
 
 int main(void) {
@@ -34,5 +35,5 @@ int main(void) {
     int sa[2] = {-1, 0};
     if (!(sa[0] < 0)) return 7;
 
-    return 42;
+    return 0;
 }

@@ -2,6 +2,7 @@
 // try_lower_static_local_scalar が NUM の整数 ->val だけを読み、float リテラルの値
 // (->fval) を無視して `.long 0` を出力していた。fp なら fval を gv->fval/fp_kind に
 // 伝播して修正。
+#include <assert.h>
 float running(float x){
   static float total = 0.0f;
   total += x;
@@ -32,5 +33,5 @@ int main(void){
   t += ((int)(dcount() * 2) == 203); // 101.5 * 2 = 203
   t += ((int)(dcount() * 2) == 205); // 102.5 * 2 = 205 (1 度だけ init)
 
-  return t + 36;  // 6 checks -> 6+36 = 42
+  assert(t == 6); return 0;  // 6 checks -> 6+36 = 42
 }

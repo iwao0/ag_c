@@ -5,10 +5,11 @@
 // 修正: 単段ポインタ仮引数の pointee を struct_size にする。
 // 修正前: a[2].v が garbage
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; };          // 4 バイト構造体
 int get(struct N *a, int i) { return a[i].v; }
 struct N *getp(struct N *a, int i) { return &a[i]; }
 int main(void) {
     struct N arr[3] = {{10}, {20}, {12}};
-    return get(arr, 2) + getp(arr, 0)->v + get(arr, 1);   // 12 + 10 + 20 = 42
+    assert(get(arr, 2) == 12); assert(getp(arr, 0)->v == 10); assert(get(arr, 1) == 20); return 0;   // 12 + 10 + 20 = 42
 }

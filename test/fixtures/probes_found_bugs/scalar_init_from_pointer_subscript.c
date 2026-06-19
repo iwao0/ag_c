@@ -10,6 +10,7 @@
 //   pointer にする。単段スカラポインタ (long*/char*/int*) はスカラ要素を返す。
 // 修正前: `int x = p[0];` が E3064 でコンパイルエラー
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     int arr[3] = {10, 20, 12};
     int *p = arr;
@@ -30,5 +31,5 @@ int main(void) {
     int viaArr = *pa[0] + *pa[1];  // pa[i] は int* のまま
 
     // a=10, b=12, c=100, d=7, viaArr=14
-    return a + b + (int)c - d - viaArr + (42 - 101);  // 10+12+100-7-14-59 = 42
+    assert(a == 10); assert(b == 12); assert((int)c == 100); assert(d == 7); assert(viaArr == 14); return 0;  // 10+12+100-7-14-59 = 42
 }

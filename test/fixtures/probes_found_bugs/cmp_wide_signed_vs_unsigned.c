@@ -4,13 +4,14 @@
 // 修正前: どちらかが unsigned なら無条件に符号なし比較し、-1 を巨大値に
 //         変換して偽を返していた (ir_builder の比較符号判定が rank 無視)。
 // 期待: exit=15
+#include <assert.h>
 int main(void) {
   long s = -1;
   unsigned int u = 1;
-  int r = 0;
-  if (s < u)   r |= 1;   // -1 < 1   (signed) => true
-  if (u > s)   r |= 2;   // 1  > -1  (signed) => true
-  if (s <= u)  r |= 4;   // -1 <= 1  (signed) => true
-  if (s == -1) r |= 8;   // sanity
-  return r;              // 1|2|4|8 = 15
+  int r = 0; (void)r;
+  assert(s < u);   // -1 < 1   (signed) => true
+  assert(u > s);   // 1  > -1  (signed) => true
+  assert(s <= u);   // -1 <= 1  (signed) => true
+  assert(s == -1);   // sanity
+  return 0;              // 1|2|4|8 = 15
 }

@@ -17,6 +17,7 @@
 //   返るようにする。
 // - parser.c の parse_global_brace_init_flat を psx_parse_global_brace_init_flat
 //   として非 static 化 (internal/decl.h に extern 追加)。
+#include <assert.h>
 int touch(int i) {
   static int t[5] = {0, 0, 0, 0, 0};
   t[i]++;
@@ -25,6 +26,6 @@ int touch(int i) {
 int main(void) {
   touch(0); touch(0); touch(0);
   touch(2); touch(2);
-  return touch(0) * 100 + touch(2); // 4*100 + 3 = 403 → mod 256 = 147
+  assert(touch(0) == 4); assert(touch(2) == 3); return 0; // 4*100 + 3 = 403 → mod 256 = 147
 }
 // 期待: 147

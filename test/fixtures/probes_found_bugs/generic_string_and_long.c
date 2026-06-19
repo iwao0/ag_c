@@ -4,6 +4,7 @@
 //  (2) long サフィックス付き整数リテラル (`42L`) が int 扱い (scalar_size=4) で、
 //      `long:` association と一致しなかった。
 // 文字列に ptr_deref_size=文字幅 を設定し、NUM の int_is_long で scalar_size=8 にして修正。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -29,5 +30,5 @@ int main(void) {
   t += (_Generic(ip, int*: 1, default: 0) == 1);
   t += (_Generic(cp, char*: 1, default: 0) == 1);
 
-  return t + 31;  // 11 checks -> 11+31 = 42
+  assert(t == 11); return 0;  // 11 checks -> 11+31 = 42
 }

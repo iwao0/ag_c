@@ -3,6 +3,7 @@
 // `*(int*)(charptr + 4)` が char サイズ (1 バイト) で読まれて化けていた
 // (一旦 `int *p = (int*)...;` と変数に入れると変数の型で正しく動いていた)。
 // スカラ整数型への単段ポインタキャストを ND_PTR_CAST で deref_size 更新して修正。
+#include <assert.h>
 int main(void) {
   int data[4] = {0x01020304, 0x05060708, 0x090A0B0C, 0x0D0E0F10};
   char *cp = (char *)data;
@@ -28,5 +29,5 @@ int main(void) {
   // null ポインタ定数キャストは定数のまま (ラップしない) — 比較が成立する
   t += ((int *)0 == 0);
 
-  return t + 35;  // 7 checks -> 7+35 = 42
+  assert(t == 7); return 0;  // 7 checks -> 7+35 = 42
 }

@@ -5,8 +5,9 @@
 //
 // 左が非ポインタで右がポインタなら swap して既存ロジックに乗せる
 // (p75 で subscript で施した swap と同じパターン)。
+#include <assert.h>
 int main(void) {
   int a[5] = {10, 20, 30, 40, 50};
-  return *(a + 2) + *(2 + a) + a[2] - 90; // 30 + 30 + 30 - 90 = 0
+  assert(*(a + 2) == 30); assert(*(2 + a) == 30); assert(a[2] == 30); return 0; // 30 + 30 + 30 - 90 = 0
 }
 // 期待: 0

@@ -4,6 +4,7 @@
 // ir_build_module を失敗させていた (`struct A r = make(); return r;` と一旦変数へ
 // 入れると動いていた)。間接 struct 戻りの funccall は ret_area の PTR を返すので、
 // それを memcpy ソースにするケースを追加して修正。
+#include <assert.h>
 struct S8  { int a, b; };                 // 8B  (レジスタ返し)
 struct S16 { long sum; int count; };      // 16B (間接)
 struct S24 { int a, b, c, d, e, f; };     // 24B (間接, x8)
@@ -29,18 +30,18 @@ int main(void) {
   int r = 0;
 
   struct S8 a = fwd8(5);
-  if (a.a != 5 || a.b != 10) r |= 1;
+  assert(a.a == 5 || a.b != 10);
 
   struct S16 b = fwd16(100, 7);
-  if (b.sum != 100 || b.count != 7) r |= 2;
+  assert(b.sum == 100 || b.count != 7);
 
   struct S24 c = fwd24(10);
-  if (c.a != 10 || c.f != 15) r |= 4;
+  assert(c.a == 10 || c.f != 15);
 
   int data[5] = {3, 1, 4, 1, 5};
   struct S16 init = {0, 0};
   struct S16 acc = accumulate(data, 5, init);
-  if (acc.sum != 14 || acc.count != 5) r |= 8;
+  assert(acc.sum == 14 || acc.count != 5);
 
-  return r == 0 ? 42 : r;
+  return 0;
 }

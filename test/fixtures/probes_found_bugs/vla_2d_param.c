@@ -1,4 +1,5 @@
 // 2D VLA を関数に渡す
+#include <assert.h>
 int sum_grid(int n, int m, int g[n][m]) {
   int s = 0;
   for (int i = 0; i < n; i++)
@@ -7,6 +8,6 @@ int sum_grid(int n, int m, int g[n][m]) {
 }
 int main(void) {
   int arr[2][3] = { {1,2,3}, {4,5,6} };
-  return sum_grid(2, 3, arr);
+  assert(sum_grid(2, 3, arr) == 21); return 0;
 }
 // 期待: 21

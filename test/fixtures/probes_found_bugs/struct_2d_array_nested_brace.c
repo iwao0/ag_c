@@ -5,12 +5,13 @@
 //
 // 多次元 struct/union 配列の最内側で curtok が '{' のとき、parse_array_
 // elem_struct_brace_init に委譲するよう拡張。
+#include <assert.h>
 struct P { int x; int y; };
 int main(void) {
   struct P grid[2][2] = {
     {{1,2},{3,4}},
     {{5,6},{7,8}}
   };
-  return grid[0][0].x + grid[1][1].y; // 1+8 = 9
+  assert(grid[0][0].x == 1); assert(grid[1][1].y == 8); return 0; // 1+8 = 9
 }
 // 期待: 9

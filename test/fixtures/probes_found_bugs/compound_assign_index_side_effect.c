@@ -3,9 +3,10 @@
 // i が 2 になり値も別要素へ書かれていた (通常代入 a[i++]=5 は正常)。
 // 修正前: exit=25 (i=2, a[1]=5)
 // 期待: exit=15 (i=1, a[0]=5)
+#include <assert.h>
 int main(void) {
     int a[4] = {0, 0, 0, 0};
     int i = 0;
     a[i++] += 5;
-    return i * 10 + a[0] + a[1];
+    assert(i == 1); assert(a[0] == 5); assert(a[1] == 0); return 0;
 }

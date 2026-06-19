@@ -4,9 +4,10 @@
 // 修正: シンボル+バイトオフセットを解決し `.quad _sym + N` を出力する。
 // 修正前: exit=139 等 (garbage)
 // 期待: exit=42
+#include <assert.h>
 int a[4] = {10, 20, 30, 42};
 int *p = a + 1;        // &a[1]
 int *q = &a[3];        // &a[3]
 int main(void) {
-    return (*p == 20 && q[0] == 42) ? *q : 0;   // 42
+    assert(*p == 20); assert(q[0] == 42); return 0;   // 42
 }

@@ -4,6 +4,7 @@
 //   結果が整数 load になり値が化けていた (is_bool と同じ分岐に修正)。
 // 初期化: parse_member_initializer の配列要素 store に fp_kind が伝播せず整数 store に
 //   なっていた (member_fp_kind を通し fp store にする)。
+#include <assert.h>
 struct Stats { float values[4]; int count; };
 struct DVec { double d[3]; };
 
@@ -29,5 +30,5 @@ int main(void) {
   double ds = v.d[0] + v.d[1] + v.d[2];
   t += (ds == 7.5);
 
-  return t + 36;  // 6 checks -> 6+36 = 42
+  assert(t == 6); return 0;  // 6 checks -> 6+36 = 42
 }

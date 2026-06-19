@@ -3,6 +3,7 @@
 // 積 (outer_stride) としてのみ扱い、第2サブスクリプト用の mid_stride を立てていなかった。
 // (引数版は inner dims から mid_stride を設定するので元から動いた。)
 // paren-array の先頭次元と次元数を捕捉し mid_stride = (積/先頭次元)*elem を設定して修正。
+#include <assert.h>
 struct P { int a, b; };
 
 int main(void) {
@@ -28,5 +29,5 @@ int main(void) {
   t += pb[1][1][0].a;    // blk[1][1][0].a = 6
   t += pb[0][1][1].a;    // 3
 
-  return t - 81;  // 11+3+100+6+3 = 123 ; 123-81 = 42
+  assert(t == 123); return 0;  // 11+3+100+6+3 = 123 ; 123-81 = 42
 }

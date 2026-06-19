@@ -15,6 +15,7 @@
 //   param_has_func_suffix && tag_kind==TK_EOF のとき、elem_size=8 で登録し
 //   pointer_qual_levels=1 を立てて lvar_is_pointer を発火させる。
 //   C11 6.7.6.3p7 で配列 → ポインタへ adjust された `int (**ops)(int)` 相当。
+#include <assert.h>
 int double_it(int x) { return x * 2; }
 int add_one(int x) { return x + 1; }
 int dispatch(int (*ops[])(int), int i, int val) {
@@ -22,6 +23,6 @@ int dispatch(int (*ops[])(int), int i, int val) {
 }
 int main(void) {
   int (*ops[2])(int) = {double_it, add_one};
-  return dispatch(ops, 0, 21) + dispatch(ops, 1, 41); // 42+42 = 84
+  assert(dispatch(ops, 0, 21) == 42); assert(dispatch(ops, 1, 41) == 42); return 0; // 42+42 = 84
 }
 // 期待: 84

@@ -8,9 +8,10 @@
 // を立て、subscript_base_address_of が ND_DEREF をそのまま返して
 // ポインタ値の load を引き起こすように修正。配列メンバの decay 表現とは
 // is_scalar_ptr_member フラグで区別 (union の `char b[4]` メンバを壊さない)。
+#include <assert.h>
 struct S { char *name; int val; };
 int main(void) {
   struct S s = {"foo", 42};
-  return s.name[0] + s.val; // 'f'+42 = 102+42 = 144
+  assert(s.name[0] == 'f'); assert(s.val == 42); return 0; // 'f'+42 = 102+42 = 144
 }
 // 期待: 144

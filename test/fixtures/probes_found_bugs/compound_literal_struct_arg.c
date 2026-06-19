@@ -7,6 +7,7 @@
 //   struct 引数 (ポインタ渡し) として扱う。
 // 修正前: 後半メンバが化ける (3 メンバ struct で v.c が garbage)
 // 期待: exit=42
+#include <assert.h>
 struct V3 { int a, b, c; };       // 12 バイト (9-16B レンジ)
 struct V5 { int a, b, c, d, e; }; // 20 バイト (>16B レンジ)
 
@@ -19,7 +20,7 @@ int main(void) {
 
     // 複数 compound literal (それぞれ別 temp)
     int two = sum3((struct V3){1, 2, 3}) + sum3((struct V3){10, 20, 30});
-    if (two != 66) return 2;
+    assert(two == 66);
 
     // >16B compound literal
     if (sum5((struct V5){1, 2, 3, 4, 5}) != 15) return 3;
@@ -28,5 +29,5 @@ int main(void) {
     struct V3 t = {100, 200, 300};
     if (sum3((struct V3){7, 8, 9}) + sum3(t) != 624) return 4;
 
-    return sum3((struct V3){12, 14, 16}) - 0;  // 12+14+16 = 42
+    assert(sum3((struct V3){12, 14, 16}) == 42); return 0;  // 12+14+16 = 42
 }

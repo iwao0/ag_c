@@ -5,6 +5,7 @@
 //         多次元途中次元は is_pointer=0。deref_size>0 && type_size>8 で判定するよう緩和。
 // 原因 2: 通常多次元配列は ND_ADDR(deref_size=行, inner_deref_size=要素) 表現で、
 //         build_unary_deref_node が `*m`/`*(m+k)` の内側ストライドを引き継いでいなかった。
+#include <assert.h>
 int g[2][3] = {{1, 2, 3}, {4, 5, 6}};
 
 int sum2(int (*a)[4], int rows) {
@@ -31,5 +32,5 @@ int main(void) {
   t += *(*(g + 1) + 2);   // g[1][2] = 6
   t += **g;               // g[0][0] = 1
 
-  return t - 42;          // 2+6+0+3+66+6+1 = 84 ; 84-42 = 42
+  assert(t == 84); return 0;          // 2+6+0+3+66+6+1 = 84 ; 84-42 = 42
 }

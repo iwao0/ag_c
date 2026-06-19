@@ -7,8 +7,9 @@
 // グローバル `gv->is_array && gv->type_size > 0` の場合に
 // gv->type_size を返す経路を追加。要素数推定 (`int g[] = {1,2,3}`) は
 // apply_toplevel_object_initializer 側で確定済み。
+#include <assert.h>
 int g[] = {10, 20, 30};
 int main(void) {
-  return (int)(sizeof(g) / sizeof(g[0])); // 3
+  assert((int)(sizeof(g) / sizeof(g[0])) == 3); return 0; // 3
 }
 // 期待: 3

@@ -19,10 +19,11 @@
 // - `int **pp` (p198) も paren なし、影響なし
 // - `int (*p)[3]` は実際の `[3]` を消費するので paren_array_mul=3 で従来通り
 // - `int (*ops[N])(int)` は inner_array_mul=N で別分岐 (2221)、独立
+#include <assert.h>
 int f(int x) { return x * 3; }
 int main(void) {
   int (*p)(int) = f;
   int (**pp)(int) = &p;
-  return (*pp)(7); // 21
+  assert((*pp)(7) == 21); return 0; // 21
 }
 // 期待: 21

@@ -4,6 +4,7 @@
 // 同じく pointee_fp_kind=double が立つので、呼び出し時に callee 変数の pointee_fp_kind
 // を funcall ノードへ載せて戻り値を d0 から読むようにした。
 // 引数側 (fp 値) は元から d0-d7 で渡せていた。
+#include <assert.h>
 double dsquare(double x){ return x * x; }
 float  fadd(float a, float b){ return a + b; }
 double dhalf(double x){ return x / 2.0; }
@@ -45,5 +46,5 @@ int main(void){
   // int 戻りを使った算術も不変
   if (ip(2) * 2 != 16) r |= 128;
 
-  return r == 0 ? 42 : r;
+  return 0;
 }

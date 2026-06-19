@@ -3,6 +3,7 @@
 // まま使われ `(int)0x100000000L == 0` や `(int)long_var == 0` が偽になっていた。
 // 定数は値を切り詰め、long 値は (x<<32)>>32 (signed=算術 / unsigned=論理シフト) で
 // 低 32bit を 64bit へ拡張して修正。
+#include <assert.h>
 int main(void) {
   int t = 0;
 
@@ -28,5 +29,5 @@ int main(void) {
   long small = 100, neg = -7;
   t += ((int)small == 100) + ((int)neg == -7);
 
-  return t + 32;  // 10 checks -> 10+32 = 42
+  assert(t == 10); return 0;  // 10 checks -> 10+32 = 42
 }

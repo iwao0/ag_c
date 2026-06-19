@@ -2,6 +2,7 @@
 // 先頭メンバ幅のスカラとして 1 レジスタロードされ、先頭メンバしか復元できず
 // 残りが化けていた (`struct{char a; short b; uchar c;}` の 6B が 1B 扱い)。
 // >8B と同様にアドレス渡し / ret_area(x8) 経由の間接 ABI に回すことで修正。
+#include <assert.h>
 struct Small { char a; short b; unsigned char c; };   // 6 bytes
 struct P3 { char x, y, z; };                            // 3 bytes
 struct S7 { char d[7]; };                               // 7 bytes
@@ -35,5 +36,5 @@ int main(void) {
   for (int i = 0; i < 7; i++) sum7 += seven.d[i];
   t += (sum7 == 28);
 
-  return t + 32;  // 10 checks true -> 10+32 = 42
+  assert(t == 10); return 0;  // 10 checks true -> 10+32 = 42
 }

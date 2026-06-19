@@ -5,6 +5,7 @@
 //
 // param_is_array_declarator && tag_kind != EOF のとき struct ポインタ扱い
 // (is_tag_pointer=1, size=8, elem_size=struct_size) で登録する経路を追加。
+#include <assert.h>
 struct V { int v; };
 int sum(struct V arr[], int n) {
   int s = 0;
@@ -13,6 +14,6 @@ int sum(struct V arr[], int n) {
 }
 int main(void) {
   struct V data[4] = {{10}, {20}, {30}, {40}};
-  return sum(data, 4); // 100
+  assert(sum(data, 4) == 100); return 0; // 100
 }
 // 期待: 100

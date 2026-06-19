@@ -5,6 +5,7 @@
 // 中間結果 (es > inner_ds) は pointee_fp_kind に伝播し、最終要素のみ base.fp_kind に
 // する (is_bool と同じ分岐)。`float *a` 仮引数は inner_ds=elem が立つので es>inner_ds
 // で多次元の中間かどうかを区別する。
+#include <assert.h>
 float sum2d(float (*g)[3], int rows){
   float s = 0;
   for (int i = 0; i < rows; i++) for (int j = 0; j < 3; j++) s += g[i][j];
@@ -39,5 +40,5 @@ int main(void) {
   double dg[2][2] = {{1.5, 2.5}, {3.5, 4.5}};
   t += (dg[1][0] == 3.5);
 
-  return t + 34;  // 8 checks -> 8+34 = 42
+  assert(t == 8); return 0;  // 8 checks -> 8+34 = 42
 }

@@ -8,6 +8,7 @@
 //   メンバ ND_DEREF) へ伝播して load を zero-extend にする。
 // 修正前: 直接比較が false に化ける
 // 期待: exit=42
+#include <assert.h>
 unsigned gu = 0xFFFFFFFFu;
 struct S { unsigned u; int s; };
 union  U { int i; unsigned u; };
@@ -40,5 +41,5 @@ int main(void) {
     struct S z; z.u = 10u; int neg = -3;
     if ((int)(z.u / 5u) != 2) return 6;
 
-    return 42;
+    return 0;
 }

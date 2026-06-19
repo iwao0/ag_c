@@ -3,6 +3,7 @@
 // struct タグポインタが is_pointer ではなく is_tag_pointer で表現され、add() の
 // ポインタ算術判定 (psx_node_is_pointer) が偽を返していたこと。
 // node_is_ptr_for_arith でタグポインタもポインタとして扱う。
+#include <assert.h>
 struct P { int x, y, z; };   // 12 bytes
 union U { int i; char c[4]; }; // 4 bytes
 
@@ -34,5 +35,5 @@ int main(void) {
   for (int i = 0; i < 4; i++) ua[i].i = i;
   t += (&ua[3] - &ua[0]);      // 3
 
-  return t - 60;   // 4+30+20+30+15+3 = 102 ; 102-60 = 42
+  assert(t == 102); return 0;   // 4+30+20+30+15+3 = 102 ; 102-60 = 42
 }

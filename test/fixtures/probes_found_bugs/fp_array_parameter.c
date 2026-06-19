@@ -7,6 +7,7 @@
 //       pointee_fp_kind を伝播 (ポインタ認識 & fp load/store)。
 // 修正前: E3064 または値破損
 // 期待: exit=42
+#include <assert.h>
 double dot(int n, double a[n], double b[n]) {   // 読み出し (VLA 配列引数)
     double s = 0;
     for (int i = 0; i < n; i++) s += a[i] * b[i];
@@ -22,5 +23,5 @@ int main(void) {
     float f[2] = {1.5f, 2.5f};
     addk(2, f, 0.5f);                           // 2.0, 3.0
     int s = (int)(f[0] + f[1] + 5);             // 2+3+5 = 10
-    return d + s;                               // 32 + 10 = 42
+    assert(d == 32); assert(s == 10); return 0;                               // 32 + 10 = 42
 }

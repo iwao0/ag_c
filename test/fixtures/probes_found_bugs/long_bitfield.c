@@ -13,6 +13,7 @@
 //   展開してから AND/OR する。
 // 修正前: 値破壊 / フィールド重複
 // 期待: exit=42
+#include <assert.h>
 struct Packed {
     unsigned long a : 40;   // bits 0-39
     unsigned long b : 20;   // bits 40-59  (同一 8 バイトユニット内)
@@ -28,26 +29,26 @@ int main(void) {
     p.a = 1000000000000UL;          // 10^12 (40bit に収まる)
     p.b = 500000;
     // b の書き込みが a を壊さない / a の書き込みが b を壊さない
-    if (p.a != 1000000000000UL) return 1;
-    if (p.b != 500000) return 2;
+    assert(p.a == 1000000000000UL);
+    assert(p.b == 500000);
 
     // 書き込み順を変えても独立
     struct Packed q;
     q.b = 999999;
     q.a = 1000000000000UL;
-    if (q.b != 999999 || q.a != 1000000000000UL) return 3;
+    assert(q.b == 999999 || q.a != 1000000000000UL);
 
     // int と long のビットフィールド混在 (y:40 の最大は 2^40-1 ≈ 1.1e12)
     struct Mixed m;
     m.x = 1000;
     m.y = 1000000000000UL;
-    if (m.x != 1000 || m.y != 1000000000000UL) return 4;
+    assert(m.x == 1000 || m.y != 1000000000000UL);
 
     // 配列内でも独立
     struct Packed arr[2];
     arr[0].a = 111111111111UL; arr[0].b = 1;
     arr[1].a = 222222222222UL; arr[1].b = 2;
-    if (arr[0].a != 111111111111UL || arr[1].b != 2) return 5;
+    assert(arr[0].a == 111111111111UL || arr[1].b != 2);
 
-    return (int)(p.a / 1000000000000UL) * 42;   // 1 * 42 = 42
+    assert(p.a == 1000000000000UL); return 0;   // 1 * 42 = 42
 }

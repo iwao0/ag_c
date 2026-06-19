@@ -6,11 +6,12 @@
 // 修正: 入れ子三項へ再帰してリテラルの 64bit 分岐を検出する。
 // 修正前: 内側 long 分岐が下位 32bit に化ける
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     int x = 5;
     // 外側 false → 内側 true → 100000000000L (40bit)
     long r = x > 10 ? 1L : x > 3 ? 100000000000L : 2L;
-    if (r != 100000000000L) return 1;
+    assert(r == 100000000000L);
 
     // さらに深い入れ子
     int y = 2;
@@ -18,12 +19,12 @@ int main(void) {
            : y == 1 ? 2L
            : y == 2 ? 5000000000L
            : 3L;
-    if (s != 5000000000L) return 2;
+    assert(s == 5000000000L);
 
     // 内側が変数の long
     long big = 9000000000L;
     long t = x > 100 ? 0L : x > 50 ? 1L : big;
-    if (t != 9000000000L) return 3;
+    assert(t == 9000000000L);
 
-    return (int)(r / 100000000000L) + (int)(s / 5000000000L) + (int)(t / 9000000000L) + 39;  // 1+1+1+39 = 42
+    assert(r == 100000000000L); assert(s == 5000000000L); assert(t == 9000000000L); return 0;  // 1+1+1+39 = 42
 }

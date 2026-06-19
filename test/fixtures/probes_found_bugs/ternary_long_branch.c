@@ -11,28 +11,29 @@
 //       64bit オペランドなら結果も i64。
 // 修正前: long 分岐が下位 32bit に化ける
 // 期待: exit=42
+#include <assert.h>
 int main(void) {
     long r = 0;
 
     // (a) long リテラル分岐 (else 採択)
     int c0 = 0;
     long x = c0 ? 5L : 10000000000L;       // 10000000000 (0x2_540BE400)
-    if (x % 1000 != 0) return 1;           // 下位 32bit 化けなら 408
+    assert(x % 1000 == 0);           // 下位 32bit 化けなら 408
     r += (x == 10000000000L) ? 10 : 0;     // 10
 
     // (b) long 変数分岐
     long big = 9000000000L;
     int c1 = 1;
     long y = c1 ? big : 0L;
-    if (y != 9000000000L) return 2;
+    assert(y == 9000000000L);
     r += 12;                               // 12
 
     // (c) long 算術を直接分岐に
     long a = 5000000000L;
     int c2 = 1;
     long z = c2 ? a + a : 0L;              // 10000000000
-    if (z != 10000000000L) return 3;
+    assert(z == 10000000000L);
     r += 20;                               // 20
 
-    return (int)r;                         // 10 + 12 + 20 = 42
+    assert(r == 42); return 0;                         // 10 + 12 + 20 = 42
 }

@@ -13,6 +13,7 @@
 //       を含む) を先に求め、ポインタなら type_size=8 とする。
 // 修正前: 連結リストの合計が壊れる / sizeof 誤り
 // 期待: exit=42
+#include <assert.h>
 struct N { int v; struct N *next; };
 
 int main(void) {
@@ -33,5 +34,5 @@ int main(void) {
     if (sizeof(struct N *) != 8) return 1;
     if (sizeof(p) != 8) return 2;
 
-    return sum;             // 42
+    assert(sum == 42); return 0;             // 42
 }

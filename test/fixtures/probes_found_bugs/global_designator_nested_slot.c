@@ -10,6 +10,7 @@
 // 修正: 入れ子 struct のフラットスロット数を再帰的に数えて slot を計算し、入れ子
 //   brace は外側 cur_idx から書き始め、`[N]=` は要素スロット数を掛ける。
 // 期待: exit=42
+#include <assert.h>
 struct In  { int p, q; };
 struct Out { struct In i; int z; };
 struct P   { int x, y; };
@@ -19,11 +20,11 @@ struct Out g2 = {.z = 6, .i = {4, 5}};        // (2) 逆順 designator
 struct P   g3[3] = {[2] = {7, 8}, [0] = {9, 10}}; // (3) struct 配列 designator
 
 int main(void) {
-    if (g1.i.p != 1 || g1.i.q != 2 || g1.z != 3) return 1;
-    if (g2.i.p != 4 || g2.i.q != 5 || g2.z != 6) return 2;
-    if (g3[0].x != 9 || g3[0].y != 10) return 3;
-    if (g3[1].x != 0 || g3[1].y != 0) return 4;   // 未指定要素は 0
-    if (g3[2].x != 7 || g3[2].y != 8) return 5;
+    assert(g1.i.p == 1 || g1.i.q != 2 || g1.z != 3);
+    assert(g2.i.p == 4 || g2.i.q != 5 || g2.z != 6);
+    assert(g3[0].x == 9 || g3[0].y != 10);
+    assert(g3[1].x == 0 || g3[1].y != 0);   // 未指定要素は 0
+    assert(g3[2].x == 7 || g3[2].y != 8);
 
-    return g1.z + g2.z + g3[2].x + g3[0].y + g3[2].y + 8;  // 3+6+7+10+8+8 = 42
+    assert(g1.z == 3); assert(g2.z == 6); assert(g3[2].x == 7); assert(g3[0].y == 10); assert(g3[2].y == 8); return 0;  // 3+6+7+10+8+8 = 42
 }
