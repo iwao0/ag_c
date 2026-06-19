@@ -1663,6 +1663,13 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
    * 上位 4 バイトが garbage になる。 */
   if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && vt.type != res_ty) {
     vt = coerce_to_type(ctx, vt, res_ty);
+  } else if (res_ty == IR_TY_I32 && !is_fp_type(vt.type) && ir_type_size(vt.type) < 4) {
+    /* sub-int (char/short) 分岐: slot は 4 バイトなので full-width で store する。
+     * strb だと上位 3 バイトが未初期化のまま残り、merge の 4 バイト ldrsw が garbage を
+     * 読む (`c ? int : char` が誤値)。値は load 時に既に符号/ゼロ拡張済みなので型 tag を
+     * 結果型 (I32) に付け替えるだけ (SEXT を挿入すると unsigned char 分岐を誤って符号
+     * 拡張する)。 */
+    vt.type = IR_TY_I32;
   }
   ir_inst_t *st_t = ir_inst_new(IR_STORE);
   st_t->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);
@@ -1688,6 +1695,9 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   }
   if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && ve.type != res_ty) {
     ve = coerce_to_type(ctx, ve, res_ty);
+  } else if (res_ty == IR_TY_I32 && !is_fp_type(ve.type) && ir_type_size(ve.type) < 4) {
+    /* sub-int (char/short) 分岐の full-width store (then 側と同じ。詳細は上のコメント)。 */
+    ve.type = IR_TY_I32;
   }
   ir_inst_t *st_e = ir_inst_new(IR_STORE);
   st_e->src1 = ir_val_vreg(slot_vreg, IR_TY_PTR);

@@ -1056,6 +1056,7 @@ static const test_case_t test_cases[] = {
     {"probes", "pp_if_operators", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_if_operators.c", 0, 0},
     {"probes", "sizeof_int_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_int_literal.c", 0, 0},
     {"probes", "variadic_macro_empty_va", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_empty_va.c", 0, 0},
+    {"probes", "ternary_subint_branch", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ternary_subint_branch.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
