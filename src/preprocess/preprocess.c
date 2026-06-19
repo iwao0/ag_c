@@ -1060,7 +1060,28 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
         buf[len++] = ' ';
       }
     int tlen = 0;
-    const char *ts = token_text(t, &tlen);
+    char *tmp_quoted = NULL;
+    const char *ts;
+    if (t->kind == TK_STRING) {
+      /* C11 6.10.3.2: 文字列リテラルを stringize するときは囲みの `"` を保持し、
+       * 内部の `"` と `\` の前に `\` を挿入する。token_text は引用符なしの内容
+       * だけを返すため、ここで再構築する (これがないと STR("hi") が hi になる)。 */
+      token_string_t *st = (token_string_t *)t;
+      int slen = st->len < 0 ? 0 : st->len;
+      tmp_quoted = malloc((size_t)slen * 2 + 3);
+      size_t q = 0;
+      tmp_quoted[q++] = '"';
+      for (int i = 0; i < slen; i++) {
+        char c = st->str[i];
+        if (c == '"' || c == '\\') tmp_quoted[q++] = '\\';
+        tmp_quoted[q++] = c;
+      }
+      tmp_quoted[q++] = '"';
+      ts = tmp_quoted;
+      tlen = (int)q;
+    } else {
+      ts = token_text(t, &tlen);
+    }
     if (!ts) ts = "";
     if (tlen < 0 || (size_t)tlen > SIZE_MAX - len - 1) {
       pp_error(DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
@@ -1078,6 +1099,7 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
     buf = xrealloc(buf, cap);
     memcpy(buf + len, ts, (size_t)tlen);
     len += (size_t)tlen;
+    free(tmp_quoted);
   }
   buf[len] = '\0';
   
