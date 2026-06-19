@@ -72,6 +72,15 @@ int psx_node_type_size(node_t *node) {
     case ND_EQ: case ND_NE:
     case ND_LOGAND: case ND_LOGOR:
       return 4; /* 比較/論理結果は int (C11 6.5.8/9) */
+    case ND_NUM: {
+      /* 整数/浮動小数リテラルの型サイズ。従来 0 を返し sizeof_expr_node の既定 8 に
+       * 落ちて `sizeof(0)`/`sizeof(1L+2)` が誤っていた。fp_kind と long サフィックスで
+       * 判定する (int=4, long/long long=8, float=4, double=8)。 */
+      node_num_t *n = (node_num_t *)node;
+      if (n->base.fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
+      if (n->base.fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
+      return n->int_is_long ? 8 : 4;
+    }
     default:
       return 0;
   }
