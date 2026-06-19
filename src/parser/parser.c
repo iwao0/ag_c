@@ -1254,6 +1254,21 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
 
 static void apply_toplevel_object_initializer(global_var_t *gv) {
   if (!tk_consume('=')) return;
+  /* ファイルスコープの複合リテラル初期化子 `T g = (T){...};` は `T g = {...};` と
+   * 等価 (C11 6.5.2.5)。先頭の `(型)` を読み飛ばして既存の brace 初期化経路に渡す。
+   * `)` の直後が `{` であることを先読みして複合リテラルだけを対象にする。 */
+  if (curtok()->kind == TK_LPAREN) {
+    token_t *t = curtok()->next;
+    int depth = 1;
+    while (t && depth > 0) {
+      if (t->kind == TK_LPAREN) depth++;
+      else if (t->kind == TK_RPAREN) { depth--; if (depth == 0) break; }
+      t = t->next;
+    }
+    if (t && t->kind == TK_RPAREN && t->next && t->next->kind == TK_LBRACE) {
+      set_curtok(t->next);  /* `(型)` を捨てて `{` から始める */
+    }
+  }
   // `T arr[N] = {a,b,c,...}` 形式のグローバル配列初期化子。
   // 1D と多次元 (ネスト brace) の両方を flat 化して保持する。
   if (curtok()->kind == TK_LBRACE) {
