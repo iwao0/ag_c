@@ -62,6 +62,8 @@ typedef enum {
                   // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
   ND_PTR_CAST,    // `(T*)expr` ポインタキャスト。codegen は lhs をそのまま評価する。
                   // node_mem_t の pointee_fp_kind 等を保持して、後段の deref に伝播させる。
+  ND_CREAL,       // GNU __real__ x: 複素数 lhs の実部 (実数なら lhs)。fp_kind=結果型。
+  ND_CIMAG,       // GNU __imag__ x: 複素数 lhs の虚部 (実数なら 0)。fp_kind=結果型。
 } node_kind_t;
 
 // 抽象構文木のノードの型

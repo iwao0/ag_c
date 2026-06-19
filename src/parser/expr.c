@@ -2799,6 +2799,24 @@ static node_t *build_unary_addr_node(node_t *operand) {
 static node_t *unary(void) {
   token_kind_t k = curtok()->kind;
   if (k == TK_SIZEOF)  { set_curtok(curtok()->next); return parse_sizeof_operand(); }
+  /* GNU 拡張 __real__ / __imag__: 複素数の実部/虚部を取り出す単項演算子
+   * (実数オペランドでは __real__ x = x, __imag__ x = 0)。キーワードではなく
+   * 特殊識別子として扱う (__func__ と同様)。creal/cimag を rvalue にも効かせる。 */
+  if (k == TK_IDENT) {
+    token_ident_t *kid = (token_ident_t *)curtok();
+    if (kid->len == 8 && (memcmp(kid->str, "__real__", 8) == 0 ||
+                          memcmp(kid->str, "__imag__", 8) == 0)) {
+      int is_real = (kid->str[2] == 'r');
+      set_curtok(curtok()->next);
+      node_t *operand = cast();
+      node_t *n = arena_alloc(sizeof(node_t));
+      n->kind = is_real ? ND_CREAL : ND_CIMAG;
+      n->lhs = operand;
+      n->fp_kind = (operand && operand->fp_kind != TK_FLOAT_KIND_NONE)
+                       ? operand->fp_kind : TK_FLOAT_KIND_DOUBLE;
+      return n;
+    }
+  }
   if (k == TK_ALIGNOF) {
     set_curtok(curtok()->next);
     tk_expect('(');

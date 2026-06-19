@@ -49,5 +49,13 @@ int main(void) {
     double complex p = cproj(z);
     assert(dn(creal(p), 3.0));
     assert(dn(cimag(p), 4.0));
+
+    // creal/cimag が rvalue (式) に直接効く (__real__/__imag__ ベース)
+    assert(dn(creal(a + b), 6.0));
+    assert(dn(cimag(a + b), 8.0));
+    assert(dn(creal((1.0 + 2.0 * I) * (3.0 + 4.0 * I)), -5.0));
+    assert(dn(cimag((1.0 + 2.0 * I) * (3.0 + 4.0 * I)), 10.0));
+    assert(dn(creal(conj(z)), 3.0));
+    assert(dn(cimag(conj(z)), -4.0));
     return 0;
 }

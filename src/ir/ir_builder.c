@@ -348,6 +348,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node);
@@ -586,6 +587,8 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_VA_ARG_AREA: return build_node_va_arg_area(ctx, node);
     case ND_COMMA: return build_node_comma(ctx, node);
     case ND_PTR_CAST: return build_node_ptr_cast(ctx, node);
+    case ND_CREAL:
+    case ND_CIMAG: return build_node_creal_cimag(ctx, node);
     case ND_VLA_ALLOC: return build_node_vla_alloc(ctx, node);
     case ND_FUNCREF: return build_node_funcref(ctx, node);
     case ND_LOGAND:
@@ -1734,6 +1737,50 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
   inst->src1 = v;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
+}
+
+/* GNU __real__ / __imag__: 複素数 lhs の実部/虚部を取り出す。複素数式は temp slot に
+ * materialize し ({re, im} 連続) re=offset 0 / im=offset half を fp load する。
+ * 実数オペランドでは __real__ x = x、__imag__ x = 0.0。任意の式 (rvalue) に効く。 */
+static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node) {
+  int is_real = (node->kind == ND_CREAL);
+  node_t *operand = node->lhs;
+  ir_type_t fp_ty = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  int half = (fp_ty == IR_TY_F32) ? 4 : 8;
+  if (!operand || !operand->is_complex) {
+    /* 実数オペランド: __real__ は値そのもの、__imag__ は 0.0。 */
+    if (is_real) return build_expr(ctx, operand);
+    int z = ir_func_new_vreg(ctx->f);
+    ir_inst_t *zi = ir_inst_new(IR_LOAD_FP_IMM);
+    zi->dst = ir_val_vreg(z, fp_ty);
+    zi->src1 = ir_val_fp_imm(fp_ty, 0.0);
+    ir_func_append_inst(ctx->f, zi);
+    return ir_val_vreg(z, fp_ty);
+  }
+  int slot = ir_func_new_vreg(ctx->f);
+  ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+  al->dst = ir_val_vreg(slot, IR_TY_PTR);
+  al->alloca_size = 2 * half;
+  al->alloca_align = 8;
+  ir_func_append_inst(ctx->f, al);
+  build_complex_to(ctx, operand, slot, fp_ty, half);
+  if (ctx->failed) return ir_val_none();
+  int part_ptr = slot;
+  if (!is_real) {
+    int imp = ir_func_new_vreg(ctx->f);
+    ir_inst_t *lea = ir_inst_new(IR_LEA);
+    lea->dst = ir_val_vreg(imp, IR_TY_PTR);
+    lea->src1 = ir_val_vreg(slot, IR_TY_PTR);
+    lea->src2 = ir_val_imm(IR_TY_I32, half);
+    ir_func_append_inst(ctx->f, lea);
+    part_ptr = imp;
+  }
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v, fp_ty);
+  ld->src1 = ir_val_vreg(part_ptr, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld);
+  return ir_val_vreg(v, fp_ty);
 }
 
 /* 浮動小数の単項マイナス `-x` — 符号ビット反転 (IR_FNEG)。`0.0 - x` (IR_FSUB) では

@@ -8,11 +8,9 @@
  * 行う。虚数単位 I は複素数 compound literal {0,1} として定義し、`a + b*I` が
  * 複素数算術で組み立てられる。
  *
- * 制約: ag_c には __real__/__imag__ や _Complex の値渡し ABI が無いため、
- * creal/cimag/conj 等はメモリレイアウト経由のマクロで実装している。引数は
- * アドレス取得可能 (lvalue) でなければならない (例: 変数。`creal(a+b)` のような
- * rvalue は一旦変数に代入してから渡すこと)。cabs/carg/cexp など <math.h> の
- * 実数関数を要するものは提供しない。 */
+ * creal/cimag は GNU 拡張 __real__/__imag__ で実装するため任意の式 (rvalue) に
+ * 効く (例: `creal(a+b)`)。cabs/carg/cexp など <math.h> の実数関数を要するものは
+ * 提供しない。_Complex の値渡し ABI は未実装 (関数引数で複素数を値で渡さないこと)。 */
 
 #define complex   _Complex
 #define imaginary _Imaginary
@@ -22,18 +20,18 @@
 #define _Imaginary_I ((double _Complex){0.0, 1.0})
 #define I            _Complex_I
 
-/* 実部・虚部の取り出し (引数は lvalue)。double/float/long double 版。
- * long double は本環境では double と同一レイアウト。 */
-#define creal(z)  (((double *)&(z))[0])
-#define cimag(z)  (((double *)&(z))[1])
-#define crealf(z) (((float *)&(z))[0])
-#define cimagf(z) (((float *)&(z))[1])
-#define creall(z) (((double *)&(z))[0])
-#define cimagl(z) (((double *)&(z))[1])
+/* 実部・虚部の取り出し。__real__/__imag__ は任意の複素数式に効く
+ * (実数オペランドでは __real__ x = x, __imag__ x = 0)。 */
+#define creal(z)  (__real__ (z))
+#define cimag(z)  (__imag__ (z))
+#define crealf(z) (__real__ (z))
+#define cimagf(z) (__imag__ (z))
+#define creall(z) (__real__ (z))
+#define cimagl(z) (__imag__ (z))
 
 /* 複素共役 (虚部の符号反転)。新しい複素数を compound literal で構築する。 */
-#define conj(z)  ((double _Complex){ ((double *)&(z))[0], -((double *)&(z))[1] })
-#define conjf(z) ((float _Complex){ ((float *)&(z))[0], -((float *)&(z))[1] })
+#define conj(z)  ((double _Complex){ __real__ (z), -__imag__ (z) })
+#define conjf(z) ((float _Complex){ __real__ (z), -__imag__ (z) })
 #define conjl(z) conj(z)
 
 /* cproj: 無限遠点への射影。有限値ではそのまま (恒等)。 */
