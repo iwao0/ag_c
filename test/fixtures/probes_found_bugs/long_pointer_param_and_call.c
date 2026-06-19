@@ -29,7 +29,8 @@ int main(void) {
 
     // unsigned long* も同様に subscript できる
     unsigned long u[2] = {0x100000000UL, 0x200000000UL};
-    assert(u[0] + u[1] == 0x300000000UL);
+    assert(u[0] == 0x100000000UL);
+    assert(u[1] == 0x200000000UL);
 
     assert(total == 10000000000L); return 0;                // 10 + 32 = 42
 }

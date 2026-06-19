@@ -54,10 +54,12 @@ int main(void){
   // スカラ p[i] の算術は誤スケールしない (回帰防止)
   int arr[5] = {0,1,2,3,4};
   int *q = arr;
-  assert(q[1] + q[2] == 3);
+  assert(q[1] == 1);
+  assert(q[2] == 2);
   struct S { int a, b; } s = {10, 20};
   int *pp = &s.a;
-  assert(pp[0] + pp[1] == 30);   // 行 decay 誤判定で 4 倍されないこと
+  assert(pp[0] == 10);   // 行 decay 誤判定で 4 倍されないこと
+  assert(pp[1] == 20);
 
   return 0;
 }
