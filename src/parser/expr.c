@@ -959,10 +959,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     if (mem_array_len > 0 && mem_size > 0) deref->pointee_is_bool = 1;
     else                                    deref->is_bool = 1;
   }
-  /* unsigned メンバ: load を zero-extend させるため is_unsigned を伝播
-   * (配列メンバは要素 subscript 後に判定するのでスカラメンバのみ)。 */
-  if (mem_info->is_unsigned && !(mem_array_len > 0 && mem_size > 0)) {
-    deref->is_unsigned = 1;
+  /* unsigned メンバ: load を zero-extend させるため伝播。配列メンバなら
+   * pointee_is_unsigned (build_subscript_deref が要素 load を zero-extend にする)、
+   * スカラメンバなら is_unsigned。is_bool と同じ分岐。これがないと
+   * `struct S { unsigned char x[1]; }` の s.x[0]=200 が ldrsb で -56 に化ける。 */
+  if (mem_info->is_unsigned) {
+    if (mem_array_len > 0 && mem_size > 0) deref->pointee_is_unsigned = 1;
+    else                                    deref->is_unsigned = 1;
   }
   return (node_t *)deref;
 }
@@ -3020,6 +3023,14 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     if (base_mem && base_mem->pointee_is_unsigned) {
       if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
       else                           deref->pointee_is_unsigned = 1;
+    }
+    /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で
+     * array_len=0 のスカラに潰れ pointee_is_unsigned を持てない。base 自体が
+     * unsigned スカラ (is_unsigned) を最終要素まで添字した場合も zero-extend する。
+     * 真のスカラの subscript は clang が拒否するのでここに来るのは [1] 配列のみ。 */
+    if (base_mem && base_mem->is_unsigned && !deref->is_unsigned &&
+        !deref->is_pointer && pql == 0 && inner_ds == 0) {
+      deref->is_unsigned = 1;
     }
     /* `char *names[N]` 等: グローバルポインタ配列の要素 subscript 結果は
      * 「スカラポインタ値の load」(= struct メンバ char* と同じ semantics)。
