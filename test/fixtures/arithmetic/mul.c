@@ -1,3 +1,4 @@
 // 乗算が加算より優先
 // 期待: exit=47 (5+42)
-main() { return 5+6*7; }
+#include <assert.h>
+main() { assert(5+6*7 == 47); return 0; }

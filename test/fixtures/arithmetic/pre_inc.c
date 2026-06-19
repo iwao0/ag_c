@@ -1,3 +1,4 @@
 // 前置インクリメント
 // 期待: exit=2
-int main(void) { int a = 1; return ++a; }
+#include <assert.h>
+int main(void) { int a = 1; assert(++a == 2); return 0; }
