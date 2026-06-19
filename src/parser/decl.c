@@ -1933,17 +1933,36 @@ static node_t *parse_union_initializer(lvar_t *var) {
   }
 }
 
+/* 直近に skip_func_params が解析した関数(ポインタ)シグネチャが可変長か。
+ * 宣言子の trailing `()` 解析ループ直前にリセットされ、解析後に登録側が読む
+ * (`int (*f)(int, ...)` の経由呼び出しで variadic ABI を選ぶため)。 */
+static int g_last_funcptr_is_variadic = 0;
+static int g_last_funcptr_nfixed = 0;
+
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
   int depth = 1;
+  int ncommas = 0;       /* depth==1 のカンマ数 */
+  int saw_ellipsis = 0;
+  int fixed_before_ellipsis = 0;
   while (depth > 0) {
-    if (curtok()->kind == TK_EOF) {
+    token_kind_t k = curtok()->kind;
+    if (k == TK_EOF) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
     }
-    if (curtok()->kind == TK_LPAREN) depth++;
-    else if (curtok()->kind == TK_RPAREN) depth--;
+    if (k == TK_LPAREN) depth++;
+    else if (k == TK_RPAREN) depth--;
+    else if (k == TK_COMMA && depth == 1) ncommas++;
+    else if (k == TK_ELLIPSIS && depth == 1) {
+      saw_ellipsis = 1;
+      fixed_before_ellipsis = ncommas;  /* `...` 前のカンマ数 = 固定引数数 */
+    }
     set_curtok(curtok()->next);
+  }
+  if (saw_ellipsis) {
+    g_last_funcptr_is_variadic = 1;
+    g_last_funcptr_nfixed = fixed_before_ellipsis;
   }
 }
 
@@ -2005,6 +2024,10 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   } else {
     tok = tk_consume_ident();
   }
+  /* この宣言子の trailing `()` を解析する前にリセット。最外フレームの本ループが
+   * シグネチャ `(int, ...)` を最後に解析するので、その結果が登録側に届く。 */
+  g_last_funcptr_is_variadic = 0;
+  g_last_funcptr_nfixed = 0;
   while (curtok()->kind == TK_LPAREN) {
     skip_func_params();
   }
@@ -2986,6 +3009,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;
     if (decl_is_atomic) var->is_atomic = 1;
+    /* 可変長関数ポインタ (`int (*f)(int, ...)`): 経由呼び出しで variadic ABI を
+     * 選べるよう、固定引数数と共に記録する。 */
+    if (is_pointer && g_last_funcptr_is_variadic) {
+      var->is_variadic_funcptr = 1;
+      var->funcptr_nargs_fixed = (short)g_last_funcptr_nfixed;
+    }
     /* `_Bool b = expr;` 代入/初期化時に rhs を 0/1 に正規化するため。 */
     if (decl_base_is_bool && !is_pointer) var->is_bool = 1;
     /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。

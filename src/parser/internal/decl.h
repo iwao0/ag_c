@@ -34,6 +34,9 @@ struct lvar_t {
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int is_complex : 1;       // 1: _Complex型
   unsigned int is_atomic : 1;        // 1: _Atomic型
+  // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
+  unsigned int is_variadic_funcptr : 1;
+  short funcptr_nargs_fixed;          // 可変長関数ポインタの固定引数数 (`...` の前)
   // 1: _Bool 型。代入/初期化時に rhs を `(rhs != 0) ? 1 : 0` に正規化する (C11 6.3.1.2)
   unsigned int is_bool : 1;
   // 1: `static` 付きで宣言されたローカル変数。フレーム上には配置されず、

@@ -1518,7 +1518,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     callee_v = build_expr(ctx, fn->callee);
     if (ctx->failed) return ir_val_none();
   }
-  /* callee が variadic か prototype から確認 (Phase 7e)。間接呼出は skip。 */
+  /* callee が variadic か確認。直接呼出は prototype から、間接呼出は関数ポインタ
+   * lvar に記録した is_variadic_funcptr から判定する (Apple ARM64: 可変長引数は
+   * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
   int nargs_fixed = fn->nargs;
   if (!fn->callee) {
@@ -1527,6 +1529,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         fixed < fn->nargs) {
       is_variadic_call = 1;
       nargs_fixed = fixed;
+    }
+  } else if (fn->callee->kind == ND_LVAR) {
+    lvar_t *cl = find_owning_lvar(ctx, ((node_lvar_t *)fn->callee)->offset);
+    if (cl && cl->is_variadic_funcptr && cl->funcptr_nargs_fixed < fn->nargs) {
+      is_variadic_call = 1;
+      nargs_fixed = cl->funcptr_nargs_fixed;
     }
   }
   /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは

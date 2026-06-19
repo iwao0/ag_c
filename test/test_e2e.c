@@ -1071,6 +1071,7 @@ static const test_case_t test_cases[] = {
     {"probes", "sizeof_enum_type", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_enum_type.c", 0, 0},
     {"probes", "compound_literal_struct_assign", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_struct_assign.c", 0, 0},
     {"probes", "file_scope_compound_literal_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_compound_literal_init.c", 0, 0},
+    {"probes", "variadic_via_func_pointer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_via_func_pointer.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
