@@ -374,7 +374,10 @@ static node_t *parse_stmt_return(void) {
   node_t *node = arena_alloc(sizeof(node_t));
   node->kind = ND_RETURN;
   if (tk_consume(';')) {
-    if (psx_expr_current_func_ret_token_kind() != TK_VOID) {
+    /* `void *` などポインタ戻り型は void ではない。ret_token_kind は TK_VOID でも
+     * is_pointer が立つので、値なし return は値要求エラーにする。 */
+    if (psx_expr_current_func_ret_token_kind() != TK_VOID ||
+        psx_expr_current_func_ret_is_pointer()) {
       diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
                      "%s",
                      diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
@@ -384,7 +387,10 @@ static node_t *parse_stmt_return(void) {
     return node;
   }
   node->lhs = ps_expr();
-  if (psx_expr_current_func_ret_token_kind() == TK_VOID) {
+  /* `void *` 等のポインタ戻り型は void ではないので、return に式を許可する。
+   * is_pointer が立つときは TK_VOID でも void 関数扱いしない。 */
+  if (psx_expr_current_func_ret_token_kind() == TK_VOID &&
+      !psx_expr_current_func_ret_is_pointer()) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(),
                    "%s",
                    diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
