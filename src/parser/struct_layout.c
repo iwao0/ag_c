@@ -96,6 +96,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       }
     } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
       member_tag_kind = curtok()->kind;
+      /* enum 型ビットフィールド (`enum E e:2`) は非負列挙なら unsigned 扱い
+       * (clang と同じ)。これがないと is_signed_type=1 のままで読み出しが符号拡張され、
+       * 最上位ビットを使う値が負に化ける。 */
+      if (member_tag_kind == TK_ENUM) is_signed_type = 0;
       set_curtok(curtok()->next);
       token_ident_t *nested_tag = tk_consume_ident();
       if (nested_tag) {
