@@ -1649,6 +1649,20 @@ static int parse_parenthesized_type_size(void) {
     int sz = 8; // macOS/AArch64: long double == double (64-bit)
     return finish_parenthesized_type_size(t, sz);
   }
+  /* 複数語の整数型 (`long long`, `unsigned long`, `unsigned int`,
+   * `short int`, `signed char` 等)。単語ごとの psx_ctx_get_type_info では
+   * 先頭 1 語しか消費できず `sizeof(long long)` が 2 語目の `long` で
+   * E2006 になっていた。整数型指定子列をまとめて解釈してサイズを得る
+   * (scalar はサイズ==アラインメントなので _Alignof でも同値)。 */
+  {
+    token_kind_t iks = TK_EOF;
+    int iksz = 4;
+    int iku = 0;
+    token_t *inext = NULL;
+    if (parse_integer_cast_spec_sequence(t, &iks, &iksz, &iku, &inext)) {
+      return finish_parenthesized_type_size(inext, iksz);
+    }
+  }
   bool is_type = false;
   int scalar_size = 8;
   token_kind_t type_kind = t->kind;
