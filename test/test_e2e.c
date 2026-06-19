@@ -1062,6 +1062,7 @@ static const test_case_t test_cases[] = {
     {"probes", "complex_brace_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_brace_init.c", 0, 0},
     {"probes", "cast_voidptr_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/cast_voidptr_subscript.c", 0, 0},
     {"probes", "fp_pointer_cast_deref", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_pointer_cast_deref.c", 0, 0},
+    {"probes", "fp_cast_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_cast_subscript.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

@@ -1880,7 +1880,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->type_size = 8; // pointer 値そのもの
       wrap->is_pointer = 1;
       wrap->pointer_qual_levels = 1;
-      wrap->base_deref_size = (type_kind == TK_FLOAT) ? 4 : 8;
+      /* base_deref_size は立てない: `(double*)X` の指す要素はスカラ double であって
+       * 「ポインタ要素」ではない。立てると `((double*)X)[i]` の添字結果が誤って
+       * ポインタ扱いされ E3064 になる (`*(double*)X` の deref は deref_size/pointee_fp_kind
+       * のみ見るので影響なし)。 */
       return (node_t *)wrap;
     }
     /* `(int *)void_p` などポインタ型キャスト: 元の operand に pointee_is_void
