@@ -1,5 +1,7 @@
 // (int)(unsigned char)-1 = 255
 // 期待: exit=255
+#include <assert.h>
 int main(void) {
-    return (int)(unsigned char)-1;
+    assert((int)(unsigned char)-1 == 255);
+    return 0;
 }

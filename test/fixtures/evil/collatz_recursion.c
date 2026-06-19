@@ -1,6 +1,7 @@
 // コラッツ予想風の再帰カウント
 // count(6) = 9 (6→3→10→5→16→8→4→2→1)
 // 期待: exit=9
+#include <assert.h>
 int count(int n) {
     if (n <= 0) return 0;
     if (n == 1) return 1;
@@ -8,5 +9,6 @@ int count(int n) {
     return 1 + count(n * 3 + 1);
 }
 int main(void) {
-    return count(6);
+    assert(count(6) == 9);
+    return 0;
 }

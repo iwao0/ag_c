@@ -1,6 +1,8 @@
 // NaN != NaN は真 (IEEE754)
 // 期待: exit=1
+#include <assert.h>
 int main(void) {
     double x = 0.0 / 0.0;
-    return x != x;
+    assert(x != x);
+    return 0;
 }
