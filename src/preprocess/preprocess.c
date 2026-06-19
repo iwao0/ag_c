@@ -1700,15 +1700,18 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
              if (tok->kind != TK_RPAREN) {
                pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
              }
+             /* C99 6.10.3p4: マクロ実引数は空でもよい (空引数は placemarker として
+              * 何も展開しない)。`F(7,)` / `F(,x)` / `F(a,,c)` はすべて合法なので
+              * has_empty_arg でエラーにしない。引数の個数のみ検査する。 */
+             (void)has_empty_arg;
              if (m->is_variadic) {
                // 可変長部 (__VA_ARGS__) は空でもよい。clang/gcc は `F(a,...)` を `F(42)`
-               // で呼べる (空 __VA_ARGS__、C23 で標準化)。名前付き引数より少ない場合だけ
-               // エラー。空 va では args[num_named] が NULL のまま (= 空展開)。
-               if (parsed_args < num_named || has_empty_arg) {
+               // で呼べる (空 __VA_ARGS__、C23 で標準化)。名前付き引数より少ない場合だけエラー。
+               if (parsed_args < num_named) {
                  pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
                }
              } else {
-               if (parsed_args != m->num_params || has_empty_arg) {
+               if (parsed_args != m->num_params) {
                  pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
                }
              }
