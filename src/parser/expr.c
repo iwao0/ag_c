@@ -2731,7 +2731,11 @@ static node_t *build_unary_addr_node(node_t *operand) {
     }
   }
   if (operand && operand->kind == ND_COMMA && operand->rhs) {
-    return psx_node_new_binary(ND_COMMA, operand->lhs, wrap_as_addr(operand->rhs));
+    /* `&(compound-literal)` 等、値が COMMA(init, ref) の形。rhs に同じ単項 & の
+     * ロジックを再帰適用する (wrap_as_addr 直呼びだと配列複合リテラルの rhs が
+     * 既に ND_ADDR (decay 済み) のとき二重に ND_ADDR でラップされ ir_build が
+     * 失敗する)。下の ND_ADDR/ND_FUNCREF 簡約をここでも効かせる。 */
+    return psx_node_new_binary(ND_COMMA, operand->lhs, build_unary_addr_node(operand->rhs));
   }
   // C 仕様: 配列名 `arr` は (sizeof/&/レジスタ変数を除く) 文脈ではポインタ崩壊する。
   // `&arr` ではアドレス値はそのまま (型だけ `int(*)[N]` に変わる)。

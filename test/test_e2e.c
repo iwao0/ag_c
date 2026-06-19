@@ -1047,6 +1047,7 @@ static const test_case_t test_cases[] = {
     {"probes", "unsigned_char_array_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_char_array_member.c", 0, 0},
     {"probes", "unsigned_subint_return_promote", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_subint_return_promote.c", 0, 0},
     {"probes", "chained_assign_narrow_lvalue", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/chained_assign_narrow_lvalue.c", 0, 0},
+    {"probes", "addr_of_array_compound_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/addr_of_array_compound_literal.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
