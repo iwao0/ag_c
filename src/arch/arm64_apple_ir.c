@@ -228,6 +228,7 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst);
 
 static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
   switch (inst->op) {
@@ -264,6 +265,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_FNEG:          gen_inst_fneg(ctx, inst); return;
     case IR_LEA:           gen_inst_lea(ctx, inst); return;
     case IR_MEMCPY:        gen_inst_memcpy(ctx, inst); return;
+    case IR_ATOMIC:        gen_inst_atomic(ctx, inst); return;
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_UDIV:
     case IR_MOD: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
     case IR_SHL: case IR_SHR: case IR_LSR:
@@ -922,6 +924,93 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
       cg_emitf("  ldp x29, x30, [sp]\n");
       emit_addsub_imm("add", "sp", "sp", ctx->total_size);
   cg_emitf("  ret\n");
+}
+
+/* アトミック演算の結果 (reg11 = w11/x11) を dst へ書く。dst が phys reg なら
+ * mov、spill なら frame slot へ str。RL は "w" または "x"。 */
+static void atomic_store_result(gen_ctx_t *ctx, ir_val_t dst, const char *RL) {
+  if (dst.id < 0 || dst.id >= ctx->f->next_vreg_id) return;
+  if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[dst.id] >= 0) {
+    cg_emitf("  mov %s%d, %s11\n", RL, ctx->f->vreg_phys_reg[dst.id], RL);
+  } else {
+    cg_emitf("  str %s11, [x29, #%d]\n", RL, ctx->vreg_off[dst.id]);
+  }
+}
+
+/* C11 アトミック操作を Apple ARM64 の LSE 命令 + バリアで生成する。
+ * 全操作を seq_cst 強度 (ldar/stlr/ld...al/swpal/casal/dmb ish) で出す
+ * (規格上、要求より強い順序付けは常に安全)。scratch は x9..x14 (regalloc は
+ * x19..x28 のみ使うので衝突しない)。幅は 1/2/4/8 バイト。 */
+static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
+  int w = inst->atomic_width ? inst->atomic_width : 4;
+  const char *wsfx = (w == 1) ? "b" : (w == 2) ? "h" : "";  /* 命令の幅サフィックス */
+  int x64 = (w == 8);
+  const char *RL = x64 ? "x" : "w";  /* データレジスタの幅レター */
+  char buf[8];
+
+  if (inst->atomic_kind == IR_ATOMIC_FENCE) {
+    cg_emitf("  dmb ish\n");
+    return;
+  }
+
+  /* ptr を x9 に。 */
+  const char *p = ensure_val_in(ctx, inst->src1, "x9", buf, sizeof(buf));
+  if (strcmp(p, "x9") != 0) cg_emitf("  mov x9, %s\n", p);
+
+  if (inst->atomic_kind == IR_ATOMIC_LOAD) {
+    cg_emitf("  ldar%s %s11, [x9]\n", wsfx, RL);
+    /* 符号付き 1/2 バイトは sign-extend (ldar は zero-extend)。 */
+    if (!x64 && w < 4 && !inst->is_unsigned_load) {
+      cg_emitf("  sxt%s w11, w11\n", wsfx);
+    }
+    atomic_store_result(ctx, inst->dst, RL);
+    return;
+  }
+
+  if (inst->atomic_kind == IR_ATOMIC_STORE) {
+    const char *v = ensure_val_in(ctx, inst->src2, "x10", buf, sizeof(buf));
+    if (strcmp(v, "x10") != 0) cg_emitf("  mov x10, %s\n", v);
+    cg_emitf("  stlr%s %s10, [x9]\n", wsfx, RL);
+    return;
+  }
+
+  if (inst->atomic_kind == IR_ATOMIC_RMW) {
+    const char *v = ensure_val_in(ctx, inst->src2, "x10", buf, sizeof(buf));
+    if (strcmp(v, "x10") != 0) cg_emitf("  mov x10, %s\n", v);
+    const char *op = NULL;
+    switch (inst->atomic_rmw_op) {
+      case IR_ARMW_ADD: op = "ldaddal"; break;
+      case IR_ARMW_SUB: op = "ldaddal"; cg_emitf("  neg %s10, %s10\n", RL, RL); break;
+      case IR_ARMW_OR:  op = "ldsetal"; break;
+      case IR_ARMW_XOR: op = "ldeoral"; break;
+      case IR_ARMW_AND: op = "ldclral"; cg_emitf("  mvn %s10, %s10\n", RL, RL); break;
+      case IR_ARMW_XCHG: op = "swpal"; break;
+      default: op = "ldaddal"; break;
+    }
+    cg_emitf("  %s%s %s10, %s11, [x9]\n", op, wsfx, RL, RL);  /* old → reg11 */
+    if (!x64 && w < 4 && !inst->is_unsigned_load) {
+      cg_emitf("  sxt%s w11, w11\n", wsfx);
+    }
+    atomic_store_result(ctx, inst->dst, RL);
+    return;
+  }
+
+  if (inst->atomic_kind == IR_ATOMIC_CAS) {
+    /* src2 = expected の PTR、src3 = desired。CASAL: Ws=expected(in)/old(out)。 */
+    char bep[8], bde[8];
+    const char *ep = ensure_val_in(ctx, inst->src2, "x10", bep, sizeof(bep));
+    if (strcmp(ep, "x10") != 0) cg_emitf("  mov x10, %s\n", ep);
+    cg_emitf("  ldr%s %s12, [x10]\n", wsfx, RL);  /* expected 値 */
+    const char *de = ensure_val_in(ctx, inst->src3, "x13", bde, sizeof(bde));
+    if (strcmp(de, "x13") != 0) cg_emitf("  mov x13, %s\n", de);
+    cg_emitf("  mov %s14, %s12\n", RL, RL);        /* Ws = expected */
+    cg_emitf("  casal%s %s14, %s13, [x9]\n", wsfx, RL, RL);  /* w14 = old */
+    cg_emitf("  cmp %s14, %s12\n", RL, RL);
+    cg_emitf("  cset w11, eq\n");                  /* 成否 */
+    cg_emitf("  str%s %s14, [x10]\n", wsfx, RL);   /* *expected = old (成功時は不変) */
+    atomic_store_result(ctx, inst->dst, "w");
+    return;
+  }
 }
 
 static void gen_func(ir_func_t *f) {

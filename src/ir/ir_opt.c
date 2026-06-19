@@ -156,6 +156,7 @@ static int has_side_effect(ir_op_t op) {
     case IR_ALLOCA:    /* フレーム上の位置に意味がある */
     case IR_LOAD_TLV_ADDR: /* 内部で blr __tlv_bootstrap を発行する */
     case IR_VLA_ALLOC:    /* SP を動的に変更する */
+    case IR_ATOMIC:       /* メモリ書き換え / 順序付け効果。結果未使用でも消さない */
       return 1;
     default:
       return 0;
@@ -165,6 +166,7 @@ static int has_side_effect(ir_op_t op) {
 static void count_uses(ir_inst_t *inst, int *use_cnt, int nvregs) {
   if (inst->src1.id >= 0 && inst->src1.id < nvregs) use_cnt[inst->src1.id]++;
   if (inst->src2.id >= 0 && inst->src2.id < nvregs) use_cnt[inst->src2.id]++;
+  if (inst->src3.id >= 0 && inst->src3.id < nvregs) use_cnt[inst->src3.id]++;
   for (int k = 0; k < inst->nargs; k++) {
     if (inst->args && inst->args[k].id >= 0 && inst->args[k].id < nvregs) {
       use_cnt[inst->args[k].id]++;

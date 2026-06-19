@@ -1413,8 +1413,92 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
 
 /* -------- Phase B1: build_expr の制御系 case ヘルパ -------- */
 
+/* `__ag_atomic_*(...)` 組込みを IR_ATOMIC に下ろす (stdatomic.h が使う)。
+ * 幅と pointee の符号は第 1 引数 (obj ポインタ) の deref_size / pointee_is_unsigned
+ * から取る。全操作 seq_cst 強度。 */
+static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn) {
+  const char *suf = fn->funcname + 12;          /* "__ag_atomic_" の後ろ */
+  int sl = fn->funcname_len - 12;
+
+  if (sl == 5 && memcmp(suf, "fence", 5) == 0) {
+    ir_inst_t *a = ir_inst_new(IR_ATOMIC);
+    a->atomic_kind = IR_ATOMIC_FENCE;
+    ir_func_append_inst(ctx->f, a);
+    return ir_val_imm(IR_TY_I32, 0);
+  }
+  if (fn->nargs < 1) { fail(ctx, "__ag_atomic intrinsic missing pointer arg"); return ir_val_none(); }
+
+  node_t *parg = fn->args[0];
+  int width = ((node_mem_t *)parg)->deref_size;
+  if (width != 1 && width != 2 && width != 4 && width != 8) width = 4;
+  /* 符号: `&var` (ND_ADDR) なら被参照変数の値の符号、ポインタ式ならその
+   * pointee_is_unsigned。1/2 バイト atomic の load 旧値の符号拡張に使う。 */
+  int unsigned_p = ((node_mem_t *)parg)->pointee_is_unsigned ? 1 : 0;
+  if (parg->kind == ND_ADDR && parg->lhs) {
+    unsigned_p = ((node_mem_t *)parg->lhs)->is_unsigned ? 1 : 0;
+  }
+  ir_type_t rty = (width == 8) ? IR_TY_I64 : IR_TY_I32;
+  ir_val_t ptr = build_expr(ctx, parg);
+  if (ctx->failed) return ir_val_none();
+
+  if (sl == 4 && memcmp(suf, "load", 4) == 0) {
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *a = ir_inst_new(IR_ATOMIC);
+    a->atomic_kind = IR_ATOMIC_LOAD; a->atomic_width = (unsigned char)width;
+    a->is_unsigned_load = (unsigned char)unsigned_p;
+    a->src1 = ptr; a->dst = ir_val_vreg(v, rty);
+    ir_func_append_inst(ctx->f, a);
+    return a->dst;
+  }
+  if (sl == 5 && memcmp(suf, "store", 5) == 0) {
+    ir_val_t val = build_expr(ctx, fn->args[1]);
+    if (ctx->failed) return ir_val_none();
+    ir_inst_t *a = ir_inst_new(IR_ATOMIC);
+    a->atomic_kind = IR_ATOMIC_STORE; a->atomic_width = (unsigned char)width;
+    a->src1 = ptr; a->src2 = val;
+    ir_func_append_inst(ctx->f, a);
+    return ir_val_imm(IR_TY_I32, 0);
+  }
+  if (sl == 3 && memcmp(suf, "cas", 3) == 0) {
+    ir_val_t exp = build_expr(ctx, fn->args[1]);   /* expected の PTR */
+    if (ctx->failed) return ir_val_none();
+    ir_val_t des = build_expr(ctx, fn->args[2]);   /* desired 値 */
+    if (ctx->failed) return ir_val_none();
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *a = ir_inst_new(IR_ATOMIC);
+    a->atomic_kind = IR_ATOMIC_CAS; a->atomic_width = (unsigned char)width;
+    a->src1 = ptr; a->src2 = exp; a->src3 = des; a->dst = ir_val_vreg(v, IR_TY_I32);
+    ir_func_append_inst(ctx->f, a);
+    return a->dst;
+  }
+  int rmwop = -1;
+  if (sl == 8 && memcmp(suf, "exchange", 8) == 0) rmwop = IR_ARMW_XCHG;
+  else if (sl == 9 && memcmp(suf, "fetch_add", 9) == 0) rmwop = IR_ARMW_ADD;
+  else if (sl == 9 && memcmp(suf, "fetch_sub", 9) == 0) rmwop = IR_ARMW_SUB;
+  else if (sl == 8 && memcmp(suf, "fetch_or", 8) == 0) rmwop = IR_ARMW_OR;
+  else if (sl == 9 && memcmp(suf, "fetch_and", 9) == 0) rmwop = IR_ARMW_AND;
+  else if (sl == 9 && memcmp(suf, "fetch_xor", 9) == 0) rmwop = IR_ARMW_XOR;
+  if (rmwop >= 0) {
+    ir_val_t val = build_expr(ctx, fn->args[1]);
+    if (ctx->failed) return ir_val_none();
+    int v = ir_func_new_vreg(ctx->f);
+    ir_inst_t *a = ir_inst_new(IR_ATOMIC);
+    a->atomic_kind = IR_ATOMIC_RMW; a->atomic_rmw_op = (unsigned char)rmwop;
+    a->atomic_width = (unsigned char)width; a->is_unsigned_load = (unsigned char)unsigned_p;
+    a->src1 = ptr; a->src2 = val; a->dst = ir_val_vreg(v, rty);
+    ir_func_append_inst(ctx->f, a);
+    return a->dst;
+  }
+  fail(ctx, "unknown __ag_atomic intrinsic");
+  return ir_val_none();
+}
+
 static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   node_func_t *fn = (node_func_t *)node;
+  if (!fn->callee && fn->funcname && fn->funcname_len > 12 &&
+      memcmp(fn->funcname, "__ag_atomic_", 12) == 0) {
+    return build_node_atomic_intrinsic(ctx, fn);
+  }
   /* 間接呼び出し: callee 式を pre-evaluate しておく (引数評価より先に
    * vreg に確定させる方が安全)。AST 経路と同じ評価順序を守るため。
    * 間接呼び出しは現状 variadic 非対応とする (関数ポインタ型に variadic

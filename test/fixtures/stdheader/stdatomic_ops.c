@@ -1,6 +1,6 @@
-// 同梱 <stdatomic.h> (単一スレッド版) の基本操作を検査する。
-// load/store/init/fetch_add/sub/xor は旧値を正しく返す。compare_exchange は
-// 成功/失敗の両経路。atomic_flag の test_and_set/clear。fence は no-op。
+// 同梱 <stdatomic.h> (Apple ARM64 LSE 命令による本物のアトミック) を検査する。
+// fetch_add/sub/or/and/xor/exchange は規格通り旧値を返す。compare_exchange は
+// 成功/失敗の両経路。各幅 (1/2/4/8 バイト) と符号、atomic_flag、fence。
 #include <stdatomic.h>
 #include <assert.h>
 
@@ -58,10 +58,38 @@ int main(void) {
     assert(atomic_is_lock_free(&x) == 1);
     assert(ATOMIC_INT_LOCK_FREE == 2);
 
-    // long の atomic
+    // fetch_or / fetch_and / exchange も旧値を返す
+    atomic_store(&x, 0xF0);
+    assert(atomic_fetch_or(&x, 0x0F) == 0xF0);   // 旧値
+    assert(atomic_load(&x) == 0xFF);
+    assert(atomic_fetch_and(&x, 0x3C) == 0xFF);  // 旧値
+    assert(atomic_load(&x) == 0x3C);
+    assert(atomic_exchange(&x, 555) == 0x3C);    // 旧値
+    assert(atomic_load(&x) == 555);
+
+    // long (8 バイト) の atomic
     atomic_long lx;
-    atomic_init(&lx, 1000);
-    assert(atomic_fetch_add(&lx, 234) == 1000);
-    assert(atomic_load(&lx) == 1234);
+    atomic_init(&lx, 1000000000000L);
+    assert(atomic_fetch_add(&lx, 234) == 1000000000000L);
+    assert(atomic_load(&lx) == 1000000000234L);
+
+    // short (2 バイト)
+    atomic_short sx;
+    atomic_init(&sx, 100);
+    assert(atomic_fetch_add(&sx, 5) == 100);
+    assert(atomic_load(&sx) == 105);
+
+    // unsigned char (1 バイト, 符号なし)
+    atomic_uchar cx;
+    atomic_init(&cx, 200);
+    assert(atomic_fetch_add(&cx, 50) == 200);
+    assert(atomic_load(&cx) == 250);
+
+    // signed char (1 バイト, 負値)
+    atomic_schar scx;
+    atomic_init(&scx, -5);
+    assert(atomic_load(&scx) == -5);
+    assert(atomic_fetch_sub(&scx, 3) == -5);
+    assert(atomic_load(&scx) == -8);
     return 0;
 }

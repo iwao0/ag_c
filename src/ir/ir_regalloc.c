@@ -20,6 +20,7 @@
 static void mark_uses(ir_inst_t *inst, int *last_use, int nvregs, int n) {
   if (inst->src1.id >= 0 && inst->src1.id < nvregs) last_use[inst->src1.id] = n;
   if (inst->src2.id >= 0 && inst->src2.id < nvregs) last_use[inst->src2.id] = n;
+  if (inst->src3.id >= 0 && inst->src3.id < nvregs) last_use[inst->src3.id] = n;
   for (int k = 0; k < inst->nargs; k++) {
     if (inst->args && inst->args[k].id >= 0 && inst->args[k].id < nvregs) {
       last_use[inst->args[k].id] = n;
@@ -60,6 +61,7 @@ static void mark_unallocatable_vregs(ir_func_t *f, int *unalloc) {
       int ns = 0;
       if (i->src1.id >= 0 && i->src1.id < nvregs) srcs[ns++] = i->src1.id;
       if (i->src2.id >= 0 && i->src2.id < nvregs) srcs[ns++] = i->src2.id;
+      if (i->src3.id >= 0 && i->src3.id < nvregs) srcs[ns++] = i->src3.id;
       for (int k = 0; k < i->nargs && ns < 32; k++) {
         if (i->args && i->args[k].id >= 0 && i->args[k].id < nvregs) {
           srcs[ns++] = i->args[k].id;

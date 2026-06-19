@@ -91,8 +91,37 @@ typedef enum {
    * SP を変更するため副作用ありで、regalloc/DCE は副作用扱いにする。 */
   IR_VLA_ALLOC,
 
+  /* C11 アトミック操作 (Apple ARM64 LSE 命令 / バリアにマップ)。
+   * atomic_width = 1/2/4/8 (操作幅)。atomic_kind = 下記 IR_ATOMIC_* のいずれか。
+   *  - IR_ATOMIC_LOAD:  dst = *src1 (LDAR)。
+   *  - IR_ATOMIC_STORE: *src1 = src2 (STLR)。
+   *  - IR_ATOMIC_RMW:   dst = old(*src1); *src1 op= src2 (LDADDAL/LDSETAL/...)。
+   *                     op は atomic_rmw_op (ADD/SUB/OR/AND/XOR/XCHG)。
+   *  - IR_ATOMIC_CAS:   src1=ptr, src2=expected-ptr, src3=desired; dst = 成否 (0/1)。
+   *  - IR_ATOMIC_FENCE: DMB ISH。 */
+  IR_ATOMIC,
+
   IR_OP_COUNT,
 } ir_op_t;
+
+/* IR_ATOMIC の種別。 */
+typedef enum {
+  IR_ATOMIC_LOAD = 0,
+  IR_ATOMIC_STORE,
+  IR_ATOMIC_RMW,
+  IR_ATOMIC_CAS,
+  IR_ATOMIC_FENCE,
+} ir_atomic_kind_t;
+
+/* IR_ATOMIC_RMW の演算。 */
+typedef enum {
+  IR_ARMW_ADD = 0,
+  IR_ARMW_SUB,
+  IR_ARMW_OR,
+  IR_ARMW_AND,
+  IR_ARMW_XOR,
+  IR_ARMW_XCHG,
+} ir_atomic_rmw_op_t;
 
 const char *ir_op_name(ir_op_t op);
 
@@ -153,6 +182,11 @@ typedef struct ir_inst_t {
    *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
    *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
   unsigned char ret_complex_half;
+  /* IR_ATOMIC 用。 */
+  unsigned char atomic_kind;   /* ir_atomic_kind_t */
+  unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t (RMW のとき) */
+  unsigned char atomic_width;  /* 1/2/4/8 バイト */
+  ir_val_t src3;               /* IR_ATOMIC_CAS の desired 値 */
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */
