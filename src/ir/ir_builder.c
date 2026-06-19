@@ -495,6 +495,18 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     ir_func_append_inst(ctx->f, cp);
     return;
   }
+  if (node->kind == ND_FUNCALL) {
+    /* _Complex を返す関数呼び出し: build_node_funcall が d0/d1 を書き戻した
+     * slot の PTR を返すので、そこから 2*half バイト memcpy する。 */
+    ir_val_t ptr = build_expr(ctx, node);
+    if (ctx->failed) return;
+    ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+    cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+    cp->src2 = ptr;
+    cp->alloca_size = 2 * half;
+    ir_func_append_inst(ctx->f, cp);
+    return;
+  }
   if (node->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)node;
     int v_addr = ir_func_new_vreg(ctx->f);
@@ -1431,8 +1443,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_none();
   }
   ir_val_t *cargs = NULL;
+  /* _Complex 値引数は 2 FP レジスタ (re, im) に展開されるので、cargs は引数あたり
+   * 最大 2 エントリを確保し、argc で実エントリ数を数える。 */
+  int argc = 0;
   if (fn->nargs > 0) {
-    cargs = calloc((size_t)fn->nargs, sizeof(ir_val_t));
+    cargs = calloc((size_t)(2 * fn->nargs), sizeof(ir_val_t));
     for (int i = 0; i < fn->nargs; i++) {
       node_t *arg = fn->args[i];
       /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
@@ -1448,6 +1463,39 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           if (ctx->failed) return ir_val_none();
           arg = arg->rhs;
         }
+      }
+      /* _Complex 値引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1}。一時 slot に
+       * {re,im} を materialize し、2 つの FP 値として push する。codegen の fp_idx
+       * カウンタが連続 2 レジスタへ割り当てる。 */
+      if (arg && arg->is_complex) {
+        ir_type_t fp_ty = (arg->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+        int half = (fp_ty == IR_TY_F32) ? 4 : 8;
+        int slot = ir_func_new_vreg(ctx->f);
+        ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+        al->dst = ir_val_vreg(slot, IR_TY_PTR);
+        al->alloca_size = 2 * half;
+        al->alloca_align = 8;
+        ir_func_append_inst(ctx->f, al);
+        build_complex_to(ctx, arg, slot, fp_ty, half);
+        if (ctx->failed) return ir_val_none();
+        for (int part = 0; part < 2; part++) {
+          int pp = slot;
+          if (part == 1) {
+            pp = ir_func_new_vreg(ctx->f);
+            ir_inst_t *lea = ir_inst_new(IR_LEA);
+            lea->dst = ir_val_vreg(pp, IR_TY_PTR);
+            lea->src1 = ir_val_vreg(slot, IR_TY_PTR);
+            lea->src2 = ir_val_imm(IR_TY_I32, half);
+            ir_func_append_inst(ctx->f, lea);
+          }
+          int lv = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ld = ir_inst_new(IR_LOAD);
+          ld->dst = ir_val_vreg(lv, fp_ty);
+          ld->src1 = ir_val_vreg(pp, IR_TY_PTR);
+          ir_func_append_inst(ctx->f, ld);
+          cargs[argc++] = ir_val_vreg(lv, fp_ty);
+        }
+        continue;
       }
       int arg_full_size = 0;
       /* struct/union 値で、サイズが 1/2/4/8 の clean なスカラロードに乗らない
@@ -1492,7 +1540,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg->kind == ND_FUNCALL && arg_full_size > 8) {
         ir_val_t a = build_expr(ctx, arg);
         if (ctx->failed) return ir_val_none();
-        cargs[i] = ir_val_vreg(a.id, IR_TY_PTR);
+        cargs[argc++] = ir_val_vreg(a.id, IR_TY_PTR);
         continue;
       }
       if (arg_full_size > 8 || struct_needs_ptr) {
@@ -1519,9 +1567,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
         cp->alloca_size = arg_full_size;
         ir_func_append_inst(ctx->f, cp);
-        cargs[i] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+        cargs[argc++] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
       } else {
-        cargs[i] = build_expr(ctx, arg);
+        ir_val_t cv = build_expr(ctx, arg);
         if (ctx->failed) return ir_val_none();
         /* 直接呼び出しで、callee の i 番目仮引数が float/double なら
          * 実引数を I2F / F2F で変換する (`f(1)` で 1 を double に昇格)。
@@ -1533,9 +1581,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
               fn->funcname, fn->funcname_len, i);
           if (pfk != TK_FLOAT_KIND_NONE) {
             ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-            cargs[i] = coerce_to_type(ctx, cargs[i], target);
+            cv = coerce_to_type(ctx, cv, target);
           }
         }
+        cargs[argc++] = cv;
       }
     }
   }
@@ -1564,9 +1613,25 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     call->sym_len = fn->funcname_len;
   }
   call->args = cargs;
-  call->nargs = fn->nargs;
+  call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
   call->nargs_fixed = nargs_fixed;
+  /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
+   * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
+   * 受け取れる)。 */
+  if (node->is_complex && !fn->callee) {
+    int half = (ir_type_from_node(node) == IR_TY_F32) ? 4 : 8;
+    int slot = ir_func_new_vreg(ctx->f);
+    ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+    ia->dst = ir_val_vreg(slot, IR_TY_PTR);
+    ia->alloca_size = 2 * half;
+    ia->alloca_align = 8;
+    ir_func_append_inst(ctx->f, ia);
+    call->dst = ir_val_vreg(slot, IR_TY_PTR);
+    call->ret_complex_half = (unsigned char)half;
+    ir_func_append_inst(ctx->f, call);
+    return ir_val_vreg(slot, IR_TY_PTR);
+  }
   /* >8B struct 戻り値を値文脈 (引数 / 式) で使う場合: 呼び出し側で ret_area を
    * 確保し x8 で渡す。戻り値はその area のアドレス (PTR)。struct 代入の直接 rhs は
    * build_assign_struct がインラインで処理するためここには来ない。 */
@@ -2299,6 +2364,25 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, inst);
     return;
   }
+  /* _Complex 戻り値 (HFA): 戻り式を temp slot に {re,im} で materialize し、
+   * IR_RET に slot の PTR と half を渡す (codegen が re→d0/s0, im→d1/s1)。 */
+  if (ctx->f->ret_complex_half > 0 && node->lhs) {
+    ir_type_t fp_ty = (ctx->f->ret_complex_half == 4) ? IR_TY_F32 : IR_TY_F64;
+    int half = ctx->f->ret_complex_half;
+    int slot = ir_func_new_vreg(ctx->f);
+    ir_inst_t *al = ir_inst_new(IR_ALLOCA);
+    al->dst = ir_val_vreg(slot, IR_TY_PTR);
+    al->alloca_size = 2 * half;
+    al->alloca_align = 8;
+    ir_func_append_inst(ctx->f, al);
+    build_complex_to(ctx, node->lhs, slot, fp_ty, half);
+    if (ctx->failed) return;
+    ir_inst_t *inst = ir_inst_new(IR_RET);
+    inst->src1 = ir_val_vreg(slot, IR_TY_PTR);
+    inst->ret_complex_half = (unsigned char)half;
+    ir_func_append_inst(ctx->f, inst);
+    return;
+  }
   ir_val_t v = ir_val_none();
   if (node->lhs) {
     v = build_expr(ctx, node->lhs);
@@ -2548,7 +2632,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
         !owner->is_array && owner->pointer_qual_levels == 0 &&
         param_full_size != 1 && param_full_size != 2 &&
         param_full_size != 4 && param_full_size != 8;
-    if (param_full_size > 8 || struct_param_needs_ptr) {
+    if ((param_full_size > 8 || struct_param_needs_ptr) && !(owner && owner->is_complex)) {
       /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
        * したポインタを x{int_idx} で渡してくる前提。 */
       int param_vreg = ir_func_new_vreg(ctx->f);
@@ -2563,6 +2647,36 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
       cp->src2 = ir_val_vreg(param_vreg, IR_TY_PTR);
       cp->alloca_size = param_full_size;
       ir_func_append_inst(ctx->f, cp);
+      continue;
+    }
+    if (owner && owner->is_complex) {
+      /* _Complex 引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1} の 2 FP レジスタで
+       * 受け取り、slot+0 / slot+half に格納する (AAPCS64)。 */
+      ir_type_t pty = (owner->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      int half = (pty == IR_TY_F32) ? 4 : 8;
+      int base_ptr = address_of_lvar(ctx, lv->offset);
+      if (base_ptr < 0) return 0;
+      for (int part = 0; part < 2; part++) {
+        int pv = ir_func_new_vreg(ctx->f);
+        ir_inst_t *p = ir_inst_new(IR_PARAM);
+        p->dst = ir_val_vreg(pv, pty);
+        p->src1 = ir_val_imm(IR_TY_I32, fp_arg_idx++);
+        ir_func_append_inst(ctx->f, p);
+        int dst_p = base_ptr;
+        if (part == 1) {
+          int lp = ir_func_new_vreg(ctx->f);
+          ir_inst_t *lea = ir_inst_new(IR_LEA);
+          lea->dst = ir_val_vreg(lp, IR_TY_PTR);
+          lea->src1 = ir_val_vreg(base_ptr, IR_TY_PTR);
+          lea->src2 = ir_val_imm(IR_TY_I32, half);
+          ir_func_append_inst(ctx->f, lea);
+          dst_p = lp;
+        }
+        ir_inst_t *st = ir_inst_new(IR_STORE);
+        st->src1 = ir_val_vreg(dst_p, IR_TY_PTR);
+        st->src2 = ir_val_vreg(pv, pty);
+        ir_func_append_inst(ctx->f, st);
+      }
       continue;
     }
     ir_type_t vty = lvar_value_type(lv);
@@ -2660,6 +2774,10 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     }
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
+  /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
+  if (fn->base.is_complex) {
+    ctx->f->ret_complex_half = (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
+  }
   ctx->f->is_variadic = fn->is_variadic;
   ctx->f->nargs_fixed = fn->nargs;
   ctx->cur_fn = fn;

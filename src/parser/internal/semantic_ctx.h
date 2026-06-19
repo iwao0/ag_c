@@ -156,6 +156,10 @@ int psx_ctx_get_function_ret_struct_size(char *name, int len);
 // `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
 void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind);
 tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len);
+// 関数戻り値が _Complex かどうかを保持する。呼び出し側 funcall ノードの is_complex
+// 伝播 (HFA 戻り値 d0/d1 の受け取り) に使う。
+void psx_ctx_set_function_ret_is_complex(char *name, int len, int is_complex);
+int psx_ctx_get_function_ret_is_complex(char *name, int len);
 // 関数が variadic (`...` を持つ) かどうかと固定引数の個数を保持する。
 // Apple ARM64 ABI で variadic 引数を stack に積むため、呼び出し側 codegen が
 // `nargs_fixed` を境に register / stack を切り替えるのに使う。

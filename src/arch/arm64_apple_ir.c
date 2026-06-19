@@ -860,6 +860,16 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
       if (var_stack_bytes > 0) {
         cg_emitf("  add sp, sp, #%d\n", var_stack_bytes);
       }
+      /* _Complex 戻り値 (HFA): dst は {re,im} スロットの PTR。d0/d1 (s0/s1) を書き戻す。 */
+  if (inst->ret_complex_half > 0 && inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
+    const char *suf = (inst->ret_complex_half == 8) ? "d" : "s";
+    char buf[8];
+    const char *p = ensure_val_in(ctx, inst->dst, "x9", buf, sizeof(buf));
+    if (strcmp(p, "x9") != 0) cg_emitf("  mov x9, %s\n", p);
+    cg_emitf("  str %s0, [x9]\n", suf);
+    cg_emitf("  str %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
+    return;
+  }
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     if (inst->dst.type == IR_TY_F32) {
@@ -882,7 +892,15 @@ static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
-      if (inst->src1.id != IR_VAL_NONE) {
+      if (inst->ret_complex_half > 0) {
+        /* _Complex 戻り値 (HFA): src1 は {re,im} スロットの PTR。re→d0/s0, im→d1/s1。 */
+        const char *suf = (inst->ret_complex_half == 8) ? "d" : "s";
+        char buf[8];
+        const char *p = ensure_val_in(ctx, inst->src1, "x9", buf, sizeof(buf));
+        if (strcmp(p, "x9") != 0) cg_emitf("  mov x9, %s\n", p);
+        cg_emitf("  ldr %s0, [x9]\n", suf);
+        cg_emitf("  ldr %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
+      } else if (inst->src1.id != IR_VAL_NONE) {
         if (inst->src1.type == IR_TY_F32) {
           char buf[8];
           const char *src = ensure_val_in(ctx, inst->src1, "s0", buf, sizeof(buf));

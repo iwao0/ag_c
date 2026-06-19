@@ -190,6 +190,8 @@ typedef struct {
   int typedef_array_dim_count;
   // float/double 仮引数を ABI に従い d0..d7 で受け取るための種別。
   tk_float_kind_t fp_kind;
+  // `double _Complex` / `float _Complex` 仮引数。HFA として 2 FP レジスタで受ける。
+  int is_complex;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -2247,6 +2249,16 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     var->base_deref_size = (short)ds->elem_size;
     return var;
   }
+  if (!param_is_ptr && ds->tag_kind == TK_EOF && ds->is_complex) {
+    /* `double _Complex` / `float _Complex` 仮引数: {re,im} を持つので 2*half バイトで
+     * 登録する (8 のままだと double complex で次の仮引数スロットと重なり im が壊れる)。 */
+    int half = (ds->fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
+    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len,
+                                                     2 * half, 2 * half, 0, 8);
+    var->is_complex = 1;
+    var->fp_kind = ds->fp_kind;
+    return var;
+  }
   // スカラー型仮引数（既存の動作）
   return psx_decl_register_lvar(param->str, param->len);
 }
@@ -2333,6 +2345,12 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
   if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
     param_node->fp_kind = ds.fp_kind;
   }
+  /* 複素数仮引数: args[] ノードにも is_complex を残す (setup_function_params は
+   * owner->is_complex を見るが、念のため両方に伝播)。 */
+  if (ds.is_complex && !param_is_ptr && !param_is_array_declarator) {
+    param_node->is_complex = 1;
+    ((node_lvar_t *)param_node)->mem.is_complex = 1;
+  }
   node->args[(*nargs)++] = param_node;
   return 0;
 }
@@ -2379,6 +2397,9 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
     if (param_type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
     else if (param_type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
+    /* `double _Complex z` 等: psx_consume_type_kind が _Complex も消費し
+     * g_last_type_complex を立てる。HFA 受け取りのため記録する。 */
+    out->is_complex = psx_last_type_is_complex();
   } else if (psx_ctx_is_typedef_name_token(curtok())) {
     out->saw_typedef_name = 1;
     // typedef 名の情報を仮引数解析に伝える。特に「配列型 typedef」が
@@ -2744,6 +2765,9 @@ static node_t *funcdef(void) {
    * 符号性が落ちるため別管理)。parse_func_decl_spec 直後に読む (parse_func_declarator
    * が g_last_type_unsigned を変えるより前)。後段で関数名判明後に記録する。 */
   int ret_is_unsigned = !ret_is_ptr && (psx_last_type_is_unsigned() || ret_td_unsigned);
+  /* 戻り型が _Complex か (parse_func_declarator が g_last_type_complex を変える前に読む)。
+   * IR builder が複素数戻り値 (HFA: re→d0, im→d1) を組むために node に記録する。 */
+  int ret_is_complex = !ret_is_ptr && psx_last_type_is_complex();
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   psx_expr_set_current_func_ret_is_pointer(ret_is_ptr);
   psx_expr_set_current_func_ret_is_unsigned(ret_is_unsigned);
@@ -2780,6 +2804,7 @@ static node_t *funcdef(void) {
   /* 戻り型の fp_kind をノードへ記録。IR builder の ir_type_from_node が
    * 関数の戻り型 (IR_TY_F32/F64) を決定し、callee が fp レジスタで返すために必要。 */
   node->base.fp_kind = ret_fp_kind;
+  node->base.is_complex = ret_is_complex;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,
@@ -2787,6 +2812,10 @@ static node_t *funcdef(void) {
   // float / double 戻り値型を記録 → call 経路で fcvtzs を挿入できるようにする
   if (ret_fp_kind != TK_FLOAT_KIND_NONE) {
     psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, ret_fp_kind);
+  }
+  // 戻り値が _Complex なら記録 → 呼び出し側 funcall ノードへ is_complex を伝播。
+  if (ret_is_complex) {
+    psx_ctx_set_function_ret_is_complex(tok->str, tok->len, 1);
   }
   // 戻り値型が void かどうかを記録。代入/初期化での void 値使用検出に使う。
   if (ret_kind == TK_VOID && !ret_is_ptr) {

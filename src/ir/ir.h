@@ -148,6 +148,11 @@ typedef struct ir_inst_t {
    * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
   unsigned char is_unsigned_load;
+  /* IR_RET / IR_CALL: 戻り値が _Complex のとき half バイト数 (float=4, double=8)。
+   * 0 = 非複素数。複素数は HFA として re→d0/s0, im→d1/s1 で渡す。
+   *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
+   *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
+  unsigned char ret_complex_half;
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */
@@ -183,6 +188,9 @@ typedef struct ir_func_t {
   /* 関数 prologue で x8 (= caller の戻り値領域ポインタ) を受け取る vreg。
    * ret_struct_size > 0 のときのみ有効。 */
   int ret_area_vreg;
+  /* 戻り値が _Complex のとき half バイト数 (float=4, double=8)。0 = 非複素数。
+   * build_stmt_return が IR_RET に複素数戻り値を組むのに使う。 */
+  int ret_complex_half;
   /* Phase 5: vreg → 物理レジスタ番号 (-1 = spill / frame に置く)。
    * 物理レジスタ番号は実際の x{n} の n。長さ = next_vreg_id。
    * NULL のとき regalloc 未実行 (codegen は全 vreg を frame に置く既存挙動)。 */

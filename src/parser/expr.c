@@ -3511,6 +3511,11 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
   // 関数戻り値が float/double のときは call ノードに fp_kind を設定し、
   // `(int)call()` キャストで apply_cast が ND_FP_TO_INT を挿入できるようにする。
   node->base.fp_kind = psx_ctx_get_function_ret_fp_kind(tok->str, tok->len);
+  /* 戻り値が _Complex のとき call ノードに is_complex を立てる。build_node_funcall が
+   * HFA 戻り値 (d0/d1) を一時 slot に受け、複素数値として扱えるようにする。 */
+  if (psx_ctx_get_function_ret_is_complex(tok->str, tok->len)) {
+    node->base.is_complex = 1;
+  }
   /* 戻り値型が unsigned のとき call ノードに is_unsigned を立てる。これがないと
    * `unsigned f(); f() <= 100` が符号付き比較 (LE) になり、32bit 比較で 0xFFFFFFFF を
    * 負数扱いして誤判定する (戻り値の符号性が funcall ノードへ伝播していなかった)。

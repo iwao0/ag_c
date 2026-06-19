@@ -9,8 +9,9 @@
  * 複素数算術で組み立てられる。
  *
  * creal/cimag は GNU 拡張 __real__/__imag__ で実装するため任意の式 (rvalue) に
- * 効く (例: `creal(a+b)`)。cabs/carg/cexp など <math.h> の実数関数を要するものは
- * 提供しない。_Complex の値渡し ABI は未実装 (関数引数で複素数を値で渡さないこと)。 */
+ * 効く (例: `creal(a+b)`)。cabs/carg は <math.h> の sqrt/atan2 経由。_Complex の
+ * 値渡し / 値返し (AAPCS64 HFA: re→d0, im→d1) も実装済みなので、複素数を値で
+ * 受け取る / 返す関数を自分で書ける。cexp/clog/csqrt 等の複素数 math 関数は未提供。 */
 
 #define complex   _Complex
 #define imaginary _Imaginary

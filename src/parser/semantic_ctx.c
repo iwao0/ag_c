@@ -112,6 +112,9 @@ struct func_name_t {
   // 戻り値が float/double のときに保持する。`(int)f()` キャストで
   // codegen に ND_FP_TO_INT (fcvtzs) を挿入させるために必要。
   tk_float_kind_t ret_fp_kind;
+  /* 1: 戻り値型が _Complex。呼び出し側 funcall ノードの is_complex 伝播に使う
+   * (HFA 戻り値 d0/d1 の受け取り)。 */
+  int ret_is_complex;
   // variadic 関数 (`...` を持つ) かどうかと、固定引数の個数。
   // Apple ARM64 ABI に従い caller は variadic 引数を stack に積むため、
   // 呼び出し側 codegen で nargs_fixed を境に register / stack を切り替える。
@@ -1049,6 +1052,17 @@ void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_ki
 tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_fp_kind : TK_FLOAT_KIND_NONE;
+}
+
+void psx_ctx_set_function_ret_is_complex(char *name, int len, int is_complex) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->ret_is_complex = is_complex ? 1 : 0;
+}
+
+int psx_ctx_get_function_ret_is_complex(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_is_complex : 0;
 }
 
 void psx_ctx_set_function_param_fp_kind(char *name, int len, int param_idx,
