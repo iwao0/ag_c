@@ -1069,6 +1069,7 @@ static const test_case_t test_cases[] = {
     {"probes", "complex_by_value_abi", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_by_value_abi.c", 0, 0},
     {"probes", "bitfield_enum_and_static_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitfield_enum_and_static_init.c", 0, 0},
     {"probes", "sizeof_enum_type", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_enum_type.c", 0, 0},
+    {"probes", "compound_literal_struct_assign", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_struct_assign.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

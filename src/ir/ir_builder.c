@@ -1003,15 +1003,25 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
   }
   /* src のアドレスを得る (通常の struct から struct コピー) */
+  node_t *src = node->rhs;
+  /* struct compound literal `(struct S){...}` は ND_COMMA(init, temp struct lvalue)。
+   * init (メンバストア) を評価してから temp lvalue を struct ソースとして扱う。
+   * これがないと src 判定が LVAR/DEREF/GVAR に当たらず compile-fail していた
+   * (`s = (struct S){9,8,7}` で >8B のとき)。 */
+  if (src && src->kind == ND_COMMA && src->rhs) {
+    (void)build_expr(ctx, src->lhs);
+    if (ctx->failed) return ir_val_none();
+    src = src->rhs;
+  }
   int src_ptr_vreg = -1;
-  if (node->rhs && node->rhs->kind == ND_LVAR) {
-    src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->rhs)->offset);
-  } else if (node->rhs && node->rhs->kind == ND_DEREF) {
-    ir_val_t ptr = build_expr(ctx, node->rhs->lhs);
+  if (src && src->kind == ND_LVAR) {
+    src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
+  } else if (src && src->kind == ND_DEREF) {
+    ir_val_t ptr = build_expr(ctx, src->lhs);
     if (ctx->failed) return ir_val_none();
     if (ptr.id >= 0) src_ptr_vreg = ptr.id;
-  } else if (node->rhs && node->rhs->kind == ND_GVAR) {
-    src_ptr_vreg = address_of_gvar(ctx, (node_gvar_t *)node->rhs);
+  } else if (src && src->kind == ND_GVAR) {
+    src_ptr_vreg = address_of_gvar(ctx, (node_gvar_t *)src);
   } else {
     fail(ctx, "struct assign src not LVAR/DEREF/GVAR");
     return ir_val_none();
