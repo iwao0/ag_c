@@ -4,7 +4,9 @@
 // また内部にゼロバイトを含むため __TEXT,__cstring ではなく __DATA,__const に出力。
 // little endian で bytes は: 3D D8 00 DE 00 00
 // 期待: s[3] = 0xDE = 222
+#include <assert.h>
 int main(void) {
     char *s = (char*)u"\U0001F600";
-    return (int)(unsigned char)s[3];
+    assert((unsigned char)s[3] == 0xDE);
+    return 0;
 }

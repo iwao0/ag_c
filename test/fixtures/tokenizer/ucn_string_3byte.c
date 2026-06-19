@@ -4,7 +4,11 @@
 // U+3042 → UTF-8: 0xE3 0x81 0x82 (3 byte)
 // s[0]+s[1]+s[2] = 227+129+130 = 486 mod 256 = 230
 // 期待: exit=230
+#include <assert.h>
 int main(void) {
     char *s = "\u3042";
-    return (int)((unsigned char)s[0] + (unsigned char)s[1] + (unsigned char)s[2]);
+    assert((unsigned char)s[0] == 0xE3);
+    assert((unsigned char)s[1] == 0x81);
+    assert((unsigned char)s[2] == 0x82);
+    return 0;
 }
