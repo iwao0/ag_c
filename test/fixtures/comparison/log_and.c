@@ -1,3 +1,4 @@
 // 論理 AND
 // 期待: exit=1
-main() { return 1&&2; }
+#include <assert.h>
+main() { assert(1&&2); return 0; }

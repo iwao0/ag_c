@@ -1,3 +1,4 @@
 // > (同値は偽)
 // 期待: exit=0
-main() { return 1>1; }
+#include <assert.h>
+main() { assert(!(1>1)); return 0; }

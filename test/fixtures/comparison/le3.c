@@ -1,3 +1,4 @@
 // <= (偽)
 // 期待: exit=0
-main() { return 2<=1; }
+#include <assert.h>
+main() { assert(!(2<=1)); return 0; }
