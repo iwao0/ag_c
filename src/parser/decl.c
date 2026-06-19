@@ -2885,7 +2885,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
         var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
-        var->pointer_qual_levels = ptr_levels;
+        /* pointer_qual_levels は設定しない: 1 を立てると base_deref_size>0 と合わさって
+         * build_subscript_deref の「要素がポインタ」分岐に乗り、q[i] が多段ストライド連鎖
+         * (inner_deref_size 経由) でなく base_deref_size 単段になって 2D 以上の
+         * `q[i][j][k]` が壊れる。直書き `int(*q)[N][M]` (paren 経路) も設定しない。 */
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
         /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
          * そのまま使って stride を計算しつつ lvar を登録する。 */

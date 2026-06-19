@@ -2,11 +2,13 @@
 // 進み、p[i][j] は行/要素ストライドで添字できる必要がある。ローカル宣言子が
 // typedef 配列次元をポインタ pointee に反映せず、p の pointee を int(4) 扱いして
 // p+1 が要素 1 個分しか進まなかった (直書き `int(*p)[3]` は正常)。
-// is_pointer + td_array_dim_count の分岐を追加し outer_stride を設定。
-// (2D 以上の typedef 配列ポインタの深い添字 q[i][j][k] は別の制約として未対応)
+// is_pointer + td_array_dim_count 分岐で outer_stride/mid_stride を設定。
+// 2D typedef 配列ポインタ `m23 *q` の深い添字 q[i][j][k] も、pointer_qual_levels を
+// 立てない (= base_deref_size 単段でなく多段ストライド連鎖を使う) ことで対応。
 #include <assert.h>
 
 typedef int row3[3];
+typedef int m23[2][3];
 
 int main(void) {
     int mat[2][3] = {{1, 2, 3}, {4, 5, 6}};
@@ -30,5 +32,18 @@ int main(void) {
     row3 *bp = big;
     assert(bp[2][0] == 7);
     assert(bp[2][2] == 9);
+
+    // 2D typedef 配列へのポインタ: 3 段の添字が各次元のストライドで進む
+    int a[2][2][3];
+    int n = 0;
+    for (int i = 0; i < 2; i++)
+        for (int j = 0; j < 2; j++)
+            for (int k = 0; k < 3; k++) a[i][j][k] = n++;
+    m23 *q = a;
+    assert(q[0][0][0] == 0);
+    assert(q[0][1][2] == 5);
+    assert(q[1][0][0] == 6);   // q+1 は [2][3]=6 int ぶん
+    assert(q[1][1][0] == 9);   // 第2添字は mid_stride (3 int) ぶん
+    assert(q[1][1][2] == 11);
     return 0;
 }
