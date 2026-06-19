@@ -3375,10 +3375,15 @@ static node_t *parse_string_literal_sequence(void) {
   token_t *t = curtok();
   while (t && t->kind == TK_STRING) {
     token_string_t *st = (token_string_t *)t;
+    /* char_width 0 は接頭辞なし (通常の char 文字列) として扱う。stringize `#x` の
+     * 結果トークンは char_width を 0 のままにするため、`"a" S(b)` のように 2 番目以降に
+     * 来ると CHAR(1) と不一致になり E3002 で誤って弾かれていた (先頭に来る `S(a) "b"`
+     * は下の正規化で通っていた)。比較側も 0→CHAR に正規化する。 */
+    tk_char_width_t tw = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
     if (total_len == 0) {
-      merged_width = st->char_width ? st->char_width : TK_CHAR_WIDTH_CHAR;
+      merged_width = tw;
       merged_prefix_kind = st->str_prefix_kind;
-    } else if (merged_width != st->char_width) {
+    } else if (merged_width != tw) {
       diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));
     }
