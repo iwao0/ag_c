@@ -1,3 +1,4 @@
 // sizeof(_Bool) = 1
 // 期待: exit=1
-int main(void) { return sizeof(_Bool); }
+#include <assert.h>
+int main(void) { assert(sizeof(_Bool) == 1); return 0; }

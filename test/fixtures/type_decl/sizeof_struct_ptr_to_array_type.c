@@ -1,6 +1,8 @@
 // sizeof(struct S (*)[3]) = 8
 // 期待: exit=8
+#include <assert.h>
 int main(void) {
     struct S { int x; };
-    return sizeof(struct S (*)[3]);
+    assert(sizeof(struct S (*)[3]) == 8);
+    return 0;
 }

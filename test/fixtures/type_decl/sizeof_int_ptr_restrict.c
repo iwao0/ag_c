@@ -1,3 +1,4 @@
 // sizeof(int * restrict) = 8
 // 期待: exit=8
-int main(void) { return sizeof(int * restrict); }
+#include <assert.h>
+int main(void) { assert(sizeof(int * restrict) == 8); return 0; }

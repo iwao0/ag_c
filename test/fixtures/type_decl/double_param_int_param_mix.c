@@ -3,9 +3,11 @@
 // f(2, 3.5, 4) では x0=2, d0=3.5, x1=4 と振り分けられる
 // 戻り値: (3.5 * 2) + 4 = 11
 // 期待: exit=11
+#include <assert.h>
 int f(int a, double b, int c) {
     return (int)(b * a) + c;
 }
 int main(void) {
-    return f(2, 3.5, 4);
+    assert(f(2, 3.5, 4) == 11);
+    return 0;
 }

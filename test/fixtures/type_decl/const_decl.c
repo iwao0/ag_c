@@ -1,3 +1,4 @@
 // const int 変数
 // 期待: exit=8
-int main(void) { const int x = 8; return x; }
+#include <assert.h>
+int main(void) { const int x = 8; assert(x == 8); return 0; }

@@ -1,3 +1,4 @@
 // sizeof(int*) = 8
 // 期待: exit=8
-int main(void) { return sizeof(int*); }
+#include <assert.h>
+int main(void) { assert(sizeof(int*) == 8); return 0; }

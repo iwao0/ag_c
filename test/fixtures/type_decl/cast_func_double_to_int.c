@@ -9,7 +9,9 @@
 //   - emit_funcall_pop_args_to_regs で fp_kind を見て ldr d_reg/s_reg
 //   - 整数レジスタと FP レジスタを独立に index する (ARM64 ABI)
 // 期待: exit=7
+#include <assert.h>
 double id(double x) { return x; }
 int main(void) {
-    return (int)id(7.0);
+    assert((int)id(7.0) == 7);
+    return 0;
 }
