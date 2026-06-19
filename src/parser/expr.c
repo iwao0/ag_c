@@ -1894,6 +1894,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->is_pointer = 1;
       wrap->pointer_qual_levels = 1;
       wrap->type_size = 8;
+      /* キャスト先のポインタ要素サイズを反映する。これがないと `((int*)void_p)[i]` が
+       * 既定の 8 バイトストライドで添字され誤った要素を読む。base_deref_size は立てない
+       * (立てると「要素自体がポインタ」扱いになり subscript 結果が誤ってポインタ化する)。 */
+      if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
       /* pointee_is_void は明示的にデフォルト (0) のままにする */
       return (node_t *)wrap;
     }
