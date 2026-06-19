@@ -2863,6 +2863,29 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         if (g_paren_array_dim_count >= 2 && g_paren_array_first_dim > 0) {
           var->mid_stride = (paren_array_mul / g_paren_array_first_dim) * elem_size;
         }
+      } else if (is_pointer && total_pointer_levels == 1 && td_array_dim_count > 0 &&
+                 curtok()->kind != TK_LBRACKET) {
+        /* `row3 *p` (row3 = typedef int[3]): 配列へのポインタ。paren 形 `int (*p)[3]`
+         * と同じく outer_stride=配列全体バイト数、base_deref_size=要素サイズ、
+         * 多次元 typedef なら mid_stride を設定する。これがないと p+1 / p[i] が
+         * 要素 1 個分しか進まず、直書き `int(*p)[3]` と挙動が食い違う。 */
+        int td_count = 1;
+        for (int di = 0; di < td_array_dim_count; di++) {
+          if (td_array_dims[di] > 0) td_count *= td_array_dims[di];
+        }
+        int row_size = td_count * elem_size;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
+        var->base_deref_size = (short)elem_size;
+        var->outer_stride = row_size;
+        if (td_array_dim_count >= 2 && td_array_dims[0] > 0) {
+          var->mid_stride = (td_count / td_array_dims[0]) * elem_size;
+        }
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
+        var->is_pointer_const_qualified = ptr_is_const_qualified;
+        var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
+        var->pointer_qual_levels = ptr_levels;
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
         /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
          * そのまま使って stride を計算しつつ lvar を登録する。 */
