@@ -696,6 +696,7 @@ static token_t *skip_cond_incl(token_t *tok) {
 }
 
 static long const_expr(token_t **rest, token_t *tok);
+static long add(token_t **rest, token_t *tok);
 
 static long primary(token_t **rest, token_t *tok) {
   if_expr_step_or_die();
@@ -751,6 +752,29 @@ static long mul(token_t **rest, token_t *tok) {
       long rhs = unary(&tok, tok->next);
       if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
       val /= rhs;
+    } else if (tok->kind == TK_MOD) {
+      if_expr_step_or_die();
+      long rhs = unary(&tok, tok->next);
+      if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+      val %= rhs;
+    } else {
+      *rest = tok;
+      return val;
+    }
+  }
+}
+
+/* シフト `<<` `>>` (加減算より低く、関係演算より高い)。 */
+static long shift(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
+  long val = add(&tok, tok);
+  for (;;) {
+    if (tok->kind == TK_SHL) {
+      if_expr_step_or_die();
+      val = val << add(&tok, tok->next);
+    } else if (tok->kind == TK_SHR) {
+      if_expr_step_or_die();
+      val = val >> add(&tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -777,20 +801,20 @@ static long add(token_t **rest, token_t *tok) {
 
 static long relational(token_t **rest, token_t *tok) {
   if_expr_step_or_die();
-  long val = add(&tok, tok);
+  long val = shift(&tok, tok);
   for (;;) {
     if (tok->kind == TK_LT) {
       if_expr_step_or_die();
-      val = val < add(&tok, tok->next);
+      val = val < shift(&tok, tok->next);
     } else if (tok->kind == TK_LE) {
       if_expr_step_or_die();
-      val = val <= add(&tok, tok->next);
+      val = val <= shift(&tok, tok->next);
     } else if (tok->kind == TK_GT) {
       if_expr_step_or_die();
-      val = val > add(&tok, tok->next);
+      val = val > shift(&tok, tok->next);
     } else if (tok->kind == TK_GE) {
       if_expr_step_or_die();
-      val = val >= add(&tok, tok->next);
+      val = val >= shift(&tok, tok->next);
     } else {
       *rest = tok;
       return val;
@@ -815,9 +839,54 @@ static long equality(token_t **rest, token_t *tok) {
   }
 }
 
-static long logand(token_t **rest, token_t *tok) {
+/* ビット AND `&` (等価演算より低く、ビット XOR より高い)。 */
+static long bitand(token_t **rest, token_t *tok) {
   if_expr_step_or_die();
   long val = equality(&tok, tok);
+  for (;;) {
+    if (tok->kind == TK_AMP) {
+      if_expr_step_or_die();
+      val = val & equality(&tok, tok->next);
+    } else {
+      *rest = tok;
+      return val;
+    }
+  }
+}
+
+/* ビット XOR `^`。 */
+static long bitxor(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
+  long val = bitand(&tok, tok);
+  for (;;) {
+    if (tok->kind == TK_CARET) {
+      if_expr_step_or_die();
+      val = val ^ bitand(&tok, tok->next);
+    } else {
+      *rest = tok;
+      return val;
+    }
+  }
+}
+
+/* ビット OR `|`。 */
+static long bitor(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
+  long val = bitxor(&tok, tok);
+  for (;;) {
+    if (tok->kind == TK_PIPE) {
+      if_expr_step_or_die();
+      val = val | bitxor(&tok, tok->next);
+    } else {
+      *rest = tok;
+      return val;
+    }
+  }
+}
+
+static long logand(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
+  long val = bitor(&tok, tok);
   for (;;) {
     if (tok->kind == TK_ANDAND) {
       if_expr_step_or_die();
@@ -845,8 +914,28 @@ static long logor(token_t **rest, token_t *tok) {
   }
 }
 
+/* 条件演算子 `?:` (C11 6.10.1 が #if 定数式で要求)。最も低い優先順位。
+ * 選択されない側も #if では評価されうる (定数式なので副作用なし) が、
+ * ゼロ除算等を避けるため C のように選択側のみ評価する。 */
+static long conditional(token_t **rest, token_t *tok) {
+  if_expr_step_or_die();
+  long cond = logor(&tok, tok);
+  if (tok->kind != TK_QUESTION) {
+    *rest = tok;
+    return cond;
+  }
+  if_expr_step_or_die();
+  long then_val = const_expr(&tok, tok->next);
+  if (tok->kind != TK_COLON) {
+    pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+  }
+  long else_val = conditional(&tok, tok->next);
+  *rest = tok;
+  return cond ? then_val : else_val;
+}
+
 static long const_expr(token_t **rest, token_t *tok) {
-  return logor(rest, tok);
+  return conditional(rest, tok);
 }
 
 token_t *preprocess(token_t *tok); // front declaration
