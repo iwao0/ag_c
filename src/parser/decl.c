@@ -150,7 +150,11 @@ static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_ki
     if (tag_sz > 0) out->elem_size = tag_sz;
   }
   out->type_kind = base_kind;
-  out->is_unsigned = (base_kind == TK_UNSIGNED);
+  /* typedef 由来の unsigned 性 (例: `typedef unsigned char uint8_t` は
+   * base_kind=TK_CHAR だが unsigned) を保持する。base_kind が TK_UNSIGNED の
+   * ときも unsigned。上書きで捨てると 1byte ロードが ldrsb (符号付き) になり
+   * uint8_t の 200 が -56 に化ける。 */
+  out->is_unsigned = out->is_unsigned || (base_kind == TK_UNSIGNED);
 }
 
 static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out_elem_size,

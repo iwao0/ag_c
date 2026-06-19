@@ -704,7 +704,7 @@ static const test_case_t test_cases[] = {
     {"pragma_pack", "pack_n_no_push", CASE_ASSERT_FILE, "test/fixtures/pragma_pack/pack_n_no_push.c", 0, 0},
     // 標準ヘッダ
     {"stdheader", "stdint_int32", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdint_int32.c", 0, 0},
-    {"stdheader", "stdint_uint8", CASE_INT_FILE, "test/fixtures/stdheader/stdint_uint8.c", 200, 0},
+    {"stdheader", "stdint_uint8", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdint_uint8.c", 0, 0},
     {"stdheader", "stdbool_true", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdbool_true.c", 0, 0},
     {"stdheader", "stdbool_false", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdbool_false.c", 0, 0},
     {"stdheader", "stddef_size_t", CASE_ASSERT_FILE, "test/fixtures/stdheader/stddef_size_t.c", 0, 0},
