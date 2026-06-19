@@ -2829,6 +2829,22 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     next_ds = m->next_deref_size;
     extras_count = m->extra_strides_count;
     for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
+  } else if (node->kind == ND_ADD || node->kind == ND_SUB) {
+    /* ポインタ算術 `t+1` の結果 (ND_ADD) を subscript するとき、ポインタ被演算子
+     * (配列へのポインタ等) の多段ストライド (inner_deref_size 等) を引き継ぐ。
+     * これがないと `(t+1)[0]` の結果 deref_size が 0 になり配列へ decay せず誤ロードし、
+     * 外側 `*` が値をアドレスとして deref して SIGBUS になる (`t[1]` は base が lvar で
+     * 上の分岐が拾えていた)。スカラポインタは inner_deref_size=0 なので無影響。 */
+    node_t *p = node;
+    while (p && (p->kind == ND_ADD || p->kind == ND_SUB)) p = p->lhs;
+    if (p && (p->kind == ND_LVAR || p->kind == ND_DEREF ||
+              p->kind == ND_ADDR || p->kind == ND_GVAR)) {
+      node_mem_t *m = (node_mem_t *)p;
+      inner_ds = m->inner_deref_size;
+      next_ds = m->next_deref_size;
+      extras_count = m->extra_strides_count;
+      for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
+    }
   }
   node_t *scaled;
   if (vla_rsf) {
