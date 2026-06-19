@@ -959,6 +959,13 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
       if (!*ok || r == 0.0) { *ok = 0; return 0.0; }
       return l / r;
     }
+    case ND_FNEG: {
+      /* 浮動小数の単項マイナス (`-1.0f` は ND_FNEG(1.0f))。これを扱わないと
+       * 負の fp グローバル初期化子が定数畳み込みに失敗し has_init が立たず BSS(0) に
+       * 化けていた (`float g=-1.0f;` が 0 になる)。 */
+      double v = psx_eval_const_fp(n->lhs, ok);
+      return *ok ? -v : 0.0;
+    }
     default:
       *ok = 0;
       return 0.0;
@@ -1139,6 +1146,15 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
         /* float/double 要素のグローバル配列では fval を保存。整数リテラルが
          * 混ざっていても (`double a[] = {1, 2.5}`) 宣言型 fp_kind を優先する。 */
         fv = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
+      }
+      else if (e && gv->fp_kind != TK_FLOAT_KIND_NONE && gv->init_fvalues) {
+        /* fp 配列の非 ND_NUM 要素 (負値 `-2.5` は ND_FNEG、定数式 `1.0/2` 等)。
+         * psx_eval_const_fp で畳み込む。これがないと負の配列要素が 0 に化けていた。
+         * fp_kind ゲート必須: init_fvalues はポインタ/整数配列でも確保されうるので、
+         * fp 配列に限定しないと `&data[n]`/文字列要素を乗っ取り symbol を失う。 */
+        int fok = 1;
+        double folded = psx_eval_const_fp(e, &fok);
+        if (fok) fv = folded;
       }
       else if (e && e->kind == ND_FUNCREF) {
         /* `struct Op gop = {sq};` 等の関数ポインタメンバ初期化。 */

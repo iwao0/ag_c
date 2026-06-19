@@ -1052,6 +1052,7 @@ static const test_case_t test_cases[] = {
     {"probes", "typedef_array_pointer_stride", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_array_pointer_stride.c", 0, 0},
     {"probes", "ptr_array_arith_subscript_deref", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ptr_array_arith_subscript_deref.c", 0, 0},
     {"probes", "generic_long_vs_longlong", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_long_vs_longlong.c", 0, 0},
+    {"probes", "negative_fp_global_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/negative_fp_global_init.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
