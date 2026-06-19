@@ -1706,6 +1706,13 @@ static int parse_parenthesized_type_size(void) {
     int sz = (type_kind == TK_VOID) ? 1 : scalar_size;
     return finish_parenthesized_type_size(t, sz);
   }
+  if (t->kind == TK_ENUM) {
+    /* sizeof/_Alignof(enum E): enum は int 相当で 4 バイト。タグ名は任意。 */
+    set_curtok(t->next);
+    (void)tk_consume_ident();
+    t = curtok();
+    return finish_parenthesized_type_size(t, 4);
+  }
   if (t->kind == TK_STRUCT || t->kind == TK_UNION) {
     token_kind_t tag_kind = t->kind;
     set_curtok(t->next);
