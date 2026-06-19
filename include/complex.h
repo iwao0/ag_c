@@ -56,4 +56,56 @@
 #define cargf(z) ((float)carg(z))
 #define cargl(z) carg(z)
 
+/* 複素数を返す初等関数。_Complex の値渡し/値返しが効くので static 関数として
+ * 実装する (引数 z は 1 回だけ評価される)。実部/虚部の計算は <math.h> の実数関数。
+ * float/long double 版は double 版へ委譲する (引数・戻り値の暗黙変換)。
+ * 標準ライブラリの同名関数を static 定義で隠すため、ag_c でも clang (-I で本ヘッダ
+ * 使用) でも同一実装になり結果が一致する。 */
+
+static double _Complex cexp(double _Complex z) {
+  double r = exp(__real__ z);
+  return (double _Complex){ r * cos(__imag__ z), r * sin(__imag__ z) };
+}
+static double _Complex clog(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  return (double _Complex){ log(sqrt(re * re + im * im)), atan2(im, re) };
+}
+static double _Complex csqrt(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  double m = sqrt(re * re + im * im);
+  double tr = (m + re) * 0.5; if (tr < 0) tr = 0;
+  double ti = (m - re) * 0.5; if (ti < 0) ti = 0;
+  double rr = sqrt(tr), ri = sqrt(ti);
+  if (im < 0) ri = -ri;
+  return (double _Complex){ rr, ri };
+}
+static double _Complex cpow(double _Complex z, double _Complex w) {
+  return cexp(w * clog(z));
+}
+static double _Complex csin(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  return (double _Complex){ sin(re) * cosh(im), cos(re) * sinh(im) };
+}
+static double _Complex ccos(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  return (double _Complex){ cos(re) * cosh(im), -sin(re) * sinh(im) };
+}
+static double _Complex csinh(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  return (double _Complex){ sinh(re) * cos(im), cosh(re) * sin(im) };
+}
+static double _Complex ccosh(double _Complex z) {
+  double re = __real__ z, im = __imag__ z;
+  return (double _Complex){ cosh(re) * cos(im), sinh(re) * sin(im) };
+}
+static double _Complex ctan(double _Complex z)  { return csin(z) / ccos(z); }
+static double _Complex ctanh(double _Complex z) { return csinh(z) / ccosh(z); }
+
+/* float _Complex 版: double 版へ委譲 (引数昇格・戻り値変換)。 */
+static float _Complex cexpf(float _Complex z)  { return cexp(z); }
+static float _Complex clogf(float _Complex z)  { return clog(z); }
+static float _Complex csqrtf(float _Complex z) { return csqrt(z); }
+static float _Complex csinf(float _Complex z)  { return csin(z); }
+static float _Complex ccosf(float _Complex z)  { return ccos(z); }
+
 #endif /* _COMPLEX_H */

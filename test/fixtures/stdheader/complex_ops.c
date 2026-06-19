@@ -64,5 +64,24 @@ int main(void) {
     double complex pim = 0.0 + 2.0 * I;
     assert(dn(carg(pim), 1.5707963267948966)); // arg(2i) = pi/2
     assert(dn(carg(1.0 + 0.0 * I), 0.0));
+
+    // 複素数初等関数 (cexp/clog/csqrt/cpow/csin/ccos/ctan)
+    double complex zc = 1.0 + 2.0 * I;
+    double complex e = cexp(zc);
+    assert(dn(creal(clog(e)), 1.0));          // clog(cexp(z)) == z
+    assert(dn(cimag(clog(e)), 2.0));
+    double complex sq = csqrt(3.0 + 4.0 * I); // sqrt(3+4i) = 2+i
+    assert(dn(creal(sq), 2.0));
+    assert(dn(cimag(sq), 1.0));
+    double complex sqm = csqrt(-1.0 + 0.0 * I); // sqrt(-1) = i
+    assert(dn(creal(sqm), 0.0));
+    assert(dn(cimag(sqm), 1.0));
+    double complex pw = cpow(zc, 2.0 + 0.0 * I); // z^2 = (1+2i)^2 = -3+4i
+    assert(dn(creal(pw), -3.0));
+    assert(dn(cimag(pw), 4.0));
+    double complex tn = ctan(0.5 + 0.5 * I);
+    double complex tchk = csin(0.5 + 0.5 * I) / ccos(0.5 + 0.5 * I);
+    assert(dn(creal(tn), creal(tchk)));
+    assert(dn(cimag(tn), cimag(tchk)));
     return 0;
 }
