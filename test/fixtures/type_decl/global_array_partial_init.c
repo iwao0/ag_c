@@ -1,8 +1,11 @@
 // グローバル配列の部分初期化。残り要素は 0 で埋められる。
-// `int g[5] = {1, 2, 3};` で g[0..2] = {1,2,3}、g[3..4] = {0,0}。
-// codegen 側で .long で 3 個 + 残り bytes を .space 0 埋め。
-// 期待: g[0] + g[2] + g[4] = 1 + 3 + 0 = 4
+// g = {1, 2, 3, 0, 0}
+// 期待: exit=0
+#include <assert.h>
 int g[5] = {1, 2, 3};
 int main(void) {
-    return g[0] + g[2] + g[4];
+    assert(g[0] == 1);
+    assert(g[2] == 3);
+    assert(g[4] == 0);
+    return 0;
 }

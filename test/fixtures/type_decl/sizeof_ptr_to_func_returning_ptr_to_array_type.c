@@ -1,3 +1,7 @@
-// ポインタ to 関数 returning ポインタ to 配列 = 8 (ポインタ)
-// 期待: exit=8
-int main(void) { return sizeof(int (*(*)(void))[3]); }
+// ポインタ to 関数 returning ポインタ to 配列 = 8
+// 期待: exit=0
+#include <assert.h>
+int main(void) {
+    assert(sizeof(int (*(*)(void))[3]) == 8);
+    return 0;
+}

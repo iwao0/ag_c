@@ -1,3 +1,10 @@
 // double 乗算
-// 期待: 15.0
-double ag_m(void) { double a = 5.0; double b = 3.0; return a * b; }
+// 期待: exit=0
+#include <assert.h>
+int main(void) {
+    double a = 5.0; double b = 3.0; double r = a * b;
+    double diff = r - 15.0;
+    if (diff < 0.0) diff = -diff;
+    assert(diff < 1e-9);
+    return 0;
+}

@@ -1,5 +1,7 @@
 // _Generic で double 選択
-// 期待: exit=33
+// 期待: exit=0
+#include <assert.h>
 int main(void) {
-    return _Generic(1.0, float: 11, double: 33, default: 22);
+    assert(_Generic(1.0, float: 11, double: 33, default: 22) == 33);
+    return 0;
 }

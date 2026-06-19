@@ -1,7 +1,11 @@
 // 複合リテラル (T[]){...} の要素数推定
-// 修正前: E3064 "スカラ初期化子の波括弧内は1要素のみ対応" でコンパイル失敗
-// 期待: exit=10 (1+2+3+4)
+// 期待: exit=0
+#include <assert.h>
 int main(void) {
     int *p = (int[]){1, 2, 3, 4};
-    return p[0] + p[1] + p[2] + p[3];
+    assert(p[0] == 1);
+    assert(p[1] == 2);
+    assert(p[2] == 3);
+    assert(p[3] == 4);
+    return 0;
 }
