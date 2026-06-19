@@ -1917,6 +1917,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->pointer_qual_levels = 1;
       wrap->type_size = 8;
       wrap->deref_size = (short)cast_elem_size;
+      /* float/double ポインタへのキャストは pointee_fp_kind を立てる。これがないと
+       * deref_size=8 が「8 バイトポインタ要素」と誤解され `((double*)&d)[i]` の結果が
+       * ポインタ扱いされたり整数ロードになる (`*(double*)p` / creal のメモリ経由に必要)。 */
+      if (type_kind == TK_FLOAT) wrap->pointee_fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (type_kind == TK_DOUBLE) wrap->pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
       return (node_t *)wrap;
     }
     /* (long)ptr のようにポインタ→long の明示キャスト: 結果は整数なので
