@@ -3,6 +3,8 @@
 #pragma pack(push, 2)
 struct S { char a; int b; };
 #pragma pack(pop)
+#include <assert.h>
 int main(void) {
-    return (int)sizeof(struct S);
+    assert((int)sizeof(struct S) == 6);
+    return 0;
 }

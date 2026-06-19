@@ -1,5 +1,7 @@
 // エスケープシーケンス '\0' は 0
 // 期待: exit=0
+#include <assert.h>
 int main(void) {
-    return '\0';
+    assert('\0' == 0);
+    return 0;
 }

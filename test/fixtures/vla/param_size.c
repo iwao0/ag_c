@@ -1,5 +1,6 @@
 // 関数仮引数を使った VLA サイズ指定
 // 期待: exit=10 (1+2+3+4)
+#include <assert.h>
 int sum(int n) {
     int a[n];
     int i;
@@ -9,5 +10,6 @@ int sum(int n) {
     return s;
 }
 int main(void) {
-    return sum(4);
+    assert(sum(4) == 10);
+    return 0;
 }

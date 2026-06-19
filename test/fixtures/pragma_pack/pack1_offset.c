@@ -3,9 +3,12 @@
 #pragma pack(push, 1)
 struct S { char a; int b; };
 #pragma pack(pop)
+#include <assert.h>
 int main(void) {
     struct S s;
     s.a = 1;
     s.b = 41;
-    return s.a + s.b;
+    assert(s.a == 1);
+    assert(s.b == 41);
+    return 0;
 }
