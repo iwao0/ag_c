@@ -819,6 +819,9 @@ static int array_desig_elem_stride(const lvar_t *var, int d) {
   return 1;
 }
 
+static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain);
+static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_member_info_t info);
+
 /* `{ elem, elem, ... }` 形の配列 brace 初期化。
  * 呼出側は冒頭 `{` をまだ消費していない前提 (本ヘルパが consume する)。
  * designator `[idx] = val` / 多次元ネスト指定子 `[i][j] = val` /
@@ -831,6 +834,17 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
   int idx = 0;
   int row_len = (var->outer_stride > 0 && var->elem_size > 0) ? var->outer_stride / var->elem_size : 0;
   bool *assigned = calloc((size_t)(array_len > 0 ? array_len : 1), sizeof(bool));
+  /* struct/union 要素の配列は、部分初期化 (no-brace スカラが要素途中で尽きる /
+   * 一部要素のみ指定 / 一部メンバのみ designator 指定) で残部が 0 にならない
+   * (要素単位の assigned[] や scalar 0-fill ではメンバ単位の補完ができない)。
+   * C11 6.7.9p21 に従い、先に配列全体を 0 埋めしてから明示初期化子で上書きする。
+   * scalar 要素配列は末尾の per-index 0-fill で足りるので対象外。 */
+  node_t *zero_prefill = NULL;
+  int elem_is_aggregate = (!var->is_tag_pointer &&
+                           (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION));
+  if (elem_is_aggregate) {
+    zero_prefill = append_struct_zero_fill_chain(var, NULL);
+  }
   if (!tk_consume('}')) {
     for (;;) {
       int target_idx = idx;
@@ -846,6 +860,40 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
           flat += di * array_desig_elem_stride(var, d);
           d++;
           if (!tk_consume('[')) break;
+        }
+        /* `[i].member = val` 連鎖 designator (C11 6.7.9 designator-list)。`[i]` の後に
+         * `.` が続く形。要素 (struct/union) のメンバ designator へ降りて代入を生成する。
+         * 未指定メンバは冒頭の zero_prefill で 0 になる。`[i] = ...` は従来どおり下で処理。 */
+        if (curtok()->kind == TK_DOT && elem_is_aggregate) {
+          if (flat < 0 || flat >= array_len) {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+          }
+          lvar_t elem = {0};
+          elem.offset = var->offset + flat * var->elem_size;
+          elem.size = var->elem_size;
+          elem.elem_size = var->elem_size;
+          elem.tag_kind = var->tag_kind;
+          elem.tag_name = var->tag_name;
+          elem.tag_len = var->tag_len;
+          tk_consume('.');
+          token_ident_t *mid = tk_consume_ident();
+          if (!mid) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+          tag_member_info_t minfo = {0};
+          minfo.tag_kind = TK_EOF;
+          if (!tag_find_member(&elem, mid->str, mid->len, &minfo)) {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+          }
+          init_chain = append_to_init_chain(init_chain,
+              consume_nested_designator_and_build_assign(&elem, minfo));
+          bump_initializer_count(&init_elem_count);
+          assigned[flat] = true;
+          idx = flat + 1;
+          if (tk_consume('}')) break;
+          tk_expect(',');
+          if (tk_consume('}')) break;
+          continue;
         }
         tk_expect('=');
         target_idx = flat;
@@ -908,9 +956,9 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
     }
   }
   /* C11 6.7.9p21: 部分初期化や指定初期化子で書かれなかった要素は 0 で初期化。
-   * elem_size が 1 を超えるスカラ要素のみ対応 (ネスト struct 配列は assigned[]
-   * が要素単位でないので未対応)。 */
-  if (array_len > 0 && var->elem_size > 0) {
+   * elem_size が 1 を超えるスカラ要素のみ対応。struct/union 要素配列は冒頭の
+   * zero_prefill で配列全体を 0 埋め済みなのでここはスキップする。 */
+  if (!elem_is_aggregate && array_len > 0 && var->elem_size > 0) {
     for (int i = 0; i < array_len; i++) {
       if (assigned[i]) continue;
       init_chain = append_to_init_chain(init_chain,
@@ -918,7 +966,10 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
     }
   }
   free(assigned);
-  return init_chain ? init_chain : psx_node_new_num(0);
+  node_t *body = init_chain ? init_chain : psx_node_new_num(0);
+  /* 事前 0 埋めを明示初期化子より前に発行する (上書き順序のため COMMA で先頭に置く)。 */
+  if (zero_prefill) return psx_node_new_binary(ND_COMMA, zero_prefill, body);
+  return body;
 }
 
 /* `char a[N] = "hello"` 形の raw 文字列リテラル初期化 (C11 6.7.9p14)。
