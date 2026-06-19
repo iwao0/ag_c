@@ -175,9 +175,9 @@ static const char *fail_cases[] = {
     "#define BAD7(a,b) a##b\nint main() { return BAD7(&,&); }\n",
     "#if 1 /* unterminated\nint main() { return 0; }\n#endif\n",
     "#error \"forced\"\nint main() { return 0; }\n",
-    // 可変長マクロ (厳密C11): 可変長部に最低1引数が必要
-    "#define F(a, ...) (a)\nint main() { return F(1); }\n",
-    "#define F(...) 0\nint main() { return F(); }\n",
+    // 可変長マクロ: 空 __VA_ARGS__ (`F(a,...)` を `F(1)`、`F(...)` を `F()`) は
+    // clang/gcc が受理する有効ケースなので「エラーになるべき」リストから除外
+    // (preprocess.c の variadic 引数チェックで対応)。
     // 可変長マクロ: 名前付き引数が不足
     "#define F(a, b, ...) (a)\nint main() { return F(1); }\n",
     // 可変長マクロ: 名前付き引数が空

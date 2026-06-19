@@ -1679,8 +1679,10 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
                pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
              }
              if (m->is_variadic) {
-               // 厳密C11 6.10.3p4: 可変長部に最低1引数 (名前付き数より多い引数) が必要。
-               if (parsed_args <= num_named || has_empty_arg) {
+               // 可変長部 (__VA_ARGS__) は空でもよい。clang/gcc は `F(a,...)` を `F(42)`
+               // で呼べる (空 __VA_ARGS__、C23 で標準化)。名前付き引数より少ない場合だけ
+               // エラー。空 va では args[num_named] が NULL のまま (= 空展開)。
+               if (parsed_args < num_named || has_empty_arg) {
                  pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
                }
              } else {
