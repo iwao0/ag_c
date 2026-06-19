@@ -1729,7 +1729,23 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_islower") == 0 || strcmp(sym, "_isprint") == 0 ||
             strcmp(sym, "_ispunct") == 0 || strcmp(sym, "_isspace") == 0 ||
             strcmp(sym, "_isupper") == 0 || strcmp(sym, "_isxdigit") == 0 ||
-            strcmp(sym, "_tolower") == 0 || strcmp(sym, "_toupper") == 0) {
+            strcmp(sym, "_tolower") == 0 || strcmp(sym, "_toupper") == 0 ||
+            /* <math.h> の実数関数 (complex.h の cabs/carg 等が呼ぶ)。外部 libc
+             * シンボルなので名前空間化してはならない。 */
+            strcmp(sym, "_acos") == 0 || strcmp(sym, "_asin") == 0 ||
+            strcmp(sym, "_atan") == 0 || strcmp(sym, "_atan2") == 0 ||
+            strcmp(sym, "_cos") == 0 || strcmp(sym, "_sin") == 0 ||
+            strcmp(sym, "_tan") == 0 || strcmp(sym, "_cosh") == 0 ||
+            strcmp(sym, "_sinh") == 0 || strcmp(sym, "_tanh") == 0 ||
+            strcmp(sym, "_exp") == 0 || strcmp(sym, "_log") == 0 ||
+            strcmp(sym, "_log10") == 0 || strcmp(sym, "_log2") == 0 ||
+            strcmp(sym, "_pow") == 0 || strcmp(sym, "_sqrt") == 0 ||
+            strcmp(sym, "_cbrt") == 0 || strcmp(sym, "_ceil") == 0 ||
+            strcmp(sym, "_floor") == 0 || strcmp(sym, "_round") == 0 ||
+            strcmp(sym, "_trunc") == 0 || strcmp(sym, "_fabs") == 0 ||
+            strcmp(sym, "_fmod") == 0 || strcmp(sym, "_fabsf") == 0 ||
+            strcmp(sym, "_sqrtf") == 0 || strcmp(sym, "_ceilf") == 0 ||
+            strcmp(sym, "_floorf") == 0 || strcmp(sym, "_roundf") == 0) {
           fputs(sym, out);
         } else {
           fprintf(out, "_%s_%s", prefix, sym + 1);

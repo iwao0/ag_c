@@ -39,4 +39,20 @@
 #define cprojf(z) (z)
 #define cprojl(z) (z)
 
+/* 複素数の絶対値・偏角は <math.h> の実数関数で計算する (ag_c では sqrt/atan2 が
+ * リンクする)。マクロ実装のため引数 z は __real__/__imag__ で複数回評価される点に
+ * 注意 (純粋な複素数値・式なら副作用なしで問題ない)。 */
+#include <math.h>
+
+/* cabs(z) = sqrt(Re^2 + Im^2)。 */
+#define cabs(z)  (sqrt((double)(__real__ (z)) * (double)(__real__ (z)) + \
+                       (double)(__imag__ (z)) * (double)(__imag__ (z))))
+#define cabsf(z) ((float)cabs(z))
+#define cabsl(z) cabs(z)
+
+/* carg(z) = atan2(Im, Re)。 */
+#define carg(z)  (atan2((double)(__imag__ (z)), (double)(__real__ (z))))
+#define cargf(z) ((float)carg(z))
+#define cargl(z) carg(z)
+
 #endif /* _COMPLEX_H */

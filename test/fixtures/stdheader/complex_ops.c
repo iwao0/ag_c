@@ -57,5 +57,12 @@ int main(void) {
     assert(dn(cimag((1.0 + 2.0 * I) * (3.0 + 4.0 * I)), 10.0));
     assert(dn(creal(conj(z)), 3.0));
     assert(dn(cimag(conj(z)), -4.0));
+
+    // cabs / carg (<math.h> の sqrt/atan2 経由)
+    assert(dn(cabs(z), 5.0));                  // |3+4i| = 5
+    assert(dn(cabs(3.0 + 4.0 * I), 5.0));      // rvalue
+    double complex pim = 0.0 + 2.0 * I;
+    assert(dn(carg(pim), 1.5707963267948966)); // arg(2i) = pi/2
+    assert(dn(carg(1.0 + 0.0 * I), 0.0));
     return 0;
 }
