@@ -3,6 +3,7 @@
 #include <assert.h>
 int main(void) {
     double x = 0.0 / 0.0;
-    assert(!(x < 0.0));
+    _Bool lt = (x < 0.0);   // NaN との順序比較は偽
+    assert(lt == 0);
     return 0;
 }

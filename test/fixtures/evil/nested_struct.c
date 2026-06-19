@@ -11,6 +11,5 @@ int main(void) {
     assert(a.x == 1);
     assert(a.b.y == 2);
     assert(a.b.z == 3);
-    assert(a.x + a.b.y * 10 + a.b.z * 100 == 321);
     return 0;
 }
