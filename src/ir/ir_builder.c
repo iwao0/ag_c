@@ -373,6 +373,15 @@ static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node);
 static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg,
                               ir_type_t fp_ty, int half) {
   if (!node || ctx->failed) return;
+  /* 複素数 compound literal `(double _Complex){re,im}` は COMMA(init, ref) 形。
+   * init (実部/虚部の store) を評価してから、rhs (複素数 lvar 参照) を複素数として
+   * dst へコピーする。 */
+  if (node->kind == ND_COMMA && node->rhs && node->rhs->is_complex) {
+    build_expr(ctx, node->lhs);
+    if (ctx->failed) return;
+    build_complex_to(ctx, node->rhs, dst_ptr_vreg, fp_ty, half);
+    return;
+  }
   /* scalar → complex promotion: re = scalar 値、im = 0.0 */
   if (!node->is_complex) {
     ir_val_t v = build_expr(ctx, node);

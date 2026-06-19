@@ -22,6 +22,9 @@ static int g_current_ret_is_unsigned = 0;
 /* 1 のとき parse_parenthesized_type_size は型の「サイズ」ではなく「アラインメント」を
  * 返す (_Alignof 用)。struct は agg_align、配列は要素アラインメント (要素数を掛けない)。 */
 static int g_parse_type_alignof_mode = 0;
+/* 直近の parse_cast_type が _Complex 型を解釈したら 1。複素数 compound literal
+ * `(double _Complex){re, im}` を構築するため try_parse_compound_literal が読む。 */
+static int g_last_cast_is_complex = 0;
 static char *g_current_funcname = NULL;
 static int g_current_funcname_len = 0;
 static int string_label_count = 0;
@@ -1024,6 +1027,9 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                 int cast_elem_size, tk_float_kind_t cast_fp_kind,
                                                 int cast_array_count) {
   set_curtok(after_rparen);
+  /* parse_cast_type が直前に設定した「複素数キャストか」を退避する (この後の
+   * 初期化子パースで parse_cast_type が再呼出され上書きされる前に保存)。 */
+  int cl_is_complex = g_last_cast_is_complex;
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
   // `(T[]){...}` の空サイズは初期化子から要素数を推定する。
   if (!cast_is_ptr && cast_array_count < 0) {
@@ -1065,6 +1071,11 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   if (is_funcptr_array) base_elem = 8;
   int var_size = is_funcptr_array ? (8 * cast_array_count)
                 : (cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem));
+  /* `(double _Complex){re, im}` 等の複素数 compound literal: {実部, 虚部} で
+   * base_elem*2 バイト。is_complex を立てて psx_decl_parse_initializer_for_var の
+   * 複素数 brace 経路に乗せる。 */
+  int cl_complex_scalar = (cl_is_complex && !is_arr && !cast_is_ptr) ? 1 : 0;
+  if (cl_complex_scalar) var_size = base_elem * 2;
   char *tmp_name = new_compound_lit_name();
   if (g_current_funcname == NULL) {
     tk_expect('{');
@@ -1094,10 +1105,12 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     gvar_node->is_thread_local = gv->is_thread_local;
     return apply_postfix((node_t *)gvar_node);
   }
-  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), var_size, base_elem, is_arr);
+  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name),
+                                             var_size, cl_complex_scalar ? var_size : base_elem, is_arr);
   var->tag_kind = cast_tag_kind;
   var->tag_name = cast_tag_name;
   var->tag_len = cast_tag_len;
+  if (cl_complex_scalar) var->is_complex = 1;  /* elem_size = var_size (=base_elem*2)、brace-init で half= elem/2 */
   /* 関数ポインタ配列は tag (struct/union) ではないので is_tag_pointer=0。
    * base_deref_size=8 はローカル `int (*ops[N])(args)` 登録 (decl.c:2259) と
    * 同じ。subscript の `ops[i]` を関数ポインタ値として load するために要る。 */
@@ -1142,6 +1155,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
   if (out_array_count) *out_array_count = 0;
   if (out_is_unsigned) *out_is_unsigned = 0;
+  g_last_cast_is_complex = 0;
 
   consume_local_type_quals(&t);
   if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
@@ -1250,6 +1264,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   // Minimal support for C11 complex/imaginary cast spellings:
   //   (_Complex float), (_Imaginary double), (double _Complex), ...
   if (t->kind == TK_COMPLEX || t->kind == TK_IMAGINARY) {
+    g_last_cast_is_complex = 1;
     token_t *q = t->next;
     if (q && q->kind == TK_LONG && q->next && q->next->kind == TK_DOUBLE) {
       *type_kind = TK_DOUBLE;
@@ -1273,6 +1288,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     }
   } else if ((t->kind == TK_FLOAT || t->kind == TK_DOUBLE || t->kind == TK_LONG) &&
              t->next && (t->next->kind == TK_COMPLEX || t->next->kind == TK_IMAGINARY)) {
+    g_last_cast_is_complex = 1;
     if (t->kind == TK_LONG) {
       if (!t->next || t->next->kind != TK_DOUBLE || !t->next->next ||
           (t->next->next->kind != TK_COMPLEX && t->next->next->kind != TK_IMAGINARY)) {
@@ -1478,6 +1494,10 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   as_lvar(ref)->mem.pointer_qual_levels = var->pointer_qual_levels;
   as_lvar(ref)->mem.base_deref_size = var->base_deref_size;
   as_lvar(ref)->mem.is_unsigned = var->is_unsigned;
+  /* 複素数 lvar 参照: is_complex を伝播して、代入/算術で複素数として扱われるように
+   * する (compound literal `(double _Complex){re,im}` の値が複素数コピーされる)。 */
+  ref->is_complex = var->is_complex;
+  as_lvar(ref)->mem.is_complex = var->is_complex;
   return ref;
 }
 
