@@ -5,6 +5,7 @@
 // s = 10+20+30 = 60、t = 10+20+30 = 60、s + t = 120
 // 期待: exit=120
 #include <stdarg.h>
+#include <assert.h>
 
 int twice(int n, ...) {
     va_list ap, copy;
@@ -20,5 +21,6 @@ int twice(int n, ...) {
 }
 
 int main(void) {
-    return twice(3, 10, 20, 30);
+    assert(twice(3, 10, 20, 30) == 120);
+    return 0;
 }

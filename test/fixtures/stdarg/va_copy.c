@@ -4,6 +4,7 @@
 // 対応: include/stdarg.h に `#define va_copy(dest, src) ((dest) = (src))` 追加
 // 期待: exit=12 ((1+2+3) + (1+2+3))
 #include <stdarg.h>
+#include <assert.h>
 int sum_twice(int n, ...) {
     va_list a, b;
     va_start(a, n);
@@ -17,5 +18,6 @@ int sum_twice(int n, ...) {
     return s1 + s2;
 }
 int main(void) {
-    return sum_twice(3, 1, 2, 3);
+    assert(sum_twice(3, 1, 2, 3) == 12);
+    return 0;
 }

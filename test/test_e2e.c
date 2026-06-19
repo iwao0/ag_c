@@ -733,13 +733,13 @@ static const test_case_t test_cases[] = {
     {"stdheader", "time_include", CASE_INT_FILE, "test/fixtures/stdheader/time_include.c", 42, 0},
     {"stdheader", "setjmp_include", CASE_INT_FILE, "test/fixtures/stdheader/setjmp_include.c", 42, 0},
     // stdarg
-    {"stdarg", "va_arg_int", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_int.c", 42, 0},
-    {"stdarg", "va_arg_double", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_double.c", 3, 0},
-    {"stdarg", "va_arg_mix", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_mix.c", 19, 0},
-    {"stdarg", "va_arg_many_int", CASE_INT_FILE, "test/fixtures/stdarg/va_arg_many_int.c", 136, 0},
-    {"stdarg", "va_copy", CASE_INT_FILE, "test/fixtures/stdarg/va_copy.c", 12, 0},
-    {"stdarg", "va_copy_func", CASE_INT_FILE, "test/fixtures/stdarg/va_copy_func.c", 120, 0},
-    {"stdarg", "printf_fp_mix", CASE_INT_FILE, "test/fixtures/stdarg/printf_fp_mix.c", 0, 0},
+    {"stdarg", "va_arg_int", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_arg_int.c", 0, 0},
+    {"stdarg", "va_arg_double", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_arg_double.c", 0, 0},
+    {"stdarg", "va_arg_mix", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_arg_mix.c", 0, 0},
+    {"stdarg", "va_arg_many_int", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_arg_many_int.c", 0, 0},
+    {"stdarg", "va_copy", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_copy.c", 0, 0},
+    {"stdarg", "va_copy_func", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_copy_func.c", 0, 0},
+    {"stdarg", "printf_fp_mix", CASE_ASSERT_FILE, "test/fixtures/stdarg/printf_fp_mix.c", 0, 0},
 
     // VLA (Variable Length Array)
     {"vla", "basic_elem", CASE_ASSERT_FILE, "test/fixtures/vla/basic_elem.c", 0, 0},

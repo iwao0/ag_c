@@ -4,6 +4,7 @@
 // 結果: 10 + (int)2.5 + 7 = 19
 // 期待: exit=19
 #include <stdarg.h>
+#include <assert.h>
 
 int mix(int n, ...) {
     va_list ap;
@@ -22,5 +23,6 @@ int mix(int n, ...) {
 }
 
 int main(void) {
-    return mix(3, 10, 2.5, 7);
+    assert(mix(3, 10, 2.5, 7) == 19);
+    return 0;
 }

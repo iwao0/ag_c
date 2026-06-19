@@ -1,6 +1,7 @@
 // 可変引数で int を取り出す基本動作 (stdarg.h)
 // 期待: exit=42 (10+20+12)
 #include <stdarg.h>
+#include <assert.h>
 
 int my_sum(int n, ...) {
     va_list ap;
@@ -15,5 +16,6 @@ int my_sum(int n, ...) {
 }
 
 int main(void) {
-    return my_sum(3, 10, 20, 12);
+    assert(my_sum(3, 10, 20, 12) == 42);
+    return 0;
 }

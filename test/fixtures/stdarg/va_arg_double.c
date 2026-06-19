@@ -4,6 +4,7 @@
 // avg(3, 1.0, 2.0, 6.0) = (1.0 + 2.0 + 6.0) / 3 = 3.0
 // 期待: exit=3
 #include <stdarg.h>
+#include <assert.h>
 
 int avg(int n, ...) {
     va_list ap;
@@ -18,5 +19,6 @@ int avg(int n, ...) {
 }
 
 int main(void) {
-    return avg(3, 1.0, 2.0, 6.0);
+    assert(avg(3, 1.0, 2.0, 6.0) == 3);
+    return 0;
 }
