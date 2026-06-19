@@ -2171,6 +2171,30 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
   ((node_lvar_t *)lvar)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   ((node_lvar_t *)lvar)->mem.pointer_qual_levels = var->pointer_qual_levels;
+  /* `_Complex z = {re, im}` 初期化。複素数は {実部, 虚部} の連続レイアウト
+   * (double _Complex は 8+8、float _Complex は 4+4) なので、実部スロット (offset) と
+   * 虚部スロット (offset+half) へそれぞれ fp スカラ store を生成する (既存の fp 代入を
+   * 再利用)。im を省略した `{re}` は虚部 0。これがないとスカラ初期化子扱いで
+   * `{0,1}` が E3064 になり、虚数単位 `I` (= {0,1}) を定義できなかった。 */
+  if (var->is_complex && curtok()->kind == TK_LBRACE) {
+    tk_consume('{');
+    int half = var->elem_size > 0 ? var->elem_size / 2 : 8;
+    node_t *re = psx_expr_assign();
+    node_t *im = NULL;
+    if (tk_consume(',') && curtok()->kind != TK_RBRACE) im = psx_expr_assign();
+    tk_expect('}');
+    node_t *re_lv = psx_node_new_lvar_typed(var->offset, half);
+    re_lv->fp_kind = var->fp_kind;
+    node_mem_t *re_as = psx_node_new_assign(re_lv, re);
+    re_as->base.fp_kind = var->fp_kind;
+    re_as->type_size = half;
+    node_t *im_lv = psx_node_new_lvar_typed(var->offset + half, half);
+    im_lv->fp_kind = var->fp_kind;
+    node_mem_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
+    im_as->base.fp_kind = var->fp_kind;
+    im_as->type_size = half;
+    return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);
+  }
   node_t *init_expr = parse_scalar_brace_initializer();
   /* C11 6.3.1.2: _Bool への変換は (x != 0) を 0/1 で表現したもの。
    * `_Bool b = 42;` を 1 にするため、ND_NE で wrap してから store する。 */
