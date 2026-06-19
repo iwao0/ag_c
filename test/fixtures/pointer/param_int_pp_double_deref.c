@@ -3,11 +3,13 @@
 //     多段ポインタ (**pp) では pointee がポインタなので elem_size=8 を維持する必要がある。
 //     先行の素朴な修正では elem_size=4 になり、本ケースが SEGV を起こした。
 // 期待: exit=12 (10 を 2 回インクリメント)
+#include <assert.h>
 void inc(int **pp) { (**pp)++; }
 int main(void) {
     int x = 10;
     int *p = &x;
     inc(&p);
     inc(&p);
-    return x;
+    assert(x == 12);
+    return 0;
 }

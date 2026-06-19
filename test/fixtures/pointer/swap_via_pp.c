@@ -1,6 +1,7 @@
 // 2 段ポインタを使った swap
-// swap 後 *px=20, *py=10 → 20+10*10=120
+// swap 後 *px=20, *py=10
 // 期待: exit=120
+#include <assert.h>
 void swap(int **a, int **b) {
     int *t = *a;
     *a = *b;
@@ -12,5 +13,7 @@ int main(void) {
     int *px = &x;
     int *py = &y;
     swap(&px, &py);
-    return *px + *py * 10;
+    assert(*px == 20);
+    assert(*py == 10);
+    return 0;
 }
