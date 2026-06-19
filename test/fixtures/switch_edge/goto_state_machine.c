@@ -1,6 +1,7 @@
 // goto ベースのステートマシン (st 0→1→2)
 // r = 1 + 10 + 100 = 111
 // 期待: exit=111
+#include <assert.h>
 int main(void) {
     int st = 0;
     int r = 0;
@@ -10,5 +11,6 @@ again:
         case 1: r = r + 10; st = 2; goto again;
         case 2: r = r + 100; break;
     }
-    return r;
+    assert(r == 111);
+    return 0;
 }

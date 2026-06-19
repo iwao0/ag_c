@@ -1,6 +1,7 @@
 // switch 内から goto で外側ループも脱出
 // i=0: a=1、i=1: a=3、i=2: goto out → a=3
 // 期待: exit=3
+#include <assert.h>
 int main(void) {
     int a = 0;
     int i = 0;
@@ -14,5 +15,6 @@ int main(void) {
         i = i + 1;
     }
 out:
-    return a;
+    assert(a == 3);
+    return 0;
 }

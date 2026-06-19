@@ -1,5 +1,6 @@
-// 複数 case のフォールスルー (case 3 →4 →5 で r=3+40-(255)? 計算: r=3, +40=43, +500=543, mod 256=31)
+// 複数 case のフォールスルー (case 3 →4 →5 で r=3, +40=43, +500=543, mod 256=31)
 // 期待: exit=31
+#include <assert.h>
 int main(void) {
     int r = 0;
     int x = 3;
@@ -11,5 +12,6 @@ int main(void) {
         case 5: r = r + 500; break;
         default: r = 9;
     }
-    return r;
+    assert(r == 543);
+    return 0;
 }

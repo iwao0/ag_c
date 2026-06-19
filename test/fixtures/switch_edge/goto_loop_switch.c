@@ -1,5 +1,6 @@
 // goto ループ + switch でステートマシン (1+10+100 = 111)
 // 期待: exit=111
+#include <assert.h>
 int main(void) {
     int i = 0;
     int s = 0;
@@ -13,5 +14,6 @@ loop:
     i = i + 1;
     goto loop;
 end:
-    return s;
+    assert(s == 111);
+    return 0;
 }

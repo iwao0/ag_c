@@ -1,5 +1,6 @@
 // switch 内 break
 // 期待: exit=7
+#include <assert.h>
 int main(void) {
     int a = 1;
     int b = 0;
@@ -7,5 +8,6 @@ int main(void) {
         case 1: b = 7; break;
         default: b = 9;
     }
-    return b;
+    assert(b == 7);
+    return 0;
 }

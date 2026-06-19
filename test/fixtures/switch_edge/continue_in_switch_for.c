@@ -2,6 +2,7 @@
 // case 0/1 で continue、case 2 で break → s+=1000
 // 計算: i=0..9 で sum 計算後 %256 = 6
 // 期待: exit=6
+#include <assert.h>
 int main(void) {
     int i = 0;
     int s = 0;
@@ -13,5 +14,6 @@ int main(void) {
         }
         s = s + 1000;
     }
-    return s % 256;
+    assert(s % 256 == 6);
+    return 0;
 }
