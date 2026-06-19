@@ -732,6 +732,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "signal_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/signal_include.c", 0, 0},
     {"stdheader", "time_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_include.c", 0, 0},
     {"stdheader", "setjmp_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/setjmp_include.c", 0, 0},
+    {"stdheader", "stdatomic_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdatomic_ops.c", 0, 0},
     // stdarg
     {"stdarg", "va_arg_int", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_arg_int.c", 0, 0},
     {"stdarg", "va_arg_double", CASE_ASSERT_FILE, "test/fixtures/stdarg/va_arg_double.c", 0, 0},
