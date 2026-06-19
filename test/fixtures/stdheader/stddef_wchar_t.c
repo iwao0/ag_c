@@ -2,7 +2,10 @@
 // このターゲットでは clang と同じく wchar_t = int (4B)。
 // 期待: exit=42
 #include <stddef.h>
+#include <assert.h>
 int main(void) {
     wchar_t c = L'*';   // 42
-    return (sizeof(wchar_t) == 4) ? (int)c : 0;
+    assert(sizeof(wchar_t) == 4);
+    assert((int)c == 42);
+    return 0;
 }

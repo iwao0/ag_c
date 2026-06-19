@@ -1,6 +1,8 @@
 // stdlib.h の abs
 // 期待: exit=42
 #include <stdlib.h>
+#include <assert.h>
 int main(void) {
-    return abs(-42);
+    assert(abs(-42) == 42);
+    return 0;
 }

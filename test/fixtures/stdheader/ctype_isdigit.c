@@ -1,6 +1,8 @@
 // ctype.h の isdigit
 // 期待: exit=42
 #include <ctype.h>
+#include <assert.h>
 int main(void) {
-    return isdigit('5') != 0 ? 42 : 0;
+    assert(isdigit('5') != 0);
+    return 0;
 }

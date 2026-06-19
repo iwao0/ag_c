@@ -2,6 +2,9 @@
 // このターゲットでは clang と同じく max_align_t = long double (size/align = 8)。
 // 期待: exit=42
 #include <stddef.h>
+#include <assert.h>
 int main(void) {
-    return (sizeof(max_align_t) == 8 && _Alignof(max_align_t) == 8) ? 42 : 0;
+    assert(sizeof(max_align_t) == 8);
+    assert(_Alignof(max_align_t) == 8);
+    return 0;
 }
