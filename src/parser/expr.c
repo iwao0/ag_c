@@ -9,6 +9,7 @@
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include "../tokenizer/escape.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2793,6 +2794,15 @@ static node_t *build_unary_addr_node(node_t *operand) {
   // codegen の `gen_lval` が ND_ADDR を受理せず E4002 になる。
   // 既に ND_ADDR で表現されているアドレス値はそのまま返す。
   if (operand && operand->kind == ND_ADDR) {
+    /* `&arr` : 配列は既に decay 済みの ND_ADDR で表現されアドレス値は同じ。ただし
+     * 結果型は `int(*)[N]` (ポインタ, 8B) なので、type_size=8 のコピーを返して
+     * sizeof(&arr) が要素サイズでなく 8 を返すようにする (共有ノードは変更しない)。 */
+    if (((node_mem_t *)operand)->type_size != 8) {
+      node_mem_t *cp = arena_alloc(sizeof(node_mem_t));
+      *cp = *(node_mem_t *)operand;
+      cp->type_size = 8;
+      return (node_t *)cp;
+    }
     return operand;
   }
   /* `&f` (f は関数): 関数のアドレスは関数ポインタそのもの (= `f`)。ND_FUNCREF を
@@ -3411,7 +3421,20 @@ static node_string_t *make_string_lit_node(char *str, int len,
   snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
   snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   snode->str_prefix_kind = prefix_kind;
-  snode->byte_len = len;
+  /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
+   * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
+   * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */
+  int decoded = 0;
+  for (int sp = 0; sp < len; ) {
+    uint32_t cp = 0;
+    if (str[sp] == '\\') {
+      if (!tk_parse_escape_value(str, len, &sp, &cp)) sp++;
+    } else {
+      sp++;
+    }
+    decoded++;
+  }
+  snode->byte_len = decoded;
   return snode;
 }
 

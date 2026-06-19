@@ -18,6 +18,7 @@
 #include "internal/switch_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include "../tokenizer/escape.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -1369,8 +1370,22 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
           if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
         }
         if (lit) {
-          for (int i = 0; i < s->byte_len; i++) {
-            gv->init_values[i] = (unsigned char)lit->str[i];
+          /* lit->str はソースのまま (raw)。エスケープシーケンスをデコードして
+           * 各バイトを格納する (ローカル `char a[]="..."` と同じ処理)。これがないと
+           * グローバル `char g[]="a\tb"` が `\` と `t` をそのまま書いて壊れていた。 */
+          int idx = 0, sp = 0;
+          while (sp < lit->len && idx < s->byte_len) {
+            uint32_t cp = 0;
+            if (lit->str[sp] == '\\') {
+              if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) {
+                cp = (unsigned char)lit->str[sp];
+                sp++;
+              }
+            } else {
+              cp = (unsigned char)lit->str[sp];
+              sp++;
+            }
+            gv->init_values[idx++] = (unsigned char)cp;
           }
         }
         gv->init_values[s->byte_len] = 0;
