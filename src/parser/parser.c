@@ -1136,6 +1136,56 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
        * 後方ジャンプ済みのときも正しい slot へ)。 */
       psx_parse_global_brace_init_flat(gv, cap, cur_idx);
       cur_idx = gv->init_count;
+    } else if (curtok()->kind == TK_STRING && gv->deref_size == 1 && gv->outer_stride > 0) {
+      /* 多次元 char 配列の行を文字列で初期化: `char g[2][6]={"hello","world"}`。
+       * 文字列を行 (outer_stride バイト) のバイト列へ展開する (char* 配列ではないので
+       * .LC ポインタにしない)。残りは 0 埋め。 */
+      node_t *e = psx_expr_assign();
+      int row_w = gv->outer_stride;
+      while (*cap < cur_idx + row_w) {
+        int new_cap = *cap * 2;
+        if (new_cap < cur_idx + row_w) new_cap = cur_idx + row_w;
+        gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+        if (gv->init_fvalues) {
+          gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+          for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
+        }
+        *cap = new_cap;
+      }
+      string_lit_t *lit = NULL;
+      if (e && e->kind == ND_STRING) {
+        for (string_lit_t *l = string_literals; l; l = l->next) {
+          if (strcmp(l->label, ((node_string_t *)e)->string_label) == 0) { lit = l; break; }
+        }
+      }
+      int j = 0, sp = 0;
+      if (lit) {
+        while (sp < lit->len && j < row_w) {
+          uint32_t cp = 0;
+          if (lit->str[sp] == '\\') {
+            if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) { cp = (unsigned char)lit->str[sp]; sp++; }
+          } else { cp = (unsigned char)lit->str[sp]; sp++; }
+          gv->init_values[cur_idx + j] = (unsigned char)cp;
+          gv->init_value_symbols[cur_idx + j] = NULL;
+          gv->init_value_symbol_lens[cur_idx + j] = 0;
+          if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
+          j++;
+        }
+      }
+      while (j < row_w) {  /* 行の残りを 0 埋め */
+        gv->init_values[cur_idx + j] = 0;
+        gv->init_value_symbols[cur_idx + j] = NULL;
+        gv->init_value_symbol_lens[cur_idx + j] = 0;
+        if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
+        j++;
+      }
+      cur_idx += row_w;
+      if (cur_idx > gv->init_count) gv->init_count = cur_idx;
+      if (!tk_consume(',')) break;
+      if (curtok()->kind == TK_RBRACE) break;
+      continue;
     } else {
       node_t *e = psx_expr_assign();
       long long v = 0;

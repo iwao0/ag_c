@@ -898,6 +898,51 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
         tk_expect('=');
         target_idx = flat;
       }
+      /* 多次元 char 配列の行を文字列リテラルで初期化:
+       * `char a[2][6] = {"hello", "world"}`。各文字列が row_len バイトの行を埋め、
+       * 残りは 0。文字列をスカラ要素として処理すると行が壊れていた。 */
+      if (row_len > 0 && var->elem_size == 1 && curtok() && curtok()->kind == TK_STRING) {
+        node_t *str_node = psx_expr_assign();  /* 隣接文字列の連結も 1 ノードに */
+        if (str_node && str_node->kind == ND_STRING) {
+          node_string_t *s = (node_string_t *)str_node;
+          string_lit_t *lit = find_string_lit_by_label(s->string_label);
+          int base = target_idx;  /* 行先頭の平坦要素インデックス */
+          int j = 0, sp = 0;
+          if (lit) {
+            while (sp < lit->len && j < row_len) {
+              uint32_t cp = 0;
+              if (lit->str[sp] == '\\') {
+                if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) {
+                  cp = (unsigned char)lit->str[sp]; sp++;
+                }
+              } else {
+                cp = (unsigned char)lit->str[sp]; sp++;
+              }
+              if (base + j < array_len) {
+                init_chain = append_to_init_chain(init_chain,
+                    build_array_elem_assign(var, base + j, psx_node_new_num((unsigned char)cp)));
+                assigned[base + j] = true;
+              }
+              j++;
+            }
+          }
+          /* 行の残りを 0 埋め */
+          while (j < row_len) {
+            if (base + j < array_len) {
+              init_chain = append_to_init_chain(init_chain,
+                  build_array_elem_assign(var, base + j, psx_node_new_num(0)));
+              assigned[base + j] = true;
+            }
+            j++;
+          }
+          bump_initializer_count(&init_elem_count);
+          idx = target_idx + row_len;
+          if (tk_consume('}')) break;
+          tk_expect(',');
+          if (tk_consume('}')) break;
+          continue;
+        }
+      }
       /* 多次元配列のネスト brace: {{1,2,3},{4,5,6}} など。
        * 3D/4D/5D... のチャンクサイズを組み立てて parse_array_init_chunk へ委譲。 */
       if (row_len > 0 && tk_consume('{')) {

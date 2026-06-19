@@ -1074,6 +1074,7 @@ static const test_case_t test_cases[] = {
     {"probes", "variadic_via_func_pointer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_via_func_pointer.c", 0, 0},
     {"probes", "sizeof_string_and_addr_of_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_string_and_addr_of_array.c", 0, 0},
     {"probes", "stringize_string_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/stringize_string_literal.c", 0, 0},
+    {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
