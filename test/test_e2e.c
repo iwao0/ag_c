@@ -1040,6 +1040,7 @@ static const test_case_t test_cases[] = {
     {"probes", "return_struct_funccall", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/return_struct_funccall.c", 0, 0},
     {"probes", "struct_init_from_ternary_funccall", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_init_from_ternary_funccall.c", 0, 0},
     {"probes", "void_ptr_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/void_ptr_return.c", 0, 0},
+    {"probes", "typedef_unsigned_subint_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_unsigned_subint_return.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

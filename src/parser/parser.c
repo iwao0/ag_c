@@ -195,10 +195,12 @@ static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
 static void parse_param_decl_spec(param_decl_spec_t *out);
 static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
-                                 token_ident_t **ret_tag, int *ret_is_ptr);
+                                 token_ident_t **ret_tag, int *ret_is_ptr,
+                                 int *ret_is_unsigned);
 static void parse_pointer_suffix_flags(int *out_is_ptr);
 static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
-                                     token_ident_t **ret_tag, int *ret_is_ptr);
+                                     token_ident_t **ret_tag, int *ret_is_ptr,
+                                     int *ret_is_unsigned);
 static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **ret_tag);
 static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_unnamed_param,
                                             node_t ***out_args, int *out_nargs);
@@ -2383,11 +2385,13 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
 }
 
 static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
-                                 token_ident_t **ret_tag, int *ret_is_ptr) {
+                                 token_ident_t **ret_tag, int *ret_is_ptr,
+                                 int *ret_is_unsigned) {
   *ret_kind = TK_EOF;
   *ret_fp_kind = TK_FLOAT_KIND_NONE;
   *ret_tag = NULL;
   *ret_is_ptr = 0;
+  if (ret_is_unsigned) *ret_is_unsigned = 0;
   if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     resolve_func_ret_tag_spec(ret_kind, ret_tag);
     parse_pointer_suffix_flags(ret_is_ptr); // skip optional pointer(s)
@@ -2396,7 +2400,7 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
 
   *ret_kind = psx_consume_type_kind(); // 通常の戻り値型（省略可）
   if (*ret_kind == TK_EOF && psx_ctx_is_typedef_name_token(curtok())) {
-    resolve_func_ret_typedef(ret_kind, ret_fp_kind, ret_tag, ret_is_ptr);
+    resolve_func_ret_typedef(ret_kind, ret_fp_kind, ret_tag, ret_is_ptr, ret_is_unsigned);
   }
   *ret_fp_kind = fp_kind_for_type_kind_toplevel(*ret_kind);
   parse_pointer_suffix_flags(ret_is_ptr);
@@ -2436,7 +2440,8 @@ static void parse_pointer_suffix_flags(int *out_is_ptr) {
 }
 
 static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *ret_fp_kind,
-                                     token_ident_t **ret_tag, int *ret_is_ptr) {
+                                     token_ident_t **ret_tag, int *ret_is_ptr,
+                                     int *ret_is_unsigned) {
   token_ident_t *td_id = (token_ident_t *)curtok();
   token_kind_t td_base = TK_EOF;
   int td_elem = 8;
@@ -2445,12 +2450,18 @@ static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *re
   char *td_tag_name = NULL;
   int td_tag_len = 0;
   int td_is_ptr = 0;
+  int td_is_unsigned = 0;
+  /* typedef の unsigned 性を捕捉する。`typedef unsigned char u8` の戻り型 `u8 f()` は
+   * td_base=TK_CHAR だが unsigned。捨てると sub-int 戻り値が符号拡張され
+   * `u8 f(){return 200;}` が -56 に化ける (uint8_t ローカルと同根の戻り型版)。 */
   psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
-                            &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL, NULL);
+                            &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL,
+                            &td_is_unsigned);
   set_curtok(curtok()->next);
   *ret_kind = td_base;
   *ret_fp_kind = td_fp;
   if (td_is_ptr) *ret_is_ptr = 1;
+  if (ret_is_unsigned && td_is_unsigned) *ret_is_unsigned = 1;
   if (td_tag != TK_EOF) {
     *ret_tag = calloc(1, sizeof(token_ident_t));
     (*ret_tag)->str = td_tag_name;
@@ -2687,8 +2698,9 @@ static node_t *funcdef(void) {
   tk_float_kind_t ret_fp_kind = TK_FLOAT_KIND_NONE;
   token_ident_t *ret_tag = NULL;
   int ret_is_ptr = 0;
+  int ret_td_unsigned = 0;
   g_last_outer_declarator_is_ptr = 0;
-  parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr);
+  parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr, &ret_td_unsigned);
   if (ret_kind == TK_EOF) {
     diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, curtok(),
                    "%s", diag_warn_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
@@ -2697,7 +2709,7 @@ static node_t *funcdef(void) {
   /* 戻り値型の unsigned 性を捕捉する (`unsigned` は ret_kind が TK_INT に潰れ
    * 符号性が落ちるため別管理)。parse_func_decl_spec 直後に読む (parse_func_declarator
    * が g_last_type_unsigned を変えるより前)。後段で関数名判明後に記録する。 */
-  int ret_is_unsigned = !ret_is_ptr && psx_last_type_is_unsigned();
+  int ret_is_unsigned = !ret_is_ptr && (psx_last_type_is_unsigned() || ret_td_unsigned);
   psx_expr_set_current_func_ret_type(ret_token_kind, ret_fp_kind);
   psx_expr_set_current_func_ret_is_pointer(ret_is_ptr);
   psx_expr_set_current_func_ret_is_unsigned(ret_is_unsigned);
