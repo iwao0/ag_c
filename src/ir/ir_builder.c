@@ -689,6 +689,24 @@ static int cg_size_needs_indirect_struct(int sz) {
   return sz > 0 && sz != 1 && sz != 2 && sz != 4 && sz != 8;
 }
 
+/* 式ツリーに副作用 (代入/インクリメント/関数呼出/VLA確保) が無いか。
+ * sub-int 代入結果の再ロードでアドレス式を再評価してよいか判定するのに使う。 */
+static int expr_side_effect_free(node_t *n) {
+  if (!n) return 1;
+  switch (n->kind) {
+    case ND_ASSIGN:
+    case ND_PRE_INC: case ND_PRE_DEC:
+    case ND_POST_INC: case ND_POST_DEC:
+    case ND_FUNCALL:
+    case ND_VLA_ALLOC:
+      return 0;
+    default: break;
+  }
+  if (!expr_side_effect_free(n->lhs)) return 0;
+  if (!expr_side_effect_free(n->rhs)) return 0;
+  return 1;
+}
+
 static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
   if (!node->lhs) {
     fail(ctx, "assign without target");
@@ -960,6 +978,15 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
   st->src2 = rhs;
   ir_func_append_inst(ctx->f, st);
+  /* 代入式の値は「lvalue の型に変換した値」(C11 6.5.16p3)。sub-int (char/short)
+   * lvalue では rhs をそのまま返すと幅・符号が反映されず、`b = a = 300` (a が
+   * unsigned char) で外側 b が 300 のままになる (IMM は coerce で切り詰められず、
+   * 値拡張も常に SEXT)。格納後に lvalue を再ロードして正しい幅・符号の値を返す
+   * (load 経路は ldrb/ldrsb を符号性どおり選ぶ。結果未使用なら DCE が除去)。 */
+  if (!is_fp_type(vty) && ir_type_size(vty) < 4) {
+    ir_val_t reloaded = build_expr(ctx, node->lhs);
+    if (!ctx->failed && reloaded.id != IR_VAL_NONE) return reloaded;
+  }
   return rhs;
 }
 
@@ -984,6 +1011,12 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
   st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
   st->src2 = rhs;
   ir_func_append_inst(ctx->f, st);
+  /* sub-int lvalue の代入式の値は格納後の値 (幅・符号変換済み)。再ロードで正しい
+   * 値を返す (build_assign_to_lvar と同じ。`b = g = 300` の b を 44 にする)。 */
+  if (!is_fp_type(vty) && ir_type_size(vty) < 4) {
+    ir_val_t reloaded = build_expr(ctx, node->lhs);
+    if (!ctx->failed && reloaded.id != IR_VAL_NONE) return reloaded;
+  }
   return rhs;
 }
 
@@ -1010,6 +1043,14 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   st->src1 = ptr;
   st->src2 = rhs;
   ir_func_append_inst(ctx->f, st);
+  /* sub-int lvalue: 代入式の値は格納後の幅・符号変換済みの値。アドレス式に副作用が
+   * なければ lvalue を再ロードして正しい値を返す (`b = s.x = 300` の b を 44 に)。
+   * `*p++ = v` 等アドレスに副作用があるときは二重評価を避け rhs を返す。 */
+  if (!is_fp_type(vty) && ir_type_size(vty) < 4 &&
+      node->lhs->lhs && expr_side_effect_free(node->lhs->lhs)) {
+    ir_val_t reloaded = build_expr(ctx, node->lhs);
+    if (!ctx->failed && reloaded.id != IR_VAL_NONE) return reloaded;
+  }
   return rhs;
 }
 
