@@ -3427,9 +3427,15 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
   node->base.fp_kind = psx_ctx_get_function_ret_fp_kind(tok->str, tok->len);
   /* 戻り値型が unsigned のとき call ノードに is_unsigned を立てる。これがないと
    * `unsigned f(); f() <= 100` が符号付き比較 (LE) になり、32bit 比較で 0xFFFFFFFF を
-   * 負数扱いして誤判定する (戻り値の符号性が funcall ノードへ伝播していなかった)。 */
+   * 負数扱いして誤判定する (戻り値の符号性が funcall ノードへ伝播していなかった)。
+   * ただし unsigned char/short は整数昇格 (C11 6.3.1.1) で signed int になるため
+   * is_unsigned を立てない。立てると `unsigned char f(); f() > -1` が unsigned 比較に
+   * なり -1 が UINT_MAX 扱いで誤って false になる (unsigned int/long のみ保持)。 */
   if (psx_ctx_get_function_ret_is_unsigned(tok->str, tok->len)) {
-    node->base.is_unsigned = 1;
+    token_kind_t rk = psx_ctx_get_function_ret_token_kind(tok->str, tok->len);
+    if (rk != TK_CHAR && rk != TK_SHORT) {
+      node->base.is_unsigned = 1;
+    }
   }
   return (node_t *)node;
 }
