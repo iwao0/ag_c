@@ -150,6 +150,9 @@ struct node_num_t {
   // 整数リテラルが long / long long サフィックスを持つ (= 値が 32bit に収まっても
   // i64 として扱う)。`2L * u` が 32bit 演算で wrap するのを防ぐ。
   unsigned char int_is_long;
+  // 整数リテラルが long long サフィックス (LL) を持つ。long と long long は同サイズ
+  // でも別型 (C11 6.2.5) なので _Generic の型照合で区別する。
+  unsigned char int_is_long_long;
 };
 
 // ローカル変数ノード

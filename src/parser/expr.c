@@ -42,6 +42,7 @@ typedef struct {
   token_kind_t kind;
   int scalar_size;
   int is_unsigned;
+  int is_long_long;  /* long long (C11 6.2.5: long と long long は同サイズでも別型) */
   int is_pointer;
   token_kind_t tag_kind;
   char *tag_name;
@@ -486,7 +487,9 @@ static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
 }
 
 static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_kind, int *out_elem_size,
-                                            int *out_is_unsigned, token_t **out_next) {
+                                            int *out_is_unsigned, token_t **out_next,
+                                            int *out_is_long_long) {
+  if (out_is_long_long) *out_is_long_long = 0;
   if (!start) return 0;
   if (start->kind != TK_SIGNED && start->kind != TK_UNSIGNED &&
       start->kind != TK_SHORT && start->kind != TK_LONG &&
@@ -544,11 +547,12 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
   if (out_elem_size) *out_elem_size = elem;
   if (out_is_unsigned) *out_is_unsigned = n_unsigned ? 1 : 0;
   if (out_next) *out_next = t;
+  if (out_is_long_long) *out_is_long_long = (n_long >= 2) ? 1 : 0;
   return 1;
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 4, 0, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
+  generic_type_t gt = {TK_INT, 4, 0, 0, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -620,6 +624,9 @@ static generic_type_t infer_generic_control_type(node_t *control) {
    * _Generic の `long:` association と一致させる (int_is_long は parse_num_literal が立てる)。 */
   if (control->kind == ND_NUM && ((node_num_t *)control)->int_is_long) {
     gt.scalar_size = 8;
+    /* `0LL` は long long。long (8B) の association より long long を優先させるため
+     * is_long_long を立てる (generic_type_matches が同サイズ整数で区別する)。 */
+    if (((node_num_t *)control)->int_is_long_long) gt.is_long_long = 1;
   }
   gt.kind = gt.is_unsigned ? TK_UNSIGNED : TK_INT;
   return gt;
@@ -672,7 +679,8 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
       assoc.kind == TK_FLOAT || assoc.kind == TK_DOUBLE) {
     return control.kind == assoc.kind;
   }
-  return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned;
+  return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned &&
+         control.is_long_long == assoc.is_long_long;
 }
 
 // _Generic の関連型に出てくる CV 修飾子を読み飛ばしながら、
@@ -737,8 +745,10 @@ static int parse_assoc_base_type(generic_type_t *out,
   // スカラ型
   token_kind_t tk = TK_EOF;
   token_t *after = NULL;
-  if (parse_integer_cast_spec_sequence(curtok(), &tk, base_elem_size, base_unsigned, &after)) {
+  int is_ll = 0;
+  if (parse_integer_cast_spec_sequence(curtok(), &tk, base_elem_size, base_unsigned, &after, &is_ll)) {
     out->kind = tk;
+    out->is_long_long = is_ll;
     set_curtok(after);
     return 1;
   }
@@ -1172,7 +1182,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         inner_elem = 8;
         inner_fp = TK_FLOAT_KIND_DOUBLE;
         q = q->next->next;
-      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q)) {
+      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q, NULL)) {
         inner_fp = TK_FLOAT_KIND_NONE;
       } else {
         inner_kind = q->kind;
@@ -1294,7 +1304,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   }
   if (is_type) {
     if (*type_kind == TK_EOF) {
-      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, out_is_unsigned, &t)) {
+      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, out_is_unsigned, &t, NULL)) {
         if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
       } else {
         *type_kind = t->kind;
@@ -1662,7 +1672,7 @@ static int parse_parenthesized_type_size(void) {
     int iksz = 4;
     int iku = 0;
     token_t *inext = NULL;
-    if (parse_integer_cast_spec_sequence(t, &iks, &iksz, &iku, &inext)) {
+    if (parse_integer_cast_spec_sequence(t, &iks, &iksz, &iku, &inext, NULL)) {
       return finish_parenthesized_type_size(inext, iksz);
     }
   }
@@ -3296,6 +3306,7 @@ static node_t *parse_num_literal(void) {
      * して扱う (`2L * u` 等が 32bit 演算で wrap しないように)。unsigned サフィックスも
      * 比較/除算の符号判定のため node に伝播する。 */
     node->int_is_long = (tk_as_num_int(tok)->int_size != TK_INT_SIZE_INT) ? 1 : 0;
+    node->int_is_long_long = (tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG) ? 1 : 0;
     node->base.is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
   } else {
     node->base.fp_kind = tk_as_num_float(tok)->fp_kind;
