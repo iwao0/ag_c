@@ -1043,6 +1043,7 @@ static const test_case_t test_cases[] = {
     {"probes", "typedef_unsigned_subint_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_unsigned_subint_return.c", 0, 0},
     {"probes", "static_tag_global", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_tag_global.c", 0, 0},
     {"probes", "sizeof_multiword_int", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_multiword_int.c", 0, 0},
+    {"probes", "typedef_unsigned_struct_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_unsigned_struct_member.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

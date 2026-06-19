@@ -147,6 +147,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       else if (td_tag != TK_EOF && psx_ctx_has_tag_type(td_tag, td_tn, td_tl)) {
         elem_size = psx_ctx_get_tag_size(td_tag, td_tn, td_tl);
       }
+      /* typedef の unsigned 性をメンバへ伝播する。`typedef unsigned char u8;
+       * struct S { u8 x; }` で u8 は IDENT トークンなので上の TK_UNSIGNED 検出に
+       * かからず、捨てると sub-int メンバのロードが ldrsb (符号拡張) になり
+       * s.x=200 が -56 に化ける。 */
+      if (td_isu) member_is_unsigned = 1;
       set_curtok(curtok()->next);
     } else {
       psx_diag_ctx(curtok(), "decl", "%s",
