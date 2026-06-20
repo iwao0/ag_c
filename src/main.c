@@ -109,21 +109,30 @@ int main(int argc, char **argv) {
 
   load_config_toml(argv[1]);
 
-  // トークナイズ
   tk_set_filename_ctx(tk_get_default_context(), input_disp);
   tokenizer_context_t *tk_ctx = tk_get_default_context();
-  token_t *tok = tk_tokenize_ctx(tk_ctx, source);
 
-  // プリプロセス（マクロ展開やディレクティブ処理）
-  tok = preprocess_ctx(tk_ctx, tok);
+  /* トークン経路の選択:
+   * - `#` 指令を含まないファイルは「トークンストリーム経路」。字句解析→プリプロセスを
+   *   遅延 pull 化し、パーサがカーソルを進めるたびに先読み分だけ materialize して通過済み
+   *   トークンを解放する。トークンのピークメモリが O(ウィンドウ) になる。
+   * - `#` を含むファイルは従来の whole-file 経路 (指令・マクロ・include を完全サポート)。
+   * どちらも同じ ps_next_function / ir_build_emit_function ループへ流れ、出力は一致する。 */
+  pp_stream_t *pps = NULL;
+  token_t *tok;
+  if (strchr(source, '#') == NULL) {
+    tok = pp_stream_open(&pps, tk_ctx, source);
+  } else {
+    tok = tk_tokenize_ctx(tk_ctx, source);
+    tok = preprocess_ctx(tk_ctx, tok);
+  }
 
   gen_set_output_callback(write_line_to_file, stdout);
 
   // 関数ごとストリーミング: パース→IR build→最適化+codegen→AST/IR 解放 を 1 関数ずつ
   // 回す。全関数の AST・IR を同時保持しないので、ピークメモリが「ファイル全体」でなく
-  // 「最大の 1 関数 + 永続テーブル」になる (8MB 級のタイト環境向け)。出力はバッチ版と一致。
-  // 非関数のトップレベル宣言 (グローバル変数・typedef・タグ) は ps_next_function 内で
-  // 副作用として処理され、データセクションは末尾でまとめて emit する。
+  // 「最大の 1 関数 + 永続テーブル + トークンウィンドウ」になる (8MB 級のタイト環境向け)。
+  // 非関数のトップレベル宣言は ps_next_function 内で副作用処理され、データセクションは末尾。
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
   ps_stream_begin(tk_ctx, tok);
   for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
@@ -134,6 +143,7 @@ int main(int argc, char **argv) {
     }
     ps_free_processed_ast();  // この関数の AST (parser arena) を解放
   }
+  if (pps) pp_stream_close(pps);
 
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
   // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)

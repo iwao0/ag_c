@@ -1852,3 +1852,144 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
   g_preprocess_tk_ctx = prev_tk_ctx;
   return head.next;
 }
+
+/* ============================================================================
+ * トークンストリーム経路: `#` 指令の無いファイル専用の遅延プリプロセス生成器。
+ * 指令・ユーザマクロ・include・条件・#line が存在しない入力では preprocess_ctx は
+ * 「通過 / __LINE__ / __FILE__ / object-like predefined マクロ展開」だけを行うので、
+ * その部分集合を 1 トークンずつ pull で再現する。出力はバッチ版とバイト一致する。
+ * パーサがカーソルを前進させるたび (tk_set_cursor_hook) に必要分だけ materialize し、
+ * 通り過ぎた recyclable チャンクを解放する。
+ * ========================================================================== */
+#define PP_STREAM_LOOKAHEAD 256
+
+struct pp_stream {
+  tk_token_stream_t *lex;
+  token_t *out_head;   // 解放されていない先頭 (デバッグ用)
+  token_t *out_tail;   // 末尾 (ここに append)
+  token_t *cursor;     // パーサの現在トークン
+  token_t *refill_at;  // カーソルがここへ来たら次の補充 (LOOKAHEAD 先のトークン)
+  int eof_done;
+};
+
+static void pps_append(pp_stream_t *s, token_t *t) {
+  t->next = NULL;
+  if (s->out_tail) s->out_tail->next = t;
+  else s->out_head = t;
+  s->out_tail = t;
+}
+
+/* 入力 1 トークンを処理して出力へ 0 個以上 append する。EOF を append したら 0。 */
+static int pps_step(pp_stream_t *s) {
+  token_t *tok = tk_stream_next(s->lex);
+  if (!tok) { s->eof_done = 1; return 0; }
+  if (tok->kind == TK_EOF) { pps_append(s, tok); s->eof_done = 1; return 0; }
+
+  if (tok->kind == TK_IDENT) {
+    token_ident_t *id = as_ident(tok);
+    /* __LINE__ / __FILE__ は preprocess_ctx と同じくマクロ表より先に inline 処理。 */
+    if (id->len == 8 && memcmp(id->str, "__LINE__", 8) == 0) {
+      pps_append(s, make_int_token(tok->line_no, tok));
+      return 1;
+    }
+    if (id->len == 8 && memcmp(id->str, "__FILE__", 8) == 0) {
+      const char *fn = tk_filename_lookup(tok->file_name_id);
+      pps_append(s, make_string_token(fn ? fn : "", tok));
+      return 1;
+    }
+    char *name = my_strndup(id->str, id->len);
+    macro_t *m = find_macro(name);
+    if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
+      /* `#` 無し入力で表に在るのは object-like predefined マクロのみ (本体は単一の
+       * 数値/文字列で再展開不能)。preprocess_ctx:1807-1834 の object 展開と同じく本体を
+       * コピーし、hideset 付与・行位置を呼び出し位置へ再配置して出力する。本体は終端
+       * トークンなので rescan 不要 (rescan しても同じ結果)。 */
+      token_t *body_copy = copy_token_list(m->body);
+      body_copy = paste_tokens(body_copy);
+      hideset_t *hs = hideset_union(as_pp(tok)->hideset, new_hideset(name));
+      for (token_t *t = body_copy; t; t = t->next) {
+        as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+        t->line_no = tok->line_no;
+        t->file_name_id = tok->file_name_id;
+      }
+      if (body_copy) {
+        body_copy->at_bol = tok->at_bol;
+        body_copy->has_space = tok->has_space;
+        for (token_t *t = body_copy; t; ) {
+          token_t *nx = t->next;
+          pps_append(s, t);
+          t = nx;
+        }
+      }
+      free(name);
+      return 1;
+    }
+    free(name);
+  }
+  pps_append(s, tok);  // 通過 (raw トークンを再利用)
+  return 1;
+}
+
+/* カーソルの先を補充する。常に LOOKAHEAD 以上のトークンを先に保つよう、2*LOOKAHEAD まで
+ * materialize し、次回補充の起点 refill_at = カーソル+LOOKAHEAD を記録する。これにより
+ * 補充は LOOKAHEAD 前進ごとに 1 回 (走査 O(LOOKAHEAD)) で済み、前進あたり償却 O(1)。 */
+static void pps_refill(pp_stream_t *s) {
+  if (!s->cursor) return;
+  /* 既存の先読み数を 1 度だけ数える (mark = カーソル+LOOKAHEAD のトークン)。 */
+  int have = 0;
+  token_t *mark = NULL;
+  for (token_t *t = s->cursor->next; t && have < 2 * PP_STREAM_LOOKAHEAD; t = t->next) {
+    have++;
+    if (have == PP_STREAM_LOOKAHEAD) mark = t;
+  }
+  /* 足りない分だけ逐次生成 (毎回カーソルから数え直さない)。 */
+  while (have < 2 * PP_STREAM_LOOKAHEAD && !s->eof_done) {
+    if (!pps_step(s)) break;
+    have++;
+    if (have == PP_STREAM_LOOKAHEAD) mark = s->out_tail;
+  }
+  s->refill_at = mark ? mark : s->out_tail;
+}
+
+static pp_stream_t *g_active_pps = NULL;
+
+/* カーソル前進フック: 必要時のみ補充 (refill_at に到達 or 先が尽きた) + 通過チャンク解放。
+ * 大半の前進では補充判定が O(1) ですぐ抜ける。 */
+static void pps_on_advance(token_t *cursor) {
+  pp_stream_t *s = g_active_pps;
+  if (!s) return;
+  s->cursor = cursor;
+  if (cursor == s->refill_at || !cursor->next) pps_refill(s);
+  tk_allocator_recyc_on_cursor(cursor);
+}
+
+/* ストリーム生成器を開く。predefined マクロは永続側へ作り、以後の生成は recyclable 側。
+ * 先頭トークン (パーサのカーソル開始位置) を返す。 */
+token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const char *src) {
+  pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
+  g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
+  tk_allocator_set_recyclable(0);
+  macros = NULL;
+  pp_init_predefined_macros();
+  /* 以後の生成は recyclable アリーナ。 */
+  tk_allocator_set_recyclable(1);
+  s->lex = tk_stream_new(tk_ctx, src);
+  s->cursor = NULL;
+  /* 先頭を 1 つ生成し、そこから lookahead 分を満たす。 */
+  while (!s->out_head && !s->eof_done) pps_step(s);
+  s->cursor = s->out_head;
+  pps_refill(s);
+  g_active_pps = s;
+  tk_set_cursor_hook(pps_on_advance);
+  *out_s = s;
+  return s->out_head;
+}
+
+void pp_stream_close(pp_stream_t *s) {
+  tk_set_cursor_hook(NULL);
+  g_active_pps = NULL;
+  tk_allocator_set_recyclable(0);
+  tk_allocator_recyc_reset();
+  if (s) { tk_stream_delete(s->lex); free(s); }
+}

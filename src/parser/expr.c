@@ -9,6 +9,7 @@
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include "../tokenizer/allocator.h"
 #include "../tokenizer/escape.h"
 #include <limits.h>
 #include <stdio.h>
@@ -3364,6 +3365,9 @@ static node_t *parse_generic_selection(void) {
   int got_cast_ty = 0;
   if (curtok()->kind == TK_LPAREN) {
     token_t *save = curtok();
+    /* トークンストリーム経路: 巻き戻し先 (save) より古いトークンを解放させない。
+     * これがパーサ内で唯一のバックトラックで、式内に収まる。非ストリーム経路では no-op。 */
+    tk_allocator_recyc_pin(save);
     set_curtok(curtok()->next); // skip '('
     generic_type_t cty = {0};
     cty.kind = TK_EOF;
@@ -3384,6 +3388,7 @@ static node_t *parse_generic_selection(void) {
       }
     }
     if (!got_cast_ty) set_curtok(save); // 純粋なキャストでなければ巻き戻して通常解析
+    tk_allocator_recyc_unpin();
   }
   if (!got_cast_ty) {
     node_t *control = assign();

@@ -148,6 +148,12 @@ typedef struct tk_token_stream tk_token_stream_t;
 void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in);
 token_t *tk_stream_next(tk_token_stream_t *s);
 void tk_stream_close(tk_token_stream_t *s);
+/* ヒープ確保版 (不透明な構造体をポインタで保持したい呼び出し側用)。 */
+tk_token_stream_t *tk_stream_new(tokenizer_context_t *ctx, const char *in);
+void tk_stream_delete(tk_token_stream_t *s);
+
+/* パーサのカーソル前進フックを登録する (トークンストリーム driver 用、NULL で解除)。 */
+void tk_set_cursor_hook(void (*fn)(token_t *));
 
 /**
  * @brief 指定コンテキストの入力文字列（診断表示用）を取得する。

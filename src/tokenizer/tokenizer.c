@@ -29,8 +29,17 @@ static tokenizer_context_t *effective_ctx(tokenizer_context_t *ctx) {
   return ctx ? ctx : runtime_ctx();
 }
 
+/* トークンストリーム経路で、パーサがカーソルを前進させるたびに呼ばれるフック。
+ * 先読み分を materialize し、通り過ぎたトークンを解放する (driver が登録/解除)。
+ * 非ストリーム経路では NULL なので無影響。カーソル更新の 2 経路 (逐次前進
+ * advance_current_token と明示ジャンプ tk_set_current_token_ctx) の両方で呼ぶ。 */
+static void (*g_cursor_hook)(token_t *) = NULL;
+void tk_set_cursor_hook(void (*fn)(token_t *)) { g_cursor_hook = fn; }
+
 static inline void advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
-  ctx->current_token = cur ? cur->next : NULL;
+  token_t *nx = cur ? cur->next : NULL;
+  ctx->current_token = nx;
+  if (g_cursor_hook && nx) g_cursor_hook(nx);
 }
 
 static token_t *require_current_token(tokenizer_context_t *ctx, diag_error_id_t id) {
@@ -59,6 +68,7 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
   if (use_ctx) {
     use_ctx->current_token = tok;
   }
+  if (g_cursor_hook && tok) g_cursor_hook(tok);
 }
 
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
@@ -1116,6 +1126,19 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
 
 void tk_stream_close(tk_token_stream_t *s) {
   end_tokenize_session(&s->session, tk_get_current_token());
+}
+
+/* ヒープ確保版 (構造体を不透明に保ったまま埋め込み利用したい呼び出し側用)。 */
+tk_token_stream_t *tk_stream_new(tokenizer_context_t *ctx, const char *in) {
+  tk_token_stream_t *s = calloc(1, sizeof(*s));
+  tk_stream_open(s, ctx, in);
+  return s;
+}
+
+void tk_stream_delete(tk_token_stream_t *s) {
+  if (!s) return;
+  tk_stream_close(s);
+  free(s);
 }
 
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
