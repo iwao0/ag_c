@@ -47,6 +47,7 @@ typedef struct {
   int scalar_size;
   int is_unsigned;
   int is_long_long;  /* long long (C11 6.2.5: long と long long は同サイズでも別型) */
+  int is_plain_char; /* plain char (C11 6.2.5/6.7.2.1: char と signed/unsigned char は別型) */
   int is_pointer;
   token_kind_t tag_kind;
   char *tag_name;
@@ -492,8 +493,9 @@ static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
 
 static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_kind, int *out_elem_size,
                                             int *out_is_unsigned, token_t **out_next,
-                                            int *out_is_long_long) {
+                                            int *out_is_long_long, int *out_is_plain_char) {
   if (out_is_long_long) *out_is_long_long = 0;
+  if (out_is_plain_char) *out_is_plain_char = 0;
   if (!start) return 0;
   if (start->kind != TK_SIGNED && start->kind != TK_UNSIGNED &&
       start->kind != TK_SHORT && start->kind != TK_LONG &&
@@ -552,11 +554,12 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
   if (out_is_unsigned) *out_is_unsigned = n_unsigned ? 1 : 0;
   if (out_next) *out_next = t;
   if (out_is_long_long) *out_is_long_long = (n_long >= 2) ? 1 : 0;
+  if (out_is_plain_char) *out_is_plain_char = (n_char && !n_signed && !n_unsigned) ? 1 : 0;
   return 1;
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 4, 0, 0, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
+  generic_type_t gt = {TK_INT, 4, 0, 0, 0, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -624,6 +627,16 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.is_unsigned = control->is_unsigned;
   }
   gt.scalar_size = ts ? ts : 4;
+  /* 変数等の long long / plain char の型識別を制御式型へ反映 (_Generic 用)。
+   * ND_LVAR は ->mem、その他の mem ノードは直接キャストで読む (is_unsigned と同じ流儀)。 */
+  if (control->kind == ND_LVAR) {
+    if (as_lvar(control)->mem.is_long_long) gt.is_long_long = 1;
+    if (as_lvar(control)->mem.is_plain_char) gt.is_plain_char = 1;
+  } else if (control->kind == ND_GVAR || control->kind == ND_DEREF ||
+             control->kind == ND_ASSIGN || control->kind == ND_ADDR) {
+    if (((node_mem_t *)control)->is_long_long) gt.is_long_long = 1;
+    if (((node_mem_t *)control)->is_plain_char) gt.is_plain_char = 1;
+  }
   /* long/long long サフィックス付き整数リテラル (`42L`) は long (8B) として扱い、
    * _Generic の `long:` association と一致させる (int_is_long は parse_num_literal が立てる)。 */
   if (control->kind == ND_NUM && ((node_num_t *)control)->int_is_long) {
@@ -688,7 +701,8 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
     return control.kind == assoc.kind;
   }
   return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned &&
-         control.is_long_long == assoc.is_long_long;
+         control.is_long_long == assoc.is_long_long &&
+         control.is_plain_char == assoc.is_plain_char;
 }
 
 // _Generic の関連型に出てくる CV 修飾子を読み飛ばしながら、
@@ -754,9 +768,11 @@ static int parse_assoc_base_type(generic_type_t *out,
   token_kind_t tk = TK_EOF;
   token_t *after = NULL;
   int is_ll = 0;
-  if (parse_integer_cast_spec_sequence(curtok(), &tk, base_elem_size, base_unsigned, &after, &is_ll)) {
+  int is_pc = 0;
+  if (parse_integer_cast_spec_sequence(curtok(), &tk, base_elem_size, base_unsigned, &after, &is_ll, &is_pc)) {
     out->kind = tk;
     out->is_long_long = is_ll;
+    out->is_plain_char = is_pc;
     set_curtok(after);
     return 1;
   }
@@ -1201,7 +1217,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         inner_elem = 8;
         inner_fp = TK_FLOAT_KIND_DOUBLE;
         q = q->next->next;
-      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q, NULL)) {
+      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q, NULL, NULL)) {
         inner_fp = TK_FLOAT_KIND_NONE;
       } else {
         inner_kind = q->kind;
@@ -1325,7 +1341,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   }
   if (is_type) {
     if (*type_kind == TK_EOF) {
-      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, out_is_unsigned, &t, NULL)) {
+      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, out_is_unsigned, &t, NULL, NULL)) {
         if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
       } else {
         *type_kind = t->kind;
@@ -1503,6 +1519,9 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
    * する (compound literal `(double _Complex){re,im}` の値が複素数コピーされる)。 */
   ref->is_complex = var->is_complex;
   as_lvar(ref)->mem.is_complex = var->is_complex;
+  /* long long / plain char の型識別を伝播 (_Generic の制御式型判定で使う)。 */
+  as_lvar(ref)->mem.is_long_long = var->is_long_long;
+  as_lvar(ref)->mem.is_plain_char = var->is_plain_char;
   return ref;
 }
 
@@ -1697,7 +1716,7 @@ static int parse_parenthesized_type_size(void) {
     int iksz = 4;
     int iku = 0;
     token_t *inext = NULL;
-    if (parse_integer_cast_spec_sequence(t, &iks, &iksz, &iku, &inext, NULL)) {
+    if (parse_integer_cast_spec_sequence(t, &iks, &iksz, &iku, &inext, NULL, NULL)) {
       return finish_parenthesized_type_size(inext, iksz);
     }
   }
@@ -3899,6 +3918,9 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.is_atomic = var->is_atomic;
   as_lvar(n)->mem.pointee_is_void = var->pointee_is_void;
   as_lvar(n)->mem.is_bool = var->is_bool;
+  /* _Generic で long/long long, char/signed char を区別するための型識別。 */
+  as_lvar(n)->mem.is_long_long = var->is_long_long;
+  as_lvar(n)->mem.is_plain_char = var->is_plain_char;
   n->is_complex = var->is_complex;
   n->is_atomic = var->is_atomic;
   n->fp_kind = var->fp_kind;

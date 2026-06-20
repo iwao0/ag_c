@@ -12,6 +12,8 @@
 token_kind_t psx_consume_type_kind(void);
 int psx_last_type_is_unsigned(void);
 int psx_last_type_is_complex(void);
+int psx_last_type_is_long_long(void);
+int psx_last_type_is_plain_char(void);
 int psx_last_type_is_atomic(void);
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified);
 void psx_take_alignas_value(int *align);

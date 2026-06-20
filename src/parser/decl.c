@@ -52,6 +52,8 @@ static string_lit_t *find_string_lit_by_label(char *label);
 typedef struct {
   token_kind_t type_kind;
   int is_unsigned;
+  int is_long_long;   // long long (_Generic で long と区別)
+  int is_plain_char;  // plain char (_Generic で signed/unsigned char と区別)
   int elem_size;
   tk_float_kind_t fp_kind;
   token_kind_t tag_kind;
@@ -2833,6 +2835,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   int alignas_val = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
   int decl_is_complex = psx_last_type_is_complex();
+  int decl_is_long_long = psx_last_type_is_long_long();
+  int decl_is_plain_char = psx_last_type_is_plain_char();
   int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
   int decl_is_static = 0;
@@ -3054,6 +3058,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;
     if (decl_is_atomic) var->is_atomic = 1;
+    /* _Generic で long/long long, char/signed char を区別するための型識別 (非ポインタの
+     * スカラ変数のみ。サイズは同じなので別フラグで持つ)。 */
+    if (!is_pointer) {
+      var->is_long_long = decl_is_long_long ? 1 : 0;
+      var->is_plain_char = decl_is_plain_char ? 1 : 0;
+    }
     /* 可変長関数ポインタ (`int (*f)(int, ...)`): 経由呼び出しで variadic ABI を
      * 選べるよう、固定引数数と共に記録する。 */
     if (is_pointer && g_last_funcptr_is_variadic) {
@@ -3142,6 +3152,8 @@ static int parse_local_decl_spec(local_decl_spec_t *out) {
 
   out->type_kind = psx_consume_type_kind();
   out->is_unsigned = psx_last_type_is_unsigned();
+  out->is_long_long = psx_last_type_is_long_long();
+  out->is_plain_char = psx_last_type_is_plain_char();
   take_local_decl_prefix_flags(out);
   if (out->type_kind == TK_EOF) return parse_local_decl_spec_from_typedef(out);
   return parse_local_decl_spec_from_builtin(out);

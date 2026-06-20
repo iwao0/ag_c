@@ -108,6 +108,8 @@ struct node_mem_t {
   unsigned int is_atomic : 1;               // 1: _Atomic型（load-acquire/store-release）
   unsigned int pointee_is_void : 1;         // 1: pointee 型が void（`void *p`）
   unsigned int is_bool : 1;                  // 1: _Bool 型 (代入を 0/1 に正規化する)
+  unsigned int is_long_long : 1;             // 1: long long 型 (_Generic で long と区別)
+  unsigned int is_plain_char : 1;            // 1: plain char 型 (_Generic で signed/unsigned char と区別)
   unsigned int pointee_is_bool : 1;          // 1: pointee 型が _Bool（_Bool 配列等）
   unsigned int pointee_is_unsigned : 1;      // 1: pointee 型が unsigned（unsigned 配列/ポインタ）
   // 配列要素 (各スロット) がスカラポインタ (`char *names[N]`, `int *vals[N]`) で

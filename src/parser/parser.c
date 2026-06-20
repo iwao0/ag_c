@@ -1794,6 +1794,11 @@ static void parse_toplevel_tag_decl(void) {
 
 static int g_last_type_unsigned = 0;
 static int g_last_type_complex = 0;
+/* 直近に解釈した型が `long long` か / plain `char` (signed/unsigned 無し) か。
+ * _Generic は long と long long、char と signed/unsigned char を別型として扱う
+ * (C11 6.2.5/6.7.2.1) ため、サイズだけでは区別できないこれらを side-channel で渡す。 */
+static int g_last_type_long_long = 0;
+static int g_last_type_plain_char = 0;
 // g_last_type_atomic is defined above (before skip_cv_qualifiers)
 
 int psx_last_type_is_unsigned(void) {
@@ -1802,6 +1807,14 @@ int psx_last_type_is_unsigned(void) {
 
 int psx_last_type_is_complex(void) {
   return g_last_type_complex;
+}
+
+int psx_last_type_is_long_long(void) {
+  return g_last_type_long_long;
+}
+
+int psx_last_type_is_plain_char(void) {
+  return g_last_type_plain_char;
 }
 
 int psx_last_type_is_atomic(void) {
@@ -1847,6 +1860,8 @@ static token_kind_t resolve_type_kind_from_flags(int saw_void, int saw_float, in
 token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
   g_last_type_complex = 0;
+  g_last_type_long_long = 0;
+  g_last_type_plain_char = 0;
   g_last_type_atomic = 0;
   g_last_type_thread_local = 0;
   skip_cv_qualifiers();
@@ -1980,6 +1995,8 @@ token_kind_t psx_consume_type_kind(void) {
   if (curtok() == start) return TK_EOF;
   g_last_type_unsigned = saw_unsigned;
   g_last_type_complex = saw_complex;
+  g_last_type_long_long = (long_count >= 2) ? 1 : 0;
+  g_last_type_plain_char = (saw_char && !saw_signed && !saw_unsigned) ? 1 : 0;
   if ((saw_complex || saw_imaginary) && !(saw_float || saw_double)) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, start,
                    "%s",

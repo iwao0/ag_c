@@ -39,6 +39,10 @@ struct lvar_t {
   short funcptr_nargs_fixed;          // 可変長関数ポインタの固定引数数 (`...` の前)
   // 1: _Bool 型。代入/初期化時に rhs を `(rhs != 0) ? 1 : 0` に正規化する (C11 6.3.1.2)
   unsigned int is_bool : 1;
+  // _Generic で long と long long、char と signed/unsigned char を別型として扱うため
+  // (サイズだけでは区別できない)。識別子参照ノードへ伝播し infer_generic_control_type が読む。
+  unsigned int is_long_long : 1;
+  unsigned int is_plain_char : 1;
   // 1: `static` 付きで宣言されたローカル変数。フレーム上には配置されず、
   //    static_global_name のグローバル変数に lowering される。
   //    識別子解決時に ND_LVAR ではなく ND_GVAR を返すフラグ。
