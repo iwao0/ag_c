@@ -99,10 +99,14 @@ const char *ir_op_name(ir_op_t op) {
 
 /* ---- ir_val_t ヘルパ ---- */
 
-/* imm と fp_imm は匿名 union (排他)。初期化子では片方だけ指定する
- * (両方書くと後勝ちで union を上書きしてしまう)。non-imm は .imm=0 で union を 0 クリア。 */
+/* imm と fp_imm は匿名 union (排他)。none は値を持たないので union を明示的に 0 クリアする。
+ * 現状 imm(long long) と fp_imm(double) はどちらも 8B なので `.imm=0` でも fp_imm は 0 に
+ * なるが、将来 union メンバのサイズが食い違っても (あるいは 32bit 移植時も) 確実に全体が 0 に
+ * なるよう、構造体全体を {0} で初期化してから id/type を設定する。 */
 ir_val_t ir_val_none(void) {
-  ir_val_t v = { .id = IR_VAL_NONE, .type = IR_TY_VOID, .imm = 0 };
+  ir_val_t v = {0};
+  v.id = IR_VAL_NONE;
+  v.type = IR_TY_VOID;
   return v;
 }
 

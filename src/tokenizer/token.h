@@ -202,13 +202,15 @@ struct token_ident_t {
 };
 
 // 文字列リテラルトークン
+// char_width / str_prefix_kind は値域が小さい列挙なので uint8_t に格納してパディングを
+// 除いている (sizeof=48B、enum 格納時は 56B)。読み書きは列挙値のまま。
 typedef struct token_string_t token_string_t;
 struct token_string_t {
   token_pp_t pp;
   char *str;
   int len;
-  tk_char_width_t char_width;
-  tk_string_prefix_kind_t str_prefix_kind;
+  uint8_t char_width;        // tk_char_width_t
+  uint8_t str_prefix_kind;   // tk_string_prefix_kind_t
 };
 
 // 数値トークン
@@ -231,10 +233,11 @@ struct token_num_int_t {
   token_num_t base;
   long long val;                // 整数値
   unsigned long long uval;      // 整数値(符号なし)
-  tk_int_size_t int_size;
+  // 値域の小さい列挙は uint8_t に格納してパディングを除く (sizeof=72B、enum 格納時は 80B)。
+  uint8_t int_size;             // tk_int_size_t
   // 文字定数由来の場合のみ有効
-  tk_char_width_t char_width;
-  tk_char_prefix_kind_t char_prefix_kind;
+  uint8_t char_width;           // tk_char_width_t
+  uint8_t char_prefix_kind;     // tk_char_prefix_kind_t
   bool is_unsigned;             // 整数サフィックス: unsigned
   uint8_t int_base;             // 2, 8, 10, 16
 };
