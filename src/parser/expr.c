@@ -2542,6 +2542,23 @@ static node_t *parse_sizeof_operand(void) {
         tk_expect(')');
         return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
       }
+      /* `sizeof(vla2d[i])` は行のランタイムサイズ (内側次元 * elem)。行ストライドは
+       * 添字に依存しないので vla_row_stride_frame_off スロットの値が答え。`a[...]` の
+       * 直後が `)` の形 (= 1 段添字) のときだけ。2 段 `a[i][j]` は要素なので除外。 */
+      if (arr_var && arr_var->is_vla && arr_var->vla_row_stride_frame_off != 0 &&
+          curtok()->next && curtok()->next->kind == TK_LBRACKET) {
+        token_t *t = curtok()->next->next;  /* `[` の次 */
+        int depth = 1;
+        while (t && depth > 0) {
+          if (t->kind == TK_LBRACKET) depth++;
+          else if (t->kind == TK_RBRACKET) { depth--; if (depth == 0) break; }
+          t = t->next;
+        }
+        if (t && t->kind == TK_RBRACKET && t->next && t->next->kind == TK_RPAREN) {
+          set_curtok(t->next->next);  /* `]` `)` を消費 */
+          return psx_node_new_lvar_typed(arr_var->vla_row_stride_frame_off, 8);
+        }
+      }
       /* sizeof(arr) where arr is a non-VLA array: C 仕様で array → pointer
        * の decay は起きないので、配列の合計サイズ (var->size) を返す。
        * 通常の式解析では `arr` が ND_ADDR(int) (= 4 バイト) になってしまうので

@@ -2821,7 +2821,11 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
   for (lvar_t *var = fn->lvars; var; var = var->next_all) {
     if (!var->is_param) continue;
     if (!var->is_vla) continue;
-    if (var->vla_row_stride_src_offset == 0) continue;
+    /* 行ストライドスロット (__rs_<param>) があるかだけで判定する。
+     * vla_row_stride_src_offset == 0 は「内側次元が第1パラメータ (offset 0)」の
+     * 正当なケースであり、これを「未設定」と誤判定して行ストライド計算を飛ばすと
+     * `int f(int n,int a[n][n])` で未初期化スロットを読み SIGSEGV していた。
+     * frame_off と src_offset は register_vla_array_param で対で設定される。 */
     if (var->vla_row_stride_frame_off == 0) continue;
     int src_ptr = address_of_lvar(ctx, var->vla_row_stride_src_offset);
     if (src_ptr < 0) return 0;

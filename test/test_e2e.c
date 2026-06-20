@@ -1079,6 +1079,7 @@ static const test_case_t test_cases[] = {
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
     {"probes", "generic_char_and_longlong_identity", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_char_and_longlong_identity.c", 0, 0},
     {"probes", "alignas_overaligned_local", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_overaligned_local.c", 0, 0},
+    {"probes", "vla_2d_param_and_row_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_2d_param_and_row_sizeof.c", 0, 0},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {
