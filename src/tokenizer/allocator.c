@@ -49,8 +49,14 @@ static size_t align_up(size_t n, size_t align) {
   return (n + align - 1) & ~(align - 1);
 }
 
-static arena_chunk_t *new_chunk(size_t size) {
-  size_t cap = next_chunk_hint;
+/* recyclable アリーナはカーソル通過分を解放して O(ウィンドウ) に保つので、チャンクを
+ * 小さく固定するとウィンドウ (= 数チャンク) も小さくなる。64KB ≈ 1300 トークンで、
+ * パーサの look-behind (宣言子 1 つ分 < 数十トークン) に対するマージン (1 チャンク) は
+ * 十分。永続側 (マクロ本体等) は従来どおり入力サイズ連動の大きいチャンク。 */
+#define RECYC_CHUNK_CAP (64 * 1024)
+
+static arena_chunk_t *new_chunk(size_t size, size_t hint) {
+  size_t cap = hint;
   if (cap < size) cap = align_up(size, 4096);
   arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + cap);
   if (!chunk) {
@@ -72,7 +78,7 @@ static void *arena_alloc(size_t size) {
 
   if (g_recyc_mode) {
     if (!recyc_newest || recyc_newest->used + size > recyc_newest->cap) {
-      arena_chunk_t *chunk = new_chunk(size);
+      arena_chunk_t *chunk = new_chunk(size, RECYC_CHUNK_CAP);
       if (recyc_newest) recyc_newest->next = chunk; else recyc_oldest = chunk;
       recyc_newest = chunk;
     }
@@ -82,7 +88,7 @@ static void *arena_alloc(size_t size) {
   }
 
   if (!arena_head || arena_head->used + size > arena_head->cap) {
-    arena_chunk_t *chunk = new_chunk(size);
+    arena_chunk_t *chunk = new_chunk(size, next_chunk_hint);
     chunk->next = arena_head;  // 永続側は LIFO (prepend)
     arena_head = chunk;
   }
