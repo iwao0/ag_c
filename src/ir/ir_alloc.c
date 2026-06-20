@@ -231,6 +231,7 @@ ir_inst_t *ir_inst_new(ir_op_t op) {
   i->else_label_id = -1;
   i->ret_struct_area = ir_val_none();
   i->callee = ir_val_none();
+  i->src3 = ir_val_none();  /* 未使用時に汎用オペランド走査 (ir_opt/ir_regalloc) の対象外にする */
   return i;
 }
 
