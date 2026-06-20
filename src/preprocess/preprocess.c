@@ -1319,50 +1319,6 @@ static diag_error_id_t include_read_failure_diag_id(void) {
   return DIAG_ERR_PREPROCESS_INCLUDE_READ_FAILED;
 }
 
-// インクルードしたファイルをトークナイズ・前処理し、結果を **pcur のチェーン末尾へ
-// 連結する。tk_ctx の filename/input/current_token は呼び出し前後で保存・復元される。
-static void include_and_splice(char *filename, token_t **pcur) {
-  char *buf = load_include_with_allowlist_or_die(filename);
-  if (!buf) {
-    diag_error_id_t id = include_read_failure_diag_id();
-    diag_emit_internalf(id, diag_message_for(id), filename);
-    free(filename);
-  }
-  const char *saved_input = tk_get_user_input_ctx(g_preprocess_tk_ctx);
-  const char *saved_filename = tk_get_filename_ctx(g_preprocess_tk_ctx);
-  token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
-  tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(filename, strlen(filename)));
-  token_t *tok2 = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
-  push_include_or_die(filename);
-  tok2 = preprocess_ctx(g_preprocess_tk_ctx, tok2);
-  pop_include();
-  tk_set_filename_ctx(g_preprocess_tk_ctx, saved_filename);
-  tk_set_user_input_ctx(g_preprocess_tk_ctx, saved_input);
-  tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
-  while (tok2->kind != TK_EOF) {
-    (*pcur)->next = copy_token(tok2);
-    *pcur = (*pcur)->next;
-    tok2 = tok2->next;
-  }
-}
-
-// #include "name.h" または #include <name.h>
-static token_t *handle_include(token_t *tok, token_t **pcur) {
-  tok = tok->next; // skip "include"
-  char *filename = consume_include_filename(&tok);
-  validate_include_path_or_die(filename);
-  char *normalized = normalize_include_path_or_die(filename);
-  free(filename);
-  filename = normalized;
-  if (pragma_once_seen(filename)) {
-    free(filename);
-    return tok;
-  }
-  include_and_splice(filename, pcur);
-  free(filename);
-  return tok;
-}
-
 // #define MACRO_NAME [( params )] body...
 static token_t *handle_define(token_t *tok) {
   tok = tok->next;
@@ -1748,9 +1704,10 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
       // 行頭かつ '#' 記号の場合はディレクティブ行として処理
     if (tok->at_bol && tok->kind == TK_HASH) {
       tok = tok->next; // '#' をスキップ
-      
-      if (is_dir(tok, "include")) { tok = handle_include(tok, &cur); continue; }
 
+      /* #include はストリーム経路 (pps_handle_include) で処理する。batch preprocess_ctx は
+       * マクロ引数展開・#if 式評価のサブ展開でのみ使われ、それらのトークン列に #include 指令は
+       * 現れないため、ここで #include を扱う必要はない。 */
       if (is_dir(tok, "ifdef"))  { tok = handle_ifdef_or_ifndef(tok, false); continue; }
       if (is_dir(tok, "ifndef")) { tok = handle_ifdef_or_ifndef(tok, true);  continue; }
       if (is_dir(tok, "else"))   { tok = handle_else(tok);  continue; }
