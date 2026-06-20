@@ -1,5 +1,6 @@
 #include "../src/parser/parser.h"
 #include "../src/parser/internal/decl.h"
+#include "../src/parser/internal/expr.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <assert.h>
@@ -30,6 +31,10 @@ static void preregister_test_locals(void) {
 static node_t *parse_expr_input(const char *input) {
   psx_decl_reset_locals();
   preregister_test_locals();
+  /* 単体式パースは関数本体内のコードを模す (ローカルを登録するのと同様)。
+   * 複合リテラル `(int){3}` をローカル実体化経路 (ND_COMMA) で扱わせるため、
+   * 現在関数名を非 NULL にしておく (本物のパースでは関数定義時に設定される)。 */
+  psx_expr_set_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
   return ps_expr_from(head);
 }

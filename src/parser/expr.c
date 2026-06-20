@@ -26,6 +26,12 @@ static int g_parse_type_alignof_mode = 0;
 /* 直近の parse_cast_type が _Complex 型を解釈したら 1。複素数 compound literal
  * `(double _Complex){re, im}` を構築するため try_parse_compound_literal が読む。 */
 static int g_last_cast_is_complex = 0;
+/* 単項 `&` のオペランドを解析中なら 1。ファイルスコープのスカラ複合リテラル
+ * `&(int){5}` で、複合リテラルを値 (ND_NUM) に短絡せず静的記憶域の gvar 実体として
+ * 生成し、そのアドレスを取れるようにするためのヒント (C11 6.5.2.5: ファイルスコープの
+ * 複合リテラルは静的記憶域期間を持つ)。値文脈の `int a[]={(int){1}}` を退行させない
+ * よう、`&` 配下のときだけ実体化する。 */
+static int g_addr_of_compound_pending = 0;
 static char *g_current_funcname = NULL;
 static int g_current_funcname_len = 0;
 static int string_label_count = 0;
@@ -1102,7 +1108,11 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     tk_expect('{');
     node_t *init_expr = psx_expr_assign();
     tk_expect('}');
-    if (!is_arr && init_expr && init_expr->kind == ND_NUM) {
+    /* `&(int){5}` のように `&` のオペランドなら、ND_NUM への短絡 (アドレス取得不能)
+     * を避けて下の gvar 実体化経路へ進む。フラグは一度きりで消費する。 */
+    int want_addr = g_addr_of_compound_pending;
+    g_addr_of_compound_pending = 0;
+    if (!is_arr && !want_addr && init_expr && init_expr->kind == ND_NUM) {
       return apply_postfix(init_expr);
     }
     global_var_t *gv = calloc(1, sizeof(global_var_t));
@@ -1111,9 +1121,17 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     gv->type_size = var_size;
     gv->deref_size = base_elem;
     gv->is_array = is_arr;
+    gv->fp_kind = cast_fp_kind;
     if (init_expr && init_expr->kind == ND_NUM) {
+      node_num_t *n = (node_num_t *)init_expr;
       gv->has_init = 1;
-      gv->init_val = ((node_num_t *)init_expr)->val;
+      if (cast_fp_kind != TK_FLOAT_KIND_NONE) {
+        /* `&(double){2.5}` 等の浮動小数複合リテラル: emit は fp スカラを fval から
+         * IEEE-754 で出力する。整数リテラルで書かれていても (`(double){3}`) 宣言型を優先。 */
+        gv->fval = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
+      } else {
+        gv->init_val = n->val;
+      }
     }
     gv->next = global_vars;
     global_vars = gv;
@@ -2912,7 +2930,15 @@ static node_t *unary(void) {
     return psx_node_new_binary(ND_SUB, neg, psx_node_new_num(1));
   }
   if (k == TK_MUL) { set_curtok(curtok()->next); return build_unary_deref_node(cast()); }
-  if (k == TK_AMP) { set_curtok(curtok()->next); return build_unary_addr_node(cast()); }
+  if (k == TK_AMP) {
+    set_curtok(curtok()->next);
+    /* `&(int){5}` のヒント: ファイルスコープのスカラ複合リテラルを静的 gvar として
+     * 実体化させ、アドレスを取れるようにする (parse_compound_literal_from_type が読む)。 */
+    g_addr_of_compound_pending = 1;
+    node_t *operand = cast();
+    g_addr_of_compound_pending = 0;
+    return build_unary_addr_node(operand);
+  }
   return apply_postfix(primary());
 }
 

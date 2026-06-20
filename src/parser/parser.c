@@ -2960,6 +2960,10 @@ static node_t *funcdef(void) {
 
   // 関数プロトタイプ宣言（本体なし）
   if (tk_consume(';')) {
+    /* __func__ 用に立てた現在関数名を NULL に戻す。プロトタイプの後はファイルスコープ
+     * なので、ここを残すと後続のファイルスコープ複合リテラル `&(int){5}` 等が「関数内」と
+     * 誤判定されローカル lvar 経路に乗ってしまう (assert.h の宣言後に顕在化)。 */
+    psx_expr_set_current_funcname(NULL, 0);
     return NULL;
   }
   if (has_unnamed_param) {
@@ -2980,6 +2984,10 @@ static node_t *funcdef(void) {
    * psx_decl_reset_locals は次の関数開始時に呼ばれるが、それは静的変数を
    * NULL に戻すだけで、既存 lvar_t は arena/calloc されたまま残る。 */
   node->lvars = psx_decl_get_locals();
+
+  /* 関数本体を抜けたらファイルスコープに戻る。現在関数名を NULL に戻し、関数間の
+   * ファイルスコープ宣言が「関数内」と誤判定されないようにする。 */
+  psx_expr_set_current_funcname(NULL, 0);
 
   return (node_t *)node;
 }
