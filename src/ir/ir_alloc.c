@@ -123,11 +123,12 @@ ir_val_t ir_val_vreg(int id, ir_type_t t) {
 
 /* ---- アロケータ ---- */
 
-/* メモリ計測用カウンタ (ir_inst_t / ir_block_t は最も大量に確保される)。 */
-static size_t ir_inst_count = 0;
-static size_t ir_block_count = 0;
-size_t ir_inst_total_count(void) { return ir_inst_count; }
-size_t ir_block_total_count(void) { return ir_block_count; }
+/* メモリ計測用カウンタ。関数ごとに IR を解放するため、現在 resident と、同時 resident の
+ * 最大 (= 最大の 1 関数) を別に追跡し、getter はピークを返す。 */
+static size_t ir_inst_live = 0, ir_inst_peak = 0;
+static size_t ir_block_live = 0, ir_block_peak = 0;
+size_t ir_inst_total_count(void) { return ir_inst_peak; }
+size_t ir_block_total_count(void) { return ir_block_peak; }
 
 ir_module_t *ir_module_new(void) {
   ir_module_t *m = calloc(1, sizeof(ir_module_t));
@@ -145,9 +146,11 @@ void ir_func_free(ir_func_t *f) {
       ir_inst_t *inext = i->next;
       free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
       free(i);
+      if (ir_inst_live) ir_inst_live--;
       i = inext;
     }
     free(b);
+    if (ir_block_live) ir_block_live--;
     b = bnext;
   }
   free(f->vreg_phys_reg);
@@ -198,7 +201,7 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t
 }
 
 ir_block_t *ir_block_new(ir_func_t *f) {
-  ir_block_count++;
+  if (++ir_block_live > ir_block_peak) ir_block_peak = ir_block_live;
   ir_block_t *b = calloc(1, sizeof(ir_block_t));
   b->id = f ? f->next_block_id++ : 0;
   if (f) {
@@ -214,7 +217,7 @@ ir_block_t *ir_block_new(ir_func_t *f) {
 }
 
 ir_inst_t *ir_inst_new(ir_op_t op) {
-  ir_inst_count++;
+  if (++ir_inst_live > ir_inst_peak) ir_inst_peak = ir_inst_live;
   ir_inst_t *i = calloc(1, sizeof(ir_inst_t));
   i->op = op;
   i->dst = ir_val_none();

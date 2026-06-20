@@ -117,19 +117,22 @@ int main(int argc, char **argv) {
   // プリプロセス（マクロ展開やディレクティブ処理）
   tok = preprocess_ctx(tk_ctx, tok);
 
-  // パースしてAST（抽象構文木）を構築（関数定義の列）
-  node_t **code = ps_program_ctx(tk_ctx, tok);
   gen_set_output_callback(write_line_to_file, stdout);
 
-  // AST → IR → ASM のコード生成。
-  // Phase 7o で fixture 100% を IR 経路で通過させたため、AST 直 codegen は削除し
-  // 常に IR 経由とした。AG_DUMP_IR=1 で stderr に IR ダンプを出す。
-  // 関数ごとストリーミング: 1 関数ずつ build → 最適化+codegen → 即解放し、IR の
-  // ピークメモリを「最大 1 関数分」に抑える (全関数の IR を同時保持しない)。
-  if (!ir_build_each_and_emit(code, gen_ir_module)) {
-    fprintf(stderr, "ir_build_module failed\n");
-    free(source);
-    return 1;
+  // 関数ごとストリーミング: パース→IR build→最適化+codegen→AST/IR 解放 を 1 関数ずつ
+  // 回す。全関数の AST・IR を同時保持しないので、ピークメモリが「ファイル全体」でなく
+  // 「最大の 1 関数 + 永続テーブル」になる (8MB 級のタイト環境向け)。出力はバッチ版と一致。
+  // 非関数のトップレベル宣言 (グローバル変数・typedef・タグ) は ps_next_function 内で
+  // 副作用として処理され、データセクションは末尾でまとめて emit する。
+  // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
+  ps_stream_begin(tk_ctx, tok);
+  for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
+    if (!ir_build_emit_function(fn, gen_ir_module)) {
+      fprintf(stderr, "ir build/emit failed\n");
+      free(source);
+      return 1;
+    }
+    ps_free_processed_ast();  // この関数の AST (parser arena) を解放
   }
 
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。

@@ -14,13 +14,16 @@ struct arena_block_t {
 
 static arena_block_t *arena_head = NULL;
 static arena_block_t *arena_current = NULL;
-static size_t arena_reserved_bytes = 0;  // メモリ計測用: 予約総バイト数
+static size_t arena_reserved_bytes = 0;  // メモリ計測用: 現在の予約バイト数
+static size_t arena_peak_bytes = 0;      // 同: 同時予約量の最大 (関数ごとリセットを跨ぐ)
 
-size_t arena_total_reserved_bytes(void) { return arena_reserved_bytes; }
+// 関数ごとに arena をリセットするため、現在量ではなく「最大の 1 関数」を表すピークを返す。
+size_t arena_total_reserved_bytes(void) { return arena_peak_bytes; }
 
 static arena_block_t *arena_new_block(size_t min_size) {
   size_t cap = min_size > ARENA_BLOCK_SIZE ? min_size : ARENA_BLOCK_SIZE;
   arena_reserved_bytes += sizeof(arena_block_t) + cap;
+  if (arena_reserved_bytes > arena_peak_bytes) arena_peak_bytes = arena_reserved_bytes;
   arena_block_t *block = malloc(sizeof(arena_block_t) + cap);
   block->next = NULL;
   block->capacity = cap;

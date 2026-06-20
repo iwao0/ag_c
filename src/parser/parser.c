@@ -662,7 +662,12 @@ bool psx_try_consume_pragma_pack_marker(void) {
 }
 
 // program = funcdef*
-node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
+/* ストリーミングパースの状態 (現在の tokenizer ctx)。トークン位置自体はグローバルな
+ * current token が保持するので、ここでは ctx 同期用に保持するだけ。 */
+static tokenizer_context_t *g_stream_tk_ctx = NULL;
+
+void ps_stream_begin(tokenizer_context_t *tk_ctx, token_t *start) {
+  g_stream_tk_ctx = tk_ctx;
   if (tk_ctx) {
     tk_set_current_token_ctx(tk_ctx, start);
   }
@@ -670,9 +675,9 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
   /* 翻訳単位境界で関数名テーブルを初期化。
    * テストが同プロセスで複数プログラムを処理しても前回の登録が漏れないようにする。 */
   psx_ctx_reset_function_names();
-  int cap = 16;
-  node_t **codes = calloc(cap, sizeof(node_t*));
-  int i = 0;
+}
+
+node_t *ps_next_function(void) {
   while (!tk_at_eof()) {
     if (psx_try_consume_pragma_pack_marker()) continue;
     if (psx_ctx_is_tag_keyword(curtok()->kind)) {
@@ -687,6 +692,33 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
     }
     node_t *fn = funcdef();
     if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
+    if (g_stream_tk_ctx) {
+      tk_set_current_token_ctx(g_stream_tk_ctx, tk_get_current_token());
+    }
+    return fn;
+  }
+  if (g_stream_tk_ctx) {
+    tk_set_current_token_ctx(g_stream_tk_ctx, tk_get_current_token());
+  }
+  return NULL;
+}
+
+void ps_free_processed_ast(void) {
+  /* 直前に処理した関数 (および直前の非関数トップレベル宣言) の AST を解放する。
+   * AST ノードは全て parser arena 上にあり、関数間で参照されない (永続データ —
+   * 文字列ラベル・グローバル名・mangled static-local 名等 — は arena 外)。
+   * codegen が IR 経由で AST の funcname を alias するため、必ず 1 関数の codegen を
+   * 終えてから呼ぶこと。 */
+  arena_free_all();
+}
+
+node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
+  ps_stream_begin(tk_ctx, start);
+  int cap = 16;
+  node_t **codes = calloc(cap, sizeof(node_t*));
+  int i = 0;
+  node_t *fn;
+  while ((fn = ps_next_function()) != NULL) {
     if (i >= cap - 1) { // NULL終端用
       cap = pda_next_cap(cap, i + 2);
       codes = pda_xreallocarray(codes, (size_t)cap, sizeof(node_t *));
@@ -694,9 +726,6 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
     codes[i++] = fn;
   }
   codes[i] = NULL;
-  if (tk_ctx) {
-    tk_set_current_token_ctx(tk_ctx, tk_get_current_token());
-  }
   return codes;
 }
 

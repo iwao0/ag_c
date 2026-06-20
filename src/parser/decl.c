@@ -2354,7 +2354,10 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
   int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
   int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  char *mangled = arena_alloc((size_t)total_len + 1);
+  /* 永続: static local を lowering したグローバルの名前で global_var_t->name が
+   * 参照する (コンパイル末尾の gen_global_vars まで生存)。関数ごとに AST arena を
+   * リセットしても消えないよう、arena でなく malloc で確保する。 */
+  char *mangled = malloc((size_t)total_len + 1);
   int off = 0;
   memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
   mangled[off++] = '.';
@@ -2519,7 +2522,10 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
   int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
   int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  char *mangled = arena_alloc((size_t)total_len + 1);
+  /* 永続: static local を lowering したグローバルの名前で global_var_t->name が
+   * 参照する (コンパイル末尾の gen_global_vars まで生存)。関数ごとに AST arena を
+   * リセットしても消えないよう、arena でなく malloc で確保する。 */
+  char *mangled = malloc((size_t)total_len + 1);
   int off = 0;
   memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
   mangled[off++] = '.';
@@ -2618,7 +2624,10 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
   const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
   int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
   int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  char *mangled = arena_alloc((size_t)total_len + 1);
+  /* 永続: static local を lowering したグローバルの名前で global_var_t->name が
+   * 参照する (コンパイル末尾の gen_global_vars まで生存)。関数ごとに AST arena を
+   * リセットしても消えないよう、arena でなく malloc で確保する。 */
+  char *mangled = malloc((size_t)total_len + 1);
   int off = 0;
   memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
   mangled[off++] = '.';
