@@ -35,6 +35,7 @@ static tokenizer_context_t *effective_ctx(tokenizer_context_t *ctx) {
  * advance_current_token と明示ジャンプ tk_set_current_token_ctx) の両方で呼ぶ。 */
 static void (*g_cursor_hook)(token_t *) = NULL;
 void tk_set_cursor_hook(void (*fn)(token_t *)) { g_cursor_hook = fn; }
+void (*tk_get_cursor_hook(void))(token_t *) { return g_cursor_hook; }
 
 static inline void advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
   token_t *nx = cur ? cur->next : NULL;

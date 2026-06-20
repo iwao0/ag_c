@@ -154,6 +154,8 @@ void tk_stream_delete(tk_token_stream_t *s);
 
 /* パーサのカーソル前進フックを登録する (トークンストリーム driver 用、NULL で解除)。 */
 void tk_set_cursor_hook(void (*fn)(token_t *));
+/* 現在のカーソル前進フックを取得する (ネスト処理中に一時退避・復元する用)。 */
+void (*tk_get_cursor_hook(void))(token_t *);
 
 /**
  * @brief 指定コンテキストの入力文字列（診断表示用）を取得する。

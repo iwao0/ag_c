@@ -1860,6 +1860,23 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
  * ========================================================================== */
 #define PP_STREAM_LOOKAHEAD 256
 
+/* #include ストリーム化 (Stage 5): 被 include を別ソースとして開いた遅延字句に切り替え、
+ * フレームをスタックに積む。被 include の lexer が TK_EOF を返したら pop して親 lexer へ戻る
+ * (被 include の EOF は出力に出さない)。各フレームは pop 時に復元する親の状態を保持する。 */
+typedef struct pp_include_frame pp_include_frame_t;
+struct pp_include_frame {
+  pp_include_frame_t *parent;       // 外側方向 (NULL = 最外ファイルの 1 つ内側)
+  tk_token_stream_t  *parent_lex;   // pop 時に s->lex を戻す親 lexer
+  char               *buf;          // 被 include のソースバッファ (pop で free)
+  char               *path_owned;   // normalize 済みパス (pop_include() の後に free)
+  token_t            *saved_pb_head; // 親の pushback 列 (指令行の次行頭トークン等)。pop で復元
+  const char *saved_input;          // 親 ctx->user_input
+  const char *saved_filename;       // 親 ctx->current_filename
+  int         saved_line_delta;     // 親の #line 状態 (Stage 4)
+  int         saved_file_override_set;
+  uint16_t    saved_file_override;
+};
+
 struct pp_stream {
   tk_token_stream_t *lex;
   token_t *out_head;   // 解放されていない先頭 (デバッグ用)
@@ -1881,6 +1898,7 @@ struct pp_stream {
   int line_delta;          // 物理 line_no に加算するデルタ (既定 0)
   int file_override_set;   // file_override が有効か
   uint16_t file_override;  // 有効時、lex 由来トークンの file_name_id をこれで上書き
+  pp_include_frame_t *frames;  // 被 include フレームスタック (NULL = 最外ファイル)
 };
 
 static void pps_append(pp_stream_t *s, token_t *t) {
@@ -1890,13 +1908,44 @@ static void pps_append(pp_stream_t *s, token_t *t) {
   s->out_tail = t;
 }
 
+/* 被 include フレームを 1 つ pop する。pps_pull_raw が被 include の TK_EOF を見たときに呼ぶ。
+ * tk_stream_delete → end_tokenize_session は tk_set_current_token(非NULL) でカーソルフックを
+ * 発火し s->cursor を破壊し得る (refill 経由の pop ではフック=pps_on_advance)。よって delete の
+ * 間だけフックを退避する。dispatch 経由の pop ではフックは既に NULL なので、現在値を保存して
+ * 復元する (無条件で pps_on_advance に戻すと dispatch 中にフックを誤って再有効化してしまう)。 */
+static void pps_pop_frame(pp_stream_t *s) {
+  pp_include_frame_t *f = s->frames;
+  void (*saved_hook)(token_t *) = tk_get_cursor_hook();
+  tk_set_cursor_hook(NULL);
+  tk_stream_delete(s->lex);          // EOF に達した被 include の lexer
+  tk_set_cursor_hook(saved_hook);
+  tk_set_filename_ctx(g_preprocess_tk_ctx, f->saved_filename);
+  tk_set_user_input_ctx(g_preprocess_tk_ctx, f->saved_input);
+  s->pb_head           = f->saved_pb_head;  // 親の pushback 列 (被 include 後に続く)
+  s->line_delta        = f->saved_line_delta;
+  s->file_override_set = f->saved_file_override_set;
+  s->file_override     = f->saved_file_override;
+  s->lex    = f->parent_lex;
+  s->frames = f->parent;
+  pop_include();
+  free(f->path_owned);  // pop_include() の後 (include_stack が path を参照するため)
+  /* f->buf は解放しない: 被 include のトークン (識別子・文字列リテラル) の str は buf 内を
+   * 指しており (replace_trigraphs はトリグラフ無しなら入力をそのまま返す)、パーサが typedef 名
+   * やタグ名などをポインタで永続保持するため、コンパイル終了まで生存させる必要がある。
+   * バッチ include_and_splice も buf を解放せずプロセス終了まで保持する。 */
+  free(f);
+}
+
 /* 次の raw トークンを 1 つ取り出す。pushback があればそれを先に返し、無ければ遅延字句から。
- * lex 由来 (物理) トークンには #line のデルタ/ファイル上書きをここで 1 回だけ適用する
- * (pushback 由来 = マクロ rescan 本体や合成 EOF・差し戻し済みトークンには適用しない。
+ * 被 include の lexer が返す TK_EOF は **そのまま返す**。フレームの pop は論理ステップの境界
+ * (pps_step) で行う。ここで pop すると、指令行 materialize の先読みが被 include の EOF を踏んだ
+ * 際に指令処理前にフレームが pop され、親トークンを巻き込んでしまう (self-include 無限ループの
+ * 原因だった)。lex 由来 (物理) トークンには #line のデルタ/ファイル上書きをここで 1 回だけ適用
+ * する (pushback 由来 = マクロ rescan 本体や合成 EOF・差し戻し済みトークンには適用しない。
  * 展開本体は呼び出し位置の line/file を pp_expand_* が既にコピー済み、差し戻し済みトークンは
  * pull 時に適用済み)。バッチが「raw を先に書き換えてから preprocess」するのと等価になる。 */
 static token_t *pps_pull_raw(pp_stream_t *s) {
-  if (s->pb_head) {
+  if (s->pb_head) {  // pop で復元した親の pushback もここで拾う (lexer より優先)
     token_t *t = s->pb_head;
     s->pb_head = t->next;
     t->next = NULL;
@@ -2086,9 +2135,68 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
    * 永続保持するため (バッチ handle_line も free せず table に所有させる)。 */
 }
 
+/* #include をストリーム経路で処理する。バッチ handle_include と同じ順で被 include を解決し、
+ * splice する代わりに被 include の遅延字句フレームを push する。pps_pull_raw が被 include を
+ * O(ウィンドウ) で pull し、EOF で pps_pop_frame が親へ戻す。dispatch 中 (フック NULL) に
+ * 呼ばれる前提。 */
+static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
+  token_t *tok = after_hash->next;  // skip "include"
+  char *filename = consume_include_filename(&tok);
+  validate_include_path_or_die(filename);
+  char *normalized = normalize_include_path_or_die(filename);
+  free(filename);
+  filename = normalized;
+  if (pragma_once_seen(filename)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)
+    free(filename);
+    return;
+  }
+  char *buf = load_include_with_allowlist_or_die(filename);
+  if (!buf) {  // not found / 権限 / symlink loop: 診断して終了 (バッチ include_and_splice 同様)
+    diag_error_id_t id = include_read_failure_diag_id();
+    diag_emit_internalf(id, diag_message_for(id), filename);
+  }
+
+  /* ctx 切替前に親状態を保存する。 */
+  pp_include_frame_t *f = calloc(1, sizeof(*f));
+  if (!f) pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+  f->parent                  = s->frames;
+  f->parent_lex              = s->lex;
+  f->buf                     = buf;
+  f->path_owned              = filename;
+  f->saved_input             = tk_get_user_input_ctx(g_preprocess_tk_ctx);
+  f->saved_filename          = tk_get_filename_ctx(g_preprocess_tk_ctx);
+  f->saved_line_delta        = s->line_delta;
+  f->saved_file_override_set = s->file_override_set;
+  f->saved_file_override     = s->file_override;
+
+  /* 被 include 内の #pragma once が include_stack->path に被 include 名を記録できるよう、
+   * tokenize 前に push する。深さ/循環制限もここで発火しうる (バッチ同様)。 */
+  push_include_or_die(filename);
+
+  /* ctx を被 include に切替。以後 init_token_base が被 include 名で file_name_id を付与し、
+   * 新しい lexer は line_no=1 起算なので line_delta=0 で正しい行番号になる。my_strndup は
+   * tk_filename_intern がポインタ保持するため free しない (バッチ同様)。 */
+  tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(filename, strlen(filename)));
+  s->line_delta        = 0;
+  s->file_override_set = 0;
+  s->file_override     = 0;
+
+  /* 指令行 materialize で pushback された次行頭トークン (親) を退避し、被 include を空 pushback で
+   * 読む。被 include 終端 (pop) で復元するので、出力順は「被 include → 親の続き」になる。 */
+  f->saved_pb_head = s->pb_head;
+  s->pb_head = NULL;
+
+  /* 被 include の遅延字句を開く。begin_tokenize_session が current_token=NULL にし、
+   * tokenize_prepare_input が user_input を被 include バッファに上書きする。current_token は
+   * パーサのカーソルなので保存・復元する (バッチ include_and_splice 同様)。 */
+  token_t *saved_token = tk_get_current_token_ctx(g_preprocess_tk_ctx);
+  s->lex    = tk_stream_new(g_preprocess_tk_ctx, buf);
+  s->frames = f;
+  tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
+}
+
 /* materialize 済みの指令行を処理する。bounded 指令 (define/undef/error/pragma/endif/line) は
- * バッチハンドラ相当を行バッファ上で実行。条件指令は streaming 版を呼ぶ。
- * include はゲートで除外済み (到達しない)。 */
+ * バッチハンドラ相当を行バッファ上で実行。条件指令・include は streaming 版を呼ぶ。 */
 static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   token_t *tok = line->next;  // '#' を読み飛ばす
   if (!tok || tok->kind == TK_EOF) return;  // 空指令 '#'
@@ -2098,6 +2206,7 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   if (is_dir(tok, "elif"))   { pps_handle_elif(s, tok); return; }
   if (is_dir(tok, "else"))   { pps_handle_else(s, tok); return; }
   if (is_dir(tok, "endif"))  { handle_endif(tok); return; }
+  if (is_dir(tok, "include")) { pps_handle_include(s, tok); return; }
   if (is_dir(tok, "define")) {
     tk_allocator_set_recyclable(0);  // マクロ本体は永続アリーナへ (window 解放で消さない)
     handle_define(tok);
@@ -2121,7 +2230,10 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
 static int pps_step(pp_stream_t *s) {
   token_t *tok = pps_pull_raw(s);
   if (!tok) { s->eof_done = 1; return 0; }
-  if (tok->kind == TK_EOF) { pps_append(s, tok); s->eof_done = 1; return 1; }
+  if (tok->kind == TK_EOF) {
+    if (s->frames) { pps_pop_frame(s); return 0; }  // 被 include 終端: pop して親から続ける (出力しない)
+    pps_append(s, tok); s->eof_done = 1; return 1;
+  }
 
   /* BOL の '#': 指令行。materialize して dispatch (出力は 0 個 or pragma マーカー)。
    * dispatch 中はネスト字句/プリプロセス (evaluate_constexpr→preprocess_ctx 等) が
@@ -2262,5 +2374,20 @@ void pp_stream_close(pp_stream_t *s) {
   g_active_pps = NULL;
   tk_allocator_set_recyclable(0);
   tk_allocator_recyc_reset();
-  if (s) { tk_stream_delete(s->lex); free(s); }
+  if (s) {
+    /* 早期終了 (パーサが EOF まで来なかった) で残った被 include フレームを後始末する。
+     * フックは既に NULL なので tk_stream_delete はフックを発火しない。 */
+    while (s->frames) {
+      pp_include_frame_t *f = s->frames;
+      tk_stream_delete(s->lex);
+      s->lex = f->parent_lex;
+      s->frames = f->parent;
+      pop_include();
+      free(f->path_owned);
+      /* f->buf は解放しない (pps_pop_frame 参照: トークン str が buf 内を指す)。 */
+      free(f);
+    }
+    tk_stream_delete(s->lex);
+    free(s);
+  }
 }
