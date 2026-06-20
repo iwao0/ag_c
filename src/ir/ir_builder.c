@@ -2956,3 +2956,33 @@ ir_module_t *ir_build_module(node_t **code) {
   }
   return ctx.m;
 }
+
+/* 関数ごとストリーミング: 各関数の IR を「単一関数モジュールへ build → emit (最適化+codegen)
+ * → 即解放」で 1 つずつ処理する。全関数の IR を同時に保持しないので、IR のピークメモリが
+ * モジュール全体ではなく「最大の 1 関数」になる (8MB 級のタイト環境向け)。関数間に IR
+ * 依存はない (関数呼び出しは sym 名で解決) ため出力はバッチ版と一致する。
+ * emit は通常 gen_ir_module (1 関数モジュールに対し const_fold/dce + gen_func)。
+ * 成功で 1、エラーで 0 を返す。 */
+int ir_build_each_and_emit(node_t **code, void (*emit_module)(ir_module_t *)) {
+  if (!code) return 1;
+  int dump_ir = 0;
+  { const char *e = getenv("AG_DUMP_IR"); dump_ir = (e && strcmp(e, "1") == 0); }
+  for (int i = 0; code[i]; i++) {
+    if (code[i]->kind != ND_FUNCDEF) return 0;
+    ir_build_ctx_t ctx = {0};
+    ctx.m = ir_module_new();
+    if (!build_function(&ctx, (node_func_t *)code[i])) {
+      ir_module_free(ctx.m);
+      return 0;
+    }
+    if (dump_ir) {
+      char *buf = malloc(1 << 16);
+      ir_print_module_to_buf(ctx.m, buf, 1 << 16);
+      fprintf(stderr, "%s", buf);
+      free(buf);
+    }
+    if (emit_module) emit_module(ctx.m);
+    ir_module_free(ctx.m);
+  }
+  return 1;
+}

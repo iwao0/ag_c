@@ -124,20 +124,13 @@ int main(int argc, char **argv) {
   // AST → IR → ASM のコード生成。
   // Phase 7o で fixture 100% を IR 経路で通過させたため、AST 直 codegen は削除し
   // 常に IR 経由とした。AG_DUMP_IR=1 で stderr に IR ダンプを出す。
-  ir_module_t *m = ir_build_module(code);
-  if (!m) {
+  // 関数ごとストリーミング: 1 関数ずつ build → 最適化+codegen → 即解放し、IR の
+  // ピークメモリを「最大 1 関数分」に抑える (全関数の IR を同時保持しない)。
+  if (!ir_build_each_and_emit(code, gen_ir_module)) {
     fprintf(stderr, "ir_build_module failed\n");
     free(source);
     return 1;
   }
-  const char *dump_ir = getenv("AG_DUMP_IR");
-  if (dump_ir && strcmp(dump_ir, "1") == 0) {
-    char *buf = malloc(1 << 16);
-    ir_print_module_to_buf(m, buf, 1 << 16);
-    fprintf(stderr, "%s", buf);
-    free(buf);
-  }
-  gen_ir_module(m);
 
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
   // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)

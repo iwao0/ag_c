@@ -134,6 +134,44 @@ ir_module_t *ir_module_new(void) {
   return m;
 }
 
+/* 関数 1 つ分の IR を解放する (関数ごとストリーミング codegen 用)。
+ * 所有しているのは block / inst / inst->args / f->name / f->vreg_phys_reg のみ。
+ * inst->sym は gv->name / 文字列ラベル / AST funcname の alias なので解放しない。 */
+void ir_func_free(ir_func_t *f) {
+  if (!f) return;
+  for (ir_block_t *b = f->entry; b; ) {
+    ir_block_t *bnext = b->next;
+    for (ir_inst_t *i = b->head; i; ) {
+      ir_inst_t *inext = i->next;
+      free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
+      free(i);
+      i = inext;
+    }
+    free(b);
+    b = bnext;
+  }
+  free(f->vreg_phys_reg);
+  free(f->name);
+  free(f);
+}
+
+/* モジュール全体を解放する。ストリーミング経路では 1 関数モジュールに使う。 */
+void ir_module_free(ir_module_t *m) {
+  if (!m) return;
+  for (ir_func_t *f = m->funcs; f; ) {
+    ir_func_t *fnext = f->next;
+    ir_func_free(f);
+    f = fnext;
+  }
+  for (ir_global_t *g = m->globals; g; ) {
+    ir_global_t *gnext = g->next;
+    free(g->init_values);  /* init_symbol は alias なので解放しない */
+    free(g);
+    g = gnext;
+  }
+  free(m);
+}
+
 ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t ret_type) {
   ir_func_t *f = calloc(1, sizeof(ir_func_t));
   if (name && name_len > 0) {
