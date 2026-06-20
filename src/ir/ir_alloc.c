@@ -227,8 +227,12 @@ ir_inst_t *ir_inst_new(ir_op_t op) {
   i->dst = ir_val_none();
   i->src1 = ir_val_none();
   i->src2 = ir_val_none();
-  i->label_id = -1;
-  i->else_label_id = -1;
+  /* label_id / else_label_id は分岐 op の匿名 union アーム。-1 既定は分岐 op に限定する
+   * (非分岐 op で書くと他アーム alloca_size 等を破壊する。読み出しは分岐 op のみ)。 */
+  if (op == IR_BR || op == IR_BR_COND || op == IR_LABEL) {
+    i->label_id = -1;
+    i->else_label_id = -1;
+  }
   i->ret_struct_area = ir_val_none();
   i->callee = ir_val_none();
   i->src3 = ir_val_none();  /* 未使用時に汎用オペランド走査 (ir_opt/ir_regalloc) の対象外にする */

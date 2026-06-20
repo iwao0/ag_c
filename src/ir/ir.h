@@ -159,19 +159,25 @@ ir_val_t ir_val_vreg(int id, ir_type_t t);
 
 /*
  * フィールドはアライメント降順 (8→4→1 バイト) に並べてパディングを最小化している
- * (sizeof=168B / align 8、内部パディングなし。並べ替え前は 224B。ir_val_t の imm/fp_imm
- * union 化で 6 個の ir_val_t が各 8B 縮み 216→168B)。codegen / regalloc が
- * 毎命令で読むホットフィールド (op / dst / src1 / src2) は先頭側に置き、op のあとの 4 バイト
- * 穴を label_id で埋めている。並べ替えはレイアウトのみの変更で、ir_inst_new が calloc +
- * フィールド代入のため挙動には影響しない。
+ * (sizeof=144B / align 8。並べ替え前は 224B。ir_val_t の imm/fp_imm union 化で
+ * 6 個の ir_val_t が各 8B 縮み 216→168B、nargs_fixed を short・is_variadic_call を
+ * 1 バイト化して 168→160B、さらに op 排他なスカラ系メタを匿名 union にまとめて
+ * 160→144B)。codegen / regalloc が毎命令で読むホットフィールド (op / dst / src1 /
+ * src2) は先頭側に置き、op のあとの 4 バイト穴を nargs で埋めている。
+ *
+ * 匿名 union (C11 標準・GNU 拡張ではない) には op ごとに排他的にしか使われないスカラ系
+ * メタフィールドだけを入れている。ir_opt / ir_regalloc の汎用オペランド走査が op を
+ * 問わず全命令で読む args / nargs / callee / ret_struct_area / src3 は union に入れない
+ * (同一メモリを別 op の値と共有すると誤読する)。並べ替えはレイアウトのみの変更で、
+ * ir_inst_new が calloc + フィールド代入のため挙動には影響しない。
  */
 typedef struct ir_inst_t {
   struct ir_inst_t *next;
   ir_op_t op;
-  int label_id;       /* BR / BR_COND / LABEL (op 直後の 4 バイト穴を埋める) */
+  int nargs;          /* CALL の実引数個数 (op 直後の 4 バイト穴を埋める。汎用走査される) */
   ir_val_t dst, src1, src2;
 
-  /* --- 8 バイト (ポインタ / ir_val_t) --- */
+  /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
   ir_val_t *args;     /* CALL の実引数列 */
   /* IR_CALL で戻り値が struct の場合: x8 に渡すバッファのアドレス vreg。
@@ -182,20 +188,11 @@ typedef struct ir_inst_t {
   ir_val_t callee;
   ir_val_t src3;               /* IR_ATOMIC_CAS の desired 値 */
 
-  /* --- 4 バイト (op に応じて使うサブ情報) --- */
-  int else_label_id;  /* BR_COND の偽分岐先 */
-  int sym_len;
-  int nargs;
-  int alloca_size;    /* ALLOCA / MEMCPY: スロットサイズ (バイト) */
-  int alloca_align;   /* ALLOCA: アライメント (バイト) */
-  int ret_struct_size;
-  /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
-   * is_variadic_call > 0 のとき、args[nargs_fixed..nargs-1] は stack に置く。 */
-  int is_variadic_call;
-  int nargs_fixed;
+  /* --- 4 バイト --- */
+  int sym_len;        /* CALL / LOAD_* のシンボル長 (sym と対) */
 
-  /* --- 1 バイト --- */
-  /* IR_LOAD: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
+  /* --- 1 バイト (複数 op 族で共有するため union 外) --- */
+  /* IR_LOAD / IR_ATOMIC: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
    * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
   unsigned char is_unsigned_load;
@@ -204,10 +201,35 @@ typedef struct ir_inst_t {
    *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
    *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
   unsigned char ret_complex_half;
-  /* IR_ATOMIC 用。 */
-  unsigned char atomic_kind;   /* ir_atomic_kind_t */
-  unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t (RMW のとき) */
-  unsigned char atomic_width;  /* 1/2/4/8 バイト */
+
+  /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
+   * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で
+   * ゲートされている (switch(op) / if(op==...))。ここに汎用走査される
+   * args/nargs/callee/ret_struct_area/src3 を入れてはならない。 */
+  union {
+    struct {            /* IR_BR / IR_BR_COND / IR_LABEL */
+      int label_id;       /* 分岐先 / ラベル id */
+      int else_label_id;  /* BR_COND の偽分岐先 */
+    };
+    struct {            /* IR_ALLOCA / IR_MEMCPY / IR_ALIGN_PTR */
+      int alloca_size;    /* スロットサイズ (バイト) */
+      int alloca_align;   /* アライメント (バイト) */
+    };
+    struct {            /* IR_CALL */
+      int ret_struct_size;
+      /* variadic 呼び出し時の固定引数数。args[nargs_fixed..nargs-1] が stack 行き。
+       * 固定引数数は short に収まる (decl.c の funcptr_nargs_fixed も short)。 */
+      short nargs_fixed;
+      /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
+       * 0/1 のみ。1 のとき args[nargs_fixed..nargs-1] は stack。 */
+      unsigned char is_variadic_call;
+    };
+    struct {            /* IR_ATOMIC */
+      unsigned char atomic_kind;   /* ir_atomic_kind_t */
+      unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t (RMW のとき) */
+      unsigned char atomic_width;  /* 1/2/4/8 バイト */
+    };
+  };
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */
