@@ -152,31 +152,43 @@ ir_val_t ir_val_vreg(int id, ir_type_t t);
 /* 命令                                                                */
 /* ------------------------------------------------------------------ */
 
+/*
+ * フィールドはアライメント降順 (8→4→1 バイト) に並べてパディングを最小化している
+ * (sizeof=216B / align 8、内部パディングなし。並べ替え前は 224B)。codegen / regalloc が
+ * 毎命令で読むホットフィールド (op / dst / src1 / src2) は先頭側に置き、op のあとの 4 バイト
+ * 穴を label_id で埋めている。並べ替えはレイアウトのみの変更で、ir_inst_new が calloc +
+ * フィールド代入のため挙動には影響しない。
+ */
 typedef struct ir_inst_t {
   struct ir_inst_t *next;
   ir_op_t op;
+  int label_id;       /* BR / BR_COND / LABEL (op 直後の 4 バイト穴を埋める) */
   ir_val_t dst, src1, src2;
 
-  /* op に応じて使うサブ情報 */
-  int label_id;       /* BR / BR_COND / LABEL */
-  int else_label_id;  /* BR_COND の偽分岐先 */
+  /* --- 8 バイト (ポインタ / ir_val_t) --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
-  int sym_len;
   ir_val_t *args;     /* CALL の実引数列 */
+  /* IR_CALL で戻り値が struct の場合: x8 に渡すバッファのアドレス vreg。
+   * ret_struct_size > 0 のときに ret_struct_area が有効。 */
+  ir_val_t ret_struct_area;
+  /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
+   * sym ではなく callee vreg を blr する。 */
+  ir_val_t callee;
+  ir_val_t src3;               /* IR_ATOMIC_CAS の desired 値 */
+
+  /* --- 4 バイト (op に応じて使うサブ情報) --- */
+  int else_label_id;  /* BR_COND の偽分岐先 */
+  int sym_len;
   int nargs;
   int alloca_size;    /* ALLOCA / MEMCPY: スロットサイズ (バイト) */
   int alloca_align;   /* ALLOCA: アライメント (バイト) */
-  /* IR_CALL で戻り値が struct の場合: x8 に渡すバッファのアドレス vreg。
-   * ret_struct_size > 0 のときに ret_struct_area が有効。 */
   int ret_struct_size;
-  ir_val_t ret_struct_area;
   /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
    * is_variadic_call > 0 のとき、args[nargs_fixed..nargs-1] は stack に置く。 */
   int is_variadic_call;
   int nargs_fixed;
-  /* 間接呼び出し時の callee 値 (関数ポインタ)。id != IR_VAL_NONE のとき
-   * sym ではなく callee vreg を blr する。 */
-  ir_val_t callee;
+
+  /* --- 1 バイト --- */
   /* IR_LOAD: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
    * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
@@ -190,7 +202,6 @@ typedef struct ir_inst_t {
   unsigned char atomic_kind;   /* ir_atomic_kind_t */
   unsigned char atomic_rmw_op; /* ir_atomic_rmw_op_t (RMW のとき) */
   unsigned char atomic_width;  /* 1/2/4/8 バイト */
-  ir_val_t src3;               /* IR_ATOMIC_CAS の desired 値 */
 } ir_inst_t;
 
 /* ------------------------------------------------------------------ */
@@ -207,13 +218,19 @@ typedef struct ir_block_t {
 /* 関数                                                                */
 /* ------------------------------------------------------------------ */
 
+/* フィールドはアライメント降順 (8→4 バイト) に並べてパディングを除いている
+ * (sizeof=88B、並べ替え前は 96B)。 */
 typedef struct ir_func_t {
   struct ir_func_t *next;
   char *name;
-  int name_len;
   ir_block_t *entry;
   ir_block_t *cur_block;
   ir_block_t *blocks_tail;
+  /* Phase 5: vreg → 物理レジスタ番号 (-1 = spill / frame に置く)。
+   * 物理レジスタ番号は実際の x{n} の n。長さ = next_vreg_id。
+   * NULL のとき regalloc 未実行 (codegen は全 vreg を frame に置く既存挙動)。 */
+  int *vreg_phys_reg;
+  int name_len;
   int next_vreg_id;
   int next_block_id;
   int frame_size;
@@ -229,27 +246,25 @@ typedef struct ir_func_t {
   /* 戻り値が _Complex のとき half バイト数 (float=4, double=8)。0 = 非複素数。
    * build_stmt_return が IR_RET に複素数戻り値を組むのに使う。 */
   int ret_complex_half;
-  /* Phase 5: vreg → 物理レジスタ番号 (-1 = spill / frame に置く)。
-   * 物理レジスタ番号は実際の x{n} の n。長さ = next_vreg_id。
-   * NULL のとき regalloc 未実行 (codegen は全 vreg を frame に置く既存挙動)。 */
-  int *vreg_phys_reg;
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */
 /* グローバル定義                                                      */
 /* ------------------------------------------------------------------ */
 
+/* フィールドはアライメント降順 (8→4 バイト) に並べてパディングを除いている
+ * (sizeof=64B、並べ替え前は 72B)。 */
 typedef struct ir_global_t {
   struct ir_global_t *next;
   char *name;
+  long long *init_values;
+  long long init_val;
+  char *init_symbol;
   int name_len;
   int byte_size;
   int elem_size;
   int is_array;
-  long long *init_values;
   int init_count;
-  long long init_val;
-  char *init_symbol;
   int init_symbol_len;
 } ir_global_t;
 

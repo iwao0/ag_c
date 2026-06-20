@@ -224,17 +224,19 @@ struct token_num_t {
   tk_num_kind_t num_kind;
 };
 
-/** @brief 整数数値トークン本体。 */
+/** @brief 整数数値トークン本体。
+ * base は先頭固定 (token_t* からのダウンキャストが offset 0 依存)。base 以降のフィールドは
+ * アライメント降順 (8→4→1) に並べてパディングを除いている (sizeof=80B、並べ替え前は 88B)。 */
 struct token_num_int_t {
   token_num_t base;
   long long val;                // 整数値
   unsigned long long uval;      // 整数値(符号なし)
-  bool is_unsigned;             // 整数サフィックス: unsigned
   tk_int_size_t int_size;
-  uint8_t int_base;             // 2, 8, 10, 16
   // 文字定数由来の場合のみ有効
   tk_char_width_t char_width;
   tk_char_prefix_kind_t char_prefix_kind;
+  bool is_unsigned;             // 整数サフィックス: unsigned
+  uint8_t int_base;             // 2, 8, 10, 16
 };
 
 /** @brief 浮動小数点数値トークン本体。 */
