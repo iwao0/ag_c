@@ -22,6 +22,8 @@ void psx_take_static_flag(int *is_static);
 void psx_set_static_flag(int is_static);
 void psx_set_alignas_value(int align);
 void psx_consume_pointer_prefix(int *is_ptr);
+// `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。
+int psx_consume_pointer_prefix_counted(int *is_ptr);
 bool psx_is_decl_prefix_token(token_kind_t k);
 void psx_skip_func_suffix_groups(int *out_has_func_suffix);
 bool psx_try_consume_pragma_pack_marker(void);

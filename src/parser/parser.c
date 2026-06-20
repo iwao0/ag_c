@@ -75,6 +75,10 @@ static token_kind_t g_toplevel_decl_tag_kind = TK_EOF;
 static char *g_toplevel_decl_tag_name = NULL;
 static int g_toplevel_decl_tag_len = 0;
 static int g_toplevel_decl_base_is_ptr = 0;
+/* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP gp;` で 2)。多段ポインタ
+ * typedef の段数を宣言へ伝えるのと、合成 typedef (`typedef PP X;`) の段数加算に使う。
+ * resolve_toplevel_typedef_ref で設定、reset_toplevel_decl_spec_state でクリア。 */
+static int g_toplevel_decl_base_pointer_levels = 0;
 /* 現在パース中のトップレベル宣言子が関数サフィックス `(...)` を持つか。
  * `double (*gops)(double)` のような関数ポインタグローバルを `double *dp` のような
  * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
@@ -271,6 +275,8 @@ static void resolve_toplevel_typedef_ref(void) {
                                 &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr,
                                 NULL, NULL, &td_is_unsigned, &td_is_array, &td_sizeof,
                                 &td_first, g_toplevel_decl_td_array_dims, &td_dim_count, 8);
+  /* 多段ポインタ typedef の段数 (`typedef int **PP` で 2)。単段/非ポインタは 1/0。 */
+  g_toplevel_decl_base_pointer_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
   g_toplevel_decl_td_array_dim_count = (td_is_array && td_dim_count > 0) ? td_dim_count : 0;
   /* pointer-to-array typedef (is_ptr かつ is_array でないのに dims を持つ): ポインティ
    * dims を別管理する。配列サフィックス連結 (parse_toplevel_array_suffixes) には混ぜない。 */
@@ -309,6 +315,7 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_tag_name = NULL;
   g_toplevel_decl_tag_len = 0;
   g_toplevel_decl_base_is_ptr = 0;
+  g_toplevel_decl_base_pointer_levels = 0;
   g_toplevel_decl_pointee_const = 0;
   g_toplevel_decl_pointee_volatile = 0;
   g_toplevel_decl_td_array_dim_count = 0;
@@ -479,15 +486,22 @@ static void skip_ptr_qualifiers(void) {
   }
 }
 
-void psx_consume_pointer_prefix(int *is_ptr) {
+int psx_consume_pointer_prefix_counted(int *is_ptr) {
+  int count = 0;
   while (tk_consume('*')) {
     if (is_ptr) *is_ptr = 1;
     /* トップレベル宣言子のポインタ段数を積算する (他経路の呼び出しでも増えるが、
      * g_toplevel_decl_ptr_levels は parse_toplevel_declarator_head でのリセット後に
      * register_toplevel_global_decl が読むだけなので影響しない)。 */
     g_toplevel_decl_ptr_levels++;
+    count++;
     skip_ptr_qualifiers();
   }
+  return count;
+}
+
+void psx_consume_pointer_prefix(int *is_ptr) {
+  (void)psx_consume_pointer_prefix_counted(is_ptr);
 }
 
 static void parse_static_assert_toplevel(void) {
@@ -1666,6 +1680,13 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   }
   register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array,
                                  td_first_dim, td_dims, td_dim_count);
+  /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array
+   * は getter のデフォルト (is_pointer→1) に任せ、2 段以上だけ明示保存。段数 = 基底ポインタ
+   * typedef の段数 + 宣言子の prefix `*` 数 (g_toplevel_decl_ptr_levels)。 */
+  int td_ptr_levels = g_toplevel_decl_base_pointer_levels + g_toplevel_decl_ptr_levels;
+  if (is_ptr && td_ptr_levels >= 2) {
+    psx_ctx_set_typedef_pointer_levels(name->str, name->len, td_ptr_levels);
+  }
 }
 
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,

@@ -353,6 +353,10 @@ static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_di
  * consume_decl_name_recursive が paren-array を消費するときにセットする。 */
 static int g_paren_array_first_dim = 0;
 static int g_paren_array_dim_count = 0;
+/* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP p;` で 2)。
+ * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
+ * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
+static int g_decl_base_pointer_levels = 0;
 
 static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   decl_array_suffix_t out = {0};
@@ -2837,6 +2841,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int decl_base_is_bool) {
   node_t *init_chain = NULL;
   int alignas_val = 0;
+  /* 基底ポインタ typedef の段数を消費する (read-and-reset)。多段 typedef
+   * `typedef int **PP; PP p;` で base が 2 段ぶん寄与する。非ポインタ基底や直書きは 0
+   * (= base_is_pointer ? 1 : 0 と一致し従来挙動を保つ)。 */
+  int base_pointer_levels = g_decl_base_pointer_levels;
+  g_decl_base_pointer_levels = 0;
+  if (base_is_pointer && base_pointer_levels < 1) base_pointer_levels = 1;
+  if (!base_is_pointer) base_pointer_levels = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
   int decl_is_complex = psx_last_type_is_complex();
   int decl_is_long_long = psx_last_type_is_long_long();
@@ -2874,7 +2885,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
     int var_size = is_pointer ? 8 : elem_size;
-    int total_pointer_levels = ptr_levels + (base_is_pointer ? 1 : 0);
+    /* 基底が多段ポインタ typedef なら段数ぶん寄与する (`PP p` = int**)。単段 typedef・
+     * 非ポインタ基底は base_pointer_levels が 1/0 で従来の `(base_is_pointer?1:0)` と一致。 */
+    int total_pointer_levels = ptr_levels + base_pointer_levels;
     int pointer_deref_size = (total_pointer_levels >= 2) ? 8 : elem_size;
     int ptr_is_const_qualified = (ptr_const_mask & 1u) ? 1 : 0;
     int ptr_is_volatile_qualified = (ptr_volatile_mask & 1u) ? 1 : 0;
@@ -3031,7 +3044,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
         var->pointer_const_qual_mask = ptr_const_mask;
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
-        var->pointer_qual_levels = ptr_levels;
+        var->pointer_qual_levels = total_pointer_levels;
         if (is_pointer) {
           var->base_deref_size = (short)elem_size;
         }
@@ -3045,7 +3058,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
         var->pointer_const_qual_mask = ptr_const_mask;
         var->pointer_volatile_qual_mask = ptr_volatile_mask;
-        var->pointer_qual_levels = ptr_levels;
+        var->pointer_qual_levels = total_pointer_levels;
         if (is_pointer && total_pointer_levels >= 2) {
           var->base_deref_size = (short)elem_size;
         }
@@ -3169,6 +3182,9 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
   token_ident_t *id = (token_ident_t *)curtok();
   // 多次元配列 typedef (`typedef int M[2][3][4]`) の dims を取得して保持する。
   resolve_typedef_array_dims(id, out->td_array_dims, &out->td_array_dim_count);
+  /* 多段ポインタ typedef (`typedef int **PP`) の段数を捕捉し、宣言経路へ受け渡す。
+   * id はトークンなので resolve で curtok が進んでも文字列は有効。 */
+  g_decl_base_pointer_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
                                  &out->tag_kind, &out->tag_name, &out->tag_len,
                                  &out->base_is_pointer,
@@ -3178,6 +3194,7 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
 }
 
 static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
+  g_decl_base_pointer_levels = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }

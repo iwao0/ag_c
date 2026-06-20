@@ -145,6 +145,11 @@ bool psx_ctx_find_typedef_name_ex3(char *name, int len, token_kind_t *out_base_k
                                    int *out_array_first_dim,
                                    int *out_array_dims, int *out_array_dim_count,
                                    int max_dims);
+// 多段ポインタ typedef (`typedef int **PP`) のポインタ段数を記録/取得する。
+// 単段 (`typedef int *PI`) や未設定は getter が is_pointer から 1 を返す。
+void psx_ctx_set_typedef_pointer_levels(char *name, int len, int levels);
+// ポインタ段数を返す。非ポインタは 0、is_pointer だが段数未設定なら 1。
+int psx_ctx_get_typedef_pointer_levels(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 void psx_ctx_define_function_name(char *name, int len);

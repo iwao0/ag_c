@@ -106,6 +106,10 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
 // _Alignas( constant-expression | type-name )
 
 
+/* 基底型がポインタ typedef のときの段数 (`typedef int **PP; typedef PP X;` の合成用)。
+ * parse_decl_type_spec の typedef 分岐で設定し、parse_typedef_decl が読む。 */
+static int g_stmt_base_ptr_levels = 0;
+
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind) {
@@ -116,6 +120,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
   *tag_len = 0;
   *is_pointer_base = 0;
   *base_kind = TK_EOF;
+  g_stmt_base_ptr_levels = 0;
 
   token_kind_t builtin_kind = psx_consume_type_kind();
   if (builtin_kind != TK_EOF) {
@@ -159,6 +164,8 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                    tag_kind, tag_name, tag_len, is_pointer_base, NULL, NULL, NULL)) {
       return 0;
     }
+    /* 基底がポインタ typedef なら段数を捕捉 (合成 typedef の段数加算用)。 */
+    g_stmt_base_ptr_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
     set_curtok(curtok()->next);
     return 1;
   }
@@ -187,10 +194,11 @@ static void parse_typedef_decl(void) {
   psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
   int td_is_unsigned = (base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
 
+  int base_ptr_levels = g_stmt_base_ptr_levels;
   for (;;) {
     int is_ptr = is_pointer_base;
     g_stmt_typedef_ptr_in_paren = 0;
-    psx_consume_pointer_prefix(&is_ptr);
+    int decl_stars = psx_consume_pointer_prefix_counted(&is_ptr);
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
     stmt_array_suffix_t arr = parse_stmt_array_suffixes(0);
@@ -211,6 +219,13 @@ static void parse_typedef_decl(void) {
                                 td_pointee_const, td_pointee_volatile, td_is_unsigned,
                                 0, td_first_dim, td_dims, td_dim_count)) {
       psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
+    }
+    /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array
+     * は getter のデフォルト (is_pointer→1) に任せ、2 段以上だけ明示保存して退行を避ける。
+     * 段数 = 基底ポインタ typedef の段数 + 宣言子の prefix `*` 数。 */
+    int td_ptr_levels = base_ptr_levels + decl_stars;
+    if (is_ptr && td_ptr_levels >= 2) {
+      psx_ctx_set_typedef_pointer_levels(name->str, name->len, td_ptr_levels);
     }
     if (!tk_consume(',')) break;
   }

@@ -81,6 +81,9 @@ struct typedef_name_t {
   char *tag_name;
   int tag_len;
   int is_pointer;
+  // 多段ポインタ typedef (`typedef int **PP`) の `*` 段数。0 のときは未設定
+  // (互換: is_pointer なら 1 段とみなす)。getter psx_ctx_get_typedef_pointer_levels 参照。
+  int pointer_levels;
   int sizeof_size;
   int pointee_const_qualified;
   int pointee_volatile_qualified;
@@ -907,6 +910,18 @@ bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
   if (!t) return false;
   if (out_sizeof_size) *out_sizeof_size = t->sizeof_size;
   return true;
+}
+
+void psx_ctx_set_typedef_pointer_levels(char *name, int len, int levels) {
+  typedef_name_t *t = find_typedef(name, len);
+  if (t) t->pointer_levels = levels;
+}
+
+int psx_ctx_get_typedef_pointer_levels(char *name, int len) {
+  typedef_name_t *t = find_typedef(name, len);
+  if (!t) return 0;
+  if (t->pointer_levels > 0) return t->pointer_levels;
+  return t->is_pointer ? 1 : 0;  /* 未設定の単段ポインタ互換 */
 }
 
 bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
