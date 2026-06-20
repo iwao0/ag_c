@@ -229,6 +229,7 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst);
 static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst);
+static void gen_inst_align_ptr(gen_ctx_t *ctx, ir_inst_t *inst);
 
 static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
   switch (inst->op) {
@@ -266,6 +267,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_LEA:           gen_inst_lea(ctx, inst); return;
     case IR_MEMCPY:        gen_inst_memcpy(ctx, inst); return;
     case IR_ATOMIC:        gen_inst_atomic(ctx, inst); return;
+    case IR_ALIGN_PTR:     gen_inst_align_ptr(ctx, inst); return;
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_UDIV:
     case IR_MOD: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
     case IR_SHL: case IR_SHR: case IR_LSR:
@@ -1011,6 +1013,21 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
     atomic_store_result(ctx, inst->dst, "w");
     return;
   }
+}
+
+/* IR_ALIGN_PTR: dst = (src1 + (A-1)) & ~(A-1)。過剰整列ローカル (_Alignas(>16)) の
+ * アドレスを実行時に丸める (A = alloca_align)。x29 は 16 整列のみなので、固定オフセット
+ * では >16 整列にできない。VLA の add/and 丸めと同じ手法 (`and #-A` は AArch64 の
+ * 有効な bitmask 即値)。 */
+static void gen_inst_align_ptr(gen_ctx_t *ctx, ir_inst_t *inst) {
+  int a = inst->alloca_align > 0 ? inst->alloca_align : 16;
+  char b1[8], bd[8];
+  const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
+  int spill = 0;
+  const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+  emit_addsub_imm("add", d, s1, a - 1);
+  cg_emitf("  and %s, %s, #%d\n", d, d, -a);
+  release_dst(ctx, inst->dst, d, spill);
 }
 
 static void gen_func(ir_func_t *f) {

@@ -101,6 +101,10 @@ typedef enum {
    *  - IR_ATOMIC_FENCE: DMB ISH。 */
   IR_ATOMIC,
 
+  /* 過剰整列ローカル (_Alignas(>16)) のアドレスを実行時に丸める。
+   * dst = (src1 + (alloca_align-1)) & ~(alloca_align-1)。副作用なし。 */
+  IR_ALIGN_PTR,
+
   IR_OP_COUNT,
 } ir_op_t;
 

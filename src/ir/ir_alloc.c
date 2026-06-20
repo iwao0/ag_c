@@ -92,6 +92,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_UDIV:         return "udiv";
     case IR_UMOD:         return "umod";
     case IR_LSR:          return "lsr";
+    case IR_ALIGN_PTR:    return "align_ptr";
     default:              return "?";
   }
 }

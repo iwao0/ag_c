@@ -211,9 +211,24 @@ static node_t *parse_decl_like_stmt(void) {
    * 入れるようにする。psx_decl_parse_declaration は struct を type-spec
    * として直接処理できないため、ここで先に分岐する必要がある。 */
   int tag_path_saw_static = 0;
+  int tag_path_alignas = 0;
   {
     token_t *peek = curtok();
-    while (peek && psx_is_decl_prefix_token(peek->kind)) peek = peek->next;
+    while (peek && psx_is_decl_prefix_token(peek->kind)) {
+      if (peek->kind == TK_ALIGNAS && peek->next && peek->next->kind == TK_LPAREN) {
+        /* `_Alignas(...)` は 1 単位。続く `(...)` を釣り合った括弧で読み飛ばさないと
+         * `(` で止まり、後ろの struct/union/enum を検出できない。 */
+        peek = peek->next->next;
+        int depth = 1;
+        while (peek && depth > 0) {
+          if (peek->kind == TK_LPAREN) depth++;
+          else if (peek->kind == TK_RPAREN) depth--;
+          peek = peek->next;
+        }
+      } else {
+        peek = peek->next;
+      }
+    }
     if (peek && psx_ctx_is_tag_keyword(peek->kind)) {
       /* 修飾子を先に飲み込む (parse_decl_like 側の cv 状態を更新する)。
        * `static struct T x;` の storage class はここで素通りスキップすると
@@ -225,6 +240,15 @@ static node_t *parse_decl_like_stmt(void) {
        * 呼び出し跨ぎで永続しなかった。 */
       while (psx_is_decl_prefix_token(curtok()->kind)) {
         if (curtok()->kind == TK_STATIC) tag_path_saw_static = 1;
+        if (curtok()->kind == TK_ALIGNAS) {
+          /* `_Alignas(N) struct T x;`: _Alignas トークンと続く `(N)` を正しく消費し、
+           * 値を捕捉する。素朴に set_curtok(next) すると `(N)` が残り `struct` 検出前で
+           * E3015 になっていた。値は tag 定義パース後に psx_set_alignas_value で復元する。 */
+          set_curtok(curtok()->next);
+          int av = psx_parse_alignas_value();
+          if (av > tag_path_alignas) tag_path_alignas = av;
+          continue;
+        }
         set_curtok(curtok()->next);
       }
       /* tag 経路へフォールスルー */
@@ -260,8 +284,9 @@ static node_t *parse_decl_like_stmt(void) {
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
-      /* メンバ定義の解析で skip_cv_qualifiers が static フラグをリセットするため復元。 */
+      /* メンバ定義の解析で skip_cv_qualifiers が static / alignas をリセットするため復元。 */
       if (tag_path_saw_static) psx_set_static_flag(1);
+      if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
       return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
     }
     if (tk_consume(';')) {
@@ -273,6 +298,7 @@ static node_t *parse_decl_like_stmt(void) {
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     if (tag_path_saw_static) psx_set_static_flag(1);
+    if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
     return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
                                                  TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
   }

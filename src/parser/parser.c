@@ -457,6 +457,12 @@ void psx_set_static_flag(int is_static) {
   g_last_decl_is_static = is_static ? 1 : 0;
 }
 
+/* tag 経路 (`_Alignas(N) struct T x;`) で、プレフィックス先読み消費時に捕捉した
+ * _Alignas 値を、tag 定義パース後 (skip_cv_qualifiers がリセットする) に復元する。 */
+void psx_set_alignas_value(int align) {
+  if (align > g_last_alignas_value) g_last_alignas_value = align;
+}
+
 static void skip_ptr_qualifiers(void) {
   while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
     set_curtok(curtok()->next);

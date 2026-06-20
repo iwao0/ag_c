@@ -154,16 +154,31 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
   if (size >= 8 && align < 8) align = 8;
   /* _Alignas(N) で明示指定された align は natural より強い (大きい) ものを尊重。 */
   if (var->align_bytes > align) align = var->align_bytes;
+  /* 過剰整列ローカル (_Alignas(>16))。x29 は 16 整列のみで `x29 + 固定オフセット`
+   * では >16 整列にできない。予備領域 (size + A) を確保し、実行時にアドレスを A へ
+   * 丸めた vreg を base にする (IR_ALIGN_PTR)。16 以下は従来どおり。 */
+  int over_aligned = (var->align_bytes > 16);
+  int alloc_size = over_aligned ? size + var->align_bytes : size;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_ALLOCA);
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
-  inst->alloca_size = size;
+  inst->alloca_size = alloc_size;
   inst->alloca_align = align;
   ir_func_append_inst(ctx->f, inst);
+  int base = v;
+  if (over_aligned) {
+    int av = ir_func_new_vreg(ctx->f);
+    ir_inst_t *ap = ir_inst_new(IR_ALIGN_PTR);
+    ap->dst = ir_val_vreg(av, IR_TY_PTR);
+    ap->src1 = ir_val_vreg(v, IR_TY_PTR);
+    ap->alloca_align = var->align_bytes;  /* 丸め先アライメント A */
+    ir_func_append_inst(ctx->f, ap);
+    base = av;  /* lvar の base は丸め後アドレス */
+  }
   ctx->lvar_offset[ctx->lvar_count] = var->offset;
-  ctx->lvar_vreg[ctx->lvar_count] = v;
+  ctx->lvar_vreg[ctx->lvar_count] = base;
   ctx->lvar_count++;
-  return v;
+  return base;
 }
 
 /* v を target_ty に変換した vreg を返す。型が同じならそのまま。
