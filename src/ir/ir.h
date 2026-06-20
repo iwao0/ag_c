@@ -139,8 +139,13 @@ const char *ir_op_name(ir_op_t op);
 typedef struct ir_val_t {
   int id;            /* >= 0: vreg id、IR_VAL_IMM: imm/fp_imm を見る、IR_VAL_NONE: 未使用 */
   ir_type_t type;
-  long long imm;     /* 整数 immediate */
-  double fp_imm;     /* 浮動小数 immediate */
+  /* imm と fp_imm は排他 (値は整数即値か浮動小数即値のどちらか一方)。匿名 union で
+   * 共有し ir_val_t を 24→16B に縮小する。read は常に type / op でゲートされる
+   * (F32/F64 または IR_LOAD_FP_IMM のときだけ fp_imm、それ以外は imm)。 */
+  union {
+    long long imm;   /* 整数 immediate (IR_VAL_IMM かつ非 fp 型) */
+    double fp_imm;   /* 浮動小数 immediate (IR_VAL_IMM かつ F32/F64) */
+  };
 } ir_val_t;
 
 ir_val_t ir_val_none(void);
@@ -154,7 +159,8 @@ ir_val_t ir_val_vreg(int id, ir_type_t t);
 
 /*
  * フィールドはアライメント降順 (8→4→1 バイト) に並べてパディングを最小化している
- * (sizeof=216B / align 8、内部パディングなし。並べ替え前は 224B)。codegen / regalloc が
+ * (sizeof=168B / align 8、内部パディングなし。並べ替え前は 224B。ir_val_t の imm/fp_imm
+ * union 化で 6 個の ir_val_t が各 8B 縮み 216→168B)。codegen / regalloc が
  * 毎命令で読むホットフィールド (op / dst / src1 / src2) は先頭側に置き、op のあとの 4 バイト
  * 穴を label_id で埋めている。並べ替えはレイアウトのみの変更で、ir_inst_new が calloc +
  * フィールド代入のため挙動には影響しない。

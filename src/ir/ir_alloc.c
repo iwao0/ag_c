@@ -99,23 +99,25 @@ const char *ir_op_name(ir_op_t op) {
 
 /* ---- ir_val_t ヘルパ ---- */
 
+/* imm と fp_imm は匿名 union (排他)。初期化子では片方だけ指定する
+ * (両方書くと後勝ちで union を上書きしてしまう)。non-imm は .imm=0 で union を 0 クリア。 */
 ir_val_t ir_val_none(void) {
-  ir_val_t v = { .id = IR_VAL_NONE, .type = IR_TY_VOID, .imm = 0, .fp_imm = 0 };
+  ir_val_t v = { .id = IR_VAL_NONE, .type = IR_TY_VOID, .imm = 0 };
   return v;
 }
 
 ir_val_t ir_val_imm(ir_type_t t, long long imm) {
-  ir_val_t v = { .id = IR_VAL_IMM, .type = t, .imm = imm, .fp_imm = 0 };
+  ir_val_t v = { .id = IR_VAL_IMM, .type = t, .imm = imm };
   return v;
 }
 
 ir_val_t ir_val_fp_imm(ir_type_t t, double v) {
-  ir_val_t r = { .id = IR_VAL_IMM, .type = t, .imm = 0, .fp_imm = v };
+  ir_val_t r = { .id = IR_VAL_IMM, .type = t, .fp_imm = v };
   return r;
 }
 
 ir_val_t ir_val_vreg(int id, ir_type_t t) {
-  ir_val_t v = { .id = id, .type = t, .imm = 0, .fp_imm = 0 };
+  ir_val_t v = { .id = id, .type = t, .imm = 0 };
   return v;
 }
 
