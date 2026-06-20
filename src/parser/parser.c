@@ -1622,8 +1622,21 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
+  const int *td_dims = arr.dims;
+  /* pointer-to-array typedef `typedef int (*PA)[3]`: is_ptr=1 で `*` が括弧内
+   * (ptr_in_paren_group) のとき、括弧の後ろの `[3]` (arr に入っている) はポインティ
+   * 配列の extent。is_array=0 のままその dims を typedef に記録する。これがないと
+   * `PA p; p+1 / p[i]` が要素 1 個 (4B) しか進まず、直書き `int(*p)[3]` と食い違う。
+   * 宣言側 (decl.c の `is_pointer && td_array_dim_count>0` 分岐) が outer_stride /
+   * mid_stride をこの dims から設定する。ポインタの配列 `int *PB[3]` は `*` が括弧外
+   * (ptr_in_paren_group=0) なので除外される。 */
+  if (is_ptr && g_toplevel_decl_ptr_in_paren_group && arr.is_array && arr.dim_count > 0) {
+    td_first_dim = arr.first_dim;
+    td_dim_count = arr.dim_count;
+    td_dims = arr.dims;
+  }
   register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array,
-                                 td_first_dim, arr.dims, td_dim_count);
+                                 td_first_dim, td_dims, td_dim_count);
 }
 
 static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t stored_base_kind,

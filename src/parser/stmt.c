@@ -39,7 +39,14 @@ typedef struct {
   int arr_total;
   int is_array;
   int has_incomplete_array;
+  // pointer-to-array typedef `typedef int (*PA)[3][4]` のポインティ各次元 (dims[0] が最外)。
+  int dims[8];
+  int dim_count;
+  int first_dim;
 } stmt_array_suffix_t;
+/* 直近にパースした typedef 宣言子で `*` が括弧内に現れたか (`(*PA)`)。pointer-to-array /
+ * pointer-to-function の識別に使う。宣言子ごとに parse_typedef_decl でリセットする。 */
+static int g_stmt_typedef_ptr_in_paren = 0;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static node_t *stmt_internal(void);
 static node_t *block_item(void);
@@ -50,7 +57,10 @@ static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
   psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
+    int ptr_before = *is_ptr;
     name = parse_typedef_name_decl_recursive(is_ptr);
+    /* 括弧内で初めて `*` が立った (`(*PA)`): pointer-to-array / 関数ポインタの指標。 */
+    if (*is_ptr && !ptr_before) g_stmt_typedef_ptr_in_paren = 1;
     tk_expect(')');
   } else {
     name = tk_consume_ident();
@@ -74,6 +84,7 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
   out.arr_total = (base_mul > 0) ? base_mul : 1;
   out.is_array = (base_mul > 0);
   out.has_incomplete_array = 0;
+  int dim_count = 0;
   while (tk_consume('[')) {
     int has_size = 0;
     int n = psx_parse_array_size_optional_constexpr(&has_size);
@@ -82,8 +93,12 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
     } else {
       out.arr_total *= n;
     }
+    if (dim_count == 0) out.first_dim = has_size ? n : 0;
+    if (dim_count < 8) out.dims[dim_count] = has_size ? n : 0;
+    dim_count++;
     out.is_array = 1;
   }
+  out.dim_count = dim_count;
   return out;
 }
 
@@ -174,6 +189,7 @@ static void parse_typedef_decl(void) {
 
   for (;;) {
     int is_ptr = is_pointer_base;
+    g_stmt_typedef_ptr_in_paren = 0;
     psx_consume_pointer_prefix(&is_ptr);
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
@@ -181,9 +197,19 @@ static void parse_typedef_decl(void) {
     if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
     else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
     token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
-    if (!psx_ctx_define_typedef_name(name->str, name->len, stored_base_kind, elem_size, fp_kind,
+    /* pointer-to-array typedef `typedef int (*PA)[3]` (is_ptr=1 かつ `*` が括弧内) のみ、
+     * 括弧の後ろの `[3]` をポインティ配列の extent として dims に記録する (is_array=0 の
+     * まま)。これがないと `PA p; p+1 / p[i]` が要素 1 個 (4B) しか進まず直書き `int(*p)[3]`
+     * と食い違う。その他 (スカラ / 配列 typedef) は従来の psx_ctx_define_typedef_name
+     * 相当 (is_array=0, dims なし) を維持して退行を避ける。 */
+    int is_pta = (is_ptr && g_stmt_typedef_ptr_in_paren && arr.is_array && arr.dim_count > 0);
+    int td_first_dim = is_pta ? arr.first_dim : 0;
+    int td_dim_count = is_pta ? arr.dim_count : 0;
+    const int *td_dims = is_pta ? arr.dims : NULL;
+    if (!psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, elem_size, fp_kind,
                                 tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile, td_is_unsigned)) {
+                                td_pointee_const, td_pointee_volatile, td_is_unsigned,
+                                0, td_first_dim, td_dims, td_dim_count)) {
       psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
     }
     if (!tk_consume(',')) break;

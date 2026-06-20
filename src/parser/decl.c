@@ -182,7 +182,11 @@ static void resolve_typedef_array_dims(token_ident_t *id, int *out_dims, int *ou
   psx_ctx_find_typedef_name_ex3(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL,
                                 NULL, NULL, NULL, NULL, &is_array, &sizeof_size,
                                 &first_dim, out_dims, &dim_count, 8);
-  if (out_dim_count) *out_dim_count = (is_array && dim_count > 0) ? dim_count : 0;
+  /* dim_count>0 は配列 typedef (is_array=1) と pointer-to-array typedef
+   * (`typedef int (*PA)[3]`、is_array=0 でポインティ extent を dims に格納) の両方で
+   * 立つ。後者の outer_stride を宣言側で設定するため is_array ゲートを外す。 */
+  (void)is_array;
+  if (out_dim_count) *out_dim_count = (dim_count > 0) ? dim_count : 0;
 }
 
 static long long eval_const_expr_decl(node_t *n, int *ok);

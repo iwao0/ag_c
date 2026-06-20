@@ -1052,6 +1052,7 @@ static const test_case_t test_cases[] = {
     {"probes", "addr_of_array_compound_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/addr_of_array_compound_literal.c", 0, 0},
     {"probes", "struct_array_partial_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_array_partial_init.c", 0, 0},
     {"probes", "typedef_array_pointer_stride", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_array_pointer_stride.c", 0, 0},
+    {"probes", "typedef_ptr_to_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_ptr_to_array.c", 0, 0},
     {"probes", "ptr_array_arith_subscript_deref", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ptr_array_arith_subscript_deref.c", 0, 0},
     {"probes", "generic_long_vs_longlong", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_long_vs_longlong.c", 0, 0},
     {"probes", "negative_fp_global_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/negative_fp_global_init.c", 0, 0},
