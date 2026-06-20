@@ -10,6 +10,41 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+
+/* メモリ計測モード (環境変数 AG_MEM_STATS=1)。コンパイル各段が確保したメモリの
+ * 内訳とプロセスのピーク RSS を stderr に出す。8MB 級のタイト環境への移植検討用。
+ * カウンタ getter は各アロケータが提供する (ir.h / 下記 extern)。 */
+size_t tk_allocator_total_reserved_bytes(void);  /* src/tokenizer/allocator.c */
+size_t arena_total_reserved_bytes(void);         /* src/parser/arena.c */
+
+static void print_mem_stats(size_t source_bytes) {
+  size_t tok  = tk_allocator_total_reserved_bytes();
+  size_t ast  = arena_total_reserved_bytes();
+  size_t ninst = ir_inst_total_count();
+  size_t nblk  = ir_block_total_count();
+  size_t ir_inst_bytes  = ninst * sizeof(ir_inst_t);
+  size_t ir_block_bytes = nblk  * sizeof(ir_block_t);
+  const double MB = 1024.0 * 1024.0;
+  struct rusage ru;
+  long peak_rss = (getrusage(RUSAGE_SELF, &ru) == 0) ? ru.ru_maxrss : 0;
+  /* macOS の ru_maxrss はバイト、Linux は KB。移植先で要確認。 */
+  fprintf(stderr,
+          "=== AG_MEM_STATS ===\n"
+          "source            : %zu bytes\n"
+          "token arena       : %.2f MB\n"
+          "AST arena         : %.2f MB\n"
+          "IR instructions   : %zu (%.2f MB @ %zu B)\n"
+          "IR blocks         : %zu (%.2f MB @ %zu B)\n"
+          "tracked subtotal  : %.2f MB\n"
+          "peak RSS          : %.2f MB (ru_maxrss=%ld)\n",
+          source_bytes,
+          tok / MB, ast / MB,
+          ninst, ir_inst_bytes / MB, sizeof(ir_inst_t),
+          nblk,  ir_block_bytes / MB, sizeof(ir_block_t),
+          (tok + ast + ir_inst_bytes + ir_block_bytes) / MB,
+          peak_rss / MB, peak_rss);
+}
 
 static const char *diag_display_path(const char *path) {
   if (!path) return "";
@@ -110,6 +145,8 @@ int main(int argc, char **argv) {
   gen_float_literals();
   gen_global_vars();
   gen_set_output_callback(NULL, NULL);
+
+  if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
 
   free(source);
   return 0;

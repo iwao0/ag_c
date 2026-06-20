@@ -14,9 +14,13 @@ struct arena_block_t {
 
 static arena_block_t *arena_head = NULL;
 static arena_block_t *arena_current = NULL;
+static size_t arena_reserved_bytes = 0;  // メモリ計測用: 予約総バイト数
+
+size_t arena_total_reserved_bytes(void) { return arena_reserved_bytes; }
 
 static arena_block_t *arena_new_block(size_t min_size) {
   size_t cap = min_size > ARENA_BLOCK_SIZE ? min_size : ARENA_BLOCK_SIZE;
+  arena_reserved_bytes += sizeof(arena_block_t) + cap;
   arena_block_t *block = malloc(sizeof(arena_block_t) + cap);
   block->next = NULL;
   block->capacity = cap;
@@ -52,4 +56,5 @@ void arena_free_all(void) {
   }
   arena_head = NULL;
   arena_current = NULL;
+  arena_reserved_bytes = 0;
 }

@@ -302,6 +302,10 @@ ir_func_t   *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type
 ir_block_t  *ir_block_new(ir_func_t *f);
 ir_inst_t   *ir_inst_new(ir_op_t op);
 
+/* メモリ計測用: これまでに確保した IR 命令 / ブロックの累計個数。 */
+size_t ir_inst_total_count(void);
+size_t ir_block_total_count(void);
+
 /* 関数 f の現在ブロックに inst を末尾追加する */
 void ir_func_append_inst(ir_func_t *f, ir_inst_t *inst);
 

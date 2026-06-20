@@ -123,6 +123,12 @@ ir_val_t ir_val_vreg(int id, ir_type_t t) {
 
 /* ---- アロケータ ---- */
 
+/* メモリ計測用カウンタ (ir_inst_t / ir_block_t は最も大量に確保される)。 */
+static size_t ir_inst_count = 0;
+static size_t ir_block_count = 0;
+size_t ir_inst_total_count(void) { return ir_inst_count; }
+size_t ir_block_total_count(void) { return ir_block_count; }
+
 ir_module_t *ir_module_new(void) {
   ir_module_t *m = calloc(1, sizeof(ir_module_t));
   return m;
@@ -154,6 +160,7 @@ ir_func_t *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t
 }
 
 ir_block_t *ir_block_new(ir_func_t *f) {
+  ir_block_count++;
   ir_block_t *b = calloc(1, sizeof(ir_block_t));
   b->id = f ? f->next_block_id++ : 0;
   if (f) {
@@ -169,6 +176,7 @@ ir_block_t *ir_block_new(ir_func_t *f) {
 }
 
 ir_inst_t *ir_inst_new(ir_op_t op) {
+  ir_inst_count++;
   ir_inst_t *i = calloc(1, sizeof(ir_inst_t));
   i->op = op;
   i->dst = ir_val_none();
