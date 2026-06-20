@@ -102,6 +102,11 @@ static int g_toplevel_decl_pointee_volatile = 0;
 // 設定。parse_toplevel_array_suffixes が dims を append する。
 static int g_toplevel_decl_td_array_dims[8] = {0};
 static int g_toplevel_decl_td_array_dim_count = 0;
+/* pointer-to-array typedef (`typedef int (*PA)[3]; PA gp;`) のポインティ各次元数。配列
+ * typedef の dims (上) とは別管理する: 配列サフィックスへ連結すると gp が「配列」に
+ * 誤登録されるため、apply_toplevel_object_from_head の pointer-to-array 経路でのみ使う。
+ * dims 自体は g_toplevel_decl_td_array_dims に入る (find が書き込む buffer を共用)。 */
+static int g_toplevel_decl_td_ptr_pointee_dim_count = 0;
 
 static node_t *funcdef(void);
 static void parse_toplevel_decl_after_type(void);
@@ -267,6 +272,10 @@ static void resolve_toplevel_typedef_ref(void) {
                                 NULL, NULL, &td_is_unsigned, &td_is_array, &td_sizeof,
                                 &td_first, g_toplevel_decl_td_array_dims, &td_dim_count, 8);
   g_toplevel_decl_td_array_dim_count = (td_is_array && td_dim_count > 0) ? td_dim_count : 0;
+  /* pointer-to-array typedef (is_ptr かつ is_array でないのに dims を持つ): ポインティ
+   * dims を別管理する。配列サフィックス連結 (parse_toplevel_array_suffixes) には混ぜない。 */
+  g_toplevel_decl_td_ptr_pointee_dim_count =
+      (td_is_ptr && !td_is_array && td_dim_count > 0) ? td_dim_count : 0;
   set_curtok(curtok()->next);
   apply_toplevel_typedef_decl_spec(td_base, td_elem, td_fp, td_tag, td_tag_name, td_tag_len,
                                    td_is_ptr, td_is_unsigned);
@@ -303,6 +312,7 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_pointee_const = 0;
   g_toplevel_decl_pointee_volatile = 0;
   g_toplevel_decl_td_array_dim_count = 0;
+  g_toplevel_decl_td_ptr_pointee_dim_count = 0;
   for (int i = 0; i < 8; i++) g_toplevel_decl_td_array_dims[i] = 0;
 }
 
@@ -1503,6 +1513,20 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   int pointee_dims[8];
   int pointee_dim_count = arr.dim_count;
   for (int i = 0; i < arr.dim_count && i < 8; i++) pointee_dims[i] = arr.dims[i];
+  /* pointer-to-array typedef 経由 `typedef int (*PA)[3]; PA gp;`: 直書き `int (*gp)[3]`
+   * と違い宣言子に括弧も trailing `[N]` も無いので上の is_ptr_to_array では検出できない。
+   * typedef に記録したポインティ dims から同じセットアップを行う (base のポインタ性は
+   * head.is_ptr で既に立っている)。 */
+  if (!is_ptr_to_array && head.is_ptr && !arr.is_array &&
+      g_toplevel_decl_td_ptr_pointee_dim_count > 0) {
+    is_ptr_to_array = 1;
+    pointee_dim_count = g_toplevel_decl_td_ptr_pointee_dim_count;
+    pointee_total = 1;
+    for (int i = 0; i < pointee_dim_count && i < 8; i++) {
+      pointee_dims[i] = g_toplevel_decl_td_array_dims[i];
+      if (pointee_dims[i] > 0) pointee_total *= pointee_dims[i];
+    }
+  }
   if (is_ptr_to_array) {
     arr.is_array = 0;
     arr.arr_total = 1;
@@ -1545,8 +1569,13 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
    * で配列でなく関数ポインタでもない場合に限定する。pointer-to-array `double (*pa)[N]`
    * (head.paren_array_mul>1) は pointee がスカラ double でないため除外。funcptr は
    * register_toplevel_global_decl が既に設定済み。 */
+  /* 単段データポインタの pointee fp_kind。直書き `double *dp` (ptr_levels==1) に加え、
+   * ポインタ typedef `typedef double *PD; PD pd;` (基底がポインタ = base_is_ptr) も対象に
+   * する。実効ポインタ段数 = ptr_levels + base_is_ptr が 1 のときに限定し、`double **` 等の
+   * 多段を除外する。 */
   if (gv && head.is_ptr && !arr.is_array && head.paren_array_mul <= 1 &&
-      !g_toplevel_decl_has_func_suffix && g_toplevel_decl_ptr_levels == 1 &&
+      !g_toplevel_decl_has_func_suffix &&
+      (g_toplevel_decl_ptr_levels + (g_toplevel_decl_base_is_ptr ? 1 : 0)) == 1 &&
       g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
     gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
   }
@@ -1738,7 +1767,11 @@ static void parse_toplevel_decl_after_type(void) {
     parse_toplevel_declarator_stmt(g_toplevel_decl_base_is_ptr, apply_toplevel_typedef_from_head);
     return;
   }
-  parse_toplevel_declarator_stmt(0, apply_toplevel_object_from_head);
+  /* ポインタ typedef を基底にしたグローバル変数 `typedef int *PI; PI gp;` では、
+   * 基底のポインタ性 (g_toplevel_decl_base_is_ptr) を宣言子へ渡す必要がある。0 固定だと
+   * gp が int スカラとして登録され sizeof=4 / subscript で E3064 になっていた。直書き
+   * `int *gp` は base_is_ptr=0 + 宣言子の `*` で is_ptr が立つため影響しない。 */
+  parse_toplevel_declarator_stmt(g_toplevel_decl_base_is_ptr, apply_toplevel_object_from_head);
 }
 
 static void parse_toplevel_declarator_stmt(int base_is_ptr,
