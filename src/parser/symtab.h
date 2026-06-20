@@ -67,6 +67,10 @@ struct global_var_t {
   unsigned char extra_strides_count;
   unsigned char is_bool;  // _Bool スカラ: 代入/初期化を 0/1 に正規化する
   unsigned char is_unsigned;  // unsigned スカラ: load を zero-extend (符号拡張しない)
+  // 多段ポインタグローバル (`int **gp`) の段数。`*gp` が int* (8B) を返すよう、
+  // pql>=2 のとき try_build_global_var_node が node の deref_size=8 /
+  // base_deref_size=要素サイズ / pointer_qual_levels を立てる。単段/非ポインタは 0/1。
+  unsigned char pointer_qual_levels;
 };
 extern global_var_t *global_vars;
 

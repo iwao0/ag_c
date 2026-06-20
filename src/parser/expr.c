@@ -3744,6 +3744,17 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.tag_len = gv->tag_len;
     gvar_node->mem.is_tag_pointer = gv->is_tag_pointer;
     if (gv->is_tag_pointer) gvar_node->mem.is_pointer = 1;
+    /* 多段ポインタグローバル (`int **gp`): `*gp` は int* (8B) を返すので、参照ノードの
+     * deref_size を 8 に、base_deref_size を要素サイズ (gv->deref_size) にし、
+     * pointer_qual_levels を立てる。build_unary_deref_node の pql>=2 分岐がこれを見て
+     * 中間 deref を 8B ポインタロードにする (ローカル `int **lp` と同じ表現)。
+     * pointer-to-array (outer_stride>0) は別表現なので除外。 */
+    if (gv->pointer_qual_levels >= 2 && gv->outer_stride == 0) {
+      gvar_node->mem.base_deref_size = gv->deref_size;
+      gvar_node->mem.deref_size = 8;
+      gvar_node->mem.pointer_qual_levels = gv->pointer_qual_levels;
+      gvar_node->mem.is_pointer = 1;
+    }
     /* 浮動小数スカラのグローバル: fp_kind を node に伝播。IR builder が
      * これを見て IR_TY_F32/F64 として load を発行する。 */
     gvar_node->mem.base.fp_kind = gv->fp_kind;
