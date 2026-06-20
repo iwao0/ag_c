@@ -116,12 +116,13 @@ int main(int argc, char **argv) {
    * - ストリーム経路: 字句解析→プリプロセスを遅延 pull 化し、パーサがカーソルを進めるたびに
    *   先読み分だけ materialize して通過済みトークンを解放する。トークンのピークメモリが
    *   O(ウィンドウ) になる。マクロ・条件指令 (#define/#if 等) も扱える (Stage 3)。
-   * - #include / #line を含むファイルは従来の whole-file 経路 (完全サポート) にフォールバック。
+   * - #line もストリーム経路で扱える (Stage 4: 遅延 line_delta / file_override)。
+   * - #include を含むファイルは従来の whole-file 経路 (完全サポート) にフォールバック。
    *   判定は保守的な部分文字列スキャン: 文字列/コメント中の偶然一致は単に経路を whole-file に
    *   倒すだけで安全。どちらも同じ ps_next_function / ir_build_emit_function ループへ流れ一致する。 */
   pp_stream_t *pps = NULL;
   token_t *tok;
-  if (!strstr(source, "include") && !strstr(source, "line")) {
+  if (!strstr(source, "include")) {
     tok = pp_stream_open(&pps, tk_ctx, source);
   } else {
     tok = tk_tokenize_ctx(tk_ctx, source);

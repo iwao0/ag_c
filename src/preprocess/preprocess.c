@@ -1873,6 +1873,14 @@ struct pp_stream {
   int ooo_active;        // 入れ子展開 (pushback 非空時の更なる pushback) で out 鎖が
                          // 確保順≠消費順になった区間を処理中。drain まで reclaim_hold を更新。
   int eof_done;
+  /* #line 状態 (Stage 4)。バッチ handle_line は「指令以降の全 raw トークンの line_no に
+   * offset を加算 / file_name_id を上書き」する。ストリームでは後続を一括変更できないので、
+   * 遅延デルタとして保持し、lex 由来 (物理) トークンを pull した時点で 1 回だけ適用する。
+   * file_override は #line にファイル指定がある度に更新され、以降 sticky (指定無し #line は
+   * 既存のファイル名を保つ = バッチと同じ)。id 0 も有効なので別フラグで有無を持つ。 */
+  int line_delta;          // 物理 line_no に加算するデルタ (既定 0)
+  int file_override_set;   // file_override が有効か
+  uint16_t file_override;  // 有効時、lex 由来トークンの file_name_id をこれで上書き
 };
 
 static void pps_append(pp_stream_t *s, token_t *t) {
@@ -1882,7 +1890,11 @@ static void pps_append(pp_stream_t *s, token_t *t) {
   s->out_tail = t;
 }
 
-/* 次の raw トークンを 1 つ取り出す。pushback があればそれを先に返し、無ければ遅延字句から。 */
+/* 次の raw トークンを 1 つ取り出す。pushback があればそれを先に返し、無ければ遅延字句から。
+ * lex 由来 (物理) トークンには #line のデルタ/ファイル上書きをここで 1 回だけ適用する
+ * (pushback 由来 = マクロ rescan 本体や合成 EOF・差し戻し済みトークンには適用しない。
+ * 展開本体は呼び出し位置の line/file を pp_expand_* が既にコピー済み、差し戻し済みトークンは
+ * pull 時に適用済み)。バッチが「raw を先に書き換えてから preprocess」するのと等価になる。 */
 static token_t *pps_pull_raw(pp_stream_t *s) {
   if (s->pb_head) {
     token_t *t = s->pb_head;
@@ -1890,7 +1902,12 @@ static token_t *pps_pull_raw(pp_stream_t *s) {
     t->next = NULL;
     return t;
   }
-  return tk_stream_next(s->lex);
+  token_t *t = tk_stream_next(s->lex);
+  if (t && t->kind != TK_EOF) {  // バッチ handle_line も EOF は変更しない
+    if (s->line_delta) t->line_no = (int)((long long)t->line_no + s->line_delta);
+    if (s->file_override_set) t->file_name_id = s->file_override;
+  }
+  return t;
 }
 
 /* トークン 1 つを pushback の先頭へ差し戻す。 */
@@ -2027,9 +2044,51 @@ static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
   else cond_incl->included = true;
 }
 
-/* materialize 済みの指令行を処理する。bounded 指令 (define/undef/error/pragma/endif) は
- * バッチハンドラをそのまま行バッファ上で実行。条件指令は streaming 版を呼ぶ。
- * include/line はゲートで除外済み (到達しない)。 */
+/* ストリーミング版 #line。バッチ handle_line は「次の物理行以降の全トークン」を書き換えるが、
+ * ストリームでは遅延デルタ (line_delta / file_override) に変換し pps_pull_raw で適用する。
+ * デルタは「次の物理トークンの素 (デルタ適用前) の line_no」基準で絶対計算する:
+ *   line_delta = N - raw_next_line。バッチは既調整 line に offset を足すが、累積分は相殺され
+ *   結果は常に N - raw_next_line に一致する (HANDOFF Stage 4 参照)。
+ * after_hash は指令名 "line" トークン。バッチ同様、N が無効なら何もしない (デルタ不変)。 */
+static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
+  token_t *tok = after_hash->next;  // N
+  if (!(tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT)) {
+    return;  // バッチ: skip_to_next_line で無視 (デルタ変更なし)
+  }
+  long long new_line = tk_as_num_int(tok)->val;
+  if (new_line <= 0 || new_line > INT_MAX) {
+    pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+  }
+  tok = tok->next;
+  char *new_file = NULL;
+  if (tok && tok->kind == TK_STRING) {
+    token_string_t *st = as_string(tok);
+    validate_line_filename_or_die(st->str, st->len);
+    new_file = my_strndup(st->str, st->len);
+  }
+  /* 次の物理トークンを 1 つ覗いて素の line_no を得る (pull で旧デルタ適用済みなので差し引く)。
+   * バッチは次トークンが EOF なら何もしない (offset 計算も適用も行わない) ので同じく分岐する。 */
+  token_t *nx = pps_pull_raw(s);
+  if (nx && nx->kind != TK_EOF) {
+    long long raw = (long long)nx->line_no - s->line_delta;  // 旧デルタを除いた素値
+    s->line_delta = (int)(new_line - raw);
+    if (new_file) {
+      s->file_override = tk_filename_intern(new_file);
+      s->file_override_set = 1;
+    }
+    /* 覗いたトークンは pushback 側に戻る = 以後デルタ非適用なので、新デルタ/上書きを今ここで
+     * 反映しておく (line_no は raw + 新デルタ = N)。 */
+    nx->line_no = (int)((long long)raw + s->line_delta);
+    if (s->file_override_set) nx->file_name_id = s->file_override;
+  }
+  if (nx) pps_pushback_one(s, nx);
+  /* new_file は free しない: tk_filename_intern がポインタをそのまま filename_table に
+   * 永続保持するため (バッチ handle_line も free せず table に所有させる)。 */
+}
+
+/* materialize 済みの指令行を処理する。bounded 指令 (define/undef/error/pragma/endif/line) は
+ * バッチハンドラ相当を行バッファ上で実行。条件指令は streaming 版を呼ぶ。
+ * include はゲートで除外済み (到達しない)。 */
 static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   token_t *tok = line->next;  // '#' を読み飛ばす
   if (!tok || tok->kind == TK_EOF) return;  // 空指令 '#'
@@ -2046,6 +2105,7 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
     return;
   }
   if (is_dir(tok, "undef"))  { handle_undef(tok); return; }
+  if (is_dir(tok, "line"))   { pps_handle_line(s, tok); return; }
   if (is_dir(tok, "error"))  { handle_error(tok); return; }
   if (is_dir(tok, "pragma")) {
     token_t lc; lc.next = NULL; token_t *cur = &lc;
