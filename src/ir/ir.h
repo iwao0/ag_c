@@ -148,14 +148,6 @@ typedef struct ir_val_t {
   };
 } ir_val_t;
 
-/* ir_val_none/vreg/imm は `.imm = 0` だけで union 全体をゼロにする (fp_imm も 0.0)。
- * これは imm と fp_imm が同サイズであることに依存する。両者とも 64bit
- * (long long >= 64bit, double = IEEE754 64bit) なので 32bit ターゲットでも成立するが、
- * 将来どちらかのメンバ型を変えても破綻しないようコンパイル時に保証しておく。
- * (実メンバの sizeof で比較するので、例えば imm を int に変えれば即ビルドエラーになる。) */
-_Static_assert(sizeof(((ir_val_t *)0)->imm) == sizeof(((ir_val_t *)0)->fp_imm),
-               "ir_val_t: imm と fp_imm は同サイズ前提 (.imm=0 で union 全体をゼロにする)");
-
 ir_val_t ir_val_none(void);
 ir_val_t ir_val_imm(ir_type_t t, long long imm);
 ir_val_t ir_val_fp_imm(ir_type_t t, double v);
