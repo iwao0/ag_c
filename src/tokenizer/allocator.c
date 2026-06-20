@@ -14,7 +14,8 @@ struct arena_chunk_t {
 
 static arena_chunk_t *arena_head;
 static size_t total_chunks;
-static size_t total_reserved_bytes;
+static size_t total_reserved_bytes;  // 現在 live のチャンク総バイト数
+static size_t peak_reserved_bytes;   // 同時 live の最大 (将来のアリーナ reset を跨ぐ高水位)
 static size_t next_chunk_hint = 16 * 1024;
 
 /** @brief 指定アラインメント境界へ切り上げる。 */
@@ -40,6 +41,7 @@ static void *arena_alloc(size_t size) {
     arena_head = chunk;
     total_chunks++;
     total_reserved_bytes += sizeof(arena_chunk_t) + cap;
+    if (total_reserved_bytes > peak_reserved_bytes) peak_reserved_bytes = total_reserved_bytes;
   }
 
   void *p = arena_head->data + arena_head->used;
@@ -73,7 +75,8 @@ size_t tk_allocator_total_chunks(void) {
   return total_chunks;
 }
 
-/** @brief これまでに予約した総バイト数を返す。 */
+/** @brief 同時 live の最大予約バイト数 (ピーク) を返す。アリーナを reset しない現状では
+ * 累計と一致する。将来セグメントごとに reset する経路では「最大の 1 セグメント」を表す。 */
 size_t tk_allocator_total_reserved_bytes(void) {
-  return total_reserved_bytes;
+  return peak_reserved_bytes > total_reserved_bytes ? peak_reserved_bytes : total_reserved_bytes;
 }
