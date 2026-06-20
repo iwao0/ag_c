@@ -176,14 +176,17 @@ uint16_t tk_filename_intern(const char *name);
 const char *tk_filename_lookup(uint16_t id);
 
 // 共通トークン型（最小限の共通フィールド）
+// アライメント降順 (8→4→2→1) に並べてパディングを除き sizeof=16B (並べ替え前は 24B)。
+// token_kind_t は値域が小さい (種別 < 256) ので kind は uint8_t に格納する。読み書きは
+// 列挙値のまま (比較・switch・代入はすべて暗黙変換で安全。&tok->kind を取る箇所は無い)。
 typedef struct token_t token_t;
 struct token_t {
-  token_t *next;      // 次の入力トークン
-  token_kind_t kind;  // トークンの型（hot）
-  int line_no;        // 行番号
-  unsigned int at_bol : 1;    // 行頭(Beginning of Line)にあるか
-  unsigned int has_space : 1; // 直前に空白文字があるか
+  token_t *next;             // 次の入力トークン
+  int line_no;               // 行番号
   uint16_t file_name_id;     // ファイル名テーブルのインデックス
+  uint8_t kind;              // トークンの型（hot, token_kind_t 値を格納）
+  uint8_t at_bol : 1;        // 行頭(Beginning of Line)にあるか
+  uint8_t has_space : 1;     // 直前に空白文字があるか
 };
 
 // プリプロセッサ用の共通拡張
@@ -203,7 +206,7 @@ struct token_ident_t {
 
 // 文字列リテラルトークン
 // char_width / str_prefix_kind は値域が小さい列挙なので uint8_t に格納してパディングを
-// 除いている (sizeof=48B、enum 格納時は 56B)。読み書きは列挙値のまま。
+// 除いている (sizeof=40B、enum 格納時は 48B)。読み書きは列挙値のまま。
 typedef struct token_string_t token_string_t;
 struct token_string_t {
   token_pp_t pp;
@@ -228,12 +231,12 @@ struct token_num_t {
 
 /** @brief 整数数値トークン本体。
  * base は先頭固定 (token_t* からのダウンキャストが offset 0 依存)。base 以降のフィールドは
- * アライメント降順 (8→4→1) に並べてパディングを除いている (sizeof=80B、並べ替え前は 88B)。 */
+ * アライメント降順 (8→4→1) に並べてパディングを除いている (sizeof=64B、整列前は 72B)。 */
 struct token_num_int_t {
   token_num_t base;
   long long val;                // 整数値
   unsigned long long uval;      // 整数値(符号なし)
-  // 値域の小さい列挙は uint8_t に格納してパディングを除く (sizeof=72B、enum 格納時は 80B)。
+  // 値域の小さい列挙は uint8_t に格納してパディングを除く (5 個で 5B、enum 格納なら 20B 相当)。
   uint8_t int_size;             // tk_int_size_t
   // 文字定数由来の場合のみ有効
   uint8_t char_width;           // tk_char_width_t

@@ -15,15 +15,17 @@
 
 typedef struct macro macro_t;
 #define MACRO_INLINE_PARAMS 8
+/* アライメント降順 (ポインタ/配列 → int → bool) に並べてパディングを除き sizeof=104B
+ * (並べ替え前は 112B)。 */
 struct macro {
   macro_t *next;
   char *name;
   token_t *body;
+  char **params;
+  char *inline_params[MACRO_INLINE_PARAMS];
+  int num_params;    // 可変長時は合成 __VA_ARGS__ スロットを含む
   bool is_funclike;
   bool is_variadic;  // 末尾が `...` (合成パラメータ "__VA_ARGS__") の可変長マクロ
-  char **params;
-  int num_params;    // 可変長時は合成 __VA_ARGS__ スロットを含む
-  char *inline_params[MACRO_INLINE_PARAMS];
 };
 
 static macro_t *macros;
