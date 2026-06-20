@@ -672,8 +672,12 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
            control.ptr_pointee_const == assoc.ptr_pointee_const &&
            control.ptr_pointee_volatile == assoc.ptr_pointee_volatile;
   }
-  if (control.kind == TK_STRUCT || control.kind == TK_UNION) {
-    return control.kind == assoc.kind &&
+  /* struct/union/enum タグ型: どちらか一方でもタグを持てば、両者のタグが一致する
+   * ときのみマッチ。control 側だけを見ると、control が int・assoc が単一 int メンバの
+   * struct のとき下のスカラ経路でサイズ一致して誤マッチしていた (`_Generic((int),
+   * Anon:.., int:..)` が Anon を選ぶ)。 */
+  if (control.tag_kind != TK_EOF || assoc.tag_kind != TK_EOF) {
+    return control.tag_kind == assoc.tag_kind &&
            control.tag_len == assoc.tag_len &&
            strncmp(control.tag_name ? control.tag_name : "",
                    assoc.tag_name ? assoc.tag_name : "",
