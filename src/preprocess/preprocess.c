@@ -1837,10 +1837,15 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
       free(name);
     }
 
-    // 通常のコード行のトークンはそのまま出力へ繋ぐ
-    cur->next = copy_token(tok);
-    cur = cur->next;
-    tok = tok->next;
+    /* 通常のコード行のトークンはコピーせず「再利用」して出力へ繋ぐ。copy_token は
+     * str/hideset 含む shallow clone なのでパーサから見て等価で、入力 raw トークンは
+     * この後参照されない (前方一回走査) ため所有権の重複もない。マクロ非展開部を二重に
+     * 確保しないぶんトークンのピークメモリが減る (展開なしコードでは約半分)。
+     * tok->next は次の emit (または末尾の EOF) で上書き設定されるので保存しておく。 */
+    token_t *nx = tok->next;
+    cur->next = tok;
+    cur = tok;
+    tok = nx;
   }
 
   cur->next = tok; // TK_EOF を繋ぐ
