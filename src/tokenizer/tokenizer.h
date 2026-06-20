@@ -140,6 +140,15 @@ token_t *tk_tokenize(const char *p);
  */
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *p);
 
+/* 遅延 (pull 型) トークナイザ。tk_stream_open で開始し、tk_stream_next を呼ぶたびに
+ * 1 トークンだけ生成する (入力末尾で TK_EOF を 1 度返し、以降 NULL)。返すトークンの
+ * ->next は未設定なので呼び出し側が連結する。tk_stream_close でセッションを閉じる。
+ * トークンを一括保持せず字句解析→プリプロセス→パースを流すための基盤 API。 */
+typedef struct tk_token_stream tk_token_stream_t;
+void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in);
+token_t *tk_stream_next(tk_token_stream_t *s);
+void tk_stream_close(tk_token_stream_t *s);
+
 /**
  * @brief 指定コンテキストの入力文字列（診断表示用）を取得する。
  * @param ctx 対象コンテキスト。`NULL` の場合は既定コンテキスト。

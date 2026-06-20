@@ -1069,30 +1069,64 @@ static char *tokenize_prepare_input(tokenizer_context_t *ctx, const char *in) {
   return normalized;
 }
 
+/* 遅延 (pull 型) トークナイザ。入力を一括で全トークン化せず、tk_stream_next を呼ぶたびに
+ * 1 トークンだけ切り出す。状態 (カーソル p・行頭/空白フラグ・行番号・セッション) を保持し、
+ * トークンストリーム化 (字句解析→プリプロセス→パースを 1 関数ずつ流す) の基盤にする。
+ * 現状は tk_tokenize_ctx がこの上で全トークンを生成し、挙動はバッチ版と同一。 */
+struct tk_token_stream {
+  tokenize_session_t session;
+  char *p;          // 正規化済み入力へのカーソル
+  bool at_bol;
+  bool has_space;
+  int line_no;
+  bool done;        // TK_EOF を生成済み
+};
+
+void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in) {
+  s->session = begin_tokenize_session(ctx);
+  s->p = tokenize_prepare_input(s->session.ctx, in);
+  s->at_bol = true;
+  s->has_space = false;
+  s->line_no = 1;
+  s->done = false;
+}
+
+/* 次の 1 トークンを切り出して返す。入力末尾では TK_EOF を 1 度だけ返し、以降は NULL。
+ * 返すトークンの ->next は未設定 (呼び出し側が連結する)。 */
+token_t *tk_stream_next(tk_token_stream_t *s) {
+  if (s->done) return NULL;
+  token_t local_head;
+  local_head.next = NULL;
+  token_t *cur = &local_head;
+  for (;;) {
+    s->p = tk_skip_ignored(s->p, &s->at_bol, &s->has_space, &s->line_no);
+    if (!*s->p) {
+      new_token_simple(TK_EOF, cur, s->line_no, false, false);
+      s->done = true;
+      return local_head.next;
+    }
+    tokenize_flags_t flags = take_tokenize_flags(&s->at_bol, &s->has_space);
+    if (tokenize_one(&s->p, &cur, s->line_no, flags)) {
+      return local_head.next;
+    }
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, s->p, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
+  }
+}
+
+void tk_stream_close(tk_token_stream_t *s) {
+  end_tokenize_session(&s->session, tk_get_current_token());
+}
+
 token_t *tk_tokenize_ctx(tokenizer_context_t *ctx, const char *in) {
-  tokenize_session_t session = begin_tokenize_session(ctx);
-  char *normalized = tokenize_prepare_input(session.ctx, in);
-  char *p = normalized;
+  tk_token_stream_t s;
+  tk_stream_open(&s, ctx, in);
   token_t head;
   head.next = NULL;
   token_t *cur = &head;
-  
-  bool at_bol = true;
-  bool has_space = false;
-  int line_no = 1;
-
-  while (*p) {
-    p = tk_skip_ignored(p, &at_bol, &has_space, &line_no);
-    if (!*p) break;
-
-    tokenize_flags_t flags = take_tokenize_flags(&at_bol, &has_space);
-    if (tokenize_one(&p, &cur, line_no, flags)) {
-      continue;
-    }
-
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, p, "%s", diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
+  for (token_t *t; (t = tk_stream_next(&s)) != NULL; ) {
+    cur->next = t;
+    cur = t;
   }
-
-  new_token_simple(TK_EOF, cur, line_no, false, false);
-  return end_tokenize_session(&session, head.next);
+  return end_tokenize_session(&s.session, head.next);
 }
