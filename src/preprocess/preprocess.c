@@ -1594,6 +1594,143 @@ static token_t *handle_pragma(token_t *tok, token_t **pcur) {
   return skip_to_next_line(tok);
 }
 
+/* オブジェクト形式マクロ本体を展開して返す (本体コピー + ## paste + hideset 付与 +
+ * 呼び出し位置への line/file 再配置 + 先頭 at_bol/has_space)。本体が空なら NULL。
+ * batch (preprocess_ctx) と streaming (pps_step) の双方から呼び、展開を完全一致させる。 */
+static token_t *pp_expand_objlike(macro_t *m, token_t *macro_tok, char *name) {
+  token_t *body_copy = copy_token_list(m->body);
+  body_copy = paste_tokens(body_copy);
+  hideset_t *hs = hideset_union(as_pp(macro_tok)->hideset, new_hideset(name));
+  for (token_t *t = body_copy; t; t = t->next) {
+    as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+    t->line_no = macro_tok->line_no;
+    t->file_name_id = macro_tok->file_name_id;
+  }
+  if (body_copy) {
+    body_copy->at_bol = macro_tok->at_bol;
+    body_copy->has_space = macro_tok->has_space;
+  }
+  return body_copy;
+}
+
+/* func-like マクロの実引数を集める。tok = '(' の次のトークン。args[] (calloc、呼び出し側で
+ * free) を返し、*out_rparen に ')' トークンを設定。引数個数を検査する。 */
+static token_t **pp_collect_args(macro_t *m, token_t *tok, token_t **out_rparen) {
+  token_t **args = calloc(m->num_params > 0 ? (size_t)m->num_params : 1, sizeof(token_t *));
+  int arg_cnt = 0;
+  int parsed_args = 0;
+  bool has_empty_arg = false;
+  int num_named = m->is_variadic ? m->num_params - 1 : m->num_params;
+  if (!(tok->kind == TK_RPAREN)) {
+    while (tok->kind != TK_EOF) {
+      token_t head_arg; head_arg.next = NULL;
+      token_t *cur_arg = &head_arg;
+      int nest = 0;
+      bool collecting_va = m->is_variadic && (arg_cnt >= num_named);
+      while (tok->kind != TK_EOF) {
+        if (nest == 0 && tok->kind == TK_RPAREN) break;
+        if (nest == 0 && tok->kind == TK_COMMA && !collecting_va) break;
+        if (tok->kind == TK_LPAREN) nest++;
+        if (tok->kind == TK_RPAREN) nest--;
+        cur_arg->next = copy_token(tok);
+        cur_arg = cur_arg->next;
+        tok = tok->next;
+      }
+      parsed_args++;
+      if (!head_arg.next && !collecting_va) has_empty_arg = true;
+      if (arg_cnt < m->num_params) args[arg_cnt++] = head_arg.next;
+      if (collecting_va) break;
+      if (tok->kind == TK_COMMA) tok = tok->next;
+      else break;
+    }
+  }
+  if (tok->kind != TK_RPAREN) {
+    pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
+  }
+  (void)has_empty_arg;  // C99 6.10.3p4: 空引数は合法 (placemarker)
+  if (m->is_variadic) {
+    if (parsed_args < num_named) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+  } else {
+    if (parsed_args != m->num_params) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+  }
+  *out_rparen = tok;
+  return args;
+}
+
+/* func-like マクロ本体に実引数を代入し、## paste・# stringize・hideset 付与・行再配置を行って
+ * 展開結果を返す (NULL 終端、空なら NULL)。name は new_hideset 用 (free しない)。 */
+static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **args, char *name) {
+  /* ## の位置検査 (本体側)。 */
+  token_t *prev_body = NULL;
+  for (token_t *bt = m->body; bt; bt = bt->next) {
+    if (bt->kind != TK_HASHHASH) { prev_body = bt; continue; }
+    if (!prev_body || !bt->next) {
+      pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
+    }
+    if (prev_body->kind == TK_HASHHASH || bt->next->kind == TK_HASHHASH || bt->next->kind == TK_HASH) {
+      pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
+    }
+    prev_body = bt;
+  }
+  token_t body_head; body_head.next = NULL;
+  token_t *cur_body = &body_head;
+  for (token_t *t = m->body; t; t = t->next) {
+    if (t->kind == TK_HASH && t->next && t->next->kind == TK_IDENT) {
+      int p_idx = -1;
+      for (int i = 0; i < m->num_params; i++) {
+        token_ident_t *pid = as_ident(t->next);
+        if (strlen(m->params[i]) == (size_t)pid->len && !strncmp(m->params[i], pid->str, pid->len)) {
+          p_idx = i; break;
+        }
+      }
+      if (p_idx != -1) {
+        cur_body->next = stringify_tokens(args[p_idx], macro_tok);
+        cur_body = cur_body->next;
+        t = t->next;  // skip IDENT
+        continue;
+      }
+    }
+    if (t->kind == TK_IDENT) {
+      int p_idx = -1;
+      for (int i = 0; i < m->num_params; i++) {
+        token_ident_t *pid = as_ident(t);
+        if (strlen(m->params[i]) == (size_t)pid->len && !strncmp(m->params[i], pid->str, pid->len)) {
+          p_idx = i; break;
+        }
+      }
+      if (p_idx != -1) {
+        /* C11 6.10.3.1: # / ## に隣接しない実引数は代入前に完全展開する。 */
+        token_t *pv = NULL;
+        for (token_t *b = m->body; b && b != t; b = b->next) pv = b;
+        bool paste_operand = (t->next && t->next->kind == TK_HASHHASH) ||
+                             (pv && pv->kind == TK_HASHHASH);
+        token_t *sub = paste_operand ? args[p_idx] : pp_expand_arg(args[p_idx]);
+        for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
+          cur_body->next = copy_token(a);
+          cur_body = cur_body->next;
+        }
+        continue;
+      }
+    }
+    cur_body->next = copy_token(t);
+    cur_body = cur_body->next;
+  }
+  cur_body->next = NULL;
+
+  token_t *body_copy = paste_tokens(body_head.next);
+  hideset_t *hs = hideset_union(as_pp(macro_tok)->hideset, new_hideset(name));
+  for (token_t *t = body_copy; t; t = t->next) {
+    as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+    t->line_no = macro_tok->line_no;
+    t->file_name_id = macro_tok->file_name_id;
+  }
+  if (body_copy) {
+    body_copy->at_bol = macro_tok->at_bol;
+    body_copy->has_space = macro_tok->has_space;
+  }
+  return body_copy;
+}
+
 // プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
 token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
@@ -1664,167 +1801,27 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
         if (m->is_funclike) {
            if (tok->next && tok->next->kind == TK_LPAREN) {
              token_t *macro_tok = tok;
-             tok = tok->next->next; // skip macro name and '('
-             
-             token_t **args = calloc(m->num_params > 0 ? m->num_params : 1, sizeof(token_t*));
-             int arg_cnt = 0;
-             int parsed_args = 0;
-             bool has_empty_arg = false;
-             // 可変長マクロでは末尾の合成 __VA_ARGS__ スロットを除いた数が名前付き引数。
-             int num_named = m->is_variadic ? m->num_params - 1 : m->num_params;
-             if (!(tok->kind == TK_RPAREN)) {
-               while (tok->kind != TK_EOF) {
-                 token_t head_arg; head_arg.next = NULL;
-                 token_t *cur_arg = &head_arg;
-                 int nest = 0;
-                 // 名前付き引数を埋め終えた可変長マクロでは、このグループが
-                 // __VA_ARGS__ の本体。トップレベルのカンマも取り込み `)` まで集約する。
-                 bool collecting_va = m->is_variadic && (arg_cnt >= num_named);
-                 while (tok->kind != TK_EOF) {
-                   if (nest == 0 && tok->kind == TK_RPAREN) break;
-                   if (nest == 0 && tok->kind == TK_COMMA && !collecting_va) break;
-                   if (tok->kind == TK_LPAREN) nest++;
-                   if (tok->kind == TK_RPAREN) nest--;
-                   cur_arg->next = copy_token(tok);
-                   cur_arg = cur_arg->next;
-                   tok = tok->next;
-                 }
-                 parsed_args++;
-                 if (!head_arg.next && !collecting_va) has_empty_arg = true;
-                 if (arg_cnt < m->num_params) args[arg_cnt++] = head_arg.next;
-                 if (collecting_va) break; // 可変長部を `)` まで集約済み
-                 if (tok->kind == TK_COMMA) tok = tok->next;
-                 else break;
-               }
-             }
-             if (tok->kind != TK_RPAREN) {
-               pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
-             }
-             /* C99 6.10.3p4: マクロ実引数は空でもよい (空引数は placemarker として
-              * 何も展開しない)。`F(7,)` / `F(,x)` / `F(a,,c)` はすべて合法なので
-              * has_empty_arg でエラーにしない。引数の個数のみ検査する。 */
-             (void)has_empty_arg;
-             if (m->is_variadic) {
-               // 可変長部 (__VA_ARGS__) は空でもよい。clang/gcc は `F(a,...)` を `F(42)`
-               // で呼べる (空 __VA_ARGS__、C23 で標準化)。名前付き引数より少ない場合だけエラー。
-               if (parsed_args < num_named) {
-                 pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
-               }
-             } else {
-               if (parsed_args != m->num_params) {
-                 pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
-               }
-             }
-             tok = tok->next; // skip ')'
-
-             token_t *prev_body = NULL;
-             for (token_t *bt = m->body; bt; bt = bt->next) {
-               if (bt->kind != TK_HASHHASH) {
-                 prev_body = bt;
-                 continue;
-               }
-               if (!prev_body || !bt->next) {
-                 pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
-               }
-               if (prev_body->kind == TK_HASHHASH || bt->next->kind == TK_HASHHASH || bt->next->kind == TK_HASH) {
-                 pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
-               }
-               prev_body = bt;
-             }
-             
-             token_t body_head; body_head.next = NULL;
-             token_t *cur_body = &body_head;
-             for (token_t *t = m->body; t; t = t->next) {
-               if (t->kind == TK_HASH && t->next && t->next->kind == TK_IDENT) {
-                 int p_idx = -1;
-                 for (int i=0; i<m->num_params; i++) {
-                   token_ident_t *pid = as_ident(t->next);
-                   if (strlen(m->params[i]) == (size_t)pid->len && !strncmp(m->params[i], pid->str, pid->len)) {
-                     p_idx = i; break;
-                   }
-                 }
-                 if (p_idx != -1) {
-                   token_t *str_tok = stringify_tokens(args[p_idx], macro_tok);
-                   cur_body->next = str_tok;
-                   cur_body = cur_body->next;
-                   t = t->next; // skip IDENT
-                   continue;
-                 }
-               }
-               
-               if (t->kind == TK_IDENT) {
-                 int p_idx = -1;
-                 for (int i=0; i<m->num_params; i++) {
-                   token_ident_t *pid = as_ident(t);
-                   if (strlen(m->params[i]) == (size_t)pid->len && !strncmp(m->params[i], pid->str, pid->len)) {
-                     p_idx = i; break;
-                   }
-                 }
-                 if (p_idx != -1) {
-                   /* C11 6.10.3.1: 実引数は # / ## の対象でない限り、代入前に
-                    * 完全展開する。## に隣接する場合は未展開のまま代入する。 */
-                   token_t *pv = NULL;
-                   for (token_t *b = m->body; b && b != t; b = b->next) pv = b;
-                   bool paste_operand = (t->next && t->next->kind == TK_HASHHASH) ||
-                                        (pv && pv->kind == TK_HASHHASH);
-                   token_t *sub = paste_operand ? args[p_idx] : pp_expand_arg(args[p_idx]);
-                   for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
-                     cur_body->next = copy_token(a);
-                     cur_body = cur_body->next;
-                   }
-                   continue;
-                 }
-               }
-               cur_body->next = copy_token(t);
-               cur_body = cur_body->next;
-             }
-             cur_body->next = NULL;
-             
-             token_t *body_copy = paste_tokens(body_head.next);
-             hideset_t *hs = hideset_union(as_pp(macro_tok)->hideset, new_hideset(name));
-             for (token_t *t = body_copy; t; t = t->next) {
-               as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
-               /* 展開結果はマクロ呼び出し位置にあるものとして再配置する (C11 6.10.3)。
-                * これがないとマクロ本体内の __LINE__/__FILE__ が #define の位置を指していた
-                * (本体トークンの line_no が定義行のままだったため)。 */
-               t->line_no = macro_tok->line_no;
-               t->file_name_id = macro_tok->file_name_id;
-             }
+             token_t *rparen = NULL;
+             token_t **args = pp_collect_args(m, tok->next->next, &rparen);
+             tok = rparen->next;  // skip ')'
+             token_t *body_copy = pp_expand_funclike(m, macro_tok, args, name);
+             free(args);
              if (body_copy) {
-               body_copy->at_bol = macro_tok->at_bol;
-               body_copy->has_space = macro_tok->has_space;
                token_t *tail = body_copy;
                while (tail->next) tail = tail->next;
                tail->next = tok;
-               tok = body_copy;
-               free(name);
-               continue;
-             } else {
-               free(name);
-               continue;
+               tok = body_copy;   // rescan
              }
+             free(name);
+             continue;
            }
         } else {
-           token_t *body_copy = copy_token_list(m->body);
-           body_copy = paste_tokens(body_copy);
-
-           hideset_t *hs = hideset_union(as_pp(tok)->hideset, new_hideset(name));
-           for (token_t *t = body_copy; t; t = t->next) {
-             as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
-             /* 展開結果はマクロ呼び出し位置にあるものとして再配置 (C11 6.10.3)。
-              * オブジェクト形式マクロ本体内の __LINE__/__FILE__ も呼び出し行を指すようにする。 */
-             t->line_no = tok->line_no;
-             t->file_name_id = tok->file_name_id;
-           }
-
+           token_t *body_copy = pp_expand_objlike(m, tok, name);
            if (body_copy) {
-              body_copy->at_bol = tok->at_bol;
-              body_copy->has_space = tok->has_space;
-
               token_t *tail = body_copy;
               while (tail->next) tail = tail->next;
               tail->next = tok->next;
-              tok = body_copy;
+              tok = body_copy;   // rescan (展開結果をメインループで再走査)
               free(name);
               continue;
            } else {
@@ -1869,6 +1866,12 @@ struct pp_stream {
   token_t *out_tail;   // 末尾 (ここに append)
   token_t *cursor;     // パーサの現在トークン
   token_t *refill_at;  // カーソルがここへ来たら次の補充 (LOOKAHEAD 先のトークン)
+  token_t *pb_head;    // pushback: pull 済みだが未消費の raw トークン列 (マクロ rescan /
+                       // skip_cond_incl が止まった指令の差し戻し)。pps_pull_raw が先に返す。
+  token_t *reclaim_hold; // 非 NULL の間チャンク解放を保留。out-of-order 区間をカーソルが
+                         // ここ (区間末尾の out_tail) まで通過したら解放を再開する。
+  int ooo_active;        // 入れ子展開 (pushback 非空時の更なる pushback) で out 鎖が
+                         // 確保順≠消費順になった区間を処理中。drain まで reclaim_hold を更新。
   int eof_done;
 };
 
@@ -1879,11 +1882,197 @@ static void pps_append(pp_stream_t *s, token_t *t) {
   s->out_tail = t;
 }
 
-/* 入力 1 トークンを処理して出力へ 0 個以上 append する。EOF を append したら 0。 */
+/* 次の raw トークンを 1 つ取り出す。pushback があればそれを先に返し、無ければ遅延字句から。 */
+static token_t *pps_pull_raw(pp_stream_t *s) {
+  if (s->pb_head) {
+    token_t *t = s->pb_head;
+    s->pb_head = t->next;
+    t->next = NULL;
+    return t;
+  }
+  return tk_stream_next(s->lex);
+}
+
+/* トークン 1 つを pushback の先頭へ差し戻す。 */
+static void pps_pushback_one(pp_stream_t *s, token_t *t) {
+  t->next = s->pb_head;
+  s->pb_head = t;
+}
+
+/* NULL 終端リストを pushback の先頭へ差し戻す (順序は保つ)。 */
+static void pps_pushback_list(pp_stream_t *s, token_t *head) {
+  if (!head) return;
+  token_t *tail = head;
+  while (tail->next) tail = tail->next;
+  tail->next = s->pb_head;
+  s->pb_head = head;
+}
+
+static void pps_on_advance(token_t *cursor);  // 前方宣言 (指令 dispatch でフック復帰に使う)
+
+/* 指令行/マクロ引数バッファの終端用に合成 EOF (at_bol) を作る。recyclable 側に確保。 */
+static token_t *pps_make_eof(token_t *ref) {
+  token_pp_t *t = tk_allocator_calloc(1, sizeof(token_pp_t));
+  t->base.kind = TK_EOF;
+  t->base.at_bol = true;
+  if (ref) { t->base.line_no = ref->line_no; t->base.file_name_id = ref->file_name_id; }
+  return (token_t *)t;
+}
+
+/* first を起点に 1 論理行 (次の at_bol / EOF の手前まで) を materialize し、末尾に合成 EOF を
+ * 付けて返す。次行先頭 (または EOF) トークンは pushback に戻す。バッチ指令ハンドラは
+ * `while (kind!=TK_EOF && !at_bol)` で走査するので、この合成 EOF 終端で停止できる。 */
+static token_t *pps_materialize_line(pp_stream_t *s, token_t *first) {
+  token_t *cur = first;
+  while (cur->next) cur = cur->next;   // first が既に鎖を持つ場合 (# -> name) に対応
+  for (;;) {
+    token_t *nx = pps_pull_raw(s);
+    if (!nx) break;                    // 入力末尾
+    if (nx->kind == TK_EOF || nx->at_bol) { pps_pushback_one(s, nx); break; }
+    cur->next = nx; cur = nx;
+  }
+  cur->next = pps_make_eof(first);
+  return first;
+}
+
+/* '(' (lparen、pull 済み) から対応する ')' まで balanced に materialize する。'(' の次の
+ * トークン (引数列) を返す。末尾は ')' (+ 合成 EOF)。pp_collect_args に渡す。引数は行を
+ * またげる (nest==0 の ')' まで pull、at_bol は無視)。 */
+static token_t *pps_materialize_balanced(pp_stream_t *s, token_t *lparen) {
+  token_t head; head.next = NULL; token_t *cur = &head;
+  int nest = 1;
+  for (;;) {
+    token_t *t = pps_pull_raw(s);
+    if (!t) break;
+    if (t->kind == TK_EOF) { cur->next = t; cur = t; break; }  // 未閉じ: collect_args がエラー
+    if (t->kind == TK_LPAREN) nest++;
+    if (t->kind == TK_RPAREN) nest--;
+    cur->next = t; cur = t;
+    if (t->kind == TK_RPAREN && nest == 0) break;
+  }
+  cur->next = pps_make_eof(lparen);
+  return head.next;
+}
+
+/* 偽 #if 分岐の読み飛ばし (pull-and-discard)。BOL の #if 入れ子を数え、対応する
+ * #else/#elif/#endif でその指令行を materialize して pushback し、次の pps_step に再 dispatch
+ * させる。読み飛ばしたトークンは出力に載らないので window 解放で回収される。 */
+static void pps_skip_cond_incl(pp_stream_t *s) {
+  int nest = 0;
+  for (;;) {
+    token_t *tok = pps_pull_raw(s);
+    if (!tok) { s->eof_done = 1; return; }
+    if (tok->kind == TK_EOF) { pps_pushback_one(s, tok); return; }
+    if (tok->at_bol && tok->kind == TK_HASH) {
+      token_t *name = pps_pull_raw(s);
+      bool stop = false;
+      if (is_dir(name, "if") || is_dir(name, "ifdef") || is_dir(name, "ifndef")) nest++;
+      else if (is_dir(name, "endif")) { if (nest == 0) stop = true; else nest--; }
+      else if (is_dir(name, "else") || is_dir(name, "elif")) { if (nest == 0) stop = true; }
+      if (stop) {
+        /* 一致指令の # と名前を raw のまま戻す (行の materialize は次の pps_step に任せる。
+         * ここで materialize すると合成 EOF が pushback に紛れて stream を誤終端する)。 */
+        pps_pushback_one(s, name);
+        pps_pushback_one(s, tok);
+        return;
+      }
+      /* 一致しない指令: その行の残りを捨てる (次の BOL まで)。 */
+      if (name && name->kind != TK_EOF && !name->at_bol) {
+        for (;;) {
+          token_t *t = pps_pull_raw(s);
+          if (!t) { s->eof_done = 1; return; }
+          if (t->kind == TK_EOF || t->at_bol) { pps_pushback_one(s, t); break; }
+        }
+      } else if (name) {
+        pps_pushback_one(s, name);
+      }
+    }
+    /* それ以外のトークンは捨てる (偽分岐内)。 */
+  }
+}
+
+/* ストリーミング版の条件指令ハンドラ。式評価/スタック操作はバッチの補助関数を再利用し、
+ * 偽分岐の読み飛ばしだけ pps_skip_cond_incl に差し替える。after_hash は指令名トークン。 */
+static void pps_handle_if(pp_stream_t *s, token_t *after_hash) {
+  token_t *tok = after_hash->next;
+  bool is_true = evaluate_constexpr(&tok, tok);
+  push_cond_incl(is_true);
+  if (!is_true) pps_skip_cond_incl(s);
+}
+static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) {
+  token_t *tok = after_hash->next;
+  char *name = consume_required_macro_name(&tok);
+  bool defined = find_macro(name) != NULL;
+  free(name);
+  bool is_true = negated ? !defined : defined;
+  push_cond_incl(is_true);
+  if (!is_true) pps_skip_cond_incl(s);
+}
+static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
+  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
+  cond_incl->ctx = IN_ELIF;
+  token_t *tok = after_hash->next;
+  if (cond_incl->included) { pps_skip_cond_incl(s); return; }
+  bool is_true = evaluate_constexpr(&tok, tok);
+  if (is_true) cond_incl->included = true;
+  else pps_skip_cond_incl(s);
+}
+static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
+  (void)after_hash;
+  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  cond_incl->ctx = IN_ELSE;
+  if (cond_incl->included) pps_skip_cond_incl(s);
+  else cond_incl->included = true;
+}
+
+/* materialize 済みの指令行を処理する。bounded 指令 (define/undef/error/pragma/endif) は
+ * バッチハンドラをそのまま行バッファ上で実行。条件指令は streaming 版を呼ぶ。
+ * include/line はゲートで除外済み (到達しない)。 */
+static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
+  token_t *tok = line->next;  // '#' を読み飛ばす
+  if (!tok || tok->kind == TK_EOF) return;  // 空指令 '#'
+  if (is_dir(tok, "ifdef"))  { pps_handle_ifdef(s, tok, false); return; }
+  if (is_dir(tok, "ifndef")) { pps_handle_ifdef(s, tok, true);  return; }
+  if (is_dir(tok, "if"))     { pps_handle_if(s, tok); return; }
+  if (is_dir(tok, "elif"))   { pps_handle_elif(s, tok); return; }
+  if (is_dir(tok, "else"))   { pps_handle_else(s, tok); return; }
+  if (is_dir(tok, "endif"))  { handle_endif(tok); return; }
+  if (is_dir(tok, "define")) {
+    tk_allocator_set_recyclable(0);  // マクロ本体は永続アリーナへ (window 解放で消さない)
+    handle_define(tok);
+    tk_allocator_set_recyclable(1);
+    return;
+  }
+  if (is_dir(tok, "undef"))  { handle_undef(tok); return; }
+  if (is_dir(tok, "error"))  { handle_error(tok); return; }
+  if (is_dir(tok, "pragma")) {
+    token_t lc; lc.next = NULL; token_t *cur = &lc;
+    handle_pragma(tok, &cur);                 // pragma pack マーカーを lc に append
+    for (token_t *t = lc.next; t; ) { token_t *nx = t->next; pps_append(s, t); t = nx; }
+    return;
+  }
+  /* 未知指令はバッチ同様に無視 (行は破棄)。 */
+}
+
+/* 入力 1 論理ステップを処理し、出力へ append したトークン数を返す (指令やマクロ展開の
+ * pushback では 0)。EOF は append (1) して s->eof_done を立てる。 */
 static int pps_step(pp_stream_t *s) {
-  token_t *tok = tk_stream_next(s->lex);
+  token_t *tok = pps_pull_raw(s);
   if (!tok) { s->eof_done = 1; return 0; }
-  if (tok->kind == TK_EOF) { pps_append(s, tok); s->eof_done = 1; return 0; }
+  if (tok->kind == TK_EOF) { pps_append(s, tok); s->eof_done = 1; return 1; }
+
+  /* BOL の '#': 指令行。materialize して dispatch (出力は 0 個 or pragma マーカー)。
+   * dispatch 中はネスト字句/プリプロセス (evaluate_constexpr→preprocess_ctx 等) が
+   * カーソルフックを発火させるので一時的に外す。 */
+  if (tok->at_bol && tok->kind == TK_HASH) {
+    token_t *line = pps_materialize_line(s, tok);
+    tk_set_cursor_hook(NULL);
+    pps_dispatch_directive(s, line);
+    tk_set_cursor_hook(pps_on_advance);
+    return 0;
+  }
 
   if (tok->kind == TK_IDENT) {
     token_ident_t *id = as_ident(tok);
@@ -1900,29 +2089,44 @@ static int pps_step(pp_stream_t *s) {
     char *name = my_strndup(id->str, id->len);
     macro_t *m = find_macro(name);
     if (m && !hideset_contains(as_pp(tok)->hideset, name)) {
-      /* `#` 無し入力で表に在るのは object-like predefined マクロのみ (本体は単一の
-       * 数値/文字列で再展開不能)。preprocess_ctx:1807-1834 の object 展開と同じく本体を
-       * コピーし、hideset 付与・行位置を呼び出し位置へ再配置して出力する。本体は終端
-       * トークンなので rescan 不要 (rescan しても同じ結果)。 */
-      token_t *body_copy = copy_token_list(m->body);
-      body_copy = paste_tokens(body_copy);
-      hideset_t *hs = hideset_union(as_pp(tok)->hideset, new_hideset(name));
-      for (token_t *t = body_copy; t; t = t->next) {
-        as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
-        t->line_no = tok->line_no;
-        t->file_name_id = tok->file_name_id;
-      }
-      if (body_copy) {
-        body_copy->at_bol = tok->at_bol;
-        body_copy->has_space = tok->has_space;
-        for (token_t *t = body_copy; t; ) {
-          token_t *nx = t->next;
-          pps_append(s, t);
-          t = nx;
+      count_macro_expansion_or_die();  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
+      /* マクロ展開は batch と同じ pp_expand_objlike / pp_expand_funclike を使い、結果を
+       * pushback して rescan する (= batch の splice + continue 相当)。展開中は paste_tokens
+       * (tk_tokenize_ctx) / pp_expand_arg (preprocess_ctx) がネスト session でカーソルフックを
+       * 発火させるので一時的に外す。 */
+      if (m->is_funclike) {
+        token_t *nx = pps_pull_raw(s);   // 2-token 先読み: 呼び出しの '(' か
+        if (nx && nx->kind == TK_LPAREN) {
+          token_t *grp = pps_materialize_balanced(s, nx);
+          token_t *rparen = NULL;
+          token_t **args = pp_collect_args(m, grp, &rparen);
+          tk_set_cursor_hook(NULL);
+          token_t *body = pp_expand_funclike(m, tok, args, name);
+          tk_set_cursor_hook(pps_on_advance);
+          free(args);
+          if (body) {
+            if (s->pb_head) s->ooo_active = 1;  // 入れ子展開 (既存 pb の前に積む) = out-of-order
+            pps_pushback_list(s, body);
+          }
+          free(name);
+          return 0;
         }
+        /* '(' が続かない: マクロ呼び出しでない。名前を通過させ nx を戻す。 */
+        if (nx) pps_pushback_one(s, nx);
+        pps_append(s, tok);
+        free(name);
+        return 1;
+      } else {
+        tk_set_cursor_hook(NULL);
+        token_t *body = pp_expand_objlike(m, tok, name);  // ## 展開で tk_tokenize_ctx 経由あり
+        tk_set_cursor_hook(pps_on_advance);
+        if (body) {
+          if (s->pb_head) s->ooo_active = 1;  // 入れ子展開 = out-of-order
+          pps_pushback_list(s, body);
+        }
+        free(name);
+        return 0;
       }
-      free(name);
-      return 1;
     }
     free(name);
   }
@@ -1935,20 +2139,23 @@ static int pps_step(pp_stream_t *s) {
  * 補充は LOOKAHEAD 前進ごとに 1 回 (走査 O(LOOKAHEAD)) で済み、前進あたり償却 O(1)。 */
 static void pps_refill(pp_stream_t *s) {
   if (!s->cursor) return;
-  /* 既存の先読み数を 1 度だけ数える (mark = カーソル+LOOKAHEAD のトークン)。 */
+  /* 既存の先読み出力数を数える。指令ステップは出力 0 なので、pps_step の戻り (append 数) を
+   * 積算しないと正しく数えられない (1 ステップ=1 出力とは限らない)。 */
   int have = 0;
-  token_t *mark = NULL;
-  for (token_t *t = s->cursor->next; t && have < 2 * PP_STREAM_LOOKAHEAD; t = t->next) {
-    have++;
-    if (have == PP_STREAM_LOOKAHEAD) mark = t;
-  }
-  /* 足りない分だけ逐次生成 (毎回カーソルから数え直さない)。 */
+  for (token_t *t = s->cursor->next; t && have < 2 * PP_STREAM_LOOKAHEAD; t = t->next) have++;
   while (have < 2 * PP_STREAM_LOOKAHEAD && !s->eof_done) {
-    if (!pps_step(s)) break;
-    have++;
-    if (have == PP_STREAM_LOOKAHEAD) mark = s->out_tail;
+    have += pps_step(s);
+    /* 入れ子展開で out 鎖が確保順≠消費順になった区間 (ooo_active) の間は、その末尾
+     * (out_tail) を reclaim_hold に記録し、カーソルが通過するまで解放を止める (hook 参照)。
+     * pushback が空になったら区間終了 (reclaim_hold はカーソル通過まで残す)。浅い展開
+     * (SQ/ADD 等、本体に未展開マクロを含まない) は ooo_active が立たず O(ウィンドウ)。 */
+    if (s->ooo_active) s->reclaim_hold = s->out_tail;
+    if (!s->pb_head) s->ooo_active = 0;
   }
-  s->refill_at = mark ? mark : s->out_tail;
+  /* refill_at = カーソル + LOOKAHEAD のトークン (補充の起点)。出力鎖を 1 度だけ歩く。 */
+  token_t *mark = s->cursor;
+  for (int i = 0; i < PP_STREAM_LOOKAHEAD && mark->next; i++) mark = mark->next;
+  s->refill_at = mark;
 }
 
 static pp_stream_t *g_active_pps = NULL;
@@ -1957,10 +2164,14 @@ static pp_stream_t *g_active_pps = NULL;
  * 大半の前進では補充判定が O(1) ですぐ抜ける。 */
 static void pps_on_advance(token_t *cursor) {
   pp_stream_t *s = g_active_pps;
-  if (!s) return;
+  if (!s || !cursor) return;  // ネスト字句/プリプロセスが current_token=NULL で発火する場合あり
   s->cursor = cursor;
-  if (cursor == s->refill_at || !cursor->next) pps_refill(s);
-  tk_allocator_recyc_on_cursor(cursor);
+  if (cursor == s->reclaim_hold) s->reclaim_hold = NULL;  // out-of-order 区間を通過 → 解放再開
+  if (cursor == s->refill_at || !cursor->next) pps_refill(s);  // pps_refill が reclaim_hold を更新
+  /* reclaim_hold が立っている間 (マクロ展開で out 鎖が確保順≠消費順になった区間をカーソルが
+   * まだ通過中) は chunk 解放を止める。通常コードでは展開がすぐ終わり reclaim_hold が解け、
+   * ウィンドウは O(1) のまま。病的な深い再帰展開では展開上限 (E1029) に達してエラーになる。 */
+  if (!s->reclaim_hold) tk_allocator_recyc_on_cursor(cursor);
 }
 
 /* ストリーム生成器を開く。predefined マクロは永続側へ作り、以後の生成は recyclable 側。
