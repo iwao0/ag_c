@@ -830,6 +830,11 @@ static node_t *parse_array_elem_struct_brace_init(lvar_t *var, int idx) {
   lvar_t nested = *var;
   nested.offset = var->offset + idx * var->elem_size;
   nested.size = var->elem_size; /* parse_struct_initializer の zero-fill 範囲を要素 1 つに制限 */
+  /* 要素が union のときは union 初期化子へ委譲する。struct 用に投げると `.n=5` の
+   * メンバ designator を struct レイアウトで誤解決し、値が格納されず 0 になる
+   * (`union U a[2]={[1]={.n=5}}` で a[1].n が 0 に化けていた)。配列全体は呼び出し側で
+   * zero_prefill 済みなので、ここはメンバ代入を出すだけでよい。 */
+  if (var->tag_kind == TK_UNION) return parse_union_initializer(&nested);
   return parse_struct_initializer(&nested);
 }
 
