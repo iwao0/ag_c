@@ -3280,7 +3280,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->pointee_fp_kind = TK_FLOAT_KIND_NONE;
     } else {
       var->fp_kind = TK_FLOAT_KIND_NONE;
-      var->pointee_fp_kind = (total_pointer_levels == 1) ? decl_fp_kind : TK_FLOAT_KIND_NONE;
+      /* 多段ポインタ (`double **pp`) でも最内 pointee の fp 種別を保持する。
+       * build_unary_deref_node が 1 段ずつ引き継ぎ、最終 deref で fp load/store に
+       * する。中間段は pql>=2 のため fp 値化されない (deref 結果はポインタのまま)。 */
+      var->pointee_fp_kind = decl_fp_kind;
     }
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex) var->is_complex = 1;

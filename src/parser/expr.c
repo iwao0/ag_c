@@ -2745,6 +2745,10 @@ static node_t *build_unary_deref_node(node_t *operand) {
     int bds = psx_node_base_deref_size(operand);
     node->base_deref_size = (short)bds;
     node->deref_size = (new_pql >= 2) ? 8 : (short)bds;
+    /* 最内 pointee の fp 種別を 1 段下の deref 結果へ引き継ぐ。これがないと
+     * `double **pp` の `*pp` が fp 情報を失い、最終 `**pp` が fp load/store に
+     * ならず float がゴミ・double の書き込みが落ちていた。 */
+    node->pointee_fp_kind = pointee_fp;
   }
   // 仮引数 typedef 配列ポインタ (`typedef int M[D0][D1]...; void f(M *p)`):
   // p (ND_LVAR) は M のサイズと strides を保持しているが、
@@ -3171,6 +3175,11 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     if (deref->tag_kind != TK_EOF) {
       deref->is_tag_pointer = 1;
     }
+    /* 結果がまだポインタ (多段ポインタの `pp[i]` や `int *arr[i]`) のとき、最内
+     * pointee の fp 種別を引き継ぐ。これがないと `double **pp; *pp[0]` の最終 deref が
+     * fp と分からず整数 load になっていた。結果はポインタなので base.fp_kind ではなく
+     * pointee_fp_kind に運ぶ (build_unary_deref_node の多段分岐と対称)。 */
+    deref->pointee_fp_kind = psx_node_pointee_fp_kind(node);
   }
   /* 配列 (pql=0 でも pointee_fp_kind を持つ ND_ADDR) の subscript 結果も
    * FP load にするため、pointee_fp_kind を見て fp_kind を引き継ぐ。多次元配列
