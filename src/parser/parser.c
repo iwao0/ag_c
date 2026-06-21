@@ -792,32 +792,18 @@ node_t **ps_program(void) {
   return ps_program_ctx(NULL, tk_get_current_token());
 }
 
-static int is_toplevel_function_signature(token_t *tok) {
-  if (!tok) return 0;
-  token_t *t = skip_decl_prefix_lookahead(tok);
-  if (!t) return 0;
-  /* タグ戻り型 (`static struct S *g(void){...}`): storage class を飛ばした後がタグ
-   * キーワードなら専用判定へ委譲する。これがないと struct/union/enum はここで弾かれ、
-   * `static struct S *g()` がオブジェクト宣言と誤判定され `;` 期待で E2006 になっていた。 */
-  if (psx_ctx_is_tag_keyword(t->kind)) {
-    return is_tag_return_function_signature(t);
-  }
-  if (psx_ctx_is_type_token(t->kind)) {
-    // 複合型キーワード（unsigned long 等）を全てスキップ
-    while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
-  } else if (psx_ctx_is_typedef_name_token(t)) {
-    t = t->next; // typedef 名は1トークン
-  } else {
-    return 0;
-  }
-  while (t && (t->kind == TK_MUL || t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next; // `*` と pointer 修飾子 (`int *const f()`)
+/* 型 spec (builtin / typedef 名 / タグ) の直後 t から、関数宣言子のシグネチャかを判定する。
+ * `*name(` / `(*f())(...)` (関数ポインタ・配列へのポインタ戻り) / `(name)(...)` を扱う。
+ * builtin/typedef/tag のどの戻り型でも同一なので共有する (tag 版に `(*...)` が無かったため
+ * `struct S (*f())[3]` が変数と誤判定され E2006 になっていた)。 */
+static int is_function_declarator_sig(token_t *t) {
+  while (t && (t->kind == TK_MUL || t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next;
   if (!t) return 0;
   if (t->kind == TK_IDENT) {
     return t->next && t->next->kind == TK_LPAREN;
   }
-  // function declarator returning function pointer:
-  //   int (*f(void))(int)
-  //   int (*(*f(void))(int))[3]
+  // function declarator returning function pointer / pointer-to-array:
+  //   int (*f(void))(int)  /  int (*f(void))[3]  /  int (*(*f(void))(int))[3]
   if (t->kind == TK_LPAREN && t->next && t->next->kind == TK_MUL) {
     int depth = 0;
     int saw_name = 0;
@@ -862,6 +848,27 @@ static int is_toplevel_function_signature(token_t *tok) {
   return 0;
 }
 
+static int is_toplevel_function_signature(token_t *tok) {
+  if (!tok) return 0;
+  token_t *t = skip_decl_prefix_lookahead(tok);
+  if (!t) return 0;
+  /* タグ戻り型 (`static struct S *g(void){...}`): storage class を飛ばした後がタグ
+   * キーワードなら専用判定へ委譲する。これがないと struct/union/enum はここで弾かれ、
+   * `static struct S *g()` がオブジェクト宣言と誤判定され `;` 期待で E2006 になっていた。 */
+  if (psx_ctx_is_tag_keyword(t->kind)) {
+    return is_tag_return_function_signature(t);
+  }
+  if (psx_ctx_is_type_token(t->kind)) {
+    // 複合型キーワード（unsigned long 等）を全てスキップ
+    while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
+  } else if (psx_ctx_is_typedef_name_token(t)) {
+    t = t->next; // typedef 名は1トークン
+  } else {
+    return 0;
+  }
+  return is_function_declarator_sig(t);
+}
+
 // struct/union Tag [*] ident ( のパターンを検出（戻り値型がタグ型の関数定義）
 static int is_tag_return_function_signature(token_t *tok) {
   if (!tok || !psx_ctx_is_tag_keyword(tok->kind)) return 0;
@@ -879,27 +886,9 @@ static int is_tag_return_function_signature(token_t *tok) {
     }
     if (!t) return 0;
   }
-  while (t && (t->kind == TK_MUL || t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next; // `*` と pointer 修飾子 (`int *const f()`) // skip optional pointer(s)
-  if (!t) return 0;
-  if (t->kind == TK_IDENT) {
-    return t->next && t->next->kind == TK_LPAREN;
-  }
-  // parenthesized function name declarator: struct S {...} (f)(...)
-  if (t->kind == TK_LPAREN) {
-    int depth = 0;
-    while (t && t->kind == TK_LPAREN) {
-      depth++;
-      t = t->next;
-    }
-    if (!t || t->kind != TK_IDENT) return 0;
-    t = t->next;
-    while (depth-- > 0) {
-      if (!t || t->kind != TK_RPAREN) return 0;
-      t = t->next;
-    }
-    return t && t->kind == TK_LPAREN;
-  }
-  return 0;
+  /* タグ名/本体の後は builtin/typedef と同じ宣言子判定。これで `struct S (*f())[3]`
+   * (配列へのポインタ戻り) や `struct S (*f())(int)` (関数ポインタ戻り) も検出できる。 */
+  return is_function_declarator_sig(t);
 }
 
 static global_var_t *find_global_var_by_name(char *name, int len) {
