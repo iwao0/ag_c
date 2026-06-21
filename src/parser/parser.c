@@ -640,6 +640,15 @@ static int toplevel_prefix_precedes_tag(void) {
   return t && psx_ctx_is_tag_keyword(t->kind);
 }
 
+/* tag と同様、storage class / cv 修飾が typedef 名の前にあるか。`static Point p;` で
+ * skip しないと Point が型と認識されず E2006 (`;` 期待) になっていた。 */
+static int toplevel_prefix_precedes_typedef_name(void) {
+  if (!psx_is_decl_prefix_token(curtok()->kind)) return 0;
+  token_t *t = curtok();
+  while (t && psx_is_decl_prefix_token(t->kind)) t = t->next;
+  return t && t != curtok() && psx_ctx_is_typedef_name_token(t);
+}
+
 static void parse_toplevel_decl_spec(void) {
   reset_toplevel_decl_spec_state();
   consume_toplevel_typedef_storage_class();
@@ -647,7 +656,7 @@ static void parse_toplevel_decl_spec(void) {
   /* `static struct S g;` 等、storage class が tag の前にある場合は先に修飾子を
    * 消費する。これをしないと parse_toplevel_tag_decl_spec が tag キーワードを
    * 見つけられず E3016 になっていた (static int 等の builtin 経路は別処理)。 */
-  if (toplevel_prefix_precedes_tag()) {
+  if (toplevel_prefix_precedes_tag() || toplevel_prefix_precedes_typedef_name()) {
     skip_cv_qualifiers();
   }
 
