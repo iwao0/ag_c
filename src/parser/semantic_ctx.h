@@ -154,6 +154,10 @@ token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */
 void psx_ctx_set_function_ret_unsigned(char *name, int len, int is_unsigned);
 int psx_ctx_get_function_ret_is_unsigned(char *name, int len);
+/* 戻り値型が `int (*f())[N]` (配列へのポインタ) のときの先頭次元 N (それ以外 0)。
+ * 呼び出し結果 `f()[i]` の行ストライドを N*elem にするのに使う。 */
+void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int first_dim);
+int psx_ctx_get_function_ret_pointee_array_first_dim(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

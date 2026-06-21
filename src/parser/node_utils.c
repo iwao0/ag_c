@@ -153,9 +153,17 @@ int ps_node_deref_size(node_t *node) {
     case ND_POST_DEC:
       return ps_node_deref_size(node->lhs);
     /* ポインタ戻り値の関数 `int *g(); g()[i]` / `g()+i`: pointee サイズを返さないと
-     * 添字/ポインタ算術がスケールせず 1 バイト加算になる (miscompile/SIGSEGV)。 */
-    case ND_FUNCALL:
-      return funcall_ret_pointee_size(node);
+     * 添字/ポインタ算術がスケールせず 1 バイト加算になる (miscompile/SIGSEGV)。
+     * 配列へのポインタ戻り `int (*f())[N]` では pointee は配列 (N*base) なので行ストライドを返す。 */
+    case ND_FUNCALL: {
+      int base = funcall_ret_pointee_size(node);
+      node_func_t *fn = (node_func_t *)node;
+      if (base > 0 && fn->callee == NULL && fn->funcname) {
+        int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
+        if (fd > 0) return fd * base;
+      }
+      return base;
+    }
     default:
       return 0;
   }

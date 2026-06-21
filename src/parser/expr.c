@@ -2833,6 +2833,16 @@ static node_t *build_unary_deref_node(node_t *operand) {
       if (src && src->outer_stride > 0 && src->mid_stride == 0 && !src->is_array) {
         node->deref_size = (short)src->elem_size;
       }
+    } else if (probe && probe->kind == ND_FUNCALL) {
+      /* `int (*f())[N]` の `*f()` / `*(f()+k)`: 結果は行 (int[N])。subscript_base_address_of が
+       * load を skip し `(*f())[i]` が要素ストライドで添字できるよう、deref_size を要素サイズに
+       * する (ローカル `int (*p)[N]` の `*p` と同じ)。 ds=N*elem を first_dim で割って elem を得る。 */
+      node_func_t *fn = (node_func_t *)probe;
+      if (fn->callee == NULL && fn->funcname) {
+        int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
+        int rowstride = ps_node_deref_size(probe);
+        if (fd > 0 && rowstride > 0) node->deref_size = (short)(rowstride / fd);
+      }
     }
   }
   if (operand && operand->kind == ND_LVAR) {
@@ -3102,6 +3112,17 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
       next_ds = m->next_deref_size;
       extras_count = m->extra_strides_count;
       for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
+    }
+  } else if (node->kind == ND_FUNCALL) {
+    /* 配列へのポインタ戻り `int (*f())[N]`: 第1 subscript `f()[i]` の結果 (行) が第2
+     * subscript `f()[i][j]` 用の要素ストライド (base elem) を引き継げるよう inner_ds を立てる
+     * (ローカル `int (*p)[N]` の inner_deref_size=elem と同じ。これがないと f()[i][j] が
+     * 行ストライドのまま誤ロード→SIGSEGV)。 */
+    node_func_t *fn = (node_func_t *)node;
+    if (fn->callee == NULL && fn->funcname &&
+        psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len) > 0) {
+      int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
+      if (fd > 0 && ds > 0) inner_ds = ds / fd;  /* ds = N*elem → elem */
     }
   }
   node_t *scaled;

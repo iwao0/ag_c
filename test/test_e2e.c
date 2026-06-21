@@ -1102,6 +1102,7 @@ static const test_case_t test_cases[] = {
     {"probes", "pointer_to_vla", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_to_vla.c", 0, 0},
     {"probes", "func_pointer_return_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_pointer_return_subscript.c", 0, 0},
     {"probes", "static_tag_return_function", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_tag_return_function.c", 0, 0},
+    {"probes", "func_return_pointer_to_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_return_pointer_to_array.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

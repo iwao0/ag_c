@@ -95,6 +95,11 @@ static int g_last_alignas_value = 0;
  * 戻り値型を関数ポインタ (= ポインタ) として扱うため、parse_func_declarator
  * から funcdef へ伝える。各 funcdef 開始時にリセットする。 */
 static int g_last_outer_declarator_is_ptr = 0;
+/* 戻り値型が「配列へのポインタ」`int (*f())[N]` のとき、pointee 配列の先頭次元 N と
+ * `[` suffix の個数。parse_func_declarator が捕捉し funcdef が ctx へ記録する。単一次元
+ * (`[N]` 1 個) のみ対応 (多次元 `[N][M]` は dim_count>1 として first_dim を立てない)。 */
+static int g_func_ret_pointee_first_dim = 0;
+static int g_func_ret_pointee_dim_count = 0;
 static int g_last_decl_is_extern = 0;
 static int g_last_decl_is_static = 0;
 static int g_toplevel_decl_elem_size = 8;
@@ -2942,6 +2947,8 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
   int is_variadic = 0;
   int has_unnamed_param = 0;
   int parsed_nested_inner_params = 0;
+  g_func_ret_pointee_first_dim = 0;
+  g_func_ret_pointee_dim_count = 0;
 
   token_ident_t *tok = NULL;
   // function declarator returning function pointer:
@@ -3045,7 +3052,14 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
         continue;
       }
       if (tk_consume('[')) {
-        while (!tk_consume(']')) set_curtok(curtok()->next);
+        /* pointee 配列次元 `int (*f())[N]` を捕捉 (先頭 `[N]` のみ)。これを記録しないと
+         * 呼び出し結果 `f()[i]` の行ストライドが分からず base 要素サイズで誤スケール→SIGSEGV。 */
+        if (curtok()->kind != TK_RBRACKET) {
+          int n = psx_parse_array_size_constexpr();
+          if (g_func_ret_pointee_dim_count == 0) g_func_ret_pointee_first_dim = n;
+        }
+        g_func_ret_pointee_dim_count++;
+        tk_expect(']');
       }
     }
   } else {
@@ -3236,6 +3250,12 @@ static node_t *funcdef(void) {
   /* ctx には基底型の unsigned を保存 (ポインタ返しでも pointee 符号として subscript で使う)。
    * 戻り値そのものの符号 (比較等) は call 側で is_pointer を見て別途ガードする。 */
   if (ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
+  /* 配列へのポインタ戻り `int (*f())[N]`: 先頭次元 N を記録 (単一次元のみ)。呼び出し結果
+   * `f()[i]` の行ストライドを N*elem にするのに使う (0 なら通常のポインタ戻り)。 */
+  if (ret_is_ptr && g_func_ret_pointee_dim_count == 1 && g_func_ret_pointee_first_dim > 0) {
+    psx_ctx_set_function_ret_pointee_array_first_dim(tok->str, tok->len,
+                                                     g_func_ret_pointee_first_dim);
+  }
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。
   // 非 variadic 関数でも nargs_fixed を記録するため常に呼ぶ。
