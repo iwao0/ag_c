@@ -117,7 +117,7 @@ static int sizeof_expr_node(node_t *node) {
     int elem = s->char_width ? (int)s->char_width : 1;
     return (s->byte_len + 1) * elem;
   }
-  int sz = psx_node_type_size(node);
+  int sz = ps_node_type_size(node);
   if (sz) return sz;
   if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
   if (node && node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
@@ -585,7 +585,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     /* 文字列リテラルは _Generic では char[] が char* へ decay した型として扱われる
      * (clang/gcc 準拠)。pointee サイズ (= 文字幅) を ptr_deref_size に入れないと
      * `char*` association と一致せず default に落ちていた。 */
-    int char_w = psx_node_deref_size(control);
+    int char_w = ps_node_deref_size(control);
     gt.kind = TK_CHAR;
     gt.scalar_size = 1;
     gt.is_pointer = 1;
@@ -602,8 +602,8 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.scalar_size = 8;
     return gt;
   }
-  int ts = psx_node_type_size(control);
-  int ds = psx_node_deref_size(control);
+  int ts = ps_node_type_size(control);
+  int ds = ps_node_deref_size(control);
   int is_ptr = 0;
   if (control->kind == ND_LVAR) is_ptr = ((node_lvar_t *)control)->mem.is_pointer;
   else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
@@ -893,7 +893,7 @@ static node_t *materialize_struct_rvalue_funcall(node_t *base,
                                                   token_kind_t base_tag_kind,
                                                   char *base_tag_name, int base_tag_len) {
   int obj_size = psx_ctx_get_tag_size(base_tag_kind, base_tag_name, base_tag_len);
-  if (obj_size <= 0) obj_size = psx_node_type_size(base);
+  if (obj_size <= 0) obj_size = ps_node_type_size(base);
   if (obj_size <= 0) obj_size = 8;
   char *tmp_name = new_compound_lit_name();
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
@@ -1525,7 +1525,7 @@ static int is_size_compatible_nonscalar_expr(node_t *expr, token_kind_t cast_kin
   int op_is_tag_ptr = 0;
   psx_node_get_tag_type(v, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
   if (op_is_tag_ptr || op_tag_kind != cast_kind) return 0;
-  int op_sz = psx_node_type_size(v);
+  int op_sz = ps_node_type_size(v);
   return op_sz > 0 && cast_elem_size > 0 && op_sz == cast_elem_size;
 }
 
@@ -1931,9 +1931,9 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入する (coerce は常に SEXT
      * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
      * 対象外。ポインタ・8B 以上・fp は対象外。 */
-    if (!is_pointer && type_kind == TK_LONG && !psx_node_is_pointer(operand) &&
-        operand->fp_kind == TK_FLOAT_KIND_NONE && psx_node_is_unsigned(operand) &&
-        psx_node_type_size(operand) >= 1 && psx_node_type_size(operand) < 8) {
+    if (!is_pointer && type_kind == TK_LONG && !ps_node_is_pointer(operand) &&
+        operand->fp_kind == TK_FLOAT_KIND_NONE && ps_node_is_unsigned(operand) &&
+        ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
       wrap->base.kind = ND_PTR_CAST;
       wrap->base.lhs = operand;
@@ -2002,7 +2002,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 変数の型で正しく動いていた)。多段ポインタ (`int**`) は operand 側の表現を
      * 優先するためここでは触れない (cast_elem_size は基底型サイズで段数を持たない)。 */
     if (is_pointer && cast_elem_size > 0 &&
-        psx_node_is_pointer(operand) &&
+        ps_node_is_pointer(operand) &&
         psx_node_pointer_qual_levels(operand) <= 1) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
       wrap->base.kind = ND_PTR_CAST;
@@ -2059,8 +2059,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 関数呼び出しは戻り値型幅を parser が覚えておらず type_size=4 と推定するが、
      * long 戻り値は x0 に 64bit で返るため `(int)long_fn()` も切り詰める (int 戻り値
      * でも低 32bit 抽出は無害)。 */
-    if ((psx_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
-        !psx_node_is_pointer(operand)) {
+    if ((ps_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
+        !ps_node_is_pointer(operand)) {
       /* operand が unsigned 戻り値の funcall (例 `unsigned f()`) だと、SHL が符号なし
        * 演算と見なされ ir_builder の 32bit ラップマスク (& 0xffffffff) が入り、
        * `(getu()<<32)` が 0 に潰れてシフトが壊れる。`(int)` は結果を符号付きにするので
@@ -2089,7 +2089,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
        * 符号拡張 (ldrsh/ldrh) も兼ねるため、ここで書き換えると値そのものが化ける
        * (`(int)(unsigned short)0xFFFF` が -1 に、`(unsigned)(short)-1` が 65535 に)。
        * sub-int operand は元の load 符号性を保ち、暗黙変換と同じ正しい昇格に任せる。 */
-      if (psx_node_type_size(operand) >= 4) psx_node_set_unsigned(operand, 0);
+      if (ps_node_type_size(operand) >= 4) psx_node_set_unsigned(operand, 0);
     }
     return operand;
   }
@@ -2109,8 +2109,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 切り詰める。`(x<<32)>>32` で低 32bit を 64bit へ拡張 (unsigned は論理シフトで
      * ゼロ拡張、signed は算術シフトで符号拡張) する。関数呼び出しも long 戻り値が
      * 64bit で返るため対象にする (type_size は 4 と推定される)。 */
-    if ((psx_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
-        !psx_node_is_pointer(operand)) {
+    if ((ps_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
+        !ps_node_is_pointer(operand)) {
       node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
       psx_node_set_unsigned(shl, target_unsigned);
@@ -2125,9 +2125,9 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 正しく unsigned 扱いになる (operand 幅<4 は UAC で signed 昇格扱いだった)。 */
     /* op_sz が 1/2 = 真の char/short load のみ対象。NUM 等は type_size 0 を返すので
      * 除外する (`(unsigned)13` を ND_BITAND で包んで誤って AST 形を変えないため)。 */
-    int op_sz = psx_node_type_size(operand);
+    int op_sz = ps_node_type_size(operand);
     if (target_unsigned && op_sz >= 1 && op_sz < 4 &&
-        operand->fp_kind == TK_FLOAT_KIND_NONE && !psx_node_is_pointer(operand)) {
+        operand->fp_kind == TK_FLOAT_KIND_NONE && !ps_node_is_pointer(operand)) {
       node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffffffffLL));
       psx_node_set_unsigned(masked, 1);
       return masked;
@@ -2139,7 +2139,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       ((node_mem_t *)operand)->is_pointer = 0;
       /* sub-int operand では is_unsigned 書き換えが load 拡張を壊すため触れない
        * (上の TK_INT と同じ理由)。int 幅以上のみ符号ラベルを更新する。 */
-      if (psx_node_type_size(operand) >= 4)
+      if (ps_node_type_size(operand) >= 4)
         psx_node_set_unsigned(operand, target_unsigned);
     }
     return operand;
@@ -2261,7 +2261,7 @@ static node_t *assign(void) {
         rhs = psx_node_new_binary(ND_NE, rhs, psx_node_new_num(0));
       }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
-      assign_node->type_size = psx_node_type_size(assign_node->base.lhs);
+      assign_node->type_size = ps_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
       node = (node_t *)assign_node;
       if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node);
@@ -2398,19 +2398,19 @@ static node_t *shift(void) {
  * is_tag_pointer で表現されるため、`&s[i] - &s[j]` や `sp + n` のスケーリング/差分が
  * 効かず byte 単位になっていた。タグポインタもポインタとして扱う。 */
 static int node_is_ptr_for_arith(node_t *n) {
-  if (psx_node_is_pointer(n)) return 1;
+  if (ps_node_is_pointer(n)) return 1;
   /* 多次元配列の「行」(`int m[3][4]` の `m[i]`、`int(*p)[4]` の `*(p+k)` / `p[i]`、
    * 3D 以上の中間行 `int t[2][2][2]` の `t[i]` / `*(t[i]+k)`) は ND_DEREF/ND_ADDR で
    * 表現され、値文脈ではポインタ (= 行先頭アドレス) へ decay する。is_pointer を立てると
    * subscript_base_address_of が行をポインタ値として load してしまい多次元 subscript が
    * 壊れるため、算術スケール用の判定だけここで拾う。行は type_size (= 行全体のバイト数) >
    * deref_size (= 次段ストライド) で見分ける (スカラ要素 `int *p` の `p[i]` は
-   * type_size == deref_size == 要素サイズ)。スケールは add() 側で psx_node_deref_size(n)
+   * type_size == deref_size == 要素サイズ)。スケールは add() 側で ps_node_deref_size(n)
    * (= 次段ストライド) を使う。これがないと `m[i] + k` / `*(t[i]+k) + j` が byte 加算に
    * なり不正アドレスを deref していた。 */
-  if ((n->kind == ND_DEREF || n->kind == ND_ADDR) && !psx_node_is_pointer(n)) {
-    int ds = psx_node_deref_size(n);
-    if (ds > 0 && psx_node_type_size(n) > ds)
+  if ((n->kind == ND_DEREF || n->kind == ND_ADDR) && !ps_node_is_pointer(n)) {
+    int ds = ps_node_deref_size(n);
+    if (ds > 0 && ps_node_type_size(n) > ds)
       return 1;
   }
   token_kind_t tk = TK_EOF; char *tn = NULL; int tl = 0, is_tp = 0;
@@ -2433,7 +2433,7 @@ static node_t *add(void) {
         node_t *tmp = node; node = rhs; rhs = tmp;
       }
       if (node_is_ptr_for_arith(node)) {
-        int ds = psx_node_deref_size(node);
+        int ds = ps_node_deref_size(node);
         if (ds > 1) {
           // ポインタ + 整数: 整数を要素サイズ倍にスケーリング
           rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
@@ -2447,14 +2447,14 @@ static node_t *add(void) {
       if (both_ptr) {
         // ポインタ - ポインタ (C11 6.5.6p9): 結果は要素数 (= ptrdiff_t)。
         // (p - q) / sizeof(*p) を生成する。両辺が同じ型を指す前提。
-        int ds = psx_node_deref_size(node);
+        int ds = ps_node_deref_size(node);
         node_t *diff = psx_node_new_binary(ND_SUB, node, rhs);
         node = (ds > 1)
                  ? psx_node_new_binary(ND_DIV, diff, psx_node_new_num(ds))
                  : diff;
       } else {
         if (node_is_ptr_for_arith(node)) {
-          int ds = psx_node_deref_size(node);
+          int ds = ps_node_deref_size(node);
           if (ds > 1) {
             // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
             rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
@@ -2656,9 +2656,9 @@ static node_t *build_unary_deref_node(node_t *operand) {
    * また pointee_is_void が立っているとき (`void *p`) は deref 不可。 */
   if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
                   operand->kind == ND_NUM)) {
-    int looks_ptr = psx_node_is_pointer(operand) ||
+    int looks_ptr = ps_node_is_pointer(operand) ||
                     psx_node_pointer_qual_levels(operand) > 0;
-    int ts = psx_node_type_size(operand);
+    int ts = ps_node_type_size(operand);
     /* type_size が 1/2/4 (char/short/int) で pointer 指示がなければ明確に
      * スカラ整数 → deref はエラー。 */
     if (!looks_ptr && ts > 0 && ts < 8) {
@@ -2678,7 +2678,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
   node->base.kind = ND_DEREF;
   node->base.lhs = operand;
   node->base.fp_kind = TK_FLOAT_KIND_NONE;
-  int ds = psx_node_deref_size(operand);
+  int ds = ps_node_deref_size(operand);
   node->type_size = ds ? ds : 8;
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
@@ -2834,12 +2834,12 @@ static node_t *wrap_as_addr(node_t *operand) {
     node->tag_name = tag_name;
     node->tag_len = tag_len;
     node->is_tag_pointer = 1;
-    node->deref_size = psx_node_type_size(operand);
+    node->deref_size = ps_node_type_size(operand);
     node->type_size = 8;
     return (node_t *)node;
   }
   /* タグなしオペランド: operand の型サイズが pointee サイズ */
-  int ts = psx_node_type_size(operand);
+  int ts = ps_node_type_size(operand);
   if (ts > 0) {
     node->deref_size = ts;
     node->is_pointer = 1;
@@ -2970,8 +2970,8 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
                                             int *out_es, int *out_inner_ds,
                                             int *out_next_ds,
                                             int *out_extras, int *out_extras_count) {
-  int ds = psx_node_deref_size(node);
-  int ts = psx_node_type_size(node);
+  int ds = ps_node_deref_size(node);
+  int ts = ps_node_type_size(node);
   int es = ds ? ds : (ts ? ts : 8);
   int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
   int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
@@ -3058,9 +3058,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
    * メタ情報が落ちる場合があるので、kind 単独で許容する (誤検出を避ける)。
    * 明確に「スカラ int を subscript している」ケース (両辺とも非ポインタの
    * 単純 LVAR/GVAR/NUM) のみ弾く。 */
-  int node_ok = psx_node_is_pointer(node) || node->kind == ND_DEREF ||
+  int node_ok = ps_node_is_pointer(node) || node->kind == ND_DEREF ||
                 node->kind == ND_ADDR;
-  int idx_ok = psx_node_is_pointer(idx) || idx->kind == ND_DEREF ||
+  int idx_ok = ps_node_is_pointer(idx) || idx->kind == ND_DEREF ||
                idx->kind == ND_ADDR;
   if (!node_ok && !idx_ok) {
     psx_diag_ctx(curtok(), "subscript",

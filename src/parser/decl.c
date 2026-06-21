@@ -2315,8 +2315,8 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     /* C11 6.5.16.1: スカラ非ポインタ変数を文字列リテラル (char*) など
      * ポインタ型で初期化するのは互換性のない型の制約違反。
      * 明示キャスト (int)"hello" は apply_cast で is_pointer がクリアされるので
-     * ここでは psx_node_is_pointer を見て暗黙変換のみを検出する。 */
-    if (psx_node_is_pointer(init_expr)) {
+     * ここでは ps_node_is_pointer を見て暗黙変換のみを検出する。 */
+    if (ps_node_is_pointer(init_expr)) {
       psx_diag_ctx(curtok(), "init",
                    "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
     }

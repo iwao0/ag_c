@@ -1332,8 +1332,8 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
    * 両辺の符号が異なる場合、符号なし側の幅が符号付き側の幅以上のときのみ符号なし。
    * 広い符号付き型は狭い符号なし型の全値を表現できるため符号付き演算になる。 */
   int lsz = ir_type_size(l.type), rsz = ir_type_size(r.type);
-  int lu = (lsz >= 4) && psx_node_is_unsigned(node->lhs);
-  int ru = (rsz >= 4) && psx_node_is_unsigned(node->rhs);
+  int lu = (lsz >= 4) && ps_node_is_unsigned(node->lhs);
+  int ru = (rsz >= 4) && ps_node_is_unsigned(node->rhs);
   int lw = lsz < 4 ? 4 : lsz, rw = rsz < 4 ? 4 : rsz;
   int uac_unsig;  /* 通常算術変換 (usual arithmetic conversion) の符号 */
   if (lu == ru) {
@@ -1843,12 +1843,12 @@ static int ternary_branch_is_wide_int(node_t *n) {
     return v > 0xFFFFFFFFLL || v < (-2147483647LL - 1);
   }
   /* 入れ子三項 (`a ? x : (b ? bigL : y)`): 内側の分岐に 64bit があれば結果も 64bit。
-   * psx_node_type_size は NUM リテラルを 0 とみなすため、再帰でリテラルを拾う。 */
+   * ps_node_type_size は NUM リテラルを 0 とみなすため、再帰でリテラルを拾う。 */
   if (n->kind == ND_TERNARY) {
     return ternary_branch_is_wide_int(n->rhs) ||
            ternary_branch_is_wide_int(((node_ctrl_t *)n)->els);
   }
-  return psx_node_type_size(n) >= 8;
+  return ps_node_type_size(n) >= 8;
 }
 
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
@@ -1867,7 +1867,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   /* `&x` (ND_ADDR) は常にポインタ値だが is_pointer フラグを持たないことがあるため
    * 明示的に判定に加える (`(c ? &a : &b)->m` が 8 バイトで扱われるように)。 */
   if (res_ty == IR_TY_I32 &&
-      (psx_node_is_pointer(node->rhs) || psx_node_is_pointer(c->els) ||
+      (ps_node_is_pointer(node->rhs) || ps_node_is_pointer(c->els) ||
        node->rhs->kind == ND_FUNCREF || node->rhs->kind == ND_ADDR ||
        (c->els && (c->els->kind == ND_FUNCREF || c->els->kind == ND_ADDR)))) {
     res_ty = IR_TY_PTR;
@@ -2105,8 +2105,8 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
   /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
    * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
   long long step = 1;
-  if (psx_node_is_pointer(target)) {
-    int ds = psx_node_deref_size(target);
+  if (ps_node_is_pointer(target)) {
+    int ds = ps_node_deref_size(target);
     if (ds > 1) step = ds;
   }
   int is_inc = (node->kind == ND_PRE_INC || node->kind == ND_POST_INC);

@@ -10,7 +10,7 @@
  * 現状の公開シンボル:
  *   - lvar_t (型のみ。IR 側 find_owning_lvar が offset/size/next_all を
  *     直接読む。将来的に opaque 化を検討するが Phase C2 では据置)
- *   - psx_node_is_pointer / psx_node_deref_size (node_utils 由来)
+ *   - ps_node_is_pointer / ps_node_deref_size (node_utils 由来)
  *   - psx_ctx_get_function_is_variadic / _param_fp_kind (semantic_ctx)
  *   - tag_member_info_t + psx_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
@@ -28,10 +28,10 @@
 #include <stdbool.h>
 
 /* node_utils.h からの公開 */
-int psx_node_is_pointer(node_t *n);
-int psx_node_deref_size(node_t *n);
-int psx_node_is_unsigned(node_t *n);
-int psx_node_type_size(node_t *n);
+int ps_node_is_pointer(node_t *n);
+int ps_node_deref_size(node_t *n);
+int ps_node_is_unsigned(node_t *n);
+int ps_node_type_size(node_t *n);
 
 /* グローバル変数リスト走査 (Phase C3)。
  * codegen は global_vars リストを直接舐めず、本 visitor 経由で iterate する。

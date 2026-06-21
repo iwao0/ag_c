@@ -3067,11 +3067,11 @@ static node_t *funcdef(void) {
     tk_float_kind_t pfk = (tk_float_kind_t)(args[i] ? args[i]->fp_kind : 0);
     if (pfk != TK_FLOAT_KIND_NONE) {
       psx_ctx_set_function_param_fp_kind(tok->str, tok->len, i, pfk);
-    } else if (args[i] && !psx_node_is_pointer(args[i])) {
+    } else if (args[i] && !ps_node_is_pointer(args[i])) {
       /* 整数スカラ仮引数の幅を記録 → 呼び出し側で fp 実引数を F2I 変換できる
        * (`f(7.9)` の 7.9 を int に切り詰め)。サイズ 1/2/4 は w 幅 (4)、8 は x 幅。
        * struct/union メンバ等の非スカラ (>8) は対象外 (値渡しは別経路)。 */
-      int sz = psx_node_type_size(args[i]);
+      int sz = ps_node_type_size(args[i]);
       if (sz >= 1 && sz <= 4) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 4);
       } else if (sz == 8) {

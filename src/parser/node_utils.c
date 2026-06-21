@@ -9,7 +9,7 @@ static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 
-int psx_node_type_size(node_t *node) {
+int ps_node_type_size(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.type_size;
@@ -21,11 +21,11 @@ int psx_node_type_size(node_t *node) {
     case ND_PTR_CAST:
       return as_mem(node)->type_size;
     case ND_COMMA:
-      return psx_node_type_size(node->rhs);
+      return ps_node_type_size(node->rhs);
     case ND_TERNARY: {
-      int l = psx_node_type_size(node->rhs);
+      int l = ps_node_type_size(node->rhs);
       if (l > 0) return l;
-      return psx_node_type_size(((node_ctrl_t *)node)->els);
+      return ps_node_type_size(((node_ctrl_t *)node)->els);
     }
     case ND_FUNCALL: {
       /* 関数呼び出し: 戻り値の型サイズを semantic ctx から推定する。
@@ -55,9 +55,9 @@ int psx_node_type_size(node_t *node) {
     case ND_BITXOR:
     case ND_SHL:
     case ND_SHR: {
-      if (psx_node_is_pointer(node)) return 8;
-      int l = psx_node_type_size(node->lhs);
-      int r = psx_node_type_size(node->rhs);
+      if (ps_node_is_pointer(node)) return 8;
+      int l = ps_node_type_size(node->lhs);
+      int r = ps_node_type_size(node->rhs);
       int m = l > r ? l : r;
       return m > 0 ? m : 4;
     }
@@ -65,7 +65,7 @@ int psx_node_type_size(node_t *node) {
     case ND_PRE_DEC:
     case ND_POST_INC:
     case ND_POST_DEC: {
-      int s = psx_node_type_size(node->lhs);
+      int s = ps_node_type_size(node->lhs);
       return s > 0 ? s : 4;
     }
     case ND_LT: case ND_LE:
@@ -86,7 +86,7 @@ int psx_node_type_size(node_t *node) {
   }
 }
 
-int psx_node_deref_size(node_t *node) {
+int ps_node_deref_size(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.deref_size;
@@ -98,20 +98,20 @@ int psx_node_deref_size(node_t *node) {
     case ND_PTR_CAST:
       return as_mem(node)->deref_size;
     case ND_COMMA:
-      return psx_node_deref_size(node->rhs);
+      return ps_node_deref_size(node->rhs);
     /* 条件演算子: ポインタ側分岐の deref_size を引き継ぐ
      * (`(c ? p : q)[i]` の要素サイズ決定に必要)。 */
     case ND_TERNARY: {
-      int l = psx_node_deref_size(node->rhs);
+      int l = ps_node_deref_size(node->rhs);
       if (l > 0) return l;
-      return psx_node_deref_size(((node_ctrl_t *)node)->els);
+      return ps_node_deref_size(((node_ctrl_t *)node)->els);
     }
     /* ND_ADD/SUB の結果がポインタなら、ポインタ側の deref_size を引き継ぐ。 */
     case ND_ADD:
     case ND_SUB: {
-      int l = psx_node_deref_size(node->lhs);
+      int l = ps_node_deref_size(node->lhs);
       if (l > 0) return l;
-      return psx_node_deref_size(node->rhs);
+      return ps_node_deref_size(node->rhs);
     }
     /* `p++` 等の inc/dec はオペランドの deref_size をそのまま継承する。
      * `*p++` で deref のロード幅 (= pointee サイズ) を正しく決めるのに必要。 */
@@ -119,13 +119,13 @@ int psx_node_deref_size(node_t *node) {
     case ND_PRE_DEC:
     case ND_POST_INC:
     case ND_POST_DEC:
-      return psx_node_deref_size(node->lhs);
+      return ps_node_deref_size(node->lhs);
     default:
       return 0;
   }
 }
 
-int psx_node_is_pointer(node_t *node) {
+int ps_node_is_pointer(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.is_pointer;
@@ -137,22 +137,22 @@ int psx_node_is_pointer(node_t *node) {
     case ND_PTR_CAST:
       return as_mem(node)->is_pointer;
     case ND_COMMA:
-      return psx_node_is_pointer(node->rhs);
+      return ps_node_is_pointer(node->rhs);
     /* C11 6.5.15: 条件演算子の結果は両オペランドがポインタなら
      * ポインタ。`(c ? p : q)[i]` の subscript 判定で必要。 */
     case ND_TERNARY:
-      return psx_node_is_pointer(node->rhs) ||
-             psx_node_is_pointer(((node_ctrl_t *)node)->els);
+      return ps_node_is_pointer(node->rhs) ||
+             ps_node_is_pointer(((node_ctrl_t *)node)->els);
     /* C11 6.5.6: ポインタ + 整数 / 整数 + ポインタ / ポインタ - 整数 の結果
      * もポインタ。新規 ND_ADD/SUB ノードに is_pointer 属性を直接書けない
      * (psx_node_new_binary は node_t を作る) ので、子を見て判定する。 */
     case ND_ADD:
-      return psx_node_is_pointer(node->lhs) || psx_node_is_pointer(node->rhs);
+      return ps_node_is_pointer(node->lhs) || ps_node_is_pointer(node->rhs);
     case ND_SUB:
       /* ポインタ - ポインタ は ptrdiff_t (整数) なので除外。
        * ポインタ - 整数 のみポインタ扱い。 */
-      if (psx_node_is_pointer(node->lhs) && psx_node_is_pointer(node->rhs)) return 0;
-      return psx_node_is_pointer(node->lhs);
+      if (ps_node_is_pointer(node->lhs) && ps_node_is_pointer(node->rhs)) return 0;
+      return ps_node_is_pointer(node->lhs);
     /* 関数呼び出しの戻り値型がポインタ (`int *get(void); get()[0]`) なら、
      * その式は配列/ポインタ。subscript チェックを通すために 1 を返す。 */
     case ND_FUNCALL: {
@@ -336,7 +336,7 @@ static int node_is_unsigned(node_t *node) {
 /* node_is_unsigned の公開ラッパ。IR builder が比較の符号 (通常算術変換) を
  * 決める際、オペランドの符号を ND_LVAR の mem.is_unsigned まで含めて判定する
  * ために使う。生の node->is_unsigned は LVAR/GVAR では 0 のままなので不可。 */
-int psx_node_is_unsigned(node_t *node) { return node_is_unsigned(node); }
+int ps_node_is_unsigned(node_t *node) { return node_is_unsigned(node); }
 
 /* node の符号フラグを設定する (node_is_unsigned が読むフィールドに一致させる)。
  * `(int)u` / `(unsigned)i` キャストで結果の符号を確定するのに使う。 */
@@ -496,8 +496,8 @@ node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *r
   psx_node_reject_const_assign(lhs, op);
   /* C11 6.5.16.2p3: `p += n` でポインタ算術するときは、rhs を要素サイズ倍に
    * スケーリングする。`add()` 経路と挙動を揃える。 */
-  if ((op_kind == ND_ADD || op_kind == ND_SUB) && psx_node_is_pointer(lhs)) {
-    int ds = psx_node_deref_size(lhs);
+  if ((op_kind == ND_ADD || op_kind == ND_SUB) && ps_node_is_pointer(lhs)) {
+    int ds = ps_node_deref_size(lhs);
     if (ds > 1) {
       rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
     }
@@ -513,7 +513,7 @@ node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *r
     op_expr = psx_node_new_binary(ND_NE, op_expr, psx_node_new_num(0));
   }
   node_mem_t *assign_node = psx_node_new_assign(lhs, op_expr);
-  assign_node->type_size = psx_node_type_size(lhs);
+  assign_node->type_size = ps_node_type_size(lhs);
   assign_node->base.fp_kind = lhs ? lhs->fp_kind : 0;
   return (node_t *)assign_node;
 }
