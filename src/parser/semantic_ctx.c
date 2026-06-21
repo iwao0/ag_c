@@ -130,6 +130,10 @@ struct func_name_t {
   int ret_set_once;
   token_kind_t ret_token_kind;
   int ret_is_pointer;
+  /* 戻り値型のポインタ段数 (`int *g()`=1, `int **g()`=2, 非ポインタ=0)。ret_is_pointer は
+   * bool で段数を持たないため、多段ポインタ戻り `int **g(); **g()` の deref を正しい
+   * 幅 (1 段目=ポインタ8B / 最内=基底型) で組むために別途保持する。 */
+  int ret_pointer_levels;
   /* 1: 戻り値型が unsigned。`unsigned` は ret_token_kind が TK_INT に正規化され
    * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
    * (ULT/ULE 比較選択) に使う。 */
@@ -916,6 +920,17 @@ void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int f
 int psx_ctx_get_function_ret_pointee_array_first_dim(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_pointee_array_first_dim : 0;
+}
+
+/* 戻り値型のポインタ段数 (`int **g()`=2)。未設定/非ポインタは 0。多段ポインタ戻りの
+ * deref 幅決定 (node_utils の funcall 経路) に使う。 */
+void psx_ctx_set_function_ret_pointer_levels(char *name, int len, int levels) {
+  func_name_t *f = find_function_name(name, len);
+  if (f) f->ret_pointer_levels = levels;
+}
+int psx_ctx_get_function_ret_pointer_levels(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_pointer_levels : 0;
 }
 
 int psx_ctx_track_function_ret_type(char *name, int len,

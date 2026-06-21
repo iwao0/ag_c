@@ -161,6 +161,11 @@ int ps_node_deref_size(node_t *node) {
       if (base > 0 && fn->callee == NULL && fn->funcname) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
         if (fd > 0) return fd * base;
+        /* 多段ポインタ戻り `int **g()`: `*g()` の結果はまだポインタ (8B) なので、
+         * 1 段目 deref のロード幅 / 添字スケールは基底型でなく 8 を返す。最内基底型は
+         * psx_node_base_deref_size が別途返す。 */
+        if (psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len) >= 2)
+          return 8;
       }
       return base;
     }
@@ -227,6 +232,17 @@ int psx_node_pointer_qual_levels(node_t *node) {
       return as_mem(node)->pointer_qual_levels;
     case ND_COMMA:
       return psx_node_pointer_qual_levels(node->rhs);
+    /* 多段ポインタ戻り `int **g()` の funcall: 段数 (>=2) を返し、build_unary_deref_node の
+     * pql>=2 分岐に乗せて `*g()` を「1 段減らしたポインタ」として組ませる。単段ポインタ戻り
+     * (`int *g()`) は従来どおり 0 を返し挙動を変えない (ps_node_is_pointer 側で別途ポインタ判定)。 */
+    case ND_FUNCALL: {
+      node_func_t *fn = (node_func_t *)node;
+      if (fn->callee == NULL && fn->funcname) {
+        int lv = psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len);
+        if (lv >= 2) return lv;
+      }
+      return 0;
+    }
     default:
       return 0;
   }
@@ -245,6 +261,15 @@ int psx_node_base_deref_size(node_t *node) {
       return as_mem(node)->base_deref_size;
     case ND_COMMA:
       return psx_node_base_deref_size(node->rhs);
+    /* 多段ポインタ戻り `int **g()` の funcall: 最内基底型サイズ (int=4) を返す。
+     * build_unary_deref_node の pql>=2 分岐が最終 deref のロード幅に使う。 */
+    case ND_FUNCALL: {
+      node_func_t *fn = (node_func_t *)node;
+      if (fn->callee == NULL && fn->funcname &&
+          psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len) >= 2)
+        return funcall_ret_pointee_size(node);
+      return 0;
+    }
     default:
       return 0;
   }

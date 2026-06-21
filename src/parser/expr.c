@@ -3243,7 +3243,10 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
      * ままになり、スカラ初期化 `int u=*pp[0];` が誤って弾かれ、算術も pointer 化
      * していた。 */
     int result_pql = pql;
-    if ((node->kind == ND_LVAR || node->kind == ND_GVAR) && pql >= 2) {
+    if ((node->kind == ND_LVAR || node->kind == ND_GVAR ||
+         node->kind == ND_FUNCALL) && pql >= 2) {
+      /* 多段ポインタ戻り `int **g()` の `g()[i]` も genuine ポインタ値の subscript
+       * (配列 decay でなく)。1 段消費して結果 pql を減らす (`g()[i]` は int*)。 */
       result_pql = pql - 1;
     }
     deref->pointer_qual_levels = result_pql;

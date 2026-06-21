@@ -158,6 +158,10 @@ int psx_ctx_get_function_ret_is_unsigned(char *name, int len);
  * 呼び出し結果 `f()[i]` の行ストライドを N*elem にするのに使う。 */
 void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int first_dim);
 int psx_ctx_get_function_ret_pointee_array_first_dim(char *name, int len);
+/* 戻り値型のポインタ段数 (`int *g()`=1, `int **g()`=2, 非ポインタ=0)。多段ポインタ戻り
+ * `int **g(); **g()` の deref を正しい幅で組むのに使う。 */
+void psx_ctx_set_function_ret_pointer_levels(char *name, int len, int levels);
+int psx_ctx_get_function_ret_pointer_levels(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

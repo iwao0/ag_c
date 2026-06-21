@@ -95,6 +95,9 @@ static int g_last_alignas_value = 0;
  * 戻り値型を関数ポインタ (= ポインタ) として扱うため、parse_func_declarator
  * から funcdef へ伝える。各 funcdef 開始時にリセットする。 */
 static int g_last_outer_declarator_is_ptr = 0;
+/* 戻り値型基底の `*` 段数 (`int **g()` で 2)。parse_pointer_suffix_flags が数え、
+ * funcdef が多段ポインタ戻りの記録に使う。各 funcdef 開始時にリセットする。 */
+static int g_last_ret_ptr_levels = 0;
 /* 戻り値型が「配列へのポインタ」`int (*f())[N]` のとき、pointee 配列の先頭次元 N と
  * `[` suffix の個数。parse_func_declarator が捕捉し funcdef が ctx へ記録する。単一次元
  * (`[N]` 1 個) のみ対応 (多次元 `[N][M]` は dim_count>1 として first_dim を立てない)。 */
@@ -2886,6 +2889,7 @@ static void parse_pointer_suffix_flags(int *out_is_ptr) {
   while (curtok()->kind == TK_MUL) {
     set_curtok(curtok()->next);
     if (out_is_ptr) *out_is_ptr = 1;
+    g_last_ret_ptr_levels++;
     /* ポインタ修飾子 `int *const f()` / `int *volatile f()` の const/volatile を読み飛ばす。
      * これがないと戻り型の `*` の後の const で declarator が止まり E2006 になっていた
      * (ag_c は値の正しさのみ対象なので修飾子はパースして捨てる)。 */
@@ -3167,6 +3171,7 @@ static node_t *funcdef(void) {
   int ret_is_ptr = 0;
   int ret_td_unsigned = 0;
   g_last_outer_declarator_is_ptr = 0;
+  g_last_ret_ptr_levels = 0;
   parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr, &ret_td_unsigned);
   /* static 関数 (内部リンケージ) かを捕捉する。parse_func_decl_spec 直後に取る
    * (parse_func_declarator がパラメータ型で g_last_decl_is_static を上書きする前)。 */
@@ -3254,6 +3259,12 @@ static node_t *funcdef(void) {
   /* ctx には基底型の unsigned を保存 (ポインタ返しでも pointee 符号として subscript で使う)。
    * 戻り値そのものの符号 (比較等) は call 側で is_pointer を見て別途ガードする。 */
   if (ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
+  /* 多段ポインタ戻り `int **g()`: ポインタ段数を記録 (`**g()` の deref 幅決定に使う)。
+   * 基底型 `*` の段数のみ (`int (*f())[N]` の outer declarator ポインタは別扱いなので、
+   * g_last_outer_declarator_is_ptr 由来の +1 は数えない)。 */
+  if (ret_is_ptr && g_last_ret_ptr_levels > 0) {
+    psx_ctx_set_function_ret_pointer_levels(tok->str, tok->len, g_last_ret_ptr_levels);
+  }
   /* 配列へのポインタ戻り `int (*f())[N]`: 先頭次元 N を記録 (単一次元のみ)。呼び出し結果
    * `f()[i]` の行ストライドを N*elem にするのに使う (0 なら通常のポインタ戻り)。 */
   if (ret_is_ptr && g_func_ret_pointee_dim_count == 1 && g_func_ret_pointee_first_dim > 0) {
