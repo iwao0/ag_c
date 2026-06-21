@@ -1,10 +1,52 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-21
+最終更新: 2026-06-21（探索的差分テスト継続セッション）
 
 ## このセッションの目的
 clang との差分テスト（同一 C ソースを ag_c と clang でコンパイルして exit code を
 比較）で ag_c の miscompile / コンパイルエラーを炙り出し、修正して回帰テストを追加する。
+
+## 2026-06-21 セッション（続き）: bug_coverage の ⚠️ 全消化 → 探索で宣言子/型バグ 6 件
+現在 `make test` = **1001/1001 E2E green**（unit/parser/preprocess/IR 含む全 green）。
+回帰 fixture は `test/fixtures/probes_found_bugs/`、索引は `docs/differential_testing/bug_coverage.md`。
+
+### 前半: 残っていた ⚠️（既知バグ）を全部 🔧 に
+- 多段ポインタの fp pointee `double **p; **p`（b90f302）multilevel_pointer_fp_pointee
+- ファイルスコープ集約複合リテラルのアドレス `&(struct S){...}`（d47504b）file_scope_aggregate_compound_literal_addr
+- グローバルのネスト brace designator `{.items={[2]={.a=7}}}`（3bbba23）global_nested_brace_designator
+- `#if 0` 偽分岐の非C トークン skip（adb180e）if0_skip_non_c_tokens。寛容モード+setjmp/longjmp
+- **pointer-to-VLA** `int (*p)[m]`（9fa50c0）pointer_to_vla。ランタイム行ストライド機構を local/param 両方で
+
+### 後半: 探索的差分テスト（/tmp に probe を量産→agc_diff_test）で新規発見・修正
+バグは**宣言子・関数戻り型**に集中（式・制御フロー・ABI・プリプロセッサは堅牢で probe 全 green）。
+- **ポインタ戻り関数の subscript/算術** `g()[i]` / `*(g()+i)`（df7da63）func_pointer_return_subscript。
+  parser がポインタ戻り値の pointee 型を覚えず ND_FUNCALL の deref_size=0 で誤スケール。`double* g()` は
+  戻り値を d0 から誤読し SIGSEGV、`unsigned char* g()` は符号拡張。semantic ctx の戻り型から導出。
+- **storage class 付きタグ戻り関数** `static struct S *f()`（ea308e3）static_tag_return_function
+- **配列へのポインタを返す関数** `int (*f())[N]`（19f81f6）func_return_pointer_to_array。pointee 配列次元を
+  捕捉し ret_pointee_array_first_dim に記録。単一次元のみ（多次元 `[N][M]` 戻りは未記録）
+- **ファイルスコープ `static <typedef名> 変数`** `static Point p;`（4cdb34b）static_typedef_name_global
+- **const/volatile 付きポインタ戻り型** `int *const f()`（9d57b4c）qualified_pointer_return
+- **タグ戻り + `(*...)` 宣言子** `struct P (*f())[3]` / `struct R (*f())(int)`（9bd6850）tag_return_complex_declarator。
+  is_toplevel/is_tag の宣言子判定を共有ヘルパ is_function_declarator_sig に抽出して統一
+
+### 発見したが未修正（次セッションの着手候補。すべて exploratory probe で再現確認済み）
+1. **struct を返す関数ポインタの直接メンバアクセス** `op(41).v` が E3005（`op` は `struct R (*)(int)`）。
+   一旦変数で受ければ可（`struct R r=op(41); r.v`）。間接呼び出しの struct 戻り型が funcall ノードへ
+   伝播していない。直接呼び出し `mk(41).v` が動くかは未確認（切り分け途中で中断）。
+2. **多段ポインタ戻り** `int **g(); **g()` が SIGSEGV。semantic ctx の ret_is_pointer が bool（段数なし）で
+   `int **` を `int *`（pointee 4B）扱い。型付き変数経由は可。pointer LEVELS の追跡が要る。
+3. **extern 宣言＋同一TU定義（tag/typedef 基底）** `extern struct S es; struct S es={7};` が E3064 /
+   typedef は `.comm` 二重定義で ASSEMBLE_FAIL。builtin `extern int v; int v=5;` は OK。順序が逆
+   （定義→extern）も OK。tag/typedef の object 経路は parse_toplevel_decl_spec が早期 return するため
+   apply_toplevel_decl_prefix_flags（extern/static フラグ伝播）を通らないのが一因だが、フラグ伝播を
+   足すと別の parse 回帰（E3064）が出たため要・慎重対応。グローバル再宣言＋集約初期化子の絡み。
+   通常は別TU（header に extern、.c に定義）なので影響は限定的。
+
+### このセッション中の注意（プロセス）
+- ヘッダ（token.h / semantic_ctx.h / parser_public.h / node_utils.h 等）を変更すると **増分ビルドが
+  依存を取りこぼし古い .o を使う**ことがあり、`make test` が偽の `test=2` を出した（2回）。
+  ヘッダ変更時は `make clean && make` で確認すること（コードの問題ではない）。
 
 ## 2026-06-21 セッションの修正（bug_coverage.md の ⬜ 未着手をすべて消化）
 現在 `make test` = **984 E2E + unit/parser/preprocess/fuzz/IR すべて green**、回帰 fixture は
