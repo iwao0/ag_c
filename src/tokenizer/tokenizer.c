@@ -10,6 +10,7 @@
 #include "number.h"
 #include "punctuator.h"
 #include "scanner.h"
+#include "trigraph.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -117,53 +118,6 @@ static int checked_span_len(char *start, char *end, const char *what) {
 
 void tk_set_max_token_len_limit_for_test(size_t max_len) {
   max_token_len_for_test = (max_len == 0) ? (size_t)INT_MAX : max_len;
-}
-
-static char trigraph_to_char(char c) {
-  switch (c) {
-    case '=': return '#';
-    case '(': return '[';
-    case '/': return '\\';
-    case ')': return ']';
-    case '\'': return '^';
-    case '<': return '{';
-    case '>': return '}';
-    case '!': return '|';
-    case '-': return '~';
-    default: return '\0';
-  }
-}
-
-// 翻訳フェーズ1: trigraph を置換する
-static char *replace_trigraphs(const char *in) {
-  if (!tk_ctx_get_enable_trigraphs(tk_runtime_ctx())) return (char *)in;
-  size_t n = strlen(in);
-  bool has_trigraph = false;
-  for (size_t i = 0; i + 2 < n; i++) {
-    if (in[i] == '?' && in[i + 1] == '?' && trigraph_to_char(in[i + 2])) {
-      has_trigraph = true;
-      break;
-    }
-  }
-  if (!has_trigraph) return (char *)in;
-
-  char *out = tcalloc(n + 1, 1);
-  size_t i = 0;
-  size_t j = 0;
-
-  while (i < n) {
-    if (i + 2 < n && in[i] == '?' && in[i + 1] == '?') {
-      char mapped = trigraph_to_char(in[i + 2]);
-      if (mapped) {
-        out[j++] = mapped;
-        i += 3;
-        continue;
-      }
-    }
-    out[j++] = in[i++];
-  }
-  out[j] = '\0';
-  return out;
 }
 
 // 新しいトークンを作成して、curに繋げる
@@ -573,7 +527,7 @@ token_t *tk_tokenize(const char *p) {
 /** @brief 入力文字列を正規化し、診断用入力参照をコンテキストへ設定する。 */
 static char *tokenize_prepare_input(tokenizer_context_t *ctx, const char *in) {
   tk_allocator_set_expected_size(strlen(in));
-  char *normalized = replace_trigraphs(in);
+  char *normalized = tk_replace_trigraphs(in);
   tk_set_user_input_ctx(ctx, normalized);
   return normalized;
 }
