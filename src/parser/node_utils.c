@@ -9,6 +9,31 @@ static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
 static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 
+/* 関数のポインタ戻り値 (`int *g(); g()[i]` / `g()+i`) の pointee サイズ (= deref_size /
+ * subscript・ポインタ算術のスケール)。直接呼び出しのみ。非ポインタ戻り・間接呼び出し・
+ * 不明は 0。parser はポインタ戻り値の pointee 型を覚えていないので semantic ctx の
+ * 戻り値型 (tag / token_kind) から導出する。多段ポインタ戻り (`int **g()`) は ret が段数を
+ * 持たないため基底型サイズになる (既存の制約)。 */
+static int funcall_ret_pointee_size(node_t *node) {
+  node_func_t *fn = (node_func_t *)node;
+  if (fn->callee != NULL || !fn->funcname) return 0;
+  if (!psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) return 0;
+  token_kind_t tag = TK_EOF; char *tn = NULL; int tl = 0;
+  psx_ctx_get_function_ret_tag(fn->funcname, fn->funcname_len, &tag, &tn, &tl);
+  if (tag != TK_EOF) {
+    int ss = psx_ctx_get_function_ret_struct_size(fn->funcname, fn->funcname_len);
+    return ss > 0 ? ss : 8;
+  }
+  switch (psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len)) {
+    case TK_CHAR: return 1;
+    case TK_SHORT: return 2;
+    case TK_LONG: return 8;
+    case TK_FLOAT: return 4;
+    case TK_DOUBLE: return 8;
+    default: return 4;  /* int / その他 */
+  }
+}
+
 int ps_node_type_size(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {
@@ -37,6 +62,13 @@ int ps_node_type_size(node_t *node) {
        * parser がポインタ戻り値かを覚えていないので int と区別がつかない。
        * 既存 fixture でこのケースは使われていないため一旦 4 にしている。 */
       if (node->ret_struct_size > 0) return node->ret_struct_size;
+      /* ポインタ戻り値 (`int *g()`) は値が 8 バイト (`sizeof(g())`==8)。 */
+      {
+        node_func_t *fn = (node_func_t *)node;
+        if (fn->callee == NULL && fn->funcname &&
+            psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len))
+          return 8;
+      }
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
       if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
       return 4;
@@ -120,6 +152,10 @@ int ps_node_deref_size(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return ps_node_deref_size(node->lhs);
+    /* ポインタ戻り値の関数 `int *g(); g()[i]` / `g()+i`: pointee サイズを返さないと
+     * 添字/ポインタ算術がスケールせず 1 バイト加算になる (miscompile/SIGSEGV)。 */
+    case ND_FUNCALL:
+      return funcall_ret_pointee_size(node);
     default:
       return 0;
   }
@@ -232,6 +268,18 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return psx_node_pointee_fp_kind(node->lhs);
+    /* `double *g(); g()[i]` の subscript を fp load にするため、ポインタ戻り値の
+     * pointee fp 種別を返す。 */
+    case ND_FUNCALL: {
+      node_func_t *fn = (node_func_t *)node;
+      if (fn->callee != NULL || !fn->funcname) return TK_FLOAT_KIND_NONE;
+      if (!psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len))
+        return TK_FLOAT_KIND_NONE;
+      token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
+      if (rk == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
+      if (rk == TK_DOUBLE) return TK_FLOAT_KIND_DOUBLE;
+      return TK_FLOAT_KIND_NONE;
+    }
     default:
       return TK_FLOAT_KIND_NONE;
   }

@@ -3141,7 +3141,11 @@ static node_t *funcdef(void) {
   /* 戻り値型の unsigned 性を捕捉する (`unsigned` は ret_kind が TK_INT に潰れ
    * 符号性が落ちるため別管理)。parse_func_decl_spec 直後に読む (parse_func_declarator
    * が g_last_type_unsigned を変えるより前)。後段で関数名判明後に記録する。 */
-  int ret_is_unsigned = !ret_is_ptr && (psx_last_type_is_unsigned() || ret_td_unsigned);
+  /* 基底型の unsigned 性。戻り値そのものの符号 (ret_is_unsigned, ポインタ返しは無関係なので
+   * !ret_is_ptr でゲート) と、`unsigned char *g(); g()[i]` の pointee 符号 (ret_base_unsigned、
+   * ポインタ返しでも保持し subscript の zero-extend に使う) を分ける。 */
+  int ret_base_unsigned = psx_last_type_is_unsigned() || ret_td_unsigned;
+  int ret_is_unsigned = !ret_is_ptr && ret_base_unsigned;
   /* 戻り型が _Complex か (parse_func_declarator が g_last_type_complex を変える前に読む)。
    * IR builder が複素数戻り値 (HFA: re→d0, im→d1) を組むために node に記録する。 */
   int ret_is_complex = !ret_is_ptr && psx_last_type_is_complex();
@@ -3179,15 +3183,19 @@ static node_t *funcdef(void) {
   node->base.kind = ND_FUNCDEF;
   node->base.ret_struct_size = psx_expr_current_func_ret_struct_size();
   /* 戻り型の fp_kind をノードへ記録。IR builder の ir_type_from_node が
-   * 関数の戻り型 (IR_TY_F32/F64) を決定し、callee が fp レジスタで返すために必要。 */
-  node->base.fp_kind = ret_fp_kind;
+   * 関数の戻り型 (IR_TY_F32/F64) を決定し、callee が fp レジスタで返すために必要。
+   * ただし `double *g()` のようにポインタを返す関数は戻り値が x0 のポインタ値なので
+   * fp_kind を立ててはいけない (立てると funcall が d0 から読み SIGSEGV)。pointee が
+   * fp であることは別途 ret_token_kind 経由 (psx_node_pointee_fp_kind) で扱う。 */
+  node->base.fp_kind = ret_is_ptr ? TK_FLOAT_KIND_NONE : ret_fp_kind;
   node->base.is_complex = ret_is_complex;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,
                                          psx_expr_current_func_ret_struct_size());
   // float / double 戻り値型を記録 → call 経路で fcvtzs を挿入できるようにする
-  if (ret_fp_kind != TK_FLOAT_KIND_NONE) {
+  // (ポインタ返しは fp 値でないので除外)
+  if (ret_fp_kind != TK_FLOAT_KIND_NONE && !ret_is_ptr) {
     psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, ret_fp_kind);
   }
   // 戻り値が _Complex なら記録 → 呼び出し側 funcall ノードへ is_complex を伝播。
@@ -3204,7 +3212,9 @@ static node_t *funcdef(void) {
                  "関数 '%.*s' の戻り値型が以前の宣言と異なります (C11 6.7p3)",
                  tok->len, tok->str);
   }
-  if (ret_is_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
+  /* ctx には基底型の unsigned を保存 (ポインタ返しでも pointee 符号として subscript で使う)。
+   * 戻り値そのものの符号 (比較等) は call 側で is_pointer を見て別途ガードする。 */
+  if (ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。
   // 非 variadic 関数でも nargs_fixed を記録するため常に呼ぶ。

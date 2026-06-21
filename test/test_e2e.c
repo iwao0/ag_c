@@ -1100,6 +1100,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_nested_brace_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_nested_brace_designator.c", 0, 0},
     {"probes", "if0_skip_non_c_tokens", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c", 0, 0},
     {"probes", "pointer_to_vla", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_to_vla.c", 0, 0},
+    {"probes", "func_pointer_return_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_pointer_return_subscript.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

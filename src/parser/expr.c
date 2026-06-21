@@ -3312,6 +3312,17 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
       else                           deref->pointee_is_unsigned = 1;
     }
+    /* `unsigned char *g(); g()[i]`: 関数のポインタ戻り値の pointee が unsigned なら
+     * zero-extend load させる (base_mem は ND_FUNCALL を拾わないので別途)。 */
+    if (node->kind == ND_FUNCALL) {
+      node_func_t *fn = (node_func_t *)node;
+      if (fn->callee == NULL && fn->funcname &&
+          psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
+          psx_ctx_get_function_ret_is_unsigned(fn->funcname, fn->funcname_len)) {
+        if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
+        else                           deref->pointee_is_unsigned = 1;
+      }
+    }
     /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で
      * array_len=0 のスカラに潰れ pointee_is_unsigned を持てない。base 自体が
      * unsigned スカラ (is_unsigned) を最終要素まで添字した場合も zero-extend する。
@@ -3769,7 +3780,10 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
    * ただし unsigned char/short は整数昇格 (C11 6.3.1.1) で signed int になるため
    * is_unsigned を立てない。立てると `unsigned char f(); f() > -1` が unsigned 比較に
    * なり -1 が UINT_MAX 扱いで誤って false になる (unsigned int/long のみ保持)。 */
-  if (psx_ctx_get_function_ret_is_unsigned(tok->str, tok->len)) {
+  if (psx_ctx_get_function_ret_is_unsigned(tok->str, tok->len) &&
+      !psx_ctx_get_function_ret_is_pointer(tok->str, tok->len)) {
+    /* ポインタ戻り (`unsigned char *g()`) の ctx unsigned は pointee 符号 (subscript 用) で
+     * あって戻り値そのものではないので、ここ (戻り値の符号化) では除外する。 */
     token_kind_t rk = psx_ctx_get_function_ret_token_kind(tok->str, tok->len);
     if (rk != TK_CHAR && rk != TK_SHORT) {
       node->base.is_unsigned = 1;
