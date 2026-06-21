@@ -84,67 +84,33 @@ bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value);
+/* typedef の型記述子。define/find はこの 1 構造体で受け渡す (旧 _ex/_ex2/_ex3 の
+ * フィールド堆積をまとめたもの)。array_dims は最大 8 次元、array_dims[0] が最も外側。
+ * pointer_levels / scope_depth は別 API・内部管理なのでここには含めない。 */
+typedef struct {
+  token_kind_t base_kind;
+  int elem_size;
+  tk_float_kind_t fp_kind;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int is_pointer;
+  int sizeof_size;
+  int pointee_const_qualified;
+  int pointee_volatile_qualified;
+  int is_unsigned;
+  int is_array;                 // typedef した型が配列型 (`typedef int row_t[3]`) か
+  int array_first_dim;          // 最外側 `[N]` の N (多次元の mid_stride 計算用)
+  int array_dim_count;          // 配列次元数 (0 = 非配列/未知)
+  int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
+} psx_typedef_info_t;
+
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、
  * 0 = 既存と型が異なる衝突。呼び出し元で 0 のとき診断を出す。 */
-int psx_ctx_define_typedef_name(char *name, int len, token_kind_t base_kind, int elem_size,
-                                 tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                 char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                 int pointee_const_qualified, int pointee_volatile_qualified,
-                                 int is_unsigned);
-bool psx_ctx_find_typedef_name(char *name, int len, token_kind_t *out_base_kind,
-                               int *out_elem_size, tk_float_kind_t *out_fp_kind,
-                               token_kind_t *out_tag_kind, char **out_tag_name,
-                               int *out_tag_len, int *out_is_pointer,
-                               int *out_pointee_const_qualified, int *out_pointee_volatile_qualified,
-                               int *out_is_unsigned);
-// 拡張版: typedef した型が配列型か (`typedef int row_t[3]` 等) と sizeof_size を取得する。
-// `row_t *a` のような仮引数で正しい outer_stride を設定するために使う。
-bool psx_ctx_find_typedef_name_ex(char *name, int len, token_kind_t *out_base_kind,
-                                  int *out_elem_size, tk_float_kind_t *out_fp_kind,
-                                  token_kind_t *out_tag_kind, char **out_tag_name,
-                                  int *out_tag_len, int *out_is_pointer,
-                                  int *out_pointee_const_qualified,
-                                  int *out_pointee_volatile_qualified, int *out_is_unsigned,
-                                  int *out_is_array, int *out_sizeof_size);
-int psx_ctx_define_typedef_name_ex(char *name, int len, token_kind_t base_kind, int elem_size,
-                                    tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                    char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                    int pointee_const_qualified, int pointee_volatile_qualified,
-                                    int is_unsigned, int is_array);
-// さらに拡張: 多次元 typedef 配列型の最外側 dim を取得する/渡す。
-// `typedef int M[3][4]; M *p` で mid_stride = sizeof_size / first_dim = 16
-// を計算するのに使う。
-bool psx_ctx_find_typedef_name_ex2(char *name, int len, token_kind_t *out_base_kind,
-                                   int *out_elem_size, tk_float_kind_t *out_fp_kind,
-                                   token_kind_t *out_tag_kind, char **out_tag_name,
-                                   int *out_tag_len, int *out_is_pointer,
-                                   int *out_pointee_const_qualified,
-                                   int *out_pointee_volatile_qualified, int *out_is_unsigned,
-                                   int *out_is_array, int *out_sizeof_size,
-                                   int *out_array_first_dim);
-int psx_ctx_define_typedef_name_ex2(char *name, int len, token_kind_t base_kind, int elem_size,
-                                     tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                     char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                     int pointee_const_qualified, int pointee_volatile_qualified,
-                                     int is_unsigned, int is_array, int array_first_dim);
-// ex3: 多次元 typedef 配列の全次元を保存。array_dims[0] が最も外側、count=次元数。
-// array_dim_count=0 のときは互換用 (1 次元 or 非配列扱い)。
-int psx_ctx_define_typedef_name_ex3(char *name, int len, token_kind_t base_kind, int elem_size,
-                                     tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                     char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                     int pointee_const_qualified, int pointee_volatile_qualified,
-                                     int is_unsigned, int is_array, int array_first_dim,
-                                     const int *array_dims, int array_dim_count);
-bool psx_ctx_find_typedef_name_ex3(char *name, int len, token_kind_t *out_base_kind,
-                                   int *out_elem_size, tk_float_kind_t *out_fp_kind,
-                                   token_kind_t *out_tag_kind, char **out_tag_name,
-                                   int *out_tag_len, int *out_is_pointer,
-                                   int *out_pointee_const_qualified,
-                                   int *out_pointee_volatile_qualified, int *out_is_unsigned,
-                                   int *out_is_array, int *out_sizeof_size,
-                                   int *out_array_first_dim,
-                                   int *out_array_dims, int *out_array_dim_count,
-                                   int max_dims);
+int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
+/* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
+ * out が NULL のときは存在判定のみ (記述子は書かない)。 */
+bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
 // 多段ポインタ typedef (`typedef int **PP`) のポインタ段数を記録/取得する。
 // 単段 (`typedef int *PI`) や未設定は getter が is_pointer から 1 を返す。
 void psx_ctx_set_typedef_pointer_levels(char *name, int len, int levels);

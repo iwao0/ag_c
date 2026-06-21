@@ -273,14 +273,16 @@ static void resolve_toplevel_typedef_ref(void) {
   int td_tag_len = 0;
   int td_is_ptr = 0;
   int td_is_array = 0;
-  int td_sizeof = 0;
-  int td_first = 0;
   int td_dim_count = 0;
   int td_is_unsigned = 0;
-  psx_ctx_find_typedef_name_ex3(id->str, id->len, &td_base, &td_elem, &td_fp,
-                                &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr,
-                                NULL, NULL, &td_is_unsigned, &td_is_array, &td_sizeof,
-                                &td_first, g_toplevel_decl_td_array_dims, &td_dim_count, 8);
+  psx_typedef_info_t _ti;
+  if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+    td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
+    td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
+    td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+    td_is_array = _ti.is_array; td_dim_count = _ti.array_dim_count;
+    for (int i = 0; i < td_dim_count && i < 8; i++) g_toplevel_decl_td_array_dims[i] = _ti.array_dims[i];
+  }
   /* 多段ポインタ typedef の段数 (`typedef int **PP` で 2)。単段/非ポインタは 1/0。 */
   g_toplevel_decl_base_pointer_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
   g_toplevel_decl_td_array_dim_count = (td_is_array && td_dim_count > 0) ? td_dim_count : 0;
@@ -1746,13 +1748,23 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int is_ptr, int typedef_sizeof, int td_is_array,
                                            int td_first_dim,
                                            const int *td_dims, int td_dim_count) {
-  if (!psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, g_toplevel_decl_elem_size,
-                                  g_toplevel_decl_fp_kind, g_toplevel_decl_tag_kind,
-                                  g_toplevel_decl_tag_name, g_toplevel_decl_tag_len,
-                                  is_ptr, typedef_sizeof,
-                                  g_toplevel_decl_pointee_const, g_toplevel_decl_pointee_volatile,
-                                  is_toplevel_typedef_unsigned(stored_base_kind), td_is_array,
-                                  td_first_dim, td_dims, td_dim_count)) {
+  psx_typedef_info_t _ti = {0};
+  _ti.base_kind = stored_base_kind;
+  _ti.elem_size = g_toplevel_decl_elem_size;
+  _ti.fp_kind = g_toplevel_decl_fp_kind;
+  _ti.tag_kind = g_toplevel_decl_tag_kind;
+  _ti.tag_name = g_toplevel_decl_tag_name;
+  _ti.tag_len = g_toplevel_decl_tag_len;
+  _ti.is_pointer = is_ptr;
+  _ti.sizeof_size = typedef_sizeof;
+  _ti.pointee_const_qualified = g_toplevel_decl_pointee_const;
+  _ti.pointee_volatile_qualified = g_toplevel_decl_pointee_volatile;
+  _ti.is_unsigned = is_toplevel_typedef_unsigned(stored_base_kind);
+  _ti.is_array = td_is_array;
+  _ti.array_first_dim = td_first_dim;
+  _ti.array_dim_count = td_dim_count;
+  if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
+  if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
   }
 }
@@ -2640,10 +2652,18 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
     token_kind_t td_tag_kind = TK_EOF;
     char *td_tag_name = NULL;
     int td_tag_len = 0;
-    if (psx_ctx_find_typedef_name_ex3(id->str, id->len, NULL, &td_elem_size, &td_fp_kind,
-                                      &td_tag_kind, &td_tag_name, &td_tag_len, NULL, NULL, NULL, NULL,
-                                      &td_is_array, &td_sizeof_size, &td_first_dim,
-                                      out->typedef_array_dims, &td_dim_count, 8)) {
+    psx_typedef_info_t _ti;
+    if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+      td_elem_size = _ti.elem_size;
+      td_fp_kind = _ti.fp_kind;
+      td_tag_kind = _ti.tag_kind;
+      td_tag_name = _ti.tag_name;
+      td_tag_len = _ti.tag_len;
+      td_is_array = _ti.is_array;
+      td_sizeof_size = _ti.sizeof_size;
+      td_first_dim = _ti.array_first_dim;
+      td_dim_count = _ti.array_dim_count;
+      for (int i = 0; i < td_dim_count && i < 8; i++) out->typedef_array_dims[i] = _ti.array_dims[i];
       if (td_elem_size > 0) out->elem_size = td_elem_size;
       out->typedef_is_array = td_is_array;
       out->typedef_sizeof_size = td_sizeof_size;
@@ -2724,7 +2744,6 @@ static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *re
                                      int *ret_is_unsigned) {
   token_ident_t *td_id = (token_ident_t *)curtok();
   token_kind_t td_base = TK_EOF;
-  int td_elem = 8;
   tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
   token_kind_t td_tag = TK_EOF;
   char *td_tag_name = NULL;
@@ -2734,9 +2753,12 @@ static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *re
   /* typedef の unsigned 性を捕捉する。`typedef unsigned char u8` の戻り型 `u8 f()` は
    * td_base=TK_CHAR だが unsigned。捨てると sub-int 戻り値が符号拡張され
    * `u8 f(){return 200;}` が -56 に化ける (uint8_t ローカルと同根の戻り型版)。 */
-  psx_ctx_find_typedef_name(td_id->str, td_id->len, &td_base, &td_elem, &td_fp,
-                            &td_tag, &td_tag_name, &td_tag_len, &td_is_ptr, NULL, NULL,
-                            &td_is_unsigned);
+  psx_typedef_info_t _ti;
+  if (psx_ctx_find_typedef_name(td_id->str, td_id->len, &_ti)) {
+    td_base = _ti.base_kind; td_fp = _ti.fp_kind;
+    td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
+    td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+  }
   set_curtok(curtok()->next);
   *ret_kind = td_base;
   *ret_fp_kind = td_fp;

@@ -195,16 +195,14 @@ static long long parse_unary(void) {
           }
         } else if (psx_ctx_is_typedef_name_token(curtok())) {
           token_ident_t *id = (token_ident_t *)curtok();
-          token_kind_t td_base = TK_EOF;
           int td_elem = 8;
-          tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-          token_kind_t td_tag = TK_EOF;
-          char *td_tag_name = NULL;
-          int td_tag_len = 0;
           int td_ptr = 0;
           int td_sizeof = 8;
-          psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp,
-                                    &td_tag, &td_tag_name, &td_tag_len, &td_ptr, NULL, NULL, NULL);
+          psx_typedef_info_t _ti;
+          if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+            td_elem = _ti.elem_size;
+            td_ptr = _ti.is_pointer;
+          }
           if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
           else sz = td_ptr ? 8 : td_elem;
           set_curtok(curtok()->next);

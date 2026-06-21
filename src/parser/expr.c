@@ -753,9 +753,14 @@ static int parse_assoc_base_type(generic_type_t *out,
     int tag_len = 0;
     int is_ptr = 0;
     int td_is_unsigned = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &base_kind, &elem_size, &fp_kind,
-                              &tag_kind, &tag_name, &tag_len,
-                              &is_ptr, base_const, base_volatile, &td_is_unsigned);
+    psx_typedef_info_t _ti;
+    if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+      base_kind = _ti.base_kind; elem_size = _ti.elem_size; fp_kind = _ti.fp_kind;
+      tag_kind = _ti.tag_kind; tag_name = _ti.tag_name; tag_len = _ti.tag_len;
+      is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+      if (base_const) *base_const = _ti.pointee_const_qualified;
+      if (base_volatile) *base_volatile = _ti.pointee_volatile_qualified;
+    }
     set_curtok(curtok()->next);
     out->kind = (tag_kind != TK_EOF) ? tag_kind : base_kind;
     out->scalar_size = elem_size;
@@ -1290,8 +1295,12 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       char *td_tag_name = NULL;
       int td_tag_len = 0;
       int td_ptr = 0;
-      psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
-                                &td_ptr, NULL, NULL, NULL);
+      psx_typedef_info_t _ti;
+      if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+        td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
+        td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
+        td_ptr = _ti.is_pointer;
+      }
       inner_kind = (td_tag != TK_EOF) ? td_tag : td_base;
       inner_tag_kind = td_tag;
       inner_tag_name = td_tag_name;
@@ -1416,8 +1425,13 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     char *td_tag_name = NULL;
     int td_tag_len = 0;
     int td_ptr = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
-                              &td_ptr, NULL, NULL, out_is_unsigned);
+    psx_typedef_info_t _ti;
+    if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+      td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
+      td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
+      td_ptr = _ti.is_pointer;
+      if (out_is_unsigned) *out_is_unsigned = _ti.is_unsigned;
+    }
     *type_kind = (td_tag != TK_EOF) ? td_tag : td_base;
     if (out_tag_kind) *out_tag_kind = td_tag;
     if (out_tag_name) *out_tag_name = td_tag_name;
@@ -1796,16 +1810,14 @@ static int parse_parenthesized_type_size(void) {
   }
   if (psx_ctx_is_typedef_name_token(t)) {
     token_ident_t *id = (token_ident_t *)t;
-    token_kind_t td_base = TK_EOF;
     int td_elem = 8;
-    tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
-    token_kind_t td_tag = TK_EOF;
-    char *td_tag_name = NULL;
-    int td_tag_len = 0;
     int td_ptr = 0;
     int td_sizeof = 0;
-    psx_ctx_find_typedef_name(id->str, id->len, &td_base, &td_elem, &td_fp, &td_tag, &td_tag_name, &td_tag_len,
-                              &td_ptr, NULL, NULL, NULL);
+    psx_typedef_info_t _ti;
+    if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+      td_elem = _ti.elem_size;
+      td_ptr = _ti.is_pointer;
+    }
     t = t->next;
     int sz = td_ptr ? 8 : td_elem;
     if (!td_ptr && psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {

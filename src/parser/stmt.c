@@ -160,10 +160,17 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
   }
   if (psx_ctx_is_typedef_name_token(curtok())) {
     token_ident_t *id = (token_ident_t *)curtok();
-    if (!psx_ctx_find_typedef_name(id->str, id->len, base_kind, elem_size, fp_kind,
-                                   tag_kind, tag_name, tag_len, is_pointer_base, NULL, NULL, NULL)) {
+    psx_typedef_info_t _ti;
+    if (!psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       return 0;
     }
+    if (base_kind) *base_kind = _ti.base_kind;
+    if (elem_size) *elem_size = _ti.elem_size;
+    if (fp_kind) *fp_kind = _ti.fp_kind;
+    if (tag_kind) *tag_kind = _ti.tag_kind;
+    if (tag_name) *tag_name = _ti.tag_name;
+    if (tag_len) *tag_len = _ti.tag_len;
+    if (is_pointer_base) *is_pointer_base = _ti.is_pointer;
     /* 基底がポインタ typedef なら段数を捕捉 (合成 typedef の段数加算用)。 */
     g_stmt_base_ptr_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
     set_curtok(curtok()->next);
@@ -214,10 +221,23 @@ static void parse_typedef_decl(void) {
     int td_first_dim = is_pta ? arr.first_dim : 0;
     int td_dim_count = is_pta ? arr.dim_count : 0;
     const int *td_dims = is_pta ? arr.dims : NULL;
-    if (!psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, elem_size, fp_kind,
-                                tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                td_pointee_const, td_pointee_volatile, td_is_unsigned,
-                                0, td_first_dim, td_dims, td_dim_count)) {
+    psx_typedef_info_t _ti = {0};
+    _ti.base_kind = stored_base_kind;
+    _ti.elem_size = elem_size;
+    _ti.fp_kind = fp_kind;
+    _ti.tag_kind = tag_kind;
+    _ti.tag_name = tag_name;
+    _ti.tag_len = tag_len;
+    _ti.is_pointer = is_ptr;
+    _ti.sizeof_size = typedef_sizeof;
+    _ti.pointee_const_qualified = td_pointee_const;
+    _ti.pointee_volatile_qualified = td_pointee_volatile;
+    _ti.is_unsigned = td_is_unsigned;
+    _ti.is_array = 0;
+    _ti.array_first_dim = td_first_dim;
+    _ti.array_dim_count = td_dim_count;
+    if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
+    if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
       psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
     }
     /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array

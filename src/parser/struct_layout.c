@@ -132,16 +132,17 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * typedef 名が struct メンバ型として現れるケース。typedef を解決して
        * 基底型 / tag 情報を取り出し、後続の `*` や宣言子と一緒に処理する。 */
       token_ident_t *td = (token_ident_t *)curtok();
-      token_kind_t td_base = TK_EOF;
       int td_elem = 0;
-      tk_float_kind_t td_fp = TK_FLOAT_KIND_NONE;
       token_kind_t td_tag = TK_EOF;
       char *td_tn = NULL;
       int td_tl = 0;
-      int td_isptr = 0, td_pcq = 0, td_pvq = 0, td_isu = 0;
-      psx_ctx_find_typedef_name(td->str, td->len, &td_base, &td_elem, &td_fp,
-                                 &td_tag, &td_tn, &td_tl, &td_isptr,
-                                 &td_pcq, &td_pvq, &td_isu);
+      int td_isu = 0;
+      psx_typedef_info_t _ti;
+      if (psx_ctx_find_typedef_name(td->str, td->len, &_ti)) {
+        td_elem = _ti.elem_size;
+        td_tag = _ti.tag_kind; td_tn = _ti.tag_name; td_tl = _ti.tag_len;
+        td_isu = _ti.is_unsigned;
+      }
       if (td_tag != TK_EOF) {
         member_tag_kind = td_tag;
         member_tag_name = td_tn;

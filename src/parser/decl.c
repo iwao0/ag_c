@@ -184,26 +184,33 @@ static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out
                                            int *out_pointee_const, int *out_pointee_volatile,
                                            int *out_is_unsigned) {
   token_ident_t *id = (token_ident_t *)curtok();
-  psx_ctx_find_typedef_name(id->str, id->len,
-                            out_base_kind, out_elem_size, out_fp_kind,
-                            out_tag_kind, out_tag_name, out_tag_len, out_base_is_pointer,
-                            out_pointee_const, out_pointee_volatile, out_is_unsigned);
+  psx_typedef_info_t _ti;
+  if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+    if (out_base_kind) *out_base_kind = _ti.base_kind;
+    if (out_elem_size) *out_elem_size = _ti.elem_size;
+    if (out_fp_kind) *out_fp_kind = _ti.fp_kind;
+    if (out_tag_kind) *out_tag_kind = _ti.tag_kind;
+    if (out_tag_name) *out_tag_name = _ti.tag_name;
+    if (out_tag_len) *out_tag_len = _ti.tag_len;
+    if (out_base_is_pointer) *out_base_is_pointer = _ti.is_pointer;
+    if (out_pointee_const) *out_pointee_const = _ti.pointee_const_qualified;
+    if (out_pointee_volatile) *out_pointee_volatile = _ti.pointee_volatile_qualified;
+    if (out_is_unsigned) *out_is_unsigned = _ti.is_unsigned;
+  }
   set_curtok(curtok()->next);
 }
 
 // typedef 配列の dims[] と次元数を取得する補助。dims が無い場合は dim_count=0。
 static void resolve_typedef_array_dims(token_ident_t *id, int *out_dims, int *out_dim_count) {
-  int is_array = 0;
-  int sizeof_size = 0;
-  int first_dim = 0;
   int dim_count = 0;
-  psx_ctx_find_typedef_name_ex3(id->str, id->len, NULL, NULL, NULL, NULL, NULL, NULL,
-                                NULL, NULL, NULL, NULL, &is_array, &sizeof_size,
-                                &first_dim, out_dims, &dim_count, 8);
+  psx_typedef_info_t _ti;
+  if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+    dim_count = _ti.array_dim_count;
+    if (out_dims) for (int i = 0; i < dim_count && i < 8; i++) out_dims[i] = _ti.array_dims[i];
+  }
   /* dim_count>0 は配列 typedef (is_array=1) と pointer-to-array typedef
    * (`typedef int (*PA)[3]`、is_array=0 でポインティ extent を dims に格納) の両方で
-   * 立つ。後者の outer_stride を宣言側で設定するため is_array ゲートを外す。 */
-  (void)is_array;
+   * 立つ。後者も dims に extent を持つので is_array では絞らず dim_count で判定する。 */
   if (out_dim_count) *out_dim_count = (dim_count > 0) ? dim_count : 0;
 }
 
@@ -3445,10 +3452,23 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
-  if (!psx_ctx_define_typedef_name_ex3(name->str, name->len, stored_base_kind, elem_size, fp_kind,
-                                  tag_kind, tag_name, tag_len, is_ptr, typedef_sizeof,
-                                  td_pointee_const, td_pointee_volatile, td_is_unsigned,
-                                  td_is_array, td_first_dim, arr.dims, td_dim_count)) {
+  psx_typedef_info_t _ti = {0};
+  _ti.base_kind = stored_base_kind;
+  _ti.elem_size = elem_size;
+  _ti.fp_kind = fp_kind;
+  _ti.tag_kind = tag_kind;
+  _ti.tag_name = tag_name;
+  _ti.tag_len = tag_len;
+  _ti.is_pointer = is_ptr;
+  _ti.sizeof_size = typedef_sizeof;
+  _ti.pointee_const_qualified = td_pointee_const;
+  _ti.pointee_volatile_qualified = td_pointee_volatile;
+  _ti.is_unsigned = td_is_unsigned;
+  _ti.is_array = td_is_array;
+  _ti.array_first_dim = td_first_dim;
+  _ti.array_dim_count = td_dim_count;
+  for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
+  if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
   }
 }
