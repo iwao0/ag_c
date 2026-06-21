@@ -3,7 +3,8 @@
 
 static inline token_kind_t punctuator_kind_for_2chars(char c0, char c1);
 
-static inline token_kind_t punctuator_kind_for_char(char c) {
+/** @brief 1文字記号の token kind を返す (非該当は TK_EOF)。 */
+token_kind_t punctuator_kind_for_char(char c) {
   switch (c) {
     case '<': return TK_LT;
     case '>': return TK_GT;

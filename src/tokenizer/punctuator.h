@@ -4,6 +4,9 @@
 #include "token.h"
 #include <stdbool.h>
 
+/** @brief 1文字記号の token kind を返す (非該当は TK_EOF)。 */
+token_kind_t punctuator_kind_for_char(char c);
+
 /** @brief 記号文字列が完全一致した場合の token kind を返す。 */
 token_kind_t punctuator_kind_for_str(const char *op);
 
