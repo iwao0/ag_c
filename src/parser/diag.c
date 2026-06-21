@@ -1,4 +1,4 @@
-#include "internal/diag.h"
+#include "diag.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdarg.h>

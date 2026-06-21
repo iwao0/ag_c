@@ -1,4 +1,4 @@
-#include "internal/anon_tag.h"
+#include "anon_tag.h"
 #include <stdio.h>
 #include <stdlib.h>
 

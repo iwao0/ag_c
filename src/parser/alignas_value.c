@@ -1,6 +1,6 @@
-#include "internal/alignas_value.h"
-#include "internal/enum_const.h"
-#include "internal/semantic_ctx.h"
+#include "alignas_value.h"
+#include "enum_const.h"
+#include "semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }

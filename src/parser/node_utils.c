@@ -1,7 +1,7 @@
-#include "internal/node_utils.h"
-#include "internal/semantic_ctx.h"
-#include "internal/arena.h"
-#include "internal/diag.h"
+#include "node_utils.h"
+#include "semantic_ctx.h"
+#include "arena.h"
+#include "diag.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 

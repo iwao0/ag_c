@@ -1,6 +1,6 @@
 #include "../src/parser/parser.h"
-#include "../src/parser/internal/decl.h"
-#include "../src/parser/internal/expr.h"
+#include "../src/parser/decl.h"
+#include "../src/parser/expr.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <assert.h>

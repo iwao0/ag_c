@@ -1,7 +1,7 @@
 #ifndef PARSER_STRUCT_LAYOUT_H
 #define PARSER_STRUCT_LAYOUT_H
 
-#include "../../tokenizer/token.h"
+#include "../tokenizer/token.h"
 
 typedef struct {
   token_ident_t *member;

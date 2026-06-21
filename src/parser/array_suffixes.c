@@ -1,6 +1,6 @@
-#include "internal/array_suffixes.h"
-#include "internal/diag.h"
-#include "internal/enum_const.h"
+#include "array_suffixes.h"
+#include "diag.h"
+#include "enum_const.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 

@@ -1,6 +1,6 @@
-#include "internal/enum_const.h"
-#include "internal/diag.h"
-#include "internal/semantic_ctx.h"
+#include "enum_const.h"
+#include "diag.h"
+#include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 

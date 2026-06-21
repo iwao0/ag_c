@@ -1,5 +1,5 @@
-#include "internal/semantic_ctx.h"
-#include "internal/diag.h"
+#include "semantic_ctx.h"
+#include "diag.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>

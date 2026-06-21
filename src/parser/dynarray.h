@@ -4,7 +4,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include "../../diag/diag.h"
+#include "../diag/diag.h"
 
 static inline int pda_next_cap(int current_cap, int required_cap) {
   if (required_cap < 0) {

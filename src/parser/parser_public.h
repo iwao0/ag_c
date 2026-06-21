@@ -23,7 +23,7 @@
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
 #include "symtab.h"     /* global_var_t */
-#include "internal/decl.h"  /* lvar_t — Phase C2 では内部含むが、IR からは
+#include "decl.h"  /* lvar_t — Phase C2 では内部含むが、IR からは
                               本ヘッダ越しにしか触らない契約とする */
 #include <stdbool.h>
 
@@ -59,6 +59,6 @@ bool codegen_has_float_literals(void);
  *   _get_tag_member_info (Phase A1 統合 API)
  * 重複定義回避のため internal/semantic_ctx.h を transitive include して
  * これらシンボルを取り込む。 */
-#include "internal/semantic_ctx.h"
+#include "semantic_ctx.h"
 
 #endif
