@@ -281,7 +281,7 @@ static long long eval_const_expr_decl(node_t *n, int *ok) {
      * 厳密な C 標準では ICE に該当しないが ag_c は寛容に扱う。
      * シンボルアドレス初期 / 浮動小数 / 配列は除外。 */
     node_gvar_t *gv = (node_gvar_t *)n;
-    for (global_var_t *g = global_vars; g; g = g->next) {
+    for (global_var_t *g = psx_find_global_var(gv->name, gv->name_len); g; g = NULL) {
       if (g->name_len == gv->name_len &&
           memcmp(g->name, gv->name, (size_t)g->name_len) == 0) {
         if (g->has_init && !g->init_symbol && !g->init_values && !g->init_fvalues &&
@@ -2110,12 +2110,7 @@ static void skip_bracket_group(void) {
 }
 
 static global_var_t *find_global_var_decl(char *name, int len) {
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0) {
-      return gv;
-    }
-  }
-  return NULL;
+  return psx_find_global_var(name, len);
 }
 
 static token_ident_t *consume_decl_name_recursive(int *is_pointer,
@@ -2484,8 +2479,7 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   gv->init_val = init_val;
   gv->fp_kind = (unsigned char)fp_kind;
   gv->fval = init_fval;
-  gv->next = global_vars;
-  global_vars = gv;
+  psx_register_global_var(gv);
 
   /* lvar を「alias」として登録 — frame には置かないが、short name で引けるよう
    * locals に挿入する。is_static_local を立てて、識別子解決時に ND_GVAR に
@@ -2628,8 +2622,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
 
   gv->name = mangled;
   gv->name_len = total_len;
-  gv->next = global_vars;
-  global_vars = gv;
+  psx_register_global_var(gv);
 
   /* alias lvar を locals に登録。`is_array=0, size=0` にすることで
    * codegen のフレーム割当 (auto array 経路) を抑制する。
@@ -2732,8 +2725,7 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
 
   gv->name = mangled;
   gv->name_len = total_len;
-  gv->next = global_vars;
-  global_vars = gv;
+  psx_register_global_var(gv);
 
   /* alias lvar を locals に登録。size=struct_size, elem_size=struct_size で、
    * is_static_local + static_global_name + tag 情報を持たせる。識別子解決は
@@ -3431,8 +3423,7 @@ static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_arr
   gv->deref_size = elem_size;
   gv->is_array = arr.is_array;
   gv->is_extern_decl = 1;
-  gv->next = global_vars;
-  global_vars = gv;
+  psx_register_global_var(gv);
 }
 
 static node_t *parse_typedef_declaration_local(void) {

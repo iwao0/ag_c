@@ -28,6 +28,39 @@ string_lit_t *string_literals = NULL;
 float_lit_t *float_literals = NULL;
 global_var_t *global_vars = NULL;
 
+/* グローバル変数の名前ハッシュ索引。グローバル参照の解決 (try_build_global_var_node)
+ * や登録時の重複チェックが global_vars を線形走査しており、グローバル N 個・参照 M 回で
+ * O(N*M) になっていた。名前を 256 バケットへハッシュして O(1) 化する。global_vars は
+ * TU 全体で生存しスコープも無いので、登録時に挿入するだけ (除去・リセット不要)。 */
+#define GVAR_HASH_BUCKETS 256u
+static global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
+
+static unsigned gvar_name_hash(const char *name, int len) {
+  unsigned h = 2166136261u;
+  for (int i = 0; i < len; i++) h = (h ^ (unsigned char)name[i]) * 16777619u;
+  return h & (GVAR_HASH_BUCKETS - 1u);
+}
+
+void psx_register_global_var(global_var_t *gv) {
+  gv->next = global_vars;
+  global_vars = gv;
+  unsigned h = gvar_name_hash(gv->name, gv->name_len);
+  gv->next_hash = gvars_by_bucket[h];
+  gvars_by_bucket[h] = gv;
+}
+
+global_var_t *psx_find_global_var(char *name, int len) {
+  /* bucket は MRU 順 (登録順) なので、最初の名前一致が global_vars 線形走査と
+   * 同じ変数 (重複登録時も先頭 = 同一挙動)。 */
+  unsigned h = gvar_name_hash(name, len);
+  for (global_var_t *gv = gvars_by_bucket[h]; gv; gv = gv->next_hash) {
+    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0) {
+      return gv;
+    }
+  }
+  return NULL;
+}
+
 /* parser_public.h で宣言した visitor の実装 (Phase C3-1)。
  * codegen 側が global_vars / string_literals / float_literals リストを
  * 直接舐めるのを廃して、走査経路を 1 箇所にまとめる。 */
@@ -850,12 +883,7 @@ static int is_tag_return_function_signature(token_t *tok) {
 }
 
 static global_var_t *find_global_var_by_name(char *name, int len) {
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0) {
-      return gv;
-    }
-  }
-  return NULL;
+  return psx_find_global_var(name, len);
 }
 
 static global_var_t *register_toplevel_global_decl(char *name, int len, int is_ptr,
@@ -914,8 +942,7 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
     int lvls = g_toplevel_decl_ptr_levels + g_toplevel_decl_base_pointer_levels;
     gv->pointer_qual_levels = (lvls > 0 && lvls < 256) ? (unsigned char)lvls : 0;
   }
-  gv->next = global_vars;
-  global_vars = gv;
+  psx_register_global_var(gv);
   return gv;
 }
 

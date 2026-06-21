@@ -18,6 +18,7 @@ typedef struct global_var_t global_var_t;
 struct global_var_t {
   // --- 8 バイト (ポインタ / long long / double) ---
   global_var_t *next;
+  global_var_t *next_hash;  // 名前ハッシュ表のチェーン（psx_find_global_var の O(1) 化用）
   char *name;
   // tag (struct / union) 情報。tag_kind == TK_EOF のとき非タグ型。
   // build_member_access が `gvar.member` でタグメンバを引くのに使う。
@@ -87,6 +88,11 @@ struct global_var_t {
   unsigned char pointer_qual_levels;
 };
 extern global_var_t *global_vars;
+/* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は
+ * 呼び出し前に設定済みであること。各登録経路はこれを通すこと。 */
+void psx_register_global_var(global_var_t *gv);
+/* 名前でグローバル変数を引く (見つからなければ NULL)。global_vars 線形走査の置換。 */
+global_var_t *psx_find_global_var(char *name, int len);
 
 // 文字列リテラルテーブル（連結リスト）
 typedef struct string_lit_t string_lit_t;

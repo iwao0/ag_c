@@ -1160,8 +1160,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         gv->init_val = n->val;
       }
     }
-    gv->next = global_vars;
-    global_vars = gv;
+    psx_register_global_var(gv);
     node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
     gvar_node->mem.base.kind = ND_GVAR;
     gvar_node->mem.type_size = gv->type_size;
@@ -2626,7 +2625,7 @@ static node_t *parse_sizeof_operand(void) {
        * のような要素数推定後の type_size (apply_toplevel_object_initializer で
        * 確定済み) を全体サイズとして返す。 */
       if (!arr_var) {
-        for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+        for (global_var_t *gv = psx_find_global_var(id->str, id->len); gv; gv = NULL) {
           if (gv->name_len != id->len ||
               memcmp(gv->name, id->str, (size_t)id->len) != 0) continue;
           if (gv->is_array && gv->type_size > 0) {
@@ -3240,7 +3239,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
        * gv->pointee_elem_size から伝播するため、ND_ADDR/ND_GVAR を辿って取得する。 */
       if (node->kind == ND_ADDR && node->lhs && node->lhs->kind == ND_GVAR) {
         node_gvar_t *gv_node = (node_gvar_t *)node->lhs;
-        for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+        for (global_var_t *gv = psx_find_global_var(gv_node->name, gv_node->name_len); gv; gv = NULL) {
           if (gv->name_len == gv_node->name_len &&
               memcmp(gv->name, gv_node->name, (size_t)gv->name_len) == 0) {
             if (gv->pointee_elem_size > 0) {
@@ -3686,7 +3685,7 @@ static node_t *build_funcref_node(token_ident_t *tok) {
 // グローバル変数表から名前を引く。見つからなければ NULL。
 // 配列のときは ND_ADDR でラップして返す。
 static node_t *try_build_global_var_node(token_ident_t *tok) {
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+  for (global_var_t *gv = psx_find_global_var(tok->str, tok->len); gv; gv = NULL) {
     if (gv->name_len != tok->len || memcmp(gv->name, tok->str, (size_t)tok->len) != 0) continue;
     if (gv->is_array) {
       node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
@@ -3828,7 +3827,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
 static node_t *build_static_local_array_addr_node(lvar_t *var) {
   /* global_vars リストから名前で引いて type_size を取る。 */
   short gv_type_size = (short)var->elem_size;
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+  for (global_var_t *gv = psx_find_global_var(var->static_global_name, var->static_global_name_len); gv; gv = NULL) {
     if (gv->name_len == var->static_global_name_len &&
         memcmp(gv->name, var->static_global_name, (size_t)gv->name_len) == 0) {
       gv_type_size = gv->type_size;
