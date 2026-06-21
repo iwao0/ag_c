@@ -55,6 +55,7 @@ struct global_var_t {
   // ビットフラグ群 (unsigned int コンテナ、4 バイト)。真偽フラグはここに集約する。
   unsigned int is_array : 1;       // 1: 配列
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）
+  unsigned int is_static : 1;      // 1: static (内部リンケージ)。.global を出さず .comm でなく .zerofill に。
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
   unsigned int is_tag_pointer : 1;  // 1: tag へのポインタ (`struct P *pp`)

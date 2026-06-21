@@ -263,6 +263,7 @@ typedef struct ir_func_t {
   int next_block_id;
   int frame_size;
   int is_variadic;
+  int is_static;      /* 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。 */
   int nargs_fixed;
   ir_type_t ret_type;
   /* 戻り値が struct のときのサイズ (Apple ABI で x8 隠し引数を使う条件)。

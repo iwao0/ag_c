@@ -1038,7 +1038,9 @@ static void gen_func(ir_func_t *f) {
   ctx.f = f;
   layout_frame(&ctx);
 
-  cg_emitf(".global _%.*s\n", f->name_len, f->name);
+  /* static 関数 (内部リンケージ) は .global を出さない (C11 6.2.2p3)。
+   * 出すと別 TU の同名 static とリンク衝突する (duplicate symbol)。 */
+  if (!f->is_static) cg_emitf(".global _%.*s\n", f->name_len, f->name);
   cg_emitf(".align 2\n");
   cg_emitf("_%.*s:\n", f->name_len, f->name);
   emit_addsub_imm("sub", "sp", "sp", ctx.total_size);

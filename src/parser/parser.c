@@ -66,6 +66,7 @@ static int g_last_decl_is_extern = 0;
 static int g_last_decl_is_static = 0;
 static int g_toplevel_decl_elem_size = 8;
 static int g_toplevel_decl_is_extern = 0;
+static int g_toplevel_decl_is_static = 0;
 static int g_toplevel_decl_is_thread_local = 0;
 static int g_toplevel_decl_is_typedef = 0;
 static token_kind_t g_toplevel_decl_base_kind = TK_EOF;
@@ -254,6 +255,7 @@ static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind) {
 static void apply_toplevel_decl_prefix_flags(void) {
   psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
   g_toplevel_decl_is_extern = g_last_decl_is_extern;
+  g_toplevel_decl_is_static = g_last_decl_is_static;
   g_toplevel_decl_is_thread_local = g_last_type_thread_local;
 }
 
@@ -872,6 +874,9 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   gv->pointee_elem_size = (is_ptr && is_array) ? g_toplevel_decl_elem_size : 0;
   gv->is_array = is_array;
   gv->is_extern_decl = is_extern_decl;
+  /* static (内部リンケージ): codegen で .global を抑制し、暫定定義を .comm でなく
+   * .zerofill (ローカル) に出す。extern 宣言のみのときは linkage 対象外。 */
+  gv->is_static = is_extern_decl ? 0 : g_toplevel_decl_is_static;
   /* tag (struct / union) 情報を decl spec から引き継ぐ。
    * is_ptr のときは is_tag_pointer=1 を立て、`pp->x` のメンバアクセスで
    * build_member_access が tag を引けるようにする。 */
@@ -2962,6 +2967,10 @@ static node_t *funcdef(void) {
   int ret_td_unsigned = 0;
   g_last_outer_declarator_is_ptr = 0;
   parse_func_decl_spec(&ret_kind, &ret_fp_kind, &ret_tag, &ret_is_ptr, &ret_td_unsigned);
+  /* static 関数 (内部リンケージ) かを捕捉する。parse_func_decl_spec 直後に取る
+   * (parse_func_declarator がパラメータ型で g_last_decl_is_static を上書きする前)。 */
+  int fn_is_static = 0;
+  psx_take_static_flag(&fn_is_static);
   if (ret_kind == TK_EOF) {
     diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, curtok(),
                    "%s", diag_warn_message_for(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN));
@@ -3053,6 +3062,7 @@ static node_t *funcdef(void) {
     psx_ctx_set_function_ret_tag(tok->str, tok->len, ret_kind, ret_tag->str, ret_tag->len);
   }
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
+  node->is_static = fn_is_static;
   node->args = args;
   node->is_variadic = is_variadic;
   node->nargs = nargs;

@@ -477,7 +477,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       cg_emitf("  .space %d\n", gv->type_size);
     }
     cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
-    cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+    if (!gv->is_static) cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
     cg_emitf("_%.*s:\n", gv->name_len, gv->name);
     cg_emitf("  .quad __tlv_bootstrap\n");
     cg_emitf("  .quad 0\n");
@@ -486,7 +486,8 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
   }
   if (gv->has_init) {
     cg_emitf(".section __DATA,__data\n");
-    cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+    /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
+    if (!gv->is_static) cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
     int align_size = (gv->init_count > 0 && gv->deref_size > 0)
                         ? gv->deref_size : (int)gv->type_size;
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
@@ -567,9 +568,15 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     }
     return;
   }
-  /* 暫定定義: .comm _name,size,log2align */
+  /* 暫定定義: .comm _name,size,log2align。
+   * ただし static (内部リンケージ) は .comm (= common/外部シンボル) にすると別 TU の
+   * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
   int log2align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
-  cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+  if (gv->is_static) {
+    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+  } else {
+    cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+  }
 }
 
 void gen_global_vars(void) {

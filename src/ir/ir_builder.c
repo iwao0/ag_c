@@ -2900,6 +2900,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     ctx->f->ret_complex_half = (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
   }
   ctx->f->is_variadic = fn->is_variadic;
+  ctx->f->is_static = fn->is_static;
   ctx->f->nargs_fixed = fn->nargs;
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;

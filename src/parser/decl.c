@@ -2386,6 +2386,7 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
 
   /* global_var_t を作って global_vars に追加。 */
   global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない (別 TU と衝突しない)。 */
   gv->name = mangled;
   gv->name_len = total_len;
   gv->type_size = (short)var_size;
@@ -2480,6 +2481,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
 
   /* global_var_t を構築。 */
   global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない。 */
   gv->deref_size = (short)elem_size;
   gv->is_array = 1;
   gv->tag_kind = TK_EOF;
@@ -2589,6 +2591,7 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
 
   /* global_var_t を構築。tag 情報と struct サイズを設定する。 */
   global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない。 */
   gv->tag_kind = tag_kind;
   gv->tag_name = tag_name;
   gv->tag_len = tag_len;
