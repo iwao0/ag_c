@@ -234,8 +234,13 @@ struct token_num_t {
  * アライメント降順 (8→4→1) に並べてパディングを除いている (sizeof=64B、整列前は 72B)。 */
 struct token_num_int_t {
   token_num_t base;
-  long long val;                // 整数値
-  unsigned long long uval;      // 整数値(符号なし)
+  /* 同一の 64bit 値を符号付き/符号なしの 2 つの見え方で共有する無名 union (C11 6.7.2.1)。
+   * val と uval は常に同じビット列で、利用側が文脈に応じて読み分ける (実際の型は is_unsigned)。
+   * メンバ名は外側へ昇格するので tok->val / tok->uval の参照側は変更不要。 */
+  union {
+    long long val;              // 整数値(符号付きの見え方)
+    unsigned long long uval;    // 整数値(符号なしの見え方)
+  };
   // 値域の小さい列挙は uint8_t に格納してパディングを除く (5 個で 5B、enum 格納なら 20B 相当)。
   uint8_t int_size;             // tk_int_size_t
   // 文字定数由来の場合のみ有効
