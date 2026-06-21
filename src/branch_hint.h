@@ -1,5 +1,5 @@
-#ifndef TOKENIZER_BRANCH_HINT_H
-#define TOKENIZER_BRANCH_HINT_H
+#ifndef BRANCH_HINT_H
+#define BRANCH_HINT_H
 
 #if defined(__GNUC__) || defined(__clang__)
 #define TK_LIKELY(x) __builtin_expect(!!(x), 1)

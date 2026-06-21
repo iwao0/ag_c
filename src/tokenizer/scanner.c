@@ -1,5 +1,5 @@
 #include "scanner.h"
-#include "branch_hint.h"
+#include "../branch_hint.h"
 #include "charclass.h"
 #include "diag_helper.h"
 #include "literals.h"

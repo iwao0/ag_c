@@ -1,5 +1,5 @@
 #include "allocator.h"
-#include "branch_hint.h"
+#include "../branch_hint.h"
 #include "tokenizer.h"
 #include "../diag/diag.h"
 #include "charclass.h"
