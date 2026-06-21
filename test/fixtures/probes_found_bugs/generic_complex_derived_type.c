@@ -19,5 +19,9 @@ int main(void) {
   double (*g1)(int) = 0;
   assert(_Generic(g1, int (*)(int): 1, double (*)(int): 5, default: 0) == 5);
 
+  // キャスト制御式 `_Generic((T)0, ...)` でも複雑派生型を区別する
+  assert(_Generic((int (*)(int, int))0, int (*)(int): 1, int (*)(int, int): 2, default: 0) == 2);
+  assert(_Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 7, int *: 9, default: 0) == 7);
+
   return 0;
 }

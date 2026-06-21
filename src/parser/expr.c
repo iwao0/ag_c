@@ -3390,13 +3390,15 @@ static node_t *parse_generic_selection(void) {
     cty.kind = TK_EOF;
     cty.tag_kind = TK_EOF;
     cty.ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
-    /* キャスト型はスカラ算術型 (char/short/int/long/unsigned/float/double 等、非ポインタ
-     * 非タグ) のときだけ採用する。関数ポインタ / 配列 / struct ポインタ等の複雑型は assoc
-     * 側の型照合が不完全で、捕捉すると `(int(*)(int))0` が array-of-funcptr assoc に誤マッチ
-     * する回帰が出たため、従来どおり下の infer に委ねる。 */
+    /* キャスト型は (a) スカラ算術型 (char/short/int/long/unsigned/float/double 等、非ポインタ
+     * 非タグ)、または (b) 正規化トークン文字列 (type_sig) を持つ複雑な派生型 (関数ポインタ /
+     * ネスト宣言子) のときに採用する。(b) は以前 assoc 側の構造的照合が不完全で
+     * `(int(*)(int))0` が array-of-funcptr assoc へ誤マッチしたため除外していたが、type_sig の
+     * strcmp 照合になり安全に区別できる。単純ポインタ (`int*`, type_sig なし) は従来どおり
+     * 下の infer に委ねる。 */
     if (parse_generic_assoc_type(&cty) && curtok()->kind == TK_RPAREN &&
         curtok()->next && curtok()->next->kind != TK_LBRACE &&
-        !cty.is_pointer && cty.tag_kind == TK_EOF) {
+        (cty.type_sig != NULL || (!cty.is_pointer && cty.tag_kind == TK_EOF))) {
       set_curtok(curtok()->next); // skip ')'
       cast();                     // 制御式は未評価 (C11 6.5.1.1) なので operand の値は捨てる
       if (curtok()->kind == TK_COMMA) {
