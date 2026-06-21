@@ -16,6 +16,16 @@
 static lvar_t *locals;       // 現在のスコープで見えるローカル変数リスト
 static lvar_t *all_locals;   // 全スコープのローカル変数リスト（未使用チェック用）
 static int locals_offset;
+/* _Generic 用: 局所変数の型を正規化トークン文字列で記録する副テーブル (詳細は下の
+ * psx_serialize_decl_type_tokens 付近)。宣言の型開始トークンと、名前→シグネチャ表。 */
+static token_t *g_decl_typespec_start = NULL;
+#define VAR_TYPESIG_MAX 256
+static struct {
+  char *name;
+  int len;
+  char *sig;
+} g_var_typesigs[VAR_TYPESIG_MAX];
+static int g_var_typesig_count = 0;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
@@ -2133,6 +2143,8 @@ void psx_decl_reset_locals(void) {
   all_locals = NULL;
   locals_offset = 0;
   lvar_scope_depth = 0;
+  g_var_typesig_count = 0;   /* _Generic 用の型シグネチャ表も関数境界でリセット */
+  g_decl_typespec_start = NULL;
 }
 
 void psx_decl_enter_scope(void) {
@@ -2843,6 +2855,67 @@ static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_s
   return var;
 }
 
+/* ---- _Generic 用: 局所変数の型を正規化トークン文字列で記録する ----
+ * 関数ポインタ (`int(*)(int,int)`) や深いネスト型 (`int(*(*)(void))[3]`) は
+ * generic_type_t の構造的フィールドでは区別できないため、宣言子を「型をそのまま
+ * トークン列で書き起こした正規化文字列」にして _Generic の照合で比較する。
+ * 制御式が単一の局所変数のときに名前で引く。関数ごとにリセットする。
+ * (グローバル g_decl_typespec_start / g_var_typesigs はファイル先頭で宣言。) */
+
+/* [start, end) のトークン綴りを単一スペースで連結する。skip のトークンは除外。
+ * '(' を含まない単純型 (scalar / `int*` / `int[3]`) は NULL を返し、従来の構造的照合に
+ * 委ねる (修飾子/typedef の細かな差を string 化で誤判定しないため)。malloc した文字列を返す。 */
+char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip) {
+  int has_paren = 0;
+  for (token_t *t = start; t && t != end; t = t->next) {
+    if (t->kind == TK_LPAREN) { has_paren = 1; break; }
+  }
+  if (!has_paren) return NULL;
+  size_t cap = 64, len = 0;
+  char *buf = malloc(cap);
+  if (!buf) return NULL;
+  buf[0] = '\0';
+  for (token_t *t = start; t && t != end; t = t->next) {
+    if (t == skip) continue;
+    const char *sp = NULL;
+    int sl = 0;
+    if (t->kind == TK_IDENT) { token_ident_t *id = (token_ident_t *)t; sp = id->str; sl = id->len; }
+    else if (t->kind == TK_NUM) { token_num_t *n = (token_num_t *)t; sp = n->str; sl = n->len; }
+    else { sp = tk_token_kind_str((token_kind_t)t->kind, &sl); }
+    if (!sp || sl <= 0) continue;
+    if (len + (size_t)sl + 2 >= cap) {
+      cap = (len + (size_t)sl + 2) * 2;
+      char *nb = realloc(buf, cap);
+      if (!nb) { free(buf); return NULL; }
+      buf = nb;
+    }
+    if (len > 0) buf[len++] = ' ';
+    memcpy(buf + len, sp, (size_t)sl);
+    len += (size_t)sl;
+    buf[len] = '\0';
+  }
+  return buf;
+}
+
+static void record_var_type_sig(char *name, int len, char *sig) {
+  if (!sig || g_var_typesig_count >= VAR_TYPESIG_MAX) return;
+  g_var_typesigs[g_var_typesig_count].name = name;
+  g_var_typesigs[g_var_typesig_count].len = len;
+  g_var_typesigs[g_var_typesig_count].sig = sig;
+  g_var_typesig_count++;
+}
+
+/* 単一識別子の制御式 `_Generic(var, ...)` から var の型シグネチャを引く。無ければ NULL。 */
+char *psx_lookup_var_type_sig(char *name, int len) {
+  for (int i = g_var_typesig_count - 1; i >= 0; i--) {
+    if (g_var_typesigs[i].len == len &&
+        memcmp(g_var_typesigs[i].name, name, (size_t)len) == 0) {
+      return g_var_typesigs[i].sig;
+    }
+  }
+  return NULL;
+}
+
 node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int base_is_pointer,
@@ -2852,6 +2925,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int decl_base_is_void,
                                                  int decl_base_is_bool) {
   node_t *init_chain = NULL;
+  /* _Generic 用: 型シグネチャ文字列化のための型開始トークン (呼び出し元が設定)。
+   * 一度だけ使い、stale 参照を避けるためここで取り出してクリアする。 */
+  token_t *ts_start = g_decl_typespec_start;
+  g_decl_typespec_start = NULL;
   int alignas_val = 0;
   /* 基底ポインタ typedef の段数を消費する (read-and-reset)。多段 typedef
    * `typedef int **PP; PP p;` で base が 2 段ぶん寄与する。非ポインタ基底や直書きは 0
@@ -3107,6 +3184,14 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->pointee_is_void = 1;
     }
 
+    /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化して名前で記録する。
+     * 複雑な派生型 (関数ポインタ / ネスト宣言子, '(' を含む) のみ非 NULL。型開始トークン
+     * を含むのは先頭宣言子だけなので declarator_count==1 に限定する。 */
+    if (declarator_count == 1 && ts_start && var && tok) {
+      char *sig = psx_serialize_decl_type_tokens(ts_start, curtok(), (token_t *)tok);
+      if (sig) record_var_type_sig(tok->str, tok->len, sig);
+    }
+
     if (tk_consume('=')) {
       var->is_initialized = 1;
       node_t *init_node = psx_decl_parse_initializer_for_var(var, is_pointer);
@@ -3152,6 +3237,9 @@ node_t *psx_decl_parse_declaration(void) {
     return psx_node_new_num(0);
   }
 
+  /* _Generic 用: 型シグネチャ文字列化のため、型指定子の開始トークンを記録する
+   * (_ex が先頭宣言子の [型開始, 宣言子終端) を name 抜きで文字列化する)。 */
+  g_decl_typespec_start = curtok();
   local_decl_spec_t ds = {0};
   if (!parse_local_decl_spec(&ds)) {
     diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",

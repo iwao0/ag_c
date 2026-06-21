@@ -20,6 +20,11 @@ void psx_take_alignas_value(int *align);
 void psx_take_extern_flag(int *is_extern);
 void psx_take_static_flag(int *is_static);
 void psx_set_static_flag(int is_static);
+/* _Generic 用: [start, end) のトークン綴りを単一スペースで連結 (skip は除外)。'(' を
+ * 含まない単純型は NULL。複雑な派生型 (関数ポインタ/ネスト宣言子) の型照合に使う。 */
+char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip);
+/* 単一識別子の制御式 `_Generic(var, ...)` の var の型シグネチャを名前で引く (無ければ NULL)。 */
+char *psx_lookup_var_type_sig(char *name, int len);
 void psx_set_alignas_value(int align);
 void psx_consume_pointer_prefix(int *is_ptr);
 // `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。

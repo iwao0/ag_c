@@ -1086,6 +1086,7 @@ static const test_case_t test_cases[] = {
     {"probes", "alignas_overaligned_local", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_overaligned_local.c", 0, 0},
     {"probes", "vla_2d_param_and_row_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_2d_param_and_row_sizeof.c", 0, 0},
     {"probes", "static_internal_linkage", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_internal_linkage.c", 0, 0},
+    {"probes", "generic_complex_derived_type", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_complex_derived_type.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

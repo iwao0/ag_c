@@ -68,6 +68,9 @@ typedef struct {
   int ptr_pointee_unsigned;
   int ptr_pointee_const;
   int ptr_pointee_volatile;
+  /* 複雑な派生型 (関数ポインタ / ネスト宣言子) の正規化トークン文字列。非 NULL のとき
+   * 構造的フィールドより優先し、control と assoc 双方が非 NULL なら strcmp で照合する。 */
+  char *type_sig;
 } generic_type_t;
 
 static void consume_local_type_quals(token_t **cur);
@@ -566,7 +569,11 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
 }
 
 static generic_type_t infer_generic_control_type(node_t *control) {
-  generic_type_t gt = {TK_INT, 4, 0, 0, 0, 0, TK_EOF, NULL, 0, 0, 0, 0, 0, 0, TK_FLOAT_KIND_NONE, 0, 0, 0};
+  generic_type_t gt = {0};
+  gt.kind = TK_INT;
+  gt.scalar_size = 4;
+  gt.tag_kind = TK_EOF;
+  gt.ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
@@ -657,6 +664,12 @@ static generic_type_t infer_generic_control_type(node_t *control) {
 }
 
 static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
+  /* 複雑な派生型 (関数ポインタ / ネスト宣言子): 双方が型シグネチャ文字列を持つときは
+   * それで照合する。構造的フィールドでは引数の個数/型やネスト構造を区別できないため。
+   * 片方のみシグネチャを持つ場合は従来の構造的照合に委ねる (回帰回避; 加算的変更)。 */
+  if (control.type_sig && assoc.type_sig) {
+    return strcmp(control.type_sig, assoc.type_sig) == 0;
+  }
   if (control.is_pointer != assoc.is_pointer) return 0;
   if (control.is_pointer) {
     if (control.ptr_levels && assoc.ptr_levels && control.ptr_levels != assoc.ptr_levels) return 0;
@@ -831,6 +844,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   out->kind = TK_EOF;
   out->tag_kind = TK_EOF;
   out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  /* _Generic 用: 型名トークン全体 (base + 宣言子) を文字列化するための開始位置。 */
+  token_t *sig_start = curtok();
   int base_elem_size = 8;
   tk_float_kind_t base_fp_kind = TK_FLOAT_KIND_NONE;
   int base_unsigned = 0;
@@ -862,6 +877,8 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     out->ptr_pointee_const = base_const;
     out->ptr_pointee_volatile = base_volatile;
   }
+  /* 関数ポインタ / ネスト宣言子など '(' を含む複雑型のみ型シグネチャを作る。 */
+  out->type_sig = psx_serialize_decl_type_tokens(sig_start, t, NULL);
   set_curtok(t);
   return 1;
 }
@@ -3391,8 +3408,15 @@ static node_t *parse_generic_selection(void) {
     tk_allocator_recyc_unpin();
   }
   if (!got_cast_ty) {
+    /* 制御式が単一の識別子 `_Generic(var, ...)` なら、宣言時に記録した型シグネチャを
+     * 名前で引いて control に付与する (関数ポインタ/ネスト宣言子の照合用)。 */
+    token_ident_t *ctrl_id = NULL;
+    if (curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COMMA) {
+      ctrl_id = (token_ident_t *)curtok();
+    }
     node_t *control = assign();
     control_ty = infer_generic_control_type(control);
+    if (ctrl_id) control_ty.type_sig = psx_lookup_var_type_sig(ctrl_id->str, ctrl_id->len);
   }
   tk_expect(',');
 
