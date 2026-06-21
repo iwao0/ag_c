@@ -71,7 +71,7 @@ char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
     }
 
     char c = *p;
-    if (TK_UNLIKELY(c == '/' || c == '\\')) {
+    if (UNLIKELY(c == '/' || c == '\\')) {
       char *next = tk_skip_ignored_fallback(p, at_bol, has_space, line_no);
       if (next == p) return p;
       p = next;
@@ -79,7 +79,7 @@ char *tk_skip_ignored(char *p, bool *at_bol, bool *has_space, int *line_no) {
     }
 
     // 非ASCII空白などは低頻度フォールバックへ。
-    if (TK_UNLIKELY((unsigned char)c >= 0x80 && tk_is_space(c))) {
+    if (UNLIKELY((unsigned char)c >= 0x80 && tk_is_space(c))) {
       *has_space = true;
       p++;
       continue;

@@ -345,7 +345,7 @@ static bool tokenize_ident_or_keyword(
     char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
   char *p = *pp;
   int adv = 0;
-  if (!TK_LIKELY(tk_scan_ident_start(p, &adv))) {
+  if (!LIKELY(tk_scan_ident_start(p, &adv))) {
     return false;
   }
 
