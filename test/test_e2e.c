@@ -1088,6 +1088,28 @@ static const test_case_t test_cases[] = {
     {"probes", "static_internal_linkage", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_internal_linkage.c", 0, 0},
 };
 
+/* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
+ * 同じ名前空間接頭辞で記号を namespace してから一緒に category binary へリンクする。
+ * 単一ファイル fixture では再現できない「別 TU の同名シンボル衝突」を検査できる
+ * (例: 両 TU が同名 file-scope static を持つとき、内部リンケージが壊れていると
+ *  namespace 後に .global が重複し category binary のリンクが失敗する)。
+ * file_main が main を含む TU、file_other がもう一方の TU。expected_i は main の戻り値。
+ * test_cases[] に 2 つ目のファイル列を足すと既存約 1000 エントリが
+ * -Wmissing-field-initializers 警告を出すため、別テーブルにしている。 */
+typedef struct {
+  const char *category;
+  const char *name;
+  const char *file_main;   // main を含む TU
+  const char *file_other;  // もう一方の TU
+  int expected_i;          // main の戻り値 (exit code mod 256)
+} link2_case_t;
+
+static const link2_case_t link2_cases[] = {
+    {"probes", "static_internal_linkage_xtu",
+     "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c",
+     "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c", 42},
+};
+
 static const compile_fail_case_t compile_fail_cases[] = {
     {"cast_struct_from_nonscalar_rejected",
      "int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }",
@@ -1799,8 +1821,10 @@ static int build_category(const char *category) {
   fprintf(log, "Category: %s\n", category);
 
   const size_t max_cases = sizeof(test_cases) / sizeof(test_cases[0]);
-  const char **clang_inputs = calloc(max_cases + 1, sizeof(char *));
-  char **owned_paths = calloc(max_cases + 1, sizeof(char *));
+  const size_t n_link2 = sizeof(link2_cases) / sizeof(link2_cases[0]);
+  /* link2 ケースは 1 件につき 2 つの .s を追加するため余分に確保する (+ driver 用の 1)。 */
+  const char **clang_inputs = calloc(max_cases + 2 * n_link2 + 1, sizeof(char *));
+  char **owned_paths = calloc(max_cases + 2 * n_link2 + 1, sizeof(char *));
   if (!clang_inputs || !owned_paths) {
     fclose(log);
     free(clang_inputs);
@@ -1879,6 +1903,46 @@ static int build_category(const char *category) {
     }
   }
 
+  /* クロス TU ケース: 2 つの TU を同じ名前空間接頭辞で namespace し、両方とも
+   * category binary にリンクする。両 TU の同名 static が内部リンケージを失っていると
+   * namespace 後に .global が重複してリンクが失敗する (= 回帰検出)。 */
+  for (size_t i = 0; i < n_link2; i++) {
+    const link2_case_t *lc = &link2_cases[i];
+    if (strcmp(lc->category, category) != 0) continue;
+    char cat_sym[128], name_sym[128], fn_sym[320];
+    sanitize_symbol(category, cat_sym, sizeof(cat_sym));
+    sanitize_symbol(lc->name, name_sym, sizeof(name_sym));
+    snprintf(fn_sym, sizeof(fn_sym), "agc_%s_%s", cat_sym, name_sym);
+    const char *files[2] = {lc->file_main, lc->file_other};
+    const char *tags[2] = {"main", "other"};
+    for (int k = 0; k < 2; k++) {
+      char src2[PATH_MAX], s2[PATH_MAX], rs2[PATH_MAX];
+      snprintf(src2, sizeof(src2), "%s/%s__%s.c", category_dir, lc->name, tags[k]);
+      snprintf(s2, sizeof(s2), "%s/%s__%s.s", category_dir, lc->name, tags[k]);
+      snprintf(rs2, sizeof(rs2), "%s/%s__%s.renamed.s", category_dir, lc->name, tags[k]);
+      if (copy_source_file(files[k], src2) != 0 || run_ag_c_to_s(src2, s2) != 0 ||
+          copy_and_namespace_symbols(s2, rs2, fn_sym) != 0) {
+        fprintf(log, "  FAIL: build link2 %s (%s)\n", lc->name, tags[k]);
+        fclose(drv);
+        fclose(log);
+        free(clang_inputs);
+        free(owned_paths);
+        return 1;
+      }
+      owned_paths[input_count] = strdup(rs2);
+      clang_inputs[input_count] = owned_paths[input_count];
+      if (!owned_paths[input_count]) {
+        fclose(drv);
+        fclose(log);
+        free(clang_inputs);
+        free(owned_paths);
+        return 1;
+      }
+      input_count++;
+    }
+    fprintf(drv, "  extern int %s_main(void);\n", fn_sym);
+  }
+
   fprintf(drv, "\n");
   for (size_t i = 0; i < max_cases; i++) {
     const test_case_t *tc = &test_cases[i];
@@ -1895,6 +1959,16 @@ static int build_category(const char *category) {
       fprintf(drv, "  { double actual = (double)%s_ag_m(); if (!agc_nearly(actual, %.6f)) { failed = 1; printf(\"FAIL %s expected %.2f got %%.2f\\n\", actual); } else { printf(\"OK %s => %%.2f\\n\", actual); } }\n",
               fn_sym, tc->expected_f, tc->name, tc->expected_f, tc->name);
     }
+  }
+  for (size_t i = 0; i < n_link2; i++) {
+    const link2_case_t *lc = &link2_cases[i];
+    if (strcmp(lc->category, category) != 0) continue;
+    char cat_sym[128], name_sym[128], fn_sym[320];
+    sanitize_symbol(category, cat_sym, sizeof(cat_sym));
+    sanitize_symbol(lc->name, name_sym, sizeof(name_sym));
+    snprintf(fn_sym, sizeof(fn_sym), "agc_%s_%s", cat_sym, name_sym);
+    fprintf(drv, "  { int actual = (%s_main() & 255); if (actual != %d) { failed = 1; printf(\"FAIL %s expected %d got %%d\\n\", actual); } else { printf(\"OK %s => %%d\\n\", actual); } }\n",
+            fn_sym, lc->expected_i, lc->name, lc->expected_i, lc->name);
   }
   fprintf(drv, "  return failed;\n}\n");
   fclose(drv);
