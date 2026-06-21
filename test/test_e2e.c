@@ -1106,6 +1106,7 @@ static const test_case_t test_cases[] = {
     {"probes", "static_typedef_name_global", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_typedef_name_global.c", 0, 0},
     {"probes", "qualified_pointer_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/qualified_pointer_return.c", 0, 0},
     {"probes", "tag_return_complex_declarator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tag_return_complex_declarator.c", 0, 0},
+    {"probes", "funcptr_return_struct_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_struct_member.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
