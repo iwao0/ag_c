@@ -3460,6 +3460,18 @@ static node_t *parse_call_postfix(node_t *callee) {
   if (callee) {
     tk_float_kind_t ret_fp = psx_node_pointee_fp_kind(callee);
     if (ret_fp != TK_FLOAT_KIND_NONE) node->base.fp_kind = ret_fp;
+    /* 間接呼び出しで戻り型が struct/union 値 (`struct R (*op)(int)`) なら ret_struct_size を
+     * 設定する。直接呼び出しは ret 表 (psx_ctx_get_function_ret_struct_size) から引くが、
+     * 間接は callee funcptr の戻り tag (pql=1 で値戻り) からサイズを導出する。これがないと
+     * ir_builder が >8B/非 pow2 struct 戻りを scalar 扱いし struct 代入/メンバアクセスが壊れる。
+     * ポインタ戻り (pql>=2) は struct ポインタ値 (8B) なので ret_struct_size は立てない。 */
+    token_kind_t rtk = TK_EOF; char *rtn = NULL; int rtl = 0;
+    psx_node_get_tag_type(callee, &rtk, &rtn, &rtl, NULL);
+    if ((rtk == TK_STRUCT || rtk == TK_UNION) &&
+        psx_node_pointer_qual_levels(callee) <= 1) {
+      int ss = psx_ctx_get_tag_size(rtk, rtn, rtl);
+      if (ss > 0) node->base.ret_struct_size = ss;
+    }
   }
   int nargs = 0;
   int arg_cap = 16;

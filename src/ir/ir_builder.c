@@ -955,8 +955,22 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
   if (node->rhs && node->rhs->kind == ND_FUNCALL &&
       cg_size_needs_indirect_struct(node->rhs->ret_struct_size)) {
     node_func_t *callee = (node_func_t *)node->rhs;
-    if (callee->callee || callee->is_variadic || callee->nargs > 8) {
-      fail(ctx, "indirect/variadic/many-arg struct-return call");
+    /* 間接呼び出し (関数ポインタ経由) の struct 戻り値: dst へ直接書く下の最適化は
+     * direct call 専用 (引数処理が簡略版)。間接は汎用 funcall 経路 (build_node_funcall)
+     * に委譲して ret_area を確保・呼び出しさせ、返ってきた area から dst へ memcpy する。
+     * これで `struct Big r = ob(100);` や materialize 経由の `op(100).a` が動く。 */
+    if (callee->callee) {
+      ir_val_t srcp = build_node_funcall(ctx, node->rhs);
+      if (ctx->failed) return ir_val_none();
+      ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+      cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+      cp->src2 = srcp;
+      cp->alloca_size = node->rhs->ret_struct_size;
+      ir_func_append_inst(ctx->f, cp);
+      return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+    }
+    if (callee->is_variadic || callee->nargs > 8) {
+      fail(ctx, "variadic/many-arg struct-return call");
       return ir_val_none();
     }
     ir_val_t *cargs = NULL;
@@ -1757,11 +1771,14 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, call);
     return ir_val_vreg(slot, IR_TY_PTR);
   }
-  /* >8B struct 戻り値を値文脈 (引数 / 式) で使う場合: 呼び出し側で ret_area を
-   * 確保し x8 で渡す。戻り値はその area のアドレス (PTR)。struct 代入の直接 rhs は
-   * build_assign_struct がインラインで処理するためここには来ない。 */
+  /* 1/2/4/8B 以外の struct 戻り値を値文脈 (引数 / 式) で使う場合: 呼び出し側で
+   * ret_area を確保し x8 で渡す。戻り値はその area のアドレス (PTR)。間接呼び出し
+   * (関数ポインタ経由) でも x8 ret_area ABI は同じなので、direct/indirect 両方で
+   * 確保する (codegen は x8 設定と blr を独立に出す)。struct 代入の直接 rhs (direct
+   * call) は build_assign_struct がインラインで dst へ書くためここには来ないが、
+   * 間接呼び出しの代入は build_assign_struct がこの経路へ委譲する。 */
   int struct_ret_area = -1;
-  if (cg_size_needs_indirect_struct(node->ret_struct_size) && !fn->callee) {
+  if (cg_size_needs_indirect_struct(node->ret_struct_size)) {
     struct_ret_area = ir_func_new_vreg(ctx->f);
     ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
     ia->dst = ir_val_vreg(struct_ret_area, IR_TY_PTR);
