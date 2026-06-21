@@ -2377,6 +2377,7 @@ static void apply_typedef_array_pointee_strides(lvar_t *var, param_decl_spec_t *
   }
   if (mid_mul > 0) var->mid_stride = mid_mul * ds->elem_size;
   // extra_strides[k] = D(k+2) 以降の積 * elem
+  if (ds->typedef_array_dim_count >= 3) var->extra_strides = calloc(5, sizeof(int));
   int idx_in_extras = 0;
   for (int start = 2; start < ds->typedef_array_dim_count && idx_in_extras < 5; start++) {
     int rest_mul = 1;

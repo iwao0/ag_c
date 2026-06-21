@@ -67,7 +67,10 @@ struct lvar_t {
   // ストライド。例: 4D `a[N1][N2][N3][N4]` では outer=N2*N3*N4*e, mid=N3*N4*e、
   // 3 段目で使う N4*e は next_deref_size 経由で運ばれ、extra_strides は最後の
   // elem ストライドのみ (count=1) を持つ。5D ならさらに 1 段追加。
-  int extra_strides[5];         // 最大 8 次元 (3 + 5) まで対応
+  /* 4 次元以上の追加ストライド (最大 5 = 8 次元まで)。4D+ 配列は稀なので、全 lvar に
+   * 20B 抱えさせず、必要なときだけ calloc(5) する (未使用時 NULL)。読みは必ず
+   * extra_strides_count>0 で guard 済み (count>0 ⟺ 確保済み)。 */
+  int *extra_strides;
   unsigned char extra_strides_count;
   int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=定数stride）
   /* 2D VLA 関数パラメータ (`int g[n][m]`): 関数 entry 時に

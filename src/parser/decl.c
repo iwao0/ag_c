@@ -2779,6 +2779,7 @@ static lvar_t *register_typedef_array_lvar(token_ident_t *tok, int elem_size,
     var->mid_stride = mid_mul * arr_elem_size;
   }
   if (td_array_dim_count >= 4) {
+    var->extra_strides = calloc(5, sizeof(int));
     int idx_in_extras = 0;
     for (int start = 3; start < td_array_dim_count && idx_in_extras < 5; start++) {
       int rest_mul = 1;
@@ -2854,6 +2855,7 @@ static lvar_t *register_multidim_array_lvar(token_ident_t *tok, int elem_size,
   }
   // 4 次元以上: 3 段目以降のストライドを順に extra_strides に格納する。
   if (trailing_count >= 3) {
+    var->extra_strides = calloc(5, sizeof(int));
     int idx_in_extras = 0;
     for (int start = 2; start < trailing_count && idx_in_extras < 5; start++) {
       int rest_mul = 1;
