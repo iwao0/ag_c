@@ -78,6 +78,7 @@ static long long eval_const_expr_type_size(node_t *n, int *ok);
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
 static char *new_compound_lit_name(void);
+static int lvar_is_static_local_array(lvar_t *var);
 static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer);
 static node_t *apply_postfix(node_t *node);
 static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast_is_ptr,
@@ -2619,6 +2620,20 @@ static node_t *parse_sizeof_operand(void) {
         if (peek && peek->kind == TK_RPAREN) {
           set_curtok(peek->next);
           return psx_node_new_num(arr_var->size);
+        }
+      }
+      /* static local 配列はグローバルへ lowering され alias lvar は is_array=0 /
+       * size=0 なので上の分岐に乗らない。実サイズは lowering 先グローバルの
+       * type_size にある (`static int a[10]` → 40)。 */
+      if (arr_var && lvar_is_static_local_array(arr_var)) {
+        token_t *peek = curtok()->next;
+        if (peek && peek->kind == TK_RPAREN) {
+          global_var_t *sgv = psx_find_global_var(arr_var->static_global_name,
+                                                  arr_var->static_global_name_len);
+          if (sgv && sgv->type_size > 0) {
+            set_curtok(peek->next);
+            return psx_node_new_num(sgv->type_size);
+          }
         }
       }
       /* ローカル lvar が見つからなければ global 配列を探す。`int g[] = {...}`
