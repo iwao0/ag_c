@@ -787,24 +787,20 @@ static typedef_name_t *find_typedef_in_current_scope(char *name, int len) {
   return NULL;
 }
 
-static void assign_typedef_fields(typedef_name_t *t, token_kind_t base_kind, int elem_size,
-                                  tk_float_kind_t fp_kind, token_kind_t tag_kind,
-                                  char *tag_name, int tag_len, int is_pointer, int sizeof_size,
-                                  int pointee_const_qualified, int pointee_volatile_qualified,
-                                  int is_unsigned, int is_array, int array_first_dim) {
-  t->base_kind = base_kind;
-  t->elem_size = elem_size;
-  t->fp_kind = fp_kind;
-  t->tag_kind = tag_kind;
-  t->tag_name = tag_name;
-  t->tag_len = tag_len;
-  t->is_pointer = is_pointer;
-  t->sizeof_size = sizeof_size;
-  t->pointee_const_qualified = pointee_const_qualified;
-  t->pointee_volatile_qualified = pointee_volatile_qualified;
-  t->is_unsigned = is_unsigned;
-  t->is_array = is_array;
-  t->array_first_dim = array_first_dim;
+static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *info) {
+  t->base_kind = info->base_kind;
+  t->elem_size = info->elem_size;
+  t->fp_kind = info->fp_kind;
+  t->tag_kind = info->tag_kind;
+  t->tag_name = info->tag_name;
+  t->tag_len = info->tag_len;
+  t->is_pointer = info->is_pointer;
+  t->sizeof_size = info->sizeof_size;
+  t->pointee_const_qualified = info->pointee_const_qualified;
+  t->pointee_volatile_qualified = info->pointee_volatile_qualified;
+  t->is_unsigned = info->is_unsigned;
+  t->is_array = info->is_array;
+  t->array_first_dim = info->array_first_dim;
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -844,10 +840,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
   t->scope_depth = tag_scope_depth;
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
-  assign_typedef_fields(t, info->base_kind, info->elem_size, info->fp_kind, info->tag_kind,
-                        info->tag_name, info->tag_len, info->is_pointer, info->sizeof_size,
-                        info->pointee_const_qualified, info->pointee_volatile_qualified, info->is_unsigned,
-                        info->is_array, info->array_first_dim);
+  assign_typedef_fields(t, info);
   int n = (info->array_dim_count < 0) ? 0 : info->array_dim_count;
   if (n > 8) n = 8;
   t->array_dim_count = n;
