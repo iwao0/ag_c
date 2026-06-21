@@ -6,18 +6,19 @@
 #include "token.h"
 
 /* 数値リテラル解析の中間表現。ソーステキストを整数/浮動の共通表現へ変換した結果で、
- * トークン構築 (tokenize_number_literal) はこれを読んでトークンへ書き写す。 */
+ * トークン構築 (tokenize_number_literal) はこれを読んでトークンへ書き写す。
+ * フィールドは 8B → 4B(enum) → 1B の順に並べて内部パディングを詰めている (sizeof=48)。 */
 struct parsed_num_t {
   long long val;
   unsigned long long uval;
   double fval;
   tk_float_kind_t fp_kind;
   tk_float_suffix_kind_t float_suffix_kind;
-  bool is_unsigned;
   tk_int_size_t int_size;
-  uint8_t int_base;
   tk_char_width_t char_width;
   tk_char_prefix_kind_t char_prefix_kind;
+  bool is_unsigned;
+  uint8_t int_base;
 };
 typedef struct parsed_num_t parsed_num_t;
 
