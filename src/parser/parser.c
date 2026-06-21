@@ -248,6 +248,10 @@ typedef struct {
   tk_float_kind_t fp_kind;
   // `double _Complex` / `float _Complex` 仮引数。HFA として 2 FP レジスタで受ける。
   int is_complex;
+  // 基底型 (typedef 名) がポインタのとき (`typedef char* Str; f(Str s)`) のポインタ段数。
+  // 宣言子側の `*` (param_is_ptr) と合成して実効ポインタ性を決める。非ポインタは 0。
+  int base_is_pointer;
+  int base_pointer_levels;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -2682,6 +2686,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
                                                      &param_inner_first_dim_ident,
                                                      &param_inner_second_dim_ident,
                                                      &param_has_func_suffix);
+  /* ポインタ typedef 基底 (`typedef char* Str; f(Str s)`) を実効ポインタ性へ合成する。
+   * 宣言子に `*` が無く (param_is_ptr=0) 配列宣言子でもないときのみ、基底の段数を採用する
+   * (`Str *p` のように宣言子側にも `*` がある場合は param_ptr_levels に基底段数を足す)。
+   * 配列宣言子 `Str a[]` は C11 6.7.6.3p7 の adjust が別経路で効くので触らない。 */
+  if (ds.base_is_pointer && !param_is_array_declarator) {
+    param_is_ptr = 1;
+    param_ptr_levels += ds.base_pointer_levels;
+  }
   if (!param) {
     // int f(void) の "void" は仮引数0件として扱う（C11 6.7.6.3）。
     if (ds.base_type_kind == TK_VOID && ds.tag_kind == TK_EOF && !ds.saw_typedef_name &&
@@ -2841,6 +2853,15 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
         out->tag_len = td_tag_len;
         int ts = psx_ctx_get_tag_size(td_tag_kind, td_tag_name, td_tag_len);
         if (ts > 0) out->struct_size = ts;
+      }
+      /* ポインタ typedef (`typedef char* Str; f(Str s)`): 基底のポインタ性を捕捉し、
+       * 仮引数を非配列・宣言子に `*` が無くてもポインタとして登録できるようにする。
+       * 未捕捉だと `s` がスカラ登録され `s[i]` が E3064 (subscript 不可) になっていた。
+       * elem_size は typedef 解決で pointee サイズ (char=1 等) に設定済み。 */
+      if (_ti.is_pointer) {
+        out->base_is_pointer = 1;
+        int lv = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
+        out->base_pointer_levels = (lv > 0) ? lv : 1;
       }
     }
     set_curtok(curtok()->next);
