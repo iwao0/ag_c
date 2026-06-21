@@ -430,27 +430,6 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   tag_members_by_bucket[bucket] = m;
 }
 
-/* 以下 5 関数は統合 API (psx_ctx_get_tag_member_info / _find_tag_member_info)
- * の内部実装。外部呼出は Phase A1-2/A1-3 で全廃した。 */
-static bool psx_ctx_get_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
-                               char *member_name, int member_len,
-                               int *out_bit_width, int *out_bit_offset, int *out_bit_is_signed) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      if (out_bit_width) *out_bit_width = m->bit_width;
-      if (out_bit_offset) *out_bit_offset = m->bit_offset;
-      if (out_bit_is_signed) *out_bit_is_signed = m->bit_is_signed;
-      return true;
-    }
-  }
-  return false;
-}
-
 void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
                                      char *member_name, int member_len,
                                      tk_float_kind_t fp_kind) {
@@ -497,36 +476,6 @@ void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, 
   }
 }
 
-static int psx_ctx_get_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                        char *member_name, int member_len) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      return m->outer_stride;
-    }
-  }
-  return 0;
-}
-
-static int psx_ctx_get_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                    char *member_name, int member_len) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      return m->is_bool;
-    }
-  }
-  return 0;
-}
-
 void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
                                         char *member_name, int member_len, int is_unsigned) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -542,36 +491,6 @@ void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, i
   }
 }
 
-static int psx_ctx_get_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                       char *member_name, int member_len) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      return m->is_unsigned;
-    }
-  }
-  return 0;
-}
-
-static tk_float_kind_t psx_ctx_get_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                 char *member_name, int member_len) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      return m->fp_kind;
-    }
-  }
-  return TK_FLOAT_KIND_NONE;
-}
-
 static int cmp_tag_member_ptr(const void *a, const void *b) {
   const tag_member_t *ma = *(const tag_member_t * const *)a;
   const tag_member_t *mb = *(const tag_member_t * const *)b;
@@ -580,18 +499,40 @@ static int cmp_tag_member_ptr(const void *a, const void *b) {
   return 0;
 }
 
-static bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int tag_len, int index,
-                               char **out_member_name, int *out_member_len,
-                               int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
-                               token_kind_t *out_member_tag_kind, char **out_member_tag_name,
-                               int *out_member_tag_len, int *out_member_is_tag_pointer) {
+/* tag_member_t の全属性を tag_member_info_t へ写す。get/find_tag_member_info が
+ * メンバを 1 つ特定したあとに使う (旧実装の複数 getter 呼び分けを 1 箇所に集約)。 */
+static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) {
+  out->name = m->member_name;
+  out->len = m->member_len;
+  out->offset = m->offset;
+  out->type_size = m->type_size;
+  out->deref_size = m->deref_size;
+  out->array_len = m->array_len;
+  out->tag_kind = m->member_tag_kind;
+  out->tag_name = m->member_tag_name;
+  out->tag_len = m->member_tag_len;
+  out->is_tag_pointer = m->member_is_tag_pointer;
+  out->bit_width = m->bit_width;
+  out->bit_offset = m->bit_offset;
+  out->bit_is_signed = m->bit_is_signed;
+  out->fp_kind = m->fp_kind;
+  out->is_bool = m->is_bool;
+  out->is_unsigned = m->is_unsigned;
+  out->outer_stride = m->outer_stride;
+}
+
+/* tag の index 番目 (offset 昇順) のメンバ全属性を 1 回のクエリで取得する統合 API。
+ * メンバを特定して fill_tag_member_info で全フィールドを写す。 */
+bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
+                                  tag_member_info_t *out) {
+  if (!out) return false;
   int cap = 8;
   int n = 0;
   tag_member_t **members = calloc((size_t)cap, sizeof(tag_member_t *));
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (tag_member_t *m = tag_members_by_bucket[i]; m; m = m->next_hash) {
-      if (m->tag_kind != tag_kind || m->tag_len != tag_len) continue;
-      if (strncmp(m->tag_name, tag_name, (size_t)tag_len) != 0) continue;
+      if (m->tag_kind != kind || m->tag_len != len) continue;
+      if (strncmp(m->tag_name, name, (size_t)len) != 0) continue;
       if (n >= cap) {
         cap *= 2;
         members = realloc(members, (size_t)cap * sizeof(tag_member_t *));
@@ -604,111 +545,24 @@ static bool psx_ctx_get_tag_member_at(token_kind_t tag_kind, char *tag_name, int
     return false;
   }
   qsort(members, (size_t)n, sizeof(tag_member_t *), cmp_tag_member_ptr);
-  tag_member_t *m = members[index];
-  if (out_member_name) *out_member_name = m->member_name;
-  if (out_member_len) *out_member_len = m->member_len;
-  if (out_offset) *out_offset = m->offset;
-  if (out_type_size) *out_type_size = m->type_size;
-  if (out_deref_size) *out_deref_size = m->deref_size;
-  if (out_array_len) *out_array_len = m->array_len;
-  if (out_member_tag_kind) *out_member_tag_kind = m->member_tag_kind;
-  if (out_member_tag_name) *out_member_tag_name = m->member_tag_name;
-  if (out_member_tag_len) *out_member_tag_len = m->member_tag_len;
-  if (out_member_is_tag_pointer) *out_member_is_tag_pointer = m->member_is_tag_pointer;
+  fill_tag_member_info(members[index], out);
   free(members);
   return true;
 }
 
-/* 全属性を 1 回のクエリで取得する統合 API (Phase A1 リファクタリング)。
- * 既存 5 getter (_at / _bf / _fp_kind / _is_bool) を内部で順次呼ぶ wrapper。
- * 取得成功時、bitfield/fp_kind/is_bool は対応 setter 未呼出なら 0 が入る。 */
-bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
-                                  tag_member_info_t *out) {
-  if (!out) return false;
-  /* 初期化 (全フィールド 0) */
-  out->name = NULL; out->len = 0;
-  out->offset = 0; out->type_size = 0; out->deref_size = 0; out->array_len = 0;
-  out->tag_kind = TK_EOF; out->tag_name = NULL; out->tag_len = 0; out->is_tag_pointer = 0;
-  out->bit_width = 0; out->bit_offset = 0; out->bit_is_signed = 0;
-  out->fp_kind = TK_FLOAT_KIND_NONE;
-  out->is_bool = 0;
-  out->is_unsigned = 0;
-  out->outer_stride = 0;
-  /* 基本情報 (offset / type_size / deref_size / array_len / tag_*) */
-  if (!psx_ctx_get_tag_member_at(kind, name, len, index,
-                                  &out->name, &out->len,
-                                  &out->offset, &out->type_size, &out->deref_size, &out->array_len,
-                                  &out->tag_kind, &out->tag_name, &out->tag_len,
-                                  &out->is_tag_pointer)) {
-    return false;
-  }
-  /* bitfield 情報 (bit_width=0 なら非 bitfield) */
-  if (out->len > 0) {
-    psx_ctx_get_tag_member_bf(kind, name, len, out->name, out->len,
-                               &out->bit_width, &out->bit_offset, &out->bit_is_signed);
-    out->fp_kind = psx_ctx_get_tag_member_fp_kind(kind, name, len, out->name, out->len);
-    out->is_bool = psx_ctx_get_tag_member_is_bool(kind, name, len, out->name, out->len);
-    out->is_unsigned = psx_ctx_get_tag_member_is_unsigned(kind, name, len, out->name, out->len);
-    out->outer_stride = psx_ctx_get_tag_member_outer_stride(kind, name, len, out->name, out->len);
-  }
-  return true;
-}
-
-static bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                             char *member_name, int member_len,
-                             int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
-                             token_kind_t *out_member_tag_kind, char **out_member_tag_name,
-                             int *out_member_tag_len, int *out_member_is_tag_pointer);
-
-/* 名前検索版の統合 API (Phase A1)。
- * `psx_ctx_find_tag_member` + bf + fp_kind + is_bool を 1 回のクエリに集約。 */
+/* 名前検索版の統合 API。get 版と同じく fill_tag_member_info で全属性を写す。 */
 bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
                                    char *member_name, int member_len,
                                    tag_member_info_t *out) {
   if (!out) return false;
-  out->name = member_name; out->len = member_len;
-  out->offset = 0; out->type_size = 0; out->deref_size = 0; out->array_len = 0;
-  out->tag_kind = TK_EOF; out->tag_name = NULL; out->tag_len = 0; out->is_tag_pointer = 0;
-  out->bit_width = 0; out->bit_offset = 0; out->bit_is_signed = 0;
-  out->fp_kind = TK_FLOAT_KIND_NONE;
-  out->is_bool = 0;
-  out->is_unsigned = 0;
-  out->outer_stride = 0;
-  if (!psx_ctx_find_tag_member(kind, name, len, member_name, member_len,
-                                &out->offset, &out->type_size, &out->deref_size, &out->array_len,
-                                &out->tag_kind, &out->tag_name, &out->tag_len,
-                                &out->is_tag_pointer)) {
-    return false;
-  }
-  psx_ctx_get_tag_member_bf(kind, name, len, member_name, member_len,
-                             &out->bit_width, &out->bit_offset, &out->bit_is_signed);
-  out->fp_kind = psx_ctx_get_tag_member_fp_kind(kind, name, len, member_name, member_len);
-  out->is_bool = psx_ctx_get_tag_member_is_bool(kind, name, len, member_name, member_len);
-  out->is_unsigned = psx_ctx_get_tag_member_is_unsigned(kind, name, len, member_name, member_len);
-  out->outer_stride = psx_ctx_get_tag_member_outer_stride(kind, name, len, member_name, member_len);
-  return true;
-}
-
-static bool psx_ctx_find_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                             char *member_name, int member_len,
-                             int *out_offset, int *out_type_size, int *out_deref_size, int *out_array_len,
-                             token_kind_t *out_member_tag_kind, char **out_member_tag_name,
-                             int *out_member_tag_len, int *out_member_is_tag_pointer) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+  unsigned bucket = (psx_ctx_hash_tag(kind, name, len) ^
                      psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
   for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+    if (m->tag_kind == kind && m->tag_len == len &&
         m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->tag_name, name, (size_t)len) == 0 &&
         strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      if (out_offset) *out_offset = m->offset;
-      if (out_type_size) *out_type_size = m->type_size;
-      if (out_deref_size) *out_deref_size = m->deref_size;
-      if (out_array_len) *out_array_len = m->array_len;
-      if (out_member_tag_kind) *out_member_tag_kind = m->member_tag_kind;
-      if (out_member_tag_name) *out_member_tag_name = m->member_tag_name;
-      if (out_member_tag_len) *out_member_tag_len = m->member_tag_len;
-      if (out_member_is_tag_pointer) *out_member_is_tag_pointer = m->member_is_tag_pointer;
+      fill_tag_member_info(m, out);
       return true;
     }
   }
