@@ -2305,6 +2305,14 @@ static void pps_on_advance(token_t *cursor) {
   if (!s->reclaim_hold) tk_allocator_recyc_on_cursor(cursor);
 }
 
+/* カーソルを進めずに前方を先読みするパーサ経路 (_Generic の型照合等) 用に、現在カーソルの
+ * 前方 lookahead を明示的に満たす。set_curtok のジャンプが refill_at を飛び越えると補充が
+ * チェーン末尾到達まで起きず、t->next の純粋な先読みが未生成境界 (NULL) を踏むため、
+ * 深い型先読みの直前に呼んで窓を確保する。非ストリーム時は no-op。 */
+static void pps_ensure_lookahead(void) {
+  if (g_active_pps && g_active_pps->cursor) pps_refill(g_active_pps);
+}
+
 /* ストリーム生成器を開く。predefined マクロは永続側へ作り、以後の生成は recyclable 側。
  * 先頭トークン (パーサのカーソル開始位置) を返す。 */
 token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const char *src) {
@@ -2324,12 +2332,14 @@ token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const 
   pps_refill(s);
   g_active_pps = s;
   tk_set_cursor_hook(pps_on_advance);
+  tk_set_ensure_lookahead_hook(pps_ensure_lookahead);
   *out_s = s;
   return s->out_head;
 }
 
 void pp_stream_close(pp_stream_t *s) {
   tk_set_cursor_hook(NULL);
+  tk_set_ensure_lookahead_hook(NULL);
   g_active_pps = NULL;
   tk_allocator_set_recyclable(0);
   tk_allocator_recyc_reset();

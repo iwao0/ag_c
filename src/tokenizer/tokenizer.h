@@ -156,6 +156,10 @@ void tk_stream_delete(tk_token_stream_t *s);
 void tk_set_cursor_hook(void (*fn)(token_t *));
 /* 現在のカーソル前進フックを取得する (ネスト処理中に一時退避・復元する用)。 */
 void (*tk_get_cursor_hook(void))(token_t *);
+/* カーソルを進めない深い前方先読みの直前に呼ぶ。登録された生成器が前方 lookahead を満たす
+ * (プリプロセッサが tk_set_ensure_lookahead_hook で登録)。未登録なら no-op。 */
+void tk_set_ensure_lookahead_hook(void (*fn)(void));
+void tk_ensure_lookahead(void);
 
 /**
  * @brief 指定コンテキストの入力文字列（診断表示用）を取得する。

@@ -844,6 +844,10 @@ static int parse_generic_assoc_type(generic_type_t *out) {
   out->kind = TK_EOF;
   out->tag_kind = TK_EOF;
   out->ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  /* ストリーミングのカーソルを進めずに型全体を t->next で先読みするため、未生成境界 (NULL)
+   * を踏まないよう先に窓を満たす (非ストリーム時 no-op)。長い派生型 (`int(*(*)(void))[3]`) が
+   * 窓境界に跨ると抽象宣言子パーサが有効な型を誤って却下していた。 */
+  tk_ensure_lookahead();
   /* _Generic 用: 型名トークン全体 (base + 宣言子) を文字列化するための開始位置。 */
   token_t *sig_start = curtok();
   int base_elem_size = 8;

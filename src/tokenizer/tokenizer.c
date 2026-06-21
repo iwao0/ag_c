@@ -37,6 +37,13 @@ static void (*g_cursor_hook)(token_t *) = NULL;
 void tk_set_cursor_hook(void (*fn)(token_t *)) { g_cursor_hook = fn; }
 void (*tk_get_cursor_hook(void))(token_t *) { return g_cursor_hook; }
 
+/* カーソルを進めない深い前方先読み (パーサの _Generic 型照合等) の直前に呼び、ストリーミング
+ * 生成器に前方 lookahead を満たさせるフック。プリプロセッサが登録する。未登録 (非ストリーム
+ * の単体テスト等) では no-op。parser↔preprocess を直接リンクせず疎結合に保つための間接化。 */
+static void (*g_ensure_lookahead_hook)(void) = NULL;
+void tk_set_ensure_lookahead_hook(void (*fn)(void)) { g_ensure_lookahead_hook = fn; }
+void tk_ensure_lookahead(void) { if (g_ensure_lookahead_hook) g_ensure_lookahead_hook(); }
+
 static inline void advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
   token_t *nx = cur ? cur->next : NULL;
   ctx->current_token = nx;
