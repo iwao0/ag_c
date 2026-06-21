@@ -356,6 +356,16 @@ static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, 
 }
 
 static void reset_toplevel_decl_spec_state(void) {
+  /* storage class フラグを宣言ごとにクリアする。tag/typedef の「修飾子なし」経路は
+   * skip_cv_qualifiers を通らない (line 662 の条件付き呼び出しのみ) ため、前の宣言の
+   * extern/static が漏れる。例: `extern struct S es; struct S es={7};` の 2 行目が
+   * extern 扱いされ finalize が extern 分岐 (consume_toplevel_extern_initializer_if_any)
+   * に入り `={7}` の brace を psx_expr_assign で食べて E3064 になっていた。builtin 経路は
+   * psx_consume_type_kind 内の skip_cv_qualifiers が毎回リセットするので元から漏れない。 */
+  g_last_decl_is_extern = 0;
+  g_last_decl_is_static = 0;
+  g_toplevel_decl_is_extern = 0;
+  g_toplevel_decl_is_static = 0;
   g_toplevel_decl_is_typedef = 0;
   g_toplevel_decl_base_kind = TK_EOF;
   g_toplevel_decl_is_unsigned = 0;
@@ -426,7 +436,13 @@ static int parse_toplevel_typedef_name_spec(void) {
 }
 
 static void apply_toplevel_typedef_prefix_flags(void) {
-  g_toplevel_decl_is_extern = 0;
+  /* extern/static を伝播する (builtin/tag 経路の apply_toplevel_decl_prefix_flags と同じ)。
+   * 以前は extern を無条件に 0 にしていたため `extern S es; S es={9};` (S は typedef) の
+   * extern 宣言が tentative 定義扱いになり `.comm _es` を出し、本定義の data 出力と重複
+   * シンボルで ASSEMBLE_FAIL していた。前宣言からのフラグ漏れは reset_toplevel_decl_spec_state
+   * が宣言ごとに 0 クリアするので、ここで g_last_* を伝播しても誤って extern にはならない。 */
+  g_toplevel_decl_is_extern = g_last_decl_is_extern;
+  g_toplevel_decl_is_static = g_last_decl_is_static;
   g_toplevel_decl_is_thread_local = 0;
   psx_take_type_qualifiers(&g_toplevel_decl_pointee_const, &g_toplevel_decl_pointee_volatile);
 }
@@ -2018,6 +2034,15 @@ static void install_toplevel_tag_decl_globals(token_kind_t tag_kind, char *tag_n
 }
 
 static void parse_toplevel_tag_decl(void) {
+  /* この経路は宣言が tag キーワード (`struct`/`union`/`enum`) で始まる場合のみ (storage
+   * class 前置があれば dispatcher が parse_toplevel_declaration_like へ回す)。よって
+   * extern/static は常に無い。前の宣言 (`extern struct S es;`) のフラグが g_*_is_extern に
+   * 残っていると、ここの object 宣言 (`struct S es={7};`) が誤って extern 扱いされ
+   * finalize が brace 初期化を取りこぼし E3064 になるため、明示的に 0 へ落とす。 */
+  g_last_decl_is_extern = 0;
+  g_last_decl_is_static = 0;
+  g_toplevel_decl_is_extern = 0;
+  g_toplevel_decl_is_static = 0;
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
   int tag_len = 0;

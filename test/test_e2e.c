@@ -1109,6 +1109,7 @@ static const test_case_t test_cases[] = {
     {"probes", "funcptr_return_struct_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_struct_member.c", 0, 0},
     {"probes", "funcptr_return_large_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_large_struct.c", 0, 0},
     {"probes", "multilevel_pointer_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multilevel_pointer_return.c", 0, 0},
+    {"probes", "extern_then_def_same_tu", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/extern_then_def_same_tu.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
