@@ -1091,6 +1091,8 @@ static const test_case_t test_cases[] = {
     {"probes", "generic_streaming_lookahead", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_streaming_lookahead.c", 0, 0},
     {"probes", "fp_arg_to_int_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_arg_to_int_param.c", 0, 0},
     {"probes", "static_local_array_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_array_sizeof.c", 0, 0},
+    {"probes", "unsigned_long_return_signedness", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_long_return_signedness.c", 0, 0},
+    {"probes", "mixed_width_comparison", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_width_comparison.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
