@@ -11,6 +11,7 @@ int psx_node_base_deref_size(node_t *node);
 int ps_node_is_unsigned(node_t *node);
 void psx_node_set_unsigned(node_t *node, int is_unsigned);
 tk_float_kind_t psx_node_pointee_fp_kind(node_t *node);
+int psx_node_vla_row_stride_frame_off(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer);
 
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);

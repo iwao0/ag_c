@@ -2496,10 +2496,17 @@ static node_t *add(void) {
         node_t *tmp = node; node = rhs; rhs = tmp;
       }
       if (node_is_ptr_for_arith(node)) {
-        int ds = ps_node_deref_size(node);
-        if (ds > 1) {
-          // ポインタ + 整数: 整数を要素サイズ倍にスケーリング
-          rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+        int vla_rsf = psx_node_vla_row_stride_frame_off(node);
+        if (vla_rsf != 0) {
+          /* pointer-to-VLA (`int (*p)[m]`): 1 要素 = 1 行 = 実行時ストライド (m*elem)。
+           * スロットからロードして掛ける (定数 deref_size は 0 なので使えない)。 */
+          rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_lvar_typed(vla_rsf, 8));
+        } else {
+          int ds = ps_node_deref_size(node);
+          if (ds > 1) {
+            // ポインタ + 整数: 整数を要素サイズ倍にスケーリング
+            rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+          }
         }
       }
       node = psx_node_new_binary(ND_ADD, node, rhs);
@@ -2517,10 +2524,15 @@ static node_t *add(void) {
                  : diff;
       } else {
         if (node_is_ptr_for_arith(node)) {
-          int ds = ps_node_deref_size(node);
-          if (ds > 1) {
-            // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
-            rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+          int vla_rsf = psx_node_vla_row_stride_frame_off(node);
+          if (vla_rsf != 0) {
+            rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_lvar_typed(vla_rsf, 8));
+          } else {
+            int ds = ps_node_deref_size(node);
+            if (ds > 1) {
+              // ポインタ - 整数: 整数を要素サイズ倍にスケーリング
+              rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
+            }
           }
         }
         node = psx_node_new_binary(ND_SUB, node, rhs);
@@ -3239,13 +3251,18 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
    * (is_bool と同じ分岐)。これがないと `m[i][j]` が整数 load になっていた。 */
   {
     tk_float_kind_t arr_pointee_fp = psx_node_pointee_fp_kind(node);
+    /* pointer-to-VLA `double (*p)[m]` の第1 subscript: vla_rsf 経路では es==inner_ds に
+     * なり下の `es > inner_ds` で「最終スカラ」と誤分類される。実行時ストライド (vla_rsf)
+     * があり内側次元 (inner_ds>0) を持つなら結果は「行」(中間) なので明示的に区別する。 */
+    int node_vla_rsf = (node->kind == ND_LVAR) ? as_lvar(node)->mem.vla_row_stride_frame_off : 0;
+    int is_vla_row = (node_vla_rsf != 0 && inner_ds > 0);
     if (arr_pointee_fp != TK_FLOAT_KIND_NONE && pql == 0) {
       /* 結果がまだ多次元配列の「行」(要素サイズ es が次段ストライド inner_ds より
        * 大きい) なら pointee_fp_kind に伝播して次段 subscript を fp load にする。
        * 最終スカラ要素 (es <= inner_ds、または inner_ds==0) なら base.fp_kind。
        * 1D の `float *a` 仮引数は inner_ds=elem_size が立つことがあるので es>inner_ds
        * で「多次元の中間」かどうかを区別する。 */
-      if (inner_ds > 0 && es > inner_ds) {
+      if ((inner_ds > 0 && es > inner_ds) || is_vla_row) {
         deref->pointee_fp_kind = arr_pointee_fp;
       } else if (inner_ds == 0 && bds > 0) {
         /* 関数ポインタ配列の要素 (`double (*ops[N])(double)` の `ops[i]`): 要素は

@@ -428,12 +428,17 @@ static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_di
  * consume_decl_name_recursive が paren-array を消費するときにセットする。 */
 static int g_paren_array_first_dim = 0;
 static int g_paren_array_dim_count = 0;
+/* `int (*p)[m]` (配列へのポインタの VLA 形) の先頭次元のランタイム式。非 NULL なら
+ * registration が pointer-to-VLA として登録し、行ストライドスロットを確保する。 */
+static node_t *g_paren_array_vla_dim = NULL;
 /* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP p;` で 2)。
  * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
 static int g_decl_base_pointer_levels = 0;
 
-static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
+/* out_vla_dim 非 NULL のとき、非定数次元 (VLA, `(*p)[m]`) を即エラーにせず先頭の 1 つを
+ * *out_vla_dim に式として捕捉する (arr_total には寄与させない)。NULL なら従来どおり定数必須。 */
+static decl_array_suffix_t parse_decl_array_suffixes_ex(int base_mul, node_t **out_vla_dim) {
   decl_array_suffix_t out = {0};
   out.arr_total = (base_mul > 0) ? base_mul : 1;
   out.is_array = (base_mul > 0);
@@ -443,15 +448,32 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   int dim_count = 0;
   while (tk_consume('[')) {
     int has_size = 0;
-    int n = parse_array_size_optional_constexpr_decl(&has_size);
+    int n = 0;
+    int is_vla_dim = 0;
+    if (out_vla_dim && curtok()->kind != TK_RBRACKET) {
+      /* VLA 許容: 式を評価し、非定数なら捕捉。 */
+      node_t *dim_node = NULL;
+      int ok = 1;
+      long long v = parse_array_size_expr_decl(&dim_node, &ok);
+      if (!ok) {
+        if (*out_vla_dim == NULL) *out_vla_dim = dim_node;  /* 先頭 VLA 次元のみ */
+        is_vla_dim = 1;
+        has_size = 1;
+      } else {
+        has_size = 1;
+        n = (int)v;
+      }
+    } else {
+      n = parse_array_size_optional_constexpr_decl(&has_size);
+    }
     if (!has_size) {
       out.has_incomplete_array = 1;
-    } else {
+    } else if (!is_vla_dim) {
       out.arr_total *= n;
       if (dim_count == 0) out.first_dim = n;
     }
     if (dim_count < 8) {
-      out.dims[dim_count] = has_size ? n : 0;
+      out.dims[dim_count] = (has_size && !is_vla_dim) ? n : 0;
     }
     dim_count++;
     out.is_array = 1;
@@ -460,6 +482,10 @@ static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
   if (dim_count > 8) dim_count = 8;
   out.dim_count = dim_count;
   return out;
+}
+
+static decl_array_suffix_t parse_decl_array_suffixes(int base_mul) {
+  return parse_decl_array_suffixes_ex(base_mul, NULL);
 }
 
 
@@ -2193,8 +2219,11 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
    * 立ててしまうと `int (**pp)(int)` 等が `(*p)[N]` 分岐で誤登録される)。 */
   if (local_had_parens && out_paren_array_mul && curtok()->kind == TK_LBRACKET) {
     /* 多次元 inner (`(*p)[N][M]`) の mid_stride 計算のため先頭次元と次元数を捕捉する。
-     * arr_total は全次元の積で従来の paren_array_mul と一致。 */
-    decl_array_suffix_t pa = parse_decl_array_suffixes(1);
+     * arr_total は全次元の積で従来の paren_array_mul と一致。
+     * 非定数次元 (`int (*p)[m]`, VLA) は g_paren_array_vla_dim に式として捕捉し、
+     * registration が pointer-to-VLA として行ストライドを実行時計算する。 */
+    g_paren_array_vla_dim = NULL;
+    decl_array_suffix_t pa = parse_decl_array_suffixes_ex(1, &g_paren_array_vla_dim);
     *out_paren_array_mul = pa.arr_total > 0 ? pa.arr_total : 1;
     g_paren_array_first_dim = pa.first_dim;
     g_paren_array_dim_count = pa.dim_count;
@@ -3092,6 +3121,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     int inner_array_mul = 0;
     g_paren_array_first_dim = 0;
     g_paren_array_dim_count = 0;
+    g_paren_array_vla_dim = NULL;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
     int var_size = is_pointer ? 8 : elem_size;
@@ -3174,6 +3204,23 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->base_deref_size = 8;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
+      } else if (paren_array_mul > 0 && g_paren_array_vla_dim != NULL) {
+        /* pointer-to-VLA `int (*p)[m]` (m はランタイム値)。行ストライド (m*elem) は
+         * コンパイル時に決まらないので、ポインタ値 + 行ストライドの隠しスロットを 16B 確保し
+         * (offset=ポインタ値, offset+8=行ストライド)、宣言時に `*(off+8)=m*elem` を init_chain に
+         * 注入する。subscript は vla_row_stride_frame_off を実行時参照する (定数版の outer_stride
+         * 相当)。outer_stride は 0 のままにして「実行時ストライド」経路に乗せる。 */
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 0, alignas_val);
+        psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
+        var->base_deref_size = (short)elem_size;
+        var->vla_row_stride_frame_off = var->offset + 8;
+        var->vla_row_stride_elem_size = (short)elem_size;
+        node_t *slot = psx_node_new_lvar_typed(var->vla_row_stride_frame_off, 8);
+        node_t *stride_val = psx_node_new_binary(ND_MUL, g_paren_array_vla_dim,
+                                                 psx_node_new_num(elem_size));
+        node_t *store = (node_t *)psx_node_new_assign(slot, stride_val);
+        init_chain = init_chain ? psx_node_new_binary(ND_COMMA, init_chain, store) : store;
+        g_paren_array_vla_dim = NULL;
       } else if (paren_array_mul > 0) {
         // (*p)[N] パターン: 配列へのポインタ
         int row_size = paren_array_mul * elem_size;

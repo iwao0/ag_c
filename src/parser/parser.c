@@ -2575,6 +2575,29 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
         var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds->elem_size;
         var->mid_stride = param_inner_second_dim * ds->elem_size;
       }
+    } else if (param_is_array_declarator && param_inner_first_dim_ident != NULL) {
+      /* pointer-to-VLA 仮引数 `int (*a)[n]` (n は先行パラメータ)。行ストライド n*elem は
+       * 実行時値なので、row stride スロットを確保し関数 entry で *[rs] = *[n]*elem を計算する
+       * (register_vla_array_param と同じ機構を再利用)。subscript は vla_row_stride_frame_off を
+       * 実行時参照する。outer_stride は 0 のまま (実行時経路)。 */
+      lvar_t *src = psx_decl_find_lvar(param_inner_first_dim_ident->str,
+                                       param_inner_first_dim_ident->len);
+      if (!src || !src->is_param) {
+        psx_diag_ctx(curtok(), "param",
+                     "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                     param_inner_first_dim_ident->len, param_inner_first_dim_ident->str);
+      } else {
+        static char rs_buf[64];
+        int rs_len = snprintf(rs_buf, sizeof(rs_buf), "__rs_%.*s", param->len, param->str);
+        char *rs_name = arena_alloc((size_t)rs_len + 1);
+        memcpy(rs_name, rs_buf, (size_t)rs_len);
+        rs_name[rs_len] = '\0';
+        lvar_t *rs = psx_decl_register_lvar_sized(rs_name, rs_len, 8, 8, 0);
+        var->is_vla = 1;
+        var->vla_row_stride_frame_off = rs->offset;
+        var->vla_row_stride_src_offset = src->offset;
+        var->vla_row_stride_elem_size = (short)ds->elem_size;
+      }
     } else if (param_ptr_levels == 1 && ds->typedef_is_array && ds->typedef_sizeof_size > 0) {
       /* `typedef int row_t[N]; row_t *a` / 多次元版 (`typedef int M[2][3][4]; M *p`)。 */
       apply_typedef_array_pointee_strides(var, ds);

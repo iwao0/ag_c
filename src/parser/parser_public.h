@@ -32,6 +32,9 @@ int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
 int ps_node_is_unsigned(node_t *n);
 int ps_node_type_size(node_t *n);
+/* pointer-to-VLA (`int (*p)[m]`) の行ストライドスロットのフレームオフセット (0=なし)。
+ * IR builder が `p++` / inc/dec のステップに実行時ストライドを使うために参照する。 */
+int psx_node_vla_row_stride_frame_off(node_t *n);
 
 /* グローバル変数リスト走査 (Phase C3)。
  * codegen は global_vars リストを直接舐めず、本 visitor 経由で iterate する。

@@ -2105,7 +2105,8 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
   /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
    * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
   long long step = 1;
-  if (ps_node_is_pointer(target)) {
+  int vla_rsf = ps_node_is_pointer(target) ? psx_node_vla_row_stride_frame_off(target) : 0;
+  if (ps_node_is_pointer(target) && vla_rsf == 0) {
     int ds = ps_node_deref_size(target);
     if (ds > 1) step = ds;
   }
@@ -2119,6 +2120,17 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
     binop = is_inc ? IR_FADD : IR_FSUB;
     int one_v = emit_load_imm(ctx, 1, IR_TY_I32);
     step_val = coerce_to_type(ctx, ir_val_vreg(one_v, IR_TY_I32), vty);
+  } else if (vla_rsf != 0) {
+    /* pointer-to-VLA (`int (*p)[m]; p++`): ステップ = 実行時行ストライド。スロットから
+     * load した値を加減算する (定数 deref_size は 0 で使えない)。 */
+    binop = is_inc ? IR_ADD : IR_SUB;
+    int rs_ptr = address_of_lvar(ctx, vla_rsf);
+    int v_rs = ir_func_new_vreg(ctx->f);
+    ir_inst_t *ldrs = ir_inst_new(IR_LOAD);
+    ldrs->dst = ir_val_vreg(v_rs, vty);
+    ldrs->src1 = ir_val_vreg(rs_ptr, IR_TY_PTR);
+    ir_func_append_inst(ctx->f, ldrs);
+    step_val = ir_val_vreg(v_rs, vty);
   } else {
     binop = is_inc ? IR_ADD : IR_SUB;
     step_val = ir_val_imm(vty, step);

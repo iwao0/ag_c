@@ -237,6 +237,27 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
   }
 }
 
+/* pointer-to-VLA (`int (*p)[m]`) の行ストライドスロット (実行時値) のフレームオフセット。
+ * 無ければ 0。ポインタ算術 (`p + 1`) のスケールに使う。ND_ADD/SUB は被演算子を辿る。 */
+int psx_node_vla_row_stride_frame_off(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.vla_row_stride_frame_off;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ADDR:
+      return as_mem(node)->vla_row_stride_frame_off;
+    case ND_ADD:
+    case ND_SUB: {
+      int l = psx_node_vla_row_stride_frame_off(node->lhs);
+      if (l != 0) return l;
+      return psx_node_vla_row_stride_frame_off(node->rhs);
+    }
+    default:
+      return 0;
+  }
+}
+
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer) {
   token_kind_t kind = TK_EOF;
   char *name = NULL;
