@@ -2736,6 +2736,32 @@ static node_t *build_pre_inc_dec_node(node_kind_t kind, const char *op) {
   return node;
 }
 
+/* operand が指す pointee が unsigned か。`unsigned char *p` の `*p` / `*(p+i)` を
+ * zero-extend load させるため、ポインタ算術 (ND_ADD/SUB) や inc/dec を辿って pointee の
+ * unsigned 性を引く (psx_node_pointee_fp_kind と対称)。これがないと `*(p+2)` が ldrsb で
+ * 符号拡張されていた。 */
+static int node_pointee_is_unsigned(node_t *n) {
+  if (!n) return 0;
+  switch (n->kind) {
+    case ND_LVAR: return as_lvar(n)->mem.pointee_is_unsigned;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ADDR:
+    case ND_PTR_CAST:
+      return ((node_mem_t *)n)->pointee_is_unsigned;
+    case ND_ADD:
+    case ND_SUB:
+      return node_pointee_is_unsigned(n->lhs) || node_pointee_is_unsigned(n->rhs);
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return node_pointee_is_unsigned(n->lhs);
+    default:
+      return 0;
+  }
+}
+
 // `*operand` を表す ND_DEREF ノードを構築する。tag/pointer-qual の伝播も行う。
 static node_t *build_unary_deref_node(node_t *operand) {
   /* C11 6.5.3.2p2: 単項 `*` のオペランドはポインタ型でなければならない。
@@ -2794,12 +2820,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
   /* `unsigned *p` の `*p`: pointee が unsigned なら deref 結果も unsigned
    * (zero-extend load)。pointee_is_unsigned は build_lvar_or_vla_node が立てる。 */
   if (pql <= 1) {
-    int pointee_uns = 0;
-    if (operand->kind == ND_LVAR) pointee_uns = as_lvar(operand)->mem.pointee_is_unsigned;
-    else if (operand->kind == ND_GVAR || operand->kind == ND_DEREF ||
-             operand->kind == ND_ADDR || operand->kind == ND_PTR_CAST)
-      pointee_uns = ((node_mem_t *)operand)->pointee_is_unsigned;
-    if (pointee_uns) node->is_unsigned = 1;
+    if (node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
   }
   if (pql >= 2) {
     node->is_pointer = 1;
@@ -3330,11 +3351,16 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
         deref->pointee_is_bool = 1;
       }
     }
-    /* unsigned 配列/ポインタの subscript 結果: 最終要素なら is_unsigned (zero-extend
-     * load)、中間配列なら次段へ pointee_is_unsigned を伝播。 */
+    /* unsigned 配列/ポインタの subscript 結果: 最終スカラ要素なら is_unsigned
+     * (zero-extend load)、中間 (まだ配列の行 / ポインタ) なら次段へ pointee_is_unsigned
+     * を伝播。最終スカラ判定は「結果がポインタでなく、かつ多次元の中間行 (es>inner_ds)
+     * でない」。旧条件 `pql==0 && inner_ds==0` は `unsigned char *p` のように単段ポインタ
+     * で pql=1 / inner_ds=elem(1) になるケースを最終要素と認識できず、`p[i]` が ldrsb で
+     * 符号拡張されていた (es>inner_ds 判定は fp の中間行判定と対称)。 */
     if (base_mem && base_mem->pointee_is_unsigned) {
-      if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
-      else                           deref->pointee_is_unsigned = 1;
+      int is_final_scalar = !deref->is_pointer && !(inner_ds > 0 && es > inner_ds);
+      if (is_final_scalar) deref->is_unsigned = 1;
+      else                 deref->pointee_is_unsigned = 1;
     }
     /* `unsigned char *g(); g()[i]`: 関数のポインタ戻り値の pointee が unsigned なら
      * zero-extend load させる (base_mem は ND_FUNCALL を拾わないので別途)。 */

@@ -252,6 +252,8 @@ typedef struct {
   // 宣言子側の `*` (param_is_ptr) と合成して実効ポインタ性を決める。非ポインタは 0。
   int base_is_pointer;
   int base_pointer_levels;
+  // 基底型が unsigned か (`unsigned char* p` の pointee zero-extend に使う)。
+  int is_unsigned;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -2588,6 +2590,10 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     int pointee_size = (param_ptr_levels >= 2) ? 8 : ds->elem_size;
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
     var->base_deref_size = (short)ds->elem_size;
+    /* `unsigned char *p` / `unsigned short *p` 等: pointee が unsigned なら is_unsigned を
+     * 立てる。build_lvar_or_vla_node が pointee_is_unsigned へ伝播し、`*p` / `p[i]` が
+     * zero-extend load (ldrb/ldrh) になる。未設定だと符号拡張で値が化けていた。 */
+    var->is_unsigned = ds->is_unsigned ? 1 : 0;
     /* `long *a` / `unsigned long *a` / scalar `T **a` のように pointee が 8 バイトの
      * ポインタ仮引数は size==elem_size==8 となり、lvar_is_pointer の size>elem_size
      * 判定に漏れる。pointer_qual_levels を立ててポインタと認識させ subscript `a[i]`
@@ -2806,6 +2812,7 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
   token_kind_t param_type_kind = psx_consume_type_kind();
   if (param_type_kind != TK_EOF) {
     out->base_type_kind = param_type_kind;
+    out->is_unsigned = (param_type_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
     if (param_type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
     else if (param_type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
@@ -2863,6 +2870,7 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
         int lv = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
         out->base_pointer_levels = (lv > 0) ? lv : 1;
       }
+      if (_ti.is_unsigned) out->is_unsigned = 1;
     }
     set_curtok(curtok()->next);
   }
