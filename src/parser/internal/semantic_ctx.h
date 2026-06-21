@@ -173,6 +173,10 @@ int psx_ctx_get_function_ret_is_complex(char *name, int len);
 void psx_ctx_set_function_param_fp_kind(char *name, int len, int param_idx,
                                          tk_float_kind_t fp_kind);
 tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int param_idx);
+/* 仮引数 i が整数スカラのときの幅 (4/8、0 = 非整数) を記録/取得。呼び出し側 IR が
+ * fp 実引数→整数仮引数の暗黙変換に F2I キャストを挿入するために使う。 */
+void psx_ctx_set_function_param_int_size(char *name, int len, int param_idx, int size);
+int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx);
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 /* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での

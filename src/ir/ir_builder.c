@@ -1699,6 +1699,14 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           if (pfk != TK_FLOAT_KIND_NONE) {
             ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
             cv = coerce_to_type(ctx, cv, target);
+          } else if (is_fp_type(cv.type)) {
+            /* 整数仮引数に fp 実引数を渡す: F2I (fcvtzs) で切り詰める
+             * (`eat_int(7.9)` → 7)。仮引数幅が long(8) なら i64、それ以外は i32。
+             * 幅が未記録 (extern プロトタイプのみ等) のときは int 既定 (i32)。 */
+            int psz = psx_ctx_get_function_param_int_size(
+                fn->funcname, fn->funcname_len, i);
+            ir_type_t target = (psz == 8) ? IR_TY_I64 : IR_TY_I32;
+            cv = coerce_to_type(ctx, cv, target);
           }
         }
         cargs[argc++] = cv;

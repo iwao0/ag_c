@@ -1089,6 +1089,7 @@ static const test_case_t test_cases[] = {
     {"probes", "generic_complex_derived_type", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_complex_derived_type.c", 0, 0},
     {"probes", "generic_complex_derived_type_global", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c", 0, 0},
     {"probes", "generic_streaming_lookahead", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_streaming_lookahead.c", 0, 0},
+    {"probes", "fp_arg_to_int_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_arg_to_int_param.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

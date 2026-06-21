@@ -140,6 +140,11 @@ struct func_name_t {
    * 変換なし — 既存挙動)。 */
   unsigned char param_fp_kinds[16];
   int param_fp_kinds_count;
+  /* 仮引数 i が整数スカラのときの幅 (1/2/4 → 4, 8 → 8、0 = 非整数/未記録)。
+   * 呼び出し側 IR builder が `f(7.9)` のような fp 実引数を整数仮引数に渡すケースで
+   * F2I (fcvtzs) を挿入するために使う。fp_kind と排他 (fp 仮引数は 0)。 */
+  unsigned char param_int_sizes[16];
+  int param_int_sizes_count;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -1096,6 +1101,24 @@ tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int para
   if (!f) return TK_FLOAT_KIND_NONE;
   if (param_idx < 0 || param_idx >= f->param_fp_kinds_count) return TK_FLOAT_KIND_NONE;
   return (tk_float_kind_t)f->param_fp_kinds[param_idx];
+}
+
+void psx_ctx_set_function_param_int_size(char *name, int len, int param_idx,
+                                         int size) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  if (param_idx < 0 || param_idx >= 16) return;
+  f->param_int_sizes[param_idx] = (unsigned char)size;
+  if (param_idx + 1 > f->param_int_sizes_count) {
+    f->param_int_sizes_count = param_idx + 1;
+  }
+}
+
+int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return 0;
+  if (param_idx < 0 || param_idx >= f->param_int_sizes_count) return 0;
+  return (int)f->param_int_sizes[param_idx];
 }
 
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed) {
