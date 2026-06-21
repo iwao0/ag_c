@@ -810,7 +810,7 @@ static int is_toplevel_function_signature(token_t *tok) {
   } else {
     return 0;
   }
-  while (t && t->kind == TK_MUL) t = t->next;
+  while (t && (t->kind == TK_MUL || t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next; // `*` と pointer 修飾子 (`int *const f()`)
   if (!t) return 0;
   if (t->kind == TK_IDENT) {
     return t->next && t->next->kind == TK_LPAREN;
@@ -879,7 +879,7 @@ static int is_tag_return_function_signature(token_t *tok) {
     }
     if (!t) return 0;
   }
-  while (t && t->kind == TK_MUL) t = t->next; // skip optional pointer(s)
+  while (t && (t->kind == TK_MUL || t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next; // `*` と pointer 修飾子 (`int *const f()`) // skip optional pointer(s)
   if (!t) return 0;
   if (t->kind == TK_IDENT) {
     return t->next && t->next->kind == TK_LPAREN;
@@ -2897,6 +2897,12 @@ static void parse_pointer_suffix_flags(int *out_is_ptr) {
   while (curtok()->kind == TK_MUL) {
     set_curtok(curtok()->next);
     if (out_is_ptr) *out_is_ptr = 1;
+    /* ポインタ修飾子 `int *const f()` / `int *volatile f()` の const/volatile を読み飛ばす。
+     * これがないと戻り型の `*` の後の const で declarator が止まり E2006 になっていた
+     * (ag_c は値の正しさのみ対象なので修飾子はパースして捨てる)。 */
+    while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
+      set_curtok(curtok()->next);
+    }
   }
 }
 
