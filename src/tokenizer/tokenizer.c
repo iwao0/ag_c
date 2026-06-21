@@ -11,6 +11,7 @@
 #include "punctuator.h"
 #include "scanner.h"
 #include "trigraph.h"
+#include <setjmp.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -554,6 +555,23 @@ void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *
   s->done = false;
 }
 
+/* `#if 0` 偽分岐の読み飛ばし中は、トークナイズ不能な文字 (` @ $) ・未終端リテラル
+ * (`don't` の `'`, 閉じない `"`) ・不正数値 (`123abc`) で即エラーにせず、当該トークンを
+ * 1 文字の TK_UNKNOWN にして進める。C の翻訳フェーズ 3 では偽分岐の中身も pp-token に分解
+ * されるだけで、これらはフェーズ 7 まで到達しないのでエラーにならない。プリプロセッサが
+ * pps_skip_cond_incl / pps_materialize_line の先読み区間だけ true にする。
+ * scanner が出す各種 TK_DIAG_* は (寛容モード中のみ) longjmp で tk_stream_next へ巻き戻る。 */
+static bool g_tolerate_untokenizable = false;
+static jmp_buf g_tok_tolerate_jmp;
+static bool g_tok_jmp_valid = false;  // setjmp 済みで longjmp 可能な区間か
+void tk_set_tolerate_untokenizable(bool v) { g_tolerate_untokenizable = v; }
+
+/* TK_DIAG_* マクロから呼ばれる。寛容モードかつ tokenize_one 実行中なら、エラーを出さず
+ * tk_stream_next の setjmp 地点へ巻き戻す (戻らない)。それ以外は何もしない (通常診断へ続く)。 */
+void tk_tolerate_longjmp_if_active(void) {
+  if (g_tolerate_untokenizable && g_tok_jmp_valid) longjmp(g_tok_tolerate_jmp, 1);
+}
+
 /* 次の 1 トークンを切り出して返す。入力末尾では TK_EOF を 1 度だけ返し、以降は NULL。
  * 返すトークンの ->next は未設定 (呼び出し側が連結する)。 */
 token_t *tk_stream_next(tk_token_stream_t *s) {
@@ -569,11 +587,34 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
       return local_head.next;
     }
     tokenize_flags_t flags = take_tokenize_flags(&s->at_bol, &s->has_space);
-    if (tokenize_one(&s->p, &cur, s->line_no, flags)) {
+    if (!g_tolerate_untokenizable) {
+      if (tokenize_one(&s->p, &cur, s->line_no, flags)) {
+        return local_head.next;
+      }
+      TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, s->p, "%s",
+                  diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
+    }
+    /* 寛容モード: scanner のエラーを longjmp で受け、トークン先頭の 1 文字を TK_UNKNOWN
+     * にして進める (volatile は longjmp 後も値を保つため)。 */
+    char *volatile tok_start = s->p;
+    volatile bool v_at_bol = flags.at_bol;
+    volatile bool v_has_space = flags.has_space;
+    if (setjmp(g_tok_tolerate_jmp) != 0) {
+      g_tok_jmp_valid = false;
+      s->p = tok_start + 1;
+      new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
       return local_head.next;
     }
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, s->p, "%s",
-                diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
+    g_tok_jmp_valid = true;
+    bool ok = tokenize_one(&s->p, &cur, s->line_no, flags);
+    g_tok_jmp_valid = false;
+    if (ok) {
+      return local_head.next;
+    }
+    /* tokenize_one が false (トークナイズ不能文字): 1 文字を TK_UNKNOWN に。 */
+    s->p = tok_start + 1;
+    new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
+    return local_head.next;
   }
 }
 

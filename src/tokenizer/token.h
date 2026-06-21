@@ -58,6 +58,8 @@ typedef enum {
 // トークンの種類
 typedef enum {
   TK_EOF,      // 入力の終わりを表すトークン
+  TK_UNKNOWN,  // トークナイズ不能な単一文字 (` @ $ 等)。`#if 0` 偽分岐でのみ生成され捨てられる。
+               // active code では tk_stream_next が即 E2028 を出すのでパーサには到達しない。
   TK_IDENT,    // 識別子
   TK_NUM,      // 数値トークン
   TK_STRING,   // 文字列リテラル

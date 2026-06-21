@@ -148,6 +148,12 @@ typedef struct tk_token_stream tk_token_stream_t;
 void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *in);
 token_t *tk_stream_next(tk_token_stream_t *s);
 void tk_stream_close(tk_token_stream_t *s);
+/* true の間、トークナイズ不能な文字 (` @ $) ・未終端リテラル・不正数値で即エラーにせず
+ * TK_UNKNOWN として 1 文字進める。プリプロセッサが `#if 0` 偽分岐の読み飛ばし・行先読み中
+ * だけ立てる (中身はどうせ捨てる)。 */
+void tk_set_tolerate_untokenizable(bool v);
+/* TK_DIAG_* マクロ内部用: 寛容モード中なら tk_stream_next の setjmp 地点へ巻き戻す。 */
+void tk_tolerate_longjmp_if_active(void);
 /* ヒープ確保版 (不透明な構造体をポインタで保持したい呼び出し側用)。 */
 tk_token_stream_t *tk_stream_new(tokenizer_context_t *ctx, const char *in);
 void tk_stream_delete(tk_token_stream_t *s);

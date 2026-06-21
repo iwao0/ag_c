@@ -98,6 +98,7 @@ const char *tk_token_kind_str(token_kind_t kind, int *len) {
     case TK_HASHHASH: s = "##"; break;
     case TK_DOT: s = "."; break;
     case TK_EOF: s = "EOF"; break;
+    case TK_UNKNOWN: s = "<unknown>"; break;
     default: s = NULL; break;
   }
   if (len) *len = s ? (int)strlen(s) : 0;

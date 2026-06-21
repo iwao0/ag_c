@@ -1950,12 +1950,18 @@ static token_t *pps_make_eof(token_t *ref) {
 static token_t *pps_materialize_line(pp_stream_t *s, token_t *first) {
   token_t *cur = first;
   while (cur->next) cur = cur->next;   // first が既に鎖を持つ場合 (# -> name) に対応
+  /* 行末検出のため次行の先頭トークンを 1 つ先読みする。その先読み先が `#if 0` 偽分岐の
+   * 先頭でトークナイズ不能文字 (` @ $) だと、スキップ開始前にここで tokenize されて E2028 に
+   * なる。先読み区間はトークナイズ不能文字を許容 (TK_UNKNOWN 化) し、偽分岐なら後段の skip が
+   * 捨て、active なら pps_step が出力時に E2028 を出す。 */
+  tk_set_tolerate_untokenizable(true);
   for (;;) {
     token_t *nx = pps_pull_raw(s);
     if (!nx) break;                    // 入力末尾
     if (nx->kind == TK_EOF || nx->at_bol) { pps_pushback_one(s, nx); break; }
     cur->next = nx; cur = nx;
   }
+  tk_set_tolerate_untokenizable(false);
   cur->next = pps_make_eof(first);
   return first;
 }
@@ -1982,7 +1988,7 @@ static token_t *pps_materialize_balanced(pp_stream_t *s, token_t *lparen) {
 /* 偽 #if 分岐の読み飛ばし (pull-and-discard)。BOL の #if 入れ子を数え、対応する
  * #else/#elif/#endif でその指令行を materialize して pushback し、次の pps_step に再 dispatch
  * させる。読み飛ばしたトークンは出力に載らないので window 解放で回収される。 */
-static void pps_skip_cond_incl(pp_stream_t *s) {
+static void pps_skip_cond_incl_impl(pp_stream_t *s) {
   int nest = 0;
   for (;;) {
     token_t *tok = pps_pull_raw(s);
@@ -2014,6 +2020,15 @@ static void pps_skip_cond_incl(pp_stream_t *s) {
     }
     /* それ以外のトークンは捨てる (偽分岐内)。 */
   }
+}
+
+/* 偽分岐の読み飛ばし中はトークナイズ不能文字 (` @ $ 等) を許容する (C 翻訳フェーズ 3: 偽分岐の
+ * 中身は単一文字 pp-token に分解されるだけでよい)。読み飛ばしは生トークンを pull して捨てる
+ * ので、ここで tk_set_tolerate_untokenizable を立てておけば偽分岐内の非C 文字でエラーにならない。 */
+static void pps_skip_cond_incl(pp_stream_t *s) {
+  tk_set_tolerate_untokenizable(true);
+  pps_skip_cond_incl_impl(s);
+  tk_set_tolerate_untokenizable(false);
 }
 
 /* ストリーミング版の条件指令ハンドラ。式評価/スタック操作はバッチの補助関数を再利用し、
@@ -2260,6 +2275,13 @@ static int pps_step(pp_stream_t *s) {
       }
     }
     free(name);
+  }
+  if (tok->kind == TK_UNKNOWN) {
+    /* TK_UNKNOWN は `#if 0` 偽分岐の先読み等で許容生成された「トークナイズ不能文字」。
+     * ここまで来た＝active コードに現れたということなので、翻訳フェーズ 7 相当で E2028。
+     * (偽分岐内のものは skip が捨てるのでここには到達しない。) */
+    diag_emit_tokf(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, tok, "%s",
+                   diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
   }
   pps_append(s, tok);  // 通過 (raw トークンを再利用)
   return 1;
