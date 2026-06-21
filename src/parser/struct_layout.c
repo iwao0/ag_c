@@ -233,12 +233,16 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         }
         if (has_member_name) {
           int storage_type_size = bf_storage_type_size > 0 ? bf_storage_type_size : 4;
-          psx_ctx_add_tag_member_bf(tag_kind, tag_name, tag_len,
-                                    head.member->str, head.member->len,
-                                    tag_kind == TK_UNION ? 0 : bf_storage_offset,
-                                    storage_type_size, 0, 0,
-                                    TK_EOF, NULL, 0, 0,
-                                    bit_width, bit_field_offset_in_storage, is_signed_type);
+          tag_member_info_t _mi = {0};
+          _mi.name = head.member->str;
+          _mi.len = head.member->len;
+          _mi.offset = (tag_kind == TK_UNION) ? 0 : bf_storage_offset;
+          _mi.type_size = storage_type_size;
+          _mi.tag_kind = TK_EOF;
+          _mi.bit_width = bit_width;
+          _mi.bit_offset = bit_field_offset_in_storage;
+          _mi.bit_is_signed = is_signed_type;
+          psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
           member_count++;
         }
         if (!tk_consume(',')) break;
@@ -277,10 +281,18 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int member_len = has_member_name ? head.member->len : 0;
       int member_array_len = (arr_size <= 1) ? 0 : arr_size;
       if (has_member_name || (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
-        psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
-                               member_name, member_len, off, head.is_ptr ? 8 : elem_size, deref_size,
-                               member_array_len,
-                               member_tag_kind, member_tag_name, member_tag_len, head.is_ptr ? 1 : 0);
+        tag_member_info_t _mi = {0};
+        _mi.name = member_name;
+        _mi.len = member_len;
+        _mi.offset = off;
+        _mi.type_size = head.is_ptr ? 8 : elem_size;
+        _mi.deref_size = deref_size;
+        _mi.array_len = member_array_len;
+        _mi.tag_kind = member_tag_kind;
+        _mi.tag_name = member_tag_name;
+        _mi.tag_len = member_tag_len;
+        _mi.is_tag_pointer = head.is_ptr ? 1 : 0;
+        psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
                                           member_name, member_len, member_fp_kind);
@@ -326,10 +338,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           tag_member_info_t im = {0};
           if (psx_ctx_get_tag_member_info(member_tag_kind, member_tag_name, member_tag_len, i, &im)) {
             if (im.len == 0) continue; /* 匿名同士の連鎖は今回対象外 */
-            psx_ctx_add_tag_member(tag_kind, tag_name, tag_len,
-                                   im.name, im.len, off + im.offset,
-                                   im.type_size, im.deref_size, im.array_len,
-                                   im.tag_kind, im.tag_name, im.tag_len, im.is_tag_pointer);
+            tag_member_info_t _mi = im;
+            _mi.offset = off + im.offset;
+            _mi.bit_width = 0;  /* 旧非bf版と同じく昇格メンバの bitfield 情報は持ち込まない */
+            _mi.bit_offset = 0;
+            _mi.bit_is_signed = 0;
+            psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
             /* 昇格メンバの fp_kind / is_bool / is_unsigned / outer_stride も伝播する。
              * add_tag_member は基本属性のみ渡すため、これがないと匿名 union/struct の
              * float/double メンバ (`struct { union { int n; float f; }; };` の f) が

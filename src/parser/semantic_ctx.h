@@ -20,17 +20,6 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
 void psx_ctx_set_pending_tag_align(int align);
 int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
-void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                            char *member_name, int member_len, int offset,
-                            int type_size, int deref_size, int array_len,
-                            token_kind_t member_tag_kind, char *member_tag_name,
-                            int member_tag_len, int member_is_tag_pointer);
-void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
-                               char *member_name, int member_len, int offset,
-                               int type_size, int deref_size, int array_len,
-                               token_kind_t member_tag_kind, char *member_tag_name,
-                               int member_tag_len, int member_is_tag_pointer,
-                               int bit_width, int bit_offset, int bit_is_signed);
 /* struct/union メンバの float/double 種別を後付けで設定する。
  * 取得は psx_ctx_get_tag_member_info / _find_tag_member_info 経由。 */
 void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -80,6 +69,12 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
 bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
                                    char *member_name, int member_len,
                                    tag_member_info_t *out);
+/* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
+ * m の name/len/offset/type_size/deref_size/array_len/tag_*(メンバのネストタグ)/
+ * is_tag_pointer/bit_width/bit_offset/bit_is_signed を読む。fp_kind/is_bool/is_unsigned/
+ * outer_stride は add 時には使わず、別 setter (psx_ctx_set_tag_member_*) で後付けする。 */
+void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                            const tag_member_info_t *m);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);

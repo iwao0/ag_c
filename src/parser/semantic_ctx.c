@@ -383,31 +383,27 @@ int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len) {
   return (t && t->align > 0) ? t->align : -1;
 }
 
-void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_len,
-                               char *member_name, int member_len, int offset,
-                               int type_size, int deref_size, int array_len,
-                               token_kind_t member_tag_kind, char *member_tag_name,
-                               int member_tag_len, int member_is_tag_pointer,
-                               int bit_width, int bit_offset, int bit_is_signed) {
+void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                            const tag_member_info_t *desc) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+                     psx_ctx_hash_name(desc->name, desc->len)) & (PCTX_HASH_BUCKETS - 1u);
   for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
     if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
+        m->member_len == desc->len &&
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0 &&
+        strncmp(m->member_name, desc->name, (size_t)desc->len) == 0 &&
         m->scope_depth == tag_scope_depth) {
-      m->offset = offset;
-      m->type_size = type_size;
-      m->deref_size = deref_size;
-      m->array_len = array_len;
-      m->member_tag_kind = member_tag_kind;
-      m->member_tag_name = member_tag_name;
-      m->member_tag_len = member_tag_len;
-      m->member_is_tag_pointer = member_is_tag_pointer;
-      m->bit_width = bit_width;
-      m->bit_offset = bit_offset;
-      m->bit_is_signed = bit_is_signed;
+      m->offset = desc->offset;
+      m->type_size = desc->type_size;
+      m->deref_size = desc->deref_size;
+      m->array_len = desc->array_len;
+      m->member_tag_kind = desc->tag_kind;
+      m->member_tag_name = desc->tag_name;
+      m->member_tag_len = desc->tag_len;
+      m->member_is_tag_pointer = desc->is_tag_pointer;
+      m->bit_width = desc->bit_width;
+      m->bit_offset = desc->bit_offset;
+      m->bit_is_signed = desc->bit_is_signed;
       return;
     }
   }
@@ -415,35 +411,23 @@ void psx_ctx_add_tag_member_bf(token_kind_t tag_kind, char *tag_name, int tag_le
   m->tag_kind = tag_kind;
   m->tag_name = tag_name;
   m->tag_len = tag_len;
-  m->member_name = member_name;
-  m->member_len = member_len;
-  m->offset = offset;
-  m->type_size = type_size;
-  m->deref_size = deref_size;
-  m->array_len = array_len;
-  m->member_tag_kind = member_tag_kind;
-  m->member_tag_name = member_tag_name;
-  m->member_tag_len = member_tag_len;
-  m->member_is_tag_pointer = member_is_tag_pointer;
-  m->bit_width = bit_width;
-  m->bit_offset = bit_offset;
-  m->bit_is_signed = bit_is_signed;
+  m->member_name = desc->name;
+  m->member_len = desc->len;
+  m->offset = desc->offset;
+  m->type_size = desc->type_size;
+  m->deref_size = desc->deref_size;
+  m->array_len = desc->array_len;
+  m->member_tag_kind = desc->tag_kind;
+  m->member_tag_name = desc->tag_name;
+  m->member_tag_len = desc->tag_len;
+  m->member_is_tag_pointer = desc->is_tag_pointer;
+  m->bit_width = desc->bit_width;
+  m->bit_offset = desc->bit_offset;
+  m->bit_is_signed = desc->bit_is_signed;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
   tag_members_by_bucket[bucket] = m;
-}
-
-void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                            char *member_name, int member_len, int offset,
-                            int type_size, int deref_size, int array_len,
-                            token_kind_t member_tag_kind, char *member_tag_name,
-                            int member_tag_len, int member_is_tag_pointer) {
-  psx_ctx_add_tag_member_bf(tag_kind, tag_name, tag_len,
-                            member_name, member_len, offset,
-                            type_size, deref_size, array_len,
-                            member_tag_kind, member_tag_name, member_tag_len,
-                            member_is_tag_pointer, 0, 0, 0);
 }
 
 /* 以下 5 関数は統合 API (psx_ctx_get_tag_member_info / _find_tag_member_info)
