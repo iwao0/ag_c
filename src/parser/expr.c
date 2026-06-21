@@ -3369,6 +3369,19 @@ static node_t *parse_call_postfix(node_t *callee) {
     }
     tk_expect(')');
   }
+  /* 関数ポインタ経由呼び出し `fp(3)`: fp 仮引数に整数実引数を渡したら昇格する。
+   * 直接呼び出しは ir_builder が coerce するが、間接は funcptr 変数が仮引数型を
+   * 持つ必要があるため、宣言時に記録した funcptr_param_fp_mask を見て parser 側で
+   * wrap_to_fp する (既に fp の実引数なら no-op)。ローカル funcptr lvar のみ対応。 */
+  if (callee && callee->kind == ND_LVAR) {
+    lvar_t *fpv = psx_decl_find_lvar_by_offset(((node_lvar_t *)callee)->offset);
+    if (fpv && fpv->funcptr_param_fp_mask) {
+      for (int i = 0; i < nargs && i < 8; i++) {
+        tk_float_kind_t pfk = (tk_float_kind_t)((fpv->funcptr_param_fp_mask >> (2 * i)) & 3u);
+        if (pfk != TK_FLOAT_KIND_NONE) node->args[i] = wrap_to_fp(node->args[i], pfk);
+      }
+    }
+  }
   node->nargs = nargs;
   return (node_t *)node;
 }

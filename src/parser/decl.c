@@ -2068,6 +2068,10 @@ static node_t *parse_union_initializer(lvar_t *var) {
  * (`int (*f)(int, ...)` の経由呼び出しで variadic ABI を選ぶため)。 */
 static int g_last_funcptr_is_variadic = 0;
 static int g_last_funcptr_nfixed = 0;
+/* 関数ポインタの各仮引数が float/double スカラかを 2bit ずつ (0=非fp / 1=float /
+ * 2=double) で記録。`double (*fp)(double)` のような funcptr に int 実引数を渡すとき、
+ * 経由呼び出しでも昇格できるようにする (最大 8 引数)。 */
+static unsigned short g_last_funcptr_param_fp_mask = 0;
 
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
@@ -2075,18 +2079,38 @@ static void skip_func_params(void) {
   int ncommas = 0;       /* depth==1 のカンマ数 */
   int saw_ellipsis = 0;
   int fixed_before_ellipsis = 0;
+  unsigned short fp_mask = 0;
+  int param_idx = 0;     /* 現在の仮引数 index */
+  int cur_fp = 0;        /* 0=未 / 1=float / 2=double */
+  int cur_disq = 0;      /* * / [ / ( を含む = スカラ fp でない */
   while (depth > 0) {
     token_kind_t k = curtok()->kind;
     if (k == TK_EOF) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
     }
-    if (k == TK_LPAREN) depth++;
-    else if (k == TK_RPAREN) depth--;
-    else if (k == TK_COMMA && depth == 1) ncommas++;
+    if (k == TK_LPAREN) { if (depth == 1) cur_disq = 1; depth++; }
+    else if (k == TK_RPAREN) {
+      depth--;
+      if (depth == 0) {  /* 最後の仮引数を確定 */
+        if (cur_fp && !cur_disq && param_idx < 8)
+          fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
+      }
+    }
+    else if (k == TK_COMMA && depth == 1) {
+      ncommas++;
+      if (cur_fp && !cur_disq && param_idx < 8)
+        fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
+      param_idx++; cur_fp = 0; cur_disq = 0;
+    }
     else if (k == TK_ELLIPSIS && depth == 1) {
       saw_ellipsis = 1;
       fixed_before_ellipsis = ncommas;  /* `...` 前のカンマ数 = 固定引数数 */
+    }
+    else if (depth == 1) {
+      if (k == TK_DOUBLE) cur_fp = 2;        /* double / long double */
+      else if (k == TK_FLOAT) cur_fp = 1;
+      else if (k == TK_MUL || k == TK_LBRACKET) cur_disq = 1;  /* ポインタ/配列 */
     }
     set_curtok(curtok()->next);
   }
@@ -2094,6 +2118,7 @@ static void skip_func_params(void) {
     g_last_funcptr_is_variadic = 1;
     g_last_funcptr_nfixed = fixed_before_ellipsis;
   }
+  g_last_funcptr_param_fp_mask = fp_mask;
 }
 
 static void skip_bracket_group(void) {
@@ -2153,6 +2178,7 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
    * シグネチャ `(int, ...)` を最後に解析するので、その結果が登録側に届く。 */
   g_last_funcptr_is_variadic = 0;
   g_last_funcptr_nfixed = 0;
+  g_last_funcptr_param_fp_mask = 0;
   while (curtok()->kind == TK_LPAREN) {
     skip_func_params();
   }
@@ -3266,6 +3292,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->is_variadic_funcptr = 1;
       var->funcptr_nargs_fixed = (short)g_last_funcptr_nfixed;
     }
+    /* 関数ポインタの仮引数 fp マスク (経由呼び出しの int→fp 昇格用)。 */
+    if (is_pointer) var->funcptr_param_fp_mask = g_last_funcptr_param_fp_mask;
     /* `_Bool b = expr;` 代入/初期化時に rhs を 0/1 に正規化するため。 */
     if (decl_base_is_bool && !is_pointer) var->is_bool = 1;
     /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。

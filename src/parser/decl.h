@@ -40,6 +40,9 @@ struct lvar_t {
   // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
   unsigned int is_variadic_funcptr : 1;
   short funcptr_nargs_fixed;          // 可変長関数ポインタの固定引数数 (`...` の前)
+  // 関数ポインタの各仮引数 fp 種別 (2bit ずつ, 0=非fp/1=float/2=double, 最大8引数)。
+  // 経由呼び出し `fp(3)` で int 実引数を fp 仮引数へ昇格するのに使う。
+  unsigned short funcptr_param_fp_mask;
   // 1: _Bool 型。代入/初期化時に rhs を `(rhs != 0) ? 1 : 0` に正規化する (C11 6.3.1.2)
   unsigned int is_bool : 1;
   // _Generic で long と long long、char と signed/unsigned char を別型として扱うため
