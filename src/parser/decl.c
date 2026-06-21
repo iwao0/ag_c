@@ -49,6 +49,16 @@ static int lvar_scope_depth;
  * 抜けるときに脱落分を bucket から除去するので、bucket には可視なローカルだけが残る。 */
 #define LVAR_HASH_BUCKETS 256u
 static lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
+/* オフセット → lvar 逆引き索引 (psx_decl_find_lvar_by_offset 用)。node_lvar_t は
+ * offset だけを持つので lvar 本体を引き戻すのに使う。all_locals (関数内全ローカル) を
+ * 線形走査していたため代入のたびに O(N) かかり O(N^2) になっていた。offset は関数内で
+ * 一意 (locals_offset は単調増加) かつ all_locals はスコープ離脱で減らないので、
+ * add で挿入・関数境界の reset でクリアするだけでよい (名前索引のような除去は不要)。 */
+static lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
+
+static unsigned lvar_offset_hash(int offset) {
+  return (((unsigned)offset) * 2654435761u) >> 24;  /* Knuth 乗算ハッシュの上位 8bit */
+}
 /* スコープ一意連番。enter_scope ごとに採番し、同一スコープ内の重複宣言検出に使う
  * (同じ scope_seq を持つ変数が既にあれば C11 6.7p3 違反)。 */
 static unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
@@ -61,12 +71,15 @@ static unsigned lvar_name_hash(const char *name, int len) {
   return h & (LVAR_HASH_BUCKETS - 1u);
 }
 
-/* add 後に呼ぶ: スコープ連番を刻み、名前 bucket の先頭へ挿入する。 */
+/* add 後に呼ぶ: スコープ連番を刻み、名前 bucket とオフセット bucket の先頭へ挿入する。 */
 static void lvar_index_on_add(lvar_t *var) {
   var->scope_seq = cur_lvar_scope_seq;
   unsigned h = lvar_name_hash(var->name, var->len);
   var->next_hash = lvars_by_bucket[h];
   lvars_by_bucket[h] = var;
+  unsigned oh = lvar_offset_hash(var->offset);
+  var->next_offhash = lvars_by_offset[oh];
+  lvars_by_offset[oh] = var;
 }
 
 /* スコープ離脱時に呼ぶ: bucket から var を取り除く (通常は bucket 先頭にいる)。 */
@@ -2195,7 +2208,10 @@ void psx_decl_reset_locals(void) {
   all_locals = NULL;
   locals_offset = 0;
   lvar_scope_depth = 0;
-  for (unsigned i = 0; i < LVAR_HASH_BUCKETS; i++) lvars_by_bucket[i] = NULL;
+  for (unsigned i = 0; i < LVAR_HASH_BUCKETS; i++) {
+    lvars_by_bucket[i] = NULL;
+    lvars_by_offset[i] = NULL;
+  }
   g_lvar_scope_seq = 0;
   cur_lvar_scope_seq = 0;
   g_var_typesig_count = 0;   /* _Generic 用の型シグネチャ表も関数境界でリセット */
@@ -2233,7 +2249,10 @@ void psx_decl_reserve_variadic_regs(void) {
 lvar_t *psx_decl_get_locals(void) { return all_locals; }
 
 lvar_t *psx_decl_find_lvar_by_offset(int offset) {
-  for (lvar_t *var = all_locals; var; var = var->next_all) {
+  /* offset bucket は all_locals と同じく MRU 順なので、最初の offset 一致が
+   * 旧 all_locals 線形走査と同じ変数になる (offset 重複時の挙動も一致)。 */
+  unsigned oh = lvar_offset_hash(offset);
+  for (lvar_t *var = lvars_by_offset[oh]; var; var = var->next_offhash) {
     if (var->offset == offset) return var;
   }
   return NULL;

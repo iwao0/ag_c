@@ -11,6 +11,7 @@ struct lvar_t {
   lvar_t *next;
   lvar_t *next_all;  // 全スコープの変数リスト（未使用チェック・offset検索用）
   lvar_t *next_hash; // 名前ハッシュ表のチェーン（psx_decl_find_lvar の O(1) 化用）
+  lvar_t *next_offhash; // オフセットハッシュ表のチェーン（psx_decl_find_lvar_by_offset 用）
   unsigned scope_seq; // 宣言時スコープの一意連番（同一スコープ重複宣言チェック用）
   char *name;
   int len;
