@@ -244,13 +244,13 @@ void gen_string_literals(void) {
   /* narrow char 文字列のみ __TEXT,__cstring に置く。
    * u"..." / U"..." / L"..." は内部にゼロバイトを含み得るため __DATA,__const へ。 */
   string_lit_kind_scan_t scan = {0};
-  if (!codegen_iter_string_literals(scan_string_lit_kinds, &scan)) return;
+  if (!ps_iter_string_literals(scan_string_lit_kinds, &scan)) return;
   if (scan.has_narrow) cg_emitf(".section __TEXT,__cstring\n");
-  codegen_iter_string_literals(emit_narrow_string_literal, NULL);
+  ps_iter_string_literals(emit_narrow_string_literal, NULL);
   if (scan.has_wide) {
     cg_emitf(".section __DATA,__const\n");
     cg_emitf(".align 2\n");
-    codegen_iter_string_literals(emit_wide_string_literal, NULL);
+    ps_iter_string_literals(emit_wide_string_literal, NULL);
   }
   cg_emitf(".text\n");
 }
@@ -269,10 +269,10 @@ static void emit_one_float_literal(float_lit_t *lit, void *user) {
 }
 
 void gen_float_literals(void) {
-  if (!codegen_has_float_literals()) return;
+  if (!ps_has_float_literals()) return;
   cg_emitf(".section __DATA,__data\n");
   cg_emitf(".align 3\n");
-  codegen_iter_float_literals(emit_one_float_literal, NULL);
+  ps_iter_float_literals(emit_one_float_literal, NULL);
   cg_emitf(".text\n");
 }
 
@@ -461,7 +461,7 @@ static void emit_global_struct_array_init(global_var_t *gv) {
 }
 
 /* gen_global_vars の本体: 1 つの global_var_t を assembly directive に
- * 落とす visitor 関数 (Phase C3-2 で codegen_iter_globals に切替)。 */
+ * 落とす visitor 関数 (Phase C3-2 で ps_iter_globals に切替)。 */
 static void emit_one_global_var(global_var_t *gv, void *user) {
   (void)user;
   if (gv->is_extern_decl) return;
@@ -580,5 +580,5 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
 }
 
 void gen_global_vars(void) {
-  codegen_iter_globals(emit_one_global_var, NULL);
+  ps_iter_globals(emit_one_global_var, NULL);
 }
