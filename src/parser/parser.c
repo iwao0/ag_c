@@ -1103,31 +1103,80 @@ static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
   return slots;
 }
 
-/* グローバル struct/union の `.member` designator を解決する。
- * struct: そのメンバの flat slot index (先行メンバの slot 数の総和) を返す。
- * union : 0 を返し *out_ordinal に活性メンバ序数を入れる (codegen がその型で出力)。
- * 見つからなければ -1。 */
-static int resolve_global_member_designator(global_var_t *gv, char *mname, int mlen,
-                                            int *out_ordinal) {
-  int n = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+/* グローバル struct/union の `.member` designator 解決は resolve_member_designator_tag
+ * (tag 直接指定版) に統合した。本体 psx_gbrace_flat はネスト時の型コンテキスト ctx に対して
+ * 解決する必要があるため gv 固定版は使わない。 */
+
+static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
+
+/* ネスト brace 内の designator (`.member` / `[N]`) を解決するための「現在の brace level が
+ * 初期化している集約型」コンテキスト。これがないと `.s={.a=7}` や `.items={[2]={.a=7}}` の
+ * 内側 `.a` を最外 gv の型に対して探してしまい E3064 になっていた。 */
+typedef struct {
+  token_kind_t tag_kind;  /* struct/union タグ (要素が struct/union なら) / TK_EOF */
+  char *tag_name;
+  int tag_len;
+  int is_array;           /* この level が配列か (要素型は tag_kind) */
+} gbrace_ctx_t;
+
+/* tag 直接指定版の `.member` designator 解決 (resolve_global_member_designator の gv 非依存版)。 */
+static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
+                                         char *mname, int mlen, int *out_ordinal) {
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
   int slot = 0;
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     if (mi.len == mlen && mi.name && strncmp(mi.name, mname, (size_t)mlen) == 0) {
       if (out_ordinal) *out_ordinal = i;
-      return (gv->tag_kind == TK_UNION) ? 0 : slot;
+      return (tk == TK_UNION) ? 0 : slot;
     }
-    /* 入れ子 struct メンバは内側スカラ数だけ slot を進める (`i` は 2 slot)。 */
     slot += global_member_flat_slots(&mi);
   }
   return -1;
 }
 
-static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
+/* tag_member_info_t (designator の葉メンバ型) から子 brace のコンテキストを作る。 */
+static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
+  gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0)};
+  return c;
+}
+
+/* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
+ * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
+static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
+  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0};
+  if (ctx.is_array) {
+    /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。 */
+    c.tag_kind = ctx.tag_kind;
+    c.tag_name = ctx.tag_name;
+    c.tag_len = ctx.tag_len;
+    c.is_array = 0;
+    return c;
+  }
+  if (ctx.tag_kind == TK_STRUCT || ctx.tag_kind == TK_UNION) {
+    int n = psx_ctx_get_tag_member_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
+    int slot = 0;
+    for (int i = 0; i < n; i++) {
+      tag_member_info_t mi = {0};
+      if (!psx_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, i, &mi)) break;
+      int ms = global_member_flat_slots(&mi);
+      if (off < slot + ms) return gbrace_ctx_from_member(&mi);
+      slot += ms;
+    }
+  }
+  return c;
+}
+
+static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ctx_t ctx);
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
+  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array};
+  psx_gbrace_flat(gv, cap, start_idx, ctx);
+}
+
+static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ctx_t ctx) {
   tk_expect('{');
   if (tk_consume('}')) return;
   /* 書き込み位置はフラットな絶対 index。ネスト brace の再帰でも連続して
@@ -1136,7 +1185,22 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
    * (start_idx) から書き始める (`{.z=14, .i={12,13}}` で .i の brace を slot 0 へ)。
    * start_idx < 0 は「init_count から」を意味する (トップレベル呼出)。 */
   int cur_idx = (start_idx >= 0) ? start_idx : gv->init_count;
+  int level_start = cur_idx;  /* この brace level の先頭 slot ([N]= の絶対位置計算に使う) */
   for (;;) {
+    /* 配列レベルの positional 要素は要素境界へ揃える。直前の要素が部分初期化
+     * (`{.a=1}` で b を埋めない) でも init_count が要素途中で止まり、次要素が
+     * ずれるのを防ぐ。designator (`[N]=`) はこの後 cur_idx を再設定するので除外。 */
+    if (ctx.is_array && curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
+      int es = (ctx.tag_kind == TK_STRUCT)
+                   ? global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
+      if (es > 1) {
+        int r = (cur_idx - level_start) % es;
+        if (r != 0) cur_idx += es - r;  /* 次の要素境界へ切り上げ (隙間は後段で 0 埋め) */
+      }
+    }
+    /* この反復で初期化する部分オブジェクトの型 (ネスト brace の子コンテキスト)。
+     * 既定は positional 位置の型。designator のときは下で上書きする。 */
+    gbrace_ctx_t child = gbrace_child_at(ctx, cur_idx - level_start);
     /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
      * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
     if (curtok()->kind == TK_LBRACKET) {
@@ -1154,33 +1218,41 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
        * N にその数を掛ける (`struct P g[3]={[2]={5,6}}` の [2] は flat slot 4)。
        * scalar 要素配列は 1 slot なので従来どおり N。 */
       int elem_slots = 1;
-      if (gv->tag_kind == TK_STRUCT) {
-        elem_slots = global_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+      if (ctx.tag_kind == TK_STRUCT) {
+        elem_slots = global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
         if (elem_slots < 1) elem_slots = 1;
       }
-      cur_idx = (int)idx_val * elem_slots;
+      /* level 先頭からの絶対 slot。ネスト配列 (`.items={[2]={...}}`) では level_start を
+       * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
+      cur_idx = level_start + (int)idx_val * elem_slots;
+      /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。 */
+      child = (gbrace_ctx_t){ctx.tag_kind, ctx.tag_name, ctx.tag_len, 0};
     }
     /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
      * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
     else if (curtok()->kind == TK_DOT) {
       set_curtok(curtok()->next);
       token_ident_t *m = tk_consume_ident();
-      if (!m || gv->tag_kind == TK_EOF) {
+      if (!m || ctx.tag_kind == TK_EOF) {
         psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子が不正です");
       }
       int ordinal = 0;
-      int slot = resolve_global_member_designator(gv, m->str, m->len, &ordinal);
+      /* designator は最外 gv ではなく「現在の brace level の型」ctx に対して解決する。
+       * これがないと `.s={.a=7}` / `.items={[2]={.a=7}}` の内側 `.a` を gv の型に
+       * 探して E3064 になっていた。level_start を足して絶対 slot にする。 */
+      int slot = resolve_member_designator_tag(ctx.tag_kind, ctx.tag_name, ctx.tag_len,
+                                               m->str, m->len, &ordinal);
       if (slot < 0) {
         psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子のメンバが見つかりません");
       }
-      cur_idx = slot;
-      if (gv->tag_kind == TK_UNION) gv->union_init_ordinal = ordinal;
+      cur_idx = level_start + slot;
+      if (ctx.tag_kind == TK_UNION) gv->union_init_ordinal = ordinal;
       /* `.member[idx]` / `.member.sub` の designator チェーンを辿る (C11 6.7.9p6)。
        * 現メンバの型情報 cmi を持ち、[idx] は要素 slot 数だけ、.sub は内側メンバの
        * slot offset だけ cur_idx を進める。これがないと `struct W w={.arr[1]=7}`
        * (グローバル) が E2006 で拒否されていた。 */
       tag_member_info_t cmi = {0};
-      psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ordinal, &cmi);
+      psx_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, ordinal, &cmi);
       for (;;) {
         if (curtok()->kind == TK_LBRACKET) {
           set_curtok(curtok()->next);
@@ -1213,6 +1285,8 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
         } else break;
       }
       tk_expect('=');
+      /* designator の葉メンバ型を子 brace コンテキストにする (`.s={.a=7}` の `{...}` は struct I)。 */
+      child = gbrace_ctx_from_member(&cmi);
     }
     /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
     while (*cap <= cur_idx) {
@@ -1237,8 +1311,9 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
     }
     if (curtok()->kind == TK_LBRACE) {
       /* 入れ子 brace は外側の現在位置 cur_idx から書き始める (designator で
-       * 後方ジャンプ済みのときも正しい slot へ)。 */
-      psx_parse_global_brace_init_flat(gv, cap, cur_idx);
+       * 後方ジャンプ済みのときも正しい slot へ)。child は内側 designator を正しい型で
+       * 解決するためのコンテキスト (`.s={.a=7}` の `{...}` は struct I)。 */
+      psx_gbrace_flat(gv, cap, cur_idx, child);
       cur_idx = gv->init_count;
     } else if (curtok()->kind == TK_STRING && gv->deref_size == 1 && gv->outer_stride > 0) {
       /* 多次元 char 配列の行を文字列で初期化: `char g[2][6]={"hello","world"}`。
