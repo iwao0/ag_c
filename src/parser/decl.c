@@ -41,6 +41,43 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 #define LVAR_SCOPE_STACK_MAX 256
 static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
 static int lvar_scope_depth;
+
+/* ローカル変数の名前ハッシュ索引。`locals` 連結リストの線形走査
+ * (psx_decl_find_lvar) は識別子参照ごとに呼ばれ O(N^2) になるため、名前を
+ * バケットへハッシュして O(1) 化する。各 bucket は MRU 順 (add で先頭挿入)
+ * なので最初の名前一致が最も内側のスコープ = 正しいシャドーイング。スコープを
+ * 抜けるときに脱落分を bucket から除去するので、bucket には可視なローカルだけが残る。 */
+#define LVAR_HASH_BUCKETS 256u
+static lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
+/* スコープ一意連番。enter_scope ごとに採番し、同一スコープ内の重複宣言検出に使う
+ * (同じ scope_seq を持つ変数が既にあれば C11 6.7p3 違反)。 */
+static unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
+static unsigned g_lvar_scope_seq;     // enter_scope ごとに ++
+static unsigned cur_lvar_scope_seq;   // 現在スコープの連番
+
+static unsigned lvar_name_hash(const char *name, int len) {
+  unsigned h = 2166136261u;
+  for (int i = 0; i < len; i++) h = (h ^ (unsigned char)name[i]) * 16777619u;
+  return h & (LVAR_HASH_BUCKETS - 1u);
+}
+
+/* add 後に呼ぶ: スコープ連番を刻み、名前 bucket の先頭へ挿入する。 */
+static void lvar_index_on_add(lvar_t *var) {
+  var->scope_seq = cur_lvar_scope_seq;
+  unsigned h = lvar_name_hash(var->name, var->len);
+  var->next_hash = lvars_by_bucket[h];
+  lvars_by_bucket[h] = var;
+}
+
+/* スコープ離脱時に呼ぶ: bucket から var を取り除く (通常は bucket 先頭にいる)。 */
+static void lvar_index_on_remove(lvar_t *var) {
+  unsigned h = lvar_name_hash(var->name, var->len);
+  lvar_t **pp = &lvars_by_bucket[h];
+  while (*pp) {
+    if (*pp == var) { *pp = var->next_hash; return; }
+    pp = &(*pp)->next_hash;
+  }
+}
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
@@ -2158,6 +2195,9 @@ void psx_decl_reset_locals(void) {
   all_locals = NULL;
   locals_offset = 0;
   lvar_scope_depth = 0;
+  for (unsigned i = 0; i < LVAR_HASH_BUCKETS; i++) lvars_by_bucket[i] = NULL;
+  g_lvar_scope_seq = 0;
+  cur_lvar_scope_seq = 0;
   g_var_typesig_count = 0;   /* _Generic 用の型シグネチャ表も関数境界でリセット */
   g_decl_typespec_start = NULL;
 }
@@ -2165,15 +2205,21 @@ void psx_decl_reset_locals(void) {
 void psx_decl_enter_scope(void) {
   if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
     lvar_scope_stack[lvar_scope_depth] = locals;
+    lvar_scope_seq_stack[lvar_scope_depth] = cur_lvar_scope_seq;
   }
   lvar_scope_depth++;
+  cur_lvar_scope_seq = ++g_lvar_scope_seq;
 }
 
 void psx_decl_leave_scope(void) {
   if (lvar_scope_depth <= 0) return;
   lvar_scope_depth--;
   if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
-    locals = lvar_scope_stack[lvar_scope_depth];
+    /* このスコープで追加された変数 (locals head .. 退避点) を名前索引から外す。 */
+    lvar_t *restore = lvar_scope_stack[lvar_scope_depth];
+    for (lvar_t *v = locals; v != restore; v = v->next) lvar_index_on_remove(v);
+    locals = restore;
+    cur_lvar_scope_seq = lvar_scope_seq_stack[lvar_scope_depth];
   }
 }
 
@@ -2194,7 +2240,10 @@ lvar_t *psx_decl_find_lvar_by_offset(int offset) {
 }
 
 lvar_t *psx_decl_find_lvar(char *name, int len) {
-  for (lvar_t *var = locals; var; var = var->next) {
+  /* 名前 bucket は MRU 順 (内側スコープが先頭) かつ可視な変数のみ。
+   * 最初の名前一致が `locals` 線形走査と同じ「最も内側の見える変数」になる。 */
+  unsigned h = lvar_name_hash(name, len);
+  for (lvar_t *var = lvars_by_bucket[h]; var; var = var->next_hash) {
     if (var->len == len && memcmp(var->name, name, len) == 0) {
       return var;
     }
@@ -2208,19 +2257,12 @@ lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_siz
 
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align) {
   /* C11 6.7p3: 同一スコープで同名のオブジェクト/関数を重複宣言してはならない。
-   * 現在のスコープは locals 連結リストの head から、1 段外側のスコープに
-   * 入る直前の locals (= lvar_scope_stack[lvar_scope_depth - 1]) まで。
-   * lvar_scope_depth == 0 のとき (関数引数列など) はリスト全体を見る。
-   *
-   * psx_decl_find_lvar を使うと外側スコープまで見てしまうのでここでは
-   * 自前に scope を walk して同名を探す。 */
-  lvar_t *scope_end = (lvar_scope_depth > 0 && lvar_scope_depth <= LVAR_SCOPE_STACK_MAX)
-                         ? lvar_scope_stack[lvar_scope_depth - 1] : NULL;
-  for (lvar_t *v = locals; v != scope_end; v = v->next) {
-    if (v->len == len && memcmp(v->name, name, (size_t)len) == 0) {
-      psx_diag_duplicate_with_name(curtok(), "variable", name, len);
-      /* psx_diag_duplicate_with_name は exit するため後続には到達しない */
-    }
+   * 名前索引で最も内側の同名変数を引き、それが現在スコープ (= 同じ scope_seq) の
+   * ものなら重複。外側スコープのものはシャドーイングなので許可。 */
+  lvar_t *prev = psx_decl_find_lvar(name, len);
+  if (prev && prev->scope_seq == cur_lvar_scope_seq) {
+    psx_diag_duplicate_with_name(curtok(), "variable", name, len);
+    /* psx_diag_duplicate_with_name は exit するため後続には到達しない */
   }
 
   lvar_t *var = calloc(1, sizeof(lvar_t));
@@ -2239,6 +2281,7 @@ lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int el
   var->is_array = is_array;
   var->align_bytes = align;
   locals = var;
+  lvar_index_on_add(var);
   return var;
 }
 
@@ -2444,6 +2487,7 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
+  lvar_index_on_add(var);
   return 1;
 }
 
@@ -2590,6 +2634,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
+  lvar_index_on_add(var);
   return 1;
 }
 
@@ -2691,6 +2736,7 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
+  lvar_index_on_add(var);
   return 1;
 }
 
