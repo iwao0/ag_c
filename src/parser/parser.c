@@ -782,6 +782,12 @@ static int is_toplevel_function_signature(token_t *tok) {
   if (!tok) return 0;
   token_t *t = skip_decl_prefix_lookahead(tok);
   if (!t) return 0;
+  /* タグ戻り型 (`static struct S *g(void){...}`): storage class を飛ばした後がタグ
+   * キーワードなら専用判定へ委譲する。これがないと struct/union/enum はここで弾かれ、
+   * `static struct S *g()` がオブジェクト宣言と誤判定され `;` 期待で E2006 になっていた。 */
+  if (psx_ctx_is_tag_keyword(t->kind)) {
+    return is_tag_return_function_signature(t);
+  }
   if (psx_ctx_is_type_token(t->kind)) {
     // 複合型キーワード（unsigned long 等）を全てスキップ
     while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
@@ -2818,6 +2824,21 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   *ret_tag = NULL;
   *ret_is_ptr = 0;
   if (ret_is_unsigned) *ret_is_unsigned = 0;
+  /* storage class (static/extern) の直後がタグキーワードなら、先に storage class を消費
+   * してフラグを立ててからタグ経路へ。psx_consume_type_kind は `static` の後の `struct` を
+   * 型と認識できず implicit int に落ちるため (`static struct S *g(){}` が壊れていた)。
+   * 後ろがタグでないとき (builtin/typedef) は従来どおり psx_consume_type_kind に任せる。 */
+  {
+    token_t *t = curtok();
+    while (t && (t->kind == TK_STATIC || t->kind == TK_EXTERN)) t = t->next;
+    if (t && t != curtok() && psx_ctx_is_tag_keyword(t->kind)) {
+      while (curtok()->kind == TK_STATIC || curtok()->kind == TK_EXTERN) {
+        if (curtok()->kind == TK_STATIC) g_last_decl_is_static = 1;
+        if (curtok()->kind == TK_EXTERN) g_last_decl_is_extern = 1;
+        set_curtok(curtok()->next);
+      }
+    }
+  }
   if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     resolve_func_ret_tag_spec(ret_kind, ret_tag);
     parse_pointer_suffix_flags(ret_is_ptr); // skip optional pointer(s)
