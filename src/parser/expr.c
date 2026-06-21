@@ -1133,13 +1133,63 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   if (cl_complex_scalar) var_size = base_elem * 2;
   char *tmp_name = new_compound_lit_name();
   if (g_current_funcname == NULL) {
+    int want_addr = g_addr_of_compound_pending;
+    g_addr_of_compound_pending = 0;
+    /* struct/union/配列のファイルスコープ複合リテラル `&(struct S){3,4}` /
+     * `&(int[3]){1,2,3}[0]`: 単一スカラしか扱えない下の経路では brace の `,` で E2006 に
+     * なる。グローバル struct/配列と同じ psx_parse_global_brace_init_flat で gvar 実体へ
+     * 展開し、アドレス可能なノードを返す。 */
+    int cl_is_aggregate = is_arr || cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION;
+    if (cl_is_aggregate) {
+      global_var_t *gv = calloc(1, sizeof(global_var_t));
+      gv->name = tmp_name;
+      gv->name_len = (int)strlen(tmp_name);
+      gv->type_size = var_size;
+      gv->deref_size = base_elem;
+      gv->is_array = is_arr;
+      gv->fp_kind = cast_fp_kind;
+      gv->tag_kind = cast_tag_kind;
+      gv->tag_name = cast_tag_name;
+      gv->tag_len = cast_tag_len;
+      /* 匿名複合リテラルは内部リンケージ (.global を出さない)。`___compound_lit_N` は
+       * namespace 対象外 (__ 始まり) なので、.global だと別 fixture とリンク衝突する。 */
+      gv->is_static = 1;
+      gv->has_init = 1;
+      int cap = 16;
+      gv->init_values = calloc((size_t)cap, sizeof(long long));
+      gv->init_fvalues = calloc((size_t)cap, sizeof(double));  /* fp 要素 (`(double[]){...}`) 用 */
+      gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+      gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+      gv->init_count = 0;
+      psx_parse_global_brace_init_flat(gv, &cap, -1);
+      psx_register_global_var(gv);
+      node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
+      gvar_node->mem.base.kind = ND_GVAR;
+      gvar_node->mem.type_size = gv->type_size;
+      gvar_node->mem.deref_size = gv->deref_size;
+      gvar_node->mem.tag_kind = gv->tag_kind;
+      gvar_node->mem.tag_name = gv->tag_name;
+      gvar_node->mem.tag_len = gv->tag_len;
+      gvar_node->name = gv->name;
+      gvar_node->name_len = gv->name_len;
+      gvar_node->is_thread_local = gv->is_thread_local;
+      if (is_arr) {
+        /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
+        node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
+        addr->base.kind = ND_ADDR;
+        addr->base.lhs = (node_t *)gvar_node;
+        addr->type_size = base_elem;
+        addr->deref_size = base_elem;
+        addr->is_pointer = 1;
+        return apply_postfix((node_t *)addr);
+      }
+      return apply_postfix((node_t *)gvar_node);
+    }
     tk_expect('{');
     node_t *init_expr = psx_expr_assign();
     tk_expect('}');
     /* `&(int){5}` のように `&` のオペランドなら、ND_NUM への短絡 (アドレス取得不能)
-     * を避けて下の gvar 実体化経路へ進む。フラグは一度きりで消費する。 */
-    int want_addr = g_addr_of_compound_pending;
-    g_addr_of_compound_pending = 0;
+     * を避けて下の gvar 実体化経路へ進む。 */
     if (!is_arr && !want_addr && init_expr && init_expr->kind == ND_NUM) {
       return apply_postfix(init_expr);
     }
@@ -1150,6 +1200,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     gv->deref_size = base_elem;
     gv->is_array = is_arr;
     gv->fp_kind = cast_fp_kind;
+    gv->is_static = 1;  /* 匿名複合リテラルは内部リンケージ (.global を出さない) */
     if (init_expr && init_expr->kind == ND_NUM) {
       node_num_t *n = (node_num_t *)init_expr;
       gv->has_init = 1;

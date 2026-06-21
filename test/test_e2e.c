@@ -1096,6 +1096,7 @@ static const test_case_t test_cases[] = {
     {"probes", "funcptr_int_to_fp_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_int_to_fp_arg.c", 0, 0},
     {"probes", "union_array_brace_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_array_brace_init.c", 0, 0},
     {"probes", "multilevel_pointer_fp_pointee", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multilevel_pointer_fp_pointee.c", 0, 0},
+    {"probes", "file_scope_aggregate_compound_literal_addr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_aggregate_compound_literal_addr.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
