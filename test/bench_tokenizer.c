@@ -1,8 +1,8 @@
 #include "../src/tokenizer/tokenizer.h"
 #include "../src/tokenizer/token.h"
-#include "../src/tokenizer/internal/literals.h"
-#include "../src/tokenizer/internal/punctuator.h"
-#include "../src/tokenizer/internal/scanner.h"
+#include "../src/tokenizer/literals.h"
+#include "../src/tokenizer/punctuator.h"
+#include "../src/tokenizer/scanner.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

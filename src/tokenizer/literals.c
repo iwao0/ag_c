@@ -1,8 +1,8 @@
-#include "internal/literals.h"
-#include "internal/allocator.h"
-#include "internal/charclass.h"
-#include "internal/diag_helper.h"
-#include "internal/escape.h"
+#include "literals.h"
+#include "allocator.h"
+#include "charclass.h"
+#include "diag_helper.h"
+#include "escape.h"
 #include "tokenizer.h"
 #include <string.h>
 

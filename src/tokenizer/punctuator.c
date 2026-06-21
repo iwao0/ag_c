@@ -1,4 +1,4 @@
-#include "internal/punctuator.h"
+#include "punctuator.h"
 #include <string.h>
 
 static inline token_kind_t punctuator_kind_for_2chars(char c0, char c1);
