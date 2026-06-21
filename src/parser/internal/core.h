@@ -25,6 +25,8 @@ void psx_set_static_flag(int is_static);
 char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip);
 /* 単一識別子の制御式 `_Generic(var, ...)` の var の型シグネチャを名前で引く (無ければ NULL)。 */
 char *psx_lookup_var_type_sig(char *name, int len);
+/* グローバル変数の型シグネチャを記録する (トップレベル宣言から呼ぶ。翻訳単位を通じて永続)。 */
+void psx_record_global_type_sig(char *name, int len, char *sig);
 void psx_set_alignas_value(int align);
 void psx_consume_pointer_prefix(int *is_ptr);
 // `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。

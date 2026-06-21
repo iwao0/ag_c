@@ -67,6 +67,10 @@ static int g_last_decl_is_static = 0;
 static int g_toplevel_decl_elem_size = 8;
 static int g_toplevel_decl_is_extern = 0;
 static int g_toplevel_decl_is_static = 0;
+/* _Generic 用: トップレベル宣言の型開始トークン。apply_toplevel_object_from_head が
+ * 先頭宣言子の [型開始, 宣言子終端) を name 抜きで文字列化してグローバル sig 表に記録する
+ * (consume-once: 捕捉後 NULL にする)。 */
+static token_t *g_toplevel_typespec_start = NULL;
 static int g_toplevel_decl_is_thread_local = 0;
 static int g_toplevel_decl_is_typedef = 0;
 static token_kind_t g_toplevel_decl_base_kind = TK_EOF;
@@ -1599,6 +1603,14 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   }
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
+  /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化してグローバル sig 表に記録する。
+   * 複雑な派生型 ('(' を含む funcptr / ネスト宣言子) のみ非 NULL。consume-once で先頭のみ。 */
+  if (g_toplevel_typespec_start && gv && head.name) {
+    char *sig = psx_serialize_decl_type_tokens(g_toplevel_typespec_start, curtok(),
+                                               (token_t *)head.name);
+    if (sig) psx_record_global_type_sig(head.name->str, head.name->len, sig);
+    g_toplevel_typespec_start = NULL;
+  }
   if (gv && is_ptr_to_array) {
     /* 第1subscript `pa[i]` は pointee 全体 (pointee_total*elem) をステップ。多次元 pointee
      * `(*pa)[N][M]` では pa[i][j]=行 (M*elem)、pa[i][j][k]=要素 (elem)。これは「先頭に
@@ -1853,6 +1865,8 @@ static int parse_toplevel_declaration_like(void) {
   }
   if (is_toplevel_decl_like_start(curtok()) &&
       !is_toplevel_function_signature(curtok())) {
+    /* _Generic 用: 型シグネチャ文字列化のため型開始トークンを記録 (オブジェクト宣言のみ)。 */
+    g_toplevel_typespec_start = (curtok()->kind == TK_TYPEDEF) ? NULL : curtok();
     parse_toplevel_decl_spec();
     parse_toplevel_decl_after_type();
     return 1;

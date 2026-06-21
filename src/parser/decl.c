@@ -20,12 +20,20 @@ static int locals_offset;
  * psx_serialize_decl_type_tokens 付近)。宣言の型開始トークンと、名前→シグネチャ表。 */
 static token_t *g_decl_typespec_start = NULL;
 #define VAR_TYPESIG_MAX 256
+/* 局所変数: 関数ごとにリセットする。 */
 static struct {
   char *name;
   int len;
   char *sig;
 } g_var_typesigs[VAR_TYPESIG_MAX];
 static int g_var_typesig_count = 0;
+/* グローバル変数: 翻訳単位を通じて永続 (関数境界でリセットしない)。 */
+static struct {
+  char *name;
+  int len;
+  char *sig;
+} g_global_typesigs[VAR_TYPESIG_MAX];
+static int g_global_typesig_count = 0;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
@@ -2905,12 +2913,28 @@ static void record_var_type_sig(char *name, int len, char *sig) {
   g_var_typesig_count++;
 }
 
-/* 単一識別子の制御式 `_Generic(var, ...)` から var の型シグネチャを引く。無ければ NULL。 */
+/* グローバル変数の型シグネチャを記録する (トップレベル宣言から呼ぶ。翻訳単位を通じて永続)。 */
+void psx_record_global_type_sig(char *name, int len, char *sig) {
+  if (!sig || g_global_typesig_count >= VAR_TYPESIG_MAX) return;
+  g_global_typesigs[g_global_typesig_count].name = name;
+  g_global_typesigs[g_global_typesig_count].len = len;
+  g_global_typesigs[g_global_typesig_count].sig = sig;
+  g_global_typesig_count++;
+}
+
+/* 単一識別子の制御式 `_Generic(var, ...)` から var の型シグネチャを引く。局所を優先し、
+ * 無ければグローバルを引く。どちらにも無ければ NULL。 */
 char *psx_lookup_var_type_sig(char *name, int len) {
   for (int i = g_var_typesig_count - 1; i >= 0; i--) {
     if (g_var_typesigs[i].len == len &&
         memcmp(g_var_typesigs[i].name, name, (size_t)len) == 0) {
       return g_var_typesigs[i].sig;
+    }
+  }
+  for (int i = g_global_typesig_count - 1; i >= 0; i--) {
+    if (g_global_typesigs[i].len == len &&
+        memcmp(g_global_typesigs[i].name, name, (size_t)len) == 0) {
+      return g_global_typesigs[i].sig;
     }
   }
   return NULL;
