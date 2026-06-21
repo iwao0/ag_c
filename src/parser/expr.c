@@ -3386,21 +3386,31 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
      * is_scalar_ptr_member を立てて subscript_base_address_of が ND_DEREF を
      * そのまま返し、次段の subscript でポインタ値を base として使うようにする。 */
     if (base_mem && base_mem->pointee_is_scalar_ptr && pql == 0) {
-      deref->is_scalar_ptr_member = 1;
-      deref->is_pointer = 1;
-      /* deref_size を pointee の素のサイズに更新 (char* なら 1)。
-       * gv->pointee_elem_size から伝播するため、ND_ADDR/ND_GVAR を辿って取得する。 */
-      if (node->kind == ND_ADDR && node->lhs && node->lhs->kind == ND_GVAR) {
-        node_gvar_t *gv_node = (node_gvar_t *)node->lhs;
-        for (global_var_t *gv = psx_find_global_var(gv_node->name, gv_node->name_len); gv; gv = NULL) {
-          if (gv->name_len == gv_node->name_len &&
-              memcmp(gv->name, gv_node->name, (size_t)gv->name_len) == 0) {
-            if (gv->pointee_elem_size > 0) {
-              deref->deref_size = gv->pointee_elem_size;
+      if (inner_ds == 0) {
+        /* 最終次元: 要素 (スカラポインタ値) を load する。 */
+        deref->is_scalar_ptr_member = 1;
+        deref->is_pointer = 1;
+        /* deref_size を pointee の素のサイズに更新 (char* なら 1)。1D 配列は base が ND_ADDR
+         * なので gv->pointee_elem_size を引く。2D 以上は base が中間 ND_DEREF なので
+         * base_mem->base_deref_size に carry された値を使う。 */
+        int pelem = 0;
+        if (node->kind == ND_ADDR && node->lhs && node->lhs->kind == ND_GVAR) {
+          node_gvar_t *gv_node = (node_gvar_t *)node->lhs;
+          for (global_var_t *gv = psx_find_global_var(gv_node->name, gv_node->name_len); gv; gv = NULL) {
+            if (gv->name_len == gv_node->name_len &&
+                memcmp(gv->name, gv_node->name, (size_t)gv->name_len) == 0) {
+              pelem = gv->pointee_elem_size;
+              break;
             }
-            break;
           }
         }
+        if (pelem == 0) pelem = base_mem->base_deref_size;
+        if (pelem > 0) deref->deref_size = pelem;
+      } else {
+        /* 中間次元 (2D 以上のポインタ配列の行): まだ要素でないので load せず、
+         * pointee_is_scalar_ptr と pointee サイズ (base_deref_size) を次段へ carry する。 */
+        deref->pointee_is_scalar_ptr = 1;
+        deref->base_deref_size = base_mem->base_deref_size;
       }
     }
   }
@@ -3917,6 +3927,11 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
        * 2 段 subscript はしない (= pointee_elem_size を見ない) ので影響なし。 */
       if (gv->pointee_elem_size > 0 && gv->tag_kind == TK_EOF) {
         addr->pointee_is_scalar_ptr = 1;
+        /* 2D 以上のポインタ配列 (`int *t[2][2]`) では最終 subscript の base が ND_ADDR で
+         * なく中間 ND_DEREF になり gv を引けない。要素ポインタの pointee サイズ
+         * (`int*` なら 4) を base_deref_size に載せて中間次元へ carry する。fp funcptr 配列
+         * (base_deref_size=8 を上で設定) とは排他なので未設定時のみ。 */
+        if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->pointee_elem_size;
       }
       if (gv->outer_stride > 0) {
         if (gv->mid_stride > 0) {

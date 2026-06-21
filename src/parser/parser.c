@@ -145,6 +145,11 @@ static int g_toplevel_decl_ptr_in_paren_group = 0;
  * 返すだけで N==1 と「配列なし」を区別できないため、要素数 1 の配列 `(*g[1])(...)` が
  * スカラ誤登録されて crash していた。このフラグで配列を保証する。宣言子ごとにリセット。 */
 static int g_toplevel_decl_paren_array_present = 0;
+/* 括弧内配列の個別次元 (`int (*t[2][2])(void)` で {2,2})。paren_array_mul は積しか持たず
+ * 2 次元以上の funcptr/ポインタ配列でストライドが立てられなかったため、dims を別途保持する。
+ * 宣言子ごとにリセット。 */
+static int g_toplevel_decl_paren_array_dims[8] = {0};
+static int g_toplevel_decl_paren_array_dim_count = 0;
 static int g_toplevel_decl_pointee_const = 0;
 static int g_toplevel_decl_pointee_volatile = 0;
 // typedef 由来の配列型の dims (使用側 `M2 g;` で typedef の `[2][3]` を保持)。
@@ -1739,6 +1744,21 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     arr.dim_count = 1;
     arr.dims[0] = arr.arr_total;
   }
+  /* 多次元の括弧内配列 `int (*t[2][2])(void)`: parse_toplevel_array_suffixes は
+   * paren_array_mul(積=4) で is_array=1 にするが trailing `[N]` が無いので dim_count=0。
+   * 捕捉した個別 dims (g_toplevel_decl_paren_array_dims) で埋め直し、下の
+   * apply_global_multidim_strides がストライドを立てられるようにする。 */
+  if (!is_ptr_to_array && g_toplevel_decl_paren_array_present &&
+      g_toplevel_decl_paren_array_dim_count >= 2 && arr.dim_count < 2) {
+    arr.is_array = 1;
+    arr.dim_count = g_toplevel_decl_paren_array_dim_count;
+    if (arr.dim_count > 8) arr.dim_count = 8;
+    arr.arr_total = 1;
+    for (int i = 0; i < arr.dim_count; i++) {
+      arr.dims[i] = g_toplevel_decl_paren_array_dims[i];
+      arr.arr_total *= arr.dims[i];
+    }
+  }
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
   /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化してグローバル sig 表に記録する。
@@ -1766,8 +1786,14 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
       gv->outer_stride = pointee_total * elem;
     }
   }
-  if (gv && !head.is_ptr && arr.is_array && arr.dim_count >= 2) {
-    apply_global_multidim_strides(gv, arr.dims, arr.dim_count, g_toplevel_decl_elem_size);
+  if (gv && arr.is_array && arr.dim_count >= 2) {
+    /* 多次元配列のストライド設定。ポインタ要素配列 (`int *t[2][2]` / `char *names[2][3]`) は
+     * 要素がポインタ値 (8B) なので elem_size=8。以前は `!head.is_ptr` でポインタ配列を除外して
+     * いたため stride が立たず、`t[i]` が「ポインタ値として load → [j] で deref」と誤計算され
+     * SIGSEGV になっていた (非ポインタ 2D 配列は元から動作)。最終要素 load 幅と
+     * pointee_is_scalar_ptr の中間次元伝播は build_subscript_deref 側で扱う。 */
+    int ms_elem = head.is_ptr ? 8 : g_toplevel_decl_elem_size;
+    apply_global_multidim_strides(gv, arr.dims, arr.dim_count, ms_elem);
   }
   /* スカラデータポインタ `double *dp`: pointee スカラの fp_kind を保存し、`*dp` / `dp[i]`
    * の deref を fp load にする (ローカル `double *a` と同じ)。単段ポインタ (ptr_levels==1)
@@ -1801,6 +1827,8 @@ static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr
   g_toplevel_decl_ptr_levels = 0;
   g_toplevel_decl_ptr_in_paren_group = 0;
   g_toplevel_decl_paren_array_present = 0;
+  g_toplevel_decl_paren_array_dim_count = 0;
+  for (int i = 0; i < 8; i++) g_toplevel_decl_paren_array_dims[i] = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
@@ -1950,7 +1978,9 @@ static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, i
     if (*is_ptr && !ptr_before_inner) g_toplevel_decl_ptr_in_paren_group = 1;
     /* 括弧内に `[N]` があるか (要素数 1 でも配列扱いにするため、積ではなく有無を記録)。 */
     if (curtok()->kind == TK_LBRACKET) g_toplevel_decl_paren_array_present = 1;
-    paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
+    paren_array_mul = psx_parse_array_suffixes_capture_dims(
+        paren_array_mul, g_toplevel_decl_paren_array_dims, 8,
+        &g_toplevel_decl_paren_array_dim_count);
     tk_expect(')');
   } else {
     name = consume_decl_ident_or_error(require_name);

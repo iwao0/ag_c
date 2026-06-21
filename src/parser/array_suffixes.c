@@ -36,6 +36,23 @@ int psx_parse_array_suffixes_constexpr_required(int base_mul) {
   return arr_total;
 }
 
+int psx_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_dims,
+                                          int *out_dim_count) {
+  int arr_total = (base_mul > 0) ? base_mul : 1;
+  int dc = 0;
+  while (tk_consume('[')) {
+    int has_size = 0;
+    int n = psx_parse_array_size_optional_constexpr(&has_size);
+    if (has_size && n > 0) {
+      arr_total *= n;
+      if (out_dims && dc < max_dims) out_dims[dc] = n;
+      dc++;
+    }
+  }
+  if (out_dim_count) *out_dim_count = dc;
+  return arr_total;
+}
+
 int psx_parse_member_array_suffixes(int *out_is_flex_array,
                                     int *out_dim_count, int *out_first_dim) {
   int arr_total = 1;
