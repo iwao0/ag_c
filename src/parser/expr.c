@@ -1101,8 +1101,16 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   }
 
   tag_member_info_t mem_info = {0};
-  if (!psx_ctx_find_tag_member_info(base_tag_kind, base_tag_name, base_tag_len,
-                                     member->str, member->len, &mem_info)) {
+  /* タグ shadow 応用形: 変数が宣言時に見ていた tag の scope_depth が分かれば、その scope
+   * に固定してメンバを引く。これがないと find_tag_type が最も内側 tag を返してしまい、
+   * 外側変数を内側 shadow 下から参照したときにメンバが見つからず E3064 になる。 */
+  int base_scope = psx_node_get_tag_scope_depth(base);
+  bool found = (base_scope >= 0)
+      ? psx_ctx_find_tag_member_info_at_scope(base_tag_kind, base_tag_name, base_tag_len,
+                                              base_scope, member->str, member->len, &mem_info)
+      : psx_ctx_find_tag_member_info(base_tag_kind, base_tag_name, base_tag_len,
+                                     member->str, member->len, &mem_info);
+  if (!found) {
     psx_diag_ctx(op_tok, "member", diag_message_for(DIAG_ERR_PARSER_MEMBER_NOT_FOUND),
                  member->len, member->str);
   }
@@ -1644,6 +1652,10 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   as_lvar(ref)->mem.tag_name = var->tag_name;
   as_lvar(ref)->mem.tag_len = var->tag_len;
   as_lvar(ref)->mem.is_tag_pointer = var->is_tag_pointer;
+  /* タグ shadow 応用形: 変数宣言時の tag_scope_depth を node にも伝播し、後段の
+   * メンバ参照経路で「最も内側 tag」ではなく「変数が見ていた tag」のメンバを引けるように
+   * する (内側 shadow からの外側変数参照対応)。 */
+  as_lvar(ref)->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
   as_lvar(ref)->mem.is_const_qualified = var->is_const_qualified;
   as_lvar(ref)->mem.is_volatile_qualified = var->is_volatile_qualified;
   as_lvar(ref)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
@@ -3952,6 +3964,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       base->mem.tag_kind = gv->tag_kind;
       base->mem.tag_name = gv->tag_name;
       base->mem.tag_len = gv->tag_len;
+      base->mem.tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
       base->name = gv->name;
       base->name_len = gv->name_len;
       base->is_thread_local = gv->is_thread_local;
@@ -3961,6 +3974,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->tag_kind = gv->tag_kind;
       addr->tag_name = gv->tag_name;
       addr->tag_len = gv->tag_len;
+      addr->tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
       if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
       // 多次元配列: outer_stride を 1 次サブスクリプトのステップとして使う。
       // ローカル配列の build_array_lvar_addr_node と同じレイアウト。
@@ -4048,6 +4062,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.tag_kind = gv->tag_kind;
     gvar_node->mem.tag_name = gv->tag_name;
     gvar_node->mem.tag_len = gv->tag_len;
+    gvar_node->mem.tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
     gvar_node->mem.is_tag_pointer = gv->is_tag_pointer;
     if (gv->is_tag_pointer) gvar_node->mem.is_pointer = 1;
     /* 多段ポインタグローバル (`int **gp`): `*gp` は int* (8B) を返すので、参照ノードの
@@ -4168,6 +4183,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->tag_kind = var->tag_kind;
   node->tag_name = var->tag_name;
   node->tag_len = var->tag_len;
+  node->tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
   node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
   node->is_pointer = 1;
   node->pointer_qual_levels = var->pointer_qual_levels;
@@ -4212,6 +4228,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     gv->mem.tag_kind = var->tag_kind;
     gv->mem.tag_name = var->tag_name;
     gv->mem.tag_len = var->tag_len;
+    gv->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
     gv->mem.is_tag_pointer = 0;
     gv->name = var->static_global_name;
     gv->name_len = var->static_global_name_len;
@@ -4259,6 +4276,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.tag_kind = var->tag_kind;
   as_lvar(n)->mem.tag_name = var->tag_name;
   as_lvar(n)->mem.tag_len = var->tag_len;
+  as_lvar(n)->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
   as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
   as_lvar(n)->mem.is_pointer = lvar_is_pointer;
   as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;

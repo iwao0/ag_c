@@ -5,6 +5,7 @@
  * 両方を使う。Phase C1-2: 両ヘッダを明示的に include する。 */
 #include "ast.h"
 #include "symtab.h"
+#include "semantic_ctx.h"  /* psx_ctx_get_tag_scope_depth (inline setter で使う) */
 
 typedef struct lvar_t lvar_t;
 struct lvar_t {
@@ -23,6 +24,11 @@ struct lvar_t {
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
+  /* タグ宣言時のスコープ深度 + 1 (内側 shadow 対応)。0 = 未設定 (calloc 初期値)、
+   * >0 のとき (実際の depth = この値 - 1) を psx_ctx_find_tag_member_info_at_scope に
+   * 渡し、変数宣言時に見ていた tag の member を引く。+1 エンコードにすることで
+   * calloc/arena_alloc がそのまま未設定扱いになる。 */
+  int tag_scope_depth_p1;
   unsigned int is_array : 1;
   unsigned int is_vla : 1;            // 1: 可変長配列 (VLA) - offsetはベースポインタスロット
   unsigned int is_byref_param : 1;    // 1: >16バイト構造体の値渡し仮引数 - フレームスロットはポインタ(8B)、elemは実際の構造体サイズ
@@ -95,6 +101,15 @@ static inline void psx_decl_set_var_tag(lvar_t *var,
   var->tag_name = tag_name;
   var->tag_len = tag_len;
   var->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  /* 宣言時に見えているタグの scope_depth を +1 して保存 (0=未設定の規約)。
+   * 後段でメンバ参照経路が「変数宣言時に見えていた tag」のメンバを引けるようにする
+   * (内側 shadow からの外側変数参照対応)。タグ無しは 0 のまま (未設定)。 */
+  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+    int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
+    var->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
+  } else {
+    var->tag_scope_depth_p1 = 0;
+  }
 }
 static inline void psx_decl_set_gvar_tag(global_var_t *gv,
                                           token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -103,6 +118,12 @@ static inline void psx_decl_set_gvar_tag(global_var_t *gv,
   gv->tag_name = tag_name;
   gv->tag_len = tag_len;
   gv->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+    int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
+    gv->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
+  } else {
+    gv->tag_scope_depth_p1 = 0;
+  }
 }
 
 void psx_decl_reset_locals(void);

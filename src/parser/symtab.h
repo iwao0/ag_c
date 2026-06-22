@@ -43,6 +43,10 @@ struct global_var_t {
   int name_len;
   token_kind_t tag_kind;
   int tag_len;
+  /* タグ宣言時のスコープ深度 + 1 (0=未設定の規約、>0 で実 depth=値-1)。
+   * メンバ参照経路で「グローバル変数が宣言時に見ていた tag」のメンバを引くのに使う
+   * (内側 shadow 内でグローバル変数のメンバアクセス対応)。 */
+  int tag_scope_depth_p1;
   int init_symbol_len;
   int union_init_ordinal;  // union の designated 初期化 `{.m=v}` で活性メンバの序数 (既定 0=先頭)
   int init_count;

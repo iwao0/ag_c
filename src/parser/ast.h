@@ -97,6 +97,10 @@ struct node_mem_t {
   token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）
   char *tag_name;
   int tag_len;
+  /* タグ宣言時のスコープ深度 + 1 (0=未設定、>0 で実 depth=値-1)。arena_alloc がゼロ
+   * 初期化なので未設定を 0 にしておくと初期化忘れがあっても安全。メンバ参照経路で
+   * 「変数が宣言時に見ていた tag」を引くのに使う。 */
+  int tag_scope_depth_p1;
   unsigned int bit_is_signed : 1;           // ビットフィールドの符号（1: signed, 0: unsigned）
   unsigned int is_tag_pointer : 1;          // 1: tagへのポインタ値, 0: tag値そのもの
   unsigned int is_pointer : 1;              // 1: ポインタ型（ポインタ加算スケーリング対象）

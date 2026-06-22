@@ -434,6 +434,42 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
   if (is_tag_pointer) *is_tag_pointer = ptr;
 }
 
+int psx_node_get_tag_scope_depth(node_t *node) {
+  if (!node) return -1;
+  int p1 = 0;
+  switch (node->kind) {
+    case ND_LVAR:
+      p1 = as_lvar(node)->mem.tag_scope_depth_p1;
+      break;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ADDR:
+    case ND_STRING:
+    case ND_PTR_CAST:
+    case ND_ASSIGN:
+      p1 = as_mem(node)->tag_scope_depth_p1;
+      break;
+    case ND_COMMA:
+      return psx_node_get_tag_scope_depth(node->rhs);
+    case ND_ADD:
+    case ND_SUB:
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return psx_node_get_tag_scope_depth(node->lhs);
+    case ND_TERNARY: {
+      node_ctrl_t *t = (node_ctrl_t *)node;
+      int d = psx_node_get_tag_scope_depth(t->base.rhs);
+      if (d < 0 && t->els) d = psx_node_get_tag_scope_depth(t->els);
+      return d;
+    }
+    default:
+      return -1;
+  }
+  return p1 > 0 ? p1 - 1 : -1;
+}
+
 static int node_is_unsigned(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {

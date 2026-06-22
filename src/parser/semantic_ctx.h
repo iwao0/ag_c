@@ -89,6 +89,21 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
 bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
                                    char *member_name, int member_len,
                                    tag_member_info_t *out);
+/* 上記 2 つの「特定スコープ深度に固定」版。タグ shadowing の応用形 (内側スコープでの
+ * 外側変数メンバ参照、ネスト 2 段 shadow) で、変数の宣言時 tag_scope_depth を渡して
+ * 最も内側ではなく「変数が見ていたタグの scope」のメンバを引くのに使う。scope_depth<0
+ * のときは既存挙動 (最も内側を使う) と等価。 */
+bool psx_ctx_get_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
+                                          int scope_depth, int index,
+                                          tag_member_info_t *out);
+bool psx_ctx_find_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
+                                           int scope_depth,
+                                           char *member_name, int member_len,
+                                           tag_member_info_t *out);
+/* (kind, name, len) のタグが現在見えているスコープ深度を返す。タグが無ければ -1。
+ * 変数宣言時に呼んで lvar/global_var の tag_scope_depth に保存するのに使う。 */
+int psx_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len);
+int psx_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth);
 /* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
  * m の name/len/offset/type_size/deref_size/array_len/tag_*(メンバのネストタグ)/
  * is_tag_pointer/bit_width/bit_offset/bit_is_signed を読む。fp_kind/is_bool/is_unsigned/
