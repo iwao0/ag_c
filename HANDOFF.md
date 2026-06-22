@@ -1,44 +1,39 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き18〜19: 探索 round 2 発見の 2 件を修正。残: typedef 配列ポインタの細形）
+最終更新: 2026-06-22（続き20〜22: typedef 配列ポインタ細形 3 件を全消化。**現時点で明確な未対応バグ無し**）
 
-## 次セッションの最優先タスク（未着手・再現確認済み）
-続き17 で発見した 2 件 (関数ポインタ配列へのポインタ / ネスト union fp 初期化) は続き18 / 19 で
-修正済み。修正の限界として残る細形:
+## 次セッションの最優先タスク
+**現時点で明確な未対応バグは無い**。HANDOFF 既知形 + 続き17 の探索で発見した形 + 続き18〜22 で
+解消した細形まですべて green (`make test` = 1029/1029)。
 
-1. **`typedef T A[N]; A *pa` 形** (配列 typedef へのポインタで要素がポインタ)。
-   ```c
-   typedef int (*BinOp)(int, int);
-   typedef BinOp OpArr3[3];
-   BinOp ops[3] = {add, sub, mul};
-   OpArr3 *pa = &ops;
-   pa[0][0](7, 2);  /* agc: SIGSEGV */
-   ```
-   原因: decl.c の `is_pointer + td_array_dim_count > 0` 経路 (= `typedef int (*PA)[3]; PA p`
-   と共有) が elem_size を上書きせず、要素を 4B で扱う。base_is_pointer だけで判別すると
-   `PA p` 経路 (要素は int=4B) を壊すため、typedef_info から精密に要素型を判定する仕組みが要る。
+次セッションは **未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成ファズ）からの新規
+探索 round 3 に戻る。索引は `docs/differential_testing/bug_coverage.md`。
 
-2. **`typedef int *IP; IP (*pia)[3]` の `*(*pia)[0]` 最終 deref**。
-   ```c
-   typedef int *IP;
-   int x = 100, *parr[3] = {&x, &x, &x};
-   IP (*pia)[3] = (IP (*)[3])&parr;  /* 続き18 で base_deref_size=8 は設定された */
-   int v = *(*pia)[0];  /* OK */
-   if (*(*pia)[0] == 100) ...;  /* 直接比較は型情報がずれて 0 になる */
-   ```
-   原因: subscript 結果 `(*pia)[0]` を更に `*` で deref するとき、データポインタ要素について
-   最終 deref サイズが int (4B) load にならない。`int v = ...` (代入) なら自動 cast で int 化
-   されるが、直接比較 `... == 100` だと型情報がポインタのままで integer-vs-pointer 比較になる。
-   関数ポインタ要素は呼び出し時に bl で済むため OK。
+## このセッション（続き22）: ネスト union fp 初期化の sentinel 化
+- **designator sentinel**（nested_union_designator_ordinal）。続き19 のヒューリスティック
+  (fv!=0 && iv==0) を sentinel 機構に置き換え、`.f = 0.0f` と `.n = 0` の判別、union 内に
+  float/double 両方ある場合の正確な type_size 判定を可能にした。gbrace_ctx_t に
+  pending_fp_kind / pending_fp_size を追加し、DOT 経路で union fp 設定 → scalar 書き込み時に
+  init_value_symbol_lens に sentinel (-2=float / -3=double) をスタンプ。emit TK_UNION 分岐が
+  sentinel を最優先で読み取り、無ければ旧ヒューリスティックに fallback。`make test`=1029/1029 green。
 
-3. **ネスト union の fp 初期化の正確化**。続き19 でヒューリスティック (fv!=0 && iv==0) で
-   `.f = 2.5f` / `.n = 99` を区別しているが、`.f = 0.0f` (= 整数 0 と区別不能) は int 経路に
-   流れる。4B/8B のゼロビットパターンは一致するので結果同じだが、より大きい union (`union {char c; long l;}` 等で fp なし) には別の限界がある。正攻法は global_var_t に
-   per-nested-union の ordinal map を持たせる。
+## このセッション（続き21）: IP (*pia)[3] 最終 deref サイズ伝播
+- **データポインタ要素配列の deref**（ptr_to_array_of_funcptrs 拡張）。`*(*pia)[0]` の直接比較
+  `== 100` が型情報ずれで 0 を返していた。decl.c の paren `(*p)[N]` / typedef-array `A *pa`
+  両経路で「要素がデータポインタ」のとき base_deref_size を pointee サイズ (int=4) に、
+  pointer_qual_levels=1 を立てる。build_unary_deref_node で `*p` の配列 decay 経路 (2906 行)
+  が src の pql/bds を carry し、build_subscript_deref の「要素はポインタ」分岐に乗って結果が
+  scalar pointer (deref_size=4) になる。関数ポインタ要素 (bl で 8B 値そのまま使う) は除外。
+  `make test`=1028/1028 green。
 
-その他: HANDOFF の既知形 (char メンバ 5 形 + designator nested + fp 配列メンバ + tag shadow
-基本+応用) はすべて消化済み。**未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成
-ファズ）は引き続き要探索。索引は `docs/differential_testing/bug_coverage.md`。
+## このセッション（続き20）: typedef BinOp OpArr3[3] の sizeof / is_array
+- **pointer-element 配列 typedef の登録**（typedef_pointer_element_array_sizeof）。base が
+  pointer typedef + 宣言子に `*` 追加なし + 配列 suffix のとき、sizeof_size を 8*N、
+  is_array=1 として登録するよう parser.c (compute_toplevel_typedef_sizeof /
+  define_toplevel_typedef_from_declarator) と decl.c (define_local_typedef_from_declarator) を
+  改修。expr.c の sizeof 経路も `(!td_ptr || td_is_array)` で sizeof_size を読むように。
+  pointer-to-array typedef (`typedef int (*PA)[3]`、ptr_in_paren_group=1) とは排他。
+  `make test`=1028/1028 green。
 
 ## このセッション（続き19）: グローバル struct のネスト union fp メンバ初期化
 - **ネスト union fp 初期化**（global_struct_nested_union_fp）。
