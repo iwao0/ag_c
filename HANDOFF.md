@@ -1,6 +1,20 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（グローバル 2D char 配列メンバの文字列初期化を修正）
+最終更新: 2026-06-22（グローバル struct 配列要素の char 配列メンバを修正）
+
+## このセッション（続き9）: グローバル struct 配列の要素メンバにある char 配列
+HANDOFF サブケース (c) `struct{char tag[4]; int n;} g[2]={{"aa",1},{"bb",2}}` を修正。
+- **グローバル struct 配列要素の char 配列メンバ**（global_struct_array_char_member）。
+  emit_global_struct_array_init がメンバごとにフラット slot を 1 個だけ消費する単純ループで、
+  配列メンバ (`char tag[4]`)・char 配列の文字列展開・入れ子 struct メンバ・bitfield を扱えなかった。
+  tag が 1 バイトしか出ず (`.byte 97; .space 3`)、後続メンバ n に 2 文字目の 'a'(97) が入り総崩れ。
+  emit_global_struct_array_init を各要素について emit_global_struct_members_rec を呼ぶ形に書き換え、
+  非配列 struct (emit_global_struct_init) と同じメンバ展開機構を要素ごとに適用して統一した
+  (配列メンバ/char 配列展開/入れ子 struct/bitfield/部分初期化のゼロ埋めを共通処理)。parser 側
+  (psx_gbrace_flat) は元から各要素の char 配列メンバをバイト展開できており emit 側のみの不具合。
+  char配列先頭+スカラ・スカラ先頭+char配列・部分初期化ゼロ埋め・入れ子struct要素・char配列2本を
+  網羅。`make test`=1017/1017 green。**これで HANDOFF「発見したが未修正」の (a)(b)(c) を全消化。**
+  残既知制約: 3 次元以上の char メンバ・ローカル (非 static) struct の 2D char メンバ (別経路)。
 
 ## このセッション（続き8）: グローバル struct の 2 次元 char 配列メンバの文字列初期化
 HANDOFF サブケース (b) `struct{char rows[2][4];} g={{"ab","cd"}}` を修正。
@@ -181,20 +195,15 @@ malloc/tree・hashtable・state machine・Duff's device・多数ローカル/fp 
 複雑な組合せ」に集中する傾向。
 
 ### 発見したが未修正（次セッションの着手候補。再現確認済み）
-1. **グローバル struct の char 配列メンバ + 後続/ネストの slot 相互作用**（基本形は 8c8ce2a で修正済み）。
-   global_struct_char_array_member の「未対応」3 形が残る:
-   - (a) char[] メンバの後に char* メンバが続く `struct{char buf[4]; char*p;} g={"ab","cd"}` → p が `.quad 0`
-     (文字列ラベルが入らず NULL)。psx_gbrace_flat で char[] 展開後の次メンバ (char*) の string→ラベル経路が
-     値を取りこぼす。最小再現:
-     ```c
-     #include <string.h>
-     struct S{char buf[4]; char*p;}; struct S g={"ab","cd"};
-     int main(void){return (g.buf[0]=='a' && strcmp(g.p,"cd")==0)?0:1;}  /* agc SIGSEGV/誤値 */
-     ```
-   - (b) 2 次元 char 配列メンバ `struct{char rows[2][4];} g={{"ab","cd"}}`。
-   - (c) struct 配列内の char メンバ `struct{char tag[4];int n;} g[2]={{"aa",1},{"bb",2}}`。
-   いずれも基本の char[] メンバ単独 (8c8ce2a) は動くが、後続メンバ/ネスト時の flat slot マッピングで
-   壊れる。emit 側 (emit_global_struct_members_rec) と parser 側 (psx_gbrace_flat) の slot 数整合を要確認。
+1. **グローバル struct の char 配列メンバ + 後続/ネストの slot 相互作用** — **3 形 (a)(b)(c) すべて消化済み**:
+   - (a) char[] メンバの後に char* メンバ `struct{char buf[4]; char*p;}` → 真因は fp_kind 汚染。
+     global_struct_member_after_fp_decl で修正（続き7）。
+   - (b) 2 次元 char メンバ `struct{char rows[2][4];}` → global_struct_2d_char_array_member で修正（続き8）。
+   - (c) struct 配列内の char メンバ `struct{char tag[4];int n;} g[2]` → global_struct_array_char_member
+     で修正（続き9）。
+   **残既知制約（別経路。次セッション候補）**: 3 次元以上の char メンバ `char c[2][2][3]`（gbrace_ctx_t が
+   全次元チェーンを持てず SIGSEGV）／ローカル (非 static) struct の 2D char メンバ（ローカル struct メンバ
+   初期化の別経路。1D ローカルは動作）。
 - それ以外: HANDOFF 列挙の既知未対応はすべて消化済み。上記網羅探索領域も再探索不要。**未探索の角度**
   （複数 TU リンク、ライブラリ関数との相互作用、ランダム生成ファズ）から新規 miscompile を炙り出す。
   索引は `docs/differential_testing/bug_coverage.md`。

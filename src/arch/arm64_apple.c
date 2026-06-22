@@ -423,28 +423,17 @@ static void emit_global_struct_init(global_var_t *gv) {
  * その型サイズで出力する。`struct {int x; int y;} a[3] = {{1,2},...}`
  * は .long 1; .long 2; .long 3; ... と展開する。 */
 static void emit_global_struct_array_init(global_var_t *gv) {
-  int n_members = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
   int elem_size = gv->deref_size;
   int total_elems = elem_size > 0 ? gv->type_size / elem_size : 0;
   int val_idx = 0;
+  /* 各要素を emit_global_struct_members_rec でメンバ単位に展開する。以前はメンバごとに
+   * フラット slot を 1 個だけ消費する単純ループだったため、配列メンバ (`char tag[4]`)・
+   * char 配列の文字列展開・入れ子 struct メンバ・bitfield を扱えず、`struct{char tag[4];
+   * int n;} g[2]={{"aa",1},...}` の tag が 1 バイトしか出ず後続メンバがずれていた。
+   * 非配列 struct の出力 (emit_global_struct_init) と同じ機構を要素ごとに適用して統一する。 */
   for (int e = 0; e < total_elems; e++) {
-    int prev_end = 0;
-    for (int i = 0; i < n_members; i++) {
-      tag_member_info_t mi = {0};
-      if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, i, &mi)) break;
-      int off = mi.offset, ts = mi.type_size;
-      if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
-      char *sym_i = (val_idx < gv->init_count && gv->init_value_symbols)
-                        ? gv->init_value_symbols[val_idx] : NULL;
-      int sym_i_len = (val_idx < gv->init_count && gv->init_value_symbol_lens)
-                          ? gv->init_value_symbol_lens[val_idx] : 0;
-      long long v = (val_idx < gv->init_count) ? gv->init_values[val_idx] : 0;
-      double fv_i = (val_idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[val_idx] : 0.0;
-      emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, v, fv_i);
-      val_idx++;
-      prev_end = off + ts;
-    }
-    if (prev_end < elem_size) cg_emitf("  .space %d\n", elem_size - prev_end);
+    emit_global_struct_members_rec(gv->tag_kind, gv->tag_name, gv->tag_len,
+                                   elem_size, gv, &val_idx);
   }
 }
 
