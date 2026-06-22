@@ -1,36 +1,68 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（(a)(b)(c) 全消化。残: 3D char メンバ / ローカル 2D char メンバ）
+最終更新: 2026-06-22（HANDOFF 2 件 [3D global / 2D local] 消化。残: 3D local / brace elision）
 
 ## 次セッションの最優先タスク（未着手・再現確認済み）
-HANDOFF サブケース (a)(b)(c) は全消化済み（下記「続き7〜9」）。残る既知制約は以下 2 件で、
-いずれも今回の global flat パーサ / emit 修正とは**別経路**。再現は確認済み。
+HANDOFF サブケース (a)(b)(c) と続き10〜11 の 2 件は全消化済み。残る既知制約は以下 2 件で、
+いずれも今回の修正とは**別経路**。再現は確認済み。
 
-1. **3 次元以上の char 配列メンバ**（グローバル）。`struct{char c[2][2][3];} g={{{"ab","cd"},{"ef","gh"}}}`
-   が **SIGSEGV**（agc=139）。最小再現は `/tmp/probe_3d.c` を再作成（下記内容）して
-   `scripts/agc_diff_test.sh` で確認。原因の見立て: gbrace_ctx_t が 1 段ぶんの行幅 (row_width) しか
-   持てず、多次元の全次元チェーンを表現できない（続き8 で 2D は row_width を 1 つ足して解決したが、
-   3D 以降は内側の更なる次元情報が落ちる）。gbrace_child_at が 2 段目の要素を「内側 1 次元 char 配列」
-   として返せず、3 段目で再帰したときに row_width=0 になり文字列が要素 (char) 扱い→ポインタ化/SIGSEGV。
-   方針案: gbrace_ctx_t に「残り次元のスタック（または inner_stride のチェーン）」を持たせるか、
-   多次元 char メンバ専用に「総バイト数と各次元幅の配列」を渡して再帰のたびに 1 段消費する。
-   最小再現:
+1. **3 次元以上の char 配列メンバ（ローカル / 非 static）**。`struct{char c[2][2][3];} l={{{"ab","cd"},{"ef","gh"}}}`
+   を関数内で宣言すると誤値（MISMATCH）。**グローバルは続き10 で修正済み**（global_struct_3d_char_array_member）。
+   ローカル経路 (parse_member_initializer) は続き11 で 2D は対応したが、行自体がさらに 2 次元配列となる
+   3D 以上には未対応。方針案: 続き11 の EMIT_ROW_FROM_STRING を「行 = 内側 brace の 2D 配列」に
+   一般化し、内側 brace を再帰的にバイト展開する。または parse_member_initializer の多次元経路に
+   gbrace_ctx_t.sub_dims と同じ「残り次元チェーン」機構を移植する。最小再現:
    ```c
-   struct S{char c[2][2][3];}; struct S g={{{"ab","cd"},{"ef","gh"}}};
-   int main(void){return (g.c[0][0][0]=='a'&&g.c[1][1][1]=='h')?0:1;}  /* agc SIGSEGV */
+   int main(void){struct S{char c[2][2][3];}; struct S l={{{"ab","cd"},{"ef","gh"}}};
+   return (l.c[0][0][0]=='a'&&l.c[1][1][1]=='h')?0:1;}  /* agc 誤値 */
    ```
-2. **ローカル（非 static）struct の 2 次元 char 配列メンバ**。`struct S{char rows[2][4];}` の
-   `struct S l={{"ab","cd"}};` を関数内で宣言すると誤値（MISMATCH）。**1D ローカル char メンバは動作**。
-   グローバル/static の psx_gbrace_flat 経路ではなく、**ローカル struct メンバ初期化の別経路**
-   （decl.c / stmt.c の parse_member_initializer 周辺、要特定）の問題。続き8 の global 修正前から壊れて
-   いた既存バグ（私の変更とは無関係なことを git stash で確認済み）。最小再現:
+2. **配列メンバへの brace elision**。`struct B{char rows[2][4];}; struct B b={"ab","cd"};` のように
+   外側 brace 内に文字列を直接並べる形 (C11 6.7.9p20) が **E3064** になる。parse_struct_initializer が
+   メンバ "rows" は 1 つだけと認識し、2 つ目の文字列を「メンバ数超過」と診断する。続き11 の修正で
+   `parse_member_initializer` 内の brace elision (外側 brace 内に文字列が直接並ぶ; 行ごとに 1 文字列)
+   は対応済みだが、そこに到達する前にメンバ数判定で弾かれる。修正は `parse_struct_initializer` の
+   メンバループで「メンバが多次元 char 配列なら次の文字列も同じメンバの brace elision として吸収する」
+   分岐を追加する必要がある。最小再現:
    ```c
-   int main(void){struct S{char rows[2][4];}; struct S l={{"ab","cd"}};
-   return (l.rows[0][0]=='a'&&l.rows[1][1]=='d'&&l.rows[1][2]==0)?0:1;}  /* agc 誤値 */
+   int main(void){struct B{char rows[2][4];}; struct B b={"ab","cd"};
+   return (b.rows[0][0]=='a'&&b.rows[1][0]=='c')?0:1;}  /* agc E3064 */
    ```
 
 それ以外の未探索の角度（複数 TU リンク・ライブラリ関数との相互作用・ランダム生成ファズ）は
 下記「発見したが未修正」末尾と bug_coverage.md を参照。
+
+## このセッション（続き11）: 関数内 struct の 2 次元 char 配列メンバの文字列初期化
+HANDOFF 残課題 2「ローカル (非 static) struct の 2D char メンバ」を修正。
+- **ローカル 2D char 配列メンバ**（local_struct_2d_char_array_member）。`parse_member_initializer`
+  (decl.c) の多次元配列メンバ・ネスト brace 経路が、行要素として文字列リテラル ("ab" / "cd") が
+  来たとき parse_scalar_brace_initializer で 1 個のスカラ値として読み、文字列リテラルを `.LC0`
+  ラベルアドレスの下位 1 バイトとして 1 slot に書き込んでいた (`strb w20, [x19]`)。グローバル経路
+  (psx_gbrace_flat) は既に修正済み (続き8 の global_struct_2d_char_array_member) だったが、ローカル
+  経路は同じ機構を持っていなかった。
+  修正: 同経路で `elem_size==1 && val->kind==ND_STRING` のとき、グローバル経路と対称な処理で文字列を
+  inner_len バイトへバイト展開して flat に書き込み、行ぶん flat を進める (EMIT_ROW_FROM_STRING マクロ)。
+  `{{"ab","cd"}}` (内側 brace あり) と `{"ab","cd"}` (外側 brace 内で直接並ぶ; 内側 brace なしの
+  brace elision の一種) の両形に対応。`make test`=1019/1019 green。
+  **限界 (未対応、次タスク候補)**: (1) 3 次元以上 `char c[2][2][3]` のローカル版は行自体がさらに 2D
+  配列のため未対応 (続き10 の global と同じ機構を parse_member_initializer に移植する必要)。
+  (2) `struct B b={"ab","cd"};` (外側 brace 1 段のみの brace elision) は parse_struct_initializer の
+  メンバ数判定で E3064。配列メンバが文字列を複数受け取れる brace elision 分岐が要る。
+
+## このセッション（続き10）: グローバル struct の 3 次元 char 配列メンバ
+HANDOFF 残課題 1「3 次元以上の char 配列メンバ (グローバル)」を修正。
+- **グローバル 3D 以上の char 配列メンバ**（global_struct_3d_char_array_member）。`struct{char c[2][2][3];} g`
+  が **2 系統で同時に壊れていた**:
+  (a) 初期化側: gbrace_ctx_t が 1 段ぶんの行幅 (row_width) しか持てず、3D 以上の brace 構造を表現できず
+  各内側 brace の文字列が「要素 (char)」扱いされ array_len=0 でポインタ化 (.LC ラベル) されていた。
+  (b) アクセス側: tag_member_info_t に mid_stride がなく、build_member_deref_node の 3 段 subscript で
+  中間ストライドが立たず誤アドレスを deref → SIGSEGV。
+  修正: tag_member_info_t / tag_member_t に **arr_dims[8] / arr_ndim** (各次元サイズ) と **mid_stride**
+  (1 段 subscript 後の要素サイズ) を追加。struct_layout で 3D 以上の char メンバ時に arr_dims、3D 以上
+  の任意メンバ時に mid_stride をセット (匿名 struct 昇格でも伝播)。gbrace_ctx_t に **sub_dims チェーン**
+  を持たせ、gbrace_child_at が 1 段消費 (sub_ndim==1 なら最内 1D char 配列 → 文字列展開、sub_ndim>=2 なら
+  ネスト配列を再帰)。build_member_deref_node で 3D 以上は inner_deref_size=mid_stride / next_deref_size=elem_size
+  を立ててローカル多次元配列と同じ 3 段 subscript 表現に乗せる。`make test`=1018/1018 green。
+  **限界 (続き11 で消化)**: ローカル 2D char メンバは別経路 (parse_member_initializer)。続き11 で対応。
 
 ## このセッション（続き9）: グローバル struct 配列の要素メンバにある char 配列
 HANDOFF サブケース (c) `struct{char tag[4]; int n;} g[2]={{"aa",1},{"bb",2}}` を修正。
@@ -231,9 +263,16 @@ malloc/tree・hashtable・state machine・Duff's device・多数ローカル/fp 
    - (b) 2 次元 char メンバ `struct{char rows[2][4];}` → global_struct_2d_char_array_member で修正（続き8）。
    - (c) struct 配列内の char メンバ `struct{char tag[4];int n;} g[2]` → global_struct_array_char_member
      で修正（続き9）。
-   **残既知制約（別経路。次セッション候補）**: 3 次元以上の char メンバ `char c[2][2][3]`（gbrace_ctx_t が
-   全次元チェーンを持てず SIGSEGV）／ローカル (非 static) struct の 2D char メンバ（ローカル struct メンバ
-   初期化の別経路。1D ローカルは動作）。
+   - (d) 3 次元以上の char メンバ `struct{char c[2][2][3];}` → global_struct_3d_char_array_member で
+     修正（続き10、tag_member_info_t に arr_dims/mid_stride 追加）。
+2. **ローカル (非 static) struct の char 配列メンバ** —
+   - 1D `struct S{char name[8];}` のローカル: 元から動作。
+   - 2D `struct S{char rows[2][4];}` のローカル: local_struct_2d_char_array_member で修正（続き11）。
+   - **残既知制約（次セッション候補）**: 3D 以上 `char c[2][2][3]` のローカル (parse_member_initializer の
+     多次元経路を 3D 以上に拡張する必要、行自体がさらに 2D 配列のため EMIT_ROW_FROM_STRING を再帰化する)。
+3. **配列メンバへの brace elision** — `struct B b={"ab","cd"};` のような外側 brace 1 段のみの形式
+   (C11 6.7.9p20) が parse_struct_initializer のメンバ数判定で E3064。配列メンバが文字列リテラルを
+   複数受け取れる brace elision 分岐が要る。
 - それ以外: HANDOFF 列挙の既知未対応はすべて消化済み。上記網羅探索領域も再探索不要。**未探索の角度**
   （複数 TU リンク、ライブラリ関数との相互作用、ランダム生成ファズ）から新規 miscompile を炙り出す。
   索引は `docs/differential_testing/bug_coverage.md`。
