@@ -2933,6 +2933,17 @@ static node_t *build_unary_deref_node(node_t *operand) {
       lvar_t *src = psx_decl_find_lvar_by_offset(((node_lvar_t *)probe)->offset);
       if (src && src->outer_stride > 0 && src->mid_stride == 0 && !src->is_array) {
         node->deref_size = (short)src->elem_size;
+        /* タグ情報の carry: `struct S (*ap)[N]` の `*ap` は struct S[N] (配列) を表す。
+         * 変数 ap 自体は is_tag_pointer=0 (ポインタ-to-配列であって tag ポインタでない)
+         * のため上流の `is_tag_ptr` ガードで tag が落ちている。subscript 結果の
+         * `(*ap)[i].m` 解決のため、deref ノードに tag を carry する (is_tag_pointer=0:
+         * 結果は配列で、その要素が struct)。 */
+        if (src->tag_kind != TK_EOF && !src->is_tag_pointer && node->tag_kind == TK_EOF) {
+          node->tag_kind = src->tag_kind;
+          node->tag_name = src->tag_name;
+          node->tag_len = src->tag_len;
+          node->is_tag_pointer = 0;
+        }
         /* 要素がポインタの配列へのポインタ (`IP (*pia)[3]` / `BinOp (*pa)[3]`): src 側で
          * pointer_qual_levels=1 と base_deref_size=要素 pointee サイズが立つ。これを ND_DEREF
          * に carry し、build_subscript_deref の「要素はポインタ」分岐に乗せて `(*pia)[0]` の
@@ -2960,6 +2971,15 @@ static node_t *build_unary_deref_node(node_t *operand) {
     if (src && src->outer_stride > 0 && src->mid_stride > 0) {
       // 2D 以上 (`*p` の結果が配列)
       node->deref_size = (short)src->mid_stride;
+      /* タグ情報の carry: `struct S (*ap)[N][M]` の `*ap` は struct S[N][M] (2D 配列)。
+       * 1D 版と同様に、subscript 連鎖 `(*ap)[i][j].m` の解決のため tag を deref ノードへ
+       * carry する (is_tag_pointer=0: 結果は配列で、最終要素が struct)。 */
+      if (src->tag_kind != TK_EOF && !src->is_tag_pointer && node->tag_kind == TK_EOF) {
+        node->tag_kind = src->tag_kind;
+        node->tag_name = src->tag_name;
+        node->tag_len = src->tag_len;
+        node->is_tag_pointer = 0;
+      }
       if (src->extra_strides_count > 0) {
         node->inner_deref_size = (short)src->extra_strides[0];
         if (src->extra_strides_count > 1) {

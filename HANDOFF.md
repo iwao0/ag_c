@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き25〜27: 残課題 3 件全消化。**現時点で明確な未対応バグ無し**）
+最終更新: 2026-06-22（続き28: 配列へのポインタ経由の struct メンバ access）
 
 ## 現状
-- `make test` = **1034/1034 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-27 で発見した形まですべて消化)。
+- `make test` = **1035/1035 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-28 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,20 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き28）: 配列へのポインタ経由の struct メンバ access
+- **`struct S (*ap)[N]; (*ap)[i].m`** が E3005 で弾かれていた（ptr_to_array_struct_member）。
+  原因: ap (lvar) は宣言時に tag_kind=STRUCT を持つが is_tag_pointer=0（変数自体はポインタ-to-配列で
+  あって tag ポインタではない）。build_unary_deref_node 冒頭の `tag_kind != TK_EOF && is_tag_ptr`
+  ガードが偽となり、tag が ND_DEREF に carry されない。結果として `(*ap)` の psx_node_get_tag_type
+  が TK_EOF を返し、build_subscript_deref で subscript 結果に tag が立たず、member access が
+  E3005「'.' の左辺は構造体/共用体である必要があります」で失敗。`struct S s = (*ap)[1]` の struct
+  値コピー経路は memcpy ベースで tag 不要のため動作していた（差分でバグが顕在化しにくかった）。
+  修正: build_unary_deref_node の outer_stride 検出ブロック内 (1D / 2D 両方) で、
+  `src->tag_kind != TK_EOF && !src->is_tag_pointer` のとき deref ノードに tag を carry
+  （is_tag_pointer=0: 結果は配列で、要素が struct）。これで `(*ap)[i].m` の subscript+member
+  解決が通り、メンバ read/write・仮引数経由・2D `(*ap2)[i][j].m`・union 要素 `(*up)[i].s.a`・
+  グローバル `gap` のいずれも green。`make test`=1035/1035 green。
 
 ## このセッション（続き27）: ポインタ算術後の deref で pql/bds carry
 - **`*(pp + n)` の pql/bds carry**（struct_double_ptr_deref_arrow）。
