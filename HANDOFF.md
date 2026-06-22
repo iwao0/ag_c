@@ -1,36 +1,54 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き10〜14: char メンバ 5 形 + designator nested + fp 配列メンバ。残: tag shadowing）
+最終更新: 2026-06-22（続き10〜15: char メンバ 5 形 + designator nested + fp 配列メンバ + tag shadow [基本形]）
 
 ## 次セッションの最優先タスク（未着手・再現確認済み）
-このセッションで HANDOFF の char 配列メンバ系 5 形 (3D global / 2D local / 3D local / brace elision
-[global+local]) + 探索で発見した 2 形 (designator nested / fp 配列メンバ) を消化。残る既知制約は以下 1 件:
+このセッションで HANDOFF の char 配列メンバ系 5 形 + 探索で発見した 3 形 (designator nested /
+fp 配列メンバ / tag shadow 基本形) を消化。残る既知制約は以下 1 件:
 
-1. **タグ shadowing（内側スコープで同名 struct を別レイアウトで再宣言）**。
+1. **タグ shadowing の応用形（変数の宣言時 scope を覚える機構）**。
    ```c
-   struct S { int a; int b; };          /* 外側 */
-   int outer_val(struct S s){ return s.a+s.b; }
+   /* (a) 内側 1 で宣言した変数を内側 2 (さらに shadow) から参照 */
+   struct S { int p; int q; int r; };  /* 内側 1 */
+   struct S s = {7, 8, 9};
+   { struct S { char c[4]; };           /* 内側 2: shadow */
+     int v = s.p;  /* E3064: メンバ 'p' は存在しません */
+   }
+   /* (b) 内側スコープでグローバル変数 (外側 tag) のメンバを参照 */
+   struct S { int a; };                 /* 外側 */
+   struct S sg = {7};
    int main(void){
-     struct S s1 = {1,2}; int v1 = outer_val(s1);  /* OK */
-     { struct S { double x; double y; };   /* shadow: 別レイアウト */
-       struct S s2 = {1.5, 2.5};  /* agc: x=2.5, y=0.0 になる (壊れ) */
+     { struct S { double x; };           /* 内側: shadow */
+       int v = sg.a;  /* find_tag_type が内側 S を返し sg.a が解決できない */
      }
-     struct S s3 = {10,20};  /* 外側 S に戻ったはず */
-     return outer_val(s3);   /* agc: 1869835345 (壊れ) */
    }
    ```
-   原因: `psx_ctx_define_tag_type_with_layout` が既存タグを **update** する設計になっており、
-   内側スコープでの同名タグ再宣言が既存タグを上書きしてしまう。スコープ別に複数の同名タグを
-   保持する機構が無い。tag_type_t / tag_member_t には `scope_depth` フィールドが既にあるが、
-   define/lookup の双方で scope_depth を考慮した分岐が無い。
-   修正の見立て: (1) `psx_ctx_define_tag_type_with_layout` を「既存と scope_depth が異なる場合は
-   新規登録 (内側 shadow)」にする。(2) `find_tag_type` / `psx_ctx_get_tag_member_*` 系の
-   lookup で「scope_depth の高い (=深い) ものを優先」する。(3) `enter_scope_for_block_locals` /
-   leave で scope を進めるタイミングを確認 (block 単位で正しく enter/leave されるか)。
-   全 lookup 経路を改修するため副作用が大きく、回帰リスクも高い。
+   原因: lvar_t / global_var_t が tag_kind/name/len しか持たず、宣言時の tag_scope_depth を
+   覚えていない。メンバ参照 (build_member_deref_node 等) は find_tag_type で「最も内側」の
+   タグを取得するため、変数の宣言時タグと参照時タグがズレる。
+   修正の見立て: (1) lvar_t / global_var_t / node_mem_t に `tag_scope_depth` フィールドを追加。
+   (2) 変数宣言時に find_tag_type の結果から scope_depth を伝播。(3) メンバ解決経路で「変数
+   経由なら宣言時 scope_depth に固定して find_tag_member_info を呼ぶ」分岐を追加。(4) その
+   ためには psx_ctx_find_tag_member_info の signature に scope_depth を渡せるようにする。
+   現状の基本形 (同じスコープ内での宣言+参照、内側 shadow 後に外側へ戻る) は続き15 で対応済み。
 
 それ以外の未探索の角度（複数 TU リンク・ライブラリ関数との相互作用・ランダム生成ファズ）は
 下記「発見したが未修正」末尾と bug_coverage.md を参照。
+
+## このセッション（続き15）: タグ shadowing 基本形
+- **内側ブロックでの同名 struct 再宣言**（tag_shadowing_block_scope）。
+  `struct S{int a;int b;}; int main(){ { struct S{double x;double y;}; struct S s2={1.5,2.5}; ...}}`
+  で内側 s2 の初期化が外側 S のレイアウトで行われ s2.x が 2.5 (本来 1.5)、外側に戻った後の s3 も
+  壊れていた。psx_ctx_define_tag_type_with_layout が同名タグを問答無用で update していた (member_count
+  が増えるなら更新、それ以外は据え置き)。修正: existing->scope_depth と tag_scope_depth が一致する
+  ときだけ in-place update (前方宣言→定義)、異なれば新規挿入 (先頭 push)。leave_block_scope は既に
+  scope_depth>=old_depth を削除する設計なので shadow は scope を抜けると自然消滅。
+  メンバ lookup (get_tag_member_info / find_tag_member_info) も「find_tag_type で確定した
+  最も内側 tag の scope_depth と一致するメンバのみ」を返すよう改修 (混在防止)。
+  基本形 (同スコープでの宣言+参照、shadow 後に外側へ戻る、union のメンバアクセス含む) を網羅。
+  `make test`=1024/1024 green。
+  **限界 (応用形は次セッション)**: 上記「次セッションの最優先タスク」参照。lvar_t/global_var_t に
+  宣言時 scope_depth を持たせる追加機構が要る。
 
 ## このセッション（続き14）: グローバル struct の fp 配列メンバ
 - **fp 配列メンバの emit**（global_struct_fp_array_member）。
@@ -338,8 +356,9 @@ malloc/tree・hashtable・state machine・Duff's device・多数ローカル/fp 
    2D/3D int を消化。
 5. **グローバル struct の fp 配列メンバ** — global_struct_fp_array_member (続き14) で 1D float /
    2D double / スカラ混在を消化。
-6. **タグ shadowing（未修正）** — 「次セッションの最優先タスク」末尾参照。内側スコープでの同名
-   タグ別レイアウト宣言が動作せず、全 lookup 経路の改修が必要。
+6. **タグ shadowing 基本形** — tag_shadowing_block_scope (続き15) で同スコープ宣言+参照のケースを
+   消化。応用形 (内側 shadow 後に外側変数を参照、ネスト 2 段 shadow) は変数の宣言時 scope_depth を
+   覚える機構が要るため次セッション候補 (「次セッションの最優先タスク」参照)。
 - それ以外: HANDOFF 列挙の既知未対応はすべて消化済み。上記網羅探索領域も再探索不要。**未探索の角度**
   （複数 TU リンク、ライブラリ関数との相互作用、ランダム生成ファズ）から新規 miscompile を炙り出す。
   索引は `docs/differential_testing/bug_coverage.md`。
