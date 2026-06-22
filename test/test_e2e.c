@@ -1116,6 +1116,7 @@ static const test_case_t test_cases[] = {
     {"probes", "local_2d_pointer_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_pointer_array.c", 0, 0},
     {"probes", "local_2d_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_funcptr_array.c", 0, 0},
     {"probes", "wide_string_literal_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wide_string_literal_init.c", 0, 0},
+    {"probes", "c11_standard_headers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/c11_standard_headers.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
@@ -1818,7 +1819,28 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_trunc") == 0 || strcmp(sym, "_fabs") == 0 ||
             strcmp(sym, "_fmod") == 0 || strcmp(sym, "_fabsf") == 0 ||
             strcmp(sym, "_sqrtf") == 0 || strcmp(sym, "_ceilf") == 0 ||
-            strcmp(sym, "_floorf") == 0 || strcmp(sym, "_roundf") == 0) {
+            strcmp(sym, "_floorf") == 0 || strcmp(sym, "_roundf") == 0 ||
+            /* <wctype.h> / <wchar.h> / <fenv.h> / <locale.h> / <inttypes.h> の libc 関数。
+             * 外部シンボルなので名前空間化しない (c11_standard_headers fixture が使用)。 */
+            strcmp(sym, "_iswalnum") == 0 || strcmp(sym, "_iswalpha") == 0 ||
+            strcmp(sym, "_iswblank") == 0 || strcmp(sym, "_iswcntrl") == 0 ||
+            strcmp(sym, "_iswdigit") == 0 || strcmp(sym, "_iswgraph") == 0 ||
+            strcmp(sym, "_iswlower") == 0 || strcmp(sym, "_iswprint") == 0 ||
+            strcmp(sym, "_iswpunct") == 0 || strcmp(sym, "_iswspace") == 0 ||
+            strcmp(sym, "_iswupper") == 0 || strcmp(sym, "_iswxdigit") == 0 ||
+            strcmp(sym, "_towlower") == 0 || strcmp(sym, "_towupper") == 0 ||
+            strcmp(sym, "_wcslen") == 0 || strcmp(sym, "_wcscpy") == 0 ||
+            strcmp(sym, "_wcsncpy") == 0 || strcmp(sym, "_wcscat") == 0 ||
+            strcmp(sym, "_wcscmp") == 0 || strcmp(sym, "_wcsncmp") == 0 ||
+            strcmp(sym, "_wcschr") == 0 || strcmp(sym, "_wcsrchr") == 0 ||
+            strcmp(sym, "_wmemcpy") == 0 || strcmp(sym, "_wmemset") == 0 ||
+            strcmp(sym, "_feclearexcept") == 0 || strcmp(sym, "_fetestexcept") == 0 ||
+            strcmp(sym, "_feraiseexcept") == 0 || strcmp(sym, "_fegetround") == 0 ||
+            strcmp(sym, "_fesetround") == 0 ||
+            strcmp(sym, "_setlocale") == 0 || strcmp(sym, "_localeconv") == 0 ||
+            strcmp(sym, "_imaxabs") == 0 || strcmp(sym, "_powf") == 0 ||
+            strcmp(sym, "_powl") == 0 || strcmp(sym, "_sqrtl") == 0 ||
+            strcmp(sym, "_fabsl") == 0 || strcmp(sym, "_fmodf") == 0) {
           fputs(sym, out);
         } else {
           fprintf(out, "_%s_%s", prefix, sym + 1);

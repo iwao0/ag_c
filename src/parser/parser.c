@@ -2117,10 +2117,17 @@ static int g_last_type_complex = 0;
  * (C11 6.2.5/6.7.2.1) ため、サイズだけでは区別できないこれらを side-channel で渡す。 */
 static int g_last_type_long_long = 0;
 static int g_last_type_plain_char = 0;
+/* long double。ag_c は long double を double に lowering するが、_Generic は double と
+ * long double を別型として扱う (C11 6.2.5) ため side-channel で区別する。 */
+static int g_last_type_long_double = 0;
 // g_last_type_atomic is defined above (before skip_cv_qualifiers)
 
 int psx_last_type_is_unsigned(void) {
   return g_last_type_unsigned;
+}
+
+int psx_last_type_is_long_double(void) {
+  return g_last_type_long_double;
 }
 
 int psx_last_type_is_complex(void) {
@@ -2179,6 +2186,7 @@ token_kind_t psx_consume_type_kind(void) {
   g_last_type_unsigned = 0;
   g_last_type_complex = 0;
   g_last_type_long_long = 0;
+  g_last_type_long_double = 0;
   g_last_type_plain_char = 0;
   g_last_type_atomic = 0;
   g_last_type_thread_local = 0;
@@ -2315,6 +2323,7 @@ token_kind_t psx_consume_type_kind(void) {
   g_last_type_complex = saw_complex;
   g_last_type_long_long = (long_count >= 2) ? 1 : 0;
   g_last_type_plain_char = (saw_char && !saw_signed && !saw_unsigned) ? 1 : 0;
+  g_last_type_long_double = (saw_double && long_count >= 1) ? 1 : 0;
   if ((saw_complex || saw_imaginary) && !(saw_float || saw_double)) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, start,
                    "%s",

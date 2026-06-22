@@ -201,6 +201,11 @@ typedef struct ir_inst_t {
    *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
    *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
   unsigned char ret_complex_half;
+  /* IR_LOAD_SYM: 関数シンボルのアドレス参照 (関数ポインタ値)。外部関数 (libc 等) の
+   * アドレスは Apple ARM64 では GOT 経由 (@GOTPAGE/@GOTPAGEOFF + ldr) が必須で、直接
+   * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
+   * 有効なので関数アドレスは常に GOT 経由にする。 */
+  unsigned char is_got_funcref;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
    * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で

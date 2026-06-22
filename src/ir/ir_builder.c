@@ -1245,6 +1245,7 @@ static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
   sym->dst = ir_val_vreg(v, IR_TY_PTR);
   sym->sym = fr->funcname;
   sym->sym_len = fr->funcname_len;
+  sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
   ir_func_append_inst(ctx->f, sym);
   return ir_val_vreg(v, IR_TY_PTR);
 }

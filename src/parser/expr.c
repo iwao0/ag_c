@@ -54,6 +54,7 @@ typedef struct {
   int scalar_size;
   int is_unsigned;
   int is_long_long;  /* long long (C11 6.2.5: long と long long は同サイズでも別型) */
+  int is_long_double;/* long double (C11 6.2.5: double と long double は同表現でも別型) */
   int is_plain_char; /* plain char (C11 6.2.5/6.7.2.1: char と signed/unsigned char は別型) */
   int is_pointer;
   token_kind_t tag_kind;
@@ -528,6 +529,11 @@ static int parse_integer_cast_spec_sequence(token_t *start, token_kind_t *out_ki
     t = t->next;
   }
 
+  /* `long double` は浮動小数型。`long` だけ消費して `double` を残すと、_Generic 関連型や
+   * cast で「long の後に double」になり呼び出し側が ': 必要' (E2006) を出す。整数指定子の
+   * 直後が `double` なら整数列ではない (= long double) と判断し、汎用型パーサに委ねる。 */
+  if (t && t->kind == TK_DOUBLE) return 0;
+
   if (n_signed > 1 || n_unsigned > 1 || n_short > 1 || n_long > 2 || n_int > 1 || n_char > 1) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, start, "%s", diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
   }
@@ -719,7 +725,10 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
   }
   if (control.kind == TK_FLOAT || control.kind == TK_DOUBLE ||
       assoc.kind == TK_FLOAT || assoc.kind == TK_DOUBLE) {
-    return control.kind == assoc.kind;
+    /* double と long double は同じ kind (TK_DOUBLE) に lowering されるが C11 では別型。
+     * is_long_double で区別する (制御式が素の double のとき long double: に当てない)。 */
+    return control.kind == assoc.kind &&
+           control.is_long_double == assoc.is_long_double;
   }
   return control.scalar_size == assoc.scalar_size && control.is_unsigned == assoc.is_unsigned &&
          control.is_long_long == assoc.is_long_long &&
@@ -805,6 +814,10 @@ static int parse_assoc_base_type(generic_type_t *out,
   tk = psx_consume_type_kind();
   if (tk == TK_EOF) return 0;
   out->kind = tk;
+  /* `long double` は double に lowering され kind=TK_DOUBLE になるが、_Generic では
+   * double と別型。side-channel フラグで区別する (double 制御式が long double: に
+   * 誤マッチして tgmath の sqrt(2.0) が sqrtl を呼ぶのを防ぐ)。 */
+  out->is_long_double = psx_last_type_is_long_double();
   psx_ctx_get_type_info(tk, NULL, base_elem_size);
   if (tk == TK_FLOAT) *base_fp_kind = TK_FLOAT_KIND_FLOAT;
   else if (tk == TK_DOUBLE) *base_fp_kind = TK_FLOAT_KIND_DOUBLE;
@@ -3499,7 +3512,28 @@ static node_t *parse_call_postfix(node_t *callee) {
       callee = base;
     }
   }
-  node->callee = callee;
+  /* callee が bare 関数参照 (ND_FUNCREF) のとき — 典型的には `_Generic(...)(args)` が
+   * 関数を選んだ場合や `(funcname)(args)` — は直接呼び出しに変換する。funcname 経由なら
+   * プロトタイプから戻り型/引数の fp ABI を引けるので、tgmath の `sqrt(2.0)` 等が double を
+   * 正しく d0 で渡し受けできる (bare funcref の間接呼び出しはシグネチャを持たず整数扱いで
+   * 値が化けていた)。 */
+  if (callee && callee->kind == ND_FUNCREF) {
+    node_funcref_t *fr = (node_funcref_t *)callee;
+    node->funcname = fr->funcname;
+    node->funcname_len = fr->funcname_len;
+    node->callee = NULL;
+    callee = NULL;
+    /* 直接呼び出しと同じく、プロトタイプから戻り型情報を引く (build_unqualified_call と
+     * 同じ)。これがないと fp 戻り値を x0 で読む等で値が化ける (tgmath の sqrt 等)。 */
+    node->base.fp_kind = psx_ctx_get_function_ret_fp_kind(fr->funcname, fr->funcname_len);
+    node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(fr->funcname, fr->funcname_len);
+    if (psx_ctx_get_function_ret_is_complex(fr->funcname, fr->funcname_len))
+      node->base.is_complex = 1;
+    if (psx_ctx_get_function_ret_is_unsigned(fr->funcname, fr->funcname_len))
+      psx_node_set_unsigned((node_t *)node, 1);
+  } else {
+    node->callee = callee;
+  }
   /* 間接呼び出しで callee の pointee fp_kind (= 関数戻り型の fp_kind。
    * `double (*d)(double)` は宣言時 `double *d` と同じく pointee_fp_kind=double が
    * 立つ) を funcall ノードに載せる。これがないと ir_builder が戻り値型を整数

@@ -301,12 +301,20 @@ static void gen_inst_load_str(gen_ctx_t *ctx, ir_inst_t *inst) {
 }
 
 static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
-      /* グローバル変数のアドレス (_<name>@PAGE/PAGEOFF) を vreg に */
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-      cg_emitf("  adrp %s, _%.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-  cg_emitf("  add %s, %s, _%.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      if (inst->is_got_funcref) {
+        /* 関数アドレス: GOT 経由 (外部 libc 関数は @PAGE 直参照だと「does not have
+         * address」でリンク失敗。GOT はローカル定義にも有効)。
+         *   adrp d, _sym@GOTPAGE ; ldr d, [d, _sym@GOTPAGEOFF] */
+        cg_emitf("  adrp %s, _%.*s@GOTPAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+        cg_emitf("  ldr %s, [%s, _%.*s@GOTPAGEOFF]\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      } else {
+        /* グローバル変数のアドレス (_<name>@PAGE/PAGEOFF) を vreg に */
+        cg_emitf("  adrp %s, _%.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+        cg_emitf("  add %s, %s, _%.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      }
   release_dst(ctx, inst->dst, d, spill);
 }
 
