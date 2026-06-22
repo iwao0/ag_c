@@ -597,6 +597,12 @@ static node_t *parse_stmt_if(void) {
   node->base.kind = ND_IF;
   node->base.lhs = ps_expr();
   tk_expect(')');
+  /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
+   * (clang -Wempty-body 相当)。 */
+  if (curtok()->kind == TK_SEMI) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                   "if 文の本体が空です (タイプミスの可能性)");
+  }
   node->base.rhs = stmt_internal();
   if (curtok()->kind == TK_ELSE) {
     set_curtok(curtok()->next);

@@ -2392,6 +2392,16 @@ static node_t *assign(void) {
       if (lhs_is_bool && rhs) {
         rhs = psx_node_new_binary(ND_NE, rhs, psx_node_new_num(0));
       }
+      /* 自己代入 `x = x` の警告 (両辺が同じ ND_LVAR offset)。
+       * よくあるタイプミス・デバッグ残骸を検出する (clang -Wself-assign 相当)。
+       * struct メンバ (ND_DEREF) や グローバル変数の自己代入も同様に拡張可だが、
+       * まずはローカル変数の単純形だけにとどめる。 */
+      if (assign_target && assign_target->kind == ND_LVAR &&
+          rhs && rhs->kind == ND_LVAR &&
+          ((node_lvar_t *)assign_target)->offset == ((node_lvar_t *)rhs)->offset) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "変数を自身に代入しています (タイプミスの可能性)");
+      }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
       assign_node->type_size = ps_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
@@ -2512,15 +2522,33 @@ static node_t *relational(void) {
   }
 }
 
+/* シフト量が型の幅を超えるリテラル時に C11 6.5.7p3 違反 (未定義動作) を警告する。
+ * 通常の int (ts<=4) なら 32 ビット幅、long (ts==8) なら 64 ビット幅。負値も未定義。 */
+static void warn_if_shift_oob(node_t *lhs, node_t *rhs, const char *op_name) {
+  if (!rhs || rhs->kind != ND_NUM) return;
+  long long r = ((node_num_t *)rhs)->val;
+  int lhs_ts = lhs ? ps_node_type_size(lhs) : 4;
+  int width = (lhs_ts >= 8) ? 64 : 32;
+  if (r < 0 || r >= width) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                   "シフト量 %lld が型の幅 (%d ビット) を超えています (C11 6.5.7p3 未定義動作): %s",
+                   r, width, op_name);
+  }
+}
+
 static node_t *shift(void) {
   node_t *node = add();
   for (;;) {
     if (curtok()->kind == TK_SHL) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_SHL, node, add());
+      node_t *rhs = add();
+      warn_if_shift_oob(node, rhs, "<<");
+      node = psx_node_new_binary(ND_SHL, node, rhs);
     } else if (curtok()->kind == TK_SHR) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_SHR, node, add());
+      node_t *rhs = add();
+      warn_if_shift_oob(node, rhs, ">>");
+      node = psx_node_new_binary(ND_SHR, node, rhs);
     }
     else return node;
   }
@@ -2619,10 +2647,23 @@ static node_t *mul(void) {
       node = psx_node_new_binary(ND_MUL, node, cast());
     } else if (curtok()->kind == TK_DIV) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_DIV, node, cast());
+      node_t *rhs = cast();
+      /* C11 6.5.5p5: / または % で除数が 0 は未定義動作。リテラル 0 は警告。 */
+      if (rhs && rhs->kind == ND_NUM && ((node_num_t *)rhs)->val == 0 &&
+          rhs->fp_kind == TK_FLOAT_KIND_NONE) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "0 による除算 (C11 6.5.5p5 未定義動作)");
+      }
+      node = psx_node_new_binary(ND_DIV, node, rhs);
     } else if (curtok()->kind == TK_MOD) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_MOD, node, cast());
+      node_t *rhs = cast();
+      if (rhs && rhs->kind == ND_NUM && ((node_num_t *)rhs)->val == 0 &&
+          rhs->fp_kind == TK_FLOAT_KIND_NONE) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "0 による剰余 (C11 6.5.5p5 未定義動作)");
+      }
+      node = psx_node_new_binary(ND_MOD, node, rhs);
     }
     else return node;
   }

@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き42: タグ再定義 + 非 void 関数 return なし）
+最終更新: 2026-06-23（続き43: コンパイル時 UB / 怪しい書き方の警告 4 件）
 
 ## 現状
-- `make test` = **1050/1050 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-42 で発見した形まですべて消化)。
+- `make test` = **1051/1051 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-43 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,18 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き43）: コンパイル時 UB / 怪しい書き方の警告 4 件
+コンパイル時に検出可能な未定義動作・タイプミスの警告を追加:
+- 0 リテラルでの除算・剰余 `1 / 0` / `1 % 0` (C11 6.5.5p5)
+- シフト量が型の幅以上 / 負 `1 << 32` (C11 6.5.7p3)
+- 自己代入 `x = x` (clang -Wself-assign 相当)
+- 空 if 本体 `if (cond);` (clang -Wempty-body 相当)
+
+実装: mul() / shift() / assign() / parse_stmt_if() で diag_warn_tokf を呼ぶ。
+合法形 (非ゼロ除算、適切なシフト、別変数代入、本体ありの if) を fixture で網羅。
+
+`make test`=1051/1051 green。
 
 ## このセッション（続き42）: タグ再定義 + 非 void 関数 return なし
 - **タグ再定義** (struct / enum): `struct S{int x;}; struct S{int y;};` の重複定義が silently
