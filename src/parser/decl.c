@@ -1266,16 +1266,43 @@ static node_mem_t *build_member_array_elem_assign_node(node_t *lhs, node_t *valu
   return an;
 }
 
+/* 多次元 char 配列メンバ (`char c[2][2][3]`) の brace init を再帰的に展開する。
+ * 呼出時点で外側 `{` は **消費済み** (caller が tk_consume 済み、内部の再帰も同様)。
+ *
+ *   ndim == 1: 行 (dims[0] バイト)。内側 brace の中で文字列 1 つ (`{"ab"}`) を展開する
+ *              or 数値スカラを並べる (`{'a','b'}`)。
+ *   ndim >= 2: dims[0] 個の要素を順に処理し、各要素は内側 (ndim-1) 次元配列。
+ *              内側 `{` で再帰、文字列だけなら ndim==2 のとき行 brace elision として展開。
+ *
+ * `*flat` はメンバ先頭からの累積バイト位置。要素ごとに進め、関数末で level 末まで進める。 */
+static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset,
+                                                int array_len, const int *dims, int ndim,
+                                                int *flat, node_t *init_chain,
+                                                tk_float_kind_t member_fp_kind, int member_is_bool);
+
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
                                         int member_array_len, int member_outer_stride,
-                                        int member_is_bool, tk_float_kind_t member_fp_kind) {
+                                        int member_is_bool, tk_float_kind_t member_fp_kind,
+                                        const int *member_arr_dims, int member_arr_ndim) {
   if (member_array_len > 0) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
     node_t *init_chain = NULL;
     if (tk_consume('{')) {
+      /* 3 次元以上の char 配列メンバ (`char c[2][2][3]`) は、各次元 dims を持って
+       * 再帰展開する。2D の outer_stride 経路では「行 = 内側 1 次元 char 配列」しか
+       * 表現できず、行自体がさらに 2D 配列となる 3D 以上で内側構造を見れないため。
+       * グローバルの gbrace_ctx_t.sub_dims チェーンと同じ機構をローカルに移植。 */
+      if (member_arr_ndim >= 3 && member_arr_dims && elem_size == 1) {
+        int flat = 0;
+        node_t *chain = parse_multidim_char_member_brace(
+            owner, member_offset, array_len,
+            member_arr_dims, member_arr_ndim, &flat, NULL,
+            member_fp_kind, member_is_bool);
+        return chain ? chain : psx_node_new_num(0);
+      }
       /* 多次元配列メンバ (`int a[2][2]`): ネスト brace `{{1,2},{3,4}}` を行優先で
        * フラット展開する。member_outer_stride は 1 行のバイトサイズなので
        * 行要素数 inner_len = outer_stride / elem_size。各行 brace の不足要素は
@@ -1481,6 +1508,122 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                  diag_message_for(DIAG_ERR_PARSER_AGGREGATE_INIT_SCALAR_SIZE_UNSUPPORTED));
   }
   return parse_scalar_brace_initializer();
+}
+
+/* 文字列リテラル val を `flat` から `row_w` バイト (上限 array_len) に展開し、
+ * 1 バイトずつ assign ノードを init_chain に追加する。残りは struct 全体の zero-fill
+ * に委ねる (caller が flat を行末まで進める)。grobal 経路 (psx_gbrace_flat) と対称。 */
+static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row_w,
+                                       int array_len, int *flat, node_string_t *s,
+                                       node_t *init_chain,
+                                       tk_float_kind_t fp_kind, int is_bool) {
+  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  if (!lit) return init_chain;
+  int j = 0, sp = 0;
+  while (sp < lit->len && j < row_w && *flat + j < array_len) {
+    uint32_t cp = 0;
+    if (lit->str[sp] == '\\') {
+      if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) {
+        cp = (unsigned char)lit->str[sp]; sp++;
+      }
+    } else { cp = (unsigned char)lit->str[sp]; sp++; }
+    node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, 1, *flat + j);
+    node_mem_t *an = build_member_array_elem_assign_node(
+        lhs, psx_node_new_num((int)cp), 1, fp_kind, is_bool);
+    init_chain = init_chain
+        ? psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an)
+        : (node_t *)an;
+    j++;
+  }
+  return init_chain;
+}
+
+static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset,
+                                                int array_len, const int *dims, int ndim,
+                                                int *flat, node_t *init_chain,
+                                                tk_float_kind_t member_fp_kind, int member_is_bool) {
+  if (tk_consume('}')) return init_chain;
+  /* この level が消費する総バイト数 (dims[0..ndim) の積)。要素境界を決めるのに使う。 */
+  int level_total = 1;
+  for (int i = 0; i < ndim; i++) level_total *= dims[i];
+  int level_start = *flat;
+  int elems = dims[0];
+  int per_elem = level_total / (elems > 0 ? elems : 1);
+  int idx = 0;
+  for (;;) {
+    /* この要素の書き出し開始位置を要素境界へスナップ (前要素が短かった場合の埋め)。 */
+    if (idx < elems) *flat = level_start + idx * per_elem;
+    if (curtok()->kind == TK_LBRACE) {
+      if (ndim == 2) {
+        /* 内側 brace は「行」: dims[1] バイトを 1 つの文字列で埋めるか、char スカラを並べる。 */
+        tk_consume('{');
+        int row_w = dims[1];
+        if (!tk_consume('}')) {
+          int row_start_flat = *flat;
+          int k = 0;
+          for (;;) {
+            node_t *val = parse_scalar_brace_initializer();
+            if (val && val->kind == ND_STRING) {
+              init_chain = emit_string_row_assigns(owner, member_offset, row_w, array_len,
+                                                   flat, (node_string_t *)val, init_chain,
+                                                   member_fp_kind, member_is_bool);
+              /* 文字列 1 つで行を消費。残り要素は捨てる (グローバル経路と同じ振る舞い)。 */
+              if (tk_consume('}')) break;
+              tk_expect(',');
+              if (tk_consume('}')) break;
+              continue;
+            }
+            if (k < row_w && *flat + k < array_len) {
+              node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, 1, *flat + k);
+              node_mem_t *an = build_member_array_elem_assign_node(lhs, val, 1,
+                  member_fp_kind, member_is_bool);
+              init_chain = init_chain
+                  ? psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an)
+                  : (node_t *)an;
+              k++;
+            }
+            if (tk_consume('}')) break;
+            tk_expect(',');
+            if (tk_consume('}')) break;
+          }
+          (void)row_start_flat;
+          *flat = row_start_flat + row_w;     /* 行末まで進める (残りは zero-fill) */
+        }
+      } else {
+        /* ndim >= 3: 内側 `{` を消費してから次元を再帰展開。 */
+        tk_consume('{');
+        init_chain = parse_multidim_char_member_brace(owner, member_offset, array_len,
+                                                       dims + 1, ndim - 1, flat, init_chain,
+                                                       member_fp_kind, member_is_bool);
+      }
+    } else if (curtok()->kind == TK_STRING && ndim == 2) {
+      /* 行 brace なしの brace elision: `{"ab","cd"}` の各文字列を 1 行として展開。 */
+      node_t *val = parse_scalar_brace_initializer();
+      init_chain = emit_string_row_assigns(owner, member_offset, dims[1], array_len,
+                                           flat, (node_string_t *)val, init_chain,
+                                           member_fp_kind, member_is_bool);
+      *flat = level_start + (idx + 1) * per_elem;  /* 要素境界へ */
+    } else {
+      /* 全 brace 省略の scalar 要素 (`{1,2,3,4,...}`)。1 要素 1 バイトずつ書く。 */
+      node_t *val = parse_scalar_brace_initializer();
+      if (*flat < array_len) {
+        node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, 1, *flat);
+        node_mem_t *an = build_member_array_elem_assign_node(lhs, val, 1,
+            member_fp_kind, member_is_bool);
+        init_chain = init_chain
+            ? psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an)
+            : (node_t *)an;
+        (*flat)++;
+      }
+    }
+    idx++;
+    if (tk_consume('}')) break;
+    tk_expect(',');
+    if (tk_consume('}')) break;
+  }
+  /* level 末まで進めて caller の境界計算を正しく保つ。 */
+  *flat = level_start + level_total;
+  return init_chain;
 }
 
 static bool tag_find_member(lvar_t *var, char *name, int len, tag_member_info_t *out) {
@@ -1852,7 +1995,8 @@ static node_t *parse_struct_initializer(lvar_t *var) {
        * 逐次代入を順に発行すれば最後の代入が残る。 */
       node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                      info.tag_kind, info.tag_name, info.tag_len,
-                                                     info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind);
+                                                     info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind,
+                                                     info.arr_dims, info.arr_ndim);
       init_chain = append_to_init_chain(init_chain,
           wrap_member_init_as_assign(var, &info, member_init));
       record_assigned_member(assigned_names, assigned_lens, assigned_kind,
@@ -1996,7 +2140,8 @@ static node_t *struct_member_elision(lvar_t *nested) {
     if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
     node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
                                              mi.tag_kind, mi.tag_name, mi.tag_len,
-                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool, mi.fp_kind);
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool, mi.fp_kind,
+                                             mi.arr_dims, mi.arr_ndim);
     node_t *as = wrap_member_init_as_assign(nested, &mi, minit);
     chain = chain ? psx_node_new_binary(ND_COMMA, chain, as) : as;
     if (curtok() && curtok()->kind == TK_RBRACE) break;
@@ -2039,7 +2184,8 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
     if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
     node_t *minit = parse_member_initializer(nested, mi.offset, mi.type_size,
                                              mi.tag_kind, mi.tag_name, mi.tag_len,
-                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool, mi.fp_kind);
+                                             mi.is_tag_pointer, mi.array_len, mi.outer_stride, mi.is_bool, mi.fp_kind,
+                                             mi.arr_dims, mi.arr_ndim);
     chain = psx_node_new_binary(ND_COMMA, chain, wrap_member_init_as_assign(nested, &mi, minit));
   }
   return chain;
@@ -2120,7 +2266,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
   }
   node_t *member_init = parse_member_initializer(var, info.offset, info.type_size,
                                                  info.tag_kind, info.tag_name, info.tag_len,
-                                                 info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind);
+                                                 info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind,
+                                                 info.arr_dims, info.arr_ndim);
   node_t *init_chain = wrap_member_init_as_assign(var, &info, member_init);
   if (!tk_consume(',')) {
     tk_expect('}');
@@ -2144,7 +2291,8 @@ static node_t *parse_union_initializer(lvar_t *var) {
     }
     node_t *extra_init = parse_member_initializer(var, info.offset, info.type_size,
                                                   info.tag_kind, info.tag_name, info.tag_len,
-                                                  info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind);
+                                                  info.is_tag_pointer, info.array_len, info.outer_stride, info.is_bool, info.fp_kind,
+                                                  info.arr_dims, info.arr_ndim);
     node_t *extra_assign = wrap_member_init_as_assign(var, &info, extra_init);
     init_chain = append_to_init_chain(init_chain, extra_assign);
     if (tk_consume('}')) return init_chain;
