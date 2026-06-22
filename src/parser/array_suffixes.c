@@ -55,6 +55,13 @@ int psx_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_d
 
 int psx_parse_member_array_suffixes(int *out_is_flex_array,
                                     int *out_dim_count, int *out_first_dim) {
+  return psx_parse_member_array_suffixes_ex(out_is_flex_array, out_dim_count,
+                                            out_first_dim, NULL, 0);
+}
+
+int psx_parse_member_array_suffixes_ex(int *out_is_flex_array,
+                                       int *out_dim_count, int *out_first_dim,
+                                       int *out_dims, int max_dims) {
   int arr_total = 1;
   int is_flex_array = 0;
   int dim_count = 0;
@@ -70,6 +77,7 @@ int psx_parse_member_array_suffixes(int *out_is_flex_array,
       arr_total *= dim;
     }
     if (dim_count == 0) first_dim = dim;
+    if (out_dims && dim_count < max_dims) out_dims[dim_count] = dim;
     dim_count++;
     tk_expect(']');
   }

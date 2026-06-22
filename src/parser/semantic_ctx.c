@@ -57,6 +57,13 @@ struct tag_member_t {
   int is_bool;              // 1: _Bool メンバ (代入を 0/1 に正規化する)
   int is_unsigned;          // 1: unsigned メンバ (load を zero-extend する)
   int outer_stride;         // 多次元配列メンバの最外次元バイトストライド（0: 非多次元）
+  /* 3 次元以上の配列メンバの中間段ストライド (1 段 subscript 後の要素サイズ)。
+   * 0 = 2 次元以下 (outer_stride / elem_size の 2 段で済む)。 */
+  int mid_stride;
+  /* 多次元 char 配列メンバ (`char c[2][2][3]`) の各次元サイズ。最外側から arr_ndim
+   * 段。グローバル brace init の再帰展開で 1 段ずつ消費する。0 = 非多次元 char。 */
+  int arr_dims[8];
+  int arr_ndim;
   int decl_order;
   int scope_depth;
 };
@@ -483,6 +490,41 @@ void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, 
   }
 }
 
+void psx_ctx_set_tag_member_mid_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                       char *member_name, int member_len, int mid_stride) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      m->mid_stride = mid_stride;
+      return;
+    }
+  }
+}
+
+void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                     char *member_name, int member_len,
+                                     const int *dims, int ndim) {
+  if (ndim < 0) ndim = 0;
+  if (ndim > 8) ndim = 8;
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      for (int i = 0; i < 8; i++) m->arr_dims[i] = 0;
+      for (int i = 0; i < ndim; i++) m->arr_dims[i] = dims[i];
+      m->arr_ndim = ndim;
+      return;
+    }
+  }
+}
+
 void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
                                         char *member_name, int member_len, int is_unsigned) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -526,6 +568,9 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->is_bool = m->is_bool;
   out->is_unsigned = m->is_unsigned;
   out->outer_stride = m->outer_stride;
+  out->mid_stride = m->mid_stride;
+  for (int i = 0; i < 8; i++) out->arr_dims[i] = m->arr_dims[i];
+  out->arr_ndim = m->arr_ndim;
 }
 
 /* tag の index 番目 (offset 昇順) のメンバ全属性を 1 回のクエリで取得する統合 API。

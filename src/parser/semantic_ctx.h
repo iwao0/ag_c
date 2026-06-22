@@ -31,6 +31,16 @@ void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, i
                                         char *member_name, int member_len, int is_unsigned);
 void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
                                           char *member_name, int member_len, int outer_stride);
+/* 3 次元以上の配列メンバの中間段ストライド (1 段 subscript 後の要素サイズ) を保存する。
+ * 3D `char c[2][2][3]` なら 3 (=arr_dims[1]*arr_dims[2]*elem / arr_dims[1])。 */
+void psx_ctx_set_tag_member_mid_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                       char *member_name, int member_len, int mid_stride);
+/* 多次元 char 配列メンバ (`char c[2][2][3]`) の各次元サイズを保存する。
+ * dims[0..ndim) を最外側から並べる。ndim<=8。グローバル brace init の再帰
+ * 展開で 1 段ずつ消費する (gbrace_ctx_t.sub_dims を介して)。 */
+void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                     char *member_name, int member_len,
+                                     const int *dims, int ndim);
 
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。
@@ -59,6 +69,16 @@ typedef struct {
   int is_bool;
   int is_unsigned;
   int outer_stride;
+  /* 3 次元以上の配列メンバ (`char c[2][2][3]` / `int t[2][2][2]`) の中間段ストライド
+   * (1 段目 subscript 後の要素サイズ = 残り次元の総バイト数 / arr_dims[1])。
+   * 2D は 0 (outer_stride / elem_size の 2 段で済む)。3D 以上で inner_deref_size に
+   * 載せて多段 subscript を正しくスケールする。 */
+  int mid_stride;
+  /* 多次元 char 配列メンバ (`char c[2][2][3]`) の各次元サイズ。arr_ndim 段だけ
+   * 有効。グローバル brace init の再帰展開で 1 段ずつ消費する。0 = 非多次元 char
+   * (従来通り outer_stride のみで運用)。 */
+  int arr_dims[8];
+  int arr_ndim;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,

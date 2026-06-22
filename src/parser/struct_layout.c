@@ -257,8 +257,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
       int arr_dim_count = 0, arr_first_dim = 0;
-      int arr_size = psx_parse_member_array_suffixes(&is_flex_array,
-                                                     &arr_dim_count, &arr_first_dim);
+      int arr_dims_buf[8] = {0};
+      int arr_size = psx_parse_member_array_suffixes_ex(&is_flex_array,
+                                                        &arr_dim_count, &arr_first_dim,
+                                                        arr_dims_buf, 8);
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
       int member_elem_size = head.is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
@@ -324,6 +326,25 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
                                               member_name, member_len,
                                               inner_count * member_elem_size);
+          /* 3 次元以上は中間段ストライド (1 段 subscript 後の要素サイズ) も保存。
+           * `char c[2][2][3]` なら arr_dims=[2,2,3]、mid_stride = 3*1 = 3。
+           * これがないと build_member_deref_node の inner_deref_size が elem_size の
+           * ままで 3 段目 subscript が誤スケール (or SIGSEGV) になっていた。 */
+          if (arr_dim_count >= 3 && arr_dims_buf[1] > 0) {
+            int inner2 = inner_count / arr_dims_buf[1];  /* 第1+第2次元を除く要素数 */
+            psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len,
+                                              member_name, member_len,
+                                              inner2 * member_elem_size);
+          }
+          /* 多次元 char 配列メンバ (`char c[2][2][3]`) は各次元サイズも保存する。
+           * グローバル brace init `{{{"ab","cd"},{"ef","gh"}}}` を再帰展開する
+           * (gbrace_ctx_t.sub_dims 経由) のに使う。outer_stride だけでは 3D 以上で
+           * 内側次元の分割が一意に決まらず文字列がポインタ化していた。 */
+          if (member_tag_kind == TK_EOF && member_elem_size == 1) {
+            psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
+                                            member_name, member_len,
+                                            arr_dims_buf, arr_dim_count);
+          }
         }
         member_count++;
       }
@@ -356,6 +377,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
               psx_ctx_set_tag_member_is_unsigned(tag_kind, tag_name, tag_len, im.name, im.len, 1);
             if (im.outer_stride > 0)
               psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len, im.name, im.len, im.outer_stride);
+            if (im.mid_stride > 0)
+              psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len, im.name, im.len, im.mid_stride);
+            if (im.arr_ndim > 0)
+              psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len, im.name, im.len,
+                                              im.arr_dims, im.arr_ndim);
             member_count++;
           }
         }

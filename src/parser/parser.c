@@ -1159,8 +1159,13 @@ typedef struct {
   int is_array;           /* この level が配列か (要素型は tag_kind) */
   int elem_size;          /* 非タグ配列メンバ (`char name[8]`) の要素サイズ。char 配列の文字列展開判定に使う */
   int array_len;          /* 同上の要素数 (0=非配列) */
-  int row_width;          /* 多次元 char 配列メンバ (`char rows[2][4]`) の行幅 (内側 1 次元のバイト数)。
-                           * 0=非多次元。gbrace_child_at が要素を char[row_width] として返すのに使う */
+  /* 多次元 char 配列メンバ (`char c[2][2][3]`) の「残り」次元チェーン。is_array=1 のとき、
+   * 最外側次元はこの level が表現し、sub_dims[0..sub_ndim) が内側に残る次元を最外側から並べる。
+   * gbrace_child_at で 1 段下がるたびに sub_dims を 1 つ消費し、内側 ctx を生成する。
+   * sub_ndim==0 は単純 1 次元 (従来挙動)。sub_ndim==1 は要素が「char[sub_dims[0]] 行」(文字列展開)。
+   * sub_ndim>=2 はさらに内側がネスト配列。 */
+  int sub_dims[8];
+  int sub_ndim;
 } gbrace_ctx_t;
 
 /* tag 直接指定版の `.member` designator 解決 (resolve_global_member_designator の gv 非依存版)。 */
@@ -1186,14 +1191,17 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
    * type_size に要素サイズ (char=1) が入るため、deref_size が無ければ type_size を使う。 */
   int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
   gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0),
-                    elem, mi->array_len, 0};
-  /* 多次元 char 配列メンバ (`char rows[2][4]`): outer_stride に行幅 (内側 1 次元の
-   * バイト数) が入る。これを row_width に持たせ、gbrace_child_at が各要素を「内側 1 次元
-   * char 配列 (char[row_width])」として返せるようにする。これがないとネスト brace
-   * `{"ab","cd"}` の各行文字列が要素 (char) 扱いされ array_len=0 でポインタ化していた。 */
-  if (mi->tag_kind == TK_EOF && elem == 1 && mi->outer_stride > 0 &&
-      mi->array_len > mi->outer_stride) {
-    c.row_width = mi->outer_stride;
+                    elem, mi->array_len, {0}, 0};
+  /* 多次元 char 配列メンバ (`char c[2][2][3]`): 各次元サイズが arr_dims に入る。
+   * 最外側 1 段はこの ctx が is_array=1 として表現するので、残り (sub_dims) には
+   * arr_dims[1..arr_ndim) を最外側から並べてコピー。child_at が 1 段ずつ消費する。
+   * これがないと 2 次元以上で内側次元情報が落ち、ネスト brace `{"ab","cd"}` の各行
+   * 文字列がポインタ化していた (2D は旧 row_width 機構で対応済み、3D 以降が対象)。 */
+  if (mi->tag_kind == TK_EOF && elem == 1 && mi->arr_ndim >= 2) {
+    int n = mi->arr_ndim - 1;
+    if (n > 8) n = 8;
+    for (int i = 0; i < n; i++) c.sub_dims[i] = mi->arr_dims[i + 1];
+    c.sub_ndim = n;
   }
   return c;
 }
@@ -1201,20 +1209,34 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
 /* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
  * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
 static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
-  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, 0};
+  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, {0}, 0};
   if (ctx.is_array) {
     /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。 */
     c.tag_kind = ctx.tag_kind;
     c.tag_name = ctx.tag_name;
     c.tag_len = ctx.tag_len;
     c.is_array = 0;
-    /* 多次元 char 配列メンバ (`char rows[2][4]`) の要素は内側 1 次元 char 配列
-     * (char[row_width])。文字列で各行を初期化 (`{"ab","cd"}`) できるよう、要素を
-     * char 配列として返す。これで psx_gbrace_flat の char 配列メンバ展開分岐に乗り、
-     * 行ごとに row_width バイトへ展開される (ポインタ .LC 化を防ぐ)。 */
-    if (ctx.row_width > 0 && ctx.elem_size == 1 && ctx.tag_kind == TK_EOF) {
-      c.elem_size = 1;
-      c.array_len = ctx.row_width;
+    /* 多次元 char 配列メンバ: 残り次元 sub_dims を 1 段消費して内側 ctx を生成する。
+     * (a) sub_ndim==1: 内側は 1 次元 char 配列 `char[sub_dims[0]]` (行)。is_array=0 で
+     *     elem_size=1, array_len=sub_dims[0] として返し、psx_gbrace_flat の char 配列
+     *     メンバ展開分岐に乗せて文字列を行幅へ展開させる (ポインタ .LC 化を防ぐ)。
+     * (b) sub_ndim>=2: 内側はさらにネスト配列。is_array=1, sub_dims を 1 つ前に詰めて
+     *     渡し、再帰的に展開する。これがないと 3D 以上 (`char c[2][2][3]`) で内側 brace
+     *     `{"ab","cd"}` の各行文字列が要素 (char) 扱いされ SIGSEGV になっていた。 */
+    if (ctx.sub_ndim >= 1 && ctx.elem_size == 1 && ctx.tag_kind == TK_EOF) {
+      if (ctx.sub_ndim == 1) {
+        c.elem_size = 1;
+        c.array_len = ctx.sub_dims[0];
+      } else {
+        int inner_total = 1;
+        for (int i = 0; i < ctx.sub_ndim; i++) inner_total *= ctx.sub_dims[i];
+        c.is_array = 1;
+        c.elem_size = 1;
+        c.array_len = inner_total;
+        int n = ctx.sub_ndim - 1;
+        for (int i = 0; i < n; i++) c.sub_dims[i] = ctx.sub_dims[i + 1];
+        c.sub_ndim = n;
+      }
     }
     return c;
   }
@@ -1236,7 +1258,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
-  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array, 0, 0, 0};
+  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array, 0, 0, {0}, 0};
   psx_gbrace_flat(gv, cap, start_idx, ctx);
 }
 
@@ -1290,7 +1312,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
       cur_idx = level_start + (int)idx_val * elem_slots;
       /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。 */
-      child = (gbrace_ctx_t){ctx.tag_kind, ctx.tag_name, ctx.tag_len, 0, 0, 0, 0};
+      child = (gbrace_ctx_t){ctx.tag_kind, ctx.tag_name, ctx.tag_len, 0, 0, 0, {0}, 0};
     }
     /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
      * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */

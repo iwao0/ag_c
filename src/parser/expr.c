@@ -1006,6 +1006,16 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     if (mem_info->outer_stride > 0) {
       deref->deref_size = mem_info->outer_stride;
       deref->inner_deref_size = (short)mem_size;
+      /* 3 次元以上の配列メンバ (`int t[2][2][2]` / `char c[2][2][3]`): 1 段目 subscript の
+       * 後に内側 2 段以上が残るため、ローカル/グローバルの 3D 配列と同じく mid_stride /
+       * elem_size の 2 段を渡す。ローカル build_array_lvar_addr_node では
+       * inner_deref_size=mid_stride, next_deref_size=elem_size として 3 段の subscript を
+       * 連鎖させる。member 経由でも同じ表現に乗せる。これがないと 3 段目 subscript が
+       * elem_size 直接 step にならず誤アドレスを load して SIGSEGV になっていた。 */
+      if (mem_info->mid_stride > 0) {
+        deref->inner_deref_size = (short)mem_info->mid_stride;
+        deref->next_deref_size = (short)mem_size;
+      }
     }
     /* ポインタ配列の各要素は単一ポインタ。subscript 後の 1 段 deref では qual_levels を引き継ぐ。 */
     if (mem_is_ptr) {
