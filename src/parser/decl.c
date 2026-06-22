@@ -2763,6 +2763,18 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
       psx_diag_ctx(curtok(), "init",
                    "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
     }
+    /* 縮小変換 (narrowing) warning: 整数変数を小数値リテラルで初期化 (`int x = 1.5;`)。
+     * 値が切り捨てられて意図が伝わらない (clang -Wliteral-conversion 相当)。 */
+    if (var->fp_kind == TK_FLOAT_KIND_NONE && init_expr->kind == ND_NUM &&
+        init_expr->fp_kind != TK_FLOAT_KIND_NONE) {
+      node_num_t *num = (node_num_t *)init_expr;
+      double f = num->fval;
+      if (f != (double)(long long)f) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "整数変数を浮動小数点リテラル %g で初期化しています (小数部が切り捨てられます)",
+                       f);
+      }
+    }
     /* C11 6.5.16.1: struct/union 値をスカラに代入することはできない。
      * RHS の node_mem_t::tag_kind が TK_STRUCT/TK_UNION かつ is_tag_pointer=0
      * の場合、構造体実体を整数に変換しようとしているので拒否する。 */

@@ -2488,15 +2488,40 @@ static node_t *bit_and(void) {
   return node;
 }
 
+/* 自己比較 (`x == x` / `x != x` / `x < x` 等) は常に真または偽。タイプミスの可能性が高い。
+ * 両辺が同じ ND_LVAR offset または同じ ND_GVAR 名なら警告 (clang -Wtautological-compare 相当)。 */
+static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
+  if (!lhs || !rhs) return;
+  if (lhs->kind == ND_LVAR && rhs->kind == ND_LVAR &&
+      ((node_lvar_t *)lhs)->offset == ((node_lvar_t *)rhs)->offset) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                   "自己比較 (常に同じ値): '%s'", op);
+    return;
+  }
+  if (lhs->kind == ND_GVAR && rhs->kind == ND_GVAR) {
+    node_gvar_t *lg = (node_gvar_t *)lhs;
+    node_gvar_t *rg = (node_gvar_t *)rhs;
+    if (lg->name_len == rg->name_len &&
+        memcmp(lg->name, rg->name, (size_t)lg->name_len) == 0) {
+      diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                     "自己比較 (常に同じ値): '%s'", op);
+    }
+  }
+}
+
 static node_t *equality(void) {
   node_t *node = relational();
   for (;;) {
     if (curtok()->kind == TK_EQEQ) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_EQ, node, relational());
+      node_t *rhs = relational();
+      warn_if_self_compare(node, rhs, "==");
+      node = psx_node_new_binary(ND_EQ, node, rhs);
     } else if (curtok()->kind == TK_NEQ) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_NE, node, relational());
+      node_t *rhs = relational();
+      warn_if_self_compare(node, rhs, "!=");
+      node = psx_node_new_binary(ND_NE, node, rhs);
     }
     else return node;
   }

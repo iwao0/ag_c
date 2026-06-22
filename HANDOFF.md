@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き43: コンパイル時 UB / 怪しい書き方の警告 4 件）
+最終更新: 2026-06-23（続き44: 縮小変換と自己比較の警告）
 
 ## 現状
-- `make test` = **1051/1051 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-43 で発見した形まですべて消化)。
+- `make test` = **1052/1052 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-44 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,15 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き44）: 縮小変換と自己比較の警告
+- 整数変数を浮動小数点リテラルで初期化 `int x = 1.5;` (clang -Wliteral-conversion 相当)。
+  decl.c のスカラ初期化分岐で ND_NUM の fval に小数部があれば W3001 warning。
+- 自己比較 `x == x` / `x != x` (clang -Wtautological-compare 相当)。equality() で両辺が
+  同じ ND_LVAR offset または同じ ND_GVAR 名なら警告。
+- while/for の空本体は意図的な busy wait の慣用句で clang も警告しないため未追加。
+
+`make test`=1052/1052 green。
 
 ## このセッション（続き43）: コンパイル時 UB / 怪しい書き方の警告 4 件
 コンパイル時に検出可能な未定義動作・タイプミスの警告を追加:

@@ -1041,6 +1041,7 @@ static const test_case_t test_cases[] = {
     {"probes", "identifier_diagnostics", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/identifier_diagnostics.c", 0, 0},
     {"probes", "tag_redef_and_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tag_redef_and_return.c", 0, 0},
     {"probes", "undefined_behavior_warnings", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/undefined_behavior_warnings.c", 0, 0},
+    {"probes", "narrowing_and_self_compare", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/narrowing_and_self_compare.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},
