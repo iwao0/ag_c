@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き32: 探索 round 20 probe 全 green）
+最終更新: 2026-06-22（続き33: 4D+ VLA / 汎用 N-D 対応）
 
 ## 現状
-- `make test` = **1038/1038 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-32 で発見した形まですべて消化)。
+- `make test` = **1039/1039 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-33 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,22 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き33）: 4D+ VLA / 汎用 N-D 対応
+- **4D+ VLA**（vla_4d_and_higher）。`int t[n][m][k][l]...` の 4 次元以上が E3064 で拒否されていた。
+  続き30 の 3D 用 vla_mid_stride_frame_off を汎用 `vla_strides_remaining` + 連続 stride スロット
+  に置換し、最大 8 次元 (実用範囲) の VLA をサポート。
+- 設計:
+  - descriptor slot = 16 + 8*(N-1) バイト。slot+0=base ptr、slot+8=byte_size、slot+16..slot+16+8*(N-2)
+    に N-1 個の runtime stride を保存。stride[k] = dim[k+1]*dim[k+2]*...*dim[N-1]*elem。
+  - level 0 は ND_VLA_ALLOC の rsf 経路で初期化、level 1..N-2 は init_chain への STORE 注入で初期化。
+  - lvar_t / node_mem_t に `vla_strides_remaining` を追加。subscript chain で
+    vla_row_stride_frame_off を +=8 シフト、remaining を -=1 で消費。
+  - `inner_deref_size = elem` を chain に carry することで、最終 runtime stride 消費後も
+    subscript_base_address_of が「中間配列」を正しく認識 (これがないと SIGSEGV)。
+  - sizeof(vlaN[i][j]...[d]) は連続 [...] を D 段 peek して slot+16+(D-1)*8 を読む統一経路。
+- 4D 全 VLA、4D mixed const/VLA、5D 全 VLA、4 段 sizeof を fixture で網羅。
+  `make test`=1039/1039 green。
 
 ## このセッション（続き32）: 探索 round 20 probe 全 green
 3D VLA + 混在 const/VLA 対応後、未探索の角度で probe を 20 件流して**新規 miscompile 0 件**。

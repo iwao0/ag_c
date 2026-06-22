@@ -3255,100 +3255,112 @@ static lvar_t *register_multidim_array_lvar(token_ident_t *tok, int elem_size,
  * 戻り値: 登録した lvar_t (is_vla=1 が立つ)。 */
 static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_size,
                                                    node_t *size_node, node_t **init_chain_inout) {
-  // 内側次元を確認 (2D / 3D VLA サポート)
-  node_t *inner_size_node = NULL;
-  int inner_size_ok = 1;
-  long long inner_const_size = 0;
-  int has_inner_dim = tk_consume('[') != 0;
-  if (has_inner_dim) {
-    inner_const_size = parse_array_size_expr_decl(&inner_size_node, &inner_size_ok);
+  /* N-D VLA 宣言子の登録 (N <= MAX_VLA_DIMS)。
+   *   1D                 : 16B slot ([base][bytesize])。subscript は const elem stride。
+   *   2D const inner     : 16B slot ([base][bytesize])。subscript は const outer_stride。
+   *   2D runtime inner   : 24B slot ([base][bytesize][row_stride])。
+   *   3D 以上            : (16 + 8*(N-1))B slot ([base][bytesize][stride_0][stride_1]...
+   *                       [stride_{N-2}])。各 subscript で stride スロットを順に消費する。 */
+  enum { MAX_VLA_DIMS = 8 };
+  node_t *dim_nodes[MAX_VLA_DIMS];
+  int dim_is_const[MAX_VLA_DIMS];
+  long long dim_const_vals[MAX_VLA_DIMS];
+  /* 第 1 dim は size_node として渡される。const-first ケース (size_node が ND_NUM) も
+   * 同様に扱う (是非を判定するのは難しいので一律 expr として扱う)。 */
+  dim_nodes[0] = size_node;
+  dim_is_const[0] = (size_node && size_node->kind == ND_NUM) ? 1 : 0;
+  dim_const_vals[0] = dim_is_const[0] ? ((node_num_t *)size_node)->val : 0;
+  int dim_count = 1;
+  while (tk_consume('[') && dim_count < MAX_VLA_DIMS) {
+    node_t *n = NULL;
+    int ok = 1;
+    long long v = parse_array_size_expr_decl(&n, &ok);
     tk_expect(']');
+    dim_nodes[dim_count] = ok ? psx_node_new_num((int)v) : n;
+    dim_is_const[dim_count] = ok ? 1 : 0;
+    dim_const_vals[dim_count] = ok ? v : 0;
+    dim_count++;
   }
-  /* 3 段目の次元 (3D VLA `int t[n][m][k]`)。任意の次元を VLA 可とする。
-   * 4D 以上は現状未サポート: 末尾を読み飛ばし、最終的に E3064 を残す。 */
-  node_t *third_size_node = NULL;
-  int third_size_ok = 1;
-  long long third_const_size = 0;
-  int has_third_dim = (has_inner_dim && tk_consume('[')) ? 1 : 0;
-  if (has_third_dim) {
-    third_const_size = parse_array_size_expr_decl(&third_size_node, &third_size_ok);
-    tk_expect(']');
-    // 4D 以上は未サポート (消費のみ; 後段で E3064 が出ることがある)
-    parse_decl_skip_constexpr_array_suffixes();
-  }
-  // VLA フレームスロット割り当て
-  // 1D / 2D const inner: 16B ([offset]=baseptr, [offset+8]=bytesize)
-  // 2D runtime inner:    24B ([offset]=baseptr, [offset+8]=bytesize, [offset+16]=row_stride)
-  // 3D:                  32B ([offset]=baseptr, [offset+8]=bytesize, [offset+16]=outer_stride,
-  //                          [offset+24]=mid_stride)
+  /* 9 次元以上は読み飛ばし (E3064 を残す)。8 次元あれば実用上十分。 */
+  parse_decl_skip_constexpr_array_suffixes();
+
   int vla_row_stride_frame_off = 0;
-  int vla_mid_stride_frame_off = 0;
   int outer_stride = 0;
+  int vla_strides_remaining = 0;
   lvar_t *var;
-  if (!has_inner_dim) {
-    // 1D VLA: int a[n]
+  if (dim_count == 1) {
+    /* 1D VLA */
     outer_stride = elem_size;
     var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
-  } else if (!has_third_dim) {
-    if (inner_size_ok) {
-      // 2D VLA constant inner: int a[n][M]
-      outer_stride = (int)inner_const_size * elem_size;
-      var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
-    } else {
-      // 2D VLA runtime inner: int a[n][m]
-      var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 24, elem_size, 1, 0);
-      vla_row_stride_frame_off = var->offset + 16;
-    }
+  } else if (dim_count == 2 && dim_is_const[1]) {
+    /* 2D const-inner: outer_stride = M * elem (const). No runtime stride slot. */
+    outer_stride = (int)dim_const_vals[1] * elem_size;
+    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
+  } else if (dim_count == 2) {
+    /* 2D runtime-inner: 24B slot, runtime stride at slot+16. */
+    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 24, elem_size, 1, 0);
+    vla_row_stride_frame_off = var->offset + 16;
   } else {
-    // 3D VLA: int t[n][m][k] — どの dim も const/VLA 混在可。32B slot
-    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 32, elem_size, 1, 0);
-    vla_row_stride_frame_off = var->offset + 16;  /* outer (= m*k*elem) */
-    vla_mid_stride_frame_off = var->offset + 24;  /* mid (= k*elem) */
+    /* 3D 以上: (16 + 8*(N-1))B slot。N-1 個の runtime stride を slot+16, slot+24, ... に保存する
+     * (たとえ const dim を含んでいても、運用を統一するため全て runtime として store する)。
+     * subscript chain では vla_row を +=8 でシフトし vla_strides_remaining を -1 ずつ消費する。 */
+    int n_strides = dim_count - 1;
+    int slot_bytes = 16 + 8 * n_strides;
+    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, slot_bytes, elem_size, 1, 0);
+    vla_row_stride_frame_off = var->offset + 16;
+    vla_strides_remaining = n_strides - 1;
   }
   var->is_vla = 1;
   var->outer_stride = outer_stride;
   var->vla_row_stride_frame_off = vla_row_stride_frame_off;
-  var->vla_mid_stride_frame_off = vla_mid_stride_frame_off;
-  // VLA確保ノード
+  var->vla_strides_remaining = vla_strides_remaining;
+
+  /* VLA_ALLOC 確保ノード */
   node_mem_t *alloc_node = arena_alloc(sizeof(node_mem_t));
   alloc_node->base.kind = ND_VLA_ALLOC;
-  alloc_node->type_size = var->offset; // ベースポインタを格納するフレームオフセット
+  alloc_node->type_size = var->offset;
   alloc_node->vla_row_stride_frame_off = vla_row_stride_frame_off;
-  if (!has_inner_dim) {
-    // 1D: byte_size = n * elem_size
-    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(elem_size));
-  } else if (!has_third_dim && inner_size_ok) {
-    // 2D constant inner: byte_size = n * outer_stride
-    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, size_node, psx_node_new_num(outer_stride));
-  } else if (!has_third_dim) {
-    // 2D runtime inner: lhs=n, rhs=row_stride_expr(m*elem); VLA_ALLOC が n*row=total を計算し
-    // row_stride を slot+16 へ store する (既存経路)。
-    alloc_node->base.lhs = size_node;
-    alloc_node->base.rhs = psx_node_new_binary(ND_MUL, inner_size_node, psx_node_new_num(elem_size));
+  if (dim_count == 1) {
+    /* 1D: byte_size = n * elem */
+    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, dim_nodes[0], psx_node_new_num(elem_size));
+  } else if (dim_count == 2 && dim_is_const[1]) {
+    /* 2D const-inner: byte_size = n * outer_stride (const) */
+    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, dim_nodes[0], psx_node_new_num(outer_stride));
+  } else if (dim_count == 2) {
+    /* 2D runtime-inner: lhs=n, rhs=m*elem。VLA_ALLOC が n*rhs=total を計算し
+     * rhs を slot+16 (vla_row) に store する。 */
+    alloc_node->base.lhs = dim_nodes[0];
+    alloc_node->base.rhs = psx_node_new_binary(ND_MUL, dim_nodes[1], psx_node_new_num(elem_size));
   } else {
-    // 3D: lhs=n, rhs=outer_stride_expr (= m * k * elem)。VLA_ALLOC は n*rhs=total を計算し
-    // outer_stride (= rhs) を slot+16 へ store する (既存 rsf 経路を再利用)。
-    // mid_stride (= k*elem) は別途 STORE を init_chain に注入する (後段)。
-    node_t *k_node = third_size_ok ? psx_node_new_num((int)third_const_size) : third_size_node;
-    node_t *m_node = inner_size_ok ? psx_node_new_num((int)inner_const_size) : inner_size_node;
-    node_t *mk_expr = psx_node_new_binary(ND_MUL, m_node, k_node);
-    alloc_node->base.lhs = size_node;
-    alloc_node->base.rhs = psx_node_new_binary(ND_MUL, mk_expr, psx_node_new_num(elem_size));
+    /* N-D (N>=3): lhs = dim[0], rhs = outer_stride_expr = dim[1]*dim[2]*...*dim[N-1]*elem。
+     * VLA_ALLOC が lhs*rhs=total を計算し rhs を slot+16 (= 最外 stride) に store。
+     * 残り N-2 段の stride は init_chain に STORE を注入 (slot+24, slot+32, ...)。
+     * 注: dim_nodes は AST ノードを多段で再利用するので、副作用のある式は未サポート。 */
+    node_t *outer_stride_expr = psx_node_new_num(elem_size);
+    for (int i = dim_count - 1; i >= 1; i--) {
+      outer_stride_expr = psx_node_new_binary(ND_MUL, outer_stride_expr, dim_nodes[i]);
+    }
+    alloc_node->base.lhs = dim_nodes[0];
+    alloc_node->base.rhs = outer_stride_expr;
   }
   if (!*init_chain_inout) *init_chain_inout = (node_t *)alloc_node;
   else *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, (node_t *)alloc_node);
-  /* 3D VLA: mid_stride (= k*elem) を slot+24 に store する命令を init_chain に追加する。
-   * alloc 直後に実行され、subscript chain で参照される。
-   * size_node を 2 重評価しないように third_size_node の再利用に注意 (parse_array_size_expr_decl
-   * が返したノードは 1 回しか評価しないと仮定して別経路でも使用済み。3D の k は alloc 内で
-   * 1 回 (rhs の MUL) 評価され、ここでもう 1 回評価される — 副作用のある式は未サポート)。 */
-  if (has_third_dim) {
-    node_t *k_node2 = third_size_ok ? psx_node_new_num((int)third_const_size)
-                                    : third_size_node;
-    node_t *mid_slot = psx_node_new_lvar_typed(vla_mid_stride_frame_off, 8);
-    node_t *mid_val = psx_node_new_binary(ND_MUL, k_node2, psx_node_new_num(elem_size));
-    node_t *mid_store = (node_t *)psx_node_new_assign(mid_slot, mid_val);
-    *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, mid_store);
+
+  /* N>=3: stride[1..N-2] を slot+24, slot+32, ... に store する STORE 列を注入する。
+   * stride[k] = dim[k+1] * dim[k+2] * ... * dim[N-1] * elem。stride[0] は VLA_ALLOC の rhs と
+   * 同値で既に slot+16 に store 済み (rsf 経路)、stride[N-1]=elem は最終 subscript で
+   * const として扱われるので store 不要。 */
+  if (dim_count >= 3) {
+    for (int level = 1; level < dim_count - 1; level++) {
+      node_t *expr = psx_node_new_num(elem_size);
+      for (int i = dim_count - 1; i >= level + 1; i--) {
+        expr = psx_node_new_binary(ND_MUL, expr, dim_nodes[i]);
+      }
+      int slot_off = var->offset + 16 + 8 * level;
+      node_t *slot = psx_node_new_lvar_typed(slot_off, 8);
+      node_t *st = (node_t *)psx_node_new_assign(slot, expr);
+      *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, st);
+    }
   }
   return var;
 }

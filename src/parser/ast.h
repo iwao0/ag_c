@@ -145,7 +145,10 @@ struct node_mem_t {
   // シフトさせる。最大 8 次元（3 + 5 段）まで対応。
   int extra_strides[5];
   unsigned char extra_strides_count;
-  int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=コンパイル時定数）
+  int vla_row_stride_frame_off; // N-D VLA: 次 subscript で消費する runtime stride のフレームオフセット (0=なし)
+  /* N-D VLA (N >= 3): vla_row_stride_frame_off の後にさらに何個の runtime stride スロット
+   * が続くか。lvar_t と同じ意味。subscript で 1 段消費するたび -1、vla_row は +=8 シフトする。 */
+  int vla_strides_remaining;
 };
 
 // 数値ノード

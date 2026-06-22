@@ -82,12 +82,13 @@ struct lvar_t {
    * extra_strides_count>0 で guard 済み (count>0 ⟺ 確保済み)。 */
   int *extra_strides;
   unsigned char extra_strides_count;
-  int vla_row_stride_frame_off; // 2D/3D VLA: 1 段目 subscript の runtime stride を格納するフレームオフセット（0=定数stride）
-  /* 3D VLA `int t[n][m][k]`: 2 段目 subscript (t[i][j]) 用の runtime stride を格納する
-   * フレームオフセット (= k*elem)。0 = 設定なし (2D 以下)。subscript で t (ND_LVAR) を
-   * 消費したとき、結果 ND_DEREF.vla_row_stride_frame_off にコピーして次の subscript が
-   * runtime stride で動作するようにする。 */
-  int vla_mid_stride_frame_off;
+  int vla_row_stride_frame_off; // N-D VLA: 次の subscript で消費する runtime stride のフレームオフセット (0=定数 stride)
+  /* N-D VLA (N >= 3): vla_row_stride_frame_off の後にさらに何個の runtime stride スロット
+   * が続くか。2D は 0 (= row が最後)、3D は 1 (row の後に 1 個 = k*elem)、4D は 2、…
+   * subscript で 1 段消費するごとに result の vla_strides_remaining = max(-1, parent-1)、
+   * vla_row_stride_frame_off は += 8 シフト (remaining が 0 になったときは 0 にクリア)。
+   * これにより任意 N-D VLA を 8 バイト/段で連鎖的に解決できる。 */
+  int vla_strides_remaining;
   /* 2D VLA 関数パラメータ (`int g[n][m]`): 関数 entry 時に
    *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * vla_row_stride_elem_size
    * を計算する。src は同一関数内で先に登録された別パラメータ (内側 dim 識別子)。
