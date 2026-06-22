@@ -95,6 +95,16 @@ struct lvar_t {
    * 0 = この機構を使わない (通常の VLA / 定数 dim)。 */
   int vla_row_stride_src_offset;
   short vla_row_stride_elem_size;
+  /* N-D VLA 仮引数 (`int t[n][m][k][l]` 等): pointee 多次元配列の内側 dim 各値の source。
+   * idx 0 が外側 (m に相当)、count-1 が最内 (l に相当)。
+   * vla_param_inner_dim_consts[i] > 0 のとき定数 dim、== 0 のときは
+   * vla_param_inner_dim_src_offsets[i] が param frame offset を示す runtime dim。
+   * vla_param_inner_dim_count = 内側 dim 数 (= 配列次元数 - 1)。
+   * 関数 entry で emit_vla_row_stride_for_params がこれを使って N-1 個の stride スロットを
+   * 計算する。2D 専用の vla_row_stride_src_offset/elem_size は 2D 後方互換で残置。 */
+  short vla_param_inner_dim_consts[7];
+  int vla_param_inner_dim_src_offsets[7];
+  unsigned char vla_param_inner_dim_count;
 };
 
 /* lvar_t / global_var_t の tag 4 フィールド (kind/name/len/is_tag_pointer)

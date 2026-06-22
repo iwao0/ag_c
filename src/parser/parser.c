@@ -2552,6 +2552,14 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
                diag_message_for(DIAG_ERR_PARSER_MISSING_CLOSING_PAREN));
 }
 
+/* N-D VLA 仮引数 (`int t[n][m][k][l]` 等) 対応のため、内側 dim 全リストを保持する。
+ * parse_param_declarator_name_recursive がセット、register_vla_array_param が読む。
+ * 1 仮引数ごとに parse_param_declarator_name で初期化される。idx 0 が外側 dim。
+ * 内側 dim は `inner_first_dim`/`inner_second_dim` と意味的に同じ (既存 API は 2D まで)。 */
+static int g_param_inner_dim_consts[7] = {0};
+static token_ident_t *g_param_inner_dim_idents[7] = {0};
+static int g_param_inner_dim_count = 0;
+
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
                                                   int *out_pointer_levels,
                                                   int *out_inner_first_dim, int *out_inner_second_dim,
@@ -2566,6 +2574,12 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, 
   if (out_inner_first_dim_ident) *out_inner_first_dim_ident = NULL;
   if (out_inner_second_dim_ident) *out_inner_second_dim_ident = NULL;
   if (out_has_func_suffix) *out_has_func_suffix = 0;
+  /* N-D 用の inner dim 配列もクリア。 */
+  for (int i = 0; i < 7; i++) {
+    g_param_inner_dim_consts[i] = 0;
+    g_param_inner_dim_idents[i] = NULL;
+  }
+  g_param_inner_dim_count = 0;
   token_ident_t *param = parse_param_declarator_name_recursive(out_is_array_declarator,
                                                                out_is_pointer_declarator,
                                                                out_pointer_levels,
@@ -2652,6 +2666,12 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
           if (out_inner_second_dim) *out_inner_second_dim = dim;
           if (out_inner_second_dim_ident) *out_inner_second_dim_ident = dim_ident;
         }
+        /* N-D 用 inner dim 配列にも記録 (最大 7 個まで)。 */
+        if (dim_pos >= 0 && dim_pos < 7) {
+          g_param_inner_dim_consts[dim_pos] = dim;
+          g_param_inner_dim_idents[dim_pos] = dim_ident;
+          if (dim_pos + 1 > g_param_inner_dim_count) g_param_inner_dim_count = dim_pos + 1;
+        }
       }
       bracket_count++;
     }
@@ -2674,12 +2694,77 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
   if (inner_first_dim == 0 && ds->fp_kind != TK_FLOAT_KIND_NONE) {
     var->pointee_fp_kind = ds->fp_kind;
   }
-  if (inner_first_dim > 0) {
-    var->outer_stride = inner_first_dim * ds->elem_size;
+  /* 全 inner dim が定数 (N-D const inner、`int t[][2][3][4]` 等): outer/mid/extra strides を立てる。
+   * 3D 以下は既存挙動を維持。4D 以上は N-D 一般経路 (下記) で extra_strides まで設定する。 */
+  int all_inner_const = (g_param_inner_dim_count >= 1);
+  for (int i = 0; i < g_param_inner_dim_count; i++) {
+    if (g_param_inner_dim_consts[i] <= 0) { all_inner_const = 0; break; }
+  }
+  if (inner_first_dim > 0 && all_inner_const) {
     var->base_deref_size = (short)ds->elem_size;
-    if (inner_second_dim > 0) {
-      var->outer_stride = inner_first_dim * inner_second_dim * ds->elem_size;
-      var->mid_stride = inner_second_dim * ds->elem_size;
+    /* level k の stride = dim[k+1]*...*dim[N-1]*elem。outer_stride = level 0、
+     * mid_stride = level 1、extra_strides[i] = level (i+2)。 */
+    int prod_all = 1;
+    for (int i = 0; i < g_param_inner_dim_count; i++) prod_all *= g_param_inner_dim_consts[i];
+    var->outer_stride = prod_all * ds->elem_size;
+    if (g_param_inner_dim_count >= 2) {
+      int prod_mid = 1;
+      for (int i = 1; i < g_param_inner_dim_count; i++) prod_mid *= g_param_inner_dim_consts[i];
+      var->mid_stride = prod_mid * ds->elem_size;
+    }
+    if (g_param_inner_dim_count >= 3) {
+      var->extra_strides = calloc(5, sizeof(int));
+      int idx_ex = 0;
+      for (int start = 2; start < g_param_inner_dim_count && idx_ex < 5; start++) {
+        int rest = 1;
+        for (int j = start; j < g_param_inner_dim_count; j++) rest *= g_param_inner_dim_consts[j];
+        var->extra_strides[idx_ex++] = rest * ds->elem_size;
+      }
+      var->extra_strides_count = (unsigned char)idx_ex;
+    }
+    return var;
+  }
+  /* N-D VLA 仮引数 (内側 dim に runtime / 混在 const-VLA 含む)。stride スロットを (N-1)*8 バイト
+   * 確保し、関数 entry で emit_vla_row_stride_for_params が各 level の stride を計算・store する。
+   * 内側 dim 情報を lvar に保存して emit が読めるようにする。 */
+  if (g_param_inner_dim_count >= 1) {
+    int n_inner = g_param_inner_dim_count;
+    /* stride スロット (__rs_<param>) を 8*n_inner バイト確保。先頭 8 バイトが level 0 (vla_row)、
+     * 次が level 1、...、最後が level n_inner-1。subscript chain は vla_row を +=8 シフト。 */
+    static char rs_name_buf2[64];
+    int rs_len = snprintf(rs_name_buf2, sizeof(rs_name_buf2),
+                          "__rs_%.*s", param->len, param->str);
+    char *rs_name2 = arena_alloc((size_t)rs_len + 1);
+    memcpy(rs_name2, rs_name_buf2, (size_t)rs_len);
+    rs_name2[rs_len] = '\0';
+    lvar_t *rs = psx_decl_register_lvar_sized(rs_name2, rs_len, 8 * n_inner, 8, 0);
+    var->is_vla = 1;
+    var->vla_row_stride_frame_off = rs->offset;
+    var->vla_strides_remaining = n_inner - 1;
+    var->base_deref_size = (short)ds->elem_size;
+    var->vla_row_stride_elem_size = (short)ds->elem_size;
+    /* 内側 dim 情報を保存。emit_vla_row_stride_for_params がこれを読んで stride を計算する。 */
+    var->vla_param_inner_dim_count = (unsigned char)n_inner;
+    for (int i = 0; i < n_inner; i++) {
+      var->vla_param_inner_dim_consts[i] = (short)g_param_inner_dim_consts[i];
+      if (g_param_inner_dim_consts[i] <= 0 && g_param_inner_dim_idents[i]) {
+        lvar_t *src = psx_decl_find_lvar(g_param_inner_dim_idents[i]->str,
+                                         g_param_inner_dim_idents[i]->len);
+        if (!src || !src->is_param) {
+          psx_diag_ctx(curtok(), "param",
+                       "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                       g_param_inner_dim_idents[i]->len, g_param_inner_dim_idents[i]->str);
+          return var;
+        }
+        var->vla_param_inner_dim_src_offsets[i] = src->offset;
+      } else {
+        var->vla_param_inner_dim_src_offsets[i] = 0;  /* const dim */
+      }
+    }
+    /* 2D 後方互換: 旧 vla_row_stride_src_offset も先頭 runtime dim から立てる
+     * (既存 emit が 2D ではこれを参照する。N-D 経路では使わない)。 */
+    if (n_inner == 1 && g_param_inner_dim_consts[0] == 0) {
+      var->vla_row_stride_src_offset = var->vla_param_inner_dim_src_offsets[0];
     }
     return var;
   }

@@ -2859,12 +2859,58 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
   for (lvar_t *var = fn->lvars; var; var = var->next_all) {
     if (!var->is_param) continue;
     if (!var->is_vla) continue;
-    /* 行ストライドスロット (__rs_<param>) があるかだけで判定する。
-     * vla_row_stride_src_offset == 0 は「内側次元が第1パラメータ (offset 0)」の
-     * 正当なケースであり、これを「未設定」と誤判定して行ストライド計算を飛ばすと
-     * `int f(int n,int a[n][n])` で未初期化スロットを読み SIGSEGV していた。
-     * frame_off と src_offset は register_vla_array_param で対で設定される。 */
     if (var->vla_row_stride_frame_off == 0) continue;
+    int elem = var->vla_row_stride_elem_size;
+    if (elem <= 0) continue;
+    /* N-D VLA 仮引数 (vla_param_inner_dim_count >= 1): 各 stride level を
+     *   stride[k] = (dim[k] * dim[k+1] * ... * dim[n_inner-1]) * elem
+     * で計算し slot+8*k に store する。後ろから掛けていけば各 level 1 回の MUL で済む。 */
+    if (var->vla_param_inner_dim_count >= 1) {
+      int n_inner = var->vla_param_inner_dim_count;
+      int v_prev = -1;
+      for (int level = n_inner - 1; level >= 0; level--) {
+        /* dim_value (i32) を vreg に取り出す。const dim は最内 level だけ immediate * elem
+         * で済むが、構造を統一するため load 経路と同様に MUL の左辺に渡す。 */
+        ir_val_t dim_val;
+        int dim_const = var->vla_param_inner_dim_consts[level];
+        if (dim_const > 0) {
+          dim_val = ir_val_imm(IR_TY_I32, dim_const);
+        } else {
+          int src_ptr = address_of_lvar(ctx, var->vla_param_inner_dim_src_offsets[level]);
+          if (src_ptr < 0) return 0;
+          int v_loaded = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ld = ir_inst_new(IR_LOAD);
+          ld->dst = ir_val_vreg(v_loaded, IR_TY_I32);
+          ld->src1 = ir_val_vreg(src_ptr, IR_TY_PTR);
+          ir_func_append_inst(ctx->f, ld);
+          dim_val = ir_val_vreg(v_loaded, IR_TY_I32);
+        }
+        int v_cur;
+        if (level == n_inner - 1) {
+          v_cur = emit_binop(ctx, IR_MUL, dim_val,
+                             ir_val_imm(IR_TY_I32, elem), IR_TY_I32);
+        } else {
+          v_cur = emit_binop(ctx, IR_MUL, dim_val,
+                             ir_val_vreg(v_prev, IR_TY_I32), IR_TY_I32);
+        }
+        int v_64 = ir_func_new_vreg(ctx->f);
+        ir_inst_t *zx = ir_inst_new(IR_ZEXT);
+        zx->dst = ir_val_vreg(v_64, IR_TY_I64);
+        zx->src1 = ir_val_vreg(v_cur, IR_TY_I32);
+        ir_func_append_inst(ctx->f, zx);
+        int slot_off = var->vla_row_stride_frame_off + 8 * level;
+        int slot_ptr = address_of_lvar(ctx, slot_off);
+        if (slot_ptr < 0) return 0;
+        ir_inst_t *st = ir_inst_new(IR_STORE);
+        st->src1 = ir_val_vreg(slot_ptr, IR_TY_PTR);
+        st->src2 = ir_val_vreg(v_64, IR_TY_I64);
+        ir_func_append_inst(ctx->f, st);
+        v_prev = v_cur;
+      }
+      continue;
+    }
+    /* 旧 1D 経路: vla_param_inner_dim_count == 0 だが vla_row_stride_frame_off != 0
+     * (古い経路。N-D 経路に移行後は通常到達しないが、互換のため残す)。 */
     int src_ptr = address_of_lvar(ctx, var->vla_row_stride_src_offset);
     if (src_ptr < 0) return 0;
     int v_m = ir_func_new_vreg(ctx->f);
@@ -2872,12 +2918,10 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
     ld->dst = ir_val_vreg(v_m, IR_TY_I32);
     ld->src1 = ir_val_vreg(src_ptr, IR_TY_PTR);
     ir_func_append_inst(ctx->f, ld);
-    /* v_stride = m * elem_size (i32 域内で計算) */
     int v_stride = emit_binop(ctx, IR_MUL,
                               ir_val_vreg(v_m, IR_TY_I32),
-                              ir_val_imm(IR_TY_I32, var->vla_row_stride_elem_size),
+                              ir_val_imm(IR_TY_I32, elem),
                               IR_TY_I32);
-    /* zero-extend to i64 for store as pointer-step (frame slot は 8B) */
     int v_s64 = ir_func_new_vreg(ctx->f);
     ir_inst_t *zx = ir_inst_new(IR_ZEXT);
     zx->dst = ir_val_vreg(v_s64, IR_TY_I64);

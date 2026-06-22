@@ -1029,6 +1029,7 @@ static const test_case_t test_cases[] = {
     {"probes", "vla_3d", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_3d.c", 0, 0},
     {"probes", "vla_mixed_dims", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_mixed_dims.c", 0, 0},
     {"probes", "vla_4d_and_higher", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_4d_and_higher.c", 0, 0},
+    {"probes", "vla_3d4d_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_3d4d_param.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},

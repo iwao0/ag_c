@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き33: 4D+ VLA / 汎用 N-D 対応）
+最終更新: 2026-06-22（続き34: 3D+ VLA 仮引数）
 
 ## 現状
-- `make test` = **1039/1039 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-33 で発見した形まですべて消化)。
+- `make test` = **1040/1040 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-34 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,24 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き34）: 3D+ VLA 仮引数
+- **3D+ VLA 仮引数**（vla_3d4d_param）。`int sum_3d(int n, int m, int k, int t[n][m][k])`
+  のような 3D 以上の VLA 仮引数で内側 dim が silently 切り捨てられ miscompile していた。
+  parse_param_declarator_name_recursive は inner_first_dim / inner_second_dim の 2 個しか
+  捕捉せず、register_vla_array_param も 2D までしか stride を計算していなかった。
+- 修正:
+  - parser.c: 内側 dim を最大 7 個 g_param_inner_dim_consts / g_param_inner_dim_idents に保存。
+  - lvar_t: vla_param_inner_dim_consts[7] / src_offsets[7] / count を追加。
+  - register_vla_array_param: N-D VLA 仮引数で stride スロット (n_inner*8 バイト) を anon lvar
+    `__rs_<name>` として確保し、vla_strides_remaining = n_inner - 1。全 const 内側 (`int a[][2][3][4]`)
+    は extra_strides も使う既存非 VLA 経路に近い形で初期化。
+  - ir_builder.c emit_vla_row_stride_for_params: N-D VLA 仮引数の各 level の stride を関数
+    entry で計算・store。後ろから掛けて各 level 1 回の MUL で済む構成 (const dim は IR_MUL の
+    immediate、runtime dim は param frame slot から load)。
+- subscript chain / sizeof は続き33 の local N-D VLA 機構 (vla_row += 8 / vla_strides_remaining
+  -= 1) をそのまま流用。3D 全 VLA / 4D 全 VLA / 4D mixed const/VLA / 3D 全 const 内側を
+  fixture で網羅。`make test`=1040/1040 green。
 
 ## このセッション（続き33）: 4D+ VLA / 汎用 N-D 対応
 - **4D+ VLA**（vla_4d_and_higher）。`int t[n][m][k][l]...` の 4 次元以上が E3064 で拒否されていた。
