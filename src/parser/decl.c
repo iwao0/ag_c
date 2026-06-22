@@ -1279,6 +1279,10 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
                                                 int array_len, const int *dims, int ndim,
                                                 int *flat, node_t *init_chain,
                                                 tk_float_kind_t member_fp_kind, int member_is_bool);
+static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row_w,
+                                       int array_len, int *flat, node_string_t *s,
+                                       node_t *init_chain,
+                                       tk_float_kind_t fp_kind, int is_bool);
 
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
@@ -1448,6 +1452,39 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     }
     if (owner->tag_kind == TK_STRUCT ||
         (owner->tag_kind == TK_UNION && ps_get_enable_union_array_member_nonbrace_init())) {
+      /* 多次元 char 配列メンバへの brace elision (C11 6.7.9p20):
+       *   struct B{char rows[2][4];}; struct B b = {"ab","cd"};
+       * 外側 brace 内に文字列が直接並ぶ形は、try_parse_array_member_string_initializer
+       * が「最初の文字列で配列全体を埋め」て return してしまい (2 つ目の "cd" を読まない)、
+       * 親 parse_struct_initializer のループが "cd" を「次メンバ」として扱い E3064 と
+       * 診断していた。多次元 char メンバ (arr_ndim>=2, elem_size==1) の場合は文字列を
+       * 行ごとに消費するヘルパに委譲する。 */
+      if (member_arr_ndim >= 2 && elem_size == 1 && member_arr_dims &&
+          curtok() && curtok()->kind == TK_STRING) {
+        int row_w = member_arr_dims[member_arr_ndim - 1];
+        if (row_w > 0) {
+          int rows_total = array_len / row_w;
+          int flat = 0;
+          node_t *chain = NULL;
+          int r = 0;
+          while (r < rows_total && curtok() && curtok()->kind == TK_STRING) {
+            node_t *val = psx_expr_assign();
+            if (val && val->kind == ND_STRING) {
+              flat = r * row_w;
+              chain = emit_string_row_assigns(owner, member_offset, row_w, array_len,
+                                              &flat, (node_string_t *)val, chain,
+                                              member_fp_kind, member_is_bool);
+            }
+            r++;
+            /* 次が `,文字列` なら次行へ。`,}` / `,.m=` / 親 `}` は親に任せる。 */
+            if (!curtok() || curtok()->kind != TK_COMMA) break;
+            token_t *nx = curtok()->next;
+            if (!nx || nx->kind != TK_STRING) break;
+            tk_consume(',');
+          }
+          return chain ? chain : psx_node_new_num(0);
+        }
+      }
       // Brace elision for aggregate array members: allow flat scalar list.
       node_t *array_str = try_parse_array_member_string_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_str) return array_str;

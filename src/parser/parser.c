@@ -1456,9 +1456,16 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       /* struct の char 配列メンバを文字列で初期化: `struct S{char name[8];} g={"main"}`。
        * 文字列を array_len バイトへ展開する (char* メンバではないので .LC ポインタにしない。
        * 旧挙動は scalar 経路で .quad <ラベル> を 1 slot に書き、name 全体がポインタ値に
-       * 化けていた)。残りは 0 埋め。 */
+       * 化けていた)。残りは 0 埋め。
+       *
+       * 多次元 char メンバ (`char rows[2][4]`) への brace elision `{"ab","cd"}`: 1 文字列を
+       * 「行」(sub_dims 最後の次元 = 行幅) に展開する。残りメンバ要素の埋めは外側ループの
+       * 次反復が gbrace_child_at で同メンバを返すので自動で続く (cur_idx は行幅ぶん進めるだけ)。
+       * これがないと array_len 全体 (=メンバ全要素数) を 1 文字列で埋めてしまい後続文字列が
+       * 次メンバとして扱われていた (struct に他メンバが無いと 0 埋めだけになる)。 */
       node_t *e = psx_expr_assign();
-      int row_w = child.array_len;
+      int row_w = child.sub_ndim > 0 ? child.sub_dims[child.sub_ndim - 1] : child.array_len;
+      if (row_w <= 0) row_w = child.array_len;
       while (*cap < cur_idx + row_w) {
         int new_cap = *cap * 2;
         if (new_cap < cur_idx + row_w) new_cap = cur_idx + row_w;
