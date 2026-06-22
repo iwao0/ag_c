@@ -1,14 +1,50 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き23: 探索 round 3 で 2 件発見・修正。**現時点で明確な未対応バグ無し**）
+最終更新: 2026-06-22（続き24: 探索 round 4 で 2 件発見・修正 + 3 件残課題記録）
 
-## 次セッションの最優先タスク
-**現時点で明確な未対応バグは無い**。HANDOFF 既知形 + 続き17 / 23 の探索で発見した形まで
-すべて green (`make test` = 1031/1031)。
+## 次セッションの最優先タスク（再現確認済み）
+続き24 の探索 round 4 で 3 件の残課題を発見。修正規模ありで HANDOFF 記録:
 
-次セッションは引き続き **未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成ファズ・
-複合代入の細形・古い C コードの寛容性等）から新規 miscompile を炙り出す。索引は
-`docs/differential_testing/bug_coverage.md`。
+1. **VLA `sizeof` のランタイム評価**。`int arr[sz]; sizeof(arr)` が garbage (本来 sz*4)。
+   C11 6.5.3.4 で VLA の sizeof はランタイム評価が必須だが ag_c は未実装。
+   最小再現:
+   ```c
+   int main(void){int sz=7; int arr[sz]; return sizeof(arr); /* 期待: 28 */}
+   ```
+
+2. **グローバル struct ポインタ配列の init slot 計算**。
+   `struct P *parr[3] = {&pts[0], &pts[1], &pts[2]}` で parr[1] / parr[2] のシンボル+offset
+   が誤値 (続き24 でアクセス側は修正したが parser 側 slot 計算が壊れている)。
+   原因: psx_gbrace_flat の gbrace_child_at が `is_tag_pointer && is_array` のとき要素を
+   「ポインタ 1 slot」でなく「struct 単位 (= 内側 member 数 slot)」で展開する。
+   最小再現:
+   ```c
+   struct P{int x,y;}; struct P pts[3]={{1,2},{3,4},{5,6}};
+   struct P *parr[3] = {&pts[0], &pts[1], &pts[2]};
+   /* parr[1]->x == 3 が壊れる (parr[1] の値が誤) */
+   ```
+
+3. **`struct P **pp = &parr[1]; (*pp)->x`** (struct P** の単独 deref からの ->)。
+   `*pp` の build_unary_deref_node で tag info / is_tag_pointer の carry 不足。
+   `(*pp)` の結果が struct ポインタとして認識されず `->` で E3005。
+
+その他: HANDOFF 既知形 + 続き17/23/24 で発見した形まですべて消化済み (上記 3 件除く)。
+**未探索の角度** (複数 TU リンク・libc 関数連携・ランダム生成ファズ) は引き続き要探索。
+索引は `docs/differential_testing/bug_coverage.md`。
+
+## このセッション（続き24）: 探索 round 4 + 2 件修正
+- **明示キャスト経由のポインタ初期化**（`void *p = (void*)0xdeadbeefL`）。
+  apply_cast が folding で ND_NUM に潰し、init check (C11 6.5.16.1) が「非ゼロ整数定数で
+  ポインタ初期化」E3064 を発火。node_num_t に from_pointer_cast フラグを追加、apply_cast
+  でポインタ cast 結果が ND_NUM になる時にスタンプ、decl.c の check で skip。
+  プレーン `int *p = 42;` (キャストなし) は引き続き弾く。
+- **グローバル struct ポインタ配列の subscript + ->**（global_struct_ptr_array_subscript）。
+  `struct P *parr[N] = {...}; parr[i]->m` が E3005 (-> 左辺が struct ポインタじゃない)。
+  try_build_global_var_node の配列 decay 経路で is_tag_pointer のとき pql=1/bds=struct サイズ
+  を立て、subscript 結果が「要素はポインタ」分岐に乗るように。emit 側も struct-array 経路に
+  `!gv->is_tag_pointer` ガードを追加し、scalar emit (8B ポインタ) に流す。
+  fixture は parr[0] と local 変種のみ網羅 (parr[1]/parr[2] の init slot 計算は別バグで残課題 2)。
+- bug_coverage.md に round 4 探索領域 + 残課題 3 件を索引化済み。
 
 ## このセッション（続き23）: 探索 round 3 + 2 件修正
 未探索角度 12 probe を流して 10 件 green / 2 件発見・修正:
