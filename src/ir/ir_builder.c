@@ -312,15 +312,28 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
   return v;
 }
 
-/* グローバル変数 (ND_GVAR) のアドレスをシンボルロードで得て vreg を返す。 */
-static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
+/* グローバル変数 (ND_GVAR) のアドレスをシンボルロードする IR_LOAD_SYM (TLS なら
+ * IR_LOAD_TLV_ADDR) を発行する共通ヘルパ。extern 宣言のみのグローバル変数 (定義は別 TU、
+ * 典型は libc の `__stderrp` 等) は @PAGE/@PAGEOFF 直参照ではリンカに「does not have
+ * address」と言われるため、関数アドレスと同じく GOT 経由 (@GOTPAGE/@GOTPAGEOFF) で解決する。
+ * 同名の global_var_t を引いて is_extern_decl が立っていれば is_got_funcref を立てる。 */
+static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   int v_addr = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
   sym->sym = gv->name;
   sym->sym_len = gv->name_len;
+  global_var_t *gv_ent = psx_find_global_var(gv->name, gv->name_len);
+  if (gv_ent && gv_ent->is_extern_decl) {
+    sym->is_got_funcref = 1;
+  }
   ir_func_append_inst(ctx->f, sym);
   return v_addr;
+}
+
+/* グローバル変数 (ND_GVAR) のアドレスをシンボルロードで得て vreg を返す (互換 API)。 */
+static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
+  return emit_load_sym_for_gvar(ctx, gv);
 }
 
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
@@ -524,11 +537,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
   }
   if (node->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)node;
-    int v_addr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
-    sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-    sym->sym = gv->name; sym->sym_len = gv->name_len;
-    ir_func_append_inst(ctx->f, sym);
+    int v_addr = emit_load_sym_for_gvar(ctx, gv);
     ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
     cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
     cp->src2 = ir_val_vreg(v_addr, IR_TY_PTR);
@@ -696,13 +705,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
    * 配列 / 構造体のグローバル変数は parser が ND_ADDR(ND_GVAR) で包む。
    * thread_local の場合は @TLVPPAGE 経由で動的にアドレス解決する。 */
   node_gvar_t *gv = (node_gvar_t *)node;
-  int v_addr = ir_func_new_vreg(ctx->f);
-  ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
-                                                   : IR_LOAD_SYM);
-  sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-  sym->sym = gv->name;
-  sym->sym_len = gv->name_len;
-  ir_func_append_inst(ctx->f, sym);
+  int v_addr = emit_load_sym_for_gvar(ctx, gv);
   /* load (型は node の fp_kind / type_size から判定) */
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
@@ -917,12 +920,7 @@ static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node) {
     if (ptr.id >= 0) dst_ptr_vreg = ptr.id;
   } else if (node->lhs->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)node->lhs;
-    int v_addr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
-    sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-    sym->sym = gv->name; sym->sym_len = gv->name_len;
-    ir_func_append_inst(ctx->f, sym);
-    dst_ptr_vreg = v_addr;
+    dst_ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
   } else {
     fail(ctx, "complex assign dst not LVAR/DEREF/GVAR");
     return ir_val_none();
@@ -1110,13 +1108,7 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
     vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
   }
-  int v_addr = ir_func_new_vreg(ctx->f);
-  ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
-                                                   : IR_LOAD_SYM);
-  sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-  sym->sym = gv->name;
-  sym->sym_len = gv->name_len;
-  ir_func_append_inst(ctx->f, sym);
+  int v_addr = emit_load_sym_for_gvar(ctx, gv);
   ir_val_t rhs = build_expr(ctx, node->rhs);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type(ctx, rhs, vty);
@@ -1175,14 +1167,8 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   /* &gvar: グローバル変数のアドレス (= LOAD_SYM のみ、load しない) */
   if (node->lhs && node->lhs->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)node->lhs;
-    int v = ir_func_new_vreg(ctx->f);
-    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR
-                                                     : IR_LOAD_SYM);
-    sym->dst = ir_val_vreg(v, IR_TY_PTR);
-    sym->sym = gv->name;
-    sym->sym_len = gv->name_len;
-    ir_func_append_inst(ctx->f, sym);
-    return sym->dst;
+    int v = emit_load_sym_for_gvar(ctx, gv);
+    return ir_val_vreg(v, IR_TY_PTR);
   }
   if (!node->lhs || node->lhs->kind != ND_LVAR) {
     fail(ctx, "& of non-lvar (Phase 4b unsupported)");
@@ -2102,13 +2088,7 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
       int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
       vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
     }
-    int v_addr = ir_func_new_vreg(ctx->f);
-    ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
-    sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
-    sym->sym = gv->name;
-    sym->sym_len = gv->name_len;
-    ir_func_append_inst(ctx->f, sym);
-    ptr_vreg = v_addr;
+    ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
   } else {
     fail(ctx, "inc/dec target not LVAR/DEREF/GVAR");
     return ir_val_none();

@@ -3756,6 +3756,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
            * pointee_fp_kind に入れて subscript の fp load/store に伝播させる。 */
           var->pointee_fp_kind = decl_fp_kind;
           var->is_unsigned = decl_is_unsigned;
+          /* タグ情報も carry (struct/union 要素 VLA `struct P arr[n]` で `arr[i].m` を解決可能に)。
+           * is_tag_pointer=0: 配列なので tag ポインタではない。 */
+          psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
           if (!tk_consume(',')) break;
           continue;
         }
@@ -3769,6 +3772,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           var = register_vla_lvar_and_append_alloc(tok, elem_size, first_size_node, &init_chain);
           var->pointee_fp_kind = decl_fp_kind;
           var->is_unsigned = decl_is_unsigned;
+          psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
           if (!tk_consume(',')) break;
           continue;
         }

@@ -36,4 +36,14 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
 /* Error */
 void perror(const char *s);
 
+/* Standard streams (Apple libc が __std{in,out,err}p としてエクスポート、stdio.h は
+ * 通常マクロで包む)。fprintf(stderr, ...) 等を使えるよう、同じ規約で extern 宣言する。
+ * codegen は is_extern_decl のグローバル変数を @GOTPAGE 経由でリンクする。 */
+extern FILE *__stdinp;
+extern FILE *__stdoutp;
+extern FILE *__stderrp;
+#define stdin  __stdinp
+#define stdout __stdoutp
+#define stderr __stderrp
+
 #endif

@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き34: 3D+ VLA 仮引数）
+最終更新: 2026-06-22（続き35: 局所 VLA tag carry + extern global GOT）
 
 ## 現状
-- `make test` = **1040/1040 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-34 で発見した形まですべて消化)。
+- `make test` = **1042/1042 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-35 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,21 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き35）: 局所 VLA tag carry + extern global GOT
+3D+ VLA 仮引数完了後の探索 round で 2 件発見・修正:
+- **局所 VLA のタグ carry**（vla_struct_local）。`struct P arr[n]; arr[i].m` が
+  E3005「左辺は構造体/共用体でない」で弾かれていた。register_vla_lvar_and_append_alloc
+  の呼び出し元が psx_decl_set_var_tag を呼んでおらず、VLA lvar の tag_kind が EOF のまま
+  だった。`!size_ok` 分岐 + 続き31 の mixed redirect 分岐の両方で tag を carry するよう修正。
+- **extern global の GOT 経由参照**（extern_global_got）。`extern FILE *__stderrp;` 等の
+  「宣言のみ」global を @PAGE/@PAGEOFF 直参照してリンクが "does not have address" で失敗。
+  続き4 の関数アドレス GOT 化と同じパターンを extern data に拡張: ir_builder に
+  emit_load_sym_for_gvar を新設し、psx_find_global_var で gv_ent を引いて is_extern_decl
+  が立つときは is_got_funcref を立てる。LOAD_SYM 発行サイト 5 箇所をヘルパに集約。
+  副次効果: stdio.h に stdin/stdout/stderr (Apple libc の __std{in,out,err}p) を追加し、
+  `fprintf(stderr, ...)` が使えるように。
+`make test`=1042/1042 green。
 
 ## このセッション（続き34）: 3D+ VLA 仮引数
 - **3D+ VLA 仮引数**（vla_3d4d_param）。`int sum_3d(int n, int m, int k, int t[n][m][k])`
