@@ -335,14 +335,12 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
           long long ev = gv->init_values[*val_idx];
           double efv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
           (*val_idx)++;
-          /* ポインタ配列メンバ `int *ptrs[N] = {&data[i], ...}` のシンボル+オフセット要素や
-           * 文字列/関数ポインタ要素も emit_global_init_member_scalar で処理する。 */
-          if (esym) {
-            emit_global_init_member_scalar(esym, esym_len, mi.fp_kind, ts, ev, efv);
-          } else {
-            if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
-            cg_emit_int_directive(ts, ev);
-          }
+          if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
+          /* ポインタ配列メンバ (シンボル+オフセット要素や文字列/関数ポインタ要素) も
+           * fp 配列メンバ (`struct R{double m[2][2];}`) も emit_global_init_member_scalar
+           * 経由で統一処理する。直接 cg_emit_int_directive を呼ぶと fp_kind を見落として
+           * double 値が `.quad 0` として出力されていた (efv を捨てて ev=0 を整数で書く)。 */
+          emit_global_init_member_scalar(esym, esym_len, mi.fp_kind, ts, ev, efv);
         }
       }
       prev_end = off + ts * alen;
