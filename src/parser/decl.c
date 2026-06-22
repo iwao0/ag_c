@@ -3420,6 +3420,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
+    /* typedef が配列で base もポインタ (pointer-element 配列 typedef: `typedef IP IPA[3]`
+     * など) のケース: declarator に `*` を追加していない (= IPA arr / OpArr3 arr) なら宣言は
+     * 配列であり、is_pointer は本来立つべきではない (`IP arr[3]` 相当 = `int *arr[3]`)。
+     * base 由来の is_pointer をそのままにすると 3522 経路 (配列ポインタ) に流れて
+     * 「配列宣言」経路 (3616) に乗れず、`IPA arr = {&s,...}` の brace init が「スカラ初期化子」
+     * と誤判定 (E3064)。declarator に `*` 追加 (`IPA *pa`) なら is_pointer のままで配列
+     * ポインタ扱い。 */
+    if (is_pointer && ptr_levels == 0 && td_array_dim_count > 0 &&
+        td_array_elem_size_for_this_decl > 0) {
+      is_pointer = 0;
+    }
     int var_size = is_pointer ? 8 : elem_size;
     /* 基底が多段ポインタ typedef なら段数ぶん寄与する (`PP p` = int**)。単段 typedef・
      * 非ポインタ基底は base_pointer_levels が 1/0 で従来の `(base_is_pointer?1:0)` と一致。 */
@@ -3615,12 +3626,27 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * `q[i][j][k]` が壊れる。直書き `int(*q)[N][M]` (paren 経路) も設定しない。 */
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
         /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
-         * そのまま使って stride を計算しつつ lvar を登録する。 */
-        var = register_typedef_array_lvar(tok, elem_size, td_array_dims,
+         * そのまま使って stride を計算しつつ lvar を登録する。
+         * 要素がポインタの 1 次元配列 typedef (`typedef IP IPA[3]`、続き20 で td_array_elem_size
+         * を取得済み) は要素サイズが 8 (ポインタ) なので elem_size の代わりに使う。条件:
+         *  (a) td_array_dim_count == 1 (1 次元、多次元 typedef は td_array_elem_size が「行
+         *      サイズ」になるので除外。`typedef int M[3][4]; M m` で 16 を使うと壊れる)
+         *  (b) td_array_elem_size > elem_size (要素サイズが基底型より大きい = ポインタ要素) */
+        int eff_elem_for_arr = (td_array_elem_size_for_this_decl > 0 &&
+                                td_array_dim_count == 1 &&
+                                td_array_elem_size_for_this_decl > elem_size)
+                                   ? td_array_elem_size_for_this_decl : elem_size;
+        var = register_typedef_array_lvar(tok, eff_elem_for_arr, td_array_dims,
                                            td_array_dim_count, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
+        /* 要素がポインタの場合: pointer_qual_levels=1 / base_deref_size=pointee サイズを立て、
+         * `*arr[i]` の subscript+deref で「要素はポインタ」分岐に乗せて pointee で deref する。 */
+        if (eff_elem_for_arr > elem_size && elem_size > 0) {
+          var->pointer_qual_levels = 1;
+          var->base_deref_size = (short)elem_size;
+        }
       } else if (tk_consume('[')) {
         node_t *size_node = NULL;
         int size_ok = 1;

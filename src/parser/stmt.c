@@ -207,10 +207,19 @@ static void parse_typedef_decl(void) {
     g_stmt_typedef_ptr_in_paren = 0;
     int decl_stars = psx_consume_pointer_prefix_counted(&is_ptr);
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
+    /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]` / `typedef ScorePtr SPA[3]`):
+     * base が pointer typedef かつ declarator に prefix `*` 追加なし (decl_stars==0) かつ
+     * 括弧内 `*` も無し (!g_stmt_typedef_ptr_in_paren) で配列 suffix があるケース。
+     * sizeof_size = 8*N、is_array=1 として登録し、宣言側で配列扱いにする。
+     * pointer-to-array typedef (`typedef int (*PA)[3]`) は base=int だが declarator 内の
+     * 括弧内で `*` を取り is_ptr=1 / g_stmt_typedef_ptr_in_paren=1 になる。decl_stars=0
+     * (prefix `*` 無し) と区別できないので g_stmt_typedef_ptr_in_paren で除外する必要がある。 */
+    int base_is_ptr_only = (is_ptr && decl_stars == 0 && !g_stmt_typedef_ptr_in_paren);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
     stmt_array_suffix_t arr = parse_stmt_array_suffixes(0);
     if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
     else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+    else if (base_is_ptr_only && arr.is_array && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
     token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
     /* pointer-to-array typedef `typedef int (*PA)[3]` (is_ptr=1 かつ `*` が括弧内) のみ、
      * 括弧の後ろの `[3]` をポインティ配列の extent として dims に記録する (is_array=0 の
@@ -218,9 +227,10 @@ static void parse_typedef_decl(void) {
      * と食い違う。その他 (スカラ / 配列 typedef) は従来の psx_ctx_define_typedef_name
      * 相当 (is_array=0, dims なし) を維持して退行を避ける。 */
     int is_pta = (is_ptr && g_stmt_typedef_ptr_in_paren && arr.is_array && arr.dim_count > 0);
-    int td_first_dim = is_pta ? arr.first_dim : 0;
-    int td_dim_count = is_pta ? arr.dim_count : 0;
-    const int *td_dims = is_pta ? arr.dims : NULL;
+    int is_base_ptr_arr = (base_is_ptr_only && arr.is_array && arr.arr_total > 0);
+    int td_first_dim = is_pta ? arr.first_dim : (is_base_ptr_arr ? arr.first_dim : 0);
+    int td_dim_count = is_pta ? arr.dim_count : (is_base_ptr_arr ? arr.dim_count : 0);
+    const int *td_dims = (is_pta || is_base_ptr_arr) ? arr.dims : NULL;
     psx_typedef_info_t _ti = {0};
     _ti.base_kind = stored_base_kind;
     _ti.elem_size = elem_size;
@@ -233,7 +243,7 @@ static void parse_typedef_decl(void) {
     _ti.pointee_const_qualified = td_pointee_const;
     _ti.pointee_volatile_qualified = td_pointee_volatile;
     _ti.is_unsigned = td_is_unsigned;
-    _ti.is_array = 0;
+    _ti.is_array = is_base_ptr_arr ? 1 : 0;
     _ti.array_first_dim = td_first_dim;
     _ti.array_dim_count = td_dim_count;
     if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];

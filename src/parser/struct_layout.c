@@ -3,8 +3,10 @@
 #include "anon_tag.h"
 #include "array_suffixes.h"
 #include "core.h"
+#include "decl.h"
 #include "diag.h"
 #include "enum_const.h"
+#include "expr.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -58,6 +60,32 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
   int bf_storage_type_size = 0;
   int bf_bits_used = 0;
   while (!tk_consume('}')) {
+    /* C11 6.7.2.1: struct/union のメンバ位置にも static_assert-declaration を書ける。
+     * `_Static_assert(expr, "msg");` の expr を畳み込んで真なら受理、偽なら診断。
+     * これがないと `struct S { _Static_assert(...); int x; };` が「メンバ型が必要」E3064。 */
+    if (curtok()->kind == TK_STATIC_ASSERT) {
+      set_curtok(curtok()->next);
+      tk_expect('(');
+      int const_ok = 1;
+      long long cond_val = psx_decl_eval_const_int(psx_expr_assign(), &const_ok);
+      tk_expect(',');
+      if (curtok()->kind != TK_STRING) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
+      }
+      set_curtok(curtok()->next);
+      tk_expect(')');
+      tk_expect(';');
+      if (!const_ok) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
+      }
+      if (cond_val == 0) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
+      }
+      continue;
+    }
     int elem_size = 8;
     int is_signed_type = 1;
     token_kind_t member_tag_kind = TK_EOF;
