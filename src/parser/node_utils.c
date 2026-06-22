@@ -232,6 +232,15 @@ int psx_node_pointer_qual_levels(node_t *node) {
       return as_mem(node)->pointer_qual_levels;
     case ND_COMMA:
       return psx_node_pointer_qual_levels(node->rhs);
+    /* ポインタ算術 `pp + n` / `pp - n`: ポインタ側 (通常 lhs、稀に rhs) の pql を carry。
+     * これがないと `*(pp + n)` の build_unary_deref_node で pql=0 になり、`struct P **pp;
+     * (*(pp + 2))->m` の中間 deref が struct ポインタとして認識されず E3005 になっていた。 */
+    case ND_ADD:
+    case ND_SUB: {
+      int l = psx_node_pointer_qual_levels(node->lhs);
+      if (l > 0) return l;
+      return psx_node_pointer_qual_levels(node->rhs);
+    }
     /* 多段ポインタ戻り `int **g()` の funcall: 段数 (>=2) を返し、build_unary_deref_node の
      * pql>=2 分岐に乗せて `*g()` を「1 段減らしたポインタ」として組ませる。単段ポインタ戻り
      * (`int *g()`) は従来どおり 0 を返し挙動を変えない (ps_node_is_pointer 側で別途ポインタ判定)。 */
@@ -261,6 +270,14 @@ int psx_node_base_deref_size(node_t *node) {
       return as_mem(node)->base_deref_size;
     case ND_COMMA:
       return psx_node_base_deref_size(node->rhs);
+    /* ポインタ算術 `pp + n` / `pp - n`: ポインタ側 (通常 lhs、稀に rhs) の bds を carry。
+     * pql と対称で多段ポインタ算術の最終 deref が正しい load 幅を使えるようにする。 */
+    case ND_ADD:
+    case ND_SUB: {
+      int l = psx_node_base_deref_size(node->lhs);
+      if (l > 0) return l;
+      return psx_node_base_deref_size(node->rhs);
+    }
     /* 多段ポインタ戻り `int **g()` の funcall: 最内基底型サイズ (int=4) を返す。
      * build_unary_deref_node の pql>=2 分岐が最終 deref のロード幅に使う。 */
     case ND_FUNCALL: {
