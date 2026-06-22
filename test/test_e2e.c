@@ -1120,6 +1120,7 @@ static const test_case_t test_cases[] = {
     {"probes", "generic_long_double", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_long_double.c", 0, 0},
     {"probes", "global_struct_char_array_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_char_array_member.c", 0, 0},
     {"probes", "global_struct_member_after_fp_decl", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_member_after_fp_decl.c", 0, 0},
+    {"probes", "global_struct_2d_char_array_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_2d_char_array_member.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

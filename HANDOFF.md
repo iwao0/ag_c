@@ -1,6 +1,21 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（tag global の decl-spec fp_kind 汚染を修正）
+最終更新: 2026-06-22（グローバル 2D char 配列メンバの文字列初期化を修正）
+
+## このセッション（続き8）: グローバル struct の 2 次元 char 配列メンバの文字列初期化
+HANDOFF サブケース (b) `struct{char rows[2][4];} g={{"ab","cd"}}` を修正。
+- **グローバル 2D char 配列メンバ**（global_struct_2d_char_array_member）。2 次元 char メンバの行幅
+  (outer_stride=4) が global brace flat パーサのコンテキスト gbrace_ctx_t に伝わらず、ネスト brace
+  `{"ab","cd"}` の各行文字列が「要素 (char)」扱いされ array_len=0 でポインタ (.LC ラベル) として
+  出力されていた (`.quad .LC0; .quad .LC1`)。gbrace_ctx_t に row_width フィールドを追加し、多次元
+  char 配列メンバ (tag 無し・elem 1B・outer_stride>0・array_len>outer_stride) で outer_stride を
+  行幅として持たせる。gbrace_child_at が各要素を「内側 1 次元 char 配列 (char[row_width])」として
+  返すので、既存の char 配列メンバ展開分岐 (8c8ce2a) に乗り行ごとに row_width バイトへ展開される。
+  2D 基本形・後続スカラメンバ・先行スカラメンバ・短い文字列 0 埋めを網羅。`make test`=1016/1016 green。
+  **限界 (未対応)**: (1) 3 次元以上の char メンバ `char c[2][2][3]` は gbrace_ctx_t が全次元チェーンを
+  持てず SIGSEGV のまま。(2) ローカル (非 static) struct の 2D char メンバは別経路 (ローカル struct
+  メンバ初期化) で未対応 (1D ローカルは動作)。いずれも今回の global flat パーサ修正とは別経路。
+  **残: HANDOFF「発見したが未修正」の (c) struct 配列内 char メンバは未確認 (次タスク候補)。**
 
 ## このセッション（続き7）: fp 宣言の直後に来る tag グローバルの fp_kind 汚染
 HANDOFF「発見したが未修正」のサブケース (a)（char[] メンバの後に char* メンバが続く形
