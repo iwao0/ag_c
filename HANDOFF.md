@@ -1,13 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き20〜22: typedef 配列ポインタ細形 3 件を全消化。**現時点で明確な未対応バグ無し**）
+最終更新: 2026-06-22（続き23: 探索 round 3 で 2 件発見・修正。**現時点で明確な未対応バグ無し**）
 
 ## 次セッションの最優先タスク
-**現時点で明確な未対応バグは無い**。HANDOFF 既知形 + 続き17 の探索で発見した形 + 続き18〜22 で
-解消した細形まですべて green (`make test` = 1029/1029)。
+**現時点で明確な未対応バグは無い**。HANDOFF 既知形 + 続き17 / 23 の探索で発見した形まで
+すべて green (`make test` = 1031/1031)。
 
-次セッションは **未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成ファズ）からの新規
-探索 round 3 に戻る。索引は `docs/differential_testing/bug_coverage.md`。
+次セッションは引き続き **未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成ファズ・
+複合代入の細形・古い C コードの寛容性等）から新規 miscompile を炙り出す。索引は
+`docs/differential_testing/bug_coverage.md`。
+
+## このセッション（続き23）: 探索 round 3 + 2 件修正
+未探索角度 12 probe を流して 10 件 green / 2 件発見・修正:
+- **typedef-array-with-pointer-elements 宣言**（typedef_pointer_element_array_decl）。
+  `typedef IP IPA[3]; IPA arr = {&x, &y, &z}` が「スカラ初期化子 1 要素のみ」E3064 で失敗。
+  base が pointer typedef + typedef 自体が配列のとき、declarator に `*` を追加していない場合
+  is_pointer を 0 にリセットして配列宣言経路へ。register_typedef_array_lvar に td_array_elem_size
+  (= 8) を渡し、pointer_qual_levels=1 / base_deref_size=pointee サイズを立てて `*arr[i]` を
+  pointee で deref。多次元 typedef (`typedef int M[2][3]; M m`) は td_array_dim_count==1 で除外。
+  stmt.c の parse_typedef_decl にも base-is-ptr-only 経路を追加 (parser.c は続き20 で対応済み)。
+  ローカル typedef chain (Int→Score→ScorePtr→ScorePtrArr) も動くように。
+- **struct メンバ位置の _Static_assert**（static_assert_in_struct）。C11 6.7.2.1 で許可される
+  `struct S { _Static_assert(expr, "msg"); int x; };` が「メンバ型が必要」E3064。struct_layout の
+  メンバ解析冒頭に TK_STATIC_ASSERT 分岐を追加 (トップレベル/関数内経路と同じく expr を畳み込んで
+  偽なら診断)。ネスト struct でも動く。
+- bug_coverage.md に round 3 探索領域 (C11 機能 / 言語機能各種) を索引化済み (再探索不要)。
+- offsetof on bitfield は仕様外 (clang もエラー、未定義動作) で probe から除外。
 
 ## このセッション（続き22）: ネスト union fp 初期化の sentinel 化
 - **designator sentinel**（nested_union_designator_ordinal）。続き19 のヒューリスティック
