@@ -437,6 +437,11 @@ static int g_inner_array_dim_count = 0;
 /* `int (*p)[m]` (配列へのポインタの VLA 形) の先頭次元のランタイム式。非 NULL なら
  * registration が pointer-to-VLA として登録し、行ストライドスロットを確保する。 */
 static node_t *g_paren_array_vla_dim = NULL;
+/* 宣言子の trailing 部に関数シグネチャ `(args...)` があれば 1。
+ * 「関数ポインタ配列へのポインタ」(`int (*(*pa)[N])(args)` / `BinOp (*pa)[N]`) の登録で
+ * 要素サイズを「関数ポインタ = 8」と判定するのに使う。consume_decl_name_recursive が
+ * skip_func_params の呼び出し時に立てる。宣言子ごとにリセット。 */
+static int g_decl_trailing_func_suffix = 0;
 /* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP p;` で 2)。
  * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
@@ -2462,6 +2467,10 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   g_last_funcptr_param_fp_mask = 0;
   while (curtok()->kind == TK_LPAREN) {
     skip_func_params();
+    /* 関数シグネチャを 1 つでも消費したら trailing-func-suffix を立てる。
+     * `int (*(*pa)[N])(args)` で要素が関数ポインタの場合、後段の `(*p)[N]` 登録経路で
+     * elem_size を 8 に上書きするのに使う。 */
+    g_decl_trailing_func_suffix = 1;
   }
   /* paren-grouped 宣言子 `(*p)...` の後ろに `[N]` が続くのは `int (*p)[N]`
    * (配列へのポインタ) 専用形式。`[` が来ていないなら paren_array_mul を立てない
@@ -3374,6 +3383,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     g_paren_array_dim_count = 0;
     g_paren_array_vla_dim = NULL;
     g_inner_array_dim_count = 0;
+    g_decl_trailing_func_suffix = 0;
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
@@ -3490,15 +3500,24 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         g_paren_array_vla_dim = NULL;
       } else if (paren_array_mul > 0) {
         // (*p)[N] パターン: 配列へのポインタ
-        int row_size = paren_array_mul * elem_size;
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);
+        /* 配列要素がポインタ (関数ポインタや typedef 経由のデータポインタ) の場合、
+         * 要素サイズは「ポインタサイズ = 8」になる。elem_size は基底 (戻り型 or pointee 型、
+         * 例 int=4) で来るので上書きする。条件:
+         *   (a) `int (*(*pa)[N])(args)` 形式: trailing 部に関数シグネチャ
+         *   (b) `BinOp (*pa)[N]` / `typedef int *IP; IP (*pa)[N]` 形式: base_is_pointer
+         * これがないと (*pa)[i] の deref が 4B (ldrsw) で出力され、ポインタを下位 4B だけ
+         * load して SIGSEGV / 誤値になる。 */
+        int eff_elem = ((g_decl_trailing_func_suffix && is_pointer) || base_is_pointer)
+                           ? 8 : elem_size;
+        int row_size = paren_array_mul * eff_elem;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, eff_elem, 0, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
-        var->base_deref_size = (short)elem_size;
+        var->base_deref_size = (short)eff_elem;
         var->outer_stride = row_size;
         /* 多次元 inner (`(*p)[N][M]`): p[i] は [N][M] 全体 (outer_stride)、p[i][j] は
          * 内側 1 行 ([M]) ぶん進む。mid_stride = (積/先頭次元)*elem を設定する。 */
         if (g_paren_array_dim_count >= 2 && g_paren_array_first_dim > 0) {
-          var->mid_stride = (paren_array_mul / g_paren_array_first_dim) * elem_size;
+          var->mid_stride = (paren_array_mul / g_paren_array_first_dim) * eff_elem;
         }
       } else if (is_pointer && total_pointer_levels == 1 && td_array_dim_count > 0 &&
                  curtok()->kind != TK_LBRACKET) {
