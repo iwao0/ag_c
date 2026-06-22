@@ -2,13 +2,52 @@
 
 最終更新: 2026-06-22（続き25〜27: 残課題 3 件全消化。**現時点で明確な未対応バグ無し**）
 
-## 次セッションの最優先タスク
-**現時点で明確な未対応バグは無い**。HANDOFF 既知形 + 続き17/23/24/25-27 で発見した形まで
-すべて green (`make test` = 1034/1034)。
+## 現状
+- `make test` = **1034/1034 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-27 で発見した形まですべて消化)。
+- ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
+- 索引: `docs/differential_testing/bug_coverage.md`。
 
-次セッションは引き続き **未探索の角度** (複数 TU リンク・libc 関数連携・ランダム生成ファズ・
-複合代入の細形・古い C コードの寛容性・宣言子の特殊な組合せ等) から新規 miscompile を
-炙り出す。索引は `docs/differential_testing/bug_coverage.md`。
+## 次セッション開始時の手順
+1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
+2. **`make test`** で 1034/1034 green を確認 (前回セッションの状態が引き継がれている)。
+3. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
+4. **未探索の角度から probe** (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
+5. **新規バグを発見** したら、HANDOFF と同じ流れ (修正 → fixture 登録 → コミット) で進める。
+
+## 次セッションの最優先タスク
+**現時点で明確な未対応バグは無い**。次セッションは引き続き **未探索の角度** から新規
+miscompile を炙り出すフェーズ。候補:
+- 複数 TU リンク (`test_e2e.c` の `link2_cases[]` 経由、または使い捨ての `/tmp/*.sh` で
+  クロス TU 比較; static_internal_linkage_xtu_{main,other} を参考に)。
+- libc 関数連携の更に深い (snprintf format flags、qsort 複雑な comparator、stdlib chain、
+  math 連鎖)。
+- ランダム生成ファズ (深いネスト・複合的なアルゴリズム・大きいプログラム)。
+- 複合代入の細形 (struct メンバ + 多次元 + ポインタ deref 組合せ)。
+- 宣言子の特殊な組合せ (typedef chain × paren-array × funcptr の更なる組合せ)。
+- 古い C コードの寛容性 (K&R, implicit int 等; ただし GNU 拡張は対象外)。
+
+## 重要な約束事 (memory より)
+- **1 タスクずつ進める**: 完了後にユーザー確認を取ってから次へ。複数タスクを並行しない。
+- **コミットまでがタスク**: タスク完了時はコミットも自分で実行 (`feedback_commit_per_task.md`)。
+  「コミットしますか？」と毎回聞かない。
+- **作業前に範囲確認**: 狭い依頼を勝手に全体へ広げない (`feedback_confirm_scope_before_acting.md`)。
+- **GNU 拡張は対象外**: ag_c は C11 サブセット。statement expression `({...})`、`__real__` 等は
+  バグ探索の対象に入れない (`feedback_no_gnu_extensions.md`)。
+- **コミットメッセージ**: 英語 Conventional Commits (`fix:` / `docs:` 等)。Co-Authored-By を付ける。
+- **テスト出力を省略しない**: `make test` の結果はそのまま出す (`feedback_trust.md`)。
+- **ヘッダ変更時は `make clean && make`** で確認 (増分ビルドが依存を取りこぼすことがある)。
+
+## ag_c の基本情報
+- **ターゲット**: Apple Silicon ARM64 (Mach-O)。クロスは未対応。
+- **言語**: C11 サブセット。GNU 拡張なし。
+- **コンパイル**: `./build/ag_c foo.c > foo.s` (アセンブリを stdout)。`-o`/`-I` フラグなし。
+  include 検索は CWD 相対の `include/`。
+- **ビルド**: `make` (日本語診断 `-DDIAG_LANG_JA`)。
+- **テスト**: `make test` (E2E + parser/preprocess 単体 + fuzz + IR)。
+- **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
+  (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
+- **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
 
 ## このセッション（続き27）: ポインタ算術後の deref で pql/bds carry
 - **`*(pp + n)` の pql/bds carry**（struct_double_ptr_deref_arrow）。
