@@ -1909,15 +1909,21 @@ static int parse_parenthesized_type_size(void) {
     token_ident_t *id = (token_ident_t *)t;
     int td_elem = 8;
     int td_ptr = 0;
+    int td_is_array = 0;
     int td_sizeof = 0;
     psx_typedef_info_t _ti;
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       td_elem = _ti.elem_size;
       td_ptr = _ti.is_pointer;
+      td_is_array = _ti.is_array;
     }
     t = t->next;
     int sz = td_ptr ? 8 : td_elem;
-    if (!td_ptr && psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {
+    /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]`) は is_pointer=1 だが
+     * is_array=1 でもある。この場合 sizeof_size (= 8*N) を優先する。pure pointer typedef
+     * (is_array=0) は引き続き 8 (= pointer サイズ) を返す。 */
+    if ((!td_ptr || td_is_array) &&
+        psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {
       sz = td_sizeof;
     }
     return finish_parenthesized_type_size(t, sz);

@@ -1994,9 +1994,15 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
   int typedef_sizeof = compute_toplevel_typedef_sizeof(is_ptr, arr);
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
-  int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
+  /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef + 配列
+   * suffix のとき、is_array=1 として登録する (sizeof_size 経路と同じく ptr_in_paren_group=0
+   * かつ declarator に `*` 追加なしを条件にして pointer-to-array typedef とは排他)。 */
+  int base_ptr_elem_array = (is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
+                             g_toplevel_decl_ptr_levels == 0 &&
+                             arr.is_array && arr.arr_total > 0) ? 1 : 0;
+  int td_is_array = ((!is_ptr || base_ptr_elem_array) && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
-  int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
+  int td_dim_count = td_is_array ? arr.dim_count : 0;
   const int *td_dims = arr.dims;
   /* pointer-to-array typedef `typedef int (*PA)[3]`: is_ptr=1 で `*` が括弧内
    * (ptr_in_paren_group) のとき、括弧の後ろの `[3]` (arr に入っている) はポインティ
@@ -2054,6 +2060,17 @@ static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t a
   int typedef_sizeof = is_ptr ? 8 : g_toplevel_decl_elem_size;
   if (!is_ptr && arr.has_incomplete_array) return 0;
   if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+  /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef
+   * かつ declarator は `*` を追加していない (= ptr_in_paren_group=0 で base のみ由来) +
+   * 配列 suffix が立つケース。sizeof = 8 (pointer) * arr_total。これがないと typedef の
+   * sizeof_size が 8 (base pointer サイズのまま) になり、宣言側で OpArr3 *pa の要素サイズ
+   * が誤判定される。pointer-to-array typedef (`typedef int (*PA)[3]`、ptr_in_paren_group=1)
+   * とは排他。 */
+  if (is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
+      g_toplevel_decl_ptr_levels == 0 &&
+      arr.is_array && arr.arr_total > 0) {
+    typedef_sizeof = 8 * arr.arr_total;
+  }
   return typedef_sizeof;
 }
 

@@ -138,6 +138,11 @@ typedef struct {
   // と次元数。`M m;` 宣言で配列として lvar 登録するために宣言子側で参照する。
   int td_array_dims[8];
   int td_array_dim_count;
+  /* typedef が配列型のときの 1 要素のバイト数 (= sizeof_size / dims[0])。
+   * `typedef BinOp OpArr3[3]; OpArr3 *pa` のような「typedef 配列へのポインタ + 要素が
+   * ポインタ」のケースで、宣言子側が elem_size を 8 (関数ポインタ) に上書きするのに使う。
+   * 0 = 配列 typedef でない or 取れない (caller は elem_size を使う)。 */
+  int td_array_elem_size;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -168,7 +173,8 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
                                                  tk_float_kind_t fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
-                                                 int td_is_unsigned);
+                                                 int td_is_unsigned,
+                                                 int decl_added_pointer);
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
                                                 tk_float_kind_t fp_kind,
                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -263,6 +269,20 @@ static void resolve_typedef_array_dims(token_ident_t *id, int *out_dims, int *ou
    * (`typedef int (*PA)[3]`、is_array=0 でポインティ extent を dims に格納) の両方で
    * 立つ。後者も dims に extent を持つので is_array では絞らず dim_count で判定する。 */
   if (out_dim_count) *out_dim_count = (dim_count > 0) ? dim_count : 0;
+}
+
+/* `typedef T A[N]; A *pa` (配列 typedef へのポインタ) で要素サイズを正しく取るための
+ * 補助。typedef が配列型 (is_array=1) のとき、要素 1 個のバイト数 = sizeof_size / dims[0]
+ * を返す。配列でなければ 0 (= caller は elem_size を使う)。
+ * pointer-to-array typedef (`typedef int (*PA)[3]`、is_array=0) は dims を持つが要素サイズ
+ * 計算には使わない (PA p の要素は int で elem_size=4 のまま)。 */
+static int resolve_typedef_array_element_size(token_ident_t *id) {
+  psx_typedef_info_t _ti;
+  if (!psx_ctx_find_typedef_name(id->str, id->len, &_ti)) return 0;
+  if (!_ti.is_array) return 0;
+  if (_ti.array_dim_count < 1 || _ti.array_dims[0] <= 0) return 0;
+  if (_ti.sizeof_size <= 0) return 0;
+  return _ti.sizeof_size / _ti.array_dims[0];
 }
 
 static long long eval_const_expr_decl(node_t *n, int *ok);
@@ -442,6 +462,11 @@ static node_t *g_paren_array_vla_dim = NULL;
  * 要素サイズを「関数ポインタ = 8」と判定するのに使う。consume_decl_name_recursive が
  * skip_func_params の呼び出し時に立てる。宣言子ごとにリセット。 */
 static int g_decl_trailing_func_suffix = 0;
+/* 基底 typedef が配列型 (`typedef BinOp OpArr3[3]`) のとき、要素 1 個のバイト数。
+ * `OpArr3 *pa` (typedef 配列型へのポインタ + 要素がポインタ) で要素サイズを 8 と判定する
+ * のに使う。pointer-to-array typedef (`typedef int (*PA)[3]`) では 0 のまま (PA p の要素は
+ * int=4 で elem_size を使うため、上書きしない)。parse_local_decl_spec_from_typedef がセット。 */
+static int g_decl_td_array_elem_size = 0;
 /* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP p;` で 2)。
  * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
@@ -3344,6 +3369,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
    * (= base_is_pointer ? 1 : 0 と一致し従来挙動を保つ)。 */
   int base_pointer_levels = g_decl_base_pointer_levels;
   g_decl_base_pointer_levels = 0;
+  /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
+   * (declarator ループ後にもう一度宣言文があれば、その spec で立て直す)。
+   * 非 typedef spec で前回値が残ると 3522 経路が誤検出するため、ここでクリアする。
+   * 一旦ローカル変数に取って declarator ループ内で参照する形にする。 */
+  int td_array_elem_size_for_this_decl = g_decl_td_array_elem_size;
+  g_decl_td_array_elem_size = 0;
   if (base_is_pointer && base_pointer_levels < 1) base_pointer_levels = 1;
   if (!base_is_pointer) base_pointer_levels = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
@@ -3384,6 +3415,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     g_paren_array_vla_dim = NULL;
     g_inner_array_dim_count = 0;
     g_decl_trailing_func_suffix = 0;
+    /* td_array_elem_size は宣言文 (spec 共有) ごとに valid なので、各 declarator では
+     * リセットしない。type spec 解析時に parse_local_decl_spec_from_typedef が立てる。 */
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
@@ -3524,18 +3557,33 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         /* `row3 *p` (row3 = typedef int[3]): 配列へのポインタ。paren 形 `int (*p)[3]`
          * と同じく outer_stride=配列全体バイト数、base_deref_size=要素サイズ、
          * 多次元 typedef なら mid_stride を設定する。これがないと p+1 / p[i] が
-         * 要素 1 個分しか進まず、直書き `int(*p)[3]` と挙動が食い違う。 */
+         * 要素 1 個分しか進まず、直書き `int(*p)[3]` と挙動が食い違う。
+         *
+         * 要素がポインタの 1 次元配列 typedef (`typedef BinOp OpArr3[3]; OpArr3 *pa`):
+         * td_array_elem_size が要素サイズ (8) を返す。条件で eff_elem に上書き:
+         *  (a) td_array_dim_count == 1 (1 次元 typedef、内側次元が無い)
+         *  (b) td_array_elem_size > elem_size (要素が基底型より大きい = ポインタ要素)
+         * 多次元 typedef (`typedef int m23[2][3]; m23 *q`、td_array_dim_count==2) は既存の
+         * elem_size + outer_stride / mid_stride 経路を使うので上書きしない。基底と要素が
+         * 同サイズ (`typedef long L[3]; L *p`) も elem_size のままで正しい。
+         * pointer-to-array typedef (`typedef int (*PA)[3]; PA p`) は td_array_elem_size=0。 */
+        int eff_elem = elem_size;
+        if (td_array_elem_size_for_this_decl > 0 &&
+            td_array_dim_count == 1 &&
+            td_array_elem_size_for_this_decl > elem_size) {
+          eff_elem = td_array_elem_size_for_this_decl;
+        }
         int td_count = 1;
         for (int di = 0; di < td_array_dim_count; di++) {
           if (td_array_dims[di] > 0) td_count *= td_array_dims[di];
         }
-        int row_size = td_count * elem_size;
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, elem_size, 0, alignas_val);
+        int row_size = td_count * eff_elem;
+        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, eff_elem, 0, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
-        var->base_deref_size = (short)elem_size;
+        var->base_deref_size = (short)eff_elem;
         var->outer_stride = row_size;
         if (td_array_dim_count >= 2 && td_array_dims[0] > 0) {
-          var->mid_stride = (td_count / td_array_dims[0]) * elem_size;
+          var->mid_stride = (td_count / td_array_dims[0]) * eff_elem;
         }
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
@@ -3742,6 +3790,12 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
   token_ident_t *id = (token_ident_t *)curtok();
   // 多次元配列 typedef (`typedef int M[2][3][4]`) の dims を取得して保持する。
   resolve_typedef_array_dims(id, out->td_array_dims, &out->td_array_dim_count);
+  /* typedef が配列型の場合の要素 1 個のサイズ (要素がポインタなら 8 になる)。
+   * pointer-to-array typedef (`typedef int (*PA)[3]`) は is_array=0 なので 0 を返す。
+   * static global にも転記して、3522 経路の declarator 側からも参照できるようにする
+   * (caller シグネチャを増やさずに済ませるため)。 */
+  out->td_array_elem_size = resolve_typedef_array_element_size(id);
+  g_decl_td_array_elem_size = out->td_array_elem_size;
   /* 多段ポインタ typedef (`typedef int **PP`) の段数を捕捉し、宣言経路へ受け渡す。
    * id はトークンなので resolve で curtok が進んでも文字列は有効。 */
   g_decl_base_pointer_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
@@ -3869,17 +3923,26 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
                                                  tk_float_kind_t fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
-                                                 int td_is_unsigned) {
-  int typedef_sizeof = is_ptr ? 8 : elem_size;
+                                                 int td_is_unsigned,
+                                                 int decl_added_pointer) {
+  /* 配列要素がポインタの typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef だが
+   * declarator は `*` を追加していない (decl_added_pointer=0)。この場合の typedef は
+   * 「pointer 配列」なので is_array=1、要素サイズはポインタサイズ (8)、sizeof_size=8*N。
+   * 通常の「pointer typedef + 配列 suffix なし」(`BinOp f`) は arr.is_array=0 なので影響なし。 */
+  int base_is_ptr_only = (is_ptr && !decl_added_pointer);
+  int elem_unit_size = is_ptr ? 8 : elem_size;
+  int typedef_sizeof = elem_unit_size;
   decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_mul);
   if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
   else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
+  else if (base_is_ptr_only && arr.is_array && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
   token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
   // `typedef int row_t[3]` のように配列型を typedef した場合は is_array=1 で記録する。
   // 不完全配列 `typedef int A[]` も is_array=1 (sizeof_size は 0)。
-  int td_is_array = (!is_ptr && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
+  // `typedef BinOp OpArr3[3]` (ポインタ要素配列) も is_array=1。
+  int td_is_array = ((!is_ptr || base_is_ptr_only) && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
-  int td_dim_count = (td_is_array && !is_ptr) ? arr.dim_count : 0;
+  int td_dim_count = td_is_array ? arr.dim_count : 0;
   psx_typedef_info_t _ti = {0};
   _ti.base_kind = stored_base_kind;
   _ti.elem_size = elem_size;
@@ -3915,10 +3978,14 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
     int paren_array_mul = 0;
     consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
+    /* declarator が `*` を 1 つでも追加していれば decl_added_pointer=1。is_ptr が base 由来
+     * のみか declarator 由来かを判別する (ptr_levels は declarator 側の `*` 個数を持つ)。 */
+    int decl_added_ptr = (ptr_levels > 0) ? 1 : 0;
     define_local_typedef_from_declarator(name, is_ptr, paren_array_mul,
                                          base_kind, elem_size, fp_kind,
                                          tag_kind, tag_name, tag_len,
-                                         td_pointee_const, td_pointee_volatile, td_is_unsigned);
+                                         td_pointee_const, td_pointee_volatile, td_is_unsigned,
+                                         decl_added_ptr);
     if (!tk_consume(',')) break;
   }
 }
