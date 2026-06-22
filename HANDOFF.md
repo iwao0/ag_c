@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き31: 混在 const/VLA dim サポート）
+最終更新: 2026-06-22（続き32: 探索 round 20 probe 全 green）
 
 ## 現状
 - `make test` = **1038/1038 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-31 で発見した形まですべて消化)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-32 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,25 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き32）: 探索 round 20 probe 全 green
+3D VLA + 混在 const/VLA 対応後、未探索の角度で probe を 20 件流して**新規 miscompile 0 件**。
+カバー領域は `bug_coverage.md` の「2026-06-22 セッション 続き32」に索引化済み (再探索不要)。
+網羅したカテゴリ:
+- 関数ポインタ戻り値・関数ポインタ配列メンバ + 集約初期化
+- qsort 複雑 comparator (struct + tie-break)
+- 複合代入チェーン (構造体メンバ × 配列要素 × shift)
+- snprintf format flags 細形 (`#`/`0`/precision/`e g a`)
+- ポインタ配列 + 負添字 + 文字列処理
+- 64bit ビット演算 (64bit × 64bit unsigned 乗算)
+- 可変長引数 double 列の交互加減算
+- bitfield + cast (`(unsigned)(signed bitfield)`)
+- 混在幅比較・再帰 struct list (malloc chain)
+- switch 4-way fallthrough + default
+- designator init array gap (positional 混在)
+- extern + 同一 TU 定義、マクロ stringize/paste、volatile + ++、
+- const 関数ポインタ typedef、goto labels、ternary が struct 値
+- 大 struct 値渡し + scalar 混在
 
 ## このセッション（続き31）: 混在 const/VLA dim サポート
 - **混在 const/VLA dim**（vla_mixed_dims）。`int t[2][n][4]` のように第 1 dim が const で
