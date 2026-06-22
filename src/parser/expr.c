@@ -2728,6 +2728,39 @@ static node_t *parse_sizeof_operand(void) {
         cast->is_unsigned = 1;
         return (node_t *)cast;
       }
+      /* `sizeof(vla3d[i][j])` は 3D VLA の中間 1D 行のランタイムサイズ (k*elem)。
+       * vla_mid_stride_frame_off スロットの値を読む。2 段添字 `a[...][...]` の直後が
+       * `)` の形のときだけ。1 段は下の vla_row_stride 経路、3 段は要素 (elem) なので除外。 */
+      if (arr_var && arr_var->is_vla && arr_var->vla_mid_stride_frame_off != 0 &&
+          curtok()->next && curtok()->next->kind == TK_LBRACKET) {
+        token_t *t1 = curtok()->next->next;  /* 1 段目の `[` の次 */
+        int depth1 = 1;
+        while (t1 && depth1 > 0) {
+          if (t1->kind == TK_LBRACKET) depth1++;
+          else if (t1->kind == TK_RBRACKET) { depth1--; if (depth1 == 0) break; }
+          t1 = t1->next;
+        }
+        if (t1 && t1->kind == TK_RBRACKET && t1->next && t1->next->kind == TK_LBRACKET) {
+          token_t *t2 = t1->next->next;  /* 2 段目の `[` の次 */
+          int depth2 = 1;
+          while (t2 && depth2 > 0) {
+            if (t2->kind == TK_LBRACKET) depth2++;
+            else if (t2->kind == TK_RBRACKET) { depth2--; if (depth2 == 0) break; }
+            t2 = t2->next;
+          }
+          if (t2 && t2->kind == TK_RBRACKET && t2->next && t2->next->kind == TK_RPAREN) {
+            set_curtok(t2->next->next);
+            node_t *lvar3 = psx_node_new_lvar_typed(arr_var->vla_mid_stride_frame_off, 8);
+            as_lvar(lvar3)->mem.is_unsigned = 1;
+            node_mem_t *cast3 = arena_alloc(sizeof(node_mem_t));
+            cast3->base.kind = ND_PTR_CAST;
+            cast3->base.lhs = lvar3;
+            cast3->type_size = 8;
+            cast3->is_unsigned = 1;
+            return (node_t *)cast3;
+          }
+        }
+      }
       /* `sizeof(vla2d[i])` は行のランタイムサイズ (内側次元 * elem)。行ストライドは
        * 添字に依存しないので vla_row_stride_frame_off スロットの値が答え。`a[...]` の
        * 直後が `)` の形 (= 1 段添字) のときだけ。2 段 `a[i][j]` は要素なので除外。 */
@@ -3227,6 +3260,10 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     next_ds = m->next_deref_size;
     extras_count = m->extra_strides_count;
     for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
+    /* 3D VLA chain: t[i] の結果 deref が vla_row_stride_frame_off = mid slot を持っているとき、
+     * 続く `t[i][j]` の subscript は runtime mid stride で行う。これがないと vla_rsf=0 のまま
+     * inner_ds (= elem_size) でスケールしてしまい mid stride (k*elem) が反映されない。 */
+    if (node->kind == ND_DEREF) vla_rsf = m->vla_row_stride_frame_off;
   } else if (node->kind == ND_ADD || node->kind == ND_SUB) {
     /* ポインタ算術 `t+1` の結果 (ND_ADD) を subscript するとき、ポインタ被演算子
      * (配列へのポインタ等) の多段ストライド (inner_deref_size 等) を引き継ぐ。
@@ -3280,6 +3317,11 @@ static node_t *subscript_base_address_of(node_t *node) {
   if (node->kind != ND_DEREF) return node;
   node_mem_t *mem = (node_mem_t *)node;
   if (mem->deref_size > 0 && !mem->is_pointer) return node->lhs;
+  /* 3D VLA `int t[n][m][k]` の最初の subscript結果 t[i] は deref_size=0 (次 stride は
+   * runtime, vla_row_stride_frame_off=mid_slot 経由) だが、配列の中間「2D サブ配列」を
+   * 表すため subscript chain では address (lhs) を返す。これがないと t[i][j] が ND_DEREF
+   * を 1 バイト整数として load してしまい SIGSEGV。 */
+  if (mem->vla_row_stride_frame_off > 0 && !mem->is_pointer) return node->lhs;
   /* スカラポインタメンバ (`struct S { char *name; }; s.name[0]`) を subscript
    * する場合、base は「ポインタ値の load」(= ND_DEREF をそのまま使う) でなければ
    * いけない。配列メンバとは違って ND_ADD (= メンバスロットのアドレス) を base に
@@ -3340,6 +3382,19 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     deref->extra_strides_count = (unsigned char)(extras_count - 1);
   }
   deref->base.fp_kind = TK_FLOAT_KIND_NONE;
+  /* 3D VLA `int t[n][m][k]` の subscript chain:
+   * - t (ND_LVAR): vla_row_stride_frame_off = outer slot (= m*k*elem runtime),
+   *   vla_mid_stride_frame_off (lvar 側) = mid slot (= k*elem runtime)
+   * - t[i] 結果 (ND_DEREF): vla_row_stride_frame_off = mid slot を立てる。これにより
+   *   続く `t[i][j]` の make_subscript_scaled_offset が ND_DEREF 経由で vla_rsf を読み
+   *   runtime mid stride でスケールする。3 段目 `t[i][j][l]` は inner_deref_size = elem
+   *   経由で elem 定数で動く。 */
+  if (node->kind == ND_LVAR) {
+    lvar_t *vla_src = psx_decl_find_lvar_by_offset(((node_lvar_t *)node)->offset);
+    if (vla_src && vla_src->is_vla && vla_src->vla_mid_stride_frame_off != 0) {
+      deref->vla_row_stride_frame_off = vla_src->vla_mid_stride_frame_off;
+    }
+  }
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
   int tag_len = 0;
@@ -4340,6 +4395,14 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
                         (var->vla_row_stride_frame_off != 0);
   if (var->mid_stride > 0) {
     as_lvar(n)->mem.inner_deref_size = (short)var->mid_stride;
+    as_lvar(n)->mem.next_deref_size = (short)var->elem_size;
+  } else if (var->vla_mid_stride_frame_off != 0) {
+    /* 3D VLA `int t[n][m][k]`: 1 段目は outer (runtime, vla_row 経由)、2 段目は mid
+     * (runtime、build_subscript_deref が結果 deref の vla_row_stride_frame_off に mid slot を
+     * 伝播)、3 段目は elem (定数)。inner_deref_size=0 にして「次 stride は runtime」と知らせる
+     * (元の 2D VLA 経路は inner_ds=elem を入れていた、3D ではゼロが必要)。
+     * next_deref_size=elem は 3 段目用に。 */
+    as_lvar(n)->mem.inner_deref_size = 0;
     as_lvar(n)->mem.next_deref_size = (short)var->elem_size;
   } else {
     as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;

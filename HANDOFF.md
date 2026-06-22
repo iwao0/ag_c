@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き29: typedef chain dims 合成 + 関数内 typedef is_array）
+最終更新: 2026-06-22（続き30: 3D VLA 宣言と subscript chain / sizeof のサポート）
 
 ## 現状
-- `make test` = **1036/1036 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-29 で発見した形まですべて消化)。
+- `make test` = **1037/1037 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-30 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,32 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き30）: 3D VLA 宣言と subscript chain / sizeof
+- **3D VLA**（vla_3d）。`int t[n][m][k]` が E3064 で弾かれていた。
+  register_vla_lvar_and_append_alloc が 1D/2D のみ対応で、3 段目の dim suffix を
+  parse_decl_skip_constexpr_array_suffixes で消費しようとして非定数を拒否していた。
+  以下のセットで対応:
+  - 32B descriptor slot に拡張: [base ptr][byte_size][outer_stride][mid_stride]。
+    outer = m*k*elem (vla_row_stride_frame_off に格納、既存 rsf 経路で初期化)。
+    mid = k*elem (vla_mid_stride_frame_off に格納、init_chain に STORE 注入で初期化)。
+  - lvar_t に vla_mid_stride_frame_off フィールドを追加。
+  - build_lvar_or_vla_node: 3D VLA は inner_deref_size=0 (1 段目 subscript の結果が
+    「次 stride も runtime」と知らせる) / next_deref_size=elem (3 段目用)。
+  - build_subscript_deref: ND_LVAR (3D VLA) の subscript 結果 ND_DEREF に
+    vla_row_stride_frame_off=mid_slot を立てる。続く `t[i][j]` の make_scaled は
+    ND_DEREF 経由で vla_rsf を読み runtime mid stride でスケール。
+  - make_subscript_scaled_offset が ND_DEREF からも vla_rsf を読む (従来 ND_LVAR のみ)。
+  - subscript_base_address_of が vla_row_stride_frame_off>0 の deref を address (lhs)
+    として返す。これがないと t[i] が 1 バイト load されて SIGSEGV。
+  - sizeof(vla3d[i][j]) の特別経路: 2 段添字を peek し vla_mid_stride_frame_off スロット
+    (k*elem) を 8B unsigned long として返す。1 段は既存 vla_row 経路、3 段は要素 (elem 定数)
+    なので fallthrough。
+- all-VLA `int t[n][m][k]`・first-dim VLA `int t[n][3][4]`・double 要素・read/write・
+  3 段 sizeof を fixture で網羅。`make test`=1037/1037 green。
+- **未対応 (既知制約として bug_coverage に記録)**: 第 1 dim が const で後の dim が VLA
+  (例 `int t[2][n][4]`) は register_multidim_array_lvar 経由のため依然 E3064。const-first
+  経路を VLA 経路に切り替える必要があり、別タスクで対応する。
 
 ## このセッション（続き29）: typedef chain dims 合成 + 関数内 typedef is_array
 - **typedef chain で基底が配列の場合の dims 合成**（typedef_array_chain）。

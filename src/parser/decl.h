@@ -82,7 +82,12 @@ struct lvar_t {
    * extra_strides_count>0 で guard 済み (count>0 ⟺ 確保済み)。 */
   int *extra_strides;
   unsigned char extra_strides_count;
-  int vla_row_stride_frame_off; // 2D VLA(内側も可変): 行ストライドを格納するフレームオフセット（0=定数stride）
+  int vla_row_stride_frame_off; // 2D/3D VLA: 1 段目 subscript の runtime stride を格納するフレームオフセット（0=定数stride）
+  /* 3D VLA `int t[n][m][k]`: 2 段目 subscript (t[i][j]) 用の runtime stride を格納する
+   * フレームオフセット (= k*elem)。0 = 設定なし (2D 以下)。subscript で t (ND_LVAR) を
+   * 消費したとき、結果 ND_DEREF.vla_row_stride_frame_off にコピーして次の subscript が
+   * runtime stride で動作するようにする。 */
+  int vla_mid_stride_frame_off;
   /* 2D VLA 関数パラメータ (`int g[n][m]`): 関数 entry 時に
    *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * vla_row_stride_elem_size
    * を計算する。src は同一関数内で先に登録された別パラメータ (内側 dim 識別子)。
