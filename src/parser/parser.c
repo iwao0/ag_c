@@ -1687,7 +1687,13 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   if (!tk_consume('=')) return;
   /* ファイルスコープの複合リテラル初期化子 `T g = (T){...};` は `T g = {...};` と
    * 等価 (C11 6.5.2.5)。先頭の `(型)` を読み飛ばして既存の brace 初期化経路に渡す。
-   * `)` の直後が `{` であることを先読みして複合リテラルだけを対象にする。 */
+   * `)` の直後が `{` であることを先読みして複合リテラルだけを対象にする。
+   * ただし変数がポインタの場合 (`int *p = (int[]){...}`)、cast 型と変数型が違うため strip
+   * してしまうと「ポインタを brace 初期化子で初期化」と解釈され先頭要素値がポインタスロット
+   * に書き込まれて SIGBUS になる。集約 (配列 / struct 値 / union 値) のときだけ strip し、
+   * ポインタ・スカラ変数では式経路 (psx_expr_assign) で compound literal 経路に乗せて hidden
+   * gvar を作る。スカラ変数 `int g = (int){5}` は式経路の compound literal 短絡
+   * (expr.c の `!is_arr && !want_addr && ND_NUM` 分岐) が ND_NUM を直接返すので動作する。 */
   if (curtok()->kind == TK_LPAREN) {
     token_t *t = curtok()->next;
     int depth = 1;
@@ -1697,7 +1703,24 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
       t = t->next;
     }
     if (t && t->kind == TK_RPAREN && t->next && t->next->kind == TK_LBRACE) {
-      set_curtok(t->next);  /* `(型)` を捨てて `{` から始める */
+      /* strip 判定: 集約 (配列 / struct 値 / union 値) なら常に OK。ポインタ・スカラ var では、
+       * brace が単一文字列 (`char *p = (char[6]){"hi"}` の "hi" のような形) ならポインタ初期化
+       * として等価なので strip OK。複数値の `int *p = (int[]){10,20,30}` 形は strip すると先頭
+       * 要素値がポインタスロットに書き込まれて SIGBUS なので skip し、式経路で compound literal
+       * を hidden gvar に materialize させる。 */
+      int gv_is_aggregate = gv->is_array || (gv->tag_kind != TK_EOF && !gv->is_tag_pointer);
+      int may_strip = gv_is_aggregate;
+      if (!may_strip) {
+        token_t *brace_open = t->next;            /* '{' */
+        token_t *first = brace_open->next;        /* 中身先頭 */
+        if (first && first->kind == TK_STRING && first->next &&
+            first->next->kind == TK_RBRACE) {
+          may_strip = 1;  /* {"str"} 単一文字列 → ポインタ初期化と等価 */
+        }
+      }
+      if (may_strip) {
+        set_curtok(t->next);  /* `(型)` を捨てて `{` から始める */
+      }
     }
   }
   // `T arr[N] = {a,b,c,...}` 形式のグローバル配列初期化子。
@@ -2895,6 +2918,13 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, pointee, 0, 0);
     psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 1);
     var->base_deref_size = (short)pointee;
+    /* 多段の struct ポインタ仮引数 (`struct N **root`): pointer_qual_levels を
+     * declarator の段数で立てる。これがないと build_unary_deref_node の `*root` で
+     * is_tag_pointer 伝播が pql>=2 を要求して 0 にクリアしてしまい、続く
+     * `(*root)->m` が E3005 になる。単段 struct ポインタは従来どおり pql 未設定。 */
+    if (param_ptr_levels >= 2) {
+      var->pointer_qual_levels = param_ptr_levels;
+    }
     /* `struct V (*p)[N]` 配列へのポインタ仮引数: 上の is_tag_pointer=1 のままだと
      * 1 要素 (struct サイズ) ずつしか進まず行を跨げない。outer_stride を 1 行 (N 要素)
      * に設定し is_tag_pointer をクリアして、ローカルの `struct V (*p)[N]` と同じ

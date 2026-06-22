@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き35: 局所 VLA tag carry + extern global GOT）
+最終更新: 2026-06-22（続き36: 探索 round で 2 件発見・修正）
 
 ## 現状
-- `make test` = **1042/1042 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-35 で発見した形まですべて消化)。
+- `make test` = **1044/1044 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-36 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,20 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き36）: 探索 round で 2 件発見・修正
+続き35 の探索後、新たな probe round で 2 件発見・修正:
+- **`struct N **` 仮引数の `(*root)->m`**（struct_pp_param_arrow）。多段の struct ポインタ仮引数
+  で `(*root)->m` が E3005 で弾かれていた (ローカル `struct N **root` は動作)。
+  register_param_lvar の struct ポインタ分岐 (param_ptr_levels>=2) で pointer_qual_levels が
+  立っておらず、build_unary_deref_node の `*root` で is_tag_pointer 伝播が pql>=2 を要求して
+  0 にクリアされ、続く `->` が base_is_ptr=0 で弾かれていた。
+- **ファイルスコープの `T *p = (T[]){...}`**（file_scope_ptr_from_array_compound）。ポインタ
+  変数を配列複合リテラルで初期化すると SIGBUS。apply_toplevel_object_initializer の strip
+  heuristic が `(T){...}` を無条件で剥がして `T *p = {...}` (複数値で初期化) と解釈し、先頭
+  要素値がポインタスロットに書き込まれていた。修正: 集約 (配列 / struct 値 / union 値) の
+  ときだけ strip。ただし `char *p = (char[N]){"str"}` の単一文字列形は等価なので peek で例外
+  許可。`make test`=1044/1044 green。
 
 ## このセッション（続き35）: 局所 VLA tag carry + extern global GOT
 3D+ VLA 仮引数完了後の探索 round で 2 件発見・修正:
