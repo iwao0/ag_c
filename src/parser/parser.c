@@ -1625,12 +1625,15 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
       gv->init_symbol = s->string_label;
       gv->init_symbol_len = -1;  /* sentinel: emit raw label (no `_` prefix) */
     } else {
-      /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` 形式。文字列の各バイトと
-       * null 終端を init_values へ展開し、type_size を確定する。
-       * char 以外 (wchar_t など) は未対応。 */
+      /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` / `unsigned short a[] = u"..";` /
+       * `T a[] = U".."`/`L".."` 形式。文字列の各コード単位と null 終端を init_values へ展開し
+       * type_size を確定する。要素幅 (elem) が文字列の char_width (char/u8=1, u=2, U/L=4) と
+       * 一致するときのみ (ASCII 内容のみ。非 ASCII の UTF-8→UTF-16/32 デコードは未対応)。
+       * emit (emit_one_global_var) は deref_size 幅で .byte/.short/.long 出力する。 */
       int elem = gv->deref_size > 0 ? gv->deref_size : 1;
-      if (elem == 1) {
-        int total = s->byte_len + 1; /* null 終端を含む */
+      int cw = s->char_width > 0 ? (int)s->char_width : 1;
+      if (elem == cw) {
+        int total = s->byte_len + 1; /* null 終端を含む (要素数) */
         gv->has_init = 1;
         gv->init_values = calloc((size_t)total, sizeof(long long));
         string_lit_t *lit = NULL;
@@ -1639,7 +1642,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
         }
         if (lit) {
           /* lit->str はソースのまま (raw)。エスケープシーケンスをデコードして
-           * 各バイトを格納する (ローカル `char a[]="..."` と同じ処理)。これがないと
+           * 各コード単位を格納する (ローカル `a[]=".."` と同じ処理)。これがないと
            * グローバル `char g[]="a\tb"` が `\` と `t` をそのまま書いて壊れていた。 */
           int idx = 0, sp = 0;
           while (sp < lit->len && idx < s->byte_len) {
@@ -1653,12 +1656,12 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
               cp = (unsigned char)lit->str[sp];
               sp++;
             }
-            gv->init_values[idx++] = (unsigned char)cp;
+            gv->init_values[idx++] = cp;
           }
         }
         gv->init_values[s->byte_len] = 0;
         gv->init_count = total;
-        if (gv->type_size == 0 && gv->is_array) gv->type_size = total;
+        if (gv->type_size == 0 && gv->is_array) gv->type_size = total * elem;
       }
     }
   }

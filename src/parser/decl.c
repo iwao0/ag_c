@@ -607,14 +607,22 @@ static long long infer_array_count_from_initializer(int elem_size) {
   if (!t || t->kind != TK_ASSIGN) return 0;
   t = t->next;
   if (!t) return 0;
-  if (t->kind == TK_STRING && elem_size == 1) {
-    return count_char_init_from_string_seq(t, false);
+  /* `T a[] = "..."` / `u"..."` (U/L 含む): 要素幅 (elem_size) が文字列のコード単位幅
+   * (char/u8=1, u=2, U/L=4) と一致するとき、コード単位数 + NUL で要素数を推論する。 */
+  if (t->kind == TK_STRING) {
+    int cw = (int)((token_string_t *)t)->char_width;
+    if (cw <= 0) cw = 1;
+    if (elem_size == cw) return count_char_init_from_string_seq(t, false);
   }
-  if (elem_size == 1 && t->kind == TK_LBRACE) {
+  if (t->kind == TK_LBRACE) {
     token_t *inside = t->next;
     if (inside && inside->kind == TK_STRING) {
-      long long n = count_char_init_from_string_seq(inside, true);
-      if (n > 0) return n;
+      int cw = (int)((token_string_t *)inside)->char_width;
+      if (cw <= 0) cw = 1;
+      if (elem_size == cw) {
+        long long n = count_char_init_from_string_seq(inside, true);
+        if (n > 0) return n;
+      }
     }
   }
   return psx_decl_count_brace_init_elements(t);
@@ -1187,9 +1195,16 @@ static node_t *parse_array_initializer(lvar_t *var) {
   }
 
   node_t *rhs = psx_expr_assign();
-  /* `char a[N] = "hello"` 形 (波括弧なし raw 文字列): 各文字を要素 assign。 */
-  if (var->elem_size == 1 && rhs->kind == ND_STRING) {
-    return build_array_string_initializer(var, (node_string_t *)rhs, array_len);
+  /* `char a[N] = "hello"` / `unsigned short a[N] = u"hi"` / `T a[N] = U".."`/`L".."` 形
+   * (波括弧なし raw 文字列): 各コード単位を要素 assign。要素幅 (elem_size) が文字列の
+   * char_width (char/u8=1, u=2, U/L=4) と一致するときに限る (ASCII 内容のみ対応。
+   * 非 ASCII の UTF-8→UTF-16/32 デコードは未対応)。 */
+  if (rhs->kind == ND_STRING) {
+    int cw = (int)((node_string_t *)rhs)->char_width;
+    if (cw <= 0) cw = 1;
+    if (var->elem_size == cw) {
+      return build_array_string_initializer(var, (node_string_t *)rhs, array_len);
+    }
   }
   node_t *init_chain = NULL;
   /* Extension: `int arr[N] = (T[N]){...}` 形式 (compound literal で配列初期化)。
