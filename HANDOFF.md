@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き30: 3D VLA 宣言と subscript chain / sizeof のサポート）
+最終更新: 2026-06-22（続き31: 混在 const/VLA dim サポート）
 
 ## 現状
-- `make test` = **1037/1037 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-30 で発見した形まですべて消化)。
+- `make test` = **1038/1038 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-31 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,20 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き31）: 混在 const/VLA dim サポート
+- **混在 const/VLA dim**（vla_mixed_dims）。`int t[2][n][4]` のように第 1 dim が const で
+  後の dim が VLA の混在配列が E3064 で弾かれていた。第 1 dim が const の場合は
+  register_multidim_array_lvar 経由になり、parse_decl_constexpr_array_suffix_product_n が
+  VLA dim を「非定数」と判定して E3064。C11 6.7.6.2 では「次元式のいずれかが非定数なら配列
+  全体は VLA」だが、ag_c は第 1 dim だけで VLA か否かを判定していた。
+- 修正: decl_peek_trailing_array_dims_have_vla を新設し、後続 `[...]` を token peek で走査。
+  TK_IDENT (enum 定数以外) が含まれていれば VLA 経路へ redirect。const 第 1 dim を ND_NUM
+  ノードに包んで size_node として register_vla_lvar_and_append_alloc に渡す。enum 定数は
+  psx_ctx_find_enum_const で識別して定数扱いし、誤検出を避ける。誤検出した場合も VLA 経路の
+  const-inner 分岐で正しく動く (frame slot は VLA 用の 16/24/32 バイト分使う)。
+- 2D `int a[2][n]`・3D `[C][n][C]`・`[C][C][n]`・全 VLA・enum 定数 dim を fixture で網羅。
+  `make test`=1038/1038 green。
 
 ## このセッション（続き30）: 3D VLA 宣言と subscript chain / sizeof
 - **3D VLA**（vla_3d）。`int t[n][m][k]` が E3064 で弾かれていた。

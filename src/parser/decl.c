@@ -472,6 +472,39 @@ static int g_decl_td_array_elem_size = 0;
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
 static int g_decl_base_pointer_levels = 0;
 
+/* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
+ * 「定数」とは [...] 内が TK_NUM のみで構成されることを指す。TK_IDENT がある場合は変数または
+ * enum 定数だが、enum 定数のときは psx_ctx_find_enum_const で識別して定数扱いする。それ以外
+ * (識別子参照、関数呼び出し、その他複雑な式) は VLA と判定する。
+ * 主な用途: 第 1 dim が const、後の dim が VLA の混在配列 `int t[2][n][4]` を VLA 経路へ
+ * redirect する判定に使う。curtok は変更しない。 */
+static int decl_peek_trailing_array_dims_have_vla(void) {
+  token_t *t = curtok();
+  while (t && t->kind == TK_LBRACKET) {
+    t = t->next;
+    int depth = 1;
+    int has_non_const = 0;
+    while (t && depth > 0) {
+      if (t->kind == TK_LBRACKET) { depth++; }
+      else if (t->kind == TK_RBRACKET) {
+        depth--;
+        if (depth == 0) break;
+      } else if (t->kind == TK_IDENT) {
+        /* enum 定数なら const、それ以外は VLA とみなす。 */
+        token_ident_t *id = (token_ident_t *)t;
+        long long ev;
+        if (!psx_ctx_find_enum_const(id->str, id->len, &ev)) {
+          has_non_const = 1;
+        }
+      }
+      t = t->next;
+    }
+    if (has_non_const) return 1;
+    if (t && t->kind == TK_RBRACKET) t = t->next;
+  }
+  return 0;
+}
+
 /* out_vla_dim 非 NULL のとき、非定数次元 (VLA, `(*p)[m]`) を即エラーにせず先頭の 1 つを
  * *out_vla_dim に式として捕捉する (arr_total には寄与させない)。NULL なら従来どおり定数必須。 */
 static decl_array_suffix_t parse_decl_array_suffixes_ex(int base_mul, node_t **out_vla_dim) {
@@ -3703,12 +3736,25 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                    : parse_array_size_expr_decl(&size_node, &size_ok);
         tk_expect(']');
         if (!size_ok) {
-          /* 可変長配列 (VLA): フレームスロット (1D/2D 定数=16B, 2D 実行時=24B)
+          /* 可変長配列 (VLA): フレームスロット (1D/2D 定数=16B, 2D 実行時=24B, 3D=32B)
            * を確保し、ND_VLA_ALLOC ノードを init_chain に append する。 */
           var = register_vla_lvar_and_append_alloc(tok, elem_size, size_node, &init_chain);
           /* VLA は continue で下の fp_kind/is_unsigned 設定をスキップする。VLA 記述子
            * 自体はベースポインタ (整数) なので fp_kind は NONE のまま、要素型は
            * pointee_fp_kind に入れて subscript の fp load/store に伝播させる。 */
+          var->pointee_fp_kind = decl_fp_kind;
+          var->is_unsigned = decl_is_unsigned;
+          if (!tk_consume(',')) break;
+          continue;
+        }
+        /* 第 1 dim が const でも、後の dim に VLA があれば配列全体は VLA (C11 6.7.6.2)。
+         * peek で trailing にIDENT (= enum 定数以外) があれば VLA 経路へ redirect し、
+         * const 第 1 dim を ND_NUM ノードとして size_node に詰める。これがないと
+         * register_multidim_array_lvar が parse_decl_constexpr_array_suffix_product_n で
+         * VLA dim を非定数と判定し E3064 を出していた。 */
+        if (!size_inferred_from_init && decl_peek_trailing_array_dims_have_vla()) {
+          node_t *first_size_node = psx_node_new_num((int)array_size);
+          var = register_vla_lvar_and_append_alloc(tok, elem_size, first_size_node, &init_chain);
           var->pointee_fp_kind = decl_fp_kind;
           var->is_unsigned = decl_is_unsigned;
           if (!tk_consume(',')) break;
