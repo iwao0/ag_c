@@ -3684,11 +3684,37 @@ static node_t *funcdef(void) {
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。
   // 非 variadic 関数でも nargs_fixed を記録するため常に呼ぶ。
+  /* C11 6.7p4: 同名関数の再宣言で引数数 / 可変長性が異なれば conflicting types。
+   * 戻り型 (上の track_function_ret_type) と同じ要領で初回値を覚えて以降比較する。 */
+  if (!psx_ctx_track_function_nargs(tok->str, tok->len, nargs, is_variadic)) {
+    psx_diag_ctx(curtok(), "funcdef",
+                 "関数 '%.*s' の引数数が以前の宣言と異なります (C11 6.7p4)",
+                 tok->len, tok->str);
+  }
   psx_ctx_set_function_variadic(tok->str, tok->len, is_variadic ? 1 : 0, nargs);
   /* 仮引数 i の fp_kind を記録 → 呼び出し側で int→double 暗黙変換を挿入できる。
-   * args[i] は parse_param_decl で fp_kind がセット済みの ND_LVAR。 */
+   * args[i] は parse_param_decl で fp_kind がセット済みの ND_LVAR。
+   * 同時に再宣言時の型 mismatch も粗粒度カテゴリで照合する (C11 6.7p4)。 */
   for (int i = 0; i < nargs && i < 16; i++) {
     tk_float_kind_t pfk = (tk_float_kind_t)(args[i] ? args[i]->fp_kind : 0);
+    int param_cat = PSX_PCAT_UNSET;
+    if (pfk == TK_FLOAT_KIND_FLOAT) param_cat = PSX_PCAT_FLOAT;
+    else if (pfk >= TK_FLOAT_KIND_DOUBLE) param_cat = PSX_PCAT_DOUBLE;
+    else if (args[i] && ps_node_is_pointer(args[i])) param_cat = PSX_PCAT_PTR;
+    else if (args[i]) {
+      /* 整数の幅 (4 vs 8) は宣言と定義で粒度を変えても等価扱いするため (proto は
+       * placeholder ND_NUM で sz=4、def は ND_LVAR で abi_type_size=8 となり一致しない
+       * ことが多いため) INT カテゴリ 1 つに集約する。fp/pointer/struct との不一致は検出する。
+       * 厳密な long vs int 区別はパラメータ型を別途追跡する必要があり後続課題。 */
+      int sz = ps_node_type_size(args[i]);
+      if (sz >= 1 && sz <= 8) param_cat = PSX_PCAT_INT4;     /* INT 系を一律 */
+      else if (sz > 0) param_cat = PSX_PCAT_STRUCT;
+    }
+    if (!psx_ctx_track_function_param_category(tok->str, tok->len, i, param_cat)) {
+      psx_diag_ctx(curtok(), "funcdef",
+                   "関数 '%.*s' の引数 %d の型が以前の宣言と異なります (C11 6.7p4)",
+                   tok->len, tok->str, i + 1);
+    }
     if (pfk != TK_FLOAT_KIND_NONE) {
       psx_ctx_set_function_param_fp_kind(tok->str, tok->len, i, pfk);
     } else if (args[i] && !ps_node_is_pointer(args[i])) {

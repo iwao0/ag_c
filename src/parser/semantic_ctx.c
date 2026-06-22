@@ -159,6 +159,11 @@ struct func_name_t {
    * F2I (fcvtzs) を挿入するために使う。fp_kind と排他 (fp 仮引数は 0)。 */
   unsigned char param_int_sizes[16];
   int param_int_sizes_count;
+  /* 同名関数の宣言と定義でシグネチャ (引数数 / 可変長 / 引数型カテゴリ) が一致するかの照合用。
+   * 0 のうちは初回値として記録、以降は比較する (C11 6.7p4)。
+   * param_categories[i] は引数 i の型カテゴリ (PSX_PCAT_*; 0=未設定)。 */
+  int nargs_set_once;
+  unsigned char param_categories[16];
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -983,6 +988,38 @@ void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nar
   if (!f) return;
   f->is_variadic = is_variadic;
   f->nargs_fixed = nargs_fixed;
+}
+
+/* C11 6.7p4: 同名関数の再宣言で「引数の個数」「可変長性」が異なるかチェックする。
+ * 初回呼び出しは記録、以降は比較。一致 (または初回) なら 1、不一致なら 0。 */
+int psx_ctx_track_function_nargs(char *name, int len, int nargs, int is_variadic) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return 1;
+  if (!f->nargs_set_once) {
+    f->nargs_set_once = 1;
+    f->nargs_fixed = nargs;
+    f->is_variadic = is_variadic ? 1 : 0;
+    return 1;
+  }
+  if (f->nargs_fixed == nargs && f->is_variadic == (is_variadic ? 1 : 0)) {
+    return 1;
+  }
+  return 0;
+}
+
+/* C11 6.7p4: 同名関数の再宣言で引数 i のカテゴリ (粗粒度) が異なるかチェックする。
+ * 初回 (UNSET) のときは記録、以降は比較。 */
+int psx_ctx_track_function_param_category(char *name, int len, int idx, int category) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return 1;
+  if (idx < 0 || idx >= 16) return 1;
+  if (category == PSX_PCAT_UNSET) return 1;  /* 引数型を判定できないケース (typedef 経由等) は素通し */
+  if (f->param_categories[idx] == PSX_PCAT_UNSET) {
+    f->param_categories[idx] = (unsigned char)category;
+    return 1;
+  }
+  if (f->param_categories[idx] == (unsigned char)category) return 1;
+  return 0;
 }
 
 void psx_ctx_set_function_ret_void(char *name, int len, int is_void) {

@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き36: 探索 round で 2 件発見・修正）
+最終更新: 2026-06-23（続き37: 関数宣言/定義シグネチャ照合）
 
 ## 現状
-- `make test` = **1044/1044 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-36 で発見した形まですべて消化)。
+- `make test` = **1045/1045 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-37 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,23 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き37）: 関数宣言/定義シグネチャ照合
+ユーザーの問題提起「同じ関数の宣言と定義で形が違う場合は検査されているか」を契機に検証。
+戻り型のみ既存照合 (psx_ctx_track_function_ret_type) で、引数数 / 引数型の不一致は素通しだった:
+- `int g(int); int g(int x, int y) {...}` (引数数違い) — silently 通過
+- `int h(int); int h(double x) {...}`     (引数型違い) — silently 通過
+
+修正 (C11 6.7p4):
+- psx_ctx_track_function_nargs: 初回登録/以降比較で引数数 + 可変長性を照合。
+- psx_ctx_track_function_param_category: 各引数を粗粒度カテゴリ (INT/FLOAT/DOUBLE/PTR/STRUCT)
+  で照合。funcdef の param 走査内で track し、不一致なら E3064。
+- 整数の幅 (4 vs 8) は宣言と定義で粒度を変えても等価扱い (proto の placeholder ND_NUM は
+  sz=4、def の ND_LVAR は abi_type_size=8 で本来一致しないため、INT は 1 カテゴリに集約)。
+  long vs int の厳密区別は後続課題。
+- fixture function_redecl_signature で合法な再宣言が false-positive で弾かれないことを確認。
+
+`make test`=1045/1045 green。
 
 ## このセッション（続き36）: 探索 round で 2 件発見・修正
 続き35 の探索後、新たな probe round で 2 件発見・修正:

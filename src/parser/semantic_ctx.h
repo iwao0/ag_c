@@ -174,6 +174,26 @@ tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int para
 void psx_ctx_set_function_param_int_size(char *name, int len, int param_idx, int size);
 int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx);
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
+/* 同名関数の再宣言で引数数 / 可変長性が一致するかを track する (C11 6.7p4)。
+ * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。 */
+int psx_ctx_track_function_nargs(char *name, int len, int nargs, int is_variadic);
+
+/* 引数 i の型カテゴリ (粗粒度)。同名関数の再宣言での型一致照合に使う。 */
+enum {
+  PSX_PCAT_UNSET = 0,
+  PSX_PCAT_INT4  = 1,  /* char/short/int / _Bool */
+  PSX_PCAT_INT8  = 2,  /* long / long long */
+  PSX_PCAT_FLOAT = 3,
+  PSX_PCAT_DOUBLE = 4,
+  PSX_PCAT_PTR   = 5,
+  PSX_PCAT_STRUCT = 6, /* struct/union 値 */
+  PSX_PCAT_OTHER  = 7,
+};
+
+/* 同名関数の再宣言で引数 i のカテゴリが一致するかを track する (C11 6.7p4)。
+ * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。
+ * カテゴリは粗粒度 (int width / fp / pointer / struct) で K&R 互換のため厳密型は照合しない。 */
+int psx_ctx_track_function_param_category(char *name, int len, int idx, int category);
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 /* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
