@@ -3255,7 +3255,20 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
    * base_deref_size>0 が「要素がさらにポインタ」の指標 (pointee が pointee を持つ)。
    * bds==0 も含め pql>=1 だけで判定していたため、`int x = p[0];` が誤って
    * 「スカラにポインタを代入」と E3064 拒否されていた (pp8/pp1/pp5)。 */
-  if (pql >= 1 && bds > 0) {
+  /* 多次元ポインタ配列 (`int *t[2][2]`) の中間行: 結果はまだ「行」(配列) でポインタ要素
+   * でない。pql>=1 && bds>0 の「要素はポインタ」分岐がここで発火すると deref_size が
+   * 要素 stride (inner_ds) でなく bds に上書きされ、次段 subscript が誤スケール (+4 等) になる。
+   * fp/unsigned と同じ中間行判定 (inner_ds>0 && es>inner_ds: 行サイズ es が要素 stride
+   * inner_ds より大きい) で中間行を見分け、pointer-element 化を最終次元まで遅延する。
+   * 単段 `int *arr[N]` (inner_ds==0) や genuine 多段ポインタ `int **pp` (es==inner_ds) は
+   * 中間行でないので従来どおり最終要素として扱う。 */
+  int subscript_is_intermediate_row = (inner_ds > 0 && es > inner_ds);
+  if (pql >= 1 && bds > 0 && subscript_is_intermediate_row) {
+    /* 中間行: pointer 化せず deref_size=inner_ds を保ち、pql / bds を次段へ carry して
+     * 最終次元の subscript が「要素はポインタ」分岐に乗れるようにする。 */
+    deref->pointer_qual_levels = pql;
+    deref->base_deref_size = (short)bds;
+  } else if (pql >= 1 && bds > 0) {
     deref->is_pointer = 1;
     /* genuine ポインタ変数 (`int **pp`, ND_LVAR/ND_GVAR) の subscript は 1 段の
      * ポインタを消費するので結果の pql を 1 減らす (`pp[i]` は int*、pql=1)。
