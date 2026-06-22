@@ -110,6 +110,14 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
  * parse_decl_type_spec の typedef 分岐で設定し、parse_typedef_decl が読む。 */
 static int g_stmt_base_ptr_levels = 0;
 
+/* 基底型が配列 typedef のときの dims (`typedef int Row[3]; typedef Row Matrix[2]` の合成用)。
+ * parse_decl_type_spec の typedef 分岐で _ti.array_dims を写し取り、parse_typedef_decl が
+ * declarator の dims と結合して新しい typedef の dims とする。pointer-to-array typedef
+ * (`typedef int (*PA)[3]`、is_pointer=1 で dims を持つ) は別経路 (g_stmt_typedef_ptr_in_paren)
+ * を使うのでここでは捕捉しない。 */
+static int g_stmt_base_array_dims[8] = {0};
+static int g_stmt_base_array_dim_count = 0;
+
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
                                 int *is_pointer_base, token_kind_t *base_kind) {
@@ -121,6 +129,8 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
   *is_pointer_base = 0;
   *base_kind = TK_EOF;
   g_stmt_base_ptr_levels = 0;
+  g_stmt_base_array_dim_count = 0;
+  for (int i = 0; i < 8; i++) g_stmt_base_array_dims[i] = 0;
 
   token_kind_t builtin_kind = psx_consume_type_kind();
   if (builtin_kind != TK_EOF) {
@@ -173,6 +183,15 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     if (is_pointer_base) *is_pointer_base = _ti.is_pointer;
     /* 基底がポインタ typedef なら段数を捕捉 (合成 typedef の段数加算用)。 */
     g_stmt_base_ptr_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
+    /* 基底が配列 typedef なら dims を捕捉 (typedef chain `typedef Row Matrix[2]` の合成用)。
+     * pointer typedef (is_pointer=1) は対象外: そちらの dims は pointer-to-array typedef
+     * のポインティ extent を表しており、ここでの array typedef chain とは別経路。 */
+    if (!_ti.is_pointer && _ti.is_array && _ti.array_dim_count > 0) {
+      g_stmt_base_array_dim_count = _ti.array_dim_count;
+      for (int i = 0; i < _ti.array_dim_count && i < 8; i++) {
+        g_stmt_base_array_dims[i] = _ti.array_dims[i];
+      }
+    }
     set_curtok(curtok()->next);
     return 1;
   }
@@ -228,9 +247,34 @@ static void parse_typedef_decl(void) {
      * 相当 (is_array=0, dims なし) を維持して退行を避ける。 */
     int is_pta = (is_ptr && g_stmt_typedef_ptr_in_paren && arr.is_array && arr.dim_count > 0);
     int is_base_ptr_arr = (base_is_ptr_only && arr.is_array && arr.arr_total > 0);
-    int td_first_dim = is_pta ? arr.first_dim : (is_base_ptr_arr ? arr.first_dim : 0);
-    int td_dim_count = is_pta ? arr.dim_count : (is_base_ptr_arr ? arr.dim_count : 0);
-    const int *td_dims = (is_pta || is_base_ptr_arr) ? arr.dims : NULL;
+    /* 通常の配列 typedef (`typedef int Row[3]`): is_pointer でなく array suffix がある場合
+     * is_array=1 + dims を立てる (トップレベル版 parser.c と対称)。これがないと関数内
+     * typedef で `Row r = {1,2,3}` が「スカラに brace 初期化」E3064 になっていた。 */
+    int is_plain_array = (!is_ptr && arr.is_array && arr.dim_count > 0);
+    int td_first_dim = is_pta ? arr.first_dim
+                      : (is_base_ptr_arr ? arr.first_dim
+                      : (is_plain_array ? arr.first_dim : 0));
+    int td_dim_count = is_pta ? arr.dim_count
+                      : (is_base_ptr_arr ? arr.dim_count
+                      : (is_plain_array ? arr.dim_count : 0));
+    const int *td_dims = (is_pta || is_base_ptr_arr || is_plain_array) ? arr.dims : NULL;
+    /* 多次元 typedef chain: 基底 typedef が自身配列の場合 (`typedef int Row[3]; typedef Row Matrix[2]`)、
+     * declarator の dims と base typedef の dims を [declarator..., base...] の順で結合し、
+     * 新しい typedef の dims/sizeof を更新する。トップレベル版 (parser.c) と同じロジック。 */
+    static int s_merged_dims[8];
+    int is_array_chain = (!is_ptr && !g_stmt_typedef_ptr_in_paren &&
+                          arr.is_array && g_stmt_base_array_dim_count > 0) ? 1 : 0;
+    if (is_array_chain) {
+      int n = 0;
+      for (int i = 0; i < arr.dim_count && n < 8; i++) s_merged_dims[n++] = arr.dims[i];
+      for (int i = 0; i < g_stmt_base_array_dim_count && n < 8; i++) s_merged_dims[n++] = g_stmt_base_array_dims[i];
+      td_dims = s_merged_dims;
+      td_dim_count = n;
+      td_first_dim = (n > 0) ? s_merged_dims[0] : td_first_dim;
+      int prod = 1;
+      for (int i = 0; i < n; i++) prod *= s_merged_dims[i];
+      typedef_sizeof = elem_size * prod;
+    }
     psx_typedef_info_t _ti = {0};
     _ti.base_kind = stored_base_kind;
     _ti.elem_size = elem_size;
@@ -243,7 +287,7 @@ static void parse_typedef_decl(void) {
     _ti.pointee_const_qualified = td_pointee_const;
     _ti.pointee_volatile_qualified = td_pointee_volatile;
     _ti.is_unsigned = td_is_unsigned;
-    _ti.is_array = is_base_ptr_arr ? 1 : 0;
+    _ti.is_array = (is_base_ptr_arr || is_array_chain || is_plain_array) ? 1 : 0;
     _ti.array_first_dim = td_first_dim;
     _ti.array_dim_count = td_dim_count;
     if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];

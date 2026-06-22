@@ -2049,6 +2049,31 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = td_is_array ? arr.dim_count : 0;
   const int *td_dims = arr.dims;
+  /* 多次元 typedef chain: 基底 typedef が自身配列の場合 (`typedef int Row[3]; typedef Row Matrix[2]`)、
+   * declarator の dims (= [2]) と base typedef の dims (= [3]) を [declarator..., base...] の順で
+   * 結合し、新しい typedef の dims を [2, 3] にする。これがないと Matrix は int[2] として登録され、
+   * sizeof(Matrix)=24 のはずが 8 になり、`Matrix m; m[i][j]` も誤計算する。
+   * 条件は base が配列 (g_toplevel_decl_td_array_dim_count>0) かつ declarator も配列 (td_is_array)、
+   * かつ pointer-to-array typedef でない (!is_ptr, !ptr_in_paren_group)。
+   * pointer-element 配列 typedef (`typedef IP IPA[3]`、base_ptr_elem_array) は base が array でなく
+   * ポインタなので td_array_dim_count=0 で自然に除外される。 */
+  static int s_merged_dims[8];
+  if (td_is_array && !is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
+      g_toplevel_decl_td_array_dim_count > 0) {
+    int n = 0;
+    for (int i = 0; i < arr.dim_count && n < 8; i++) {
+      s_merged_dims[n++] = arr.dims[i];
+    }
+    for (int i = 0; i < g_toplevel_decl_td_array_dim_count && n < 8; i++) {
+      s_merged_dims[n++] = g_toplevel_decl_td_array_dims[i];
+    }
+    td_dims = s_merged_dims;
+    td_dim_count = n;
+    td_first_dim = (n > 0) ? s_merged_dims[0] : td_first_dim;
+    int prod = 1;
+    for (int i = 0; i < n; i++) prod *= s_merged_dims[i];
+    typedef_sizeof = g_toplevel_decl_elem_size * prod;
+  }
   /* pointer-to-array typedef `typedef int (*PA)[3]`: is_ptr=1 で `*` が括弧内
    * (ptr_in_paren_group) のとき、括弧の後ろの `[3]` (arr に入っている) はポインティ
    * 配列の extent。is_array=0 のままその dims を typedef に記録する。これがないと

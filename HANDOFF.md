@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き28: 配列へのポインタ経由の struct メンバ access）
+最終更新: 2026-06-22（続き29: typedef chain dims 合成 + 関数内 typedef is_array）
 
 ## 現状
-- `make test` = **1035/1035 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-28 で発見した形まですべて消化)。
+- `make test` = **1036/1036 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-29 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,24 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き29）: typedef chain dims 合成 + 関数内 typedef is_array
+- **typedef chain で基底が配列の場合の dims 合成**（typedef_array_chain）。
+  `typedef int Row[3]; typedef Row Matrix[2]` のような chain で Matrix が int[2] として登録され
+  sizeof(Matrix)=24 のはずが 8、`Matrix m={{1,2,3},{4,5,6}}` も E3064。トップレベル
+  (parser.c define_toplevel_typedef_from_declarator) と関数内 (stmt.c parse_typedef_decl) の両方
+  で、base typedef の array_dims (= [3]) と declarator の dims (= [2]) を `[declarator..., base...]`
+  の順で結合して新しい typedef の dims/sizeof を更新するよう修正。pointer-to-array typedef
+  (`typedef int (*PA)[3]`、ptr_in_paren_group=1) とは排他。stmt.c では基底が配列 typedef のとき
+  _ti.array_dims を g_stmt_base_array_dims にコピーする経路を parse_decl_type_spec に追加。
+- **関数内 typedef の通常配列の is_array**（同じ fixture で網羅）。
+  stmt.c parse_typedef_decl が通常の配列 typedef `typedef int Row[3]` でも is_array=1 を立てて
+  おらず (line 246: `is_array = is_base_ptr_arr ? 1 : 0`)、トップレベル parser.c とは非対称。
+  関数内で `Row r = {1,2,3}` が E3064。`is_plain_array`(`!is_ptr && arr.is_array && arr.dim_count>0`)
+  分岐を追加し is_array/dims を立てるよう修正。
+- 3 段 chain (A→B→C)・基底が多次元 (`typedef int M23[2][3]; typedef M23 M4[4]`)・declarator が
+  多次元 (`typedef Row Cube[2][5]`)・グローバル変数・flat init・関数内 chain を fixture で網羅。
+  `make test`=1036/1036 green。
 
 ## このセッション（続き28）: 配列へのポインタ経由の struct メンバ access
 - **`struct S (*ap)[N]; (*ap)[i].m`** が E3005 で弾かれていた（ptr_to_array_struct_member）。
