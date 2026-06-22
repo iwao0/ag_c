@@ -1,15 +1,52 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き10〜16: char メンバ 5 形 + designator nested + fp 配列メンバ + tag shadow 基本+応用）
+最終更新: 2026-06-22（続き17: 探索 round 2 で 2 件発見、修正規模大のため次セッション持ち越し）
 
-## 次セッションの最優先タスク（未着手）
-このセッションで HANDOFF の char 配列メンバ系 5 形 + 探索で発見した 4 形 (designator nested /
-fp 配列メンバ / tag shadow 基本形 / tag shadow 応用形) を消化。**現時点で明確な未対応バグは
-無い** (探索で 130+ の probe を回し、上記既知形以外は green)。
+## 次セッションの最優先タスク（未着手・再現確認済み）
+続き17 の探索 (round 2) で新規 2 件発見。両件とも修正規模が大きいため次セッション持ち越し:
 
-次セッションは下記「発見したが未修正」末尾の **未探索の角度**（複数 TU リンク・ライブラリ
-関数との相互作用・ランダム生成ファズ）から新規 miscompile を炙り出すフェーズに戻る。
-索引は `docs/differential_testing/bug_coverage.md`。
+1. **「関数ポインタ配列へのポインタ」(`BinOp (*pa)[3]` で要素が関数ポインタ) の宣言子解析**。
+   ```c
+   typedef int (*BinOp)(int, int);
+   BinOp ops[3] = {add, add, add};
+   int main(void){
+     BinOp (*pa)[3] = &ops;
+     return (*pa)[0](7, 2);  /* agc: SIGSEGV (rc=139) */
+   }
+   ```
+   原因: `(*pa)[0]` の deref が `ldrsw` (4B) で出力される。本来は 8B (関数ポインタ) で
+   ロードすべきだが、decl.c の `(*p)[N]` 経路 (decl.c:3491 付近) が `base_deref_size = elem_size`
+   を設定するとき、配列要素が関数ポインタの場合の判定をしていない。typedef なしの直接表記
+   `int (*(*pa)[3])(int,int) = &ops` でも同様に再現。
+   修正の見立て: 宣言子で trailing 関数シグネチャ (`(int,int)`) が来る場合に「要素は関数
+   ポインタ (8B)」と判定するフラグを宣言子コンテキストに追加し、elem_size を 8 に上書きする。
+
+2. **グローバル struct のネスト union メンバの fp 初期化**。
+   ```c
+   struct Inner { int a; union { int n; float f; } u; };
+   struct Inner o = { 2, {.f = 2.5f} };  /* agc: o.u.f = 0.0 */
+   ```
+   原因: `emit_global_struct_members_rec` が union メンバを「mi.fp_kind が NONE のスカラ」
+   として `cg_emit_int_directive` で .long 0 を出力。`.n` (int) は OK、`.f` (float) は壊れる。
+   global_var_t.union_init_ordinal はトップレベル union 用で、ネスト union メンバごとの ordinal を
+   保存する機構が無い。
+   修正の見立て: (1) global_var_t (またはメンバ単位) にネスト union 用 ordinal テーブルを追加し、
+   parser 側で `.f = ...` 経由のメンバ ordinal を記録。emit 側でこれを引いて active メンバの
+   fp_kind を使う。または (2) 暫定 hack: emit_global_struct_members_rec の TK_UNION 分岐で
+   「init_fvalues[i] が非ゼロなら fp として出力」を入れる (0.0 を float 初期化したいケースで
+   誤動作するが多くのケースをカバー)。
+
+その他: HANDOFF の既知形 (char メンバ 5 形 + designator nested + fp 配列メンバ + tag shadow
+基本+応用) はすべて消化済み。**未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成
+ファズ）は引き続き要探索。索引は `docs/differential_testing/bug_coverage.md`。
+
+## このセッション（続き17）: 探索 round 2
+タグ shadowing 完了後、未探索の角度で probe を 19 件流して新規 2 件発見:
+- libc string/math/malloc/qsort/va_list/static local struct/recursive list/const struct/offsetof/
+  array decay/hex float/string concat/bitfield+union/typedef+funcptr/ternary+struct/VLA 多次元・
+  short ポインタ算術・nested struct init・function-local static counter
+- すべて green の 17 件は `docs/differential_testing/bug_coverage.md` の 2026-06-22 節 (round 2)
+  に索引化済み (=再探索不要)。新規発見の 2 件は上記「次セッションの最優先タスク」参照。
 
 ## このセッション（続き16）: タグ shadowing 応用形
 - **変数宣言時 scope の保持**（tag_shadowing_advanced）。続き15 で同スコープ内 shadow の基本形は
