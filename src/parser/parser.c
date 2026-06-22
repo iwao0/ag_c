@@ -3757,6 +3757,13 @@ static node_t *funcdef(void) {
     // 関数定義の仮引数では識別子必須。
     psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
   }
+  /* C11 6.9p3: 同一名の関数を 2 度定義することはできない。プロトタイプ宣言は何度でも OK
+   * だが、本体 `{...}` を伴う定義は 1 度のみ。`;` (プロトタイプ) を弾いた後にチェックする。 */
+  if (!psx_ctx_track_function_defined(tok->str, tok->len)) {
+    psx_diag_ctx(curtok(), "funcdef",
+                 "関数 '%.*s' の重複定義 (C11 6.9p3)",
+                 tok->len, tok->str);
+  }
 
   // 関数本体 (ブロック)
   tk_expect('{');

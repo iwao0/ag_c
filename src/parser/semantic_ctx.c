@@ -164,6 +164,10 @@ struct func_name_t {
    * param_categories[i] は引数 i の型カテゴリ (PSX_PCAT_*; 0=未設定)。 */
   int nargs_set_once;
   unsigned char param_categories[16];
+  /* 1: この関数名はすでに本体定義済み。2 度目の定義を E3064 で弾くために使う
+   * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
+   * のみではこのフラグは立たない。 */
+  int is_defined;
 };
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -1005,6 +1009,16 @@ int psx_ctx_track_function_nargs(char *name, int len, int nargs, int is_variadic
     return 1;
   }
   return 0;
+}
+
+/* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
+ * 初回 (まだ立っていない) なら 1 を返してフラグを立てる、すでに定義済みなら 0 を返す。 */
+int psx_ctx_track_function_defined(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return 1;
+  if (f->is_defined) return 0;
+  f->is_defined = 1;
+  return 1;
 }
 
 /* C11 6.7p4: 同名関数の再宣言で引数 i のカテゴリ (粗粒度) が異なるかチェックする。

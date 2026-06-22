@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き37: 関数宣言/定義シグネチャ照合）
+最終更新: 2026-06-23（続き38: 関数の重複定義検出）
 
 ## 現状
-- `make test` = **1045/1045 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-37 で発見した形まですべて消化)。
+- `make test` = **1046/1046 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-38 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,20 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き38）: 関数の重複定義検出
+ユーザーの問題提起「同じ名前の関数が宣言、定義されている場合は検査されているか」を契機に検証。
+重複定義 `int f(){...} int f(){...}` が silently 通過し、後段でアセンブラ/リンカが duplicate
+symbol を出すまで気づけなかった。
+
+修正 (C11 6.9p3):
+- func_name_t に is_defined フラグを追加。
+- psx_ctx_track_function_defined を新設。初回は立てて 1、立っていれば 0。
+- funcdef で proto `;` を弾いた後 (本体パース直前) でこれを呼び、0 なら E3064。
+- プロトタイプ宣言 (`;` で終わる) は何度書いても合法 (フラグは立たない)。
+- proto + def 混在 / static / 複数 proto + 1 つの定義の合法形を fixture で網羅。
+
+`make test`=1046/1046 green。
 
 ## このセッション（続き37）: 関数宣言/定義シグネチャ照合
 ユーザーの問題提起「同じ関数の宣言と定義で形が違う場合は検査されているか」を契機に検証。
