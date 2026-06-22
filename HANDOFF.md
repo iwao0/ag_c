@@ -1,6 +1,36 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（グローバル struct 配列要素の char 配列メンバを修正）
+最終更新: 2026-06-22（(a)(b)(c) 全消化。残: 3D char メンバ / ローカル 2D char メンバ）
+
+## 次セッションの最優先タスク（未着手・再現確認済み）
+HANDOFF サブケース (a)(b)(c) は全消化済み（下記「続き7〜9」）。残る既知制約は以下 2 件で、
+いずれも今回の global flat パーサ / emit 修正とは**別経路**。再現は確認済み。
+
+1. **3 次元以上の char 配列メンバ**（グローバル）。`struct{char c[2][2][3];} g={{{"ab","cd"},{"ef","gh"}}}`
+   が **SIGSEGV**（agc=139）。最小再現は `/tmp/probe_3d.c` を再作成（下記内容）して
+   `scripts/agc_diff_test.sh` で確認。原因の見立て: gbrace_ctx_t が 1 段ぶんの行幅 (row_width) しか
+   持てず、多次元の全次元チェーンを表現できない（続き8 で 2D は row_width を 1 つ足して解決したが、
+   3D 以降は内側の更なる次元情報が落ちる）。gbrace_child_at が 2 段目の要素を「内側 1 次元 char 配列」
+   として返せず、3 段目で再帰したときに row_width=0 になり文字列が要素 (char) 扱い→ポインタ化/SIGSEGV。
+   方針案: gbrace_ctx_t に「残り次元のスタック（または inner_stride のチェーン）」を持たせるか、
+   多次元 char メンバ専用に「総バイト数と各次元幅の配列」を渡して再帰のたびに 1 段消費する。
+   最小再現:
+   ```c
+   struct S{char c[2][2][3];}; struct S g={{{"ab","cd"},{"ef","gh"}}};
+   int main(void){return (g.c[0][0][0]=='a'&&g.c[1][1][1]=='h')?0:1;}  /* agc SIGSEGV */
+   ```
+2. **ローカル（非 static）struct の 2 次元 char 配列メンバ**。`struct S{char rows[2][4];}` の
+   `struct S l={{"ab","cd"}};` を関数内で宣言すると誤値（MISMATCH）。**1D ローカル char メンバは動作**。
+   グローバル/static の psx_gbrace_flat 経路ではなく、**ローカル struct メンバ初期化の別経路**
+   （decl.c / stmt.c の parse_member_initializer 周辺、要特定）の問題。続き8 の global 修正前から壊れて
+   いた既存バグ（私の変更とは無関係なことを git stash で確認済み）。最小再現:
+   ```c
+   int main(void){struct S{char rows[2][4];}; struct S l={{"ab","cd"}};
+   return (l.rows[0][0]=='a'&&l.rows[1][1]=='d'&&l.rows[1][2]==0)?0:1;}  /* agc 誤値 */
+   ```
+
+それ以外の未探索の角度（複数 TU リンク・ライブラリ関数との相互作用・ランダム生成ファズ）は
+下記「発見したが未修正」末尾と bug_coverage.md を参照。
 
 ## このセッション（続き9）: グローバル struct 配列の要素メンバにある char 配列
 HANDOFF サブケース (c) `struct{char tag[4]; int n;} g[2]={{"aa",1},{"bb",2}}` を修正。
