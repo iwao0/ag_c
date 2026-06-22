@@ -1,44 +1,64 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き17: 探索 round 2 で 2 件発見、修正規模大のため次セッション持ち越し）
+最終更新: 2026-06-22（続き18〜19: 探索 round 2 発見の 2 件を修正。残: typedef 配列ポインタの細形）
 
 ## 次セッションの最優先タスク（未着手・再現確認済み）
-続き17 の探索 (round 2) で新規 2 件発見。両件とも修正規模が大きいため次セッション持ち越し:
+続き17 で発見した 2 件 (関数ポインタ配列へのポインタ / ネスト union fp 初期化) は続き18 / 19 で
+修正済み。修正の限界として残る細形:
 
-1. **「関数ポインタ配列へのポインタ」(`BinOp (*pa)[3]` で要素が関数ポインタ) の宣言子解析**。
+1. **`typedef T A[N]; A *pa` 形** (配列 typedef へのポインタで要素がポインタ)。
    ```c
    typedef int (*BinOp)(int, int);
-   BinOp ops[3] = {add, add, add};
-   int main(void){
-     BinOp (*pa)[3] = &ops;
-     return (*pa)[0](7, 2);  /* agc: SIGSEGV (rc=139) */
-   }
+   typedef BinOp OpArr3[3];
+   BinOp ops[3] = {add, sub, mul};
+   OpArr3 *pa = &ops;
+   pa[0][0](7, 2);  /* agc: SIGSEGV */
    ```
-   原因: `(*pa)[0]` の deref が `ldrsw` (4B) で出力される。本来は 8B (関数ポインタ) で
-   ロードすべきだが、decl.c の `(*p)[N]` 経路 (decl.c:3491 付近) が `base_deref_size = elem_size`
-   を設定するとき、配列要素が関数ポインタの場合の判定をしていない。typedef なしの直接表記
-   `int (*(*pa)[3])(int,int) = &ops` でも同様に再現。
-   修正の見立て: 宣言子で trailing 関数シグネチャ (`(int,int)`) が来る場合に「要素は関数
-   ポインタ (8B)」と判定するフラグを宣言子コンテキストに追加し、elem_size を 8 に上書きする。
+   原因: decl.c の `is_pointer + td_array_dim_count > 0` 経路 (= `typedef int (*PA)[3]; PA p`
+   と共有) が elem_size を上書きせず、要素を 4B で扱う。base_is_pointer だけで判別すると
+   `PA p` 経路 (要素は int=4B) を壊すため、typedef_info から精密に要素型を判定する仕組みが要る。
 
-2. **グローバル struct のネスト union メンバの fp 初期化**。
+2. **`typedef int *IP; IP (*pia)[3]` の `*(*pia)[0]` 最終 deref**。
    ```c
-   struct Inner { int a; union { int n; float f; } u; };
-   struct Inner o = { 2, {.f = 2.5f} };  /* agc: o.u.f = 0.0 */
+   typedef int *IP;
+   int x = 100, *parr[3] = {&x, &x, &x};
+   IP (*pia)[3] = (IP (*)[3])&parr;  /* 続き18 で base_deref_size=8 は設定された */
+   int v = *(*pia)[0];  /* OK */
+   if (*(*pia)[0] == 100) ...;  /* 直接比較は型情報がずれて 0 になる */
    ```
-   原因: `emit_global_struct_members_rec` が union メンバを「mi.fp_kind が NONE のスカラ」
-   として `cg_emit_int_directive` で .long 0 を出力。`.n` (int) は OK、`.f` (float) は壊れる。
-   global_var_t.union_init_ordinal はトップレベル union 用で、ネスト union メンバごとの ordinal を
-   保存する機構が無い。
-   修正の見立て: (1) global_var_t (またはメンバ単位) にネスト union 用 ordinal テーブルを追加し、
-   parser 側で `.f = ...` 経由のメンバ ordinal を記録。emit 側でこれを引いて active メンバの
-   fp_kind を使う。または (2) 暫定 hack: emit_global_struct_members_rec の TK_UNION 分岐で
-   「init_fvalues[i] が非ゼロなら fp として出力」を入れる (0.0 を float 初期化したいケースで
-   誤動作するが多くのケースをカバー)。
+   原因: subscript 結果 `(*pia)[0]` を更に `*` で deref するとき、データポインタ要素について
+   最終 deref サイズが int (4B) load にならない。`int v = ...` (代入) なら自動 cast で int 化
+   されるが、直接比較 `... == 100` だと型情報がポインタのままで integer-vs-pointer 比較になる。
+   関数ポインタ要素は呼び出し時に bl で済むため OK。
+
+3. **ネスト union の fp 初期化の正確化**。続き19 でヒューリスティック (fv!=0 && iv==0) で
+   `.f = 2.5f` / `.n = 99` を区別しているが、`.f = 0.0f` (= 整数 0 と区別不能) は int 経路に
+   流れる。4B/8B のゼロビットパターンは一致するので結果同じだが、より大きい union (`union {char c; long l;}` 等で fp なし) には別の限界がある。正攻法は global_var_t に
+   per-nested-union の ordinal map を持たせる。
 
 その他: HANDOFF の既知形 (char メンバ 5 形 + designator nested + fp 配列メンバ + tag shadow
 基本+応用) はすべて消化済み。**未探索の角度**（複数 TU リンク・libc 関数連携・ランダム生成
 ファズ）は引き続き要探索。索引は `docs/differential_testing/bug_coverage.md`。
+
+## このセッション（続き19）: グローバル struct のネスト union fp メンバ初期化
+- **ネスト union fp 初期化**（global_struct_nested_union_fp）。
+  `struct Inner { int a; union { int n; float f; } u; }; struct Inner o = { 2, {.f = 2.5f} };`
+  で `o.u.f = 0.0` に化けていた。emit_global_struct_members_rec に TK_UNION 分岐を追加し、
+  ヒューリスティック「fv!=0 && iv==0 なら fp 経路」で内側 union の fp メンバを active と推定
+  して emit する (psx_gbrace_flat が ND_NUM 整数も `(double)val` を fv に書くため、fv 単独
+  では `.n = 99` を fp 扱いしてしまう。iv==0 で絞る)。`make test`=1027/1027 green。
+  **限界**: 上記「次セッションの最優先タスク」3 参照。
+
+## このセッション（続き18）: 関数ポインタ配列へのポインタの宣言子解析
+- **`(*p)[N]` の要素サイズ**（ptr_to_array_of_funcptrs）。
+  `BinOp (*pa)[3] = &ops; (*pa)[0](7,2)` が SIGSEGV。decl.c の `(*p)[N]` 経路が elem_size を
+  常に base 戻り型 (int=4) として登録し、関数ポインタ要素 (8B) を 4B (`ldrsw`) で load して
+  下位 4B だけで `bl` していた。修正: 同経路で eff_elem を 8 に上書きする条件を追加:
+  (a) 宣言子の trailing 部に関数シグネチャ `(args...)` がある (g_decl_trailing_func_suffix を
+  新設、consume_decl_name_recursive の skip_func_params ループで立てる)。
+  (b) 基底型 typedef がポインタ型 (base_is_pointer) → `BinOp (*pa)[N]` / `IP (*pa)[N]` 形式。
+  base_deref_size / outer_stride / mid_stride すべて eff_elem を使う。`make test`=1026/1026 green。
+  **限界**: 上記「次セッションの最優先タスク」1, 2 参照。
 
 ## このセッション（続き17）: 探索 round 2
 タグ shadowing 完了後、未探索の角度で probe を 19 件流して新規 2 件発見:
@@ -46,7 +66,7 @@
   array decay/hex float/string concat/bitfield+union/typedef+funcptr/ternary+struct/VLA 多次元・
   short ポインタ算術・nested struct init・function-local static counter
 - すべて green の 17 件は `docs/differential_testing/bug_coverage.md` の 2026-06-22 節 (round 2)
-  に索引化済み (=再探索不要)。新規発見の 2 件は上記「次セッションの最優先タスク」参照。
+  に索引化済み (=再探索不要)。新規発見の 2 件は続き18/19 で消化済み。
 
 ## このセッション（続き16）: タグ shadowing 応用形
 - **変数宣言時 scope の保持**（tag_shadowing_advanced）。続き15 で同スコープ内 shadow の基本形は
