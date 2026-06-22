@@ -1131,6 +1131,7 @@ static const test_case_t test_cases[] = {
     {"probes", "tag_shadowing_block_scope", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tag_shadowing_block_scope.c", 0, 0},
     {"probes", "tag_shadowing_advanced", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tag_shadowing_advanced.c", 0, 0},
     {"probes", "ptr_to_array_of_funcptrs", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ptr_to_array_of_funcptrs.c", 0, 0},
+    {"probes", "global_struct_nested_union_fp", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_nested_union_fp.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

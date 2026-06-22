@@ -352,6 +352,44 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       prev_end = off + ts;
       continue;
     }
+    /* ネスト union メンバ: トップレベル global_var_t.union_init_ordinal はネスト union 用では
+     * ないため、active メンバの fp_kind/type_size をここで判定する。ヒューリスティック:
+     * init_fvalues[*val_idx] が非ゼロかつ init_values[*val_idx] がゼロなら、内側メンバを
+     * 巡回して fp メンバを active とみなす。psx_gbrace_flat は ND_NUM 整数も `(double)val`
+     * を fv に書く (fp 配列対応) ため、fv だけで判別すると `.n = 99` も fp 扱いになって
+     * しまう。iv==0 で絞れば「fp 値があり整数値が立っていない」= fp active と推定できる。
+     * `.f = 0.0f` (iv=0, fv=0) と `.n = 0` (iv=0, fv=0) は int 経路に流れるが、4B/8B の
+     * ゼロビットパターンは一致するので結果同じ。これがないと `{.f = 2.5f}` が `.long 0` で
+     * 出力されていた。 */
+    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+      char *sym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
+      int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
+      double fv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
+      long long iv = gv->init_values[*val_idx];
+      (*val_idx)++;
+      tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
+      int use_size = ts;
+      if (fv != 0.0 && iv == 0) {
+        int inner_n = psx_ctx_get_tag_member_count(mi.tag_kind, mi.tag_name, mi.tag_len);
+        for (int j = 0; j < inner_n; j++) {
+          tag_member_info_t imi = {0};
+          if (psx_ctx_get_tag_member_info(mi.tag_kind, mi.tag_name, mi.tag_len, j, &imi) &&
+              imi.fp_kind != TK_FLOAT_KIND_NONE) {
+            use_fp = imi.fp_kind;
+            use_size = imi.type_size;
+            break;
+          }
+        }
+      }
+      emit_global_init_member_scalar(sym, sym_len, use_fp, use_size, iv, fv);
+      int emitted = sym ? 8
+                        : (use_fp == TK_FLOAT_KIND_FLOAT) ? 4
+                        : (use_fp >= TK_FLOAT_KIND_DOUBLE) ? 8
+                        : (use_size <= 8 ? use_size : 8);
+      if (emitted < ts) cg_emitf("  .space %d\n", ts - emitted);
+      prev_end = off + ts;
+      continue;
+    }
     /* ビットフィールド: 同じ storage ユニット (同一 offset) に属する連続ビット
      * フィールドを 1 つの整数に詰めて出力する。各メンバを別々の .long で出すと
      * `{3,5}` が `.long 3 / .long 5` (8B) になり値が壊れていた (正しくは 1B 0x53)。 */
