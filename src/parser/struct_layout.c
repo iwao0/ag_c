@@ -336,11 +336,16 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                               member_name, member_len,
                                               inner2 * member_elem_size);
           }
-          /* 多次元 char 配列メンバ (`char c[2][2][3]`) は各次元サイズも保存する。
-           * グローバル brace init `{{{"ab","cd"},{"ef","gh"}}}` を再帰展開する
-           * (gbrace_ctx_t.sub_dims 経由) のに使う。outer_stride だけでは 3D 以上で
-           * 内側次元の分割が一意に決まらず文字列がポインタ化していた。 */
-          if (member_tag_kind == TK_EOF && member_elem_size == 1) {
+          /* 多次元配列メンバの各次元サイズを保存する。
+           * (1) char (`char c[2][2][3]`): グローバル brace init `{{{"ab","cd"},...}}` を
+           *     再帰展開する (gbrace_ctx_t.sub_dims 経由) のに使う。
+           * (2) 非 char (`int x[3][3]`): `[N]={...}` designator の elem_slots を
+           *     「内側次元の総スカラ数」として算出するのに使う。これがないと多次元配列で
+           *     `[N]=` のジャンプ幅が 1 slot ぶんしか進まず `[2]=` が slot 6 でなく
+           *     slot 2 にジャンプし他要素を上書きしていた (designator nested バグ)。
+           * tag メンバはスカラ単位での slot 計算が別経路 (global_flat_slot_count) なので
+           * 対象外。 */
+          if (member_tag_kind == TK_EOF) {
             psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
                                             member_name, member_len,
                                             arr_dims_buf, arr_dim_count);

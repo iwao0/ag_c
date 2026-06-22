@@ -1192,12 +1192,14 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
   int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
   gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0),
                     elem, mi->array_len, {0}, 0};
-  /* 多次元 char 配列メンバ (`char c[2][2][3]`): 各次元サイズが arr_dims に入る。
-   * 最外側 1 段はこの ctx が is_array=1 として表現するので、残り (sub_dims) には
-   * arr_dims[1..arr_ndim) を最外側から並べてコピー。child_at が 1 段ずつ消費する。
-   * これがないと 2 次元以上で内側次元情報が落ち、ネスト brace `{"ab","cd"}` の各行
-   * 文字列がポインタ化していた (2D は旧 row_width 機構で対応済み、3D 以降が対象)。 */
-  if (mi->tag_kind == TK_EOF && elem == 1 && mi->arr_ndim >= 2) {
+  /* 多次元配列メンバ: 各次元サイズが arr_dims に入る。最外側 1 段はこの ctx が
+   * is_array=1 として表現するので、残り (sub_dims) には arr_dims[1..arr_ndim) を
+   * 最外側から並べてコピー。child_at が 1 段ずつ消費する。
+   * - char (`char c[2][2][3]`): 内側 1D を文字列展開する (sub_ndim==1 で is_array=0)。
+   * - 非 char (`int x[3][3]`): 内側次元を ndim-1 として再帰し、`[N]=` 経路では
+   *   sub_dims から内側 1 要素の slot 数を計算する。
+   * 2 次元以上のみ (1D は sub_dims 不要、従来の array_len で運用)。 */
+  if (mi->tag_kind == TK_EOF && mi->arr_ndim >= 2) {
     int n = mi->arr_ndim - 1;
     if (n > 8) n = 8;
     for (int i = 0; i < n; i++) c.sub_dims[i] = mi->arr_dims[i + 1];
@@ -1216,22 +1218,23 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
     c.tag_name = ctx.tag_name;
     c.tag_len = ctx.tag_len;
     c.is_array = 0;
-    /* 多次元 char 配列メンバ: 残り次元 sub_dims を 1 段消費して内側 ctx を生成する。
-     * (a) sub_ndim==1: 内側は 1 次元 char 配列 `char[sub_dims[0]]` (行)。is_array=0 で
-     *     elem_size=1, array_len=sub_dims[0] として返し、psx_gbrace_flat の char 配列
-     *     メンバ展開分岐に乗せて文字列を行幅へ展開させる (ポインタ .LC 化を防ぐ)。
-     * (b) sub_ndim>=2: 内側はさらにネスト配列。is_array=1, sub_dims を 1 つ前に詰めて
-     *     渡し、再帰的に展開する。これがないと 3D 以上 (`char c[2][2][3]`) で内側 brace
-     *     `{"ab","cd"}` の各行文字列が要素 (char) 扱いされ SIGSEGV になっていた。 */
-    if (ctx.sub_ndim >= 1 && ctx.elem_size == 1 && ctx.tag_kind == TK_EOF) {
-      if (ctx.sub_ndim == 1) {
+    /* 多次元配列メンバ: 残り次元 sub_dims を 1 段消費して内側 ctx を生成する。
+     * - char (`char c[2][2][3]`): 最内 1 段 (sub_ndim==1) は文字列展開用に is_array=0 で
+     *   返す。中間段 (sub_ndim>=2) は is_array=1 で sub_dims を 1 つ前に詰めて再帰。
+     * - 非 char (`int x[3][3]`): 中間段は is_array=1 で内側ndim配列として再帰。最内
+     *   1 段 (sub_ndim==1) は scalar 要素 (`int`) を 1 つ書く ctx (is_array=0, elem_size=)
+     *   としてそのまま fall-through (sub_dims 機構を抜ける)。 */
+    if (ctx.sub_ndim >= 1 && ctx.tag_kind == TK_EOF) {
+      if (ctx.elem_size == 1 && ctx.sub_ndim == 1) {
+        /* char 最内 1D: 行 (sub_dims[0] バイト) として文字列展開分岐に乗せる。 */
         c.elem_size = 1;
         c.array_len = ctx.sub_dims[0];
-      } else {
+      } else if (ctx.sub_ndim >= 2 || ctx.elem_size > 1) {
+        /* 中間段 / 非 char 多次元: 内側 (sub_ndim-1) 次元の配列。 */
         int inner_total = 1;
         for (int i = 0; i < ctx.sub_ndim; i++) inner_total *= ctx.sub_dims[i];
         c.is_array = 1;
-        c.elem_size = 1;
+        c.elem_size = ctx.elem_size;
         c.array_len = inner_total;
         int n = ctx.sub_ndim - 1;
         for (int i = 0; i < n; i++) c.sub_dims[i] = ctx.sub_dims[i + 1];
@@ -1302,17 +1305,25 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       tk_expect('=');
       /* struct 要素配列の `[N]=` は要素 1 つが内側スカラ数だけ slot を占めるので
        * N にその数を掛ける (`struct P g[3]={[2]={5,6}}` の [2] は flat slot 4)。
+       * 多次元配列 (`int x[3][3]`) も同様: 1 要素 = 内側次元の総スカラ数 (sub_dims の積)。
        * scalar 要素配列は 1 slot なので従来どおり N。 */
       int elem_slots = 1;
       if (ctx.tag_kind == TK_STRUCT) {
         elem_slots = global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
         if (elem_slots < 1) elem_slots = 1;
+      } else if (ctx.sub_ndim >= 1) {
+        /* 多次元配列メンバ (非タグ): 1 要素 = 内側 sub_ndim 次元の総スカラ数。
+         * `int x[3][3]` で sub_dims={3} なら elem_slots=3、`[2]=` は slot 6 へ。
+         * これがないと elem_slots=1 のまま `[2]=` が slot 2 へジャンプし他要素を
+         * 上書きしていた (designator nested バグ)。 */
+        for (int i = 0; i < ctx.sub_ndim; i++) elem_slots *= ctx.sub_dims[i];
+        if (elem_slots < 1) elem_slots = 1;
       }
       /* level 先頭からの絶対 slot。ネスト配列 (`.items={[2]={...}}`) では level_start を
        * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
       cur_idx = level_start + (int)idx_val * elem_slots;
-      /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。 */
-      child = (gbrace_ctx_t){ctx.tag_kind, ctx.tag_name, ctx.tag_len, 0, 0, 0, {0}, 0};
+      /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。多次元配列なら 1 段降りた内側ndim配列。 */
+      child = gbrace_child_at(ctx, cur_idx - level_start);
     }
     /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
      * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
