@@ -49,6 +49,7 @@ struct lvar_t {
   // (サイズだけでは区別できない)。識別子参照ノードへ伝播し infer_generic_control_type が読む。
   unsigned int is_long_long : 1;
   unsigned int is_plain_char : 1;
+  unsigned int is_long_double : 1;  // 1: long double (_Generic で double と区別)
   // 1: `static` 付きで宣言されたローカル変数。フレーム上には配置されず、
   //    static_global_name のグローバル変数に lowering される。
   //    識別子解決時に ND_LVAR ではなく ND_GVAR を返すフラグ。

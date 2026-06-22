@@ -3109,6 +3109,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   int decl_is_complex = psx_last_type_is_complex();
   int decl_is_long_long = psx_last_type_is_long_long();
   int decl_is_plain_char = psx_last_type_is_plain_char();
+  int decl_is_long_double = psx_last_type_is_long_double();
   int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
   int decl_is_static = 0;
@@ -3374,6 +3375,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     if (!is_pointer) {
       var->is_long_long = decl_is_long_long ? 1 : 0;
       var->is_plain_char = decl_is_plain_char ? 1 : 0;
+      var->is_long_double = decl_is_long_double ? 1 : 0;
     }
     /* 可変長関数ポインタ (`int (*f)(int, ...)`): 経由呼び出しで variadic ABI を
      * 選べるよう、固定引数数と共に記録する。 */

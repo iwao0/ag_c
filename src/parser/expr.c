@@ -608,6 +608,15 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   if (control->fp_kind >= TK_FLOAT_KIND_DOUBLE) {
     gt.kind = TK_DOUBLE;
     gt.scalar_size = 8;
+    /* long double は double に lowering され fp_kind=DOUBLE になるが _Generic では別型。
+     * 宣言時に立てた is_long_double ビット (ノードへ伝播済み) を読んで区別し、
+     * `long double:` 関連型と一致させる。 */
+    if (control->kind == ND_LVAR && as_lvar(control)->mem.is_long_double)
+      gt.is_long_double = 1;
+    else if ((control->kind == ND_GVAR || control->kind == ND_DEREF ||
+              control->kind == ND_ASSIGN || control->kind == ND_ADDR) &&
+             ((node_mem_t *)control)->is_long_double)
+      gt.is_long_double = 1;
     return gt;
   }
   int ts = ps_node_type_size(control);
@@ -1641,6 +1650,7 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   /* long long / plain char の型識別を伝播 (_Generic の制御式型判定で使う)。 */
   as_lvar(ref)->mem.is_long_long = var->is_long_long;
   as_lvar(ref)->mem.is_plain_char = var->is_plain_char;
+  as_lvar(ref)->mem.is_long_double = var->is_long_double;
   return ref;
 }
 
@@ -4261,6 +4271,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   /* _Generic で long/long long, char/signed char を区別するための型識別。 */
   as_lvar(n)->mem.is_long_long = var->is_long_long;
   as_lvar(n)->mem.is_plain_char = var->is_plain_char;
+  as_lvar(n)->mem.is_long_double = var->is_long_double;
   n->is_complex = var->is_complex;
   n->is_atomic = var->is_atomic;
   n->fp_kind = var->fp_kind;
