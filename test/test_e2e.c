@@ -1114,6 +1114,7 @@ static const test_case_t test_cases[] = {
     {"probes", "unsigned_char_pointer_zero_extend", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c", 0, 0},
     {"probes", "global_2d_pointer_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_2d_pointer_array.c", 0, 0},
     {"probes", "local_2d_pointer_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_pointer_array.c", 0, 0},
+    {"probes", "local_2d_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_funcptr_array.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

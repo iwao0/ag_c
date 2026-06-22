@@ -428,6 +428,11 @@ static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_di
  * consume_decl_name_recursive が paren-array を消費するときにセットする。 */
 static int g_paren_array_first_dim = 0;
 static int g_paren_array_dim_count = 0;
+/* 関数ポインタ配列 `int (*t[2][2])(void)` の括弧内 `[N][M]` 個別次元。inner_array_mul は
+ * 積しか持たないため、2 次元以上の funcptr 配列でストライドを立てられるよう dims を保持する。
+ * consume_decl_name_recursive が括弧内 `[N]` 列を消費するときにセット。宣言子ごとにリセット。 */
+static int g_inner_array_dims[8] = {0};
+static int g_inner_array_dim_count = 0;
 /* `int (*p)[m]` (配列へのポインタの VLA 形) の先頭次元のランタイム式。非 NULL なら
  * registration が pointer-to-VLA として登録し、行ストライドスロットを確保する。 */
 static node_t *g_paren_array_vla_dim = NULL;
@@ -2196,6 +2201,9 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
         } else if (n > 0) {
           if (*out_inner_array_mul == 0) *out_inner_array_mul = 1;
           if (*out_inner_array_mul > 0) *out_inner_array_mul *= n;
+          /* 個別次元を記録 (2 次元以上の funcptr 配列 `int(*t[2][2])(void)` のストライド用)。 */
+          if (g_inner_array_dim_count < 8) g_inner_array_dims[g_inner_array_dim_count] = n;
+          g_inner_array_dim_count++;
         }
       } else {
         skip_bracket_group();
@@ -3122,6 +3130,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     g_paren_array_first_dim = 0;
     g_paren_array_dim_count = 0;
     g_paren_array_vla_dim = NULL;
+    g_inner_array_dim_count = 0;
+    for (int i = 0; i < 8; i++) g_inner_array_dims[i] = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
     int var_size = is_pointer ? 8 : elem_size;
@@ -3204,6 +3214,20 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->base_deref_size = 8;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
+        /* 2 次元以上の関数ポインタ配列 `int (*t[2][2])(void)`: 括弧内個別次元から多次元
+         * ストライドを立てる (要素は 8B funcptr)。これがないと flat 1D 配列扱いで `t[i][j]` が
+         * 誤計算/SIGSEGV になる。1 次元 `int(*ops[N])(...)` は dim_count<2 で従来どおり。
+         * グローバル paren funcptr 配列 (320e0ff) の局所版。 */
+        if (g_inner_array_dim_count >= 2) {
+          int outer_mul = 1;
+          for (int i = 1; i < g_inner_array_dim_count; i++) outer_mul *= g_inner_array_dims[i];
+          var->outer_stride = outer_mul * 8;
+          if (g_inner_array_dim_count >= 3) {
+            int mid_mul = 1;
+            for (int i = 2; i < g_inner_array_dim_count; i++) mid_mul *= g_inner_array_dims[i];
+            var->mid_stride = mid_mul * 8;
+          }
+        }
       } else if (paren_array_mul > 0 && g_paren_array_vla_dim != NULL) {
         /* pointer-to-VLA `int (*p)[m]` (m はランタイム値)。行ストライド (m*elem) は
          * コンパイル時に決まらないので、ポインタ値 + 行ストライドの隠しスロットを 16B 確保し
