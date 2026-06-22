@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き39: declaration-specifier 順序自由 + storage class 重複 + グローバル重複定義）
+最終更新: 2026-06-23（続き40: 識別子の名前空間衝突検出）
 
 ## 現状
-- `make test` = **1047/1047 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-39 で発見した形まですべて消化)。
+- `make test` = **1048/1048 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-40 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,20 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き40）: 識別子の名前空間衝突検出
+ユーザー指示「37 から順に」を受けて続き37〜39 の延長として 4 件を検証・修正:
+- `extern int g; double g = 1.5;` (extern と定義の型不一致): silently 通過していた。
+  register_toplevel_global_decl の merge ロジックを extern も含めて一本化し、型互換チェックを
+  両方向に適用。
+- `int foo(int){...} int foo;` (関数→変数): register_toplevel_global_decl で
+  psx_ctx_has_function_name を確認、当たれば E3064。
+- `int bar; int bar(int){...}` (変数→関数): funcdef の本体パース直前で find_global_var_by_name
+  を確認、当たれば E3064。
+- `typedef int T; int T = 5;` (typedef→変数): register_toplevel_global_decl で
+  psx_ctx_find_typedef_name を確認、当たれば E3064。
+
+`make test`=1048/1048 green。
 
 ## このセッション（続き39）: declaration-specifier 順序自由 + storage class 重複 + グローバル重複定義
 ユーザーの問題提起「同じ名前の変数のチェックと、static/const/volatile を複数同じものを書く、

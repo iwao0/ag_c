@@ -937,30 +937,48 @@ static global_var_t *find_global_var_by_name(char *name, int len) {
 static global_var_t *register_toplevel_global_decl(char *name, int len, int is_ptr,
                                                    int is_array, int arr_total, int is_extern_decl,
                                                    int has_incomplete_array) {
-  if (is_extern_decl) {
-    global_var_t *existing = find_global_var_by_name(name, len);
-    if (existing) return existing;
+  /* 同名関数とのコンフリクト検出 (C11 6.7p4: 関数と変数は同じ名前空間)。
+   * `int foo(int){...} int foo;` のように関数として登録済みなら違法。 */
+  if (psx_ctx_has_function_name(name, len)) {
+    psx_diag_ctx(curtok(), "decl",
+                 "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
+                 len, name);
   }
-  /* C11 6.9.2: 同名グローバル変数の重複宣言。tentative def 同士 (両方初期化子なし) は
-   * merge して 1 つの定義として扱う。両方初期化があれば apply_toplevel_object_initializer
-   * の `=` 検出時にエラー (has_init=1 を 2 度立てる側で診断)。型不一致は C11 6.7p4 違反で
-   * ここでエラー報告。
-   * extern 宣言は上で先に処理済み (`extern int g; int g = 5;` 等は extern 後の定義が新規
-   * 登録するように見えるが、`is_extern_decl` 経路で existing を返している)。 */
+  /* 同名 typedef とのコンフリクト検出 (C11 6.7p4)。
+   * `typedef int T; int T = 5;` — typedef name と通常の identifier は同じ名前空間。 */
+  {
+    psx_typedef_info_t _ti;
+    if (psx_ctx_find_typedef_name(name, len, &_ti)) {
+      psx_diag_ctx(curtok(), "decl",
+                   "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
+                   len, name);
+    }
+  }
+  /* C11 6.9.2 / 6.7p4: 同名グローバル変数の重複宣言。型互換性 (type_size + fp_kind +
+   * tag_kind + is_array) を確認し、不一致なら E3064。一致なら既存を返して merge する。
+   * extern → 非 extern (定義) の場合は is_extern_decl をクリアして通常 data 出力に切り替える。
+   * 両方に初期化があれば apply_toplevel_object_initializer の `=` 検出時に重複定義エラー。 */
   int new_type_size = has_incomplete_array ? 0
                        : (is_array ? ((is_ptr ? 8 : g_toplevel_decl_elem_size) * arr_total)
                                    : (is_ptr ? 8 : g_toplevel_decl_elem_size));
   global_var_t *existing = find_global_var_by_name(name, len);
-  if (existing && !existing->is_extern_decl) {
-    /* 型の互換チェック (簡易: type_size + fp_kind + tag_kind + is_array)。
-     * 不一致なら C11 6.7p4 違反。一致なら既存を返して merge する。 */
-    if (existing->type_size != new_type_size ||
-        existing->fp_kind != (unsigned char)g_toplevel_decl_fp_kind ||
-        existing->tag_kind != g_toplevel_decl_tag_kind ||
-        (unsigned)existing->is_array != (unsigned)is_array) {
+  if (existing) {
+    int type_compatible =
+        (existing->type_size == 0 || new_type_size == 0 ||
+         existing->type_size == new_type_size) &&
+        existing->fp_kind == (unsigned char)g_toplevel_decl_fp_kind &&
+        existing->tag_kind == g_toplevel_decl_tag_kind &&
+        (unsigned)existing->is_array == (unsigned)is_array;
+    if (!type_compatible) {
       psx_diag_ctx(curtok(), "decl",
                    "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
                    len, name);
+    }
+    if (existing->is_extern_decl && !is_extern_decl) {
+      existing->is_extern_decl = 0;
+      if (existing->type_size == 0 && new_type_size > 0) {
+        existing->type_size = new_type_size;
+      }
     }
     return existing;
   }
@@ -3717,6 +3735,13 @@ static node_t *funcdef(void) {
   node->base.is_complex = ret_is_complex;
   node->funcname = tok->str;
   node->funcname_len = tok->len;
+  /* 同名グローバル変数とのコンフリクト検出 (C11 6.7p4: 関数と変数は同じ名前空間)。
+   * `int bar; int bar(int){...}` のように変数として登録済みなら違法。 */
+  if (find_global_var_by_name(tok->str, tok->len)) {
+    psx_diag_ctx(curtok(), "funcdef",
+                 "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
+                 tok->len, tok->str);
+  }
   psx_ctx_define_function_name_with_ret(tok->str, tok->len,
                                          psx_expr_current_func_ret_struct_size());
   // float / double 戻り値型を記録 → call 経路で fcvtzs を挿入できるようにする
