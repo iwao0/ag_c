@@ -204,6 +204,32 @@ void psx_ctx_reset_function_names(void) {
   memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
 }
 
+/* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。これにより、同一プロセス
+ * 内で複数回 ps_program_from を呼ぶユニットテストで前回パースの "struct S 完全定義済み"
+ * 状態が今回パースに漏れず、再定義チェックが誤発火しない。 */
+void psx_ctx_reset_tag_diag_state(void) {
+  for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (tag_type_t *t = tag_types_by_bucket[i]; t; t = t->next_hash) {
+      t->member_count = 0;
+    }
+  }
+}
+
+/* 各 parse 開始時に呼ぶ、関数名テーブルの「ソフトリセット」: 累積状態 (関数情報) は残し、
+ * 同一 parse 内でのみ意味を持つ診断フラグ (is_defined、nargs_set_once、ret_set_once、
+ * param_categories) のみクリアする。これにより同一プロセス内で複数回 ps_program_from
+ * を呼ぶユニットテストで前回パースの "function defined" 状態が今回パースに漏れない。 */
+void psx_ctx_reset_function_diag_state(void) {
+  for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (func_name_t *f = func_names_by_bucket[i]; f; f = f->next_hash) {
+      f->is_defined = 0;
+      f->nargs_set_once = 0;
+      f->ret_set_once = 0;
+      for (int k = 0; k < 16; k++) f->param_categories[k] = 0;
+    }
+  }
+}
+
 void psx_ctx_reset_function_scope(void) {
   goto_refs_all = NULL;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
@@ -377,6 +403,19 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
    * `struct S{double x;}`) は新規エントリとして先頭挿入し、leave_block_scope で削除されるよう
    * scope_depth を立てる。find_tag_type は先頭から最初の一致を返すので、内側 shadow が優先される。 */
   if (existing && existing->scope_depth == tag_scope_depth) {
+    /* C11 6.7.2.1p1 / 6.7.2.2p2 / 6.7.2.3p3: 同一スコープでの完全型タグの再定義は不可。
+     * 既存もメンバを持っている (= 完全型) のに、今回も新しいメンバを持っている (= 完全型) なら
+     * 二重定義。一方が前方宣言なら従来どおり update。 */
+    if (existing->member_count > 0 && member_count > 0) {
+      /* psx_diag は ctx 経由でしか呼べない (semantic_ctx は diag 抽象を持たない) ため
+       * フラグだけ立てて呼び出し側で診断する案もあるが、ここでは diag_emit_tokf を直接使う。 */
+      /* 実装簡略化: 検出専用の API を別 fn に分けるのでなく、ここで diag_emit を呼ぶ。
+       * caller (struct_layout / enum_const) は curtok() 位置で診断する。 */
+      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, NULL,
+                     "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",
+                     len, name);
+      return;
+    }
     if (member_count > existing->member_count) existing->member_count = member_count;
     if (tag_size > existing->size) existing->size = tag_size;
     if (pending_align > existing->align) existing->align = pending_align;

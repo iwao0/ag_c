@@ -23,6 +23,8 @@
  * internal ヘッダへの直接 include は禁止 (parser_public.h が必要に応じて
  * transitively 取り込む形で内部実装の変更を吸収する)。 */
 #include "../parser/parser_public.h"
+#include "../diag/diag.h"
+#include "../diag/warning_catalog.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2920,7 +2922,8 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
 /* 関数本体末尾に必要に応じて暗黙 `return 0` を補う。
  * main: 末尾が IR_RET でなければ補う (AST 直 codegen 互換)。
  * main 以外: 末尾が IR_RET / IR_BR でなければ安全のため補う
- *           (ABI 上 caller が戻り値を期待していなければ実害なし)。 */
+ *           (ABI 上 caller が戻り値を期待していなければ実害なし)。
+ * 非 void 関数で IR_RET なしの場合は C11 6.9.1p12 に従い未定義動作なので W3001 warning。 */
 static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn) {
   int is_main = (fn->funcname_len == 4 &&
                  fn->funcname && memcmp(fn->funcname, "main", 4) == 0);
@@ -2930,6 +2933,16 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
       ? (!tail || tail_op != IR_RET)
       : (!tail || (tail_op != IR_RET && tail_op != IR_BR));
   if (needs_ret) {
+    /* C11 6.9.1p12: 非 void 関数で値を返さずに到達するのは未定義動作。main は例外で
+     * 暗黙 return 0 が標準化されている (C11 5.1.2.2.3)。 */
+    if (!is_main) {
+      bool ret_is_void = psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len);
+      if (!ret_is_void) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
+                       fn->funcname_len, fn->funcname);
+      }
+    }
     ir_inst_t *r = ir_inst_new(IR_RET);
     r->src1 = ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);

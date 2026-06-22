@@ -6,6 +6,11 @@
 
 void psx_ctx_reset_function_scope(void);
 void psx_ctx_reset_function_names(void);
+/* 各 parse 開始時に呼ぶソフトリセット: 関数情報は残し、診断フラグ (is_defined / nargs_set_once
+ * / ret_set_once / param_categories) のみクリア。 */
+void psx_ctx_reset_function_diag_state(void);
+/* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。 */
+void psx_ctx_reset_tag_diag_state(void);
 void psx_ctx_enter_block_scope(void);
 void psx_ctx_leave_block_scope(void);
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok);

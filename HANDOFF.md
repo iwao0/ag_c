@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き41: 追加識別子診断 — 関数代入 / enum 衝突 / 暗黙関数宣言）
+最終更新: 2026-06-23（続き42: タグ再定義 + 非 void 関数 return なし）
 
 ## 現状
-- `make test` = **1049/1049 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-41 で発見した形まですべて消化)。
+- `make test` = **1050/1050 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-42 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,18 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き42）: タグ再定義 + 非 void 関数 return なし
+- **タグ再定義** (struct / enum): `struct S{int x;}; struct S{int y;};` の重複定義が silently
+  通過していた。psx_ctx_define_tag_type_with_layout で同一スコープに既存の完全型
+  (member_count > 0) があり今回も完全型ならエラー。前方宣言 → 定義は従来挙動。
+- **非 void 関数の return なし** (C11 6.9.1p12): emit_implicit_return_if_missing で main
+  以外の非 void 関数で値を返さず終端していたら W3001 warning。
+- 副次: ps_program_from の冒頭で psx_ctx_reset_tag_diag_state / reset_function_diag_state
+  を呼び出すソフトリセットを追加。ユニットテスト用 (実コンパイル 1 ファイル 1 プロセスなので
+  影響なし)。
+
+`make test`=1050/1050 green。
 
 ## このセッション（続き41）: 追加識別子診断 — 関数代入 / enum 衝突 / 暗黙関数宣言
 ユーザー指示「順番に」を受けて続き40 の延長として 3 件:

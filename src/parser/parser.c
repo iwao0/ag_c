@@ -816,14 +816,16 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
 }
 
 node_t **ps_program_from(token_t *start) {
-  /* 新しいコンパイル開始時に、前回のパースが残した has_init フラグを既存グローバル変数で
-   * クリアする。これは「同一プロセス内で複数回 ps_program_from を呼ぶ」ユニットテスト用の
-   * リセット (実コンパイルは 1 ファイル 1 プロセスなので影響なし)。これがないと前回パース
-   * の `int g=1;` の has_init=1 が次回パースの `int g=1;` の register 時にすでに立っていて、
-   * apply_toplevel_object_initializer の重複初期化チェックが誤って発火する。 */
+  /* 新しいコンパイル開始時に、前回のパースが残した診断フラグをクリアする。
+   * これは「同一プロセス内で複数回 ps_program_from を呼ぶ」ユニットテスト用のリセット
+   * (実コンパイルは 1 ファイル 1 プロセスなので影響なし)。これがないと前回パースの
+   * `int g=1;` の has_init=1 や前回 funcdef の is_defined=1 が次回パースに漏れて、
+   * 重複定義チェック等が誤って発火する。 */
   for (global_var_t *gv = global_vars; gv; gv = gv->next) {
     gv->has_init = 0;
   }
+  psx_ctx_reset_function_diag_state();
+  psx_ctx_reset_tag_diag_state();
   return ps_program_ctx(NULL, start);
 }
 
