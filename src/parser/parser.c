@@ -1157,6 +1157,8 @@ typedef struct {
   char *tag_name;
   int tag_len;
   int is_array;           /* この level が配列か (要素型は tag_kind) */
+  int elem_size;          /* 非タグ配列メンバ (`char name[8]`) の要素サイズ。char 配列の文字列展開判定に使う */
+  int array_len;          /* 同上の要素数 (0=非配列) */
 } gbrace_ctx_t;
 
 /* tag 直接指定版の `.member` designator 解決 (resolve_global_member_designator の gv 非依存版)。 */
@@ -1178,14 +1180,18 @@ static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
 
 /* tag_member_info_t (designator の葉メンバ型) から子 brace のコンテキストを作る。 */
 static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
-  gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0)};
+  /* 非タグ配列メンバの要素サイズ。char 配列 (`char name[8]`) のメンバは deref_size=0 で
+   * type_size に要素サイズ (char=1) が入るため、deref_size が無ければ type_size を使う。 */
+  int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
+  gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0),
+                    elem, mi->array_len};
   return c;
 }
 
 /* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
  * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
 static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
-  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0};
+  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0};
   if (ctx.is_array) {
     /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。 */
     c.tag_kind = ctx.tag_kind;
@@ -1212,7 +1218,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
-  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array};
+  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array, 0, 0};
   psx_gbrace_flat(gv, cap, start_idx, ctx);
 }
 
@@ -1266,7 +1272,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
       cur_idx = level_start + (int)idx_val * elem_slots;
       /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。 */
-      child = (gbrace_ctx_t){ctx.tag_kind, ctx.tag_name, ctx.tag_len, 0};
+      child = (gbrace_ctx_t){ctx.tag_kind, ctx.tag_name, ctx.tag_len, 0, 0, 0};
     }
     /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
      * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
@@ -1394,6 +1400,58 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         }
       }
       while (j < row_w) {  /* 行の残りを 0 埋め */
+        gv->init_values[cur_idx + j] = 0;
+        gv->init_value_symbols[cur_idx + j] = NULL;
+        gv->init_value_symbol_lens[cur_idx + j] = 0;
+        if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
+        j++;
+      }
+      cur_idx += row_w;
+      if (cur_idx > gv->init_count) gv->init_count = cur_idx;
+      if (!tk_consume(',')) break;
+      if (curtok()->kind == TK_RBRACE) break;
+      continue;
+    } else if (curtok()->kind == TK_STRING && child.tag_kind == TK_EOF &&
+               child.array_len > 0 && child.elem_size == 1) {
+      /* struct の char 配列メンバを文字列で初期化: `struct S{char name[8];} g={"main"}`。
+       * 文字列を array_len バイトへ展開する (char* メンバではないので .LC ポインタにしない。
+       * 旧挙動は scalar 経路で .quad <ラベル> を 1 slot に書き、name 全体がポインタ値に
+       * 化けていた)。残りは 0 埋め。 */
+      node_t *e = psx_expr_assign();
+      int row_w = child.array_len;
+      while (*cap < cur_idx + row_w) {
+        int new_cap = *cap * 2;
+        if (new_cap < cur_idx + row_w) new_cap = cur_idx + row_w;
+        gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+        if (gv->init_fvalues) {
+          gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+          for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
+        }
+        *cap = new_cap;
+      }
+      string_lit_t *lit = NULL;
+      if (e && e->kind == ND_STRING) {
+        for (string_lit_t *l = string_literals; l; l = l->next) {
+          if (strcmp(l->label, ((node_string_t *)e)->string_label) == 0) { lit = l; break; }
+        }
+      }
+      int j = 0, sp = 0;
+      if (lit) {
+        while (sp < lit->len && j < row_w) {
+          uint32_t cp = 0;
+          if (lit->str[sp] == '\\') {
+            if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) { cp = (unsigned char)lit->str[sp]; sp++; }
+          } else { cp = (unsigned char)lit->str[sp]; sp++; }
+          gv->init_values[cur_idx + j] = (unsigned char)cp;
+          gv->init_value_symbols[cur_idx + j] = NULL;
+          gv->init_value_symbol_lens[cur_idx + j] = 0;
+          if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
+          j++;
+        }
+      }
+      while (j < row_w) {
         gv->init_values[cur_idx + j] = 0;
         gv->init_value_symbols[cur_idx + j] = NULL;
         gv->init_value_symbol_lens[cur_idx + j] = 0;
