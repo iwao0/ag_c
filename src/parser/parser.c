@@ -2126,14 +2126,16 @@ static void install_toplevel_tag_decl_globals(token_kind_t tag_kind, char *tag_n
 
 static void parse_toplevel_tag_decl(void) {
   /* この経路は宣言が tag キーワード (`struct`/`union`/`enum`) で始まる場合のみ (storage
-   * class 前置があれば dispatcher が parse_toplevel_declaration_like へ回す)。よって
-   * extern/static は常に無い。前の宣言 (`extern struct S es;`) のフラグが g_*_is_extern に
-   * 残っていると、ここの object 宣言 (`struct S es={7};`) が誤って extern 扱いされ
-   * finalize が brace 初期化を取りこぼし E3064 になるため、明示的に 0 へ落とす。 */
-  g_last_decl_is_extern = 0;
-  g_last_decl_is_static = 0;
-  g_toplevel_decl_is_extern = 0;
-  g_toplevel_decl_is_static = 0;
+   * class 前置があれば dispatcher が parse_toplevel_declaration_like へ回す)。dispatcher
+   * (ps_next_function) はこの経路の前に reset_toplevel_decl_spec_state を呼ばないので、
+   * 前の宣言の decl-spec 状態が g_toplevel_decl_* に残る。例えば直前が `typedef double T;`
+   * だと g_toplevel_decl_fp_kind=DOUBLE が漏れ、ここで宣言する struct object の fp_kind が
+   * DOUBLE になり、グローバル brace init の fp-fold 経路が文字列/関数参照/アドレス初期化子を
+   * fp 定数(0)として食べてしまう (`struct{char b[4];char*p;} g={"x","y"}` の p が NULL 化)。
+   * extern/static 漏れ (`extern struct S es; struct S es={7};` の 2 行目が extern 扱いされ
+   * brace を取りこぼす) も同根。宣言ごとに全状態をクリアする。tag 情報は後段の
+   * install_toplevel_tag_decl_globals が再設定する。 */
+  reset_toplevel_decl_spec_state();
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
   int tag_len = 0;

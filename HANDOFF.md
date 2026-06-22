@@ -1,6 +1,26 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（C11 文字列リテラル/ヘッダ・long double・大きめプログラム探索）
+最終更新: 2026-06-22（tag global の decl-spec fp_kind 汚染を修正）
+
+## このセッション（続き7）: fp 宣言の直後に来る tag グローバルの fp_kind 汚染
+HANDOFF「発見したが未修正」のサブケース (a)（char[] メンバの後に char* メンバが続く形
+`struct{char buf[4]; char*p;} g={"ab","cd"}` で p が `.quad 0` に化ける）を調査した結果、
+真因は char[]+char* の slot マッピングではなく、**fp 宣言の直後に宣言される tag グローバルが
+前宣言の decl-spec fp_kind を引き継ぐ汚染**だった。
+- **tag global の decl-spec fp_kind 汚染**（global_struct_member_after_fp_decl）。トップレベル
+  dispatcher `ps_next_function` が tag キーワード始まりの宣言を `parse_toplevel_tag_decl` へ
+  直接回す経路で `reset_toplevel_decl_spec_state` を呼ばず、`g_toplevel_decl_fp_kind` が前宣言
+  （例: stddef.h の `typedef long double max_align_t;` → string.h 等が間接 include）の DOUBLE の
+  まま残り、ここで宣言する struct/union object の fp_kind が DOUBLE になっていた。すると
+  グローバル brace init の fp-fold 経路（`gv->fp_kind != NONE`）が**文字列リテラル/関数参照/
+  アドレス初期化子を fp 定数(0)として食べ**、後続メンバが NULL/0 に化けた。`parse_toplevel_tag_decl`
+  冒頭で手動の extern/static 4 フラグリセットを `reset_toplevel_decl_spec_state()` 呼び出しに
+  置換し、宣言ごとに decl-spec 状態を全クリア（tag 情報は install_toplevel_tag_decl_globals が
+  後段で再設定）。これで (a) に加え funcref 初期化子・アドレス初期化子・文字列ポインタも同根の
+  取りこぼしが解消。**サブケース (a) の真因はこの汚染であり、先行 fp 宣言が無ければ char[]+char*
+  の組合せ自体は元から正しく動作していた**（standalone で確認済み）。`make test`=1015/1015 green。
+  **残: HANDOFF「発見したが未修正」の (b) 2 次元 char メンバ・(c) struct 配列内 char メンバは
+  別問題として未確認（次タスク候補）。**
 
 ## このセッションの目的
 clang との差分テスト（同一 C ソースを ag_c と clang でコンパイルして exit code を
