@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-21（探索的差分テスト継続セッション）
+最終更新: 2026-06-22（C11 文字列リテラル/ヘッダ・long double・大きめプログラム探索）
 
 ## このセッションの目的
 clang との差分テスト（同一 C ソースを ag_c と clang でコンパイルして exit code を
@@ -145,10 +145,24 @@ malloc/tree・hashtable・state machine・Duff's device・多数ローカル/fp 
 リテラル各種・プリプロセッサ stringize 等。式・制御フロー・ABI・数値変換は堅牢で、バグは依然「宣言子・型の
 複雑な組合せ」に集中する傾向。
 
-### 発見したが未修正（次セッションの着手候補）
-- 現状、HANDOFF 列挙の既知未対応バグはすべて消化済み。上記網羅探索領域も再探索不要。再開時は
-  **未探索の角度**（最適化が絡む大きめプログラム、複数 TU リンク、ライブラリ関数との相互作用、
-  ランダム生成ファズ）から新規 miscompile を炙り出す。索引は `docs/differential_testing/bug_coverage.md`。
+### 発見したが未修正（次セッションの着手候補。再現確認済み）
+1. **グローバル struct の char 配列メンバ + 後続/ネストの slot 相互作用**（基本形は 8c8ce2a で修正済み）。
+   global_struct_char_array_member の「未対応」3 形が残る:
+   - (a) char[] メンバの後に char* メンバが続く `struct{char buf[4]; char*p;} g={"ab","cd"}` → p が `.quad 0`
+     (文字列ラベルが入らず NULL)。psx_gbrace_flat で char[] 展開後の次メンバ (char*) の string→ラベル経路が
+     値を取りこぼす。最小再現:
+     ```c
+     #include <string.h>
+     struct S{char buf[4]; char*p;}; struct S g={"ab","cd"};
+     int main(void){return (g.buf[0]=='a' && strcmp(g.p,"cd")==0)?0:1;}  /* agc SIGSEGV/誤値 */
+     ```
+   - (b) 2 次元 char 配列メンバ `struct{char rows[2][4];} g={{"ab","cd"}}`。
+   - (c) struct 配列内の char メンバ `struct{char tag[4];int n;} g[2]={{"aa",1},{"bb",2}}`。
+   いずれも基本の char[] メンバ単独 (8c8ce2a) は動くが、後続メンバ/ネスト時の flat slot マッピングで
+   壊れる。emit 側 (emit_global_struct_members_rec) と parser 側 (psx_gbrace_flat) の slot 数整合を要確認。
+- それ以外: HANDOFF 列挙の既知未対応はすべて消化済み。上記網羅探索領域も再探索不要。**未探索の角度**
+  （複数 TU リンク、ライブラリ関数との相互作用、ランダム生成ファズ）から新規 miscompile を炙り出す。
+  索引は `docs/differential_testing/bug_coverage.md`。
 
 ### このセッション中の注意（プロセス）
 - ヘッダ（token.h / semantic_ctx.h / parser_public.h / node_utils.h 等）を変更すると **増分ビルドが
