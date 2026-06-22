@@ -1,36 +1,43 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-22（続き24: 探索 round 4 で 2 件発見・修正 + 3 件残課題記録）
+最終更新: 2026-06-22（続き25〜27: 残課題 3 件全消化。**現時点で明確な未対応バグ無し**）
 
-## 次セッションの最優先タスク（再現確認済み）
-続き24 の探索 round 4 で 3 件の残課題を発見。修正規模ありで HANDOFF 記録:
+## 次セッションの最優先タスク
+**現時点で明確な未対応バグは無い**。HANDOFF 既知形 + 続き17/23/24/25-27 で発見した形まで
+すべて green (`make test` = 1034/1034)。
 
-1. **VLA `sizeof` のランタイム評価**。`int arr[sz]; sizeof(arr)` が garbage (本来 sz*4)。
-   C11 6.5.3.4 で VLA の sizeof はランタイム評価が必須だが ag_c は未実装。
-   最小再現:
-   ```c
-   int main(void){int sz=7; int arr[sz]; return sizeof(arr); /* 期待: 28 */}
-   ```
+次セッションは引き続き **未探索の角度** (複数 TU リンク・libc 関数連携・ランダム生成ファズ・
+複合代入の細形・古い C コードの寛容性・宣言子の特殊な組合せ等) から新規 miscompile を
+炙り出す。索引は `docs/differential_testing/bug_coverage.md`。
 
-2. **グローバル struct ポインタ配列の init slot 計算**。
-   `struct P *parr[3] = {&pts[0], &pts[1], &pts[2]}` で parr[1] / parr[2] のシンボル+offset
-   が誤値 (続き24 でアクセス側は修正したが parser 側 slot 計算が壊れている)。
-   原因: psx_gbrace_flat の gbrace_child_at が `is_tag_pointer && is_array` のとき要素を
-   「ポインタ 1 slot」でなく「struct 単位 (= 内側 member 数 slot)」で展開する。
-   最小再現:
-   ```c
-   struct P{int x,y;}; struct P pts[3]={{1,2},{3,4},{5,6}};
-   struct P *parr[3] = {&pts[0], &pts[1], &pts[2]};
-   /* parr[1]->x == 3 が壊れる (parr[1] の値が誤) */
-   ```
+## このセッション（続き27）: ポインタ算術後の deref で pql/bds carry
+- **`*(pp + n)` の pql/bds carry**（struct_double_ptr_deref_arrow）。
+  `struct P **pp; (*(pp + n))->m` が E3005。build_unary_deref_node が
+  psx_node_pointer_qual_levels(operand) を呼ぶが ND_ADD/ND_SUB を考慮しておらず pql=0 を返し、
+  「pql>=2 の多段 deref」分岐に乗れず struct ポインタ扱いされなかった。
+  修正: psx_node_pointer_qual_levels / psx_node_base_deref_size の switch に ND_ADD/ND_SUB
+  分岐を追加し、ポインタ側 (lhs 優先、rhs fallback) の pql/bds を carry。これで `*(pp+n)`
+  が struct P* として認識され `->` 解決可能。`make test`=1034/1034 green。
 
-3. **`struct P **pp = &parr[1]; (*pp)->x`** (struct P** の単独 deref からの ->)。
-   `*pp` の build_unary_deref_node で tag info / is_tag_pointer の carry 不足。
-   `(*pp)` の結果が struct ポインタとして認識されず `->` で E3005。
+## このセッション（続き26）: グローバル struct-ptr-array init slot 計算
+- **タグポインタ配列の 1 slot 化**（global_struct_ptr_array_subscript 拡張）。
+  `struct P *parr[3] = {&pts[0], &pts[1], &pts[2]}` で parr[1]/parr[2] のシンボル+offset が
+  誤値だった (gbrace_child_at が tag_kind=STRUCT && is_array=1 で struct 値 (= 内側メンバ数
+  slot) として展開していたため)。
+  修正: gbrace_ctx_t に is_tag_pointer フィールドを追加 (gv->is_tag_pointer / mi->is_tag_pointer
+  から carry)。gbrace_child_at で `ctx.is_array && ctx.is_tag_pointer` のとき scalar 8B
+  ポインタ slot (TK_EOF, elem_size=8) を返す。境界揃え (positional) と `[N]=` の elem_slots
+  も `!is_tag_pointer` でガード。
 
-その他: HANDOFF 既知形 + 続き17/23/24 で発見した形まですべて消化済み (上記 3 件除く)。
-**未探索の角度** (複数 TU リンク・libc 関数連携・ランダム生成ファズ) は引き続き要探索。
-索引は `docs/differential_testing/bug_coverage.md`。
+## このセッション（続き25）: VLA sizeof の variadic 引数経路
+- **VLA sizeof の scalar 化**（vla_sizeof_direct）。
+  `int arr[sz]; printf("%zu", sizeof(arr))` が garbage。parse_sizeof_operand が VLA 全体
+  サイズスロットを指す ND_LVAR を返すが、IR builder の variadic 引数経路 find_owning_lvar
+  が arr_var (VLA メタ slot サイズ=16) を所属判定して「struct 16B 値渡し」扱いに化け、
+  2 slot 渡しで garbage が混じっていた。
+  修正: VLA 全体サイズ + 行サイズの sizeof 返り値を ND_PTR_CAST でラップし、scalar 8B
+  unsigned long として明示。find_owning_lvar の所属判定を回避して variadic 経路で 8B
+  1 slot として正しく渡される。中間変数経由 (`long s = sizeof(arr)`) は元から動作。
 
 ## このセッション（続き24）: 探索 round 4 + 2 件修正
 - **明示キャスト経由のポインタ初期化**（`void *p = (void*)0xdeadbeefL`）。
