@@ -1284,6 +1284,37 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
         int inner_len = member_outer_stride / elem_size;
         if (inner_len < 1) inner_len = 1;
         int flat = 0;
+        /* 多次元 char 配列メンバ (`char rows[2][4]`) の行を文字列リテラルで初期化
+         * する場合 (`{"ab","cd"}` / `{{"ab"},{"cd"}}`)、文字列を inner_len バイトへ
+         * バイト展開して flat に書き込み、行ぶん flat を進めるヘルパ。これがないと
+         * 文字列リテラルが「.LC アドレスの 1 バイト」として 1 slot に書き込まれ
+         * (`strb w20, [x19]`)、行データがポインタ値の下位 1 バイトに化けていた。
+         * グローバル経路 (psx_gbrace_flat) と対称な処理。 */
+#define EMIT_ROW_FROM_STRING(VAL)                                                                  \
+        do {                                                                                       \
+          node_string_t *_s = (node_string_t *)(VAL);                                              \
+          string_lit_t *_lit = find_string_lit_by_label(_s->string_label);                         \
+          int _row = flat / inner_len; flat = _row * inner_len; /* 行頭スナップ */                  \
+          int _j = 0, _sp = 0;                                                                     \
+          if (_lit) {                                                                              \
+            while (_sp < _lit->len && _j < inner_len && flat + _j < array_len) {                   \
+              uint32_t _cp = 0;                                                                    \
+              if (_lit->str[_sp] == '\\') {                                                        \
+                if (!tk_parse_escape_value(_lit->str, _lit->len, &_sp, &_cp)) {                    \
+                  _cp = (unsigned char)_lit->str[_sp]; _sp++;                                      \
+                }                                                                                  \
+              } else { _cp = (unsigned char)_lit->str[_sp]; _sp++; }                               \
+              node_t *_lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size,      \
+                                                    flat + _j);                                    \
+              node_mem_t *_an = build_member_array_elem_assign_node(                               \
+                  _lhs, psx_node_new_num((int)_cp), elem_size, member_fp_kind, member_is_bool);    \
+              if (!init_chain) init_chain = (node_t *)_an;                                         \
+              else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)_an);          \
+              _j++;                                                                                \
+            }                                                                                      \
+          }                                                                                        \
+          flat = (_row + 1) * inner_len; /* 行末まで進める (残りは struct zero-fill) */            \
+        } while (0)
         if (!tk_consume('}')) {
           for (;;) {
             if (tk_consume('{')) {
@@ -1293,6 +1324,17 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               if (!tk_consume('}')) {
                 for (;;) {
                   node_t *val = parse_scalar_brace_initializer();
+                  /* `{{"ab"},{"cd"}}` 形式: 内側 brace 内の文字列を行幅へ展開して
+                   * 内側 brace を抜ける (k 進度より flat を優先)。 */
+                  if (elem_size == 1 && val && val->kind == ND_STRING) {
+                    EMIT_ROW_FROM_STRING(val);
+                    /* 内側 brace の残り `,...}` は捨てるのではなく、文字列 1 行で
+                     * 完結する想定。後続要素は標準の break / `,` 処理に任せる。 */
+                    if (tk_consume('}')) break;
+                    tk_expect(',');
+                    if (tk_consume('}')) break;
+                    continue;
+                  }
                   if (k < inner_len && flat < array_len) {
                     node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
                     node_mem_t *an = build_member_array_elem_assign_node(lhs, val, elem_size,
@@ -1309,7 +1351,11 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               flat = (row + 1) * inner_len;       /* 次の行頭へ (残りは 0) */
             } else {
               node_t *val = parse_scalar_brace_initializer();
-              if (flat < array_len) {
+              /* `{"ab","cd"}` 形式 (外側 brace 内に文字列が直接並ぶ; brace elision):
+               * 各文字列を 1 行 (inner_len バイト) として展開する。 */
+              if (elem_size == 1 && val && val->kind == ND_STRING) {
+                EMIT_ROW_FROM_STRING(val);
+              } else if (flat < array_len) {
                 node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
                 node_mem_t *an = build_member_array_elem_assign_node(lhs, val, elem_size,
                     member_fp_kind, member_is_bool);
@@ -1323,6 +1369,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             if (tk_consume('}')) break;
           }
         }
+#undef EMIT_ROW_FROM_STRING
         return init_chain ? init_chain : psx_node_new_num(0);
       }
       int idx = 0;
