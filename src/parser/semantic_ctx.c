@@ -363,7 +363,11 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
   int pending_align = g_pending_tag_align;
   g_pending_tag_align = 0;
   tag_type_t *existing = find_tag_type(kind, name, len);
-  if (existing) {
+  /* 同じスコープでの再宣言 (前方宣言 `struct S;` → 定義 `struct S{...}`) のみ既存を update する。
+   * 内側スコープに同名タグを別レイアウトで宣言した場合 (`struct S{int a;}` 外側 → ブロック内
+   * `struct S{double x;}`) は新規エントリとして先頭挿入し、leave_block_scope で削除されるよう
+   * scope_depth を立てる。find_tag_type は先頭から最初の一致を返すので、内側 shadow が優先される。 */
+  if (existing && existing->scope_depth == tag_scope_depth) {
     if (member_count > existing->member_count) existing->member_count = member_count;
     if (tag_size > existing->size) existing->size = tag_size;
     if (pending_align > existing->align) existing->align = pending_align;
@@ -574,10 +578,15 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
 }
 
 /* tag の index 番目 (offset 昇順) のメンバ全属性を 1 回のクエリで取得する統合 API。
- * メンバを特定して fill_tag_member_info で全フィールドを写す。 */
+ * メンバを特定して fill_tag_member_info で全フィールドを写す。
+ * 内側スコープでの同名タグ shadow に対応: 対象 tag の scope_depth と一致するメンバだけ列挙する
+ * (外側 tag のメンバと混在させない)。tag_scope_depth の上位互換ではなく find_tag_type が返す
+ * 最も内側のタグの scope_depth が基準。 */
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
                                   tag_member_info_t *out) {
   if (!out) return false;
+  tag_type_t *tt = find_tag_type(kind, name, len);
+  int target_scope = tt ? tt->scope_depth : 0;
   int cap = 8;
   int n = 0;
   tag_member_t **members = calloc((size_t)cap, sizeof(tag_member_t *));
@@ -585,6 +594,7 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
     for (tag_member_t *m = tag_members_by_bucket[i]; m; m = m->next_hash) {
       if (m->tag_kind != kind || m->tag_len != len) continue;
       if (strncmp(m->tag_name, name, (size_t)len) != 0) continue;
+      if (tt && m->scope_depth != target_scope) continue;
       if (n >= cap) {
         cap *= 2;
         members = realloc(members, (size_t)cap * sizeof(tag_member_t *));
@@ -602,11 +612,14 @@ bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int ind
   return true;
 }
 
-/* 名前検索版の統合 API。get 版と同じく fill_tag_member_info で全属性を写す。 */
+/* 名前検索版の統合 API。get 版と同じく fill_tag_member_info で全属性を写す。
+ * shadow 対応: 対象 tag の scope_depth と一致するメンバのみマッチさせる。 */
 bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
                                    char *member_name, int member_len,
                                    tag_member_info_t *out) {
   if (!out) return false;
+  tag_type_t *tt = find_tag_type(kind, name, len);
+  int target_scope = tt ? tt->scope_depth : 0;
   unsigned bucket = (psx_ctx_hash_tag(kind, name, len) ^
                      psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
   for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
@@ -614,6 +627,7 @@ bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
         m->member_len == member_len &&
         strncmp(m->tag_name, name, (size_t)len) == 0 &&
         strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      if (tt && m->scope_depth != target_scope) continue;
       fill_tag_member_info(m, out);
       return true;
     }
