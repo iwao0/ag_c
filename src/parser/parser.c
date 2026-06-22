@@ -1157,6 +1157,11 @@ typedef struct {
   char *tag_name;
   int tag_len;
   int is_array;           /* この level が配列か (要素型は tag_kind) */
+  int is_tag_pointer;     /* この level の要素がタグへのポインタ (`struct P *arr[3]`)。
+                           * 設定時、is_array=1 で要素は「タグポインタ scalar 8B」になり
+                           * gbrace_child_at が各要素を 1 slot (= 8B) として返す。
+                           * 通常のタグ値配列 (`struct P arr[3]`) は 0 で従来どおり struct
+                           * 単位 (= 内側メンバ数 slot) で展開する。 */
   int elem_size;          /* 非タグ配列メンバ (`char name[8]`) の要素サイズ。char 配列の文字列展開判定に使う */
   int array_len;          /* 同上の要素数 (0=非配列) */
   /* 多次元 char 配列メンバ (`char c[2][2][3]`) の「残り」次元チェーン。is_array=1 のとき、
@@ -1196,6 +1201,7 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
    * type_size に要素サイズ (char=1) が入るため、deref_size が無ければ type_size を使う。 */
   int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
   gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0),
+                    mi->is_tag_pointer ? 1 : 0,
                     elem, mi->array_len, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   /* 多次元配列メンバ: 各次元サイズが arr_dims に入る。最外側 1 段はこの ctx が
    * is_array=1 として表現するので、残り (sub_dims) には arr_dims[1..arr_ndim) を
@@ -1216,9 +1222,19 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
 /* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
  * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
 static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
-  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
+  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   if (ctx.is_array) {
-    /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。 */
+    /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。
+     * タグポインタ配列 (`struct P *arr[3]`): 要素は「struct P へのポインタ scalar (8B)」。
+     * tag_kind は伝播せず TK_EOF にして scalar 8B として返す。これがないと psx_gbrace_flat
+     * の struct 経路で「struct 値 (= 内側メンバ数 slot)」として展開され、parr[1]/parr[2] の
+     * シンボル+offset が誤 slot に書かれていた。1 要素 = 1 slot で済むよう scalar 化する。 */
+    if (ctx.is_tag_pointer) {
+      c.tag_kind = TK_EOF;
+      c.is_array = 0;
+      c.elem_size = 8;
+      return c;
+    }
     c.tag_kind = ctx.tag_kind;
     c.tag_name = ctx.tag_name;
     c.tag_len = ctx.tag_len;
@@ -1266,7 +1282,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
-  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
+  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array,
+                      gv->is_tag_pointer ? 1 : 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   psx_gbrace_flat(gv, cap, start_idx, ctx);
 }
 
@@ -1285,7 +1302,9 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
      * (`{.a=1}` で b を埋めない) でも init_count が要素途中で止まり、次要素が
      * ずれるのを防ぐ。designator (`[N]=`) はこの後 cur_idx を再設定するので除外。 */
     if (ctx.is_array && curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
-      int es = (ctx.tag_kind == TK_STRUCT)
+      /* タグポインタ配列 (`struct P *arr[3]`) は要素 = 1 slot (scalar pointer) なので
+       * es=1 で従来どおり境界揃え不要。タグ値配列 (`struct P arr[3]`) は struct 内側メンバ数。 */
+      int es = (ctx.tag_kind == TK_STRUCT && !ctx.is_tag_pointer)
                    ? global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
       if (es > 1) {
         int r = (cur_idx - level_start) % es;
@@ -1313,7 +1332,10 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * 多次元配列 (`int x[3][3]`) も同様: 1 要素 = 内側次元の総スカラ数 (sub_dims の積)。
        * scalar 要素配列は 1 slot なので従来どおり N。 */
       int elem_slots = 1;
-      if (ctx.tag_kind == TK_STRUCT) {
+      if (ctx.tag_kind == TK_STRUCT && !ctx.is_tag_pointer) {
+        /* タグ値配列 (`struct P arr[3]={[1]={...}}`) は要素 = 内側メンバ数 slot。
+         * タグポインタ配列 (`struct P *arr[3]={[1]=&p}`) は要素 = 1 slot (scalar pointer)
+         * なので elem_slots=1 のまま (`is_tag_pointer` で除外)。 */
         elem_slots = global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
         if (elem_slots < 1) elem_slots = 1;
       } else if (ctx.sub_ndim >= 1) {

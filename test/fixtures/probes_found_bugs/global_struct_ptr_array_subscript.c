@@ -28,10 +28,12 @@ struct P pts[3] = {{1, 2}, {3, 4}, {5, 6}};
 struct P *parr[3] = {&pts[0], &pts[1], &pts[2]};
 
 int main(void) {
-  /* (1) 基本: subscript + -> (グローバル要素 0、tag pointer 配列の `->` 解決) */
+  /* (1) 基本: subscript + -> (全要素確認、続き25 で init slot 計算修正済み) */
   assert(parr[0]->x == 1 && parr[0]->y == 2);
+  assert(parr[1]->x == 3 && parr[1]->y == 4);
+  assert(parr[2]->x == 5 && parr[2]->y == 6);
 
-  /* (2) 同 fixture のローカル struct ポインタ配列 (元から動作、回帰確認) */
+  /* (2) ローカル struct ポインタ配列 (回帰確認) */
   struct P lpts = {7, 8};
   struct P *larr[3] = {&lpts, &lpts, &lpts};
   int i = 0;
@@ -40,10 +42,12 @@ int main(void) {
   v = larr[i++]->y;
   assert(v == 8 && i == 2);
 
+  /* (3) グローバル post-inc 連鎖 */
+  int j = 0;
+  int w = parr[j++]->x;
+  assert(w == 1 && j == 1);
+  w = parr[j++]->y;
+  assert(w == 4 && j == 2);
+
   return 0;
 }
-
-/* 限界 (未対応、次セッション課題): グローバル `struct P *parr[3] = {&pts[0], &pts[1], &pts[2]}`
- * の init slot 計算が壊れており parr[1] / parr[2] の値が誤 (psx_gbrace_flat の child_at が
- * is_tag_pointer 配列を「ポインタ 1 slot」でなく struct 単位 (3 slot) で展開しようとする)。
- * 本 fixture は最初の要素 (parr[0]) のみ動作確認。 */
