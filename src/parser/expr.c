@@ -2714,7 +2714,19 @@ static node_t *parse_sizeof_operand(void) {
           curtok()->next && curtok()->next->kind == TK_RPAREN) {
         set_curtok(curtok()->next);
         tk_expect(')');
-        return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
+        /* VLA メタ slot (offset+8 = total size) を 8B scalar として返す。find_owning_lvar
+         * が arr_var (size=16 の VLA メタ) を所属判定すると variadic 引数経路で
+         * cg_size_needs_indirect_struct(16) が真となり「struct 16B」扱いで 2 slot 渡しに
+         * 化けて garbage が混じる。ND_PTR_CAST でラップして scalar 8B unsigned long として
+         * 明示し、所属判定を回避する。 */
+        node_t *lvar = psx_node_new_lvar_typed(arr_var->offset + 8, 8);
+        as_lvar(lvar)->mem.is_unsigned = 1;
+        node_mem_t *cast = arena_alloc(sizeof(node_mem_t));
+        cast->base.kind = ND_PTR_CAST;
+        cast->base.lhs = lvar;
+        cast->type_size = 8;
+        cast->is_unsigned = 1;
+        return (node_t *)cast;
       }
       /* `sizeof(vla2d[i])` は行のランタイムサイズ (内側次元 * elem)。行ストライドは
        * 添字に依存しないので vla_row_stride_frame_off スロットの値が答え。`a[...]` の
@@ -2730,7 +2742,16 @@ static node_t *parse_sizeof_operand(void) {
         }
         if (t && t->kind == TK_RBRACKET && t->next && t->next->kind == TK_RPAREN) {
           set_curtok(t->next->next);  /* `]` `)` を消費 */
-          return psx_node_new_lvar_typed(arr_var->vla_row_stride_frame_off, 8);
+          /* 2D VLA の行サイズも同様に ND_PTR_CAST でラップして所属判定を回避し、scalar 8B
+           * unsigned long として variadic 経路に乗せる。 */
+          node_t *lvar2 = psx_node_new_lvar_typed(arr_var->vla_row_stride_frame_off, 8);
+          as_lvar(lvar2)->mem.is_unsigned = 1;
+          node_mem_t *cast2 = arena_alloc(sizeof(node_mem_t));
+          cast2->base.kind = ND_PTR_CAST;
+          cast2->base.lhs = lvar2;
+          cast2->type_size = 8;
+          cast2->is_unsigned = 1;
+          return (node_t *)cast2;
         }
       }
       /* sizeof(arr) where arr is a non-VLA array: C 仕様で array → pointer
