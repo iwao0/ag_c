@@ -1166,6 +1166,11 @@ typedef struct {
    * sub_ndim>=2 はさらに内側がネスト配列。 */
   int sub_dims[8];
   int sub_ndim;
+  /* ネスト union の active メンバ fp_kind (TK_FLOAT_KIND_NONE = fp ではない or 不明)。
+   * `.member = expr` designator で fp メンバを解決した時に立て、後段の scalar 書き込みで
+   * sentinel (init_value_symbol_lens) を立ててネスト union fp 出力に使う。 */
+  tk_float_kind_t pending_fp_kind;
+  int pending_fp_size;  /* float=4, double=8 (sentinel decode 用) */
 } gbrace_ctx_t;
 
 /* tag 直接指定版の `.member` designator 解決 (resolve_global_member_designator の gv 非依存版)。 */
@@ -1191,7 +1196,7 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
    * type_size に要素サイズ (char=1) が入るため、deref_size が無ければ type_size を使う。 */
   int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
   gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0),
-                    elem, mi->array_len, {0}, 0};
+                    elem, mi->array_len, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   /* 多次元配列メンバ: 各次元サイズが arr_dims に入る。最外側 1 段はこの ctx が
    * is_array=1 として表現するので、残り (sub_dims) には arr_dims[1..arr_ndim) を
    * 最外側から並べてコピー。child_at が 1 段ずつ消費する。
@@ -1211,7 +1216,7 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
 /* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
  * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
 static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
-  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, {0}, 0};
+  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   if (ctx.is_array) {
     /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。 */
     c.tag_kind = ctx.tag_kind;
@@ -1261,7 +1266,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
-  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array, 0, 0, {0}, 0};
+  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   psx_gbrace_flat(gv, cap, start_idx, ctx);
 }
 
@@ -1350,6 +1355,13 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * (グローバル) が E2006 で拒否されていた。 */
       tag_member_info_t cmi = {0};
       psx_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, ordinal, &cmi);
+      /* ネスト union の fp メンバ designator (`.f = 2.5f`): 次の scalar 書き込みで sentinel
+       * を立てて emit にネスト union active メンバが fp であることを伝える。0.0f と .n=0 を
+       * 判別可能にするため、ヒューリスティック (fv!=0) ではなく明示的に通知する。 */
+      if (ctx.tag_kind == TK_UNION && cmi.fp_kind != TK_FLOAT_KIND_NONE) {
+        ctx.pending_fp_kind = cmi.fp_kind;
+        ctx.pending_fp_size = cmi.type_size;
+      }
       for (;;) {
         if (curtok()->kind == TK_LBRACKET) {
           set_curtok(curtok()->next);
@@ -1578,6 +1590,17 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       gv->init_value_symbols[cur_idx] = sym;
       gv->init_value_symbol_lens[cur_idx] = sym_len;
       if (gv->init_fvalues) gv->init_fvalues[cur_idx] = fv;
+      /* ネスト union の fp active メンバ sentinel: DOT 経路で pending_fp_kind がセットされて
+       * いれば、init_value_symbols=NULL かつ init_value_symbol_lens に sentinel (-2: float,
+       * -3: double/long double) を立てる。emit TK_UNION 分岐がこれを読んで fp として出力。
+       * sentinel -1 は既存の「文字列リテラル要素」用なので使わない。
+       * scalar 書き込み 1 回で消費して clear (`{.f=2.5f,.n=99}` などの後勝ち designator にも対応)。 */
+      if (sym == NULL && ctx.pending_fp_kind != TK_FLOAT_KIND_NONE) {
+        gv->init_value_symbols[cur_idx] = NULL;
+        gv->init_value_symbol_lens[cur_idx] = (ctx.pending_fp_size >= 8) ? -3 : -2;
+        ctx.pending_fp_kind = TK_FLOAT_KIND_NONE;
+        ctx.pending_fp_size = 0;
+      }
       cur_idx++;
       if (cur_idx > gv->init_count) gv->init_count = cur_idx;
     }

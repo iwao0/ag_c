@@ -353,14 +353,11 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       continue;
     }
     /* ネスト union メンバ: トップレベル global_var_t.union_init_ordinal はネスト union 用では
-     * ないため、active メンバの fp_kind/type_size をここで判定する。ヒューリスティック:
-     * init_fvalues[*val_idx] が非ゼロかつ init_values[*val_idx] がゼロなら、内側メンバを
-     * 巡回して fp メンバを active とみなす。psx_gbrace_flat は ND_NUM 整数も `(double)val`
-     * を fv に書く (fp 配列対応) ため、fv だけで判別すると `.n = 99` も fp 扱いになって
-     * しまう。iv==0 で絞れば「fp 値があり整数値が立っていない」= fp active と推定できる。
-     * `.f = 0.0f` (iv=0, fv=0) と `.n = 0` (iv=0, fv=0) は int 経路に流れるが、4B/8B の
-     * ゼロビットパターンは一致するので結果同じ。これがないと `{.f = 2.5f}` が `.long 0` で
-     * 出力されていた。 */
+     * ないため、active メンバの fp_kind/type_size をここで判定する。
+     * 最優先: parser が立てた sentinel (sym==NULL && sym_len==-2 (float) / -3 (double))。
+     *   `.f = 0.0f` でも明示通知されるため、ヒューリスティックの曖昧さがない。
+     * フォールバック (sentinel 無し): 旧ヒューリスティック (fv!=0 && iv==0) で内側 fp メンバ
+     *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
     if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
       char *sym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
       int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
@@ -369,7 +366,12 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       (*val_idx)++;
       tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
       int use_size = ts;
-      if (fv != 0.0 && iv == 0) {
+      /* sentinel チェック (sym==NULL のときのみ意味を持つ; sym!=NULL は文字列/関数ポインタ) */
+      if (sym == NULL && (sym_len == -2 || sym_len == -3)) {
+        use_fp = (sym_len == -3) ? TK_FLOAT_KIND_DOUBLE : TK_FLOAT_KIND_FLOAT;
+        use_size = (sym_len == -3) ? 8 : 4;
+        sym_len = 0;  /* emit_global_init_member_scalar には通常の 0 を渡す */
+      } else if (fv != 0.0 && iv == 0) {
         int inner_n = psx_ctx_get_tag_member_count(mi.tag_kind, mi.tag_name, mi.tag_len);
         for (int j = 0; j < inner_n; j++) {
           tag_member_info_t imi = {0};
