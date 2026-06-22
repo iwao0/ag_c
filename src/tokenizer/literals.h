@@ -15,6 +15,14 @@ bool tk_is_valid_ucn_codepoint(uint32_t cp);
 /** @brief UnicodeコードポイントをUTF-8へエンコードする。 */
 int tk_encode_utf8(uint32_t cp, char out[4]);
 
+/** @brief s[*pos] から UTF-8 シーケンス1個をデコードし、*pos を進めてコードポイントを返す。
+ * 不正/不完全シーケンスは1バイトをそのまま返す（寛容）。 */
+uint32_t tk_decode_utf8(const char *s, int len, int *pos);
+
+/** @brief 文字列の次の1文字を char_width のコードユニット列 out[] に変換し個数(1/2)を返す。
+ * *pos を消費分進める。emit / 配列初期化 / 要素数カウントで共通利用する。 */
+int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, uint32_t out[2]);
+
 /** @brief 文字列/文字定数中の1つのエスケープを読み取って値を返す。 */
 int tk_read_escape_char(char **pp);
 /** @brief 文字列/文字定数中の1つのエスケープを値化せずにスキップする。 */

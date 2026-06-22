@@ -45,5 +45,17 @@ int main(void) {
   assert(gU[0] == 'a' && gU[2] == 'c' && gU[3] == 0);
   assert(g8[0] == 'o' && g8[2] == 0);
 
+  /* 非 ASCII (UTF-8 ソース → コードポイント)。`あ`=U+3042, `α`=U+03B1。
+   * U/L (UTF-32) は 1 コードポイント = 1 要素、u (UTF-16) は BMP なので 1 要素。 */
+  unsigned int u32[] = U"aあb";
+  assert(u32[0] == 0x61 && u32[1] == 0x3042 && u32[2] == 0x62 && u32[3] == 0);
+  assert(sizeof(u32) == 4 * sizeof(unsigned int));
+  unsigned short u16[] = u"aあb";
+  assert(u16[0] == 0x61 && u16[1] == 0x3042 && u16[2] == 0x62 && u16[3] == 0);
+  assert(sizeof(u16) == 4 * sizeof(unsigned short));
+  /* u8 は UTF-8 バイト列のまま (`あ` は 3 バイト) */
+  char u8b[] = u8"aあ";
+  assert(sizeof(u8b) == 1 + 3 + 1);
+
   return 0;
 }

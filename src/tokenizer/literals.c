@@ -75,6 +75,56 @@ int tk_encode_utf8(uint32_t cp, char out[4]) {
   return 4;
 }
 
+/** @brief s[*pos] から UTF-8 シーケンス 1 個をデコードしてコードポイントを返す。
+ * *pos を消費バイト数だけ進める。不正/不完全シーケンスは 1 バイトをそのまま値として
+ * 返す (寛容)。wide/UTF-16/32 文字列リテラルのコードユニット化に使う。 */
+uint32_t tk_decode_utf8(const char *s, int len, int *pos) {
+  int i = *pos;
+  unsigned char c0 = (unsigned char)s[i];
+  if (c0 < 0x80) { *pos = i + 1; return c0; }
+  int n;          /* 後続バイト数 */
+  uint32_t cp;
+  if ((c0 & 0xE0) == 0xC0) { n = 1; cp = c0 & 0x1F; }
+  else if ((c0 & 0xF0) == 0xE0) { n = 2; cp = c0 & 0x0F; }
+  else if ((c0 & 0xF8) == 0xF0) { n = 3; cp = c0 & 0x07; }
+  else { *pos = i + 1; return c0; }  /* 不正な先頭バイト */
+  if (i + n >= len + 0) { /* 続きが足りるか後で確認 */ }
+  for (int k = 1; k <= n; k++) {
+    if (i + k >= len || ((unsigned char)s[i + k] & 0xC0) != 0x80) {
+      *pos = i + 1; return c0;  /* 不完全/不正: 1 バイトとして扱う */
+    }
+    cp = (cp << 6) | ((unsigned char)s[i + k] & 0x3F);
+  }
+  *pos = i + n + 1;
+  return cp;
+}
+
+/** @brief 文字列リテラルの「次の 1 文字」を、ターゲット幅 (char_width) のコードユニット列に
+ * 変換する。s[*pos] からエスケープ / UTF-8 / ASCII を 1 つ消費して *pos を進め、生成した
+ * コードユニットを out[0..] に書き、その個数 (1 または 2) を返す。
+ *   - char_width 1 (char/u8): 1 バイト = 1 ユニット (UTF-8 バイト列をそのまま)。
+ *   - char_width 2 (u, UTF-16): コードポイントへデコードし、BMP は 1、補助面は サロゲート対 2。
+ *   - char_width 4 (U/L, UTF-32): コードポイント 1 個 = 1 ユニット。
+ * emit / 配列初期化 / 要素数カウントで共通利用し挙動を一致させる。 */
+int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, uint32_t out[2]) {
+  uint32_t v;
+  if (s[*pos] == '\\') {
+    if (!tk_parse_escape_value(s, len, pos, &v)) { v = (unsigned char)s[*pos]; (*pos)++; }
+  } else if (char_width >= 2) {
+    v = tk_decode_utf8(s, len, pos);
+  } else {
+    v = (unsigned char)s[*pos]; (*pos)++;
+  }
+  if (char_width == 2 && v >= 0x10000) {
+    uint32_t u = v - 0x10000;
+    out[0] = 0xD800u | ((u >> 10) & 0x3FFu);
+    out[1] = 0xDC00u | (u & 0x3FFu);
+    return 2;
+  }
+  out[0] = v;
+  return 1;
+}
+
 /** @brief リテラル中のエスケープ1個を値にデコードする。 */
 int tk_read_escape_char(char **pp) {
   char *p = *pp;

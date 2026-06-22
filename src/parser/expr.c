@@ -11,6 +11,7 @@
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/allocator.h"
 #include "../tokenizer/escape.h"
+#include "../tokenizer/literals.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -3772,14 +3773,10 @@ static node_string_t *make_string_lit_node(char *str, int len,
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
    * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */
   int decoded = 0;
+  int cw_count = char_width ? (int)char_width : TK_CHAR_WIDTH_CHAR;
   for (int sp = 0; sp < len; ) {
-    uint32_t cp = 0;
-    if (str[sp] == '\\') {
-      if (!tk_parse_escape_value(str, len, &sp, &cp)) sp++;
-    } else {
-      sp++;
-    }
-    decoded++;
+    uint32_t units[2];
+    decoded += tk_next_string_code_units(str, len, &sp, cw_count, units);
   }
   snode->byte_len = decoded;
   return snode;

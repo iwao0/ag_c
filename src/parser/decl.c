@@ -9,6 +9,7 @@
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/escape.h"
+#include "../tokenizer/literals.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -570,17 +571,13 @@ static bool init_first_element_is_brace(void) {
  * 1 文字にデコードされるので、配列要素数は decode 後の文字数で数える。
  * 生バイト長 (raw len) を返してしまうと `char s[] = "\t"` で要素数が 3 (raw '\','t',NUL)
  * になり過剰確保 + 値もズレる。 */
-static long long count_decoded_chars_in_string(const char *s, int len) {
+static long long count_decoded_chars_in_string(const char *s, int len, int char_width) {
   long long n = 0;
   int i = 0;
+  int cw = char_width > 0 ? char_width : 1;
   while (i < len) {
-    if (s[i] == '\\') {
-      uint32_t cp = 0;
-      if (!tk_parse_escape_value(s, len, &i, &cp)) i++;
-    } else {
-      i++;
-    }
-    n++;
+    uint32_t units[2];
+    n += tk_next_string_code_units(s, len, &i, cw, units);  /* 幅に応じたコードユニット数 */
   }
   return n;
 }
@@ -589,7 +586,7 @@ static long long count_char_init_from_string_seq(token_t *t, bool require_rbrace
   long long total = 0;
   while (t && t->kind == TK_STRING) {
     token_string_t *st = (token_string_t *)t;
-    total += count_decoded_chars_in_string(st->str, st->len);
+    total += count_decoded_chars_in_string(st->str, st->len, (int)st->char_width);
     t = t->next;
   }
   if (require_rbrace_terminator) {
@@ -1158,20 +1155,18 @@ static node_t *build_array_string_initializer(lvar_t *var, node_string_t *s, int
   }
   int idx = 0;
   int src_pos = 0;
+  /* 要素幅 (= var->elem_size) のコードユニットに変換して格納する。char/u8 配列は
+   * 1 バイト = 1 ユニット、u/U/L 配列は UTF-8 をデコードしたコードユニット (u は補助面で
+   * サロゲート対)。dispatch 側で elem_size == 文字列 char_width を保証済み。 */
+  int cw = var->elem_size > 0 ? var->elem_size : 1;
   while (src_pos < lit->len && idx < array_len) {
-    uint32_t cp = 0;
-    if (lit->str[src_pos] == '\\') {
-      if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
-        cp = (unsigned char)lit->str[src_pos];
-        src_pos++;
-      }
-    } else {
-      cp = (unsigned char)lit->str[src_pos];
-      src_pos++;
+    uint32_t units[2];
+    int nu = tk_next_string_code_units(lit->str, lit->len, &src_pos, cw, units);
+    for (int k = 0; k < nu && idx < array_len; k++) {
+      init_chain = append_to_init_chain(init_chain,
+          build_array_elem_assign(var, idx, psx_node_new_num((long long)units[k])));
+      idx++;
     }
-    init_chain = append_to_init_chain(init_chain,
-        build_array_elem_assign(var, idx, psx_node_new_num((unsigned char)cp)));
-    idx++;
   }
   /* 文字列が配列長より短い場合 (`char a[10] = "hi"`) は残り全てを 0 で埋める。 */
   while (idx < array_len) {

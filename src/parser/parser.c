@@ -19,6 +19,7 @@
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/escape.h"
+#include "../tokenizer/literals.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -1646,17 +1647,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
            * グローバル `char g[]="a\tb"` が `\` と `t` をそのまま書いて壊れていた。 */
           int idx = 0, sp = 0;
           while (sp < lit->len && idx < s->byte_len) {
-            uint32_t cp = 0;
-            if (lit->str[sp] == '\\') {
-              if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) {
-                cp = (unsigned char)lit->str[sp];
-                sp++;
-              }
-            } else {
-              cp = (unsigned char)lit->str[sp];
-              sp++;
-            }
-            gv->init_values[idx++] = cp;
+            uint32_t units[2];
+            int nu = tk_next_string_code_units(lit->str, lit->len, &sp, elem, units);
+            for (int k = 0; k < nu && idx < s->byte_len; k++)
+              gv->init_values[idx++] = units[k];
           }
         }
         gv->init_values[s->byte_len] = 0;
