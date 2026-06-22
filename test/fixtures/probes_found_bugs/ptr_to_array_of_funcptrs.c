@@ -15,16 +15,12 @@
  *   (b) 基底型 typedef がポインタ型 (base_is_pointer)
  *       → `BinOp (*pa)[3]` / `typedef int *IP; IP (*pa)[3]` 形式
  *
- * 限界 (未対応、次セッション課題):
- * (a) `typedef BinOp OpArr3[3]; OpArr3 *pa` (paren なしで typedef 配列ポインタ) は別経路
- *     (decl.c の is_pointer + td_array_dim_count>0 分岐) で、`PA p = m` (= `typedef int (*PA)[3]`) と
- *     同じ経路を共有しており、単純な base_is_pointer 判定では PA p のケースを壊す。
- *     別途要素型を typedef_info から精密に判定する仕組みが要る。
- * (b) `typedef int *IP; IP (*pia)[3]` 形 (paren 経路でデータポインタ配列) の `*(*pia)[0]` の
- *     最終 deref サイズ伝播。本修正で paren 経路の `var->base_deref_size = 8` は設定するが、
- *     subscript 結果 `(*pia)[0]` を更に `*` で deref するときの sizing 連鎖がデータポインタ
- *     要素について int (4B) load にならない (関数ポインタ要素 (a)(b) は呼び出し時に正しく
- *     bl になるため OK)。 */
+ * 後続修正 (続き20〜21 で対応):
+ *  - `typedef BinOp OpArr3[3]` の typedef_info を「is_array=1, sizeof_size=8*N」で登録するよう
+ *    parser.c / decl.c / sizeof 経路を改修 (typedef_pointer_element_array_sizeof.c で網羅)。
+ *  - データポインタ要素配列 (`IP (*pia)[3]`) の `*(*pia)[0]` 最終 deref を pointee サイズ
+ *    (int=4) で出すよう、宣言経路で pointer_qual_levels=1 / base_deref_size=pointee を立てて
+ *    build_unary_deref_node で carry する (本 fixture の IP ケースで網羅)。 */
 #include <assert.h>
 
 typedef int (*BinOp)(int, int);
@@ -47,6 +43,19 @@ int main(void) {
   assert((*pb)[0](10, 3) == 13);
   assert((*pb)[1](10, 3) == 7);
   assert((*pb)[2](10, 3) == 30);
+
+  /* (3) typedef int *IP; IP (*pia)[3] (データポインタ配列へのポインタ): 続き21 修正で
+   * `*(*pia)[0]` の最終 deref が pointee サイズ (int=4) で出力されるようになった。
+   * 直接比較 `== 100` も型情報が int で渡り正しく動く。 */
+  typedef int *IP;
+  int x = 100, y = 200, z = 300;
+  IP arr[3] = { &x, &y, &z };
+  IP (*pia)[3] = &arr;
+  assert(*(*pia)[0] == 100);
+  assert(*(*pia)[1] == 200);
+  assert(*(*pia)[2] == 300);
+  int v = *(*pia)[0];   /* 代入経路も従来通り */
+  assert(v == 100);
 
   return 0;
 }

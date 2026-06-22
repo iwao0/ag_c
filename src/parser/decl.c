@@ -3540,12 +3540,24 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          *   (b) `BinOp (*pa)[N]` / `typedef int *IP; IP (*pa)[N]` 形式: base_is_pointer
          * これがないと (*pa)[i] の deref が 4B (ldrsw) で出力され、ポインタを下位 4B だけ
          * load して SIGSEGV / 誤値になる。 */
-        int eff_elem = ((g_decl_trailing_func_suffix && is_pointer) || base_is_pointer)
-                           ? 8 : elem_size;
+        int element_is_pointer_paren = ((g_decl_trailing_func_suffix && is_pointer) || base_is_pointer)
+                                           ? 1 : 0;
+        int eff_elem = element_is_pointer_paren ? 8 : elem_size;
         int row_size = paren_array_mul * eff_elem;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, eff_elem, 0, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
-        var->base_deref_size = (short)eff_elem;
+        /* データポインタ要素 (`IP (*pia)[N]`, base_is_pointer のみ): pointer_qual_levels=1 と
+         * base_deref_size=pointee サイズ (= 基底 elem_size、IP なら int=4) を立てて、
+         * `*(*pia)[0]` の最終 deref が pointee サイズで出力されるよう build_subscript_deref
+         * の「要素はポインタ」分岐に乗せる。関数ポインタ要素は call で 8B 値をそのまま使う
+         * ため、bds=8 (= eff_elem) のままで OK (既存挙動)。 */
+        if (base_is_pointer && !g_decl_trailing_func_suffix && elem_size > 0 && elem_size < 8) {
+          var->base_deref_size = (short)elem_size;
+          var->pointer_qual_levels = 1;
+        } else {
+          var->base_deref_size = (short)eff_elem;
+        }
+        (void)element_is_pointer_paren;
         var->outer_stride = row_size;
         /* 多次元 inner (`(*p)[N][M]`): p[i] は [N][M] 全体 (outer_stride)、p[i][j] は
          * 内側 1 行 ([M]) ぶん進む。mid_stride = (積/先頭次元)*elem を設定する。 */
@@ -3568,10 +3580,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * 同サイズ (`typedef long L[3]; L *p`) も elem_size のままで正しい。
          * pointer-to-array typedef (`typedef int (*PA)[3]; PA p`) は td_array_elem_size=0。 */
         int eff_elem = elem_size;
+        int element_is_pointer = 0;
         if (td_array_elem_size_for_this_decl > 0 &&
             td_array_dim_count == 1 &&
             td_array_elem_size_for_this_decl > elem_size) {
           eff_elem = td_array_elem_size_for_this_decl;
+          element_is_pointer = 1;
         }
         int td_count = 1;
         for (int di = 0; di < td_array_dim_count; di++) {
@@ -3580,7 +3594,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         int row_size = td_count * eff_elem;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, eff_elem, 0, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
-        var->base_deref_size = (short)eff_elem;
+        /* 要素がポインタ (pointer-element 配列 typedef + `*`) のとき、base_deref_size には
+         * 「要素 (ポインタ) の pointee サイズ」(= 元の基底型 elem_size、IP なら int=4) を
+         * 設定し、pointer_qual_levels=1 を立てる。これにより build_unary_deref_node の
+         * 配列 decay 経路で pql/bds が carry され、build_subscript_deref の「要素はポインタ」
+         * 分岐に乗って `*(*pia)[0]` の最終 deref が pointee サイズ (int=4) で出力される。 */
+        var->base_deref_size = element_is_pointer ? (short)elem_size : (short)eff_elem;
+        if (element_is_pointer) var->pointer_qual_levels = 1;
         var->outer_stride = row_size;
         if (td_array_dim_count >= 2 && td_array_dims[0] > 0) {
           var->mid_stride = (td_count / td_array_dims[0]) * eff_elem;

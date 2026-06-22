@@ -2905,6 +2905,15 @@ static node_t *build_unary_deref_node(node_t *operand) {
       lvar_t *src = psx_decl_find_lvar_by_offset(((node_lvar_t *)probe)->offset);
       if (src && src->outer_stride > 0 && src->mid_stride == 0 && !src->is_array) {
         node->deref_size = (short)src->elem_size;
+        /* 要素がポインタの配列へのポインタ (`IP (*pia)[3]` / `BinOp (*pa)[3]`): src 側で
+         * pointer_qual_levels=1 と base_deref_size=要素 pointee サイズが立つ。これを ND_DEREF
+         * に carry し、build_subscript_deref の「要素はポインタ」分岐に乗せて `(*pia)[0]` の
+         * 結果を scalar pointer として扱えるようにする。これがないと `*(*pia)[0]` の最終
+         * deref が 8B のままで int (4B) 比較が型ずれする。 */
+        if (src->pointer_qual_levels >= 1 && src->base_deref_size > 0) {
+          node->pointer_qual_levels = src->pointer_qual_levels;
+          node->base_deref_size = src->base_deref_size;
+        }
       }
     } else if (probe && probe->kind == ND_FUNCALL) {
       /* `int (*f())[N]` の `*f()` / `*(f()+k)`: 結果は行 (int[N])。subscript_base_address_of が
