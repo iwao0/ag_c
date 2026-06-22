@@ -954,6 +954,16 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
                    len, name);
     }
   }
+  /* 同名 enum 定数とのコンフリクト検出 (C11 6.7p4)。
+   * `enum E { A = 5 }; int A = 10;` — enum 定数は通常の identifier と同じ名前空間。 */
+  {
+    long long ev;
+    if (psx_ctx_find_enum_const(name, len, &ev)) {
+      psx_diag_ctx(curtok(), "decl",
+                   "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
+                   len, name);
+    }
+  }
   /* C11 6.9.2 / 6.7p4: 同名グローバル変数の重複宣言。型互換性 (type_size + fp_kind +
    * tag_kind + is_array) を確認し、不一致なら E3064。一致なら既存を返して merge する。
    * extern → 非 extern (定義) の場合は is_extern_decl をクリアして通常 data 出力に切り替える。

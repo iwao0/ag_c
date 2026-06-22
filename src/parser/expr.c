@@ -2359,6 +2359,16 @@ static node_t *assign(void) {
   if (is_compound_assign_token(curtok()->kind)) {
     assign_target = hoist_compound_assign_lvalue(assign_target, &lhs_prefix);
   }
+  /* C11 6.5.16p2: 代入演算子の LHS は modifiable lvalue でなければならない。
+   * 関数識別子 (ND_FUNCREF) はそうではない (`f = 5;` 等は非合法)。後段の IR builder で
+   * "ir build/emit failed" になっていたのを、ここで分かりやすい診断にする。
+   * 代入系トークン (`=`/`+=`/`-=`/...) が来ているときだけ check し、それ以外
+   * (関数呼び出し `f(...)` や関数アドレス取得 `&f` 等) は素通し。 */
+  if (assign_target && assign_target->kind == ND_FUNCREF &&
+      (curtok()->kind == TK_ASSIGN || is_compound_assign_token(curtok()->kind))) {
+    psx_diag_ctx(curtok(), "assign",
+                 "関数識別子に代入することはできません (C11 6.5.16p2)");
+  }
   switch (curtok()->kind) {
     case TK_ASSIGN: {
       psx_node_reject_const_assign(assign_target, "=");
@@ -4048,6 +4058,16 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
     tk_expect(')');
   }
   node->nargs = nargs;
+  /* C99/C11 では implicit function declaration は禁止 (C89 では int 戻りで暗黙宣言可)。
+   * `undecl_func()` のように未宣言関数を呼ぶ場合に診断する。clang は default で warning、
+   * `-Werror=implicit-function-declaration` で error。ag_c も warning として扱う。
+   * tok が関数として登録されておらず、グローバル変数 (関数ポインタ) でもないなら未宣言。 */
+  if (!psx_ctx_has_function_name(tok->str, tok->len) &&
+      !psx_find_global_var(tok->str, tok->len)) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, (token_t *)tok,
+                   "関数 '%.*s' は宣言されていません (C99/C11 で implicit declaration は不可)",
+                   tok->len, tok->str);
+  }
   /* C11 6.5.2.2p2: 呼び出しの実引数数は仮引数数と一致 (non-variadic)、
    * または >= 固定引数数 (variadic) でなければならない。
    * 既に登録されている関数のみチェック (未宣言識別子は別エラーで弾かれる)。 */

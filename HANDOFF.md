@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き40: 識別子の名前空間衝突検出）
+最終更新: 2026-06-23（続き41: 追加識別子診断 — 関数代入 / enum 衝突 / 暗黙関数宣言）
 
 ## 現状
-- `make test` = **1048/1048 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-40 で発見した形まですべて消化)。
+- `make test` = **1049/1049 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-41 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,20 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き41）: 追加識別子診断 — 関数代入 / enum 衝突 / 暗黙関数宣言
+ユーザー指示「順番に」を受けて続き40 の延長として 3 件:
+- 関数識別子への代入 `f = 5;` が "ir build/emit failed" 粗エラーで止まっていた。assign 関数で
+  ND_FUNCREF を check し E3064 「関数識別子に代入することはできません」を発する。
+- enum 定数と通常 identifier の名前空間衝突 (`enum E{A=5}; int A=10;` / 逆順) が見逃されて
+  いた。register_toplevel_global_decl で psx_ctx_find_enum_const、enum_const.c で
+  psx_find_global_var / psx_ctx_has_function_name / psx_ctx_find_typedef_name を双方向 check。
+- C99/C11 で禁止の implicit function declaration `undecl_func()` が silently 通過していた。
+  build_unqualified_call で psx_ctx_has_function_name と psx_find_global_var に見つからない
+  場合は W3001 warning を出す (clang は default で warning、`-Werror=implicit-function-declaration`
+  で error)。
+
+`make test`=1049/1049 green。
 
 ## このセッション（続き40）: 識別子の名前空間衝突検出
 ユーザー指示「37 から順に」を受けて続き37〜39 の延長として 4 件を検証・修正:
