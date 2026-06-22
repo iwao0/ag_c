@@ -510,7 +510,8 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     cg_emitf("_%.*s:\n", gv->name_len, gv->name);
     if (gv->init_count > 0 && gv->tag_kind != TK_EOF && !gv->is_array) {
       emit_global_struct_init(gv);
-    } else if (gv->init_count > 0 && gv->is_array && gv->tag_kind != TK_EOF) {
+    } else if (gv->init_count > 0 && gv->is_array && gv->tag_kind != TK_EOF &&
+               !gv->is_tag_pointer) {
       emit_global_struct_array_init(gv);
     } else if (gv->init_count > 0) {
       int elem = gv->deref_size > 0 ? gv->deref_size : 4;

@@ -2144,6 +2144,13 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         ((node_mem_t *)operand)->is_pointer = 0;
       }
     }
+    /* `(void*)0xdeadbeefL` のように整数定数をポインタ型へキャストすると、operand は
+     * folding で ND_NUM のまま返る (ND_PTR_CAST にラップされない経路)。後段の
+     * 「ポインタ変数の非ゼロ整数初期化」検査 (C11 6.5.16.1) が誤発火しないよう、
+     * NUM ノードにフラグを立てて「これはキャスト経由」と通知する。 */
+    if (is_pointer && operand->kind == ND_NUM) {
+      ((node_num_t *)operand)->from_pointer_cast = 1;
+    }
     return operand;
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
@@ -4025,6 +4032,15 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
          * (`int*` なら 4) を base_deref_size に載せて中間次元へ carry する。fp funcptr 配列
          * (base_deref_size=8 を上で設定) とは排他なので未設定時のみ。 */
         if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->pointee_elem_size;
+      }
+      /* グローバル struct ポインタ配列 (`struct P *parr[3]`): 要素は struct ポインタ。
+       * build_subscript_deref の「要素はポインタ」分岐 (pql>=1 && bds>0) に乗せて
+       * `parr[i]->m` の `->` 解決ができるよう pointer_qual_levels=1 / base_deref_size を立てる。
+       * 既存はメンバ struct ポインタ配列 (db98d34) は対応していたがグローバルは漏れていた。
+       * deref_size には pointee struct のサイズを使う (gv->deref_size に入っている)。 */
+      if (gv->tag_kind != TK_EOF && gv->is_tag_pointer) {
+        if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->deref_size;
+        if (addr->pointer_qual_levels == 0) addr->pointer_qual_levels = 1;
       }
       if (gv->outer_stride > 0) {
         if (gv->mid_stride > 0) {

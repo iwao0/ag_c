@@ -1136,6 +1136,7 @@ static const test_case_t test_cases[] = {
     {"probes", "nested_union_designator_ordinal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_union_designator_ordinal.c", 0, 0},
     {"probes", "typedef_pointer_element_array_decl", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_pointer_element_array_decl.c", 0, 0},
     {"probes", "static_assert_in_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_assert_in_struct.c", 0, 0},
+    {"probes", "global_struct_ptr_array_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_ptr_array_subscript.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

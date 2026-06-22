@@ -162,6 +162,10 @@ struct node_num_t {
   // 整数リテラルが long long サフィックス (LL) を持つ。long と long long は同サイズ
   // でも別型 (C11 6.2.5) なので _Generic の型照合で区別する。
   unsigned char int_is_long_long;
+  // 1: この NUM ノードが明示 cast (`(void*)0xdeadbeefL` 等) でポインタ型へ変換された
+  // 結果。folding で ND_NUM に潰されてもキャスト経路を覚えておき、ポインタ変数初期化の
+  // 制約チェック (C11 6.5.16.1) で「キャスト経由なら許容」として扱う。
+  unsigned char from_pointer_cast;
 };
 
 // ローカル変数ノード
