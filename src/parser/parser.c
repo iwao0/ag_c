@@ -816,6 +816,14 @@ node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
 }
 
 node_t **ps_program_from(token_t *start) {
+  /* 新しいコンパイル開始時に、前回のパースが残した has_init フラグを既存グローバル変数で
+   * クリアする。これは「同一プロセス内で複数回 ps_program_from を呼ぶ」ユニットテスト用の
+   * リセット (実コンパイルは 1 ファイル 1 プロセスなので影響なし)。これがないと前回パース
+   * の `int g=1;` の has_init=1 が次回パースの `int g=1;` の register 時にすでに立っていて、
+   * apply_toplevel_object_initializer の重複初期化チェックが誤って発火する。 */
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    gv->has_init = 0;
+  }
   return ps_program_ctx(NULL, start);
 }
 
@@ -932,6 +940,29 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   if (is_extern_decl) {
     global_var_t *existing = find_global_var_by_name(name, len);
     if (existing) return existing;
+  }
+  /* C11 6.9.2: 同名グローバル変数の重複宣言。tentative def 同士 (両方初期化子なし) は
+   * merge して 1 つの定義として扱う。両方初期化があれば apply_toplevel_object_initializer
+   * の `=` 検出時にエラー (has_init=1 を 2 度立てる側で診断)。型不一致は C11 6.7p4 違反で
+   * ここでエラー報告。
+   * extern 宣言は上で先に処理済み (`extern int g; int g = 5;` 等は extern 後の定義が新規
+   * 登録するように見えるが、`is_extern_decl` 経路で existing を返している)。 */
+  int new_type_size = has_incomplete_array ? 0
+                       : (is_array ? ((is_ptr ? 8 : g_toplevel_decl_elem_size) * arr_total)
+                                   : (is_ptr ? 8 : g_toplevel_decl_elem_size));
+  global_var_t *existing = find_global_var_by_name(name, len);
+  if (existing && !existing->is_extern_decl) {
+    /* 型の互換チェック (簡易: type_size + fp_kind + tag_kind + is_array)。
+     * 不一致なら C11 6.7p4 違反。一致なら既存を返して merge する。 */
+    if (existing->type_size != new_type_size ||
+        existing->fp_kind != (unsigned char)g_toplevel_decl_fp_kind ||
+        existing->tag_kind != g_toplevel_decl_tag_kind ||
+        (unsigned)existing->is_array != (unsigned)is_array) {
+      psx_diag_ctx(curtok(), "decl",
+                   "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
+                   len, name);
+    }
+    return existing;
   }
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->name = name;
@@ -1685,6 +1716,14 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
 
 static void apply_toplevel_object_initializer(global_var_t *gv) {
   if (!tk_consume('=')) return;
+  /* C11 6.9.2: 同名グローバル変数の二重定義検出。register_toplevel_global_decl が merge して
+   * 既存 gvar を返すため、`int g = 1; int g = 2;` の 2 度目の `=` 時には gv->has_init が
+   * すでに 1 になっている。 */
+  if (gv->has_init) {
+    psx_diag_ctx(curtok(), "decl",
+                 "グローバル変数 '%.*s' は重複定義されています (C11 6.9.2)",
+                 gv->name_len, gv->name);
+  }
   /* ファイルスコープの複合リテラル初期化子 `T g = (T){...};` は `T g = {...};` と
    * 等価 (C11 6.5.2.5)。先頭の `(型)` を読み飛ばして既存の brace 初期化経路に渡す。
    * `)` の直後が `{` であることを先読みして複合リテラルだけを対象にする。
@@ -2537,6 +2576,39 @@ token_kind_t psx_consume_type_kind(void) {
     }
     // 後置 cv 修飾子（int const, volatile int const など）は同じ形なので集約。
     if (try_consume_post_cv_qualifier(k)) continue;
+    /* C11 6.7p1: declaration-specifiers の順序は任意。型指定子の後ろに storage class
+     * (static / extern / auto / register / inline / _Noreturn / _Thread_local / _Alignas) が
+     * 来てもよい (`int static x = 5;` 等)。ここで遭遇したら skip_cv_qualifiers と同じ要領で
+     * 1 つ消費して flag を立てループ継続。skip_cv_qualifiers を直接呼ぶと先頭で reset され
+     * 既に立っている qualifier 情報 (const/volatile/atomic) を失うため、ここでは OR 的に
+     * 1 トークンずつ処理する。 */
+    if (psx_is_decl_prefix_token(k)) {
+      /* storage class の重複・併用検出 (C11 6.7.1p2): static / extern / auto / register は
+       * 高々 1 個。型指定子の前 (skip_cv_qualifiers) ですでに 1 つ立っていたら 2 つ目で error。 */
+      int is_new_storage = (k == TK_STATIC || k == TK_EXTERN ||
+                            k == TK_AUTO || k == TK_REGISTER);
+      if (is_new_storage && (g_last_decl_is_static || g_last_decl_is_extern)) {
+        psx_diag_ctx(curtok(), "decl",
+                     "storage class 指定子は1つまでです (C11 6.7.1p2)");
+      }
+      if (k == TK_CONST)        g_last_type_const_qualified = 1;
+      else if (k == TK_VOLATILE) g_last_type_volatile_qualified = 1;
+      else if (k == TK_STATIC)   g_last_decl_is_static = 1;
+      else if (k == TK_EXTERN)   g_last_decl_is_extern = 1;
+      else if (k == TK_THREAD_LOCAL) g_last_type_thread_local = 1;
+      else if (k == TK_ATOMIC) {
+        /* `int _Atomic(int) x` 形式は ATOMIC 後に `(` が来る (型指定子)。型指定子の後の
+         * 単独 `_Atomic` は qualifier 形 (`int _Atomic x`)。 */
+        if (curtok()->next && curtok()->next->kind == TK_LPAREN) break;
+        g_last_type_atomic = 1;
+      }
+      /* TK_AUTO / TK_REGISTER / TK_INLINE / TK_NORETURN / TK_ALIGNAS(...) は flag を立てずに
+       * 単純消費。TK_ALIGNAS は `(value)` 形のため複雑だが、型指定子の後の出現は稀 (実例は
+       * `int _Alignas(8) x` で C11 では基本的に typespec の前)。ここでは省略 — 必要ならば
+       * 既存の skip_cv_qualifiers の TK_ALIGNAS 分岐を引用する。 */
+      set_curtok(curtok()->next);
+      continue;
+    }
     break;
   }
 

@@ -1036,6 +1036,7 @@ static const test_case_t test_cases[] = {
     {"probes", "file_scope_ptr_from_array_compound", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_ptr_from_array_compound.c", 0, 0},
     {"probes", "function_redecl_signature", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_redecl_signature.c", 0, 0},
     {"probes", "function_duplicate_def", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/function_duplicate_def.c", 0, 0},
+    {"probes", "decl_spec_order_and_dup", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/decl_spec_order_and_dup.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},

@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き38: 関数の重複定義検出）
+最終更新: 2026-06-23（続き39: declaration-specifier 順序自由 + storage class 重複 + グローバル重複定義）
 
 ## 現状
-- `make test` = **1046/1046 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-38 で発見した形まですべて消化)。
+- `make test` = **1047/1047 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-39 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,30 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き39）: declaration-specifier 順序自由 + storage class 重複 + グローバル重複定義
+ユーザーの問題提起「同じ名前の変数のチェックと、static/const/volatile を複数同じものを書く、
+違う順序で書く、誤った組み合わせで書く」を契機に検証。3 件の関連バグを発見・修正:
+
+1. **順序自由** (C11 6.7p1): `int static x = 5` のように「型 → storage class 順」が E3016
+   で拒否されていた。psx_consume_type_kind のループに「型指定子後の storage class / qualifier
+   を消費し flag を立てる」分岐を追加。`const static int`、`int static const`、
+   `unsigned static int` 等を許容。
+2. **storage class 重複検出** (C11 6.7.1p2): `int static static x`、`static int static`、
+   `static int extern` 等の interleaved 重複/併用が見逃されていた (skip_cv_qualifiers の
+   storage_count は単発呼び出し内のみ)。上記ループ内分岐で g_last_decl_is_static /
+   is_extern を見て 2 度目で E3064。
+3. **グローバル変数の重複定義** (C11 6.9.2 / 6.7p4): `int g=1; int g=2;` の重複定義や
+   `int g; double g;` の型違いが silently 通過していた (後段でアセンブラの duplicate symbol
+   で気づくのみ)。register_toplevel_global_decl で同名既存を merge (型互換チェック付き)、
+   apply_toplevel_object_initializer で `=` 消費時に既存 has_init を検出して E3064。
+   tentative def 同型 (`int g; int g;`) は合法 merge。
+
+副次: ps_program_from に「既存 global var の has_init をクリア」を追加。同一プロセス内で
+複数回 ps_program_from を呼ぶユニットテストで前回パースの has_init が残らないように
+(実コンパイルは 1 ファイル 1 プロセスなので影響なし)。
+
+`make test`=1047/1047 green。
 
 ## このセッション（続き38）: 関数の重複定義検出
 ユーザーの問題提起「同じ名前の関数が宣言、定義されている場合は検査されているか」を契機に検証。
