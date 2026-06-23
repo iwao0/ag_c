@@ -149,26 +149,26 @@ B1 軽量 (00145/00152/00212) は **続き79-81 で完了**。次は **B2 中規
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き79 後): 200/220 = 90.9% pass
+### c-testsuite 現状 (続き81 後): 202/220 = 91.8% pass
 
 ```
 Total:           220
-Pass:            200
-Fail (compile):  13
+Pass:            202
+Fail (compile):  12
 Fail (assemble): 0
 Fail (runtime):  2
-Fail (stdout):   5
+Fail (stdout):   4
 ```
 
-### 失敗テスト分類 (20 件、うち 5 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (19 件、うち 5 件は GNU 拡張で skip 対象)
 
-**Compile fail (13 件)**: 00089, 00121, 00124(*), 00129, 00151, 00152, 00200, 00201, 00202,
+**Compile fail (12 件)**: 00089, 00121, 00124(*), 00129, 00151, 00200, 00201, 00202,
 00204, 00209, 00210, 00213, 00214, 00216
 
 **Runtime fail (2 件)**: 00124(*), 00151(?)
 (* 00124 は compile も runtime も失敗カウントに含まれる可能性、要再確認)
 
-**Stdout mismatch (5 件)**: 00189, 00205, 00206, 00212, 00219
+**Stdout mismatch (4 件)**: 00189, 00205, 00206, 00219
 
 **GNU 拡張で skip 対象 (5 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
 - 00206 (`#pragma push_macro` / `pop_macro`)
@@ -177,7 +177,7 @@ Fail (stdout):   5
 - 00214 (`__builtin_expect` + statement expression)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **15 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **13 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 
