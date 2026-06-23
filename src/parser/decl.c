@@ -3645,6 +3645,24 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
+    /* 関数内ローカル関数プロトタイプ宣言 (`int f1(char *);`): C11 6.2.2p5 で暗黙 extern。
+     * declarator が non-pointer の関数 (`(...)` 付きで `*` なし) のとき、ローカル変数として
+     * 登録せず宣言を読み飛ばすだけにする。グローバル関数テーブルには別途関数定義
+     * (`int f1(char *p){...}`) で登録されているので、呼び出し時は通常の関数呼び出し経路。
+     * 関数ポインタ変数 (`int (*fp)(char *);`) は is_pointer=1 なので除外。 */
+    if (tok && g_decl_trailing_func_suffix && !is_pointer) {
+      /* 初期化子は許されないが防御的に skip、次の declarator または `;` へ。 */
+      if (curtok()->kind == TK_ASSIGN) {
+        set_curtok(curtok()->next);
+        psx_expr_assign();
+      }
+      if (curtok()->kind == TK_COMMA) {
+        set_curtok(curtok()->next);
+        continue;
+      }
+      tk_expect(';');
+      return init_chain ? init_chain : psx_node_new_num(0);
+    }
     /* typedef が配列で base もポインタ (pointer-element 配列 typedef: `typedef IP IPA[3]`
      * など) のケース: declarator に `*` を追加していない (= IPA arr / OpArr3 arr) なら宣言は
      * 配列であり、is_pointer は本来立つべきではない (`IP arr[3]` 相当 = `int *arr[3]`)。

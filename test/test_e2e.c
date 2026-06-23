@@ -1074,6 +1074,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_struct_member_multidim_struct_array_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_member_multidim_struct_array_designator.c", 0, 0},
     {"probes", "global_struct_member_multidim_nested_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_member_multidim_nested_designator.c", 0, 0},
     {"probes", "local_struct_member_multidim_nested_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_struct_member_multidim_nested_designator.c", 0, 0},
+    {"probes", "local_function_prototype", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_function_prototype.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},
