@@ -286,7 +286,9 @@ static void cg_emit_int_directive(int size, long long value) {
 static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind_t fp_kind,
                                            int ts, long long v, double fv) {
   if (sym && sym_len < 0) {
-    cg_emitf("  .quad %s\n", sym);
+    /* 文字列リテラル要素: `.LC<n>` ラベル参照。`"abc" + 2` 由来の +offset があれば併記。 */
+    if (v != 0) cg_emitf("  .quad %s+%lld\n", sym, v);
+    else        cg_emitf("  .quad %s\n", sym);
   } else if (sym && sym_len > 0) {
     /* `&data[n]` 由来は v にバイトオフセットを持つ (`_data+off`)。 */
     if (v != 0) cg_emitf("  .quad _%.*s+%lld\n", sym_len, sym, v);
@@ -524,8 +526,12 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
         char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
         int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
         if (sym_i && sym_i_len < 0) {
-          /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。 */
-          cg_emitf("  .quad %s\n", sym_i);
+          /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。
+           * `const char *arr[] = {"abc" + 2, ...}` のような +offset は init_values[i] に
+           * バイトオフセットが入っているので併記する。 */
+          long long soff = gv->init_values ? gv->init_values[i] : 0;
+          if (soff != 0) cg_emitf("  .quad %s+%lld\n", sym_i, soff);
+          else           cg_emitf("  .quad %s\n", sym_i);
           continue;
         }
         if (sym_i && sym_i_len > 0) {
