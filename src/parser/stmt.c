@@ -608,11 +608,18 @@ static node_t *parse_stmt_return(void) {
  * を警告する (clang -Wparentheses 相当)。意図的に代入を使う場合 (`while ((c = getchar()) != EOF)`
  * のような形) は条件式の top が比較演算 (ND_NE 等) なので発火しない。
  * 注: ag_c はパース時に括弧情報を残さないため、`if ((x = 10))` のように括弧で囲んだ
- * 意図的形でも警告が出る (clang は括弧で抑制するが ag_c は区別できない)。 */
+ * 意図的形でも警告が出る (clang は括弧で抑制するが ag_c は区別できない)。
+ * 同様に `if (a, b)` のような条件式での comma 演算子は `&&` のタイプミスが典型なので警告
+ * (clang -Wunused-value 相当)。 */
 static void warn_if_assign_as_condition(node_t *cond, const char *ctx) {
-  if (cond && cond->kind == ND_ASSIGN) {
+  if (!cond) return;
+  if (cond->kind == ND_ASSIGN) {
     diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
                    "%s の条件に代入式を使っています ('==' のタイプミスの可能性)",
+                   ctx);
+  } else if (cond->kind == ND_COMMA) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                   "%s の条件にカンマ演算子を使っています ('&&' のタイプミスの可能性)",
                    ctx);
   }
 }
