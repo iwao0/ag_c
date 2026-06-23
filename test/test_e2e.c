@@ -1044,6 +1044,7 @@ static const test_case_t test_cases[] = {
     {"probes", "narrowing_and_self_compare", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/narrowing_and_self_compare.c", 0, 0},
     {"probes", "assign_overflow_dangling", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/assign_overflow_dangling.c", 0, 0},
     {"probes", "comma_in_condition", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/comma_in_condition.c", 0, 0},
+    {"probes", "switch_fallthrough", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/switch_fallthrough.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},

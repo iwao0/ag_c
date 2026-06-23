@@ -476,6 +476,30 @@ static node_t *stmt_internal(void) {
   return node;
 }
 
+/* switch fallthrough 検出のため、文 (ND_CASE/ND_DEFAULT/ND_BLOCK) の末尾が
+ * break/return/continue/goto 等で終端しているかを再帰的に判定する。
+ * - ND_CASE / ND_DEFAULT: 子の body (rhs) を再帰確認する。
+ * - ND_BLOCK: body 配列の最後の非 NULL 要素を再帰確認する。
+ * if/while 等の制御文は両分岐すべて終端する保証が無いと真にできないため非対応 (false 扱い)。 */
+static int stmt_tail_terminates(node_t *n) {
+  if (!n) return 0;
+  switch (n->kind) {
+    case ND_RETURN: case ND_BREAK: case ND_CONTINUE: case ND_GOTO:
+      return 1;
+    case ND_CASE: case ND_DEFAULT:
+      return stmt_tail_terminates(n->rhs);
+    case ND_BLOCK: {
+      node_block_t *blk = (node_block_t *)n;
+      if (!blk->body) return 0;
+      node_t *last = NULL;
+      for (int i = 0; blk->body[i]; i++) last = blk->body[i];
+      return stmt_tail_terminates(last);
+    }
+    default:
+      return 0;
+  }
+}
+
 static node_t *parse_stmt_block(void) {
   tk_consume('{');
   psx_ctx_enter_block_scope();
@@ -486,6 +510,11 @@ static node_t *parse_stmt_block(void) {
   int cap = 16;
   node->body = calloc(cap, sizeof(node_t*));
   int prev_terminates = 0;
+  /* このブロック内で case/default を一度でも見たか。switch fallthrough 警告は
+   * 「直前文が case 本体の続きで、かつ非終端のまま次の case に至る」場合のみ発火させる
+   * ため、最初の case 出現前のセットアップ文 (`int tmp = ...; switch(x){...}` の中の
+   * decl 等) には反応させない。 */
+  int seen_case_in_block = 0;
   while (!tk_consume('}')) {
     // #pragma pack マーカーはブロック内でも透過的に処理（AST には載せない）。
     if (psx_try_consume_pragma_pack_marker()) continue;
@@ -495,13 +524,29 @@ static node_t *parse_stmt_block(void) {
                      "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
       prev_terminates = 0;
     }
+    /* switch fallthrough (clang -Wimplicit-fallthrough 相当):
+     * 既に case を出した後で、次の case/default に到達しようとしていて、
+     * 直前文が break/return/continue/goto で終わっていないなら警告。
+     * `case 0: case 1: ...` のように case が連続するのは内側で recursive にネスト
+     * (case 0 の rhs が case 1) されるため、外側ブロックには現れず誤検出しない。 */
+    if (seen_case_in_block && !prev_terminates &&
+        (curtok()->kind == TK_CASE || curtok()->kind == TK_DEFAULT) &&
+        psx_switch_has_ctx()) {
+      diag_warn_tokf(DIAG_WARN_PARSER_SWITCH_FALLTHROUGH, curtok(),
+                     "%s", diag_warn_message_for(DIAG_WARN_PARSER_SWITCH_FALLTHROUGH));
+    }
     if (i >= cap - 1) {
       cap = pda_next_cap(cap, i + 2);
       node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
     }
     node->body[i] = block_item();
     node_kind_t k = node->body[i]->kind;
-    prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
+    /* prev_terminates は浅い終端 (このブロックの直接要素が break/return 等) と、
+     * case/default 本体の末尾終端を合わせて反映する。前者は unreachable 検出に、
+     * 後者は次反復での fallthrough 抑制に効く。 */
+    prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO) ||
+                      ((k == ND_CASE || k == ND_DEFAULT) && stmt_tail_terminates(node->body[i]));
+    if (k == ND_CASE || k == ND_DEFAULT) seen_case_in_block = 1;
     i++;
   }
   node->body[i] = NULL;

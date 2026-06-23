@@ -24,6 +24,7 @@ static const diag_warn_entry_t k_warn_entries[] = {
     {DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE, "W3014", "parser.shift_out_of_range"},
     {DIAG_WARN_PARSER_DIVIDE_BY_ZERO, "W3015", "parser.divide_by_zero"},
     {DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL, "W3016", "parser.implicit_function_declaration"},
+    {DIAG_WARN_PARSER_SWITCH_FALLTHROUGH, "W3017", "parser.switch_fallthrough"},
 };
 
 static const diag_warn_entry_t *find_warn_entry(diag_warn_id_t id) {

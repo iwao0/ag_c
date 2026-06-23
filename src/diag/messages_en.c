@@ -190,6 +190,7 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "shift amount exceeds type width (C11 6.5.7p3 undefined behavior)";
     case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "division/modulo by zero (C11 6.5.5p5 undefined behavior)";
     case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "function is not declared (implicit declaration is invalid in C99/C11)";
+    case DIAG_WARN_PARSER_SWITCH_FALLTHROUGH: return "switch case does not terminate (break/return/etc.) and falls through to the next case";
   }
   return NULL;
 }
