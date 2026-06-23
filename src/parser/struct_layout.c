@@ -505,9 +505,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
            *     「内側次元の総スカラ数」として算出するのに使う。これがないと多次元配列で
            *     `[N]=` のジャンプ幅が 1 slot ぶんしか進まず `[2]=` が slot 6 でなく
            *     slot 2 にジャンプし他要素を上書きしていた (designator nested バグ)。
-           * tag メンバはスカラ単位での slot 計算が別経路 (global_flat_slot_count) なので
-           * 対象外。 */
-          if (member_tag_kind == TK_EOF) {
+           * (3) struct タグ多次元配列メンバ (`struct C rows[3][2]`): 外側 `[N]=` の
+           *     elem_slots を `struct slot * 内側次元の積` で計算するため sub_dims が必要。
+           *     これがないと外側 designator が内側次元を無視して誤ジャンプ。
+           * tag ポインタメンバはスカラ単位の slot 計算で対象外 (member_is_ptr で除外)。 */
+          if (!member_is_ptr) {
             psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
                                             member_name, member_len,
                                             arr_dims_buf, arr_dim_count);

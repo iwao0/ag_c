@@ -1270,8 +1270,10 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
    * - char (`char c[2][2][3]`): 内側 1D を文字列展開する (sub_ndim==1 で is_array=0)。
    * - 非 char (`int x[3][3]`): 内側次元を ndim-1 として再帰し、`[N]=` 経路では
    *   sub_dims から内側 1 要素の slot 数を計算する。
+   * - struct タグ配列 (`struct C rows[3][2]`): 最外 `[N]=` の elem_slots を
+   *   `struct slot * 内側次元の積` で計算するために sub_dims を保持する。
    * 2 次元以上のみ (1D は sub_dims 不要、従来の array_len で運用)。 */
-  if (mi->tag_kind == TK_EOF && mi->arr_ndim >= 2) {
+  if (mi->arr_ndim >= 2) {
     int n = mi->arr_ndim - 1;
     if (n > 8) n = 8;
     for (int i = 0; i < n; i++) c.sub_dims[i] = mi->arr_dims[i + 1];
@@ -1424,6 +1426,11 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
          * なので elem_slots=1 のまま (`is_tag_pointer` で除外)。 */
         elem_slots = global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
         if (elem_slots < 1) elem_slots = 1;
+        /* 多次元 struct タグ配列メンバ (`struct C rows[3][2]`): 1 要素 (rows[i]) は
+         * 内側次元 (sub_dims[*]) の積 ぶんだけ struct slot が並ぶ。`[N]=` ジャンプは
+         * `struct slot * 内側次元の積` で進める必要がある (これがないと外側 designator が
+         * 内側次元を無視し誤ジャンプ。99 が rows[2][0] でなく rows[1][0] に書かれていた)。 */
+        for (int i = 0; i < ctx.sub_ndim; i++) elem_slots *= ctx.sub_dims[i];
       } else if (ctx.sub_ndim >= 1) {
         /* 多次元配列メンバ (非タグ): 1 要素 = 内側 sub_ndim 次元の総スカラ数。
          * `int x[3][3]` で sub_dims={3} なら elem_slots=3、`[2]=` は slot 6 へ。
