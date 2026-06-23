@@ -105,6 +105,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_bool = 0;
     int member_is_unsigned = 0;
     int member_is_ptr_typedef = 0;
+    int member_typedef_array_first_dim = 0;
+    int member_typedef_array_dim_count = 0;
+    int member_typedef_array_dims[8] = {0};
     if (psx_ctx_is_type_token(curtok()->kind)) {
       is_signed_type = (curtok()->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
@@ -184,6 +187,16 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * ようにする。修正前は ptr-typedef で elem_size のままにしていたため type_size=4
          * (関数戻り型 int) で 32bit `str w` に潰れ呼び出し時 SIGSEGV していた。 */
         if (_ti.is_pointer) member_is_ptr_typedef = 1;
+        /* 配列 typedef (`typedef int Row[4]; struct S { Row r; }`): typedef が array なら
+         * 後段の psx_parse_member_array_suffixes_ex は inline [N] が無いため 1 を返す。
+         * 多次元 (`typedef int Row[3][2]; struct { Row m; }`) も dims[] 経由で復元する。 */
+        if (_ti.is_array && _ti.array_dim_count > 0) {
+          member_typedef_array_first_dim = _ti.array_first_dim;
+          member_typedef_array_dim_count = _ti.array_dim_count;
+          for (int i = 0; i < _ti.array_dim_count && i < 8; i++) {
+            member_typedef_array_dims[i] = _ti.array_dims[i];
+          }
+        }
       }
       if (td_tag != TK_EOF) {
         member_tag_kind = td_tag;
@@ -304,6 +317,19 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                                         &arr_dim_count, &arr_first_dim,
                                                         arr_dims_buf, 8);
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
+      /* 配列 typedef + 宣言子に追加 `[N]` なし → typedef の次元情報を取り込む。
+       * (両方ある形 `typedef int R[3]; struct{R r[5];}` は配列要素型が typedef になる
+       * ため複雑で、ここでは追加 [N] が無い形のみサポートする。) */
+      if (member_typedef_array_dim_count > 0 && arr_dim_count == 0 && !is_flex_array) {
+        arr_dim_count = member_typedef_array_dim_count;
+        arr_first_dim = member_typedef_array_first_dim;
+        for (int i = 0; i < arr_dim_count && i < 8; i++) {
+          arr_dims_buf[i] = member_typedef_array_dims[i];
+        }
+        int total_count = 1;
+        for (int i = 0; i < arr_dim_count; i++) total_count *= arr_dims_buf[i];
+        arr_size = total_count;
+      }
       /* 宣言子に `*` がついた場合 (head.is_ptr) と、typedef 自体がポインタ型の場合
        * (member_is_ptr_typedef) の両方を「メンバはポインタ」として扱う。typedef ポインタは
        * 宣言子に `*` が現れないため head.is_ptr を立てておくと扱いが揃う。 */
