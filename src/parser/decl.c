@@ -1429,14 +1429,60 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           }                                                                                        \
           flat = (_row + 1) * inner_len; /* 行末まで進める (残りは struct zero-fill) */            \
         } while (0)
+        /* 多次元 struct タグ配列メンバ (`struct C rows[3][2]`): 1 要素は struct 値で
+         * parse_struct_initializer 経由で初期化する必要がある。スカラ要素 (int 等) は
+         * 従来どおり parse_scalar_brace_initializer + flat slot に書き込む。 */
+        int is_struct_tag_elem = ((member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
+                                   && !member_is_tag_pointer);
         if (!tk_consume('}')) {
           for (;;) {
+            /* 外側 `[N]=` designator (C11 6.7.9p6): 行 N へジャンプ。 */
+            if (curtok()->kind == TK_LBRACKET) {
+              set_curtok(curtok()->next);
+              long long ridx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+              tk_expect(']');
+              tk_expect('=');
+              if (ridx < 0) ridx = 0;
+              flat = (int)ridx * inner_len;
+            }
             if (tk_consume('{')) {
               int row = flat / inner_len;
               flat = row * inner_len;            /* 行頭へスナップ */
               int k = 0;
               if (!tk_consume('}')) {
                 for (;;) {
+                  /* 内側 `[M]=` designator: 行内の列 M へジャンプ。 */
+                  if (curtok()->kind == TK_LBRACKET) {
+                    set_curtok(curtok()->next);
+                    long long cidx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+                    tk_expect(']');
+                    tk_expect('=');
+                    if (cidx < 0) cidx = 0;
+                    k = (int)cidx;
+                    flat = row * inner_len + k;
+                  }
+                  if (is_struct_tag_elem && curtok()->kind == TK_LBRACE) {
+                    /* struct 要素 `{...}`: parse_struct_initializer で 1 slot ぶん解釈する。
+                     * nested lvar の offset / size / tag を 1 要素に絞ることで designator
+                     * (`.val=99`) も positional もそのまま解決できる。 */
+                    lvar_t nested = {0};
+                    nested.offset = owner->offset + member_offset + flat * elem_size;
+                    nested.size = elem_size;
+                    nested.elem_size = elem_size;
+                    nested.tag_kind = member_tag_kind;
+                    nested.tag_name = member_tag_name;
+                    nested.tag_len = member_tag_len;
+                    node_t *snode = parse_struct_initializer(&nested);
+                    if (snode) {
+                      if (!init_chain) init_chain = snode;
+                      else init_chain = psx_node_new_binary(ND_COMMA, init_chain, snode);
+                    }
+                    flat++; k++;
+                    if (tk_consume('}')) break;
+                    tk_expect(',');
+                    if (tk_consume('}')) break;
+                    continue;
+                  }
                   node_t *val = parse_scalar_brace_initializer();
                   /* `{{"ab"},{"cd"}}` 形式: 内側 brace 内の文字列を行幅へ展開して
                    * 内側 brace を抜ける (k 進度より flat を優先)。 */
