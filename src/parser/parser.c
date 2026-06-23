@@ -1345,6 +1345,31 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
   gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array,
                       gv->is_tag_pointer ? 1 : 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
+  /* グローバル多次元配列 (`int g[3][2]` 等) のトップレベル ctx に sub_dims を埋める。
+   * 内側 designator (`{[2] = {[1] = 99}}`) の elem_slots 計算で「外側 `[N]=` は内側次元の総
+   * スカラ数 * N 進める」必要がある (続き13 で struct メンバ多次元配列に対応済みだが、その
+   * 経路は gbrace_ctx_from_member 経由。トップレベル global 多次元配列は本関数が ctx を
+   * 初期化するためここでも sub_dims を埋める必要がある)。
+   * gv の outer_stride / mid_stride / extra_strides の隣接ペアを割って各 dim を算出。
+   * 1D 配列 (outer_stride==deref_size) は sub_ndim=0 (従来挙動)。 */
+  if (gv->is_array && gv->tag_kind == TK_EOF && gv->deref_size > 0
+      && gv->outer_stride > gv->deref_size) {
+    int strides[10];
+    int n_strides = 0;
+    strides[n_strides++] = gv->outer_stride;
+    if (gv->mid_stride > 0) strides[n_strides++] = gv->mid_stride;
+    for (int i = 0; i < gv->extra_strides_count && i < 5; i++) {
+      if (gv->extra_strides[i] > 0) strides[n_strides++] = gv->extra_strides[i];
+    }
+    strides[n_strides++] = gv->deref_size;
+    int n_sub = n_strides - 1;
+    if (n_sub > 8) n_sub = 8;
+    for (int i = 0; i < n_sub; i++) {
+      ctx.sub_dims[i] = strides[i] / strides[i + 1];
+    }
+    ctx.sub_ndim = n_sub;
+    ctx.elem_size = gv->deref_size;
+  }
   psx_gbrace_flat(gv, cap, start_idx, ctx);
 }
 
