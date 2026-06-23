@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き92: c-testsuite 00089）
+最終更新: 2026-06-23（続き93: c-testsuite 00129）
 
 ## 現状
-- `make test` = **1100/1100 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **213/220 = 96.8% pass**。
-- 続き92: **00089** (`go()()->zerofunc()` 連鎖呼び出し)。
+- `make test` = **1101/1101 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **214/220 = 97.3% pass**。
+- 続き93: **00129** (typedef 名と同名ラベル `s:` の shadowing)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1100/1100 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 213/220 green を確認 (= 前回セッションのベースライン)。
+3. **`make test`** で 1101/1101 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 214/220 green を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -22,7 +22,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の 10 件を順次修正していく。
-B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92 で完了**。次は **00129** など B3 から。
+B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93 で完了**。次は **00200** など B3 から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -55,8 +55,8 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 **B3. 大規模 (重い、影響範囲広い)**
 - **00089**: ✅ 続き92 (`func_returning_funcptr_chain`) — `go()()->zerofunc()` の
   2 段目 funcall 戻り tag 伝播 + typedef 関数ポインタ戻り型の記録。
-- **00129**: `typedef struct s s; ... goto s; struct s s; { int s; ... }` — struct/typedef/label
-  shadowing + マクロ。
+- **00129**: ✅ 続き93 (`typedef_label_shadow`) — typedef 名 `s` と同名ラベル `s:` を
+  宣言より先にラベルとして解釈。
 - **00200**: シフトの型変換の網羅テスト (長大マクロ展開)。
 - **00204**: 527 行の ARM64 ABI 網羅テスト (struct 値渡し・引数渡し各種)。
 - **00205** (stdout): J interpreter snippet の long 大量初期化 (PT struct 配列)。
@@ -156,20 +156,20 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き92 後): 213/220 = 96.8% pass
+### c-testsuite 現状 (続き93 後): 214/220 = 97.3% pass
 
 ```
 Total:           220
-Pass:            213
-Fail (compile):  4
+Pass:            214
+Fail (compile):  3
 Fail (assemble): 0
 Fail (runtime):  0
 Fail (stdout):   3
 ```
 
-### 失敗テスト分類 (7 件、うち 2 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (6 件、うち 2 件は GNU 拡張で skip 対象)
 
-**Compile fail (4 件)**: 00129, 00200,
+**Compile fail (3 件)**: 00200,
 00204, 00216
 
 **Stdout mismatch (3 件)**: 00205, 00206, 00219
@@ -178,7 +178,7 @@ Fail (stdout):   3
 - 00206 (`#pragma push_macro` / `pop_macro`)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **7 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **6 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 
