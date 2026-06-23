@@ -2488,6 +2488,46 @@ static node_t *bit_and(void) {
   return node;
 }
 
+/* 符号付き整数と符号なし整数の比較を検出する (clang -Wsign-compare 相当)。
+ * C11 6.3.1.8 通常算術変換のうち、signed 側が unsigned に変換される場合のみ警告する。
+ *
+ * 抑制条件:
+ * - 浮動小数・ポインタは符号概念がないので対象外。
+ * - 整数昇格 (C11 6.3.1.1): char/short (signed/unsigned) は int に昇格されるため、
+ *   narrow unsigned は実質 signed int として扱う (size<4 を signed と見なす)。
+ *   例: `unsigned char vs int` は両辺とも signed int で比較 → 警告しない。
+ * - 通常算術変換: signed 側のサイズが unsigned 側より厳密に大きい場合、signed は
+ *   unsigned の全値を表現できるため unsigned 側が signed に変換される (= 安全)。
+ *   例: `long s vs unsigned int u` (8>4) は signed 比較 → 警告しない。
+ * - 非負整数リテラル: `u == 5` は値が unsigned に変換されても変化なし → 警告しない。 */
+static int sign_cmp_effective_unsigned(node_t *n) {
+  if (!n) return 0;
+  if (ps_node_is_pointer(n)) return 0;
+  if (n->fp_kind != TK_FLOAT_KIND_NONE) return 0;
+  /* size<4: integer promotion で signed int になる (unsigned char/short も含む) */
+  if (ps_node_type_size(n) < 4) return 0;
+  return ps_node_is_unsigned(n) ? 1 : 0;
+}
+static int sign_cmp_effective_size(node_t *n) {
+  int sz = n ? ps_node_type_size(n) : 4;
+  return sz < 4 ? 4 : sz;
+}
+static void warn_if_sign_compare(node_t *lhs, node_t *rhs, const char *op) {
+  if (!lhs || !rhs) return;
+  int lu = sign_cmp_effective_unsigned(lhs);
+  int ru = sign_cmp_effective_unsigned(rhs);
+  if (lu == ru) return;
+  node_t *signed_side = lu ? rhs : lhs;
+  node_t *unsigned_side = lu ? lhs : rhs;
+  /* 非負整数リテラル側はサイズに依らず安全 */
+  if (signed_side->kind == ND_NUM && ((node_num_t *)signed_side)->val >= 0) return;
+  /* signed が unsigned より厳密に幅広なら C11 6.3.1.8 で unsigned→signed 変換、安全 */
+  if (sign_cmp_effective_size(signed_side) > sign_cmp_effective_size(unsigned_side)) return;
+  diag_warn_tokf(DIAG_WARN_PARSER_SIGN_COMPARE, NULL,
+                 "符号付きと符号なしの整数を比較しています ('%s' / 負値が大きな正の値として扱われる可能性)",
+                 op);
+}
+
 /* 自己比較 (`x == x` / `x != x` / `x < x` 等) は常に真または偽。タイプミスの可能性が高い。
  * 両辺が同じ ND_LVAR offset または同じ ND_GVAR 名なら警告 (clang -Wtautological-compare 相当)。 */
 static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
@@ -2516,11 +2556,13 @@ static node_t *equality(void) {
       set_curtok(curtok()->next);
       node_t *rhs = relational();
       warn_if_self_compare(node, rhs, "==");
+      warn_if_sign_compare(node, rhs, "==");
       node = psx_node_new_binary(ND_EQ, node, rhs);
     } else if (curtok()->kind == TK_NEQ) {
       set_curtok(curtok()->next);
       node_t *rhs = relational();
       warn_if_self_compare(node, rhs, "!=");
+      warn_if_sign_compare(node, rhs, "!=");
       node = psx_node_new_binary(ND_NE, node, rhs);
     }
     else return node;
@@ -2532,16 +2574,24 @@ static node_t *relational(void) {
   for (;;) {
     if (curtok()->kind == TK_LT) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_LT, node, shift());
+      node_t *rhs = shift();
+      warn_if_sign_compare(node, rhs, "<");
+      node = psx_node_new_binary(ND_LT, node, rhs);
     } else if (curtok()->kind == TK_LE) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_LE, node, shift());
+      node_t *rhs = shift();
+      warn_if_sign_compare(node, rhs, "<=");
+      node = psx_node_new_binary(ND_LE, node, rhs);
     } else if (curtok()->kind == TK_GT) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_LT, shift(), node);
+      node_t *rhs = shift();
+      warn_if_sign_compare(node, rhs, ">");
+      node = psx_node_new_binary(ND_LT, rhs, node);
     } else if (curtok()->kind == TK_GE) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_LE, shift(), node);
+      node_t *rhs = shift();
+      warn_if_sign_compare(node, rhs, ">=");
+      node = psx_node_new_binary(ND_LE, rhs, node);
     }
     else return node;
   }

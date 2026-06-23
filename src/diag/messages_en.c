@@ -191,6 +191,7 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "division/modulo by zero (C11 6.5.5p5 undefined behavior)";
     case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "function is not declared (implicit declaration is invalid in C99/C11)";
     case DIAG_WARN_PARSER_SWITCH_FALLTHROUGH: return "switch case does not terminate (break/return/etc.) and falls through to the next case";
+    case DIAG_WARN_PARSER_SIGN_COMPARE: return "comparison between signed and unsigned (negative value may be treated as a large positive)";
   }
   return NULL;
 }

@@ -19,6 +19,7 @@ typedef enum {
   DIAG_WARN_PARSER_DIVIDE_BY_ZERO = 3015,
   DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL = 3016,
   DIAG_WARN_PARSER_SWITCH_FALLTHROUGH = 3017,
+  DIAG_WARN_PARSER_SIGN_COMPARE = 3018,
 } diag_warn_id_t;
 
 const char *diag_warn_code(diag_warn_id_t id);
