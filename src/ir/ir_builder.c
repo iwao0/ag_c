@@ -99,6 +99,11 @@ static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
 static lvar_t *find_owning_lvar(ir_build_ctx_t *ctx, int offset) {
   lvar_t *head = ctx && ctx->cur_fn ? ctx->cur_fn->lvars : NULL;
   for (lvar_t *var = head; var; var = var->next_all) {
+    /* static local alias (try_lower_static_local_*) はグローバルへ lowering 済みで実体は
+     * stack に無く、offset=0 / size=0 のダミー。これを所有者として返すと、本物の
+     * 同 offset 仮引数 (例 `int *out`) より先に拾われて param のスロットを 4 バイト alias 用に
+     * alloca してしまい、後続ローカルとフレームが重なって SIGSEGV になっていた。 */
+    if (var->is_static_local) continue;
     int sz = var->size > 0 ? var->size : 1;
     if (var->offset <= offset && offset < var->offset + sz) return var;
   }
