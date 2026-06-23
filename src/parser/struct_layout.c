@@ -122,6 +122,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         else if (curtok()->kind == TK_UNSIGNED) member_is_unsigned = 1;
         set_curtok(curtok()->next);
       }
+      /* `_Bool b : 1;` の bitfield 抽出は符号拡張せず 0/1 として扱う必要がある
+       * (C11 6.7.2.1)。is_signed_type は line 108 で TK_BOOL を見て signed と
+       * 判定してしまうため、ここで _Bool / unsigned を明示的に反映し直す。
+       * 修正前: `_Bool b:1 = 1` を読み出すと 1bit signed extension で -1 に化け
+       * `(int)s.b == -1` になっていた。 */
+      if (member_is_bool || member_is_unsigned) is_signed_type = 0;
     } else if (psx_ctx_is_tag_keyword(curtok()->kind)) {
       member_tag_kind = curtok()->kind;
       /* enum 型ビットフィールド (`enum E e:2`) は非負列挙なら unsigned 扱い
