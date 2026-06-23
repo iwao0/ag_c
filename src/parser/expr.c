@@ -1036,14 +1036,22 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
       }
     }
   } else if (mem_is_ptr && mem_size > 0 && mem_info->outer_stride > 0) {
-    /* pointer-to-array メンバ (`struct S { int (*p)[N]; }`): mem_info->outer_stride に
-     * pointee の全バイト数 (N*elem) を保存してある。ローカル `int (*p)[N]` の ND_LVAR
-     * (type_size=8、deref_size=outer_stride、is_pointer=1) と同じレイアウトで deref を組む。
-     * inner_deref_size に pointee の要素サイズ (elem) を carry し、build_unary_deref_node が
-     * `*s.p` 構築時に新 deref の deref_size を elem に再設定するためのヒントにする。 */
+    /* pointer-to-array メンバ (`struct S { int (*p)[N]; }` / `int (*p)[M][N]`):
+     * mem_info->outer_stride に pointee の全バイト数を保存。多次元 pointee の場合は
+     * mem_info->mid_stride に 1 段目 subscript stride (= N*elem) も保存されている。
+     * deref->deref_size に outer_stride、続いて inner_deref_size / next_deref_size に
+     * 段ストライドを並べ、build_unary_deref_node が `*s.p` 構築時に 1 段スライドして
+     * carry できるようにする (ローカル `int (*p)[M][N]` の lvar 表現と整合)。 */
     deref->is_pointer = 1;
     deref->deref_size = (short)mem_info->outer_stride;
-    deref->inner_deref_size = (short)mem_info->deref_size;
+    if (mem_info->mid_stride > 0) {
+      /* 2D pointee: 1 段目 subscript stride = mid_stride、最終要素 = elem */
+      deref->inner_deref_size = (short)mem_info->mid_stride;
+      deref->next_deref_size = (short)mem_info->deref_size;
+    } else {
+      /* 1D pointee: 要素サイズだけ */
+      deref->inner_deref_size = (short)mem_info->deref_size;
+    }
   } else if (mem_is_ptr && mem_size > 0) {
     /* スカラポインタメンバ (`char *name`): subscript や pointer 算術で
      * is_pointer 判定が要るため立てておく。is_scalar_ptr_member を立てて
@@ -3344,16 +3352,21 @@ static node_t *build_unary_deref_node(node_t *operand) {
         if (fd > 0 && rowstride > 0) node->deref_size = (short)(rowstride / fd);
       }
     } else if (probe && probe->kind == ND_DEREF) {
-      /* struct メンバ `int (*p)[N]` の `*s.p`: probe (= s.p のメンバ deref) は
-       * build_member_deref_node で is_tag_pointer=1 / deref_size=outer_stride(=N*elem) /
-       * inner_deref_size=elem として組まれている。ローカル `int (*p)[N]` の `*p` と
-       * 同じく、結果 deref の deref_size を elem に再設定して subscript_base_address_of
-       * が lhs (= s.p) を返す経路に乗せる。is_pointer は立てない (subscript_base_address_of
-       * のガード条件 `deref_size>0 && !is_pointer` を満たすため)。 */
+      /* struct メンバ `int (*p)[N]` (および 2D pointee `int (*p)[M][N]`) の `*s.p`:
+       * probe (= s.p のメンバ deref) は build_member_deref_node で is_tag_pointer=1、
+       * deref_size=pointee 全バイト数、inner_deref_size=1 段目 stride、next_deref_size=elem
+       * (2D 時) として組まれている。1 段スライドして carry:
+       *   新 deref_size      ← probe.inner_deref_size  (1 段目 subscript の要素 stride)
+       *   新 inner_deref_size ← probe.next_deref_size  (2 段目 subscript の要素 stride)
+       * ローカル `int (*p)[M][N]` の `*p` と同じ表現に揃え、subscript_base_address_of が
+       * lhs (= s.p) を返す経路に乗せる (is_pointer は立てない)。 */
       node_mem_t *pm = (node_mem_t *)probe;
       if (pm->is_tag_pointer && pm->inner_deref_size > 0
           && pm->deref_size > pm->inner_deref_size) {
         node->deref_size = pm->inner_deref_size;
+        if (pm->next_deref_size > 0) {
+          node->inner_deref_size = pm->next_deref_size;
+        }
       }
     }
   }

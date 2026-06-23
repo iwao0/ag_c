@@ -331,12 +331,18 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * pointee の配列次元として ptr_array_pointee_bytes に保存し、downstream の subscript
        * 結果に carry する。 */
       int pointee_arr_size = 0;
+      int pointee_arr_dim_count = 0;
+      int pointee_arr_first_dim = 0;
       int ptr_array_pointee_bytes = 0;
       if (head.ptr_in_paren && head.is_ptr && arr_size > 1 && !is_flex_array
           && !head.has_func_suffix) {
         if (head.paren_array_mul == 1) {
-          /* `int (*p)[N]`: メンバは単一ポインタ。pointee dim を保存。 */
+          /* `int (*p)[N]` / `int (*p)[M][N]`: メンバは単一ポインタ。pointee dims (1D / 多次元)
+           * を保存し、outer_stride / mid_stride に反映して downstream の `(*s.p)[i][j]` が
+           * 行ストライドで添字できるようにする。 */
           pointee_arr_size = arr_size;
+          pointee_arr_dim_count = arr_dim_count;
+          pointee_arr_first_dim = arr_first_dim;
           arr_size = 1;
           arr_dim_count = 0;
           arr_first_dim = 0;
@@ -429,13 +435,19 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.tag_len = member_tag_len;
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
-        /* pointer-to-array メンバ (`int (*p)[N]`): pointee の全バイトサイズを outer_stride に
-         * 保存しておく。build_member_deref_node がこれを見て「ポインタ-to-配列」分岐に乗せ、
-         * `*s.p` / `(*s.p)[i]` を正しいストライドで解決する。 */
+        /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
+         * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
+         * 保存し、build_member_deref_node が deref を multi-dim 配列形に組めるようにする。 */
         if (has_member_name && pointee_arr_size > 0) {
           psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
                                               member_name, member_len,
                                               pointee_arr_size * elem_size);
+          if (pointee_arr_dim_count >= 2 && pointee_arr_first_dim > 0) {
+            /* 2D pointee (`int (*p)[M][N]`): 1 段目 subscript stride = (M*N*elem)/M = N*elem */
+            int mid = (pointee_arr_size / pointee_arr_first_dim) * elem_size;
+            psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len,
+                                              member_name, member_len, mid);
+          }
         }
         /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`): 各要素ポインタが指す配列の
          * 全バイト数 (= N * elem) を保存する。`s.p[i]` の subscript 結果 deref に carry し、
