@@ -6,6 +6,7 @@
 #include "dynarray.h"
 #include "node_utils.h"
 #include "semantic_ctx.h"
+#include "stmt.h"
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -4982,6 +4983,11 @@ static node_t *primary(void) {
   if (curtok()->kind == TK_GENERIC) return parse_generic_selection();
 
   if (curtok()->kind == TK_NUM) return parse_num_literal();
+
+  if (curtok()->kind == TK_LPAREN && curtok()->next &&
+      curtok()->next->kind == TK_LBRACE) {
+    return psx_parse_statement_expression();
+  }
 
   if (curtok()->kind == TK_LPAREN) {
     enter_paren_nest_or_die();

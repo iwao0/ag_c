@@ -64,6 +64,7 @@ typedef enum {
                   // node_mem_t の pointee_fp_kind 等を保持して、後段の deref に伝播させる。
   ND_CREAL,       // GNU __real__ x: 複素数 lhs の実部 (実数なら lhs)。fp_kind=結果型。
   ND_CIMAG,       // GNU __imag__ x: 複素数 lhs の虚部 (実数なら 0)。fp_kind=結果型。
+  ND_STMT_EXPR,   // GNU statement expression ({ ...; expr })
 } node_kind_t;
 
 // 抽象構文木のノードの型

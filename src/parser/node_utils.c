@@ -47,6 +47,8 @@ int ps_node_type_size(node_t *node) {
       return as_mem(node)->type_size;
     case ND_COMMA:
       return ps_node_type_size(node->rhs);
+    case ND_STMT_EXPR:
+      return ps_node_type_size(node->rhs);
     case ND_TERNARY: {
       int l = ps_node_type_size(node->rhs);
       if (l > 0) return l;

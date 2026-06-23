@@ -561,6 +561,47 @@ static node_t *parse_stmt_block(void) {
   return (node_t *)node;
 }
 
+static int is_stmt_expr_value_stmt(node_t *s) {
+  if (!s || s->kind == ND_NUM) return 0;
+  switch (s->kind) {
+    case ND_IF:
+    case ND_WHILE:
+    case ND_DO_WHILE:
+    case ND_FOR:
+    case ND_SWITCH:
+    case ND_CASE:
+    case ND_DEFAULT:
+    case ND_BREAK:
+    case ND_CONTINUE:
+    case ND_GOTO:
+    case ND_LABEL:
+    case ND_RETURN:
+    case ND_BLOCK:
+      return 0;
+    default:
+      return 1;
+  }
+}
+
+node_t *psx_parse_statement_expression(void) {
+  tk_expect('(');
+  node_t *block = parse_stmt_block();
+  tk_expect(')');
+  node_block_t *b = (node_block_t *)block;
+  node_t *value = NULL;
+  if (b->body) {
+    for (int i = 0; b->body[i]; i++) {
+      if (is_stmt_expr_value_stmt(b->body[i])) value = b->body[i];
+    }
+  }
+  if (!value) value = psx_node_new_num(0);
+  node_t *node = calloc(1, sizeof(node_t));
+  node->kind = ND_STMT_EXPR;
+  node->lhs = block;
+  node->rhs = value;
+  return node;
+}
+
 static node_t *parse_stmt_return(void) {
   set_curtok(curtok()->next);
   node_t *node = arena_alloc(sizeof(node_t));

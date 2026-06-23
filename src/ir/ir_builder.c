@@ -380,6 +380,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_comma(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node);
@@ -687,6 +688,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_LOGAND:
     case ND_LOGOR: return build_node_logand_or(ctx, node);
     case ND_TERNARY: return build_node_ternary(ctx, node);
+    case ND_STMT_EXPR: return build_node_stmt_expr(ctx, node);
     default:
       fail(ctx, "unsupported expression node");
       return ir_val_none();
@@ -1867,6 +1869,12 @@ static int ternary_branch_is_wide_int(node_t *n) {
            ternary_branch_is_wide_int(((node_ctrl_t *)n)->els);
   }
   return ps_node_type_size(n) >= 8;
+}
+
+static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node) {
+  build_stmt_block(ctx, node->lhs);
+  if (ctx->failed) return ir_val_none();
+  return build_expr(ctx, node->rhs);
 }
 
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
