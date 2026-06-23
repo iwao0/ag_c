@@ -2852,6 +2852,23 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int deref_size,
                                           tk_float_kind_t fp_kind, int is_unsigned) {
   if (var_size <= 0) return 0;
+  /* peek フェーズ: 受理できる init 形 (なし、または `=` + 単純な数値リテラル) のみ
+   * scalar 経路で処理する。`=` + 文字列リテラル / `{` / 識別子参照 / 演算式などは
+   * lowering で 0 にされて値が消えるため、auto local 経路へ fall through させる。 */
+  {
+    token_t *p = curtok();
+    if (p && p->kind == TK_ASSIGN) {
+      token_t *a = p->next;
+      if (!a) return 0;
+      /* 数値リテラル (`=5`) または符号付き数値リテラル (`= -5`, `= +5`) のみ受理。
+       * 文字列・複合リテラル・識別子参照・関数呼び出し等は fallback。 */
+      token_t *num_tok = a;
+      if (a->kind == TK_MINUS || a->kind == TK_PLUS) num_tok = a->next;
+      if (!num_tok || num_tok->kind != TK_NUM) return 0;
+      token_t *tail = num_tok->next;
+      if (!tail || (tail->kind != TK_SEMI && tail->kind != TK_COMMA)) return 0;
+    }
+  }
   /* mangled name: `<funcname>.<varname>.<seq>` を arena に組み立てる。seq は重複防止用。 */
   static int g_static_seq = 0;
   char *funcname = NULL;
@@ -2877,19 +2894,22 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   mangled[off] = '\0';
 
   /* 初期化子 (`= N`) があれば NUM をパースして init_val に取り込む。
-   * float/double の static ローカルはリテラル値が ->fval にあるので、整数 ->val だけ
-   * 見ると 0 で初期化され `.long 0` が出力されていた (値が化ける)。fp なら fval を使う。 */
+   * 整数式は psx_decl_eval_const_int で folding (`= -5` は ND_SUB(0,5) として
+   * パースされるため、ND_NUM だけ見ると 0 に化けていた)。
+   * float/double の static ローカルはリテラル値が ->fval にあるので、ND_NUM のときに
+   * fval を取り出す。 */
   long long init_val = 0;
   double init_fval = 0;
   int has_init = 0;
   if (tk_consume('=')) {
     node_t *e = psx_expr_assign();
-    if (e && e->kind == ND_NUM) {
-      if (fp_kind != TK_FLOAT_KIND_NONE) init_fval = ((node_num_t *)e)->fval;
-      else                               init_val = ((node_num_t *)e)->val;
+    if (fp_kind != TK_FLOAT_KIND_NONE) {
+      if (e && e->kind == ND_NUM) init_fval = ((node_num_t *)e)->fval;
       has_init = 1;
     } else {
-      /* 非定数 init は未対応 — silently 0 で初期化 (将来課題)。 */
+      int ok = 1;
+      long long v = psx_decl_eval_const_int(e, &ok);
+      if (ok) init_val = v;
       has_init = 1;
     }
   }

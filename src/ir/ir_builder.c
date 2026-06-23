@@ -3008,9 +3008,15 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   /* 全ローカル変数の ALLOCA をエントリブロックで前もって発行する。
    * 遅延発行だと「最初の参照が分岐内」のとき、未到達経路では vreg が
    * 未初期化となり、別経路から参照すると壊れる (struct ternary 等)。
-   * fn->lvars には全スコープの lvar が next_all で連なっている。 */
+   * fn->lvars には全スコープの lvar が next_all で連なっている。
+   * static local alias (`static int x = 5;` 等) は実体がグローバルへ lowering されており
+   * スタック上に枠を必要としない。プリパスでそれを alloca してしまうと、後続の本物の
+   * lvar (`int y;` 等で同 offset を持つもの) が find_alloca_vreg で alias のスロットを
+   * 再利用させられ、サイズが alias のもの (`size=4` 等) に縮んで上位バイトが他のローカル
+   * と重なる (SIGSEGV)。alias は alloca 対象から除外する。 */
   for (lvar_t *var = fn->lvars; var; var = var->next_all) {
     if (var->is_param) continue;  /* parameter は既に param/alloca/store した */
+    if (var->is_static_local) continue;
     (void)alloca_for_owner(ctx, var);
     if (ctx->failed) return 0;
   }

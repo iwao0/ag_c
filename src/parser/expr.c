@@ -4704,6 +4704,14 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     gv->mem.tag_len = var->tag_len;
     gv->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
     gv->mem.is_tag_pointer = 0;
+    /* スカラ static local がポインタ型 (`static char *msg = "..."`) のとき、
+     * size==8 かつ pointee の elem_size がそれより小さい (char=1, int=4 等) なら
+     * is_pointer を立てる。非ポインタの static スカラ (`static int n = 5;`) は
+     * size==elem_size==4 で偽になる。修正前は is_pointer 未設定で subscript
+     * `msg[i]` が両辺非ポインタとして E3064 reject されていた。同 elem (long*)
+     * のケースは pointer_qual_levels を立てる必要があるが、現状の static-local
+     * 経路では追跡しないので別 follow-up。 */
+    if (sz > var->elem_size && var->elem_size > 0) gv->mem.is_pointer = 1;
     gv->name = var->static_global_name;
     gv->name_len = var->static_global_name_len;
     var->is_used = 1;
