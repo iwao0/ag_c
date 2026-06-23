@@ -400,9 +400,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             if (im.len == 0) continue; /* 匿名同士の連鎖は今回対象外 */
             tag_member_info_t _mi = im;
             _mi.offset = off + im.offset;
-            _mi.bit_width = 0;  /* 旧非bf版と同じく昇格メンバの bitfield 情報は持ち込まない */
-            _mi.bit_offset = 0;
-            _mi.bit_is_signed = 0;
+            /* C11 6.7.2.1p13: 匿名 struct/union 内 bitfield も昇格メンバとして外側からの
+             * アクセスで正しく動くよう、bit_width/bit_offset/bit_is_signed を保持する。
+             * 修正前: 旧 non-bf 版の名残でこれらを 0 にクリアしており、`s.lo` (匿名 struct
+             * 内 `unsigned lo:16`) が bitfield 抽出を経ず full-width load されて値が化けていた。 */
             psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
             /* 昇格メンバの fp_kind / is_bool / is_unsigned / outer_stride も伝播する。
              * add_tag_member は基本属性のみ渡すため、これがないと匿名 union/struct の
