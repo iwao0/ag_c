@@ -192,6 +192,7 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "関数が宣言されていません (C99/C11 で暗黙宣言は不可)";
     case DIAG_WARN_PARSER_SWITCH_FALLTHROUGH: return "switch の case が break / return 等で終端せず、次の case に到達します";
     case DIAG_WARN_PARSER_SIGN_COMPARE: return "符号付きと符号なしの比較です (負値が大きな正の値として扱われる可能性)";
+    case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "符号なし整数と 0 の比較が常に同じ結果になります";
   }
   return NULL;
 }

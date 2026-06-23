@@ -2548,6 +2548,46 @@ static void warn_if_sign_compare(node_t *lhs, node_t *rhs, const char *op) {
                  op);
 }
 
+/* 符号なし整数と 0 の比較が常に同じ結果になる形を検出する (clang
+ * -Wtautological-unsigned-zero-compare 相当)。
+ *   `u >= 0`, `0 <= u`  -> 常に真
+ *   `u < 0`,  `0 > u`   -> 常に偽
+ * `u > 0`, `u == 0`, `u <= 0` 等は実際に値次第なので警告しない。
+ *
+ * unsigned char / unsigned short は C11 6.3.1.1 で signed int に昇格されるが、値域は
+ * 元のまま (0..255 / 0..65535) なので比較結果はやはり同じ。is_unsigned フラグだけで判定
+ * すれば十分。 */
+static int tuz_is_zero_literal(node_t *n) {
+  return n && n->kind == ND_NUM && n->fp_kind == TK_FLOAT_KIND_NONE &&
+         ((node_num_t *)n)->val == 0;
+}
+static int tuz_is_unsigned_integer(node_t *n) {
+  return n && !ps_node_is_pointer(n) && n->fp_kind == TK_FLOAT_KIND_NONE &&
+         ps_node_is_unsigned(n);
+}
+static void warn_if_tautological_unsigned_zero(node_t *lhs, node_t *rhs, const char *op) {
+  /* `u OP 0` */
+  if (tuz_is_unsigned_integer(lhs) && tuz_is_zero_literal(rhs)) {
+    if (op[0] == '>' && op[1] == '=') {
+      diag_warn_tokf(DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, NULL,
+                     "符号なし整数は常に 0 以上です: '%s 0' は常に真", op);
+    } else if (op[0] == '<' && op[1] == '\0') {
+      diag_warn_tokf(DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, NULL,
+                     "符号なし整数は常に 0 以上です: '%s 0' は常に偽", op);
+    }
+  }
+  /* `0 OP u` */
+  if (tuz_is_zero_literal(lhs) && tuz_is_unsigned_integer(rhs)) {
+    if (op[0] == '<' && op[1] == '=') {
+      diag_warn_tokf(DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, NULL,
+                     "符号なし整数は常に 0 以上です: '0 %s' は常に真", op);
+    } else if (op[0] == '>' && op[1] == '\0') {
+      diag_warn_tokf(DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, NULL,
+                     "符号なし整数は常に 0 以上です: '0 %s' は常に偽", op);
+    }
+  }
+}
+
 /* 自己比較 (`x == x` / `x != x` / `x < x` 等) は常に真または偽。タイプミスの可能性が高い。
  * 両辺が同じ ND_LVAR offset または同じ ND_GVAR 名なら警告 (clang -Wtautological-compare 相当)。 */
 static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
@@ -2596,21 +2636,25 @@ static node_t *relational(void) {
       set_curtok(curtok()->next);
       node_t *rhs = shift();
       warn_if_sign_compare(node, rhs, "<");
+      warn_if_tautological_unsigned_zero(node, rhs, "<");
       node = psx_node_new_binary(ND_LT, node, rhs);
     } else if (curtok()->kind == TK_LE) {
       set_curtok(curtok()->next);
       node_t *rhs = shift();
       warn_if_sign_compare(node, rhs, "<=");
+      warn_if_tautological_unsigned_zero(node, rhs, "<=");
       node = psx_node_new_binary(ND_LE, node, rhs);
     } else if (curtok()->kind == TK_GT) {
       set_curtok(curtok()->next);
       node_t *rhs = shift();
       warn_if_sign_compare(node, rhs, ">");
+      warn_if_tautological_unsigned_zero(node, rhs, ">");
       node = psx_node_new_binary(ND_LT, rhs, node);
     } else if (curtok()->kind == TK_GE) {
       set_curtok(curtok()->next);
       node_t *rhs = shift();
       warn_if_sign_compare(node, rhs, ">=");
+      warn_if_tautological_unsigned_zero(node, rhs, ">=");
       node = psx_node_new_binary(ND_LE, rhs, node);
     }
     else return node;

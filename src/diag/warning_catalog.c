@@ -26,6 +26,7 @@ static const diag_warn_entry_t k_warn_entries[] = {
     {DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL, "W3016", "parser.implicit_function_declaration"},
     {DIAG_WARN_PARSER_SWITCH_FALLTHROUGH, "W3017", "parser.switch_fallthrough"},
     {DIAG_WARN_PARSER_SIGN_COMPARE, "W3018", "parser.sign_compare"},
+    {DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, "W3019", "parser.tautological_unsigned_zero_compare"},
 };
 
 static const diag_warn_entry_t *find_warn_entry(diag_warn_id_t id) {
