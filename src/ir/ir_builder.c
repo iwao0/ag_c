@@ -1559,6 +1559,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       is_variadic_call = 1;
       nargs_fixed = cl->funcptr_nargs_fixed;
     }
+  } else if (fn->callee->kind == ND_GVAR) {
+    node_gvar_t *cg = (node_gvar_t *)fn->callee;
+    global_var_t *g = psx_find_global_var(cg->name, cg->name_len);
+    if (g && g->is_variadic_funcptr && g->funcptr_nargs_fixed < fn->nargs) {
+      is_variadic_call = 1;
+      nargs_fixed = g->funcptr_nargs_fixed;
+    }
   }
   /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは
    * 制限せず通す (Apple ARM64 ABI)。float/double が 9 番目以降になる場合は

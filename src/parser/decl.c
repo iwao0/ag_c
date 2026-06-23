@@ -2534,6 +2534,24 @@ static void skip_func_params(void) {
   g_last_funcptr_param_fp_mask = fp_mask;
 }
 
+void psx_reset_funcptr_signature_state(void) {
+  g_last_funcptr_is_variadic = 0;
+  g_last_funcptr_nfixed = 0;
+  g_last_funcptr_param_fp_mask = 0;
+}
+
+void psx_skip_func_param_list(void) {
+  skip_func_params();
+}
+
+int psx_last_funcptr_is_variadic(void) {
+  return g_last_funcptr_is_variadic;
+}
+
+int psx_last_funcptr_nargs_fixed(void) {
+  return g_last_funcptr_nfixed;
+}
+
 static void skip_bracket_group(void) {
   if (!tk_consume('[')) return;
   int depth = 1;

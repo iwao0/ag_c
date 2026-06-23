@@ -150,6 +150,12 @@ void psx_decl_enter_scope(void);
 void psx_decl_leave_scope(void);
 lvar_t *psx_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
+/* 宣言子 trailing `()` の解析前にリセットし、skip_func_param_list で消費する。
+ * 直後に psx_last_funcptr_is_variadic / psx_last_funcptr_nargs_fixed で可変長情報を読む。 */
+void psx_reset_funcptr_signature_state(void);
+void psx_skip_func_param_list(void);
+int psx_last_funcptr_is_variadic(void);
+int psx_last_funcptr_nargs_fixed(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 lvar_t *psx_decl_register_lvar(char *name, int len);

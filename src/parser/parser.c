@@ -2203,6 +2203,10 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
       g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
     gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
   }
+  if (gv && head.is_ptr && g_toplevel_decl_has_func_suffix && psx_last_funcptr_is_variadic()) {
+    gv->is_variadic_funcptr = 1;
+    gv->funcptr_nargs_fixed = (short)psx_last_funcptr_nargs_fixed();
+  }
   finalize_toplevel_object_declarator(gv);
 }
 
@@ -2573,11 +2577,12 @@ static void emit_decl_name_required_diag(void) {
 
 static void consume_toplevel_paren_decl_func_suffixes_if_any(int had_parens) {
   if (!had_parens) return;
+  psx_reset_funcptr_signature_state();
   while (curtok()->kind == TK_LPAREN) {
-    /* `(*gops)(double)` の `(double)` 関数サフィックス: 関数ポインタ宣言子の指標。
-     * 戻り型 fp_kind の保存判定 (register_toplevel_global_decl) に使う。 */
+    /* `(*gops)(double)` / `(*fprintfptr)(FILE*, const char*, ...)` の関数サフィックス。
+     * skip_func_params で `...` を検出し、グローバル funcptr 登録と variadic 経由呼び出しに伝播。 */
     g_toplevel_decl_has_func_suffix = 1;
-    skip_balanced_group(TK_LPAREN, TK_RPAREN);
+    psx_skip_func_param_list();
   }
 }
 

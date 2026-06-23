@@ -67,8 +67,11 @@ struct global_var_t {
   unsigned int elem_is_bool : 1;    // 1: 要素型が _Bool (`_Bool a[N]`)。init_values を 0/1 に正規化。
   unsigned int is_bool : 1;     // _Bool スカラ: 代入/初期化を 0/1 に正規化する
   unsigned int is_unsigned : 1; // unsigned スカラ: load を zero-extend (符号拡張しない)
+  // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
+  unsigned int is_variadic_funcptr : 1;
 
   // --- 2 バイト (short) ---
+  short funcptr_nargs_fixed;  // 可変長関数ポインタの固定引数数 (`...` の前)
   short type_size;    // sizeof（ロード/ストアサイズ）
   short deref_size;   // ポインタ先の要素サイズ
   // ポインタ配列 (`char *names[N]`) の場合、pointee 要素の素のサイズ (char なら 1)。
