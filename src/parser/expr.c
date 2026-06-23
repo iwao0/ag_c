@@ -1027,6 +1027,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
        * が解決できる (それまで struct 値扱いで E3005)。 */
       deref->pointer_qual_levels = 1;
       deref->base_deref_size = (short)mem_info->deref_size;
+      /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`): 要素ポインタが指す配列の
+       * 全バイト数を deref ノードに carry。build_subscript_deref が `s.p[i]` の結果
+       * deref に pointer-to-array 情報を伝播し、`(*s.p[i])[j]` の単項 `*` が要素ストライドに
+       * 再設定する経路に乗せる。 */
+      if (mem_info->ptr_array_pointee_bytes > 0) {
+        deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
+      }
     }
   } else if (mem_is_ptr && mem_size > 0 && mem_info->outer_stride > 0) {
     /* pointer-to-array メンバ (`struct S { int (*p)[N]; }`): mem_info->outer_stride に
@@ -3889,6 +3896,23 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(node);
     if (pointee_fp != TK_FLOAT_KIND_NONE) {
       deref->base.fp_kind = pointee_fp;
+    }
+  }
+  /* array-of-pointer-to-array struct メンバ (`int (*p[M])[N]`) の `s.p[i]`: 要素は
+   * pointer-to-array。結果 deref を「単一 pointer-to-array」(`int (*sp)[N]`) と同じ表現に
+   * 組み直す: is_tag_pointer=1、deref_size=ポインティ全バイト数 (N*elem)、inner_deref_size=
+   * 要素サイズ (elem)、is_pointer=0。これで `(*s.p[i])[j]` の単項 `*` が build_unary_deref_node の
+   * 既存 pointer-to-array 分岐 (operand=ND_DEREF && is_tag_pointer && inner_deref_size>0 &&
+   * deref_size>inner_deref_size) に乗り、subscript_base_address_of が lhs を返す経路に乗せる。 */
+  if (node->kind == ND_DEREF) {
+    node_mem_t *base_mem_ptp = (node_mem_t *)node;
+    if (base_mem_ptp->ptr_array_pointee_bytes > 0 && bds > 0) {
+      deref->is_tag_pointer = 1;
+      deref->is_pointer = 0;
+      deref->deref_size = (short)base_mem_ptp->ptr_array_pointee_bytes;
+      deref->inner_deref_size = (short)bds;
+      deref->pointer_qual_levels = 0;
+      deref->base_deref_size = 0;
     }
   }
   /* `_Bool a[5]` の subscript 結果は _Bool スカラ。代入時に rhs を `!= 0` で

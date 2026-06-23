@@ -326,18 +326,37 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       /* `int (*p)[N]` (struct メンバ版): パレン内 `*` + パレン外 trailing `[N]`。trailing は
        * pointee の配列次元であり、メンバ自身は単一ポインタ (8B 1 slot)。pointee dims は
        * outer_stride に reflect して downstream の `(*s.p)[i]` で参照する。
-       * `int (*p[M])[N]` (parens 内に `[M]` あり) は array-of-pointer-to-array なので別扱い
-       * (現在は head.paren_array_mul で M、trailing で N を取り arr_size=M*N の既存挙動)。 */
+       * `int (*p[M])[N]` (parens 内に `[M]` あり) は array-of-pointer-to-array: 各要素が
+       * pointer-to-array で、メンバ自身は M 個のポインタ配列 (8B*M)。trailing `[N]` は
+       * pointee の配列次元として ptr_array_pointee_bytes に保存し、downstream の subscript
+       * 結果に carry する。 */
       int pointee_arr_size = 0;
-      if (head.ptr_in_paren && head.is_ptr && head.paren_array_mul == 1
-          && arr_size > 1 && !is_flex_array && !head.has_func_suffix) {
-        pointee_arr_size = arr_size;
-        arr_size = 1;
-        arr_dim_count = 0;
-        arr_first_dim = 0;
-        for (int i = 0; i < 8; i++) arr_dims_buf[i] = 0;
+      int ptr_array_pointee_bytes = 0;
+      if (head.ptr_in_paren && head.is_ptr && arr_size > 1 && !is_flex_array
+          && !head.has_func_suffix) {
+        if (head.paren_array_mul == 1) {
+          /* `int (*p)[N]`: メンバは単一ポインタ。pointee dim を保存。 */
+          pointee_arr_size = arr_size;
+          arr_size = 1;
+          arr_dim_count = 0;
+          arr_first_dim = 0;
+          for (int i = 0; i < 8; i++) arr_dims_buf[i] = 0;
+        } else {
+          /* `int (*p[M])[N]`: メンバは M 個のポインタ配列。pointee 1 個ぶんのバイト数 (N*elem)
+           * を保存しておき、subscript 結果 deref に carry する。arr_size は M に置き換える。 */
+          ptr_array_pointee_bytes = arr_size * elem_size;
+          arr_size = head.paren_array_mul;
+          arr_first_dim = head.paren_array_mul;
+          arr_dim_count = 1;
+          arr_dims_buf[0] = head.paren_array_mul;
+          for (int i = 1; i < 8; i++) arr_dims_buf[i] = 0;
+        }
       }
-      if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
+      if (head.paren_array_mul > 1 && ptr_array_pointee_bytes == 0) {
+        /* 既存挙動: ptr_in_paren でない通常の `(*name)` 経路 (関数ポインタ配列等) は
+         * これまでどおり paren_array_mul で arr_size を倍化する。 */
+        arr_size *= head.paren_array_mul;
+      }
       /* 配列 typedef + 宣言子に追加 `[N]` なし → typedef の次元情報を取り込む。
        * 宣言子にも追加 `[N]` がある場合 (`typedef int R[3]; struct {R r[2];}`) は
        * 宣言子側 dims を outer に、typedef 側 dims を inner に連結する。
@@ -417,6 +436,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
                                               member_name, member_len,
                                               pointee_arr_size * elem_size);
+        }
+        /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`): 各要素ポインタが指す配列の
+         * 全バイト数 (= N * elem) を保存する。`s.p[i]` の subscript 結果 deref に carry し、
+         * `(*s.p[i])[j]` の build_unary_deref_node 経路で要素ストライドに再設定する。 */
+        if (has_member_name && ptr_array_pointee_bytes > 0) {
+          psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
+                                                          member_name, member_len,
+                                                          ptr_array_pointee_bytes);
         }
         if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
@@ -511,6 +538,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             if (im.arr_ndim > 0)
               psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len, im.name, im.len,
                                               im.arr_dims, im.arr_ndim);
+            if (im.ptr_array_pointee_bytes > 0)
+              psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
+                                                              im.name, im.len,
+                                                              im.ptr_array_pointee_bytes);
             member_count++;
           }
         }

@@ -46,6 +46,10 @@ void psx_ctx_set_tag_member_mid_stride(token_kind_t tag_kind, char *tag_name, in
 void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int tag_len,
                                      char *member_name, int member_len,
                                      const int *dims, int ndim);
+/* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
+ * 全バイト数 (= N * elem) を保存する。 */
+void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                     char *member_name, int member_len, int bytes);
 
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。
@@ -84,6 +88,11 @@ typedef struct {
    * (従来通り outer_stride のみで運用)。 */
   int arr_dims[8];
   int arr_ndim;
+  /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
+   * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。`s.p[i]` の subscript 結果に
+   * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
+   * build_subscript_deref / build_unary_deref_node に伝える。 */
+  int ptr_array_pointee_bytes;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,

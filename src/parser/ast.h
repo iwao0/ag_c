@@ -151,6 +151,11 @@ struct node_mem_t {
   /* N-D VLA (N >= 3): vla_row_stride_frame_off の後にさらに何個の runtime stride スロット
    * が続くか。lvar_t と同じ意味。subscript で 1 段消費するたび -1、vla_row は +=8 シフトする。 */
   int vla_strides_remaining;
+  /* array-of-pointer-to-array struct メンバ (`int (*p[M])[N]`) で carry する、各要素ポインタが
+   * 指す配列の全バイト数 (= N * elem)。`s.p` の deref ノードと、`s.p[i]` の subscript 結果
+   * deref ノードに carry し、build_unary_deref_node の pointer-to-array 分岐に乗せて
+   * `(*s.p[i])[j]` を要素ストライドで添字できるようにする。 */
+  int ptr_array_pointee_bytes;
 };
 
 // 数値ノード

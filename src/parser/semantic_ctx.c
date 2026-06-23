@@ -64,6 +64,9 @@ struct tag_member_t {
    * 段。グローバル brace init の再帰展開で 1 段ずつ消費する。0 = 非多次元 char。 */
   int arr_dims[8];
   int arr_ndim;
+  /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
+   * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。 */
+  int ptr_array_pointee_bytes;
   int decl_order;
   int scope_depth;
 };
@@ -577,6 +580,21 @@ void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int 
   }
 }
 
+void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                     char *member_name, int member_len, int bytes) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
+      m->ptr_array_pointee_bytes = bytes;
+      return;
+    }
+  }
+}
+
 void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
                                         char *member_name, int member_len, int is_unsigned) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -623,6 +641,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->mid_stride = m->mid_stride;
   for (int i = 0; i < 8; i++) out->arr_dims[i] = m->arr_dims[i];
   out->arr_ndim = m->arr_ndim;
+  out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
