@@ -1626,7 +1626,7 @@ static token_t *handle_pragma(token_t *tok, token_t **pcur) {
 static token_t *pp_expand_objlike(macro_t *m, token_t *macro_tok, char *name) {
   token_t *body_copy = copy_token_list(m->body);
   body_copy = paste_tokens(body_copy);
-  hideset_t *hs = hideset_union(as_pp(macro_tok)->hideset, new_hideset(name));
+  hideset_t *hs = new_hideset(name);
   for (token_t *t = body_copy; t; t = t->next) {
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
     t->line_no = macro_tok->line_no;
@@ -1744,7 +1744,7 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
   cur_body->next = NULL;
 
   token_t *body_copy = paste_tokens(body_head.next);
-  hideset_t *hs = hideset_union(as_pp(macro_tok)->hideset, new_hideset(name));
+  hideset_t *hs = new_hideset(name);
   for (token_t *t = body_copy; t; t = t->next) {
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
     t->line_no = macro_tok->line_no;
@@ -1928,6 +1928,9 @@ struct pp_stream {
   pp_include_frame_t *frames;  // 被 include フレームスタック (NULL = 最外ファイル)
 };
 
+static token_t *pps_pull_raw(pp_stream_t *s);
+static void pps_pushback_one(pp_stream_t *s, token_t *t);
+
 static void pps_append(pp_stream_t *s, token_t *t) {
   t->next = NULL;
   if (s->out_tail) s->out_tail->next = t;
@@ -1984,6 +1987,54 @@ static token_t *pps_pull_raw(pp_stream_t *s) {
     if (s->file_override_set) t->file_name_id = s->file_override;
   }
   return t;
+}
+
+/* `MACRO(args)(more)` 形: 置換列末尾の `)` の直後の `(more)` だけを繋ぎ、
+ * その閉じ `)` までを preprocess_ctx で縮約してから pushback する。 */
+static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t *body) {
+  if (!body) return NULL;
+  token_t *copy = copy_token_list(body);
+  token_t *tail = copy;
+  while (tail->next) tail = tail->next;
+
+  token_t *next_raw = pps_pull_raw(s);
+  if (!next_raw || tail->kind != TK_RPAREN || next_raw->kind != TK_LPAREN) {
+    if (next_raw) pps_pushback_one(s, next_raw);
+    return copy;
+  }
+
+  token_t *suffix = copy_token(next_raw);
+  token_t *suffix_tail = suffix;
+  int nest = 1;
+  while (nest > 0) {
+    token_t *t = pps_pull_raw(s);
+    if (!t) break;
+    suffix_tail->next = copy_token(t);
+    suffix_tail = suffix_tail->next;
+    if (t->kind == TK_LPAREN) nest++;
+    if (t->kind == TK_RPAREN) nest--;
+  }
+  tail->next = suffix;
+
+  token_t *eof = tk_allocator_calloc(1, sizeof(token_t));
+  eof->kind = TK_EOF;
+  suffix_tail->next = eof;
+
+  int saved_depth = include_depth;
+  include_depth++;
+  token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, copy);
+  include_depth = saved_depth;
+  if (expanded) {
+    token_t *prev = NULL;
+    for (token_t *t = expanded; t; prev = t, t = t->next) {
+      if (t->kind == TK_EOF) {
+        if (prev) prev->next = NULL;
+        else expanded = NULL;
+        break;
+      }
+    }
+  }
+  return expanded;
 }
 
 /* トークン 1 つを pushback の先頭へ差し戻す。 */
@@ -2310,7 +2361,8 @@ static int pps_step(pp_stream_t *s) {
           tk_set_cursor_hook(pps_on_advance);
           free(args);
           if (body) {
-            if (s->pb_head) s->ooo_active = 1;  // 入れ子展開 (既存 pb の前に積む) = out-of-order
+            body = pp_stream_splice_paren_suffix_and_rescan(s, body);
+            if (s->pb_head) s->ooo_active = 1;
             pps_pushback_list(s, body);
           }
           free(name);
