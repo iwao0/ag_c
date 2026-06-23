@@ -1,47 +1,74 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き69: 浮動→整数キャストのグローバル init 定数畳み込み）
+最終更新: 2026-06-23（続き70-78 + c-testsuite 組み込み）
 
 ## 現状
-- `make test` = **1077/1077 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- このセッション (続き56-69) で **14 件の miscompile / parse error を修正**。詳細は下記。
+- `make test` = **1086/1086 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- このセッション (続き70-78) で **9 件の miscompile / parse error を修正**。詳細は下記。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
+- **c-testsuite 組み込み済み**: `test/external/c-testsuite/` (git submodule)。
+  `make c-testsuite` で 220 件中 **199/220 = 90.5% pass**。残課題は下記参照。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
-2. **`make test`** で 1077/1077 green を確認 (前回セッションの状態が引き継がれている)。
-3. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
-4. **未探索の角度から probe** (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
-5. **新規バグを発見** したら、HANDOFF と同じ流れ (修正 → fixture 登録 → コミット) で進める。
+2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
+3. **`make test`** で 1086/1086 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 199/220 green を確認 (= 前セッションのベースライン)。
+5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
+6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
+   probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
+7. **新規バグを発見** したら、HANDOFF と同じ流れ (修正 → fixture 登録 → コミット) で進める。
 
 ## 次セッションの最優先タスク
 
-### 既知の未修正バグ (parser 層の改修が必要)
+### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
-**`int (*p)[N]` を struct メンバとして使った場合の subscript stride 誤り**:
-```c
-struct H { int (*p)[3]; };
-int g_arr[3] = {10, 20, 30};
-struct H g_h = { &g_arr };
-int main(void) {
-    return (*g_h.p)[2];  /* 期待 30、agc は別アドレスを読む */
-}
-```
-- `sizeof(struct H)` が 8 ではなく 24 になる (前提となるバグ)。
-- 原因: parser が `int (*p)[N]` (pointer to array of N) と `int *p[N]` (array of N pointers) を
-  区別せず、両方とも paren_array_mul=1, is_ptr=1, trailing-array=N として解析している。
-  違いは「`*` が parens の内側にあるか外側にあるか」だが、struct_layout 経路はその区別を
-  保持していない。`g_decl_ptr_in_paren_group` 相当のフラグを member parser にも持たせる
-  必要がある。
-- ローカル変数 (`int (*p)[3] = &arr;`) は別経路で正しく動く。問題は **struct メンバとしての**
-  `int (*p)[N]` 限定。
-- 修正の取っ掛かり: `src/parser/struct_layout.c` の `parse_member_decl_name_recursive` で
-  「declarator が `*` を parens 内に含む」事実を `member_decl_head_t` に追加して持ち回す。
-  下流の arr_size 計算で「ptr-in-paren + trailing-array」なら arr_size を倍にせず、
-  代わりに outer_stride に N*elem を立てる。
+`make c-testsuite-verbose` で失敗一覧を見て、未着手の 16 件を順次修正していく。前セッション末で
+着手途中だった **00145 (プリプロセッサ短絡評価)** から再開するのが自然。
 
-### 未探索の角度から新規バグ探索
+#### 取り組み順 (軽量 → 中規模 → 大規模)
+
+**B1. 軽量 (修正範囲が局所、影響度小)**
+- **00145** (compile fail, 中断中): `#if 0 != (0 && (0/0))` のプリプロセッサ短絡評価が機能せず
+  ゼロ除算エラー。`src/preprocess/preprocess.c` の `logand` / `logor` / `conditional` で
+  左辺で結果確定なら右辺を skip。実装は `equality`/`logand` 等のステップ消費を保ちつつ
+  short-circuit を入れるだけで済むはず。
+- **00152**: `#line line` (`#line` 指令の引数にマクロ名)。preprocess で `#line` 行の前に
+  マクロ展開を通す必要。現状は raw token で読んでいる可能性。
+- **00212** (stdout): `__LP64__` / `__LLP64__` / `__ILP32__` predefined macro 未定義。Apple ARM64 は
+  LP64 なので `__LP64__` を 1 として組み込む。`src/preprocess/preprocess.c` の predefined macros
+  初期化付近。
+
+**B2. 中規模 (parser / 型システム)**
+- **00121**: `int f(int a), g(int a), a;` — 1 つの宣言で関数 prototype と変数を混ぜる形。
+  続き77 で関数 declarator を skip するようにしたが、その後の `, a;` (変数) 経路で正しく登録
+  されているか確認。
+- **00124** (runtime): `int (*f1(int a, int b))(int c, int b) { ... }` — 関数ポインタを返す関数。
+- **00151**: `int arr[][3][5] = {...};` — 最外側次元を省略 (初期化子から推論)。
+- **00189** (stdout): `int (*fprintfptr)(FILE *, const char *, ...) = &fprintf;` — グローバル
+  可変長関数ポインタ初期化。
+- **00201**: `CAT(A,B)(x)` マクロ token paste で識別子合成。
+- **00202**: `A##B ; bob` 形マクロ paste (paste 結果が `;` を含む)。
+- **00209**: `int f1 (int (), int);` — 抽象宣言子で関数仮引数。
+
+**B3. 大規模 (重い、影響範囲広い)**
+- **00089**: `go()()->zerofunc()` — 関数戻り値の連鎖呼び出し (関数ポインタ戻り型 + 構造体メンバ)。
+- **00129**: `typedef struct s s; ... goto s; struct s s; { int s; ... }` — struct/typedef/label
+  shadowing + マクロ。
+- **00200**: シフトの型変換の網羅テスト (長大マクロ展開)。
+- **00204**: 527 行の ARM64 ABI 網羅テスト (struct 値渡し・引数渡し各種)。
+- **00205** (stdout): J interpreter snippet の long 大量初期化 (PT struct 配列)。
+- **00219** (stdout): `_Generic` の網羅テスト (色々な型)。
+
+#### 対象外 (GNU 拡張、HANDOFF ルールで skip)
+- **00206**: `#pragma push_macro` / `pop_macro` (GCC/MSVC 拡張)
+- **00210**: `__attribute__((packed))`, `((stdcall))`
+- **00213**: GNU statement expression `({...})`
+- **00214**: `__builtin_expect`, statement expression
+- **00216**: 空 struct `typedef struct {} empty_s;` (GCC 拡張)
+
+### B. 未探索の角度から新規バグ探索 (探索路線)
 
 候補:
 - libc 関数連携の更に深い (snprintf format flags、qsort 複雑な comparator、stdlib chain、math 連鎖)。
@@ -51,6 +78,13 @@ int main(void) {
 - 複数 TU リンク (`test_e2e.c` の `link2_cases[]` 経由、または使い捨ての `/tmp/*.sh` で
   クロス TU 比較; static_internal_linkage_xtu_{main,other} を参考に)。
 - 古い C コードの寛容性 (K&R, implicit int 等; ただし GNU 拡張は対象外)。
+
+### C. 既知の follow-up (今セッションで触れて残ったもの)
+
+- **明示 `extern int f(...);` 関数内宣言**: 続き77 で暗黙 extern 経路は直したが、明示 `extern`
+  付きは `parse_local_extern_declarator_list` 経路で関数 declarator を変数として登録してしまう。
+- **cast 結果型のサイズ追跡**: 続き78 で `sizeof((int) 1)` 構文は直したが、`sizeof((long) 1)`
+  が 4 を返す (= cast を ND_NUM(1) に fold して int 扱い)。apply_cast 後の型保持が必要。
 
 ## 重要な約束事 (memory より)
 - **1 タスクずつ進める**: 完了後にユーザー確認を取ってから次へ。複数タスクを並行しない。
@@ -74,7 +108,87 @@ int main(void) {
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
 
-## このセッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
+## このセッション（続き70-78）累計成果: 9 件の修正 + c-testsuite 組み込み
+
+| # | 続き | コミット | 内容 |
+|---|---|---|---|
+| 1 | 70 | `2801eec` | struct メンバ `int (*p)[N]` (pointer to array) が `int *p[N]` と区別されず sizeof/access が誤動作 |
+| 2 | 71 | `e5ed9b8` | struct メンバ `int (*p[M])[N]` (array of pointer to array) sizeof/access |
+| 3 | 72 | `52771c4` | struct メンバ `int (*p)[M][N]` (2D pointee の pointer-to-array) — pointee dim 情報が落ちて誤スケール |
+| 4 | 73 | `37a502d` | グローバル plain 多次元配列の `[N]={[M]=V}` designator が単一スカラ scale で誤ジャンプ |
+| 5 | 74 | `c19af41` | グローバル struct メンバ 2D struct タグ配列の外側 `[N]=` designator で内側次元が無視される |
+| 6 | 75 | `140070d` | グローバル struct メンバ多次元 struct タグ配列の内側 brace 内 designator (`.member=` / `[M]=`) が E3064 |
+| 7 | 76 | `96115fd` | ローカル struct メンバ多次元 struct タグ配列の designator init が parser エラー |
+| 8 | 77 | `74b8e0d` | 関数内ローカル関数 prototype (`int f1(char *);`) がローカル変数化されて SIGSEGV (c-testsuite 00078) |
+| 9 | 78 | `dd7c614` | `sizeof((int) 1)` のような cast 式に対する sizeof が E2006 (c-testsuite 00155) |
+
+### 修正の主な領域
+- **struct_layout.c**: pointer-to-array メンバ系の 4 修正 (続き70-72, 74) — `ptr_in_paren` /
+  `ptr_array_pointee_bytes` フィールド追加、pointee dims を outer_stride/mid_stride に反映、
+  struct タグ配列メンバの arr_dims 保存条件緩和。
+- **parser.c**: トップレベル多次元配列の sub_dims 算出 (続き73)、gbrace_child_at の tag_kind
+  非依存化と TK_STRUCT branch の sub_dims 積算 (続き74-75)。
+- **decl.c**: parse_member_initializer の outer_stride 経路に designator + struct 要素対応
+  (続き76)、関数 declarator の登録 skip (続き77)。
+- **expr.c**: build_member_deref_node / build_unary_deref_node / build_subscript_deref に
+  pointer-to-array carry 機構 (続き70-72)、parse_parenthesized_type_size の cast 式巻き戻し
+  (続き78)。
+- **ast.h / semantic_ctx.{h,c}**: 新フィールド `ptr_array_pointee_bytes` 追加 (続き71)。
+
+### 全 fixture リスト (本セッション分)
+- struct_ptr_to_array_member.c (続き70)
+- struct_array_of_ptr_to_array_member.c (続き71)
+- struct_ptr_to_2d_array_member.c (続き72)
+- global_multidim_array_nested_designator_plain.c (続き73)
+- global_struct_member_multidim_struct_array_designator.c (続き74)
+- global_struct_member_multidim_nested_designator.c (続き75)
+- local_struct_member_multidim_nested_designator.c (続き76)
+- local_function_prototype.c (続き77)
+- sizeof_cast_expression.c (続き78)
+
+## c-testsuite 組み込み (今セッション)
+
+- **submodule**: `test/external/c-testsuite/` (https://github.com/c-testsuite/c-testsuite, MIT)
+- **harness**: `scripts/run_c_testsuite.sh` — 各 `tests/single-exec/NNNNN.c` を ag_c で compile →
+  `cc -arch arm64` で link → 実行 → exit code & stdout を `.expected` と比較
+- **Makefile targets**:
+  - `make c-testsuite` — pass/fail サマリ
+  - `make c-testsuite-verbose` — 各カテゴリ先頭 20 件の失敗一覧
+  - `bash scripts/run_c_testsuite.sh --list-fail` — 全失敗 ID 列挙
+- **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
+  100% green を維持する。
+
+### c-testsuite 現状 (続き78 後): 199/220 = 90.5% pass
+
+```
+Total:           220
+Pass:            199
+Fail (compile):  14
+Fail (assemble): 0
+Fail (runtime):  2
+Fail (stdout):   5
+```
+
+### 失敗テスト分類 (21 件、うち 5 件は GNU 拡張で skip 対象)
+
+**Compile fail (14 件)**: 00089, 00121, 00124(*), 00129, 00145, 00151, 00152, 00200, 00201, 00202,
+00204, 00209, 00210, 00213, 00214, 00216
+
+**Runtime fail (2 件)**: 00124(*), 00151(?)
+(* 00124 は compile も runtime も失敗カウントに含まれる可能性、要再確認)
+
+**Stdout mismatch (5 件)**: 00189, 00205, 00206, 00212, 00219
+
+**GNU 拡張で skip 対象 (5 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
+- 00206 (`#pragma push_macro` / `pop_macro`)
+- 00210 (`__attribute__`)
+- 00213 (statement expression `({...})`)
+- 00214 (`__builtin_expect` + statement expression)
+- 00216 (空 struct `typedef struct {} empty_s;`)
+
+実質取り組み対象は **16 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+
+## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 
 差分テスト (`scripts/agc_diff_test.sh`) sweep で発見した miscompile / parse error を順次修正。
 詳細はコミット履歴と各 fixture (`test/fixtures/probes_found_bugs/`) のヘッダコメント参照。
