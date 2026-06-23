@@ -1,30 +1,55 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き45: 代入を条件 / 整数オーバーフロー / dangling pointer）
+最終更新: 2026-06-23（続き69: 浮動→整数キャストのグローバル init 定数畳み込み）
 
 ## 現状
-- `make test` = **1053/1053 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-45 で発見した形まですべて消化)。
+- `make test` = **1077/1077 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- このセッション (続き56-69) で **14 件の miscompile / parse error を修正**。詳細は下記。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
-2. **`make test`** で 1034/1034 green を確認 (前回セッションの状態が引き継がれている)。
+2. **`make test`** で 1077/1077 green を確認 (前回セッションの状態が引き継がれている)。
 3. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 4. **未探索の角度から probe** (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
 5. **新規バグを発見** したら、HANDOFF と同じ流れ (修正 → fixture 登録 → コミット) で進める。
 
 ## 次セッションの最優先タスク
-**現時点で明確な未対応バグは無い**。次セッションは引き続き **未探索の角度** から新規
-miscompile を炙り出すフェーズ。候補:
-- 複数 TU リンク (`test_e2e.c` の `link2_cases[]` 経由、または使い捨ての `/tmp/*.sh` で
-  クロス TU 比較; static_internal_linkage_xtu_{main,other} を参考に)。
-- libc 関数連携の更に深い (snprintf format flags、qsort 複雑な comparator、stdlib chain、
-  math 連鎖)。
+
+### 既知の未修正バグ (parser 層の改修が必要)
+
+**`int (*p)[N]` を struct メンバとして使った場合の subscript stride 誤り**:
+```c
+struct H { int (*p)[3]; };
+int g_arr[3] = {10, 20, 30};
+struct H g_h = { &g_arr };
+int main(void) {
+    return (*g_h.p)[2];  /* 期待 30、agc は別アドレスを読む */
+}
+```
+- `sizeof(struct H)` が 8 ではなく 24 になる (前提となるバグ)。
+- 原因: parser が `int (*p)[N]` (pointer to array of N) と `int *p[N]` (array of N pointers) を
+  区別せず、両方とも paren_array_mul=1, is_ptr=1, trailing-array=N として解析している。
+  違いは「`*` が parens の内側にあるか外側にあるか」だが、struct_layout 経路はその区別を
+  保持していない。`g_decl_ptr_in_paren_group` 相当のフラグを member parser にも持たせる
+  必要がある。
+- ローカル変数 (`int (*p)[3] = &arr;`) は別経路で正しく動く。問題は **struct メンバとしての**
+  `int (*p)[N]` 限定。
+- 修正の取っ掛かり: `src/parser/struct_layout.c` の `parse_member_decl_name_recursive` で
+  「declarator が `*` を parens 内に含む」事実を `member_decl_head_t` に追加して持ち回す。
+  下流の arr_size 計算で「ptr-in-paren + trailing-array」なら arr_size を倍にせず、
+  代わりに outer_stride に N*elem を立てる。
+
+### 未探索の角度から新規バグ探索
+
+候補:
+- libc 関数連携の更に深い (snprintf format flags、qsort 複雑な comparator、stdlib chain、math 連鎖)。
 - ランダム生成ファズ (深いネスト・複合的なアルゴリズム・大きいプログラム)。
 - 複合代入の細形 (struct メンバ + 多次元 + ポインタ deref 組合せ)。
 - 宣言子の特殊な組合せ (typedef chain × paren-array × funcptr の更なる組合せ)。
+- 複数 TU リンク (`test_e2e.c` の `link2_cases[]` 経由、または使い捨ての `/tmp/*.sh` で
+  クロス TU 比較; static_internal_linkage_xtu_{main,other} を参考に)。
 - 古い C コードの寛容性 (K&R, implicit int 等; ただし GNU 拡張は対象外)。
 
 ## 重要な約束事 (memory より)
@@ -48,6 +73,55 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
+
+差分テスト (`scripts/agc_diff_test.sh`) sweep で発見した miscompile / parse error を順次修正。
+詳細はコミット履歴と各 fixture (`test/fixtures/probes_found_bugs/`) のヘッダコメント参照。
+
+| # | 続き | コミット | 内容 |
+|---|---|---|---|
+| 1 | 56 | `d22bd1e` | `_Bool b:1` bitfield 読み出しが -1 (符号拡張誤り) → 0/1 |
+| 2 | 57 | `58d6fe3` | 匿名 struct/union 内 bitfield 昇格時に bit_width が落ちて full-width load |
+| 3 | 58 | `789690a` | ポインタ typedef を struct メンバに使うと 4 バイト store → SIGSEGV |
+| 4 | 59 | `4cf62ab` | 配列 typedef を struct メンバ初期化で E3064 |
+| 5 | 60 | `948e3c0` | static-local array alias が param と同 offset で alloca 衝突 → SIGSEGV |
+| 6 | 61 | `624f91e` | static-local 文字列ポインタ 3 件 (subscript 不可 / NULL 化け / 負値リテラル) |
+| 7 | 62 | `61cf2da` | `typedef T *X[N]` (array of pointers) を単一ポインタと誤認 |
+| 8 | 63 | `077cbd2` | typedef array dims と declarator 側 [N] の連結 (struct メンバ) |
+| 9 | 64 | `15af560` | `(char*)&struct_var - (char*)&struct_var.m` 形が init で reject |
+| 10 | 65 | `3f9f2b2` | ネスト struct のアラインメントが sizeof と混同 (`{struct Inner i; int}` が 16 に化ける) |
+| 11 | 66 | `4b75452` | `const char *p = "..." + N;` グローバル init が `.comm` に落ちて NULL |
+| 12 | 67 | `7efbfc6` | 同上の配列/struct 要素版 (`{"abc"+2, ...}`) |
+| 13 | 68 | `4795bf4` | `long g = &arr[i] - &arr[j];` グローバル init が定数畳み込み失敗 |
+| 14 | 69 | `e3b8053` | `int g = (int)3.7;` グローバル init が ND_FP_TO_INT のまま `.comm` に化ける |
+
+### 修正の主な領域
+- **struct_layout.c**: bitfield 符号性 (続き56)、匿名昇格 bitfield 属性保持 (続き57)、ポインタ typedef
+  メンバ幅 (続き58)、配列 typedef メンバ次元連結 (続き59 + 63)、ネスト struct アラインメント (続き65)。
+- **ir_builder.c**: static-local alias を find_owning_lvar / alloca-prepass の両方で skip (続き60、61)。
+- **decl.c / expr.c**: static-local-scalar の init peek / 文字列ポインタ subscript (続き61)、
+  `*X[N]` array-of-pointers typedef (続き62)、`(char*)&struct` cast (続き64)。
+- **parser.c**: グローバル init の文字列+offset (続き66)、resolve_global_addr_init の公開化と
+  ptrdiff fold (続き68)。
+- **arm64_apple.c**: 文字列 sentinel + offset の emit (続き66、67)。
+- **expr.c**: 浮動 ND_NUM → 整数キャスト upfront fold (続き69)。
+
+### 全 fixture リスト
+- bool_bitfield.c
+- anon_struct_bitfield_promote.c
+- struct_pointer_typedef_member.c
+- struct_array_typedef_member.c
+- static_local_array_param_overlap.c
+- static_local_string_pointer.c
+- typedef_array_of_pointers.c
+- struct_array_typedef_member_2d.c
+- struct_addr_cast_subtract.c
+- struct_member_alignment.c
+- global_string_offset_init.c
+- global_string_offset_in_array_and_struct.c
+- global_ptrdiff_init.c
+- global_int_from_float_cast.c
 
 ## このセッション（続き45）: 代入を条件 / 整数オーバーフロー / dangling pointer
 3 件の W3001 warning を追加:
