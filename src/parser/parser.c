@@ -295,6 +295,7 @@ typedef struct {
 static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t arr);
 static void validate_toplevel_object_array_suffix(toplevel_array_suffix_t arr);
 static toplevel_array_suffix_t parse_toplevel_array_suffixes(int base_mul);
+static void register_toplevel_function_prototype(token_ident_t *tok, int declarator_is_ptr);
 static global_var_t *register_toplevel_object_from_declarator(token_ident_t *name, int is_ptr,
                                                                toplevel_array_suffix_t arr);
 static int current_toplevel_extern_flag(void);
@@ -885,6 +886,33 @@ static int is_function_declarator_sig(token_t *t) {
       t = t->next;
     }
     return t && t->kind == TK_LPAREN;
+  }
+  return 0;
+}
+
+/* 型指定子の後、宣言子列にトップレベル `,` があるか (`int f(int), g(int), a;` 等)。
+ * 関数定義 `int main() {` は `)` の次が `{` なので偽。単一プロトタイプ `int f(int);` も偽。 */
+static int toplevel_decl_has_comma_separated_declarators(token_t *tok) {
+  token_t *t = skip_decl_prefix_lookahead(tok);
+  if (!t) return 0;
+  if (psx_ctx_is_tag_keyword(t->kind)) {
+    t = t->next;
+    if (t && t->kind == TK_IDENT) t = t->next;
+  } else if (psx_ctx_is_type_token(t->kind)) {
+    while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
+  } else if (psx_ctx_is_typedef_name_token(t)) {
+    t = t->next;
+  } else {
+    return 0;
+  }
+  if (!t) return 0;
+  int depth = 0;
+  for (; t && t->kind != TK_EOF; t = t->next) {
+    if (depth == 0 && t->kind == TK_SEMI) return 0;
+    if (depth == 0 && t->kind == TK_LBRACE) return 0;
+    if (depth == 0 && t->kind == TK_COMMA) return 1;
+    if (t->kind == TK_LPAREN || t->kind == TK_LBRACKET) depth++;
+    else if (t->kind == TK_RPAREN || t->kind == TK_RBRACKET) depth--;
   }
   return 0;
 }
@@ -2005,6 +2033,14 @@ static void apply_global_multidim_strides(global_var_t *gv, const int *dims, int
 }
 
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
+  if (head.name && curtok()->kind == TK_LPAREN) {
+    register_toplevel_function_prototype(head.name, head.is_ptr);
+    if (curtok()->kind == TK_ASSIGN) {
+      set_curtok(curtok()->next);
+      psx_expr_assign();
+    }
+    return;
+  }
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
   /* `T (*pa)[N]` (配列へのポインタ): `*` が括弧内 (ptr_in_paren_group) で、外側に `[N]`
    * 配列サフィックス (arr.is_array) が付く形。pa は 8B のスカラポインタで、`[N]` は
@@ -2323,9 +2359,133 @@ static int has_next_toplevel_declarator(void) {
 }
 
 static token_ident_t *parse_toplevel_decl_name(int *is_ptr, int *out_paren_array_mul) {
-  token_ident_t *name = parse_decl_name_recursive(is_ptr, 1, out_paren_array_mul);
-  psx_skip_func_suffix_groups(NULL);
-  return name;
+  return parse_decl_name_recursive(is_ptr, 1, out_paren_array_mul);
+}
+
+/* curtok が `(` のとき仮引数リストだけを消費する (関数名は既に読んだ後)。 */
+static void parse_func_param_list_only(int *out_is_variadic, int *out_has_unnamed_param,
+                                       node_t ***out_args, int *out_nargs) {
+  int arg_cap = 16;
+  node_t **args = calloc(arg_cap, sizeof(node_t *));
+  int nargs = 0;
+  int is_variadic = 0;
+  int has_unnamed_param = 0;
+  tk_expect('(');
+  if (!tk_consume(')')) {
+    bool done = false;
+    node_func_t node_tmp = {0};
+    node_tmp.args = args;
+    while (!done) {
+      if (curtok()->kind == TK_ELLIPSIS) {
+        set_curtok(curtok()->next);
+        if (curtok()->kind == ',') {
+          diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, curtok(), "%s",
+                         diag_message_for(DIAG_ERR_PARSER_VARIADIC_NOT_LAST));
+        }
+        is_variadic = 1;
+        done = true;
+        continue;
+      }
+      if (parse_param_decl(&node_tmp, &nargs, &arg_cap, 1)) has_unnamed_param = 1;
+      args = node_tmp.args;
+      if (!tk_consume(',')) break;
+      if (curtok()->kind == TK_RPAREN) {
+        psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
+      }
+    }
+    tk_expect(')');
+  }
+  *out_is_variadic = is_variadic;
+  *out_has_unnamed_param = has_unnamed_param;
+  *out_args = args;
+  *out_nargs = nargs;
+}
+
+/* `int f(int), g(int), a;` の f/g 等: funcdef と同様に関数テーブルへプロトタイプを登録する。 */
+static void register_toplevel_function_prototype(token_ident_t *tok, int declarator_is_ptr) {
+  if (!tok || curtok()->kind != TK_LPAREN) return;
+  psx_decl_reset_locals();
+  token_kind_t ret_kind = g_toplevel_decl_base_kind;
+  tk_float_kind_t ret_fp_kind = g_toplevel_decl_fp_kind;
+  token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
+  int ret_is_ptr = g_toplevel_decl_base_is_ptr || declarator_is_ptr;
+  int ret_base_unsigned = g_toplevel_decl_is_unsigned;
+  int ret_is_unsigned = !ret_is_ptr && ret_base_unsigned;
+  int ret_is_complex = !ret_is_ptr && psx_last_type_is_complex();
+  int ret_struct_size = 0;
+  if ((g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION) &&
+      !ret_is_ptr && g_toplevel_decl_tag_name &&
+      psx_ctx_has_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                           g_toplevel_decl_tag_len)) {
+    ret_struct_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                                           g_toplevel_decl_tag_len);
+  }
+  int is_variadic = 0;
+  int has_unnamed_param = 0;
+  node_t **args = NULL;
+  int nargs = 0;
+  parse_func_param_list_only(&is_variadic, &has_unnamed_param, &args, &nargs);
+  (void)has_unnamed_param;
+  if (find_global_var_by_name(tok->str, tok->len)) {
+    psx_diag_ctx(curtok(), "decl",
+                 "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
+                 tok->len, tok->str);
+  }
+  psx_ctx_define_function_name_with_ret(tok->str, tok->len, ret_struct_size);
+  if (ret_fp_kind != TK_FLOAT_KIND_NONE && !ret_is_ptr) {
+    psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, ret_fp_kind);
+  }
+  if (ret_is_complex) {
+    psx_ctx_set_function_ret_is_complex(tok->str, tok->len, 1);
+  }
+  if (ret_kind == TK_VOID && !ret_is_ptr) {
+    psx_ctx_set_function_ret_void(tok->str, tok->len, 1);
+  }
+  if (!psx_ctx_track_function_ret_type(tok->str, tok->len, ret_token_kind, ret_is_ptr)) {
+    psx_diag_ctx(curtok(), "decl",
+                 "関数 '%.*s' の戻り値型が以前の宣言と異なります (C11 6.7p3)",
+                 tok->len, tok->str);
+  }
+  if (ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
+  (void)ret_is_unsigned;
+  if (!psx_ctx_track_function_nargs(tok->str, tok->len, nargs, is_variadic)) {
+    psx_diag_ctx(curtok(), "decl",
+                 "関数 '%.*s' の引数数が以前の宣言と異なります (C11 6.7p4)",
+                 tok->len, tok->str);
+  }
+  psx_ctx_set_function_variadic(tok->str, tok->len, is_variadic ? 1 : 0, nargs);
+  for (int i = 0; i < nargs && i < 16; i++) {
+    tk_float_kind_t pfk = (tk_float_kind_t)(args[i] ? args[i]->fp_kind : 0);
+    int param_cat = PSX_PCAT_UNSET;
+    if (pfk == TK_FLOAT_KIND_FLOAT) param_cat = PSX_PCAT_FLOAT;
+    else if (pfk >= TK_FLOAT_KIND_DOUBLE) param_cat = PSX_PCAT_DOUBLE;
+    else if (args[i] && ps_node_is_pointer(args[i])) param_cat = PSX_PCAT_PTR;
+    else if (args[i]) {
+      int sz = ps_node_type_size(args[i]);
+      if (sz >= 1 && sz <= 8) param_cat = PSX_PCAT_INT4;
+      else if (sz > 0) param_cat = PSX_PCAT_STRUCT;
+    }
+    if (!psx_ctx_track_function_param_category(tok->str, tok->len, i, param_cat)) {
+      psx_diag_ctx(curtok(), "decl",
+                   "関数 '%.*s' の引数 %d の型が以前の宣言と異なります (C11 6.7p4)",
+                   tok->len, tok->str, i + 1);
+    }
+    if (pfk != TK_FLOAT_KIND_NONE) {
+      psx_ctx_set_function_param_fp_kind(tok->str, tok->len, i, pfk);
+    } else if (args[i] && !ps_node_is_pointer(args[i])) {
+      int sz = ps_node_type_size(args[i]);
+      if (sz >= 1 && sz <= 4) {
+        psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 4);
+      } else if (sz == 8) {
+        psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 8);
+      }
+    }
+  }
+  if ((g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION) &&
+      g_toplevel_decl_tag_name) {
+    psx_ctx_set_function_ret_tag(tok->str, tok->len, g_toplevel_decl_tag_kind,
+                                 g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+  }
 }
 
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul) {
@@ -2406,7 +2566,8 @@ static int parse_toplevel_declaration_like(void) {
     return 0;
   }
   if (is_toplevel_decl_like_start(curtok()) &&
-      !is_toplevel_function_signature(curtok())) {
+      (!is_toplevel_function_signature(curtok()) ||
+       toplevel_decl_has_comma_separated_declarators(curtok()))) {
     /* _Generic 用: 型シグネチャ文字列化のため型開始トークンを記録 (オブジェクト宣言のみ)。 */
     g_toplevel_typespec_start = (curtok()->kind == TK_TYPEDEF) ? NULL : curtok();
     parse_toplevel_decl_spec();
