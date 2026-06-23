@@ -49,6 +49,7 @@ typedef struct {
 static int g_stmt_typedef_ptr_in_paren = 0;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static node_t *stmt_internal(void);
+static node_t *parse_stmt_label(void);
 static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
 static node_t *parse_decl_like_stmt(void);
@@ -306,6 +307,11 @@ static void parse_typedef_decl(void) {
   tk_expect(';');
 }
 
+static int is_label_start_stmt(void) {
+  return curtok()->kind == TK_IDENT && curtok()->next &&
+         curtok()->next->kind == TK_COLON;
+}
+
 static int is_decl_like_start_stmt(void) {
   if (curtok()->kind == TK_TYPEDEF) return 1;
   if (curtok()->kind == TK_STATIC_ASSERT) return 1;
@@ -428,6 +434,9 @@ static node_t *parse_decl_like_stmt(void) {
 }
 
 static node_t *block_item(void) {
+  if (is_label_start_stmt()) {
+    return parse_stmt_label();
+  }
   if (is_decl_like_start_stmt()) {
     return parse_decl_like_stmt();
   }
@@ -457,6 +466,7 @@ static node_t *stmt_internal(void) {
   // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
   if (tk_consume(';')) return psx_node_new_num(0);
   if (curtok()->kind == TK_LBRACE) return parse_stmt_block();
+  if (is_label_start_stmt()) return parse_stmt_label();
   if (is_decl_like_start_stmt()) return parse_decl_like_stmt();
   switch (curtok()->kind) {
     case TK_RETURN:   return parse_stmt_return();
@@ -471,10 +481,6 @@ static node_t *stmt_internal(void) {
     case TK_CONTINUE: return parse_stmt_continue();
     case TK_GOTO:     return parse_stmt_goto();
     default: break;
-  }
-  /* `<ident>:` 形のラベル文 */
-  if (curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON) {
-    return parse_stmt_label();
   }
   /* 式文 (式を評価して結果を捨てる) */
   node_t *node = ps_expr();

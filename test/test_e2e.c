@@ -1118,6 +1118,7 @@ static const test_case_t test_cases[] = {
     {"probes", "mixed_decl_func_proto_and_var", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_decl_func_proto_and_var.c", 0, 0},
     {"probes", "func_returning_funcptr_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_returning_funcptr_call.c", 0, 0},
     {"probes", "func_returning_funcptr_chain", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_returning_funcptr_chain.c", 0, 0},
+    {"probes", "typedef_label_shadow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_label_shadow.c", 0, 0},
     {"probes", "global_incomplete_outer_array_dim", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_incomplete_outer_array_dim.c", 0, 0},
     {"probes", "sizeof_int_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_int_literal.c", 0, 0},
     {"probes", "variadic_macro_empty_va", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_empty_va.c", 0, 0},
