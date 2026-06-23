@@ -2037,6 +2037,19 @@ static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                           int cast_elem_size, int cast_is_unsigned) {
+  /* 浮動小数点定数 ND_NUM をスカラ整数型へキャストするのは定数畳み込みできる。
+   * wrap_fp_to_int_if_needed 経由で ND_FP_TO_INT に変換してしまうと「定数」ではなく
+   * なり、グローバル初期化 (`int g = (int)3.7;`) の has_init が立たず `.comm` に
+   * 落ちて 0 に化けていた。型ごとの切り詰めは下流の per-kind 分岐に任せ、ここでは
+   * fp_kind=NONE の整数 ND_NUM に正規化するだけにする。 */
+  if (operand && operand->kind == ND_NUM &&
+      operand->fp_kind != TK_FLOAT_KIND_NONE && !is_pointer &&
+      (type_kind == TK_INT || type_kind == TK_LONG || type_kind == TK_SHORT ||
+       type_kind == TK_CHAR || type_kind == TK_ENUM ||
+       type_kind == TK_SIGNED || type_kind == TK_UNSIGNED || type_kind == TK_BOOL)) {
+    double f = ((node_num_t *)operand)->fval;
+    operand = psx_node_new_num((long long)f);
+  }
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;

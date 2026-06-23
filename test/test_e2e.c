@@ -1066,6 +1066,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_string_offset_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_string_offset_init.c", 0, 0},
     {"probes", "global_string_offset_in_array_and_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_string_offset_in_array_and_struct.c", 0, 0},
     {"probes", "global_ptrdiff_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptrdiff_init.c", 0, 0},
+    {"probes", "global_int_from_float_cast", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_int_from_float_cast.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},
