@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き86: c-testsuite 00201）
+最終更新: 2026-06-23（続き87: c-testsuite 00202）
 
 ## 現状
-- `make test` = **1094/1094 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **207/220 = 94.1% pass**。
-- 続き86: **00201** (`CAT(A,B)(x)` 二段 paste + 直後マクロ呼び出し)。
+- `make test` = **1095/1095 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **208/220 = 94.5% pass**。
+- 続き87: **00202** (`A ## B` と空引数 placemarker / `P(jim,) ; bob`)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1094/1094 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 207/220 green を確認 (= 前セッションのベースライン)。
+3. **`make test`** で 1095/1095 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 208/220 green を確認 (= 前セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -22,7 +22,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の 10 件を順次修正していく。
-B1 軽量・B2 の **00121/00124/00151/00189/00201** は **続き82-86 で完了**。次は **00202** から。
+B1 軽量・B2 の **00121/00124/00151/00189/00201/00202** は **続き82-87 で完了**。次は **00209** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -42,7 +42,7 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201** は **続き82-86 で完了
   `...` 解析 + ND_GVAR 経由呼び出しで variadic ABI。
 - **00201**: ✅ 続き86 (`macro_nested_paste_call`) — `CAT(A,B)(x)` の `)(` splice +
   hideset 伝播修正。
-- **00202**: `A##B ; bob` 形マクロ paste (paste 結果が `;` を含む)。
+- **00202**: ✅ 続き87 (`macro_paste_empty_operand`) — 空引数 placemarker と `##`。
 - **00209**: `int f1 (int (), int);` — 抽象宣言子で関数仮引数。
 
 **B3. 大規模 (重い、影響範囲広い)**
@@ -151,12 +151,12 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201** は **続き82-86 で完了
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き86 後): 207/220 = 94.1% pass
+### c-testsuite 現状 (続き87 後): 208/220 = 94.5% pass
 
 ```
 Total:           220
-Pass:            207
-Fail (compile):  10
+Pass:            208
+Fail (compile):  9
 Fail (assemble): 0
 Fail (runtime):  0
 Fail (stdout):   3
@@ -164,7 +164,7 @@ Fail (stdout):   3
 
 ### 失敗テスト分類 (16 件、うち 5 件は GNU 拡張で skip 対象)
 
-**Compile fail (10 件)**: 00089, 00129, 00200, 00202,
+**Compile fail (9 件)**: 00089, 00129, 00200,
 00204, 00209, 00210, 00213, 00214, 00216
 
 **Stdout mismatch (3 件)**: 00205, 00206, 00219
