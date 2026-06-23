@@ -2642,6 +2642,28 @@ static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
   }
 }
 
+/* ポインタを非ゼロ整数定数と比較するのは C11 6.5.16.1 の制約違反相当 (clang
+ * -Wpointer-integer-compare)。`if (p == 0)` の NULL ポインタ定数比較は合法で、
+ * `if (p == (void*)5)` のような明示キャスト経由 (apply_cast が from_pointer_cast を
+ * 立てる) も意図表明済みなので除外。 */
+static void warn_if_pointer_int_compare(node_t *lhs, node_t *rhs, const char *op) {
+  if (!lhs || !rhs) return;
+  node_t *p = NULL, *n = NULL;
+  if (ps_node_is_pointer(lhs) && !ps_node_is_pointer(rhs) && rhs->kind == ND_NUM) {
+    p = lhs; n = rhs;
+  } else if (ps_node_is_pointer(rhs) && !ps_node_is_pointer(lhs) && lhs->kind == ND_NUM) {
+    p = rhs; n = lhs;
+  }
+  if (!p) return;
+  node_num_t *num = (node_num_t *)n;
+  if (num->val == 0) return;            /* NULL ポインタ定数 */
+  if (num->from_pointer_cast) return;   /* 明示 (void*)5 等 */
+  (void)p;
+  diag_warn_tokf(DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE, NULL,
+                 "ポインタを非ゼロ整数定数 (%lld) と '%s' で比較しています (C11 6.5.16.1)",
+                 num->val, op);
+}
+
 /* `!x == y` / `!x != y` の優先順位罠を検出する (clang -Wlogical-not-parentheses 相当)。
  * `!` は `==` より優先順位が高いため `!p == 0` は `(!p) == 0` と解釈され、書き手が
  * `!(p == 0)` を期待していた場合に意図と逆になる。ag_c は `!x` を ND_EQ(x, 0) に
@@ -2666,6 +2688,7 @@ static node_t *equality(void) {
       warn_if_logical_not_paren_trap(node, "==");
       warn_if_self_compare(node, rhs, "==");
       warn_if_sign_compare(node, rhs, "==");
+      warn_if_pointer_int_compare(node, rhs, "==");
       node = psx_node_new_binary(ND_EQ, node, rhs);
     } else if (curtok()->kind == TK_NEQ) {
       set_curtok(curtok()->next);
@@ -2673,6 +2696,7 @@ static node_t *equality(void) {
       warn_if_logical_not_paren_trap(node, "!=");
       warn_if_self_compare(node, rhs, "!=");
       warn_if_sign_compare(node, rhs, "!=");
+      warn_if_pointer_int_compare(node, rhs, "!=");
       node = psx_node_new_binary(ND_NE, node, rhs);
     }
     else return node;

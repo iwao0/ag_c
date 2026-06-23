@@ -195,6 +195,7 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "符号なし整数と 0 の比較が常に同じ結果になります";
     case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "論理演算子 (&& / ||) の両辺が同じ式です";
     case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' の優先順位が '==' より高いため '!x == y' は '(!x) == y' になります";
+    case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "ポインタを非ゼロ整数定数と比較しています (C11 6.5.16.1: NULL ポインタ定数 0 のみ整数比較可能)";
   }
   return NULL;
 }
