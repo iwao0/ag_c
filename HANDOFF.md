@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き44: 縮小変換と自己比較の警告）
+最終更新: 2026-06-23（続き45: 代入を条件 / 整数オーバーフロー / dangling pointer）
 
 ## 現状
-- `make test` = **1052/1052 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-44 で発見した形まですべて消化)。
+- `make test` = **1053/1053 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 明確な未対応バグなし (HANDOFF 既知形 + 続き17/23/24/25-45 で発見した形まですべて消化)。
 - ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
 - 索引: `docs/differential_testing/bug_coverage.md`。
 
@@ -48,6 +48,18 @@ miscompile を炙り出すフェーズ。候補:
 - **差分テスト**: `scripts/agc_diff_test.sh <file.c>` で agc と clang を比較
   (exit code/stdout/stderr の 3 つを照合)。詳細は下記「作業のやり方」。
 - **アーキ流れ**: tokenizer → preprocess → parser → IR builder → ARM64 codegen。
+
+## このセッション（続き45）: 代入を条件 / 整数オーバーフロー / dangling pointer
+3 件の W3001 warning を追加:
+- `if (x = 10)` / `while (x = 0)` — 代入を条件として使う (clang -Wparentheses 相当)。
+  parse_stmt_if / parse_stmt_while で条件式 top が ND_ASSIGN なら警告。
+- `char c = 300;` / `short s = 70000;` — 整数リテラル範囲外 (clang -Wconstant-conversion 相当)。
+  decl.c のスカラ初期化分岐で var->elem_size < 4 かつ ND_NUM の値が型範囲外なら警告。
+  `unsigned char uc = -1;` は全ビット 1 のイディオムとして除外。
+- `return &x;` — ローカル変数アドレスを返す dangling pointer (clang -Wreturn-stack-address
+  相当)。parse_stmt_return で ND_ADDR(ND_LVAR) かつ非 static なら警告。
+
+`make test`=1053/1053 green。
 
 ## このセッション（続き44）: 縮小変換と自己比較の警告
 - 整数変数を浮動小数点リテラルで初期化 `int x = 1.5;` (clang -Wliteral-conversion 相当)。

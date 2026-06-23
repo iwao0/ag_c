@@ -548,6 +548,20 @@ static node_t *parse_stmt_return(void) {
                      num->val);
       }
     }
+    /* ローカル変数のアドレスを返すと dangling pointer (clang -Wreturn-stack-address 相当)。
+     * 関数終了で stack frame が破棄されるため、呼び出し側が読むと未定義動作。
+     * `return &local;` および `return local_array;` (= ND_ADDR(ND_LVAR) decay) を検出。
+     * static ローカルは寿命がプログラム期間なので除外、仮引数も典型は同じ問題なので警告対象。 */
+    if (node->lhs->kind == ND_ADDR && node->lhs->lhs &&
+        node->lhs->lhs->kind == ND_LVAR) {
+      node_lvar_t *lv = (node_lvar_t *)node->lhs->lhs;
+      lvar_t *src = psx_decl_find_lvar_by_offset(lv->offset);
+      if (src && !src->is_static_local) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "ローカル変数 '%.*s' のアドレスを返しています (dangling pointer になります)",
+                       src->len, src->name);
+      }
+    }
   }
   /* C11 6.3.1.2: 関数戻り値型が _Bool なら return 値も (rhs != 0) に正規化。
    * `_Bool f() { return 200; }` で 200 をそのまま返すと caller が真偽以外の
@@ -590,12 +604,26 @@ static node_t *parse_stmt_return(void) {
   return node;
 }
 
+/* 条件式が ND_ASSIGN (= 代入) のとき、`if (x = 10)` のようなタイプミス (`==` の typo)
+ * を警告する (clang -Wparentheses 相当)。意図的に代入を使う場合 (`while ((c = getchar()) != EOF)`
+ * のような形) は条件式の top が比較演算 (ND_NE 等) なので発火しない。
+ * 注: ag_c はパース時に括弧情報を残さないため、`if ((x = 10))` のように括弧で囲んだ
+ * 意図的形でも警告が出る (clang は括弧で抑制するが ag_c は区別できない)。 */
+static void warn_if_assign_as_condition(node_t *cond, const char *ctx) {
+  if (cond && cond->kind == ND_ASSIGN) {
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                   "%s の条件に代入式を使っています ('==' のタイプミスの可能性)",
+                   ctx);
+  }
+}
+
 static node_t *parse_stmt_if(void) {
   set_curtok(curtok()->next);
   tk_expect('(');
   node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
   node->base.kind = ND_IF;
   node->base.lhs = ps_expr();
+  warn_if_assign_as_condition(node->base.lhs, "if 文");
   tk_expect(')');
   /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
    * (clang -Wempty-body 相当)。 */
@@ -617,6 +645,7 @@ static node_t *parse_stmt_while(void) {
   node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
   node->base.kind = ND_WHILE;
   node->base.lhs = ps_expr();
+  warn_if_assign_as_condition(node->base.lhs, "while 文");
   tk_expect(')');
   psx_loop_enter();
   node->base.rhs = stmt_internal();

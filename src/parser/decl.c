@@ -2775,6 +2775,34 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
                        f);
       }
     }
+    /* 整数リテラルの範囲オーバー: `char c = 300;`、`short s = 70000;` 等
+     * (clang -Wconstant-conversion 相当)。signed/unsigned で範囲が違うため var の符号性
+     * (is_unsigned) を見て判定する。値が型に収まらない場合に warning。
+     * `unsigned char uc = -1;` は意図的な「全ビット 1」(=255) のイディオムなので除外
+     * (clang も -Wconstant-conversion では出さない)。`int x = ...` (4 バイト) は値域が広く
+     * 範囲外リテラルは tokenizer で long に昇格されるためこの check に乗らない。 */
+    if (var->fp_kind == TK_FLOAT_KIND_NONE && init_expr->kind == ND_NUM &&
+        init_expr->fp_kind == TK_FLOAT_KIND_NONE && var->elem_size > 0 &&
+        var->elem_size < 4) {
+      long long v = ((node_num_t *)init_expr)->val;
+      int bits = var->elem_size * 8;
+      long long max_signed = (1LL << (bits - 1)) - 1;
+      long long min_signed = -(1LL << (bits - 1));
+      long long max_unsigned = (1LL << bits) - 1;
+      int out_of_range;
+      if (var->is_unsigned) {
+        out_of_range = (v < 0 || v > max_unsigned);
+        /* -1 / 0xFF パターンは意図的なので除外 (signed-rep の負値そのもの) */
+        if (v < 0 && v >= min_signed) out_of_range = 0;
+      } else {
+        out_of_range = (v < min_signed || v > max_signed);
+      }
+      if (out_of_range) {
+        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+                       "整数リテラル %lld は %d バイト型に収まりません (値が切り詰められます)",
+                       v, var->elem_size);
+      }
+    }
     /* C11 6.5.16.1: struct/union 値をスカラに代入することはできない。
      * RHS の node_mem_t::tag_kind が TK_STRUCT/TK_UNION かつ is_tag_pointer=0
      * の場合、構造体実体を整数に変換しようとしているので拒否する。 */
