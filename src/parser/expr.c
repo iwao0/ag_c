@@ -4442,6 +4442,18 @@ static node_t *parse_string_literal_sequence(void) {
   return (node_t *)make_string_lit_node(merged, (int)total_len, merged_width, merged_prefix_kind);
 }
 
+// GCC __builtin_expect(exp, c): 第1引数 exp をそのまま返す (分岐ヒントは無視)。
+static node_t *try_parse_builtin_expect_call(token_ident_t *tok) {
+  if (tok->len != 16 || memcmp(tok->str, "__builtin_expect", 16) != 0) return NULL;
+  if (curtok()->kind != TK_LPAREN) return NULL;
+  set_curtok(curtok()->next); // skip '('
+  node_t *exp = assign();
+  tk_expect(',');
+  (void)assign(); // discard hint
+  tk_expect(')');
+  return exp;
+}
+
 // 名前が宣言済みでない (var==NULL) 識別子の直後に '(' が来ている場合の通常関数呼び出し。
 // 戻り値型 (ret_struct_size 等) は psx_ctx から引く。
 static node_t *build_unqualified_call(token_ident_t *tok) {
@@ -4941,6 +4953,8 @@ static node_t *resolve_identifier(token_ident_t *tok) {
     }
   }
   if (curtok()->kind == TK_LPAREN && !var) {
+    node_t *be = try_parse_builtin_expect_call(tok);
+    if (be) return be;
     /* `gp(...)` でグローバル関数ポインタを呼び出す場合は、まずグローバル変数として
      * 解決して間接呼び出しに回す。global var として見つからなければ通常の
      * unqualified function call として処理する。 */
