@@ -2763,16 +2763,23 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
       psx_diag_ctx(curtok(), "init",
                    "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
     }
-    /* 縮小変換 (narrowing) warning: 整数変数を小数値リテラルで初期化 (`int x = 1.5;`)。
-     * 値が切り捨てられて意図が伝わらない (clang -Wliteral-conversion 相当)。 */
-    if (var->fp_kind == TK_FLOAT_KIND_NONE && init_expr->kind == ND_NUM &&
+    /* 縮小変換 (narrowing) warning: 整数変数を浮動小数点値で初期化。
+     * - `int x = 1.5;` のような小数値リテラル: clang -Wliteral-conversion 相当
+     * - `int z = d;` のような double 変数からの初期化: clang -Wfloat-conversion 相当
+     * `int y = 2.0;` (整数値リテラル) は値が変わらないため除外、明示キャスト
+     * `int x = (int)d;` も apply_cast 後の fp_kind が NONE になるため除外。 */
+    if (var->fp_kind == TK_FLOAT_KIND_NONE &&
         init_expr->fp_kind != TK_FLOAT_KIND_NONE) {
-      node_num_t *num = (node_num_t *)init_expr;
-      double f = num->fval;
-      if (f != (double)(long long)f) {
+      if (init_expr->kind == ND_NUM) {
+        double f = ((node_num_t *)init_expr)->fval;
+        if (f != (double)(long long)f) {
+          diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
+                         "整数変数を浮動小数点リテラル %g で初期化しています (小数部が切り捨てられます)",
+                         f);
+        }
+      } else {
         diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
-                       "整数変数を浮動小数点リテラル %g で初期化しています (小数部が切り捨てられます)",
-                       f);
+                       "整数変数を浮動小数点値で初期化しています (小数部が切り捨てられます)");
       }
     }
     /* 整数リテラルの範囲オーバー: `char c = 300;`、`short s = 70000;` 等

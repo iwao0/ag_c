@@ -2402,6 +2402,26 @@ static node_t *assign(void) {
         diag_warn_tokf(DIAG_WARN_PARSER_SELF_ASSIGN, NULL,
                        "変数を自身に代入しています (タイプミスの可能性)");
       }
+      /* 浮動小数点 → 整数の縮小変換警告 (clang -Wliteral-conversion / -Wfloat-conversion):
+       * 整数の代入先 (fp_kind==NONE かつ非ポインタ) に float 値を代入。リテラル `w = 1.5;`
+       * は値も併記、変数経由 `w = d;` は型のみで警告。`w = 2.0;` (整数値リテラル) は
+       * 値が変わらないため除外、明示キャスト `w = (int)d;` も cast 適用後の fp_kind が
+       * NONE になるため自然と除外される。 */
+      if (assign_target && rhs && !ps_node_is_pointer(assign_target) &&
+          assign_target->fp_kind == TK_FLOAT_KIND_NONE &&
+          rhs->fp_kind != TK_FLOAT_KIND_NONE) {
+        if (rhs->kind == ND_NUM) {
+          double f = ((node_num_t *)rhs)->fval;
+          if (f != (double)(long long)f) {
+            diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
+                           "整数変数に浮動小数点リテラル %g を代入しています (小数部が切り捨てられます)",
+                           f);
+          }
+        } else {
+          diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
+                         "整数変数に浮動小数点値を代入しています (小数部が切り捨てられます)");
+        }
+      }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
       assign_node->type_size = ps_node_type_size(assign_node->base.lhs);
       assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
