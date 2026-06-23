@@ -104,6 +104,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     tk_float_kind_t member_fp_kind = TK_FLOAT_KIND_NONE;
     int member_is_bool = 0;
     int member_is_unsigned = 0;
+    int member_is_ptr_typedef = 0;
     if (psx_ctx_is_type_token(curtok()->kind)) {
       is_signed_type = (curtok()->kind != TK_UNSIGNED);
       psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
@@ -176,6 +177,13 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         td_elem = _ti.elem_size;
         td_tag = _ti.tag_kind; td_tn = _ti.tag_name; td_tl = _ti.tag_len;
         td_isu = _ti.is_unsigned;
+        /* ポインタ typedef (`typedef int (*FnPtr)(int)`, `typedef T *PT`) は struct メンバとして
+         * 使うと 8 バイト幅で扱う必要がある。head.is_ptr (宣言子に `*` がついた) を立てて
+         * 下流の type_size / deref_size / member_align 計算を再利用する。
+         * elem_size は td_elem (指す先のサイズ) のまま保持して deref_size が正しく決まる
+         * ようにする。修正前は ptr-typedef で elem_size のままにしていたため type_size=4
+         * (関数戻り型 int) で 32bit `str w` に潰れ呼び出し時 SIGSEGV していた。 */
+        if (_ti.is_pointer) member_is_ptr_typedef = 1;
       }
       if (td_tag != TK_EOF) {
         member_tag_kind = td_tag;
@@ -296,10 +304,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                                         &arr_dim_count, &arr_first_dim,
                                                         arr_dims_buf, 8);
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
-      int member_elem_size = head.is_ptr ? 8 : elem_size;
+      /* 宣言子に `*` がついた場合 (head.is_ptr) と、typedef 自体がポインタ型の場合
+       * (member_is_ptr_typedef) の両方を「メンバはポインタ」として扱う。typedef ポインタは
+       * 宣言子に `*` が現れないため head.is_ptr を立てておくと扱いが揃う。 */
+      int member_is_ptr = head.is_ptr || member_is_ptr_typedef;
+      int member_elem_size = member_is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
-      int deref_size = head.is_ptr ? elem_size : 0;
-      int member_align = head.is_ptr ? 8 : elem_size;
+      int deref_size = member_is_ptr ? elem_size : 0;
+      int member_align = member_is_ptr ? 8 : elem_size;
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
       int pack_align = pragma_pack_current;
@@ -321,13 +333,13 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.name = member_name;
         _mi.len = member_len;
         _mi.offset = off;
-        _mi.type_size = head.is_ptr ? 8 : elem_size;
+        _mi.type_size = member_is_ptr ? 8 : elem_size;
         _mi.deref_size = deref_size;
         _mi.array_len = member_array_len;
         _mi.tag_kind = member_tag_kind;
         _mi.tag_name = member_tag_name;
         _mi.tag_len = member_tag_len;
-        _mi.is_tag_pointer = head.is_ptr ? 1 : 0;
+        _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
