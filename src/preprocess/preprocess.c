@@ -1499,25 +1499,60 @@ static token_t *handle_error(token_t *tok) {
   return tok;
 }
 
-// #line N ["filename"]: 以降のトークンの line_no / file_name_id を書き換える。
-static token_t *handle_line(token_t *tok) {
-  tok = tok->next;
+/* #line 引数列 (指令行の残りトークン) をマクロ展開する (#if 定数式と同様)。 */
+static token_t *pp_expand_directive_line(token_t *args) {
+  token_t head;
+  head.next = NULL;
+  token_t *cur = &head;
+  token_t *tok = args;
+  while (tok->kind != TK_EOF && !tok->at_bol) {
+    cur->next = copy_token(tok);
+    cur->next->at_bol = false;
+    cur = cur->next;
+    tok = tok->next;
+  }
+  cur->next = tk_allocator_calloc(1, sizeof(token_t));
+  cur->next->kind = TK_EOF;
+  int saved_depth = include_depth;
+  include_depth++;
+  token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, head.next);
+  include_depth = saved_depth;
+  return expanded;
+}
+
+/* マクロ展開済み #line 引数を解釈する。行番号が無効なら診断で中断。 */
+static bool pp_parse_line_directive_args(token_t *tok, long long *out_line, char **out_file) {
   if (!(tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT)) {
-    return skip_to_next_line(tok);
+    return false;
   }
   long long new_line = tk_as_num_int(tok)->val;
   if (new_line <= 0 || new_line > INT_MAX) {
     pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
   }
+  *out_line = new_line;
   tok = tok->next;
-  char *new_file = NULL;
-  if (tok && tok->kind == TK_STRING) {
+  *out_file = NULL;
+  if (tok && tok->kind != TK_EOF && !tok->at_bol) {
+    if (tok->kind != TK_STRING) {
+      return false;
+    }
     token_string_t *st = as_string(tok);
     validate_line_filename_or_die(st->str, st->len);
-    new_file = my_strndup(st->str, st->len);
-    tok = tok->next;
+    *out_file = my_strndup(st->str, st->len);
   }
-  tok = skip_to_next_line(tok);
+  return true;
+}
+
+// #line N ["filename"]: 以降のトークンの line_no / file_name_id を書き換える。
+static token_t *handle_line(token_t *tok) {
+  token_t *args = tok->next;
+  token_t *expanded = pp_expand_directive_line(args);
+  long long new_line;
+  char *new_file = NULL;
+  if (!pp_parse_line_directive_args(expanded, &new_line, &new_file)) {
+    return skip_to_next_line(args);
+  }
+  tok = skip_to_next_line(args);
   if (tok->kind != TK_EOF) {
     long long offset = new_line - (long long)tok->line_no;
     for (token_t *t = tok; t && t->kind != TK_EOF; t = t->next) {
@@ -2105,20 +2140,11 @@ static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
  *   結果は常に N - raw_next_line に一致する (HANDOFF Stage 4 参照)。
  * after_hash は指令名 "line" トークン。バッチ同様、N が無効なら何もしない (デルタ不変)。 */
 static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
-  token_t *tok = after_hash->next;  // N
-  if (!(tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT)) {
-    return;  // バッチ: skip_to_next_line で無視 (デルタ変更なし)
-  }
-  long long new_line = tk_as_num_int(tok)->val;
-  if (new_line <= 0 || new_line > INT_MAX) {
-    pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
-  }
-  tok = tok->next;
+  token_t *expanded = pp_expand_directive_line(after_hash->next);
+  long long new_line;
   char *new_file = NULL;
-  if (tok && tok->kind == TK_STRING) {
-    token_string_t *st = as_string(tok);
-    validate_line_filename_or_die(st->str, st->len);
-    new_file = my_strndup(st->str, st->len);
+  if (!pp_parse_line_directive_args(expanded, &new_line, &new_file)) {
+    return;  // バッチ: skip_to_next_line で無視 (デルタ変更なし)
   }
   /* 次の物理トークンを 1 つ覗いて素の line_no を得る (pull で旧デルタ適用済みなので差し引く)。
    * バッチは次トークンが EOF なら何もしない (offset 計算も適用も行わない) ので同じく分岐する。 */
