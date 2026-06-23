@@ -1716,6 +1716,16 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
       *sym = g->name; *sym_len = g->name_len;
       return 1;
     }
+    /* 文字列リテラルを「ベース + 0」のシンボル参照として扱う。
+     * `const char *p = "abc" + 2;` のような形を resolve できるようにし、後段の
+     * ND_ADD 経路で +2 を加算した init_symbol_offset として登録する。
+     * init_symbol_len=-1 を sentinel に立てて codegen が `.LCn` を `_` プレフィックス
+     * なしで出すようにする (通常 gvar 名と同じ仕組み)。 */
+    case ND_STRING: {
+      node_string_t *s = (node_string_t *)e;
+      *sym = s->string_label; *sym_len = -1;
+      return 1;
+    }
     case ND_ADD: {
       int ok = 1;
       if (resolve_global_addr_init(e->lhs, sym, sym_len, off)) {

@@ -557,8 +557,13 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
     } else if (gv->init_symbol) {
       if (gv->init_symbol_len < 0) {
-        /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。 */
-        cg_emitf("  .quad %s\n", gv->init_symbol);
+        /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。
+         * `const char *p = "abc" + 2;` のように +offset がある場合はラベル + offset を出す。 */
+        if (gv->init_symbol_offset != 0) {
+          cg_emitf("  .quad %s + %lld\n", gv->init_symbol, gv->init_symbol_offset);
+        } else {
+          cg_emitf("  .quad %s\n", gv->init_symbol);
+        }
       } else if (gv->init_symbol_offset != 0) {
         /* `&a[1]` / `a+1`: シンボル + バイトオフセット。 */
         cg_emitf("  .quad _%.*s + %lld\n", gv->init_symbol_len, gv->init_symbol,
