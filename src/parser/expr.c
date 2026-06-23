@@ -2116,8 +2116,18 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * char サイズ (1) で 1 バイトしかロードしていなかった (変数に代入した場合は
      * 変数の型で正しく動いていた)。多段ポインタ (`int**`) は operand 側の表現を
      * 優先するためここでは触れない (cast_elem_size は基底型サイズで段数を持たない)。 */
+    /* オペランドがポインタ (通常 is_pointer=1) または tag ポインタ (struct/union の `&s`、
+     * wrap_as_addr が is_tag_pointer=1 / is_pointer=0 で生成) のとき、新しいポインタ型として
+     * ラップする。後者を含めないと `(char*)&s - (char*)&s.c` のような struct ポインタの cast が
+     * 元の ND_ADDR をそのまま返し is_pointer=0 のまま残るため、ND_SUB の「ポインタ - ポインタ
+     * = ptrdiff_t」分岐が成立せず、long 初期化が「ポインタを scalar に init」と reject される。 */
+    int operand_is_ptr_or_tag = ps_node_is_pointer(operand) ||
+                                ((operand->kind == ND_ADDR || operand->kind == ND_DEREF ||
+                                  operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
+                                  operand->kind == ND_PTR_CAST) &&
+                                 ((node_mem_t *)operand)->is_tag_pointer);
     if (is_pointer && cast_elem_size > 0 &&
-        ps_node_is_pointer(operand) &&
+        operand_is_ptr_or_tag &&
         psx_node_pointer_qual_levels(operand) <= 1) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
       wrap->base.kind = ND_PTR_CAST;

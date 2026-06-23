@@ -1061,6 +1061,7 @@ static const test_case_t test_cases[] = {
     {"probes", "static_local_string_pointer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_string_pointer.c", 0, 0},
     {"probes", "typedef_array_of_pointers", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_array_of_pointers.c", 0, 0},
     {"probes", "struct_array_typedef_member_2d", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_array_typedef_member_2d.c", 0, 0},
+    {"probes", "struct_addr_cast_subtract", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_addr_cast_subtract.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},
