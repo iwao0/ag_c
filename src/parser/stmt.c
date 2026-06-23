@@ -159,11 +159,10 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
       member_count = psx_parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size);
       psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size);
     } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
-      if (*tag_kind == TK_STRUCT || *tag_kind == TK_UNION) {
-        psx_ctx_define_tag_type(*tag_kind, *tag_name, *tag_len);
-      } else {
-        psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), *tag_name, *tag_len);
-      }
+      psx_ctx_define_tag_type(*tag_kind, *tag_name, *tag_len);
+    }
+    while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
+      set_curtok(curtok()->next);
     }
     *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
     return 1;
@@ -409,12 +408,17 @@ static node_t *parse_decl_like_stmt(void) {
       return psx_node_new_num(0);
     }
     if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+      psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
+    }
+    while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
+      set_curtok(curtok()->next);
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+    int tag_members = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
+    int elem_size = (tag_members > 0) ? (tag_size > 0 ? tag_size : 8) : 0;
     if (tag_path_saw_static) psx_set_static_flag(1);
     if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
-    return psx_decl_parse_declaration_after_type(tag_size > 0 ? tag_size : 8,
+    return psx_decl_parse_declaration_after_type(elem_size,
                                                  TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
   }
 

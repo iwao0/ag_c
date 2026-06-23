@@ -203,6 +203,7 @@ static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, 
 static void apply_toplevel_typedef_prefix_flags(void);
 static void resolve_toplevel_tag_decl_layout_or_ref(void);
 static void reset_toplevel_decl_spec_state(void);
+static void skip_post_type_cv_qualifiers(void);
 static int parse_toplevel_tag_decl_spec(void);
 static int parse_toplevel_typedef_name_spec(void);
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len);
@@ -230,6 +231,7 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
                                                             token_ident_t **out_inner_second_dim_ident,
                                                             int *out_has_func_suffix);
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed);
+static int is_param_decl_spec_start(void);
 typedef struct {
   token_kind_t base_type_kind;
   int saw_typedef_name;
@@ -400,6 +402,7 @@ static int parse_toplevel_tag_decl_spec(void) {
   parse_toplevel_tag_head(&g_toplevel_decl_tag_kind, &g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
   g_toplevel_decl_base_kind = g_toplevel_decl_tag_kind;
   resolve_toplevel_tag_decl_layout_or_ref();
+  skip_post_type_cv_qualifiers();
   g_toplevel_decl_elem_size = psx_ctx_get_tag_size(g_toplevel_decl_tag_kind,
                                                    g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
   apply_toplevel_decl_prefix_flags();
@@ -422,8 +425,8 @@ static void resolve_toplevel_tag_decl_layout_or_ref(void) {
     psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
     return;
   }
-  psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX),
-                               g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
+  /* 未完了タグの前方宣言 (`enum E *e;` / `struct S *s;` 等)。`enum E;` と同様に登録する。 */
+  psx_ctx_define_tag_type(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name, g_toplevel_decl_tag_len);
 }
 
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len) {
@@ -560,6 +563,20 @@ void psx_set_alignas_value(int align) {
 
 static void skip_ptr_qualifiers(void) {
   while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
+    set_curtok(curtok()->next);
+  }
+}
+
+/* 型指定子の直後 (`enum E const *p` 等) の cv 修飾子を読み飛ばす。 */
+static void skip_post_type_cv_qualifiers(void) {
+  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE ||
+         curtok()->kind == TK_RESTRICT) {
+    if (curtok()->kind == TK_CONST) g_last_type_const_qualified = 1;
+    if (curtok()->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
+    set_curtok(curtok()->next);
+  }
+  if (curtok()->kind == TK_ATOMIC && curtok()->next && curtok()->next->kind != TK_LPAREN) {
+    g_last_type_atomic = 1;
     set_curtok(curtok()->next);
   }
 }
@@ -2084,6 +2101,12 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     }
     return;
   }
+  if (g_toplevel_decl_tag_kind != TK_EOF && !head.is_ptr &&
+      psx_ctx_get_tag_member_count(g_toplevel_decl_tag_kind, g_toplevel_decl_tag_name,
+                                   g_toplevel_decl_tag_len) <= 0) {
+    psx_diag_ctx(curtok(), "decl", "%s",
+                 diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+  }
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
   /* `T (*pa)[N]` (配列へのポインタ): `*` が括弧内 (ptr_in_paren_group) で、外側に `[N]`
    * 配列サフィックス (arr.is_array) が付く形。pa は 8B のスカラポインタで、`[N]` は
@@ -2675,8 +2698,9 @@ static void parse_toplevel_tag_decl(void) {
     return;
   }
   if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-    psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag_name, tag_len);
+    psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
   }
+  skip_post_type_cv_qualifiers();
   install_toplevel_tag_decl_globals(tag_kind, tag_name, tag_len);
   parse_toplevel_declarator_list();
   tk_expect(';');
@@ -2997,6 +3021,17 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, 
   return param;
 }
 
+/* `int (int x)` のように declarator の `(` 直後が型指定子なら、関数型の仮引数リスト。 */
+static int is_param_decl_spec_start(void) {
+  token_t *t = curtok();
+  if (!t) return 0;
+  if (psx_ctx_is_tag_keyword(t->kind)) return 1;
+  if (psx_ctx_is_type_token(t->kind)) return 1;
+  if (psx_ctx_is_typedef_name_token(t)) return 1;
+  if (t->kind == TK_CONST || t->kind == TK_VOLATILE) return 1;
+  return 0;
+}
+
 static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_declarator,
                                                             int *out_is_pointer_declarator,
                                                             int *out_pointer_levels,
@@ -3016,6 +3051,21 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   int levels_before_paren = out_pointer_levels ? *out_pointer_levels : 0;
   bool paren_made_pointer = false;
   if (tk_consume('(')) {
+    if (is_param_decl_spec_start() || curtok()->kind == TK_VOID) {
+      /* 関数型 declarator: `int (int x)` / `int (int())` / `int (void)` 等。
+       * 仮引数位置では関数型は関数ポインタへ decay する。 */
+      if (out_has_func_suffix) *out_has_func_suffix = 1;
+      if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
+      if (out_pointer_levels && *out_pointer_levels == 0) (*out_pointer_levels)++;
+      node_func_t discard = {0};
+      int discard_nargs = 0;
+      int discard_cap = 0;
+      while (curtok()->kind != TK_RPAREN) {
+        parse_param_decl(&discard, &discard_nargs, &discard_cap, 0);
+        if (!tk_consume(',')) break;
+      }
+      tk_expect(')');
+    } else {
     name = parse_param_declarator_name_recursive(out_is_array_declarator, out_is_pointer_declarator,
                                                  out_pointer_levels,
                                                  out_inner_first_dim, out_inner_second_dim,
@@ -3025,6 +3075,7 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
     tk_expect(')');
     if (out_pointer_levels && *out_pointer_levels > levels_before_paren) {
       paren_made_pointer = true;
+    }
     }
   } else {
     name = tk_consume_ident();
@@ -3674,7 +3725,7 @@ static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **re
     member_count = psx_parse_tag_definition_body(*ret_kind, tag->str, tag->len, &tag_size);
     psx_ctx_define_tag_type_with_layout(*ret_kind, tag->str, tag->len, member_count, tag_size);
   } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
-    psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), tag->str, tag->len);
+    psx_ctx_define_tag_type(*ret_kind, tag->str, tag->len);
   }
 }
 
