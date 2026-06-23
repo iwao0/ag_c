@@ -4083,7 +4083,7 @@ static int expr_funcall_returns_funcptr(node_t *fcall) {
   if (!fcall || fcall->kind != ND_FUNCALL) return 0;
   node_func_t *fc = (node_func_t *)fcall;
   if (!fc->callee && fc->funcname) {
-    return psx_ctx_get_function_ret_is_pointer(fc->funcname, fc->funcname_len);
+    return psx_ctx_get_function_ret_is_funcptr(fc->funcname, fc->funcname_len);
   }
   if (fc->callee && fc->callee->kind == ND_LVAR) {
     lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)fc->callee)->offset);

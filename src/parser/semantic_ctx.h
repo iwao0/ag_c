@@ -147,6 +147,8 @@ typedef struct {
   int array_first_dim;          // 最外側 `[N]` の N (多次元の mid_stride 計算用)
   int array_dim_count;          // 配列次元数 (0 = 非配列/未知)
   int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
+  int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
+  int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
 } psx_typedef_info_t;
 
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、
@@ -222,6 +224,10 @@ int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
+void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
+                                         int funcptr_ret_is_pointer);
+int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
+int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len);
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等)。未登録は TK_EOF。 */
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */

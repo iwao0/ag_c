@@ -96,6 +96,8 @@ static int g_last_alignas_value = 0;
  * 戻り値型を関数ポインタ (= ポインタ) として扱うため、parse_func_declarator
  * から funcdef へ伝える。各 funcdef 開始時にリセットする。 */
 static int g_last_outer_declarator_is_ptr = 0;
+static int g_func_ret_is_funcptr = 0;
+static int g_func_funcptr_ret_is_pointer = 0;
 /* 戻り値型基底の `*` 段数 (`int **g()` で 2)。parse_pointer_suffix_flags が数え、
  * funcdef が多段ポインタ戻りの記録に使う。各 funcdef 開始時にリセットする。 */
 static int g_last_ret_ptr_levels = 0;
@@ -131,6 +133,7 @@ static int g_toplevel_decl_base_pointer_levels = 0;
  * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
  * 宣言子ごとに parse_toplevel_declarator_head でリセットされる。 */
 static int g_toplevel_decl_has_func_suffix = 0;
+static int g_toplevel_decl_funcptr_ret_is_pointer = 0;
 /* 現在パース中のトップレベル宣言子のポインタ段数 (`double *dp`=1, `double **dpp`=2)。
  * psx_consume_pointer_prefix が消費した `*` の数を積算する。宣言子ごとに
  * parse_toplevel_declarator_head でリセットする。単段ポインタ (`double *dp`) に限って
@@ -2271,12 +2274,17 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
 static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr, int require_name) {
   toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
   g_toplevel_decl_has_func_suffix = 0;
+  g_toplevel_decl_funcptr_ret_is_pointer = 0;
   g_toplevel_decl_ptr_levels = 0;
   g_toplevel_decl_ptr_in_paren_group = 0;
   g_toplevel_decl_paren_array_present = 0;
   g_toplevel_decl_paren_array_dim_count = 0;
   for (int i = 0; i < 8; i++) g_toplevel_decl_paren_array_dims[i] = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
+  if (g_toplevel_decl_is_typedef && out.is_ptr &&
+      (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
+    g_toplevel_decl_funcptr_ret_is_pointer = 1;
+  }
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
   if (!out.name && require_name) emit_decl_name_required_diag();
   return out;
@@ -2412,6 +2420,10 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
   if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
+  if (is_ptr && g_toplevel_decl_has_func_suffix) {
+    _ti.is_funcptr = 1;
+    _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
+  }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
   }
@@ -2595,7 +2607,12 @@ static void register_toplevel_function_prototype(token_ident_t *tok, int declara
 }
 
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul) {
+  int ptr_before_prefix = *is_ptr;
   psx_consume_pointer_prefix(is_ptr);
+  if (require_name && !ptr_before_prefix && *is_ptr && g_toplevel_decl_is_typedef &&
+      (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
+    g_toplevel_decl_funcptr_ret_is_pointer = 1;
+  }
   psx_skip_gnu_attributes();
   token_ident_t *name = NULL;
   int had_parens = 0;
@@ -3712,6 +3729,8 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   *ret_tag = NULL;
   *ret_is_ptr = 0;
   if (ret_is_unsigned) *ret_is_unsigned = 0;
+  g_func_ret_is_funcptr = 0;
+  g_func_funcptr_ret_is_pointer = 0;
   /* storage class (static/extern) の直後がタグキーワードなら、先に storage class を消費
    * してフラグを立ててからタグ経路へ。psx_consume_type_kind は `static` の後の `struct` を
    * 型と認識できず implicit int に落ちるため (`static struct S *g(){}` が壊れていた)。
@@ -3796,11 +3815,13 @@ static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *re
   /* typedef の unsigned 性を捕捉する。`typedef unsigned char u8` の戻り型 `u8 f()` は
    * td_base=TK_CHAR だが unsigned。捨てると sub-int 戻り値が符号拡張され
    * `u8 f(){return 200;}` が -56 に化ける (uint8_t ローカルと同根の戻り型版)。 */
-  psx_typedef_info_t _ti;
+  psx_typedef_info_t _ti = {0};
   if (psx_ctx_find_typedef_name(td_id->str, td_id->len, &_ti)) {
     td_base = _ti.base_kind; td_fp = _ti.fp_kind;
     td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
     td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+    g_func_ret_is_funcptr = _ti.is_funcptr;
+    g_func_funcptr_ret_is_pointer = _ti.funcptr_ret_is_pointer;
   }
   set_curtok(curtok()->next);
   *ret_kind = td_base;
@@ -4217,6 +4238,17 @@ static node_t *funcdef(void) {
    * psx_ctx_get_function_ret_is_pointer で別途参照される。 */
   if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && ret_tag) {
     psx_ctx_set_function_ret_tag(tok->str, tok->len, ret_kind, ret_tag->str, ret_tag->len);
+  }
+  {
+    int ret_is_funcptr = g_func_ret_is_funcptr;
+    int funcptr_ret_is_pointer = g_func_funcptr_ret_is_pointer;
+    if (g_last_outer_declarator_is_ptr) {
+      ret_is_funcptr = 1;
+      if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && ret_tag)
+        funcptr_ret_is_pointer = ret_is_ptr ? 1 : 0;
+    }
+    if (ret_is_funcptr)
+      psx_ctx_set_function_ret_is_funcptr(tok->str, tok->len, 1, funcptr_ret_is_pointer);
   }
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
   node->is_static = fn_is_static;

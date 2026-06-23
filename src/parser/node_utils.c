@@ -423,16 +423,27 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
            * を立てる。`get()->m` の `->` 判定に必要 (以前は常に 0 で誤判定していた)。 */
           ptr = psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len);
         } else if (fn->callee) {
-          /* 間接呼び出し (関数ポインタ経由) `op(41).v` / `op(41)->v`: callee の funcptr
-           * 変数は tag フィールドに戻り tag を保持する (`struct R (*op)(int)` → tag=R)。
-           * funcptr 自身の is_tag_pointer は「変数がポインタ」を表し常に 1 なので使わず、
-           * 戻り値がポインタか否かは pointer_qual_levels で判定する
-           * (pql=1: 値戻り `struct R (*op)()` → ptr=0 / pql>=2: ポインタ戻り
-           * `struct R *(*op)()` → ptr=1)。これがないと funcall ノードの tag が引けず
-           * `.`/`->` が E3005 になっていた。 */
-          psx_node_get_tag_type(fn->callee, &kind, &name, &len, NULL);
-          if (kind != TK_EOF)
-            ptr = psx_node_pointer_qual_levels(fn->callee) >= 2 ? 1 : 0;
+          node_func_t *inner = (node_func_t *)fn->callee;
+          if (inner->callee == NULL && inner->funcname &&
+              psx_ctx_get_function_ret_is_funcptr(inner->funcname, inner->funcname_len)) {
+            /* `go()()->m`: go は関数ポインタを返し、2 段目の呼び出し結果は指し示す
+             * 関数の戻り型 (例 `struct S * (*)(void)` → struct S *)。 */
+            psx_ctx_get_function_ret_tag(inner->funcname, inner->funcname_len,
+                                         &kind, &name, &len);
+            ptr = psx_ctx_get_function_funcptr_ret_is_pointer(inner->funcname,
+                                                              inner->funcname_len);
+          } else {
+            /* 間接呼び出し (関数ポインタ経由) `op(41).v` / `op(41)->v`: callee の funcptr
+             * 変数は tag フィールドに戻り tag を保持する (`struct R (*op)(int)` → tag=R)。
+             * funcptr 自身の is_tag_pointer は「変数がポインタ」を表し常に 1 なので使わず、
+             * 戻り値がポインタか否かは pointer_qual_levels で判定する
+             * (pql=1: 値戻り `struct R (*op)()` → ptr=0 / pql>=2: ポインタ戻り
+             * `struct R *(*op)()` → ptr=1)。これがないと funcall ノードの tag が引けず
+             * `.`/`->` が E3005 になっていた。 */
+            psx_node_get_tag_type(fn->callee, &kind, &name, &len, NULL);
+            if (kind != TK_EOF)
+              ptr = psx_node_pointer_qual_levels(fn->callee) >= 2 ? 1 : 0;
+          }
         }
         break;
       }

@@ -111,6 +111,8 @@ struct typedef_name_t {
   // 多次元 typedef 配列の各次元のサイズ。array_dims[0] が最も外側。
   // 上限 8 次元 (実用上十分)。
   int array_dims[8];
+  int is_funcptr;
+  int funcptr_ret_is_pointer;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -144,6 +146,10 @@ struct func_name_t {
    * bool で段数を持たないため、多段ポインタ戻り `int **g(); **g()` の deref を正しい
    * 幅 (1 段目=ポインタ8B / 最内=基底型) で組むために別途保持する。 */
   int ret_pointer_levels;
+  /* 1: 戻り値型が関数ポインタ (`fty go()` / `int (*f())()`)。ret_tag は指し示す
+   * 関数の戻り tag を保持し、funcptr_ret_is_pointer がその戻りがポインタかを表す。 */
+  int ret_is_funcptr;
+  int funcptr_ret_is_pointer;
   /* 1: 戻り値型が unsigned。`unsigned` は ret_token_kind が TK_INT に正規化され
    * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
    * (ULT/ULE 比較選択) に使う。 */
@@ -838,6 +844,8 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_unsigned = info->is_unsigned;
   t->is_array = info->is_array;
   t->array_first_dim = info->array_first_dim;
+  t->is_funcptr = info->is_funcptr;
+  t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -927,6 +935,8 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->array_dim_count = n;
     for (int i = 0; i < n; i++) out->array_dims[i] = t->array_dims[i];
     for (int i = n; i < 8; i++) out->array_dims[i] = 0;
+    out->is_funcptr = t->is_funcptr;
+    out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
   }
   return true;
 }
@@ -1111,6 +1121,24 @@ bool psx_ctx_is_function_ret_void(char *name, int len) {
 int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return (f && f->ret_set_once) ? f->ret_is_pointer : 0;
+}
+
+void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
+                                         int funcptr_ret_is_pointer) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->ret_is_funcptr = is_funcptr ? 1 : 0;
+  f->funcptr_ret_is_pointer = funcptr_ret_is_pointer ? 1 : 0;
+}
+
+int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_is_funcptr : 0;
+}
+
+int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->funcptr_ret_is_pointer : 0;
 }
 
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等) を返す。未登録なら TK_EOF。
