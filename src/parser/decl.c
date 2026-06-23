@@ -287,6 +287,9 @@ static int resolve_typedef_array_element_size(token_ident_t *id) {
 
 static long long eval_const_expr_decl(node_t *n, int *ok);
 
+/* parser.c で定義された forward 宣言。グローバル初期化のシンボル+offset 解決を再利用する。 */
+extern int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
+
 long long psx_decl_eval_const_int(node_t *n, int *ok) {
   return eval_const_expr_decl(n, ok);
 }
@@ -334,6 +337,23 @@ static long long eval_const_expr_decl(node_t *n, int *ok) {
     break;
   default:
     *ok = 0; return 0;
+  }
+  /* `&g_arr[3] - &g_arr[1]` のような「同一シンボル上のポインタ減算」は ICE。
+   * 両辺をそれぞれ (sym, off) に解決し、同 sym なら byte 差分を返す。
+   * 上位レイヤ (`add()` で ND_DIV(ND_SUB, sizeof) にラップ) が要素単位に変換する。
+   * 修正前は ND_SUB の左右 (= ND_ADD/ND_ADDR) が switch にないため eval が失敗し、
+   * `long g_diff = &g_arr[3] - &g_arr[1];` がグローバル init を `.comm` (0) に落としていた。 */
+  if (n->kind == ND_SUB) {
+    char *lsym = NULL, *rsym = NULL;
+    int lsym_len = 0, rsym_len = 0;
+    long long loff = 0, roff = 0;
+    if (psx_resolve_global_addr_init(n->lhs, &lsym, &lsym_len, &loff) &&
+        psx_resolve_global_addr_init(n->rhs, &rsym, &rsym_len, &roff) &&
+        lsym && rsym && lsym_len == rsym_len &&
+        (lsym_len == -1 ? lsym == rsym
+                        : (lsym_len > 0 && memcmp(lsym, rsym, (size_t)lsym_len) == 0))) {
+      return loff - roff;
+    }
   }
   // 二項演算共通: 左→右の順で評価し、op を適用。
   long long l = eval_const_expr_decl(n->lhs, ok);

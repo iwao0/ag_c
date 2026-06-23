@@ -1698,6 +1698,12 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
  *   a + n / &a[n]              → (a, n*sizeof(elem))
  *   &a[n] (= &*(a+n))          → DEREF を剥がして再帰
  * 解決できれば 1 を返し sym・sym_len・off を設定する。 */
+int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
+
+int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off) {
+  return resolve_global_addr_init(e, sym, sym_len, off);
+}
+
 static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off) {
   if (!e) return 0;
   switch (e->kind) {
@@ -1711,6 +1717,10 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
         return resolve_global_addr_init(e->lhs->lhs, sym, sym_len, off);
       }
       return 0;
+    /* `(char*)&g_arr[N]` のような明示キャストは ND_PTR_CAST にラップされる。
+     * シンボル+offset 解決には型変換の有無は無関係なので、operand に再帰する。 */
+    case ND_PTR_CAST:
+      return resolve_global_addr_init(e->lhs, sym, sym_len, off);
     case ND_GVAR: {
       node_gvar_t *g = (node_gvar_t *)e;
       *sym = g->name; *sym_len = g->name_len;
