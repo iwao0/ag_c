@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き84: c-testsuite 00151）
+最終更新: 2026-06-23（続き85: c-testsuite 00189）
 
 ## 現状
-- `make test` = **1092/1092 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **205/220 = 93.2% pass**。
-- 続き84: **00151** (グローバル `int arr[][3][5]` 最外次元推論 + 部分行初期化)。
+- `make test` = **1093/1093 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **206/220 = 93.6% pass**。
+- 続き85: **00189** (グローバル可変長関数ポインタ経由呼び出しの variadic ABI)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1092/1092 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 205/220 green を確認 (= 前セッションのベースライン)。
+3. **`make test`** で 1093/1093 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 206/220 green を確認 (= 前セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -22,7 +22,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の 10 件を順次修正していく。
-B1 軽量・B2 の **00121/00124/00151** は **続き82-84 で完了**。次は **00189** から。
+B1 軽量・B2 の **00121/00124/00151/00189** は **続き82-85 で完了**。次は **00201** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -38,8 +38,8 @@ B1 軽量・B2 の **00121/00124/00151** は **続き82-84 で完了**。次は 
   の pql 補正 + `(*call())(args)` deref 減衰。
 - **00151**: ✅ 続き84 (`global_incomplete_outer_array_dim`) — `int arr[][3][5]` の
   行境界揃え + 外側次元推論。
-- **00189** (stdout): `int (*fprintfptr)(FILE *, const char *, ...) = &fprintf;` — グローバル
-  可変長関数ポインタ初期化。
+- **00189**: ✅ 続き85 (`global_variadic_funcptr_call`) — グローバル可変長 funcptr の
+  `...` 解析 + ND_GVAR 経由呼び出しで variadic ABI。
 - **00201**: `CAT(A,B)(x)` マクロ token paste で識別子合成。
 - **00202**: `A##B ; bob` 形マクロ paste (paste 結果が `;` を含む)。
 - **00209**: `int f1 (int (), int);` — 抽象宣言子で関数仮引数。
@@ -150,15 +150,15 @@ B1 軽量・B2 の **00121/00124/00151** は **続き82-84 で完了**。次は 
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き84 後): 205/220 = 93.2% pass
+### c-testsuite 現状 (続き85 後): 206/220 = 93.6% pass
 
 ```
 Total:           220
-Pass:            205
+Pass:            206
 Fail (compile):  11
 Fail (assemble): 0
 Fail (runtime):  0
-Fail (stdout):   4
+Fail (stdout):   3
 ```
 
 ### 失敗テスト分類 (16 件、うち 5 件は GNU 拡張で skip 対象)
@@ -166,7 +166,7 @@ Fail (stdout):   4
 **Compile fail (11 件)**: 00089, 00129, 00200, 00201, 00202,
 00204, 00209, 00210, 00213, 00214, 00216
 
-**Stdout mismatch (4 件)**: 00189, 00205, 00206, 00219
+**Stdout mismatch (3 件)**: 00205, 00206, 00219
 
 **GNU 拡張で skip 対象 (5 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
 - 00206 (`#pragma push_macro` / `pop_macro`)
