@@ -1052,6 +1052,7 @@ static const test_case_t test_cases[] = {
     {"probes", "identical_logical_operands", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/identical_logical_operands.c", 0, 0},
     {"probes", "logical_not_paren_trap", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/logical_not_paren_trap.c", 0, 0},
     {"probes", "pointer_integer_compare", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_integer_compare.c", 0, 0},
+    {"probes", "integer_const_overflow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/integer_const_overflow.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},

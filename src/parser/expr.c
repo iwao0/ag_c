@@ -2735,6 +2735,37 @@ static node_t *relational(void) {
   }
 }
 
+/* 整数定数式の int オーバーフロー検出 (clang -Winteger-overflow 相当)。
+ * 両辺がリテラル int (long/long long サフィックスなし、符号付き、float でない、ポインタでない)
+ * のとき、ADD/SUB/MUL の結果が int32 範囲を超えるなら C11 6.5p5 未定義動作。
+ * 片方でも long リテラルなら long 演算扱いで対象外 (`2147483647L + 1L` は long なので安全)。
+ * unsigned はモジュロ演算で定義されているので対象外。
+ * `-2147483648` のような形は tokenizer が `2147483648` を long 扱いするため自然と除外。 */
+static int int_const_overflow_is_int_literal(node_t *n) {
+  if (!n || n->kind != ND_NUM) return 0;
+  if (n->fp_kind != TK_FLOAT_KIND_NONE) return 0;
+  if (n->is_unsigned) return 0;
+  node_num_t *num = (node_num_t *)n;
+  if (num->int_is_long || num->int_is_long_long) return 0;
+  /* int 範囲チェック (値自体が long になる literal は除外) */
+  return num->val >= -2147483648LL && num->val <= 2147483647LL;
+}
+static void warn_if_int_const_overflow(node_t *lhs, node_t *rhs, node_kind_t op_kind, const char *op_name) {
+  if (!int_const_overflow_is_int_literal(lhs) || !int_const_overflow_is_int_literal(rhs)) return;
+  long long a = ((node_num_t *)lhs)->val;
+  long long b = ((node_num_t *)rhs)->val;
+  long long r;
+  if (op_kind == ND_ADD)      r = a + b;
+  else if (op_kind == ND_SUB) r = a - b;
+  else if (op_kind == ND_MUL) r = a * b;
+  else return;
+  if (r < -2147483648LL || r > 2147483647LL) {
+    diag_warn_tokf(DIAG_WARN_PARSER_INTEGER_OVERFLOW, NULL,
+                   "整数定数式 %lld %s %lld = %lld は int の範囲を超えています (C11 6.5p5 未定義動作)",
+                   a, op_name, b, r);
+  }
+}
+
 /* シフト量が型の幅を超えるリテラル時に C11 6.5.7p3 違反 (未定義動作) を警告する。
  * 通常の int (ts<=4) なら 32 ビット幅、long (ts==8) なら 64 ビット幅。負値も未定義。 */
 static void warn_if_shift_oob(node_t *lhs, node_t *rhs, const char *op_name) {
@@ -2818,6 +2849,8 @@ static node_t *add(void) {
             rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
           }
         }
+      } else {
+        warn_if_int_const_overflow(node, rhs, ND_ADD, "+");
       }
       node = psx_node_new_binary(ND_ADD, node, rhs);
     } else if (curtok()->kind == TK_MINUS) {
@@ -2844,6 +2877,8 @@ static node_t *add(void) {
               rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
             }
           }
+        } else {
+          warn_if_int_const_overflow(node, rhs, ND_SUB, "-");
         }
         node = psx_node_new_binary(ND_SUB, node, rhs);
       }
@@ -2857,7 +2892,9 @@ static node_t *mul(void) {
   for (;;) {
     if (curtok()->kind == TK_MUL) {
       set_curtok(curtok()->next);
-      node = psx_node_new_binary(ND_MUL, node, cast());
+      node_t *rhs = cast();
+      warn_if_int_const_overflow(node, rhs, ND_MUL, "*");
+      node = psx_node_new_binary(ND_MUL, node, rhs);
     } else if (curtok()->kind == TK_DIV) {
       set_curtok(curtok()->next);
       node_t *rhs = cast();
