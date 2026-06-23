@@ -1307,14 +1307,18 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
      *   返す。中間段 (sub_ndim>=2) は is_array=1 で sub_dims を 1 つ前に詰めて再帰。
      * - 非 char (`int x[3][3]`): 中間段は is_array=1 で内側ndim配列として再帰。最内
      *   1 段 (sub_ndim==1) は scalar 要素 (`int`) を 1 つ書く ctx (is_array=0, elem_size=)
-     *   としてそのまま fall-through (sub_dims 機構を抜ける)。 */
-    if (ctx.sub_ndim >= 1 && ctx.tag_kind == TK_EOF) {
-      if (ctx.elem_size == 1 && ctx.sub_ndim == 1) {
+     *   としてそのまま fall-through (sub_dims 機構を抜ける)。
+     * - struct タグ多次元配列 (`struct C rows[3][2]`): 中間段 (sub_ndim>=2) と最内 1 段
+     *   (sub_ndim==1) のいずれも is_array=1 で「内側次元数の struct タグ配列」として
+     *   返す。これがないと内側 brace `{{.val=99}}` で designator が「単一 struct」コンテキストに
+     *   解釈され `.val=` が E3064 で弾かれる。 */
+    if (ctx.sub_ndim >= 1) {
+      if (ctx.tag_kind == TK_EOF && ctx.elem_size == 1 && ctx.sub_ndim == 1) {
         /* char 最内 1D: 行 (sub_dims[0] バイト) として文字列展開分岐に乗せる。 */
         c.elem_size = 1;
         c.array_len = ctx.sub_dims[0];
-      } else if (ctx.sub_ndim >= 2 || ctx.elem_size > 1) {
-        /* 中間段 / 非 char 多次元: 内側 (sub_ndim-1) 次元の配列。 */
+      } else if (ctx.sub_ndim >= 2 || ctx.elem_size > 1 || ctx.tag_kind != TK_EOF) {
+        /* 中間段 / 非 char 多次元 / struct タグ多次元: 内側 (sub_ndim-1) 次元の配列。 */
         int inner_total = 1;
         for (int i = 0; i < ctx.sub_ndim; i++) inner_total *= ctx.sub_dims[i];
         c.is_array = 1;
