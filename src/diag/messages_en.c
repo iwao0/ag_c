@@ -178,6 +178,18 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "unreachable code";
     case DIAG_WARN_PARSER_UNUSED_VARIABLE: return "unused variable '%.*s'";
     case DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE: return "variable '%.*s' is used uninitialized";
+    case DIAG_WARN_PARSER_MISSING_RETURN: return "non-void function falls off without returning a value (C11 6.9.1p12)";
+    case DIAG_WARN_PARSER_RETURN_STACK_ADDRESS: return "returning address of a local variable (dangling pointer)";
+    case DIAG_WARN_PARSER_ASSIGN_IN_CONDITION: return "assignment used as a condition (possible '==' typo)";
+    case DIAG_WARN_PARSER_COMMA_IN_CONDITION: return "comma operator used as a condition (possible '&&' typo)";
+    case DIAG_WARN_PARSER_EMPTY_BODY: return "control statement body is empty (possible typo)";
+    case DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING: return "initializing an integer variable from a floating-point literal (fractional part will be truncated)";
+    case DIAG_WARN_PARSER_CONSTANT_OVERFLOW: return "integer literal does not fit in target type (value will be truncated)";
+    case DIAG_WARN_PARSER_SELF_ASSIGN: return "variable assigned to itself (possible typo)";
+    case DIAG_WARN_PARSER_SELF_COMPARE: return "comparing identical expressions (result is always the same)";
+    case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "shift amount exceeds type width (C11 6.5.7p3 undefined behavior)";
+    case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "division/modulo by zero (C11 6.5.5p5 undefined behavior)";
+    case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "function is not declared (implicit declaration is invalid in C99/C11)";
   }
   return NULL;
 }

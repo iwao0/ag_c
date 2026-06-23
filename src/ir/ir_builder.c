@@ -2938,7 +2938,7 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
     if (!is_main) {
       bool ret_is_void = psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len);
       if (!ret_is_void) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
                        "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
                        fn->funcname_len, fn->funcname);
       }

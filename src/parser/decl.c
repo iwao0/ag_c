@@ -2770,7 +2770,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
       node_num_t *num = (node_num_t *)init_expr;
       double f = num->fval;
       if (f != (double)(long long)f) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
                        "整数変数を浮動小数点リテラル %g で初期化しています (小数部が切り捨てられます)",
                        f);
       }
@@ -2798,7 +2798,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
         out_of_range = (v < min_signed || v > max_signed);
       }
       if (out_of_range) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_CONSTANT_OVERFLOW, NULL,
                        "整数リテラル %lld は %d バイト型に収まりません (値が切り詰められます)",
                        v, var->elem_size);
       }

@@ -557,7 +557,7 @@ static node_t *parse_stmt_return(void) {
       node_lvar_t *lv = (node_lvar_t *)node->lhs->lhs;
       lvar_t *src = psx_decl_find_lvar_by_offset(lv->offset);
       if (src && !src->is_static_local) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_RETURN_STACK_ADDRESS, NULL,
                        "ローカル変数 '%.*s' のアドレスを返しています (dangling pointer になります)",
                        src->len, src->name);
       }
@@ -614,11 +614,11 @@ static node_t *parse_stmt_return(void) {
 static void warn_if_assign_as_condition(node_t *cond, const char *ctx) {
   if (!cond) return;
   if (cond->kind == ND_ASSIGN) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+    diag_warn_tokf(DIAG_WARN_PARSER_ASSIGN_IN_CONDITION, NULL,
                    "%s の条件に代入式を使っています ('==' のタイプミスの可能性)",
                    ctx);
   } else if (cond->kind == ND_COMMA) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+    diag_warn_tokf(DIAG_WARN_PARSER_COMMA_IN_CONDITION, NULL,
                    "%s の条件にカンマ演算子を使っています ('&&' のタイプミスの可能性)",
                    ctx);
   }
@@ -635,7 +635,7 @@ static node_t *parse_stmt_if(void) {
   /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
    * (clang -Wempty-body 相当)。 */
   if (curtok()->kind == TK_SEMI) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+    diag_warn_tokf(DIAG_WARN_PARSER_EMPTY_BODY, NULL,
                    "if 文の本体が空です (タイプミスの可能性)");
   }
   node->base.rhs = stmt_internal();

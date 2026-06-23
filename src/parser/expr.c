@@ -2399,7 +2399,7 @@ static node_t *assign(void) {
       if (assign_target && assign_target->kind == ND_LVAR &&
           rhs && rhs->kind == ND_LVAR &&
           ((node_lvar_t *)assign_target)->offset == ((node_lvar_t *)rhs)->offset) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_SELF_ASSIGN, NULL,
                        "変数を自身に代入しています (タイプミスの可能性)");
       }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
@@ -2494,7 +2494,7 @@ static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
   if (!lhs || !rhs) return;
   if (lhs->kind == ND_LVAR && rhs->kind == ND_LVAR &&
       ((node_lvar_t *)lhs)->offset == ((node_lvar_t *)rhs)->offset) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+    diag_warn_tokf(DIAG_WARN_PARSER_SELF_COMPARE, NULL,
                    "自己比較 (常に同じ値): '%s'", op);
     return;
   }
@@ -2503,7 +2503,7 @@ static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
     node_gvar_t *rg = (node_gvar_t *)rhs;
     if (lg->name_len == rg->name_len &&
         memcmp(lg->name, rg->name, (size_t)lg->name_len) == 0) {
-      diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+      diag_warn_tokf(DIAG_WARN_PARSER_SELF_COMPARE, NULL,
                      "自己比較 (常に同じ値): '%s'", op);
     }
   }
@@ -2555,7 +2555,7 @@ static void warn_if_shift_oob(node_t *lhs, node_t *rhs, const char *op_name) {
   int lhs_ts = lhs ? ps_node_type_size(lhs) : 4;
   int width = (lhs_ts >= 8) ? 64 : 32;
   if (r < 0 || r >= width) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+    diag_warn_tokf(DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE, NULL,
                    "シフト量 %lld が型の幅 (%d ビット) を超えています (C11 6.5.7p3 未定義動作): %s",
                    r, width, op_name);
   }
@@ -2676,7 +2676,7 @@ static node_t *mul(void) {
       /* C11 6.5.5p5: / または % で除数が 0 は未定義動作。リテラル 0 は警告。 */
       if (rhs && rhs->kind == ND_NUM && ((node_num_t *)rhs)->val == 0 &&
           rhs->fp_kind == TK_FLOAT_KIND_NONE) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_DIVIDE_BY_ZERO, NULL,
                        "0 による除算 (C11 6.5.5p5 未定義動作)");
       }
       node = psx_node_new_binary(ND_DIV, node, rhs);
@@ -2685,7 +2685,7 @@ static node_t *mul(void) {
       node_t *rhs = cast();
       if (rhs && rhs->kind == ND_NUM && ((node_num_t *)rhs)->val == 0 &&
           rhs->fp_kind == TK_FLOAT_KIND_NONE) {
-        diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, NULL,
+        diag_warn_tokf(DIAG_WARN_PARSER_DIVIDE_BY_ZERO, NULL,
                        "0 による剰余 (C11 6.5.5p5 未定義動作)");
       }
       node = psx_node_new_binary(ND_MOD, node, rhs);
@@ -4130,7 +4130,7 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
    * tok が関数として登録されておらず、グローバル変数 (関数ポインタ) でもないなら未宣言。 */
   if (!psx_ctx_has_function_name(tok->str, tok->len) &&
       !psx_find_global_var(tok->str, tok->len)) {
-    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_INT_RETURN, (token_t *)tok,
+    diag_warn_tokf(DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL, (token_t *)tok,
                    "関数 '%.*s' は宣言されていません (C99/C11 で implicit declaration は不可)",
                    tok->len, tok->str);
   }

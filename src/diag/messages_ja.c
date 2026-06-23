@@ -178,6 +178,18 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_UNREACHABLE_CODE: return "到達不能なコードです";
     case DIAG_WARN_PARSER_UNUSED_VARIABLE: return "未使用の変数 '%.*s'";
     case DIAG_WARN_PARSER_UNINITIALIZED_VARIABLE: return "初期化されていない変数 '%.*s' が使用されています";
+    case DIAG_WARN_PARSER_MISSING_RETURN: return "非 void 関数が値を返さずに終端します (C11 6.9.1p12)";
+    case DIAG_WARN_PARSER_RETURN_STACK_ADDRESS: return "ローカル変数のアドレスを返しています (dangling pointer)";
+    case DIAG_WARN_PARSER_ASSIGN_IN_CONDITION: return "条件式に代入を使っています ('==' のタイプミスの可能性)";
+    case DIAG_WARN_PARSER_COMMA_IN_CONDITION: return "条件式にカンマ演算子を使っています ('&&' のタイプミスの可能性)";
+    case DIAG_WARN_PARSER_EMPTY_BODY: return "制御文の本体が空です (タイプミスの可能性)";
+    case DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING: return "整数変数を浮動小数点リテラルで初期化しています (小数部が切り捨てられます)";
+    case DIAG_WARN_PARSER_CONSTANT_OVERFLOW: return "整数リテラルが型に収まりません (値が切り詰められます)";
+    case DIAG_WARN_PARSER_SELF_ASSIGN: return "変数を自身に代入しています (タイプミスの可能性)";
+    case DIAG_WARN_PARSER_SELF_COMPARE: return "同じ式同士を比較しています (結果が常に同じ)";
+    case DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE: return "シフト量が型の幅を超えています (C11 6.5.7p3 未定義動作)";
+    case DIAG_WARN_PARSER_DIVIDE_BY_ZERO: return "0 による除算 / 剰余 (C11 6.5.5p5 未定義動作)";
+    case DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL: return "関数が宣言されていません (C99/C11 で暗黙宣言は不可)";
   }
   return NULL;
 }
