@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き88: c-testsuite 00209）
+最終更新: 2026-06-23（続き89: c-testsuite 00210）
 
 ## 現状
-- `make test` = **1096/1096 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **209/220 = 95.0% pass**。
-- 続き88: **00209** (未完了タグのポインタ宣言 / `enum E const *` / `int (int x)` 関数型仮引数)。
+- `make test` = **1097/1097 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **210/220 = 95.5% pass**。
+- 続き89: **00210** (GNU `__attribute__((packed))` / `stdcall` / マクロ展開後の属性)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
@@ -22,7 +22,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の 10 件を順次修正していく。
-B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209** は **続き82-88 で完了**。次は **00210** から。
+B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209/00210** は **続き82-89 で完了**。次は **00213** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -45,7 +45,9 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209** は **続き82-
 - **00202**: ✅ 続き87 (`macro_paste_empty_operand`) — 空引数 placemarker と `##`。
 - **00209**: ✅ 続き88 (`incomplete_tag_and_nested_func_param`) — 未完了タグ前方宣言 +
   `enum E const *` + `int (int x)` 仮引数。
-- **00210**: `__attribute__((packed))` / `__attribute__((stdcall))` 等の属性構文。
+- **00210**: ✅ 続き89 (`gnu_attribute_parse`) — `__attribute__((...))` を宣言・関数・
+  キャストで読み飛ばし。
+- **00213**: 複雑な宣言子・typedef 連鎖。
 
 **B3. 大規模 (重い、影響範囲広い)**
 - **00089**: `go()()->zerofunc()` — 関数戻り値の連鎖呼び出し (関数ポインタ戻り型 + 構造体メンバ)。
@@ -58,7 +60,6 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209** は **続き82-
 
 #### 対象外 (GNU 拡張、HANDOFF ルールで skip)
 - **00206**: `#pragma push_macro` / `pop_macro` (GCC/MSVC 拡張)
-- **00210**: `__attribute__((packed))`, `((stdcall))`
 - **00213**: GNU statement expression `({...})`
 - **00214**: `__builtin_expect`, statement expression
 - **00216**: 空 struct `typedef struct {} empty_s;` (GCC 拡張)
@@ -153,27 +154,26 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209** は **続き82-
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き88 後): 209/220 = 95.0% pass
+### c-testsuite 現状 (続き89 後): 210/220 = 95.5% pass
 
 ```
 Total:           220
-Pass:            209
-Fail (compile):  8
+Pass:            210
+Fail (compile):  7
 Fail (assemble): 0
 Fail (runtime):  0
 Fail (stdout):   3
 ```
 
-### 失敗テスト分類 (16 件、うち 5 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (10 件、うち 4 件は GNU 拡張で skip 対象)
 
-**Compile fail (8 件)**: 00089, 00129, 00200,
-00204, 00210, 00213, 00214, 00216
+**Compile fail (7 件)**: 00089, 00129, 00200,
+00204, 00213, 00214, 00216
 
 **Stdout mismatch (3 件)**: 00205, 00206, 00219
 
-**GNU 拡張で skip 対象 (5 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
+**GNU 拡張で skip 対象 (4 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
 - 00206 (`#pragma push_macro` / `pop_macro`)
-- 00210 (`__attribute__`)
 - 00213 (statement expression `({...})`)
 - 00214 (`__builtin_expect` + statement expression)
 - 00216 (空 struct `typedef struct {} empty_s;`)
