@@ -1683,6 +1683,21 @@ static token_t **pp_collect_args(macro_t *m, token_t *tok, token_t **out_rparen)
   return args;
 }
 
+static bool pp_arg_is_empty(token_t *arg) {
+  return !arg;
+}
+
+static int pp_param_idx_for_ident(macro_t *m, token_t *ident_tok) {
+  if (ident_tok->kind != TK_IDENT) return -1;
+  token_ident_t *pid = as_ident(ident_tok);
+  for (int i = 0; i < m->num_params; i++) {
+    if (strlen(m->params[i]) == (size_t)pid->len && !strncmp(m->params[i], pid->str, pid->len)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 /* func-like マクロ本体に実引数を代入し、## paste・# stringize・hideset 付与・行再配置を行って
  * 展開結果を返す (NULL 終端、空なら NULL)。name は new_hideset 用 (free しない)。 */
 static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **args, char *name) {
@@ -1730,6 +1745,28 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
         for (token_t *b = m->body; b && b != t; b = b->next) pv = b;
         bool paste_operand = (t->next && t->next->kind == TK_HASHHASH) ||
                              (pv && pv->kind == TK_HASHHASH);
+        /* C11 6.10.3.2p3: placemarker (空引数) と ## の組は paste せず placemarker を削除。 */
+        if (paste_operand && pp_arg_is_empty(args[p_idx])) {
+          if (t->next && t->next->kind == TK_HASHHASH) {
+            t = t->next;  /* 空 LHS: パラメータと ## を落とす */
+            continue;
+          }
+          if (pv && pv->kind == TK_HASHHASH) {
+            continue;  /* 空 RHS: パラメータ名だけ落とす (## は LHS 側で除去済み) */
+          }
+        }
+        if (paste_operand && t->next && t->next->kind == TK_HASHHASH) {
+          int rhs_idx = pp_param_idx_for_ident(m, t->next->next);
+          if (rhs_idx >= 0 && pp_arg_is_empty(args[rhs_idx])) {
+            token_t *sub = args[p_idx];
+            for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
+              cur_body->next = copy_token(a);
+              cur_body = cur_body->next;
+            }
+            t = t->next->next;  /* ## と空 RHS パラメータ名をスキップ */
+            continue;
+          }
+        }
         token_t *sub = paste_operand ? args[p_idx] : pp_expand_arg(args[p_idx]);
         for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
           cur_body->next = copy_token(a);
