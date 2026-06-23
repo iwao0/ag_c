@@ -349,6 +349,17 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
       int deref_size = member_is_ptr ? elem_size : 0;
       int member_align = member_is_ptr ? 8 : elem_size;
+      /* struct/union メンバ (非ポインタ) のアラインメントは「メンバの最大スカラ
+       * アラインメント (psx_ctx_get_tag_align)」であり、sizeof ではない。
+       * 修正前は elem_size (= sizeof) をそのまま採用しており、
+       * `struct Inner {int a, b;}` (sizeof=8, align=4) を含む `struct Outer
+       * {struct Inner i; int trail;}` で agg_align=8 となり sizeof(Outer)=16 と 4 バイト
+       * 過剰パディング (clang は 12)。 */
+      if (!member_is_ptr && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
+          member_tag_name) {
+        int tag_align = psx_ctx_get_tag_align(member_tag_kind, member_tag_name, member_tag_len);
+        if (tag_align > 0) member_align = tag_align;
+      }
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
       int pack_align = pragma_pack_current;
