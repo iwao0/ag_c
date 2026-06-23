@@ -1047,6 +1047,7 @@ static const test_case_t test_cases[] = {
     {"probes", "switch_fallthrough", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/switch_fallthrough.c", 0, 0},
     {"probes", "sign_compare", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sign_compare.c", 0, 0},
     {"probes", "float_to_int_narrowing_extended", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_to_int_narrowing_extended.c", 0, 0},
+    {"probes", "float_to_int_return_narrowing", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_to_int_return_narrowing.c", 0, 0},
     {"probes", "global_ptr_to_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_ptr_to_multidim_array.c", 0, 0},
     {"probes", "funcptr_global_array_fp_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_global_array_fp_return.c", 0, 0},
     {"probes", "global_size1_funcptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_size1_funcptr_array.c", 0, 0},

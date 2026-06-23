@@ -581,6 +581,27 @@ static node_t *parse_stmt_return(void) {
                    "%s",
                    diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
   }
+  /* 浮動小数点 → 整数の縮小変換警告 (return 経路、clang -Wliteral-conversion /
+   * -Wfloat-conversion 相当): `int f() { return 1.5; }` のように整数戻り型へ float を
+   * 返すと小数部が切り捨てられる。リテラル `return 1.5;` は値も併記、変数経由
+   * `return d;` は型のみで警告。`return 2.0;` (整数値リテラル) は値が変わらないので除外、
+   * 明示キャスト `return (int)d;` は cast 適用後の fp_kind が NONE になるため自然と除外。 */
+  if (node->lhs && node->lhs->fp_kind != TK_FLOAT_KIND_NONE &&
+      psx_expr_current_func_ret_fp_kind() == TK_FLOAT_KIND_NONE &&
+      !psx_expr_current_func_ret_is_pointer() &&
+      psx_expr_current_func_ret_token_kind() != TK_VOID) {
+    if (node->lhs->kind == ND_NUM) {
+      double f = ((node_num_t *)node->lhs)->fval;
+      if (f != (double)(long long)f) {
+        diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
+                       "整数戻り型の関数から浮動小数点リテラル %g を return しています (小数部が切り捨てられます)",
+                       f);
+      }
+    } else {
+      diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
+                     "整数戻り型の関数から浮動小数点値を return しています (小数部が切り捨てられます)");
+    }
+  }
   /* C11 6.8.6.4 / 6.5.16.1: ポインタ戻り値型の関数で非ゼロ整数値を返すのは
    * 互換性のない型の制約違反 (NULL ポインタ定数 0 は許可)。
    * 明示キャスト (int*)x は apply_cast が is_pointer を設定するためここでは通る。 */
