@@ -1430,6 +1430,18 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         int r = (cur_idx - level_start) % es;
         if (r != 0) cur_idx += es - r;  /* 次の要素境界へ切り上げ (隙間は後段で 0 埋め) */
       }
+      /* plain 多次元配列の positional 要素境界。部分初期化した行の直後は次行の先頭 slot へ
+       * 進める (`int a[2][3][5]` で `{0,0,3,5}` の 4 スカラの次は slot 5 から)。
+       * sub_dims の積が 1 要素の flat slot 数 (`[3][5]`→15、行 `[5]`→5)。 */
+      if (es <= 1 && ctx.sub_ndim >= 1) {
+        int elem_slots = 1;
+        for (int i = 0; i < ctx.sub_ndim; i++) elem_slots *= ctx.sub_dims[i];
+        if (elem_slots > 1) {
+          int off = cur_idx - level_start;
+          int r = off % elem_slots;
+          if (r != 0) cur_idx += elem_slots - r;
+        }
+      }
     }
     /* この反復で初期化する部分オブジェクトの型 (ネスト brace の子コンテキスト)。
      * 既定は positional 位置の型。designator のときは下で上書きする。 */
@@ -1896,7 +1908,38 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
      * register 時には has_incomplete_array で type_size=0 にされているので
      * ここで埋め直す。 */
     if (gv->type_size == 0 && gv->is_array && gv->deref_size > 0 && gv->init_count > 0) {
-      gv->type_size = gv->init_count * gv->deref_size;
+      if (gv->outer_stride > gv->deref_size) {
+        /* `int a[][3][5]={{...},{...}}`: 外側次元を内側 slab (outer_stride) から推論。 */
+        int inner_slots = gv->outer_stride / gv->deref_size;
+        if (inner_slots > 0) {
+          int outer_dim = (gv->init_count + inner_slots - 1) / inner_slots;
+          int total_slots = outer_dim * inner_slots;
+          while (cap < total_slots) {
+            int new_cap = cap * 2;
+            if (new_cap < total_slots) new_cap = total_slots;
+            gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+            gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+            gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+            if (gv->init_fvalues) {
+              gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+              for (int i = cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
+            }
+            cap = new_cap;
+          }
+          while (gv->init_count < total_slots) {
+            gv->init_values[gv->init_count] = 0;
+            gv->init_value_symbols[gv->init_count] = NULL;
+            gv->init_value_symbol_lens[gv->init_count] = 0;
+            if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = 0.0;
+            gv->init_count++;
+          }
+          gv->type_size = total_slots * gv->deref_size;
+        } else {
+          gv->type_size = gv->init_count * gv->deref_size;
+        }
+      } else {
+        gv->type_size = gv->init_count * gv->deref_size;
+      }
     }
     /* C11 6.3.1.2: `_Bool a[N]={...}` の各要素初期化子を 0/1 に正規化する。
      * (配列ブランチはここで早期 return するため末尾のスカラ正規化には到達しない。) */
