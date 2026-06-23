@@ -2137,7 +2137,13 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
   int base_ptr_elem_array = (is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
                              g_toplevel_decl_ptr_levels == 0 &&
                              arr.is_array && arr.arr_total > 0) ? 1 : 0;
-  int td_is_array = ((!is_ptr || base_ptr_elem_array) && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
+  /* `typedef int *IP[5]`: declarator の `*` (ptr_levels>=1) と `[N]` 配列 suffix の組合せは
+   * 「N 個のポインタ配列」。is_array=1 として記録する。 */
+  int decl_ptr_array = (is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
+                        g_toplevel_decl_ptr_levels >= 1 &&
+                        arr.is_array && arr.arr_total > 0) ? 1 : 0;
+  int td_is_array = ((!is_ptr || base_ptr_elem_array || decl_ptr_array) &&
+                     (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = td_is_array ? arr.dim_count : 0;
   const int *td_dims = arr.dims;
@@ -2230,6 +2236,16 @@ static int compute_toplevel_typedef_sizeof(int is_ptr, toplevel_array_suffix_t a
    * とは排他。 */
   if (is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
       g_toplevel_decl_ptr_levels == 0 &&
+      arr.is_array && arr.arr_total > 0) {
+    typedef_sizeof = 8 * arr.arr_total;
+  }
+  /* 直書きの「array of pointer typedef」(`typedef int *IP[5]`): declarator が `*` を追加
+   * (ptr_levels>=1) かつ `[N]` 配列 suffix がある形は「N 個のポインタ配列」なので
+   * sizeof = 8 (pointer) * arr_total。修正前は単一ポインタ扱いで 8 のまま、`IP a; a[0]=&g;
+   * *a[0]` が SIGSEGV していた。pointer-to-array typedef (`int (*PA)[3]`) は
+   * ptr_in_paren_group=1 で除外。 */
+  if (is_ptr && !g_toplevel_decl_ptr_in_paren_group &&
+      g_toplevel_decl_ptr_levels >= 1 &&
       arr.is_array && arr.arr_total > 0) {
     typedef_sizeof = 8 * arr.arr_total;
   }

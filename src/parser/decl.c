@@ -4150,19 +4150,26 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   /* 配列要素がポインタの typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef だが
    * declarator は `*` を追加していない (decl_added_pointer=0)。この場合の typedef は
    * 「pointer 配列」なので is_array=1、要素サイズはポインタサイズ (8)、sizeof_size=8*N。
-   * 通常の「pointer typedef + 配列 suffix なし」(`BinOp f`) は arr.is_array=0 なので影響なし。 */
+   * 通常の「pointer typedef + 配列 suffix なし」(`BinOp f`) は arr.is_array=0 なので影響なし。
+   * 直書きの「array of pointer typedef」(`typedef int *IP[5]`) も同じ扱い: declarator に
+   * `*` と `[N]` の両方があり、結果は「N 個の int* 配列」。修正前はこの形が is_array=0 /
+   * sizeof=8 で「単一ポインタ」と解釈され、`IP a; a[0] = &g; *a[0]` が SIGSEGV していた。 */
   int base_is_ptr_only = (is_ptr && !decl_added_pointer);
+  decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_mul);
+  int decl_has_array_with_ptr = (is_ptr && decl_added_pointer && arr.is_array);
   int elem_unit_size = is_ptr ? 8 : elem_size;
   int typedef_sizeof = elem_unit_size;
-  decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_mul);
   if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
   else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
   else if (base_is_ptr_only && arr.is_array && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
+  else if (decl_has_array_with_ptr && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
   token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
   // `typedef int row_t[3]` のように配列型を typedef した場合は is_array=1 で記録する。
   // 不完全配列 `typedef int A[]` も is_array=1 (sizeof_size は 0)。
   // `typedef BinOp OpArr3[3]` (ポインタ要素配列) も is_array=1。
-  int td_is_array = ((!is_ptr || base_is_ptr_only) && (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
+  // `typedef int *IP[5]` (decl_has_array_with_ptr) も同様に is_array=1。
+  int td_is_array = ((!is_ptr || base_is_ptr_only || decl_has_array_with_ptr) &&
+                     (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = td_is_array ? arr.dim_count : 0;
   psx_typedef_info_t _ti = {0};
