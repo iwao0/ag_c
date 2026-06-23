@@ -194,6 +194,7 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_SIGN_COMPARE: return "符号付きと符号なしの比較です (負値が大きな正の値として扱われる可能性)";
     case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "符号なし整数と 0 の比較が常に同じ結果になります";
     case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "論理演算子 (&& / ||) の両辺が同じ式です";
+    case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' の優先順位が '==' より高いため '!x == y' は '(!x) == y' になります";
   }
   return NULL;
 }

@@ -194,6 +194,7 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_SIGN_COMPARE: return "comparison between signed and unsigned (negative value may be treated as a large positive)";
     case DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO: return "comparison of unsigned integer with 0 has a constant result";
     case DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS: return "logical operator (&& / ||) has identical operands";
+    case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' has higher precedence than '==' so '!x == y' is parsed as '(!x) == y'";
   }
   return NULL;
 }

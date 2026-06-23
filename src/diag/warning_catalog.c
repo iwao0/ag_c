@@ -28,6 +28,7 @@ static const diag_warn_entry_t k_warn_entries[] = {
     {DIAG_WARN_PARSER_SIGN_COMPARE, "W3018", "parser.sign_compare"},
     {DIAG_WARN_PARSER_TAUTOLOGICAL_UNSIGNED_ZERO, "W3019", "parser.tautological_unsigned_zero_compare"},
     {DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS, "W3020", "parser.identical_logical_operands"},
+    {DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES, "W3021", "parser.logical_not_parentheses"},
 };
 
 static const diag_warn_entry_t *find_warn_entry(diag_warn_id_t id) {

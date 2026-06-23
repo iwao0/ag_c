@@ -2642,18 +2642,35 @@ static void warn_if_self_compare(node_t *lhs, node_t *rhs, const char *op) {
   }
 }
 
+/* `!x == y` / `!x != y` の優先順位罠を検出する (clang -Wlogical-not-parentheses 相当)。
+ * `!` は `==` より優先順位が高いため `!p == 0` は `(!p) == 0` と解釈され、書き手が
+ * `!(p == 0)` を期待していた場合に意図と逆になる。ag_c は `!x` を ND_EQ(x, 0) に
+ * 変換するため、LHS が ND_EQ かつ from_logical_not なら警告。`(!x) == y` のように
+ * 括弧で囲んでも ag_c は括弧情報を残さないため誤検出するが、これは少数の事例で
+ * clang も同様に警告を出す挙動。 */
+static void warn_if_logical_not_paren_trap(node_t *lhs, const char *op) {
+  if (lhs && lhs->from_logical_not) {
+    diag_warn_tokf(DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES, NULL,
+                   "'%s' の左辺が単項 '!' で、'!' の優先順位が '%s' より高いため "
+                   "'(!x) %s y' と解釈されます ('!(x %s y)' を意図していませんか)",
+                   op, op, op, op);
+  }
+}
+
 static node_t *equality(void) {
   node_t *node = relational();
   for (;;) {
     if (curtok()->kind == TK_EQEQ) {
       set_curtok(curtok()->next);
       node_t *rhs = relational();
+      warn_if_logical_not_paren_trap(node, "==");
       warn_if_self_compare(node, rhs, "==");
       warn_if_sign_compare(node, rhs, "==");
       node = psx_node_new_binary(ND_EQ, node, rhs);
     } else if (curtok()->kind == TK_NEQ) {
       set_curtok(curtok()->next);
       node_t *rhs = relational();
+      warn_if_logical_not_paren_trap(node, "!=");
       warn_if_self_compare(node, rhs, "!=");
       warn_if_sign_compare(node, rhs, "!=");
       node = psx_node_new_binary(ND_NE, node, rhs);
@@ -3440,7 +3457,12 @@ static node_t *unary(void) {
     }
     return psx_node_new_binary(ND_SUB, psx_node_new_num(0), operand);
   }
-  if (k == TK_BANG)  { set_curtok(curtok()->next); return psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0)); }
+  if (k == TK_BANG)  {
+    set_curtok(curtok()->next);
+    node_t *eq = psx_node_new_binary(ND_EQ, cast(), psx_node_new_num(0));
+    eq->from_logical_not = 1;  /* `!p == 0` の precedence-trap 警告に使う */
+    return eq;
+  }
   if (k == TK_TILDE) {
     set_curtok(curtok()->next);
     node_t *neg = psx_node_new_binary(ND_SUB, psx_node_new_num(0), cast());

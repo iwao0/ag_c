@@ -80,6 +80,8 @@ struct node_t {
   unsigned int is_unsigned : 1; // 1: unsigned演算
   unsigned int is_complex : 1;  // 1: _Complex型演算
   unsigned int is_atomic : 1;   // 1: _Atomic型（load-acquire/store-release）
+  unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
+                                     // (`!p == 0` の precedence-trap 警告に使う)
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
