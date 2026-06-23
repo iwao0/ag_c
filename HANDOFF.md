@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き80-81: c-testsuite 00152 + 00212）
+最終更新: 2026-06-23（続き82: c-testsuite 00121）
 
 ## 現状
-- `make test` = **1089/1089 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **202/220 = 91.8% pass**。
-- 続き80: **00152** (`#line` 引数マクロ展開)。続き81: **00212** (`__LP64__` 定義済みマクロ)。
+- `make test` = **1090/1090 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **203/220 = 92.3% pass**。
+- 続き82: **00121** (トップレベル宣言で関数プロトタイプと変数の混在)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1089/1089 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 202/220 green を確認 (= 前セッションのベースライン)。
+3. **`make test`** で 1090/1090 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 203/220 green を確認 (= 前セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -21,8 +21,9 @@
 
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
-`make c-testsuite-verbose` で失敗一覧を見て、未着手の 13 件を順次修正していく。
-B1 軽量 (00145/00152/00212) は **続き79-81 で完了**。次は **B2 中規模** の **00121** から。
+`make c-testsuite-verbose` で失敗一覧を見て、未着手の 12 件を順次修正していく。
+B1 軽量 (00145/00152/00212) は **続き79-81 で完了**。B2 中規模の **00121** は **続き82 で完了**。
+次は **00124** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -32,9 +33,8 @@ B1 軽量 (00145/00152/00212) は **続き79-81 で完了**。次は **B2 中規
 - **00212**: ✅ 続き81 (`pp_predefined_lp64`)
 
 **B2. 中規模 (parser / 型システム)**
-- **00121**: `int f(int a), g(int a), a;` — 1 つの宣言で関数 prototype と変数を混ぜる形。
-  続き77 で関数 declarator を skip するようにしたが、その後の `, a;` (変数) 経路で正しく登録
-  されているか確認。
+- **00121**: ✅ 続き82 (`mixed_decl_func_proto_and_var`) — カンマ区切り toplevel 宣言を
+  `funcdef()` ではなく declaration 経路へ。prototype 登録 + 変数 `a` 登録。
 - **00124** (runtime): `int (*f1(int a, int b))(int c, int b) { ... }` — 関数ポインタを返す関数。
 - **00151**: `int arr[][3][5] = {...};` — 最外側次元を省略 (初期化子から推論)。
 - **00189** (stdout): `int (*fprintfptr)(FILE *, const char *, ...) = &fprintf;` — グローバル
@@ -149,20 +149,20 @@ B1 軽量 (00145/00152/00212) は **続き79-81 で完了**。次は **B2 中規
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き81 後): 202/220 = 91.8% pass
+### c-testsuite 現状 (続き82 後): 203/220 = 92.3% pass
 
 ```
 Total:           220
-Pass:            202
-Fail (compile):  12
+Pass:            203
+Fail (compile):  11
 Fail (assemble): 0
 Fail (runtime):  2
 Fail (stdout):   4
 ```
 
-### 失敗テスト分類 (19 件、うち 5 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (18 件、うち 5 件は GNU 拡張で skip 対象)
 
-**Compile fail (12 件)**: 00089, 00121, 00124(*), 00129, 00151, 00200, 00201, 00202,
+**Compile fail (11 件)**: 00089, 00124(*), 00129, 00151, 00200, 00201, 00202,
 00204, 00209, 00210, 00213, 00214, 00216
 
 **Runtime fail (2 件)**: 00124(*), 00151(?)
@@ -177,7 +177,7 @@ Fail (stdout):   4
 - 00214 (`__builtin_expect` + statement expression)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **13 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **12 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 
