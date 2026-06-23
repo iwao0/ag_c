@@ -18,12 +18,18 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
 
 static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
-                                                       int *out_paren_array_mul) {
+                                                       int *out_paren_array_mul,
+                                                       int *out_ptr_in_paren) {
   psx_consume_pointer_prefix(is_ptr);
   token_ident_t *name = NULL;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
-    name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, &paren_array_mul);
+    int ptr_before = *is_ptr;
+    name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, &paren_array_mul,
+                                            out_ptr_in_paren);
+    /* `(` 通過直後に `*` を消費したか? `int (*p)[N]` 等を `int *p[N]` と区別するためのフラグ。
+     * 内側で更に `(` を踏んで設定された結果は維持する。 */
+    if (!ptr_before && *is_ptr && out_ptr_in_paren) *out_ptr_in_paren = 1;
     paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
     tk_expect(')');
   } else {
@@ -37,7 +43,8 @@ static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has
 member_decl_head_t psx_parse_member_decl_head(void) {
   member_decl_head_t out = {0};
   out.paren_array_mul = 1;
-  out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix, &out.paren_array_mul);
+  out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix,
+                                                &out.paren_array_mul, &out.ptr_in_paren);
   return out;
 }
 
@@ -316,6 +323,20 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int arr_size = psx_parse_member_array_suffixes_ex(&is_flex_array,
                                                         &arr_dim_count, &arr_first_dim,
                                                         arr_dims_buf, 8);
+      /* `int (*p)[N]` (struct メンバ版): パレン内 `*` + パレン外 trailing `[N]`。trailing は
+       * pointee の配列次元であり、メンバ自身は単一ポインタ (8B 1 slot)。pointee dims は
+       * outer_stride に reflect して downstream の `(*s.p)[i]` で参照する。
+       * `int (*p[M])[N]` (parens 内に `[M]` あり) は array-of-pointer-to-array なので別扱い
+       * (現在は head.paren_array_mul で M、trailing で N を取り arr_size=M*N の既存挙動)。 */
+      int pointee_arr_size = 0;
+      if (head.ptr_in_paren && head.is_ptr && head.paren_array_mul == 1
+          && arr_size > 1 && !is_flex_array && !head.has_func_suffix) {
+        pointee_arr_size = arr_size;
+        arr_size = 1;
+        arr_dim_count = 0;
+        arr_first_dim = 0;
+        for (int i = 0; i < 8; i++) arr_dims_buf[i] = 0;
+      }
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
       /* 配列 typedef + 宣言子に追加 `[N]` なし → typedef の次元情報を取り込む。
        * 宣言子にも追加 `[N]` がある場合 (`typedef int R[3]; struct {R r[2];}`) は
@@ -389,6 +410,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.tag_len = member_tag_len;
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
+        /* pointer-to-array メンバ (`int (*p)[N]`): pointee の全バイトサイズを outer_stride に
+         * 保存しておく。build_member_deref_node がこれを見て「ポインタ-to-配列」分岐に乗せ、
+         * `*s.p` / `(*s.p)[i]` を正しいストライドで解決する。 */
+        if (has_member_name && pointee_arr_size > 0) {
+          psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
+                                              member_name, member_len,
+                                              pointee_arr_size * elem_size);
+        }
         if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
                                           member_name, member_len, member_fp_kind);

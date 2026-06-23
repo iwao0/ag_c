@@ -8,6 +8,10 @@ typedef struct {
   int is_ptr;
   int has_func_suffix;
   int paren_array_mul;
+  /* `*` が `( ... )` の内側で消費されたか (例: `int (*p)[N]` や `int (*p)(...)` の `*`)。
+   * 1 のとき、宣言子の trailing `[N]` (parens の外側) はメンバ自体の配列次元ではなく
+   * pointee の配列次元として扱う (HANDOFF 続き69 → struct メンバ pointer-to-array 修正)。 */
+  int ptr_in_paren;
 } member_decl_head_t;
 
 member_decl_head_t psx_parse_member_decl_head(void);

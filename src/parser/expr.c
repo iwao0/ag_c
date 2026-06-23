@@ -1028,6 +1028,15 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
       deref->pointer_qual_levels = 1;
       deref->base_deref_size = (short)mem_info->deref_size;
     }
+  } else if (mem_is_ptr && mem_size > 0 && mem_info->outer_stride > 0) {
+    /* pointer-to-array メンバ (`struct S { int (*p)[N]; }`): mem_info->outer_stride に
+     * pointee の全バイト数 (N*elem) を保存してある。ローカル `int (*p)[N]` の ND_LVAR
+     * (type_size=8、deref_size=outer_stride、is_pointer=1) と同じレイアウトで deref を組む。
+     * inner_deref_size に pointee の要素サイズ (elem) を carry し、build_unary_deref_node が
+     * `*s.p` 構築時に新 deref の deref_size を elem に再設定するためのヒントにする。 */
+    deref->is_pointer = 1;
+    deref->deref_size = (short)mem_info->outer_stride;
+    deref->inner_deref_size = (short)mem_info->deref_size;
   } else if (mem_is_ptr && mem_size > 0) {
     /* スカラポインタメンバ (`char *name`): subscript や pointer 算術で
      * is_pointer 判定が要るため立てておく。is_scalar_ptr_member を立てて
@@ -3326,6 +3335,18 @@ static node_t *build_unary_deref_node(node_t *operand) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
         int rowstride = ps_node_deref_size(probe);
         if (fd > 0 && rowstride > 0) node->deref_size = (short)(rowstride / fd);
+      }
+    } else if (probe && probe->kind == ND_DEREF) {
+      /* struct メンバ `int (*p)[N]` の `*s.p`: probe (= s.p のメンバ deref) は
+       * build_member_deref_node で is_tag_pointer=1 / deref_size=outer_stride(=N*elem) /
+       * inner_deref_size=elem として組まれている。ローカル `int (*p)[N]` の `*p` と
+       * 同じく、結果 deref の deref_size を elem に再設定して subscript_base_address_of
+       * が lhs (= s.p) を返す経路に乗せる。is_pointer は立てない (subscript_base_address_of
+       * のガード条件 `deref_size>0 && !is_pointer` を満たすため)。 */
+      node_mem_t *pm = (node_mem_t *)probe;
+      if (pm->is_tag_pointer && pm->inner_deref_size > 0
+          && pm->deref_size > pm->inner_deref_size) {
+        node->deref_size = pm->inner_deref_size;
       }
     }
   }
