@@ -2463,11 +2463,39 @@ static node_t *conditional(void) {
   return node;
 }
 
+/* 論理演算 `&&` / `||` の両辺が同じ式 (`x && x` / `x || x`) を検出する
+ * (gcc -Wlogical-op 相当)。x && x は単に x、x || x も同じく x なので冗長か
+ * タイプミス。ND_LVAR は offset 一致、ND_GVAR は名前一致、ND_NUM は値一致で判定。
+ * 副作用のある式 (関数呼び出し等) は除外: 同じ「式テキスト」でも 2 回評価される
+ * 形なので意図的なケースがある。 */
+static int logical_operands_identical(node_t *lhs, node_t *rhs) {
+  if (!lhs || !rhs || lhs->kind != rhs->kind) return 0;
+  if (lhs->kind == ND_LVAR) {
+    return ((node_lvar_t *)lhs)->offset == ((node_lvar_t *)rhs)->offset;
+  }
+  if (lhs->kind == ND_GVAR) {
+    node_gvar_t *lg = (node_gvar_t *)lhs;
+    node_gvar_t *rg = (node_gvar_t *)rhs;
+    return lg->name_len == rg->name_len &&
+           memcmp(lg->name, rg->name, (size_t)lg->name_len) == 0;
+  }
+  if (lhs->kind == ND_NUM) {
+    return ((node_num_t *)lhs)->val == ((node_num_t *)rhs)->val &&
+           lhs->fp_kind == rhs->fp_kind;
+  }
+  return 0;
+}
+
 static node_t *logical_or(void) {
   node_t *node = logical_and();
   while (curtok()->kind == TK_OROR) {
     set_curtok(curtok()->next);
-    node = psx_node_new_binary(ND_LOGOR, node, logical_and());
+    node_t *rhs = logical_and();
+    if (logical_operands_identical(node, rhs)) {
+      diag_warn_tokf(DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS, NULL,
+                     "'||' の両辺が同じ式です (常に同じ結果、タイプミスの可能性)");
+    }
+    node = psx_node_new_binary(ND_LOGOR, node, rhs);
   }
   return node;
 }
@@ -2476,7 +2504,12 @@ static node_t *logical_and(void) {
   node_t *node = bit_or();
   while (curtok()->kind == TK_ANDAND) {
     set_curtok(curtok()->next);
-    node = psx_node_new_binary(ND_LOGAND, node, bit_or());
+    node_t *rhs = bit_or();
+    if (logical_operands_identical(node, rhs)) {
+      diag_warn_tokf(DIAG_WARN_PARSER_IDENTICAL_LOGICAL_OPERANDS, NULL,
+                     "'&&' の両辺が同じ式です (常に同じ結果、タイプミスの可能性)");
+    }
+    node = psx_node_new_binary(ND_LOGAND, node, rhs);
   }
   return node;
 }
