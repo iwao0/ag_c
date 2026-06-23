@@ -1,20 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き70-78 + c-testsuite 組み込み）
+最終更新: 2026-06-23（続き79: c-testsuite 00145 短絡評価）
 
 ## 現状
-- `make test` = **1086/1086 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- このセッション (続き70-78) で **9 件の miscompile / parse error を修正**。詳細は下記。
-- ASAN クリーン、各修正に回帰 fixture (`test/fixtures/probes_found_bugs/`) 登録済み。
-- 索引: `docs/differential_testing/bug_coverage.md`。
-- **c-testsuite 組み込み済み**: `test/external/c-testsuite/` (git submodule)。
-  `make c-testsuite` で 220 件中 **199/220 = 90.5% pass**。残課題は下記参照。
+- `make test` = **1087/1087 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **200/220 = 90.9% pass** (00145 修正で +1)。
+- 続き79 で **c-testsuite 00145** (`#if` 定数式の `&&`/`||`/`?:` 短絡評価) を修正。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1086/1086 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 199/220 green を確認 (= 前セッションのベースライン)。
+3. **`make test`** で 1087/1087 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 200/220 green を確認 (= 前セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -24,16 +21,13 @@
 
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
-`make c-testsuite-verbose` で失敗一覧を見て、未着手の 16 件を順次修正していく。前セッション末で
-着手途中だった **00145 (プリプロセッサ短絡評価)** から再開するのが自然。
+`make c-testsuite-verbose` で失敗一覧を見て、未着手の 15 件を順次修正していく。00145 は
+**続き79 で修正済み**。次は **00152** (`#line` マクロ展開) または **00212** (`__LP64__`) が軽量。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
 **B1. 軽量 (修正範囲が局所、影響度小)**
-- **00145** (compile fail, 中断中): `#if 0 != (0 && (0/0))` のプリプロセッサ短絡評価が機能せず
-  ゼロ除算エラー。`src/preprocess/preprocess.c` の `logand` / `logor` / `conditional` で
-  左辺で結果確定なら右辺を skip。実装は `equality`/`logand` 等のステップ消費を保ちつつ
-  short-circuit を入れるだけで済むはず。
+- **00145** (compile fail): ✅ 続き79 で修正 (`pp_if_short_circuit`)。
 - **00152**: `#line line` (`#line` 指令の引数にマクロ名)。preprocess で `#line` 行の前に
   マクロ展開を通す必要。現状は raw token で読んでいる可能性。
 - **00212** (stdout): `__LP64__` / `__LLP64__` / `__ILP32__` predefined macro 未定義。Apple ARM64 は
@@ -158,20 +152,20 @@
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き78 後): 199/220 = 90.5% pass
+### c-testsuite 現状 (続き79 後): 200/220 = 90.9% pass
 
 ```
 Total:           220
-Pass:            199
-Fail (compile):  14
+Pass:            200
+Fail (compile):  13
 Fail (assemble): 0
 Fail (runtime):  2
 Fail (stdout):   5
 ```
 
-### 失敗テスト分類 (21 件、うち 5 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (20 件、うち 5 件は GNU 拡張で skip 対象)
 
-**Compile fail (14 件)**: 00089, 00121, 00124(*), 00129, 00145, 00151, 00152, 00200, 00201, 00202,
+**Compile fail (13 件)**: 00089, 00121, 00124(*), 00129, 00151, 00152, 00200, 00201, 00202,
 00204, 00209, 00210, 00213, 00214, 00216
 
 **Runtime fail (2 件)**: 00124(*), 00151(?)
@@ -186,7 +180,7 @@ Fail (stdout):   5
 - 00214 (`__builtin_expect` + statement expression)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **16 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **15 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 

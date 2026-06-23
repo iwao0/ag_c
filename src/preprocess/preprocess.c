@@ -57,6 +57,8 @@ static int include_depth = 0;
 static size_t macro_expand_steps = 0;
 static int include_last_errno = 0;
 static size_t if_expr_eval_steps = 0;
+/* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
+static bool g_if_expr_eval = true;
 static void pp_error(diag_error_id_t id, const char *arg) __attribute__((noreturn));
 
 static void if_expr_step_or_die(void) {
@@ -698,6 +700,7 @@ static token_t *skip_cond_incl(token_t *tok) {
 }
 
 static long const_expr(token_t **rest, token_t *tok);
+static void skip_const_expr(token_t **rest, token_t *tok);
 static long add(token_t **rest, token_t *tok);
 
 static long primary(token_t **rest, token_t *tok) {
@@ -752,13 +755,17 @@ static long mul(token_t **rest, token_t *tok) {
     } else if (tok->kind == TK_DIV) {
       if_expr_step_or_die();
       long rhs = unary(&tok, tok->next);
-      if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
-      val /= rhs;
+      if (g_if_expr_eval) {
+        if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+        val /= rhs;
+      }
     } else if (tok->kind == TK_MOD) {
       if_expr_step_or_die();
       long rhs = unary(&tok, tok->next);
-      if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
-      val %= rhs;
+      if (g_if_expr_eval) {
+        if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+        val %= rhs;
+      }
     } else {
       *rest = tok;
       return val;
@@ -892,8 +899,12 @@ static long logand(token_t **rest, token_t *tok) {
   for (;;) {
     if (tok->kind == TK_ANDAND) {
       if_expr_step_or_die();
-      long rhs = equality(&tok, tok->next);
-      val = val && rhs;
+      if (val) {
+        long rhs = bitor(&tok, tok->next);
+        val = val && rhs;
+      } else {
+        skip_const_expr(&tok, tok->next);
+      }
     } else {
       *rest = tok;
       return val;
@@ -907,8 +918,13 @@ static long logor(token_t **rest, token_t *tok) {
   for (;;) {
     if (tok->kind == TK_OROR) {
       if_expr_step_or_die();
-      long rhs = logand(&tok, tok->next);
-      val = val || rhs;
+      if (val) {
+        skip_const_expr(&tok, tok->next);
+        val = 1;
+      } else {
+        long rhs = logand(&tok, tok->next);
+        val = val || rhs;
+      }
     } else {
       *rest = tok;
       return val;
@@ -917,8 +933,7 @@ static long logor(token_t **rest, token_t *tok) {
 }
 
 /* 条件演算子 `?:` (C11 6.10.1 が #if 定数式で要求)。最も低い優先順位。
- * 選択されない側も #if では評価されうる (定数式なので副作用なし) が、
- * ゼロ除算等を避けるため C のように選択側のみ評価する。 */
+ * ゼロ除算等を避けるため C と同様に選択側のみ評価する。 */
 static long conditional(token_t **rest, token_t *tok) {
   if_expr_step_or_die();
   long cond = logor(&tok, tok);
@@ -927,17 +942,33 @@ static long conditional(token_t **rest, token_t *tok) {
     return cond;
   }
   if_expr_step_or_die();
-  long then_val = const_expr(&tok, tok->next);
+  if (cond) {
+    long then_val = const_expr(&tok, tok->next);
+    if (tok->kind != TK_COLON) {
+      pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+    }
+    skip_const_expr(&tok, tok->next);
+    *rest = tok;
+    return then_val;
+  }
+  skip_const_expr(&tok, tok->next);
   if (tok->kind != TK_COLON) {
     pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
   }
   long else_val = conditional(&tok, tok->next);
   *rest = tok;
-  return cond ? then_val : else_val;
+  return else_val;
 }
 
 static long const_expr(token_t **rest, token_t *tok) {
   return conditional(rest, tok);
+}
+
+static void skip_const_expr(token_t **rest, token_t *tok) {
+  bool saved = g_if_expr_eval;
+  g_if_expr_eval = false;
+  (void)const_expr(rest, tok);
+  g_if_expr_eval = saved;
 }
 
 token_t *preprocess(token_t *tok); // front declaration
