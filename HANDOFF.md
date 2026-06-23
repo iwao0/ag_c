@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き83: c-testsuite 00124）
+最終更新: 2026-06-23（続き84: c-testsuite 00151）
 
 ## 現状
-- `make test` = **1091/1091 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **204/220 = 92.7% pass**。
-- 続き83: **00124** (関数が関数ポインタを返す + pointer-to-function 連鎖呼び出し)。
+- `make test` = **1092/1092 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **205/220 = 93.2% pass**。
+- 続き84: **00151** (グローバル `int arr[][3][5]` 最外次元推論 + 部分行初期化)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1091/1091 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 204/220 green を確認 (= 前セッションのベースライン)。
+3. **`make test`** で 1092/1092 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 205/220 green を確認 (= 前セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -21,8 +21,8 @@
 
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
-`make c-testsuite-verbose` で失敗一覧を見て、未着手の 11 件を順次修正していく。
-B1 軽量・B2 の **00121/00124** は **続き82-83 で完了**。次は **00151** から。
+`make c-testsuite-verbose` で失敗一覧を見て、未着手の 10 件を順次修正していく。
+B1 軽量・B2 の **00121/00124/00151** は **続き82-84 で完了**。次は **00189** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -36,7 +36,8 @@ B1 軽量・B2 の **00121/00124** は **続き82-83 で完了**。次は **0015
   `funcdef()` ではなく declaration 経路へ。prototype 登録 + 変数 `a` 登録。
 - **00124**: ✅ 続き83 (`func_returning_funcptr_call`) — pointer-to-function (戻り funcptr)
   の pql 補正 + `(*call())(args)` deref 減衰。
-- **00151**: `int arr[][3][5] = {...};` — 最外側次元を省略 (初期化子から推論)。
+- **00151**: ✅ 続き84 (`global_incomplete_outer_array_dim`) — `int arr[][3][5]` の
+  行境界揃え + 外側次元推論。
 - **00189** (stdout): `int (*fprintfptr)(FILE *, const char *, ...) = &fprintf;` — グローバル
   可変長関数ポインタ初期化。
 - **00201**: `CAT(A,B)(x)` マクロ token paste で識別子合成。
@@ -149,23 +150,21 @@ B1 軽量・B2 の **00121/00124** は **続き82-83 で完了**。次は **0015
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き83 後): 204/220 = 92.7% pass
+### c-testsuite 現状 (続き84 後): 205/220 = 93.2% pass
 
 ```
 Total:           220
-Pass:            204
+Pass:            205
 Fail (compile):  11
 Fail (assemble): 0
-Fail (runtime):  1
+Fail (runtime):  0
 Fail (stdout):   4
 ```
 
-### 失敗テスト分類 (17 件、うち 5 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (16 件、うち 5 件は GNU 拡張で skip 対象)
 
-**Compile fail (11 件)**: 00089, 00129, 00151, 00200, 00201, 00202,
+**Compile fail (11 件)**: 00089, 00129, 00200, 00201, 00202,
 00204, 00209, 00210, 00213, 00214, 00216
-
-**Runtime fail (1 件)**: 00151(?)
 
 **Stdout mismatch (4 件)**: 00189, 00205, 00206, 00219
 
@@ -176,7 +175,7 @@ Fail (stdout):   4
 - 00214 (`__builtin_expect` + statement expression)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **11 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **10 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 
