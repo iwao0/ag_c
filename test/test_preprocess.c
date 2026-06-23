@@ -63,6 +63,7 @@ static const success_case_t success_cases[] = {
     {42, "#line 41\nint x = 0;\nint main() { return __LINE__; }"},
     {1,  "#line 1 \"myfile.c\"\nint main() { char *f = __FILE__; return f[0] == 'm' ? 1 : 0; }"},
     {200, "#undef line\n#define line 200\n#line line\nint main() { return __LINE__; }"},
+    {42, "#if defined(__LP64__)\nint main() { return 42; }\n#else\nint main() { return 0; }\n#endif"},
     // 標準ヘッダ
     {42, "#include <stdint.h>\nint main() { int32_t x = 42; return x; }"},
     {42, "#include <stdbool.h>\nint main() { _Bool b = 1; return b ? 42 : 0; }"},

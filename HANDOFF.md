@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き79: c-testsuite 00145 短絡評価）
+最終更新: 2026-06-23（続き80-81: c-testsuite 00152 + 00212）
 
 ## 現状
-- `make test` = **1087/1087 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **200/220 = 90.9% pass** (00145 修正で +1)。
-- 続き79 で **c-testsuite 00145** (`#if` 定数式の `&&`/`||`/`?:` 短絡評価) を修正。
+- `make test` = **1089/1089 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **202/220 = 91.8% pass**。
+- 続き80: **00152** (`#line` 引数マクロ展開)。続き81: **00212** (`__LP64__` 定義済みマクロ)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
@@ -21,18 +21,15 @@
 
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
-`make c-testsuite-verbose` で失敗一覧を見て、未着手の 15 件を順次修正していく。00145 は
-**続き79 で修正済み**。次は **00152** (`#line` マクロ展開) または **00212** (`__LP64__`) が軽量。
+`make c-testsuite-verbose` で失敗一覧を見て、未着手の 13 件を順次修正していく。
+B1 軽量 (00145/00152/00212) は **続き79-81 で完了**。次は **B2 中規模** の **00121** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
-**B1. 軽量 (修正範囲が局所、影響度小)**
-- **00145** (compile fail): ✅ 続き79 で修正 (`pp_if_short_circuit`)。
-- **00152**: `#line line` (`#line` 指令の引数にマクロ名)。preprocess で `#line` 行の前に
-  マクロ展開を通す必要。現状は raw token で読んでいる可能性。
-- **00212** (stdout): `__LP64__` / `__LLP64__` / `__ILP32__` predefined macro 未定義。Apple ARM64 は
-  LP64 なので `__LP64__` を 1 として組み込む。`src/preprocess/preprocess.c` の predefined macros
-  初期化付近。
+**B1. 軽量 (修正範囲が局所、影響度小)** — 完了
+- **00145**: ✅ 続き79 (`pp_if_short_circuit`)
+- **00152**: ✅ 続き80 (`pp_line_macro_arg`)
+- **00212**: ✅ 続き81 (`pp_predefined_lp64`)
 
 **B2. 中規模 (parser / 型システム)**
 - **00121**: `int f(int a), g(int a), a;` — 1 つの宣言で関数 prototype と変数を混ぜる形。
