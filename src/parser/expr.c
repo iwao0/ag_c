@@ -1834,9 +1834,17 @@ static int finish_parenthesized_type_size(token_t *t, int sz) {
 static int parse_parenthesized_type_size(void) {
   token_t *t = curtok();
   if (t->kind == TK_LPAREN && is_type_name_start_token(t->next)) {
+    /* `sizeof((int) 1)` 等の cast 式は、`(` の直後が type-name でも閉じ `)` の後ろに
+     * 式が続く。内側で sz を取得しても curtok が `)` でない場合は type-name 解釈は失敗で、
+     * トークンを巻き戻して -1 を返し、呼び出し側 (parse_sizeof_operand 等) の式パース経路に
+     * 任せる。これがないと `(int)` を type-name として消費し、残った `1)` で E2006 になる。 */
+    token_t *save = curtok();
     set_curtok(t->next);
     int sz = parse_parenthesized_type_size();
-    if (sz < 0) return -1;
+    if (sz < 0 || curtok()->kind != TK_RPAREN) {
+      set_curtok(save);
+      return -1;
+    }
     tk_expect(')');
     return sz;
   }
