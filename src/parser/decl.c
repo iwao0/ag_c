@@ -2575,10 +2575,12 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
                                                   int *had_parens,
                                                   int *out_inner_array_mul) {
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
+  psx_skip_gnu_attributes();
   token_ident_t *tok = NULL;
   int local_had_parens = 0;
   if (tk_consume('(')) {
     local_had_parens = 1;
+    psx_skip_gnu_attributes();
     tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels,
                                       out_paren_array_mul, NULL, out_inner_array_mul);
     // パレン内の `[N]` を捕捉する: `int (*ops[N])(...)` の N は関数ポインタ配列の要素数。

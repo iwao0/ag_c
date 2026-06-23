@@ -432,6 +432,7 @@ static void resolve_toplevel_tag_decl_layout_or_ref(void) {
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len) {
   *out_kind = curtok()->kind;
   set_curtok(curtok()->next);
+  psx_skip_gnu_attributes();
   token_ident_t *tag = tk_consume_ident();
   if (!tag && curtok()->kind != TK_LBRACE) {
     psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
@@ -467,6 +468,38 @@ bool psx_is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
          k == TK_AUTO || k == TK_REGISTER || k == TK_INLINE || k == TK_NORETURN ||
          k == TK_THREAD_LOCAL || k == TK_ALIGNAS || k == TK_ATOMIC;
+}
+
+bool psx_is_gnu_attribute_token(const token_t *t) {
+  if (!t || t->kind != TK_IDENT) return 0;
+  const token_ident_t *id = (const token_ident_t *)t;
+  return id->len == 13 && memcmp(id->str, "__attribute__", 13) == 0;
+}
+
+void psx_skip_gnu_attributes_at(token_t **t) {
+  while (*t && psx_is_gnu_attribute_token(*t)) {
+    *t = (*t)->next;
+    if (!*t || (*t)->kind != TK_LPAREN) continue;
+    int depth = 0;
+    while (*t) {
+      if ((*t)->kind == TK_LPAREN) depth++;
+      else if ((*t)->kind == TK_RPAREN) {
+        depth--;
+        *t = (*t)->next;
+        if (depth == 0) break;
+        continue;
+      }
+      *t = (*t)->next;
+    }
+  }
+}
+
+void psx_skip_gnu_attributes(void) {
+  while (psx_is_gnu_attribute_token(curtok())) {
+    token_t *t = curtok();
+    psx_skip_gnu_attributes_at(&t);
+    set_curtok(t);
+  }
 }
 
 static inline token_t *curtok(void) {
@@ -528,6 +561,7 @@ static void skip_cv_qualifiers(void) {
                  "storage class 指定子は1つまでです (C11 6.7.1p2)");
   }
   (void)saw_thread_local;
+  psx_skip_gnu_attributes();
 }
 
 void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualified) {
@@ -579,6 +613,7 @@ static void skip_post_type_cv_qualifiers(void) {
     g_last_type_atomic = 1;
     set_curtok(curtok()->next);
   }
+  psx_skip_gnu_attributes();
 }
 
 int psx_consume_pointer_prefix_counted(int *is_ptr) {
@@ -2495,6 +2530,7 @@ static void register_toplevel_function_prototype(token_ident_t *tok, int declara
   node_t **args = NULL;
   int nargs = 0;
   parse_func_param_list_only(&is_variadic, &has_unnamed_param, &args, &nargs);
+  psx_skip_gnu_attributes();
   (void)has_unnamed_param;
   if (find_global_var_by_name(tok->str, tok->len)) {
     psx_diag_ctx(curtok(), "decl",
@@ -2560,11 +2596,13 @@ static void register_toplevel_function_prototype(token_ident_t *tok, int declara
 
 static token_ident_t *parse_decl_name_recursive(int *is_ptr, int require_name, int *out_paren_array_mul) {
   psx_consume_pointer_prefix(is_ptr);
+  psx_skip_gnu_attributes();
   token_ident_t *name = NULL;
   int had_parens = 0;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     had_parens = 1;
+    psx_skip_gnu_attributes();
     int ptr_before_inner = *is_ptr;
     name = parse_decl_name_recursive(is_ptr, require_name, &paren_array_mul);
     /* 括弧内で初めて `*` が立った (`(*pa)`): 配列へのポインタ / 関数ポインタの指標。
@@ -3706,6 +3744,7 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
 static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **ret_tag) {
   *ret_kind = curtok()->kind;
   set_curtok(curtok()->next);
+  psx_skip_gnu_attributes();
   token_ident_t *tag = tk_consume_ident();
   if (!tag && curtok()->kind != TK_LBRACE) {
     psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
@@ -3777,6 +3816,7 @@ static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *re
 }
 
 static token_ident_t *parse_func_name_declarator_recursive(void) {
+  psx_skip_gnu_attributes();
   while (tk_consume('*')) {
     skip_ptr_qualifiers();
   }
@@ -3802,6 +3842,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
   g_func_ret_pointee_first_dim = 0;
   g_func_ret_pointee_dim_count = 0;
 
+  psx_skip_gnu_attributes();
   token_ident_t *tok = NULL;
   // function declarator returning function pointer:
   //   int (*f(void))(int) { ... }
@@ -3948,6 +3989,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
     }
   }
 
+  psx_skip_gnu_attributes();
   *out_is_variadic = is_variadic;
   *out_has_unnamed_param = has_unnamed_param;
   *out_args = args;

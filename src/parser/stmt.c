@@ -144,6 +144,7 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     *base_kind = curtok()->kind;
     *tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
+    psx_skip_gnu_attributes();
     token_ident_t *tag = tk_consume_ident();
     if (!tag && curtok()->kind != TK_LBRACE) {
       psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_TAG_NAME));
@@ -378,6 +379,7 @@ static node_t *parse_decl_like_stmt(void) {
   if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     token_kind_t tag_kind = curtok()->kind;
     set_curtok(curtok()->next);
+    psx_skip_gnu_attributes();
     token_ident_t *tag = tk_consume_ident();
     // 匿名タグ（enum { A=1 }; など）: タグ名なしで '{' が来る場合
     if (!tag && curtok()->kind != TK_LBRACE) {

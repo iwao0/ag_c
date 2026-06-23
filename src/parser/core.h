@@ -33,6 +33,9 @@ void psx_consume_pointer_prefix(int *is_ptr);
 // `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。
 int psx_consume_pointer_prefix_counted(int *is_ptr);
 bool psx_is_decl_prefix_token(token_kind_t k);
+bool psx_is_gnu_attribute_token(const token_t *t);
+void psx_skip_gnu_attributes(void);
+void psx_skip_gnu_attributes_at(token_t **t);
 void psx_skip_func_suffix_groups(int *out_has_func_suffix);
 bool psx_try_consume_pragma_pack_marker(void);
 

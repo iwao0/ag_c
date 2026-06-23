@@ -249,6 +249,7 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
   t = t->next;
+  psx_skip_gnu_attributes_at(&t);
   if (!t || t->kind != TK_MUL) return 0;
   while (t && t->kind == TK_MUL) {
     *is_pointer = 1;
@@ -490,7 +491,12 @@ static int is_type_name_start_token(token_t *t) {
 }
 
 static void consume_local_type_quals(token_t **cur) {
-  while (*cur && ((*cur)->kind == TK_CONST || (*cur)->kind == TK_VOLATILE || (*cur)->kind == TK_RESTRICT)) {
+  while (*cur) {
+    psx_skip_gnu_attributes_at(cur);
+    if (!(*cur) || ((*cur)->kind != TK_CONST && (*cur)->kind != TK_VOLATILE &&
+                    (*cur)->kind != TK_RESTRICT)) {
+      break;
+    }
     *cur = (*cur)->next;
   }
 }
