@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-23（続き90: c-testsuite 00213）
+最終更新: 2026-06-23（続き91: c-testsuite 00214）
 
 ## 現状
-- `make test` = **1098/1098 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `make c-testsuite` で 220 件中 **211/220 = 95.9% pass**。
-- 続き90: **00213** (GNU statement expression `({ ...; expr })`)。
+- `make test` = **1099/1099 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `make c-testsuite` で 220 件中 **212/220 = 96.4% pass**。
+- 続き91: **00214** (`__builtin_expect` を第1引数に畳み込み)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1098/1098 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`make c-testsuite`** で 211/220 green を確認 (= 前回セッションのベースライン)。
+3. **`make test`** で 1099/1099 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`make c-testsuite`** で 212/220 green を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -22,7 +22,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の 10 件を順次修正していく。
-B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209/00210/00213** は **続き82-90 で完了**。次は **00214** から。
+B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209/00210/00213/00214** は **続き82-91 で完了**。次は **00089** など B3 から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -49,7 +49,8 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209/00210/00213** は
   キャストで読み飛ばし。
 - **00213**: ✅ 続き90 (`gnu_statement_expression`) — `({ ...; expr })` を
   ND_STMT_EXPR でパース・コード生成。
-- **00214**: `__builtin_expect` + statement expression (assemble fail)。
+- **00214**: ✅ 続き91 (`builtin_expect_fold`) — `__builtin_expect(exp, c)` を
+  exp に畳み込み (外部シンボル参照を出さない)。
 
 **B3. 大規模 (重い、影響範囲広い)**
 - **00089**: `go()()->zerofunc()` — 関数戻り値の連鎖呼び出し (関数ポインタ戻り型 + 構造体メンバ)。
@@ -62,7 +63,6 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209/00210/00213** は
 
 #### 対象外 (GNU 拡張、HANDOFF ルールで skip)
 - **00206**: `#pragma push_macro` / `pop_macro` (GCC/MSVC 拡張)
-- **00214**: `__builtin_expect`, statement expression
 - **00216**: 空 struct `typedef struct {} empty_s;` (GCC 拡張)
 
 ### B. 未探索の角度から新規バグ探索 (探索路線)
@@ -155,32 +155,29 @@ B1 軽量・B2 の **00121/00124/00151/00189/00201/00202/00209/00210/00213** は
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き90 後): 211/220 = 95.9% pass
+### c-testsuite 現状 (続き91 後): 212/220 = 96.4% pass
 
 ```
 Total:           220
-Pass:            211
+Pass:            212
 Fail (compile):  5
-Fail (assemble): 1
+Fail (assemble): 0
 Fail (runtime):  0
 Fail (stdout):   3
 ```
 
-### 失敗テスト分類 (9 件、うち 3 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (8 件、うち 2 件は GNU 拡張で skip 対象)
 
 **Compile fail (5 件)**: 00089, 00129, 00200,
 00204, 00216
 
-**Assemble fail (1 件)**: 00214
-
 **Stdout mismatch (3 件)**: 00205, 00206, 00219
 
-**GNU 拡張で skip 対象 (3 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
+**GNU 拡張で skip 対象 (2 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
 - 00206 (`#pragma push_macro` / `pop_macro`)
-- 00214 (`__builtin_expect` + statement expression)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **10 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **8 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 
