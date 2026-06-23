@@ -49,6 +49,9 @@ struct lvar_t {
   // 関数ポインタの各仮引数 fp 種別 (2bit ずつ, 0=非fp/1=float/2=double, 最大8引数)。
   // 経由呼び出し `fp(3)` で int 実引数を fp 仮引数へ昇格するのに使う。
   unsigned short funcptr_param_fp_mask;
+  // 1: 指す関数の戻り値が関数ポインタ (`int (*(*p)(int))(int,int)` の `p`)。
+  //    `(*p)(...)` の結果を呼ぶとき余分な deref をしないために使う。
+  unsigned int funcptr_ret_is_pointer : 1;
   // 1: _Bool 型。代入/初期化時に rhs を `(rhs != 0) ? 1 : 0` に正規化する (C11 6.3.1.2)
   unsigned int is_bool : 1;
   // _Generic で long と long long、char と signed/unsigned char を別型として扱うため

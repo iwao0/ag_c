@@ -482,6 +482,12 @@ static node_t *g_paren_array_vla_dim = NULL;
  * 要素サイズを「関数ポインタ = 8」と判定するのに使う。consume_decl_name_recursive が
  * skip_func_params の呼び出し時に立てる。宣言子ごとにリセット。 */
 static int g_decl_trailing_func_suffix = 0;
+/* 宣言子に paren グループ `(*...)` があれば 1 (`**pp` のように括弧無しは 0)。
+ * pointer-to-function (`(* (*p)(args))(ret-args)`) と pointer-to-funcptr (`**pp`) を
+ * 区別して pointer_qual_levels を補正するのに使う。 */
+static int g_decl_had_paren_group = 0;
+/* trailing `()` の個数 (pointer-to-function が戻り funcptr を持つとき 2 以上)。 */
+static int g_decl_func_suffix_count = 0;
 /* 基底 typedef が配列型 (`typedef BinOp OpArr3[3]`) のとき、要素 1 個のバイト数。
  * `OpArr3 *pa` (typedef 配列型へのポインタ + 要素がポインタ) で要素サイズを 8 と判定する
  * のに使う。pointer-to-array typedef (`typedef int (*PA)[3]`) では 0 のまま (PA p の要素は
@@ -2595,7 +2601,9 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
      * `int (*(*pa)[N])(args)` で要素が関数ポインタの場合、後段の `(*p)[N]` 登録経路で
      * elem_size を 8 に上書きするのに使う。 */
     g_decl_trailing_func_suffix = 1;
+    g_decl_func_suffix_count++;
   }
+  if (local_had_parens) g_decl_had_paren_group = 1;
   /* paren-grouped 宣言子 `(*p)...` の後ろに `[N]` が続くのは `int (*p)[N]`
    * (配列へのポインタ) 専用形式。`[` が来ていないなら paren_array_mul を立てない
    * (parse_decl_array_suffixes_constexpr_required は初期値 1 をそのまま返すため、
@@ -3640,11 +3648,21 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     g_paren_array_vla_dim = NULL;
     g_inner_array_dim_count = 0;
     g_decl_trailing_func_suffix = 0;
+    g_decl_had_paren_group = 0;
+    g_decl_func_suffix_count = 0;
     /* td_array_elem_size は宣言文 (spec 共有) ごとに valid なので、各 declarator では
      * リセットしない。type spec 解析時に parse_local_decl_spec_from_typedef が立てる。 */
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = 0;
     token_ident_t *tok = consume_decl_name_ex(&is_pointer, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels,
                                               &paren_array_mul, &inner_array_mul);
+    /* `int (* (*p)(int,int))(int,int)` は declarator 上 `*` が 2 つあるが、p は
+     * pointer-to-function 1 段のみ (戻り funcptr)。`**pp` や `struct S *(*f)(int)` は
+     * 対象外 (後者は戻りデータポインタで pql=2 が要る)。 */
+    if (ptr_levels >= 2 && g_decl_trailing_func_suffix && g_decl_had_paren_group &&
+        paren_array_mul == 0 && inner_array_mul == 0 &&
+        g_decl_func_suffix_count >= 2) {
+      ptr_levels = 1;
+    }
     /* 関数内ローカル関数プロトタイプ宣言 (`int f1(char *);`): C11 6.2.2p5 で暗黙 extern。
      * declarator が non-pointer の関数 (`(...)` 付きで `*` なし) のとき、ローカル変数として
      * 登録せず宣言を読み飛ばすだけにする。グローバル関数テーブルには別途関数定義
@@ -3990,6 +4008,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     }
     /* 関数ポインタの仮引数 fp マスク (経由呼び出しの int→fp 昇格用)。 */
     if (is_pointer) var->funcptr_param_fp_mask = g_last_funcptr_param_fp_mask;
+    if (is_pointer && g_decl_had_paren_group && g_decl_func_suffix_count >= 2) {
+      var->funcptr_ret_is_pointer = 1;
+    }
     /* `_Bool b = expr;` 代入/初期化時に rhs を 0/1 に正規化するため。 */
     if (decl_base_is_bool && !is_pointer) var->is_bool = 1;
     /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。

@@ -1116,6 +1116,7 @@ static const test_case_t test_cases[] = {
     {"probes", "pp_line_macro_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_line_macro_arg.c", 0, 0},
     {"probes", "pp_predefined_lp64", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pp_predefined_lp64.c", 0, 0},
     {"probes", "mixed_decl_func_proto_and_var", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_decl_func_proto_and_var.c", 0, 0},
+    {"probes", "func_returning_funcptr_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_returning_funcptr_call.c", 0, 0},
     {"probes", "sizeof_int_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_int_literal.c", 0, 0},
     {"probes", "variadic_macro_empty_va", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_empty_va.c", 0, 0},
     {"probes", "ternary_subint_branch", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ternary_subint_branch.c", 0, 0},

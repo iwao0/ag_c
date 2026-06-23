@@ -4072,6 +4072,19 @@ static node_t *apply_postfix(node_t *node) {
   }
 }
 
+static int expr_funcall_returns_funcptr(node_t *fcall) {
+  if (!fcall || fcall->kind != ND_FUNCALL) return 0;
+  node_func_t *fc = (node_func_t *)fcall;
+  if (!fc->callee && fc->funcname) {
+    return psx_ctx_get_function_ret_is_pointer(fc->funcname, fc->funcname_len);
+  }
+  if (fc->callee && fc->callee->kind == ND_LVAR) {
+    lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)fc->callee)->offset);
+    return lv && lv->funcptr_ret_is_pointer;
+  }
+  return 0;
+}
+
 static node_t *parse_call_postfix(node_t *callee) {
   tk_expect('(');
   node_func_t *node = arena_alloc(sizeof(node_func_t));
@@ -4079,14 +4092,20 @@ static node_t *parse_call_postfix(node_t *callee) {
   /* `(*fp)(args)` / `(**fp)(args)`: 関数ポインタの「単項 deref」は関数へ戻り即座に
    * 関数ポインタへ減衰するので `fp(args)` と等価。単項 deref を辿って最下層が関数
    * ポインタ lvar (pointer_qual_levels<=1) なら全段剥がす。
+   * `(*call())(args)` も同様: 戻り値が関数ポインタなら `*result` は減衰のみ。
    * subscript の結果 (`ops[i]`, lhs=ND_ADD で最下層が lvar にならない) や、
    * ポインタ→関数ポインタ (`int(**pp)(); (*pp)()`, pql>=2) は実体 deref なので除外。 */
   if (callee && callee->kind == ND_DEREF) {
-    node_t *base = callee;
-    while (base && base->kind == ND_DEREF) base = base->lhs;
-    if (base && (base->kind == ND_LVAR || base->kind == ND_GVAR) &&
-        psx_node_pointer_qual_levels(base) <= 1) {
-      callee = base;
+    node_t *lhs = callee->lhs;
+    if (lhs && lhs->kind == ND_FUNCALL && expr_funcall_returns_funcptr(lhs)) {
+      callee = lhs;
+    } else {
+      node_t *base = callee;
+      while (base && base->kind == ND_DEREF) base = base->lhs;
+      if (base && (base->kind == ND_LVAR || base->kind == ND_GVAR) &&
+          psx_node_pointer_qual_levels(base) <= 1) {
+        callee = base;
+      }
     }
   }
   /* callee が bare 関数参照 (ND_FUNCREF) のとき — 典型的には `_Generic(...)(args)` が
