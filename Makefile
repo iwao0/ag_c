@@ -119,6 +119,15 @@ release: $(OBJS)
 clean:
 	rm -rf build
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject
+# c-testsuite (test/external/c-testsuite, submodule) を ag_c で走らせて pass 率を可視化する。
+# 初回は `git submodule update --init` で取得する必要がある。`make test` には含めない
+# (失敗テスト多数のため別 target)。`make c-testsuite-verbose` で個別失敗一覧を出力。
+c-testsuite: $(TARGET)
+	@bash scripts/run_c_testsuite.sh
+
+c-testsuite-verbose: $(TARGET)
+	@bash scripts/run_c_testsuite.sh --verbose
+
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject c-testsuite c-testsuite-verbose
 
 -include $(DEPS)

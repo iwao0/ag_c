@@ -1,0 +1,3 @@
+[submodule "test/external/c-testsuite"]
+	path = test/external/c-testsuite
+	url = https://github.com/c-testsuite/c-testsuite
