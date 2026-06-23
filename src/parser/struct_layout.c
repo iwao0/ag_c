@@ -318,13 +318,24 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                                         arr_dims_buf, 8);
       if (head.paren_array_mul > 1) arr_size *= head.paren_array_mul;
       /* 配列 typedef + 宣言子に追加 `[N]` なし → typedef の次元情報を取り込む。
-       * (両方ある形 `typedef int R[3]; struct{R r[5];}` は配列要素型が typedef になる
-       * ため複雑で、ここでは追加 [N] が無い形のみサポートする。) */
-      if (member_typedef_array_dim_count > 0 && arr_dim_count == 0 && !is_flex_array) {
-        arr_dim_count = member_typedef_array_dim_count;
-        arr_first_dim = member_typedef_array_first_dim;
+       * 宣言子にも追加 `[N]` がある場合 (`typedef int R[3]; struct {R r[2];}`) は
+       * 宣言子側 dims を outer に、typedef 側 dims を inner に連結する。
+       * 結果 r は [2][3] の 2D 配列で、6 要素 (24 バイト)。 */
+      if (member_typedef_array_dim_count > 0 && !is_flex_array) {
+        int combined_dims[8] = {0};
+        int combined_count = 0;
+        /* outer (declarator side) */
+        for (int i = 0; i < arr_dim_count && combined_count < 8; i++) {
+          combined_dims[combined_count++] = arr_dims_buf[i];
+        }
+        /* inner (typedef side) */
+        for (int i = 0; i < member_typedef_array_dim_count && combined_count < 8; i++) {
+          combined_dims[combined_count++] = member_typedef_array_dims[i];
+        }
+        arr_dim_count = combined_count;
+        arr_first_dim = (combined_count > 0) ? combined_dims[0] : 0;
         for (int i = 0; i < arr_dim_count && i < 8; i++) {
-          arr_dims_buf[i] = member_typedef_array_dims[i];
+          arr_dims_buf[i] = combined_dims[i];
         }
         int total_count = 1;
         for (int i = 0; i < arr_dim_count; i++) total_count *= arr_dims_buf[i];
