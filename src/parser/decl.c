@@ -148,6 +148,8 @@ typedef struct {
   int td_array_elem_size;
   unsigned short td_funcptr_param_fp_mask;
   unsigned short td_funcptr_param_int_mask;
+  int td_funcptr_ret_pointee_array_first_dim;
+  int td_funcptr_ret_pointee_array_elem_size;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -510,6 +512,8 @@ static int g_decl_base_pointer_levels = 0;
  * `typedef double (*Op)(double); Op op; op(3)` で int 実引数を double へ昇格するため。 */
 static unsigned short g_decl_base_funcptr_param_fp_mask = 0;
 static unsigned short g_decl_base_funcptr_param_int_mask = 0;
+static int g_decl_base_funcptr_ret_pointee_array_first_dim = 0;
+static int g_decl_base_funcptr_ret_pointee_array_elem_size = 0;
 
 /* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
  * 「定数」とは [...] 内が TK_NUM のみで構成されることを指す。TK_IDENT がある場合は変数または
@@ -3695,8 +3699,14 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   g_decl_base_pointer_levels = 0;
   unsigned short base_funcptr_param_fp_mask = g_decl_base_funcptr_param_fp_mask;
   unsigned short base_funcptr_param_int_mask = g_decl_base_funcptr_param_int_mask;
+  int base_funcptr_ret_pointee_array_first_dim =
+      g_decl_base_funcptr_ret_pointee_array_first_dim;
+  int base_funcptr_ret_pointee_array_elem_size =
+      g_decl_base_funcptr_ret_pointee_array_elem_size;
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
+  g_decl_base_funcptr_ret_pointee_array_first_dim = 0;
+  g_decl_base_funcptr_ret_pointee_array_elem_size = 0;
   /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
    * (declarator ループ後にもう一度宣言文があれば、その spec で立て直す)。
    * 非 typedef spec で前回値が残ると 3522 経路が誤検出するため、ここでクリアする。
@@ -4135,8 +4145,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                        ? g_last_funcptr_param_fp_mask
                                        : base_funcptr_param_fp_mask;
       var->funcptr_param_int_mask = g_decl_trailing_func_suffix
-                                        ? g_last_funcptr_param_int_mask
-                                        : base_funcptr_param_int_mask;
+                                       ? g_last_funcptr_param_int_mask
+                                       : base_funcptr_param_int_mask;
+      if (g_decl_trailing_func_suffix && paren_array_mul > 0 && g_paren_array_first_dim > 0) {
+        var->funcptr_ret_pointee_array_first_dim = (short)g_paren_array_first_dim;
+        var->funcptr_ret_pointee_array_elem_size = (short)elem_size;
+      } else if (base_funcptr_ret_pointee_array_first_dim > 0) {
+        var->funcptr_ret_pointee_array_first_dim =
+            (short)base_funcptr_ret_pointee_array_first_dim;
+        var->funcptr_ret_pointee_array_elem_size =
+            (short)base_funcptr_ret_pointee_array_elem_size;
+      }
     }
     if (is_pointer && g_decl_had_paren_group && g_decl_func_suffix_count >= 2) {
       var->funcptr_ret_is_pointer = 1;
@@ -4261,8 +4280,14 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
+      out->td_funcptr_ret_pointee_array_first_dim = _ti.funcptr_ret_pointee_array_first_dim;
+      out->td_funcptr_ret_pointee_array_elem_size = _ti.funcptr_ret_pointee_array_elem_size;
       g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       g_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
+      g_decl_base_funcptr_ret_pointee_array_first_dim =
+          _ti.funcptr_ret_pointee_array_first_dim;
+      g_decl_base_funcptr_ret_pointee_array_elem_size =
+          _ti.funcptr_ret_pointee_array_elem_size;
     }
   }
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
@@ -4277,6 +4302,8 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_pointer_levels = 0;
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
+  g_decl_base_funcptr_ret_pointee_array_first_dim = 0;
+  g_decl_base_funcptr_ret_pointee_array_elem_size = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
@@ -4451,6 +4478,11 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   }
   if (is_ptr && g_last_funcptr_param_int_mask) {
     _ti.funcptr_param_int_mask = g_last_funcptr_param_int_mask;
+  }
+  if (is_ptr && g_decl_trailing_func_suffix && paren_array_mul > 0 &&
+      g_paren_array_first_dim > 0) {
+    _ti.funcptr_ret_pointee_array_first_dim = g_paren_array_first_dim;
+    _ti.funcptr_ret_pointee_array_elem_size = elem_size;
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

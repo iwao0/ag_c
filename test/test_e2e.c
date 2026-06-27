@@ -1176,6 +1176,7 @@ static const test_case_t test_cases[] = {
     {"probes", "func_pointer_return_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_pointer_return_subscript.c", 0, 0},
     {"probes", "static_tag_return_function", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_tag_return_function.c", 0, 0},
     {"probes", "func_return_pointer_to_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_return_pointer_to_array.c", 0, 0},
+    {"probes", "funcptr_return_pointer_to_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_pointer_to_array.c", 0, 0},
     {"probes", "static_typedef_name_global", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_typedef_name_global.c", 0, 0},
     {"probes", "qualified_pointer_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/qualified_pointer_return.c", 0, 0},
     {"probes", "tag_return_complex_declarator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tag_return_complex_declarator.c", 0, 0},

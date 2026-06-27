@@ -114,7 +114,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_ptr_typedef = 0;
     unsigned short member_typedef_funcptr_param_fp_mask = 0;
     unsigned short member_typedef_funcptr_param_int_mask = 0;
-    int member_typedef_array_first_dim = 0;
+    int member_typedef_funcptr_ret_pointee_array_first_dim = 0;
+    int member_typedef_funcptr_ret_pointee_array_elem_size = 0;
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
     if (psx_ctx_is_type_token(curtok()->kind)) {
@@ -202,6 +203,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (_ti.is_pointer && _ti.funcptr_param_int_mask) {
           member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
         }
+        if (_ti.is_pointer && _ti.funcptr_ret_pointee_array_first_dim) {
+          member_typedef_funcptr_ret_pointee_array_first_dim =
+              _ti.funcptr_ret_pointee_array_first_dim;
+          member_typedef_funcptr_ret_pointee_array_elem_size =
+              _ti.funcptr_ret_pointee_array_elem_size;
+        }
         if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
           member_fp_kind = _ti.fp_kind;
         }
@@ -209,7 +216,6 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * 後段の psx_parse_member_array_suffixes_ex は inline [N] が無いため 1 を返す。
          * 多次元 (`typedef int Row[3][2]; struct { Row m; }`) も dims[] 経由で復元する。 */
         if (_ti.is_array && _ti.array_dim_count > 0) {
-          member_typedef_array_first_dim = _ti.array_first_dim;
           member_typedef_array_dim_count = _ti.array_dim_count;
           for (int i = 0; i < _ti.array_dim_count && i < 8; i++) {
             member_typedef_array_dims[i] = _ti.array_dims[i];
@@ -452,6 +458,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.funcptr_param_int_mask = head.has_func_suffix
                                            ? psx_last_funcptr_param_int_mask()
                                            : member_typedef_funcptr_param_int_mask;
+          if (member_typedef_funcptr_ret_pointee_array_first_dim > 0) {
+            _mi.funcptr_ret_pointee_array_first_dim =
+                (short)member_typedef_funcptr_ret_pointee_array_first_dim;
+            _mi.funcptr_ret_pointee_array_elem_size =
+                (short)member_typedef_funcptr_ret_pointee_array_elem_size;
+          }
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを

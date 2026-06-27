@@ -101,6 +101,8 @@ typedef struct {
   int ptr_array_pointee_bytes;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
+  short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_elem_size;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
@@ -159,6 +161,8 @@ typedef struct {
   int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
   unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
   unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅 (1=4B, 2=8B; 2bit * 最大8)
+  int funcptr_ret_pointee_array_first_dim; // 関数ポインタ戻り値が `T (*)[N]` のときの N
+  int funcptr_ret_pointee_array_elem_size; // 上記 pointer-to-array の要素サイズ
 } psx_typedef_info_t;
 
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、

@@ -171,6 +171,21 @@ int ps_node_deref_size(node_t *node) {
     case ND_FUNCALL: {
       int base = funcall_ret_pointee_size(node);
       node_func_t *fn = (node_func_t *)node;
+      if (base == 0 && fn->callee) {
+        int fd = 0;
+        if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
+            fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
+          node_mem_t *cm = (node_mem_t *)fn->callee;
+          fd = cm->funcptr_ret_pointee_array_first_dim;
+          int elem = cm->funcptr_ret_pointee_array_elem_size;
+          if (fd > 0 && elem > 0) return fd * elem;
+        }
+        if (fd > 0) {
+          int elem = ps_node_deref_size(fn->callee);
+          if (elem <= 0) elem = ps_node_type_size(fn->callee);
+          if (elem > 0) return fd * elem;
+        }
+      }
       if (base > 0 && fn->callee == NULL && fn->funcname) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
         if (fd > 0) return fd * base;
@@ -221,6 +236,10 @@ int ps_node_is_pointer(node_t *node) {
       node_func_t *fn = (node_func_t *)node;
       if (fn->callee == NULL && fn->funcname) {
         return psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len);
+      }
+      if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
+                         fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
+        return ((node_mem_t *)fn->callee)->funcptr_ret_pointee_array_first_dim > 0;
       }
       return 0;
     }
@@ -335,6 +354,14 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
      * pointee fp 種別を返す。 */
     case ND_FUNCALL: {
       node_func_t *fn = (node_func_t *)node;
+      if (fn->callee &&
+          (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
+           fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
+        node_mem_t *cm = (node_mem_t *)fn->callee;
+        if (cm->funcptr_ret_pointee_array_first_dim > 0) {
+          return (tk_float_kind_t)cm->pointee_fp_kind;
+        }
+      }
       if (fn->callee != NULL || !fn->funcname) return TK_FLOAT_KIND_NONE;
       if (!psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len))
         return TK_FLOAT_KIND_NONE;

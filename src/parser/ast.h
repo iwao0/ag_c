@@ -141,6 +141,8 @@ struct node_mem_t {
   unsigned int pointer_volatile_qual_mask;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
+  short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_elem_size;
   int pointer_qual_levels;
   // 多次元配列サポート用
   short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
