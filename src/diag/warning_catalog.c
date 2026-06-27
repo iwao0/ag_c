@@ -31,6 +31,7 @@ static const diag_warn_entry_t k_warn_entries[] = {
     {DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES, "W3021", "parser.logical_not_parentheses"},
     {DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE, "W3022", "parser.pointer_integer_compare"},
     {DIAG_WARN_PARSER_INTEGER_OVERFLOW, "W3023", "parser.integer_overflow"},
+    {DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, "W3024", "parser.unsupported_gnu_extension"},
 };
 
 static const diag_warn_entry_t *find_warn_entry(diag_warn_id_t id) {

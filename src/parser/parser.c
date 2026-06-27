@@ -505,6 +505,20 @@ void psx_skip_gnu_attributes(void) {
   }
 }
 
+static void warn_unsupported_gnu_extension_name(const token_t *tok, const char *name) {
+  diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
+                 "%s: %s",
+                 diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+                 name);
+}
+
+static void consume_gnu_range_designator_tail_if_any(void) {
+  if (curtok()->kind != TK_ELLIPSIS) return;
+  warn_unsupported_gnu_extension_name(curtok(), "array range designator");
+  set_curtok(curtok()->next);
+  (void)psx_expr_assign();
+}
+
 static inline token_t *curtok(void) {
   return tk_get_current_token();
 }
@@ -1515,6 +1529,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         psx_diag_ctx(curtok(), "decl",
                      "配列指定初期化子の添字は非負の定数式である必要があります");
       }
+      consume_gnu_range_designator_tail_if_any();
       tk_expect(']');
       tk_expect('=');
       /* struct 要素配列の `[N]=` は要素 1 つが内側スカラ数だけ slot を占めるので
@@ -1584,6 +1599,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           set_curtok(curtok()->next);
           int iok = 1;
           long long iv = psx_decl_eval_const_int(psx_expr_assign(), &iok);
+          consume_gnu_range_designator_tail_if_any();
           tk_expect(']');
           if (!iok || iv < 0) psx_diag_ctx(curtok(), "decl", "配列指定初期化子の添字が不正です");
           int per = (cmi.tag_kind == TK_STRUCT && !cmi.is_tag_pointer)

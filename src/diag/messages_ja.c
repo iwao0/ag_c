@@ -197,6 +197,7 @@ const char *diag_warn_message_ja(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' の優先順位が '==' より高いため '!x == y' は '(!x) == y' になります";
     case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "ポインタを非ゼロ整数定数と比較しています (C11 6.5.16.1: NULL ポインタ定数 0 のみ整数比較可能)";
     case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "整数定数式が int の範囲を超えています (C11 6.5p5 未定義動作)";
+    case DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU 拡張はこのコンパイラでは使用できません。読み飛ばします";
   }
   return NULL;
 }

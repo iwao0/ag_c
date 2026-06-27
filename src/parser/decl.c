@@ -60,6 +60,9 @@ static lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
 static unsigned lvar_offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;  /* Knuth 乗算ハッシュの上位 8bit */
 }
+
+static void warn_unsupported_gnu_extension_name(const token_t *tok, const char *name);
+
 /* スコープ一意連番。enter_scope ごとに採番し、同一スコープ内の重複宣言検出に使う
  * (同じ scope_seq を持つ変数が既にあれば C11 6.7p3 違反)。 */
 static unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
@@ -414,9 +417,11 @@ static long long parse_array_size_expr_decl(node_t **out_node, int *out_ok) {
   int ok = 1;
   long long v = eval_const_expr_decl(n, &ok);
   if (out_ok) *out_ok = ok;
-  if (ok && v <= 0) {
+  if (ok && v < 0) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+  } else if (ok && v == 0) {
+    warn_unsupported_gnu_extension_name(curtok(), "zero-length array");
   }
   return v;
 }
@@ -1041,6 +1046,20 @@ static int array_desig_elem_stride(const lvar_t *var, int d) {
   return 1;
 }
 
+static void warn_unsupported_gnu_extension_name(const token_t *tok, const char *name) {
+  diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
+                 "%s: %s",
+                 diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+                 name);
+}
+
+static void consume_gnu_range_designator_tail_if_any(void) {
+  if (curtok()->kind != TK_ELLIPSIS) return;
+  warn_unsupported_gnu_extension_name(curtok(), "array range designator");
+  set_curtok(curtok()->next);
+  (void)psx_expr_assign();
+}
+
 static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain);
 static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_member_info_t info);
 
@@ -1078,6 +1097,7 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
         int flat = 0;
         for (;;) {
           int di = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+          consume_gnu_range_designator_tail_if_any();
           tk_expect(']');
           flat += di * array_desig_elem_stride(var, d);
           d++;
@@ -1453,6 +1473,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             if (curtok()->kind == TK_LBRACKET) {
               set_curtok(curtok()->next);
               long long ridx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+              consume_gnu_range_designator_tail_if_any();
               tk_expect(']');
               tk_expect('=');
               if (ridx < 0) ridx = 0;
@@ -1468,6 +1489,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                   if (curtok()->kind == TK_LBRACKET) {
                     set_curtok(curtok()->next);
                     long long cidx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+                    consume_gnu_range_designator_tail_if_any();
                     tk_expect(']');
                     tk_expect('=');
                     if (cidx < 0) cidx = 0;
@@ -1552,6 +1574,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           int target_idx = idx;
           if (tk_consume('[')) {
             target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+            consume_gnu_range_designator_tail_if_any();
             tk_expect(']');
             tk_expect('=');
           }
@@ -1980,6 +2003,7 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
       }
       tk_consume('[');
       int nested_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+      consume_gnu_range_designator_tail_if_any();
       tk_expect(']');
       if (nested_idx < 0 || nested_idx >= cur_info.array_len) {
         psx_diag_ctx(curtok(), "decl", "%s",

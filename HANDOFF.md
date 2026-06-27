@@ -1,11 +1,14 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き97: c-testsuite 00219）
+最終更新: 2026-06-27（続き98: unsupported GNU extensions warn+skip）
 
 ## 現状
-- `make test` = **1105/1105 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- `make test` = **1106/1106 green** (E2E + unit + parser + preprocess + IR + fuzz)。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218/220 = 99.1% pass**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
+- 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
+  意味実装せず読み飛ばす。対象: `#pragma push_macro` / `pop_macro`、GNU range designator
+  `[lo ... hi] =` (先頭 `lo` の単一 designator として処理)、ゼロ長配列 `[0]` (0 バイトとして処理)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
@@ -95,8 +98,8 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **コミットまでがタスク**: タスク完了時はコミットも自分で実行 (`feedback_commit_per_task.md`)。
   「コミットしますか？」と毎回聞かない。
 - **作業前に範囲確認**: 狭い依頼を勝手に全体へ広げない (`feedback_confirm_scope_before_acting.md`)。
-- **GNU 拡張は対象外**: ag_c は C11 サブセット。statement expression `({...})`、`__real__` 等は
-  バグ探索の対象に入れない (`feedback_no_gnu_extensions.md`)。
+- **GNU 拡張は対象外**: ag_c は C11 サブセット。新規に意味サポートしない。認識済みの未対応拡張は
+  `W3024` で警告して読み飛ばすが、clang/GCC 互換の挙動は保証しない (`feedback_no_gnu_extensions.md`)。
 - **コミットメッセージ**: 英語 Conventional Commits (`fix:` / `docs:` 等)。Co-Authored-By を付ける。
 - **テスト出力を省略しない**: `make test` の結果はそのまま出す (`feedback_trust.md`)。
 - **ヘッダ変更時は `make clean && make`** で確認 (増分ビルドが依存を取りこぼすことがある)。
@@ -183,8 +186,9 @@ Fail (stdout):   1
 - 00206 (`#pragma push_macro` / `pop_macro`)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **0 件**。次は未探索の角度から probe を作るか、GNU 拡張サポートを
-方針変更として明示的に扱う場合のみ 00206/00216 に取り組む。
+実質取り組み対象は **0 件**。続き98 で認識済み GNU 拡張の一部は `W3024` 警告 + 読み飛ばしに
+したが、GNU 拡張の意味サポートはしない方針のまま。次は未探索の角度から probe を作るか、
+GNU 拡張サポートを方針変更として明示的に扱う場合のみ 00206/00216 に取り組む。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 

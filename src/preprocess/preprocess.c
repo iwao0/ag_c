@@ -1603,6 +1603,15 @@ static token_t *handle_pragma_pack_body(token_t *tok, token_t **pcur) {
   return tok;
 }
 
+static void warn_unsupported_gnu_extension_token(const token_t *tok) {
+  if (!tok || tok->kind != TK_IDENT) return;
+  const token_ident_t *id = (const token_ident_t *)tok;
+  diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
+                 "%s: %.*s",
+                 diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+                 id->len, id->str);
+}
+
 static token_t *handle_pragma(token_t *tok, token_t **pcur) {
   tok = tok->next;
   if (ident_is(tok, "once")) {
@@ -1616,6 +1625,8 @@ static token_t *handle_pragma(token_t *tok, token_t **pcur) {
       tok = tok->next;
       tok = handle_pragma_pack_body(tok, pcur);
     }
+  } else if (ident_is(tok, "push_macro") || ident_is(tok, "pop_macro")) {
+    warn_unsupported_gnu_extension_token(tok);
   }
   return skip_to_next_line(tok);
 }

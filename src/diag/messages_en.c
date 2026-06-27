@@ -197,6 +197,7 @@ const char *diag_warn_message_en(diag_warn_id_t id) {
     case DIAG_WARN_PARSER_LOGICAL_NOT_PARENTHESES: return "'!' has higher precedence than '==' so '!x == y' is parsed as '(!x) == y'";
     case DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE: return "comparing pointer with non-zero integer constant (only the NULL pointer constant 0 is allowed)";
     case DIAG_WARN_PARSER_INTEGER_OVERFLOW: return "integer constant expression overflows int (C11 6.5p5 undefined behavior)";
+    case DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION: return "GNU extension is not supported by this compiler; skipping it";
   }
   return NULL;
 }

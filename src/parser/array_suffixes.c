@@ -8,9 +8,14 @@ static inline token_t *curtok(void) { return tk_get_current_token(); }
 
 int psx_parse_array_size_constexpr(void) {
   long long v = psx_parse_enum_const_expr();
-  if (v <= 0) {
+  if (v < 0) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+  } else if (v == 0) {
+    diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, curtok(),
+                   "%s: %s",
+                   diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+                   "zero-length array");
   }
   return (int)v;
 }
