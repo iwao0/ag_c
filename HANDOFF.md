@@ -1,9 +1,9 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き102: const struct member assignment）
+最終更新: 2026-06-27（続き103: const aggregate array element assignment）
 
 ## 現状
-- `make test` = **1109/1109 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- `make test` = **1111/1111 green** (E2E + unit + parser + preprocess + IR + fuzz)。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -26,11 +26,15 @@
   after_type に渡さず、さらに `s.x` の ND_DEREF 代入で const を見ていなかったため
   `s.x = ...` が通っていた。tag 経路で const/volatile を保存し、メンバ deref に親 const を伝播、
   const 付き ND_DEREF への代入を E3077 にする。
+- 続き103: **`const struct` 配列要素のメンバ代入拒否**。`const struct S a[1]; a[0].x = ...`
+  が、配列 decay の `ND_ADDR` と subscript 結果 `ND_DEREF` に const/volatile が伝播せず通っていた。
+  ローカル/static local/global 配列の base address node と global_var_t に qualifier を保持し、
+  subscript 結果へ伝播して E3077 にする。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1109/1109 green を確認 (前回セッションの状態が引き継がれている)。
+3. **`make test`** で 1111/1111 green を確認 (前回セッションの状態が引き継がれている)。
 4. **`bash scripts/run_c_testsuite.sh --list-fail`** で fail 0 / unsupported skip 2 を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から

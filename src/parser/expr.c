@@ -4029,6 +4029,10 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (is_final_scalar) deref->is_unsigned = 1;
       else                 deref->pointee_is_unsigned = 1;
     }
+    if (base_mem) {
+      if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
+      if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
+    }
     /* `unsigned char *g(); g()[i]`: 関数のポインタ戻り値の pointee が unsigned なら
      * zero-extend load させる (base_mem は ND_FUNCALL を拾わないので別途)。 */
     if (node->kind == ND_FUNCALL) {
@@ -4614,6 +4618,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       base->mem.tag_name = gv->tag_name;
       base->mem.tag_len = gv->tag_len;
       base->mem.tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
+      base->mem.is_const_qualified = gv->is_const_qualified;
+      base->mem.is_volatile_qualified = gv->is_volatile_qualified;
       base->name = gv->name;
       base->name_len = gv->name_len;
       base->is_thread_local = gv->is_thread_local;
@@ -4624,6 +4630,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->tag_name = gv->tag_name;
       addr->tag_len = gv->tag_len;
       addr->tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
+      addr->is_const_qualified = gv->is_const_qualified;
+      addr->is_volatile_qualified = gv->is_volatile_qualified;
       if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
       // 多次元配列: outer_stride を 1 次サブスクリプトのステップとして使う。
       // ローカル配列の build_array_lvar_addr_node と同じレイアウト。
@@ -4722,6 +4730,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.tag_len = gv->tag_len;
     gvar_node->mem.tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
     gvar_node->mem.is_tag_pointer = gv->is_tag_pointer;
+    gvar_node->mem.is_const_qualified = gv->is_const_qualified;
+    gvar_node->mem.is_volatile_qualified = gv->is_volatile_qualified;
     if (gv->is_tag_pointer) gvar_node->mem.is_pointer = 1;
     /* 多段ポインタグローバル (`int **gp`): `*gp` は int* (8B) を返すので、参照ノードの
      * deref_size を 8 に、base_deref_size を要素サイズ (gv->deref_size) にし、
@@ -4781,6 +4791,8 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
   addr->type_size = stride;
   addr->deref_size = stride;
   addr->is_pointer = 1;
+  addr->is_const_qualified = var->is_const_qualified;
+  addr->is_volatile_qualified = var->is_volatile_qualified;
   return (node_t *)addr;
 }
 
@@ -4844,6 +4856,8 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
   node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
   node->is_pointer = 1;
+  node->is_const_qualified = var->is_const_qualified;
+  node->is_volatile_qualified = var->is_volatile_qualified;
   node->pointer_qual_levels = var->pointer_qual_levels;
   node->base_deref_size = var->base_deref_size;
   return (node_t *)node;

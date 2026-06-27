@@ -1137,6 +1137,8 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
    * スカラは node の is_unsigned、配列は pointee_is_unsigned に使う (ポインタ値
    * 自体は unsigned ではないので is_ptr は除外)。 */
   gv->is_unsigned = (!is_ptr && g_toplevel_decl_is_unsigned) ? 1 : 0;
+  gv->is_const_qualified = g_toplevel_decl_pointee_const ? 1 : 0;
+  gv->is_volatile_qualified = g_toplevel_decl_pointee_volatile ? 1 : 0;
   /* 多段ポインタグローバル (`int **gp` / pointer typedef `PP gp`) の段数 = 宣言子の
    * `*` 数 + 基底ポインタ typedef の段数。`*gp` が int* を返すよう、参照ノード構築時に
    * deref_size=8 等を立てるために記録する (単段以下は意味なし)。 */
