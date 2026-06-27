@@ -20,6 +20,7 @@ void psx_take_type_qualifiers(int *is_const_qualified, int *is_volatile_qualifie
 void psx_take_alignas_value(int *align);
 void psx_take_extern_flag(int *is_extern);
 void psx_take_static_flag(int *is_static);
+void psx_set_extern_flag(int is_extern);
 void psx_set_static_flag(int is_static);
 /* _Generic 用: [start, end) のトークン綴りを単一スペースで連結 (skip は除外)。'(' を
  * 含まない単純型は NULL。複雑な派生型 (関数ポインタ/ネスト宣言子) の型照合に使う。 */

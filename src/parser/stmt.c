@@ -332,6 +332,7 @@ static node_t *parse_decl_like_stmt(void) {
    * 入れるようにする。psx_decl_parse_declaration は struct を type-spec
    * として直接処理できないため、ここで先に分岐する必要がある。 */
   int tag_path_saw_static = 0;
+  int tag_path_saw_extern = 0;
   int tag_path_alignas = 0;
   {
     token_t *peek = curtok();
@@ -361,6 +362,7 @@ static node_t *parse_decl_like_stmt(void) {
        * 呼び出し跨ぎで永続しなかった。 */
       while (psx_is_decl_prefix_token(curtok()->kind)) {
         if (curtok()->kind == TK_STATIC) tag_path_saw_static = 1;
+        if (curtok()->kind == TK_EXTERN) tag_path_saw_extern = 1;
         if (curtok()->kind == TK_ALIGNAS) {
           /* `_Alignas(N) struct T x;`: _Alignas トークンと続く `(N)` を正しく消費し、
            * 値を捕捉する。素朴に set_curtok(next) すると `(N)` が残り `struct` 検出前で
@@ -407,6 +409,7 @@ static node_t *parse_decl_like_stmt(void) {
         return psx_node_new_num(0);
       }
       /* メンバ定義の解析で skip_cv_qualifiers が static / alignas をリセットするため復元。 */
+      psx_set_extern_flag(tag_path_saw_extern);
       if (tag_path_saw_static) psx_set_static_flag(1);
       if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
       return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
@@ -424,6 +427,7 @@ static node_t *parse_decl_like_stmt(void) {
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     int tag_members = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
     int elem_size = (tag_members > 0) ? (tag_size > 0 ? tag_size : 8) : 0;
+    psx_set_extern_flag(tag_path_saw_extern);
     if (tag_path_saw_static) psx_set_static_flag(1);
     if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
     return psx_decl_parse_declaration_after_type(elem_size,

@@ -606,6 +606,10 @@ void psx_set_static_flag(int is_static) {
   g_last_decl_is_static = is_static ? 1 : 0;
 }
 
+void psx_set_extern_flag(int is_extern) {
+  g_last_decl_is_extern = is_extern ? 1 : 0;
+}
+
 /* tag 経路 (`_Alignas(N) struct T x;`) で、プレフィックス先読み消費時に捕捉した
  * _Alignas 値を、tag 定義パース後 (skip_cv_qualifiers がリセットする) に復元する。 */
 void psx_set_alignas_value(int align) {

@@ -166,7 +166,9 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out);
 static node_t *parse_typedef_declaration_local(void);
 static void parse_local_extern_declarator_list(local_decl_spec_t *ds);
 static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_array_suffix_t arr,
-                                       int elem_size);
+                                       int elem_size, tk_float_kind_t fp_kind,
+                                       token_kind_t tag_kind, char *tag_name, int tag_len,
+                                       int is_unsigned);
 static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
                                             tk_float_kind_t *fp_kind,
                                             token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -3676,6 +3678,22 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   int decl_is_long_double = psx_last_type_is_long_double();
   int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
+  int decl_is_extern = 0;
+  psx_take_extern_flag(&decl_is_extern);
+  if (decl_is_extern) {
+    local_decl_spec_t ds = {0};
+    init_local_decl_spec(&ds);
+    ds.elem_size = elem_size;
+    ds.fp_kind = decl_fp_kind;
+    ds.tag_kind = tag_kind;
+    ds.tag_name = tag_name;
+    ds.tag_len = tag_len;
+    ds.base_is_pointer = base_is_pointer;
+    ds.is_unsigned = decl_is_unsigned;
+    parse_local_extern_declarator_list(&ds);
+    tk_expect(';');
+    return psx_node_new_num(0);
+  }
   int decl_is_static = 0;
   psx_take_static_flag(&decl_is_static);
 
@@ -4222,7 +4240,9 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
     decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_dim);
     int is_function_prototype = g_decl_trailing_func_suffix && !is_ptr;
     if (!is_function_prototype) {
-      register_local_extern_decl(name, is_ptr, arr, ds->elem_size);
+      register_local_extern_decl(name, is_ptr, arr, ds->elem_size, ds->fp_kind,
+                                 ds->tag_kind, ds->tag_name, ds->tag_len,
+                                 ds->is_unsigned);
     }
     if (curtok()->kind == TK_ASSIGN) {
       set_curtok(curtok()->next);
@@ -4234,7 +4254,9 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
 }
 
 static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_array_suffix_t arr,
-                                       int elem_size) {
+                                       int elem_size, tk_float_kind_t fp_kind,
+                                       token_kind_t tag_kind, char *tag_name, int tag_len,
+                                       int is_unsigned) {
   if (find_global_var_decl(name->str, name->len)) return;
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->name = name->str;
@@ -4244,6 +4266,9 @@ static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_arr
   gv->deref_size = elem_size;
   gv->is_array = arr.is_array;
   gv->is_extern_decl = 1;
+  gv->fp_kind = is_ptr ? (unsigned char)TK_FLOAT_KIND_NONE : (unsigned char)fp_kind;
+  gv->is_unsigned = is_unsigned ? 1 : 0;
+  psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, is_ptr);
   psx_register_global_var(gv);
 }
 

@@ -1,9 +1,9 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き99: local extern function prototypes）
+最終更新: 2026-06-27（続き100: local extern tag declarations）
 
 ## 現状
-- `make test` = **1106/1106 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- `make test` = **1107/1107 green** (E2E + unit + parser + preprocess + IR + fuzz)。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218/220 = 99.1% pass**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -13,11 +13,16 @@
   `extern` 付きだけ `parse_local_extern_declarator_list` が関数 declarator を extern 変数として
   登録し、呼び出しが GOT load 経由になって SIGBUS。`extern` 宣言子ループでも関数 suffix を検出し、
   non-pointer 関数 prototype は変数登録せず読み飛ばす。
+- 続き100: **関数内 `extern struct/union T obj;`**。stmt.c の tag-keyword fast path が
+  `extern` プレフィックスを消費するだけで storage class を復元せず、`struct S gs;` と同じ
+  auto 変数として登録して未初期化スタックを読んでいた。tag 経路で `extern` を保存/復元し、
+  `psx_decl_parse_declaration_after_type_ex` でも extern なら local extern 登録へ回す。
+  local extern 登録には tag/fp/unsigned 情報も持たせる。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1105/1105 green を確認 (前回セッションの状態が引き継がれている)。
+3. **`make test`** で 1107/1107 green を確認 (前回セッションの状態が引き継がれている)。
 4. **`bash scripts/run_c_testsuite.sh --list-fail`** で 218/220 green を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
@@ -168,7 +173,7 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き97 後): 218/220 = 99.1% pass
+### c-testsuite 現状 (続き100 後): 218/220 = 99.1% pass
 
 ```
 Total:           220

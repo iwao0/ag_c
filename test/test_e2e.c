@@ -1181,6 +1181,7 @@ static const test_case_t test_cases[] = {
     {"probes", "arm64_aggregate_varargs", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/arm64_aggregate_varargs.c", 0, 0},
     {"probes", "multilevel_pointer_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multilevel_pointer_return.c", 0, 0},
     {"probes", "extern_then_def_same_tu", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/extern_then_def_same_tu.c", 0, 0},
+    {"probes", "local_extern_tag_decl", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_extern_tag_decl.c", 0, 0},
     {"probes", "pointer_typedef_param_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_typedef_param_subscript.c", 0, 0},
     {"probes", "unsigned_char_pointer_zero_extend", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c", 0, 0},
     {"probes", "global_2d_pointer_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_2d_pointer_array.c", 0, 0},
