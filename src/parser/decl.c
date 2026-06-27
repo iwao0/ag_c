@@ -3872,6 +3872,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 0, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
         var->base_deref_size = (short)elem_size;
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
+        var->is_pointer_const_qualified = ptr_is_const_qualified;
+        var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
+        var->pointer_const_qual_mask = ptr_const_mask;
+        var->pointer_volatile_qual_mask = ptr_volatile_mask;
         var->vla_row_stride_frame_off = var->offset + 8;
         var->vla_row_stride_elem_size = (short)elem_size;
         node_t *slot = psx_node_new_lvar_typed(var->vla_row_stride_frame_off, 8);
@@ -3908,6 +3914,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         }
         (void)element_is_pointer_paren;
         var->outer_stride = row_size;
+        var->is_const_qualified = is_const_qualified;
+        var->is_volatile_qualified = is_volatile_qualified;
+        var->is_pointer_const_qualified = ptr_is_const_qualified;
+        var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
+        var->pointer_const_qual_mask = ptr_const_mask;
+        var->pointer_volatile_qual_mask = ptr_volatile_mask;
         /* 多次元 inner (`(*p)[N][M]`): p[i] は [N][M] 全体 (outer_stride)、p[i][j] は
          * 内側 1 行 ([M]) ぶん進む。mid_stride = (積/先頭次元)*elem を設定する。 */
         if (g_paren_array_dim_count >= 2 && g_paren_array_first_dim > 0) {

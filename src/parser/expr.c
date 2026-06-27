@@ -3361,6 +3361,12 @@ static node_t *build_unary_deref_node(node_t *operand) {
   if (pql <= 1) {
     if (node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
   }
+  if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
+                  operand->kind == ND_DEREF || operand->kind == ND_ADDR)) {
+    node_mem_t *operand_mem = (node_mem_t *)operand;
+    if (operand_mem->is_const_qualified) node->is_const_qualified = 1;
+    if (operand_mem->is_volatile_qualified) node->is_volatile_qualified = 1;
+  }
   if (pql >= 2) {
     node->is_pointer = 1;
     int new_pql = pql - 1;
