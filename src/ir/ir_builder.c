@@ -1331,9 +1331,13 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   /* unsigned 演算は SHR→LSR、DIV→UDIV、MOD→UMOD、LT/LE→ULT/ULE に振り分ける。
    * 結果型の is_unsigned (parser が伝播) と、片側が unsigned LVAR/GVAR/...
    * の場合の両方を考慮する。 */
-  int unsig = node->is_unsigned ||
-              (node->lhs && node->lhs->is_unsigned) ||
-              (node->rhs && node->rhs->is_unsigned);
+  int shift_unsig = (node->lhs && ps_node_type_size(node->lhs) >= 4 &&
+                     ps_node_is_unsigned(node->lhs));
+  int unsig = (node->kind == ND_SHL || node->kind == ND_SHR)
+                ? (node->is_unsigned || shift_unsig)
+                : (node->is_unsigned ||
+                   (node->lhs && node->lhs->is_unsigned) ||
+                   (node->rhs && node->rhs->is_unsigned));
   /* 比較 (LT/LE) と除算/剰余 (DIV/MOD) の符号は C11 6.3.1.8 の通常算術変換に
    * 従って別途決める。上の unsig (どちらかが unsigned なら unsigned) は rank を
    * 無視しており、`long < unsigned int` や `long / unsigned int`、
@@ -1378,11 +1382,15 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   } else if (is_fp) {
     result_ty = (l.type == IR_TY_F64 || r.type == IR_TY_F64) ? IR_TY_F64 : IR_TY_F32;
   } else {
+    if (node->kind == ND_SHL || node->kind == ND_SHR) {
+      result_ty = (ir_type_size(l.type) >= 8) ? IR_TY_I64 : IR_TY_I32;
+    } else {
     /* 整数演算: いずれかのオペランドが 64bit (long / long long / pointer) なら
      * 結果も 64bit。さもないと i32。i32 のままだと後段で 64bit へ拡張する際に
      * sxtw が下位 32bit へ切り詰めてしまう (例 `(c)? a+a : 0`、a が long)。 */
-    int wide = (ir_type_size(l.type) >= 8) || (ir_type_size(r.type) >= 8);
-    result_ty = wide ? IR_TY_I64 : IR_TY_I32;
+      int wide = (ir_type_size(l.type) >= 8) || (ir_type_size(r.type) >= 8);
+      result_ty = wide ? IR_TY_I64 : IR_TY_I32;
+    }
   }
   /* 浮動小数点演算: 整数 src を float に昇格 */
   if (is_fp) {
@@ -1432,7 +1440,8 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
    * 折り返す (C11 6.2.5p9: 符号なしは 2^32 で wrap)。これをしないと `(x+1)==0`
    * (x=0xFFFFFFFF) のように格納/キャストを経ない直接使用で値が壊れる。
    * 符号付きはオーバーフローが UB なので対象外 (符号拡張のまま)。 */
-  if (result_ty == IR_TY_I32 && uac_unsig &&
+  int result_unsigned = (node->kind == ND_SHL || node->kind == ND_SHR) ? unsig : uac_unsig;
+  if (result_ty == IR_TY_I32 && result_unsigned &&
       (node->kind == ND_ADD || node->kind == ND_SUB ||
        node->kind == ND_MUL || node->kind == ND_SHL)) {
     int vm = ir_func_new_vreg(ctx->f);
@@ -2181,16 +2190,26 @@ static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node) {
   if (!node->lhs) return ir_val_none();
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
+  node_mem_t *cast = (node_mem_t *)node;
   /* `(long)unsigned_int` の zero-extend ラッパ: lhs (I32) を I64 へ ZEXT する。
    * coerce_to_type は常に SEXT なので unsigned widen には使えず、ここで明示挿入する。
    * これにより `(long)u + (long)u` の二項演算が I64 で計算され (I32 ラップマスク回避)、
    * 2^32 を超える和が正しくなる。 */
-  if (((node_mem_t *)node)->widen_zext_i64 && v.type != IR_TY_I64 && !is_fp_type(v.type)) {
+  if (cast->widen_zext_i64 && v.type != IR_TY_I64 && !is_fp_type(v.type)) {
     int d = ir_func_new_vreg(ctx->f);
     ir_inst_t *zx = ir_inst_new(IR_ZEXT);
     zx->dst = ir_val_vreg(d, IR_TY_I64);
     zx->src1 = v;
     ir_func_append_inst(ctx->f, zx);
+    return ir_val_vreg(d, IR_TY_I64);
+  }
+  if (!cast->is_pointer && !cast->is_tag_pointer && cast->type_size >= 8 &&
+      v.type != IR_TY_I64 && v.type != IR_TY_PTR && !is_fp_type(v.type)) {
+    int d = ir_func_new_vreg(ctx->f);
+    ir_inst_t *sx = ir_inst_new(cast->is_unsigned ? IR_ZEXT : IR_SEXT);
+    sx->dst = ir_val_vreg(d, IR_TY_I64);
+    sx->src1 = v;
+    ir_func_append_inst(ctx->f, sx);
     return ir_val_vreg(d, IR_TY_I64);
   }
   return v;

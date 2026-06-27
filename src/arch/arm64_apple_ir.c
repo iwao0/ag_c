@@ -102,6 +102,41 @@ static void emit_addsub_imm(const char *op, const char *dst, const char *src, in
   if (imm & 0xfff) cg_emitf("  %s %s, %s, #%d\n", op, dst, dst, imm & 0xfff);
 }
 
+static int frame_offset_scale_for_reg(const char *reg) {
+  if (!reg || !reg[0]) return 8;
+  switch (reg[0]) {
+    case 'b': return 1;
+    case 'h': return 2;
+    case 'w':
+    case 's': return 4;
+    default: return 8;
+  }
+}
+
+static int frame_offset_fits_unsigned(const char *reg, int off) {
+  int scale = frame_offset_scale_for_reg(reg);
+  return off >= 0 && off <= 4095 * scale && (off % scale) == 0;
+}
+
+static void emit_frame_load(const char *reg, int off) {
+  if (frame_offset_fits_unsigned(reg, off)) {
+    cg_emitf("  ldr %s, [x29, #%d]\n", reg, off);
+    return;
+  }
+  emit_addsub_imm("add", "x16", "x29", off);
+  cg_emitf("  ldr %s, [x16]\n", reg);
+}
+
+static void emit_frame_store(const char *reg, int off) {
+  if (frame_offset_fits_unsigned(reg, off)) {
+    cg_emitf("  str %s, [x29, #%d]\n", reg, off);
+    return;
+  }
+  const char *addr = (strcmp(reg, "x16") == 0 || strcmp(reg, "w16") == 0) ? "x17" : "x16";
+  emit_addsub_imm("add", addr, "x29", off);
+  cg_emitf("  str %s, [%s]\n", reg, addr);
+}
+
 /* prologue: x29/x30 のあと、使われた callee-saved reg を保存する。 */
 static void emit_save_regs(gen_ctx_t *ctx) {
   int off = 16;
@@ -153,7 +188,7 @@ static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch
   }
   if (vv >= 0 && vv < ctx->f->next_vreg_id) {
     snprintf(out_buf, out_size, "%s", scratch);
-    cg_emitf("  ldr %s, [x29, #%d]\n", scratch, ctx->vreg_off[vv]);
+    emit_frame_load(scratch, ctx->vreg_off[vv]);
     return out_buf;
   }
   snprintf(out_buf, out_size, "%s", scratch);
@@ -183,7 +218,7 @@ static const char *acquire_dst(gen_ctx_t *ctx, ir_val_t dst, const char *scratch
 static void release_dst(gen_ctx_t *ctx, ir_val_t dst, const char *reg, int needs_spill) {
   if (!needs_spill) return;
   if (dst.id < 0 || dst.id >= ctx->f->next_vreg_id) return;
-  cg_emitf("  str %s, [x29, #%d]\n", reg, ctx->vreg_off[dst.id]);
+  emit_frame_store(reg, ctx->vreg_off[dst.id]);
 }
 
 /* "x9" → "w9" の変換。phys reg / scratch 共通。out 長 8 想定。 */
@@ -331,7 +366,7 @@ static void gen_inst_load_tlv_addr(gen_ctx_t *ctx, ir_inst_t *inst) {
       cg_emitf("  ldr x8, [x0]\n");
       cg_emitf("  blr x8\n");
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-    cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+    emit_frame_store("x0", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -372,7 +407,7 @@ static void gen_inst_vla_alloc(gen_ctx_t *ctx, ir_inst_t *inst) {
       cg_emitf("  sub sp, sp, x9\n");
       cg_emitf("  mov x9, sp\n");
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-    cg_emitf("  str x9, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+    emit_frame_store("x9", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -402,12 +437,12 @@ static void gen_inst_load_fp_imm(gen_ctx_t *ctx, ir_inst_t *inst) {
         union { float f; uint32_t i; } u = { .f = (float)inst->src1.fp_imm };
         cg_emit_mov_imm("x9", (long long)u.i);
         cg_emitf("  fmov s0, w9\n");
-        cg_emitf("  str s0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        emit_frame_store("s0", ctx->vreg_off[inst->dst.id]);
       } else {
         union { double d; uint64_t i; } u = { .d = inst->src1.fp_imm };
         cg_emit_mov_imm("x9", (long long)u.i);
         cg_emitf("  fmov d0, x9\n");
-        cg_emitf("  str d0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        emit_frame_store("d0", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -415,8 +450,11 @@ static void gen_inst_fp_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
       /* float vreg は frame 経由。d0/d1 (or s0/s1) にロード、演算、frame に str。 */
       int is_double = (inst->dst.type == IR_TY_F64);
       const char *suf = is_double ? "d" : "s";
-      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
-      cg_emitf("  ldr %s1, [x29, #%d]\n", suf, ctx->vreg_off[inst->src2.id]);
+      char r0[4], r1[4];
+      snprintf(r0, sizeof(r0), "%s0", suf);
+      snprintf(r1, sizeof(r1), "%s1", suf);
+      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
+      emit_frame_load(r1, ctx->vreg_off[inst->src2.id]);
       const char *op = "fadd";
       switch (inst->op) {
         case IR_FADD: op = "fadd"; break;
@@ -426,14 +464,17 @@ static void gen_inst_fp_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
         default: break;
       }
       cg_emitf("  %s %s0, %s0, %s1\n", op, suf, suf, suf);
-  cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+  emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_fp_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
       int src_double = (inst->src1.type == IR_TY_F64) || (inst->src2.type == IR_TY_F64);
       const char *suf = src_double ? "d" : "s";
-      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
-      cg_emitf("  ldr %s1, [x29, #%d]\n", suf, ctx->vreg_off[inst->src2.id]);
+      char r0[4], r1[4];
+      snprintf(r0, sizeof(r0), "%s0", suf);
+      snprintf(r1, sizeof(r1), "%s1", suf);
+      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
+      emit_frame_load(r1, ctx->vreg_off[inst->src2.id]);
       cg_emitf("  fcmp %s0, %s1\n", suf, suf);
       const char *cond = "eq";
       switch (inst->op) {
@@ -453,7 +494,9 @@ static void gen_inst_fp_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_f2i(gen_ctx_t *ctx, ir_inst_t *inst) {
       int src_double = (inst->src1.type == IR_TY_F64);
       const char *suf = src_double ? "d" : "s";
-      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
+      char r0[4];
+      snprintf(r0, sizeof(r0), "%s0", suf);
+      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
@@ -467,7 +510,9 @@ static void gen_inst_i2f(gen_ctx_t *ctx, ir_inst_t *inst) {
       int is_double = (inst->dst.type == IR_TY_F64);
       const char *suf = is_double ? "d" : "s";
   cg_emitf("  scvtf %s0, %s\n", suf, s1);
-  cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+  char r0[4];
+  snprintf(r0, sizeof(r0), "%s0", suf);
+  emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_f2f(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -476,9 +521,12 @@ static void gen_inst_f2f(gen_ctx_t *ctx, ir_inst_t *inst) {
       int dst_double = (inst->dst.type == IR_TY_F64);
       const char *src_suf = src_double ? "d" : "s";
       const char *dst_suf = dst_double ? "d" : "s";
-      cg_emitf("  ldr %s0, [x29, #%d]\n", src_suf, ctx->vreg_off[inst->src1.id]);
+      char r0[4], r1[4];
+      snprintf(r0, sizeof(r0), "%s0", src_suf);
+      snprintf(r1, sizeof(r1), "%s1", dst_suf);
+      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
   cg_emitf("  fcvt %s1, %s0\n", dst_suf, src_suf);
-  cg_emitf("  str %s1, [x29, #%d]\n", dst_suf, ctx->vreg_off[inst->dst.id]);
+  emit_frame_store(r1, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_alloca(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -503,12 +551,12 @@ static void gen_inst_load(gen_ctx_t *ctx, ir_inst_t *inst) {
       /* float/double: frame に書く (spill 経路で統一) */
       if (inst->dst.type == IR_TY_F32) {
         cg_emitf("  ldr s0, [%s]\n", ptr);
-        cg_emitf("  str s0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        emit_frame_store("s0", ctx->vreg_off[inst->dst.id]);
         return;
       }
       if (inst->dst.type == IR_TY_F64) {
         cg_emitf("  ldr d0, [%s]\n", ptr);
-        cg_emitf("  str d0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+        emit_frame_store("d0", ctx->vreg_off[inst->dst.id]);
         return;
       }
       char bd[8];
@@ -541,14 +589,14 @@ static void gen_inst_store(gen_ctx_t *ctx, ir_inst_t *inst) {
       /* float/double store: src2 vreg は frame 上にある (spill 経路)。 */
       if (inst->src2.type == IR_TY_F32) {
         if (inst->src2.id >= 0 && inst->src2.id < ctx->f->next_vreg_id) {
-          cg_emitf("  ldr s0, [x29, #%d]\n", ctx->vreg_off[inst->src2.id]);
+          emit_frame_load("s0", ctx->vreg_off[inst->src2.id]);
         }
         cg_emitf("  str s0, [%s]\n", ptr);
         return;
       }
       if (inst->src2.type == IR_TY_F64) {
         if (inst->src2.id >= 0 && inst->src2.id < ctx->f->next_vreg_id) {
-          cg_emitf("  ldr d0, [x29, #%d]\n", ctx->vreg_off[inst->src2.id]);
+          emit_frame_load("d0", ctx->vreg_off[inst->src2.id]);
         }
         cg_emitf("  str d0, [%s]\n", ptr);
         return;
@@ -586,9 +634,11 @@ static void gen_inst_not(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_fneg(gen_ctx_t *ctx, ir_inst_t *inst) {
       int is_double = (inst->dst.type == IR_TY_F64);
       const char *suf = is_double ? "d" : "s";
-      cg_emitf("  ldr %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->src1.id]);
+      char r0[4];
+      snprintf(r0, sizeof(r0), "%s0", suf);
+      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
   cg_emitf("  fneg %s0, %s0\n", suf, suf);
-  cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+  emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_lea(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -704,13 +754,13 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
         /* stack-passed integer arg: ldr to a scratch reg then write to slot. */
         int stack_off = ctx->total_size + (idx - 8) * 8;
         const char *tmp = "x9";
-        cg_emitf("  ldr %s, [x29, #%d]\n", tmp, stack_off);
+        emit_frame_load(tmp, stack_off);
         if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
           if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
             int r = ctx->f->vreg_phys_reg[inst->dst.id];
             cg_emitf("  mov x%d, %s\n", r, tmp);
           } else {
-            cg_emitf("  str %s, [x29, #%d]\n", tmp, ctx->vreg_off[inst->dst.id]);
+            emit_frame_store(tmp, ctx->vreg_off[inst->dst.id]);
           }
         }
         return;
@@ -719,9 +769,11 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
          * d0 を scratch として使い、slot へ転送。 */
         int stack_off = ctx->total_size + (idx - 8) * 8;
         const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
-        cg_emitf("  ldr %s0, [x29, #%d]\n", suf, stack_off);
+        char r0[4];
+        snprintf(r0, sizeof(r0), "%s0", suf);
+        emit_frame_load(r0, stack_off);
         if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-          cg_emitf("  str %s0, [x29, #%d]\n", suf, ctx->vreg_off[inst->dst.id]);
+          emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
         }
         return;
       } else if (is_fp) {
@@ -739,7 +791,7 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
         cg_emitf("  mov x%d, %s\n", r, src_reg);
       }
     } else {
-      cg_emitf("  str %s, [x29, #%d]\n", src_reg, ctx->vreg_off[inst->dst.id]);
+      emit_frame_store(src_reg, ctx->vreg_off[inst->dst.id]);
     }
   }
 }
@@ -885,11 +937,11 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     if (inst->dst.type == IR_TY_F32) {
-      cg_emitf("  str s0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      emit_frame_store("s0", ctx->vreg_off[inst->dst.id]);
     } else if (inst->dst.type == IR_TY_F64) {
-      cg_emitf("  str d0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      emit_frame_store("d0", ctx->vreg_off[inst->dst.id]);
     } else {
-      cg_emitf("  str x0, [x29, #%d]\n", ctx->vreg_off[inst->dst.id]);
+      emit_frame_store("x0", ctx->vreg_off[inst->dst.id]);
     }
   }
 }
@@ -943,7 +995,9 @@ static void atomic_store_result(gen_ctx_t *ctx, ir_val_t dst, const char *RL) {
   if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[dst.id] >= 0) {
     cg_emitf("  mov %s%d, %s11\n", RL, ctx->f->vreg_phys_reg[dst.id], RL);
   } else {
-    cg_emitf("  str %s11, [x29, #%d]\n", RL, ctx->vreg_off[dst.id]);
+    char reg[8];
+    snprintf(reg, sizeof(reg), "%s11", RL);
+    emit_frame_store(reg, ctx->vreg_off[dst.id]);
   }
 }
 

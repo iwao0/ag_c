@@ -1334,6 +1334,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
                            int *out_elem_size, tk_float_kind_t *out_fp_kind, int *out_array_count,
                            int *out_is_unsigned) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
+  tk_ensure_lookahead();
   token_t *t = tok->next;
   if (!t) return 0;
   *type_kind = TK_EOF;
@@ -1604,7 +1605,7 @@ cast_parse_postfix:
     t = t->next;
     if (out_array_count) *out_array_count = n;
   }
-  if (!t || t->kind != TK_RPAREN) return 0;
+  if (!t || t->kind != TK_RPAREN || !t->next) return 0;
   *after_rparen = t->next;
   return 1;
 }
@@ -2092,6 +2093,23 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
+    if (!is_pointer && type_kind == TK_LONG) {
+      if (operand->kind == ND_NUM) {
+        ((node_num_t *)operand)->int_is_long = 1;
+        psx_node_set_unsigned(operand, cast_is_unsigned);
+        return operand;
+      }
+      if (!ps_node_is_pointer(operand)) {
+        node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+        wrap->base.kind = ND_PTR_CAST;
+        wrap->base.lhs = operand;
+        wrap->type_size = 8;
+        wrap->is_unsigned = cast_is_unsigned ? 1 : 0;
+        if (ps_node_is_unsigned(operand) && ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8)
+          wrap->widen_zext_i64 = 1;
+        return (node_t *)wrap;
+      }
+    }
     /* `(long)unsigned_int` (int 未満幅の unsigned も含む): I64 へ zero-extend する。
      * `(long)` は通常 no-op だが、その場合 `(long)u + (long)u` の二項演算が I32 のまま
      * 計算され、符号なし 32bit ラップマスクで 2^32 を超える和が切り詰められていた。
@@ -2240,10 +2258,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 比較/演算が 64bit 幅でも正しい値になる。代入では store 幅で偶然合っていたが
      * `(int)long_var == 0` 等のインライン比較が 64bit 比較で誤っていた。
      * ポインタ→int は稀かつ別経路 (is_pointer クリア) のためここでは触れない。
-     * 関数呼び出しは戻り値型幅を parser が覚えておらず type_size=4 と推定するが、
-     * long 戻り値は x0 に 64bit で返るため `(int)long_fn()` も切り詰める (int 戻り値
-     * でも低 32bit 抽出は無害)。 */
-    if ((ps_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
+     * long 戻り関数は ps_node_type_size(ND_FUNCALL) が 8 を返すためここに入る。 */
+    if (ps_node_type_size(operand) > 4 &&
         !ps_node_is_pointer(operand)) {
       /* operand が unsigned 戻り値の funcall (例 `unsigned f()`) だと、SHL が符号なし
        * 演算と見なされ ir_builder の 32bit ラップマスク (& 0xffffffff) が入り、
@@ -2291,9 +2307,9 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     }
     /* int 幅超 (long, 8B) の非ポインタ値の (signed/unsigned) キャスト: 32bit へ
      * 切り詰める。`(x<<32)>>32` で低 32bit を 64bit へ拡張 (unsigned は論理シフトで
-     * ゼロ拡張、signed は算術シフトで符号拡張) する。関数呼び出しも long 戻り値が
-     * 64bit で返るため対象にする (type_size は 4 と推定される)。 */
-    if ((ps_node_type_size(operand) > 4 || operand->kind == ND_FUNCALL) &&
+     * ゼロ拡張、signed は算術シフトで符号拡張) する。long 戻り関数は
+     * ps_node_type_size(ND_FUNCALL) が 8 を返すため対象になる。 */
+    if (ps_node_type_size(operand) > 4 &&
         !ps_node_is_pointer(operand)) {
       node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));

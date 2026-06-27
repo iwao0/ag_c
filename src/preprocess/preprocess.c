@@ -2026,6 +2026,20 @@ static token_t *pps_pull_raw(pp_stream_t *s) {
   return t;
 }
 
+static int pp_body_is_single_call_replacement(token_t *body) {
+  if (!body || body->kind != TK_IDENT || !body->next || body->next->kind != TK_LPAREN) return 0;
+  int nest = 0;
+  for (token_t *t = body->next; t; t = t->next) {
+    if (t->kind == TK_LPAREN) nest++;
+    else if (t->kind == TK_RPAREN) {
+      nest--;
+      if (nest < 0) return 0;
+      if (nest == 0) return t->next == NULL;
+    }
+  }
+  return 0;
+}
+
 /* `MACRO(args)(more)` 形: 置換列末尾の `)` の直後の `(more)` だけを繋ぎ、
  * その閉じ `)` までを preprocess_ctx で縮約してから pushback する。 */
 static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t *body) {
@@ -2033,9 +2047,10 @@ static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t
   token_t *copy = copy_token_list(body);
   token_t *tail = copy;
   while (tail->next) tail = tail->next;
+  if (tail->kind != TK_RPAREN || !pp_body_is_single_call_replacement(copy)) return copy;
 
   token_t *next_raw = pps_pull_raw(s);
-  if (!next_raw || tail->kind != TK_RPAREN || next_raw->kind != TK_LPAREN) {
+  if (!next_raw || next_raw->kind != TK_LPAREN) {
     if (next_raw) pps_pushback_one(s, next_raw);
     return copy;
   }

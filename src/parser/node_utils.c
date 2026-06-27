@@ -73,6 +73,13 @@ int ps_node_type_size(node_t *node) {
       }
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
       if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
+      {
+        node_func_t *fn = (node_func_t *)node;
+        if (fn->callee == NULL && fn->funcname) {
+          token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
+          if (rk == TK_LONG) return 8;
+        }
+      }
       return 4;
     }
     /* 算術/論理演算: ポインタ算術 (ptr ± int) なら 8、それ以外は
@@ -86,14 +93,18 @@ int ps_node_type_size(node_t *node) {
     case ND_MOD:
     case ND_BITAND:
     case ND_BITOR:
-    case ND_BITXOR:
-    case ND_SHL:
-    case ND_SHR: {
+    case ND_BITXOR: {
       if (ps_node_is_pointer(node)) return 8;
       int l = ps_node_type_size(node->lhs);
       int r = ps_node_type_size(node->rhs);
       int m = l > r ? l : r;
       return m > 0 ? m : 4;
+    }
+    case ND_SHL:
+    case ND_SHR: {
+      int l = ps_node_type_size(node->lhs);
+      if (l <= 0) return 4;
+      return l < 4 ? 4 : l;
     }
     case ND_PRE_INC:
     case ND_PRE_DEC:
@@ -508,6 +519,8 @@ static int node_is_unsigned(node_t *node) {
     case ND_DEREF:
     case ND_ASSIGN:
       return as_mem(node)->is_unsigned;
+    case ND_PTR_CAST:
+      return as_mem(node)->is_unsigned || node->is_unsigned;
     default: return node->is_unsigned;
   }
 }
@@ -526,6 +539,7 @@ void psx_node_set_unsigned(node_t *node, int is_unsigned) {
     case ND_LVAR: as_lvar(node)->mem.is_unsigned = u; break;
     case ND_GVAR:
     case ND_DEREF:
+    case ND_PTR_CAST:
     case ND_ASSIGN:
       as_mem(node)->is_unsigned = u; break;
     default: node->is_unsigned = u; break;
@@ -546,8 +560,10 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
       kind == ND_SHL || kind == ND_SHR) {
     node->fp_kind = TK_FLOAT_KIND_NONE;
   }
-  // unsigned伝播: どちらかがunsignedなら結果もunsigned
-  if (node_is_unsigned(lhs) || node_is_unsigned(rhs)) {
+  if (kind == ND_SHL || kind == ND_SHR) {
+    int lhs_sz = ps_node_type_size(lhs);
+    if (lhs_sz >= 4 && node_is_unsigned(lhs)) node->is_unsigned = 1;
+  } else if (node_is_unsigned(lhs) || node_is_unsigned(rhs)) {
     node->is_unsigned = 1;
   }
   // _Complex伝播: どちらかが_Complexなら結果も_Complex
