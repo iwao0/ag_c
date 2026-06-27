@@ -59,6 +59,9 @@ typedef struct {
   int is_long_double;/* long double (C11 6.2.5: double と long double は同表現でも別型) */
   int is_plain_char; /* plain char (C11 6.2.5/6.7.2.1: char と signed/unsigned char は別型) */
   int is_pointer;
+  int is_array;
+  int is_funcptr;
+  int is_func_designator;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
@@ -607,6 +610,27 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.ptr_deref_size = char_w > 0 ? char_w : 1;
     return gt;
   }
+  if (control->kind == ND_FUNCREF) {
+    node_funcref_t *fr = (node_funcref_t *)control;
+    gt.is_pointer = 1;
+    gt.is_funcptr = 1;
+    gt.is_func_designator = 1;
+    gt.kind = psx_ctx_get_function_ret_token_kind(fr->funcname, fr->funcname_len);
+    if (gt.kind == TK_EOF) gt.kind = TK_INT;
+    gt.ptr_levels = 1;
+    gt.ptr_pointee_fp_kind = psx_ctx_get_function_ret_fp_kind(fr->funcname, fr->funcname_len);
+    gt.ptr_pointee_unsigned = psx_ctx_get_function_ret_is_unsigned(fr->funcname, fr->funcname_len);
+    bool ret_is_type = false;
+    int ret_size = 4;
+    psx_ctx_get_type_info(gt.kind, &ret_is_type, &ret_size);
+    (void)ret_is_type;
+    gt.scalar_size = ret_size;
+    gt.ptr_deref_size = ret_size;
+    gt.ptr_base_deref_size = ret_size;
+    psx_ctx_get_function_ret_tag(fr->funcname, fr->funcname_len,
+                                 &gt.tag_kind, &gt.tag_name, &gt.tag_len);
+    return gt;
+  }
   if (control->fp_kind == TK_FLOAT_KIND_FLOAT) {
     gt.kind = TK_FLOAT;
     gt.scalar_size = 4;
@@ -696,6 +720,13 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
   }
   if (control.is_pointer != assoc.is_pointer) return 0;
   if (control.is_pointer) {
+    if (control.is_funcptr || assoc.is_funcptr) {
+      if (control.is_func_designator && assoc.type_sig && !control.type_sig) return 0;
+      return control.is_funcptr == assoc.is_funcptr &&
+             control.kind == assoc.kind &&
+             control.ptr_pointee_fp_kind == assoc.ptr_pointee_fp_kind &&
+             control.ptr_pointee_unsigned == assoc.ptr_pointee_unsigned;
+    }
     if (control.ptr_levels && assoc.ptr_levels && control.ptr_levels != assoc.ptr_levels) return 0;
     if (control.ptr_const_mask != assoc.ptr_const_mask ||
         control.ptr_volatile_mask != assoc.ptr_volatile_mask) {
@@ -729,6 +760,7 @@ static int generic_type_matches(generic_type_t control, generic_type_t assoc) {
            control.ptr_pointee_const == assoc.ptr_pointee_const &&
            control.ptr_pointee_volatile == assoc.ptr_pointee_volatile;
   }
+  if (control.is_array || assoc.is_array) return control.is_array == assoc.is_array;
   /* struct/union/enum タグ型: どちらか一方でもタグを持てば、両者のタグが一致する
    * ときのみマッチ。control 側だけを見ると、control が int・assoc が単一 int メンバの
    * struct のとき下のスカラ経路でサイズ一致して誤マッチしていた (`_Generic((int),
@@ -785,6 +817,8 @@ static int parse_assoc_base_type(generic_type_t *out,
       base_kind = _ti.base_kind; elem_size = _ti.elem_size; fp_kind = _ti.fp_kind;
       tag_kind = _ti.tag_kind; tag_name = _ti.tag_name; tag_len = _ti.tag_len;
       is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+      out->is_array = _ti.is_array;
+      out->is_funcptr = _ti.is_funcptr;
       if (base_const) *base_const = _ti.pointee_const_qualified;
       if (base_volatile) *base_volatile = _ti.pointee_volatile_qualified;
     }
@@ -905,6 +939,7 @@ static int parse_generic_assoc_type(generic_type_t *out) {
     while (t && t->kind == TK_LBRACKET) {
       token_t *after = skip_balanced_bracket_token(t);
       if (!after) break;
+      out->is_array = 1;
       t = after;
     }
   }

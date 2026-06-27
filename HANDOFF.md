@@ -1,18 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き96: c-testsuite 00205）
+最終更新: 2026-06-27（続き97: c-testsuite 00219）
 
 ## 現状
-- `make test` = **1104/1104 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **217/220 = 98.6% pass**。
-- 続き96: **00205** (グローバル `struct PT cases[] = { scalar... }` の flat brace elision と
-  未完了外側 `[]` の struct 要素数推論)。
+- `make test` = **1105/1105 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218/220 = 99.1% pass**。
+- 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1104/1104 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`bash scripts/run_c_testsuite.sh --list-fail`** で 217/220 green を確認 (= 前回セッションのベースライン)。
+3. **`make test`** で 1105/1105 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`bash scripts/run_c_testsuite.sh --list-fail`** で 218/220 green を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -23,7 +22,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の残件を順次修正していく。
-B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93**、**00200** は **続き94**、**00204** は **続き95**、**00205** は **続き96 で完了**。次は **00219** から。
+B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93**、**00200** は **続き94**、**00204** は **続き95**、**00205** は **続き96**、**00219** は **続き97 で完了**。c-testsuite の残件は GNU 拡張 skip 対象のみ。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -67,7 +66,9 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
   `PT cases[] = { scalar... }`。グローバル struct 配列の flat brace elision で scalar 後に
   毎回次要素境界へ揃えていたためメンバが 0 化し、さらに未完了 `[]` の型サイズ推論が
   flat slot 数を struct 要素数として扱って余分な 0 要素を出力していた。
-- **00219** (stdout): `_Generic` の網羅テスト (色々な型)。
+- **00219**: ✅ 続き97 (`generic_array_assoc_and_func_designator`) — `_Generic` の
+  `int[4]` association を scalar `int` と誤マッチさせず、関数 designator `foo` を
+  function pointer へ decay して typedef 関数ポインタ association に一致させる。
 
 #### 対象外 (GNU 拡張、HANDOFF ルールで skip)
 - **00206**: `#pragma push_macro` / `pop_macro` (GCC/MSVC 拡張)
@@ -161,28 +162,29 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き96 後): 217/220 = 98.6% pass
+### c-testsuite 現状 (続き97 後): 218/220 = 99.1% pass
 
 ```
 Total:           220
-Pass:            217
+Pass:            218
 Fail (compile):  1
 Fail (assemble): 0
 Fail (runtime):  0
-Fail (stdout):   2
+Fail (stdout):   1
 ```
 
-### 失敗テスト分類 (3 件、うち 2 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (2 件、どちらも GNU 拡張で skip 対象)
 
 **Compile fail (1 件)**: 00216
 
-**Stdout mismatch (2 件)**: 00206, 00219
+**Stdout mismatch (1 件)**: 00206
 
 **GNU 拡張で skip 対象 (2 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
 - 00206 (`#pragma push_macro` / `pop_macro`)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **1 件**: 00219。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **0 件**。次は未探索の角度から probe を作るか、GNU 拡張サポートを
+方針変更として明示的に扱う場合のみ 00206/00216 に取り組む。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 

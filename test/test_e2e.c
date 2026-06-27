@@ -1151,6 +1151,7 @@ static const test_case_t test_cases[] = {
     {"probes", "char_2d_array_string_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/char_2d_array_string_init.c", 0, 0},
     {"probes", "empty_macro_argument", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/empty_macro_argument.c", 0, 0},
     {"probes", "generic_struct_vs_scalar", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_struct_vs_scalar.c", 0, 0},
+    {"probes", "generic_array_assoc_and_func_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_array_assoc_and_func_designator.c", 0, 0},
     {"probes", "generic_char_and_longlong_identity", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_char_and_longlong_identity.c", 0, 0},
     {"probes", "alignas_overaligned_local", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignas_overaligned_local.c", 0, 0},
     {"probes", "vla_2d_param_and_row_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_2d_param_and_row_sizeof.c", 0, 0},
