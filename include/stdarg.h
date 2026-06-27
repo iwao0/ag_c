@@ -17,7 +17,8 @@
  *   unused with this convention; we accept it for source compatibility.
  *
  * va_arg(ap, type):
- *   Reads *(type *)ap, then advances ap by 8 bytes (one slot).
+ *   Reads *(type *)ap, then advances ap by sizeof(type) rounded up to an
+ *   8-byte stack slot.
  */
 
 #ifndef _STDARG_H
@@ -27,7 +28,7 @@ typedef char *va_list;
 
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
 
-#define va_arg(ap, type) (*(type *)((long)(ap += 8) - 8))
+#define va_arg(ap, type) (*(type *)((long)(ap += ((sizeof(type) + 7) & -8)) - ((sizeof(type) + 7) & -8)))
 
 #define va_end(ap) ((void)(ap))
 

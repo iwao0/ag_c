@@ -1212,6 +1212,8 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
    *    (loaded ポインタ値 `*pp` は is_pointer=1 なので除外され従来どおり load)。 */
   if (mm->deref_size > 0 &&
       (mm->type_size > 8 ||
+       (mm->is_pointer && mm->pointer_qual_levels == 0 && !mm->is_scalar_ptr_member &&
+        mm->pointee_fp_kind == TK_FLOAT_KIND_NONE && mm->inner_deref_size == 0) ||
        (!mm->is_pointer && mm->type_size > mm->deref_size))) {
     return ptr;
   }
@@ -1586,11 +1588,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_none();
   }
   ir_val_t *cargs = NULL;
-  /* _Complex 値引数は 2 FP レジスタ (re, im) に展開されるので、cargs は引数あたり
-   * 最大 2 エントリを確保し、argc で実エントリ数を数える。 */
+  /* _Complex 値引数は 2 FP レジスタ (re, im)、variadic aggregate は 8B stack
+   * slot 列に展開されるので、cargs は余裕を持って確保し、argc で実エントリ数を数える。 */
   int argc = 0;
   if (fn->nargs > 0) {
-    cargs = calloc((size_t)(2 * fn->nargs), sizeof(ir_val_t));
+    cargs = calloc((size_t)(8 * fn->nargs), sizeof(ir_val_t));
     for (int i = 0; i < fn->nargs; i++) {
       node_t *arg = fn->args[i];
       /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
@@ -1663,6 +1665,15 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         } else {
           arg_full_size = lv->mem.type_size;
         }
+      } else if (arg && arg->kind == ND_GVAR) {
+        node_gvar_t *gv = (node_gvar_t *)arg;
+        if (gv->mem.tag_kind != TK_EOF && !gv->mem.is_tag_pointer &&
+            !gv->mem.is_pointer) {
+          arg_full_size = gv->mem.type_size;
+          if (cg_size_needs_indirect_struct(arg_full_size)) {
+            struct_needs_ptr = 1;
+          }
+        }
       } else if (arg && arg->kind == ND_DEREF) {
         /* struct 値の subscript / メンバアクセス (`arr[i]`, `s.member`) は ND_DEREF。
          * tag を持ち >8B ならアドレス渡しの struct 引数として扱う。 */
@@ -1695,6 +1706,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           ir_val_t a = build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;
+        } else if (arg->kind == ND_GVAR) {
+          src_ptr = address_of_gvar(ctx, (node_gvar_t *)arg);
         } else {
           src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
         }
@@ -1702,7 +1715,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         int tmp_vreg = ir_func_new_vreg(ctx->f);
         ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
         ia->dst = ir_val_vreg(tmp_vreg, IR_TY_PTR);
-        ia->alloca_size = arg_full_size;
+        int rounded_size = ((arg_full_size + 7) / 8) * 8;
+        ia->alloca_size = (is_variadic_call && i >= nargs_fixed) ? rounded_size : arg_full_size;
         ia->alloca_align = 8;
         ir_func_append_inst(ctx->f, ia);
         ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
@@ -1710,6 +1724,27 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
         cp->alloca_size = arg_full_size;
         ir_func_append_inst(ctx->f, cp);
+        if (is_variadic_call && i >= nargs_fixed) {
+          for (int off = 0; off < rounded_size; off += 8) {
+            int p = tmp_vreg;
+            if (off > 0) {
+              p = ir_func_new_vreg(ctx->f);
+              ir_inst_t *lea = ir_inst_new(IR_LEA);
+              lea->dst = ir_val_vreg(p, IR_TY_PTR);
+              lea->src1 = ir_val_vreg(tmp_vreg, IR_TY_PTR);
+              lea->src2 = ir_val_imm(IR_TY_I32, off);
+              ir_func_append_inst(ctx->f, lea);
+            }
+            int chunk = ir_func_new_vreg(ctx->f);
+            ir_inst_t *ld = ir_inst_new(IR_LOAD);
+            ld->dst = ir_val_vreg(chunk, IR_TY_I64);
+            ld->src1 = ir_val_vreg(p, IR_TY_PTR);
+            ld->is_unsigned_load = 1;
+            ir_func_append_inst(ctx->f, ld);
+            cargs[argc++] = ir_val_vreg(chunk, IR_TY_I64);
+          }
+          continue;
+        }
         cargs[argc++] = ir_val_vreg(tmp_vreg, IR_TY_PTR);
       } else {
         ir_val_t cv = build_expr(ctx, arg);
@@ -2518,6 +2553,8 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
       ir_val_t p = build_expr(ctx, src->lhs);
       if (ctx->failed) return;
       src_ptr = p.id;
+    } else if (src->kind == ND_GVAR) {
+      src_ptr = address_of_gvar(ctx, (node_gvar_t *)src);
     } else if (src->kind == ND_FUNCALL) {
       /* `return make(...)`: >8B struct を返す funccall を直接 return する。
        * build_node_funcall は間接 struct 戻り値で ret_area を確保しそのアドレス (PTR)

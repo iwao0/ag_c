@@ -1,17 +1,18 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き94: c-testsuite 00200）
+最終更新: 2026-06-27（続き95: c-testsuite 00204）
 
 ## 現状
-- `make test` = **1102/1102 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **215/220 = 97.7% pass**。
-- 続き94: **00200** (シフト結果型 = promoted left operand、long cast 幅保持、長大マクロ展開/大 frame)。
+- `make test` = **1103/1103 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **216/220 = 98.2% pass**。
+- 続き95: **00204** (ARM64 aggregate ABI: struct 値渡し/戻り、グローバル aggregate、
+  長さ 1 配列メンバ、variadic aggregate stack slot / `va_arg`)。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1102/1102 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`bash scripts/run_c_testsuite.sh --list-fail`** で 215/220 green を確認 (= 前回セッションのベースライン)。
+3. **`make test`** で 1103/1103 green を確認 (前回セッションの状態が引き継がれている)。
+4. **`bash scripts/run_c_testsuite.sh --list-fail`** で 216/220 green を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -22,7 +23,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の残件を順次修正していく。
-B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93**、**00200** は **続き94 で完了**。次は **00204** など B3 から。
+B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93**、**00200** は **続き94**、**00204** は **続き95 で完了**。次は **00205** または **00219** から。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -60,7 +61,8 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **00200**: ✅ 続き94 (`shift_left_operand_type`) — シフト結果型を promoted left operand に。
   併せて `(long)` cast の型幅保持、stream cast 先読み補充、長大マクロ展開で露出した大 frame
   spill の `ldr/str [x29,#off]` 即値範囲超を修正。
-- **00204**: 527 行の ARM64 ABI 網羅テスト (struct 値渡し・引数渡し各種)。
+- **00204**: ✅ 続き95 (`arm64_aggregate_varargs`) — ARM64 aggregate ABI の
+  struct 値渡し/戻り、グローバル aggregate、長さ 1 配列メンバ、variadic aggregate stack slot。
 - **00205** (stdout): J interpreter snippet の long 大量初期化 (PT struct 配列)。
 - **00219** (stdout): `_Generic` の網羅テスト (色々な型)。
 
@@ -156,20 +158,20 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き94 後): 215/220 = 97.7% pass
+### c-testsuite 現状 (続き95 後): 216/220 = 98.2% pass
 
 ```
 Total:           220
-Pass:            215
-Fail (compile):  2
+Pass:            216
+Fail (compile):  1
 Fail (assemble): 0
 Fail (runtime):  0
 Fail (stdout):   3
 ```
 
-### 失敗テスト分類 (5 件、うち 2 件は GNU 拡張で skip 対象)
+### 失敗テスト分類 (4 件、うち 2 件は GNU 拡張で skip 対象)
 
-**Compile fail (2 件)**: 00204, 00216
+**Compile fail (1 件)**: 00216
 
 **Stdout mismatch (3 件)**: 00205, 00206, 00219
 
@@ -177,7 +179,7 @@ Fail (stdout):   3
 - 00206 (`#pragma push_macro` / `pop_macro`)
 - 00216 (空 struct `typedef struct {} empty_s;`)
 
-実質取り組み対象は **6 件**。詳細と修正方針は上の「次セッション最優先タスク A」参照。
+実質取り組み対象は **2 件**: 00205 / 00219。詳細と修正方針は上の「次セッション最優先タスク A」参照。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
 

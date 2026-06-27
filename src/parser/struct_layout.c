@@ -421,7 +421,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       }
       char *member_name = has_member_name ? head.member->str : "";
       int member_len = has_member_name ? head.member->len : 0;
-      int member_array_len = (arr_size <= 1) ? 0 : arr_size;
+      int member_array_len = (arr_dim_count > 0 || head.paren_array_mul > 1) ? arr_size : 0;
       if (has_member_name || (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
         tag_member_info_t _mi = {0};
         _mi.name = member_name;

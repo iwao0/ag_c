@@ -789,6 +789,13 @@ static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
   return src->mem.type_size > 0 && var->size > 0 && src->mem.type_size == var->size;
 }
 
+static int is_compatible_tag_object_mem(node_mem_t *src, lvar_t *var) {
+  if (!src || !var) return 0;
+  if (src->is_tag_pointer || var->is_tag_pointer) return 0;
+  if (src->tag_kind != var->tag_kind) return 0;
+  return src->type_size > 0 && var->size > 0 && src->type_size == var->size;
+}
+
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src) {
   lvar_t src_var = {0};
   src_var.offset = src->offset;
@@ -2200,6 +2207,14 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     /* グローバル構造体からのコピー初期化 `struct S t = g;`。構造体全体を 1 つの
      * ND_ASSIGN でコピーする (代入文 `t = g` と同じ memcpy 経路)。node_gvar_t は
      * node_lvar_t と同じく先頭が node_mem_t なので互換判定を共用できる。 */
+    node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    assign_node->type_size = var->size;
+    init_chain = (node_t *)assign_node;
+  } else if (value && value->kind == ND_DEREF &&
+             is_compatible_tag_object_mem((node_mem_t *)value, var)) {
+    /* `va_arg(ap, struct S)` expands to `*(struct S *)...`: a same-type
+     * struct lvalue that can be copied as a whole. */
     node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     assign_node->type_size = var->size;

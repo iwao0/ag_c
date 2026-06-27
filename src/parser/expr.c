@@ -2141,6 +2141,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->is_tag_pointer = 1;
       wrap->is_pointer = 1;
       wrap->type_size = 8;
+      if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
       wrap->pointer_qual_levels = 1;
       return (node_t *)wrap;
     }
