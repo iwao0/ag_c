@@ -47,6 +47,7 @@ fail_assemble=0
 fail_runtime=0
 fail_stdout=0
 fail_timeout=0
+skip_unsupported=0
 total=0
 
 fail_compile_list=()
@@ -54,6 +55,15 @@ fail_assemble_list=()
 fail_runtime_list=()
 fail_stdout_list=()
 fail_timeout_list=()
+skip_unsupported_list=()
+
+unsupported_reason() {
+  case "$1" in
+    00206) echo "GNU #pragma push_macro/pop_macro" ;;
+    00216) echo "GNU empty struct / range designator" ;;
+    *) return 1 ;;
+  esac
+}
 
 # tests/single-exec/*.c (NNNNN.c.expected がペア) を列挙
 for cfile in "$SUITE"/[0-9]*.c; do
@@ -64,6 +74,12 @@ for cfile in "$SUITE"/[0-9]*.c; do
 
   sfile="$TMPDIR/$base.s"
   exe="$TMPDIR/$base"
+
+  if reason=$(unsupported_reason "$base"); then
+    skip_unsupported=$((skip_unsupported + 1))
+    skip_unsupported_list+=("$base ($reason)")
+    continue
+  fi
 
   # ag_c で compile (タイムアウト 10s 程度の安全策)
   # ag_c は CWD 相対の include/ を見るため ROOT に cd して実行
@@ -112,6 +128,8 @@ if [ "$LIST_FAIL" -eq 1 ]; then
   for t in "${fail_runtime_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
   printf '\n== Stdout mismatch ==\n'
   for t in "${fail_stdout_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
+  printf '\n== Unsupported GNU extension skip ==\n'
+  for t in "${skip_unsupported_list[@]:-}"; do [ -n "$t" ] && echo "  $t"; done
 fi
 
 if [ "$VERBOSE" -eq 1 ] && [ "$LIST_FAIL" -eq 0 ]; then
@@ -135,12 +153,17 @@ if [ "$VERBOSE" -eq 1 ] && [ "$LIST_FAIL" -eq 0 ]; then
     printf '  %s\n' "${fail_stdout_list[@]:0:20}"
     [ "${#fail_stdout_list[@]}" -gt 20 ] && printf '  ... %d more\n' $((${#fail_stdout_list[@]} - 20))
   fi
+  if [ "${#skip_unsupported_list[@]}" -gt 0 ]; then
+    printf '\nUnsupported GNU extension skip (%d):\n' "$skip_unsupported"
+    printf '  %s\n' "${skip_unsupported_list[@]:0:20}"
+  fi
 fi
 
 echo ""
 echo "==== c-testsuite (ag_c) ===="
 printf "Total:           %d\n" "$total"
 printf "Pass:            %d\n" "$pass"
+printf "Skip unsupported: %d\n" "$skip_unsupported"
 printf "Fail (compile):  %d\n" "$fail_compile"
 printf "Fail (assemble): %d\n" "$fail_assemble"
 printf "Fail (runtime):  %d\n" "$fail_runtime"
@@ -148,4 +171,9 @@ printf "Fail (stdout):   %d\n" "$fail_stdout"
 if [ "$total" -gt 0 ]; then
   pct=$(awk "BEGIN { printf \"%.1f\", $pass * 100 / $total }")
   printf "Pass率:          %s%%\n" "$pct"
+fi
+target_total=$((total - skip_unsupported))
+if [ "$target_total" -gt 0 ]; then
+  target_pct=$(awk "BEGIN { printf \"%.1f\", $pass * 100 / $target_total }")
+  printf "対象Pass率:      %s%%\n" "$target_pct"
 fi

@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き100: local extern tag declarations）
+最終更新: 2026-06-27（続き101: c-testsuite unsupported GNU skips）
 
 ## 現状
 - `make test` = **1107/1107 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218/220 = 99.1% pass**。
+- **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
   意味実装せず読み飛ばす。対象: `#pragma push_macro` / `pop_macro`、GNU range designator
@@ -18,12 +18,15 @@
   auto 変数として登録して未初期化スタックを読んでいた。tag 経路で `extern` を保存/復元し、
   `psx_decl_parse_declaration_after_type_ex` でも extern なら local extern 登録へ回す。
   local extern 登録には tag/fp/unsigned 情報も持たせる。
+- 続き101: **c-testsuite 残 2 件を unsupported GNU skip として明示**。00206
+  (`#pragma push_macro` / `pop_macro`) と 00216 (空 struct / GNU range designator) は
+  方針どおり意味サポートせず、harness 側で `Skip unsupported: 2` として fail 集計から除外。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
 3. **`make test`** で 1107/1107 green を確認 (前回セッションの状態が引き継がれている)。
-4. **`bash scripts/run_c_testsuite.sh --list-fail`** で 218/220 green を確認 (= 前回セッションのベースライン)。
+4. **`bash scripts/run_c_testsuite.sh --list-fail`** で fail 0 / unsupported skip 2 を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
    probe (`/tmp/*.c`) を作り `scripts/agc_diff_test.sh` で差分テスト。
@@ -34,7 +37,7 @@
 ### A. c-testsuite の残失敗から修正 (推奨、進捗測りやすい)
 
 `make c-testsuite-verbose` で失敗一覧を見て、未着手の残件を順次修正していく。
-B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93**、**00200** は **続き94**、**00204** は **続き95**、**00205** は **続き96**、**00219** は **続き97 で完了**。c-testsuite の残件は GNU 拡張 skip 対象のみ。
+B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089** は **続き92**、**00129** は **続き93**、**00200** は **続き94**、**00204** は **続き95**、**00205** は **続き96**、**00219** は **続き97 で完了**。c-testsuite の残件は GNU 拡張として harness で unsupported skip 扱い。
 
 #### 取り組み順 (軽量 → 中規模 → 大規模)
 
@@ -173,29 +176,29 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 - **設計判断**: `make test` には含めない (失敗テスト多数のため別 target)。`make test` は引き続き
   100% green を維持する。
 
-### c-testsuite 現状 (続き100 後): 218/220 = 99.1% pass
+### c-testsuite 現状 (続き101 後): 218 pass + 2 unsupported skip
 
 ```
 Total:           220
 Pass:            218
-Fail (compile):  1
+Skip unsupported: 2
+Fail (compile):  0
 Fail (assemble): 0
 Fail (runtime):  0
-Fail (stdout):   1
+Fail (stdout):   0
+Pass率:          99.1%
+対象Pass率:      100.0%
 ```
 
-### 失敗テスト分類 (2 件、どちらも GNU 拡張で skip 対象)
+### unsupported skip テスト分類 (2 件、どちらも GNU 拡張)
 
-**Compile fail (1 件)**: 00216
-
-**Stdout mismatch (1 件)**: 00206
-
-**GNU 拡張で skip 対象 (2 件、HANDOFF ルール `feedback_no_gnu_extensions.md` より)**:
+**Unsupported GNU extension skip (2 件)**:
 - 00206 (`#pragma push_macro` / `pop_macro`)
-- 00216 (空 struct `typedef struct {} empty_s;`)
+- 00216 (空 struct `typedef struct {} empty_s;`、GNU range designator など)
 
 実質取り組み対象は **0 件**。続き98 で認識済み GNU 拡張の一部は `W3024` 警告 + 読み飛ばしに
-したが、GNU 拡張の意味サポートはしない方針のまま。次は未探索の角度から probe を作るか、
+したが、GNU 拡張の意味サポートはしない方針のまま。続き101 で c-testsuite harness に
+unsupported skip を明示し、残失敗は 0 件になった。次は未探索の角度から probe を作るか、
 GNU 拡張サポートを方針変更として明示的に扱う場合のみ 00206/00216 に取り組む。
 
 ## 前セッション（続き56-69）累計成果: 14 件の miscompile / parse error 修正
