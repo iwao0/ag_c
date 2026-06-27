@@ -1472,11 +1472,13 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
    * start_idx < 0 は「init_count から」を意味する (トップレベル呼出)。 */
   int cur_idx = (start_idx >= 0) ? start_idx : gv->init_count;
   int level_start = cur_idx;  /* この brace level の先頭 slot ([N]= の絶対位置計算に使う) */
+  int align_next_array_positional = 0;
   for (;;) {
     /* 配列レベルの positional 要素は要素境界へ揃える。直前の要素が部分初期化
      * (`{.a=1}` で b を埋めない) でも init_count が要素途中で止まり、次要素が
      * ずれるのを防ぐ。designator (`[N]=`) はこの後 cur_idx を再設定するので除外。 */
-    if (ctx.is_array && curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
+    if (align_next_array_positional && ctx.is_array &&
+        curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
       /* タグポインタ配列 (`struct P *arr[3]`) は要素 = 1 slot (scalar pointer) なので
        * es=1 で従来どおり境界揃え不要。タグ値配列 (`struct P arr[3]`) は struct 内側メンバ数。 */
       int es = (ctx.tag_kind == TK_STRUCT && !ctx.is_tag_pointer)
@@ -1498,6 +1500,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         }
       }
     }
+    align_next_array_positional = 0;
     /* この反復で初期化する部分オブジェクトの型 (ネスト brace の子コンテキスト)。
      * 既定は positional 位置の型。designator のときは下で上書きする。 */
     gbrace_ctx_t child = gbrace_child_at(ctx, cur_idx - level_start);
@@ -1638,6 +1641,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * 解決するためのコンテキスト (`.s={.a=7}` の `{...}` は struct I)。 */
       psx_gbrace_flat(gv, cap, cur_idx, child);
       cur_idx = gv->init_count;
+      align_next_array_positional = 1;
     } else if (curtok()->kind == TK_STRING && gv->deref_size == 1 && gv->outer_stride > 0) {
       /* 多次元 char 配列の行を文字列で初期化: `char g[2][6]={"hello","world"}`。
        * 文字列を行 (outer_stride バイト) のバイト列へ展開する (char* 配列ではないので
@@ -1895,6 +1899,38 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
   }
 }
 
+static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap) {
+  while (*cap < min_cap) {
+    int old_cap = *cap;
+    int new_cap = old_cap * 2;
+    if (new_cap < min_cap) new_cap = min_cap;
+    gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+    gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+    gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+    if (gv->init_fvalues) {
+      gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+    }
+    for (int i = old_cap; i < new_cap; i++) {
+      gv->init_values[i] = 0;
+      gv->init_value_symbols[i] = NULL;
+      gv->init_value_symbol_lens[i] = 0;
+      if (gv->init_fvalues) gv->init_fvalues[i] = 0.0;
+    }
+    *cap = new_cap;
+  }
+}
+
+static void pad_global_init_zeros(global_var_t *gv, int *cap, int total_slots) {
+  ensure_global_init_capacity(gv, cap, total_slots);
+  while (gv->init_count < total_slots) {
+    gv->init_values[gv->init_count] = 0;
+    gv->init_value_symbols[gv->init_count] = NULL;
+    gv->init_value_symbol_lens[gv->init_count] = 0;
+    if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = 0.0;
+    gv->init_count++;
+  }
+}
+
 static void apply_toplevel_object_initializer(global_var_t *gv) {
   if (!tk_consume('=')) return;
   /* C11 6.9.2: 同名グローバル変数の二重定義検出。register_toplevel_global_decl が merge して
@@ -1963,31 +1999,22 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
      * register 時には has_incomplete_array で type_size=0 にされているので
      * ここで埋め直す。 */
     if (gv->type_size == 0 && gv->is_array && gv->deref_size > 0 && gv->init_count > 0) {
-      if (gv->outer_stride > gv->deref_size) {
+      if (gv->tag_kind == TK_STRUCT && !gv->is_tag_pointer) {
+        /* `struct P a[] = {1,2,3,4}`: init_count is flat scalar slots, while
+         * type_size must be inferred in struct elements. */
+        int elem_slots = global_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+        if (elem_slots < 1) elem_slots = 1;
+        int outer_dim = (gv->init_count + elem_slots - 1) / elem_slots;
+        int total_slots = outer_dim * elem_slots;
+        pad_global_init_zeros(gv, &cap, total_slots);
+        gv->type_size = outer_dim * gv->deref_size;
+      } else if (gv->outer_stride > gv->deref_size) {
         /* `int a[][3][5]={{...},{...}}`: 外側次元を内側 slab (outer_stride) から推論。 */
         int inner_slots = gv->outer_stride / gv->deref_size;
         if (inner_slots > 0) {
           int outer_dim = (gv->init_count + inner_slots - 1) / inner_slots;
           int total_slots = outer_dim * inner_slots;
-          while (cap < total_slots) {
-            int new_cap = cap * 2;
-            if (new_cap < total_slots) new_cap = total_slots;
-            gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
-            gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
-            gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
-            if (gv->init_fvalues) {
-              gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
-              for (int i = cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
-            }
-            cap = new_cap;
-          }
-          while (gv->init_count < total_slots) {
-            gv->init_values[gv->init_count] = 0;
-            gv->init_value_symbols[gv->init_count] = NULL;
-            gv->init_value_symbol_lens[gv->init_count] = 0;
-            if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = 0.0;
-            gv->init_count++;
-          }
+          pad_global_init_zeros(gv, &cap, total_slots);
           gv->type_size = total_slots * gv->deref_size;
         } else {
           gv->type_size = gv->init_count * gv->deref_size;

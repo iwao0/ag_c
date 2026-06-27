@@ -903,6 +903,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_str_ptr_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_str_ptr_array.c", 0, 0},
     {"probes", "global_string_ptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_string_ptr.c", 0, 0},
     {"probes", "global_struct_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_array.c", 0, 0},
+    {"probes", "global_struct_array_flat_elision", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_array_flat_elision.c", 0, 0},
     {"probes", "global_struct_pointer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_pointer.c", 0, 0},
     {"probes", "global_struct_with_funcptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_with_funcptr.c", 0, 0},
     {"probes", "many_double_params", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/many_double_params.c", 0, 0},
