@@ -4211,10 +4211,19 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
     unsigned int ptr_volatile_mask = 0;
     int ptr_levels = 0;
     int paren_array_dim = 0;
+    g_paren_array_first_dim = 0;
+    g_paren_array_dim_count = 0;
+    g_paren_array_vla_dim = NULL;
+    g_decl_trailing_func_suffix = 0;
+    g_decl_had_paren_group = 0;
+    g_decl_func_suffix_count = 0;
     consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_dim);
     decl_array_suffix_t arr = parse_decl_array_suffixes(paren_array_dim);
-    register_local_extern_decl(name, is_ptr, arr, ds->elem_size);
+    int is_function_prototype = g_decl_trailing_func_suffix && !is_ptr;
+    if (!is_function_prototype) {
+      register_local_extern_decl(name, is_ptr, arr, ds->elem_size);
+    }
     if (curtok()->kind == TK_ASSIGN) {
       set_curtok(curtok()->next);
       psx_expr_assign();

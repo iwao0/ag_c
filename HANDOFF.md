@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き98: unsupported GNU extensions warn+skip）
+最終更新: 2026-06-27（続き99: local extern function prototypes）
 
 ## 現状
 - `make test` = **1106/1106 green** (E2E + unit + parser + preprocess + IR + fuzz)。
@@ -9,6 +9,10 @@
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
   意味実装せず読み飛ばす。対象: `#pragma push_macro` / `pop_macro`、GNU range designator
   `[lo ... hi] =` (先頭 `lo` の単一 designator として処理)、ゼロ長配列 `[0]` (0 バイトとして処理)。
+- 続き99: **明示 `extern int f(...);` 関数内宣言**。通常ローカル prototype は続き77で直っていたが、
+  `extern` 付きだけ `parse_local_extern_declarator_list` が関数 declarator を extern 変数として
+  登録し、呼び出しが GOT load 経由になって SIGBUS。`extern` 宣言子ループでも関数 suffix を検出し、
+  non-pointer 関数 prototype は変数登録せず読み飛ばす。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
@@ -90,8 +94,7 @@ B1 軽量・B2 の **00121/…/00214** は **続き82-91 で完了**。**00089**
 
 ### C. 既知の follow-up (今セッションで触れて残ったもの)
 
-- **明示 `extern int f(...);` 関数内宣言**: 続き77 で暗黙 extern 経路は直したが、明示 `extern`
-  付きは `parse_local_extern_declarator_list` 経路で関数 declarator を変数として登録してしまう。
+- 現時点で明示的な follow-up なし。
 
 ## 重要な約束事 (memory より)
 - **1 タスクずつ進める**: 完了後にユーザー確認を取ってから次へ。複数タスクを並行しない。

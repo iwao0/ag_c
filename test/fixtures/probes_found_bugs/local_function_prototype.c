@@ -16,16 +16,19 @@
 
 int f1(char *p) { return *p + 1; }
 int f2(int a, int b) { return a + b; }
+int f3(int a) { return a + 3; }
+int extern_seed = 39;
 
 int main(void) {
     char s = 1;
     int v[100];  /* スタック消費させ、もし誤ったスロットがあれば SIGSEGV を誘発 */
     int f1(char *);              /* ローカル関数 prototype */
     int f2(int, int);            /* 引数 2 個も */
-    /* 明示 `extern int f(...)` 形は別経路 (parse_local_extern_declarator_list) で未対応。 */
+    extern int f3(int), extern_seed; /* 明示 extern + 変数宣言の混在 */
 
     assert(f1(&s) == 2);
     assert(f2(3, 4) == 7);
+    assert(f3(extern_seed) == 42);
 
     /* 関数ポインタ変数は従来どおりローカル変数 (回帰確認) */
     int (*fp)(char *) = f1;
