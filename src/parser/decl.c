@@ -1412,6 +1412,9 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                                         int member_array_len, int member_outer_stride,
                                         int member_is_bool, tk_float_kind_t member_fp_kind,
                                         const int *member_arr_dims, int member_arr_ndim) {
+  if (member_is_tag_pointer) {
+    member_fp_kind = TK_FLOAT_KIND_NONE;
+  }
   if (member_array_len > 0) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
@@ -1948,7 +1951,7 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   assign_node->type_size = info->type_size;
   /* float/double メンバなら lhs と assign に fp_kind を伝播し、
    * IR が FP store を出すようにする。 */
-  if (info->fp_kind != TK_FLOAT_KIND_NONE) {
+  if (!info->is_tag_pointer && info->fp_kind != TK_FLOAT_KIND_NONE) {
     lhs->fp_kind = info->fp_kind;
     assign_node->base.fp_kind = info->fp_kind;
   }

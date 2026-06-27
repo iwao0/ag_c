@@ -139,6 +139,7 @@ struct node_mem_t {
   unsigned int widen_zext_i64 : 1;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
+  unsigned short funcptr_param_fp_mask;
   int pointer_qual_levels;
   // 多次元配列サポート用
   short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）

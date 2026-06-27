@@ -1165,6 +1165,7 @@ static const test_case_t test_cases[] = {
     {"probes", "mixed_width_comparison", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_width_comparison.c", 0, 0},
     {"probes", "funcptr_int_to_fp_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_int_to_fp_arg.c", 0, 0},
     {"probes", "typedef_funcptr_int_to_fp_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_funcptr_int_to_fp_arg.c", 0, 0},
+    {"probes", "funcptr_member_int_to_fp_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_member_int_to_fp_arg.c", 0, 0},
     {"probes", "union_array_brace_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/union_array_brace_init.c", 0, 0},
     {"probes", "multilevel_pointer_fp_pointee", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multilevel_pointer_fp_pointee.c", 0, 0},
     {"probes", "file_scope_aggregate_compound_literal_addr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_aggregate_compound_literal_addr.c", 0, 0},

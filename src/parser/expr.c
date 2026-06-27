@@ -1143,6 +1143,7 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
   deref->bit_is_signed = mem_info->bit_is_signed;
+  deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
    * 式中でポインタへ decay するので pointee_fp_kind に入れて subscript 結果を fp load
    * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと
@@ -4083,6 +4084,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       else                 deref->pointee_is_unsigned = 1;
     }
     if (base_mem) {
+      if (base_mem->funcptr_param_fp_mask) {
+        deref->funcptr_param_fp_mask = base_mem->funcptr_param_fp_mask;
+      }
       if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
       if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
     }
@@ -4313,6 +4317,8 @@ static node_t *parse_call_postfix(node_t *callee) {
     node_gvar_t *gvn = (node_gvar_t *)callee;
     global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
     if (gv) fp_param_mask = gv->funcptr_param_fp_mask;
+  } else if (callee && callee->kind == ND_DEREF) {
+    fp_param_mask = ((node_mem_t *)callee)->funcptr_param_fp_mask;
   }
   if (fp_param_mask) {
     for (int i = 0; i < nargs && i < 8; i++) {

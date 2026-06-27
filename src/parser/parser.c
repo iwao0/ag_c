@@ -1154,19 +1154,10 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
 }
 
 void psx_skip_func_suffix_groups(int *out_has_func_suffix) {
+  psx_reset_funcptr_signature_state();
   while (curtok()->kind == TK_LPAREN) {
     if (out_has_func_suffix) *out_has_func_suffix = 1;
-    int depth = 1;
-    set_curtok(curtok()->next);
-    while (depth > 0) {
-      if (curtok()->kind == TK_EOF) {
-        diag_emit_tokf(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN, curtok(), "%s",
-                       diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
-      }
-      if (curtok()->kind == TK_LPAREN) depth++;
-      else if (curtok()->kind == TK_RPAREN) depth--;
-      set_curtok(curtok()->next);
-    }
+    psx_skip_func_param_list();
   }
 }
 

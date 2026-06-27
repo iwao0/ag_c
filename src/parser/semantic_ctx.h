@@ -50,6 +50,9 @@ void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int 
  * 全バイト数 (= N * elem) を保存する。 */
 void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                      char *member_name, int member_len, int bytes);
+void psx_ctx_set_tag_member_funcptr_param_fp_mask(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                  char *member_name, int member_len,
+                                                  unsigned short mask);
 
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。
@@ -93,6 +96,7 @@ typedef struct {
    * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
    * build_subscript_deref / build_unary_deref_node に伝える。 */
   int ptr_array_pointee_bytes;
+  unsigned short funcptr_param_fp_mask;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,

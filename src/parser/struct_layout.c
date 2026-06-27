@@ -112,6 +112,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_bool = 0;
     int member_is_unsigned = 0;
     int member_is_ptr_typedef = 0;
+    unsigned short member_typedef_funcptr_param_fp_mask = 0;
     int member_typedef_array_first_dim = 0;
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
@@ -194,6 +195,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * ようにする。修正前は ptr-typedef で elem_size のままにしていたため type_size=4
          * (関数戻り型 int) で 32bit `str w` に潰れ呼び出し時 SIGSEGV していた。 */
         if (_ti.is_pointer) member_is_ptr_typedef = 1;
+        if (_ti.is_pointer && _ti.funcptr_param_fp_mask) {
+          member_typedef_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+        }
+        if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
+          member_fp_kind = _ti.fp_kind;
+        }
         /* 配列 typedef (`typedef int Row[4]; struct S { Row r; }`): typedef が array なら
          * 後段の psx_parse_member_array_suffixes_ex は inline [N] が無いため 1 を返す。
          * 多次元 (`typedef int Row[3][2]; struct { Row m; }`) も dims[] 経由で復元する。 */
@@ -434,6 +441,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.tag_name = member_tag_name;
         _mi.tag_len = member_tag_len;
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
+        if (member_is_ptr) {
+          _mi.funcptr_param_fp_mask = head.has_func_suffix
+                                          ? psx_last_funcptr_param_fp_mask()
+                                          : member_typedef_funcptr_param_fp_mask;
+        }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
          * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
@@ -471,6 +483,20 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
                                           member_name, member_len, member_fp_kind);
+        }
+        if (has_member_name && member_is_ptr && member_typedef_funcptr_param_fp_mask &&
+            member_fp_kind != TK_FLOAT_KIND_NONE) {
+          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
+                                          member_name, member_len, member_fp_kind);
+        }
+        if (has_member_name && member_is_ptr) {
+          unsigned short fp_mask = head.has_func_suffix
+                                       ? psx_last_funcptr_param_fp_mask()
+                                       : member_typedef_funcptr_param_fp_mask;
+          if (fp_mask) {
+            psx_ctx_set_tag_member_funcptr_param_fp_mask(tag_kind, tag_name, tag_len,
+                                                         member_name, member_len, fp_mask);
+          }
         }
         if (has_member_name && !head.is_ptr && member_is_bool) {
           psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len,
