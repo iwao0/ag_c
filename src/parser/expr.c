@@ -1105,6 +1105,11 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->tag_name = mem_info->tag_name;
   deref->tag_len = mem_info->tag_len;
   deref->is_tag_pointer = mem_is_ptr;
+  if (base->kind == ND_LVAR || base->kind == ND_GVAR || base->kind == ND_DEREF) {
+    node_mem_t *base_mem = (node_mem_t *)base;
+    if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
+    if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
+  }
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
   deref->bit_is_signed = mem_info->bit_is_signed;

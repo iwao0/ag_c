@@ -1,9 +1,9 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き101: c-testsuite unsupported GNU skips）
+最終更新: 2026-06-27（続き102: const struct member assignment）
 
 ## 現状
-- `make test` = **1107/1107 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- `make test` = **1109/1109 green** (E2E + unit + parser + preprocess + IR + fuzz)。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -21,11 +21,16 @@
 - 続き101: **c-testsuite 残 2 件を unsupported GNU skip として明示**。00206
   (`#pragma push_macro` / `pop_macro`) と 00216 (空 struct / GNU range designator) は
   方針どおり意味サポートせず、harness 側で `Skip unsupported: 2` として fail 集計から除外。
+- 続き102: **`const struct` / `const struct *` のメンバ代入拒否**。stmt.c の tag-keyword
+  fast path が `const struct S s` / `struct S const s` / inline tag の `const` を
+  after_type に渡さず、さらに `s.x` の ND_DEREF 代入で const を見ていなかったため
+  `s.x = ...` が通っていた。tag 経路で const/volatile を保存し、メンバ deref に親 const を伝播、
+  const 付き ND_DEREF への代入を E3077 にする。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1107/1107 green を確認 (前回セッションの状態が引き継がれている)。
+3. **`make test`** で 1109/1109 green を確認 (前回セッションの状態が引き継がれている)。
 4. **`bash scripts/run_c_testsuite.sh --list-fail`** で fail 0 / unsupported skip 2 を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から

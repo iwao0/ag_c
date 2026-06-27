@@ -333,6 +333,8 @@ static node_t *parse_decl_like_stmt(void) {
    * として直接処理できないため、ここで先に分岐する必要がある。 */
   int tag_path_saw_static = 0;
   int tag_path_saw_extern = 0;
+  int tag_path_saw_const = 0;
+  int tag_path_saw_volatile = 0;
   int tag_path_alignas = 0;
   {
     token_t *peek = curtok();
@@ -361,6 +363,8 @@ static node_t *parse_decl_like_stmt(void) {
        * static struct/union 局所がグローバルへ lowering されず auto 扱いで
        * 呼び出し跨ぎで永続しなかった。 */
       while (psx_is_decl_prefix_token(curtok()->kind)) {
+        if (curtok()->kind == TK_CONST) tag_path_saw_const = 1;
+        if (curtok()->kind == TK_VOLATILE) tag_path_saw_volatile = 1;
         if (curtok()->kind == TK_STATIC) tag_path_saw_static = 1;
         if (curtok()->kind == TK_EXTERN) tag_path_saw_extern = 1;
         if (curtok()->kind == TK_ALIGNAS) {
@@ -408,11 +412,18 @@ static node_t *parse_decl_like_stmt(void) {
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
+      while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
+        if (curtok()->kind == TK_CONST) tag_path_saw_const = 1;
+        if (curtok()->kind == TK_VOLATILE) tag_path_saw_volatile = 1;
+        set_curtok(curtok()->next);
+      }
       /* メンバ定義の解析で skip_cv_qualifiers が static / alignas をリセットするため復元。 */
       psx_set_extern_flag(tag_path_saw_extern);
       if (tag_path_saw_static) psx_set_static_flag(1);
       if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
-      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
+      return psx_decl_parse_declaration_after_type(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name,
+                                                   tag_len, 0, tag_path_saw_const,
+                                                   tag_path_saw_volatile, 0);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
@@ -422,6 +433,8 @@ static node_t *parse_decl_like_stmt(void) {
       psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
     }
     while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
+      if (curtok()->kind == TK_CONST) tag_path_saw_const = 1;
+      if (curtok()->kind == TK_VOLATILE) tag_path_saw_volatile = 1;
       set_curtok(curtok()->next);
     }
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
@@ -431,7 +444,8 @@ static node_t *parse_decl_like_stmt(void) {
     if (tag_path_saw_static) psx_set_static_flag(1);
     if (tag_path_alignas) psx_set_alignas_value(tag_path_alignas);
     return psx_decl_parse_declaration_after_type(elem_size,
-                                                 TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0, 0, 0, 0);
+                                                 TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0,
+                                                 tag_path_saw_const, tag_path_saw_volatile, 0);
   }
 
   return NULL;
