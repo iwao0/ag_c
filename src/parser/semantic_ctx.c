@@ -154,6 +154,8 @@ struct func_name_t {
    * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
    * (ULT/ULE 比較選択) に使う。 */
   int ret_is_unsigned;
+  int ret_pointee_const;
+  int ret_pointee_volatile;
   /* 戻り値型が「配列へのポインタ」`int (*f())[N]` のときの先頭次元 N (それ以外は 0)。
    * 呼び出し結果 `f()[i]` の行ストライドを N*elem にするのに使う (0 なら通常のポインタ戻り)。 */
   int ret_pointee_array_first_dim;
@@ -1157,6 +1159,22 @@ void psx_ctx_set_function_ret_unsigned(char *name, int len, int is_unsigned) {
 int psx_ctx_get_function_ret_is_unsigned(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_is_unsigned : 0;
+}
+
+void psx_ctx_set_function_ret_pointee_qualifiers(char *name, int len,
+                                                 int is_const, int is_volatile) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->ret_pointee_const = is_const ? 1 : 0;
+  f->ret_pointee_volatile = is_volatile ? 1 : 0;
+}
+int psx_ctx_get_function_ret_pointee_const(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_pointee_const : 0;
+}
+int psx_ctx_get_function_ret_pointee_volatile(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_pointee_volatile : 0;
 }
 
 void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int first_dim) {

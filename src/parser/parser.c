@@ -2614,6 +2614,11 @@ static void register_toplevel_function_prototype(token_ident_t *tok, int declara
                  tok->len, tok->str);
   }
   if (ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
+  if (ret_is_ptr && (g_toplevel_decl_pointee_const || g_toplevel_decl_pointee_volatile)) {
+    psx_ctx_set_function_ret_pointee_qualifiers(tok->str, tok->len,
+                                                g_toplevel_decl_pointee_const,
+                                                g_toplevel_decl_pointee_volatile);
+  }
   (void)ret_is_unsigned;
   if (!psx_ctx_track_function_nargs(tok->str, tok->len, nargs, is_variadic)) {
     psx_diag_ctx(curtok(), "decl",
@@ -3786,11 +3791,15 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
    * 後ろがタグでないとき (builtin/typedef) は従来どおり psx_consume_type_kind に任せる。 */
   {
     token_t *t = curtok();
-    while (t && (t->kind == TK_STATIC || t->kind == TK_EXTERN)) t = t->next;
+    while (t && (t->kind == TK_STATIC || t->kind == TK_EXTERN ||
+                 t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next;
     if (t && t != curtok() && psx_ctx_is_tag_keyword(t->kind)) {
-      while (curtok()->kind == TK_STATIC || curtok()->kind == TK_EXTERN) {
+      while (curtok()->kind == TK_STATIC || curtok()->kind == TK_EXTERN ||
+             curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
         if (curtok()->kind == TK_STATIC) g_last_decl_is_static = 1;
         if (curtok()->kind == TK_EXTERN) g_last_decl_is_extern = 1;
+        if (curtok()->kind == TK_CONST) g_last_type_const_qualified = 1;
+        if (curtok()->kind == TK_VOLATILE) g_last_type_volatile_qualified = 1;
         set_curtok(curtok()->next);
       }
     }
@@ -4146,6 +4155,8 @@ static node_t *funcdef(void) {
    * ポインタ返しでも保持し subscript の zero-extend に使う) を分ける。 */
   int ret_base_unsigned = psx_last_type_is_unsigned() || ret_td_unsigned;
   int ret_is_unsigned = !ret_is_ptr && ret_base_unsigned;
+  int ret_pointee_const = g_last_type_const_qualified;
+  int ret_pointee_volatile = g_last_type_volatile_qualified;
   /* 戻り型が _Complex か (parse_func_declarator が g_last_type_complex を変える前に読む)。
    * IR builder が複素数戻り値 (HFA: re→d0, im→d1) を組むために node に記録する。 */
   int ret_is_complex = !ret_is_ptr && psx_last_type_is_complex();
@@ -4222,6 +4233,11 @@ static node_t *funcdef(void) {
   /* ctx には基底型の unsigned を保存 (ポインタ返しでも pointee 符号として subscript で使う)。
    * 戻り値そのものの符号 (比較等) は call 側で is_pointer を見て別途ガードする。 */
   if (ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
+  if (ret_is_ptr && (ret_pointee_const || ret_pointee_volatile)) {
+    psx_ctx_set_function_ret_pointee_qualifiers(tok->str, tok->len,
+                                                ret_pointee_const,
+                                                ret_pointee_volatile);
+  }
   /* 多段ポインタ戻り `int **g()`: ポインタ段数を記録 (`**g()` の deref 幅決定に使う)。
    * 基底型 `*` の段数のみ (`int (*f())[N]` の outer declarator ポインタは別扱いなので、
    * g_last_outer_declarator_is_ptr 由来の +1 は数えない)。 */

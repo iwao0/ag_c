@@ -1109,6 +1109,16 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     node_mem_t *base_mem = (node_mem_t *)base;
     if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
     if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
+  } else if (base->kind == ND_FUNCALL) {
+    node_func_t *fn = (node_func_t *)base;
+    if (fn->callee == NULL && fn->funcname) {
+      if (psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len)) {
+        deref->is_const_qualified = 1;
+      }
+      if (psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len)) {
+        deref->is_volatile_qualified = 1;
+      }
+    }
   }
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
@@ -3366,6 +3376,16 @@ static node_t *build_unary_deref_node(node_t *operand) {
     node_mem_t *operand_mem = (node_mem_t *)operand;
     if (operand_mem->is_const_qualified) node->is_const_qualified = 1;
     if (operand_mem->is_volatile_qualified) node->is_volatile_qualified = 1;
+  } else if (operand && operand->kind == ND_FUNCALL) {
+    node_func_t *fn = (node_func_t *)operand;
+    if (fn->callee == NULL && fn->funcname) {
+      if (psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len)) {
+        node->is_const_qualified = 1;
+      }
+      if (psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len)) {
+        node->is_volatile_qualified = 1;
+      }
+    }
   }
   if (pql >= 2) {
     node->is_pointer = 1;
@@ -4048,6 +4068,15 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
           psx_ctx_get_function_ret_is_unsigned(fn->funcname, fn->funcname_len)) {
         if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
         else                           deref->pointee_is_unsigned = 1;
+      }
+      if (fn->callee == NULL && fn->funcname &&
+          psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
+        if (psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len)) {
+          deref->is_const_qualified = 1;
+        }
+        if (psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len)) {
+          deref->is_volatile_qualified = 1;
+        }
       }
     }
     /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で

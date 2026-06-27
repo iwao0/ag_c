@@ -233,6 +233,11 @@ token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */
 void psx_ctx_set_function_ret_unsigned(char *name, int len, int is_unsigned);
 int psx_ctx_get_function_ret_is_unsigned(char *name, int len);
+/* 戻り値がポインタ型のとき、pointee の const/volatile 修飾を保持する。 */
+void psx_ctx_set_function_ret_pointee_qualifiers(char *name, int len,
+                                                 int is_const, int is_volatile);
+int psx_ctx_get_function_ret_pointee_const(char *name, int len);
+int psx_ctx_get_function_ret_pointee_volatile(char *name, int len);
 /* 戻り値型が `int (*f())[N]` (配列へのポインタ) のときの先頭次元 N (それ以外 0)。
  * 呼び出し結果 `f()[i]` の行ストライドを N*elem にするのに使う。 */
 void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int first_dim);
