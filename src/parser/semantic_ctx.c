@@ -167,6 +167,7 @@ struct func_name_t {
   /* 戻り値型が「配列へのポインタ」`int (*f())[N]` のときの先頭次元 N (それ以外は 0)。
    * 呼び出し結果 `f()[i]` の行ストライドを N*elem にするのに使う (0 なら通常のポインタ戻り)。 */
   int ret_pointee_array_first_dim;
+  int ret_pointee_array_second_dim;
   /* 仮引数 i の fp_kind (float/double/none) を保持。呼び出し側 IR builder が
    * `f(1)` のような int 実引数を double 仮引数に渡すケースで I2F キャスト
    * を挿入するために使う。 16 個まで track (それ以降は NONE のままで暗黙
@@ -1252,6 +1253,14 @@ void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int f
 int psx_ctx_get_function_ret_pointee_array_first_dim(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_pointee_array_first_dim : 0;
+}
+void psx_ctx_set_function_ret_pointee_array_second_dim(char *name, int len, int second_dim) {
+  func_name_t *f = find_function_name(name, len);
+  if (f) f->ret_pointee_array_second_dim = second_dim;
+}
+int psx_ctx_get_function_ret_pointee_array_second_dim(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_pointee_array_second_dim : 0;
 }
 
 /* 戻り値型のポインタ段数 (`int **g()`=2)。未設定/非ポインタは 0。多段ポインタ戻りの

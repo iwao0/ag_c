@@ -188,7 +188,10 @@ int ps_node_deref_size(node_t *node) {
       }
       if (base > 0 && fn->callee == NULL && fn->funcname) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
-        if (fd > 0) return fd * base;
+        if (fd > 0) {
+          int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
+          return fd * (sd > 0 ? sd : 1) * base;
+        }
         /* 多段ポインタ戻り `int **g()`: `*g()` の結果はまだポインタ (8B) なので、
          * 1 段目 deref のロード幅 / 添字スケールは基底型でなく 8 を返す。最内基底型は
          * psx_node_base_deref_size が別途返す。 */

@@ -3479,8 +3479,13 @@ static node_t *build_unary_deref_node(node_t *operand) {
       node_func_t *fn = (node_func_t *)probe;
       if (fn->callee == NULL && fn->funcname) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
+        int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
         int rowstride = ps_node_deref_size(probe);
-        if (fd > 0 && rowstride > 0) node->deref_size = (short)(rowstride / fd);
+        if (fd > 0 && rowstride > 0) {
+          int inner = rowstride / fd;
+          node->deref_size = (short)inner;
+          if (sd > 0 && inner > 0) node->inner_deref_size = (short)(inner / sd);
+        }
       } else if (fn->callee) {
         if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
@@ -3821,7 +3826,11 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     if (fn->callee == NULL && fn->funcname &&
         psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len) > 0) {
       int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
-      if (fd > 0 && ds > 0) inner_ds = ds / fd;  /* ds = N*elem → elem */
+      int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
+      if (fd > 0 && ds > 0) {
+        inner_ds = ds / fd;  /* 1D: elem、2D: M*elem */
+        if (sd > 0 && inner_ds > 0) next_ds = inner_ds / sd;
+      }
     } else if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
                               fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
       node_mem_t *cm = (node_mem_t *)fn->callee;

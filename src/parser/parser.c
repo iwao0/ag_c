@@ -101,10 +101,10 @@ static int g_func_funcptr_ret_is_pointer = 0;
 /* 戻り値型基底の `*` 段数 (`int **g()` で 2)。parse_pointer_suffix_flags が数え、
  * funcdef が多段ポインタ戻りの記録に使う。各 funcdef 開始時にリセットする。 */
 static int g_last_ret_ptr_levels = 0;
-/* 戻り値型が「配列へのポインタ」`int (*f())[N]` のとき、pointee 配列の先頭次元 N と
- * `[` suffix の個数。parse_func_declarator が捕捉し funcdef が ctx へ記録する。単一次元
- * (`[N]` 1 個) のみ対応 (多次元 `[N][M]` は dim_count>1 として first_dim を立てない)。 */
+/* 戻り値型が「配列へのポインタ」`int (*f())[N]` / `int (*f())[N][M]` のとき、
+ * pointee 配列の先頭次元 N と第2次元 M、`[` suffix の個数を捕捉する。 */
 static int g_func_ret_pointee_first_dim = 0;
+static int g_func_ret_pointee_second_dim = 0;
 static int g_func_ret_pointee_dim_count = 0;
 static int g_last_decl_is_extern = 0;
 static int g_last_decl_is_static = 0;
@@ -3958,6 +3958,7 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
   int has_unnamed_param = 0;
   int parsed_nested_inner_params = 0;
   g_func_ret_pointee_first_dim = 0;
+  g_func_ret_pointee_second_dim = 0;
   g_func_ret_pointee_dim_count = 0;
 
   psx_skip_gnu_attributes();
@@ -4063,11 +4064,12 @@ static token_ident_t *parse_func_declarator(int *out_is_variadic, int *out_has_u
         continue;
       }
       if (tk_consume('[')) {
-        /* pointee 配列次元 `int (*f())[N]` を捕捉 (先頭 `[N]` のみ)。これを記録しないと
+        /* pointee 配列次元 `int (*f())[N]` / `int (*f())[N][M]` を捕捉する。これを記録しないと
          * 呼び出し結果 `f()[i]` の行ストライドが分からず base 要素サイズで誤スケール→SIGSEGV。 */
         if (curtok()->kind != TK_RBRACKET) {
           int n = psx_parse_array_size_constexpr();
           if (g_func_ret_pointee_dim_count == 0) g_func_ret_pointee_first_dim = n;
+          else if (g_func_ret_pointee_dim_count == 1) g_func_ret_pointee_second_dim = n;
         }
         g_func_ret_pointee_dim_count++;
         tk_expect(']');
@@ -4283,11 +4285,16 @@ static node_t *funcdef(void) {
   if (ret_is_ptr && g_last_ret_ptr_levels > 0) {
     psx_ctx_set_function_ret_pointer_levels(tok->str, tok->len, g_last_ret_ptr_levels);
   }
-  /* 配列へのポインタ戻り `int (*f())[N]`: 先頭次元 N を記録 (単一次元のみ)。呼び出し結果
-   * `f()[i]` の行ストライドを N*elem にするのに使う (0 なら通常のポインタ戻り)。 */
-  if (ret_is_ptr && g_func_ret_pointee_dim_count == 1 && g_func_ret_pointee_first_dim > 0) {
+  /* 配列へのポインタ戻り `int (*f())[N]` / `int (*f())[N][M]`: 先頭次元 N と、
+   * あれば第2次元 M を記録。呼び出し結果 `f()[i]` のストライドを N*M*elem にし、
+   * 第1 subscript 結果へ M*elem を carry するのに使う (0 なら通常のポインタ戻り)。 */
+  if (ret_is_ptr && g_func_ret_pointee_dim_count >= 1 && g_func_ret_pointee_first_dim > 0) {
     psx_ctx_set_function_ret_pointee_array_first_dim(tok->str, tok->len,
                                                      g_func_ret_pointee_first_dim);
+    if (g_func_ret_pointee_dim_count >= 2 && g_func_ret_pointee_second_dim > 0) {
+      psx_ctx_set_function_ret_pointee_array_second_dim(tok->str, tok->len,
+                                                        g_func_ret_pointee_second_dim);
+    }
   }
   // variadic 情報と固定引数数を記録。caller 側 codegen が register/stack 切替に使い、
   // build_unqualified_call が引数数チェックに使う。
