@@ -1000,6 +1000,32 @@ static node_t *materialize_struct_rvalue_ternary(node_t *base,
   return psx_node_new_binary(ND_COMMA, (node_t *)select, new_typed_lvar_ref(var, 0));
 }
 
+static int funcall_ret_pointee_const(node_func_t *fn) {
+  if (!fn) return 0;
+  if (fn->callee == NULL && fn->funcname) {
+    return psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len);
+  }
+  if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
+                     fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR ||
+                     fn->callee->kind == ND_PTR_CAST)) {
+    return ((node_mem_t *)fn->callee)->is_const_qualified ? 1 : 0;
+  }
+  return 0;
+}
+
+static int funcall_ret_pointee_volatile(node_func_t *fn) {
+  if (!fn) return 0;
+  if (fn->callee == NULL && fn->funcname) {
+    return psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len);
+  }
+  if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
+                     fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR ||
+                     fn->callee->kind == ND_PTR_CAST)) {
+    return ((node_mem_t *)fn->callee)->is_volatile_qualified ? 1 : 0;
+  }
+  return 0;
+}
+
 /* `base.member` / `base->member` の deref node を組み立てる。
  * base アドレス + member offset を ADD して DEREF。
  * mem_info から type_size / deref_size / 配列メンバ / スカラポインタメンバ /
@@ -1111,14 +1137,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
   } else if (base->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)base;
-    if (fn->callee == NULL && fn->funcname) {
-      if (psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len)) {
-        deref->is_const_qualified = 1;
-      }
-      if (psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len)) {
-        deref->is_volatile_qualified = 1;
-      }
-    }
+    if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
+    if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
   }
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
@@ -3378,14 +3398,8 @@ static node_t *build_unary_deref_node(node_t *operand) {
     if (operand_mem->is_volatile_qualified) node->is_volatile_qualified = 1;
   } else if (operand && operand->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)operand;
-    if (fn->callee == NULL && fn->funcname) {
-      if (psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len)) {
-        node->is_const_qualified = 1;
-      }
-      if (psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len)) {
-        node->is_volatile_qualified = 1;
-      }
-    }
+    if (funcall_ret_pointee_const(fn)) node->is_const_qualified = 1;
+    if (funcall_ret_pointee_volatile(fn)) node->is_volatile_qualified = 1;
   }
   if (pql >= 2) {
     node->is_pointer = 1;
@@ -3448,6 +3462,19 @@ static node_t *build_unary_deref_node(node_t *operand) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
         int rowstride = ps_node_deref_size(probe);
         if (fd > 0 && rowstride > 0) node->deref_size = (short)(rowstride / fd);
+      } else if (fn->callee) {
+        token_kind_t fk = TK_EOF;
+        char *fname = NULL;
+        int flen = 0;
+        psx_node_get_tag_type(fn->callee, &fk, &fname, &flen, NULL);
+        if (fk != TK_EOF) {
+          node->tag_kind = fk;
+          node->tag_name = fname;
+          node->tag_len = flen;
+          node->is_tag_pointer = 0;
+          int elem = psx_ctx_get_tag_size(fk, fname, flen);
+          if (elem > 0) node->deref_size = (short)elem;
+        }
       }
     } else if (probe && probe->kind == ND_DEREF) {
       /* struct メンバ `int (*p)[N]` (および 2D pointee `int (*p)[M][N]`) の `*s.p`:
@@ -4071,12 +4098,11 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       }
       if (fn->callee == NULL && fn->funcname &&
           psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
-        if (psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len)) {
-          deref->is_const_qualified = 1;
-        }
-        if (psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len)) {
-          deref->is_volatile_qualified = 1;
-        }
+        if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
+        if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
+      } else if (fn->callee) {
+        if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
+        if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
       }
     }
     /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で

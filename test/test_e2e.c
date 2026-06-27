@@ -1212,6 +1212,7 @@ static const test_case_t test_cases[] = {
     {"probes", "vla_sizeof_direct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_sizeof_direct.c", 0, 0},
     {"probes", "struct_double_ptr_deref_arrow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_double_ptr_deref_arrow.c", 0, 0},
     {"probes", "unsupported_gnu_extensions_warn_skip", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c", 0, 0},
+    {"probes", "funcptr_return_const_pointee", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_const_pointee.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
@@ -1269,6 +1270,12 @@ static const compile_fail_case_t compile_fail_cases[] = {
      "const修飾された変数への代入はできません"},
     {"const_struct_func_ret_pointer_to_array_member_assign_rejected",
      "struct S { int x; }; const struct S g[1] = {{1}}; const struct S (*get(void))[1] { return &g; } int main() { (*get())[0].x = 2; return (*get())[0].x; }",
+     "const修飾された変数への代入はできません"},
+    {"const_struct_funcptr_ret_pointer_member_assign_rejected",
+     "struct S { int x; }; const struct S g = {1}; const struct S *get(void) { return &g; } int main() { const struct S *(*fp)(void) = get; fp()->x = 2; return fp()->x; }",
+     "const修飾された変数への代入はできません"},
+    {"const_struct_funcptr_ret_pointer_to_array_member_assign_rejected",
+     "struct S { int x; }; const struct S g[1] = {{1}}; const struct S (*get(void))[1] { return &g; } int main() { const struct S (*(*fp)(void))[1] = get; (*fp())[0].x = 2; return (*fp())[0].x; }",
      "const修飾された変数への代入はできません"},
     {"const_qual_discard_init_rejected",
      "int main() { const int x = 5; const int *cp = &x; int *p = cp; return 0; }",
