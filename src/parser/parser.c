@@ -129,6 +129,7 @@ static int g_toplevel_decl_base_is_ptr = 0;
  * resolve_toplevel_typedef_ref で設定、reset_toplevel_decl_spec_state でクリア。 */
 static int g_toplevel_decl_base_pointer_levels = 0;
 static unsigned short g_toplevel_decl_base_funcptr_param_fp_mask = 0;
+static unsigned short g_toplevel_decl_base_funcptr_param_int_mask = 0;
 /* 現在パース中のトップレベル宣言子が関数サフィックス `(...)` を持つか。
  * `double (*gops)(double)` のような関数ポインタグローバルを `double *dp` のような
  * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
@@ -342,6 +343,7 @@ static void resolve_toplevel_typedef_ref(void) {
     td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
     td_is_array = _ti.is_array; td_dim_count = _ti.array_dim_count;
     g_toplevel_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+    g_toplevel_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
     for (int i = 0; i < td_dim_count && i < 8; i++) g_toplevel_decl_td_array_dims[i] = _ti.array_dims[i];
   }
   /* 多段ポインタ typedef の段数 (`typedef int **PP` で 2)。単段/非ポインタは 1/0。 */
@@ -396,6 +398,7 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_base_is_ptr = 0;
   g_toplevel_decl_base_pointer_levels = 0;
   g_toplevel_decl_base_funcptr_param_fp_mask = 0;
+  g_toplevel_decl_base_funcptr_param_int_mask = 0;
   g_toplevel_decl_pointee_const = 0;
   g_toplevel_decl_pointee_volatile = 0;
   g_toplevel_decl_td_array_dim_count = 0;
@@ -2315,7 +2318,11 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     unsigned short fp_mask = g_toplevel_decl_has_func_suffix
                                  ? psx_last_funcptr_param_fp_mask()
                                  : g_toplevel_decl_base_funcptr_param_fp_mask;
+    unsigned short int_mask = g_toplevel_decl_has_func_suffix
+                                  ? psx_last_funcptr_param_int_mask()
+                                  : g_toplevel_decl_base_funcptr_param_int_mask;
     gv->funcptr_param_fp_mask = fp_mask;
+    gv->funcptr_param_int_mask = int_mask;
   }
   finalize_toplevel_object_declarator(gv);
 }
@@ -2473,6 +2480,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     _ti.is_funcptr = 1;
     _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
     _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
+    _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

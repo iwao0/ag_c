@@ -147,6 +147,7 @@ typedef struct {
    * 0 = 配列 typedef でない or 取れない (caller は elem_size を使う)。 */
   int td_array_elem_size;
   unsigned short td_funcptr_param_fp_mask;
+  unsigned short td_funcptr_param_int_mask;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -508,6 +509,7 @@ static int g_decl_base_pointer_levels = 0;
 /* 基底 typedef が関数ポインタ型のときの仮引数 fp マスク。
  * `typedef double (*Op)(double); Op op; op(3)` で int 実引数を double へ昇格するため。 */
 static unsigned short g_decl_base_funcptr_param_fp_mask = 0;
+static unsigned short g_decl_base_funcptr_param_int_mask = 0;
 
 /* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
  * 「定数」とは [...] 内が TK_NUM のみで構成されることを指す。TK_IDENT がある場合は変数または
@@ -2533,6 +2535,7 @@ static int g_last_funcptr_nfixed = 0;
  * 2=double) で記録。`double (*fp)(double)` のような funcptr に int 実引数を渡すとき、
  * 経由呼び出しでも昇格できるようにする (最大 8 引数)。 */
 static unsigned short g_last_funcptr_param_fp_mask = 0;
+static unsigned short g_last_funcptr_param_int_mask = 0;
 
 static void skip_func_params(void) {
   if (!tk_consume('(')) return;
@@ -2541,8 +2544,10 @@ static void skip_func_params(void) {
   int saw_ellipsis = 0;
   int fixed_before_ellipsis = 0;
   unsigned short fp_mask = 0;
+  unsigned short int_mask = 0;
   int param_idx = 0;     /* 現在の仮引数 index */
   int cur_fp = 0;        /* 0=未 / 1=float / 2=double */
+  int cur_int = 0;       /* 0=未 / 1=4B / 2=8B */
   int cur_disq = 0;      /* * / [ / ( を含む = スカラ fp でない */
   while (depth > 0) {
     token_kind_t k = curtok()->kind;
@@ -2556,13 +2561,17 @@ static void skip_func_params(void) {
       if (depth == 0) {  /* 最後の仮引数を確定 */
         if (cur_fp && !cur_disq && param_idx < 8)
           fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
+        if (cur_int && !cur_disq && param_idx < 8)
+          int_mask |= (unsigned short)(cur_int << (2 * param_idx));
       }
     }
     else if (k == TK_COMMA && depth == 1) {
       ncommas++;
       if (cur_fp && !cur_disq && param_idx < 8)
         fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
-      param_idx++; cur_fp = 0; cur_disq = 0;
+      if (cur_int && !cur_disq && param_idx < 8)
+        int_mask |= (unsigned short)(cur_int << (2 * param_idx));
+      param_idx++; cur_fp = 0; cur_int = 0; cur_disq = 0;
     }
     else if (k == TK_ELLIPSIS && depth == 1) {
       saw_ellipsis = 1;
@@ -2571,6 +2580,10 @@ static void skip_func_params(void) {
     else if (depth == 1) {
       if (k == TK_DOUBLE) cur_fp = 2;        /* double / long double */
       else if (k == TK_FLOAT) cur_fp = 1;
+      else if (k == TK_LONG) cur_int = 2;
+      else if (k == TK_INT || k == TK_CHAR || k == TK_SHORT ||
+               k == TK_SIGNED || k == TK_UNSIGNED || k == TK_BOOL ||
+               k == TK_ENUM) cur_int = 1;
       else if (k == TK_MUL || k == TK_LBRACKET) cur_disq = 1;  /* ポインタ/配列 */
     }
     set_curtok(curtok()->next);
@@ -2580,12 +2593,14 @@ static void skip_func_params(void) {
     g_last_funcptr_nfixed = fixed_before_ellipsis;
   }
   g_last_funcptr_param_fp_mask = fp_mask;
+  g_last_funcptr_param_int_mask = int_mask;
 }
 
 void psx_reset_funcptr_signature_state(void) {
   g_last_funcptr_is_variadic = 0;
   g_last_funcptr_nfixed = 0;
   g_last_funcptr_param_fp_mask = 0;
+  g_last_funcptr_param_int_mask = 0;
 }
 
 void psx_skip_func_param_list(void) {
@@ -2602,6 +2617,10 @@ int psx_last_funcptr_nargs_fixed(void) {
 
 unsigned short psx_last_funcptr_param_fp_mask(void) {
   return g_last_funcptr_param_fp_mask;
+}
+
+unsigned short psx_last_funcptr_param_int_mask(void) {
+  return g_last_funcptr_param_int_mask;
 }
 
 static void skip_bracket_group(void) {
@@ -3675,7 +3694,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   int base_pointer_levels = g_decl_base_pointer_levels;
   g_decl_base_pointer_levels = 0;
   unsigned short base_funcptr_param_fp_mask = g_decl_base_funcptr_param_fp_mask;
+  unsigned short base_funcptr_param_int_mask = g_decl_base_funcptr_param_int_mask;
   g_decl_base_funcptr_param_fp_mask = 0;
+  g_decl_base_funcptr_param_int_mask = 0;
   /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
    * (declarator ループ後にもう一度宣言文があれば、その spec で立て直す)。
    * 非 typedef spec で前回値が残ると 3522 経路が誤検出するため、ここでクリアする。
@@ -4113,6 +4134,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->funcptr_param_fp_mask = g_decl_trailing_func_suffix
                                        ? g_last_funcptr_param_fp_mask
                                        : base_funcptr_param_fp_mask;
+      var->funcptr_param_int_mask = g_decl_trailing_func_suffix
+                                        ? g_last_funcptr_param_int_mask
+                                        : base_funcptr_param_int_mask;
     }
     if (is_pointer && g_decl_had_paren_group && g_decl_func_suffix_count >= 2) {
       var->funcptr_ret_is_pointer = 1;
@@ -4236,7 +4260,9 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
     psx_typedef_info_t _ti;
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+      out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
       g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+      g_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
     }
   }
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
@@ -4250,6 +4276,7 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
 static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_pointer_levels = 0;
   g_decl_base_funcptr_param_fp_mask = 0;
+  g_decl_base_funcptr_param_int_mask = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
@@ -4421,6 +4448,9 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
   if (is_ptr && g_last_funcptr_param_fp_mask) {
     _ti.funcptr_param_fp_mask = g_last_funcptr_param_fp_mask;
+  }
+  if (is_ptr && g_last_funcptr_param_int_mask) {
+    _ti.funcptr_param_int_mask = g_last_funcptr_param_int_mask;
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

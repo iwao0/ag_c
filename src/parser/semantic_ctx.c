@@ -68,6 +68,7 @@ struct tag_member_t {
    * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。 */
   int ptr_array_pointee_bytes;
   unsigned short funcptr_param_fp_mask;
+  unsigned short funcptr_param_int_mask;
   int decl_order;
   int scope_depth;
 };
@@ -115,6 +116,7 @@ struct typedef_name_t {
   int is_funcptr;
   int funcptr_ret_is_pointer;
   unsigned short funcptr_param_fp_mask;
+  unsigned short funcptr_param_int_mask;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -484,6 +486,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->bit_offset = desc->bit_offset;
       m->bit_is_signed = desc->bit_is_signed;
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
+      m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
       return;
     }
   }
@@ -505,6 +508,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->bit_offset = desc->bit_offset;
   m->bit_is_signed = desc->bit_is_signed;
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
+  m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -622,6 +626,23 @@ void psx_ctx_set_tag_member_funcptr_param_fp_mask(token_kind_t tag_kind, char *t
   }
 }
 
+void psx_ctx_set_tag_member_funcptr_param_int_mask(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                                   char *member_name, int member_len,
+                                                   unsigned short mask) {
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
+  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
+    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
+        m->member_len == member_len &&
+        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
+        strncmp(m->member_name, member_name, (size_t)member_len) == 0 &&
+        m->scope_depth == tag_scope_depth) {
+      m->funcptr_param_int_mask = mask;
+      return;
+    }
+  }
+}
+
 void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
                                         char *member_name, int member_len, int is_unsigned) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -670,6 +691,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->arr_ndim = m->arr_ndim;
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
+  out->funcptr_param_int_mask = m->funcptr_param_int_mask;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -869,6 +891,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_funcptr = info->is_funcptr;
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
+  t->funcptr_param_int_mask = info->funcptr_param_int_mask;
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -895,7 +918,8 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->array_dim_count == n_new &&
                 existing->is_funcptr == info->is_funcptr &&
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
-                existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask);
+                existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
+                existing->funcptr_param_int_mask == info->funcptr_param_int_mask);
     if (same) {
       for (int i = 0; i < n_new; i++) {
         if (existing->array_dims[i] != info->array_dims[i]) { same = 0; break; }
@@ -964,6 +988,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->is_funcptr = t->is_funcptr;
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
+    out->funcptr_param_int_mask = t->funcptr_param_int_mask;
   }
   return true;
 }

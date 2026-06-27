@@ -1,9 +1,9 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き108: struct member funcptr int-to-fp argument conversion）
+最終更新: 2026-06-27（続き109: funcptr fp-to-int argument conversion）
 
 ## 現状
-- `make test` = **1119/1119 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- `make test` = **1120/1120 green** (E2E + unit + parser + preprocess + IR + fuzz)。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -58,11 +58,17 @@
   メンバ自身の FP 型として扱い、関数アドレスを double 化して格納していた。tag member と
   `node_mem_t` に `funcptr_param_fp_mask` を伝播し、`ND_DEREF` callee でも `wrap_to_fp` を適用。
   初期化時は tag pointer メンバの `fp_kind` を FP store に使わないようにした。
+- 続き109: **関数ポインタ経由呼び出しの float/double 実引数→整数仮引数変換**。
+  `int (*fp)(int); fp(7.9)` が、直接呼び出し用の `param_int_sizes` に乗らず、FP 実引数を
+  d0/s0 に置いたまま callee が x0/w0 を読んでいた。関数ポインタ型にも
+  `funcptr_param_int_mask` (1=4B, 2=8B) を保存し、typedef/local/global/tag member/`node_mem_t`
+  へ伝播、`ND_LVAR` / `ND_GVAR` / `ND_DEREF` callee で FP 実引数を `ND_FP_TO_INT` にラップする。
+  `ND_FP_TO_INT` は long 仮引数用に `type_size==8` なら i64 F2I を返すようにした。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1119/1119 green を確認 (前回セッションの状態が引き継がれている)。
+3. **`make test`** で 1120/1120 green を確認 (前回セッションの状態が引き継がれている)。
 4. **`bash scripts/run_c_testsuite.sh --list-fail`** で fail 0 / unsupported skip 2 を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から

@@ -74,6 +74,7 @@ struct global_var_t {
 
   // --- 2 バイト (short) ---
   unsigned short funcptr_param_fp_mask;
+  unsigned short funcptr_param_int_mask;
   short funcptr_nargs_fixed;  // 可変長関数ポインタの固定引数数 (`...` の前)
   short type_size;    // sizeof（ロード/ストアサイズ）
   short deref_size;   // ポインタ先の要素サイズ

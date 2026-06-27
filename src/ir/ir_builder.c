@@ -2043,7 +2043,7 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
   if (ctx->failed) return ir_val_none();
   int dst = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_F2I);
-  inst->dst = ir_val_vreg(dst, IR_TY_I32);
+  inst->dst = ir_val_vreg(dst, ps_node_type_size(node) == 8 ? IR_TY_I64 : IR_TY_I32);
   inst->src1 = v;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;

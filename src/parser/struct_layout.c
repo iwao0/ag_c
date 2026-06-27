@@ -113,6 +113,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_unsigned = 0;
     int member_is_ptr_typedef = 0;
     unsigned short member_typedef_funcptr_param_fp_mask = 0;
+    unsigned short member_typedef_funcptr_param_int_mask = 0;
     int member_typedef_array_first_dim = 0;
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
@@ -197,6 +198,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (_ti.is_pointer) member_is_ptr_typedef = 1;
         if (_ti.is_pointer && _ti.funcptr_param_fp_mask) {
           member_typedef_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+        }
+        if (_ti.is_pointer && _ti.funcptr_param_int_mask) {
+          member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
         }
         if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
           member_fp_kind = _ti.fp_kind;
@@ -445,6 +449,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.funcptr_param_fp_mask = head.has_func_suffix
                                           ? psx_last_funcptr_param_fp_mask()
                                           : member_typedef_funcptr_param_fp_mask;
+          _mi.funcptr_param_int_mask = head.has_func_suffix
+                                           ? psx_last_funcptr_param_int_mask()
+                                           : member_typedef_funcptr_param_int_mask;
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
@@ -493,9 +500,16 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           unsigned short fp_mask = head.has_func_suffix
                                        ? psx_last_funcptr_param_fp_mask()
                                        : member_typedef_funcptr_param_fp_mask;
+          unsigned short int_mask = head.has_func_suffix
+                                        ? psx_last_funcptr_param_int_mask()
+                                        : member_typedef_funcptr_param_int_mask;
           if (fp_mask) {
             psx_ctx_set_tag_member_funcptr_param_fp_mask(tag_kind, tag_name, tag_len,
                                                          member_name, member_len, fp_mask);
+          }
+          if (int_mask) {
+            psx_ctx_set_tag_member_funcptr_param_int_mask(tag_kind, tag_name, tag_len,
+                                                          member_name, member_len, int_mask);
           }
         }
         if (has_member_name && !head.is_ptr && member_is_bool) {
