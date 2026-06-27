@@ -156,6 +156,7 @@ void psx_reset_funcptr_signature_state(void);
 void psx_skip_func_param_list(void);
 int psx_last_funcptr_is_variadic(void);
 int psx_last_funcptr_nargs_fixed(void);
+unsigned short psx_last_funcptr_param_fp_mask(void);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 lvar_t *psx_decl_register_lvar(char *name, int len);

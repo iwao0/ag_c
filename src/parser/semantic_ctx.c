@@ -113,6 +113,7 @@ struct typedef_name_t {
   int array_dims[8];
   int is_funcptr;
   int funcptr_ret_is_pointer;
+  unsigned short funcptr_param_fp_mask;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -848,6 +849,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->array_first_dim = info->array_first_dim;
   t->is_funcptr = info->is_funcptr;
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
+  t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -871,7 +873,10 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->is_unsigned == info->is_unsigned &&
                 existing->is_array == info->is_array &&
                 existing->array_first_dim == info->array_first_dim &&
-                existing->array_dim_count == n_new);
+                existing->array_dim_count == n_new &&
+                existing->is_funcptr == info->is_funcptr &&
+                existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
+                existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask);
     if (same) {
       for (int i = 0; i < n_new; i++) {
         if (existing->array_dims[i] != info->array_dims[i]) { same = 0; break; }
@@ -939,6 +944,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     for (int i = n; i < 8; i++) out->array_dims[i] = 0;
     out->is_funcptr = t->is_funcptr;
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
+    out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
   }
   return true;
 }

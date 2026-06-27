@@ -146,6 +146,7 @@ typedef struct {
    * ポインタ」のケースで、宣言子側が elem_size を 8 (関数ポインタ) に上書きするのに使う。
    * 0 = 配列 typedef でない or 取れない (caller は elem_size を使う)。 */
   int td_array_elem_size;
+  unsigned short td_funcptr_param_fp_mask;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -504,6 +505,9 @@ static int g_decl_td_array_elem_size = 0;
  * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
 static int g_decl_base_pointer_levels = 0;
+/* 基底 typedef が関数ポインタ型のときの仮引数 fp マスク。
+ * `typedef double (*Op)(double); Op op; op(3)` で int 実引数を double へ昇格するため。 */
+static unsigned short g_decl_base_funcptr_param_fp_mask = 0;
 
 /* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
  * 「定数」とは [...] 内が TK_NUM のみで構成されることを指す。TK_IDENT がある場合は変数または
@@ -2593,6 +2597,10 @@ int psx_last_funcptr_nargs_fixed(void) {
   return g_last_funcptr_nfixed;
 }
 
+unsigned short psx_last_funcptr_param_fp_mask(void) {
+  return g_last_funcptr_param_fp_mask;
+}
+
 static void skip_bracket_group(void) {
   if (!tk_consume('[')) return;
   int depth = 1;
@@ -3663,6 +3671,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
    * (= base_is_pointer ? 1 : 0 と一致し従来挙動を保つ)。 */
   int base_pointer_levels = g_decl_base_pointer_levels;
   g_decl_base_pointer_levels = 0;
+  unsigned short base_funcptr_param_fp_mask = g_decl_base_funcptr_param_fp_mask;
+  g_decl_base_funcptr_param_fp_mask = 0;
   /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
    * (declarator ループ後にもう一度宣言文があれば、その spec で立て直す)。
    * 非 typedef spec で前回値が残ると 3522 経路が誤検出するため、ここでクリアする。
@@ -4096,7 +4106,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->funcptr_nargs_fixed = (short)g_last_funcptr_nfixed;
     }
     /* 関数ポインタの仮引数 fp マスク (経由呼び出しの int→fp 昇格用)。 */
-    if (is_pointer) var->funcptr_param_fp_mask = g_last_funcptr_param_fp_mask;
+    if (is_pointer) {
+      var->funcptr_param_fp_mask = g_decl_trailing_func_suffix
+                                       ? g_last_funcptr_param_fp_mask
+                                       : base_funcptr_param_fp_mask;
+    }
     if (is_pointer && g_decl_had_paren_group && g_decl_func_suffix_count >= 2) {
       var->funcptr_ret_is_pointer = 1;
     }
@@ -4215,6 +4229,13 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
   /* 多段ポインタ typedef (`typedef int **PP`) の段数を捕捉し、宣言経路へ受け渡す。
    * id はトークンなので resolve で curtok が進んでも文字列は有効。 */
   g_decl_base_pointer_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
+  {
+    psx_typedef_info_t _ti;
+    if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+      out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+      g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+    }
+  }
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
                                  &out->tag_kind, &out->tag_name, &out->tag_len,
                                  &out->base_is_pointer,
@@ -4225,6 +4246,7 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
 
 static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_pointer_levels = 0;
+  g_decl_base_funcptr_param_fp_mask = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
@@ -4394,6 +4416,9 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
   for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
+  if (is_ptr && g_last_funcptr_param_fp_mask) {
+    _ti.funcptr_param_fp_mask = g_last_funcptr_param_fp_mask;
+  }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
   }

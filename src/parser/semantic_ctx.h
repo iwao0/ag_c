@@ -149,6 +149,7 @@ typedef struct {
   int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
   int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
   int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
+  unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
 } psx_typedef_info_t;
 
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、

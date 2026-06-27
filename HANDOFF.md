@@ -1,9 +1,9 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-27（続き106: const function-pointer-return pointee member assignment）
+最終更新: 2026-06-27（続き107: typedef funcptr int-to-fp argument conversion）
 
 ## 現状
-- `make test` = **1117/1117 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- `make test` = **1118/1118 green** (E2E + unit + parser + preprocess + IR + fuzz)。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -45,11 +45,17 @@
   ある pointee const を見ずに通っていた。さらに `const struct S (*(*fp)(void))[1]; (*fp())[0].x`
   は `*fp()` の結果に戻り tag が伝播せず E3005 になっていた。間接呼び出しでは callee の
   `node_mem_t` から const/volatile と戻り tag を復元し、読み取りは許可、書き込みは E3077 にする。
+- 続き107: **typedef 関数ポインタ経由呼び出しの int→float/double 引数変換**。
+  `typedef double (*Op)(double); Op op; op(3)` が、直書き関数ポインタと違って typedef に
+  仮引数 fp マスクを保存しておらず、整数実引数を x0/w0 に置いたまま間接呼び出ししていた。
+  `psx_typedef_info_t` と local/global 関数ポインタ変数に `funcptr_param_fp_mask` を伝播し、
+  `ND_LVAR` / `ND_GVAR` の間接呼び出しで既存の `wrap_to_fp` に乗せる。直前 typedef の
+  stale mask が別 typedef 変数へ漏れないよう、直書き宣言子だけ `psx_last...` を優先する。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1117/1117 green を確認 (前回セッションの状態が引き継がれている)。
+3. **`make test`** で 1118/1118 green を確認 (前回セッションの状態が引き継がれている)。
 4. **`bash scripts/run_c_testsuite.sh --list-fail`** で fail 0 / unsupported skip 2 を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
