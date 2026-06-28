@@ -243,6 +243,14 @@ static int intern_function_table_ref(char *name, int name_len) {
   return idx;
 }
 
+static int function_table_index_or_unsupported(char *name, int name_len) {
+  if (!psx_ctx_has_function_name(name, name_len)) return -1;
+  if (!psx_ctx_is_function_defined(name, name_len)) {
+    wasm_unsupported_msg("external function pointer in Wasm backend");
+  }
+  return intern_function_table_ref(name, name_len);
+}
+
 static void emit_function_table(void) {
   if (g_func_table.ref_count <= 0) return;
   wasm_emitf(2, "(table %d funcref)\n", g_func_table.ref_count);
@@ -704,10 +712,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     }
     case IR_LOAD_SYM: {
       if (psx_ctx_has_function_name(i->sym, i->sym_len)) {
-        if (!psx_ctx_is_function_defined(i->sym, i->sym_len)) {
-          wasm_unsupported_msg("external function pointer in Wasm backend");
-        }
-        int func_idx = intern_function_table_ref(i->sym, i->sym_len);
+        int func_idx = function_table_index_or_unsupported(i->sym, i->sym_len);
         wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, func_idx);
         return;
       }
@@ -1068,7 +1073,7 @@ static int data_addr_for_init_symbol(char *sym, int sym_len) {
   if (!sym) return -1;
   if (sym_len < 0) return data_addr_for_string_label(sym);
   if (psx_ctx_has_function_name(sym, sym_len)) {
-    wasm_unsupported_msg("function pointer initializer in Wasm backend");
+    return function_table_index_or_unsupported(sym, sym_len);
   }
   return data_addr_for_global(sym, sym_len);
 }

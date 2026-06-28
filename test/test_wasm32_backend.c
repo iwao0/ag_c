@@ -342,9 +342,10 @@ int main(void) {
   failures += run_case("fp_return_to_int", "int main(){return 1.5;}\n",
                        fp_return_to_int, 2, 1);
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
-  failures += run_fail_case("funcptr_init",
-                            "int f(){return 1;} int (*fp[1])()={f}; int main(){return 0;}\n",
-                            "E4008");
+  const char *funcptr_init[] = {"(data (i32.const", "(table 1 funcref)", "(elem (i32.const 0) $f"};
+  failures += run_case("funcptr_init",
+                       "int f(){return 1;} int (*fp[1])()={f}; int main(){return fp[0]();}\n",
+                       funcptr_init, 3, 1);
   const char *global_fp_scalar[] = {"(data (i32.const", "f64.load"};
   failures += run_case("global_fp_scalar", "double g=2.5; int main(){return (int)(g+1.5);}\n",
                        global_fp_scalar, 2, 4);
@@ -526,6 +527,29 @@ int main(void) {
                             "E4008");
   failures += run_fail_case("funcptr_external_ref",
                             "int ext(int); int main(){int (*fp)(int); fp=ext; return fp(1);}\n",
+                            "E4008");
+  const char *global_funcptr_call[] = {"(data (i32.const", "(table 1 funcref)", "call_indirect"};
+  failures += run_case("global_funcptr_call",
+                       "int add1(int x){return x+1;} int (*g)(int)=add1; int main(){return g(41);}\n",
+                       global_funcptr_call, 3, 42);
+  const char *global_funcptr_array_call[] = {"(data (i32.const", "(table 2 funcref)",
+                                             "(elem (i32.const 0) $add1 $add2", "call_indirect"};
+  failures += run_case("global_funcptr_array_call",
+                       "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                       "int (*ops[2])(int)={add1,add2}; int main(){return ops[1](40);}\n",
+                       global_funcptr_array_call, 4, 42);
+  const char *static_funcptr_call[] = {"(i32.const 0)", "(table 1 funcref)", "call_indirect"};
+  failures += run_case("static_funcptr_call",
+                       "int add1(int x){return x+1;} int main(){static int (*fp)(int)=add1; "
+                       "return fp(41);}\n",
+                       static_funcptr_call, 3, 42);
+  const char *struct_funcptr_call[] = {"(data (i32.const", "(table 1 funcref)", "call_indirect"};
+  failures += run_case("struct_funcptr_call",
+                       "int add1(int x){return x+1;} struct Ops{int (*f)(int);}; "
+                       "struct Ops ops={add1}; int main(){return ops.f(41);}\n",
+                       struct_funcptr_call, 3, 42);
+  failures += run_fail_case("global_funcptr_external_ref",
+                            "int ext(int); int (*g)(int)=ext; int main(){return 0;}\n",
                             "E4008");
   const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};
   failures += run_case("unsigned_int_to_double",
