@@ -301,7 +301,7 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
 }
 
 static int func_has_hidden_ret_area(ir_func_t *f) {
-  return f && f->ret_struct_size > 0;
+  return f && (f->ret_struct_size > 0 || f->ret_complex_half > 0);
 }
 
 static int func_param_ordinal_for_inst(ir_func_t *f, ir_inst_t *target) {
@@ -877,10 +877,10 @@ static int vreg_used_after(ir_inst_t *from, int id) {
 }
 
 static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
-  if (i->ret_complex_half != 0) {
-    wasm_unsupported_op(i->op);
-  }
   if (i->callee.id != IR_VAL_NONE) {
+    if (i->ret_complex_half != 0) {
+      wasm_unsupported_op(i->op);
+    }
     if (i->is_variadic_call) {
       wasm_unsupported_op(i->op);
     }
@@ -931,7 +931,10 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
   }
   int returns_void = psx_ctx_is_function_ret_void(i->sym, i->sym_len);
-  if (i->ret_struct_size > 0) {
+  if (i->ret_complex_half > 0) {
+    wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
+    emit_val_expr_as(ctx, i->dst, IR_TY_PTR);
+  } else if (i->ret_struct_size > 0) {
     wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
     emit_val_expr_as(ctx, i->ret_struct_area, IR_TY_PTR);
   } else if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
@@ -947,10 +950,22 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     emit_val_expr_as(ctx, i->args[a], arg_ty);
   }
   cg_emitf(")");
-  if (i->ret_struct_size == 0 && !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
+  if (i->ret_struct_size == 0 && i->ret_complex_half == 0 &&
+      !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
     cg_emitf(")");
   }
   cg_emitf("\n");
+}
+
+static void emit_complex_ret_copy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
+  int half = i->ret_complex_half;
+  const char *ty = half == 4 ? "f32" : "f64";
+  wasm_emitf(indent, "(%s.store (local.get $p0) (%s.load ", ty, ty);
+  emit_addr_expr(ctx, i->src1);
+  cg_emitf("))\n");
+  wasm_emitf(indent, "(%s.store (i32.add (local.get $p0) (i32.const %d)) (%s.load ", ty, half, ty);
+  emit_addr_plus_const(ctx, i->src1, half);
+  cg_emitf("))\n");
 }
 
 static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int indent) {
@@ -1178,6 +1193,12 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       wasm_emitf(indent, "(br $dispatch)\n");
       return;
     case IR_RET:
+      if (i->ret_complex_half > 0) {
+        emit_complex_ret_copy(ctx, i, indent);
+        if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
+        wasm_emitf(indent, "return\n");
+        return;
+      }
       if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
       if (i->src1.id != IR_VAL_NONE) {
         wasm_emitf(indent, "(return ");

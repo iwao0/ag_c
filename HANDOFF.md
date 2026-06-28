@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き132: Emit Wasm wide string literal data + E2E 1023）
+最終更新: 2026-06-29（続き133: Lower Wasm complex return via hidden area + E2E 1024）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1023/1023 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1024/1024 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -228,6 +228,12 @@
   E4008 になっていた。char/u8 は既存の UTF-8 byte emission を維持し、wide literal は
   `tk_next_string_code_units` で UTF-16/UTF-32 code unit に変換して little-endian bytes を出す。
   fixture を Wasm E2E に追加し、静的 531 件 + extra 492 件の **1023 件**。
+- 続き133: **Wasm _Complex return lowering**。
+  `complex_by_value_abi.c` が `IR_CALL.ret_complex_half` で E4008 になっていた。Wasm では `_Complex`
+  戻り値を multi-value ではなく hidden return area に寄せ、関数 signature の先頭に返却先 `i32`
+  pointer を足す。caller は既存の結果 slot を渡し、callee の `IR_RET.ret_complex_half` は
+  `{re,im}` slot から hidden area へ `f32/f64.store` する。fixture を Wasm E2E に追加し、
+  静的 531 件 + extra 493 件の **1024 件**。
 
 ### Wasm backend の既知メモ
 
@@ -235,9 +241,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1023 件を通常 `make test` に組み込み済み。
+  1024 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、TLS/stdarg/complex、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-132で 45 件を回収し、73 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-133で 46 件を回収し、72 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

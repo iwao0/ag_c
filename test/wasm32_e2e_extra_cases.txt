@@ -61,6 +61,7 @@ probes_found_bugs/cmp_same_width_unsigned.c
 probes_found_bugs/cmp_wide_signed_vs_unsigned.c
 probes_found_bugs/comma_in_condition.c
 probes_found_bugs/complex_brace_init.c
+probes_found_bugs/complex_by_value_abi.c
 probes_found_bugs/complex_float_double_convert.c
 probes_found_bugs/compound_assign_index_side_effect.c
 probes_found_bugs/compound_literal_struct_assign.c
