@@ -343,6 +343,19 @@ static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   return emit_load_sym_for_gvar(ctx, gv);
 }
 
+static int aggregate_size_from_node(node_t *node) {
+  if (!node) return 0;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_tag_pointer = 0;
+  psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_pointer);
+  if (is_tag_pointer || (tag_kind != TK_STRUCT && tag_kind != TK_UNION)) return 0;
+  int size = ps_node_type_size(node);
+  if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+  return size;
+}
+
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
 static void emit_br(ir_build_ctx_t *ctx, ir_block_t *target);
 static void emit_br_cond(ir_build_ctx_t *ctx, ir_val_t cond,
@@ -350,6 +363,8 @@ static void emit_br_cond(ir_build_ctx_t *ctx, ir_val_t cond,
 static void switch_to_new_block(ir_build_ctx_t *ctx, ir_block_t *b);
 
 static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node);
+static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
+                                          int dst_ptr_vreg, int size);
 
 /* build_expr の case 別ヘルパ群 (Phase B1 リファクタリング)。
  * 各 build_node_<kind> は build_expr の 1 case 分の処理を担当し、
@@ -1071,6 +1086,91 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
 }
 
+static int aggregate_source_address(ir_build_ctx_t *ctx, node_t *src) {
+  if (!src) return -1;
+  if (src->kind == ND_LVAR) {
+    return address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
+  }
+  if (src->kind == ND_GVAR) {
+    return address_of_gvar(ctx, (node_gvar_t *)src);
+  }
+  if (src->kind == ND_DEREF) {
+    ir_val_t ptr = build_expr(ctx, src->lhs);
+    if (ctx->failed) return -1;
+    return ptr.id;
+  }
+  return -1;
+}
+
+static void copy_aggregate_from_address(ir_build_ctx_t *ctx, int dst_ptr_vreg,
+                                        int src_ptr_vreg, int size) {
+  if (src_ptr_vreg < 0) return;
+  ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+  cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+  cp->src2 = ir_val_vreg(src_ptr_vreg, IR_TY_PTR);
+  cp->alloca_size = size;
+  ir_func_append_inst(ctx->f, cp);
+}
+
+static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
+                                          int dst_ptr_vreg, int size) {
+  if (!src || ctx->failed) return;
+  if (src->kind == ND_COMMA && src->rhs) {
+    (void)build_expr(ctx, src->lhs);
+    if (ctx->failed) return;
+    materialize_aggregate_expr_to(ctx, src->rhs, dst_ptr_vreg, size);
+    return;
+  }
+  if (src->kind == ND_TERNARY) {
+    node_ctrl_t *c = (node_ctrl_t *)src;
+    if (!c->els) {
+      fail(ctx, "ternary without else");
+      return;
+    }
+    ir_val_t cond = build_expr(ctx, src->lhs);
+    if (ctx->failed) return;
+    ir_block_t *then_b = ir_block_new(ctx->f);
+    ir_block_t *else_b = ir_block_new(ctx->f);
+    ir_block_t *merge_b = ir_block_new(ctx->f);
+    emit_br_cond(ctx, cond, then_b, else_b);
+    switch_to_new_block(ctx, then_b);
+    materialize_aggregate_expr_to(ctx, src->rhs, dst_ptr_vreg, size);
+    if (ctx->failed) return;
+    emit_br(ctx, merge_b);
+    switch_to_new_block(ctx, else_b);
+    materialize_aggregate_expr_to(ctx, c->els, dst_ptr_vreg, size);
+    if (ctx->failed) return;
+    emit_br(ctx, merge_b);
+    switch_to_new_block(ctx, merge_b);
+    return;
+  }
+  if (src->kind == ND_FUNCALL) {
+    int ret_size = src->ret_struct_size;
+    if (ret_size == 8) {
+      ir_val_t v = build_expr(ctx, src);
+      if (ctx->failed) return;
+      if (v.type != IR_TY_I64) v = coerce_to_type(ctx, v, IR_TY_I64);
+      ir_inst_t *st = ir_inst_new(IR_STORE);
+      st->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+      st->src2 = v;
+      ir_func_append_inst(ctx->f, st);
+      return;
+    }
+    if (cg_size_needs_indirect_struct(ret_size)) {
+      ir_val_t src_ptr = build_expr(ctx, src);
+      if (ctx->failed) return;
+      copy_aggregate_from_address(ctx, dst_ptr_vreg, src_ptr.id, size);
+      return;
+    }
+  }
+  int src_ptr_vreg = aggregate_source_address(ctx, src);
+  if (src_ptr_vreg >= 0) {
+    copy_aggregate_from_address(ctx, dst_ptr_vreg, src_ptr_vreg, size);
+    return;
+  }
+  fail(ctx, "aggregate expression source not materializable");
+}
+
 static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   node_lvar_t *lv = (node_lvar_t *)node->lhs;
   ir_type_t vty = lvar_value_type(lv);
@@ -1689,6 +1789,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
             struct_needs_ptr = 1;
           }
         }
+      } else if (arg && arg->kind == ND_TERNARY) {
+        arg_full_size = aggregate_size_from_node(arg);
+        if (arg_full_size > 0 && cg_size_needs_indirect_struct(arg_full_size)) {
+          struct_needs_ptr = 1;
+        }
       } else if (arg && arg->kind == ND_FUNCALL && arg->ret_struct_size > 8) {
         /* >8B struct を返す関数呼び出しを直接 struct 引数に (`sum(make())`)。
          * build_node_funcall が ret_area を確保しそのアドレスを返すので、それを
@@ -1707,9 +1812,19 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
            (arg->kind == ND_GVAR && ((node_gvar_t *)arg)->mem.tag_kind != TK_EOF &&
             !((node_gvar_t *)arg)->mem.is_pointer && !((node_gvar_t *)arg)->mem.is_tag_pointer) ||
            (arg->kind == ND_DEREF && ((node_mem_t *)arg)->tag_kind != TK_EOF &&
-            !((node_mem_t *)arg)->is_pointer && !((node_mem_t *)arg)->is_tag_pointer))) {
+            !((node_mem_t *)arg)->is_pointer && !((node_mem_t *)arg)->is_tag_pointer) ||
+           arg->kind == ND_TERNARY)) {
         int src_ptr;
-        if (arg->kind == ND_DEREF) {
+        if (arg->kind == ND_TERNARY) {
+          src_ptr = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+          ia->dst = ir_val_vreg(src_ptr, IR_TY_PTR);
+          ia->alloca_size = arg_full_size;
+          ia->alloca_align = 8;
+          ir_func_append_inst(ctx->f, ia);
+          materialize_aggregate_expr_to(ctx, arg, src_ptr, arg_full_size);
+          if (ctx->failed) return ir_val_none();
+        } else if (arg->kind == ND_DEREF) {
           ir_val_t a = build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;
@@ -1732,7 +1847,16 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * src アドレスは ND_LVAR なら lvar slot、ND_DEREF ならその lhs (= 計算済み
          * アドレス式) を評価して得る。 */
         int src_ptr;
-        if (arg->kind == ND_DEREF) {
+        if (arg->kind == ND_TERNARY) {
+          src_ptr = ir_func_new_vreg(ctx->f);
+          ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+          ia->dst = ir_val_vreg(src_ptr, IR_TY_PTR);
+          ia->alloca_size = arg_full_size;
+          ia->alloca_align = 8;
+          ir_func_append_inst(ctx->f, ia);
+          materialize_aggregate_expr_to(ctx, arg, src_ptr, arg_full_size);
+          if (ctx->failed) return ir_val_none();
+        } else if (arg->kind == ND_DEREF) {
           ir_val_t a = build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           src_ptr = a.id;

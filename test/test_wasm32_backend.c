@@ -251,6 +251,18 @@ int main(void) {
                        "struct P{int a; int b;}; int sum(struct P p){return p.a+p.b;} "
                        "int main(){return sum((struct P){6,7});}\n",
                        struct8_arg_compound, 3, 13);
+  const char *struct8_arg_ternary[] = {"(func $sum (param $p0 i64) (result i32)", "if", "i64.load"};
+  failures += run_case("struct8_arg_ternary",
+                       "struct P{int a; int b;}; int sum(struct P p){return p.a+p.b;} "
+                       "int main(){struct P a; struct P b; a.a=1; a.b=2; b.a=3; b.b=4; "
+                       "return sum(1?b:a);}\n",
+                       struct8_arg_ternary, 3, 7);
+  const char *struct_arg_ternary[] = {"(func $sum (param $p0 i32) (result i32)", "i64.store", "(call $sum"};
+  failures += run_case("struct_arg_ternary",
+                       "struct P{int a; int b; int c;}; int sum(struct P p){return p.a+p.b+p.c;} "
+                       "int main(){struct P a; struct P b; a.a=1; a.b=2; a.c=3; "
+                       "b.a=4; b.b=5; b.c=6; return sum(1?b:a);}\n",
+                       struct_arg_ternary, 3, 15);
   const char *alignas32[] = {"i32.and", "i32.const -32"};
   failures += run_case("alignas32",
                        "int main(){_Alignas(32) int x; x=7; return x + (((long)&x) & 31);}\n",
