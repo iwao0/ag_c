@@ -253,6 +253,21 @@ int main(void) {
   failures += run_case("global_union_fp",
                        "union U{int i; double d;}; union U g={.d=2.5}; int main(){return (int)(g.d+1.5);}\n",
                        global_union_fp, 2, 4);
+  const char *global_struct_union[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct_union",
+                       "union U{int i; char c;}; struct S{int tag; union U u;}; "
+                       "struct S g={7,{.i=35}}; int main(){return g.tag+g.u.i;}\n",
+                       global_struct_union, 2, 42);
+  const char *global_struct_union_fp[] = {"(data (i32.const", "f64.load"};
+  failures += run_case("global_struct_union_fp",
+                       "union U{int i; double d;}; struct S{union U u; int x;}; "
+                       "struct S g={{.d=2.5},4}; int main(){return (int)g.u.d+g.x;}\n",
+                       global_struct_union_fp, 2, 6);
+  const char *global_struct_union_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct_union_array",
+                       "union U{int i; char c;}; struct S{union U u[2];}; "
+                       "struct S g={{{.i=10},{.i=32}}}; int main(){return g.u[0].i+g.u[1].i;}\n",
+                       global_struct_union_array, 2, 42);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "

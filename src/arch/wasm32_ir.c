@@ -1040,6 +1040,20 @@ static void emit_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
   *member_idx = m - 1;
 }
 
+static void emit_global_nested_union_data(global_var_t *gv, int *val_idx, int addr, int union_size) {
+  if (*val_idx >= gv->init_count) return;
+  int idx = (*val_idx)++;
+  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
+                    ? gv->init_value_symbol_lens[idx] : 0;
+  if (!sym && (sym_len == -2 || sym_len == -3)) {
+    double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
+    emit_fp_data_bytes(addr, sym_len == -2 ? TK_FLOAT_KIND_FLOAT : TK_FLOAT_KIND_DOUBLE, fv);
+    return;
+  }
+  emit_global_init_slot_data(gv, idx, addr, union_size, 0);
+}
+
 static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                 global_var_t *gv, int *val_idx, int base_addr) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
@@ -1050,15 +1064,16 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
       emit_global_bitfield_unit_data(tk, tn, tl, &m, gv, val_idx, base_addr);
       continue;
     }
-    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
-      wasm_unsupported_msg("global union member initializer in Wasm backend");
-    }
     if (mi.array_len > 0) {
       if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
-        if (mi.tag_kind == TK_UNION) wasm_unsupported_msg("global union array initializer in Wasm backend");
         for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
-          emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
-                                              base_addr + mi.offset + k * mi.type_size);
+          if (mi.tag_kind == TK_UNION) {
+            emit_global_nested_union_data(gv, val_idx, base_addr + mi.offset + k * mi.type_size,
+                                          mi.type_size);
+          } else {
+            emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
+                                                base_addr + mi.offset + k * mi.type_size);
+          }
         }
       } else {
         for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
@@ -1071,6 +1086,10 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
     if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
       emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
                                           base_addr + mi.offset);
+      continue;
+    }
+    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+      emit_global_nested_union_data(gv, val_idx, base_addr + mi.offset, mi.type_size);
       continue;
     }
     int slot = (*val_idx)++;
