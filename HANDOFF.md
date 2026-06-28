@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き115: Wasm indirect aggregate returns）
+最終更新: 2026-06-29（続き116: Wasm control-flow void funcptr calls）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + E2E)。
@@ -98,7 +98,8 @@
   対応済み範囲: local/global/static/struct member の単純な関数ポインタ呼び出し、関数ポインタ配列、
   void / unused-result call、int↔fp 引数変換が IR に現れる indirect call、単純 pointer return、
   pointer-to-array return、未初期化の大きい global/aggregate を Wasm linear memory のゼロ初期化に任せる処理。
-  制御フロー越しに global/struct member 関数ポインタが上書きされる場合は、誤コンパイルせず E4008 で止める。
+  制御フロー越しに global/struct member void 関数ポインタが上書きされる場合も対応済み。
+  非 void unknown indirect call の結果未使用ケースは、誤コンパイルせず E4008 で止める。
   WAT は `wat2wasm` / `wasm-interp` がある環境では test harness が実行値まで確認する。
 - 続き114: **多次元 static local 整数配列の lowering**。
   `int f(){static int a[2][3]; a[1][2]++; return a[1][2];}` が、1D static local 配列の
@@ -116,11 +117,20 @@
   `ret_struct_area` を渡す。aggregate return は Wasm 上は result なしとして扱う。local/global/struct
   member 関数ポインタ、変数への受け取り、直接メンバ materialize (`fp(1).b`) を
   `test_wasm32_backend` で WAT と `wasm-interp` 実行値まで確認する。
+- 続き116: **Wasm control-flow void function pointer call**。
+  `if(1) g=set7; g(&x);` / `if(1) ops.f=set7; ops.f(&x);` のように制御フロー越しに
+  global/struct member の void 関数ポインタが上書きされる場合、callee 名を逆引きできず
+  Wasm backend が未使用結果の非 void indirect call と区別できず E4008 にしていた。
+  関数ポインタ型へ `funcptr_ret_is_void` を保存し、typedef/local/global/tag member/`node_mem_t` から
+  `ND_FUNCALL.is_void_call`、`IR_CALL.is_void_call` へ伝播。Wasm emitter は unknown indirect call でも
+  void と分かる場合は result なしの `call_indirect` を出す。非 void の unknown unused-result indirect
+  call は誤った typeuse を避けるため引き続き E4008。
 
 ### Wasm backend の既知メモ
 
 - Wasm indirect aggregate return (`ret_struct_size > 0`) は local/global/struct member 関数ポインタで対応済み。
-  制御フロー越しに global/struct member 関数ポインタが上書きされる場合は、引き続き誤コンパイルせず E4008。
+- Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
+  unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

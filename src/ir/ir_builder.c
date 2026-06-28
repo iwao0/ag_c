@@ -1967,6 +1967,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->args = cargs;
   call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
+  call->is_void_call = node->is_void_call ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が

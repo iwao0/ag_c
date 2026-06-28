@@ -1150,6 +1150,7 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_is_signed = mem_info->bit_is_signed;
   deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
   deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
+  deref->funcptr_ret_is_void = mem_info->funcptr_ret_is_void ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(
       deref, mem_info->funcptr_ret_pointee_array);
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
@@ -4146,6 +4147,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (base_mem->funcptr_param_int_mask) {
         deref->funcptr_param_int_mask = base_mem->funcptr_param_int_mask;
       }
+      if (base_mem->funcptr_ret_is_void) {
+        deref->funcptr_ret_is_void = 1;
+      }
       if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(base_mem)) {
         PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
       }
@@ -4320,6 +4324,8 @@ static node_t *parse_call_postfix(node_t *callee) {
     node->base.ret_struct_size = psx_ctx_get_function_ret_struct_size(fr->funcname, fr->funcname_len);
     if (psx_ctx_get_function_ret_is_complex(fr->funcname, fr->funcname_len))
       node->base.is_complex = 1;
+    if (psx_ctx_is_function_ret_void(fr->funcname, fr->funcname_len))
+      node->base.is_void_call = 1;
     if (psx_ctx_get_function_ret_is_unsigned(fr->funcname, fr->funcname_len))
       psx_node_set_unsigned((node_t *)node, 1);
   } else {
@@ -4342,6 +4348,9 @@ static node_t *parse_call_postfix(node_t *callee) {
     if (ret_fp != TK_FLOAT_KIND_NONE &&
         !(cm && PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(cm))) {
       node->base.fp_kind = ret_fp;
+    }
+    if (cm && cm->funcptr_ret_is_void) {
+      node->base.is_void_call = 1;
     }
     /* 間接呼び出しで戻り型が struct/union 値 (`struct R (*op)(int)`) なら ret_struct_size を
      * 設定する。直接呼び出しは ret 表 (psx_ctx_get_function_ret_struct_size) から引くが、
@@ -4730,6 +4739,9 @@ static node_t *build_unqualified_call(token_ident_t *tok) {
   if (psx_ctx_get_function_ret_is_complex(tok->str, tok->len)) {
     node->base.is_complex = 1;
   }
+  if (psx_ctx_is_function_ret_void(tok->str, tok->len)) {
+    node->base.is_void_call = 1;
+  }
   /* 戻り値型が unsigned のとき call ノードに is_unsigned を立てる。これがないと
    * `unsigned f(); f() <= 100` が符号付き比較 (LE) になり、32bit 比較で 0xFFFFFFFF を
    * 負数扱いして誤判定する (戻り値の符号性が funcall ノードへ伝播していなかった)。
@@ -4811,6 +4823,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
       addr->funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
       addr->funcptr_param_int_mask = gv->funcptr_param_int_mask;
+      addr->funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
       PSX_RET_POINTEE_ARRAY_COPY_FIELDS(addr, gv);
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
        * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
@@ -4908,6 +4921,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型 fp_kind を pointee_fp_kind
      * に伝播。parse_call_postfix がこれを funcall に載せ、戻り値を d0 で読む。 */
     gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
+    gvar_node->mem.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
     PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&gvar_node->mem, gv);
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
@@ -5168,6 +5182,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
   as_lvar(n)->mem.base_deref_size = var->base_deref_size;
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
+  as_lvar(n)->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&as_lvar(n)->mem, var);
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
   /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を

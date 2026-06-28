@@ -53,6 +53,7 @@ struct lvar_t {
   short funcptr_ret_pointee_array_first_dim;
   short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
+  unsigned int funcptr_ret_is_void : 1;
   // 1: 指す関数の戻り値が関数ポインタ (`int (*(*p)(int))(int,int)` の `p`)。
   //    `(*p)(...)` の結果を呼ぶとき余分な deref をしないために使う。
   unsigned int funcptr_ret_is_pointer : 1;

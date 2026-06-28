@@ -662,9 +662,16 @@ int main(void) {
                        "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
                        "int main(){int x; x=0; ops.f=set7; ops.f(&x); return x;}\n",
                        struct_funcptr_store_call, 3, 7);
-  failures += run_fail_case("struct_funcptr_control_flow_store",
-                            "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
-                            "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
+  const char *struct_funcptr_control_flow_store[] = {"(table 2 funcref)", "$set7 $set9",
+                                                     "call_indirect", "(local $pc i32)"};
+  failures += run_case("struct_funcptr_control_flow_store",
+                       "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
+                       "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
+                       "int main(){int x; x=0; if(1) ops.f=set7; ops.f(&x); return x;}\n",
+                       struct_funcptr_control_flow_store, 4, 7);
+  failures += run_fail_case("struct_funcptr_nonvoid_control_flow_unused_result",
+                            "int set9(int *p){*p=9; return 9;} int set7(int *p){*p=7; return 7;} "
+                            "struct Ops{int (*f)(int*);}; struct Ops ops={set9}; "
                             "int main(){int x; x=0; if(1) ops.f=set7; ops.f(&x); return x;}\n",
                             "E4008");
   failures += run_fail_case("global_funcptr_external_ref",
@@ -685,9 +692,16 @@ int main(void) {
                        "int set(int *p){*p=9; return 123;} int (*g)(int*)=set; "
                        "int main(){int x; x=0; g(&x); return x;}\n",
                        global_funcptr_unused_result_call, 3, 9);
-  failures += run_fail_case("global_funcptr_control_flow_store",
-                            "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
-                            "void (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
+  const char *global_funcptr_control_flow_store[] = {"(table 2 funcref)", "$set7 $set9",
+                                                     "call_indirect", "(local $pc i32)"};
+  failures += run_case("global_funcptr_control_flow_store",
+                       "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
+                       "void (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
+                       "g(&x); return x;}\n",
+                       global_funcptr_control_flow_store, 4, 7);
+  failures += run_fail_case("global_funcptr_nonvoid_control_flow_unused_result",
+                            "int set9(int *p){*p=9; return 9;} int set7(int *p){*p=7; return 7;} "
+                            "int (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
                             "g(&x); return x;}\n",
                             "E4008");
   const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};

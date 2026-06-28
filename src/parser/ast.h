@@ -83,6 +83,7 @@ struct node_t {
   unsigned int is_atomic : 1;   // 1: _Atomic型（load-acquire/store-release）
   unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
                                      // (`!p == 0` の precedence-trap 警告に使う)
+  unsigned int is_void_call : 1; // ND_FUNCALL: 戻り値が void
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
@@ -126,6 +127,7 @@ struct node_mem_t {
   // pointee 要素サイズ (例: 1 for char) が異なるケースを表現する。
   unsigned int pointee_is_scalar_ptr : 1;
   unsigned int is_pointer_volatile_qualified : 1;
+  unsigned int funcptr_ret_is_void : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
   // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
   // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。

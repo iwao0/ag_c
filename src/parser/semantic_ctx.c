@@ -71,6 +71,7 @@ struct tag_member_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
+  int funcptr_ret_is_void;
   int decl_order;
   int scope_depth;
 };
@@ -116,6 +117,7 @@ struct typedef_name_t {
   // 上限 8 次元 (実用上十分)。
   int array_dims[8];
   int is_funcptr;
+  int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
@@ -494,6 +496,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
       m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
       m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
+      m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
       return;
     }
   }
@@ -517,6 +520,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
   m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
   m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
+  m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -701,6 +705,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
   out->funcptr_param_int_mask = m->funcptr_param_int_mask;
   out->funcptr_ret_pointee_array = m->funcptr_ret_pointee_array;
+  out->funcptr_ret_is_void = m->funcptr_ret_is_void;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -898,6 +903,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_array = info->is_array;
   t->array_first_dim = info->array_first_dim;
   t->is_funcptr = info->is_funcptr;
+  t->funcptr_ret_is_void = info->funcptr_ret_is_void;
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
@@ -927,6 +933,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->array_first_dim == info->array_first_dim &&
                 existing->array_dim_count == n_new &&
                 existing->is_funcptr == info->is_funcptr &&
+                existing->funcptr_ret_is_void == info->funcptr_ret_is_void &&
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
                 existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
                 existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
@@ -998,6 +1005,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     for (int i = 0; i < n; i++) out->array_dims[i] = t->array_dims[i];
     for (int i = n; i < 8; i++) out->array_dims[i] = 0;
     out->is_funcptr = t->is_funcptr;
+    out->funcptr_ret_is_void = t->funcptr_ret_is_void;
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
     out->funcptr_param_int_mask = t->funcptr_param_int_mask;

@@ -103,6 +103,7 @@ typedef struct {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
+  int funcptr_ret_is_void;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
@@ -158,6 +159,7 @@ typedef struct {
   int array_dim_count;          // 配列次元数 (0 = 非配列/未知)
   int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
   int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
+  int funcptr_ret_is_void;      // 指し示す関数の戻り値が void
   int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
   unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
   unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅 (1=4B, 2=8B; 2bit * 最大8)

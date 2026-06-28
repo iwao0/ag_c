@@ -115,6 +115,7 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
       if (i->src1.id != IR_VAL_NONE) print_val(s, i->src1);
       break;
     case IR_CALL:
+      if (i->is_void_call) sink_printf(s, "void ");
       sink_printf(s, "@%.*s(", i->sym_len, i->sym ? i->sym : "");
       for (int k = 0; k < i->nargs; k++) {
         if (k > 0) sink_printf(s, ", ");

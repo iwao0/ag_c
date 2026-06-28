@@ -229,6 +229,7 @@ typedef struct ir_inst_t {
       /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
        * 0/1 のみ。1 のとき args[nargs_fixed..nargs-1] は stack。 */
       unsigned char is_variadic_call;
+      unsigned char is_void_call;
     };
     struct {            /* IR_ATOMIC */
       unsigned char atomic_kind;   /* ir_atomic_kind_t */

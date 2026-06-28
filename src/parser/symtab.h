@@ -72,6 +72,7 @@ struct global_var_t {
   unsigned int is_volatile_qualified : 1;
   // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
   unsigned int is_variadic_funcptr : 1;
+  unsigned int funcptr_ret_is_void : 1;
 
   // --- 2 バイト (short) ---
   unsigned short funcptr_param_fp_mask;
