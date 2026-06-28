@@ -149,6 +149,10 @@ int main(void) {
                        alignas32, 2, 7);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
+  failures += run_fail_case("ptr_i64_mix",
+                            "int main(){unsigned int x; x=4294967295U; unsigned long y; "
+                            "y=x+1UL; return y==4294967296UL;}\n",
+                            "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
   return 0;

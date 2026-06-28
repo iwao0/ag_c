@@ -180,6 +180,7 @@ static int data_addr_for_global(const char *sym, int sym_len) {
 static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
   if (v.id < 0 || v.id >= ctx->f->next_vreg_id) return;
   if (!wasm_type(v.type)) return;
+  if (ctx->vreg_type_seen[v.id]) return;
   ctx->vreg_type_seen[v.id] = 1;
   ctx->vreg_types[v.id] = v.type;
 }
@@ -282,6 +283,13 @@ static void emit_addr_plus_const(ir_val_t base, int off) {
   cg_emitf(" (i32.const %d))", off);
 }
 
+static ir_type_t effective_val_type(wasm_func_ctx_t *ctx, ir_val_t v) {
+  if (v.id >= 0 && v.id < ctx->f->next_vreg_id && ctx->vreg_type_seen[v.id]) {
+    return ctx->vreg_types[v.id];
+  }
+  return v.type;
+}
+
 static const char *wasm_binop(ir_op_t op, ir_type_t t) {
   const char *prefix = wasm_type(t);
   if (!prefix) return NULL;
@@ -324,9 +332,9 @@ static void emit_load(ir_inst_t *i, int indent) {
   cg_emitf("))\n");
 }
 
-static void emit_store(ir_inst_t *i, int indent) {
+static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   const char *op = NULL;
-  switch (i->src2.type) {
+  switch (effective_val_type(ctx, i->src2)) {
     case IR_TY_I8:  op = "i32.store8"; break;
     case IR_TY_I16: op = "i32.store16"; break;
     case IR_TY_I32:
@@ -339,6 +347,12 @@ static void emit_store(ir_inst_t *i, int indent) {
   cg_emitf(" ");
   emit_val_expr(i->src2);
   cg_emitf(")\n");
+}
+
+static int mixes_ptr_and_i64(ir_inst_t *i) {
+  return (i->src1.type == IR_TY_PTR && i->src2.type == IR_TY_I64) ||
+         (i->src1.type == IR_TY_I64 && i->src2.type == IR_TY_PTR) ||
+         (i->dst.type == IR_TY_PTR && (i->src1.type == IR_TY_I64 || i->src2.type == IR_TY_I64));
 }
 
 static void emit_memcpy(ir_inst_t *i, int indent) {
@@ -452,7 +466,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       emit_load(i, indent);
       return;
     case IR_STORE:
-      emit_store(i, indent);
+      emit_store(ctx, i, indent);
       return;
     case IR_MEMCPY:
       emit_memcpy(i, indent);
@@ -489,6 +503,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_ULT: case IR_ULE: {
       int is_cmp = (i->op == IR_EQ || i->op == IR_NE || i->op == IR_LT || i->op == IR_LE ||
                     i->op == IR_ULT || i->op == IR_ULE);
+      if (mixes_ptr_and_i64(i)) {
+        wasm_unsupported_msg("64-bit integer value represented as pointer in Wasm backend");
+      }
       ir_type_t op_ty = is_cmp ? i->src1.type : i->dst.type;
       const char *op = wasm_binop(i->op, op_ty);
       if (!op) wasm_unsupported_op(i->op);
