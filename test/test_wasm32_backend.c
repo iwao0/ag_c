@@ -135,6 +135,22 @@ int main(void) {
   failures += run_case("branch", "int main(){if(1)return 1; return 0;}\n", branch, 3, 1);
   const char *loop[] = {"(local $pc i32)", "(loop $dispatch", "i32.lt_s"};
   failures += run_case("loop", "int main(){int i; i=0; while(i<3){i=i+1;} return i;}\n", loop, 3, 3);
+  const char *for_loop[] = {"(local $pc i32)", "(loop $dispatch", "i32.lt_s"};
+  failures += run_case("for_loop",
+                       "int main(){int s; s=0; for(int i=0;i<5;i=i+1){s=s+i;} return s;}\n",
+                       for_loop, 3, 10);
+  const char *break_continue[] = {"(local $pc i32)", "(loop $dispatch", "(br $dispatch)"};
+  failures += run_case("break_continue",
+                       "int main(){int s; s=0; int i; i=0; while(i<6){i=i+1; "
+                       "if(i==2)continue; if(i==5)break; s=s+i;} return s;}\n",
+                       break_continue, 3, 8);
+  const char *switch_case[] = {"(local $pc i32)", "(loop $dispatch", "i32.eq"};
+  failures += run_case("switch_case",
+                       "int main(){int x; x=3; switch(x){case 1:return 10; "
+                       "case 3:return 30; default:return 99;} return 0;}\n",
+                       switch_case, 3, 30);
+  const char *ternary[] = {"(local $pc i32)", "(loop $dispatch", "i32.const 20"};
+  failures += run_case("ternary", "int main(){int x; x=0; return x?10:20;}\n", ternary, 3, 20);
   const char *global_read[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_read", "int g=5; int main(){return g+2;}\n", global_read, 2, 7);
   const char *global_write[] = {"(data (i32.const", "i32.store"};
@@ -148,10 +164,17 @@ int main(void) {
   const char *global_str_ptr[] = {"(data (i32.const", "\"abc\\00\""};
   failures += run_case("global_str_ptr", "char *p=\"abc\"; int main(){return p[1];}\n",
                        global_str_ptr, 2, 98);
+  const char *global_str_ptr_offset[] = {"(data (i32.const", "\"abc\\00\""};
+  failures += run_case("global_str_ptr_offset", "char *p=\"abc\"+1; int main(){return p[0];}\n",
+                       global_str_ptr_offset, 2, 98);
   const char *global_str_ptr_array[] = {"(data (i32.const", "\"abc\\00\"", "\"de\\00\"", "i32.load"};
   failures += run_case("global_str_ptr_array",
                        "char *names[3]={\"abc\",\"de\",\"f\"}; int main(){return names[1][1]+names[2][0];}\n",
                        global_str_ptr_array, 4, 203);
+  const char *global_str_ptr_array_offset[] = {"(data (i32.const", "\"abc\\00\"", "\"xyz\\00\""};
+  failures += run_case("global_str_ptr_array_offset",
+                       "char *p[2]={\"abc\"+2,\"xyz\"+1}; int main(){return p[0][0]+p[1][0];}\n",
+                       global_str_ptr_array_offset, 3, 220);
   const char *global_ptr_array_addr[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_ptr_array_addr",
                        "int data[3]={4,5,6}; int *p[2]={&data[0],data+2}; int main(){return *p[0]+*p[1];}\n",
@@ -160,6 +183,15 @@ int main(void) {
   failures += run_case("global_struct",
                        "struct P{int a; int b;}; struct P g={3,4}; int main(){return g.a+g.b;}\n",
                        global_struct, 2, 7);
+  const char *global_struct_partial[] = {"(data (i32.const", "\\07\\00\\00\\00"};
+  failures += run_case("global_struct_partial",
+                       "struct P{int a; int b; int c;}; struct P g={.b=7}; int main(){return g.a+g.b+g.c;}\n",
+                       global_struct_partial, 2, 7);
+  const char *global_nested_struct[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_nested_struct",
+                       "struct I{int a; int b;}; struct O{struct I i; int c;}; "
+                       "struct O g={{1,2},3}; int main(){return g.i.a+g.i.b+g.c;}\n",
+                       global_nested_struct, 2, 6);
   const char *global_struct_array[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_struct_array",
                        "struct P{int a; int b;}; struct P g[2]={{1,2},{3,4}}; int main(){return g[1].a+g[1].b;}\n",
@@ -172,6 +204,10 @@ int main(void) {
   failures += run_case("global_struct_str_ptr",
                        "struct S{char *name; int id;}; struct S g={\"hi\",5}; int main(){return g.name[0]+g.id;}\n",
                        global_struct_str_ptr, 3, 109);
+  const char *global_struct_str_ptr_offset[] = {"(data (i32.const", "\"hello\\00\"", "i32.load"};
+  failures += run_case("global_struct_str_ptr_offset",
+                       "struct S{char *p;}; struct S g={\"hello\"+1}; int main(){return g.p[0];}\n",
+                       global_struct_str_ptr_offset, 3, 101);
   const char *global_struct_bool[] = {"(data (i32.const", "\\01"};
   failures += run_case("global_struct_bool",
                        "struct S{_Bool b; int x;}; struct S g={100,4}; int main(){return g.b+g.x;}\n",
