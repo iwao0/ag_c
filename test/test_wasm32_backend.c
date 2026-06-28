@@ -261,6 +261,26 @@ int main(void) {
   failures += run_case("global_union_signed_bitfield",
                        "union U{int a:3; unsigned int b:5;}; union U g={.a=-1}; int main(){return g.a+1;}\n",
                        global_union_signed_bitfield, 2, 0);
+  const char *global_union_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_array",
+                       "union U{int i; char c;}; union U g[2]={{.i=10},{.i=32}}; "
+                       "int main(){return g[0].i+g[1].i;}\n",
+                       global_union_array, 2, 42);
+  const char *global_union_fp_array[] = {"(data (i32.const", "f64.load"};
+  failures += run_case("global_union_fp_array",
+                       "union U{int i; double d;}; union U g[2]={{.d=1.25},{.d=2.75}}; "
+                       "int main(){return (int)(g[0].d+g[1].d);}\n",
+                       global_union_fp_array, 2, 4);
+  const char *global_union_struct_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_struct_array",
+                       "struct S{int a; int b;}; union U{struct S s; int i;}; "
+                       "union U g[2]={{.s={10,11}},{.s={20,1}}}; int main(){return g[0].s.a+g[1].s.a+g[1].s.b;}\n",
+                       global_union_struct_array, 2, 31);
+  const char *global_union_bitfield_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_bitfield_array",
+                       "union U{unsigned int a:3; unsigned int b:5;}; union U g[2]={{.b=17},{.b=25}}; "
+                       "int main(){return g[0].b+g[1].b;}\n",
+                       global_union_bitfield_array, 2, 42);
   const char *global_union_struct[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_union_struct",
                        "struct S{int a; int b;}; union U{struct S s; int i;}; "

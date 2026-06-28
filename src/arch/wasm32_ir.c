@@ -1108,27 +1108,32 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
   }
 }
 
-static void emit_global_union_data(global_var_t *gv, int addr) {
-  if (gv->init_count <= 0) return;
+static void emit_global_union_element_data(global_var_t *gv, int *val_idx, int addr) {
+  if (*val_idx >= gv->init_count) return;
   tag_member_info_t mi = {0};
   int ord = gv->union_init_ordinal;
   if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ord, &mi)) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }
   if (mi.bit_width > 0) {
-    emit_global_bitfield_member_data(gv, 0, addr, &mi);
+    emit_global_bitfield_member_data(gv, (*val_idx)++, addr, &mi);
     return;
   }
   if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
-    int val_idx = 0;
     if (mi.tag_kind == TK_STRUCT) {
-      emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, &val_idx, addr);
+      emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx, addr);
     } else {
-      emit_global_nested_union_data(gv, &val_idx, addr, mi.type_size);
+      emit_global_nested_union_data(gv, val_idx, addr, mi.type_size);
     }
     return;
   }
-  emit_global_init_member_data(gv, 0, addr, &mi);
+  emit_global_init_member_data(gv, (*val_idx)++, addr, &mi);
+}
+
+static void emit_global_union_data(global_var_t *gv, int addr) {
+  if (gv->init_count <= 0) return;
+  int val_idx = 0;
+  emit_global_union_element_data(gv, &val_idx, addr);
 }
 
 static void emit_global_struct_data(global_var_t *gv, int addr) {
@@ -1136,7 +1141,16 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
   }
   if (gv->tag_kind == TK_UNION) {
-    emit_global_union_data(gv, addr);
+    if (gv->is_array) {
+      int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
+      int total = elem_size > 0 ? (int)gv->type_size / elem_size : 0;
+      int val_idx = 0;
+      for (int e = 0; e < total && val_idx < gv->init_count; e++) {
+        emit_global_union_element_data(gv, &val_idx, addr + e * elem_size);
+      }
+    } else {
+      emit_global_union_data(gv, addr);
+    }
     return;
   }
   int val_idx = 0;
