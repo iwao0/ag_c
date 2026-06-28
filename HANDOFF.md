@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き118: Wasm E2E fixture expansion）
+最終更新: 2026-06-29（続き119: Wasm E2E extra fixture list）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **531/531 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **978/978 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -138,13 +138,19 @@
   type_decl の未収録ケースに加え、inline/flex array/pragma pack/evil/func_name/string/stdheader 定数系/
   struct by-value/struct return も Wasm backend + WABT 実行値で確認する。外部 libc 呼び出し、VLA、
   既知の `pointer/array_decay_diff.c` は引き続き未収録。
+- 続き119: **Wasm E2E extra fixture list**。
+  未収録 fixture を広く preflight し、Wasm backend + WABT 実行値まで通った 447 件を
+  `test/wasm32_e2e_extra_cases.txt` に分離して追加。`test_wasm32_e2e` は静的 531 件 + extra 447 件の
+  **978 件**を実行する。追加分は `probes_found_bugs` 305 件、`type_decl` 106 件を中心に、evil/stdheader/
+  tokenizer 等も含む。
 
 ### Wasm backend の既知メモ
 
 - Wasm indirect aggregate return (`ret_struct_size > 0`) は local/global/struct member 関数ポインタで対応済み。
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
-- Wasm E2E subset は `test/test_wasm32_e2e.c` で 531 件を通常 `make test` に組み込み済み。
+- Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
+  978 件を通常 `make test` に組み込み済み。
   `pointer/array_decay_diff.c` (`&a[9] - a`) は IR が `ptr + offset -> i64; i64 - ptr` になり、
   既存の `64-bit integer value represented as pointer` guard に当たるため未収録。次の Wasm parity 候補。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

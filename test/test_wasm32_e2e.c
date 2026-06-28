@@ -10,6 +10,13 @@ typedef struct {
   const char *path;
 } wasm_e2e_case_t;
 
+#define MAX_EXTRA_CASES 512
+
+static wasm_e2e_case_t extra_cases[MAX_EXTRA_CASES];
+static char extra_case_categories[MAX_EXTRA_CASES][64];
+static char extra_case_names[MAX_EXTRA_CASES][192];
+static char extra_case_paths[MAX_EXTRA_CASES][256];
+
 static const wasm_e2e_case_t cases[] = {
     {"integer", "zero", "test/fixtures/integer/zero.c"},
     {"integer", "literal", "test/fixtures/integer/literal.c"},
@@ -696,18 +703,82 @@ static int run_case(const wasm_e2e_case_t *tc, int *executed) {
   return run_wabt_case(case_id, wat_path, executed);
 }
 
+static int load_extra_cases(const char *path, size_t *out_count) {
+  *out_count = 0;
+  FILE *fp = fopen(path, "rb");
+  if (!fp) {
+    fprintf(stderr, "FAIL: open extra Wasm E2E case list %s\n", path);
+    return 1;
+  }
+
+  char line[256];
+  while (fgets(line, sizeof(line), fp)) {
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '#' || *p == '\n' || *p == '\0') continue;
+
+    char *end = p + strlen(p);
+    while (end > p && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ' || end[-1] == '\t')) {
+      *--end = '\0';
+    }
+    if (*p == '\0') continue;
+    if (*out_count >= MAX_EXTRA_CASES) {
+      fclose(fp);
+      fprintf(stderr, "FAIL: too many extra Wasm E2E cases\n");
+      return 1;
+    }
+
+    char *slash = strchr(p, '/');
+    char *dot = strrchr(p, '.');
+    if (!slash || !dot || strcmp(dot, ".c") != 0 || slash == p || dot <= slash + 1) {
+      fclose(fp);
+      fprintf(stderr, "FAIL: invalid extra Wasm E2E case path '%s'\n", p);
+      return 1;
+    }
+
+    size_t idx = *out_count;
+    size_t cat_len = (size_t)(slash - p);
+    size_t name_len = (size_t)(dot - slash - 1);
+    if (cat_len >= sizeof(extra_case_categories[idx]) || name_len >= sizeof(extra_case_names[idx])) {
+      fclose(fp);
+      fprintf(stderr, "FAIL: extra Wasm E2E case path too long '%s'\n", p);
+      return 1;
+    }
+    memcpy(extra_case_categories[idx], p, cat_len);
+    extra_case_categories[idx][cat_len] = '\0';
+    memcpy(extra_case_names[idx], slash + 1, name_len);
+    extra_case_names[idx][name_len] = '\0';
+    snprintf(extra_case_paths[idx], sizeof(extra_case_paths[idx]), "test/fixtures/%s", p);
+
+    extra_cases[idx].category = extra_case_categories[idx];
+    extra_cases[idx].name = extra_case_names[idx];
+    extra_cases[idx].path = extra_case_paths[idx];
+    (*out_count)++;
+  }
+  fclose(fp);
+  return 0;
+}
+
 int main(void) {
   if (mkdir_p("build/wasm32_e2e") != 0) {
     fprintf(stderr, "FAIL: mkdir build/wasm32_e2e\n");
     return 1;
   }
+  size_t nextra = 0;
+  if (load_extra_cases("test/wasm32_e2e_extra_cases.txt", &nextra) != 0) return 1;
 
   int failures = 0;
   int executed = 0;
-  size_t ncases = sizeof(cases) / sizeof(cases[0]);
-  for (size_t i = 0; i < ncases; i++) {
+  size_t nstatic = sizeof(cases) / sizeof(cases[0]);
+  size_t ncases = nstatic + nextra;
+  for (size_t i = 0; i < nstatic; i++) {
     int did_execute = 0;
     failures += run_case(&cases[i], &did_execute);
+    executed += did_execute;
+  }
+  for (size_t i = 0; i < nextra; i++) {
+    int did_execute = 0;
+    failures += run_case(&extra_cases[i], &did_execute);
     executed += did_execute;
   }
   if (failures) {
