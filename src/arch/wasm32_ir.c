@@ -812,12 +812,14 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     wasm_unsupported_op(i->op);
   }
   if (i->callee.id != IR_VAL_NONE) {
-    if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) {
-      wasm_unsupported_msg("indirect aggregate function call in Wasm backend");
-    }
     int callee_name_len = 0;
     char *callee_name = get_vreg_func_ref(ctx, i->callee.id, &callee_name_len);
-    int returns_void = (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
+    int returns_aggregate = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
+    if (returns_aggregate && i->ret_struct_area.id == IR_VAL_NONE) {
+      wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
+    }
+    int returns_void = returns_aggregate ||
+                       (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
     if (result_unused && !callee_name) {
@@ -828,12 +830,17 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     else if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
     else wasm_emitf(indent, "");
     cg_emitf("(call_indirect");
+    if (returns_aggregate) cg_emitf(" (param i32)");
     for (int a = 0; a < i->nargs; a++) {
       ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
       if (!is_fp_type(arg_ty)) arg_ty = IR_TY_I64;
       cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
     }
     if (!returns_void) cg_emitf(" (result %s)", ret_ty);
+    if (returns_aggregate) {
+      cg_emitf(" ");
+      emit_val_expr_as(ctx, i->ret_struct_area, IR_TY_PTR);
+    }
     for (int a = 0; a < i->nargs; a++) {
       ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
       if (!is_fp_type(arg_ty)) arg_ty = IR_TY_I64;

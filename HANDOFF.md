@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-28（続き114: static local multidim array lowering）
+最終更新: 2026-06-29（続き115: Wasm indirect aggregate returns）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + E2E)。
-- 直近確認: `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/static_local_multidim_array.c` OK、
-  `./build/test_wasm32_backend` green、`./build/test_e2e` = **1125/1125 green**、`git diff --check` clean。
+- 直近確認: `make test` green、`./build/test_wasm32_backend` green、
+  `./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -109,11 +109,18 @@
   `extra_strides` を保存。`build_static_local_array_addr_node` でその stride を
   `ND_ADDR(ND_GVAR)` に伝播する。2D/3D、初期化あり/なし、永続性、`sizeof` を fixture 化し、
   Wasm backend でも実行値 12 を確認する。
+- 続き115: **Wasm indirect aggregate return**。
+  `struct Big (*fp)(int); fp(40)` のような 1/2/4/8B に収まらない struct 値返しの関数ポインタ
+  indirect call が、Wasm backend で E4008 になっていた。IR はすでに `ret_struct_area` を持つため、
+  `call_indirect` の typeuse に hidden return area `i32` を先頭 param として追加し、実引数列の前に
+  `ret_struct_area` を渡す。aggregate return は Wasm 上は result なしとして扱う。local/global/struct
+  member 関数ポインタ、変数への受け取り、直接メンバ materialize (`fp(1).b`) を
+  `test_wasm32_backend` で WAT と `wasm-interp` 実行値まで確認する。
 
 ### Wasm backend の既知メモ
 
-- Wasm indirect aggregate return (`ret_struct_size > 0`) はまだ未対応で E4008。単純 pointer return は `i32`
-  として通るようになった。
+- Wasm indirect aggregate return (`ret_struct_size > 0`) は local/global/struct member 関数ポインタで対応済み。
+  制御フロー越しに global/struct member 関数ポインタが上書きされる場合は、引き続き誤コンパイルせず E4008。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

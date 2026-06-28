@@ -569,6 +569,30 @@ int main(void) {
                        "int main(){double (*(*fp)(void))[2]; fp=get; fp()[1][1]=4.5; "
                        "return (int)a[1][1];}\n",
                        funcptr_pointer_to_double_array_return, 2, 4);
+  const char *funcptr_struct_return[] = {"(func $mkbig (param $p0 i32) (param $p1 i64)",
+                                         "(call_indirect (param i32) (param i64)", "i32.store"};
+  failures += run_case("funcptr_struct_return",
+                       "struct Big{int a; int b; int c;}; "
+                       "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; r.c=x+2; return r;} "
+                       "int main(){struct Big (*fp)(int); fp=mkbig; struct Big r; r=fp(40); "
+                       "return r.a+r.c+fp(1).b;}\n",
+                       funcptr_struct_return, 3, 84);
+  const char *global_funcptr_struct_return[] = {"(data (i32.const", "(table 1 funcref)",
+                                                "(call_indirect (param i32) (param i64)"};
+  failures += run_case("global_funcptr_struct_return",
+                       "struct Big{int a; int b; int c;}; "
+                       "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; r.c=x+2; return r;} "
+                       "struct Big (*g)(int)=mkbig; int main(){struct Big r; r=g(5); "
+                       "return r.b+r.c;}\n",
+                       global_funcptr_struct_return, 3, 13);
+  const char *struct_funcptr_struct_return[] = {"(data (i32.const", "(table 1 funcref)",
+                                                "(call_indirect (param i32) (param i64)"};
+  failures += run_case("struct_funcptr_struct_return",
+                       "struct Big{int a; int b; int c;}; "
+                       "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; r.c=x+2; return r;} "
+                       "struct Ops{struct Big (*f)(int);}; struct Ops ops={mkbig}; "
+                       "int main(){struct Big r; r=ops.f(10); return r.a+r.c;}\n",
+                       struct_funcptr_struct_return, 3, 22);
   const char *funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
   failures += run_case("funcptr_void_call",
                        "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
