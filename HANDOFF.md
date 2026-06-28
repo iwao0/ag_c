@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き140: Keep assert comments in Wasm E2E transform + E2E 1073）
+最終更新: 2026-06-29（続き141: Lower Wasm atomics + E2E 1074）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1073/1073 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1074/1074 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -279,6 +279,11 @@
   Wasm E2E の変換がコメント行まで削除して壊れた C を生成していた。`assert.h` 除去を実際の
   preprocessor include 行だけに限定し、fixture を追加。Wasm E2E は
   静的 531 件 + extra 541 件 + link2 1 件の **1073 件**。
+- 続き141: **Wasm atomic lowering**。
+  `stdheader/stdatomic_ops.c` が `IR_ATOMIC` 未対応で E4008 になっていた。Wasm E2E は単一スレッド
+  `wasm-interp` 実行なので、`IR_ATOMIC_LOAD/STORE/RMW/CAS/FENCE` を通常の load/store/RMW/CAS/no-op
+  に lowering。CAS 用 scratch local を関数に追加し、`ir_op_name(IR_ATOMIC)` も補完した。
+  fixture を追加し、Wasm E2E は静的 531 件 + extra 542 件 + link2 1 件の **1074 件**。
 
 ### Wasm backend の既知メモ
 
@@ -286,11 +291,11 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1073 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
+  1074 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
-- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は 23 件。内訳は主に TLS (`load_tlv_addr`)、
+- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は 22 件。内訳は主に TLS (`load_tlv_addr`)、
   `_Complex` 算術の IR 構築失敗、`stdheader/complex_ops.c` の外部 math/complex 関数、
-  `stdheader/stdatomic_ops.c` の atomic IR、`arithmetic/mod_zero_impl_defined.c` の Wasm trap 差分。
+  `arithmetic/mod_zero_impl_defined.c` の Wasm trap 差分。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

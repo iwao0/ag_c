@@ -803,6 +803,145 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
 }
 
+static ir_type_t atomic_mem_type(ir_inst_t *i) {
+  return i->atomic_width == 8 ? IR_TY_I64 : IR_TY_I32;
+}
+
+static const char *atomic_load_op(ir_inst_t *i) {
+  switch (i->atomic_width ? i->atomic_width : 4) {
+    case 1: return i->is_unsigned ? "i32.load8_u" : "i32.load8_s";
+    case 2: return i->is_unsigned ? "i32.load16_u" : "i32.load16_s";
+    case 4: return "i32.load";
+    case 8: return "i64.load";
+    default: return NULL;
+  }
+}
+
+static const char *atomic_store_op(ir_inst_t *i) {
+  switch (i->atomic_width ? i->atomic_width : 4) {
+    case 1: return "i32.store8";
+    case 2: return "i32.store16";
+    case 4: return "i32.store";
+    case 8: return "i64.store";
+    default: return NULL;
+  }
+}
+
+static void emit_atomic_load_expr(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+  const char *op = atomic_load_op(i);
+  if (!op) wasm_unsupported_op(i->op);
+  cg_emitf("(%s ", op);
+  emit_addr_expr(ctx, i->src1);
+  cg_emitf(")");
+}
+
+static void emit_atomic_store(wasm_func_ctx_t *ctx, ir_inst_t *i, ir_val_t ptr, ir_val_t val,
+                              int indent) {
+  const char *op = atomic_store_op(i);
+  if (!op) wasm_unsupported_op(i->op);
+  wasm_emitf(indent, "(%s ", op);
+  emit_addr_expr(ctx, ptr);
+  cg_emitf(" ");
+  emit_val_expr_as(ctx, val, atomic_mem_type(i));
+  cg_emitf(")\n");
+}
+
+static const char *atomic_rmw_wasm_op(ir_inst_t *i) {
+  int is64 = atomic_mem_type(i) == IR_TY_I64;
+  switch (i->atomic_rmw_op) {
+    case IR_ARMW_ADD: return is64 ? "i64.add" : "i32.add";
+    case IR_ARMW_SUB: return is64 ? "i64.sub" : "i32.sub";
+    case IR_ARMW_OR:  return is64 ? "i64.or"  : "i32.or";
+    case IR_ARMW_AND: return is64 ? "i64.and" : "i32.and";
+    case IR_ARMW_XOR: return is64 ? "i64.xor" : "i32.xor";
+    default: return NULL;
+  }
+}
+
+static void emit_atomic_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
+  if (i->atomic_kind == IR_ATOMIC_FENCE) {
+    wasm_emitf(indent, "(nop)\n");
+    return;
+  }
+
+  ir_type_t mem_ty = atomic_mem_type(i);
+  if (i->atomic_kind == IR_ATOMIC_LOAD) {
+    ir_type_t dst_ty = effective_val_type(ctx, i->dst);
+    wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+    emit_wasm_type_cast_prefix(mem_ty, dst_ty, i->is_unsigned);
+    emit_atomic_load_expr(ctx, i);
+    emit_wasm_type_cast_suffix(mem_ty, dst_ty);
+    cg_emitf(")\n");
+    return;
+  }
+
+  if (i->atomic_kind == IR_ATOMIC_STORE) {
+    emit_atomic_store(ctx, i, i->src1, i->src2, indent);
+    return;
+  }
+
+  if (i->atomic_kind == IR_ATOMIC_RMW) {
+    ir_type_t dst_ty = effective_val_type(ctx, i->dst);
+    wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+    emit_wasm_type_cast_prefix(mem_ty, dst_ty, i->is_unsigned);
+    emit_atomic_load_expr(ctx, i);
+    emit_wasm_type_cast_suffix(mem_ty, dst_ty);
+    cg_emitf(")\n");
+
+    const char *store_op = atomic_store_op(i);
+    if (!store_op) wasm_unsupported_op(i->op);
+    wasm_emitf(indent, "(%s ", store_op);
+    emit_addr_expr(ctx, i->src1);
+    cg_emitf(" ");
+    if (i->atomic_rmw_op == IR_ARMW_XCHG) {
+      emit_val_expr_as(ctx, i->src2, mem_ty);
+    } else {
+      const char *op = atomic_rmw_wasm_op(i);
+      if (!op) wasm_unsupported_op(i->op);
+      cg_emitf("(%s ", op);
+      emit_val_expr_as(ctx, i->dst, mem_ty);
+      cg_emitf(" ");
+      emit_val_expr_as(ctx, i->src2, mem_ty);
+      cg_emitf(")");
+    }
+    cg_emitf(")\n");
+    return;
+  }
+
+  if (i->atomic_kind == IR_ATOMIC_CAS) {
+    const char *load_op = atomic_load_op(i);
+    const char *store_op = atomic_store_op(i);
+    const char *eq_op = mem_ty == IR_TY_I64 ? "i64.eq" : "i32.eq";
+    const char *tmp = mem_ty == IR_TY_I64 ? "$atomic_tmp_i64" : "$atomic_tmp_i32";
+    const char *exp = mem_ty == IR_TY_I64 ? "$atomic_exp_i64" : "$atomic_exp_i32";
+    if (!load_op || !store_op) wasm_unsupported_op(i->op);
+
+    wasm_emitf(indent, "(local.set %s (%s ", tmp, load_op);
+    emit_addr_expr(ctx, i->src1);
+    cg_emitf("))\n");
+    wasm_emitf(indent, "(local.set %s (%s ", exp, load_op);
+    emit_addr_expr(ctx, i->src2);
+    cg_emitf("))\n");
+    wasm_emitf(indent, "(local.set $v%d (%s (local.get %s) (local.get %s)))\n",
+               i->dst.id, eq_op, tmp, exp);
+    wasm_emitf(indent, "(if (local.get $v%d)\n", i->dst.id);
+    wasm_emitf(indent + 2, "(then\n");
+    wasm_emitf(indent + 4, "(%s ", store_op);
+    emit_addr_expr(ctx, i->src1);
+    cg_emitf(" ");
+    emit_val_expr_as(ctx, i->src3, mem_ty);
+    cg_emitf(")\n");
+    wasm_emitf(indent + 2, ")\n");
+    wasm_emitf(indent, ")\n");
+    wasm_emitf(indent, "(%s ", store_op);
+    emit_addr_expr(ctx, i->src2);
+    cg_emitf(" (local.get %s))\n", tmp);
+    return;
+  }
+
+  wasm_unsupported_op(i->op);
+}
+
 static int uses_ptr_value(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   ir_type_t src1 = effective_val_type(ctx, i->src1);
   ir_type_t src2 = effective_val_type(ctx, i->src2);
@@ -1126,6 +1265,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_STORE:
       emit_store(ctx, i, indent);
       return;
+    case IR_ATOMIC:
+      emit_atomic_inst(ctx, i, indent);
+      return;
     case IR_MEMCPY:
       emit_memcpy(ctx, i, indent);
       return;
@@ -1326,6 +1468,10 @@ static void emit_func(ir_func_t *f) {
   wasm_emitf(4, "(local $fp i32)\n");
   wasm_emitf(4, "(local $old_sp i32)\n");
   wasm_emitf(4, "(local $old_va_arg_area i32)\n");
+  wasm_emitf(4, "(local $atomic_tmp_i32 i32)\n");
+  wasm_emitf(4, "(local $atomic_exp_i32 i32)\n");
+  wasm_emitf(4, "(local $atomic_tmp_i64 i64)\n");
+  wasm_emitf(4, "(local $atomic_exp_i64 i64)\n");
   if (ctx.has_control_flow) wasm_emitf(4, "(local $pc i32)\n");
   if (ctx.frame_size > 0) {
     wasm_emitf(4, "(local.set $old_sp (global.get $__stack_pointer))\n");

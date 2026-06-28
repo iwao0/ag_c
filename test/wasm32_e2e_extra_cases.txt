@@ -516,6 +516,7 @@ stdarg/va_copy_func.c
 stdheader/ctype_isalpha.c
 stdheader/ctype_isdigit.c
 stdheader/ctype_toupper.c
+stdheader/stdatomic_ops.c
 stdheader/stdlib_abs.c
 stdheader/stdlib_atoi.c
 stdheader/stdlib_malloc_free.c
