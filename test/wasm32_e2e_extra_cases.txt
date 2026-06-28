@@ -361,6 +361,7 @@ probes_found_bugs/unsigned_subint_return_promote.c
 probes_found_bugs/unsupported_gnu_extensions_warn_skip.c
 probes_found_bugs/variadic_macro_empty_va.c
 probes_found_bugs/variadic_macro_forward.c
+probes_found_bugs/variadic_unnamed_proto_fixed_args.c
 probes_found_bugs/void_ptr_return.c
 probes_found_bugs/vla_2d_param.c
 probes_found_bugs/vla_2d_param_and_row_sizeof.c
@@ -369,6 +370,7 @@ probes_found_bugs/vla_3d4d_param.c
 probes_found_bugs/vla_4d_and_higher.c
 probes_found_bugs/vla_double_element.c
 probes_found_bugs/vla_mixed_dims.c
+probes_found_bugs/vla_sizeof_direct.c
 probes_found_bugs/vla_struct_local.c
 probes_found_bugs/wide_string_literal_init.c
 shift/shift_neg_right.c
