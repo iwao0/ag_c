@@ -156,6 +156,26 @@ int main(void) {
   failures += run_case("global_ptr_array_addr",
                        "int data[3]={4,5,6}; int *p[2]={&data[0],data+2}; int main(){return *p[0]+*p[1];}\n",
                        global_ptr_array_addr, 2, 10);
+  const char *global_struct[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct",
+                       "struct P{int a; int b;}; struct P g={3,4}; int main(){return g.a+g.b;}\n",
+                       global_struct, 2, 7);
+  const char *global_struct_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct_array",
+                       "struct P{int a; int b;}; struct P g[2]={{1,2},{3,4}}; int main(){return g[1].a+g[1].b;}\n",
+                       global_struct_array, 2, 7);
+  const char *global_struct_char_array[] = {"(data (i32.const", "\"abc\\00\""};
+  failures += run_case("global_struct_char_array",
+                       "struct S{char name[4]; int id;}; struct S g={\"abc\",5}; int main(){return g.name[1]+g.id;}\n",
+                       global_struct_char_array, 2, 103);
+  const char *global_struct_str_ptr[] = {"(data (i32.const", "\"hi\\00\"", "i32.load"};
+  failures += run_case("global_struct_str_ptr",
+                       "struct S{char *name; int id;}; struct S g={\"hi\",5}; int main(){return g.name[0]+g.id;}\n",
+                       global_struct_str_ptr, 3, 109);
+  const char *global_struct_bool[] = {"(data (i32.const", "\\01"};
+  failures += run_case("global_struct_bool",
+                       "struct S{_Bool b; int x;}; struct S g={100,4}; int main(){return g.b+g.x;}\n",
+                       global_struct_bool, 2, 5);
   const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
   failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
   const char *struct_copy[] = {"i64.store", "i64.load", "i32.store", "i32.load"};
@@ -171,6 +191,9 @@ int main(void) {
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
   failures += run_fail_case("funcptr_init",
                             "int f(){return 1;} int (*fp[1])()={f}; int main(){return 0;}\n",
+                            "E4008");
+  failures += run_fail_case("global_struct_fp",
+                            "struct S{double d; int x;}; struct S g={1.5,2}; int main(){return g.x;}\n",
                             "E4008");
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",

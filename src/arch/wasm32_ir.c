@@ -847,16 +847,91 @@ static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
   emit_i32_data_bytes(addr, (long long)sym_addr + gv->init_symbol_offset, size);
 }
 
+static void emit_global_init_slot_data(global_var_t *gv, int idx, int addr, int size, int normalize_bool) {
+  if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global member size in Wasm backend");
+  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
+                    ? gv->init_value_symbol_lens[idx] : 0;
+  if (!sym && (sym_len == -2 || sym_len == -3)) {
+    wasm_unsupported_msg("floating global struct initializer in Wasm backend");
+  }
+  long long value = (idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0;
+  if (normalize_bool) value = value != 0;
+  if (sym) {
+    int sym_addr = data_addr_for_init_symbol(sym, sym_len);
+    if (sym_addr < 0) wasm_unsupported_msg("symbol global struct initializer in Wasm backend");
+    value += sym_addr;
+  }
+  emit_i32_data_bytes(addr, value, size);
+}
+
+static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
+                                                global_var_t *gv, int *val_idx, int base_addr) {
+  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
+  for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
+    if (mi.fp_kind != TK_FLOAT_KIND_NONE || mi.bit_width > 0) {
+      wasm_unsupported_msg("global struct member initializer in Wasm backend");
+    }
+    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+      wasm_unsupported_msg("global union member initializer in Wasm backend");
+    }
+    if (mi.array_len > 0) {
+      if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+        if (mi.tag_kind == TK_UNION) wasm_unsupported_msg("global union array initializer in Wasm backend");
+        for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+          emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
+                                              base_addr + mi.offset + k * mi.type_size);
+        }
+      } else {
+        for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+          int slot = (*val_idx)++;
+          emit_global_init_slot_data(gv, slot, base_addr + mi.offset + k * mi.type_size,
+                                     mi.type_size, mi.is_bool);
+        }
+      }
+      continue;
+    }
+    if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+      emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
+                                          base_addr + mi.offset);
+      continue;
+    }
+    int slot = (*val_idx)++;
+    emit_global_init_slot_data(gv, slot, base_addr + mi.offset, mi.type_size, mi.is_bool);
+  }
+}
+
+static void emit_global_struct_data(global_var_t *gv, int addr) {
+  if (gv->tag_kind == TK_UNION || gv->is_tag_pointer) {
+    wasm_unsupported_msg("global aggregate initializer in Wasm backend");
+  }
+  int val_idx = 0;
+  if (gv->is_array) {
+    int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
+    int total = elem_size > 0 ? (int)gv->type_size / elem_size : 0;
+    for (int e = 0; e < total && val_idx < gv->init_count; e++) {
+      emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx,
+                                          addr + e * elem_size);
+    }
+  } else {
+    emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx, addr);
+  }
+}
+
 static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
   if (gv->is_extern_decl) return;
-  if (gv->is_thread_local || gv->fp_kind != TK_FLOAT_KIND_NONE || gv->tag_kind != TK_EOF ||
-      gv->init_fvalues) {
+  if (gv->is_thread_local || gv->fp_kind != TK_FLOAT_KIND_NONE ||
+      (gv->tag_kind == TK_EOF && gv->init_fvalues)) {
     wasm_unsupported_msg("global initializer in Wasm backend");
   }
   int addr = data_addr_for_global(gv->name, gv->name_len);
   int size = gv->type_size > 0 ? gv->type_size : 4;
-  if (gv->init_symbol) {
+  if (gv->tag_kind != TK_EOF && !gv->is_tag_pointer) {
+    emit_global_struct_data(gv, addr);
+  } else if (gv->init_symbol) {
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
     emit_global_symbol_addr_data(gv, addr, size);
   } else if (gv->init_count > 0) {
