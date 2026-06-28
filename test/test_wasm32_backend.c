@@ -231,6 +231,16 @@ int main(void) {
                        "struct P{int a; int b; int c;}; int main(){struct P x; struct P y; "
                        "x.a=3; x.b=4; x.c=5; y=x; return y.a+y.b+y.c;}\n",
                        struct_copy, 4, 12);
+  const char *struct8_return[] = {"(func $make (result i64)", "i64.load", "i64.store"};
+  failures += run_case("struct8_return",
+                       "struct P{int a; int b;}; struct P make(){struct P p; p.a=3; p.b=4; "
+                       "return p;} int main(){struct P q; q=make(); return q.a+q.b;}\n",
+                       struct8_return, 3, 7);
+  const char *struct8_return_deref[] = {"(func $make (param $p0 i64) (result i64)", "i64.load", "i64.store"};
+  failures += run_case("struct8_return_deref",
+                       "struct P{int a; int b;}; struct P make(struct P *p){return *p;} "
+                       "int main(){struct P q; q.a=8; q.b=9; struct P r; r=make(&q); return r.a+r.b;}\n",
+                       struct8_return_deref, 3, 17);
   const char *alignas32[] = {"i32.and", "i32.const -32"};
   failures += run_case("alignas32",
                        "int main(){_Alignas(32) int x; x=7; return x + (((long)&x) & 31);}\n",

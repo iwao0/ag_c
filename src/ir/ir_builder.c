@@ -2535,6 +2535,37 @@ static void build_stmt_block(ir_build_ctx_t *ctx, node_t *node) {
   }
 }
 
+static ir_val_t build_small_struct_return_value(ir_build_ctx_t *ctx, node_t *src, int size) {
+  if (size != 8) return ir_val_none();
+  if (src && src->kind == ND_COMMA && src->rhs) {
+    (void)build_expr(ctx, src->lhs);
+    if (ctx->failed) return ir_val_none();
+    src = src->rhs;
+  }
+  if (src && src->kind == ND_FUNCALL) {
+    return build_expr(ctx, src);
+  }
+
+  int src_ptr = -1;
+  if (src && src->kind == ND_LVAR) {
+    src_ptr = address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
+  } else if (src && src->kind == ND_DEREF) {
+    ir_val_t p = build_expr(ctx, src->lhs);
+    if (ctx->failed) return ir_val_none();
+    src_ptr = p.id;
+  } else if (src && src->kind == ND_GVAR) {
+    src_ptr = address_of_gvar(ctx, (node_gvar_t *)src);
+  }
+  if (src_ptr < 0) return ir_val_none();
+
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ld = ir_inst_new(IR_LOAD);
+  ld->dst = ir_val_vreg(v, IR_TY_I64);
+  ld->src1 = ir_val_vreg(src_ptr, IR_TY_PTR);
+  ir_func_append_inst(ctx->f, ld);
+  return ld->dst;
+}
+
 static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
   if (ctx->f->ret_struct_size > 0 && node->lhs) {
@@ -2576,6 +2607,17 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     inst->src1 = ir_val_none();
     ir_func_append_inst(ctx->f, inst);
     return;
+  }
+  if (node->lhs && ctx->cur_fn && ctx->cur_fn->base.ret_struct_size == 8 &&
+      ctx->f->ret_type == IR_TY_I64) {
+    ir_val_t sv = build_small_struct_return_value(ctx, node->lhs, ctx->cur_fn->base.ret_struct_size);
+    if (ctx->failed) return;
+    if (sv.id != IR_VAL_NONE) {
+      ir_inst_t *inst = ir_inst_new(IR_RET);
+      inst->src1 = sv;
+      ir_func_append_inst(ctx->f, inst);
+      return;
+    }
   }
   /* _Complex 戻り値 (HFA): 戻り式を temp slot に {re,im} で materialize し、
    * IR_RET に slot の PTR と half を渡す (codegen が re→d0/s0, im→d1/s1)。 */
