@@ -267,6 +267,7 @@ probes_found_bugs/sizeof_string_literal.c
 probes_found_bugs/static_assert_in_struct.c
 probes_found_bugs/static_internal_linkage.c
 probes_found_bugs/static_local_array_param_overlap.c
+probes_found_bugs/static_local_array_sizeof.c
 probes_found_bugs/static_local_float_init.c
 probes_found_bugs/static_local_int_array.c
 probes_found_bugs/static_local_multidim_array.c

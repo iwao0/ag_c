@@ -1664,7 +1664,8 @@ static void emit_global_data(global_var_t *gv, void *user) {
   } else if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
     emit_fp_data_bytes(addr, (tk_float_kind_t)gv->fp_kind, gv->has_init ? gv->fval : 0.0);
   } else {
-    if (!gv->has_init && size > 8) return;
+    if ((!gv->has_init || gv->init_val == 0) &&
+        size != 1 && size != 2 && size != 4 && size != 8) return;
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
     emit_i32_data_bytes(addr, gv->has_init ? gv->init_val : 0, size);
   }
