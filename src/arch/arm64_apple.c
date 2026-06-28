@@ -3,9 +3,7 @@
  *
  * ag_c は AST → IR → ASM の経路で関数本体を生成する (arm64_apple_ir.c)。
  * このファイルは IR バックエンドと main.c が共有する以下を提供する:
- *   - cg_emitf / cg_emit_mov_imm: 低レベル emit ヘルパ (str/ldr 連を peephole で
- *     潰すバッファ付き)
- *   - gen_set_output_callback: stdout 以外への出力切り替え
+ *   - cg_emit_mov_imm: ARM64 即値ロードヘルパ
  *   - gen_string_literals / gen_float_literals / gen_global_vars: parser が登録
  *     した文字列 / 浮動小数点定数 / グローバル変数のデータセクション emit
  *
@@ -13,6 +11,7 @@
  * Phase 7o で IR 経路が fixture 100% を通過したため、AST 経路は不要になった。
  */
 
+#include "arm64_apple_emit.h"
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
 /* arm64_apple.c は AST node 型を使わない。
@@ -23,112 +22,8 @@
 #include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <stdbool.h>
-#include <stdarg.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
-static gen_output_line_fn gen_output_cb;
-static void *gen_output_user_data;
-
-/* ピープホール最適化: 直前の出力行をバッファして、
- *   str x0, [sp, #-16]!  +  ldr x0, [sp], #16  → 両方除去
- *   str x0, [sp, #-16]!  +  ldr x1, [sp], #16  → mov x1, x0
- * のような自明な push/pop ペアを潰す。IR 経路でもこの 2 パターンは出るので
- * 残しておく価値がある。 */
-#define PEEPHOLE_BUF_SIZE 128
-static char peephole_buf[PEEPHOLE_BUF_SIZE];
-static size_t peephole_len = 0;
-static int peephole_has_line = 0;
-
-static const char STR_X0_PUSH[] = "  str x0, [sp, #-16]!\n";
-static const char LDR_X0_POP[]  = "  ldr x0, [sp], #16\n";
-static const char LDR_X1_POP[]  = "  ldr x1, [sp], #16\n";
-static const char MOV_X1_X0[]   = "  mov x1, x0\n";
-
-static void cg_raw_emit(const char *line, size_t len) {
-  if (gen_output_cb) {
-    gen_output_cb(line, len, gen_output_user_data);
-  } else {
-    fwrite(line, 1, len, stdout);
-  }
-}
-
-static void cg_flush_peephole(void) {
-  if (!peephole_has_line) return;
-  cg_raw_emit(peephole_buf, peephole_len);
-  peephole_has_line = 0;
-  peephole_len = 0;
-}
-
-static void cg_emit_line(const char *line, size_t len) {
-  if (peephole_has_line
-      && peephole_len == sizeof(STR_X0_PUSH) - 1
-      && memcmp(peephole_buf, STR_X0_PUSH, peephole_len) == 0) {
-    if (len == sizeof(LDR_X0_POP) - 1
-        && memcmp(line, LDR_X0_POP, len) == 0) {
-      peephole_has_line = 0;
-      peephole_len = 0;
-      return;
-    }
-    if (len == sizeof(LDR_X1_POP) - 1
-        && memcmp(line, LDR_X1_POP, len) == 0) {
-      peephole_has_line = 0;
-      peephole_len = 0;
-      cg_raw_emit(MOV_X1_X0, sizeof(MOV_X1_X0) - 1);
-      return;
-    }
-  }
-  cg_flush_peephole();
-  if (len < PEEPHOLE_BUF_SIZE) {
-    memcpy(peephole_buf, line, len);
-    peephole_len = len;
-    peephole_has_line = 1;
-  } else {
-    cg_raw_emit(line, len);
-  }
-}
-
-/* IR バックエンド (arm64_apple_ir.c) からも呼ばれるため非 static。 */
-void cg_emitf(const char *fmt, ...) {
-  char stack_buf[256];
-  va_list ap;
-  va_start(ap, fmt);
-  va_list ap2;
-  va_copy(ap2, ap);
-  int need_i = vsnprintf(stack_buf, sizeof(stack_buf), fmt, ap2);
-  va_end(ap2);
-  if (need_i < 0) {
-    va_end(ap);
-    diag_emit_internalf(DIAG_ERR_CODEGEN_OUTPUT_FAILED, "%s",
-                        diag_message_for(DIAG_ERR_CODEGEN_OUTPUT_FAILED));
-  }
-  size_t need = (size_t)need_i;
-  char *buf = stack_buf;
-  char *heap_buf = NULL;
-  if (need >= sizeof(stack_buf)) {
-    heap_buf = malloc(need + 1);
-    if (!heap_buf) {
-      va_end(ap);
-      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-    }
-    vsnprintf(heap_buf, need + 1, fmt, ap);
-    buf = heap_buf;
-  }
-  va_end(ap);
-  size_t start = 0;
-  for (size_t i = 0; i < need; i++) {
-    if (buf[i] == '\n') {
-      cg_emit_line(buf + start, i - start + 1);
-      start = i + 1;
-    }
-  }
-  if (start < need) {
-    cg_emit_line(buf + start, need - start);
-  }
-  free(heap_buf);
-}
 
 /* AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンス。
  * IR バックエンドからも共有するため非 static。 */
@@ -153,12 +48,6 @@ void cg_emit_mov_imm(const char *reg, long long val) {
       cg_emitf("  movk %s, #%llu, lsl #%d\n", reg, (unsigned long long)chunk, shift);
     }
   }
-}
-
-void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
-  cg_flush_peephole();
-  gen_output_cb = cb;
-  gen_output_user_data = user_data;
 }
 
 /* ------------------------------------------------------------------ */

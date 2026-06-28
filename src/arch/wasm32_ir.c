@@ -1,5 +1,5 @@
 #include "wasm32_ir.h"
-#include "arm64_apple_emit.h"
+#include "../codegen_emit.h"
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
 #include "../parser/semantic_ctx.h"
