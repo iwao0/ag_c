@@ -202,7 +202,6 @@ static void add_alloca_slot(wasm_func_ctx_t *ctx, ir_inst_t *i) {
     ctx->alloca_cap = ncap;
   }
   int align = i->alloca_align > 0 ? i->alloca_align : 4;
-  if (align > 16) wasm_unsupported_op(i->op);
   ctx->frame_size = align_to(ctx->frame_size, align);
   ctx->allocas[ctx->alloca_count].vreg = i->dst.id;
   ctx->allocas[ctx->alloca_count].offset = ctx->frame_size;
@@ -454,6 +453,13 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_MEMCPY:
       emit_memcpy(i, indent);
       return;
+    case IR_ALIGN_PTR: {
+      int align = i->alloca_align > 0 ? i->alloca_align : 16;
+      wasm_emitf(indent, "(local.set $v%d (i32.and (i32.add ", i->dst.id);
+      emit_addr_expr(i->src1);
+      cg_emitf(" (i32.const %d)) (i32.const %d)))\n", align - 1, -align);
+      return;
+    }
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
       emit_addr_expr(i->src1);

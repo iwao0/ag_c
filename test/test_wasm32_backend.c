@@ -143,6 +143,10 @@ int main(void) {
                        "struct P{int a; int b; int c;}; int main(){struct P x; struct P y; "
                        "x.a=3; x.b=4; x.c=5; y=x; return y.a+y.b+y.c;}\n",
                        struct_copy, 4, 12);
+  const char *alignas32[] = {"i32.and", "i32.const -32"};
+  failures += run_case("alignas32",
+                       "int main(){_Alignas(32) int x; x=7; return x + (((long)&x) & 31);}\n",
+                       alignas32, 2, 7);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
