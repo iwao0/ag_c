@@ -554,6 +554,27 @@ int main(void) {
                        "int add1(int x){return x+1;} struct Ops{int (*f)(int);}; "
                        "struct Ops ops={add1}; int main(){return ops.f(41);}\n",
                        struct_funcptr_call, 3, 42);
+  const char *struct_funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
+  failures += run_case("struct_funcptr_void_call",
+                       "void set(int *p){*p=9;} struct Ops{void (*f)(int*);}; "
+                       "struct Ops ops={set}; int main(){int x; x=0; ops.f(&x); return x;}\n",
+                       struct_funcptr_void_call, 2, 9);
+  const char *struct_funcptr_unused_result_call[] = {"drop", "call_indirect", "(result i32)"};
+  failures += run_case("struct_funcptr_unused_result_call",
+                       "int set(int *p){*p=9; return 123;} struct Ops{int (*f)(int*);}; "
+                       "struct Ops ops={set}; int main(){int x; x=0; ops.f(&x); return x;}\n",
+                       struct_funcptr_unused_result_call, 3, 9);
+  const char *struct_funcptr_store_call[] = {"(table 2 funcref)", "$set7 $set9", "call_indirect"};
+  failures += run_case("struct_funcptr_store_call",
+                       "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
+                       "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
+                       "int main(){int x; x=0; ops.f=set7; ops.f(&x); return x;}\n",
+                       struct_funcptr_store_call, 3, 7);
+  failures += run_fail_case("struct_funcptr_control_flow_store",
+                            "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
+                            "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
+                            "int main(){int x; x=0; if(1) ops.f=set7; ops.f(&x); return x;}\n",
+                            "E4008");
   failures += run_fail_case("global_funcptr_external_ref",
                             "int ext(int); int (*g)(int)=ext; int main(){return 0;}\n",
                             "E4008");

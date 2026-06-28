@@ -25,6 +25,7 @@ typedef struct {
 
 typedef struct {
   global_var_t *gv;
+  int offset;
   char *func_ref_name;
   int func_ref_name_len;
   int is_set;
@@ -45,6 +46,9 @@ typedef struct {
   char **vreg_func_ref_names;
   int *vreg_func_ref_name_lens;
   global_var_t **vreg_global_refs;
+  int *vreg_global_ref_offsets;
+  unsigned char *vreg_const_known;
+  long long *vreg_const_values;
   int has_control_flow;
 } wasm_func_ctx_t;
 
@@ -377,14 +381,33 @@ static char *get_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, int *out_len) {
   return ctx->vreg_func_ref_names[vreg];
 }
 
-static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg, global_var_t *gv) {
+static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg, global_var_t *gv, int offset) {
   if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
   ctx->vreg_global_refs[vreg] = gv;
+  ctx->vreg_global_ref_offsets[vreg] = offset;
 }
 
-static global_var_t *get_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg) {
+static global_var_t *get_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg, int *out_offset) {
+  if (out_offset) *out_offset = 0;
   if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return NULL;
+  if (out_offset) *out_offset = ctx->vreg_global_ref_offsets[vreg];
   return ctx->vreg_global_refs[vreg];
+}
+
+static void set_vreg_const(wasm_func_ctx_t *ctx, int vreg, long long value) {
+  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
+  ctx->vreg_const_known[vreg] = 1;
+  ctx->vreg_const_values[vreg] = value;
+}
+
+static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value) {
+  if (v.id == IR_VAL_IMM) {
+    if (out_value) *out_value = v.imm;
+    return 1;
+  }
+  if (v.id < 0 || v.id >= ctx->f->next_vreg_id || !ctx->vreg_const_known[v.id]) return 0;
+  if (out_value) *out_value = ctx->vreg_const_values[v.id];
+  return 1;
 }
 
 static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
@@ -395,17 +418,21 @@ static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
   return gv->init_symbol;
 }
 
-static wasm_global_func_state_t *find_global_func_state(wasm_func_ctx_t *ctx, global_var_t *gv) {
+static wasm_global_func_state_t *find_global_func_state(wasm_func_ctx_t *ctx, global_var_t *gv,
+                                                        int offset) {
   if (!gv) return NULL;
   for (int i = 0; i < ctx->global_func_state_count; i++) {
-    if (ctx->global_func_states[i].gv == gv) return &ctx->global_func_states[i];
+    if (ctx->global_func_states[i].gv == gv && ctx->global_func_states[i].offset == offset) {
+      return &ctx->global_func_states[i];
+    }
   }
   return NULL;
 }
 
-static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, char *name, int name_len) {
+static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offset, char *name,
+                                int name_len) {
   if (!gv) return;
-  wasm_global_func_state_t *s = find_global_func_state(ctx, gv);
+  wasm_global_func_state_t *s = find_global_func_state(ctx, gv, offset);
   if (!s) {
     if (ctx->global_func_state_count == ctx->global_func_state_cap) {
       int ncap = ctx->global_func_state_cap ? ctx->global_func_state_cap * 2 : 8;
@@ -417,20 +444,55 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, char *na
     }
     s = &ctx->global_func_states[ctx->global_func_state_count++];
     s->gv = gv;
+    s->offset = offset;
   }
   s->func_ref_name = name;
   s->func_ref_name_len = name_len;
   s->is_set = 1;
 }
 
-static char *current_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int *out_len) {
+static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) {
   if (out_len) *out_len = 0;
-  wasm_global_func_state_t *s = find_global_func_state(ctx, gv);
+  if (!gv || gv->tag_kind == TK_EOF || gv->is_tag_pointer || gv->is_array || !gv->init_value_symbols) {
+    return NULL;
+  }
+  int n = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+  int init_idx = 0;
+  for (int m = 0; m < n; m++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, m, &mi)) break;
+    if (mi.bit_width > 0) {
+      init_idx++;
+      continue;
+    }
+    if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) return NULL;
+    if (mi.offset == offset && init_idx < gv->init_count) {
+      char *sym = gv->init_value_symbols[init_idx];
+      int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;
+      if (sym && sym_len > 0 && psx_ctx_has_function_name(sym, sym_len)) {
+        if (out_len) *out_len = sym_len;
+        return sym;
+      }
+      return NULL;
+    }
+    init_idx++;
+  }
+  return NULL;
+}
+
+static char *current_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offset,
+                                     int *out_len) {
+  if (out_len) *out_len = 0;
+  wasm_global_func_state_t *s = find_global_func_state(ctx, gv, offset);
   if (s && s->is_set) {
     if (out_len) *out_len = s->func_ref_name_len;
     return s->func_ref_name;
   }
-  return global_scalar_func_ref(gv, out_len);
+  if (offset == 0) {
+    char *name = global_scalar_func_ref(gv, out_len);
+    if (name) return name;
+  }
+  return global_member_func_ref(gv, offset, out_len);
 }
 
 static void infer_alloca_value_types(wasm_func_ctx_t *ctx) {
@@ -469,8 +531,12 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
   ctx->vreg_func_ref_names = calloc((size_t)ctx->f->next_vreg_id, sizeof(char *));
   ctx->vreg_func_ref_name_lens = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
   ctx->vreg_global_refs = calloc((size_t)ctx->f->next_vreg_id, sizeof(global_var_t *));
+  ctx->vreg_global_ref_offsets = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
+  ctx->vreg_const_known = calloc((size_t)ctx->f->next_vreg_id, sizeof(unsigned char));
+  ctx->vreg_const_values = calloc((size_t)ctx->f->next_vreg_id, sizeof(long long));
   if (!ctx->vreg_type_seen || !ctx->vreg_types || !ctx->vreg_unsigned ||
-      !ctx->vreg_func_ref_names || !ctx->vreg_func_ref_name_lens || !ctx->vreg_global_refs) {
+      !ctx->vreg_func_ref_names || !ctx->vreg_func_ref_name_lens || !ctx->vreg_global_refs ||
+      !ctx->vreg_global_ref_offsets || !ctx->vreg_const_known || !ctx->vreg_const_values) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
@@ -607,16 +673,18 @@ static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   if (slot && slot->func_ref_name) {
     set_vreg_func_ref(ctx, i->dst.id, slot->func_ref_name, slot->func_ref_name_len);
   } else {
-    global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id);
+    int global_off = 0;
+    global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &global_off);
     int name_len = 0;
-    char *name = current_global_func_ref(ctx, gv, &name_len);
+    char *name = current_global_func_ref(ctx, gv, global_off, &name_len);
     if (name) set_vreg_func_ref(ctx, i->dst.id, name, name_len);
   }
 }
 
 static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
-  global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id);
+  int global_off = 0;
+  global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &global_off);
   const char *op = NULL;
   switch (effective_val_type(ctx, i->src2)) {
     case IR_TY_I8:  op = "i32.store8"; break;
@@ -643,9 +711,9 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     int name_len = 0;
     char *name = get_vreg_func_ref(ctx, i->src2.id, &name_len);
     if (ctx->has_control_flow) {
-      set_global_func_ref(ctx, gv, NULL, 0);
+      set_global_func_ref(ctx, gv, global_off, NULL, 0);
     } else {
-      set_global_func_ref(ctx, gv, name, name_len);
+      set_global_func_ref(ctx, gv, global_off, name, name_len);
     }
   }
 }
@@ -817,6 +885,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       emit_val_expr(ctx, i->src1);
       cg_emitf(")\n");
+      if (!is_fp_type(i->dst.type)) set_vreg_const(ctx, i->dst.id, i->src1.imm);
       return;
     case IR_LOAD_FP_IMM:
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
@@ -838,7 +907,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       }
       int addr = data_addr_for_global(i->sym, i->sym_len);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
-      set_vreg_global_ref(ctx, i->dst.id, psx_find_global_var(i->sym, i->sym_len));
+      set_vreg_global_ref(ctx, i->dst.id, psx_find_global_var(i->sym, i->sym_len), 0);
       return;
     }
     case IR_ZEXT:
@@ -969,6 +1038,18 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       cg_emitf(" ");
       emit_val_expr_as(ctx, i->src2, op_ty);
       cg_emitf("))\n");
+      if ((i->op == IR_ADD || i->op == IR_SUB) && !is_cmp) {
+        int base_off = 0;
+        global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &base_off);
+        long long delta = 0;
+        if (gv && get_vreg_const(ctx, i->src2, &delta)) {
+          if (i->op == IR_SUB) delta = -delta;
+          set_vreg_global_ref(ctx, i->dst.id, gv, base_off + (int)delta);
+        } else if (i->op == IR_ADD && get_vreg_const(ctx, i->src1, &delta)) {
+          gv = get_vreg_global_ref(ctx, i->src2.id, &base_off);
+          if (gv) set_vreg_global_ref(ctx, i->dst.id, gv, base_off + (int)delta);
+        }
+      }
       return;
     }
     case IR_CALL:
@@ -1110,6 +1191,9 @@ static void emit_func(ir_func_t *f) {
   free(ctx.vreg_func_ref_names);
   free(ctx.vreg_func_ref_name_lens);
   free(ctx.vreg_global_refs);
+  free(ctx.vreg_global_ref_offsets);
+  free(ctx.vreg_const_known);
+  free(ctx.vreg_const_values);
 }
 
 void wasm32_module_begin(void) {
