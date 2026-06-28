@@ -115,9 +115,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_ptr_typedef = 0;
     unsigned short member_typedef_funcptr_param_fp_mask = 0;
     unsigned short member_typedef_funcptr_param_int_mask = 0;
-    int member_typedef_funcptr_ret_pointee_array_first_dim = 0;
-    int member_typedef_funcptr_ret_pointee_array_second_dim = 0;
-    int member_typedef_funcptr_ret_pointee_array_elem_size = 0;
+    psx_ret_pointee_array_t member_typedef_funcptr_ret_pointee_array = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
     if (psx_ctx_is_type_token(curtok()->kind)) {
@@ -206,12 +204,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
         }
         if (_ti.is_pointer && _ti.funcptr_ret_pointee_array_first_dim) {
-          member_typedef_funcptr_ret_pointee_array_first_dim =
-              _ti.funcptr_ret_pointee_array_first_dim;
-          member_typedef_funcptr_ret_pointee_array_second_dim =
-              _ti.funcptr_ret_pointee_array_second_dim;
-          member_typedef_funcptr_ret_pointee_array_elem_size =
-              _ti.funcptr_ret_pointee_array_elem_size;
+          member_typedef_funcptr_ret_pointee_array =
+              psx_ret_pointee_array_make(_ti.funcptr_ret_pointee_array_first_dim,
+                                         _ti.funcptr_ret_pointee_array_second_dim,
+                                         _ti.funcptr_ret_pointee_array_elem_size);
         }
         if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
           member_fp_kind = _ti.fp_kind;
@@ -355,9 +351,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int pointee_arr_dim_count = 0;
       int pointee_arr_first_dim = 0;
       int ptr_array_pointee_bytes = 0;
-      int direct_funcptr_ret_pointee_array_first_dim = 0;
-      int direct_funcptr_ret_pointee_array_second_dim = 0;
-      int direct_funcptr_ret_pointee_array_elem_size = 0;
+      psx_ret_pointee_array_t direct_funcptr_ret_pointee_array = {0};
       if (head.is_ptr && head.has_func_suffix && arr_size > 1 && !is_flex_array) {
         /* 関数ポインタメンバが配列へのポインタを返す直書き宣言子:
          * `int (*(*f)(void))[N]` / `int (*(*f)(void))[N][M]`。
@@ -365,9 +359,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * メンバは 8B の関数ポインタ 1 個として layout し、次元は呼び出し側 subscript 用に保存する。 */
         psx_ret_pointee_array_absorb_member_suffix(
             &arr_size, &arr_dim_count, &arr_first_dim, arr_dims_buf, 8,
-            &direct_funcptr_ret_pointee_array_first_dim,
-            &direct_funcptr_ret_pointee_array_second_dim);
-        direct_funcptr_ret_pointee_array_elem_size = elem_size;
+            elem_size, &direct_funcptr_ret_pointee_array);
       }
       if (head.ptr_in_paren && head.is_ptr && arr_size > 1 && !is_flex_array
           && !head.has_func_suffix) {
@@ -476,20 +468,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.funcptr_param_int_mask = head.has_func_suffix
                                            ? psx_last_funcptr_param_int_mask()
                                            : member_typedef_funcptr_param_int_mask;
-          if (member_typedef_funcptr_ret_pointee_array_first_dim > 0) {
-            _mi.funcptr_ret_pointee_array_first_dim =
-                (short)member_typedef_funcptr_ret_pointee_array_first_dim;
-            _mi.funcptr_ret_pointee_array_second_dim =
-                (short)member_typedef_funcptr_ret_pointee_array_second_dim;
-            _mi.funcptr_ret_pointee_array_elem_size =
-                (short)member_typedef_funcptr_ret_pointee_array_elem_size;
-          } else if (direct_funcptr_ret_pointee_array_first_dim > 0) {
-            _mi.funcptr_ret_pointee_array_first_dim =
-                (short)direct_funcptr_ret_pointee_array_first_dim;
-            _mi.funcptr_ret_pointee_array_second_dim =
-                (short)direct_funcptr_ret_pointee_array_second_dim;
-            _mi.funcptr_ret_pointee_array_elem_size =
-                (short)direct_funcptr_ret_pointee_array_elem_size;
+          psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
+              member_typedef_funcptr_ret_pointee_array,
+              direct_funcptr_ret_pointee_array);
+          if (psx_ret_pointee_array_has_dims(ret_pointee_array)) {
+            psx_ret_pointee_array_store_shorts(ret_pointee_array,
+                                               &_mi.funcptr_ret_pointee_array_first_dim,
+                                               &_mi.funcptr_ret_pointee_array_second_dim,
+                                               &_mi.funcptr_ret_pointee_array_elem_size);
           }
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);

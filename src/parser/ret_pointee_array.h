@@ -21,6 +21,20 @@ static inline bool psx_ret_pointee_array_has_dims(psx_ret_pointee_array_t a) {
   return a.first_dim > 0;
 }
 
+static inline psx_ret_pointee_array_t psx_ret_pointee_array_select(psx_ret_pointee_array_t preferred,
+                                                                    psx_ret_pointee_array_t fallback) {
+  return psx_ret_pointee_array_has_dims(preferred) ? preferred : fallback;
+}
+
+static inline void psx_ret_pointee_array_store_shorts(psx_ret_pointee_array_t a,
+                                                      short *first_dim,
+                                                      short *second_dim,
+                                                      short *elem_size) {
+  if (first_dim) *first_dim = (short)a.first_dim;
+  if (second_dim) *second_dim = (short)a.second_dim;
+  if (elem_size) *elem_size = (short)a.elem_size;
+}
+
 static inline int psx_ret_pointee_array_row_stride(psx_ret_pointee_array_t a) {
   if (a.first_dim <= 0 || a.elem_size <= 0) return 0;
   return a.first_dim * (a.second_dim > 0 ? a.second_dim : 1) * a.elem_size;
@@ -56,11 +70,12 @@ static inline void psx_ret_pointee_array_absorb_suffix(int *arr_is_array,
                                                        int *first_dim,
                                                        int *dims,
                                                        int dims_cap,
-                                                       int *out_first_dim,
-                                                       int *out_second_dim) {
-  if (out_first_dim) *out_first_dim = first_dim ? *first_dim : 0;
-  if (out_second_dim) {
-    *out_second_dim = (dim_count && *dim_count >= 2 && dims) ? dims[1] : 0;
+                                                       int elem_size,
+                                                       psx_ret_pointee_array_t *out) {
+  if (out) {
+    *out = psx_ret_pointee_array_make(first_dim ? *first_dim : 0,
+                                      (dim_count && *dim_count >= 2 && dims) ? dims[1] : 0,
+                                      elem_size);
   }
   if (arr_is_array) *arr_is_array = 0;
   if (arr_total) *arr_total = 1;
@@ -74,10 +89,10 @@ static inline void psx_ret_pointee_array_absorb_member_suffix(int *arr_size,
                                                               int *first_dim,
                                                               int *dims,
                                                               int dims_cap,
-                                                              int *out_first_dim,
-                                                              int *out_second_dim) {
+                                                              int elem_size,
+                                                              psx_ret_pointee_array_t *out) {
   psx_ret_pointee_array_absorb_suffix(NULL, arr_size, dim_count, first_dim, dims,
-                                      dims_cap, out_first_dim, out_second_dim);
+                                      dims_cap, elem_size, out);
 }
 
 #endif

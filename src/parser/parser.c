@@ -131,9 +131,7 @@ static int g_toplevel_decl_base_is_ptr = 0;
 static int g_toplevel_decl_base_pointer_levels = 0;
 static unsigned short g_toplevel_decl_base_funcptr_param_fp_mask = 0;
 static unsigned short g_toplevel_decl_base_funcptr_param_int_mask = 0;
-static int g_toplevel_decl_base_funcptr_ret_pointee_array_first_dim = 0;
-static int g_toplevel_decl_base_funcptr_ret_pointee_array_second_dim = 0;
-static int g_toplevel_decl_base_funcptr_ret_pointee_array_elem_size = 0;
+static psx_ret_pointee_array_t g_toplevel_decl_base_funcptr_ret_pointee_array = {0};
 /* 現在パース中のトップレベル宣言子が関数サフィックス `(...)` を持つか。
  * `double (*gops)(double)` のような関数ポインタグローバルを `double *dp` のような
  * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
@@ -195,8 +193,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int is_ptr, int typedef_sizeof, int td_is_array,
                                            int td_first_dim,
                                            const int *td_dims, int td_dim_count,
-                                           int funcptr_ret_pointee_array_first_dim,
-                                           int funcptr_ret_pointee_array_second_dim);
+                                           psx_ret_pointee_array_t funcptr_ret_pointee_array);
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void apply_toplevel_object_from_head(toplevel_declarator_head_t head);
@@ -350,12 +347,10 @@ static void resolve_toplevel_typedef_ref(void) {
     td_is_array = _ti.is_array; td_dim_count = _ti.array_dim_count;
     g_toplevel_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
     g_toplevel_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
-    g_toplevel_decl_base_funcptr_ret_pointee_array_first_dim =
-        _ti.funcptr_ret_pointee_array_first_dim;
-    g_toplevel_decl_base_funcptr_ret_pointee_array_second_dim =
-        _ti.funcptr_ret_pointee_array_second_dim;
-    g_toplevel_decl_base_funcptr_ret_pointee_array_elem_size =
-        _ti.funcptr_ret_pointee_array_elem_size;
+    g_toplevel_decl_base_funcptr_ret_pointee_array =
+        psx_ret_pointee_array_make(_ti.funcptr_ret_pointee_array_first_dim,
+                                   _ti.funcptr_ret_pointee_array_second_dim,
+                                   _ti.funcptr_ret_pointee_array_elem_size);
     for (int i = 0; i < td_dim_count && i < 8; i++) g_toplevel_decl_td_array_dims[i] = _ti.array_dims[i];
   }
   /* 多段ポインタ typedef の段数 (`typedef int **PP` で 2)。単段/非ポインタは 1/0。 */
@@ -411,9 +406,7 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_base_pointer_levels = 0;
   g_toplevel_decl_base_funcptr_param_fp_mask = 0;
   g_toplevel_decl_base_funcptr_param_int_mask = 0;
-  g_toplevel_decl_base_funcptr_ret_pointee_array_first_dim = 0;
-  g_toplevel_decl_base_funcptr_ret_pointee_array_second_dim = 0;
-  g_toplevel_decl_base_funcptr_ret_pointee_array_elem_size = 0;
+  g_toplevel_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_toplevel_decl_pointee_const = 0;
   g_toplevel_decl_pointee_volatile = 0;
   g_toplevel_decl_td_array_dim_count = 0;
@@ -2207,8 +2200,7 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
                  diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
   }
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(head.paren_array_mul);
-  int direct_funcptr_ret_pointee_array_first_dim = 0;
-  int direct_funcptr_ret_pointee_array_second_dim = 0;
+  psx_ret_pointee_array_t direct_funcptr_ret_pointee_array = {0};
   if (head.is_ptr && g_toplevel_decl_has_func_suffix && arr.is_array &&
       arr.dim_count >= 1 && !arr.has_incomplete_array) {
     /* 関数ポインタグローバルが配列へのポインタを返す直書き宣言子:
@@ -2217,8 +2209,8 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     psx_ret_pointee_array_absorb_suffix(&arr.is_array, &arr.arr_total,
                                         &arr.dim_count, &arr.first_dim,
                                         arr.dims, 8,
-                                        &direct_funcptr_ret_pointee_array_first_dim,
-                                        &direct_funcptr_ret_pointee_array_second_dim);
+                                        g_toplevel_decl_elem_size,
+                                        &direct_funcptr_ret_pointee_array);
   }
   /* `T (*pa)[N]` (配列へのポインタ): `*` が括弧内 (ptr_in_paren_group) で、外側に `[N]`
    * 配列サフィックス (arr.is_array) が付く形。pa は 8B のスカラポインタで、`[N]` は
@@ -2351,19 +2343,14 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
                                   : g_toplevel_decl_base_funcptr_param_int_mask;
     gv->funcptr_param_fp_mask = fp_mask;
     gv->funcptr_param_int_mask = int_mask;
-    if (direct_funcptr_ret_pointee_array_first_dim > 0) {
-      gv->funcptr_ret_pointee_array_first_dim =
-          (short)direct_funcptr_ret_pointee_array_first_dim;
-      gv->funcptr_ret_pointee_array_second_dim =
-          (short)direct_funcptr_ret_pointee_array_second_dim;
-      gv->funcptr_ret_pointee_array_elem_size = (short)g_toplevel_decl_elem_size;
-    } else if (g_toplevel_decl_base_funcptr_ret_pointee_array_first_dim > 0) {
-      gv->funcptr_ret_pointee_array_first_dim =
-          (short)g_toplevel_decl_base_funcptr_ret_pointee_array_first_dim;
-      gv->funcptr_ret_pointee_array_second_dim =
-          (short)g_toplevel_decl_base_funcptr_ret_pointee_array_second_dim;
-      gv->funcptr_ret_pointee_array_elem_size =
-          (short)g_toplevel_decl_base_funcptr_ret_pointee_array_elem_size;
+    psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
+        direct_funcptr_ret_pointee_array,
+        g_toplevel_decl_base_funcptr_ret_pointee_array);
+    if (psx_ret_pointee_array_has_dims(ret_pointee_array)) {
+      psx_ret_pointee_array_store_shorts(ret_pointee_array,
+                                         &gv->funcptr_ret_pointee_array_first_dim,
+                                         &gv->funcptr_ret_pointee_array_second_dim,
+                                         &gv->funcptr_ret_pointee_array_elem_size);
     }
   }
   finalize_toplevel_object_declarator(gv);
@@ -2487,17 +2474,17 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
     td_dim_count = arr.dim_count;
     td_dims = arr.dims;
   }
-  int funcptr_ret_pointee_array_first_dim = 0;
-  int funcptr_ret_pointee_array_second_dim = 0;
+  psx_ret_pointee_array_t funcptr_ret_pointee_array = {0};
   if (is_ptr && g_toplevel_decl_has_func_suffix &&
       !g_toplevel_decl_paren_array_present && arr.first_dim > 0) {
-    funcptr_ret_pointee_array_first_dim = arr.first_dim;
-    funcptr_ret_pointee_array_second_dim = (arr.dim_count >= 2) ? arr.dims[1] : 0;
+    funcptr_ret_pointee_array =
+        psx_ret_pointee_array_make(arr.first_dim,
+                                   (arr.dim_count >= 2) ? arr.dims[1] : 0,
+                                   g_toplevel_decl_elem_size);
   }
   register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array,
                                  td_first_dim, td_dims, td_dim_count,
-                                 funcptr_ret_pointee_array_first_dim,
-                                 funcptr_ret_pointee_array_second_dim);
+                                 funcptr_ret_pointee_array);
   /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array
    * は getter のデフォルト (is_pointer→1) に任せ、2 段以上だけ明示保存。段数 = 基底ポインタ
    * typedef の段数 + 宣言子の prefix `*` 数 (g_toplevel_decl_ptr_levels)。 */
@@ -2511,8 +2498,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int is_ptr, int typedef_sizeof, int td_is_array,
                                            int td_first_dim,
                                            const int *td_dims, int td_dim_count,
-                                           int funcptr_ret_pointee_array_first_dim,
-                                           int funcptr_ret_pointee_array_second_dim) {
+                                           psx_ret_pointee_array_t funcptr_ret_pointee_array) {
   psx_typedef_info_t _ti = {0};
   _ti.base_kind = stored_base_kind;
   _ti.elem_size = g_toplevel_decl_elem_size;
@@ -2534,10 +2520,10 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
     _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
     _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
-    if (funcptr_ret_pointee_array_first_dim > 0) {
-      _ti.funcptr_ret_pointee_array_first_dim = funcptr_ret_pointee_array_first_dim;
-      _ti.funcptr_ret_pointee_array_second_dim = funcptr_ret_pointee_array_second_dim;
-      _ti.funcptr_ret_pointee_array_elem_size = g_toplevel_decl_elem_size;
+    if (psx_ret_pointee_array_has_dims(funcptr_ret_pointee_array)) {
+      _ti.funcptr_ret_pointee_array_first_dim = funcptr_ret_pointee_array.first_dim;
+      _ti.funcptr_ret_pointee_array_second_dim = funcptr_ret_pointee_array.second_dim;
+      _ti.funcptr_ret_pointee_array_elem_size = funcptr_ret_pointee_array.elem_size;
     }
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
