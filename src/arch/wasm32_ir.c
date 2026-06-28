@@ -205,7 +205,17 @@ static void find_string_lit_cb(string_lit_t *lit, void *user) {
 
 static int narrow_string_encoded_size(string_lit_t *lit) {
   if (!lit) return 1;
-  if (lit->char_width != TK_CHAR_WIDTH_CHAR) wasm_unsupported_msg("wide string literal in Wasm backend");
+  int cw = lit->char_width > 0 ? (int)lit->char_width : TK_CHAR_WIDTH_CHAR;
+  if (cw != TK_CHAR_WIDTH_CHAR) {
+    int bytes = cw;  /* trailing NUL code unit */
+    int i = 0;
+    while (i < lit->len) {
+      uint32_t units[2];
+      int nu = tk_next_string_code_units(lit->str, lit->len, &i, cw, units);
+      bytes += nu * cw;
+    }
+    return bytes;
+  }
   int bytes = 1;  /* trailing NUL */
   int i = 0;
   while (i < lit->len) {
@@ -1317,10 +1327,25 @@ static void emit_wat_escaped_byte(unsigned char c) {
 
 static void emit_string_literal_data(string_lit_t *lit, void *user) {
   (void)user;
-  if (lit->char_width != TK_CHAR_WIDTH_CHAR) wasm_unsupported_msg("wide string literal in Wasm backend");
   int addr = data_addr_for_string_label(lit->label);
   if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
+  int cw = lit->char_width > 0 ? (int)lit->char_width : TK_CHAR_WIDTH_CHAR;
+  if (cw != TK_CHAR_WIDTH_CHAR) {
+    int sp = 0;
+    while (sp < lit->len) {
+      uint32_t units[2];
+      int nu = tk_next_string_code_units(lit->str, lit->len, &sp, cw, units);
+      for (int u = 0; u < nu; u++) {
+        for (int b = 0; b < cw; b++) {
+          emit_wat_escaped_byte((unsigned char)(units[u] >> (8 * b)));
+        }
+      }
+    }
+    for (int b = 0; b < cw; b++) emit_wat_escaped_byte(0);
+    cg_emitf("\")\n");
+    return;
+  }
   int i = 0;
   while (i < lit->len) {
     uint32_t v = 0;

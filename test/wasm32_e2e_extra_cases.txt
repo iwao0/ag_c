@@ -365,6 +365,7 @@ probes_found_bugs/vla_4d_and_higher.c
 probes_found_bugs/vla_double_element.c
 probes_found_bugs/vla_mixed_dims.c
 probes_found_bugs/vla_struct_local.c
+probes_found_bugs/wide_string_literal_init.c
 shift/shift_neg_right.c
 stdheader/assert_include.c
 stdheader/errno_include.c
