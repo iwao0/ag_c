@@ -702,9 +702,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
   out->funcptr_param_int_mask = m->funcptr_param_int_mask;
-  out->funcptr_ret_pointee_array_first_dim = m->funcptr_ret_pointee_array_first_dim;
-  out->funcptr_ret_pointee_array_second_dim = m->funcptr_ret_pointee_array_second_dim;
-  out->funcptr_ret_pointee_array_elem_size = m->funcptr_ret_pointee_array_elem_size;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(out, m);
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -1015,9 +1013,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
     out->funcptr_param_int_mask = t->funcptr_param_int_mask;
-    out->funcptr_ret_pointee_array_first_dim = t->funcptr_ret_pointee_array_first_dim;
-    out->funcptr_ret_pointee_array_second_dim = t->funcptr_ret_pointee_array_second_dim;
-    out->funcptr_ret_pointee_array_elem_size = t->funcptr_ret_pointee_array_elem_size;
+    PSX_RET_POINTEE_ARRAY_COPY_FIELDS(out, t);
   }
   return true;
 }

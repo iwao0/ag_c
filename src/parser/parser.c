@@ -2521,9 +2521,11 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
     _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
     if (psx_ret_pointee_array_has_dims(funcptr_ret_pointee_array)) {
-      _ti.funcptr_ret_pointee_array_first_dim = funcptr_ret_pointee_array.first_dim;
-      _ti.funcptr_ret_pointee_array_second_dim = funcptr_ret_pointee_array.second_dim;
-      _ti.funcptr_ret_pointee_array_elem_size = funcptr_ret_pointee_array.elem_size;
+      psx_ret_pointee_array_store_ints(
+          funcptr_ret_pointee_array,
+          &_ti.funcptr_ret_pointee_array_first_dim,
+          &_ti.funcptr_ret_pointee_array_second_dim,
+          &_ti.funcptr_ret_pointee_array_elem_size);
     }
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
