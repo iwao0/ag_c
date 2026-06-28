@@ -1013,11 +1013,262 @@ static void data_write_symbol_addr(obj_data_t *d, char *sym, int sym_len,
                  reloc_addend + (int)addend);
 }
 
+static void data_write_int_le_at(obj_data_t *d, size_t off, uint64_t value, int size) {
+  if (size != 1 && size != 2 && size != 4 && size != 8) {
+    obj_unsupported_msg("global data slot size in Wasm object mode");
+  }
+  if (off + (size_t)size > d->bytes.len) {
+    obj_unsupported_msg("global data write out of range in Wasm object mode");
+  }
+  for (int i = 0; i < size; i++) {
+    d->bytes.data[off + (size_t)i] = (unsigned char)((value >> (8 * i)) & 0xff);
+  }
+}
+
+static void data_write_symbol_addr_at(obj_data_t *d, size_t off, char *sym, int sym_len,
+                                      long long addend, int size) {
+  int reloc_addend = 0;
+  obj_data_t *target = data_for_symbol(sym, sym_len, &reloc_addend);
+  data_write_int_le_at(d, off, 0, size);
+  data_add_reloc(d, R_WASM_MEMORY_ADDR_I32, off, data_index(target), 1,
+                 reloc_addend + (int)addend);
+}
+
 static void data_write_scalar(obj_data_t *d, uint64_t value, int size) {
   if (size != 1 && size != 2 && size != 4 && size != 8) {
     obj_unsupported_msg("global scalar size in Wasm object mode");
   }
   wb_int_le(&d->bytes, value, size);
+}
+
+static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind, double value) {
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
+    float f = (float)value;
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    data_write_int_le_at(d, off, bits, 4);
+  } else if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    uint64_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    data_write_int_le_at(d, off, bits, 8);
+  } else {
+    obj_unsupported_msg("global floating slot in Wasm object mode");
+  }
+}
+
+static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
+                                    size_t off, int size, int normalize_bool,
+                                    tk_float_kind_t fp_kind) {
+  if (idx < 0) return;
+  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
+                  ? gv->init_value_symbol_lens[idx] : 0;
+  long long value = (idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0;
+  if (sym) {
+    data_write_symbol_addr_at(d, off, sym, sym_len, value, size);
+    return;
+  }
+  if (sym_len == -2 || sym_len == -3) {
+    double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
+    data_write_fp_at(d, off, sym_len == -2 ? TK_FLOAT_KIND_FLOAT : TK_FLOAT_KIND_DOUBLE, fv);
+    return;
+  }
+  if (fp_kind != TK_FLOAT_KIND_NONE) {
+    double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
+    data_write_fp_at(d, off, fp_kind, fv);
+    return;
+  }
+  if (normalize_bool) value = value != 0;
+  data_write_int_le_at(d, off, (uint64_t)value, size);
+}
+
+static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
+                                              obj_data_t *d, global_var_t *gv,
+                                              int *val_idx, size_t base_off);
+
+static void emit_obj_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
+                                               int *member_idx, obj_data_t *d,
+                                               global_var_t *gv, int *val_idx,
+                                               size_t base_off) {
+  tag_member_info_t first = {0};
+  if (!psx_ctx_get_tag_member_info(tk, tn, tl, *member_idx, &first) || first.bit_width <= 0) {
+    obj_unsupported_msg("global bitfield initializer in Wasm object mode");
+  }
+  int unit_off = first.offset;
+  int unit_size = first.type_size;
+  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
+  uint64_t packed = 0;
+  int m = *member_idx;
+  while (m < n_members && *val_idx < gv->init_count) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
+    if (mi.bit_width <= 0 || mi.offset != unit_off) break;
+    uint64_t mask = mi.bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi.bit_width) - 1);
+    uint64_t value = (uint64_t)((*val_idx < gv->init_count && gv->init_values)
+                                  ? gv->init_values[*val_idx] : 0);
+    packed |= (value & mask) << mi.bit_offset;
+    (*val_idx)++;
+    m++;
+  }
+  data_write_int_le_at(d, base_off + (size_t)unit_off, packed, unit_size);
+  *member_idx = m - 1;
+}
+
+static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv, int idx,
+                                                 size_t base_off,
+                                                 const tag_member_info_t *mi) {
+  if (!mi || mi->bit_width <= 0) obj_unsupported_msg("global bitfield initializer in Wasm object mode");
+  uint64_t mask = mi->bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi->bit_width) - 1);
+  uint64_t value = (uint64_t)((idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0);
+  uint64_t packed = (value & mask) << mi->bit_offset;
+  data_write_int_le_at(d, base_off + (size_t)mi->offset, packed, mi->type_size);
+}
+
+static int union_init_slot_fp_size(global_var_t *gv, int idx) {
+  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
+                  ? gv->init_value_symbol_lens[idx] : 0;
+  if (sym) return 0;
+  if (sym_len == -2) return 4;
+  if (sym_len == -3) return 8;
+  return 0;
+}
+
+static void select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
+                                              global_var_t *gv, int idx,
+                                              tag_member_info_t *mi) {
+  int init_fp_size = union_init_slot_fp_size(gv, idx);
+  int selected_fp_size = mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
+                       : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
+  if (init_fp_size == selected_fp_size) return;
+  if (init_fp_size == 0 && selected_fp_size == 0) return;
+
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t cand = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &cand)) break;
+    int cand_fp_size = cand.fp_kind == TK_FLOAT_KIND_FLOAT ? 4
+                       : cand.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
+    if ((init_fp_size > 0 && cand_fp_size == init_fp_size) ||
+        (init_fp_size == 0 && cand_fp_size == 0)) {
+      *mi = cand;
+      return;
+    }
+  }
+}
+
+static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
+                                                    obj_data_t *d, global_var_t *gv,
+                                                    int *val_idx, size_t base_off) {
+  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
+  for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
+    if (mi.bit_width > 0) {
+      emit_obj_global_bitfield_unit_data(tk, tn, tl, &m, d, gv, val_idx, base_off);
+      continue;
+    }
+    if (mi.array_len > 0) {
+      if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+        for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+          size_t elem_off = base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size;
+          if (mi.tag_kind == TK_UNION) {
+            emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                              val_idx, elem_off);
+          } else {
+            emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                                    val_idx, elem_off);
+          }
+        }
+      } else {
+        for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+          int slot = (*val_idx)++;
+          data_write_init_slot_at(d, gv, slot,
+                                  base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size,
+                                  mi.type_size, mi.is_bool, mi.fp_kind);
+        }
+      }
+      continue;
+    }
+    if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+      emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                              val_idx, base_off + (size_t)mi.offset);
+      continue;
+    }
+    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+      emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv, val_idx,
+                                        base_off + (size_t)mi.offset);
+      continue;
+    }
+    int slot = (*val_idx)++;
+    data_write_init_slot_at(d, gv, slot, base_off + (size_t)mi.offset, mi.type_size,
+                            mi.is_bool, mi.fp_kind);
+  }
+}
+
+static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
+                                              obj_data_t *d, global_var_t *gv,
+                                              int *val_idx, size_t base_off) {
+  if (*val_idx >= gv->init_count) return;
+  tag_member_info_t mi = {0};
+  int ord = gv->union_init_ordinal;
+  if (gv->init_union_ordinals && gv->init_union_ordinals[*val_idx] >= 0) {
+    ord = gv->init_union_ordinals[*val_idx];
+  }
+  if (!psx_ctx_get_tag_member_info(tk, tn, tl, ord, &mi)) {
+    obj_unsupported_msg("global union initializer in Wasm object mode");
+  }
+  select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
+  if (mi.bit_width > 0) {
+    emit_obj_global_bitfield_member_data(d, gv, (*val_idx)++, base_off, &mi);
+    return;
+  }
+  if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+    if (mi.tag_kind == TK_STRUCT) {
+      emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                              val_idx, base_off);
+    } else {
+      emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                        val_idx, base_off);
+    }
+    return;
+  }
+  int slot = (*val_idx)++;
+  data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind);
+}
+
+static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
+  wb_zero(&d->bytes, size);
+  if (gv->init_count <= 0) return;
+  if (gv->is_tag_pointer || (gv->tag_kind != TK_STRUCT && gv->tag_kind != TK_UNION)) {
+    obj_unsupported_msg("global aggregate initializer in Wasm object mode");
+  }
+  int val_idx = 0;
+  if (gv->tag_kind == TK_UNION) {
+    if (gv->is_array) {
+      int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
+      int total = elem_size > 0 ? size / elem_size : 0;
+      for (int e = 0; e < total && val_idx < gv->init_count; e++) {
+        emit_obj_global_union_member_data(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,
+                                          &val_idx, (size_t)e * (size_t)elem_size);
+      }
+    } else {
+      emit_obj_global_union_member_data(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,
+                                        &val_idx, 0);
+    }
+    return;
+  }
+  if (gv->is_array) {
+    int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
+    int total = elem_size > 0 ? size / elem_size : 0;
+    for (int e = 0; e < total && val_idx < gv->init_count; e++) {
+      emit_obj_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,
+                                              &val_idx, (size_t)e * (size_t)elem_size);
+    }
+  } else {
+    emit_obj_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,
+                                            &val_idx, 0);
+  }
 }
 
 static void emit_obj_global(global_var_t *gv, void *user) {
@@ -1027,15 +1278,14 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     intern_data(gv->name, gv->name_len, 2, gv->is_static, 1);
     return;
   }
-  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
-    obj_unsupported_msg("aggregate global in Wasm object mode");
-  }
 
   int size = gv->type_size > 0 ? gv->type_size : 4;
   obj_data_t *d = intern_data(gv->name, gv->name_len, align_log2_for_size(size), gv->is_static, 0);
   if (d->is_emitted) return;
 
-  if (gv->init_symbol) {
+  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+    emit_obj_global_aggregate_data(d, gv, size);
+  } else if (gv->init_symbol) {
     data_write_symbol_addr(d, gv->init_symbol, gv->init_symbol_len, gv->init_symbol_offset, size);
   } else if (gv->init_count > 0) {
     int elem = gv->is_array && gv->deref_size > 0 ? gv->deref_size : size;
@@ -1048,7 +1298,8 @@ static void emit_obj_global(global_var_t *gv, void *user) {
       int sym_len = (i < gv->init_count && gv->init_value_symbol_lens)
                       ? gv->init_value_symbol_lens[i] : 0;
       if (sym) {
-        data_write_symbol_addr(d, sym, sym_len, 0, elem);
+        long long off = (i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0;
+        data_write_symbol_addr(d, sym, sym_len, off, elem);
       } else {
         uint64_t value = (uint64_t)((i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0);
         data_write_scalar(d, value, elem);

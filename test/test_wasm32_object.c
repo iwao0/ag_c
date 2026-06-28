@@ -182,6 +182,35 @@ int main(void) {
                                 "extern int ext; int f(void){ext=9; return ext;}\n",
                                 extern_global_write_needles, 6);
 
+  const char *struct_global_needles[] = {
+      "Data[1]", "<pair>", "size=8", "0300 0000 0400 0000", "i32.load 2 0"};
+  failures += run_objdump_check("struct_global",
+                                "struct P{int x; int y;}; struct P pair={3,4}; "
+                                "int main(void){return pair.y;}\n",
+                                struct_global_needles, 5);
+
+  const char *struct_array_needles[] = {
+      "Data[1]", "<pts>", "size=16", "0100 0000 0200 0000 0300 0000 0400 0000",
+      "i32.load 2 0"};
+  failures += run_objdump_check("struct_array_global",
+                                "struct P{int x; int y;}; struct P pts[2]={{1,2},{3,4}}; "
+                                "int main(void){return pts[1].y;}\n",
+                                struct_array_needles, 4);
+
+  const char *nested_struct_needles[] = {
+      "Data[1]", "<out>", "size=12", "0100 0000 0200 0000 0300 0000"};
+  failures += run_objdump_check("nested_struct_global",
+                                "struct In{int a; int b;}; struct Out{struct In in; int c;}; "
+                                "struct Out out={{1,2},3}; int main(void){return out.c;}\n",
+                                nested_struct_needles, 4);
+
+  const char *struct_ptr_member_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "symbol=2 <target>"};
+  failures += run_objdump_check("struct_ptr_member",
+                                "int target=5; struct Box{int *p;}; struct Box box={&target}; "
+                                "int main(void){return 0;}\n",
+                                struct_ptr_member_needles, 3);
+
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",
                                 "static int hidden(void){return 7;} int main(void){return hidden();}\n",
