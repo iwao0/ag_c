@@ -128,6 +128,13 @@ int main(void) {
   failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3, 8);
   const char *call[] = {"(func $add (param $p0 i64) (param $p1 i64) (result i32)", "(call $add"};
   failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2, 7);
+  const char *void_call[] = {"(func $set (param $p0 i64)", "(call $set", "i32.store"};
+  failures += run_case("void_call",
+                       "void set(int *p){*p=7;} int main(){int x; x=0; set(&x); return x;}\n",
+                       void_call, 3, 7);
+  const char *void_return[] = {"(func $noop\n", "(call $noop)", "return"};
+  failures += run_case("void_return", "void noop(){return;} int main(){noop(); return 9;}\n",
+                       void_return, 3, 9);
   const char *i64_call[] = {"(func $inc (param $p0 i64) (result i64)", "i64.load", "(call $inc"};
   failures += run_case("i64_call", "long inc(long x){return x+1;} int main(){return inc(41L);}\n",
                        i64_call, 3, 42);

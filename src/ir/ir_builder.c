@@ -2597,6 +2597,16 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     return;
   }
   ir_val_t v = ir_val_none();
+  if (ctx->f->ret_type == IR_TY_VOID) {
+    if (node->lhs) {
+      (void)build_expr(ctx, node->lhs);
+      if (ctx->failed) return;
+    }
+    ir_inst_t *inst = ir_inst_new(IR_RET);
+    inst->src1 = ir_val_none();
+    ir_func_append_inst(ctx->f, inst);
+    return;
+  }
   if (node->lhs) {
     v = build_expr(ctx, node->lhs);
     if (ctx->failed) return;
@@ -3020,7 +3030,9 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
       }
     }
     ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = ir_val_imm(IR_TY_I32, 0);
+    r->src1 = psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len)
+                  ? ir_val_none()
+                  : ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);
   }
 }
@@ -3030,6 +3042,9 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
   ir_type_t ret_ty = ir_type_from_node(&fn->base);
+  if (psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len)) {
+    ret_ty = IR_TY_VOID;
+  }
   /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
    * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
    * 上位 32bit を捨ててしまう。 */

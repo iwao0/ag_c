@@ -533,7 +533,8 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   if (!psx_ctx_has_function_name(i->sym, i->sym_len)) {
     wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
   }
-  if (i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
+  int returns_void = psx_ctx_is_function_ret_void(i->sym, i->sym_len);
+  if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
     wasm_emitf(indent, "(local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
   } else {
     wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
@@ -545,7 +546,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     emit_val_expr_as(ctx, i->args[a], arg_ty);
   }
   cg_emitf(")");
-  if (i->dst.id >= 0 && i->dst.type != IR_TY_VOID) cg_emitf(")");
+  if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) cg_emitf(")");
   cg_emitf("\n");
 }
 
