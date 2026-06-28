@@ -102,9 +102,7 @@ typedef struct {
   int ptr_array_pointee_bytes;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
-  short funcptr_ret_pointee_array_first_dim;
-  short funcptr_ret_pointee_array_second_dim;
-  short funcptr_ret_pointee_array_elem_size;
+  psx_ret_pointee_array_t funcptr_ret_pointee_array;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,

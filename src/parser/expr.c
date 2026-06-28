@@ -1150,7 +1150,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_is_signed = mem_info->bit_is_signed;
   deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
   deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
-  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, mem_info);
+  PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(
+      deref, mem_info->funcptr_ret_pointee_array);
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
    * 式中でポインタへ decay するので pointee_fp_kind に入れて subscript 結果を fp load
    * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと

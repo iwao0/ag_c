@@ -70,9 +70,7 @@ struct tag_member_t {
   int ptr_array_pointee_bytes;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
-  short funcptr_ret_pointee_array_first_dim;
-  short funcptr_ret_pointee_array_second_dim;
-  short funcptr_ret_pointee_array_elem_size;
+  psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int decl_order;
   int scope_depth;
 };
@@ -493,7 +491,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->bit_is_signed = desc->bit_is_signed;
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
       m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
-      PSX_RET_POINTEE_ARRAY_COPY_FIELDS(m, desc);
+      m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
       return;
     }
   }
@@ -516,7 +514,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->bit_is_signed = desc->bit_is_signed;
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
   m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
-  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(m, desc);
+  m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -700,7 +698,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
   out->funcptr_param_int_mask = m->funcptr_param_int_mask;
-  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(out, m);
+  out->funcptr_ret_pointee_array = m->funcptr_ret_pointee_array;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
