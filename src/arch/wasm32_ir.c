@@ -810,16 +810,30 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
   cg_emitf("\")\n");
 }
 
+static int data_addr_for_init_symbol(char *sym, int sym_len) {
+  if (!sym) return -1;
+  if (sym_len < 0) return data_addr_for_string_label(sym);
+  if (psx_ctx_has_function_name(sym, sym_len)) {
+    wasm_unsupported_msg("function pointer initializer in Wasm backend");
+  }
+  return data_addr_for_global(sym, sym_len);
+}
+
 static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
   int elem = gv->is_array && gv->deref_size > 0 ? gv->deref_size : size;
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
   int total_elems = elem > 0 ? (size + elem - 1) / elem : 0;
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < total_elems; i++) {
-    if (i < gv->init_count && gv->init_value_symbols && gv->init_value_symbols[i]) {
-      wasm_unsupported_msg("symbol array initializer in Wasm backend");
-    }
+    char *sym = (i < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[i] : NULL;
+    int sym_len = (i < gv->init_count && gv->init_value_symbol_lens)
+                      ? gv->init_value_symbol_lens[i] : 0;
     uint64_t value = (uint64_t)((i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0);
+    if (sym) {
+      int sym_addr = data_addr_for_init_symbol(sym, sym_len);
+      if (sym_addr < 0) wasm_unsupported_msg("symbol array initializer in Wasm backend");
+      value += (uint64_t)sym_addr;
+    }
     int bytes = elem;
     if ((i + 1) * elem > size) bytes = size - i * elem;
     for (int b = 0; b < bytes; b++) emit_wat_escaped_byte((unsigned char)(value >> (8 * b)));
@@ -828,12 +842,7 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
 }
 
 static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
-  int sym_addr = 0;
-  if (gv->init_symbol_len < 0) {
-    sym_addr = data_addr_for_string_label(gv->init_symbol);
-  } else {
-    sym_addr = data_addr_for_global(gv->init_symbol, gv->init_symbol_len);
-  }
+  int sym_addr = data_addr_for_init_symbol(gv->init_symbol, gv->init_symbol_len);
   if (sym_addr < 0) wasm_unsupported_msg("global symbol initializer in Wasm backend");
   emit_i32_data_bytes(addr, (long long)sym_addr + gv->init_symbol_offset, size);
 }

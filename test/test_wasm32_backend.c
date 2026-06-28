@@ -148,6 +148,14 @@ int main(void) {
   const char *global_str_ptr[] = {"(data (i32.const", "\"abc\\00\""};
   failures += run_case("global_str_ptr", "char *p=\"abc\"; int main(){return p[1];}\n",
                        global_str_ptr, 2, 98);
+  const char *global_str_ptr_array[] = {"(data (i32.const", "\"abc\\00\"", "\"de\\00\"", "i32.load"};
+  failures += run_case("global_str_ptr_array",
+                       "char *names[3]={\"abc\",\"de\",\"f\"}; int main(){return names[1][1]+names[2][0];}\n",
+                       global_str_ptr_array, 4, 203);
+  const char *global_ptr_array_addr[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_ptr_array_addr",
+                       "int data[3]={4,5,6}; int *p[2]={&data[0],data+2}; int main(){return *p[0]+*p[1];}\n",
+                       global_ptr_array_addr, 2, 10);
   const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
   failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
   const char *struct_copy[] = {"i64.store", "i64.load", "i32.store", "i32.load"};
@@ -161,6 +169,9 @@ int main(void) {
                        alignas32, 2, 7);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
+  failures += run_fail_case("funcptr_init",
+                            "int f(){return 1;} int (*fp[1])()={f}; int main(){return 0;}\n",
+                            "E4008");
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "
