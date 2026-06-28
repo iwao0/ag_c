@@ -3199,6 +3199,8 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     gv->init_values = calloc((size_t)cap, sizeof(long long));
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+    for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
     if (gv->type_size == 0 && gv->init_count > 0) {
@@ -3307,6 +3309,8 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
     gv->init_values = calloc((size_t)cap, sizeof(long long));
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+    for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
     /* struct は float/double メンバを持ち得るので fvalues も並行確保する
      * (トップレベル global struct と同じ。codegen が fp メンバをビット出力)。 */
     gv->init_fvalues = calloc((size_t)cap, sizeof(double));

@@ -336,6 +336,11 @@ int main(void) {
                        "union U{unsigned int a:3; unsigned int b:5;}; struct S{int tag; union U u;}; "
                        "struct S g={25,{.b=17}}; int main(){return g.tag+g.u.b;}\n",
                        global_struct_union_bitfield, 2, 42);
+  const char *static_struct_mixed_union[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("static_struct_mixed_union",
+                       "struct P{int a; int b;}; union U{struct P p; int i;}; struct W{union U a; union U b;}; "
+                       "int main(){static struct W w={{.i=10},{.p={20,1}}}; return w.a.i+w.b.p.a+w.b.p.b;}\n",
+                       static_struct_mixed_union, 2, 31);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "
