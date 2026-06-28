@@ -119,6 +119,7 @@ probes_found_bugs/funcptr_return_large_struct.c
 probes_found_bugs/funcptr_return_struct_member.c
 probes_found_bugs/funcret_subscript.c
 probes_found_bugs/function_duplicate_def.c
+probes_found_bugs/function_redecl_signature.c
 probes_found_bugs/generic_array_assoc_and_func_designator.c
 probes_found_bugs/generic_char_and_longlong_identity.c
 probes_found_bugs/generic_complex_derived_type.c

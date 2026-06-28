@@ -867,10 +867,13 @@ static int vreg_used_after(ir_inst_t *from, int id) {
 }
 
 static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
-  if (i->ret_complex_half != 0 || i->is_variadic_call) {
+  if (i->ret_complex_half != 0) {
     wasm_unsupported_op(i->op);
   }
   if (i->callee.id != IR_VAL_NONE) {
+    if (i->is_variadic_call) {
+      wasm_unsupported_op(i->op);
+    }
     int callee_name_len = 0;
     char *callee_name = get_vreg_func_ref(ctx, i->callee.id, &callee_name_len);
     int returns_aggregate = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
@@ -926,7 +929,8 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   } else {
     wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
   }
-  for (int a = 0; a < i->nargs; a++) {
+  int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
+  for (int a = 0; a < call_nargs; a++) {
     ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
     if (psx_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) arg_ty = IR_TY_I64;
     cg_emitf(" ");

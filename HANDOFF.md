@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き129: Preserve unsigned local init conversions + E2E 1012）
+最終更新: 2026-06-29（続き130: Allow fixed Wasm calls to defined variadic funcs + E2E 1013）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1012/1012 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1013/1013 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -210,6 +210,12 @@
   `i32.trunc_f64_s` で runtime overflow していた。initializer lvar に unsigned/pointee_unsigned を
   伝播し、代入 coerce が `trunc_f64_u` を選べるようにする。fixture を Wasm E2E に追加し、
   静的 531 件 + extra 481 件の **1012 件**。
+- 続き130: **定義済み variadic 関数への Wasm 直接 call**。
+  `function_redecl_signature.c` の `count_args(3, 10, 20, 30)` は callee が同一モジュール内で定義済み、
+  かつ本体が `va_arg` を読まず固定引数だけ使うが、Wasm emitter が `is_variadic_call` を一律 E4008
+  にしていた。直接 call では固定引数数までを Wasm call に渡し、間接 variadic call と `va_arg_area`
+  は引き続き未対応にする。fixture を Wasm E2E に追加し、
+  静的 531 件 + extra 482 件の **1013 件**。
 
 ### Wasm backend の既知メモ
 
@@ -217,9 +223,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1012 件を通常 `make test` に組み込み済み。
+  1013 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-129で 34 件を回収し、84 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-130で 35 件を回収し、83 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
