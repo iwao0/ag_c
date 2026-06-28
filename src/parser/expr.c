@@ -5,6 +5,7 @@
 #include "diag.h"
 #include "dynarray.h"
 #include "node_utils.h"
+#include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "stmt.h"
 #include "config_runtime.h"
@@ -3480,28 +3481,34 @@ static node_t *build_unary_deref_node(node_t *operand) {
        * する (ローカル `int (*p)[N]` の `*p` と同じ)。 ds=N*elem を first_dim で割って elem を得る。 */
       node_func_t *fn = (node_func_t *)probe;
       if (fn->callee == NULL && fn->funcname) {
-        int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
-        int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
+        psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
+            psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len),
+            psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len),
+            0);
         int rowstride = ps_node_deref_size(probe);
-        if (fd > 0 && rowstride > 0) {
-          int inner = rowstride / fd;
+        int inner = 0, next = 0;
+        psx_ret_pointee_array_strides_from_row(dims, rowstride, &inner, &next);
+        if (inner > 0) {
           node->deref_size = (short)inner;
-          if (sd > 0 && inner > 0) node->inner_deref_size = (short)(inner / sd);
+          if (next > 0) node->inner_deref_size = (short)next;
         }
       } else if (fn->callee) {
         if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
           node_mem_t *cm = (node_mem_t *)fn->callee;
-          int fd = cm->funcptr_ret_pointee_array_first_dim;
-          int sd = cm->funcptr_ret_pointee_array_second_dim;
-          int elem = cm->funcptr_ret_pointee_array_elem_size;
+          psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
+              cm->funcptr_ret_pointee_array_first_dim,
+              cm->funcptr_ret_pointee_array_second_dim,
+              cm->funcptr_ret_pointee_array_elem_size);
           int rowstride = ps_node_deref_size(probe);
-          if (fd > 0 && elem > 0) {
-            int inner = (sd > 0) ? sd * elem : elem;
+          int inner = psx_ret_pointee_array_inner_stride(dims);
+          int next = psx_ret_pointee_array_next_stride(dims);
+          if (inner > 0) {
             node->deref_size = (short)inner;
-            if (sd > 0) node->inner_deref_size = (short)elem;
-          } else if (fd > 0 && rowstride > 0) {
-            node->deref_size = (short)(rowstride / fd);
+            if (next > 0) node->inner_deref_size = (short)next;
+          } else {
+            psx_ret_pointee_array_strides_from_row(dims, rowstride, &inner, NULL);
+            if (inner > 0) node->deref_size = (short)inner;
           }
         }
         token_kind_t fk = TK_EOF;
@@ -3830,23 +3837,22 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     node_func_t *fn = (node_func_t *)node;
     if (fn->callee == NULL && fn->funcname &&
         psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len) > 0) {
-      int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
-      int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
-      if (fd > 0 && ds > 0) {
-        inner_ds = ds / fd;  /* 1D: elem、2D: M*elem */
-        if (sd > 0 && inner_ds > 0) next_ds = inner_ds / sd;
-      }
+      psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
+          psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len),
+          psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len),
+          0);
+      psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, &next_ds);
     } else if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
                               fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
       node_mem_t *cm = (node_mem_t *)fn->callee;
-      int fd = cm->funcptr_ret_pointee_array_first_dim;
-      int sd = cm->funcptr_ret_pointee_array_second_dim;
-      int elem = cm->funcptr_ret_pointee_array_elem_size;
-      if (fd > 0 && elem > 0) {
-        inner_ds = (sd > 0) ? sd * elem : elem;
-        if (sd > 0) next_ds = elem;
-      } else if (fd > 0 && ds > 0) {
-        inner_ds = ds / fd;
+      psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
+          cm->funcptr_ret_pointee_array_first_dim,
+          cm->funcptr_ret_pointee_array_second_dim,
+          cm->funcptr_ret_pointee_array_elem_size);
+      inner_ds = psx_ret_pointee_array_inner_stride(dims);
+      next_ds = psx_ret_pointee_array_next_stride(dims);
+      if (inner_ds <= 0) {
+        psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, NULL);
       }
     }
   }

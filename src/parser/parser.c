@@ -13,6 +13,7 @@
 #include "enum_const.h"
 #include "expr.h"
 #include "loop_ctx.h"
+#include "ret_pointee_array.h"
 #include "stmt.h"
 #include "struct_layout.h"
 #include "switch_ctx.h"
@@ -2213,13 +2214,11 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     /* 関数ポインタグローバルが配列へのポインタを返す直書き宣言子:
      * `int (*(*g)(void))[N]` / `int (*(*g)(void))[N][M]`。
      * trailing `[N][M]` はグローバル自身の配列ではなく、戻り値ポインタの pointee 配列次元。 */
-    direct_funcptr_ret_pointee_array_first_dim = arr.first_dim;
-    direct_funcptr_ret_pointee_array_second_dim = (arr.dim_count >= 2) ? arr.dims[1] : 0;
-    arr.is_array = 0;
-    arr.arr_total = 1;
-    arr.dim_count = 0;
-    arr.first_dim = 0;
-    for (int i = 0; i < 8; i++) arr.dims[i] = 0;
+    psx_ret_pointee_array_absorb_suffix(&arr.is_array, &arr.arr_total,
+                                        &arr.dim_count, &arr.first_dim,
+                                        arr.dims, 8,
+                                        &direct_funcptr_ret_pointee_array_first_dim,
+                                        &direct_funcptr_ret_pointee_array_second_dim);
   }
   /* `T (*pa)[N]` (配列へのポインタ): `*` が括弧内 (ptr_in_paren_group) で、外側に `[N]`
    * 配列サフィックス (arr.is_array) が付く形。pa は 8B のスカラポインタで、`[N]` は

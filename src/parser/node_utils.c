@@ -1,4 +1,5 @@
 #include "node_utils.h"
+#include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "arena.h"
 #include "diag.h"
@@ -177,9 +178,11 @@ int ps_node_deref_size(node_t *node) {
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
           node_mem_t *cm = (node_mem_t *)fn->callee;
           fd = cm->funcptr_ret_pointee_array_first_dim;
-          int sd = cm->funcptr_ret_pointee_array_second_dim;
-          int elem = cm->funcptr_ret_pointee_array_elem_size;
-          if (fd > 0 && elem > 0) return fd * (sd > 0 ? sd : 1) * elem;
+          int row = psx_ret_pointee_array_row_stride(psx_ret_pointee_array_make(
+              fd,
+              cm->funcptr_ret_pointee_array_second_dim,
+              cm->funcptr_ret_pointee_array_elem_size));
+          if (row > 0) return row;
         }
         if (fd > 0) {
           int elem = ps_node_deref_size(fn->callee);
@@ -191,7 +194,7 @@ int ps_node_deref_size(node_t *node) {
         int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
         if (fd > 0) {
           int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
-          return fd * (sd > 0 ? sd : 1) * base;
+          return psx_ret_pointee_array_row_stride(psx_ret_pointee_array_make(fd, sd, base));
         }
         /* 多段ポインタ戻り `int **g()`: `*g()` の結果はまだポインタ (8B) なので、
          * 1 段目 deref のロード幅 / 添字スケールは基底型でなく 8 を返す。最内基底型は

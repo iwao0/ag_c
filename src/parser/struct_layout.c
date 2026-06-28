@@ -7,6 +7,7 @@
 #include "diag.h"
 #include "enum_const.h"
 #include "expr.h"
+#include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -362,14 +363,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * `int (*(*f)(void))[N]` / `int (*(*f)(void))[N][M]`。
          * trailing `[N][M]` はメンバ自身の配列ではなく、戻り値ポインタの pointee 配列次元。
          * メンバは 8B の関数ポインタ 1 個として layout し、次元は呼び出し側 subscript 用に保存する。 */
-        direct_funcptr_ret_pointee_array_first_dim = arr_first_dim;
-        direct_funcptr_ret_pointee_array_second_dim =
-            (arr_dim_count >= 2) ? arr_dims_buf[1] : 0;
+        psx_ret_pointee_array_absorb_member_suffix(
+            &arr_size, &arr_dim_count, &arr_first_dim, arr_dims_buf, 8,
+            &direct_funcptr_ret_pointee_array_first_dim,
+            &direct_funcptr_ret_pointee_array_second_dim);
         direct_funcptr_ret_pointee_array_elem_size = elem_size;
-        arr_size = 1;
-        arr_dim_count = 0;
-        arr_first_dim = 0;
-        for (int i = 0; i < 8; i++) arr_dims_buf[i] = 0;
       }
       if (head.ptr_in_paren && head.is_ptr && arr_size > 1 && !is_flex_array
           && !head.has_func_suffix) {
