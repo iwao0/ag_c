@@ -1,6 +1,7 @@
 #ifndef PARSER_SEMANTIC_CTX_H
 #define PARSER_SEMANTIC_CTX_H
 
+#include "ret_pointee_array.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
@@ -162,9 +163,7 @@ typedef struct {
   int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
   unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
   unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅 (1=4B, 2=8B; 2bit * 最大8)
-  int funcptr_ret_pointee_array_first_dim; // 関数ポインタ戻り値が `T (*)[N]` のときの N
-  int funcptr_ret_pointee_array_second_dim; // `T (*)[N][M]` の M (0=単一次元/未知)
-  int funcptr_ret_pointee_array_elem_size; // 上記 pointer-to-array の要素サイズ
+  psx_ret_pointee_array_t funcptr_ret_pointee_array; // 関数ポインタ戻り値が `T (*)[N][M]` のときの pointee 配列
 } psx_typedef_info_t;
 
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、

@@ -149,9 +149,6 @@ typedef struct {
   int td_array_elem_size;
   unsigned short td_funcptr_param_fp_mask;
   unsigned short td_funcptr_param_int_mask;
-  int td_funcptr_ret_pointee_array_first_dim;
-  int td_funcptr_ret_pointee_array_second_dim;
-  int td_funcptr_ret_pointee_array_elem_size;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -4286,12 +4283,9 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
-      out->td_funcptr_ret_pointee_array_first_dim = _ti.funcptr_ret_pointee_array_first_dim;
-      out->td_funcptr_ret_pointee_array_second_dim = _ti.funcptr_ret_pointee_array_second_dim;
-      out->td_funcptr_ret_pointee_array_elem_size = _ti.funcptr_ret_pointee_array_elem_size;
       g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       g_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
-      g_decl_base_funcptr_ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(&_ti);
+      g_decl_base_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
     }
   }
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
@@ -4487,9 +4481,9 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   }
   if (is_ptr && g_decl_trailing_func_suffix && paren_array_mul > 0 &&
       g_paren_array_first_dim > 0) {
-    _ti.funcptr_ret_pointee_array_first_dim = g_paren_array_first_dim;
-    _ti.funcptr_ret_pointee_array_second_dim = g_paren_array_second_dim;
-    _ti.funcptr_ret_pointee_array_elem_size = elem_size;
+    _ti.funcptr_ret_pointee_array =
+        psx_ret_pointee_array_make(g_paren_array_first_dim, g_paren_array_second_dim,
+                                   elem_size);
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

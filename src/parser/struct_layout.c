@@ -203,8 +203,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (_ti.is_pointer && _ti.funcptr_param_int_mask) {
           member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
         }
-        if (_ti.is_pointer && PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(&_ti)) {
-          member_typedef_funcptr_ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(&_ti);
+        if (_ti.is_pointer && psx_ret_pointee_array_has_dims(_ti.funcptr_ret_pointee_array)) {
+          member_typedef_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
         }
         if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
           member_fp_kind = _ti.fp_kind;

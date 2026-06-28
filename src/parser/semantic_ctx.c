@@ -121,9 +121,7 @@ struct typedef_name_t {
   int funcptr_ret_is_pointer;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
-  int funcptr_ret_pointee_array_first_dim;
-  int funcptr_ret_pointee_array_second_dim;
-  int funcptr_ret_pointee_array_elem_size;
+  psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int scope_depth;
 };
 typedef struct func_name_t func_name_t;
@@ -903,8 +901,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
-  PSX_RET_POINTEE_ARRAY_STORE_INT_FIELDS_IF_PRESENT(
-      t, PSX_RET_POINTEE_ARRAY_FROM_FIELDS(info));
+  t->funcptr_ret_pointee_array = info->funcptr_ret_pointee_array;
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -933,7 +930,8 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
                 existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
                 existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
-                PSX_RET_POINTEE_ARRAY_FIELDS_EQUAL(existing, info));
+                psx_ret_pointee_array_equal(existing->funcptr_ret_pointee_array,
+                                            info->funcptr_ret_pointee_array));
     if (same) {
       for (int i = 0; i < n_new; i++) {
         if (existing->array_dims[i] != info->array_dims[i]) { same = 0; break; }
@@ -1003,7 +1001,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
     out->funcptr_param_int_mask = t->funcptr_param_int_mask;
-    PSX_RET_POINTEE_ARRAY_COPY_FIELDS(out, t);
+    out->funcptr_ret_pointee_array = t->funcptr_ret_pointee_array;
   }
   return true;
 }

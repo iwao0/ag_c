@@ -67,6 +67,13 @@ static inline psx_ret_pointee_array_t psx_ret_pointee_array_select(psx_ret_point
   return psx_ret_pointee_array_has_dims(preferred) ? preferred : fallback;
 }
 
+static inline bool psx_ret_pointee_array_equal(psx_ret_pointee_array_t a,
+                                               psx_ret_pointee_array_t b) {
+  return a.first_dim == b.first_dim &&
+         a.second_dim == b.second_dim &&
+         a.elem_size == b.elem_size;
+}
+
 static inline void psx_ret_pointee_array_store_shorts(psx_ret_pointee_array_t a,
                                                       short *first_dim,
                                                       short *second_dim,
