@@ -291,6 +291,31 @@ static int func_has_hidden_ret_area(ir_func_t *f) {
   return f && f->ret_struct_size > 0;
 }
 
+static int func_param_ordinal_for_inst(ir_func_t *f, ir_inst_t *target) {
+  int ordinal = 0;
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op != IR_PARAM || i->src1.id != IR_VAL_IMM || i->src1.imm < 0) continue;
+      if (i == target) return ordinal;
+      ordinal++;
+    }
+  }
+  return -1;
+}
+
+static ir_inst_t *func_param_inst_at_ordinal(ir_func_t *f, int ordinal) {
+  if (ordinal < 0) return NULL;
+  int cur = 0;
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op != IR_PARAM || i->src1.id != IR_VAL_IMM || i->src1.imm < 0) continue;
+      if (cur == ordinal) return i;
+      cur++;
+    }
+  }
+  return NULL;
+}
+
 static void collect_vreg_type_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t type) {
   if (v.id < 0 || v.id >= ctx->f->next_vreg_id) return;
   if (!wasm_type(type)) return;
@@ -305,8 +330,9 @@ static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
 
 static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM) {
+    int ordinal = func_param_ordinal_for_inst(ctx->f, i);
     ir_type_t ty = (i->src1.imm < 0) ? IR_TY_PTR
-                                     : func_param_type_from_decl(ctx->f, (int)i->src1.imm, i->dst.type);
+                                     : func_param_type_from_decl(ctx->f, ordinal, i->dst.type);
     collect_vreg_type_as(ctx, i->dst, ty);
     return;
   }
@@ -889,8 +915,10 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       return;
     case IR_PARAM:
       if (i->src1.id != IR_VAL_IMM || i->src1.imm < -1) wasm_unsupported_op(i->op);
+      int param_ordinal = func_param_ordinal_for_inst(ctx->f, i);
+      if (i->src1.imm >= 0 && param_ordinal < 0) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(local.set $v%d (local.get $p%d))\n", i->dst.id,
-                 i->src1.imm < 0 ? 0 : (int)i->src1.imm + func_has_hidden_ret_area(ctx->f));
+                 i->src1.imm < 0 ? 0 : param_ordinal + func_has_hidden_ret_area(ctx->f));
       return;
     case IR_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
@@ -1103,16 +1131,15 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
 }
 
 static int func_param_count(ir_func_t *f) {
-  int max_idx = -1;
+  int count = 0;
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0 &&
-          i->src1.imm > max_idx) {
-        max_idx = (int)i->src1.imm;
+      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0) {
+        count++;
       }
     }
   }
-  return max_idx + 1 + func_has_hidden_ret_area(f);
+  return count + func_has_hidden_ret_area(f);
 }
 
 static ir_type_t func_param_type(ir_func_t *f, int idx) {
@@ -1120,12 +1147,9 @@ static ir_type_t func_param_type(ir_func_t *f, int idx) {
     if (idx == 0) return IR_TY_PTR;
     idx--;
   }
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm == idx) {
-        return func_param_type_from_decl(f, idx, i->dst.type);
-      }
-    }
+  ir_inst_t *param = func_param_inst_at_ordinal(f, idx);
+  if (param) {
+    return func_param_type_from_decl(f, idx, param->dst.type);
   }
   return IR_TY_I32;
 }

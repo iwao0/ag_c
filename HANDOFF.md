@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き116: Wasm control-flow void funcptr calls）
+最終更新: 2026-06-29（続き117: Wasm E2E subset harness）
 
 ## 現状
-- `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + E2E)。
+- `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **296/296 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -125,12 +125,23 @@
   `ND_FUNCALL.is_void_call`、`IR_CALL.is_void_call` へ伝播。Wasm emitter は unknown indirect call でも
   void と分かる場合は result なしの `call_indirect` を出す。非 void の unknown unused-result indirect
   call は誤った typeuse を避けるため引き続き E4008。
+- 続き117: **Wasm E2E subset harness**。
+  ARM64/native の `test_e2e` だけでは Wasm backend を通らないため、既存 `test/fixtures/**`
+  の self-checking assert fixture を Wasm 用に変換して `ag_c_wasm -> wat2wasm -> wasm-validate ->
+  wasm-interp` まで通す `test/test_wasm32_e2e.c` を追加し、`make test` に組み込んだ。
+  現在は integer/arithmetic/comparison/control-flow/funcall/pointer/array/global/type など 296 件を
+  実行値 `main() => i32:0` で確認する。副作用で、直接関数の mixed int/fp 仮引数
+  (`int f(int,double,int)`) の Wasm signature が、IR_PARAM の integer/fp 別 ABI index をそのまま使い
+  param を潰していた問題を修正。Wasm signature と entry `local.get $pN` は IR_PARAM 出現順で並べる。
 
 ### Wasm backend の既知メモ
 
 - Wasm indirect aggregate return (`ret_struct_size > 0`) は local/global/struct member 関数ポインタで対応済み。
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
+- Wasm E2E subset は `test/test_wasm32_e2e.c` で 296 件を通常 `make test` に組み込み済み。
+  `pointer/array_decay_diff.c` (`&a[9] - a`) は IR が `ptr + offset -> i64; i64 - ptr` になり、
+  既存の `64-bit integer value represented as pointer` guard に当たるため未収録。次の Wasm parity 候補。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
