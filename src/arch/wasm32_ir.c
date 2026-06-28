@@ -1040,6 +1040,17 @@ static void emit_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
   *member_idx = m - 1;
 }
 
+static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr,
+                                             const tag_member_info_t *mi) {
+  if (!mi || mi->bit_width <= 0) {
+    wasm_unsupported_msg("global bitfield initializer in Wasm backend");
+  }
+  uint64_t mask = mi->bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi->bit_width) - 1);
+  uint64_t value = (uint64_t)((idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0);
+  uint64_t packed = (value & mask) << mi->bit_offset;
+  emit_i32_data_bytes(addr + mi->offset, (long long)packed, mi->type_size);
+}
+
 static void emit_global_nested_union_data(global_var_t *gv, int *val_idx, int addr, int union_size) {
   if (*val_idx >= gv->init_count) return;
   int idx = (*val_idx)++;
@@ -1105,7 +1116,8 @@ static void emit_global_union_data(global_var_t *gv, int addr) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }
   if (mi.bit_width > 0) {
-    wasm_unsupported_msg("global union initializer in Wasm backend");
+    emit_global_bitfield_member_data(gv, 0, addr, &mi);
+    return;
   }
   if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
     int val_idx = 0;

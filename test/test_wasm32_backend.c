@@ -253,6 +253,14 @@ int main(void) {
   failures += run_case("global_union_fp",
                        "union U{int i; double d;}; union U g={.d=2.5}; int main(){return (int)(g.d+1.5);}\n",
                        global_union_fp, 2, 4);
+  const char *global_union_bitfield[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_bitfield",
+                       "union U{unsigned int a:3; unsigned int b:5;}; union U g={.b=17}; int main(){return g.b;}\n",
+                       global_union_bitfield, 2, 17);
+  const char *global_union_signed_bitfield[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_signed_bitfield",
+                       "union U{int a:3; unsigned int b:5;}; union U g={.a=-1}; int main(){return g.a+1;}\n",
+                       global_union_signed_bitfield, 2, 0);
   const char *global_union_struct[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_union_struct",
                        "struct S{int a; int b;}; union U{struct S s; int i;}; "
