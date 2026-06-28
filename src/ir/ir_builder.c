@@ -119,13 +119,23 @@ static ir_type_t elem_value_type(int type_size) {
   return IR_TY_I8;
 }
 
+static ir_type_t scalar_value_type(int type_size, int is_pointer) {
+  if (type_size >= 8) return is_pointer ? IR_TY_PTR : IR_TY_I64;
+  return elem_value_type(type_size);
+}
+
+static int mem_is_pointer_like(const node_mem_t *mem) {
+  return mem && (mem->is_pointer || mem->is_tag_pointer ||
+                 mem->is_scalar_ptr_member || mem->pointer_qual_levels > 0);
+}
+
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
   /* float/double 変数は base.fp_kind で判定 */
   unsigned fpk = lv->mem.base.fp_kind;
   if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
-  return elem_value_type(elem);
+  return scalar_value_type(elem, mem_is_pointer_like(&lv->mem));
 }
 
 static int is_fp_type(ir_type_t t) {
@@ -742,7 +752,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
     int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-    load_ty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+    load_ty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -1128,7 +1138,7 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
   if (src->kind == ND_FUNCALL) {
     int ret_size = src->ret_struct_size;
     if (ret_size == 1 || ret_size == 2 || ret_size == 4 || ret_size == 8) {
-      ir_type_t ret_ty = elem_value_type(ret_size);
+      ir_type_t ret_ty = scalar_value_type(ret_size, 0);
       ir_val_t v = build_expr(ctx, src);
       if (ctx->failed) return;
       if (v.type != ret_ty) v = coerce_to_type(ctx, v, ret_ty);
@@ -1198,7 +1208,7 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (vty == IR_TY_I32) {
     int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-    vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+    vty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
   ir_val_t rhs = build_expr(ctx, node->rhs);
@@ -1232,9 +1242,7 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   /* DEREF の type_size と fp_kind から書き込み幅を決める。 */
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (vty == IR_TY_I32) {
-    if (mm->type_size >= 8) vty = IR_TY_PTR;
-    else if (mm->type_size == 2) vty = IR_TY_I16;
-    else if (mm->type_size == 1) vty = IR_TY_I8;
+    vty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
   }
   rhs = coerce_to_type_ex(ctx, rhs, vty, mm->is_unsigned ? 1 : 0,
                           node->rhs ? ps_node_is_unsigned(node->rhs) : 0);
@@ -1308,9 +1316,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
    * (関数ポインタ配列等で 8B 要素を i32 と誤判定しないように)。 */
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
-    if (mm->type_size >= 8) load_ty = IR_TY_PTR;
-    else if (mm->type_size == 2) load_ty = IR_TY_I16;
-    else if (mm->type_size == 1) load_ty = IR_TY_I8;
+    load_ty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
   }
   inst->dst = ir_val_vreg(v, load_ty);
   inst->src1 = ptr;
@@ -1925,15 +1931,26 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   /* 直接呼び出しで戻り値が long / pointer のとき、呼び出し側でも 8 バイト値として
    * 扱う。i32 のままだと `h(x) * 2` のように戻り値を使う演算が 32bit で行われ
    * 上位ビットが落ちる (h が long を返す場合)。 */
-  if (ret_ty == IR_TY_I32 && !fn->callee && fn->funcname) {
-    if (node->ret_struct_size > 0 &&
-        !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
-        !psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len) &&
-        !cg_size_needs_indirect_struct(node->ret_struct_size)) {
+  if (ret_ty == IR_TY_I32) {
+    int small_struct_value_ret = 0;
+    if (!fn->callee && fn->funcname) {
+      small_struct_value_ret =
+          node->ret_struct_size > 0 &&
+          !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
+          !psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len) &&
+          !cg_size_needs_indirect_struct(node->ret_struct_size);
+    } else if (fn->callee) {
+      small_struct_value_ret =
+          node->ret_struct_size > 0 &&
+          psx_node_pointer_qual_levels(fn->callee) <= 1 &&
+          !cg_size_needs_indirect_struct(node->ret_struct_size);
+    }
+    if (small_struct_value_ret) {
       ret_ty = (node->ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
-    } else if (psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
+    } else if (!fn->callee && fn->funcname &&
+               psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
       ret_ty = IR_TY_PTR;
-    } else if (node->ret_struct_size <= 0) {
+    } else if (!fn->callee && fn->funcname && node->ret_struct_size <= 0) {
       token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
       if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) ret_ty = IR_TY_I64;
     }
@@ -2295,16 +2312,14 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
     node_mem_t *mm = (node_mem_t *)target;
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
-      if (mm->type_size >= 8) vty = IR_TY_PTR;
-      else if (mm->type_size == 2) vty = IR_TY_I16;
-      else if (mm->type_size == 1) vty = IR_TY_I8;
+      vty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
     }
   } else if (target->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)target;
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
       int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-      vty = (sz >= 8) ? IR_TY_PTR : (sz == 4 ? IR_TY_I32 : (sz == 2 ? IR_TY_I16 : IR_TY_I8));
+      vty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
     }
     ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
   } else {

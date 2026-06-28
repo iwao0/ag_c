@@ -138,6 +138,18 @@ int main(void) {
   const char *i64_call[] = {"(func $inc (param $p0 i64) (result i64)", "i64.load", "(call $inc"};
   failures += run_case("i64_call", "long inc(long x){return x+1;} int main(){return inc(41L);}\n",
                        i64_call, 3, 42);
+  const char *i64_local_store[] = {"i64.store", "i64.load", "i64.shr_s"};
+  failures += run_case("i64_local_store",
+                       "int main(){long x; x=1L<<40; return (x>>40)==1;}\n",
+                       i64_local_store, 3, 1);
+  const char *i64_global_store[] = {"i64.store", "i64.load", "i64.shr_s"};
+  failures += run_case("i64_global_store",
+                       "long g; int main(){g=1L<<40; return (g>>40)==1;}\n",
+                       i64_global_store, 3, 1);
+  const char *i64_deref_store[] = {"i64.store", "i64.load", "i64.shr_s"};
+  failures += run_case("i64_deref_store",
+                       "int main(){long x; long *p; p=&x; *p=1L<<40; return ((*p)>>40)==1;}\n",
+                       i64_deref_store, 3, 1);
   const char *branch[] = {"(local $pc i32)", "(loop $dispatch", "(br $dispatch)"};
   failures += run_case("branch", "int main(){if(1)return 1; return 0;}\n", branch, 3, 1);
   const char *loop[] = {"(local $pc i32)", "(loop $dispatch", "i32.lt_s"};
