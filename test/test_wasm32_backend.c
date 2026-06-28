@@ -241,6 +241,12 @@ int main(void) {
                        "struct P{int a; int b;}; struct P make(struct P *p){return *p;} "
                        "int main(){struct P q; q.a=8; q.b=9; struct P r; r=make(&q); return r.a+r.b;}\n",
                        struct8_return_deref, 3, 17);
+  const char *struct8_return_ternary[] = {"(func $pick (param $p0 i64) (result i64)", "if", "i64.load"};
+  failures += run_case("struct8_return_ternary",
+                       "struct P{int a; int b;}; struct P pick(int c){struct P a; struct P b; "
+                       "a.a=1; a.b=2; b.a=3; b.b=4; return c?b:a;} "
+                       "int main(){struct P q; q=pick(1); return q.a+q.b;}\n",
+                       struct8_return_ternary, 3, 7);
   const char *struct8_arg[] = {"(func $id (param $p0 i64) (result i64)", "(call $id", "i64.load"};
   failures += run_case("struct8_arg",
                        "struct P{int a; int b;}; struct P id(struct P p){return p;} "
@@ -263,6 +269,22 @@ int main(void) {
                        "int main(){struct P a; struct P b; a.a=1; a.b=2; a.c=3; "
                        "b.a=4; b.b=5; b.c=6; return sum(1?b:a);}\n",
                        struct_arg_ternary, 3, 15);
+  const char *struct8_assign_ternary[] = {"i64.store", "if", "i64.load"};
+  failures += run_case("struct8_assign_ternary",
+                       "struct P{int a; int b;}; int main(){struct P a; struct P b; struct P q; "
+                       "a.a=1; a.b=2; b.a=3; b.b=4; q=1?b:a; return q.a+q.b;}\n",
+                       struct8_assign_ternary, 3, 7);
+  const char *struct_return_ternary[] = {"(func $pick (param $p0 i32)", "(call $pick", "i64.store"};
+  failures += run_case("struct_return_ternary",
+                       "struct P{int a; int b; int c;}; struct P pick(int c){struct P a; struct P b; "
+                       "a.a=1; a.b=2; a.c=3; b.a=4; b.b=5; b.c=6; return c?b:a;} "
+                       "int main(){struct P q; q=pick(1); return q.a+q.b+q.c;}\n",
+                       struct_return_ternary, 3, 15);
+  const char *struct_assign_ternary[] = {"i64.store", "if", "i32.store"};
+  failures += run_case("struct_assign_ternary",
+                       "struct P{int a; int b; int c;}; int main(){struct P a; struct P b; struct P q; "
+                       "a.a=1; a.b=2; a.c=3; b.a=4; b.b=5; b.c=6; q=1?b:a; return q.a+q.b+q.c;}\n",
+                       struct_assign_ternary, 3, 15);
   const char *alignas32[] = {"i32.and", "i32.const -32"};
   failures += run_case("alignas32",
                        "int main(){_Alignas(32) int x; x=7; return x + (((long)&x) & 31);}\n",

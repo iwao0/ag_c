@@ -829,9 +829,10 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_none();
   }
   if (node->is_complex) return build_assign_complex(ctx, node);
-  /* struct 値代入: ND_ASSIGN.type_size が要素サイズを超える (>8) か、レジスタに
-   * きれいに乗らないサイズ (3/5/6/7) なら memcpy 経路。 */
-  if (cg_size_needs_indirect_struct(((node_mem_t *)node)->type_size))
+  /* struct/union 値代入: 8B でも scalar 式として評価すると先頭メンバだけを
+   * store してしまうため、tag 値そのものなら memcpy/materialize 経路に送る。 */
+  if ((aggregate_size_from_node(node->lhs) > 0 && aggregate_size_from_node(node->rhs) > 0) ||
+      cg_size_needs_indirect_struct(((node_mem_t *)node)->type_size))
     return build_assign_struct(ctx, node);
   switch (node->lhs->kind) {
     case ND_LVAR:  return build_assign_to_lvar(ctx, node);
@@ -1053,36 +1054,8 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, call);
     return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
   }
-  /* src のアドレスを得る (通常の struct から struct コピー) */
-  node_t *src = node->rhs;
-  /* struct compound literal `(struct S){...}` は ND_COMMA(init, temp struct lvalue)。
-   * init (メンバストア) を評価してから temp lvalue を struct ソースとして扱う。
-   * これがないと src 判定が LVAR/DEREF/GVAR に当たらず compile-fail していた
-   * (`s = (struct S){9,8,7}` で >8B のとき)。 */
-  if (src && src->kind == ND_COMMA && src->rhs) {
-    (void)build_expr(ctx, src->lhs);
-    if (ctx->failed) return ir_val_none();
-    src = src->rhs;
-  }
-  int src_ptr_vreg = -1;
-  if (src && src->kind == ND_LVAR) {
-    src_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
-  } else if (src && src->kind == ND_DEREF) {
-    ir_val_t ptr = build_expr(ctx, src->lhs);
-    if (ctx->failed) return ir_val_none();
-    if (ptr.id >= 0) src_ptr_vreg = ptr.id;
-  } else if (src && src->kind == ND_GVAR) {
-    src_ptr_vreg = address_of_gvar(ctx, (node_gvar_t *)src);
-  } else {
-    fail(ctx, "struct assign src not LVAR/DEREF/GVAR");
-    return ir_val_none();
-  }
-  if (src_ptr_vreg < 0) return ir_val_none();
-  ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-  cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-  cp->src2 = ir_val_vreg(src_ptr_vreg, IR_TY_PTR);
-  cp->alloca_size = assign_size;
-  ir_func_append_inst(ctx->f, cp);
+  materialize_aggregate_expr_to(ctx, node->rhs, dst_ptr_vreg, assign_size);
+  if (ctx->failed) return ir_val_none();
   return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
 }
 
@@ -1146,10 +1119,11 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
   }
   if (src->kind == ND_FUNCALL) {
     int ret_size = src->ret_struct_size;
-    if (ret_size == 8) {
+    if (ret_size == 1 || ret_size == 2 || ret_size == 4 || ret_size == 8) {
+      ir_type_t ret_ty = elem_value_type(ret_size);
       ir_val_t v = build_expr(ctx, src);
       if (ctx->failed) return;
-      if (v.type != IR_TY_I64) v = coerce_to_type(ctx, v, IR_TY_I64);
+      if (v.type != ret_ty) v = coerce_to_type(ctx, v, ret_ty);
       ir_inst_t *st = ir_inst_new(IR_STORE);
       st->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
       st->src2 = v;
@@ -2691,26 +2665,18 @@ static void build_stmt_block(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_small_struct_return_value(ir_build_ctx_t *ctx, node_t *src, int size) {
   if (size != 8) return ir_val_none();
-  if (src && src->kind == ND_COMMA && src->rhs) {
-    (void)build_expr(ctx, src->lhs);
-    if (ctx->failed) return ir_val_none();
-    src = src->rhs;
-  }
   if (src && src->kind == ND_FUNCALL) {
     return build_expr(ctx, src);
   }
 
-  int src_ptr = -1;
-  if (src && src->kind == ND_LVAR) {
-    src_ptr = address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
-  } else if (src && src->kind == ND_DEREF) {
-    ir_val_t p = build_expr(ctx, src->lhs);
-    if (ctx->failed) return ir_val_none();
-    src_ptr = p.id;
-  } else if (src && src->kind == ND_GVAR) {
-    src_ptr = address_of_gvar(ctx, (node_gvar_t *)src);
-  }
-  if (src_ptr < 0) return ir_val_none();
+  int src_ptr = ir_func_new_vreg(ctx->f);
+  ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
+  ia->dst = ir_val_vreg(src_ptr, IR_TY_PTR);
+  ia->alloca_size = size;
+  ia->alloca_align = 8;
+  ir_func_append_inst(ctx->f, ia);
+  materialize_aggregate_expr_to(ctx, src, src_ptr, size);
+  if (ctx->failed) return ir_val_none();
 
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -2723,40 +2689,8 @@ static ir_val_t build_small_struct_return_value(ir_build_ctx_t *ctx, node_t *src
 static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   /* struct 戻り値: *ret_area = node->lhs を memcpy して void return。 */
   if (ctx->f->ret_struct_size > 0 && node->lhs) {
-    int src_ptr = -1;
-    node_t *src = node->lhs;
-    /* compound literal `return (struct V){...};` は ND_COMMA(init, struct lvalue)。
-     * init (要素ストア) を評価してから rhs を struct ソースとして扱う。 */
-    if (src->kind == ND_COMMA && src->rhs) {
-      (void)build_expr(ctx, src->lhs);
-      if (ctx->failed) return;
-      src = src->rhs;
-    }
-    if (src->kind == ND_LVAR) {
-      src_ptr = address_of_lvar(ctx, ((node_lvar_t *)src)->offset);
-    } else if (src->kind == ND_DEREF) {
-      ir_val_t p = build_expr(ctx, src->lhs);
-      if (ctx->failed) return;
-      src_ptr = p.id;
-    } else if (src->kind == ND_GVAR) {
-      src_ptr = address_of_gvar(ctx, (node_gvar_t *)src);
-    } else if (src->kind == ND_FUNCALL) {
-      /* `return make(...)`: >8B struct を返す funccall を直接 return する。
-       * build_node_funcall は間接 struct 戻り値で ret_area を確保しそのアドレス (PTR)
-       * を返すので、それを memcpy ソースにする (一旦変数へ入れると動いていた)。 */
-      ir_val_t p = build_expr(ctx, src);
-      if (ctx->failed) return;
-      src_ptr = p.id;
-    } else {
-      fail(ctx, "struct return value is not LVAR/DEREF");
-      return;
-    }
-    if (src_ptr < 0) return;
-    ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-    cp->src1 = ir_val_vreg(ctx->f->ret_area_vreg, IR_TY_PTR);
-    cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
-    cp->alloca_size = ctx->f->ret_struct_size;
-    ir_func_append_inst(ctx->f, cp);
+    materialize_aggregate_expr_to(ctx, node->lhs, ctx->f->ret_area_vreg, ctx->f->ret_struct_size);
+    if (ctx->failed) return;
     ir_inst_t *inst = ir_inst_new(IR_RET);
     inst->src1 = ir_val_none();
     ir_func_append_inst(ctx->f, inst);
@@ -3241,6 +3175,11 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   if (psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len)) {
     ret_ty = IR_TY_VOID;
   }
+  if (fn->base.ret_struct_size > 0 && !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
+      !psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len) &&
+      !cg_size_needs_indirect_struct(fn->base.ret_struct_size)) {
+    ret_ty = (fn->base.ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
+  }
   /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
    * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
    * 上位 32bit を捨ててしまう。 */
@@ -3250,7 +3189,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   }
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
    * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
-  if (ret_ty == IR_TY_I32) {
+  if (ret_ty == IR_TY_I32 && fn->base.ret_struct_size <= 0) {
     token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
     if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) {
       ret_ty = IR_TY_I64;

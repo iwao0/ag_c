@@ -214,6 +214,10 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
   return raw;
 }
 
+static int func_has_hidden_ret_area(ir_func_t *f) {
+  return f && f->ret_struct_size > 0;
+}
+
 static void collect_vreg_type_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t type) {
   if (v.id < 0 || v.id >= ctx->f->next_vreg_id) return;
   if (!wasm_type(type)) return;
@@ -228,8 +232,9 @@ static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
 
 static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM) {
-    collect_vreg_type_as(ctx, i->dst,
-                         func_param_type_from_decl(ctx->f, (int)i->src1.imm, i->dst.type));
+    ir_type_t ty = (i->src1.imm < 0) ? IR_TY_PTR
+                                     : func_param_type_from_decl(ctx->f, (int)i->src1.imm, i->dst.type);
+    collect_vreg_type_as(ctx, i->dst, ty);
     return;
   }
   collect_vreg_type(ctx, i->dst);
@@ -525,8 +530,7 @@ static void emit_memcpy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
 }
 
 static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
-  if (i->callee.id != IR_VAL_NONE || i->ret_struct_size > 0 || i->ret_complex_half != 0 ||
-      i->is_variadic_call) {
+  if (i->callee.id != IR_VAL_NONE || i->ret_complex_half != 0 || i->is_variadic_call) {
     wasm_unsupported_op(i->op);
   }
   if (!i->sym) wasm_unsupported_op(i->op);
@@ -534,7 +538,10 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
   }
   int returns_void = psx_ctx_is_function_ret_void(i->sym, i->sym_len);
-  if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
+  if (i->ret_struct_size > 0) {
+    wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
+    emit_val_expr_as(ctx, i->ret_struct_area, IR_TY_PTR);
+  } else if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
     wasm_emitf(indent, "(local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
   } else {
     wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
@@ -546,7 +553,9 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     emit_val_expr_as(ctx, i->args[a], arg_ty);
   }
   cg_emitf(")");
-  if (!returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) cg_emitf(")");
+  if (i->ret_struct_size == 0 && !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
+    cg_emitf(")");
+  }
   cg_emitf("\n");
 }
 
@@ -558,8 +567,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (!dispatch_mode) wasm_unsupported_op(i->op);
       return;
     case IR_PARAM:
-      if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0) wasm_unsupported_op(i->op);
-      wasm_emitf(indent, "(local.set $v%d (local.get $p%d))\n", i->dst.id, (int)i->src1.imm);
+      if (i->src1.id != IR_VAL_IMM || i->src1.imm < -1) wasm_unsupported_op(i->op);
+      wasm_emitf(indent, "(local.set $v%d (local.get $p%d))\n", i->dst.id,
+                 i->src1.imm < 0 ? 0 : (int)i->src1.imm + func_has_hidden_ret_area(ctx->f));
       return;
     case IR_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
@@ -761,10 +771,14 @@ static int func_param_count(ir_func_t *f) {
       }
     }
   }
-  return max_idx + 1;
+  return max_idx + 1 + func_has_hidden_ret_area(f);
 }
 
 static ir_type_t func_param_type(ir_func_t *f, int idx) {
+  if (func_has_hidden_ret_area(f)) {
+    if (idx == 0) return IR_TY_PTR;
+    idx--;
+  }
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm == idx) {
@@ -792,7 +806,7 @@ static void emit_func(ir_func_t *f) {
     if (!pt) wasm_unsupported_msg("non-integer Wasm function parameter");
     cg_emitf(" (param $p%d %s)", p, pt);
   }
-  if (f->ret_type != IR_TY_VOID) {
+  if (f->ret_type != IR_TY_VOID && !func_has_hidden_ret_area(f)) {
     const char *rt = wasm_type(f->ret_type);
     if (!rt) wasm_unsupported_msg("non-integer Wasm function return");
     cg_emitf(" (result %s)", rt);
