@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き130: Allow fixed Wasm calls to defined variadic funcs + E2E 1013）
+最終更新: 2026-06-29（続き131: Lower Wasm VLA allocation + E2E 1022）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1013/1013 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1022/1022 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -216,6 +216,13 @@
   にしていた。直接 call では固定引数数までを Wasm call に渡し、間接 variadic call と `va_arg_area`
   は引き続き未対応にする。fixture を Wasm E2E に追加し、
   静的 531 件 + extra 482 件の **1013 件**。
+- 続き131: **Wasm VLA allocation lowering**。
+  VLA 系 fixture が IR_VLA_ALLOC で E4008 になっていた。Wasm emitter で `src1` の byte size を
+  16-byte align し、`__stack_pointer` を下げて dst vreg に base pointer を入れる lowering を追加。
+  関数 return 時の既存 `old_sp` 復元に乗る。`alignas_overaligned_local.c`,
+  `sizeof_vla_subscript.c`, `vla_2d_param_and_row_sizeof.c`, `vla_3d.c`,
+  `vla_3d4d_param.c`, `vla_4d_and_higher.c`, `vla_double_element.c`, `vla_mixed_dims.c`,
+  `vla_struct_local.c` を Wasm E2E に追加し、静的 531 件 + extra 491 件の **1022 件**。
 
 ### Wasm backend の既知メモ
 
@@ -223,9 +230,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1013 件を通常 `make test` に組み込み済み。
+  1022 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-130で 35 件を回収し、83 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-131で 44 件を回収し、74 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

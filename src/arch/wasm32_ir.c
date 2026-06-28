@@ -1056,6 +1056,13 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       cg_emitf(" (i32.const %d)) (i32.const %d)))\n", align - 1, -align);
       return;
     }
+    case IR_VLA_ALLOC:
+      wasm_emitf(indent, "(local.set $v%d (i32.sub (global.get $__stack_pointer) ", i->dst.id);
+      cg_emitf("(i32.and (i32.add ");
+      emit_val_expr_as(ctx, i->src1, IR_TY_I32);
+      cg_emitf(" (i32.const 15)) (i32.const -16))))\n");
+      wasm_emitf(indent, "(global.set $__stack_pointer (local.get $v%d))\n", i->dst.id);
+      return;
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
       emit_addr_expr(ctx, i->src1);

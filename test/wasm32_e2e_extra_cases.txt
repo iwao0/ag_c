@@ -19,6 +19,7 @@ funcall/variadic_def.c
 funcall/variadic_proto.c
 pointer/array_decay_diff.c
 probes_found_bugs/addr_of_array_compound_literal.c
+probes_found_bugs/alignas_overaligned_local.c
 probes_found_bugs/alignof_aggregate.c
 probes_found_bugs/anon_member_fp_unsigned_promote.c
 probes_found_bugs/anon_struct_bitfield_promote.c
@@ -265,6 +266,7 @@ probes_found_bugs/sizeof_multiword_int.c
 probes_found_bugs/sizeof_postinc.c
 probes_found_bugs/sizeof_string_and_addr_of_array.c
 probes_found_bugs/sizeof_string_literal.c
+probes_found_bugs/sizeof_vla_subscript.c
 probes_found_bugs/static_assert_in_struct.c
 probes_found_bugs/static_internal_linkage.c
 probes_found_bugs/static_local_array_param_overlap.c
@@ -356,6 +358,13 @@ probes_found_bugs/variadic_macro_empty_va.c
 probes_found_bugs/variadic_macro_forward.c
 probes_found_bugs/void_ptr_return.c
 probes_found_bugs/vla_2d_param.c
+probes_found_bugs/vla_2d_param_and_row_sizeof.c
+probes_found_bugs/vla_3d.c
+probes_found_bugs/vla_3d4d_param.c
+probes_found_bugs/vla_4d_and_higher.c
+probes_found_bugs/vla_double_element.c
+probes_found_bugs/vla_mixed_dims.c
+probes_found_bugs/vla_struct_local.c
 shift/shift_neg_right.c
 stdheader/assert_include.c
 stdheader/errno_include.c
