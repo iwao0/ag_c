@@ -3124,6 +3124,9 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   return 1;
 }
 
+static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
+                                                 int array_count, int is_unsigned);
+
 /* `static int t[N] = {...};` / `static char s[] = "..."` の 1D 整数配列 static local をグローバルに lowering する。
  * スコープ: 1D 整数配列 (`int/long/short/char [unsigned]`)、ゼロ初期化 or brace init。
  * 文字列リテラル init は要素幅と文字列幅が一致する場合だけ扱う。FP / 多次元 /
@@ -3162,8 +3165,45 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     return 0;
   }
   if (!after_rb) return 0;
-  /* 多次元は scope 外。 */
-  if (after_rb->kind == TK_LBRACKET) return 0;
+  if (after_rb->kind == TK_LBRACKET) {
+    if (!has_size_token) return 0;
+    int dims[8] = {0};
+    int dim_count = 1;
+    long long total_count = arr_count;
+    dims[0] = (int)arr_count;
+    token_t *q = after_rb;
+    while (q && q->kind == TK_LBRACKET) {
+      if (dim_count >= 8) return 0;
+      token_t *num = q->next;
+      if (!num || num->kind != TK_NUM ||
+          ((token_num_t *)num)->num_kind != TK_NUM_KIND_INT) {
+        return 0;
+      }
+      token_t *rb = num->next;
+      if (!rb || rb->kind != TK_RBRACKET) return 0;
+      long long dim = ((token_num_int_t *)num)->val;
+      if (dim <= 0) return 0;
+      dims[dim_count++] = (int)dim;
+      total_count *= dim;
+      q = rb->next;
+    }
+    if (!q) return 0;
+    if (q->kind == TK_ASSIGN) {
+      token_t *after_eq = q->next;
+      if (!after_eq || after_eq->kind != TK_LBRACE) return 0;
+    } else if (q->kind != TK_COMMA && q->kind != TK_SEMI) {
+      return 0;
+    }
+
+    for (int i = 0; i < dim_count; i++) {
+      tk_expect('[');
+      set_curtok(curtok()->next); /* skip NUM */
+      tk_expect(']');
+    }
+    g_inner_array_dim_count = dim_count;
+    for (int i = 0; i < 8; i++) g_inner_array_dims[i] = i < dim_count ? dims[i] : 0;
+    return try_lower_static_local_array_consumed(tok, elem_size, (int)total_count, is_unsigned);
+  }
   /* `=` の後の形を peek。`{`= brace OK、`TK_STRING`=文字列 init、その他は fallback。 */
   int has_init = 0;
   int has_string_init = 0;
@@ -3354,6 +3394,31 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   gv->tag_kind = TK_EOF;
   gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
   gv->type_size = (short)((int)arr_count * elem_size);
+  if (g_inner_array_dim_count >= 2) {
+    int outer_mul = 1;
+    for (int i = 1; i < g_inner_array_dim_count; i++) {
+      if (g_inner_array_dims[i] > 0) outer_mul *= g_inner_array_dims[i];
+    }
+    gv->outer_stride = outer_mul * elem_size;
+  }
+  if (g_inner_array_dim_count >= 3) {
+    int mid_mul = 1;
+    for (int i = 2; i < g_inner_array_dim_count; i++) {
+      if (g_inner_array_dims[i] > 0) mid_mul *= g_inner_array_dims[i];
+    }
+    gv->mid_stride = mid_mul * elem_size;
+  }
+  if (g_inner_array_dim_count >= 4) {
+    int idx_in_extras = 0;
+    for (int start = 3; start < g_inner_array_dim_count && idx_in_extras < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < g_inner_array_dim_count; j++) {
+        if (g_inner_array_dims[j] > 0) rest_mul *= g_inner_array_dims[j];
+      }
+      gv->extra_strides[idx_in_extras++] = rest_mul * elem_size;
+    }
+    gv->extra_strides_count = (unsigned char)idx_in_extras;
+  }
 
   if (has_init && has_string_init) {
     tk_expect('=');
@@ -3432,6 +3497,32 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   var->is_initialized = 1;
   var->is_unsigned = is_unsigned ? 1 : 0;
   var->fp_kind = TK_FLOAT_KIND_NONE;
+  if (g_inner_array_dim_count >= 2) {
+    int outer_mul = 1;
+    for (int i = 1; i < g_inner_array_dim_count; i++) {
+      if (g_inner_array_dims[i] > 0) outer_mul *= g_inner_array_dims[i];
+    }
+    var->outer_stride = outer_mul * elem_size;
+  }
+  if (g_inner_array_dim_count >= 3) {
+    int mid_mul = 1;
+    for (int i = 2; i < g_inner_array_dim_count; i++) {
+      if (g_inner_array_dims[i] > 0) mid_mul *= g_inner_array_dims[i];
+    }
+    var->mid_stride = mid_mul * elem_size;
+  }
+  if (g_inner_array_dim_count >= 4) {
+    var->extra_strides = calloc(5, sizeof(int));
+    int idx_in_extras = 0;
+    for (int start = 3; start < g_inner_array_dim_count && idx_in_extras < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < g_inner_array_dim_count; j++) {
+        if (g_inner_array_dims[j] > 0) rest_mul *= g_inner_array_dims[j];
+      }
+      var->extra_strides[idx_in_extras++] = rest_mul * elem_size;
+    }
+    var->extra_strides_count = (unsigned char)idx_in_extras;
+  }
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
@@ -4151,7 +4242,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     }
     if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
         (inner_array_mul > 0 || inner_array_mul == -1) &&
-        g_inner_array_dim_count <= 1 && paren_array_mul == 0 &&
+        paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
         decl_fp_kind == TK_FLOAT_KIND_NONE &&
         curtok()->kind != TK_LBRACKET) {

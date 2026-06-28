@@ -4925,7 +4925,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
  * 配列は decl.c の try_lower_static_local_array でグローバルにリダイレクトされ、
  * alias lvar (is_static_local=1, static_global_name=mangled) を持つ。
  * alias は size=0 で frame 割当を抑制しているため、サイズ情報は global_vars
- * から名前で引く。1D 整数配列のみ scope に入る (outer/mid stride は 0 のまま)。 */
+ * から名前で引く。多次元配列は alias lvar に保存した stride 情報を
+ * ND_ADDR(ND_GVAR) へ伝播し、通常のローカル/グローバル配列と同じ subscript 経路に乗せる。 */
 static node_t *build_static_local_array_addr_node(lvar_t *var) {
   /* global_vars リストから名前で引いて type_size を取る。 */
   short gv_type_size = (short)var->elem_size;
@@ -4951,10 +4952,27 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
   node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
   addr->base.kind = ND_ADDR;
   addr->base.lhs = (node_t *)base;
-  int stride = var->elem_size; /* 1D limited */
+  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
   addr->type_size = stride;
   addr->deref_size = stride;
   addr->is_pointer = 1;
+  if (var->outer_stride > 0) {
+    if (var->mid_stride > 0) {
+      addr->inner_deref_size = (short)var->mid_stride;
+      if (var->extra_strides_count > 0) {
+        addr->next_deref_size = (short)var->extra_strides[0];
+        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
+          addr->extra_strides[i - 1] = var->extra_strides[i];
+        }
+        addr->extra_strides[var->extra_strides_count - 1] = var->elem_size;
+        addr->extra_strides_count = var->extra_strides_count;
+      } else {
+        addr->next_deref_size = (short)var->elem_size;
+      }
+    } else {
+      addr->inner_deref_size = (short)var->elem_size;
+    }
+  }
   addr->tag_kind = var->tag_kind;
   addr->tag_name = var->tag_name;
   addr->tag_len = var->tag_len;

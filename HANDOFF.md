@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-28（続き113: Wasm backend incremental support）
+最終更新: 2026-06-28（続き114: static local multidim array lowering）
 
 ## 現状
-- `make test` = **1123/1123 green** (E2E + unit + parser + preprocess + IR + fuzz)。
-- 直近 Wasm backend 作業後の確認: `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend` green、
-  `./build/test_e2e` = **1124/1124 green**、`git diff --check` clean。
+- `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + E2E)。
+- 直近確認: `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/static_local_multidim_array.c` OK、
+  `./build/test_wasm32_backend` green、`./build/test_e2e` = **1125/1125 green**、`git diff --check` clean。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -100,19 +100,18 @@
   pointer-to-array return、未初期化の大きい global/aggregate を Wasm linear memory のゼロ初期化に任せる処理。
   制御フロー越しに global/struct member 関数ポインタが上書きされる場合は、誤コンパイルせず E4008 で止める。
   WAT は `wat2wasm` / `wasm-interp` がある環境では test harness が実行値まで確認する。
+- 続き114: **多次元 static local 整数配列の lowering**。
+  `int f(){static int a[2][3]; a[1][2]++; return a[1][2];}` が、1D static local 配列の
+  lowering 対象から外れて auto 多次元配列として登録され、呼び出し間で永続化せず ARM64/Wasm とも
+  stack frame (`alloca`) に置かれていた。`try_lower_static_local_array` が `[` 直後の多次元
+  定数 suffix を peek/consume して `try_lower_static_local_array_consumed` へ渡すよう拡張し、
+  lowering 先 `global_var_t` と alias `lvar_t` に `outer_stride` / `mid_stride` /
+  `extra_strides` を保存。`build_static_local_array_addr_node` でその stride を
+  `ND_ADDR(ND_GVAR)` に伝播する。2D/3D、初期化あり/なし、永続性、`sizeof` を fixture 化し、
+  Wasm backend でも実行値 12 を確認する。
 
 ### Wasm backend の既知メモ
 
-- **多次元 static local 配列の疑い**:
-  `int f(){static int a[2][3]; a[1][2]=a[1][2]+1; return a[1][2];}` が IR で
-  `v0 = alloca ptr size=24 align=8` になり、static storage ではなく stack frame に置かれる。
-  `static int x;` と `static int a[2];` は `load_sym @f.x.0` / `@f.a.a0` になり永続化されるため、
-  多次元 static local の宣言/登録経路だけが怪しい。Wasm backend では復元しづらいので parser/decl 側で追う。
-  再現プローブ:
-  ```c
-  int f(){static int a[2][3]; a[1][2]=a[1][2]+1; return a[1][2];}
-  int main(){return f()*10+f();} /* 期待 12、alloca なら 11 になり得る */
-  ```
 - Wasm indirect aggregate return (`ret_struct_size > 0`) はまだ未対応で E4008。単純 pointer return は `i32`
   として通るようになった。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

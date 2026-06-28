@@ -1162,6 +1162,7 @@ static const test_case_t test_cases[] = {
     {"probes", "generic_streaming_lookahead", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_streaming_lookahead.c", 0, 0},
     {"probes", "fp_arg_to_int_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/fp_arg_to_int_param.c", 0, 0},
     {"probes", "static_local_array_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_array_sizeof.c", 0, 0},
+    {"probes", "static_local_multidim_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_multidim_array.c", 0, 0},
     {"probes", "unsigned_long_return_signedness", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_long_return_signedness.c", 0, 0},
     {"probes", "mixed_width_comparison", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/mixed_width_comparison.c", 0, 0},
     {"probes", "funcptr_int_to_fp_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_int_to_fp_arg.c", 0, 0},

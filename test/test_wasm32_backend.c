@@ -486,6 +486,11 @@ int main(void) {
                        "struct P{int a;}; int f(){static struct P a[1]={{1}}; "
                        "a[0].a=a[0].a+1; return a[0].a;} int main(){return f()*10+f();}\n",
                        static_struct_array_persistent, 3, 23);
+  const char *static_local_multidim_array[] = {"i32.store", "i32.load"};
+  failures += run_case("static_local_multidim_array",
+                       "int f(){static int a[2][3]; a[1][2]=a[1][2]+1; return a[1][2];} "
+                       "int main(){return f()*10+f();}\n",
+                       static_local_multidim_array, 2, 12);
   const char *static_struct_incomplete_array[] = {"(data (i32.const", "i32.load"};
   failures += run_case("static_struct_incomplete_array",
                        "struct P{int a; int b;}; int main(){static struct P a[]={{1,2},{3,4}}; "
