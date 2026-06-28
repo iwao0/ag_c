@@ -132,6 +132,12 @@ int main(void) {
   failures += run_case("branch", "int main(){if(1)return 1; return 0;}\n", branch, 3, 1);
   const char *loop[] = {"(local $pc i32)", "(loop $dispatch", "i32.lt_s"};
   failures += run_case("loop", "int main(){int i; i=0; while(i<3){i=i+1;} return i;}\n", loop, 3, 3);
+  const char *global_read[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_read", "int g=5; int main(){return g+2;}\n", global_read, 2, 7);
+  const char *global_write[] = {"(data (i32.const", "i32.store"};
+  failures += run_case("global_write", "int g; int main(){g=9; return g;}\n", global_write, 2, 9);
+  const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
+  failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");

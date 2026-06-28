@@ -268,6 +268,10 @@ static void emit_val_expr_as(ir_val_t v, ir_type_t target) {
   emit_val_expr(v);
 }
 
+static void emit_addr_expr(ir_val_t v) {
+  emit_val_expr_as(v, IR_TY_I32);
+}
+
 static const char *wasm_binop(ir_op_t op, ir_type_t t) {
   const char *prefix = wasm_type(t);
   if (!prefix) return NULL;
@@ -306,7 +310,7 @@ static void emit_load(ir_inst_t *i, int indent) {
     default: wasm_unsupported_op(i->op);
   }
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
-  emit_val_expr(i->src1);
+  emit_addr_expr(i->src1);
   cg_emitf("))\n");
 }
 
@@ -321,7 +325,7 @@ static void emit_store(ir_inst_t *i, int indent) {
     default: wasm_unsupported_op(i->op);
   }
   wasm_emitf(indent, "(%s ", op);
-  emit_val_expr(i->src1);
+  emit_addr_expr(i->src1);
   cg_emitf(" ");
   emit_val_expr(i->src2);
   cg_emitf(")\n");
@@ -405,9 +409,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       return;
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
-      emit_val_expr(i->src1);
+      emit_addr_expr(i->src1);
       cg_emitf(" ");
-      emit_val_expr(i->src2);
+      emit_addr_expr(i->src2);
       cg_emitf("))\n");
       return;
     case IR_NEG:
