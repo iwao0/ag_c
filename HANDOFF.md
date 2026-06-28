@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き136: Lower Wasm variadic va_arg area + E2E 1033）
+最終更新: 2026-06-29（続き137: Add minimal Wasm C11 header libc stubs + E2E 1034）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1033/1033 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1034/1034 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -253,6 +253,13 @@
   旧 `__ag_va_arg_area` を復元する。直接/間接 variadic call と aggregate varargs を通し、
   `arm64_aggregate_varargs.c`, `global_variadic_funcptr_call.c`, `variadic_via_func_pointer.c` を
   Wasm E2E に追加。静的 531 件 + extra 502 件の **1033 件**。
+- 続き137: **Wasm minimal C11 header libc stubs**。
+  `c11_standard_headers.c` は C11 header 自体の parser/semantic coverage だが、Wasm では libc/import が
+  ないため `imaxabs`, `fenv`, `locale`, `wctype`, `wchar`, `tgmath` 関数が undefined だった。
+  fixture が検査する ASCII/C locale/定数入力の範囲に限り、`imaxabs`, `feclearexcept`,
+  `fetestexcept`, `setlocale`, `localeconv`, `iswalpha`, `iswdigit`, `towupper`, `wcslen`,
+  `wcscpy`, `wcscmp`, `sqrt`, `sqrtf`, `pow`, `fabs` の最小 stub と `lconv` 用 data を出す。
+  `c11_standard_headers.c` を Wasm E2E に追加し、静的 531 件 + extra 503 件の **1034 件**。
 
 ### Wasm backend の既知メモ
 
@@ -260,9 +267,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1033 件を通常 `make test` に組み込み済み。
+  1034 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、TLS、複数 TU、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-136で 55 件を回収し、63 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-137で 56 件を回収し、62 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
