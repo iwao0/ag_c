@@ -306,6 +306,16 @@ int main(void) {
                        "union U{int i; char c;}; struct S{union U u[2];}; "
                        "struct S g={{{.i=10},{.i=32}}}; int main(){return g.u[0].i+g.u[1].i;}\n",
                        global_struct_union_array, 2, 42);
+  const char *global_struct_union_struct[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct_union_struct",
+                       "struct P{int a; int b;}; union U{struct P p; int i;}; struct S{int tag; union U u;}; "
+                       "struct S g={7,{.p={10,25}}}; int main(){return g.tag+g.u.p.a+g.u.p.b;}\n",
+                       global_struct_union_struct, 2, 42);
+  const char *global_struct_union_bitfield[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct_union_bitfield",
+                       "union U{unsigned int a:3; unsigned int b:5;}; struct S{int tag; union U u;}; "
+                       "struct S g={25,{.b=17}}; int main(){return g.tag+g.u.b;}\n",
+                       global_struct_union_bitfield, 2, 42);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "
