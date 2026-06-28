@@ -553,7 +553,7 @@ static void infer_alloca_value_types(wasm_func_ctx_t *ctx) {
       }
       if (i->op == IR_STORE) {
         wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
-        ir_type_t val_ty = effective_val_type(ctx, i->src2);
+        ir_type_t val_ty = i->src2.type;
         if (slot && slot->value_type == IR_TY_VOID && wasm_type(val_ty)) {
           slot->value_type = val_ty;
         }
@@ -756,7 +756,8 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   int global_off = 0;
   global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &global_off);
   const char *op = NULL;
-  switch (effective_val_type(ctx, i->src2)) {
+  ir_type_t store_ty = i->src2.type;
+  switch (store_ty) {
     case IR_TY_I8:  op = "i32.store8"; break;
     case IR_TY_I16: op = "i32.store16"; break;
     case IR_TY_I32:
@@ -769,7 +770,7 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   wasm_emitf(indent, "(%s ", op);
   emit_addr_expr(ctx, i->src1);
   cg_emitf(" ");
-  emit_val_expr(ctx, i->src2);
+  emit_val_expr_as(ctx, i->src2, store_ty);
   cg_emitf(")\n");
   if (slot) {
     int name_len = 0;

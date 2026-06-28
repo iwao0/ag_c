@@ -324,6 +324,7 @@ probes_found_bugs/ternary_address_pointer_truncation.c
 probes_found_bugs/ternary_long_branch.c
 probes_found_bugs/ternary_pointer_null_branch.c
 probes_found_bugs/ternary_pointer_subscript.c
+probes_found_bugs/ternary_subint_branch.c
 probes_found_bugs/typedef_array_chain.c
 probes_found_bugs/typedef_array_of_pointers.c
 probes_found_bugs/typedef_array_param.c
