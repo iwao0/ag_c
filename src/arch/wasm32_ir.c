@@ -627,6 +627,10 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
     return;
   }
   if (target == IR_TY_I64 && src != IR_TY_I64) {
+    if (v.id == IR_VAL_IMM && !is_fp_type(src)) {
+      cg_emitf("(i64.const %lld)", v.imm);
+      return;
+    }
     cg_emitf("(%s ", val_is_unsigned(ctx, v) ? "i64.extend_i32_u" : "i64.extend_i32_s");
     emit_val_expr(ctx, v);
     cg_emitf(")");
@@ -799,7 +803,7 @@ static int i64_runtime_extension_unsupported(wasm_func_ctx_t *ctx, ir_val_t v) {
   ir_type_t src = effective_val_type(ctx, v);
   if (src == IR_TY_I64) return 0;
   if (v.id >= 0 && (src == IR_TY_I8 || src == IR_TY_I16 || src == IR_TY_I32)) return 0;
-  if (v.id == IR_VAL_IMM && v.imm >= INT32_MIN && v.imm <= INT32_MAX) return 0;
+  if (v.id == IR_VAL_IMM) return 0;
   return 1;
 }
 

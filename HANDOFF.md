@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き126: Fix Wasm ternary sub-int result stores + E2E 1008）
+最終更新: 2026-06-29（続き127: Fix Wasm i64 immediate extension + E2E 1010）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1008/1008 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1010/1010 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -192,6 +192,12 @@
   壊れて `-5` 判定に失敗していた。store 命令の幅と alloca value type 推定は IR の store source 型を
   正とし、値はその型へ合わせて emit する。`ternary_subint_branch.c` を Wasm E2E に追加し、
   静的 531 件 + extra 477 件の **1008 件**。
+- 続き127: **Wasm i64 mixed op の即値拡張**。
+  `int_cast_truncates_long.c` の `(unsigned)u == 0xFFFFFFFFu` と `switch_case_long_label.c` の
+  `case 5000000000L` が、mixed-width i64 op へ 32bit/long 即値を合わせる段階で
+  runtime i32→i64 extension と見なされ E4008 になっていた。即値 operand は `i64.const` として
+  直接 emit し、extension guard でも即値全般を許可する。2 件を Wasm E2E に追加し、
+  静的 531 件 + extra 479 件の **1010 件**。
 
 ### Wasm backend の既知メモ
 
@@ -199,9 +205,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1008 件を通常 `make test` に組み込み済み。
+  1010 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-126で 30 件を回収し、88 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-127で 32 件を回収し、86 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
