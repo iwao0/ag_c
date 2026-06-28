@@ -3309,6 +3309,32 @@ static lvar_t *register_param_stride_slot(token_ident_t *param, int byte_size) {
   return psx_decl_register_lvar_sized(name, name_len, byte_size, 8, 0);
 }
 
+static void apply_param_pointer_array_strides(lvar_t *var, int first_dim,
+                                              int second_dim, int elem_size) {
+  var->outer_stride = first_dim * elem_size;
+  if (second_dim > 0) {
+    var->outer_stride = first_dim * second_dim * elem_size;
+    var->mid_stride = second_dim * elem_size;
+  }
+}
+
+static int attach_param_runtime_stride(lvar_t *var, token_ident_t *param,
+                                       token_ident_t *dim_ident, int elem_size) {
+  lvar_t *src = psx_decl_find_lvar(dim_ident->str, dim_ident->len);
+  if (!src || !src->is_param) {
+    psx_diag_ctx(curtok(), "param",
+                 "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                 dim_ident->len, dim_ident->str);
+    return 0;
+  }
+  lvar_t *rs = register_param_stride_slot(param, 8);
+  var->is_vla = 1;
+  var->vla_row_stride_frame_off = rs->offset;
+  var->vla_row_stride_src_offset = src->offset;
+  var->vla_row_stride_elem_size = (short)elem_size;
+  return 1;
+}
+
 /* 仮引数 VLA / 多次元配列宣言子の lvar 登録 (`int a[n]` / `int a[][N]` /
  * `int a[][N][M]` / VLA dim that's another param 等)。
  * C11 6.7.6.3p7 により int *a として扱われるが、pointee が配列の場合は
@@ -3398,21 +3424,7 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
    *   *[rs_slot] = *[src_param] * elem_size
    * を計算する。これにより subscript の vla_rsf 経路 (expr.c) が
    * runtime stride を読んで `g[i]` を正しく steping できる。 */
-  lvar_t *src = psx_decl_find_lvar(inner_first_dim_ident->str,
-                                   inner_first_dim_ident->len);
-  if (!src || !src->is_param) {
-    psx_diag_ctx(curtok(), "param",
-                 "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
-                 inner_first_dim_ident->len, inner_first_dim_ident->str);
-    return var;
-  }
-  /* row stride スロットを匿名で確保。名前は param 名 + "__rs" で
-   * 衝突しないようにする (実体は VLA param 内部用)。 */
-  lvar_t *rs = register_param_stride_slot(param, 8);
-  var->is_vla = 1;
-  var->vla_row_stride_frame_off = rs->offset;
-  var->vla_row_stride_src_offset = src->offset;
-  var->vla_row_stride_elem_size = (short)ds->elem_size;
+  attach_param_runtime_stride(var, param, inner_first_dim_ident, ds->elem_size);
   var->base_deref_size = (short)ds->elem_size;
   return var;
 }
@@ -3526,11 +3538,9 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     if (param_is_array_declarator && param_inner_first_dim > 0 && ds->struct_size > 0) {
       var->is_tag_pointer = 0;
       var->base_deref_size = (short)ds->struct_size;
-      var->outer_stride = param_inner_first_dim * ds->struct_size;
-      if (param_inner_second_dim > 0) {
-        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds->struct_size;
-        var->mid_stride = param_inner_second_dim * ds->struct_size;
-      }
+      apply_param_pointer_array_strides(var, param_inner_first_dim,
+                                        param_inner_second_dim,
+                                        ds->struct_size);
     }
     return var;
   }
@@ -3567,29 +3577,15 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
      * captured inner dims を使って outer_stride / mid_stride を設定する。 */
     if (param_is_array_declarator && param_inner_first_dim > 0) {
-      var->outer_stride = param_inner_first_dim * ds->elem_size;
-      if (param_inner_second_dim > 0) {
-        var->outer_stride = param_inner_first_dim * param_inner_second_dim * ds->elem_size;
-        var->mid_stride = param_inner_second_dim * ds->elem_size;
-      }
+      apply_param_pointer_array_strides(var, param_inner_first_dim,
+                                        param_inner_second_dim,
+                                        ds->elem_size);
     } else if (param_is_array_declarator && param_inner_first_dim_ident != NULL) {
       /* pointer-to-VLA 仮引数 `int (*a)[n]` (n は先行パラメータ)。行ストライド n*elem は
        * 実行時値なので、row stride スロットを確保し関数 entry で *[rs] = *[n]*elem を計算する
        * (register_vla_array_param と同じ機構を再利用)。subscript は vla_row_stride_frame_off を
        * 実行時参照する。outer_stride は 0 のまま (実行時経路)。 */
-      lvar_t *src = psx_decl_find_lvar(param_inner_first_dim_ident->str,
-                                       param_inner_first_dim_ident->len);
-      if (!src || !src->is_param) {
-        psx_diag_ctx(curtok(), "param",
-                     "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
-                     param_inner_first_dim_ident->len, param_inner_first_dim_ident->str);
-      } else {
-        lvar_t *rs = register_param_stride_slot(param, 8);
-        var->is_vla = 1;
-        var->vla_row_stride_frame_off = rs->offset;
-        var->vla_row_stride_src_offset = src->offset;
-        var->vla_row_stride_elem_size = (short)ds->elem_size;
-      }
+      attach_param_runtime_stride(var, param, param_inner_first_dim_ident, ds->elem_size);
     } else if (param_ptr_levels == 1 && ds->typedef_is_array && ds->typedef_sizeof_size > 0) {
       /* `typedef int row_t[N]; row_t *a` / 多次元版 (`typedef int M[2][3][4]; M *p`)。 */
       apply_typedef_array_pointee_strides(var, ds);
