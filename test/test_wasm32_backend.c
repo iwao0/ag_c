@@ -20,7 +20,53 @@ static int slurp(const char *path, char *buf, size_t cap) {
   return 0;
 }
 
-static int run_case(const char *name, const char *src, const char **needles, int nneedles) {
+static int command_available(const char *cmd) {
+  char probe[256];
+  snprintf(probe, sizeof(probe), "command -v %s > /dev/null 2>&1", cmd);
+  return system(probe) == 0;
+}
+
+static int run_wabt_case(const char *name, int expected_ret) {
+  if (!command_available("wat2wasm") || !command_available("wasm-validate") ||
+      !command_available("wasm-interp")) {
+    return 0;
+  }
+  char wat[256];
+  char wasm[256];
+  char log[256];
+  snprintf(wat, sizeof(wat), "build/wasm32_%s.wat", name);
+  snprintf(wasm, sizeof(wasm), "build/wasm32_%s.wasm", name);
+  snprintf(log, sizeof(log), "build/wasm32_%s.interp.log", name);
+
+  char cmd[768];
+  snprintf(cmd, sizeof(cmd), "wat2wasm %s -o %s", wat, wasm);
+  if (system(cmd) != 0) {
+    fprintf(stderr, "FAIL: wat2wasm failed for %s\n", name);
+    return 1;
+  }
+  snprintf(cmd, sizeof(cmd), "wasm-validate %s", wasm);
+  if (system(cmd) != 0) {
+    fprintf(stderr, "FAIL: wasm-validate failed for %s\n", name);
+    return 1;
+  }
+  snprintf(cmd, sizeof(cmd), "wasm-interp %s --run-all-exports > %s", wasm, log);
+  if (system(cmd) != 0) {
+    fprintf(stderr, "FAIL: wasm-interp failed for %s\n", name);
+    return 1;
+  }
+  char buf[8192];
+  if (slurp(log, buf, sizeof(buf)) != 0) return 1;
+  char expected[64];
+  snprintf(expected, sizeof(expected), "main() => i32:%d", expected_ret);
+  if (!strstr(buf, expected)) {
+    fprintf(stderr, "FAIL: %s expected interp result '%s'\n", name, expected);
+    return 1;
+  }
+  return 0;
+}
+
+static int run_case(const char *name, const char *src, const char **needles, int nneedles,
+                    int expected_ret) {
   char in[256];
   char out[256];
   snprintf(in, sizeof(in), "build/wasm32_%s.c", name);
@@ -47,7 +93,7 @@ static int run_case(const char *name, const char *src, const char **needles, int
       return 1;
     }
   }
-  return 0;
+  return run_wabt_case(name, expected_ret);
 }
 
 static int run_fail_case(const char *name, const char *src, const char *needle) {
@@ -75,13 +121,13 @@ static int run_fail_case(const char *name, const char *src, const char *needle) 
 int main(void) {
   int failures = 0;
   const char *basic[] = {"(module", "(memory (export \"memory\") 1)", "(func $main", "(export \"main\""};
-  failures += run_case("ret42", "int main(){return 42;}\n", basic, 4);
+  failures += run_case("ret42", "int main(){return 42;}\n", basic, 4, 42);
   const char *arith[] = {"i32.const 29", "(return"};
-  failures += run_case("arith", "int main(){return (3+4)*5-6;}\n", arith, 2);
+  failures += run_case("arith", "int main(){return (3+4)*5-6;}\n", arith, 2, 29);
   const char *local[] = {"__stack_pointer", "i32.store", "i32.load"};
-  failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3);
+  failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3, 8);
   const char *call[] = {"(func $add (param $p0 i32) (param $p1 i32) (result i32)", "(call $add"};
-  failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2);
+  failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2, 7);
   failures += run_fail_case("branch", "int main(){if(1)return 1; return 0;}\n", "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
