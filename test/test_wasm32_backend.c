@@ -240,6 +240,14 @@ int main(void) {
   failures += run_case("global_struct_fp",
                        "struct S{double d; int x;}; struct S g={1.5,2}; int main(){return (int)g.d+g.x;}\n",
                        global_struct_fp, 3, 3);
+  const char *global_union_int[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_int",
+                       "union U{int i; char c;}; union U g={.i=77}; int main(){return g.i;}\n",
+                       global_union_int, 2, 77);
+  const char *global_union_fp[] = {"(data (i32.const", "f64.load"};
+  failures += run_case("global_union_fp",
+                       "union U{int i; double d;}; union U g={.d=2.5}; int main(){return (int)(g.d+1.5);}\n",
+                       global_union_fp, 2, 4);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "

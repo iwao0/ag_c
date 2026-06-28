@@ -1050,9 +1050,26 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
   }
 }
 
+static void emit_global_union_data(global_var_t *gv, int addr) {
+  if (gv->init_count <= 0) return;
+  tag_member_info_t mi = {0};
+  int ord = gv->union_init_ordinal;
+  if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ord, &mi)) {
+    wasm_unsupported_msg("global union initializer in Wasm backend");
+  }
+  if (mi.bit_width > 0 || ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer)) {
+    wasm_unsupported_msg("global union initializer in Wasm backend");
+  }
+  emit_global_init_member_data(gv, 0, addr, &mi);
+}
+
 static void emit_global_struct_data(global_var_t *gv, int addr) {
-  if (gv->tag_kind == TK_UNION || gv->is_tag_pointer) {
+  if (gv->is_tag_pointer) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
+  }
+  if (gv->tag_kind == TK_UNION) {
+    emit_global_union_data(gv, addr);
+    return;
   }
   int val_idx = 0;
   if (gv->is_array) {
