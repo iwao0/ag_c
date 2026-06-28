@@ -46,6 +46,7 @@ probes_found_bugs/bool_initializer_normalization.c
 probes_found_bugs/bool_normalization.c
 probes_found_bugs/bool_struct_array_member_normalize.c
 probes_found_bugs/bool_struct_member.c
+probes_found_bugs/builtin_expect_fold.c
 probes_found_bugs/cast_int_to_double.c
 probes_found_bugs/cast_short_char_sign_extend.c
 probes_found_bugs/cast_subint_to_int_signedness.c
@@ -78,6 +79,7 @@ probes_found_bugs/double_pointer_subscript_deref.c
 probes_found_bugs/duplicate_designator_override.c
 probes_found_bugs/empty_macro_argument.c
 probes_found_bugs/extern_then_def_same_tu.c
+probes_found_bugs/extern_global_got.c
 probes_found_bugs/file_scope_addr_of_compound_literal.c
 probes_found_bugs/file_scope_aggregate_compound_literal_addr.c
 probes_found_bugs/file_scope_compound_literal_init.c
@@ -130,6 +132,7 @@ probes_found_bugs/generic_long_double.c
 probes_found_bugs/generic_long_vs_longlong.c
 probes_found_bugs/generic_scalar_cast_control.c
 probes_found_bugs/generic_streaming_lookahead.c
+probes_found_bugs/gnu_statement_expression.c
 probes_found_bugs/generic_string_and_long.c
 probes_found_bugs/generic_struct_vs_scalar.c
 probes_found_bugs/global_2d_pointer_array.c
@@ -249,6 +252,7 @@ probes_found_bugs/ptr_to_array_of_funcptrs.c
 probes_found_bugs/ptr_to_array_p_plus_1.c
 probes_found_bugs/ptr_to_array_struct_member.c
 probes_found_bugs/ptr_to_funcptr_direct_deref.c
+probes_found_bugs/pp_predefined_lp64.c
 probes_found_bugs/qualified_pointer_return.c
 probes_found_bugs/real_imag_operators.c
 probes_found_bugs/return_int_to_double.c

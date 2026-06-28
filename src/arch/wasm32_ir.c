@@ -945,7 +945,15 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
   for (int a = 0; a < call_nargs; a++) {
     ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
-    if (psx_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) arg_ty = IR_TY_I64;
+    int minimal_stub_ptr_arg =
+        (i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 && a == 0) ||
+        (i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 && a < 2);
+    if (minimal_stub_ptr_arg ||
+        psx_ctx_get_function_param_category(i->sym, i->sym_len, a) == PSX_PCAT_PTR) {
+      arg_ty = IR_TY_PTR;
+    } else if (psx_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) {
+      arg_ty = IR_TY_I64;
+    }
     cg_emitf(" ");
     emit_val_expr_as(ctx, i->args[a], arg_ty);
   }
@@ -1733,7 +1741,22 @@ void wasm32_emit_data_segments(void) {
   ps_iter_globals(emit_global_data, NULL);
 }
 
+static int has_undefined_function(const char *name, int len) {
+  return psx_ctx_has_function_name((char *)name, len) &&
+         !psx_ctx_is_function_defined((char *)name, len);
+}
+
+static void emit_minimal_libc_stubs(void) {
+  if (has_undefined_function("printf", 6)) {
+    wasm_emitf(2, "(func $printf (param i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("fprintf", 7)) {
+    wasm_emitf(2, "(func $fprintf (param i32 i32) (result i32) (i32.const 1))\n");
+  }
+}
+
 void wasm32_module_end(void) {
+  emit_minimal_libc_stubs();
   emit_function_table();
   cg_emitf(")\n");
 }
