@@ -10,12 +10,26 @@ typedef struct {
   const char *path;
 } wasm_e2e_case_t;
 
+typedef struct {
+  const char *category;
+  const char *name;
+  const char *file_main;
+  const char *file_other;
+  int expected_i;
+} wasm_link2_case_t;
+
 #define MAX_EXTRA_CASES 512
 
 static wasm_e2e_case_t extra_cases[MAX_EXTRA_CASES];
 static char extra_case_categories[MAX_EXTRA_CASES][64];
 static char extra_case_names[MAX_EXTRA_CASES][192];
 static char extra_case_paths[MAX_EXTRA_CASES][256];
+
+static const wasm_link2_case_t link2_cases[] = {
+    {"probes_found_bugs", "static_internal_linkage_xtu",
+     "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c",
+     "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c", 42},
+};
 
 static const wasm_e2e_case_t cases[] = {
     {"integer", "zero", "test/fixtures/integer/zero.c"},
@@ -639,7 +653,7 @@ static int write_transformed_source(const wasm_e2e_case_t *tc, const char *out_p
   return 0;
 }
 
-static int run_wabt_case(const char *case_id, const char *wat_path, int *executed) {
+static int run_wabt_case(const char *case_id, const char *wat_path, int expected_i, int *executed) {
   *executed = 0;
   if (!command_available("wat2wasm") || !command_available("wasm-validate") ||
       !command_available("wasm-interp")) {
@@ -670,8 +684,10 @@ static int run_wabt_case(const char *case_id, const char *wat_path, int *execute
 
   char buf[8192];
   if (slurp(log_path, buf, sizeof(buf)) != 0) return 1;
-  if (!strstr(buf, "main() => i32:0")) {
-    fprintf(stderr, "FAIL: %s expected 'main() => i32:0'\n", case_id);
+  char expected[64];
+  snprintf(expected, sizeof(expected), "main() => i32:%d", expected_i);
+  if (!strstr(buf, expected)) {
+    fprintf(stderr, "FAIL: %s expected '%s'\n", case_id, expected);
     return 1;
   }
   return 0;
@@ -700,7 +716,51 @@ static int run_case(const wasm_e2e_case_t *tc, int *executed) {
     fprintf(stderr, "FAIL: ag_c_wasm %s (see %s)\n", case_id, log_path);
     return 1;
   }
-  return run_wabt_case(case_id, wat_path, executed);
+  return run_wabt_case(case_id, wat_path, 0, executed);
+}
+
+static int write_link2_wrapper_source(const wasm_link2_case_t *tc, const char *case_id,
+                                      const char *out_path) {
+  FILE *out = fopen(out_path, "wb");
+  if (!out) {
+    fprintf(stderr, "FAIL: create %s\n", out_path);
+    return 1;
+  }
+  fprintf(out, "#define assert(expr) do { if (!(expr)) return 100; } while (0)\n");
+  fprintf(out, "#define s __ag_%s_other_s\n", case_id);
+  fprintf(out, "#define base __ag_%s_other_base\n", case_id);
+  fprintf(out, "#include \"%s\"\n", tc->file_other);
+  fprintf(out, "#undef base\n");
+  fprintf(out, "#undef s\n");
+  fprintf(out, "#include \"%s\"\n", tc->file_main);
+  fclose(out);
+  return 0;
+}
+
+static int run_link2_case(const wasm_link2_case_t *tc, int *executed) {
+  char cat[128];
+  char name[128];
+  char case_id[320];
+  sanitize(tc->category, cat, sizeof(cat));
+  sanitize(tc->name, name, sizeof(name));
+  snprintf(case_id, sizeof(case_id), "link2_%s_%s", cat, name);
+
+  char src_path[512];
+  char wat_path[512];
+  char log_path[512];
+  snprintf(src_path, sizeof(src_path), "build/wasm32_e2e/%s.c", case_id);
+  snprintf(wat_path, sizeof(wat_path), "build/wasm32_e2e/%s.wat", case_id);
+  snprintf(log_path, sizeof(log_path), "build/wasm32_e2e/%s.compile.log", case_id);
+
+  if (write_link2_wrapper_source(tc, case_id, src_path) != 0) return 1;
+
+  char cmd[1536];
+  snprintf(cmd, sizeof(cmd), "./build/ag_c_wasm %s > %s 2> %s", src_path, wat_path, log_path);
+  if (system(cmd) != 0) {
+    fprintf(stderr, "FAIL: ag_c_wasm %s (see %s)\n", case_id, log_path);
+    return 1;
+  }
+  return run_wabt_case(case_id, wat_path, tc->expected_i, executed);
 }
 
 static int load_extra_cases(const char *path, size_t *out_count) {
@@ -770,7 +830,8 @@ int main(void) {
   int failures = 0;
   int executed = 0;
   size_t nstatic = sizeof(cases) / sizeof(cases[0]);
-  size_t ncases = nstatic + nextra;
+  size_t nlink2 = sizeof(link2_cases) / sizeof(link2_cases[0]);
+  size_t ncases = nstatic + nextra + nlink2;
   for (size_t i = 0; i < nstatic; i++) {
     int did_execute = 0;
     failures += run_case(&cases[i], &did_execute);
@@ -779,6 +840,11 @@ int main(void) {
   for (size_t i = 0; i < nextra; i++) {
     int did_execute = 0;
     failures += run_case(&extra_cases[i], &did_execute);
+    executed += did_execute;
+  }
+  for (size_t i = 0; i < nlink2; i++) {
+    int did_execute = 0;
+    failures += run_link2_case(&link2_cases[i], &did_execute);
     executed += did_execute;
   }
   if (failures) {
