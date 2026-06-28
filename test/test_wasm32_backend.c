@@ -509,6 +509,25 @@ int main(void) {
                        "int main(){double d; d=4294967295.0; unsigned int x; x=d; "
                        "return x==4294967295U;}\n",
                        double_to_unsigned_int, 2, 1);
+  const char *unsigned_int_to_double_call[] = {"f64.convert_i32_u", "(call $id"};
+  failures += run_case("unsigned_int_to_double_call",
+                       "double id(double x){return x;} int main(){unsigned int x; "
+                       "x=4294967295U; return id(x)>4294967294.0;}\n",
+                       unsigned_int_to_double_call, 2, 1);
+  const char *double_to_unsigned_int_call[] = {"i64.trunc_f64_u", "(call $take"};
+  failures += run_case("double_to_unsigned_int_call",
+                       "int take(unsigned int x){return (int)(x>>31);} "
+                       "int main(){return take(4294967295.0);}\n",
+                       double_to_unsigned_int_call, 2, 1);
+  const char *unsigned_int_to_double_return[] = {"f64.convert_i32_u", "(call $f"};
+  failures += run_case("unsigned_int_to_double_return",
+                       "double f(){unsigned int x; x=4294967295U; return x;} "
+                       "int main(){return f()>4294967294.0;}\n",
+                       unsigned_int_to_double_return, 2, 1);
+  const char *double_to_unsigned_int_return[] = {"i32.trunc_f64_u", "(call $f"};
+  failures += run_case("double_to_unsigned_int_return",
+                       "unsigned int f(){return 4294967295.0;} int main(){return (int)(f()>>31);}\n",
+                       double_to_unsigned_int_return, 2, 1);
   const char *double_neg[] = {"f64.neg"};
   failures += run_case("double_neg", "int main(){double x; x=-2.0; return (int)(-x);}\n",
                        double_neg, 1, 2);

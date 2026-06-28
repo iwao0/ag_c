@@ -178,6 +178,8 @@ struct func_name_t {
    * F2I (fcvtzs) を挿入するために使う。fp_kind と排他 (fp 仮引数は 0)。 */
   unsigned char param_int_sizes[16];
   int param_int_sizes_count;
+  unsigned char param_int_unsigned[16];
+  int param_int_unsigned_count;
   /* 同名関数の宣言と定義でシグネチャ (引数数 / 可変長 / 引数型カテゴリ) が一致するかの照合用。
    * 0 のうちは初回値として記録、以降は比較する (C11 6.7p4)。
    * param_categories[i] は引数 i の型カテゴリ (PSX_PCAT_*; 0=未設定)。 */
@@ -1116,6 +1118,24 @@ int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx) {
   if (!f) return 0;
   if (param_idx < 0 || param_idx >= f->param_int_sizes_count) return 0;
   return (int)f->param_int_sizes[param_idx];
+}
+
+void psx_ctx_set_function_param_int_unsigned(char *name, int len, int param_idx,
+                                             int is_unsigned) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  if (param_idx < 0 || param_idx >= 16) return;
+  f->param_int_unsigned[param_idx] = (unsigned char)(is_unsigned ? 1 : 0);
+  if (param_idx + 1 > f->param_int_unsigned_count) {
+    f->param_int_unsigned_count = param_idx + 1;
+  }
+}
+
+int psx_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return 0;
+  if (param_idx < 0 || param_idx >= f->param_int_unsigned_count) return 0;
+  return f->param_int_unsigned[param_idx] ? 1 : 0;
 }
 
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed) {

@@ -202,6 +202,8 @@ tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int para
  * fp 実引数→整数仮引数の暗黙変換に F2I キャストを挿入するために使う。 */
 void psx_ctx_set_function_param_int_size(char *name, int len, int param_idx, int size);
 int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx);
+void psx_ctx_set_function_param_int_unsigned(char *name, int len, int param_idx, int is_unsigned);
+int psx_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx);
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
 /* 同名関数の再宣言で引数数 / 可変長性が一致するかを track する (C11 6.7p4)。
  * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。 */

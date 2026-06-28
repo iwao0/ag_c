@@ -2726,8 +2726,12 @@ static void register_toplevel_function_prototype(token_ident_t *tok, int declara
       int sz = ps_node_type_size(args[i]);
       if (sz >= 1 && sz <= 4) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 4);
+        psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
+                                                ps_node_is_unsigned(args[i]));
       } else if (sz == 8) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 8);
+        psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
+                                                ps_node_is_unsigned(args[i]));
       }
     }
   }
@@ -3690,6 +3694,7 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
         if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
           ph->fp_kind = ds.fp_kind;
         }
+        ph->is_unsigned = ds.is_unsigned ? 1 : 0;
         node->args[(*nargs)++] = ph;
       }
       return 1;
@@ -3722,6 +3727,8 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
                        !param_is_array_declarator)
                       ? ds.struct_size : 8;
   node_t *param_node = psx_node_new_lvar_typed(var->offset, abi_type_size);
+  param_node->is_unsigned = ds.is_unsigned ? 1 : 0;
+  ((node_lvar_t *)param_node)->mem.is_unsigned = ds.is_unsigned ? 1 : 0;
   // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
   // args[i] ノードにも fp_kind を残す。配列宣言子はポインタ (整数レジスタ) なので除外。
   if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
@@ -4365,8 +4372,12 @@ static node_t *funcdef(void) {
       int sz = ps_node_type_size(args[i]);
       if (sz >= 1 && sz <= 4) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 4);
+        psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
+                                                ps_node_is_unsigned(args[i]));
       } else if (sz == 8) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 8);
+        psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
+                                                ps_node_is_unsigned(args[i]));
       }
     }
   }

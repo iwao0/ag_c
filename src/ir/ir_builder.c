@@ -1900,7 +1900,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
               fn->funcname, fn->funcname_len, i);
           if (pfk != TK_FLOAT_KIND_NONE) {
             ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-            cv = coerce_to_type(ctx, cv, target);
+            cv = coerce_to_type_ex(ctx, cv, target, 0, ps_node_is_unsigned(arg));
           } else if (is_fp_type(cv.type)) {
             /* 整数仮引数に fp 実引数を渡す: F2I (fcvtzs) で切り詰める
              * (`eat_int(7.9)` → 7)。仮引数幅が long(8) なら i64、それ以外は i32。
@@ -1908,7 +1908,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
             int psz = psx_ctx_get_function_param_int_size(
                 fn->funcname, fn->funcname_len, i);
             ir_type_t target = (psz == 8) ? IR_TY_I64 : IR_TY_I32;
-            cv = coerce_to_type(ctx, cv, target);
+            cv = coerce_to_type_ex(ctx, cv, target,
+                                   psx_ctx_get_function_param_int_unsigned(
+                                       fn->funcname, fn->funcname_len, i),
+                                   0);
           }
         }
         cargs[argc++] = cv;
@@ -2763,7 +2766,10 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     if (ctx->failed) return;
     /* 戻り値を関数の戻り型へ変換する (C11 6.8.6.4: 代入と同じ変換)。
      * `double f(){ return 7; }` の int→double (I2F) などがここで挟まる。 */
-    v = coerce_to_type(ctx, v, ctx->f->ret_type);
+    v = coerce_to_type_ex(ctx, v, ctx->f->ret_type,
+                          ctx->cur_fn ? psx_ctx_get_function_ret_is_unsigned(
+                                            ctx->cur_fn->funcname, ctx->cur_fn->funcname_len) : 0,
+                          ps_node_is_unsigned(node->lhs));
   } else {
     v = ir_val_imm(IR_TY_I32, 0);
   }

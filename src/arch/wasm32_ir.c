@@ -728,9 +728,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
       emit_val_expr_as(ctx, i->src1, op_ty);
       cg_emitf(" ");
-      emit_val_expr_as(ctx, i->src2, (op_ty == IR_TY_I64 &&
-                                      (i->op == IR_SHL || i->op == IR_SHR || i->op == IR_LSR))
-                                         ? IR_TY_I32 : op_ty);
+      emit_val_expr_as(ctx, i->src2, op_ty);
       cg_emitf("))\n");
       return;
     }
