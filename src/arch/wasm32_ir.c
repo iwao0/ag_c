@@ -272,6 +272,16 @@ static void emit_addr_expr(ir_val_t v) {
   emit_val_expr_as(v, IR_TY_I32);
 }
 
+static void emit_addr_plus_const(ir_val_t base, int off) {
+  if (off == 0) {
+    emit_addr_expr(base);
+    return;
+  }
+  cg_emitf("(i32.add ");
+  emit_addr_expr(base);
+  cg_emitf(" (i32.const %d))", off);
+}
+
 static const char *wasm_binop(ir_op_t op, ir_type_t t) {
   const char *prefix = wasm_type(t);
   if (!prefix) return NULL;
@@ -329,6 +339,40 @@ static void emit_store(ir_inst_t *i, int indent) {
   cg_emitf(" ");
   emit_val_expr(i->src2);
   cg_emitf(")\n");
+}
+
+static void emit_memcpy(ir_inst_t *i, int indent) {
+  int n = i->alloca_size;
+  if (n < 0) wasm_unsupported_op(i->op);
+  int off = 0;
+  for (; off + 8 <= n; off += 8) {
+    wasm_emitf(indent, "(i64.store ");
+    emit_addr_plus_const(i->src1, off);
+    cg_emitf(" (i64.load ");
+    emit_addr_plus_const(i->src2, off);
+    cg_emitf("))\n");
+  }
+  for (; off + 4 <= n; off += 4) {
+    wasm_emitf(indent, "(i32.store ");
+    emit_addr_plus_const(i->src1, off);
+    cg_emitf(" (i32.load ");
+    emit_addr_plus_const(i->src2, off);
+    cg_emitf("))\n");
+  }
+  for (; off + 2 <= n; off += 2) {
+    wasm_emitf(indent, "(i32.store16 ");
+    emit_addr_plus_const(i->src1, off);
+    cg_emitf(" (i32.load16_u ");
+    emit_addr_plus_const(i->src2, off);
+    cg_emitf("))\n");
+  }
+  for (; off < n; off++) {
+    wasm_emitf(indent, "(i32.store8 ");
+    emit_addr_plus_const(i->src1, off);
+    cg_emitf(" (i32.load8_u ");
+    emit_addr_plus_const(i->src2, off);
+    cg_emitf("))\n");
+  }
 }
 
 static void emit_call(ir_inst_t *i, int indent) {
@@ -406,6 +450,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       return;
     case IR_STORE:
       emit_store(i, indent);
+      return;
+    case IR_MEMCPY:
+      emit_memcpy(i, indent);
       return;
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);

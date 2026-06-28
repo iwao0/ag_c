@@ -138,6 +138,11 @@ int main(void) {
   failures += run_case("global_write", "int g; int main(){g=9; return g;}\n", global_write, 2, 9);
   const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
   failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
+  const char *struct_copy[] = {"i64.store", "i64.load", "i32.store", "i32.load"};
+  failures += run_case("struct_copy",
+                       "struct P{int a; int b; int c;}; int main(){struct P x; struct P y; "
+                       "x.a=3; x.b=4; x.c=5; y=x; return y.a+y.b+y.c;}\n",
+                       struct_copy, 4, 12);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
