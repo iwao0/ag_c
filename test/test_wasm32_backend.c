@@ -128,7 +128,11 @@ int main(void) {
   failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3, 8);
   const char *call[] = {"(func $add (param $p0 i32) (param $p1 i32) (result i32)", "(call $add"};
   failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2, 7);
-  failures += run_fail_case("branch", "int main(){if(1)return 1; return 0;}\n", "E4008");
+  const char *branch[] = {"(local $pc i32)", "(loop $dispatch", "(br $dispatch)"};
+  failures += run_case("branch", "int main(){if(1)return 1; return 0;}\n", branch, 3, 1);
+  const char *loop[] = {"(local $pc i32)", "(loop $dispatch", "i32.lt_s"};
+  failures += run_case("loop", "int main(){int i; i=0; while(i<3){i=i+1;} return i;}\n", loop, 3, 3);
+  failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
   return 0;

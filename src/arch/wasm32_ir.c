@@ -27,6 +27,7 @@ typedef struct {
   int frame_size;
   int *vreg_type_seen;
   ir_type_t *vreg_types;
+  int has_control_flow;
 } wasm_func_ctx_t;
 
 typedef struct {
@@ -217,7 +218,7 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       collect_inst_vregs(ctx, i);
       if (i->op == IR_ALLOCA) add_alloca_slot(ctx, i);
-      if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) wasm_unsupported_op(i->op);
+      if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) ctx->has_control_flow = 1;
     }
   }
   ctx->frame_size = align_to(ctx->frame_size, 16);
@@ -336,9 +337,12 @@ static void emit_call(ir_inst_t *i) {
   cg_emitf("\n");
 }
 
-static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode) {
   switch (i->op) {
     case IR_NOP:
+      return;
+    case IR_LABEL:
+      if (!dispatch_mode) wasm_unsupported_op(i->op);
       return;
     case IR_PARAM:
       if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0) wasm_unsupported_op(i->op);
@@ -429,6 +433,21 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i) {
     case IR_CALL:
       emit_call(i);
       return;
+    case IR_BR:
+      if (!dispatch_mode) wasm_unsupported_op(i->op);
+      cg_emitf("    (local.set $pc (i32.const %d))\n", i->label_id);
+      cg_emitf("    (br $dispatch)\n");
+      return;
+    case IR_BR_COND:
+      if (!dispatch_mode) wasm_unsupported_op(i->op);
+      cg_emitf("    (if ");
+      emit_val_expr_as(i->src1, IR_TY_I32);
+      cg_emitf("\n");
+      cg_emitf("      (then (local.set $pc (i32.const %d)))\n", i->label_id);
+      cg_emitf("      (else (local.set $pc (i32.const %d)))\n", i->else_label_id);
+      cg_emitf("    )\n");
+      cg_emitf("    (br $dispatch)\n");
+      return;
     case IR_RET:
       if (ctx->frame_size > 0) cg_emitf("    (global.set $__stack_pointer (local.get $old_sp))\n");
       if (i->src1.id != IR_VAL_NONE) {
@@ -466,6 +485,11 @@ static ir_type_t func_param_type(ir_func_t *f, int idx) {
   return IR_TY_I32;
 }
 
+static int block_has_terminator(ir_block_t *b) {
+  ir_inst_t *tail = b ? b->tail : NULL;
+  return tail && (tail->op == IR_BR || tail->op == IR_BR_COND || tail->op == IR_RET);
+}
+
 static void emit_func(ir_func_t *f) {
   wasm_func_ctx_t ctx = {0};
   ctx.f = f;
@@ -491,14 +515,40 @@ static void emit_func(ir_func_t *f) {
   }
   cg_emitf("    (local $fp i32)\n");
   cg_emitf("    (local $old_sp i32)\n");
+  if (ctx.has_control_flow) cg_emitf("    (local $pc i32)\n");
   if (ctx.frame_size > 0) {
     cg_emitf("    (local.set $old_sp (global.get $__stack_pointer))\n");
     cg_emitf("    (local.set $fp (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
              ctx.frame_size);
     cg_emitf("    (global.set $__stack_pointer (local.get $fp))\n");
   }
-  for (ir_block_t *b = f->entry; b; b = b->next) {
-    for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i);
+  if (ctx.has_control_flow) {
+    cg_emitf("    (local.set $pc (i32.const %d))\n", f->entry ? f->entry->id : 0);
+    cg_emitf("    (block $exit\n");
+    cg_emitf("      (loop $dispatch\n");
+    for (ir_block_t *b = f->entry; b; b = b->next) {
+      cg_emitf("        (if (i32.eq (local.get $pc) (i32.const %d))\n", b->id);
+      cg_emitf("          (then\n");
+      for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i, 1);
+      if (!block_has_terminator(b)) {
+        if (b->next) {
+          cg_emitf("    (local.set $pc (i32.const %d))\n", b->next->id);
+          cg_emitf("    (br $dispatch)\n");
+        } else {
+          cg_emitf("    (br $exit)\n");
+        }
+      }
+      cg_emitf("          )\n");
+      cg_emitf("        )\n");
+    }
+    cg_emitf("        (br $exit)\n");
+    cg_emitf("      )\n");
+    cg_emitf("    )\n");
+    cg_emitf("    unreachable\n");
+  } else {
+    for (ir_block_t *b = f->entry; b; b = b->next) {
+      for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i, 0);
+    }
   }
   cg_emitf("  )\n");
   if (f->name_len == 4 && memcmp(f->name, "main", 4) == 0) {
