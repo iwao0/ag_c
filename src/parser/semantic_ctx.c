@@ -1,4 +1,5 @@
 #include "semantic_ctx.h"
+#include "ret_pointee_array.h"
 #include "diag.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -494,9 +495,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->bit_is_signed = desc->bit_is_signed;
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
       m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
-      m->funcptr_ret_pointee_array_first_dim = desc->funcptr_ret_pointee_array_first_dim;
-      m->funcptr_ret_pointee_array_second_dim = desc->funcptr_ret_pointee_array_second_dim;
-      m->funcptr_ret_pointee_array_elem_size = desc->funcptr_ret_pointee_array_elem_size;
+      PSX_RET_POINTEE_ARRAY_COPY_FIELDS(m, desc);
       return;
     }
   }
@@ -519,9 +518,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->bit_is_signed = desc->bit_is_signed;
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
   m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
-  m->funcptr_ret_pointee_array_first_dim = desc->funcptr_ret_pointee_array_first_dim;
-  m->funcptr_ret_pointee_array_second_dim = desc->funcptr_ret_pointee_array_second_dim;
-  m->funcptr_ret_pointee_array_elem_size = desc->funcptr_ret_pointee_array_elem_size;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(m, desc);
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -908,9 +905,13 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
-  t->funcptr_ret_pointee_array_first_dim = info->funcptr_ret_pointee_array_first_dim;
-  t->funcptr_ret_pointee_array_second_dim = info->funcptr_ret_pointee_array_second_dim;
-  t->funcptr_ret_pointee_array_elem_size = info->funcptr_ret_pointee_array_elem_size;
+  psx_ret_pointee_array_store_ints(
+      psx_ret_pointee_array_make(info->funcptr_ret_pointee_array_first_dim,
+                                 info->funcptr_ret_pointee_array_second_dim,
+                                 info->funcptr_ret_pointee_array_elem_size),
+      &t->funcptr_ret_pointee_array_first_dim,
+      &t->funcptr_ret_pointee_array_second_dim,
+      &t->funcptr_ret_pointee_array_elem_size);
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {

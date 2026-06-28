@@ -10,6 +10,15 @@ typedef struct {
   int elem_size;
 } psx_ret_pointee_array_t;
 
+#define PSX_RET_POINTEE_ARRAY_COPY_FIELDS(dst, src) do {                       \
+  (dst)->funcptr_ret_pointee_array_first_dim =                                  \
+      (src)->funcptr_ret_pointee_array_first_dim;                               \
+  (dst)->funcptr_ret_pointee_array_second_dim =                                 \
+      (src)->funcptr_ret_pointee_array_second_dim;                              \
+  (dst)->funcptr_ret_pointee_array_elem_size =                                  \
+      (src)->funcptr_ret_pointee_array_elem_size;                               \
+} while (0)
+
 static inline psx_ret_pointee_array_t psx_ret_pointee_array_make(int first_dim,
                                                                   int second_dim,
                                                                   int elem_size) {
@@ -33,6 +42,15 @@ static inline void psx_ret_pointee_array_store_shorts(psx_ret_pointee_array_t a,
   if (first_dim) *first_dim = (short)a.first_dim;
   if (second_dim) *second_dim = (short)a.second_dim;
   if (elem_size) *elem_size = (short)a.elem_size;
+}
+
+static inline void psx_ret_pointee_array_store_ints(psx_ret_pointee_array_t a,
+                                                    int *first_dim,
+                                                    int *second_dim,
+                                                    int *elem_size) {
+  if (first_dim) *first_dim = a.first_dim;
+  if (second_dim) *second_dim = a.second_dim;
+  if (elem_size) *elem_size = a.elem_size;
 }
 
 static inline int psx_ret_pointee_array_row_stride(psx_ret_pointee_array_t a) {

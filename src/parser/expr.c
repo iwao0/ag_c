@@ -1146,12 +1146,7 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_is_signed = mem_info->bit_is_signed;
   deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
   deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
-  deref->funcptr_ret_pointee_array_first_dim =
-      mem_info->funcptr_ret_pointee_array_first_dim;
-  deref->funcptr_ret_pointee_array_second_dim =
-      mem_info->funcptr_ret_pointee_array_second_dim;
-  deref->funcptr_ret_pointee_array_elem_size =
-      mem_info->funcptr_ret_pointee_array_elem_size;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, mem_info);
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
    * 式中でポインタへ decay するので pointee_fp_kind に入れて subscript 結果を fp load
    * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと
@@ -4153,12 +4148,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
         deref->funcptr_param_int_mask = base_mem->funcptr_param_int_mask;
       }
       if (base_mem->funcptr_ret_pointee_array_first_dim) {
-        deref->funcptr_ret_pointee_array_first_dim =
-            base_mem->funcptr_ret_pointee_array_first_dim;
-        deref->funcptr_ret_pointee_array_second_dim =
-            base_mem->funcptr_ret_pointee_array_second_dim;
-        deref->funcptr_ret_pointee_array_elem_size =
-            base_mem->funcptr_ret_pointee_array_elem_size;
+        PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
       }
       if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
       if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
@@ -4822,12 +4812,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
       addr->funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
       addr->funcptr_param_int_mask = gv->funcptr_param_int_mask;
-      addr->funcptr_ret_pointee_array_first_dim =
-          gv->funcptr_ret_pointee_array_first_dim;
-      addr->funcptr_ret_pointee_array_second_dim =
-          gv->funcptr_ret_pointee_array_second_dim;
-      addr->funcptr_ret_pointee_array_elem_size =
-          gv->funcptr_ret_pointee_array_elem_size;
+      PSX_RET_POINTEE_ARRAY_COPY_FIELDS(addr, gv);
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
        * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
        * を立てて、struct メンバ char* (commit 6a663ed) と同じく ND_DEREF をそのまま
@@ -4924,12 +4909,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型 fp_kind を pointee_fp_kind
      * に伝播。parse_call_postfix がこれを funcall に載せ、戻り値を d0 で読む。 */
     gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
-    gvar_node->mem.funcptr_ret_pointee_array_first_dim =
-        gv->funcptr_ret_pointee_array_first_dim;
-    gvar_node->mem.funcptr_ret_pointee_array_second_dim =
-        gv->funcptr_ret_pointee_array_second_dim;
-    gvar_node->mem.funcptr_ret_pointee_array_elem_size =
-        gv->funcptr_ret_pointee_array_elem_size;
+    PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&gvar_node->mem, gv);
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
     /* unsigned スカラ: load を zero-extend するため is_unsigned を伝播。 */
@@ -5009,9 +4989,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
   node->funcptr_param_fp_mask = var->funcptr_param_fp_mask;
   node->funcptr_param_int_mask = var->funcptr_param_int_mask;
-  node->funcptr_ret_pointee_array_first_dim = var->funcptr_ret_pointee_array_first_dim;
-  node->funcptr_ret_pointee_array_second_dim = var->funcptr_ret_pointee_array_second_dim;
-  node->funcptr_ret_pointee_array_elem_size = var->funcptr_ret_pointee_array_elem_size;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(node, var);
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
     // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
@@ -5163,12 +5141,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
   as_lvar(n)->mem.base_deref_size = var->base_deref_size;
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
-  as_lvar(n)->mem.funcptr_ret_pointee_array_first_dim =
-      var->funcptr_ret_pointee_array_first_dim;
-  as_lvar(n)->mem.funcptr_ret_pointee_array_second_dim =
-      var->funcptr_ret_pointee_array_second_dim;
-  as_lvar(n)->mem.funcptr_ret_pointee_array_elem_size =
-      var->funcptr_ret_pointee_array_elem_size;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&as_lvar(n)->mem, var);
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
   /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を
    * 伝播する (var->is_unsigned は基底型 unsigned を表すのでポインタにも乗る)。 */
