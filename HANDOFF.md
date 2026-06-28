@@ -1,11 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き142: Complete Wasm fixture coverage + E2E 1096）
+最終更新: 2026-06-29（続き143: Wasm object v1 direct-call route）
 
 ## 現状
-- `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
+- `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_wasm32_object` green、
+  `./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -292,6 +293,17 @@
   LHS にする。`complex_ops` 用に `sqrt/sqrtf` を Wasm builtin 化し、fixture 範囲の
   `sin/cos/exp/log/atan/atan2/sinh/cosh` 最小 math stub を追加。Wasm E2E は
   静的 531 件 + extra 564 件 + link2 1 件の **1096 件**。
+- 続き143: **Wasm object v1 direct-call route**。
+  既存の `ag_c_wasm input.c > out.wat` は維持し、`ag_c_wasm -c -o out.o input.c` を追加。
+  `src/arch/wasm32_obj.c/h` に WAT emitter とは別の binary writer を置き、magic/version、
+  Type/Import/Function/Code section、`linking` custom section、`reloc.CODE` を直接出す。
+  v1 はメモリを触らない定義済み関数/未定義外部関数/direct call relocation の最小経路。
+  static 関数は local symbol (`binding=local`) として出し、通常関数は Wasm export ではなく
+  global binding の symbol に留める。object mode では WAT 用 libc/math stub は出さない。
+  `test/test_wasm32_object.c` を追加し、常時 `wasm-objdump -x` で `linking` / `reloc.CODE` /
+  symbol / `R_WASM_FUNCTION_INDEX_LEB` を確認。`wasm-ld` + WABT がある環境では 2 object を
+  `wasm-ld --no-entry --export=main` でリンクするテストも走る。この環境では `wasm-ld` がないため
+  optional link 実行は skip。
 
 ### Wasm backend の既知メモ
 
@@ -301,6 +313,10 @@
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
   1096 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
+- Wasm object v1 は `test/test_wasm32_object.c` で常時実行。現状の実装範囲は
+  direct call relocation 中心で、data segment / global address relocation / function pointer table
+  relocation / indirect call object 化 / TLS object relocation は未対応。これらに当たる IR は E4008 で
+  停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。

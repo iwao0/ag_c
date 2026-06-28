@@ -8,6 +8,9 @@
 #include "ir/ir_builder.h"
 #include "arch/arm64_apple_ir.h"
 #include "arch/wasm32_ir.h"
+#ifdef AGC_TARGET_WASM32
+#include "arch/wasm32_obj.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,21 +97,39 @@ static char *read_file_contents(const char *path) {
 
 int main(int argc, char **argv) {
   const char *prog_disp = (argc > 0) ? diag_display_path(argv[0]) : "ag_c";
+  const char *input_path = NULL;
+  int wasm_object_mode = 0;
+#ifdef AGC_TARGET_WASM32
+  const char *output_path = NULL;
+  if (argc == 2) {
+    input_path = argv[1];
+  } else if (argc == 5 && strcmp(argv[1], "-c") == 0 && strcmp(argv[2], "-o") == 0) {
+    wasm_object_mode = 1;
+    output_path = argv[3];
+    input_path = argv[4];
+  } else {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
+                        diag_message_for(DIAG_ERR_INTERNAL_USAGE), prog_disp);
+    return 1;
+  }
+#else
   if (argc != 2) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
                         diag_message_for(DIAG_ERR_INTERNAL_USAGE), prog_disp);
     return 1;
   }
+  input_path = argv[1];
+#endif
 
-  const char *input_disp = diag_display_path(argv[1]);
-  char *source = read_file_contents(argv[1]);
+  const char *input_disp = diag_display_path(input_path);
+  char *source = read_file_contents(input_path);
   if (!source) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_INPUT_READ_FAILED,
                         diag_message_for(DIAG_ERR_INTERNAL_INPUT_READ_FAILED), input_disp);
     return 1;
   }
 
-  load_config_toml(argv[1]);
+  load_config_toml(input_path);
 
   tk_set_filename_ctx(tk_get_default_context(), input_disp);
   tokenizer_context_t *tk_ctx = tk_get_default_context();
@@ -121,9 +142,22 @@ int main(int argc, char **argv) {
   pp_stream_t *pps = NULL;
   token_t *tok = pp_stream_open(&pps, tk_ctx, source);
 
-  gen_set_output_callback(write_line_to_file, stdout);
 #ifdef AGC_TARGET_WASM32
-  wasm32_module_begin();
+  FILE *wasm_obj_out = NULL;
+  if (wasm_object_mode) {
+    wasm_obj_out = fopen(output_path, "wb");
+    if (!wasm_obj_out) {
+      diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to open Wasm object output");
+      return 1;
+    }
+    wasm32_obj_set_output_file(wasm_obj_out);
+    wasm32_obj_begin();
+  } else {
+    gen_set_output_callback(write_line_to_file, stdout);
+    wasm32_module_begin();
+  }
+#else
+  gen_set_output_callback(write_line_to_file, stdout);
 #endif
 
   // 関数ごとストリーミング: パース→IR build→最適化+codegen→AST/IR 解放 を 1 関数ずつ
@@ -135,7 +169,7 @@ int main(int argc, char **argv) {
   for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
     if (!ir_build_emit_function(fn,
 #ifdef AGC_TARGET_WASM32
-                                wasm32_gen_ir_module
+                                wasm_object_mode ? wasm32_obj_gen_ir_module : wasm32_gen_ir_module
 #else
                                 gen_ir_module
 #endif
@@ -150,8 +184,14 @@ int main(int argc, char **argv) {
   if (pps) pp_stream_close(pps);
 
 #ifdef AGC_TARGET_WASM32
-  wasm32_emit_data_segments();
-  wasm32_module_end();
+  if (wasm_object_mode) {
+    wasm32_obj_emit_data_segments();
+    wasm32_obj_end();
+    fclose(wasm_obj_out);
+  } else {
+    wasm32_emit_data_segments();
+    wasm32_module_end();
+  }
 #else
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
   // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)
@@ -159,7 +199,7 @@ int main(int argc, char **argv) {
   gen_float_literals();
   gen_global_vars();
 #endif
-  gen_set_output_callback(NULL, NULL);
+  if (!wasm_object_mode) gen_set_output_callback(NULL, NULL);
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
 

@@ -34,6 +34,7 @@ TEST_IR=build/test_ir
 TEST_IR_E2E=build/test_ir_e2e
 TEST_WASM32_BACKEND=build/test_wasm32_backend
 TEST_WASM32_E2E=build/test_wasm32_e2e
+TEST_WASM32_OBJECT=build/test_wasm32_object
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=$(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/cursor.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/number.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/token_kind.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o $(OBJROOT)/tokenizer/trigraph.o
@@ -95,6 +96,10 @@ $(TEST_WASM32_E2E): test/test_wasm32_e2e.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_e2e.c
 
+$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(WASM_TARGET)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ test/test_wasm32_object.c
+
 $(BENCH_TOKENIZER): test/bench_tokenizer.c $(TOKENIZER_LIB_OBJS) $(DIAG_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
@@ -114,7 +119,7 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_E2E)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(TEST_PREPROCESS)
@@ -123,6 +128,7 @@ test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) 
 	$(TEST_IR_E2E)
 	$(TEST_WASM32_BACKEND)
 	$(TEST_WASM32_E2E)
+	$(TEST_WASM32_OBJECT)
 	$(TEST_E2E)
 
 test-asan: CFLAGS+=-fsanitize=$(ASAN_SANITIZERS) -fno-omit-frame-pointer
