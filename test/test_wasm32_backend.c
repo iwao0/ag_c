@@ -230,9 +230,16 @@ int main(void) {
   failures += run_fail_case("funcptr_init",
                             "int f(){return 1;} int (*fp[1])()={f}; int main(){return 0;}\n",
                             "E4008");
-  failures += run_fail_case("global_struct_fp",
-                            "struct S{double d; int x;}; struct S g={1.5,2}; int main(){return g.x;}\n",
-                            "E4008");
+  const char *global_fp_scalar[] = {"(data (i32.const", "f64.load"};
+  failures += run_case("global_fp_scalar", "double g=2.5; int main(){return (int)(g+1.5);}\n",
+                       global_fp_scalar, 2, 4);
+  const char *global_fp_array[] = {"(data (i32.const", "f32.load"};
+  failures += run_case("global_fp_array", "float g[2]={1.25f,2.75f}; int main(){return (int)(g[0]+g[1]);}\n",
+                       global_fp_array, 2, 4);
+  const char *global_struct_fp[] = {"(data (i32.const", "f64.load", "i32.load"};
+  failures += run_case("global_struct_fp",
+                       "struct S{double d; int x;}; struct S g={1.5,2}; int main(){return (int)g.d+g.x;}\n",
+                       global_struct_fp, 3, 3);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "
