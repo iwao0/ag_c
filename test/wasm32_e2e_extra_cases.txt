@@ -345,6 +345,7 @@ probes_found_bugs/union_array_brace_init.c
 probes_found_bugs/unsigned_array_pointer_deref.c
 probes_found_bugs/unsigned_char_array_member.c
 probes_found_bugs/unsigned_char_pointer_zero_extend.c
+probes_found_bugs/unsigned_fp_conversion.c
 probes_found_bugs/unsigned_int_overflow_wrap.c
 probes_found_bugs/unsigned_long_return_signedness.c
 probes_found_bugs/unsigned_member_global_load.c

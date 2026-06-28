@@ -2888,6 +2888,8 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
   ((node_lvar_t *)lvar)->mem.is_complex = var->is_complex;
   ((node_lvar_t *)lvar)->mem.is_atomic = var->is_atomic;
+  ((node_lvar_t *)lvar)->mem.is_unsigned = var->is_unsigned ? 1 : 0;
+  ((node_lvar_t *)lvar)->mem.pointee_is_unsigned = var->is_unsigned ? 1 : 0;
   lvar->is_complex = var->is_complex;
   lvar->is_atomic = var->is_atomic;
   ((node_lvar_t *)lvar)->mem.is_const_qualified = var->is_const_qualified;
