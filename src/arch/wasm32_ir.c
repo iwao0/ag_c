@@ -50,7 +50,13 @@ typedef struct {
 static wasm_data_ctx_t g_data = {WASM_STATIC_BASE, NULL, 0, 0};
 
 static void wasm_emit_indent(int spaces) {
-  for (int i = 0; i < spaces; i++) cg_emitf(" ");
+  static const char k_spaces[] = "                                ";
+  int chunk = (int)sizeof(k_spaces) - 1;
+  while (spaces > chunk) {
+    cg_emitf("%s", k_spaces);
+    spaces -= chunk;
+  }
+  if (spaces > 0) cg_emitf("%.*s", spaces, k_spaces);
 }
 
 #define wasm_emitf(spaces, ...)       \
