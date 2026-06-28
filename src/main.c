@@ -7,6 +7,7 @@
 #include "ir/ir.h"
 #include "ir/ir_builder.h"
 #include "arch/arm64_apple_ir.h"
+#include "arch/wasm32_ir.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,6 +122,9 @@ int main(int argc, char **argv) {
   token_t *tok = pp_stream_open(&pps, tk_ctx, source);
 
   gen_set_output_callback(write_line_to_file, stdout);
+#ifdef AGC_TARGET_WASM32
+  wasm32_module_begin();
+#endif
 
   // 関数ごとストリーミング: パース→IR build→最適化+codegen→AST/IR 解放 を 1 関数ずつ
   // 回す。全関数の AST・IR を同時保持しないので、ピークメモリが「ファイル全体」でなく
@@ -129,7 +133,13 @@ int main(int argc, char **argv) {
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
   ps_stream_begin(tk_ctx, tok);
   for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
-    if (!ir_build_emit_function(fn, gen_ir_module)) {
+    if (!ir_build_emit_function(fn,
+#ifdef AGC_TARGET_WASM32
+                                wasm32_gen_ir_module
+#else
+                                gen_ir_module
+#endif
+                                )) {
       diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
                           diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
       free(source);
@@ -139,11 +149,16 @@ int main(int argc, char **argv) {
   }
   if (pps) pp_stream_close(pps);
 
+#ifdef AGC_TARGET_WASM32
+  wasm32_emit_data_segments();
+  wasm32_module_end();
+#else
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
   // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)
   gen_string_literals();
   gen_float_literals();
   gen_global_vars();
+#endif
   gen_set_output_callback(NULL, NULL);
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
