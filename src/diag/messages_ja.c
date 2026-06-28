@@ -82,6 +82,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED: return "文字列リテラルが閉じられていません";
     case DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID: return "識別子内のUCNが不正です";
     case DIAG_ERR_TOKENIZER_TOKENIZE_FAILED: return "トークナイズできません";
+    case DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED: return "文字リテラルが閉じられていません";
     case DIAG_ERR_PARSER_GENERIC: return "構文解析エラーです";
     case DIAG_ERR_PARSER_EXPECTED_TOKEN: return "トークンが必要です";
     case DIAG_ERR_PARSER_UNEXPECTED_TOKEN: return "予期しないトークンです";
@@ -161,6 +162,15 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY: return "入れ子designatorの対象が配列メンバではありません";
     case DIAG_ERR_PARSER_CONST_ASSIGNMENT: return "const修飾された変数への代入はできません";
     case DIAG_ERR_PARSER_CONST_QUAL_DISCARD: return "const修飾されたポインタからconst無しポインタへの暗黙変換はできません";
+    case DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM: return "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません";
+    case DIAG_ERR_PARSER_EXPR_NEST_TOO_DEEP: return "式ネストが深すぎます（上限 %d）";
+    case DIAG_ERR_PARSER_PAREN_NEST_TOO_DEEP: return "括弧ネストが深すぎます（上限 %d）";
+    case DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG: return "宣言子列が多すぎます（上限 %d）";
+    case DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID: return "メンバ指定初期化子が不正です";
+    case DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND: return "メンバ指定初期化子のメンバが見つかりません";
+    case DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID: return "配列指定初期化子の添字が不正です";
+    case DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED: return "初期化子要素数が多すぎます（上限 %d）";
+    case DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN: return "void 型のオブジェクトは宣言できません: '%.*s'";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

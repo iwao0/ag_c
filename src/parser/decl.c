@@ -993,7 +993,8 @@ static node_t *parse_array_elem_struct_brace_init(lvar_t *var, int idx) {
 static void bump_initializer_count(int *count) {
   (*count)++;
   if (*count > PS_MAX_INITIALIZER_ELEMENTS) {
-    psx_diag_ctx(curtok(), "decl", "初期化子要素数が多すぎます（上限 %d）",
+    psx_diag_ctx(curtok(), "decl",
+                 diag_message_for(DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED),
                  PS_MAX_INITIALIZER_ELEMENTS);
   }
 }
@@ -3750,7 +3751,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   for (;;) {
     declarator_count++;
     if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+      psx_diag_ctx(curtok(), "decl",
+                   diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
+                   PS_MAX_DECLARATOR_COUNT);
     }
     int is_pointer = base_is_pointer;
     unsigned int ptr_const_mask = 0;
@@ -3826,7 +3829,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
      * `void x;` はエラー、`void *p;` は可。is_pointer は宣言子のポインタチェーン
      * (`*` 列) を含んだ後の値なので、ここで判定できる。 */
     if (decl_base_is_void && !is_pointer) {
-      psx_diag_ctx(curtok(), "decl", "void 型のオブジェクトは宣言できません: '%.*s'",
+      psx_diag_ctx(curtok(), "decl",
+                   diag_message_for(DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
                    tok ? tok->len : 0, tok ? tok->str : "");
     }
 
@@ -4320,7 +4324,9 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
   for (;;) {
     declarator_count++;
     if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+      psx_diag_ctx(curtok(), "decl",
+                   diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
+                   PS_MAX_DECLARATOR_COUNT);
     }
     int is_ptr = ds->base_is_pointer;
     unsigned int ptr_const_mask = 0;

@@ -97,7 +97,9 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
 static void enter_expr_nest_or_die(void) {
   g_expr_nest_depth++;
   if (g_expr_nest_depth > PS_MAX_EXPR_NEST_DEPTH) {
-    psx_diag_ctx(curtok(), "expr", "式ネストが深すぎます（上限 %d）", PS_MAX_EXPR_NEST_DEPTH);
+    psx_diag_ctx(curtok(), "expr",
+                 diag_message_for(DIAG_ERR_PARSER_EXPR_NEST_TOO_DEEP),
+                 PS_MAX_EXPR_NEST_DEPTH);
   }
 }
 
@@ -108,7 +110,9 @@ static void leave_expr_nest(void) {
 static void enter_paren_nest_or_die(void) {
   g_paren_nest_depth++;
   if (g_paren_nest_depth > PS_MAX_PAREN_NEST_DEPTH) {
-    psx_diag_ctx(curtok(), "paren", "括弧ネストが深すぎます（上限 %d）", PS_MAX_PAREN_NEST_DEPTH);
+    psx_diag_ctx(curtok(), "paren",
+                 diag_message_for(DIAG_ERR_PARSER_PAREN_NEST_TOO_DEEP),
+                 PS_MAX_PAREN_NEST_DEPTH);
   }
 }
 

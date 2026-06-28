@@ -257,7 +257,8 @@ static bool tokenize_char_literal(
   p += chr_prefix;
   p++; // opening quote
   if (*p == '\0' || *p == '\n') {
-    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_UNTERMINATED_LITERAL, p, "文字リテラルが閉じられていません");
+    TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED, p, "%s",
+                diag_message_for(DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED));
   }
   if (*p == '\'') {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_CHAR_LITERAL_EMPTY, p, "%s",

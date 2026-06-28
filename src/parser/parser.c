@@ -1231,7 +1231,9 @@ static void parse_toplevel_declarator_list_with_apply(int base_is_ptr,
 
 static void guard_toplevel_declarator_count(int declarator_count) {
   if (declarator_count <= PS_MAX_DECLARATOR_COUNT) return;
-  psx_diag_ctx(curtok(), "decl", "宣言子列が多すぎます（上限 %d）", PS_MAX_DECLARATOR_COUNT);
+  psx_diag_ctx(curtok(), "decl",
+               diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
+               PS_MAX_DECLARATOR_COUNT);
 }
 
 // グローバル変数の `{...}` 初期化子を再帰的に flatten して gv->init_values に
@@ -1579,7 +1581,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       set_curtok(curtok()->next);
       token_ident_t *m = tk_consume_ident();
       if (!m || ctx.tag_kind == TK_EOF) {
-        psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子が不正です");
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
       }
       int ordinal = 0;
       /* designator は最外 gv ではなく「現在の brace level の型」ctx に対して解決する。
@@ -1588,7 +1591,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       int slot = resolve_member_designator_tag(ctx.tag_kind, ctx.tag_name, ctx.tag_len,
                                                m->str, m->len, &ordinal);
       if (slot < 0) {
-        psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子のメンバが見つかりません");
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
       }
       cur_idx = level_start + slot;
       if (ctx.tag_kind == TK_UNION) gv->union_init_ordinal = ordinal;
@@ -1612,7 +1616,10 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           long long iv = psx_decl_eval_const_int(psx_expr_assign(), &iok);
           consume_gnu_range_designator_tail_if_any();
           tk_expect(']');
-          if (!iok || iv < 0) psx_diag_ctx(curtok(), "decl", "配列指定初期化子の添字が不正です");
+          if (!iok || iv < 0) {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
+          }
           int per = (cmi.tag_kind == TK_STRUCT && !cmi.is_tag_pointer)
                         ? global_flat_slot_count(cmi.tag_kind, cmi.tag_name, cmi.tag_len) : 1;
           cur_idx += (int)iv * per;
@@ -1621,7 +1628,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           set_curtok(curtok()->next);
           token_ident_t *sm = tk_consume_ident();
           if (!sm || cmi.tag_kind == TK_EOF)
-            psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子が不正です");
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
           int sub_n = psx_ctx_get_tag_member_count(cmi.tag_kind, cmi.tag_name, cmi.tag_len);
           int sub_slot = 0, found = 0;
           for (int si = 0; si < sub_n; si++) {
@@ -1634,7 +1642,10 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
             }
             sub_slot += global_member_flat_slots(&smi);
           }
-          if (!found) psx_diag_ctx(curtok(), "decl", "メンバ指定初期化子のメンバが見つかりません");
+          if (!found) {
+            psx_diag_ctx(curtok(), "decl", "%s",
+                         diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
+          }
         } else break;
       }
       tk_expect('=');
@@ -3323,7 +3334,7 @@ static int attach_param_runtime_stride(lvar_t *var, token_ident_t *param,
   lvar_t *src = psx_decl_find_lvar(dim_ident->str, dim_ident->len);
   if (!src || !src->is_param) {
     psx_diag_ctx(curtok(), "param",
-                 "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                 diag_message_for(DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
                  dim_ident->len, dim_ident->str);
     return 0;
   }
@@ -3402,7 +3413,7 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
                                          g_param_inner_dim_idents[i]->len);
         if (!src || !src->is_param) {
           psx_diag_ctx(curtok(), "param",
-                       "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
+                       diag_message_for(DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
                        g_param_inner_dim_idents[i]->len, g_param_inner_dim_idents[i]->str);
           return var;
         }

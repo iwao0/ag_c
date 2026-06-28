@@ -82,6 +82,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_TOKENIZER_STRING_LITERAL_UNTERMINATED: return "Unterminated string literal";
     case DIAG_ERR_TOKENIZER_IDENT_UCN_INVALID: return "Invalid UCN in identifier";
     case DIAG_ERR_TOKENIZER_TOKENIZE_FAILED: return "Failed to tokenize";
+    case DIAG_ERR_TOKENIZER_CHAR_LITERAL_UNTERMINATED: return "Unterminated character literal";
     case DIAG_ERR_PARSER_GENERIC: return "Parser error";
     case DIAG_ERR_PARSER_EXPECTED_TOKEN: return "Expected token is missing";
     case DIAG_ERR_PARSER_UNEXPECTED_TOKEN: return "Unexpected token";
@@ -161,6 +162,15 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY: return "Nested designator target is not an array member";
     case DIAG_ERR_PARSER_CONST_ASSIGNMENT: return "Cannot assign to const-qualified variable";
     case DIAG_ERR_PARSER_CONST_QUAL_DISCARD: return "Implicit conversion discards 'const' qualifier from pointer";
+    case DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM: return "VLA parameter dimension '%.*s' must be a preceding parameter in the same function";
+    case DIAG_ERR_PARSER_EXPR_NEST_TOO_DEEP: return "Expression nesting is too deep (limit %d)";
+    case DIAG_ERR_PARSER_PAREN_NEST_TOO_DEEP: return "Parenthesis nesting is too deep (limit %d)";
+    case DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG: return "Declarator list is too long (limit %d)";
+    case DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID: return "Invalid member designator initializer";
+    case DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND: return "Member in designator initializer was not found";
+    case DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID: return "Invalid array designator initializer index";
+    case DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED: return "Too many initializer elements (limit %d)";
+    case DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN: return "Cannot declare an object of type void: '%.*s'";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";
