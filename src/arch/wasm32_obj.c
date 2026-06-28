@@ -485,6 +485,53 @@ static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   }
 }
 
+static int mem_align_log2(ir_type_t ty) {
+  switch (ty) {
+    case IR_TY_I8: return 0;
+    case IR_TY_I16: return 1;
+    case IR_TY_I32:
+    case IR_TY_PTR:
+    case IR_TY_F32: return 2;
+    case IR_TY_I64:
+    case IR_TY_F64: return 3;
+    default: obj_unsupported_msg("unsupported Wasm object memory type");
+  }
+  return 0;
+}
+
+static unsigned load_opcode(ir_type_t ty, int is_unsigned) {
+  switch (ty) {
+    case IR_TY_I8: return is_unsigned ? 0x2d : 0x2c;
+    case IR_TY_I16: return is_unsigned ? 0x2f : 0x2e;
+    case IR_TY_I32:
+    case IR_TY_PTR: return 0x28;
+    case IR_TY_I64: return 0x29;
+    case IR_TY_F32: return 0x2a;
+    case IR_TY_F64: return 0x2b;
+    default: obj_unsupported_msg("unsupported Wasm object load type");
+  }
+  return 0;
+}
+
+static unsigned store_opcode(ir_type_t ty) {
+  switch (ty) {
+    case IR_TY_I8: return 0x3a;
+    case IR_TY_I16: return 0x3b;
+    case IR_TY_I32:
+    case IR_TY_PTR: return 0x36;
+    case IR_TY_I64: return 0x37;
+    case IR_TY_F32: return 0x38;
+    case IR_TY_F64: return 0x39;
+    default: obj_unsupported_msg("unsupported Wasm object store type");
+  }
+  return 0;
+}
+
+static void emit_memarg(wb_t *b, ir_type_t ty) {
+  wb_uleb(b, (uint32_t)mem_align_log2(ty));
+  wb_uleb(b, 0);
+}
+
 static int collect_param_count(ir_func_t *f) {
   int max_idx = -1;
   for (ir_block_t *b = f->entry; b; b = b->next) {
@@ -617,6 +664,18 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_TRUNC:
           emit_val(&body, i->src1, i->dst.type, param_count);
           emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        case IR_LOAD:
+          emit_val(&body, i->src1, IR_TY_PTR, param_count);
+          wb_u8(&body, load_opcode(i->dst.type, i->is_unsigned));
+          emit_memarg(&body, i->dst.type);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        case IR_STORE:
+          emit_val(&body, i->src1, IR_TY_PTR, param_count);
+          emit_val(&body, i->src2, i->src2.type, param_count);
+          wb_u8(&body, store_opcode(i->src2.type));
+          emit_memarg(&body, i->src2.type);
           break;
         case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
         case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:

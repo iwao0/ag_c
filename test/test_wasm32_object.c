@@ -53,7 +53,7 @@ static int run_objdump_check(const char *name, const char *src,
   if (run_cmd(cmd, name) != 0) return 1;
 
   if (!command_available("wasm-objdump")) return 0;
-  snprintf(cmd, sizeof(cmd), "wasm-objdump -x %s > %s", o_path, dump_path);
+  snprintf(cmd, sizeof(cmd), "wasm-objdump -x -d %s > %s", o_path, dump_path);
   if (run_cmd(cmd, "wasm-objdump") != 0) return 1;
   char buf[65536];
   if (slurp(dump_path, buf, sizeof(buf)) != 0) return 1;
@@ -156,6 +156,31 @@ int main(void) {
   failures += run_objdump_check("extern_data",
                                 "extern int ext; int *f(void){return &ext;}\n",
                                 extern_data_needles, 4);
+
+  const char *global_read_needles[] = {
+      "<g>", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <g>"};
+  failures += run_objdump_check("global_read",
+                                "int g=7; int main(void){return g;}\n",
+                                global_read_needles, 4);
+
+  const char *global_write_needles[] = {
+      "<g>", "R_WASM_MEMORY_ADDR_LEB", "i32.store", "i32.load", "symbol=1 <g>"};
+  failures += run_objdump_check("global_write",
+                                "int g; int main(void){g=5; return g;}\n",
+                                global_write_needles, 5);
+
+  const char *extern_global_read_needles[] = {
+      "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
+  failures += run_objdump_check("extern_global_read",
+                                "extern int ext; int f(void){return ext;}\n",
+                                extern_global_read_needles, 5);
+
+  const char *extern_global_write_needles[] = {
+      "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.store", "i32.load",
+      "symbol=1 <ext>"};
+  failures += run_objdump_check("extern_global_write",
+                                "extern int ext; int f(void){ext=9; return ext;}\n",
+                                extern_global_write_needles, 6);
 
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き144: Wasm object data relocations）
+最終更新: 2026-06-29（続き145: Wasm object global load/store）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -311,6 +311,12 @@
   へ出し、data initializer 内の address slot は raw i32 なので `R_WASM_MEMORY_ADDR_I32` を
   `reloc.DATA` へ出す。`test/test_wasm32_object.c` に data address、string address、
   data initializer relocation、extern data の objectdump fixture を追加。
+- 続き145: **Wasm object global load/store**。
+  object mode に Wasm binary の memory load/store opcode と memarg 生成を追加し、`IR_LOAD` /
+  `IR_STORE` を処理する。これで simple global / extern global の read/write が、`LOAD_SYM`
+  の `R_WASM_MEMORY_ADDR_LEB` で得た address に対する `i32.load` / `i32.store` などとして
+  object に出る。`wasm-objdump -x -d` fixture に global read/write、extern global
+  read/write を追加。
 
 ### Wasm backend の既知メモ
 
@@ -322,10 +328,11 @@
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
 - Wasm object v1 は `test/test_wasm32_object.c` で常時実行。現状の実装範囲は
   direct call relocation、simple data segment、`LOAD_SYM`/`LOAD_STR` の data address relocation、
-  global initializer 内の data address relocation、未定義 extern data symbol。
-  memory load/store による global read/write、aggregate global、function pointer table relocation、
-  indirect call object 化、TLS object relocation は未対応。これらに当たる IR は E4008 で停止させ、
-  誤った relocatable object を出さない方針。
+  global initializer 内の data address relocation、未定義 extern data symbol、simple
+  global/extern global read/write。
+  aggregate global、function pointer table relocation、indirect call object 化、TLS object
+  relocation は未対応。これらに当たる IR は E4008 で停止させ、誤った relocatable object を
+  出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
