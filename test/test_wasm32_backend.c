@@ -241,6 +241,16 @@ int main(void) {
                        "struct S{int x;}; int take(struct S s){return s.x+1;} "
                        "struct S make(){struct S s; s.x=7; return s;} int main(){return take(make());}\n",
                        struct4_return_arg, 3, 8);
+  const char *struct1_return_arg[] = {"(func $take (param $p0 i32) (result i32)", "(call $make", "(call $take"};
+  failures += run_case("struct1_return_arg",
+                       "struct S{unsigned char x;}; int take(struct S s){return s.x+1;} "
+                       "struct S make(){struct S s; s.x=255; return s;} int main(){return take(make());}\n",
+                       struct1_return_arg, 3, 256);
+  const char *struct2_return_member[] = {"(func $make (result i32)", "(call $make", "i32.store16"};
+  failures += run_case("struct2_return_member",
+                       "struct S{short x;}; struct S make(){struct S s; s.x=300; return s;} "
+                       "int main(){return make().x;}\n",
+                       struct2_return_member, 3, 300);
   const char *struct8_return[] = {"(func $make (result i64)", "i64.load", "i64.store"};
   failures += run_case("struct8_return",
                        "struct P{int a; int b;}; struct P make(){struct P p; p.a=3; p.b=4; "
@@ -290,6 +300,23 @@ int main(void) {
                        "a.a=1; a.b=2; a.c=3; b.a=4; b.b=5; b.c=6; return c?b:a;} "
                        "int main(){struct P q; q=pick(1); return q.a+q.b+q.c;}\n",
                        struct_return_ternary, 3, 15);
+  const char *struct_return_member[] = {"(func $make (param $p0 i32)", "(call $make", "i32.load"};
+  failures += run_case("struct_return_member",
+                       "struct P{int a; int b; int c;}; struct P make(){struct P p; "
+                       "p.a=3; p.b=4; p.c=5; return p;} int main(){return make().b;}\n",
+                       struct_return_member, 3, 4);
+  const char *struct_return_arg[] = {"(func $sum (param $p0 i32) (result i32)", "(call $make", "(call $sum"};
+  failures += run_case("struct_return_arg",
+                       "struct P{int a; int b; int c;}; struct P make(){struct P p; "
+                       "p.a=3; p.b=4; p.c=5; return p;} int sum(struct P p){return p.a+p.b+p.c;} "
+                       "int main(){return sum(make());}\n",
+                       struct_return_arg, 3, 12);
+  const char *struct_return_ternary_arg[] = {"(func $sum (param $p0 i32) (result i32)", "if", "(call $sum"};
+  failures += run_case("struct_return_ternary_arg",
+                       "struct P{int a; int b; int c;}; struct P make(int x){struct P p; "
+                       "p.a=x; p.b=x+1; p.c=x+2; return p;} int sum(struct P p){return p.a+p.b+p.c;} "
+                       "int main(){return sum(1?make(4):make(1));}\n",
+                       struct_return_ternary_arg, 3, 15);
   const char *struct_assign_ternary[] = {"i64.store", "if", "i32.store"};
   failures += run_case("struct_assign_ternary",
                        "struct P{int a; int b; int c;}; int main(){struct P a; struct P b; struct P q; "
