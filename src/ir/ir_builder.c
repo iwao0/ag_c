@@ -1595,6 +1595,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     cargs = calloc((size_t)(8 * fn->nargs), sizeof(ir_val_t));
     for (int i = 0; i < fn->nargs; i++) {
       node_t *arg = fn->args[i];
+      int forced_arg_full_size = 0;
       /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
        * struct 値引数のときは init (要素ストア) を先に評価してから temp lvar を
        * struct 引数として扱う。これをしないと先頭 8B を値ロードして渡し、9-16B
@@ -1603,10 +1604,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
         int cl_sz = owner_cl ? owner_cl->size : rlv->mem.type_size;
-        if (cg_size_needs_indirect_struct(cl_sz) && !rlv->mem.is_pointer) {
+        if (!rlv->mem.is_pointer && rlv->mem.tag_kind != TK_EOF &&
+            (cl_sz == 8 || cg_size_needs_indirect_struct(cl_sz))) {
           (void)build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
           arg = arg->rhs;
+          forced_arg_full_size = cl_sz;
         }
       }
       /* _Complex 値引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1}。一時 slot に
@@ -1655,6 +1658,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         if (!lv->mem.is_pointer) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
           if (owner) arg_full_size = owner->size;
+          if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
           if (arg_full_size == 0) arg_full_size = lv->mem.type_size;
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
              確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
@@ -1695,6 +1699,32 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         ir_val_t a = build_expr(ctx, arg);
         if (ctx->failed) return ir_val_none();
         cargs[argc++] = ir_val_vreg(a.id, IR_TY_PTR);
+        continue;
+      }
+      if (arg_full_size == 8 &&
+          ((arg->kind == ND_LVAR && ((node_lvar_t *)arg)->mem.tag_kind != TK_EOF &&
+            !((node_lvar_t *)arg)->mem.is_pointer) ||
+           (arg->kind == ND_GVAR && ((node_gvar_t *)arg)->mem.tag_kind != TK_EOF &&
+            !((node_gvar_t *)arg)->mem.is_pointer && !((node_gvar_t *)arg)->mem.is_tag_pointer) ||
+           (arg->kind == ND_DEREF && ((node_mem_t *)arg)->tag_kind != TK_EOF &&
+            !((node_mem_t *)arg)->is_pointer && !((node_mem_t *)arg)->is_tag_pointer))) {
+        int src_ptr;
+        if (arg->kind == ND_DEREF) {
+          ir_val_t a = build_expr(ctx, arg->lhs);
+          if (ctx->failed) return ir_val_none();
+          src_ptr = a.id;
+        } else if (arg->kind == ND_GVAR) {
+          src_ptr = address_of_gvar(ctx, (node_gvar_t *)arg);
+        } else {
+          src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
+        }
+        if (src_ptr < 0) return ir_val_none();
+        int chunk = ir_func_new_vreg(ctx->f);
+        ir_inst_t *ld = ir_inst_new(IR_LOAD);
+        ld->dst = ir_val_vreg(chunk, IR_TY_I64);
+        ld->src1 = ir_val_vreg(src_ptr, IR_TY_PTR);
+        ir_func_append_inst(ctx->f, ld);
+        cargs[argc++] = ir_val_vreg(chunk, IR_TY_I64);
         continue;
       }
       if (arg_full_size > 8 || struct_needs_ptr) {
