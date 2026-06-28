@@ -529,6 +529,7 @@ tokenizer/ucn_string_u16_mix.c
 tokenizer/ucn_string_u16_surrogate.c
 tokenizer/ucn_string_u32.c
 tokenizer/wide_string_L.c
+type_decl/compound_literal_file_scope.c
 type_decl/typedef_ret_proto.c
 vla/basic_elem.c
 vla/loop_fill.c

@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き139: Add Wasm libc stubs + E2E 1072）
+最終更新: 2026-06-29（続き140: Keep assert comments in Wasm E2E transform + E2E 1073）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1072/1072 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1073/1073 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -274,6 +274,11 @@
   bump allocator を Wasm module に追加し、`printf("x=%d\n", 42)` 用に undefined `printf` stub の
   戻り値を 5 にした。`MAX_EXTRA_CASES` は 1024 に拡張。Wasm E2E は
   静的 531 件 + extra 540 件 + link2 1 件の **1072 件**。
+- 続き140: **Wasm E2E assert include transform 修正**。
+  `type_decl/compound_literal_file_scope.c` はコメント中に `#include <assert.h>` と書かれており、
+  Wasm E2E の変換がコメント行まで削除して壊れた C を生成していた。`assert.h` 除去を実際の
+  preprocessor include 行だけに限定し、fixture を追加。Wasm E2E は
+  静的 531 件 + extra 541 件 + link2 1 件の **1073 件**。
 
 ### Wasm backend の既知メモ
 
@@ -281,12 +286,11 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1072 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
+  1073 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
-- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は 24 件。内訳は主に TLS (`load_tlv_addr`)、
+- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は 23 件。内訳は主に TLS (`load_tlv_addr`)、
   `_Complex` 算術の IR 構築失敗、`stdheader/complex_ops.c` の外部 math/complex 関数、
-  `stdheader/stdatomic_ops.c` の atomic IR、`arithmetic/mod_zero_impl_defined.c` の Wasm trap 差分、
-  `type_decl/compound_literal_file_scope.c` の parser 差分。
+  `stdheader/stdatomic_ops.c` の atomic IR、`arithmetic/mod_zero_impl_defined.c` の Wasm trap 差分。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

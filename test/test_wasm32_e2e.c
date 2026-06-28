@@ -645,7 +645,9 @@ static int write_transformed_source(const wasm_e2e_case_t *tc, const char *out_p
   fprintf(out, "#define assert(expr) do { if (!(expr)) return 100; } while (0)\n");
   char line[4096];
   while (fgets(line, sizeof(line), in)) {
-    if (strstr(line, "#include") && strstr(line, "assert.h")) continue;
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '#' && strstr(p, "include") && strstr(p, "assert.h")) continue;
     fputs(line, out);
   }
   fclose(in);
