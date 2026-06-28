@@ -471,12 +471,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
               member_typedef_funcptr_ret_pointee_array,
               direct_funcptr_ret_pointee_array);
-          if (psx_ret_pointee_array_has_dims(ret_pointee_array)) {
-            psx_ret_pointee_array_store_shorts(ret_pointee_array,
-                                               &_mi.funcptr_ret_pointee_array_first_dim,
-                                               &_mi.funcptr_ret_pointee_array_second_dim,
-                                               &_mi.funcptr_ret_pointee_array_elem_size);
-          }
+          psx_ret_pointee_array_store_shorts_if_present(
+              ret_pointee_array,
+              &_mi.funcptr_ret_pointee_array_first_dim,
+              &_mi.funcptr_ret_pointee_array_second_dim,
+              &_mi.funcptr_ret_pointee_array_elem_size);
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを

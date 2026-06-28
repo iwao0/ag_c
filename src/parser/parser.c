@@ -2357,12 +2357,11 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
         direct_funcptr_ret_pointee_array,
         g_toplevel_decl_base_funcptr_ret_pointee_array);
-    if (psx_ret_pointee_array_has_dims(ret_pointee_array)) {
-      psx_ret_pointee_array_store_shorts(ret_pointee_array,
-                                         &gv->funcptr_ret_pointee_array_first_dim,
-                                         &gv->funcptr_ret_pointee_array_second_dim,
-                                         &gv->funcptr_ret_pointee_array_elem_size);
-    }
+    psx_ret_pointee_array_store_shorts_if_present(
+        ret_pointee_array,
+        &gv->funcptr_ret_pointee_array_first_dim,
+        &gv->funcptr_ret_pointee_array_second_dim,
+        &gv->funcptr_ret_pointee_array_elem_size);
   }
   finalize_toplevel_object_declarator(gv);
 }
@@ -2531,13 +2530,11 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
     _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
     _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
-    if (psx_ret_pointee_array_has_dims(funcptr_ret_pointee_array)) {
-      psx_ret_pointee_array_store_ints(
-          funcptr_ret_pointee_array,
-          &_ti.funcptr_ret_pointee_array_first_dim,
-          &_ti.funcptr_ret_pointee_array_second_dim,
-          &_ti.funcptr_ret_pointee_array_elem_size);
-    }
+    psx_ret_pointee_array_store_ints_if_present(
+        funcptr_ret_pointee_array,
+        &_ti.funcptr_ret_pointee_array_first_dim,
+        &_ti.funcptr_ret_pointee_array_second_dim,
+        &_ti.funcptr_ret_pointee_array_elem_size);
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

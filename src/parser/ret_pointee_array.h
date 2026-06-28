@@ -44,6 +44,15 @@ static inline void psx_ret_pointee_array_store_shorts(psx_ret_pointee_array_t a,
   if (elem_size) *elem_size = (short)a.elem_size;
 }
 
+static inline bool psx_ret_pointee_array_store_shorts_if_present(psx_ret_pointee_array_t a,
+                                                                 short *first_dim,
+                                                                 short *second_dim,
+                                                                 short *elem_size) {
+  if (!psx_ret_pointee_array_has_dims(a)) return false;
+  psx_ret_pointee_array_store_shorts(a, first_dim, second_dim, elem_size);
+  return true;
+}
+
 static inline void psx_ret_pointee_array_store_ints(psx_ret_pointee_array_t a,
                                                     int *first_dim,
                                                     int *second_dim,
@@ -51,6 +60,15 @@ static inline void psx_ret_pointee_array_store_ints(psx_ret_pointee_array_t a,
   if (first_dim) *first_dim = a.first_dim;
   if (second_dim) *second_dim = a.second_dim;
   if (elem_size) *elem_size = a.elem_size;
+}
+
+static inline bool psx_ret_pointee_array_store_ints_if_present(psx_ret_pointee_array_t a,
+                                                               int *first_dim,
+                                                               int *second_dim,
+                                                               int *elem_size) {
+  if (!psx_ret_pointee_array_has_dims(a)) return false;
+  psx_ret_pointee_array_store_ints(a, first_dim, second_dim, elem_size);
+  return true;
 }
 
 static inline int psx_ret_pointee_array_row_stride(psx_ret_pointee_array_t a) {

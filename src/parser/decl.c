@@ -4161,12 +4161,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
           direct_ret_pointee_array,
           base_funcptr_ret_pointee_array);
-      if (psx_ret_pointee_array_has_dims(ret_pointee_array)) {
-        psx_ret_pointee_array_store_shorts(ret_pointee_array,
-                                           &var->funcptr_ret_pointee_array_first_dim,
-                                           &var->funcptr_ret_pointee_array_second_dim,
-                                           &var->funcptr_ret_pointee_array_elem_size);
-      }
+      psx_ret_pointee_array_store_shorts_if_present(
+          ret_pointee_array,
+          &var->funcptr_ret_pointee_array_first_dim,
+          &var->funcptr_ret_pointee_array_second_dim,
+          &var->funcptr_ret_pointee_array_elem_size);
     }
     if (is_pointer && g_decl_had_paren_group && g_decl_func_suffix_count >= 2) {
       var->funcptr_ret_is_pointer = 1;
