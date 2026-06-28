@@ -253,6 +253,16 @@ int main(void) {
   failures += run_case("global_union_fp",
                        "union U{int i; double d;}; union U g={.d=2.5}; int main(){return (int)(g.d+1.5);}\n",
                        global_union_fp, 2, 4);
+  const char *global_union_struct[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_struct",
+                       "struct S{int a; int b;}; union U{struct S s; int i;}; "
+                       "union U g={.s={10,32}}; int main(){return g.s.a+g.s.b;}\n",
+                       global_union_struct, 2, 42);
+  const char *global_union_struct_fp[] = {"(data (i32.const", "f64.load"};
+  failures += run_case("global_union_struct_fp",
+                       "struct S{double d; int x;}; union U{struct S s; long raw;}; "
+                       "union U g={.s={2.5,4}}; int main(){return (int)g.s.d+g.s.x;}\n",
+                       global_union_struct_fp, 2, 6);
   const char *global_struct_union[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_struct_union",
                        "union U{int i; char c;}; struct S{int tag; union U u;}; "

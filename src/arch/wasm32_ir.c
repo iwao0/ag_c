@@ -1104,8 +1104,17 @@ static void emit_global_union_data(global_var_t *gv, int addr) {
   if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ord, &mi)) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }
-  if (mi.bit_width > 0 || ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer)) {
+  if (mi.bit_width > 0) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
+  }
+  if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+    int val_idx = 0;
+    if (mi.tag_kind == TK_STRUCT) {
+      emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, &val_idx, addr);
+    } else {
+      emit_global_nested_union_data(gv, &val_idx, addr, mi.type_size);
+    }
+    return;
   }
   emit_global_init_member_data(gv, 0, addr, &mi);
 }
