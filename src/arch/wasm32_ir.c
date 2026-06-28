@@ -596,8 +596,10 @@ static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
   if (v.id == IR_VAL_IMM) {
     if (is_fp_type(type)) {
       cg_emitf("(%s.const %.17g)", ty, v.fp_imm);
-    } else {
+    } else if (type == IR_TY_I64) {
       cg_emitf("(%s.const %lld)", ty, v.imm);
+    } else {
+      cg_emitf("(%s.const %d)", ty, (int32_t)v.imm);
     }
   } else if (v.id >= 0) {
     cg_emitf("(local.get $v%d)", v.id);
@@ -627,6 +629,23 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
     return;
   }
   emit_val_expr(ctx, v);
+}
+
+static void emit_wasm_type_cast_prefix(ir_type_t from, ir_type_t to, int is_unsigned) {
+  if (from == IR_TY_PTR) from = IR_TY_I32;
+  if (to == IR_TY_PTR) to = IR_TY_I32;
+  if (from == to) return;
+  if (to == IR_TY_I64 && from != IR_TY_I64) {
+    cg_emitf("(%s ", is_unsigned ? "i64.extend_i32_u" : "i64.extend_i32_s");
+  } else if (to != IR_TY_I64 && from == IR_TY_I64) {
+    cg_emitf("(i32.wrap_i64 ");
+  }
+}
+
+static void emit_wasm_type_cast_suffix(ir_type_t from, ir_type_t to) {
+  if (from == IR_TY_PTR) from = IR_TY_I32;
+  if (to == IR_TY_PTR) to = IR_TY_I32;
+  if (from != to && (from == IR_TY_I64 || to == IR_TY_I64)) cg_emitf(")");
 }
 
 static void emit_addr_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
@@ -757,13 +776,10 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
 }
 
-static int mixes_ptr_and_i64(wasm_func_ctx_t *ctx, ir_inst_t *i) {
-  ir_type_t dst = effective_val_type(ctx, i->dst);
+static int uses_ptr_value(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   ir_type_t src1 = effective_val_type(ctx, i->src1);
   ir_type_t src2 = effective_val_type(ctx, i->src2);
-  return (src1 == IR_TY_PTR && src2 == IR_TY_I64) ||
-         (src1 == IR_TY_I64 && src2 == IR_TY_PTR) ||
-         (dst == IR_TY_PTR && (src1 == IR_TY_I64 || src2 == IR_TY_I64));
+  return src1 == IR_TY_PTR || src2 == IR_TY_PTR;
 }
 
 static int i64_runtime_extension_unsupported(wasm_func_ctx_t *ctx, ir_val_t v) {
@@ -1063,10 +1079,8 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_ULT: case IR_ULE: {
       int is_cmp = (i->op == IR_EQ || i->op == IR_NE || i->op == IR_LT || i->op == IR_LE ||
                     i->op == IR_ULT || i->op == IR_ULE);
-      if (mixes_ptr_and_i64(ctx, i)) {
-        wasm_unsupported_msg("64-bit integer value represented as pointer in Wasm backend");
-      }
       ir_type_t op_ty = is_cmp ? effective_val_type(ctx, i->src1) : effective_val_type(ctx, i->dst);
+      if (uses_ptr_value(ctx, i)) op_ty = IR_TY_I32;
       const char *op = wasm_binop(i->op, op_ty);
       if (!op) wasm_unsupported_op(i->op);
       ir_type_t src1_ty = effective_val_type(ctx, i->src1);
@@ -1078,11 +1092,20 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
             i64_runtime_extension_unsupported(ctx, i->src2)))) {
         wasm_unsupported_msg("runtime i32 to i64 extension in Wasm backend");
       }
-      wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
+      ir_type_t dst_ty = effective_val_type(ctx, i->dst);
+      ir_type_t result_ty = is_cmp ? IR_TY_I32 : op_ty;
+      int result_unsigned = uses_ptr_value(ctx, i) ||
+                            i->op == IR_UDIV || i->op == IR_UMOD || i->op == IR_LSR ||
+                            i->op == IR_ULT || i->op == IR_ULE;
+      wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+      emit_wasm_type_cast_prefix(result_ty, dst_ty, result_unsigned);
+      cg_emitf("(%s ", op);
       emit_val_expr_as(ctx, i->src1, op_ty);
       cg_emitf(" ");
       emit_val_expr_as(ctx, i->src2, op_ty);
-      cg_emitf("))\n");
+      cg_emitf(")");
+      emit_wasm_type_cast_suffix(result_ty, dst_ty);
+      cg_emitf(")\n");
       if ((i->op == IR_ADD || i->op == IR_SUB) && !is_cmp) {
         int base_off = 0;
         global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &base_off);
@@ -1119,7 +1142,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
       if (i->src1.id != IR_VAL_NONE) {
         wasm_emitf(indent, "(return ");
-        emit_val_expr(ctx, i->src1);
+        emit_val_expr_as(ctx, i->src1, ctx->f->ret_type);
         cg_emitf(")\n");
       } else {
         wasm_emitf(indent, "return\n");

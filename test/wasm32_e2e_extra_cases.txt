@@ -17,9 +17,11 @@ evil/struct_array_member.c
 evil/struct_ptr_reassign.c
 funcall/variadic_def.c
 funcall/variadic_proto.c
+pointer/array_decay_diff.c
 probes_found_bugs/addr_of_array_compound_literal.c
 probes_found_bugs/alignof_aggregate.c
 probes_found_bugs/anon_member_fp_unsigned_promote.c
+probes_found_bugs/anon_struct_bitfield_promote.c
 probes_found_bugs/anon_struct_union_local.c
 probes_found_bugs/anon_union_member.c
 probes_found_bugs/array_designator_brace_mix.c
@@ -30,6 +32,7 @@ probes_found_bugs/array_of_struct_member_init.c
 probes_found_bugs/array_of_struct_pointers_arrow.c
 probes_found_bugs/array_row_decay_3d_pointer_arith.c
 probes_found_bugs/array_row_decay_pointer_arith.c
+probes_found_bugs/assign_overflow_dangling.c
 probes_found_bugs/bitfield_brace_init.c
 probes_found_bugs/bitfield_enum_and_static_init.c
 probes_found_bugs/bitfield_pack_after_member.c
@@ -50,6 +53,8 @@ probes_found_bugs/cast_to_struct_pointer.c
 probes_found_bugs/cast_voidptr_subscript.c
 probes_found_bugs/char_2d_array_string_init.c
 probes_found_bugs/char_array_string_partial_zerofill.c
+probes_found_bugs/char_ptr_postinc_deref.c
+probes_found_bugs/chained_assign_narrow_lvalue.c
 probes_found_bugs/cmp_narrow_unsigned_promote.c
 probes_found_bugs/cmp_same_width_unsigned.c
 probes_found_bugs/cmp_wide_signed_vs_unsigned.c
@@ -65,6 +70,7 @@ probes_found_bugs/designator_nested.c
 probes_found_bugs/designator_then_positional.c
 probes_found_bugs/div_wide_signed_by_unsigned.c
 probes_found_bugs/double_array.c
+probes_found_bugs/double_pointer_double_subscript.c
 probes_found_bugs/double_pointer_subscript_deref.c
 probes_found_bugs/duplicate_designator_override.c
 probes_found_bugs/empty_macro_argument.c
@@ -86,8 +92,11 @@ probes_found_bugs/fp_pointer_cast_deref.c
 probes_found_bugs/fp_pointer_parameter.c
 probes_found_bugs/fp_unary_minus_neg_zero.c
 probes_found_bugs/func_pointer_return_subscript.c
+probes_found_bugs/func_return_pointer_to_2d_array.c
+probes_found_bugs/func_return_pointer_to_array.c
 probes_found_bugs/func_returning_funcptr.c
 probes_found_bugs/func_returning_funcptr_call.c
+probes_found_bugs/funcall_struct_ptr_arrow.c
 probes_found_bugs/funcptr_address_of_init.c
 probes_found_bugs/funcptr_array_compound_literal.c
 probes_found_bugs/funcptr_array_fp_return.c
@@ -99,6 +108,8 @@ probes_found_bugs/funcptr_global_array_fp_return.c
 probes_found_bugs/funcptr_global_fp_return.c
 probes_found_bugs/funcptr_int_to_fp_arg.c
 probes_found_bugs/funcptr_member_fp_return.c
+probes_found_bugs/funcptr_return_pointer_to_2d_array.c
+probes_found_bugs/funcptr_return_pointer_to_array.c
 probes_found_bugs/funcptr_return_const_pointee.c
 probes_found_bugs/funcptr_return_struct_member.c
 probes_found_bugs/funcret_subscript.c
@@ -141,6 +152,7 @@ probes_found_bugs/global_ptr_to_multidim_array.c
 probes_found_bugs/global_ptrdiff_init.c
 probes_found_bugs/global_scalar_ptr_array_subscript.c
 probes_found_bugs/global_size1_funcptr_array.c
+probes_found_bugs/global_str_ptr_array.c
 probes_found_bugs/global_string_offset_in_array_and_struct.c
 probes_found_bugs/global_string_offset_init.c
 probes_found_bugs/global_string_ptr.c
@@ -214,6 +226,7 @@ probes_found_bugs/nested_ternary_long.c
 probes_found_bugs/nested_union_designator_ordinal.c
 probes_found_bugs/pointer_compound_assign.c
 probes_found_bugs/pointer_integer_compare.c
+probes_found_bugs/pointer_to_vla.c
 probes_found_bugs/pointer_typedef_param_subscript.c
 probes_found_bugs/pp_if_operators.c
 probes_found_bugs/pp_if_short_circuit.c
@@ -247,6 +260,7 @@ probes_found_bugs/static_assert_in_struct.c
 probes_found_bugs/static_internal_linkage.c
 probes_found_bugs/static_local_array_param_overlap.c
 probes_found_bugs/static_local_float_init.c
+probes_found_bugs/static_local_int_array.c
 probes_found_bugs/static_local_multidim_array.c
 probes_found_bugs/static_local_string_pointer.c
 probes_found_bugs/static_local_struct_persist.c
@@ -261,6 +275,7 @@ probes_found_bugs/struct_array_param.c
 probes_found_bugs/struct_array_partial_init.c
 probes_found_bugs/struct_array_typedef_member.c
 probes_found_bugs/struct_array_typedef_member_2d.c
+probes_found_bugs/struct_addr_cast_subtract.c
 probes_found_bugs/struct_copy_init_array_member.c
 probes_found_bugs/struct_copy_init_from_global.c
 probes_found_bugs/struct_double_ptr_deref_arrow.c
@@ -273,6 +288,7 @@ probes_found_bugs/struct_multidim_array_member.c
 probes_found_bugs/struct_of_struct_of_array.c
 probes_found_bugs/struct_partial_init_zerofill.c
 probes_found_bugs/struct_pointer_to_array.c
+probes_found_bugs/struct_pointer_arithmetic.c
 probes_found_bugs/struct_pointer_typedef_member.c
 probes_found_bugs/struct_pointer_var_size.c
 probes_found_bugs/struct_pp_param_arrow.c
@@ -280,6 +296,7 @@ probes_found_bugs/struct_ptr_array_member_access.c
 probes_found_bugs/struct_ptr_compound_assign_and_double_deref.c
 probes_found_bugs/struct_ptr_incdec_and_typedef_arrow.c
 probes_found_bugs/struct_ptr_plus_arrow.c
+probes_found_bugs/struct_ptr_param_subscript.c
 probes_found_bugs/struct_ptr_subscript_member.c
 probes_found_bugs/struct_ptr_to_2d_array_member.c
 probes_found_bugs/struct_ptr_to_array_member.c
@@ -301,6 +318,7 @@ probes_found_bugs/ternary_pointer_subscript.c
 probes_found_bugs/typedef_array_chain.c
 probes_found_bugs/typedef_array_of_pointers.c
 probes_found_bugs/typedef_array_param.c
+probes_found_bugs/typedef_array_pointer_stride.c
 probes_found_bugs/typedef_funcptr_int_to_fp_arg.c
 probes_found_bugs/typedef_label_shadow.c
 probes_found_bugs/typedef_pointer_element_array_decl.c
@@ -321,6 +339,7 @@ probes_found_bugs/unsigned_subint_return_promote.c
 probes_found_bugs/unsupported_gnu_extensions_warn_skip.c
 probes_found_bugs/variadic_macro_empty_va.c
 probes_found_bugs/variadic_macro_forward.c
+probes_found_bugs/void_ptr_return.c
 probes_found_bugs/vla_2d_param.c
 shift/shift_neg_right.c
 stdheader/assert_include.c
