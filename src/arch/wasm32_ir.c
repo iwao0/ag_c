@@ -46,6 +46,16 @@ typedef struct {
 
 static wasm_data_ctx_t g_data = {WASM_STATIC_BASE, NULL, 0, 0};
 
+static void wasm_emit_indent(int spaces) {
+  for (int i = 0; i < spaces; i++) cg_emitf(" ");
+}
+
+#define wasm_emitf(spaces, ...)       \
+  do {                                \
+    wasm_emit_indent((spaces));       \
+    cg_emitf(__VA_ARGS__);            \
+  } while (0)
+
 static const char *wasm_type(ir_type_t t) {
   switch (t) {
     case IR_TY_I8:
@@ -285,7 +295,7 @@ static const char *wasm_binop(ir_op_t op, ir_type_t t) {
   }
 }
 
-static void emit_load(ir_inst_t *i) {
+static void emit_load(ir_inst_t *i, int indent) {
   const char *op = NULL;
   switch (i->dst.type) {
     case IR_TY_I8:  op = i->is_unsigned_load ? "i32.load8_u" : "i32.load8_s"; break;
@@ -295,12 +305,12 @@ static void emit_load(ir_inst_t *i) {
     case IR_TY_I64: op = "i64.load"; break;
     default: wasm_unsupported_op(i->op);
   }
-  cg_emitf("    (local.set $v%d (%s ", i->dst.id, op);
+  wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
   emit_val_expr(i->src1);
   cg_emitf("))\n");
 }
 
-static void emit_store(ir_inst_t *i) {
+static void emit_store(ir_inst_t *i, int indent) {
   const char *op = NULL;
   switch (i->src2.type) {
     case IR_TY_I8:  op = "i32.store8"; break;
@@ -310,23 +320,23 @@ static void emit_store(ir_inst_t *i) {
     case IR_TY_I64: op = "i64.store"; break;
     default: wasm_unsupported_op(i->op);
   }
-  cg_emitf("    (%s ", op);
+  wasm_emitf(indent, "(%s ", op);
   emit_val_expr(i->src1);
   cg_emitf(" ");
   emit_val_expr(i->src2);
   cg_emitf(")\n");
 }
 
-static void emit_call(ir_inst_t *i) {
+static void emit_call(ir_inst_t *i, int indent) {
   if (i->callee.id != IR_VAL_NONE || i->ret_struct_size > 0 || i->ret_complex_half != 0 ||
       i->is_variadic_call) {
     wasm_unsupported_op(i->op);
   }
   if (!i->sym) wasm_unsupported_op(i->op);
   if (i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
-    cg_emitf("    (local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
+    wasm_emitf(indent, "(local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
   } else {
-    cg_emitf("    (call $%.*s", i->sym_len, i->sym);
+    wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
   }
   for (int a = 0; a < i->nargs; a++) {
     cg_emitf(" ");
@@ -337,7 +347,7 @@ static void emit_call(ir_inst_t *i) {
   cg_emitf("\n");
 }
 
-static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode) {
+static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int indent) {
   switch (i->op) {
     case IR_NOP:
       return;
@@ -346,34 +356,34 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode) {
       return;
     case IR_PARAM:
       if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0) wasm_unsupported_op(i->op);
-      cg_emitf("    (local.set $v%d (local.get $p%d))\n", i->dst.id, (int)i->src1.imm);
+      wasm_emitf(indent, "(local.set $v%d (local.get $p%d))\n", i->dst.id, (int)i->src1.imm);
       return;
     case IR_ALLOCA: {
       int off = find_alloca_offset(ctx, i->dst.id);
       if (off < 0) wasm_unsupported_op(i->op);
-      cg_emitf("    (local.set $v%d (i32.add (local.get $fp) (i32.const %d)))\n", i->dst.id, off);
+      wasm_emitf(indent, "(local.set $v%d (i32.add (local.get $fp) (i32.const %d)))\n", i->dst.id, off);
       return;
     }
     case IR_LOAD_IMM:
-      cg_emitf("    (local.set $v%d ", i->dst.id);
+      wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       emit_val_expr(i->src1);
       cg_emitf(")\n");
       return;
     case IR_LOAD_STR: {
       int addr = data_addr_for_string_label(i->sym);
       if (addr < 0) wasm_unsupported_op(i->op);
-      cg_emitf("    (local.set $v%d (i32.const %d))\n", i->dst.id, addr);
+      wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       return;
     }
     case IR_LOAD_SYM: {
       int addr = data_addr_for_global(i->sym, i->sym_len);
-      cg_emitf("    (local.set $v%d (i32.const %d))\n", i->dst.id, addr);
+      wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       return;
     }
     case IR_ZEXT:
     case IR_SEXT:
     case IR_TRUNC:
-      cg_emitf("    (local.set $v%d ", i->dst.id);
+      wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       if (i->dst.type == IR_TY_I64 && i->src1.type != IR_TY_I64) {
         cg_emitf("(%s ", i->op == IR_ZEXT ? "i64.extend_i32_u" : "i64.extend_i32_s");
         emit_val_expr(i->src1);
@@ -388,27 +398,27 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode) {
       cg_emitf(")\n");
       return;
     case IR_LOAD:
-      emit_load(i);
+      emit_load(i, indent);
       return;
     case IR_STORE:
-      emit_store(i);
+      emit_store(i, indent);
       return;
     case IR_LEA:
-      cg_emitf("    (local.set $v%d (i32.add ", i->dst.id);
+      wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
       emit_val_expr(i->src1);
       cg_emitf(" ");
       emit_val_expr(i->src2);
       cg_emitf("))\n");
       return;
     case IR_NEG:
-      cg_emitf("    (local.set $v%d (%s.sub (%s.const 0) ", i->dst.id,
+      wasm_emitf(indent, "(local.set $v%d (%s.sub (%s.const 0) ", i->dst.id,
                i->dst.type == IR_TY_I64 ? "i64" : "i32",
                i->dst.type == IR_TY_I64 ? "i64" : "i32");
       emit_val_expr(i->src1);
       cg_emitf("))\n");
       return;
     case IR_NOT:
-      cg_emitf("    (local.set $v%d (%s.xor ", i->dst.id, i->dst.type == IR_TY_I64 ? "i64" : "i32");
+      wasm_emitf(indent, "(local.set $v%d (%s.xor ", i->dst.id, i->dst.type == IR_TY_I64 ? "i64" : "i32");
       emit_val_expr(i->src1);
       cg_emitf(" (%s.const -1)))\n", i->dst.type == IR_TY_I64 ? "i64" : "i32");
       return;
@@ -421,7 +431,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode) {
       ir_type_t op_ty = is_cmp ? i->src1.type : i->dst.type;
       const char *op = wasm_binop(i->op, op_ty);
       if (!op) wasm_unsupported_op(i->op);
-      cg_emitf("    (local.set $v%d (%s ", i->dst.id, op);
+      wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
       emit_val_expr_as(i->src1, op_ty);
       cg_emitf(" ");
       emit_val_expr_as(i->src2, (op_ty == IR_TY_I64 &&
@@ -431,31 +441,31 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode) {
       return;
     }
     case IR_CALL:
-      emit_call(i);
+      emit_call(i, indent);
       return;
     case IR_BR:
       if (!dispatch_mode) wasm_unsupported_op(i->op);
-      cg_emitf("    (local.set $pc (i32.const %d))\n", i->label_id);
-      cg_emitf("    (br $dispatch)\n");
+      wasm_emitf(indent, "(local.set $pc (i32.const %d))\n", i->label_id);
+      wasm_emitf(indent, "(br $dispatch)\n");
       return;
     case IR_BR_COND:
       if (!dispatch_mode) wasm_unsupported_op(i->op);
-      cg_emitf("    (if ");
+      wasm_emitf(indent, "(if ");
       emit_val_expr_as(i->src1, IR_TY_I32);
       cg_emitf("\n");
-      cg_emitf("      (then (local.set $pc (i32.const %d)))\n", i->label_id);
-      cg_emitf("      (else (local.set $pc (i32.const %d)))\n", i->else_label_id);
-      cg_emitf("    )\n");
-      cg_emitf("    (br $dispatch)\n");
+      wasm_emitf(indent + 2, "(then (local.set $pc (i32.const %d)))\n", i->label_id);
+      wasm_emitf(indent + 2, "(else (local.set $pc (i32.const %d)))\n", i->else_label_id);
+      wasm_emitf(indent, ")\n");
+      wasm_emitf(indent, "(br $dispatch)\n");
       return;
     case IR_RET:
-      if (ctx->frame_size > 0) cg_emitf("    (global.set $__stack_pointer (local.get $old_sp))\n");
+      if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
       if (i->src1.id != IR_VAL_NONE) {
-        cg_emitf("    (return ");
+        wasm_emitf(indent, "(return ");
         emit_val_expr(i->src1);
         cg_emitf(")\n");
       } else {
-        cg_emitf("    return\n");
+        wasm_emitf(indent, "return\n");
       }
       return;
     default:
@@ -496,7 +506,7 @@ static void emit_func(ir_func_t *f) {
   analyze_func(&ctx);
 
   int nparams = func_param_count(f);
-  cg_emitf("  (func $%.*s", f->name_len, f->name);
+  wasm_emitf(2, "(func $%.*s", f->name_len, f->name);
   for (int p = 0; p < nparams; p++) {
     const char *pt = wasm_type(func_param_type(f, p));
     if (!pt) wasm_unsupported_msg("non-integer Wasm function parameter");
@@ -511,48 +521,48 @@ static void emit_func(ir_func_t *f) {
   for (int v = 0; v < f->next_vreg_id; v++) {
     if (!ctx.vreg_type_seen[v]) continue;
     const char *vt = wasm_type(ctx.vreg_types[v]);
-    if (vt) cg_emitf("    (local $v%d %s)\n", v, vt);
+    if (vt) wasm_emitf(4, "(local $v%d %s)\n", v, vt);
   }
-  cg_emitf("    (local $fp i32)\n");
-  cg_emitf("    (local $old_sp i32)\n");
-  if (ctx.has_control_flow) cg_emitf("    (local $pc i32)\n");
+  wasm_emitf(4, "(local $fp i32)\n");
+  wasm_emitf(4, "(local $old_sp i32)\n");
+  if (ctx.has_control_flow) wasm_emitf(4, "(local $pc i32)\n");
   if (ctx.frame_size > 0) {
-    cg_emitf("    (local.set $old_sp (global.get $__stack_pointer))\n");
-    cg_emitf("    (local.set $fp (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
-             ctx.frame_size);
-    cg_emitf("    (global.set $__stack_pointer (local.get $fp))\n");
+    wasm_emitf(4, "(local.set $old_sp (global.get $__stack_pointer))\n");
+    wasm_emitf(4, "(local.set $fp (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
+               ctx.frame_size);
+    wasm_emitf(4, "(global.set $__stack_pointer (local.get $fp))\n");
   }
   if (ctx.has_control_flow) {
-    cg_emitf("    (local.set $pc (i32.const %d))\n", f->entry ? f->entry->id : 0);
-    cg_emitf("    (block $exit\n");
-    cg_emitf("      (loop $dispatch\n");
+    wasm_emitf(4, "(local.set $pc (i32.const %d))\n", f->entry ? f->entry->id : 0);
+    wasm_emitf(4, "(block $exit\n");
+    wasm_emitf(6, "(loop $dispatch\n");
     for (ir_block_t *b = f->entry; b; b = b->next) {
-      cg_emitf("        (if (i32.eq (local.get $pc) (i32.const %d))\n", b->id);
-      cg_emitf("          (then\n");
-      for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i, 1);
+      wasm_emitf(8, "(if (i32.eq (local.get $pc) (i32.const %d))\n", b->id);
+      wasm_emitf(10, "(then\n");
+      for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i, 1, 12);
       if (!block_has_terminator(b)) {
         if (b->next) {
-          cg_emitf("    (local.set $pc (i32.const %d))\n", b->next->id);
-          cg_emitf("    (br $dispatch)\n");
+          wasm_emitf(12, "(local.set $pc (i32.const %d))\n", b->next->id);
+          wasm_emitf(12, "(br $dispatch)\n");
         } else {
-          cg_emitf("    (br $exit)\n");
+          wasm_emitf(12, "(br $exit)\n");
         }
       }
-      cg_emitf("          )\n");
-      cg_emitf("        )\n");
+      wasm_emitf(10, ")\n");
+      wasm_emitf(8, ")\n");
     }
-    cg_emitf("        (br $exit)\n");
-    cg_emitf("      )\n");
-    cg_emitf("    )\n");
-    cg_emitf("    unreachable\n");
+    wasm_emitf(8, "(br $exit)\n");
+    wasm_emitf(6, ")\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(4, "unreachable\n");
   } else {
     for (ir_block_t *b = f->entry; b; b = b->next) {
-      for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i, 0);
+      for (ir_inst_t *i = b->head; i; i = i->next) emit_inst(&ctx, i, 0, 4);
     }
   }
-  cg_emitf("  )\n");
+  wasm_emitf(2, ")\n");
   if (f->name_len == 4 && memcmp(f->name, "main", 4) == 0) {
-    cg_emitf("  (export \"main\" (func $main))\n");
+    wasm_emitf(2, "(export \"main\" (func $main))\n");
   }
 
   free(ctx.allocas);
@@ -564,8 +574,8 @@ void wasm32_module_begin(void) {
   g_data.next_data_off = WASM_STATIC_BASE;
   g_data.symbol_count = 0;
   cg_emitf("(module\n");
-  cg_emitf("  (memory (export \"memory\") 1)\n");
-  cg_emitf("  (global $__stack_pointer (mut i32) (i32.const %d))\n", WASM_STACK_BASE);
+  wasm_emitf(2, "(memory (export \"memory\") 1)\n");
+  wasm_emitf(2, "(global $__stack_pointer (mut i32) (i32.const %d))\n", WASM_STACK_BASE);
 }
 
 void wasm32_gen_ir_module(ir_module_t *m) {
@@ -590,7 +600,7 @@ static void emit_string_literal_data(string_lit_t *lit, void *user) {
   if (lit->char_width != TK_CHAR_WIDTH_CHAR) wasm_unsupported_msg("wide string literal in Wasm backend");
   int addr = data_addr_for_string_label(lit->label);
   if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
-  cg_emitf("  (data (i32.const %d) \"", addr);
+  wasm_emitf(2, "(data (i32.const %d) \"", addr);
   int i = 0;
   while (i < lit->len) {
     uint32_t v = 0;
@@ -619,7 +629,7 @@ static void emit_string_literal_data(string_lit_t *lit, void *user) {
 }
 
 static void emit_i32_data_bytes(int addr, long long value, int size) {
-  cg_emitf("  (data (i32.const %d) \"", addr);
+  wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < size; i++) emit_wat_escaped_byte((unsigned char)((uint64_t)value >> (8 * i)));
   cg_emitf("\")\n");
 }
