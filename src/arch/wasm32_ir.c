@@ -876,12 +876,46 @@ static int vreg_used_after(ir_inst_t *from, int id) {
   return 0;
 }
 
+static int emit_variadic_arg_area_prepare(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
+  if (!i->is_variadic_call) return 0;
+  int nargs_var = i->nargs - i->nargs_fixed;
+  if (nargs_var <= 0) return 0;
+  int bytes = align_to(nargs_var * 8, 16);
+  wasm_emitf(indent, "(local.set $old_va_arg_area (global.get $__ag_va_arg_area))\n");
+  wasm_emitf(indent, "(global.set $__stack_pointer (i32.sub (global.get $__stack_pointer) (i32.const %d)))\n",
+             bytes);
+  wasm_emitf(indent, "(global.set $__ag_va_arg_area (global.get $__stack_pointer))\n");
+  for (int a = i->nargs_fixed; a < i->nargs; a++) {
+    int off = (a - i->nargs_fixed) * 8;
+    ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
+    if (arg_ty == IR_TY_F64) {
+      wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
+      emit_val_expr_as(ctx, i->args[a], IR_TY_F64);
+      cg_emitf(")\n");
+    } else if (arg_ty == IR_TY_F32) {
+      wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) (f64.promote_f32 ", off);
+      emit_val_expr_as(ctx, i->args[a], IR_TY_F32);
+      cg_emitf("))\n");
+    } else {
+      wasm_emitf(indent, "(i64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
+      emit_val_expr_as(ctx, i->args[a], IR_TY_I64);
+      cg_emitf(")\n");
+    }
+  }
+  return bytes;
+}
+
+static void emit_variadic_arg_area_restore(int bytes, int indent) {
+  if (bytes <= 0) return;
+  wasm_emitf(indent, "(global.set $__stack_pointer (i32.add (global.get $__stack_pointer) (i32.const %d)))\n",
+             bytes);
+  wasm_emitf(indent, "(global.set $__ag_va_arg_area (local.get $old_va_arg_area))\n");
+}
+
 static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
+  int vararg_area_bytes = emit_variadic_arg_area_prepare(ctx, i, indent);
   if (i->callee.id != IR_VAL_NONE) {
     if (i->ret_complex_half != 0) {
-      wasm_unsupported_op(i->op);
-    }
-    if (i->is_variadic_call) {
       wasm_unsupported_op(i->op);
     }
     int callee_name_len = 0;
@@ -902,8 +936,9 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     else if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
     else wasm_emitf(indent, "");
     cg_emitf("(call_indirect");
+    int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
     if (returns_aggregate) cg_emitf(" (param i32)");
-    for (int a = 0; a < i->nargs; a++) {
+    for (int a = 0; a < call_nargs; a++) {
       ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
       if (!is_fp_type(arg_ty)) arg_ty = IR_TY_I64;
       cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
@@ -913,7 +948,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       cg_emitf(" ");
       emit_val_expr_as(ctx, i->ret_struct_area, IR_TY_PTR);
     }
-    for (int a = 0; a < i->nargs; a++) {
+    for (int a = 0; a < call_nargs; a++) {
       ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
       if (!is_fp_type(arg_ty)) arg_ty = IR_TY_I64;
       cg_emitf(" ");
@@ -924,6 +959,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     cg_emitf(")");
     if (result_unused || !returns_void) cg_emitf(")");
     cg_emitf("\n");
+    emit_variadic_arg_area_restore(vararg_area_bytes, indent);
     return;
   }
   if (!i->sym) wasm_unsupported_op(i->op);
@@ -973,6 +1009,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     cg_emitf(")");
   }
   cg_emitf("\n");
+  emit_variadic_arg_area_restore(vararg_area_bytes, indent);
 }
 
 static void emit_complex_ret_copy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
@@ -1105,6 +1142,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       emit_val_expr_as(ctx, i->src1, IR_TY_I32);
       cg_emitf(" (i32.const 15)) (i32.const -16))))\n");
       wasm_emitf(indent, "(global.set $__stack_pointer (local.get $v%d))\n", i->dst.id);
+      return;
+    case IR_VA_ARG_AREA:
+      wasm_emitf(indent, "(local.set $v%d (global.get $__ag_va_arg_area))\n", i->dst.id);
       return;
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
@@ -1285,6 +1325,7 @@ static void emit_func(ir_func_t *f) {
   }
   wasm_emitf(4, "(local $fp i32)\n");
   wasm_emitf(4, "(local $old_sp i32)\n");
+  wasm_emitf(4, "(local $old_va_arg_area i32)\n");
   if (ctx.has_control_flow) wasm_emitf(4, "(local $pc i32)\n");
   if (ctx.frame_size > 0) {
     wasm_emitf(4, "(local.set $old_sp (global.get $__stack_pointer))\n");
@@ -1345,6 +1386,7 @@ void wasm32_module_begin(void) {
   cg_emitf("(module\n");
   wasm_emitf(2, "(memory (export \"memory\") 1)\n");
   wasm_emitf(2, "(global $__stack_pointer (mut i32) (i32.const %d))\n", WASM_STACK_BASE);
+  wasm_emitf(2, "(global $__ag_va_arg_area (mut i32) (i32.const 0))\n");
 }
 
 void wasm32_gen_ir_module(ir_module_t *m) {

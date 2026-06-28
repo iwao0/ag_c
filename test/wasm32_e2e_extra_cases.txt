@@ -25,6 +25,7 @@ probes_found_bugs/anon_member_fp_unsigned_promote.c
 probes_found_bugs/anon_struct_bitfield_promote.c
 probes_found_bugs/anon_struct_union_local.c
 probes_found_bugs/anon_union_member.c
+probes_found_bugs/arm64_aggregate_varargs.c
 probes_found_bugs/array_designator_brace_mix.c
 probes_found_bugs/array_designator_with_struct_designator.c
 probes_found_bugs/array_nested_designator_2d.c
@@ -158,6 +159,7 @@ probes_found_bugs/global_nested_struct_init.c
 probes_found_bugs/global_pointer_array_offset_init.c
 probes_found_bugs/global_pointer_typedef.c
 probes_found_bugs/global_ptr_array_addr_init.c
+probes_found_bugs/global_variadic_funcptr_call.c
 probes_found_bugs/global_ptr_to_array_subscript.c
 probes_found_bugs/global_ptr_to_multidim_array.c
 probes_found_bugs/global_ptrdiff_init.c
@@ -362,6 +364,7 @@ probes_found_bugs/unsupported_gnu_extensions_warn_skip.c
 probes_found_bugs/variadic_macro_empty_va.c
 probes_found_bugs/variadic_macro_forward.c
 probes_found_bugs/variadic_unnamed_proto_fixed_args.c
+probes_found_bugs/variadic_via_func_pointer.c
 probes_found_bugs/void_ptr_return.c
 probes_found_bugs/vla_2d_param.c
 probes_found_bugs/vla_2d_param_and_row_sizeof.c

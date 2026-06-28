@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き135: Add minimal Wasm snprintf formatter + E2E 1030）
+最終更新: 2026-06-29（続き136: Lower Wasm variadic va_arg area + E2E 1033）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1030/1030 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1033/1033 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -245,6 +245,14 @@
   `snprintf` だけ固定 signature `(char*, size_t, const char*, i64, i64)` で呼び、Wasm 内に
   `%d`, `%zu`, `%d-%d` 用の最小 decimal formatter を出す。`variadic_unnamed_proto_fixed_args.c` と
   `vla_sizeof_direct.c` を Wasm E2E に追加し、静的 531 件 + extra 499 件の **1030 件**。
+- 続き136: **Wasm variadic `va_arg` area lowering**。
+  Wasm には Apple ARM64 の「可変長引数だけ stack 渡し」に相当する native ABI がないため、
+  variadic call の caller 側で linear memory 上の一時領域へ可変部を 8B slot で並べ、
+  `__ag_va_arg_area` global に先頭アドレスを入れる。callee の `IR_VA_ARG_AREA` はその global を返し、
+  既存 `stdarg.h` の `va_list` pointer walk をそのまま使う。呼び出し後は stack pointer と
+  旧 `__ag_va_arg_area` を復元する。直接/間接 variadic call と aggregate varargs を通し、
+  `arm64_aggregate_varargs.c`, `global_variadic_funcptr_call.c`, `variadic_via_func_pointer.c` を
+  Wasm E2E に追加。静的 531 件 + extra 502 件の **1033 件**。
 
 ### Wasm backend の既知メモ
 
@@ -252,9 +260,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1030 件を通常 `make test` に組み込み済み。
-- 残る Wasm E2E 未収録は主に外部 libc/import、TLS/stdarg/complex、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-135で 52 件を回収し、66 件は未収録。
+  1033 件を通常 `make test` に組み込み済み。
+- 残る Wasm E2E 未収録は主に外部 libc/import、TLS、複数 TU、
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-136で 55 件を回収し、63 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
