@@ -4018,6 +4018,14 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
      * 最終次元の subscript が「要素はポインタ」分岐に乗れるようにする。 */
     deref->pointer_qual_levels = pql;
     deref->base_deref_size = (short)bds;
+  } else if (pql == 1 && bds > 0 &&
+             (node->kind == ND_LVAR || node->kind == ND_GVAR ||
+              node->kind == ND_FUNCALL)) {
+    /* 単段のスカラポインタ値 (`long *p`, `unsigned long *p`) の subscript は
+     * pointee スカラ。`long *` ではポインタ認識のため pql=1 / bds=8 を持つが、
+     * これは「要素がポインタ」ではなく「指している要素が 8B」という情報なので
+     * 結果に pointer_qual_levels を carry しない。 */
+    deref->deref_size = 0;
   } else if (pql >= 1 && bds > 0) {
     deref->is_pointer = 1;
     /* genuine ポインタ変数 (`int **pp`, ND_LVAR/ND_GVAR) の subscript は 1 段の

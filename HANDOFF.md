@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き121: Wasm indirect call return signatures + E2E 1003）
+最終更新: 2026-06-29（続き122: Wasm long* subscript i64 load + E2E 1004）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1003/1003 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1004/1004 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -163,6 +163,13 @@
   member/`node_mem_t`/関数戻り funcptr metadata へ伝播。IR builder は indirect call の callee から
   `IR_CALL.dst.type` を `PTR` / `I64` / `I32` に選ぶ。`funcptr_fp_to_int_arg.c` と
   `func_returning_funcptr_chain.c` を Wasm E2E に追加し、静的 531 件 + extra 472 件の **1003 件**。
+- 続き122: **Wasm `long *` subscript の i64 load**。
+  `long *a` / `unsigned long *a` 仮引数は、ポインタ認識のため `pointer_qual_levels=1` と
+  `base_deref_size=8` を持つ。この組合せを `int *arr[N]` のような「要素がポインタ」の配列と同じに
+  扱っていたため、`a[i]` の結果にも pointer metadata が残り、Wasm IR が `load ptr` / i32 load を
+  生成して上位 32bit を落としていた。単段スカラポインタ値の subscript は metadata を消費して
+  8B スカラ結果にする。`long_pointer_param_and_call.c` を Wasm E2E に追加し、
+  静的 531 件 + extra 473 件の **1004 件**。
 
 ### Wasm backend の既知メモ
 
@@ -170,9 +177,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1003 件を通常 `make test` に組み込み済み。
+  1004 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-121で 25 件を回収し、93 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-122で 26 件を回収し、92 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

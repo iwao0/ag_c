@@ -206,6 +206,7 @@ probes_found_bugs/logical_not_paren_trap.c
 probes_found_bugs/long_bitfield.c
 probes_found_bugs/long_cast_unsigned_zero_extend.c
 probes_found_bugs/long_literal_width.c
+probes_found_bugs/long_pointer_param_and_call.c
 probes_found_bugs/long_return_value.c
 probes_found_bugs/macro_arg_nested_same_name.c
 probes_found_bugs/macro_nested_paste_call.c
