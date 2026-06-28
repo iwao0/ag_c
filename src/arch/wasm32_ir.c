@@ -1013,6 +1013,33 @@ static void emit_global_init_member_data(global_var_t *gv, int idx, int addr,
   emit_global_init_slot_data(gv, idx, addr, mi->type_size, mi->is_bool);
 }
 
+static void emit_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
+                                           int *member_idx, global_var_t *gv,
+                                           int *val_idx, int base_addr) {
+  tag_member_info_t first = {0};
+  if (!psx_ctx_get_tag_member_info(tk, tn, tl, *member_idx, &first) ||
+      first.bit_width <= 0) {
+    wasm_unsupported_msg("global bitfield initializer in Wasm backend");
+  }
+  int unit_off = first.offset;
+  int unit_size = first.type_size;
+  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
+  uint64_t packed = 0;
+  int m = *member_idx;
+  while (m < n_members && *val_idx < gv->init_count) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
+    if (mi.bit_width <= 0 || mi.offset != unit_off) break;
+    uint64_t mask = mi.bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi.bit_width) - 1);
+    uint64_t value = (uint64_t)gv->init_values[*val_idx];
+    packed |= (value & mask) << mi.bit_offset;
+    (*val_idx)++;
+    m++;
+  }
+  emit_i32_data_bytes(base_addr + unit_off, (long long)packed, unit_size);
+  *member_idx = m - 1;
+}
+
 static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                 global_var_t *gv, int *val_idx, int base_addr) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
@@ -1020,7 +1047,8 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
     if (mi.bit_width > 0) {
-      wasm_unsupported_msg("global struct member initializer in Wasm backend");
+      emit_global_bitfield_unit_data(tk, tn, tl, &m, gv, val_idx, base_addr);
+      continue;
     }
     if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
       wasm_unsupported_msg("global union member initializer in Wasm backend");

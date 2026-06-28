@@ -212,6 +212,11 @@ int main(void) {
   failures += run_case("global_struct_bool",
                        "struct S{_Bool b; int x;}; struct S g={100,4}; int main(){return g.b+g.x;}\n",
                        global_struct_bool, 2, 5);
+  const char *global_struct_bitfield[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_struct_bitfield",
+                       "struct S{unsigned int a:3; unsigned int b:5;}; struct S g={3,5}; "
+                       "int main(){return g.a*10+g.b;}\n",
+                       global_struct_bitfield, 2, 35);
   const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
   failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
   const char *struct_copy[] = {"i64.store", "i64.load", "i32.store", "i32.load"};
