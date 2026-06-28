@@ -177,6 +177,8 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH, "E4004", "codegen.break_outside_loop_or_switch"},
     {DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP, "E4005", "codegen.continue_outside_loop"},
     {DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED, "E4006", "codegen.goto_label_undefined"},
+    {DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "E4007", "codegen.ir_build_emit_failed"},
+    {DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP, "E4008", "codegen.unsupported_ir_op"},
 };
 
 /**

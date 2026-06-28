@@ -178,6 +178,8 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH: return "break はループまたはswitch内でのみ使用できます";
     case DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP: return "continue はループ内でのみ使用できます";
     case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "未定義ラベル '%.*s' への goto です";
+    case DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED: return "IR の構築または出力に失敗しました";
+    case DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP: return "未対応の IR 命令です: %s";
   }
   return NULL;
 }

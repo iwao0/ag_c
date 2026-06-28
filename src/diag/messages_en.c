@@ -178,6 +178,8 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_CODEGEN_BREAK_OUTSIDE_LOOP_OR_SWITCH: return "break can only be used inside loop or switch";
     case DIAG_ERR_CODEGEN_CONTINUE_OUTSIDE_LOOP: return "continue can only be used inside loop";
     case DIAG_ERR_CODEGEN_GOTO_LABEL_UNDEFINED: return "goto to undefined label '%.*s'";
+    case DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED: return "Failed to build or emit IR";
+    case DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP: return "Unsupported IR instruction: %s";
   }
   return NULL;
 }

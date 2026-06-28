@@ -16,6 +16,7 @@
 #include "arm64_apple_ir.h"
 #include "arm64_apple_emit.h"
 #include "../ir/ir.h"
+#include "../diag/diag.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -318,8 +319,9 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_BR_COND:       gen_inst_br_cond(ctx, inst); return;
     case IR_RET:           gen_inst_ret(ctx, inst); return;
     default:
-      fprintf(stderr, "gen_ir_inst: unsupported op %s\n", ir_op_name(inst->op));
-      return;
+      diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
+                          diag_message_for(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP),
+                          ir_op_name(inst->op));
   }
 }
 

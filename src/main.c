@@ -130,7 +130,8 @@ int main(int argc, char **argv) {
   ps_stream_begin(tk_ctx, tok);
   for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
     if (!ir_build_emit_function(fn, gen_ir_module)) {
-      fprintf(stderr, "ir build/emit failed\n");
+      diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
+                          diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
       free(source);
       return 1;
     }
