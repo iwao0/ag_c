@@ -133,6 +133,30 @@ int main(void) {
                                 "int other(void); int main(void){return other();}\n",
                                 extern_needles, 4);
 
+  const char *data_addr_needles[] = {
+      "Data[1]", "<g>", "R_WASM_MEMORY_ADDR_LEB", "symbol=2 <g>"};
+  failures += run_objdump_check("data_addr",
+                                "int g=7; int *f(void){return &g;} int main(void){return 0;}\n",
+                                data_addr_needles, 4);
+
+  const char *string_addr_needles[] = {
+      "Data[1]", "<.LC0>", "R_WASM_MEMORY_ADDR_LEB", "symbol=2 <.LC0>"};
+  failures += run_objdump_check("string_addr",
+                                "char *s(void){return \"hi\";} int main(void){return 0;}\n",
+                                string_addr_needles, 4);
+
+  const char *data_init_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "symbol=2 <target>"};
+  failures += run_objdump_check("data_init_reloc",
+                                "int target=3; int *p=&target; int main(void){return 0;}\n",
+                                data_init_needles, 3);
+
+  const char *extern_data_needles[] = {
+      "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "symbol=1 <ext>"};
+  failures += run_objdump_check("extern_data",
+                                "extern int ext; int *f(void){return &ext;}\n",
+                                extern_data_needles, 4);
+
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",
                                 "static int hidden(void){return 7;} int main(void){return hidden();}\n",

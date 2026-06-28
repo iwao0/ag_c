@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き143: Wasm object v1 direct-call route）
+最終更新: 2026-06-29（続き144: Wasm object data relocations）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -304,6 +304,13 @@
   symbol / `R_WASM_FUNCTION_INDEX_LEB` を確認。`wasm-ld` + WABT がある環境では 2 object を
   `wasm-ld --no-entry --export=main` でリンクするテストも走る。この環境では `wasm-ld` がないため
   optional link 実行は skip。
+- 続き144: **Wasm object data relocations**。
+  object mode で simple data symbol を出す経路を追加。文字列 literal、単純な global scalar/array、
+  未定義 extern data symbol、global initializer 内の symbol address を扱う。
+  `IR_LOAD_SYM` / `IR_LOAD_STR` は `i32.const` に `R_WASM_MEMORY_ADDR_LEB` を付けて `reloc.CODE`
+  へ出し、data initializer 内の address slot は raw i32 なので `R_WASM_MEMORY_ADDR_I32` を
+  `reloc.DATA` へ出す。`test/test_wasm32_object.c` に data address、string address、
+  data initializer relocation、extern data の objectdump fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -314,9 +321,11 @@
   1096 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
 - Wasm object v1 は `test/test_wasm32_object.c` で常時実行。現状の実装範囲は
-  direct call relocation 中心で、data segment / global address relocation / function pointer table
-  relocation / indirect call object 化 / TLS object relocation は未対応。これらに当たる IR は E4008 で
-  停止させ、誤った relocatable object を出さない方針。
+  direct call relocation、simple data segment、`LOAD_SYM`/`LOAD_STR` の data address relocation、
+  global initializer 内の data address relocation、未定義 extern data symbol。
+  memory load/store による global read/write、aggregate global、function pointer table relocation、
+  indirect call object 化、TLS object relocation は未対応。これらに当たる IR は E4008 で停止させ、
+  誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
