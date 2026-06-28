@@ -148,6 +148,7 @@ int main(void) {
                        "int main(){_Alignas(32) int x; x=7; return x + (((long)&x) & 31);}\n",
                        alignas32, 2, 7);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
+  failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
   return 0;

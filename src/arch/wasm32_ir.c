@@ -2,6 +2,7 @@
 #include "arm64_apple_emit.h"
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
+#include "../parser/semantic_ctx.h"
 #include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
@@ -380,6 +381,9 @@ static void emit_call(ir_inst_t *i, int indent) {
     wasm_unsupported_op(i->op);
   }
   if (!i->sym) wasm_unsupported_op(i->op);
+  if (!psx_ctx_has_function_name(i->sym, i->sym_len)) {
+    wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
+  }
   if (i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
     wasm_emitf(indent, "(local.set $v%d (call $%.*s", i->dst.id, i->sym_len, i->sym);
   } else {
