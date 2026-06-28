@@ -819,9 +819,6 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     char *callee_name = get_vreg_func_ref(ctx, i->callee.id, &callee_name_len);
     int returns_void = (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
-    if (!returns_void && i->dst.type == IR_TY_PTR) {
-      wasm_unsupported_msg("indirect pointer-return function call in Wasm backend");
-    }
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
     if (result_unused && !callee_name) {
       wasm_unsupported_msg("indirect void or unused-result function call in Wasm backend");

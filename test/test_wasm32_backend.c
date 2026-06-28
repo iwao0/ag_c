@@ -521,6 +521,20 @@ int main(void) {
                        "double addd(double x,double y){return x+y;} int main(){double (*fp)(double,double); "
                        "fp=addd; return (int)fp(1.25,2.75);}\n",
                        funcptr_double_call, 4, 4);
+  const char *funcptr_int_to_double_arg[] = {"f64.convert_i32_s", "call_indirect", "(param f64)"};
+  failures += run_case("funcptr_int_to_double_arg",
+                       "double add(double x){return x+0.5;} int main(){double (*fp)(double); "
+                       "fp=add; return (int)fp(3);}\n",
+                       funcptr_int_to_double_arg, 3, 3);
+  const char *funcptr_double_to_int_arg[] = {"i32.trunc_f64_s", "call_indirect", "(param i64)"};
+  failures += run_case("funcptr_double_to_int_arg",
+                       "int take(int x){return x;} int main(){int (*fp)(int); fp=take; return fp(7.9);}\n",
+                       funcptr_double_to_int_arg, 3, 7);
+  const char *funcptr_pointer_return[] = {"(call_indirect (result i32)", "(return (local.get"};
+  failures += run_case("funcptr_pointer_return",
+                       "int g; int *get(void){return &g;} int main(){int *(*fp)(void); fp=get; "
+                       "*fp()=42; return g;}\n",
+                       funcptr_pointer_return, 2, 42);
   const char *funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
   failures += run_case("funcptr_void_call",
                        "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
