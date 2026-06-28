@@ -1,9 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-28（続き112: funcptr return pointer-to-2d-array）
+最終更新: 2026-06-28（続き113: Wasm backend incremental support）
 
 ## 現状
 - `make test` = **1123/1123 green** (E2E + unit + parser + preprocess + IR + fuzz)。
+- 直近 Wasm backend 作業後の確認: `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend` green、
+  `./build/test_e2e` = **1124/1124 green**、`git diff --check` clean。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -85,11 +87,41 @@
   間接 `ND_FUNCALL` の deref_size/subscript/`*fp()` 経路で N*M*elem / M*elem / elem を carry。
   直書き global/struct member では trailing `[N][M]` をオブジェクト自身の配列ではなく戻り
   pointee 次元として登録する。
+- 続き113: **IR ベース Wasm backend の拡張**。ARM64 backend は維持しつつ `build/ag_c_wasm`
+  の WAT 出力を段階的に拡張。主なコミット:
+  - `0037e7c` simple indirect call、`e41f7f0` function pointer initializer、
+    `f1c60ea` void / unused-result indirect call。
+  - `721ef89` global function pointer tracking、`51c0976` struct member function pointer call、
+    `54c4c92` struct member function pointer array。
+  - `cb90307` simple indirect pointer return、`4b38be5` zeroed large Wasm globals、
+    `aadc081` zeroed aggregate globals の fixture。
+  対応済み範囲: local/global/static/struct member の単純な関数ポインタ呼び出し、関数ポインタ配列、
+  void / unused-result call、int↔fp 引数変換が IR に現れる indirect call、単純 pointer return、
+  pointer-to-array return、未初期化の大きい global/aggregate を Wasm linear memory のゼロ初期化に任せる処理。
+  制御フロー越しに global/struct member 関数ポインタが上書きされる場合は、誤コンパイルせず E4008 で止める。
+  WAT は `wat2wasm` / `wasm-interp` がある環境では test harness が実行値まで確認する。
+
+### Wasm backend の既知メモ
+
+- **多次元 static local 配列の疑い**:
+  `int f(){static int a[2][3]; a[1][2]=a[1][2]+1; return a[1][2];}` が IR で
+  `v0 = alloca ptr size=24 align=8` になり、static storage ではなく stack frame に置かれる。
+  `static int x;` と `static int a[2];` は `load_sym @f.x.0` / `@f.a.a0` になり永続化されるため、
+  多次元 static local の宣言/登録経路だけが怪しい。Wasm backend では復元しづらいので parser/decl 側で追う。
+  再現プローブ:
+  ```c
+  int f(){static int a[2][3]; a[1][2]=a[1][2]+1; return a[1][2];}
+  int main(){return f()*10+f();} /* 期待 12、alloca なら 11 になり得る */
+  ```
+- Wasm indirect aggregate return (`ret_struct_size > 0`) はまだ未対応で E4008。単純 pointer return は `i32`
+  として通るようになった。
+- 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
+  initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
 ## 次セッション開始時の手順
 1. **HANDOFF.md を読む** (このファイル)。「現状」「次セッションの最優先タスク」「作業のやり方」を確認。
 2. **`git submodule update --init`** で c-testsuite を初期化 (未取得時のみ)。
-3. **`make test`** で 1123/1123 green を確認 (前回セッションの状態が引き継がれている)。
+3. **`make test`** で green を確認 (前回セッションの状態が引き継がれている)。
 4. **`bash scripts/run_c_testsuite.sh --list-fail`** で fail 0 / unsupported skip 2 を確認 (= 前回セッションのベースライン)。
 5. **bug_coverage.md** で再探索不要な領域を確認 (重複探索を避ける)。
 6. **次セッションの最優先タスク** (下記) のうち 1 件を選んで取り組む。または未探索の角度から
