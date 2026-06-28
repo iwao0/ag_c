@@ -810,17 +810,52 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
   cg_emitf("\")\n");
 }
 
+static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
+  int elem = gv->is_array && gv->deref_size > 0 ? gv->deref_size : size;
+  if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
+  int total_elems = elem > 0 ? (size + elem - 1) / elem : 0;
+  wasm_emitf(2, "(data (i32.const %d) \"", addr);
+  for (int i = 0; i < total_elems; i++) {
+    if (i < gv->init_count && gv->init_value_symbols && gv->init_value_symbols[i]) {
+      wasm_unsupported_msg("symbol array initializer in Wasm backend");
+    }
+    uint64_t value = (uint64_t)((i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0);
+    int bytes = elem;
+    if ((i + 1) * elem > size) bytes = size - i * elem;
+    for (int b = 0; b < bytes; b++) emit_wat_escaped_byte((unsigned char)(value >> (8 * b)));
+  }
+  cg_emitf("\")\n");
+}
+
+static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
+  int sym_addr = 0;
+  if (gv->init_symbol_len < 0) {
+    sym_addr = data_addr_for_string_label(gv->init_symbol);
+  } else {
+    sym_addr = data_addr_for_global(gv->init_symbol, gv->init_symbol_len);
+  }
+  if (sym_addr < 0) wasm_unsupported_msg("global symbol initializer in Wasm backend");
+  emit_i32_data_bytes(addr, (long long)sym_addr + gv->init_symbol_offset, size);
+}
+
 static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
   if (gv->is_extern_decl) return;
   if (gv->is_thread_local || gv->fp_kind != TK_FLOAT_KIND_NONE || gv->tag_kind != TK_EOF ||
-      gv->init_symbol || gv->init_count > 0) {
+      gv->init_fvalues) {
     wasm_unsupported_msg("global initializer in Wasm backend");
   }
   int addr = data_addr_for_global(gv->name, gv->name_len);
   int size = gv->type_size > 0 ? gv->type_size : 4;
-  if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
-  emit_i32_data_bytes(addr, gv->has_init ? gv->init_val : 0, size);
+  if (gv->init_symbol) {
+    if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
+    emit_global_symbol_addr_data(gv, addr, size);
+  } else if (gv->init_count > 0) {
+    emit_global_init_values_data(gv, addr, size);
+  } else {
+    if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
+    emit_i32_data_bytes(addr, gv->has_init ? gv->init_val : 0, size);
+  }
 }
 
 void wasm32_emit_data_segments(void) {

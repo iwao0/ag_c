@@ -139,6 +139,15 @@ int main(void) {
   failures += run_case("global_read", "int g=5; int main(){return g+2;}\n", global_read, 2, 7);
   const char *global_write[] = {"(data (i32.const", "i32.store"};
   failures += run_case("global_write", "int g; int main(){g=9; return g;}\n", global_write, 2, 9);
+  const char *global_array[] = {"(data (i32.const", "\\0a\\00\\00\\00\\14\\00\\00\\00\\1e\\00\\00\\00"};
+  failures += run_case("global_array", "int a[3]={10,20,30}; int main(){return a[1]+a[2];}\n",
+                       global_array, 2, 50);
+  const char *global_char_array[] = {"(data (i32.const", "\"abc\\00\""};
+  failures += run_case("global_char_array", "char g[]=\"abc\"; int main(){return g[1];}\n",
+                       global_char_array, 2, 98);
+  const char *global_str_ptr[] = {"(data (i32.const", "\"abc\\00\""};
+  failures += run_case("global_str_ptr", "char *p=\"abc\"; int main(){return p[1];}\n",
+                       global_str_ptr, 2, 98);
   const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
   failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
   const char *struct_copy[] = {"i64.store", "i64.load", "i32.store", "i32.load"};
