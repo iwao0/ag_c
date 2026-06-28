@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き120: Wasm pointer/i64 lowering + E2E 997）
+最終更新: 2026-06-29（続き120: Wasm pointer/i64 lowering + E2E 1001）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **997/997 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1001/1001 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -150,8 +150,10 @@
   直前で i32/i64 の wrap/extend を挟む。比較命令の結果型は operand 幅に関係なく `i32` として扱う。
   併せて `i32.const` は 32bit 表現で出し、`i32.const -4294901761` のような WAT 不正即値を避ける。
   前回 failed 118 件を再プローブし、`pointer/array_decay_diff.c` と pointer-to-array return /
-  struct pointer arithmetic 系など 19 件を `test/wasm32_e2e_extra_cases.txt` に追加。Wasm E2E は
-  静的 531 件 + extra 466 件の **997 件**。
+  struct pointer arithmetic 系など 19 件を `test/wasm32_e2e_extra_cases.txt` に追加。
+  さらに byref struct 仮引数の Wasm signature を `i32` に合わせ、indirect callee vreg を table index
+  (`i32`) として型付けすることで、large struct by-value/direct member funcptr 系 4 件を追加回収。
+  Wasm E2E は静的 531 件 + extra 470 件の **1001 件**。
 
 ### Wasm backend の既知メモ
 
@@ -159,10 +161,10 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  997 件を通常 `make test` に組み込み済み。
+  1001 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分、large struct arg など。前回 failed 118 件のうち続き120で 19 件を回収し、
-  99 件は未収録。
+  一部の実行結果差分、long 戻り値を含む indirect call など。前回 failed 118 件のうち続き120で
+  23 件を回収し、95 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

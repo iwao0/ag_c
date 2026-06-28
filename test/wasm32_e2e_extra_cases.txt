@@ -63,6 +63,7 @@ probes_found_bugs/complex_brace_init.c
 probes_found_bugs/complex_float_double_convert.c
 probes_found_bugs/compound_assign_index_side_effect.c
 probes_found_bugs/compound_literal_struct_assign.c
+probes_found_bugs/compound_literal_struct_arg.c
 probes_found_bugs/const_pointer_reassign.c
 probes_found_bugs/const_struct.c
 probes_found_bugs/decl_spec_order_and_dup.c
@@ -108,9 +109,11 @@ probes_found_bugs/funcptr_global_array_fp_return.c
 probes_found_bugs/funcptr_global_fp_return.c
 probes_found_bugs/funcptr_int_to_fp_arg.c
 probes_found_bugs/funcptr_member_fp_return.c
+probes_found_bugs/funcptr_member_int_to_fp_arg.c
 probes_found_bugs/funcptr_return_pointer_to_2d_array.c
 probes_found_bugs/funcptr_return_pointer_to_array.c
 probes_found_bugs/funcptr_return_const_pointee.c
+probes_found_bugs/funcptr_return_large_struct.c
 probes_found_bugs/funcptr_return_struct_member.c
 probes_found_bugs/funcret_subscript.c
 probes_found_bugs/function_duplicate_def.c
@@ -352,6 +355,7 @@ stdheader/setjmp_include.c
 stdheader/signal_include.c
 stdheader/stddef_max_align_t.c
 stdheader/time_include.c
+struct_arg/large_sum.c
 tokenizer/charlit_L.c
 tokenizer/charlit_u.c
 tokenizer/string_concat_prefix.c

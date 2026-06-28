@@ -281,7 +281,10 @@ static void emit_function_table(void) {
 }
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
-  if (raw == IR_TY_PTR && psx_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
+  if (psx_ctx_get_function_param_category(f->name, f->name_len, idx) == PSX_PCAT_STRUCT) {
+    return IR_TY_PTR;
+  }
+  if (raw != IR_TY_PTR && psx_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
     return IR_TY_I64;
   }
   return raw;
@@ -585,6 +588,13 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
       if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) ctx->has_control_flow = 1;
     }
   }
+  for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op == IR_CALL && i->callee.id != IR_VAL_NONE) {
+        set_vreg_type(ctx, i->callee, IR_TY_I32);
+      }
+    }
+  }
   infer_alloca_value_types(ctx);
   ctx->frame_size = align_to(ctx->frame_size, 16);
 }
@@ -705,6 +715,8 @@ static const char *wasm_fp_binop(ir_op_t op, ir_type_t t) {
 }
 
 static ir_type_t effective_load_type(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+  ir_type_t dst_ty = effective_val_type(ctx, i->dst);
+  if (dst_ty != i->dst.type) return dst_ty;
   if (i->dst.type == IR_TY_PTR) {
     wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
     if (slot && slot->value_type == IR_TY_I64) return IR_TY_I64;

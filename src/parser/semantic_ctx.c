@@ -1200,6 +1200,12 @@ int psx_ctx_track_function_param_category(char *name, int len, int idx, int cate
   return 0;
 }
 
+int psx_ctx_get_function_param_category(char *name, int len, int idx) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f || idx < 0 || idx >= 16) return PSX_PCAT_UNSET;
+  return (int)f->param_categories[idx];
+}
+
 void psx_ctx_set_function_ret_void(char *name, int len, int is_void) {
   func_name_t *f = find_function_name(name, len);
   if (!f) return;

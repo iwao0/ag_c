@@ -227,6 +227,7 @@ enum {
  * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。
  * カテゴリは粗粒度 (int width / fp / pointer / struct) で K&R 互換のため厳密型は照合しない。 */
 int psx_ctx_track_function_param_category(char *name, int len, int idx, int category);
+int psx_ctx_get_function_param_category(char *name, int len, int idx);
 
 /* 同名関数の本体定義が初回かどうかを track する (C11 6.9p3)。
  * 初回なら 1 を返して定義済みフラグを立てる、すでに定義済みなら 0。 */
