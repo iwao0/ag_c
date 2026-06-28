@@ -18,7 +18,7 @@ typedef struct {
   int expected_i;
 } wasm_link2_case_t;
 
-#define MAX_EXTRA_CASES 512
+#define MAX_EXTRA_CASES 1024
 
 static wasm_e2e_case_t extra_cases[MAX_EXTRA_CASES];
 static char extra_case_categories[MAX_EXTRA_CASES][64];

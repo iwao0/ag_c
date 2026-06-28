@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き138: Add Wasm link2 E2E case + E2E 1035）
+最終更新: 2026-06-29（続き139: Add Wasm libc stubs + E2E 1072）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1035/1035 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1072/1072 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -266,6 +266,14 @@
   test harness 側で `other` TU の file-scope static 名 (`s`, `base`) だけ namespace した wrapper を
   生成し、2 ファイルを 1 ケース (`expected main() => i32:42`) として実行する link2 枠を追加。
   Wasm E2E は静的 531 件 + extra 503 件 + link2 1 件の **1035 件**。
+- 続き139: **Wasm minimal libc stubs + extra fixture 37 件**。
+  未収録 fixture を再 preflight し、Wasm backend + WABT 実行値まで通る 37 件を
+  `test/wasm32_e2e_extra_cases.txt` に追加。`stdarg` 基本系、VLA 基本/2D/param 系、wide string tokenizer、
+  `typedef_ret_proto` は既存 backend で通過。さらに fixture が検査する範囲に限って `isalpha`,
+  `isdigit`, `toupper`, `abs`, `strlen`, `strcmp`, `memset`, `atoi`, `malloc`, `free` の最小 stub と
+  bump allocator を Wasm module に追加し、`printf("x=%d\n", 42)` 用に undefined `printf` stub の
+  戻り値を 5 にした。`MAX_EXTRA_CASES` は 1024 に拡張。Wasm E2E は
+  静的 531 件 + extra 540 件 + link2 1 件の **1072 件**。
 
 ### Wasm backend の既知メモ
 
@@ -273,10 +281,12 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1035 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
+  1072 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
-- 残る Wasm E2E 未収録は主に外部 libc/import、TLS、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-138で 58 ファイル分を回収し、60 件は未収録。
+- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は 24 件。内訳は主に TLS (`load_tlv_addr`)、
+  `_Complex` 算術の IR 構築失敗、`stdheader/complex_ops.c` の外部 math/complex 関数、
+  `stdheader/stdatomic_ops.c` の atomic IR、`arithmetic/mod_zero_impl_defined.c` の Wasm trap 差分、
+  `type_decl/compound_literal_file_scope.c` の parser 差分。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
