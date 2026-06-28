@@ -19,6 +19,8 @@ typedef struct {
   int offset;
   int size;
   ir_type_t value_type;
+  char *func_ref_name;
+  int func_ref_name_len;
 } wasm_alloca_slot_t;
 
 typedef struct {
@@ -30,6 +32,8 @@ typedef struct {
   int *vreg_type_seen;
   ir_type_t *vreg_types;
   unsigned char *vreg_unsigned;
+  char **vreg_func_ref_names;
+  int *vreg_func_ref_name_lens;
   int has_control_flow;
 } wasm_func_ctx_t;
 
@@ -349,6 +353,19 @@ static int val_is_unsigned(wasm_func_ctx_t *ctx, ir_val_t v) {
   return v.id >= 0 && v.id < ctx->f->next_vreg_id && ctx->vreg_unsigned[v.id];
 }
 
+static void set_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, char *name, int name_len) {
+  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
+  ctx->vreg_func_ref_names[vreg] = name;
+  ctx->vreg_func_ref_name_lens[vreg] = name_len;
+}
+
+static char *get_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, int *out_len) {
+  if (out_len) *out_len = 0;
+  if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return NULL;
+  if (out_len) *out_len = ctx->vreg_func_ref_name_lens[vreg];
+  return ctx->vreg_func_ref_names[vreg];
+}
+
 static void infer_alloca_value_types(wasm_func_ctx_t *ctx) {
   for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
@@ -382,7 +399,10 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
   ctx->vreg_type_seen = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
   ctx->vreg_types = calloc((size_t)ctx->f->next_vreg_id, sizeof(ir_type_t));
   ctx->vreg_unsigned = calloc((size_t)ctx->f->next_vreg_id, sizeof(unsigned char));
-  if (!ctx->vreg_type_seen || !ctx->vreg_types || !ctx->vreg_unsigned) {
+  ctx->vreg_func_ref_names = calloc((size_t)ctx->f->next_vreg_id, sizeof(char *));
+  ctx->vreg_func_ref_name_lens = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
+  if (!ctx->vreg_type_seen || !ctx->vreg_types || !ctx->vreg_unsigned ||
+      !ctx->vreg_func_ref_names || !ctx->vreg_func_ref_name_lens) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
@@ -501,6 +521,7 @@ static ir_type_t effective_load_type(wasm_func_ctx_t *ctx, ir_inst_t *i) {
 }
 
 static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
+  wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   const char *op = NULL;
   switch (effective_load_type(ctx, i)) {
     case IR_TY_I8:  op = i->is_unsigned ? "i32.load8_u" : "i32.load8_s"; break;
@@ -515,9 +536,13 @@ static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
   emit_addr_expr(ctx, i->src1);
   cg_emitf("))\n");
+  if (slot && slot->func_ref_name) {
+    set_vreg_func_ref(ctx, i->dst.id, slot->func_ref_name, slot->func_ref_name_len);
+  }
 }
 
 static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
+  wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   const char *op = NULL;
   switch (effective_val_type(ctx, i->src2)) {
     case IR_TY_I8:  op = "i32.store8"; break;
@@ -534,6 +559,12 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   cg_emitf(" ");
   emit_val_expr(ctx, i->src2);
   cg_emitf(")\n");
+  if (slot) {
+    int name_len = 0;
+    char *name = get_vreg_func_ref(ctx, i->src2.id, &name_len);
+    slot->func_ref_name = name;
+    slot->func_ref_name_len = name_len;
+  }
 }
 
 static int mixes_ptr_and_i64(wasm_func_ctx_t *ctx, ir_inst_t *i) {
@@ -620,15 +651,20 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) {
       wasm_unsupported_msg("indirect aggregate function call in Wasm backend");
     }
-    int returns_void = (i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID);
+    int callee_name_len = 0;
+    char *callee_name = get_vreg_func_ref(ctx, i->callee.id, &callee_name_len);
+    int returns_void = (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
+                       i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     if (!returns_void && i->dst.type == IR_TY_PTR) {
       wasm_unsupported_msg("indirect pointer-return function call in Wasm backend");
     }
-    if (!returns_void && !vreg_used_after(i, i->dst.id)) {
+    int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
+    if (result_unused && !callee_name) {
       wasm_unsupported_msg("indirect void or unused-result function call in Wasm backend");
     }
     const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(i->dst.type);
-    if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+    if (result_unused) wasm_emitf(indent, "(drop ");
+    else if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
     else wasm_emitf(indent, "");
     cg_emitf("(call_indirect");
     for (int a = 0; a < i->nargs; a++) {
@@ -646,7 +682,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     cg_emitf(" ");
     emit_val_expr_as(ctx, i->callee, IR_TY_I32);
     cg_emitf(")");
-    if (!returns_void) cg_emitf(")");
+    if (result_unused || !returns_void) cg_emitf(")");
     cg_emitf("\n");
     return;
   }
@@ -714,6 +750,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (psx_ctx_has_function_name(i->sym, i->sym_len)) {
         int func_idx = function_table_index_or_unsupported(i->sym, i->sym_len);
         wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, func_idx);
+        set_vreg_func_ref(ctx, i->dst.id, i->sym, i->sym_len);
         return;
       }
       int addr = data_addr_for_global(i->sym, i->sym_len);
@@ -985,6 +1022,8 @@ static void emit_func(ir_func_t *f) {
   free(ctx.vreg_type_seen);
   free(ctx.vreg_types);
   free(ctx.vreg_unsigned);
+  free(ctx.vreg_func_ref_names);
+  free(ctx.vreg_func_ref_name_lens);
 }
 
 void wasm32_module_begin(void) {

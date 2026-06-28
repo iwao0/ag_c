@@ -521,10 +521,16 @@ int main(void) {
                        "double addd(double x,double y){return x+y;} int main(){double (*fp)(double,double); "
                        "fp=addd; return (int)fp(1.25,2.75);}\n",
                        funcptr_double_call, 4, 4);
-  failures += run_fail_case("funcptr_void_call",
-                            "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
-                            "fp=set; fp(&x); return x;}\n",
-                            "E4008");
+  const char *funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
+  failures += run_case("funcptr_void_call",
+                       "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
+                       "fp=set; fp(&x); return x;}\n",
+                       funcptr_void_call, 2, 9);
+  const char *funcptr_unused_result_call[] = {"drop", "call_indirect", "(result i32)"};
+  failures += run_case("funcptr_unused_result_call",
+                       "int set(int *p){*p=9; return 123;} int main(){int (*fp)(int*); int x; x=0; "
+                       "fp=set; fp(&x); return x;}\n",
+                       funcptr_unused_result_call, 3, 9);
   failures += run_fail_case("funcptr_external_ref",
                             "int ext(int); int main(){int (*fp)(int); fp=ext; return fp(1);}\n",
                             "E4008");
@@ -550,6 +556,10 @@ int main(void) {
                        struct_funcptr_call, 3, 42);
   failures += run_fail_case("global_funcptr_external_ref",
                             "int ext(int); int (*g)(int)=ext; int main(){return 0;}\n",
+                            "E4008");
+  failures += run_fail_case("global_funcptr_void_call",
+                            "void set(int *p){*p=9;} void (*g)(int*)=set; "
+                            "int main(){int x; x=0; g(&x); return x;}\n",
                             "E4008");
   const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};
   failures += run_case("unsigned_int_to_double",
