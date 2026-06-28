@@ -229,6 +229,7 @@ int psx_ctx_track_function_param_category(char *name, int len, int idx, int cate
 /* 同名関数の本体定義が初回かどうかを track する (C11 6.9p3)。
  * 初回なら 1 を返して定義済みフラグを立てる、すでに定義済みなら 0。 */
 int psx_ctx_track_function_defined(char *name, int len);
+int psx_ctx_is_function_defined(char *name, int len);
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 /* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */

@@ -47,7 +47,19 @@ typedef struct {
   int symbol_cap;
 } wasm_data_ctx_t;
 
+typedef struct {
+  char *name;
+  int name_len;
+} wasm_func_ref_t;
+
+typedef struct {
+  wasm_func_ref_t *refs;
+  int ref_count;
+  int ref_cap;
+} wasm_func_table_ctx_t;
+
 static wasm_data_ctx_t g_data = {WASM_STATIC_BASE, NULL, 0, 0};
+static wasm_func_table_ctx_t g_func_table = {NULL, 0, 0};
 
 static void wasm_emit_indent(int spaces) {
   static const char k_spaces[] = "                                ";
@@ -98,6 +110,12 @@ static const char *wasm_fp_type_or_unsupported(ir_type_t t) {
 static const char *wasm_int_type_or_unsupported(ir_type_t t) {
   const char *ty = wasm_type(t);
   if (!ty || is_fp_type(t)) wasm_unsupported_msg("unsupported Wasm integer type");
+  return ty;
+}
+
+static const char *wasm_any_type_or_unsupported(ir_type_t t) {
+  const char *ty = wasm_type(t);
+  if (!ty) wasm_unsupported_msg("unsupported Wasm value type");
   return ty;
 }
 
@@ -205,6 +223,34 @@ static int data_addr_for_global(const char *sym, int sym_len) {
   int size = (ctx.found && ctx.found->type_size > 0) ? ctx.found->type_size : 8;
   int align = size >= 8 ? 8 : size >= 4 ? 4 : size >= 2 ? 2 : 1;
   return intern_data_symbol(sym, sym_len, size, align)->addr;
+}
+
+static int intern_function_table_ref(char *name, int name_len) {
+  if (!name || name_len <= 0) return -1;
+  for (int i = 0; i < g_func_table.ref_count; i++) {
+    if (name_eq(g_func_table.refs[i].name, g_func_table.refs[i].name_len, name, name_len)) return i;
+  }
+  if (g_func_table.ref_count == g_func_table.ref_cap) {
+    int ncap = g_func_table.ref_cap ? g_func_table.ref_cap * 2 : 16;
+    wasm_func_ref_t *n = realloc(g_func_table.refs, (size_t)ncap * sizeof(*n));
+    if (!n) diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    g_func_table.refs = n;
+    g_func_table.ref_cap = ncap;
+  }
+  int idx = g_func_table.ref_count++;
+  g_func_table.refs[idx].name = name;
+  g_func_table.refs[idx].name_len = name_len;
+  return idx;
+}
+
+static void emit_function_table(void) {
+  if (g_func_table.ref_count <= 0) return;
+  wasm_emitf(2, "(table %d funcref)\n", g_func_table.ref_count);
+  wasm_emitf(2, "(elem (i32.const 0)");
+  for (int i = 0; i < g_func_table.ref_count; i++) {
+    cg_emitf(" $%.*s", g_func_table.refs[i].name_len, g_func_table.refs[i].name);
+  }
+  cg_emitf(")\n");
 }
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
@@ -533,9 +579,68 @@ static void emit_memcpy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
 }
 
+static int val_uses_vreg(ir_val_t v, int id) {
+  return v.id == id;
+}
+
+static int inst_uses_vreg(ir_inst_t *i, int id) {
+  if (!i) return 0;
+  if (val_uses_vreg(i->src1, id) || val_uses_vreg(i->src2, id) ||
+      val_uses_vreg(i->src3, id) || val_uses_vreg(i->callee, id) ||
+      val_uses_vreg(i->ret_struct_area, id)) {
+    return 1;
+  }
+  for (int a = 0; a < i->nargs; a++) {
+    if (val_uses_vreg(i->args[a], id)) return 1;
+  }
+  return 0;
+}
+
+static int vreg_used_after(ir_inst_t *from, int id) {
+  if (!from || id < 0) return 0;
+  for (ir_inst_t *i = from->next; i; i = i->next) {
+    if (inst_uses_vreg(i, id)) return 1;
+  }
+  return 0;
+}
+
 static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
-  if (i->callee.id != IR_VAL_NONE || i->ret_complex_half != 0 || i->is_variadic_call) {
+  if (i->ret_complex_half != 0 || i->is_variadic_call) {
     wasm_unsupported_op(i->op);
+  }
+  if (i->callee.id != IR_VAL_NONE) {
+    if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) {
+      wasm_unsupported_msg("indirect aggregate function call in Wasm backend");
+    }
+    int returns_void = (i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID);
+    if (!returns_void && i->dst.type == IR_TY_PTR) {
+      wasm_unsupported_msg("indirect pointer-return function call in Wasm backend");
+    }
+    if (!returns_void && !vreg_used_after(i, i->dst.id)) {
+      wasm_unsupported_msg("indirect void or unused-result function call in Wasm backend");
+    }
+    const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(i->dst.type);
+    if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+    else wasm_emitf(indent, "");
+    cg_emitf("(call_indirect");
+    for (int a = 0; a < i->nargs; a++) {
+      ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
+      if (!is_fp_type(arg_ty)) arg_ty = IR_TY_I64;
+      cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
+    }
+    if (!returns_void) cg_emitf(" (result %s)", ret_ty);
+    for (int a = 0; a < i->nargs; a++) {
+      ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
+      if (!is_fp_type(arg_ty)) arg_ty = IR_TY_I64;
+      cg_emitf(" ");
+      emit_val_expr_as(ctx, i->args[a], arg_ty);
+    }
+    cg_emitf(" ");
+    emit_val_expr_as(ctx, i->callee, IR_TY_I32);
+    cg_emitf(")");
+    if (!returns_void) cg_emitf(")");
+    cg_emitf("\n");
+    return;
   }
   if (!i->sym) wasm_unsupported_op(i->op);
   if (!psx_ctx_has_function_name(i->sym, i->sym_len)) {
@@ -598,6 +703,14 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       return;
     }
     case IR_LOAD_SYM: {
+      if (psx_ctx_has_function_name(i->sym, i->sym_len)) {
+        if (!psx_ctx_is_function_defined(i->sym, i->sym_len)) {
+          wasm_unsupported_msg("external function pointer in Wasm backend");
+        }
+        int func_idx = intern_function_table_ref(i->sym, i->sym_len);
+        wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, func_idx);
+        return;
+      }
       int addr = data_addr_for_global(i->sym, i->sym_len);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       return;
@@ -872,6 +985,7 @@ static void emit_func(ir_func_t *f) {
 void wasm32_module_begin(void) {
   g_data.next_data_off = WASM_STATIC_BASE;
   g_data.symbol_count = 0;
+  g_func_table.ref_count = 0;
   cg_emitf("(module\n");
   wasm_emitf(2, "(memory (export \"memory\") 1)\n");
   wasm_emitf(2, "(global $__stack_pointer (mut i32) (i32.const %d))\n", WASM_STACK_BASE);
@@ -1265,5 +1379,6 @@ void wasm32_emit_data_segments(void) {
 }
 
 void wasm32_module_end(void) {
+  emit_function_table();
   cg_emitf(")\n");
 }

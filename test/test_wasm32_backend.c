@@ -511,6 +511,22 @@ int main(void) {
   failures += run_case("double_call",
                        "double addd(double a,double b){return a+b;} int main(){return (int)addd(1.25,2.75);}\n",
                        double_call, 3, 4);
+  const char *funcptr_call[] = {"(table 1 funcref)", "(elem (i32.const 0) $add1", "call_indirect"};
+  failures += run_case("funcptr_call",
+                       "int add1(int x){return x+1;} int main(){int (*fp)(int); fp=add1; return fp(41);}\n",
+                       funcptr_call, 3, 42);
+  const char *funcptr_double_call[] = {"(table 1 funcref)", "call_indirect", "(param f64)", "(result f64)"};
+  failures += run_case("funcptr_double_call",
+                       "double addd(double x,double y){return x+y;} int main(){double (*fp)(double,double); "
+                       "fp=addd; return (int)fp(1.25,2.75);}\n",
+                       funcptr_double_call, 4, 4);
+  failures += run_fail_case("funcptr_void_call",
+                            "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
+                            "fp=set; fp(&x); return x;}\n",
+                            "E4008");
+  failures += run_fail_case("funcptr_external_ref",
+                            "int ext(int); int main(){int (*fp)(int); fp=ext; return fp(1);}\n",
+                            "E4008");
   const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};
   failures += run_case("unsigned_int_to_double",
                        "int main(){unsigned int x; x=4294967295U; double d; d=x; "

@@ -1172,6 +1172,11 @@ int psx_ctx_track_function_defined(char *name, int len) {
   return 1;
 }
 
+int psx_ctx_is_function_defined(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f && f->is_defined;
+}
+
 /* C11 6.7p4: 同名関数の再宣言で引数 i のカテゴリ (粗粒度) が異なるかチェックする。
  * 初回 (UNSET) のときは記録、以降は比較。 */
 int psx_ctx_track_function_param_category(char *name, int len, int idx, int category) {
