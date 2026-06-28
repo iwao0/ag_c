@@ -231,6 +231,16 @@ int main(void) {
                        "struct P{int a; int b; int c;}; int main(){struct P x; struct P y; "
                        "x.a=3; x.b=4; x.c=5; y=x; return y.a+y.b+y.c;}\n",
                        struct_copy, 4, 12);
+  const char *struct4_return_member[] = {"(func $make (result i32)", "(call $make", "i32.store"};
+  failures += run_case("struct4_return_member",
+                       "struct S{int x;}; struct S make(){struct S s; s.x=7; return s;} "
+                       "int main(){return make().x;}\n",
+                       struct4_return_member, 3, 7);
+  const char *struct4_return_arg[] = {"(func $take (param $p0 i32) (result i32)", "(call $make", "(call $take"};
+  failures += run_case("struct4_return_arg",
+                       "struct S{int x;}; int take(struct S s){return s.x+1;} "
+                       "struct S make(){struct S s; s.x=7; return s;} int main(){return take(make());}\n",
+                       struct4_return_arg, 3, 8);
   const char *struct8_return[] = {"(func $make (result i64)", "i64.load", "i64.store"};
   failures += run_case("struct8_return",
                        "struct P{int a; int b;}; struct P make(){struct P p; p.a=3; p.b=4; "

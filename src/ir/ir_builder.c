@@ -1910,9 +1910,14 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * 扱う。i32 のままだと `h(x) * 2` のように戻り値を使う演算が 32bit で行われ
    * 上位ビットが落ちる (h が long を返す場合)。 */
   if (ret_ty == IR_TY_I32 && !fn->callee && fn->funcname) {
-    if (psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
+    if (node->ret_struct_size > 0 &&
+        !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
+        !psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len) &&
+        !cg_size_needs_indirect_struct(node->ret_struct_size)) {
+      ret_ty = (node->ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
+    } else if (psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
       ret_ty = IR_TY_PTR;
-    } else {
+    } else if (node->ret_struct_size <= 0) {
       token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
       if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) ret_ty = IR_TY_I64;
     }
