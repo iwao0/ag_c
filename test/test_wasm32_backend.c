@@ -223,7 +223,9 @@ int main(void) {
   failures += run_case("alignas32",
                        "int main(){_Alignas(32) int x; x=7; return x + (((long)&x) & 31);}\n",
                        alignas32, 2, 7);
-  failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
+  const char *fp_return_to_int[] = {"f64.const", "i32.trunc_f64_s"};
+  failures += run_case("fp_return_to_int", "int main(){return 1.5;}\n",
+                       fp_return_to_int, 2, 1);
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
   failures += run_fail_case("funcptr_init",
                             "int f(){return 1;} int (*fp[1])()={f}; int main(){return 0;}\n",
@@ -236,6 +238,25 @@ int main(void) {
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "
                        "y=x+1UL; return y==4294967296UL;}\n",
                        ptr_i64_mix, 3, 1);
+  const char *double_arith[] = {"f64.const", "f64.add", "f64.mul", "i32.trunc_f64_s"};
+  failures += run_case("double_arith",
+                       "int main(){double x; x=1.5; double y; y=2.5; return (int)((x+y)*2.0);}\n",
+                       double_arith, 4, 8);
+  const char *float_arith[] = {"f32.const", "f32.add", "i32.trunc_f32_s"};
+  failures += run_case("float_arith",
+                       "int main(){float x; x=3.5f; return (int)(x+1.5f);}\n",
+                       float_arith, 3, 5);
+  const char *double_cmp[] = {"f64.lt"};
+  failures += run_case("double_cmp", "int main(){double x; x=2.0; return x<3.0;}\n",
+                       double_cmp, 1, 1);
+  const char *double_call[] = {"(func $addd (param $p0 f64) (param $p1 f64) (result f64)",
+                               "(call $addd", "i32.trunc_f64_s"};
+  failures += run_case("double_call",
+                       "double addd(double a,double b){return a+b;} int main(){return (int)addd(1.25,2.75);}\n",
+                       double_call, 3, 4);
+  const char *double_neg[] = {"f64.neg"};
+  failures += run_case("double_neg", "int main(){double x; x=-2.0; return (int)(-x);}\n",
+                       double_neg, 1, 2);
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
   return 0;

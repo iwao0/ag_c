@@ -74,9 +74,31 @@ static const char *wasm_type(ir_type_t t) {
       return "i32";
     case IR_TY_I64:
       return "i64";
+    case IR_TY_F32:
+      return "f32";
+    case IR_TY_F64:
+      return "f64";
     default:
       return NULL;
   }
+}
+
+static void wasm_unsupported_msg(const char *msg);
+
+static int is_fp_type(ir_type_t t) {
+  return t == IR_TY_F32 || t == IR_TY_F64;
+}
+
+static const char *wasm_fp_type_or_unsupported(ir_type_t t) {
+  const char *ty = wasm_type(t);
+  if (!ty || !is_fp_type(t)) wasm_unsupported_msg("unsupported Wasm floating-point type");
+  return ty;
+}
+
+static const char *wasm_int_type_or_unsupported(ir_type_t t) {
+  const char *ty = wasm_type(t);
+  if (!ty || is_fp_type(t)) wasm_unsupported_msg("unsupported Wasm integer type");
+  return ty;
 }
 
 static int align_to(int value, int align) {
@@ -314,9 +336,13 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
 static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
   ir_type_t type = effective_val_type(ctx, v);
   const char *ty = wasm_type(type);
-  if (!ty) wasm_unsupported_msg("non-integer Wasm value type");
+  if (!ty) wasm_unsupported_msg("unsupported Wasm value type");
   if (v.id == IR_VAL_IMM) {
-    cg_emitf("(%s.const %lld)", ty, v.imm);
+    if (is_fp_type(type)) {
+      cg_emitf("(%s.const %.17g)", ty, v.fp_imm);
+    } else {
+      cg_emitf("(%s.const %lld)", ty, v.imm);
+    }
   } else if (v.id >= 0) {
     cg_emitf("(local.get $v%d)", v.id);
   } else {
@@ -388,6 +414,21 @@ static const char *wasm_binop(ir_op_t op, ir_type_t t) {
   }
 }
 
+static const char *wasm_fp_binop(ir_op_t op, ir_type_t t) {
+  if (!is_fp_type(t)) return NULL;
+  switch (op) {
+    case IR_FADD: return t == IR_TY_F64 ? "f64.add" : "f32.add";
+    case IR_FSUB: return t == IR_TY_F64 ? "f64.sub" : "f32.sub";
+    case IR_FMUL: return t == IR_TY_F64 ? "f64.mul" : "f32.mul";
+    case IR_FDIV: return t == IR_TY_F64 ? "f64.div" : "f32.div";
+    case IR_FEQ:  return t == IR_TY_F64 ? "f64.eq" : "f32.eq";
+    case IR_FNE:  return t == IR_TY_F64 ? "f64.ne" : "f32.ne";
+    case IR_FLT:  return t == IR_TY_F64 ? "f64.lt" : "f32.lt";
+    case IR_FLE:  return t == IR_TY_F64 ? "f64.le" : "f32.le";
+    default: return NULL;
+  }
+}
+
 static ir_type_t effective_load_type(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   if (i->dst.type == IR_TY_PTR) {
     wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
@@ -404,6 +445,8 @@ static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     case IR_TY_I32:
     case IR_TY_PTR: op = "i32.load"; break;
     case IR_TY_I64: op = "i64.load"; break;
+    case IR_TY_F32: op = "f32.load"; break;
+    case IR_TY_F64: op = "f64.load"; break;
     default: wasm_unsupported_op(i->op);
   }
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
@@ -419,6 +462,8 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     case IR_TY_I32:
     case IR_TY_PTR: op = "i32.store"; break;
     case IR_TY_I64: op = "i64.store"; break;
+    case IR_TY_F32: op = "f32.store"; break;
+    case IR_TY_F64: op = "f64.store"; break;
     default: wasm_unsupported_op(i->op);
   }
   wasm_emitf(indent, "(%s ", op);
@@ -526,6 +571,11 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       emit_val_expr(ctx, i->src1);
       cg_emitf(")\n");
       return;
+    case IR_LOAD_FP_IMM:
+      wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+      emit_val_expr(ctx, i->src1);
+      cg_emitf(")\n");
+      return;
     case IR_LOAD_STR: {
       int addr = data_addr_for_string_label(i->sym);
       if (addr < 0) wasm_unsupported_op(i->op);
@@ -547,6 +597,35 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
         cg_emitf(")");
       } else if (i->dst.type != IR_TY_I64 && i->src1.type == IR_TY_I64) {
         cg_emitf("(i32.wrap_i64 ");
+        emit_val_expr(ctx, i->src1);
+        cg_emitf(")");
+      } else {
+        emit_val_expr(ctx, i->src1);
+      }
+      cg_emitf(")\n");
+      return;
+    case IR_I2F:
+      wasm_emitf(indent, "(local.set $v%d (%s.convert_%s_s ", i->dst.id,
+                 wasm_fp_type_or_unsupported(i->dst.type),
+                 wasm_int_type_or_unsupported(effective_val_type(ctx, i->src1)));
+      emit_val_expr(ctx, i->src1);
+      cg_emitf("))\n");
+      return;
+    case IR_F2I:
+      wasm_emitf(indent, "(local.set $v%d (%s.trunc_%s_s ", i->dst.id,
+                 wasm_int_type_or_unsupported(i->dst.type),
+                 wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)));
+      emit_val_expr(ctx, i->src1);
+      cg_emitf("))\n");
+      return;
+    case IR_F2F:
+      wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+      if (i->dst.type == IR_TY_F64 && effective_val_type(ctx, i->src1) == IR_TY_F32) {
+        cg_emitf("(f64.promote_f32 ");
+        emit_val_expr(ctx, i->src1);
+        cg_emitf(")");
+      } else if (i->dst.type == IR_TY_F32 && effective_val_type(ctx, i->src1) == IR_TY_F64) {
+        cg_emitf("(f32.demote_f64 ");
         emit_val_expr(ctx, i->src1);
         cg_emitf(")");
       } else {
@@ -589,6 +668,25 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       emit_val_expr(ctx, i->src1);
       cg_emitf(" (%s.const -1)))\n", i->dst.type == IR_TY_I64 ? "i64" : "i32");
       return;
+    case IR_FNEG:
+      wasm_emitf(indent, "(local.set $v%d (%s.neg ", i->dst.id,
+                 wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)));
+      emit_val_expr(ctx, i->src1);
+      cg_emitf("))\n");
+      return;
+    case IR_FADD: case IR_FSUB: case IR_FMUL: case IR_FDIV:
+    case IR_FEQ: case IR_FNE: case IR_FLT: case IR_FLE: {
+      int is_cmp = (i->op == IR_FEQ || i->op == IR_FNE || i->op == IR_FLT || i->op == IR_FLE);
+      ir_type_t op_ty = is_cmp ? effective_val_type(ctx, i->src1) : effective_val_type(ctx, i->dst);
+      const char *op = wasm_fp_binop(i->op, op_ty);
+      if (!op) wasm_unsupported_op(i->op);
+      wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
+      emit_val_expr_as(ctx, i->src1, op_ty);
+      cg_emitf(" ");
+      emit_val_expr_as(ctx, i->src2, op_ty);
+      cg_emitf("))\n");
+      return;
+    }
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_UDIV:
     case IR_MOD: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
     case IR_SHL: case IR_SHR: case IR_LSR:
