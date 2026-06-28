@@ -271,6 +271,7 @@ probes_found_bugs/static_local_int_array.c
 probes_found_bugs/static_local_multidim_array.c
 probes_found_bugs/static_local_string_pointer.c
 probes_found_bugs/static_local_struct_persist.c
+probes_found_bugs/static_tag_global.c
 probes_found_bugs/static_typedef_name_global.c
 probes_found_bugs/string_concat_stringize.c
 probes_found_bugs/string_escape_in_init.c

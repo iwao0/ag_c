@@ -1649,7 +1649,7 @@ static void emit_global_data(global_var_t *gv, void *user) {
   }
   int addr = data_addr_for_global(gv->name, gv->name_len);
   int size = gv->type_size > 0 ? gv->type_size : 4;
-  if (gv->tag_kind != TK_EOF && !gv->is_tag_pointer) {
+  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
     emit_global_struct_data(gv, addr);
   } else if (gv->init_symbol) {
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
