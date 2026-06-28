@@ -367,6 +367,19 @@ int main(void) {
                        "struct P{int a; int b;}; union U{struct P p; int i;}; "
                        "int main(){static union U u[]={{.i=10},{.p={20,1}}}; return u[0].i+u[1].p.a+u[1].p.b;}\n",
                        static_union_incomplete_array, 2, 31);
+  const char *static_char_string_array[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
+  failures += run_case("static_char_string_array",
+                       "int main(){static char s[]=\"abc\"; return s[1];}\n",
+                       static_char_string_array, 3, 98);
+  const char *static_char_string_persistent[] = {"(data (i32.const", "\"az\\00\"", "i32.store8"};
+  failures += run_case("static_char_string_persistent",
+                       "int f(){static char s[]=\"az\"; s[0]=s[0]+1; return s[0]+s[1];} "
+                       "int main(){return f()*1000+f();}\n",
+                       static_char_string_persistent, 3, 220221);
+  const char *static_paren_char_string_array[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
+  failures += run_case("static_paren_char_string_array",
+                       "int main(){static char (s[])=\"abc\"; return s[1];}\n",
+                       static_paren_char_string_array, 3, 98);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "

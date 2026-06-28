@@ -704,8 +704,8 @@ static long long count_char_init_from_string_seq(token_t *t, bool require_rbrace
 // curtok は変更しない。`=` で始まる初期化子を想定し、推定できなければ 0 を返す。
 // elem_size==1 の場合は文字列リテラル初期化子（NUL を含む長さ）にも対応する。
 // 波括弧で囲まれた `{"..."}` 形式も同じく文字列初期化として扱う。
-static long long infer_array_count_from_initializer(int elem_size) {
-  token_t *t = curtok();
+static long long infer_array_count_from_initializer_at(token_t *assign_tok, int elem_size) {
+  token_t *t = assign_tok;
   if (!t || t->kind != TK_ASSIGN) return 0;
   t = t->next;
   if (!t) return 0;
@@ -728,6 +728,10 @@ static long long infer_array_count_from_initializer(int elem_size) {
     }
   }
   return psx_decl_count_brace_init_elements(t);
+}
+
+static long long infer_array_count_from_initializer(int elem_size) {
+  return infer_array_count_from_initializer_at(curtok(), elem_size);
 }
 
 static int parse_nonneg_const_expr_decl(const char *what) {
@@ -3120,9 +3124,10 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   return 1;
 }
 
-/* `static int t[N] = {...};` の 1D 整数配列 static local をグローバルに lowering する。
+/* `static int t[N] = {...};` / `static char s[] = "..."` の 1D 整数配列 static local をグローバルに lowering する。
  * スコープ: 1D 整数配列 (`int/long/short/char [unsigned]`)、ゼロ初期化 or brace init。
- * 文字列リテラル init / FP / 多次元 / struct / 関数ポインタは fallback (0 を返す)。
+ * 文字列リテラル init は要素幅と文字列幅が一致する場合だけ扱う。FP / 多次元 /
+ * struct / 関数ポインタは fallback (0 を返す)。
  * 0 を返すときは curtok を変えない (呼び出し側の auto array 経路に流す)。
  *
  * 前提:
@@ -3159,12 +3164,24 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   if (!after_rb) return 0;
   /* 多次元は scope 外。 */
   if (after_rb->kind == TK_LBRACKET) return 0;
-  /* `=` の後の形を peek。`{`= brace OK、`TK_STRING` = fallback、その他は fallback。 */
+  /* `=` の後の形を peek。`{`= brace OK、`TK_STRING`=文字列 init、その他は fallback。 */
   int has_init = 0;
+  int has_string_init = 0;
   if (after_rb->kind == TK_ASSIGN) {
     token_t *after_eq = after_rb->next;
     if (!after_eq) return 0;
-    if (after_eq->kind != TK_LBRACE) return 0; /* 文字列/スカラ式は fallback */
+    if (after_eq->kind == TK_STRING) {
+      int cw = (int)((token_string_t *)after_eq)->char_width;
+      if (cw <= 0) cw = 1;
+      if (elem_size != cw) return 0;
+      if (!has_size_token) {
+        arr_count = infer_array_count_from_initializer_at(after_rb, elem_size);
+        if (arr_count <= 0) return 0;
+      }
+      has_string_init = 1;
+    } else if (after_eq->kind != TK_LBRACE) {
+      return 0; /* スカラ式は fallback */
+    }
     has_init = 1;
   } else if (after_rb->kind == TK_COMMA || after_rb->kind == TK_SEMI) {
     has_init = 0;
@@ -3186,13 +3203,40 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   gv->is_array = 1;
   gv->tag_kind = TK_EOF;
   gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
-  if (has_size_token) {
+  if (has_size_token || (has_string_init && arr_count > 0)) {
     gv->type_size = (short)((int)arr_count * elem_size);
   } else {
     gv->type_size = 0; /* brace 後に確定 */
   }
 
-  if (has_init) {
+  if (has_init && has_string_init) {
+    tk_expect('=');
+    node_t *rhs = psx_expr_assign();
+    if (!rhs || rhs->kind != ND_STRING) return 0;
+    node_string_t *s = (node_string_t *)rhs;
+    string_lit_t *lit = find_string_lit_by_label(s->string_label);
+    if (!lit) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+    }
+    gv->has_init = 1;
+    gv->init_values = calloc((size_t)arr_count, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)arr_count, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)arr_count, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)arr_count * sizeof(int));
+    for (int i = 0; i < arr_count; i++) gv->init_union_ordinals[i] = -1;
+    int idx = 0;
+    int src_pos = 0;
+    while (src_pos < lit->len && idx < arr_count) {
+      uint32_t units[2];
+      int nu = tk_next_string_code_units(lit->str, lit->len, &src_pos, elem_size, units);
+      for (int k = 0; k < nu && idx < arr_count; k++) {
+        gv->init_values[idx++] = (long long)units[k];
+      }
+    }
+    if (idx < arr_count) gv->init_values[idx++] = 0;
+    gv->init_count = idx;
+  } else if (has_init) {
     tk_expect('=');
     gv->has_init = 1;
     int cap = 16;
@@ -3257,6 +3301,133 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   var->size = 0;
   var->elem_size = elem_size; /* 0 だとスカラ扱いになるので elem_size を残す */
   var->is_array = 0;          /* frame 割当抑制のため敢えて 0 */
+  var->is_static_local = 1;
+  var->is_initialized = 1;
+  var->is_unsigned = is_unsigned ? 1 : 0;
+  var->fp_kind = TK_FLOAT_KIND_NONE;
+  var->static_global_name = mangled;
+  var->static_global_name_len = total_len;
+  locals = var;
+  lvar_index_on_add(var);
+  return 1;
+}
+
+static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
+                                                 int array_count, int is_unsigned) {
+  if (elem_size <= 0) return 0;
+  if (array_count == 0 || array_count < -1) return 0;
+  long long arr_count = array_count;
+  int has_init = 0;
+  int has_string_init = 0;
+  if (curtok()->kind == TK_ASSIGN) {
+    token_t *after_eq = curtok()->next;
+    if (!after_eq) return 0;
+    if (after_eq->kind == TK_STRING) {
+      int cw = (int)((token_string_t *)after_eq)->char_width;
+      if (cw <= 0) cw = 1;
+      if (elem_size != cw) return 0;
+      if (arr_count == -1) {
+        arr_count = infer_array_count_from_initializer(elem_size);
+        if (arr_count <= 0) return 0;
+      }
+      has_string_init = 1;
+    } else if (after_eq->kind == TK_LBRACE) {
+      if (arr_count == -1) {
+        arr_count = infer_array_count_from_initializer(elem_size);
+        if (arr_count <= 0) return 0;
+      }
+    } else {
+      return 0;
+    }
+    has_init = 1;
+  } else if (curtok()->kind == TK_COMMA || curtok()->kind == TK_SEMI) {
+    if (arr_count == -1) return 0;
+  } else {
+    return 0;
+  }
+  if (arr_count <= 0) return 0;
+
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->is_static = 1;
+  gv->deref_size = (short)elem_size;
+  gv->is_array = 1;
+  gv->tag_kind = TK_EOF;
+  gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
+  gv->type_size = (short)((int)arr_count * elem_size);
+
+  if (has_init && has_string_init) {
+    tk_expect('=');
+    node_t *rhs = psx_expr_assign();
+    if (!rhs || rhs->kind != ND_STRING) return 0;
+    node_string_t *s = (node_string_t *)rhs;
+    string_lit_t *lit = find_string_lit_by_label(s->string_label);
+    if (!lit) {
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+    }
+    gv->has_init = 1;
+    gv->init_values = calloc((size_t)arr_count, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)arr_count, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)arr_count, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)arr_count * sizeof(int));
+    for (int i = 0; i < arr_count; i++) gv->init_union_ordinals[i] = -1;
+    int idx = 0;
+    int src_pos = 0;
+    while (src_pos < lit->len && idx < arr_count) {
+      uint32_t units[2];
+      int nu = tk_next_string_code_units(lit->str, lit->len, &src_pos, elem_size, units);
+      for (int k = 0; k < nu && idx < arr_count; k++) {
+        gv->init_values[idx++] = (long long)units[k];
+      }
+    }
+    if (idx < arr_count) gv->init_values[idx++] = 0;
+    gv->init_count = idx;
+  } else if (has_init) {
+    tk_expect('=');
+    gv->has_init = 1;
+    int cap = 16;
+    gv->init_values = calloc((size_t)cap, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+    for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
+    gv->init_count = 0;
+    psx_parse_global_brace_init_flat(gv, &cap, -1);
+  }
+
+  static int g_static_arr_consumed_seq = 0;
+  char *funcname = NULL;
+  int funcname_len = 0;
+  psx_expr_get_current_funcname(&funcname, &funcname_len);
+  int seq = g_static_arr_consumed_seq++;
+  char seq_buf[12];
+  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "ac%d", seq);
+  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
+  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
+  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
+  char *mangled = malloc((size_t)total_len + 1);
+  int off = 0;
+  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
+  mangled[off] = '\0';
+
+  gv->name = mangled;
+  gv->name_len = total_len;
+  psx_register_global_var(gv);
+
+  lvar_t *var = calloc(1, sizeof(lvar_t));
+  var->next = locals;
+  var->next_all = all_locals;
+  all_locals = var;
+  var->name = tok->str;
+  var->len = tok->len;
+  var->offset = 0;
+  var->size = 0;
+  var->elem_size = elem_size;
+  var->is_array = 0;
   var->is_static_local = 1;
   var->is_initialized = 1;
   var->is_unsigned = is_unsigned ? 1 : 0;
@@ -3974,6 +4145,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         decl_fp_kind == TK_FLOAT_KIND_NONE &&
         curtok()->kind == TK_LBRACKET) {
       if (try_lower_static_local_array(tok, elem_size, decl_is_unsigned)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
+    if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
+        (inner_array_mul > 0 || inner_array_mul == -1) &&
+        g_inner_array_dim_count <= 1 && paren_array_mul == 0 &&
+        td_array_dim_count == 0 &&
+        decl_fp_kind == TK_FLOAT_KIND_NONE &&
+        curtok()->kind != TK_LBRACKET) {
+      if (try_lower_static_local_array_consumed(tok, elem_size, inner_array_mul, decl_is_unsigned)) {
         if (!tk_consume(',')) break;
         continue;
       }
