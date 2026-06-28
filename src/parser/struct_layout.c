@@ -110,18 +110,22 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       }
     }
     tk_float_kind_t member_fp_kind = TK_FLOAT_KIND_NONE;
+    token_kind_t member_base_kind = TK_EOF;
     int member_is_bool = 0;
     int member_is_unsigned = 0;
     int member_base_is_void = 0;
     int member_is_ptr_typedef = 0;
     unsigned short member_typedef_funcptr_param_fp_mask = 0;
     unsigned short member_typedef_funcptr_param_int_mask = 0;
+    unsigned char member_typedef_funcptr_ret_int_width = 0;
     int member_typedef_funcptr_ret_is_void = 0;
+    int member_typedef_funcptr_ret_is_pointer = 0;
     psx_ret_pointee_array_t member_typedef_funcptr_ret_pointee_array = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
     if (psx_ctx_is_type_token(curtok()->kind)) {
       is_signed_type = (curtok()->kind != TK_UNSIGNED);
+      member_base_kind = curtok()->kind;
       psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
       if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
       else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
@@ -131,6 +135,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       set_curtok(curtok()->next);
       while (psx_ctx_is_type_token(curtok()->kind)) {
         if (curtok()->kind != TK_UNSIGNED && curtok()->kind != TK_SIGNED) {
+          member_base_kind = curtok()->kind;
           psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
         }
         if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
@@ -207,8 +212,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (_ti.is_pointer && _ti.funcptr_param_int_mask) {
           member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
         }
+        if (_ti.is_pointer && _ti.funcptr_ret_int_width) {
+          member_typedef_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
+        }
         if (_ti.is_pointer && _ti.funcptr_ret_is_void) {
           member_typedef_funcptr_ret_is_void = 1;
+        }
+        if (_ti.is_pointer && _ti.funcptr_ret_is_pointer) {
+          member_typedef_funcptr_ret_is_pointer = 1;
         }
         if (_ti.is_pointer && psx_ret_pointee_array_has_dims(_ti.funcptr_ret_pointee_array)) {
           member_typedef_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
@@ -475,6 +486,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.funcptr_ret_is_void = head.has_func_suffix
                                         ? (member_base_is_void ? 1 : 0)
                                         : member_typedef_funcptr_ret_is_void;
+          _mi.funcptr_ret_is_pointer = head.has_func_suffix
+                                           ? ((member_tag_kind != TK_EOF && member_is_ptr) ? 1 : 0)
+                                           : member_typedef_funcptr_ret_is_pointer;
+          _mi.funcptr_ret_int_width = head.has_func_suffix
+                                          ? psx_funcptr_ret_int_width_from_kind(
+                                                member_base_kind,
+                                                _mi.funcptr_ret_is_pointer,
+                                                member_fp_kind)
+                                          : member_typedef_funcptr_ret_int_width;
           psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
               member_typedef_funcptr_ret_pointee_array,
               direct_funcptr_ret_pointee_array);

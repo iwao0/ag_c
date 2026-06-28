@@ -70,8 +70,10 @@ struct tag_member_t {
   int ptr_array_pointee_bytes;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
+  unsigned char funcptr_ret_int_width;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int funcptr_ret_is_void;
+  int funcptr_ret_is_pointer;
   int decl_order;
   int scope_depth;
 };
@@ -119,6 +121,7 @@ struct typedef_name_t {
   int is_funcptr;
   int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
+  unsigned char funcptr_ret_int_width;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
@@ -159,6 +162,7 @@ struct func_name_t {
    * 関数の戻り tag を保持し、funcptr_ret_is_pointer がその戻りがポインタかを表す。 */
   int ret_is_funcptr;
   int funcptr_ret_is_pointer;
+  unsigned char funcptr_ret_int_width;
   /* 1: 戻り値型が unsigned。`unsigned` は ret_token_kind が TK_INT に正規化され
    * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
    * (ULT/ULE 比較選択) に使う。 */
@@ -495,8 +499,10 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->bit_is_signed = desc->bit_is_signed;
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
       m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
+      m->funcptr_ret_int_width = desc->funcptr_ret_int_width;
       m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
       m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
+      m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
       return;
     }
   }
@@ -519,8 +525,10 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->bit_is_signed = desc->bit_is_signed;
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
   m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
+  m->funcptr_ret_int_width = desc->funcptr_ret_int_width;
   m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
   m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
+  m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -704,8 +712,10 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
   out->funcptr_param_int_mask = m->funcptr_param_int_mask;
+  out->funcptr_ret_int_width = m->funcptr_ret_int_width;
   out->funcptr_ret_pointee_array = m->funcptr_ret_pointee_array;
   out->funcptr_ret_is_void = m->funcptr_ret_is_void;
+  out->funcptr_ret_is_pointer = m->funcptr_ret_is_pointer;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -905,6 +915,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_funcptr = info->is_funcptr;
   t->funcptr_ret_is_void = info->funcptr_ret_is_void;
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
+  t->funcptr_ret_int_width = info->funcptr_ret_int_width;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
   t->funcptr_ret_pointee_array = info->funcptr_ret_pointee_array;
@@ -935,6 +946,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->is_funcptr == info->is_funcptr &&
                 existing->funcptr_ret_is_void == info->funcptr_ret_is_void &&
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
+                existing->funcptr_ret_int_width == info->funcptr_ret_int_width &&
                 existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
                 existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
                 psx_ret_pointee_array_equal(existing->funcptr_ret_pointee_array,
@@ -1007,6 +1019,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->is_funcptr = t->is_funcptr;
     out->funcptr_ret_is_void = t->funcptr_ret_is_void;
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
+    out->funcptr_ret_int_width = t->funcptr_ret_int_width;
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
     out->funcptr_param_int_mask = t->funcptr_param_int_mask;
     out->funcptr_ret_pointee_array = t->funcptr_ret_pointee_array;
@@ -1241,6 +1254,17 @@ int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {
 int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->funcptr_ret_is_pointer : 0;
+}
+
+void psx_ctx_set_function_funcptr_ret_int_width(char *name, int len, int width) {
+  func_name_t *f = find_function_name(name, len);
+  if (!f) return;
+  f->funcptr_ret_int_width = (width == 8) ? 8 : (width == 4 ? 4 : 0);
+}
+
+int psx_ctx_get_function_funcptr_ret_int_width(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->funcptr_ret_int_width : 0;
 }
 
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等) を返す。未登録なら TK_EOF。

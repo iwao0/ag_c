@@ -149,6 +149,7 @@ typedef struct {
   int td_array_elem_size;
   unsigned short td_funcptr_param_fp_mask;
   unsigned short td_funcptr_param_int_mask;
+  unsigned char td_funcptr_ret_int_width;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -512,8 +513,18 @@ static int g_decl_base_pointer_levels = 0;
  * `typedef double (*Op)(double); Op op; op(3)` で int 実引数を double へ昇格するため。 */
 static unsigned short g_decl_base_funcptr_param_fp_mask = 0;
 static unsigned short g_decl_base_funcptr_param_int_mask = 0;
+static unsigned char g_decl_base_funcptr_ret_int_width = 0;
 static psx_ret_pointee_array_t g_decl_base_funcptr_ret_pointee_array = {0};
 static int g_decl_base_funcptr_ret_is_void = 0;
+
+unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
+                                                  tk_float_kind_t fp_kind) {
+  if (is_pointer || fp_kind != TK_FLOAT_KIND_NONE || kind == TK_VOID ||
+      kind == TK_STRUCT || kind == TK_UNION || kind == TK_EOF) {
+    return 0;
+  }
+  return psx_ctx_scalar_type_size(kind) >= 8 ? 8 : 4;
+}
 
 /* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
  * 「定数」とは [...] 内が TK_NUM のみで構成されることを指す。TK_IDENT がある場合は変数または
@@ -4083,11 +4094,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   g_decl_base_pointer_levels = 0;
   unsigned short base_funcptr_param_fp_mask = g_decl_base_funcptr_param_fp_mask;
   unsigned short base_funcptr_param_int_mask = g_decl_base_funcptr_param_int_mask;
+  unsigned char base_funcptr_ret_int_width = g_decl_base_funcptr_ret_int_width;
   psx_ret_pointee_array_t base_funcptr_ret_pointee_array =
       g_decl_base_funcptr_ret_pointee_array;
   int base_funcptr_ret_is_void = g_decl_base_funcptr_ret_is_void;
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
+  g_decl_base_funcptr_ret_int_width = 0;
   g_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_decl_base_funcptr_ret_is_void = 0;
   /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
@@ -4558,6 +4571,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->funcptr_ret_is_void = g_decl_trailing_func_suffix
                                      ? (decl_base_is_void ? 1 : 0)
                                      : (base_funcptr_ret_is_void ? 1 : 0);
+      var->funcptr_ret_is_data_pointer =
+          g_decl_trailing_func_suffix ? ((ptr_levels > 1 || base_is_pointer) ? 1 : 0)
+                                      : 0;
+      var->funcptr_ret_int_width = g_decl_trailing_func_suffix
+                                       ? ((!var->funcptr_ret_is_data_pointer &&
+                                           !decl_base_is_void &&
+                                           tag_kind == TK_EOF &&
+                                           decl_fp_kind == TK_FLOAT_KIND_NONE)
+                                              ? (elem_size >= 8 ? 8 : 4)
+                                              : 0)
+                                       : base_funcptr_ret_int_width;
       psx_ret_pointee_array_t direct_ret_pointee_array =
           (g_decl_trailing_func_suffix && paren_array_mul > 0 && g_paren_array_first_dim > 0)
               ? psx_ret_pointee_array_make(g_paren_array_first_dim,
@@ -4692,8 +4716,10 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
+      out->td_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
       g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       g_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
+      g_decl_base_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
       g_decl_base_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
       g_decl_base_funcptr_ret_is_void = _ti.funcptr_ret_is_void;
     }
@@ -4710,6 +4736,7 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_pointer_levels = 0;
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
+  g_decl_base_funcptr_ret_int_width = 0;
   g_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_decl_base_funcptr_ret_is_void = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
@@ -4887,6 +4914,17 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   if (is_ptr && g_decl_trailing_func_suffix && base_kind == TK_VOID) {
     _ti.is_funcptr = 1;
     _ti.funcptr_ret_is_void = 1;
+  }
+  if (is_ptr && g_decl_trailing_func_suffix) {
+    _ti.is_funcptr = 1;
+    int ret_is_data_pointer = (paren_array_mul == 0 && base_kind != TK_VOID && is_ptr &&
+                               g_decl_had_paren_group && g_decl_func_suffix_count == 1 &&
+                               psx_funcptr_ret_int_width_from_kind(base_kind, 0, fp_kind) == 0)
+                                  ? 1
+                                  : 0;
+    _ti.funcptr_ret_is_pointer = ret_is_data_pointer;
+    _ti.funcptr_ret_int_width =
+        psx_funcptr_ret_int_width_from_kind(base_kind, ret_is_data_pointer, fp_kind);
   }
   if (is_ptr && g_last_funcptr_param_fp_mask) {
     _ti.is_funcptr = 1;

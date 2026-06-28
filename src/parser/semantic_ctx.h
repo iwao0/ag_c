@@ -102,8 +102,10 @@ typedef struct {
   int ptr_array_pointee_bytes;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
+  unsigned char funcptr_ret_int_width;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int funcptr_ret_is_void;
+  int funcptr_ret_is_pointer;
 } tag_member_info_t;
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
@@ -161,6 +163,7 @@ typedef struct {
   int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
   int funcptr_ret_is_void;      // 指し示す関数の戻り値が void
   int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
+  unsigned char funcptr_ret_int_width; // 指し示す関数の整数戻り幅 (4/8, 0=非整数/未知)
   unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
   unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅 (1=4B, 2=8B; 2bit * 最大8)
   psx_ret_pointee_array_t funcptr_ret_pointee_array; // 関数ポインタ戻り値が `T (*)[N][M]` のときの pointee 配列
@@ -247,6 +250,8 @@ void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
                                          int funcptr_ret_is_pointer);
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
 int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len);
+void psx_ctx_set_function_funcptr_ret_int_width(char *name, int len, int width);
+int psx_ctx_get_function_funcptr_ret_int_width(char *name, int len);
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等)。未登録は TK_EOF。 */
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */

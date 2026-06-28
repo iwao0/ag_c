@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き120: Wasm pointer/i64 lowering + E2E 1001）
+最終更新: 2026-06-29（続き121: Wasm indirect call return signatures + E2E 1003）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1001/1001 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1003/1003 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -154,6 +154,15 @@
   さらに byref struct 仮引数の Wasm signature を `i32` に合わせ、indirect callee vreg を table index
   (`i32`) として型付けすることで、large struct by-value/direct member funcptr 系 4 件を追加回収。
   Wasm E2E は静的 531 件 + extra 470 件の **1001 件**。
+- 続き121: **Wasm indirect call return signatures**。
+  間接呼び出しの戻り値 typeuse が、callee 関数ポインタ型の戻り幅を持たず `int` 既定になっていたため、
+  `struct Ops { long (*lg)(long); }` の `ops.lg(20.9)` で table 要素 `$plus5 (result i64)` に対し
+  `call_indirect (result i32)` を出していた。また `go()()->zerofunc()` では、関数ポインタを返す
+  直接関数呼び出しを callee にした 2 段目 indirect call が pointer return なのに `(result i64)` になっていた。
+  関数ポインタ型へ戻り値の data-pointer フラグと整数戻り幅 (4/8) を保存し、typedef/local/global/tag
+  member/`node_mem_t`/関数戻り funcptr metadata へ伝播。IR builder は indirect call の callee から
+  `IR_CALL.dst.type` を `PTR` / `I64` / `I32` に選ぶ。`funcptr_fp_to_int_arg.c` と
+  `func_returning_funcptr_chain.c` を Wasm E2E に追加し、静的 531 件 + extra 472 件の **1003 件**。
 
 ### Wasm backend の既知メモ
 
@@ -161,10 +170,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1001 件を通常 `make test` に組み込み済み。
+  1003 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分、long 戻り値を含む indirect call など。前回 failed 118 件のうち続き120で
-  23 件を回収し、95 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-121で 25 件を回収し、93 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

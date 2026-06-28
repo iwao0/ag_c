@@ -73,6 +73,7 @@ struct global_var_t {
   // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
   unsigned int is_variadic_funcptr : 1;
   unsigned int funcptr_ret_is_void : 1;
+  unsigned int funcptr_ret_is_data_pointer : 1;
 
   // --- 2 バイト (short) ---
   unsigned short funcptr_param_fp_mask;
@@ -97,6 +98,7 @@ struct global_var_t {
   // ここに保持し、識別子解決時に ND_GVAR ノードの pointee_fp_kind へ伝播する。
   // これがないと `gops(x)` の funcall が戻り値を x0 で読み float/double が化ける。
   unsigned char pointee_fp_kind;
+  unsigned char funcptr_ret_int_width;
   unsigned char extra_strides_count;
   // 多段ポインタグローバル (`int **gp`) の段数。`*gp` が int* (8B) を返すよう、
   // pql>=2 のとき try_build_global_var_node が node の deref_size=8 /

@@ -97,6 +97,7 @@ probes_found_bugs/func_return_pointer_to_2d_array.c
 probes_found_bugs/func_return_pointer_to_array.c
 probes_found_bugs/func_returning_funcptr.c
 probes_found_bugs/func_returning_funcptr_call.c
+probes_found_bugs/func_returning_funcptr_chain.c
 probes_found_bugs/funcall_struct_ptr_arrow.c
 probes_found_bugs/funcptr_address_of_init.c
 probes_found_bugs/funcptr_array_compound_literal.c
@@ -104,6 +105,7 @@ probes_found_bugs/funcptr_array_fp_return.c
 probes_found_bugs/funcptr_array_member_init.c
 probes_found_bugs/funcptr_array_param.c
 probes_found_bugs/funcptr_explicit_deref_call.c
+probes_found_bugs/funcptr_fp_to_int_arg.c
 probes_found_bugs/funcptr_fp_return.c
 probes_found_bugs/funcptr_global_array_fp_return.c
 probes_found_bugs/funcptr_global_fp_return.c

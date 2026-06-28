@@ -1632,6 +1632,40 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
   return ir_val_none();
 }
 
+static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
+  if (!callee) return 0;
+  if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
+      callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
+    return ((node_mem_t *)callee)->funcptr_ret_is_data_pointer ? 1 : 0;
+  }
+  if (callee->kind == ND_FUNCALL) {
+    node_func_t *fn = (node_func_t *)callee;
+    if (!fn->callee && fn->funcname &&
+        psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len)) {
+      return psx_ctx_get_function_funcptr_ret_is_pointer(fn->funcname,
+                                                         fn->funcname_len);
+    }
+  }
+  return 0;
+}
+
+static int indirect_funcptr_ret_int_width(node_t *callee) {
+  if (!callee) return 0;
+  if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
+      callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
+    return ((node_mem_t *)callee)->funcptr_ret_int_width;
+  }
+  if (callee->kind == ND_FUNCALL) {
+    node_func_t *fn = (node_func_t *)callee;
+    if (!fn->callee && fn->funcname &&
+        psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len)) {
+      return psx_ctx_get_function_funcptr_ret_int_width(fn->funcname,
+                                                        fn->funcname_len);
+    }
+  }
+  return 0;
+}
+
 static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   node_func_t *fn = (node_func_t *)node;
   if (!fn->callee && fn->funcname && fn->funcname_len > 12 &&
@@ -1933,7 +1967,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * 上位ビットが落ちる (h が long を返す場合)。 */
   if (ret_ty == IR_TY_I32) {
     int small_struct_value_ret = 0;
-    if (!fn->callee && fn->funcname) {
+    if (fn->callee && indirect_funcptr_ret_is_data_pointer(fn->callee)) {
+      ret_ty = IR_TY_PTR;
+    } else if (fn->callee && indirect_funcptr_ret_int_width(fn->callee) >= 8) {
+      ret_ty = IR_TY_I64;
+    } else if (!fn->callee && fn->funcname) {
       small_struct_value_ret =
           node->ret_struct_size > 0 &&
           !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&

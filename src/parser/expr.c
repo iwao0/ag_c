@@ -1150,7 +1150,9 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_is_signed = mem_info->bit_is_signed;
   deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
   deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
+  deref->funcptr_ret_int_width = mem_info->funcptr_ret_int_width;
   deref->funcptr_ret_is_void = mem_info->funcptr_ret_is_void ? 1 : 0;
+  deref->funcptr_ret_is_data_pointer = mem_info->funcptr_ret_is_pointer ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(
       deref, mem_info->funcptr_ret_pointee_array);
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
@@ -4147,8 +4149,14 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (base_mem->funcptr_param_int_mask) {
         deref->funcptr_param_int_mask = base_mem->funcptr_param_int_mask;
       }
+      if (base_mem->funcptr_ret_int_width) {
+        deref->funcptr_ret_int_width = base_mem->funcptr_ret_int_width;
+      }
       if (base_mem->funcptr_ret_is_void) {
         deref->funcptr_ret_is_void = 1;
+      }
+      if (base_mem->funcptr_ret_is_data_pointer) {
+        deref->funcptr_ret_is_data_pointer = 1;
       }
       if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(base_mem)) {
         PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
@@ -4823,7 +4831,9 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
       addr->funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
       addr->funcptr_param_int_mask = gv->funcptr_param_int_mask;
+      addr->funcptr_ret_int_width = gv->funcptr_ret_int_width;
       addr->funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
+      addr->funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
       PSX_RET_POINTEE_ARRAY_COPY_FIELDS(addr, gv);
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
        * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
@@ -4921,7 +4931,11 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型 fp_kind を pointee_fp_kind
      * に伝播。parse_call_postfix がこれを funcall に載せ、戻り値を d0 で読む。 */
     gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
+    gvar_node->mem.funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
+    gvar_node->mem.funcptr_param_int_mask = gv->funcptr_param_int_mask;
+    gvar_node->mem.funcptr_ret_int_width = gv->funcptr_ret_int_width;
     gvar_node->mem.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
+    gvar_node->mem.funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
     PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&gvar_node->mem, gv);
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
@@ -5030,6 +5044,8 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
   node->funcptr_param_fp_mask = var->funcptr_param_fp_mask;
   node->funcptr_param_int_mask = var->funcptr_param_int_mask;
+  node->funcptr_ret_int_width = var->funcptr_ret_int_width;
+  node->funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_COPY_FIELDS(node, var);
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
@@ -5182,7 +5198,11 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
   as_lvar(n)->mem.base_deref_size = var->base_deref_size;
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
+  as_lvar(n)->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
+  as_lvar(n)->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
+  as_lvar(n)->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
   as_lvar(n)->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
+  as_lvar(n)->mem.funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&as_lvar(n)->mem, var);
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
   /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を

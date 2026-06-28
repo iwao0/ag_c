@@ -50,10 +50,12 @@ struct lvar_t {
   // 経由呼び出し `fp(3)` で int 実引数を fp 仮引数へ昇格するのに使う。
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
+  unsigned char funcptr_ret_int_width;
   short funcptr_ret_pointee_array_first_dim;
   short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
   unsigned int funcptr_ret_is_void : 1;
+  unsigned int funcptr_ret_is_data_pointer : 1;
   // 1: 指す関数の戻り値が関数ポインタ (`int (*(*p)(int))(int,int)` の `p`)。
   //    `(*p)(...)` の結果を呼ぶとき余分な deref をしないために使う。
   unsigned int funcptr_ret_is_pointer : 1;
@@ -163,6 +165,8 @@ int psx_last_funcptr_is_variadic(void);
 int psx_last_funcptr_nargs_fixed(void);
 unsigned short psx_last_funcptr_param_fp_mask(void);
 unsigned short psx_last_funcptr_param_int_mask(void);
+unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
+                                                  tk_float_kind_t fp_kind);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 lvar_t *psx_decl_register_lvar(char *name, int len);
