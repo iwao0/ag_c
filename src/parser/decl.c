@@ -3371,6 +3371,105 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
   return 1;
 }
 
+/* `static struct S a[N] = {...};` / `static union U a[N] = {...};` を
+ * static local scalar/array と同じ mangled global に lowering する。
+ * file-scope named tag に限定し、1D の固定長配列だけ扱う。 */
+static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind_t tag_kind,
+                                                  char *tag_name, int tag_len) {
+  int elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+  if (elem_size <= 0) return 0;
+  if (tag_name && tag_len >= 11 && memcmp(tag_name, "__anon_tag_", 11) == 0) return 0;
+  token_t *p = curtok();
+  if (!p || p->kind != TK_LBRACKET) return 0;
+  token_t *num = p->next;
+  if (!num || num->kind != TK_NUM || ((token_num_t *)num)->num_kind != TK_NUM_KIND_INT) return 0;
+  long long arr_count = ((token_num_int_t *)num)->val;
+  if (arr_count <= 0) return 0;
+  token_t *rb = num->next;
+  if (!rb || rb->kind != TK_RBRACKET || !rb->next) return 0;
+  if (rb->next->kind == TK_LBRACKET) return 0;
+  int has_init = 0;
+  if (rb->next->kind == TK_ASSIGN) {
+    if (!rb->next->next || rb->next->next->kind != TK_LBRACE) return 0;
+    has_init = 1;
+  } else if (rb->next->kind == TK_COMMA || rb->next->kind == TK_SEMI) {
+    has_init = 0;
+  } else {
+    return 0;
+  }
+
+  tk_expect('[');
+  set_curtok(curtok()->next);
+  tk_expect(']');
+
+  global_var_t *gv = calloc(1, sizeof(global_var_t));
+  gv->is_static = 1;
+  gv->is_array = 1;
+  gv->tag_kind = tag_kind;
+  gv->tag_name = tag_name;
+  gv->tag_len = tag_len;
+  gv->type_size = (short)((int)arr_count * elem_size);
+  gv->deref_size = (short)elem_size;
+  gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
+
+  if (has_init) {
+    tk_expect('=');
+    gv->has_init = 1;
+    int cap = 16;
+    gv->init_values = calloc((size_t)cap, sizeof(long long));
+    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+    for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
+    gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    gv->init_count = 0;
+    psx_parse_global_brace_init_flat(gv, &cap, -1);
+  }
+
+  static int g_static_aggregate_arr_seq = 0;
+  char *funcname = NULL;
+  int funcname_len = 0;
+  psx_expr_get_current_funcname(&funcname, &funcname_len);
+  int seq = g_static_aggregate_arr_seq++;
+  char seq_buf[12];
+  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "sa%d", seq);
+  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
+  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
+  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
+  char *mangled = malloc((size_t)total_len + 1);
+  int off = 0;
+  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
+  mangled[off++] = '.';
+  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
+  mangled[off] = '\0';
+
+  gv->name = mangled;
+  gv->name_len = total_len;
+  psx_register_global_var(gv);
+
+  lvar_t *var = calloc(1, sizeof(lvar_t));
+  var->next = locals;
+  var->next_all = all_locals;
+  all_locals = var;
+  var->name = tok->str;
+  var->len = tok->len;
+  var->offset = 0;
+  var->size = 0;
+  var->elem_size = elem_size;
+  var->is_array = 0;
+  var->is_static_local = 1;
+  var->is_initialized = 1;
+  var->fp_kind = TK_FLOAT_KIND_NONE;
+  psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, 0);
+  var->static_global_name = mangled;
+  var->static_global_name_len = total_len;
+  locals = var;
+  lvar_index_on_add(var);
+  return 1;
+}
+
 /* typedef が配列型 (`typedef int M[2][3][4]; M m;`) のときの lvar 登録。
  * td_array_dims をそのまま多次元配列の dims として扱い、
  * outer_stride / mid_stride / extra_strides (8 次元まで) を計算する。 */
@@ -3863,9 +3962,19 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         continue;
       }
     }
+    /* `static struct S a[N] = {...};` / `static union U a[N] = {...};` の 1D aggregate
+     * static local をグローバル化する。 */
+    if (decl_is_static && (tag_kind == TK_STRUCT || tag_kind == TK_UNION) &&
+        !is_pointer && inner_array_mul == 0 && paren_array_mul == 0 &&
+        td_array_dim_count == 0 && curtok()->kind == TK_LBRACKET) {
+      if (try_lower_static_local_aggregate_array(tok, tag_kind, tag_name, tag_len)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
     /* `static struct S a = {...};` / `static union U u = {...};` の struct/union
      * static local をグローバル化。ポインタ (`static struct S *p`、上の scalar 経路で
-     * 処理) や struct 配列 (`static struct S arr[N]`、curtok=='[') は除外する。 */
+     * 処理) と、上の aggregate array 経路に入らない配列形は除外する。 */
     if (decl_is_static && (tag_kind == TK_STRUCT || tag_kind == TK_UNION) &&
         !is_pointer && inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 && curtok()->kind != TK_LBRACKET) {

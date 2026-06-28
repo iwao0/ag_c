@@ -4941,6 +4941,11 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
   base->mem.type_size = gv_type_size;
   base->mem.deref_size = (short)var->elem_size;
   base->mem.is_unsigned = var->is_unsigned;
+  base->mem.tag_kind = var->tag_kind;
+  base->mem.tag_name = var->tag_name;
+  base->mem.tag_len = var->tag_len;
+  base->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  base->mem.is_tag_pointer = 0;
   base->name = var->static_global_name;
   base->name_len = var->static_global_name_len;
   node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
@@ -4950,6 +4955,11 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
   addr->type_size = stride;
   addr->deref_size = stride;
   addr->is_pointer = 1;
+  addr->tag_kind = var->tag_kind;
+  addr->tag_name = var->tag_name;
+  addr->tag_len = var->tag_len;
+  addr->tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  addr->is_tag_pointer = 0;
   addr->is_const_qualified = var->is_const_qualified;
   addr->is_volatile_qualified = var->is_volatile_qualified;
   return (node_t *)addr;

@@ -341,6 +341,22 @@ int main(void) {
                        "struct P{int a; int b;}; union U{struct P p; int i;}; struct W{union U a; union U b;}; "
                        "int main(){static struct W w={{.i=10},{.p={20,1}}}; return w.a.i+w.b.p.a+w.b.p.b;}\n",
                        static_struct_mixed_union, 2, 31);
+  const char *static_union_mixed_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("static_union_mixed_array",
+                       "struct P{int a; int b;}; union U{struct P p; int i;}; "
+                       "int main(){static union U g[2]={{.i=10},{.p={20,1}}}; return g[0].i+g[1].p.a+g[1].p.b;}\n",
+                       static_union_mixed_array, 2, 31);
+  const char *static_struct_array_mixed_union[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("static_struct_array_mixed_union",
+                       "struct P{int a; int b;}; union U{struct P p; int i;}; struct S{union U u; int tail;}; "
+                       "int main(){static struct S a[2]={{{.i=10},1},{{.p={20,2}},3}}; "
+                       "return a[0].u.i+a[0].tail+a[1].u.p.a+a[1].u.p.b+a[1].tail;}\n",
+                       static_struct_array_mixed_union, 2, 36);
+  const char *static_struct_array_persistent[] = {"(data (i32.const", "i32.store", "i32.load"};
+  failures += run_case("static_struct_array_persistent",
+                       "struct P{int a;}; int f(){static struct P a[1]={{1}}; "
+                       "a[0].a=a[0].a+1; return a[0].a;} int main(){return f()*10+f();}\n",
+                       static_struct_array_persistent, 3, 23);
   const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
   failures += run_case("ptr_i64_mix",
                        "int main(){unsigned int x; x=4294967295U; unsigned long y; "
