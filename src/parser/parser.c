@@ -1528,6 +1528,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
     /* この反復で初期化する部分オブジェクトの型 (ネスト brace の子コンテキスト)。
      * 既定は positional 位置の型。designator のときは下で上書きする。 */
     gbrace_ctx_t child = gbrace_child_at(ctx, cur_idx - level_start);
+    int active_union_ordinal = -1;
     /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
      * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
     if (curtok()->kind == TK_LBRACKET) {
@@ -1592,7 +1593,10 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
                      diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
       }
       cur_idx = level_start + slot;
-      if (ctx.tag_kind == TK_UNION) gv->union_init_ordinal = ordinal;
+      if (ctx.tag_kind == TK_UNION) {
+        gv->union_init_ordinal = ordinal;
+        active_union_ordinal = ordinal;
+      }
       /* `.member[idx]` / `.member.sub` の designator チェーンを辿る (C11 6.7.9p6)。
        * 現メンバの型情報 cmi を持ち、[idx] は要素 slot 数だけ、.sub は内側メンバの
        * slot offset だけ cur_idx を進める。これがないと `struct W w={.arr[1]=7}`
@@ -1635,6 +1639,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
             if (smi.len == sm->len && smi.name &&
                 strncmp(smi.name, sm->str, (size_t)sm->len) == 0) {
               cur_idx += (cmi.tag_kind == TK_UNION) ? 0 : sub_slot;
+              if (cmi.tag_kind == TK_UNION) active_union_ordinal = si;
               cmi = smi; found = 1; break;
             }
             sub_slot += global_member_flat_slots(&smi);
@@ -1655,10 +1660,12 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
       gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
       gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+      gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
       if (gv->init_fvalues) {
         gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
         for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
       }
+      for (int i = *cap; i < new_cap; i++) gv->init_union_ordinals[i] = -1;
       *cap = new_cap;
     }
     /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
@@ -1667,9 +1674,12 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       gv->init_values[gv->init_count] = 0;
       gv->init_value_symbols[gv->init_count] = NULL;
       gv->init_value_symbol_lens[gv->init_count] = 0;
+      if (gv->init_union_ordinals) gv->init_union_ordinals[gv->init_count] = -1;
       if (gv->init_fvalues) gv->init_fvalues[gv->init_count] = 0.0;
       gv->init_count++;
     }
+    if (gv->init_union_ordinals && active_union_ordinal >= 0)
+      gv->init_union_ordinals[cur_idx] = active_union_ordinal;
     if (curtok()->kind == TK_LBRACE) {
       /* 入れ子 brace は外側の現在位置 cur_idx から書き始める (designator で
        * 後方ジャンプ済みのときも正しい slot へ)。child は内側 designator を正しい型で
@@ -1689,10 +1699,12 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
         gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
         gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+        gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
         if (gv->init_fvalues) {
           gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
           for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
         }
+        for (int i = *cap; i < new_cap; i++) gv->init_union_ordinals[i] = -1;
         *cap = new_cap;
       }
       string_lit_t *lit = NULL;
@@ -1711,6 +1723,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           gv->init_values[cur_idx + j] = (unsigned char)cp;
           gv->init_value_symbols[cur_idx + j] = NULL;
           gv->init_value_symbol_lens[cur_idx + j] = 0;
+          if (gv->init_union_ordinals) gv->init_union_ordinals[cur_idx + j] = -1;
           if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
           j++;
         }
@@ -1719,6 +1732,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         gv->init_values[cur_idx + j] = 0;
         gv->init_value_symbols[cur_idx + j] = NULL;
         gv->init_value_symbol_lens[cur_idx + j] = 0;
+        if (gv->init_union_ordinals) gv->init_union_ordinals[cur_idx + j] = -1;
         if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
         j++;
       }
@@ -1748,10 +1762,12 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
         gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
         gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+        gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
         if (gv->init_fvalues) {
           gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
           for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
         }
+        for (int i = *cap; i < new_cap; i++) gv->init_union_ordinals[i] = -1;
         *cap = new_cap;
       }
       string_lit_t *lit = NULL;
@@ -1770,6 +1786,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           gv->init_values[cur_idx + j] = (unsigned char)cp;
           gv->init_value_symbols[cur_idx + j] = NULL;
           gv->init_value_symbol_lens[cur_idx + j] = 0;
+          if (gv->init_union_ordinals) gv->init_union_ordinals[cur_idx + j] = -1;
           if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
           j++;
         }
@@ -1778,6 +1795,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         gv->init_values[cur_idx + j] = 0;
         gv->init_value_symbols[cur_idx + j] = NULL;
         gv->init_value_symbol_lens[cur_idx + j] = 0;
+        if (gv->init_union_ordinals) gv->init_union_ordinals[cur_idx + j] = -1;
         if (gv->init_fvalues) gv->init_fvalues[cur_idx + j] = 0.0;
         j++;
       }
@@ -1842,6 +1860,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       gv->init_values[cur_idx] = v;
       gv->init_value_symbols[cur_idx] = sym;
       gv->init_value_symbol_lens[cur_idx] = sym_len;
+      if (gv->init_union_ordinals && ctx.tag_kind == TK_UNION)
+        gv->init_union_ordinals[cur_idx] = gv->union_init_ordinal;
       if (gv->init_fvalues) gv->init_fvalues[cur_idx] = fv;
       /* ネスト union の fp active メンバ sentinel: DOT 経路で pending_fp_kind がセットされて
        * いれば、init_value_symbols=NULL かつ init_value_symbol_lens に sentinel (-2: float,
@@ -1942,6 +1962,7 @@ static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap)
     gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
     gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
     gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+    gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
     if (gv->init_fvalues) {
       gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
     }
@@ -1949,6 +1970,7 @@ static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap)
       gv->init_values[i] = 0;
       gv->init_value_symbols[i] = NULL;
       gv->init_value_symbol_lens[i] = 0;
+      gv->init_union_ordinals[i] = -1;
       if (gv->init_fvalues) gv->init_fvalues[i] = 0.0;
     }
     *cap = new_cap;
@@ -2022,6 +2044,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_values = calloc((size_t)cap, sizeof(long long));
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+    for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
     /* 浮動小数要素の配列 (`double a[5] = {...}`) や、float/double メンバを持ち得る
      * struct/union では fvalues も並行確保する。要素ごとに fval を保存し、codegen が
      * 浮動小数メンバをビットパターンで出力する。 */
@@ -2134,6 +2158,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
         int total = s->byte_len + 1; /* null 終端を含む (要素数) */
         gv->has_init = 1;
         gv->init_values = calloc((size_t)total, sizeof(long long));
+        gv->init_union_ordinals = malloc((size_t)total * sizeof(int));
+        for (int i = 0; i < total; i++) gv->init_union_ordinals[i] = -1;
         string_lit_t *lit = NULL;
         for (string_lit_t *l = string_literals; l; l = l->next) {
           if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }

@@ -1160,6 +1160,8 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
   if (*val_idx >= gv->init_count) return;
   tag_member_info_t mi = {0};
   int ord = gv->union_init_ordinal;
+  if (gv->init_union_ordinals && gv->init_union_ordinals[*val_idx] >= 0)
+    ord = gv->init_union_ordinals[*val_idx];
   if (!psx_ctx_get_tag_member_info(tk, tn, tl, ord, &mi)) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }

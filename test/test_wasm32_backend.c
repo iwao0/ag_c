@@ -286,6 +286,16 @@ int main(void) {
                        "struct S{int a; int b;}; union U{struct S s; int i;}; "
                        "union U g[2]={{.s={10,11}},{.s={20,1}}}; int main(){return g[0].s.a+g[1].s.a+g[1].s.b;}\n",
                        global_union_struct_array, 2, 31);
+  const char *global_union_mixed_struct_array[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_mixed_struct_array",
+                       "struct P{int a; int b;}; union U{struct P p; int i;}; "
+                       "union U g[2]={{.i=10},{.p={20,1}}}; int main(){return g[0].i+g[1].p.a+g[1].p.b;}\n",
+                       global_union_mixed_struct_array, 2, 31);
+  const char *global_union_mixed_struct_array_rev[] = {"(data (i32.const", "i32.load"};
+  failures += run_case("global_union_mixed_struct_array_rev",
+                       "struct P{int a; int b;}; union U{struct P p; int i;}; "
+                       "union U g[2]={{.p={20,1}},{.i=10}}; int main(){return g[0].p.a+g[0].p.b+g[1].i;}\n",
+                       global_union_mixed_struct_array_rev, 2, 31);
   const char *global_union_bitfield_array[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_union_bitfield_array",
                        "union U{unsigned int a:3; unsigned int b:5;}; union U g[2]={{.b=17},{.b=25}}; "
