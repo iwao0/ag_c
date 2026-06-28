@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き141: Lower Wasm atomics + E2E 1074）
+最終更新: 2026-06-29（続き142: Complete Wasm fixture coverage + E2E 1096）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1074/1074 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -284,6 +284,14 @@
   `wasm-interp` 実行なので、`IR_ATOMIC_LOAD/STORE/RMW/CAS/FENCE` を通常の load/store/RMW/CAS/no-op
   に lowering。CAS 用 scratch local を関数に追加し、`ir_op_name(IR_ATOMIC)` も補完した。
   fixture を追加し、Wasm E2E は静的 531 件 + extra 542 件 + link2 1 件の **1074 件**。
+- 続き142: **Wasm fixture coverage 完了**。
+  残っていた通常 fixture (should_reject 除く) 22 件を回収。`_Complex` では複素代入式の
+  materialize と `!(complex == complex)` 外側比較の扱い、複素引数の f32/f64 変換を修正。
+  Wasm TLS は単一スレッド実行では通常 global と同じ data address に lowering し、TLS data も
+  通常 data segment として出す。`% 0` は ag_c の既存仕様に合わせ、定数 0 divisor の remainder を
+  LHS にする。`complex_ops` 用に `sqrt/sqrtf` を Wasm builtin 化し、fixture 範囲の
+  `sin/cos/exp/log/atan/atan2/sinh/cosh` 最小 math stub を追加。Wasm E2E は
+  静的 531 件 + extra 564 件 + link2 1 件の **1096 件**。
 
 ### Wasm backend の既知メモ
 
@@ -291,11 +299,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1074 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
+  1096 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
-- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は 22 件。内訳は主に TLS (`load_tlv_addr`)、
-  `_Complex` 算術の IR 構築失敗、`stdheader/complex_ops.c` の外部 math/complex 関数、
-  `arithmetic/mod_zero_impl_defined.c` の Wasm trap 差分。
+- 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 

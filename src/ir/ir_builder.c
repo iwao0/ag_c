@@ -543,6 +543,18 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
     }
     return;
   }
+  /* 複素数代入式 `(a = b)` を値として使う場合は、代入先に materialize 済みの
+   * lhs slot から dst へコピーする。 */
+  if (node->kind == ND_ASSIGN) {
+    ir_val_t ptr = build_assign_complex(ctx, node);
+    if (ctx->failed || ptr.id == IR_VAL_NONE) return;
+    ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+    cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+    cp->src2 = ptr;
+    cp->alloca_size = 2 * half;
+    ir_func_append_inst(ctx->f, cp);
+    return;
+  }
   /* LVAR / DEREF / GVAR: src のアドレスを得て 2*half バイト memcpy */
   if (node->kind == ND_LVAR) {
     int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)node)->offset);
@@ -1412,7 +1424,7 @@ static ir_val_t build_complex_cmp(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   /* _Complex EQ/NE 比較は専用経路 (build_complex_cmp) に分岐。 */
-  if ((node->kind == ND_EQ || node->kind == ND_NE) &&
+  if ((node->kind == ND_EQ || node->kind == ND_NE) && !node->from_logical_not &&
       ((node->lhs && node->lhs->is_complex) || (node->rhs && node->rhs->is_complex))) {
     return build_complex_cmp(ctx, node);
   }
@@ -1744,6 +1756,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
        * カウンタが連続 2 レジスタへ割り当てる。 */
       if (arg && arg->is_complex) {
         ir_type_t fp_ty = (arg->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+        if (!fn->callee && i < nargs_fixed) {
+          tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
+              fn->funcname, fn->funcname_len, i);
+          if (pfk != TK_FLOAT_KIND_NONE) {
+            fp_ty = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+          }
+        }
         int half = (fp_ty == IR_TY_F32) ? 4 : 8;
         int slot = ir_func_new_vreg(ctx->f);
         ir_inst_t *al = ir_inst_new(IR_ALLOCA);

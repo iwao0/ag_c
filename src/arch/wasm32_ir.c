@@ -1211,6 +1211,12 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       set_vreg_global_ref(ctx, i->dst.id, psx_find_global_var(i->sym, i->sym_len), 0);
       return;
     }
+    case IR_LOAD_TLV_ADDR: {
+      int addr = data_addr_for_global(i->sym, i->sym_len);
+      wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
+      set_vreg_global_ref(ctx, i->dst.id, psx_find_global_var(i->sym, i->sym_len), 0);
+      return;
+    }
     case IR_ZEXT:
     case IR_SEXT:
     case IR_TRUNC:
@@ -1351,6 +1357,15 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       int result_unsigned = uses_ptr_value(ctx, i) ||
                             i->op == IR_UDIV || i->op == IR_UMOD || i->op == IR_LSR ||
                             i->op == IR_ULT || i->op == IR_ULE;
+      if ((i->op == IR_MOD || i->op == IR_UMOD) &&
+          i->src2.id == IR_VAL_IMM && i->src2.imm == 0) {
+        wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
+        emit_wasm_type_cast_prefix(op_ty, dst_ty, result_unsigned);
+        emit_val_expr_as(ctx, i->src1, op_ty);
+        emit_wasm_type_cast_suffix(op_ty, dst_ty);
+        cg_emitf(")\n");
+        return;
+      }
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       emit_wasm_type_cast_prefix(result_ty, dst_ty, result_unsigned);
       cg_emitf("(%s ", op);
@@ -1913,9 +1928,6 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
 static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
   if (gv->is_extern_decl) return;
-  if (gv->is_thread_local) {
-    wasm_unsupported_msg("global initializer in Wasm backend");
-  }
   int addr = data_addr_for_global(gv->name, gv->name_len);
   int size = gv->type_size > 0 ? gv->type_size : 4;
   if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
@@ -2204,11 +2216,229 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  int atan_defined = psx_ctx_has_function_name("atan", 4) &&
+                     psx_ctx_is_function_defined("atan", 4);
+  int need_atan_stub = has_undefined_function("atan", 4) ||
+                       (has_undefined_function("atan2", 5) && !atan_defined);
+  int need_atan = need_atan_stub || has_undefined_function("atan2", 5);
+  if (need_atan) {
+    wasm_emitf(2, "(func $__ag_atan_core (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(local $x2 f64)\n");
+    wasm_emitf(4, "(local $term f64)\n");
+    wasm_emitf(4, "(local $sum f64)\n");
+    wasm_emitf(4, "(local $den f64)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(local $neg i32)\n");
+    wasm_emitf(4, "(local.set $x2 (f64.mul (local.get $x) (local.get $x)))\n");
+    wasm_emitf(4, "(local.set $term (local.get $x))\n");
+    wasm_emitf(4, "(local.set $sum (local.get $x))\n");
+    wasm_emitf(4, "(local.set $den (f64.const 3))\n");
+    wasm_emitf(4, "(local.set $neg (i32.const 1))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $i) (i32.const 80)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $term (f64.mul (local.get $term) (local.get $x2)))\n");
+    wasm_emitf(6, "(if (local.get $neg)\n");
+    wasm_emitf(8, "(then (local.set $sum (f64.sub (local.get $sum) (f64.div (local.get $term) (local.get $den)))))\n");
+    wasm_emitf(8, "(else (local.set $sum (f64.add (local.get $sum) (f64.div (local.get $term) (local.get $den)))))\n");
+    wasm_emitf(6, ")\n");
+    wasm_emitf(6, "(local.set $neg (i32.xor (local.get $neg) (i32.const 1)))\n");
+    wasm_emitf(6, "(local.set $den (f64.add (local.get $den) (f64.const 2)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $sum)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (need_atan_stub) {
+    wasm_emitf(2, "(func $atan (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(if (result f64) (f64.gt (local.get $x) (f64.const 1))\n");
+    wasm_emitf(6, "(then (f64.sub (f64.const 1.5707963267948966) (call $__ag_atan_core (f64.div (f64.const 1) (local.get $x)))))\n");
+    wasm_emitf(6, "(else (if (result f64) (f64.lt (local.get $x) (f64.const -1))\n");
+    wasm_emitf(8, "(then (f64.sub (f64.const -1.5707963267948966) (call $__ag_atan_core (f64.div (f64.const 1) (local.get $x)))))\n");
+    wasm_emitf(8, "(else (call $__ag_atan_core (local.get $x)))\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("atan2", 5)) {
+    wasm_emitf(2, "(func $atan2 (param $y f64) (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(if (result f64) (f64.gt (local.get $x) (f64.const 0))\n");
+    wasm_emitf(6, "(then (call $atan (f64.div (local.get $y) (local.get $x))))\n");
+    wasm_emitf(6, "(else (if (result f64) (f64.lt (local.get $x) (f64.const 0))\n");
+    wasm_emitf(8, "(then (if (result f64) (f64.ge (local.get $y) (f64.const 0))\n");
+    wasm_emitf(10, "(then (f64.add (call $atan (f64.div (local.get $y) (local.get $x))) (f64.const 3.141592653589793)))\n");
+    wasm_emitf(10, "(else (f64.sub (call $atan (f64.div (local.get $y) (local.get $x))) (f64.const 3.141592653589793)))\n");
+    wasm_emitf(8, "))\n");
+    wasm_emitf(8, "(else (if (result f64) (f64.gt (local.get $y) (f64.const 0))\n");
+    wasm_emitf(10, "(then (f64.const 1.5707963267948966))\n");
+    wasm_emitf(10, "(else (if (result f64) (f64.lt (local.get $y) (f64.const 0)) (then (f64.const -1.5707963267948966)) (else (f64.const 0))))\n");
+    wasm_emitf(8, "))\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
+  int exp_defined = psx_ctx_has_function_name("exp", 3) &&
+                    psx_ctx_is_function_defined("exp", 3);
+  int need_exp_stub = has_undefined_function("exp", 3) ||
+                      ((has_undefined_function("sinh", 4) ||
+                        has_undefined_function("cosh", 4)) && !exp_defined);
+  if (need_exp_stub) {
+    wasm_emitf(2, "(func $exp (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(local $r f64)\n");
+    wasm_emitf(4, "(local $term f64)\n");
+    wasm_emitf(4, "(local $sum f64)\n");
+    wasm_emitf(4, "(local $n f64)\n");
+    wasm_emitf(4, "(local $k i32)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(local.set $r (local.get $x))\n");
+    wasm_emitf(4, "(block $done_pos (loop $pos\n");
+    wasm_emitf(6, "(if (f64.le (local.get $r) (f64.const 0.5)) (then (br $done_pos)))\n");
+    wasm_emitf(6, "(local.set $r (f64.sub (local.get $r) (f64.const 0.6931471805599453)))\n");
+    wasm_emitf(6, "(local.set $k (i32.add (local.get $k) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $pos)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(block $done_neg (loop $neg\n");
+    wasm_emitf(6, "(if (f64.ge (local.get $r) (f64.const -0.5)) (then (br $done_neg)))\n");
+    wasm_emitf(6, "(local.set $r (f64.add (local.get $r) (f64.const 0.6931471805599453)))\n");
+    wasm_emitf(6, "(local.set $k (i32.sub (local.get $k) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $neg)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.set $term (f64.const 1))\n");
+    wasm_emitf(4, "(local.set $sum (f64.const 1))\n");
+    wasm_emitf(4, "(local.set $n (f64.const 1))\n");
+    wasm_emitf(4, "(block $done_series (loop $series\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $i) (i32.const 28)) (then (br $done_series)))\n");
+    wasm_emitf(6, "(local.set $term (f64.div (f64.mul (local.get $term) (local.get $r)) (local.get $n)))\n");
+    wasm_emitf(6, "(local.set $sum (f64.add (local.get $sum) (local.get $term)))\n");
+    wasm_emitf(6, "(local.set $n (f64.add (local.get $n) (f64.const 1)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $series)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(block $done_scale_pos (loop $scale_pos\n");
+    wasm_emitf(6, "(if (i32.le_s (local.get $k) (i32.const 0)) (then (br $done_scale_pos)))\n");
+    wasm_emitf(6, "(local.set $sum (f64.mul (local.get $sum) (f64.const 2)))\n");
+    wasm_emitf(6, "(local.set $k (i32.sub (local.get $k) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $scale_pos)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(block $done_scale_neg (loop $scale_neg\n");
+    wasm_emitf(6, "(if (i32.ge_s (local.get $k) (i32.const 0)) (then (br $done_scale_neg)))\n");
+    wasm_emitf(6, "(local.set $sum (f64.mul (local.get $sum) (f64.const 0.5)))\n");
+    wasm_emitf(6, "(local.set $k (i32.add (local.get $k) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $scale_neg)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $sum)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("log", 3)) {
+    wasm_emitf(2, "(func $log (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(local $z f64)\n");
+    wasm_emitf(4, "(local $z2 f64)\n");
+    wasm_emitf(4, "(local $term f64)\n");
+    wasm_emitf(4, "(local $sum f64)\n");
+    wasm_emitf(4, "(local $den f64)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(if (f64.le (local.get $x) (f64.const 0)) (then (return (f64.const -inf))))\n");
+    wasm_emitf(4, "(local.set $z (f64.div (f64.sub (local.get $x) (f64.const 1)) (f64.add (local.get $x) (f64.const 1))))\n");
+    wasm_emitf(4, "(local.set $z2 (f64.mul (local.get $z) (local.get $z)))\n");
+    wasm_emitf(4, "(local.set $term (local.get $z))\n");
+    wasm_emitf(4, "(local.set $sum (local.get $z))\n");
+    wasm_emitf(4, "(local.set $den (f64.const 3))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $i) (i32.const 80)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $term (f64.mul (local.get $term) (local.get $z2)))\n");
+    wasm_emitf(6, "(local.set $sum (f64.add (local.get $sum) (f64.div (local.get $term) (local.get $den))))\n");
+    wasm_emitf(6, "(local.set $den (f64.add (local.get $den) (f64.const 2)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(f64.mul (f64.const 2) (local.get $sum))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("sin", 3)) {
+    wasm_emitf(2, "(func $sin (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(local $x2 f64)\n");
+    wasm_emitf(4, "(local $term f64)\n");
+    wasm_emitf(4, "(local $sum f64)\n");
+    wasm_emitf(4, "(local $den f64)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(block $done_hi (loop $hi\n");
+    wasm_emitf(6, "(if (f64.le (local.get $x) (f64.const 3.141592653589793)) (then (br $done_hi)))\n");
+    wasm_emitf(6, "(local.set $x (f64.sub (local.get $x) (f64.const 6.283185307179586)))\n");
+    wasm_emitf(6, "(br $hi)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(block $done_lo (loop $lo\n");
+    wasm_emitf(6, "(if (f64.ge (local.get $x) (f64.const -3.141592653589793)) (then (br $done_lo)))\n");
+    wasm_emitf(6, "(local.set $x (f64.add (local.get $x) (f64.const 6.283185307179586)))\n");
+    wasm_emitf(6, "(br $lo)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(if (f64.gt (local.get $x) (f64.const 1.5707963267948966)) (then (local.set $x (f64.sub (f64.const 3.141592653589793) (local.get $x)))))\n");
+    wasm_emitf(4, "(if (f64.lt (local.get $x) (f64.const -1.5707963267948966)) (then (local.set $x (f64.sub (f64.const -3.141592653589793) (local.get $x)))))\n");
+    wasm_emitf(4, "(local.set $x2 (f64.mul (local.get $x) (local.get $x)))\n");
+    wasm_emitf(4, "(local.set $term (local.get $x))\n");
+    wasm_emitf(4, "(local.set $sum (local.get $x))\n");
+    wasm_emitf(4, "(local.set $i (i32.const 1))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $i) (i32.const 14)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $den (f64.convert_i32_s (i32.mul (i32.mul (local.get $i) (i32.const 2)) (i32.add (i32.mul (local.get $i) (i32.const 2)) (i32.const 1)))))\n");
+    wasm_emitf(6, "(local.set $term (f64.div (f64.neg (f64.mul (local.get $term) (local.get $x2))) (local.get $den)))\n");
+    wasm_emitf(6, "(local.set $sum (f64.add (local.get $sum) (local.get $term)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $sum)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("cos", 3)) {
+    wasm_emitf(2, "(func $cos (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(local $x2 f64)\n");
+    wasm_emitf(4, "(local $term f64)\n");
+    wasm_emitf(4, "(local $sum f64)\n");
+    wasm_emitf(4, "(local $den f64)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(local $sign f64)\n");
+    wasm_emitf(4, "(local.set $sign (f64.const 1))\n");
+    wasm_emitf(4, "(block $done_hi (loop $hi\n");
+    wasm_emitf(6, "(if (f64.le (local.get $x) (f64.const 3.141592653589793)) (then (br $done_hi)))\n");
+    wasm_emitf(6, "(local.set $x (f64.sub (local.get $x) (f64.const 6.283185307179586)))\n");
+    wasm_emitf(6, "(br $hi)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(block $done_lo (loop $lo\n");
+    wasm_emitf(6, "(if (f64.ge (local.get $x) (f64.const -3.141592653589793)) (then (br $done_lo)))\n");
+    wasm_emitf(6, "(local.set $x (f64.add (local.get $x) (f64.const 6.283185307179586)))\n");
+    wasm_emitf(6, "(br $lo)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(if (f64.gt (local.get $x) (f64.const 1.5707963267948966)) (then (local.set $x (f64.sub (f64.const 3.141592653589793) (local.get $x))) (local.set $sign (f64.const -1))))\n");
+    wasm_emitf(4, "(if (f64.lt (local.get $x) (f64.const -1.5707963267948966)) (then (local.set $x (f64.sub (f64.const -3.141592653589793) (local.get $x))) (local.set $sign (f64.const -1))))\n");
+    wasm_emitf(4, "(local.set $x2 (f64.mul (local.get $x) (local.get $x)))\n");
+    wasm_emitf(4, "(local.set $term (f64.const 1))\n");
+    wasm_emitf(4, "(local.set $sum (f64.const 1))\n");
+    wasm_emitf(4, "(local.set $i (i32.const 1))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $i) (i32.const 14)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $den (f64.convert_i32_s (i32.mul (i32.sub (i32.mul (local.get $i) (i32.const 2)) (i32.const 1)) (i32.mul (local.get $i) (i32.const 2)))))\n");
+    wasm_emitf(6, "(local.set $term (f64.div (f64.neg (f64.mul (local.get $term) (local.get $x2))) (local.get $den)))\n");
+    wasm_emitf(6, "(local.set $sum (f64.add (local.get $sum) (local.get $term)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(f64.mul (local.get $sign) (local.get $sum))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("sinh", 4)) {
+    wasm_emitf(2, "(func $sinh (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(f64.mul (f64.const 0.5) (f64.sub (call $exp (local.get $x)) (call $exp (f64.neg (local.get $x)))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("cosh", 4)) {
+    wasm_emitf(2, "(func $cosh (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(f64.mul (f64.const 0.5) (f64.add (call $exp (local.get $x)) (call $exp (f64.neg (local.get $x)))))\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("sqrt", 4)) {
-    wasm_emitf(2, "(func $sqrt (param f64) (result f64) (f64.const 1.4142135623730951))\n");
+    wasm_emitf(2, "(func $sqrt (param $x f64) (result f64) (f64.sqrt (local.get $x)))\n");
   }
   if (has_undefined_function("sqrtf", 5)) {
-    wasm_emitf(2, "(func $sqrtf (param f32) (result f32) (f32.const 1.41421356))\n");
+    wasm_emitf(2, "(func $sqrtf (param $x f32) (result f32) (f32.sqrt (local.get $x)))\n");
   }
   if (has_undefined_function("pow", 3)) {
     wasm_emitf(2, "(func $pow (param f64 f64) (result f64) (f64.const 1024))\n");
