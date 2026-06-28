@@ -18,6 +18,7 @@ typedef struct {
   int vreg;
   int offset;
   int size;
+  ir_type_t value_type;
 } wasm_alloca_slot_t;
 
 typedef struct {
@@ -28,6 +29,7 @@ typedef struct {
   int frame_size;
   int *vreg_type_seen;
   ir_type_t *vreg_types;
+  unsigned char *vreg_unsigned;
   int has_control_flow;
 } wasm_func_ctx_t;
 
@@ -177,15 +179,31 @@ static int data_addr_for_global(const char *sym, int sym_len) {
   return intern_data_symbol(sym, sym_len, size, align)->addr;
 }
 
-static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
+static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
+  if (raw == IR_TY_PTR && psx_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
+    return IR_TY_I64;
+  }
+  return raw;
+}
+
+static void collect_vreg_type_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t type) {
   if (v.id < 0 || v.id >= ctx->f->next_vreg_id) return;
-  if (!wasm_type(v.type)) return;
+  if (!wasm_type(type)) return;
   if (ctx->vreg_type_seen[v.id]) return;
   ctx->vreg_type_seen[v.id] = 1;
-  ctx->vreg_types[v.id] = v.type;
+  ctx->vreg_types[v.id] = type;
+}
+
+static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
+  collect_vreg_type_as(ctx, v, v.type);
 }
 
 static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+  if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM) {
+    collect_vreg_type_as(ctx, i->dst,
+                         func_param_type_from_decl(ctx->f, (int)i->src1.imm, i->dst.type));
+    return;
+  }
   collect_vreg_type(ctx, i->dst);
   collect_vreg_type(ctx, i->src1);
   collect_vreg_type(ctx, i->src2);
@@ -208,21 +226,72 @@ static void add_alloca_slot(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   ctx->allocas[ctx->alloca_count].vreg = i->dst.id;
   ctx->allocas[ctx->alloca_count].offset = ctx->frame_size;
   ctx->allocas[ctx->alloca_count].size = i->alloca_size;
+  ctx->allocas[ctx->alloca_count].value_type = IR_TY_VOID;
   ctx->alloca_count++;
   ctx->frame_size += i->alloca_size;
 }
 
-static int find_alloca_offset(wasm_func_ctx_t *ctx, int vreg) {
+static wasm_alloca_slot_t *find_alloca_slot(wasm_func_ctx_t *ctx, int vreg) {
   for (int i = 0; i < ctx->alloca_count; i++) {
-    if (ctx->allocas[i].vreg == vreg) return ctx->allocas[i].offset;
+    if (ctx->allocas[i].vreg == vreg) return &ctx->allocas[i];
   }
+  return NULL;
+}
+
+static int find_alloca_offset(wasm_func_ctx_t *ctx, int vreg) {
+  wasm_alloca_slot_t *slot = find_alloca_slot(ctx, vreg);
+  if (slot) return slot->offset;
   return -1;
+}
+
+static ir_type_t effective_val_type(wasm_func_ctx_t *ctx, ir_val_t v) {
+  if (v.id >= 0 && v.id < ctx->f->next_vreg_id && ctx->vreg_type_seen[v.id]) {
+    return ctx->vreg_types[v.id];
+  }
+  return v.type;
+}
+
+static void set_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t type) {
+  if (v.id < 0 || v.id >= ctx->f->next_vreg_id) return;
+  if (!wasm_type(type)) return;
+  ctx->vreg_type_seen[v.id] = 1;
+  ctx->vreg_types[v.id] = type;
+}
+
+static int val_is_unsigned(wasm_func_ctx_t *ctx, ir_val_t v) {
+  return v.id >= 0 && v.id < ctx->f->next_vreg_id && ctx->vreg_unsigned[v.id];
+}
+
+static void infer_alloca_value_types(wasm_func_ctx_t *ctx) {
+  for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op == IR_LOAD && i->dst.id >= 0 && i->dst.id < ctx->f->next_vreg_id &&
+          i->is_unsigned_load) {
+        ctx->vreg_unsigned[i->dst.id] = 1;
+      }
+      if (i->op == IR_ZEXT && i->dst.id >= 0 && i->dst.id < ctx->f->next_vreg_id) {
+        ctx->vreg_unsigned[i->dst.id] = 1;
+      }
+      if (i->op == IR_STORE) {
+        wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
+        ir_type_t val_ty = effective_val_type(ctx, i->src2);
+        if (slot && slot->value_type == IR_TY_VOID && wasm_type(val_ty)) {
+          slot->value_type = val_ty;
+        }
+      }
+      if (i->op == IR_LOAD && i->dst.type == IR_TY_PTR) {
+        wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
+        if (slot && slot->value_type == IR_TY_I64) set_vreg_type(ctx, i->dst, IR_TY_I64);
+      }
+    }
+  }
 }
 
 static void analyze_func(wasm_func_ctx_t *ctx) {
   ctx->vreg_type_seen = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
   ctx->vreg_types = calloc((size_t)ctx->f->next_vreg_id, sizeof(ir_type_t));
-  if (!ctx->vreg_type_seen || !ctx->vreg_types) {
+  ctx->vreg_unsigned = calloc((size_t)ctx->f->next_vreg_id, sizeof(unsigned char));
+  if (!ctx->vreg_type_seen || !ctx->vreg_types || !ctx->vreg_unsigned) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
@@ -232,11 +301,13 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
       if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) ctx->has_control_flow = 1;
     }
   }
+  infer_alloca_value_types(ctx);
   ctx->frame_size = align_to(ctx->frame_size, 16);
 }
 
-static void emit_val_expr(ir_val_t v) {
-  const char *ty = wasm_type(v.type);
+static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
+  ir_type_t type = effective_val_type(ctx, v);
+  const char *ty = wasm_type(type);
   if (!ty) wasm_unsupported_msg("non-integer Wasm value type");
   if (v.id == IR_VAL_IMM) {
     cg_emitf("(%s.const %lld)", ty, v.imm);
@@ -247,47 +318,41 @@ static void emit_val_expr(ir_val_t v) {
   }
 }
 
-static void emit_val_expr_as(ir_val_t v, ir_type_t target) {
+static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target) {
   if (target == IR_TY_PTR) target = IR_TY_I32;
-  ir_type_t src = (v.type == IR_TY_PTR) ? IR_TY_I32 : v.type;
+  ir_type_t src = effective_val_type(ctx, v);
+  if (src == IR_TY_PTR) src = IR_TY_I32;
   if (src == target) {
-    emit_val_expr(v);
+    emit_val_expr(ctx, v);
     return;
   }
   if (target == IR_TY_I64 && src != IR_TY_I64) {
-    cg_emitf("(i64.extend_i32_s ");
-    emit_val_expr(v);
+    cg_emitf("(%s ", val_is_unsigned(ctx, v) ? "i64.extend_i32_u" : "i64.extend_i32_s");
+    emit_val_expr(ctx, v);
     cg_emitf(")");
     return;
   }
   if (target != IR_TY_I64 && src == IR_TY_I64) {
     cg_emitf("(i32.wrap_i64 ");
-    emit_val_expr(v);
+    emit_val_expr(ctx, v);
     cg_emitf(")");
     return;
   }
-  emit_val_expr(v);
+  emit_val_expr(ctx, v);
 }
 
-static void emit_addr_expr(ir_val_t v) {
-  emit_val_expr_as(v, IR_TY_I32);
+static void emit_addr_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
+  emit_val_expr_as(ctx, v, IR_TY_I32);
 }
 
-static void emit_addr_plus_const(ir_val_t base, int off) {
+static void emit_addr_plus_const(wasm_func_ctx_t *ctx, ir_val_t base, int off) {
   if (off == 0) {
-    emit_addr_expr(base);
+    emit_addr_expr(ctx, base);
     return;
   }
   cg_emitf("(i32.add ");
-  emit_addr_expr(base);
+  emit_addr_expr(ctx, base);
   cg_emitf(" (i32.const %d))", off);
-}
-
-static ir_type_t effective_val_type(wasm_func_ctx_t *ctx, ir_val_t v) {
-  if (v.id >= 0 && v.id < ctx->f->next_vreg_id && ctx->vreg_type_seen[v.id]) {
-    return ctx->vreg_types[v.id];
-  }
-  return v.type;
 }
 
 static const char *wasm_binop(ir_op_t op, ir_type_t t) {
@@ -317,9 +382,17 @@ static const char *wasm_binop(ir_op_t op, ir_type_t t) {
   }
 }
 
-static void emit_load(ir_inst_t *i, int indent) {
+static ir_type_t effective_load_type(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+  if (i->dst.type == IR_TY_PTR) {
+    wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
+    if (slot && slot->value_type == IR_TY_I64) return IR_TY_I64;
+  }
+  return i->dst.type;
+}
+
+static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   const char *op = NULL;
-  switch (i->dst.type) {
+  switch (effective_load_type(ctx, i)) {
     case IR_TY_I8:  op = i->is_unsigned_load ? "i32.load8_u" : "i32.load8_s"; break;
     case IR_TY_I16: op = i->is_unsigned_load ? "i32.load16_u" : "i32.load16_s"; break;
     case IR_TY_I32:
@@ -328,7 +401,7 @@ static void emit_load(ir_inst_t *i, int indent) {
     default: wasm_unsupported_op(i->op);
   }
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
-  emit_addr_expr(i->src1);
+  emit_addr_expr(ctx, i->src1);
   cg_emitf("))\n");
 }
 
@@ -343,53 +416,64 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     default: wasm_unsupported_op(i->op);
   }
   wasm_emitf(indent, "(%s ", op);
-  emit_addr_expr(i->src1);
+  emit_addr_expr(ctx, i->src1);
   cg_emitf(" ");
-  emit_val_expr(i->src2);
+  emit_val_expr(ctx, i->src2);
   cg_emitf(")\n");
 }
 
-static int mixes_ptr_and_i64(ir_inst_t *i) {
-  return (i->src1.type == IR_TY_PTR && i->src2.type == IR_TY_I64) ||
-         (i->src1.type == IR_TY_I64 && i->src2.type == IR_TY_PTR) ||
-         (i->dst.type == IR_TY_PTR && (i->src1.type == IR_TY_I64 || i->src2.type == IR_TY_I64));
+static int mixes_ptr_and_i64(wasm_func_ctx_t *ctx, ir_inst_t *i) {
+  ir_type_t dst = effective_val_type(ctx, i->dst);
+  ir_type_t src1 = effective_val_type(ctx, i->src1);
+  ir_type_t src2 = effective_val_type(ctx, i->src2);
+  return (src1 == IR_TY_PTR && src2 == IR_TY_I64) ||
+         (src1 == IR_TY_I64 && src2 == IR_TY_PTR) ||
+         (dst == IR_TY_PTR && (src1 == IR_TY_I64 || src2 == IR_TY_I64));
 }
 
-static void emit_memcpy(ir_inst_t *i, int indent) {
+static int i64_runtime_extension_unsupported(wasm_func_ctx_t *ctx, ir_val_t v) {
+  ir_type_t src = effective_val_type(ctx, v);
+  if (src == IR_TY_I64) return 0;
+  if (v.id >= 0 && src == IR_TY_I32) return 0;
+  if (v.id == IR_VAL_IMM && v.imm >= INT32_MIN && v.imm <= INT32_MAX) return 0;
+  return 1;
+}
+
+static void emit_memcpy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   int n = i->alloca_size;
   if (n < 0) wasm_unsupported_op(i->op);
   int off = 0;
   for (; off + 8 <= n; off += 8) {
     wasm_emitf(indent, "(i64.store ");
-    emit_addr_plus_const(i->src1, off);
+    emit_addr_plus_const(ctx, i->src1, off);
     cg_emitf(" (i64.load ");
-    emit_addr_plus_const(i->src2, off);
+    emit_addr_plus_const(ctx, i->src2, off);
     cg_emitf("))\n");
   }
   for (; off + 4 <= n; off += 4) {
     wasm_emitf(indent, "(i32.store ");
-    emit_addr_plus_const(i->src1, off);
+    emit_addr_plus_const(ctx, i->src1, off);
     cg_emitf(" (i32.load ");
-    emit_addr_plus_const(i->src2, off);
+    emit_addr_plus_const(ctx, i->src2, off);
     cg_emitf("))\n");
   }
   for (; off + 2 <= n; off += 2) {
     wasm_emitf(indent, "(i32.store16 ");
-    emit_addr_plus_const(i->src1, off);
+    emit_addr_plus_const(ctx, i->src1, off);
     cg_emitf(" (i32.load16_u ");
-    emit_addr_plus_const(i->src2, off);
+    emit_addr_plus_const(ctx, i->src2, off);
     cg_emitf("))\n");
   }
   for (; off < n; off++) {
     wasm_emitf(indent, "(i32.store8 ");
-    emit_addr_plus_const(i->src1, off);
+    emit_addr_plus_const(ctx, i->src1, off);
     cg_emitf(" (i32.load8_u ");
-    emit_addr_plus_const(i->src2, off);
+    emit_addr_plus_const(ctx, i->src2, off);
     cg_emitf("))\n");
   }
 }
 
-static void emit_call(ir_inst_t *i, int indent) {
+static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   if (i->callee.id != IR_VAL_NONE || i->ret_struct_size > 0 || i->ret_complex_half != 0 ||
       i->is_variadic_call) {
     wasm_unsupported_op(i->op);
@@ -404,8 +488,10 @@ static void emit_call(ir_inst_t *i, int indent) {
     wasm_emitf(indent, "(call $%.*s", i->sym_len, i->sym);
   }
   for (int a = 0; a < i->nargs; a++) {
+    ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
+    if (psx_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) arg_ty = IR_TY_I64;
     cg_emitf(" ");
-    emit_val_expr(i->args[a]);
+    emit_val_expr_as(ctx, i->args[a], arg_ty);
   }
   cg_emitf(")");
   if (i->dst.id >= 0 && i->dst.type != IR_TY_VOID) cg_emitf(")");
@@ -431,7 +517,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     }
     case IR_LOAD_IMM:
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
-      emit_val_expr(i->src1);
+      emit_val_expr(ctx, i->src1);
       cg_emitf(")\n");
       return;
     case IR_LOAD_STR: {
@@ -451,50 +537,50 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       if (i->dst.type == IR_TY_I64 && i->src1.type != IR_TY_I64) {
         cg_emitf("(%s ", i->op == IR_ZEXT ? "i64.extend_i32_u" : "i64.extend_i32_s");
-        emit_val_expr(i->src1);
+        emit_val_expr(ctx, i->src1);
         cg_emitf(")");
       } else if (i->dst.type != IR_TY_I64 && i->src1.type == IR_TY_I64) {
         cg_emitf("(i32.wrap_i64 ");
-        emit_val_expr(i->src1);
+        emit_val_expr(ctx, i->src1);
         cg_emitf(")");
       } else {
-        emit_val_expr(i->src1);
+        emit_val_expr(ctx, i->src1);
       }
       cg_emitf(")\n");
       return;
     case IR_LOAD:
-      emit_load(i, indent);
+      emit_load(ctx, i, indent);
       return;
     case IR_STORE:
       emit_store(ctx, i, indent);
       return;
     case IR_MEMCPY:
-      emit_memcpy(i, indent);
+      emit_memcpy(ctx, i, indent);
       return;
     case IR_ALIGN_PTR: {
       int align = i->alloca_align > 0 ? i->alloca_align : 16;
       wasm_emitf(indent, "(local.set $v%d (i32.and (i32.add ", i->dst.id);
-      emit_addr_expr(i->src1);
+      emit_addr_expr(ctx, i->src1);
       cg_emitf(" (i32.const %d)) (i32.const %d)))\n", align - 1, -align);
       return;
     }
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
-      emit_addr_expr(i->src1);
+      emit_addr_expr(ctx, i->src1);
       cg_emitf(" ");
-      emit_addr_expr(i->src2);
+      emit_addr_expr(ctx, i->src2);
       cg_emitf("))\n");
       return;
     case IR_NEG:
       wasm_emitf(indent, "(local.set $v%d (%s.sub (%s.const 0) ", i->dst.id,
                i->dst.type == IR_TY_I64 ? "i64" : "i32",
                i->dst.type == IR_TY_I64 ? "i64" : "i32");
-      emit_val_expr(i->src1);
+      emit_val_expr(ctx, i->src1);
       cg_emitf("))\n");
       return;
     case IR_NOT:
       wasm_emitf(indent, "(local.set $v%d (%s.xor ", i->dst.id, i->dst.type == IR_TY_I64 ? "i64" : "i32");
-      emit_val_expr(i->src1);
+      emit_val_expr(ctx, i->src1);
       cg_emitf(" (%s.const -1)))\n", i->dst.type == IR_TY_I64 ? "i64" : "i32");
       return;
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_UDIV:
@@ -503,23 +589,32 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_ULT: case IR_ULE: {
       int is_cmp = (i->op == IR_EQ || i->op == IR_NE || i->op == IR_LT || i->op == IR_LE ||
                     i->op == IR_ULT || i->op == IR_ULE);
-      if (mixes_ptr_and_i64(i)) {
+      if (mixes_ptr_and_i64(ctx, i)) {
         wasm_unsupported_msg("64-bit integer value represented as pointer in Wasm backend");
       }
-      ir_type_t op_ty = is_cmp ? i->src1.type : i->dst.type;
+      ir_type_t op_ty = is_cmp ? effective_val_type(ctx, i->src1) : effective_val_type(ctx, i->dst);
       const char *op = wasm_binop(i->op, op_ty);
       if (!op) wasm_unsupported_op(i->op);
+      ir_type_t src1_ty = effective_val_type(ctx, i->src1);
+      ir_type_t src2_ty = effective_val_type(ctx, i->src2);
+      if (op_ty == IR_TY_I64 &&
+          src1_ty != IR_TY_PTR && src2_ty != IR_TY_PTR &&
+          (i64_runtime_extension_unsupported(ctx, i->src1) ||
+           ((i->op != IR_SHL && i->op != IR_SHR && i->op != IR_LSR) &&
+            i64_runtime_extension_unsupported(ctx, i->src2)))) {
+        wasm_unsupported_msg("runtime i32 to i64 extension in Wasm backend");
+      }
       wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
-      emit_val_expr_as(i->src1, op_ty);
+      emit_val_expr_as(ctx, i->src1, op_ty);
       cg_emitf(" ");
-      emit_val_expr_as(i->src2, (op_ty == IR_TY_I64 &&
-                                 (i->op == IR_SHL || i->op == IR_SHR || i->op == IR_LSR))
-                                    ? IR_TY_I32 : op_ty);
+      emit_val_expr_as(ctx, i->src2, (op_ty == IR_TY_I64 &&
+                                      (i->op == IR_SHL || i->op == IR_SHR || i->op == IR_LSR))
+                                         ? IR_TY_I32 : op_ty);
       cg_emitf("))\n");
       return;
     }
     case IR_CALL:
-      emit_call(i, indent);
+      emit_call(ctx, i, indent);
       return;
     case IR_BR:
       if (!dispatch_mode) wasm_unsupported_op(i->op);
@@ -529,7 +624,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_BR_COND:
       if (!dispatch_mode) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(if ");
-      emit_val_expr_as(i->src1, IR_TY_I32);
+      emit_val_expr_as(ctx, i->src1, IR_TY_I32);
       cg_emitf("\n");
       wasm_emitf(indent + 2, "(then (local.set $pc (i32.const %d)))\n", i->label_id);
       wasm_emitf(indent + 2, "(else (local.set $pc (i32.const %d)))\n", i->else_label_id);
@@ -540,7 +635,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (ctx->frame_size > 0) wasm_emitf(indent, "(global.set $__stack_pointer (local.get $old_sp))\n");
       if (i->src1.id != IR_VAL_NONE) {
         wasm_emitf(indent, "(return ");
-        emit_val_expr(i->src1);
+        emit_val_expr(ctx, i->src1);
         cg_emitf(")\n");
       } else {
         wasm_emitf(indent, "return\n");
@@ -567,7 +662,9 @@ static int func_param_count(ir_func_t *f) {
 static ir_type_t func_param_type(ir_func_t *f, int idx) {
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
-      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm == idx) return i->dst.type;
+      if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm == idx) {
+        return func_param_type_from_decl(f, idx, i->dst.type);
+      }
     }
   }
   return IR_TY_I32;
@@ -646,6 +743,7 @@ static void emit_func(ir_func_t *f) {
   free(ctx.allocas);
   free(ctx.vreg_type_seen);
   free(ctx.vreg_types);
+  free(ctx.vreg_unsigned);
 }
 
 void wasm32_module_begin(void) {

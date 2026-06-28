@@ -126,8 +126,11 @@ int main(void) {
   failures += run_case("arith", "int main(){return (3+4)*5-6;}\n", arith, 2, 29);
   const char *local[] = {"__stack_pointer", "i32.store", "i32.load"};
   failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3, 8);
-  const char *call[] = {"(func $add (param $p0 i32) (param $p1 i32) (result i32)", "(call $add"};
+  const char *call[] = {"(func $add (param $p0 i64) (param $p1 i64) (result i32)", "(call $add"};
   failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2, 7);
+  const char *i64_call[] = {"(func $inc (param $p0 i64) (result i64)", "i64.load", "(call $inc"};
+  failures += run_case("i64_call", "long inc(long x){return x+1;} int main(){return inc(41L);}\n",
+                       i64_call, 3, 42);
   const char *branch[] = {"(local $pc i32)", "(loop $dispatch", "(br $dispatch)"};
   failures += run_case("branch", "int main(){if(1)return 1; return 0;}\n", branch, 3, 1);
   const char *loop[] = {"(local $pc i32)", "(loop $dispatch", "i32.lt_s"};
@@ -149,10 +152,11 @@ int main(void) {
                        alignas32, 2, 7);
   failures += run_fail_case("fp", "int main(){return 1.5;}\n", "E4008");
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
-  failures += run_fail_case("ptr_i64_mix",
-                            "int main(){unsigned int x; x=4294967295U; unsigned long y; "
-                            "y=x+1UL; return y==4294967296UL;}\n",
-                            "E4008");
+  const char *ptr_i64_mix[] = {"i64.extend_i32_u", "i64.add", "i64.eq"};
+  failures += run_case("ptr_i64_mix",
+                       "int main(){unsigned int x; x=4294967295U; unsigned long y; "
+                       "y=x+1UL; return y==4294967296UL;}\n",
+                       ptr_i64_mix, 3, 1);
   if (failures) return 1;
   printf("wasm32 backend tests passed\n");
   return 0;
