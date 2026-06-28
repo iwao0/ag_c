@@ -181,6 +181,10 @@ int main(void) {
   failures += run_case("global_large_zero_array",
                        "int a[2][3]; int main(){a[1][2]=77; return a[0][0]+a[1][2];}\n",
                        global_large_zero_array, 2, 77);
+  const char *global_large_zero_double_array[] = {"f64.store", "f64.load"};
+  failures += run_case("global_large_zero_double_array",
+                       "double a[2][2]; int main(){a[1][1]=4.5; return (int)(a[0][0]+a[1][1]);}\n",
+                       global_large_zero_double_array, 2, 4);
   const char *global_char_array[] = {"(data (i32.const", "\"abc\\00\""};
   failures += run_case("global_char_array", "char g[]=\"abc\"; int main(){return g[1];}\n",
                        global_char_array, 2, 98);
@@ -219,6 +223,16 @@ int main(void) {
   failures += run_case("global_struct_array",
                        "struct P{int a; int b;}; struct P g[2]={{1,2},{3,4}}; int main(){return g[1].a+g[1].b;}\n",
                        global_struct_array, 2, 7);
+  const char *global_zero_struct_array[] = {"i32.store", "i32.load"};
+  failures += run_case("global_zero_struct_array",
+                       "struct P{int a; int b;}; struct P g[2]; "
+                       "int main(){g[1].b=44; return g[0].a+g[1].b;}\n",
+                       global_zero_struct_array, 2, 44);
+  const char *global_zero_mixed_struct_array[] = {"f64.store", "i32.store", "f64.load"};
+  failures += run_case("global_zero_mixed_struct_array",
+                       "struct P{double a; int b;}; struct P g[2]; "
+                       "int main(){g[1].a=2.5; g[1].b=4; return (int)g[0].a+(int)g[1].a+g[1].b;}\n",
+                       global_zero_mixed_struct_array, 3, 6);
   const char *global_struct_char_array[] = {"(data (i32.const", "\"abc\\00\""};
   failures += run_case("global_struct_char_array",
                        "struct S{char name[4]; int id;}; struct S g={\"abc\",5}; int main(){return g.name[1]+g.id;}\n",
