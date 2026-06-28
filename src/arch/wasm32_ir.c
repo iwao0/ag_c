@@ -466,6 +466,19 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
       continue;
     }
     if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) return NULL;
+    if (mi.array_len > 0) {
+      for (int k = 0; k < mi.array_len && init_idx < gv->init_count; k++, init_idx++) {
+        if (mi.offset + k * mi.type_size != offset) continue;
+        char *sym = gv->init_value_symbols[init_idx];
+        int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;
+        if (sym && sym_len > 0 && psx_ctx_has_function_name(sym, sym_len)) {
+          if (out_len) *out_len = sym_len;
+          return sym;
+        }
+        return NULL;
+      }
+      continue;
+    }
     if (mi.offset == offset && init_idx < gv->init_count) {
       char *sym = gv->init_value_symbols[init_idx];
       int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;

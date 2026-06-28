@@ -554,6 +554,26 @@ int main(void) {
                        "int add1(int x){return x+1;} struct Ops{int (*f)(int);}; "
                        "struct Ops ops={add1}; int main(){return ops.f(41);}\n",
                        struct_funcptr_call, 3, 42);
+  const char *struct_funcptr_offset_call[] = {"(data (i32.const", "(table 1 funcref)", "call_indirect"};
+  failures += run_case("struct_funcptr_offset_call",
+                       "int add1(int x){return x+1;} struct Ops{int pad; int (*f)(int);}; "
+                       "struct Ops ops={5,add1}; int main(){return ops.f(41);}\n",
+                       struct_funcptr_offset_call, 3, 42);
+  const char *struct_funcptr_array_member_call[] = {"(data (i32.const", "(table 2 funcref)",
+                                                     "(elem (i32.const 0) $add1 $add2",
+                                                     "call_indirect"};
+  failures += run_case("struct_funcptr_array_member_call",
+                       "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                       "struct Ops{int (*f[2])(int);}; struct Ops ops={{add1,add2}}; "
+                       "int main(){return ops.f[1](40);}\n",
+                       struct_funcptr_array_member_call, 4, 42);
+  const char *struct_funcptr_array_member_store_call[] = {"(table 2 funcref)", "$add1 $add2",
+                                                           "call_indirect"};
+  failures += run_case("struct_funcptr_array_member_store_call",
+                       "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                       "struct Ops{int (*f[2])(int);}; struct Ops ops={{add2,add2}}; "
+                       "int main(){ops.f[1]=add1; return ops.f[1](41);}\n",
+                       struct_funcptr_array_member_store_call, 3, 42);
   const char *struct_funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
   failures += run_case("struct_funcptr_void_call",
                        "void set(int *p){*p=9;} struct Ops{void (*f)(int*);}; "
