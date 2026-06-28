@@ -499,6 +499,16 @@ int main(void) {
   failures += run_case("double_call",
                        "double addd(double a,double b){return a+b;} int main(){return (int)addd(1.25,2.75);}\n",
                        double_call, 3, 4);
+  const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};
+  failures += run_case("unsigned_int_to_double",
+                       "int main(){unsigned int x; x=4294967295U; double d; d=x; "
+                       "return d>4294967294.0;}\n",
+                       unsigned_int_to_double, 2, 1);
+  const char *double_to_unsigned_int[] = {"i32.trunc_f64_u", "i32.eq"};
+  failures += run_case("double_to_unsigned_int",
+                       "int main(){double d; d=4294967295.0; unsigned int x; x=d; "
+                       "return x==4294967295U;}\n",
+                       double_to_unsigned_int, 2, 1);
   const char *double_neg[] = {"f64.neg"};
   failures += run_case("double_neg", "int main(){double x; x=-2.0; return (int)(-x);}\n",
                        double_neg, 1, 2);

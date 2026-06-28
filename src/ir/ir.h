@@ -193,9 +193,10 @@ typedef struct ir_inst_t {
 
   /* --- 1 バイト (複数 op 族で共有するため union 外) --- */
   /* IR_LOAD / IR_ATOMIC: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
+   * IR_I2F / IR_F2I: unsigned 変換なら 1。
    * 32bit unsigned 値を 64bit reg で扱うとき、上位 32bit を 0 にしないと
    * 後段の LSR/UDIV/ULT が誤動作するので必須。 */
-  unsigned char is_unsigned_load;
+  unsigned char is_unsigned;
   /* IR_RET / IR_CALL: 戻り値が _Complex のとき half バイト数 (float=4, double=8)。
    * 0 = 非複素数。複素数は HFA として re→d0/s0, im→d1/s1 で渡す。
    *  - IR_RET: src1 は {re,im} を持つスロットの PTR。

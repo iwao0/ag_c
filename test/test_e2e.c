@@ -1049,6 +1049,7 @@ static const test_case_t test_cases[] = {
     {"probes", "sign_compare", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sign_compare.c", 0, 0},
     {"probes", "float_to_int_narrowing_extended", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_to_int_narrowing_extended.c", 0, 0},
     {"probes", "float_to_int_return_narrowing", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_to_int_return_narrowing.c", 0, 0},
+    {"probes", "unsigned_fp_conversion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_fp_conversion.c", 0, 0},
     {"probes", "tautological_unsigned_zero", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tautological_unsigned_zero.c", 0, 0},
     {"probes", "identical_logical_operands", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/identical_logical_operands.c", 0, 0},
     {"probes", "logical_not_paren_trap", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/logical_not_paren_trap.c", 0, 0},

@@ -299,10 +299,14 @@ static void infer_alloca_value_types(wasm_func_ctx_t *ctx) {
   for (ir_block_t *b = ctx->f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       if (i->op == IR_LOAD && i->dst.id >= 0 && i->dst.id < ctx->f->next_vreg_id &&
-          i->is_unsigned_load) {
+          i->is_unsigned) {
         ctx->vreg_unsigned[i->dst.id] = 1;
       }
       if (i->op == IR_ZEXT && i->dst.id >= 0 && i->dst.id < ctx->f->next_vreg_id) {
+        ctx->vreg_unsigned[i->dst.id] = 1;
+      }
+      if (i->op == IR_F2I && i->is_unsigned &&
+          i->dst.id >= 0 && i->dst.id < ctx->f->next_vreg_id) {
         ctx->vreg_unsigned[i->dst.id] = 1;
       }
       if (i->op == IR_STORE) {
@@ -445,8 +449,8 @@ static ir_type_t effective_load_type(wasm_func_ctx_t *ctx, ir_inst_t *i) {
 static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   const char *op = NULL;
   switch (effective_load_type(ctx, i)) {
-    case IR_TY_I8:  op = i->is_unsigned_load ? "i32.load8_u" : "i32.load8_s"; break;
-    case IR_TY_I16: op = i->is_unsigned_load ? "i32.load16_u" : "i32.load16_s"; break;
+    case IR_TY_I8:  op = i->is_unsigned ? "i32.load8_u" : "i32.load8_s"; break;
+    case IR_TY_I16: op = i->is_unsigned ? "i32.load16_u" : "i32.load16_s"; break;
     case IR_TY_I32:
     case IR_TY_PTR: op = "i32.load"; break;
     case IR_TY_I64: op = "i64.load"; break;
@@ -616,16 +620,18 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       cg_emitf(")\n");
       return;
     case IR_I2F:
-      wasm_emitf(indent, "(local.set $v%d (%s.convert_%s_s ", i->dst.id,
+      wasm_emitf(indent, "(local.set $v%d (%s.convert_%s_%c ", i->dst.id,
                  wasm_fp_type_or_unsupported(i->dst.type),
-                 wasm_int_type_or_unsupported(effective_val_type(ctx, i->src1)));
+                 wasm_int_type_or_unsupported(effective_val_type(ctx, i->src1)),
+                 (i->is_unsigned || val_is_unsigned(ctx, i->src1)) ? 'u' : 's');
       emit_val_expr(ctx, i->src1);
       cg_emitf("))\n");
       return;
     case IR_F2I:
-      wasm_emitf(indent, "(local.set $v%d (%s.trunc_%s_s ", i->dst.id,
+      wasm_emitf(indent, "(local.set $v%d (%s.trunc_%s_%c ", i->dst.id,
                  wasm_int_type_or_unsupported(i->dst.type),
-                 wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)));
+                 wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)),
+                 i->is_unsigned ? 'u' : 's');
       emit_val_expr(ctx, i->src1);
       cg_emitf("))\n");
       return;

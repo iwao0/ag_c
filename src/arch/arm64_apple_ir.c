@@ -502,7 +502,7 @@ static void gen_inst_f2i(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  fcvtzs %s, %s0\n", d, suf);
+  cg_emitf("  %s %s, %s0\n", inst->is_unsigned ? "fcvtzu" : "fcvtzs", d, suf);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -511,7 +511,7 @@ static void gen_inst_i2f(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       int is_double = (inst->dst.type == IR_TY_F64);
       const char *suf = is_double ? "d" : "s";
-  cg_emitf("  scvtf %s0, %s\n", suf, s1);
+  cg_emitf("  %s %s0, %s\n", inst->is_unsigned ? "ucvtf" : "scvtf", suf, s1);
   char r0[4];
   snprintf(r0, sizeof(r0), "%s0", suf);
   emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
@@ -566,7 +566,7 @@ static void gen_inst_load(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *d = acquire_dst(ctx, inst->dst, "x10", bd, sizeof(bd), &spill);
       char w_d[8];
       to_w_name(d, w_d, sizeof(w_d));
-      if (inst->is_unsigned_load) {
+      if (inst->is_unsigned) {
         switch (inst->dst.type) {
           /* unsigned: ldrb/ldrh/ldr w は自動で zero-extend する */
           case IR_TY_I8:  cg_emitf("  ldrb %s, [%s]\n", w_d, ptr); break;
@@ -1026,7 +1026,7 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
   if (inst->atomic_kind == IR_ATOMIC_LOAD) {
     cg_emitf("  ldar%s %s11, [x9]\n", wsfx, RL);
     /* 符号付き 1/2 バイトは sign-extend (ldar は zero-extend)。 */
-    if (!x64 && w < 4 && !inst->is_unsigned_load) {
+    if (!x64 && w < 4 && !inst->is_unsigned) {
       cg_emitf("  sxt%s w11, w11\n", wsfx);
     }
     atomic_store_result(ctx, inst->dst, RL);
@@ -1054,7 +1054,7 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
       default: op = "ldaddal"; break;
     }
     cg_emitf("  %s%s %s10, %s11, [x9]\n", op, wsfx, RL, RL);  /* old → reg11 */
-    if (!x64 && w < 4 && !inst->is_unsigned_load) {
+    if (!x64 && w < 4 && !inst->is_unsigned) {
       cg_emitf("  sxt%s w11, w11\n", wsfx);
     }
     atomic_store_result(ctx, inst->dst, RL);

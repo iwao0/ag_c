@@ -192,7 +192,8 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
  * 整数⇔浮動小数点は IR_I2F / IR_F2I、float⇔double は IR_F2F、
  * i32 → i64 等の整数幅変換は SEXT/ZEXT/TRUNC。
  * ポインタ型は他とは混ぜず、unsigned 拡張は呼び出し元の責任とする。 */
-static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target_ty) {
+static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target_ty,
+                                  int target_unsigned, int src_unsigned) {
   if (v.type == target_ty) return v;
   int v_is_fp = is_fp_type(v.type);
   int t_is_fp = is_fp_type(target_ty);
@@ -202,6 +203,7 @@ static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target
     ir_inst_t *inst = ir_inst_new(IR_I2F);
     inst->dst = ir_val_vreg(dst, target_ty);
     inst->src1 = v;
+    inst->is_unsigned = (unsigned char)src_unsigned;
     ir_func_append_inst(ctx->f, inst);
     return ir_val_vreg(dst, target_ty);
   }
@@ -211,6 +213,7 @@ static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target
     ir_inst_t *inst = ir_inst_new(IR_F2I);
     inst->dst = ir_val_vreg(dst, target_ty);
     inst->src1 = v;
+    inst->is_unsigned = (unsigned char)target_unsigned;
     ir_func_append_inst(ctx->f, inst);
     return ir_val_vreg(dst, target_ty);
   }
@@ -256,6 +259,10 @@ static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target
   /* fall-through: 同サイズなら tag だけ更新 (例: 内部表現の都合) */
   v.type = target_ty;
   return v;
+}
+
+static ir_val_t coerce_to_type(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t target_ty) {
+  return coerce_to_type_ex(ctx, v, target_ty, 0, 0);
 }
 
 /* 整数即値を LOAD_IMM で生成し vreg を返す。 */
@@ -443,6 +450,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
       int cv = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_I2F);
       inst->dst = ir_val_vreg(cv, fp_ty); inst->src1 = v;
+      inst->is_unsigned = (unsigned char)ps_node_is_unsigned(node);
       ir_func_append_inst(ctx->f, inst);
       v = ir_val_vreg(cv, fp_ty);
     } else if (v.type != fp_ty) {
@@ -740,7 +748,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
   ld->dst = ir_val_vreg(v, load_ty);
   ld->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
-  ld->is_unsigned_load = gv->mem.is_unsigned ? 1 : 0;
+  ld->is_unsigned = gv->mem.is_unsigned ? 1 : 0;
   ir_func_append_inst(ctx->f, ld);
   return ld->dst;
 }
@@ -792,7 +800,7 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *inst = ir_inst_new(IR_LOAD);
   inst->dst = ir_val_vreg(v, vty);
   inst->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-  inst->is_unsigned_load = lv->mem.is_unsigned ? 1 : 0;
+  inst->is_unsigned = lv->mem.is_unsigned ? 1 : 0;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -1167,7 +1175,8 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
                                 bw, lv->mem.bit_offset);
   }
   /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
-  rhs = coerce_to_type(ctx, rhs, vty);
+  rhs = coerce_to_type_ex(ctx, rhs, vty, lv->mem.is_unsigned ? 1 : 0,
+                          node->rhs ? ps_node_is_unsigned(node->rhs) : 0);
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
   st->src2 = rhs;
@@ -1194,7 +1203,8 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
   ir_val_t rhs = build_expr(ctx, node->rhs);
   if (ctx->failed) return ir_val_none();
-  rhs = coerce_to_type(ctx, rhs, vty);
+  rhs = coerce_to_type_ex(ctx, rhs, vty, gv->mem.is_unsigned ? 1 : 0,
+                          node->rhs ? ps_node_is_unsigned(node->rhs) : 0);
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
   st->src2 = rhs;
@@ -1226,7 +1236,8 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
     else if (mm->type_size == 2) vty = IR_TY_I16;
     else if (mm->type_size == 1) vty = IR_TY_I8;
   }
-  rhs = coerce_to_type(ctx, rhs, vty);
+  rhs = coerce_to_type_ex(ctx, rhs, vty, mm->is_unsigned ? 1 : 0,
+                          node->rhs ? ps_node_is_unsigned(node->rhs) : 0);
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ptr;
   st->src2 = rhs;
@@ -1303,7 +1314,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   }
   inst->dst = ir_val_vreg(v, load_ty);
   inst->src1 = ptr;
-  inst->is_unsigned_load = mm->is_unsigned ? 1 : 0;
+  inst->is_unsigned = mm->is_unsigned ? 1 : 0;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -1479,6 +1490,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *cv = ir_inst_new(IR_I2F);
       cv->dst = ir_val_vreg(v, fp_ty);
       cv->src1 = l;
+      cv->is_unsigned = (unsigned char)ps_node_is_unsigned(node->lhs);
       ir_func_append_inst(ctx->f, cv);
       l = ir_val_vreg(v, fp_ty);
     } else if (l.type != fp_ty) {
@@ -1494,6 +1506,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *cv = ir_inst_new(IR_I2F);
       cv->dst = ir_val_vreg(v, fp_ty);
       cv->src1 = r;
+      cv->is_unsigned = (unsigned char)ps_node_is_unsigned(node->rhs);
       ir_func_append_inst(ctx->f, cv);
       r = ir_val_vreg(v, fp_ty);
     } else if (r.type != fp_ty) {
@@ -1565,7 +1578,7 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
     a->atomic_kind = IR_ATOMIC_LOAD; a->atomic_width = (unsigned char)width;
-    a->is_unsigned_load = (unsigned char)unsigned_p;
+    a->is_unsigned = (unsigned char)unsigned_p;
     a->src1 = ptr; a->dst = ir_val_vreg(v, rty);
     ir_func_append_inst(ctx->f, a);
     return a->dst;
@@ -1604,7 +1617,7 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
     a->atomic_kind = IR_ATOMIC_RMW; a->atomic_rmw_op = (unsigned char)rmwop;
-    a->atomic_width = (unsigned char)width; a->is_unsigned_load = (unsigned char)unsigned_p;
+    a->atomic_width = (unsigned char)width; a->is_unsigned = (unsigned char)unsigned_p;
     a->src1 = ptr; a->src2 = val; a->dst = ir_val_vreg(v, rty);
     ir_func_append_inst(ctx->f, a);
     return a->dst;
@@ -1867,7 +1880,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
             ir_inst_t *ld = ir_inst_new(IR_LOAD);
             ld->dst = ir_val_vreg(chunk, IR_TY_I64);
             ld->src1 = ir_val_vreg(p, IR_TY_PTR);
-            ld->is_unsigned_load = 1;
+            ld->is_unsigned = 1;
             ir_func_append_inst(ctx->f, ld);
             cargs[argc++] = ir_val_vreg(chunk, IR_TY_I64);
           }
@@ -2103,6 +2116,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *cv = ir_inst_new(IR_I2F);
     cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
+    cv->is_unsigned = (unsigned char)ps_node_is_unsigned(node->rhs);
     ir_func_append_inst(ctx->f, cv);
     vt = ir_val_vreg(v, res_ty);
   } else if (is_fp_type(res_ty) && is_fp_type(vt.type) && vt.type != res_ty) {
@@ -2139,6 +2153,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *cv = ir_inst_new(IR_I2F);
     cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
+    cv->is_unsigned = (unsigned char)ps_node_is_unsigned(c->els);
     ir_func_append_inst(ctx->f, cv);
     ve = ir_val_vreg(v, res_ty);
   } else if (is_fp_type(res_ty) && is_fp_type(ve.type) && ve.type != res_ty) {
@@ -2178,6 +2193,7 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *inst = ir_inst_new(IR_F2I);
   inst->dst = ir_val_vreg(dst, ps_node_type_size(node) == 8 ? IR_TY_I64 : IR_TY_I32);
   inst->src1 = v;
+  inst->is_unsigned = (unsigned char)ps_node_is_unsigned(node);
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -2247,7 +2263,7 @@ static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   ir_type_t target = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-  return coerce_to_type(ctx, v, target);
+  return coerce_to_type_ex(ctx, v, target, 0, ps_node_is_unsigned(node->lhs));
 }
 
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
