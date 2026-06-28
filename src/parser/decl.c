@@ -3371,9 +3371,9 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
   return 1;
 }
 
-/* `static struct S a[N] = {...};` / `static union U a[N] = {...};` を
+/* `static struct S a[N] = {...};` / `static union U a[] = {...};` を
  * static local scalar/array と同じ mangled global に lowering する。
- * file-scope named tag に限定し、1D の固定長配列だけ扱う。 */
+ * file-scope named tag に限定し、1D 配列だけ扱う。 */
 static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind_t tag_kind,
                                                   char *tag_name, int tag_len) {
   int elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
@@ -3381,25 +3381,41 @@ static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind
   if (tag_name && tag_len >= 11 && memcmp(tag_name, "__anon_tag_", 11) == 0) return 0;
   token_t *p = curtok();
   if (!p || p->kind != TK_LBRACKET) return 0;
-  token_t *num = p->next;
-  if (!num || num->kind != TK_NUM || ((token_num_t *)num)->num_kind != TK_NUM_KIND_INT) return 0;
-  long long arr_count = ((token_num_int_t *)num)->val;
-  if (arr_count <= 0) return 0;
-  token_t *rb = num->next;
+  token_t *after_lb = p->next;
+  if (!after_lb) return 0;
+  int has_size_token = 0;
+  long long arr_count = 0;
+  token_t *rb = NULL;
+  if (after_lb->kind == TK_RBRACKET) {
+    rb = after_lb;
+  } else if (after_lb->kind == TK_NUM &&
+             ((token_num_t *)after_lb)->num_kind == TK_NUM_KIND_INT) {
+    has_size_token = 1;
+    arr_count = ((token_num_int_t *)after_lb)->val;
+    if (arr_count <= 0) return 0;
+    rb = after_lb->next;
+  } else {
+    return 0;
+  }
   if (!rb || rb->kind != TK_RBRACKET || !rb->next) return 0;
   if (rb->next->kind == TK_LBRACKET) return 0;
   int has_init = 0;
   if (rb->next->kind == TK_ASSIGN) {
     if (!rb->next->next || rb->next->next->kind != TK_LBRACE) return 0;
     has_init = 1;
+    if (!has_size_token) {
+      arr_count = psx_decl_count_brace_init_elements(rb->next->next);
+      if (arr_count <= 0) return 0;
+    }
   } else if (rb->next->kind == TK_COMMA || rb->next->kind == TK_SEMI) {
+    if (!has_size_token) return 0;
     has_init = 0;
   } else {
     return 0;
   }
 
   tk_expect('[');
-  set_curtok(curtok()->next);
+  if (has_size_token) set_curtok(curtok()->next);
   tk_expect(']');
 
   global_var_t *gv = calloc(1, sizeof(global_var_t));
@@ -3962,7 +3978,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         continue;
       }
     }
-    /* `static struct S a[N] = {...};` / `static union U a[N] = {...};` の 1D aggregate
+    /* `static struct S a[N] = {...};` / `static union U a[] = {...};` の 1D aggregate
      * static local をグローバル化する。 */
     if (decl_is_static && (tag_kind == TK_STRUCT || tag_kind == TK_UNION) &&
         !is_pointer && inner_array_mul == 0 && paren_array_mul == 0 &&
