@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き124: Wasm static enum global data + E2E 1006）
+最終更新: 2026-06-29（続き125: Add Wasm static tag return fixture + E2E 1007）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1006/1006 green**、`./build/test_e2e` = **1125/1125 green**。
+  `./build/test_wasm32_e2e` = **1007/1007 green**、`./build/test_e2e` = **1125/1125 green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -182,6 +182,10 @@
   data segment を出さずゼロ初期化のままになっていた。aggregate data emission は struct/union のみに
   限定し、enum は通常の 4B scalar initializer として出す。`static_tag_global.c` を Wasm E2E に追加し、
   静的 531 件 + extra 475 件の **1006 件**。
+- 続き125: **Wasm static tag return fixture 追加**。
+  続き124 の enum global data 修正により `static_tag_return_function.c` も Wasm 実行値まで green。
+  `static struct/union/enum *f()` と static tag value return、static struct array return を含むため
+  Wasm E2E に追加。静的 531 件 + extra 476 件の **1007 件**。
 
 ### Wasm backend の既知メモ
 
@@ -189,9 +193,9 @@
 - Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1006 件を通常 `make test` に組み込み済み。
+  1007 件を通常 `make test` に組み込み済み。
 - 残る Wasm E2E 未収録は主に外部 libc/import、VLA/TLS/stdarg/complex/wide string、
-  一部の実行結果差分など。前回 failed 118 件のうち続き120-124で 28 件を回収し、90 件は未収録。
+  一部の実行結果差分など。前回 failed 118 件のうち続き120-125で 29 件を回収し、89 件は未収録。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
   initialized な大きい object は既存の aggregate/array 初期化経路に従う。
 
