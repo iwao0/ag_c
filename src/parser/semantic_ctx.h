@@ -102,6 +102,7 @@ typedef struct {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
 } tag_member_info_t;
 
@@ -162,6 +163,7 @@ typedef struct {
   unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
   unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅 (1=4B, 2=8B; 2bit * 最大8)
   int funcptr_ret_pointee_array_first_dim; // 関数ポインタ戻り値が `T (*)[N]` のときの N
+  int funcptr_ret_pointee_array_second_dim; // `T (*)[N][M]` の M (0=単一次元/未知)
   int funcptr_ret_pointee_array_elem_size; // 上記 pointer-to-array の要素サイズ
 } psx_typedef_info_t;
 

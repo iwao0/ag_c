@@ -142,6 +142,7 @@ struct node_mem_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
   int pointer_qual_levels;
   // 多次元配列サポート用

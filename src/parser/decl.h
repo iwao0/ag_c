@@ -51,6 +51,7 @@ struct lvar_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
   // 1: 指す関数の戻り値が関数ポインタ (`int (*(*p)(int))(int,int)` の `p`)。
   //    `(*p)(...)` の結果を呼ぶとき余分な deref をしないために使う。

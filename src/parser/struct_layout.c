@@ -115,6 +115,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     unsigned short member_typedef_funcptr_param_fp_mask = 0;
     unsigned short member_typedef_funcptr_param_int_mask = 0;
     int member_typedef_funcptr_ret_pointee_array_first_dim = 0;
+    int member_typedef_funcptr_ret_pointee_array_second_dim = 0;
     int member_typedef_funcptr_ret_pointee_array_elem_size = 0;
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
@@ -206,6 +207,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (_ti.is_pointer && _ti.funcptr_ret_pointee_array_first_dim) {
           member_typedef_funcptr_ret_pointee_array_first_dim =
               _ti.funcptr_ret_pointee_array_first_dim;
+          member_typedef_funcptr_ret_pointee_array_second_dim =
+              _ti.funcptr_ret_pointee_array_second_dim;
           member_typedef_funcptr_ret_pointee_array_elem_size =
               _ti.funcptr_ret_pointee_array_elem_size;
         }
@@ -351,6 +354,23 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int pointee_arr_dim_count = 0;
       int pointee_arr_first_dim = 0;
       int ptr_array_pointee_bytes = 0;
+      int direct_funcptr_ret_pointee_array_first_dim = 0;
+      int direct_funcptr_ret_pointee_array_second_dim = 0;
+      int direct_funcptr_ret_pointee_array_elem_size = 0;
+      if (head.is_ptr && head.has_func_suffix && arr_size > 1 && !is_flex_array) {
+        /* 関数ポインタメンバが配列へのポインタを返す直書き宣言子:
+         * `int (*(*f)(void))[N]` / `int (*(*f)(void))[N][M]`。
+         * trailing `[N][M]` はメンバ自身の配列ではなく、戻り値ポインタの pointee 配列次元。
+         * メンバは 8B の関数ポインタ 1 個として layout し、次元は呼び出し側 subscript 用に保存する。 */
+        direct_funcptr_ret_pointee_array_first_dim = arr_first_dim;
+        direct_funcptr_ret_pointee_array_second_dim =
+            (arr_dim_count >= 2) ? arr_dims_buf[1] : 0;
+        direct_funcptr_ret_pointee_array_elem_size = elem_size;
+        arr_size = 1;
+        arr_dim_count = 0;
+        arr_first_dim = 0;
+        for (int i = 0; i < 8; i++) arr_dims_buf[i] = 0;
+      }
       if (head.ptr_in_paren && head.is_ptr && arr_size > 1 && !is_flex_array
           && !head.has_func_suffix) {
         if (head.paren_array_mul == 1) {
@@ -461,8 +481,17 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           if (member_typedef_funcptr_ret_pointee_array_first_dim > 0) {
             _mi.funcptr_ret_pointee_array_first_dim =
                 (short)member_typedef_funcptr_ret_pointee_array_first_dim;
+            _mi.funcptr_ret_pointee_array_second_dim =
+                (short)member_typedef_funcptr_ret_pointee_array_second_dim;
             _mi.funcptr_ret_pointee_array_elem_size =
                 (short)member_typedef_funcptr_ret_pointee_array_elem_size;
+          } else if (direct_funcptr_ret_pointee_array_first_dim > 0) {
+            _mi.funcptr_ret_pointee_array_first_dim =
+                (short)direct_funcptr_ret_pointee_array_first_dim;
+            _mi.funcptr_ret_pointee_array_second_dim =
+                (short)direct_funcptr_ret_pointee_array_second_dim;
+            _mi.funcptr_ret_pointee_array_elem_size =
+                (short)direct_funcptr_ret_pointee_array_elem_size;
           }
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);

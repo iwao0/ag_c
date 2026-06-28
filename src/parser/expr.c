@@ -1147,6 +1147,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
   deref->funcptr_ret_pointee_array_first_dim =
       mem_info->funcptr_ret_pointee_array_first_dim;
+  deref->funcptr_ret_pointee_array_second_dim =
+      mem_info->funcptr_ret_pointee_array_second_dim;
   deref->funcptr_ret_pointee_array_elem_size =
       mem_info->funcptr_ret_pointee_array_elem_size;
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
@@ -3491,10 +3493,13 @@ static node_t *build_unary_deref_node(node_t *operand) {
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
           node_mem_t *cm = (node_mem_t *)fn->callee;
           int fd = cm->funcptr_ret_pointee_array_first_dim;
+          int sd = cm->funcptr_ret_pointee_array_second_dim;
           int elem = cm->funcptr_ret_pointee_array_elem_size;
           int rowstride = ps_node_deref_size(probe);
           if (fd > 0 && elem > 0) {
-            node->deref_size = (short)elem;
+            int inner = (sd > 0) ? sd * elem : elem;
+            node->deref_size = (short)inner;
+            if (sd > 0) node->inner_deref_size = (short)elem;
           } else if (fd > 0 && rowstride > 0) {
             node->deref_size = (short)(rowstride / fd);
           }
@@ -3835,9 +3840,11 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
                               fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
       node_mem_t *cm = (node_mem_t *)fn->callee;
       int fd = cm->funcptr_ret_pointee_array_first_dim;
+      int sd = cm->funcptr_ret_pointee_array_second_dim;
       int elem = cm->funcptr_ret_pointee_array_elem_size;
       if (fd > 0 && elem > 0) {
-        inner_ds = elem;
+        inner_ds = (sd > 0) ? sd * elem : elem;
+        if (sd > 0) next_ds = elem;
       } else if (fd > 0 && ds > 0) {
         inner_ds = ds / fd;
       }
@@ -4142,6 +4149,8 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (base_mem->funcptr_ret_pointee_array_first_dim) {
         deref->funcptr_ret_pointee_array_first_dim =
             base_mem->funcptr_ret_pointee_array_first_dim;
+        deref->funcptr_ret_pointee_array_second_dim =
+            base_mem->funcptr_ret_pointee_array_second_dim;
         deref->funcptr_ret_pointee_array_elem_size =
             base_mem->funcptr_ret_pointee_array_elem_size;
       }
@@ -4809,6 +4818,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->funcptr_param_int_mask = gv->funcptr_param_int_mask;
       addr->funcptr_ret_pointee_array_first_dim =
           gv->funcptr_ret_pointee_array_first_dim;
+      addr->funcptr_ret_pointee_array_second_dim =
+          gv->funcptr_ret_pointee_array_second_dim;
       addr->funcptr_ret_pointee_array_elem_size =
           gv->funcptr_ret_pointee_array_elem_size;
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
@@ -4909,6 +4920,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
     gvar_node->mem.funcptr_ret_pointee_array_first_dim =
         gv->funcptr_ret_pointee_array_first_dim;
+    gvar_node->mem.funcptr_ret_pointee_array_second_dim =
+        gv->funcptr_ret_pointee_array_second_dim;
     gvar_node->mem.funcptr_ret_pointee_array_elem_size =
         gv->funcptr_ret_pointee_array_elem_size;
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
@@ -4991,6 +5004,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->funcptr_param_fp_mask = var->funcptr_param_fp_mask;
   node->funcptr_param_int_mask = var->funcptr_param_int_mask;
   node->funcptr_ret_pointee_array_first_dim = var->funcptr_ret_pointee_array_first_dim;
+  node->funcptr_ret_pointee_array_second_dim = var->funcptr_ret_pointee_array_second_dim;
   node->funcptr_ret_pointee_array_elem_size = var->funcptr_ret_pointee_array_elem_size;
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
@@ -5145,6 +5159,8 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
   as_lvar(n)->mem.funcptr_ret_pointee_array_first_dim =
       var->funcptr_ret_pointee_array_first_dim;
+  as_lvar(n)->mem.funcptr_ret_pointee_array_second_dim =
+      var->funcptr_ret_pointee_array_second_dim;
   as_lvar(n)->mem.funcptr_ret_pointee_array_elem_size =
       var->funcptr_ret_pointee_array_elem_size;
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;

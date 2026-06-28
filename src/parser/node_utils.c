@@ -177,8 +177,9 @@ int ps_node_deref_size(node_t *node) {
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
           node_mem_t *cm = (node_mem_t *)fn->callee;
           fd = cm->funcptr_ret_pointee_array_first_dim;
+          int sd = cm->funcptr_ret_pointee_array_second_dim;
           int elem = cm->funcptr_ret_pointee_array_elem_size;
-          if (fd > 0 && elem > 0) return fd * elem;
+          if (fd > 0 && elem > 0) return fd * (sd > 0 ? sd : 1) * elem;
         }
         if (fd > 0) {
           int elem = ps_node_deref_size(fn->callee);

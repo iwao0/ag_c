@@ -76,6 +76,7 @@ struct global_var_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
   short funcptr_nargs_fixed;  // 可変長関数ポインタの固定引数数 (`...` の前)
   short type_size;    // sizeof（ロード/ストアサイズ）

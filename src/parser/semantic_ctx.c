@@ -70,6 +70,7 @@ struct tag_member_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   short funcptr_ret_pointee_array_first_dim;
+  short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
   int decl_order;
   int scope_depth;
@@ -120,6 +121,7 @@ struct typedef_name_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   int funcptr_ret_pointee_array_first_dim;
+  int funcptr_ret_pointee_array_second_dim;
   int funcptr_ret_pointee_array_elem_size;
   int scope_depth;
 };
@@ -493,6 +495,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
       m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
       m->funcptr_ret_pointee_array_first_dim = desc->funcptr_ret_pointee_array_first_dim;
+      m->funcptr_ret_pointee_array_second_dim = desc->funcptr_ret_pointee_array_second_dim;
       m->funcptr_ret_pointee_array_elem_size = desc->funcptr_ret_pointee_array_elem_size;
       return;
     }
@@ -517,6 +520,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
   m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
   m->funcptr_ret_pointee_array_first_dim = desc->funcptr_ret_pointee_array_first_dim;
+  m->funcptr_ret_pointee_array_second_dim = desc->funcptr_ret_pointee_array_second_dim;
   m->funcptr_ret_pointee_array_elem_size = desc->funcptr_ret_pointee_array_elem_size;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
@@ -702,6 +706,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
   out->funcptr_param_int_mask = m->funcptr_param_int_mask;
   out->funcptr_ret_pointee_array_first_dim = m->funcptr_ret_pointee_array_first_dim;
+  out->funcptr_ret_pointee_array_second_dim = m->funcptr_ret_pointee_array_second_dim;
   out->funcptr_ret_pointee_array_elem_size = m->funcptr_ret_pointee_array_elem_size;
 }
 
@@ -904,6 +909,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
   t->funcptr_ret_pointee_array_first_dim = info->funcptr_ret_pointee_array_first_dim;
+  t->funcptr_ret_pointee_array_second_dim = info->funcptr_ret_pointee_array_second_dim;
   t->funcptr_ret_pointee_array_elem_size = info->funcptr_ret_pointee_array_elem_size;
 }
 
@@ -935,6 +941,8 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
                 existing->funcptr_ret_pointee_array_first_dim ==
                     info->funcptr_ret_pointee_array_first_dim &&
+                existing->funcptr_ret_pointee_array_second_dim ==
+                    info->funcptr_ret_pointee_array_second_dim &&
                 existing->funcptr_ret_pointee_array_elem_size ==
                     info->funcptr_ret_pointee_array_elem_size);
     if (same) {
@@ -1007,6 +1015,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
     out->funcptr_param_int_mask = t->funcptr_param_int_mask;
     out->funcptr_ret_pointee_array_first_dim = t->funcptr_ret_pointee_array_first_dim;
+    out->funcptr_ret_pointee_array_second_dim = t->funcptr_ret_pointee_array_second_dim;
     out->funcptr_ret_pointee_array_elem_size = t->funcptr_ret_pointee_array_elem_size;
   }
   return true;

@@ -149,6 +149,7 @@ typedef struct {
   unsigned short td_funcptr_param_fp_mask;
   unsigned short td_funcptr_param_int_mask;
   int td_funcptr_ret_pointee_array_first_dim;
+  int td_funcptr_ret_pointee_array_second_dim;
   int td_funcptr_ret_pointee_array_elem_size;
 } local_decl_spec_t;
 typedef struct {
@@ -479,6 +480,7 @@ static int parse_decl_constexpr_array_suffix_product_n(int *out_dims, int max_di
  * 先頭次元 (N) と次元数を捕捉する。outer_stride に加え mid_stride を計算するのに使う。
  * consume_decl_name_recursive が paren-array を消費するときにセットする。 */
 static int g_paren_array_first_dim = 0;
+static int g_paren_array_second_dim = 0;
 static int g_paren_array_dim_count = 0;
 /* 関数ポインタ配列 `int (*t[2][2])(void)` の括弧内 `[N][M]` 個別次元。inner_array_mul は
  * 積しか持たないため、2 次元以上の funcptr 配列でストライドを立てられるよう dims を保持する。
@@ -513,6 +515,7 @@ static int g_decl_base_pointer_levels = 0;
 static unsigned short g_decl_base_funcptr_param_fp_mask = 0;
 static unsigned short g_decl_base_funcptr_param_int_mask = 0;
 static int g_decl_base_funcptr_ret_pointee_array_first_dim = 0;
+static int g_decl_base_funcptr_ret_pointee_array_second_dim = 0;
 static int g_decl_base_funcptr_ret_pointee_array_elem_size = 0;
 
 /* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
@@ -2712,6 +2715,7 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
     decl_array_suffix_t pa = parse_decl_array_suffixes_ex(1, &g_paren_array_vla_dim);
     *out_paren_array_mul = pa.arr_total > 0 ? pa.arr_total : 1;
     g_paren_array_first_dim = pa.first_dim;
+    g_paren_array_second_dim = (pa.dim_count >= 2) ? pa.dims[1] : 0;
     g_paren_array_dim_count = pa.dim_count;
   }
   if (had_parens) *had_parens = local_had_parens;
@@ -3701,11 +3705,14 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   unsigned short base_funcptr_param_int_mask = g_decl_base_funcptr_param_int_mask;
   int base_funcptr_ret_pointee_array_first_dim =
       g_decl_base_funcptr_ret_pointee_array_first_dim;
+  int base_funcptr_ret_pointee_array_second_dim =
+      g_decl_base_funcptr_ret_pointee_array_second_dim;
   int base_funcptr_ret_pointee_array_elem_size =
       g_decl_base_funcptr_ret_pointee_array_elem_size;
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
   g_decl_base_funcptr_ret_pointee_array_first_dim = 0;
+  g_decl_base_funcptr_ret_pointee_array_second_dim = 0;
   g_decl_base_funcptr_ret_pointee_array_elem_size = 0;
   /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
    * (declarator ループ後にもう一度宣言文があれば、その spec で立て直す)。
@@ -3765,6 +3772,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     int paren_array_mul = 0;
     int inner_array_mul = 0;
     g_paren_array_first_dim = 0;
+    g_paren_array_second_dim = 0;
     g_paren_array_dim_count = 0;
     g_paren_array_vla_dim = NULL;
     g_inner_array_dim_count = 0;
@@ -4149,10 +4157,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                        : base_funcptr_param_int_mask;
       if (g_decl_trailing_func_suffix && paren_array_mul > 0 && g_paren_array_first_dim > 0) {
         var->funcptr_ret_pointee_array_first_dim = (short)g_paren_array_first_dim;
+        var->funcptr_ret_pointee_array_second_dim = (short)g_paren_array_second_dim;
         var->funcptr_ret_pointee_array_elem_size = (short)elem_size;
       } else if (base_funcptr_ret_pointee_array_first_dim > 0) {
         var->funcptr_ret_pointee_array_first_dim =
             (short)base_funcptr_ret_pointee_array_first_dim;
+        var->funcptr_ret_pointee_array_second_dim =
+            (short)base_funcptr_ret_pointee_array_second_dim;
         var->funcptr_ret_pointee_array_elem_size =
             (short)base_funcptr_ret_pointee_array_elem_size;
       }
@@ -4281,11 +4292,14 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
       out->td_funcptr_ret_pointee_array_first_dim = _ti.funcptr_ret_pointee_array_first_dim;
+      out->td_funcptr_ret_pointee_array_second_dim = _ti.funcptr_ret_pointee_array_second_dim;
       out->td_funcptr_ret_pointee_array_elem_size = _ti.funcptr_ret_pointee_array_elem_size;
       g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       g_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
       g_decl_base_funcptr_ret_pointee_array_first_dim =
           _ti.funcptr_ret_pointee_array_first_dim;
+      g_decl_base_funcptr_ret_pointee_array_second_dim =
+          _ti.funcptr_ret_pointee_array_second_dim;
       g_decl_base_funcptr_ret_pointee_array_elem_size =
           _ti.funcptr_ret_pointee_array_elem_size;
     }
@@ -4303,6 +4317,7 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
   g_decl_base_funcptr_ret_pointee_array_first_dim = 0;
+  g_decl_base_funcptr_ret_pointee_array_second_dim = 0;
   g_decl_base_funcptr_ret_pointee_array_elem_size = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
@@ -4321,6 +4336,7 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
     int ptr_levels = 0;
     int paren_array_dim = 0;
     g_paren_array_first_dim = 0;
+    g_paren_array_second_dim = 0;
     g_paren_array_dim_count = 0;
     g_paren_array_vla_dim = NULL;
     g_decl_trailing_func_suffix = 0;
@@ -4482,6 +4498,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   if (is_ptr && g_decl_trailing_func_suffix && paren_array_mul > 0 &&
       g_paren_array_first_dim > 0) {
     _ti.funcptr_ret_pointee_array_first_dim = g_paren_array_first_dim;
+    _ti.funcptr_ret_pointee_array_second_dim = g_paren_array_second_dim;
     _ti.funcptr_ret_pointee_array_elem_size = elem_size;
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
