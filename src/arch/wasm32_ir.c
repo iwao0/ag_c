@@ -797,7 +797,7 @@ static int uses_ptr_value(wasm_func_ctx_t *ctx, ir_inst_t *i) {
 static int i64_runtime_extension_unsupported(wasm_func_ctx_t *ctx, ir_val_t v) {
   ir_type_t src = effective_val_type(ctx, v);
   if (src == IR_TY_I64) return 0;
-  if (v.id >= 0 && src == IR_TY_I32) return 0;
+  if (v.id >= 0 && (src == IR_TY_I8 || src == IR_TY_I16 || src == IR_TY_I32)) return 0;
   if (v.id == IR_VAL_IMM && v.imm >= INT32_MIN && v.imm <= INT32_MAX) return 0;
   return 1;
 }
@@ -1091,12 +1091,13 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_ULT: case IR_ULE: {
       int is_cmp = (i->op == IR_EQ || i->op == IR_NE || i->op == IR_LT || i->op == IR_LE ||
                     i->op == IR_ULT || i->op == IR_ULE);
-      ir_type_t op_ty = is_cmp ? effective_val_type(ctx, i->src1) : effective_val_type(ctx, i->dst);
+      ir_type_t src1_ty = effective_val_type(ctx, i->src1);
+      ir_type_t src2_ty = effective_val_type(ctx, i->src2);
+      ir_type_t op_ty = is_cmp ? ((src1_ty == IR_TY_I64 || src2_ty == IR_TY_I64) ? IR_TY_I64 : src1_ty)
+                               : effective_val_type(ctx, i->dst);
       if (uses_ptr_value(ctx, i)) op_ty = IR_TY_I32;
       const char *op = wasm_binop(i->op, op_ty);
       if (!op) wasm_unsupported_op(i->op);
-      ir_type_t src1_ty = effective_val_type(ctx, i->src1);
-      ir_type_t src2_ty = effective_val_type(ctx, i->src2);
       if (op_ty == IR_TY_I64 &&
           src1_ty != IR_TY_PTR && src2_ty != IR_TY_PTR &&
           (i64_runtime_extension_unsupported(ctx, i->src1) ||

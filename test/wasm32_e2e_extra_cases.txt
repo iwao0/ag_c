@@ -214,6 +214,7 @@ probes_found_bugs/macro_paste_empty_operand.c
 probes_found_bugs/many_double_params.c
 probes_found_bugs/many_int_params.c
 probes_found_bugs/mixed_decl_func_proto_and_var.c
+probes_found_bugs/mixed_width_comparison.c
 probes_found_bugs/mod_wide_signed_by_unsigned.c
 probes_found_bugs/multidim_array_explicit_deref.c
 probes_found_bugs/multidim_char_member_brace_elision.c
