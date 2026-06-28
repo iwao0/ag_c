@@ -3300,12 +3300,21 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   return name;
 }
 
+static lvar_t *register_param_stride_slot(token_ident_t *param, int byte_size) {
+  char name_buf[64];
+  int name_len = snprintf(name_buf, sizeof(name_buf), "__rs_%.*s", param->len, param->str);
+  char *name = arena_alloc((size_t)name_len + 1);
+  memcpy(name, name_buf, (size_t)name_len);
+  name[name_len] = '\0';
+  return psx_decl_register_lvar_sized(name, name_len, byte_size, 8, 0);
+}
+
 /* 仮引数 VLA / 多次元配列宣言子の lvar 登録 (`int a[n]` / `int a[][N]` /
  * `int a[][N][M]` / VLA dim that's another param 等)。
  * C11 6.7.6.3p7 により int *a として扱われるが、pointee が配列の場合は
  * outer_stride / mid_stride 等を立てて `a[i]` の steping を pointee 全体に揃える。 */
 static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t *ds,
-                                         int inner_first_dim, int inner_second_dim,
+                                         int inner_first_dim,
                                          token_ident_t *inner_first_dim_ident) {
   // size=8 (pointer), elem_size=実際の要素サイズ
   lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
@@ -3352,13 +3361,7 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
     int n_inner = g_param_inner_dim_count;
     /* stride スロット (__rs_<param>) を 8*n_inner バイト確保。先頭 8 バイトが level 0 (vla_row)、
      * 次が level 1、...、最後が level n_inner-1。subscript chain は vla_row を +=8 シフト。 */
-    static char rs_name_buf2[64];
-    int rs_len = snprintf(rs_name_buf2, sizeof(rs_name_buf2),
-                          "__rs_%.*s", param->len, param->str);
-    char *rs_name2 = arena_alloc((size_t)rs_len + 1);
-    memcpy(rs_name2, rs_name_buf2, (size_t)rs_len);
-    rs_name2[rs_len] = '\0';
-    lvar_t *rs = psx_decl_register_lvar_sized(rs_name2, rs_len, 8 * n_inner, 8, 0);
+    lvar_t *rs = register_param_stride_slot(param, 8 * n_inner);
     var->is_vla = 1;
     var->vla_row_stride_frame_off = rs->offset;
     var->vla_strides_remaining = n_inner - 1;
@@ -3405,13 +3408,7 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
   }
   /* row stride スロットを匿名で確保。名前は param 名 + "__rs" で
    * 衝突しないようにする (実体は VLA param 内部用)。 */
-  static char rs_name_buf[64];
-  int rs_name_len = snprintf(rs_name_buf, sizeof(rs_name_buf),
-                              "__rs_%.*s", param->len, param->str);
-  char *rs_name = arena_alloc((size_t)rs_name_len + 1);
-  memcpy(rs_name, rs_name_buf, (size_t)rs_name_len);
-  rs_name[rs_name_len] = '\0';
-  lvar_t *rs = psx_decl_register_lvar_sized(rs_name, rs_name_len, 8, 8, 0);
+  lvar_t *rs = register_param_stride_slot(param, 8);
   var->is_vla = 1;
   var->vla_row_stride_frame_off = rs->offset;
   var->vla_row_stride_src_offset = src->offset;
@@ -3483,7 +3480,6 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     /* 仮引数 VLA / 多次元配列宣言子 (`int a[n]` / `int a[][N]` 等)。
      * C11 6.7.6.3p7 により pointer (or pointer-to-array) に adjust される。 */
     return register_vla_array_param(param, ds, param_inner_first_dim,
-                                     param_inner_second_dim,
                                      param_inner_first_dim_ident);
   }
   if (param_is_array_declarator && ds->tag_kind != TK_EOF && !param_is_ptr) {
@@ -3588,12 +3584,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
                      "VLA パラメータの dim '%.*s' は同関数の先行パラメータでなければなりません",
                      param_inner_first_dim_ident->len, param_inner_first_dim_ident->str);
       } else {
-        static char rs_buf[64];
-        int rs_len = snprintf(rs_buf, sizeof(rs_buf), "__rs_%.*s", param->len, param->str);
-        char *rs_name = arena_alloc((size_t)rs_len + 1);
-        memcpy(rs_name, rs_buf, (size_t)rs_len);
-        rs_name[rs_len] = '\0';
-        lvar_t *rs = psx_decl_register_lvar_sized(rs_name, rs_len, 8, 8, 0);
+        lvar_t *rs = register_param_stride_slot(param, 8);
         var->is_vla = 1;
         var->vla_row_stride_frame_off = rs->offset;
         var->vla_row_stride_src_offset = src->offset;
