@@ -19,6 +19,38 @@ typedef struct {
       (src)->funcptr_ret_pointee_array_elem_size;                               \
 } while (0)
 
+#define PSX_RET_POINTEE_ARRAY_FROM_FIELDS(src)                                 \
+  psx_ret_pointee_array_make((src)->funcptr_ret_pointee_array_first_dim,        \
+                             (src)->funcptr_ret_pointee_array_second_dim,       \
+                             (src)->funcptr_ret_pointee_array_elem_size)
+
+#define PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(src)                              \
+  ((src)->funcptr_ret_pointee_array_first_dim > 0)
+
+#define PSX_RET_POINTEE_ARRAY_FIELDS_EQUAL(a, b)                               \
+  ((a)->funcptr_ret_pointee_array_first_dim ==                                  \
+       (b)->funcptr_ret_pointee_array_first_dim &&                              \
+   (a)->funcptr_ret_pointee_array_second_dim ==                                 \
+       (b)->funcptr_ret_pointee_array_second_dim &&                             \
+   (a)->funcptr_ret_pointee_array_elem_size ==                                  \
+       (b)->funcptr_ret_pointee_array_elem_size)
+
+#define PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(dst, array_desc) do { \
+  psx_ret_pointee_array_store_shorts_if_present(                                \
+      (array_desc),                                                             \
+      &(dst)->funcptr_ret_pointee_array_first_dim,                              \
+      &(dst)->funcptr_ret_pointee_array_second_dim,                             \
+      &(dst)->funcptr_ret_pointee_array_elem_size);                             \
+} while (0)
+
+#define PSX_RET_POINTEE_ARRAY_STORE_INT_FIELDS_IF_PRESENT(dst, array_desc) do { \
+  psx_ret_pointee_array_store_ints_if_present(                                  \
+      (array_desc),                                                             \
+      &(dst)->funcptr_ret_pointee_array_first_dim,                              \
+      &(dst)->funcptr_ret_pointee_array_second_dim,                             \
+      &(dst)->funcptr_ret_pointee_array_elem_size);                             \
+} while (0)
+
 static inline psx_ret_pointee_array_t psx_ret_pointee_array_make(int first_dim,
                                                                   int second_dim,
                                                                   int elem_size) {

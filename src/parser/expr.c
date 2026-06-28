@@ -3495,10 +3495,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
         if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
           node_mem_t *cm = (node_mem_t *)fn->callee;
-          psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-              cm->funcptr_ret_pointee_array_first_dim,
-              cm->funcptr_ret_pointee_array_second_dim,
-              cm->funcptr_ret_pointee_array_elem_size);
+          psx_ret_pointee_array_t dims = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
           int rowstride = ps_node_deref_size(probe);
           int inner = psx_ret_pointee_array_inner_stride(dims);
           int next = psx_ret_pointee_array_next_stride(dims);
@@ -3844,10 +3841,7 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     } else if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
                               fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
       node_mem_t *cm = (node_mem_t *)fn->callee;
-      psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-          cm->funcptr_ret_pointee_array_first_dim,
-          cm->funcptr_ret_pointee_array_second_dim,
-          cm->funcptr_ret_pointee_array_elem_size);
+      psx_ret_pointee_array_t dims = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
       inner_ds = psx_ret_pointee_array_inner_stride(dims);
       next_ds = psx_ret_pointee_array_next_stride(dims);
       if (inner_ds <= 0) {
@@ -4151,7 +4145,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (base_mem->funcptr_param_int_mask) {
         deref->funcptr_param_int_mask = base_mem->funcptr_param_int_mask;
       }
-      if (base_mem->funcptr_ret_pointee_array_first_dim) {
+      if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(base_mem)) {
         PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
       }
       if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
@@ -4345,7 +4339,7 @@ static node_t *parse_call_postfix(node_t *callee) {
                       callee->kind == ND_DEREF || callee->kind == ND_ADDR)
                          ? (node_mem_t *)callee : NULL;
     if (ret_fp != TK_FLOAT_KIND_NONE &&
-        !(cm && cm->funcptr_ret_pointee_array_first_dim > 0)) {
+        !(cm && PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(cm))) {
       node->base.fp_kind = ret_fp;
     }
     /* 間接呼び出しで戻り型が struct/union 値 (`struct R (*op)(int)`) なら ret_struct_size を

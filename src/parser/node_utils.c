@@ -177,11 +177,9 @@ int ps_node_deref_size(node_t *node) {
         if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
             fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
           node_mem_t *cm = (node_mem_t *)fn->callee;
-          fd = cm->funcptr_ret_pointee_array_first_dim;
-          int row = psx_ret_pointee_array_row_stride(psx_ret_pointee_array_make(
-              fd,
-              cm->funcptr_ret_pointee_array_second_dim,
-              cm->funcptr_ret_pointee_array_elem_size));
+          psx_ret_pointee_array_t dims = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
+          fd = dims.first_dim;
+          int row = psx_ret_pointee_array_row_stride(dims);
           if (row > 0) return row;
         }
         if (fd > 0) {
@@ -246,7 +244,7 @@ int ps_node_is_pointer(node_t *node) {
       }
       if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
                          fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
-        return ((node_mem_t *)fn->callee)->funcptr_ret_pointee_array_first_dim > 0;
+        return PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT((node_mem_t *)fn->callee);
       }
       return 0;
     }
@@ -365,7 +363,7 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
           (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
            fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
         node_mem_t *cm = (node_mem_t *)fn->callee;
-        if (cm->funcptr_ret_pointee_array_first_dim > 0) {
+        if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(cm)) {
           return (tk_float_kind_t)cm->pointee_fp_kind;
         }
       }

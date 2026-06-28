@@ -903,13 +903,8 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
-  psx_ret_pointee_array_store_ints(
-      psx_ret_pointee_array_make(info->funcptr_ret_pointee_array_first_dim,
-                                 info->funcptr_ret_pointee_array_second_dim,
-                                 info->funcptr_ret_pointee_array_elem_size),
-      &t->funcptr_ret_pointee_array_first_dim,
-      &t->funcptr_ret_pointee_array_second_dim,
-      &t->funcptr_ret_pointee_array_elem_size);
+  PSX_RET_POINTEE_ARRAY_STORE_INT_FIELDS_IF_PRESENT(
+      t, PSX_RET_POINTEE_ARRAY_FROM_FIELDS(info));
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -938,12 +933,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
                 existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
                 existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
-                existing->funcptr_ret_pointee_array_first_dim ==
-                    info->funcptr_ret_pointee_array_first_dim &&
-                existing->funcptr_ret_pointee_array_second_dim ==
-                    info->funcptr_ret_pointee_array_second_dim &&
-                existing->funcptr_ret_pointee_array_elem_size ==
-                    info->funcptr_ret_pointee_array_elem_size);
+                PSX_RET_POINTEE_ARRAY_FIELDS_EQUAL(existing, info));
     if (same) {
       for (int i = 0; i < n_new; i++) {
         if (existing->array_dims[i] != info->array_dims[i]) { same = 0; break; }

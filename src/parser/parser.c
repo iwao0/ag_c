@@ -347,10 +347,7 @@ static void resolve_toplevel_typedef_ref(void) {
     td_is_array = _ti.is_array; td_dim_count = _ti.array_dim_count;
     g_toplevel_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
     g_toplevel_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
-    g_toplevel_decl_base_funcptr_ret_pointee_array =
-        psx_ret_pointee_array_make(_ti.funcptr_ret_pointee_array_first_dim,
-                                   _ti.funcptr_ret_pointee_array_second_dim,
-                                   _ti.funcptr_ret_pointee_array_elem_size);
+    g_toplevel_decl_base_funcptr_ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(&_ti);
     for (int i = 0; i < td_dim_count && i < 8; i++) g_toplevel_decl_td_array_dims[i] = _ti.array_dims[i];
   }
   /* 多段ポインタ typedef の段数 (`typedef int **PP` で 2)。単段/非ポインタは 1/0。 */
@@ -2357,11 +2354,7 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
     psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
         direct_funcptr_ret_pointee_array,
         g_toplevel_decl_base_funcptr_ret_pointee_array);
-    psx_ret_pointee_array_store_shorts_if_present(
-        ret_pointee_array,
-        &gv->funcptr_ret_pointee_array_first_dim,
-        &gv->funcptr_ret_pointee_array_second_dim,
-        &gv->funcptr_ret_pointee_array_elem_size);
+    PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(gv, ret_pointee_array);
   }
   finalize_toplevel_object_declarator(gv);
 }
@@ -2530,11 +2523,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
     _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
     _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
-    psx_ret_pointee_array_store_ints_if_present(
-        funcptr_ret_pointee_array,
-        &_ti.funcptr_ret_pointee_array_first_dim,
-        &_ti.funcptr_ret_pointee_array_second_dim,
-        &_ti.funcptr_ret_pointee_array_elem_size);
+    PSX_RET_POINTEE_ARRAY_STORE_INT_FIELDS_IF_PRESENT(&_ti, funcptr_ret_pointee_array);
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

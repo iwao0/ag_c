@@ -203,11 +203,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (_ti.is_pointer && _ti.funcptr_param_int_mask) {
           member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
         }
-        if (_ti.is_pointer && _ti.funcptr_ret_pointee_array_first_dim) {
-          member_typedef_funcptr_ret_pointee_array =
-              psx_ret_pointee_array_make(_ti.funcptr_ret_pointee_array_first_dim,
-                                         _ti.funcptr_ret_pointee_array_second_dim,
-                                         _ti.funcptr_ret_pointee_array_elem_size);
+        if (_ti.is_pointer && PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(&_ti)) {
+          member_typedef_funcptr_ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(&_ti);
         }
         if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
           member_fp_kind = _ti.fp_kind;
@@ -471,11 +468,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
               member_typedef_funcptr_ret_pointee_array,
               direct_funcptr_ret_pointee_array);
-          psx_ret_pointee_array_store_shorts_if_present(
-              ret_pointee_array,
-              &_mi.funcptr_ret_pointee_array_first_dim,
-              &_mi.funcptr_ret_pointee_array_second_dim,
-              &_mi.funcptr_ret_pointee_array_elem_size);
+          PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(&_mi, ret_pointee_array);
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
