@@ -557,9 +557,25 @@ int main(void) {
   failures += run_fail_case("global_funcptr_external_ref",
                             "int ext(int); int (*g)(int)=ext; int main(){return 0;}\n",
                             "E4008");
-  failures += run_fail_case("global_funcptr_void_call",
-                            "void set(int *p){*p=9;} void (*g)(int*)=set; "
-                            "int main(){int x; x=0; g(&x); return x;}\n",
+  const char *global_funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
+  failures += run_case("global_funcptr_void_call",
+                       "void set(int *p){*p=9;} void (*g)(int*)=set; "
+                       "int main(){int x; x=0; g(&x); return x;}\n",
+                       global_funcptr_void_call, 2, 9);
+  const char *global_funcptr_void_store_call[] = {"(table 2 funcref)", "$set7 $set9", "call_indirect"};
+  failures += run_case("global_funcptr_void_store_call",
+                       "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
+                       "void (*g)(int*)=set9; int main(){int x; x=0; g=set7; g(&x); return x;}\n",
+                       global_funcptr_void_store_call, 3, 7);
+  const char *global_funcptr_unused_result_call[] = {"drop", "call_indirect", "(result i32)"};
+  failures += run_case("global_funcptr_unused_result_call",
+                       "int set(int *p){*p=9; return 123;} int (*g)(int*)=set; "
+                       "int main(){int x; x=0; g(&x); return x;}\n",
+                       global_funcptr_unused_result_call, 3, 9);
+  failures += run_fail_case("global_funcptr_control_flow_store",
+                            "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
+                            "void (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
+                            "g(&x); return x;}\n",
                             "E4008");
   const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};
   failures += run_case("unsigned_int_to_double",
