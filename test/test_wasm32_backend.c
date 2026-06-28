@@ -177,6 +177,10 @@ int main(void) {
   const char *global_array[] = {"(data (i32.const", "\\0a\\00\\00\\00\\14\\00\\00\\00\\1e\\00\\00\\00"};
   failures += run_case("global_array", "int a[3]={10,20,30}; int main(){return a[1]+a[2];}\n",
                        global_array, 2, 50);
+  const char *global_large_zero_array[] = {"i32.store", "i32.load"};
+  failures += run_case("global_large_zero_array",
+                       "int a[2][3]; int main(){a[1][2]=77; return a[0][0]+a[1][2];}\n",
+                       global_large_zero_array, 2, 77);
   const char *global_char_array[] = {"(data (i32.const", "\"abc\\00\""};
   failures += run_case("global_char_array", "char g[]=\"abc\"; int main(){return g[1];}\n",
                        global_char_array, 2, 98);
@@ -535,6 +539,17 @@ int main(void) {
                        "int g; int *get(void){return &g;} int main(){int *(*fp)(void); fp=get; "
                        "*fp()=42; return g;}\n",
                        funcptr_pointer_return, 2, 42);
+  const char *funcptr_pointer_to_array_return[] = {"(call_indirect (result i32)", "i32.store"};
+  failures += run_case("funcptr_pointer_to_array_return",
+                       "int a[2][3]; int (*get(void))[3]{return a;} "
+                       "int main(){int (*(*fp)(void))[3]; fp=get; fp()[1][2]=77; return a[1][2];}\n",
+                       funcptr_pointer_to_array_return, 2, 77);
+  const char *funcptr_pointer_to_double_array_return[] = {"(call_indirect (result i32)", "f64.store"};
+  failures += run_case("funcptr_pointer_to_double_array_return",
+                       "double a[2][2]; double (*get(void))[2]{return a;} "
+                       "int main(){double (*(*fp)(void))[2]; fp=get; fp()[1][1]=4.5; "
+                       "return (int)a[1][1];}\n",
+                       funcptr_pointer_to_double_array_return, 2, 4);
   const char *funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
   failures += run_case("funcptr_void_call",
                        "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
