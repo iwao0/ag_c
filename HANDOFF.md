@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き174: Wasm object variadic extra args）
+最終更新: 2026-06-29（続き175: Wasm object indirect variadic extra fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -459,6 +459,11 @@
   `__ag_va_arg_area` + `__stack_pointer` の 8B slot に退避するようにした。call 後は stack pointer と
   `__ag_va_arg_area` を復元する。fixture は direct/extern variadic extra、callee 側 `va_arg` read、
   `float` 可変引数の `f64.promote_f32` + `f64.store` を objdump で確認。
+- 続き175: **Wasm object indirect variadic extra fixtures**。
+  続き174 の vararg area 退避が local/global function pointer 経由の indirect variadic call にも効くことを
+  `local_variadic_funcptr_extra` / `global_variadic_funcptr_extra` で確認。
+  `__indirect_function_table`、`__ag_va_arg_area`、fixed-only type `(i64) -> i32`、`call_indirect`、
+  `i64.store` を objdump で見る。
 
 ### Wasm backend の既知メモ
 
@@ -480,7 +485,8 @@
   C11 atomic builtin lowering (`IR_ATOMIC`)、>8B aggregate return area、complex hidden return area。
   file-scope data は scalar/array の integer/floating 初期化、symbol address relocation、struct/union/
   bitfield aggregate の基本形に対応。
-  extra vararg を持つ variadic call は `__ag_va_arg_area` 退避で対応済み。aggregate call は hidden return area
+  extra vararg を持つ variadic call は direct/extern/local-global funcptr indirect で `__ag_va_arg_area`
+  退避に対応済み。aggregate call は hidden return area
   を持つ direct/indirect call の基本形まで対応。complex call は direct hidden return area と
   local/global/typedef/struct member function pointer 経由の indirect hidden return area まで fixture 済み。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。

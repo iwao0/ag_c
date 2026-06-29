@@ -266,6 +266,19 @@ int main(void) {
                                 "int log1(char *, ...); int main(void){return log1(\"x\",42);}\n",
                                 extern_variadic_extra_needles, 5);
 
+  const char *indirect_variadic_extra_needles[] = {
+      "__indirect_function_table", "__ag_va_arg_area", "(i64) -> i32", "call_indirect",
+      "i64.store"};
+  failures += run_objdump_check("local_variadic_funcptr_extra",
+                                "int pick(int n, ...){return n;} "
+                                "int main(void){int (*fp)(int,...)=pick; return fp(1,2);}\n",
+                                indirect_variadic_extra_needles, 5);
+
+  failures += run_objdump_check("global_variadic_funcptr_extra",
+                                "int pick(int n, ...){return n;} int (*gfp)(int,...)=pick; "
+                                "int main(void){return gfp(1,2);}\n",
+                                indirect_variadic_extra_needles, 5);
+
   const char *extern_variadic_no_extra_needles[] = {"<log1>", "undefined", "(i32) -> i32"};
   failures += run_objdump_check("extern_variadic_no_extra",
                                 "int log1(char *, ...); int main(void){return log1(\"x\");}\n",
