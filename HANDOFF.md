@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き170: Wasm object i32 const LEB fix）
+最終更新: 2026-06-29（続き171: Wasm object indirect aggregate return fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -438,6 +438,11 @@
   `emit_const(IR_TY_I32)` は `(int32_t)(uint32_t)value` を SLEB 化するよう修正。
   unsigned i32/i64 の FP 変換 (`f64.convert_i32_u` / `i32.trunc_f64_u` /
   `f64.convert_i64_u` / `i64.trunc_f64_u`) と FP compare/neg fixture を追加。
+- 続き171: **Wasm object indirect aggregate return fixture**。
+  object mode で `struct Big (*fp)(int)` の indirect call + hidden return area が通ることを fixture 化。
+  `__indirect_function_table`、`(i32, i64) -> nil` type、`call_indirect`、`i64.store` を objdump で確認。
+  `_Complex` return の関数ポインタ代入は frontend IR が関数アドレスを `i2f` する別件が残るため、
+  object fixture 化は保留。
 
 ### Wasm backend の既知メモ
 
@@ -459,8 +464,9 @@
   C11 atomic builtin lowering (`IR_ATOMIC`)、>8B aggregate return area、complex hidden return area。
   file-scope data は scalar/array の integer/floating 初期化、symbol address relocation、struct/union/
   bitfield aggregate の基本形に対応。
-  extra vararg を持つ variadic call の object 化は未対応。aggregate/complex call は hidden return area
-  を持つ direct/indirect call の基本形まで対応。variadic call は可変引数 0 個のみ対応。
+  extra vararg を持つ variadic call の object 化は未対応。aggregate call は hidden return area
+  を持つ direct/indirect call の基本形まで対応。complex call は direct hidden return area まで fixture 済み。
+  variadic call は可変引数 0 個のみ対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

@@ -602,6 +602,16 @@ int main(void) {
                                 "int main(void){int *(*fp)(void)=get; *fp()=42; return g;}\n",
                                 indirect_pointer_return_needles, 4);
 
+  const char *indirect_large_struct_return_needles[] = {
+      "__indirect_function_table", "(i32, i64) -> nil", "call_indirect", "i64.store"};
+  failures += run_objdump_check("indirect_large_struct_return",
+                                "struct Big{int a; int b; int c;}; "
+                                "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; "
+                                "r.c=x+2; return r;} "
+                                "int main(void){struct Big (*fp)(int)=mkbig; "
+                                "struct Big r=fp(40); return r.a+r.c;}\n",
+                                indirect_large_struct_return_needles, 4);
+
   const char *global_funcptr_array_call_needles[] = {
       "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect", "i32.load"};
   failures += run_objdump_check("global_funcptr_array_call",
