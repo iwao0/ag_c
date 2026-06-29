@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き242: Wasm __assert_rtn minimal stub）
+最終更新: 2026-06-30（続き243: Wasm WAT c-testsuite preflight cleanup）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2503,3 +2503,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `wasm-interp` で `main() => i32:0` になることを確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
+
+### このセッション（続き243）: Wasm WAT c-testsuite preflight cleanup
+- `test/external/c-testsuite/tests/single-exec` を WAT 経路で `ag_c_wasm -> wat2wasm -> wasm-validate`
+  まで通す ad hoc scan を実施。開始時は 218 対象中 206 pass / 12 fail / 2 unsupported skip。
+- `strlen` stub を宣言上の戻り型に合わせ、pointer 引数を `i32` として扱うよう修正。
+  これで K&R 風の `int strlen(char*)` と標準 `size_t strlen(const char*)` の両方で WAT 型不一致を避ける。
+- `call_indirect` があるが関数 table 初期化が無い module でも `(table 1 funcref)` を出すようにした。
+  関数ポインタ型宣言だけを含み、実行されない関数でも `wat2wasm` が通る。
+- minimal libc stub を追加/拡張:
+  - `strcpy`, `strncpy`, `strcat`, `strncmp`, `strchr`, `strrchr`, `memcpy`, `memcmp`
+  - `calloc`
+  - `sprintf` (`"->%02d<-\\n"` 系の first variadic int を `__ag_va_arg_area` から読む最小実装)
+- `test_wasm32_backend` に raw `strlen` 旧宣言、empty indirect table、`calloc`、`sprintf`、
+  string stub 群の実行 fixture を追加。
+- focused 確認:
+  - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
+  - ad hoc WAT c-testsuite scan = 218 対象中 214 pass / 4 fail / 2 unsupported skip
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+- 残り 4 件:
+  - `00095`, `00170`, `00189`: WAT standalone の外部/forward 関数ポインタ table 扱い
+  - `00187`: `getc`/file I/O 系 stub 不足

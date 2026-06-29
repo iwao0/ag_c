@@ -368,6 +368,42 @@ int main(void) {
   failures += run_case("assert_stub",
                        "#include <assert.h>\nint main(){assert(1); return 0;}\n",
                        assert_stub, 2, 0);
+  const char *strlen_old_decl[] = {"(call $strlen", "(func $strlen (param $s i32) (result i32)"};
+  failures += run_case("strlen_old_decl",
+                       "int strlen(char *); int main(){char *p; p=\"hello\"; return strlen(p)-5;}\n",
+                       strlen_old_decl, 2, 0);
+  const char *strcpy_stub[] = {"(call $strcpy", "(func $strcpy (param $dst i64) (param $src i64) (result i32)"};
+  failures += run_case("strcpy_stub",
+                       "#include <string.h>\nint main(){char a[8]; strcpy(a,\"ok\"); return a[0]=='o' && a[1]=='k';}\n",
+                       strcpy_stub, 2, 1);
+  const char *putchar_stub[] = {"(call $putchar", "(func $putchar (param $c i64) (result i32)"};
+  failures += run_case("putchar_stub",
+                       "#include <stdio.h>\nint main(){return putchar('A')-65;}\n",
+                       putchar_stub, 2, 0);
+  const char *calloc_stub[] = {"(call $calloc", "(func $calloc (param $nmemb i64) (param $size i64) (result i32)"};
+  failures += run_case("calloc_stub",
+                       "#include <stdlib.h>\nint main(){int *p=calloc(3,sizeof(int)); "
+                       "int z=p[0]+p[1]+p[2]; p[1]=7; return z+p[1]-7;}\n",
+                       calloc_stub, 2, 0);
+  const char *sprintf_stub[] = {"(call $sprintf", "(func $sprintf (param $buf i64) (param $fmt i64) (result i32)"};
+  failures += run_case("sprintf_stub",
+                       "#include <stdio.h>\nint main(){char b[16]; int n=sprintf(b,\"->%02d<-\\n\",7); "
+                       "return n==7 && b[0]=='-' && b[2]=='0' && b[3]=='7' ? 0 : 1;}\n",
+                       sprintf_stub, 2, 0);
+  const char *string_stubs[] = {"(call $strncpy", "(call $strcat", "(call $strncmp",
+                                "(call $strchr", "(call $strrchr", "(call $memcpy",
+                                "(call $memcmp"};
+  failures += run_case("string_stubs",
+                       "#include <string.h>\nint main(){char a[16]; char *t=\"abca\"; strcpy(a,\"ab\"); "
+                       "if(strncpy(a,\"ab\",2)!=a) return 6; strcat(a,\"c\"); if(strcmp(a,\"abc\")) return 1; "
+                       "if(strncmp(a,\"abd\",2)) return 2; if(strchr(a,'b')!=a+1) return 3; "
+                       "if(strrchr(t,'a')-t!=3) return 4; memset(a,'x',3); "
+                       "memcpy(a+1,\"yz\",2); if(memcmp(a,\"xyz\",3)) return 5; return 0;}\n",
+                       string_stubs, 7, 0);
+  const char *empty_indirect_table[] = {"(table 1 funcref)", "call_indirect"};
+  failures += run_case("empty_indirect_table",
+                       "typedef int (*F)(int); int call(F f, int x){return f(x);} int main(){return 0;}\n",
+                       empty_indirect_table, 2, 0);
   const char *funcptr_init[] = {"(data (i32.const", "(table 1 funcref)", "(elem (i32.const 0) $f"};
   failures += run_case("funcptr_init",
                        "int f(){return 1;} int (*fp[1])()={f}; int main(){return fp[0]();}\n",
