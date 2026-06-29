@@ -567,6 +567,64 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked static union multidim member indirect data cross-TU wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/static_nested_extern_addr_main.c",
+                 "extern int g; struct Box{int *p[2];}; struct Wrap{int pad; struct Box box;}; "
+                 "int main(void){static struct Wrap wrap={.box.p[1]=&g}; return *wrap.box.p[1];}\n") != 0 ||
+      write_file("build/wasm32_obj/static_nested_extern_addr_other.c",
+                 "int g=42;\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_nested_extern_addr_main.o "
+              "build/wasm32_obj/static_nested_extern_addr_main.c",
+              "static_nested_extern_addr_main.o") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_nested_extern_addr_other.o "
+              "build/wasm32_obj/static_nested_extern_addr_other.c",
+              "static_nested_extern_addr_other.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_static_nested_extern_addr.wasm "
+              "build/wasm32_obj/static_nested_extern_addr_main.o "
+              "build/wasm32_obj/static_nested_extern_addr_other.o",
+              "wasm-ld static nested extern addr") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_static_nested_extern_addr.wasm",
+              "wasm-validate static nested extern addr") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_static_nested_extern_addr.wasm "
+              "--run-all-exports > build/wasm32_obj/linked_static_nested_extern_addr.interp",
+              "wasm-interp static nested extern addr") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_static_nested_extern_addr.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked static nested extern addr wasm returned unexpected result\n");
+    return 1;
+  }
+  if (write_file("build/wasm32_obj/static_union_extern_addr_main.c",
+                 "extern int g; union U{int *p[2]; long raw;}; "
+                 "int main(void){static union U u={.p[1]=&g}; return *u.p[1];}\n") != 0 ||
+      write_file("build/wasm32_obj/static_union_extern_addr_other.c",
+                 "int g=42;\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_union_extern_addr_main.o "
+              "build/wasm32_obj/static_union_extern_addr_main.c",
+              "static_union_extern_addr_main.o") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_union_extern_addr_other.o "
+              "build/wasm32_obj/static_union_extern_addr_other.c",
+              "static_union_extern_addr_other.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_static_union_extern_addr.wasm "
+              "build/wasm32_obj/static_union_extern_addr_main.o "
+              "build/wasm32_obj/static_union_extern_addr_other.o",
+              "wasm-ld static union extern addr") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_static_union_extern_addr.wasm",
+              "wasm-validate static union extern addr") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_static_union_extern_addr.wasm "
+              "--run-all-exports > build/wasm32_obj/linked_static_union_extern_addr.interp",
+              "wasm-interp static union extern addr") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_static_union_extern_addr.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked static union extern addr wasm returned unexpected result\n");
+    return 1;
+  }
   return 0;
 }
 
@@ -1329,6 +1387,38 @@ int main(void) {
                                 "int g=7; union U{int *p[2]; long raw;}; "
                                 "int main(void){static union U u={.p[1]=&g}; return *u.p[1];}\n",
                                 static_local_union_ptr_needles, 4);
+
+  const char *extern_nested_struct_member_array_addr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<wrap>", "<g>", "undefined"};
+  failures += run_objdump_check("extern_nested_struct_member_array_addr",
+                                "extern int g; struct Box{int *p[2];}; "
+                                "struct Wrap{int pad; struct Box box;}; "
+                                "struct Wrap wrap={.box.p[1]=&g}; "
+                                "int main(void){return *wrap.box.p[1];}\n",
+                                extern_nested_struct_member_array_addr_needles, 5);
+
+  const char *static_local_extern_nested_struct_member_array_addr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<main.wrap.", "<g>", "undefined", "binding=local"};
+  failures += run_objdump_check("static_local_extern_nested_struct_member_array_addr",
+                                "extern int g; struct Box{int *p[2];}; "
+                                "struct Wrap{int pad; struct Box box;}; "
+                                "int main(void){static struct Wrap wrap={.box.p[1]=&g}; "
+                                "return *wrap.box.p[1];}\n",
+                                static_local_extern_nested_struct_member_array_addr_needles, 6);
+
+  const char *extern_union_member_array_addr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<u>", "<g>", "undefined"};
+  failures += run_objdump_check("extern_union_member_array_addr",
+                                "extern int g; union U{int *p[2]; long raw;}; "
+                                "union U u={.p[1]=&g}; int main(void){return *u.p[1];}\n",
+                                extern_union_member_array_addr_needles, 5);
+
+  const char *static_local_extern_union_member_array_addr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<main.u.", "<g>", "undefined", "binding=local"};
+  failures += run_objdump_check("static_local_extern_union_member_array_addr",
+                                "extern int g; union U{int *p[2]; long raw;}; "
+                                "int main(void){static union U u={.p[1]=&g}; return *u.p[1];}\n",
+                                static_local_extern_union_member_array_addr_needles, 6);
 
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};

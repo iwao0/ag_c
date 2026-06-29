@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き213: Wasm object multidim member cross-TU indirect-data fixtures）
+最終更新: 2026-06-29（続き214: Wasm object extern global address aggregate relocations）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -731,6 +731,14 @@
   file-scope/static local を両方追加し、static local 版では `<main.wrap...>` local binding も確認する。
   optional link test には static local struct/union multidim member の `main() => i32:42` case を追加
   （このローカル環境では `wasm-ld` 不在のため skip）。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き214: **Wasm object extern global address aggregate relocations**。
+  undefined extern data symbol `<g>` の address initializer を、file-scope/static local の
+  nested struct member-array と union member-array へ展開。
+  data segment 内 `R_WASM_MEMORY_ADDR_I32` が `<g>` を指し、static local 版では `<main.wrap...>` /
+  `<main.u...>` local binding も確認する。
+  optional link test には別 object の `int g=42;` とリンクして `main() => i32:42` になる
+  nested struct / union member-array case を追加（このローカル環境では `wasm-ld` 不在のため skip）。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ
