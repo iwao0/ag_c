@@ -236,6 +236,31 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked indirect data wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/indirect_unused_nonvoid.c",
+                 "int set7(int *p){*p=7; return 70;} int set9(int *p){*p=9; return 90;} "
+                 "int (*g)(int *)=set9; struct Ops{int (*f)(int *);}; struct Ops ops={set9}; "
+                 "int main(void){int x=0; g=set7; g(&x); if(x!=7) return x; "
+                 "x=0; ops.f=set9; ops.f(&x); return x+33;}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/indirect_unused_nonvoid.o "
+              "build/wasm32_obj/indirect_unused_nonvoid.c",
+              "indirect_unused_nonvoid.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_indirect_unused_nonvoid.wasm "
+              "build/wasm32_obj/indirect_unused_nonvoid.o",
+              "wasm-ld indirect unused nonvoid") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_indirect_unused_nonvoid.wasm",
+              "wasm-validate indirect unused nonvoid") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_indirect_unused_nonvoid.wasm "
+              "--run-all-exports > build/wasm32_obj/linked_indirect_unused_nonvoid.interp",
+              "wasm-interp indirect unused nonvoid") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_indirect_unused_nonvoid.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked indirect unused nonvoid wasm returned unexpected result\n");
+    return 1;
+  }
   if (write_file("build/wasm32_obj/indirect_data_main.c",
                  "extern int add2(int); union Ops{int (*f[2])(int); long raw;}; "
                  "union Ops ops={.f[1]=add2}; int main(void){return ops.f[1](40);}\n") != 0 ||
@@ -1931,6 +1956,15 @@ int main(void) {
                                 "int take(int x){return x;} "
                                 "int main(void){int (*fp)(int)=take; return fp(7.9);}\n",
                                 indirect_double_to_int_arg_needles, 4);
+
+  const char *indirect_unused_nonvoid_needles[] = {
+      "__indirect_function_table", "(i32) -> i32", "call_indirect", "R_WASM_TABLE_INDEX_SLEB"};
+  failures += run_objdump_check("indirect_unused_nonvoid",
+                                "int set7(int *p){*p=7; return 70;} "
+                                "int set9(int *p){*p=9; return 90;} "
+                                "int (*g)(int *)=set9; "
+                                "int main(void){int x=0; g=set7; g(&x); return x;}\n",
+                                indirect_unused_nonvoid_needles, 4);
 
   const char *indirect_pointer_return_needles[] = {
       "__indirect_function_table", "() -> i32", "R_WASM_TABLE_INDEX_SLEB", "i32.store"};

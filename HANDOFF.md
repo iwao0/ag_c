@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き239: Wasm non-void indirect unused-result call）
+最終更新: 2026-06-30（続き240: Wasm object non-void indirect unused-result link/run）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -150,8 +150,8 @@
   対応済み範囲: local/global/static/struct member の単純な関数ポインタ呼び出し、関数ポインタ配列、
   void / unused-result call、int↔fp 引数変換が IR に現れる indirect call、単純 pointer return、
   pointer-to-array return、未初期化の大きい global/aggregate を Wasm linear memory のゼロ初期化に任せる処理。
-  制御フロー越しに global/struct member void 関数ポインタが上書きされる場合も対応済み。
-  非 void unknown indirect call の結果未使用ケースは、誤コンパイルせず E4008 で止める。
+  制御フロー越しに global/struct member 関数ポインタが上書きされる場合も対応済み。
+  非 void unknown indirect call の結果未使用ケースも `IR_CALL.dst.type` から typeuse を組んで対応済み。
   WAT は `wat2wasm` / `wasm-interp` がある環境では test harness が実行値まで確認する。
 - 続き114: **多次元 static local 整数配列の lowering**。
   `int f(){static int a[2][3]; a[1][2]++; return a[1][2];}` が、1D static local 配列の
@@ -2460,5 +2460,19 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/test_e2e && ./build/test_e2e` = 1139/1139
   - `./build/test_wasm32_e2e` = 1110/1110
   - `./build/test_wasm32_object` = object fixture scan 1111/1111
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+
+### このセッション（続き240）: Wasm object non-void indirect unused-result link/run
+- 続き239 の `wasm_nonvoid_indirect_unused_result` は object fixture scan では compile + validate まで
+  確認できていたが、object 専用の link/run ケースは無かった。
+- `test_wasm32_object` に常時 objdump ケース `indirect_unused_nonvoid` を追加し、
+  `call_indirect` が `(i32) -> i32` typeuse と table relocation を持つことを確認する。
+  object emitter は未使用戻り値を WAT emitter の `drop` ではなく local に受ける形で出す。
+- `wasm-ld` / `wasm-validate` / `wasm-interp` がある環境では、
+  global funcptr と struct member funcptr の非 void 呼び出し結果を捨てる object をリンク実行し、
+  side effect が残って `main() => i32:42` になることを確認する。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object`
   - `make test` green
   - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
