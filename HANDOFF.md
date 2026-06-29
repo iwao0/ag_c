@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き153: Wasm object floating local ops）
+最終更新: 2026-06-29（続き154: Wasm object fp/int conversions）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -361,6 +361,11 @@
   object mode に `IR_LOAD_FP_IMM` と基本 fp 演算 (`FNEG` / `FADD` / `FSUB` / `FMUL` / `FDIV` /
   `FEQ` / `FNE` / `FLT` / `FLE`) を追加。`f32.const` / `f64.const` は binary immediate を
   直接 emit。local double の store/load/add fixture を `test/test_wasm32_object.c` に追加。
+- 続き154: **Wasm object fp/int conversions**。
+  object mode に `IR_I2F` / `IR_F2I` / `IR_F2F` を追加。`f32/f64.convert_i32/i64_[su]`、
+  `i32/i64.trunc_f32/f64_[su]`、`f32.demote_f64`、`f64.promote_f32` を binary opcode で emit。
+  objdump fixture で `f64.convert_i32_s` / `i32.trunc_f64_s` / `f32.demote_f64` /
+  `f64.promote_f32` を確認。
 
 ### Wasm backend の既知メモ
 
@@ -376,8 +381,8 @@
   global/extern global read/write、aggregate global data segment、function address/table-index
   relocation、simple indirect call、TLS global data/address relocation、local stack slot
   (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)、integer unary ops (`IR_NEG`/`IR_NOT`)。
-  local floating-point immediates/basic ops。
-  aggregate/complex/variadic call の object 化、fp/int conversion、VLA/dynamic stack allocation は未対応。
+  local floating-point immediates/basic ops、fp/int/fp width conversions。
+  aggregate/complex/variadic call の object 化、VLA/dynamic stack allocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

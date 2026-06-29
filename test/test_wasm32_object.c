@@ -198,6 +198,15 @@ int main(void) {
                                 "double f(void){double x=1.5; return x+2.0;}\n",
                                 fp_local_needles, 4);
 
+  const char *fp_convert_needles[] = {
+      "f64.convert_i32_s", "i32.trunc_f64_s", "f32.demote_f64", "f64.promote_f32"};
+  failures += run_objdump_check("fp_convert",
+                                "double i2d(void){int x=3; return x;} "
+                                "int d2i(double x){return (int)x;} "
+                                "float d2f(double x){return (float)x;} "
+                                "double f2d(float x){return x;}\n",
+                                fp_convert_needles, 4);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",

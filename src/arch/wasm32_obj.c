@@ -789,6 +789,28 @@ static unsigned fp_binop_opcode(ir_op_t op, ir_type_t ty) {
   return 0;
 }
 
+static unsigned i2f_opcode(ir_type_t dst, ir_type_t src, int is_unsigned) {
+  dst = wasm_ir_type(dst);
+  src = wasm_ir_type(src);
+  if (dst == IR_TY_F32 && src == IR_TY_I32) return is_unsigned ? 0xb3 : 0xb2;
+  if (dst == IR_TY_F32 && src == IR_TY_I64) return is_unsigned ? 0xb5 : 0xb4;
+  if (dst == IR_TY_F64 && src == IR_TY_I32) return is_unsigned ? 0xb8 : 0xb7;
+  if (dst == IR_TY_F64 && src == IR_TY_I64) return is_unsigned ? 0xba : 0xb9;
+  obj_unsupported_op(IR_I2F);
+  return 0;
+}
+
+static unsigned f2i_opcode(ir_type_t dst, ir_type_t src, int is_unsigned) {
+  dst = wasm_ir_type(dst);
+  src = wasm_ir_type(src);
+  if (dst == IR_TY_I32 && src == IR_TY_F32) return is_unsigned ? 0xa9 : 0xa8;
+  if (dst == IR_TY_I32 && src == IR_TY_F64) return is_unsigned ? 0xab : 0xaa;
+  if (dst == IR_TY_I64 && src == IR_TY_F32) return is_unsigned ? 0xaf : 0xae;
+  if (dst == IR_TY_I64 && src == IR_TY_F64) return is_unsigned ? 0xb1 : 0xb0;
+  obj_unsupported_op(IR_F2I);
+  return 0;
+}
+
 static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
@@ -881,6 +903,34 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_val(&body, i->src1, i->dst.type, param_count);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
+        case IR_I2F: {
+          ir_type_t src_ty = wasm_ir_type(i->src1.type);
+          emit_val(&body, i->src1, src_ty, param_count);
+          wb_u8(&body, i2f_opcode(i->dst.type, src_ty, i->is_unsigned));
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
+        case IR_F2I: {
+          ir_type_t src_ty = wasm_ir_type(i->src1.type);
+          emit_val(&body, i->src1, src_ty, param_count);
+          wb_u8(&body, f2i_opcode(i->dst.type, src_ty, i->is_unsigned));
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
+        case IR_F2F: {
+          ir_type_t src_ty = wasm_ir_type(i->src1.type);
+          ir_type_t dst_ty = wasm_ir_type(i->dst.type);
+          emit_val(&body, i->src1, src_ty, param_count);
+          if (dst_ty == IR_TY_F64 && src_ty == IR_TY_F32) {
+            wb_u8(&body, 0xbb);
+          } else if (dst_ty == IR_TY_F32 && src_ty == IR_TY_F64) {
+            wb_u8(&body, 0xb6);
+          } else if (dst_ty != src_ty) {
+            obj_unsupported_op(i->op);
+          }
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
         case IR_LOAD:
           emit_addr_val(&body, i->src1, param_count);
           wb_u8(&body, load_opcode(i->dst.type, i->is_unsigned));
