@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き209: Wasm object nested struct cross-TU indirect-data fixtures）
+最終更新: 2026-06-29（続き210: Wasm object nested union cross-TU indirect-data fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -701,6 +701,13 @@
   data segment 内 `R_WASM_TABLE_INDEX_I32` が undefined `<add2>` を指すことを確認。
   static local 版では `<main.wrap...>` local binding も確認する。
   optional link test には static local nested struct 版の `main() => i32:42` case を追加
+  （このローカル環境では `wasm-ld` 不在のため skip）。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き210: **Wasm object nested union cross-TU indirect-data fixtures**。
+  `struct Wrap{int pad; union Ops ops;}; ... {.ops.f[1]=add2}` の file-scope/static local で
+  data segment 内 `R_WASM_TABLE_INDEX_I32` が undefined `<add2>` を指すことを確認。
+  static local 版では `<main.wrap...>` local binding も確認する。
+  optional link test には static local nested union 版の `main() => i32:42` case を追加
   （このローカル環境では `wasm-ld` 不在のため skip）。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
