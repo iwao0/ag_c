@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き163: Wasm object complex call return area）
+最終更新: 2026-06-29（続き164: Wasm object global fp array data）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -405,6 +405,11 @@
   `_Complex` return を aggregate return area と同じ hidden i32 return-area param で object 化。
   `IR_RET.ret_complex_half` は実部/虚部を hidden area へ f32/f64 store し、complex call は `IR_CALL.dst`
   を return area として先頭引数に渡す。double complex by-value call/return fixture を追加。
+- 続き164: **Wasm object global fp array data**。
+  `float[]` / `double[]` の file-scope 初期化で object data segment が整数 `init_values` だけを見て
+  0 埋めになっていた。WAT backend と同じく `gv->init_fvalues` + `gv->fp_kind` から IEEE754 bit pattern
+  を書くよう修正し、float/double global array fixture を追加。既存対応だった global union と bitfield も
+  object fixture で固定。
 
 ### Wasm backend の既知メモ
 
@@ -424,6 +429,8 @@
   rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)、dynamic stack allocation (`IR_VLA_ALLOC`)、
   control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)、
   C11 atomic builtin lowering (`IR_ATOMIC`)、>8B aggregate return area、complex hidden return area。
+  file-scope data は scalar/array の integer/floating 初期化、symbol address relocation、struct/union/
+  bitfield aggregate の基本形に対応。
   extra vararg を持つ variadic call の object 化は未対応。aggregate/complex call は hidden return area
   を持つ direct/indirect call の基本形まで対応。variadic call は可変引数 0 個のみ対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。

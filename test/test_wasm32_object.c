@@ -190,6 +190,14 @@ int main(void) {
                                 "int g; int main(void){g=5; return g;}\n",
                                 global_write_needles, 5);
 
+  const char *global_fp_array_needles[] = {
+      "<fa>", "0000 a03f 0000 3040", "<da>", "0000 0000 0000 f83f 0000 0000 0000 0440",
+      "f32.load", "f64.load"};
+  failures += run_objdump_check("global_fp_array",
+                                "float fa[2]={1.25f,2.75f}; double da[2]={1.5,2.5}; "
+                                "double f(void){return fa[0]+da[1];}\n",
+                                global_fp_array_needles, 6);
+
   const char *local_stack_needles[] = {
       "__stack_pointer", "R_WASM_GLOBAL_INDEX_LEB", "global.set", "i32.store", "i32.load"};
   failures += run_objdump_check("local_stack",
@@ -336,6 +344,20 @@ int main(void) {
                                 "struct In{int a; int b;}; struct Out{struct In in; int c;}; "
                                 "struct Out out={{1,2},3}; int main(void){return out.c;}\n",
                                 nested_struct_needles, 4);
+
+  const char *union_global_needles[] = {
+      "Data[1]", "<u>", "size=8", "0500 0000 0000 0000", "i32.load 2 0"};
+  failures += run_objdump_check("union_global",
+                                "union U{int i; double d;}; union U u={.i=5}; "
+                                "int main(void){return u.i;}\n",
+                                union_global_needles, 5);
+
+  const char *bitfield_global_needles[] = {
+      "Data[1]", "<s>", "size=4", "8d00 0000", "i32.shr_s", "i32.and"};
+  failures += run_objdump_check("bitfield_global",
+                                "struct S{unsigned a:3; unsigned b:5;}; struct S s={5,17}; "
+                                "int main(void){return s.b;}\n",
+                                bitfield_global_needles, 6);
 
   const char *struct_ptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "symbol=2 <target>"};

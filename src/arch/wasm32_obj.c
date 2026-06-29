@@ -2032,6 +2032,8 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
       obj_unsupported_msg("global array element size in Wasm object mode");
     }
+    int is_fp_array = gv->init_fvalues &&
+                      (gv->fp_kind == TK_FLOAT_KIND_FLOAT || gv->fp_kind >= TK_FLOAT_KIND_DOUBLE);
     int total = elem > 0 ? (size + elem - 1) / elem : 0;
     for (int i = 0; i < total; i++) {
       char *sym = (i < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[i] : NULL;
@@ -2042,6 +2044,19 @@ static void emit_obj_global(global_var_t *gv, void *user) {
         data_write_symbol_addr(d, sym, sym_len, off, elem);
       } else {
         uint64_t value = (uint64_t)((i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0);
+        if (is_fp_array) {
+          double fv = (i < gv->init_count) ? gv->init_fvalues[i] : 0.0;
+          if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+            float f = (float)fv;
+            uint32_t bits;
+            memcpy(&bits, &f, sizeof(bits));
+            value = bits;
+          } else {
+            uint64_t bits;
+            memcpy(&bits, &fv, sizeof(bits));
+            value = bits;
+          }
+        }
         data_write_scalar(d, value, elem);
       }
     }
