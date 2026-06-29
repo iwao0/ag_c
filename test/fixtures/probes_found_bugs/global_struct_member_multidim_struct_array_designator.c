@@ -17,8 +17,8 @@
 //   配列も sub_dims を carry。
 // - psx_gbrace_flat の elem_slots 計算: struct 経路でも sub_dims の積を掛ける。
 //
-// なお内側 designator `[2]={[1]=...}` や内側 brace 内の `.member=` designator は parser 側の
-// 別問題で未対応 (B-3/B-4)。
+// 内側 designator `[2]={[1]=...}` や内側 brace 内の `.member=` designator は
+// global_struct_member_multidim_nested_designator で対応済み。
 #include <assert.h>
 
 struct C { int val; };
