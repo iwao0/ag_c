@@ -518,6 +518,8 @@ static unsigned char g_decl_base_funcptr_ret_int_width = 0;
 static psx_ret_pointee_array_t g_decl_base_funcptr_ret_pointee_array = {0};
 static int g_decl_base_funcptr_ret_is_void = 0;
 static int g_decl_base_funcptr_ret_is_complex = 0;
+static int g_decl_base_is_variadic_funcptr = 0;
+static short g_decl_base_funcptr_nargs_fixed = 0;
 
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind) {
@@ -4103,12 +4105,16 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       g_decl_base_funcptr_ret_pointee_array;
   int base_funcptr_ret_is_void = g_decl_base_funcptr_ret_is_void;
   int base_funcptr_ret_is_complex = g_decl_base_funcptr_ret_is_complex;
+  int base_is_variadic_funcptr = g_decl_base_is_variadic_funcptr;
+  short base_funcptr_nargs_fixed = g_decl_base_funcptr_nargs_fixed;
   g_decl_base_funcptr_param_fp_mask = 0;
   g_decl_base_funcptr_param_int_mask = 0;
   g_decl_base_funcptr_ret_int_width = 0;
   g_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_decl_base_funcptr_ret_is_void = 0;
   g_decl_base_funcptr_ret_is_complex = 0;
+  g_decl_base_is_variadic_funcptr = 0;
+  g_decl_base_funcptr_nargs_fixed = 0;
   /* td_array_elem_size も同様に「宣言文全体の typedef 由来」なので read-and-reset
    * (declarator ループ後にもう一度宣言文があれば、その spec で立て直す)。
    * 非 typedef spec で前回値が残ると 3522 経路が誤検出するため、ここでクリアする。
@@ -4562,9 +4568,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     }
     /* 可変長関数ポインタ (`int (*f)(int, ...)`): 経由呼び出しで variadic ABI を
      * 選べるよう、固定引数数と共に記録する。 */
-    if (is_pointer && g_last_funcptr_is_variadic) {
+    if (is_pointer && (g_last_funcptr_is_variadic || base_is_variadic_funcptr)) {
       var->is_variadic_funcptr = 1;
-      var->funcptr_nargs_fixed = (short)g_last_funcptr_nfixed;
+      var->funcptr_nargs_fixed = g_last_funcptr_is_variadic
+                                      ? (short)g_last_funcptr_nfixed
+                                      : base_funcptr_nargs_fixed;
     }
     /* 関数ポインタの仮引数 fp マスク (経由呼び出しの int→fp 昇格用)。 */
     if (is_pointer) {
@@ -4734,6 +4742,8 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
       g_decl_base_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
       g_decl_base_funcptr_ret_is_void = _ti.funcptr_ret_is_void;
       g_decl_base_funcptr_ret_is_complex = _ti.funcptr_ret_is_complex;
+      g_decl_base_is_variadic_funcptr = _ti.is_variadic_funcptr ? 1 : 0;
+      g_decl_base_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
     }
   }
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
@@ -4752,6 +4762,8 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_decl_base_funcptr_ret_is_void = 0;
   g_decl_base_funcptr_ret_is_complex = 0;
+  g_decl_base_is_variadic_funcptr = 0;
+  g_decl_base_funcptr_nargs_fixed = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
@@ -4940,6 +4952,11 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
         (psx_last_type_is_complex() && !ret_is_data_pointer) ? 1 : 0;
     _ti.funcptr_ret_int_width =
         psx_funcptr_ret_int_width_from_kind(base_kind, ret_is_data_pointer, fp_kind);
+  }
+  if (is_ptr && g_decl_trailing_func_suffix && psx_last_funcptr_is_variadic()) {
+    _ti.is_funcptr = 1;
+    _ti.is_variadic_funcptr = 1;
+    _ti.funcptr_nargs_fixed = (short)psx_last_funcptr_nargs_fixed();
   }
   if (is_ptr && g_last_funcptr_param_fp_mask) {
     _ti.is_funcptr = 1;

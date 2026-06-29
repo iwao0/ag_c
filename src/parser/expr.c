@@ -1151,6 +1151,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
   deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
   deref->funcptr_ret_int_width = mem_info->funcptr_ret_int_width;
+  deref->is_variadic_funcptr = mem_info->is_variadic_funcptr ? 1 : 0;
+  deref->funcptr_nargs_fixed = mem_info->funcptr_nargs_fixed;
   deref->funcptr_ret_is_void = mem_info->funcptr_ret_is_void ? 1 : 0;
   deref->funcptr_ret_is_data_pointer = mem_info->funcptr_ret_is_pointer ? 1 : 0;
   deref->funcptr_ret_is_complex = mem_info->funcptr_ret_is_complex ? 1 : 0;

@@ -68,6 +68,8 @@ struct tag_member_t {
   /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
    * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。 */
   int ptr_array_pointee_bytes;
+  int is_variadic_funcptr;
+  short funcptr_nargs_fixed;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   unsigned char funcptr_ret_int_width;
@@ -120,6 +122,8 @@ struct typedef_name_t {
   // 上限 8 次元 (実用上十分)。
   int array_dims[8];
   int is_funcptr;
+  int is_variadic_funcptr;
+  short funcptr_nargs_fixed;
   int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
   int funcptr_ret_is_complex;
@@ -502,6 +506,8 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
       m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
       m->funcptr_ret_int_width = desc->funcptr_ret_int_width;
+      m->is_variadic_funcptr = desc->is_variadic_funcptr ? 1 : 0;
+      m->funcptr_nargs_fixed = desc->funcptr_nargs_fixed;
       m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
       m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
       m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
@@ -529,6 +535,8 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
   m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
   m->funcptr_ret_int_width = desc->funcptr_ret_int_width;
+  m->is_variadic_funcptr = desc->is_variadic_funcptr ? 1 : 0;
+  m->funcptr_nargs_fixed = desc->funcptr_nargs_fixed;
   m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
   m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
   m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
@@ -714,6 +722,8 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   for (int i = 0; i < 8; i++) out->arr_dims[i] = m->arr_dims[i];
   out->arr_ndim = m->arr_ndim;
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
+  out->is_variadic_funcptr = m->is_variadic_funcptr ? 1 : 0;
+  out->funcptr_nargs_fixed = m->funcptr_nargs_fixed;
   out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
   out->funcptr_param_int_mask = m->funcptr_param_int_mask;
   out->funcptr_ret_int_width = m->funcptr_ret_int_width;
@@ -918,6 +928,8 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_array = info->is_array;
   t->array_first_dim = info->array_first_dim;
   t->is_funcptr = info->is_funcptr;
+  t->is_variadic_funcptr = info->is_variadic_funcptr;
+  t->funcptr_nargs_fixed = info->funcptr_nargs_fixed;
   t->funcptr_ret_is_void = info->funcptr_ret_is_void;
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
   t->funcptr_ret_is_complex = info->funcptr_ret_is_complex;
@@ -950,6 +962,8 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->array_first_dim == info->array_first_dim &&
                 existing->array_dim_count == n_new &&
                 existing->is_funcptr == info->is_funcptr &&
+                existing->is_variadic_funcptr == info->is_variadic_funcptr &&
+                existing->funcptr_nargs_fixed == info->funcptr_nargs_fixed &&
                 existing->funcptr_ret_is_void == info->funcptr_ret_is_void &&
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
                 existing->funcptr_ret_is_complex == info->funcptr_ret_is_complex &&
@@ -1024,6 +1038,8 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     for (int i = 0; i < n; i++) out->array_dims[i] = t->array_dims[i];
     for (int i = n; i < 8; i++) out->array_dims[i] = 0;
     out->is_funcptr = t->is_funcptr;
+    out->is_variadic_funcptr = t->is_variadic_funcptr;
+    out->funcptr_nargs_fixed = t->funcptr_nargs_fixed;
     out->funcptr_ret_is_void = t->funcptr_ret_is_void;
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
     out->funcptr_ret_is_complex = t->funcptr_ret_is_complex;

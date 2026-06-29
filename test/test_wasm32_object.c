@@ -278,6 +278,20 @@ int main(void) {
                                 "int pick(int n, ...){return n;} int (*gfp)(int,...)=pick; "
                                 "int main(void){return gfp(1,2);}\n",
                                 indirect_variadic_extra_needles, 5);
+  failures += run_objdump_check("struct_variadic_funcptr_extra",
+                                "int pick(int n, ...){return n;} "
+                                "struct Ops{int (*f)(int,...);}; struct Ops ops={pick}; "
+                                "int main(void){return ops.f(1,2);}\n",
+                                indirect_variadic_extra_needles, 5);
+  failures += run_objdump_check("typedef_struct_variadic_funcptr_extra",
+                                "typedef int (*VOp)(int,...); int pick(int n, ...){return n;} "
+                                "struct Ops{VOp f;}; struct Ops ops={pick}; "
+                                "int main(void){return ops.f(1,2);}\n",
+                                indirect_variadic_extra_needles, 5);
+  failures += run_objdump_check("typedef_local_variadic_funcptr_extra",
+                                "typedef int (*VOp)(int,...); int pick(int n, ...){return n;} "
+                                "int main(void){VOp fp=pick; return fp(1,2);}\n",
+                                indirect_variadic_extra_needles, 5);
 
   const char *extern_variadic_no_extra_needles[] = {"<log1>", "undefined", "(i32) -> i32"};
   failures += run_objdump_check("extern_variadic_no_extra",

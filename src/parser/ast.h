@@ -130,6 +130,7 @@ struct node_mem_t {
   unsigned int funcptr_ret_is_void : 1;
   unsigned int funcptr_ret_is_data_pointer : 1;
   unsigned int funcptr_ret_is_complex : 1;
+  unsigned int is_variadic_funcptr : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
   // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
   // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。
@@ -146,6 +147,7 @@ struct node_mem_t {
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   unsigned char funcptr_ret_int_width;
+  short funcptr_nargs_fixed;
   short funcptr_ret_pointee_array_first_dim;
   short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;

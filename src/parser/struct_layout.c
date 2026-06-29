@@ -121,6 +121,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_typedef_funcptr_ret_is_void = 0;
     int member_typedef_funcptr_ret_is_pointer = 0;
     int member_typedef_funcptr_ret_is_complex = 0;
+    int member_typedef_is_variadic_funcptr = 0;
+    short member_typedef_funcptr_nargs_fixed = 0;
     psx_ret_pointee_array_t member_typedef_funcptr_ret_pointee_array = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
@@ -224,6 +226,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         }
         if (_ti.is_pointer && _ti.funcptr_ret_is_complex) {
           member_typedef_funcptr_ret_is_complex = 1;
+        }
+        if (_ti.is_pointer && _ti.is_variadic_funcptr) {
+          member_typedef_is_variadic_funcptr = 1;
+          member_typedef_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
         }
         if (_ti.is_pointer && psx_ret_pointee_array_has_dims(_ti.funcptr_ret_pointee_array)) {
           member_typedef_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
@@ -505,6 +511,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                                 _mi.funcptr_ret_is_pointer,
                                                 member_fp_kind)
                                           : member_typedef_funcptr_ret_int_width;
+          _mi.is_variadic_funcptr = head.has_func_suffix
+                                        ? (psx_last_funcptr_is_variadic() ? 1 : 0)
+                                        : member_typedef_is_variadic_funcptr;
+          _mi.funcptr_nargs_fixed = head.has_func_suffix
+                                        ? (short)psx_last_funcptr_nargs_fixed()
+                                        : member_typedef_funcptr_nargs_fixed;
           psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
               member_typedef_funcptr_ret_pointee_array,
               direct_funcptr_ret_pointee_array);

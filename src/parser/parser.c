@@ -135,6 +135,8 @@ static unsigned char g_toplevel_decl_base_funcptr_ret_int_width = 0;
 static psx_ret_pointee_array_t g_toplevel_decl_base_funcptr_ret_pointee_array = {0};
 static int g_toplevel_decl_base_funcptr_ret_is_void = 0;
 static int g_toplevel_decl_base_funcptr_ret_is_complex = 0;
+static int g_toplevel_decl_base_is_variadic_funcptr = 0;
+static short g_toplevel_decl_base_funcptr_nargs_fixed = 0;
 /* 現在パース中のトップレベル宣言子が関数サフィックス `(...)` を持つか。
  * `double (*gops)(double)` のような関数ポインタグローバルを `double *dp` のような
  * データポインタと区別し、戻り型 fp_kind を gv->pointee_fp_kind に保存するのに使う。
@@ -354,6 +356,8 @@ static void resolve_toplevel_typedef_ref(void) {
     g_toplevel_decl_base_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
     g_toplevel_decl_base_funcptr_ret_is_void = _ti.funcptr_ret_is_void;
     g_toplevel_decl_base_funcptr_ret_is_complex = _ti.funcptr_ret_is_complex;
+    g_toplevel_decl_base_is_variadic_funcptr = _ti.is_variadic_funcptr ? 1 : 0;
+    g_toplevel_decl_base_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
     for (int i = 0; i < td_dim_count && i < 8; i++) g_toplevel_decl_td_array_dims[i] = _ti.array_dims[i];
   }
   /* 多段ポインタ typedef の段数 (`typedef int **PP` で 2)。単段/非ポインタは 1/0。 */
@@ -413,6 +417,8 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_toplevel_decl_base_funcptr_ret_is_void = 0;
   g_toplevel_decl_base_funcptr_ret_is_complex = 0;
+  g_toplevel_decl_base_is_variadic_funcptr = 0;
+  g_toplevel_decl_base_funcptr_nargs_fixed = 0;
   g_toplevel_decl_pointee_const = 0;
   g_toplevel_decl_pointee_volatile = 0;
   g_toplevel_decl_td_array_dim_count = 0;
@@ -2397,9 +2403,13 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
       g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
     gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
   }
-  if (gv && head.is_ptr && g_toplevel_decl_has_func_suffix && psx_last_funcptr_is_variadic()) {
+  if (gv && head.is_ptr &&
+      ((g_toplevel_decl_has_func_suffix && psx_last_funcptr_is_variadic()) ||
+       (!g_toplevel_decl_has_func_suffix && g_toplevel_decl_base_is_variadic_funcptr))) {
     gv->is_variadic_funcptr = 1;
-    gv->funcptr_nargs_fixed = (short)psx_last_funcptr_nargs_fixed();
+    gv->funcptr_nargs_fixed = g_toplevel_decl_has_func_suffix
+                                   ? (short)psx_last_funcptr_nargs_fixed()
+                                   : g_toplevel_decl_base_funcptr_nargs_fixed;
   }
   if (gv && head.is_ptr) {
     unsigned short fp_mask = g_toplevel_decl_has_func_suffix
@@ -2605,6 +2615,10 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
     _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
     _ti.funcptr_ret_pointee_array = funcptr_ret_pointee_array;
+    if (psx_last_funcptr_is_variadic()) {
+      _ti.is_variadic_funcptr = 1;
+      _ti.funcptr_nargs_fixed = (short)psx_last_funcptr_nargs_fixed();
+    }
   }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);

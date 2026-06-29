@@ -100,6 +100,8 @@ typedef struct {
    * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
    * build_subscript_deref / build_unary_deref_node に伝える。 */
   int ptr_array_pointee_bytes;
+  int is_variadic_funcptr;
+  short funcptr_nargs_fixed;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   unsigned char funcptr_ret_int_width;
@@ -162,6 +164,8 @@ typedef struct {
   int array_dim_count;          // 配列次元数 (0 = 非配列/未知)
   int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
   int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
+  int is_variadic_funcptr;      // `typedef int (*vf)(int, ...)` 等の可変長関数ポインタ typedef
+  short funcptr_nargs_fixed;    // 可変長関数ポインタの固定引数数 (`...` の前)
   int funcptr_ret_is_void;      // 指し示す関数の戻り値が void
   int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
   int funcptr_ret_is_complex;   // 指し示す関数の戻り値が _Complex
