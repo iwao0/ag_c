@@ -567,6 +567,20 @@ static int func_has_vla_alloc(ir_func_t *f) {
   return 0;
 }
 
+static int func_has_control_flow(ir_func_t *f) {
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) return 1;
+    }
+  }
+  return 0;
+}
+
+static int block_has_terminator(ir_block_t *b) {
+  ir_inst_t *tail = b ? b->tail : NULL;
+  return tail && (tail->op == IR_BR || tail->op == IR_BR_COND || tail->op == IR_RET);
+}
+
 static int alloca_offset(ir_func_t *f, int vreg) {
   int frame_size = 0;
   for (ir_block_t *b = f->entry; b; b = b->next) {
@@ -865,8 +879,11 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
   int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f);
-  int fp_local = local_index(param_count, nlocals);
+  int has_control_flow = func_has_control_flow(f);
+  int extra_base = local_index(param_count, nlocals);
+  int fp_local = extra_base;
   int old_sp_local = fp_local + 1;
+  int pc_local = extra_base + (has_stack_restore ? 2 : 0);
   obj_global_t *stack_pointer = has_stack_restore ? intern_stack_pointer_global() : NULL;
   wb_t body = {0};
   ir_type_t *local_types = NULL;
@@ -875,7 +892,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     collect_local_types(f, local_types, nlocals);
   }
 
-  wb_uleb(&body, (uint32_t)(nlocals + (has_stack_restore ? 2 : 0)));
+  wb_uleb(&body, (uint32_t)(nlocals + (has_stack_restore ? 2 : 0) + (has_control_flow ? 1 : 0)));
   for (int v = 0; v < nlocals; v++) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(local_types[v]));
@@ -885,7 +902,12 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     wb_u8(&body, wasm_valtype(IR_TY_I32));
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
-
+  }
+  if (has_control_flow) {
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+  }
+  if (has_stack_restore) {
     emit_stack_global_get(&body, of, stack_pointer);
     emit_local_set(&body, old_sp_local);
   }
@@ -897,8 +919,23 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     emit_local_get(&body, fp_local);
     emit_stack_global_set(&body, of, stack_pointer);
   }
+  if (has_control_flow) {
+    emit_const(&body, IR_TY_I32, f->entry ? f->entry->id : 0);
+    emit_local_set(&body, pc_local);
+    wb_u8(&body, 0x02);
+    wb_u8(&body, 0x40);
+    wb_u8(&body, 0x03);
+    wb_u8(&body, 0x40);
+  }
 
   for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
+    if (has_control_flow) {
+      emit_local_get(&body, pc_local);
+      emit_const(&body, IR_TY_I32, blk->id);
+      wb_u8(&body, 0x46);
+      wb_u8(&body, 0x04);
+      wb_u8(&body, 0x40);
+    }
     for (ir_inst_t *i = blk->head; i; i = i->next) {
       switch (i->op) {
         case IR_NOP:
@@ -1111,6 +1148,27 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           }
           break;
         }
+        case IR_BR:
+          if (!has_control_flow) obj_unsupported_op(i->op);
+          emit_const(&body, IR_TY_I32, i->label_id);
+          emit_local_set(&body, pc_local);
+          wb_u8(&body, 0x0c);
+          wb_uleb(&body, 1);
+          break;
+        case IR_BR_COND:
+          if (!has_control_flow) obj_unsupported_op(i->op);
+          emit_val(&body, i->src1, IR_TY_I32, param_count);
+          wb_u8(&body, 0x04);
+          wb_u8(&body, 0x40);
+          emit_const(&body, IR_TY_I32, i->label_id);
+          emit_local_set(&body, pc_local);
+          wb_u8(&body, 0x05);
+          emit_const(&body, IR_TY_I32, i->else_label_id);
+          emit_local_set(&body, pc_local);
+          wb_u8(&body, 0x0b);
+          wb_u8(&body, 0x0c);
+          wb_uleb(&body, 1);
+          break;
         case IR_RET:
           if (i->src1.id != IR_VAL_NONE) emit_val(&body, i->src1, of->sig.result, param_count);
           if (has_stack_restore) {
@@ -1123,8 +1181,26 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           obj_unsupported_op(i->op);
       }
     }
+    if (has_control_flow && !block_has_terminator(blk)) {
+      if (blk->next) {
+        emit_const(&body, IR_TY_I32, blk->next->id);
+        emit_local_set(&body, pc_local);
+        wb_u8(&body, 0x0c);
+        wb_uleb(&body, 1);
+      } else {
+        wb_u8(&body, 0x0c);
+        wb_uleb(&body, 2);
+      }
+    }
+    if (has_control_flow) wb_u8(&body, 0x0b);
   }
-  if (has_stack_restore) {
+  if (has_control_flow) {
+    wb_u8(&body, 0x0c);
+    wb_uleb(&body, 1);
+    wb_u8(&body, 0x0b);
+    wb_u8(&body, 0x0b);
+    wb_u8(&body, 0x00);
+  } else if (has_stack_restore) {
     emit_local_get(&body, old_sp_local);
     emit_stack_global_set(&body, of, stack_pointer);
   }

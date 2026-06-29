@@ -199,6 +199,11 @@ int main(void) {
                                 "int main(void){int x=5; return (-x)+(~x);}\n",
                                 int_unary_needles, 1);
 
+  const char *control_flow_needles[] = {"loop", "if", "br ", "unreachable"};
+  failures += run_objdump_check("control_flow",
+                                "int main(void){int x=0; if (x) return 1; return 2;}\n",
+                                control_flow_needles, 4);
+
   const char *fp_local_needles[] = {"f64.const", "f64.store", "f64.load", "f64.add"};
   failures += run_objdump_check("fp_local",
                                 "double f(void){double x=1.5; return x+2.0;}\n",
