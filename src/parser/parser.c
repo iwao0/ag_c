@@ -2408,13 +2408,13 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
    * で配列でなく関数ポインタでもない場合に限定する。pointer-to-array `double (*pa)[N]`
    * (head.paren_array_mul>1) は pointee がスカラ double でないため除外。funcptr は
    * register_toplevel_global_decl が既に設定済み。 */
-  /* 単段データポインタの pointee fp_kind。直書き `double *dp` (ptr_levels==1) に加え、
+  /* データポインタの pointee fp_kind。直書き `double *dp` (ptr_levels==1) に加え、
    * ポインタ typedef `typedef double *PD; PD pd;` (基底がポインタ = base_is_ptr) も対象に
-   * する。実効ポインタ段数 = ptr_levels + base_is_ptr が 1 のときに限定し、`double **` 等の
-   * 多段を除外する。 */
+   * する。多段 `double **` でも最内 pointee は double なので同じ印を保存し、
+   * build_unary_deref_node が 1 段ずつ引き継いで最終 deref を fp load にする。 */
   if (gv && head.is_ptr && !arr.is_array && head.paren_array_mul <= 1 &&
       !g_toplevel_decl_has_func_suffix &&
-      (g_toplevel_decl_ptr_levels + (g_toplevel_decl_base_is_ptr ? 1 : 0)) == 1 &&
+      (g_toplevel_decl_ptr_levels + g_toplevel_decl_base_pointer_levels) >= 1 &&
       g_toplevel_decl_fp_kind != TK_FLOAT_KIND_NONE) {
     gv->pointee_fp_kind = (unsigned char)g_toplevel_decl_fp_kind;
   }

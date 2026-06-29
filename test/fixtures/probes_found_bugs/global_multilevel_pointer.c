@@ -8,11 +8,10 @@
 //   typedef 段数)、try_build_global_var_node が pql>=2 のとき参照ノードの deref_size=8 /
 //   base_deref_size=要素サイズ / pql を立て、build_unary_deref_node の多段 deref 分岐に
 //   乗せる (ローカルと同一表現)。
-// 注: `double **gdp` の fp pointee は local/global とも未対応の別バグ (fp_kind の多段伝播)
-//   なのでここでは扱わない。
 #include <assert.h>
 
 typedef int **PP;
+typedef double **DPP;
 
 int    x = 9;
 int   *xp = &x;
@@ -37,6 +36,19 @@ int    arr[3] = {10, 20, 30};
 int   *ap = arr;
 int  **gap = &ap;       // subscript 用
 
+double    dd = 2.5;
+double   *ddp = &dd;
+double  **gdp = &ddp;   // fp pointee の 2 段
+DPP       tdp = &ddp;   // typedef 経由 fp pointee
+
+int local_double_multilevel(void) {
+    double d = 3.5;
+    double *p = &d;
+    double **pp = &p;
+    DPP tpp = &p;
+    return (**pp == 3.5 && **tpp == 3.5);
+}
+
 int main(void) {
     assert(sizeof(gp) == 8);
     assert(**gp == 9);          // 直書き 2 段 deref
@@ -49,6 +61,10 @@ int main(void) {
     int z = 99; int *zp = &z;
     *gp = zp;                   // 中間ポインタへの代入
     assert(**gp == 99);
+
+    assert(**gdp == 2.5);
+    assert(**tdp == 2.5);
+    assert(local_double_multilevel());
 
     return 0;
 }

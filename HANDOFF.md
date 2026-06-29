@@ -2167,3 +2167,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/generic_long_double.c`
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/c11_standard_headers.c`
   - `./build/ag_c_wasm -c -o /private/tmp/generic_long_double.o test/fixtures/probes_found_bugs/generic_long_double.c`
+
+### このセッション（続き223）: global 多段 FP ポインタの最内 pointee を伝播
+- `double **gdp; **gdp` / `typedef double **DPP; DPP tdp; **tdp` が global 経路だけ integer load に
+  落ち、`global_direct()` が assertion failure していた。local 多段は以前の
+  `multilevel_pointer_fp_pointee` で動いていたが、top-level global のデータポインタ
+  `pointee_fp_kind` 保存条件が実効ポインタ段数 1 に限定されていたため、多段 global だけ
+  最内 double 印を失っていた。pointer-to-array / funcptr / 配列を除いたデータポインタ全般で
+  `g_toplevel_decl_fp_kind` を保存するよう拡張。
+- focused 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_double_multilevel_pointer.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/global_multilevel_pointer.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/global_pointer_typedef.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/global_multilevel_pointer.o test/fixtures/probes_found_bugs/global_multilevel_pointer.c`
