@@ -1221,6 +1221,9 @@ static const test_case_t test_cases[] = {
     {"probes", "struct_double_ptr_deref_arrow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_double_ptr_deref_arrow.c", 0, 0},
     {"probes", "unsupported_gnu_extensions_warn_skip", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c", 0, 0},
     {"probes", "funcptr_return_const_pointee", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_const_pointee.c", 0, 0},
+    {"probes", "file_scope_array_compound_literal_decay", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_array_compound_literal_decay.c", 0, 0},
+    {"probes", "global_multidim_struct_pointer_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_multidim_struct_pointer_designator.c", 0, 0},
+    {"probes", "static_local_pointer_array_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_pointer_array_init.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

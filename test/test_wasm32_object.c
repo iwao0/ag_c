@@ -628,6 +628,11 @@ static int run_optional_link_case(void) {
   return 0;
 }
 
+static int run_e2e_fixture_object_scan(void) {
+  return run_cmd("bash scripts/run_wasm32_object_fixture_scan.sh --e2e-fixtures --list-fail",
+                 "wasm32 object e2e fixture scan");
+}
+
 int main(void) {
   int failures = 0;
   if (mkdir("build/wasm32_obj", 0777) != 0) {
@@ -1954,6 +1959,7 @@ int main(void) {
   failures += run_fail_case("missing_o", "./build/ag_c_wasm -c build/wasm32_obj/simple.c",
                             "E0002");
 
+  failures += run_e2e_fixture_object_scan();
   failures += run_optional_link_case();
 
   if (failures) {

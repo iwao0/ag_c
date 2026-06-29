@@ -6,12 +6,14 @@ out_dir=${WASM32_OBJECT_SCAN_DIR:-build/wasm32_obj_scan}
 list_fail=0
 verbose=0
 validate=auto
+fixture_source=all
 
 usage() {
   cat <<'EOF'
-usage: scripts/run_wasm32_object_fixture_scan.sh [--list-fail] [--verbose] [--no-validate]
+usage: scripts/run_wasm32_object_fixture_scan.sh [--list-fail] [--verbose] [--no-validate] [--e2e-fixtures]
 
 Compiles test/fixtures/**/*.c in Wasm object mode, excluding should_reject.
+With --e2e-fixtures, compiles the fixture paths registered in test/test_e2e.c.
 If wasm-validate is available, validates each generated object too.
 Set AG_C_WASM to override the compiler path.
 Set WASM32_OBJECT_SCAN_DIR to override the output directory.
@@ -28,6 +30,9 @@ while [ $# -gt 0 ]; do
       ;;
     --no-validate)
       validate=0
+      ;;
+    --e2e-fixtures)
+      fixture_source=e2e
       ;;
     -h|--help)
       usage
@@ -61,6 +66,14 @@ failures="$out_dir/failures.txt"
 
 scanned=0
 failed=0
+
+fixture_list="$out_dir/fixtures.txt"
+if [ "$fixture_source" = "e2e" ]; then
+  sed -n 's/.*"\(test\/fixtures\/[^"]*\.c\)".*/\1/p' test/test_e2e.c |
+    LC_ALL=C sort -u > "$fixture_list"
+else
+  find test/fixtures -type f -name '*.c' | LC_ALL=C sort > "$fixture_list"
+fi
 
 while IFS= read -r src; do
   case "$src" in
@@ -98,9 +111,10 @@ while IFS= read -r src; do
   if [ "$verbose" -ne 0 ]; then
     printf 'PASS %s\n' "$src"
   fi
-done < <(find test/fixtures -type f -name '*.c' | LC_ALL=C sort)
+done < "$fixture_list"
 
 printf '==== wasm32 object fixture scan ====\n'
+printf 'Source: %s\n' "$fixture_source"
 printf 'Total: %d\n' "$scanned"
 printf 'Pass:  %d\n' "$((scanned - failed))"
 printf 'Fail:  %d\n' "$failed"
