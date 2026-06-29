@@ -652,7 +652,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_LOAD_STR:
-        case IR_LOAD_SYM: {
+        case IR_LOAD_SYM:
+        case IR_LOAD_TLV_ADDR: {
           if (!i->sym) obj_unsupported_op(i->op);
           if (i->op == IR_LOAD_SYM && psx_ctx_has_function_name(i->sym, i->sym_len)) {
             obj_func_t *target = intern_func(i->sym, i->sym_len);
@@ -1331,7 +1332,6 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
 
 static void emit_obj_global(global_var_t *gv, void *user) {
   (void)user;
-  if (gv->is_thread_local) obj_unsupported_msg("TLS global in Wasm object mode");
   if (gv->is_extern_decl) {
     intern_data(gv->name, gv->name_len, 2, gv->is_static, 1);
     return;

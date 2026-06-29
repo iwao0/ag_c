@@ -163,6 +163,12 @@ int main(void) {
                                 "int g=7; int main(void){return g;}\n",
                                 global_read_needles, 4);
 
+  const char *tls_global_read_needles[] = {
+      "<tls>", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <tls>"};
+  failures += run_objdump_check("tls_global_read",
+                                "_Thread_local int tls=7; int main(void){return tls;}\n",
+                                tls_global_read_needles, 4);
+
   const char *global_write_needles[] = {
       "<g>", "R_WASM_MEMORY_ADDR_LEB", "i32.store", "i32.load", "symbol=1 <g>"};
   failures += run_objdump_check("global_write",
@@ -174,6 +180,12 @@ int main(void) {
   failures += run_objdump_check("extern_global_read",
                                 "extern int ext; int f(void){return ext;}\n",
                                 extern_global_read_needles, 5);
+
+  const char *extern_tls_read_needles[] = {
+      "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
+  failures += run_objdump_check("extern_tls_read",
+                                "extern _Thread_local int ext; int f(void){return ext;}\n",
+                                extern_tls_read_needles, 5);
 
   const char *extern_global_write_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.store", "i32.load",

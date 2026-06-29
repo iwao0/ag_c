@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き148: Wasm object indirect calls）
+最終更新: 2026-06-29（続き149: Wasm object TLS globals）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -335,6 +335,11 @@
   indirect call を使う object は `env.__indirect_function_table` を table import する。
   global 関数ポインタ initializer の `R_WASM_TABLE_INDEX_I32` と組み合わせる fixture を
   `test/test_wasm32_object.c` に追加。aggregate/complex/variadic call は引き続き E4008。
+- 続き149: **Wasm object TLS globals**。
+  WAT backend と同じ単一スレッド方針で、object mode の `_Thread_local` global を通常 global data
+  と同じ data segment / data symbol として出す。`IR_LOAD_TLV_ADDR` は `IR_LOAD_SYM` と同じ
+  `i32.const` + `R_WASM_MEMORY_ADDR_LEB` に lowering。定義済み TLS read と extern TLS read の
+  objectdump fixture を `test/test_wasm32_object.c` に追加。
 
 ### Wasm backend の既知メモ
 
@@ -348,8 +353,8 @@
   direct call relocation、simple data segment、`LOAD_SYM`/`LOAD_STR` の data address relocation、
   global initializer 内の data address relocation、未定義 extern data symbol、simple
   global/extern global read/write、aggregate global data segment、function address/table-index
-  relocation、simple indirect call。
-  aggregate/complex/variadic call の object 化、TLS object relocation は未対応。
+  relocation、simple indirect call、TLS global data/address relocation。
+  aggregate/complex/variadic call の object 化、local stack object (`IR_ALLOCA`) は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
