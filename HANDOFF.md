@@ -543,6 +543,11 @@
   statement expression は block 内の値文が通常評価で先に fallback signature を作っていたため、
   expected funcptr signature 付き経路では値文だけ skip して最後に期待型付きで評価するよう修正。
   追加 fixture: `extern_funcptr_return_direct_decl`、`extern_funcptr_return_stmt_expr`。
+- 続き189: **Wasm object extern funcptr signature fixture coverage**。
+  既存実装で通る経路を fixture 化して、extern variadic function pointer signature の回帰検出を強化。
+  追加 fixture: local funcptr array subscript 代入 (`extern_local_funcptr_array_assign`)、
+  return funcptr を local に保存してから indirect call (`extern_funcptr_return_store_local`)、
+  struct pointer arrow 経由の member 代入/call (`extern_local_struct_funcptr_arrow`)。
 
 ### Wasm backend の既知メモ
 
