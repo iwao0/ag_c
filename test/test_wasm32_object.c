@@ -188,6 +188,12 @@ int main(void) {
                                 "struct P a={1,2}; struct P b=a; return b.y;}\n",
                                 local_struct_needles, 5);
 
+  const char *local_struct_assign_needles[] = {"i64.load", "i64.store", "i32.load"};
+  failures += run_objdump_check("local_struct_assign",
+                                "struct P{int x; int y;}; int main(void){"
+                                "struct P a={1,2}; struct P b; b=a; return b.y;}\n",
+                                local_struct_assign_needles, 3);
+
   const char *int_unary_needles[] = {"i32.sub"};
   failures += run_objdump_check("int_unary",
                                 "int main(void){int x=5; return (-x)+(~x);}\n",

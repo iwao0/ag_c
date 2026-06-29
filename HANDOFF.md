@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き155: Wasm object aligned local pointers）
+最終更新: 2026-06-29（続き156: Wasm object fixed-size memcpy）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -370,6 +370,10 @@
   object mode に `IR_ALIGN_PTR` を追加。過剰整列ローカル (`_Alignas(>16)`) の pointer を
   `i32.add` + `i32.and` で `(ptr + align-1) & -align` に丸める。`_Alignas(32) int` の
   objdump fixture を追加。
+- 続き156: **Wasm object fixed-size memcpy**。
+  object mode に `IR_MEMCPY` を追加。WAT backend と同じく固定サイズを `i64/i32/i32.store16/
+  i32.store8` 系の load/store chunk に展開し、bulk-memory 命令には依存しない。struct assignment
+  fixture で `i64.load` / `i64.store` を確認。
 
 ### Wasm backend の既知メモ
 
@@ -386,7 +390,7 @@
   relocation、simple indirect call、TLS global data/address relocation、local stack slot
   (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)、integer unary ops (`IR_NEG`/`IR_NOT`)。
   local floating-point immediates/basic ops、fp/int/fp width conversions、aligned local pointer
-  rounding (`IR_ALIGN_PTR`)。
+  rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)。
   aggregate/complex/variadic call の object 化、VLA/dynamic stack allocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。

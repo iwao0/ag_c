@@ -519,6 +519,10 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
         case IR_STORE:
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
           break;
+        case IR_MEMCPY:
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          force_vreg_type(types, ntypes, i->src2, IR_TY_I32);
+          break;
         case IR_LEA:
           force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
@@ -815,6 +819,33 @@ static unsigned f2i_opcode(ir_type_t dst, ir_type_t src, int is_unsigned) {
   return 0;
 }
 
+static void emit_addr_plus_const(wb_t *b, ir_val_t v, int off, int param_count) {
+  emit_addr_val(b, v, param_count);
+  if (off == 0) return;
+  emit_const(b, IR_TY_I32, off);
+  wb_u8(b, 0x6a);
+}
+
+static void emit_copy_chunk(wb_t *b, ir_val_t dst, ir_val_t src, int off, ir_type_t ty,
+                            int param_count) {
+  emit_addr_plus_const(b, dst, off, param_count);
+  emit_addr_plus_const(b, src, off, param_count);
+  wb_u8(b, load_opcode(ty, 1));
+  emit_memarg(b, ty);
+  wb_u8(b, store_opcode(ty));
+  emit_memarg(b, ty);
+}
+
+static void emit_memcpy_inline(wb_t *b, ir_inst_t *i, int param_count) {
+  int n = i->alloca_size;
+  if (n < 0) obj_unsupported_op(i->op);
+  int off = 0;
+  for (; off + 8 <= n; off += 8) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I64, param_count);
+  for (; off + 4 <= n; off += 4) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I32, param_count);
+  for (; off + 2 <= n; off += 2) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I16, param_count);
+  for (; off < n; off++) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I8, param_count);
+}
+
 static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
@@ -946,6 +977,9 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_val(&body, i->src2, i->src2.type, param_count);
           wb_u8(&body, store_opcode(i->src2.type));
           emit_memarg(&body, i->src2.type);
+          break;
+        case IR_MEMCPY:
+          emit_memcpy_inline(&body, i, param_count);
           break;
         case IR_LEA:
           emit_addr_val(&body, i->src1, param_count);
