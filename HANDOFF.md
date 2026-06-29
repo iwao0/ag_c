@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き190: Wasm object casted extern funcptr signatures）
+最終更新: 2026-06-29（続き191: Wasm object aggregate casted extern funcptr initializers）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -558,6 +558,15 @@
   `extern_funcptr_return_cast`、`extern_local_struct_funcptr_cast`。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、
   `make test` green（`test_wasm32_e2e` 1096/1096、`test_e2e` 1125/1125）。
+- 続き191: **Wasm object aggregate casted extern funcptr initializers**。
+  global aggregate initializer 内の `(Printer)&fprintf` が `psx_gbrace_flat` で address initializer
+  として扱われず、symbol relocation を落とす危険があったため、`ND_PTR_CAST` も
+  `resolve_global_addr_init` に通すよう修正。object fixture は global funcptr array、
+  global struct funcptr member、local funcptr array assignment、return ternary、
+  local struct arrow assignment の cast 付き extern variadic funcptr 経路を追加し、
+  `(i32, i32) -> i32` / `R_WASM_TABLE_INDEX_*` を確認、fallback `(i64, i64) -> i32` を reject。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、
+  `make test` green、`make wasm32-object-fixture-scan` = 1097/1097 compile + validate green。
 
 ### Wasm backend の既知メモ
 

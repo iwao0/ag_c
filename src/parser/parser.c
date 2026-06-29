@@ -1878,7 +1878,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         node_funcref_t *fr = (node_funcref_t *)e;
         sym = fr->funcname;
         sym_len = fr->funcname_len;
-      } else if (e && (e->kind == ND_ADDR || e->kind == ND_ADD || e->kind == ND_SUB)) {
+      } else if (e && (e->kind == ND_ADDR || e->kind == ND_ADD || e->kind == ND_SUB ||
+                       e->kind == ND_PTR_CAST)) {
         /* `&g` / `&data[n]` / `data + n` 形式: グローバル変数 (配列要素) のアドレスを
          * 要素に置く。resolve_global_addr_init が (シンボル, バイトオフセット) へ
          * 解決する。オフセットは init_values に格納し、codegen が `_sym+off` を出力する。
