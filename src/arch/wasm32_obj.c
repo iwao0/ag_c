@@ -614,6 +614,17 @@ static int func_has_vla_alloc(ir_func_t *f) {
   return 0;
 }
 
+static int func_has_variadic_varargs(ir_func_t *f) {
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op == IR_CALL && i->is_variadic_call && i->nargs > i->nargs_fixed) {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
 static int func_has_control_flow(ir_func_t *f) {
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
@@ -860,9 +871,6 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
-  if (i->is_variadic_call && i->nargs > i->nargs_fixed) {
-    obj_unsupported_msg("variadic call with object varargs in Wasm object mode");
-  }
   sig.nparams = (i->is_variadic_call ? i->nargs_fixed : i->nargs) + (has_ret_area ? 1 : 0);
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
@@ -976,6 +984,64 @@ static void emit_memcpy_inline(wb_t *b, ir_inst_t *i, int param_count) {
   for (; off < n; off++) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I8, param_count);
 }
 
+static int emit_variadic_arg_area_prepare(wb_t *b, obj_func_t *of, obj_global_t *stack_pointer,
+                                          obj_global_t **va_arg_area, int old_va_arg_area_local,
+                                          ir_inst_t *i, int param_count) {
+  if (!i->is_variadic_call) return 0;
+  int nargs_var = i->nargs - i->nargs_fixed;
+  if (nargs_var <= 0) return 0;
+  if (!stack_pointer) obj_unsupported_msg("variadic call without stack pointer in Wasm object mode");
+  if (!*va_arg_area) *va_arg_area = intern_va_arg_area_global();
+  int bytes = align_to(nargs_var * 8, 16);
+
+  emit_stack_global_get(b, of, *va_arg_area);
+  emit_local_set(b, old_va_arg_area_local);
+
+  emit_stack_global_get(b, of, stack_pointer);
+  emit_const(b, IR_TY_I32, bytes);
+  wb_u8(b, 0x6b);
+  emit_stack_global_set(b, of, stack_pointer);
+
+  emit_stack_global_get(b, of, stack_pointer);
+  emit_stack_global_set(b, of, *va_arg_area);
+
+  for (int a = i->nargs_fixed; a < i->nargs; a++) {
+    int off = (a - i->nargs_fixed) * 8;
+    emit_stack_global_get(b, of, *va_arg_area);
+    emit_const(b, IR_TY_I32, off);
+    wb_u8(b, 0x6a);
+    ir_type_t arg_ty = wasm_ir_type(i->args[a].type);
+    if (arg_ty == IR_TY_F64) {
+      emit_val(b, i->args[a], IR_TY_F64, param_count);
+      wb_u8(b, store_opcode(IR_TY_F64));
+      emit_memarg(b, IR_TY_F64);
+    } else if (arg_ty == IR_TY_F32) {
+      emit_val(b, i->args[a], IR_TY_F32, param_count);
+      wb_u8(b, 0xbb); /* f64.promote_f32 */
+      wb_u8(b, store_opcode(IR_TY_F64));
+      emit_memarg(b, IR_TY_F64);
+    } else {
+      emit_val(b, i->args[a], IR_TY_I64, param_count);
+      wb_u8(b, store_opcode(IR_TY_I64));
+      emit_memarg(b, IR_TY_I64);
+    }
+  }
+  return bytes;
+}
+
+static void emit_variadic_arg_area_restore(wb_t *b, obj_func_t *of, obj_global_t *stack_pointer,
+                                           obj_global_t *va_arg_area,
+                                           int old_va_arg_area_local, int bytes) {
+  if (bytes <= 0) return;
+  emit_stack_global_get(b, of, stack_pointer);
+  emit_const(b, IR_TY_I32, bytes);
+  wb_u8(b, 0x6a);
+  emit_stack_global_set(b, of, stack_pointer);
+
+  emit_local_get(b, old_va_arg_area_local);
+  emit_stack_global_set(b, of, va_arg_area);
+}
+
 static void emit_complex_ret_copy(wb_t *b, ir_inst_t *i, int param_count) {
   ir_type_t ty = i->ret_complex_half == 4 ? IR_TY_F32 : IR_TY_F64;
   if (i->ret_complex_half != 4 && i->ret_complex_half != 8) obj_unsupported_op(i->op);
@@ -1001,7 +1067,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int has_ret_area = func_has_ret_area(f);
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
-  int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f);
+  int has_variadic_varargs = func_has_variadic_varargs(f);
+  int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f) || has_variadic_varargs;
   int has_control_flow = func_has_control_flow(f);
   int has_atomic_cas32 = func_has_atomic_cas_width(f, 0);
   int has_atomic_cas64 = func_has_atomic_cas_width(f, 1);
@@ -1010,6 +1077,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int fp_local = extra_base + extra_count;
   int old_sp_local = fp_local + 1;
   if (has_stack_restore) extra_count += 2;
+  int old_va_arg_area_local = extra_base + extra_count;
+  if (has_variadic_varargs) extra_count++;
   int pc_local = extra_base + extra_count;
   if (has_control_flow) extra_count++;
   int atomic_tmp32_local = extra_base + extra_count;
@@ -1037,6 +1106,10 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   if (has_stack_restore) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+  }
+  if (has_variadic_varargs) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
   }
@@ -1351,6 +1424,9 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           break;
         }
         case IR_CALL: {
+          int vararg_area_bytes =
+              emit_variadic_arg_area_prepare(&body, of, stack_pointer, &va_arg_area,
+                                             old_va_arg_area_local, i, param_count);
           if (i->callee.id != IR_VAL_NONE) {
             obj_sig_t csig = call_sig_from_inst(i);
             int type_index = intern_type(&csig);
@@ -1368,6 +1444,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             if (csig.result != IR_TY_VOID && i->dst.id >= 0) {
               emit_local_set(&body, local_index(param_count, i->dst.id));
             }
+            emit_variadic_arg_area_restore(&body, of, stack_pointer, va_arg_area,
+                                           old_va_arg_area_local, vararg_area_bytes);
             free(csig.params);
             break;
           }
@@ -1396,6 +1474,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           if (target->sig.result != IR_TY_VOID && i->dst.id >= 0) {
             emit_local_set(&body, local_index(param_count, i->dst.id));
           }
+          emit_variadic_arg_area_restore(&body, of, stack_pointer, va_arg_area,
+                                         old_va_arg_area_local, vararg_area_bytes);
           break;
         }
         case IR_BR:

@@ -236,6 +236,36 @@ int main(void) {
                                 "int pick(int n, ...){return n;} int main(void){return pick(4);}\n",
                                 variadic_no_extra_needles, 3);
 
+  const char *variadic_extra_needles[] = {
+      "__ag_va_arg_area", "__stack_pointer", "(i64) -> i32", "i64.store",
+      "R_WASM_FUNCTION_INDEX_LEB"};
+  failures += run_objdump_check("variadic_extra",
+                                "int pick(int n, ...){return n;} "
+                                "int main(void){return pick(1,2);}\n",
+                                variadic_extra_needles, 5);
+
+  const char *variadic_va_arg_read_needles[] = {
+      "__ag_va_arg_area", "__stack_pointer", "(i64) -> i32", "i64.store", "i64.load"};
+  failures += run_objdump_check("variadic_va_arg_read",
+                                "#include <stdarg.h>\n"
+                                "int first(int n, ...){va_list ap; va_start(ap,n); "
+                                "return va_arg(ap,int);} "
+                                "int main(void){return first(0,42);}\n",
+                                variadic_va_arg_read_needles, 5);
+
+  const char *variadic_fp_extra_needles[] = {
+      "__ag_va_arg_area", "(i64) -> i32", "f64.promote_f32", "f64.store"};
+  failures += run_objdump_check("variadic_fp_extra",
+                                "int pick(int n, ...){return n;} "
+                                "int main(void){float x=1.5f; return pick(1,x);}\n",
+                                variadic_fp_extra_needles, 4);
+
+  const char *extern_variadic_extra_needles[] = {
+      "<log1>", "undefined", "__ag_va_arg_area", "(i32) -> i32", "i64.store"};
+  failures += run_objdump_check("extern_variadic_extra",
+                                "int log1(char *, ...); int main(void){return log1(\"x\",42);}\n",
+                                extern_variadic_extra_needles, 5);
+
   const char *extern_variadic_no_extra_needles[] = {"<log1>", "undefined", "(i32) -> i32"};
   failures += run_objdump_check("extern_variadic_no_extra",
                                 "int log1(char *, ...); int main(void){return log1(\"x\");}\n",
@@ -675,17 +705,6 @@ int main(void) {
 
   failures += run_fail_case("missing_o", "./build/ag_c_wasm -c build/wasm32_obj/simple.c",
                             "E0002");
-
-  if (write_file("build/wasm32_obj/variadic_extra_reject.c",
-                 "int pick(int n, ...){return n;} int main(void){return pick(1,2);}\n") != 0) {
-    fprintf(stderr, "FAIL: write variadic_extra_reject.c\n");
-    failures++;
-  } else {
-    failures += run_fail_case("variadic_extra_reject",
-                              "./build/ag_c_wasm -c -o build/wasm32_obj/variadic_extra_reject.o "
-                              "build/wasm32_obj/variadic_extra_reject.c",
-                              "E4008");
-  }
 
   failures += run_optional_link_case();
 
