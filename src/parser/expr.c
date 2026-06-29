@@ -4746,6 +4746,25 @@ static node_t *parse_generic_selection(void) {
         got_cast_ty = 1;
       }
     }
+    if (!got_cast_ty && save->next && save->next->kind == TK_LPAREN) {
+      set_curtok(save->next->next); // skip outer '(' and inner '('
+      cty = (generic_type_t){0};
+      cty.kind = TK_EOF;
+      cty.tag_kind = TK_EOF;
+      cty.ptr_pointee_fp_kind = TK_FLOAT_KIND_NONE;
+      if (parse_generic_assoc_type(&cty) && curtok()->kind == TK_RPAREN &&
+          curtok()->next && curtok()->next->kind != TK_LBRACE &&
+          (cty.type_sig != NULL || (!cty.is_pointer && cty.tag_kind == TK_EOF))) {
+        set_curtok(curtok()->next); // skip inner ')'
+        cast();
+        if (curtok()->kind == TK_RPAREN && curtok()->next &&
+            curtok()->next->kind == TK_COMMA) {
+          set_curtok(curtok()->next); // skip outer ')'
+          control_ty = cty;
+          got_cast_ty = 1;
+        }
+      }
+    }
     if (!got_cast_ty) set_curtok(save); // 純粋なキャストでなければ巻き戻して通常解析
     tk_allocator_recyc_unpin();
   }

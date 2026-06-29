@@ -2181,3 +2181,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/global_multilevel_pointer.c`
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/global_pointer_typedef.c`
   - `./build/ag_c_wasm -c -o /private/tmp/global_multilevel_pointer.o test/fixtures/probes_found_bugs/global_multilevel_pointer.c`
+
+### このセッション（続き224）: _Generic の二重括弧 cast 制御式
+- `#define KIND(x) _Generic((x), ...)` と `KIND((long double)1.0)` の組み合わせで、制御式が
+  `((long double)1.0)` になり、既存の cast 型推定分岐を通らず `long double:` ではなく
+  `double:`/`default:` 側へ落ちていた。`parse_generic_selection` で外側 1 段の括弧に包まれた
+  純粋 cast 制御式も、通常の `(T)x` と同じく cast 型を静的型として採用するよう拡張。
+- focused 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_generic_ld_macro.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/generic_long_double.c`
+  - `scripts/agc_diff_test.sh test/fixtures/type_decl/generic_assoc_ptr_to_func_returning_ptr_to_array_type.c`

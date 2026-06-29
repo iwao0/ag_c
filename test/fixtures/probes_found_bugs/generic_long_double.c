@@ -8,6 +8,7 @@
 #include <assert.h>
 
 #define KIND(x) _Generic((x), long double: 3, double: 2, float: 1, default: 0)
+#define CAST_KIND(T, x) KIND((T)(x))
 
 typedef long double LD;
 typedef LD LD2;
@@ -47,10 +48,12 @@ int main(void) {
   assert(classify_typedef_param(2.0L) == 3);
   assert(classify_typedef_chain_param(3.0L) == 7);
 
-  /* cast (制御式に直接置く形。`_Generic((T)expr, ...)` は parse_generic_selection が
-   * キャスト型を静的型として採用する。マクロ経由の二重括弧 `((T)expr)` は別経路で未対応)。 */
+  /* cast (制御式に直接置く形と、マクロ経由で二重括弧になる形)。 */
   assert(_Generic((long double)1.0, long double: 3, double: 2, default: 0) == 3);
   assert(_Generic((double)1.0, long double: 3, double: 2, default: 0) == 2);
+  assert(CAST_KIND(long double, 1.0) == 3);
+  assert(CAST_KIND(double, 1.0L) == 2);
+  assert(CAST_KIND(LD, 1.0) == 3);
 
   /* long double の値は double と同一に評価される (lowering)。区別は型のみ。 */
   assert((double)ld == 1.5);
