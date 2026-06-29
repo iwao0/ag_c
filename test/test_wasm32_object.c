@@ -211,6 +211,27 @@ int main(void) {
                                 "int main(void){return 0;}\n",
                                 struct_ptr_member_needles, 3);
 
+  const char *func_addr_needles[] = {
+      "R_WASM_TABLE_INDEX_SLEB", "<f>"};
+  failures += run_objdump_check("func_addr",
+                                "int f(void){return 1;} int (*addr(void))(void){return f;} "
+                                "int main(void){return 0;}\n",
+                                func_addr_needles, 2);
+
+  const char *funcptr_global_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>"};
+  failures += run_objdump_check("funcptr_global",
+                                "int f(void){return 1;} int (*p)(void)=f; "
+                                "int main(void){return 0;}\n",
+                                funcptr_global_needles, 3);
+
+  const char *struct_funcptr_member_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
+  failures += run_objdump_check("struct_funcptr_member",
+                                "int f(void){return 1;} struct Box{int (*p)(void);}; "
+                                "struct Box box={f}; int main(void){return 0;}\n",
+                                struct_funcptr_member_needles, 4);
+
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",
                                 "static int hidden(void){return 7;} int main(void){return hidden();}\n",

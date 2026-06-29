@@ -17,6 +17,8 @@ enum {
   WASM_SEC_DATACOUNT = 12,
 
   R_WASM_FUNCTION_INDEX_LEB = 0,
+  R_WASM_TABLE_INDEX_SLEB = 1,
+  R_WASM_TABLE_INDEX_I32 = 2,
   R_WASM_MEMORY_ADDR_LEB = 3,
   R_WASM_MEMORY_ADDR_I32 = 5,
 
@@ -651,6 +653,16 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_LOAD_STR:
         case IR_LOAD_SYM: {
           if (!i->sym) obj_unsupported_op(i->op);
+          if (i->op == IR_LOAD_SYM && psx_ctx_has_function_name(i->sym, i->sym_len)) {
+            obj_func_t *target = intern_func(i->sym, i->sym_len);
+            of = &g_obj.funcs[of_index];
+            wb_u8(&body, 0x41);
+            size_t imm_off = wb_uleb5(&body, 0);
+            func_add_reloc(of, R_WASM_TABLE_INDEX_SLEB, imm_off,
+                           (int)(target - g_obj.funcs), 0, 0);
+            emit_local_set(&body, local_index(param_count, i->dst.id));
+            break;
+          }
           int addend = 0;
           obj_data_t *d = data_for_symbol(i->sym, i->op == IR_LOAD_STR ? -1 : i->sym_len, &addend);
           wb_u8(&body, 0x41);
@@ -757,7 +769,9 @@ static void assign_indices(void) {
         f->relocs[r].target_sym = target->symbol_index;
       } else {
         obj_func_t *target = &g_obj.funcs[f->relocs[r].target_sym];
-        wb_patch_uleb5(f->body.data + f->relocs[r].body_off, (uint32_t)target->func_index);
+        uint32_t value = f->relocs[r].type == R_WASM_TABLE_INDEX_SLEB
+                           ? 0 : (uint32_t)target->func_index;
+        wb_patch_uleb5(f->body.data + f->relocs[r].body_off, value);
         f->relocs[r].target_sym = target->symbol_index;
       }
     }
@@ -1005,6 +1019,15 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
 
 static void data_write_symbol_addr(obj_data_t *d, char *sym, int sym_len,
                                    long long addend, int size) {
+  if (sym && sym_len >= 0 && psx_ctx_has_function_name(sym, sym_len)) {
+    if (addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
+    obj_func_t *target = find_func(sym, sym_len);
+    if (!target) obj_unsupported_msg("unresolved function address in Wasm object mode");
+    size_t off = d->bytes.len;
+    wb_int_le(&d->bytes, 0, size);
+    data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);
+    return;
+  }
   int reloc_addend = 0;
   obj_data_t *target = data_for_symbol(sym, sym_len, &reloc_addend);
   size_t off = d->bytes.len;
@@ -1027,6 +1050,14 @@ static void data_write_int_le_at(obj_data_t *d, size_t off, uint64_t value, int 
 
 static void data_write_symbol_addr_at(obj_data_t *d, size_t off, char *sym, int sym_len,
                                       long long addend, int size) {
+  if (sym && sym_len >= 0 && psx_ctx_has_function_name(sym, sym_len)) {
+    if (addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
+    obj_func_t *target = find_func(sym, sym_len);
+    if (!target) obj_unsupported_msg("unresolved function address in Wasm object mode");
+    data_write_int_le_at(d, off, 0, size);
+    data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);
+    return;
+  }
   int reloc_addend = 0;
   obj_data_t *target = data_for_symbol(sym, sym_len, &reloc_addend);
   data_write_int_le_at(d, off, 0, size);
