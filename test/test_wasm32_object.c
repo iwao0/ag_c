@@ -478,6 +478,31 @@ int main(void) {
                                        union_fp_array_needles, 5,
                                        union_fp_array_rejects, 1);
 
+  const char *struct_fp_array_member_needles[] = {
+      "Data[1]", "<r>", "0000 0000 0000 f83f 0000 0000 0000 0440",
+      "0000 0000 0000 0c40 0000 0000 0000 1240", "f64.load"};
+  failures += run_objdump_check("struct_fp_array_member",
+                                "struct R{double m[2][2];}; "
+                                "struct R r={{{1.5,2.5},{3.5,4.5}}}; "
+                                "int main(void){return (int)r.m[1][1];}\n",
+                                struct_fp_array_member_needles, 5);
+
+  const char *struct_union_fp_needles[] = {
+      "Data[1]", "<g>", "0000 0000 0000 0440 0400 0000", "f64.load", "i32.load"};
+  failures += run_objdump_check("struct_union_fp",
+                                "union U{int i; double d;}; struct S{union U u; int x;}; "
+                                "struct S g={{.d=2.5},4}; "
+                                "int main(void){return (int)g.u.d+g.x;}\n",
+                                struct_union_fp_needles, 5);
+
+  const char *union_struct_fp_needles[] = {
+      "Data[1]", "<g>", "0000 0000 0000 0440 0400 0000", "f64.load", "i32.load"};
+  failures += run_objdump_check("union_struct_fp",
+                                "struct S{double d; int x;}; union U{struct S s; long raw;}; "
+                                "union U g={.s={2.5,4}}; "
+                                "int main(void){return (int)g.s.d+g.s.x;}\n",
+                                union_struct_fp_needles, 5);
+
   const char *bitfield_global_needles[] = {
       "Data[1]", "<s>", "size=4", "8d00 0000", "i32.shr_s", "i32.and"};
   failures += run_objdump_check("bitfield_global",

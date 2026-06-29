@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き167: Wasm object optional link coverage）
+最終更新: 2026-06-29（続き168: Wasm object aggregate FP data fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -424,6 +424,10 @@
   `wasm-ld` / `wasm-validate` / `wasm-interp` がある環境でだけ走る optional link test に、
   extern global read/write を別 TU data symbol 経由で解決するケースと、同名 `static hidden`
   関数を別 TU に持つ local function symbol 衝突なしケースを追加。どちらも `main() => i32:42` を確認。
+- 続き168: **Wasm object aggregate FP data fixtures**。
+  object data initializer の aggregate FP coverage として、`struct { double m[2][2]; }` の FP 配列メンバ、
+  `struct` 内 `union` の active double メンバ、`union` 内 `struct` の double+int メンバを fixture 化。
+  data segment の IEEE754 bytes と `f64.load` / `i32.load` を確認。
 
 ### Wasm backend の既知メモ
 
