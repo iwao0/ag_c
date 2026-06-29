@@ -51,6 +51,10 @@ static int run_objdump_check(const char *name, const char *src,
   char cmd[1024];
   snprintf(cmd, sizeof(cmd), "./build/ag_c_wasm -c -o %s %s", o_path, c_path);
   if (run_cmd(cmd, name) != 0) return 1;
+  if (command_available("wasm-validate")) {
+    snprintf(cmd, sizeof(cmd), "wasm-validate %s", o_path);
+    if (run_cmd(cmd, "wasm-validate object") != 0) return 1;
+  }
 
   if (!command_available("wasm-objdump")) return 0;
   snprintf(cmd, sizeof(cmd), "wasm-objdump -x -d %s > %s", o_path, dump_path);
@@ -82,6 +86,10 @@ static int run_objdump_check_absent(const char *name, const char *src,
   char cmd[1024];
   snprintf(cmd, sizeof(cmd), "./build/ag_c_wasm -c -o %s %s", o_path, c_path);
   if (run_cmd(cmd, name) != 0) return 1;
+  if (command_available("wasm-validate")) {
+    snprintf(cmd, sizeof(cmd), "wasm-validate %s", o_path);
+    if (run_cmd(cmd, "wasm-validate object") != 0) return 1;
+  }
 
   if (!command_available("wasm-objdump")) return 0;
   snprintf(cmd, sizeof(cmd), "wasm-objdump -x -d %s > %s", o_path, dump_path);
@@ -215,11 +223,15 @@ int main(void) {
     /* already exists is fine; later file writes will report real failures */
   }
 
-  const char *simple_needles[] = {
-      "Custom:", "\"linking\"", "\"reloc.CODE\"", "<forty>", "R_WASM_FUNCTION_INDEX_LEB"};
+  const char *simple_needles[] = {"Custom:",
+                                  "\"linking\"",
+                                  "\"reloc.CODE\"",
+                                  "__linear_memory",
+                                  "<forty>",
+                                  "R_WASM_FUNCTION_INDEX_LEB"};
   failures += run_objdump_check("simple",
                                 "int forty(void){return 40;} int main(void){return forty()+2;}\n",
-                                simple_needles, 5);
+                                simple_needles, 6);
 
   const char *extern_needles[] = {"Import", "<other>", "undefined", "R_WASM_FUNCTION_INDEX_LEB"};
   failures += run_objdump_check("extern_call",
@@ -420,11 +432,10 @@ int main(void) {
                                 "int main(void){int x=5; return (-x)+(~x);}\n",
                                 int_unary_needles, 1);
 
-  const char *i64_shift_needles[] = {"i64.shl"};
-  const char *i64_shift_rejects[] = {"i64.extend_i32_u"};
-  failures += run_objdump_check_absent("i64_shift",
-                                       "long f(long x){return x<<3;}\n",
-                                       i64_shift_needles, 1, i64_shift_rejects, 1);
+  const char *i64_shift_needles[] = {"i64.extend_i32_u", "i64.shl"};
+  failures += run_objdump_check("i64_shift",
+                                "long f(long x){return x<<3;}\n",
+                                i64_shift_needles, 2);
 
   const char *control_flow_needles[] = {"loop", "if", "br ", "unreachable"};
   failures += run_objdump_check("control_flow",

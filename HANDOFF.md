@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き179: Wasm object fixture scan target）
+最終更新: 2026-06-29（続き180: Wasm object validation coverage）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
   `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_wasm32_object` green、
   `./build/test_e2e` = **1125/1125 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile green**。
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile + validate green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -487,6 +487,13 @@
   178 の scan を `scripts/run_wasm32_object_fixture_scan.sh` と `make wasm32-object-fixture-scan` に
   昇格。失敗一覧は `build/wasm32_obj_scan/failures.txt` に残す。`--list-fail` / `--verbose` と
   `AG_C_WASM` / `WASM32_OBJECT_SCAN_DIR` override に対応。
+- 続き180: **Wasm object validation coverage**。
+  object file に `env.__linear_memory` import を出し、`wasm-validate` が使える環境では
+  `test_wasm32_object` と `make wasm32-object-fixture-scan` の各 `.o` を validate する。
+  validate で露出した型不一致も修正。i64 shift count は i64 に揃え、function param/result の
+  pointer/struct canonical type を local 型収集へ反映。address として i32 化された vreg は
+  load/store/constant emission でも actual local type を使う。通常 fixture scan は
+  1097/1097 compile + validate green。
 
 ### Wasm backend の既知メモ
 
@@ -510,8 +517,8 @@
   (narrow UCN は UTF-8 bytes)、
   symbol address relocation、struct/union/
   bitfield aggregate の基本形に対応。
-  通常 fixture の object compile scan は `make wasm32-object-fixture-scan` で 1097/1097 green
-  （should_reject 除外）。
+  通常 fixture の object compile + validate scan は `make wasm32-object-fixture-scan` で
+  1097/1097 green（should_reject 除外）。
   extra vararg を持つ variadic call は direct/extern/local/global/struct member/typedef funcptr indirect で
   `__ag_va_arg_area` 退避に対応済み。aggregate call は hidden return area
   を持つ direct/indirect call の基本形まで対応。complex call は direct hidden return area と

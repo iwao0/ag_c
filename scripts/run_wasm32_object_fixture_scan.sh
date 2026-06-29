@@ -5,12 +5,14 @@ agc_wasm=${AG_C_WASM:-./build/ag_c_wasm}
 out_dir=${WASM32_OBJECT_SCAN_DIR:-build/wasm32_obj_scan}
 list_fail=0
 verbose=0
+validate=auto
 
 usage() {
   cat <<'EOF'
-usage: scripts/run_wasm32_object_fixture_scan.sh [--list-fail] [--verbose]
+usage: scripts/run_wasm32_object_fixture_scan.sh [--list-fail] [--verbose] [--no-validate]
 
 Compiles test/fixtures/**/*.c in Wasm object mode, excluding should_reject.
+If wasm-validate is available, validates each generated object too.
 Set AG_C_WASM to override the compiler path.
 Set WASM32_OBJECT_SCAN_DIR to override the output directory.
 EOF
@@ -23,6 +25,9 @@ while [ $# -gt 0 ]; do
       ;;
     --verbose)
       verbose=1
+      ;;
+    --no-validate)
+      validate=0
       ;;
     -h|--help)
       usage
@@ -40,6 +45,14 @@ done
 if [ ! -x "$agc_wasm" ]; then
   echo "missing executable: $agc_wasm" >&2
   exit 2
+fi
+
+if [ "$validate" = "auto" ]; then
+  if command -v wasm-validate >/dev/null 2>&1; then
+    validate=1
+  else
+    validate=0
+  fi
 fi
 
 mkdir -p "$out_dir"
@@ -62,17 +75,28 @@ while IFS= read -r src; do
   obj="$out_dir/${safe%.c}.o"
   err="$out_dir/${safe%.c}.err"
 
-  if "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err"; then
-    if [ "$verbose" -ne 0 ]; then
-      printf 'PASS %s\n' "$src"
-    fi
-  else
+  if ! "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err"; then
     failed=$((failed + 1))
     msg=$(sed -n '1p' "$err")
-    printf '%s\t%s\n' "$src" "$msg" >> "$failures"
+    printf '%s\tcompile: %s\n' "$src" "$msg" >> "$failures"
     if [ "$verbose" -ne 0 ]; then
-      printf 'FAIL %s\t%s\n' "$src" "$msg"
+      printf 'FAIL %s\tcompile: %s\n' "$src" "$msg"
     fi
+    continue
+  fi
+
+  if [ "$validate" -ne 0 ] && ! wasm-validate "$obj" >/dev/null 2>"$err"; then
+    failed=$((failed + 1))
+    msg=$(sed -n '1p' "$err")
+    printf '%s\tvalidate: %s\n' "$src" "$msg" >> "$failures"
+    if [ "$verbose" -ne 0 ]; then
+      printf 'FAIL %s\tvalidate: %s\n' "$src" "$msg"
+    fi
+    continue
+  fi
+
+  if [ "$verbose" -ne 0 ]; then
+    printf 'PASS %s\n' "$src"
   fi
 done < <(find test/fixtures -type f -name '*.c' | LC_ALL=C sort)
 
@@ -80,6 +104,7 @@ printf '==== wasm32 object fixture scan ====\n'
 printf 'Total: %d\n' "$scanned"
 printf 'Pass:  %d\n' "$((scanned - failed))"
 printf 'Fail:  %d\n' "$failed"
+printf 'Validate: %s\n' "$validate"
 printf 'Log:   %s\n' "$failures"
 
 if [ "$failed" -ne 0 ]; then
