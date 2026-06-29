@@ -492,16 +492,29 @@ static int local_index(int param_count, int vreg) {
   return param_count + vreg;
 }
 
+static ir_type_t *g_emit_local_types;
+static int g_emit_local_count;
+
+static ir_type_t actual_vreg_type(ir_val_t v) {
+  if (v.id >= 0 && v.id < g_emit_local_count && g_emit_local_types) return g_emit_local_types[v.id];
+  return wasm_ir_type(v.type);
+}
+
 static void note_vreg_type(ir_type_t *types, int ntypes, ir_val_t v) {
   if (v.id >= 0 && v.id < ntypes) types[v.id] = wasm_ir_type(v.type);
 }
 
-static void force_vreg_type(ir_type_t *types, int ntypes, ir_val_t v, ir_type_t ty) {
-  if (v.id >= 0 && v.id < ntypes) types[v.id] = wasm_ir_type(ty);
+static int force_vreg_i32(ir_type_t *types, unsigned char *forced_i32, int ntypes, ir_val_t v) {
+  if (v.id < 0 || v.id >= ntypes) return 0;
+  int changed = types[v.id] != IR_TY_I32 || !forced_i32[v.id];
+  types[v.id] = IR_TY_I32;
+  forced_i32[v.id] = 1;
+  return changed;
 }
 
 static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
   for (int v = 0; v < ntypes; v++) types[v] = IR_TY_I32;
+  unsigned char *forced_i32 = calloc((size_t)ntypes, 1);
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       note_vreg_type(types, ntypes, i->dst);
@@ -511,50 +524,72 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
       note_vreg_type(types, ntypes, i->callee);
       note_vreg_type(types, ntypes, i->ret_struct_area);
       for (int a = 0; a < i->nargs; a++) note_vreg_type(types, ntypes, i->args[a]);
-      switch (i->op) {
-        case IR_ALLOCA:
-        case IR_LOAD_STR:
-        case IR_LOAD_SYM:
-        case IR_LOAD_TLV_ADDR:
-          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
-          break;
-        case IR_LOAD:
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          break;
-        case IR_STORE:
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          break;
-        case IR_ATOMIC:
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          if (i->atomic_kind == IR_ATOMIC_CAS) force_vreg_type(types, ntypes, i->src2, IR_TY_I32);
-          break;
-        case IR_MEMCPY:
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          force_vreg_type(types, ntypes, i->src2, IR_TY_I32);
-          break;
-        case IR_VLA_ALLOC:
-          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          break;
-        case IR_VA_ARG_AREA:
-          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
-          break;
-        case IR_LEA:
-          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          break;
-        case IR_ALIGN_PTR:
-          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
-          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
-          break;
-        case IR_CALL:
-          force_vreg_type(types, ntypes, i->callee, IR_TY_I32);
-          break;
-        default:
-          break;
+    }
+  }
+  int changed = 1;
+  while (changed) {
+    changed = 0;
+    for (ir_block_t *b = f->entry; b; b = b->next) {
+      for (ir_inst_t *i = b->head; i; i = i->next) {
+        switch (i->op) {
+          case IR_ALLOCA:
+          case IR_LOAD_STR:
+          case IR_LOAD_SYM:
+          case IR_LOAD_TLV_ADDR:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
+            break;
+          case IR_LOAD:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            break;
+          case IR_STORE:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            break;
+          case IR_ATOMIC:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            if (i->atomic_kind == IR_ATOMIC_CAS) {
+              changed |= force_vreg_i32(types, forced_i32, ntypes, i->src2);
+            }
+            break;
+          case IR_MEMCPY:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src2);
+            break;
+          case IR_VLA_ALLOC:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            break;
+          case IR_VA_ARG_AREA:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
+            break;
+          case IR_LEA:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            break;
+          case IR_ALIGN_PTR:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+            break;
+          case IR_CALL:
+            changed |= force_vreg_i32(types, forced_i32, ntypes, i->callee);
+            break;
+          case IR_ADD:
+          case IR_SUB:
+            if (i->dst.id >= 0 && i->dst.id < ntypes && forced_i32[i->dst.id]) {
+              changed |= force_vreg_i32(types, forced_i32, ntypes, i->src1);
+              changed |= force_vreg_i32(types, forced_i32, ntypes, i->src2);
+            }
+            if ((i->src1.id >= 0 && i->src1.id < ntypes && forced_i32[i->src1.id]) ||
+                (i->src2.id >= 0 && i->src2.id < ntypes && forced_i32[i->src2.id])) {
+              changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
+            }
+            break;
+          default:
+            break;
+        }
       }
     }
   }
+  free(forced_i32);
 }
 
 static int collect_frame_size(ir_func_t *f) {
@@ -677,7 +712,7 @@ static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
     return;
   }
   if (v.id < 0) obj_unsupported_msg("missing Wasm object value");
-  ir_type_t got = wasm_ir_type(v.type);
+  ir_type_t got = actual_vreg_type(v);
   emit_local_get(b, local_index(param_count, v.id));
   if (got == want) return;
   if (got == IR_TY_I32 && want == IR_TY_I64) {
@@ -991,6 +1026,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     local_types = xrealloc(NULL, (size_t)nlocals * sizeof(ir_type_t));
     collect_local_types(f, local_types, nlocals);
   }
+  g_emit_local_types = local_types;
+  g_emit_local_count = nlocals;
 
   wb_uleb(&body, (uint32_t)(nlocals + extra_count));
   for (int v = 0; v < nlocals; v++) {
@@ -1284,10 +1321,22 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
         case IR_SHL: case IR_SHR: case IR_LSR:
         case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_ULT: case IR_ULE: {
-          ir_type_t op_ty = wasm_ir_type(i->src1.type == IR_TY_I64 || i->src2.type == IR_TY_I64
-                                         ? IR_TY_I64 : i->src1.type);
+          ir_type_t lhs_ty = actual_vreg_type(i->src1);
+          ir_type_t rhs_ty = actual_vreg_type(i->src2);
+          ir_type_t dst_ty = actual_vreg_type(i->dst);
+          ir_type_t op_ty;
+          if (i->op == IR_EQ || i->op == IR_NE || i->op == IR_LT || i->op == IR_LE ||
+              i->op == IR_ULT || i->op == IR_ULE) {
+            op_ty = lhs_ty == IR_TY_I64 || rhs_ty == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+          } else if (i->op == IR_SHL || i->op == IR_SHR || i->op == IR_LSR) {
+            op_ty = lhs_ty == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+          } else {
+            op_ty = dst_ty == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+          }
           emit_val(&body, i->src1, op_ty, param_count);
-          emit_val(&body, i->src2, op_ty, param_count);
+          emit_val(&body, i->src2,
+                   (i->op == IR_SHL || i->op == IR_SHR || i->op == IR_LSR) ? IR_TY_I32 : op_ty,
+                   param_count);
           wb_u8(&body, int_binop_opcode(i->op, op_ty));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
@@ -1412,6 +1461,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   wb_u8(&body, 0x0b);
   of->body = body;
   free(local_types);
+  g_emit_local_types = NULL;
+  g_emit_local_count = 0;
 }
 
 static void assign_indices(void) {

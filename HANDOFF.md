@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き164: Wasm object global fp array data）
+最終更新: 2026-06-29（続き165: Wasm object address local type propagation）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -410,6 +410,12 @@
   0 埋めになっていた。WAT backend と同じく `gv->init_fvalues` + `gv->fp_kind` から IEEE754 bit pattern
   を書くよう修正し、float/double global array fixture を追加。既存対応だった global union と bitfield も
   object fixture で固定。
+- 続き165: **Wasm object address local type propagation**。
+  union/aggregate member address 計算の IR が pointer arithmetic を `i64` として表す場合、object emitter の
+  local 型と opcode 選択がずれて `i64.add` / i32 local.set 型不整合になっていた。load/store 等で
+  address として使われる vreg は wasm32 object では i32 に固定し、ADD/SUB address chain へ逆伝播。
+  emit 時も確定 local 型を参照するよう修正。あわせて Wasm shift の RHS は i32 なので、i64 shift で
+  RHS を i64 extend しないよう修正。union FP array と i64 shift fixture を追加。
 
 ### Wasm backend の既知メモ
 

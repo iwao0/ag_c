@@ -66,6 +66,43 @@ static int run_objdump_check(const char *name, const char *src,
   return 0;
 }
 
+static int run_objdump_check_absent(const char *name, const char *src,
+                                    const char **needles, int nneedles,
+                                    const char **rejects, int nrejects) {
+  char c_path[256];
+  char o_path[256];
+  char dump_path[256];
+  snprintf(c_path, sizeof(c_path), "build/wasm32_obj/%s.c", name);
+  snprintf(o_path, sizeof(o_path), "build/wasm32_obj/%s.o", name);
+  snprintf(dump_path, sizeof(dump_path), "build/wasm32_obj/%s.objdump", name);
+  if (write_file(c_path, src) != 0) {
+    fprintf(stderr, "FAIL: write %s\n", c_path);
+    return 1;
+  }
+  char cmd[1024];
+  snprintf(cmd, sizeof(cmd), "./build/ag_c_wasm -c -o %s %s", o_path, c_path);
+  if (run_cmd(cmd, name) != 0) return 1;
+
+  if (!command_available("wasm-objdump")) return 0;
+  snprintf(cmd, sizeof(cmd), "wasm-objdump -x -d %s > %s", o_path, dump_path);
+  if (run_cmd(cmd, "wasm-objdump") != 0) return 1;
+  char buf[65536];
+  if (slurp(dump_path, buf, sizeof(buf)) != 0) return 1;
+  for (int i = 0; i < nneedles; i++) {
+    if (!strstr(buf, needles[i])) {
+      fprintf(stderr, "FAIL: %s objdump missing '%s'\n", name, needles[i]);
+      return 1;
+    }
+  }
+  for (int i = 0; i < nrejects; i++) {
+    if (strstr(buf, rejects[i])) {
+      fprintf(stderr, "FAIL: %s objdump unexpectedly contains '%s'\n", name, rejects[i]);
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static int run_fail_case(const char *name, const char *cmd, const char *needle) {
   char log_path[256];
   snprintf(log_path, sizeof(log_path), "build/wasm32_obj/%s.log", name);
@@ -237,6 +274,12 @@ int main(void) {
                                 "int main(void){int x=5; return (-x)+(~x);}\n",
                                 int_unary_needles, 1);
 
+  const char *i64_shift_needles[] = {"i64.shl"};
+  const char *i64_shift_rejects[] = {"i64.extend_i32_u"};
+  failures += run_objdump_check_absent("i64_shift",
+                                       "long f(long x){return x<<3;}\n",
+                                       i64_shift_needles, 1, i64_shift_rejects, 1);
+
   const char *control_flow_needles[] = {"loop", "if", "br ", "unreachable"};
   failures += run_objdump_check("control_flow",
                                 "int main(void){int x=0; if (x) return 1; return 2;}\n",
@@ -351,6 +394,17 @@ int main(void) {
                                 "union U{int i; double d;}; union U u={.i=5}; "
                                 "int main(void){return u.i;}\n",
                                 union_global_needles, 5);
+
+  const char *union_fp_array_needles[] = {
+      "Data[1]", "<g>", "0000 0000 0000 f43f 0000 0000 0000 0640", "f64.load",
+      "i32.add"};
+  const char *union_fp_array_rejects[] = {"i64.add"};
+  failures += run_objdump_check_absent("union_fp_array",
+                                       "union U{int i; double d;}; "
+                                       "union U g[2]={{.d=1.25},{.d=2.75}}; "
+                                       "int main(void){return (int)(g[0].d+g[1].d);}\n",
+                                       union_fp_array_needles, 5,
+                                       union_fp_array_rejects, 1);
 
   const char *bitfield_global_needles[] = {
       "Data[1]", "<s>", "size=4", "8d00 0000", "i32.shr_s", "i32.and"};
