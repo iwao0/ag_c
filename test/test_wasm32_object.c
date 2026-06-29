@@ -236,6 +236,27 @@ int main(void) {
                                 "return va_arg(ap,int);}\n",
                                 va_arg_area_needles, 3);
 
+  const char *atomic_needles[] = {"i32.load", "i32.store", "i32.add", "if", "nop"};
+  failures += run_objdump_check("atomic_ops",
+                                "#include <stdatomic.h>\n"
+                                "atomic_int x; int expect;\n"
+                                "int f(void){atomic_store(&x,3); "
+                                "int old=atomic_fetch_add(&x,4); "
+                                "int ok=atomic_compare_exchange_strong(&x,&expect,9); "
+                                "atomic_thread_fence(memory_order_seq_cst); "
+                                "return atomic_load(&x)+old+ok;}\n",
+                                atomic_needles, 5);
+
+  const char *atomic64_needles[] = {"i64.load", "i64.store", "i64.eq"};
+  failures += run_objdump_check("atomic64_ops",
+                                "#include <stdatomic.h>\n"
+                                "atomic_llong x; long long expect;\n"
+                                "long long f(void){atomic_store(&x,3); "
+                                "long long old=atomic_exchange(&x,4); "
+                                "int ok=atomic_compare_exchange_strong(&x,&expect,9); "
+                                "return atomic_load(&x)+old+ok;}\n",
+                                atomic64_needles, 3);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",

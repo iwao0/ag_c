@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き159: Wasm object va_arg area global）
+最終更新: 2026-06-29（続き160: Wasm object atomic ops）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -387,6 +387,11 @@
   object mode に `IR_VA_ARG_AREA` を追加。`__ag_va_arg_area` を undefined mutable i32 global
   import/symbol として扱い、`global.get` + `R_WASM_GLOBAL_INDEX_LEB` relocation を emit。
   variadic function definition の `va_start` fixture を追加。
+- 続き160: **Wasm object atomic ops**。
+  object mode に `IR_ATOMIC` を追加。WAT backend と同じ非 thread-atomic lowering として
+  fence=`nop`、load/store、fetch RMW、CAS を通常 wasm load/store/if で emit。CAS 用には関数ごとに
+  i32/i64 tmp local を必要時だけ追加する。`stdatomic.h` 経由の 32-bit fetch_add/CAS/fence/load と
+  64-bit exchange/CAS/load fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -404,7 +409,8 @@
   (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)、integer unary ops (`IR_NEG`/`IR_NOT`)。
   local floating-point immediates/basic ops、fp/int/fp width conversions、aligned local pointer
   rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)、dynamic stack allocation (`IR_VLA_ALLOC`)、
-  control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)。
+  control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)、
+  C11 atomic builtin lowering (`IR_ATOMIC`)。
   aggregate/complex/variadic call の object 化は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。

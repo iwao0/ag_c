@@ -524,6 +524,10 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
         case IR_STORE:
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
           break;
+        case IR_ATOMIC:
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          if (i->atomic_kind == IR_ATOMIC_CAS) force_vreg_type(types, ntypes, i->src2, IR_TY_I32);
+          break;
         case IR_MEMCPY:
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
           force_vreg_type(types, ntypes, i->src2, IR_TY_I32);
@@ -579,6 +583,16 @@ static int func_has_control_flow(ir_func_t *f) {
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       if (i->op == IR_LABEL || i->op == IR_BR || i->op == IR_BR_COND) return 1;
+    }
+  }
+  return 0;
+}
+
+static int func_has_atomic_cas_width(ir_func_t *f, int width64) {
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op != IR_ATOMIC || i->atomic_kind != IR_ATOMIC_CAS) continue;
+      if ((i->atomic_width == 8) == width64) return 1;
     }
   }
   return 0;
@@ -722,6 +736,34 @@ static unsigned store_opcode(ir_type_t ty) {
     case IR_TY_F32: return 0x38;
     case IR_TY_F64: return 0x39;
     default: obj_unsupported_msg("unsupported Wasm object store type");
+  }
+  return 0;
+}
+
+static ir_type_t atomic_width_type(ir_inst_t *i) {
+  switch (i->atomic_width ? i->atomic_width : 4) {
+    case 1: return IR_TY_I8;
+    case 2: return IR_TY_I16;
+    case 4: return IR_TY_I32;
+    case 8: return IR_TY_I64;
+    default: obj_unsupported_op(i->op);
+  }
+  return IR_TY_I32;
+}
+
+static ir_type_t atomic_value_type(ir_inst_t *i) {
+  return atomic_width_type(i) == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+}
+
+static unsigned atomic_rmw_opcode(ir_inst_t *i) {
+  int is64 = atomic_value_type(i) == IR_TY_I64;
+  switch (i->atomic_rmw_op) {
+    case IR_ARMW_ADD: return is64 ? 0x7c : 0x6a;
+    case IR_ARMW_SUB: return is64 ? 0x7d : 0x6b;
+    case IR_ARMW_OR: return is64 ? 0x84 : 0x72;
+    case IR_ARMW_AND: return is64 ? 0x83 : 0x71;
+    case IR_ARMW_XOR: return is64 ? 0x85 : 0x73;
+    default: obj_unsupported_op(i->op);
   }
   return 0;
 }
@@ -888,10 +930,21 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int frame_size = collect_frame_size(f);
   int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f);
   int has_control_flow = func_has_control_flow(f);
+  int has_atomic_cas32 = func_has_atomic_cas_width(f, 0);
+  int has_atomic_cas64 = func_has_atomic_cas_width(f, 1);
   int extra_base = local_index(param_count, nlocals);
-  int fp_local = extra_base;
+  int extra_count = 0;
+  int fp_local = extra_base + extra_count;
   int old_sp_local = fp_local + 1;
-  int pc_local = extra_base + (has_stack_restore ? 2 : 0);
+  if (has_stack_restore) extra_count += 2;
+  int pc_local = extra_base + extra_count;
+  if (has_control_flow) extra_count++;
+  int atomic_tmp32_local = extra_base + extra_count;
+  int atomic_exp32_local = atomic_tmp32_local + 1;
+  if (has_atomic_cas32) extra_count += 2;
+  int atomic_tmp64_local = extra_base + extra_count;
+  int atomic_exp64_local = atomic_tmp64_local + 1;
+  if (has_atomic_cas64) extra_count += 2;
   obj_global_t *stack_pointer = has_stack_restore ? intern_stack_pointer_global() : NULL;
   obj_global_t *va_arg_area = NULL;
   wb_t body = {0};
@@ -901,7 +954,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     collect_local_types(f, local_types, nlocals);
   }
 
-  wb_uleb(&body, (uint32_t)(nlocals + (has_stack_restore ? 2 : 0) + (has_control_flow ? 1 : 0)));
+  wb_uleb(&body, (uint32_t)(nlocals + extra_count));
   for (int v = 0; v < nlocals; v++) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(local_types[v]));
@@ -915,6 +968,18 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   if (has_control_flow) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
+  }
+  if (has_atomic_cas32) {
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+  }
+  if (has_atomic_cas64) {
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I64));
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I64));
   }
   if (has_stack_restore) {
     emit_stack_global_get(&body, of, stack_pointer);
@@ -1040,6 +1105,77 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           wb_u8(&body, store_opcode(i->src2.type));
           emit_memarg(&body, i->src2.type);
           break;
+        case IR_ATOMIC: {
+          if (i->atomic_kind == IR_ATOMIC_FENCE) {
+            wb_u8(&body, 0x01);
+            break;
+          }
+          ir_type_t width_ty = atomic_width_type(i);
+          ir_type_t value_ty = atomic_value_type(i);
+          if (i->atomic_kind == IR_ATOMIC_LOAD) {
+            emit_addr_val(&body, i->src1, param_count);
+            wb_u8(&body, load_opcode(width_ty, i->is_unsigned));
+            emit_memarg(&body, width_ty);
+            emit_local_set(&body, local_index(param_count, i->dst.id));
+            break;
+          }
+          if (i->atomic_kind == IR_ATOMIC_STORE) {
+            emit_addr_val(&body, i->src1, param_count);
+            emit_val(&body, i->src2, value_ty, param_count);
+            wb_u8(&body, store_opcode(width_ty));
+            emit_memarg(&body, width_ty);
+            break;
+          }
+          if (i->atomic_kind == IR_ATOMIC_RMW) {
+            emit_addr_val(&body, i->src1, param_count);
+            wb_u8(&body, load_opcode(width_ty, i->is_unsigned));
+            emit_memarg(&body, width_ty);
+            emit_local_set(&body, local_index(param_count, i->dst.id));
+
+            emit_addr_val(&body, i->src1, param_count);
+            if (i->atomic_rmw_op == IR_ARMW_XCHG) {
+              emit_val(&body, i->src2, value_ty, param_count);
+            } else {
+              emit_val(&body, i->dst, value_ty, param_count);
+              emit_val(&body, i->src2, value_ty, param_count);
+              wb_u8(&body, atomic_rmw_opcode(i));
+            }
+            wb_u8(&body, store_opcode(width_ty));
+            emit_memarg(&body, width_ty);
+            break;
+          }
+          if (i->atomic_kind == IR_ATOMIC_CAS) {
+            int tmp_local = value_ty == IR_TY_I64 ? atomic_tmp64_local : atomic_tmp32_local;
+            int exp_local = value_ty == IR_TY_I64 ? atomic_exp64_local : atomic_exp32_local;
+            emit_addr_val(&body, i->src1, param_count);
+            wb_u8(&body, load_opcode(width_ty, i->is_unsigned));
+            emit_memarg(&body, width_ty);
+            emit_local_set(&body, tmp_local);
+            emit_addr_val(&body, i->src2, param_count);
+            wb_u8(&body, load_opcode(width_ty, i->is_unsigned));
+            emit_memarg(&body, width_ty);
+            emit_local_set(&body, exp_local);
+            emit_local_get(&body, tmp_local);
+            emit_local_get(&body, exp_local);
+            wb_u8(&body, value_ty == IR_TY_I64 ? 0x51 : 0x46);
+            emit_local_set(&body, local_index(param_count, i->dst.id));
+            emit_local_get(&body, local_index(param_count, i->dst.id));
+            wb_u8(&body, 0x04);
+            wb_u8(&body, 0x40);
+            emit_addr_val(&body, i->src1, param_count);
+            emit_val(&body, i->src3, value_ty, param_count);
+            wb_u8(&body, store_opcode(width_ty));
+            emit_memarg(&body, width_ty);
+            wb_u8(&body, 0x0b);
+            emit_addr_val(&body, i->src2, param_count);
+            emit_local_get(&body, tmp_local);
+            wb_u8(&body, store_opcode(width_ty));
+            emit_memarg(&body, width_ty);
+            break;
+          }
+          obj_unsupported_op(i->op);
+          break;
+        }
         case IR_MEMCPY:
           emit_memcpy_inline(&body, i, param_count);
           break;
