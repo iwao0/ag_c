@@ -13,17 +13,15 @@
  * 異なれば新規挿入 (先頭に push)、leave_block_scope で内側エントリは削除される。
  * get/find_tag_member_info で「対象 tag の scope_depth と一致するメンバのみ列挙/検索」する。
  *
- * 限界 (未対応):
- * - ネスト 2 段以上の shadow で内側 1 で宣言した変数を内側 2 から参照する形は、内側 2 が
- *   さらに shadow するとメンバ解決が壊れる (find_tag_type が最も内側を返すため)。これは
- *   「変数の宣言時 scope_depth を覚える」追加機構が要る (lvar_t/global_var_t 拡張)。
- * - 内側スコープでグローバル変数 (外側 tag) のメンバを参照するのも同じ理由で壊れる場合あり。 */
+ * 後続修正で、ネスト 2 段以上の shadow 中に外側/中間 scope で宣言した変数を参照する形も
+ * 変数の宣言時 tag scope を使って解決できるようになった。 */
 #include <assert.h>
 
 /* (1) 外側 struct S */
 struct S { int a; int b; };
 
 int sum_outer(struct S s) { return s.a + s.b; }
+struct S gs = { 11, 12 };
 
 int main(void) {
   /* (2) 外側 S を使う (基本動作確認) */
@@ -55,6 +53,23 @@ int main(void) {
   }
   struct S s5 = { 50, 60 };
   assert(s5.a == 50 && s5.b == 60);
+
+  /* (6) 2 段 shadow の内側から中間 scope 変数と外側 tag の global を参照 */
+  int seen_mid = 0;
+  int seen_global = 0;
+  {
+    struct S { int mid; int pad; };
+    struct S sm = { 2, 20 };
+    {
+      struct S { double inner; };
+      struct S si2 = { 3.5 };
+      seen_mid = sm.mid + sm.pad;
+      seen_global = gs.a + gs.b;
+      assert((int)(si2.inner * 10) == 35);
+    }
+  }
+  assert(seen_mid == 22);
+  assert(seen_global == 23);
 
   return 0;
 }

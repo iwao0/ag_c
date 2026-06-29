@@ -2204,3 +2204,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e`
   - `./build/test_wasm32_e2e`
   - `./build/test_wasm32_object`
+
+### このセッション（続き226）: tag_shadowing_block_scope の stale 限界コメントを回収
+- `tag_shadowing_block_scope.c` に残っていた「ネスト 2 段 shadow の内側から中間 scope 変数や
+  外側 tag の global を参照する形は未対応」というコメントは、後続の tag scope carry 修正後は
+  stale になっていた。fixture に中間 scope 変数 `sm.mid/sm.pad` と outer tag 型 global `gs.a/gs.b`
+  を内側 shadow から読むケースを追加。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_tag_shadow_nested_ref.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/tag_shadowing_block_scope.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/tag_shadowing_advanced.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/tag_shadowing_block_scope.o test/fixtures/probes_found_bugs/tag_shadowing_block_scope.c`
