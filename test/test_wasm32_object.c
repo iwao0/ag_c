@@ -856,6 +856,39 @@ int main(void) {
                                        extern_funcptr_global_needles, 5,
                                        extern_funcptr_rejects, 1);
 
+  failures += run_objdump_check_absent("extern_static_local_funcptr",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "int main(void){static Printer p=&fprintf; "
+                                       "return p(stdout, \"x\");}\n",
+                                       extern_funcptr_global_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
+  const char *static_local_data_ptr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<main.p.0>", "<.LC0>"};
+  failures += run_objdump_check("static_local_string_ptr",
+                                "int main(void){static char *p=\"hi\"; return p[0];}\n",
+                                static_local_data_ptr_needles, 4);
+
+  failures += run_objdump_check("static_local_string_ptr_cast",
+                                "int main(void){static char *p=(char*)\"hi\"; return p[0];}\n",
+                                static_local_data_ptr_needles, 4);
+
+  const char *static_local_global_ptr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<main.p.0>", "<g>"};
+  failures += run_objdump_check("static_local_global_addr_ptr",
+                                "int g=7; int main(void){static int *p=&g; return *p;}\n",
+                                static_local_global_ptr_needles, 4);
+
+  failures += run_objdump_check("static_local_global_addr_ptr_cast",
+                                "int g=7; int main(void){static int *p=(int*)&g; return *p;}\n",
+                                static_local_global_ptr_needles, 4);
+
+  failures += run_objdump_check("static_local_extern_global_addr_ptr",
+                                "extern int g; int main(void){static int *p=&g; return *p;}\n",
+                                static_local_global_ptr_needles, 4);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",

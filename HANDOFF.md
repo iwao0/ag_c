@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き193: Wasm object static local casted extern funcptr initializer）
+最終更新: 2026-06-29（続き194: Wasm object static local address initializer fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -590,6 +590,14 @@
   fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、`make test` green
   (`test_wasm32_e2e` 1096/1096、`test_e2e` 1125/1125)。
+- 続き194: **Wasm object static local address initializer fixtures**。
+  続き193 の static local pointer address initializer lowering を data address 側にも拡張確認。
+  `static char *p="hi"` / `(char*)"hi"`、`static int *p=&g` / `(int*)&g`、
+  `extern int g; static int *p=&g` を fixture 化し、backing static local symbol (`main.p.0`) の
+  data segment に `R_WASM_MEMORY_ADDR_I32` が出ることを確認。併せて cast 無しの
+  `static Printer p=&fprintf` も fixture 化し、`R_WASM_TABLE_INDEX_I32` と extern funcptr signature
+  `(i32, i32) -> i32` を確認、fallback `(i64, i64) -> i32` を reject。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ
 
