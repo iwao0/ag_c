@@ -235,6 +235,22 @@ int main(void) {
                                 "double f(void){return fa[0]+da[1];}\n",
                                 global_fp_array_needles, 6);
 
+  const char *static_multidim_needles[] = {
+      "<f.a.", "binding=local", "size=24", "i32.store", "i32.load"};
+  failures += run_objdump_check("static_multidim",
+                                "int f(void){static int a[2][3]; "
+                                "a[1][2]=a[1][2]+1; return a[1][2];} "
+                                "int main(void){return f()*10+f();}\n",
+                                static_multidim_needles, 5);
+
+  const char *static_string_needles[] = {
+      "<f.s.", "binding=local", "617a 00", "i32.store8", "i32.load8_s"};
+  failures += run_objdump_check("static_string",
+                                "int f(void){static char s[]=\"az\"; "
+                                "s[0]=s[0]+1; return s[0]+s[1];} "
+                                "int main(void){return f()*1000+f();}\n",
+                                static_string_needles, 5);
+
   const char *local_stack_needles[] = {
       "__stack_pointer", "R_WASM_GLOBAL_INDEX_LEB", "global.set", "i32.store", "i32.load"};
   failures += run_objdump_check("local_stack",
