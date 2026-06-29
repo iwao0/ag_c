@@ -1840,6 +1840,23 @@ static int union_init_slot_fp_size(global_var_t *gv, int idx) {
   return 0;
 }
 
+static int global_init_slot_is_plain_zero(global_var_t *gv, int idx) {
+  if (idx < 0 || idx >= gv->init_count) return 1;
+  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
+  long long value = gv->init_values ? gv->init_values[idx] : 0;
+  double fv = gv->init_fvalues ? gv->init_fvalues[idx] : 0.0;
+  return sym == NULL && sym_len == 0 && value == 0 && fv == 0.0;
+}
+
+static void collapse_trailing_zero_union_slots(global_var_t *gv, int start_idx, int *val_idx) {
+  if (!val_idx || *val_idx <= start_idx + 1) return;
+  for (int i = start_idx + 1; i < *val_idx; i++) {
+    if (!global_init_slot_is_plain_zero(gv, i)) return;
+  }
+  *val_idx = start_idx + 1;
+}
+
 static void select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
                                               global_var_t *gv, int idx,
                                               tag_member_info_t *mi) {
@@ -1866,6 +1883,7 @@ static void select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr) {
   if (*val_idx >= gv->init_count) return;
+  int start_idx = *val_idx;
   tag_member_info_t mi = {0};
   int ord = gv->union_init_ordinal;
   if (gv->init_union_ordinals && gv->init_union_ordinals[*val_idx] >= 0)
@@ -1903,6 +1921,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
     } else {
       emit_global_nested_union_data(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx, addr);
     }
+    collapse_trailing_zero_union_slots(gv, start_idx, val_idx);
     return;
   }
   emit_global_union_scalar_data(gv, val_idx, addr, &mi);

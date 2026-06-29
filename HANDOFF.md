@@ -1,14 +1,15 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き237: struct funcptr designated zero-init）
+最終更新: 2026-06-30（続き238: nested union/struct designated zero-init の Wasm data 配置）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1108/1108 green**、`./build/test_wasm32_object` = **1109/1109 green**、
-  `./build/test_e2e` = **1137/1137 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1109/1109 compile + validate green**、
-  `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
+  `./build/test_wasm32_e2e` = **1109/1109 green**、`./build/test_wasm32_object` = **1110/1110 green**、
+  `./build/test_e2e` = **1138/1138 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1110/1110 compile + validate green**、
+  `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
+  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
@@ -2418,5 +2419,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = 1137/1137
   - `./build/test_wasm32_e2e` = 1108/1108
   - `./build/test_wasm32_object` = object fixture scan 1109/1109
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+
+### このセッション（続き238）: nested union/struct designated zero-init の Wasm data 配置
+- `struct Wrap { union Slot slots[2]; struct Holder direct[2]; };` のように、
+  union 配列メンバの designated zero-init の後に struct 配列メンバが続く global initializer で、
+  WAT backend が union 内の明示ゼロ slot を全部消費し、後続 `direct[1]` の関数ポインタ table index を
+  `direct[0]` 位置へ詰めていた。fixture は `nested_struct_funcptr_designated_zero_init`。
+- WAT/object の global aggregate emitter で、union aggregate が複数 slot を消費しても追加分が
+  plain zero だけなら union 自体は 1 slot 消費に畳み、後続 layout のゼロとして残すようにした。
+  非ゼロ aggregate union の既存挙動は維持する。
+- fixture `nested_struct_funcptr_designated_zero_init` を `test_e2e.c` と
+  `wasm32_e2e_extra_cases.txt` に登録。bug coverage docs も `struct_funcptr_designated_zero_init`
+  系の coverage として更新。
+- focused 確認:
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/nested_struct_funcptr_designated_zero_init.c`
+  - `./build/ag_c_wasm /private/tmp/agc_probe_nested_designated_zero_init_numbered.c` +
+    `wat2wasm` + `wasm-interp` = `main() => i32:0`
+  - `./build/ag_c_wasm -c -o /private/tmp/nested_struct_funcptr_designated_zero_init.o test/fixtures/probes_found_bugs/nested_struct_funcptr_designated_zero_init.c`
+  - `./build/test_wasm32_backend` green
+  - `./build/test_e2e` = 1138/1138
+  - `./build/test_wasm32_e2e` = 1109/1109
+  - `./build/test_wasm32_object` = object fixture scan 1110/1110
   - `make test` green
   - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
