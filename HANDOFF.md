@@ -2350,6 +2350,9 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `static_local_struct_pointer_member_init`
 - 個別の素 `ag_c_wasm -> wat2wasm` preflight では `assert.h` の `__assert_rtn` stub 問題で失敗するが、
   `test_wasm32_e2e` harness は `assert` を `return 100` へ変換して走るため、実 harness で確認した。
+- `test_wasm32_e2e` に parity check を追加。`test/test_e2e.c` に登録された
+  `test/fixtures/*.c` が static/extra/link2 の Wasm E2E 登録に存在しない場合は fail する。
+  これで今後 fixture 追加時に Wasm 実行 E2E の追従漏れを検出できる。
 - focused 確認:
   - `make -j4 build/test_wasm32_e2e && ./build/test_wasm32_e2e` (1106 compiled/executed)
   - `comm -23 /tmp/e2e_cases.txt /tmp/wasm_cases.txt` = 0 (test_e2e fixture path と Wasm E2E fixture path の差分なし)

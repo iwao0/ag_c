@@ -821,6 +821,62 @@ static int load_extra_cases(const char *path, size_t *out_count) {
   return 0;
 }
 
+static int has_wasm_e2e_fixture_path(const char *path, size_t nextra) {
+  size_t nstatic = sizeof(cases) / sizeof(cases[0]);
+  for (size_t i = 0; i < nstatic; i++) {
+    if (strcmp(cases[i].path, path) == 0) return 1;
+  }
+  for (size_t i = 0; i < nextra; i++) {
+    if (strcmp(extra_cases[i].path, path) == 0) return 1;
+  }
+  size_t nlink2 = sizeof(link2_cases) / sizeof(link2_cases[0]);
+  for (size_t i = 0; i < nlink2; i++) {
+    if (strcmp(link2_cases[i].file_main, path) == 0 ||
+        strcmp(link2_cases[i].file_other, path) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int verify_test_e2e_fixture_parity(size_t nextra) {
+  FILE *fp = fopen("test/test_e2e.c", "rb");
+  if (!fp) {
+    fprintf(stderr, "FAIL: open test/test_e2e.c for Wasm E2E parity check\n");
+    return 1;
+  }
+
+  int missing = 0;
+  char line[4096];
+  while (fgets(line, sizeof(line), fp)) {
+    char *p = line;
+    while ((p = strstr(p, "test/fixtures/")) != NULL) {
+      char *end = strstr(p, ".c");
+      if (!end) {
+        p += strlen("test/fixtures/");
+        continue;
+      }
+      end += 2;
+      size_t len = (size_t)(end - p);
+      char path[512];
+      if (len >= sizeof(path)) {
+        fclose(fp);
+        fprintf(stderr, "FAIL: fixture path too long in test/test_e2e.c\n");
+        return 1;
+      }
+      memcpy(path, p, len);
+      path[len] = '\0';
+      if (!has_wasm_e2e_fixture_path(path, nextra)) {
+        fprintf(stderr, "FAIL: Wasm E2E missing test_e2e fixture %s\n", path);
+        missing++;
+      }
+      p = end;
+    }
+  }
+  fclose(fp);
+  return missing ? 1 : 0;
+}
+
 int main(void) {
   if (mkdir_p("build/wasm32_e2e") != 0) {
     fprintf(stderr, "FAIL: mkdir build/wasm32_e2e\n");
@@ -828,6 +884,7 @@ int main(void) {
   }
   size_t nextra = 0;
   if (load_extra_cases("test/wasm32_e2e_extra_cases.txt", &nextra) != 0) return 1;
+  if (verify_test_e2e_fixture_parity(nextra) != 0) return 1;
 
   int failures = 0;
   int executed = 0;
