@@ -1,15 +1,15 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き181: Wasm object extern function address data relocation）
+最終更新: 2026-06-29（続き182: Wasm object c-testsuite scan target）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
   `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_wasm32_object` green、
   `./build/test_e2e` = **1125/1125 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile + validate green**。
-- c-testsuite single-exec の Wasm object ad-hoc scan（00206/00216 除外）も
-  **218/218 compile + validate green**。
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile + validate green**、
+  `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
+  （00206/00216 は unsupported GNU skip）。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -502,6 +502,11 @@
   として出す。左辺の global funcptr 型から import signature を作るので、`fprintf` は
   `(i32, i32) -> i32` になる。`extern_funcptr_global` fixture を追加。c-testsuite single-exec
   object scan（00206/00216 除外）は 218/218 compile + validate green。
+- 続き182: **Wasm object c-testsuite scan target**。
+  181 で ad-hoc 実行していた c-testsuite single-exec object compile + validate scan を
+  `scripts/run_wasm32_object_c_testsuite_scan.sh` と `make wasm32-object-c-testsuite-scan` に昇格。
+  通常 c-testsuite と同じく 00206/00216 は unsupported GNU extension として skip し、失敗一覧は
+  `build/wasm32_obj_cts_scan/failures.txt` に残す。
 
 ### Wasm backend の既知メモ
 
