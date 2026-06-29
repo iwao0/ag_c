@@ -3195,6 +3195,26 @@ static node_t *cast(void) {
 static node_t *parse_sizeof_operand(void) {
   if (curtok()->kind == TK_LPAREN) {
     set_curtok(curtok()->next);
+    token_kind_t cast_kind = TK_EOF;
+    int cast_is_ptr = 0;
+    token_t *after_rparen = NULL;
+    token_kind_t cast_tag_kind = TK_EOF;
+    char *cast_tag_name = NULL;
+    int cast_tag_len = 0;
+    int cast_elem_size = 8;
+    tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
+    int cast_array_count = 0;
+    if (curtok()->kind == TK_LPAREN &&
+        parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
+                        &cast_tag_kind, &cast_tag_name, &cast_tag_len,
+                        &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL) &&
+        after_rparen && after_rparen->kind == TK_LBRACE) {
+      node_t *node = parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
+                                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                                      cast_elem_size, cast_fp_kind, cast_array_count);
+      tk_expect(')');
+      return psx_node_new_num(sizeof_expr_node(node));
+    }
     int type_sz = parse_parenthesized_type_size();
     if (type_sz >= 0) return psx_node_new_num(type_sz);
     if (curtok()->kind == TK_IDENT) {

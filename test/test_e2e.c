@@ -1227,6 +1227,7 @@ static const test_case_t test_cases[] = {
     {"probes", "global_nested_union_pointer_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_nested_union_pointer_init.c", 0, 0},
     {"probes", "static_local_struct_pointer_member_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_local_struct_pointer_member_init.c", 0, 0},
     {"probes", "compound_literal_array_size_and_decay", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_array_size_and_decay.c", 0, 0},
+    {"probes", "compound_literal_inferred_array_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_inferred_array_sizeof.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、
