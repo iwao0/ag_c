@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き233: Wasm E2E extra fixture parity）
+最終更新: 2026-06-30（続き236: struct funcptr zero-init coverage）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1106/1106 green**、`./build/test_wasm32_object` = **1107/1107 green**、
-  `./build/test_e2e` = **1135/1135 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1107/1107 compile + validate green**、
+  `./build/test_wasm32_e2e` = **1107/1107 green**、`./build/test_wasm32_object` = **1108/1108 green**、
+  `./build/test_e2e` = **1136/1136 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1108/1108 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
@@ -2389,4 +2389,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh /private/tmp/agc_probe_struct_holder_funcptr_zero_init.c`
   - `scripts/agc_diff_test.sh /private/tmp/agc_probe_struct_holder_funcptr_zero_init_return0.c`
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/struct_funcptr_zero_init.o test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
+
+### このセッション（続き236）: struct funcptr zero-init fixture の文脈拡張
+- `struct_funcptr_zero_init` を local 単体だけでなく、global zero-init、static local zero-init、
+  nested wrapper (`struct Wrap { struct Holder h; int tail; }`) まで拡張した。
+  先頭 aggregate funcptr メンバの terminal `{0}` no-op 消費と、global/static data の 0 初期化が
+  同時に回帰しないことを確認する。
+- 直近現状欄の件数を、続き235 後の実測値に更新した。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_struct_funcptr_zero_init_more.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/agc_probe_struct_funcptr_zero_init_more.o /private/tmp/agc_probe_struct_funcptr_zero_init_more.c`
   - `./build/ag_c_wasm -c -o /private/tmp/struct_funcptr_zero_init.o test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
