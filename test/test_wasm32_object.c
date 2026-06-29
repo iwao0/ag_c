@@ -309,6 +309,18 @@ int main(void) {
   failures += run_objdump_check("string_addr",
                                 "char *s(void){return \"hi\";} int main(void){return 0;}\n",
                                 string_addr_needles, 4);
+  const char *wide_string_u16_needles[] = {
+      "Data[1]", "<.LC0>", "4100 5a00 0000", "R_WASM_MEMORY_ADDR_LEB"};
+  failures += run_objdump_check("wide_string_u16_addr",
+                                "unsigned short *s(void){return u\"AZ\";} "
+                                "int main(void){return s()[1];}\n",
+                                wide_string_u16_needles, 4);
+  const char *wide_string_u32_needles[] = {
+      "Data[1]", "<.LC0>", "4100 0000 5a00 0000 0000 0000", "R_WASM_MEMORY_ADDR_LEB"};
+  failures += run_objdump_check("wide_string_u32_addr",
+                                "unsigned int *s(void){return U\"AZ\";} "
+                                "int main(void){return s()[1];}\n",
+                                wide_string_u32_needles, 4);
 
   const char *data_init_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "symbol=2 <target>"};

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き176: Wasm object struct/typedef variadic funcptr）
+最終更新: 2026-06-29（続き177: Wasm object wide string literals）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -470,6 +470,11 @@
   object fixture は `struct_variadic_funcptr_extra`、`typedef_struct_variadic_funcptr_extra`、
   `typedef_local_variadic_funcptr_extra`。いずれも `__indirect_function_table`、
   `__ag_va_arg_area`、fixed-only type `(i64) -> i32`、`call_indirect`、`i64.store` を objdump で確認。
+- 続き177: **Wasm object wide string literals**。
+  object mode の string literal data segment で `u"..."` / `U"..."` を E4008 にせず、
+  WAT backend と同じ `tk_next_string_code_units` で 2/4 バイト little-endian code unit として出す。
+  `wide_string_u16_addr` / `wide_string_u32_addr` fixture で `.LC0` の bytes と
+  `R_WASM_MEMORY_ADDR_LEB` を objdump 確認。
 
 ### Wasm backend の既知メモ
 
@@ -489,7 +494,8 @@
   rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)、dynamic stack allocation (`IR_VLA_ALLOC`)、
   control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)、
   C11 atomic builtin lowering (`IR_ATOMIC`)、>8B aggregate return area、complex hidden return area。
-  file-scope data は scalar/array の integer/floating 初期化、symbol address relocation、struct/union/
+  file-scope data は scalar/array の integer/floating 初期化、narrow/wide string literal、
+  symbol address relocation、struct/union/
   bitfield aggregate の基本形に対応。
   extra vararg を持つ variadic call は direct/extern/local/global/struct member/typedef funcptr indirect で
   `__ag_va_arg_area` 退避に対応済み。aggregate call は hidden return area

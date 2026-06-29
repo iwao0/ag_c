@@ -3,6 +3,7 @@
 #include "../parser/parser_public.h"
 #include "../parser/semantic_ctx.h"
 #include "../tokenizer/escape.h"
+#include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1840,9 +1841,21 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
   int name_len = lit->label ? (int)strlen(lit->label) : 0;
   if (!lit->label || name_len == 0) obj_unsupported_msg("string literal label in Wasm object mode");
   int cw = lit->char_width > 0 ? (int)lit->char_width : TK_CHAR_WIDTH_CHAR;
-  if (cw != TK_CHAR_WIDTH_CHAR) obj_unsupported_msg("wide string literal in Wasm object mode");
   obj_data_t *d = intern_data(lit->label, name_len, 0, 1, 0);
   if (d->is_emitted) return;
+  if (cw != TK_CHAR_WIDTH_CHAR) {
+    int sp = 0;
+    while (sp < lit->len) {
+      uint32_t units[2];
+      int nu = tk_next_string_code_units(lit->str, lit->len, &sp, cw, units);
+      for (int u = 0; u < nu; u++) {
+        for (int b = 0; b < cw; b++) wb_u8(&d->bytes, (unsigned char)(units[u] >> (8 * b)));
+      }
+    }
+    for (int b = 0; b < cw; b++) wb_u8(&d->bytes, 0);
+    d->is_emitted = 1;
+    return;
+  }
   int i = 0;
   while (i < lit->len) {
     uint32_t v = 0;
