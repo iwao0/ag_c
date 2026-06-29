@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き184: Wasm object local extern funcptr signatures）
+最終更新: 2026-06-29（続き185: Wasm object extern funcptr signature fixture hardening）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -520,6 +520,11 @@
   `funcptr_param_int_mask` の空き値 `3` を pointer marker として扱い、object signature では `i32`、
   WAT 実行経路では整数幅変換に使わない。宣言初期化時は AST 左辺 node の metadata が古い場合があるため、
   IR build 時に lvar table から signature を補完する。`extern_local_funcptr` fixture を追加。
+- 続き185: **Wasm object extern funcptr signature fixture hardening**。
+  続き181/183/184 の extern function pointer signature 回帰を固定するため、global/local/typedef/local
+  struct member の `&fprintf` 経路をすべて reject needle `(i64, i64) -> i32` 付きに拡張。
+  追加 fixture: `extern_local_funcptr_assign`、`extern_typedef_local_funcptr`、
+  `extern_local_struct_funcptr_member`。既存 `extern_funcptr_global` も absent check に変更。
 
 ### Wasm backend の既知メモ
 
