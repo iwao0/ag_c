@@ -595,6 +595,24 @@ static void emit_const(wb_t *b, ir_type_t type, long long value) {
   }
 }
 
+static void emit_fp_const(wb_t *b, ir_type_t type, double value) {
+  if (type == IR_TY_F32) {
+    float f = (float)value;
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    wb_u8(b, 0x43);
+    wb_u32le(b, bits);
+  } else if (type == IR_TY_F64) {
+    uint64_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    wb_u8(b, 0x44);
+    wb_u32le(b, (uint32_t)(bits & 0xffffffffu));
+    wb_u32le(b, (uint32_t)(bits >> 32));
+  } else {
+    obj_unsupported_msg("floating-point immediate type in Wasm object mode");
+  }
+}
+
 static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   want = wasm_ir_type(want);
   if (v.id == IR_VAL_IMM) {
@@ -754,6 +772,23 @@ static unsigned int_binop_opcode(ir_op_t op, ir_type_t ty) {
   return 0;
 }
 
+static unsigned fp_binop_opcode(ir_op_t op, ir_type_t ty) {
+  int is64 = ty == IR_TY_F64;
+  if (ty != IR_TY_F32 && ty != IR_TY_F64) obj_unsupported_op(op);
+  switch (op) {
+    case IR_FADD: return is64 ? 0xa0 : 0x92;
+    case IR_FSUB: return is64 ? 0xa1 : 0x93;
+    case IR_FMUL: return is64 ? 0xa2 : 0x94;
+    case IR_FDIV: return is64 ? 0xa3 : 0x95;
+    case IR_FEQ: return is64 ? 0x61 : 0x5b;
+    case IR_FNE: return is64 ? 0x62 : 0x5c;
+    case IR_FLT: return is64 ? 0x63 : 0x5d;
+    case IR_FLE: return is64 ? 0x65 : 0x5f;
+    default: obj_unsupported_op(op);
+  }
+  return 0;
+}
+
 static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
@@ -812,6 +847,10 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         }
         case IR_LOAD_IMM:
           emit_const(&body, i->dst.type, i->src1.imm);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        case IR_LOAD_FP_IMM:
+          emit_fp_const(&body, i->dst.type, i->src1.fp_imm);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_LOAD_STR:
@@ -876,6 +915,14 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }
+        case IR_FNEG: {
+          ir_type_t ty = wasm_ir_type(i->src1.type);
+          if (ty != IR_TY_F32 && ty != IR_TY_F64) obj_unsupported_op(i->op);
+          emit_val(&body, i->src1, ty, param_count);
+          wb_u8(&body, ty == IR_TY_F64 ? 0x9a : 0x8c);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
         case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
         case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
         case IR_SHL: case IR_SHR: case IR_LSR:
@@ -885,6 +932,15 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_val(&body, i->src1, op_ty, param_count);
           emit_val(&body, i->src2, op_ty, param_count);
           wb_u8(&body, int_binop_opcode(i->op, op_ty));
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
+        case IR_FADD: case IR_FSUB: case IR_FMUL: case IR_FDIV:
+        case IR_FEQ: case IR_FNE: case IR_FLT: case IR_FLE: {
+          ir_type_t op_ty = wasm_ir_type(i->src1.type);
+          emit_val(&body, i->src1, op_ty, param_count);
+          emit_val(&body, i->src2, op_ty, param_count);
+          wb_u8(&body, fp_binop_opcode(i->op, op_ty));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }

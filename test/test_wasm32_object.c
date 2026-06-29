@@ -193,6 +193,11 @@ int main(void) {
                                 "int main(void){int x=5; return (-x)+(~x);}\n",
                                 int_unary_needles, 1);
 
+  const char *fp_local_needles[] = {"f64.const", "f64.store", "f64.load", "f64.add"};
+  failures += run_objdump_check("fp_local",
+                                "double f(void){double x=1.5; return x+2.0;}\n",
+                                fp_local_needles, 4);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",
