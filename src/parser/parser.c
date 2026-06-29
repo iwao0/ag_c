@@ -1957,6 +1957,11 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
      * シンボル+offset 解決には型変換の有無は無関係なので、operand に再帰する。 */
     case ND_PTR_CAST:
       return resolve_global_addr_init(e->lhs, sym, sym_len, off);
+    case ND_FUNCREF: {
+      node_funcref_t *fr = (node_funcref_t *)e;
+      *sym = fr->funcname; *sym_len = fr->funcname_len;
+      return 1;
+    }
     case ND_GVAR: {
       node_gvar_t *g = (node_gvar_t *)e;
       *sym = g->name; *sym_len = g->name_len;
@@ -2167,7 +2172,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_val = folded;
   } else if (init_expr &&
              (init_expr->kind == ND_ADDR || init_expr->kind == ND_GVAR ||
-              init_expr->kind == ND_ADD || init_expr->kind == ND_SUB)) {
+              init_expr->kind == ND_ADD || init_expr->kind == ND_SUB ||
+              init_expr->kind == ND_PTR_CAST)) {
     /* `int *p = &x;` / `int *p = a + 1;` / `int *p = &a[1];` 等の
      * グローバル/配列アドレス + オフセット初期化。 */
     char *asym = NULL; int asym_len = 0; long long aoff = 0;

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き185: Wasm object extern funcptr signature fixture hardening）
+最終更新: 2026-06-29（続き190: Wasm object casted extern funcptr signatures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -548,6 +548,16 @@
   追加 fixture: local funcptr array subscript 代入 (`extern_local_funcptr_array_assign`)、
   return funcptr を local に保存してから indirect call (`extern_funcptr_return_store_local`)、
   struct pointer arrow 経由の member 代入/call (`extern_local_struct_funcptr_arrow`)。
+- 続き190: **Wasm object casted extern funcptr signatures**。
+  `(Printer)&fprintf` のような明示 cast が `ND_PTR_CAST` で `ND_FUNCREF` を包むと、
+  object emitter の extern function import signature が fallback `(i64, i64) -> i32`
+  へ戻る経路を修正。local/global/deref assignment は expected funcptr signature 付きの
+  evaluator に統一し、global initializer は cast 内の function reference を symbol address として
+  解決するよう `resolve_global_addr_init` を拡張。
+  追加 fixture: `extern_typedef_cast_funcptr`、`extern_funcptr_global_cast`、
+  `extern_funcptr_return_cast`、`extern_local_struct_funcptr_cast`。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、
+  `make test` green（`test_wasm32_e2e` 1096/1096、`test_e2e` 1125/1125）。
 
 ### Wasm backend の既知メモ
 

@@ -768,6 +768,12 @@ static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
   switch (node->kind) {
     case ND_FUNCREF:
       return build_node_funcref_with_sig(ctx, node, expected_sig);
+    case ND_PTR_CAST:
+      if (node->lhs && (node->lhs->kind == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
+                        node->lhs->kind == ND_TERNARY || node->lhs->kind == ND_STMT_EXPR)) {
+        return build_expr_with_funcptr_sig(ctx, node->lhs, expected_sig);
+      }
+      return build_expr(ctx, node);
     case ND_COMMA:
       if (node->lhs) {
         (void)build_expr(ctx, node->lhs);
@@ -1226,14 +1232,9 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  ir_val_t rhs;
-  if (node->rhs && node->rhs->kind == ND_FUNCREF) {
-    node_mem_t sig = lv->mem;
-    merge_funcptr_sig_from_lvar(&sig, find_owning_lvar(ctx, lv->offset));
-    rhs = build_node_funcref_with_sig(ctx, node->rhs, &sig);
-  } else {
-    rhs = build_expr(ctx, node->rhs);
-  }
+  node_mem_t sig = lv->mem;
+  merge_funcptr_sig_from_lvar(&sig, find_owning_lvar(ctx, lv->offset));
+  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
   if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
@@ -1276,9 +1277,7 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  ir_val_t rhs = (node->rhs && node->rhs->kind == ND_FUNCREF)
-                   ? build_node_funcref_with_sig(ctx, node->rhs, &gv->mem)
-                   : build_expr(ctx, node->rhs);
+  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &gv->mem);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type_ex(ctx, rhs, vty, gv->mem.is_unsigned ? 1 : 0,
                           node->rhs ? ps_node_is_unsigned(node->rhs) : 0);
@@ -1301,9 +1300,7 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   int bw = mm->bit_width;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
-  ir_val_t rhs = (node->rhs && node->rhs->kind == ND_FUNCREF)
-                   ? build_node_funcref_with_sig(ctx, node->rhs, mm)
-                   : build_expr(ctx, node->rhs);
+  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, mm);
   if (ctx->failed) return ir_val_none();
   if (bw > 0) {
     return emit_bitfield_store(ctx, ptr, rhs, bw, mm->bit_offset);
