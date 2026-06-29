@@ -164,6 +164,9 @@ struct node_mem_t {
   /* N-D VLA (N >= 3): vla_row_stride_frame_off の後にさらに何個の runtime stride スロット
    * が続くか。lvar_t と同じ意味。subscript で 1 段消費するたび -1、vla_row は +=8 シフトする。 */
   int vla_strides_remaining;
+  /* 配列 compound literal は通常式では pointer decay するが、sizeof の直下では
+   * C11 6.5.3.4p2 により元の配列全体サイズを返す必要がある。 */
+  int compound_literal_array_size;
   /* array-of-pointer-to-array struct メンバ (`int (*p[M])[N]`) で carry する、各要素ポインタが
    * 指す配列の全バイト数 (= N * elem)。`s.p` の deref ノードと、`s.p[i]` の subscript 結果
    * deref ノードに carry し、build_unary_deref_node の pointer-to-array 分岐に乗せて

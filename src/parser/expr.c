@@ -129,6 +129,13 @@ static int sizeof_expr_node(node_t *node) {
     int elem = s->char_width ? (int)s->char_width : 1;
     return (s->byte_len + 1) * elem;
   }
+  if (node && (node->kind == ND_ADDR || node->kind == ND_COMMA)) {
+    node_t *target = node->kind == ND_COMMA ? node->rhs : node;
+    if (target && target->kind == ND_ADDR) {
+      int cl_array_size = ((node_mem_t *)target)->compound_literal_array_size;
+      if (cl_array_size > 0) return cl_array_size;
+    }
+  }
   int sz = ps_node_type_size(node);
   if (sz) return sz;
   if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
@@ -1335,9 +1342,14 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
         addr->base.kind = ND_ADDR;
         addr->base.lhs = (node_t *)gvar_node;
+        addr->tag_kind = gv->tag_kind;
+        addr->tag_name = gv->tag_name;
+        addr->tag_len = gv->tag_len;
         addr->type_size = base_elem;
         addr->deref_size = base_elem;
         addr->is_pointer = 1;
+        if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
+        addr->compound_literal_array_size = var_size;
         return apply_postfix((node_t *)addr);
       }
       return apply_postfix((node_t *)gvar_node);
@@ -1401,11 +1413,16 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
     addr_node->base.kind = ND_ADDR;
     addr_node->base.lhs = psx_node_new_lvar(var->offset);
+    addr_node->tag_kind = var->tag_kind;
+    addr_node->tag_name = var->tag_name;
+    addr_node->tag_len = var->tag_len;
     addr_node->type_size = var->elem_size;
     addr_node->deref_size = var->elem_size;
     /* `(int[N]){...}` 複合リテラルは配列名と同じくポインタへ崩壊する。
      * 後続の `[i]` サブスクリプトを通すために is_pointer を立てる。 */
     addr_node->is_pointer = 1;
+    if (var->tag_kind != TK_EOF) addr_node->is_tag_pointer = 1;
+    addr_node->compound_literal_array_size = var_size;
     ref = (node_t *)addr_node;
   } else {
     ref = new_typed_lvar_ref(var, cast_is_ptr);
