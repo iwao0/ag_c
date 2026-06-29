@@ -5264,6 +5264,11 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
   addr->type_size = stride;
   addr->deref_size = stride;
   addr->is_pointer = 1;
+  addr->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
+                             ? var->pointee_fp_kind
+                             : var->fp_kind;
+  addr->pointee_is_bool = var->is_bool ? 1 : 0;
+  addr->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
   if (var->outer_stride > 0) {
     if (var->mid_stride > 0) {
       addr->inner_deref_size = (short)var->mid_stride;

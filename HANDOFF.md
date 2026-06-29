@@ -2251,3 +2251,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` (1106/1106)
   - `make test`
   - `bash scripts/run_c_testsuite.sh --list-fail` (218 pass / 2 unsupported skip)
+
+### このセッション（続き229）: static local multidim array の型バリエーション
+- `static unsigned char a[2][3]` は global lowering 済みでも alias の
+  `ND_ADDR(ND_GVAR)` に `pointee_is_unsigned` が伝播せず、最終 subscript load が signed char
+  扱いになって `250` を `-6` と読んでいた。通常ローカル配列と同じく
+  `pointee_is_unsigned` / `pointee_is_bool` / `pointee_fp_kind` を static local array address node へ
+  伝播するようにした。
+- `static double a[2][2]` は FP 配列が static local array lowering のゲートから外れ、さらに
+  consumed lowering 側で `fp_kind` と `init_fvalues` を持たなかったため、2D FP 初期値がゼロ化
+  していた。`try_lower_static_local_array(_consumed)` に `fp_kind` を渡し、global/alias と
+  brace initializer の `init_fvalues` へ保存するようにした。
+- fixture `static_local_multidim_array` に unsigned char / short / long / double の 2D/3D 永続化ケースを追加。
+- focused 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_multidim_uchar_min.c`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_double_array_min.c`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_multidim_types.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/static_local_multidim_array.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/static_local_multidim_array.o test/fixtures/probes_found_bugs/static_local_multidim_array.c`
+  - `./build/test_e2e` (1134/1134)
+  - `./build/test_wasm32_e2e` (1098 compiled/executed)
+  - `./build/test_wasm32_object` (1106/1106)
+  - `make test`
+  - `bash scripts/run_c_testsuite.sh --list-fail` (218 pass / 2 unsupported skip)

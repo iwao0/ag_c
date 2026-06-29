@@ -3299,19 +3299,21 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
 }
 
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
+                                                 tk_float_kind_t fp_kind,
                                                  int array_count, int is_unsigned);
 
-/* `static int t[N] = {...};` / `static char s[] = "..."` の 1D 整数配列 static local をグローバルに lowering する。
- * スコープ: 1D 整数配列 (`int/long/short/char [unsigned]`)、ゼロ初期化 or brace init。
- * 文字列リテラル init は要素幅と文字列幅が一致する場合だけ扱う。FP / 多次元 /
- * struct / 関数ポインタは fallback (0 を返す)。
+/* `static int t[N] = {...};` / `static char s[] = "..."` の 1D scalar 配列 static local をグローバルに lowering する。
+ * スコープ: 1D scalar 配列 (`int/long/short/char [unsigned]` / float/double)、ゼロ初期化 or brace init。
+ * 文字列リテラル init は要素幅と文字列幅が一致する場合だけ扱う。struct / 関数ポインタは
+ * fallback (0 を返す)。
  * 0 を返すときは curtok を変えない (呼び出し側の auto array 経路に流す)。
  *
  * 前提:
  *   - curtok() == TK_LBRACKET ('[' の直前)
- *   - tag_kind == TK_EOF、is_pointer == 0、fp_kind == TK_FLOAT_KIND_NONE
+ *   - tag_kind == TK_EOF、is_pointer == 0
  *   - 多次元・struct 等は呼び出し側ゲートで除外済み */
 static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
+                                         tk_float_kind_t fp_kind,
                                          int is_unsigned) {
   if (elem_size <= 0) return 0;
   /* --- peek フェーズ: curtok 不変で scope 内/外を判定する。--- */
@@ -3376,7 +3378,8 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     }
     g_inner_array_dim_count = dim_count;
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = i < dim_count ? dims[i] : 0;
-    return try_lower_static_local_array_consumed(tok, elem_size, (int)total_count, is_unsigned);
+    return try_lower_static_local_array_consumed(tok, elem_size, fp_kind,
+                                                 (int)total_count, is_unsigned);
   }
   /* `=` の後の形を peek。`{`= brace OK、`TK_STRING`=文字列 init、その他は fallback。 */
   int has_init = 0;
@@ -3416,7 +3419,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   gv->deref_size = (short)elem_size;
   gv->is_array = 1;
   gv->tag_kind = TK_EOF;
-  gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
+  gv->fp_kind = (unsigned char)fp_kind;
   if (has_size_token || (has_string_init && arr_count > 0)) {
     gv->type_size = (short)((int)arr_count * elem_size);
   } else {
@@ -3439,6 +3442,9 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     gv->init_value_symbol_lens = calloc((size_t)arr_count, sizeof(int));
     gv->init_union_ordinals = malloc((size_t)arr_count * sizeof(int));
     for (int i = 0; i < arr_count; i++) gv->init_union_ordinals[i] = -1;
+    if (fp_kind != TK_FLOAT_KIND_NONE) {
+      gv->init_fvalues = calloc((size_t)arr_count, sizeof(double));
+    }
     int idx = 0;
     int src_pos = 0;
     while (src_pos < lit->len && idx < arr_count) {
@@ -3459,6 +3465,9 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
     gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
     for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
+    if (fp_kind != TK_FLOAT_KIND_NONE) {
+      gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    }
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
     if (gv->type_size == 0 && gv->init_count > 0) {
@@ -3518,7 +3527,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   var->is_static_local = 1;
   var->is_initialized = 1;
   var->is_unsigned = is_unsigned ? 1 : 0;
-  var->fp_kind = TK_FLOAT_KIND_NONE;
+  var->fp_kind = fp_kind;
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
@@ -3527,6 +3536,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
 }
 
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
+                                                 tk_float_kind_t fp_kind,
                                                  int array_count, int is_unsigned) {
   if (elem_size <= 0) return 0;
   if (array_count == 0 || array_count < -1) return 0;
@@ -3566,7 +3576,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   gv->deref_size = (short)elem_size;
   gv->is_array = 1;
   gv->tag_kind = TK_EOF;
-  gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
+  gv->fp_kind = (unsigned char)fp_kind;
   gv->type_size = (short)((int)arr_count * elem_size);
   if (g_inner_array_dim_count >= 2) {
     int outer_mul = 1;
@@ -3610,6 +3620,9 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
     gv->init_value_symbol_lens = calloc((size_t)arr_count, sizeof(int));
     gv->init_union_ordinals = malloc((size_t)arr_count * sizeof(int));
     for (int i = 0; i < arr_count; i++) gv->init_union_ordinals[i] = -1;
+    if (fp_kind != TK_FLOAT_KIND_NONE) {
+      gv->init_fvalues = calloc((size_t)arr_count, sizeof(double));
+    }
     int idx = 0;
     int src_pos = 0;
     while (src_pos < lit->len && idx < arr_count) {
@@ -3630,6 +3643,9 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
     gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
     for (int i = 0; i < cap; i++) gv->init_union_ordinals[i] = -1;
+    if (fp_kind != TK_FLOAT_KIND_NONE) {
+      gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    }
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
   }
@@ -3670,7 +3686,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   var->is_static_local = 1;
   var->is_initialized = 1;
   var->is_unsigned = is_unsigned ? 1 : 0;
-  var->fp_kind = TK_FLOAT_KIND_NONE;
+  var->fp_kind = fp_kind;
   if (g_inner_array_dim_count >= 2) {
     int outer_mul = 1;
     for (int i = 1; i < g_inner_array_dim_count; i++) {
@@ -4456,9 +4472,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
-        decl_fp_kind == TK_FLOAT_KIND_NONE &&
         curtok()->kind == TK_LBRACKET) {
-      if (try_lower_static_local_array(tok, elem_size, decl_is_unsigned)) {
+      if (try_lower_static_local_array(tok, elem_size, decl_fp_kind, decl_is_unsigned)) {
         if (!tk_consume(',')) break;
         continue;
       }
@@ -4467,9 +4482,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         (inner_array_mul > 0 || inner_array_mul == -1) &&
         paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
-        decl_fp_kind == TK_FLOAT_KIND_NONE &&
         curtok()->kind != TK_LBRACKET) {
-      if (try_lower_static_local_array_consumed(tok, elem_size, inner_array_mul, decl_is_unsigned)) {
+      if (try_lower_static_local_array_consumed(tok, elem_size, decl_fp_kind,
+                                                inner_array_mul, decl_is_unsigned)) {
         if (!tk_consume(',')) break;
         continue;
       }
