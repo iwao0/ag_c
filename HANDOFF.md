@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き206: Wasm object cross-TU indirect-data fixtures）
+最終更新: 2026-06-29（続き207: Wasm object static local cross-TU indirect-data fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -680,6 +680,13 @@
   `<add2>` undefined / `(i64) -> i32` / `R_WASM_TABLE_INDEX_I32` / `call_indirect` を出すことを確認。
   optional link test では `add2` を別 object で定義して `main() => i32:42` まで確認する
   cross-TU case を追加（このローカル環境では `wasm-ld` 不在のため optional 実行部は skip）。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き207: **Wasm object static local cross-TU indirect-data fixtures**。
+  続き206 の static local 版を追加。
+  `int main(){static union Ops ops={.f[1]=add2}; ...}` が `<add2>` undefined /
+  `(i64) -> i32` / data `R_WASM_TABLE_INDEX_I32` / `<main.ops...>` local binding を出すことを確認。
+  optional link test では `add2` を別 object で定義して static local data symbol 経由でも
+  `main() => i32:42` になる cross-TU case を追加（このローカル環境では `wasm-ld` 不在のため skip）。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ
