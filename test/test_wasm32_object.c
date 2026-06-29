@@ -821,6 +821,17 @@ int main(void) {
                                 "int main(void){return f();}\n",
                                 static_typedef_multidim_ptr_needles, 6);
 
+  const char *static_direct_multidim_ptr_needles[] = {
+      "<f.ptrs.", "binding=local", "size=32", "R_WASM_MEMORY_ADDR_I32", "<values>",
+      "i32.store"};
+  failures += run_objdump_check("static_direct_multidim_ptr",
+                                "int values[4]={1,2,3,4}; "
+                                "int f(void){static int *ptrs[2][2]={{&values[0],&values[1]},"
+                                "{&values[2],&values[3]}}; int *old=ptrs[0][0]; "
+                                "ptrs[0][0]=ptrs[1][1]; ptrs[1][1]=old; "
+                                "return *ptrs[0][0]*10+*ptrs[1][1];}\n",
+                                static_direct_multidim_ptr_needles, 6);
+
   const char *static_string_needles[] = {
       "<f.s.", "binding=local", "617a 00", "i32.store8", "i32.load8_s"};
   failures += run_objdump_check("static_string",

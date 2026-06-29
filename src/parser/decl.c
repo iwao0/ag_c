@@ -3316,7 +3316,8 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
  *   - 多次元・struct 等は呼び出し側ゲートで除外済み */
 static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
                                          tk_float_kind_t fp_kind,
-                                         int is_unsigned) {
+                                         int is_unsigned,
+                                         int pointer_elem_pointee_size) {
   if (elem_size <= 0) return 0;
   /* --- peek フェーズ: curtok 不変で scope 内/外を判定する。--- */
   token_t *p = curtok();
@@ -3381,7 +3382,8 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     g_inner_array_dim_count = dim_count;
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = i < dim_count ? dims[i] : 0;
     return try_lower_static_local_array_consumed(tok, elem_size, fp_kind,
-                                                 (int)total_count, is_unsigned, 0);
+                                                 (int)total_count, is_unsigned,
+                                                 pointer_elem_pointee_size);
   }
   /* `=` の後の形を peek。`{`= brace OK、`TK_STRING`=文字列 init、その他は fallback。 */
   int has_init = 0;
@@ -3530,6 +3532,10 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   var->is_initialized = 1;
   var->is_unsigned = is_unsigned ? 1 : 0;
   var->fp_kind = fp_kind;
+  if (pointer_elem_pointee_size > 0) {
+    var->pointer_qual_levels = 1;
+    var->base_deref_size = (short)pointer_elem_pointee_size;
+  }
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
@@ -4510,7 +4516,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
         curtok()->kind == TK_LBRACKET) {
-      if (try_lower_static_local_array(tok, elem_size, decl_fp_kind, decl_is_unsigned)) {
+      if (try_lower_static_local_array(tok, elem_size, decl_fp_kind, decl_is_unsigned, 0)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
+    if (decl_is_static && tag_kind == TK_EOF && is_pointer &&
+        !g_decl_trailing_func_suffix &&
+        inner_array_mul == 0 && paren_array_mul == 0 &&
+        td_array_dim_count == 0 &&
+        curtok()->kind == TK_LBRACKET) {
+      if (try_lower_static_local_array(tok, 8, TK_FLOAT_KIND_NONE, 0, elem_size)) {
         if (!tk_consume(',')) break;
         continue;
       }
@@ -4522,6 +4538,18 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_array_consumed(tok, elem_size, decl_fp_kind,
                                                 inner_array_mul, decl_is_unsigned, 0)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
+    if (decl_is_static && tag_kind == TK_EOF && is_pointer &&
+        !g_decl_trailing_func_suffix &&
+        (inner_array_mul > 0 || inner_array_mul == -1) &&
+        paren_array_mul == 0 &&
+        td_array_dim_count == 0 &&
+        curtok()->kind != TK_LBRACKET) {
+      if (try_lower_static_local_array_consumed(tok, 8, TK_FLOAT_KIND_NONE,
+                                                inner_array_mul, 0, elem_size)) {
         if (!tk_consume(',')) break;
         continue;
       }

@@ -2315,3 +2315,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` (1135/1135)
   - `./build/test_wasm32_e2e` (1099 compiled/executed)
   - `./build/test_wasm32_object` (1107/1107)
+
+### このセッション（続き232）: direct static local multidim pointer array の永続化
+- `static int *ptrs[2][2]={{&a,&b},{&c,&d}};` は読み出しだけなら動くが、`ptrs[0][0]=ptrs[1][1]`
+  のように pointer array 自体を書き換えると 2 回目の呼び出しで初期状態に戻っていた。
+  名前直後の `[2][2]` suffix は `inner_array_mul` ではなく `curtok()==TK_LBRACKET` の通常配列経路に残るため、
+  続き231 の consumed pointer-array lowering 分岐では拾えていなかった。
+- `try_lower_static_local_array` に `pointer_elem_pointee_size` を渡せるようにし、
+  `decl_is_static && is_pointer && curtok()==TK_LBRACKET` の data pointer array を
+  elem_size=8 の static local array lowering に入れるようにした。1D/2D どちらも static data + alias になる。
+- fixture `static_local_pointer_array_init` に、2D static pointer array の要素を入れ替えて
+  2 回目呼び出しで保持されるケースを追加。
+  Wasm object fixture `static_direct_multidim_ptr` では direct `static int *ptrs[2][2]` の
+  local data symbol `size=32` と `R_WASM_MEMORY_ADDR_I32 <values>` を確認。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_direct_pointer_array_persist.c`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_2d_pointer_array.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/static_local_pointer_array_init.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/agc_probe_static_local_direct_pointer_array_persist.o /private/tmp/agc_probe_static_local_direct_pointer_array_persist.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/static_local_pointer_array_init.o test/fixtures/probes_found_bugs/static_local_pointer_array_init.c`
+  - `./build/test_e2e` (1135/1135)
+  - `./build/test_wasm32_e2e` (1099 compiled/executed)
+  - `./build/test_wasm32_object` (1107/1107)
