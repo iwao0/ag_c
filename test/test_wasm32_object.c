@@ -218,6 +218,12 @@ int main(void) {
                                 "int main(void){_Alignas(32) int x=7; return x;}\n",
                                 align_ptr_needles, 4);
 
+  const char *vla_needles[] = {"__stack_pointer", "i32.const 15", "i32.and", "global.set",
+                               "i32.store", "i32.load"};
+  failures += run_objdump_check("vla_alloc",
+                                "int main(void){int n=4; int a[n]; a[0]=7; return a[0];}\n",
+                                vla_needles, 6);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",

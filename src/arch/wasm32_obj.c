@@ -523,6 +523,10 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
           force_vreg_type(types, ntypes, i->src2, IR_TY_I32);
           break;
+        case IR_VLA_ALLOC:
+          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          break;
         case IR_LEA:
           force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
@@ -552,6 +556,15 @@ static int collect_frame_size(ir_func_t *f) {
     }
   }
   return align_to(frame_size, 16);
+}
+
+static int func_has_vla_alloc(ir_func_t *f) {
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op == IR_VLA_ALLOC) return 1;
+    }
+  }
+  return 0;
 }
 
 static int alloca_offset(ir_func_t *f, int vreg) {
@@ -851,9 +864,10 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int param_count = of->sig.nparams;
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
+  int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f);
   int fp_local = local_index(param_count, nlocals);
   int old_sp_local = fp_local + 1;
-  obj_global_t *stack_pointer = frame_size > 0 ? intern_stack_pointer_global() : NULL;
+  obj_global_t *stack_pointer = has_stack_restore ? intern_stack_pointer_global() : NULL;
   wb_t body = {0};
   ir_type_t *local_types = NULL;
   if (nlocals > 0) {
@@ -861,12 +875,12 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     collect_local_types(f, local_types, nlocals);
   }
 
-  wb_uleb(&body, (uint32_t)(nlocals + (frame_size > 0 ? 2 : 0)));
+  wb_uleb(&body, (uint32_t)(nlocals + (has_stack_restore ? 2 : 0)));
   for (int v = 0; v < nlocals; v++) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(local_types[v]));
   }
-  if (frame_size > 0) {
+  if (has_stack_restore) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
     wb_uleb(&body, 1);
@@ -874,6 +888,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
 
     emit_stack_global_get(&body, of, stack_pointer);
     emit_local_set(&body, old_sp_local);
+  }
+  if (frame_size > 0) {
     emit_stack_global_get(&body, of, stack_pointer);
     emit_const(&body, IR_TY_I32, frame_size);
     wb_u8(&body, 0x6b);
@@ -981,6 +997,18 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_MEMCPY:
           emit_memcpy_inline(&body, i, param_count);
           break;
+        case IR_VLA_ALLOC:
+          emit_stack_global_get(&body, of, stack_pointer);
+          emit_val(&body, i->src1, IR_TY_I32, param_count);
+          emit_const(&body, IR_TY_I32, 15);
+          wb_u8(&body, 0x6a);
+          emit_const(&body, IR_TY_I32, -16);
+          wb_u8(&body, 0x71);
+          wb_u8(&body, 0x6b);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          emit_local_get(&body, local_index(param_count, i->dst.id));
+          emit_stack_global_set(&body, of, stack_pointer);
+          break;
         case IR_LEA:
           emit_addr_val(&body, i->src1, param_count);
           emit_val(&body, i->src2, IR_TY_I32, param_count);
@@ -1085,7 +1113,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         }
         case IR_RET:
           if (i->src1.id != IR_VAL_NONE) emit_val(&body, i->src1, of->sig.result, param_count);
-          if (frame_size > 0) {
+          if (has_stack_restore) {
             emit_local_get(&body, old_sp_local);
             emit_stack_global_set(&body, of, stack_pointer);
           }
@@ -1096,7 +1124,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
       }
     }
   }
-  if (frame_size > 0) {
+  if (has_stack_restore) {
     emit_local_get(&body, old_sp_local);
     emit_stack_global_set(&body, of, stack_pointer);
   }
