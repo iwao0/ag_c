@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き160: Wasm object atomic ops）
+最終更新: 2026-06-29（続き161: Wasm object aggregate return area）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -392,6 +392,11 @@
   fence=`nop`、load/store、fetch RMW、CAS を通常 wasm load/store/if で emit。CAS 用には関数ごとに
   i32/i64 tmp local を必要時だけ追加する。`stdatomic.h` 経由の 32-bit fetch_add/CAS/fence/load と
   64-bit exchange/CAS/load fixture を追加。
+- 続き161: **Wasm object aggregate return area**。
+  >8B struct return の hidden return area を object mode に追加。関数署名の先頭に i32 return-area
+  param を入れ、`IR_PARAM src1=-1` と `IR_CALL.ret_struct_area` をそこへ対応させる。
+  併せて extern call の整数引数署名を定義側 ABI と揃え、非 pointer 整数は i64、pointer は i32、
+  fp は fp のままにした。large struct return と extern large struct return、extern int param fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -410,8 +415,9 @@
   local floating-point immediates/basic ops、fp/int/fp width conversions、aligned local pointer
   rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)、dynamic stack allocation (`IR_VLA_ALLOC`)、
   control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)、
-  C11 atomic builtin lowering (`IR_ATOMIC`)。
-  aggregate/complex/variadic call の object 化は未対応。
+  C11 atomic builtin lowering (`IR_ATOMIC`)、>8B aggregate return area。
+  complex/variadic call の object 化は未対応。aggregate call は hidden return area を持つ direct/indirect
+  call の基本形まで対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

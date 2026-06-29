@@ -133,6 +133,11 @@ int main(void) {
                                 "int other(void); int main(void){return other();}\n",
                                 extern_needles, 4);
 
+  const char *extern_int_param_needles[] = {"<inc>", "undefined", "(i64) -> i32"};
+  failures += run_objdump_check("extern_int_param",
+                                "int inc(int); int main(void){return inc(4);}\n",
+                                extern_int_param_needles, 3);
+
   const char *data_addr_needles[] = {
       "Data[1]", "<g>", "R_WASM_MEMORY_ADDR_LEB", "symbol=2 <g>"};
   failures += run_objdump_check("data_addr",
@@ -193,6 +198,21 @@ int main(void) {
                                 "struct P{int x; int y;}; int main(void){"
                                 "struct P a={1,2}; struct P b; b=a; return b.y;}\n",
                                 local_struct_assign_needles, 3);
+
+  const char *large_struct_return_needles[] = {
+      "(i32, i64) -> nil", "R_WASM_FUNCTION_INDEX_LEB", "i64.store", "i32.store"};
+  failures += run_objdump_check("large_struct_return",
+                                "struct P{int x; int y; int z;}; "
+                                "struct P make(int x){struct P p={x,x+1,x+2}; return p;} "
+                                "int main(void){struct P p=make(4); return p.z;}\n",
+                                large_struct_return_needles, 4);
+
+  const char *extern_large_struct_return_needles[] = {
+      "<make>", "undefined", "(i32, i64) -> nil", "R_WASM_FUNCTION_INDEX_LEB"};
+  failures += run_objdump_check("extern_large_struct_return",
+                                "struct P{int x; int y; int z;}; struct P make(int); "
+                                "int main(void){struct P p=make(4); return p.z;}\n",
+                                extern_large_struct_return_needles, 4);
 
   const char *int_unary_needles[] = {"i32.sub"};
   failures += run_objdump_check("int_unary",

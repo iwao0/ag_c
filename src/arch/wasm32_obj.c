@@ -786,20 +786,22 @@ static int collect_param_count(ir_func_t *f) {
 }
 
 static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
-  if (f->ret_struct_size > 0 || f->ret_area_vreg >= 0 || f->ret_complex_half > 0) {
+  if (f->ret_complex_half > 0) {
     obj_unsupported_msg("aggregate or complex return in Wasm object mode");
   }
+  int has_ret_area = f->ret_struct_size > 0 || f->ret_area_vreg >= 0;
   memset(sig, 0, sizeof(*sig));
-  sig->nparams = collect_param_count(f);
-  sig->result = f->ret_type == IR_TY_VOID ? IR_TY_VOID : wasm_ir_type(f->ret_type);
+  sig->nparams = collect_param_count(f) + (has_ret_area ? 1 : 0);
+  sig->result = has_ret_area || f->ret_type == IR_TY_VOID ? IR_TY_VOID : wasm_ir_type(f->ret_type);
   if (sig->nparams > 0) {
     sig->params = xrealloc(NULL, (size_t)sig->nparams * sizeof(ir_type_t));
     for (int p = 0; p < sig->nparams; p++) sig->params[p] = IR_TY_I64;
+    if (has_ret_area) sig->params[0] = IR_TY_I32;
     for (ir_block_t *b = f->entry; b; b = b->next) {
       for (ir_inst_t *i = b->head; i; i = i->next) {
         if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0 &&
-            i->src1.imm < sig->nparams) {
-          sig->params[i->src1.imm] = wasm_ir_type(i->dst.type);
+            i->src1.imm + (has_ret_area ? 1 : 0) < sig->nparams) {
+          sig->params[i->src1.imm + (has_ret_area ? 1 : 0)] = wasm_ir_type(i->dst.type);
         }
       }
     }
@@ -808,23 +810,29 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
 
 static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   obj_sig_t sig = {0};
-  if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE || i->ret_complex_half > 0) {
+  if (i->ret_complex_half > 0) {
     obj_unsupported_msg("aggregate or complex call in Wasm object mode");
   }
+  int has_ret_area = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
+  if (has_ret_area && i->ret_struct_area.id == IR_VAL_NONE) {
+    obj_unsupported_msg("aggregate call without return area in Wasm object mode");
+  }
   if (i->is_variadic_call) obj_unsupported_msg("variadic call in Wasm object mode");
-  sig.nparams = i->is_variadic_call ? i->nargs_fixed : i->nargs;
+  sig.nparams = (i->is_variadic_call ? i->nargs_fixed : i->nargs) + (has_ret_area ? 1 : 0);
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
-    for (int a = 0; a < sig.nparams; a++) {
-      ir_type_t ty = wasm_ir_type(i->args[a].type);
+    if (has_ret_area) sig.params[0] = IR_TY_I32;
+    int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
+    for (int a = 0; a < call_nargs; a++) {
+      ir_type_t arg_ty = i->args[a].type;
+      ir_type_t ty = wasm_ir_type(arg_ty);
       int pcat = i->sym ? psx_ctx_get_function_param_category(i->sym, i->sym_len, a) : PSX_PCAT_UNSET;
-      int int_size = i->sym ? psx_ctx_get_function_param_int_size(i->sym, i->sym_len, a) : 0;
-      if (pcat == PSX_PCAT_PTR) ty = IR_TY_I32;
-      else if (int_size == 8 || pcat == PSX_PCAT_INT8) ty = IR_TY_I64;
-      sig.params[a] = ty;
+      if (pcat == PSX_PCAT_PTR || arg_ty == IR_TY_PTR) ty = IR_TY_I32;
+      else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
+      sig.params[a + (has_ret_area ? 1 : 0)] = ty;
     }
   }
-  sig.result = (i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID)
+  sig.result = (has_ret_area || i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID)
                  ? IR_TY_VOID
                  : wasm_ir_type(i->dst.type);
   return sig;
@@ -926,6 +934,7 @@ static void emit_memcpy_inline(wb_t *b, ir_inst_t *i, int param_count) {
 static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
+  int has_ret_area = f->ret_struct_size > 0 || f->ret_area_vreg >= 0;
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
   int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f);
@@ -1016,8 +1025,13 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_LABEL:
           break;
         case IR_PARAM:
-          if (i->src1.id != IR_VAL_IMM || i->src1.imm < 0) obj_unsupported_op(i->op);
-          emit_local_get(&body, (int)i->src1.imm);
+          if (i->src1.id != IR_VAL_IMM) obj_unsupported_op(i->op);
+          if (i->src1.imm < 0) {
+            if (!has_ret_area) obj_unsupported_op(i->op);
+            emit_local_get(&body, 0);
+          } else {
+            emit_local_get(&body, (int)i->src1.imm + (has_ret_area ? 1 : 0));
+          }
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ALLOCA: {
@@ -1263,8 +1277,13 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             obj_sig_t csig = call_sig_from_inst(i);
             int type_index = intern_type(&csig);
             g_obj.has_indirect_call = 1;
+            if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) {
+              emit_addr_val(&body, i->ret_struct_area, param_count);
+            }
             for (int a = 0; a < csig.nparams; a++) {
-              emit_val(&body, i->args[a], csig.params[a], param_count);
+              int p = a + ((i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) ? 1 : 0);
+              if (p >= csig.nparams) break;
+              emit_val(&body, i->args[a], csig.params[p], param_count);
             }
             emit_addr_val(&body, i->callee, param_count);
             wb_u8(&body, 0x11);
@@ -1287,8 +1306,12 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           } else {
             free(csig.params);
           }
-          for (int a = 0; a < target->sig.nparams; a++) {
-            emit_val(&body, i->args[a], target->sig.params[a], param_count);
+          int call_has_ret_area = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
+          if (call_has_ret_area) emit_addr_val(&body, i->ret_struct_area, param_count);
+          for (int a = 0; a < i->nargs; a++) {
+            int p = a + (call_has_ret_area ? 1 : 0);
+            if (p >= target->sig.nparams) break;
+            emit_val(&body, i->args[a], target->sig.params[p], param_count);
           }
           wb_u8(&body, 0x10);
           size_t imm_off = wb_uleb5(&body, 0);
