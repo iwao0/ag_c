@@ -138,6 +138,16 @@ int main(void) {
                                 "int inc(int); int main(void){return inc(4);}\n",
                                 extern_int_param_needles, 3);
 
+  const char *variadic_no_extra_needles[] = {"<pick>", "(i64) -> i32", "R_WASM_FUNCTION_INDEX_LEB"};
+  failures += run_objdump_check("variadic_no_extra",
+                                "int pick(int n, ...){return n;} int main(void){return pick(4);}\n",
+                                variadic_no_extra_needles, 3);
+
+  const char *extern_variadic_no_extra_needles[] = {"<log1>", "undefined", "(i32) -> i32"};
+  failures += run_objdump_check("extern_variadic_no_extra",
+                                "int log1(char *, ...); int main(void){return log1(\"x\");}\n",
+                                extern_variadic_no_extra_needles, 3);
+
   const char *data_addr_needles[] = {
       "Data[1]", "<g>", "R_WASM_MEMORY_ADDR_LEB", "symbol=2 <g>"};
   failures += run_objdump_check("data_addr",
@@ -368,6 +378,17 @@ int main(void) {
 
   failures += run_fail_case("missing_o", "./build/ag_c_wasm -c build/wasm32_obj/simple.c",
                             "E0002");
+
+  if (write_file("build/wasm32_obj/variadic_extra_reject.c",
+                 "int pick(int n, ...){return n;} int main(void){return pick(1,2);}\n") != 0) {
+    fprintf(stderr, "FAIL: write variadic_extra_reject.c\n");
+    failures++;
+  } else {
+    failures += run_fail_case("variadic_extra_reject",
+                              "./build/ag_c_wasm -c -o build/wasm32_obj/variadic_extra_reject.o "
+                              "build/wasm32_obj/variadic_extra_reject.c",
+                              "E4008");
+  }
 
   failures += run_optional_link_case();
 

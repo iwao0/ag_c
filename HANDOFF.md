@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き161: Wasm object aggregate return area）
+最終更新: 2026-06-29（続き162: Wasm object zero-extra variadic calls）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -397,6 +397,10 @@
   param を入れ、`IR_PARAM src1=-1` と `IR_CALL.ret_struct_area` をそこへ対応させる。
   併せて extern call の整数引数署名を定義側 ABI と揃え、非 pointer 整数は i64、pointer は i32、
   fp は fp のままにした。large struct return と extern large struct return、extern int param fixture を追加。
+- 続き162: **Wasm object zero-extra variadic calls**。
+  `is_variadic_call` でも `nargs == nargs_fixed` なら fixed parameter だけの通常 call として object 化する。
+  定義済み variadic 関数と extern variadic 関数の「可変引数 0 個」fixture を追加。extra vararg がある
+  call は vararg area 未実装のため引き続き E4008 で停止する fixture も追加。
 
 ### Wasm backend の既知メモ
 
@@ -416,8 +420,8 @@
   rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)、dynamic stack allocation (`IR_VLA_ALLOC`)、
   control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)、
   C11 atomic builtin lowering (`IR_ATOMIC`)、>8B aggregate return area。
-  complex/variadic call の object 化は未対応。aggregate call は hidden return area を持つ direct/indirect
-  call の基本形まで対応。
+  complex call と extra vararg を持つ variadic call の object 化は未対応。aggregate call は hidden
+  return area を持つ direct/indirect call の基本形まで対応。variadic call は可変引数 0 個のみ対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

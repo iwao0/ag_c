@@ -817,7 +817,9 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   if (has_ret_area && i->ret_struct_area.id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
-  if (i->is_variadic_call) obj_unsupported_msg("variadic call in Wasm object mode");
+  if (i->is_variadic_call && i->nargs > i->nargs_fixed) {
+    obj_unsupported_msg("variadic call with object varargs in Wasm object mode");
+  }
   sig.nparams = (i->is_variadic_call ? i->nargs_fixed : i->nargs) + (has_ret_area ? 1 : 0);
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
