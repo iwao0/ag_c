@@ -776,10 +776,28 @@ int main(void) {
                                        extern_local_funcptr_needles, 5,
                                        extern_funcptr_rejects, 1);
 
+  failures += run_objdump_check_absent("extern_funcptr_return_comma_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "Printer get(int x){return x, (Printer)&fprintf;} "
+                                       "int main(void){return get(1)(stdout, \"x\");}\n",
+                                       extern_local_funcptr_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
   failures += run_objdump_check_absent("extern_funcptr_return_direct_decl",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
                                        "int fprintf(FILE*, const char*, ...); "
                                        "int (*get(void))(FILE*, const char*, ...){return &fprintf;} "
+                                       "int main(void){return get()(stdout, \"x\");}\n",
+                                       extern_local_funcptr_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
+  failures += run_objdump_check_absent("extern_funcptr_return_direct_decl_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "int (*get(void))(FILE*, const char*, ...){return (Printer)&fprintf;} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
                                        extern_funcptr_rejects, 1);
@@ -789,6 +807,15 @@ int main(void) {
                                        "int fprintf(FILE*, const char*, ...); "
                                        "typedef int (*Printer)(FILE*, const char*, ...); "
                                        "Printer get(void){return ({ &fprintf; });} "
+                                       "int main(void){return get()(stdout, \"x\");}\n",
+                                       extern_local_funcptr_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
+  failures += run_objdump_check_absent("extern_funcptr_return_stmt_expr_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "Printer get(void){return ({ (Printer)&fprintf; });} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
                                        extern_funcptr_rejects, 1);
@@ -809,6 +836,24 @@ int main(void) {
                                        "Printer get(void){return &fprintf;} "
                                        "int main(void){Printer p=get(); return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
+  failures += run_objdump_check_absent("extern_funcptr_return_store_local_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "Printer get(void){return (Printer)&fprintf;} "
+                                       "int main(void){Printer p=get(); return p(stdout, \"x\");}\n",
+                                       extern_local_funcptr_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
+  failures += run_objdump_check_absent("extern_static_local_funcptr_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "int main(void){static Printer p=(Printer)&fprintf; "
+                                       "return p(stdout, \"x\");}\n",
+                                       extern_funcptr_global_needles, 5,
                                        extern_funcptr_rejects, 1);
 
   const char *struct_funcptr_member_needles[] = {

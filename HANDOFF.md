@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き192: Wasm object designator casted extern funcptr fixtures）
+最終更新: 2026-06-29（続き193: Wasm object static local casted extern funcptr initializer）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -576,6 +576,20 @@
   `[1]` / `.p` / `.p[1]` / `.ops.p` の global aggregate designator で
   `(i32, i32) -> i32` と `R_WASM_TABLE_INDEX_I32` を確認し、fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、`make test` green。
+- 続き193: **Wasm object static local casted extern funcptr initializer**。
+  `static Printer p=(Printer)&fprintf;` が static local scalar lowering で数値定数以外を
+  受け付けず auto local に fallback し、object mode では stack slot 初期化の
+  `R_WASM_TABLE_INDEX_SLEB` になっていた。pointer static scalar initializer に address constant を許可し、
+  backing global の `init_symbol` と funcptr signature metadata を保存。static alias 参照時の
+  `ND_GVAR` にも funcptr metadata を伝播するよう修正した。address constant として解決できない
+  initializer は token 消費後に fallback せず診断で止める。
+  追加 fixture: `extern_static_local_funcptr_cast` と return wrapper cast fixtures
+  (`extern_funcptr_return_comma_cast`、`extern_funcptr_return_direct_decl_cast`、
+  `extern_funcptr_return_stmt_expr_cast`、`extern_funcptr_return_store_local_cast`)。
+  `main.p.0` data segment の `R_WASM_TABLE_INDEX_I32` と `(i32, i32) -> i32` を確認し、
+  fallback `(i64, i64) -> i32` を reject。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、`make test` green
+  (`test_wasm32_e2e` 1096/1096、`test_e2e` 1125/1125)。
 
 ### Wasm backend の既知メモ
 

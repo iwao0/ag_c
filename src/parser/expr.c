@@ -5139,6 +5139,13 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     gv->mem.deref_size = (short)(var->elem_size > 0 ? var->elem_size : sz);
     gv->mem.is_unsigned = var->is_unsigned;
     gv->mem.base.fp_kind = var->fp_kind;
+    gv->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
+    gv->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
+    gv->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
+    gv->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
+    gv->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
+    gv->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
+    gv->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
     /* `static struct S a` の tag 情報を ND_GVAR に伝播して `a.member` の
      * メンバアクセスを解決可能にする (tag を落とすと build_member_access が
      * 失敗する)。is_tag_pointer は実体 (= 0)。 */

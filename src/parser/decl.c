@@ -3049,14 +3049,23 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
 
 /* `static int n = 5;` のような単純スカラ static ローカルをグローバルに lowering する。
  * 戻り値: 1 = 処理した (登録 + alias 作成済)、0 = 非対応形式なので呼び出し側で fallback。
- * 対応範囲: スカラ整数 / 浮動小数点 / ポインタ。`=` の右辺は ND_NUM 定数のみ。
+ * 対応範囲: スカラ整数 / 浮動小数点 / ポインタ。`=` の右辺は数値定数、
+ * またはポインタ用のアドレス定数 (`&g` / 関数参照 / 文字列リテラル等)。
  * 配列・struct・union・複合型は未対応。 */
 static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int deref_size,
-                                          tk_float_kind_t fp_kind, int is_unsigned) {
+                                          tk_float_kind_t fp_kind, int is_unsigned,
+                                          int is_pointer,
+                                          unsigned short funcptr_param_fp_mask,
+                                          unsigned short funcptr_param_int_mask,
+                                          unsigned char funcptr_ret_int_width,
+                                          int funcptr_ret_is_void,
+                                          int funcptr_ret_is_complex,
+                                          int is_variadic_funcptr,
+                                          short funcptr_nargs_fixed) {
   if (var_size <= 0) return 0;
-  /* peek フェーズ: 受理できる init 形 (なし、または `=` + 単純な数値リテラル) のみ
-   * scalar 経路で処理する。`=` + 文字列リテラル / `{` / 識別子参照 / 演算式などは
-   * lowering で 0 にされて値が消えるため、auto local 経路へ fall through させる。 */
+  /* peek フェーズ: 受理できる init 形 (なし、`=` + 単純な数値リテラル、
+   * または pointer のアドレス定数式) のみ scalar 経路で処理する。 */
+  int init_is_addr = 0;
   {
     token_t *p = curtok();
     if (p && p->kind == TK_ASSIGN) {
@@ -3066,8 +3075,25 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
        * 文字列・複合リテラル・識別子参照・関数呼び出し等は fallback。 */
       token_t *num_tok = a;
       if (a->kind == TK_MINUS || a->kind == TK_PLUS) num_tok = a->next;
-      if (!num_tok || num_tok->kind != TK_NUM) return 0;
-      token_t *tail = num_tok->next;
+      token_t *tail = NULL;
+      if (num_tok && num_tok->kind == TK_NUM) {
+        tail = num_tok->next;
+      } else if (is_pointer) {
+        int depth = 0;
+        for (token_t *q = a; q; q = q->next) {
+          if (q->kind == TK_LPAREN || q->kind == TK_LBRACKET || q->kind == TK_LBRACE) depth++;
+          else if (q->kind == TK_RPAREN || q->kind == TK_RBRACKET || q->kind == TK_RBRACE) {
+            if (depth > 0) depth--;
+          } else if (depth == 0 && (q->kind == TK_SEMI || q->kind == TK_COMMA)) {
+            tail = q;
+            break;
+          }
+        }
+        if (!tail) return 0;
+        init_is_addr = 1;
+      } else {
+        return 0;
+      }
       if (!tail || (tail->kind != TK_SEMI && tail->kind != TK_COMMA)) return 0;
     }
   }
@@ -3102,10 +3128,25 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
    * fval を取り出す。 */
   long long init_val = 0;
   double init_fval = 0;
+  char *init_symbol = NULL;
+  int init_symbol_len = 0;
+  long long init_symbol_offset = 0;
   int has_init = 0;
   if (tk_consume('=')) {
     node_t *e = psx_expr_assign();
-    if (fp_kind != TK_FLOAT_KIND_NONE) {
+    if (init_is_addr) {
+      long long off = 0;
+      char *sym = NULL;
+      int sym_len = 0;
+      if (!psx_resolve_global_addr_init(e, &sym, &sym_len, &off)) {
+        psx_diag_ctx(curtok(), "decl",
+                     "static local pointer initializer must be an address constant");
+      }
+      init_symbol = sym;
+      init_symbol_len = sym_len;
+      init_symbol_offset = off;
+      has_init = 1;
+    } else if (fp_kind != TK_FLOAT_KIND_NONE) {
       if (e && e->kind == ND_NUM) init_fval = ((node_num_t *)e)->fval;
       has_init = 1;
     } else {
@@ -3125,8 +3166,20 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   gv->deref_size = (short)deref_size;
   gv->has_init = has_init;
   gv->init_val = init_val;
+  gv->init_symbol = init_symbol;
+  gv->init_symbol_len = init_symbol_len;
+  gv->init_symbol_offset = init_symbol_offset;
   gv->fp_kind = (unsigned char)fp_kind;
   gv->fval = init_fval;
+  if (is_pointer) {
+    gv->funcptr_param_fp_mask = funcptr_param_fp_mask;
+    gv->funcptr_param_int_mask = funcptr_param_int_mask;
+    gv->funcptr_ret_int_width = funcptr_ret_int_width;
+    gv->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
+    gv->funcptr_ret_is_complex = funcptr_ret_is_complex ? 1 : 0;
+    gv->is_variadic_funcptr = is_variadic_funcptr ? 1 : 0;
+    gv->funcptr_nargs_fixed = funcptr_nargs_fixed;
+  }
   psx_register_global_var(gv);
 
   /* lvar を「alias」として登録 — frame には置かないが、short name で引けるよう
@@ -3145,6 +3198,15 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   var->is_unsigned = is_unsigned ? 1 : 0;
   var->is_static_local = 1;
   var->is_initialized = 1;
+  if (is_pointer) {
+    var->funcptr_param_fp_mask = funcptr_param_fp_mask;
+    var->funcptr_param_int_mask = funcptr_param_int_mask;
+    var->funcptr_ret_int_width = funcptr_ret_int_width;
+    var->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
+    var->funcptr_ret_is_complex = funcptr_ret_is_complex ? 1 : 0;
+    var->is_variadic_funcptr = is_variadic_funcptr ? 1 : 0;
+    var->funcptr_nargs_fixed = funcptr_nargs_fixed;
+  }
   var->static_global_name = mangled;
   var->static_global_name_len = total_len;
   locals = var;
@@ -4256,10 +4318,53 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     if (decl_is_static && tag_kind == TK_EOF &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         curtok()->kind != TK_LBRACKET && td_array_dim_count == 0) {
+      unsigned short static_funcptr_param_fp_mask =
+          is_pointer ? (g_decl_trailing_func_suffix ? g_last_funcptr_param_fp_mask
+                                                    : base_funcptr_param_fp_mask)
+                     : 0;
+      unsigned short static_funcptr_param_int_mask =
+          is_pointer ? (g_decl_trailing_func_suffix ? g_last_funcptr_param_int_mask
+                                                    : base_funcptr_param_int_mask)
+                     : 0;
+      unsigned char static_funcptr_ret_int_width =
+          is_pointer ? (g_decl_trailing_func_suffix
+                            ? ((!((ptr_levels > 1 || base_is_pointer) ? 1 : 0) &&
+                                !decl_base_is_void &&
+                                tag_kind == TK_EOF &&
+                                decl_fp_kind == TK_FLOAT_KIND_NONE)
+                                   ? (elem_size >= 8 ? 8 : 4)
+                                   : 0)
+                            : base_funcptr_ret_int_width)
+                     : 0;
+      int static_funcptr_ret_is_void =
+          is_pointer ? (g_decl_trailing_func_suffix ? (decl_base_is_void ? 1 : 0)
+                                                    : (base_funcptr_ret_is_void ? 1 : 0))
+                     : 0;
+      int static_funcptr_ret_is_complex =
+          is_pointer ? (g_decl_trailing_func_suffix
+                            ? ((decl_is_complex &&
+                                !((ptr_levels > 1 || base_is_pointer) ? 1 : 0))
+                                   ? 1
+                                   : 0)
+                            : (base_funcptr_ret_is_complex ? 1 : 0))
+                     : 0;
+      int static_is_variadic_funcptr =
+          is_pointer && (g_last_funcptr_is_variadic || base_is_variadic_funcptr);
+      short static_funcptr_nargs_fixed =
+          g_last_funcptr_is_variadic ? (short)g_last_funcptr_nfixed
+                                     : base_funcptr_nargs_fixed;
       if (try_lower_static_local_scalar(tok, var_size,
                                          is_pointer ? pointer_deref_size : var_size,
                                          is_pointer ? TK_FLOAT_KIND_NONE : decl_fp_kind,
-                                         decl_is_unsigned)) {
+                                         decl_is_unsigned,
+                                         is_pointer,
+                                         static_funcptr_param_fp_mask,
+                                         static_funcptr_param_int_mask,
+                                         static_funcptr_ret_int_width,
+                                         static_funcptr_ret_is_void,
+                                         static_funcptr_ret_is_complex,
+                                         static_is_variadic_funcptr,
+                                         static_funcptr_nargs_fixed)) {
         if (!tk_consume(',')) break;
         continue;
       }
