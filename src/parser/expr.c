@@ -834,6 +834,7 @@ static int parse_assoc_base_type(generic_type_t *out,
       base_kind = _ti.base_kind; elem_size = _ti.elem_size; fp_kind = _ti.fp_kind;
       tag_kind = _ti.tag_kind; tag_name = _ti.tag_name; tag_len = _ti.tag_len;
       is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+      out->is_long_double = _ti.is_long_double ? 1 : 0;
       out->is_array = _ti.is_array;
       out->is_funcptr = _ti.is_funcptr;
       if (base_const) *base_const = _ti.pointee_const_qualified;
@@ -5200,6 +5201,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.is_bool = gv->is_bool;
     /* unsigned スカラ: load を zero-extend するため is_unsigned を伝播。 */
     gvar_node->mem.is_unsigned = gv->is_unsigned;
+    gvar_node->mem.is_long_double = gv->is_long_double;
     gvar_node->name = gv->name;
     gvar_node->name_len = gv->name_len;
     gvar_node->is_thread_local = gv->is_thread_local;

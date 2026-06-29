@@ -126,6 +126,7 @@ typedef struct {
   token_kind_t type_kind;
   int is_unsigned;
   int is_long_long;   // long long (_Generic で long と区別)
+  int is_long_double; // long double (_Generic で double と区別)
   int is_plain_char;  // plain char (_Generic で signed/unsigned char と区別)
   int elem_size;
   tk_float_kind_t fp_kind;
@@ -177,20 +178,20 @@ static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_arr
 static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
                                             tk_float_kind_t *fp_kind,
                                             token_kind_t *tag_kind, char **tag_name, int *tag_len,
-                                            int *is_pointer_base);
+                                            int *is_pointer_base, int *is_long_double_base);
 static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr, int paren_array_mul,
                                                  token_kind_t base_kind, int elem_size,
                                                  tk_float_kind_t fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
-                                                 int td_is_unsigned,
+                                                 int td_is_unsigned, int td_is_long_double,
                                                  int decl_added_pointer);
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
                                                 tk_float_kind_t fp_kind,
                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
                                                 int is_pointer_base,
                                                 int td_pointee_const, int td_pointee_volatile,
-                                                int td_is_unsigned);
+                                                int td_is_unsigned, int td_is_long_double);
 static global_var_t *find_global_var_decl(char *name, int len);
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
 static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
@@ -203,7 +204,7 @@ static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out
                                            token_kind_t *out_tag_kind, char **out_tag_name,
                                            int *out_tag_len, int *out_base_is_pointer,
                                            int *out_pointee_const, int *out_pointee_volatile,
-                                           int *out_is_unsigned);
+                                           int *out_is_unsigned, int *out_is_long_double);
 
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind) {
   if (type_kind == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
@@ -249,7 +250,7 @@ static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out
                                            token_kind_t *out_tag_kind, char **out_tag_name,
                                            int *out_tag_len, int *out_base_is_pointer,
                                            int *out_pointee_const, int *out_pointee_volatile,
-                                           int *out_is_unsigned) {
+                                           int *out_is_unsigned, int *out_is_long_double) {
   token_ident_t *id = (token_ident_t *)curtok();
   psx_typedef_info_t _ti;
   if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
@@ -263,6 +264,7 @@ static void resolve_typedef_name_ref_local(token_kind_t *out_base_kind, int *out
     if (out_pointee_const) *out_pointee_const = _ti.pointee_const_qualified;
     if (out_pointee_volatile) *out_pointee_volatile = _ti.pointee_volatile_qualified;
     if (out_is_unsigned) *out_is_unsigned = _ti.is_unsigned;
+    if (out_is_long_double) *out_is_long_double = _ti.is_long_double;
   }
   set_curtok(curtok()->next);
 }
@@ -507,6 +509,7 @@ static int g_decl_func_suffix_count = 0;
  * int=4 で elem_size を使うため、上書きしない)。parse_local_decl_spec_from_typedef がセット。 */
 static int g_decl_td_array_elem_size = 0;
 static int g_decl_td_is_array = 0;
+static int g_decl_td_is_long_double = 0;
 /* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP p;` で 2)。
  * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
@@ -4283,6 +4286,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   int decl_is_long_long = psx_last_type_is_long_long();
   int decl_is_plain_char = psx_last_type_is_plain_char();
   int decl_is_long_double = psx_last_type_is_long_double();
+  if (g_decl_td_is_long_double) decl_is_long_double = 1;
+  g_decl_td_is_long_double = 0;
   int decl_is_atomic = psx_last_type_is_atomic();
   psx_take_alignas_value(&alignas_val);
   int decl_is_extern = 0;
@@ -4956,8 +4961,10 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
   resolve_typedef_name_ref_local(&base_kind, &out->elem_size, &out->fp_kind,
                                  &out->tag_kind, &out->tag_name, &out->tag_len,
                                  &out->base_is_pointer,
-                                 &out->td_pointee_const, &out->td_pointee_volatile, &out->is_unsigned);
+                                 &out->td_pointee_const, &out->td_pointee_volatile,
+                                 &out->is_unsigned, &out->is_long_double);
   adjust_local_decl_spec_from_typedef(out, base_kind);
+  g_decl_td_is_long_double = out->is_long_double ? 1 : 0;
   return 1;
 }
 
@@ -4972,6 +4979,7 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_is_variadic_funcptr = 0;
   g_decl_base_funcptr_nargs_fixed = 0;
   g_decl_td_is_array = 0;
+  g_decl_td_is_long_double = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }
@@ -5044,17 +5052,21 @@ static node_t *parse_typedef_declaration_local(void) {
   char *tag_name = NULL;
   int tag_len = 0;
   int is_pointer_base = 0;
+  int is_long_double_base = 0;
   resolve_local_typedef_decl_spec(&base_kind, &elem_size, &fp_kind,
-                                  &tag_kind, &tag_name, &tag_len, &is_pointer_base);
+                                  &tag_kind, &tag_name, &tag_len, &is_pointer_base,
+                                  &is_long_double_base);
 
   int td_pointee_const = 0;
   int td_pointee_volatile = 0;
   psx_take_type_qualifiers(&td_pointee_const, &td_pointee_volatile);
   int td_is_unsigned = (base_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
+  int td_is_long_double = psx_last_type_is_long_double() || is_long_double_base;
 
   parse_local_typedef_declarator_list(base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len,
                                       is_pointer_base,
-                                      td_pointee_const, td_pointee_volatile, td_is_unsigned);
+                                      td_pointee_const, td_pointee_volatile,
+                                      td_is_unsigned, td_is_long_double);
   tk_expect(';');
   return psx_node_new_num(0);
 }
@@ -5062,7 +5074,7 @@ static node_t *parse_typedef_declaration_local(void) {
 static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_size,
                                             tk_float_kind_t *fp_kind,
                                             token_kind_t *tag_kind, char **tag_name, int *tag_len,
-                                            int *is_pointer_base) {
+                                            int *is_pointer_base, int *is_long_double_base) {
   if (psx_ctx_is_tag_keyword(curtok()->kind)) {
     *tag_kind = curtok()->kind;
     *base_kind = *tag_kind;
@@ -5084,12 +5096,13 @@ static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_s
   if (builtin_kind != TK_EOF) {
     *base_kind = builtin_kind;
     resolve_builtin_type_local(builtin_kind, elem_size, fp_kind);
+    if (is_long_double_base) *is_long_double_base = psx_last_type_is_long_double();
     return;
   }
   if (psx_ctx_is_typedef_name_token(curtok())) {
     resolve_typedef_name_ref_local(base_kind, elem_size, fp_kind,
                                    tag_kind, tag_name, tag_len, is_pointer_base,
-                                   NULL, NULL, NULL);
+                                   NULL, NULL, NULL, is_long_double_base);
     return;
   }
   diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
@@ -5101,7 +5114,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
                                                  tk_float_kind_t fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
-                                                 int td_is_unsigned,
+                                                 int td_is_unsigned, int td_is_long_double,
                                                  int decl_added_pointer) {
   /* 配列要素がポインタの typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef だが
    * declarator は `*` を追加していない (decl_added_pointer=0)。この場合の typedef は
@@ -5140,6 +5153,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   _ti.pointee_const_qualified = td_pointee_const;
   _ti.pointee_volatile_qualified = td_pointee_volatile;
   _ti.is_unsigned = td_is_unsigned;
+  _ti.is_long_double = (!is_ptr && !td_is_array && td_is_long_double) ? 1 : 0;
   _ti.is_array = td_is_array;
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
@@ -5190,7 +5204,7 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
                                                 int is_pointer_base,
                                                 int td_pointee_const, int td_pointee_volatile,
-                                                int td_is_unsigned) {
+                                                int td_is_unsigned, int td_is_long_double) {
   for (;;) {
     int is_ptr = is_pointer_base;
     unsigned int ptr_const_mask = 0;
@@ -5205,8 +5219,8 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
     define_local_typedef_from_declarator(name, is_ptr, paren_array_mul,
                                          base_kind, elem_size, fp_kind,
                                          tag_kind, tag_name, tag_len,
-                                         td_pointee_const, td_pointee_volatile, td_is_unsigned,
-                                         decl_added_ptr);
+                                         td_pointee_const, td_pointee_volatile,
+                                         td_is_unsigned, td_is_long_double, decl_added_ptr);
     if (!tk_consume(',')) break;
   }
 }

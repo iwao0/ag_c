@@ -159,6 +159,7 @@ typedef struct {
   int pointee_const_qualified;
   int pointee_volatile_qualified;
   int is_unsigned;
+  int is_long_double;          // typedef した型自体が long double スカラか
   int is_array;                 // typedef した型が配列型 (`typedef int row_t[3]`) か
   int array_first_dim;          // 最外側 `[N]` の N (多次元の mid_stride 計算用)
   int array_dim_count;          // 配列次元数 (0 = 非配列/未知)

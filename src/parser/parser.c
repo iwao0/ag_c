@@ -127,6 +127,7 @@ static int g_toplevel_decl_is_thread_local = 0;
 static int g_toplevel_decl_is_typedef = 0;
 static token_kind_t g_toplevel_decl_base_kind = TK_EOF;
 static int g_toplevel_decl_is_unsigned = 0;
+static int g_toplevel_decl_is_long_double = 0;
 static tk_float_kind_t g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
 static token_kind_t g_toplevel_decl_tag_kind = TK_EOF;
 static char *g_toplevel_decl_tag_name = NULL;
@@ -219,7 +220,7 @@ static void consume_toplevel_typedef_storage_class(void);
 static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind);
 static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, tk_float_kind_t td_fp,
                                              token_kind_t td_tag, char *td_tag_name, int td_tag_len,
-                                             int td_is_ptr, int td_is_unsigned);
+                                             int td_is_ptr, int td_is_unsigned, int td_is_long_double);
 static void apply_toplevel_typedef_prefix_flags(void);
 static void resolve_toplevel_tag_decl_layout_or_ref(void);
 static void reset_toplevel_decl_spec_state(void);
@@ -282,6 +283,7 @@ typedef struct {
   int base_pointer_levels;
   // 基底型が unsigned か (`unsigned char* p` の pointee zero-extend に使う)。
   int is_unsigned;
+  int is_long_double;
 } param_decl_spec_t;
 static int parse_param_tag_decl_spec(param_decl_spec_t *out);
 static void parse_param_scalar_decl_spec(param_decl_spec_t *out);
@@ -351,11 +353,13 @@ static void resolve_toplevel_typedef_ref(void) {
   int td_is_array = 0;
   int td_dim_count = 0;
   int td_is_unsigned = 0;
+  int td_is_long_double = 0;
   psx_typedef_info_t _ti;
   if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
     td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
     td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
     td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
+    td_is_long_double = _ti.is_long_double;
     td_is_array = _ti.is_array; td_dim_count = _ti.array_dim_count;
     g_toplevel_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
     g_toplevel_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
@@ -376,14 +380,15 @@ static void resolve_toplevel_typedef_ref(void) {
       (td_is_ptr && !td_is_array && td_dim_count > 0) ? td_dim_count : 0;
   set_curtok(curtok()->next);
   apply_toplevel_typedef_decl_spec(td_base, td_elem, td_fp, td_tag, td_tag_name, td_tag_len,
-                                   td_is_ptr, td_is_unsigned);
+                                   td_is_ptr, td_is_unsigned, td_is_long_double);
 }
 
 static void apply_toplevel_typedef_decl_spec(token_kind_t td_base, int td_elem, tk_float_kind_t td_fp,
                                              token_kind_t td_tag, char *td_tag_name, int td_tag_len,
-                                             int td_is_ptr, int td_is_unsigned) {
+                                             int td_is_ptr, int td_is_unsigned, int td_is_long_double) {
   g_toplevel_decl_base_kind = td_base;
   g_toplevel_decl_is_unsigned = td_is_unsigned ? 1 : 0;
+  g_toplevel_decl_is_long_double = td_is_long_double ? 1 : 0;
   g_toplevel_decl_fp_kind = td_fp;
   g_toplevel_decl_tag_kind = td_tag;
   g_toplevel_decl_tag_name = td_tag_name;
@@ -412,6 +417,7 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_is_typedef = 0;
   g_toplevel_decl_base_kind = TK_EOF;
   g_toplevel_decl_is_unsigned = 0;
+  g_toplevel_decl_is_long_double = 0;
   g_toplevel_decl_fp_kind = TK_FLOAT_KIND_NONE;
   g_toplevel_decl_tag_kind = TK_EOF;
   g_toplevel_decl_tag_name = NULL;
@@ -818,6 +824,7 @@ static void apply_toplevel_builtin_decl_spec(token_kind_t type_kind) {
   /* unsigned 修飾を保持する。`unsigned int` は base_kind=TK_UNSIGNED にするが、
    * `unsigned long/char/short` は base_kind=TK_LONG 等のままなので別フラグで覚える。 */
   g_toplevel_decl_is_unsigned = (type_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
+  g_toplevel_decl_is_long_double = psx_last_type_is_long_double();
   if (type_kind == TK_INT && psx_last_type_is_unsigned()) {
     g_toplevel_decl_base_kind = TK_UNSIGNED;
   }
@@ -1113,6 +1120,7 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
         (existing->type_size == 0 || new_type_size == 0 ||
          existing->type_size == new_type_size) &&
         existing->fp_kind == (unsigned char)g_toplevel_decl_fp_kind &&
+        existing->is_long_double == (unsigned)g_toplevel_decl_is_long_double &&
         existing->tag_kind == g_toplevel_decl_tag_kind &&
         (unsigned)existing->is_array == (unsigned)is_array;
     if (!type_compatible) {
@@ -1194,6 +1202,7 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
    * スカラは node の is_unsigned、配列は pointee_is_unsigned に使う (ポインタ値
    * 自体は unsigned ではないので is_ptr は除外)。 */
   gv->is_unsigned = (!is_ptr && g_toplevel_decl_is_unsigned) ? 1 : 0;
+  gv->is_long_double = (!is_ptr && !is_array && g_toplevel_decl_is_long_double) ? 1 : 0;
   gv->is_const_qualified = g_toplevel_decl_pointee_const ? 1 : 0;
   gv->is_volatile_qualified = g_toplevel_decl_pointee_volatile ? 1 : 0;
   /* 多段ポインタグローバル (`int **gp` / pointer typedef `PP gp`) の段数 = 宣言子の
@@ -2614,6 +2623,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
   _ti.pointee_const_qualified = g_toplevel_decl_pointee_const;
   _ti.pointee_volatile_qualified = g_toplevel_decl_pointee_volatile;
   _ti.is_unsigned = is_toplevel_typedef_unsigned(stored_base_kind);
+  _ti.is_long_double = (!is_ptr && !td_is_array && g_toplevel_decl_is_long_double) ? 1 : 0;
   _ti.is_array = td_is_array;
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
@@ -3718,10 +3728,16 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
                                                      2 * half, 2 * half, 0, 8);
     var->is_complex = 1;
     var->fp_kind = ds->fp_kind;
+    var->is_long_double = ds->is_long_double ? 1 : 0;
     return var;
   }
   // スカラー型仮引数（既存の動作）
-  return psx_decl_register_lvar(param->str, param->len);
+  {
+    lvar_t *var = psx_decl_register_lvar(param->str, param->len);
+    var->fp_kind = ds->fp_kind;
+    var->is_long_double = ds->is_long_double ? 1 : 0;
+    return var;
+  }
 }
 
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed) {
@@ -3867,6 +3883,7 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
   if (param_type_kind != TK_EOF) {
     out->base_type_kind = param_type_kind;
     out->is_unsigned = (param_type_kind == TK_UNSIGNED) || psx_last_type_is_unsigned();
+    out->is_long_double = psx_last_type_is_long_double();
     psx_ctx_get_type_info(param_type_kind, NULL, &out->elem_size);
     if (param_type_kind == TK_FLOAT) out->fp_kind = TK_FLOAT_KIND_FLOAT;
     else if (param_type_kind == TK_DOUBLE) out->fp_kind = TK_FLOAT_KIND_DOUBLE;
@@ -3899,6 +3916,7 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
       td_sizeof_size = _ti.sizeof_size;
       td_first_dim = _ti.array_first_dim;
       td_dim_count = _ti.array_dim_count;
+      out->is_long_double = _ti.is_long_double ? 1 : 0;
       for (int i = 0; i < td_dim_count && i < 8; i++) out->typedef_array_dims[i] = _ti.array_dims[i];
       if (td_elem_size > 0) out->elem_size = td_elem_size;
       out->typedef_is_array = td_is_array;

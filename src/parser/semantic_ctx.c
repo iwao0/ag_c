@@ -108,6 +108,7 @@ struct typedef_name_t {
   int pointee_const_qualified;
   int pointee_volatile_qualified;
   int is_unsigned;
+  int is_long_double;
   // typedef した型が配列型 (例: `typedef int row_t[3]`) のときに 1。
   // 不完全配列 `typedef int A[]` でも 1（sizeof_size は 0）。
   // 仮引数 `row_t *a` を `(*a)[N]` 相当として扱うため、判別が必要。
@@ -925,6 +926,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->pointee_const_qualified = info->pointee_const_qualified;
   t->pointee_volatile_qualified = info->pointee_volatile_qualified;
   t->is_unsigned = info->is_unsigned;
+  t->is_long_double = info->is_long_double;
   t->is_array = info->is_array;
   t->array_first_dim = info->array_first_dim;
   t->is_funcptr = info->is_funcptr;
@@ -958,6 +960,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->pointee_const_qualified == info->pointee_const_qualified &&
                 existing->pointee_volatile_qualified == info->pointee_volatile_qualified &&
                 existing->is_unsigned == info->is_unsigned &&
+                existing->is_long_double == info->is_long_double &&
                 existing->is_array == info->is_array &&
                 existing->array_first_dim == info->array_first_dim &&
                 existing->array_dim_count == n_new &&
@@ -1030,6 +1033,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->pointee_const_qualified = t->pointee_const_qualified;
     out->pointee_volatile_qualified = t->pointee_volatile_qualified;
     out->is_unsigned = t->is_unsigned;
+    out->is_long_double = t->is_long_double;
     out->is_array = t->is_array;
     out->array_first_dim = t->array_first_dim;
     int n = t->array_dim_count;
