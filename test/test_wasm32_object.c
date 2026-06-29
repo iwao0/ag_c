@@ -150,6 +150,62 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/global_main.c",
+                 "extern int shared; int bump(void); int main(void){shared=37; return bump();}\n") != 0 ||
+      write_file("build/wasm32_obj/global_other.c",
+                 "int shared; int bump(void){shared=shared+5; return shared;}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/global_main.o "
+              "build/wasm32_obj/global_main.c",
+              "global_main.o") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/global_other.o "
+              "build/wasm32_obj/global_other.c",
+              "global_other.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o build/wasm32_obj/linked_global.wasm "
+              "build/wasm32_obj/global_main.o build/wasm32_obj/global_other.o",
+              "wasm-ld global") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_global.wasm",
+              "wasm-validate global") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_global.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_global.interp",
+              "wasm-interp global") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_global.interp", buf, sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked global wasm returned unexpected result\n");
+    return 1;
+  }
+  if (write_file("build/wasm32_obj/static_main.c",
+                 "int a(void); int b(void); int main(void){return a()+b();}\n") != 0 ||
+      write_file("build/wasm32_obj/static_a.c",
+                 "static int hidden(void){return 20;} int a(void){return hidden();}\n") != 0 ||
+      write_file("build/wasm32_obj/static_b.c",
+                 "static int hidden(void){return 22;} int b(void){return hidden();}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_main.o "
+              "build/wasm32_obj/static_main.c",
+              "static_main.o") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_a.o "
+              "build/wasm32_obj/static_a.c",
+              "static_a.o") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/static_b.o "
+              "build/wasm32_obj/static_b.c",
+              "static_b.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o build/wasm32_obj/linked_static.wasm "
+              "build/wasm32_obj/static_main.o build/wasm32_obj/static_a.o "
+              "build/wasm32_obj/static_b.o",
+              "wasm-ld static") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_static.wasm",
+              "wasm-validate static") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_static.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_static.interp",
+              "wasm-interp static") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_static.interp", buf, sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked static wasm returned unexpected result\n");
+    return 1;
+  }
   return 0;
 }
 

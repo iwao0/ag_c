@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き166: Wasm object static local data fixtures）
+最終更新: 2026-06-29（続き167: Wasm object optional link coverage）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -420,6 +420,10 @@
   static local 多次元配列と static local 文字列配列が object data segment の local binding symbol として
   出ることを fixture 化。`static int a[2][3]` の永続 data + load/store、`static char s[]="az"` の
   byte data + load8/store8 を `test_wasm32_object` に追加。
+- 続き167: **Wasm object optional link coverage**。
+  `wasm-ld` / `wasm-validate` / `wasm-interp` がある環境でだけ走る optional link test に、
+  extern global read/write を別 TU data symbol 経由で解決するケースと、同名 `static hidden`
+  関数を別 TU に持つ local function symbol 衝突なしケースを追加。どちらも `main() => i32:42` を確認。
 
 ### Wasm backend の既知メモ
 
