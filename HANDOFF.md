@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き182: Wasm object c-testsuite scan target）
+最終更新: 2026-06-29（続き183: Wasm object aggregate extern funcptr signatures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -507,6 +507,12 @@
   `scripts/run_wasm32_object_c_testsuite_scan.sh` と `make wasm32-object-c-testsuite-scan` に昇格。
   通常 c-testsuite と同じく 00206/00216 は unsupported GNU extension として skip し、失敗一覧は
   `build/wasm32_obj_cts_scan/failures.txt` に残す。
+- 続き183: **Wasm object aggregate extern funcptr signatures**。
+  `struct Ops{int (*p)(FILE*,const char*,...);}; struct Ops ops={&fprintf};` と
+  `int (*ops[1])(FILE*,const char*,...)={&fprintf};` で、data relocation 側の undefined function
+  import が fallback の `(i64, i64) -> i32` になり、call site の `(i32, i32) -> i32` とずれる穴を修正。
+  aggregate member は `tag_member_info_t`、global funcptr array は `global_var_t` の funcptr 型から
+  import signature を作る。object fixture に reject needle `(i64, i64) -> i32` 付きで追加。
 
 ### Wasm backend の既知メモ
 

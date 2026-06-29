@@ -1001,6 +1001,35 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
   return sig;
 }
 
+static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
+                                              const char *name, int name_len) {
+  if (!mi) return func_sig_from_ctx(name, name_len);
+  obj_sig_t sig = {0};
+  if (mi->funcptr_ret_is_void) sig.result = IR_TY_VOID;
+  else if (mi->funcptr_ret_is_pointer) sig.result = IR_TY_I32;
+  else if (mi->fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (mi->fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = mi->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+
+  int nparams = mi->is_variadic_funcptr
+                  ? mi->funcptr_nargs_fixed
+                  : funcptr_mask_param_count(mi->funcptr_param_fp_mask,
+                                             mi->funcptr_param_int_mask);
+  sig.nparams = nparams;
+  if (nparams > 0) {
+    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
+    for (int p = 0; p < nparams; p++) {
+      unsigned fp = (mi->funcptr_param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (mi->funcptr_param_int_mask >> (2 * p)) & 3u;
+      if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
+      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      else if (iw != 0) sig.params[p] = IR_TY_I64;
+      else sig.params[p] = IR_TY_I32;
+    }
+  }
+  return sig;
+}
+
 static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
   obj_func_t *target = find_func(sym, sym_len);
   if (!target) {
@@ -2146,13 +2175,18 @@ static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind,
 
 static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
                                     size_t off, int size, int normalize_bool,
-                                    tk_float_kind_t fp_kind) {
+                                    tk_float_kind_t fp_kind,
+                                    const tag_member_info_t *member_info) {
   if (idx < 0) return;
   char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
   int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
                   ? gv->init_value_symbol_lens[idx] : 0;
   long long value = (idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0;
   if (sym) {
+    if (psx_ctx_has_function_name(sym, sym_len) && member_info) {
+      ensure_func_sig_for_address(sym, sym_len,
+                                  func_sig_from_member_funcptr(member_info, sym, sym_len));
+    }
     data_write_symbol_addr_at(d, off, sym, sym_len, value, size);
     return;
   }
@@ -2273,7 +2307,7 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
           int slot = (*val_idx)++;
           data_write_init_slot_at(d, gv, slot,
                                   base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size,
-                                  mi.type_size, mi.is_bool, mi.fp_kind);
+                                  mi.type_size, mi.is_bool, mi.fp_kind, &mi);
         }
       }
       continue;
@@ -2290,7 +2324,7 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
     }
     int slot = (*val_idx)++;
     data_write_init_slot_at(d, gv, slot, base_off + (size_t)mi.offset, mi.type_size,
-                            mi.is_bool, mi.fp_kind);
+                            mi.is_bool, mi.fp_kind, &mi);
   }
 }
 
@@ -2322,7 +2356,7 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
     return;
   }
   int slot = (*val_idx)++;
-  data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind);
+  data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind, &mi);
 }
 
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
@@ -2393,6 +2427,10 @@ static void emit_obj_global(global_var_t *gv, void *user) {
                       ? gv->init_value_symbol_lens[i] : 0;
       if (sym) {
         long long off = (i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0;
+        if (psx_ctx_has_function_name(sym, sym_len)) {
+          ensure_func_sig_for_address(sym, sym_len,
+                                      func_sig_from_global_funcptr(gv, sym, sym_len));
+        }
         data_write_symbol_addr(d, sym, sym_len, off, elem);
       } else {
         uint64_t value = (uint64_t)((i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0);

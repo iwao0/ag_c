@@ -645,12 +645,36 @@ int main(void) {
                                 "int main(void){return p(stdout, \"x\");}\n",
                                 extern_funcptr_global_needles, 5);
 
+  const char *extern_funcptr_array_needles[] = {
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "call_indirect"};
+  const char *extern_funcptr_rejects[] = {"(i64, i64) -> i32"};
+  failures += run_objdump_check_absent("extern_funcptr_array",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "int (*ops[1])(FILE*, const char*, ...)={&fprintf}; "
+                                       "int main(void){return ops[0](stdout, \"x\");}\n",
+                                       extern_funcptr_array_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",
                                 "int f(void){return 1;} struct Box{int (*p)(void);}; "
                                 "struct Box box={f}; int main(void){return 0;}\n",
                                 struct_funcptr_member_needles, 4);
+
+  const char *extern_struct_funcptr_member_needles[] = {
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "call_indirect", "<ops>"};
+  failures += run_objdump_check_absent("extern_struct_funcptr_member",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "struct Ops{int (*p)(FILE*, const char*, ...);}; "
+                                       "struct Ops ops={&fprintf}; "
+                                       "int main(void){return ops.p(stdout, \"x\");}\n",
+                                       extern_struct_funcptr_member_needles, 6,
+                                       extern_funcptr_rejects, 1);
 
   const char *indirect_needles[] = {
       "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
