@@ -15,9 +15,7 @@
 //     (これがないと t[i] が 1 バイト load されて SIGSEGV)。
 // (7) sizeof(vla3d[i][j]) は vla_mid_stride_frame_off スロット (k*elem) を読む。
 //
-// 制約 (今回は未対応): mixed const/VLA で「第 1 dim が const、後の dim が VLA」
-// (例 `int t[2][n][4]`) は依然 E3064 (register_multidim_array_lvar 経由のため)。
-// 第 1 dim が VLA・後が const のケースは all-VLA 経路に乗るので動作する。
+// mixed const/VLA も後続の N-D VLA descriptor 経路で動作する。
 #include <assert.h>
 #include <stdio.h>
 
@@ -86,6 +84,22 @@ int main(void) {
         t[0][0][0] = 1;
         assert(t[1][2][3] == 999);
         assert(t[0][0][0] == 1);
+    }
+
+    /* (e) first dim const, inner dim VLA */
+    {
+        int t[2][m][4];
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < m; j++)
+                for (int l = 0; l < 4; l++) t[i][j][l] = i*100 + j*10 + l;
+        int s = 0;
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < m; j++)
+                for (int l = 0; l < 4; l++) s += t[i][j][l];
+        assert(s == 1476);
+        assert(sizeof(t) == (size_t)(2*m*4*4));
+        assert(sizeof(t[0]) == (size_t)(m*4*4));
+        assert(sizeof(t[0][0]) == (size_t)(4*4));
     }
 
     return 0;

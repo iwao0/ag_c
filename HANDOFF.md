@@ -1295,9 +1295,8 @@ symbol を出すまで気づけなかった。
     なので fallthrough。
 - all-VLA `int t[n][m][k]`・first-dim VLA `int t[n][3][4]`・double 要素・read/write・
   3 段 sizeof を fixture で網羅。`make test`=1037/1037 green。
-- **未対応 (既知制約として bug_coverage に記録)**: 第 1 dim が const で後の dim が VLA
-  (例 `int t[2][n][4]`) は register_multidim_array_lvar 経由のため依然 E3064。const-first
-  経路を VLA 経路に切り替える必要があり、別タスクで対応する。
+- **注**: 当時未対応だった第 1 dim const / 後続 dim VLA
+  (例 `int t[2][n][4]`) は、後続の `vla_mixed_dims` で対応済み。
 
 ## このセッション（続き29）: typedef chain dims 合成 + 関数内 typedef is_array
 - **typedef chain で基底が配列の場合の dims 合成**（typedef_array_chain）。
@@ -2192,3 +2191,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh /private/tmp/agc_probe_generic_ld_macro.c`
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/generic_long_double.c`
   - `scripts/agc_diff_test.sh test/fixtures/type_decl/generic_assoc_ptr_to_func_returning_ptr_to_array_type.c`
+
+### このセッション（続き225）: vla_3d の stale 未対応コメントを回収
+- `vla_3d.c` に残っていた「第 1 dim const / 後続 dim VLA は未対応」というコメントは、
+  後続の `vla_mixed_dims` 修正後は stale になっていた。`int t[2][m][4]` の read/write/sizeof を
+  `vla_3d.c` に追加し、古い HANDOFF の未対応メモも対応済み注記に更新。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_vla_const_outer_runtime_inner.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/vla_3d.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/vla_mixed_dims.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/vla_3d.o test/fixtures/probes_found_bugs/vla_3d.c`
+  - `./build/test_e2e`
+  - `./build/test_wasm32_e2e`
+  - `./build/test_wasm32_object`
