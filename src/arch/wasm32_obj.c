@@ -523,6 +523,10 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
           force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
           break;
+        case IR_ALIGN_PTR:
+          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          break;
         case IR_CALL:
           force_vreg_type(types, ntypes, i->callee, IR_TY_I32);
           break;
@@ -949,6 +953,16 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           wb_u8(&body, 0x6a);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
+        case IR_ALIGN_PTR: {
+          int align = i->alloca_align > 0 ? i->alloca_align : 16;
+          emit_addr_val(&body, i->src1, param_count);
+          emit_const(&body, IR_TY_I32, align - 1);
+          wb_u8(&body, 0x6a);
+          emit_const(&body, IR_TY_I32, -align);
+          wb_u8(&body, 0x71);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
         case IR_NEG: {
           ir_type_t ty = wasm_ir_type(i->dst.type);
           emit_const(&body, ty, 0);

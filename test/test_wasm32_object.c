@@ -207,6 +207,11 @@ int main(void) {
                                 "double f2d(float x){return x;}\n",
                                 fp_convert_needles, 4);
 
+  const char *align_ptr_needles[] = {"i32.add", "i32.const 31", "i32.const 4294967264", "i32.and"};
+  failures += run_objdump_check("align_ptr",
+                                "int main(void){_Alignas(32) int x=7; return x;}\n",
+                                align_ptr_needles, 4);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",

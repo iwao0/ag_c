@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き154: Wasm object fp/int conversions）
+最終更新: 2026-06-29（続き155: Wasm object aligned local pointers）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -366,6 +366,10 @@
   `i32/i64.trunc_f32/f64_[su]`、`f32.demote_f64`、`f64.promote_f32` を binary opcode で emit。
   objdump fixture で `f64.convert_i32_s` / `i32.trunc_f64_s` / `f32.demote_f64` /
   `f64.promote_f32` を確認。
+- 続き155: **Wasm object aligned local pointers**。
+  object mode に `IR_ALIGN_PTR` を追加。過剰整列ローカル (`_Alignas(>16)`) の pointer を
+  `i32.add` + `i32.and` で `(ptr + align-1) & -align` に丸める。`_Alignas(32) int` の
+  objdump fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -381,7 +385,8 @@
   global/extern global read/write、aggregate global data segment、function address/table-index
   relocation、simple indirect call、TLS global data/address relocation、local stack slot
   (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)、integer unary ops (`IR_NEG`/`IR_NOT`)。
-  local floating-point immediates/basic ops、fp/int/fp width conversions。
+  local floating-point immediates/basic ops、fp/int/fp width conversions、aligned local pointer
+  rounding (`IR_ALIGN_PTR`)。
   aggregate/complex/variadic call の object 化、VLA/dynamic stack allocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
