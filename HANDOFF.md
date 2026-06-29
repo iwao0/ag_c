@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き238: nested union/struct designated zero-init の Wasm data 配置）
+最終更新: 2026-06-30（続き239: Wasm non-void indirect unused-result call）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1109/1109 green**、`./build/test_wasm32_object` = **1110/1110 green**、
-  `./build/test_e2e` = **1138/1138 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1110/1110 compile + validate green**、
+  `./build/test_wasm32_e2e` = **1110/1110 green**、`./build/test_wasm32_object` = **1111/1111 green**、
+  `./build/test_e2e` = **1139/1139 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1111/1111 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
@@ -2442,5 +2442,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = 1138/1138
   - `./build/test_wasm32_e2e` = 1109/1109
   - `./build/test_wasm32_object` = object fixture scan 1110/1110
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+
+### このセッション（続き239）: Wasm non-void indirect unused-result call
+- 制御フロー越しに上書きされた global / struct member 関数ポインタの非 void 呼び出しで、
+  戻り値を使わない場合 (`g(&x);` / `ops.f(&x);`) は、callee 名を逆引きできず E4008 にしていた。
+- `IR_CALL.dst.type` には戻り型が残っているため、unknown indirect でも未使用結果は
+  `drop (call_indirect ... (result T))` として安全に出せる。Wasm emitter の
+  `indirect non-void unused-result function call` E4008 ガードを外し、backend test の
+  global/member control-flow cases を実行成功ケースへ更新。
+- fixture `wasm_nonvoid_indirect_unused_result` を追加し、`test_e2e.c` と
+  `wasm32_e2e_extra_cases.txt` に登録。object fixture scan もこの fixture を拾う。
+- focused 確認:
+  - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/wasm_nonvoid_indirect_unused_result.c`
+  - `make -j4 build/test_e2e && ./build/test_e2e` = 1139/1139
+  - `./build/test_wasm32_e2e` = 1110/1110
+  - `./build/test_wasm32_object` = object fixture scan 1111/1111
   - `make test` green
   - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0

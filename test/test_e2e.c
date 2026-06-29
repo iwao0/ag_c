@@ -1234,6 +1234,7 @@ static const test_case_t test_cases[] = {
     {"probes", "compound_literal_array_addr_sizeof", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/compound_literal_array_addr_sizeof.c", 0, 0},
     {"probes", "struct_funcptr_designated_zero_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_funcptr_designated_zero_init.c", 0, 0},
     {"probes", "nested_struct_funcptr_designated_zero_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_struct_funcptr_designated_zero_init.c", 0, 0},
+    {"probes", "wasm_nonvoid_indirect_unused_result", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wasm_nonvoid_indirect_unused_result.c", 0, 0},
 };
 
 /* クロス TU (複数 translation unit) テスト。2 つの .c を ag_c で別々に .s 化し、

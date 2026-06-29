@@ -1067,9 +1067,6 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
                        (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
-    if (result_unused && !callee_name) {
-      wasm_unsupported_msg("indirect non-void unused-result function call in Wasm backend");
-    }
     const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(i->dst.type);
     if (result_unused) wasm_emitf(indent, "(drop ");
     else if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);

@@ -687,11 +687,13 @@ int main(void) {
                        "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
                        "int main(){int x; x=0; if(1) ops.f=set7; ops.f(&x); return x;}\n",
                        struct_funcptr_control_flow_store, 4, 7);
-  failures += run_fail_case("struct_funcptr_nonvoid_control_flow_unused_result",
-                            "int set9(int *p){*p=9; return 9;} int set7(int *p){*p=7; return 7;} "
-                            "struct Ops{int (*f)(int*);}; struct Ops ops={set9}; "
-                            "int main(){int x; x=0; if(1) ops.f=set7; ops.f(&x); return x;}\n",
-                            "E4008");
+  const char *struct_funcptr_nonvoid_control_flow_unused_result[] =
+      {"drop", "call_indirect", "(result i32)", "(local $pc i32)"};
+  failures += run_case("struct_funcptr_nonvoid_control_flow_unused_result",
+                       "int set9(int *p){*p=9; return 9;} int set7(int *p){*p=7; return 7;} "
+                       "struct Ops{int (*f)(int*);}; struct Ops ops={set9}; "
+                       "int main(){int x; x=0; if(1) ops.f=set7; ops.f(&x); return x;}\n",
+                       struct_funcptr_nonvoid_control_flow_unused_result, 4, 7);
   failures += run_fail_case("global_funcptr_external_ref",
                             "int ext(int); int (*g)(int)=ext; int main(){return 0;}\n",
                             "E4008");
@@ -717,11 +719,13 @@ int main(void) {
                        "void (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
                        "g(&x); return x;}\n",
                        global_funcptr_control_flow_store, 4, 7);
-  failures += run_fail_case("global_funcptr_nonvoid_control_flow_unused_result",
-                            "int set9(int *p){*p=9; return 9;} int set7(int *p){*p=7; return 7;} "
-                            "int (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
-                            "g(&x); return x;}\n",
-                            "E4008");
+  const char *global_funcptr_nonvoid_control_flow_unused_result[] =
+      {"drop", "call_indirect", "(result i32)", "(local $pc i32)"};
+  failures += run_case("global_funcptr_nonvoid_control_flow_unused_result",
+                       "int set9(int *p){*p=9; return 9;} int set7(int *p){*p=7; return 7;} "
+                       "int (*g)(int*)=set9; int main(){int x; x=0; if(1) g=set7; "
+                       "g(&x); return x;}\n",
+                       global_funcptr_nonvoid_control_flow_unused_result, 4, 7);
   const char *unsigned_int_to_double[] = {"f64.convert_i32_u", "f64.lt"};
   failures += run_case("unsigned_int_to_double",
                        "int main(){unsigned int x; x=4294967295U; double d; d=x; "
