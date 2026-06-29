@@ -717,6 +717,27 @@ static void emit_fp_const(wb_t *b, ir_type_t type, double value) {
   }
 }
 
+static unsigned i2f_opcode(ir_type_t dst, ir_type_t src, int is_unsigned);
+static unsigned f2i_opcode(ir_type_t dst, ir_type_t src, int is_unsigned);
+
+static void wb_utf8_codepoint(wb_t *b, uint32_t v) {
+  if (v < 0x80) {
+    wb_u8(b, v);
+  } else if (v < 0x800) {
+    wb_u8(b, 0xc0 | (v >> 6));
+    wb_u8(b, 0x80 | (v & 0x3f));
+  } else if (v < 0x10000) {
+    wb_u8(b, 0xe0 | (v >> 12));
+    wb_u8(b, 0x80 | ((v >> 6) & 0x3f));
+    wb_u8(b, 0x80 | (v & 0x3f));
+  } else {
+    wb_u8(b, 0xf0 | (v >> 18));
+    wb_u8(b, 0x80 | ((v >> 12) & 0x3f));
+    wb_u8(b, 0x80 | ((v >> 6) & 0x3f));
+    wb_u8(b, 0x80 | (v & 0x3f));
+  }
+}
+
 static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   want = wasm_ir_type(want);
   if (v.id == IR_VAL_IMM) {
@@ -731,6 +752,12 @@ static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
     wb_u8(b, 0xad); /* i64.extend_i32_u */
   } else if (got == IR_TY_I64 && want == IR_TY_I32) {
     wb_u8(b, 0xa7); /* i32.wrap_i64 */
+  } else if ((got == IR_TY_I32 || got == IR_TY_I64) &&
+             (want == IR_TY_F32 || want == IR_TY_F64)) {
+    wb_u8(b, i2f_opcode(want, got, 0));
+  } else if ((got == IR_TY_F32 || got == IR_TY_F64) &&
+             (want == IR_TY_I32 || want == IR_TY_I64)) {
+    wb_u8(b, f2i_opcode(want, got, 0));
   } else {
     obj_unsupported_msg("unsupported Wasm object value cast");
   }
@@ -836,6 +863,15 @@ static int func_has_ret_area(ir_func_t *f) {
   return f && (f->ret_struct_size > 0 || f->ret_area_vreg >= 0 || f->ret_complex_half > 0);
 }
 
+static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
+  int pcat = psx_ctx_get_function_param_category(f->name, f->name_len, idx);
+  if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) return IR_TY_PTR;
+  if (raw != IR_TY_PTR && psx_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
+    return IR_TY_I64;
+  }
+  return raw;
+}
+
 static int call_has_ret_area(ir_inst_t *i) {
   return i && (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE ||
                i->ret_complex_half > 0);
@@ -859,7 +895,8 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
       for (ir_inst_t *i = b->head; i; i = i->next) {
         if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0 &&
             i->src1.imm + (has_ret_area ? 1 : 0) < sig->nparams) {
-          sig->params[i->src1.imm + (has_ret_area ? 1 : 0)] = wasm_ir_type(i->dst.type);
+          ir_type_t pty = func_param_type_from_decl(f, (int)i->src1.imm, i->dst.type);
+          sig->params[i->src1.imm + (has_ret_area ? 1 : 0)] = wasm_ir_type(pty);
         }
       }
     }
@@ -1454,8 +1491,12 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           obj_func_t *target = intern_func(i->sym, i->sym_len);
           of = &g_obj.funcs[of_index];
           obj_sig_t csig = call_sig_from_inst(i);
+          obj_sig_t *emit_sig = &target->sig;
           if (target->sig.nparams == 0 && target->sig.result == IR_TY_VOID && !target->defined) {
             target->sig = csig;
+            emit_sig = &target->sig;
+          } else if (target->defined) {
+            free(csig.params);
           } else if (!sig_equal(&target->sig, &csig)) {
             obj_unsupported_msg("conflicting Wasm object function signature");
           } else {
@@ -1465,14 +1506,14 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           if (has_call_ret_area) emit_addr_val(&body, call_ret_area(i), param_count);
           for (int a = 0; a < i->nargs; a++) {
             int p = a + (has_call_ret_area ? 1 : 0);
-            if (p >= target->sig.nparams) break;
-            emit_val(&body, i->args[a], target->sig.params[p], param_count);
+            if (p >= emit_sig->nparams) break;
+            emit_val(&body, i->args[a], emit_sig->params[p], param_count);
           }
           wb_u8(&body, 0x10);
           size_t imm_off = wb_uleb5(&body, 0);
           func_add_reloc(of, R_WASM_FUNCTION_INDEX_LEB, imm_off, -1, 0, 0);
           of->relocs[of->reloc_count - 1].target_sym = target - g_obj.funcs;
-          if (target->sig.result != IR_TY_VOID && i->dst.id >= 0) {
+          if (emit_sig->result != IR_TY_VOID && i->dst.id >= 0) {
             emit_local_set(&body, local_index(param_count, i->dst.id));
           }
           emit_variadic_arg_area_restore(&body, of, stack_pointer, va_arg_area,
@@ -1864,8 +1905,7 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
     } else {
       v = (unsigned char)lit->str[i++];
     }
-    if (v > 0xff) obj_unsupported_msg("non-byte string literal in Wasm object mode");
-    wb_u8(&d->bytes, (unsigned)v);
+    wb_utf8_codepoint(&d->bytes, v);
   }
   wb_u8(&d->bytes, 0);
   d->is_emitted = 1;

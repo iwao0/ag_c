@@ -309,6 +309,11 @@ int main(void) {
   failures += run_objdump_check("string_addr",
                                 "char *s(void){return \"hi\";} int main(void){return 0;}\n",
                                 string_addr_needles, 4);
+  const char *string_ucn_needles[] = {
+      "Data[1]", "<.LC0>", "e381 8200", "R_WASM_MEMORY_ADDR_LEB"};
+  failures += run_objdump_check("string_ucn_addr",
+                                "char *s(void){return \"\\u3042\";} int main(void){return s()[0];}\n",
+                                string_ucn_needles, 4);
   const char *wide_string_u16_needles[] = {
       "Data[1]", "<.LC0>", "4100 5a00 0000", "R_WASM_MEMORY_ADDR_LEB"};
   failures += run_objdump_check("wide_string_u16_addr",
