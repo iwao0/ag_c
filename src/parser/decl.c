@@ -2372,11 +2372,10 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     resolve_copy_source_lvar(ternary->base.rhs, &then_prefix, &then_src);
     resolve_copy_source_lvar(ternary->els, &else_prefix, &else_src);
     if (!is_compatible_tag_object_lvar(then_src, var) || !is_compatible_tag_object_lvar(else_src, var)) {
-      /* 分岐が lvar でない (`struct S s = c ? ok() : err()` の funccall 分岐など) とき、
-       * <=8B struct は ND_ASSIGN(var, ternary) でコピー初期化する (ternary 結果が 1 ワード
-       * のスカラ選択として codegen され funccall 戻り値も扱える)。>8B は build_assign_struct
-       * が ternary RHS を未対応 (fail) なので従来どおり E3064 にする (誤コンパイルを避ける)。 */
-      if (var->size <= 8) {
+      /* 分岐が lvar でない (`struct S s = c ? ok() : err()` の funccall 分岐など) ときは
+       * struct 全体の ND_ASSIGN(var, ternary) にする。<=8B はスカラ選択、>8B は IR の
+       * materialize_aggregate_expr_to が各分岐を dst へ materialize する。 */
+      if (var->size <= 8 || ps_node_type_size(value) == var->size) {
         node_t *lhs_var = psx_node_new_lvar_typed(var->offset, var->size);
         node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
         assign_node->type_size = var->size;

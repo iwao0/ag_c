@@ -2215,3 +2215,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/tag_shadowing_block_scope.c`
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/tag_shadowing_advanced.c`
   - `./build/ag_c_wasm -c -o /private/tmp/tag_shadowing_block_scope.o test/fixtures/probes_found_bugs/tag_shadowing_block_scope.c`
+
+### このセッション（続き227）: >8B struct ternary funccall 初期化
+- `struct Big x = cond ? mk(10) : mk(20);` が parser で
+  `E3064: 構造体の単一式初期化は同型オブジェクトのみ対応` になっていた。<=8B struct は
+  以前の `ND_ASSIGN(var, ternary)` 経路で動いていたが、>8B は拒否していた。
+- `build_struct_copy_from_value` で ternary の型サイズが初期化先 struct サイズと一致する場合も
+  `ND_ASSIGN(lhs, ternary)` を作るようにした。IR 側の `materialize_aggregate_expr_to` はすでに
+  ternary と indirect aggregate return call を扱えるため、各分岐を代入先へ materialize できる。
+- focused 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_large_struct_ternary_funccall.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/struct_init_from_ternary_funccall.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/return_struct_funccall.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/struct_init_from_ternary_funccall.o test/fixtures/probes_found_bugs/struct_init_from_ternary_funccall.c`
