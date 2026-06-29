@@ -169,14 +169,14 @@
   `ret_struct_area` を渡す。aggregate return は Wasm 上は result なしとして扱う。local/global/struct
   member 関数ポインタ、変数への受け取り、直接メンバ materialize (`fp(1).b`) を
   `test_wasm32_backend` で WAT と `wasm-interp` 実行値まで確認する。
-- 続き116: **Wasm control-flow void function pointer call**。
+- 続き116: **Wasm control-flow function pointer call**。
   `if(1) g=set7; g(&x);` / `if(1) ops.f=set7; ops.f(&x);` のように制御フロー越しに
   global/struct member の void 関数ポインタが上書きされる場合、callee 名を逆引きできず
   Wasm backend が未使用結果の非 void indirect call と区別できず E4008 にしていた。
   関数ポインタ型へ `funcptr_ret_is_void` を保存し、typedef/local/global/tag member/`node_mem_t` から
   `ND_FUNCALL.is_void_call`、`IR_CALL.is_void_call` へ伝播。Wasm emitter は unknown indirect call でも
-  void と分かる場合は result なしの `call_indirect` を出す。非 void の unknown unused-result indirect
-  call は誤った typeuse を避けるため引き続き E4008。
+  void と分かる場合は result なしの `call_indirect` を出す。続き239で非 void の unknown
+  unused-result indirect call も `IR_CALL.dst.type` から result typeuse を出せるようにした。
 - 続き117: **Wasm E2E subset harness**。
   ARM64/native の `test_e2e` だけでは Wasm backend を通らないため、既存 `test/fixtures/**`
   の self-checking assert fixture を Wasm 用に変換して `ag_c_wasm -> wat2wasm -> wasm-validate ->
@@ -792,8 +792,8 @@
 ### Wasm backend の既知メモ
 
 - Wasm indirect aggregate return (`ret_struct_size > 0`) は local/global/struct member 関数ポインタで対応済み。
-- Wasm の制御フロー越し global/struct member void 関数ポインタ call は対応済み。非 void かつ結果未使用の
-  unknown indirect call は、戻り typeuse を安全に決められないため引き続き E4008。
+- Wasm の制御フロー越し global/struct member 関数ポインタ call は対応済み。非 void かつ結果未使用の
+  unknown indirect call も `IR_CALL.dst.type` から戻り typeuse を決めて出力する。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
   1096 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
