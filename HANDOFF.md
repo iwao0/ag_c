@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き236: struct funcptr zero-init coverage）
+最終更新: 2026-06-30（続き237: struct funcptr designated zero-init）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1107/1107 green**、`./build/test_wasm32_object` = **1108/1108 green**、
-  `./build/test_e2e` = **1136/1136 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1108/1108 compile + validate green**、
+  `./build/test_wasm32_e2e` = **1108/1108 green**、`./build/test_wasm32_object` = **1109/1109 green**、
+  `./build/test_e2e` = **1137/1137 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1109/1109 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
@@ -2402,3 +2402,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
   - `./build/ag_c_wasm -c -o /private/tmp/agc_probe_struct_funcptr_zero_init_more.o /private/tmp/agc_probe_struct_funcptr_zero_init_more.c`
   - `./build/ag_c_wasm -c -o /private/tmp/struct_funcptr_zero_init.o test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
+
+### このセッション（続き237）: struct funcptr designated zero-init
+- `struct Holder h = {.ops = {0}, .p = 0};` で、ローカル struct メンバ配列の
+  `struct/union` 要素初期化経路が `{0}` の terminal zero を no-op として扱えず、
+  `parse_struct_initializer` に `0` を渡して E3064 になっていた。
+- `parse_member_initializer` の struct/union 配列メンバ要素分岐でも
+  `consume_terminal_zero_initializer()` を見るよう修正。global/static local/designated 関数ポインタ
+  initializer を含む fixture `struct_funcptr_designated_zero_init` を追加し、
+  `test_e2e.c` と `wasm32_e2e_extra_cases.txt` に登録。
+- focused 確認:
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/struct_funcptr_designated_zero_init.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/struct_funcptr_designated_zero_init.o test/fixtures/probes_found_bugs/struct_funcptr_designated_zero_init.c`
+  - `./build/ag_c_wasm test/fixtures/probes_found_bugs/struct_funcptr_designated_zero_init.c`
+  - `./build/test_e2e` = 1137/1137
+  - `./build/test_wasm32_e2e` = 1108/1108
+  - `./build/test_wasm32_object` = object fixture scan 1109/1109
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0

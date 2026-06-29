@@ -1654,18 +1654,22 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           node_t *init_node;
           if ((member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
               !member_is_tag_pointer) {
-            /* struct/union 配列メンバの 1 要素 `{...}` を、要素 target_idx を target と
-             * して処理する (`.pts={{1,2},{3,4}}` / `[k]={.x=1}`)。 */
-            lvar_t nested = {0};
-            nested.offset = owner->offset + member_offset + target_idx * elem_size;
-            nested.size = elem_size;
-            nested.elem_size = elem_size;
-            nested.tag_kind = member_tag_kind;
-            nested.tag_name = member_tag_name;
-            nested.tag_len = member_tag_len;
-            init_node = (member_tag_kind == TK_UNION)
-                          ? parse_union_initializer(&nested)
-                          : parse_struct_initializer(&nested);
+            if (consume_terminal_zero_initializer()) {
+              init_node = psx_node_new_num(0);
+            } else {
+              /* struct/union 配列メンバの 1 要素 `{...}` を、要素 target_idx を target と
+               * して処理する (`.pts={{1,2},{3,4}}` / `[k]={.x=1}`)。 */
+              lvar_t nested = {0};
+              nested.offset = owner->offset + member_offset + target_idx * elem_size;
+              nested.size = elem_size;
+              nested.elem_size = elem_size;
+              nested.tag_kind = member_tag_kind;
+              nested.tag_name = member_tag_name;
+              nested.tag_len = member_tag_len;
+              init_node = (member_tag_kind == TK_UNION)
+                            ? parse_union_initializer(&nested)
+                            : parse_struct_initializer(&nested);
+            }
           } else {
             node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
             node_mem_t *assign_node = build_member_array_elem_assign_node(lhs,

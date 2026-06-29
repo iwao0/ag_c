@@ -576,3 +576,4 @@ vla_2d/runtime_inner_read.c
 vla_param/basic_access.c
 vla_param/sizeof_is_ptr.c
 vla_param/write_through.c
+probes_found_bugs/struct_funcptr_designated_zero_init.c
