@@ -4497,8 +4497,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     lvar_t *var = NULL;
     {
       if ((inner_array_mul > 0 || inner_array_mul == -1) && is_pointer) {
-        // `int (*ops[N])(int,int)` パターン: 関数ポインタの配列。
-        // 各要素は 8 バイトの関数ポインタなので elem_size=8 で is_array を立てる。
+        // `int (*ops[N])(int,int)` 関数ポインタ配列、または
+        // `int (*p[N])[M]` array-of-pointer-to-array。
+        // どちらも配列要素は 8 バイトのポインタなので elem_size=8 で is_array を立てる。
         // inner_array_mul==-1 は `int (*ops[])(...)={f,g,...}` の形で、
         // 要素数を初期化子から推定する必要がある。
         int effective_count = inner_array_mul;
@@ -4515,7 +4516,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         int arr_total_bytes = effective_count * 8;
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, arr_total_bytes, 8, 1, alignas_val);
         psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, tag_kind != TK_EOF);
-        var->base_deref_size = 8;
+        int pointee_array_bytes = (!g_decl_trailing_func_suffix && paren_array_mul > 0)
+                                      ? paren_array_mul * elem_size
+                                      : 0;
+        var->base_deref_size = (short)(pointee_array_bytes > 0 ? elem_size : 8);
+        var->ptr_array_pointee_bytes = pointee_array_bytes;
         var->is_const_qualified = is_const_qualified;
         var->is_volatile_qualified = is_volatile_qualified;
         /* 2 次元以上の関数ポインタ配列 `int (*t[2][2])(void)`: 括弧内個別次元から多次元

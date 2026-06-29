@@ -1894,6 +1894,7 @@ static void set_addr_array_strides_from_lvar(node_mem_t *addr, const lvar_t *var
   int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
   addr->type_size = stride;
   addr->deref_size = stride;
+  addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
   if (var->outer_stride > 0) {
     if (var->mid_stride > 0) {
       addr->inner_deref_size = (short)var->mid_stride;
@@ -1958,6 +1959,7 @@ static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   as_lvar(ref)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   as_lvar(ref)->mem.pointer_qual_levels = var->pointer_qual_levels;
   as_lvar(ref)->mem.base_deref_size = var->base_deref_size;
+  as_lvar(ref)->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
   as_lvar(ref)->mem.is_unsigned = var->is_unsigned;
   /* 複素数 lvar 参照: is_complex を伝播して、代入/算術で複素数として扱われるように
    * する (compound literal `(double _Complex){re,im}` の値が複素数コピーされる)。 */
@@ -4329,21 +4331,28 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       deref->base.fp_kind = pointee_fp;
     }
   }
-  /* array-of-pointer-to-array struct メンバ (`int (*p[M])[N]`) の `s.p[i]`: 要素は
+  /* array-of-pointer-to-array (`int (*p[M])[N]`) の `p[i]` / `s.p[i]`: 要素は
    * pointer-to-array。結果 deref を「単一 pointer-to-array」(`int (*sp)[N]`) と同じ表現に
-   * 組み直す: is_tag_pointer=1、deref_size=ポインティ全バイト数 (N*elem)、inner_deref_size=
-   * 要素サイズ (elem)、is_pointer=0。これで `(*s.p[i])[j]` の単項 `*` が build_unary_deref_node の
-   * 既存 pointer-to-array 分岐 (operand=ND_DEREF && is_tag_pointer && inner_deref_size>0 &&
-   * deref_size>inner_deref_size) に乗り、subscript_base_address_of が lhs を返す経路に乗せる。 */
-  if (node->kind == ND_DEREF) {
-    node_mem_t *base_mem_ptp = (node_mem_t *)node;
-    if (base_mem_ptp->ptr_array_pointee_bytes > 0 && bds > 0) {
-      deref->is_tag_pointer = 1;
-      deref->is_pointer = 0;
-      deref->deref_size = (short)base_mem_ptp->ptr_array_pointee_bytes;
-      deref->inner_deref_size = (short)bds;
-      deref->pointer_qual_levels = 0;
-      deref->base_deref_size = 0;
+   * 組み直す。2D 以上の `int (*m[A][B])[N]` では 1 段目 `m[a]` はまだ行なので、
+   * ptr_array_pointee_bytes / bds を carry し、最終次元で同じ組み直しを行う。 */
+  {
+    node_mem_t *base_mem_ptp =
+        (node->kind == ND_ADDR || node->kind == ND_LVAR ||
+         node->kind == ND_GVAR || node->kind == ND_DEREF)
+            ? (node_mem_t *)node
+            : NULL;
+    if (base_mem_ptp && base_mem_ptp->ptr_array_pointee_bytes > 0 && bds > 0) {
+      if (subscript_is_intermediate_row) {
+        deref->ptr_array_pointee_bytes = base_mem_ptp->ptr_array_pointee_bytes;
+        deref->base_deref_size = (short)bds;
+      } else {
+        deref->is_tag_pointer = 1;
+        deref->is_pointer = 1;
+        deref->deref_size = (short)base_mem_ptp->ptr_array_pointee_bytes;
+        deref->inner_deref_size = (short)bds;
+        deref->pointer_qual_levels = 0;
+        deref->base_deref_size = 0;
+      }
     }
   }
   /* `_Bool a[5]` の subscript 結果は _Bool スカラ。代入時に rhs を `!= 0` で
@@ -5331,6 +5340,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->is_volatile_qualified = var->is_volatile_qualified;
   node->pointer_qual_levels = var->pointer_qual_levels;
   node->base_deref_size = var->base_deref_size;
+  node->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
   return (node_t *)node;
 }
 
@@ -5455,6 +5465,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
   as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
   as_lvar(n)->mem.base_deref_size = var->base_deref_size;
+  as_lvar(n)->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
   as_lvar(n)->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
   as_lvar(n)->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;

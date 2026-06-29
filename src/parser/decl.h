@@ -80,6 +80,10 @@ struct lvar_t {
   unsigned int pointer_volatile_qual_mask;
   int pointer_qual_levels;
   short base_deref_size; // 多段ポインタの最内ポインタが指す要素サイズ（int**→4）
+  /* ローカル `T (*p[M])[N]`: 配列要素は pointer-to-array。
+   * struct メンバ側の同名フィールドと同じく、subscript 結果を single pointer-to-array
+   * 表現へ組み直すため pointee 配列全体のバイト数を保持する。 */
+  int ptr_array_pointee_bytes;
   int align_bytes; // 0 = natural alignment
   // 多次元配列サポート用
   int outer_stride;             // 1次サブスクリプトのストライド（直下の次元 1 つ分のバイトサイズ）

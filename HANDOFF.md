@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き218: local 3D struct-tag array member designator init）
+最終更新: 2026-06-30（続き219: local array-of-pointer-to-array direct subscript）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1097/1097 green**、`./build/test_wasm32_object` = **1105/1105 green**、
-  `./build/test_e2e` = **1133/1133 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1105/1105 compile + validate green**、
+  `./build/test_wasm32_e2e` = **1098/1098 green**、`./build/test_wasm32_object` = **1106/1106 green**、
+  `./build/test_e2e` = **1134/1134 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1106/1106 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
@@ -34,6 +34,14 @@
   3D 以上の struct/union タグ配列メンバ用に次元再帰 helper を追加し、最下層だけ
   `parse_struct_initializer` / `parse_union_initializer` へ委譲。既存 2D 経路は維持。
   `local_struct_member_multidim_nested_designator.c` に 3D case を追加。
+- 続き219: **local array-of-pointer-to-array direct subscript**。
+  `int (*p[2])[3] = {a,b}; p[0][0][0]` で、struct メンバ版にはあった
+  `ptr_array_pointee_bytes` が local lvar 側になく、`p[0]` 後続 subscript が
+  配列スロット内のポインタ値ではなくスロット自身を基点にして誤値になっていた。
+  `lvar_t` に `ptr_array_pointee_bytes` を追加し、識別子参照/配列 decay へ伝播。
+  `build_subscript_deref` は 2D 以上の中間行では metadata を carry、最終次元では
+  pointer-to-array 値として組み直す。`local_array_of_ptr_to_array.c` を追加し、
+  direct `p[i][j][k]` / explicit `(*p[i])[j]` / 2D `m[i][j][k][l]` / 書き込みを網羅。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、

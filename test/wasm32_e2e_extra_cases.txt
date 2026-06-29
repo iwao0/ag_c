@@ -205,6 +205,7 @@ probes_found_bugs/integer_const_overflow.c
 probes_found_bugs/integer_indexes_array.c
 probes_found_bugs/large_stack_frame.c
 probes_found_bugs/line_macro_in_expansion.c
+probes_found_bugs/local_array_of_ptr_to_array.c
 probes_found_bugs/local_2d_funcptr_array.c
 probes_found_bugs/local_2d_pointer_array.c
 probes_found_bugs/local_designator_aggregate_leaf.c
