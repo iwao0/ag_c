@@ -506,6 +506,7 @@ static int g_decl_func_suffix_count = 0;
  * のに使う。pointer-to-array typedef (`typedef int (*PA)[3]`) では 0 のまま (PA p の要素は
  * int=4 で elem_size を使うため、上書きしない)。parse_local_decl_spec_from_typedef がセット。 */
 static int g_decl_td_array_elem_size = 0;
+static int g_decl_td_is_array = 0;
 /* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP p;` で 2)。
  * parse_local_decl_spec_from_typedef が設定し、psx_decl_parse_declaration_after_type_ex が
  * 読んで pql / total_pointer_levels に反映する。非ポインタ基底や直書きでは 0。 */
@@ -4270,6 +4271,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
    * 一旦ローカル変数に取って declarator ループ内で参照する形にする。 */
   int td_array_elem_size_for_this_decl = g_decl_td_array_elem_size;
   g_decl_td_array_elem_size = 0;
+  int td_is_array_for_this_decl = g_decl_td_is_array;
+  g_decl_td_is_array = 0;
   if (base_is_pointer && base_pointer_levels < 1) base_pointer_levels = 1;
   if (!base_is_pointer) base_pointer_levels = 0;
   int decl_is_unsigned = psx_last_type_is_unsigned() || decl_is_unsigned_hint;
@@ -4599,7 +4602,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         if (g_paren_array_dim_count >= 2 && g_paren_array_first_dim > 0) {
           var->mid_stride = (paren_array_mul / g_paren_array_first_dim) * eff_elem;
         }
-      } else if (is_pointer && total_pointer_levels == 1 && td_array_dim_count > 0 &&
+      } else if (is_pointer && td_array_dim_count > 0 &&
+                 (total_pointer_levels == 1 ||
+                  (ptr_levels == 1 && td_is_array_for_this_decl)) &&
                  curtok()->kind != TK_LBRACKET) {
         /* `row3 *p` (row3 = typedef int[3]): 配列へのポインタ。paren 形 `int (*p)[3]`
          * と同じく outer_stride=配列全体バイト数、base_deref_size=要素サイズ、
@@ -4610,6 +4615,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * td_array_elem_size が要素サイズ (8) を返す。条件で eff_elem に上書き:
          *  (a) td_array_dim_count == 1 (1 次元 typedef、内側次元が無い)
          *  (b) td_array_elem_size > elem_size (要素が基底型より大きい = ポインタ要素)
+         *      または typedef 基底自体が pointer (関数ポインタ要素など同サイズの pointer 要素)
          * 多次元 typedef (`typedef int m23[2][3]; m23 *q`、td_array_dim_count==2) は既存の
          * elem_size + outer_stride / mid_stride 経路を使うので上書きしない。基底と要素が
          * 同サイズ (`typedef long L[3]; L *p`) も elem_size のままで正しい。
@@ -4618,7 +4624,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         int element_is_pointer = 0;
         if (td_array_elem_size_for_this_decl > 0 &&
             td_array_dim_count == 1 &&
-            td_array_elem_size_for_this_decl > elem_size) {
+            (td_array_elem_size_for_this_decl > elem_size || base_is_pointer)) {
           eff_elem = td_array_elem_size_for_this_decl;
           element_is_pointer = 1;
         }
@@ -4644,10 +4650,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         var->is_volatile_qualified = is_volatile_qualified;
         var->is_pointer_const_qualified = ptr_is_const_qualified;
         var->is_pointer_volatile_qualified = ptr_is_volatile_qualified;
-        /* pointer_qual_levels は設定しない: 1 を立てると base_deref_size>0 と合わさって
-         * build_subscript_deref の「要素がポインタ」分岐に乗り、q[i] が多段ストライド連鎖
-         * (inner_deref_size 経由) でなく base_deref_size 単段になって 2D 以上の
-         * `q[i][j][k]` が壊れる。直書き `int(*q)[N][M]` (paren 経路) も設定しない。 */
+        /* 要素ポインタ配列だけ pointer_qual_levels=1 を立てる。通常の多次元 typedef 配列では
+         * 立てない: base_deref_size>0 と合わさって build_subscript_deref の「要素がポインタ」
+         * 分岐に乗り、q[i] が多段ストライド連鎖 (inner_deref_size 経由) でなく
+         * base_deref_size 単段になって 2D 以上の `q[i][j][k]` が壊れる。 */
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
         /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
          * そのまま使って stride を計算しつつ lvar を登録する。
@@ -4929,6 +4935,7 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
   {
     psx_typedef_info_t _ti;
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
+      g_decl_td_is_array = _ti.is_array ? 1 : 0;
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
       out->td_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
@@ -4961,6 +4968,7 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_funcptr_ret_is_complex = 0;
   g_decl_base_is_variadic_funcptr = 0;
   g_decl_base_funcptr_nargs_fixed = 0;
+  g_decl_td_is_array = 0;
   resolve_builtin_type_local(out->type_kind, &out->elem_size, &out->fp_kind);
   return 1;
 }

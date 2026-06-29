@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き219: local array-of-pointer-to-array direct subscript）
+最終更新: 2026-06-30（続き220: typedef function-pointer array pointer call）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -42,6 +42,14 @@
   `build_subscript_deref` は 2D 以上の中間行では metadata を carry、最終次元では
   pointer-to-array 値として組み直す。`local_array_of_ptr_to_array.c` を追加し、
   direct `p[i][j][k]` / explicit `(*p[i])[j]` / 2D `m[i][j][k][l]` / 書き込みを網羅。
+- 続き220: **typedef function-pointer array pointer call**。
+  `typedef int (*BinOp)(int,int); typedef BinOp OpArr3[3]; OpArr3 *pa; (*pa)[i](...)`
+  で、typedef の配列要素が関数ポインタである分まで pointer level に数え、
+  typedef 配列へのポインタ stride 分岐から外れていた。結果 `*pa` が配列アドレスへ
+  decay せず、`ops[0]` の関数ポインタ値をさらに subscript して関数コードを int として読み SIGBUS。
+  local typedef spec から typedef が配列型かを宣言子処理へ渡し、従来の pointer-to-array typedef
+  (`typedef int (*PA)[3]; PA p`) は維持しつつ、配列 typedef 自体に宣言子 `*` を足した形も
+  stride 分岐に入れる。`typedef_pointer_element_array_sizeof.c` に `OpArr3 *pa` call を追加。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、

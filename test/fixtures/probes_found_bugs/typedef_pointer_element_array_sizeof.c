@@ -16,13 +16,18 @@
  * sizeof 評価側 (expr.c) も `(!td_ptr || td_is_array)` で sizeof_size を読むよう拡張し、
  * is_pointer=1 でも is_array=1 ならネスト要素サイズが反映されるようにした。
  *
- * 限界 (未対応、次セッション課題): OpArr3 *pa の実体宣言と `(*pa)[i](...)` 呼び出しは
- * call 経路の deref サイズ伝播がまだ不完全で SIGBUS する。本修正は sizeof と
- * typedef_info の登録のみで、call まで届かない。 */
+ * 追加修正: OpArr3 *pa の実体宣言では typedef の配列要素が関数ポインタである分まで
+ * pointer level に数え、配列 typedef へのポインタ stride 分岐から外れていた。
+ * `(*pa)[i](...)` が配列アドレスでなく関数コードを int として読んで SIGBUS していたため、
+ * 配列 typedef 自体に宣言子 `*` を足した形も stride 分岐に入れる。 */
 #include <assert.h>
 
 typedef int (*BinOp)(int, int);
 typedef BinOp OpArr3[3];
+
+static int add(int a, int b) { return a + b; }
+static int sub(int a, int b) { return a - b; }
+static int mul(int a, int b) { return a * b; }
 
 /* 配列要素が単段データポインタの場合 */
 typedef int *IP;
@@ -57,6 +62,13 @@ int main(void) {
   /* (6) 回帰確認: 普通の配列 typedef */
   typedef int IntArr3[3];
   assert(sizeof(IntArr3) == 12);
+
+  /* (7) pointer to typedef array whose elements are function pointers */
+  OpArr3 ops = {add, sub, mul};
+  OpArr3 *pa = &ops;
+  assert((*pa)[0](2, 3) == 5);
+  assert((*pa)[1](9, 4) == 5);
+  assert((*pa)[2](6, 7) == 42);
 
   return 0;
 }
