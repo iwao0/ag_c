@@ -553,6 +553,50 @@ int main(void) {
                                 "int main(void){int (*p)(void)=one; return p();}\n",
                                 local_indirect_needles, 5);
 
+  const char *indirect_double_needles[] = {
+      "__indirect_function_table", "(f64, f64) -> f64", "f64.add", "call_indirect"};
+  failures += run_objdump_check("indirect_double",
+                                "double addd(double x,double y){return x+y;} "
+                                "int main(void){double (*fp)(double,double)=addd; "
+                                "return (int)fp(1.25,2.75);}\n",
+                                indirect_double_needles, 4);
+
+  const char *indirect_int_to_double_arg_needles[] = {
+      "__indirect_function_table", "(f64) -> f64", "f64.convert_i32_s", "call_indirect"};
+  failures += run_objdump_check("indirect_int_to_double_arg",
+                                "double add(double x){return x+0.5;} "
+                                "int main(void){double (*fp)(double)=add; return (int)fp(3);}\n",
+                                indirect_int_to_double_arg_needles, 4);
+
+  const char *indirect_double_to_int_arg_needles[] = {
+      "__indirect_function_table", "(i64) -> i32", "trunc_f64_s", "call_indirect"};
+  failures += run_objdump_check("indirect_double_to_int_arg",
+                                "int take(int x){return x;} "
+                                "int main(void){int (*fp)(int)=take; return fp(7.9);}\n",
+                                indirect_double_to_int_arg_needles, 4);
+
+  const char *indirect_pointer_return_needles[] = {
+      "__indirect_function_table", "() -> i32", "R_WASM_TABLE_INDEX_SLEB", "i32.store"};
+  failures += run_objdump_check("indirect_pointer_return",
+                                "int g; int *get(void){return &g;} "
+                                "int main(void){int *(*fp)(void)=get; *fp()=42; return g;}\n",
+                                indirect_pointer_return_needles, 4);
+
+  const char *global_funcptr_array_call_needles[] = {
+      "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect", "i32.load"};
+  failures += run_objdump_check("global_funcptr_array_call",
+                                "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                                "int (*ops[2])(int)={add1,add2}; int main(void){return ops[1](40);}\n",
+                                global_funcptr_array_call_needles, 4);
+
+  const char *struct_funcptr_offset_call_needles[] = {
+      "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
+  failures += run_objdump_check("struct_funcptr_offset_call",
+                                "int add1(int x){return x+1;} "
+                                "struct Ops{int pad; int (*f)(int);}; struct Ops ops={5,add1}; "
+                                "int main(void){return ops.f(41);}\n",
+                                struct_funcptr_offset_call_needles, 4);
+
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",
                                 "static int hidden(void){return 7;} int main(void){return hidden();}\n",

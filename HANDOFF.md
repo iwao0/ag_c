@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き168: Wasm object aggregate FP data fixtures）
+最終更新: 2026-06-29（続き169: Wasm object indirect function pointer fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -428,6 +428,10 @@
   object data initializer の aggregate FP coverage として、`struct { double m[2][2]; }` の FP 配列メンバ、
   `struct` 内 `union` の active double メンバ、`union` 内 `struct` の double+int メンバを fixture 化。
   data segment の IEEE754 bytes と `f64.load` / `i32.load` を確認。
+- 続き169: **Wasm object indirect function pointer fixtures**。
+  object mode の indirect call coverage として、double 引数/戻り値、int→double / double→int 引数変換、
+  pointer return、global 関数ポインタ配列、struct 内 offset 付き関数ポインタメンバ呼び出しを fixture 化。
+  `__indirect_function_table`、table relocation、call_indirect、型 signature / load を objdump で確認。
 
 ### Wasm backend の既知メモ
 
