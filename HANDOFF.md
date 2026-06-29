@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き200: Wasm object static local union address fixtures）
+最終更新: 2026-06-29（続き201: Wasm union array-member initializer emission）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -642,6 +642,15 @@
   `static union Ops ops={.p=(Printer)&fprintf}` で `R_WASM_TABLE_INDEX_I32`、
   `(i32, i32) -> i32`、`call_indirect` を確認し、fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き201: **Wasm union array-member initializer emission**。
+  union の active member が配列のとき、WAT/Object emitter が先頭 slot だけを書いて戻り、
+  `.p[1]=&g` / `.p[1]=(Printer)&fprintf` がゼロ初期化のままになる穴を修正。
+  `emit_global_union_member_data` / `emit_obj_global_union_member_data` に array member 分岐を追加し、
+  scalar 配列、struct/union 要素配列を `val_idx` に沿って順に出力する。
+  fixture: `static union U u={.p[1]=&g}` と
+  `static union Ops ops={.p[1]=(Printer)&fprintf}`。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、
+  `./build/test_wasm32_backend && ./build/test_wasm32_e2e` green。
 
 ### Wasm backend の既知メモ
 

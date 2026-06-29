@@ -2379,6 +2379,28 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
     emit_obj_global_bitfield_member_data(d, gv, (*val_idx)++, base_off, &mi);
     return;
   }
+  if (mi.array_len > 0) {
+    if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+      for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+        size_t elem_off = base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size;
+        if (mi.tag_kind == TK_STRUCT) {
+          emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                                  val_idx, elem_off);
+        } else {
+          emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
+                                            val_idx, elem_off);
+        }
+      }
+    } else {
+      for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+        int slot = (*val_idx)++;
+        data_write_init_slot_at(d, gv, slot,
+                                base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size,
+                                mi.type_size, mi.is_bool, mi.fp_kind, &mi);
+      }
+    }
+    return;
+  }
   if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
     if (mi.tag_kind == TK_STRUCT) {
       emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,

@@ -943,6 +943,11 @@ int main(void) {
                                 "int main(void){static union U u={.p=&g}; return *u.p;}\n",
                                 static_local_union_ptr_needles, 4);
 
+  failures += run_objdump_check("static_local_union_member_array_global_addr_ptr_designated",
+                                "int g=7; union U{int *p[2]; long raw;}; "
+                                "int main(void){static union U u={.p[1]=&g}; return *u.p[1];}\n",
+                                static_local_union_ptr_needles, 4);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",
@@ -1094,6 +1099,16 @@ int main(void) {
                                        "union Ops{Printer p; long raw;}; "
                                        "int main(void){static union Ops ops={.p=(Printer)&fprintf}; "
                                        "return ops.p(stdout, \"x\");}\n",
+                                       extern_static_local_union_funcptr_member_needles, 6,
+                                       extern_funcptr_rejects, 1);
+
+  failures += run_objdump_check_absent("extern_static_local_union_funcptr_array_member_designated_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "union Ops{Printer p[2]; long raw;}; "
+                                       "int main(void){static union Ops ops={.p[1]=(Printer)&fprintf}; "
+                                       "return ops.p[1](stdout, \"x\");}\n",
                                        extern_static_local_union_funcptr_member_needles, 6,
                                        extern_funcptr_rejects, 1);
 
