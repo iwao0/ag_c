@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き240: Wasm object non-void indirect unused-result link/run）
+最終更新: 2026-06-30（続き241: Wasm puts minimal stub）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -326,6 +326,8 @@
   bump allocator を Wasm module に追加し、`printf("x=%d\n", 42)` 用に undefined `printf` stub の
   戻り値を 5 にした。`MAX_EXTRA_CASES` は 1024 に拡張。Wasm E2E は
   静的 531 件 + extra 540 件 + link2 1 件の **1072 件**。
+  続き241で `puts` の最小 stub も追加し、宣言済み `puts("x")` は `(param i32) -> i32` で 1 を返す。
+  implicit declaration の `puts` は引き続き E4008。
 - 続き140: **Wasm E2E assert include transform 修正**。
   `type_decl/compound_literal_file_scope.c` はコメント中に `#include <assert.h>` と書かれており、
   Wasm E2E の変換がコメント行まで削除して壊れた C を生成していた。`assert.h` 除去を実際の
@@ -2456,6 +2458,8 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `wasm32_e2e_extra_cases.txt` に登録。object fixture scan もこの fixture を拾う。
 - focused 確認:
   - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/wasm_nonvoid_indirect_unused_result.c`
   - `make -j4 build/test_e2e && ./build/test_e2e` = 1139/1139
   - `./build/test_wasm32_e2e` = 1110/1110
@@ -2476,3 +2480,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object`
   - `make test` green
   - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+
+### このセッション（続き241）: Wasm puts minimal stub
+- `#include <stdio.h>` 経由の `puts("x")` は WAT 生成時に `$puts` 呼び出しまで出るが、
+  minimal libc stub が無く `wat2wasm` で undefined function になっていた。
+- `puts` を既存の output-only minimal libc stub 群に追加し、pointer 引数を i32 として渡す。
+  stub は実出力せず成功値 1 を返す。prototype なしの implicit `puts` は引き続き E4008。
+- `test_wasm32_backend` に `puts_stub` を追加し、WAT に `(func $puts (param i32) (result i32)` が出て
+  `wasm-interp` で `main() => i32:1` になることを確認する。
+- focused 確認:
+  - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`

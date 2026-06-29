@@ -360,6 +360,10 @@ int main(void) {
   failures += run_case("fp_return_to_int", "int main(){return 1.5;}\n",
                        fp_return_to_int, 2, 1);
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
+  const char *puts_stub[] = {"(call $puts", "(func $puts (param i32) (result i32)"};
+  failures += run_case("puts_stub",
+                       "#include <stdio.h>\nint main(){return puts(\"x\");}\n",
+                       puts_stub, 2, 1);
   const char *funcptr_init[] = {"(data (i32.const", "(table 1 funcref)", "(elem (i32.const 0) $f"};
   failures += run_case("funcptr_init",
                        "int f(){return 1;} int (*fp[1])()={f}; int main(){return fp[0]();}\n",

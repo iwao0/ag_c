@@ -1127,6 +1127,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     int minimal_stub_ptr_arg =
         (i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 && a == 0) ||
         (i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 && a < 2) ||
+        (i->sym_len == 4 && memcmp(i->sym, "puts", 4) == 0 && a == 0) ||
         (is_minimal_snprintf && (a == 0 || a == 2));
     if (minimal_stub_ptr_arg ||
         psx_ctx_get_function_param_category(i->sym, i->sym_len, a) == PSX_PCAT_PTR) {
@@ -2009,6 +2010,9 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (has_undefined_function("fprintf", 7)) {
     wasm_emitf(2, "(func $fprintf (param i32 i32) (result i32) (i32.const 1))\n");
+  }
+  if (has_undefined_function("puts", 4)) {
+    wasm_emitf(2, "(func $puts (param i32) (result i32) (i32.const 1))\n");
   }
   if (has_undefined_function("snprintf", 8)) {
     wasm_emitf(2, "(func $__ag_write_u64_dec (param $buf i32) (param $n i64) (result i32)\n");
