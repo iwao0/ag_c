@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き194: Wasm object static local address initializer fixtures）
+最終更新: 2026-06-29（続き195: Wasm object static local aggregate address fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -597,6 +597,14 @@
   data segment に `R_WASM_MEMORY_ADDR_I32` が出ることを確認。併せて cast 無しの
   `static Printer p=&fprintf` も fixture 化し、`R_WASM_TABLE_INDEX_I32` と extern funcptr signature
   `(i32, i32) -> i32` を確認、fallback `(i64, i64) -> i32` を reject。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き195: **Wasm object static local aggregate address fixtures**。
+  static local struct / struct array の initializer 内 address relocation を fixture 化。
+  `static struct Box box={&g}` と `static struct Box boxes[2]={{0},{&g}}` で、mangled static local
+  data segment (`main.box.*` / `main.boxes.*`) に `R_WASM_MEMORY_ADDR_I32` が出ることを確認。
+  extern variadic funcptr member も `static struct Ops ops={(Printer)&fprintf}` と
+  `static struct Ops ops[2]={{0},{(Printer)&fprintf}}` で、`R_WASM_TABLE_INDEX_I32`、
+  `(i32, i32) -> i32`、`call_indirect` を確認し、fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ
