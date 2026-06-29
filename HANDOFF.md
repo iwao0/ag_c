@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き221: local designator union leaf brace init）
+最終更新: 2026-06-30（続き233: Wasm E2E extra fixture parity）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1098/1098 green**、`./build/test_wasm32_object` = **1106/1106 green**、
-  `./build/test_e2e` = **1134/1134 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1106/1106 compile + validate green**、
+  `./build/test_wasm32_e2e` = **1106/1106 green**、`./build/test_wasm32_object` = **1107/1107 green**、
+  `./build/test_e2e` = **1135/1135 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1107/1107 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
@@ -2337,3 +2337,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` (1135/1135)
   - `./build/test_wasm32_e2e` (1099 compiled/executed)
   - `./build/test_wasm32_object` (1107/1107)
+
+### このセッション（続き233）: test_e2e fixture の Wasm E2E 追加
+- `test_e2e.c` 登録 fixture のうち `test/wasm32_e2e_extra_cases.txt` 未登録だった 7 件を確認し、
+  そのまま Wasm 実行 E2E に追加した。
+  - `compound_literal_array_size_and_decay`
+  - `compound_literal_inferred_array_sizeof`
+  - `file_scope_array_compound_literal_decay`
+  - `global_multidim_struct_pointer_designator`
+  - `global_nested_union_pointer_init`
+  - `static_local_pointer_array_init`
+  - `static_local_struct_pointer_member_init`
+- 個別の素 `ag_c_wasm -> wat2wasm` preflight では `assert.h` の `__assert_rtn` stub 問題で失敗するが、
+  `test_wasm32_e2e` harness は `assert` を `return 100` へ変換して走るため、実 harness で確認した。
+- focused 確認:
+  - `make -j4 build/test_wasm32_e2e && ./build/test_wasm32_e2e` (1106 compiled/executed)
+  - `comm -23 /tmp/e2e_cases.txt /tmp/wasm_cases.txt` = 0 (test_e2e fixture path と Wasm E2E fixture path の差分なし)
+  - `make test`
+  - `make wasm32-object-fixture-scan` (1107/1107 compile + validate)
+  - `make wasm32-object-c-testsuite-scan` (218/218 compile + validate, 2 unsupported skip)
+  - `bash scripts/run_c_testsuite.sh --list-fail` (218 pass / 2 unsupported skip)
