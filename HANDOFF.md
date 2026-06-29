@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き198: Wasm object static local aggregate member-array address fixtures）
+最終更新: 2026-06-29（続き199: Wasm object nested static local member-array address fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -626,6 +626,13 @@
   `static struct Box box={.p[1]=&g}` で `R_WASM_MEMORY_ADDR_I32` が
   `main.box.*` data segment に出ることを確認。extern variadic funcptr array member も
   `static struct Ops ops={.p[1]=(Printer)&fprintf}` で `R_WASM_TABLE_INDEX_I32`、
+  `(i32, i32) -> i32`、`call_indirect` を確認し、fallback `(i64, i64) -> i32` を reject。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き199: **Wasm object nested static local member-array address fixtures**。
+  static local nested struct 内の配列メンバに入る address relocation を fixture 化。
+  `static struct Wrap wrap={.box.p[1]=&g}` で `R_WASM_MEMORY_ADDR_I32` が
+  `main.wrap.*` data segment に出ることを確認。extern variadic funcptr array member も
+  `static struct Wrap wrap={.ops.p[1]=(Printer)&fprintf}` で `R_WASM_TABLE_INDEX_I32`、
   `(i32, i32) -> i32`、`call_indirect` を確認し、fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 

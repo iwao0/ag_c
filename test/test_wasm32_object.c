@@ -929,6 +929,13 @@ int main(void) {
                                 "return *box.p[1];}\n",
                                 static_local_struct_ptr_needles, 4);
 
+  failures += run_objdump_check("static_local_nested_struct_member_array_global_addr_ptr_designated",
+                                "int g=7; struct Box{int *p[2];}; "
+                                "struct Wrap{int pad; struct Box box;}; "
+                                "int main(void){static struct Wrap wrap={.box.p[1]=&g}; "
+                                "return *wrap.box.p[1];}\n",
+                                static_local_nested_struct_ptr_needles, 4);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",
@@ -1057,6 +1064,16 @@ int main(void) {
                                        "struct Ops{Printer p;}; struct Wrap{int pad; struct Ops ops;}; "
                                        "int main(void){static struct Wrap wrap={.ops.p=(Printer)&fprintf}; "
                                        "return wrap.ops.p(stdout, \"x\");}\n",
+                                       extern_static_local_nested_struct_funcptr_member_needles, 6,
+                                       extern_funcptr_rejects, 1);
+
+  failures += run_objdump_check_absent("extern_static_local_nested_struct_funcptr_array_member_designated_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "struct Ops{Printer p[2];}; struct Wrap{int pad; struct Ops ops;}; "
+                                       "int main(void){static struct Wrap wrap={.ops.p[1]=(Printer)&fprintf}; "
+                                       "return wrap.ops.p[1](stdout, \"x\");}\n",
                                        extern_static_local_nested_struct_funcptr_member_needles, 6,
                                        extern_funcptr_rejects, 1);
 
