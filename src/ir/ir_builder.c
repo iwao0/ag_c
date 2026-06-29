@@ -397,8 +397,13 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
+static int mem_has_funcptr_sig(const node_mem_t *m);
 static void merge_funcptr_sig_from_lvar(node_mem_t *m, const lvar_t *var);
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
+                                            const node_mem_t *expected_sig);
+static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
+                                            const node_mem_t *expected_sig);
+static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
                                             const node_mem_t *expected_sig);
 /* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
@@ -740,6 +745,27 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     default:
       fail(ctx, "unsupported expression node");
       return ir_val_none();
+  }
+}
+
+static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
+                                            const node_mem_t *expected_sig) {
+  if (!node || ctx->failed) return ir_val_none();
+  if (!mem_has_funcptr_sig(expected_sig)) return build_expr(ctx, node);
+  switch (node->kind) {
+    case ND_FUNCREF:
+      return build_node_funcref_with_sig(ctx, node, expected_sig);
+    case ND_COMMA:
+      if (node->lhs) {
+        (void)build_expr(ctx, node->lhs);
+        if (ctx->failed) return ir_val_none();
+      }
+      return node->rhs ? build_expr_with_funcptr_sig(ctx, node->rhs, expected_sig)
+                       : ir_val_none();
+    case ND_TERNARY:
+      return build_node_ternary_with_sig(ctx, node, expected_sig);
+    default:
+      return build_expr(ctx, node);
   }
 }
 
@@ -2233,6 +2259,11 @@ static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
+  return build_node_ternary_with_sig(ctx, node, NULL);
+}
+
+static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
+                                            const node_mem_t *expected_sig) {
   /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
    * 結果型は fp_kind から推定 (整数のみ or float/double)。
    * struct ternary 等は今のところサポート外で fall through する。 */
@@ -2274,7 +2305,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   emit_br_cond(ctx, cond, then_b, else_b);
   /* then */
   switch_to_new_block(ctx, then_b);
-  ir_val_t vt = build_expr(ctx, node->rhs);
+  ir_val_t vt = build_expr_with_funcptr_sig(ctx, node->rhs, expected_sig);
   if (ctx->failed) return ir_val_none();
   /* 型変換: 結果型が fp で値が int なら I2F、逆も */
   if (is_fp_type(res_ty) && !is_fp_type(vt.type)) {
@@ -2312,7 +2343,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
   emit_br(ctx, merge_b);
   /* else */
   switch_to_new_block(ctx, else_b);
-  ir_val_t ve = build_expr(ctx, c->els);
+  ir_val_t ve = build_expr_with_funcptr_sig(ctx, c->els, expected_sig);
   if (ctx->failed) return ir_val_none();
   if (is_fp_type(res_ty) && !is_fp_type(ve.type)) {
     int v = ir_func_new_vreg(ctx->f);
@@ -2922,10 +2953,10 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     return;
   }
   if (node->lhs) {
-    if (node->lhs->kind == ND_FUNCREF && func_has_return_funcptr_sig(ctx->cur_fn)) {
+    if (func_has_return_funcptr_sig(ctx->cur_fn)) {
       node_mem_t sig = {0};
       fill_return_funcptr_sig(&sig, ctx->cur_fn);
-      v = build_node_funcref_with_sig(ctx, node->lhs, &sig);
+      v = build_expr_with_funcptr_sig(ctx, node->lhs, &sig);
     } else {
       v = build_expr(ctx, node->lhs);
     }

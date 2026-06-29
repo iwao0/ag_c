@@ -532,6 +532,11 @@
   関数本体コンテキストの fallback ではなく返却先 funcptr 型から決めるため、
   `(i64, i64) -> i32` ではなく `(i32, i32) -> i32` + variadic fixed args になる。
   追加 fixture: `extern_funcptr_return`。
+- 続き187: **Wasm object return funcptr signature through expression wrappers**。
+  続き186 の署名伝播を `return x ? &fprintf : &fprintf;` と `return x, &fprintf;` にも拡張。
+  `build_node_ternary` を通常経路と expected funcptr signature 付き経路に分け、return
+  funcptr の期待型がある場合だけ then/else と comma rhs の `ND_FUNCREF` へ署名を渡す。
+  追加 fixture: `extern_funcptr_return_ternary`、`extern_funcptr_return_comma`。
 
 ### Wasm backend の既知メモ
 
