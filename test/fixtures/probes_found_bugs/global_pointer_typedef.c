@@ -8,8 +8,7 @@
 //   併せて (1) double ポインタ typedef の pointee fp_kind 伝播 (実効段数で判定)、
 //   (2) pointer-to-array typedef グローバル `typedef int (*PA)[3]; PA gp;` の outer_stride
 //   設定 (typedef に記録したポインティ dims から) も対応。
-// 既知の制約: 多段ポインタ typedef `typedef int **PP;` は段数を保存しないためローカル/
-// グローバルとも未対応 (別件)。
+// 多段ポインタ typedef `typedef int **PP;` は global_multilevel_pointer で対応済み。
 #include <assert.h>
 
 typedef int      *PI;

@@ -6,7 +6,7 @@
  * いずれも「char(1B) 配列のみ」を前提とした 3 経路 (ローカル init / [] 推論 / グローバル init) が
  * 要素幅 1 に決め打ちだったため。要素幅 (elem_size) が文字列の char_width (char/u8=1, u=2,
  * U/L=4) と一致するときに各コード単位を要素幅で格納するよう一般化した。
- * 注: ASCII 内容のみ対応 (非 ASCII の UTF-8→UTF-16/32 デコードは未対応)。 */
+ * 続き5で UTF-8 ソースをコードポイントへデコードし、非 ASCII の UTF-16/UTF-32 も対応済み。 */
 #include <assert.h>
 
 unsigned short gu[]  = u"hi";      /* グローバル UTF-16, サイズ推論 */

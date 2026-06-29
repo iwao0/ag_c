@@ -4,8 +4,8 @@
  * (tag 無し・要素 1 バイト・array_len>0) の文字列を、ポインタでなく array_len バイトへ展開する
  * ように修正 (多次元 char 配列 `char g[2][6]` の行展開と同じ機構を struct メンバへ適用)。
  * メンバ要素サイズは tag_member_info の type_size から得る (char 配列メンバは deref_size=0)。
- * 注: char 配列メンバの後ろに char* メンバが続く形・2 次元 char メンバ・struct 配列内の char
- * メンバ は別の slot 相互作用が残り未対応 (HANDOFF 記載)。 */
+ * その後、char 配列メンバの後ろに char* メンバが続く形、2D/3D char メンバ、struct 配列内の
+ * char メンバも個別 fixture で対応済み。 */
 #include <assert.h>
 
 struct Cfg { int w, h; double scale; char name[8]; int flags[4]; };
