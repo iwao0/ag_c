@@ -3732,6 +3732,10 @@ static node_t *build_unary_addr_node(node_t *operand) {
       node_mem_t *cp = arena_alloc(sizeof(node_mem_t));
       *cp = *opm;
       cp->type_size = 8;
+      if (opm->compound_literal_array_size > 0) {
+        cp->inner_deref_size = opm->deref_size;
+        cp->deref_size = opm->compound_literal_array_size;
+      }
       cp->compound_literal_array_size = 0;
       return (node_t *)cp;
     }

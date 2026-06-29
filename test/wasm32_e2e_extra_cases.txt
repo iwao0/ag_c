@@ -68,6 +68,7 @@ probes_found_bugs/complex_brace_init.c
 probes_found_bugs/complex_by_value_abi.c
 probes_found_bugs/complex_float_double_convert.c
 probes_found_bugs/compound_assign_index_side_effect.c
+probes_found_bugs/compound_literal_array_addr_sizeof.c
 probes_found_bugs/compound_literal_struct_assign.c
 probes_found_bugs/compound_literal_struct_arg.c
 probes_found_bugs/const_pointer_reassign.c
