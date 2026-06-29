@@ -113,6 +113,9 @@ $(BENCH_PARSER): test/bench_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(
 check-should-reject: $(TARGET)
 	./scripts/check_should_reject.sh
 
+wasm32-object-fixture-scan: $(WASM_TARGET)
+	@bash scripts/run_wasm32_object_fixture_scan.sh --list-fail
+
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
@@ -156,6 +159,6 @@ c-testsuite: $(TARGET)
 c-testsuite-verbose: $(TARGET)
 	@bash scripts/run_c_testsuite.sh --verbose
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject c-testsuite c-testsuite-verbose
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan c-testsuite c-testsuite-verbose
 
 -include $(DEPS)

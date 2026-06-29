@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き178: Wasm object fixture scan coverage）
+最終更新: 2026-06-29（続き179: Wasm object fixture scan target）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
   `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_wasm32_object` green、
-  `./build/test_e2e` = **1125/1125 green**、Wasm object fixture scan
+  `./build/test_e2e` = **1125/1125 green**、`make wasm32-object-fixture-scan`
   (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
@@ -477,12 +477,16 @@
   `wide_string_u16_addr` / `wide_string_u32_addr` fixture で `.LC0` の bytes と
   `R_WASM_MEMORY_ADDR_LEB` を objdump 確認。
 - 続き178: **Wasm object fixture scan coverage**。
-  `test/fixtures/**/*.c` (should_reject 除外) を object mode でコンパイルする scan を追加確認し、
+  `test/fixtures/**/*.c` (should_reject 除外) を object mode でコンパイルする scan を
   1097 件中 fail 0 まで解消。主因だった direct call の signature 衝突は、定義済み target では
   定義側 signature を canonical として使い、pointer/struct param は `func_param_type_from_decl` で
   i32 に揃えるよう修正。call emission の `emit_val` には int↔fp conversion を追加。
   narrow string literal の `\u3042` は UTF-8 bytes (`e3 81 82 00`) として object data segment に出す。
   `string_ucn_addr` fixture を追加。
+- 続き179: **Wasm object fixture scan target**。
+  178 の scan を `scripts/run_wasm32_object_fixture_scan.sh` と `make wasm32-object-fixture-scan` に
+  昇格。失敗一覧は `build/wasm32_obj_scan/failures.txt` に残す。`--list-fail` / `--verbose` と
+  `AG_C_WASM` / `WASM32_OBJECT_SCAN_DIR` override に対応。
 
 ### Wasm backend の既知メモ
 
@@ -506,7 +510,8 @@
   (narrow UCN は UTF-8 bytes)、
   symbol address relocation、struct/union/
   bitfield aggregate の基本形に対応。
-  通常 fixture の object compile scan は 1097/1097 green（should_reject 除外）。
+  通常 fixture の object compile scan は `make wasm32-object-fixture-scan` で 1097/1097 green
+  （should_reject 除外）。
   extra vararg を持つ variadic call は direct/extern/local/global/struct member/typedef funcptr indirect で
   `__ag_va_arg_area` 退避に対応済み。aggregate call は hidden return area
   を持つ direct/indirect call の基本形まで対応。complex call は direct hidden return area と
