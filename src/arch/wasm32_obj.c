@@ -21,9 +21,11 @@ enum {
   R_WASM_TABLE_INDEX_I32 = 2,
   R_WASM_MEMORY_ADDR_LEB = 3,
   R_WASM_MEMORY_ADDR_I32 = 5,
+  R_WASM_GLOBAL_INDEX_LEB = 7,
 
   WASM_SYM_FUNCTION = 0,
   WASM_SYM_DATA = 1,
+  WASM_SYM_GLOBAL = 2,
 
   WASM_SYMBOL_BINDING_LOCAL = 0x2,
   WASM_SYMBOL_UNDEFINED = 0x10,
@@ -43,6 +45,7 @@ typedef struct {
   unsigned char *body;
   int target_sym;
   int target_is_data;
+  int target_is_global;
   size_t body_off;
   int type;
   int addend;
@@ -86,6 +89,13 @@ typedef struct {
 } obj_data_t;
 
 typedef struct {
+  char *name;
+  int name_len;
+  int global_index;
+  int symbol_index;
+} obj_global_t;
+
+typedef struct {
   FILE *out;
   obj_func_t *funcs;
   int func_count;
@@ -93,6 +103,9 @@ typedef struct {
   obj_data_t *data;
   int data_count;
   int data_cap;
+  obj_global_t *globals;
+  int global_count;
+  int global_cap;
   obj_sig_t *types;
   int type_count;
   int type_cap;
@@ -107,6 +120,8 @@ typedef struct {
 } obj_ctx_t;
 
 static obj_ctx_t g_obj;
+
+static const char STACK_POINTER_NAME[] = "__stack_pointer";
 
 static void obj_unsupported_op(ir_op_t op) {
   diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
@@ -262,6 +277,11 @@ static int align_log2_for_size(int size) {
   return a;
 }
 
+static int align_to(int v, int align) {
+  if (align <= 1) return v;
+  return (v + align - 1) & ~(align - 1);
+}
+
 static void wb_int_le(wb_t *b, uint64_t value, int size) {
   if (size < 0) obj_unsupported_msg("negative data size in Wasm object mode");
   for (int i = 0; i < size; i++) wb_u8(b, (unsigned)((value >> (8 * i)) & 0xff));
@@ -356,6 +376,37 @@ static int data_index(obj_data_t *d) {
   return (int)(d - g_obj.data);
 }
 
+static obj_global_t *find_global_symbol(const char *name, int name_len) {
+  for (int i = 0; i < g_obj.global_count; i++) {
+    if (name_eq(g_obj.globals[i].name, g_obj.globals[i].name_len, name, name_len)) {
+      return &g_obj.globals[i];
+    }
+  }
+  return NULL;
+}
+
+static obj_global_t *intern_global_symbol(const char *name, int name_len) {
+  obj_global_t *g = find_global_symbol(name, name_len);
+  if (g) return g;
+  if (g_obj.global_count == g_obj.global_cap) {
+    int ncap = g_obj.global_cap ? g_obj.global_cap * 2 : 4;
+    g_obj.globals = xrealloc(g_obj.globals, (size_t)ncap * sizeof(*g_obj.globals));
+    memset(g_obj.globals + g_obj.global_cap, 0,
+           (size_t)(ncap - g_obj.global_cap) * sizeof(*g_obj.globals));
+    g_obj.global_cap = ncap;
+  }
+  g = &g_obj.globals[g_obj.global_count++];
+  g->name = dup_name(name, name_len);
+  g->name_len = name_len;
+  g->global_index = -1;
+  g->symbol_index = -1;
+  return g;
+}
+
+static obj_global_t *intern_stack_pointer_global(void) {
+  return intern_global_symbol(STACK_POINTER_NAME, (int)strlen(STACK_POINTER_NAME));
+}
+
 static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_sym,
                            int target_is_data, int addend) {
   if (f->reloc_count == f->reloc_cap) {
@@ -369,7 +420,13 @@ static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_
   r->type = type;
   r->target_sym = target_sym;
   r->target_is_data = target_is_data;
+  r->target_is_global = 0;
   r->addend = addend;
+}
+
+static void func_add_global_reloc(obj_func_t *f, int type, size_t body_off, int target_sym) {
+  func_add_reloc(f, type, body_off, target_sym, 0, 0);
+  f->relocs[f->reloc_count - 1].target_is_global = 1;
 }
 
 static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_sym,
@@ -385,6 +442,7 @@ static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_
   r->type = type;
   r->target_sym = target_sym;
   r->target_is_data = target_is_data;
+  r->target_is_global = 0;
   r->addend = addend;
 }
 
@@ -400,6 +458,8 @@ static void add_global_reloc(obj_reloc_t **arr, int *count, int *cap, int type,
   r->body_off = off;
   r->type = type;
   r->target_sym = target_sym;
+  r->target_is_data = 0;
+  r->target_is_global = 0;
   r->addend = addend;
 }
 
@@ -446,6 +506,33 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
   }
 }
 
+static int collect_frame_size(ir_func_t *f) {
+  int frame_size = 0;
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op != IR_ALLOCA) continue;
+      int align = i->alloca_align > 0 ? i->alloca_align : 4;
+      frame_size = align_to(frame_size, align);
+      frame_size += i->alloca_size;
+    }
+  }
+  return align_to(frame_size, 16);
+}
+
+static int alloca_offset(ir_func_t *f, int vreg) {
+  int frame_size = 0;
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op != IR_ALLOCA) continue;
+      int align = i->alloca_align > 0 ? i->alloca_align : 4;
+      frame_size = align_to(frame_size, align);
+      if (i->dst.id == vreg) return frame_size;
+      frame_size += i->alloca_size;
+    }
+  }
+  return -1;
+}
+
 static void emit_local_get(wb_t *b, int idx) {
   wb_u8(b, 0x20);
   wb_uleb(b, (uint32_t)idx);
@@ -454,6 +541,18 @@ static void emit_local_get(wb_t *b, int idx) {
 static void emit_local_set(wb_t *b, int idx) {
   wb_u8(b, 0x21);
   wb_uleb(b, (uint32_t)idx);
+}
+
+static void emit_stack_global_get(wb_t *b, obj_func_t *of, obj_global_t *sp) {
+  wb_u8(b, 0x23);
+  size_t imm_off = wb_uleb5(b, 0);
+  func_add_global_reloc(of, R_WASM_GLOBAL_INDEX_LEB, imm_off, (int)(sp - g_obj.globals));
+}
+
+static void emit_stack_global_set(wb_t *b, obj_func_t *of, obj_global_t *sp) {
+  wb_u8(b, 0x24);
+  size_t imm_off = wb_uleb5(b, 0);
+  func_add_global_reloc(of, R_WASM_GLOBAL_INDEX_LEB, imm_off, (int)(sp - g_obj.globals));
 }
 
 static void emit_const(wb_t *b, ir_type_t type, long long value) {
@@ -623,6 +722,10 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
   int nlocals = f->next_vreg_id;
+  int frame_size = collect_frame_size(f);
+  int fp_local = local_index(param_count, nlocals);
+  int old_sp_local = fp_local + 1;
+  obj_global_t *stack_pointer = frame_size > 0 ? intern_stack_pointer_global() : NULL;
   wb_t body = {0};
   ir_type_t *local_types = NULL;
   if (nlocals > 0) {
@@ -630,10 +733,25 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
     collect_local_types(f, local_types, nlocals);
   }
 
-  wb_uleb(&body, (uint32_t)nlocals);
+  wb_uleb(&body, (uint32_t)(nlocals + (frame_size > 0 ? 2 : 0)));
   for (int v = 0; v < nlocals; v++) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(local_types[v]));
+  }
+  if (frame_size > 0) {
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+
+    emit_stack_global_get(&body, of, stack_pointer);
+    emit_local_set(&body, old_sp_local);
+    emit_stack_global_get(&body, of, stack_pointer);
+    emit_const(&body, IR_TY_I32, frame_size);
+    wb_u8(&body, 0x6b);
+    emit_local_set(&body, fp_local);
+    emit_local_get(&body, fp_local);
+    emit_stack_global_set(&body, of, stack_pointer);
   }
 
   for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
@@ -647,6 +765,15 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_local_get(&body, (int)i->src1.imm);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
+        case IR_ALLOCA: {
+          int off = alloca_offset(f, i->dst.id);
+          if (off < 0 || frame_size <= 0) obj_unsupported_op(i->op);
+          emit_local_get(&body, fp_local);
+          emit_const(&body, IR_TY_I32, off);
+          wb_u8(&body, 0x6a);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
         case IR_LOAD_IMM:
           emit_const(&body, i->dst.type, i->src1.imm);
           emit_local_set(&body, local_index(param_count, i->dst.id));
@@ -746,12 +873,20 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         }
         case IR_RET:
           if (i->src1.id != IR_VAL_NONE) emit_val(&body, i->src1, of->sig.result, param_count);
+          if (frame_size > 0) {
+            emit_local_get(&body, old_sp_local);
+            emit_stack_global_set(&body, of, stack_pointer);
+          }
           wb_u8(&body, 0x0f);
           break;
         default:
           obj_unsupported_op(i->op);
       }
     }
+  }
+  if (frame_size > 0) {
+    emit_local_get(&body, old_sp_local);
+    emit_stack_global_set(&body, of, stack_pointer);
   }
   wb_u8(&body, 0x0b);
   of->body = body;
@@ -773,16 +908,24 @@ static void assign_indices(void) {
   for (int i = 0; i < g_obj.func_count; i++) {
     if (g_obj.funcs[i].defined) g_obj.funcs[i].func_index = func_index++;
   }
+  for (int i = 0; i < g_obj.global_count; i++) {
+    g_obj.globals[i].global_index = i;
+  }
 
   int sym = 0;
   for (int i = 0; i < g_obj.func_count; i++) g_obj.funcs[i].symbol_index = sym++;
   for (int i = 0; i < g_obj.data_count; i++) g_obj.data[i].symbol_index = sym++;
+  for (int i = 0; i < g_obj.global_count; i++) g_obj.globals[i].symbol_index = sym++;
   g_obj.symbol_count = sym;
 
   for (int i = 0; i < g_obj.func_count; i++) {
     obj_func_t *f = &g_obj.funcs[i];
     for (int r = 0; r < f->reloc_count; r++) {
-      if (f->relocs[r].target_is_data) {
+      if (f->relocs[r].target_is_global) {
+        obj_global_t *target = &g_obj.globals[f->relocs[r].target_sym];
+        wb_patch_uleb5(f->body.data + f->relocs[r].body_off, (uint32_t)target->global_index);
+        f->relocs[r].target_sym = target->symbol_index;
+      } else if (f->relocs[r].target_is_data) {
         obj_data_t *target = &g_obj.data[f->relocs[r].target_sym];
         wb_patch_uleb5(f->body.data + f->relocs[r].body_off, 0);
         f->relocs[r].target_sym = target->symbol_index;
@@ -828,6 +971,7 @@ static void emit_import_section(wb_t *out) {
   int nimports = 0;
   for (int i = 0; i < g_obj.func_count; i++) if (g_obj.funcs[i].imported) nimports++;
   if (g_obj.has_indirect_call) nimports++;
+  nimports += g_obj.global_count;
   if (nimports == 0) return;
   wb_t p = {0};
   wb_uleb(&p, (uint32_t)nimports);
@@ -846,6 +990,14 @@ static void emit_import_section(wb_t *out) {
     wb_u8(&p, 0x70);
     wb_u8(&p, 0x00);
     wb_uleb(&p, 0);
+  }
+  for (int i = 0; i < g_obj.global_count; i++) {
+    obj_global_t *g = &g_obj.globals[i];
+    wb_str(&p, "env", 3);
+    wb_str(&p, g->name, g->name_len);
+    wb_u8(&p, 0x03);
+    wb_u8(&p, wasm_valtype(IR_TY_I32));
+    wb_u8(&p, 0x01);
   }
   emit_section(out, WASM_SEC_IMPORT, &p);
   free(p.data);
@@ -949,6 +1101,14 @@ static void emit_data_symbol_entry(wb_t *p, obj_data_t *d) {
   wb_uleb(p, (uint32_t)d->bytes.len);
 }
 
+static void emit_global_symbol_entry(wb_t *p, obj_global_t *g) {
+  uint32_t flags = WASM_SYMBOL_UNDEFINED | WASM_SYMBOL_EXPLICIT_NAME;
+  wb_u8(p, WASM_SYM_GLOBAL);
+  wb_uleb(p, flags);
+  wb_uleb(p, (uint32_t)g->global_index);
+  wb_str(p, g->name, g->name_len);
+}
+
 static void emit_linking_section(wb_t *out) {
   wb_t payload = {0};
   wb_uleb(&payload, 2);
@@ -957,6 +1117,7 @@ static void emit_linking_section(wb_t *out) {
   wb_uleb(&symtab, (uint32_t)g_obj.symbol_count);
   for (int i = 0; i < g_obj.func_count; i++) emit_symbol_entry(&symtab, &g_obj.funcs[i]);
   for (int i = 0; i < g_obj.data_count; i++) emit_data_symbol_entry(&symtab, &g_obj.data[i]);
+  for (int i = 0; i < g_obj.global_count; i++) emit_global_symbol_entry(&symtab, &g_obj.globals[i]);
   wb_u8(&payload, WASM_SYMBOL_TABLE);
   wb_uleb(&payload, (uint32_t)symtab.len);
   wb_bytes(&payload, symtab.data, symtab.len);
@@ -1395,6 +1556,7 @@ void wasm32_obj_end(void) {
     if (g_obj.funcs[i].defined) has_defs = 1;
   }
   if (g_obj.has_indirect_call) has_imports = 1;
+  if (g_obj.global_count > 0) has_imports = 1;
   int section_index = 0;
   int code_section_index = -1;
   int data_section_index = -1;

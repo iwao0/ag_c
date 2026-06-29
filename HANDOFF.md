@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き149: Wasm object TLS globals）
+最終更新: 2026-06-29（続き150: Wasm object local stack slots）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -340,6 +340,13 @@
   と同じ data segment / data symbol として出す。`IR_LOAD_TLV_ADDR` は `IR_LOAD_SYM` と同じ
   `i32.const` + `R_WASM_MEMORY_ADDR_LEB` に lowering。定義済み TLS read と extern TLS read の
   objectdump fixture を `test/test_wasm32_object.c` に追加。
+- 続き150: **Wasm object local stack slots**。
+  object mode で `IR_ALLOCA` を追加。関数ごとの固定 frame size を計算し、`env.__stack_pointer`
+  を mutable global import / undefined global symbol として出す。prologue で stack pointer を
+  減算して `$fp` 相当 local に保存し、`IR_ALLOCA` は `$fp + offset` に lowering。return と
+  fallthrough で old stack pointer を復元する。`global.get/set` の immediate には
+  `R_WASM_GLOBAL_INDEX_LEB` relocation を付ける。local scalar stack と local 関数ポインタ
+  indirect call の objectdump fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -353,8 +360,9 @@
   direct call relocation、simple data segment、`LOAD_SYM`/`LOAD_STR` の data address relocation、
   global initializer 内の data address relocation、未定義 extern data symbol、simple
   global/extern global read/write、aggregate global data segment、function address/table-index
-  relocation、simple indirect call、TLS global data/address relocation。
-  aggregate/complex/variadic call の object 化、local stack object (`IR_ALLOCA`) は未対応。
+  relocation、simple indirect call、TLS global data/address relocation、local stack slot
+  (`IR_ALLOCA`)。
+  aggregate/complex/variadic call の object 化、VLA/dynamic stack allocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。

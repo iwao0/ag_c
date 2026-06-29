@@ -175,6 +175,12 @@ int main(void) {
                                 "int g; int main(void){g=5; return g;}\n",
                                 global_write_needles, 5);
 
+  const char *local_stack_needles[] = {
+      "__stack_pointer", "R_WASM_GLOBAL_INDEX_LEB", "global.set", "i32.store", "i32.load"};
+  failures += run_objdump_check("local_stack",
+                                "int main(void){int x=4; return x+1;}\n",
+                                local_stack_needles, 5);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",
@@ -250,6 +256,14 @@ int main(void) {
                                 "int one(void){return 1;} int (*p)(void)=one; "
                                 "int main(void){return p();}\n",
                                 indirect_needles, 3);
+
+  const char *local_indirect_needles[] = {
+      "__indirect_function_table", "__stack_pointer", "R_WASM_TABLE_INDEX_SLEB",
+      "R_WASM_GLOBAL_INDEX_LEB", "call_indirect"};
+  failures += run_objdump_check("local_indirect",
+                                "int one(void){return 1;} "
+                                "int main(void){int (*p)(void)=one; return p();}\n",
+                                local_indirect_needles, 5);
 
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",
