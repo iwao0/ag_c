@@ -11,6 +11,7 @@
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -3720,6 +3721,31 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   return 1;
 }
 
+static int try_lower_static_local_typedef_array(token_ident_t *tok, int elem_size,
+                                                tk_float_kind_t fp_kind, int is_unsigned,
+                                                const int *td_array_dims, int td_array_dim_count,
+                                                int td_array_elem_size) {
+  if (elem_size <= 0 || !td_array_dims || td_array_dim_count <= 0 || td_array_dim_count > 8) {
+    return 0;
+  }
+  int eff_elem = elem_size;
+  if (td_array_elem_size > 0 && td_array_dim_count == 1 && td_array_elem_size > elem_size) {
+    eff_elem = td_array_elem_size;
+  }
+  long long total_count = 1;
+  for (int i = 0; i < td_array_dim_count; i++) {
+    if (td_array_dims[i] <= 0) return 0;
+    total_count *= td_array_dims[i];
+  }
+  if (total_count <= 0 || total_count > INT_MAX) return 0;
+  g_inner_array_dim_count = td_array_dim_count;
+  for (int i = 0; i < 8; i++) {
+    g_inner_array_dims[i] = i < td_array_dim_count ? td_array_dims[i] : 0;
+  }
+  return try_lower_static_local_array_consumed(tok, eff_elem, fp_kind,
+                                               (int)total_count, is_unsigned);
+}
+
 /* `static struct S a = {...};` / `static union U u = {...};` の struct/union
  * static local をグローバルに lowering する。スカラ/配列の static local と同じく
  * mangled global へ実体を置き、識別子は alias lvar (is_static_local) 経由で
@@ -4485,6 +4511,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_array_consumed(tok, elem_size, decl_fp_kind,
                                                 inner_array_mul, decl_is_unsigned)) {
+        if (!tk_consume(',')) break;
+        continue;
+      }
+    }
+    if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
+        inner_array_mul == 0 && paren_array_mul == 0 &&
+        td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
+      if (try_lower_static_local_typedef_array(tok, elem_size, decl_fp_kind,
+                                                decl_is_unsigned, td_array_dims,
+                                                td_array_dim_count,
+                                                td_array_elem_size_for_this_decl)) {
         if (!tk_consume(',')) break;
         continue;
       }

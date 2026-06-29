@@ -2275,3 +2275,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` (1106/1106)
   - `make test`
   - `bash scripts/run_c_testsuite.sh --list-fail` (218 pass / 2 unsupported skip)
+
+### このセッション（続き230）: static local typedef multidim array の永続化
+- `typedef int I2x3[2][3]; int f(){static I2x3 a={{1,2,3},{4,5,6}}; ...}` が
+  通常の typedef-array local 登録に落ち、呼び出しごとに stack 上で再初期化されていた。
+  直書き `static int a[2][3]` の修正とは別経路で、2 回目の呼び出しで値が保持されない。
+- `try_lower_static_local_typedef_array` を追加し、`td_array_dims` を static local array lowering の
+  stride 情報 (`g_inner_array_dims`) に渡してから `try_lower_static_local_array_consumed` を再利用するようにした。
+  これで typedef 多次元配列も mangled static data + alias lvar になり、WAT/object とも stack alloca に落ちない。
+- fixture `static_local_typedef_multidim_array` を追加。`int[2][3]`、`unsigned char[2][3]`、
+  `double[2][2]` の typedef static local を呼び出し間永続化で確認。
+- Wasm e2e extra cases と Wasm object objdump fixture にも追加。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_typedef_multidim_array.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/static_local_typedef_multidim_array.o test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+  - `./build/test_e2e` (1135/1135)
+  - `./build/test_wasm32_e2e` (1099 compiled/executed)
+  - `./build/test_wasm32_object` (1107/1107)

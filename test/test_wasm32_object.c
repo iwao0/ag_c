@@ -801,6 +801,15 @@ int main(void) {
                                 "int main(void){return f()*10+f();}\n",
                                 static_multidim_needles, 5);
 
+  const char *static_typedef_multidim_needles[] = {
+      "<f.a.", "binding=local", "size=24", "i32.store", "i32.load"};
+  failures += run_objdump_check("static_typedef_multidim",
+                                "typedef int I2x3[2][3]; "
+                                "int f(void){static I2x3 a={{1,2,3},{4,5,6}}; "
+                                "a[1][2]=a[1][2]+1; return a[1][2];} "
+                                "int main(void){return f()*10+f();}\n",
+                                static_typedef_multidim_needles, 5);
+
   const char *static_string_needles[] = {
       "<f.s.", "binding=local", "617a 00", "i32.store8", "i32.load8_s"};
   failures += run_objdump_check("static_string",
