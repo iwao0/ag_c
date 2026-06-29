@@ -491,6 +491,10 @@ static void note_vreg_type(ir_type_t *types, int ntypes, ir_val_t v) {
   if (v.id >= 0 && v.id < ntypes) types[v.id] = wasm_ir_type(v.type);
 }
 
+static void force_vreg_type(ir_type_t *types, int ntypes, ir_val_t v, ir_type_t ty) {
+  if (v.id >= 0 && v.id < ntypes) types[v.id] = wasm_ir_type(ty);
+}
+
 static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
   for (int v = 0; v < ntypes; v++) types[v] = IR_TY_I32;
   for (ir_block_t *b = f->entry; b; b = b->next) {
@@ -502,6 +506,29 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
       note_vreg_type(types, ntypes, i->callee);
       note_vreg_type(types, ntypes, i->ret_struct_area);
       for (int a = 0; a < i->nargs; a++) note_vreg_type(types, ntypes, i->args[a]);
+      switch (i->op) {
+        case IR_ALLOCA:
+        case IR_LOAD_STR:
+        case IR_LOAD_SYM:
+        case IR_LOAD_TLV_ADDR:
+          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
+          break;
+        case IR_LOAD:
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          break;
+        case IR_STORE:
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          break;
+        case IR_LEA:
+          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
+          force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          break;
+        case IR_CALL:
+          force_vreg_type(types, ntypes, i->callee, IR_TY_I32);
+          break;
+        default:
+          break;
+      }
     }
   }
 }
@@ -585,6 +612,15 @@ static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   } else {
     obj_unsupported_msg("unsupported Wasm object value cast");
   }
+}
+
+static void emit_addr_val(wb_t *b, ir_val_t v, int param_count) {
+  if (v.id == IR_VAL_IMM) {
+    emit_const(b, IR_TY_I32, v.imm);
+    return;
+  }
+  if (v.id < 0) obj_unsupported_msg("missing Wasm object address");
+  emit_local_get(b, local_index(param_count, v.id));
 }
 
 static int mem_align_log2(ir_type_t ty) {
@@ -807,16 +843,22 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_LOAD:
-          emit_val(&body, i->src1, IR_TY_PTR, param_count);
+          emit_addr_val(&body, i->src1, param_count);
           wb_u8(&body, load_opcode(i->dst.type, i->is_unsigned));
           emit_memarg(&body, i->dst.type);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_STORE:
-          emit_val(&body, i->src1, IR_TY_PTR, param_count);
+          emit_addr_val(&body, i->src1, param_count);
           emit_val(&body, i->src2, i->src2.type, param_count);
           wb_u8(&body, store_opcode(i->src2.type));
           emit_memarg(&body, i->src2.type);
+          break;
+        case IR_LEA:
+          emit_addr_val(&body, i->src1, param_count);
+          emit_val(&body, i->src2, IR_TY_I32, param_count);
+          wb_u8(&body, 0x6a);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
         case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
@@ -838,7 +880,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             for (int a = 0; a < csig.nparams; a++) {
               emit_val(&body, i->args[a], csig.params[a], param_count);
             }
-            emit_val(&body, i->callee, IR_TY_I32, param_count);
+            emit_addr_val(&body, i->callee, param_count);
             wb_u8(&body, 0x11);
             wb_uleb(&body, (uint32_t)type_index);
             wb_uleb(&body, 0);

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き150: Wasm object local stack slots）
+最終更新: 2026-06-29（続き151: Wasm object local address arithmetic）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -347,6 +347,12 @@
   fallthrough で old stack pointer を復元する。`global.get/set` の immediate には
   `R_WASM_GLOBAL_INDEX_LEB` relocation を付ける。local scalar stack と local 関数ポインタ
   indirect call の objectdump fixture を追加。
+- 続き151: **Wasm object local address arithmetic**。
+  object mode に `IR_LEA` を追加し、local stack object / struct member address を `i32.add` に
+  lowering。address operand 用の emit helper を追加し、`LOAD` / `STORE` / `LEA` / indirect
+  callee では IR 上の広い整数型に引きずられて `i32.wrap_i64` を挿入しないようにした。
+  local type 収集でも address として使う vreg は i32 に固定。local struct copy/member access の
+  objectdump fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -361,7 +367,7 @@
   global initializer 内の data address relocation、未定義 extern data symbol、simple
   global/extern global read/write、aggregate global data segment、function address/table-index
   relocation、simple indirect call、TLS global data/address relocation、local stack slot
-  (`IR_ALLOCA`)。
+  (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)。
   aggregate/complex/variadic call の object 化、VLA/dynamic stack allocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。

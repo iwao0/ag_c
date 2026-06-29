@@ -181,6 +181,13 @@ int main(void) {
                                 "int main(void){int x=4; return x+1;}\n",
                                 local_stack_needles, 5);
 
+  const char *local_struct_needles[] = {
+      "__stack_pointer", "R_WASM_GLOBAL_INDEX_LEB", "i32.add", "i32.store", "i32.load"};
+  failures += run_objdump_check("local_struct",
+                                "struct P{int x; int y;}; int main(void){"
+                                "struct P a={1,2}; struct P b=a; return b.y;}\n",
+                                local_struct_needles, 5);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",
