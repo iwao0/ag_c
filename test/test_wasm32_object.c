@@ -915,6 +915,14 @@ int main(void) {
                                 "return *boxes[1].p;}\n",
                                 static_local_struct_array_ptr_needles, 4);
 
+  const char *static_local_nested_struct_ptr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<main.wrap.", "<g>"};
+  failures += run_objdump_check("static_local_nested_struct_global_addr_ptr_designated",
+                                "int g=7; struct Box{int *p;}; struct Wrap{int pad; struct Box box;}; "
+                                "int main(void){static struct Wrap wrap={.box.p=&g}; "
+                                "return *wrap.box.p;}\n",
+                                static_local_nested_struct_ptr_needles, 4);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",
@@ -1021,6 +1029,19 @@ int main(void) {
                                        "struct Wrap wrap={.ops.p=(Printer)&fprintf}; "
                                        "int main(void){return wrap.ops.p(stdout, \"x\");}\n",
                                        extern_nested_struct_funcptr_member_needles, 6,
+                                       extern_funcptr_rejects, 1);
+
+  const char *extern_static_local_nested_struct_funcptr_member_needles[] = {
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "call_indirect", "<main.wrap."};
+  failures += run_objdump_check_absent("extern_static_local_nested_struct_funcptr_member_designated_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "struct Ops{Printer p;}; struct Wrap{int pad; struct Ops ops;}; "
+                                       "int main(void){static struct Wrap wrap={.ops.p=(Printer)&fprintf}; "
+                                       "return wrap.ops.p(stdout, \"x\");}\n",
+                                       extern_static_local_nested_struct_funcptr_member_needles, 6,
                                        extern_funcptr_rejects, 1);
 
   failures += run_objdump_check_absent("extern_local_struct_funcptr_member",

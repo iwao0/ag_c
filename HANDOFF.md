@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き196: Wasm object static local aggregate designator address fixtures）
+最終更新: 2026-06-29（続き197: Wasm object nested static local aggregate address fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -613,6 +613,13 @@
   `static struct Ops ops[2]={[1]={.p=(Printer)&fprintf}}` を fixture 化。
   static local の mangled data segment に `R_WASM_MEMORY_ADDR_I32` / `R_WASM_TABLE_INDEX_I32` が出ること、
   extern variadic funcptr signature が `(i32, i32) -> i32` のまま保たれることを確認。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き197: **Wasm object nested static local aggregate address fixtures**。
+  static local nested struct の designator address relocation を fixture 化。
+  `static struct Wrap wrap={.box.p=&g}` で `R_WASM_MEMORY_ADDR_I32` が
+  `main.wrap.*` data segment に出ることを確認。extern variadic funcptr member も
+  `static struct Wrap wrap={.ops.p=(Printer)&fprintf}` で `R_WASM_TABLE_INDEX_I32`、
+  `(i32, i32) -> i32`、`call_indirect` を確認し、fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ
