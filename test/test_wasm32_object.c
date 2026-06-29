@@ -229,6 +229,13 @@ int main(void) {
                                 "int main(void){int n=4; int a[n]; a[0]=7; return a[0];}\n",
                                 vla_needles, 6);
 
+  const char *va_arg_area_needles[] = {"__ag_va_arg_area", "R_WASM_GLOBAL_INDEX_LEB", "global.get"};
+  failures += run_objdump_check("va_arg_area",
+                                "#include <stdarg.h>\n"
+                                "int first(int n, ...){va_list ap; va_start(ap,n); "
+                                "return va_arg(ap,int);}\n",
+                                va_arg_area_needles, 3);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",

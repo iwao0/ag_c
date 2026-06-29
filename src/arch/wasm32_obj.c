@@ -122,6 +122,7 @@ typedef struct {
 static obj_ctx_t g_obj;
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
+static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
 
 static void obj_unsupported_op(ir_op_t op) {
   diag_emit_internalf(DIAG_ERR_CODEGEN_UNSUPPORTED_IR_OP,
@@ -407,6 +408,10 @@ static obj_global_t *intern_stack_pointer_global(void) {
   return intern_global_symbol(STACK_POINTER_NAME, (int)strlen(STACK_POINTER_NAME));
 }
 
+static obj_global_t *intern_va_arg_area_global(void) {
+  return intern_global_symbol(VA_ARG_AREA_NAME, (int)strlen(VA_ARG_AREA_NAME));
+}
+
 static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_sym,
                            int target_is_data, int addend) {
   if (f->reloc_count == f->reloc_cap) {
@@ -526,6 +531,9 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
         case IR_VLA_ALLOC:
           force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
           force_vreg_type(types, ntypes, i->src1, IR_TY_I32);
+          break;
+        case IR_VA_ARG_AREA:
+          force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
           break;
         case IR_LEA:
           force_vreg_type(types, ntypes, i->dst, IR_TY_I32);
@@ -885,6 +893,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int old_sp_local = fp_local + 1;
   int pc_local = extra_base + (has_stack_restore ? 2 : 0);
   obj_global_t *stack_pointer = has_stack_restore ? intern_stack_pointer_global() : NULL;
+  obj_global_t *va_arg_area = NULL;
   wb_t body = {0};
   ir_type_t *local_types = NULL;
   if (nlocals > 0) {
@@ -1045,6 +1054,12 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           emit_local_set(&body, local_index(param_count, i->dst.id));
           emit_local_get(&body, local_index(param_count, i->dst.id));
           emit_stack_global_set(&body, of, stack_pointer);
+          break;
+        case IR_VA_ARG_AREA:
+          if (!va_arg_area) va_arg_area = intern_va_arg_area_global();
+          of = &g_obj.funcs[of_index];
+          emit_stack_global_get(&body, of, va_arg_area);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_LEA:
           emit_addr_val(&body, i->src1, param_count);

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き158: Wasm object control flow dispatch）
+最終更新: 2026-06-29（続き159: Wasm object va_arg area global）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -383,6 +383,10 @@
   object mode に `IR_BR` / `IR_BR_COND` を追加。WAT backend と同じく `pc` local + dispatch loop
   で block id を選び、branch は `pc` 更新後に loop 先頭へ戻す。if/return fixture で `loop` /
   `if` / `br` / `unreachable` を確認。
+- 続き159: **Wasm object va_arg area global**。
+  object mode に `IR_VA_ARG_AREA` を追加。`__ag_va_arg_area` を undefined mutable i32 global
+  import/symbol として扱い、`global.get` + `R_WASM_GLOBAL_INDEX_LEB` relocation を emit。
+  variadic function definition の `va_start` fixture を追加。
 
 ### Wasm backend の既知メモ
 
@@ -400,7 +404,7 @@
   (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)、integer unary ops (`IR_NEG`/`IR_NOT`)。
   local floating-point immediates/basic ops、fp/int/fp width conversions、aligned local pointer
   rounding (`IR_ALIGN_PTR`)、fixed-size memcpy (`IR_MEMCPY`)、dynamic stack allocation (`IR_VLA_ALLOC`)、
-  control flow dispatch (`IR_BR`/`IR_BR_COND`)。
+  control flow dispatch (`IR_BR`/`IR_BR_COND`)、va_arg area global (`IR_VA_ARG_AREA`)。
   aggregate/complex/variadic call の object 化は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
