@@ -390,6 +390,18 @@ int main(void) {
                        "#include <stdio.h>\nint main(){char b[16]; int n=sprintf(b,\"->%02d<-\\n\",7); "
                        "return n==7 && b[0]=='-' && b[2]=='0' && b[3]=='7' ? 0 : 1;}\n",
                        sprintf_stub, 2, 0);
+  const char *stdio_file_stubs[] = {"(func $fopen (param i64 i64) (result i32)",
+                                    "(func $fread (param i64 i64 i64 i64) (result i64)",
+                                    "(func $fwrite (param i64 i64 i64 i64) (result i64)",
+                                    "(func $getc (param i64) (result i32)",
+                                    "(func $fgets (param i64 i64 i64) (result i32)"};
+  failures += run_case("stdio_file_stubs",
+                       "#include <stdio.h>\n"
+                       "int main(){FILE *f=fopen(\"x\",\"r\"); char b[4]; "
+                       "int ok=f!=0 && fwrite(\"a\",1,3,f)==3 && fread(b,1,2,f)==2; "
+                       "ok=ok && fgetc(f)==EOF && getc(f)==EOF && fgets(b,4,f)==0; "
+                       "return ok ? fclose(f) : 9;}\n",
+                       stdio_file_stubs, 5, 0);
   const char *string_stubs[] = {"(call $strncpy", "(call $strcat", "(call $strncmp",
                                 "(call $strchr", "(call $strrchr", "(call $memcpy",
                                 "(call $memcmp"};
@@ -656,6 +668,22 @@ int main(void) {
                        "int set(int *p){*p=9; return 123;} int main(){int (*fp)(int*); int x; x=0; "
                        "fp=set; fp(&x); return x;}\n",
                        funcptr_unused_result_call, 3, 9);
+  const char *forward_func_addr[] = {"(table 1 funcref)", "(elem (i32.const 0) $main"};
+  failures += run_case("forward_func_addr",
+                       "int main(); void *foo(){return &main;} int main(){foo(); return 0;}\n",
+                       forward_func_addr, 2, 0);
+  const char *forward_funcptr_store[] = {"(table 1 funcref)", "(elem (i32.const 0) $later"};
+  failures += run_case("forward_funcptr_store",
+                       "int later(void); struct S{int (*f)(void);}; void set(struct S *s){s->f=later;} "
+                       "int later(void){return 7;} int main(){struct S s; set(&s); return s.f();}\n",
+                       forward_funcptr_store, 2, 7);
+  const char *fprintf_funcptr_stub[] = {"(func $fprintf (param i64 i64) (result i32)",
+                                        "(elem (i32.const 0) $fprintf", "call_indirect"};
+  failures += run_case("fprintf_funcptr_stub",
+                       "typedef void FILE; int fprintf(FILE*, const char*, ...); "
+                       "int (*p)(FILE*, const char*, ...)=&fprintf; "
+                       "int main(){return p(0,\"x\")-1;}\n",
+                       fprintf_funcptr_stub, 3, 0);
   failures += run_fail_case("funcptr_external_ref",
                             "int ext(int); int main(){int (*fp)(int); fp=ext; return fp(1);}\n",
                             "E4008");

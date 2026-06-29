@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き243: Wasm WAT c-testsuite preflight cleanup）
+最終更新: 2026-06-30（続き244: Wasm WAT c-testsuite preflight complete）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2525,3 +2525,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 残り 4 件:
   - `00095`, `00170`, `00189`: WAT standalone の外部/forward 関数ポインタ table 扱い
   - `00187`: `getc`/file I/O 系 stub 不足
+
+### このセッション（続き244）: Wasm WAT c-testsuite preflight complete
+- 続き243で残っていた WAT c-testsuite preflight 4 件を解消。
+- forward 関数アドレス (`&main`) / forward 関数ポインタ store (`s->f=later`) は、関数 table
+  参照の定義済みチェックを table 登録時ではなく module 末尾の table emit 時へ遅延。
+  arbitrary external function pointer は引き続き E4008 のまま。
+- WAT standalone の minimal libc stub table 参照として `fprintf` を許可し、
+  `int (*p)(FILE*, const char*, ...) = &fprintf;` が `(param i64 i64) -> i32` の
+  `call_indirect` で validate できるようにした。
+- `include/stdio.h` に `getc(FILE *)` を追加。`00187.c` の file I/O fixture が implicit declaration
+  で止まらないようにした。
+- WAT standalone の検証用 minimal libc stub に `fopen`, `fclose`, `fread`, `fwrite`,
+  `fgetc`, `getc`, `fgets` を追加。実 file I/O はしないが、`wat2wasm` / `wasm-validate` と
+  backend smoke 実行で型が合う最小挙動を返す。
+- `test_wasm32_backend` に `forward_func_addr`, `forward_funcptr_store`,
+  `fprintf_funcptr_stub`, `stdio_file_stubs` を追加。
+- focused 確認:
+  - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
+  - ad hoc WAT c-testsuite scan = 218 対象中 218 pass / 0 fail / 2 unsupported skip
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0

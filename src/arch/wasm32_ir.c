@@ -116,6 +116,7 @@ static const char *wasm_type(ir_type_t t) {
 }
 
 static void wasm_unsupported_msg(const char *msg);
+static int has_undefined_function(const char *name, int len);
 
 static int is_fp_type(ir_type_t t) {
   return t == IR_TY_F32 || t == IR_TY_F64;
@@ -275,16 +276,29 @@ static int intern_function_table_ref(char *name, int name_len) {
 
 static int function_table_index_or_unsupported(char *name, int name_len) {
   if (!psx_ctx_has_function_name(name, name_len)) return -1;
-  if (!psx_ctx_is_function_defined(name, name_len)) {
-    wasm_unsupported_msg("external function pointer in Wasm backend");
-  }
   return intern_function_table_ref(name, name_len);
+}
+
+static int has_minimal_libc_stub_function(char *name, int name_len) {
+  return (name_len == 6 && memcmp(name, "printf", 6) == 0) ||
+         (name_len == 7 && memcmp(name, "fprintf", 7) == 0) ||
+         (name_len == 4 && memcmp(name, "puts", 4) == 0) ||
+         (name_len == 7 && memcmp(name, "sprintf", 7) == 0) ||
+         (name_len == 8 && memcmp(name, "snprintf", 8) == 0);
 }
 
 static void emit_function_table(void) {
   if (g_func_table.ref_count <= 0) {
     if (g_func_table.needs_table) wasm_emitf(2, "(table 1 funcref)\n");
     return;
+  }
+  for (int i = 0; i < g_func_table.ref_count; i++) {
+    char *name = g_func_table.refs[i].name;
+    int name_len = g_func_table.refs[i].name_len;
+    if (!psx_ctx_is_function_defined(name, name_len) &&
+        !(has_undefined_function(name, name_len) && has_minimal_libc_stub_function(name, name_len))) {
+      wasm_unsupported_msg("external function pointer in Wasm backend");
+    }
   }
   wasm_emitf(2, "(table %d funcref)\n", g_func_table.ref_count);
   wasm_emitf(2, "(elem (i32.const 0)");
@@ -1131,7 +1145,6 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
     int minimal_stub_ptr_arg =
         (i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 && a == 0) ||
-        (i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 && a < 2) ||
         (i->sym_len == 4 && memcmp(i->sym, "puts", 4) == 0 && a == 0) ||
         (i->sym_len == 6 && memcmp(i->sym, "strlen", 6) == 0 && a == 0) ||
         (is_minimal_snprintf && (a == 0 || a == 2));
@@ -2030,10 +2043,31 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, "(func $printf (param i32) (result i32) (i32.const 5))\n");
   }
   if (has_undefined_function("fprintf", 7)) {
-    wasm_emitf(2, "(func $fprintf (param i32 i32) (result i32) (i32.const 1))\n");
+    wasm_emitf(2, "(func $fprintf (param i64 i64) (result i32) (i32.const 1))\n");
   }
   if (has_undefined_function("puts", 4)) {
     wasm_emitf(2, "(func $puts (param i32) (result i32) (i32.const 1))\n");
+  }
+  if (has_undefined_function("fopen", 5)) {
+    wasm_emitf(2, "(func $fopen (param i64 i64) (result i32) (i32.const 1))\n");
+  }
+  if (has_undefined_function("fclose", 6)) {
+    wasm_emitf(2, "(func $fclose (param i64) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("fread", 5)) {
+    wasm_emitf(2, "(func $fread (param i64 i64 i64 i64) (result i64) (local.get 2))\n");
+  }
+  if (has_undefined_function("fwrite", 6)) {
+    wasm_emitf(2, "(func $fwrite (param i64 i64 i64 i64) (result i64) (local.get 2))\n");
+  }
+  if (has_undefined_function("fgetc", 5)) {
+    wasm_emitf(2, "(func $fgetc (param i64) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("getc", 4)) {
+    wasm_emitf(2, "(func $getc (param i64) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("fgets", 5)) {
+    wasm_emitf(2, "(func $fgets (param i64 i64 i64) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("__assert_rtn", 12)) {
     wasm_emitf(2, "(func $__assert_rtn (param i32 i32 i32 i32) (unreachable))\n");

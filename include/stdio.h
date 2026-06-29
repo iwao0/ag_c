@@ -22,6 +22,7 @@ int fputc(int c, FILE *stream);
 /* Character input */
 int getchar(void);
 int fgetc(FILE *stream);
+int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 
 /* File operations */
