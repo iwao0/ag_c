@@ -12,10 +12,9 @@
  * 文字列リテラルが来たとき (elem_size==1) は文字列を inner_len バイトへバイト展開して
  * flat に書き込み、行ぶん進める (グローバル経路と対称な処理)。
  *
- * `{{"ab","cd"}}` 形式 (内側 brace あり、行ごとに 1 文字列) と、`{"ab","cd"}` 形式
- * (内側 brace 省略 = brace elision) の 2 形に対応。後者は parse_struct_initializer の
- * メンバ数判定 (member rows は 1 つ) が手前で `"cd"` を超過と判定し E3064 になるため、
- * ここでは前者形式のみテストする (brace elision は別経路の未対応で task 範囲外)。 */
+ * ここでは `{{"ab","cd"}}` 形式 (内側 brace あり、行ごとに 1 文字列) をテストする。
+ * `{"ab","cd"}` 形式 (内側 brace 省略 = brace elision) は別 fixture
+ * multidim_char_member_brace_elision.c で対応済み。 */
 #include <assert.h>
 
 int main(void) {

@@ -11,9 +11,9 @@
  * gbrace_child_at が各要素を「内側 1 次元 char 配列 (char[row_width])」として返すので、
  * 既存の char 配列メンバ展開分岐に乗り、行ごとに row_width バイトへ展開される。
  *
- * 限界 (未対応): 3 次元以上の char メンバ (`char c[2][2][3]`) は gbrace_ctx_t が全次元チェーンを
- * 持てないため未対応。ローカル (非 static) struct の 2 次元 char メンバは別経路 (ローカル struct
- * メンバ初期化) で未対応。 */
+ * 3 次元以上の char メンバは global_struct_3d_char_array_member.c、
+ * ローカル (非 static) struct の 2/3 次元 char メンバは
+ * local_struct_2d_char_array_member.c / local_struct_3d_char_array_member.c で対応済み。 */
 #include <assert.h>
 
 /* (1) 基本形 */
