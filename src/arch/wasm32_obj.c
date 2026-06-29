@@ -860,6 +860,22 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           wb_u8(&body, 0x6a);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
+        case IR_NEG: {
+          ir_type_t ty = wasm_ir_type(i->dst.type);
+          emit_const(&body, ty, 0);
+          emit_val(&body, i->src1, ty, param_count);
+          wb_u8(&body, ty == IR_TY_I64 ? 0x7d : 0x6b);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
+        case IR_NOT: {
+          ir_type_t ty = wasm_ir_type(i->dst.type);
+          emit_val(&body, i->src1, ty, param_count);
+          emit_const(&body, ty, -1);
+          wb_u8(&body, ty == IR_TY_I64 ? 0x83 : 0x73);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+          break;
+        }
         case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_MOD:
         case IR_UDIV: case IR_UMOD: case IR_AND: case IR_OR: case IR_XOR:
         case IR_SHL: case IR_SHR: case IR_LSR:

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き151: Wasm object local address arithmetic）
+最終更新: 2026-06-29（続き152: Wasm object integer unary ops）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -353,6 +353,10 @@
   callee では IR 上の広い整数型に引きずられて `i32.wrap_i64` を挿入しないようにした。
   local type 収集でも address として使う vreg は i32 に固定。local struct copy/member access の
   objectdump fixture を追加。
+- 続き152: **Wasm object integer unary ops**。
+  object mode に整数 `IR_NEG` / `IR_NOT` を追加。`IR_NEG` は `0 - x`、`IR_NOT` は `x xor -1`
+  に lowering。C frontend は現状 `~x` を `0 - x - 1` へ下げるため、objectdump fixture では
+  `IR_NEG` 経路の `i32.sub` を確認。
 
 ### Wasm backend の既知メモ
 
@@ -367,7 +371,7 @@
   global initializer 内の data address relocation、未定義 extern data symbol、simple
   global/extern global read/write、aggregate global data segment、function address/table-index
   relocation、simple indirect call、TLS global data/address relocation、local stack slot
-  (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)。
+  (`IR_ALLOCA`)、local address arithmetic (`IR_LEA`)、integer unary ops (`IR_NEG`/`IR_NOT`)。
   aggregate/complex/variadic call の object 化、VLA/dynamic stack allocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。

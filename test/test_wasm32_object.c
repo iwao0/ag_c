@@ -188,6 +188,11 @@ int main(void) {
                                 "struct P a={1,2}; struct P b=a; return b.y;}\n",
                                 local_struct_needles, 5);
 
+  const char *int_unary_needles[] = {"i32.sub"};
+  failures += run_objdump_check("int_unary",
+                                "int main(void){int x=5; return (-x)+(~x);}\n",
+                                int_unary_needles, 1);
+
   const char *extern_global_read_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "i32.load", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_global_read",
