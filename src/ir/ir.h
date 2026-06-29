@@ -207,6 +207,16 @@ typedef struct ir_inst_t {
    * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
    * 有効なので関数アドレスは常に GOT 経由にする。 */
   unsigned char is_got_funcref;
+  unsigned char has_funcptr_sig;
+  unsigned char funcptr_ret_fp_kind;
+  unsigned char funcptr_ret_int_width;
+  unsigned char funcptr_ret_is_void;
+  unsigned char funcptr_ret_is_data_pointer;
+  unsigned char funcptr_ret_is_complex;
+  unsigned char is_variadic_funcptr;
+  unsigned short funcptr_param_fp_mask;
+  unsigned short funcptr_param_int_mask;
+  short funcptr_nargs_fixed;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
    * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で

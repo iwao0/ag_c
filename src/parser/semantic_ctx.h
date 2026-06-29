@@ -171,7 +171,7 @@ typedef struct {
   int funcptr_ret_is_complex;   // 指し示す関数の戻り値が _Complex
   unsigned char funcptr_ret_int_width; // 指し示す関数の整数戻り幅 (4/8, 0=非整数/未知)
   unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
-  unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅 (1=4B, 2=8B; 2bit * 最大8)
+  unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅/ptr (1=4B, 2=8B, 3=ptr; 2bit * 最大8)
   psx_ret_pointee_array_t funcptr_ret_pointee_array; // 関数ポインタ戻り値が `T (*)[N][M]` のときの pointee 配列
 } psx_typedef_info_t;
 

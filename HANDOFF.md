@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き183: Wasm object aggregate extern funcptr signatures）
+最終更新: 2026-06-29（続き184: Wasm object local extern funcptr signatures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -513,6 +513,13 @@
   import が fallback の `(i64, i64) -> i32` になり、call site の `(i32, i32) -> i32` とずれる穴を修正。
   aggregate member は `tag_member_info_t`、global funcptr array は `global_var_t` の funcptr 型から
   import signature を作る。object fixture に reject needle `(i64, i64) -> i32` 付きで追加。
+- 続き184: **Wasm object local extern funcptr signatures**。
+  `int (*p)(FILE*,const char*,...) = &fprintf; return p(stdout,"x");` で code relocation 側の
+  undefined function import が `() -> nil` / `(i64, i64) -> i32` へ落ちる穴を修正。`IR_LOAD_SYM` に
+  左辺 funcptr 型 metadata を載せ、object emitter が関数アドレス import signature に使えるようにした。
+  `funcptr_param_int_mask` の空き値 `3` を pointer marker として扱い、object signature では `i32`、
+  WAT 実行経路では整数幅変換に使わない。宣言初期化時は AST 左辺 node の metadata が古い場合があるため、
+  IR build 時に lvar table から signature を補完する。`extern_local_funcptr` fixture を追加。
 
 ### Wasm backend の既知メモ
 

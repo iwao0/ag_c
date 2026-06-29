@@ -994,6 +994,7 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
       unsigned iw = (gv->funcptr_param_int_mask >> (2 * p)) & 3u;
       if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      else if (iw == 3) sig.params[p] = IR_TY_I32;
       else if (iw != 0) sig.params[p] = IR_TY_I64;
       else sig.params[p] = IR_TY_I32;
     }
@@ -1023,6 +1024,36 @@ static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
       unsigned iw = (mi->funcptr_param_int_mask >> (2 * p)) & 3u;
       if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      else if (iw == 3) sig.params[p] = IR_TY_I32;
+      else if (iw != 0) sig.params[p] = IR_TY_I64;
+      else sig.params[p] = IR_TY_I32;
+    }
+  }
+  return sig;
+}
+
+static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *name, int name_len) {
+  if (!inst || !inst->has_funcptr_sig) return func_sig_from_ctx(name, name_len);
+  obj_sig_t sig = {0};
+  if (inst->funcptr_ret_is_void) sig.result = IR_TY_VOID;
+  else if (inst->funcptr_ret_is_data_pointer) sig.result = IR_TY_I32;
+  else if (inst->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (inst->funcptr_ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = inst->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+
+  int nparams = inst->is_variadic_funcptr
+                  ? inst->funcptr_nargs_fixed
+                  : funcptr_mask_param_count(inst->funcptr_param_fp_mask,
+                                             inst->funcptr_param_int_mask);
+  sig.nparams = nparams;
+  if (nparams > 0) {
+    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
+    for (int p = 0; p < nparams; p++) {
+      unsigned fp = (inst->funcptr_param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (inst->funcptr_param_int_mask >> (2 * p)) & 3u;
+      if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
+      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      else if (iw == 3) sig.params[p] = IR_TY_I32;
       else if (iw != 0) sig.params[p] = IR_TY_I64;
       else sig.params[p] = IR_TY_I32;
     }
@@ -1412,6 +1443,9 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           if (!i->sym) obj_unsupported_op(i->op);
           if (i->op == IR_LOAD_SYM && psx_ctx_has_function_name(i->sym, i->sym_len)) {
             obj_func_t *target = intern_func(i->sym, i->sym_len);
+            if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
+              target->sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
+            }
             of = &g_obj.funcs[of_index];
             wb_u8(&body, 0x41);
             size_t imm_off = wb_uleb5(&body, 0);

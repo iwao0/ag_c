@@ -2571,7 +2571,7 @@ static void skip_func_params(void) {
   unsigned short int_mask = 0;
   int param_idx = 0;     /* 現在の仮引数 index */
   int cur_fp = 0;        /* 0=未 / 1=float / 2=double */
-  int cur_int = 0;       /* 0=未 / 1=4B / 2=8B */
+  int cur_int = 0;       /* 0=未 / 1=4B / 2=8B / 3=pointer */
   int cur_disq = 0;      /* * / [ / ( を含む = スカラ fp でない */
   while (depth > 0) {
     token_kind_t k = curtok()->kind;
@@ -2579,13 +2579,19 @@ static void skip_func_params(void) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
     }
-    if (k == TK_LPAREN) { if (depth == 1) cur_disq = 1; depth++; }
+    if (k == TK_LPAREN) {
+      if (depth == 1) {
+        cur_disq = 1;
+        cur_int = 3;
+      }
+      depth++;
+    }
     else if (k == TK_RPAREN) {
       depth--;
       if (depth == 0) {  /* 最後の仮引数を確定 */
         if (cur_fp && !cur_disq && param_idx < 8)
           fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
-        if (cur_int && !cur_disq && param_idx < 8)
+        if (cur_int && (!cur_disq || cur_int == 3) && param_idx < 8)
           int_mask |= (unsigned short)(cur_int << (2 * param_idx));
       }
     }
@@ -2593,7 +2599,7 @@ static void skip_func_params(void) {
       ncommas++;
       if (cur_fp && !cur_disq && param_idx < 8)
         fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
-      if (cur_int && !cur_disq && param_idx < 8)
+      if (cur_int && (!cur_disq || cur_int == 3) && param_idx < 8)
         int_mask |= (unsigned short)(cur_int << (2 * param_idx));
       param_idx++; cur_fp = 0; cur_int = 0; cur_disq = 0;
     }
@@ -2608,7 +2614,10 @@ static void skip_func_params(void) {
       else if (k == TK_INT || k == TK_CHAR || k == TK_SHORT ||
                k == TK_SIGNED || k == TK_UNSIGNED || k == TK_BOOL ||
                k == TK_ENUM) cur_int = 1;
-      else if (k == TK_MUL || k == TK_LBRACKET) cur_disq = 1;  /* ポインタ/配列 */
+      else if (k == TK_MUL || k == TK_LBRACKET) {
+        cur_disq = 1;
+        cur_int = 3;  /* pointer/array adjusted parameter */
+      }
     }
     set_curtok(curtok()->next);
   }

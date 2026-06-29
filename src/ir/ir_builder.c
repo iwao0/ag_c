@@ -397,6 +397,9 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
+static void merge_funcptr_sig_from_lvar(node_mem_t *m, const lvar_t *var);
+static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
+                                            const node_mem_t *expected_sig);
 /* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
                                      int bit_width, int bit_offset);
@@ -1180,7 +1183,14 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  ir_val_t rhs = build_expr(ctx, node->rhs);
+  ir_val_t rhs;
+  if (node->rhs && node->rhs->kind == ND_FUNCREF) {
+    node_mem_t sig = lv->mem;
+    merge_funcptr_sig_from_lvar(&sig, find_owning_lvar(ctx, lv->offset));
+    rhs = build_node_funcref_with_sig(ctx, node->rhs, &sig);
+  } else {
+    rhs = build_expr(ctx, node->rhs);
+  }
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
   if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
@@ -1223,7 +1233,9 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  ir_val_t rhs = build_expr(ctx, node->rhs);
+  ir_val_t rhs = (node->rhs && node->rhs->kind == ND_FUNCREF)
+                   ? build_node_funcref_with_sig(ctx, node->rhs, &gv->mem)
+                   : build_expr(ctx, node->rhs);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type_ex(ctx, rhs, vty, gv->mem.is_unsigned ? 1 : 0,
                           node->rhs ? ps_node_is_unsigned(node->rhs) : 0);
@@ -1246,7 +1258,9 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   int bw = mm->bit_width;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
-  ir_val_t rhs = build_expr(ctx, node->rhs);
+  ir_val_t rhs = (node->rhs && node->rhs->kind == ND_FUNCREF)
+                   ? build_node_funcref_with_sig(ctx, node->rhs, mm)
+                   : build_expr(ctx, node->rhs);
   if (ctx->failed) return ir_val_none();
   if (bw > 0) {
     return emit_bitfield_store(ctx, ptr, rhs, bw, mm->bit_offset);
@@ -1294,6 +1308,60 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
 
+static int mem_has_funcptr_sig(const node_mem_t *m) {
+  return m && (m->funcptr_param_fp_mask || m->funcptr_param_int_mask ||
+               m->funcptr_ret_int_width || m->funcptr_ret_is_void ||
+               m->funcptr_ret_is_data_pointer || m->funcptr_ret_is_complex ||
+               m->is_variadic_funcptr || m->pointee_fp_kind != TK_FLOAT_KIND_NONE);
+}
+
+static void merge_funcptr_sig_from_lvar(node_mem_t *m, const lvar_t *var) {
+  if (!m || !var) return;
+  if (!m->funcptr_param_fp_mask) m->funcptr_param_fp_mask = var->funcptr_param_fp_mask;
+  if (!m->funcptr_param_int_mask) m->funcptr_param_int_mask = var->funcptr_param_int_mask;
+  if (!m->funcptr_ret_int_width) m->funcptr_ret_int_width = var->funcptr_ret_int_width;
+  if (!m->funcptr_ret_is_void) m->funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
+  if (!m->funcptr_ret_is_data_pointer) {
+    m->funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
+  }
+  if (!m->funcptr_ret_is_complex) m->funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
+  if (!m->is_variadic_funcptr) {
+    m->is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
+    m->funcptr_nargs_fixed = var->funcptr_nargs_fixed;
+  } else if (!m->funcptr_nargs_fixed) {
+    m->funcptr_nargs_fixed = var->funcptr_nargs_fixed;
+  }
+  if (m->pointee_fp_kind == TK_FLOAT_KIND_NONE) m->pointee_fp_kind = var->pointee_fp_kind;
+}
+
+static void attach_funcptr_sig(ir_inst_t *sym, const node_mem_t *m) {
+  if (!sym || !mem_has_funcptr_sig(m)) return;
+  sym->has_funcptr_sig = 1;
+  sym->funcptr_ret_fp_kind = (unsigned char)m->pointee_fp_kind;
+  sym->funcptr_ret_int_width = m->funcptr_ret_int_width;
+  sym->funcptr_ret_is_void = m->funcptr_ret_is_void ? 1 : 0;
+  sym->funcptr_ret_is_data_pointer = m->funcptr_ret_is_data_pointer ? 1 : 0;
+  sym->funcptr_ret_is_complex = m->funcptr_ret_is_complex ? 1 : 0;
+  sym->is_variadic_funcptr = m->is_variadic_funcptr ? 1 : 0;
+  sym->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
+  sym->funcptr_param_int_mask = m->funcptr_param_int_mask;
+  sym->funcptr_nargs_fixed = m->funcptr_nargs_fixed;
+}
+
+static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
+                                            const node_mem_t *expected_sig) {
+  node_funcref_t *fr = (node_funcref_t *)node;
+  int v = ir_func_new_vreg(ctx->f);
+  ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
+  sym->dst = ir_val_vreg(v, IR_TY_PTR);
+  sym->sym = fr->funcname;
+  sym->sym_len = fr->funcname_len;
+  sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
+  attach_funcptr_sig(sym, expected_sig);
+  ir_func_append_inst(ctx->f, sym);
+  return ir_val_vreg(v, IR_TY_PTR);
+}
+
 static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t ptr = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
@@ -1339,15 +1407,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
   /* 関数シンボル参照 (関数ポインタ値)。`_<funcname>` のアドレスを vreg に。 */
-  node_funcref_t *fr = (node_funcref_t *)node;
-  int v = ir_func_new_vreg(ctx->f);
-  ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
-  sym->dst = ir_val_vreg(v, IR_TY_PTR);
-  sym->sym = fr->funcname;
-  sym->sym_len = fr->funcname_len;
-  sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
-  ir_func_append_inst(ctx->f, sym);
-  return ir_val_vreg(v, IR_TY_PTR);
+  return build_node_funcref_with_sig(ctx, node, NULL);
 }
 
 /* -------- Phase B1: build_expr の算術/比較系 case ヘルパ -------- */

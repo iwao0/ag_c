@@ -4439,6 +4439,7 @@ static node_t *parse_call_postfix(node_t *callee) {
   if (int_param_mask) {
     for (int i = 0; i < nargs && i < 8; i++) {
       int code = (int)((int_param_mask >> (2 * i)) & 3u);
+      if (code == 3) continue;
       if (code) node->args[i] = wrap_fp_to_int_width(node->args[i], code == 2 ? 8 : 4);
     }
   }
@@ -4849,6 +4850,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
       addr->funcptr_param_int_mask = gv->funcptr_param_int_mask;
       addr->funcptr_ret_int_width = gv->funcptr_ret_int_width;
+      addr->is_variadic_funcptr = gv->is_variadic_funcptr ? 1 : 0;
+      addr->funcptr_nargs_fixed = gv->funcptr_nargs_fixed;
       addr->funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
       addr->funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
       addr->funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
@@ -4952,6 +4955,8 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
     gvar_node->mem.funcptr_param_int_mask = gv->funcptr_param_int_mask;
     gvar_node->mem.funcptr_ret_int_width = gv->funcptr_ret_int_width;
+    gvar_node->mem.is_variadic_funcptr = gv->is_variadic_funcptr ? 1 : 0;
+    gvar_node->mem.funcptr_nargs_fixed = gv->funcptr_nargs_fixed;
     gvar_node->mem.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
     gvar_node->mem.funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
     gvar_node->mem.funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
@@ -5221,6 +5226,8 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
   as_lvar(n)->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
   as_lvar(n)->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
+  as_lvar(n)->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
+  as_lvar(n)->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
   as_lvar(n)->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
   as_lvar(n)->mem.funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
   as_lvar(n)->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
