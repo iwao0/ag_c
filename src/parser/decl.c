@@ -3717,22 +3717,14 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
                                           char *tag_name, int tag_len) {
   int struct_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
   if (struct_size <= 0) return 0;
-  /* 関数内でインライン定義された匿名タグ (`static struct { int n; } s`) は
-   * codegen (全パース後のグローバル出力) 時点で関数スコープのタグテーブルから
-   * 消えており、emit_global_struct_members_rec のメンバ照会が失敗して初期化子を
-   * ゼロ出力してしまう。lowering せず 0 を返して従来の auto 経路に委ね、誤った
-   * ゼロ初期化を避ける (file-scope の named タグは codegen まで残るので対象)。
-   * curtok を消費する前に判定するので auto 経路へ安全に戻せる。 */
   if (tag_name && tag_len >= 11 && memcmp(tag_name, "__anon_tag_", 11) == 0) {
-    return 0;
+    psx_ctx_promote_tag_to_file_scope(tag_kind, tag_name, tag_len);
   }
 
   /* global_var_t を構築。tag 情報と struct サイズを設定する。 */
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない。 */
-  gv->tag_kind = tag_kind;
-  gv->tag_name = tag_name;
-  gv->tag_len = tag_len;
+  psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, 0);
   gv->type_size = (short)struct_size;
   gv->deref_size = (short)struct_size;
   gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
@@ -3814,7 +3806,9 @@ static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind
                                                   char *tag_name, int tag_len) {
   int elem_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
   if (elem_size <= 0) return 0;
-  if (tag_name && tag_len >= 11 && memcmp(tag_name, "__anon_tag_", 11) == 0) return 0;
+  if (tag_name && tag_len >= 11 && memcmp(tag_name, "__anon_tag_", 11) == 0) {
+    psx_ctx_promote_tag_to_file_scope(tag_kind, tag_name, tag_len);
+  }
   token_t *p = curtok();
   if (!p || p->kind != TK_LBRACKET) return 0;
   token_t *after_lb = p->next;
@@ -3857,9 +3851,7 @@ static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->is_static = 1;
   gv->is_array = 1;
-  gv->tag_kind = tag_kind;
-  gv->tag_name = tag_name;
-  gv->tag_len = tag_len;
+  psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, 0);
   gv->type_size = (short)((int)arr_count * elem_size);
   gv->deref_size = (short)elem_size;
   gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;

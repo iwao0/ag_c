@@ -134,6 +134,9 @@ bool psx_ctx_find_tag_member_info_at_scope(token_kind_t kind, char *name, int le
  * 変数宣言時に呼んで lvar/global_var の tag_scope_depth に保存するのに使う。 */
 int psx_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len);
 int psx_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth);
+/* 現在見えている tag とそのメンバを file scope に昇格する。関数内 static aggregate を
+ * global lowering した後も codegen が匿名タグのレイアウトを参照できるようにする。 */
+void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
 /* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
  * m の name/len/offset/type_size/deref_size/array_len/tag_*(メンバのネストタグ)/
  * is_tag_pointer/bit_width/bit_offset/bit_is_signed を読む。fp_kind/is_bool/is_unsigned/

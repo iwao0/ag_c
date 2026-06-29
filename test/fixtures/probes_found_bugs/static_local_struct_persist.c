@@ -37,6 +37,23 @@ int designated(void){
   q.a++;
   return q.a + q.b;
 }
+int anon_struct_persist(void){
+  static struct { int n; int m; } s = {3, 4};
+  s.n += 1;
+  s.m += 2;
+  return s.n * 10 + s.m;
+}
+int anon_union_persist(int use_b){
+  static union { int a; int b; } u = {5};
+  if (use_b) u.b += 2; else u.a += 1;
+  return u.a;
+}
+int anon_array_persist(void){
+  static struct { int n; int m; } a[2] = {{1, 2}, {3, 4}};
+  a[0].n += 3;
+  a[1].m += 5;
+  return a[0].n + a[0].m + a[1].n + a[1].m;
+}
 
 int main(void){
   int r = 0;
@@ -56,6 +73,15 @@ int main(void){
 
   designated();                       // a=1,b=5 -> 6
   if (designated() != 7) r |= 256;   // 永続: a=2,b=5 -> 7
+
+  if (anon_struct_persist() != 46) r |= 512;
+  if (anon_struct_persist() != 58) r |= 1024;
+
+  if (anon_union_persist(0) != 6) r |= 2048;
+  if (anon_union_persist(1) != 8) r |= 4096;
+
+  if (anon_array_persist() != 18) r |= 8192;
+  if (anon_array_persist() != 26) r |= 16384;
 
   return 0;
 }

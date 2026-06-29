@@ -829,6 +829,22 @@ int psx_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len) {
   return t ? t->scope_depth : -1;
 }
 
+void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len) {
+  tag_type_t *t = find_tag_type(kind, name, len);
+  if (!t || t->scope_depth == 0) return;
+  int old_depth = t->scope_depth;
+  t->scope_depth = 0;
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (tag_member_t *m = tag_members_by_bucket[i]; m; m = m->next_hash) {
+      if (m->tag_kind == kind && m->tag_len == len &&
+          m->scope_depth == old_depth &&
+          strncmp(m->tag_name, name, (size_t)len) == 0) {
+        m->scope_depth = 0;
+      }
+    }
+  }
+}
+
 int psx_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth) {
   /* 該当スコープの tag を線形検索 (find_tag_type は最も内側を返すので使えない)。 */
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
