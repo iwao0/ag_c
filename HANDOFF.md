@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き216: struct メンバ union 配列の brace/designator 初期化）
+最終更新: 2026-06-30（続き217: global struct メンバ union 配列の ARM64 data padding）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -21,6 +21,12 @@
   `parse_struct_initializer` に投げ、`.n=7` 後に未指定 union メンバ `.l=0` が同じ offset を上書きしていた。
   `parse_member_initializer` の struct/union 配列要素分岐を union なら `parse_union_initializer` へ委譲。
   `union_array_brace_init.c` に struct メンバ版を追加。
+- 続き217: **global struct メンバ union 配列の ARM64 data padding**。
+  `struct GlobalBox { int tag; union U u[3]; int tail; } g = {.u={[1]={.n=7}, [2]={.l=11}}};`
+  で、ARM64 data emitter が union 配列要素を `emit_global_struct_members_rec` へ再帰し、active union
+  メンバだけを出した後に union 要素サイズまで padding しなかったため、後続要素/tail が前へ詰まっていた。
+  `emit_global_union_slot` を切り出し、単体 union メンバと union 配列要素の両方で active member + union-size
+  padding に統一。`union_array_brace_init.c` に global struct メンバ union 配列を追加。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、

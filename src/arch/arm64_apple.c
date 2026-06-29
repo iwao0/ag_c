@@ -196,6 +196,46 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
   }
 }
 
+/* ネスト union の 1 slot を出力する。union は active メンバだけをその型で emit し、
+ * 残りは union 全体サイズまで 0 padding する必要がある。 */
+static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_size,
+                                   global_var_t *gv, int *val_idx) {
+  if (*val_idx >= gv->init_count) {
+    cg_emitf("  .space %d\n", union_size);
+    return;
+  }
+  char *sym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
+  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
+  double fv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
+  long long iv = gv->init_values[*val_idx];
+  (*val_idx)++;
+  tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
+  int use_size = union_size;
+  /* sentinel チェック (sym==NULL のときのみ意味を持つ; sym!=NULL は文字列/関数ポインタ) */
+  if (sym == NULL && (sym_len == -2 || sym_len == -3)) {
+    use_fp = (sym_len == -3) ? TK_FLOAT_KIND_DOUBLE : TK_FLOAT_KIND_FLOAT;
+    use_size = (sym_len == -3) ? 8 : 4;
+    sym_len = 0;  /* emit_global_init_member_scalar には通常の 0 を渡す */
+  } else if (fv != 0.0 && iv == 0) {
+    int inner_n = psx_ctx_get_tag_member_count(tk, tn, tl);
+    for (int j = 0; j < inner_n; j++) {
+      tag_member_info_t imi = {0};
+      if (psx_ctx_get_tag_member_info(tk, tn, tl, j, &imi) &&
+          imi.fp_kind != TK_FLOAT_KIND_NONE) {
+        use_fp = imi.fp_kind;
+        use_size = imi.type_size;
+        break;
+      }
+    }
+  }
+  emit_global_init_member_scalar(sym, sym_len, use_fp, use_size, iv, fv);
+  int emitted = sym ? 8
+                    : (use_fp == TK_FLOAT_KIND_FLOAT) ? 4
+                    : (use_fp >= TK_FLOAT_KIND_DOUBLE) ? 8
+                    : (use_size <= 8 ? use_size : 8);
+  if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
+}
+
 /* struct のメンバを宣言順にフラット出力する (init_values を val_idx から消費)。
  * 入れ子 struct メンバ (`struct Out{struct In i; int z;}`) は再帰して内側メンバを
  * 展開する。これをしないと内側 struct を 1 つの .quad として出力し、フラット値が
@@ -212,12 +252,16 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
-      if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
-        /* struct/union 配列メンバ (`struct P pts[2]`): 各要素を再帰してメンバ単位で
-         * 出力する。これをしないと要素 1 つを ts バイトのスカラとして出力し、
+      if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+        /* struct 配列メンバ (`struct P pts[2]`): 各要素を再帰してメンバ単位で出力する。
+         * これをしないと要素 1 つを ts バイトのスカラとして出力し、
          * `{{10,20},{30,40}}` が .quad 10/.quad 20 と化けていた。 */
         for (int k = 0; k < alen; k++) {
           emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+        }
+      } else if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+        for (int k = 0; k < alen; k++) {
+          emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
         }
       } else {
         for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
@@ -250,36 +294,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      * フォールバック (sentinel 無し): 旧ヒューリスティック (fv!=0 && iv==0) で内側 fp メンバ
      *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
     if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
-      char *sym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
-      int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
-      double fv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
-      long long iv = gv->init_values[*val_idx];
-      (*val_idx)++;
-      tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
-      int use_size = ts;
-      /* sentinel チェック (sym==NULL のときのみ意味を持つ; sym!=NULL は文字列/関数ポインタ) */
-      if (sym == NULL && (sym_len == -2 || sym_len == -3)) {
-        use_fp = (sym_len == -3) ? TK_FLOAT_KIND_DOUBLE : TK_FLOAT_KIND_FLOAT;
-        use_size = (sym_len == -3) ? 8 : 4;
-        sym_len = 0;  /* emit_global_init_member_scalar には通常の 0 を渡す */
-      } else if (fv != 0.0 && iv == 0) {
-        int inner_n = psx_ctx_get_tag_member_count(mi.tag_kind, mi.tag_name, mi.tag_len);
-        for (int j = 0; j < inner_n; j++) {
-          tag_member_info_t imi = {0};
-          if (psx_ctx_get_tag_member_info(mi.tag_kind, mi.tag_name, mi.tag_len, j, &imi) &&
-              imi.fp_kind != TK_FLOAT_KIND_NONE) {
-            use_fp = imi.fp_kind;
-            use_size = imi.type_size;
-            break;
-          }
-        }
-      }
-      emit_global_init_member_scalar(sym, sym_len, use_fp, use_size, iv, fv);
-      int emitted = sym ? 8
-                        : (use_fp == TK_FLOAT_KIND_FLOAT) ? 4
-                        : (use_fp >= TK_FLOAT_KIND_DOUBLE) ? 8
-                        : (use_size <= 8 ? use_size : 8);
-      if (emitted < ts) cg_emitf("  .space %d\n", ts - emitted);
+      emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
       prev_end = off + ts;
       continue;
     }

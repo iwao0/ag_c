@@ -6,12 +6,34 @@
  *
  * 続き: struct メンバの union 配列 (`struct Box { union U u[3]; }`) も同じく
  * parse_struct_initializer に投げていたため、`.n=7` の後に未指定 union メンバ `.l=0`
- * が同じ offset を上書きし、b.u[1].n が 0 に戻っていた。 */
+ * が同じ offset を上書きし、b.u[1].n が 0 に戻っていた。
+ *
+ * global struct メンバ union 配列は ARM64 data emitter 側でも別途壊れていた。
+ * active union メンバだけを出した後に union 要素サイズまで padding せず、
+ * 後続 union 要素や tail メンバの offset が前へ詰まっていた。 */
 #include <assert.h>
 
 union U { int n; long l; };
 union V { int i; double d; char c[8]; };
 struct Box { union U u[3]; };
+struct GlobalBox {
+  int tag;
+  union U u[3];
+  int tail;
+};
+
+struct GlobalBox g1 = {
+  .tag = 1,
+  .u = {[1] = {.n = 7}, [2] = {.l = 11}},
+  .tail = 2,
+};
+
+struct GlobalBox g2 = {
+  .u[0].n = 3,
+  .u[2].l = 9,
+  .tag = 4,
+  .tail = 5,
+};
 
 int main(void){
   /* designator 要素 */
@@ -43,5 +65,17 @@ int main(void){
   assert(g.u[0].n == 0);
   assert(g.u[1].n == 7);
   assert(g.u[2].l == 11);
+
+  assert(g1.tag == 1);
+  assert(g1.u[0].n == 0);
+  assert(g1.u[1].n == 7);
+  assert(g1.u[2].l == 11);
+  assert(g1.tail == 2);
+
+  assert(g2.tag == 4);
+  assert(g2.u[0].n == 3);
+  assert(g2.u[1].n == 0);
+  assert(g2.u[2].l == 9);
+  assert(g2.tail == 5);
   return 0;
 }
