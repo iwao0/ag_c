@@ -3727,10 +3727,12 @@ static node_t *build_unary_addr_node(node_t *operand) {
     /* `&arr` : 配列は既に decay 済みの ND_ADDR で表現されアドレス値は同じ。ただし
      * 結果型は `int(*)[N]` (ポインタ, 8B) なので、type_size=8 のコピーを返して
      * sizeof(&arr) が要素サイズでなく 8 を返すようにする (共有ノードは変更しない)。 */
-    if (((node_mem_t *)operand)->type_size != 8) {
+    node_mem_t *opm = (node_mem_t *)operand;
+    if (opm->type_size != 8 || opm->compound_literal_array_size > 0) {
       node_mem_t *cp = arena_alloc(sizeof(node_mem_t));
-      *cp = *(node_mem_t *)operand;
+      *cp = *opm;
       cp->type_size = 8;
+      cp->compound_literal_array_size = 0;
       return (node_t *)cp;
     }
     return operand;
