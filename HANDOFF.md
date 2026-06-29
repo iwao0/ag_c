@@ -2293,3 +2293,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` (1135/1135)
   - `./build/test_wasm32_e2e` (1099 compiled/executed)
   - `./build/test_wasm32_object` (1107/1107)
+
+### このセッション（続き231）: static local typedef multidim pointer array の leaf 要素サイズ
+- `typedef int *IP2x2[2][2]; static IP2x2 ptrs = {{&v0,...}}; *ptrs[1][0]` が
+  ag_c 実行で SIGSEGV。`resolve_typedef_array_element_size` が多次元 typedef では先頭行サイズ
+  (`sizeof(IP2x2)/2 = 16`) を返すため、続き230 の static typedef-array lowering が leaf 要素を
+  `int` の 4B のまま扱い、static data のサイズ/stride と subscript の pointer element 情報が不足していた。
+- typedef-array static lowering で `td_array_elem_size / product(dims[1..])` から leaf 要素サイズを復元し、
+  leaf が基底 elem より大きい場合は pointer element として alias lvar に
+  `pointer_qual_levels=1` / `base_deref_size=基底 elem` を保存するようにした。
+- `build_static_local_array_addr_node` でも alias lvar の `pointer_qual_levels/base_deref_size` を
+  `ND_ADDR(ND_GVAR)` へ伝播し、多次元 subscript の最終段で `*ptrs[i][j]` が pointee 幅で読めるようにした。
+- fixture `static_local_typedef_multidim_array` に `typedef int *IP2x2[2][2]` の永続化/書き換えケースを追加。
+  Wasm object fixture `static_typedef_multidim_ptr` では `<f.ptrs...>` の `size=32` と
+  `R_WASM_MEMORY_ADDR_I32 <values>` を確認。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_static_local_typedef_multidim_pointer_array.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/agc_probe_static_local_typedef_multidim_pointer_array.o /private/tmp/agc_probe_static_local_typedef_multidim_pointer_array.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/static_local_typedef_multidim_array_ptr.o test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+  - `./build/test_e2e` (1135/1135)
+  - `./build/test_wasm32_e2e` (1099 compiled/executed)
+  - `./build/test_wasm32_object` (1107/1107)

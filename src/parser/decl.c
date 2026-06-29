@@ -3301,7 +3301,8 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
 
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
                                                  tk_float_kind_t fp_kind,
-                                                 int array_count, int is_unsigned);
+                                                 int array_count, int is_unsigned,
+                                                 int pointer_elem_pointee_size);
 
 /* `static int t[N] = {...};` / `static char s[] = "..."` の 1D scalar 配列 static local をグローバルに lowering する。
  * スコープ: 1D scalar 配列 (`int/long/short/char [unsigned]` / float/double)、ゼロ初期化 or brace init。
@@ -3380,7 +3381,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     g_inner_array_dim_count = dim_count;
     for (int i = 0; i < 8; i++) g_inner_array_dims[i] = i < dim_count ? dims[i] : 0;
     return try_lower_static_local_array_consumed(tok, elem_size, fp_kind,
-                                                 (int)total_count, is_unsigned);
+                                                 (int)total_count, is_unsigned, 0);
   }
   /* `=` の後の形を peek。`{`= brace OK、`TK_STRING`=文字列 init、その他は fallback。 */
   int has_init = 0;
@@ -3538,7 +3539,8 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
 
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
                                                  tk_float_kind_t fp_kind,
-                                                 int array_count, int is_unsigned) {
+                                                 int array_count, int is_unsigned,
+                                                 int pointer_elem_pointee_size) {
   if (elem_size <= 0) return 0;
   if (array_count == 0 || array_count < -1) return 0;
   long long arr_count = array_count;
@@ -3688,6 +3690,10 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   var->is_initialized = 1;
   var->is_unsigned = is_unsigned ? 1 : 0;
   var->fp_kind = fp_kind;
+  if (pointer_elem_pointee_size > 0) {
+    var->pointer_qual_levels = 1;
+    var->base_deref_size = (short)pointer_elem_pointee_size;
+  }
   if (g_inner_array_dim_count >= 2) {
     int outer_mul = 1;
     for (int i = 1; i < g_inner_array_dim_count; i++) {
@@ -3729,21 +3735,26 @@ static int try_lower_static_local_typedef_array(token_ident_t *tok, int elem_siz
     return 0;
   }
   int eff_elem = elem_size;
-  if (td_array_elem_size > 0 && td_array_dim_count == 1 && td_array_elem_size > elem_size) {
-    eff_elem = td_array_elem_size;
-  }
   long long total_count = 1;
   for (int i = 0; i < td_array_dim_count; i++) {
     if (td_array_dims[i] <= 0) return 0;
     total_count *= td_array_dims[i];
   }
   if (total_count <= 0 || total_count > INT_MAX) return 0;
+  if (td_array_elem_size > 0) {
+    int trailing_mul = 1;
+    for (int i = 1; i < td_array_dim_count; i++) trailing_mul *= td_array_dims[i];
+    int leaf_elem = td_array_elem_size / trailing_mul;
+    if (leaf_elem > elem_size) eff_elem = leaf_elem;
+  }
   g_inner_array_dim_count = td_array_dim_count;
   for (int i = 0; i < 8; i++) {
     g_inner_array_dims[i] = i < td_array_dim_count ? td_array_dims[i] : 0;
   }
+  int pointer_elem_pointee_size = eff_elem > elem_size ? elem_size : 0;
   return try_lower_static_local_array_consumed(tok, eff_elem, fp_kind,
-                                               (int)total_count, is_unsigned);
+                                               (int)total_count, is_unsigned,
+                                               pointer_elem_pointee_size);
 }
 
 /* `static struct S a = {...};` / `static union U u = {...};` の struct/union
@@ -4510,7 +4521,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         td_array_dim_count == 0 &&
         curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_array_consumed(tok, elem_size, decl_fp_kind,
-                                                inner_array_mul, decl_is_unsigned)) {
+                                                inner_array_mul, decl_is_unsigned, 0)) {
         if (!tk_consume(',')) break;
         continue;
       }
