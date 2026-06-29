@@ -1427,6 +1427,10 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
                                                 int array_len, const int *dims, int ndim,
                                                 int *flat, node_t *init_chain,
                                                 tk_float_kind_t member_fp_kind, int member_is_bool);
+static node_t *parse_multidim_tag_member_brace(lvar_t *owner, int member_offset, int elem_size,
+                                               int array_len, const int *dims, int ndim,
+                                               int *flat, node_t *init_chain,
+                                               token_kind_t tag_kind, char *tag_name, int tag_len);
 static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row_w,
                                        int array_len, int *flat, node_string_t *s,
                                        node_t *init_chain,
@@ -1456,6 +1460,16 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             owner, member_offset, array_len,
             member_arr_dims, member_arr_ndim, &flat, NULL,
             member_fp_kind, member_is_bool);
+        return chain ? chain : psx_node_new_num(0);
+      }
+      if (member_arr_ndim >= 3 && member_arr_dims &&
+          (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
+          !member_is_tag_pointer) {
+        int flat = 0;
+        node_t *chain = parse_multidim_tag_member_brace(
+            owner, member_offset, elem_size, array_len,
+            member_arr_dims, member_arr_ndim, &flat, NULL,
+            member_tag_kind, member_tag_name, member_tag_len);
         return chain ? chain : psx_node_new_num(0);
       }
       /* 多次元配列メンバ (`int a[2][2]`): ネスト brace `{{1,2},{3,4}}` を行優先で
@@ -1775,6 +1789,67 @@ static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row
         : (node_t *)an;
     j++;
   }
+  return init_chain;
+}
+
+static node_t *parse_multidim_tag_member_brace(lvar_t *owner, int member_offset, int elem_size,
+                                               int array_len, const int *dims, int ndim,
+                                               int *flat, node_t *init_chain,
+                                               token_kind_t tag_kind, char *tag_name, int tag_len) {
+  if (tk_consume('}')) return init_chain;
+  int level_total = 1;
+  for (int i = 0; i < ndim; i++) level_total *= dims[i];
+  int elems = dims[0];
+  int per_elem = level_total / (elems > 0 ? elems : 1);
+  int level_start = *flat;
+  int idx = 0;
+  for (;;) {
+    if (curtok()->kind == TK_LBRACKET) {
+      set_curtok(curtok()->next);
+      long long didx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+      consume_gnu_range_designator_tail_if_any();
+      tk_expect(']');
+      tk_expect('=');
+      if (didx < 0) didx = 0;
+      idx = (int)didx;
+    }
+    if (idx < elems) *flat = level_start + idx * per_elem;
+    if (ndim > 1) {
+      if (tk_consume('{')) {
+        init_chain = parse_multidim_tag_member_brace(owner, member_offset, elem_size,
+                                                     array_len, dims + 1, ndim - 1,
+                                                     flat, init_chain,
+                                                     tag_kind, tag_name, tag_len);
+      } else {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_UNSUPPORTED_FORM));
+      }
+    } else {
+      if (*flat >= array_len) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      }
+      lvar_t nested = {0};
+      nested.offset = owner->offset + member_offset + (*flat) * elem_size;
+      nested.size = elem_size;
+      nested.elem_size = elem_size;
+      nested.tag_kind = tag_kind;
+      nested.tag_name = tag_name;
+      nested.tag_len = tag_len;
+      node_t *snode = (tag_kind == TK_UNION)
+                        ? parse_union_initializer(&nested)
+                        : parse_struct_initializer(&nested);
+      init_chain = init_chain
+          ? psx_node_new_binary(ND_COMMA, init_chain, snode)
+          : snode;
+    }
+    idx++;
+    *flat = level_start + idx * per_elem;
+    if (tk_consume('}')) break;
+    tk_expect(',');
+    if (tk_consume('}')) break;
+  }
+  *flat = level_start + level_total;
   return init_chain;
 }
 

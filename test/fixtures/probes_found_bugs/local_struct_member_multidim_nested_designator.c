@@ -13,11 +13,17 @@
 //   (c) 要素 tag が struct/union の場合は nested lvar を作って parse_struct_initializer で
 //       1 slot ぶん解釈する (`{.val=99}` / `{99, 'A'}` などを正しく扱う)。
 //
+// 続き: 3D 以上では `cube[2][3][2]` の中間 brace を「次元 level」ではなく struct 要素
+// として早く解釈し、`{{{.val=10},...}}` の内側 `.val` で E3064 になっていた。
+// 3D 以上の struct/union タグ配列メンバは次元ごとに再帰し、最下層だけを
+// parse_struct_initializer / parse_union_initializer へ委譲する。
+//
 // 単一フィールド struct (positional `{{1},{2},...}`) の既存挙動は不変。
 #include <assert.h>
 
 struct Cell { int val; char tag; };
 struct Grid { struct Cell rows[3][2]; };
+struct Big { struct Cell cube[2][3][2]; };
 
 int main(void) {
     /* ローカル + 外側 designator + 内側 positional */
@@ -54,6 +60,15 @@ int main(void) {
     struct Grid2 { struct Cell2 r[3][2]; };
     struct Grid2 e = {.r = {{{1},{2}}, {{3},{4}}, {{5},{6}}}};
     assert(e.r[0][0].v == 1 && e.r[1][1].v == 4 && e.r[2][1].v == 6);
+
+    /* 3D struct タグ配列 + 中間 level の brace + 最下層 `.member=` */
+    struct Big f = {.cube = {[1] = {{{.val=10}, {.val=20}},
+                                      {{.val=30}, {.val=40}},
+                                      {{.val=50}, {.val=60}}}}};
+    assert(f.cube[0][0][0].val == 0);
+    assert(f.cube[1][0][0].val == 10 && f.cube[1][0][1].val == 20);
+    assert(f.cube[1][1][0].val == 30 && f.cube[1][1][1].val == 40);
+    assert(f.cube[1][2][0].val == 50 && f.cube[1][2][1].val == 60);
 
     return 0;
 }

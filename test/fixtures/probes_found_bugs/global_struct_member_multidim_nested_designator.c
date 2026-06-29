@@ -15,8 +15,8 @@
 // 中の `{.val=99}` は struct Cell 単一要素の ctx で `.val=` を解決可能、`[2]={[1]={.val=99}}`
 // の中の `[1]` も配列 1 段添字として解決可能。
 //
-// ローカル `struct Grid g = {.rows={[2]={[1]={.val=99}}}};` は別経路 (parse_struct_initializer)
-// で「primary 数値が必要 (実際 '[')」のため未対応 (B-4 として別タスクで取り組む)。
+// ローカル `struct Grid g = {.rows={[2]={[1]={.val=99}}}};` は別経路
+// (local_struct_member_multidim_nested_designator) で対応済み。
 #include <assert.h>
 
 struct Cell { int val; char tag; };

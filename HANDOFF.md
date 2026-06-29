@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き217: global struct メンバ union 配列の ARM64 data padding）
+最終更新: 2026-06-30（続き218: local 3D struct-tag array member designator init）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -27,6 +27,13 @@
   メンバだけを出した後に union 要素サイズまで padding しなかったため、後続要素/tail が前へ詰まっていた。
   `emit_global_union_slot` を切り出し、単体 union メンバと union 配列要素の両方で active member + union-size
   padding に統一。`union_array_brace_init.c` に global struct メンバ union 配列を追加。
+- 続き218: **local 3D struct-tag array member designator init**。
+  `struct Big { struct Cell cube[2][3][2]; }; struct Big b = {.cube={[1]={{{.val=10},...}}}};`
+  で、ローカル初期化の `parse_member_initializer` が 3D 以上の中間 brace を「次元 level」ではなく
+  struct 要素として早く解釈し、最下層 `.val` で E3064 になっていた。
+  3D 以上の struct/union タグ配列メンバ用に次元再帰 helper を追加し、最下層だけ
+  `parse_struct_initializer` / `parse_union_initializer` へ委譲。既存 2D 経路は維持。
+  `local_struct_member_multidim_nested_designator.c` に 3D case を追加。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
