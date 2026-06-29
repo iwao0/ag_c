@@ -85,6 +85,10 @@ static long long eval_const_expr_type_size(node_t *n, int *ok);
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
 static char *new_compound_lit_name(void);
+static void set_lvar_array_strides_from_dims(lvar_t *var, const int *dims, int dim_count, int elem_size);
+static void set_gvar_array_strides_from_dims(global_var_t *gv, const int *dims, int dim_count, int elem_size);
+static void set_addr_array_strides_from_lvar(node_mem_t *addr, const lvar_t *var);
+static void set_addr_array_strides_from_gvar(node_mem_t *addr, const global_var_t *gv);
 static int lvar_is_static_local_array(lvar_t *var);
 static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer);
 static node_t *apply_postfix(node_t *node);
@@ -92,7 +96,8 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                 token_t *after_rparen,
                                                 token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                                                 int cast_elem_size, tk_float_kind_t cast_fp_kind,
-                                                int cast_array_count);
+                                                int cast_array_count,
+                                                const int *cast_array_dims, int cast_array_dim_count);
 
 static void enter_expr_nest_or_die(void) {
   g_expr_nest_depth++;
@@ -1244,12 +1249,19 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                 token_t *after_rparen,
                                                 token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                                                 int cast_elem_size, tk_float_kind_t cast_fp_kind,
-                                                int cast_array_count) {
+                                                int cast_array_count,
+                                                const int *cast_array_dims, int cast_array_dim_count) {
   set_curtok(after_rparen);
   /* parse_cast_type が直前に設定した「複素数キャストか」を退避する (この後の
    * 初期化子パースで parse_cast_type が再呼出され上書きされる前に保存)。 */
   int cl_is_complex = g_last_cast_is_complex;
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
+  int local_array_dims[8] = {0};
+  int local_array_dim_count = 0;
+  if (cast_array_dims && cast_array_dim_count > 0) {
+    local_array_dim_count = cast_array_dim_count > 8 ? 8 : cast_array_dim_count;
+    for (int i = 0; i < local_array_dim_count; i++) local_array_dims[i] = cast_array_dims[i];
+  }
   // `(T[]){...}` の空サイズは初期化子から要素数を推定する。
   if (!cast_is_ptr && cast_array_count < 0) {
     long long inferred = 0;
@@ -1278,6 +1290,8 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       cast_array_count = 1;
     } else {
       cast_array_count = (int)inferred;
+      local_array_dims[0] = cast_array_count;
+      local_array_dim_count = 1;
     }
   }
   /* `(int (*[N])(args)){f1, f2, ...}` の関数ポインタ配列 compound literal を
@@ -1315,6 +1329,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->tag_kind = cast_tag_kind;
       gv->tag_name = cast_tag_name;
       gv->tag_len = cast_tag_len;
+      if (is_arr) set_gvar_array_strides_from_dims(gv, local_array_dims, local_array_dim_count, base_elem);
       /* 匿名複合リテラルは内部リンケージ (.global を出さない)。`___compound_lit_N` は
        * namespace 対象外 (__ 始まり) なので、.global だと別 fixture とリンク衝突する。 */
       gv->is_static = 1;
@@ -1345,8 +1360,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         addr->tag_kind = gv->tag_kind;
         addr->tag_name = gv->tag_name;
         addr->tag_len = gv->tag_len;
-        addr->type_size = base_elem;
-        addr->deref_size = base_elem;
+        set_addr_array_strides_from_gvar(addr, gv);
         addr->is_pointer = 1;
         if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
         addr->compound_literal_array_size = var_size;
@@ -1370,6 +1384,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     gv->is_array = is_arr;
     gv->fp_kind = cast_fp_kind;
     gv->is_static = 1;  /* 匿名複合リテラルは内部リンケージ (.global を出さない) */
+    if (is_arr) set_gvar_array_strides_from_dims(gv, local_array_dims, local_array_dim_count, base_elem);
     if (init_expr && init_expr->kind == ND_NUM) {
       node_num_t *n = (node_num_t *)init_expr;
       gv->has_init = 1;
@@ -1396,6 +1411,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   var->tag_kind = cast_tag_kind;
   var->tag_name = cast_tag_name;
   var->tag_len = cast_tag_len;
+  if (is_arr) set_lvar_array_strides_from_dims(var, local_array_dims, local_array_dim_count, base_elem);
   if (cl_complex_scalar) var->is_complex = 1;  /* elem_size = var_size (=base_elem*2)、brace-init で half= elem/2 */
   /* 関数ポインタ配列は tag (struct/union) ではないので is_tag_pointer=0。
    * base_deref_size=8 はローカル `int (*ops[N])(args)` 登録 (decl.c:2259) と
@@ -1416,8 +1432,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     addr_node->tag_kind = var->tag_kind;
     addr_node->tag_name = var->tag_name;
     addr_node->tag_len = var->tag_len;
-    addr_node->type_size = var->elem_size;
-    addr_node->deref_size = var->elem_size;
+    set_addr_array_strides_from_lvar(addr_node, var);
     /* `(int[N]){...}` 複合リテラルは配列名と同じくポインタへ崩壊する。
      * 後続の `[i]` サブスクリプトを通すために is_pointer を立てる。 */
     addr_node->is_pointer = 1;
@@ -1431,10 +1446,43 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   return psx_node_new_binary(ND_COMMA, init, apply_postfix(ref));
 }
 
+static int parse_cast_array_suffixes_token(token_t **pt, int *out_dims, int max_dims, int *out_dim_count) {
+  if (!pt || !*pt || (*pt)->kind != TK_LBRACKET) return 0;
+  token_t *t = *pt;
+  int dims[8] = {0};
+  int dim_count = 0;
+  int product = 1;
+  while (t && t->kind == TK_LBRACKET) {
+    t = t->next;
+    int n = 0;
+    if (t && t->kind == TK_RBRACKET) {
+      n = -1;
+    } else if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
+      n = (int)tk_as_num_int(t)->uval;
+      t = t->next;
+    } else {
+      return 0;
+    }
+    if (!t || t->kind != TK_RBRACKET) return 0;
+    t = t->next;
+    if (dim_count < 8) dims[dim_count] = n;
+    dim_count++;
+    if (n > 0) product *= n;
+  }
+  if (dim_count > 0 && dims[0] < 0) product = -1;
+  if (out_dims && max_dims > 0) {
+    int ncopy = dim_count < max_dims ? dim_count : max_dims;
+    for (int i = 0; i < ncopy; i++) out_dims[i] = dims[i];
+  }
+  if (out_dim_count) *out_dim_count = dim_count < max_dims ? dim_count : max_dims;
+  *pt = t;
+  return product;
+}
+
 static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen,
                            token_kind_t *out_tag_kind, char **out_tag_name, int *out_tag_len,
                            int *out_elem_size, tk_float_kind_t *out_fp_kind, int *out_array_count,
-                           int *out_is_unsigned) {
+                           int *out_array_dims, int *out_array_dim_count, int *out_is_unsigned) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
   tk_ensure_lookahead();
   token_t *t = tok->next;
@@ -1446,6 +1494,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_elem_size) *out_elem_size = 8;
   if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
   if (out_array_count) *out_array_count = 0;
+  if (out_array_dim_count) *out_array_dim_count = 0;
   if (out_is_unsigned) *out_is_unsigned = 0;
   g_last_cast_is_complex = 0;
 
@@ -1657,6 +1706,16 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
       td_ptr = _ti.is_pointer;
       if (out_is_unsigned) *out_is_unsigned = _ti.is_unsigned;
+      if (_ti.is_array && _ti.array_dim_count > 0) {
+        int total = 1;
+        int dim_count = _ti.array_dim_count > 8 ? 8 : _ti.array_dim_count;
+        for (int i = 0; i < dim_count; i++) {
+          if (out_array_dims) out_array_dims[i] = _ti.array_dims[i];
+          if (_ti.array_dims[i] > 0) total *= _ti.array_dims[i];
+        }
+        if (out_array_count) *out_array_count = total;
+        if (out_array_dim_count) *out_array_dim_count = dim_count;
+      }
     }
     *type_kind = (td_tag != TK_EOF) ? td_tag : td_base;
     if (out_tag_kind) *out_tag_kind = td_tag;
@@ -1692,20 +1751,18 @@ cast_parse_postfix:
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
   (void)parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
-  // 配列宣言子 [N] を受理する（非ポインタ型のみ）
-  // 空 `[]` は -1 を返し、呼び出し側で初期化子から要素数を推定させる。
+  // 配列宣言子 [N][M]... を受理する（非ポインタ型のみ）
+  // 先頭の空 `[]` は -1 を返し、呼び出し側で初期化子から要素数を推定させる。
   if (!*is_pointer && t && t->kind == TK_LBRACKET) {
-    t = t->next;
-    int n = 0;
-    if (t && t->kind == TK_RBRACKET) {
-      n = -1; // size unspecified, infer from initializer
-    } else if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
-      n = (int)tk_as_num_int(t)->uval;
-      t = t->next;
-    }
-    if (!t || t->kind != TK_RBRACKET) return 0;
-    t = t->next;
+    int dims[8] = {0};
+    int dim_count = 0;
+    int n = parse_cast_array_suffixes_token(&t, dims, 8, &dim_count);
+    if (n == 0 || dim_count <= 0) return 0;
     if (out_array_count) *out_array_count = n;
+    if (out_array_dims) {
+      for (int i = 0; i < dim_count && i < 8; i++) out_array_dims[i] = dims[i];
+    }
+    if (out_array_dim_count) *out_array_dim_count = dim_count;
   }
   if (!t || t->kind != TK_RPAREN || !t->next) return 0;
   *after_rparen = t->next;
@@ -1775,6 +1832,109 @@ static char *new_compound_lit_name(void) {
   char *name = calloc((size_t)len + 1, 1);
   snprintf(name, (size_t)len + 1, "__compound_lit_%d", n);
   return name;
+}
+
+static void set_lvar_array_strides_from_dims(lvar_t *var, const int *dims, int dim_count, int elem_size) {
+  if (!var || !dims || dim_count < 2 || elem_size <= 0) return;
+  int outer_mul = 1;
+  for (int i = 1; i < dim_count; i++) {
+    if (dims[i] > 0) outer_mul *= dims[i];
+  }
+  var->outer_stride = outer_mul * elem_size;
+  if (dim_count >= 3) {
+    int mid_mul = 1;
+    for (int i = 2; i < dim_count; i++) {
+      if (dims[i] > 0) mid_mul *= dims[i];
+    }
+    var->mid_stride = mid_mul * elem_size;
+  }
+  if (dim_count >= 4) {
+    var->extra_strides = calloc(5, sizeof(int));
+    int idx = 0;
+    for (int start = 3; start < dim_count && idx < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < dim_count; j++) {
+        if (dims[j] > 0) rest_mul *= dims[j];
+      }
+      var->extra_strides[idx++] = rest_mul * elem_size;
+    }
+    var->extra_strides_count = (unsigned char)idx;
+  }
+}
+
+static void set_gvar_array_strides_from_dims(global_var_t *gv, const int *dims, int dim_count, int elem_size) {
+  if (!gv || !dims || dim_count < 2 || elem_size <= 0) return;
+  int outer_mul = 1;
+  for (int i = 1; i < dim_count; i++) {
+    if (dims[i] > 0) outer_mul *= dims[i];
+  }
+  gv->outer_stride = outer_mul * elem_size;
+  if (dim_count >= 3) {
+    int mid_mul = 1;
+    for (int i = 2; i < dim_count; i++) {
+      if (dims[i] > 0) mid_mul *= dims[i];
+    }
+    gv->mid_stride = mid_mul * elem_size;
+  }
+  if (dim_count >= 4) {
+    int idx = 0;
+    for (int start = 3; start < dim_count && idx < 5; start++) {
+      int rest_mul = 1;
+      for (int j = start; j < dim_count; j++) {
+        if (dims[j] > 0) rest_mul *= dims[j];
+      }
+      gv->extra_strides[idx++] = rest_mul * elem_size;
+    }
+    gv->extra_strides_count = (unsigned char)idx;
+  }
+}
+
+static void set_addr_array_strides_from_lvar(node_mem_t *addr, const lvar_t *var) {
+  if (!addr || !var) return;
+  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
+  addr->type_size = stride;
+  addr->deref_size = stride;
+  if (var->outer_stride > 0) {
+    if (var->mid_stride > 0) {
+      addr->inner_deref_size = (short)var->mid_stride;
+      if (var->extra_strides_count > 0) {
+        addr->next_deref_size = (short)var->extra_strides[0];
+        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
+          addr->extra_strides[i - 1] = var->extra_strides[i];
+        }
+        addr->extra_strides[var->extra_strides_count - 1] = var->elem_size;
+        addr->extra_strides_count = var->extra_strides_count;
+      } else {
+        addr->next_deref_size = (short)var->elem_size;
+      }
+    } else {
+      addr->inner_deref_size = (short)var->elem_size;
+    }
+  }
+}
+
+static void set_addr_array_strides_from_gvar(node_mem_t *addr, const global_var_t *gv) {
+  if (!addr || !gv) return;
+  int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
+  addr->type_size = stride;
+  addr->deref_size = stride;
+  if (gv->outer_stride > 0) {
+    if (gv->mid_stride > 0) {
+      addr->inner_deref_size = (short)gv->mid_stride;
+      if (gv->extra_strides_count > 0) {
+        addr->next_deref_size = (short)gv->extra_strides[0];
+        for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
+          addr->extra_strides[i - 1] = gv->extra_strides[i];
+        }
+        addr->extra_strides[gv->extra_strides_count - 1] = gv->deref_size;
+        addr->extra_strides_count = gv->extra_strides_count;
+      } else {
+        addr->next_deref_size = (short)gv->deref_size;
+      }
+    } else {
+      addr->inner_deref_size = (short)gv->deref_size;
+    }
+  }
 }
 
 static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
@@ -3126,7 +3286,8 @@ static node_t *cast(void) {
   int cast_is_unsigned = 0;
   if (parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
-                      &cast_elem_size, &cast_fp_kind, &cast_array_count, &cast_is_unsigned)) {
+                      &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL, NULL,
+                      &cast_is_unsigned)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       // compound literal は primary/postfix 側で処理する
       return unary();
@@ -3204,14 +3365,18 @@ static node_t *parse_sizeof_operand(void) {
     int cast_elem_size = 8;
     tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
     int cast_array_count = 0;
+    int cast_array_dims[8] = {0};
+    int cast_array_dim_count = 0;
     if (curtok()->kind == TK_LPAREN &&
         parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                         &cast_tag_kind, &cast_tag_name, &cast_tag_len,
-                        &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL) &&
+                        &cast_elem_size, &cast_fp_kind, &cast_array_count,
+                        cast_array_dims, &cast_array_dim_count, NULL) &&
         after_rparen && after_rparen->kind == TK_LBRACE) {
       node_t *node = parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
                                                       cast_tag_kind, cast_tag_name, cast_tag_len,
-                                                      cast_elem_size, cast_fp_kind, cast_array_count);
+                                                      cast_elem_size, cast_fp_kind, cast_array_count,
+                                                      cast_array_dims, cast_array_dim_count);
       tk_expect(')');
       return psx_node_new_num(sizeof_expr_node(node));
     }
@@ -3733,8 +3898,22 @@ static node_t *build_unary_addr_node(node_t *operand) {
       *cp = *opm;
       cp->type_size = 8;
       if (opm->compound_literal_array_size > 0) {
+        int old_inner = opm->inner_deref_size;
+        int old_next = opm->next_deref_size;
+        int old_extras[5] = {0};
+        int old_extra_count = opm->extra_strides_count;
+        for (int i = 0; i < old_extra_count && i < 5; i++) old_extras[i] = opm->extra_strides[i];
         cp->inner_deref_size = opm->deref_size;
         cp->deref_size = opm->compound_literal_array_size;
+        cp->next_deref_size = old_inner;
+        cp->extra_strides_count = 0;
+        for (int i = 0; i < 5; i++) cp->extra_strides[i] = 0;
+        if (old_next > 0) {
+          cp->extra_strides[0] = old_next;
+          int n = 1;
+          for (int i = 0; i < old_extra_count && n < 5; i++, n++) cp->extra_strides[n] = old_extras[i];
+          cp->extra_strides_count = (unsigned char)n;
+        }
       }
       cp->compound_literal_array_size = 0;
       return (node_t *)cp;
@@ -4502,14 +4681,18 @@ static node_t *try_parse_compound_literal(void) {
   int cast_elem_size = 8;
   tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
   int cast_array_count = 0;
+  int cast_array_dims[8] = {0};
+  int cast_array_dim_count = 0;
   if (curtok()->kind == TK_LPAREN &&
       parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
-                      &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL) &&
+                      &cast_elem_size, &cast_fp_kind, &cast_array_count,
+                      cast_array_dims, &cast_array_dim_count, NULL) &&
       after_rparen && after_rparen->kind == TK_LBRACE) {
     return parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
                                             cast_tag_kind, cast_tag_name, cast_tag_len,
-                                            cast_elem_size, cast_fp_kind, cast_array_count);
+                                            cast_elem_size, cast_fp_kind, cast_array_count,
+                                            cast_array_dims, cast_array_dim_count);
   }
   return NULL;
 }

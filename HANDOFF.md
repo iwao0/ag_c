@@ -1,15 +1,21 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き214: Wasm object extern global address aggregate relocations）
+最終更新: 2026-06-29（続き215: 多次元/typedef 配列 compound literal の address stride）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_wasm32_object` green、
-  `./build/test_e2e` = **1125/1125 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile + validate green**、
+  `./build/test_wasm32_e2e` = **1097/1097 green**、`./build/test_wasm32_object` = **1105/1105 green**、
+  `./build/test_e2e` = **1133/1133 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1105/1105 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**
   （00206/00216 は unsupported GNU skip）。
+- 続き215: **多次元/typedef 配列 compound literal の address stride**。
+  `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
+  `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず
+  E3064。さらに `&` 後の pointer-to-array stride が 1 段シフトされず、内側 subscript の stride が落ちる穴があった。
+  cast type から dims を渡し、匿名 lvar/global に outer/mid/extra stride を設定、`&` で deref/inner/next をシフト。
+  `compound_literal_array_addr_sizeof.c` に raw 2D、typedef 1D/2D、struct 配列 typedef を追加。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
