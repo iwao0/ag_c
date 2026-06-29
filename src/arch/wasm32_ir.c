@@ -2014,6 +2014,9 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("puts", 4)) {
     wasm_emitf(2, "(func $puts (param i32) (result i32) (i32.const 1))\n");
   }
+  if (has_undefined_function("__assert_rtn", 12)) {
+    wasm_emitf(2, "(func $__assert_rtn (param i32 i32 i32 i32) (unreachable))\n");
+  }
   if (has_undefined_function("snprintf", 8)) {
     wasm_emitf(2, "(func $__ag_write_u64_dec (param $buf i32) (param $n i64) (result i32)\n");
     wasm_emitf(4, "(local $div i64)\n");

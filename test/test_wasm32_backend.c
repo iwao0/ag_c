@@ -364,6 +364,10 @@ int main(void) {
   failures += run_case("puts_stub",
                        "#include <stdio.h>\nint main(){return puts(\"x\");}\n",
                        puts_stub, 2, 1);
+  const char *assert_stub[] = {"(call $__assert_rtn", "(func $__assert_rtn (param i32 i32 i32 i32)"};
+  failures += run_case("assert_stub",
+                       "#include <assert.h>\nint main(){assert(1); return 0;}\n",
+                       assert_stub, 2, 0);
   const char *funcptr_init[] = {"(data (i32.const", "(table 1 funcref)", "(elem (i32.const 0) $f"};
   failures += run_case("funcptr_init",
                        "int f(){return 1;} int (*fp[1])()={f}; int main(){return fp[0]();}\n",

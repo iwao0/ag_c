@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き241: Wasm puts minimal stub）
+最終更新: 2026-06-30（続き242: Wasm __assert_rtn minimal stub）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2352,8 +2352,9 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `global_nested_union_pointer_init`
   - `static_local_pointer_array_init`
   - `static_local_struct_pointer_member_init`
-- 個別の素 `ag_c_wasm -> wat2wasm` preflight では `assert.h` の `__assert_rtn` stub 問題で失敗するが、
-  `test_wasm32_e2e` harness は `assert` を `return 100` へ変換して走るため、実 harness で確認した。
+- 個別の素 `ag_c_wasm -> wat2wasm` preflight で邪魔になっていた `assert.h` の `__assert_rtn`
+  stub 問題は続き242で解消済み。`test_wasm32_e2e` harness 自体は引き続き `assert` を
+  `return 100` へ変換して走る。
 - `test_wasm32_e2e` に parity check を追加。`test/test_e2e.c` に登録された
   `test/fixtures/*.c` が static/extra/link2 の Wasm E2E 登録に存在しない場合は fail する。
   これで今後 fixture 追加時に Wasm 実行 E2E の追従漏れを検出できる。
@@ -2460,6 +2461,8 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
   - `make test` green
   - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+  - `make test` green
+  - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/wasm_nonvoid_indirect_unused_result.c`
   - `make -j4 build/test_e2e && ./build/test_e2e` = 1139/1139
   - `./build/test_wasm32_e2e` = 1110/1110
@@ -2488,5 +2491,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   stub は実出力せず成功値 1 を返す。prototype なしの implicit `puts` は引き続き E4008。
 - `test_wasm32_backend` に `puts_stub` を追加し、WAT に `(func $puts (param i32) (result i32)` が出て
   `wasm-interp` で `main() => i32:1` になることを確認する。
+- focused 確認:
+  - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
+
+### このセッション（続き242）: Wasm __assert_rtn minimal stub
+- 素の `#include <assert.h>` fixture を `ag_c_wasm -> wat2wasm` すると、`assert(1)` でも false 側の
+  `$__assert_rtn` 参照が WAT に残り、undefined function で `wat2wasm` が失敗していた。
+- `__assert_rtn` を minimal libc stub に追加。signature は `(param i32 i32 i32 i32)`、本体は
+  `(unreachable)` として、assert failure は trap させる。
+- `test_wasm32_backend` に raw `assert.h` ケース `assert_stub` を追加し、WAT 定義と
+  `wasm-interp` で `main() => i32:0` になることを確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend`
