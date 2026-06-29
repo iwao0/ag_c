@@ -2373,3 +2373,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `scripts/agc_diff_test.sh /private/tmp/agc_probe_nested_member_funcptr_fp_return.c`
   - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/funcptr_member_fp_return.c`
   - `./build/ag_c_wasm -c -o /private/tmp/funcptr_member_fp_return.o test/fixtures/probes_found_bugs/funcptr_member_fp_return.c`
+
+### このセッション（続き235）: struct funcptr aggregate member の `{0}` 初期化
+- `struct Holder { struct Ops ops[2]; struct Ops *p; }; struct Holder h = {0};`
+  が IR/Wasm object 経路で E4007。先頭メンバ `ops` が 16B aggregate で、brace 内の明示 `0` が
+  `ops` 全体への aggregate assignment として残り、`aggregate expression source not materializable`
+  へ落ちていた。
+- `parse_struct_initializer` は既に struct 全体を pre-zero-fill するため、集約メンバに対する
+  terminal `0` (`{0}` の閉じ brace 直前) は no-op として消費するようにした。
+  併せて `append_struct_zero_fill_chain` の synthetic store は代入ノードの `type_size` を 8/4/2/1 に固定し、
+  `psx_node_new_lvar` の `tag_kind` 既定値を `TK_EOF` に初期化した。
+- fixture `struct_funcptr_zero_init` を追加し、`test_e2e.c` と `wasm32_e2e_extra_cases.txt` に登録。
+  parity guard により Wasm E2E 追従漏れも検出される。Wasm object fixture scan もこの fixture を拾う。
+- focused 確認:
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_struct_holder_funcptr_zero_init.c`
+  - `scripts/agc_diff_test.sh /private/tmp/agc_probe_struct_holder_funcptr_zero_init_return0.c`
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
+  - `./build/ag_c_wasm -c -o /private/tmp/struct_funcptr_zero_init.o test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`

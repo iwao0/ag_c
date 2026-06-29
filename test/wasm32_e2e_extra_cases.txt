@@ -312,6 +312,7 @@ probes_found_bugs/struct_addr_cast_subtract.c
 probes_found_bugs/struct_copy_init_array_member.c
 probes_found_bugs/struct_copy_init_from_global.c
 probes_found_bugs/struct_double_ptr_deref_arrow.c
+probes_found_bugs/struct_funcptr_zero_init.c
 probes_found_bugs/struct_funcptr_array.c
 probes_found_bugs/struct_init_from_deref.c
 probes_found_bugs/struct_init_from_ternary_funccall.c

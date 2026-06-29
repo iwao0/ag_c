@@ -615,6 +615,7 @@ node_t *psx_node_new_num(long long val) {
 node_t *psx_node_new_lvar(int offset) {
   node_lvar_t *node = arena_alloc(sizeof(node_lvar_t));
   node->mem.base.kind = ND_LVAR;
+  node->mem.tag_kind = TK_EOF;
   node->offset = offset;
   node->mem.type_size = 8;
   return (node_t *)node;

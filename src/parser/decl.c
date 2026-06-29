@@ -1441,6 +1441,18 @@ static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row
                                        node_t *init_chain,
                                        tk_float_kind_t fp_kind, int is_bool);
 
+static int consume_terminal_zero_initializer(void) {
+  token_t *t = curtok();
+  if (!t || t->kind != TK_NUM || tk_as_num(t)->num_kind != TK_NUM_KIND_INT ||
+      tk_as_num_int(t)->val != 0) {
+    return 0;
+  }
+  token_t *next = t->next;
+  if (!next || next->kind != TK_RBRACE) return 0;
+  set_curtok(next);
+  return 1;
+}
+
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
@@ -1712,6 +1724,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       if (array_str) return array_str;
       node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_copy) return array_copy;
+      if (consume_terminal_zero_initializer()) return psx_node_new_num(0);
       node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
       node_mem_t *assign0 = build_member_array_elem_assign_node(lhs0,
           parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
@@ -2209,26 +2222,30 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
   int off = 0;
   while (off + 8 <= total) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 8);
-    init_chain = append_to_init_chain(init_chain,
-        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    assign->type_size = 8;
+    init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 8;
   }
   while (off + 4 <= total) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 4);
-    init_chain = append_to_init_chain(init_chain,
-        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    assign->type_size = 4;
+    init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 4;
   }
   while (off + 2 <= total) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 2);
-    init_chain = append_to_init_chain(init_chain,
-        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    assign->type_size = 2;
+    init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 2;
   }
   while (off + 1 <= total) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 1);
-    init_chain = append_to_init_chain(init_chain,
-        (node_t *)psx_node_new_assign(lhs, psx_node_new_num(0)));
+    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    assign->type_size = 1;
+    init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 1;
   }
   return init_chain;
@@ -2488,6 +2505,7 @@ static node_t *struct_member_elision(lvar_t *nested) {
  * (先頭メンバが集約でも parse_member_initializer が正しく消費するため)。 */
 static node_t *parse_struct_member_no_brace(lvar_t *nested) {
   token_t *t = curtok();
+  if (consume_terminal_zero_initializer()) return psx_node_new_num(0);
   if (!(t && (t->kind == TK_IDENT || t->kind == TK_LPAREN))) {
     return struct_member_elision(nested);
   }
