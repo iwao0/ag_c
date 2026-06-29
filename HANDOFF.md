@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き180: Wasm object validation coverage）
+最終更新: 2026-06-29（続き181: Wasm object extern function address data relocation）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -8,6 +8,8 @@
   `./build/test_wasm32_e2e` = **1096/1096 green**、`./build/test_wasm32_object` green、
   `./build/test_e2e` = **1125/1125 green**、`make wasm32-object-fixture-scan`
   (`test/fixtures/**/*.c`, should_reject 除外) = **1097/1097 compile + validate green**。
+- c-testsuite single-exec の Wasm object ad-hoc scan（00206/00216 除外）も
+  **218/218 compile + validate green**。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -494,6 +496,12 @@
   pointer/struct canonical type を local 型収集へ反映。address として i32 化された vreg は
   load/store/constant emission でも actual local type を使う。通常 fixture scan は
   1097/1097 compile + validate green。
+- 続き181: **Wasm object extern function address data relocation**。
+  `int (*p)(FILE*, const char*, ...) = &fprintf;` のように、外部関数アドレスだけが global data
+  initializer に現れるケースを E4008 にせず、undefined function symbol + `R_WASM_TABLE_INDEX_I32`
+  として出す。左辺の global funcptr 型から import signature を作るので、`fprintf` は
+  `(i32, i32) -> i32` になる。`extern_funcptr_global` fixture を追加。c-testsuite single-exec
+  object scan（00206/00216 除外）は 218/218 compile + validate green。
 
 ### Wasm backend の既知メモ
 

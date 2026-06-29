@@ -924,6 +924,97 @@ static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_t
   return raw;
 }
 
+static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
+  obj_sig_t sig = {0};
+  tk_float_kind_t rfp = psx_ctx_get_function_ret_fp_kind((char *)name, name_len);
+  token_kind_t rtk = psx_ctx_get_function_ret_token_kind((char *)name, name_len);
+  if (psx_ctx_get_function_ret_is_pointer((char *)name, name_len) ||
+      psx_ctx_get_function_ret_is_funcptr((char *)name, name_len)) {
+    sig.result = IR_TY_I32;
+  } else if (rfp == TK_FLOAT_KIND_FLOAT) {
+    sig.result = IR_TY_F32;
+  } else if (rfp >= TK_FLOAT_KIND_DOUBLE) {
+    sig.result = IR_TY_F64;
+  } else if (rtk == TK_VOID) {
+    sig.result = IR_TY_VOID;
+  } else if (rtk == TK_LONG) {
+    sig.result = IR_TY_I64;
+  } else {
+    sig.result = IR_TY_I32;
+  }
+
+  int nparams = 0;
+  for (; nparams < 32; nparams++) {
+    int pcat = psx_ctx_get_function_param_category((char *)name, name_len, nparams);
+    tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind((char *)name, name_len, nparams);
+    int int_size = psx_ctx_get_function_param_int_size((char *)name, name_len, nparams);
+    if (pcat == PSX_PCAT_UNSET && fp == TK_FLOAT_KIND_NONE && int_size <= 0) break;
+  }
+  sig.nparams = nparams;
+  if (nparams > 0) {
+    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
+    for (int p = 0; p < nparams; p++) {
+      int pcat = psx_ctx_get_function_param_category((char *)name, name_len, p);
+      tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind((char *)name, name_len, p);
+      int int_size = psx_ctx_get_function_param_int_size((char *)name, name_len, p);
+      if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) sig.params[p] = IR_TY_I32;
+      else if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
+      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      else sig.params[p] = int_size == 8 ? IR_TY_I64 : IR_TY_I64;
+    }
+  }
+  return sig;
+}
+
+static int funcptr_mask_param_count(unsigned short fp_mask, unsigned short int_mask) {
+  int n = 0;
+  for (int p = 0; p < 8; p++) {
+    if (((fp_mask >> (2 * p)) & 3u) || ((int_mask >> (2 * p)) & 3u)) n = p + 1;
+  }
+  return n;
+}
+
+static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
+  if (!gv) return func_sig_from_ctx(name, name_len);
+  obj_sig_t sig = {0};
+  if (gv->funcptr_ret_is_void) sig.result = IR_TY_VOID;
+  else if (gv->funcptr_ret_is_data_pointer) sig.result = IR_TY_I32;
+  else if (gv->pointee_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (gv->pointee_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = gv->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+
+  int nparams = gv->is_variadic_funcptr
+                  ? gv->funcptr_nargs_fixed
+                  : funcptr_mask_param_count(gv->funcptr_param_fp_mask, gv->funcptr_param_int_mask);
+  sig.nparams = nparams;
+  if (nparams > 0) {
+    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
+    for (int p = 0; p < nparams; p++) {
+      unsigned fp = (gv->funcptr_param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (gv->funcptr_param_int_mask >> (2 * p)) & 3u;
+      if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
+      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      else if (iw != 0) sig.params[p] = IR_TY_I64;
+      else sig.params[p] = IR_TY_I32;
+    }
+  }
+  return sig;
+}
+
+static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
+  obj_func_t *target = find_func(sym, sym_len);
+  if (!target) {
+    target = intern_func(sym, sym_len);
+    target->sig = sig;
+    return;
+  }
+  if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
+    target->sig = sig;
+  } else {
+    free(sig.params);
+  }
+}
+
 static int call_has_ret_area(ir_inst_t *i) {
   return i && (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE ||
                i->ret_complex_half > 0);
@@ -1982,7 +2073,10 @@ static void data_write_symbol_addr(obj_data_t *d, char *sym, int sym_len,
   if (sym && sym_len >= 0 && psx_ctx_has_function_name(sym, sym_len)) {
     if (addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
     obj_func_t *target = find_func(sym, sym_len);
-    if (!target) obj_unsupported_msg("unresolved function address in Wasm object mode");
+    if (!target) {
+      target = intern_func(sym, sym_len);
+      target->sig = func_sig_from_ctx(sym, sym_len);
+    }
     size_t off = d->bytes.len;
     wb_int_le(&d->bytes, 0, size);
     data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);
@@ -2013,7 +2107,10 @@ static void data_write_symbol_addr_at(obj_data_t *d, size_t off, char *sym, int 
   if (sym && sym_len >= 0 && psx_ctx_has_function_name(sym, sym_len)) {
     if (addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
     obj_func_t *target = find_func(sym, sym_len);
-    if (!target) obj_unsupported_msg("unresolved function address in Wasm object mode");
+    if (!target) {
+      target = intern_func(sym, sym_len);
+      target->sig = func_sig_from_ctx(sym, sym_len);
+    }
     data_write_int_le_at(d, off, 0, size);
     data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);
     return;
@@ -2276,6 +2373,11 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
     emit_obj_global_aggregate_data(d, gv, size);
   } else if (gv->init_symbol) {
+    if (psx_ctx_has_function_name(gv->init_symbol, gv->init_symbol_len)) {
+      ensure_func_sig_for_address(gv->init_symbol, gv->init_symbol_len,
+                                  func_sig_from_global_funcptr(gv, gv->init_symbol,
+                                                               gv->init_symbol_len));
+    }
     data_write_symbol_addr(d, gv->init_symbol, gv->init_symbol_len, gv->init_symbol_offset, size);
   } else if (gv->init_count > 0) {
     int elem = gv->is_array && gv->deref_size > 0 ? gv->deref_size : size;

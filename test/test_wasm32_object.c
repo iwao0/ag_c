@@ -636,6 +636,15 @@ int main(void) {
                                 "int main(void){return 0;}\n",
                                 funcptr_global_needles, 3);
 
+  const char *extern_funcptr_global_needles[] = {
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
+  failures += run_objdump_check("extern_funcptr_global",
+                                "typedef struct FILE FILE; extern FILE *stdout; "
+                                "int fprintf(FILE*, const char*, ...); "
+                                "int (*p)(FILE*, const char*, ...) = &fprintf; "
+                                "int main(void){return p(stdout, \"x\");}\n",
+                                extern_funcptr_global_needles, 5);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",
