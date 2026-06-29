@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き205: Wasm object optional indirect-data link fixture）
+最終更新: 2026-06-29（続き206: Wasm object cross-TU indirect-data fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -673,6 +673,13 @@
   data segment 内の `R_WASM_TABLE_INDEX_I32` をリンク後に実行する
   `union Ops{int (*f[2])(int); ...}; union Ops ops={.f[1]=add2}; main -> ops.f[1](40)` を追加。
   このローカル環境では `wasm-ld` が無いため optional 実行部は skip。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き206: **Wasm object cross-TU indirect-data fixtures**。
+  data segment 内 `R_WASM_TABLE_INDEX_I32` が undefined function symbol を指す形を fixture 化。
+  通常 object test では `extern int add2(int); union Ops ops={.f[1]=add2};` が
+  `<add2>` undefined / `(i64) -> i32` / `R_WASM_TABLE_INDEX_I32` / `call_indirect` を出すことを確認。
+  optional link test では `add2` を別 object で定義して `main() => i32:42` まで確認する
+  cross-TU case を追加（このローカル環境では `wasm-ld` 不在のため optional 実行部は skip）。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ

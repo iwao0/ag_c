@@ -236,6 +236,32 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked indirect data wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/indirect_data_main.c",
+                 "extern int add2(int); union Ops{int (*f[2])(int); long raw;}; "
+                 "union Ops ops={.f[1]=add2}; int main(void){return ops.f[1](40);}\n") != 0 ||
+      write_file("build/wasm32_obj/indirect_data_other.c",
+                 "int add2(int x){return x+2;}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/indirect_data_main.o "
+              "build/wasm32_obj/indirect_data_main.c",
+              "indirect_data_main.o") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/indirect_data_other.o "
+              "build/wasm32_obj/indirect_data_other.c",
+              "indirect_data_other.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o build/wasm32_obj/linked_indirect_data_xtu.wasm "
+              "build/wasm32_obj/indirect_data_main.o build/wasm32_obj/indirect_data_other.o",
+              "wasm-ld indirect data xtu") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_indirect_data_xtu.wasm",
+              "wasm-validate indirect data xtu") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_indirect_data_xtu.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_indirect_data_xtu.interp",
+              "wasm-interp indirect data xtu") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_indirect_data_xtu.interp", buf, sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked indirect data cross-TU wasm returned unexpected result\n");
+    return 1;
+  }
   return 0;
 }
 
@@ -726,6 +752,15 @@ int main(void) {
                                        "int main(void){return ops.p[1](stdout, \"x\");}\n",
                                        extern_union_funcptr_array_member_needles, 6,
                                        extern_funcptr_rejects, 1);
+
+  const char *extern_union_funcptr_array_member_xtu_needles[] = {
+      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
+  failures += run_objdump_check("extern_union_funcptr_array_member_xtu",
+                                "extern int add2(int); "
+                                "union Ops{int (*f[2])(int); long raw;}; "
+                                "union Ops ops={.f[1]=add2}; "
+                                "int main(void){return ops.f[1](40);}\n",
+                                extern_union_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_local_funcptr_needles[] = {
       "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_SLEB",
