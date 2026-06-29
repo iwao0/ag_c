@@ -232,6 +232,13 @@ int main(void) {
                                 "struct Box box={f}; int main(void){return 0;}\n",
                                 struct_funcptr_member_needles, 4);
 
+  const char *indirect_needles[] = {
+      "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
+  failures += run_objdump_check("indirect",
+                                "int one(void){return 1;} int (*p)(void)=one; "
+                                "int main(void){return p();}\n",
+                                indirect_needles, 3);
+
   const char *static_needles[] = {"<hidden>", "binding=local", "<main>"};
   failures += run_objdump_check("static_func",
                                 "static int hidden(void){return 7;} int main(void){return hidden();}\n",
@@ -239,15 +246,6 @@ int main(void) {
 
   failures += run_fail_case("missing_o", "./build/ag_c_wasm -c build/wasm32_obj/simple.c",
                             "E0002");
-  if (write_file("build/wasm32_obj/indirect.c",
-                 "int one(void){return 1;} int main(void){int (*p)(void)=one; return p();}\n") == 0) {
-    failures += run_fail_case("indirect",
-                              "./build/ag_c_wasm -c -o build/wasm32_obj/indirect.o "
-                              "build/wasm32_obj/indirect.c",
-                              "E4008");
-  } else {
-    failures++;
-  }
 
   failures += run_optional_link_case();
 

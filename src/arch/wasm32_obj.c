@@ -103,6 +103,7 @@ typedef struct {
   int data_reloc_count;
   int data_reloc_cap;
   int symbol_count;
+  int has_indirect_call;
 } obj_ctx_t;
 
 static obj_ctx_t g_obj;
@@ -569,10 +570,10 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
 
 static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   obj_sig_t sig = {0};
-  if (i->callee.id != IR_VAL_NONE) obj_unsupported_msg("indirect call in Wasm object mode");
   if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE || i->ret_complex_half > 0) {
     obj_unsupported_msg("aggregate or complex call in Wasm object mode");
   }
+  if (i->is_variadic_call) obj_unsupported_msg("variadic call in Wasm object mode");
   sig.nparams = i->is_variadic_call ? i->nargs_fixed : i->nargs;
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
@@ -702,6 +703,23 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           break;
         }
         case IR_CALL: {
+          if (i->callee.id != IR_VAL_NONE) {
+            obj_sig_t csig = call_sig_from_inst(i);
+            int type_index = intern_type(&csig);
+            g_obj.has_indirect_call = 1;
+            for (int a = 0; a < csig.nparams; a++) {
+              emit_val(&body, i->args[a], csig.params[a], param_count);
+            }
+            emit_val(&body, i->callee, IR_TY_I32, param_count);
+            wb_u8(&body, 0x11);
+            wb_uleb(&body, (uint32_t)type_index);
+            wb_uleb(&body, 0);
+            if (csig.result != IR_TY_VOID && i->dst.id >= 0) {
+              emit_local_set(&body, local_index(param_count, i->dst.id));
+            }
+            free(csig.params);
+            break;
+          }
           if (!i->sym) obj_unsupported_op(i->op);
           obj_func_t *target = intern_func(i->sym, i->sym_len);
           of = &g_obj.funcs[of_index];
@@ -808,6 +826,7 @@ static void emit_type_section(wb_t *out) {
 static void emit_import_section(wb_t *out) {
   int nimports = 0;
   for (int i = 0; i < g_obj.func_count; i++) if (g_obj.funcs[i].imported) nimports++;
+  if (g_obj.has_indirect_call) nimports++;
   if (nimports == 0) return;
   wb_t p = {0};
   wb_uleb(&p, (uint32_t)nimports);
@@ -818,6 +837,14 @@ static void emit_import_section(wb_t *out) {
     wb_str(&p, f->name, f->name_len);
     wb_u8(&p, 0x00);
     wb_uleb(&p, (uint32_t)f->type_index);
+  }
+  if (g_obj.has_indirect_call) {
+    wb_str(&p, "env", 3);
+    wb_str(&p, "__indirect_function_table", 25);
+    wb_u8(&p, 0x01);
+    wb_u8(&p, 0x70);
+    wb_u8(&p, 0x00);
+    wb_uleb(&p, 0);
   }
   emit_section(out, WASM_SEC_IMPORT, &p);
   free(p.data);
@@ -1367,6 +1394,7 @@ void wasm32_obj_end(void) {
     if (g_obj.funcs[i].imported) has_imports = 1;
     if (g_obj.funcs[i].defined) has_defs = 1;
   }
+  if (g_obj.has_indirect_call) has_imports = 1;
   int section_index = 0;
   int code_section_index = -1;
   int data_section_index = -1;

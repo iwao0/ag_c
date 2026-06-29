@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き147: Wasm object function address relocations）
+最終更新: 2026-06-29（続き148: Wasm object indirect calls）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -329,7 +329,12 @@
   `i32.const` に `R_WASM_TABLE_INDEX_SLEB` を付け、global/data initializer 内の関数ポインタは
   raw i32 slot に `R_WASM_TABLE_INDEX_I32` を付ける。struct member の関数ポインタ initializer も
   同じ data relocation で扱う。未解決の関数アドレスだけは仮の import を作らず E4008。
-  indirect call object 化はまだ未対応。
+- 続き148: **Wasm object indirect calls**。
+  object mode で simple indirect call を追加。`IR_CALL.callee` がある場合は call site の signature を
+  type section に intern し、実引数と callee table index を積んで `call_indirect` を出す。
+  indirect call を使う object は `env.__indirect_function_table` を table import する。
+  global 関数ポインタ initializer の `R_WASM_TABLE_INDEX_I32` と組み合わせる fixture を
+  `test/test_wasm32_object.c` に追加。aggregate/complex/variadic call は引き続き E4008。
 
 ### Wasm backend の既知メモ
 
@@ -343,8 +348,8 @@
   direct call relocation、simple data segment、`LOAD_SYM`/`LOAD_STR` の data address relocation、
   global initializer 内の data address relocation、未定義 extern data symbol、simple
   global/extern global read/write、aggregate global data segment、function address/table-index
-  relocation。
-  indirect call object 化、TLS object relocation は未対応。
+  relocation、simple indirect call。
+  aggregate/complex/variadic call の object 化、TLS object relocation は未対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
 - 大きい未初期化 global は data segment を出さず、`data_addr_for_global` によるアドレス予約だけ行う。
