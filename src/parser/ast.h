@@ -227,6 +227,15 @@ struct node_func_t {
   int funcname_len; // 関数名の長さ
   int is_variadic;  // 1: 可変長引数関数 (funcdef時のみ)
   int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。
+  unsigned short ret_funcptr_param_fp_mask;
+  unsigned short ret_funcptr_param_int_mask;
+  unsigned char ret_funcptr_ret_int_width;
+  unsigned char ret_funcptr_ret_is_void;
+  unsigned char ret_funcptr_ret_is_data_pointer;
+  unsigned char ret_funcptr_ret_is_complex;
+  unsigned char ret_funcptr_is_variadic;
+  unsigned char ret_funcptr_pointee_fp_kind;
+  short ret_funcptr_nargs_fixed;
   // 関数定義のローカル変数連結リスト (next_all で辿る)。
   // 関数解析完了時に保存し、IR builder 等が後段で参照する。
   // 既存 AST 直 codegen には影響しない (未参照のまま動く)。

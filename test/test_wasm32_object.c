@@ -686,6 +686,15 @@ int main(void) {
                                        extern_local_funcptr_needles, 5,
                                        extern_funcptr_rejects, 1);
 
+  failures += run_objdump_check_absent("extern_funcptr_return",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "Printer get(void){return &fprintf;} "
+                                       "int main(void){return get()(stdout, \"x\");}\n",
+                                       extern_local_funcptr_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
   const char *struct_funcptr_member_needles[] = {
       "\"reloc.DATA\"", "R_WASM_TABLE_INDEX_I32", "<f>", "<box>"};
   failures += run_objdump_check("struct_funcptr_member",

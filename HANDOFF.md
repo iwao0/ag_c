@@ -525,6 +525,13 @@
   struct member の `&fprintf` 経路をすべて reject needle `(i64, i64) -> i32` 付きに拡張。
   追加 fixture: `extern_local_funcptr_assign`、`extern_typedef_local_funcptr`、
   `extern_local_struct_funcptr_member`。既存 `extern_funcptr_global` も absent check に変更。
+- 続き186: **Wasm object function-pointer-return signature propagation**。
+  `typedef int (*Printer)(FILE*, const char*, ...); Printer get(){return &fprintf;}` のように、
+  funcptr typedef を返す関数の `return &extern_func;` で戻り funcptr の署名を `IR_LOAD_SYM`
+  へ渡すように修正。object emitter が extern 関数アドレスの import signature を
+  関数本体コンテキストの fallback ではなく返却先 funcptr 型から決めるため、
+  `(i64, i64) -> i32` ではなく `(i32, i32) -> i32` + variadic fixed args になる。
+  追加 fixture: `extern_funcptr_return`。
 
 ### Wasm backend の既知メモ
 

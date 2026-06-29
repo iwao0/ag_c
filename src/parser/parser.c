@@ -99,6 +99,13 @@ static int g_last_alignas_value = 0;
 static int g_last_outer_declarator_is_ptr = 0;
 static int g_func_ret_is_funcptr = 0;
 static int g_func_funcptr_ret_is_pointer = 0;
+static int g_func_funcptr_ret_is_void = 0;
+static int g_func_funcptr_ret_is_complex = 0;
+static int g_func_ret_is_variadic_funcptr = 0;
+static unsigned short g_func_ret_funcptr_param_fp_mask = 0;
+static unsigned short g_func_ret_funcptr_param_int_mask = 0;
+static unsigned char g_func_ret_funcptr_ret_int_width = 0;
+static short g_func_ret_funcptr_nargs_fixed = 0;
 /* 戻り値型基底の `*` 段数 (`int **g()` で 2)。parse_pointer_suffix_flags が数え、
  * funcdef が多段ポインタ戻りの記録に使う。各 funcdef 開始時にリセットする。 */
 static int g_last_ret_ptr_levels = 0;
@@ -3926,6 +3933,13 @@ static void parse_func_decl_spec(token_kind_t *ret_kind, tk_float_kind_t *ret_fp
   if (ret_is_unsigned) *ret_is_unsigned = 0;
   g_func_ret_is_funcptr = 0;
   g_func_funcptr_ret_is_pointer = 0;
+  g_func_funcptr_ret_is_void = 0;
+  g_func_funcptr_ret_is_complex = 0;
+  g_func_ret_is_variadic_funcptr = 0;
+  g_func_ret_funcptr_param_fp_mask = 0;
+  g_func_ret_funcptr_param_int_mask = 0;
+  g_func_ret_funcptr_ret_int_width = 0;
+  g_func_ret_funcptr_nargs_fixed = 0;
   /* storage class (static/extern) の直後がタグキーワードなら、先に storage class を消費
    * してフラグを立ててからタグ経路へ。psx_consume_type_kind は `static` の後の `struct` を
    * 型と認識できず implicit int に落ちるため (`static struct S *g(){}` が壊れていた)。
@@ -4021,6 +4035,13 @@ static void resolve_func_ret_typedef(token_kind_t *ret_kind, tk_float_kind_t *re
     td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
     g_func_ret_is_funcptr = _ti.is_funcptr;
     g_func_funcptr_ret_is_pointer = _ti.funcptr_ret_is_pointer;
+    g_func_funcptr_ret_is_void = _ti.funcptr_ret_is_void;
+    g_func_funcptr_ret_is_complex = _ti.funcptr_ret_is_complex;
+    g_func_ret_is_variadic_funcptr = _ti.is_variadic_funcptr ? 1 : 0;
+    g_func_ret_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+    g_func_ret_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
+    g_func_ret_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
+    g_func_ret_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
   }
   set_curtok(curtok()->next);
   *ret_kind = td_base;
@@ -4471,6 +4492,19 @@ static node_t *funcdef(void) {
           ret_token_kind, funcptr_ret_is_pointer, ret_fp_kind);
       psx_ctx_set_function_funcptr_ret_int_width(tok->str, tok->len,
                                                  funcptr_ret_int_width);
+      node->ret_funcptr_param_fp_mask = g_func_ret_funcptr_param_fp_mask;
+      node->ret_funcptr_param_int_mask = g_func_ret_funcptr_param_int_mask;
+      node->ret_funcptr_ret_int_width = g_func_ret_funcptr_ret_int_width
+                                            ? g_func_ret_funcptr_ret_int_width
+                                            : (unsigned char)funcptr_ret_int_width;
+      node->ret_funcptr_ret_is_void = g_func_funcptr_ret_is_void ? 1 : 0;
+      node->ret_funcptr_ret_is_data_pointer = funcptr_ret_is_pointer ? 1 : 0;
+      node->ret_funcptr_ret_is_complex = g_func_funcptr_ret_is_complex ? 1 : 0;
+      node->ret_funcptr_is_variadic = g_func_ret_is_variadic_funcptr ? 1 : 0;
+      node->ret_funcptr_nargs_fixed = g_func_ret_funcptr_nargs_fixed;
+      if (!funcptr_ret_is_pointer && ret_fp_kind != TK_FLOAT_KIND_NONE) {
+        node->ret_funcptr_pointee_fp_kind = (unsigned char)ret_fp_kind;
+      }
     }
   }
   psx_expr_set_current_funcname(tok->str, tok->len); // __func__ 用
