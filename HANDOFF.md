@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き169: Wasm object indirect function pointer fixtures）
+最終更新: 2026-06-29（続き170: Wasm object i32 const LEB fix）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -432,6 +432,12 @@
   object mode の indirect call coverage として、double 引数/戻り値、int→double / double→int 引数変換、
   pointer return、global 関数ポインタ配列、struct 内 offset 付き関数ポインタメンバ呼び出しを fixture 化。
   `__indirect_function_table`、table relocation、call_indirect、型 signature / load を objdump で確認。
+- 続き170: **Wasm object i32 const LEB fix**。
+  `4294967295U` など unsigned i32 即値で object emitter が 32bit に丸めず正の SLEB を出し、
+  `wasm-objdump` が `unable to read i32 leb128: i32.const value` で失敗していた。
+  `emit_const(IR_TY_I32)` は `(int32_t)(uint32_t)value` を SLEB 化するよう修正。
+  unsigned i32/i64 の FP 変換 (`f64.convert_i32_u` / `i32.trunc_f64_u` /
+  `f64.convert_i64_u` / `i64.trunc_f64_u`) と FP compare/neg fixture を追加。
 
 ### Wasm backend の既知メモ
 

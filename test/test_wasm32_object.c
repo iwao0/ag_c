@@ -371,6 +371,26 @@ int main(void) {
                                 "double f2d(float x){return x;}\n",
                                 fp_convert_needles, 4);
 
+  const char *fp_unsigned_convert_needles[] = {
+      "f64.convert_i32_u", "i32.trunc_f64_u", "f64.convert_i64_u", "i64.trunc_f64_u"};
+  failures += run_objdump_check("fp_unsigned_convert",
+                                "int u32_to_d(void){unsigned int x; x=4294967295U; "
+                                "double d; d=x; return d>4294967294.0;} "
+                                "int d_to_u32(void){double d; d=4294967295.0; "
+                                "unsigned int x; x=d; return x==4294967295U;} "
+                                "int u64_to_d(void){unsigned long x; x=4294967296UL; "
+                                "double d; d=x; return d>4294967295.0;} "
+                                "int d_to_u64(void){double d; d=4294967296.0; "
+                                "unsigned long x; x=d; return x==4294967296UL;}\n",
+                                fp_unsigned_convert_needles, 4);
+
+  const char *fp_compare_neg_needles[] = {"f64.lt", "f64.neg", "f32.neg"};
+  failures += run_objdump_check("fp_compare_neg",
+                                "int dcmp(void){double x; x=2.0; return x<3.0;} "
+                                "int dneg(void){double x; x=-2.0; return (int)(-x);} "
+                                "int fneg(void){float x; x=3.5f; return (int)(-x);}\n",
+                                fp_compare_neg_needles, 3);
+
   const char *complex_call_needles[] = {
       "(i32, f64, f64, f64, f64) -> nil", "R_WASM_FUNCTION_INDEX_LEB", "f64.store", "f64.load"};
   failures += run_objdump_check("complex_call",

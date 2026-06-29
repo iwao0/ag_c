@@ -681,7 +681,7 @@ static void emit_const(wb_t *b, ir_type_t type, long long value) {
     wb_sleb(b, value);
   } else if (type == IR_TY_I32) {
     wb_u8(b, 0x41);
-    wb_sleb(b, value);
+    wb_sleb(b, (int32_t)(uint32_t)value);
   } else {
     obj_unsupported_msg("floating-point immediates in Wasm object mode");
   }
