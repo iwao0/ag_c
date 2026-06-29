@@ -14,8 +14,13 @@ struct Ops {
     double (*d)(double);
     float  (*f)(float);
 };
+struct Holder {
+    struct Ops ops[2];
+    struct Ops *p;
+};
 double dbl(double x){ return x * 2.0; }
 float  inc(float x){ return x + 1.0f; }
+double half(double x){ return x / 2.0; }
 
 int main(void){
     struct Ops o;
@@ -36,5 +41,18 @@ int main(void){
     assert(a == 42);
     assert(b == 41);
     assert(c == 1);
+
+    // nested struct / struct-array member 経由
+    struct Holder h;
+    h.ops[0].d = dbl;
+    h.ops[0].f = inc;
+    h.ops[1].d = half;
+    h.ops[1].f = inc;
+    h.p = &o;
+    assert((int)h.ops[0].d(21.0) == 42);
+    assert((int)h.ops[1].d(84.0) == 42);
+    assert((int)h.ops[0].f(41.0f) == 42);
+    assert((int)h.p->d(21.0) == 42);
+    assert((int)h.p->f(41.0f) == 42);
     return 0;
 }

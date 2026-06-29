@@ -4592,8 +4592,8 @@ static node_t *parse_call_postfix(node_t *callee) {
    * 呼び出し文脈なので callee は関数ポインタであり、データポインタ `double *p` の
    * pointee と取り違える心配はない。関数ポインタ変数 (ND_LVAR/ND_GVAR) に加え、
    * 関数ポインタ配列の要素 `ops[i]` (ND_DEREF、build_subscript_deref が pointee_fp_kind
-   * を設定済み) も拾う。struct メンバ `s.f` (ND_DEREF) は tag メンバ経路で戻り型
-   * fp_kind を伝播していないため未対応。 */
+   * を設定済み) や struct メンバ `s.f` / `p->f` (build_member_deref_node が funcptr
+   * メンバの戻り fp_kind を pointee_fp_kind として設定済み) も拾う。 */
   if (callee) {
     tk_float_kind_t ret_fp = psx_node_pointee_fp_kind(callee);
     node_mem_t *cm = (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
