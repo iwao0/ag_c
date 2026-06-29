@@ -1153,6 +1153,7 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->funcptr_ret_int_width = mem_info->funcptr_ret_int_width;
   deref->funcptr_ret_is_void = mem_info->funcptr_ret_is_void ? 1 : 0;
   deref->funcptr_ret_is_data_pointer = mem_info->funcptr_ret_is_pointer ? 1 : 0;
+  deref->funcptr_ret_is_complex = mem_info->funcptr_ret_is_complex ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(
       deref, mem_info->funcptr_ret_pointee_array);
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
@@ -4166,6 +4167,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (base_mem->funcptr_ret_is_data_pointer) {
         deref->funcptr_ret_is_data_pointer = 1;
       }
+      if (base_mem->funcptr_ret_is_complex) {
+        deref->funcptr_ret_is_complex = 1;
+      }
       if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(base_mem)) {
         PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
       }
@@ -4367,6 +4371,9 @@ static node_t *parse_call_postfix(node_t *callee) {
     }
     if (cm && cm->funcptr_ret_is_void) {
       node->base.is_void_call = 1;
+    }
+    if (cm && cm->funcptr_ret_is_complex) {
+      node->base.is_complex = 1;
     }
     /* 間接呼び出しで戻り型が struct/union 値 (`struct R (*op)(int)`) なら ret_struct_size を
      * 設定する。直接呼び出しは ret 表 (psx_ctx_get_function_ret_struct_size) から引くが、
@@ -4842,6 +4849,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       addr->funcptr_ret_int_width = gv->funcptr_ret_int_width;
       addr->funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
       addr->funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
+      addr->funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
       PSX_RET_POINTEE_ARRAY_COPY_FIELDS(addr, gv);
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
        * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
@@ -4944,6 +4952,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     gvar_node->mem.funcptr_ret_int_width = gv->funcptr_ret_int_width;
     gvar_node->mem.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
     gvar_node->mem.funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
+    gvar_node->mem.funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
     PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&gvar_node->mem, gv);
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
@@ -5054,6 +5063,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node->funcptr_param_int_mask = var->funcptr_param_int_mask;
   node->funcptr_ret_int_width = var->funcptr_ret_int_width;
   node->funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
+  node->funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_COPY_FIELDS(node, var);
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
@@ -5211,6 +5221,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
   as_lvar(n)->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
   as_lvar(n)->mem.funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
+  as_lvar(n)->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
   PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&as_lvar(n)->mem, var);
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
   /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を

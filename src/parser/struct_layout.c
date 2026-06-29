@@ -120,6 +120,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     unsigned char member_typedef_funcptr_ret_int_width = 0;
     int member_typedef_funcptr_ret_is_void = 0;
     int member_typedef_funcptr_ret_is_pointer = 0;
+    int member_typedef_funcptr_ret_is_complex = 0;
     psx_ret_pointee_array_t member_typedef_funcptr_ret_pointee_array = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
@@ -220,6 +221,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         }
         if (_ti.is_pointer && _ti.funcptr_ret_is_pointer) {
           member_typedef_funcptr_ret_is_pointer = 1;
+        }
+        if (_ti.is_pointer && _ti.funcptr_ret_is_complex) {
+          member_typedef_funcptr_ret_is_complex = 1;
         }
         if (_ti.is_pointer && psx_ret_pointee_array_has_dims(_ti.funcptr_ret_pointee_array)) {
           member_typedef_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
@@ -489,6 +493,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.funcptr_ret_is_pointer = head.has_func_suffix
                                            ? ((member_tag_kind != TK_EOF && member_is_ptr) ? 1 : 0)
                                            : member_typedef_funcptr_ret_is_pointer;
+          _mi.funcptr_ret_is_complex = head.has_func_suffix
+                                           ? ((psx_last_type_is_complex() &&
+                                               !_mi.funcptr_ret_is_pointer)
+                                                  ? 1
+                                                  : 0)
+                                           : member_typedef_funcptr_ret_is_complex;
           _mi.funcptr_ret_int_width = head.has_func_suffix
                                           ? psx_funcptr_ret_int_width_from_kind(
                                                 member_base_kind,

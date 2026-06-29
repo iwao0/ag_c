@@ -74,6 +74,7 @@ struct global_var_t {
   unsigned int is_variadic_funcptr : 1;
   unsigned int funcptr_ret_is_void : 1;
   unsigned int funcptr_ret_is_data_pointer : 1;
+  unsigned int funcptr_ret_is_complex : 1;
 
   // --- 2 バイト (short) ---
   unsigned short funcptr_param_fp_mask;

@@ -74,6 +74,7 @@ struct tag_member_t {
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
+  int funcptr_ret_is_complex;
   int decl_order;
   int scope_depth;
 };
@@ -121,6 +122,7 @@ struct typedef_name_t {
   int is_funcptr;
   int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
+  int funcptr_ret_is_complex;
   unsigned char funcptr_ret_int_width;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
@@ -503,6 +505,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
       m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
       m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
+      m->funcptr_ret_is_complex = desc->funcptr_ret_is_complex;
       return;
     }
   }
@@ -529,6 +532,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
   m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
   m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
+  m->funcptr_ret_is_complex = desc->funcptr_ret_is_complex;
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -716,6 +720,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->funcptr_ret_pointee_array = m->funcptr_ret_pointee_array;
   out->funcptr_ret_is_void = m->funcptr_ret_is_void;
   out->funcptr_ret_is_pointer = m->funcptr_ret_is_pointer;
+  out->funcptr_ret_is_complex = m->funcptr_ret_is_complex;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -915,6 +920,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_funcptr = info->is_funcptr;
   t->funcptr_ret_is_void = info->funcptr_ret_is_void;
   t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
+  t->funcptr_ret_is_complex = info->funcptr_ret_is_complex;
   t->funcptr_ret_int_width = info->funcptr_ret_int_width;
   t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
   t->funcptr_param_int_mask = info->funcptr_param_int_mask;
@@ -946,6 +952,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->is_funcptr == info->is_funcptr &&
                 existing->funcptr_ret_is_void == info->funcptr_ret_is_void &&
                 existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
+                existing->funcptr_ret_is_complex == info->funcptr_ret_is_complex &&
                 existing->funcptr_ret_int_width == info->funcptr_ret_int_width &&
                 existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
                 existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
@@ -1019,6 +1026,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     out->is_funcptr = t->is_funcptr;
     out->funcptr_ret_is_void = t->funcptr_ret_is_void;
     out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
+    out->funcptr_ret_is_complex = t->funcptr_ret_is_complex;
     out->funcptr_ret_int_width = t->funcptr_ret_int_width;
     out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
     out->funcptr_param_int_mask = t->funcptr_param_int_mask;

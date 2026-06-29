@@ -581,6 +581,39 @@ int main(void) {
                                 "fp=zadd; return fp!=0;}\n",
                                 complex_funcptr_assign_needles, 3);
 
+  const char *indirect_complex_return_needles[] = {
+      "__indirect_function_table", "(i32, f64, f64, f64, f64) -> nil",
+      "call_indirect", "f64.store"};
+  failures += run_objdump_check("indirect_complex_return",
+                                "double _Complex zadd(double _Complex a,double _Complex b){return a+b;} "
+                                "int main(void){double _Complex (*fp)(double _Complex,double _Complex); "
+                                "fp=zadd; double _Complex a={1.0,2.0}; double _Complex b={3.0,4.0}; "
+                                "double _Complex z=fp(a,b); return (int)__real__ z;}\n",
+                                indirect_complex_return_needles, 4);
+
+  failures += run_objdump_check("typedef_complex_funcptr_return",
+                                "typedef double _Complex (*Zop)(double _Complex,double _Complex); "
+                                "double _Complex zadd(double _Complex a,double _Complex b){return a+b;} "
+                                "int main(void){Zop fp=zadd; double _Complex a={1.0,2.0}; "
+                                "double _Complex b={3.0,4.0}; double _Complex z=fp(a,b); "
+                                "return (int)__real__ z;}\n",
+                                indirect_complex_return_needles, 4);
+
+  failures += run_objdump_check("global_complex_funcptr_return",
+                                "double _Complex zadd(double _Complex a,double _Complex b){return a+b;} "
+                                "double _Complex (*gfp)(double _Complex,double _Complex)=zadd; "
+                                "int main(void){double _Complex a={1.0,2.0}; double _Complex b={3.0,4.0}; "
+                                "double _Complex z=gfp(a,b); return (int)__real__ z;}\n",
+                                indirect_complex_return_needles, 4);
+
+  failures += run_objdump_check("struct_complex_funcptr_return",
+                                "double _Complex zadd(double _Complex a,double _Complex b){return a+b;} "
+                                "struct Ops{double _Complex (*f)(double _Complex,double _Complex);}; "
+                                "struct Ops ops={zadd}; int main(void){double _Complex a={1.0,2.0}; "
+                                "double _Complex b={3.0,4.0}; double _Complex z=ops.f(a,b); "
+                                "return (int)__real__ z;}\n",
+                                indirect_complex_return_needles, 4);
+
   const char *indirect_double_needles[] = {
       "__indirect_function_table", "(f64, f64) -> f64", "f64.add", "call_indirect"};
   failures += run_objdump_check("indirect_double",

@@ -129,6 +129,7 @@ struct node_mem_t {
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int funcptr_ret_is_void : 1;
   unsigned int funcptr_ret_is_data_pointer : 1;
+  unsigned int funcptr_ret_is_complex : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
   // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
   // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。

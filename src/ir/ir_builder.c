@@ -2029,7 +2029,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
    * 受け取れる)。 */
-  if (node->is_complex && !fn->callee) {
+  if (node->is_complex) {
     int half = (ir_type_from_node(node) == IR_TY_F32) ? 4 : 8;
     int slot = ir_func_new_vreg(ctx->f);
     ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
