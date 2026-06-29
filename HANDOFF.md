@@ -2123,24 +2123,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   ⬜ 未着手候補（複数 TU/extern、printf 書式、`_Generic` 複雑派生型）は全消化。再開時はまず
   これを見て未探索の「型 × 宣言経路 × 使用文脈」の組合せを選ぶ。下記は古い既知の未対応の抜粋。
 
-- **関数ポインタ FP 戻り値の残り**（funcptr 変数は 0b980b0 で対応済み）。callee が配列要素
-  `ops[i]` / struct メンバ `s.f` / グローバル関数ポインタの場合は戻り型 fp_kind が funcall へ
-  伝播せず戻り値を x0 で読む。subscript/メンバ/global_var_t への配線が要る。また間接呼び出しの
-  **int→fp 引数昇格**（`double(*p)(double); p(4)` の整数リテラル）は仮引数型保存が必要で未対応。
-
-- **codegen の符号性/幅の深い穴**。`unsigned long` / `unsigned char` 戻りの符号性は plain
-  `unsigned` のみ追跡（ret_token_kind が TK_LONG/TK_CHAR に潰れる）。混在幅の比較で片側が
-  i32・片側 i64 のケースは 64bit 比較になる（gen_inst_int_cmp は両 i32 のときだけ 32bit）。
-
-- **多次元・ポインタの変則形**。`*(t+1)[0]`（pointer-to-2D-array に subscript+deref 混在）は
-  コミット前から SIGSEGV（47975d4 の標準 3D 行算術とは別経路）。
+- **この節の古い抜粋は一部が修正済み**。関数ポインタ FP 戻り値 / int→fp 引数昇格は
+  `funcptr_*_fp_return`・`funcptr_*_int_to_fp_arg` 系 fixture で対応済み。`unsigned long`
+  / `unsigned char` 戻り値の符号性と混在幅比較は再検証で miscompile ではないことを確認し
+  fixture 化済み。`*(t+1)[0]` 系の pointer-to-array subscript+deref 混在も
+  `ptr_array_arith_subscript_deref` で対応済み。現状の真の索引は
+  `docs/differential_testing/bug_coverage.md` を優先すること。
 
 - **union 集約初期化の穴**。`union U arr[2]={[1]={.n=5}}` / `.u[1]={...}`（union 配列要素の
   brace init）の誤値は `union_array_brace_init` / 続き216で解消済み。local designator の
   union leaf も続き221で対応済み。
 
 - グローバルのネスト brace 配列添字 `struct O o={.items={[2]={.a=7}}}`（`{[2]=...}` 形）は
-  グローバル flat パーサの制約で E3064。`.items[2].a=` 形（designator チェーン）は 1e843b4 で対応済み。
+  `global_nested_brace_designator` で対応済み。`.items[2].a=` 形（designator チェーン）は
+  `global_designator_member_index` で対応済み。
 
 - 同梱ヘッダに `complex.h` が無く `#include <complex.h>` が E1034。`_Complex` の言語機能自体は
   動く（creal/cimag 等のライブラリ関数を使わなければ可）。
