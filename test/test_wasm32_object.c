@@ -248,6 +248,15 @@ int main(void) {
                                 "double f2d(float x){return x;}\n",
                                 fp_convert_needles, 4);
 
+  const char *complex_call_needles[] = {
+      "(i32, f64, f64, f64, f64) -> nil", "R_WASM_FUNCTION_INDEX_LEB", "f64.store", "f64.load"};
+  failures += run_objdump_check("complex_call",
+                                "double _Complex zadd(double _Complex a,double _Complex b){return a+b;} "
+                                "int main(void){double _Complex a={1.0,2.0}; "
+                                "double _Complex b={3.0,4.0}; double _Complex z=zadd(a,b); "
+                                "return (int)__real__ z;}\n",
+                                complex_call_needles, 4);
+
   const char *align_ptr_needles[] = {"i32.add", "i32.const 31", "i32.const 4294967264", "i32.and"};
   failures += run_objdump_check("align_ptr",
                                 "int main(void){_Alignas(32) int x=7; return x;}\n",

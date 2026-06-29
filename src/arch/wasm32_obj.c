@@ -785,11 +785,22 @@ static int collect_param_count(ir_func_t *f) {
   return max_idx + 1;
 }
 
+static int func_has_ret_area(ir_func_t *f) {
+  return f && (f->ret_struct_size > 0 || f->ret_area_vreg >= 0 || f->ret_complex_half > 0);
+}
+
+static int call_has_ret_area(ir_inst_t *i) {
+  return i && (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE ||
+               i->ret_complex_half > 0);
+}
+
+static ir_val_t call_ret_area(ir_inst_t *i) {
+  if (i->ret_complex_half > 0) return i->dst;
+  return i->ret_struct_area;
+}
+
 static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
-  if (f->ret_complex_half > 0) {
-    obj_unsupported_msg("aggregate or complex return in Wasm object mode");
-  }
-  int has_ret_area = f->ret_struct_size > 0 || f->ret_area_vreg >= 0;
+  int has_ret_area = func_has_ret_area(f);
   memset(sig, 0, sizeof(*sig));
   sig->nparams = collect_param_count(f) + (has_ret_area ? 1 : 0);
   sig->result = has_ret_area || f->ret_type == IR_TY_VOID ? IR_TY_VOID : wasm_ir_type(f->ret_type);
@@ -810,11 +821,8 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
 
 static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   obj_sig_t sig = {0};
-  if (i->ret_complex_half > 0) {
-    obj_unsupported_msg("aggregate or complex call in Wasm object mode");
-  }
-  int has_ret_area = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
-  if (has_ret_area && i->ret_struct_area.id == IR_VAL_NONE) {
+  int has_ret_area = call_has_ret_area(i);
+  if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
   if (i->is_variadic_call && i->nargs > i->nargs_fixed) {
@@ -933,10 +941,29 @@ static void emit_memcpy_inline(wb_t *b, ir_inst_t *i, int param_count) {
   for (; off < n; off++) emit_copy_chunk(b, i->src1, i->src2, off, IR_TY_I8, param_count);
 }
 
+static void emit_complex_ret_copy(wb_t *b, ir_inst_t *i, int param_count) {
+  ir_type_t ty = i->ret_complex_half == 4 ? IR_TY_F32 : IR_TY_F64;
+  if (i->ret_complex_half != 4 && i->ret_complex_half != 8) obj_unsupported_op(i->op);
+  emit_local_get(b, 0);
+  emit_addr_val(b, i->src1, param_count);
+  wb_u8(b, load_opcode(ty, 0));
+  emit_memarg(b, ty);
+  wb_u8(b, store_opcode(ty));
+  emit_memarg(b, ty);
+  emit_local_get(b, 0);
+  emit_const(b, IR_TY_I32, i->ret_complex_half);
+  wb_u8(b, 0x6a);
+  emit_addr_plus_const(b, i->src1, i->ret_complex_half, param_count);
+  wb_u8(b, load_opcode(ty, 0));
+  emit_memarg(b, ty);
+  wb_u8(b, store_opcode(ty));
+  emit_memarg(b, ty);
+}
+
 static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
-  int has_ret_area = f->ret_struct_size > 0 || f->ret_area_vreg >= 0;
+  int has_ret_area = func_has_ret_area(f);
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
   int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f);
@@ -1279,11 +1306,9 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             obj_sig_t csig = call_sig_from_inst(i);
             int type_index = intern_type(&csig);
             g_obj.has_indirect_call = 1;
-            if (i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) {
-              emit_addr_val(&body, i->ret_struct_area, param_count);
-            }
+            if (call_has_ret_area(i)) emit_addr_val(&body, call_ret_area(i), param_count);
             for (int a = 0; a < csig.nparams; a++) {
-              int p = a + ((i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE) ? 1 : 0);
+              int p = a + (call_has_ret_area(i) ? 1 : 0);
               if (p >= csig.nparams) break;
               emit_val(&body, i->args[a], csig.params[p], param_count);
             }
@@ -1308,10 +1333,10 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           } else {
             free(csig.params);
           }
-          int call_has_ret_area = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
-          if (call_has_ret_area) emit_addr_val(&body, i->ret_struct_area, param_count);
+          int has_call_ret_area = call_has_ret_area(i);
+          if (has_call_ret_area) emit_addr_val(&body, call_ret_area(i), param_count);
           for (int a = 0; a < i->nargs; a++) {
-            int p = a + (call_has_ret_area ? 1 : 0);
+            int p = a + (has_call_ret_area ? 1 : 0);
             if (p >= target->sig.nparams) break;
             emit_val(&body, i->args[a], target->sig.params[p], param_count);
           }
@@ -1346,7 +1371,11 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           wb_uleb(&body, 1);
           break;
         case IR_RET:
-          if (i->src1.id != IR_VAL_NONE) emit_val(&body, i->src1, of->sig.result, param_count);
+          if (i->ret_complex_half > 0) {
+            emit_complex_ret_copy(&body, i, param_count);
+          } else if (i->src1.id != IR_VAL_NONE) {
+            emit_val(&body, i->src1, of->sig.result, param_count);
+          }
           if (has_stack_restore) {
             emit_local_get(&body, old_sp_local);
             emit_stack_global_set(&body, of, stack_pointer);
