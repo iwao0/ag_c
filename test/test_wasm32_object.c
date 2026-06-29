@@ -1272,6 +1272,24 @@ int main(void) {
                                 "int (*ops[2])(int)={add1,add2}; int main(void){return ops[1](40);}\n",
                                 global_funcptr_array_call_needles, 4);
 
+  const char *global_union_funcptr_array_member_call_needles[] = {
+      "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>", "<add2>"};
+  failures += run_objdump_check("global_union_funcptr_array_member_call",
+                                "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                                "union Ops{int (*f[2])(int); long raw;}; union Ops ops={.f[1]=add2}; "
+                                "int main(void){return ops.f[1](40);}\n",
+                                global_union_funcptr_array_member_call_needles, 5);
+
+  const char *static_union_funcptr_array_member_call_needles[] = {
+      "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<main.ops.",
+      "binding=local", "<add2>"};
+  failures += run_objdump_check("static_union_funcptr_array_member_call",
+                                "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                                "union Ops{int (*f[2])(int); long raw;}; "
+                                "int main(void){static union Ops ops={.f[1]=add2}; "
+                                "return ops.f[1](40);}\n",
+                                static_union_funcptr_array_member_call_needles, 6);
+
   const char *struct_funcptr_offset_call_needles[] = {
       "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
   failures += run_objdump_check("struct_funcptr_offset_call",
