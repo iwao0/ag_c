@@ -440,6 +440,15 @@ int main(void) {
                        "struct S{double d; int x;}; union U{struct S s; long raw;}; "
                        "union U g={.s={2.5,4}}; int main(){return (int)g.s.d+g.s.x;}\n",
                        global_union_struct_fp, 2, 6);
+  const char *global_union_funcptr_array_member_call[] = {"(data (i32.const", "(table 2 funcref)",
+                                                            "(elem (i32.const 0) $add1 $add2",
+                                                            "call_indirect"};
+  failures += run_case("global_union_funcptr_array_member_call",
+                       "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                       "union Ops{int (*f[2])(int); long raw;}; union Ops ops={.f[1]=add2}; "
+                       "int (*q)(int)=add1; "
+                       "int main(){return ops.f[1](40)+q(0)-1;}\n",
+                       global_union_funcptr_array_member_call, 4, 42);
   const char *global_struct_union[] = {"(data (i32.const", "i32.load"};
   failures += run_case("global_struct_union",
                        "union U{int i; char c;}; struct S{int tag; union U u;}; "
@@ -639,6 +648,15 @@ int main(void) {
                        "struct Ops{int (*f[2])(int);}; struct Ops ops={{add1,add2}}; "
                        "int main(){return ops.f[1](40);}\n",
                        struct_funcptr_array_member_call, 4, 42);
+  const char *static_union_funcptr_array_member_call[] = {"(data (i32.const", "(table 2 funcref)",
+                                                            "(elem (i32.const 0) $add1 $add2",
+                                                            "call_indirect"};
+  failures += run_case("static_union_funcptr_array_member_call",
+                       "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                       "union Ops{int (*f[2])(int); long raw;}; "
+                       "int main(){static union Ops ops={.f[1]=add2}; "
+                       "static int (*q)(int)=add1; return ops.f[1](40)+q(0)-1;}\n",
+                       static_union_funcptr_array_member_call, 4, 42);
   const char *struct_funcptr_array_member_store_call[] = {"(table 2 funcref)", "$add1 $add2",
                                                            "call_indirect"};
   failures += run_case("struct_funcptr_array_member_store_call",

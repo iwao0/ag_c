@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き202: Wasm object global union array-member fixtures）
+最終更新: 2026-06-29（続き203: Wasm backend union funcptr array-member fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -657,6 +657,12 @@
   extern variadic funcptr member `union Ops ops={.p[1]=(Printer)&fprintf}` で
   `R_WASM_TABLE_INDEX_I32`、`(i32, i32) -> i32`、`call_indirect` を確認。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き203: **Wasm backend union funcptr array-member fixtures**。
+  WAT backend の実行値 fixture として、global/static local union の
+  `union Ops{int (*f[2])(int); ...}; ... {.f[1]=add2}` を追加。
+  `add1` も別 function pointer 経由で table に入れ、`.f[1]` がゼロでも通る弱い fixture にしない形で
+  `call_indirect` と `main() == 42` を確認。
+  検証: `make -j4 build/test_wasm32_backend && ./build/test_wasm32_backend` green。
 
 ### Wasm backend の既知メモ
 
