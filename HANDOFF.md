@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き201: Wasm union array-member initializer emission）
+最終更新: 2026-06-29（続き202: Wasm object global union array-member fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -651,6 +651,12 @@
   `static union Ops ops={.p[1]=(Printer)&fprintf}`。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、
   `./build/test_wasm32_backend && ./build/test_wasm32_e2e` green。
+- 続き202: **Wasm object global union array-member fixtures**。
+  続き201 の修正が file-scope global union にも効くことを fixture 化。
+  `union U u={.p[1]=&target}` で `R_WASM_MEMORY_ADDR_I32` が `<u>` data segment に出ること、
+  extern variadic funcptr member `union Ops ops={.p[1]=(Printer)&fprintf}` で
+  `R_WASM_TABLE_INDEX_I32`、`(i32, i32) -> i32`、`call_indirect` を確認。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ
 

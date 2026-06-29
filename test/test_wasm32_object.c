@@ -572,6 +572,13 @@ int main(void) {
                                 "int main(void){return u.i;}\n",
                                 union_global_needles, 5);
 
+  const char *union_ptr_array_member_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<u>", "<target>"};
+  failures += run_objdump_check("union_ptr_array_member_designated",
+                                "int target=5; union U{int *p[2]; long raw;}; "
+                                "union U u={.p[1]=&target}; int main(void){return 0;}\n",
+                                union_ptr_array_member_needles, 4);
+
   const char *union_fp_array_needles[] = {
       "Data[1]", "<g>", "0000 0000 0000 f43f 0000 0000 0000 0640", "f64.load",
       "i32.add"};
@@ -683,6 +690,19 @@ int main(void) {
                                        "Printer ops[2]={[1]=(Printer)&fprintf}; "
                                        "int main(void){return ops[1](stdout, \"x\");}\n",
                                        extern_funcptr_array_needles, 5,
+                                       extern_funcptr_rejects, 1);
+
+  const char *extern_union_funcptr_array_member_needles[] = {
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "call_indirect", "<ops>"};
+  failures += run_objdump_check_absent("extern_union_funcptr_array_member_designated_cast",
+                                       "typedef struct FILE FILE; extern FILE *stdout; "
+                                       "int fprintf(FILE*, const char*, ...); "
+                                       "typedef int (*Printer)(FILE*, const char*, ...); "
+                                       "union Ops{Printer p[2]; long raw;}; "
+                                       "union Ops ops={.p[1]=(Printer)&fprintf}; "
+                                       "int main(void){return ops.p[1](stdout, \"x\");}\n",
+                                       extern_union_funcptr_array_member_needles, 6,
                                        extern_funcptr_rejects, 1);
 
   const char *extern_local_funcptr_needles[] = {
