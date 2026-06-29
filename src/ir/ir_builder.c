@@ -431,6 +431,7 @@ static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node);
 
 /* build_stmt の case 別ヘルパ群 (build_expr 分割と同パターン)。 */
+static void build_stmt(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_block(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_if(ir_build_ctx_t *ctx, node_t *node);
@@ -748,6 +749,18 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
   }
 }
 
+static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *block,
+                                                node_t *value) {
+  if (!block || block->kind != ND_BLOCK) return;
+  node_block_t *b = (node_block_t *)block;
+  if (!b->body) return;
+  for (int i = 0; b->body[i]; i++) {
+    if (b->body[i] == value) continue;
+    build_stmt(ctx, b->body[i]);
+    if (ctx->failed) return;
+  }
+}
+
 static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
                                             const node_mem_t *expected_sig) {
   if (!node || ctx->failed) return ir_val_none();
@@ -764,6 +777,10 @@ static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
                        : ir_val_none();
     case ND_TERNARY:
       return build_node_ternary_with_sig(ctx, node, expected_sig);
+    case ND_STMT_EXPR:
+      build_stmt_expr_block_without_value(ctx, node->lhs, node->rhs);
+      if (ctx->failed) return ir_val_none();
+      return build_expr_with_funcptr_sig(ctx, node->rhs, expected_sig);
     default:
       return build_expr(ctx, node);
   }

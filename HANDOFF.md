@@ -537,6 +537,12 @@
   `build_node_ternary` を通常経路と expected funcptr signature 付き経路に分け、return
   funcptr の期待型がある場合だけ then/else と comma rhs の `ND_FUNCREF` へ署名を渡す。
   追加 fixture: `extern_funcptr_return_ternary`、`extern_funcptr_return_comma`。
+- 続き188: **Wasm object return funcptr signature through direct declarator / statement expression**。
+  `int (*get(void))(FILE*, const char*, ...)` の direct declarator return と、
+  `return ({ &fprintf; });` の statement expression return を object fixture に追加。
+  statement expression は block 内の値文が通常評価で先に fallback signature を作っていたため、
+  expected funcptr signature 付き経路では値文だけ skip して最後に期待型付きで評価するよう修正。
+  追加 fixture: `extern_funcptr_return_direct_decl`、`extern_funcptr_return_stmt_expr`。
 
 ### Wasm backend の既知メモ
 
