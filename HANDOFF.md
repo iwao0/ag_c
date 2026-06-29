@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き204: Wasm object union funcptr array-member fixtures）
+最終更新: 2026-06-29（続き205: Wasm object optional indirect-data link fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -667,6 +667,12 @@
   object 側にも global/static local union の `int (*f[2])(int)` member initializer fixture を追加。
   `.f[1]=add2` が data segment 内の `R_WASM_TABLE_INDEX_I32` relocation になり、
   static local 版では `<main.ops...>` が local binding の data symbol になることを確認する。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
+- 続き205: **Wasm object optional indirect-data link fixture**。
+  `wasm-ld` / `wasm-validate` / `wasm-interp` がある環境だけ走る optional link test に、
+  data segment 内の `R_WASM_TABLE_INDEX_I32` をリンク後に実行する
+  `union Ops{int (*f[2])(int); ...}; union Ops ops={.f[1]=add2}; main -> ops.f[1](40)` を追加。
+  このローカル環境では `wasm-ld` が無いため optional 実行部は skip。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green。
 
 ### Wasm backend の既知メモ

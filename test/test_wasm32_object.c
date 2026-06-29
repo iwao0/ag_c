@@ -214,6 +214,28 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked static wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/indirect_data.c",
+                 "int add1(int x){return x+1;} int add2(int x){return x+2;} "
+                 "union Ops{int (*f[2])(int); long raw;}; union Ops ops={.f[1]=add2}; "
+                 "int main(void){return ops.f[1](40);}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/indirect_data.o "
+              "build/wasm32_obj/indirect_data.c",
+              "indirect_data.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o build/wasm32_obj/linked_indirect_data.wasm "
+              "build/wasm32_obj/indirect_data.o",
+              "wasm-ld indirect data") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_indirect_data.wasm",
+              "wasm-validate indirect data") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_indirect_data.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_indirect_data.interp",
+              "wasm-interp indirect data") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_indirect_data.interp", buf, sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked indirect data wasm returned unexpected result\n");
+    return 1;
+  }
   return 0;
 }
 
