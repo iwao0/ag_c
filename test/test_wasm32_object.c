@@ -573,6 +573,14 @@ int main(void) {
                                 "int main(void){int (*p)(void)=one; return p();}\n",
                                 local_indirect_needles, 5);
 
+  const char *complex_funcptr_assign_needles[] = {
+      "R_WASM_TABLE_INDEX_SLEB", "<zadd>", "i32.store"};
+  failures += run_objdump_check("complex_funcptr_assign",
+                                "double _Complex zadd(double _Complex a,double _Complex b){return a+b;} "
+                                "int main(void){double _Complex (*fp)(double _Complex,double _Complex); "
+                                "fp=zadd; return fp!=0;}\n",
+                                complex_funcptr_assign_needles, 3);
+
   const char *indirect_double_needles[] = {
       "__indirect_function_table", "(f64, f64) -> f64", "f64.add", "call_indirect"};
   failures += run_objdump_check("indirect_double",

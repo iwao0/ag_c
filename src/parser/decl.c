@@ -4547,7 +4547,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->pointee_fp_kind = decl_fp_kind;
     }
     var->is_unsigned = decl_is_unsigned;
-    if (decl_is_complex) var->is_complex = 1;
+    if (decl_is_complex && !is_pointer) var->is_complex = 1;
     if (decl_is_atomic) var->is_atomic = 1;
     /* _Generic で long/long long, char/signed char を区別するための型識別 (非ポインタの
      * スカラ変数のみ。サイズは同じなので別フラグで持つ)。 */

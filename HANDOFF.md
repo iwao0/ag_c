@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き171: Wasm object indirect aggregate return fixture）
+最終更新: 2026-06-29（続き172: complex funcptr local assignment fix）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -441,8 +441,14 @@
 - 続き171: **Wasm object indirect aggregate return fixture**。
   object mode で `struct Big (*fp)(int)` の indirect call + hidden return area が通ることを fixture 化。
   `__indirect_function_table`、`(i32, i64) -> nil` type、`call_indirect`、`i64.store` を objdump で確認。
-  `_Complex` return の関数ポインタ代入は frontend IR が関数アドレスを `i2f` する別件が残るため、
+  `_Complex` return の関数ポインタ呼び出しは hidden return metadata 伝播が別件として残るため、
   object fixture 化は保留。
+- 続き172: **complex-return function pointer local assignment**。
+  `double _Complex (*fp)(...)` の local 関数ポインタ変数に `decl_is_complex` をそのまま付けていたため、
+  `fp=zadd` が関数アドレスを complex scalar と見なし、IR に `i2f` を出して object mode が E4008 になっていた。
+  pointer declarator では object 自体の `is_complex` を立てないようにし、`complex_funcptr_assign` fixture で
+  `R_WASM_TABLE_INDEX_SLEB` / `<zadd>` / `i32.store` を確認。間接 `_Complex` call の hidden return metadata
+  伝播はまだ未対応。
 
 ### Wasm backend の既知メモ
 
@@ -466,6 +472,8 @@
   bitfield aggregate の基本形に対応。
   extra vararg を持つ variadic call の object 化は未対応。aggregate call は hidden return area
   を持つ direct/indirect call の基本形まで対応。complex call は direct hidden return area まで fixture 済み。
+  complex-return function pointer の代入は対応済みだが、indirect `_Complex` call の hidden return metadata
+  伝播は未対応。
   variadic call は可変引数 0 個のみ対応。
   これらに当たる IR は E4008 で停止させ、誤った relocatable object を出さない方針。
 - 残る通常 fixture (should_reject を除く) の Wasm E2E 未収録は **0 件**。
