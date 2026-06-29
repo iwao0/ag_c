@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き215: 多次元/typedef 配列 compound literal の address stride）
+最終更新: 2026-06-29（続き216: struct メンバ union 配列の brace/designator 初期化）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -16,6 +16,11 @@
   E3064。さらに `&` 後の pointer-to-array stride が 1 段シフトされず、内側 subscript の stride が落ちる穴があった。
   cast type から dims を渡し、匿名 lvar/global に outer/mid/extra stride を設定、`&` で deref/inner/next をシフト。
   `compound_literal_array_addr_sizeof.c` に raw 2D、typedef 1D/2D、struct 配列 typedef を追加。
+- 続き216: **struct メンバ union 配列の brace/designator 初期化**。
+  `struct Box { union U u[3]; }; struct Box b = {.u={[1]={.n=7}}};` で、union 配列要素を
+  `parse_struct_initializer` に投げ、`.n=7` 後に未指定 union メンバ `.l=0` が同じ offset を上書きしていた。
+  `parse_member_initializer` の struct/union 配列要素分岐を union なら `parse_union_initializer` へ委譲。
+  `union_array_brace_init.c` に struct メンバ版を追加。
 - **c-testsuite**: `bash scripts/run_c_testsuite.sh --list-fail` で 220 件中 **218 pass + 2 unsupported skip**。
 - 続き97: **00219** (`_Generic` の array association と関数 designator→function pointer decay)。
 - 続き98: 認識済みの未対応 GNU 拡張は `W3024` で「このコンパイラでは使用できない」旨を警告し、
@@ -2095,7 +2100,8 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   コミット前から SIGSEGV（47975d4 の標準 3D 行算術とは別経路）。
 
 - **union 集約初期化の穴**。`union U arr[2]={[1]={.n=5}}` / `.u[1]={...}`（union 配列要素の
-  brace init）が誤値。local designator の union leaf は 7e39081 で意図的に E3064 のまま除外。
+  brace init）の誤値は `union_array_brace_init` / 続き216で解消済み。local designator の union leaf は
+  7e39081 で意図的に E3064 のまま除外。
 
 - グローバルのネスト brace 配列添字 `struct O o={.items={[2]={.a=7}}}`（`{[2]=...}` 形）は
   グローバル flat パーサの制約で E3064。`.items[2].a=` 形（designator チェーン）は 1e843b4 で対応済み。

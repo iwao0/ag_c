@@ -2,11 +2,16 @@
  * コンパイルは通るが値が格納されず a[1].n が 0 に化けていた。parse_array_elem_struct_brace_init
  * が配列要素を常に parse_struct_initializer へ投げており、union 要素の `.n=5` を
  * struct レイアウトで誤解決して代入を出していなかった。要素が union のときは
- * parse_union_initializer へ委譲して直す。 */
+ * parse_union_initializer へ委譲して直す。
+ *
+ * 続き: struct メンバの union 配列 (`struct Box { union U u[3]; }`) も同じく
+ * parse_struct_initializer に投げていたため、`.n=7` の後に未指定 union メンバ `.l=0`
+ * が同じ offset を上書きし、b.u[1].n が 0 に戻っていた。 */
 #include <assert.h>
 
 union U { int n; long l; };
 union V { int i; double d; char c[8]; };
+struct Box { union U u[3]; };
 
 int main(void){
   /* designator 要素 */
@@ -33,5 +38,10 @@ int main(void){
   /* designator と positional の混在 */
   union U f[3] = {{.n = 1}, [2] = {.n = 3}};
   assert(f[0].n == 1 && f[1].n == 0 && f[2].n == 3);
+
+  struct Box g = {.u = {[1] = {.n = 7}, [2] = {.l = 11}}};
+  assert(g.u[0].n == 0);
+  assert(g.u[1].n == 7);
+  assert(g.u[2].l == 11);
   return 0;
 }

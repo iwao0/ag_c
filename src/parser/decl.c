@@ -1532,7 +1532,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                     flat = row * inner_len + k;
                   }
                   if (is_struct_tag_elem && curtok()->kind == TK_LBRACE) {
-                    /* struct 要素 `{...}`: parse_struct_initializer で 1 slot ぶん解釈する。
+                    /* struct/union 要素 `{...}`: 1 slot ぶん解釈する。
                      * nested lvar の offset / size / tag を 1 要素に絞ることで designator
                      * (`.val=99`) も positional もそのまま解決できる。 */
                     lvar_t nested = {0};
@@ -1542,7 +1542,9 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                     nested.tag_kind = member_tag_kind;
                     nested.tag_name = member_tag_name;
                     nested.tag_len = member_tag_len;
-                    node_t *snode = parse_struct_initializer(&nested);
+                    node_t *snode = (member_tag_kind == TK_UNION)
+                                       ? parse_union_initializer(&nested)
+                                       : parse_struct_initializer(&nested);
                     if (snode) {
                       if (!init_chain) init_chain = snode;
                       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, snode);
@@ -1622,8 +1624,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           if ((member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
               !member_is_tag_pointer) {
             /* struct/union 配列メンバの 1 要素 `{...}` を、要素 target_idx を target と
-             * した struct 初期化として処理する (`.pts={{1,2},{3,4}}` / `[k]={.x=1}`)。
-             * parse_struct_initializer が designator も positional も両形に対応。 */
+             * して処理する (`.pts={{1,2},{3,4}}` / `[k]={.x=1}`)。 */
             lvar_t nested = {0};
             nested.offset = owner->offset + member_offset + target_idx * elem_size;
             nested.size = elem_size;
@@ -1631,7 +1632,9 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             nested.tag_kind = member_tag_kind;
             nested.tag_name = member_tag_name;
             nested.tag_len = member_tag_len;
-            init_node = parse_struct_initializer(&nested);
+            init_node = (member_tag_kind == TK_UNION)
+                          ? parse_union_initializer(&nested)
+                          : parse_struct_initializer(&nested);
           } else {
             node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
             node_mem_t *assign_node = build_member_array_elem_assign_node(lhs,
