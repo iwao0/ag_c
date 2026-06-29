@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-29（続き191: Wasm object aggregate casted extern funcptr initializers）
+最終更新: 2026-06-29（続き192: Wasm object designator casted extern funcptr fixtures）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -567,6 +567,15 @@
   `(i32, i32) -> i32` / `R_WASM_TABLE_INDEX_*` を確認、fallback `(i64, i64) -> i32` を reject。
   検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、
   `make test` green、`make wasm32-object-fixture-scan` = 1097/1097 compile + validate green。
+- 続き192: **Wasm object designator casted extern funcptr fixtures**。
+  続き191 の cast 付き extern funcptr coverage を designator 経路へ拡張。既存実装で通ることを
+  確認し、回帰検出用 fixture として `extern_funcptr_array_designated_cast`、
+  `extern_struct_funcptr_member_designated_cast`、
+  `extern_struct_funcptr_array_member_designated_cast`、
+  `extern_nested_struct_funcptr_member_designated_cast` を追加。
+  `[1]` / `.p` / `.p[1]` / `.ops.p` の global aggregate designator で
+  `(i32, i32) -> i32` と `R_WASM_TABLE_INDEX_I32` を確認し、fallback `(i64, i64) -> i32` を reject。
+  検証: `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green、`make test` green。
 
 ### Wasm backend の既知メモ
 
