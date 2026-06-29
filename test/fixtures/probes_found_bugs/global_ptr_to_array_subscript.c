@@ -13,8 +13,8 @@
 //  try_build_global_var_node のスカラ分岐が outer_stride/inner_deref_size を node に反映。
 // 修正前: 誤値 / SIGSEGV
 // 期待: exit=42
-// 補足: double の `(*dp)[j]` (単項 deref + subscript 形) の fp load は別経路
-//      (build_unary_deref_node) の未対応で本修正外。`dp[i][j]` 形は動く。
+// 補足: double の `(*dp)[j]` (単項 deref + subscript 形) の fp load は別 fixture
+//      ptr_to_array_deref_fp.c で対応済み。
 #include <assert.h>
 int    irows[2][3] = {{1, 2, 3}, {4, 5, 6}};
 double drows[2][2] = {{1.5, 2.5}, {3.5, 4.5}};

@@ -17,7 +17,8 @@
 // 追加し、`*s.p` 構築時に新 deref の deref_size を elem に再設定 → subscript_base_address_of が
 // lhs (= s.p) を返し、`(*s.p)[i]` がポインタ値 load + elem ストライド add で解決される。
 //
-// `int (*p[M])[N]` (parens 内に `[M]` あり、array-of-pointer-to-array) は別形で現状は未対応。
+// `int (*p[M])[N]` (parens 内に `[M]` あり、array-of-pointer-to-array) は別 fixture
+// struct_array_of_ptr_to_array_member.c で対応済み。
 #include <assert.h>
 #include <stddef.h>
 

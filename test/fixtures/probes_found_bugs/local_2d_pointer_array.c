@@ -8,7 +8,7 @@
  * 修正: fp/unsigned と同じ中間行判定 (inner_ds>0 && es>inner_ds) で 1 段目を中間行と認識し、
  * pointer-element 化を最終次元まで遅延しつつ pql/bds を carry する。単段 `int *arr[N]`
  * (inner_ds==0) や genuine 多段ポインタ `int **pp` (es==inner_ds) は従来どおり。
- * funcptr ローカル `int(*t[2][2])(void)` は別問題 (paren array stride + ネスト brace init) で未対応。 */
+ * funcptr ローカル `int(*t[2][2])(void)` は別 fixture local_2d_funcptr_array.c で対応済み。 */
 #include <assert.h>
 
 int main(void) {

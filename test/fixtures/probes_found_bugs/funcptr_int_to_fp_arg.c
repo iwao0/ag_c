@@ -4,8 +4,8 @@
  * 持たず、int 3 が整数レジスタのまま渡って d0 にゴミが入っていた。宣言時に
  * skip_func_params で各仮引数の fp 種別を funcptr_param_fp_mask に記録し、
  * parse_call_postfix で fp 仮引数の実引数を wrap_to_fp (ND_INT_TO_FP) でラップする。
- * （typedef 経由 funcptr `typedef double (*F)(double)` は typedef 側に mask を持たせる
- *   別経路が必要で本コミットでは未対応。直書き funcptr のみ。） */
+ * typedef 経由 funcptr `typedef double (*F)(double)` は別 fixture
+ * typedef_funcptr_int_to_fp_arg.c で対応済み。 */
 #include <assert.h>
 
 static double did(double x){ return x; }
