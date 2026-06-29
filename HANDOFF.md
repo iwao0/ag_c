@@ -2138,8 +2138,8 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `global_nested_brace_designator` で対応済み。`.items[2].a=` 形（designator チェーン）は
   `global_designator_member_index` で対応済み。
 
-- 同梱ヘッダに `complex.h` が無く `#include <complex.h>` が E1034。`_Complex` の言語機能自体は
-  動く（creal/cimag 等のライブラリ関数を使わなければ可）。
+- `complex.h` は同梱済み (`include/complex.h`)。`stdheader/complex_ops.c` で
+  `creal` / `cimag` / `cabs` / 複素初等関数の基本動作を確認済み。
 
 ## バグではない（仕様 / 既知の差異、追わない）
 - statement expression `({...})`（GNU 拡張、非標準。プロジェクトは C11 準拠）。
