@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き253: Wasm object global string offset data relocation fixture）
+最終更新: 2026-06-30（続き254: Wasm object global struct string offset data relocation fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2631,5 +2631,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `const char *p="abc"+1` と `const char *items[2]={"de"+1,"fg"}` を
   `global_string_offset_data_reloc` fixture で固定し、`R_WASM_MEMORY_ADDR_I32` の
   `<.LC*>+0x1` 表示まで objdump で確認する。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
+
+### このセッション（続き254）: Wasm object global struct string offset data relocation fixture
+- Wasm object の file-scope struct initializer で、pointer メンバの文字列リテラル + offset が
+  `reloc.DATA` の addend 付き relocation になることを追加確認。
+  `struct S s={"abc"+2,7,"de"+1};` を `global_struct_string_offset_data_reloc`
+  fixture で固定し、struct data segment と `<.LC0>+0x2` / `<.LC1>+0x1` を objdump で確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
