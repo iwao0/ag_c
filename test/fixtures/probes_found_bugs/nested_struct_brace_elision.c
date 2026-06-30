@@ -14,6 +14,9 @@ struct B   { struct A a; int z; };
 struct C   { struct B b; int w; };
 struct Arr { int a[2]; };
 struct AnonArr { struct { int a[2]; }; };
+struct DoubleAnonArr { struct { struct { int a[2]; }; }; };
+struct UnionAnonArr { union { int a[2]; }; };
+struct BoxedAnonArr { struct AnonArr h[2]; };
 
 int main(void) {
     // 1 段ネスト brace 省略
@@ -45,9 +48,15 @@ int main(void) {
     struct AnonArr arr = {{{11, 12}}};
     struct AnonArr arr_designated = {{{[1] = 21, [0] = 19}}};
     struct Arr arr2 = {{13, 14}};
+    struct DoubleAnonArr deep = {{{{5, 9}}}};
+    struct UnionAnonArr uni = {{{31, 32}}};
+    struct BoxedAnonArr boxed = {{{{{41, 42}}}, {{{43, 44}}}}};
     assert(arr.a[0] == 11 && arr.a[1] == 12);
     assert(arr_designated.a[0] == 19 && arr_designated.a[1] == 21);
     assert(arr2.a[0] == 13 && arr2.a[1] == 14);
+    assert(deep.a[0] == 5 && deep.a[1] == 9);
+    assert(uni.a[0] == 31 && uni.a[1] == 32);
+    assert(boxed.h[0].a[1] == 42 && boxed.h[1].a[0] == 43);
 
     assert(o.i.p == 1); assert(o.i.q == 2); assert(o.z == 3); assert(c.w == 4); assert(o3.i.p == 7); assert(o4.z == 10); return 0;  // 1+2+3+4+7+10+15 = 42
 }

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き263: anonymous aggregate brace around array member）
+最終更新: 2026-06-30（続き264: nested anonymous aggregate array brace）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -60,6 +60,12 @@
   を持つときは配列全体の wrapper として平坦化する分岐を追加。`file_scope_ptr_from_array_compound.c`
   に匿名 `RowPtr rows[2]` と `[i]=` designator、`nested_struct_brace_elision.c` に匿名 `int a[2]`
   と `[i]=` designator を追加。
+- 続き264: **2 段匿名 aggregate wrapper 越しの配列メンバ brace 初期化**。
+  `struct H { struct { struct { int a[2]; }; }; }; struct H h={{{{5,9}}}};` が E3064。
+  続き263 の wrapper 判定は内側 comma が top-level にあるケースだけを拾っていたため、
+  もう 1 段匿名 wrapper が重なると `{5,9}` を scalar 要素 1 個の brace として読んでいた。
+  `parse_scalar_array_member_brace_body` で配列全体 wrapper を再帰 unwrap するよう修正。
+  `nested_struct_brace_elision.c` に二重匿名 struct、匿名 union、struct 配列要素内の匿名 wrapper を追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

@@ -1474,7 +1474,8 @@ static bool brace_starts_whole_array_initializer(token_t *t) {
       bracket_depth++;
     } else if (p->kind == TK_RBRACKET) {
       if (bracket_depth > 0) bracket_depth--;
-    } else if (p->kind == TK_COMMA && brace_depth == 1 &&
+    } else if (p->kind == TK_COMMA &&
+               (brace_depth == 1 || (brace_depth == 2 && t->next && t->next->kind == TK_LBRACE)) &&
                paren_depth == 0 && bracket_depth == 0) {
       return true;
     }
@@ -1490,6 +1491,13 @@ static node_t *parse_scalar_array_member_brace_body(lvar_t *owner, int member_of
   node_t *init_chain = NULL;
   int idx = 0;
   if (!tk_consume('}')) {
+    if (brace_starts_whole_array_initializer(curtok())) {
+      node_t *chain = parse_scalar_array_member_brace_body(owner, member_offset, elem_size,
+                                                          array_len, member_fp_kind,
+                                                          member_is_bool);
+      tk_expect('}');
+      return chain;
+    }
     for (;;) {
       int target_idx = idx;
       if (tk_consume('[')) {
