@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き261: pointer-to-array element member/param contexts）
+最終更新: 2026-06-30（続き262: typedef pointer-to-array array member）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -46,6 +46,12 @@
   8B と trailing `[3]` の pointee 配列幅 12B が混同されていた。member/param 登録で
   `ptr_array_pointee_bytes` と slot stride を分離し、subscript 結果の pointer load は `type_size=8`
   に固定。`file_scope_ptr_from_array_compound.c` に global/local struct holder と flat/nested param を追加。
+- 続き262: **typedef pointer-to-array の配列メンバ**。
+  `typedef int (*RowPtr)[3]; struct H { RowPtr rows[2]; };` の `h.rows[0][1][2]` が ARM64 で
+  assertion fail。`RowPtr row` と同じ outer_stride 表現に寄せてしまい、配列要素が
+  pointer slot である情報 (`ptr_array_pointee_bytes`) が落ちていた。struct layout で
+  `member_array_len > 0` の typedef pointer-to-array を array-of-pointer-to-array として登録し、
+  fixture に global/local `RowPtr rows[2]` を追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

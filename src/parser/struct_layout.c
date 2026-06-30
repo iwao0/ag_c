@@ -558,7 +558,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                                           ptr_array_pointee_bytes);
         }
         if (has_member_name && member_typedef_ptr_array_pointee_bytes > 0) {
-          if (head.is_ptr) {
+          if (head.is_ptr || member_array_len > 0) {
             psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
                                                             member_name, member_len,
                                                             member_typedef_ptr_array_pointee_bytes);
