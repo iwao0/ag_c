@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き246: Wasm WAT fixture scan target）
+最終更新: 2026-06-30（続き247: Wasm scan aggregate target）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -12,6 +12,7 @@
   （multi-TU link fixture 1 件は skip）、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `make wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**、
+  `make wasm32-scans` = **上記 4 scan green**、
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
@@ -2572,3 +2573,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - focused 確認:
   - `make wasm32-wat-fixture-scan` = 1110 pass / 0 fail / 1 skip、
     `wat2wasm=1`, `wasm-validate=1`
+
+### このセッション（続き247）: Wasm scan aggregate target
+- 分割されていた Wasm validation scan を一括実行できるように、`Makefile` に
+  `wasm32-scans` target を追加。
+- 実行内容:
+  - `wasm32-object-fixture-scan`
+  - `wasm32-wat-fixture-scan`
+  - `wasm32-object-c-testsuite-scan`
+  - `wasm32-wat-c-testsuite-scan`
+- focused 確認:
+  - `make wasm32-scans` green
