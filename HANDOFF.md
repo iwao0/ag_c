@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き286: Wasm object-link import/params run skip 解消）
+最終更新: 2026-07-01（続き287: snprintf runtime の global relocation 化）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -3256,8 +3256,8 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `__ag_va_arg_area` 8 byte slot から可変長引数を読み、fixture が使う `%d-%d` / `%zu` / `%d`
   を decimal 文字列として buffer に書くようにした。
 - 現時点の制約:
-  - `__ag_va_arg_area` global index は ag_c 生成 object の現在の global 並びに合わせて読む。
-    汎用 linker runtime としては、後で runtime body 側にも global relocation を持たせるのが望ましい。
+  - 続き287 で `__ag_va_arg_area` global index の固定読みは解消済み。runtime body 側にも
+    `R_WASM_GLOBAL_INDEX_LEB` relocation を持たせる。
   - format 対応は上記 3 種だけ。flags/precision/幅/負数/浮動小数は未対応。
 - object-link fixture scan の `Skip run imports` は 4 から 2 に減り、実行件数は 1110 から 1112 に増えた。
 - 確認:
@@ -3349,3 +3349,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check`
 - 現時点で object-link fixture と object-link c-testsuite の run skip は import/params ともに 0。
   残り skip は suite 側の既知 unsupported だけ。
+
+### このセッション（続き287）: snprintf runtime の __ag_va_arg_area global relocation 化
+- `ag_wasm_link` の synthetic `snprintf` runtime は、続き283 時点では `__ag_va_arg_area` を
+  ag_c 生成 object の現在の global index (=1) 前提で `global.get 1` として読んでいた。
+  これは fixture では通るが、global の最終順序が変わると壊れる。
+- runtime synthetic object に undefined global symbol `__ag_va_arg_area` と
+  `R_WASM_GLOBAL_INDEX_LEB` code relocation を追加し、`snprintf` body の `global.get` immediate を
+  linker の global 解決で patch するようにした。
+- synthetic runtime function に疑似 `code_payload_off` を割り当て、既存 object relocation patcher に
+  そのまま乗せる。これで runtime body も通常 object と同じ global relocation 経路を通る。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` =
+    1114 pass / 0 fail / 1 skip、validate 1114、run 1114、skip run imports 0
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 218、skip run imports 0、skip run params 0
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 218、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`

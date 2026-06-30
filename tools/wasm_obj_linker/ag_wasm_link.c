@@ -239,6 +239,17 @@ static void buf_uleb(buf_t *b, uint32_t v) {
   } while (v);
 }
 
+static size_t buf_uleb5(buf_t *b, uint32_t v) {
+  size_t off = b->len;
+  for (int i = 0; i < 5; i++) {
+    unsigned char c = (unsigned char)(v & 0x7f);
+    v >>= 7;
+    if (i != 4) c |= 0x80;
+    buf_u8(b, c);
+  }
+  return off;
+}
+
 static void buf_sleb_i32(buf_t *b, int32_t v) {
   int more = 1;
   while (more) {
@@ -1678,7 +1689,7 @@ static void emit_snprintf_return_count(buf_t *b, type_t *type, uint32_t out, uin
   buf_u8(b, 0x0f);                  /* return */
 }
 
-static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b) {
+static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *va_global_imm_off) {
   if (!str_eq_lit(name, "snprintf")) return 0;
   runtime_param_count(type, 3, name);
   uint32_t params = wasm_type_param_count(type);
@@ -1700,7 +1711,8 @@ static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b) {
   emit_i32_from_param(b, type, 0); emit_local_set(b, dst);
   emit_i32_from_param(b, type, 1); emit_local_set(b, size);
   emit_i32_from_param(b, type, 2); emit_local_set(b, fmt);
-  buf_u8(b, 0x23); buf_uleb(b, 1); /* global.get __ag_va_arg_area in ag_c objects */
+  buf_u8(b, 0x23); /* global.get __ag_va_arg_area */
+  *va_global_imm_off = buf_uleb5(b, 0);
   emit_local_set(b, va);
   emit_local_get(b, dst); emit_local_set(b, out);
   emit_i32_const(b, 0); emit_local_set(b, count);
@@ -1991,8 +2003,10 @@ static int make_file_stub_body(str_t name, type_t *type, buf_t *b) {
   return 0;
 }
 
-static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
+static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len,
+                                             size_t *out_va_global_imm_off) {
   buf_t b = {0};
+  *out_va_global_imm_off = (size_t)-1;
   if (str_eq_lit(name, "__assert_rtn")) {
     buf_uleb(&b, 0); /* local decl count */
     buf_u8(&b, 0x00); /* unreachable */
@@ -2017,7 +2031,7 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_memcmp_stub_body(name, type, &b)) {
   } else if (make_strchr_stub_body(name, type, &b)) {
   } else if (make_putchar_stub_body(name, type, &b)) {
-  } else if (make_snprintf_stub_body(name, type, &b)) {
+  } else if (make_snprintf_stub_body(name, type, &b, out_va_global_imm_off)) {
   } else if (make_wcslen_stub_body(name, type, &b)) {
   } else if (make_wcscpy_stub_body(name, type, &b)) {
   } else if (make_wcscmp_stub_body(name, type, &b)) {
@@ -2070,6 +2084,48 @@ static void add_runtime_data_symbol(object_t *runtime, str_t name) {
   PUSH(runtime->symbols, runtime->symbol_count, runtime->symbol_cap, sym);
 }
 
+static size_t runtime_next_code_payload_off(object_t *runtime) {
+  size_t off = 1; /* synthetic code section function-count LEB */
+  for (int i = 0; i < runtime->func_count; i++) {
+    if (!runtime->funcs[i].defined) continue;
+    off += 5 + runtime->funcs[i].body_len; /* body size LEB + body payload */
+  }
+  return off + 5; /* next body payload start after its size LEB */
+}
+
+static int runtime_global_symbol(object_t *runtime, const char *name) {
+  str_t n = str_dup(name, (int)strlen(name));
+  for (int i = 0; i < runtime->symbol_count; i++) {
+    symbol_t *sym = &runtime->symbols[i];
+    if (sym->kind == SYM_GLOBAL && str_eq(sym->name, n)) return i;
+  }
+
+  global_sym_t g = {0};
+  g.name = str_dup(n.s, n.len);
+  g.final_index = -1;
+  int global_index = runtime->global_count;
+  PUSH(runtime->globals, runtime->global_count, runtime->global_cap, g);
+
+  symbol_t sym = {0};
+  sym.kind = SYM_GLOBAL;
+  sym.flags = SYM_UNDEFINED;
+  sym.name = str_dup(n.s, n.len);
+  sym.index = global_index;
+  int sym_index = runtime->symbol_count;
+  PUSH(runtime->symbols, runtime->symbol_count, runtime->symbol_cap, sym);
+  return sym_index;
+}
+
+static void add_runtime_code_reloc(object_t *runtime, int type, size_t code_payload_off,
+                                   size_t body_off, int symbol) {
+  reloc_t r = {0};
+  r.is_code = 1;
+  r.type = type;
+  r.offset = (uint32_t)(code_payload_off + body_off);
+  r.symbol = (uint32_t)symbol;
+  PUSH(runtime->relocs, runtime->reloc_count, runtime->reloc_cap, r);
+}
+
 static void add_runtime_func_symbol(object_t *runtime, str_t name, type_t *type) {
   if (runtime_has_func(runtime, name)) return;
   type_t t = {0};
@@ -2083,9 +2139,15 @@ static void add_runtime_func_symbol(object_t *runtime, str_t name, type_t *type)
   f.name = str_dup(name.s, name.len);
   f.type_index = type_index;
   f.defined = 1;
-  f.body = make_runtime_stub_body(name, &runtime->types[type_index], &f.body_len);
+  f.code_payload_off = runtime_next_code_payload_off(runtime);
+  size_t va_global_imm_off = (size_t)-1;
+  f.body = make_runtime_stub_body(name, &runtime->types[type_index], &f.body_len, &va_global_imm_off);
   int func_index = runtime->func_count;
   PUSH(runtime->funcs, runtime->func_count, runtime->func_cap, f);
+  if (va_global_imm_off != (size_t)-1) {
+    int sym = runtime_global_symbol(runtime, "__ag_va_arg_area");
+    add_runtime_code_reloc(runtime, R_WASM_GLOBAL_INDEX_LEB, f.code_payload_off, va_global_imm_off, sym);
+  }
 
   symbol_t sym = {0};
   sym.kind = SYM_FUNCTION;
