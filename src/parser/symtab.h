@@ -58,6 +58,7 @@ struct global_var_t {
   int outer_stride;
   int mid_stride;
   int extra_strides[5];
+  int ptr_array_pointee_bytes;
   // ビットフラグ群 (unsigned int コンテナ、4 バイト)。真偽フラグはここに集約する。
   unsigned int is_array : 1;       // 1: 配列
   unsigned int is_extern_decl : 1; // 1: extern宣言のみ（.comm不要）

@@ -4684,7 +4684,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          *   (b) `BinOp (*pa)[N]` / `typedef int *IP; IP (*pa)[N]` 形式: base_is_pointer
          * これがないと (*pa)[i] の deref が 4B (ldrsw) で出力され、ポインタを下位 4B だけ
          * load して SIGSEGV / 誤値になる。 */
-        int element_is_pointer_paren = ((g_decl_trailing_func_suffix && is_pointer) || base_is_pointer)
+        int element_is_pointer_paren = ((g_decl_trailing_func_suffix && is_pointer) ||
+                                        base_is_pointer ||
+                                        (ptr_levels >= 2 && is_pointer))
                                            ? 1 : 0;
         int eff_elem = element_is_pointer_paren ? 8 : elem_size;
         int row_size = paren_array_mul * eff_elem;
@@ -4700,6 +4702,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           var->pointer_qual_levels = 1;
         } else {
           var->base_deref_size = (short)eff_elem;
+        }
+        if (ptr_levels >= 2 && !g_decl_trailing_func_suffix && paren_array_mul > 0) {
+          var->ptr_array_pointee_bytes = paren_array_mul * elem_size;
+          var->base_deref_size = (short)elem_size;
         }
         (void)element_is_pointer_paren;
         var->outer_stride = row_size;
@@ -4870,6 +4876,15 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
        * build_unary_deref_node が 1 段ずつ引き継ぎ、最終 deref で fp load/store に
        * する。中間段は pql>=2 のため fp 値化されない (deref 結果はポインタのまま)。 */
       var->pointee_fp_kind = decl_fp_kind;
+    }
+    if (is_pointer && base_is_pointer && !td_is_array_for_this_decl &&
+        td_array_dim_count > 0 && ptr_levels >= 1 && var->ptr_array_pointee_bytes == 0) {
+      int td_pointee_count = 1;
+      for (int di = 0; di < td_array_dim_count; di++) {
+        if (td_array_dims[di] > 0) td_pointee_count *= td_array_dims[di];
+      }
+      var->ptr_array_pointee_bytes = td_pointee_count * elem_size;
+      var->base_deref_size = (short)elem_size;
     }
     var->is_unsigned = decl_is_unsigned;
     if (decl_is_complex && !is_pointer) var->is_complex = 1;

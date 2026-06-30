@@ -2337,6 +2337,12 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
       if (pointee_dims[i] > 0) pointee_total *= pointee_dims[i];
     }
   }
+  int ptr_array_pointee_bytes = 0;
+  if (head.is_ptr && !g_toplevel_decl_has_func_suffix &&
+      g_toplevel_decl_paren_array_present && arr.is_array &&
+      arr.arr_total > 0) {
+    ptr_array_pointee_bytes = arr.arr_total * g_toplevel_decl_elem_size;
+  }
   if (is_ptr_to_array) {
     arr.is_array = 0;
     arr.arr_total = 1;
@@ -2369,6 +2375,23 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
   }
   validate_toplevel_object_array_suffix(arr);
   global_var_t *gv = register_toplevel_object_from_declarator(head.name, head.is_ptr, arr);
+  if (gv && ptr_array_pointee_bytes > 0) {
+    gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  }
+  if (gv && head.is_ptr && !gv->is_array && !g_toplevel_decl_has_func_suffix &&
+      !g_toplevel_decl_paren_array_present &&
+      g_toplevel_decl_base_is_ptr &&
+      g_toplevel_decl_td_ptr_pointee_dim_count > 0 &&
+      g_toplevel_decl_ptr_levels >= 1) {
+    int target_count = 1;
+    for (int i = 0; i < g_toplevel_decl_td_ptr_pointee_dim_count && i < 8; i++) {
+      int dim = g_toplevel_decl_td_array_dims[i];
+      if (dim > 0) target_count *= dim;
+    }
+    gv->ptr_array_pointee_bytes = target_count * g_toplevel_decl_elem_size;
+    gv->pointee_elem_size = (short)g_toplevel_decl_elem_size;
+    gv->deref_size = 8;
+  }
   /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化してグローバル sig 表に記録する。
    * 複雑な派生型 ('(' を含む funcptr / ネスト宣言子) のみ非 NULL。consume-once で先頭のみ。 */
   if (g_toplevel_typespec_start && gv && head.name) {
@@ -2385,7 +2408,14 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
      * = pointee 全体、mid_stride 以降が内側)。deref_size(=elem) は register 設定済み。
      * try_build_global_var_node のスカラ分岐が outer/mid/extra を node に反映する。 */
     int elem = g_toplevel_decl_elem_size;
-    if (pointee_dim_count >= 2) {
+    if (g_toplevel_decl_paren_array_present && head.paren_array_mul > 0) {
+      gv->outer_stride = head.paren_array_mul * 8;
+      gv->deref_size = 8;
+      gv->pointee_elem_size = (short)elem;
+      int target_count = pointee_total / head.paren_array_mul;
+      if (target_count <= 0) target_count = 1;
+      gv->ptr_array_pointee_bytes = target_count * elem;
+    } else if (pointee_dim_count >= 2) {
       int vdims[9];
       vdims[0] = 1;
       for (int i = 0; i < pointee_dim_count && i + 1 < 9; i++) vdims[i + 1] = pointee_dims[i];

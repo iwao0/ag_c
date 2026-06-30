@@ -30,6 +30,7 @@ static int g_parse_type_alignof_mode = 0;
 /* 直近の parse_cast_type が _Complex 型を解釈したら 1。複素数 compound literal
  * `(double _Complex){re, im}` を構築するため try_parse_compound_literal が読む。 */
 static int g_last_cast_is_complex = 0;
+static int g_last_cast_ptr_array_pointee_bytes = 0;
 /* 単項 `&` のオペランドを解析中なら 1。ファイルスコープのスカラ複合リテラル
  * `&(int){5}` で、複合リテラルを値 (ND_NUM) に短絡せず静的記憶域の gvar 実体として
  * 生成し、そのアドレスを取れるようにするためのヒント (C11 6.5.2.5: ファイルスコープの
@@ -326,7 +327,31 @@ static int parse_ptr_to_array_abstract_decl(token_t **ptok, int *is_pointer) {
   return 1;
 }
 
+static int parse_array_of_ptr_to_array_abstract_decl_ex(token_t **ptok, int *out_array_mul,
+                                                        int *out_pointee_mul) {
+  token_t *t = *ptok;
+  if (!t || t->kind != TK_LPAREN) return 0;
+  t = t->next;
+  if (!t || t->kind != TK_MUL) return 0;
+  t = t->next;
+  consume_local_type_quals(&t);
+  int array_mul = 1;
+  if (!consume_const_dim_brackets(&t, &array_mul)) return 0;
+  if (!t || t->kind != TK_RPAREN) return 0;
+  t = t->next;
+  int pointee_mul = 1;
+  if (!consume_const_dim_brackets(&t, &pointee_mul)) return 0;
+  *ptok = t;
+  if (out_array_mul) *out_array_mul = array_mul;
+  if (out_pointee_mul) *out_pointee_mul = pointee_mul;
+  return 1;
+}
+
 static int parse_array_of_ptr_to_array_abstract_decl(token_t **ptok, int *out_array_mul) {
+  return parse_array_of_ptr_to_array_abstract_decl_ex(ptok, out_array_mul, NULL);
+}
+
+static int parse_array_of_ptr_to_array_abstract_decl_skip(token_t **ptok, int *out_array_mul) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
   t = t->next;
@@ -919,7 +944,7 @@ static void try_parse_assoc_abstract_declarators(generic_type_t *out, token_t **
   (void)parse_funcptr_abstract_decl(pt, &out->is_pointer);
   (void)parse_ptr_to_array_abstract_decl(pt, &out->is_pointer);
   (void)parse_array_of_funcptr_abstract_decl(pt, NULL);
-  (void)parse_array_of_ptr_to_array_abstract_decl(pt, NULL);
+  (void)parse_array_of_ptr_to_array_abstract_decl_skip(pt, NULL);
   (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(pt, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(pt);
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(pt, NULL);
@@ -1256,6 +1281,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   /* parse_cast_type が直前に設定した「複素数キャストか」を退避する (この後の
    * 初期化子パースで parse_cast_type が再呼出され上書きされる前に保存)。 */
   int cl_is_complex = g_last_cast_is_complex;
+  int cl_ptr_array_pointee_bytes = g_last_cast_ptr_array_pointee_bytes;
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
   int local_array_dims[8] = {0};
   int local_array_dim_count = 0;
@@ -1364,6 +1390,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         addr->tag_name = gv->tag_name;
         addr->tag_len = gv->tag_len;
         set_addr_array_strides_from_gvar(addr, gv);
+        if (cl_ptr_array_pointee_bytes > 0) {
+          addr->ptr_array_pointee_bytes = cl_ptr_array_pointee_bytes;
+          addr->base_deref_size = (short)(cast_elem_size > 0 ? cast_elem_size : 8);
+        }
         addr->is_pointer = 1;
         if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
         addr->compound_literal_array_size = var_size;
@@ -1422,6 +1452,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     var->is_tag_pointer = 0;
     var->pointer_qual_levels = 1;
     var->base_deref_size = (short)(cast_elem_size > 0 ? cast_elem_size : 8);
+    var->ptr_array_pointee_bytes = cl_ptr_array_pointee_bytes;
     /* 配列要素はタグ実体ではなくポインタ。初期化 lvar に tag を残すと
      * parse_array_braced_init が `{&a,&b}` を brace 省略 struct 値として扱い、
      * struct 内容を 32bit store してしまう。 */
@@ -1506,6 +1537,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_array_dim_count) *out_array_dim_count = 0;
   if (out_is_unsigned) *out_is_unsigned = 0;
   g_last_cast_is_complex = 0;
+  g_last_cast_ptr_array_pointee_bytes = 0;
 
   consume_local_type_quals(&t);
   if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
@@ -1754,7 +1786,19 @@ cast_parse_postfix:
       }
     }
   }
-  (void)parse_array_of_ptr_to_array_abstract_decl(&t, NULL);
+  {
+    int ptr_array_mul = 0;
+    int ptr_array_pointee_mul = 0;
+    if (parse_array_of_ptr_to_array_abstract_decl_ex(&t, &ptr_array_mul, &ptr_array_pointee_mul)) {
+      if (ptr_array_mul > 0 && out_array_count) *out_array_count = ptr_array_mul;
+      if (ptr_array_mul > 0 && out_array_dims) out_array_dims[0] = ptr_array_mul;
+      if (ptr_array_mul > 0 && out_array_dim_count) *out_array_dim_count = 1;
+      if (ptr_array_pointee_mul > 0 && out_elem_size) {
+        g_last_cast_ptr_array_pointee_bytes = ptr_array_pointee_mul * (*out_elem_size);
+      }
+      *is_pointer = 1;
+    }
+  }
   (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
@@ -3639,6 +3683,12 @@ static node_t *build_unary_deref_node(node_t *operand) {
     node_mem_t *operand_mem = (node_mem_t *)operand;
     if (operand_mem->is_const_qualified) node->is_const_qualified = 1;
     if (operand_mem->is_volatile_qualified) node->is_volatile_qualified = 1;
+    if (operand_mem->ptr_array_pointee_bytes > 0) {
+      node->ptr_array_pointee_bytes = operand_mem->ptr_array_pointee_bytes;
+      if (node->base_deref_size == 0 && operand_mem->base_deref_size > 0) {
+        node->base_deref_size = operand_mem->base_deref_size;
+      }
+    }
   } else if (operand && operand->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)operand;
     if (funcall_ret_pointee_const(fn)) node->is_const_qualified = 1;
@@ -3694,6 +3744,10 @@ static node_t *build_unary_deref_node(node_t *operand) {
         if (src->pointer_qual_levels >= 1 && src->base_deref_size > 0) {
           node->pointer_qual_levels = src->pointer_qual_levels;
           node->base_deref_size = src->base_deref_size;
+        }
+        if (src->ptr_array_pointee_bytes > 0) {
+          node->ptr_array_pointee_bytes = src->ptr_array_pointee_bytes;
+          if (node->base_deref_size == 0) node->base_deref_size = (short)src->elem_size;
         }
       }
     } else if (probe && probe->kind == ND_FUNCALL) {
@@ -5189,6 +5243,11 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       } else {
         gvar_node->mem.inner_deref_size = (short)gv->deref_size;
       }
+    }
+    if (gv->ptr_array_pointee_bytes > 0) {
+      gvar_node->mem.ptr_array_pointee_bytes = gv->ptr_array_pointee_bytes;
+      gvar_node->mem.base_deref_size = gv->pointee_elem_size > 0 ? gv->pointee_elem_size : gv->deref_size;
+      gvar_node->mem.deref_size = 8;
     }
     /* タグ情報 (struct / union): build_member_access が `.x` を解決するときに
      * psx_node_get_tag_type 経由でここを読む。 */

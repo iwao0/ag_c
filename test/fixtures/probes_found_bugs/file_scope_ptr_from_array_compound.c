@@ -32,6 +32,12 @@ struct Node node_b = {17};
 struct Node **node_ptrs = (struct Node *[]){&node_a, &node_b};
 NodePtr *typedef_node_ptrs = (NodePtr[]){&node_a, &node_b};
 
+int grid_a[2][3] = {{1, 2, 3}, {4, 5, 6}};
+int grid_b[2][3] = {{7, 8, 9}, {10, 11, 12}};
+int (*(*grid_ptrs)[2])[3] = &(int (*[2])[3]){grid_a, grid_b};
+typedef int (*RowPtr)[3];
+RowPtr *typedef_grid_ptrs = (RowPtr[]){grid_a, grid_b};
+
 static int local_pointer_element_compound_literal(void) {
     int x = 41;
     int y = 1;
@@ -45,6 +51,16 @@ static int local_pointer_element_compound_literal(void) {
     return **ptrs + *typedef_ptrs[1] + nodes[0]->value + typedef_nodes[1]->value + direct;
 }
 
+static int local_pointer_to_array_element_compound_literal(void) {
+    int x[2][3] = {{13, 14, 15}, {16, 17, 18}};
+    int y[2][3] = {{19, 20, 21}, {22, 23, 24}};
+    int (*(*ptrs)[2])[3] = &(int (*[2])[3]){x, y};
+    RowPtr *typedef_ptrs = (RowPtr[]){x, y};
+    int direct = ((int (*[2])[3]){x, y})[1][1][2];
+    return (*ptrs)[0][1][2] + (*ptrs)[1][0][1] +
+           typedef_ptrs[0][0][2] + typedef_ptrs[1][1][0] + direct;
+}
+
 int main(void) {
     assert(ptr_i[0] == 10 && ptr_i[1] == 20 && ptr_i[2] == 30);
     assert(ptr_u[0] == 1 && ptr_u[3] == 4);
@@ -56,5 +72,8 @@ int main(void) {
     assert(node_ptrs[0]->value == 13 && node_ptrs[1]->value == 17);
     assert(typedef_node_ptrs[0]->value == 13 && typedef_node_ptrs[1]->value == 17);
     assert(local_pointer_element_compound_literal() == 61);
+    assert((*grid_ptrs)[0][0][1] == 2 && (*grid_ptrs)[1][1][2] == 12);
+    assert(typedef_grid_ptrs[0][1][0] == 4 && typedef_grid_ptrs[1][0][2] == 9);
+    assert(local_pointer_to_array_element_compound_literal() == 99);
     return 0;
 }
