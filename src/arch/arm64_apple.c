@@ -198,10 +198,78 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
 
 /* ネスト union の 1 slot を出力する。union は active メンバだけをその型で emit し、
  * 残りは union 全体サイズまで 0 padding する必要がある。 */
+static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
+                                           int struct_size, global_var_t *gv, int *val_idx);
+
+static int arm_union_init_slot_fp_size(global_var_t *gv, int idx) {
+  if (idx < 0 || idx >= gv->init_count) return 0;
+  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
+  if (sym == NULL && sym_len == -2) return 4;
+  if (sym == NULL && sym_len == -3) return 8;
+  return 0;
+}
+
+static void arm_select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
+                                                  global_var_t *gv, int idx,
+                                                  tag_member_info_t *mi) {
+  int init_fp_size = arm_union_init_slot_fp_size(gv, idx);
+  int selected_fp_size = mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
+                       : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
+  if (init_fp_size == selected_fp_size) return;
+  if (init_fp_size == 0 && selected_fp_size == 0) return;
+
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t cand = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &cand)) break;
+    int cand_fp_size = cand.fp_kind == TK_FLOAT_KIND_FLOAT ? 4
+                       : cand.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
+    if ((init_fp_size > 0 && cand_fp_size == init_fp_size) ||
+        (init_fp_size == 0 && cand_fp_size == 0)) {
+      *mi = cand;
+      return;
+    }
+  }
+}
+
 static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_size,
                                    global_var_t *gv, int *val_idx) {
   if (*val_idx >= gv->init_count) {
     cg_emitf("  .space %d\n", union_size);
+    return;
+  }
+  int start_idx = *val_idx;
+  tag_member_info_t mi = {0};
+  int ord = gv->union_init_ordinal;
+  if (gv->init_union_ordinals && gv->init_union_ordinals[*val_idx] >= 0) {
+    ord = gv->init_union_ordinals[*val_idx];
+  }
+  if (!psx_ctx_get_tag_member_info(tk, tn, tl, ord, &mi)) {
+    cg_emitf("  .space %d\n", union_size);
+    return;
+  }
+  arm_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
+  if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+    if (mi.offset > 0) cg_emitf("  .space %d\n", mi.offset);
+    if (mi.array_len > 0) {
+      for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+        if (mi.tag_kind == TK_STRUCT) {
+          emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
+                                         gv, val_idx);
+        } else {
+          emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, val_idx);
+        }
+      }
+    } else if (mi.tag_kind == TK_STRUCT) {
+      emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
+                                     gv, val_idx);
+    } else {
+      emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, val_idx);
+    }
+    int emitted = mi.offset + (mi.array_len > 0 ? mi.type_size * mi.array_len : mi.type_size);
+    if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
+    if (*val_idx == start_idx) (*val_idx)++;
     return;
   }
   char *sym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;

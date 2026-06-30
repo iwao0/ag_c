@@ -1417,15 +1417,52 @@ static int global_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *
 static int global_member_flat_slots(const tag_member_info_t *mi) {
   if (global_member_is_unnamed_struct(mi)) return 0;
   int per = 1;
-  if ((mi->tag_kind == TK_STRUCT || global_member_is_unnamed_union(mi)) && !mi->is_tag_pointer) {
+  if ((mi->tag_kind == TK_STRUCT || mi->tag_kind == TK_UNION) && !mi->is_tag_pointer) {
     per = global_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
   }
   return (mi->array_len > 0) ? mi->array_len * per : per;
 }
 
+static int global_member_elem_flat_slots(const tag_member_info_t *mi) {
+  if (!mi) return 1;
+  int total = global_member_flat_slots(mi);
+  if (mi->array_len > 0) {
+    int per = total / mi->array_len;
+    return per > 0 ? per : 1;
+  }
+  return total > 0 ? total : 1;
+}
+
+static int global_member_subscript_stride_slots(const tag_member_info_t *mi) {
+  int per = global_member_elem_flat_slots(mi);
+  if (!mi || mi->arr_ndim <= 1) return per;
+  for (int i = 1; i < mi->arr_ndim; i++) {
+    int dim = mi->arr_dims[i];
+    if (dim > 0) per *= dim;
+  }
+  return per > 0 ? per : 1;
+}
+
+static void consume_global_member_array_dim(tag_member_info_t *mi) {
+  if (!mi) return;
+  if (mi->arr_ndim > 1) {
+    int remaining = 1;
+    for (int i = 1; i < mi->arr_ndim; i++) {
+      mi->arr_dims[i - 1] = mi->arr_dims[i];
+      if (mi->arr_dims[i - 1] > 0) remaining *= mi->arr_dims[i - 1];
+    }
+    mi->arr_ndim--;
+    mi->array_len = remaining;
+    return;
+  }
+  mi->array_len = 0;
+  mi->arr_ndim = 0;
+}
+
 static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);
   int slots = 0;
+  int union_max_bytes = 0;
   int covered_union_off = 0;
   int covered_union_size = 0;
   for (int i = 0; i < n; i++) {
@@ -1433,7 +1470,12 @@ static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     if (tk == TK_UNION) {
       int ms = global_member_flat_slots(&mi);
-      if (ms > slots) slots = ms;
+      int count = mi.array_len > 0 ? mi.array_len : 1;
+      int bytes = mi.type_size * count;
+      if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
+        union_max_bytes = bytes;
+        slots = ms;
+      }
       continue;
     }
     if (global_member_is_unnamed_struct(&mi)) continue;
@@ -1703,7 +1745,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
       /* タグポインタ配列 (`struct P *arr[3]`) は要素 = 1 slot (scalar pointer) なので
        * es=1 で従来どおり境界揃え不要。タグ値配列 (`struct P arr[3]`) は struct 内側メンバ数。 */
-      int es = (ctx.tag_kind == TK_STRUCT && !ctx.is_tag_pointer)
+      int es = ((ctx.tag_kind == TK_STRUCT || ctx.tag_kind == TK_UNION) && !ctx.is_tag_pointer)
                    ? global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
       if (es > 1) {
         int r = (cur_idx - level_start) % es;
@@ -1819,10 +1861,9 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
           }
-          int per = (cmi.tag_kind == TK_STRUCT && !cmi.is_tag_pointer)
-                        ? global_flat_slot_count(cmi.tag_kind, cmi.tag_name, cmi.tag_len) : 1;
+          int per = global_member_subscript_stride_slots(&cmi);
           cur_idx += (int)iv * per;
-          cmi.array_len = 0; /* 添字を 1 段消費 */
+          consume_global_member_array_dim(&cmi); /* 添字を 1 段消費 */
         } else if (curtok()->kind == TK_DOT) {
           set_curtok(curtok()->next);
           token_ident_t *sm = tk_consume_ident();

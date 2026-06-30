@@ -1,23 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き287: snprintf runtime の global relocation 化）
+最終更新: 2026-07-01（続き288: Wasm object/WAT global union/designator slot 修正）
 
 ## 現状
-- `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
+- `make test` = **green**。
 - 直近確認: `make wasm32-scans` green:
-  `wasm32-object-fixture-scan` = **1115/1115 compile + validate green**、
-  `wasm32-object-link-fixture-scan` = **1114 pass / 1 skip / validate 1114 / run 1114 / import skip 0**
+  `wasm32-object-fixture-scan` = **1116/1116 compile + validate green**、
+  `wasm32-object-link-fixture-scan` = **1115 pass / 1 skip / validate 1115 / run 1115 / import skip 0**
   （multi-TU 部品 fixture 1 件は skip）、
-  `wasm32-object-link-all-fixture-scan` = **1114 pass / 1 skip / validate 1114 / run 1114 / import skip 0**、
-  `wasm32-wat-fixture-scan` = **1114 pass / 1 skip / WAT compile + wat2wasm + validate green**、
+  `wasm32-object-link-all-fixture-scan` = **1115 pass / 1 skip / validate 1115 / run 1115 / import skip 0**、
+  `wasm32-wat-fixture-scan` = **1115 pass / 1 skip / WAT compile + wat2wasm + validate green**、
   `wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**、
   `wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**。
-  `./build/test_e2e` = **1143/1143 green**。
-  以前の直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` / `./build/test_wasm32_object` green。
+  `./build/test_e2e` = **1144/1144 green**、`./build/test_parser` green、
+  `./build/test_wasm32_backend` green、`./build/test_wasm32_e2e` = **1115/1115 green**、
+  `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き288: **Wasm object/WAT global union / multidim member funcptr designator**。
+  `static union Wrap wrap={.inner.f[1]=add2};` など、union 内 struct/array 経由の関数ポインタ初期化で
+  object data relocation が payload 先頭や誤 slot に出るケースを修正。parser の global flat slot 計算を
+  named union でも使い、union 幅は「最大 byte footprint の active member」を基準に決めるよう変更。
+  `.member[idx][j]` designator は内側次元の stride を掛けて進める。Wasm object data emitter は
+  named union の trailing zero slots を潰さず、scalar union active member だけ parser が予約したゼロ padding
+  slot を消費する。WAT emitter も collapse で slot を詰めず、member 配列 / nested aggregate /
+  top-level struct 配列ごとに末尾ゼロ padding を消費して、`struct S { union U u; int tail; } a[]` と
+  `.u = {[1]=...}` の designator hole を両立。ARM64 data emitter も union active member が
+  struct/union の場合は aggregate として再帰出力し、native e2e の nested funcptr fixture を維持。
+  追加 fixture: `probes_found_bugs/global_multidim_member_funcptr_designator.c`。
 - 続き257: **file-scope pointer-element array compound literal**。
   `int **ptrs = (int *[]){&g,&g};` が `E3064`。`parse_cast_type` がポインタ型後続の
   array suffix を非ポインタ型だけに限定していたため、`(int *[]){...}` を compound literal

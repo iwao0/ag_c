@@ -36,6 +36,19 @@ static int run_cmd(const char *cmd, const char *name) {
   return 0;
 }
 
+static int ensure_wasm_linker_on_path(void) {
+  if (command_available("wasm-ld")) return 0;
+  struct stat st;
+  if (stat("./build/ag_wasm_link", &st) != 0) return -1;
+  if (write_file("build/wasm32_obj/wasm-ld",
+                 "#!/bin/sh\nexec ./build/ag_wasm_link \"$@\"\n") != 0) return -1;
+  if (chmod("build/wasm32_obj/wasm-ld", 0755) != 0) return -1;
+  const char *old_path = getenv("PATH");
+  char path[4096];
+  snprintf(path, sizeof(path), "build/wasm32_obj:%s", old_path ? old_path : "");
+  return setenv("PATH", path, 1);
+}
+
 static int run_objdump_check(const char *name, const char *src,
                              const char **needles, int nneedles) {
   char c_path[256];
@@ -131,8 +144,8 @@ static int run_fail_case(const char *name, const char *cmd, const char *needle) 
 }
 
 static int run_optional_link_case(void) {
-  if (!command_available("wasm-ld") || !command_available("wasm-validate") ||
-      !command_available("wasm-interp")) {
+  if (!command_available("wasm-validate") || !command_available("wasm-interp") ||
+      ensure_wasm_linker_on_path() != 0) {
     return 0;
   }
   if (write_file("build/wasm32_obj/main.c",

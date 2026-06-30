@@ -101,7 +101,7 @@ $(TEST_WASM32_E2E): test/test_wasm32_e2e.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_e2e.c
 
-$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(WASM_TARGET)
+$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(WASM_TARGET) $(WASM_LINKER)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_object.c
 

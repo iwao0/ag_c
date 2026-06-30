@@ -2420,7 +2420,39 @@ static int union_init_slot_fp_size(global_var_t *gv, int idx) {
   return 0;
 }
 
-static int global_init_slot_is_plain_zero(global_var_t *gv, int idx) {
+static int obj_flat_slot_count(token_kind_t tk, char *tn, int tl);
+
+static int obj_member_flat_slots(const tag_member_info_t *mi) {
+  int per = 1;
+  if ((mi->tag_kind == TK_STRUCT || mi->tag_kind == TK_UNION) && !mi->is_tag_pointer) {
+    per = obj_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
+  }
+  return (mi->array_len > 0) ? mi->array_len * per : per;
+}
+
+static int obj_flat_slot_count(token_kind_t tk, char *tn, int tl) {
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int slots = 0;
+  int union_max_bytes = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    if (tk == TK_UNION) {
+      int ms = obj_member_flat_slots(&mi);
+      int count = mi.array_len > 0 ? mi.array_len : 1;
+      int bytes = mi.type_size * count;
+      if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
+        union_max_bytes = bytes;
+        slots = ms;
+      }
+    } else {
+      slots += obj_member_flat_slots(&mi);
+    }
+  }
+  return slots > 0 ? slots : 1;
+}
+
+static int obj_init_slot_is_plain_zero(global_var_t *gv, int idx) {
   if (idx < 0 || idx >= gv->init_count) return 1;
   char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
   int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
@@ -2429,12 +2461,23 @@ static int global_init_slot_is_plain_zero(global_var_t *gv, int idx) {
   return sym == NULL && sym_len == 0 && value == 0 && fv == 0.0;
 }
 
-static void collapse_trailing_zero_union_slots(global_var_t *gv, int start_idx, int *val_idx) {
-  if (!val_idx || *val_idx <= start_idx + 1) return;
-  for (int i = start_idx + 1; i < *val_idx; i++) {
-    if (!global_init_slot_is_plain_zero(gv, i)) return;
+static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx, int *val_idx,
+                                                int target_slots) {
+  if (!val_idx || target_slots <= 1) return;
+  int limit = start_idx + target_slots;
+  while (*val_idx < limit && *val_idx < gv->init_count &&
+         obj_init_slot_is_plain_zero(gv, *val_idx)) {
+    (*val_idx)++;
   }
-  *val_idx = start_idx + 1;
+}
+
+static void collapse_trailing_zero_union_slots(global_var_t *gv, int start_idx, int *val_idx) {
+  /* The parser now reserves the full flat width of named union members.  Keeping
+   * those trailing zero slots consumed is required for arrays of unions and for
+   * following struct members to stay on their declared slot boundary. */
+  (void)gv;
+  (void)start_idx;
+  (void)val_idx;
 }
 
 static void select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
@@ -2556,6 +2599,7 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
   select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
   if (mi.bit_width > 0) {
     emit_obj_global_bitfield_member_data(d, gv, (*val_idx)++, base_off, &mi);
+    consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
     return;
   }
   if (mi.array_len > 0) {
@@ -2593,6 +2637,7 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
   }
   int slot = (*val_idx)++;
   data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind, &mi);
+  consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
 }
 
 static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int fallback) {

@@ -1178,6 +1178,7 @@ static const test_case_t test_cases[] = {
     {"probes", "multilevel_pointer_fp_pointee", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multilevel_pointer_fp_pointee.c", 0, 0},
     {"probes", "file_scope_aggregate_compound_literal_addr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/file_scope_aggregate_compound_literal_addr.c", 0, 0},
     {"probes", "global_nested_brace_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_nested_brace_designator.c", 0, 0},
+    {"probes", "global_multidim_member_funcptr_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_multidim_member_funcptr_designator.c", 0, 0},
     {"probes", "if0_skip_non_c_tokens", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c", 0, 0},
     {"probes", "pointer_to_vla", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_to_vla.c", 0, 0},
     {"probes", "func_pointer_return_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_pointer_return_subscript.c", 0, 0},
