@@ -1191,6 +1191,7 @@ static const test_case_t test_cases[] = {
     {"probes", "tag_return_complex_declarator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/tag_return_complex_declarator.c", 0, 0},
     {"probes", "funcptr_return_struct_member", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_struct_member.c", 0, 0},
     {"probes", "funcptr_return_large_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_large_struct.c", 0, 0},
+    {"probes", "indirect_aggregate_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/indirect_aggregate_return.c", 0, 0},
     {"probes", "arm64_aggregate_varargs", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/arm64_aggregate_varargs.c", 0, 0},
     {"probes", "multilevel_pointer_return", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/multilevel_pointer_return.c", 0, 0},
     {"probes", "extern_then_def_same_tu", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/extern_then_def_same_tu.c", 0, 0},

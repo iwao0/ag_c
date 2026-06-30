@@ -3024,7 +3024,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     validate 1113、run 1098、skip run imports 15
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `./build/test_wasm32_object` = 1114 pass / 0 fail / 0 skip
-  - `make wasm32-scans` = object all 598 pass / 0 skip、object-link e2e 1113 pass / 1 skip、
+  - `make wasm32-scans` = object all 1114 pass / 0 skip、object-link e2e 1113 pass / 1 skip、
     WAT all 1113 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
     object-link c-testsuite 218 pass / 2 skip / validate 218 / run 209、
     WAT c-testsuite 218 pass / 2 skip
+
+### このセッション（続き273）: indirect aggregate return の小型 fixture 追加
+- 以前の未対応メモにあった `indirect aggregate return` について、現状の Wasm object 経路では
+  function pointer call の ret-area を先頭引数として渡し、`call_indirect` 後に戻り領域から読む
+  経路が link-run まで通ることを確認した。
+- 既存の `funcptr_return_large_struct.c` は広い回帰 fixture なので、ret-area 間接返しだけを隔離した
+  `test/fixtures/probes_found_bugs/indirect_aggregate_return.c` を追加した。
+  `test/test_e2e.c` と `test/wasm32_e2e_extra_cases.txt` に登録済み。
+- 確認:
+  - `./build/test_e2e` = 1143/1143 pass
+  - `./build/test_wasm32_e2e` = 1114 compiled / 1114 executed
+  - `./build/test_wasm32_object` = 1115 pass / 0 fail / 0 skip
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1099、skip run imports 15
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 209、
+    WAT c-testsuite 218 pass / 2 skip
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `git diff --check`

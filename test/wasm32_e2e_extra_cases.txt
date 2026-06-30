@@ -128,6 +128,7 @@ probes_found_bugs/funcptr_return_pointer_to_array.c
 probes_found_bugs/funcptr_return_const_pointee.c
 probes_found_bugs/funcptr_return_large_struct.c
 probes_found_bugs/funcptr_return_struct_member.c
+probes_found_bugs/indirect_aggregate_return.c
 probes_found_bugs/funcret_subscript.c
 probes_found_bugs/function_duplicate_def.c
 probes_found_bugs/function_redecl_signature.c
