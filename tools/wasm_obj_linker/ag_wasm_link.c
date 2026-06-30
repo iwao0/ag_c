@@ -1671,6 +1671,22 @@ static void emit_snprintf_write_u32_decimal(buf_t *b, uint32_t out, uint32_t cou
   buf_u8(b, 0x0b);                  /* end block */
 }
 
+static void emit_snprintf_write_i32_decimal(buf_t *b, uint32_t out, uint32_t count,
+                                            uint32_t arg, uint32_t divisor,
+                                            uint32_t started, uint32_t digit) {
+  emit_local_get(b, arg);
+  emit_i32_const(b, 0);
+  buf_u8(b, 0x48);                  /* i32.lt_s */
+  buf_u8(b, 0x04); buf_u8(b, 0x40); /* if */
+  emit_snprintf_write_byte_const(b, out, count, '-', 1);
+  emit_i32_const(b, 0);
+  emit_local_get(b, arg);
+  buf_u8(b, 0x6b);                  /* i32.sub */
+  emit_local_set(b, arg);
+  buf_u8(b, 0x0b);                  /* end if */
+  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+}
+
 static void emit_snprintf_load_arg(buf_t *b, uint32_t va, uint32_t arg, int slot) {
   emit_local_get(b, va);
   if (slot != 0) {
@@ -1736,10 +1752,10 @@ static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *v
   emit_i32_const(b, 'd'); buf_u8(b, 0x46); buf_u8(b, 0x71);
   buf_u8(b, 0x04); buf_u8(b, 0x40);
   emit_snprintf_load_arg(b, va, arg, 0);
-  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  emit_snprintf_write_i32_decimal(b, out, count, arg, divisor, started, digit);
   emit_snprintf_write_byte_const(b, out, count, '-', 1);
   emit_snprintf_load_arg(b, va, arg, 1);
-  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  emit_snprintf_write_i32_decimal(b, out, count, arg, divisor, started, digit);
   emit_snprintf_return_count(b, type, out, count);
   buf_u8(b, 0x0b);
 
@@ -1766,7 +1782,7 @@ static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *v
   emit_i32_const(b, 'd'); buf_u8(b, 0x46); buf_u8(b, 0x71);
   buf_u8(b, 0x04); buf_u8(b, 0x40);
   emit_snprintf_load_arg(b, va, arg, 0);
-  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  emit_snprintf_write_i32_decimal(b, out, count, arg, divisor, started, digit);
   emit_snprintf_return_count(b, type, out, count);
   buf_u8(b, 0x0b);
 

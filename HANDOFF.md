@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き288: Wasm object/WAT global union/designator slot 修正）
+最終更新: 2026-07-01（続き289: ag_wasm_link snprintf signed decimal 修正）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,13 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き289: **ag_wasm_link `snprintf` signed decimal**。
+  synthetic runtime の `snprintf` は `%d` / `%d-%d` の整数出力を unsigned decimal helper に流しており、
+  負数が巨大な unsigned 値として出る穴があった。`arg < 0` なら `'-'` を書いて `0 - arg` を
+  unsigned decimal に渡す `emit_snprintf_write_i32_decimal` を追加し、`%zu` は従来通り unsigned のまま維持。
+  `tools/wasm_obj_linker/test_smoke.sh` に `snprintf("%d", -42)` と `snprintf("%d-%d", -12, 34)` の
+  link/run 確認を追加。確認: `make -j4 build/ag_wasm_link`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan`、`make wasm32-object-link-c-testsuite-scan`。
 - 続き288: **Wasm object/WAT global union / multidim member funcptr designator**。
   `static union Wrap wrap={.inner.f[1]=add2};` など、union 内 struct/array 経由の関数ポインタ初期化で
   object data relocation が payload 先頭や誤 slot に出るケースを修正。parser の global flat slot 計算を

@@ -179,6 +179,19 @@ extern int host_mix(double);
 int b(void) { return host_mix(1.0); }
 SRC
 
+cat > "$out_dir/snprintf_negative.c" <<'SRC'
+int snprintf(char *s, unsigned long n, const char *fmt, ...);
+int main(void) {
+  char a[32];
+  char b[32];
+  int na = snprintf(a, sizeof(a), "%d", -42);
+  int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
+  return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
+         nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
+         b[4] == '3' && b[5] == '4' && b[6] == 0 ? 42 : 1;
+}
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -356,6 +369,13 @@ if "$root/build/ag_wasm_link" --no-entry -o "$out_dir/linked_import_sig.wasm" \
   exit 1
 fi
 grep -q 'function signature mismatch: host_mix' "$out_dir/linked_import_sig.err"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/snprintf_negative.o" "$out_dir/snprintf_negative.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_snprintf_negative.wasm" \
+  "$out_dir/snprintf_negative.o"
+wasm-validate "$out_dir/linked_snprintf_negative.wasm"
+wasm-interp "$out_dir/linked_snprintf_negative.wasm" --run-all-exports > "$out_dir/linked_snprintf_negative.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_snprintf_negative.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \
