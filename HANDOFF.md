@@ -3246,3 +3246,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     WAT c-testsuite 218 pass / 2 skip
   - `git diff --check`
 - c-testsuite object-link scan の残り実行 skip は `main(int, char**)` の params 1 件のみ。
+
+### このセッション（続き283）: ag_wasm_link の snprintf runtime formatter 追加
+- object-link fixture の `probes_found_bugs__variadic_unnamed_proto_fixed_args.c` と
+  `probes_found_bugs__vla_sizeof_direct.c` が `snprintf` import のため実行 skip になっていた。
+- `ag_wasm_link` の synthetic runtime function に `snprintf` を追加し、ag_c Wasm object の
+  `__ag_va_arg_area` 8 byte slot から可変長引数を読み、fixture が使う `%d-%d` / `%zu` / `%d`
+  を decimal 文字列として buffer に書くようにした。
+- 現時点の制約:
+  - `__ag_va_arg_area` global index は ag_c 生成 object の現在の global 並びに合わせて読む。
+    汎用 linker runtime としては、後で runtime body 側にも global relocation を持たせるのが望ましい。
+  - format 対応は上記 3 種だけ。flags/precision/幅/負数/浮動小数は未対応。
+- object-link fixture scan の `Skip run imports` は 4 から 2 に減り、実行件数は 1110 から 1112 に増えた。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1112、skip run imports 2
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 217、skip run imports 0、skip run params 1
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 217、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
+- 残っている object-link fixture import は以下 2 本:
+  - `probes_found_bugs__c11_standard_headers`
+  - `stdheader__complex_ops`
