@@ -715,7 +715,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncmp") ||
          str_eq_lit(name, "strchr") || str_eq_lit(name, "strrchr") ||
          str_eq_lit(name, "memcmp") || str_eq_lit(name, "putchar") ||
-         str_eq_lit(name, "sin");
+         str_eq_lit(name, "sin") || str_eq_lit(name, "sprintf");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
