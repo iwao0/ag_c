@@ -3081,3 +3081,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     object-link c-testsuite 218 pass / 2 skip / validate 218 / run 210、
     WAT c-testsuite 218 pass / 2 skip
   - `git diff --check`
+
+### このセッション（続き275）: ag_wasm_link の allocator runtime stub 追加
+- `malloc` / `free` / `calloc` を synthetic runtime function として解決するようにした。
+- 現時点では full allocator ではなく、既存 fixture/c-testsuite の link-run を進めるための
+  fixed scratch 実装:
+  - `malloc(size)` は linear memory 内の `32768` を返す。
+  - `free(ptr)` は no-op。
+  - `calloc(n, size)` は `32768 .. 32768 + n*size` を 0 クリアして `32768` を返す。
+- 本格的な複数 allocation 対応は、heap pointer 用 mutable global を linker runtime に持たせる
+  形で別途実装する余地がある。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1109、skip run imports 5
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 211、skip run imports 6、skip run params 1
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 211、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`

@@ -33,6 +33,8 @@ enum {
 
   LINK_SEGMENT_INFO = 5,
   LINK_SYMBOL_TABLE = 8,
+
+  RUNTIME_SCRATCH_BASE = 32768,
 };
 
 typedef struct {
@@ -706,7 +708,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
          str_eq_lit(name, "memset") || str_eq_lit(name, "memcpy") ||
          str_eq_lit(name, "abs") || str_eq_lit(name, "isdigit") ||
-         str_eq_lit(name, "isalpha") || str_eq_lit(name, "toupper");
+         str_eq_lit(name, "isalpha") || str_eq_lit(name, "toupper") ||
+         str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
+         str_eq_lit(name, "calloc");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -1079,6 +1083,61 @@ static int make_ctype_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_malloc_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "malloc")) return 0;
+  runtime_param_count(type, 1, name);
+  buf_uleb(b, 0);
+  buf_u8(b, 0x41);
+  buf_sleb_i32(b, RUNTIME_SCRATCH_BASE);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_free_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "free")) return 0;
+  runtime_param_count(type, 1, name);
+  buf_uleb(b, 0);
+  return 1;
+}
+
+static int make_calloc_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "calloc")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t n = wasm_type_param_count(type);
+  uint32_t i = n + 1;
+  buf_uleb(b, 1);
+  buf_uleb(b, 2);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0);
+  emit_i32_from_param(b, type, 1);
+  buf_u8(b, 0x6c);      /* i32.mul */
+  buf_u8(b, 0x21); buf_uleb(b, n);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x20); buf_uleb(b, n);
+  buf_u8(b, 0x4f);      /* i32.ge_u */
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x41); buf_sleb_i32(b, RUNTIME_SCRATCH_BASE);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x41);
+  buf_sleb_i32(b, RUNTIME_SCRATCH_BASE);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
 static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
   buf_t b = {0};
   if (str_eq_lit(name, "__assert_rtn")) {
@@ -1091,6 +1150,9 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_memcpy_stub_body(name, type, &b)) {
   } else if (make_abs_stub_body(name, type, &b)) {
   } else if (make_ctype_stub_body(name, type, &b)) {
+  } else if (make_malloc_stub_body(name, type, &b)) {
+  } else if (make_free_stub_body(name, type, &b)) {
+  } else if (make_calloc_stub_body(name, type, &b)) {
   } else {
     buf_uleb(&b, 0); /* local decl count */
     unsigned char result = wasm_type_result_valtype(type);
