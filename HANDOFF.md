@@ -2862,3 +2862,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `SYM_BINDING_LOCAL` なので対象外。
 - `tools/wasm_obj_linker/test_smoke.sh` に duplicate function definition と duplicate data definition の
   negative cases を追加。
+
+### このセッション（続き264）: Wasm object linker function signature mismatch
+- cross-TU で `extern int f(int);` と `int f(double)` のように同名関数の Wasm signature が異なる場合、
+  旧 linker は名前だけで定義へ解決し、最終 wasm validation まで壊れた形で進む可能性があった。
+- `ag_wasm_link.c` に object-local type raw bytes の比較を追加し、undefined function symbol を
+  defined function へ解決するときに参照側/定義側 signature が一致しなければ
+  `function signature mismatch: <name>` で停止する。
+- unresolved host import の収集前にも、同名定義が見つかった場合は signature を検査する。
+- `tools/wasm_obj_linker/test_smoke.sh` に `extern int sig_mismatch(int)` + `int sig_mismatch(double)`
+  の negative case を追加。
+
+### このセッション（続き265）: Wasm object linker host import signature mismatch
+- 定義がない host import でも、複数 object が同じ import 名を別 signature で参照すると、
+  旧 linker は同名 import を型違いで複数出せてしまっていた。
+- unresolved function import 収集時に、同名 import が既にあれば final type index の一致を要求し、
+  不一致なら `function signature mismatch: <name>` で停止する。
+- `tools/wasm_obj_linker/test_smoke.sh` に `extern int host_mix(int)` と
+  `extern int host_mix(double)` を別 object から参照する negative case を追加。

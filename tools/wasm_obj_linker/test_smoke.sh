@@ -148,6 +148,25 @@ cat > "$out_dir/dup_data_b.c" <<'SRC'
 int dup_data = 42;
 SRC
 
+cat > "$out_dir/sig_mismatch_main.c" <<'SRC'
+extern int sig_mismatch(int);
+int main(void) { return sig_mismatch(42); }
+SRC
+
+cat > "$out_dir/sig_mismatch_other.c" <<'SRC'
+int sig_mismatch(double x) { return (int)x; }
+SRC
+
+cat > "$out_dir/import_sig_a.c" <<'SRC'
+extern int host_mix(int);
+int a(void) { return host_mix(1); }
+SRC
+
+cat > "$out_dir/import_sig_b.c" <<'SRC'
+extern int host_mix(double);
+int b(void) { return host_mix(1.0); }
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -268,6 +287,26 @@ if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_dup_d
   exit 1
 fi
 grep -q 'duplicate symbol definition: dup_data' "$out_dir/linked_dup_data.err"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/sig_mismatch_main.o" "$out_dir/sig_mismatch_main.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/sig_mismatch_other.o" "$out_dir/sig_mismatch_other.c"
+if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_sig_mismatch.wasm" \
+  "$out_dir/sig_mismatch_main.o" "$out_dir/sig_mismatch_other.o" \
+  > "$out_dir/linked_sig_mismatch.out" 2> "$out_dir/linked_sig_mismatch.err"; then
+  echo "signature mismatch unexpectedly linked"
+  exit 1
+fi
+grep -q 'function signature mismatch: sig_mismatch' "$out_dir/linked_sig_mismatch.err"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/import_sig_a.o" "$out_dir/import_sig_a.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/import_sig_b.o" "$out_dir/import_sig_b.c"
+if "$root/build/ag_wasm_link" --no-entry -o "$out_dir/linked_import_sig.wasm" \
+  "$out_dir/import_sig_a.o" "$out_dir/import_sig_b.o" \
+  > "$out_dir/linked_import_sig.out" 2> "$out_dir/linked_import_sig.err"; then
+  echo "import signature mismatch unexpectedly linked"
+  exit 1
+fi
+grep -q 'function signature mismatch: host_mix' "$out_dir/linked_import_sig.err"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \

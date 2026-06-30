@@ -603,6 +603,25 @@ static void build_object_type_map(object_t *o, type_t **types, int *count, int *
   }
 }
 
+static int type_equal(const type_t *a, const type_t *b) {
+  return a->raw_len == b->raw_len && memcmp(a->raw, b->raw, a->raw_len) == 0;
+}
+
+static int func_signature_matches(object_t *ref_obj, int ref_func,
+                                  object_t *def_obj, int def_func) {
+  if (ref_func < 0 || ref_func >= ref_obj->func_count ||
+      def_func < 0 || def_func >= def_obj->func_count) {
+    return 0;
+  }
+  int ref_type = ref_obj->funcs[ref_func].type_index;
+  int def_type = def_obj->funcs[def_func].type_index;
+  if (ref_type < 0 || ref_type >= ref_obj->type_count ||
+      def_type < 0 || def_type >= def_obj->type_count) {
+    return 0;
+  }
+  return type_equal(&ref_obj->types[ref_type], &def_obj->types[def_type]);
+}
+
 static void check_duplicate_definitions(object_t *objs, int obj_count) {
   for (int oi = 0; oi < obj_count; oi++) {
     for (int si = 0; si < objs[oi].symbol_count; si++) {
@@ -697,6 +716,13 @@ static int find_import(final_import_t *imports, int count, str_t name, int type_
   return -1;
 }
 
+static int find_import_by_name(final_import_t *imports, int count, str_t name) {
+  for (int i = 0; i < count; i++) {
+    if (str_eq(imports[i].name, name)) return i;
+  }
+  return -1;
+}
+
 static void add_unresolved_function_imports(object_t *objs, int obj_count,
                                             final_import_t **imports, int *import_count, int *import_cap,
                                             type_t **types, int *type_count, int *type_cap) {
@@ -707,10 +733,19 @@ static void add_unresolved_function_imports(object_t *objs, int obj_count,
       if (sym->kind != SYM_FUNCTION || !(sym->flags & SYM_UNDEFINED)) continue;
       object_t *def_obj = NULL;
       int def_func = -1;
-      if (find_defined_func(objs, obj_count, sym->name, &def_obj, &def_func)) continue;
       if (sym->index < 0 || sym->index >= o->func_count) die("bad undefined function symbol index");
+      if (find_defined_func(objs, obj_count, sym->name, &def_obj, &def_func)) {
+        if (!func_signature_matches(o, sym->index, def_obj, def_func)) {
+          dief("function signature mismatch: %s", sym->name.s);
+        }
+        continue;
+      }
       int final_type = intern_type(types, type_count, type_cap, &o->types[o->funcs[sym->index].type_index]);
       if (find_import(*imports, *import_count, sym->name, final_type) >= 0) continue;
+      int existing_name = find_import_by_name(*imports, *import_count, sym->name);
+      if (existing_name >= 0 && (*imports)[existing_name].type_index != final_type) {
+        dief("function signature mismatch: %s", sym->name.s);
+      }
       final_import_t imp = {0};
       imp.obj = o;
       imp.func_index = sym->index;
@@ -722,7 +757,7 @@ static void add_unresolved_function_imports(object_t *objs, int obj_count,
   }
 }
 
-static int final_func_index_for_symbol(object_t *objs, int obj_count, symbol_t *sym,
+static int final_func_index_for_symbol(object_t *objs, int obj_count, object_t *cur, symbol_t *sym,
                                        final_import_t **imports, int *import_count,
                                        type_t **types, int *type_count, int *type_cap) {
   object_t *def_obj = NULL;
@@ -731,7 +766,11 @@ static int final_func_index_for_symbol(object_t *objs, int obj_count, symbol_t *
   if (!(sym->flags & SYM_UNDEFINED)) {
     die("internal error: defined function symbol should already have a final index");
   }
+  if (sym->index < 0 || sym->index >= cur->func_count) die("bad undefined function symbol index");
   if (find_defined_func(objs, obj_count, sym->name, &def_obj, &def_func)) {
+    if (!func_signature_matches(cur, sym->index, def_obj, def_func)) {
+      dief("function signature mismatch: %s", sym->name.s);
+    }
     return def_obj->funcs[def_func].final_index;
   }
   int obj_type = -1;
@@ -756,7 +795,7 @@ static int final_func_index_for_reloc_symbol(object_t *objs, int obj_count, obje
                                              type_t **types, int *type_count, int *type_cap) {
   if (sym->kind != SYM_FUNCTION) die("function relocation does not point at function symbol");
   if (sym->flags & SYM_UNDEFINED) {
-    return final_func_index_for_symbol(objs, obj_count, sym, imports, import_count,
+    return final_func_index_for_symbol(objs, obj_count, cur, sym, imports, import_count,
                                        types, type_count, type_cap);
   }
   if (sym->index < 0 || sym->index >= cur->func_count) die("bad function symbol index");
@@ -859,7 +898,7 @@ static void patch_object_relocations(object_t *objs, int obj_count,
           symbol_t *sym = reloc_symbol(o, r);
           uint32_t idx = 0;
           if (sym->flags & SYM_UNDEFINED) {
-            idx = (uint32_t)final_func_index_for_symbol(objs, obj_count, sym, imports, import_count,
+            idx = (uint32_t)final_func_index_for_symbol(objs, obj_count, o, sym, imports, import_count,
                                                         types, type_count, type_cap);
           } else {
             if (sym->index < 0 || sym->index >= o->func_count) die("bad function symbol index");
