@@ -2413,7 +2413,11 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
                                     str_t name, type_t *caller_type, buf_t *b,
                                     int *out_target_sym, size_t *out_call_imm_off) {
   const char *target_lit = NULL;
-  if (str_eq_lit(name, "snprintf")) {
+  if (str_eq_lit(name, "printf")) {
+    target_lit = "__agc_runtime_printf";
+  } else if (str_eq_lit(name, "fprintf")) {
+    target_lit = "__agc_runtime_fprintf";
+  } else if (str_eq_lit(name, "snprintf")) {
     target_lit = "__agc_runtime_snprintf";
   } else if (str_eq_lit(name, "sprintf")) {
     target_lit = "__agc_runtime_sprintf";

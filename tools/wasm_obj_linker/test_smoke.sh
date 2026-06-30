@@ -277,6 +277,8 @@ unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *s
 int fgetc(FILE *stream);
 int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+int printf(char *fmt, ...);
+int fprintf(FILE *stream, char *fmt, ...);
 int main(void) {
   char a[32];
   char b[32];
@@ -341,6 +343,8 @@ int main(void) {
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
          linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
          ch2 == 'B' &&
+         printf("x=%d\n", 42) == 5 &&
+         fprintf(0, "y=%d\n", 17) == 5 &&
          putchar('Z') == 'Z' ? 42 : 1;
 }
 SRC
@@ -553,6 +557,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
 
 cat > "$out_dir/stdio_data_runtime.c" <<'SRC'

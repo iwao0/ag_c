@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き302: ag_wasm_link runtime object sin and stdio data）
+最終更新: 2026-07-01（続き303: ag_wasm_link runtime object printf fprintf）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き303: **`printf` / `fprintf` を `libagc_runtime.o` へ移行**。
+  既存 synthetic と同じく実出力はせず、format 文字列長を返す最小実装として
+  `__agc_runtime_printf` / `__agc_runtime_fprintf` を runtime object に追加した。
+  `ag_wasm_link` の ABI bridge map で public `printf` / `fprintf` から接続する。
+  `test_smoke.sh` では通常リンクで戻り値を確認し、`--nostdlib` では `env.printf` /
+  `env.fprintf` import が残ることを確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き302: **`sin` と stdio data symbol を `libagc_runtime.o` へ移行**。
   `__agc_runtime_sin` を runtime object に追加し、`ag_wasm_link` の ABI bridge map で
   public `sin` から接続するようにした。実装は従来 synthetic と同じ fixture 用の `0.0` 戻し。
