@@ -3324,3 +3324,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     WAT c-testsuite 218 pass / 2 skip
   - `git diff --check`
 - 残っている object-link c-testsuite の実行 skip は `main(int, char**)` の params 1 件のみ。
+
+### このセッション（続き286）: ag_wasm_link の main argc/argv wrapper 追加
+- object-link c-testsuite の最後の実行 skip は `single-exec/00200.c` で、`main(int argc, char **argv)`
+  が export されるため `wasm-interp --run-all-exports` から 0 引数で呼べず、link-only-params になっていた。
+- `ag_wasm_link --export=main` で定義済み `main` が引数付きかつ `i32` 戻り値の場合、runtime object に
+  0 引数 `main` wrapper を合成するようにした。
+  wrapper は元の `main` に `argc=0`, `argv=0` を渡して呼び、export は wrapper 側に向く。
+- `single-exec/00200.c` は `argc > 1` のときだけ debug 出力するため、`argc=0` で通常実行できる。
+- c-testsuite object-link scan は `Ran` が 217 から 218 に増え、`Skip run params` が 1 から 0 になった。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 218、skip run imports 0、skip run params 0
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1114、skip run imports 0
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 218、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
+- 現時点で object-link fixture と object-link c-testsuite の run skip は import/params ともに 0。
+  残り skip は suite 側の既知 unsupported だけ。

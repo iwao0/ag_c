@@ -2094,6 +2094,61 @@ static void add_runtime_func_symbol(object_t *runtime, str_t name, type_t *type)
   PUSH(runtime->symbols, runtime->symbol_count, runtime->symbol_cap, sym);
 }
 
+static int maybe_add_main_wrapper(object_t *objs, int obj_count, const char *export_name,
+                                  object_t *runtime, func_t **out_wrapper) {
+  *out_wrapper = NULL;
+  if (!export_name || strcmp(export_name, "main") != 0) return 0;
+  str_t main_name = str_dup("main", 4);
+  object_t *main_obj = NULL;
+  int main_func = -1;
+  if (!find_defined_func(objs, obj_count, main_name, &main_obj, &main_func)) return 0;
+  func_t *main_f = &main_obj->funcs[main_func];
+  if (main_f->type_index < 0 || main_f->type_index >= main_obj->type_count) die("bad main type index");
+  type_t *main_type = &main_obj->types[main_f->type_index];
+  if (wasm_type_param_count(main_type) == 0) return 0;
+  if (wasm_type_result_valtype(main_type) != 0x7f) return 0;
+
+  unsigned char wrapper_type_raw[] = {0x60, 0x00, 0x01, 0x7f}; /* () -> i32 */
+  type_t t = {0};
+  t.raw_len = sizeof(wrapper_type_raw);
+  t.raw = xmalloc(t.raw_len);
+  memcpy(t.raw, wrapper_type_raw, t.raw_len);
+  int type_index = runtime->type_count;
+  PUSH(runtime->types, runtime->type_count, runtime->type_cap, t);
+
+  func_t f = {0};
+  f.name = str_dup("main", 4);
+  f.type_index = type_index;
+  f.defined = 1;
+  int func_index = runtime->func_count;
+  PUSH(runtime->funcs, runtime->func_count, runtime->func_cap, f);
+  *out_wrapper = &runtime->funcs[func_index];
+  return 1;
+}
+
+static void fill_main_wrapper_body(func_t *wrapper, type_t *main_type, int main_final_index) {
+  buf_t b = {0};
+  buf_uleb(&b, 0); /* local decl count */
+  uint32_t params = wasm_type_param_count(main_type);
+  for (uint32_t i = 0; i < params; i++) {
+    unsigned char ty = wasm_type_param_valtype(main_type, i);
+    if (ty == 0x7e) {
+      buf_u8(&b, 0x42);
+      buf_sleb_i32(&b, 0);
+    } else if (ty == 0x7f) {
+      buf_u8(&b, 0x41);
+      buf_sleb_i32(&b, 0);
+    } else {
+      die("unsupported main wrapper parameter type");
+    }
+  }
+  buf_u8(&b, 0x10); /* call */
+  buf_uleb(&b, (uint32_t)main_final_index);
+  buf_u8(&b, 0x0b);
+  wrapper->body = b.data;
+  wrapper->body_len = b.len;
+}
+
 static void synthesize_runtime_object(object_t *objs, int obj_count, object_t *runtime) {
   const char *runtime_path = "<ag_wasm_link_runtime>";
   runtime->path = str_dup(runtime_path, (int)strlen(runtime_path));
@@ -2428,6 +2483,8 @@ static void build_module(const char *out_path, const char *export_name,
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
   synthesize_runtime_object(objs, obj_count, &runtime);
+  func_t *main_wrapper = NULL;
+  maybe_add_main_wrapper(objs, obj_count, export_name, &runtime, &main_wrapper);
   if (runtime.func_count > 0 || runtime.data_count > 0) {
     object_t *with_runtime = xmalloc((size_t)(obj_count + 1) * sizeof(*with_runtime));
     memcpy(with_runtime, objs, (size_t)obj_count * sizeof(*with_runtime));
@@ -2471,6 +2528,20 @@ static void build_module(const char *out_path, const char *export_name,
                                   &types, &type_count, &type_cap);
 
   for (int i = 0; i < def_count; i++) defs[i].obj->funcs[defs[i].func_index].final_index = import_count + i;
+  if (main_wrapper) {
+    type_t *main_type = NULL;
+    int main_final_index = -1;
+    for (int i = 0; i < def_count; i++) {
+      func_t *f = &defs[i].obj->funcs[defs[i].func_index];
+      if (f == main_wrapper) continue;
+      if (str_eq_lit(f->name, "main")) {
+        main_type = &defs[i].obj->types[f->type_index];
+        main_final_index = f->final_index;
+      }
+    }
+    if (!main_type || main_final_index < 0) die("main wrapper target not found");
+    fill_main_wrapper_body(main_wrapper, main_type, main_final_index);
+  }
 
   int needs_table = 0;
   for (int oi = 0; oi < obj_count; oi++) {
