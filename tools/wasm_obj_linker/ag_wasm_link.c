@@ -21,6 +21,7 @@ enum {
   R_WASM_TABLE_INDEX_I32 = 2,
   R_WASM_MEMORY_ADDR_LEB = 3,
   R_WASM_MEMORY_ADDR_I32 = 5,
+  R_WASM_TYPE_INDEX_LEB = 6,
   R_WASM_GLOBAL_INDEX_LEB = 7,
 
   SYM_FUNCTION = 0,
@@ -104,6 +105,7 @@ typedef struct {
   type_t *types;
   int type_count;
   int type_cap;
+  int *type_map;
   func_t *funcs;
   int func_count;
   int func_cap;
@@ -580,6 +582,14 @@ static int intern_type(type_t **types, int *count, int *cap, const type_t *t) {
   return *count - 1;
 }
 
+static void build_object_type_map(object_t *o, type_t **types, int *count, int *cap) {
+  if (o->type_map) return;
+  o->type_map = xmalloc((size_t)o->type_count * sizeof(*o->type_map));
+  for (int i = 0; i < o->type_count; i++) {
+    o->type_map[i] = intern_type(types, count, cap, &o->types[i]);
+  }
+}
+
 static int find_defined_func(object_t *objs, int obj_count, str_t name, object_t **out_obj, int *out_func) {
   for (int oi = 0; oi < obj_count; oi++) {
     for (int fi = 0; fi < objs[oi].func_count; fi++) {
@@ -786,7 +796,6 @@ static void patch_object_relocations(object_t *objs, int obj_count,
     object_t *o = &objs[oi];
     for (int ri = 0; ri < o->reloc_count; ri++) {
       reloc_t *r = &o->relocs[ri];
-      symbol_t *sym = reloc_symbol(o, r);
       if (r->is_code) {
         func_t *fn = NULL;
         size_t body_off = 0;
@@ -802,7 +811,11 @@ static void patch_object_relocations(object_t *objs, int obj_count,
         }
         if (!fn) die("code relocation offset does not map to a function body");
         if (body_off + 5 > fn->body_len) die("code relocation immediate out of range");
-        if (r->type == R_WASM_FUNCTION_INDEX_LEB) {
+        if (r->type == R_WASM_TYPE_INDEX_LEB) {
+          if (r->symbol >= (uint32_t)o->type_count) die("type relocation index out of range");
+          patch_uleb5(fn->body + body_off, (uint32_t)o->type_map[r->symbol]);
+        } else if (r->type == R_WASM_FUNCTION_INDEX_LEB) {
+          symbol_t *sym = reloc_symbol(o, r);
           uint32_t idx = 0;
           if (sym->flags & SYM_UNDEFINED) {
             idx = (uint32_t)final_func_index_for_symbol(objs, obj_count, sym, imports, import_count,
@@ -813,14 +826,17 @@ static void patch_object_relocations(object_t *objs, int obj_count,
           }
           patch_uleb5(fn->body + body_off, idx);
         } else if (r->type == R_WASM_TABLE_INDEX_SLEB) {
+          symbol_t *sym = reloc_symbol(o, r);
           uint32_t idx = (uint32_t)table_index_for_symbol(objs, obj_count, o, sym, imports, import_count,
                                                           types, type_count, type_cap,
                                                           table_funcs, table_count, table_cap);
           patch_uleb5(fn->body + body_off, idx);
         } else if (r->type == R_WASM_MEMORY_ADDR_LEB) {
+          symbol_t *sym = reloc_symbol(o, r);
           uint32_t addr = final_data_addr_for_symbol(objs, obj_count, o, sym, r->addend);
           patch_uleb5(fn->body + body_off, addr);
         } else if (r->type == R_WASM_GLOBAL_INDEX_LEB) {
+          symbol_t *sym = reloc_symbol(o, r);
           if (sym->kind != SYM_GLOBAL) die("global relocation does not point at global symbol");
           int gi = find_final_global(*globals, *global_count, sym->name);
           if (gi < 0) {
@@ -850,9 +866,11 @@ static void patch_object_relocations(object_t *objs, int obj_count,
         }
         if (!seg || data_off + 4 > seg->size) die("data relocation offset out of range");
         if (r->type == R_WASM_MEMORY_ADDR_I32) {
+          symbol_t *sym = reloc_symbol(o, r);
           uint32_t addr = final_data_addr_for_symbol(objs, obj_count, o, sym, r->addend);
           patch_u32le(seg->bytes + data_off, addr);
         } else if (r->type == R_WASM_TABLE_INDEX_I32) {
+          symbol_t *sym = reloc_symbol(o, r);
           uint32_t idx = (uint32_t)table_index_for_symbol(objs, obj_count, o, sym, imports, import_count,
                                                           types, type_count, type_cap,
                                                           table_funcs, table_count, table_cap);
@@ -888,9 +906,11 @@ static void build_module(const char *out_path, const char *export_name,
   int global_count = 0, global_cap = 0;
 
   for (int oi = 0; oi < obj_count; oi++) {
+    build_object_type_map(&objs[oi], &types, &type_count, &type_cap);
     for (int fi = 0; fi < objs[oi].func_count; fi++) {
       func_t *f = &objs[oi].funcs[fi];
-      f->final_type = intern_type(&types, &type_count, &type_cap, &objs[oi].types[f->type_index]);
+      if (f->type_index < 0 || f->type_index >= objs[oi].type_count) die("bad function type index");
+      f->final_type = objs[oi].type_map[f->type_index];
       if (f->defined) {
         final_func_t d = {&objs[oi], fi};
         PUSH(defs, def_count, def_cap, d);

@@ -22,6 +22,7 @@ enum {
   R_WASM_TABLE_INDEX_I32 = 2,
   R_WASM_MEMORY_ADDR_LEB = 3,
   R_WASM_MEMORY_ADDR_I32 = 5,
+  R_WASM_TYPE_INDEX_LEB = 6,
   R_WASM_GLOBAL_INDEX_LEB = 7,
 
   WASM_SYM_FUNCTION = 0,
@@ -47,6 +48,7 @@ typedef struct {
   int target_sym;
   int target_is_data;
   int target_is_global;
+  int target_is_type;
   size_t body_off;
   int type;
   int addend;
@@ -427,12 +429,18 @@ static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_
   r->target_sym = target_sym;
   r->target_is_data = target_is_data;
   r->target_is_global = 0;
+  r->target_is_type = 0;
   r->addend = addend;
 }
 
 static void func_add_global_reloc(obj_func_t *f, int type, size_t body_off, int target_sym) {
   func_add_reloc(f, type, body_off, target_sym, 0, 0);
   f->relocs[f->reloc_count - 1].target_is_global = 1;
+}
+
+static void func_add_type_reloc(obj_func_t *f, size_t body_off, int type_index) {
+  func_add_reloc(f, R_WASM_TYPE_INDEX_LEB, body_off, type_index, 0, 0);
+  f->relocs[f->reloc_count - 1].target_is_type = 1;
 }
 
 static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_sym,
@@ -449,6 +457,7 @@ static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_
   r->target_sym = target_sym;
   r->target_is_data = target_is_data;
   r->target_is_global = 0;
+  r->target_is_type = 0;
   r->addend = addend;
 }
 
@@ -466,6 +475,7 @@ static void add_global_reloc(obj_reloc_t **arr, int *count, int *cap, int type,
   r->target_sym = target_sym;
   r->target_is_data = 0;
   r->target_is_global = 0;
+  r->target_is_type = 0;
   r->addend = addend;
 }
 
@@ -1691,7 +1701,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             }
             emit_addr_val(&body, i->callee, param_count);
             wb_u8(&body, 0x11);
-            wb_uleb(&body, (uint32_t)type_index);
+            size_t type_imm_off = wb_uleb5(&body, (uint32_t)type_index);
+            func_add_type_reloc(of, type_imm_off, type_index);
             wb_uleb(&body, 0);
             if (csig.result != IR_TY_VOID && i->dst.id >= 0) {
               emit_local_set(&body, local_index(param_count, i->dst.id));
@@ -1833,6 +1844,9 @@ static void assign_indices(void) {
         obj_global_t *target = &g_obj.globals[f->relocs[r].target_sym];
         wb_patch_uleb5(f->body.data + f->relocs[r].body_off, (uint32_t)target->global_index);
         f->relocs[r].target_sym = target->symbol_index;
+      } else if (f->relocs[r].target_is_type) {
+        wb_patch_uleb5(f->body.data + f->relocs[r].body_off,
+                       (uint32_t)f->relocs[r].target_sym);
       } else if (f->relocs[r].target_is_data) {
         obj_data_t *target = &g_obj.data[f->relocs[r].target_sym];
         wb_patch_uleb5(f->body.data + f->relocs[r].body_off, 0);

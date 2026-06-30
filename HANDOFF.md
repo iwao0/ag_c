@@ -2801,3 +2801,19 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -B build/ag_wasm_link`
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make wasm32-object-fixture-scan` = 1114 pass / 0 fail
+
+### このセッション（続き260）: Wasm object indirect-call type relocation
+- 続き259 の残件だった cross-TU `extern int (*p)(int)` 経由 indirect call の
+  `indirect call signature mismatch` を修正。
+- 原因は `call_indirect` の type index immediate が object-local type index のまま final wasm に残ること。
+  object A では type[0] が `(i64)->i32`、final module では type[0] が `main:()->i32` になるなど、
+  local index と final index がずれていた。
+- `src/arch/wasm32_obj.c` で `R_WASM_TYPE_INDEX_LEB` を emit し、`call_indirect` の type immediate を
+  fixed-width LEB + relocation 化。`tools/wasm_obj_linker/ag_wasm_link.c` は object-local type map を作り、
+  `R_WASM_TYPE_INDEX_LEB` を final type index に patch する。
+- `tools/wasm_obj_linker/test_smoke.sh` に cross-object function pointer variable case を追加:
+  `extern int (*p)(int); int main(){return p(41);}` + `int add1(int); int (*p)(int)=add1;`
+- focused 確認:
+  - `make -j4 build/ag_c_wasm build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-fixture-scan` = 1114 pass / 0 fail

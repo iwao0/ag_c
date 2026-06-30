@@ -31,6 +31,7 @@ Supported:
 - Direct call relocation: `R_WASM_FUNCTION_INDEX_LEB`.
 - Function pointer/table relocations: `R_WASM_TABLE_INDEX_SLEB` and
   `R_WASM_TABLE_INDEX_I32`.
+- Indirect-call type index relocation: `R_WASM_TYPE_INDEX_LEB`.
 - Data address relocations: `R_WASM_MEMORY_ADDR_LEB` and `R_WASM_MEMORY_ADDR_I32`.
 - Imported object globals used by the current backend, such as `__stack_pointer`.
 - A defined linear memory exported as `memory`; memory pages are sized from the
@@ -50,8 +51,8 @@ The smoke test covers cross-object direct calls, extern global read/write,
 data-address relocations in both code and data, static symbol collisions,
 unresolved host function imports, function pointer relocation through both code
 and data, imported host function table entries through both code and data
-relocations, and a many-data-segment case that requires more than one Wasm
-memory page.
+relocations, cross-object function pointer variables, and a many-data-segment
+case that requires more than one Wasm memory page.
 
 Not yet supported:
 

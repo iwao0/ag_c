@@ -95,6 +95,16 @@ int (*p)(int) = host_add;
 int main(void) { return p(41); }
 SRC
 
+cat > "$out_dir/fp_data_cross_main.c" <<'SRC'
+extern int (*p)(int);
+int main(void) { return p(41); }
+SRC
+
+cat > "$out_dir/fp_data_cross_other.c" <<'SRC'
+int add1(int x) { return x + 1; }
+int (*p)(int) = add1;
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -164,6 +174,14 @@ wasm-validate "$out_dir/linked_fp_import.wasm"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_data_import.wasm" \
   "$out_dir/fp_data_import.o"
 wasm-validate "$out_dir/linked_fp_data_import.wasm"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_data_cross_main.o" "$out_dir/fp_data_cross_main.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_data_cross_other.o" "$out_dir/fp_data_cross_other.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_data_cross.wasm" \
+  "$out_dir/fp_data_cross_main.o" "$out_dir/fp_data_cross_other.o"
+wasm-validate "$out_dir/linked_fp_data_cross.wasm"
+wasm-interp "$out_dir/linked_fp_data_cross.wasm" --run-all-exports > "$out_dir/linked_fp_data_cross.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_fp_data_cross.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \
