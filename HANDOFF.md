@@ -1,18 +1,20 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き268: anonymous union promoted positional/data emit）
+最終更新: 2026-06-30（続き286: Wasm object-link import/params run skip 解消）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
-- 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1113/1113 green**、`./build/test_wasm32_object` = **1114/1114 green**、
-  `./build/test_e2e` = **1142/1142 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1114/1114 compile + validate green**、
-  `make wasm32-wat-fixture-scan` = **1113/1113 WAT compile + wat2wasm + validate green**
-  （multi-TU link fixture 1 件は skip）、
-  `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
-  `make wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**、
-  `make wasm32-scans` = **上記 4 scan green**、
+- 直近確認: `make wasm32-scans` green:
+  `wasm32-object-fixture-scan` = **1115/1115 compile + validate green**、
+  `wasm32-object-link-fixture-scan` = **1114 pass / 1 skip / validate 1114 / run 1114 / import skip 0**
+  （multi-TU 部品 fixture 1 件は skip）、
+  `wasm32-wat-fixture-scan` = **1114 pass / 1 skip / WAT compile + wat2wasm + validate green**、
+  `wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
+  `wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**、
+  `wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**。
+  `./build/test_e2e` = **1143/1143 green**。
+  以前の直近確認: `make test` green、`./build/test_wasm32_backend` green、
+  `./build/test_wasm32_e2e` / `./build/test_wasm32_object` green。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
 - 続き257: **file-scope pointer-element array compound literal**。
