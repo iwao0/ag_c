@@ -3137,3 +3137,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     object-link c-testsuite 218 pass / 2 skip / validate 218 / run 212、
     WAT c-testsuite 218 pass / 2 skip
   - `git diff --check`
+
+### このセッション（続き278）: ag_wasm_link の string runtime stub 追加
+- c-testsuite `00179.c` の import を解消するため、以下の synthetic runtime function を追加した。
+  - `strncpy`
+  - `strcat`
+  - `strncmp`
+  - `strchr`
+  - `strrchr`
+  - `memcmp`
+- `strncpy` は NUL 後の padding zero まで行い、`strrchr` は最後に見つかった位置を保持して返す。
+- c-testsuite `00179.c` が import skip から link-run 対象に移った。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 213、skip run imports 4、skip run params 1
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1110、skip run imports 4
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 213、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
+- 残っている c-testsuite import は `sin`、`sprintf`、file I/O (`fopen`/`fwrite`/`fclose`/
+  `fread`/`fgetc`/`getc`/`fgets`)、`putchar`。

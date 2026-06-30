@@ -711,7 +711,10 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "isalpha") || str_eq_lit(name, "toupper") ||
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
          str_eq_lit(name, "calloc") || str_eq_lit(name, "atoi") ||
-         str_eq_lit(name, "strcpy");
+         str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
+         str_eq_lit(name, "strcat") || str_eq_lit(name, "strncmp") ||
+         str_eq_lit(name, "strchr") || str_eq_lit(name, "strrchr") ||
+         str_eq_lit(name, "memcmp");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -1270,6 +1273,279 @@ static int make_strcpy_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_strncpy_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "strncpy")) return 0;
+  runtime_param_count(type, 3, name);
+  uint32_t dst = wasm_type_param_count(type);
+  uint32_t src = dst + 1;
+  uint32_t n = dst + 2;
+  uint32_t i = dst + 3;
+  uint32_t c = dst + 4;
+  uint32_t ended = dst + 5;
+  buf_uleb(b, 1);
+  buf_uleb(b, 6);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, dst);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, src);
+  emit_i32_from_param(b, type, 2); buf_u8(b, 0x21); buf_uleb(b, n);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, ended);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x20); buf_uleb(b, n);
+  buf_u8(b, 0x4f);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, ended);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x04); buf_u8(b, 0x7f);
+  buf_u8(b, 0x20); buf_uleb(b, src);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x05);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x21); buf_uleb(b, ended);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_strcat_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "strcat")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t dst = wasm_type_param_count(type);
+  uint32_t src = dst + 1;
+  uint32_t end = dst + 2;
+  uint32_t i = dst + 3;
+  uint32_t c = dst + 4;
+  buf_uleb(b, 1);
+  buf_uleb(b, 5);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, dst);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, src);
+  buf_u8(b, 0x20); buf_uleb(b, dst); buf_u8(b, 0x21); buf_uleb(b, end);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, end);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, end);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, end);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, src);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, end);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_strncmp_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "strncmp")) return 0;
+  runtime_param_count(type, 3, name);
+  uint32_t a = wasm_type_param_count(type);
+  uint32_t c = a + 3;
+  uint32_t d = a + 4;
+  uint32_t i = a + 5;
+  buf_uleb(b, 1);
+  buf_uleb(b, 6);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, a);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, a + 1);
+  emit_i32_from_param(b, type, 2); buf_u8(b, 0x21); buf_uleb(b, a + 2);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x20); buf_uleb(b, a + 2);
+  buf_u8(b, 0x4f);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, a);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, a + 1);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, d);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, d);
+  buf_u8(b, 0x47);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, d);
+  buf_u8(b, 0x6b);
+  emit_return_i32_as_result(b, type);
+  buf_u8(b, 0x0f);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  emit_return_i32_as_result(b, type);
+  buf_u8(b, 0x0f);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_memcmp_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "memcmp")) return 0;
+  runtime_param_count(type, 3, name);
+  uint32_t a = wasm_type_param_count(type);
+  uint32_t c = a + 3;
+  uint32_t d = a + 4;
+  uint32_t i = a + 5;
+  buf_uleb(b, 1);
+  buf_uleb(b, 6);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, a);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, a + 1);
+  emit_i32_from_param(b, type, 2); buf_u8(b, 0x21); buf_uleb(b, a + 2);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x20); buf_uleb(b, a + 2);
+  buf_u8(b, 0x4f);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, a);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, a + 1);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, d);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, d);
+  buf_u8(b, 0x47);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, d);
+  buf_u8(b, 0x6b);
+  emit_return_i32_as_result(b, type);
+  buf_u8(b, 0x0f);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_strchr_stub_body(str_t name, type_t *type, buf_t *b) {
+  int reverse = str_eq_lit(name, "strrchr");
+  if (!str_eq_lit(name, "strchr") && !reverse) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t p = wasm_type_param_count(type);
+  uint32_t ch = p + 1;
+  uint32_t cur = p + 2;
+  uint32_t c = p + 3;
+  uint32_t found = p + 4;
+  buf_uleb(b, 1);
+  buf_uleb(b, 5);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, p);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, ch);
+  buf_u8(b, 0x20); buf_uleb(b, p); buf_u8(b, 0x21); buf_uleb(b, cur);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, found);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, cur);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, ch);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 255);
+  buf_u8(b, 0x71);
+  buf_u8(b, 0x46);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, cur);
+  if (reverse) {
+    buf_u8(b, 0x21); buf_uleb(b, found);
+  } else {
+    emit_return_i32_as_result(b, type);
+    buf_u8(b, 0x0f);
+  }
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, cur);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, cur);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, found);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
 static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
   buf_t b = {0};
   if (str_eq_lit(name, "__assert_rtn")) {
@@ -1287,6 +1563,11 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_calloc_stub_body(name, type, &b)) {
   } else if (make_atoi_stub_body(name, type, &b)) {
   } else if (make_strcpy_stub_body(name, type, &b)) {
+  } else if (make_strncpy_stub_body(name, type, &b)) {
+  } else if (make_strcat_stub_body(name, type, &b)) {
+  } else if (make_strncmp_stub_body(name, type, &b)) {
+  } else if (make_memcmp_stub_body(name, type, &b)) {
+  } else if (make_strchr_stub_body(name, type, &b)) {
   } else {
     buf_uleb(&b, 0); /* local decl count */
     unsigned char result = wasm_type_result_valtype(type);
