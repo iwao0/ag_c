@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き258: typedef pointer-element array compound literal fixture）
+最終更新: 2026-06-30（続き259: local struct-pointer array compound literal）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -25,6 +25,13 @@
   `typedef struct Node *NodePtr; (NodePtr[]){...}`) も追加。Wasm object は
   `global_compound_literal_inner_ptr_data_reloc` / `typedef_compound_literal_inner_ptr_data_reloc`
   で data initializer 内 `&g` / struct pointer の `R_WASM_MEMORY_ADDR_I32` relocation を固定。
+- 続き259: **local struct-pointer array compound literal**。
+  `struct Node **nodes = (struct Node *[]){&a,&b};` が ARM64 実行で SIGSEGV。ローカル
+  compound literal の初期化 lvar に struct tag が残り、`parse_array_braced_init` が
+  `{&a,&b}` を「brace 省略 struct 値」と誤解して struct 内容を 32bit store していた。
+  pointer-element 配列の初期化中は tag を外し、式として返す `ND_ADDR` には tag と
+  `pointer_qual_levels/base_deref_size` を戻す。`((struct Node *[]){&a,&b})[1]->value`
+  も `file_scope_ptr_from_array_compound.c` に追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

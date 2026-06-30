@@ -32,6 +32,19 @@ struct Node node_b = {17};
 struct Node **node_ptrs = (struct Node *[]){&node_a, &node_b};
 NodePtr *typedef_node_ptrs = (NodePtr[]){&node_a, &node_b};
 
+static int local_pointer_element_compound_literal(void) {
+    int x = 41;
+    int y = 1;
+    int **ptrs = (int *[]){&x, &y};
+    IntPtr *typedef_ptrs = (IntPtr[]){&x, &y};
+    struct Node a = {5};
+    struct Node b = {7};
+    struct Node **nodes = (struct Node *[]){&a, &b};
+    NodePtr *typedef_nodes = (NodePtr[]){&a, &b};
+    int direct = ((struct Node *[]){&a, &b})[1]->value;
+    return **ptrs + *typedef_ptrs[1] + nodes[0]->value + typedef_nodes[1]->value + direct;
+}
+
 int main(void) {
     assert(ptr_i[0] == 10 && ptr_i[1] == 20 && ptr_i[2] == 30);
     assert(ptr_u[0] == 1 && ptr_u[3] == 4);
@@ -42,5 +55,6 @@ int main(void) {
     assert(**typedef_ptrs == 11 && *typedef_ptrs[1] == 11);
     assert(node_ptrs[0]->value == 13 && node_ptrs[1]->value == 17);
     assert(typedef_node_ptrs[0]->value == 13 && typedef_node_ptrs[1]->value == 17);
+    assert(local_pointer_element_compound_literal() == 61);
     return 0;
 }

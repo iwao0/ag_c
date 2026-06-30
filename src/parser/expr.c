@@ -1422,6 +1422,12 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     var->is_tag_pointer = 0;
     var->pointer_qual_levels = 1;
     var->base_deref_size = (short)(cast_elem_size > 0 ? cast_elem_size : 8);
+    /* 配列要素はタグ実体ではなくポインタ。初期化 lvar に tag を残すと
+     * parse_array_braced_init が `{&a,&b}` を brace 省略 struct 値として扱い、
+     * struct 内容を 32bit store してしまう。 */
+    var->tag_kind = TK_EOF;
+    var->tag_name = NULL;
+    var->tag_len = 0;
   } else {
     var->is_tag_pointer = cast_is_ptr ? 1 : 0;
   }
@@ -1432,14 +1438,14 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
     addr_node->base.kind = ND_ADDR;
     addr_node->base.lhs = psx_node_new_lvar(var->offset);
-    addr_node->tag_kind = var->tag_kind;
-    addr_node->tag_name = var->tag_name;
-    addr_node->tag_len = var->tag_len;
+    addr_node->tag_kind = is_pointer_elem_array ? cast_tag_kind : var->tag_kind;
+    addr_node->tag_name = is_pointer_elem_array ? cast_tag_name : var->tag_name;
+    addr_node->tag_len = is_pointer_elem_array ? cast_tag_len : var->tag_len;
     set_addr_array_strides_from_lvar(addr_node, var);
     /* `(int[N]){...}` 複合リテラルは配列名と同じくポインタへ崩壊する。
      * 後続の `[i]` サブスクリプトを通すために is_pointer を立てる。 */
     addr_node->is_pointer = 1;
-    if (var->tag_kind != TK_EOF) addr_node->is_tag_pointer = 1;
+    if (addr_node->tag_kind != TK_EOF) addr_node->is_tag_pointer = 1;
     addr_node->compound_literal_array_size = var_size;
     ref = (node_t *)addr_node;
   } else {
@@ -1898,6 +1904,8 @@ static void set_addr_array_strides_from_lvar(node_mem_t *addr, const lvar_t *var
   addr->type_size = stride;
   addr->deref_size = stride;
   addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
+  addr->pointer_qual_levels = var->pointer_qual_levels;
+  addr->base_deref_size = var->base_deref_size;
   if (var->outer_stride > 0) {
     if (var->mid_stride > 0) {
       addr->inner_deref_size = (short)var->mid_stride;
