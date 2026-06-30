@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き292: ag_wasm_link sprintf formatter 修正）
+最終更新: 2026-07-01（続き293: ag_wasm_link printf-family string formatter 修正）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,13 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き293: **ag_wasm_link `snprintf` / `sprintf` の `%s` 対応**。
+  synthetic runtime formatter に NUL 終端文字列を byte copy する helper を追加し、
+  `snprintf("%s", p)` と `sprintf("%s", p)` を vararg pointer から出力できるようにした。
+  `test_smoke.sh` に `snprintf(i, sizeof(i), "%s", "wasm")` と `sprintf(j, "%s", "link")` の
+  buffer 内容と戻り値確認を追加。
+  確認: `make -j4 build/ag_wasm_link`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan`、`make wasm32-object-link-c-testsuite-scan`。
 - 続き292: **ag_wasm_link `sprintf` 最小 formatter**。
   `sprintf` は runtime symbol として解決されていたが、専用 body がなく fallback stub で戻り値だけ返し、
   buffer を書いていなかった。`make_sprintf_stub_body` を追加し、`%d` / `%u` / `%02d` を
