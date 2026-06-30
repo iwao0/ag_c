@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き244: Wasm WAT c-testsuite preflight complete）
+最終更新: 2026-06-30（続き245: Wasm WAT c-testsuite scan target）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -9,6 +9,7 @@
   `./build/test_e2e` = **1139/1139 green**、`make wasm32-object-fixture-scan`
   (`test/fixtures/**/*.c`, should_reject 除外) = **1111/1111 compile + validate green**、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
+  `make wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**、
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
@@ -2546,3 +2547,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - ad hoc WAT c-testsuite scan = 218 対象中 218 pass / 0 fail / 2 unsupported skip
   - `make test` green
   - `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0
+
+### このセッション（続き245）: Wasm WAT c-testsuite scan target
+- 続き244で ad hoc 実行だった WAT c-testsuite preflight を恒久 target 化。
+- `scripts/run_wasm32_wat_c_testsuite_scan.sh` を追加し、`ag_c_wasm -> wat2wasm -> wasm-validate`
+  を c-testsuite `single-exec` 全体へ実行する。object c-testsuite scan と同じく
+  `--list-fail`, `--verbose`, `--no-validate`, `AG_C_WASM`, `C_TESTSUITE_DIR`,
+  `WASM32_WAT_C_TESTSUITE_SCAN_DIR` に対応。
+- `Makefile` に `wasm32-wat-c-testsuite-scan` target を追加。
+- focused 確認:
+  - `make wasm32-wat-c-testsuite-scan` = 218 pass / 0 fail / 2 unsupported skip、
+    `wat2wasm=1`, `wasm-validate=1`

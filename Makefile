@@ -119,6 +119,9 @@ wasm32-object-fixture-scan: $(WASM_TARGET)
 wasm32-object-c-testsuite-scan: $(WASM_TARGET)
 	@bash scripts/run_wasm32_object_c_testsuite_scan.sh --list-fail
 
+wasm32-wat-c-testsuite-scan: $(WASM_TARGET)
+	@bash scripts/run_wasm32_wat_c_testsuite_scan.sh --list-fail
+
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
@@ -162,6 +165,6 @@ c-testsuite: $(TARGET)
 c-testsuite-verbose: $(TARGET)
 	@bash scripts/run_c_testsuite.sh --verbose
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-c-testsuite-scan c-testsuite c-testsuite-verbose
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-c-testsuite-scan wasm32-wat-c-testsuite-scan c-testsuite c-testsuite-verbose
 
 -include $(DEPS)
