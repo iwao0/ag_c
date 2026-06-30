@@ -3010,3 +3010,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = 1114 pass / 0 fail / 0 skip
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `git diff --check`
+
+### このセッション（続き272）: Wasm object linked fixture scan の multi-TU 実行確認
+- `scripts/run_wasm32_object_link_fixture_scan.sh` で、既存 e2e fixture の
+  `static_internal_linkage_xtu_main.c` / `static_internal_linkage_xtu_other.c` を
+  既知の multi-TU ペアとして扱うようにした。
+- 以前は main 側を単体 object として link するため `other_val` が unresolved import になり、
+  validate までは通るが実行は `Skip run imports` 側だった。今回から両 TU を object 化して
+  `ag_wasm_link --no-entry --export=main` で一緒に link し、`main() => i32:42` まで確認する。
+- other 側 fixture は main を持たない部品なので、単体スキャン上の skip は維持する。
+- 確認:
+  - `make wasm32-object-link-fixture-scan` = 1113 pass / 0 fail / 1 skip、
+    validate 1113、run 1098、skip run imports 15
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = 1114 pass / 0 fail / 0 skip
+  - `make wasm32-scans` = object all 598 pass / 0 skip、object-link e2e 1113 pass / 1 skip、
+    WAT all 1113 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 209、
+    WAT c-testsuite 218 pass / 2 skip

@@ -12,9 +12,10 @@ usage() {
   cat <<'EOF'
 usage: scripts/run_wasm32_object_link_fixture_scan.sh [--list-fail] [--verbose] [--all-fixtures]
 
-Compiles fixtures in Wasm object mode, links each single-TU object with ag_wasm_link,
-validates the linked wasm when wasm-validate is available, and runs it when
-wasm-interp is available and the linked wasm has no imports.
+Compiles fixtures in Wasm object mode, links each single-TU object or known
+multi-TU fixture pair with ag_wasm_link, validates the linked wasm when
+wasm-validate is available, and runs it when wasm-interp is available and the
+linked wasm has no imports.
 By default, scans fixture paths registered in test/test_e2e.c.
 Set AG_C_WASM / AG_WASM_LINK to override tool paths.
 Set WASM32_OBJECT_LINK_SCAN_DIR to override the output directory.
@@ -62,6 +63,28 @@ skip_reason() {
       ;;
     *)
       return 1
+      ;;
+  esac
+}
+
+link_companion() {
+  case "$1" in
+    test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+expected_result() {
+  case "$1" in
+    test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
+      echo 42
+      ;;
+    *)
+      echo 0
       ;;
   esac
 }
@@ -118,6 +141,9 @@ while IFS= read -r src; do
   err="$out_dir/${safe%.c}.err"
   interp="$out_dir/${safe%.c}.interp"
   dump="$out_dir/${safe%.c}.objdump"
+  companion=
+  extra_obj=
+  expect=$(expected_result "$src")
 
   if ! "$agc_wasm" -c -o "$obj" "$src" >/dev/null 2>"$err"; then
     failed=$((failed + 1))
@@ -127,7 +153,28 @@ while IFS= read -r src; do
     continue
   fi
 
-  if ! "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" >/dev/null 2>"$err"; then
+  if companion=$(link_companion "$src"); then
+    companion_rel=${companion#test/fixtures/}
+    companion_safe=${companion_rel//\//__}
+    extra_obj="$out_dir/${companion_safe%.c}.o"
+    if ! "$agc_wasm" -c -o "$extra_obj" "$companion" >/dev/null 2>"$err"; then
+      failed=$((failed + 1))
+      msg=$(sed -n '1p' "$err")
+      printf '%s\tcompile companion %s: %s\n' "$src" "$companion" "$msg" >> "$failures"
+      [ "$verbose" -ne 0 ] && printf 'FAIL %s\tcompile companion %s: %s\n' "$src" "$companion" "$msg"
+      continue
+    fi
+  fi
+
+  if [ -n "$extra_obj" ]; then
+    if ! "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" "$extra_obj" >/dev/null 2>"$err"; then
+      failed=$((failed + 1))
+      msg=$(sed -n '1p' "$err")
+      printf '%s\tlink: %s\n' "$src" "$msg" >> "$failures"
+      [ "$verbose" -ne 0 ] && printf 'FAIL %s\tlink: %s\n' "$src" "$msg"
+      continue
+    fi
+  elif ! "$ag_wasm_link" --no-entry --export=main -o "$wasm" "$obj" >/dev/null 2>"$err"; then
     failed=$((failed + 1))
     msg=$(sed -n '1p' "$err")
     printf '%s\tlink: %s\n' "$src" "$msg" >> "$failures"
@@ -175,7 +222,7 @@ while IFS= read -r src; do
     continue
   fi
 
-  if ! grep -q 'main() => i32:0' "$interp"; then
+  if ! grep -q "main() => i32:$expect" "$interp"; then
     failed=$((failed + 1))
     msg=$(tr '\n' ' ' < "$interp")
     printf '%s\tresult: %s\n' "$src" "$msg" >> "$failures"
