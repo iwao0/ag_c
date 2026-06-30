@@ -2465,6 +2465,20 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strrchr";
   } else if (str_eq_lit(name, "putchar")) {
     target_lit = "__agc_runtime_putchar";
+  } else if (str_eq_lit(name, "fopen")) {
+    target_lit = "__agc_runtime_fopen";
+  } else if (str_eq_lit(name, "fclose")) {
+    target_lit = "__agc_runtime_fclose";
+  } else if (str_eq_lit(name, "fwrite")) {
+    target_lit = "__agc_runtime_fwrite";
+  } else if (str_eq_lit(name, "fread")) {
+    target_lit = "__agc_runtime_fread";
+  } else if (str_eq_lit(name, "fgetc")) {
+    target_lit = "__agc_runtime_fgetc";
+  } else if (str_eq_lit(name, "getc")) {
+    target_lit = "__agc_runtime_getc";
+  } else if (str_eq_lit(name, "fgets")) {
+    target_lit = "__agc_runtime_fgets";
   } else if (str_eq_lit(name, "feclearexcept")) {
     target_lit = "__agc_runtime_feclearexcept";
   } else if (str_eq_lit(name, "fetestexcept")) {

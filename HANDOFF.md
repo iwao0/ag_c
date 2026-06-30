@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き300: ag_wasm_link runtime object fenv locale math）
+最終更新: 2026-07-01（続き301: ag_wasm_link runtime object file I/O）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き301: **file I/O helper を `libagc_runtime.o` へ移行**。
+  `fopen` / `fwrite` / `fclose` / `fread` / `fgetc` / `getc` / `fgets` を runtime object に追加し、
+  `ag_wasm_link` の ABI bridge map を拡張した。実装は fixture 用の memory-backed one-file stub で、
+  write mode の `fopen` で内部 buffer をクリアし、read mode はその buffer を先頭から読む。
+  `test_smoke.sh` の `libc_runtime.c` で write/read/fgetc/fgets/getc の結果を確認し、
+  `--nostdlib` では `env.fopen` / `env.fread` import が残ることも確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き300: **fenv / locale / math helper を `libagc_runtime.o` へ移行**。
   `feclearexcept` / `fetestexcept`、`setlocale` / `localeconv`、`sqrt` / `sqrtf` /
   `pow` / `fabs` を runtime object に追加し、`ag_wasm_link` の ABI bridge map を拡張した。

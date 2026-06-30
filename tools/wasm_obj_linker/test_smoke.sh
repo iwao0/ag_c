@@ -268,6 +268,14 @@ long wcslen(int *s);
 int *wcscpy(int *dst, int *src);
 int wcscmp(int *a, int *b);
 int putchar(int c);
+typedef void FILE;
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+int fgetc(FILE *stream);
+int getc(FILE *stream);
+char *fgets(char *s, int size, FILE *stream);
 int main(void) {
   char a[32];
   char b[32];
@@ -294,6 +302,19 @@ int main(void) {
   struct lconv *lc;
   setlocale(0, "C");
   lc = localeconv();
+  FILE *wf = fopen("tmp.txt", "w");
+  int wrote = fwrite("A\nB", 1, 3, wf);
+  fclose(wf);
+  char rb[8];
+  FILE *rf = fopen("tmp.txt", "r");
+  int readn = fread(rb, 1, 2, rf);
+  int ch = fgetc(rf);
+  fclose(rf);
+  FILE *rf2 = fopen("tmp.txt", "r");
+  char line[8];
+  char *linep = fgets(line, sizeof(line), rf2);
+  int ch2 = getc(rf2);
+  fclose(rf2);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -315,6 +336,9 @@ int main(void) {
          (int)fabs(-3.5) == 3 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
+         wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
+         linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
+         ch2 == 'B' &&
          putchar('Z') == 'Z' ? 42 : 1;
 }
 SRC
@@ -524,6 +548,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
