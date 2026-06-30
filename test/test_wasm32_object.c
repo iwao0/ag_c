@@ -817,6 +817,16 @@ int main(void) {
                                 "int main(void){return b+bs[0]+bs[1]+bs[2];}\n",
                                 global_bool_data_needles, 5);
 
+  const char *global_unsigned_data_needles[] = {
+      "<uc>", "c8", "<us>", "ffff", "<uca>", "c800 ff", "<usa>", "f401 ffff",
+      "i32.load8_u", "i32.load16_u"};
+  failures += run_objdump_check("global_unsigned_data",
+                                "unsigned char uc=200; unsigned short us=65535; "
+                                "unsigned char uca[3]={200,0,255}; "
+                                "unsigned short usa[2]={500,65535}; "
+                                "int main(void){return uc+us+uca[0]+uca[2]+usa[0]+usa[1];}\n",
+                                global_unsigned_data_needles, 10);
+
   const char *global_fp_array_needles[] = {
       "<fa>", "0000 a03f 0000 3040", "<da>", "0000 0000 0000 f83f 0000 0000 0000 0440",
       "f32.load", "f64.load"};
