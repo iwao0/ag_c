@@ -786,6 +786,15 @@ int main(void) {
                                 "int target=3; int *p=&target; int main(void){return 0;}\n",
                                 data_init_needles, 3);
 
+  const char *global_string_offset_reloc_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<p>", "<items>",
+      "<.LC0>+0x1", "<.LC1>+0x1", "<.LC2>"};
+  failures += run_objdump_check("global_string_offset_data_reloc",
+                                "const char *p=\"abc\"+1; "
+                                "const char *items[2]={\"de\"+1,\"fg\"}; "
+                                "int main(void){return p[0]+items[0][0]+items[1][1];}\n",
+                                global_string_offset_reloc_needles, 7);
+
   const char *extern_data_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_data",

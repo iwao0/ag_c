@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き252: Wasm object global signed data fixture）
+最終更新: 2026-06-30（続き253: Wasm object global string offset data relocation fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2622,5 +2622,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `signed char` / `short` の scalar と配列が object data segment に little-endian bytes
   として出て、参照側も `i32.load8_s` / `i32.load16_s` になることを `global_signed_data`
   fixture で固定した。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
+
+### このセッション（続き253）: Wasm object global string offset data relocation fixture
+- Wasm object の file-scope pointer initializer で、文字列リテラル + offset が `reloc.DATA`
+  の addend 付き relocation になることを追加確認。
+  `const char *p="abc"+1` と `const char *items[2]={"de"+1,"fg"}` を
+  `global_string_offset_data_reloc` fixture で固定し、`R_WASM_MEMORY_ADDR_I32` の
+  `<.LC*>+0x1` 表示まで objdump で確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
