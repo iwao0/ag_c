@@ -1172,9 +1172,9 @@ static unsigned int_binop_opcode(ir_op_t op, ir_type_t ty) {
     case IR_EQ: return is64 ? 0x51 : 0x46;
     case IR_NE: return is64 ? 0x52 : 0x47;
     case IR_LT: return is64 ? 0x53 : 0x48;
-    case IR_LE: return is64 ? 0x55 : 0x4c;
+    case IR_LE: return is64 ? 0x57 : 0x4c;
     case IR_ULT: return is64 ? 0x54 : 0x49;
-    case IR_ULE: return is64 ? 0x56 : 0x4d;
+    case IR_ULE: return is64 ? 0x58 : 0x4d;
     default: obj_unsupported_op(op);
   }
   return 0;

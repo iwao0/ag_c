@@ -2901,3 +2901,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 確認:
   - `make -j4 build/ag_c_wasm build/ag_wasm_link`
   - `make test-wasm-obj-linker`
+
+### このセッション（続き268）: Wasm object linked fixture scan と i64 <= opcode 修正
+- 既存の `scripts/run_wasm32_object_fixture_scan.sh` は object 生成 + object validate までで、
+  `ag_wasm_link` で最終 wasm に link する経路を広く踏んでいなかった。
+- `scripts/run_wasm32_object_link_fixture_scan.sh` と Makefile target
+  `wasm32-object-link-fixture-scan` を追加した。e2e 登録 fixture を単一 TU object として compile し、
+  `ag_wasm_link --no-entry --export=main` で link、`wasm-validate` で validate、
+  import が残らない wasm は `wasm-interp --run-all-exports` で `main() => i32:0` を確認する。
+- scan で `typedef_unsigned_global.c` / `unsigned_member_global_load.c` が object link 後実行で
+  それぞれ 3 / 7 を返すバグを検出した。原因は `src/arch/wasm32_obj.c` の
+  `int_binop_opcode()` で i64 `IR_LE` / `IR_ULE` の opcode が `gt_s` / `gt_u` 側にずれていたこと。
+  `i64.le_s` = `0x57`、`i64.le_u` = `0x58` に修正。
+- link-run scan の skip は 3 件:
+  `static_internal_linkage_xtu_other.c` は main のない multi-TU 部品、
+  `extern_global_got.c` / `global_variadic_funcptr_call.c` は stdio runtime data import
+  (`__stderrp` / `__stdoutp`) 前提。
+- 確認:
+  - `make -j4 build/ag_c_wasm build/ag_wasm_link`
+  - `make wasm32-object-link-fixture-scan` = 1111 pass / 3 skip / fail 0、36 件実行
+  - `make test-wasm-obj-linker`
+  - `./build/test_wasm32_object` = e2e object scan 1114 pass / fail 0
+  - `make wasm32-scans` = object all 1114 pass、object-link e2e 1111 pass / 3 skip、
+    WAT all 1113 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    WAT c-testsuite 218 pass / 2 skip
