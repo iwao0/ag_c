@@ -91,6 +91,8 @@ typedef struct {
   int flags;
   str_t name;
   int index;
+  uint32_t data_offset;
+  uint32_t data_size;
 } symbol_t;
 
 typedef struct {
@@ -192,6 +194,10 @@ static str_t str_dup(const char *s, int len) {
 
 static int str_eq(str_t a, str_t b) {
   return a.len == b.len && a.s && b.s && memcmp(a.s, b.s, (size_t)a.len) == 0;
+}
+
+static int str_empty(str_t s) {
+  return s.len == 0 || !s.s;
 }
 
 static void buf_reserve(buf_t *b, size_t add) {
@@ -477,6 +483,8 @@ static void parse_linking_section(object_t *o, rd_t sec) {
             uint32_t off = rd_uleb(&ss);
             uint32_t size = rd_uleb(&ss);
             sym.index = seg;
+            sym.data_offset = off;
+            sym.data_size = size;
             if (seg >= 0 && seg < o->data_count && !o->data[seg].name.s) {
               o->data[seg].name = str_dup(sym.name.s, sym.name.len);
             }
@@ -595,6 +603,31 @@ static void build_object_type_map(object_t *o, type_t **types, int *count, int *
   }
 }
 
+static void check_duplicate_definitions(object_t *objs, int obj_count) {
+  for (int oi = 0; oi < obj_count; oi++) {
+    for (int si = 0; si < objs[oi].symbol_count; si++) {
+      symbol_t *a = &objs[oi].symbols[si];
+      if ((a->kind != SYM_FUNCTION && a->kind != SYM_DATA) ||
+          (a->flags & (SYM_UNDEFINED | SYM_BINDING_LOCAL)) ||
+          str_empty(a->name)) {
+        continue;
+      }
+      for (int oj = oi; oj < obj_count; oj++) {
+        int sj_start = (oj == oi) ? si + 1 : 0;
+        for (int sj = sj_start; sj < objs[oj].symbol_count; sj++) {
+          symbol_t *b = &objs[oj].symbols[sj];
+          if (b->kind != a->kind ||
+              (b->flags & (SYM_UNDEFINED | SYM_BINDING_LOCAL)) ||
+              str_empty(b->name)) {
+            continue;
+          }
+          if (str_eq(a->name, b->name)) dief("duplicate symbol definition: %s", a->name.s);
+        }
+      }
+    }
+  }
+}
+
 static int find_defined_func(object_t *objs, int obj_count, str_t name, object_t **out_obj, int *out_func) {
   for (int oi = 0; oi < obj_count; oi++) {
     for (int fi = 0; fi < objs[oi].func_count; fi++) {
@@ -616,7 +649,8 @@ static int find_defined_func(object_t *objs, int obj_count, str_t name, object_t
   return 0;
 }
 
-static int find_defined_data(object_t *objs, int obj_count, str_t name, object_t **out_obj, int *out_data) {
+static int find_defined_data(object_t *objs, int obj_count, str_t name, object_t **out_obj,
+                             int *out_data, uint32_t *out_offset) {
   for (int oi = 0; oi < obj_count; oi++) {
     for (int si = 0; si < objs[oi].symbol_count; si++) {
       symbol_t *sym = &objs[oi].symbols[si];
@@ -624,6 +658,7 @@ static int find_defined_data(object_t *objs, int obj_count, str_t name, object_t
       if (str_eq(sym->name, name)) {
         if (out_obj) *out_obj = &objs[oi];
         if (out_data) *out_data = sym->index;
+        if (out_offset) *out_offset = sym->data_offset;
         return 1;
       }
     }
@@ -748,16 +783,17 @@ static uint32_t final_data_addr_for_symbol(object_t *objs, int obj_count, object
                                            symbol_t *sym, int32_t addend) {
   object_t *def_obj = cur;
   int data_index = sym->index;
+  uint32_t symbol_offset = sym->data_offset;
   if (sym->kind != SYM_DATA) die("memory relocation does not point at data symbol");
   if (sym->flags & SYM_UNDEFINED) {
-    if (!find_defined_data(objs, obj_count, sym->name, &def_obj, &data_index)) {
+    if (!find_defined_data(objs, obj_count, sym->name, &def_obj, &data_index, &symbol_offset)) {
       dief("unresolved data symbol: %s", sym->name.s);
     }
   }
   if (data_index < 0 || data_index >= def_obj->data_count || !def_obj->data[data_index].defined) {
     dief("bad data symbol: %s", sym->name.s);
   }
-  return (uint32_t)((int64_t)def_obj->data[data_index].final_addr + addend);
+  return (uint32_t)((int64_t)def_obj->data[data_index].final_addr + symbol_offset + addend);
 }
 
 static int intern_table_func(final_table_func_t **table_funcs, int *table_count, int *table_cap,
@@ -897,6 +933,8 @@ static void write_output(const char *path, buf_t *out) {
 
 static void build_module(const char *out_path, const char *export_name,
                          object_t *objs, int obj_count) {
+  check_duplicate_definitions(objs, obj_count);
+
   type_t *types = NULL;
   int type_count = 0, type_cap = 0;
   final_func_t *defs = NULL;

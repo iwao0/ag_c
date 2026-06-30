@@ -113,6 +113,41 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/data_symbol_offset_main.c" <<'SRC'
+extern int alias;
+int main(void) { return alias; }
+SRC
+
+cat > "$out_dir/data_symbol_offset_other.c" <<'SRC'
+int alias[2] = {40, 42};
+SRC
+
+cat > "$out_dir/dup_func_main.c" <<'SRC'
+int dup(void);
+int main(void) { return dup(); }
+SRC
+
+cat > "$out_dir/dup_func_a.c" <<'SRC'
+int dup(void) { return 40; }
+SRC
+
+cat > "$out_dir/dup_func_b.c" <<'SRC'
+int dup(void) { return 42; }
+SRC
+
+cat > "$out_dir/dup_data_main.c" <<'SRC'
+extern int dup_data;
+int main(void) { return dup_data; }
+SRC
+
+cat > "$out_dir/dup_data_a.c" <<'SRC'
+int dup_data = 40;
+SRC
+
+cat > "$out_dir/dup_data_b.c" <<'SRC'
+int dup_data = 42;
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -197,6 +232,42 @@ grep -q 'main() => i32:42' "$out_dir/linked_fp_data_cross.interp"
 wasm-validate "$out_dir/linked_bss_big.wasm"
 wasm-interp "$out_dir/linked_bss_big.wasm" --run-all-exports > "$out_dir/linked_bss_big.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_bss_big.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/data_symbol_offset_main.o" "$out_dir/data_symbol_offset_main.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/data_symbol_offset_other.o" "$out_dir/data_symbol_offset_other.c"
+cp "$out_dir/data_symbol_offset_other.o" "$out_dir/data_symbol_offset_other_patched.o"
+perl -0777 -pi -e "s/\x01\x00\x05alias\x00\x00\x08/\x01\x00\x05alias\x00\x04\x04/" \
+  "$out_dir/data_symbol_offset_other_patched.o"
+wasm-objdump -x "$out_dir/data_symbol_offset_other_patched.o" > "$out_dir/data_symbol_offset_other.objdump"
+grep -q 'D <alias> segment=0 offset=4 size=4' "$out_dir/data_symbol_offset_other.objdump"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_data_symbol_offset.wasm" \
+  "$out_dir/data_symbol_offset_main.o" "$out_dir/data_symbol_offset_other_patched.o"
+wasm-validate "$out_dir/linked_data_symbol_offset.wasm"
+wasm-interp "$out_dir/linked_data_symbol_offset.wasm" --run-all-exports \
+  > "$out_dir/linked_data_symbol_offset.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_data_symbol_offset.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/dup_func_main.o" "$out_dir/dup_func_main.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/dup_func_a.o" "$out_dir/dup_func_a.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/dup_func_b.o" "$out_dir/dup_func_b.c"
+if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_dup_func.wasm" \
+  "$out_dir/dup_func_main.o" "$out_dir/dup_func_a.o" "$out_dir/dup_func_b.o" \
+  > "$out_dir/linked_dup_func.out" 2> "$out_dir/linked_dup_func.err"; then
+  echo "duplicate function definition unexpectedly linked"
+  exit 1
+fi
+grep -q 'duplicate symbol definition: dup' "$out_dir/linked_dup_func.err"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/dup_data_main.o" "$out_dir/dup_data_main.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/dup_data_a.o" "$out_dir/dup_data_a.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/dup_data_b.o" "$out_dir/dup_data_b.c"
+if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_dup_data.wasm" \
+  "$out_dir/dup_data_main.o" "$out_dir/dup_data_a.o" "$out_dir/dup_data_b.o" \
+  > "$out_dir/linked_dup_data.out" 2> "$out_dir/linked_dup_data.err"; then
+  echo "duplicate data definition unexpectedly linked"
+  exit 1
+fi
+grep -q 'duplicate symbol definition: dup_data' "$out_dir/linked_dup_data.err"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \

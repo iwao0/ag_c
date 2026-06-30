@@ -2842,3 +2842,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_backend` green
   - `./build/test_wasm32_e2e` = 1113 compiled / 1113 executed
   - `./build/test_wasm32_object` = object fixture scan 1114 pass / 0 fail
+
+### このセッション（続き262）: Wasm object linker data symbol offsets
+- `tools/wasm_obj_linker/ag_wasm_link.c` が linking symbol table の data symbol `offset` を読んで
+  `alloc_size` には使っていたが、relocation 解決時の final address には足していなかった。
+  同一 data segment 内の alias symbol / non-zero offset symbol を参照すると segment base を指してしまう。
+- `symbol_t` に `data_offset` / `data_size` を保存し、undefined data symbol を別 object の定義へ解決する
+  `find_defined_data` でも定義側 symbol offset を返すようにした。`final_data_addr_for_symbol` は
+  `segment final_addr + symbol_offset + addend` を返す。
+- `tools/wasm_obj_linker/test_smoke.sh` に、`int alias[2]={40,42}` object の symbol table だけを
+  `offset=4 size=4` に patch し、別 object の `extern int alias; return alias;` が 42 を返す
+  regression case を追加。旧挙動なら 40 になる。
+
+### このセッション（続き263）: Wasm object linker duplicate definitions
+- `tools/wasm_obj_linker/ag_wasm_link.c` は同名の非 local / 非 undefined function/data definition が
+  複数あっても、解決時に最初を拾って進んでいた。
+- link 開始時に symbol table を走査し、同名の external function/data definition が複数あれば
+  `duplicate symbol definition: <name>` で停止するようにした。`static` symbol は
+  `SYM_BINDING_LOCAL` なので対象外。
+- `tools/wasm_obj_linker/test_smoke.sh` に duplicate function definition と duplicate data definition の
+  negative cases を追加。
