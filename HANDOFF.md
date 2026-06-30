@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き254: Wasm object global struct string offset data relocation fixture）
+最終更新: 2026-06-30（続き255: Wasm object global array address addend data relocation fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2639,5 +2639,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `reloc.DATA` の addend 付き relocation になることを追加確認。
   `struct S s={"abc"+2,7,"de"+1};` を `global_struct_string_offset_data_reloc`
   fixture で固定し、struct data segment と `<.LC0>+0x2` / `<.LC1>+0x1` を objdump で確認する。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
+
+### このセッション（続き255）: Wasm object global array address addend data relocation fixture
+- Wasm object の file-scope pointer initializer で、global 配列要素アドレスが `reloc.DATA`
+  の addend 付き relocation になることを追加確認。
+  `int *p=arr+2` と `struct S s={arr+1,7}` を `global_array_addr_addend_data_reloc`
+  fixture で固定し、`<arr>+0x8` / `<arr>+0x4` を objdump で確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green

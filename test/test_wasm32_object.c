@@ -804,6 +804,15 @@ int main(void) {
                                 "int main(void){return s.a[0]+s.b[0];}\n",
                                 struct_string_offset_reloc_needles, 6);
 
+  const char *global_array_addr_addend_reloc_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<p>", "<s>", "<arr>+0x8",
+      "<arr>+0x4", "size=16"};
+  failures += run_objdump_check("global_array_addr_addend_data_reloc",
+                                "int arr[4]={10,20,30,40}; int *p=arr+2; "
+                                "struct S{int *q; int pad;}; struct S s={arr+1,7}; "
+                                "int main(void){return *p+*s.q;}\n",
+                                global_array_addr_addend_reloc_needles, 7);
+
   const char *extern_data_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_data",
