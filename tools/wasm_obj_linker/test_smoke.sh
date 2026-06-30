@@ -181,17 +181,24 @@ SRC
 
 cat > "$out_dir/snprintf_negative.c" <<'SRC'
 int snprintf(char *s, unsigned long n, const char *fmt, ...);
+int sprintf(char *s, const char *fmt, ...);
 int main(void) {
   char a[32];
   char b[32];
   char c[32];
   char d[32];
   char e[32];
+  char f[32];
+  char g[32];
+  char h[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
   int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
   int nd = snprintf(d, sizeof(d), "%02d", 7);
   int ne = snprintf(e, sizeof(e), "%02d", -5);
+  int nf = sprintf(f, "%d", -42);
+  int ng = sprintf(g, "%u", 4294967295u);
+  int nh = sprintf(h, "%02d", 7);
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
          b[4] == '3' && b[5] == '4' && b[6] == 0 &&
@@ -199,7 +206,10 @@ int main(void) {
          c[4] == '9' && c[5] == '6' && c[6] == '7' && c[7] == '2' &&
          c[8] == '9' && c[9] == '5' && c[10] == 0 &&
          nd == 2 && d[0] == '0' && d[1] == '7' && d[2] == 0 &&
-         ne == 2 && e[0] == '-' && e[1] == '5' && e[2] == 0 ? 42 : 1;
+         ne == 2 && e[0] == '-' && e[1] == '5' && e[2] == 0 &&
+         nf == 3 && f[0] == '-' && f[1] == '4' && f[2] == '2' && f[3] == 0 &&
+         ng == 10 && g[0] == '4' && g[9] == '5' && g[10] == 0 &&
+         nh == 2 && h[0] == '0' && h[1] == '7' && h[2] == 0 ? 42 : 1;
 }
 SRC
 

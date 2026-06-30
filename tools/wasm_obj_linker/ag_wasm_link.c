@@ -2005,6 +2005,92 @@ static int make_wcscmp_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_sprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *va_global_imm_off) {
+  if (!str_eq_lit(name, "sprintf")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t params = wasm_type_param_count(type);
+  uint32_t dst = params;
+  uint32_t fmt = dst + 1;
+  uint32_t va = dst + 2;
+  uint32_t out = dst + 3;
+  uint32_t count = dst + 4;
+  uint32_t arg = dst + 5;
+  uint32_t divisor = dst + 6;
+  uint32_t started = dst + 7;
+  uint32_t digit = dst + 8;
+
+  buf_uleb(b, 1);
+  buf_uleb(b, 9);
+  buf_u8(b, 0x7f);
+
+  emit_i32_from_param(b, type, 0); emit_local_set(b, dst);
+  emit_i32_from_param(b, type, 1); emit_local_set(b, fmt);
+  buf_u8(b, 0x23); /* global.get __ag_va_arg_area */
+  *va_global_imm_off = buf_uleb5(b, 0);
+  emit_local_set(b, va);
+  emit_local_get(b, dst); emit_local_set(b, out);
+  emit_i32_const(b, 0); emit_local_set(b, count);
+
+  /* "%02d" */
+  emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '%'); buf_u8(b, 0x46);
+  emit_local_get(b, fmt); emit_i32_const(b, 1); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '0'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  emit_local_get(b, fmt); emit_i32_const(b, 2); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '2'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  emit_local_get(b, fmt); emit_i32_const(b, 3); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, 'd'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  emit_snprintf_load_arg(b, va, arg, 0);
+  emit_local_get(b, arg);
+  emit_i32_const(b, 0);
+  buf_u8(b, 0x48);                  /* i32.lt_s */
+  buf_u8(b, 0x04); buf_u8(b, 0x40); /* if */
+  emit_snprintf_write_i32_decimal(b, out, count, arg, divisor, started, digit);
+  buf_u8(b, 0x05);                  /* else */
+  emit_local_get(b, arg);
+  emit_i32_const(b, 10);
+  buf_u8(b, 0x49);                  /* i32.lt_u */
+  buf_u8(b, 0x04); buf_u8(b, 0x40); /* if */
+  emit_snprintf_write_byte_const(b, out, count, '0', 1);
+  buf_u8(b, 0x0b);                  /* end if */
+  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  buf_u8(b, 0x0b);                  /* end if */
+  emit_snprintf_return_count(b, type, out, count);
+  buf_u8(b, 0x0b);
+
+  /* "%u" */
+  emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '%'); buf_u8(b, 0x46);
+  emit_local_get(b, fmt); emit_i32_const(b, 1); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, 'u'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  emit_snprintf_load_arg(b, va, arg, 0);
+  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  emit_snprintf_return_count(b, type, out, count);
+  buf_u8(b, 0x0b);
+
+  /* "%d" */
+  emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '%'); buf_u8(b, 0x46);
+  emit_local_get(b, fmt); emit_i32_const(b, 1); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, 'd'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  emit_snprintf_load_arg(b, va, arg, 0);
+  emit_snprintf_write_i32_decimal(b, out, count, arg, divisor, started, digit);
+  emit_snprintf_return_count(b, type, out, count);
+  buf_u8(b, 0x0b);
+
+  emit_i32_const(b, 0);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
 static int make_math_header_stub_body(str_t name, type_t *type, buf_t *b) {
   if (str_eq_lit(name, "sqrt")) {
     runtime_param_count(type, 1, name);
@@ -2090,6 +2176,7 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_memcmp_stub_body(name, type, &b)) {
   } else if (make_strchr_stub_body(name, type, &b)) {
   } else if (make_putchar_stub_body(name, type, &b)) {
+  } else if (make_sprintf_stub_body(name, type, &b, out_va_global_imm_off)) {
   } else if (make_snprintf_stub_body(name, type, &b, out_va_global_imm_off)) {
   } else if (make_wcslen_stub_body(name, type, &b)) {
   } else if (make_wcscpy_stub_body(name, type, &b)) {
