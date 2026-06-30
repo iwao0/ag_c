@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き255: Wasm object global array address addend data relocation fixture）
+最終更新: 2026-06-30（続き256: Wasm object compound literal address data relocation fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2647,5 +2647,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   の addend 付き relocation になることを追加確認。
   `int *p=arr+2` と `struct S s={arr+1,7}` を `global_array_addr_addend_data_reloc`
   fixture で固定し、`<arr>+0x8` / `<arr>+0x4` を objdump で確認する。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
+
+### このセッション（続き256）: Wasm object compound literal address data relocation fixture
+- Wasm object の file-scope compound literal address initializer で、隠し compound literal data
+  symbol への `reloc.DATA` が出ることを追加確認。
+  `int *pi=&(int){7}` / `int *pa=(int[]){10,20,30}+1` /
+  `struct S *ps=&(struct S){3,4}` を `global_compound_literal_addr_data_reloc` fixture で固定し、
+  local symbol `<__compound_lit_*>` と `<__compound_lit_1>+0x4` addend を objdump で確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green

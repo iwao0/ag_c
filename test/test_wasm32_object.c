@@ -813,6 +813,16 @@ int main(void) {
                                 "int main(void){return *p+*s.q;}\n",
                                 global_array_addr_addend_reloc_needles, 7);
 
+  const char *compound_literal_addr_reloc_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<pi>", "<pa>", "<ps>",
+      "<__compound_lit_0>", "<__compound_lit_1>+0x4", "<__compound_lit_2>"};
+  failures += run_objdump_check("global_compound_literal_addr_data_reloc",
+                                "struct S{int a; int b;}; int *pi=&(int){7}; "
+                                "int *pa=(int[]){10,20,30}+1; "
+                                "struct S *ps=&(struct S){3,4}; "
+                                "int main(void){return *pi+*pa+ps->b;}\n",
+                                compound_literal_addr_reloc_needles, 8);
+
   const char *extern_data_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_data",
