@@ -247,6 +247,15 @@ int towupper(int c);
 void *malloc(long size);
 void *calloc(long nmemb, long size);
 void free(void *p);
+int feclearexcept(int excepts);
+int fetestexcept(int excepts);
+char *setlocale(int category, char *locale);
+struct lconv { char *decimal_point; };
+struct lconv *localeconv(void);
+double sqrt(double x);
+float sqrtf(float x);
+double pow(double x, double y);
+double fabs(double x);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
@@ -282,6 +291,9 @@ int main(void) {
   p[2] = 0;
   free(p);
   wcscpy(wd, ws);
+  struct lconv *lc;
+  setlocale(0, "C");
+  lc = localeconv();
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -295,6 +307,12 @@ int main(void) {
          toupper('q') == 'Q' &&
          iswdigit('8') && iswalpha('Z') && towupper('m') == 'M' &&
          wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
+         feclearexcept(31) == 0 && fetestexcept(16) == 16 &&
+         lc->decimal_point[0] == '.' &&
+         (int)(sqrt(2.0) * 1000.0) == 1414 &&
+         (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
+         (int)pow(2.0, 10.0) == 1024 &&
+         (int)fabs(-3.5) == 3 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          putchar('Z') == 'Z' ? 42 : 1;

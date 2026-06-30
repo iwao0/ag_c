@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き299: ag_wasm_link runtime object wide helpers）
+最終更新: 2026-07-01（続き300: ag_wasm_link runtime object fenv locale math）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き300: **fenv / locale / math helper を `libagc_runtime.o` へ移行**。
+  `feclearexcept` / `fetestexcept`、`setlocale` / `localeconv`、`sqrt` / `sqrtf` /
+  `pow` / `fabs` を runtime object に追加し、`ag_wasm_link` の ABI bridge map を拡張した。
+  `sqrt` / `sqrtf` は Newton 法の最小実装、`pow` は既存 synthetic と同じく現 fixture 用の
+  `1024.0` 戻し、`localeconv` は `decimal_point="."` の最小 `lconv` を返す。
+  `test_smoke.sh` の `libc_runtime.c` で fenv / locale / math の結果を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き299: **`imaxabs` / wide-char helper を `libagc_runtime.o` へ移行**。
   `__agc_runtime_imaxabs`、`__agc_runtime_wcslen`、`__agc_runtime_wcscpy`、
   `__agc_runtime_wcscmp` を追加し、`iswalpha` / `iswdigit` / `towupper` は

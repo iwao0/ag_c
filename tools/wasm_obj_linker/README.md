@@ -54,8 +54,9 @@ Supported:
   carries the `snprintf`/`sprintf` formatter body plus small string/memory/ctype
   helpers such as `strlen`, `strcmp`, `memset`, `memcpy`, `strcpy`, `strncmp`,
   `memcmp`, `strchr`, `atoi`, and `putchar`, plus a tiny bump allocator for
-  `malloc`, `calloc`, and `free`, plus minimal `imaxabs` and wide-char helpers.
-  The linker emits only small ABI bridges for those public symbols.
+  `malloc`, `calloc`, and `free`, plus minimal `imaxabs`, wide-char, fenv,
+  locale, and math helpers. The linker emits only small ABI bridges for those
+  public symbols.
 
 ## Smoke Test
 

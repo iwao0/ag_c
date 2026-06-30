@@ -27,6 +27,14 @@ static char *ag_rt_ptr(long addr) {
 }
 
 static long ag_rt_heap = 32768;
+static char ag_rt_locale_c[] = "C";
+static char ag_rt_decimal_point[] = ".";
+
+struct ag_rt_lconv {
+  char *decimal_point;
+};
+
+static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 
 long __agc_runtime_malloc(long size) {
   long aligned = (size + 7) & -8;
@@ -231,6 +239,49 @@ long __agc_runtime_strrchr(long s_addr, int ch) {
 
 int __agc_runtime_putchar(int c) {
   return c;
+}
+
+int __agc_runtime_feclearexcept(int excepts) {
+  (void)excepts;
+  return 0;
+}
+
+int __agc_runtime_fetestexcept(int excepts) {
+  return excepts;
+}
+
+long __agc_runtime_setlocale(int category, long locale_addr) {
+  (void)category;
+  (void)locale_addr;
+  return (long)ag_rt_locale_c;
+}
+
+long __agc_runtime_localeconv(void) {
+  return (long)&ag_rt_lconv_value;
+}
+
+double __agc_runtime_sqrt(double x) {
+  if (x <= 0.0) return 0.0;
+  double g = x > 1.0 ? x : 1.0;
+  for (int i = 0; i < 12; i++) g = (g + x / g) / 2.0;
+  return g;
+}
+
+float __agc_runtime_sqrtf(float x) {
+  if (x <= 0.0f) return 0.0f;
+  float g = x > 1.0f ? x : 1.0f;
+  for (int i = 0; i < 8; i++) g = (g + x / g) / 2.0f;
+  return g;
+}
+
+double __agc_runtime_pow(double x, double y) {
+  (void)x;
+  (void)y;
+  return 1024.0;
+}
+
+double __agc_runtime_fabs(double x) {
+  return x < 0.0 ? -x : x;
 }
 
 static int ag_rt_udec_len(unsigned long v) {
