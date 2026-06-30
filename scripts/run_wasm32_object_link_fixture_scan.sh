@@ -60,10 +60,6 @@ skip_reason() {
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
-    test/fixtures/probes_found_bugs/extern_global_got.c|\
-    test/fixtures/probes_found_bugs/global_variadic_funcptr_call.c)
-      echo "requires stdio runtime data imports (__stderrp/__stdoutp)"
-      ;;
     *)
       return 1
       ;;

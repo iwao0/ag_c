@@ -994,7 +994,7 @@ int main(void) {
                                 "int main(void){int x=5; return (-x)+(~x);}\n",
                                 int_unary_needles, 1);
 
-  const char *i64_shift_needles[] = {"i64.extend_i32_u", "i64.shl"};
+  const char *i64_shift_needles[] = {"i64.extend_i32_s", "i64.shl"};
   failures += run_objdump_check("i64_shift",
                                 "long f(long x){return x<<3;}\n",
                                 i64_shift_needles, 2);
@@ -1206,8 +1206,8 @@ int main(void) {
                                 funcptr_global_needles, 3);
 
   const char *extern_funcptr_global_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
-  const char *extern_funcptr_rejects[] = {"(i64, i64) -> i32"};
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
+  const char *extern_funcptr_rejects[] = {"(i32, i32) -> i32"};
   failures += run_objdump_check_absent("extern_funcptr_global",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
                                        "int fprintf(FILE*, const char*, ...); "
@@ -1226,7 +1226,7 @@ int main(void) {
                                        extern_funcptr_rejects, 1);
 
   const char *extern_funcptr_array_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect"};
   failures += run_objdump_check_absent("extern_funcptr_array",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1255,7 +1255,7 @@ int main(void) {
                                        extern_funcptr_rejects, 1);
 
   const char *extern_union_funcptr_array_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<ops>"};
   failures += run_objdump_check_absent("extern_union_funcptr_array_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1277,7 +1277,7 @@ int main(void) {
                                 extern_union_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_local_funcptr_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_SLEB",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_SLEB",
       "call_indirect"};
   failures += run_objdump_check_absent("extern_local_funcptr",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1579,7 +1579,7 @@ int main(void) {
                                 struct_funcptr_member_needles, 4);
 
   const char *extern_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<ops>"};
   failures += run_objdump_check_absent("extern_struct_funcptr_member",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1611,7 +1611,7 @@ int main(void) {
                                        extern_funcptr_rejects, 1);
 
   const char *extern_static_local_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops."};
   failures += run_objdump_check_absent("extern_static_local_struct_funcptr_member_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1634,7 +1634,7 @@ int main(void) {
                                        extern_funcptr_rejects, 1);
 
   const char *extern_static_local_struct_array_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops."};
   failures += run_objdump_check_absent("extern_static_local_struct_array_funcptr_member_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1863,7 +1863,7 @@ int main(void) {
                                 extern_static_local_union_multidim_funcptr_member_xtu_needles, 7);
 
   const char *extern_nested_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<wrap>"};
   failures += run_objdump_check_absent("extern_nested_struct_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1876,7 +1876,7 @@ int main(void) {
                                        extern_funcptr_rejects, 1);
 
   const char *extern_static_local_nested_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap."};
   failures += run_objdump_check_absent("extern_static_local_nested_struct_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1899,7 +1899,7 @@ int main(void) {
                                        extern_funcptr_rejects, 1);
 
   const char *extern_static_local_union_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops."};
   failures += run_objdump_check_absent("extern_static_local_union_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -2048,7 +2048,7 @@ int main(void) {
                                 indirect_double_to_int_arg_needles, 4);
 
   const char *indirect_unused_nonvoid_needles[] = {
-      "__indirect_function_table", "(i32) -> i32", "call_indirect", "R_WASM_TABLE_INDEX_SLEB"};
+      "__indirect_function_table", "(i64) -> i32", "call_indirect", "R_WASM_TABLE_INDEX_SLEB"};
   failures += run_objdump_check("indirect_unused_nonvoid",
                                 "int set7(int *p){*p=7; return 70;} "
                                 "int set9(int *p){*p=9; return 90;} "

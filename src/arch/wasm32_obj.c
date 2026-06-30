@@ -509,11 +509,17 @@ static int local_index(int param_count, int vreg) {
 }
 
 static ir_type_t *g_emit_local_types;
+static unsigned char *g_emit_local_unsigned;
 static int g_emit_local_count;
 
 static ir_type_t actual_vreg_type(ir_val_t v) {
   if (v.id >= 0 && v.id < g_emit_local_count && g_emit_local_types) return g_emit_local_types[v.id];
   return wasm_ir_type(v.type);
+}
+
+static int actual_vreg_unsigned(ir_val_t v) {
+  return v.id >= 0 && v.id < g_emit_local_count && g_emit_local_unsigned &&
+         g_emit_local_unsigned[v.id];
 }
 
 static ir_type_t memory_access_type(ir_type_t raw, ir_type_t actual) {
@@ -524,7 +530,13 @@ static ir_type_t memory_access_type(ir_type_t raw, ir_type_t actual) {
 }
 
 static void note_vreg_type(ir_type_t *types, int ntypes, ir_val_t v) {
-  if (v.id >= 0 && v.id < ntypes) types[v.id] = wasm_ir_type(v.type);
+  if (v.id >= 0 && v.id < ntypes && types[v.id] == IR_TY_I32) {
+    types[v.id] = wasm_ir_type(v.type);
+  }
+}
+
+static void note_vreg_unsigned(unsigned char *is_unsigned, int ntypes, ir_val_t v, int flag) {
+  if (v.id >= 0 && v.id < ntypes) is_unsigned[v.id] = flag ? 1 : 0;
 }
 
 static int force_vreg_i32(ir_type_t *types, unsigned char *forced_i32, int ntypes, ir_val_t v) {
@@ -539,12 +551,26 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw);
 static obj_sig_t call_sig_from_inst(ir_inst_t *i);
 
-static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
+static int func_param_ordinal_for_inst(ir_func_t *f, ir_inst_t *target) {
+  int ordinal = 0;
+  for (ir_block_t *b = f->entry; b; b = b->next) {
+    for (ir_inst_t *i = b->head; i; i = i->next) {
+      if (i->op != IR_PARAM || i->src1.id != IR_VAL_IMM || i->src1.imm < 0) continue;
+      if (i == target) return ordinal;
+      ordinal++;
+    }
+  }
+  return -1;
+}
+
+static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *is_unsigned,
+                                int ntypes) {
   for (int v = 0; v < ntypes; v++) types[v] = IR_TY_I32;
   unsigned char *forced_i32 = calloc((size_t)ntypes, 1);
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       note_vreg_type(types, ntypes, i->dst);
+      note_vreg_unsigned(is_unsigned, ntypes, i->dst, i->is_unsigned);
       note_vreg_type(types, ntypes, i->src1);
       note_vreg_type(types, ntypes, i->src2);
       note_vreg_type(types, ntypes, i->src3);
@@ -562,7 +588,8 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, int ntypes) {
       if (i->src1.imm < 0) {
         force_vreg_i32(types, forced_i32, ntypes, i->dst);
       } else {
-        ir_type_t pty = func_param_type_from_decl(f, (int)i->src1.imm, i->dst.type);
+        int ordinal = func_param_ordinal_for_inst(f, i);
+        ir_type_t pty = func_param_type_from_decl(f, ordinal, i->dst.type);
         types[i->dst.id] = wasm_ir_type(pty);
         if (pty == IR_TY_PTR) {
           force_vreg_i32(types, forced_i32, ntypes, i->dst);
@@ -807,7 +834,7 @@ static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   emit_local_get(b, local_index(param_count, v.id));
   if (got == want) return;
   if (got == IR_TY_I32 && want == IR_TY_I64) {
-    wb_u8(b, 0xad); /* i64.extend_i32_u */
+    wb_u8(b, actual_vreg_unsigned(v) ? 0xad : 0xac); /* i64.extend_i32_{u,s} */
   } else if (got == IR_TY_I64 && want == IR_TY_I32) {
     wb_u8(b, 0xa7); /* i32.wrap_i64 */
   } else if ((got == IR_TY_I32 || got == IR_TY_I64) &&
@@ -914,7 +941,12 @@ static int collect_param_count(ir_func_t *f) {
       }
     }
   }
-  return max_idx + 1;
+  int count = max_idx + 1;
+  int declared = f ? psx_ctx_get_function_nargs_fixed(f->name, f->name_len) : 0;
+  if (declared > count) {
+    count = declared;
+  }
+  return count;
 }
 
 static int func_has_ret_area(ir_func_t *f) {
@@ -923,7 +955,11 @@ static int func_has_ret_area(ir_func_t *f) {
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
   int pcat = psx_ctx_get_function_param_category(f->name, f->name_len, idx);
+  if (raw == IR_TY_PTR) return IR_TY_PTR;
   if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) return IR_TY_PTR;
+  tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind(f->name, f->name_len, idx);
+  if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   if (raw != IR_TY_PTR && psx_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
     return IR_TY_I64;
   }
@@ -1009,9 +1045,9 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
       unsigned iw = (gv->funcptr_param_int_mask >> (2 * p)) & 3u;
       if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else if (iw == 3) sig.params[p] = IR_TY_I32;
+      else if (iw == 3) sig.params[p] = IR_TY_I64;
       else if (iw != 0) sig.params[p] = IR_TY_I64;
-      else sig.params[p] = IR_TY_I32;
+      else sig.params[p] = IR_TY_I64;
     }
   }
   return sig;
@@ -1039,9 +1075,9 @@ static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
       unsigned iw = (mi->funcptr_param_int_mask >> (2 * p)) & 3u;
       if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else if (iw == 3) sig.params[p] = IR_TY_I32;
+      else if (iw == 3) sig.params[p] = IR_TY_I64;
       else if (iw != 0) sig.params[p] = IR_TY_I64;
-      else sig.params[p] = IR_TY_I32;
+      else sig.params[p] = IR_TY_I64;
     }
   }
   return sig;
@@ -1068,9 +1104,9 @@ static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *nam
       unsigned iw = (inst->funcptr_param_int_mask >> (2 * p)) & 3u;
       if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else if (iw == 3) sig.params[p] = IR_TY_I32;
+      else if (iw == 3) sig.params[p] = IR_TY_I64;
       else if (iw != 0) sig.params[p] = IR_TY_I64;
-      else sig.params[p] = IR_TY_I32;
+      else sig.params[p] = IR_TY_I64;
     }
   }
   return sig;
@@ -1115,8 +1151,11 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
       for (ir_inst_t *i = b->head; i; i = i->next) {
         if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0 &&
             i->src1.imm + (has_ret_area ? 1 : 0) < sig->nparams) {
-          ir_type_t pty = func_param_type_from_decl(f, (int)i->src1.imm, i->dst.type);
-          sig->params[i->src1.imm + (has_ret_area ? 1 : 0)] = wasm_ir_type(pty);
+          int ordinal = func_param_ordinal_for_inst(f, i);
+          if (ordinal >= 0 && ordinal + (has_ret_area ? 1 : 0) < sig->nparams) {
+            ir_type_t pty = func_param_type_from_decl(f, ordinal, i->dst.type);
+            sig->params[ordinal + (has_ret_area ? 1 : 0)] = wasm_ir_type(pty);
+          }
         }
       }
     }
@@ -1129,6 +1168,9 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
+  if (!has_ret_area && i->callee.id != IR_VAL_NONE && i->has_funcptr_sig) {
+    return func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
+  }
   sig.nparams = (i->is_variadic_call ? i->nargs_fixed : i->nargs) + (has_ret_area ? 1 : 0);
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
@@ -1138,7 +1180,8 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       ir_type_t arg_ty = i->args[a].type;
       ir_type_t ty = wasm_ir_type(arg_ty);
       int pcat = i->sym ? psx_ctx_get_function_param_category(i->sym, i->sym_len, a) : PSX_PCAT_UNSET;
-      if (pcat == PSX_PCAT_PTR || arg_ty == IR_TY_PTR) ty = IR_TY_I32;
+      if (i->callee.id != IR_VAL_NONE && arg_ty == IR_TY_PTR) ty = IR_TY_I64;
+      else if (pcat == PSX_PCAT_PTR || arg_ty == IR_TY_PTR) ty = IR_TY_I32;
       else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
       sig.params[a + (has_ret_area ? 1 : 0)] = ty;
     }
@@ -1353,11 +1396,15 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   obj_global_t *va_arg_area = NULL;
   wb_t body = {0};
   ir_type_t *local_types = NULL;
+  unsigned char *local_unsigned = NULL;
   if (nlocals > 0) {
     local_types = xrealloc(NULL, (size_t)nlocals * sizeof(ir_type_t));
-    collect_local_types(f, local_types, nlocals);
+    local_unsigned = xrealloc(NULL, (size_t)nlocals);
+    memset(local_unsigned, 0, (size_t)nlocals);
+    collect_local_types(f, local_types, local_unsigned, nlocals);
   }
   g_emit_local_types = local_types;
+  g_emit_local_unsigned = local_unsigned;
   g_emit_local_count = nlocals;
 
   wb_uleb(&body, (uint32_t)(nlocals + extra_count));
@@ -1431,7 +1478,9 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             if (!has_ret_area) obj_unsupported_op(i->op);
             emit_local_get(&body, 0);
           } else {
-            emit_local_get(&body, (int)i->src1.imm + (has_ret_area ? 1 : 0));
+            int ordinal = func_param_ordinal_for_inst(f, i);
+            if (ordinal < 0) obj_unsupported_op(i->op);
+            emit_local_get(&body, ordinal + (has_ret_area ? 1 : 0));
           }
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
@@ -1813,7 +1862,9 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
   wb_u8(&body, 0x0b);
   of->body = body;
   free(local_types);
+  free(local_unsigned);
   g_emit_local_types = NULL;
+  g_emit_local_unsigned = NULL;
   g_emit_local_count = 0;
 }
 

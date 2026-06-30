@@ -688,6 +688,227 @@ static int find_defined_data(object_t *objs, int obj_count, str_t name, object_t
   return 0;
 }
 
+static int str_eq_lit(str_t a, const char *b) {
+  int n = (int)strlen(b);
+  return a.len == n && a.s && memcmp(a.s, b, (size_t)n) == 0;
+}
+
+static int is_runtime_data_symbol(str_t name) {
+  return str_eq_lit(name, "__stdinp") || str_eq_lit(name, "__stdoutp") ||
+         str_eq_lit(name, "__stderrp");
+}
+
+static int is_runtime_func_symbol(str_t name) {
+  return str_eq_lit(name, "printf") || str_eq_lit(name, "fprintf") ||
+         str_eq_lit(name, "__assert_rtn");
+}
+
+static int runtime_has_data(object_t *runtime, str_t name) {
+  for (int i = 0; i < runtime->symbol_count; i++) {
+    symbol_t *sym = &runtime->symbols[i];
+    if (sym->kind == SYM_DATA && !(sym->flags & SYM_UNDEFINED) && str_eq(sym->name, name)) return 1;
+  }
+  return 0;
+}
+
+static int runtime_has_func(object_t *runtime, str_t name) {
+  for (int i = 0; i < runtime->symbol_count; i++) {
+    symbol_t *sym = &runtime->symbols[i];
+    if (sym->kind == SYM_FUNCTION && !(sym->flags & SYM_UNDEFINED) && str_eq(sym->name, name)) return 1;
+  }
+  return 0;
+}
+
+static unsigned char wasm_type_result_valtype(type_t *t) {
+  rd_t r = {t->raw, t->raw_len, 0, "runtime stub type"};
+  if (r.pos >= r.len || r.p[r.pos++] != 0x60) die("bad runtime stub function type");
+  uint32_t np = rd_uleb(&r);
+  rd_skip(&r, np);
+  uint32_t nr = rd_uleb(&r);
+  if (nr == 0) return 0;
+  if (nr != 1 || r.pos >= r.len) die("unsupported runtime stub result type");
+  return r.p[r.pos++];
+}
+
+static uint32_t wasm_type_param_count(type_t *t) {
+  rd_t r = {t->raw, t->raw_len, 0, "runtime stub type"};
+  if (r.pos >= r.len || r.p[r.pos++] != 0x60) die("bad runtime stub function type");
+  return rd_uleb(&r);
+}
+
+static unsigned char wasm_type_param_valtype(type_t *t, uint32_t idx) {
+  rd_t r = {t->raw, t->raw_len, 0, "runtime stub type"};
+  if (r.pos >= r.len || r.p[r.pos++] != 0x60) die("bad runtime stub function type");
+  uint32_t np = rd_uleb(&r);
+  if (idx >= np) die("runtime stub parameter index out of range");
+  for (uint32_t p = 0; p < np; p++) {
+    if (r.pos >= r.len) die("truncated runtime stub parameter type");
+    unsigned char ty = r.p[r.pos++];
+    if (p == idx) return ty;
+  }
+  die("runtime stub parameter index out of range");
+  return 0;
+}
+
+static int make_printf_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "printf") && !str_eq_lit(name, "fprintf")) return 0;
+  if (wasm_type_result_valtype(type) != 0x7f) return 0;
+  uint32_t fmt_param = str_eq_lit(name, "fprintf") ? 1u : 0u;
+  if (wasm_type_param_count(type) <= fmt_param) return 0;
+  unsigned char fmt_ty = wasm_type_param_valtype(type, fmt_param);
+  if (fmt_ty != 0x7e && fmt_ty != 0x7f) return 0;
+
+  uint32_t addr_local = wasm_type_param_count(type);
+  uint32_t len_local = addr_local + 1;
+  buf_uleb(b, 1);       /* local decl group count */
+  buf_uleb(b, 2);       /* addr, len */
+  buf_u8(b, 0x7f);      /* i32 */
+  buf_u8(b, 0x20);      /* local.get fmt_param */
+  buf_uleb(b, fmt_param);
+  if (fmt_ty == 0x7e) buf_u8(b, 0xa7); /* i32.wrap_i64 */
+  buf_u8(b, 0x21);      /* local.set addr */
+  buf_uleb(b, addr_local);
+  buf_u8(b, 0x41);      /* i32.const 0 */
+  buf_sleb_i32(b, 0);
+  buf_u8(b, 0x21);      /* local.set len */
+  buf_uleb(b, len_local);
+  buf_u8(b, 0x02);      /* block */
+  buf_u8(b, 0x40);
+  buf_u8(b, 0x03);      /* loop */
+  buf_u8(b, 0x40);
+  buf_u8(b, 0x20);      /* local.get addr */
+  buf_uleb(b, addr_local);
+  buf_u8(b, 0x2d);      /* i32.load8_u */
+  buf_uleb(b, 0);
+  buf_uleb(b, 0);
+  buf_u8(b, 0x45);      /* i32.eqz */
+  buf_u8(b, 0x0d);      /* br_if 1 */
+  buf_uleb(b, 1);
+  buf_u8(b, 0x20);      /* local.get len */
+  buf_uleb(b, len_local);
+  buf_u8(b, 0x41);      /* i32.const 1 */
+  buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);      /* i32.add */
+  buf_u8(b, 0x21);      /* local.set len */
+  buf_uleb(b, len_local);
+  buf_u8(b, 0x20);      /* local.get addr */
+  buf_uleb(b, addr_local);
+  buf_u8(b, 0x41);      /* i32.const 1 */
+  buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);      /* i32.add */
+  buf_u8(b, 0x21);      /* local.set addr */
+  buf_uleb(b, addr_local);
+  buf_u8(b, 0x0c);      /* br 0 */
+  buf_uleb(b, 0);
+  buf_u8(b, 0x0b);      /* end loop */
+  buf_u8(b, 0x0b);      /* end block */
+  buf_u8(b, 0x20);      /* local.get len */
+  buf_uleb(b, len_local);
+  return 1;
+}
+
+static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
+  buf_t b = {0};
+  if (str_eq_lit(name, "__assert_rtn")) {
+    buf_uleb(&b, 0); /* local decl count */
+    buf_u8(&b, 0x00); /* unreachable */
+  } else if (make_printf_stub_body(name, type, &b)) {
+  } else {
+    buf_uleb(&b, 0); /* local decl count */
+    unsigned char result = wasm_type_result_valtype(type);
+    if (result == 0x7f) {
+      buf_u8(&b, 0x41);
+      buf_sleb_i32(&b, 1);
+    } else if (result == 0x7e) {
+      buf_u8(&b, 0x42);
+      buf_sleb_i32(&b, 1);
+    } else if (result == 0x7d) {
+      buf_u8(&b, 0x43);
+      buf_u32le(&b, 0);
+    } else if (result == 0x7c) {
+      buf_u8(&b, 0x44);
+      buf_u32le(&b, 0);
+      buf_u32le(&b, 0);
+    } else if (result != 0) {
+      die("unsupported runtime stub result type");
+    }
+  }
+  buf_u8(&b, 0x0b);
+  *out_len = b.len;
+  return b.data;
+}
+
+static void add_runtime_data_symbol(object_t *runtime, str_t name) {
+  if (runtime_has_data(runtime, name)) return;
+  data_seg_t d = {0};
+  d.name = str_dup(name.s, name.len);
+  d.bytes = xmalloc(4);
+  memset(d.bytes, 0, 4);
+  d.size = 4;
+  d.alloc_size = 4;
+  d.align_log2 = 2;
+  d.defined = 1;
+  int data_index = runtime->data_count;
+  PUSH(runtime->data, runtime->data_count, runtime->data_cap, d);
+
+  symbol_t sym = {0};
+  sym.kind = SYM_DATA;
+  sym.name = str_dup(name.s, name.len);
+  sym.index = data_index;
+  sym.data_offset = 0;
+  sym.data_size = 4;
+  PUSH(runtime->symbols, runtime->symbol_count, runtime->symbol_cap, sym);
+}
+
+static void add_runtime_func_symbol(object_t *runtime, str_t name, type_t *type) {
+  if (runtime_has_func(runtime, name)) return;
+  type_t t = {0};
+  t.raw_len = type->raw_len;
+  t.raw = xmalloc(t.raw_len);
+  memcpy(t.raw, type->raw, t.raw_len);
+  int type_index = runtime->type_count;
+  PUSH(runtime->types, runtime->type_count, runtime->type_cap, t);
+
+  func_t f = {0};
+  f.name = str_dup(name.s, name.len);
+  f.type_index = type_index;
+  f.defined = 1;
+  f.body = make_runtime_stub_body(name, &runtime->types[type_index], &f.body_len);
+  int func_index = runtime->func_count;
+  PUSH(runtime->funcs, runtime->func_count, runtime->func_cap, f);
+
+  symbol_t sym = {0};
+  sym.kind = SYM_FUNCTION;
+  sym.name = str_dup(name.s, name.len);
+  sym.index = func_index;
+  PUSH(runtime->symbols, runtime->symbol_count, runtime->symbol_cap, sym);
+}
+
+static void synthesize_runtime_object(object_t *objs, int obj_count, object_t *runtime) {
+  const char *runtime_path = "<ag_wasm_link_runtime>";
+  runtime->path = str_dup(runtime_path, (int)strlen(runtime_path));
+  runtime->code_section_index = -1;
+  runtime->data_section_index = -1;
+  for (int oi = 0; oi < obj_count; oi++) {
+    object_t *o = &objs[oi];
+    for (int si = 0; si < o->symbol_count; si++) {
+      symbol_t *sym = &o->symbols[si];
+      if (sym->kind == SYM_DATA && (sym->flags & SYM_UNDEFINED) &&
+          is_runtime_data_symbol(sym->name) &&
+          !find_defined_data(objs, obj_count, sym->name, NULL, NULL, NULL)) {
+        add_runtime_data_symbol(runtime, sym->name);
+      } else if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) &&
+                 is_runtime_func_symbol(sym->name) &&
+                 !find_defined_func(objs, obj_count, sym->name, NULL, NULL)) {
+        if (sym->index < 0 || sym->index >= o->func_count) die("bad undefined function symbol index");
+        int type_index = o->funcs[sym->index].type_index;
+        if (type_index < 0 || type_index >= o->type_count) die("bad function type index");
+        add_runtime_func_symbol(runtime, sym->name, &o->types[type_index]);
+      }
+    }
+  }
+}
+
 static int find_final_global(final_global_t *globals, int count, str_t name) {
   for (int i = 0; i < count; i++) if (str_eq(globals[i].name, name)) return i;
   return -1;
@@ -994,6 +1215,15 @@ static void write_output(const char *path, buf_t *out) {
 static void build_module(const char *out_path, const char *export_name,
                          object_t *objs, int obj_count) {
   check_duplicate_definitions(objs, obj_count);
+  object_t runtime;
+  memset(&runtime, 0, sizeof(runtime));
+  synthesize_runtime_object(objs, obj_count, &runtime);
+  if (runtime.func_count > 0 || runtime.data_count > 0) {
+    object_t *with_runtime = xmalloc((size_t)(obj_count + 1) * sizeof(*with_runtime));
+    memcpy(with_runtime, objs, (size_t)obj_count * sizeof(*with_runtime));
+    with_runtime[obj_count++] = runtime;
+    objs = with_runtime;
+  }
 
   type_t *types = NULL;
   int type_count = 0, type_cap = 0;

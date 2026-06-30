@@ -1400,6 +1400,11 @@ bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed)
   return f->is_variadic != 0;
 }
 
+int psx_ctx_get_function_nargs_fixed(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->nargs_fixed : 0;
+}
+
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len) {
   if (out_tag_kind) *out_tag_kind = TK_EOF;

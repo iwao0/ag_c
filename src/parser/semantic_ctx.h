@@ -247,6 +247,7 @@ int psx_ctx_get_function_param_category(char *name, int len, int idx);
 int psx_ctx_track_function_defined(char *name, int len);
 int psx_ctx_is_function_defined(char *name, int len);
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
+int psx_ctx_get_function_nargs_fixed(char *name, int len);
 /* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
 void psx_ctx_set_function_ret_void(char *name, int len, int is_void);
