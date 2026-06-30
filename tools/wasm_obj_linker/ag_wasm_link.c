@@ -2427,11 +2427,19 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_memcpy";
   } else if (str_eq_lit(name, "abs")) {
     target_lit = "__agc_runtime_abs";
+  } else if (str_eq_lit(name, "imaxabs")) {
+    target_lit = "__agc_runtime_imaxabs";
   } else if (str_eq_lit(name, "isdigit")) {
+    target_lit = "__agc_runtime_isdigit";
+  } else if (str_eq_lit(name, "iswdigit")) {
     target_lit = "__agc_runtime_isdigit";
   } else if (str_eq_lit(name, "isalpha")) {
     target_lit = "__agc_runtime_isalpha";
+  } else if (str_eq_lit(name, "iswalpha")) {
+    target_lit = "__agc_runtime_isalpha";
   } else if (str_eq_lit(name, "toupper")) {
+    target_lit = "__agc_runtime_toupper";
+  } else if (str_eq_lit(name, "towupper")) {
     target_lit = "__agc_runtime_toupper";
   } else if (str_eq_lit(name, "malloc")) {
     target_lit = "__agc_runtime_malloc";
@@ -2457,6 +2465,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strrchr";
   } else if (str_eq_lit(name, "putchar")) {
     target_lit = "__agc_runtime_putchar";
+  } else if (str_eq_lit(name, "wcslen")) {
+    target_lit = "__agc_runtime_wcslen";
+  } else if (str_eq_lit(name, "wcscpy")) {
+    target_lit = "__agc_runtime_wcscpy";
+  } else if (str_eq_lit(name, "wcscmp")) {
+    target_lit = "__agc_runtime_wcscmp";
   } else {
     return 0;
   }

@@ -237,9 +237,13 @@ int strcmp(char *a, char *b);
 void *memset(void *s, int c, unsigned long n);
 void *memcpy(void *dst, void *src, unsigned long n);
 int abs(int x);
+long imaxabs(long x);
 int isdigit(int c);
 int isalpha(int c);
 int toupper(int c);
+int iswdigit(int c);
+int iswalpha(int c);
+int towupper(int c);
 void *malloc(long size);
 void *calloc(long nmemb, long size);
 void free(void *p);
@@ -251,6 +255,9 @@ int strncmp(char *a, char *b, unsigned long n);
 int memcmp(void *a, void *b, unsigned long n);
 char *strchr(char *s, int ch);
 char *strrchr(char *s, int ch);
+long wcslen(int *s);
+int *wcscpy(int *dst, int *src);
+int wcscmp(int *a, int *b);
 int putchar(int c);
 int main(void) {
   char a[32];
@@ -265,10 +272,16 @@ int main(void) {
   memcpy(c, a, 6);
   char *p = malloc(8);
   char *q = calloc(4, 1);
+  int ws[8];
+  int wd[8];
+  ws[0] = 'A';
+  ws[1] = 'b';
+  ws[2] = 0;
   p[0] = 'O';
   p[1] = 'K';
   p[2] = 0;
   free(p);
+  wcscpy(wd, ws);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -276,9 +289,12 @@ int main(void) {
          strchr(a, 'l') == a + 2 &&
          strrchr(a, 'l') == a + 3 &&
          abs(-42) == 42 &&
+         imaxabs(-1234567890123L) == 1234567890123L &&
          isdigit('7') && !isdigit('x') &&
          isalpha('Q') && !isalpha('7') &&
          toupper('q') == 'Q' &&
+         iswdigit('8') && iswalpha('Z') && towupper('m') == 'M' &&
+         wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          putchar('Z') == 'Z' ? 42 : 1;

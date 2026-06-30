@@ -85,6 +85,10 @@ int __agc_runtime_abs(int x) {
   return x < 0 ? -x : x;
 }
 
+long __agc_runtime_imaxabs(long x) {
+  return x < 0 ? -x : x;
+}
+
 int __agc_runtime_isdigit(int c) {
   return c >= '0' && c <= '9';
 }
@@ -96,6 +100,31 @@ int __agc_runtime_isalpha(int c) {
 
 int __agc_runtime_toupper(int c) {
   return c >= 'a' && c <= 'z' ? c - 32 : c;
+}
+
+long __agc_runtime_wcslen(long s_addr) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  long n = 0;
+  while (s[n]) n++;
+  return n;
+}
+
+long __agc_runtime_wcscpy(long dst_addr, long src_addr) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *src = (int *)ag_rt_ptr(src_addr);
+  long i = 0;
+  do {
+    dst[i] = src[i];
+  } while (src[i++] != 0);
+  return dst_addr;
+}
+
+int __agc_runtime_wcscmp(long a_addr, long b_addr) {
+  int *a = (int *)ag_rt_ptr(a_addr);
+  int *b = (int *)ag_rt_ptr(b_addr);
+  long i = 0;
+  while (a[i] && a[i] == b[i]) i++;
+  return a[i] - b[i];
 }
 
 int __agc_runtime_atoi(long s_addr) {

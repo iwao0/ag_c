@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き298: ag_wasm_link runtime object allocator）
+最終更新: 2026-07-01（続き299: ag_wasm_link runtime object wide helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き299: **`imaxabs` / wide-char helper を `libagc_runtime.o` へ移行**。
+  `__agc_runtime_imaxabs`、`__agc_runtime_wcslen`、`__agc_runtime_wcscpy`、
+  `__agc_runtime_wcscmp` を追加し、`iswalpha` / `iswdigit` / `towupper` は
+  既存の ASCII `isalpha` / `isdigit` / `toupper` runtime 本体へ bridge する。
+  `test_smoke.sh` の `libc_runtime.c` で `imaxabs`、wide string copy/compare/length、
+  wide ctype を確認。synthetic fallback は残すが、通常 runtime object 経路では `__agc_runtime_*` を使う。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き298: **`malloc` / `calloc` / `free` を `libagc_runtime.o` へ移行**。
   `libagc_runtime.c` に 32768 起点の小さな bump allocator を追加し、`calloc` は確保範囲をゼロ化、
   `free` は no-op にした。`ag_wasm_link` の ABI bridge map に `malloc` / `calloc` / `free` を追加し、
