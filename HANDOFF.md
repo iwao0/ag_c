@@ -20,7 +20,7 @@
   array suffix を非ポインタ型だけに限定していたため、`(int *[]){...}` を compound literal
   と認識できなかった。suffix 受理と `[]` 要素数推定をポインタ要素配列にも広げ、
   hidden global/lvar に `pointee_elem_size` / `pointer_qual_levels` / `base_deref_size` を設定。
-  `file_scope_ptr_from_array_compound.c` に unsized/sized `int *[...]` を追加し、
+  `file_scope_ptr_from_array_compound.c` に unsized/sized `int *[...]` と `struct Node *[...]` を追加し、
   Wasm object は `global_compound_literal_inner_ptr_data_reloc` で data initializer 内 `&g`
   の `R_WASM_MEMORY_ADDR_I32` relocation を固定。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。

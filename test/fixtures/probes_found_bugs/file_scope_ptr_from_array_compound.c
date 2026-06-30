@@ -21,6 +21,12 @@ int *ptr_sized = (int [3]){100, 200, 300};
 int target_value = 11;
 int **ptr_ptrs = (int *[]){&target_value, &target_value};
 int **ptr_ptrs_sized = (int *[2]){&target_value, &target_value};
+struct Node {
+    int value;
+};
+struct Node node_a = {13};
+struct Node node_b = {17};
+struct Node **node_ptrs = (struct Node *[]){&node_a, &node_b};
 
 int main(void) {
     assert(ptr_i[0] == 10 && ptr_i[1] == 20 && ptr_i[2] == 30);
@@ -29,5 +35,6 @@ int main(void) {
     assert(ptr_sized[0] == 100 && ptr_sized[2] == 300);
     assert(**ptr_ptrs == 11 && *ptr_ptrs[1] == 11);
     assert(**ptr_ptrs_sized == 11 && *ptr_ptrs_sized[1] == 11);
+    assert(node_ptrs[0]->value == 13 && node_ptrs[1]->value == 17);
     return 0;
 }
