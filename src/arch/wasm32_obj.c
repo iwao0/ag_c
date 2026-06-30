@@ -377,6 +377,16 @@ static obj_data_t *intern_data(const char *name, int name_len, int align_log2,
   return d;
 }
 
+static void reserve_data_capacity(int min_cap) {
+  if (min_cap <= g_obj.data_cap) return;
+  int ncap = g_obj.data_cap ? g_obj.data_cap : 32;
+  while (ncap < min_cap) ncap *= 2;
+  g_obj.data = xrealloc(g_obj.data, (size_t)ncap * sizeof(*g_obj.data));
+  memset(g_obj.data + g_obj.data_cap, 0,
+         (size_t)(ncap - g_obj.data_cap) * sizeof(*g_obj.data));
+  g_obj.data_cap = ncap;
+}
+
 static void data_note_alloc_size(obj_data_t *d, size_t size) {
   if (d && size > d->alloc_size) d->alloc_size = size;
 }
@@ -571,6 +581,10 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
     for (ir_inst_t *i = b->head; i; i = i->next) {
       note_vreg_type(types, ntypes, i->dst);
       note_vreg_unsigned(is_unsigned, ntypes, i->dst, i->is_unsigned);
+      if (i->op == IR_LOAD_IMM && i->dst.type == IR_TY_I32 && i->src1.id == IR_VAL_IMM &&
+          i->src1.imm > INT32_MAX) {
+        note_vreg_unsigned(is_unsigned, ntypes, i->dst, 1);
+      }
       note_vreg_type(types, ntypes, i->src1);
       note_vreg_type(types, ntypes, i->src2);
       note_vreg_type(types, ntypes, i->src3);
@@ -933,15 +947,14 @@ static void emit_memarg(wb_t *b, ir_type_t ty) {
 }
 
 static int collect_param_count(ir_func_t *f) {
-  int max_idx = -1;
+  int count = 0;
   for (ir_block_t *b = f->entry; b; b = b->next) {
     for (ir_inst_t *i = b->head; i; i = i->next) {
       if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM && i->src1.imm >= 0) {
-        if ((int)i->src1.imm > max_idx) max_idx = (int)i->src1.imm;
+        count++;
       }
     }
   }
-  int count = max_idx + 1;
   int declared = f ? psx_ctx_get_function_nargs_fixed(f->name, f->name_len) : 0;
   if (declared > count) {
     count = declared;
@@ -1723,6 +1736,20 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             op_ty = lhs_ty == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
           } else {
             op_ty = dst_ty == IR_TY_I64 ? IR_TY_I64 : IR_TY_I32;
+          }
+          if (i->op == IR_MOD || i->op == IR_UMOD) {
+            emit_val(&body, i->src2, op_ty, param_count);
+            wb_u8(&body, op_ty == IR_TY_I64 ? 0x50 : 0x45);
+            wb_u8(&body, 0x04);
+            wb_u8(&body, wasm_valtype(op_ty));
+            emit_val(&body, i->src1, op_ty, param_count);
+            wb_u8(&body, 0x05);
+            emit_val(&body, i->src1, op_ty, param_count);
+            emit_val(&body, i->src2, op_ty, param_count);
+            wb_u8(&body, int_binop_opcode(i->op, op_ty));
+            wb_u8(&body, 0x0b);
+            emit_local_set(&body, local_index(param_count, i->dst.id));
+            break;
           }
           emit_val(&body, i->src1, op_ty, param_count);
           emit_val(&body, i->src2, op_ty, param_count);
@@ -2584,6 +2611,15 @@ static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int 
   return max_end > 0 ? max_end : fallback;
 }
 
+static int global_has_object_payload(global_var_t *gv) {
+  if (!gv) return 0;
+  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+    return gv->init_count > 0;
+  }
+  return gv->init_symbol || gv->init_count > 0 ||
+         gv->fp_kind != TK_FLOAT_KIND_NONE || gv->has_init;
+}
+
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
   wb_zero(&d->bytes, size);
   if (gv->init_count <= 0) return;
@@ -2628,7 +2664,12 @@ static void emit_obj_global(global_var_t *gv, void *user) {
 
   int size = gv->type_size > 0 ? gv->type_size : 4;
   obj_data_t *d = intern_data(gv->name, gv->name_len, align_log2_for_size(size), gv->is_static, 0);
-  if (d->is_emitted) return;
+  if (d->is_emitted) {
+    if (!global_has_object_payload(gv) || d->bytes.len != 0) return;
+    d->bytes.len = 0;
+    d->reloc_count = 0;
+    d->is_emitted = 0;
+  }
   data_note_alloc_size(d, (size_t)size);
 
   if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
@@ -2699,8 +2740,17 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   d->is_emitted = 1;
 }
 
+static void count_obj_global(global_var_t *gv, void *user) {
+  (void)gv;
+  int *count = (int *)user;
+  (*count)++;
+}
+
 void wasm32_obj_emit_data_segments(void) {
   ps_iter_string_literals(emit_obj_string_literal, NULL);
+  int global_count = 0;
+  ps_iter_globals(count_obj_global, &global_count);
+  reserve_data_capacity(g_obj.data_count + global_count + 8);
   ps_iter_globals(emit_obj_global, NULL);
 }
 

@@ -2960,3 +2960,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `test/fixtures/probes_found_bugs/multilevel_pointer_return.c` : assert trap
   - `test/fixtures/probes_found_bugs/static_local_pointer_array_init.c` : assert trap
   - `test/fixtures/probes_found_bugs/unsigned_fp_conversion.c` : assert trap
+
+### このセッション（続き270）: Wasm object linked fixture scan 全通
+- `src/arch/wasm32_obj.c` の local unsigned metadata で、`load_imm i32 4294967295` のような
+  32-bit unsigned out-of-range immediate を unsigned として保持するようにした。
+  `int_cast_truncates_long.c` / `unsigned_fp_conversion.c` の object link-run が通る。
+- global/data symbol emission 前に `g_obj.data` の容量を予約するようにした。data initializer の
+  relocation target を `intern_data()` した瞬間に `g_obj.data` が realloc され、書き込み中の
+  `obj_data_t *` が stale になるバグを潰した。これで `p = &v` などの scalar pointer global と、
+  static local pointer array initializer の reloc.DATA が落ちなくなり、
+  `multilevel_pointer_return.c` / `static_local_pointer_array_init.c` が通る。
+- complex by-value ABI で、Wasm signature の parameter count を source-level 引数数ではなく
+  IR_PARAM 命令数で数えるようにした。`mix(int, double _Complex, double)` のように C 引数 3 個が
+  Wasm 値 4 個へ展開される case で最後の FP param が欠け、local type がずれる問題を修正。
+  `complex_by_value_abi.c` は linked wasm validate と実行まで通る。
+- object emitter の `%` / unsigned `%` に runtime divisor-zero guard を追加し、WAT backend と同じく
+  divisor が 0 のとき LHS を返す。`mod_zero_impl_defined.c` が trap しなくなった。
+- 確認:
+  - `make -j4 build/ag_c_wasm`
+  - `./build/test_wasm32_object` = e2e object scan 1113 pass / 1 skip / fail 0
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-fixture-scan` = 1113 pass / 0 fail / 1 skip、
+    validate 1113、run 1097
+  - `git diff --check`
