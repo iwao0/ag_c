@@ -577,6 +577,27 @@ wasm-validate "$out_dir/linked_stdio_data_runtime.wasm"
 wasm-interp "$out_dir/linked_stdio_data_runtime.wasm" --run-all-exports > "$out_dir/linked_stdio_data_runtime.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_stdio_data_runtime.interp"
 
+cat > "$out_dir/assert_runtime.c" <<'SRC'
+void __assert_rtn(char *func, char *file, int line, char *expr);
+int ag_assert_gate;
+int main(void) {
+  if (ag_assert_gate) __assert_rtn("main", "assert_runtime.c", 4, "ag_assert_gate == 0");
+  return 42;
+}
+SRC
+"$root/build/ag_c_wasm" -c -o "$out_dir/assert_runtime.o" "$out_dir/assert_runtime.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_assert_runtime.wasm" \
+  "$out_dir/assert_runtime.o"
+wasm-validate "$out_dir/linked_assert_runtime.wasm"
+wasm-interp "$out_dir/linked_assert_runtime.wasm" --run-all-exports > "$out_dir/linked_assert_runtime.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_assert_runtime.interp"
+if command -v wasm-objdump >/dev/null 2>&1; then
+  "$root/build/ag_wasm_link" --nostdlib --no-entry --export=main -o "$out_dir/linked_assert_runtime_nostdlib.wasm" \
+    "$out_dir/assert_runtime.o"
+  wasm-objdump -x "$out_dir/linked_assert_runtime_nostdlib.wasm" > "$out_dir/linked_assert_runtime_nostdlib.objdump"
+  grep -q '<env.__assert_rtn>' "$out_dir/linked_assert_runtime_nostdlib.objdump"
+fi
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \
   "$out_dir/many_globals.o"

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き303: ag_wasm_link runtime object printf fprintf）
+最終更新: 2026-07-01（続き304: ag_wasm_link runtime object __assert_rtn）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き304: **`__assert_rtn` を `libagc_runtime.o` へ移行**。
+  `__agc_runtime___assert_rtn` を runtime object に追加し、`ag_wasm_link` の ABI bridge map で
+  public `__assert_rtn` から接続するようにした。失敗時にしか呼ばれないため、現時点の実装は
+  呼ばれたら停止する最小 body。`test_smoke.sh` では、未実行分岐内に `__assert_rtn` call を残す
+  fixture で通常リンク実行が 42 を返すことと、`--nostdlib` では `env.__assert_rtn` import が
+  残ることを確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き303: **`printf` / `fprintf` を `libagc_runtime.o` へ移行**。
   既存 synthetic と同じく実出力はせず、format 文字列長を返す最小実装として
   `__agc_runtime_printf` / `__agc_runtime_fprintf` を runtime object に追加した。

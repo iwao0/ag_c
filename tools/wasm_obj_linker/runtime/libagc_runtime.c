@@ -493,3 +493,12 @@ int __agc_runtime_fprintf(long stream_addr, long fmt_addr, ...) {
   (void)stream_addr;
   return (int)__agc_runtime_strlen(fmt_addr);
 }
+
+void __agc_runtime___assert_rtn(long func_addr, long file_addr, int line, long expr_addr) {
+  (void)func_addr;
+  (void)file_addr;
+  (void)line;
+  (void)expr_addr;
+  for (;;) {
+  }
+}
