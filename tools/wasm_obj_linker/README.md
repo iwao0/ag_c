@@ -9,7 +9,7 @@ separate repository.
 ## Build
 
 ```sh
-make build/ag_wasm_link
+make build/ag_wasm_link build/libagc_runtime.o
 ```
 
 ## Usage
@@ -20,7 +20,10 @@ make build/ag_wasm_link
 ./build/ag_wasm_link --no-entry --export=main -o linked.wasm main.o other.o
 ```
 
-`--no-entry` is accepted for `wasm-ld`-shaped command lines.
+When `build/libagc_runtime.o` exists, `ag_wasm_link` appends it by default as
+the current standard runtime object. Use `--nostdlib` to leave those symbols as
+ordinary unresolved imports. `--no-entry` is accepted for `wasm-ld`-shaped
+command lines.
 
 ## v1 Scope
 
@@ -47,6 +50,9 @@ Supported:
   table index 0 is reserved for null function pointers.
 - Final active data segment offsets and global initializer `i32.const`
   immediates are emitted as signed LEB128.
+- Default runtime-object linking through `build/libagc_runtime.o`; currently it
+  carries the `snprintf`/`sprintf` formatter body and the linker emits only the
+  small ABI bridge for those public symbols.
 
 ## Smoke Test
 
@@ -63,7 +69,8 @@ with an omitted zero payload, a patched object with a non-zero data symbol
 offset, duplicate external function/data definition errors,
 cross-object function/import signature mismatch errors, malformed relocation
 target errors, and a many-data-segment case that requires more than one Wasm
-memory page.
+memory page. It also checks that `--nostdlib` leaves `snprintf`/`sprintf` as
+imports instead of resolving them through the runtime object.
 
 Not yet supported:
 

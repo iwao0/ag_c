@@ -415,6 +415,13 @@ grep -q 'function signature mismatch: host_mix' "$out_dir/linked_import_sig.err"
 wasm-validate "$out_dir/linked_snprintf_negative.wasm"
 wasm-interp "$out_dir/linked_snprintf_negative.wasm" --run-all-exports > "$out_dir/linked_snprintf_negative.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_snprintf_negative.interp"
+if command -v wasm-objdump >/dev/null 2>&1; then
+  "$root/build/ag_wasm_link" --nostdlib --no-entry --export=main -o "$out_dir/linked_snprintf_nostdlib.wasm" \
+    "$out_dir/snprintf_negative.o"
+  wasm-objdump -x "$out_dir/linked_snprintf_nostdlib.wasm" > "$out_dir/linked_snprintf_nostdlib.objdump"
+  grep -q '<env.snprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
+  grep -q '<env.sprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
+fi
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き295: ag_wasm_link printf-family percent literal 修正）
+最終更新: 2026-07-01（続き296: ag_wasm_link default runtime object 経路）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,19 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き296: **`libagc_runtime.o` を標準 runtime object としてリンクする経路を追加**。
+  `tools/wasm_obj_linker/runtime/libagc_runtime.c` を追加し、`make build/libagc_runtime.o` で
+  `ag_c_wasm -c` から Wasm object を作る。`ag_wasm_link` は `build/libagc_runtime.o` が存在する場合に
+  標準で入力末尾へ追加し、`--nostdlib` では追加と内部 synthetic stdlib 合成を止める。
+  現時点で runtime object 側へ移した本体は `snprintf` / `sprintf`。通常 C 定義 ABI と外部 libc 呼び出し ABI が
+  まだ一致しないため、public `snprintf` / `sprintf` は linker 側で薄い ABI bridge を合成し、
+  実処理は runtime object の `__agc_runtime_snprintf` / `__agc_runtime_sprintf` に置く。
+  `Makefile` の link scan / `test-wasm-obj-linker` / `test_wasm32_object` は `build/libagc_runtime.o` に依存。
+  `test_smoke.sh` は通常リンクで formatter が動くことと、`--nostdlib` では `env.snprintf` / `env.sprintf`
+  import のまま残ることを確認する。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き295: **ag_wasm_link `snprintf` / `sprintf` の `%%` 対応**。
   synthetic runtime formatter に percent literal `%%` を追加。vararg を読まず `%` を 1 byte 出力し、
   NUL 終端と戻り値 count は既存 helper で処理する。`test_smoke.sh` に

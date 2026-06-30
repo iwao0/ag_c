@@ -37,6 +37,8 @@ enum {
   RUNTIME_SCRATCH_BASE = 32768,
 };
 
+static const char *DEFAULT_RUNTIME_OBJECT = "build/libagc_runtime.o";
+
 typedef struct {
   unsigned char *data;
   size_t len;
@@ -2377,7 +2379,81 @@ static void add_runtime_code_reloc(object_t *runtime, int type, size_t code_payl
   PUSH(runtime->relocs, runtime->reloc_count, runtime->reloc_cap, r);
 }
 
-static void add_runtime_func_symbol(object_t *runtime, str_t name, type_t *type) {
+static int add_runtime_undefined_func_symbol(object_t *runtime, str_t name, type_t *type) {
+  for (int i = 0; i < runtime->symbol_count; i++) {
+    symbol_t *sym = &runtime->symbols[i];
+    if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) && str_eq(sym->name, name)) return i;
+  }
+
+  type_t t = {0};
+  t.raw_len = type->raw_len;
+  t.raw = xmalloc(t.raw_len);
+  memcpy(t.raw, type->raw, t.raw_len);
+  int type_index = runtime->type_count;
+  PUSH(runtime->types, runtime->type_count, runtime->type_cap, t);
+
+  func_t f = {0};
+  f.name = str_dup(name.s, name.len);
+  f.type_index = type_index;
+  f.defined = 0;
+  int func_index = runtime->func_count;
+  PUSH(runtime->funcs, runtime->func_count, runtime->func_cap, f);
+
+  symbol_t sym = {0};
+  sym.kind = SYM_FUNCTION;
+  sym.flags = SYM_UNDEFINED;
+  sym.name = str_dup(name.s, name.len);
+  sym.index = func_index;
+  int sym_index = runtime->symbol_count;
+  PUSH(runtime->symbols, runtime->symbol_count, runtime->symbol_cap, sym);
+  return sym_index;
+}
+
+static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *runtime,
+                                    str_t name, type_t *caller_type, buf_t *b,
+                                    int *out_target_sym, size_t *out_call_imm_off) {
+  const char *target_lit = NULL;
+  if (str_eq_lit(name, "snprintf")) {
+    target_lit = "__agc_runtime_snprintf";
+  } else if (str_eq_lit(name, "sprintf")) {
+    target_lit = "__agc_runtime_sprintf";
+  } else {
+    return 0;
+  }
+
+  str_t target_name = str_dup(target_lit, (int)strlen(target_lit));
+  object_t *target_obj = NULL;
+  int target_func = -1;
+  if (!find_defined_func(objs, obj_count, target_name, &target_obj, &target_func)) return 0;
+  type_t *target_type = &target_obj->types[target_obj->funcs[target_func].type_index];
+  uint32_t caller_params = wasm_type_param_count(caller_type);
+  uint32_t target_params = wasm_type_param_count(target_type);
+  if (caller_params != target_params) return 0;
+  if (wasm_type_result_valtype(caller_type) != wasm_type_result_valtype(target_type)) return 0;
+
+  buf_uleb(b, 0);
+  for (uint32_t i = 0; i < caller_params; i++) {
+    unsigned char src = wasm_type_param_valtype(caller_type, i);
+    unsigned char dst = wasm_type_param_valtype(target_type, i);
+    emit_local_get(b, i);
+    if (src == dst) {
+      continue;
+    } else if (src == 0x7f && dst == 0x7e) {
+      buf_u8(b, 0xad); /* i64.extend_i32_u */
+    } else if (src == 0x7e && dst == 0x7f) {
+      buf_u8(b, 0xa7); /* i32.wrap_i64 */
+    } else {
+      return 0;
+    }
+  }
+  buf_u8(b, 0x10); /* call */
+  *out_call_imm_off = buf_uleb5(b, 0);
+  *out_target_sym = add_runtime_undefined_func_symbol(runtime, target_name, target_type);
+  return 1;
+}
+
+static void add_runtime_func_symbol(object_t *objs, int obj_count, object_t *runtime,
+                                    str_t name, type_t *type) {
   if (runtime_has_func(runtime, name)) return;
   type_t t = {0};
   t.raw_len = type->raw_len;
@@ -2392,9 +2468,22 @@ static void add_runtime_func_symbol(object_t *runtime, str_t name, type_t *type)
   f.defined = 1;
   f.code_payload_off = runtime_next_code_payload_off(runtime);
   size_t va_global_imm_off = (size_t)-1;
-  f.body = make_runtime_stub_body(name, &runtime->types[type_index], &f.body_len, &va_global_imm_off);
+  int target_sym = -1;
+  size_t call_imm_off = (size_t)-1;
+  buf_t bridge = {0};
+  if (emit_runtime_libc_bridge(objs, obj_count, runtime, name, &runtime->types[type_index],
+                               &bridge, &target_sym, &call_imm_off)) {
+    buf_u8(&bridge, 0x0b);
+    f.body = bridge.data;
+    f.body_len = bridge.len;
+  } else {
+    f.body = make_runtime_stub_body(name, &runtime->types[type_index], &f.body_len, &va_global_imm_off);
+  }
   int func_index = runtime->func_count;
   PUSH(runtime->funcs, runtime->func_count, runtime->func_cap, f);
+  if (call_imm_off != (size_t)-1) {
+    add_runtime_code_reloc(runtime, R_WASM_FUNCTION_INDEX_LEB, f.code_payload_off, call_imm_off, target_sym);
+  }
   if (va_global_imm_off != (size_t)-1) {
     int sym = runtime_global_symbol(runtime, "__ag_va_arg_area");
     add_runtime_code_reloc(runtime, R_WASM_GLOBAL_INDEX_LEB, f.code_payload_off, va_global_imm_off, sym);
@@ -2481,7 +2570,7 @@ static void synthesize_runtime_object(object_t *objs, int obj_count, object_t *r
         if (sym->index < 0 || sym->index >= o->func_count) die("bad undefined function symbol index");
         int type_index = o->funcs[sym->index].type_index;
         if (type_index < 0 || type_index >= o->type_count) die("bad function type index");
-        add_runtime_func_symbol(runtime, sym->name, &o->types[type_index]);
+        add_runtime_func_symbol(objs, obj_count, runtime, sym->name, &o->types[type_index]);
       }
     }
   }
@@ -2791,11 +2880,11 @@ static void write_output(const char *path, buf_t *out) {
 }
 
 static void build_module(const char *out_path, const char *export_name,
-                         object_t *objs, int obj_count) {
+                         object_t *objs, int obj_count, int use_stdlib) {
   check_duplicate_definitions(objs, obj_count);
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
-  synthesize_runtime_object(objs, obj_count, &runtime);
+  if (use_stdlib) synthesize_runtime_object(objs, obj_count, &runtime);
   func_t *main_wrapper = NULL;
   maybe_add_main_wrapper(objs, obj_count, export_name, &runtime, &main_wrapper);
   if (runtime.func_count > 0 || runtime.data_count > 0) {
@@ -3008,14 +3097,29 @@ static void build_module(const char *out_path, const char *export_name,
 }
 
 static void usage(void) {
-  fprintf(stderr, "usage: ag_wasm_link --no-entry --export=main -o out.wasm a.o b.o ...\n");
+  fprintf(stderr, "usage: ag_wasm_link [--nostdlib] --no-entry --export=main -o out.wasm a.o b.o ...\n");
   exit(2);
+}
+
+static int file_exists(const char *path) {
+  FILE *f = fopen(path, "rb");
+  if (!f) return 0;
+  fclose(f);
+  return 1;
+}
+
+static int input_contains(const char **inputs, int count, const char *path) {
+  for (int i = 0; i < count; i++) {
+    if (strcmp(inputs[i], path) == 0) return 1;
+  }
+  return 0;
 }
 
 int main(int argc, char **argv) {
   const char *out = NULL;
   const char *export_name = NULL;
-  const char **inputs = xmalloc((size_t)argc * sizeof(char *));
+  int use_stdlib = 1;
+  const char **inputs = xmalloc(((size_t)argc + 1) * sizeof(char *));
   int input_count = 0;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-o") == 0) {
@@ -3025,6 +3129,8 @@ int main(int argc, char **argv) {
       export_name = argv[i] + 9;
     } else if (strcmp(argv[i], "--no-entry") == 0) {
       /* accepted for wasm-ld-shaped command lines */
+    } else if (strcmp(argv[i], "--nostdlib") == 0) {
+      use_stdlib = 0;
     } else if (argv[i][0] == '-') {
       usage();
     } else {
@@ -3032,8 +3138,12 @@ int main(int argc, char **argv) {
     }
   }
   if (!out || input_count == 0) usage();
+  if (use_stdlib && file_exists(DEFAULT_RUNTIME_OBJECT) &&
+      !input_contains(inputs, input_count, DEFAULT_RUNTIME_OBJECT)) {
+    inputs[input_count++] = DEFAULT_RUNTIME_OBJECT;
+  }
   object_t *objs = xmalloc((size_t)input_count * sizeof(object_t));
   for (int i = 0; i < input_count; i++) objs[i] = parse_object(inputs[i]);
-  build_module(out, export_name, objs, input_count);
+  build_module(out, export_name, objs, input_count, use_stdlib);
   return 0;
 }

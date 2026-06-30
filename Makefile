@@ -26,6 +26,7 @@ DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 WASM_TARGET=build/ag_c_wasm
 WASM_LINKER=build/ag_wasm_link
+WASM_RUNTIME=build/libagc_runtime.o
 TEST_TOKENIZER=build/test_tokenizer
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
@@ -56,6 +57,10 @@ $(WASM_TARGET): $(WASM_OBJS)
 $(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $<
+
+$(WASM_RUNTIME): tools/wasm_obj_linker/runtime/libagc_runtime.c $(WASM_TARGET)
+	@mkdir -p $(dir $@)
+	./$(WASM_TARGET) -c -o $@ $<
 
 $(OBJROOT)/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -101,7 +106,7 @@ $(TEST_WASM32_E2E): test/test_wasm32_e2e.c $(WASM_TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_e2e.c
 
-$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(WASM_TARGET) $(WASM_LINKER)
+$(TEST_WASM32_OBJECT): test/test_wasm32_object.c $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_wasm32_object.c
 
@@ -121,10 +126,10 @@ check-should-reject: $(TARGET)
 wasm32-object-fixture-scan: $(WASM_TARGET)
 	@bash scripts/run_wasm32_object_fixture_scan.sh --list-fail
 
-wasm32-object-link-fixture-scan: $(WASM_TARGET) $(WASM_LINKER)
+wasm32-object-link-fixture-scan: $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail
 
-wasm32-object-link-all-fixture-scan: $(WASM_TARGET) $(WASM_LINKER)
+wasm32-object-link-all-fixture-scan: $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail
 
 wasm32-wat-fixture-scan: $(WASM_TARGET)
@@ -133,7 +138,7 @@ wasm32-wat-fixture-scan: $(WASM_TARGET)
 wasm32-object-c-testsuite-scan: $(WASM_TARGET)
 	@bash scripts/run_wasm32_object_c_testsuite_scan.sh --list-fail
 
-wasm32-object-link-c-testsuite-scan: $(WASM_TARGET) $(WASM_LINKER)
+wasm32-object-link-c-testsuite-scan: $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash scripts/run_wasm32_object_link_c_testsuite_scan.sh --list-fail
 
 wasm32-wat-c-testsuite-scan: $(WASM_TARGET)
@@ -141,7 +146,7 @@ wasm32-wat-c-testsuite-scan: $(WASM_TARGET)
 
 wasm32-scans: wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan
 
-test-wasm-obj-linker: $(WASM_TARGET) $(WASM_LINKER)
+test-wasm-obj-linker: $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash tools/wasm_obj_linker/test_smoke.sh
 
 check-tokenizer-perf-light:
