@@ -3241,8 +3241,11 @@ int main(int argc, char **argv) {
     }
   }
   if (!out || input_count == 0) usage();
-  if (use_stdlib && file_exists(DEFAULT_RUNTIME_OBJECT) &&
-      !input_contains(inputs, input_count, DEFAULT_RUNTIME_OBJECT)) {
+  if (use_stdlib && !input_contains(inputs, input_count, DEFAULT_RUNTIME_OBJECT)) {
+    if (!file_exists(DEFAULT_RUNTIME_OBJECT)) {
+      dief("default runtime object not found: %s (run make build/libagc_runtime.o or pass --nostdlib)",
+           DEFAULT_RUNTIME_OBJECT);
+    }
     inputs[input_count++] = DEFAULT_RUNTIME_OBJECT;
   }
   object_t *objs = xmalloc((size_t)input_count * sizeof(object_t));

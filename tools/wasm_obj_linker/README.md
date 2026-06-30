@@ -20,10 +20,10 @@ make build/ag_wasm_link build/libagc_runtime.o
 ./build/ag_wasm_link --no-entry --export=main -o linked.wasm main.o other.o
 ```
 
-When `build/libagc_runtime.o` exists, `ag_wasm_link` appends it by default as
-the current standard runtime object. Use `--nostdlib` to leave those symbols as
-ordinary unresolved imports. `--no-entry` is accepted for `wasm-ld`-shaped
-command lines.
+`ag_wasm_link` appends `build/libagc_runtime.o` by default as the current
+standard runtime object. Build it first with `make build/libagc_runtime.o`, or
+use `--nostdlib` to leave those symbols as ordinary unresolved imports.
+`--no-entry` is accepted for `wasm-ld`-shaped command lines.
 
 ## v1 Scope
 
@@ -51,12 +51,12 @@ Supported:
 - Final active data segment offsets and global initializer `i32.const`
   immediates are emitted as signed LEB128.
 - Default runtime-object linking through `build/libagc_runtime.o`; currently it
-  carries the `snprintf`/`sprintf` formatter body plus small string/memory/ctype
-  helpers such as `strlen`, `strcmp`, `memset`, `memcpy`, `strcpy`, `strncmp`,
-  `memcmp`, `strchr`, `atoi`, and `putchar`, plus a tiny bump allocator for
-  `malloc`, `calloc`, and `free`, plus minimal `imaxabs`, wide-char, fenv,
-  locale, and math helpers. The linker emits only small ABI bridges for those
-  public symbols.
+  carries the small C runtime used by the fixture suite: formatter helpers
+  (`printf`, `fprintf`, `snprintf`, `sprintf`), string/memory/ctype helpers,
+  `putchar`, minimal file I/O stubs, a tiny bump allocator, `imaxabs`,
+  wide-char helpers, fenv/locale helpers, selected math helpers, stdio globals,
+  and `__assert_rtn`. The linker emits only small ABI bridges for those public
+  symbols.
 
 ## Smoke Test
 
@@ -73,9 +73,9 @@ with an omitted zero payload, a patched object with a non-zero data symbol
 offset, duplicate external function/data definition errors,
 cross-object function/import signature mismatch errors, malformed relocation
 target errors, and a many-data-segment case that requires more than one Wasm
-memory page. It also checks that default runtime-object linking resolves
-`snprintf`/`sprintf` and the small libc helpers, while `--nostdlib` leaves those
-symbols as imports instead.
+memory page. It also checks that default runtime-object linking resolves the
+runtime helpers above, while `--nostdlib` leaves those symbols as imports
+instead.
 
 Not yet supported:
 

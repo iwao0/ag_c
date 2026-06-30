@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き304: ag_wasm_link runtime object __assert_rtn）
+最終更新: 2026-07-01（続き305: ag_wasm_link requires default runtime object）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き305: **標準 runtime object を通常リンクで必須化**。
+  `ag_wasm_link` は `--nostdlib` なしの通常 stdlib 経路では `build/libagc_runtime.o` を
+  必ず入力へ追加する。存在しない場合は、内部 synthetic stdlib fallback に戻らず、
+  `make build/libagc_runtime.o` または `--nostdlib` を案内するエラーで停止する。
+  これで libc 相当を object としてリンクする形が標準経路になった。`tools/wasm_obj_linker/README.md`
+  も現行 runtime helper 一覧と build 手順に更新。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き304: **`__assert_rtn` を `libagc_runtime.o` へ移行**。
   `__agc_runtime___assert_rtn` を runtime object に追加し、`ag_wasm_link` の ABI bridge map で
   public `__assert_rtn` から接続するようにした。失敗時にしか呼ばれないため、現時点の実装は
