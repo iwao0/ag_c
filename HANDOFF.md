@@ -8,6 +8,7 @@
   `wasm32-object-fixture-scan` = **1115/1115 compile + validate green**、
   `wasm32-object-link-fixture-scan` = **1114 pass / 1 skip / validate 1114 / run 1114 / import skip 0**
   （multi-TU 部品 fixture 1 件は skip）、
+  `wasm32-object-link-all-fixture-scan` = **1114 pass / 1 skip / validate 1114 / run 1114 / import skip 0**、
   `wasm32-wat-fixture-scan` = **1114 pass / 1 skip / WAT compile + wat2wasm + validate green**、
   `wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**、
@@ -3367,7 +3368,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
     validate 218、run 218、skip run imports 0、skip run params 0
   - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
-    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link all 1114 pass / 1 skip、WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
     object-link c-testsuite 218 pass / 2 skip / validate 218 / run 218、
     WAT c-testsuite 218 pass / 2 skip
   - `git diff --check`
+
+### このセッション（続き288）: wasm32-scans に全 fixture link-run を追加
+- `scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures` は全 fixture の object-link 実行を
+  検査できるが、従来の `make wasm32-scans` は既定の e2e 登録分だけを呼んでいた。
+- `wasm32-object-link-all-fixture-scan` target を追加し、`wasm32-scans` に含めた。
+  これで「object mode で出せる全 fixture object が ag_wasm_link でも link/validate/run できる」ことを
+  標準ゲートで確認できる。
+- 確認:
+  - `make wasm32-object-link-all-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1114、skip run imports 0
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    object-link all 1114 pass / 1 skip、WAT all 1114 pass / 1 skip、
+    object c-testsuite 218 pass / 2 skip、object-link c-testsuite 218 pass / 2 skip / validate 218 / run 218、
+    WAT c-testsuite 218 pass / 2 skip
