@@ -1347,7 +1347,13 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
  * グローバル designator の slot 計算で先行メンバの正しいスロット数を得るのに使う。 */
 static int global_flat_slot_count(token_kind_t tk, char *tn, int tl);
 
+static int global_member_is_unnamed_aggregate(const tag_member_info_t *mi) {
+  return mi->len == 0 && !mi->is_tag_pointer &&
+         (mi->tag_kind == TK_STRUCT || mi->tag_kind == TK_UNION);
+}
+
 static int global_member_flat_slots(const tag_member_info_t *mi) {
+  if (global_member_is_unnamed_aggregate(mi)) return 0;
   int per = 1;
   if (mi->tag_kind == TK_STRUCT && !mi->is_tag_pointer) {
     per = global_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
@@ -1361,6 +1367,7 @@ static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    if (global_member_is_unnamed_aggregate(&mi)) continue;
     slots += global_member_flat_slots(&mi);
   }
   return slots;
@@ -1413,6 +1420,7 @@ static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
       if (out_ordinal) *out_ordinal = i;
       return (tk == TK_UNION) ? 0 : slot;
     }
+    if (global_member_is_unnamed_aggregate(&mi)) continue;
     slot += global_member_flat_slots(&mi);
   }
   return -1;
@@ -1499,6 +1507,7 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
     for (int i = 0; i < n; i++) {
       tag_member_info_t mi = {0};
       if (!psx_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, i, &mi)) break;
+      if (global_member_is_unnamed_aggregate(&mi)) continue;
       int ms = global_member_flat_slots(&mi);
       if (off < slot + ms) return gbrace_ctx_from_member(&mi);
       slot += ms;
@@ -1697,6 +1706,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
               if (cmi.tag_kind == TK_UNION) active_union_ordinal = si;
               cmi = smi; found = 1; break;
             }
+            if (global_member_is_unnamed_aggregate(&smi)) continue;
             sub_slot += global_member_flat_slots(&smi);
           }
           if (!found) {

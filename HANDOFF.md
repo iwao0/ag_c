@@ -1,14 +1,14 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き264: nested anonymous aggregate array brace）
+最終更新: 2026-06-30（続き265: anonymous aggregate promoted array designator）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1110/1110 green**、`./build/test_wasm32_object` = **1111/1111 green**、
-  `./build/test_e2e` = **1139/1139 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1111/1111 compile + validate green**、
-  `make wasm32-wat-fixture-scan` = **1110/1110 WAT compile + wat2wasm + validate green**
+  `./build/test_wasm32_e2e` = **1112/1112 green**、`./build/test_wasm32_object` = **1113/1113 green**、
+  `./build/test_e2e` = **1141/1141 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1113/1113 compile + validate green**、
+  `make wasm32-wat-fixture-scan` = **1112/1112 WAT compile + wat2wasm + validate green**
   （multi-TU link fixture 1 件は skip）、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `make wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**、
@@ -66,6 +66,15 @@
   もう 1 段匿名 wrapper が重なると `{5,9}` を scalar 要素 1 個の brace として読んでいた。
   `parse_scalar_array_member_brace_body` で配列全体 wrapper を再帰 unwrap するよう修正。
   `nested_struct_brace_elision.c` に二重匿名 struct、匿名 union、struct 配列要素内の匿名 wrapper を追加。
+- 続き265: **匿名 aggregate promoted 配列メンバ designator**。
+  `struct H { struct { int a[2]; }; int z; }; struct H h = {.a = {1,2}, .z = 3};`
+  が global initializer で `h` の先頭に余分な 0 を 2 slot 出し、Wasm WAT/object data emitter でも
+  匿名 aggregate 実体と promoted member を二重に歩いて同じ offset を上書きしていた。
+  global flat slot 計算・designator 解決・positional child 探索で「名前なし匿名 aggregate 実体」を
+  slot 消費対象から外し、WAT/object data emitter も同じ扱いに統一。さらに
+  `typedef int (*RowPtr)[3]; struct H { struct { RowPtr rows[2]; }; };` の `.rows[1] = b`
+  は array-of-pointer-to-array でも `[i]` designator を許可するよう修正。
+  `anon_global_array_member_designator.c` / `anon_ptr_to_array_member_designator.c` を e2e と Wasm e2e/object scan に追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

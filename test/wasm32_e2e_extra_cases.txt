@@ -579,3 +579,5 @@ vla_param/write_through.c
 probes_found_bugs/struct_funcptr_designated_zero_init.c
 probes_found_bugs/nested_struct_funcptr_designated_zero_init.c
 probes_found_bugs/wasm_nonvoid_indirect_unused_result.c
+probes_found_bugs/anon_global_array_member_designator.c
+probes_found_bugs/anon_ptr_to_array_member_designator.c

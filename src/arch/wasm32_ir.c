@@ -1780,6 +1780,11 @@ static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr);
 
+static int wasm_member_is_unnamed_aggregate(const tag_member_info_t *mi) {
+  return mi->len == 0 && !mi->is_tag_pointer &&
+         (mi->tag_kind == TK_STRUCT || mi->tag_kind == TK_UNION);
+}
+
 static void emit_global_nested_union_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr) {
   if (*val_idx >= gv->init_count) return;
@@ -1806,6 +1811,7 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
   for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
+    if (wasm_member_is_unnamed_aggregate(&mi)) continue;
     if (mi.bit_width > 0) {
       emit_global_bitfield_unit_data(tk, tn, tl, &m, gv, val_idx, base_addr);
       continue;

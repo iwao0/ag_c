@@ -2207,10 +2207,10 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
       cumulative_offset += sub_info.offset;
       cur_info = sub_info;
     } else {
-      /* `[idx]`: cur_info が配列メンバ (array_len>0、ポインタ配列でない) のときだけ
+      /* `[idx]`: cur_info が配列メンバ (array_len>0) のときだけ
        * 要素へ降りる。stride は要素サイズ (type_size)。降下後は単一要素なので
        * array_len を 0 にし、後続の `.member` がそのまま tag を引けるようにする。 */
-      if (cur_info.array_len <= 0 || cur_info.is_tag_pointer) {
+      if (cur_info.array_len <= 0) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY));
         break;
