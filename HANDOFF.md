@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き267: local anonymous union promoted zero-fill）
+最終更新: 2026-06-30（続き268: anonymous union promoted positional/data emit）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -91,6 +91,16 @@
   `anon_union_promoted_array_designator.c` に local `.a` / `.q` 初期化を追加し、
   `./build/test_e2e` = **1142/1142 green**、`./build/test_wasm32_e2e` = **1113/1113 green**、
   `./build/test_wasm32_object` = **1114/1114 green** を確認。
+- 続き268: **匿名 union promoted positional / data emit**。
+  `struct H hp = {{21,22},23};` と `struct N { struct { union { int a[2]; int q; }; }; int z; };`
+  の global/local positional 初期化で、`.a` を消費した後に同じ匿名 union storage 内の promoted
+  `.q` も次メンバとして消費し、`z` 用の値で union 先頭を上書きしていた。local parser は
+  匿名 struct を再帰して「匿名 union に覆われる offset」を判定し、positional 消費後に同じ
+  covered range の後続 promoted member を飛ばす。Wasm WAT/object data emitter も同じ再帰
+  covered range 判定を持ち、`n` の data segment で 33 を offset 0 へ再出力せず offset 8 の
+  `z` へ進めるよう修正。fixture に global/local positional、匿名 struct 経由、static local を追加。
+  `make test` = **green**、`./build/test_wasm32_e2e` = **1113/1113 green**、
+  `./build/test_wasm32_object` = **1114/1114 green**、focused WAT `wasm-interp` も `main() => i32:0`。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず
