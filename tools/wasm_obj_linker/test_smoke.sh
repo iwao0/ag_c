@@ -105,6 +105,14 @@ int add1(int x) { return x + 1; }
 int (*p)(int) = add1;
 SRC
 
+cat > "$out_dir/bss_big.c" <<'SRC'
+char big[70000];
+int main(void) {
+  big[69999] = 7;
+  return big[69999] + 35;
+}
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -182,6 +190,13 @@ wasm-validate "$out_dir/linked_fp_data_import.wasm"
 wasm-validate "$out_dir/linked_fp_data_cross.wasm"
 wasm-interp "$out_dir/linked_fp_data_cross.wasm" --run-all-exports > "$out_dir/linked_fp_data_cross.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_fp_data_cross.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/bss_big.o" "$out_dir/bss_big.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_bss_big.wasm" \
+  "$out_dir/bss_big.o"
+wasm-validate "$out_dir/linked_bss_big.wasm"
+wasm-interp "$out_dir/linked_bss_big.wasm" --run-all-exports > "$out_dir/linked_bss_big.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_bss_big.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \

@@ -2817,3 +2817,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/ag_c_wasm build/ag_wasm_link`
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make wasm32-object-fixture-scan` = 1114 pass / 0 fail
+
+### このセッション（続き261）: Wasm object linker large BSS allocation
+- `char big[70000];` のような大きい未初期化 global で、object 側の data symbol size が
+  `global_var_t.type_size` の `short` 幅により 4464 に丸まり、link 後 memory が 1 page のまま
+  `out of bounds memory access` になっていた。
+- `global_var_t.type_size` を int に広げ、Wasm object emitter は data payload bytes とは別に
+  data symbol の allocation size を保持する。未初期化 global は data payload を出さず、
+  linking symbol table の size だけを実サイズにして linear memory のゼロ初期化へ任せる。
+- `tools/wasm_obj_linker/ag_wasm_link.c` は linking symbol table の data symbol size を読み、
+  final data layout の advance を `max(payload size, symbol alloc size)` にした。final Data section は
+  payload bytes だけを出す。
+- `tools/wasm_obj_linker/test_smoke.sh` に `char big[70000]; big[69999]=7;` の link/run case を追加。
+- focused 確認:
+  - `make -j4 build/ag_c_wasm build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - 手動確認: `wasm-objdump -x build/ag_wasm_link_probe/bss_big.o` で `<big> size=70000` /
+    data segment payload `size=0`
+  - 手動確認: linked wasm は `memory[0] pages: initial=2`、`wasm-interp --run-all-exports` =
+    `main() => i32:42`
+  - `make wasm32-object-fixture-scan` = 1114 pass / 0 fail
+  - `./build/test_parser` green
+  - `./build/test_e2e` = 1142/1142
+  - `./build/test_wasm32_backend` green
+  - `./build/test_wasm32_e2e` = 1113 compiled / 1113 executed
+  - `./build/test_wasm32_object` = object fixture scan 1114 pass / 0 fail

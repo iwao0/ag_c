@@ -74,6 +74,7 @@ typedef struct {
   str_t name;
   unsigned char *bytes;
   size_t size;
+  size_t alloc_size;
   size_t data_payload_off;
   int align_log2;
   int defined;
@@ -473,11 +474,15 @@ static void parse_linking_section(object_t *o, rd_t sec) {
           sym.name = rd_str_dup(&ss);
           if (!(sym.flags & SYM_UNDEFINED)) {
             int seg = (int)rd_uleb(&ss);
-            (void)rd_uleb(&ss); /* offset */
-            (void)rd_uleb(&ss); /* size */
+            uint32_t off = rd_uleb(&ss);
+            uint32_t size = rd_uleb(&ss);
             sym.index = seg;
             if (seg >= 0 && seg < o->data_count && !o->data[seg].name.s) {
               o->data[seg].name = str_dup(sym.name.s, sym.name.len);
+            }
+            if (seg >= 0 && seg < o->data_count) {
+              size_t need = (size_t)off + (size_t)size;
+              if (need > o->data[seg].alloc_size) o->data[seg].alloc_size = need;
             }
           } else {
             data_seg_t d = {0};
@@ -935,7 +940,8 @@ static void build_module(const char *out_path, const char *export_name,
     uint32_t align = d->align_log2 > 0 && d->align_log2 < 31 ? (uint32_t)1 << d->align_log2 : 1;
     mem = align_to_u32(mem, align);
     d->final_addr = mem;
-    mem += (uint32_t)d->size;
+    size_t alloc_size = d->alloc_size > d->size ? d->alloc_size : d->size;
+    mem += (uint32_t)alloc_size;
   }
 
   patch_object_relocations(objs, obj_count, &imports, &import_count,

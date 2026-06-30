@@ -80,6 +80,7 @@ typedef struct {
   char *name;
   int name_len;
   wb_t bytes;
+  size_t alloc_size;
   int align;
   int segment_index;
   int symbol_index;
@@ -374,6 +375,10 @@ static obj_data_t *intern_data(const char *name, int name_len, int align_log2,
   d->is_static = is_static;
   d->is_undefined = is_undefined;
   return d;
+}
+
+static void data_note_alloc_size(obj_data_t *d, size_t size) {
+  if (d && size > d->alloc_size) d->alloc_size = size;
 }
 
 static int data_index(obj_data_t *d) {
@@ -2026,7 +2031,7 @@ static void emit_data_symbol_entry(wb_t *p, obj_data_t *d) {
   if (d->is_undefined) return;
   wb_uleb(p, (uint32_t)d->segment_index);
   wb_uleb(p, 0);
-  wb_uleb(p, (uint32_t)d->bytes.len);
+  wb_uleb(p, (uint32_t)(d->alloc_size > d->bytes.len ? d->alloc_size : d->bytes.len));
 }
 
 static void emit_global_symbol_entry(wb_t *p, obj_global_t *g) {
@@ -2573,6 +2578,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   int size = gv->type_size > 0 ? gv->type_size : 4;
   obj_data_t *d = intern_data(gv->name, gv->name_len, align_log2_for_size(size), gv->is_static, 0);
   if (d->is_emitted) return;
+  data_note_alloc_size(d, (size_t)size);
 
   if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
     emit_obj_global_aggregate_data(d, gv, size);
@@ -2631,8 +2637,13 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     memcpy(&bits, &f, sizeof(bits));
     data_write_scalar(d, bits, 8);
   } else {
-    if (!gv->has_init || gv->init_val == 0) wb_zero(&d->bytes, size);
-    else data_write_scalar(d, (uint64_t)gv->init_val, size);
+    if (!gv->has_init) {
+      /* Leave BSS-like globals out of the object payload; linear memory starts zeroed. */
+    } else if (gv->init_val == 0) {
+      wb_zero(&d->bytes, size);
+    } else {
+      data_write_scalar(d, (uint64_t)gv->init_val, size);
+    }
   }
   d->is_emitted = 1;
 }

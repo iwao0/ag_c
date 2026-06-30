@@ -85,7 +85,8 @@ struct global_var_t {
   short funcptr_ret_pointee_array_second_dim;
   short funcptr_ret_pointee_array_elem_size;
   short funcptr_nargs_fixed;  // 可変長関数ポインタの固定引数数 (`...` の前)
-  short type_size;    // sizeof（ロード/ストアサイズ）
+  int type_size;      // sizeof（グローバルオブジェクト全体サイズ）
+  // --- 2 バイト (short) ---
   short deref_size;   // ポインタ先の要素サイズ
   // ポインタ配列 (`char *names[N]`) の場合、pointee 要素の素のサイズ (char なら 1)。
   // deref_size は ポインタサイズ (8) になるため、pointee 区別用に保持する。
