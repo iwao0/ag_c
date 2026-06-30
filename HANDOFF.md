@@ -3302,3 +3302,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check`
 - 残っている object-link fixture import は `stdheader__complex_ops` の 1 本のみ。
   現在の import は `exp` / `cos` / `log` / `atan2` / `cosh` / `sinh`。
+
+### このセッション（続き285）: complex.h の外部 libm 依存を削減
+- object-link fixture の最後の import skip は `stdheader__complex_ops.c` で、残 import は
+  `exp` / `cos` / `log` / `atan2` / `cosh` / `sinh` だった。
+- リンカ runtime に巨大な math bytecode を直書きする代わりに、同梱 `include/complex.h` の
+  static complex math 実装を header 内 helper に閉じ、外部 libm に依存しないようにした。
+  追加した helper は `sqrt` / `exp` / `log` / `sin` / `cos` / `atan` / `atan2` / `sinh` / `cosh`
+  の fixture 範囲向け近似。
+- `cabs` / `carg` / `cexp` / `clog` / `csqrt` / `csin` / `ccos` / `csinh` / `ccosh` は
+  `__ag_complex_*` helper を使う。
+- object-link fixture scan の `Skip run imports` は 1 から 0 になり、実行件数は 1113 から
+  1114 に増えた。これで e2e 登録 fixture の Wasm object-link 経路は import skip なし。
+- 確認:
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1114、skip run imports 0
+  - `./build/test_e2e` = 1143/1143
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 217、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
+- 残っている object-link c-testsuite の実行 skip は `main(int, char**)` の params 1 件のみ。
