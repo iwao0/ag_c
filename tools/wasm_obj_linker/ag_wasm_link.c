@@ -710,7 +710,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "abs") || str_eq_lit(name, "isdigit") ||
          str_eq_lit(name, "isalpha") || str_eq_lit(name, "toupper") ||
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
-         str_eq_lit(name, "calloc") || str_eq_lit(name, "atoi");
+         str_eq_lit(name, "calloc") || str_eq_lit(name, "atoi") ||
+         str_eq_lit(name, "strcpy");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -1229,6 +1230,46 @@ static int make_atoi_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_strcpy_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "strcpy")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t dst = wasm_type_param_count(type);
+  uint32_t src = dst + 1;
+  uint32_t i = dst + 2;
+  uint32_t c = dst + 3;
+  buf_uleb(b, 1);
+  buf_uleb(b, 4);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, dst);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, src);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, src);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
 static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
   buf_t b = {0};
   if (str_eq_lit(name, "__assert_rtn")) {
@@ -1245,6 +1286,7 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_free_stub_body(name, type, &b)) {
   } else if (make_calloc_stub_body(name, type, &b)) {
   } else if (make_atoi_stub_body(name, type, &b)) {
+  } else if (make_strcpy_stub_body(name, type, &b)) {
   } else {
     buf_uleb(&b, 0); /* local decl count */
     unsigned char result = wasm_type_result_valtype(type);

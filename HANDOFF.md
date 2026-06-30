@@ -3120,3 +3120,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     object-link c-testsuite 218 pass / 2 skip / validate 218 / run 211、
     WAT c-testsuite 218 pass / 2 skip
   - `git diff --check`
+
+### このセッション（続き277）: ag_wasm_link の strcpy runtime stub 追加
+- `strcpy` を synthetic runtime function として解決するようにした。
+- 実装は NUL 終端まで byte copy し、戻り値として dst を返す。
+- c-testsuite `00180.c` が import skip から link-run 対象に移った。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 212、skip run imports 5、skip run params 1
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1110、skip run imports 4
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 212、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
