@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き247: Wasm scan aggregate target）
+最終更新: 2026-06-30（続き248: Wasm coverage notes refresh）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -801,7 +801,7 @@
 - Wasm の制御フロー越し global/struct member 関数ポインタ call は対応済み。非 void かつ結果未使用の
   unknown indirect call も `IR_CALL.dst.type` から戻り typeuse を決めて出力する。
 - Wasm E2E subset は `test/test_wasm32_e2e.c` と `test/wasm32_e2e_extra_cases.txt` で
-  1096 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
+  1110 件を通常 `make test` に組み込み済み。`static_internal_linkage_xtu_*` は extra list ではなく
   `test/test_wasm32_e2e.c` の link2 case で 2 ファイル 1 ケースとして扱う。
 - Wasm object v1 は `test/test_wasm32_object.c` で常時実行。現状の実装範囲は
   direct call relocation、simple data segment、`LOAD_SYM`/`LOAD_STR` の data address relocation、
@@ -818,7 +818,8 @@
   symbol address relocation、struct/union/
   bitfield aggregate の基本形に対応。
   通常 fixture の object compile + validate scan は `make wasm32-object-fixture-scan` で
-  1097/1097 green（should_reject 除外）。
+  1111/1111 green（should_reject 除外）。WAT standalone fixture scan は
+  `make wasm32-wat-fixture-scan` で 1110/1110 green（multi-TU link fixture 1 件 skip）。
   extra vararg を持つ variadic call は direct/extern/local/global/struct member/typedef funcptr indirect で
   `__ag_va_arg_area` 退避に対応済み。aggregate call は hidden return area
   を持つ direct/indirect call の基本形まで対応。complex call は direct hidden return area と
@@ -2582,5 +2583,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `wasm32-wat-fixture-scan`
   - `wasm32-object-c-testsuite-scan`
   - `wasm32-wat-c-testsuite-scan`
+- focused 確認:
+  - `make wasm32-scans` green
+
+### このセッション（続き248）: Wasm coverage notes refresh
+- Wasm backend の既知メモに残っていた古い件数を、現状の `test_wasm32_e2e` 1110 件と
+  object fixture scan 1111 件へ同期。
+- WAT fixture scan は standalone 可能な 1110 件が green、multi-TU link fixture 1 件は skip
+  という現在の扱いを明記。
 - focused 確認:
   - `make wasm32-scans` green
