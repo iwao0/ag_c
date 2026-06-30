@@ -831,6 +831,17 @@ int main(void) {
                                 "int main(void){return **ptrs+*ptrs[1];}\n",
                                 compound_literal_inner_ptr_reloc_needles, 6);
 
+  const char *typedef_compound_literal_inner_ptr_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<ptrs>", "<nodes>",
+      "<__compound_lit_0>", "<__compound_lit_1>", "<g>", "<a>", "<b>"};
+  failures += run_objdump_check("typedef_compound_literal_inner_ptr_data_reloc",
+                                "typedef int *IP; int g=23; IP *ptrs=(IP[]){&g,&g}; "
+                                "struct Node{int value;}; typedef struct Node *NP; "
+                                "struct Node a={31}; struct Node b={37}; "
+                                "NP *nodes=(NP[]){&a,&b}; "
+                                "int main(void){return **ptrs+nodes[1]->value;}\n",
+                                typedef_compound_literal_inner_ptr_needles, 9);
+
   const char *extern_data_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_data",
