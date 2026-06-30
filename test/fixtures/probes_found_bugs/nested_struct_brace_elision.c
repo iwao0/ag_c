@@ -43,8 +43,10 @@ int main(void) {
 
     // 匿名 struct メンバ昇格後も、内側 aggregate 用 brace を配列初期化として読む
     struct AnonArr arr = {{{11, 12}}};
+    struct AnonArr arr_designated = {{{[1] = 21, [0] = 19}}};
     struct Arr arr2 = {{13, 14}};
     assert(arr.a[0] == 11 && arr.a[1] == 12);
+    assert(arr_designated.a[0] == 19 && arr_designated.a[1] == 21);
     assert(arr2.a[0] == 13 && arr2.a[1] == 14);
 
     assert(o.i.p == 1); assert(o.i.q == 2); assert(o.z == 3); assert(c.w == 4); assert(o3.i.p == 7); assert(o4.z == 10); return 0;  // 1+2+3+4+7+10+15 = 42

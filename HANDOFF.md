@@ -58,7 +58,8 @@
   匿名 struct 用に 1 段残るため、`parse_member_initializer` が `{a,b}` を「配列要素 1 個の
   scalar brace」と誤解していた。スカラ配列メンバで内側 brace が top-level comma/designator
   を持つときは配列全体の wrapper として平坦化する分岐を追加。`file_scope_ptr_from_array_compound.c`
-  に匿名 `RowPtr rows[2]`、`nested_struct_brace_elision.c` に匿名 `int a[2]` を追加。
+  に匿名 `RowPtr rows[2]` と `[i]=` designator、`nested_struct_brace_elision.c` に匿名 `int a[2]`
+  と `[i]=` designator を追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず
