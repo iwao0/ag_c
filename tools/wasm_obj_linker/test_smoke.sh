@@ -184,11 +184,16 @@ int snprintf(char *s, unsigned long n, const char *fmt, ...);
 int main(void) {
   char a[32];
   char b[32];
+  char c[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
+  int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
-         b[4] == '3' && b[5] == '4' && b[6] == 0 ? 42 : 1;
+         b[4] == '3' && b[5] == '4' && b[6] == 0 &&
+         nc == 10 && c[0] == '4' && c[1] == '2' && c[2] == '9' && c[3] == '4' &&
+         c[4] == '9' && c[5] == '6' && c[6] == '7' && c[7] == '2' &&
+         c[8] == '9' && c[9] == '5' && c[10] == 0 ? 42 : 1;
 }
 SRC
 

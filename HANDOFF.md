@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き289: ag_wasm_link snprintf signed decimal 修正）
+最終更新: 2026-07-01（続き290: ag_wasm_link snprintf unsigned decimal 修正）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,13 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き290: **ag_wasm_link `snprintf("%u")` 対応**。
+  synthetic runtime の `snprintf` は `%zu` は出せたが通常の unsigned int `%u` が未対応で、
+  format 不一致時の fallback 0 戻りになっていた。`%u` 分岐を追加し、既存の unsigned decimal helper に
+  variadic 先頭引数を流す。`test_smoke.sh` の `snprintf_negative.c` に
+  `snprintf(c, sizeof(c), "%u", 4294967295u)` の buffer 内容と戻り値確認を追加。
+  確認: `make -j4 build/ag_wasm_link`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan`、`make wasm32-object-link-c-testsuite-scan`。
 - 続き289: **ag_wasm_link `snprintf` signed decimal**。
   synthetic runtime の `snprintf` は `%d` / `%d-%d` の整数出力を unsigned decimal helper に流しており、
   負数が巨大な unsigned 値として出る穴があった。`arg < 0` なら `'-'` を書いて `0 - arg` を

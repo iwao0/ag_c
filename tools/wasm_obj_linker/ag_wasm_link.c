@@ -1774,6 +1774,18 @@ static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *v
   emit_snprintf_return_count(b, type, out, count);
   buf_u8(b, 0x0b);
 
+  /* "%u" */
+  emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '%'); buf_u8(b, 0x46);
+  emit_local_get(b, fmt); emit_i32_const(b, 1); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, 'u'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  emit_snprintf_load_arg(b, va, arg, 0);
+  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  emit_snprintf_return_count(b, type, out, count);
+  buf_u8(b, 0x0b);
+
   /* "%d" */
   emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
   emit_i32_const(b, '%'); buf_u8(b, 0x46);
