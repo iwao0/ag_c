@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き248: Wasm coverage notes refresh）
+最終更新: 2026-06-30（続き249: Wasm object global FP scalar fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2593,3 +2593,11 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   という現在の扱いを明記。
 - focused 確認:
   - `make wasm32-scans` green
+
+### このセッション（続き249）: Wasm object global FP scalar fixture
+- Wasm object の file-scope floating scalar initializer coverage を追加。
+  `float gf=1.5f; double gd=-2.25;` が object data segment に IEEE754 bytes として出て、
+  `f32.load` / `f64.load` で参照されることを `test/test_wasm32_object.c` の objdump fixture
+  `global_fp_scalar` で固定した。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green

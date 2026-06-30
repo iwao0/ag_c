@@ -818,6 +818,13 @@ int main(void) {
                                 "double f(void){return fa[0]+da[1];}\n",
                                 global_fp_array_needles, 6);
 
+  const char *global_fp_scalar_needles[] = {
+      "<gf>", "0000 c03f", "<gd>", "0000 0000 0000 02c0", "f32.load", "f64.load"};
+  failures += run_objdump_check("global_fp_scalar",
+                                "float gf=1.5f; double gd=-2.25; "
+                                "double f(void){return gf+gd;}\n",
+                                global_fp_scalar_needles, 6);
+
   const char *static_multidim_needles[] = {
       "<f.a.", "binding=local", "size=24", "i32.store", "i32.load"};
   failures += run_objdump_check("static_multidim",
