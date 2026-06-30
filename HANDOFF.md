@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き266: anonymous union promoted array designator）
+最終更新: 2026-06-30（続き267: local anonymous union promoted zero-fill）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -83,6 +83,14 @@
   promoted member の追加 slot 消費を抑制。ARM64/WAT/object data emitter でも匿名 union 本体を書いた後、
   covered range 内の promoted member を再出力しないよう統一。union active member が配列なら ARM64 data でも
   union storage 内へ要素列を展開する。`anon_union_promoted_array_designator.c` を e2e と Wasm e2e/object scan に追加。
+- 続き267: **local anonymous union promoted member の未割当 zero-fill**。
+  global 修正後、`struct H lh = {.a = {11,12}, .z = 13};` の local 初期化で
+  `append_unassigned_scalar_zero_fills` が同じ匿名 union storage 内の promoted scalar `.q` を
+  未割当メンバと見なし、`.a` の直後に 0 store して `lh.a[0]` を潰していた。struct 全体は
+  初期化開始時点で zero-fill 済みなので、匿名 union に覆われる promoted member は補完 0 代入から除外。
+  `anon_union_promoted_array_designator.c` に local `.a` / `.q` 初期化を追加し、
+  `./build/test_e2e` = **1142/1142 green**、`./build/test_wasm32_e2e` = **1113/1113 green**、
+  `./build/test_wasm32_object` = **1114/1114 green** を確認。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

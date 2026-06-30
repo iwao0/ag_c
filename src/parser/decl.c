@@ -2266,6 +2266,8 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
   return (node_t *)assign_node;
 }
 
+static bool member_is_covered_by_unnamed_union(lvar_t *var, const tag_member_info_t *info);
+
 /* parse_struct_initializer 末尾の未割当スカラメンバ補完。
  * assigned_names/assigned_lens に登録済みでなく、is_supported_scalar_store_size を
  * 満たすスカラ (= 配列/集約でない) メンバを ordinal 順に探し、明示 0 代入を append する
@@ -2280,6 +2282,7 @@ static node_t *append_unassigned_scalar_zero_fills(lvar_t *var, int member_count
     int probe_ordinal = o;
     if (!tag_get_next_named_member(var, &probe_ordinal, &info)) continue;
     if (info.len <= 0) continue;
+    if (member_is_covered_by_unnamed_union(var, &info)) continue;
     int already = 0;
     for (int i = 0; i < assigned_n; i++) {
       if (assigned_lens[i] == info.len &&
@@ -2346,6 +2349,20 @@ static void record_assigned_member(char **names, int *lens, int *kinds, int *n,
   if (*n < cap) {
     names[*n] = name; lens[*n] = len; kinds[*n] = kind; (*n)++;
   }
+}
+
+static bool member_is_covered_by_unnamed_union(lvar_t *var, const tag_member_info_t *info) {
+  if (!info || info->len <= 0) return false;
+  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
+  for (int o = 0; o < member_count; o++) {
+    tag_member_info_t mi = {0};
+    if (!tag_get_member_at(var, o, &mi)) break;
+    if (mi.len == 0 && mi.tag_kind == TK_UNION && !mi.is_tag_pointer &&
+        info->offset >= mi.offset && info->offset < mi.offset + mi.type_size) {
+      return true;
+    }
+  }
+  return false;
 }
 
 static node_t *parse_struct_initializer(lvar_t *var) {
