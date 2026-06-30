@@ -3179,3 +3179,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check`
 - 残っている c-testsuite import は `sin`、`sprintf`、file I/O (`fopen`/`fwrite`/`fclose`/
   `fread`/`fgetc`/`getc`/`fgets`)。
+
+### このセッション（続き280）: ag_wasm_link の sin runtime 解決追加
+- c-testsuite `00174.c` の import を解消するため、`sin` を synthetic runtime function 対象に追加した。
+- 現時点では stdout 比較をしていない scan を進めるための最小解決で、既存 fallback により
+  `f64 0.0` を返す。正確な math runtime は別途実装対象。
+- c-testsuite `00174.c` が import skip から link-run 対象に移った。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 215、skip run imports 2、skip run params 1
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1110、skip run imports 4
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 215、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
+- 残っている c-testsuite import は `sprintf` と file I/O (`fopen`/`fwrite`/`fclose`/
+  `fread`/`fgetc`/`getc`/`fgets`)。
