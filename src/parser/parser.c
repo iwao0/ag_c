@@ -3303,6 +3303,7 @@ static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind) {
 static int g_param_inner_dim_consts[7] = {0};
 static token_ident_t *g_param_inner_dim_idents[7] = {0};
 static int g_param_inner_dim_count = 0;
+static int g_param_pointer_array_outer_dim = 0;
 
 static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, int *out_is_pointer_declarator,
                                                   int *out_pointer_levels,
@@ -3324,6 +3325,7 @@ static token_ident_t *parse_param_declarator_name(int *out_is_array_declarator, 
     g_param_inner_dim_idents[i] = NULL;
   }
   g_param_inner_dim_count = 0;
+  g_param_pointer_array_outer_dim = 0;
   token_ident_t *param = parse_param_declarator_name_recursive(out_is_array_declarator,
                                                                out_is_pointer_declarator,
                                                                out_pointer_levels,
@@ -3409,7 +3411,17 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
       // dim を表すため最初の bracket も捕捉する。
       bool skip_first = (bracket_count == 0) && !paren_made_pointer;
       if (skip_first) {
-        skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+        if (out_is_pointer_declarator && *out_is_pointer_declarator) {
+          tk_consume('[');
+          int dim = 0;
+          if (curtok() && curtok()->kind != TK_RBRACKET) {
+            dim = psx_parse_array_size_constexpr();
+          }
+          tk_expect(']');
+          if (dim > 0) g_param_pointer_array_outer_dim = dim;
+        } else {
+          skip_balanced_group(TK_LBRACKET, TK_RBRACKET);
+        }
       } else {
         tk_consume('[');
         int dim = 0;
@@ -3431,6 +3443,11 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
         // 通常時は bracket 1/2/... が pointee dim。
         int dim_pos = paren_made_pointer ? bracket_count : (bracket_count - 1);
         if (dim_pos == 0) {
+          if (out_is_pointer_declarator && *out_is_pointer_declarator &&
+              out_inner_first_dim && *out_inner_first_dim > 0 &&
+              g_param_pointer_array_outer_dim == 0) {
+            g_param_pointer_array_outer_dim = *out_inner_first_dim;
+          }
           if (out_inner_first_dim) *out_inner_first_dim = dim;
           if (out_inner_first_dim_ident) *out_inner_first_dim_ident = dim_ident;
         } else if (dim_pos == 1) {
@@ -3695,6 +3712,17 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     return var;
   }
   if (param_is_ptr && ds->tag_kind == TK_EOF) {
+    if (param_is_array_declarator && g_param_pointer_array_outer_dim > 0 &&
+        param_inner_first_dim > 0 && !param_has_func_suffix) {
+      lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, 8, 0);
+      var->pointer_qual_levels = 1;
+      var->base_deref_size = (short)ds->elem_size;
+      var->ptr_array_pointee_bytes = param_inner_first_dim * ds->elem_size;
+      if (param_ptr_levels >= 2) {
+        var->outer_stride = g_param_pointer_array_outer_dim * 8;
+      }
+      return var;
+    }
     /* スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）。
      * 多段ポインタなら pointee_size=8、それ以外は ds->elem_size。 */
     int pointee_size = (param_ptr_levels >= 2) ? 8 : ds->elem_size;

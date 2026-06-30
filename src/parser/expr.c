@@ -1154,6 +1154,7 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
      * 段ストライドを並べ、build_unary_deref_node が `*s.p` 構築時に 1 段スライドして
      * carry できるようにする (ローカル `int (*p)[M][N]` の lvar 表現と整合)。 */
     deref->is_pointer = 1;
+    deref->is_scalar_ptr_member = 1;
     deref->deref_size = (short)mem_info->outer_stride;
     if (mem_info->mid_stride > 0) {
       /* 2D pointee: 1 段目 subscript stride = mid_stride、最終要素 = elem */
@@ -1169,6 +1170,11 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
      * 配列メンバの decay 表現と区別する。 */
     deref->is_pointer = 1;
     deref->is_scalar_ptr_member = 1;
+    if (mem_info->ptr_array_pointee_bytes > 0) {
+      deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
+      deref->base_deref_size = (short)mem_info->deref_size;
+      deref->deref_size = 8;
+    }
   }
   deref->tag_kind = mem_info->tag_kind;
   deref->tag_name = mem_info->tag_name;
@@ -4413,6 +4419,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       } else {
         deref->is_tag_pointer = 1;
         deref->is_pointer = 1;
+        deref->type_size = 8;
         deref->deref_size = (short)base_mem_ptp->ptr_array_pointee_bytes;
         deref->inner_deref_size = (short)bds;
         deref->pointer_qual_levels = 0;

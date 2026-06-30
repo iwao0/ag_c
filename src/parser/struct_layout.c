@@ -126,6 +126,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     psx_ret_pointee_array_t member_typedef_funcptr_ret_pointee_array = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
+    int member_typedef_ptr_array_pointee_bytes = 0;
+    int member_typedef_ptr_array_dim_count = 0;
+    int member_typedef_ptr_array_dims[8] = {0};
     if (psx_ctx_is_type_token(curtok()->kind)) {
       is_signed_type = (curtok()->kind != TK_UNSIGNED);
       member_base_kind = curtok()->kind;
@@ -245,6 +248,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           for (int i = 0; i < _ti.array_dim_count && i < 8; i++) {
             member_typedef_array_dims[i] = _ti.array_dims[i];
           }
+        }
+        if (_ti.is_pointer && _ti.array_dim_count > 0) {
+          int td_pointee_count = 1;
+          member_typedef_ptr_array_dim_count = _ti.array_dim_count;
+          for (int i = 0; i < _ti.array_dim_count && i < 8; i++) {
+            member_typedef_ptr_array_dims[i] = _ti.array_dims[i];
+            if (_ti.array_dims[i] > 0) td_pointee_count *= _ti.array_dims[i];
+          }
+          member_typedef_ptr_array_pointee_bytes = td_pointee_count * (_ti.elem_size > 0 ? _ti.elem_size : elem_size);
         }
       }
       if (td_tag != TK_EOF) {
@@ -544,6 +556,23 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
                                                           member_name, member_len,
                                                           ptr_array_pointee_bytes);
+        }
+        if (has_member_name && member_typedef_ptr_array_pointee_bytes > 0) {
+          if (head.is_ptr) {
+            psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
+                                                            member_name, member_len,
+                                                            member_typedef_ptr_array_pointee_bytes);
+          } else if (member_is_ptr_typedef) {
+            psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
+                                                member_name, member_len,
+                                                member_typedef_ptr_array_pointee_bytes);
+            if (member_typedef_ptr_array_dim_count >= 2 &&
+                member_typedef_ptr_array_dims[0] > 0) {
+              int mid = member_typedef_ptr_array_pointee_bytes / member_typedef_ptr_array_dims[0];
+              psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len,
+                                                member_name, member_len, mid);
+            }
+          }
         }
         if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,

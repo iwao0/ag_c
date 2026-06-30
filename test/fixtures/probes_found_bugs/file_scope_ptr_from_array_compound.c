@@ -38,6 +38,25 @@ int (*(*grid_ptrs)[2])[3] = &(int (*[2])[3]){grid_a, grid_b};
 typedef int (*RowPtr)[3];
 RowPtr *typedef_grid_ptrs = (RowPtr[]){grid_a, grid_b};
 
+struct RowHolder {
+    RowPtr *rows;
+};
+
+struct SingleRowHolder {
+    RowPtr row;
+};
+
+struct RowHolder global_row_holder = {(RowPtr[]){grid_a, grid_b}};
+struct SingleRowHolder global_single_row_holder = {grid_b};
+
+static int use_flat_param(int (*rows[2])[3]) {
+    return rows[0][0][2] + rows[1][1][1];
+}
+
+static int use_nested_param(int (*(*rows)[2])[3]) {
+    return (*rows)[0][1][2] + (*rows)[1][0][0];
+}
+
 static int local_pointer_element_compound_literal(void) {
     int x = 41;
     int y = 1;
@@ -56,9 +75,13 @@ static int local_pointer_to_array_element_compound_literal(void) {
     int y[2][3] = {{19, 20, 21}, {22, 23, 24}};
     int (*(*ptrs)[2])[3] = &(int (*[2])[3]){x, y};
     RowPtr *typedef_ptrs = (RowPtr[]){x, y};
+    struct RowHolder holder = {(RowPtr[]){x, y}};
+    struct SingleRowHolder single = {y};
     int direct = ((int (*[2])[3]){x, y})[1][1][2];
     return (*ptrs)[0][1][2] + (*ptrs)[1][0][1] +
-           typedef_ptrs[0][0][2] + typedef_ptrs[1][1][0] + direct;
+           typedef_ptrs[0][0][2] + typedef_ptrs[1][1][0] +
+           holder.rows[0][1][1] + holder.rows[1][0][2] +
+           single.row[1][2] + direct;
 }
 
 int main(void) {
@@ -74,6 +97,10 @@ int main(void) {
     assert(local_pointer_element_compound_literal() == 61);
     assert((*grid_ptrs)[0][0][1] == 2 && (*grid_ptrs)[1][1][2] == 12);
     assert(typedef_grid_ptrs[0][1][0] == 4 && typedef_grid_ptrs[1][0][2] == 9);
-    assert(local_pointer_to_array_element_compound_literal() == 99);
+    assert(global_row_holder.rows[0][1][0] == 4 && global_row_holder.rows[1][0][2] == 9);
+    assert(global_single_row_holder.row[0][1] == 8 && global_single_row_holder.row[1][2] == 12);
+    assert(use_flat_param((int (*[2])[3]){grid_a, grid_b}) == 14);
+    assert(use_nested_param(&(int (*[2])[3]){grid_a, grid_b}) == 13);
+    assert(local_pointer_to_array_element_compound_literal() == 161);
     return 0;
 }

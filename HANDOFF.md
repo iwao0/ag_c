@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き260: pointer-to-array element compound literal）
+最終更新: 2026-06-30（続き261: pointer-to-array element member/param contexts）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -39,6 +39,13 @@
   保持し、local/global の宣言 metadata は「配列要素 pointer slot は 8B」「その pointer が指す
   array は M*elem」を分離するよう修正。`file_scope_ptr_from_array_compound.c` に
   global/local/typedef/direct subscript を追加し、Wasm WAT/object 生成も focused 確認済み。
+- 続き261: **pointer-to-array element の struct member / parameter 文脈**。
+  `typedef int (*RowPtr)[3]; struct H { RowPtr *rows; };` の `h.rows[i][j][k]` と、
+  `int (*rows[2])[3]` / `int (*(*rows)[2])[3]` 仮引数が ARM64 で SIGSEGV。struct member では
+  typedef pointer-to-array + 追加 `*` の metadata が落ち、param では `rows[2]` の pointer slot 幅
+  8B と trailing `[3]` の pointee 配列幅 12B が混同されていた。member/param 登録で
+  `ptr_array_pointee_bytes` と slot stride を分離し、subscript 結果の pointer load は `type_size=8`
+  に固定。`file_scope_ptr_from_array_compound.c` に global/local struct holder と flat/nested param を追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず
