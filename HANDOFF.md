@@ -1,14 +1,14 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き265: anonymous aggregate promoted array designator）
+最終更新: 2026-06-30（続き266: anonymous union promoted array designator）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
 - 直近確認: `make test` green、`./build/test_wasm32_backend` green、
-  `./build/test_wasm32_e2e` = **1112/1112 green**、`./build/test_wasm32_object` = **1113/1113 green**、
-  `./build/test_e2e` = **1141/1141 green**、`make wasm32-object-fixture-scan`
-  (`test/fixtures/**/*.c`, should_reject 除外) = **1113/1113 compile + validate green**、
-  `make wasm32-wat-fixture-scan` = **1112/1112 WAT compile + wat2wasm + validate green**
+  `./build/test_wasm32_e2e` = **1113/1113 green**、`./build/test_wasm32_object` = **1114/1114 green**、
+  `./build/test_e2e` = **1142/1142 green**、`make wasm32-object-fixture-scan`
+  (`test/fixtures/**/*.c`, should_reject 除外) = **1114/1114 compile + validate green**、
+  `make wasm32-wat-fixture-scan` = **1113/1113 WAT compile + wat2wasm + validate green**
   （multi-TU link fixture 1 件は skip）、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `make wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**、
@@ -75,6 +75,14 @@
   `typedef int (*RowPtr)[3]; struct H { struct { RowPtr rows[2]; }; };` の `.rows[1] = b`
   は array-of-pointer-to-array でも `[i]` designator を許可するよう修正。
   `anon_global_array_member_designator.c` / `anon_ptr_to_array_member_designator.c` を e2e と Wasm e2e/object scan に追加。
+- 続き266: **匿名 union promoted 配列メンバ designator**。
+  `struct H { union { int a[2]; int q; }; int z; }; struct H h = {.a = {1,2}, .z = 3};`
+  が ARM64/Wasm WAT で値ずれ。匿名 union の promoted member は同じ storage を共有するため、
+  `.a` と `.q` は同じ union slot へ解決し、後続 `.z` は union storage 分だけ進める必要がある。
+  global flat slot 計算・designator 解決・child 探索で匿名 union storage を 1 つの covered range として扱い、
+  promoted member の追加 slot 消費を抑制。ARM64/WAT/object data emitter でも匿名 union 本体を書いた後、
+  covered range 内の promoted member を再出力しないよう統一。union active member が配列なら ARM64 data でも
+  union storage 内へ要素列を展開する。`anon_union_promoted_array_designator.c` を e2e と Wasm e2e/object scan に追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

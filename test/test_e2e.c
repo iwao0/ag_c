@@ -958,6 +958,7 @@ static const test_case_t test_cases[] = {
     {"probes", "anon_struct_union_local", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anon_struct_union_local.c", 0, 0},
     {"probes", "anon_global_array_member_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anon_global_array_member_designator.c", 0, 0},
     {"probes", "anon_ptr_to_array_member_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anon_ptr_to_array_member_designator.c", 0, 0},
+    {"probes", "anon_union_promoted_array_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/anon_union_promoted_array_designator.c", 0, 0},
     {"probes", "vla_double_element", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_double_element.c", 0, 0},
     {"probes", "funcall_struct_ptr_arrow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcall_struct_ptr_arrow.c", 0, 0},
     {"probes", "struct_ptr_param_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_ptr_param_subscript.c", 0, 0},

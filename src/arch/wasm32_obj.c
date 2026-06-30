@@ -2242,9 +2242,12 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                               obj_data_t *d, global_var_t *gv,
                                               int *val_idx, size_t base_off);
 
-static int obj_member_is_unnamed_aggregate(const tag_member_info_t *mi) {
-  return mi->len == 0 && !mi->is_tag_pointer &&
-         (mi->tag_kind == TK_STRUCT || mi->tag_kind == TK_UNION);
+static int obj_member_is_unnamed_struct(const tag_member_info_t *mi) {
+  return mi->len == 0 && !mi->is_tag_pointer && mi->tag_kind == TK_STRUCT;
+}
+
+static int obj_member_is_unnamed_union(const tag_member_info_t *mi) {
+  return mi->len == 0 && !mi->is_tag_pointer && mi->tag_kind == TK_UNION;
 }
 
 static void emit_obj_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
@@ -2339,10 +2342,17 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
                                                     obj_data_t *d, global_var_t *gv,
                                                     int *val_idx, size_t base_off) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int covered_union_off = 0;
+  int covered_union_size = 0;
   for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
-    if (obj_member_is_unnamed_aggregate(&mi)) continue;
+    if (obj_member_is_unnamed_struct(&mi)) continue;
+    if (covered_union_size > 0 &&
+        mi.offset >= covered_union_off &&
+        mi.offset < covered_union_off + covered_union_size) {
+      continue;
+    }
     if (mi.bit_width > 0) {
       emit_obj_global_bitfield_unit_data(tk, tn, tl, &m, d, gv, val_idx, base_off);
       continue;
@@ -2377,6 +2387,10 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
     if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
       emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv, val_idx,
                                         base_off + (size_t)mi.offset);
+      if (obj_member_is_unnamed_union(&mi)) {
+        covered_union_off = mi.offset;
+        covered_union_size = mi.type_size;
+      }
       continue;
     }
     int slot = (*val_idx)++;

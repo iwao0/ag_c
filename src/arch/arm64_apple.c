@@ -228,6 +228,32 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
       }
     }
   }
+  tag_member_info_t active = {0};
+  if (use_fp == TK_FLOAT_KIND_NONE &&
+      psx_ctx_get_tag_member_info(tk, tn, tl, 0, &active) &&
+      active.array_len > 0 &&
+      !(active.tag_kind == TK_STRUCT && !active.is_tag_pointer) &&
+      !(active.tag_kind == TK_UNION && !active.is_tag_pointer)) {
+    int emitted = 0;
+    int elem_size = active.type_size;
+    emit_global_init_member_scalar(sym, sym_len, active.fp_kind, elem_size, iv, fv);
+    emitted += elem_size;
+    for (int k = 1; k < active.array_len && emitted + elem_size <= union_size; k++) {
+      char *esym = (*val_idx < gv->init_count && gv->init_value_symbols)
+                       ? gv->init_value_symbols[*val_idx] : NULL;
+      int esym_len = (*val_idx < gv->init_count && gv->init_value_symbol_lens)
+                         ? gv->init_value_symbol_lens[*val_idx] : 0;
+      long long ev = (*val_idx < gv->init_count && gv->init_values)
+                         ? gv->init_values[*val_idx] : 0;
+      double efv = (*val_idx < gv->init_count && gv->init_fvalues)
+                       ? gv->init_fvalues[*val_idx] : 0.0;
+      if (*val_idx < gv->init_count) (*val_idx)++;
+      emit_global_init_member_scalar(esym, esym_len, active.fp_kind, elem_size, ev, efv);
+      emitted += elem_size;
+    }
+    if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
+    return;
+  }
   emit_global_init_member_scalar(sym, sym_len, use_fp, use_size, iv, fv);
   int emitted = sym ? 8
                     : (use_fp == TK_FLOAT_KIND_FLOAT) ? 4
@@ -245,10 +271,18 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
                                            int struct_size, global_var_t *gv, int *val_idx) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
   int prev_end = 0;
+  int covered_union_off = 0;
+  int covered_union_size = 0;
   for (int i = 0; i < n_members && *val_idx < gv->init_count; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
+    if (mi.len == 0 && mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) continue;
+    if (covered_union_size > 0 &&
+        off >= covered_union_off &&
+        off < covered_union_off + covered_union_size) {
+      continue;
+    }
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
@@ -295,6 +329,10 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
     if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
       emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+      if (mi.len == 0) {
+        covered_union_off = off;
+        covered_union_size = ts;
+      }
       prev_end = off + ts;
       continue;
     }
