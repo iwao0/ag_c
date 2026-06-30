@@ -2495,6 +2495,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_pow";
   } else if (str_eq_lit(name, "fabs")) {
     target_lit = "__agc_runtime_fabs";
+  } else if (str_eq_lit(name, "sin")) {
+    target_lit = "__agc_runtime_sin";
   } else if (str_eq_lit(name, "wcslen")) {
     target_lit = "__agc_runtime_wcslen";
   } else if (str_eq_lit(name, "wcscpy")) {

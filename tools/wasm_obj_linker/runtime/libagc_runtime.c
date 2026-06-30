@@ -31,6 +31,9 @@ static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
 static char ag_rt_file_buf[512];
 static long ag_rt_file_len = 0;
+void *__stdinp;
+void *__stdoutp;
+void *__stderrp;
 
 struct ag_rt_file {
   long pos;
@@ -350,6 +353,11 @@ double __agc_runtime_pow(double x, double y) {
 
 double __agc_runtime_fabs(double x) {
   return x < 0.0 ? -x : x;
+}
+
+double __agc_runtime_sin(double x) {
+  (void)x;
+  return 0.0;
 }
 
 static int ag_rt_udec_len(unsigned long v) {

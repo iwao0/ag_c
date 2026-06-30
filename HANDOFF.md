@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き301: ag_wasm_link runtime object file I/O）
+最終更新: 2026-07-01（続き302: ag_wasm_link runtime object sin and stdio data）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き302: **`sin` と stdio data symbol を `libagc_runtime.o` へ移行**。
+  `__agc_runtime_sin` を runtime object に追加し、`ag_wasm_link` の ABI bridge map で
+  public `sin` から接続するようにした。実装は従来 synthetic と同じ fixture 用の `0.0` 戻し。
+  `__stdinp` / `__stdoutp` / `__stderrp` も runtime object 側の実データ定義に移した。
+  `test_smoke.sh` では `sin` の通常リンク/`--nostdlib` import 維持と、
+  stdio data symbol が通常リンクで 0 初期化 data として解決されることを確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き301: **file I/O helper を `libagc_runtime.o` へ移行**。
   `fopen` / `fwrite` / `fclose` / `fread` / `fgetc` / `getc` / `fgets` を runtime object に追加し、
   `ag_wasm_link` の ABI bridge map を拡張した。実装は fixture 用の memory-backed one-file stub で、

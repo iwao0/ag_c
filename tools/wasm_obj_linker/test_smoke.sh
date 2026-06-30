@@ -256,6 +256,7 @@ double sqrt(double x);
 float sqrtf(float x);
 double pow(double x, double y);
 double fabs(double x);
+double sin(double x);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
@@ -334,6 +335,7 @@ int main(void) {
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
          (int)pow(2.0, 10.0) == 1024 &&
          (int)fabs(-3.5) == 3 &&
+         (int)sin(1.0) == 0 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
@@ -550,7 +552,24 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
+
+cat > "$out_dir/stdio_data_runtime.c" <<'SRC'
+typedef void FILE;
+extern FILE *__stdinp;
+extern FILE *__stdoutp;
+extern FILE *__stderrp;
+int main(void) {
+  return __stdinp == 0 && __stdoutp == 0 && __stderrp == 0 ? 42 : 1;
+}
+SRC
+"$root/build/ag_c_wasm" -c -o "$out_dir/stdio_data_runtime.o" "$out_dir/stdio_data_runtime.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_stdio_data_runtime.wasm" \
+  "$out_dir/stdio_data_runtime.o"
+wasm-validate "$out_dir/linked_stdio_data_runtime.wasm"
+wasm-interp "$out_dir/linked_stdio_data_runtime.wasm" --run-all-exports > "$out_dir/linked_stdio_data_runtime.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_stdio_data_runtime.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \
