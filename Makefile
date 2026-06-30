@@ -25,6 +25,7 @@ OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
 WASM_TARGET=build/ag_c_wasm
+WASM_LINKER=build/ag_wasm_link
 TEST_TOKENIZER=build/test_tokenizer
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
@@ -51,6 +52,10 @@ $(TARGET): $(OBJS)
 
 $(WASM_TARGET): $(WASM_OBJS)
 	$(CC) $(CFLAGS) -o $@ $(WASM_OBJS)
+
+$(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $<
 
 $(OBJROOT)/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -127,6 +132,9 @@ wasm32-wat-c-testsuite-scan: $(WASM_TARGET)
 
 wasm32-scans: wasm32-object-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-wat-c-testsuite-scan
 
+test-wasm-obj-linker: $(WASM_TARGET) $(WASM_LINKER)
+	@bash tools/wasm_obj_linker/test_smoke.sh
+
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
@@ -170,6 +178,6 @@ c-testsuite: $(TARGET)
 c-testsuite-verbose: $(TARGET)
 	@bash scripts/run_c_testsuite.sh --verbose
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans c-testsuite c-testsuite-verbose
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker c-testsuite c-testsuite-verbose
 
 -include $(DEPS)

@@ -2762,3 +2762,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = object fixture scan 1114 pass / 0 fail
   - `./build/test_e2e` = 1142/1142
   - `make test` green
+
+### このセッション（続き258）: Experimental Wasm object linker folder
+- 後で別 repository に切り出しやすいよう、`tools/wasm_obj_linker/` に実験用 Wasm object linker
+  `ag_wasm_link.c` を追加。
+- `Makefile` に `build/ag_wasm_link` と `test-wasm-obj-linker` target を追加。
+- v1 は `ag_c_wasm -c` が出す object に限定し、複数 object の Type/Function/Code/Data を結合する。
+  対応 relocation は direct call `R_WASM_FUNCTION_INDEX_LEB`、data address
+  `R_WASM_MEMORY_ADDR_LEB` / `R_WASM_MEMORY_ADDR_I32`、backend が使う imported global
+  `R_WASM_GLOBAL_INDEX_LEB`。final wasm では linear memory を定義して `memory` export を出す。
+- final wasm の memory page 数は linked data layout から計算する。`__stack_pointer` は確保した
+  memory の top に置く。final data segment offset / global initializer の `i32.const` は signed
+  LEB128 で出すよう修正済み（unsigned LEB だと offset が負値として解釈されるケースがあった）。
+- `R_WASM_TABLE_INDEX_*` はまだ未対応。function pointer/table relocation に当たったらエラーにして、
+  誤った wasm を出さない。
+- `tools/wasm_obj_linker/README.md` と smoke script を追加。smoke は cross-TU direct call と
+  extern global read/write、code/data の data address relocation、static symbol collision、
+  unresolved host function import、1 page を超える many-data-segment case を
+  `ag_wasm_link --no-entry --export=main` でリンクし、`wasm-validate` / `wasm-interp` で
+  `main() => i32:42` を確認する。
+- focused 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
