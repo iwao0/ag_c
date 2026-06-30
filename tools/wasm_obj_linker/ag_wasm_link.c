@@ -1774,6 +1774,37 @@ static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *v
   emit_snprintf_return_count(b, type, out, count);
   buf_u8(b, 0x0b);
 
+  /* "%02d" */
+  emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '%'); buf_u8(b, 0x46);
+  emit_local_get(b, fmt); emit_i32_const(b, 1); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '0'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  emit_local_get(b, fmt); emit_i32_const(b, 2); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, '2'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  emit_local_get(b, fmt); emit_i32_const(b, 3); buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  emit_i32_const(b, 'd'); buf_u8(b, 0x46); buf_u8(b, 0x71);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  emit_snprintf_load_arg(b, va, arg, 0);
+  emit_local_get(b, arg);
+  emit_i32_const(b, 0);
+  buf_u8(b, 0x48);                  /* i32.lt_s */
+  buf_u8(b, 0x04); buf_u8(b, 0x40); /* if */
+  emit_snprintf_write_i32_decimal(b, out, count, arg, divisor, started, digit);
+  buf_u8(b, 0x05);                  /* else */
+  emit_local_get(b, arg);
+  emit_i32_const(b, 10);
+  buf_u8(b, 0x49);                  /* i32.lt_u */
+  buf_u8(b, 0x04); buf_u8(b, 0x40); /* if */
+  emit_snprintf_write_byte_const(b, out, count, '0', 1);
+  buf_u8(b, 0x0b);                  /* end if */
+  emit_snprintf_write_u32_decimal(b, out, count, arg, divisor, started, digit);
+  buf_u8(b, 0x0b);                  /* end if */
+  emit_snprintf_return_count(b, type, out, count);
+  buf_u8(b, 0x0b);
+
   /* "%u" */
   emit_local_get(b, fmt); buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
   emit_i32_const(b, '%'); buf_u8(b, 0x46);

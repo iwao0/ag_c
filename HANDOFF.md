@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き290: ag_wasm_link snprintf unsigned decimal 修正）
+最終更新: 2026-07-01（続き291: ag_wasm_link snprintf zero-padded decimal 修正）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,13 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き291: **ag_wasm_link `snprintf("%02d")` 対応**。
+  synthetic runtime の `snprintf` に zero-padded width 2 の signed decimal 分岐を追加。
+  正数 0..9 は先頭 `0` を書いてから decimal helper に流し、負数は幅 2 では sign+digit で幅を満たすため
+  既存の signed decimal helper にそのまま流す。`test_smoke.sh` の `snprintf_negative.c` に
+  `snprintf(d, sizeof(d), "%02d", 7)` と `snprintf(e, sizeof(e), "%02d", -5)` の buffer 内容と戻り値確認を追加。
+  確認: `make -j4 build/ag_wasm_link`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan`、`make wasm32-object-link-c-testsuite-scan`。
 - 続き290: **ag_wasm_link `snprintf("%u")` 対応**。
   synthetic runtime の `snprintf` は `%zu` は出せたが通常の unsigned int `%u` が未対応で、
   format 不一致時の fallback 0 戻りになっていた。`%u` 分岐を追加し、既存の unsigned decimal helper に
