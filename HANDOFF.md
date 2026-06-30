@@ -3048,3 +3048,36 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     WAT c-testsuite 218 pass / 2 skip
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `git diff --check`
+
+### このセッション（続き274）: ag_wasm_link の小型 libc runtime stub 追加
+- object link-run scan で import が残り実行 skip になっていた fixture のうち、状態管理が小さい
+  libc 関数を `ag_wasm_link` の synthetic runtime function として解決するようにした。
+- 追加した stub:
+  - `strlen`
+  - `strcmp`
+  - `memset`
+  - `memcpy`
+  - `abs`
+  - `isdigit`
+  - `isalpha`
+  - `toupper`
+- pointer/int ABI の差を吸収するため、stub 生成時に param valtype が `i64` なら `i32.wrap_i64`、
+  戻り値が `i64` なら `i64.extend_i32_u` を挟む。
+- まだ import が残る主なもの:
+  - allocator 系: `malloc` / `free` / `calloc`
+  - printf family: `snprintf` / `sprintf`
+  - math: `sin` / `cos` / `exp` / `sqrt` / `log` / `atan2` / `sinh` / `cosh`
+  - wide/locale/file I/O と残り string (`strcpy` / `strncpy` / `strcat` / `strncmp` /
+    `strchr` / `strrchr` / `memcmp`)
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1107、skip run imports 7
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 210、skip run imports 7、skip run params 1
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 210、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`

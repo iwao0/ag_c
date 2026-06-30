@@ -702,7 +702,11 @@ static int is_runtime_data_symbol(str_t name) {
 
 static int is_runtime_func_symbol(str_t name) {
   return str_eq_lit(name, "printf") || str_eq_lit(name, "fprintf") ||
-         str_eq_lit(name, "__assert_rtn");
+         str_eq_lit(name, "__assert_rtn") ||
+         str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
+         str_eq_lit(name, "memset") || str_eq_lit(name, "memcpy") ||
+         str_eq_lit(name, "abs") || str_eq_lit(name, "isdigit") ||
+         str_eq_lit(name, "isalpha") || str_eq_lit(name, "toupper");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -750,6 +754,32 @@ static unsigned char wasm_type_param_valtype(type_t *t, uint32_t idx) {
   }
   die("runtime stub parameter index out of range");
   return 0;
+}
+
+static uint32_t runtime_param_count(type_t *type, uint32_t min, str_t name) {
+  uint32_t n = wasm_type_param_count(type);
+  if (n < min) dief("runtime stub signature mismatch: %s", name.s);
+  return n;
+}
+
+static void emit_i32_from_param(buf_t *b, type_t *type, uint32_t idx) {
+  unsigned char ty = wasm_type_param_valtype(type, idx);
+  buf_u8(b, 0x20);      /* local.get */
+  buf_uleb(b, idx);
+  if (ty == 0x7e) {
+    buf_u8(b, 0xa7);    /* i32.wrap_i64 */
+  } else if (ty != 0x7f) {
+    die("runtime stub expects integer parameter");
+  }
+}
+
+static void emit_return_i32_as_result(buf_t *b, type_t *type) {
+  unsigned char result = wasm_type_result_valtype(type);
+  if (result == 0x7e) {
+    buf_u8(b, 0xad);    /* i64.extend_i32_u */
+  } else if (result != 0x7f && result != 0) {
+    die("runtime stub expects integer result");
+  }
 }
 
 static int make_printf_stub_body(str_t name, type_t *type, buf_t *b) {
@@ -809,12 +839,258 @@ static int make_printf_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_strlen_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "strlen")) return 0;
+  runtime_param_count(type, 1, name);
+  uint32_t addr = wasm_type_param_count(type);
+  uint32_t len = addr + 1;
+  buf_uleb(b, 1);
+  buf_uleb(b, 2);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0);
+  buf_u8(b, 0x21); buf_uleb(b, addr);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, len);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, addr);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, len);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, len);
+  buf_u8(b, 0x20); buf_uleb(b, addr);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, addr);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, len);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_strcmp_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "strcmp")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t a = wasm_type_param_count(type);
+  uint32_t c = a + 2;
+  uint32_t d = a + 3;
+  buf_uleb(b, 1);
+  buf_uleb(b, 4);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0);
+  buf_u8(b, 0x21); buf_uleb(b, a);
+  emit_i32_from_param(b, type, 1);
+  buf_u8(b, 0x21); buf_uleb(b, a + 1);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, a + 1);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x21); buf_uleb(b, d);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, d);
+  buf_u8(b, 0x47);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x20); buf_uleb(b, d);
+  buf_u8(b, 0x6b);
+  emit_return_i32_as_result(b, type);
+  buf_u8(b, 0x0f);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, c);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  emit_return_i32_as_result(b, type);
+  buf_u8(b, 0x0f);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, a);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, a);
+  buf_u8(b, 0x20); buf_uleb(b, a + 1);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, a + 1);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_memset_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "memset")) return 0;
+  runtime_param_count(type, 3, name);
+  uint32_t dst = wasm_type_param_count(type);
+  uint32_t val = dst + 1;
+  uint32_t n = dst + 2;
+  uint32_t i = dst + 3;
+  buf_uleb(b, 1);
+  buf_uleb(b, 4);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, dst);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, val);
+  emit_i32_from_param(b, type, 2); buf_u8(b, 0x21); buf_uleb(b, n);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x20); buf_uleb(b, n);
+  buf_u8(b, 0x4f);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x20); buf_uleb(b, val);
+  buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_memcpy_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "memcpy")) return 0;
+  runtime_param_count(type, 3, name);
+  uint32_t dst = wasm_type_param_count(type);
+  uint32_t src = dst + 1;
+  uint32_t n = dst + 2;
+  uint32_t i = dst + 3;
+  buf_uleb(b, 1);
+  buf_uleb(b, 4);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); buf_u8(b, 0x21); buf_uleb(b, dst);
+  emit_i32_from_param(b, type, 1); buf_u8(b, 0x21); buf_uleb(b, src);
+  emit_i32_from_param(b, type, 2); buf_u8(b, 0x21); buf_uleb(b, n);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0); buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x20); buf_uleb(b, n);
+  buf_u8(b, 0x4f);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x20); buf_uleb(b, src);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x2d); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, i);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 1);
+  buf_u8(b, 0x6a);
+  buf_u8(b, 0x21); buf_uleb(b, i);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x20); buf_uleb(b, dst);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_abs_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "abs")) return 0;
+  runtime_param_count(type, 1, name);
+  uint32_t x = wasm_type_param_count(type);
+  buf_uleb(b, 1);
+  buf_uleb(b, 1);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0);
+  buf_u8(b, 0x21); buf_uleb(b, x);
+  buf_u8(b, 0x20); buf_uleb(b, x);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  buf_u8(b, 0x48);
+  buf_u8(b, 0x04); buf_u8(b, 0x7f);
+  buf_u8(b, 0x41); buf_sleb_i32(b, 0);
+  buf_u8(b, 0x20); buf_uleb(b, x);
+  buf_u8(b, 0x6b);
+  buf_u8(b, 0x05);
+  buf_u8(b, 0x20); buf_uleb(b, x);
+  buf_u8(b, 0x0b);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_ctype_stub_body(str_t name, type_t *type, buf_t *b) {
+  int is_digit = str_eq_lit(name, "isdigit");
+  int is_alpha = str_eq_lit(name, "isalpha");
+  int is_upper = str_eq_lit(name, "toupper");
+  if (!is_digit && !is_alpha && !is_upper) return 0;
+  runtime_param_count(type, 1, name);
+  uint32_t x = wasm_type_param_count(type);
+  buf_uleb(b, 1);
+  buf_uleb(b, 1);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0);
+  buf_u8(b, 0x21); buf_uleb(b, x);
+  if (is_digit) {
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, '0');
+    buf_u8(b, 0x4e);
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, '9');
+    buf_u8(b, 0x4c);
+    buf_u8(b, 0x71);
+  } else if (is_alpha) {
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, 32);
+    buf_u8(b, 0x72);
+    buf_u8(b, 0x21); buf_uleb(b, x);
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, 'a');
+    buf_u8(b, 0x4e);
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, 'z');
+    buf_u8(b, 0x4c);
+    buf_u8(b, 0x71);
+  } else {
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, 'a');
+    buf_u8(b, 0x4e);
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, 'z');
+    buf_u8(b, 0x4c);
+    buf_u8(b, 0x71);
+    buf_u8(b, 0x04); buf_u8(b, 0x7f);
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x41); buf_sleb_i32(b, 32);
+    buf_u8(b, 0x6b);
+    buf_u8(b, 0x05);
+    buf_u8(b, 0x20); buf_uleb(b, x);
+    buf_u8(b, 0x0b);
+  }
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
 static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
   buf_t b = {0};
   if (str_eq_lit(name, "__assert_rtn")) {
     buf_uleb(&b, 0); /* local decl count */
     buf_u8(&b, 0x00); /* unreachable */
   } else if (make_printf_stub_body(name, type, &b)) {
+  } else if (make_strlen_stub_body(name, type, &b)) {
+  } else if (make_strcmp_stub_body(name, type, &b)) {
+  } else if (make_memset_stub_body(name, type, &b)) {
+  } else if (make_memcpy_stub_body(name, type, &b)) {
+  } else if (make_abs_stub_body(name, type, &b)) {
+  } else if (make_ctype_stub_body(name, type, &b)) {
   } else {
     buf_uleb(&b, 0); /* local decl count */
     unsigned char result = wasm_type_result_valtype(type);
