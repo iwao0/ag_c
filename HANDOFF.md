@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き262: typedef pointer-to-array array member）
+最終更新: 2026-06-30（続き263: anonymous aggregate brace around array member）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -52,6 +52,13 @@
   pointer slot である情報 (`ptr_array_pointee_bytes`) が落ちていた。struct layout で
   `member_array_len > 0` の typedef pointer-to-array を array-of-pointer-to-array として登録し、
   fixture に global/local `RowPtr rows[2]` を追加。
+- 続き263: **匿名 aggregate wrapper 越しの配列メンバ brace 初期化**。
+  `struct H { struct { RowPtr rows[2]; }; }; struct H h={{{a,b}}};` が E3064。
+  匿名 struct メンバは外側 tag に `rows` として昇格されるが、初期化子の brace は
+  匿名 struct 用に 1 段残るため、`parse_member_initializer` が `{a,b}` を「配列要素 1 個の
+  scalar brace」と誤解していた。スカラ配列メンバで内側 brace が top-level comma/designator
+  を持つときは配列全体の wrapper として平坦化する分岐を追加。`file_scope_ptr_from_array_compound.c`
+  に匿名 `RowPtr rows[2]`、`nested_struct_brace_elision.c` に匿名 `int a[2]` を追加。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

@@ -1453,6 +1453,68 @@ static int consume_terminal_zero_initializer(void) {
   return 1;
 }
 
+static bool brace_starts_whole_array_initializer(token_t *t) {
+  if (!t || t->kind != TK_LBRACE) return false;
+  token_t *p = t->next;
+  if (p && p->kind == TK_LBRACKET) return true;
+  int brace_depth = 1;
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  for (; p; p = p->next) {
+    if (p->kind == TK_LBRACE) {
+      brace_depth++;
+    } else if (p->kind == TK_RBRACE) {
+      brace_depth--;
+      if (brace_depth == 0) return false;
+    } else if (p->kind == TK_LPAREN) {
+      paren_depth++;
+    } else if (p->kind == TK_RPAREN) {
+      if (paren_depth > 0) paren_depth--;
+    } else if (p->kind == TK_LBRACKET) {
+      bracket_depth++;
+    } else if (p->kind == TK_RBRACKET) {
+      if (bracket_depth > 0) bracket_depth--;
+    } else if (p->kind == TK_COMMA && brace_depth == 1 &&
+               paren_depth == 0 && bracket_depth == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static node_t *parse_scalar_array_member_brace_body(lvar_t *owner, int member_offset,
+                                                    int elem_size, int array_len,
+                                                    tk_float_kind_t member_fp_kind,
+                                                    int member_is_bool) {
+  if (!tk_consume('{')) return psx_node_new_num(0);
+  node_t *init_chain = NULL;
+  int idx = 0;
+  if (!tk_consume('}')) {
+    for (;;) {
+      int target_idx = idx;
+      if (tk_consume('[')) {
+        target_idx = parse_nonneg_const_expr_decl(diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+        consume_gnu_range_designator_tail_if_any();
+        tk_expect(']');
+        tk_expect('=');
+      }
+      if (target_idx >= array_len) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      }
+      node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
+      node_mem_t *assign_node = build_member_array_elem_assign_node(
+          lhs, parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
+      init_chain = append_to_init_chain(init_chain, (node_t *)assign_node);
+      idx = target_idx + 1;
+      if (tk_consume('}')) break;
+      tk_expect(',');
+      if (tk_consume('}')) break;
+    }
+  }
+  return init_chain ? init_chain : psx_node_new_num(0);
+}
+
 static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int member_type_size,
                                         token_kind_t member_tag_kind, char *member_tag_name,
                                         int member_tag_len, int member_is_tag_pointer,
@@ -1467,6 +1529,15 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
     int elem_size = member_type_size;
     node_t *init_chain = NULL;
     if (tk_consume('{')) {
+      if (member_outer_stride <= 0 && member_arr_ndim < 2 &&
+          !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
+          brace_starts_whole_array_initializer(curtok())) {
+        node_t *chain = parse_scalar_array_member_brace_body(owner, member_offset, elem_size,
+                                                            array_len, member_fp_kind,
+                                                            member_is_bool);
+        tk_expect('}');
+        return chain;
+      }
       /* 3 次元以上の char 配列メンバ (`char c[2][2][3]`) は、各次元 dims を持って
        * 再帰展開する。2D の outer_stride 経路では「行 = 内側 1 次元 char 配列」しか
        * 表現できず、行自体がさらに 2D 配列となる 3D 以上で内側構造を見れないため。

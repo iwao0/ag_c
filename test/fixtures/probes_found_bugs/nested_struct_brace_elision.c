@@ -12,6 +12,8 @@ struct Out { struct In i; int z; };
 struct A   { int x, y; };
 struct B   { struct A a; int z; };
 struct C   { struct B b; int w; };
+struct Arr { int a[2]; };
+struct AnonArr { struct { int a[2]; }; };
 
 int main(void) {
     // 1 段ネスト brace 省略
@@ -38,6 +40,12 @@ int main(void) {
     // brace 省略 + designator 併用
     struct Out o5 = {1, 2, .z = 30};          // i.p=1, i.q=2, z=30
     assert(o5.i.p == 1 || o5.i.q != 2 || o5.z != 30);
+
+    // 匿名 struct メンバ昇格後も、内側 aggregate 用 brace を配列初期化として読む
+    struct AnonArr arr = {{{11, 12}}};
+    struct Arr arr2 = {{13, 14}};
+    assert(arr.a[0] == 11 && arr.a[1] == 12);
+    assert(arr2.a[0] == 13 && arr2.a[1] == 14);
 
     assert(o.i.p == 1); assert(o.i.q == 2); assert(o.z == 3); assert(c.w == 4); assert(o3.i.p == 7); assert(o4.z == 10); return 0;  // 1+2+3+4+7+10+15 = 42
 }

@@ -50,9 +50,16 @@ struct RowArrayHolder {
     RowPtr rows[2];
 };
 
+struct AnonRowHolder {
+    struct {
+        RowPtr rows[2];
+    };
+};
+
 struct RowHolder global_row_holder = {(RowPtr[]){grid_a, grid_b}};
 struct SingleRowHolder global_single_row_holder = {grid_b};
 struct RowArrayHolder global_row_array_holder = {{grid_a, grid_b}};
+struct AnonRowHolder global_anon_row_holder = {{{grid_a, grid_b}}};
 
 static int use_flat_param(int (*rows[2])[3]) {
     return rows[0][0][2] + rows[1][1][1];
@@ -83,12 +90,14 @@ static int local_pointer_to_array_element_compound_literal(void) {
     struct RowHolder holder = {(RowPtr[]){x, y}};
     struct SingleRowHolder single = {y};
     struct RowArrayHolder array_holder = {{x, y}};
+    struct AnonRowHolder anon_holder = {{{x, y}}};
     int direct = ((int (*[2])[3]){x, y})[1][1][2];
     return (*ptrs)[0][1][2] + (*ptrs)[1][0][1] +
            typedef_ptrs[0][0][2] + typedef_ptrs[1][1][0] +
            holder.rows[0][1][1] + holder.rows[1][0][2] +
            single.row[1][2] + array_holder.rows[0][1][2] +
-           array_holder.rows[1][0][1] + direct;
+           array_holder.rows[1][0][1] + anon_holder.rows[0][0][1] +
+           anon_holder.rows[1][1][2] + direct;
 }
 
 int main(void) {
@@ -107,8 +116,9 @@ int main(void) {
     assert(global_row_holder.rows[0][1][0] == 4 && global_row_holder.rows[1][0][2] == 9);
     assert(global_single_row_holder.row[0][1] == 8 && global_single_row_holder.row[1][2] == 12);
     assert(global_row_array_holder.rows[0][1][2] == 6 && global_row_array_holder.rows[1][0][1] == 8);
+    assert(global_anon_row_holder.rows[0][1][2] == 6 && global_anon_row_holder.rows[1][1][1] == 11);
     assert(use_flat_param((int (*[2])[3]){grid_a, grid_b}) == 14);
     assert(use_nested_param(&(int (*[2])[3]){grid_a, grid_b}) == 13);
-    assert(local_pointer_to_array_element_compound_literal() == 199);
+    assert(local_pointer_to_array_element_compound_literal() == 237);
     return 0;
 }
