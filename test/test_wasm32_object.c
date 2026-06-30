@@ -823,6 +823,14 @@ int main(void) {
                                 "int main(void){return *pi+*pa+ps->b;}\n",
                                 compound_literal_addr_reloc_needles, 8);
 
+  const char *compound_literal_inner_ptr_reloc_needles[] = {
+      "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<ptrs>",
+      "<__compound_lit_0>", "<g>", "size=16"};
+  failures += run_objdump_check("global_compound_literal_inner_ptr_data_reloc",
+                                "int g=11; int **ptrs=(int *[]){&g,&g}; "
+                                "int main(void){return **ptrs+*ptrs[1];}\n",
+                                compound_literal_inner_ptr_reloc_needles, 6);
+
   const char *extern_data_needles[] = {
       "<ext>", "undefined", "R_WASM_MEMORY_ADDR_LEB", "symbol=1 <ext>"};
   failures += run_objdump_check("extern_data",

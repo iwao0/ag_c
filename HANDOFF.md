@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き256: Wasm object compound literal address data relocation fixture）
+最終更新: 2026-06-30（続き257: file-scope pointer-element array compound literal）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -15,6 +15,14 @@
   `make wasm32-scans` = **上記 4 scan green**、
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き257: **file-scope pointer-element array compound literal**。
+  `int **ptrs = (int *[]){&g,&g};` が `E3064`。`parse_cast_type` がポインタ型後続の
+  array suffix を非ポインタ型だけに限定していたため、`(int *[]){...}` を compound literal
+  と認識できなかった。suffix 受理と `[]` 要素数推定をポインタ要素配列にも広げ、
+  hidden global/lvar に `pointee_elem_size` / `pointer_qual_levels` / `base_deref_size` を設定。
+  `file_scope_ptr_from_array_compound.c` に unsized/sized `int *[...]` を追加し、
+  Wasm object は `global_compound_literal_inner_ptr_data_reloc` で data initializer 内 `&g`
+  の `R_WASM_MEMORY_ADDR_I32` relocation を固定。
 - 続き215: **多次元/typedef 配列 compound literal の address stride**。
   `&(int[2][3]){{...}}` は cast parser が 2 個目以降の array suffix を読まず、
   `&(Row3){...}` (`typedef int Row3[3]`) は typedef の array_dims が compound literal 側へ渡らず

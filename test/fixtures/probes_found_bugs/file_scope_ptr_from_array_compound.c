@@ -17,11 +17,17 @@ unsigned char *ptr_u = (unsigned char []){1, 2, 3, 4};
 char *ptr_s = (char[6]){"hi"};
 /* sized array */
 int *ptr_sized = (int [3]){100, 200, 300};
+/* pointer-element array compound literal */
+int target_value = 11;
+int **ptr_ptrs = (int *[]){&target_value, &target_value};
+int **ptr_ptrs_sized = (int *[2]){&target_value, &target_value};
 
 int main(void) {
     assert(ptr_i[0] == 10 && ptr_i[1] == 20 && ptr_i[2] == 30);
     assert(ptr_u[0] == 1 && ptr_u[3] == 4);
     assert(ptr_s[0] == 'h' && ptr_s[1] == 'i' && ptr_s[2] == 0);
     assert(ptr_sized[0] == 100 && ptr_sized[2] == 300);
+    assert(**ptr_ptrs == 11 && *ptr_ptrs[1] == 11);
+    assert(**ptr_ptrs_sized == 11 && *ptr_ptrs_sized[1] == 11);
     return 0;
 }

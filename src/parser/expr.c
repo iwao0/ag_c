@@ -1263,8 +1263,8 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     local_array_dim_count = cast_array_dim_count > 8 ? 8 : cast_array_dim_count;
     for (int i = 0; i < local_array_dim_count; i++) local_array_dims[i] = cast_array_dims[i];
   }
-  // `(T[]){...}` の空サイズは初期化子から要素数を推定する。
-  if (!cast_is_ptr && cast_array_count < 0) {
+  // `(T[]){...}` / `(T *[]){...}` の空サイズは初期化子から要素数を推定する。
+  if (cast_array_count < 0) {
     long long inferred = 0;
     // 特例: `(char[]){"abc" "def" ...}` のように波括弧で文字列リテラル列を
     // 包んでいる場合は、文字列内容長 + 1 を要素数として採用する。
@@ -1295,15 +1295,13 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       local_array_dim_count = 1;
     }
   }
-  /* `(int (*[N])(args)){f1, f2, ...}` の関数ポインタ配列 compound literal を
-   * 「配列実体」(size=N*8, elem=8 byte ポインタ要素) として登録する。
-   * cast_is_ptr=1 + cast_array_count>0 で識別。修正前は cast_is_ptr=1 だけ
-   * 見て「スカラポインタ」扱いし、初期化子経路がスカラ brace と誤認していた
-   * (p304: 2 要素 brace で E3025)。 */
-  int is_funcptr_array = (cast_is_ptr && cast_array_count > 0) ? 1 : 0;
-  int is_arr = ((!cast_is_ptr && cast_array_count > 0) || is_funcptr_array) ? 1 : 0;
-  if (is_funcptr_array) base_elem = 8;
-  int var_size = is_funcptr_array ? (8 * cast_array_count)
+  /* `(int (*[N])(args)){f1, f2, ...}` や `(int *[N]){&x, &y}` のように
+   * 要素がポインタの配列 compound literal は、配列実体 (N * 8 byte) として登録する。
+   * cast_is_ptr=1 + cast_array_count>0 で識別。 */
+  int is_pointer_elem_array = (cast_is_ptr && cast_array_count > 0) ? 1 : 0;
+  int is_arr = ((!cast_is_ptr && cast_array_count > 0) || is_pointer_elem_array) ? 1 : 0;
+  if (is_pointer_elem_array) base_elem = 8;
+  int var_size = is_pointer_elem_array ? (8 * cast_array_count)
                 : (cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem));
   /* `(double _Complex){re, im}` 等の複素数 compound literal: {実部, 虚部} で
    * base_elem*2 バイト。is_complex を立てて psx_decl_parse_initializer_for_var の
@@ -1326,6 +1324,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->type_size = var_size;
       gv->deref_size = base_elem;
       gv->is_array = is_arr;
+      if (is_pointer_elem_array) {
+        gv->pointee_elem_size = cast_elem_size > 0 ? (short)cast_elem_size : 8;
+        gv->is_tag_pointer = (cast_tag_kind != TK_EOF) ? 1 : 0;
+      }
       gv->fp_kind = cast_fp_kind;
       gv->tag_kind = cast_tag_kind;
       gv->tag_name = cast_tag_name;
@@ -1414,12 +1416,12 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   var->tag_len = cast_tag_len;
   if (is_arr) set_lvar_array_strides_from_dims(var, local_array_dims, local_array_dim_count, base_elem);
   if (cl_complex_scalar) var->is_complex = 1;  /* elem_size = var_size (=base_elem*2)、brace-init で half= elem/2 */
-  /* 関数ポインタ配列は tag (struct/union) ではないので is_tag_pointer=0。
-   * base_deref_size=8 はローカル `int (*ops[N])(args)` 登録 (decl.c:2259) と
-   * 同じ。subscript の `ops[i]` を関数ポインタ値として load するために要る。 */
-  if (is_funcptr_array) {
+  /* 要素がポインタの配列は、ローカル `T *arr[N]` と同じく subscript 後の値を
+   * 単段ポインタとして扱えるよう pointer metadata を持たせる。 */
+  if (is_pointer_elem_array) {
     var->is_tag_pointer = 0;
-    var->base_deref_size = 8;
+    var->pointer_qual_levels = 1;
+    var->base_deref_size = (short)(cast_elem_size > 0 ? cast_elem_size : 8);
   } else {
     var->is_tag_pointer = cast_is_ptr ? 1 : 0;
   }
@@ -1752,9 +1754,9 @@ cast_parse_postfix:
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(&t, NULL);
   (void)parse_ptr_to_func_returning_ptr_to_func_abstract_decl(&t);
   (void)parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t);
-  // 配列宣言子 [N][M]... を受理する（非ポインタ型のみ）
+  // 配列宣言子 [N][M]... を受理する。
   // 先頭の空 `[]` は -1 を返し、呼び出し側で初期化子から要素数を推定させる。
-  if (!*is_pointer && t && t->kind == TK_LBRACKET) {
+  if (t && t->kind == TK_LBRACKET) {
     int dims[8] = {0};
     int dim_count = 0;
     int n = parse_cast_array_suffixes_token(&t, dims, 8, &dim_count);
