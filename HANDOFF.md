@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き296: ag_wasm_link default runtime object 経路）
+最終更新: 2026-07-01（続き297: ag_wasm_link runtime object libc helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,18 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き297: **小型 libc helper を `libagc_runtime.o` へ追加移行**。
+  `strlen` / `strcmp` / `memset` / `memcpy` / `abs` / `isdigit` / `isalpha` / `toupper` /
+  `atoi` / `strcpy` / `strncpy` / `strcat` / `strncmp` / `memcmp` / `strchr` / `strrchr` /
+  `putchar` の本体を `tools/wasm_obj_linker/runtime/libagc_runtime.c` に追加。
+  `ag_wasm_link` の ABI bridge map を広げ、public libc 呼び出しの `i32` pointer ABI と
+  runtime C 定義側の `i64` pointer ABI、戻り値 `i32/i64` 差を吸収するようにした。
+  synthetic runtime 実装は fallback として残すが、`build/libagc_runtime.o` がある通常経路では
+  `__agc_runtime_*` 本体へ bridge する。`test_smoke.sh` に `libc_runtime.c` を追加し、
+  通常リンクで helper 群が動くことと、`--nostdlib` で `env.strlen` / `env.memcpy` import が残ることを確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き296: **`libagc_runtime.o` を標準 runtime object としてリンクする経路を追加**。
   `tools/wasm_obj_linker/runtime/libagc_runtime.c` を追加し、`make build/libagc_runtime.o` で
   `ag_c_wasm -c` から Wasm object を作る。`ag_wasm_link` は `build/libagc_runtime.o` が存在する場合に

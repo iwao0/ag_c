@@ -2417,6 +2417,40 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_snprintf";
   } else if (str_eq_lit(name, "sprintf")) {
     target_lit = "__agc_runtime_sprintf";
+  } else if (str_eq_lit(name, "strlen")) {
+    target_lit = "__agc_runtime_strlen";
+  } else if (str_eq_lit(name, "strcmp")) {
+    target_lit = "__agc_runtime_strcmp";
+  } else if (str_eq_lit(name, "memset")) {
+    target_lit = "__agc_runtime_memset";
+  } else if (str_eq_lit(name, "memcpy")) {
+    target_lit = "__agc_runtime_memcpy";
+  } else if (str_eq_lit(name, "abs")) {
+    target_lit = "__agc_runtime_abs";
+  } else if (str_eq_lit(name, "isdigit")) {
+    target_lit = "__agc_runtime_isdigit";
+  } else if (str_eq_lit(name, "isalpha")) {
+    target_lit = "__agc_runtime_isalpha";
+  } else if (str_eq_lit(name, "toupper")) {
+    target_lit = "__agc_runtime_toupper";
+  } else if (str_eq_lit(name, "atoi")) {
+    target_lit = "__agc_runtime_atoi";
+  } else if (str_eq_lit(name, "strcpy")) {
+    target_lit = "__agc_runtime_strcpy";
+  } else if (str_eq_lit(name, "strncpy")) {
+    target_lit = "__agc_runtime_strncpy";
+  } else if (str_eq_lit(name, "strcat")) {
+    target_lit = "__agc_runtime_strcat";
+  } else if (str_eq_lit(name, "strncmp")) {
+    target_lit = "__agc_runtime_strncmp";
+  } else if (str_eq_lit(name, "memcmp")) {
+    target_lit = "__agc_runtime_memcmp";
+  } else if (str_eq_lit(name, "strchr")) {
+    target_lit = "__agc_runtime_strchr";
+  } else if (str_eq_lit(name, "strrchr")) {
+    target_lit = "__agc_runtime_strrchr";
+  } else if (str_eq_lit(name, "putchar")) {
+    target_lit = "__agc_runtime_putchar";
   } else {
     return 0;
   }
@@ -2429,7 +2463,13 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
   uint32_t caller_params = wasm_type_param_count(caller_type);
   uint32_t target_params = wasm_type_param_count(target_type);
   if (caller_params != target_params) return 0;
-  if (wasm_type_result_valtype(caller_type) != wasm_type_result_valtype(target_type)) return 0;
+  unsigned char caller_result = wasm_type_result_valtype(caller_type);
+  unsigned char target_result = wasm_type_result_valtype(target_type);
+  if (caller_result != target_result) {
+    int integer_pair = (caller_result == 0x7f || caller_result == 0x7e) &&
+                       (target_result == 0x7f || target_result == 0x7e);
+    if (!integer_pair) return 0;
+  }
 
   buf_uleb(b, 0);
   for (uint32_t i = 0; i < caller_params; i++) {
@@ -2448,6 +2488,11 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
   }
   buf_u8(b, 0x10); /* call */
   *out_call_imm_off = buf_uleb5(b, 0);
+  if (target_result == 0x7f && caller_result == 0x7e) {
+    buf_u8(b, 0xad); /* i64.extend_i32_u */
+  } else if (target_result == 0x7e && caller_result == 0x7f) {
+    buf_u8(b, 0xa7); /* i32.wrap_i64 */
+  }
   *out_target_sym = add_runtime_undefined_func_symbol(runtime, target_name, target_type);
   return 1;
 }

@@ -22,6 +22,166 @@ static void ag_rt_write_str(char *buf, size_t size, int bounded, size_t *pos, co
   }
 }
 
+static char *ag_rt_ptr(long addr) {
+  return (char *)addr;
+}
+
+long __agc_runtime_strlen(long s_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  long n = 0;
+  while (s[n]) n++;
+  return n;
+}
+
+int __agc_runtime_strcmp(long a_addr, long b_addr) {
+  unsigned char *a = (unsigned char *)ag_rt_ptr(a_addr);
+  unsigned char *b = (unsigned char *)ag_rt_ptr(b_addr);
+  long i = 0;
+  while (a[i] && a[i] == b[i]) i++;
+  return (int)a[i] - (int)b[i];
+}
+
+long __agc_runtime_memset(long dst_addr, int ch, long n) {
+  unsigned char *dst = (unsigned char *)ag_rt_ptr(dst_addr);
+  long i = 0;
+  while (i < n) dst[i++] = (unsigned char)ch;
+  return dst_addr;
+}
+
+long __agc_runtime_memcpy(long dst_addr, long src_addr, long n) {
+  unsigned char *dst = (unsigned char *)ag_rt_ptr(dst_addr);
+  unsigned char *src = (unsigned char *)ag_rt_ptr(src_addr);
+  long i = 0;
+  while (i < n) {
+    dst[i] = src[i];
+    i++;
+  }
+  return dst_addr;
+}
+
+int __agc_runtime_abs(int x) {
+  return x < 0 ? -x : x;
+}
+
+int __agc_runtime_isdigit(int c) {
+  return c >= '0' && c <= '9';
+}
+
+int __agc_runtime_isalpha(int c) {
+  int lower = c | 32;
+  return lower >= 'a' && lower <= 'z';
+}
+
+int __agc_runtime_toupper(int c) {
+  return c >= 'a' && c <= 'z' ? c - 32 : c;
+}
+
+int __agc_runtime_atoi(long s_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  int sign = 1;
+  int acc = 0;
+  while (*s == ' ') s++;
+  if (*s == '-') {
+    sign = -1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+  while (*s >= '0' && *s <= '9') {
+    acc = acc * 10 + (*s - '0');
+    s++;
+  }
+  return acc * sign;
+}
+
+long __agc_runtime_strcpy(long dst_addr, long src_addr) {
+  char *dst = ag_rt_ptr(dst_addr);
+  char *src = ag_rt_ptr(src_addr);
+  long i = 0;
+  do {
+    dst[i] = src[i];
+  } while (src[i++] != 0);
+  return dst_addr;
+}
+
+long __agc_runtime_strncpy(long dst_addr, long src_addr, long n) {
+  char *dst = ag_rt_ptr(dst_addr);
+  char *src = ag_rt_ptr(src_addr);
+  long i = 0;
+  int ended = 0;
+  while (i < n) {
+    char c = ended ? 0 : src[i];
+    dst[i] = c;
+    if (c == 0) ended = 1;
+    i++;
+  }
+  return dst_addr;
+}
+
+long __agc_runtime_strcat(long dst_addr, long src_addr) {
+  char *dst = ag_rt_ptr(dst_addr);
+  char *src = ag_rt_ptr(src_addr);
+  long end = 0;
+  long i = 0;
+  while (dst[end]) end++;
+  do {
+    dst[end + i] = src[i];
+  } while (src[i++] != 0);
+  return dst_addr;
+}
+
+int __agc_runtime_strncmp(long a_addr, long b_addr, long n) {
+  unsigned char *a = (unsigned char *)ag_rt_ptr(a_addr);
+  unsigned char *b = (unsigned char *)ag_rt_ptr(b_addr);
+  long i = 0;
+  while (i < n) {
+    if (a[i] != b[i]) return (int)a[i] - (int)b[i];
+    if (a[i] == 0) return 0;
+    i++;
+  }
+  return 0;
+}
+
+int __agc_runtime_memcmp(long a_addr, long b_addr, long n) {
+  unsigned char *a = (unsigned char *)ag_rt_ptr(a_addr);
+  unsigned char *b = (unsigned char *)ag_rt_ptr(b_addr);
+  long i = 0;
+  while (i < n) {
+    if (a[i] != b[i]) return (int)a[i] - (int)b[i];
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_strchr(long s_addr, int ch) {
+  char *s = ag_rt_ptr(s_addr);
+  int needle = ch & 255;
+  long i = 0;
+  for (;;) {
+    if (((int)s[i] & 255) == needle) return s_addr + i;
+    if (s[i] == 0) return 0;
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_strrchr(long s_addr, int ch) {
+  char *s = ag_rt_ptr(s_addr);
+  int needle = ch & 255;
+  long found = 0;
+  long i = 0;
+  for (;;) {
+    if (((int)s[i] & 255) == needle) found = s_addr + i;
+    if (s[i] == 0) return found;
+    i++;
+  }
+  return 0;
+}
+
+int __agc_runtime_putchar(int c) {
+  return c;
+}
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {

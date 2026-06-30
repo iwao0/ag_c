@@ -231,6 +231,50 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/libc_runtime.c" <<'SRC'
+long strlen(char *s);
+int strcmp(char *a, char *b);
+void *memset(void *s, int c, unsigned long n);
+void *memcpy(void *dst, void *src, unsigned long n);
+int abs(int x);
+int isdigit(int c);
+int isalpha(int c);
+int toupper(int c);
+int atoi(char *s);
+char *strcpy(char *dst, char *src);
+char *strncpy(char *dst, char *src, unsigned long n);
+char *strcat(char *dst, char *src);
+int strncmp(char *a, char *b, unsigned long n);
+int memcmp(void *a, void *b, unsigned long n);
+char *strchr(char *s, int ch);
+char *strrchr(char *s, int ch);
+int putchar(int c);
+int main(void) {
+  char a[32];
+  char b[32];
+  char c[32];
+  memset(a, 0, sizeof(a));
+  memset(b, 0, sizeof(b));
+  strcpy(a, "he");
+  strcat(a, "llo");
+  strncpy(b, a, 3);
+  b[3] = 0;
+  memcpy(c, a, 6);
+  return strlen(a) == 5 &&
+         strcmp(a, "hello") == 0 &&
+         strncmp(b, "helx", 3) == 0 &&
+         memcmp(c, "hello", 6) == 0 &&
+         strchr(a, 'l') == a + 2 &&
+         strrchr(a, 'l') == a + 3 &&
+         abs(-42) == 42 &&
+         isdigit('7') && !isdigit('x') &&
+         isalpha('Q') && !isalpha('7') &&
+         toupper('q') == 'Q' &&
+         atoi(" -123x") == -123 &&
+         putchar('Z') == 'Z' ? 42 : 1;
+}
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -421,6 +465,20 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   wasm-objdump -x "$out_dir/linked_snprintf_nostdlib.wasm" > "$out_dir/linked_snprintf_nostdlib.objdump"
   grep -q '<env.snprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
   grep -q '<env.sprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
+fi
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \
+  "$out_dir/libc_runtime.o"
+wasm-validate "$out_dir/linked_libc_runtime.wasm"
+wasm-interp "$out_dir/linked_libc_runtime.wasm" --run-all-exports > "$out_dir/linked_libc_runtime.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_libc_runtime.interp"
+if command -v wasm-objdump >/dev/null 2>&1; then
+  "$root/build/ag_wasm_link" --nostdlib --no-entry --export=main -o "$out_dir/linked_libc_runtime_nostdlib.wasm" \
+    "$out_dir/libc_runtime.o"
+  wasm-objdump -x "$out_dir/linked_libc_runtime_nostdlib.wasm" > "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"

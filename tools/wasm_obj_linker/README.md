@@ -51,8 +51,10 @@ Supported:
 - Final active data segment offsets and global initializer `i32.const`
   immediates are emitted as signed LEB128.
 - Default runtime-object linking through `build/libagc_runtime.o`; currently it
-  carries the `snprintf`/`sprintf` formatter body and the linker emits only the
-  small ABI bridge for those public symbols.
+  carries the `snprintf`/`sprintf` formatter body plus small string/memory/ctype
+  helpers such as `strlen`, `strcmp`, `memset`, `memcpy`, `strcpy`, `strncmp`,
+  `memcmp`, `strchr`, `atoi`, and `putchar`. The linker emits only small ABI
+  bridges for those public symbols.
 
 ## Smoke Test
 
@@ -69,8 +71,9 @@ with an omitted zero payload, a patched object with a non-zero data symbol
 offset, duplicate external function/data definition errors,
 cross-object function/import signature mismatch errors, malformed relocation
 target errors, and a many-data-segment case that requires more than one Wasm
-memory page. It also checks that `--nostdlib` leaves `snprintf`/`sprintf` as
-imports instead of resolving them through the runtime object.
+memory page. It also checks that default runtime-object linking resolves
+`snprintf`/`sprintf` and the small libc helpers, while `--nostdlib` leaves those
+symbols as imports instead.
 
 Not yet supported:
 
