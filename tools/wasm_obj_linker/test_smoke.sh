@@ -195,6 +195,8 @@ int main(void) {
   char j[32];
   char k[32];
   char l[32];
+  char m[32];
+  char n[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
   int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
@@ -207,6 +209,8 @@ int main(void) {
   int nj = sprintf(j, "%s", "link");
   int nk = snprintf(k, sizeof(k), "%c", 'Z');
   int nl = sprintf(l, "%c", 'Q');
+  int nm = snprintf(m, sizeof(m), "%%");
+  int nn = sprintf(n, "%%");
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
          b[4] == '3' && b[5] == '4' && b[6] == 0 &&
@@ -221,7 +225,9 @@ int main(void) {
          ni == 4 && i[0] == 'w' && i[1] == 'a' && i[2] == 's' && i[3] == 'm' && i[4] == 0 &&
          nj == 4 && j[0] == 'l' && j[1] == 'i' && j[2] == 'n' && j[3] == 'k' && j[4] == 0 &&
          nk == 1 && k[0] == 'Z' && k[1] == 0 &&
-         nl == 1 && l[0] == 'Q' && l[1] == 0 ? 42 : 1;
+         nl == 1 && l[0] == 'Q' && l[1] == 0 &&
+         nm == 1 && m[0] == '%' && m[1] == 0 &&
+         nn == 1 && n[0] == '%' && n[1] == 0 ? 42 : 1;
 }
 SRC
 

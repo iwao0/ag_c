@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き294: ag_wasm_link printf-family char formatter 修正）
+最終更新: 2026-07-01（続き295: ag_wasm_link printf-family percent literal 修正）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,12 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き295: **ag_wasm_link `snprintf` / `sprintf` の `%%` 対応**。
+  synthetic runtime formatter に percent literal `%%` を追加。vararg を読まず `%` を 1 byte 出力し、
+  NUL 終端と戻り値 count は既存 helper で処理する。`test_smoke.sh` に
+  `snprintf(m, sizeof(m), "%%")` と `sprintf(n, "%%")` の buffer 内容と戻り値確認を追加。
+  確認: `make -j4 build/ag_wasm_link`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan`、`make wasm32-object-link-c-testsuite-scan`。
 - 続き294: **ag_wasm_link `snprintf` / `sprintf` の `%c` 対応**。
   synthetic runtime formatter に `snprintf("%c", ch)` と `sprintf("%c", ch)` を追加。
   vararg の int slot を 1 byte store し、NUL 終端と戻り値 count を既存 helper で処理する。
