@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き251: Wasm object global unsigned data fixture）
+最終更新: 2026-06-30（続き252: Wasm object global signed data fixture）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -2613,6 +2613,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - Wasm object の file-scope unsigned sub-int scalar/array initializer coverage を追加。
   `unsigned char` / `unsigned short` の scalar と配列が object data segment に little-endian bytes
   として出て、参照側も `i32.load8_u` / `i32.load16_u` になることを `global_unsigned_data`
+  fixture で固定した。
+- focused 確認:
+  - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
+
+### このセッション（続き252）: Wasm object global signed data fixture
+- Wasm object の file-scope signed sub-int scalar/array initializer coverage を追加。
+  `signed char` / `short` の scalar と配列が object data segment に little-endian bytes
+  として出て、参照側も `i32.load8_s` / `i32.load16_s` になることを `global_signed_data`
   fixture で固定した。
 - focused 確認:
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green

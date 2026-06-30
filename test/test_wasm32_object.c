@@ -827,6 +827,16 @@ int main(void) {
                                 "int main(void){return uc+us+uca[0]+uca[2]+usa[0]+usa[1];}\n",
                                 global_unsigned_data_needles, 10);
 
+  const char *global_signed_data_needles[] = {
+      "<sc>", "c8", "<ss>", "2efb", "<sca>", "ff64", "<ssa>", "feff 2c01",
+      "i32.load8_s", "i32.load16_s"};
+  failures += run_objdump_check("global_signed_data",
+                                "signed char sc=-56; short ss=-1234; "
+                                "signed char sca[2]={-1,100}; "
+                                "short ssa[2]={-2,300}; "
+                                "int main(void){return sc+ss+sca[0]+sca[1]+ssa[0]+ssa[1];}\n",
+                                global_signed_data_needles, 10);
+
   const char *global_fp_array_needles[] = {
       "<fa>", "0000 a03f 0000 3040", "<da>", "0000 0000 0000 f83f 0000 0000 0000 0440",
       "f32.load", "f64.load"};
