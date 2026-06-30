@@ -130,10 +130,13 @@ wasm32-wat-fixture-scan: $(WASM_TARGET)
 wasm32-object-c-testsuite-scan: $(WASM_TARGET)
 	@bash scripts/run_wasm32_object_c_testsuite_scan.sh --list-fail
 
+wasm32-object-link-c-testsuite-scan: $(WASM_TARGET) $(WASM_LINKER)
+	@bash scripts/run_wasm32_object_link_c_testsuite_scan.sh --list-fail
+
 wasm32-wat-c-testsuite-scan: $(WASM_TARGET)
 	@bash scripts/run_wasm32_wat_c_testsuite_scan.sh --list-fail
 
-wasm32-scans: wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-wat-c-testsuite-scan
+wasm32-scans: wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan
 
 test-wasm-obj-linker: $(WASM_TARGET) $(WASM_LINKER)
 	@bash tools/wasm_obj_linker/test_smoke.sh
@@ -181,6 +184,6 @@ c-testsuite: $(TARGET)
 c-testsuite-verbose: $(TARGET)
 	@bash scripts/run_c_testsuite.sh --verbose
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker c-testsuite c-testsuite-verbose
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker c-testsuite c-testsuite-verbose
 
 -include $(DEPS)

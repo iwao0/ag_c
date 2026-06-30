@@ -2983,3 +2983,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make wasm32-object-link-fixture-scan` = 1113 pass / 0 fail / 1 skip、
     validate 1113、run 1097
   - `git diff --check`
+
+### このセッション（続き271）: Wasm object c-testsuite link-run scan
+- `scripts/run_wasm32_object_fixture_scan.sh` の `complex_by_value_abi.c` skip を削除した。
+  続き270で object validate も通るようになったため、`make wasm32-object-fixture-scan` は
+  all fixtures 1114 pass / 0 skip。
+- `scripts/run_wasm32_object_link_c_testsuite_scan.sh` と Makefile target
+  `wasm32-object-link-c-testsuite-scan` を追加した。c-testsuite single-exec を object 化し、
+  `ag_wasm_link --no-entry --export=main` で link、`wasm-validate`、実行可能なものは
+  `wasm-interp --run-all-exports` で `main() => i32:0` を確認する。
+  `main(int,char**)` など引数付き main は validate まで確認して run skip とする。
+- 新 scan で `00159.c` / `00209.c` が validate 失敗した。原因は object が
+  `__indirect_function_table` を import して `call_indirect` を含むが、function address relocation が
+  ない場合、`ag_wasm_link` が final Table section を出していなかったこと。
+  object parser で table import 有無を記録し、table element がなくても call_indirect 用に
+  最小 table を出すようにした。
+- `tools/wasm_obj_linker/test_smoke.sh` に、call_indirect はあるが table element がない
+  `indirect_no_elem.c` regression を追加。
+- 確認:
+  - `make wasm32-scans` = object all 1114 pass / 0 skip、object-link e2e 1113 pass / 1 skip、
+    WAT all 1113 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 209、
+    WAT c-testsuite 218 pass / 2 skip
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip
+  - `make wasm32-object-fixture-scan` = 1114 pass / 0 fail / 0 skip
+  - `./build/test_wasm32_object` = 1114 pass / 0 fail / 0 skip
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `git diff --check`

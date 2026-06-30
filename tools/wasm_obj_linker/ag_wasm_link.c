@@ -126,6 +126,7 @@ typedef struct {
   int reloc_cap;
   int code_section_index;
   int data_section_index;
+  int imports_table;
 } object_t;
 
 typedef struct {
@@ -380,6 +381,7 @@ static void parse_import_section(object_t *o, rd_t sec) {
       PUSH(o->funcs, o->func_count, o->func_cap, f);
       func_index++;
     } else if (kind == 1) {
+      o->imports_table = 1;
       rd_skip(&sec, 1);
       uint32_t flags = rd_uleb(&sec);
       rd_uleb(&sec);
@@ -1262,6 +1264,11 @@ static void build_module(const char *out_path, const char *export_name,
 
   for (int i = 0; i < def_count; i++) defs[i].obj->funcs[defs[i].func_index].final_index = import_count + i;
 
+  int needs_table = 0;
+  for (int oi = 0; oi < obj_count; oi++) {
+    if (objs[oi].imports_table) needs_table = 1;
+  }
+
   uint32_t mem = 1024;
   for (int i = 0; i < data_count; i++) {
     data_seg_t *d = &datas[i].obj->data[datas[i].data_index];
@@ -1315,7 +1322,7 @@ static void build_module(const char *out_path, const char *export_name,
     free(sec.data); sec = (buf_t){0};
   }
 
-  if (table_count > 0) {
+  if (needs_table || table_count > 0) {
     buf_uleb(&sec, 1);
     buf_u8(&sec, 0x70);
     buf_u8(&sec, 0);

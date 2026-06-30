@@ -89,6 +89,12 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/indirect_no_elem.c" <<'SRC'
+typedef int (*fptr)(int);
+int call_it(fptr fp, int x) { return fp(x); }
+int main(void) { return 0; }
+SRC
+
 cat > "$out_dir/fp_data_import.c" <<'SRC'
 extern int host_add(int);
 int (*p)(int) = host_add;
@@ -258,6 +264,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_fp_data_single.interp"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_import.wasm" \
   "$out_dir/fp_import.o"
 wasm-validate "$out_dir/linked_fp_import.wasm"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/indirect_no_elem.o" "$out_dir/indirect_no_elem.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_indirect_no_elem.wasm" \
+  "$out_dir/indirect_no_elem.o"
+wasm-validate "$out_dir/linked_indirect_no_elem.wasm"
+wasm-interp "$out_dir/linked_indirect_no_elem.wasm" --run-all-exports > "$out_dir/linked_indirect_no_elem.interp"
+grep -q 'main() => i32:0' "$out_dir/linked_indirect_no_elem.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/fp_data_import.o" "$out_dir/fp_data_import.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_data_import.wasm" \
