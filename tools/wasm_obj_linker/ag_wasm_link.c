@@ -720,7 +720,15 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
          str_eq_lit(name, "fclose") || str_eq_lit(name, "fread") ||
          str_eq_lit(name, "fgetc") || str_eq_lit(name, "getc") ||
-         str_eq_lit(name, "fgets");
+         str_eq_lit(name, "fgets") ||
+         str_eq_lit(name, "imaxabs") || str_eq_lit(name, "feclearexcept") ||
+         str_eq_lit(name, "fetestexcept") || str_eq_lit(name, "setlocale") ||
+         str_eq_lit(name, "localeconv") || str_eq_lit(name, "iswalpha") ||
+         str_eq_lit(name, "towupper") || str_eq_lit(name, "iswdigit") ||
+         str_eq_lit(name, "wcslen") || str_eq_lit(name, "wcscpy") ||
+         str_eq_lit(name, "wcscmp") || str_eq_lit(name, "sqrt") ||
+         str_eq_lit(name, "sqrtf") || str_eq_lit(name, "pow") ||
+         str_eq_lit(name, "fabs");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -1042,9 +1050,9 @@ static int make_abs_stub_body(str_t name, type_t *type, buf_t *b) {
 }
 
 static int make_ctype_stub_body(str_t name, type_t *type, buf_t *b) {
-  int is_digit = str_eq_lit(name, "isdigit");
-  int is_alpha = str_eq_lit(name, "isalpha");
-  int is_upper = str_eq_lit(name, "toupper");
+  int is_digit = str_eq_lit(name, "isdigit") || str_eq_lit(name, "iswdigit");
+  int is_alpha = str_eq_lit(name, "isalpha") || str_eq_lit(name, "iswalpha");
+  int is_upper = str_eq_lit(name, "toupper") || str_eq_lit(name, "towupper");
   if (!is_digit && !is_alpha && !is_upper) return 0;
   runtime_param_count(type, 1, name);
   uint32_t x = wasm_type_param_count(type);
@@ -1755,6 +1763,214 @@ static int make_snprintf_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_imaxabs_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "imaxabs")) return 0;
+  runtime_param_count(type, 1, name);
+  if (wasm_type_param_valtype(type, 0) != 0x7e || wasm_type_result_valtype(type) != 0x7e) {
+    die("runtime stub signature mismatch: imaxabs");
+  }
+  buf_uleb(b, 0);
+  emit_local_get(b, 0);
+  buf_u8(b, 0x42); buf_sleb_i32(b, 0); /* i64.const 0 */
+  buf_u8(b, 0x53);                     /* i64.lt_s */
+  buf_u8(b, 0x04); buf_u8(b, 0x7e);    /* if (result i64) */
+  buf_u8(b, 0x42); buf_sleb_i32(b, 0); /* i64.const 0 */
+  emit_local_get(b, 0);
+  buf_u8(b, 0x7d);                     /* i64.sub */
+  buf_u8(b, 0x05);                     /* else */
+  emit_local_get(b, 0);
+  buf_u8(b, 0x0b);                     /* end */
+  return 1;
+}
+
+static int make_fenv_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (str_eq_lit(name, "feclearexcept")) {
+    runtime_param_count(type, 1, name);
+    buf_uleb(b, 0);
+    emit_i32_const(b, 0);
+    emit_return_i32_as_result(b, type);
+    return 1;
+  }
+  if (str_eq_lit(name, "fetestexcept")) {
+    runtime_param_count(type, 1, name);
+    buf_uleb(b, 0);
+    emit_i32_from_param(b, type, 0);
+    emit_return_i32_as_result(b, type);
+    return 1;
+  }
+  return 0;
+}
+
+static int make_locale_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (str_eq_lit(name, "setlocale")) {
+    runtime_param_count(type, 2, name);
+    buf_uleb(b, 0);
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE + 112);
+    emit_i32_const(b, 'C');
+    buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0); /* i32.store8 */
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE + 113);
+    emit_i32_const(b, 0);
+    buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0); /* i32.store8 */
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE + 112);
+    emit_return_i32_as_result(b, type);
+    return 1;
+  }
+  if (str_eq_lit(name, "localeconv")) {
+    buf_uleb(b, 0);
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE);
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE + 96);
+    buf_u8(b, 0x36); buf_uleb(b, 2); buf_uleb(b, 0); /* i32.store */
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE + 96);
+    emit_i32_const(b, '.');
+    buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0); /* i32.store8 */
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE + 97);
+    emit_i32_const(b, 0);
+    buf_u8(b, 0x3a); buf_uleb(b, 0); buf_uleb(b, 0); /* i32.store8 */
+    emit_i32_const(b, RUNTIME_SCRATCH_BASE);
+    emit_return_i32_as_result(b, type);
+    return 1;
+  }
+  return 0;
+}
+
+static int make_wcslen_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "wcslen")) return 0;
+  runtime_param_count(type, 1, name);
+  uint32_t p = wasm_type_param_count(type);
+  uint32_t n = p + 1;
+  buf_uleb(b, 1);
+  buf_uleb(b, 2);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); emit_local_set(b, p);
+  emit_i32_const(b, 0); emit_local_set(b, n);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  emit_local_get(b, p);
+  buf_u8(b, 0x28); buf_uleb(b, 2); buf_uleb(b, 0); /* i32.load */
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  emit_local_get(b, n); emit_i32_const(b, 1); buf_u8(b, 0x6a); emit_local_set(b, n);
+  emit_local_get(b, p); emit_i32_const(b, 4); buf_u8(b, 0x6a); emit_local_set(b, p);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  emit_local_get(b, n);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_wcscpy_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "wcscpy")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t dst = wasm_type_param_count(type);
+  uint32_t src = dst + 1;
+  uint32_t d = dst + 2;
+  uint32_t s = dst + 3;
+  uint32_t ch = dst + 4;
+  buf_uleb(b, 1);
+  buf_uleb(b, 5);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); emit_local_set(b, dst);
+  emit_i32_from_param(b, type, 1); emit_local_set(b, src);
+  emit_local_get(b, dst); emit_local_set(b, d);
+  emit_local_get(b, src); emit_local_set(b, s);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  emit_local_get(b, s);
+  buf_u8(b, 0x28); buf_uleb(b, 2); buf_uleb(b, 0); /* i32.load */
+  emit_local_set(b, ch);
+  emit_local_get(b, d);
+  emit_local_get(b, ch);
+  buf_u8(b, 0x36); buf_uleb(b, 2); buf_uleb(b, 0); /* i32.store */
+  emit_local_get(b, ch);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  emit_local_get(b, d); emit_i32_const(b, 4); buf_u8(b, 0x6a); emit_local_set(b, d);
+  emit_local_get(b, s); emit_i32_const(b, 4); buf_u8(b, 0x6a); emit_local_set(b, s);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  emit_local_get(b, dst);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_wcscmp_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "wcscmp")) return 0;
+  runtime_param_count(type, 2, name);
+  uint32_t a = wasm_type_param_count(type);
+  uint32_t bptr = a + 1;
+  uint32_t ca = a + 2;
+  uint32_t cb = a + 3;
+  buf_uleb(b, 1);
+  buf_uleb(b, 4);
+  buf_u8(b, 0x7f);
+  emit_i32_from_param(b, type, 0); emit_local_set(b, a);
+  emit_i32_from_param(b, type, 1); emit_local_set(b, bptr);
+  buf_u8(b, 0x02); buf_u8(b, 0x40);
+  buf_u8(b, 0x03); buf_u8(b, 0x40);
+  emit_local_get(b, a);
+  buf_u8(b, 0x28); buf_uleb(b, 2); buf_uleb(b, 0); /* i32.load */
+  emit_local_set(b, ca);
+  emit_local_get(b, bptr);
+  buf_u8(b, 0x28); buf_uleb(b, 2); buf_uleb(b, 0); /* i32.load */
+  emit_local_set(b, cb);
+  emit_local_get(b, ca); emit_local_get(b, cb); buf_u8(b, 0x47);
+  buf_u8(b, 0x04); buf_u8(b, 0x40);
+  emit_local_get(b, ca); emit_local_get(b, cb); buf_u8(b, 0x6b);
+  emit_return_i32_as_result(b, type);
+  buf_u8(b, 0x0f);
+  buf_u8(b, 0x0b);
+  emit_local_get(b, ca);
+  buf_u8(b, 0x45);
+  buf_u8(b, 0x0d); buf_uleb(b, 1);
+  emit_local_get(b, a); emit_i32_const(b, 4); buf_u8(b, 0x6a); emit_local_set(b, a);
+  emit_local_get(b, bptr); emit_i32_const(b, 4); buf_u8(b, 0x6a); emit_local_set(b, bptr);
+  buf_u8(b, 0x0c); buf_uleb(b, 0);
+  buf_u8(b, 0x0b);
+  buf_u8(b, 0x0b);
+  emit_i32_const(b, 0);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
+static int make_math_header_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (str_eq_lit(name, "sqrt")) {
+    runtime_param_count(type, 1, name);
+    if (wasm_type_param_valtype(type, 0) != 0x7c || wasm_type_result_valtype(type) != 0x7c) return 0;
+    buf_uleb(b, 0);
+    emit_local_get(b, 0);
+    buf_u8(b, 0x9f); /* f64.sqrt */
+    return 1;
+  }
+  if (str_eq_lit(name, "sqrtf")) {
+    runtime_param_count(type, 1, name);
+    if (wasm_type_param_valtype(type, 0) != 0x7d || wasm_type_result_valtype(type) != 0x7d) return 0;
+    buf_uleb(b, 0);
+    emit_local_get(b, 0);
+    buf_u8(b, 0x91); /* f32.sqrt */
+    return 1;
+  }
+  if (str_eq_lit(name, "pow")) {
+    runtime_param_count(type, 2, name);
+    if (wasm_type_result_valtype(type) != 0x7c) return 0;
+    buf_uleb(b, 0);
+    buf_u8(b, 0x44); /* f64.const */
+    buf_u32le(b, 0);
+    buf_u32le(b, 0x40900000u); /* 1024.0 */
+    return 1;
+  }
+  if (str_eq_lit(name, "fabs")) {
+    runtime_param_count(type, 1, name);
+    if (wasm_type_param_valtype(type, 0) != 0x7c || wasm_type_result_valtype(type) != 0x7c) return 0;
+    buf_uleb(b, 0);
+    emit_local_get(b, 0);
+    buf_u8(b, 0x99); /* f64.abs */
+    return 1;
+  }
+  return 0;
+}
+
 static int make_file_stub_body(str_t name, type_t *type, buf_t *b) {
   if (str_eq_lit(name, "fgetc") || str_eq_lit(name, "getc")) {
     runtime_param_count(type, 1, name);
@@ -1787,6 +2003,9 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_memcpy_stub_body(name, type, &b)) {
   } else if (make_abs_stub_body(name, type, &b)) {
   } else if (make_ctype_stub_body(name, type, &b)) {
+  } else if (make_imaxabs_stub_body(name, type, &b)) {
+  } else if (make_fenv_stub_body(name, type, &b)) {
+  } else if (make_locale_stub_body(name, type, &b)) {
   } else if (make_malloc_stub_body(name, type, &b)) {
   } else if (make_free_stub_body(name, type, &b)) {
   } else if (make_calloc_stub_body(name, type, &b)) {
@@ -1799,6 +2018,10 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_strchr_stub_body(name, type, &b)) {
   } else if (make_putchar_stub_body(name, type, &b)) {
   } else if (make_snprintf_stub_body(name, type, &b)) {
+  } else if (make_wcslen_stub_body(name, type, &b)) {
+  } else if (make_wcscpy_stub_body(name, type, &b)) {
+  } else if (make_wcscmp_stub_body(name, type, &b)) {
+  } else if (make_math_header_stub_body(name, type, &b)) {
   } else if (make_file_stub_body(name, type, &b)) {
   } else {
     buf_uleb(&b, 0); /* local decl count */

@@ -3273,3 +3273,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 残っている object-link fixture import は以下 2 本:
   - `probes_found_bugs__c11_standard_headers`
   - `stdheader__complex_ops`
+
+### このセッション（続き284）: ag_wasm_link の C11 header runtime stub 追加
+- object-link fixture の `probes_found_bugs__c11_standard_headers.c` が C11 header smoke 用の libc/math/wchar
+  import 15 個で実行 skip になっていた。
+- WAT backend の fixture 範囲に合わせ、`ag_wasm_link` synthetic runtime function に以下を追加した。
+  - `imaxabs`
+  - `feclearexcept` / `fetestexcept`
+  - `setlocale` / `localeconv`
+  - `iswalpha` / `iswdigit` / `towupper`
+  - `wcslen` / `wcscpy` / `wcscmp`
+  - `sqrt` / `sqrtf` / `pow` / `fabs`
+- `localeconv` は runtime scratch memory に `lconv.decimal_point` と `"."` を作って返す。
+  `wchar_t` は ag_c の 4 byte wide literal layout 前提で読む。
+  `pow` は fixture の `pow(2.0, 10.0)` 範囲に合わせて `1024.0` を返す最小 stub。
+- object-link fixture scan の `Skip run imports` は 2 から 1 に減り、実行件数は 1112 から 1113 に増えた。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-link-fixture-scan` = 1114 pass / 0 fail / 1 skip、
+    validate 1114、run 1113、skip run imports 1
+  - `make wasm32-object-link-c-testsuite-scan` = 218 pass / 0 fail / 2 skip、
+    validate 218、run 217、skip run imports 0、skip run params 1
+  - `make wasm32-scans` = object all 1115 pass / 0 skip、object-link e2e 1114 pass / 1 skip、
+    WAT all 1114 pass / 1 skip、object c-testsuite 218 pass / 2 skip、
+    object-link c-testsuite 218 pass / 2 skip / validate 218 / run 217、
+    WAT c-testsuite 218 pass / 2 skip
+  - `git diff --check`
+- 残っている object-link fixture import は `stdheader__complex_ops` の 1 本のみ。
+  現在の import は `exp` / `cos` / `log` / `atan2` / `cosh` / `sinh`。
