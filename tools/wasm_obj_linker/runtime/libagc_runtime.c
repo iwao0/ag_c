@@ -356,8 +356,24 @@ double __agc_runtime_fabs(double x) {
 }
 
 double __agc_runtime_sin(double x) {
-  (void)x;
-  return 0.0;
+  double pi = 3.141592653589793;
+  double two_pi = 6.283185307179586;
+  while (x > pi) x = x - two_pi;
+  while (x < -pi) x = x + two_pi;
+  double x2 = x * x;
+  double term = x;
+  double sum = x;
+  term = -term * x2 / 6.0;
+  sum = sum + term;
+  term = -term * x2 / 20.0;
+  sum = sum + term;
+  term = -term * x2 / 42.0;
+  sum = sum + term;
+  term = -term * x2 / 72.0;
+  sum = sum + term;
+  term = -term * x2 / 110.0;
+  sum = sum + term;
+  return sum;
 }
 
 static int ag_rt_udec_len(unsigned long v) {

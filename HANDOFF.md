@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き305: ag_wasm_link requires default runtime object）
+最終更新: 2026-07-01（続き306: wasm runtime object sin approximation）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,13 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き306: **`libagc_runtime.o` の `sin` を 0.0 stub から近似実装へ改善**。
+  旧 synthetic と同じ `0.0` 戻しだった `__agc_runtime_sin` を、範囲を `[-pi, pi]` に折りたたんで
+  Taylor 近似する最小実装に変更した。`test_smoke.sh` の `libc_runtime.c` で
+  `sin(0)`、`sin(pi/2)`、`sin(-pi/2)` を 1000 倍整数の許容範囲で確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き305: **標準 runtime object を通常リンクで必須化**。
   `ag_wasm_link` は `--nostdlib` なしの通常 stdlib 経路では `build/libagc_runtime.o` を
   必ず入力へ追加する。存在しない場合は、内部 synthetic stdlib fallback に戻らず、

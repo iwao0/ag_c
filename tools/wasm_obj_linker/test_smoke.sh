@@ -318,6 +318,9 @@ int main(void) {
   char *linep = fgets(line, sizeof(line), rf2);
   int ch2 = getc(rf2);
   fclose(rf2);
+  int sin0 = (int)(sin(0.0) * 1000.0);
+  int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
+  int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -337,7 +340,8 @@ int main(void) {
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
          (int)pow(2.0, 10.0) == 1024 &&
          (int)fabs(-3.5) == 3 &&
-         (int)sin(1.0) == 0 &&
+         sin0 == 0 && sin90 >= 998 && sin90 <= 1002 &&
+         sinm90 <= -998 && sinm90 >= -1002 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
