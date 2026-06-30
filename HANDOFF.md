@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-06-30（続き245: Wasm WAT c-testsuite scan target）
+最終更新: 2026-06-30（続き246: Wasm WAT fixture scan target）
 
 ## 現状
 - `make test` = **green** (tokenizer + parser + preprocess + fuzz + IR + Wasm backend + Wasm E2E + Wasm object + E2E)。
@@ -8,6 +8,8 @@
   `./build/test_wasm32_e2e` = **1110/1110 green**、`./build/test_wasm32_object` = **1111/1111 green**、
   `./build/test_e2e` = **1139/1139 green**、`make wasm32-object-fixture-scan`
   (`test/fixtures/**/*.c`, should_reject 除外) = **1111/1111 compile + validate green**、
+  `make wasm32-wat-fixture-scan` = **1110/1110 WAT compile + wat2wasm + validate green**
+  （multi-TU link fixture 1 件は skip）、
   `make wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
   `make wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**、
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
@@ -2557,4 +2559,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - `Makefile` に `wasm32-wat-c-testsuite-scan` target を追加。
 - focused 確認:
   - `make wasm32-wat-c-testsuite-scan` = 218 pass / 0 fail / 2 unsupported skip、
+    `wat2wasm=1`, `wasm-validate=1`
+
+### このセッション（続き246）: Wasm WAT fixture scan target
+- object fixture scan と同じく、`test/fixtures/**/*.c` を WAT standalone 経路で
+  `ag_c_wasm -> wat2wasm -> wasm-validate` する恒久 target を追加。
+- `scripts/run_wasm32_wat_fixture_scan.sh` を追加し、`--list-fail`, `--verbose`,
+  `--no-validate`, `--e2e-fixtures`, `AG_C_WASM`, `WASM32_WAT_SCAN_DIR` に対応。
+- `test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c` は multi-TU link fixture で、
+  WAT 単体出力では未定義 `$other_val` になるため明示 skip。object/link 経路では既に別途確認対象。
+- `Makefile` に `wasm32-wat-fixture-scan` target を追加。
+- focused 確認:
+  - `make wasm32-wat-fixture-scan` = 1110 pass / 0 fail / 1 skip、
     `wat2wasm=1`, `wasm-validate=1`
