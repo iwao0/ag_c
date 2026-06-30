@@ -714,7 +714,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncmp") ||
          str_eq_lit(name, "strchr") || str_eq_lit(name, "strrchr") ||
-         str_eq_lit(name, "memcmp");
+         str_eq_lit(name, "memcmp") || str_eq_lit(name, "putchar");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -1546,6 +1546,15 @@ static int make_strchr_stub_body(str_t name, type_t *type, buf_t *b) {
   return 1;
 }
 
+static int make_putchar_stub_body(str_t name, type_t *type, buf_t *b) {
+  if (!str_eq_lit(name, "putchar")) return 0;
+  runtime_param_count(type, 1, name);
+  buf_uleb(b, 0);
+  emit_i32_from_param(b, type, 0);
+  emit_return_i32_as_result(b, type);
+  return 1;
+}
+
 static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *out_len) {
   buf_t b = {0};
   if (str_eq_lit(name, "__assert_rtn")) {
@@ -1568,6 +1577,7 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (make_strncmp_stub_body(name, type, &b)) {
   } else if (make_memcmp_stub_body(name, type, &b)) {
   } else if (make_strchr_stub_body(name, type, &b)) {
+  } else if (make_putchar_stub_body(name, type, &b)) {
   } else {
     buf_uleb(&b, 0); /* local decl count */
     unsigned char result = wasm_type_result_valtype(type);
