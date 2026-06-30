@@ -2656,7 +2656,7 @@ void wasm32_obj_emit_data_segments(void) {
 void wasm32_obj_end(void) {
   assign_indices();
 
-  int has_imports = 0;
+  int has_imports = 1; /* __linear_memory is always imported. */
   int has_defs = 0;
   for (int i = 0; i < g_obj.func_count; i++) {
     if (g_obj.funcs[i].imported) has_imports = 1;

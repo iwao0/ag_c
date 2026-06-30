@@ -2880,3 +2880,12 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   不一致なら `function signature mismatch: <name>` で停止する。
 - `tools/wasm_obj_linker/test_smoke.sh` に `extern int host_mix(int)` と
   `extern int host_mix(double)` を別 object から参照する negative case を追加。
+
+### このセッション（続き266）: Wasm object linker relocation target validation
+- `reloc.CODE` / `reloc.DATA` custom section の target section index を読んで捨てていた。
+  壊れた object が別 section を target にしていても、そのまま offset を Code/Data として解釈し得た。
+- `parse_reloc_section` で `reloc.CODE` は object の Code section index、`reloc.DATA` は Data section index
+  と一致することを検査し、不一致なら `reloc.CODE targets wrong section` /
+  `reloc.DATA targets wrong section` で停止するようにした。
+- `tools/wasm_obj_linker/test_smoke.sh` に、`main.o` の `reloc.CODE` target byte を patch して
+  negative case を追加。

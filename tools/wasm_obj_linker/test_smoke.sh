@@ -182,6 +182,17 @@ wasm-validate "$out_dir/linked.wasm"
 wasm-interp "$out_dir/linked.wasm" --run-all-exports > "$out_dir/linked.interp"
 grep -q 'main() => i32:42' "$out_dir/linked.interp"
 
+cp "$out_dir/main.o" "$out_dir/bad_reloc_target.o"
+perl -0777 -pi -e 'my $name = "\x0areloc.CODE"; my $i = index($_, $name); die "missing reloc.CODE\n" if $i < 0; substr($_, $i + length($name), 1) = "\x01";' \
+  "$out_dir/bad_reloc_target.o"
+if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_bad_reloc_target.wasm" \
+  "$out_dir/bad_reloc_target.o" "$out_dir/other.o" \
+  > "$out_dir/linked_bad_reloc_target.out" 2> "$out_dir/linked_bad_reloc_target.err"; then
+  echo "bad relocation target unexpectedly linked"
+  exit 1
+fi
+grep -q 'reloc.CODE targets wrong section' "$out_dir/linked_bad_reloc_target.err"
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/gmain.o" "$out_dir/gmain.c"
 "$root/build/ag_c_wasm" -c -o "$out_dir/gother.o" "$out_dir/gother.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_global.wasm" \

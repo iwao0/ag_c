@@ -527,7 +527,9 @@ static void parse_linking_section(object_t *o, rd_t sec) {
 
 static void parse_reloc_section(object_t *o, rd_t sec, int is_code) {
   int target = (int)rd_uleb(&sec);
-  (void)target;
+  int expected = is_code ? o->code_section_index : o->data_section_index;
+  if (expected < 0) die(is_code ? "reloc.CODE without Code section" : "reloc.DATA without Data section");
+  if (target != expected) die(is_code ? "reloc.CODE targets wrong section" : "reloc.DATA targets wrong section");
   uint32_t n = rd_uleb(&sec);
   for (uint32_t i = 0; i < n; i++) {
     reloc_t r = {0};
@@ -559,12 +561,13 @@ static object_t parse_object(const char *path) {
     if (r.pos + sz > r.len) dief("truncated section in %s", path);
     rd_t sec = {r.p + r.pos, sz, 0, path};
     r.pos += sz;
+    int section_index = noncustom_index;
     if (id != SEC_CUSTOM) noncustom_index++;
     if (id == SEC_TYPE) parse_type_section(&o, sec);
     else if (id == SEC_IMPORT) parse_import_section(&o, sec);
     else if (id == SEC_FUNCTION) parse_function_section(&o, sec);
-    else if (id == SEC_CODE) parse_code_section(&o, sec, noncustom_index);
-    else if (id == SEC_DATA) parse_data_section(&o, sec, noncustom_index);
+    else if (id == SEC_CODE) parse_code_section(&o, sec, section_index);
+    else if (id == SEC_DATA) parse_data_section(&o, sec, section_index);
     else if (id == SEC_CUSTOM) {
       str_t name = rd_str_dup(&sec);
       if (name.len == 7 && memcmp(name.s, "linking", 7) == 0) {

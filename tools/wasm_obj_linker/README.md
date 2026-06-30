@@ -37,6 +37,7 @@ Supported:
 - Duplicate non-local function/data definitions are rejected.
 - Cross-object function and host import signature mismatches are rejected before
   producing an invalid final wasm.
+- Relocation custom sections must target the matching Code/Data section.
 - Imported object globals used by the current backend, such as `__stack_pointer`.
 - A defined linear memory exported as `memory`; memory pages are sized from the
   linked data layout and `__stack_pointer` is placed at the top of that memory.
@@ -59,9 +60,10 @@ unresolved host function imports, function pointer relocation through both code
 and data, imported host function table entries through both code and data
 relocations, cross-object function pointer variables, a large BSS-like global
 with an omitted zero payload, a patched object with a non-zero data symbol
-offset, duplicate external function/data definition errors, and a
-cross-object function/import signature mismatch errors, and a many-data-segment
-case that requires more than one Wasm memory page.
+offset, duplicate external function/data definition errors,
+cross-object function/import signature mismatch errors, malformed relocation
+target errors, and a many-data-segment case that requires more than one Wasm
+memory page.
 
 Not yet supported:
 
