@@ -2784,3 +2784,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - focused 確認:
   - `make -j4 build/ag_wasm_link`
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+
+### このセッション（続き259）: Wasm object linker table relocations
+- `tools/wasm_obj_linker/ag_wasm_link.c` で function pointer/table relocation を実装。
+  `R_WASM_TABLE_INDEX_SLEB` は code 内の `i32.const`、`R_WASM_TABLE_INDEX_I32` は data initializer
+  内の function pointer slot を final table index に patch する。
+- final wasm に Table section と Element section を出す。table index 0 は null function pointer 用に
+  空け、address-taken function は 1 始まりで element segment に入れる。defined function だけでなく
+  unresolved host function import も element に入れて `wasm-validate` 可能にした。
+- `tools/wasm_obj_linker/test_smoke.sh` に cross-TU function pointer call、global function pointer
+  initializer、host function pointer import validate（code relocation / data relocation 両方）を追加。
+- 注意: cross-TU の `extern int (*p)(int)` 経由 indirect call で object 側の call_indirect type と
+  定義関数 type がずれるケースは別問題として残る。今回の smoke は linker が table relocation と
+  element segment を正しく処理できる範囲を固定している。
+- focused 確認:
+  - `make -B build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make wasm32-object-fixture-scan` = 1114 pass / 0 fail

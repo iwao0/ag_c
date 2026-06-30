@@ -8,9 +8,11 @@ enum {
   SEC_TYPE = 1,
   SEC_IMPORT = 2,
   SEC_FUNCTION = 3,
+  SEC_TABLE = 4,
   SEC_MEMORY = 5,
   SEC_GLOBAL = 6,
   SEC_EXPORT = 7,
+  SEC_ELEM = 9,
   SEC_CODE = 10,
   SEC_DATA = 11,
 
@@ -64,6 +66,7 @@ typedef struct {
   size_t code_payload_off;
   int final_type;
   int final_index;
+  int final_table_index;
 } func_t;
 
 typedef struct {
@@ -132,6 +135,13 @@ typedef struct {
   object_t *obj;
   int func_index;
 } final_func_t;
+
+typedef struct {
+  object_t *obj;
+  int func_index;
+  int final_func_index;
+  int table_index;
+} final_table_func_t;
 
 typedef struct {
   object_t *obj;
@@ -690,6 +700,35 @@ static int final_func_index_for_symbol(object_t *objs, int obj_count, symbol_t *
   return -1;
 }
 
+static int final_func_index_for_reloc_symbol(object_t *objs, int obj_count, object_t *cur,
+                                             symbol_t *sym,
+                                             final_import_t **imports, int *import_count,
+                                             type_t **types, int *type_count, int *type_cap) {
+  if (sym->kind != SYM_FUNCTION) die("function relocation does not point at function symbol");
+  if (sym->flags & SYM_UNDEFINED) {
+    return final_func_index_for_symbol(objs, obj_count, sym, imports, import_count,
+                                       types, type_count, type_cap);
+  }
+  if (sym->index < 0 || sym->index >= cur->func_count) die("bad function symbol index");
+  return cur->funcs[sym->index].final_index;
+}
+
+static func_t *func_for_reloc_symbol(object_t *objs, int obj_count, object_t *cur, symbol_t *sym,
+                                     object_t **out_obj) {
+  if (sym->kind != SYM_FUNCTION) die("function relocation does not point at function symbol");
+  if (sym->flags & SYM_UNDEFINED) {
+    object_t *def_obj = NULL;
+    int def_func = -1;
+    if (find_defined_func(objs, obj_count, sym->name, &def_obj, &def_func)) {
+      if (out_obj) *out_obj = def_obj;
+      return &def_obj->funcs[def_func];
+    }
+  }
+  if (sym->index < 0 || sym->index >= cur->func_count) die("bad function symbol index");
+  if (out_obj) *out_obj = cur;
+  return &cur->funcs[sym->index];
+}
+
 static uint32_t final_data_addr_for_symbol(object_t *objs, int obj_count, object_t *cur,
                                            symbol_t *sym, int32_t addend) {
   object_t *def_obj = cur;
@@ -706,18 +745,48 @@ static uint32_t final_data_addr_for_symbol(object_t *objs, int obj_count, object
   return (uint32_t)((int64_t)def_obj->data[data_index].final_addr + addend);
 }
 
+static int intern_table_func(final_table_func_t **table_funcs, int *table_count, int *table_cap,
+                             object_t *obj, int func_index, int final_func_index) {
+  func_t *f = &obj->funcs[func_index];
+  if (f->final_table_index > 0) return f->final_table_index;
+  for (int i = 0; i < *table_count; i++) {
+    if ((*table_funcs)[i].final_func_index == final_func_index) {
+      f->final_table_index = (*table_funcs)[i].table_index;
+      return f->final_table_index;
+    }
+  }
+  final_table_func_t tf = {0};
+  tf.obj = obj;
+  tf.func_index = func_index;
+  tf.final_func_index = final_func_index;
+  tf.table_index = *table_count + 1;
+  f->final_table_index = tf.table_index;
+  PUSH(*table_funcs, *table_count, *table_cap, tf);
+  return tf.table_index;
+}
+
+static int table_index_for_symbol(object_t *objs, int obj_count, object_t *cur, symbol_t *sym,
+                                  final_import_t **imports, int *import_count,
+                                  type_t **types, int *type_count, int *type_cap,
+                                  final_table_func_t **table_funcs, int *table_count, int *table_cap) {
+  int final_func_index = final_func_index_for_reloc_symbol(objs, obj_count, cur, sym, imports,
+                                                          import_count, types, type_count, type_cap);
+  object_t *target_obj = NULL;
+  func_t *f = func_for_reloc_symbol(objs, obj_count, cur, sym, &target_obj);
+  return intern_table_func(table_funcs, table_count, table_cap, target_obj,
+                           (int)(f - target_obj->funcs), final_func_index);
+}
+
 static void patch_object_relocations(object_t *objs, int obj_count,
                                      final_import_t **imports, int *import_count,
                                      type_t **types, int *type_count, int *type_cap,
-                                     final_global_t **globals, int *global_count, int *global_cap) {
+                                     final_global_t **globals, int *global_count, int *global_cap,
+                                     final_table_func_t **table_funcs, int *table_count, int *table_cap) {
   for (int oi = 0; oi < obj_count; oi++) {
     object_t *o = &objs[oi];
     for (int ri = 0; ri < o->reloc_count; ri++) {
       reloc_t *r = &o->relocs[ri];
       symbol_t *sym = reloc_symbol(o, r);
-      if (r->type == R_WASM_TABLE_INDEX_SLEB || r->type == R_WASM_TABLE_INDEX_I32) {
-        die("table/function-pointer relocations are not supported by ag_wasm_link v1");
-      }
       if (r->is_code) {
         func_t *fn = NULL;
         size_t body_off = 0;
@@ -742,6 +811,11 @@ static void patch_object_relocations(object_t *objs, int obj_count,
             if (sym->index < 0 || sym->index >= o->func_count) die("bad function symbol index");
             idx = (uint32_t)o->funcs[sym->index].final_index;
           }
+          patch_uleb5(fn->body + body_off, idx);
+        } else if (r->type == R_WASM_TABLE_INDEX_SLEB) {
+          uint32_t idx = (uint32_t)table_index_for_symbol(objs, obj_count, o, sym, imports, import_count,
+                                                          types, type_count, type_cap,
+                                                          table_funcs, table_count, table_cap);
           patch_uleb5(fn->body + body_off, idx);
         } else if (r->type == R_WASM_MEMORY_ADDR_LEB) {
           uint32_t addr = final_data_addr_for_symbol(objs, obj_count, o, sym, r->addend);
@@ -778,6 +852,11 @@ static void patch_object_relocations(object_t *objs, int obj_count,
         if (r->type == R_WASM_MEMORY_ADDR_I32) {
           uint32_t addr = final_data_addr_for_symbol(objs, obj_count, o, sym, r->addend);
           patch_u32le(seg->bytes + data_off, addr);
+        } else if (r->type == R_WASM_TABLE_INDEX_I32) {
+          uint32_t idx = (uint32_t)table_index_for_symbol(objs, obj_count, o, sym, imports, import_count,
+                                                          types, type_count, type_cap,
+                                                          table_funcs, table_count, table_cap);
+          patch_u32le(seg->bytes + data_off, idx);
         } else {
           die("unsupported data relocation type");
         }
@@ -803,6 +882,8 @@ static void build_module(const char *out_path, const char *export_name,
   int import_count = 0, import_cap = 0;
   final_data_t *datas = NULL;
   int data_count = 0, data_cap = 0;
+  final_table_func_t *table_funcs = NULL;
+  int table_count = 0, table_cap = 0;
   final_global_t *globals = NULL;
   int global_count = 0, global_cap = 0;
 
@@ -838,7 +919,8 @@ static void build_module(const char *out_path, const char *export_name,
   }
 
   patch_object_relocations(objs, obj_count, &imports, &import_count,
-                           &types, &type_count, &type_cap, &globals, &global_count, &global_cap);
+                           &types, &type_count, &type_cap, &globals, &global_count, &global_cap,
+                           &table_funcs, &table_count, &table_cap);
   uint32_t min_memory = mem > 65536 ? mem : 65536;
   uint32_t memory_pages = align_to_u32(min_memory, 65536) / 65536;
   uint32_t stack_top = memory_pages * 65536;
@@ -875,6 +957,15 @@ static void build_module(const char *out_path, const char *export_name,
       buf_uleb(&sec, (uint32_t)f->final_type);
     }
     emit_section(&out, SEC_FUNCTION, &sec);
+    free(sec.data); sec = (buf_t){0};
+  }
+
+  if (table_count > 0) {
+    buf_uleb(&sec, 1);
+    buf_u8(&sec, 0x70);
+    buf_u8(&sec, 0);
+    buf_uleb(&sec, (uint32_t)table_count + 1);
+    emit_section(&out, SEC_TABLE, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
@@ -918,6 +1009,20 @@ static void build_module(const char *out_path, const char *export_name,
   }
   emit_section(&out, SEC_EXPORT, &sec);
   free(sec.data); sec = (buf_t){0};
+
+  if (table_count > 0) {
+    buf_uleb(&sec, 1);
+    buf_u8(&sec, 0);
+    buf_u8(&sec, 0x41);
+    buf_sleb_i32(&sec, 1);
+    buf_u8(&sec, 0x0b);
+    buf_uleb(&sec, (uint32_t)table_count);
+    for (int i = 0; i < table_count; i++) {
+      buf_uleb(&sec, (uint32_t)table_funcs[i].final_func_index);
+    }
+    emit_section(&out, SEC_ELEM, &sec);
+    free(sec.data); sec = (buf_t){0};
+  }
 
   if (def_count > 0) {
     buf_uleb(&sec, (uint32_t)def_count);

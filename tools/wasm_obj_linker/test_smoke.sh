@@ -63,6 +63,38 @@ extern int host_add(int);
 int main(void) { return host_add(41); }
 SRC
 
+cat > "$out_dir/fp_cross_main.c" <<'SRC'
+int add1(int);
+int main(void) {
+  int (*p)(int) = add1;
+  return p(41);
+}
+SRC
+
+cat > "$out_dir/fp_cross_other.c" <<'SRC'
+int add1(int x) { return x + 1; }
+SRC
+
+cat > "$out_dir/fp_data_single.c" <<'SRC'
+int add1(int x) { return x + 1; }
+int (*p)(int) = add1;
+int main(void) { return p(41); }
+SRC
+
+cat > "$out_dir/fp_import.c" <<'SRC'
+extern int host_add(int);
+int main(void) {
+  int (*p)(int) = host_add;
+  return p(41);
+}
+SRC
+
+cat > "$out_dir/fp_data_import.c" <<'SRC'
+extern int host_add(int);
+int (*p)(int) = host_add;
+int main(void) { return p(41); }
+SRC
+
 {
   for i in $(seq 0 16999); do
     printf 'int g%d = %d;\n' "$i" "$i"
@@ -107,6 +139,31 @@ grep -q 'main() => i32:42' "$out_dir/linked_static.interp"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_import.wasm" \
   "$out_dir/import_main.o"
 wasm-validate "$out_dir/linked_import.wasm"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_cross_main.o" "$out_dir/fp_cross_main.c"
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_cross_other.o" "$out_dir/fp_cross_other.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_cross.wasm" \
+  "$out_dir/fp_cross_main.o" "$out_dir/fp_cross_other.o"
+wasm-validate "$out_dir/linked_fp_cross.wasm"
+wasm-interp "$out_dir/linked_fp_cross.wasm" --run-all-exports > "$out_dir/linked_fp_cross.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_fp_cross.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_data_single.o" "$out_dir/fp_data_single.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_data_single.wasm" \
+  "$out_dir/fp_data_single.o"
+wasm-validate "$out_dir/linked_fp_data_single.wasm"
+wasm-interp "$out_dir/linked_fp_data_single.wasm" --run-all-exports > "$out_dir/linked_fp_data_single.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_fp_data_single.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_import.o" "$out_dir/fp_import.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_import.wasm" \
+  "$out_dir/fp_import.o"
+wasm-validate "$out_dir/linked_fp_import.wasm"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_data_import.o" "$out_dir/fp_data_import.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_data_import.wasm" \
+  "$out_dir/fp_data_import.o"
+wasm-validate "$out_dir/linked_fp_data_import.wasm"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \
