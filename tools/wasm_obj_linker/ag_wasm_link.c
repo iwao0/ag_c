@@ -707,9 +707,25 @@ static symbol_t *reloc_symbol(object_t *o, reloc_t *r) {
   return &o->symbols[r->symbol];
 }
 
-static uint32_t align_to_u32(uint32_t v, uint32_t a) {
+static uint32_t checked_add_u32(uint32_t a, uint32_t b, const char *msg) {
+  if (b > UINT32_MAX - a) die(msg);
+  return a + b;
+}
+
+static uint32_t checked_add_i32(uint32_t a, int32_t b, const char *msg) {
+  if (b < 0) {
+    uint32_t neg = (uint32_t)(-(int64_t)b);
+    if (a < neg) die(msg);
+    return a - neg;
+  }
+  return checked_add_u32(a, (uint32_t)b, msg);
+}
+
+static uint32_t align_to_u32_checked(uint32_t v, uint32_t a, const char *msg) {
   if (a <= 1) return v;
-  return (v + a - 1) / a * a;
+  uint32_t rem = v % a;
+  if (rem == 0) return v;
+  return checked_add_u32(v, a - rem, msg);
 }
 
 static int find_import(final_import_t *imports, int count, str_t name, int type_index) {
@@ -835,7 +851,9 @@ static uint32_t final_data_addr_for_symbol(object_t *objs, int obj_count, object
   if (data_index < 0 || data_index >= def_obj->data_count || !def_obj->data[data_index].defined) {
     dief("bad data symbol: %s", sym->name.s);
   }
-  return (uint32_t)((int64_t)def_obj->data[data_index].final_addr + symbol_offset + addend);
+  uint32_t addr = checked_add_u32(def_obj->data[data_index].final_addr, symbol_offset,
+                                  "data relocation address overflow");
+  return checked_add_i32(addr, addend, "data relocation address overflow");
 }
 
 static int intern_table_func(final_table_func_t **table_funcs, int *table_count, int *table_cap,
@@ -1018,17 +1036,18 @@ static void build_module(const char *out_path, const char *export_name,
   for (int i = 0; i < data_count; i++) {
     data_seg_t *d = &datas[i].obj->data[datas[i].data_index];
     uint32_t align = d->align_log2 > 0 && d->align_log2 < 31 ? (uint32_t)1 << d->align_log2 : 1;
-    mem = align_to_u32(mem, align);
+    mem = align_to_u32_checked(mem, align, "memory layout overflow");
     d->final_addr = mem;
     size_t alloc_size = d->alloc_size > d->size ? d->alloc_size : d->size;
-    mem += (uint32_t)alloc_size;
+    if (alloc_size > UINT32_MAX) die("memory layout overflow");
+    mem = checked_add_u32(mem, (uint32_t)alloc_size, "memory layout overflow");
   }
 
   patch_object_relocations(objs, obj_count, &imports, &import_count,
                            &types, &type_count, &type_cap, &globals, &global_count, &global_cap,
                            &table_funcs, &table_count, &table_cap);
   uint32_t min_memory = mem > 65536 ? mem : 65536;
-  uint32_t memory_pages = align_to_u32(min_memory, 65536) / 65536;
+  uint32_t memory_pages = align_to_u32_checked(min_memory, 65536, "memory layout overflow") / 65536;
   uint32_t stack_top = memory_pages * 65536;
   for (int i = 0; i < global_count; i++) {
     if (is_stack_pointer_name(globals[i].name)) globals[i].init_value = stack_top;

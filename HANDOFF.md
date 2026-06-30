@@ -2889,3 +2889,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `reloc.DATA targets wrong section` で停止するようにした。
 - `tools/wasm_obj_linker/test_smoke.sh` に、`main.o` の `reloc.CODE` target byte を patch して
   negative case を追加。
+
+### このセッション（続き267）: Wasm object linker memory layout overflow
+- final memory layout の data/BSS 配置で `uint32_t mem` を unchecked に加算していた。
+  巨大 BSS や壊れ object で address が wrap すると、誤った wasm を出す可能性があった。
+- `checked_add_u32` / `checked_add_i32` / `align_to_u32_checked` を追加し、
+  data segment final address、symbol offset + addend、memory page align が 32-bit memory address を
+  超える場合は `memory layout overflow` / `data relocation address overflow` で停止する。
+- `tools/wasm_obj_linker/test_smoke.sh` に `reloc.DATA` target byte の negative case と、
+  2 個の巨大 BSS による `memory layout overflow` negative case を追加。
+- 確認:
+  - `make -j4 build/ag_c_wasm build/ag_wasm_link`
+  - `make test-wasm-obj-linker`

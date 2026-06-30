@@ -113,6 +113,12 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/bss_overflow.c" <<'SRC'
+char a[2147483000];
+char b[2147483000];
+int main(void) { return 0; }
+SRC
+
 cat > "$out_dir/data_symbol_offset_main.c" <<'SRC'
 extern int alias;
 int main(void) { return alias; }
@@ -203,6 +209,16 @@ grep -q 'main() => i32:42' "$out_dir/linked_global.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/addr_main.o" "$out_dir/addr_main.c"
 "$root/build/ag_c_wasm" -c -o "$out_dir/addr_other.o" "$out_dir/addr_other.c"
+cp "$out_dir/addr_other.o" "$out_dir/bad_data_reloc_target.o"
+perl -0777 -pi -e 'my $name = "\x0areloc.DATA"; my $i = index($_, $name); die "missing reloc.DATA\n" if $i < 0; substr($_, $i + length($name), 1) = "\x01";' \
+  "$out_dir/bad_data_reloc_target.o"
+if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_bad_data_reloc_target.wasm" \
+  "$out_dir/addr_main.o" "$out_dir/bad_data_reloc_target.o" \
+  > "$out_dir/linked_bad_data_reloc_target.out" 2> "$out_dir/linked_bad_data_reloc_target.err"; then
+  echo "bad data relocation target unexpectedly linked"
+  exit 1
+fi
+grep -q 'reloc.DATA targets wrong section' "$out_dir/linked_bad_data_reloc_target.err"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_addr.wasm" \
   "$out_dir/addr_main.o" "$out_dir/addr_other.o"
 wasm-validate "$out_dir/linked_addr.wasm"
@@ -262,6 +278,15 @@ grep -q 'main() => i32:42' "$out_dir/linked_fp_data_cross.interp"
 wasm-validate "$out_dir/linked_bss_big.wasm"
 wasm-interp "$out_dir/linked_bss_big.wasm" --run-all-exports > "$out_dir/linked_bss_big.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_bss_big.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/bss_overflow.o" "$out_dir/bss_overflow.c"
+if "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_bss_overflow.wasm" \
+  "$out_dir/bss_overflow.o" \
+  > "$out_dir/linked_bss_overflow.out" 2> "$out_dir/linked_bss_overflow.err"; then
+  echo "overflowing BSS layout unexpectedly linked"
+  exit 1
+fi
+grep -q 'memory layout overflow' "$out_dir/linked_bss_overflow.err"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/data_symbol_offset_main.o" "$out_dir/data_symbol_offset_main.c"
 "$root/build/ag_c_wasm" -c -o "$out_dir/data_symbol_offset_other.o" "$out_dir/data_symbol_offset_other.c"
