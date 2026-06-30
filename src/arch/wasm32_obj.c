@@ -2498,6 +2498,22 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
   data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind, &mi);
 }
 
+static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int fallback) {
+  if (fallback > 0) return fallback;
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int max_end = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    int count = mi.array_len > 0 ? mi.array_len : 1;
+    int end = mi.offset + mi.type_size * count;
+    if (end > max_end) max_end = end;
+  }
+  int align = psx_ctx_get_tag_align(tk, tn, tl);
+  if (align > 1 && max_end > 0) max_end = (max_end + align - 1) / align * align;
+  return max_end > 0 ? max_end : fallback;
+}
+
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
   wb_zero(&d->bytes, size);
   if (gv->init_count <= 0) return;
@@ -2520,7 +2536,8 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
     return;
   }
   if (gv->is_array) {
-    int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
+    int elem_size = effective_tag_array_elem_size(gv->tag_kind, gv->tag_name, gv->tag_len,
+                                                  gv->deref_size > 0 ? gv->deref_size : 0);
     int total = elem_size > 0 ? size / elem_size : 0;
     for (int e = 0; e < total && val_idx < gv->init_count; e++) {
       emit_obj_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,

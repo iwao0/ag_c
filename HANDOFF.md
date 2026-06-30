@@ -2744,3 +2744,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   local symbol `<__compound_lit_*>` と `<__compound_lit_1>+0x4` addend を objdump で確認する。
 - focused 確認:
   - `make -j4 build/test_wasm32_object && ./build/test_wasm32_object` green
+
+### このセッション（続き257）: Anonymous union promoted array struct-array init
+- 匿名 `struct` 内の匿名 `union` が promoted した配列メンバを持つ `struct N a[2]` で、
+  global brace initializer が union 内の別 promoted member まで余分に消費し、ARM64 data
+  に要素ごとの余分な padding を出す不具合を修正。
+- parser の global flat brace path で、匿名 `struct` 越しの匿名 `union` covered range を再帰的に扱う。
+  さらに file-scope global 登録時の tag object size は promoted member の実体側から補正し、
+  `sizeof(struct N)==12` と `global_var_t.deref_size==12` が揃うようにした。
+- ARM64 / WAT / Wasm object の global aggregate data emitter で、匿名 union covered range skip と
+  struct-array element stride を同期した。
+- `test/fixtures/probes_found_bugs/anon_union_promoted_array_designator.c` に、
+  global struct array、local struct array、compound literal の再現ケースを追加。
+- focused 確認:
+  - `scripts/agc_diff_test.sh test/fixtures/probes_found_bugs/anon_union_promoted_array_designator.c` = OK
+  - `./build/test_wasm32_e2e` = 1113 compiled / 1113 executed
+  - `./build/test_wasm32_object` = object fixture scan 1114 pass / 0 fail
+  - `./build/test_e2e` = 1142/1142
+  - `make test` green

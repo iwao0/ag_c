@@ -2015,6 +2015,22 @@ static void emit_global_union_data(global_var_t *gv, int addr) {
   emit_global_union_element_data(gv, &val_idx, addr);
 }
 
+static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int fallback) {
+  if (fallback > 0) return fallback;
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int max_end = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    int count = mi.array_len > 0 ? mi.array_len : 1;
+    int end = mi.offset + mi.type_size * count;
+    if (end > max_end) max_end = end;
+  }
+  int align = psx_ctx_get_tag_align(tk, tn, tl);
+  if (align > 1 && max_end > 0) max_end = (max_end + align - 1) / align * align;
+  return max_end > 0 ? max_end : fallback;
+}
+
 static void emit_global_struct_data(global_var_t *gv, int addr) {
   if (gv->is_tag_pointer) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
@@ -2034,7 +2050,8 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
   }
   int val_idx = 0;
   if (gv->is_array) {
-    int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
+    int elem_size = effective_tag_array_elem_size(gv->tag_kind, gv->tag_name, gv->tag_len,
+                                                  gv->deref_size > 0 ? gv->deref_size : 0);
     int total = elem_size > 0 ? (int)gv->type_size / elem_size : 0;
     for (int e = 0; e < total && val_idx < gv->init_count; e++) {
       emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx,

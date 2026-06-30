@@ -262,6 +262,31 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
   if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
 }
 
+static int arm_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn, int tl,
+                                                      int base_off, int target_off,
+                                                      int *out_off, int *out_size) {
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    if (mi.len != 0 || mi.is_tag_pointer) continue;
+    int start = base_off + mi.offset;
+    int end = start + mi.type_size;
+    if (target_off < start || target_off >= end) continue;
+    if (mi.tag_kind == TK_UNION) {
+      if (out_off) *out_off = start;
+      if (out_size) *out_size = mi.type_size;
+      return 1;
+    }
+    if (mi.tag_kind == TK_STRUCT &&
+        arm_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
+                                                   start, target_off, out_off, out_size)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 /* struct のメンバを宣言順にフラット出力する (init_values を val_idx から消費)。
  * 入れ子 struct メンバ (`struct Out{struct In i; int z;}`) は再帰して内側メンバを
  * 展開する。これをしないと内側 struct を 1 つの .quad として出力し、フラット値が
@@ -283,6 +308,10 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         off < covered_union_off + covered_union_size) {
       continue;
     }
+    int cover_off = 0;
+    int cover_size = 0;
+    int has_cover = arm_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, off,
+                                                               &cover_off, &cover_size);
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
@@ -313,12 +342,20 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         }
       }
       prev_end = off + ts * alen;
+      if (has_cover) {
+        covered_union_off = cover_off;
+        covered_union_size = cover_size;
+      }
       continue;
     }
     /* 入れ子 struct メンバ: 再帰してフラット展開する。 */
     if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
       emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
       prev_end = off + ts;
+      if (has_cover) {
+        covered_union_off = cover_off;
+        covered_union_size = cover_size;
+      }
       continue;
     }
     /* ネスト union メンバ: トップレベル global_var_t.union_init_ordinal はネスト union 用では
@@ -332,6 +369,9 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       if (mi.len == 0) {
         covered_union_off = off;
         covered_union_size = ts;
+      } else if (has_cover) {
+        covered_union_off = cover_off;
+        covered_union_size = cover_size;
       }
       prev_end = off + ts;
       continue;
@@ -367,6 +407,10 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, mv, fv_i);
     (*val_idx)++;
     prev_end = off + ts;
+    if (has_cover) {
+      covered_union_off = cover_off;
+      covered_union_size = cover_size;
+    }
   }
   if (prev_end < struct_size) cg_emitf("  .space %d\n", struct_size - prev_end);
 }
@@ -401,11 +445,28 @@ static void emit_global_struct_init(global_var_t *gv) {
                                  (int)gv->type_size, gv, &val_idx);
 }
 
+static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int fallback) {
+  if (fallback > 0) return fallback;
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int max_end = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    int count = mi.array_len > 0 ? mi.array_len : 1;
+    int end = mi.offset + mi.type_size * count;
+    if (end > max_end) max_end = end;
+  }
+  int align = psx_ctx_get_tag_align(tk, tn, tl);
+  if (align > 1 && max_end > 0) max_end = (max_end + align - 1) / align * align;
+  return max_end > 0 ? max_end : fallback;
+}
+
 /* struct/union 配列のグローバル brace init: 各要素を member 毎に
  * その型サイズで出力する。`struct {int x; int y;} a[3] = {{1,2},...}`
  * は .long 1; .long 2; .long 3; ... と展開する。 */
 static void emit_global_struct_array_init(global_var_t *gv) {
-  int elem_size = gv->deref_size;
+  int elem_size = effective_tag_array_elem_size(gv->tag_kind, gv->tag_name, gv->tag_len,
+                                                gv->deref_size);
   int total_elems = elem_size > 0 ? gv->type_size / elem_size : 0;
   int val_idx = 0;
   /* 各要素を emit_global_struct_members_rec でメンバ単位に展開する。以前はメンバごとに

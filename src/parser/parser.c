@@ -1077,6 +1077,34 @@ static global_var_t *find_global_var_by_name(char *name, int len) {
   return psx_find_global_var(name, len);
 }
 
+static int effective_toplevel_tag_object_size(token_kind_t kind, char *name, int len, int fallback) {
+  if (kind != TK_STRUCT) return fallback;
+  int n = psx_ctx_get_tag_member_count(kind, name, len);
+  if (n <= 0) return fallback;
+  int max_end = 0;
+  int max_align = 1;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(kind, name, len, i, &mi)) break;
+    if (mi.len == 0 && !mi.is_tag_pointer &&
+        (mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION)) {
+      continue;
+    }
+    int count = mi.array_len > 0 ? mi.array_len : 1;
+    int end = mi.offset + mi.type_size * count;
+    if (end > max_end) max_end = end;
+    int member_align = mi.type_size;
+    if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+      int tag_align = psx_ctx_get_tag_align(mi.tag_kind, mi.tag_name, mi.tag_len);
+      if (tag_align > 0) member_align = tag_align;
+    }
+    if (member_align > 8) member_align = 8;
+    if (member_align > max_align) max_align = member_align;
+  }
+  if (max_align > 1 && max_end > 0) max_end = (max_end + max_align - 1) / max_align * max_align;
+  return max_end > 0 ? max_end : fallback;
+}
+
 static global_var_t *register_toplevel_global_decl(char *name, int len, int is_ptr,
                                                    int is_array, int arr_total, int is_extern_decl,
                                                    int has_incomplete_array) {
@@ -1111,9 +1139,14 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
    * tag_kind + is_array) を確認し、不一致なら E3064。一致なら既存を返して merge する。
    * extern → 非 extern (定義) の場合は is_extern_decl をクリアして通常 data 出力に切り替える。
    * 両方に初期化があれば apply_toplevel_object_initializer の `=` 検出時に重複定義エラー。 */
+  int elem_store_size =
+      is_ptr ? 8
+             : effective_toplevel_tag_object_size(g_toplevel_decl_tag_kind,
+                                                  g_toplevel_decl_tag_name,
+                                                  g_toplevel_decl_tag_len,
+                                                  g_toplevel_decl_elem_size);
   int new_type_size = has_incomplete_array ? 0
-                       : (is_array ? ((is_ptr ? 8 : g_toplevel_decl_elem_size) * arr_total)
-                                   : (is_ptr ? 8 : g_toplevel_decl_elem_size));
+                       : (is_array ? (elem_store_size * arr_total) : elem_store_size);
   global_var_t *existing = find_global_var_by_name(name, len);
   if (existing) {
     int type_compatible =
@@ -1139,7 +1172,6 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->name = name;
   gv->name_len = len;
-  int elem_store_size = is_ptr ? 8 : g_toplevel_decl_elem_size;
   gv->type_size = has_incomplete_array ? 0 : (is_array ? (elem_store_size * arr_total) : elem_store_size);
   /* deref_size はスカラ単体 (is_array=0) のポインタ変数では pointee サイズ。
    * `char *p` なら 1、`int *p` なら 4。subscript / `p[i]` のステップに使う。
@@ -1357,6 +1389,31 @@ static int global_member_is_unnamed_union(const tag_member_info_t *mi) {
          mi->tag_kind == TK_UNION;
 }
 
+static int global_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn, int tl,
+                                                         int base_off, int target_off,
+                                                         int *out_off, int *out_size) {
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    if (mi.len != 0 || mi.is_tag_pointer) continue;
+    int start = base_off + mi.offset;
+    int end = start + mi.type_size;
+    if (target_off < start || target_off >= end) continue;
+    if (mi.tag_kind == TK_UNION) {
+      if (out_off) *out_off = start;
+      if (out_size) *out_size = mi.type_size;
+      return 1;
+    }
+    if (mi.tag_kind == TK_STRUCT &&
+        global_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
+                                                      start, target_off, out_off, out_size)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static int global_member_flat_slots(const tag_member_info_t *mi) {
   if (global_member_is_unnamed_struct(mi)) return 0;
   int per = 1;
@@ -1391,7 +1448,15 @@ static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
         mi.offset < covered_union_off + covered_union_size) {
       continue;
     }
+    int cover_off = 0;
+    int cover_size = 0;
+    int has_cover = global_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, mi.offset,
+                                                                  &cover_off, &cover_size);
     slots += global_member_flat_slots(&mi);
+    if (has_cover) {
+      covered_union_off = cover_off;
+      covered_union_size = cover_size;
+    }
   }
   return slots;
 }
@@ -1459,6 +1524,15 @@ static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
       continue;
     }
     if (in_covered_union) continue;
+    int cover_off = 0;
+    int cover_size = 0;
+    int has_cover = global_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, mi.offset,
+                                                                  &cover_off, &cover_size);
+    if (has_cover) {
+      covered_union_slot = slot;
+      covered_union_off = cover_off;
+      covered_union_size = cover_size;
+    }
     slot += global_member_flat_slots(&mi);
   }
   return -1;
@@ -1548,6 +1622,11 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
       tag_member_info_t mi = {0};
       if (!psx_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, i, &mi)) break;
       if (global_member_is_unnamed_struct(&mi)) continue;
+      if (covered_union_size > 0 &&
+          mi.offset >= covered_union_off &&
+          mi.offset < covered_union_off + covered_union_size) {
+        continue;
+      }
       int ms = global_member_flat_slots(&mi);
       if (off < slot + ms) return gbrace_ctx_from_member(&mi);
       if (global_member_is_unnamed_union(&mi)) {
@@ -1556,10 +1635,14 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
         slot += ms;
         continue;
       }
-      if (covered_union_size > 0 &&
-          mi.offset >= covered_union_off &&
-          mi.offset < covered_union_off + covered_union_size) {
-        continue;
+      int cover_off = 0;
+      int cover_size = 0;
+      int has_cover = global_find_unnamed_union_covering_offset_rec(ctx.tag_kind, ctx.tag_name,
+                                                                    ctx.tag_len, 0, mi.offset,
+                                                                    &cover_off, &cover_size);
+      if (has_cover) {
+        covered_union_off = cover_off;
+        covered_union_size = cover_size;
       }
       slot += ms;
     }
