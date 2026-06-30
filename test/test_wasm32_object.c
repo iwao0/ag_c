@@ -810,6 +810,13 @@ int main(void) {
                                 "int g; int main(void){g=5; return g;}\n",
                                 global_write_needles, 5);
 
+  const char *global_bool_data_needles[] = {
+      "<b>", "01", "<bs>", "0100 01", "i32.load8_s"};
+  failures += run_objdump_check("global_bool_data",
+                                "_Bool b=5; _Bool bs[3]={5,0,9}; "
+                                "int main(void){return b+bs[0]+bs[1]+bs[2];}\n",
+                                global_bool_data_needles, 5);
+
   const char *global_fp_array_needles[] = {
       "<fa>", "0000 a03f 0000 3040", "<da>", "0000 0000 0000 f83f 0000 0000 0000 0440",
       "f32.load", "f64.load"};
