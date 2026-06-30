@@ -240,6 +240,9 @@ int abs(int x);
 int isdigit(int c);
 int isalpha(int c);
 int toupper(int c);
+void *malloc(long size);
+void *calloc(long nmemb, long size);
+void free(void *p);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
@@ -260,6 +263,12 @@ int main(void) {
   strncpy(b, a, 3);
   b[3] = 0;
   memcpy(c, a, 6);
+  char *p = malloc(8);
+  char *q = calloc(4, 1);
+  p[0] = 'O';
+  p[1] = 'K';
+  p[2] = 0;
+  free(p);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -271,6 +280,7 @@ int main(void) {
          isalpha('Q') && !isalpha('7') &&
          toupper('q') == 'Q' &&
          atoi(" -123x") == -123 &&
+         p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          putchar('Z') == 'Z' ? 42 : 1;
 }
 SRC
@@ -479,6 +489,7 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   wasm-objdump -x "$out_dir/linked_libc_runtime_nostdlib.wasm" > "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"

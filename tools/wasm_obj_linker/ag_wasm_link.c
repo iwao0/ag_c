@@ -2433,6 +2433,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_isalpha";
   } else if (str_eq_lit(name, "toupper")) {
     target_lit = "__agc_runtime_toupper";
+  } else if (str_eq_lit(name, "malloc")) {
+    target_lit = "__agc_runtime_malloc";
+  } else if (str_eq_lit(name, "free")) {
+    target_lit = "__agc_runtime_free";
+  } else if (str_eq_lit(name, "calloc")) {
+    target_lit = "__agc_runtime_calloc";
   } else if (str_eq_lit(name, "atoi")) {
     target_lit = "__agc_runtime_atoi";
   } else if (str_eq_lit(name, "strcpy")) {

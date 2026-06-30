@@ -26,6 +26,28 @@ static char *ag_rt_ptr(long addr) {
   return (char *)addr;
 }
 
+static long ag_rt_heap = 32768;
+
+long __agc_runtime_malloc(long size) {
+  long aligned = (size + 7) & -8;
+  long p = ag_rt_heap;
+  ag_rt_heap = ag_rt_heap + aligned;
+  return p;
+}
+
+void __agc_runtime_free(long ptr) {
+  (void)ptr;
+}
+
+long __agc_runtime_calloc(long nmemb, long size) {
+  long n = nmemb * size;
+  long p = __agc_runtime_malloc(n);
+  char *dst = ag_rt_ptr(p);
+  long i = 0;
+  while (i < n) dst[i++] = 0;
+  return p;
+}
+
 long __agc_runtime_strlen(long s_addr) {
   char *s = ag_rt_ptr(s_addr);
   long n = 0;

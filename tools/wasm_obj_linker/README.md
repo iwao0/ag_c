@@ -53,8 +53,9 @@ Supported:
 - Default runtime-object linking through `build/libagc_runtime.o`; currently it
   carries the `snprintf`/`sprintf` formatter body plus small string/memory/ctype
   helpers such as `strlen`, `strcmp`, `memset`, `memcpy`, `strcpy`, `strncmp`,
-  `memcmp`, `strchr`, `atoi`, and `putchar`. The linker emits only small ABI
-  bridges for those public symbols.
+  `memcmp`, `strchr`, `atoi`, and `putchar`, plus a tiny bump allocator for
+  `malloc`, `calloc`, and `free`. The linker emits only small ABI bridges for
+  those public symbols.
 
 ## Smoke Test
 

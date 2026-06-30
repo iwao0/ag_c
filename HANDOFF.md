@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き297: ag_wasm_link runtime object libc helpers）
+最終更新: 2026-07-01（続き298: ag_wasm_link runtime object allocator）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,16 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き298: **`malloc` / `calloc` / `free` を `libagc_runtime.o` へ移行**。
+  `libagc_runtime.c` に 32768 起点の小さな bump allocator を追加し、`calloc` は確保範囲をゼロ化、
+  `free` は no-op にした。`ag_wasm_link` の ABI bridge map に `malloc` / `calloc` / `free` を追加し、
+  通常リンクでは synthetic allocator stub ではなく `__agc_runtime_malloc` /
+  `__agc_runtime_calloc` / `__agc_runtime_free` へ解決する。
+  `test_smoke.sh` の `libc_runtime.c` で `malloc` が別領域を返すこと、`calloc` がゼロ初期化されること、
+  `--nostdlib` では `env.malloc` import が残ることを確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き297: **小型 libc helper を `libagc_runtime.o` へ追加移行**。
   `strlen` / `strcmp` / `memset` / `memcpy` / `abs` / `isdigit` / `isalpha` / `toupper` /
   `atoi` / `strcpy` / `strncpy` / `strcat` / `strncmp` / `memcmp` / `strchr` / `strrchr` /
