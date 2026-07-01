@@ -96,6 +96,34 @@ long __agc_runtime_fopen(long path_addr, long mode_addr) {
   return (long)&ag_rt_file_value;
 }
 
+int __agc_runtime_open(long path_addr, int oflag) {
+  (void)oflag;
+  if (!path_addr) return -1;
+  ag_rt_fd_pos = 0;
+  return 3;
+}
+
+int __agc_runtime_close(int fd) {
+  (void)fd;
+  return 0;
+}
+
+long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
+  (void)fd;
+  char *dst = ag_rt_ptr(buf_addr);
+  long limit = (long)count;
+  long i = 0;
+  while (i < limit && ag_rt_fd_pos < ag_rt_file_len) {
+    dst[i++] = ag_rt_file_buf[ag_rt_fd_pos++];
+  }
+  return i;
+}
+
+long __agc_runtime_fdopen(int fd, long mode_addr) {
+  (void)fd;
+  return __agc_runtime_fopen(0, mode_addr);
+}
+
 int __agc_runtime_fclose(long stream_addr) {
   (void)stream_addr;
   return 0;

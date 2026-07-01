@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き341: libagc_runtime realpath helper）
+最終更新: 2026-07-01（続き342: libagc_runtime fd I/O helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,16 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き342: **`libagc_runtime.o` に fd 系 I/O helper を追加**。
+  `src/preprocess/preprocess.c` が self-host 時に使う `open` / `read` / `close` / `fdopen` を、
+  runtime object と `ag_wasm_link` の default runtime symbol 判定・ABI bridge map に追加した。
+  現時点では既存の in-memory file buffer を読む最小実装で、`open` は fd 3 を返し、
+  `read` は `ag_rt_file_buf` から順に読み、`fdopen` は既存 `fopen` runtime state を返す。
+  smoke では `fwrite` 後に fd 経路から同じ内容を読めることと、`--nostdlib` で
+  `<env.open>` / `<env.read>` / `<env.close>` / `<env.fdopen>` import が残ることを確認する。
+  README の runtime helper 一覧も更新した。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、`./build/test_wasm32_object`、`git diff --check`。
 - 続き341: **`libagc_runtime.o` に `realpath` helper を追加**。
   `include/stdlib.h` には既に `realpath` prototype があり、`src/preprocess/preprocess.c` でも
   self-host 時に必要になるため、runtime object に `__agc_runtime_realpath` を追加した。

@@ -32,6 +32,7 @@ static char ag_rt_decimal_point[] = ".";
 static char ag_rt_strerror[] = "error";
 static char ag_rt_file_buf[512];
 static long ag_rt_file_len = 0;
+static long ag_rt_fd_pos = 0;
 static char *ag_rt_strtok_next;
 static unsigned long ag_rt_rand_state = 1;
 static int ag_rt_round_mode = 0;
