@@ -111,6 +111,32 @@ int add1(int x) { return x + 1; }
 int (*p)(int) = add1;
 SRC
 
+cat > "$out_dir/fp_return_sig.c" <<'SRC'
+double square(double x) { return x * x; }
+double apply(double (*f)(double), double v) { return f(v); }
+int main(void) {
+  double (*p)(double) = square;
+  return (int)p(6.0) == 36 && (int)apply(square, 5.0) == 25 ? 42 : 1;
+}
+SRC
+
+cat > "$out_dir/small_struct_return_sig.c" <<'SRC'
+struct P { int x, y; };
+struct P mk(int s) {
+  struct P p = {0, 0};
+  p.x = s;
+  p.y = s * 2;
+  return p;
+}
+struct P (*gop)(int) = mk;
+int main(void) {
+  struct P (*p)(int) = mk;
+  struct P a = p(10);
+  struct P b = gop(5);
+  return a.x == 10 && a.y == 20 && b.x == 5 && b.y == 10 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/bss_big.c" <<'SRC'
 char big[70000];
 int main(void) {
@@ -938,6 +964,20 @@ wasm-validate "$out_dir/linked_fp_data_import.wasm"
 wasm-validate "$out_dir/linked_fp_data_cross.wasm"
 wasm-interp "$out_dir/linked_fp_data_cross.wasm" --run-all-exports > "$out_dir/linked_fp_data_cross.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_fp_data_cross.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fp_return_sig.o" "$out_dir/fp_return_sig.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fp_return_sig.wasm" \
+  "$out_dir/fp_return_sig.o"
+wasm-validate "$out_dir/linked_fp_return_sig.wasm"
+wasm-interp "$out_dir/linked_fp_return_sig.wasm" --run-all-exports > "$out_dir/linked_fp_return_sig.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_fp_return_sig.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/small_struct_return_sig.o" "$out_dir/small_struct_return_sig.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_small_struct_return_sig.wasm" \
+  "$out_dir/small_struct_return_sig.o"
+wasm-validate "$out_dir/linked_small_struct_return_sig.wasm"
+wasm-interp "$out_dir/linked_small_struct_return_sig.wasm" --run-all-exports > "$out_dir/linked_small_struct_return_sig.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_small_struct_return_sig.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/bss_big.o" "$out_dir/bss_big.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_bss_big.wasm" \
