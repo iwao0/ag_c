@@ -3918,3 +3918,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `struct_layout.c` の EOF parse error を最小化する。候補は self compiler が末尾の宣言/プリプロセス後
     token stream をどこかで読み違えているケース。
   - その後、全 `src/*.c` object probe を再実行する。
+
+### このセッション（続き344）: wasm runtime selfhost stub と import-free link
+- self-host wasm link の残 import を減らすため、default runtime に以下の最小 helper を追加した。
+  - `localtime`: 静的 `struct tm` 相当領域を返す stub。
+  - `getrusage`: `ru_maxrss` 相当先頭 slot を 0 にする stub。
+  - `getline`: 現状は EOF 相当の `-1` を返す stub。
+  - `setjmp`: 0 を返す stub。
+  - `longjmp`: 呼ばれた場合は戻らない loop。
+- `ag_wasm_link` の runtime bridge に `localtime` / `getrusage` / `getline` /
+  `setjmp` / `longjmp` を追加した。
+- さらに `vfprintf` / `vsnprintf` は bridge 本体にはあったが `is_runtime_func_symbol`
+  に未登録だったため、default runtime 対象として拾うよう追加した。
+- selfhost probe:
+  - `src/*.c` は 52/52 object 化済み。
+  - `diag/messages_all.o` と `diag/messages_en.o` を除外した DIAG_LANG=ja 相当の
+    object list で `./build/ag_wasm_link --no-entry --export=main` が成功。
+  - `wasm-validate build/wasm_selfhost_probe_current/ag_c_wasm_self.wasm` 成功。
+  - `wasm-objdump -x -j Import` は `Section not found: Import` になり、外部 import なし。
+- 確認:
+  - `make -j4 build/ag_wasm_link build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = 1119 pass / 0 fail / 0 skip
+- 次にやること:
+  - `make test` を通してからコミットする。
+  - 次段階は「import-free になった selfhost wasm をどう起動して C 入力を渡すか」
+    の入口設計。現状 runtime の `getline` / file I/O は最小 stub/メモリファイル実装なので、
+    ブラウザ UI からコンパイルするには argv/stdin/仮想ファイル投入の形を決める必要がある。

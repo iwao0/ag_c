@@ -228,6 +228,53 @@ double __agc_runtime_difftime(long end, long beginning) {
   return (double)(end - beginning);
 }
 
+struct ag_rt_tm {
+  int tm_sec;
+  int tm_min;
+  int tm_hour;
+  int tm_mday;
+  int tm_mon;
+  int tm_year;
+  int tm_wday;
+  int tm_yday;
+  int tm_isdst;
+};
+
+static struct ag_rt_tm ag_rt_tm_value;
+
+long __agc_runtime_localtime(long timer_addr) {
+  (void)timer_addr;
+  return (long)&ag_rt_tm_value;
+}
+
+int __agc_runtime_getrusage(int who, long usage_addr) {
+  (void)who;
+  if (usage_addr) {
+    long *usage = (long *)ag_rt_ptr(usage_addr);
+    usage[0] = 0;
+  }
+  return 0;
+}
+
+long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
+  (void)lineptr_addr;
+  (void)n_addr;
+  (void)stream_addr;
+  return -1;
+}
+
+int __agc_runtime_setjmp(long env_addr) {
+  (void)env_addr;
+  return 0;
+}
+
+void __agc_runtime_longjmp(long env_addr, int val) {
+  (void)env_addr;
+  (void)val;
+  for (;;) {
+  }
+}
+
 long __agc_runtime___error(void) {
   return (long)&ag_rt_errno_value;
 }

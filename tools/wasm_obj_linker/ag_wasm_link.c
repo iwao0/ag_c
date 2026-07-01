@@ -717,6 +717,7 @@ static int is_runtime_data_symbol(str_t name) {
 
 static int is_runtime_func_symbol(str_t name) {
   return str_eq_lit(name, "printf") || str_eq_lit(name, "fprintf") ||
+         str_eq_lit(name, "vfprintf") ||
          str_eq_lit(name, "__assert_rtn") ||
          str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
          str_eq_lit(name, "memset") || str_eq_lit(name, "memcpy") ||
@@ -743,6 +744,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "realpath") ||
          str_eq_lit(name, "system") || str_eq_lit(name, "time") ||
          str_eq_lit(name, "clock") || str_eq_lit(name, "difftime") ||
+         str_eq_lit(name, "localtime") || str_eq_lit(name, "getrusage") ||
+         str_eq_lit(name, "getline") || str_eq_lit(name, "setjmp") ||
+         str_eq_lit(name, "longjmp") ||
          str_eq_lit(name, "__error") || str_eq_lit(name, "signal") ||
          str_eq_lit(name, "raise") ||
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
@@ -757,6 +761,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "sin") || str_eq_lit(name, "cos") ||
          str_eq_lit(name, "tan") ||
          str_eq_lit(name, "sprintf") ||
+         str_eq_lit(name, "vsnprintf") ||
          str_eq_lit(name, "snprintf") ||
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
          str_eq_lit(name, "fclose") || str_eq_lit(name, "fread") ||
@@ -2624,6 +2629,16 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_clock";
   } else if (str_eq_lit(name, "difftime")) {
     target_lit = "__agc_runtime_difftime";
+  } else if (str_eq_lit(name, "localtime")) {
+    target_lit = "__agc_runtime_localtime";
+  } else if (str_eq_lit(name, "getrusage")) {
+    target_lit = "__agc_runtime_getrusage";
+  } else if (str_eq_lit(name, "getline")) {
+    target_lit = "__agc_runtime_getline";
+  } else if (str_eq_lit(name, "setjmp")) {
+    target_lit = "__agc_runtime_setjmp";
+  } else if (str_eq_lit(name, "longjmp")) {
+    target_lit = "__agc_runtime_longjmp";
   } else if (str_eq_lit(name, "__error")) {
     target_lit = "__agc_runtime___error";
   } else if (str_eq_lit(name, "signal")) {

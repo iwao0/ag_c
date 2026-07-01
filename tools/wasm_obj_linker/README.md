@@ -61,7 +61,8 @@ Supported:
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
   `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,
   `realpath`, `strtoimax`, `strtoumax`),
-  `time`/`clock`/`difftime`, `errno` storage, wide-char and uchar conversion helpers,
+  `time`/`clock`/`difftime`/`localtime`, `getrusage`, `getline`,
+  `setjmp`/`longjmp`, `errno` storage, wide-char and uchar conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
   `pow`/`powf`/`powl`, remainder, cube-root, selected long-double wrappers,

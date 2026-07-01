@@ -470,6 +470,21 @@ struct stat {
   unsigned short st_mode;
   long st_size;
 };
+struct rusage {
+  long ru_maxrss;
+};
+struct tm {
+  int tm_sec;
+  int tm_min;
+  int tm_hour;
+  int tm_mday;
+  int tm_mon;
+  int tm_year;
+  int tm_wday;
+  int tm_yday;
+  int tm_isdst;
+};
+typedef long jmp_buf[48];
 FILE *fopen(char *path, char *mode);
 FILE *fdopen(int fd, char *mode);
 int fclose(FILE *stream);
@@ -488,6 +503,7 @@ void rewind(FILE *stream);
 int feof(FILE *stream);
 int ferror(FILE *stream);
 void clearerr(FILE *stream);
+long getline(char **lineptr, unsigned long *n, FILE *stream);
 int printf(char *fmt, ...);
 int fprintf(FILE *stream, char *fmt, ...);
 int puts(char *s);
@@ -496,6 +512,10 @@ int fputc(int c, FILE *stream);
 int fflush(FILE *stream);
 void perror(char *s);
 int getchar(void);
+int getrusage(int who, struct rusage *usage);
+struct tm *localtime(long *timer);
+int setjmp(jmp_buf env);
+void longjmp(jmp_buf env, int val);
 int int_cmp(long ap, long bp) {
   int *a = (int *)ap;
   int *b = (int *)bp;
@@ -554,6 +574,12 @@ int main(void) {
   int never = 0;
   void *nullv = 0;
   long tloc = 123;
+  long now = 0;
+  struct tm *tm_info;
+  struct rusage usage = {0};
+  char *lineptr = 0;
+  unsigned long linecap = 0;
+  jmp_buf jb;
   int *errp = __error();
   sig_handler_t sigh = 0;
   fexcept_t flag = 0;
@@ -601,7 +627,11 @@ int main(void) {
   if (never) {
     exit(7);
     abort();
+    longjmp(jb, 1);
   }
+  int sj = setjmp(jb);
+  int usage_ok = getrusage(0, &usage);
+  tm_info = localtime(&now);
   wcscpy(wd, ws);
   wcsncpy(we, ws, 3);
   wcscat(we, ws);
@@ -761,6 +791,10 @@ int main(void) {
          found == nums + 2 && *found == 3 &&
          time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
          (int)difftime(100, 58) == 42 &&
+         tm_info != 0 && tm_info->tm_year == 0 &&
+         usage_ok == 0 && usage.ru_maxrss == 0 &&
+         getline(&lineptr, &linecap, rf) == -1 &&
+         sj == 0 &&
          errp != 0 && (*errp = 34, *__error() == 34) &&
          signal(2, sigh) == 0 && raise(2) == 0 &&
          isdigit('7') && !isdigit('x') &&
@@ -1160,6 +1194,11 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.time>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.clock>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.difftime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.localtime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.getrusage>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.getline>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.setjmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.longjmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.__error>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.signal>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.raise>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
