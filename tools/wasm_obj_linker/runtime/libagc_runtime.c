@@ -35,6 +35,7 @@ static long ag_rt_file_len = 0;
 static char *ag_rt_strtok_next;
 static unsigned long ag_rt_rand_state = 1;
 static int ag_rt_round_mode = 0;
+static int ag_rt_errno_value = 0;
 void *__stdinp;
 void *__stdoutp;
 void *__stderrp;
@@ -304,6 +305,26 @@ long __agc_runtime_getenv(long name_addr) {
 int __agc_runtime_system(long command_addr) {
   (void)command_addr;
   return 0;
+}
+
+long __agc_runtime_time(long tloc_addr) {
+  if (tloc_addr) {
+    long *tloc = (long *)ag_rt_ptr(tloc_addr);
+    *tloc = 0;
+  }
+  return 0;
+}
+
+long __agc_runtime_clock(void) {
+  return 0;
+}
+
+double __agc_runtime_difftime(long end, long beginning) {
+  return (double)(end - beginning);
+}
+
+long __agc_runtime___error(void) {
+  return (long)&ag_rt_errno_value;
 }
 
 long __agc_runtime_strcpy(long dst_addr, long src_addr) {

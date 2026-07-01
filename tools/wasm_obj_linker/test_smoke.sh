@@ -272,6 +272,10 @@ void srand(int seed);
 long labs(long n);
 char *getenv(char *name);
 int system(char *command);
+long time(long *tloc);
+long clock(void);
+double difftime(long end, long beginning);
+int *__error(void);
 typedef unsigned long long fexcept_t;
 typedef struct { unsigned long long fpcr; unsigned long long fpsr; } fenv_t;
 int feclearexcept(int excepts);
@@ -386,6 +390,8 @@ int main(void) {
   int rand1 = rand();
   int rand2 = rand();
   void *nullv = 0;
+  long tloc = 123;
+  int *errp = __error();
   fexcept_t flag = 0;
   fenv_t env = {0, 0};
   int ws[8];
@@ -460,6 +466,9 @@ int main(void) {
          parsed == -42 && *endp == 0 &&
          rand1 != rand2 &&
          atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 && system("true") == 0 &&
+         time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
+         (int)difftime(100, 58) == 42 &&
+         errp != 0 && (*errp = 34, *__error() == 34) &&
          isdigit('7') && !isdigit('x') &&
          isalnum('A') && isalnum('9') && !isalnum('!') &&
          isalpha('Q') && !isalpha('7') &&
@@ -755,6 +764,10 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.atexit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.system>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.time>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.clock>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.difftime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.__error>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fegetexceptflag>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.feraiseexcept>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fesetexceptflag>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

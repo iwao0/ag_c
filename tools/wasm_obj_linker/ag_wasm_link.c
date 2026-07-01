@@ -735,7 +735,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strtol") || str_eq_lit(name, "rand") ||
          str_eq_lit(name, "srand") || str_eq_lit(name, "labs") ||
          str_eq_lit(name, "atexit") || str_eq_lit(name, "getenv") ||
-         str_eq_lit(name, "system") ||
+         str_eq_lit(name, "system") || str_eq_lit(name, "time") ||
+         str_eq_lit(name, "clock") || str_eq_lit(name, "difftime") ||
+         str_eq_lit(name, "__error") ||
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncat") ||
          str_eq_lit(name, "strncmp") || str_eq_lit(name, "strchr") ||
@@ -2537,6 +2539,14 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_getenv";
   } else if (str_eq_lit(name, "system")) {
     target_lit = "__agc_runtime_system";
+  } else if (str_eq_lit(name, "time")) {
+    target_lit = "__agc_runtime_time";
+  } else if (str_eq_lit(name, "clock")) {
+    target_lit = "__agc_runtime_clock";
+  } else if (str_eq_lit(name, "difftime")) {
+    target_lit = "__agc_runtime_difftime";
+  } else if (str_eq_lit(name, "__error")) {
+    target_lit = "__agc_runtime___error";
   } else if (str_eq_lit(name, "strcpy")) {
     target_lit = "__agc_runtime_strcpy";
   } else if (str_eq_lit(name, "strncpy")) {
