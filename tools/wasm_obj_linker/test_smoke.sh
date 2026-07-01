@@ -256,6 +256,14 @@ double sqrt(double x);
 float sqrtf(float x);
 double pow(double x, double y);
 double fabs(double x);
+float fabsf(float x);
+double floor(double x);
+double ceil(double x);
+double round(double x);
+double trunc(double x);
+float floorf(float x);
+float ceilf(float x);
+float roundf(float x);
 double sin(double x);
 double cos(double x);
 int atoi(char *s);
@@ -344,6 +352,13 @@ int main(void) {
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
          (int)pow(2.0, 10.0) == 1024 &&
          (int)fabs(-3.5) == 3 &&
+         (int)fabsf(-2.5f) == 2 &&
+         (int)floor(3.8) == 3 && (int)floor(-3.2) == -4 &&
+         (int)ceil(3.2) == 4 && (int)ceil(-3.8) == -3 &&
+         (int)round(3.5) == 4 && (int)round(-3.5) == -4 &&
+         (int)trunc(3.8) == 3 && (int)trunc(-3.8) == -3 &&
+         (int)floorf(2.9f) == 2 && (int)ceilf(2.1f) == 3 &&
+         (int)roundf(-2.5f) == -3 &&
          sin0 == 0 && sin90 >= 998 && sin90 <= 1002 &&
          sinm90 <= -998 && sinm90 >= -1002 &&
          cos0 >= 998 && cos0 <= 1002 &&
@@ -569,6 +584,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.cos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.floor>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ceilf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi

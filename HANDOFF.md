@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き307: wasm runtime object cos helper）
+最終更新: 2026-07-01（続き308: wasm runtime object rounding math helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き308: **`libagc_runtime.o` に丸め系 math helper を追加**。
+  `fabsf`、`floor` / `ceil` / `round` / `trunc`、`floorf` / `ceilf` / `roundf` を
+  runtime object に追加し、`ag_wasm_link` の runtime symbol/bridge map に追加した。
+  実装は `long` cast と補正で閉じる最小実装。`test_smoke.sh` の `libc_runtime.c` で
+  正負の丸め値と float 版を確認し、`--nostdlib` では代表として `env.floor` / `env.ceilf`
+  import が残ることも確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き307: **`libagc_runtime.o` に `cos` helper を追加**。
   `__agc_runtime_cos` を runtime object に追加し、`ag_wasm_link` の runtime symbol/bridge map に
   public `cos` を追加した。実装は `sin` と同じく `[-pi, pi]` へ折りたたんで Taylor 近似する

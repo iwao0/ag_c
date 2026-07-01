@@ -355,6 +355,42 @@ double __agc_runtime_fabs(double x) {
   return x < 0.0 ? -x : x;
 }
 
+float __agc_runtime_fabsf(float x) {
+  return x < 0.0f ? -x : x;
+}
+
+double __agc_runtime_trunc(double x) {
+  return (double)(long)x;
+}
+
+double __agc_runtime_floor(double x) {
+  long i = (long)x;
+  if ((double)i > x) i = i - 1;
+  return (double)i;
+}
+
+double __agc_runtime_ceil(double x) {
+  long i = (long)x;
+  if ((double)i < x) i = i + 1;
+  return (double)i;
+}
+
+double __agc_runtime_round(double x) {
+  return x < 0.0 ? __agc_runtime_ceil(x - 0.5) : __agc_runtime_floor(x + 0.5);
+}
+
+float __agc_runtime_floorf(float x) {
+  return (float)__agc_runtime_floor((double)x);
+}
+
+float __agc_runtime_ceilf(float x) {
+  return (float)__agc_runtime_ceil((double)x);
+}
+
+float __agc_runtime_roundf(float x) {
+  return (float)__agc_runtime_round((double)x);
+}
+
 double __agc_runtime_sin(double x) {
   double pi = 3.141592653589793;
   double two_pi = 6.283185307179586;

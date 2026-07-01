@@ -742,7 +742,11 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "wcslen") || str_eq_lit(name, "wcscpy") ||
          str_eq_lit(name, "wcscmp") || str_eq_lit(name, "sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "pow") ||
-         str_eq_lit(name, "fabs");
+         str_eq_lit(name, "fabs") || str_eq_lit(name, "fabsf") ||
+         str_eq_lit(name, "floor") || str_eq_lit(name, "ceil") ||
+         str_eq_lit(name, "round") || str_eq_lit(name, "trunc") ||
+         str_eq_lit(name, "floorf") || str_eq_lit(name, "ceilf") ||
+         str_eq_lit(name, "roundf");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -2502,6 +2506,22 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_pow";
   } else if (str_eq_lit(name, "fabs")) {
     target_lit = "__agc_runtime_fabs";
+  } else if (str_eq_lit(name, "fabsf")) {
+    target_lit = "__agc_runtime_fabsf";
+  } else if (str_eq_lit(name, "floor")) {
+    target_lit = "__agc_runtime_floor";
+  } else if (str_eq_lit(name, "ceil")) {
+    target_lit = "__agc_runtime_ceil";
+  } else if (str_eq_lit(name, "round")) {
+    target_lit = "__agc_runtime_round";
+  } else if (str_eq_lit(name, "trunc")) {
+    target_lit = "__agc_runtime_trunc";
+  } else if (str_eq_lit(name, "floorf")) {
+    target_lit = "__agc_runtime_floorf";
+  } else if (str_eq_lit(name, "ceilf")) {
+    target_lit = "__agc_runtime_ceilf";
+  } else if (str_eq_lit(name, "roundf")) {
+    target_lit = "__agc_runtime_roundf";
   } else if (str_eq_lit(name, "sin")) {
     target_lit = "__agc_runtime_sin";
   } else if (str_eq_lit(name, "cos")) {

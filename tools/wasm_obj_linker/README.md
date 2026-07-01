@@ -54,9 +54,9 @@ Supported:
   carries the small C runtime used by the fixture suite: formatter helpers
   (`printf`, `fprintf`, `snprintf`, `sprintf`), string/memory/ctype helpers,
   `putchar`, minimal file I/O stubs, a tiny bump allocator, `imaxabs`,
-  wide-char helpers, fenv/locale helpers, selected math helpers, stdio globals,
-  and `__assert_rtn`. The linker emits only small ABI bridges for those public
-  symbols.
+  wide-char helpers, fenv/locale helpers, selected math helpers including
+  trigonometric and rounding helpers, stdio globals, and `__assert_rtn`. The
+  linker emits only small ABI bridges for those public symbols.
 
 ## Smoke Test
 
