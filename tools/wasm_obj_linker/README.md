@@ -58,7 +58,7 @@ Supported:
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
   `getenv`, `system`, `imaxabs`),
   `time`/`clock`/`difftime`, `errno` storage, wide-char string/memory/conversion helpers,
-  fenv/locale helpers, selected math helpers including
+  fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
   `pow`, remainder, cube-root, and rounding helpers, stdio globals, and `__assert_rtn`.
   The linker emits only small ABI bridges for those public symbols.

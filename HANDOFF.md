@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き324: libagc_runtime wide-char conversion helpers）
+最終更新: 2026-07-01（続き325: libagc_runtime signal/wctype helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -14,6 +14,13 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き325: **`libagc_runtime.o` に signal/wctype helper を追加**。
+  `signal` / `raise` / `wctype` / `iswctype` / `wctrans` / `towctrans` を runtime object 本体へ追加し、
+  `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。`signal` は旧 handler なしとして 0、
+  `raise` は 0、wctype/wctrans は ASCII 分類・大小変換の小さな descriptor 実装。
+  smoke では signal/raise、`wctype("digit")`、`wctrans("toupper")`、`--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip。
 - 続き324: **`libagc_runtime.o` の wide-char conversion helper を拡張**。
   `wcsstr` / `wcstol` / `wcstoul` / `wcstod` / `mbrtowc` / `wcrtomb` /
   `mbsrtowcs` / `wcsrtombs` / `btowc` / `wctob` を runtime object 本体へ追加し、

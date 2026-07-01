@@ -737,7 +737,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "atexit") || str_eq_lit(name, "getenv") ||
          str_eq_lit(name, "system") || str_eq_lit(name, "time") ||
          str_eq_lit(name, "clock") || str_eq_lit(name, "difftime") ||
-         str_eq_lit(name, "__error") ||
+         str_eq_lit(name, "__error") || str_eq_lit(name, "signal") ||
+         str_eq_lit(name, "raise") ||
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncat") ||
          str_eq_lit(name, "strncmp") || str_eq_lit(name, "strchr") ||
@@ -769,7 +770,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "iswprint") || str_eq_lit(name, "iswpunct") ||
          str_eq_lit(name, "iswspace") || str_eq_lit(name, "iswupper") ||
          str_eq_lit(name, "iswxdigit") || str_eq_lit(name, "towlower") ||
-         str_eq_lit(name, "towupper") ||
+         str_eq_lit(name, "towupper") || str_eq_lit(name, "wctype") ||
+         str_eq_lit(name, "iswctype") || str_eq_lit(name, "wctrans") ||
+         str_eq_lit(name, "towctrans") ||
          str_eq_lit(name, "wcslen") || str_eq_lit(name, "wcscpy") ||
          str_eq_lit(name, "wcsncpy") || str_eq_lit(name, "wcscat") ||
          str_eq_lit(name, "wcsncat") || str_eq_lit(name, "wcscmp") ||
@@ -2559,6 +2562,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_difftime";
   } else if (str_eq_lit(name, "__error")) {
     target_lit = "__agc_runtime___error";
+  } else if (str_eq_lit(name, "signal")) {
+    target_lit = "__agc_runtime_signal";
+  } else if (str_eq_lit(name, "raise")) {
+    target_lit = "__agc_runtime_raise";
   } else if (str_eq_lit(name, "strcpy")) {
     target_lit = "__agc_runtime_strcpy";
   } else if (str_eq_lit(name, "strncpy")) {
@@ -2691,6 +2698,14 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_cosh";
   } else if (str_eq_lit(name, "tanh")) {
     target_lit = "__agc_runtime_tanh";
+  } else if (str_eq_lit(name, "wctype")) {
+    target_lit = "__agc_runtime_wctype";
+  } else if (str_eq_lit(name, "iswctype")) {
+    target_lit = "__agc_runtime_iswctype";
+  } else if (str_eq_lit(name, "wctrans")) {
+    target_lit = "__agc_runtime_wctrans";
+  } else if (str_eq_lit(name, "towctrans")) {
+    target_lit = "__agc_runtime_towctrans";
   } else if (str_eq_lit(name, "wcslen")) {
     target_lit = "__agc_runtime_wcslen";
   } else if (str_eq_lit(name, "wcscpy")) {

@@ -56,6 +56,7 @@ double __agc_runtime_exp(double x);
 double __agc_runtime_log(double x);
 long __agc_runtime_memcpy(long dst_addr, long src_addr, long n);
 long __agc_runtime_wcstol(long nptr_addr, long endptr_addr, int base);
+int __agc_runtime_strcmp(long a_addr, long b_addr);
 
 long __agc_runtime_malloc(long size) {
   long aligned = (size + 7) & -8;
@@ -201,6 +202,40 @@ int __agc_runtime_tolower(int c) {
 
 int __agc_runtime_toupper(int c) {
   return __agc_runtime_islower(c) ? c - 32 : c;
+}
+
+int __agc_runtime_wctype(long property_addr) {
+  char *p = ag_rt_ptr(property_addr);
+  if (__agc_runtime_strcmp((long)p, (long)"alnum") == 0) return 1;
+  if (__agc_runtime_strcmp((long)p, (long)"alpha") == 0) return 2;
+  if (__agc_runtime_strcmp((long)p, (long)"blank") == 0) return 3;
+  if (__agc_runtime_strcmp((long)p, (long)"digit") == 0) return 4;
+  if (__agc_runtime_strcmp((long)p, (long)"space") == 0) return 5;
+  if (__agc_runtime_strcmp((long)p, (long)"xdigit") == 0) return 6;
+  return 0;
+}
+
+int __agc_runtime_iswctype(int wc, int desc) {
+  if (desc == 1) return __agc_runtime_isalnum(wc);
+  if (desc == 2) return __agc_runtime_isalpha(wc);
+  if (desc == 3) return __agc_runtime_isblank(wc);
+  if (desc == 4) return __agc_runtime_isdigit(wc);
+  if (desc == 5) return __agc_runtime_isspace(wc);
+  if (desc == 6) return __agc_runtime_isxdigit(wc);
+  return 0;
+}
+
+int __agc_runtime_wctrans(long property_addr) {
+  char *p = ag_rt_ptr(property_addr);
+  if (__agc_runtime_strcmp((long)p, (long)"tolower") == 0) return 1;
+  if (__agc_runtime_strcmp((long)p, (long)"toupper") == 0) return 2;
+  return 0;
+}
+
+int __agc_runtime_towctrans(int wc, int desc) {
+  if (desc == 1) return __agc_runtime_tolower(wc);
+  if (desc == 2) return __agc_runtime_toupper(wc);
+  return wc;
 }
 
 long __agc_runtime_wcslen(long s_addr) {
@@ -580,6 +615,17 @@ long __agc_runtime_getenv(long name_addr) {
 
 int __agc_runtime_system(long command_addr) {
   (void)command_addr;
+  return 0;
+}
+
+long __agc_runtime_signal(int sig, long handler_addr) {
+  (void)sig;
+  (void)handler_addr;
+  return 0;
+}
+
+int __agc_runtime_raise(int sig) {
+  (void)sig;
   return 0;
 }
 

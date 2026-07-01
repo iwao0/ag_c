@@ -358,6 +358,13 @@ unsigned long mbsrtowcs(int *dst, char **src, unsigned long len, void *ps);
 unsigned long wcsrtombs(char *dst, int **src, unsigned long len, void *ps);
 int btowc(int c);
 int wctob(int c);
+typedef void (*sig_handler_t)(int);
+sig_handler_t signal(int sig, sig_handler_t handler);
+int raise(int sig);
+int wctype(char *property);
+int iswctype(int wc, int desc);
+int wctrans(char *property);
+int towctrans(int wc, int desc);
 int putchar(int c);
 typedef void FILE;
 FILE *fopen(char *path, char *mode);
@@ -413,6 +420,7 @@ int main(void) {
   void *nullv = 0;
   long tloc = 123;
   int *errp = __error();
+  sig_handler_t sigh = 0;
   fexcept_t flag = 0;
   fenv_t env = {0, 0};
   int ws[8];
@@ -520,6 +528,7 @@ int main(void) {
          time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
          (int)difftime(100, 58) == 42 &&
          errp != 0 && (*errp = 34, *__error() == 34) &&
+         signal(2, sigh) == 0 && raise(2) == 0 &&
          isdigit('7') && !isdigit('x') &&
          isalnum('A') && isalnum('9') && !isalnum('!') &&
          isalpha('Q') && !isalpha('7') &&
@@ -537,6 +546,8 @@ int main(void) {
          iswdigit('8') && iswalnum('Z') && iswalpha('Z') &&
          iswblank('\t') && iswspace('\n') && iswxdigit('F') &&
          towlower('M') == 'm' && towupper('m') == 'M' &&
+         iswctype('7', wctype("digit")) && !iswctype('x', wctype("digit")) &&
+         towctrans('q', wctrans("toupper")) == 'Q' &&
          wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
          wcsncmp(we, ws, 2) == 0 && wcschr(we, 'b') == we + 1 &&
          wcsrchr(we, 'b') == we + 4 &&
@@ -830,6 +841,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.clock>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.difftime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.__error>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.signal>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.raise>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fegetexceptflag>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.feraiseexcept>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fesetexceptflag>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -844,6 +857,10 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.tolower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.iswalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.towlower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wctype>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.iswctype>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wctrans>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.towctrans>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsncpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcscat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsncat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
