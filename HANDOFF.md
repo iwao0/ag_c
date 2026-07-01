@@ -1,17 +1,26 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き314: stdheader math runtime fixture）
+最終更新: 2026-07-01（続き315: WAT math stub dependency closure）
 
 ## 現状
 - `make test` = **green**。
-  内訳として `./build/test_e2e` = **1145/1145 green**、
-  `./build/test_wasm32_e2e` = **1116 compiled / 1116 executed green**、
-  `./build/test_wasm32_object` = **1117/1117 e2e fixture object compile + validate green**。
+  内訳として `./build/test_e2e` = **1146/1146 green**、
+  `./build/test_wasm32_e2e` = **1117 compiled / 1117 executed green**、
+  `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**。
 - 直近確認:
-  `make wasm32-object-link-all-fixture-scan` = **1116 pass / 1 skip / validate 1116 / run 1116 / import skip 0**、
+  `make test-wasm-obj-linker` = **green**、
+  `make wasm32-object-link-all-fixture-scan` = **1117 pass / 1 skip / validate 1117 / run 1117 / import skip 0**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き315: **WAT math stub の依存関係を閉じる fixture を追加**。
+  `test/fixtures/stdheader/math_dependency_ops.c` を追加し、`tan`、`log2`、`asin`、`tanh` だけを直接呼ぶ。
+  WAT minimal libc stub は、これらの内部依存である `sin` / `cos`、`log`、`atan2` / `atan` / `sqrt`、
+  `exp` をユーザー定義がない場合に自動で emit するようにした。これで単独の math helper 呼び出しでも
+  未定義 `$sin` / `$log` / `$atan2` / `$exp` などを残さない。
+  確認: `make test`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き314: **math runtime helper を通常 fixture で検証**。
   `test/fixtures/stdheader/math_runtime_ops.c` を追加し、`test_e2e` と `test_wasm32_e2e` の両方に登録した。
   `sin` / `cos` / `tan`、`exp` / `log` / `log2` / `log10`、`atan` / `atan2` /
