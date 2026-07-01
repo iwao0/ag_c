@@ -255,6 +255,33 @@ int __agc_runtime_putchar(int c) {
   return c;
 }
 
+int __agc_runtime_puts(long s_addr) {
+  return (int)__agc_runtime_strlen(s_addr) + 1;
+}
+
+int __agc_runtime_fputs(long s_addr, long stream_addr) {
+  (void)stream_addr;
+  return (int)__agc_runtime_strlen(s_addr);
+}
+
+int __agc_runtime_fputc(int c, long stream_addr) {
+  (void)stream_addr;
+  return c;
+}
+
+int __agc_runtime_fflush(long stream_addr) {
+  (void)stream_addr;
+  return 0;
+}
+
+void __agc_runtime_perror(long s_addr) {
+  (void)s_addr;
+}
+
+int __agc_runtime_getchar(void) {
+  return -1;
+}
+
 long __agc_runtime_fopen(long path_addr, long mode_addr) {
   (void)path_addr;
   char *mode = ag_rt_ptr(mode_addr);

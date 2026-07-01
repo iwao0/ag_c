@@ -302,6 +302,12 @@ int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
 int printf(char *fmt, ...);
 int fprintf(FILE *stream, char *fmt, ...);
+int puts(char *s);
+int fputs(char *s, FILE *stream);
+int fputc(int c, FILE *stream);
+int fflush(FILE *stream);
+void perror(char *s);
+int getchar(void);
 int main(void) {
   char a[32];
   char b[32];
@@ -420,6 +426,12 @@ int main(void) {
          ch2 == 'B' &&
          printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
          fprintf(0, "[%04d]", 7) == 6 &&
+         puts("ok") == 3 &&
+         fputs("abc", 0) == 3 &&
+         fputc('R', 0) == 'R' &&
+         fflush(0) == 0 &&
+         (perror("ignored"), 1) &&
+         getchar() == -1 &&
          putchar('Z') == 'Z' ? 42 : 1;
 }
 SRC
@@ -645,6 +657,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.tanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.puts>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fputs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fputc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fflush>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.perror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.getchar>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
 
 cat > "$out_dir/stdio_data_runtime.c" <<'SRC'

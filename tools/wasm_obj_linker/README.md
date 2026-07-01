@@ -53,7 +53,8 @@ Supported:
 - Default runtime-object linking through `build/libagc_runtime.o`; currently it
   carries the small C runtime used by the fixture suite: formatter helpers
   (`printf`, `fprintf`, `snprintf`, `sprintf`), string/memory/ctype helpers,
-  `putchar`, minimal file I/O stubs, a tiny bump allocator, `imaxabs`,
+  `puts`/`fputs`/`fputc`/`putchar`/`fflush`/`perror`/`getchar`,
+  minimal file I/O stubs, a tiny bump allocator, `imaxabs`,
   wide-char helpers, fenv/locale helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
   `pow`, remainder, cube-root, and rounding helpers, stdio globals, and `__assert_rtn`.

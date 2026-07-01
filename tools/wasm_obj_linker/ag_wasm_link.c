@@ -727,7 +727,10 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncmp") ||
          str_eq_lit(name, "strchr") || str_eq_lit(name, "strrchr") ||
-         str_eq_lit(name, "memcmp") || str_eq_lit(name, "putchar") ||
+         str_eq_lit(name, "memcmp") || str_eq_lit(name, "puts") ||
+         str_eq_lit(name, "putchar") || str_eq_lit(name, "fputs") ||
+         str_eq_lit(name, "fputc") || str_eq_lit(name, "fflush") ||
+         str_eq_lit(name, "perror") || str_eq_lit(name, "getchar") ||
          str_eq_lit(name, "sin") || str_eq_lit(name, "cos") ||
          str_eq_lit(name, "tan") ||
          str_eq_lit(name, "sprintf") ||
@@ -2481,8 +2484,20 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strchr";
   } else if (str_eq_lit(name, "strrchr")) {
     target_lit = "__agc_runtime_strrchr";
+  } else if (str_eq_lit(name, "puts")) {
+    target_lit = "__agc_runtime_puts";
   } else if (str_eq_lit(name, "putchar")) {
     target_lit = "__agc_runtime_putchar";
+  } else if (str_eq_lit(name, "fputs")) {
+    target_lit = "__agc_runtime_fputs";
+  } else if (str_eq_lit(name, "fputc")) {
+    target_lit = "__agc_runtime_fputc";
+  } else if (str_eq_lit(name, "fflush")) {
+    target_lit = "__agc_runtime_fflush";
+  } else if (str_eq_lit(name, "perror")) {
+    target_lit = "__agc_runtime_perror";
+  } else if (str_eq_lit(name, "getchar")) {
+    target_lit = "__agc_runtime_getchar";
   } else if (str_eq_lit(name, "fopen")) {
     target_lit = "__agc_runtime_fopen";
   } else if (str_eq_lit(name, "fclose")) {
