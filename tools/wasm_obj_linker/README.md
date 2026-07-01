@@ -56,7 +56,7 @@ Supported:
   string/memory/ctype helpers,
   `puts`/`fputs`/`fputc`/`putchar`/`fflush`/`perror`/`getchar`,
   minimal file I/O stubs including seek/tell/error helpers,
-  POSIX-style `open`/`read`/`close` plus `fdopen`,
+  POSIX-style `open`/`read`/`close`/`fstat` plus `fdopen`,
   a tiny bump allocator plus small stdlib helpers
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
   `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,

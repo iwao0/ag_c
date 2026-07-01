@@ -108,6 +108,20 @@ int __agc_runtime_close(int fd) {
   return 0;
 }
 
+struct ag_rt_stat {
+  unsigned short st_mode;
+  long st_size;
+};
+
+int __agc_runtime_fstat(int fd, long st_addr) {
+  (void)fd;
+  if (!st_addr) return -1;
+  struct ag_rt_stat *st = (struct ag_rt_stat *)ag_rt_ptr(st_addr);
+  st->st_mode = 0100000;
+  st->st_size = ag_rt_file_len;
+  return 0;
+}
+
 long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
   (void)fd;
   char *dst = ag_rt_ptr(buf_addr);

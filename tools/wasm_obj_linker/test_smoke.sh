@@ -466,6 +466,10 @@ int wctrans(char *property);
 int towctrans(int wc, int desc);
 int putchar(int c);
 typedef void FILE;
+struct stat {
+  unsigned short st_mode;
+  long st_size;
+};
 FILE *fopen(char *path, char *mode);
 FILE *fdopen(int fd, char *mode);
 int fclose(FILE *stream);
@@ -474,6 +478,7 @@ unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *s
 int open(char *path, int oflag);
 long read(int fd, void *buf, unsigned long count);
 int close(int fd);
+int fstat(int fd, struct stat *st);
 int fgetc(FILE *stream);
 int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
@@ -636,6 +641,8 @@ int main(void) {
   int wrote = fwrite("A\nB", 1, 3, wf);
   fclose(wf);
   int fd = open("tmp.txt", 0);
+  struct stat st = {0, 0};
+  int stat_ok = fstat(fd, &st);
   char fdbuf[4];
   long fdread = read(fd, fdbuf, 3);
   int close_ok = close(fd);
@@ -876,7 +883,8 @@ int main(void) {
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          r[0] == 'A' &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
-         fd >= 0 && fdread == 3 && fdbuf[0] == 'A' && fdbuf[1] == '\n' &&
+         fd >= 0 && stat_ok == 0 && (st.st_mode & 0170000) == 0100000 &&
+         st.st_size == 3 && fdread == 3 && fdbuf[0] == 'A' && fdbuf[1] == '\n' &&
          fdbuf[2] == 'B' && close_ok == 0 &&
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
          pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
@@ -1206,6 +1214,7 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.open>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.read>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.close>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fstat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fseek>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ftell>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.rewind>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
