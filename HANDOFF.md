@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き317: libagc_runtime stdio helpers）
+最終更新: 2026-07-01（続き318: libagc_runtime ctype/wctype helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -14,6 +14,13 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き318: **`libagc_runtime.o` の ctype/wctype helper を拡張**。
+  `isalnum` / `isblank` / `iscntrl` / `isgraph` / `islower` / `isprint` / `ispunct` /
+  `isspace` / `isupper` / `isxdigit` / `tolower` を追加し、対応する `isw*` と `towlower`
+  も同じ runtime helper へ bridge するようにした。`test_smoke.sh` の `libc_runtime.c` で
+  narrow/wide の代表ケースと `--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip。
 - 続き317: **`libagc_runtime.o` に stdio 小物 helper を追加**。
   `puts` / `fputs` / `fputc` / `fflush` / `perror` / `getchar` を runtime object 本体へ追加し、
   `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。出力内容はまだ保持しないが、

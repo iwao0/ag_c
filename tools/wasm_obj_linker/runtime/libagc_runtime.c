@@ -115,13 +115,58 @@ int __agc_runtime_isdigit(int c) {
   return c >= '0' && c <= '9';
 }
 
+int __agc_runtime_islower(int c) {
+  return c >= 'a' && c <= 'z';
+}
+
+int __agc_runtime_isupper(int c) {
+  return c >= 'A' && c <= 'Z';
+}
+
 int __agc_runtime_isalpha(int c) {
-  int lower = c | 32;
-  return lower >= 'a' && lower <= 'z';
+  return __agc_runtime_islower(c) || __agc_runtime_isupper(c);
+}
+
+int __agc_runtime_isalnum(int c) {
+  return __agc_runtime_isalpha(c) || __agc_runtime_isdigit(c);
+}
+
+int __agc_runtime_isblank(int c) {
+  return c == ' ' || c == '\t';
+}
+
+int __agc_runtime_iscntrl(int c) {
+  return (c >= 0 && c < 32) || c == 127;
+}
+
+int __agc_runtime_isgraph(int c) {
+  return c >= 33 && c <= 126;
+}
+
+int __agc_runtime_isprint(int c) {
+  return c >= 32 && c <= 126;
+}
+
+int __agc_runtime_ispunct(int c) {
+  return __agc_runtime_isgraph(c) && !__agc_runtime_isalnum(c);
+}
+
+int __agc_runtime_isspace(int c) {
+  return c == ' ' || c == '\f' || c == '\n' || c == '\r' || c == '\t' || c == '\v';
+}
+
+int __agc_runtime_isxdigit(int c) {
+  return __agc_runtime_isdigit(c) ||
+         (c >= 'a' && c <= 'f') ||
+         (c >= 'A' && c <= 'F');
+}
+
+int __agc_runtime_tolower(int c) {
+  return __agc_runtime_isupper(c) ? c + 32 : c;
 }
 
 int __agc_runtime_toupper(int c) {
-  return c >= 'a' && c <= 'z' ? c - 32 : c;
+  return __agc_runtime_islower(c) ? c - 32 : c;
 }
 
 long __agc_runtime_wcslen(long s_addr) {

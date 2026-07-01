@@ -720,8 +720,14 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "__assert_rtn") ||
          str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
          str_eq_lit(name, "memset") || str_eq_lit(name, "memcpy") ||
-         str_eq_lit(name, "abs") || str_eq_lit(name, "isdigit") ||
-         str_eq_lit(name, "isalpha") || str_eq_lit(name, "toupper") ||
+         str_eq_lit(name, "abs") || str_eq_lit(name, "isalnum") ||
+         str_eq_lit(name, "isalpha") || str_eq_lit(name, "isblank") ||
+         str_eq_lit(name, "iscntrl") || str_eq_lit(name, "isdigit") ||
+         str_eq_lit(name, "isgraph") || str_eq_lit(name, "islower") ||
+         str_eq_lit(name, "isprint") || str_eq_lit(name, "ispunct") ||
+         str_eq_lit(name, "isspace") || str_eq_lit(name, "isupper") ||
+         str_eq_lit(name, "isxdigit") || str_eq_lit(name, "tolower") ||
+         str_eq_lit(name, "toupper") ||
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
          str_eq_lit(name, "calloc") || str_eq_lit(name, "atoi") ||
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
@@ -741,8 +747,14 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "fgets") ||
          str_eq_lit(name, "imaxabs") || str_eq_lit(name, "feclearexcept") ||
          str_eq_lit(name, "fetestexcept") || str_eq_lit(name, "setlocale") ||
-         str_eq_lit(name, "localeconv") || str_eq_lit(name, "iswalpha") ||
-         str_eq_lit(name, "towupper") || str_eq_lit(name, "iswdigit") ||
+         str_eq_lit(name, "localeconv") || str_eq_lit(name, "iswalnum") ||
+         str_eq_lit(name, "iswalpha") || str_eq_lit(name, "iswblank") ||
+         str_eq_lit(name, "iswcntrl") || str_eq_lit(name, "iswdigit") ||
+         str_eq_lit(name, "iswgraph") || str_eq_lit(name, "iswlower") ||
+         str_eq_lit(name, "iswprint") || str_eq_lit(name, "iswpunct") ||
+         str_eq_lit(name, "iswspace") || str_eq_lit(name, "iswupper") ||
+         str_eq_lit(name, "iswxdigit") || str_eq_lit(name, "towlower") ||
+         str_eq_lit(name, "towupper") ||
          str_eq_lit(name, "wcslen") || str_eq_lit(name, "wcscpy") ||
          str_eq_lit(name, "wcscmp") || str_eq_lit(name, "sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "pow") ||
@@ -2450,14 +2462,34 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_abs";
   } else if (str_eq_lit(name, "imaxabs")) {
     target_lit = "__agc_runtime_imaxabs";
-  } else if (str_eq_lit(name, "isdigit")) {
-    target_lit = "__agc_runtime_isdigit";
-  } else if (str_eq_lit(name, "iswdigit")) {
-    target_lit = "__agc_runtime_isdigit";
+  } else if (str_eq_lit(name, "isalnum") || str_eq_lit(name, "iswalnum")) {
+    target_lit = "__agc_runtime_isalnum";
   } else if (str_eq_lit(name, "isalpha")) {
     target_lit = "__agc_runtime_isalpha";
   } else if (str_eq_lit(name, "iswalpha")) {
     target_lit = "__agc_runtime_isalpha";
+  } else if (str_eq_lit(name, "isblank") || str_eq_lit(name, "iswblank")) {
+    target_lit = "__agc_runtime_isblank";
+  } else if (str_eq_lit(name, "iscntrl") || str_eq_lit(name, "iswcntrl")) {
+    target_lit = "__agc_runtime_iscntrl";
+  } else if (str_eq_lit(name, "isdigit") || str_eq_lit(name, "iswdigit")) {
+    target_lit = "__agc_runtime_isdigit";
+  } else if (str_eq_lit(name, "isgraph") || str_eq_lit(name, "iswgraph")) {
+    target_lit = "__agc_runtime_isgraph";
+  } else if (str_eq_lit(name, "islower") || str_eq_lit(name, "iswlower")) {
+    target_lit = "__agc_runtime_islower";
+  } else if (str_eq_lit(name, "isprint") || str_eq_lit(name, "iswprint")) {
+    target_lit = "__agc_runtime_isprint";
+  } else if (str_eq_lit(name, "ispunct") || str_eq_lit(name, "iswpunct")) {
+    target_lit = "__agc_runtime_ispunct";
+  } else if (str_eq_lit(name, "isspace") || str_eq_lit(name, "iswspace")) {
+    target_lit = "__agc_runtime_isspace";
+  } else if (str_eq_lit(name, "isupper") || str_eq_lit(name, "iswupper")) {
+    target_lit = "__agc_runtime_isupper";
+  } else if (str_eq_lit(name, "isxdigit") || str_eq_lit(name, "iswxdigit")) {
+    target_lit = "__agc_runtime_isxdigit";
+  } else if (str_eq_lit(name, "tolower") || str_eq_lit(name, "towlower")) {
+    target_lit = "__agc_runtime_tolower";
   } else if (str_eq_lit(name, "toupper")) {
     target_lit = "__agc_runtime_toupper";
   } else if (str_eq_lit(name, "towupper")) {

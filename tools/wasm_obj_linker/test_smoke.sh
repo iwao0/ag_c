@@ -239,10 +239,26 @@ void *memcpy(void *dst, void *src, unsigned long n);
 int abs(int x);
 long imaxabs(long x);
 int isdigit(int c);
+int isalnum(int c);
 int isalpha(int c);
+int isblank(int c);
+int iscntrl(int c);
+int isgraph(int c);
+int islower(int c);
+int isprint(int c);
+int ispunct(int c);
+int isspace(int c);
+int isupper(int c);
+int isxdigit(int c);
+int tolower(int c);
 int toupper(int c);
 int iswdigit(int c);
+int iswalnum(int c);
 int iswalpha(int c);
+int iswblank(int c);
+int iswspace(int c);
+int iswxdigit(int c);
+int towlower(int c);
 int towupper(int c);
 void *malloc(long size);
 void *calloc(long nmemb, long size);
@@ -381,9 +397,22 @@ int main(void) {
          abs(-42) == 42 &&
          imaxabs(-1234567890123L) == 1234567890123L &&
          isdigit('7') && !isdigit('x') &&
+         isalnum('A') && isalnum('9') && !isalnum('!') &&
          isalpha('Q') && !isalpha('7') &&
+         isblank('\t') && !isblank('\n') &&
+         iscntrl('\n') && !iscntrl('A') &&
+         isgraph('!') && !isgraph(' ') &&
+         islower('q') && !islower('Q') &&
+         isprint(' ') && !isprint('\n') &&
+         ispunct('!') && !ispunct('A') &&
+         isspace('\n') && !isspace('A') &&
+         isupper('Q') && !isupper('q') &&
+         isxdigit('f') && isxdigit('A') && !isxdigit('g') &&
+         tolower('Q') == 'q' &&
          toupper('q') == 'Q' &&
-         iswdigit('8') && iswalpha('Z') && towupper('m') == 'M' &&
+         iswdigit('8') && iswalnum('Z') && iswalpha('Z') &&
+         iswblank('\t') && iswspace('\n') && iswxdigit('F') &&
+         towlower('M') == 'm' && towupper('m') == 'M' &&
          wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
          feclearexcept(31) == 0 && fetestexcept(16) == 16 &&
          lc->decimal_point[0] == '.' &&
@@ -641,6 +670,11 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isspace>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tolower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.iswalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.towlower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
