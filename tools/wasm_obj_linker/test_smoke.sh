@@ -267,6 +267,8 @@ void free(void *p);
 int atexit(void *func);
 long atol(char *s);
 long strtol(char *s, char **endptr, int base);
+long strtoimax(char *s, char **endptr, int base);
+unsigned long strtoumax(char *s, char **endptr, int base);
 int rand(void);
 void srand(int seed);
 long labs(long n);
@@ -436,7 +438,11 @@ int main(void) {
   r[1] = 0;
   r = realloc(r, 4);
   char *endp = 0;
+  char *imax_endp = 0;
+  char *umax_endp = 0;
   long parsed = strtol("  -2a", &endp, 16);
+  long parsed_imax = strtoimax("  7f!", &imax_endp, 16);
+  unsigned long parsed_umax = strtoumax("  377!", &umax_endp, 8);
   srand(1);
   int rand1 = rand();
   int rand2 = rand();
@@ -597,6 +603,8 @@ int main(void) {
          imaxabs(-1234567890123L) == 1234567890123L &&
          atol(" -1234x") == -1234 &&
          parsed == -42 && *endp == 0 &&
+         parsed_imax == 127 && *imax_endp == '!' &&
+         parsed_umax == 255 && *umax_endp == '!' &&
          rand1 != rand2 &&
          atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 && system("true") == 0 &&
          nums[0] == 1 && nums[1] == 2 && nums[2] == 3 && nums[3] == 4 && nums[4] == 5 &&
@@ -918,6 +926,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.realloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtoimax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtoumax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.qsort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.bsearch>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.rand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

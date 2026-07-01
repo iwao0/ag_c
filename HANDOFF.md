@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き330: libagc_runtime wide formatted stubs）
+最終更新: 2026-07-01（続き331: libagc_runtime inttypes conversion helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -15,6 +15,15 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き331: **`libagc_runtime.o` に inttypes 変換 helper を追加**。
+  `strtoimax` / `strtoumax` を runtime object 本体へ追加し、`ag_wasm_link` の runtime symbol 判定と
+  ABI bridge map へ登録した。`strtoimax` は既存 `strtol` 相当、`strtoumax` は符号付き入力も
+  unsigned に畳む最小実装。smoke では 16/8 進変換と `--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = 1118/1118、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip、
+  `make test`、`bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0。
 - 続き330: **`libagc_runtime.o` に wide formatted stub を追加**。
   `swprintf` / `swscanf` を runtime object 本体へ追加し、`ag_wasm_link` の runtime symbol 判定と
   ABI bridge map へ登録した。`swprintf` は wide buffer 向けの最小 formatter

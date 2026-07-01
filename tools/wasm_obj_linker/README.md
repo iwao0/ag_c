@@ -58,7 +58,8 @@ Supported:
   minimal file I/O stubs including seek/tell/error helpers,
   a tiny bump allocator plus small stdlib helpers
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
-  `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`),
+  `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,
+  `strtoimax`, `strtoumax`),
   `time`/`clock`/`difftime`, `errno` storage, wide-char string/memory/conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,

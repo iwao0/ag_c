@@ -732,7 +732,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
          str_eq_lit(name, "calloc") || str_eq_lit(name, "realloc") ||
          str_eq_lit(name, "atoi") || str_eq_lit(name, "atol") ||
-         str_eq_lit(name, "strtol") || str_eq_lit(name, "rand") ||
+         str_eq_lit(name, "strtol") || str_eq_lit(name, "strtoimax") ||
+         str_eq_lit(name, "strtoumax") || str_eq_lit(name, "rand") ||
          str_eq_lit(name, "srand") || str_eq_lit(name, "labs") ||
          str_eq_lit(name, "qsort") || str_eq_lit(name, "bsearch") ||
          str_eq_lit(name, "exit") || str_eq_lit(name, "abort") ||
@@ -2552,6 +2553,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_atol";
   } else if (str_eq_lit(name, "strtol")) {
     target_lit = "__agc_runtime_strtol";
+  } else if (str_eq_lit(name, "strtoimax")) {
+    target_lit = "__agc_runtime_strtoimax";
+  } else if (str_eq_lit(name, "strtoumax")) {
+    target_lit = "__agc_runtime_strtoumax";
   } else if (str_eq_lit(name, "labs")) {
     target_lit = "__agc_runtime_labs";
   } else if (str_eq_lit(name, "qsort")) {
