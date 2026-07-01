@@ -714,12 +714,22 @@ int __agc_runtime_sprintf(long buf_addr, long fmt_addr, ...) {
 }
 
 int __agc_runtime_printf(long fmt_addr, ...) {
-  return (int)__agc_runtime_strlen(fmt_addr);
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap;
+  va_start(ap, fmt_addr);
+  int n = ag_rt_vformat((char *)0, 0, 1, fmt, ap);
+  va_end(ap);
+  return n;
 }
 
 int __agc_runtime_fprintf(long stream_addr, long fmt_addr, ...) {
   (void)stream_addr;
-  return (int)__agc_runtime_strlen(fmt_addr);
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap;
+  va_start(ap, fmt_addr);
+  int n = ag_rt_vformat((char *)0, 0, 1, fmt, ap);
+  va_end(ap);
+  return n;
 }
 
 void __agc_runtime___assert_rtn(long func_addr, long file_addr, int line, long expr_addr) {

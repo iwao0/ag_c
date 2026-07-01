@@ -418,8 +418,8 @@ int main(void) {
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
          linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
          ch2 == 'B' &&
-         printf("x=%d\n", 42) == 5 &&
-         fprintf(0, "y=%d\n", 17) == 5 &&
+         printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
+         fprintf(0, "[%04d]", 7) == 6 &&
          putchar('Z') == 'Z' ? 42 : 1;
 }
 SRC

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き315: WAT math stub dependency closure）
+最終更新: 2026-07-01（続き316: libagc_runtime printf/fprintf formatted count）
 
 ## 現状
 - `make test` = **green**。
@@ -9,10 +9,16 @@
   `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test-wasm-obj-linker` = **green**、
+  `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**、
   `make wasm32-object-link-all-fixture-scan` = **1117 pass / 1 skip / validate 1117 / run 1117 / import skip 0**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き316: **`libagc_runtime.o` の `printf` / `fprintf` 戻り値を format 展開後の文字数へ修正**。
+  旧実装は format 文字列長だけを返しており、`printf("value=%d", 1234)` のような場合に C の戻り値と
+  ずれていた。`ag_rt_vformat` を出力なし・count のみで使うようにし、`test_smoke.sh` の
+  `libc_runtime.c` で `%d` / `%u` / `%s` / `%c` / `%%` と `%04d` の戻り値を確認。
+  確認: `make test-wasm-obj-linker`、`./build/test_wasm32_object`。
 - 続き315: **WAT math stub の依存関係を閉じる fixture を追加**。
   `test/fixtures/stdheader/math_dependency_ops.c` を追加し、`tan`、`log2`、`asin`、`tanh` だけを直接呼ぶ。
   WAT minimal libc stub は、これらの内部依存である `sin` / `cos`、`log`、`atan2` / `atan` / `sqrt`、
