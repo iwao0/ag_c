@@ -730,7 +730,12 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "isxdigit") || str_eq_lit(name, "tolower") ||
          str_eq_lit(name, "toupper") ||
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
-         str_eq_lit(name, "calloc") || str_eq_lit(name, "atoi") ||
+         str_eq_lit(name, "calloc") || str_eq_lit(name, "realloc") ||
+         str_eq_lit(name, "atoi") || str_eq_lit(name, "atol") ||
+         str_eq_lit(name, "strtol") || str_eq_lit(name, "rand") ||
+         str_eq_lit(name, "srand") || str_eq_lit(name, "labs") ||
+         str_eq_lit(name, "atexit") || str_eq_lit(name, "getenv") ||
+         str_eq_lit(name, "system") ||
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncat") ||
          str_eq_lit(name, "strncmp") || str_eq_lit(name, "strchr") ||
@@ -2507,8 +2512,26 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_free";
   } else if (str_eq_lit(name, "calloc")) {
     target_lit = "__agc_runtime_calloc";
+  } else if (str_eq_lit(name, "realloc")) {
+    target_lit = "__agc_runtime_realloc";
   } else if (str_eq_lit(name, "atoi")) {
     target_lit = "__agc_runtime_atoi";
+  } else if (str_eq_lit(name, "atol")) {
+    target_lit = "__agc_runtime_atol";
+  } else if (str_eq_lit(name, "strtol")) {
+    target_lit = "__agc_runtime_strtol";
+  } else if (str_eq_lit(name, "labs")) {
+    target_lit = "__agc_runtime_labs";
+  } else if (str_eq_lit(name, "rand")) {
+    target_lit = "__agc_runtime_rand";
+  } else if (str_eq_lit(name, "srand")) {
+    target_lit = "__agc_runtime_srand";
+  } else if (str_eq_lit(name, "atexit")) {
+    target_lit = "__agc_runtime_atexit";
+  } else if (str_eq_lit(name, "getenv")) {
+    target_lit = "__agc_runtime_getenv";
+  } else if (str_eq_lit(name, "system")) {
+    target_lit = "__agc_runtime_system";
   } else if (str_eq_lit(name, "strcpy")) {
     target_lit = "__agc_runtime_strcpy";
   } else if (str_eq_lit(name, "strncpy")) {

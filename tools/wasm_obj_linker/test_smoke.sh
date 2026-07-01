@@ -262,7 +262,16 @@ int towlower(int c);
 int towupper(int c);
 void *malloc(long size);
 void *calloc(long nmemb, long size);
+void *realloc(void *ptr, long size);
 void free(void *p);
+int atexit(void *func);
+long atol(char *s);
+long strtol(char *s, char **endptr, int base);
+int rand(void);
+void srand(int seed);
+long labs(long n);
+char *getenv(char *name);
+int system(char *command);
 int feclearexcept(int excepts);
 int fetestexcept(int excepts);
 char *setlocale(int category, char *locale);
@@ -356,6 +365,16 @@ int main(void) {
   char *tok4 = strtok(nullp, ",;");
   char *p = malloc(8);
   char *q = calloc(4, 1);
+  char *r = malloc(2);
+  r[0] = 'A';
+  r[1] = 0;
+  r = realloc(r, 4);
+  char *endp = 0;
+  long parsed = strtol("  -2a", &endp, 16);
+  srand(1);
+  int rand1 = rand();
+  int rand2 = rand();
+  void *nullv = 0;
   int ws[8];
   int wd[8];
   ws[0] = 'A';
@@ -422,7 +441,12 @@ int main(void) {
          strcmp(tok2, "bb") == 0 && strcmp(tok3, "cc") == 0 && tok4 == 0 &&
          strerror(5)[0] == 'e' &&
          abs(-42) == 42 &&
+         labs(-1234567890123L) == 1234567890123L &&
          imaxabs(-1234567890123L) == 1234567890123L &&
+         atol(" -1234x") == -1234 &&
+         parsed == -42 && *endp == 0 &&
+         rand1 != rand2 &&
+         atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 && system("true") == 0 &&
          isdigit('7') && !isdigit('x') &&
          isalnum('A') && isalnum('9') && !isalnum('!') &&
          isalpha('Q') && !isalpha('7') &&
@@ -477,6 +501,7 @@ int main(void) {
          tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
+         r[0] == 'A' &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
          linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
          ch2 == 'B' &&
@@ -703,6 +728,15 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.strtok>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strerror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.realloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.rand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.srand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.labs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atexit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.getenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.system>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.isalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.isspace>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tolower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

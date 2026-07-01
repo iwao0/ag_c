@@ -54,7 +54,9 @@ Supported:
   carries the small C runtime used by the fixture suite: formatter helpers
   (`printf`, `fprintf`, `snprintf`, `sprintf`), string/memory/ctype helpers,
   `puts`/`fputs`/`fputc`/`putchar`/`fflush`/`perror`/`getchar`,
-  minimal file I/O stubs, a tiny bump allocator, `imaxabs`,
+  minimal file I/O stubs, a tiny bump allocator plus small stdlib helpers
+  (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
+  `getenv`, `system`, `imaxabs`),
   wide-char helpers, fenv/locale helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
   `pow`, remainder, cube-root, and rounding helpers, stdio globals, and `__assert_rtn`.
