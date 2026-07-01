@@ -58,4 +58,5 @@ double __agc_runtime_exp(double x);
 double __agc_runtime_log(double x);
 long __agc_runtime_memcpy(long dst_addr, long src_addr, long n);
 long __agc_runtime_wcstol(long nptr_addr, long endptr_addr, int base);
+unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base);
 int __agc_runtime_strcmp(long a_addr, long b_addr);

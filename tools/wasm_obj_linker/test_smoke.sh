@@ -265,8 +265,11 @@ void *calloc(long nmemb, long size);
 void *realloc(void *ptr, long size);
 void free(void *p);
 int atexit(void *func);
+double atof(char *s);
 long atol(char *s);
 long strtol(char *s, char **endptr, int base);
+unsigned long strtoul(char *s, char **endptr, int base);
+double strtod(char *s, char **endptr);
 long strtoimax(char *s, char **endptr, int base);
 unsigned long strtoumax(char *s, char **endptr, int base);
 int rand(void);
@@ -480,9 +483,14 @@ int main(void) {
   r[1] = 0;
   r = realloc(r, 4);
   char *endp = 0;
+  char *uendp = 0;
+  char *dendp = 0;
   char *imax_endp = 0;
   char *umax_endp = 0;
   long parsed = strtol("  -2a", &endp, 16);
+  unsigned long parsed_u = strtoul("  ff!", &uendp, 16);
+  double parsed_d = strtod(" -12.5e1!", &dendp);
+  double parsed_atof = atof(" 3.25x");
   long parsed_imax = strtoimax("  7f!", &imax_endp, 16);
   unsigned long parsed_umax = strtoumax("  377!", &umax_endp, 8);
   srand(1);
@@ -675,6 +683,9 @@ int main(void) {
          imaxabs(-1234567890123L) == 1234567890123L &&
          atol(" -1234x") == -1234 &&
          parsed == -42 && *endp == 0 &&
+         parsed_u == 255 && *uendp == '!' &&
+         (int)parsed_d == -125 && *dendp == '!' &&
+         (int)(parsed_atof * 100.0) == 325 &&
          parsed_imax == 127 && *imax_endp == '!' &&
          parsed_umax == 255 && *umax_endp == '!' &&
          rand1 != rand2 &&
@@ -1034,8 +1045,11 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.strerror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.realloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atof>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtoul>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtoimax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtoumax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.qsort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

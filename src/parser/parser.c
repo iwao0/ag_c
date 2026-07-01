@@ -2975,7 +2975,8 @@ static void register_toplevel_function_prototype(token_ident_t *tok, int declara
   token_kind_t ret_kind = g_toplevel_decl_base_kind;
   tk_float_kind_t ret_fp_kind = g_toplevel_decl_fp_kind;
   token_kind_t ret_token_kind = (ret_kind == TK_EOF) ? TK_INT : ret_kind;
-  int ret_is_ptr = g_toplevel_decl_base_is_ptr || declarator_is_ptr;
+  int ret_is_ptr = g_toplevel_decl_base_is_ptr || declarator_is_ptr ||
+                   g_toplevel_decl_base_pointer_levels > 0;
   int ret_base_unsigned = g_toplevel_decl_is_unsigned;
   int ret_is_unsigned = !ret_is_ptr && ret_base_unsigned;
   int ret_is_complex = !ret_is_ptr && psx_last_type_is_complex();

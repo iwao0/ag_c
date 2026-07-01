@@ -28,4 +28,9 @@ typedef unsigned long      uintptr_t;
 #define UINT32_MAX 4294967295U
 #define UINT64_MAX 18446744073709551615ULL
 
+#define SIZE_MAX UINT64_MAX
+
+#define INT64_C(c) c##LL
+#define UINT64_C(c) c##ULL
+
 #endif

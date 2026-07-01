@@ -56,6 +56,8 @@ static include_frame_t *include_stack = NULL;
 static int include_depth = 0;
 static size_t macro_expand_steps = 0;
 static int include_last_errno = 0;
+
+static char *normalize_include_path_or_die(const char *path);
 static size_t if_expr_eval_steps = 0;
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
 static bool g_if_expr_eval = true;
@@ -106,10 +108,11 @@ static void pp_error(diag_error_id_t id, const char *arg) {
   diag_emit_internalf(id, "%s", msg);
 }
 
-static void validate_include_path_or_die(const char *path) {
+static void validate_include_path_or_die(const char *path, const char *current_file) {
   if (!path || !*path) {
     pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
+  int allow_parent_ref = current_file && strncmp(current_file, "src/", 4) == 0;
   if (isalpha((unsigned char)path[0]) && path[1] == ':') {
     pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
   }
@@ -120,7 +123,8 @@ static void validate_include_path_or_die(const char *path) {
     if (*p == '\\') {
       pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
     }
-    if ((p == path || p[-1] == '/') && p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
+    if (!allow_parent_ref &&
+        (p == path || p[-1] == '/') && p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
       pp_error(DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN, path);
     }
   }
@@ -306,19 +310,48 @@ static char *read_include_file_secure(const char *candidate, const char *display
   return buf;
 }
 
-static char *load_include_with_allowlist_or_die(const char *filename) {
+static char *dirname_dup_or_null(const char *path) {
+  if (!path) return NULL;
+  const char *slash = strrchr(path, '/');
+  if (!slash) return NULL;
+  size_t len = (size_t)(slash - path + 1);
+  char *dir = calloc(len + 1, 1);
+  if (!dir) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  memcpy(dir, path, len);
+  dir[len] = '\0';
+  return dir;
+}
+
+static char *try_load_include_candidate(const char *root, const char *filename, char **out_loaded_path) {
+  size_t cand_len = strlen(root) + strlen(filename) + 1;
+  char *candidate = calloc(cand_len, 1);
+  if (!candidate) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  snprintf(candidate, cand_len, "%s%s", root, filename);
+  validate_include_realpath_or_die(candidate, filename);
+  char *buf = read_include_file_secure(candidate, filename);
+  if (buf && out_loaded_path) {
+    *out_loaded_path = normalize_include_path_or_die(candidate);
+  }
+  free(candidate);
+  return buf;
+}
+
+static char *load_include_with_allowlist_or_die(const char *filename, const char *current_file,
+                                                char **out_loaded_path) {
   include_last_errno = 0;
+  if (out_loaded_path) *out_loaded_path = NULL;
+  char *current_dir = dirname_dup_or_null(current_file);
+  if (current_dir) {
+    char *buf = try_load_include_candidate(current_dir, filename, out_loaded_path);
+    free(current_dir);
+    if (buf) return buf;
+  }
   for (size_t i = 0; i < sizeof(k_include_search_roots) / sizeof(k_include_search_roots[0]); i++) {
-    const char *root = k_include_search_roots[i];
-    size_t cand_len = strlen(root) + strlen(filename) + 1;
-    char *candidate = calloc(cand_len, 1);
-    if (!candidate) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
-    }
-    snprintf(candidate, cand_len, "%s%s", root, filename);
-    validate_include_realpath_or_die(candidate, filename);
-    char *buf = read_include_file_secure(candidate, filename);
-    free(candidate);
+    char *buf = try_load_include_candidate(k_include_search_roots[i], filename, out_loaded_path);
     if (buf) return buf;
   }
   return NULL;
@@ -2289,18 +2322,22 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
 static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   token_t *tok = after_hash->next;  // skip "include"
   char *filename = consume_include_filename(&tok);
-  validate_include_path_or_die(filename);
+  const char *current_file = tk_get_filename_ctx(g_preprocess_tk_ctx);
+  validate_include_path_or_die(filename, current_file);
   char *normalized = normalize_include_path_or_die(filename);
   free(filename);
   filename = normalized;
-  if (pragma_once_seen(filename)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)
-    free(filename);
-    return;
-  }
-  char *buf = load_include_with_allowlist_or_die(filename);
+  char *loaded_path = NULL;
+  char *buf = load_include_with_allowlist_or_die(filename, current_file, &loaded_path);
   if (!buf) {  // not found / 権限 / symlink loop: 診断して終了 (バッチ include_and_splice 同様)
     diag_error_id_t id = include_read_failure_diag_id();
     diag_emit_internalf(id, diag_message_for(id), filename);
+  }
+  if (!loaded_path) loaded_path = my_strndup(filename, strlen(filename));
+  if (pragma_once_seen(loaded_path)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)
+    free(filename);
+    free(loaded_path);
+    return;
   }
 
   /* ctx 切替前に親状態を保存する。 */
@@ -2309,7 +2346,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   f->parent                  = s->frames;
   f->parent_lex              = s->lex;
   f->buf                     = buf;
-  f->path_owned              = filename;
+  f->path_owned              = loaded_path;
   f->saved_input             = tk_get_user_input_ctx(g_preprocess_tk_ctx);
   f->saved_filename          = tk_get_filename_ctx(g_preprocess_tk_ctx);
   f->saved_line_delta        = s->line_delta;
@@ -2318,12 +2355,12 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
 
   /* 被 include 内の #pragma once が include_stack->path に被 include 名を記録できるよう、
    * tokenize 前に push する。深さ/循環制限もここで発火しうる (バッチ同様)。 */
-  push_include_or_die(filename);
+  push_include_or_die(loaded_path);
 
   /* ctx を被 include に切替。以後 init_token_base が被 include 名で file_name_id を付与し、
    * 新しい lexer は line_no=1 起算なので line_delta=0 で正しい行番号になる。my_strndup は
    * tk_filename_intern がポインタ保持するため free しない (バッチ同様)。 */
-  tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(filename, strlen(filename)));
+  tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(loaded_path, strlen(loaded_path)));
   s->line_delta        = 0;
   s->file_override_set = 0;
   s->file_override     = 0;
@@ -2340,6 +2377,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   s->lex    = tk_stream_new(g_preprocess_tk_ctx, buf);
   s->frames = f;
   tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
+  free(filename);
 }
 
 /* materialize 済みの指令行を処理する。bounded 指令 (define/undef/error/pragma/endif/line) は

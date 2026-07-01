@@ -81,7 +81,12 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
    * default では silent に fallback (Phase 7a 以降)。 */
   const char *use_ir = getenv("AG_USE_IR");
   if (use_ir && strcmp(use_ir, "1") == 0) {
-    fprintf(stderr, "ir_build: unsupported: %s\n", msg);
+    if (ctx->cur_fn && ctx->cur_fn->funcname) {
+      fprintf(stderr, "ir_build: unsupported in %.*s: %s\n",
+              ctx->cur_fn->funcname_len, ctx->cur_fn->funcname, msg);
+    } else {
+      fprintf(stderr, "ir_build: unsupported: %s\n", msg);
+    }
   }
 }
 

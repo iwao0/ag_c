@@ -1170,6 +1170,14 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
      * 配列メンバの decay 表現と区別する。 */
     deref->is_pointer = 1;
     deref->is_scalar_ptr_member = 1;
+    if (mem_info->deref_size == 8 &&
+        (mem_info->tag_kind == TK_STRUCT || mem_info->tag_kind == TK_UNION) &&
+        mem_info->tag_name) {
+      int pointee_size = psx_ctx_get_tag_size(mem_info->tag_kind, mem_info->tag_name,
+                                              mem_info->tag_len);
+      deref->pointer_qual_levels = 2;
+      deref->base_deref_size = (short)(pointee_size > 0 ? pointee_size : 8);
+    }
     if (mem_info->ptr_array_pointee_bytes > 0) {
       deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
       deref->base_deref_size = (short)mem_info->deref_size;
@@ -4334,7 +4342,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
      * していた。 */
     int result_pql = pql;
     if ((node->kind == ND_LVAR || node->kind == ND_GVAR ||
-         node->kind == ND_FUNCALL) && pql >= 2) {
+         node->kind == ND_FUNCALL ||
+         (node->kind == ND_DEREF && ((node_mem_t *)node)->is_scalar_ptr_member)) &&
+        pql >= 2) {
       /* 多段ポインタ戻り `int **g()` の `g()[i]` も genuine ポインタ値の subscript
        * (配列 decay でなく)。1 段消費して結果 pql を減らす (`g()[i]` は int*)。 */
       result_pql = pql - 1;

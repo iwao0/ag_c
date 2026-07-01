@@ -62,6 +62,12 @@ static void write_line_to_file(const char *line, size_t len, void *user_data) {
   fwrite(line, 1, len, out);
 }
 
+static void clear_output_callback(void) {
+  gen_output_line_fn cb = 0;
+  void *user_data = 0;
+  gen_set_output_callback(cb, user_data);
+}
+
 static char *read_file_contents(const char *path) {
   FILE *fp = fopen(path, "rb");
   if (!fp) return NULL;
@@ -199,7 +205,7 @@ int main(int argc, char **argv) {
   gen_float_literals();
   gen_global_vars();
 #endif
-  if (!wasm_object_mode) gen_set_output_callback(NULL, NULL);
+  if (!wasm_object_mode) clear_output_callback();
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
 

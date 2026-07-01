@@ -22,8 +22,11 @@ int atexit(void *func);
 
 /* String conversion */
 int atoi(char *s);
+double atof(char *s);
 long atol(char *s);
 long strtol(char *s, char **endptr, int base);
+unsigned long strtoul(char *s, char **endptr, int base);
+double strtod(char *s, char **endptr);
 
 /* Pseudo-random numbers */
 int rand(void);

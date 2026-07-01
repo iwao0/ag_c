@@ -319,6 +319,25 @@ static int sig_equal(const obj_sig_t *a, const obj_sig_t *b) {
   return 1;
 }
 
+static int wasm_valtype_is_int(ir_type_t ty) {
+  ir_type_t w = wasm_ir_type(ty);
+  return w == IR_TY_I32 || w == IR_TY_I64;
+}
+
+static int sig_integer_width_compatible(const obj_sig_t *a, const obj_sig_t *b) {
+  if (a->nparams != b->nparams) return 0;
+  if (wasm_ir_type(a->result) != wasm_ir_type(b->result) &&
+      !(wasm_valtype_is_int(a->result) && wasm_valtype_is_int(b->result))) {
+    return 0;
+  }
+  for (int i = 0; i < a->nparams; i++) {
+    if (wasm_ir_type(a->params[i]) == wasm_ir_type(b->params[i])) continue;
+    if (wasm_valtype_is_int(a->params[i]) && wasm_valtype_is_int(b->params[i])) continue;
+    return 0;
+  }
+  return 1;
+}
+
 static obj_func_t *find_func(const char *name, int name_len) {
   for (int i = 0; i < g_obj.func_count; i++) {
     if (name_eq(g_obj.funcs[i].name, g_obj.funcs[i].name_len, name, name_len)) return &g_obj.funcs[i];
@@ -840,7 +859,8 @@ static void wb_utf8_codepoint(wb_t *b, uint32_t v) {
 static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   want = wasm_ir_type(want);
   if (v.id == IR_VAL_IMM) {
-    emit_const(b, want, v.imm);
+    if (want == IR_TY_F32 || want == IR_TY_F64) emit_fp_const(b, want, v.fp_imm);
+    else emit_const(b, want, v.imm);
     return;
   }
   if (v.id < 0) obj_unsupported_msg("missing Wasm object value");
@@ -1803,7 +1823,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             emit_sig = &target->sig;
           } else if (target->defined) {
             free(csig.params);
-          } else if (!sig_equal(&target->sig, &csig)) {
+          } else if (!sig_equal(&target->sig, &csig) &&
+                     !sig_integer_width_compatible(&target->sig, &csig)) {
             char msg[160];
             snprintf(msg, sizeof(msg), "conflicting Wasm object function signature: %.*s",
                      i->sym_len, i->sym);

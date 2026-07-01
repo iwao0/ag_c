@@ -6,6 +6,7 @@
 typedef struct {
   token_ident_t *member;
   int is_ptr;
+  int ptr_levels;
   int has_func_suffix;
   int paren_array_mul;
   /* `*` が `( ... )` の内側で消費されたか (例: `int (*p)[N]` や `int (*p)(...)` の `*`)。

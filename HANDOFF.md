@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き334: libagc_runtime role split）
+最終更新: 2026-07-01（続き335: stdlib conversion runtime helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -15,6 +15,16 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き335: **`libagc_runtime.o` に stdlib conversion helper を追加**。
+  `atof` / `strtoul` / `strtod` を `include/stdlib.h` と runtime object 本体へ追加し、
+  `ag_wasm_link` の default runtime symbol 判定と ABI bridge map へ登録した。
+  `strtod` は空白・符号・小数部・10 進 exponent を扱う最小実装、`strtoul` は既存
+  `strtoumax` と同じ整数変換へ寄せている。smoke では実行結果と `--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = 1119/1119、
+  `make wasm32-object-link-all-fixture-scan` = 1118 pass / 1 skip、
+  `make test` = green。
 - 続き334: **`libagc_runtime.c` を役割別 `parts/*.c` に分割**。
   `tools/wasm_obj_linker/runtime/libagc_runtime.c` は include aggregator にし、
   実体を `parts/common.c`、`memory.c`、`ctype.c`、`wide.c`、`stdlib.c`、`string.c`、
@@ -3784,3 +3794,46 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     object-link all 1114 pass / 1 skip、WAT all 1114 pass / 1 skip、
     object c-testsuite 218 pass / 2 skip、object-link c-testsuite 218 pass / 2 skip / validate 218 / run 218、
     WAT c-testsuite 218 pass / 2 skip
+
+### このセッション（続き289）: ag_c_wasm selfhost object probe の足場
+- 目的: ブラウザ上で `ag_c_wasm` 自身を wasm として動かす前段として、まず
+  `src/*.c` を `./build/ag_c_wasm -c` で wasm object 化できる範囲を広げた。
+- include 解決:
+  - `#include "..."` で current file のディレクトリを先に探索するようにした。
+  - 実際に読み込んだ path を include frame / filename ctx に保持するようにした。
+  - repo 内 `src/...` の内部 include に限り `../` を許可し、`src/parser/ast.h` から
+    `../tokenizer/token.h` のような既存 include が通るようにした。
+- selfhost 用の最小ヘッダ:
+  - `include/fcntl.h`
+  - `include/unistd.h`
+  - `include/sys/stat.h`
+  - `include/sys/resource.h`
+  - `include/stdint.h` に `SIZE_MAX` / `INT64_C` / `UINT64_C`
+- parser/type 情報:
+  - top-level function prototype の戻り値 pointer 判定に typedef pointer levels を含めた。
+  - struct member 宣言で `**` の pointer level を数え、`node_t **args` などの subscript 後が
+    `node_t *` として扱われるようにした。
+  - scalar pointer member の多段 pointer 情報を member access/subscript に伝播した。
+- Wasm object emitter:
+  - `IR_VAL_IMM` を FP 期待型で出す場合は `f32.const` / `f64.const` を出すようにした。
+  - object 内の direct call signature conflict 判定で、i32/i64 の整数幅差は互換として扱うようにした。
+  - `AG_USE_IR=1` の IR builder unsupported 診断に関数名を出すようにした。
+- `src/main.c`:
+  - `gen_set_output_callback(NULL, NULL)` が selfhost object で signature conflict になるため、
+    typed helper `clear_output_callback()` 経由にした。
+- probe 結果:
+  - `./build/ag_c_wasm -c -o build/wasm_selfhost_probe/main.o src/main.c` は成功。
+  - `src/arch/wasm32_obj.c` / `src/parser/expr.c` / `src/parser/parser.c` は object 化成功まで進んだ。
+  - 全 `src/*.c` probe の現在 blocker は `src/parser/struct_layout.c`:
+    `src/parser/struct_layout.c:0: E3065: 必要な項目がありません: 仮引数 (実際のトークン: 'EOF')`
+    まで進んでいる。WAT 経路でも同じ source を処理すると末尾近くまで emit した後に同じ parse error が出る。
+- 確認:
+  - `make -j4 build/ag_c_wasm`
+  - `./build/ag_c_wasm -c -o build/wasm_selfhost_probe/obj/parser/parser.o src/parser/parser.c`
+  - `./build/test_parser`
+  - `./build/test_preprocess`
+  - `./build/test_wasm32_object` = 1119 pass / 0 fail / 0 skip
+- 次にやること:
+  - `struct_layout.c` の EOF parse error を最小化する。候補は self compiler が末尾の宣言/プリプロセス後
+    token stream をどこかで読み違えているケース。
+  - その後、全 `src/*.c` object probe を再実行する。

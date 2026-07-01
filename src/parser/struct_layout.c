@@ -20,14 +20,16 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
                                                        int *out_paren_array_mul,
-                                                       int *out_ptr_in_paren) {
-  psx_consume_pointer_prefix(is_ptr);
+                                                       int *out_ptr_in_paren,
+                                                       int *out_ptr_levels) {
+  int stars = psx_consume_pointer_prefix_counted(is_ptr);
+  if (out_ptr_levels) *out_ptr_levels += stars;
   token_ident_t *name = NULL;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     int ptr_before = *is_ptr;
     name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, &paren_array_mul,
-                                            out_ptr_in_paren);
+                                            out_ptr_in_paren, out_ptr_levels);
     /* `(` 通過直後に `*` を消費したか? `int (*p)[N]` 等を `int *p[N]` と区別するためのフラグ。
      * 内側で更に `(` を踏んで設定された結果は維持する。 */
     if (!ptr_before && *is_ptr && out_ptr_in_paren) *out_ptr_in_paren = 1;
@@ -45,7 +47,8 @@ member_decl_head_t psx_parse_member_decl_head(void) {
   member_decl_head_t out = {0};
   out.paren_array_mul = 1;
   out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix,
-                                                &out.paren_array_mul, &out.ptr_in_paren);
+                                                &out.paren_array_mul, &out.ptr_in_paren,
+                                                &out.ptr_levels);
   return out;
 }
 
@@ -454,10 +457,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       /* 宣言子に `*` がついた場合 (head.is_ptr) と、typedef 自体がポインタ型の場合
        * (member_is_ptr_typedef) の両方を「メンバはポインタ」として扱う。typedef ポインタは
        * 宣言子に `*` が現れないため head.is_ptr を立てておくと扱いが揃う。 */
+      int total_pointer_levels = head.ptr_levels + (member_is_ptr_typedef ? 1 : 0);
       int member_is_ptr = head.is_ptr || member_is_ptr_typedef;
       int member_elem_size = member_is_ptr ? 8 : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
-      int deref_size = member_is_ptr ? elem_size : 0;
+      int deref_size = member_is_ptr ? ((total_pointer_levels >= 2) ? 8 : elem_size) : 0;
       int member_align = member_is_ptr ? 8 : elem_size;
       /* struct/union メンバ (非ポインタ) のアラインメントは「メンバの最大スカラ
        * アラインメント (psx_ctx_get_tag_align)」であり、sizeof ではない。

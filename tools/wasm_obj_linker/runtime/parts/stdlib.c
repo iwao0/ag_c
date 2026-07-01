@@ -46,6 +46,68 @@ long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
   return sign * acc;
 }
 
+unsigned long __agc_runtime_strtoul(long s_addr, long endptr_addr, int base) {
+  return __agc_runtime_strtoumax(s_addr, endptr_addr, base);
+}
+
+double __agc_runtime_strtod(long s_addr, long endptr_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
+  double sign = 1.0;
+  if (*s == '-') {
+    sign = -1.0;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+
+  double acc = 0.0;
+  while (*s >= '0' && *s <= '9') {
+    acc = acc * 10.0 + (double)(*s - '0');
+    s++;
+  }
+  if (*s == '.') {
+    double place = 0.1;
+    s++;
+    while (*s >= '0' && *s <= '9') {
+      acc = acc + (double)(*s - '0') * place;
+      place = place / 10.0;
+      s++;
+    }
+  }
+  if (*s == 'e' || *s == 'E') {
+    char *exp_start = s;
+    s++;
+    int exp_sign = 1;
+    if (*s == '-') {
+      exp_sign = -1;
+      s++;
+    } else if (*s == '+') {
+      s++;
+    }
+    int exp = 0;
+    int have_exp = 0;
+    while (*s >= '0' && *s <= '9') {
+      have_exp = 1;
+      exp = exp * 10 + (*s - '0');
+      s++;
+    }
+    if (have_exp) {
+      while (exp > 0) {
+        acc = exp_sign < 0 ? acc / 10.0 : acc * 10.0;
+        exp--;
+      }
+    } else {
+      s = exp_start;
+    }
+  }
+  if (endptr_addr) {
+    long *endp = (long *)ag_rt_ptr(endptr_addr);
+    *endp = (long)s;
+  }
+  return sign * acc;
+}
+
 long __agc_runtime_strtoimax(long s_addr, long endptr_addr, int base) {
   return __agc_runtime_strtol(s_addr, endptr_addr, base);
 }
@@ -82,6 +144,10 @@ unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
 
 long __agc_runtime_atol(long s_addr) {
   return __agc_runtime_strtol(s_addr, 0, 10);
+}
+
+double __agc_runtime_atof(long s_addr) {
+  return __agc_runtime_strtod(s_addr, 0);
 }
 
 long __agc_runtime_labs(long x) {
