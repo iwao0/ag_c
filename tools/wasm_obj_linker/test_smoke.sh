@@ -272,8 +272,19 @@ void srand(int seed);
 long labs(long n);
 char *getenv(char *name);
 int system(char *command);
+typedef unsigned long long fexcept_t;
+typedef struct { unsigned long long fpcr; unsigned long long fpsr; } fenv_t;
 int feclearexcept(int excepts);
+int fegetexceptflag(fexcept_t *flagp, int excepts);
+int feraiseexcept(int excepts);
+int fesetexceptflag(fexcept_t *flagp, int excepts);
 int fetestexcept(int excepts);
+int fegetround(void);
+int fesetround(int round);
+int fegetenv(fenv_t *envp);
+int feholdexcept(fenv_t *envp);
+int fesetenv(fenv_t *envp);
+int feupdateenv(fenv_t *envp);
 char *setlocale(int category, char *locale);
 struct lconv { char *decimal_point; };
 struct lconv *localeconv(void);
@@ -375,6 +386,8 @@ int main(void) {
   int rand1 = rand();
   int rand2 = rand();
   void *nullv = 0;
+  fexcept_t flag = 0;
+  fenv_t env = {0, 0};
   int ws[8];
   int wd[8];
   ws[0] = 'A';
@@ -465,7 +478,12 @@ int main(void) {
          iswblank('\t') && iswspace('\n') && iswxdigit('F') &&
          towlower('M') == 'm' && towupper('m') == 'M' &&
          wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
-         feclearexcept(31) == 0 && fetestexcept(16) == 16 &&
+         feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 16 &&
+         feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
+         fetestexcept(16) == 16 &&
+         fesetround(0x00400000) == 0 && fegetround() == 0x00400000 &&
+         fegetenv(&env) == 0 && feholdexcept(&env) == 0 &&
+         fesetenv(&env) == 0 && feupdateenv(&env) == 0 &&
          lc->decimal_point[0] == '.' &&
          (int)(sqrt(2.0) * 1000.0) == 1414 &&
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
@@ -737,6 +755,15 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.atexit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.system>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fegetexceptflag>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.feraiseexcept>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fesetexceptflag>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fegetround>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fesetround>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fegetenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.feholdexcept>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fesetenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.feupdateenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.isalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.isspace>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tolower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

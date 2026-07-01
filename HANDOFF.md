@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き320: libagc_runtime stdlib helpers）
+最終更新: 2026-07-01（続き321: libagc_runtime fenv helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -14,6 +14,13 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き321: **`libagc_runtime.o` の fenv helper を拡張**。
+  `fegetexceptflag` / `feraiseexcept` / `fesetexceptflag` / `fegetround` / `fesetround` /
+  `fegetenv` / `feholdexcept` / `fesetenv` / `feupdateenv` を追加し、`ag_wasm_link` の runtime symbol
+  判定と ABI bridge map へ登録した。実 FP 例外状態とは連動しない最小実装だが、round mode は小さな状態を持つ。
+  smoke では flag 書き込み、round mode、env 保存/復元、`--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip。
 - 続き320: **`libagc_runtime.o` の stdlib helper を拡張**。
   `realloc` / `atol` / `strtol` / `rand` / `srand` / `labs` / `atexit` / `getenv` / `system`
   を runtime object 本体へ追加し、`ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。

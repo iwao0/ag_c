@@ -34,6 +34,7 @@ static char ag_rt_file_buf[512];
 static long ag_rt_file_len = 0;
 static char *ag_rt_strtok_next;
 static unsigned long ag_rt_rand_state = 1;
+static int ag_rt_round_mode = 0;
 void *__stdinp;
 void *__stdoutp;
 void *__stderrp;
@@ -558,8 +559,57 @@ int __agc_runtime_feclearexcept(int excepts) {
   return 0;
 }
 
+int __agc_runtime_fegetexceptflag(long flagp_addr, int excepts) {
+  unsigned long long *flagp = (unsigned long long *)ag_rt_ptr(flagp_addr);
+  if (flagp) *flagp = (unsigned long long)excepts;
+  return 0;
+}
+
+int __agc_runtime_feraiseexcept(int excepts) {
+  (void)excepts;
+  return 0;
+}
+
+int __agc_runtime_fesetexceptflag(long flagp_addr, int excepts) {
+  (void)flagp_addr;
+  (void)excepts;
+  return 0;
+}
+
 int __agc_runtime_fetestexcept(int excepts) {
   return excepts;
+}
+
+int __agc_runtime_fegetround(void) {
+  return ag_rt_round_mode;
+}
+
+int __agc_runtime_fesetround(int round) {
+  ag_rt_round_mode = round;
+  return 0;
+}
+
+int __agc_runtime_fegetenv(long envp_addr) {
+  unsigned long long *envp = (unsigned long long *)ag_rt_ptr(envp_addr);
+  if (envp) {
+    envp[0] = (unsigned long long)ag_rt_round_mode;
+    envp[1] = 0;
+  }
+  return 0;
+}
+
+int __agc_runtime_feholdexcept(long envp_addr) {
+  return __agc_runtime_fegetenv(envp_addr);
+}
+
+int __agc_runtime_fesetenv(long envp_addr) {
+  unsigned long long *envp = (unsigned long long *)ag_rt_ptr(envp_addr);
+  if (envp) ag_rt_round_mode = (int)envp[0];
+  return 0;
+}
+
+int __agc_runtime_feupdateenv(long envp_addr) {
+  return __agc_runtime_fesetenv(envp_addr);
 }
 
 long __agc_runtime_setlocale(int category, long locale_addr) {

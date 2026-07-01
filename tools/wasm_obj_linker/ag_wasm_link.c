@@ -754,7 +754,12 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "fgetc") || str_eq_lit(name, "getc") ||
          str_eq_lit(name, "fgets") ||
          str_eq_lit(name, "imaxabs") || str_eq_lit(name, "feclearexcept") ||
-         str_eq_lit(name, "fetestexcept") || str_eq_lit(name, "setlocale") ||
+         str_eq_lit(name, "fegetexceptflag") || str_eq_lit(name, "feraiseexcept") ||
+         str_eq_lit(name, "fesetexceptflag") || str_eq_lit(name, "fetestexcept") ||
+         str_eq_lit(name, "fegetround") || str_eq_lit(name, "fesetround") ||
+         str_eq_lit(name, "fegetenv") || str_eq_lit(name, "feholdexcept") ||
+         str_eq_lit(name, "fesetenv") || str_eq_lit(name, "feupdateenv") ||
+         str_eq_lit(name, "setlocale") ||
          str_eq_lit(name, "localeconv") || str_eq_lit(name, "iswalnum") ||
          str_eq_lit(name, "iswalpha") || str_eq_lit(name, "iswblank") ||
          str_eq_lit(name, "iswcntrl") || str_eq_lit(name, "iswdigit") ||
@@ -2584,8 +2589,26 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fgets";
   } else if (str_eq_lit(name, "feclearexcept")) {
     target_lit = "__agc_runtime_feclearexcept";
+  } else if (str_eq_lit(name, "fegetexceptflag")) {
+    target_lit = "__agc_runtime_fegetexceptflag";
+  } else if (str_eq_lit(name, "feraiseexcept")) {
+    target_lit = "__agc_runtime_feraiseexcept";
+  } else if (str_eq_lit(name, "fesetexceptflag")) {
+    target_lit = "__agc_runtime_fesetexceptflag";
   } else if (str_eq_lit(name, "fetestexcept")) {
     target_lit = "__agc_runtime_fetestexcept";
+  } else if (str_eq_lit(name, "fegetround")) {
+    target_lit = "__agc_runtime_fegetround";
+  } else if (str_eq_lit(name, "fesetround")) {
+    target_lit = "__agc_runtime_fesetround";
+  } else if (str_eq_lit(name, "fegetenv")) {
+    target_lit = "__agc_runtime_fegetenv";
+  } else if (str_eq_lit(name, "feholdexcept")) {
+    target_lit = "__agc_runtime_feholdexcept";
+  } else if (str_eq_lit(name, "fesetenv")) {
+    target_lit = "__agc_runtime_fesetenv";
+  } else if (str_eq_lit(name, "feupdateenv")) {
+    target_lit = "__agc_runtime_feupdateenv";
   } else if (str_eq_lit(name, "setlocale")) {
     target_lit = "__agc_runtime_setlocale";
   } else if (str_eq_lit(name, "localeconv")) {
