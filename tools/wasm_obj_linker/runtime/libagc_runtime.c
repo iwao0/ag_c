@@ -376,6 +376,27 @@ double __agc_runtime_sin(double x) {
   return sum;
 }
 
+double __agc_runtime_cos(double x) {
+  double pi = 3.141592653589793;
+  double two_pi = 6.283185307179586;
+  while (x > pi) x = x - two_pi;
+  while (x < -pi) x = x + two_pi;
+  double x2 = x * x;
+  double term = 1.0;
+  double sum = 1.0;
+  term = -term * x2 / 2.0;
+  sum = sum + term;
+  term = -term * x2 / 12.0;
+  sum = sum + term;
+  term = -term * x2 / 30.0;
+  sum = sum + term;
+  term = -term * x2 / 56.0;
+  sum = sum + term;
+  term = -term * x2 / 90.0;
+  sum = sum + term;
+  return sum;
+}
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {

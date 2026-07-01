@@ -257,6 +257,7 @@ float sqrtf(float x);
 double pow(double x, double y);
 double fabs(double x);
 double sin(double x);
+double cos(double x);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
@@ -321,6 +322,9 @@ int main(void) {
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
+  int cos0 = (int)(cos(0.0) * 1000.0);
+  int cos90 = (int)(cos(1.5707963267948966) * 1000.0);
+  int cos180 = (int)(cos(3.141592653589793) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -342,6 +346,9 @@ int main(void) {
          (int)fabs(-3.5) == 3 &&
          sin0 == 0 && sin90 >= 998 && sin90 <= 1002 &&
          sinm90 <= -998 && sinm90 >= -1002 &&
+         cos0 >= 998 && cos0 <= 1002 &&
+         cos90 >= -2 && cos90 <= 2 &&
+         cos180 <= -998 && cos180 >= -1002 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
@@ -561,6 +568,7 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.cos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
