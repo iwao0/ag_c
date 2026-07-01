@@ -771,7 +771,13 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "iswxdigit") || str_eq_lit(name, "towlower") ||
          str_eq_lit(name, "towupper") ||
          str_eq_lit(name, "wcslen") || str_eq_lit(name, "wcscpy") ||
-         str_eq_lit(name, "wcscmp") || str_eq_lit(name, "sqrt") ||
+         str_eq_lit(name, "wcsncpy") || str_eq_lit(name, "wcscat") ||
+         str_eq_lit(name, "wcsncat") || str_eq_lit(name, "wcscmp") ||
+         str_eq_lit(name, "wcsncmp") || str_eq_lit(name, "wcschr") ||
+         str_eq_lit(name, "wcsrchr") || str_eq_lit(name, "wmemcpy") ||
+         str_eq_lit(name, "wmemmove") || str_eq_lit(name, "wmemset") ||
+         str_eq_lit(name, "wmemcmp") || str_eq_lit(name, "wmemchr") ||
+         str_eq_lit(name, "sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "pow") ||
          str_eq_lit(name, "fabs") || str_eq_lit(name, "fabsf") ||
          str_eq_lit(name, "floor") || str_eq_lit(name, "ceil") ||
@@ -2683,8 +2689,30 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_wcslen";
   } else if (str_eq_lit(name, "wcscpy")) {
     target_lit = "__agc_runtime_wcscpy";
+  } else if (str_eq_lit(name, "wcsncpy")) {
+    target_lit = "__agc_runtime_wcsncpy";
+  } else if (str_eq_lit(name, "wcscat")) {
+    target_lit = "__agc_runtime_wcscat";
+  } else if (str_eq_lit(name, "wcsncat")) {
+    target_lit = "__agc_runtime_wcsncat";
   } else if (str_eq_lit(name, "wcscmp")) {
     target_lit = "__agc_runtime_wcscmp";
+  } else if (str_eq_lit(name, "wcsncmp")) {
+    target_lit = "__agc_runtime_wcsncmp";
+  } else if (str_eq_lit(name, "wcschr")) {
+    target_lit = "__agc_runtime_wcschr";
+  } else if (str_eq_lit(name, "wcsrchr")) {
+    target_lit = "__agc_runtime_wcsrchr";
+  } else if (str_eq_lit(name, "wmemcpy")) {
+    target_lit = "__agc_runtime_wmemcpy";
+  } else if (str_eq_lit(name, "wmemmove")) {
+    target_lit = "__agc_runtime_wmemmove";
+  } else if (str_eq_lit(name, "wmemset")) {
+    target_lit = "__agc_runtime_wmemset";
+  } else if (str_eq_lit(name, "wmemcmp")) {
+    target_lit = "__agc_runtime_wmemcmp";
+  } else if (str_eq_lit(name, "wmemchr")) {
+    target_lit = "__agc_runtime_wmemchr";
   } else {
     return 0;
   }

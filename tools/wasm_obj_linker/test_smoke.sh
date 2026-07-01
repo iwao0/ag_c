@@ -336,7 +336,18 @@ char *strtok(char *str, char *delim);
 char *strerror(int errnum);
 long wcslen(int *s);
 int *wcscpy(int *dst, int *src);
+int *wcsncpy(int *dst, int *src, unsigned long n);
+int *wcscat(int *dst, int *src);
+int *wcsncat(int *dst, int *src, unsigned long n);
 int wcscmp(int *a, int *b);
+int wcsncmp(int *a, int *b, unsigned long n);
+int *wcschr(int *s, int ch);
+int *wcsrchr(int *s, int ch);
+int *wmemcpy(int *dst, int *src, unsigned long n);
+int *wmemmove(int *dst, int *src, unsigned long n);
+int *wmemset(int *s, int ch, unsigned long n);
+int wmemcmp(int *a, int *b, unsigned long n);
+int *wmemchr(int *s, int ch, unsigned long n);
 int putchar(int c);
 typedef void FILE;
 FILE *fopen(char *path, char *mode);
@@ -396,6 +407,8 @@ int main(void) {
   fenv_t env = {0, 0};
   int ws[8];
   int wd[8];
+  int we[8];
+  int wfbuf[8];
   ws[0] = 'A';
   ws[1] = 'b';
   ws[2] = 0;
@@ -404,6 +417,12 @@ int main(void) {
   p[2] = 0;
   free(p);
   wcscpy(wd, ws);
+  wcsncpy(we, ws, 3);
+  wcscat(we, ws);
+  wcsncat(we, ws + 1, 1);
+  wmemcpy(wfbuf, we, 4);
+  wmemmove(wfbuf + 1, wfbuf, 3);
+  wmemset(wfbuf + 4, 'Z', 2);
   struct lconv *lc;
   setlocale(0, "C");
   lc = localeconv();
@@ -487,6 +506,9 @@ int main(void) {
          iswblank('\t') && iswspace('\n') && iswxdigit('F') &&
          towlower('M') == 'm' && towupper('m') == 'M' &&
          wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
+         wcsncmp(we, ws, 2) == 0 && wcschr(we, 'b') == we + 1 &&
+         wcsrchr(we, 'b') == we + 4 &&
+         wmemcmp(wd, ws, 3) == 0 && wmemchr(wfbuf, 'Z', 6) == wfbuf + 4 &&
          feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 16 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
          fetestexcept(16) == 16 &&
@@ -782,6 +804,17 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.tolower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.iswalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.towlower>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsncpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcscat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsncat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsncmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcschr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsrchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wmemcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wmemmove>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wmemset>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wmemcmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wmemchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

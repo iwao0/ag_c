@@ -219,12 +219,148 @@ long __agc_runtime_wcscpy(long dst_addr, long src_addr) {
   return dst_addr;
 }
 
+long __agc_runtime_wcsncpy(long dst_addr, long src_addr, long n) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *src = (int *)ag_rt_ptr(src_addr);
+  long i = 0;
+  int ended = 0;
+  while (i < n) {
+    int c = ended ? 0 : src[i];
+    dst[i] = c;
+    if (c == 0) ended = 1;
+    i++;
+  }
+  return dst_addr;
+}
+
+long __agc_runtime_wcscat(long dst_addr, long src_addr) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *src = (int *)ag_rt_ptr(src_addr);
+  long end = 0;
+  long i = 0;
+  while (dst[end]) end++;
+  do {
+    dst[end + i] = src[i];
+  } while (src[i++] != 0);
+  return dst_addr;
+}
+
+long __agc_runtime_wcsncat(long dst_addr, long src_addr, long n) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *src = (int *)ag_rt_ptr(src_addr);
+  long end = 0;
+  long i = 0;
+  while (dst[end]) end++;
+  while (i < n && src[i]) {
+    dst[end + i] = src[i];
+    i++;
+  }
+  dst[end + i] = 0;
+  return dst_addr;
+}
+
 int __agc_runtime_wcscmp(long a_addr, long b_addr) {
   int *a = (int *)ag_rt_ptr(a_addr);
   int *b = (int *)ag_rt_ptr(b_addr);
   long i = 0;
   while (a[i] && a[i] == b[i]) i++;
   return a[i] - b[i];
+}
+
+int __agc_runtime_wcsncmp(long a_addr, long b_addr, long n) {
+  int *a = (int *)ag_rt_ptr(a_addr);
+  int *b = (int *)ag_rt_ptr(b_addr);
+  long i = 0;
+  while (i < n) {
+    if (a[i] != b[i]) return a[i] - b[i];
+    if (a[i] == 0) return 0;
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_wcschr(long s_addr, int ch) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  long i = 0;
+  for (;;) {
+    if (s[i] == ch) return s_addr + i * 4;
+    if (s[i] == 0) return 0;
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_wcsrchr(long s_addr, int ch) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  long found = 0;
+  long i = 0;
+  for (;;) {
+    if (s[i] == ch) found = s_addr + i * 4;
+    if (s[i] == 0) return found;
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_wmemcpy(long dst_addr, long src_addr, long n) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *src = (int *)ag_rt_ptr(src_addr);
+  long i = 0;
+  while (i < n) {
+    dst[i] = src[i];
+    i++;
+  }
+  return dst_addr;
+}
+
+long __agc_runtime_wmemmove(long dst_addr, long src_addr, long n) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *src = (int *)ag_rt_ptr(src_addr);
+  if (dst < src) {
+    long i = 0;
+    while (i < n) {
+      dst[i] = src[i];
+      i++;
+    }
+  } else if (dst > src) {
+    long i = n;
+    while (i > 0) {
+      i--;
+      dst[i] = src[i];
+    }
+  }
+  return dst_addr;
+}
+
+long __agc_runtime_wmemset(long s_addr, int ch, long n) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  long i = 0;
+  while (i < n) {
+    s[i] = ch;
+    i++;
+  }
+  return s_addr;
+}
+
+int __agc_runtime_wmemcmp(long a_addr, long b_addr, long n) {
+  int *a = (int *)ag_rt_ptr(a_addr);
+  int *b = (int *)ag_rt_ptr(b_addr);
+  long i = 0;
+  while (i < n) {
+    if (a[i] != b[i]) return a[i] - b[i];
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_wmemchr(long s_addr, int ch, long n) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  long i = 0;
+  while (i < n) {
+    if (s[i] == ch) return s_addr + i * 4;
+    i++;
+  }
+  return 0;
 }
 
 int __agc_runtime_atoi(long s_addr) {
