@@ -267,6 +267,10 @@ double exp(double x);
 double log(double x);
 double log2(double x);
 double log10(double x);
+double atan(double x);
+double atan2(double y, double x);
+double asin(double x);
+double acos(double x);
 float floorf(float x);
 float ceilf(float x);
 float roundf(float x);
@@ -349,6 +353,10 @@ int main(void) {
   int loge = (int)(log(2.718281828459045) * 1000.0);
   int log2v = (int)(log2(8.0) * 1000.0);
   int log10v = (int)(log10(100.0) * 1000.0);
+  int atan1 = (int)(atan(1.0) * 1000.0);
+  int atan2v = (int)(atan2(1.0, 0.0) * 1000.0);
+  int asinv = (int)(asin(1.0) * 1000.0);
+  int acosv = (int)(acos(0.0) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -388,6 +396,10 @@ int main(void) {
          loge >= 998 && loge <= 1002 &&
          log2v >= 2998 && log2v <= 3002 &&
          log10v >= 1998 && log10v <= 2002 &&
+         atan1 >= 783 && atan1 <= 787 &&
+         atan2v >= 1568 && atan2v <= 1572 &&
+         asinv >= 1568 && asinv <= 1572 &&
+         acosv >= 1568 && acosv <= 1572 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
@@ -614,6 +626,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.exp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atan2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.acos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi

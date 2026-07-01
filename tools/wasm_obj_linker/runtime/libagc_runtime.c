@@ -515,6 +515,47 @@ double __agc_runtime_log10(double x) {
   return __agc_runtime_log(x) / 2.302585092994046;
 }
 
+static double ag_rt_atan_core(double x) {
+  double x2 = x * x;
+  double term = x;
+  double sum = x;
+  double den = 3.0;
+  int neg = 1;
+  for (int i = 0; i < 96; i = i + 1) {
+    term = term * x2;
+    if (neg) sum = sum - term / den;
+    else sum = sum + term / den;
+    neg = !neg;
+    den = den + 2.0;
+  }
+  return sum;
+}
+
+double __agc_runtime_atan(double x) {
+  if (x > 1.0) return 1.5707963267948966 - ag_rt_atan_core(1.0 / x);
+  if (x < -1.0) return -1.5707963267948966 - ag_rt_atan_core(1.0 / x);
+  return ag_rt_atan_core(x);
+}
+
+double __agc_runtime_atan2(double y, double x) {
+  if (x > 0.0) return __agc_runtime_atan(y / x);
+  if (x < 0.0) {
+    if (y >= 0.0) return __agc_runtime_atan(y / x) + 3.141592653589793;
+    return __agc_runtime_atan(y / x) - 3.141592653589793;
+  }
+  if (y > 0.0) return 1.5707963267948966;
+  if (y < 0.0) return -1.5707963267948966;
+  return 0.0;
+}
+
+double __agc_runtime_asin(double x) {
+  return __agc_runtime_atan2(x, __agc_runtime_sqrt(1.0 - x * x));
+}
+
+double __agc_runtime_acos(double x) {
+  return __agc_runtime_atan2(__agc_runtime_sqrt(1.0 - x * x), x);
+}
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {

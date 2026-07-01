@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き310: wasm runtime object exp log helpers）
+最終更新: 2026-07-01（続き311: wasm runtime object inverse trig helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き311: **`libagc_runtime.o` に `atan` / `atan2` / `asin` / `acos` helper を追加**。
+  `__agc_runtime_atan`、`__agc_runtime_atan2`、`__agc_runtime_asin`、`__agc_runtime_acos` を
+  runtime object に追加し、`ag_wasm_link` の runtime symbol/bridge map に public symbol を追加した。
+  `atan` / `atan2` は `include/complex.h` の内部近似と同じ形に揃え、`asin` / `acos` は
+  `atan2` + `sqrt` で構成する。`test_smoke.sh` の `libc_runtime.c` で代表値を確認し、
+  `--nostdlib` では `env.atan2` / `env.acos` import が残ることも確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き310: **`libagc_runtime.o` に `exp` / `log` / `log2` / `log10` helper を追加**。
   `__agc_runtime_exp`、`__agc_runtime_log`、`__agc_runtime_log2`、`__agc_runtime_log10` を
   runtime object に追加し、`ag_wasm_link` の runtime symbol/bridge map に public symbol を追加した。

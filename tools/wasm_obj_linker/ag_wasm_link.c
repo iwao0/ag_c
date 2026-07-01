@@ -750,7 +750,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "roundf") || str_eq_lit(name, "fmod") ||
          str_eq_lit(name, "cbrt") || str_eq_lit(name, "exp") ||
          str_eq_lit(name, "log") || str_eq_lit(name, "log2") ||
-         str_eq_lit(name, "log10");
+         str_eq_lit(name, "log10") || str_eq_lit(name, "atan") ||
+         str_eq_lit(name, "atan2") || str_eq_lit(name, "asin") ||
+         str_eq_lit(name, "acos");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -2544,6 +2546,14 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_log2";
   } else if (str_eq_lit(name, "log10")) {
     target_lit = "__agc_runtime_log10";
+  } else if (str_eq_lit(name, "atan")) {
+    target_lit = "__agc_runtime_atan";
+  } else if (str_eq_lit(name, "atan2")) {
+    target_lit = "__agc_runtime_atan2";
+  } else if (str_eq_lit(name, "asin")) {
+    target_lit = "__agc_runtime_asin";
+  } else if (str_eq_lit(name, "acos")) {
+    target_lit = "__agc_runtime_acos";
   } else if (str_eq_lit(name, "wcslen")) {
     target_lit = "__agc_runtime_wcslen";
   } else if (str_eq_lit(name, "wcscpy")) {
