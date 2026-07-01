@@ -1013,6 +1013,10 @@ float __agc_runtime_sqrtf(float x) {
   return g;
 }
 
+long double __agc_runtime_sqrtl(long double x) {
+  return (long double)__agc_runtime_sqrt((double)x);
+}
+
 double __agc_runtime_pow(double x, double y) {
   long yi = (long)y;
   if ((double)yi == y) {
@@ -1030,12 +1034,24 @@ double __agc_runtime_pow(double x, double y) {
   return __agc_runtime_exp(y * __agc_runtime_log(x));
 }
 
+float __agc_runtime_powf(float x, float y) {
+  return (float)__agc_runtime_pow((double)x, (double)y);
+}
+
+long double __agc_runtime_powl(long double x, long double y) {
+  return (long double)__agc_runtime_pow((double)x, (double)y);
+}
+
 double __agc_runtime_fabs(double x) {
   return x < 0.0 ? -x : x;
 }
 
 float __agc_runtime_fabsf(float x) {
   return x < 0.0f ? -x : x;
+}
+
+long double __agc_runtime_fabsl(long double x) {
+  return x < 0.0L ? -x : x;
 }
 
 double __agc_runtime_trunc(double x) {
@@ -1125,6 +1141,14 @@ double __agc_runtime_fmod(double x, double y) {
   if (x >= 0.0 && r < 0.0) r = r + __agc_runtime_fabs(y);
   if (x < 0.0 && r > 0.0) r = r - __agc_runtime_fabs(y);
   return r;
+}
+
+float __agc_runtime_fmodf(float x, float y) {
+  return (float)__agc_runtime_fmod((double)x, (double)y);
+}
+
+long double __agc_runtime_fmodl(long double x, long double y) {
+  return (long double)__agc_runtime_fmod((double)x, (double)y);
 }
 
 double __agc_runtime_cbrt(double x) {

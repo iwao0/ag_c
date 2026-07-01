@@ -21,6 +21,9 @@ double log2(double x);
 double pow(double x, double y);
 double sqrt(double x);
 double cbrt(double x);
+float powf(float x, float y);
+long double powl(long double x, long double y);
+long double sqrtl(long double x);
 
 double ceil(double x);
 double floor(double x);
@@ -31,9 +34,12 @@ double fabs(double x);
 double fmod(double x, double y);
 
 float fabsf(float x);
+long double fabsl(long double x);
 float sqrtf(float x);
 float ceilf(float x);
 float floorf(float x);
 float roundf(float x);
+float fmodf(float x, float y);
+long double fmodl(long double x, long double y);
 
 #endif

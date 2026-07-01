@@ -1970,6 +1970,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_floor") == 0 || strcmp(sym, "_round") == 0 ||
             strcmp(sym, "_trunc") == 0 || strcmp(sym, "_fabs") == 0 ||
             strcmp(sym, "_fmod") == 0 || strcmp(sym, "_fabsf") == 0 ||
+            strcmp(sym, "_fmodf") == 0 || strcmp(sym, "_fmodl") == 0 ||
             strcmp(sym, "_sqrtf") == 0 || strcmp(sym, "_ceilf") == 0 ||
             strcmp(sym, "_floorf") == 0 || strcmp(sym, "_roundf") == 0 ||
             /* <wctype.h> / <wchar.h> / <fenv.h> / <locale.h> / <inttypes.h> の libc 関数。

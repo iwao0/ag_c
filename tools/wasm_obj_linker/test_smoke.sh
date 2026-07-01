@@ -297,14 +297,20 @@ struct lconv *localeconv(void);
 double sqrt(double x);
 float sqrtf(float x);
 double pow(double x, double y);
+float powf(float x, float y);
+long double powl(long double x, long double y);
 double fabs(double x);
 float fabsf(float x);
+long double fabsl(long double x);
 double floor(double x);
 double ceil(double x);
 double round(double x);
 double trunc(double x);
 double fmod(double x, double y);
+float fmodf(float x, float y);
+long double fmodl(long double x, long double y);
 double cbrt(double x);
+long double sqrtl(long double x);
 double exp(double x);
 double log(double x);
 double log2(double x);
@@ -505,6 +511,8 @@ int main(void) {
   int tan45 = (int)(tan(0.7853981633974483) * 1000.0);
   int fmod_pos = (int)(fmod(7.5, 2.0) * 1000.0);
   int fmod_neg = (int)(fmod(-7.5, 2.0) * 1000.0);
+  int fmodf_pos = (int)(fmodf(7.5f, 2.0f) * 1000.0f);
+  int fmodl_pos = (int)(fmodl(7.5L, 2.0L) * 1000.0L);
   int cbrt_pos = (int)(cbrt(27.0) * 1000.0);
   int cbrt_neg = (int)(cbrt(-8.0) * 1000.0);
   int exp1 = (int)(exp(1.0) * 1000.0);
@@ -513,6 +521,8 @@ int main(void) {
   int log10v = (int)(log10(100.0) * 1000.0);
   int pow_int = (int)(pow(-2.0, 3.0) * 1000.0);
   int pow_frac = (int)(pow(9.0, 0.5) * 1000.0);
+  int powf_int = (int)(powf(2.0f, 5.0f) * 1000.0f);
+  int powl_int = (int)(powl(2.0L, 4.0L) * 1000.0L);
   int atan1 = (int)(atan(1.0) * 1000.0);
   int atan2v = (int)(atan2(1.0, 0.0) * 1000.0);
   int asinv = (int)(asin(1.0) * 1000.0);
@@ -588,11 +598,15 @@ int main(void) {
          lc->decimal_point[0] == '.' &&
          (int)(sqrt(2.0) * 1000.0) == 1414 &&
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
+         (int)(sqrtl(2.0L) * 1000.0L) == 1414 &&
          (int)pow(2.0, 10.0) == 1024 &&
          pow_int == -8000 &&
          pow_frac >= 2998 && pow_frac <= 3002 &&
+         powf_int == 32000 &&
+         powl_int == 16000 &&
          (int)fabs(-3.5) == 3 &&
          (int)fabsf(-2.5f) == 2 &&
+         (int)fabsl(-4.5L) == 4 &&
          (int)floor(3.8) == 3 && (int)floor(-3.2) == -4 &&
          (int)ceil(3.2) == 4 && (int)ceil(-3.8) == -3 &&
          (int)round(3.5) == 4 && (int)round(-3.5) == -4 &&
@@ -606,6 +620,8 @@ int main(void) {
          cos180 <= -998 && cos180 >= -1002 &&
          tan45 >= 998 && tan45 <= 1002 &&
          fmod_pos == 1500 && fmod_neg == -1500 &&
+         fmodf_pos == 1500 &&
+         fmodl_pos == 1500 &&
          cbrt_pos >= 2998 && cbrt_pos <= 3002 &&
          cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
          exp1 >= 2716 && exp1 <= 2720 &&
@@ -911,6 +927,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.floor>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ceilf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmodf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmodl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.powf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.powl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sqrtl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fabsl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.exp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atan2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

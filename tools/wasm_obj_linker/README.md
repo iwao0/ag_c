@@ -60,7 +60,8 @@ Supported:
   `time`/`clock`/`difftime`, `errno` storage, wide-char string/memory/conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
-  `pow`, remainder, cube-root, and rounding helpers, stdio globals, and `__assert_rtn`.
+  `pow`/`powf`/`powl`, remainder, cube-root, selected long-double wrappers,
+  and rounding helpers, stdio globals, and `__assert_rtn`.
   The linker emits only small ABI bridges for those public symbols.
 
 ## Smoke Test

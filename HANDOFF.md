@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き326: libagc_runtime qsort/bsearch helpers）
+最終更新: 2026-07-01（続き327: libagc_runtime math variant helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -15,6 +15,17 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き327: **`libagc_runtime.o` に math variant helper を追加**。
+  `powf` / `powl` / `sqrtl` / `fabsl` / `fmodf` / `fmodl` を runtime object 本体へ追加し、
+  `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。`include/math.h` にも prototype を追加。
+  WAT backend の minimal libc stub も同じ variant を出すようにし、`math_runtime_ops` fixture へ
+  float/long-double variant を追加した。
+  確認: `make -j4 build/ag_c build/ag_c_wasm build/ag_wasm_link build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、`./build/test_wasm32_e2e` = 1117/1117、
+  `./build/test_wasm32_object` = 1118/1118、`./build/test_e2e` = 1146/1146、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip、
+  `make test`、`bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0。
 - 続き326: **`libagc_runtime.o` に qsort/bsearch helper を追加**。
   `qsort` / `bsearch` を runtime object 本体へ追加し、`ag_wasm_link` の runtime symbol 判定と
   ABI bridge map へ登録した。comparator は Wasm table の function pointer 経由で呼ぶ最小実装。

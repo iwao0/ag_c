@@ -788,12 +788,16 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "wcsrtombs") || str_eq_lit(name, "btowc") ||
          str_eq_lit(name, "wctob") ||
          str_eq_lit(name, "sqrt") ||
-         str_eq_lit(name, "sqrtf") || str_eq_lit(name, "pow") ||
+         str_eq_lit(name, "sqrtf") || str_eq_lit(name, "sqrtl") ||
+         str_eq_lit(name, "pow") || str_eq_lit(name, "powf") ||
+         str_eq_lit(name, "powl") ||
          str_eq_lit(name, "fabs") || str_eq_lit(name, "fabsf") ||
+         str_eq_lit(name, "fabsl") ||
          str_eq_lit(name, "floor") || str_eq_lit(name, "ceil") ||
          str_eq_lit(name, "round") || str_eq_lit(name, "trunc") ||
          str_eq_lit(name, "floorf") || str_eq_lit(name, "ceilf") ||
          str_eq_lit(name, "roundf") || str_eq_lit(name, "fmod") ||
+         str_eq_lit(name, "fmodf") || str_eq_lit(name, "fmodl") ||
          str_eq_lit(name, "cbrt") || str_eq_lit(name, "exp") ||
          str_eq_lit(name, "log") || str_eq_lit(name, "log2") ||
          str_eq_lit(name, "log10") || str_eq_lit(name, "atan") ||
@@ -2651,12 +2655,20 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_sqrt";
   } else if (str_eq_lit(name, "sqrtf")) {
     target_lit = "__agc_runtime_sqrtf";
+  } else if (str_eq_lit(name, "sqrtl")) {
+    target_lit = "__agc_runtime_sqrtl";
   } else if (str_eq_lit(name, "pow")) {
     target_lit = "__agc_runtime_pow";
+  } else if (str_eq_lit(name, "powf")) {
+    target_lit = "__agc_runtime_powf";
+  } else if (str_eq_lit(name, "powl")) {
+    target_lit = "__agc_runtime_powl";
   } else if (str_eq_lit(name, "fabs")) {
     target_lit = "__agc_runtime_fabs";
   } else if (str_eq_lit(name, "fabsf")) {
     target_lit = "__agc_runtime_fabsf";
+  } else if (str_eq_lit(name, "fabsl")) {
+    target_lit = "__agc_runtime_fabsl";
   } else if (str_eq_lit(name, "floor")) {
     target_lit = "__agc_runtime_floor";
   } else if (str_eq_lit(name, "ceil")) {
@@ -2679,6 +2691,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_tan";
   } else if (str_eq_lit(name, "fmod")) {
     target_lit = "__agc_runtime_fmod";
+  } else if (str_eq_lit(name, "fmodf")) {
+    target_lit = "__agc_runtime_fmodf";
+  } else if (str_eq_lit(name, "fmodl")) {
+    target_lit = "__agc_runtime_fmodl";
   } else if (str_eq_lit(name, "cbrt")) {
     target_lit = "__agc_runtime_cbrt";
   } else if (str_eq_lit(name, "exp")) {
