@@ -29,8 +29,10 @@ static char *ag_rt_ptr(long addr) {
 static long ag_rt_heap = 32768;
 static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
+static char ag_rt_strerror[] = "error";
 static char ag_rt_file_buf[512];
 static long ag_rt_file_len = 0;
+static char *ag_rt_strtok_next;
 void *__stdinp;
 void *__stdoutp;
 void *__stderrp;
@@ -99,6 +101,25 @@ long __agc_runtime_memcpy(long dst_addr, long src_addr, long n) {
   while (i < n) {
     dst[i] = src[i];
     i++;
+  }
+  return dst_addr;
+}
+
+long __agc_runtime_memmove(long dst_addr, long src_addr, long n) {
+  unsigned char *dst = (unsigned char *)ag_rt_ptr(dst_addr);
+  unsigned char *src = (unsigned char *)ag_rt_ptr(src_addr);
+  if (dst < src) {
+    long i = 0;
+    while (i < n) {
+      dst[i] = src[i];
+      i++;
+    }
+  } else if (dst > src) {
+    long i = n;
+    while (i > 0) {
+      i--;
+      dst[i] = src[i];
+    }
   }
   return dst_addr;
 }
@@ -248,6 +269,20 @@ long __agc_runtime_strcat(long dst_addr, long src_addr) {
   return dst_addr;
 }
 
+long __agc_runtime_strncat(long dst_addr, long src_addr, long n) {
+  char *dst = ag_rt_ptr(dst_addr);
+  char *src = ag_rt_ptr(src_addr);
+  long end = 0;
+  long i = 0;
+  while (dst[end]) end++;
+  while (i < n && src[i]) {
+    dst[end + i] = src[i];
+    i++;
+  }
+  dst[end + i] = 0;
+  return dst_addr;
+}
+
 int __agc_runtime_strncmp(long a_addr, long b_addr, long n) {
   unsigned char *a = (unsigned char *)ag_rt_ptr(a_addr);
   unsigned char *b = (unsigned char *)ag_rt_ptr(b_addr);
@@ -266,6 +301,17 @@ int __agc_runtime_memcmp(long a_addr, long b_addr, long n) {
   long i = 0;
   while (i < n) {
     if (a[i] != b[i]) return (int)a[i] - (int)b[i];
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_memchr(long s_addr, int ch, long n) {
+  unsigned char *s = (unsigned char *)ag_rt_ptr(s_addr);
+  int needle = ch & 255;
+  long i = 0;
+  while (i < n) {
+    if ((int)s[i] == needle) return s_addr + i;
     i++;
   }
   return 0;
@@ -294,6 +340,54 @@ long __agc_runtime_strrchr(long s_addr, int ch) {
     i++;
   }
   return 0;
+}
+
+long __agc_runtime_strstr(long haystack_addr, long needle_addr) {
+  char *haystack = ag_rt_ptr(haystack_addr);
+  char *needle = ag_rt_ptr(needle_addr);
+  if (!needle[0]) return haystack_addr;
+  long i = 0;
+  while (haystack[i]) {
+    long j = 0;
+    while (needle[j] && haystack[i + j] == needle[j]) j++;
+    if (!needle[j]) return haystack_addr + i;
+    i++;
+  }
+  return 0;
+}
+
+static int ag_rt_strtok_is_delim(char ch, char *delim) {
+  long i = 0;
+  while (delim[i]) {
+    if (ch == delim[i]) return 1;
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_strtok(long str_addr, long delim_addr) {
+  char *s = str_addr ? ag_rt_ptr(str_addr) : ag_rt_strtok_next;
+  char *delim = ag_rt_ptr(delim_addr);
+  if (!s) return 0;
+  while (*s && ag_rt_strtok_is_delim(*s, delim)) s++;
+  if (!*s) {
+    ag_rt_strtok_next = 0;
+    return 0;
+  }
+  char *start = s;
+  while (*s && !ag_rt_strtok_is_delim(*s, delim)) s++;
+  if (*s) {
+    *s = 0;
+    ag_rt_strtok_next = s + 1;
+  } else {
+    ag_rt_strtok_next = 0;
+  }
+  return (long)start;
+}
+
+long __agc_runtime_strerror(int errnum) {
+  (void)errnum;
+  return (long)ag_rt_strerror;
 }
 
 int __agc_runtime_putchar(int c) {

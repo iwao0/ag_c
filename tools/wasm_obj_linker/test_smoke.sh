@@ -300,10 +300,16 @@ int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
 char *strcat(char *dst, char *src);
+char *strncat(char *dst, char *src, unsigned long n);
 int strncmp(char *a, char *b, unsigned long n);
 int memcmp(void *a, void *b, unsigned long n);
+void *memmove(void *dst, void *src, unsigned long n);
+void *memchr(void *s, int ch, unsigned long n);
 char *strchr(char *s, int ch);
 char *strrchr(char *s, int ch);
+char *strstr(char *haystack, char *needle);
+char *strtok(char *str, char *delim);
+char *strerror(int errnum);
 long wcslen(int *s);
 int *wcscpy(int *dst, int *src);
 int wcscmp(int *a, int *b);
@@ -328,13 +334,26 @@ int main(void) {
   char a[32];
   char b[32];
   char c[32];
+  char d[32];
+  char e[32];
+  char toks[32];
   memset(a, 0, sizeof(a));
   memset(b, 0, sizeof(b));
   strcpy(a, "he");
   strcat(a, "llo");
+  strcpy(d, "ab");
+  strncat(d, "cdef", 2);
+  strcpy(e, "abcdef");
+  memmove(e + 2, e, 4);
+  strcpy(toks, "aa,bb;cc");
+  char *nullp = 0;
   strncpy(b, a, 3);
   b[3] = 0;
   memcpy(c, a, 6);
+  char *tok1 = strtok(toks, ",;");
+  char *tok2 = strtok(nullp, ",;");
+  char *tok3 = strtok(nullp, ",;");
+  char *tok4 = strtok(nullp, ",;");
   char *p = malloc(8);
   char *q = calloc(4, 1);
   int ws[8];
@@ -390,10 +409,18 @@ int main(void) {
   int tanh1 = (int)(tanh(1.0) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
+         strcmp(d, "abcd") == 0 &&
+         e[0] == 'a' && e[1] == 'b' && e[2] == 'a' && e[3] == 'b' &&
+         e[4] == 'c' && e[5] == 'd' &&
          strncmp(b, "helx", 3) == 0 &&
          memcmp(c, "hello", 6) == 0 &&
+         memchr(c, 'l', 6) == c + 2 &&
          strchr(a, 'l') == a + 2 &&
          strrchr(a, 'l') == a + 3 &&
+         strstr(a, "ll") == a + 2 &&
+         tok1 == toks && strcmp(tok1, "aa") == 0 &&
+         strcmp(tok2, "bb") == 0 && strcmp(tok3, "cc") == 0 && tok4 == 0 &&
+         strerror(5)[0] == 'e' &&
          abs(-42) == 42 &&
          imaxabs(-1234567890123L) == 1234567890123L &&
          isdigit('7') && !isdigit('x') &&
@@ -669,6 +696,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   wasm-objdump -x "$out_dir/linked_libc_runtime_nostdlib.wasm" > "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.memmove>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.memchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strncat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strstr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtok>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strerror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.isalnum>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.isspace>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

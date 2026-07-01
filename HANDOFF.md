@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き318: libagc_runtime ctype/wctype helpers）
+最終更新: 2026-07-01（続き319: libagc_runtime string helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -14,6 +14,13 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き319: **`libagc_runtime.o` の string helper を拡張**。
+  `memmove` / `memchr` / `strncat` / `strstr` / `strtok` / `strerror` を runtime object 本体へ追加し、
+  `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。`strtok` は最小の静的状態つき実装。
+  smoke では overlap `memmove`、検索系、tokenize、`--nostdlib` import 維持を確認。
+  併せて Wasm object の署名衝突診断に symbol 名を含めるよう改善し、今回の `strtok` 切り分けに使った。
+  確認: `make -j4 build/ag_c_wasm build/ag_wasm_link build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、`make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip。
 - 続き318: **`libagc_runtime.o` の ctype/wctype helper を拡張**。
   `isalnum` / `isblank` / `iscntrl` / `isgraph` / `islower` / `isprint` / `ispunct` /
   `isspace` / `isupper` / `isxdigit` / `tolower` を追加し、対応する `isw*` と `towlower`

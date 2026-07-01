@@ -720,6 +720,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "__assert_rtn") ||
          str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
          str_eq_lit(name, "memset") || str_eq_lit(name, "memcpy") ||
+         str_eq_lit(name, "memmove") || str_eq_lit(name, "memchr") ||
          str_eq_lit(name, "abs") || str_eq_lit(name, "isalnum") ||
          str_eq_lit(name, "isalpha") || str_eq_lit(name, "isblank") ||
          str_eq_lit(name, "iscntrl") || str_eq_lit(name, "isdigit") ||
@@ -731,8 +732,10 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
          str_eq_lit(name, "calloc") || str_eq_lit(name, "atoi") ||
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
-         str_eq_lit(name, "strcat") || str_eq_lit(name, "strncmp") ||
-         str_eq_lit(name, "strchr") || str_eq_lit(name, "strrchr") ||
+         str_eq_lit(name, "strcat") || str_eq_lit(name, "strncat") ||
+         str_eq_lit(name, "strncmp") || str_eq_lit(name, "strchr") ||
+         str_eq_lit(name, "strrchr") || str_eq_lit(name, "strstr") ||
+         str_eq_lit(name, "strtok") || str_eq_lit(name, "strerror") ||
          str_eq_lit(name, "memcmp") || str_eq_lit(name, "puts") ||
          str_eq_lit(name, "putchar") || str_eq_lit(name, "fputs") ||
          str_eq_lit(name, "fputc") || str_eq_lit(name, "fflush") ||
@@ -2458,6 +2461,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_memset";
   } else if (str_eq_lit(name, "memcpy")) {
     target_lit = "__agc_runtime_memcpy";
+  } else if (str_eq_lit(name, "memmove")) {
+    target_lit = "__agc_runtime_memmove";
+  } else if (str_eq_lit(name, "memchr")) {
+    target_lit = "__agc_runtime_memchr";
   } else if (str_eq_lit(name, "abs")) {
     target_lit = "__agc_runtime_abs";
   } else if (str_eq_lit(name, "imaxabs")) {
@@ -2508,6 +2515,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strncpy";
   } else if (str_eq_lit(name, "strcat")) {
     target_lit = "__agc_runtime_strcat";
+  } else if (str_eq_lit(name, "strncat")) {
+    target_lit = "__agc_runtime_strncat";
   } else if (str_eq_lit(name, "strncmp")) {
     target_lit = "__agc_runtime_strncmp";
   } else if (str_eq_lit(name, "memcmp")) {
@@ -2516,6 +2525,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strchr";
   } else if (str_eq_lit(name, "strrchr")) {
     target_lit = "__agc_runtime_strrchr";
+  } else if (str_eq_lit(name, "strstr")) {
+    target_lit = "__agc_runtime_strstr";
+  } else if (str_eq_lit(name, "strtok")) {
+    target_lit = "__agc_runtime_strtok";
+  } else if (str_eq_lit(name, "strerror")) {
+    target_lit = "__agc_runtime_strerror";
   } else if (str_eq_lit(name, "puts")) {
     target_lit = "__agc_runtime_puts";
   } else if (str_eq_lit(name, "putchar")) {

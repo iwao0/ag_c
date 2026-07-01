@@ -1804,7 +1804,10 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           } else if (target->defined) {
             free(csig.params);
           } else if (!sig_equal(&target->sig, &csig)) {
-            obj_unsupported_msg("conflicting Wasm object function signature");
+            char msg[160];
+            snprintf(msg, sizeof(msg), "conflicting Wasm object function signature: %.*s",
+                     i->sym_len, i->sym);
+            obj_unsupported_msg(msg);
           } else {
             free(csig.params);
           }
