@@ -792,7 +792,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "wcrtomb") || str_eq_lit(name, "mbsrtowcs") ||
          str_eq_lit(name, "wcsrtombs") || str_eq_lit(name, "btowc") ||
          str_eq_lit(name, "wctob") || str_eq_lit(name, "swprintf") ||
-         str_eq_lit(name, "swscanf") ||
+         str_eq_lit(name, "swscanf") || str_eq_lit(name, "mbrtoc16") ||
+         str_eq_lit(name, "c16rtomb") || str_eq_lit(name, "mbrtoc32") ||
+         str_eq_lit(name, "c32rtomb") ||
          str_eq_lit(name, "sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "sqrtl") ||
          str_eq_lit(name, "pow") || str_eq_lit(name, "powf") ||
@@ -2793,6 +2795,14 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_mbrtowc";
   } else if (str_eq_lit(name, "wcrtomb")) {
     target_lit = "__agc_runtime_wcrtomb";
+  } else if (str_eq_lit(name, "mbrtoc16")) {
+    target_lit = "__agc_runtime_mbrtoc16";
+  } else if (str_eq_lit(name, "c16rtomb")) {
+    target_lit = "__agc_runtime_c16rtomb";
+  } else if (str_eq_lit(name, "mbrtoc32")) {
+    target_lit = "__agc_runtime_mbrtoc32";
+  } else if (str_eq_lit(name, "c32rtomb")) {
+    target_lit = "__agc_runtime_c32rtomb";
   } else if (str_eq_lit(name, "mbsrtowcs")) {
     target_lit = "__agc_runtime_mbsrtowcs";
   } else if (str_eq_lit(name, "wcsrtombs")) {

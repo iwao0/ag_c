@@ -532,6 +532,42 @@ long __agc_runtime_wcrtomb(long s_addr, int wc, long ps_addr) {
   return 1;
 }
 
+long __agc_runtime_mbrtoc16(long pc16_addr, long s_addr, long n, long ps_addr) {
+  (void)ps_addr;
+  if (!s_addr) return 0;
+  if (n == 0) return -2;
+  char *s = ag_rt_ptr(s_addr);
+  unsigned short *pc16 = (unsigned short *)ag_rt_ptr(pc16_addr);
+  if (pc16) *pc16 = (unsigned short)(unsigned char)s[0];
+  return s[0] == 0 ? 0 : 1;
+}
+
+long __agc_runtime_c16rtomb(long s_addr, int c16, long ps_addr) {
+  (void)ps_addr;
+  if (!s_addr) return 1;
+  char *s = ag_rt_ptr(s_addr);
+  s[0] = (char)c16;
+  return 1;
+}
+
+long __agc_runtime_mbrtoc32(long pc32_addr, long s_addr, long n, long ps_addr) {
+  (void)ps_addr;
+  if (!s_addr) return 0;
+  if (n == 0) return -2;
+  char *s = ag_rt_ptr(s_addr);
+  unsigned int *pc32 = (unsigned int *)ag_rt_ptr(pc32_addr);
+  if (pc32) *pc32 = (unsigned int)(unsigned char)s[0];
+  return s[0] == 0 ? 0 : 1;
+}
+
+long __agc_runtime_c32rtomb(long s_addr, unsigned int c32, long ps_addr) {
+  (void)ps_addr;
+  if (!s_addr) return 1;
+  char *s = ag_rt_ptr(s_addr);
+  s[0] = (char)c32;
+  return 1;
+}
+
 long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_addr) {
   (void)ps_addr;
   long *srcp = (long *)ag_rt_ptr(srcp_addr);

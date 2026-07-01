@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き331: libagc_runtime inttypes conversion helpers）
+最終更新: 2026-07-01（続き332: libagc_runtime uchar conversion helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -15,6 +15,15 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き332: **`libagc_runtime.o` に uchar conversion helper を追加**。
+  `mbrtoc16` / `c16rtomb` / `mbrtoc32` / `c32rtomb` を runtime object 本体へ追加し、
+  `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。実装は既存 wide conversion と
+  同じ ASCII 単一バイト変換。smoke では char16/char32 の往復と `--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = 1118/1118、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip、
+  `make test`、`bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0。
 - 続き331: **`libagc_runtime.o` に inttypes 変換 helper を追加**。
   `strtoimax` / `strtoumax` を runtime object 本体へ追加し、`ag_wasm_link` の runtime symbol 判定と
   ABI bridge map へ登録した。`strtoimax` は既存 `strtol` 相当、`strtoumax` は符号付き入力も

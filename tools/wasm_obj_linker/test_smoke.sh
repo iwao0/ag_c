@@ -366,6 +366,10 @@ unsigned long wcstoul(int *s, int **endptr, int base);
 double wcstod(int *s, int **endptr);
 unsigned long mbrtowc(int *pwc, char *s, unsigned long n, void *ps);
 unsigned long wcrtomb(char *s, int wc, void *ps);
+unsigned long mbrtoc16(unsigned short *pc16, char *s, unsigned long n, void *ps);
+unsigned long c16rtomb(char *s, unsigned short c16, void *ps);
+unsigned long mbrtoc32(unsigned int *pc32, char *s, unsigned long n, void *ps);
+unsigned long c32rtomb(char *s, unsigned int c32, void *ps);
 unsigned long mbsrtowcs(int *dst, char **src, unsigned long len, void *ps);
 unsigned long wcsrtombs(char *dst, int **src, unsigned long len, void *ps);
 int btowc(int c);
@@ -466,6 +470,8 @@ int main(void) {
   int swfmt[8];
   int swarg[4];
   int scanfmt[4];
+  unsigned short c16 = 0;
+  unsigned int c32 = 0;
   int *wend = 0;
   int wcnum[8];
   int wcdec[8];
@@ -511,6 +517,10 @@ int main(void) {
   mbsrtowcs(convw, &mbsrcp, 8, nullv);
   wcsrcp = convw;
   wcsrtombs(convc, &wcsrcp, 8, nullv);
+  unsigned long m16 = mbrtoc16(&c16, "U", 2, nullv);
+  unsigned long r16 = c16rtomb(convc + 2, c16, nullv);
+  unsigned long m32 = mbrtoc32(&c32, "V", 2, nullv);
+  unsigned long r32 = c32rtomb(convc + 3, c32, nullv);
   swfmt[0] = '%';
   swfmt[1] = 'd';
   swfmt[2] = '-';
@@ -643,6 +653,8 @@ int main(void) {
          mbrtowc(convw, "Q", 2, nullv) == 1 && convw[0] == 'Q' &&
          wcrtomb(convc, 'R', nullv) == 1 && convc[0] == 'R' &&
          convw[0] == 'Q' && convc[0] == 'R' &&
+         m16 == 1 && c16 == 'U' && r16 == 1 &&
+         m32 == 1 && c32 == 'V' && r32 == 1 && convc[2] == 'U' && convc[3] == 'V' &&
          btowc('S') == 'S' && wctob('T') == 'T' &&
          swret == 5 && swbuf[0] == '1' && swbuf[1] == '2' && swbuf[2] == '-' &&
          swbuf[3] == 'O' && swbuf[4] == 'K' && swbuf[5] == 0 && scanret == 0 &&
@@ -979,6 +991,10 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wcstod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.mbrtowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcrtomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbrtoc16>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.c16rtomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbrtoc32>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.c32rtomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.mbsrtowcs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsrtombs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.btowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
