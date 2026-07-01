@@ -433,6 +433,30 @@ double __agc_runtime_cos(double x) {
   return sum;
 }
 
+double __agc_runtime_tan(double x) {
+  double c = __agc_runtime_cos(x);
+  if (c == 0.0) return x < 0.0 ? -1.0e308 : 1.0e308;
+  return __agc_runtime_sin(x) / c;
+}
+
+double __agc_runtime_fmod(double x, double y) {
+  if (y == 0.0) return 0.0;
+  long q = (long)(x / y);
+  double r = x - (double)q * y;
+  if (x >= 0.0 && r < 0.0) r = r + __agc_runtime_fabs(y);
+  if (x < 0.0 && r > 0.0) r = r - __agc_runtime_fabs(y);
+  return r;
+}
+
+double __agc_runtime_cbrt(double x) {
+  if (x == 0.0) return 0.0;
+  double sign = x < 0.0 ? -1.0 : 1.0;
+  double a = x < 0.0 ? -x : x;
+  double g = a > 1.0 ? a : 1.0;
+  for (int i = 0; i < 24; i++) g = (2.0 * g + a / (g * g)) / 3.0;
+  return sign * g;
+}
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {

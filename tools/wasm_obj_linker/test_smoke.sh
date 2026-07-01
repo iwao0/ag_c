@@ -261,11 +261,14 @@ double floor(double x);
 double ceil(double x);
 double round(double x);
 double trunc(double x);
+double fmod(double x, double y);
+double cbrt(double x);
 float floorf(float x);
 float ceilf(float x);
 float roundf(float x);
 double sin(double x);
 double cos(double x);
+double tan(double x);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
@@ -333,6 +336,11 @@ int main(void) {
   int cos0 = (int)(cos(0.0) * 1000.0);
   int cos90 = (int)(cos(1.5707963267948966) * 1000.0);
   int cos180 = (int)(cos(3.141592653589793) * 1000.0);
+  int tan45 = (int)(tan(0.7853981633974483) * 1000.0);
+  int fmod_pos = (int)(fmod(7.5, 2.0) * 1000.0);
+  int fmod_neg = (int)(fmod(-7.5, 2.0) * 1000.0);
+  int cbrt_pos = (int)(cbrt(27.0) * 1000.0);
+  int cbrt_neg = (int)(cbrt(-8.0) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -364,6 +372,10 @@ int main(void) {
          cos0 >= 998 && cos0 <= 1002 &&
          cos90 >= -2 && cos90 <= 2 &&
          cos180 <= -998 && cos180 >= -1002 &&
+         tan45 >= 998 && tan45 <= 1002 &&
+         fmod_pos == 1500 && fmod_neg == -1500 &&
+         cbrt_pos >= 2998 && cbrt_pos <= 3002 &&
+         cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
@@ -584,8 +596,10 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.cos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tan>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.floor>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ceilf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi

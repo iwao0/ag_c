@@ -729,6 +729,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strchr") || str_eq_lit(name, "strrchr") ||
          str_eq_lit(name, "memcmp") || str_eq_lit(name, "putchar") ||
          str_eq_lit(name, "sin") || str_eq_lit(name, "cos") ||
+         str_eq_lit(name, "tan") ||
          str_eq_lit(name, "sprintf") ||
          str_eq_lit(name, "snprintf") ||
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
@@ -746,7 +747,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "floor") || str_eq_lit(name, "ceil") ||
          str_eq_lit(name, "round") || str_eq_lit(name, "trunc") ||
          str_eq_lit(name, "floorf") || str_eq_lit(name, "ceilf") ||
-         str_eq_lit(name, "roundf");
+         str_eq_lit(name, "roundf") || str_eq_lit(name, "fmod") ||
+         str_eq_lit(name, "cbrt");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -2526,6 +2528,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_sin";
   } else if (str_eq_lit(name, "cos")) {
     target_lit = "__agc_runtime_cos";
+  } else if (str_eq_lit(name, "tan")) {
+    target_lit = "__agc_runtime_tan";
+  } else if (str_eq_lit(name, "fmod")) {
+    target_lit = "__agc_runtime_fmod";
+  } else if (str_eq_lit(name, "cbrt")) {
+    target_lit = "__agc_runtime_cbrt";
   } else if (str_eq_lit(name, "wcslen")) {
     target_lit = "__agc_runtime_wcslen";
   } else if (str_eq_lit(name, "wcscpy")) {

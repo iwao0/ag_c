@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き308: wasm runtime object rounding math helpers）
+最終更新: 2026-07-01（続き309: wasm runtime object tan fmod cbrt helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,15 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き309: **`libagc_runtime.o` に `tan` / `fmod` / `cbrt` helper を追加**。
+  `__agc_runtime_tan`、`__agc_runtime_fmod`、`__agc_runtime_cbrt` を runtime object に追加し、
+  `ag_wasm_link` の runtime symbol/bridge map に public `tan` / `fmod` / `cbrt` を追加した。
+  `tan` は既存 `sin` / `cos` から計算、`fmod` は整数商から剰余を戻し、`cbrt` は Newton 法の
+  最小実装。`test_smoke.sh` の `libc_runtime.c` で `tan(pi/4)`、正負 `fmod`、正負 `cbrt` を確認し、
+  `--nostdlib` では代表として `env.tan` / `env.fmod` import が残ることも確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き308: **`libagc_runtime.o` に丸め系 math helper を追加**。
   `fabsf`、`floor` / `ceil` / `round` / `trunc`、`floorf` / `ceilf` / `roundf` を
   runtime object に追加し、`ag_wasm_link` の runtime symbol/bridge map に追加した。
