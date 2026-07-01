@@ -137,6 +137,19 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/indirect_aggregate_return_sig.c" <<'SRC'
+struct Big { long a, b, c; };
+struct Big mk(long x) {
+  struct Big v = {x, x + 1, x + 2};
+  return v;
+}
+long apply(struct Big (*fp)(long), long x) {
+  struct Big v = fp(x);
+  return v.a + v.b + v.c;
+}
+int main(void) { return apply(mk, 13) == 42 ? 42 : 1; }
+SRC
+
 cat > "$out_dir/bss_big.c" <<'SRC'
 char big[70000];
 int main(void) {
@@ -978,6 +991,15 @@ grep -q 'main() => i32:42' "$out_dir/linked_fp_return_sig.interp"
 wasm-validate "$out_dir/linked_small_struct_return_sig.wasm"
 wasm-interp "$out_dir/linked_small_struct_return_sig.wasm" --run-all-exports > "$out_dir/linked_small_struct_return_sig.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_small_struct_return_sig.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/indirect_aggregate_return_sig.o" \
+  "$out_dir/indirect_aggregate_return_sig.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_indirect_aggregate_return_sig.wasm" \
+  "$out_dir/indirect_aggregate_return_sig.o"
+wasm-validate "$out_dir/linked_indirect_aggregate_return_sig.wasm"
+wasm-interp "$out_dir/linked_indirect_aggregate_return_sig.wasm" --run-all-exports \
+  > "$out_dir/linked_indirect_aggregate_return_sig.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_indirect_aggregate_return_sig.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/bss_big.o" "$out_dir/bss_big.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_bss_big.wasm" \

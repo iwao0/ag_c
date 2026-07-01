@@ -18,10 +18,13 @@
   （00206/00216 は unsupported GNU skip）。
 - 続き339: **Wasm object linker smoke に indirect signature の回帰テストを追加**。
   続き338 の修正が全 fixture scan だけでなく通常の `make test-wasm-obj-linker` でも
-  捕まるように、`tools/wasm_obj_linker/test_smoke.sh` へ `fp_return_sig.c` と
-  `small_struct_return_sig.c` を追加した。前者は `double (*)(double)` の indirect call で
+  捕まるように、`tools/wasm_obj_linker/test_smoke.sh` へ `fp_return_sig.c`、
+  `small_struct_return_sig.c`、`indirect_aggregate_return_sig.c` を追加した。
+  `fp_return_sig.c` は `double (*)(double)` の indirect call で
   mask に出ない実引数を signature に残すこと、後者は 8B small aggregate return を
   `i64` signature として link/run できることを確認する。
+  `indirect_aggregate_return_sig.c` は 1/2/4/8B を超える struct return の hidden ret_area を
+  indirect call に渡す経路を確認する。
   確認: `make test-wasm-obj-linker`、`./build/test_wasm32_object`、`git diff --check`。
 - 続き338: **Wasm object link 実行時の indirect call signature mismatch を修正**。
   `make wasm32-object-link-all-fixture-scan` で `funcptr_fp_return.c` /
