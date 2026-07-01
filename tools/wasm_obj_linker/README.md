@@ -52,7 +52,8 @@ Supported:
   immediates are emitted as signed LEB128.
 - Default runtime-object linking through `build/libagc_runtime.o`; currently it
   carries the small C runtime used by the fixture suite: formatter helpers
-  (`printf`, `fprintf`, `snprintf`, `sprintf`), string/memory/ctype helpers,
+  (`printf`, `fprintf`, `snprintf`, `sprintf`, `swprintf`, `swscanf`),
+  string/memory/ctype helpers,
   `puts`/`fputs`/`fputc`/`putchar`/`fflush`/`perror`/`getchar`,
   minimal file I/O stubs including seek/tell/error helpers,
   a tiny bump allocator plus small stdlib helpers

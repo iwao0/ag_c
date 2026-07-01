@@ -368,6 +368,8 @@ unsigned long mbsrtowcs(int *dst, char **src, unsigned long len, void *ps);
 unsigned long wcsrtombs(char *dst, int **src, unsigned long len, void *ps);
 int btowc(int c);
 int wctob(int c);
+int swprintf(int *s, unsigned long n, int *fmt, ...);
+int swscanf(int *s, int *fmt, ...);
 typedef void (*sig_handler_t)(int);
 sig_handler_t signal(int sig, sig_handler_t handler);
 int raise(int sig);
@@ -454,6 +456,10 @@ int main(void) {
   int wfbuf[8];
   int convw[8];
   char convc[8];
+  int swbuf[16];
+  int swfmt[8];
+  int swarg[4];
+  int scanfmt[4];
   int *wend = 0;
   int wcnum[8];
   int wcdec[8];
@@ -499,6 +505,21 @@ int main(void) {
   mbsrtowcs(convw, &mbsrcp, 8, nullv);
   wcsrcp = convw;
   wcsrtombs(convc, &wcsrcp, 8, nullv);
+  swfmt[0] = '%';
+  swfmt[1] = 'd';
+  swfmt[2] = '-';
+  swfmt[3] = '%';
+  swfmt[4] = 'l';
+  swfmt[5] = 's';
+  swfmt[6] = 0;
+  swarg[0] = 'O';
+  swarg[1] = 'K';
+  swarg[2] = 0;
+  int swret = swprintf(swbuf, 16, swfmt, 12, swarg);
+  scanfmt[0] = '%';
+  scanfmt[1] = 'd';
+  scanfmt[2] = 0;
+  int scanret = swscanf(swbuf, scanfmt, &never);
   struct lconv *lc;
   setlocale(0, "C");
   lc = localeconv();
@@ -615,6 +636,8 @@ int main(void) {
          wcrtomb(convc, 'R', nullv) == 1 && convc[0] == 'R' &&
          convw[0] == 'Q' && convc[0] == 'R' &&
          btowc('S') == 'S' && wctob('T') == 'T' &&
+         swret == 5 && swbuf[0] == '1' && swbuf[1] == '2' && swbuf[2] == '-' &&
+         swbuf[3] == 'O' && swbuf[4] == 'K' && swbuf[5] == 0 && scanret == 0 &&
          feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 16 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
          fetestexcept(16) == 16 &&
@@ -950,6 +973,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wcsrtombs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.btowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wctob>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.swprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.swscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fseek>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

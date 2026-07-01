@@ -790,7 +790,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "wcstod") || str_eq_lit(name, "mbrtowc") ||
          str_eq_lit(name, "wcrtomb") || str_eq_lit(name, "mbsrtowcs") ||
          str_eq_lit(name, "wcsrtombs") || str_eq_lit(name, "btowc") ||
-         str_eq_lit(name, "wctob") ||
+         str_eq_lit(name, "wctob") || str_eq_lit(name, "swprintf") ||
+         str_eq_lit(name, "swscanf") ||
          str_eq_lit(name, "sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "sqrtl") ||
          str_eq_lit(name, "pow") || str_eq_lit(name, "powf") ||
@@ -2795,6 +2796,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_btowc";
   } else if (str_eq_lit(name, "wctob")) {
     target_lit = "__agc_runtime_wctob";
+  } else if (str_eq_lit(name, "swprintf")) {
+    target_lit = "__agc_runtime_swprintf";
+  } else if (str_eq_lit(name, "swscanf")) {
+    target_lit = "__agc_runtime_swscanf";
   } else {
     return 0;
   }
