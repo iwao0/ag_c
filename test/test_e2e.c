@@ -1948,6 +1948,9 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_fread") == 0 || strcmp(sym, "_fwrite") == 0 ||
             strcmp(sym, "_fputs") == 0 || strcmp(sym, "_fputc") == 0 ||
             strcmp(sym, "_fgetc") == 0 || strcmp(sym, "_fgets") == 0 ||
+            strcmp(sym, "_fseek") == 0 || strcmp(sym, "_ftell") == 0 ||
+            strcmp(sym, "_rewind") == 0 || strcmp(sym, "_feof") == 0 ||
+            strcmp(sym, "_ferror") == 0 || strcmp(sym, "_clearerr") == 0 ||
             strcmp(sym, "_getchar") == 0 || strcmp(sym, "_putchar") == 0 ||
             strcmp(sym, "_isalnum") == 0 || strcmp(sym, "_isalpha") == 0 ||
             strcmp(sym, "_isblank") == 0 || strcmp(sym, "_iscntrl") == 0 ||

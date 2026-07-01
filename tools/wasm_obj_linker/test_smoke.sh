@@ -384,6 +384,12 @@ unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *s
 int fgetc(FILE *stream);
 int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+int fseek(FILE *stream, long offset, int whence);
+long ftell(FILE *stream);
+void rewind(FILE *stream);
+int feof(FILE *stream);
+int ferror(FILE *stream);
+void clearerr(FILE *stream);
 int printf(char *fmt, ...);
 int fprintf(FILE *stream, char *fmt, ...);
 int puts(char *s);
@@ -502,7 +508,20 @@ int main(void) {
   char rb[8];
   FILE *rf = fopen("tmp.txt", "r");
   int readn = fread(rb, 1, 2, rf);
+  long pos_after_read = ftell(rf);
   int ch = fgetc(rf);
+  int eof_after_ch = feof(rf);
+  int eof_read = fgetc(rf);
+  int eof_after_miss = feof(rf);
+  int seek_ok = fseek(rf, 1, 0);
+  long pos_after_seek = ftell(rf);
+  int ch_seek = fgetc(rf);
+  int bad_seek = fseek(rf, -99, 0);
+  int err_after_bad_seek = ferror(rf);
+  clearerr(rf);
+  int err_after_clear = ferror(rf);
+  rewind(rf);
+  long pos_after_rewind = ftell(rf);
   fclose(rf);
   FILE *rf2 = fopen("tmp.txt", "r");
   char line[8];
@@ -645,6 +664,9 @@ int main(void) {
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          r[0] == 'A' &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
+         pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
+         seek_ok == 0 && pos_after_seek == 1 && ch_seek == '\n' &&
+         bad_seek == -1 && err_after_bad_seek && !err_after_clear && pos_after_rewind == 0 &&
          linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
          ch2 == 'B' &&
          printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
@@ -930,6 +952,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wctob>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fseek>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ftell>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.rewind>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.feof>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ferror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.clearerr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.cos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tan>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

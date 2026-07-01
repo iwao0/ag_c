@@ -54,7 +54,8 @@ Supported:
   carries the small C runtime used by the fixture suite: formatter helpers
   (`printf`, `fprintf`, `snprintf`, `sprintf`), string/memory/ctype helpers,
   `puts`/`fputs`/`fputc`/`putchar`/`fflush`/`perror`/`getchar`,
-  minimal file I/O stubs, a tiny bump allocator plus small stdlib helpers
+  minimal file I/O stubs including seek/tell/error helpers,
+  a tiny bump allocator plus small stdlib helpers
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
   `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`),
   `time`/`clock`/`difftime`, `errno` storage, wide-char string/memory/conversion helpers,

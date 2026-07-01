@@ -757,7 +757,10 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
          str_eq_lit(name, "fclose") || str_eq_lit(name, "fread") ||
          str_eq_lit(name, "fgetc") || str_eq_lit(name, "getc") ||
-         str_eq_lit(name, "fgets") ||
+         str_eq_lit(name, "fgets") || str_eq_lit(name, "fseek") ||
+         str_eq_lit(name, "ftell") || str_eq_lit(name, "rewind") ||
+         str_eq_lit(name, "feof") || str_eq_lit(name, "ferror") ||
+         str_eq_lit(name, "clearerr") ||
          str_eq_lit(name, "imaxabs") || str_eq_lit(name, "feclearexcept") ||
          str_eq_lit(name, "fegetexceptflag") || str_eq_lit(name, "feraiseexcept") ||
          str_eq_lit(name, "fesetexceptflag") || str_eq_lit(name, "fetestexcept") ||
@@ -2630,6 +2633,18 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_getc";
   } else if (str_eq_lit(name, "fgets")) {
     target_lit = "__agc_runtime_fgets";
+  } else if (str_eq_lit(name, "fseek")) {
+    target_lit = "__agc_runtime_fseek";
+  } else if (str_eq_lit(name, "ftell")) {
+    target_lit = "__agc_runtime_ftell";
+  } else if (str_eq_lit(name, "rewind")) {
+    target_lit = "__agc_runtime_rewind";
+  } else if (str_eq_lit(name, "feof")) {
+    target_lit = "__agc_runtime_feof";
+  } else if (str_eq_lit(name, "ferror")) {
+    target_lit = "__agc_runtime_ferror";
+  } else if (str_eq_lit(name, "clearerr")) {
+    target_lit = "__agc_runtime_clearerr";
   } else if (str_eq_lit(name, "feclearexcept")) {
     target_lit = "__agc_runtime_feclearexcept";
   } else if (str_eq_lit(name, "fegetexceptflag")) {
