@@ -1037,6 +1037,10 @@ static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_t
       psx_ctx_get_function_ret_is_funcptr((char *)name, name_len)) {
     return IR_TY_PTR;
   }
+  int ret_struct_size = psx_ctx_get_function_ret_struct_size((char *)name, name_len);
+  if (ret_struct_size > 0) {
+    return ret_struct_size == 8 ? IR_TY_I64 : IR_TY_I32;
+  }
   tk_float_kind_t rfp = psx_ctx_get_function_ret_fp_kind((char *)name, name_len);
   if (rfp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (rfp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
@@ -1054,6 +1058,10 @@ static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
   if (psx_ctx_get_function_ret_is_pointer((char *)name, name_len) ||
       psx_ctx_get_function_ret_is_funcptr((char *)name, name_len)) {
     sig.result = IR_TY_I32;
+  } else if (psx_ctx_get_function_ret_struct_size((char *)name, name_len) > 0) {
+    sig.result = psx_ctx_get_function_ret_struct_size((char *)name, name_len) == 8
+                   ? IR_TY_I64
+                   : IR_TY_I32;
   } else if (rfp == TK_FLOAT_KIND_FLOAT) {
     sig.result = IR_TY_F32;
   } else if (rfp >= TK_FLOAT_KIND_DOUBLE) {
@@ -1254,6 +1262,20 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   if (!has_ret_area && i->callee.id != IR_VAL_NONE && i->has_funcptr_sig) {
     sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
     int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
+    if (sig.nparams < call_nargs) {
+      int old_nparams = sig.nparams;
+      sig.params = xrealloc(sig.params, (size_t)call_nargs * sizeof(ir_type_t));
+      for (int a = old_nparams; a < call_nargs; a++) {
+        ir_type_t arg_ty = i->args[a].type;
+        ir_type_t ty = wasm_ir_type(arg_ty);
+        int null_ptr_pair_arg =
+            a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+        if (arg_ty == IR_TY_PTR || null_ptr_pair_arg) ty = IR_TY_I32;
+        else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
+        sig.params[a] = ty;
+      }
+      sig.nparams = call_nargs;
+    }
     for (int a = 0; a < call_nargs && a < sig.nparams; a++) {
       ir_type_t arg_ty = i->args[a].type;
       int null_ptr_pair_arg =
@@ -1264,10 +1286,14 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
         sig.params[a] = IR_TY_I64;
       }
     }
-    if (!i->is_void_call && i->dst.id != IR_VAL_NONE &&
-        (i->dst.type == IR_TY_PTR ||
-         (i->dst.type == IR_TY_I32 && (sig.result == IR_TY_F32 || sig.result == IR_TY_F64)))) {
-      sig.result = IR_TY_I32;
+    if (!i->is_void_call && i->dst.id != IR_VAL_NONE) {
+      if (i->dst.type == IR_TY_PTR ||
+          (i->dst.type == IR_TY_I32 && (sig.result == IR_TY_F32 || sig.result == IR_TY_F64))) {
+        sig.result = IR_TY_I32;
+      } else if (i->dst.type == IR_TY_I64 && sig.result == IR_TY_I32 &&
+                 !i->funcptr_ret_is_data_pointer) {
+        sig.result = IR_TY_I64;
+      }
     }
     return sig;
   }

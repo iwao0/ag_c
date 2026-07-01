@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き337: c-testsuite 00209 abstract function declarator）
+最終更新: 2026-07-01（続き338: Wasm object indirect call signature / small aggregate return）
 
 ## 現状
 - `make test` = **green**。
@@ -11,9 +11,25 @@
   `make test` = **green**、
   `make test-wasm-obj-linker` = **green**、
   `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
-  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**。
+  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**、
+  `make wasm32-object-link-all-fixture-scan` = **1118 pass / fail 0 / skip 1**、
+  `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き338: **Wasm object link 実行時の indirect call signature mismatch を修正**。
+  `make wasm32-object-link-all-fixture-scan` で `funcptr_fp_return.c` /
+  `funcptr_return_pointer_to_array.c` / `funcptr_return_pointer_to_2d_array.c` が
+  `indirect call signature mismatch` になっていた。object emitter の `has_funcptr_sig`
+  経路が mask 由来の引数数だけを使い、mask にない実引数を落として `() -> f64` などを
+  作っていたため、WAT 経路と同じく実引数数まで signature を補完するようにした。
+  さらに `funcptr_return_struct_member.c` が assertion failure 停止ループになっていた件は、
+  object の関数定義 signature が 8B small aggregate return を `i32` として出していたことが原因。
+  `ret_struct_size == 8` は `i64`、1/2/4B は `i32` として扱い、indirect call 側も IR の
+  `dst.type == i64` を尊重するようにした。
+  確認: 対象4 fixture の object link + `wasm-validate` + `wasm-interp`、
+  `./build/test_wasm32_object`、`make test-wasm-obj-linker`、`./build/test_wasm32_e2e`、
+  `make wasm32-object-link-all-fixture-scan`、`make wasm32-object-link-c-testsuite-scan`、
+  `bash scripts/run_c_testsuite.sh --list-fail`。
 - 続き337: **c-testsuite 00209 の `int ()` abstract function declarator を修正**。
   関数仮引数位置の `int ()` を unnamed int ではなく old-style empty parameter list の
   function type として扱い、関数ポインタへ decay させるようにした。
