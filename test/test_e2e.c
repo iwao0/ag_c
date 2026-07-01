@@ -729,6 +729,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
+    {"stdheader", "tgmath_variant_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/tgmath_variant_ops.c", 0, 0},
     {"stdheader", "assert_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/assert_include.c", 0, 0},
     {"stdheader", "errno_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/errno_include.c", 0, 0},
     {"stdheader", "signal_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/signal_include.c", 0, 0},
@@ -1976,6 +1977,25 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_fmodf") == 0 || strcmp(sym, "_fmodl") == 0 ||
             strcmp(sym, "_sqrtf") == 0 || strcmp(sym, "_ceilf") == 0 ||
             strcmp(sym, "_floorf") == 0 || strcmp(sym, "_roundf") == 0 ||
+            strcmp(sym, "_cbrtf") == 0 || strcmp(sym, "_cbrtl") == 0 ||
+            strcmp(sym, "_sinf") == 0 || strcmp(sym, "_sinl") == 0 ||
+            strcmp(sym, "_cosf") == 0 || strcmp(sym, "_cosl") == 0 ||
+            strcmp(sym, "_tanf") == 0 || strcmp(sym, "_tanl") == 0 ||
+            strcmp(sym, "_asinf") == 0 || strcmp(sym, "_asinl") == 0 ||
+            strcmp(sym, "_acosf") == 0 || strcmp(sym, "_acosl") == 0 ||
+            strcmp(sym, "_atanf") == 0 || strcmp(sym, "_atanl") == 0 ||
+            strcmp(sym, "_atan2f") == 0 || strcmp(sym, "_atan2l") == 0 ||
+            strcmp(sym, "_expf") == 0 || strcmp(sym, "_expl") == 0 ||
+            strcmp(sym, "_logf") == 0 || strcmp(sym, "_logl") == 0 ||
+            strcmp(sym, "_log10f") == 0 || strcmp(sym, "_log10l") == 0 ||
+            strcmp(sym, "_log2f") == 0 || strcmp(sym, "_log2l") == 0 ||
+            strcmp(sym, "_floorl") == 0 || strcmp(sym, "_ceill") == 0 ||
+            strcmp(sym, "_roundl") == 0 || strcmp(sym, "_truncf") == 0 ||
+            strcmp(sym, "_truncl") == 0 || strcmp(sym, "_hypot") == 0 ||
+            strcmp(sym, "_hypotf") == 0 || strcmp(sym, "_hypotl") == 0 ||
+            strcmp(sym, "_fmin") == 0 || strcmp(sym, "_fminf") == 0 ||
+            strcmp(sym, "_fminl") == 0 || strcmp(sym, "_fmax") == 0 ||
+            strcmp(sym, "_fmaxf") == 0 || strcmp(sym, "_fmaxl") == 0 ||
             /* <wctype.h> / <wchar.h> / <fenv.h> / <locale.h> / <inttypes.h> の libc 関数。
              * 外部シンボルなので名前空間化しない (c11_standard_headers fixture が使用)。 */
             strcmp(sym, "_iswalnum") == 0 || strcmp(sym, "_iswalpha") == 0 ||

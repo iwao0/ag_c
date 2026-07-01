@@ -300,9 +300,12 @@ struct lconv { char *decimal_point; };
 struct lconv *localeconv(void);
 double sqrt(double x);
 float sqrtf(float x);
+long double sqrtl(long double x);
 double pow(double x, double y);
 float powf(float x, float y);
 long double powl(long double x, long double y);
+float cbrtf(float x);
+long double cbrtl(long double x);
 double fabs(double x);
 float fabsf(float x);
 long double fabsl(long double x);
@@ -310,28 +313,63 @@ double floor(double x);
 double ceil(double x);
 double round(double x);
 double trunc(double x);
+float floorf(float x);
+long double floorl(long double x);
+float ceilf(float x);
+long double ceill(long double x);
+float roundf(float x);
+long double roundl(long double x);
+float truncf(float x);
+long double truncl(long double x);
 double fmod(double x, double y);
 float fmodf(float x, float y);
 long double fmodl(long double x, long double y);
 double cbrt(double x);
-long double sqrtl(long double x);
 double exp(double x);
+float expf(float x);
+long double expl(long double x);
 double log(double x);
+float logf(float x);
+long double logl(long double x);
 double log2(double x);
+float log2f(float x);
+long double log2l(long double x);
 double log10(double x);
+float log10f(float x);
+long double log10l(long double x);
 double atan(double x);
+float atanf(float x);
+long double atanl(long double x);
 double atan2(double y, double x);
+float atan2f(float y, float x);
+long double atan2l(long double y, long double x);
 double asin(double x);
+float asinf(float x);
+long double asinl(long double x);
 double acos(double x);
+float acosf(float x);
+long double acosl(long double x);
 double sinh(double x);
 double cosh(double x);
 double tanh(double x);
-float floorf(float x);
-float ceilf(float x);
-float roundf(float x);
 double sin(double x);
+float sinf(float x);
+long double sinl(long double x);
 double cos(double x);
+float cosf(float x);
+long double cosl(long double x);
 double tan(double x);
+float tanf(float x);
+long double tanl(long double x);
+double hypot(double x, double y);
+float hypotf(float x, float y);
+long double hypotl(long double x, long double y);
+double fmin(double x, double y);
+float fminf(float x, float y);
+long double fminl(long double x, long double y);
+double fmax(double x, double y);
+float fmaxf(float x, float y);
+long double fmaxl(long double x, long double y);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
@@ -572,24 +610,48 @@ int main(void) {
   int cos90 = (int)(cos(1.5707963267948966) * 1000.0);
   int cos180 = (int)(cos(3.141592653589793) * 1000.0);
   int tan45 = (int)(tan(0.7853981633974483) * 1000.0);
+  int sinf90 = (int)(sinf(1.5707963267948966f) * 1000.0f);
+  int sinl90 = (int)(sinl(1.5707963267948966L) * 1000.0L);
+  int cosf180 = (int)(cosf(3.141592653589793f) * 1000.0f);
+  int cosl180 = (int)(cosl(3.141592653589793L) * 1000.0L);
+  int tanf45 = (int)(tanf(0.7853981633974483f) * 1000.0f);
+  int tanl45 = (int)(tanl(0.7853981633974483L) * 1000.0L);
   int fmod_pos = (int)(fmod(7.5, 2.0) * 1000.0);
   int fmod_neg = (int)(fmod(-7.5, 2.0) * 1000.0);
   int fmodf_pos = (int)(fmodf(7.5f, 2.0f) * 1000.0f);
   int fmodl_pos = (int)(fmodl(7.5L, 2.0L) * 1000.0L);
   int cbrt_pos = (int)(cbrt(27.0) * 1000.0);
   int cbrt_neg = (int)(cbrt(-8.0) * 1000.0);
+  int cbrtf_pos = (int)(cbrtf(27.0f) * 1000.0f);
+  int cbrtl_neg = (int)(cbrtl(-8.0L) * 1000.0L);
   int exp1 = (int)(exp(1.0) * 1000.0);
+  int expf1 = (int)(expf(1.0f) * 1000.0f);
+  int expl1 = (int)(expl(1.0L) * 1000.0L);
   int loge = (int)(log(2.718281828459045) * 1000.0);
+  int logfe = (int)(logf(2.718281828459045f) * 1000.0f);
+  int logle = (int)(logl(2.718281828459045L) * 1000.0L);
   int log2v = (int)(log2(8.0) * 1000.0);
+  int log2fv = (int)(log2f(8.0f) * 1000.0f);
+  int log2lv = (int)(log2l(8.0L) * 1000.0L);
   int log10v = (int)(log10(100.0) * 1000.0);
+  int log10fv = (int)(log10f(100.0f) * 1000.0f);
+  int log10lv = (int)(log10l(100.0L) * 1000.0L);
   int pow_int = (int)(pow(-2.0, 3.0) * 1000.0);
   int pow_frac = (int)(pow(9.0, 0.5) * 1000.0);
   int powf_int = (int)(powf(2.0f, 5.0f) * 1000.0f);
   int powl_int = (int)(powl(2.0L, 4.0L) * 1000.0L);
   int atan1 = (int)(atan(1.0) * 1000.0);
+  int atanf1 = (int)(atanf(1.0f) * 1000.0f);
+  int atanl1 = (int)(atanl(1.0L) * 1000.0L);
   int atan2v = (int)(atan2(1.0, 0.0) * 1000.0);
+  int atan2fv = (int)(atan2f(1.0f, 0.0f) * 1000.0f);
+  int atan2lv = (int)(atan2l(1.0L, 0.0L) * 1000.0L);
   int asinv = (int)(asin(1.0) * 1000.0);
+  int asinfv = (int)(asinf(1.0f) * 1000.0f);
+  int asinlv = (int)(asinl(1.0L) * 1000.0L);
   int acosv = (int)(acos(0.0) * 1000.0);
+  int acosfv = (int)(acosf(0.0f) * 1000.0f);
+  int acosl_v = (int)(acosl(0.0L) * 1000.0L);
   int sinh0 = (int)(sinh(0.0) * 1000.0);
   int cosh0 = (int)(cosh(0.0) * 1000.0);
   int tanh0 = (int)(tanh(0.0) * 1000.0);
@@ -682,25 +744,61 @@ int main(void) {
          (int)trunc(3.8) == 3 && (int)trunc(-3.8) == -3 &&
          (int)floorf(2.9f) == 2 && (int)ceilf(2.1f) == 3 &&
          (int)roundf(-2.5f) == -3 &&
+         (int)floorl(2.9L) == 2 && (int)ceill(2.1L) == 3 &&
+         (int)roundl(-2.5L) == -3 &&
+         (int)truncf(-2.8f) == -2 && (int)truncl(-2.8L) == -2 &&
          sin0 == 0 && sin90 >= 998 && sin90 <= 1002 &&
          sinm90 <= -998 && sinm90 >= -1002 &&
          cos0 >= 998 && cos0 <= 1002 &&
          cos90 >= -2 && cos90 <= 2 &&
          cos180 <= -998 && cos180 >= -1002 &&
          tan45 >= 998 && tan45 <= 1002 &&
+         sinf90 >= 998 && sinf90 <= 1002 &&
+         sinl90 >= 998 && sinl90 <= 1002 &&
+         cosf180 <= -998 && cosf180 >= -1002 &&
+         cosl180 <= -998 && cosl180 >= -1002 &&
+         tanf45 >= 998 && tanf45 <= 1002 &&
+         tanl45 >= 998 && tanl45 <= 1002 &&
          fmod_pos == 1500 && fmod_neg == -1500 &&
          fmodf_pos == 1500 &&
          fmodl_pos == 1500 &&
          cbrt_pos >= 2998 && cbrt_pos <= 3002 &&
          cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
+         cbrtf_pos >= 2998 && cbrtf_pos <= 3002 &&
+         cbrtl_neg >= -2002 && cbrtl_neg <= -1998 &&
          exp1 >= 2716 && exp1 <= 2720 &&
+         expf1 >= 2716 && expf1 <= 2720 &&
+         expl1 >= 2716 && expl1 <= 2720 &&
          loge >= 998 && loge <= 1002 &&
+         logfe >= 998 && logfe <= 1002 &&
+         logle >= 998 && logle <= 1002 &&
          log2v >= 2998 && log2v <= 3002 &&
+         log2fv >= 2998 && log2fv <= 3002 &&
+         log2lv >= 2998 && log2lv <= 3002 &&
          log10v >= 1998 && log10v <= 2002 &&
+         log10fv >= 1998 && log10fv <= 2002 &&
+         log10lv >= 1998 && log10lv <= 2002 &&
          atan1 >= 783 && atan1 <= 787 &&
+         atanf1 >= 783 && atanf1 <= 787 &&
+         atanl1 >= 783 && atanl1 <= 787 &&
          atan2v >= 1568 && atan2v <= 1572 &&
+         atan2fv >= 1568 && atan2fv <= 1572 &&
+         atan2lv >= 1568 && atan2lv <= 1572 &&
          asinv >= 1568 && asinv <= 1572 &&
+         asinfv >= 1568 && asinfv <= 1572 &&
+         asinlv >= 1568 && asinlv <= 1572 &&
          acosv >= 1568 && acosv <= 1572 &&
+         acosfv >= 1568 && acosfv <= 1572 &&
+         acosl_v >= 1568 && acosl_v <= 1572 &&
+         (int)(hypot(3.0, 4.0) * 1000.0) == 5000 &&
+         (int)(hypotf(3.0f, 4.0f) * 1000.0f) == 5000 &&
+         (int)(hypotl(3.0L, 4.0L) * 1000.0L) == 5000 &&
+         (int)(fmin(3.0, 4.0) * 1000.0) == 3000 &&
+         (int)(fminf(3.0f, 4.0f) * 1000.0f) == 3000 &&
+         (int)(fminl(3.0L, 4.0L) * 1000.0L) == 3000 &&
+         (int)(fmax(3.0, 4.0) * 1000.0) == 4000 &&
+         (int)(fmaxf(3.0f, 4.0f) * 1000.0f) == 4000 &&
+         (int)(fmaxl(3.0L, 4.0L) * 1000.0L) == 4000 &&
          sinh0 == 0 && cosh0 >= 998 && cosh0 <= 1002 &&
          tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
          atoi(" -123x") == -123 &&
@@ -1010,21 +1108,59 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.ferror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.clearerr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sinf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sinl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.cos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.cosf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.cosl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tan>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tanl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.floor>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.floorl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ceilf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ceill>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.roundl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.truncf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.truncl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.powf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.powl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sqrtl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.cbrtf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.cbrtl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fabsl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.exp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.expf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.expl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.logf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.logl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log2f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log2l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log10f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log10l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atanl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atan2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atan2f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atan2l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.asinf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.asinl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.acos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.acosf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.acosl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.hypot>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.hypotf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.hypotl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fminf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fminl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmaxf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmaxl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sinh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

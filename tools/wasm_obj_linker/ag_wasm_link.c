@@ -797,6 +797,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "c32rtomb") ||
          str_eq_lit(name, "sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "sqrtl") ||
+         str_eq_lit(name, "cbrtf") || str_eq_lit(name, "cbrtl") ||
          str_eq_lit(name, "pow") || str_eq_lit(name, "powf") ||
          str_eq_lit(name, "powl") ||
          str_eq_lit(name, "fabs") || str_eq_lit(name, "fabsf") ||
@@ -804,14 +805,34 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "floor") || str_eq_lit(name, "ceil") ||
          str_eq_lit(name, "round") || str_eq_lit(name, "trunc") ||
          str_eq_lit(name, "floorf") || str_eq_lit(name, "ceilf") ||
-         str_eq_lit(name, "roundf") || str_eq_lit(name, "fmod") ||
+         str_eq_lit(name, "roundf") || str_eq_lit(name, "floorl") ||
+         str_eq_lit(name, "ceill") || str_eq_lit(name, "roundl") ||
+         str_eq_lit(name, "truncf") || str_eq_lit(name, "truncl") ||
+         str_eq_lit(name, "fmod") ||
          str_eq_lit(name, "fmodf") || str_eq_lit(name, "fmodl") ||
          str_eq_lit(name, "cbrt") || str_eq_lit(name, "exp") ||
-         str_eq_lit(name, "log") || str_eq_lit(name, "log2") ||
-         str_eq_lit(name, "log10") || str_eq_lit(name, "atan") ||
+         str_eq_lit(name, "expf") || str_eq_lit(name, "expl") ||
+         str_eq_lit(name, "log") || str_eq_lit(name, "logf") ||
+         str_eq_lit(name, "logl") || str_eq_lit(name, "log2") ||
+         str_eq_lit(name, "log2f") || str_eq_lit(name, "log2l") ||
+         str_eq_lit(name, "log10") || str_eq_lit(name, "log10f") ||
+         str_eq_lit(name, "log10l") || str_eq_lit(name, "atan") ||
+         str_eq_lit(name, "atanf") || str_eq_lit(name, "atanl") ||
          str_eq_lit(name, "atan2") || str_eq_lit(name, "asin") ||
-         str_eq_lit(name, "acos") || str_eq_lit(name, "sinh") ||
-         str_eq_lit(name, "cosh") || str_eq_lit(name, "tanh");
+         str_eq_lit(name, "atan2f") || str_eq_lit(name, "atan2l") ||
+         str_eq_lit(name, "asinf") || str_eq_lit(name, "asinl") ||
+         str_eq_lit(name, "acos") || str_eq_lit(name, "acosf") ||
+         str_eq_lit(name, "acosl") || str_eq_lit(name, "sin") ||
+         str_eq_lit(name, "sinf") || str_eq_lit(name, "sinl") ||
+         str_eq_lit(name, "cos") || str_eq_lit(name, "cosf") ||
+         str_eq_lit(name, "cosl") || str_eq_lit(name, "tan") ||
+         str_eq_lit(name, "tanf") || str_eq_lit(name, "tanl") ||
+         str_eq_lit(name, "sinh") || str_eq_lit(name, "cosh") ||
+         str_eq_lit(name, "tanh") || str_eq_lit(name, "hypot") ||
+         str_eq_lit(name, "hypotf") || str_eq_lit(name, "hypotl") ||
+         str_eq_lit(name, "fmin") || str_eq_lit(name, "fminf") ||
+         str_eq_lit(name, "fminl") || str_eq_lit(name, "fmax") ||
+         str_eq_lit(name, "fmaxf") || str_eq_lit(name, "fmaxl");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -2685,6 +2706,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_sqrtf";
   } else if (str_eq_lit(name, "sqrtl")) {
     target_lit = "__agc_runtime_sqrtl";
+  } else if (str_eq_lit(name, "cbrtf")) {
+    target_lit = "__agc_runtime_cbrtf";
+  } else if (str_eq_lit(name, "cbrtl")) {
+    target_lit = "__agc_runtime_cbrtl";
   } else if (str_eq_lit(name, "pow")) {
     target_lit = "__agc_runtime_pow";
   } else if (str_eq_lit(name, "powf")) {
@@ -2711,12 +2736,34 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_ceilf";
   } else if (str_eq_lit(name, "roundf")) {
     target_lit = "__agc_runtime_roundf";
+  } else if (str_eq_lit(name, "floorl")) {
+    target_lit = "__agc_runtime_floorl";
+  } else if (str_eq_lit(name, "ceill")) {
+    target_lit = "__agc_runtime_ceill";
+  } else if (str_eq_lit(name, "roundl")) {
+    target_lit = "__agc_runtime_roundl";
+  } else if (str_eq_lit(name, "truncf")) {
+    target_lit = "__agc_runtime_truncf";
+  } else if (str_eq_lit(name, "truncl")) {
+    target_lit = "__agc_runtime_truncl";
   } else if (str_eq_lit(name, "sin")) {
     target_lit = "__agc_runtime_sin";
+  } else if (str_eq_lit(name, "sinf")) {
+    target_lit = "__agc_runtime_sinf";
+  } else if (str_eq_lit(name, "sinl")) {
+    target_lit = "__agc_runtime_sinl";
   } else if (str_eq_lit(name, "cos")) {
     target_lit = "__agc_runtime_cos";
+  } else if (str_eq_lit(name, "cosf")) {
+    target_lit = "__agc_runtime_cosf";
+  } else if (str_eq_lit(name, "cosl")) {
+    target_lit = "__agc_runtime_cosl";
   } else if (str_eq_lit(name, "tan")) {
     target_lit = "__agc_runtime_tan";
+  } else if (str_eq_lit(name, "tanf")) {
+    target_lit = "__agc_runtime_tanf";
+  } else if (str_eq_lit(name, "tanl")) {
+    target_lit = "__agc_runtime_tanl";
   } else if (str_eq_lit(name, "fmod")) {
     target_lit = "__agc_runtime_fmod";
   } else if (str_eq_lit(name, "fmodf")) {
@@ -2727,26 +2774,76 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_cbrt";
   } else if (str_eq_lit(name, "exp")) {
     target_lit = "__agc_runtime_exp";
+  } else if (str_eq_lit(name, "expf")) {
+    target_lit = "__agc_runtime_expf";
+  } else if (str_eq_lit(name, "expl")) {
+    target_lit = "__agc_runtime_expl";
   } else if (str_eq_lit(name, "log")) {
     target_lit = "__agc_runtime_log";
+  } else if (str_eq_lit(name, "logf")) {
+    target_lit = "__agc_runtime_logf";
+  } else if (str_eq_lit(name, "logl")) {
+    target_lit = "__agc_runtime_logl";
   } else if (str_eq_lit(name, "log2")) {
     target_lit = "__agc_runtime_log2";
+  } else if (str_eq_lit(name, "log2f")) {
+    target_lit = "__agc_runtime_log2f";
+  } else if (str_eq_lit(name, "log2l")) {
+    target_lit = "__agc_runtime_log2l";
   } else if (str_eq_lit(name, "log10")) {
     target_lit = "__agc_runtime_log10";
+  } else if (str_eq_lit(name, "log10f")) {
+    target_lit = "__agc_runtime_log10f";
+  } else if (str_eq_lit(name, "log10l")) {
+    target_lit = "__agc_runtime_log10l";
   } else if (str_eq_lit(name, "atan")) {
     target_lit = "__agc_runtime_atan";
+  } else if (str_eq_lit(name, "atanf")) {
+    target_lit = "__agc_runtime_atanf";
+  } else if (str_eq_lit(name, "atanl")) {
+    target_lit = "__agc_runtime_atanl";
   } else if (str_eq_lit(name, "atan2")) {
     target_lit = "__agc_runtime_atan2";
+  } else if (str_eq_lit(name, "atan2f")) {
+    target_lit = "__agc_runtime_atan2f";
+  } else if (str_eq_lit(name, "atan2l")) {
+    target_lit = "__agc_runtime_atan2l";
   } else if (str_eq_lit(name, "asin")) {
     target_lit = "__agc_runtime_asin";
+  } else if (str_eq_lit(name, "asinf")) {
+    target_lit = "__agc_runtime_asinf";
+  } else if (str_eq_lit(name, "asinl")) {
+    target_lit = "__agc_runtime_asinl";
   } else if (str_eq_lit(name, "acos")) {
     target_lit = "__agc_runtime_acos";
+  } else if (str_eq_lit(name, "acosf")) {
+    target_lit = "__agc_runtime_acosf";
+  } else if (str_eq_lit(name, "acosl")) {
+    target_lit = "__agc_runtime_acosl";
   } else if (str_eq_lit(name, "sinh")) {
     target_lit = "__agc_runtime_sinh";
   } else if (str_eq_lit(name, "cosh")) {
     target_lit = "__agc_runtime_cosh";
   } else if (str_eq_lit(name, "tanh")) {
     target_lit = "__agc_runtime_tanh";
+  } else if (str_eq_lit(name, "hypot")) {
+    target_lit = "__agc_runtime_hypot";
+  } else if (str_eq_lit(name, "hypotf")) {
+    target_lit = "__agc_runtime_hypotf";
+  } else if (str_eq_lit(name, "hypotl")) {
+    target_lit = "__agc_runtime_hypotl";
+  } else if (str_eq_lit(name, "fmin")) {
+    target_lit = "__agc_runtime_fmin";
+  } else if (str_eq_lit(name, "fminf")) {
+    target_lit = "__agc_runtime_fminf";
+  } else if (str_eq_lit(name, "fminl")) {
+    target_lit = "__agc_runtime_fminl";
+  } else if (str_eq_lit(name, "fmax")) {
+    target_lit = "__agc_runtime_fmax";
+  } else if (str_eq_lit(name, "fmaxf")) {
+    target_lit = "__agc_runtime_fmaxf";
+  } else if (str_eq_lit(name, "fmaxl")) {
+    target_lit = "__agc_runtime_fmaxl";
   } else if (str_eq_lit(name, "wctype")) {
     target_lit = "__agc_runtime_wctype";
   } else if (str_eq_lit(name, "iswctype")) {

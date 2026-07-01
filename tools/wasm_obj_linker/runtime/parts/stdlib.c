@@ -1,0 +1,155 @@
+int __agc_runtime_atoi(long s_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  int sign = 1;
+  int acc = 0;
+  while (*s == ' ') s++;
+  if (*s == '-') {
+    sign = -1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+  while (*s >= '0' && *s <= '9') {
+    acc = acc * 10 + (*s - '0');
+    s++;
+  }
+  return acc * sign;
+}
+
+long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
+  char *s = ag_rt_ptr(s_addr);
+  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
+  int sign = 1;
+  if (*s == '-') {
+    sign = -1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+  if (base == 0) base = 10;
+  if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+  long acc = 0;
+  for (;;) {
+    int digit;
+    if (*s >= '0' && *s <= '9') digit = *s - '0';
+    else if (*s >= 'a' && *s <= 'z') digit = *s - 'a' + 10;
+    else if (*s >= 'A' && *s <= 'Z') digit = *s - 'A' + 10;
+    else break;
+    if (digit >= base) break;
+    acc = acc * base + digit;
+    s++;
+  }
+  if (endptr_addr) {
+    long *endp = (long *)ag_rt_ptr(endptr_addr);
+    *endp = (long)s;
+  }
+  return sign * acc;
+}
+
+long __agc_runtime_strtoimax(long s_addr, long endptr_addr, int base) {
+  return __agc_runtime_strtol(s_addr, endptr_addr, base);
+}
+
+unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
+  char *s = ag_rt_ptr(s_addr);
+  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
+  int neg = 0;
+  if (*s == '-') {
+    neg = 1;
+    s++;
+  } else if (*s == '+') {
+    s++;
+  }
+  if (base == 0) base = 10;
+  if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+  unsigned long acc = 0;
+  for (;;) {
+    int digit;
+    if (*s >= '0' && *s <= '9') digit = *s - '0';
+    else if (*s >= 'a' && *s <= 'z') digit = *s - 'a' + 10;
+    else if (*s >= 'A' && *s <= 'Z') digit = *s - 'A' + 10;
+    else break;
+    if (digit >= base) break;
+    acc = acc * (unsigned long)base + (unsigned long)digit;
+    s++;
+  }
+  if (endptr_addr) {
+    long *endp = (long *)ag_rt_ptr(endptr_addr);
+    *endp = (long)s;
+  }
+  return neg ? (0UL - acc) : acc;
+}
+
+long __agc_runtime_atol(long s_addr) {
+  return __agc_runtime_strtol(s_addr, 0, 10);
+}
+
+long __agc_runtime_labs(long x) {
+  return x < 0 ? -x : x;
+}
+
+void __agc_runtime_srand(int seed) {
+  ag_rt_rand_state = (unsigned long)seed;
+}
+
+int __agc_runtime_rand(void) {
+  ag_rt_rand_state = ag_rt_rand_state * 1103515245u + 12345u;
+  return (int)((ag_rt_rand_state / 65536u) & 32767u);
+}
+
+int __agc_runtime_atexit(long func_addr) {
+  (void)func_addr;
+  return 0;
+}
+
+void __agc_runtime_exit(int status) {
+  (void)status;
+  for (;;) {
+  }
+}
+
+void __agc_runtime_abort(void) {
+  for (;;) {
+  }
+}
+
+long __agc_runtime_getenv(long name_addr) {
+  (void)name_addr;
+  return 0;
+}
+
+int __agc_runtime_system(long command_addr) {
+  (void)command_addr;
+  return 0;
+}
+
+long __agc_runtime_signal(int sig, long handler_addr) {
+  (void)sig;
+  (void)handler_addr;
+  return 0;
+}
+
+int __agc_runtime_raise(int sig) {
+  (void)sig;
+  return 0;
+}
+
+long __agc_runtime_time(long tloc_addr) {
+  if (tloc_addr) {
+    long *tloc = (long *)ag_rt_ptr(tloc_addr);
+    *tloc = 0;
+  }
+  return 0;
+}
+
+long __agc_runtime_clock(void) {
+  return 0;
+}
+
+double __agc_runtime_difftime(long end, long beginning) {
+  return (double)(end - beginning);
+}
+
+long __agc_runtime___error(void) {
+  return (long)&ag_rt_errno_value;
+}

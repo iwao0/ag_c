@@ -1,20 +1,48 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き332: libagc_runtime uchar conversion helpers）
+最終更新: 2026-07-01（続き334: libagc_runtime role split）
 
 ## 現状
 - `make test` = **green**。
-  内訳として `./build/test_e2e` = **1146/1146 green**、
-  `./build/test_wasm32_e2e` = **1117 compiled / 1117 executed green**、
-  `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**。
+  内訳として `./build/test_e2e` = **1147/1147 green**、
+  `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
+  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test` = **green**、
   `make test-wasm-obj-linker` = **green**、
-  `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**、
-  `make wasm32-object-link-all-fixture-scan` = **1117 pass / 1 skip / validate 1117 / run 1117 / import skip 0**、
+  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**、
+  `make wasm32-object-link-all-fixture-scan` = **1118 pass / 1 skip / validate 1118 / run 1118 / import skip 0**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き334: **`libagc_runtime.c` を役割別 `parts/*.c` に分割**。
+  `tools/wasm_obj_linker/runtime/libagc_runtime.c` は include aggregator にし、
+  実体を `parts/common.c`、`memory.c`、`ctype.c`、`wide.c`、`stdlib.c`、`string.c`、
+  `stdio.c`、`fenv_locale.c`、`math.c`、`format.c` へ分けた。
+  出力物は従来通り単一の `build/libagc_runtime.o` で、`Makefile` の依存に
+  `tools/wasm_obj_linker/runtime/parts/*.c` を追加した。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = 1119/1119、
+  `make wasm32-object-link-all-fixture-scan` = 1118 pass / 1 skip、
+  `make test` = green。
+- 続き333: **`tgmath.h` の float / long double math variant を runtime と WAT に追加**。
+  `sinf` / `sinl`、`cosf` / `cosl`、`tanf` / `tanl`、`asinf` / `asinl`、
+  `acosf` / `acosl`、`atanf` / `atanl`、`atan2f` / `atan2l`、
+  `expf` / `expl`、`logf` / `logl`、`log2f` / `log2l`、`log10f` / `log10l`、
+  `cbrtf` / `cbrtl`、`floorl` / `ceill` / `roundl`、`truncf` / `truncl`、
+  `hypot` / `hypotf` / `hypotl`、`fmin` / `fminf` / `fminl`、`fmax` / `fmaxf` / `fmaxl`
+  を `libagc_runtime.o` と `ag_wasm_link` の runtime bridge へ追加した。
+  `include/math.h` の prototype と `test_e2e` の native symbol rename whitelist も更新。
+  WAT backend の minimal libc stub にも同じ variant wrapper と依存する base stub の emit 条件を追加し、
+  `test/fixtures/stdheader/tgmath_variant_ops.c` を `test_e2e` / `test_wasm32_e2e` / object scan に通した。
+  確認: `make test`、
+  `make test-wasm-obj-linker`、
+  `./build/test_wasm32_e2e` = 1118 compiled / executed、
+  `./build/test_wasm32_object` = 1119/1119、
+  `make wasm32-object-link-all-fixture-scan` = 1118 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip、
+  `bash scripts/run_c_testsuite.sh --list-fail` = 218 pass / 2 unsupported skip / fail 0。
 - 続き332: **`libagc_runtime.o` に uchar conversion helper を追加**。
   `mbrtoc16` / `c16rtomb` / `mbrtoc32` / `c32rtomb` を runtime object 本体へ追加し、
   `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。実装は既存 wide conversion と

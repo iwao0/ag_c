@@ -58,7 +58,7 @@ $(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $<
 
-$(WASM_RUNTIME): tools/wasm_obj_linker/runtime/libagc_runtime.c $(WASM_TARGET)
+$(WASM_RUNTIME): tools/wasm_obj_linker/runtime/libagc_runtime.c tools/wasm_obj_linker/runtime/parts/*.c $(WASM_TARGET)
 	@mkdir -p $(dir $@)
 	./$(WASM_TARGET) -c -o $@ $<
 
