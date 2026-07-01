@@ -642,6 +642,17 @@ int __agc_runtime_atexit(long func_addr) {
   return 0;
 }
 
+void __agc_runtime_exit(int status) {
+  (void)status;
+  for (;;) {
+  }
+}
+
+void __agc_runtime_abort(void) {
+  for (;;) {
+  }
+}
+
 long __agc_runtime_getenv(long name_addr) {
   (void)name_addr;
   return 0;

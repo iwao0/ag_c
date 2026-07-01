@@ -272,6 +272,8 @@ void srand(int seed);
 long labs(long n);
 void qsort(void *base, long nmemb, long size, void *compar);
 void *bsearch(void *key, void *base, long nmemb, long size, void *compar);
+void exit(int status);
+void abort(void);
 char *getenv(char *name);
 int system(char *command);
 long time(long *tloc);
@@ -433,6 +435,7 @@ int main(void) {
   int nums[5];
   int key = 3;
   int *found;
+  int never = 0;
   void *nullv = 0;
   long tloc = 123;
   int *errp = __error();
@@ -473,6 +476,10 @@ int main(void) {
   nums[4] = 3;
   qsort(nums, 5, sizeof(int), int_cmp);
   found = bsearch(&key, nums, 5, sizeof(int), int_cmp);
+  if (never) {
+    exit(7);
+    abort();
+  }
   wcscpy(wd, ws);
   wcsncpy(we, ws, 3);
   wcscat(we, ws);
@@ -872,6 +879,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.srand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.labs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atexit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.exit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.abort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.system>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.time>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
