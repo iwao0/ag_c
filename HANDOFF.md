@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き339: Wasm object linker smoke regression coverage）
+最終更新: 2026-07-01（続き340: Wasm object linker README coverage sync）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,12 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き340: **Wasm object linker README の smoke coverage 説明を現状に同期**。
+  続き339 で追加した `fp_return_sig.c`、`small_struct_return_sig.c`、
+  `indirect_aggregate_return_sig.c` に合わせて、`tools/wasm_obj_linker/README.md` の
+  Smoke Test 節へ floating-point indirect signature、small aggregate return、
+  hidden ret-area aggregate return の coverage を明記した。
+  確認: `git diff --check`。
 - 続き339: **Wasm object linker smoke に indirect signature の回帰テストを追加**。
   続き338 の修正が全 fixture scan だけでなく通常の `make test-wasm-obj-linker` でも
   捕まるように、`tools/wasm_obj_linker/test_smoke.sh` へ `fp_return_sig.c`、

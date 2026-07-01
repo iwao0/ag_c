@@ -77,14 +77,15 @@ The smoke test covers cross-object direct calls, extern global read/write,
 data-address relocations in both code and data, static symbol collisions,
 unresolved host function imports, function pointer relocation through both code
 and data, imported host function table entries through both code and data
-relocations, cross-object function pointer variables, a large BSS-like global
-with an omitted zero payload, a patched object with a non-zero data symbol
-offset, duplicate external function/data definition errors,
-cross-object function/import signature mismatch errors, malformed relocation
-target errors, and a many-data-segment case that requires more than one Wasm
-memory page. It also checks that default runtime-object linking resolves the
-runtime helpers above, while `--nostdlib` leaves those symbols as imports
-instead.
+relocations, cross-object function pointer variables, indirect-call signatures
+with floating-point parameters/results, indirect small-aggregate returns,
+indirect hidden-ret-area aggregate returns, a large BSS-like global with an
+omitted zero payload, a patched object with a non-zero data symbol offset,
+duplicate external function/data definition errors, cross-object function/import
+signature mismatch errors, malformed relocation target errors, and a
+many-data-segment case that requires more than one Wasm memory page. It also
+checks that default runtime-object linking resolves the runtime helpers above,
+while `--nostdlib` leaves those symbols as imports instead.
 
 Not yet supported:
 
