@@ -1069,6 +1069,17 @@ static int funcall_ret_pointee_volatile(node_func_t *fn) {
   return 0;
 }
 
+static int member_ptr_array_pointee_elem_size(const tag_member_info_t *mem_info) {
+  if (!mem_info || mem_info->ptr_array_pointee_bytes <= 0 || mem_info->arr_ndim <= 0) return 0;
+  int count = 1;
+  for (int i = 0; i < mem_info->arr_ndim && i < 8; i++) {
+    if (mem_info->arr_dims[i] <= 0) return 0;
+    count *= mem_info->arr_dims[i];
+  }
+  if (count <= 0 || (mem_info->ptr_array_pointee_bytes % count) != 0) return 0;
+  return mem_info->ptr_array_pointee_bytes / count;
+}
+
 /* `base.member` / `base->member` の deref node を組み立てる。
  * base アドレス + member offset を ADD して DEREF。
  * mem_info から type_size / deref_size / 配列メンバ / スカラポインタメンバ /
@@ -1144,6 +1155,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
        * 再設定する経路に乗せる。 */
       if (mem_info->ptr_array_pointee_bytes > 0) {
         deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
+        int ptr_arr_elem = member_ptr_array_pointee_elem_size(mem_info);
+        if (ptr_arr_elem > 0) deref->base_deref_size = (short)ptr_arr_elem;
       }
     }
   } else if (mem_is_ptr && mem_size > 0 && mem_info->outer_stride > 0) {
@@ -1180,7 +1193,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
     }
     if (mem_info->ptr_array_pointee_bytes > 0) {
       deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
-      deref->base_deref_size = (short)mem_info->deref_size;
+      int ptr_arr_elem = member_ptr_array_pointee_elem_size(mem_info);
+      deref->base_deref_size = (short)(ptr_arr_elem > 0 ? ptr_arr_elem : mem_info->deref_size);
       deref->deref_size = 8;
     }
   }

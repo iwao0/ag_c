@@ -3401,7 +3401,7 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない (別 TU と衝突しない)。 */
   gv->name = mangled;
   gv->name_len = total_len;
-  gv->type_size = (short)var_size;
+  gv->type_size = var_size;
   gv->deref_size = (short)deref_size;
   gv->has_init = has_init;
   gv->init_val = init_val;
@@ -3579,7 +3579,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   gv->tag_kind = TK_EOF;
   gv->fp_kind = (unsigned char)fp_kind;
   if (has_size_token || (has_string_init && arr_count > 0)) {
-    gv->type_size = (short)((int)arr_count * elem_size);
+    gv->type_size = (int)arr_count * elem_size;
   } else {
     gv->type_size = 0; /* brace 後に確定 */
   }
@@ -3629,14 +3629,14 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
     if (gv->type_size == 0 && gv->init_count > 0) {
-      gv->type_size = (short)(gv->init_count * elem_size);
+      gv->type_size = gv->init_count * elem_size;
     }
   }
   if (gv->type_size == 0) {
     /* サイズが確定できないケース (`[];` で init もなし) は scope 外として
      * 受け付けたくない — gv を破棄して呼び出し側 fallback に戻したいが、
      * curtok は既に進めてしまっているため戻せない。診断を出して 0 で続行。 */
-    gv->type_size = (short)elem_size; /* 暫定 1 要素 */
+    gv->type_size = elem_size; /* 暫定 1 要素 */
   }
 
   /* mangled name: スカラ版と同じ "funcname.varname.<seq>" スキーム。配列用に
@@ -3740,7 +3740,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   gv->is_array = 1;
   gv->tag_kind = TK_EOF;
   gv->fp_kind = (unsigned char)fp_kind;
-  gv->type_size = (short)((int)arr_count * elem_size);
+  gv->type_size = (int)arr_count * elem_size;
   if (g_inner_array_dim_count >= 2) {
     int outer_mul = 1;
     for (int i = 1; i < g_inner_array_dim_count; i++) {
@@ -3938,7 +3938,7 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない。 */
   psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, 0);
-  gv->type_size = (short)struct_size;
+  gv->type_size = struct_size;
   gv->deref_size = (short)struct_size;
   gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
 
@@ -4065,7 +4065,7 @@ static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind
   gv->is_static = 1;
   gv->is_array = 1;
   psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, 0);
-  gv->type_size = (short)((int)arr_count * elem_size);
+  gv->type_size = (int)arr_count * elem_size;
   gv->deref_size = (short)elem_size;
   gv->fp_kind = (unsigned char)TK_FLOAT_KIND_NONE;
 
@@ -4605,10 +4605,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                    tok ? tok->len : 0, tok ? tok->str : "");
     }
 
+    int static_scalar_tag_ok = (tag_kind == TK_EOF || tag_kind == TK_ENUM);
+
     /* `static` ローカル: 配列や struct でない単純スカラ (int/long/short/char/pointer)
      * はグローバルに lowering する。配列・struct 等の複雑形は現状フォールバック
      * (= 既存の auto と同じ挙動になる; 既知の制約)。 */
-    if (decl_is_static && tag_kind == TK_EOF &&
+    if (decl_is_static && static_scalar_tag_ok &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         curtok()->kind != TK_LBRACKET && td_array_dim_count == 0) {
       unsigned short static_funcptr_param_fp_mask =
@@ -4666,7 +4668,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
      * curtok が '[' のときのみ試行 (struct/typedef-array/pointer は除外)。
      * 関数は peek だけして scope 外なら 0 を返し curtok を変えないため、
      * 既存の auto 配列経路 (line 2297 `tk_consume('[')`) に安全に fall through する。 */
-    if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
+    if (decl_is_static && static_scalar_tag_ok && !is_pointer &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
         curtok()->kind == TK_LBRACKET) {
@@ -4675,7 +4677,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         continue;
       }
     }
-    if (decl_is_static && tag_kind == TK_EOF && is_pointer &&
+    if (decl_is_static && static_scalar_tag_ok && is_pointer &&
         !g_decl_trailing_func_suffix &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
@@ -4685,7 +4687,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         continue;
       }
     }
-    if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
+    if (decl_is_static && static_scalar_tag_ok && !is_pointer &&
         (inner_array_mul > 0 || inner_array_mul == -1) &&
         paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
@@ -4696,7 +4698,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         continue;
       }
     }
-    if (decl_is_static && tag_kind == TK_EOF && is_pointer &&
+    if (decl_is_static && static_scalar_tag_ok && is_pointer &&
         !g_decl_trailing_func_suffix &&
         (inner_array_mul > 0 || inner_array_mul == -1) &&
         paren_array_mul == 0 &&
@@ -4708,7 +4710,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         continue;
       }
     }
-    if (decl_is_static && tag_kind == TK_EOF && !is_pointer &&
+    if (decl_is_static && static_scalar_tag_ok && !is_pointer &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_typedef_array(tok, elem_size, decl_fp_kind,

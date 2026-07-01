@@ -28,6 +28,7 @@ static arena_chunk_t *recyc_oldest;   // FIFO: 確保が古い順
 static arena_chunk_t *recyc_newest;   // bump 先 (最新)
 static int g_recyc_mode = 0;          // 1 のとき tk_allocator_calloc は recyclable 側へ
 static const unsigned char *recyc_pin = NULL;  // _Generic バックトラック用の解放下限
+static const unsigned char *recyc_stream_pin = NULL; // 遅延 preprocessor の raw cursor 解放下限
 static arena_chunk_t *recyc_cursor_chunk = NULL; // 直近カーソルが属するチャンク (キャッシュ)
 
 static int ptr_in_chunk(const void *p, const arena_chunk_t *c) {
@@ -103,6 +104,18 @@ void tk_allocator_set_recyclable(int on) { g_recyc_mode = on ? 1 : 0; }
 /** @brief _Generic バックトラック等で、この位置より古いトークンの解放を一時的に禁じる。 */
 void tk_allocator_recyc_pin(const void *p) { recyc_pin = p; }
 void tk_allocator_recyc_unpin(void) { recyc_pin = NULL; }
+void tk_allocator_recyc_stream_pin(const void *p) { recyc_stream_pin = p; }
+void tk_allocator_recyc_stream_unpin(void) { recyc_stream_pin = NULL; }
+
+static void recyc_apply_pin_floor(const unsigned char *pin, arena_chunk_t **floor) {
+  if (!pin || !floor || !*floor) return;
+  for (arena_chunk_t *c = recyc_oldest; c; c = c->next) {
+    if (ptr_in_chunk(pin, c)) {
+      if (chunk_not_after(c, *floor)) *floor = c;
+      break;
+    }
+  }
+}
 
 /** @brief カーソルが指すトークンより前 (古い) の recyclable チャンクを解放する。
  * floor = min(カーソルのチャンク, pin のチャンク)。floor のチャンクとそれ以降は残す。
@@ -117,21 +130,20 @@ void tk_allocator_recyc_on_cursor(const void *cursor) {
   }
   if (!cur_chunk) return;          // recyclable 外 (静的 EOF 等) → 解放しない
   recyc_cursor_chunk = cur_chunk;
-  /* floor = カーソルのチャンクの 1 つ前。直前に消費したトークンの構造体フィールド
-   * (tok->str 等) をパーサがまだ読むため、1 チャンクぶんのマージンを残す
-   * (look-behind は宣言子 1 つ分 ≪ 1 チャンク)。カーソルが最古チャンクなら floor=cur。 */
+  /* floor = カーソルのチャンクの数個前。直前に消費したトークンの構造体フィールド
+   * (tok->str 等) や preprocessor の指令処理中に materialize した一時 token をまだ読むため、
+   * 複数チャンクぶんのマージンを残す。 */
   arena_chunk_t *floor = cur_chunk;
-  for (arena_chunk_t *c = recyc_oldest; c && c->next; c = c->next) {
-    if (c->next == cur_chunk) { floor = c; break; }
-  }
-  if (recyc_pin) {
-    for (arena_chunk_t *c = recyc_oldest; c; c = c->next) {
-      if (ptr_in_chunk(recyc_pin, c)) {  // pin のチャンクが floor より古ければ採用
-        if (chunk_not_after(c, floor)) floor = c;
-        break;
-      }
+  for (int keep = 0; keep < 4; keep++) {
+    arena_chunk_t *prev = NULL;
+    for (arena_chunk_t *c = recyc_oldest; c && c->next; c = c->next) {
+      if (c->next == floor) { prev = c; break; }
     }
+    if (!prev) break;
+    floor = prev;
   }
+  recyc_apply_pin_floor(recyc_pin, &floor);
+  recyc_apply_pin_floor(recyc_stream_pin, &floor);
   // recyc_oldest .. floor の手前までを解放
   while (recyc_oldest && recyc_oldest != floor) {
     arena_chunk_t *dead = recyc_oldest;
@@ -153,6 +165,7 @@ void tk_allocator_recyc_reset(void) {
   }
   recyc_oldest = recyc_newest = recyc_cursor_chunk = NULL;
   recyc_pin = NULL;
+  recyc_stream_pin = NULL;
 }
 
 /** @brief 入力サイズから次チャンクサイズのヒントを更新する。 */

@@ -2,6 +2,7 @@
 #define _STDIO_H
 
 #include <stddef.h>
+#include <stdarg.h>
 
 typedef void FILE;
 
@@ -13,8 +14,10 @@ typedef void FILE;
 /* Formatted output */
 int printf(const char *fmt, ...);
 int fprintf(FILE *stream, const char *fmt, ...);
+int vfprintf(FILE *stream, const char *fmt, va_list ap);
 int sprintf(char *buf, const char *fmt, ...);
 int snprintf(char *buf, size_t size, const char *fmt, ...);
+int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
 
 /* Character output */
 int puts(const char *s);

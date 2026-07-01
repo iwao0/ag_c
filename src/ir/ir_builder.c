@@ -134,6 +134,15 @@ static int mem_is_pointer_like(const node_mem_t *mem) {
                  mem->is_scalar_ptr_member || mem->pointer_qual_levels > 0);
 }
 
+static int lvar_is_pointer_like(const lvar_t *var) {
+  if (!var) return 0;
+  return var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
+         (var->size > var->elem_size) ||
+         (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
+         var->is_tag_pointer ||
+         var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
+}
+
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
   /* float/double 変数は base.fp_kind で判定 */
   unsigned fpk = lv->mem.base.fp_kind;
@@ -1393,6 +1402,37 @@ static void attach_funcptr_sig(ir_inst_t *sym, const node_mem_t *m) {
   sym->funcptr_nargs_fixed = m->funcptr_nargs_fixed;
 }
 
+static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
+  if (!call || !callee) return;
+  node_mem_t sig = {0};
+  if (callee->kind == ND_LVAR) {
+    lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
+    merge_funcptr_sig_from_lvar(&sig, lv);
+  } else if (callee->kind == ND_GVAR) {
+    node_gvar_t *gvn = (node_gvar_t *)callee;
+    global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
+    if (gv) {
+      sig.funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
+      sig.funcptr_param_int_mask = gv->funcptr_param_int_mask;
+      sig.funcptr_ret_int_width = gv->funcptr_ret_int_width;
+      sig.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
+      sig.funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
+      sig.funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
+      sig.is_variadic_funcptr = gv->is_variadic_funcptr ? 1 : 0;
+      sig.funcptr_nargs_fixed = gv->funcptr_nargs_fixed;
+      sig.pointee_fp_kind = gv->pointee_fp_kind;
+    }
+  } else if (callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
+    sig = *(node_mem_t *)callee;
+  }
+  if (!mem_has_funcptr_sig(&sig) &&
+      (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
+       callee->kind == ND_DEREF || callee->kind == ND_ADDR)) {
+    sig = *(node_mem_t *)callee;
+  }
+  attach_funcptr_sig(call, &sig);
+}
+
 static int func_has_return_funcptr_sig(const node_func_t *fn) {
   return fn && (fn->ret_funcptr_param_fp_mask || fn->ret_funcptr_param_int_mask ||
                 fn->ret_funcptr_ret_int_width || fn->ret_funcptr_ret_is_void ||
@@ -2158,6 +2198,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->is_variadic_call = is_variadic_call;
   call->is_void_call = node->is_void_call ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
+  if (fn->callee) attach_funcptr_sig_from_callee(ctx, call, fn->callee);
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
    * 受け取れる)。 */
@@ -2198,12 +2239,63 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_comma(ir_build_ctx_t *ctx, node_t *node) {
   /* (a, b): a を評価して値を捨て、b を評価してその値を返す */
-  if (node->lhs) {
-    (void)build_expr(ctx, node->lhs);
-    if (ctx->failed) return ir_val_none();
+  int stack_cap = 128, stack_len = 0;
+  int leaf_cap = 128, leaf_len = 0;
+  node_t **stack = malloc((size_t)stack_cap * sizeof(node_t *));
+  node_t **leaves = malloc((size_t)leaf_cap * sizeof(node_t *));
+  if (!stack || !leaves) {
+    free(stack);
+    free(leaves);
+    fail(ctx, "out of memory while flattening comma expression");
+    return ir_val_none();
   }
-  if (node->rhs) return build_expr(ctx, node->rhs);
-  return ir_val_none();
+  stack[stack_len++] = node;
+  while (stack_len > 0) {
+    node_t *cur = stack[--stack_len];
+    if (!cur) continue;
+    if (cur->kind == ND_COMMA) {
+      node_t *kids[2] = {cur->rhs, cur->lhs};
+      for (int i = 0; i < 2; i++) {
+        if (!kids[i]) continue;
+        if (stack_len >= stack_cap) {
+          stack_cap *= 2;
+          node_t **next = realloc(stack, (size_t)stack_cap * sizeof(node_t *));
+          if (!next) {
+            free(stack);
+            free(leaves);
+            fail(ctx, "out of memory while flattening comma expression");
+            return ir_val_none();
+          }
+          stack = next;
+        }
+        stack[stack_len++] = kids[i];
+      }
+      continue;
+    }
+    if (leaf_len >= leaf_cap) {
+      leaf_cap *= 2;
+      node_t **next = realloc(leaves, (size_t)leaf_cap * sizeof(node_t *));
+      if (!next) {
+        free(stack);
+        free(leaves);
+        fail(ctx, "out of memory while flattening comma expression");
+        return ir_val_none();
+      }
+      leaves = next;
+    }
+    leaves[leaf_len++] = cur;
+  }
+  free(stack);
+  ir_val_t result = ir_val_none();
+  for (int i = 0; i < leaf_len; i++) {
+    result = build_expr(ctx, leaves[i]);
+    if (ctx->failed) {
+      free(leaves);
+      return ir_val_none();
+    }
+  }
+  free(leaves);
+  return result;
 }
 
 static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node) {
@@ -2832,28 +2924,86 @@ static ir_block_t *register_label_block(ir_build_ctx_t *ctx, const char *name, i
  * (goto が前方参照する label にも対応するため。) */
 static void collect_labels(ir_build_ctx_t *ctx, node_t *body) {
   if (!body || ctx->failed) return;
-  if (body->kind == ND_LABEL) {
-    node_jump_t *j = (node_jump_t *)body;
-    register_label_block(ctx, j->name, j->name_len);
-  }
-  if (body->kind == ND_BLOCK) {
-    node_block_t *blk = (node_block_t *)body;
-    if (blk->body) {
-      for (int i = 0; blk->body[i]; i++) collect_labels(ctx, blk->body[i]);
-    }
+  int cap = 128;
+  int n = 0;
+  node_t **stack = malloc((size_t)cap * sizeof(node_t *));
+  if (!stack) {
+    fail(ctx, "out of memory while collecting labels");
     return;
   }
-  if (body->lhs) collect_labels(ctx, body->lhs);
-  if (body->rhs) collect_labels(ctx, body->rhs);
-  if (body->kind == ND_IF || body->kind == ND_FOR) {
-    node_ctrl_t *c = (node_ctrl_t *)body;
-    if (c->els) collect_labels(ctx, c->els);
-    if (c->init) collect_labels(ctx, c->init);
-    if (c->inc) collect_labels(ctx, c->inc);
+  stack[n++] = body;
+  while (n > 0 && !ctx->failed) {
+    node_t *cur = stack[--n];
+    if (!cur) continue;
+    if (cur->kind == ND_LABEL) {
+      node_jump_t *j = (node_jump_t *)cur;
+      register_label_block(ctx, j->name, j->name_len);
+    }
+    if (cur->kind == ND_BLOCK) {
+      node_block_t *blk = (node_block_t *)cur;
+      if (blk->body) {
+        for (int i = 0; blk->body[i]; i++) {
+          if (n >= cap) {
+            cap *= 2;
+            node_t **next = realloc(stack, (size_t)cap * sizeof(node_t *));
+            if (!next) {
+              free(stack);
+              fail(ctx, "out of memory while collecting labels");
+              return;
+            }
+            stack = next;
+          }
+          stack[n++] = blk->body[i];
+        }
+      }
+      continue;
+    }
+    if (cur->lhs) {
+      if (n >= cap) {
+        cap *= 2;
+        node_t **next = realloc(stack, (size_t)cap * sizeof(node_t *));
+        if (!next) {
+          free(stack);
+          fail(ctx, "out of memory while collecting labels");
+          return;
+        }
+        stack = next;
+      }
+      stack[n++] = cur->lhs;
+    }
+    if (cur->rhs) {
+      if (n >= cap) {
+        cap *= 2;
+        node_t **next = realloc(stack, (size_t)cap * sizeof(node_t *));
+        if (!next) {
+          free(stack);
+          fail(ctx, "out of memory while collecting labels");
+          return;
+        }
+        stack = next;
+      }
+      stack[n++] = cur->rhs;
+    }
+    if (cur->kind == ND_IF || cur->kind == ND_FOR) {
+      node_ctrl_t *c = (node_ctrl_t *)cur;
+      node_t *extra[3] = {c->els, c->init, c->inc};
+      for (int i = 0; i < 3; i++) {
+        if (!extra[i]) continue;
+        if (n >= cap) {
+          cap *= 2;
+          node_t **next = realloc(stack, (size_t)cap * sizeof(node_t *));
+          if (!next) {
+            free(stack);
+            fail(ctx, "out of memory while collecting labels");
+            return;
+          }
+          stack = next;
+        }
+        stack[n++] = extra[i];
+      }
+    }
   }
-  if (body->kind == ND_CASE || body->kind == ND_DEFAULT) {
-    /* case/default 内も body へ展開される (rhs を walk 済み) */
-  }
+  free(stack);
 }
 
 static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
@@ -3212,6 +3362,7 @@ static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node) {
 static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
   int int_arg_idx = 0;
   int fp_arg_idx = 0;
+  int abi_idx = 0;
   for (int i = 0; i < fn->nargs; i++) {
     node_t *arg = fn->args[i];
     if (!arg || arg->kind != ND_LVAR) {
@@ -3236,6 +3387,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
       p->dst = ir_val_vreg(param_vreg, IR_TY_PTR);
       p->src1 = ir_val_imm(IR_TY_I32, int_arg_idx++);
       ir_func_append_inst(ctx->f, p);
+      if (abi_idx < 32) ctx->f->param_abi_types[abi_idx++] = IR_TY_PTR;
       int slot_vreg = address_of_lvar(ctx, lv->offset);
       if (slot_vreg < 0) return 0;
       ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
@@ -3258,6 +3410,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
         p->dst = ir_val_vreg(pv, pty);
         p->src1 = ir_val_imm(IR_TY_I32, fp_arg_idx++);
         ir_func_append_inst(ctx->f, p);
+        if (abi_idx < 32) ctx->f->param_abi_types[abi_idx++] = pty;
         int dst_p = base_ptr;
         if (part == 1) {
           int lp = ir_func_new_vreg(ctx->f);
@@ -3282,6 +3435,11 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     p->dst = ir_val_vreg(param_vreg, vty);
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
+    if (abi_idx < 32) {
+      ctx->f->param_abi_types[abi_idx++] =
+          (ps_node_is_pointer(arg) || mem_is_pointer_like(&lv->mem) ||
+           lvar_is_pointer_like(owner)) ? IR_TY_PTR : vty;
+    }
     int ptr_vreg = address_of_lvar(ctx, lv->offset);
     if (ptr_vreg < 0) return 0;
     ir_inst_t *st = ir_inst_new(IR_STORE);
@@ -3289,6 +3447,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     st->src2 = ir_val_vreg(param_vreg, vty);
     ir_func_append_inst(ctx->f, st);
   }
+  ctx->f->param_abi_count = abi_idx;
   return 1;
 }
 

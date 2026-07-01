@@ -566,6 +566,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
                                                             member_name, member_len,
                                                             member_typedef_ptr_array_pointee_bytes);
+            if (member_typedef_ptr_array_dim_count > 0) {
+              psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
+                                              member_name, member_len,
+                                              member_typedef_ptr_array_dims,
+                                              member_typedef_ptr_array_dim_count);
+            }
           } else if (member_is_ptr_typedef) {
             psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
                                                 member_name, member_len,

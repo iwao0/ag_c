@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き335: stdlib conversion runtime helpers）
+最終更新: 2026-07-01（続き336: Wasm self-host ABI / fixture coverage）
 
 ## 現状
 - `make test` = **green**。
@@ -10,11 +10,21 @@
 - 直近確認:
   `make test` = **green**、
   `make test-wasm-obj-linker` = **green**、
-  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**、
-  `make wasm32-object-link-all-fixture-scan` = **1118 pass / 1 skip / validate 1118 / run 1118 / import skip 0**、
-  `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
-  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
-  （00206/00216 は unsupported GNU skip）。
+  `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
+  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**。
+-  `bash scripts/run_c_testsuite.sh --list-fail` = **217 pass / 2 unsupported skip / 1 compile fail**
+  （00206/00216 は unsupported GNU skip、00209 が compile fail）。
+- 続き336: **Wasm self-host 経路の関数ポインタ ABI と fixture coverage を修正**。
+  `const char *` などを `preprocess.c` / `filename_table.c` 側で書き換えずに通すため、
+  parser/IR 側で pointer-like local/param と funcptr signature metadata の伝搬を補強した。
+  Wasm WAT/object backend は indirect call の return/param signature 判定を修正し、
+  pointer-to-array / pointer-to-2d-array を返す funcptr、関数を返す関数ポインタ呼び出し、
+  `fprintf`/`vsnprintf` 系の pointer 引数を同じ ABI で扱う。
+  `libagc_runtime.o` には `vfprintf` / `vsnprintf` bridge を追加した。
+  確認: `make test`、`make test-wasm-obj-linker`、`./build/test_wasm32_e2e` = 1118/1118、
+  `./build/test_wasm32_object` = 1119/1119、`git diff --check`、
+  `bash scripts/run_c_testsuite.sh --list-fail` = 217 pass / 2 unsupported skip / 1 compile fail、
+  self-host object link + `wasm-validate build/wasm32_self_link/ag_c_wasm_self.wasm` = OK。
 - 続き335: **`libagc_runtime.o` に stdlib conversion helper を追加**。
   `atof` / `strtoul` / `strtod` を `include/stdlib.h` と runtime object 本体へ追加し、
   `ag_wasm_link` の default runtime symbol 判定と ABI bridge map へ登録した。

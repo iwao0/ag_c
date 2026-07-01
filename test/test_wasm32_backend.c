@@ -128,7 +128,7 @@ int main(void) {
   failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3, 8);
   const char *call[] = {"(func $add (param $p0 i64) (param $p1 i64) (result i32)", "(call $add"};
   failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2, 7);
-  const char *void_call[] = {"(func $set (param $p0 i64)", "(call $set", "i32.store"};
+  const char *void_call[] = {"(func $set (param $p0 i32)", "(call $set", "i32.store"};
   failures += run_case("void_call",
                        "void set(int *p){*p=7;} int main(){int x; x=0; set(&x); return x;}\n",
                        void_call, 3, 7);
@@ -286,7 +286,7 @@ int main(void) {
                        "struct P{int a; int b;}; struct P make(){struct P p; p.a=3; p.b=4; "
                        "return p;} int main(){struct P q; q=make(); return q.a+q.b;}\n",
                        struct8_return, 3, 7);
-  const char *struct8_return_deref[] = {"(func $make (param $p0 i64) (result i64)", "i64.load", "i64.store"};
+  const char *struct8_return_deref[] = {"(func $make (param $p0 i32) (result i64)", "i64.load", "i64.store"};
   failures += run_case("struct8_return_deref",
                        "struct P{int a; int b;}; struct P make(struct P *p){return *p;} "
                        "int main(){struct P q; q.a=8; q.b=9; struct P r; r=make(&q); return r.a+r.b;}\n",
@@ -372,7 +372,7 @@ int main(void) {
   failures += run_case("strlen_old_decl",
                        "int strlen(char *); int main(){char *p; p=\"hello\"; return strlen(p)-5;}\n",
                        strlen_old_decl, 2, 0);
-  const char *strcpy_stub[] = {"(call $strcpy", "(func $strcpy (param $dst i64) (param $src i64) (result i32)"};
+  const char *strcpy_stub[] = {"(call $strcpy", "(func $strcpy (param $dst i32) (param $src i32) (result i32)"};
   failures += run_case("strcpy_stub",
                        "#include <string.h>\nint main(){char a[8]; strcpy(a,\"ok\"); return a[0]=='o' && a[1]=='k';}\n",
                        strcpy_stub, 2, 1);
@@ -385,16 +385,16 @@ int main(void) {
                        "#include <stdlib.h>\nint main(){int *p=calloc(3,sizeof(int)); "
                        "int z=p[0]+p[1]+p[2]; p[1]=7; return z+p[1]-7;}\n",
                        calloc_stub, 2, 0);
-  const char *sprintf_stub[] = {"(call $sprintf", "(func $sprintf (param $buf i64) (param $fmt i64) (result i32)"};
+  const char *sprintf_stub[] = {"(call $sprintf", "(func $sprintf (param $buf i32) (param $fmt i32) (result i32)"};
   failures += run_case("sprintf_stub",
                        "#include <stdio.h>\nint main(){char b[16]; int n=sprintf(b,\"->%02d<-\\n\",7); "
                        "return n==7 && b[0]=='-' && b[2]=='0' && b[3]=='7' ? 0 : 1;}\n",
                        sprintf_stub, 2, 0);
-  const char *stdio_file_stubs[] = {"(func $fopen (param i64 i64) (result i32)",
-                                    "(func $fread (param i64 i64 i64 i64) (result i64)",
-                                    "(func $fwrite (param i64 i64 i64 i64) (result i64)",
-                                    "(func $getc (param i64) (result i32)",
-                                    "(func $fgets (param i64 i64 i64) (result i32)"};
+  const char *stdio_file_stubs[] = {"(func $fopen (param i32 i32) (result i32)",
+                                    "(func $fread (param i32 i64 i64 i32) (result i64)",
+                                    "(func $fwrite (param i32 i64 i64 i32) (result i64)",
+                                    "(func $getc (param i32) (result i32)",
+                                    "(func $fgets (param i32 i64 i32) (result i32)"};
   failures += run_case("stdio_file_stubs",
                        "#include <stdio.h>\n"
                        "int main(){FILE *f=fopen(\"x\",\"r\"); char b[4]; "
@@ -677,7 +677,7 @@ int main(void) {
                        "int later(void); struct S{int (*f)(void);}; void set(struct S *s){s->f=later;} "
                        "int later(void){return 7;} int main(){struct S s; set(&s); return s.f();}\n",
                        forward_funcptr_store, 2, 7);
-  const char *fprintf_funcptr_stub[] = {"(func $fprintf (param i64 i64) (result i32)",
+  const char *fprintf_funcptr_stub[] = {"(func $fprintf (param i32 i32) (result i32)",
                                         "(elem (i32.const 0) $fprintf", "call_indirect"};
   failures += run_case("fprintf_funcptr_stub",
                        "typedef void FILE; int fprintf(FILE*, const char*, ...); "

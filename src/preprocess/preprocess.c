@@ -40,7 +40,7 @@ static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 #define PP_MAX_LINE_FILENAME_LEN 1024
 #define PP_MAX_INCLUDE_FILE_BYTES (16 * 1024 * 1024)
 #define PP_MAX_IF_EXPR_TOKENS 4096
-#define PP_MAX_IF_EXPR_EVAL_STEPS 2048
+#define PP_MAX_IF_EXPR_EVAL_STEPS 8192
 static const char *k_include_search_roots[] = {
     "",
     "include/",
@@ -1819,6 +1819,25 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
         continue;
       }
     }
+    if (t->kind == TK_HASHHASH && t->next && t->next->kind == TK_IDENT) {
+      int rhs_idx = pp_param_idx_for_ident(m, t->next);
+      bool rhs_is_va_args = rhs_idx >= 0 && m->is_variadic &&
+                            strcmp(m->params[rhs_idx], "__VA_ARGS__") == 0;
+      if (rhs_is_va_args && cur_body != &body_head && cur_body->kind == TK_COMMA) {
+        if (pp_arg_is_empty(args[rhs_idx])) {
+          token_t *prev = &body_head;
+          while (prev->next && prev->next != cur_body) prev = prev->next;
+          prev->next = NULL;
+          cur_body = prev;
+          t = t->next;
+        }
+        continue;
+      }
+      if (rhs_idx >= 0 && pp_arg_is_empty(args[rhs_idx])) {
+        t = t->next;
+        continue;
+      }
+    }
     cur_body->next = copy_token(t);
     cur_body = cur_body->next;
   }
@@ -2012,6 +2031,11 @@ struct pp_stream {
 static token_t *pps_pull_raw(pp_stream_t *s);
 static void pps_pushback_one(pp_stream_t *s, token_t *t);
 
+static void pps_update_stream_pin(pp_stream_t *s) {
+  if (s && s->pb_head) tk_allocator_recyc_stream_pin(s->pb_head);
+  else tk_allocator_recyc_stream_unpin();
+}
+
 static void pps_append(pp_stream_t *s, token_t *t) {
   t->next = NULL;
   if (s->out_tail) s->out_tail->next = t;
@@ -2033,6 +2057,7 @@ static void pps_pop_frame(pp_stream_t *s) {
   tk_set_filename_ctx(g_preprocess_tk_ctx, f->saved_filename);
   tk_set_user_input_ctx(g_preprocess_tk_ctx, f->saved_input);
   s->pb_head           = f->saved_pb_head;  // 親の pushback 列 (被 include 後に続く)
+  pps_update_stream_pin(s);
   s->line_delta        = f->saved_line_delta;
   s->file_override_set = f->saved_file_override_set;
   s->file_override     = f->saved_file_override;
@@ -2059,6 +2084,7 @@ static token_t *pps_pull_raw(pp_stream_t *s) {
   if (s->pb_head) {  // pop で復元した親の pushback もここで拾う (lexer より優先)
     token_t *t = s->pb_head;
     s->pb_head = t->next;
+    pps_update_stream_pin(s);
     t->next = NULL;
     return t;
   }
@@ -2137,6 +2163,7 @@ static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t
 static void pps_pushback_one(pp_stream_t *s, token_t *t) {
   t->next = s->pb_head;
   s->pb_head = t;
+  pps_update_stream_pin(s);
 }
 
 /* NULL 終端リストを pushback の先頭へ差し戻す (順序は保つ)。 */
@@ -2146,6 +2173,7 @@ static void pps_pushback_list(pp_stream_t *s, token_t *head) {
   while (tail->next) tail = tail->next;
   tail->next = s->pb_head;
   s->pb_head = head;
+  pps_update_stream_pin(s);
 }
 
 static void pps_on_advance(token_t *cursor);  // 前方宣言 (指令 dispatch でフック復帰に使う)
@@ -2369,6 +2397,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
    * 読む。被 include 終端 (pop) で復元するので、出力順は「被 include → 親の続き」になる。 */
   f->saved_pb_head = s->pb_head;
   s->pb_head = NULL;
+  pps_update_stream_pin(s);
 
   /* 被 include の遅延字句を開く。begin_tokenize_session が current_token=NULL にし、
    * tokenize_prepare_input が user_input を被 include バッファに上書きする。current_token は
@@ -2576,6 +2605,7 @@ void pp_stream_close(pp_stream_t *s) {
   tk_set_ensure_lookahead_hook(NULL);
   g_active_pps = NULL;
   tk_allocator_set_recyclable(0);
+  tk_allocator_recyc_stream_unpin();
   tk_allocator_recyc_reset();
   if (s) {
     /* 早期終了 (パーサが EOF まで来なかった) で残った被 include フレームを後始末する。

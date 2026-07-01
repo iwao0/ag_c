@@ -1786,7 +1786,6 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       }
       consume_gnu_range_designator_tail_if_any();
       tk_expect(']');
-      tk_expect('=');
       /* struct 要素配列の `[N]=` は要素 1 つが内側スカラ数だけ slot を占めるので
        * N にその数を掛ける (`struct P g[3]={[2]={5,6}}` の [2] は flat slot 4)。
        * 多次元配列 (`int x[3][3]`) も同様: 1 要素 = 内側次元の総スカラ数 (sub_dims の積)。
@@ -1813,9 +1812,33 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       }
       /* level 先頭からの絶対 slot。ネスト配列 (`.items={[2]={...}}`) では level_start を
        * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
-      cur_idx = level_start + (int)idx_val * elem_slots;
-      /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。多次元配列なら 1 段降りた内側ndim配列。 */
-      child = gbrace_child_at(ctx, cur_idx - level_start);
+      int flat_off = (int)idx_val * elem_slots;
+      gbrace_ctx_t designator_child = gbrace_child_at(ctx, flat_off);
+      int designator_depth = 1;
+      while (curtok()->kind == TK_LBRACKET) {
+        set_curtok(curtok()->next);
+        int iok = 1;
+        long long iv = psx_decl_eval_const_int(psx_expr_assign(), &iok);
+        consume_gnu_range_designator_tail_if_any();
+        tk_expect(']');
+        if (!iok || iv < 0) {
+          psx_diag_ctx(curtok(), "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
+        }
+        if (designator_depth > ctx.sub_ndim) {
+          psx_diag_ctx(curtok(), "decl", "%s",
+                       diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
+        }
+        int stride = 1;
+        for (int i = designator_depth; i < ctx.sub_ndim; i++) stride *= ctx.sub_dims[i];
+        flat_off += (int)iv * stride;
+        designator_child = gbrace_child_at(designator_child, (int)iv * stride);
+        designator_depth++;
+      }
+      tk_expect('=');
+      cur_idx = level_start + flat_off;
+      /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。多次元配列なら designator の段数だけ降りる。 */
+      child = designator_child;
     }
     /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
      * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
@@ -4003,6 +4026,15 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   }
 }
 
+static int param_lvar_is_pointer_like(const lvar_t *var) {
+  if (!var) return 0;
+  return var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
+         (var->size > var->elem_size) ||
+         (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
+         var->is_tag_pointer ||
+         var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
+}
+
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed) {
   param_decl_spec_t ds = {0};
   parse_param_decl_spec(&ds);
@@ -4052,8 +4084,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
           *arg_cap = pda_next_cap(*arg_cap, *nargs + 1);
           node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
         }
-        node_t *ph = psx_node_new_num(0);
-        if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
+        int placeholder_is_pointer =
+            param_is_ptr || param_is_array_declarator || param_has_func_suffix || ds.base_is_pointer;
+        node_t *ph = placeholder_is_pointer ? psx_node_new_lvar_typed(0, 8) : psx_node_new_num(0);
+        if (placeholder_is_pointer) {
+          ((node_lvar_t *)ph)->mem.is_pointer = 1;
+          ((node_lvar_t *)ph)->mem.type_size = 8;
+        }
+        if (ds.fp_kind != TK_FLOAT_KIND_NONE && !placeholder_is_pointer) {
           ph->fp_kind = ds.fp_kind;
         }
         ph->is_unsigned = ds.is_unsigned ? 1 : 0;
@@ -4089,8 +4127,29 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
                        !param_is_array_declarator)
                       ? ds.struct_size : 8;
   node_t *param_node = psx_node_new_lvar_typed(var->offset, abi_type_size);
+  node_lvar_t *param_lv = (node_lvar_t *)param_node;
   param_node->is_unsigned = ds.is_unsigned ? 1 : 0;
-  ((node_lvar_t *)param_node)->mem.is_unsigned = ds.is_unsigned ? 1 : 0;
+  param_lv->mem.is_unsigned = ds.is_unsigned ? 1 : 0;
+  int param_is_pointer_like = param_lvar_is_pointer_like(var);
+  if (param_is_pointer_like) {
+    param_lv->mem.is_pointer = 1;
+    param_lv->mem.type_size = 8;
+    param_lv->mem.deref_size = (var->outer_stride > 0) ? (short)var->outer_stride
+                              : (var->vla_row_stride_frame_off ? 0 : (short)var->elem_size);
+  }
+  param_lv->mem.tag_kind = var->tag_kind;
+  param_lv->mem.tag_name = var->tag_name;
+  param_lv->mem.tag_len = var->tag_len;
+  param_lv->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  param_lv->mem.is_tag_pointer = var->is_tag_pointer;
+  param_lv->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
+  param_lv->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
+  param_lv->mem.pointer_qual_levels = var->pointer_qual_levels;
+  param_lv->mem.base_deref_size = var->base_deref_size;
+  param_lv->mem.pointee_fp_kind = var->pointee_fp_kind;
+  param_lv->mem.pointee_is_void = var->pointee_is_void;
+  param_lv->mem.pointee_is_unsigned = var->is_unsigned ? 1 : 0;
+  param_lv->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
   // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
   // args[i] ノードにも fp_kind を残す。配列宣言子はポインタ (整数レジスタ) なので除外。
   if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
@@ -4100,7 +4159,7 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
    * owner->is_complex を見るが、念のため両方に伝播)。 */
   if (ds.is_complex && !param_is_ptr && !param_is_array_declarator) {
     param_node->is_complex = 1;
-    ((node_lvar_t *)param_node)->mem.is_complex = 1;
+    param_lv->mem.is_complex = 1;
   }
   node->args[(*nargs)++] = param_node;
   return 0;

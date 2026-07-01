@@ -292,6 +292,8 @@ typedef struct ir_func_t {
   /* 戻り値が _Complex のとき half バイト数 (float=4, double=8)。0 = 非複素数。
    * build_stmt_return が IR_RET に複素数戻り値を組むのに使う。 */
   int ret_complex_half;
+  int param_abi_count;
+  ir_type_t param_abi_types[32];
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */

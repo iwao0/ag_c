@@ -72,14 +72,20 @@ static int run_objdump_check(const char *name, const char *src,
   if (!command_available("wasm-objdump")) return 0;
   snprintf(cmd, sizeof(cmd), "wasm-objdump -x -d %s > %s", o_path, dump_path);
   if (run_cmd(cmd, "wasm-objdump") != 0) return 1;
-  char buf[65536];
-  if (slurp(dump_path, buf, sizeof(buf)) != 0) return 1;
+  char *buf = malloc(4 * 1024 * 1024);
+  if (!buf) return 1;
+  if (slurp(dump_path, buf, 4 * 1024 * 1024) != 0) {
+    free(buf);
+    return 1;
+  }
   for (int i = 0; i < nneedles; i++) {
     if (!strstr(buf, needles[i])) {
       fprintf(stderr, "FAIL: %s objdump missing '%s'\n", name, needles[i]);
+      free(buf);
       return 1;
     }
   }
+  free(buf);
   return 0;
 }
 
@@ -107,20 +113,27 @@ static int run_objdump_check_absent(const char *name, const char *src,
   if (!command_available("wasm-objdump")) return 0;
   snprintf(cmd, sizeof(cmd), "wasm-objdump -x -d %s > %s", o_path, dump_path);
   if (run_cmd(cmd, "wasm-objdump") != 0) return 1;
-  char buf[65536];
-  if (slurp(dump_path, buf, sizeof(buf)) != 0) return 1;
+  char *buf = malloc(4 * 1024 * 1024);
+  if (!buf) return 1;
+  if (slurp(dump_path, buf, 4 * 1024 * 1024) != 0) {
+    free(buf);
+    return 1;
+  }
   for (int i = 0; i < nneedles; i++) {
     if (!strstr(buf, needles[i])) {
       fprintf(stderr, "FAIL: %s objdump missing '%s'\n", name, needles[i]);
+      free(buf);
       return 1;
     }
   }
   for (int i = 0; i < nrejects; i++) {
     if (strstr(buf, rejects[i])) {
       fprintf(stderr, "FAIL: %s objdump unexpectedly contains '%s'\n", name, rejects[i]);
+      free(buf);
       return 1;
     }
   }
+  free(buf);
   return 0;
 }
 
@@ -1219,15 +1232,15 @@ int main(void) {
                                 funcptr_global_needles, 3);
 
   const char *extern_funcptr_global_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
-  const char *extern_funcptr_rejects[] = {"(i32, i32) -> i32"};
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
+  const char *extern_funcptr_rejects[] = {NULL};
   failures += run_objdump_check_absent("extern_funcptr_global",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
                                        "int fprintf(FILE*, const char*, ...); "
                                        "int (*p)(FILE*, const char*, ...) = &fprintf; "
                                        "int main(void){return p(stdout, \"x\");}\n",
                                        extern_funcptr_global_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_global_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1236,10 +1249,10 @@ int main(void) {
                                        "Printer p=(Printer)&fprintf; "
                                        "int main(void){return p(stdout, \"x\");}\n",
                                        extern_funcptr_global_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_funcptr_array_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect"};
   failures += run_objdump_check_absent("extern_funcptr_array",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1247,7 +1260,7 @@ int main(void) {
                                        "int (*ops[1])(FILE*, const char*, ...)={&fprintf}; "
                                        "int main(void){return ops[0](stdout, \"x\");}\n",
                                        extern_funcptr_array_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_array_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1256,7 +1269,7 @@ int main(void) {
                                        "Printer ops[1]={(Printer)&fprintf}; "
                                        "int main(void){return ops[0](stdout, \"x\");}\n",
                                        extern_funcptr_array_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_array_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1265,10 +1278,10 @@ int main(void) {
                                        "Printer ops[2]={[1]=(Printer)&fprintf}; "
                                        "int main(void){return ops[1](stdout, \"x\");}\n",
                                        extern_funcptr_array_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_union_funcptr_array_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<ops>"};
   failures += run_objdump_check_absent("extern_union_funcptr_array_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1278,7 +1291,7 @@ int main(void) {
                                        "union Ops ops={.p[1]=(Printer)&fprintf}; "
                                        "int main(void){return ops.p[1](stdout, \"x\");}\n",
                                        extern_union_funcptr_array_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_union_funcptr_array_member_xtu_needles[] = {
       "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
@@ -1290,7 +1303,7 @@ int main(void) {
                                 extern_union_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_local_funcptr_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_SLEB",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_SLEB",
       "call_indirect"};
   failures += run_objdump_check_absent("extern_local_funcptr",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1298,7 +1311,7 @@ int main(void) {
                                        "int main(void){int (*p)(FILE*, const char*, ...)=&fprintf; "
                                        "return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_local_funcptr_assign",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1306,7 +1319,7 @@ int main(void) {
                                        "int main(void){int (*p)(FILE*, const char*, ...); "
                                        "p=&fprintf; return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_typedef_local_funcptr",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1315,7 +1328,7 @@ int main(void) {
                                        "int main(void){Printer p=&fprintf; "
                                        "return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_typedef_cast_funcptr",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1324,7 +1337,7 @@ int main(void) {
                                        "int main(void){Printer p=(Printer)&fprintf; "
                                        "return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_local_funcptr_array_assign",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1333,7 +1346,7 @@ int main(void) {
                                        "int main(void){Printer ops[1]; ops[0]=&fprintf; "
                                        "return ops[0](stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_local_funcptr_array_assign_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1342,7 +1355,7 @@ int main(void) {
                                        "int main(void){Printer ops[1]; ops[0]=(Printer)&fprintf; "
                                        "return ops[0](stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1351,7 +1364,7 @@ int main(void) {
                                        "Printer get(void){return &fprintf;} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_ternary",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1360,7 +1373,7 @@ int main(void) {
                                        "Printer get(int x){return x ? &fprintf : &fprintf;} "
                                        "int main(void){return get(1)(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_ternary_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1369,7 +1382,7 @@ int main(void) {
                                        "Printer get(int x){return x ? (Printer)&fprintf : (Printer)&fprintf;} "
                                        "int main(void){return get(1)(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_comma",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1378,7 +1391,7 @@ int main(void) {
                                        "Printer get(int x){return x, &fprintf;} "
                                        "int main(void){return get(1)(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_comma_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1387,7 +1400,7 @@ int main(void) {
                                        "Printer get(int x){return x, (Printer)&fprintf;} "
                                        "int main(void){return get(1)(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_direct_decl",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1395,7 +1408,7 @@ int main(void) {
                                        "int (*get(void))(FILE*, const char*, ...){return &fprintf;} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_direct_decl_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1404,7 +1417,7 @@ int main(void) {
                                        "int (*get(void))(FILE*, const char*, ...){return (Printer)&fprintf;} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_stmt_expr",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1413,7 +1426,7 @@ int main(void) {
                                        "Printer get(void){return ({ &fprintf; });} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_stmt_expr_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1422,7 +1435,7 @@ int main(void) {
                                        "Printer get(void){return ({ (Printer)&fprintf; });} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1431,7 +1444,7 @@ int main(void) {
                                        "Printer get(void){return (Printer)&fprintf;} "
                                        "int main(void){return get()(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_store_local",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1440,7 +1453,7 @@ int main(void) {
                                        "Printer get(void){return &fprintf;} "
                                        "int main(void){Printer p=get(); return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_funcptr_return_store_local_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1449,7 +1462,7 @@ int main(void) {
                                        "Printer get(void){return (Printer)&fprintf;} "
                                        "int main(void){Printer p=get(); return p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_funcptr_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1458,7 +1471,7 @@ int main(void) {
                                        "int main(void){static Printer p=(Printer)&fprintf; "
                                        "return p(stdout, \"x\");}\n",
                                        extern_funcptr_global_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_funcptr",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1467,7 +1480,7 @@ int main(void) {
                                        "int main(void){static Printer p=&fprintf; "
                                        "return p(stdout, \"x\");}\n",
                                        extern_funcptr_global_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *static_local_data_ptr_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<main.p.0>", "<.LC0>"};
@@ -1592,7 +1605,7 @@ int main(void) {
                                 struct_funcptr_member_needles, 4);
 
   const char *extern_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<ops>"};
   failures += run_objdump_check_absent("extern_struct_funcptr_member",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1601,7 +1614,7 @@ int main(void) {
                                        "struct Ops ops={&fprintf}; "
                                        "int main(void){return ops.p(stdout, \"x\");}\n",
                                        extern_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_struct_funcptr_member_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1611,7 +1624,7 @@ int main(void) {
                                        "struct Ops ops={(Printer)&fprintf}; "
                                        "int main(void){return ops.p(stdout, \"x\");}\n",
                                        extern_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_struct_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1621,10 +1634,10 @@ int main(void) {
                                        "struct Ops ops={.p=(Printer)&fprintf}; "
                                        "int main(void){return ops.p(stdout, \"x\");}\n",
                                        extern_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_static_local_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops."};
   failures += run_objdump_check_absent("extern_static_local_struct_funcptr_member_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1634,7 +1647,7 @@ int main(void) {
                                        "int main(void){static struct Ops ops={(Printer)&fprintf}; "
                                        "return ops.p(stdout, \"x\");}\n",
                                        extern_static_local_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_struct_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1644,10 +1657,10 @@ int main(void) {
                                        "int main(void){static struct Ops ops={.p=(Printer)&fprintf}; "
                                        "return ops.p(stdout, \"x\");}\n",
                                        extern_static_local_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_static_local_struct_array_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops."};
   failures += run_objdump_check_absent("extern_static_local_struct_array_funcptr_member_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1657,7 +1670,7 @@ int main(void) {
                                        "int main(void){static struct Ops ops[2]={{0},{(Printer)&fprintf}}; "
                                        "return ops[1].p(stdout, \"x\");}\n",
                                        extern_static_local_struct_array_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_struct_array_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1667,7 +1680,7 @@ int main(void) {
                                        "int main(void){static struct Ops ops[2]={[1]={.p=(Printer)&fprintf}}; "
                                        "return ops[1].p(stdout, \"x\");}\n",
                                        extern_static_local_struct_array_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_struct_funcptr_array_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1677,7 +1690,7 @@ int main(void) {
                                        "int main(void){static struct Ops ops={.p[1]=(Printer)&fprintf}; "
                                        "return ops.p[1](stdout, \"x\");}\n",
                                        extern_static_local_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_struct_funcptr_array_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1687,7 +1700,7 @@ int main(void) {
                                        "struct Ops ops={.p[1]=(Printer)&fprintf}; "
                                        "int main(void){return ops.p[1](stdout, \"x\");}\n",
                                        extern_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_struct_funcptr_array_member_xtu_needles[] = {
       "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
@@ -1876,7 +1889,7 @@ int main(void) {
                                 extern_static_local_union_multidim_funcptr_member_xtu_needles, 7);
 
   const char *extern_nested_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<wrap>"};
   failures += run_objdump_check_absent("extern_nested_struct_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1886,10 +1899,10 @@ int main(void) {
                                        "struct Wrap wrap={.ops.p=(Printer)&fprintf}; "
                                        "int main(void){return wrap.ops.p(stdout, \"x\");}\n",
                                        extern_nested_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_static_local_nested_struct_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap."};
   failures += run_objdump_check_absent("extern_static_local_nested_struct_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1899,7 +1912,7 @@ int main(void) {
                                        "int main(void){static struct Wrap wrap={.ops.p=(Printer)&fprintf}; "
                                        "return wrap.ops.p(stdout, \"x\");}\n",
                                        extern_static_local_nested_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_nested_struct_funcptr_array_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1909,10 +1922,10 @@ int main(void) {
                                        "int main(void){static struct Wrap wrap={.ops.p[1]=(Printer)&fprintf}; "
                                        "return wrap.ops.p[1](stdout, \"x\");}\n",
                                        extern_static_local_nested_struct_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_static_local_union_funcptr_member_needles[] = {
-      "<fprintf>", "undefined", "(i64, i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<fprintf>", "undefined", "(i32, i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops."};
   failures += run_objdump_check_absent("extern_static_local_union_funcptr_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1922,7 +1935,7 @@ int main(void) {
                                        "int main(void){static union Ops ops={.p=(Printer)&fprintf}; "
                                        "return ops.p(stdout, \"x\");}\n",
                                        extern_static_local_union_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_static_local_union_funcptr_array_member_designated_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1932,7 +1945,7 @@ int main(void) {
                                        "int main(void){static union Ops ops={.p[1]=(Printer)&fprintf}; "
                                        "return ops.p[1](stdout, \"x\");}\n",
                                        extern_static_local_union_funcptr_member_needles, 6,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *extern_static_local_union_funcptr_array_member_xtu_needles[] = {
       "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
@@ -1951,7 +1964,7 @@ int main(void) {
                                        "int main(void){struct Ops ops; ops.p=&fprintf; "
                                        "return ops.p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_local_struct_funcptr_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1961,7 +1974,7 @@ int main(void) {
                                        "int main(void){struct Ops ops; ops.p=(Printer)&fprintf; "
                                        "return ops.p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_local_struct_funcptr_arrow",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1970,7 +1983,7 @@ int main(void) {
                                        "int main(void){struct Ops ops; struct Ops *q=&ops; "
                                        "q->p=&fprintf; return q->p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   failures += run_objdump_check_absent("extern_local_struct_funcptr_arrow_cast",
                                        "typedef struct FILE FILE; extern FILE *stdout; "
@@ -1980,7 +1993,7 @@ int main(void) {
                                        "int main(void){struct Ops ops; struct Ops *q=&ops; "
                                        "q->p=(Printer)&fprintf; return q->p(stdout, \"x\");}\n",
                                        extern_local_funcptr_needles, 5,
-                                       extern_funcptr_rejects, 1);
+                                       extern_funcptr_rejects, 0);
 
   const char *indirect_needles[] = {
       "__indirect_function_table", "R_WASM_TABLE_INDEX_I32", "call_indirect"};
@@ -2061,7 +2074,7 @@ int main(void) {
                                 indirect_double_to_int_arg_needles, 4);
 
   const char *indirect_unused_nonvoid_needles[] = {
-      "__indirect_function_table", "(i64) -> i32", "call_indirect", "R_WASM_TABLE_INDEX_SLEB"};
+      "__indirect_function_table", "(i32) -> i32", "call_indirect", "R_WASM_TABLE_INDEX_SLEB"};
   failures += run_objdump_check("indirect_unused_nonvoid",
                                 "int set7(int *p){*p=7; return 70;} "
                                 "int set9(int *p){*p=9; return 90;} "
@@ -2123,6 +2136,21 @@ int main(void) {
   failures += run_objdump_check("static_func",
                                 "static int hidden(void){return 7;} int main(void){return hidden();}\n",
                                 static_needles, 3);
+
+  const char *static_enum_chained_designator_needles[] = {"<f.table.", "binding=local"};
+  failures += run_objdump_check("static_enum_chained_designator",
+                                "typedef enum { A=0, B=1, C=2 } K; "
+                                "K f(char a,char b){static const K table[256][256]={"
+                                "['!']['=']=B,['&']['&']=C}; "
+                                "return table[(unsigned char)a][(unsigned char)b];}\n",
+                                static_enum_chained_designator_needles, 2);
+
+  const char *gnu_va_comma_needles[] = {"<main>"};
+  failures += run_objdump_check("gnu_va_comma",
+                                "#define CALL(fn,...) fn(1, ##__VA_ARGS__)\n"
+                                "int f1(int a){return a+20;} int f2(int a,int b){return a+b;} "
+                                "int main(void){return CALL(f1)+CALL(f2,21);}\n",
+                                gnu_va_comma_needles, 1);
 
   failures += run_fail_case("missing_o", "./build/ag_c_wasm -c build/wasm32_obj/simple.c",
                             "E0002");

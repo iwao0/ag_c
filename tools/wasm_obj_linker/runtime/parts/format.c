@@ -212,6 +212,13 @@ int __agc_runtime_snprintf(long buf_addr, size_t size, long fmt_addr, ...) {
   return n;
 }
 
+int __agc_runtime_vsnprintf(long buf_addr, size_t size, long fmt_addr, long ap_addr) {
+  char *buf = (char *)(long)buf_addr;
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vformat(buf, size, 1, fmt, ap);
+}
+
 int __agc_runtime_sprintf(long buf_addr, long fmt_addr, ...) {
   char *buf = (char *)(long)buf_addr;
   char *fmt = (char *)(long)fmt_addr;
@@ -239,6 +246,13 @@ int __agc_runtime_fprintf(long stream_addr, long fmt_addr, ...) {
   int n = ag_rt_vformat((char *)0, 0, 1, fmt, ap);
   va_end(ap);
   return n;
+}
+
+int __agc_runtime_vfprintf(long stream_addr, long fmt_addr, long ap_addr) {
+  (void)stream_addr;
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vformat((char *)0, 0, 1, fmt, ap);
 }
 
 int __agc_runtime_swprintf(long buf_addr, size_t size, long fmt_addr, ...) {

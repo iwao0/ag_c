@@ -20,6 +20,8 @@ void tk_allocator_recyc_on_cursor(const void *cursor);
 /** @brief _Generic バックトラック中、この位置より古いトークンの解放を禁じる/解除する。 */
 void tk_allocator_recyc_pin(const void *p);
 void tk_allocator_recyc_unpin(void);
+void tk_allocator_recyc_stream_pin(const void *p);
+void tk_allocator_recyc_stream_unpin(void);
 /** @brief recyclable アリーナを全解放する (コンパイル終了時)。 */
 void tk_allocator_recyc_reset(void);
 

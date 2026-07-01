@@ -2510,10 +2510,14 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_printf";
   } else if (str_eq_lit(name, "fprintf")) {
     target_lit = "__agc_runtime_fprintf";
+  } else if (str_eq_lit(name, "vfprintf")) {
+    target_lit = "__agc_runtime_vfprintf";
   } else if (str_eq_lit(name, "__assert_rtn")) {
     target_lit = "__agc_runtime___assert_rtn";
   } else if (str_eq_lit(name, "snprintf")) {
     target_lit = "__agc_runtime_snprintf";
+  } else if (str_eq_lit(name, "vsnprintf")) {
+    target_lit = "__agc_runtime_vsnprintf";
   } else if (str_eq_lit(name, "sprintf")) {
     target_lit = "__agc_runtime_sprintf";
   } else if (str_eq_lit(name, "strlen")) {

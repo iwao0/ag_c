@@ -122,6 +122,10 @@ static const success_case_t success_cases[] = {
     {42, "#define PICK(a,b,...) b\nint main(){return PICK(1,42,3,4);}"},
     // 可変長マクロ: a##__VA_ARGS__ (paste は生のまま)
     {42, "#define CAT(a,...) a##__VA_ARGS__\nint x42(){return 42;}\nint main(){return CAT(x4,2)();}"},
+    // GNU 可変長マクロ: 空 __VA_ARGS__ では `, ##__VA_ARGS__` の comma を落とす
+    {42, "#define WRAP(fmt,...) pick(fmt, ##__VA_ARGS__)\nint pick(char *s){return s[0]=='o'?42:1;}\nint main(){return WRAP(\"ok\");}"},
+    // GNU 可変長マクロ: 非空 __VA_ARGS__ では `##` だけを落として comma と実引数を残す
+    {43, "#define CALL(fn,...) fn(1, ##__VA_ARGS__)\nint f1(int a){return a+20;} int f2(int a,int b){return a+b;}\nint main(){return CALL(f1)+CALL(f2,21);}"},
     // 可変長マクロ: #__VA_ARGS__ はカンマ込みで文字列化
     {7, "#define STR(...) #__VA_ARGS__\nint main(){char*s=STR(a,b);return (s[0]=='a'&&s[1]==','&&s[2]=='b')?7:1;}"},
 };
@@ -707,8 +711,8 @@ static void expect_if_expr_token_limit_fail(void) {
 }
 
 static void expect_if_expr_eval_limit_fail(void) {
-  const int bangs = 3000;
-  size_t cap = (size_t)bangs + 128;
+  const int terms = 1200;
+  size_t cap = (size_t)terms * 4 + 128;
   char *input = calloc(cap, 1);
   if (!input) {
     fprintf(stderr, "  FAIL: cannot allocate #if eval-limit test input\n");
@@ -722,13 +726,16 @@ static void expect_if_expr_eval_limit_fail(void) {
     exit(1);
   }
   len += (size_t)n;
-  for (int i = 0; i < bangs; i++) {
-    if (len + 1 >= cap) {
+  input[len++] = '1';
+  for (int i = 0; i < terms; i++) {
+    if (len + 3 >= cap) {
       fprintf(stderr, "  FAIL: #if eval-limit input overflow\n");
       free(input);
       exit(1);
     }
-    input[len++] = '!';
+    input[len++] = '&';
+    input[len++] = '&';
+    input[len++] = '1';
   }
   n = snprintf(input + len, cap - len, "1\nint main() { return 0; }\n#endif\n");
   if (n < 0 || (size_t)n >= cap - len) {
