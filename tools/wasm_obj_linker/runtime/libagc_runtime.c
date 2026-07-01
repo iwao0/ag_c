@@ -457,6 +457,64 @@ double __agc_runtime_cbrt(double x) {
   return sign * g;
 }
 
+double __agc_runtime_exp(double x) {
+  double ln2 = 0.6931471805599453;
+  int k = 0;
+  while (x > ln2) {
+    x = x - ln2;
+    k++;
+  }
+  while (x < -ln2) {
+    x = x + ln2;
+    k--;
+  }
+  double term = 1.0;
+  double sum = 1.0;
+  for (int i = 1; i <= 18; i++) {
+    term = term * x / (double)i;
+    sum = sum + term;
+  }
+  while (k > 0) {
+    sum = sum * 2.0;
+    k--;
+  }
+  while (k < 0) {
+    sum = sum / 2.0;
+    k++;
+  }
+  return sum;
+}
+
+double __agc_runtime_log(double x) {
+  if (x <= 0.0) return 0.0;
+  int k = 0;
+  while (x > 2.0) {
+    x = x / 2.0;
+    k++;
+  }
+  while (x < 0.5) {
+    x = x * 2.0;
+    k--;
+  }
+  double y = (x - 1.0) / (x + 1.0);
+  double y2 = y * y;
+  double term = y;
+  double sum = 0.0;
+  for (int n = 1; n <= 39; n = n + 2) {
+    sum = sum + term / (double)n;
+    term = term * y2;
+  }
+  return 2.0 * sum + (double)k * 0.6931471805599453;
+}
+
+double __agc_runtime_log2(double x) {
+  return __agc_runtime_log(x) / 0.6931471805599453;
+}
+
+double __agc_runtime_log10(double x) {
+  return __agc_runtime_log(x) / 2.302585092994046;
+}
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {

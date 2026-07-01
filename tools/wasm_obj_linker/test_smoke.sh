@@ -263,6 +263,10 @@ double round(double x);
 double trunc(double x);
 double fmod(double x, double y);
 double cbrt(double x);
+double exp(double x);
+double log(double x);
+double log2(double x);
+double log10(double x);
 float floorf(float x);
 float ceilf(float x);
 float roundf(float x);
@@ -341,6 +345,10 @@ int main(void) {
   int fmod_neg = (int)(fmod(-7.5, 2.0) * 1000.0);
   int cbrt_pos = (int)(cbrt(27.0) * 1000.0);
   int cbrt_neg = (int)(cbrt(-8.0) * 1000.0);
+  int exp1 = (int)(exp(1.0) * 1000.0);
+  int loge = (int)(log(2.718281828459045) * 1000.0);
+  int log2v = (int)(log2(8.0) * 1000.0);
+  int log10v = (int)(log10(100.0) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -376,6 +384,10 @@ int main(void) {
          fmod_pos == 1500 && fmod_neg == -1500 &&
          cbrt_pos >= 2998 && cbrt_pos <= 3002 &&
          cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
+         exp1 >= 2716 && exp1 <= 2720 &&
+         loge >= 998 && loge <= 1002 &&
+         log2v >= 2998 && log2v <= 3002 &&
+         log10v >= 1998 && log10v <= 2002 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
@@ -600,6 +612,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.floor>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ceilf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.exp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi
