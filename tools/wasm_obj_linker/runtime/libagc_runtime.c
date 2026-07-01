@@ -47,6 +47,9 @@ struct ag_rt_lconv {
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 static struct ag_rt_file ag_rt_file_value;
 
+double __agc_runtime_exp(double x);
+double __agc_runtime_log(double x);
+
 long __agc_runtime_malloc(long size) {
   long aligned = (size + 7) & -8;
   long p = ag_rt_heap;
@@ -346,9 +349,20 @@ float __agc_runtime_sqrtf(float x) {
 }
 
 double __agc_runtime_pow(double x, double y) {
-  (void)x;
-  (void)y;
-  return 1024.0;
+  long yi = (long)y;
+  if ((double)yi == y) {
+    double base = x;
+    double result = 1.0;
+    long n = yi < 0 ? -yi : yi;
+    while (n > 0) {
+      if (n & 1) result = result * base;
+      base = base * base;
+      n = n / 2;
+    }
+    return yi < 0 ? 1.0 / result : result;
+  }
+  if (x <= 0.0) return 0.0;
+  return __agc_runtime_exp(y * __agc_runtime_log(x));
 }
 
 double __agc_runtime_fabs(double x) {

@@ -356,6 +356,8 @@ int main(void) {
   int loge = (int)(log(2.718281828459045) * 1000.0);
   int log2v = (int)(log2(8.0) * 1000.0);
   int log10v = (int)(log10(100.0) * 1000.0);
+  int pow_int = (int)(pow(-2.0, 3.0) * 1000.0);
+  int pow_frac = (int)(pow(9.0, 0.5) * 1000.0);
   int atan1 = (int)(atan(1.0) * 1000.0);
   int atan2v = (int)(atan2(1.0, 0.0) * 1000.0);
   int asinv = (int)(asin(1.0) * 1000.0);
@@ -382,6 +384,8 @@ int main(void) {
          (int)(sqrt(2.0) * 1000.0) == 1414 &&
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
          (int)pow(2.0, 10.0) == 1024 &&
+         pow_int == -8000 &&
+         pow_frac >= 2998 && pow_frac <= 3002 &&
          (int)fabs(-3.5) == 3 &&
          (int)fabsf(-2.5f) == 2 &&
          (int)floor(3.8) == 3 && (int)floor(-3.2) == -4 &&

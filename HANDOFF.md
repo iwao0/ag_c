@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き312: wasm runtime object hyperbolic helpers）
+最終更新: 2026-07-01（続き313: wasm runtime object pow generalization）
 
 ## 現状
 - `make test` = **green**。
@@ -18,6 +18,14 @@
   `./build/test_wasm32_object` = **1116/1116 green**。
   `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き313: **`libagc_runtime.o` の `pow` を固定値 stub から一般化**。
+  旧実装は fixture 用に常に `1024.0` を返していたが、整数指数は累乗平方で負の底も扱い、
+  非整数指数は正の底に対して `exp(y * log(x))` で計算するようにした。
+  `test_smoke.sh` の `libc_runtime.c` で `pow(2,10)` に加え、`pow(-2,3)` と
+  `pow(9,0.5)` を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1115 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き312: **`libagc_runtime.o` に `sinh` / `cosh` / `tanh` helper を追加**。
   `__agc_runtime_sinh`、`__agc_runtime_cosh`、`__agc_runtime_tanh` を runtime object に追加し、
   `ag_wasm_link` の runtime symbol/bridge map に public symbol を追加した。実装は既存
