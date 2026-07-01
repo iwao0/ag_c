@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き336: Wasm self-host ABI / fixture coverage）
+最終更新: 2026-07-01（続き337: c-testsuite 00209 abstract function declarator）
 
 ## 現状
 - `make test` = **green**。
@@ -12,8 +12,18 @@
   `make test-wasm-obj-linker` = **green**、
   `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
   `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**。
--  `bash scripts/run_c_testsuite.sh --list-fail` = **217 pass / 2 unsupported skip / 1 compile fail**
-  （00206/00216 は unsupported GNU skip、00209 が compile fail）。
+-  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
+  （00206/00216 は unsupported GNU skip）。
+- 続き337: **c-testsuite 00209 の `int ()` abstract function declarator を修正**。
+  関数仮引数位置の `int ()` を unnamed int ではなく old-style empty parameter list の
+  function type として扱い、関数ポインタへ decay させるようにした。
+  これで `int f1(int (), int);` と `int f1(fptr1, int)` の再宣言型比較が一致する。
+  `test/fixtures/probes_found_bugs/incomplete_tag_and_nested_func_param.c` へ `fptr1` / `fptr3` /
+  `fptr4` / `fptr5` / `int ([4])` の宣言形を追加して、00209 の未カバー部分を保持した。
+  確認: `./build/ag_c test/external/c-testsuite/tests/single-exec/00209.c`、
+  `./build/test_parser`、`./build/test_e2e`、`./build/test_wasm32_e2e`、
+  `./build/test_wasm32_object`、`bash scripts/run_c_testsuite.sh --list-fail`、
+  `make test`、`git diff --check`。
 - 続き336: **Wasm self-host 経路の関数ポインタ ABI と fixture coverage を修正**。
   `const char *` などを `preprocess.c` / `filename_table.c` 側で書き換えずに通すため、
   parser/IR 側で pointer-like local/param と funcptr signature metadata の伝搬を補強した。

@@ -3595,7 +3595,15 @@ static token_ident_t *parse_param_declarator_name_recursive(int *out_is_array_de
   int levels_before_paren = out_pointer_levels ? *out_pointer_levels : 0;
   bool paren_made_pointer = false;
   if (tk_consume('(')) {
-    if (is_param_decl_spec_start() || curtok()->kind == TK_VOID) {
+    if (curtok()->kind == TK_RPAREN) {
+      /* Abstract function declarator with an old-style empty parameter list:
+       * `int ()` in a parameter position denotes a function type and adjusts
+       * to a function pointer, just like `int (int)`. */
+      if (out_has_func_suffix) *out_has_func_suffix = 1;
+      if (out_is_pointer_declarator) *out_is_pointer_declarator = 1;
+      if (out_pointer_levels && *out_pointer_levels == 0) (*out_pointer_levels)++;
+      tk_expect(')');
+    } else if (is_param_decl_spec_start() || curtok()->kind == TK_VOID) {
       /* 関数型 declarator: `int (int x)` / `int (int())` / `int (void)` 等。
        * 仮引数位置では関数型は関数ポインタへ decay する。 */
       if (out_has_func_suffix) *out_has_func_suffix = 1;
