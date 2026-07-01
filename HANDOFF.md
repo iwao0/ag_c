@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き323: libagc_runtime wide-char helpers）
+最終更新: 2026-07-01（続き324: libagc_runtime wide-char conversion helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -14,6 +14,13 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
   `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き324: **`libagc_runtime.o` の wide-char conversion helper を拡張**。
+  `wcsstr` / `wcstol` / `wcstoul` / `wcstod` / `mbrtowc` / `wcrtomb` /
+  `mbsrtowcs` / `wcsrtombs` / `btowc` / `wctob` を runtime object 本体へ追加し、
+  `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。実装は ASCII 範囲の最小変換。
+  smoke では wide string search、数値変換、single-byte multibyte/wide 変換、`--nostdlib` import 維持を確認。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip。
 - 続き323: **`libagc_runtime.o` の wide-char string/memory helper を拡張**。
   `wcsncpy` / `wcscat` / `wcsncat` / `wcsncmp` / `wcschr` / `wcsrchr` /
   `wmemcpy` / `wmemmove` / `wmemset` / `wmemcmp` / `wmemchr` を runtime object 本体へ追加し、

@@ -343,11 +343,21 @@ int wcscmp(int *a, int *b);
 int wcsncmp(int *a, int *b, unsigned long n);
 int *wcschr(int *s, int ch);
 int *wcsrchr(int *s, int ch);
+int *wcsstr(int *s, int *sub);
 int *wmemcpy(int *dst, int *src, unsigned long n);
 int *wmemmove(int *dst, int *src, unsigned long n);
 int *wmemset(int *s, int ch, unsigned long n);
 int wmemcmp(int *a, int *b, unsigned long n);
 int *wmemchr(int *s, int ch, unsigned long n);
+long wcstol(int *s, int **endptr, int base);
+unsigned long wcstoul(int *s, int **endptr, int base);
+double wcstod(int *s, int **endptr);
+unsigned long mbrtowc(int *pwc, char *s, unsigned long n, void *ps);
+unsigned long wcrtomb(char *s, int wc, void *ps);
+unsigned long mbsrtowcs(int *dst, char **src, unsigned long len, void *ps);
+unsigned long wcsrtombs(char *dst, int **src, unsigned long len, void *ps);
+int btowc(int c);
+int wctob(int c);
 int putchar(int c);
 typedef void FILE;
 FILE *fopen(char *path, char *mode);
@@ -409,6 +419,22 @@ int main(void) {
   int wd[8];
   int we[8];
   int wfbuf[8];
+  int convw[8];
+  char convc[8];
+  int *wend = 0;
+  int wcnum[8];
+  int wcdec[8];
+  wcnum[0] = ' ';
+  wcnum[1] = '-';
+  wcnum[2] = '2';
+  wcnum[3] = 'a';
+  wcnum[4] = '.';
+  wcnum[5] = '5';
+  wcnum[6] = 0;
+  wcdec[0] = '2';
+  wcdec[1] = '.';
+  wcdec[2] = '5';
+  wcdec[3] = 0;
   ws[0] = 'A';
   ws[1] = 'b';
   ws[2] = 0;
@@ -423,6 +449,12 @@ int main(void) {
   wmemcpy(wfbuf, we, 4);
   wmemmove(wfbuf + 1, wfbuf, 3);
   wmemset(wfbuf + 4, 'Z', 2);
+  char *mbsrc = "Hi";
+  char *mbsrcp = mbsrc;
+  int *wcsrcp;
+  mbsrtowcs(convw, &mbsrcp, 8, nullv);
+  wcsrcp = convw;
+  wcsrtombs(convc, &wcsrcp, 8, nullv);
   struct lconv *lc;
   setlocale(0, "C");
   lc = localeconv();
@@ -508,7 +540,15 @@ int main(void) {
          wcslen(ws) == 2 && wcscmp(ws, wd) == 0 &&
          wcsncmp(we, ws, 2) == 0 && wcschr(we, 'b') == we + 1 &&
          wcsrchr(we, 'b') == we + 4 &&
+         wcsstr(we, ws) == we &&
          wmemcmp(wd, ws, 3) == 0 && wmemchr(wfbuf, 'Z', 6) == wfbuf + 4 &&
+         wcstol(wcnum, &wend, 16) == -42 && *wend == '.' &&
+         wcstoul(wcnum + 2, &wend, 16) == 42 && *wend == '.' &&
+         (int)(wcstod(wcdec, &wend) * 10.0) == 25 && *wend == 0 &&
+         mbrtowc(convw, "Q", 2, nullv) == 1 && convw[0] == 'Q' &&
+         wcrtomb(convc, 'R', nullv) == 1 && convc[0] == 'R' &&
+         convw[0] == 'Q' && convc[0] == 'R' &&
+         btowc('S') == 'S' && wctob('T') == 'T' &&
          feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 16 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
          fetestexcept(16) == 16 &&
@@ -810,11 +850,21 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wcsncmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcschr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsrchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsstr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemmove>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemset>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemcmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstoul>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbrtowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcrtomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbsrtowcs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsrtombs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.btowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wctob>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fread>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sin>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

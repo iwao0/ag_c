@@ -57,7 +57,7 @@ Supported:
   minimal file I/O stubs, a tiny bump allocator plus small stdlib helpers
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
   `getenv`, `system`, `imaxabs`),
-  `time`/`clock`/`difftime`, `errno` storage, wide-char string/memory helpers,
+  `time`/`clock`/`difftime`, `errno` storage, wide-char string/memory/conversion helpers,
   fenv/locale helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
   `pow`, remainder, cube-root, and rounding helpers, stdio globals, and `__assert_rtn`.
