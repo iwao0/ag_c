@@ -804,16 +804,23 @@ static void emit_stack_global_set(wb_t *b, obj_func_t *of, obj_global_t *sp) {
   func_add_global_reloc(of, R_WASM_GLOBAL_INDEX_LEB, imm_off, (int)(sp - g_obj.globals));
 }
 
+static void emit_fp_const(wb_t *b, ir_type_t type, double value);
+
 static void emit_const(wb_t *b, ir_type_t type, long long value) {
   type = wasm_ir_type(type);
+  if (type == IR_TY_VOID) type = IR_TY_I32;
   if (type == IR_TY_I64) {
     wb_u8(b, 0x42);
     wb_sleb(b, value);
   } else if (type == IR_TY_I32) {
     wb_u8(b, 0x41);
     wb_sleb(b, (int32_t)(uint32_t)value);
+  } else if (type == IR_TY_F32 || type == IR_TY_F64) {
+    emit_fp_const(b, type, (double)value);
   } else {
-    obj_unsupported_msg("floating-point immediates in Wasm object mode");
+    char msg[96];
+    snprintf(msg, sizeof(msg), "unsupported immediate type in Wasm object mode: %d", (int)type);
+    obj_unsupported_msg(msg);
   }
 }
 
@@ -1527,7 +1534,11 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           break;
         }
         case IR_LOAD_IMM:
-          emit_const(&body, actual_vreg_type(i->dst), i->src1.imm);
+          if (actual_vreg_type(i->dst) == IR_TY_F32 || actual_vreg_type(i->dst) == IR_TY_F64) {
+            emit_fp_const(&body, actual_vreg_type(i->dst), i->src1.fp_imm);
+          } else {
+            emit_const(&body, actual_vreg_type(i->dst), i->src1.imm);
+          }
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_LOAD_FP_IMM:
@@ -1719,9 +1730,14 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         }
         case IR_NEG: {
           ir_type_t ty = wasm_ir_type(i->dst.type);
-          emit_const(&body, ty, 0);
-          emit_val(&body, i->src1, ty, param_count);
-          wb_u8(&body, ty == IR_TY_I64 ? 0x7d : 0x6b);
+          if (ty == IR_TY_F32 || ty == IR_TY_F64) {
+            emit_val(&body, i->src1, ty, param_count);
+            wb_u8(&body, ty == IR_TY_F64 ? 0x9a : 0x8c);
+          } else {
+            emit_const(&body, ty, 0);
+            emit_val(&body, i->src1, ty, param_count);
+            wb_u8(&body, ty == IR_TY_I64 ? 0x7d : 0x6b);
+          }
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         }

@@ -30,6 +30,7 @@ char *fgets(char *s, int size, FILE *stream);
 
 /* File operations */
 FILE *fopen(const char *path, const char *mode);
+FILE *fdopen(int fd, const char *mode);
 int fclose(FILE *stream);
 int fflush(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);

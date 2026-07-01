@@ -1,6 +1,8 @@
 #ifndef _STDLIB_H
 #define _STDLIB_H
 
+#include <stddef.h>
+
 /* NOTE: C11 標準では size_t を使うが、現パーサーが typedef 名の
  * 引数型・戻り値型に未対応のため long で代替している。
  * また const 修飾も省略している。 */
@@ -43,5 +45,6 @@ void *bsearch(void *key, void *base, long nmemb, long size, void *compar);
 /* Environment */
 char *getenv(char *name);
 int system(char *command);
+char *realpath(const char *path, char *resolved_path);
 
 #endif

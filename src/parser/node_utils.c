@@ -664,7 +664,7 @@ void psx_node_reject_const_assign(node_t *node, const char *op) {
      * したがって p = q を拒否するのはこのビットが立っているときのみ
      * (`int * const p;` のケース)。非ポインタ変数は従来通り
      * is_const_qualified を見る (`const int x = 5; x = 10;` を拒否)。 */
-    int self_const = (node->kind != ND_DEREF && mem->is_pointer)
+    int self_const = mem->is_pointer
                          ? (int)(mem->pointer_const_qual_mask & 1u)
                          : mem->is_const_qualified;
     if (self_const) {

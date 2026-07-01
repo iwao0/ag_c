@@ -437,6 +437,10 @@ static void reset_toplevel_decl_spec_state(void) {
   g_toplevel_decl_td_array_dim_count = 0;
   g_toplevel_decl_td_ptr_pointee_dim_count = 0;
   for (int i = 0; i < 8; i++) g_toplevel_decl_td_array_dims[i] = 0;
+  g_last_type_const_qualified = 0;
+  g_last_type_volatile_qualified = 0;
+  g_last_type_atomic = 0;
+  g_last_type_thread_local = 0;
 }
 
 static int parse_toplevel_tag_decl_spec(void) {

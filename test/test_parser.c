@@ -1961,6 +1961,9 @@ static void test_parse_evil_edge_cases() {
 
   // const修飾
   expect_parse_ok("main() { const int x = 42; return x; }");
+  expect_parse_ok("static const char *__const_leak_roots[]={\"\"}; typedef struct __ConstLeakFrame __ConstLeakFrame; struct __ConstLeakFrame{__ConstLeakFrame *next; const char *path;}; static __ConstLeakFrame *__const_leak_g; void f(void){ __ConstLeakFrame *p=0; __const_leak_g=p; }");
+  expect_parse_ok("static const char *__const_ptr_tbl[4]; void f(const char *name){ __const_ptr_tbl[0]=name; }");
+  expect_parse_ok("struct __ConstMemberPtr{const char *path;}; void f(struct __ConstMemberPtr *m,const char *path){ m->path=path; }");
   // 後置const (int const x) は変数宣言で現在パースエラー
   // expect_parse_ok("main() { int const x = 42; return x; }");
 
