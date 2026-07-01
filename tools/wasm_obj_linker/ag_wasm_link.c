@@ -752,7 +752,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "log") || str_eq_lit(name, "log2") ||
          str_eq_lit(name, "log10") || str_eq_lit(name, "atan") ||
          str_eq_lit(name, "atan2") || str_eq_lit(name, "asin") ||
-         str_eq_lit(name, "acos");
+         str_eq_lit(name, "acos") || str_eq_lit(name, "sinh") ||
+         str_eq_lit(name, "cosh") || str_eq_lit(name, "tanh");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -2554,6 +2555,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_asin";
   } else if (str_eq_lit(name, "acos")) {
     target_lit = "__agc_runtime_acos";
+  } else if (str_eq_lit(name, "sinh")) {
+    target_lit = "__agc_runtime_sinh";
+  } else if (str_eq_lit(name, "cosh")) {
+    target_lit = "__agc_runtime_cosh";
+  } else if (str_eq_lit(name, "tanh")) {
+    target_lit = "__agc_runtime_tanh";
   } else if (str_eq_lit(name, "wcslen")) {
     target_lit = "__agc_runtime_wcslen";
   } else if (str_eq_lit(name, "wcscpy")) {

@@ -271,6 +271,9 @@ double atan(double x);
 double atan2(double y, double x);
 double asin(double x);
 double acos(double x);
+double sinh(double x);
+double cosh(double x);
+double tanh(double x);
 float floorf(float x);
 float ceilf(float x);
 float roundf(float x);
@@ -357,6 +360,10 @@ int main(void) {
   int atan2v = (int)(atan2(1.0, 0.0) * 1000.0);
   int asinv = (int)(asin(1.0) * 1000.0);
   int acosv = (int)(acos(0.0) * 1000.0);
+  int sinh0 = (int)(sinh(0.0) * 1000.0);
+  int cosh0 = (int)(cosh(0.0) * 1000.0);
+  int tanh0 = (int)(tanh(0.0) * 1000.0);
+  int tanh1 = (int)(tanh(1.0) * 1000.0);
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strncmp(b, "helx", 3) == 0 &&
@@ -400,6 +407,8 @@ int main(void) {
          atan2v >= 1568 && atan2v <= 1572 &&
          asinv >= 1568 && asinv <= 1572 &&
          acosv >= 1568 && acosv <= 1572 &&
+         sinh0 == 0 && cosh0 >= 998 && cosh0 <= 1002 &&
+         tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
@@ -628,6 +637,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atan2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.acos>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sinh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
 fi

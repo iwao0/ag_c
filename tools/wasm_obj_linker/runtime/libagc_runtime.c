@@ -556,6 +556,24 @@ double __agc_runtime_acos(double x) {
   return __agc_runtime_atan2(__agc_runtime_sqrt(1.0 - x * x), x);
 }
 
+double __agc_runtime_sinh(double x) {
+  double ex = __agc_runtime_exp(x);
+  double em = __agc_runtime_exp(-x);
+  return (ex - em) / 2.0;
+}
+
+double __agc_runtime_cosh(double x) {
+  double ex = __agc_runtime_exp(x);
+  double em = __agc_runtime_exp(-x);
+  return (ex + em) / 2.0;
+}
+
+double __agc_runtime_tanh(double x) {
+  double ex = __agc_runtime_exp(x);
+  double em = __agc_runtime_exp(-x);
+  return (ex - em) / (ex + em);
+}
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {
