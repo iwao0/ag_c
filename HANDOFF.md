@@ -1,23 +1,27 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き313: wasm runtime object pow generalization）
+最終更新: 2026-07-01（続き314: stdheader math runtime fixture）
 
 ## 現状
 - `make test` = **green**。
-- 直近確認: `make wasm32-scans` green:
-  `wasm32-object-fixture-scan` = **1116/1116 compile + validate green**、
-  `wasm32-object-link-fixture-scan` = **1115 pass / 1 skip / validate 1115 / run 1115 / import skip 0**
-  （multi-TU 部品 fixture 1 件は skip）、
-  `wasm32-object-link-all-fixture-scan` = **1115 pass / 1 skip / validate 1115 / run 1115 / import skip 0**、
-  `wasm32-wat-fixture-scan` = **1115 pass / 1 skip / WAT compile + wat2wasm + validate green**、
-  `wasm32-object-c-testsuite-scan` = **218/218 compile + validate green**、
-  `wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**、
-  `wasm32-wat-c-testsuite-scan` = **218/218 WAT compile + wat2wasm + validate green**。
-  `./build/test_e2e` = **1144/1144 green**、`./build/test_parser` green、
-  `./build/test_wasm32_backend` green、`./build/test_wasm32_e2e` = **1115/1115 green**、
-  `./build/test_wasm32_object` = **1116/1116 green**。
-  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
+  内訳として `./build/test_e2e` = **1145/1145 green**、
+  `./build/test_wasm32_e2e` = **1116 compiled / 1116 executed green**、
+  `./build/test_wasm32_object` = **1117/1117 e2e fixture object compile + validate green**。
+- 直近確認:
+  `make wasm32-object-link-all-fixture-scan` = **1116 pass / 1 skip / validate 1116 / run 1116 / import skip 0**、
+  `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
+  `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き314: **math runtime helper を通常 fixture で検証**。
+  `test/fixtures/stdheader/math_runtime_ops.c` を追加し、`test_e2e` と `test_wasm32_e2e` の両方に登録した。
+  `sin` / `cos` / `tan`、`exp` / `log` / `log2` / `log10`、`atan` / `atan2` /
+  `asin` / `acos`、`sinh` / `cosh` / `tanh`、`fmod` / `cbrt` / `pow`、
+  `floor` / `ceil` / `round` / `trunc` と float 版を assert で踏む。
+  WAT backend の minimal libc stub も同じ fixture が通るように、`tan`、`log2` / `log10`、
+  `tanh`、`asin` / `acos`、`fmod`、`cbrt`、一般化した `pow`、丸め系 helper を追加し、
+  `log` には 2 のスケーリング、`atan` には pi/4 縮約を入れて近似精度を改善した。
+  確認: `make test`、`make wasm32-object-link-all-fixture-scan`、
+  `make wasm32-object-link-c-testsuite-scan`。
 - 続き313: **`libagc_runtime.o` の `pow` を固定値 stub から一般化**。
   旧実装は fixture 用に常に `1024.0` を返していたが、整数指数は累乗平方で負の底も扱い、
   非整数指数は正の底に対して `exp(y * log(x))` で計算するようにした。

@@ -2694,7 +2694,13 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(then (f64.sub (f64.const 1.5707963267948966) (call $__ag_atan_core (f64.div (f64.const 1) (local.get $x)))))\n");
     wasm_emitf(6, "(else (if (result f64) (f64.lt (local.get $x) (f64.const -1))\n");
     wasm_emitf(8, "(then (f64.sub (f64.const -1.5707963267948966) (call $__ag_atan_core (f64.div (f64.const 1) (local.get $x)))))\n");
-    wasm_emitf(8, "(else (call $__ag_atan_core (local.get $x)))\n");
+    wasm_emitf(8, "(else (if (result f64) (f64.gt (local.get $x) (f64.const 0.5))\n");
+    wasm_emitf(10, "(then (f64.add (f64.const 0.7853981633974483) (call $__ag_atan_core (f64.div (f64.sub (local.get $x) (f64.const 1)) (f64.add (local.get $x) (f64.const 1))))))\n");
+    wasm_emitf(10, "(else (if (result f64) (f64.lt (local.get $x) (f64.const -0.5))\n");
+    wasm_emitf(12, "(then (f64.sub (f64.const -0.7853981633974483) (call $__ag_atan_core (f64.div (f64.add (local.get $x) (f64.const 1)) (f64.sub (f64.const 1) (local.get $x))))))\n");
+    wasm_emitf(12, "(else (call $__ag_atan_core (local.get $x)))\n");
+    wasm_emitf(10, "))\n");
+    wasm_emitf(8, "))\n");
     wasm_emitf(6, "))\n");
     wasm_emitf(4, ")\n");
     wasm_emitf(2, ")\n");
@@ -2775,8 +2781,21 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local $term f64)\n");
     wasm_emitf(4, "(local $sum f64)\n");
     wasm_emitf(4, "(local $den f64)\n");
+    wasm_emitf(4, "(local $k i32)\n");
     wasm_emitf(4, "(local $i i32)\n");
     wasm_emitf(4, "(if (f64.le (local.get $x) (f64.const 0)) (then (return (f64.const -inf))))\n");
+    wasm_emitf(4, "(block $done_hi (loop $hi\n");
+    wasm_emitf(6, "(if (f64.le (local.get $x) (f64.const 2)) (then (br $done_hi)))\n");
+    wasm_emitf(6, "(local.set $x (f64.mul (local.get $x) (f64.const 0.5)))\n");
+    wasm_emitf(6, "(local.set $k (i32.add (local.get $k) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $hi)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(block $done_lo (loop $lo\n");
+    wasm_emitf(6, "(if (f64.ge (local.get $x) (f64.const 0.5)) (then (br $done_lo)))\n");
+    wasm_emitf(6, "(local.set $x (f64.mul (local.get $x) (f64.const 2)))\n");
+    wasm_emitf(6, "(local.set $k (i32.sub (local.get $k) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $lo)\n");
+    wasm_emitf(4, "))\n");
     wasm_emitf(4, "(local.set $z (f64.div (f64.sub (local.get $x) (f64.const 1)) (f64.add (local.get $x) (f64.const 1))))\n");
     wasm_emitf(4, "(local.set $z2 (f64.mul (local.get $z) (local.get $z)))\n");
     wasm_emitf(4, "(local.set $term (local.get $z))\n");
@@ -2790,7 +2809,17 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(f64.mul (f64.const 2) (local.get $sum))\n");
+    wasm_emitf(4, "(f64.add (f64.mul (f64.const 2) (local.get $sum)) (f64.mul (f64.convert_i32_s (local.get $k)) (f64.const 0.6931471805599453)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("log2", 4)) {
+    wasm_emitf(2, "(func $log2 (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(f64.div (call $log (local.get $x)) (f64.const 0.6931471805599453))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("log10", 5)) {
+    wasm_emitf(2, "(func $log10 (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(f64.div (call $log (local.get $x)) (f64.const 2.302585092994046))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("sin", 3)) {
@@ -2863,6 +2892,11 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(f64.mul (local.get $sign) (local.get $sum))\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("tan", 3)) {
+    wasm_emitf(2, "(func $tan (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(f64.div (call $sin (local.get $x)) (call $cos (local.get $x)))\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("sinh", 4)) {
     wasm_emitf(2, "(func $sinh (param $x f64) (result f64)\n");
     wasm_emitf(4, "(f64.mul (f64.const 0.5) (f64.sub (call $exp (local.get $x)) (call $exp (f64.neg (local.get $x)))))\n");
@@ -2873,17 +2907,101 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(f64.mul (f64.const 0.5) (f64.add (call $exp (local.get $x)) (call $exp (f64.neg (local.get $x)))))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("sqrt", 4)) {
+  if (has_undefined_function("tanh", 4)) {
+    wasm_emitf(2, "(func $tanh (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(f64.div (f64.sub (call $exp (local.get $x)) (call $exp (f64.neg (local.get $x)))) (f64.add (call $exp (local.get $x)) (call $exp (f64.neg (local.get $x)))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("sqrt", 4) || has_undefined_function("asin", 4) ||
+      has_undefined_function("acos", 4) || has_undefined_function("pow", 3)) {
     wasm_emitf(2, "(func $sqrt (param $x f64) (result f64) (f64.sqrt (local.get $x)))\n");
   }
   if (has_undefined_function("sqrtf", 5)) {
     wasm_emitf(2, "(func $sqrtf (param $x f32) (result f32) (f32.sqrt (local.get $x)))\n");
   }
+  if (has_undefined_function("asin", 4)) {
+    wasm_emitf(2, "(func $asin (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(call $atan2 (local.get $x) (call $sqrt (f64.sub (f64.const 1) (f64.mul (local.get $x) (local.get $x)))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("acos", 4)) {
+    wasm_emitf(2, "(func $acos (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(call $atan2 (call $sqrt (f64.sub (f64.const 1) (f64.mul (local.get $x) (local.get $x)))) (local.get $x))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("fmod", 4)) {
+    wasm_emitf(2, "(func $fmod (param $x f64) (param $y f64) (result f64)\n");
+    wasm_emitf(4, "(f64.sub (local.get $x) (f64.mul (f64.trunc (f64.div (local.get $x) (local.get $y))) (local.get $y)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("cbrt", 4)) {
+    wasm_emitf(2, "(func $cbrt (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(local $g f64)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(if (f64.eq (local.get $x) (f64.const 0)) (then (return (f64.const 0))))\n");
+    wasm_emitf(4, "(local.set $g (local.get $x))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $i) (i32.const 24)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $g (f64.div (f64.add (f64.mul (f64.const 2) (local.get $g)) (f64.div (local.get $x) (f64.mul (local.get $g) (local.get $g)))) (f64.const 3)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $g)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("pow", 3)) {
-    wasm_emitf(2, "(func $pow (param f64 f64) (result f64) (f64.const 1024))\n");
+    wasm_emitf(2, "(func $pow (param $x f64) (param $y f64) (result f64)\n");
+    wasm_emitf(4, "(local $n i32)\n");
+    wasm_emitf(4, "(local $i i32)\n");
+    wasm_emitf(4, "(local $r f64)\n");
+    wasm_emitf(4, "(if (f64.eq (local.get $y) (f64.const 0.5)) (then (return (call $sqrt (local.get $x)))))\n");
+    wasm_emitf(4, "(local.set $n (i32.trunc_f64_s (local.get $y)))\n");
+    wasm_emitf(4, "(local.set $r (f64.const 1))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_s (local.get $i) (local.get $n)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $r (f64.mul (local.get $r) (local.get $x)))\n");
+    wasm_emitf(6, "(local.set $i (i32.add (local.get $i) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $r)\n");
+    wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("fabs", 4)) {
     wasm_emitf(2, "(func $fabs (param $x f64) (result f64) (f64.abs (local.get $x)))\n");
+  }
+  if (has_undefined_function("fabsf", 5)) {
+    wasm_emitf(2, "(func $fabsf (param $x f32) (result f32) (f32.abs (local.get $x)))\n");
+  }
+  if (has_undefined_function("floor", 5)) {
+    wasm_emitf(2, "(func $floor (param $x f64) (result f64) (f64.floor (local.get $x)))\n");
+  }
+  if (has_undefined_function("ceil", 4)) {
+    wasm_emitf(2, "(func $ceil (param $x f64) (result f64) (f64.ceil (local.get $x)))\n");
+  }
+  if (has_undefined_function("round", 5)) {
+    wasm_emitf(2, "(func $round (param $x f64) (result f64)\n");
+    wasm_emitf(4, "(if (result f64) (f64.lt (local.get $x) (f64.const 0))\n");
+    wasm_emitf(6, "(then (f64.ceil (f64.sub (local.get $x) (f64.const 0.5))))\n");
+    wasm_emitf(6, "(else (f64.floor (f64.add (local.get $x) (f64.const 0.5))))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("trunc", 5)) {
+    wasm_emitf(2, "(func $trunc (param $x f64) (result f64) (f64.trunc (local.get $x)))\n");
+  }
+  if (has_undefined_function("floorf", 6)) {
+    wasm_emitf(2, "(func $floorf (param $x f32) (result f32) (f32.floor (local.get $x)))\n");
+  }
+  if (has_undefined_function("ceilf", 5)) {
+    wasm_emitf(2, "(func $ceilf (param $x f32) (result f32) (f32.ceil (local.get $x)))\n");
+  }
+  if (has_undefined_function("roundf", 6)) {
+    wasm_emitf(2, "(func $roundf (param $x f32) (result f32)\n");
+    wasm_emitf(4, "(if (result f32) (f32.lt (local.get $x) (f32.const 0))\n");
+    wasm_emitf(6, "(then (f32.ceil (f32.sub (local.get $x) (f32.const 0.5))))\n");
+    wasm_emitf(6, "(else (f32.floor (f32.add (local.get $x) (f32.const 0.5))))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
   }
 }
 
