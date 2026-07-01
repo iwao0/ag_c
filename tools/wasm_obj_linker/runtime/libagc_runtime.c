@@ -86,6 +86,40 @@ long __agc_runtime_realloc(long ptr, long size) {
   return p;
 }
 
+void __agc_runtime_qsort(long base_addr, long nmemb, long size, long compar_addr) {
+  if (!base_addr || nmemb <= 1 || size <= 0 || !compar_addr) return;
+  int (*cmp)(long, long) = (int (*)(long, long))compar_addr;
+  long tmp_addr = __agc_runtime_malloc(size);
+  long i = 0;
+  while (i < nmemb) {
+    long j = i + 1;
+    while (j < nmemb) {
+      long a = base_addr + i * size;
+      long b = base_addr + j * size;
+      if (cmp(a, b) > 0) {
+        __agc_runtime_memcpy(tmp_addr, a, size);
+        __agc_runtime_memcpy(a, b, size);
+        __agc_runtime_memcpy(b, tmp_addr, size);
+      }
+      j++;
+    }
+    i++;
+  }
+}
+
+long __agc_runtime_bsearch(long key_addr, long base_addr, long nmemb, long size, long compar_addr) {
+  if (!key_addr || !base_addr || nmemb <= 0 || size <= 0 || !compar_addr) return 0;
+  int (*cmp)(long, long) = (int (*)(long, long))compar_addr;
+  long i = 0;
+  while (i < nmemb) {
+    long elem = base_addr + i * size;
+    int r = cmp(key_addr, elem);
+    if (r == 0) return elem;
+    i++;
+  }
+  return 0;
+}
+
 long __agc_runtime_strlen(long s_addr) {
   char *s = ag_rt_ptr(s_addr);
   long n = 0;

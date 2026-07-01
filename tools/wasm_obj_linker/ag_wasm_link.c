@@ -734,6 +734,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "atoi") || str_eq_lit(name, "atol") ||
          str_eq_lit(name, "strtol") || str_eq_lit(name, "rand") ||
          str_eq_lit(name, "srand") || str_eq_lit(name, "labs") ||
+         str_eq_lit(name, "qsort") || str_eq_lit(name, "bsearch") ||
          str_eq_lit(name, "atexit") || str_eq_lit(name, "getenv") ||
          str_eq_lit(name, "system") || str_eq_lit(name, "time") ||
          str_eq_lit(name, "clock") || str_eq_lit(name, "difftime") ||
@@ -2544,6 +2545,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strtol";
   } else if (str_eq_lit(name, "labs")) {
     target_lit = "__agc_runtime_labs";
+  } else if (str_eq_lit(name, "qsort")) {
+    target_lit = "__agc_runtime_qsort";
+  } else if (str_eq_lit(name, "bsearch")) {
+    target_lit = "__agc_runtime_bsearch";
   } else if (str_eq_lit(name, "rand")) {
     target_lit = "__agc_runtime_rand";
   } else if (str_eq_lit(name, "srand")) {

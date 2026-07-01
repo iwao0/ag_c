@@ -270,6 +270,8 @@ long strtol(char *s, char **endptr, int base);
 int rand(void);
 void srand(int seed);
 long labs(long n);
+void qsort(void *base, long nmemb, long size, void *compar);
+void *bsearch(void *key, void *base, long nmemb, long size, void *compar);
 char *getenv(char *name);
 int system(char *command);
 long time(long *tloc);
@@ -382,6 +384,11 @@ int fputc(int c, FILE *stream);
 int fflush(FILE *stream);
 void perror(char *s);
 int getchar(void);
+int int_cmp(long ap, long bp) {
+  int *a = (int *)ap;
+  int *b = (int *)bp;
+  return *a - *b;
+}
 int main(void) {
   char a[32];
   char b[32];
@@ -417,6 +424,9 @@ int main(void) {
   srand(1);
   int rand1 = rand();
   int rand2 = rand();
+  int nums[5];
+  int key = 3;
+  int *found;
   void *nullv = 0;
   long tloc = 123;
   int *errp = __error();
@@ -450,6 +460,13 @@ int main(void) {
   p[1] = 'K';
   p[2] = 0;
   free(p);
+  nums[0] = 4;
+  nums[1] = 1;
+  nums[2] = 5;
+  nums[3] = 2;
+  nums[4] = 3;
+  qsort(nums, 5, sizeof(int), int_cmp);
+  found = bsearch(&key, nums, 5, sizeof(int), int_cmp);
   wcscpy(wd, ws);
   wcsncpy(we, ws, 3);
   wcscat(we, ws);
@@ -525,6 +542,8 @@ int main(void) {
          parsed == -42 && *endp == 0 &&
          rand1 != rand2 &&
          atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 && system("true") == 0 &&
+         nums[0] == 1 && nums[1] == 2 && nums[2] == 3 && nums[3] == 4 && nums[4] == 5 &&
+         found == nums + 2 && *found == 3 &&
          time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
          (int)difftime(100, 58) == 42 &&
          errp != 0 && (*errp = 34, *__error() == 34) &&
@@ -831,6 +850,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.realloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.qsort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.bsearch>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.rand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.srand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.labs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

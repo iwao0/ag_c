@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き325: libagc_runtime signal/wctype helpers）
+最終更新: 2026-07-01（続き326: libagc_runtime qsort/bsearch helpers）
 
 ## 現状
 - `make test` = **green**。
@@ -8,12 +8,20 @@
   `./build/test_wasm32_e2e` = **1117 compiled / 1117 executed green**、
   `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**。
 - 直近確認:
+  `make test` = **green**、
   `make test-wasm-obj-linker` = **green**、
   `./build/test_wasm32_object` = **1118/1118 e2e fixture object compile + validate green**、
   `make wasm32-object-link-all-fixture-scan` = **1117 pass / 1 skip / validate 1117 / run 1117 / import skip 0**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / 2 unsupported skip / validate 218 / run 218 / import skip 0 / params skip 0**。
-  `bash scripts/run_c_testsuite.sh --list-fail` は前回確認で **218 pass / 2 unsupported skip / fail 0**
+  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き326: **`libagc_runtime.o` に qsort/bsearch helper を追加**。
+  `qsort` / `bsearch` を runtime object 本体へ追加し、`ag_wasm_link` の runtime symbol 判定と
+  ABI bridge map へ登録した。comparator は Wasm table の function pointer 経由で呼ぶ最小実装。
+  smoke に int 配列 sort/search と `--nostdlib` import 維持確認を追加。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、`make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = 1118/1118、`make wasm32-object-link-all-fixture-scan` = 1117 pass / 1 skip、
+  `make wasm32-object-link-c-testsuite-scan` = 218 pass / 2 unsupported skip。
 - 続き325: **`libagc_runtime.o` に signal/wctype helper を追加**。
   `signal` / `raise` / `wctype` / `iswctype` / `wctrans` / `towctrans` を runtime object 本体へ追加し、
   `ag_wasm_link` の runtime symbol 判定と ABI bridge map へ登録した。`signal` は旧 handler なしとして 0、
