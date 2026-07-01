@@ -59,7 +59,7 @@ Supported:
   a tiny bump allocator plus small stdlib helpers
   (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
   `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,
-  `strtoimax`, `strtoumax`),
+  `realpath`, `strtoimax`, `strtoumax`),
   `time`/`clock`/`difftime`, `errno` storage, wide-char and uchar conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,

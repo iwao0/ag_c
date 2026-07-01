@@ -319,6 +319,7 @@ void *bsearch(void *key, void *base, long nmemb, long size, void *compar);
 void exit(int status);
 void abort(void);
 char *getenv(char *name);
+char *realpath(char *path, char *resolved_path);
 int system(char *command);
 long time(long *tloc);
 long clock(void);
@@ -526,6 +527,9 @@ int main(void) {
   char *dendp = 0;
   char *imax_endp = 0;
   char *umax_endp = 0;
+  char resolved_path[32];
+  char *resolved_pathp = realpath("include", resolved_path);
+  char *resolved_nullp = realpath("src", 0);
   long parsed = strtol("  -2a", &endp, 16);
   unsigned long parsed_u = strtoul("  ff!", &uendp, 16);
   double parsed_d = strtod(" -12.5e1!", &dendp);
@@ -728,7 +732,10 @@ int main(void) {
          parsed_imax == 127 && *imax_endp == '!' &&
          parsed_umax == 255 && *umax_endp == '!' &&
          rand1 != rand2 &&
-         atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 && system("true") == 0 &&
+         atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 &&
+         resolved_pathp == resolved_path && strcmp(resolved_path, "include") == 0 &&
+         resolved_nullp != 0 && strcmp(resolved_nullp, "src") == 0 &&
+         system("true") == 0 &&
          nums[0] == 1 && nums[1] == 2 && nums[2] == 3 && nums[3] == 4 && nums[4] == 5 &&
          found == nums + 2 && *found == 3 &&
          time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
@@ -1123,6 +1130,7 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.exit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.abort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.realpath>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.system>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.time>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.clock>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

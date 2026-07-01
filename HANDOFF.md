@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き340: Wasm object linker README coverage sync）
+最終更新: 2026-07-01（続き341: libagc_runtime realpath helper）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,16 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き341: **`libagc_runtime.o` に `realpath` helper を追加**。
+  `include/stdlib.h` には既に `realpath` prototype があり、`src/preprocess/preprocess.c` でも
+  self-host 時に必要になるため、runtime object に `__agc_runtime_realpath` を追加した。
+  現在の最小 runtime 方針に合わせて、`resolved_path` があれば入力 path 文字列をコピーして返し、
+  `resolved_path == NULL` なら入力 path pointer を返す。
+  `ag_wasm_link` の default runtime symbol 判定と ABI bridge map にも `realpath` を登録し、
+  smoke では通常リンクで実行結果、`--nostdlib` で `<env.realpath>` import 維持を確認する。
+  README の runtime helper 一覧も更新した。
+  確認: `make -j4 build/ag_wasm_link build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、`./build/test_wasm32_object`、`git diff --check`。
 - 続き340: **Wasm object linker README の smoke coverage 説明を現状に同期**。
   続き339 で追加した `fp_return_sig.c`、`small_struct_return_sig.c`、
   `indirect_aggregate_return_sig.c` に合わせて、`tools/wasm_obj_linker/README.md` の

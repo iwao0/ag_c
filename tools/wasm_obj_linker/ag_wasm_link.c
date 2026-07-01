@@ -740,6 +740,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "qsort") || str_eq_lit(name, "bsearch") ||
          str_eq_lit(name, "exit") || str_eq_lit(name, "abort") ||
          str_eq_lit(name, "atexit") || str_eq_lit(name, "getenv") ||
+         str_eq_lit(name, "realpath") ||
          str_eq_lit(name, "system") || str_eq_lit(name, "time") ||
          str_eq_lit(name, "clock") || str_eq_lit(name, "difftime") ||
          str_eq_lit(name, "__error") || str_eq_lit(name, "signal") ||
@@ -2610,6 +2611,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_abort";
   } else if (str_eq_lit(name, "getenv")) {
     target_lit = "__agc_runtime_getenv";
+  } else if (str_eq_lit(name, "realpath")) {
+    target_lit = "__agc_runtime_realpath";
   } else if (str_eq_lit(name, "system")) {
     target_lit = "__agc_runtime_system";
   } else if (str_eq_lit(name, "time")) {

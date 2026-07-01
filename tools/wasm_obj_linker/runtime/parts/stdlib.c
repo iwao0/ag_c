@@ -184,6 +184,18 @@ long __agc_runtime_getenv(long name_addr) {
   return 0;
 }
 
+long __agc_runtime_realpath(long path_addr, long resolved_path_addr) {
+  if (!path_addr) return 0;
+  char *path = ag_rt_ptr(path_addr);
+  if (!resolved_path_addr) return path_addr;
+  char *resolved = ag_rt_ptr(resolved_path_addr);
+  long i = 0;
+  do {
+    resolved[i] = path[i];
+  } while (path[i++] != 0);
+  return resolved_path_addr;
+}
+
 int __agc_runtime_system(long command_addr) {
   (void)command_addr;
   return 0;
