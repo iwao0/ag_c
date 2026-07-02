@@ -29,6 +29,13 @@ static inline void set_curtok(token_t *tok) {
   tk_set_current_token(tok);
 }
 
+static int fp_literal_fractional_part_known(double f) {
+  /* This warning helper must not trap when the compiler itself is running in
+   * wasm: keep the diagnostic cast inside the currently safe i32 range. */
+  if (f < -2147483648.0 || f > 2147483647.0) return 0;
+  return f != (double)(long long)f;
+}
+
 static void parse_typedef_decl(void);
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -680,7 +687,7 @@ static node_t *parse_stmt_return(void) {
       psx_expr_current_func_ret_token_kind() != TK_VOID) {
     if (node->lhs->kind == ND_NUM) {
       double f = ((node_num_t *)node->lhs)->fval;
-      if (f != (double)(long long)f) {
+      if (fp_literal_fractional_part_known(f)) {
         diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
                        "整数戻り型の関数から浮動小数点リテラル %g を return しています (小数部が切り捨てられます)",
                        f);

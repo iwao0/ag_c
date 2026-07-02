@@ -45,6 +45,13 @@ static int compound_lit_seq = 0;
 static int g_expr_nest_depth = 0;
 static int g_paren_nest_depth = 0;
 
+static int fp_literal_fractional_part_known(double f) {
+  /* Diagnostic-only cast.  In the selfhost wasm compiler, out-of-i32-range
+   * f64->int casts can trap, so keep the check inside that safe range. */
+  if (f < -2147483648.0 || f > 2147483647.0) return 0;
+  return f != (double)(long long)f;
+}
+
 #define PS_MAX_EXPR_NEST_DEPTH 1024
 #define PS_MAX_PAREN_NEST_DEPTH 1024
 
@@ -2865,7 +2872,7 @@ static node_t *assign(void) {
           rhs->fp_kind != TK_FLOAT_KIND_NONE) {
         if (rhs->kind == ND_NUM) {
           double f = ((node_num_t *)rhs)->fval;
-          if (f != (double)(long long)f) {
+          if (fp_literal_fractional_part_known(f)) {
             diag_warn_tokf(DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING, NULL,
                            "整数変数に浮動小数点リテラル %g を代入しています (小数部が切り捨てられます)",
                            f);
