@@ -1,4 +1,4 @@
-import { createAgcRuntimeImports } from "../wasm_js_api/agc-runtime-imports.js";
+import { createAgcRuntimeImports } from "../wasm_js_api/agc-runtime-imports.js?v=stdio-imports";
 
 function asBytes(input, label) {
   if (input instanceof Uint8Array) return input;

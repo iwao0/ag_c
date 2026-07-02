@@ -97,6 +97,20 @@ if (mathInstantiated.instance.exports.main() !== 1010) {
   throw new Error("instantiated math pipeline did not use JS math imports");
 }
 
+const linkedStdioSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) {
+  printf("aa");
+  return 7;
+}
+`, { loadInclude });
+const linkedStdio = await toolchain.instantiateLinkedWasm(linkedStdioSource, {
+  exports: ["main"],
+  useStdlib: false,
+});
+if (linkedStdio.instance.exports.main() !== 7) {
+  throw new Error("instantiated stdio import pipeline did not use JS stdio imports");
+}
+
 const stdioSource = await inlineStandardIncludes(`#include <stdio.h>
 int main(void) { return 42; }
 `, { loadInclude });

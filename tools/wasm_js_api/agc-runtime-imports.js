@@ -23,6 +23,63 @@ function wrapMath(fn) {
   return (...args) => fn(...args.map(Number));
 }
 
+function agcPrintf(_fmt, ..._args) {
+  return 0;
+}
+
+function agcPuts(_s) {
+  return 1;
+}
+
+function agcPutchar(c) {
+  return Number(c) | 0;
+}
+
+function agcFopen(_path, _mode) {
+  return 0;
+}
+
+function agcFclose(_stream) {
+  return 0;
+}
+
+function agcFread(_ptr, _size, nmemb, _stream) {
+  return Number(nmemb);
+}
+
+function agcFwrite(_ptr, _size, nmemb, _stream) {
+  return Number(nmemb);
+}
+
+function agcFgetc(_stream) {
+  return -1;
+}
+
+function agcFgets(_s, _size, _stream) {
+  return 0;
+}
+
+export function createAgcRuntimeStdioEnvImports() {
+  return {
+    printf: agcPrintf,
+    fprintf: agcPrintf,
+    sprintf: agcPrintf,
+    snprintf: agcPrintf,
+    vfprintf: agcPrintf,
+    vsnprintf: agcPrintf,
+    puts: agcPuts,
+    putchar: agcPutchar,
+    fopen: agcFopen,
+    fclose: agcFclose,
+    fread: agcFread,
+    fwrite: agcFwrite,
+    fgetc: agcFgetc,
+    getc: agcFgetc,
+    getchar: agcFgetc,
+    fgets: agcFgets,
+  };
+}
+
 export function createAgcRuntimeMathEnvImports() {
   return {
     acos: wrapMath(Math.acos),
@@ -131,6 +188,7 @@ export function createAgcRuntimeImports(imports = {}) {
     ...imports,
     env: {
       ...createAgcRuntimeMathEnvImports(),
+      ...createAgcRuntimeStdioEnvImports(),
       ...(imports.env || {}),
     },
   };
