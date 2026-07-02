@@ -281,6 +281,14 @@ typedef struct {
   // 宣言子側の `*` (param_is_ptr) と合成して実効ポインタ性を決める。非ポインタは 0。
   int base_is_pointer;
   int base_pointer_levels;
+  unsigned short funcptr_param_fp_mask;
+  unsigned short funcptr_param_int_mask;
+  unsigned char funcptr_ret_int_width;
+  int funcptr_ret_is_void;
+  int funcptr_ret_is_data_pointer;
+  int funcptr_ret_is_complex;
+  int is_variadic_funcptr;
+  short funcptr_nargs_fixed;
   // 基底型が unsigned か (`unsigned char* p` の pointee zero-extend に使う)。
   int is_unsigned;
   int is_long_double;
@@ -2788,7 +2796,10 @@ static void consume_toplevel_extern_initializer_if_any(void) {
 static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                     int paren_array_mul) {
   toplevel_array_suffix_t arr = parse_toplevel_array_suffixes(paren_array_mul);
-  int typedef_sizeof = compute_toplevel_typedef_sizeof(is_ptr, arr);
+  int typedef_is_funcptr =
+      g_toplevel_decl_has_func_suffix && (is_ptr || g_toplevel_decl_ptr_in_paren_group);
+  int effective_is_ptr = (is_ptr || typedef_is_funcptr) ? 1 : 0;
+  int typedef_sizeof = compute_toplevel_typedef_sizeof(effective_is_ptr, arr);
   token_kind_t stored_base_kind = resolve_toplevel_typedef_base_kind_for_store();
   /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef + 配列
    * suffix のとき、is_array=1 として登録する (sizeof_size 経路と同じく ptr_in_paren_group=0
@@ -2851,14 +2862,14 @@ static void define_toplevel_typedef_from_declarator(token_ident_t *name, int is_
                                    (arr.dim_count >= 2) ? arr.dims[1] : 0,
                                    g_toplevel_decl_elem_size);
   }
-  register_toplevel_typedef_name(name, stored_base_kind, is_ptr, typedef_sizeof, td_is_array,
+  register_toplevel_typedef_name(name, stored_base_kind, effective_is_ptr, typedef_sizeof, td_is_array,
                                  td_first_dim, td_dims, td_dim_count,
                                  funcptr_ret_pointee_array);
   /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array
    * は getter のデフォルト (is_pointer→1) に任せ、2 段以上だけ明示保存。段数 = 基底ポインタ
    * typedef の段数 + 宣言子の prefix `*` 数 (g_toplevel_decl_ptr_levels)。 */
   int td_ptr_levels = g_toplevel_decl_base_pointer_levels + g_toplevel_decl_ptr_levels;
-  if (is_ptr && td_ptr_levels >= 2) {
+  if (effective_is_ptr && td_ptr_levels >= 2) {
     psx_ctx_set_typedef_pointer_levels(name->str, name->len, td_ptr_levels);
   }
 }
@@ -2885,7 +2896,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
   if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
-  if (is_ptr && g_toplevel_decl_has_func_suffix) {
+  if (g_toplevel_decl_has_func_suffix && (is_ptr || g_toplevel_decl_ptr_in_paren_group)) {
     _ti.is_funcptr = 1;
     _ti.funcptr_ret_is_void = (g_toplevel_decl_base_kind == TK_VOID) ? 1 : 0;
     _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
@@ -4001,6 +4012,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
      * `*a` / `a[i]` が fp load/store になるようにする (未設定だと整数 load + scvtf に
      * なって値が壊れていた)。 */
     var->pointee_fp_kind = (param_ptr_levels == 1) ? ds->fp_kind : TK_FLOAT_KIND_NONE;
+    var->funcptr_param_fp_mask = ds->funcptr_param_fp_mask;
+    var->funcptr_param_int_mask = ds->funcptr_param_int_mask;
+    var->funcptr_ret_int_width = ds->funcptr_ret_int_width;
+    var->funcptr_ret_is_void = ds->funcptr_ret_is_void ? 1 : 0;
+    var->funcptr_ret_is_data_pointer = ds->funcptr_ret_is_data_pointer ? 1 : 0;
+    var->funcptr_ret_is_complex = ds->funcptr_ret_is_complex ? 1 : 0;
+    var->is_variadic_funcptr = ds->is_variadic_funcptr ? 1 : 0;
+    var->funcptr_nargs_fixed = ds->funcptr_nargs_fixed;
     /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
      * captured inner dims を使って outer_stride / mid_stride を設定する。 */
     if (param_is_array_declarator && param_inner_first_dim > 0) {
@@ -4171,6 +4190,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
   param_lv->mem.pointee_is_void = var->pointee_is_void;
   param_lv->mem.pointee_is_unsigned = var->is_unsigned ? 1 : 0;
   param_lv->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
+  param_lv->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
+  param_lv->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
+  param_lv->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
+  param_lv->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
+  param_lv->mem.funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
+  param_lv->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
+  param_lv->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
+  param_lv->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
   // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
   // args[i] ノードにも fp_kind を残す。配列宣言子はポインタ (整数レジスタ) なので除外。
   if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
@@ -4284,6 +4311,18 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
         out->base_is_pointer = 1;
         int lv = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
         out->base_pointer_levels = (lv > 0) ? lv : 1;
+      }
+      if (_ti.is_funcptr || _ti.funcptr_ret_is_void || _ti.funcptr_ret_int_width ||
+          _ti.funcptr_param_fp_mask || _ti.funcptr_param_int_mask ||
+          _ti.is_variadic_funcptr) {
+        out->funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
+        out->funcptr_param_int_mask = _ti.funcptr_param_int_mask;
+        out->funcptr_ret_int_width = _ti.funcptr_ret_int_width;
+        out->funcptr_ret_is_void = _ti.funcptr_ret_is_void ? 1 : 0;
+        out->funcptr_ret_is_data_pointer = _ti.funcptr_ret_is_pointer ? 1 : 0;
+        out->funcptr_ret_is_complex = _ti.funcptr_ret_is_complex ? 1 : 0;
+        out->is_variadic_funcptr = _ti.is_variadic_funcptr ? 1 : 0;
+        out->funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
       }
       if (_ti.is_unsigned) out->is_unsigned = 1;
     }

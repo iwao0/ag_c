@@ -186,13 +186,15 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
                                                  int td_is_unsigned, int td_is_long_double,
+                                                 int td_base_is_void,
                                                  int decl_added_pointer);
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
                                                 tk_float_kind_t fp_kind,
                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
                                                 int is_pointer_base,
                                                 int td_pointee_const, int td_pointee_volatile,
-                                                int td_is_unsigned, int td_is_long_double);
+                                                int td_is_unsigned, int td_is_long_double,
+                                                int td_base_is_void);
 static global_var_t *find_global_var_decl(char *name, int len);
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
 static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
@@ -5032,14 +5034,20 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     }
     /* 可変長関数ポインタ (`int (*f)(int, ...)`): 経由呼び出しで variadic ABI を
      * 選べるよう、固定引数数と共に記録する。 */
-    if (is_pointer && (g_last_funcptr_is_variadic || base_is_variadic_funcptr)) {
+    int has_base_funcptr_sig =
+        base_funcptr_param_fp_mask || base_funcptr_param_int_mask ||
+        base_funcptr_ret_int_width || base_funcptr_ret_is_void ||
+        base_funcptr_ret_is_complex || base_is_variadic_funcptr ||
+        psx_ret_pointee_array_has_dims(base_funcptr_ret_pointee_array);
+    int is_funcptr_decl = is_pointer || has_base_funcptr_sig;
+    if (is_funcptr_decl && (g_last_funcptr_is_variadic || base_is_variadic_funcptr)) {
       var->is_variadic_funcptr = 1;
       var->funcptr_nargs_fixed = g_last_funcptr_is_variadic
                                       ? (short)g_last_funcptr_nfixed
                                       : base_funcptr_nargs_fixed;
     }
     /* 関数ポインタの仮引数 fp マスク (経由呼び出しの int→fp 昇格用)。 */
-    if (is_pointer) {
+    if (is_funcptr_decl) {
       var->funcptr_param_fp_mask = g_decl_trailing_func_suffix
                                        ? g_last_funcptr_param_fp_mask
                                        : base_funcptr_param_fp_mask;
@@ -5319,7 +5327,8 @@ static node_t *parse_typedef_declaration_local(void) {
   parse_local_typedef_declarator_list(base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len,
                                       is_pointer_base,
                                       td_pointee_const, td_pointee_volatile,
-                                      td_is_unsigned, td_is_long_double);
+                                      td_is_unsigned, td_is_long_double,
+                                      base_kind == TK_VOID ? 1 : 0);
   tk_expect(';');
   return psx_node_new_num(0);
 }
@@ -5368,6 +5377,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
                                                  int td_is_unsigned, int td_is_long_double,
+                                                 int td_base_is_void,
                                                  int decl_added_pointer) {
   /* 配列要素がポインタの typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef だが
    * declarator は `*` を追加していない (decl_added_pointer=0)。この場合の typedef は
@@ -5394,6 +5404,8 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
                      (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
   int td_first_dim = td_is_array ? arr.first_dim : 0;
   int td_dim_count = td_is_array ? arr.dim_count : 0;
+  int typedef_is_funcptr =
+      g_decl_trailing_func_suffix && (is_ptr || g_decl_had_paren_group);
   psx_typedef_info_t _ti = {0};
   _ti.base_kind = stored_base_kind;
   _ti.elem_size = elem_size;
@@ -5401,7 +5413,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   _ti.tag_kind = tag_kind;
   _ti.tag_name = tag_name;
   _ti.tag_len = tag_len;
-  _ti.is_pointer = is_ptr;
+  _ti.is_pointer = (is_ptr || typedef_is_funcptr) ? 1 : 0;
   _ti.sizeof_size = typedef_sizeof;
   _ti.pointee_const_qualified = td_pointee_const;
   _ti.pointee_volatile_qualified = td_pointee_volatile;
@@ -5411,13 +5423,13 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
   for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
-  if (is_ptr && g_decl_trailing_func_suffix && base_kind == TK_VOID) {
+  if (typedef_is_funcptr && td_base_is_void) {
     _ti.is_funcptr = 1;
     _ti.funcptr_ret_is_void = 1;
   }
-  if (is_ptr && g_decl_trailing_func_suffix) {
+  if (typedef_is_funcptr) {
     _ti.is_funcptr = 1;
-    int ret_is_data_pointer = (paren_array_mul == 0 && base_kind != TK_VOID && is_ptr &&
+    int ret_is_data_pointer = (paren_array_mul == 0 && !td_base_is_void &&
                                g_decl_had_paren_group && g_decl_func_suffix_count == 1 &&
                                psx_funcptr_ret_int_width_from_kind(base_kind, 0, fp_kind) == 0)
                                   ? 1
@@ -5428,20 +5440,20 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
     _ti.funcptr_ret_int_width =
         psx_funcptr_ret_int_width_from_kind(base_kind, ret_is_data_pointer, fp_kind);
   }
-  if (is_ptr && g_decl_trailing_func_suffix && psx_last_funcptr_is_variadic()) {
+  if (typedef_is_funcptr && psx_last_funcptr_is_variadic()) {
     _ti.is_funcptr = 1;
     _ti.is_variadic_funcptr = 1;
     _ti.funcptr_nargs_fixed = (short)psx_last_funcptr_nargs_fixed();
   }
-  if (is_ptr && g_last_funcptr_param_fp_mask) {
+  if (typedef_is_funcptr && g_last_funcptr_param_fp_mask) {
     _ti.is_funcptr = 1;
     _ti.funcptr_param_fp_mask = g_last_funcptr_param_fp_mask;
   }
-  if (is_ptr && g_last_funcptr_param_int_mask) {
+  if (typedef_is_funcptr && g_last_funcptr_param_int_mask) {
     _ti.is_funcptr = 1;
     _ti.funcptr_param_int_mask = g_last_funcptr_param_int_mask;
   }
-  if (is_ptr && g_decl_trailing_func_suffix && paren_array_mul > 0 &&
+  if (typedef_is_funcptr && paren_array_mul > 0 &&
       g_paren_array_first_dim > 0) {
     _ti.funcptr_ret_pointee_array =
         psx_ret_pointee_array_make(g_paren_array_first_dim, g_paren_array_second_dim,
@@ -5457,7 +5469,8 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
                                                 int is_pointer_base,
                                                 int td_pointee_const, int td_pointee_volatile,
-                                                int td_is_unsigned, int td_is_long_double) {
+                                                int td_is_unsigned, int td_is_long_double,
+                                                int td_base_is_void) {
   for (;;) {
     int is_ptr = is_pointer_base;
     unsigned int ptr_const_mask = 0;
@@ -5473,7 +5486,8 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
                                          base_kind, elem_size, fp_kind,
                                          tag_kind, tag_name, tag_len,
                                          td_pointee_const, td_pointee_volatile,
-                                         td_is_unsigned, td_is_long_double, decl_added_ptr);
+                                         td_is_unsigned, td_is_long_double, td_base_is_void,
+                                         decl_added_ptr);
     if (!tk_consume(',')) break;
   }
 }

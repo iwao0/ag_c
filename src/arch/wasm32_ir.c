@@ -1101,7 +1101,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     if (returns_aggregate && i->ret_struct_area.id == IR_VAL_NONE) {
       wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
     }
-    int returns_void = returns_aggregate || i->is_void_call ||
+    int returns_void = returns_aggregate || i->is_void_call || i->funcptr_ret_is_void ||
                        (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
