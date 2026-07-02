@@ -114,6 +114,8 @@ make test-wasm-js-api
 JS wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
 (`Uint8Array`) を返します。
+browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の
+出力を切り替えられます。
 
 wasm 化したリンカー API を作る:
 
