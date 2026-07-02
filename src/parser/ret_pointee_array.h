@@ -1,7 +1,6 @@
 #ifndef PS_RET_POINTEE_ARRAY_H
 #define PS_RET_POINTEE_ARRAY_H
 
-#include <stdbool.h>
 #include <stddef.h>
 
 typedef struct {
@@ -36,108 +35,68 @@ typedef struct {
        (b)->funcptr_ret_pointee_array_elem_size)
 
 #define PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(dst, array_desc) do { \
-  psx_ret_pointee_array_store_shorts_if_present(                                \
-      (array_desc),                                                             \
-      &(dst)->funcptr_ret_pointee_array_first_dim,                              \
-      &(dst)->funcptr_ret_pointee_array_second_dim,                             \
-      &(dst)->funcptr_ret_pointee_array_elem_size);                             \
+  psx_ret_pointee_array_t _psx_rpa_a = (array_desc);                            \
+  if (_psx_rpa_a.first_dim > 0) {                                                \
+    (dst)->funcptr_ret_pointee_array_first_dim = (short)_psx_rpa_a.first_dim;    \
+    (dst)->funcptr_ret_pointee_array_second_dim = (short)_psx_rpa_a.second_dim;  \
+    (dst)->funcptr_ret_pointee_array_elem_size = (short)_psx_rpa_a.elem_size;    \
+  }                                                                             \
 } while (0)
 
 #define PSX_RET_POINTEE_ARRAY_STORE_INT_FIELDS_IF_PRESENT(dst, array_desc) do { \
-  psx_ret_pointee_array_store_ints_if_present(                                  \
-      (array_desc),                                                             \
-      &(dst)->funcptr_ret_pointee_array_first_dim,                              \
-      &(dst)->funcptr_ret_pointee_array_second_dim,                             \
-      &(dst)->funcptr_ret_pointee_array_elem_size);                             \
+  psx_ret_pointee_array_t _psx_rpa_a = (array_desc);                            \
+  if (_psx_rpa_a.first_dim > 0) {                                                \
+    (dst)->funcptr_ret_pointee_array_first_dim = _psx_rpa_a.first_dim;           \
+    (dst)->funcptr_ret_pointee_array_second_dim = _psx_rpa_a.second_dim;         \
+    (dst)->funcptr_ret_pointee_array_elem_size = _psx_rpa_a.elem_size;           \
+  }                                                                             \
 } while (0)
 
-static inline psx_ret_pointee_array_t psx_ret_pointee_array_make(int first_dim,
-                                                                  int second_dim,
-                                                                  int elem_size) {
-  psx_ret_pointee_array_t out = {first_dim, second_dim, elem_size};
-  return out;
-}
+#define psx_ret_pointee_array_make(first_dim, second_dim, elem_size)            \
+  ((psx_ret_pointee_array_t){(first_dim), (second_dim), (elem_size)})
 
-static inline bool psx_ret_pointee_array_has_dims(psx_ret_pointee_array_t a) {
-  return a.first_dim > 0;
-}
+#define psx_ret_pointee_array_has_dims(a) ((a).first_dim > 0)
 
-static inline psx_ret_pointee_array_t psx_ret_pointee_array_select(psx_ret_pointee_array_t preferred,
-                                                                    psx_ret_pointee_array_t fallback) {
-  return psx_ret_pointee_array_has_dims(preferred) ? preferred : fallback;
-}
+#define psx_ret_pointee_array_equal(a, b)                                      \
+  ((a).first_dim == (b).first_dim &&                                           \
+   (a).second_dim == (b).second_dim &&                                         \
+   (a).elem_size == (b).elem_size)
 
-static inline bool psx_ret_pointee_array_equal(psx_ret_pointee_array_t a,
-                                               psx_ret_pointee_array_t b) {
-  return a.first_dim == b.first_dim &&
-         a.second_dim == b.second_dim &&
-         a.elem_size == b.elem_size;
-}
+#define PSX_RET_POINTEE_ARRAY_SELECT_INTO(out, preferred, fallback) do {        \
+  const psx_ret_pointee_array_t *_psx_rpa_src =                                \
+      ((preferred)->first_dim > 0) ? (preferred) : (fallback);                 \
+  (out)->first_dim = _psx_rpa_src->first_dim;                                  \
+  (out)->second_dim = _psx_rpa_src->second_dim;                                \
+  (out)->elem_size = _psx_rpa_src->elem_size;                                  \
+} while (0)
 
-static inline void psx_ret_pointee_array_store_shorts(psx_ret_pointee_array_t a,
-                                                      short *first_dim,
-                                                      short *second_dim,
-                                                      short *elem_size) {
-  if (first_dim) *first_dim = (short)a.first_dim;
-  if (second_dim) *second_dim = (short)a.second_dim;
-  if (elem_size) *elem_size = (short)a.elem_size;
-}
+#define psx_ret_pointee_array_row_stride(a)                                    \
+  (((a).first_dim <= 0 || (a).elem_size <= 0) ? 0 :                            \
+   ((a).first_dim * ((a).second_dim > 0 ? (a).second_dim : 1) * (a).elem_size))
 
-static inline bool psx_ret_pointee_array_store_shorts_if_present(psx_ret_pointee_array_t a,
-                                                                 short *first_dim,
-                                                                 short *second_dim,
-                                                                 short *elem_size) {
-  if (!psx_ret_pointee_array_has_dims(a)) return false;
-  psx_ret_pointee_array_store_shorts(a, first_dim, second_dim, elem_size);
-  return true;
-}
+#define psx_ret_pointee_array_inner_stride(a)                                  \
+  (((a).first_dim <= 0 || (a).elem_size <= 0) ? 0 :                            \
+   (((a).second_dim > 0) ? (a).second_dim * (a).elem_size : (a).elem_size))
 
-static inline void psx_ret_pointee_array_store_ints(psx_ret_pointee_array_t a,
-                                                    int *first_dim,
-                                                    int *second_dim,
-                                                    int *elem_size) {
-  if (first_dim) *first_dim = a.first_dim;
-  if (second_dim) *second_dim = a.second_dim;
-  if (elem_size) *elem_size = a.elem_size;
-}
+#define psx_ret_pointee_array_next_stride(a)                                   \
+  (((a).first_dim <= 0 || (a).second_dim <= 0 || (a).elem_size <= 0) ? 0 :      \
+   (a).elem_size)
 
-static inline bool psx_ret_pointee_array_store_ints_if_present(psx_ret_pointee_array_t a,
-                                                               int *first_dim,
-                                                               int *second_dim,
-                                                               int *elem_size) {
-  if (!psx_ret_pointee_array_has_dims(a)) return false;
-  psx_ret_pointee_array_store_ints(a, first_dim, second_dim, elem_size);
-  return true;
-}
-
-static inline int psx_ret_pointee_array_row_stride(psx_ret_pointee_array_t a) {
-  if (a.first_dim <= 0 || a.elem_size <= 0) return 0;
-  return a.first_dim * (a.second_dim > 0 ? a.second_dim : 1) * a.elem_size;
-}
-
-static inline int psx_ret_pointee_array_inner_stride(psx_ret_pointee_array_t a) {
-  if (a.first_dim <= 0 || a.elem_size <= 0) return 0;
-  return (a.second_dim > 0) ? a.second_dim * a.elem_size : a.elem_size;
-}
-
-static inline int psx_ret_pointee_array_next_stride(psx_ret_pointee_array_t a) {
-  if (a.first_dim <= 0 || a.second_dim <= 0 || a.elem_size <= 0) return 0;
-  return a.elem_size;
-}
-
-static inline void psx_ret_pointee_array_strides_from_row(psx_ret_pointee_array_t a,
-                                                          int row_stride,
-                                                          int *inner_stride,
-                                                          int *next_stride) {
-  if (inner_stride) *inner_stride = 0;
-  if (next_stride) *next_stride = 0;
-  if (a.first_dim <= 0 || row_stride <= 0) return;
-  int inner = row_stride / a.first_dim;
-  if (inner_stride) *inner_stride = inner;
-  if (a.second_dim > 0 && inner > 0 && next_stride) {
-    *next_stride = inner / a.second_dim;
-  }
-}
+#define psx_ret_pointee_array_strides_from_row(a, row_stride, inner_stride, next_stride) do { \
+  psx_ret_pointee_array_t _psx_rpa_a = (a);                                    \
+  int _psx_rpa_row = (row_stride);                                             \
+  int *_psx_rpa_inner_ptr = (inner_stride);                                    \
+  int *_psx_rpa_next_ptr = (next_stride);                                      \
+  if (_psx_rpa_inner_ptr) *_psx_rpa_inner_ptr = 0;                             \
+  if (_psx_rpa_next_ptr) *_psx_rpa_next_ptr = 0;                               \
+  if (_psx_rpa_a.first_dim > 0 && _psx_rpa_row > 0) {                          \
+    int _psx_rpa_inner = _psx_rpa_row / _psx_rpa_a.first_dim;                  \
+    if (_psx_rpa_inner_ptr) *_psx_rpa_inner_ptr = _psx_rpa_inner;              \
+    if (_psx_rpa_a.second_dim > 0 && _psx_rpa_inner > 0 && _psx_rpa_next_ptr) { \
+      *_psx_rpa_next_ptr = _psx_rpa_inner / _psx_rpa_a.second_dim;             \
+    }                                                                          \
+  }                                                                            \
+} while (0)
 
 static inline void psx_ret_pointee_array_absorb_suffix(int *arr_is_array,
                                                        int *arr_total,

@@ -540,9 +540,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.funcptr_nargs_fixed = head.has_func_suffix
                                         ? (short)psx_last_funcptr_nargs_fixed()
                                         : member_typedef_funcptr_nargs_fixed;
-          psx_ret_pointee_array_t ret_pointee_array = psx_ret_pointee_array_select(
-              member_typedef_funcptr_ret_pointee_array,
-              direct_funcptr_ret_pointee_array);
+          psx_ret_pointee_array_t ret_pointee_array = {0};
+          PSX_RET_POINTEE_ARRAY_SELECT_INTO(&ret_pointee_array,
+                                            &member_typedef_funcptr_ret_pointee_array,
+                                            &direct_funcptr_ret_pointee_array);
           _mi.funcptr_ret_pointee_array = ret_pointee_array;
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
