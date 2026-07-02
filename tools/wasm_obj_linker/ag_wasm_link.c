@@ -3686,16 +3686,16 @@ long agc_wasm_link_objects(long inputs_addr, int input_count,
                            long exports_addr, int export_count,
                            int use_stdlib, long out_len_addr) {
   if (!inputs_addr || input_count <= 0 || input_count > 4096 || export_count < 0 || export_count > 4096) {
-    return 0;
+    die("invalid linker API arguments");
   }
   api_slice_t *inputs = (api_slice_t *)(uintptr_t)inputs_addr;
   long *export_ptrs = exports_addr ? (long *)(uintptr_t)exports_addr : NULL;
   long *out_len = out_len_addr ? (long *)(uintptr_t)out_len_addr : NULL;
-  if (!out_len) return 0;
+  if (!out_len) die("invalid linker API output length pointer");
 
   object_t *objs = xmalloc((size_t)input_count * sizeof(*objs));
   for (int i = 0; i < input_count; i++) {
-    if (!inputs[i].ptr || inputs[i].len < 8) return 0;
+    if (!inputs[i].ptr || inputs[i].len < 8) die("invalid linker API object slice");
     char name[32];
     snprintf(name, sizeof(name), "input%d.o", i);
     objs[i] = parse_object_bytes(name, (const unsigned char *)(uintptr_t)inputs[i].ptr,
@@ -3704,7 +3704,7 @@ long agc_wasm_link_objects(long inputs_addr, int input_count,
 
   const char **export_names = xmalloc((size_t)(export_count + 1) * sizeof(*export_names));
   for (int i = 0; i < export_count; i++) {
-    if (!export_ptrs || !export_ptrs[i]) return 0;
+    if (!export_ptrs || !export_ptrs[i]) die("invalid linker API export name");
     export_names[i] = (const char *)(uintptr_t)export_ptrs[i];
   }
 

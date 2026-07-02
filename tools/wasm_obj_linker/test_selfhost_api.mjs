@@ -12,6 +12,16 @@ const linkedPath = path.join(outDir, "linked_from_api.wasm");
 
 const source = fs.readFileSync(wasmPath);
 const linker = await createLinker(source);
+const stderrChunks = [];
+const terminations = [];
+const diagnosticLinker = await createLinker(source, {
+  onStderr(chunk) {
+    stderrChunks.push(chunk);
+  },
+  onTerminate(event) {
+    terminations.push(event);
+  },
+});
 
 function compileObject(name, sourceText) {
   const srcPath = path.join(outDir, `${name}.c`);
@@ -71,3 +81,23 @@ try {
 }
 
 console.log(`ag_wasm_link selfhost API xtu smoke: ok (${linkedXtuPath})`);
+
+try {
+  stderrChunks.length = 0;
+  terminations.length = 0;
+  diagnosticLinker.link([new Uint8Array([1, 2, 3, 4])], { exports: ["main"] });
+  throw new Error("invalid object unexpectedly linked");
+} catch (err) {
+  const message = String(err && err.message ? err.message : err);
+  if (!message.includes("invalid linker API object slice")) {
+    throw new Error(`invalid object did not surface linker diagnostics: ${message}`);
+  }
+  if (!stderrChunks.join("").includes("invalid linker API object slice")) {
+    throw new Error("invalid object did not stream diagnostics through onStderr");
+  }
+  if (terminations.length !== 1 || terminations[0].kind !== "exit" || terminations[0].status !== 1) {
+    throw new Error(`invalid object did not report exit(1): ${JSON.stringify(terminations)}`);
+  }
+}
+
+console.log("ag_wasm_link selfhost API diagnostics smoke: ok");
