@@ -22,7 +22,15 @@ export async function createToolchain(options) {
   const linker = await createLinker(options.linkerWasm);
 
   function compileLinkedWasm(sources, linkOptions = {}) {
-    const objects = normalizeSources(sources).map((source) => compiler.compileObject(source));
+    const objects = normalizeSources(sources).map((source, i) => {
+      try {
+        return compiler.compileObject(source);
+      } catch (err) {
+        err.sourceIndex = i;
+        err.message = `source ${i + 1}: ${err.message}`;
+        throw err;
+      }
+    });
     return linker.link(objects, linkOptions);
   }
 

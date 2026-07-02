@@ -100,28 +100,41 @@ int main(void){return other()+1;}
       <pre id="output"></pre>
     </main>
     <script type="module">
-      import { createToolchain } from "./agc-toolchain.js";
-
       const status = document.getElementById("status");
       const sources = Array.from(document.querySelectorAll(".source"));
       const output = document.getElementById("output");
       const run = document.getElementById("run");
       const download = document.getElementById("download");
       const mode = document.getElementById("mode");
-      const toolchain = await createToolchain({
-        compilerWasm: "../../build/wasm_selfhost_api/ag_c_wasm_api.wasm",
-        linkerWasm: "../../build/wasm_linker_selfhost/ag_wasm_link.wasm",
-      });
       let lastDownload = null;
 
-      function hexDump(bytes) {
-        const lines = [];
-        for (let off = 0; off < bytes.length; off += 16) {
-          const chunk = bytes.subarray(off, off + 16);
-          const hex = Array.from(chunk, (b) => b.toString(16).padStart(2, "0")).join(" ");
-          lines.push(`${off.toString(16).padStart(8, "0")}  ${hex}`);
-        }
-        return lines.join("\n");
+      function runCompileInWorker(request) {
+        return new Promise((resolve, reject) => {
+          const worker = new Worker("./demo-worker.js", { type: "module" });
+          const timeout = setTimeout(() => {
+            worker.terminate();
+            reject(new Error("compile timed out; the worker was stopped"));
+          }, 5000);
+          worker.onmessage = (ev) => {
+            clearTimeout(timeout);
+            worker.terminate();
+            if (ev.data && ev.data.ok) {
+              resolve(ev.data);
+            } else {
+              reject(new Error(ev.data && ev.data.error ? ev.data.error : "compile failed"));
+            }
+          };
+          worker.onerror = (err) => {
+            clearTimeout(timeout);
+            worker.terminate();
+            reject(new Error(err.message || "worker error"));
+          };
+          worker.postMessage(request);
+        });
+      }
+
+      function formatError(err) {
+        return `Compile error\n\n${err && err.message ? err.message : String(err)}`;
       }
 
       async function compile() {
@@ -132,34 +145,18 @@ int main(void){return other()+1;}
           }
           lastDownload = null;
           download.disabled = true;
-          if (mode.value === "object") {
-            const obj = toolchain.compileObject(sourceTexts[0]);
-            output.textContent = hexDump(obj);
-            lastDownload = { bytes: obj, name: "out.o", type: "application/wasm" };
-          } else if (mode.value === "linked") {
-            const linked = await toolchain.instantiateLinkedWasm(sourceTexts, {
-              exports: ["main"],
-              useStdlib: false,
-            });
-            const wasm = linked.wasm;
-            output.textContent = hexDump(wasm);
-            lastDownload = { bytes: wasm, name: "out.wasm", type: "application/wasm" };
-            if (typeof linked.instance.exports.main === "function") {
-              const result = linked.instance.exports.main();
-              status.textContent = `OK main()=${String(result)}`;
-              download.disabled = false;
-              return;
-            }
-          } else {
-            const wat = toolchain.compileWat(sourceTexts[0]);
-            output.textContent = wat;
-            lastDownload = { text: wat, name: "out.wat", type: "text/plain" };
-          }
+          run.disabled = true;
+          status.textContent = "Compiling...";
+          const result = await runCompileInWorker({ mode: mode.value, sources: sourceTexts });
+          output.textContent = result.output;
+          lastDownload = result.download;
           download.disabled = false;
-          status.textContent = "OK";
+          status.textContent = result.status;
         } catch (err) {
-          output.textContent = err && err.stack ? err.stack : String(err);
+          output.textContent = formatError(err);
           status.textContent = "Failed";
+        } finally {
+          run.disabled = false;
         }
       }
 

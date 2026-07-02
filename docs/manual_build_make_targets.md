@@ -121,6 +121,7 @@ compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の
 出力を切り替えられます。Linked Wasm では複数 source textarea を別々に object 化してから
 リンクします。`main` export を呼べる場合は戻り値も表示します。
+compile/link は Web Worker 内で実行し、失敗時は `Compile error` として画面に表示します。
 生成した `out.wat` / `out.o` / `out.wasm` は Download から保存できます。
 
 wasm 化したリンカー API を作る:

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き358: wasm JS instantiate linked output）
+最終更新: 2026-07-02（続き359: browser demo worker compile errors）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,15 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き359: **browser demo の compile/link を Web Worker に移し、失敗時にエラー表示するようにした**。
+  無効な C source で wasm self-host 内の `exit()` が runtime の無限ループに入ると renderer が
+  100% になる問題があったため、`tools/wasm_js_api/demo-worker.js` を追加し、
+  `demo.html` は compile/link を Worker へ投げる。5 秒で応答がなければ Worker を破棄し、
+  `Compile error` として表示する。
+  `agc-toolchain.js` は複数 source link で失敗 source 番号を例外 message に含める。
+  確認: `node --check tools/wasm_js_api/demo-worker.js`、
+  `node --check tools/wasm_js_api/agc-toolchain.js`、
+  `make test-wasm-js-pipeline` = **green**。
 - 続き358: **JS toolchain で linked wasm を instantiate できるようにした**。
   `tools/wasm_js_api/agc-toolchain.js` に `instantiateLinkedWasm(sources, options, imports)` を追加し、
   `{ wasm, module, instance }` を返す。

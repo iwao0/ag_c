@@ -112,6 +112,7 @@ browser demo は `tools/wasm_js_api/demo.html` です。repo root を静的 file
 WAT、wasm object、linked wasm の 3 出力を切り替えられます。
 Linked Wasm では複数の source textarea を別々に object 化してからリンクします。
 `main` export を呼べる場合は、ブラウザ上で `main()` の戻り値も表示します。
+compile/link は Web Worker 内で実行し、失敗時は画面に `Compile error` として表示します。
 生成した `out.wat` / `out.o` / `out.wasm` は画面上の Download から保存できます。
 `make test-wasm-js-pipeline` は wasm 化コンパイラの `compileObject()` と wasm 化リンカーの
 `link()` を JS 上で直結し、2 つの C source を object 化して 1 つの wasm にリンクします。
