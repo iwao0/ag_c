@@ -1593,13 +1593,24 @@ static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
 }
 
 /* tag_member_info_t (designator の葉メンバ型) から子 brace のコンテキストを作る。 */
-static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
+static void gbrace_ctx_clear(gbrace_ctx_t *c) {
+  memset(c, 0, sizeof(*c));
+  c->tag_kind = TK_EOF;
+  c->pending_fp_kind = TK_FLOAT_KIND_NONE;
+}
+
+static void gbrace_ctx_from_member(gbrace_ctx_t *c, const tag_member_info_t *mi) {
   /* 非タグ配列メンバの要素サイズ。char 配列 (`char name[8]`) のメンバは deref_size=0 で
    * type_size に要素サイズ (char=1) が入るため、deref_size が無ければ type_size を使う。 */
   int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
-  gbrace_ctx_t c = {mi->tag_kind, mi->tag_name, mi->tag_len, (mi->array_len > 0),
-                    mi->is_tag_pointer ? 1 : 0,
-                    elem, mi->array_len, {0}, 0, TK_FLOAT_KIND_NONE, 0};
+  gbrace_ctx_clear(c);
+  c->tag_kind = mi->tag_kind;
+  c->tag_name = mi->tag_name;
+  c->tag_len = mi->tag_len;
+  c->is_array = (mi->array_len > 0);
+  c->is_tag_pointer = mi->is_tag_pointer ? 1 : 0;
+  c->elem_size = elem;
+  c->array_len = mi->array_len;
   /* 多次元配列メンバ: 各次元サイズが arr_dims に入る。最外側 1 段はこの ctx が
    * is_array=1 として表現するので、残り (sub_dims) には arr_dims[1..arr_ndim) を
    * 最外側から並べてコピー。child_at が 1 段ずつ消費する。
@@ -1612,32 +1623,31 @@ static gbrace_ctx_t gbrace_ctx_from_member(const tag_member_info_t *mi) {
   if (mi->arr_ndim >= 2) {
     int n = mi->arr_ndim - 1;
     if (n > 8) n = 8;
-    for (int i = 0; i < n; i++) c.sub_dims[i] = mi->arr_dims[i + 1];
-    c.sub_ndim = n;
+    for (int i = 0; i < n; i++) c->sub_dims[i] = mi->arr_dims[i + 1];
+    c->sub_ndim = n;
   }
-  return c;
 }
 
 /* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
  * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
-static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
-  gbrace_ctx_t c = {TK_EOF, NULL, 0, 0, 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
-  if (ctx.is_array) {
+static void gbrace_child_at(gbrace_ctx_t *c, const gbrace_ctx_t *ctx, int off) {
+  gbrace_ctx_clear(c);
+  if (ctx->is_array) {
     /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。
      * タグポインタ配列 (`struct P *arr[3]`): 要素は「struct P へのポインタ scalar (8B)」。
      * tag_kind は伝播せず TK_EOF にして scalar 8B として返す。これがないと psx_gbrace_flat
      * の struct 経路で「struct 値 (= 内側メンバ数 slot)」として展開され、parr[1]/parr[2] の
      * シンボル+offset が誤 slot に書かれていた。1 要素 = 1 slot で済むよう scalar 化する。 */
-    if (ctx.is_tag_pointer) {
-      c.tag_kind = TK_EOF;
-      c.is_array = 0;
-      c.elem_size = 8;
-      return c;
+    if (ctx->is_tag_pointer) {
+      c->tag_kind = TK_EOF;
+      c->is_array = 0;
+      c->elem_size = 8;
+      return;
     }
-    c.tag_kind = ctx.tag_kind;
-    c.tag_name = ctx.tag_name;
-    c.tag_len = ctx.tag_len;
-    c.is_array = 0;
+    c->tag_kind = ctx->tag_kind;
+    c->tag_name = ctx->tag_name;
+    c->tag_len = ctx->tag_len;
+    c->is_array = 0;
     /* 多次元配列メンバ: 残り次元 sub_dims を 1 段消費して内側 ctx を生成する。
      * - char (`char c[2][2][3]`): 最内 1 段 (sub_ndim==1) は文字列展開用に is_array=0 で
      *   返す。中間段 (sub_ndim>=2) は is_array=1 で sub_dims を 1 つ前に詰めて再帰。
@@ -1648,33 +1658,33 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
      *   (sub_ndim==1) のいずれも is_array=1 で「内側次元数の struct タグ配列」として
      *   返す。これがないと内側 brace `{{.val=99}}` で designator が「単一 struct」コンテキストに
      *   解釈され `.val=` が E3064 で弾かれる。 */
-    if (ctx.sub_ndim >= 1) {
-      if (ctx.tag_kind == TK_EOF && ctx.elem_size == 1 && ctx.sub_ndim == 1) {
+    if (ctx->sub_ndim >= 1) {
+      if (ctx->tag_kind == TK_EOF && ctx->elem_size == 1 && ctx->sub_ndim == 1) {
         /* char 最内 1D: 行 (sub_dims[0] バイト) として文字列展開分岐に乗せる。 */
-        c.elem_size = 1;
-        c.array_len = ctx.sub_dims[0];
-      } else if (ctx.sub_ndim >= 2 || ctx.elem_size > 1 || ctx.tag_kind != TK_EOF) {
+        c->elem_size = 1;
+        c->array_len = ctx->sub_dims[0];
+      } else if (ctx->sub_ndim >= 2 || ctx->elem_size > 1 || ctx->tag_kind != TK_EOF) {
         /* 中間段 / 非 char 多次元 / struct タグ多次元: 内側 (sub_ndim-1) 次元の配列。 */
         int inner_total = 1;
-        for (int i = 0; i < ctx.sub_ndim; i++) inner_total *= ctx.sub_dims[i];
-        c.is_array = 1;
-        c.elem_size = ctx.elem_size;
-        c.array_len = inner_total;
-        int n = ctx.sub_ndim - 1;
-        for (int i = 0; i < n; i++) c.sub_dims[i] = ctx.sub_dims[i + 1];
-        c.sub_ndim = n;
+        for (int i = 0; i < ctx->sub_ndim; i++) inner_total *= ctx->sub_dims[i];
+        c->is_array = 1;
+        c->elem_size = ctx->elem_size;
+        c->array_len = inner_total;
+        int n = ctx->sub_ndim - 1;
+        for (int i = 0; i < n; i++) c->sub_dims[i] = ctx->sub_dims[i + 1];
+        c->sub_ndim = n;
       }
     }
-    return c;
+    return;
   }
-  if (ctx.tag_kind == TK_STRUCT || ctx.tag_kind == TK_UNION) {
-    int n = psx_ctx_get_tag_member_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
+  if (ctx->tag_kind == TK_STRUCT || ctx->tag_kind == TK_UNION) {
+    int n = psx_ctx_get_tag_member_count(ctx->tag_kind, ctx->tag_name, ctx->tag_len);
     int slot = 0;
     int covered_union_off = 0;
     int covered_union_size = 0;
     for (int i = 0; i < n; i++) {
       tag_member_info_t mi = {0};
-      if (!psx_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, i, &mi)) break;
+      if (!psx_ctx_get_tag_member_info(ctx->tag_kind, ctx->tag_name, ctx->tag_len, i, &mi)) break;
       if (global_member_is_unnamed_struct(&mi)) continue;
       if (covered_union_size > 0 &&
           mi.offset >= covered_union_off &&
@@ -1682,7 +1692,10 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
         continue;
       }
       int ms = global_member_flat_slots(&mi);
-      if (off < slot + ms) return gbrace_ctx_from_member(&mi);
+      if (off < slot + ms) {
+        gbrace_ctx_from_member(c, &mi);
+        return;
+      }
       if (global_member_is_unnamed_union(&mi)) {
         covered_union_off = mi.offset;
         covered_union_size = mi.type_size;
@@ -1691,8 +1704,8 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
       }
       int cover_off = 0;
       int cover_size = 0;
-      int has_cover = global_find_unnamed_union_covering_offset_rec(ctx.tag_kind, ctx.tag_name,
-                                                                    ctx.tag_len, 0, mi.offset,
+      int has_cover = global_find_unnamed_union_covering_offset_rec(ctx->tag_kind, ctx->tag_name,
+                                                                    ctx->tag_len, 0, mi.offset,
                                                                     &cover_off, &cover_size);
       if (has_cover) {
         covered_union_off = cover_off;
@@ -1701,7 +1714,6 @@ static gbrace_ctx_t gbrace_child_at(gbrace_ctx_t ctx, int off) {
       slot += ms;
     }
   }
-  return c;
 }
 
 static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ctx_t ctx);
@@ -1779,7 +1791,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
     align_next_array_positional = 0;
     /* この反復で初期化する部分オブジェクトの型 (ネスト brace の子コンテキスト)。
      * 既定は positional 位置の型。designator のときは下で上書きする。 */
-    gbrace_ctx_t child = gbrace_child_at(ctx, cur_idx - level_start);
+    gbrace_ctx_t child;
+    gbrace_child_at(&child, &ctx, cur_idx - level_start);
     int active_union_ordinal = -1;
     /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
      * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
@@ -1821,7 +1834,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       /* level 先頭からの絶対 slot。ネスト配列 (`.items={[2]={...}}`) では level_start を
        * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
       int flat_off = (int)idx_val * elem_slots;
-      gbrace_ctx_t designator_child = gbrace_child_at(ctx, flat_off);
+      gbrace_ctx_t designator_child;
+      gbrace_child_at(&designator_child, &ctx, flat_off);
       int designator_depth = 1;
       while (curtok()->kind == TK_LBRACKET) {
         set_curtok(curtok()->next);
@@ -1840,7 +1854,9 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         int stride = 1;
         for (int i = designator_depth; i < ctx.sub_ndim; i++) stride *= ctx.sub_dims[i];
         flat_off += (int)iv * stride;
-        designator_child = gbrace_child_at(designator_child, (int)iv * stride);
+        gbrace_ctx_t nested_designator_child;
+        gbrace_child_at(&nested_designator_child, &designator_child, (int)iv * stride);
+        designator_child = nested_designator_child;
         designator_depth++;
       }
       tk_expect('=');
@@ -1942,7 +1958,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       }
       tk_expect('=');
       /* designator の葉メンバ型を子 brace コンテキストにする (`.s={.a=7}` の `{...}` は struct I)。 */
-      child = gbrace_ctx_from_member(&cmi);
+      gbrace_ctx_from_member(&child, &cmi);
     }
     /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
     while (*cap <= cur_idx) {
