@@ -1,6 +1,7 @@
 #include "codegen_backend.h"
 #include "config/config.h"
 #include "parser/parser.h"
+#include "parser/config_runtime.h"
 #include "tokenizer/tokenizer.h"
 #include "preprocess/preprocess.h"
 #include "diag/diag.h"
@@ -136,6 +137,9 @@ static char *read_file_contents(const char *path) {
 
 static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap,
                                       int object_mode) {
+#ifdef AGC_TARGET_WASM32
+  ps_set_target_pointer_size(4);
+#endif
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
   char *source = (char *)(long)source_addr;
@@ -206,6 +210,9 @@ int agc_wasm_compile_object(int source_addr, int out_addr, int out_cap) {
 }
 
 int main(int argc, char **argv) {
+#ifdef AGC_TARGET_WASM32
+  ps_set_target_pointer_size(4);
+#endif
   const char *prog_disp = (argc > 0) ? diag_display_path(argv[0]) : "ag_c";
   const char *input_path = NULL;
   int wasm_object_mode = 0;

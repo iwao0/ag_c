@@ -7,6 +7,7 @@
 #include "diag.h"
 #include "enum_const.h"
 #include "expr.h"
+#include "config_runtime.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
@@ -301,7 +302,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         long long bw = psx_parse_enum_const_expr();
         if (bw < 0) bw = 0;
         bit_width = (int)bw;
-        int storage_size = head.is_ptr ? 8 : (elem_size > 0 ? elem_size : 4);
+        int storage_size = head.is_ptr ? ps_get_target_pointer_size()
+                                       : (elem_size > 0 ? elem_size : 4);
         /* long / long long bitfield は 8 バイトのストレージユニットを使う。
          * 以前は 4 にクランプしており `unsigned long a:40` が 32bit ユニットに
          * 収まらず、後続フィールドの bit_offset 計算が破綻して重複配置していた。
@@ -459,10 +461,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 宣言子に `*` が現れないため head.is_ptr を立てておくと扱いが揃う。 */
       int total_pointer_levels = head.ptr_levels + (member_is_ptr_typedef ? 1 : 0);
       int member_is_ptr = head.is_ptr || member_is_ptr_typedef;
-      int member_elem_size = member_is_ptr ? 8 : elem_size;
+      int ptr_size = ps_get_target_pointer_size();
+      int member_elem_size = member_is_ptr ? ptr_size : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
-      int deref_size = member_is_ptr ? ((total_pointer_levels >= 2) ? 8 : elem_size) : 0;
-      int member_align = member_is_ptr ? 8 : elem_size;
+      int deref_size = member_is_ptr ? ((total_pointer_levels >= 2) ? ptr_size : elem_size) : 0;
+      int member_align = member_is_ptr ? ptr_size : elem_size;
       /* struct/union メンバ (非ポインタ) のアラインメントは「メンバの最大スカラ
        * アラインメント (psx_ctx_get_tag_align)」であり、sizeof ではない。
        * 修正前は elem_size (= sizeof) をそのまま採用しており、
@@ -495,13 +498,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.name = member_name;
         _mi.len = member_len;
         _mi.offset = off;
-        _mi.type_size = member_is_ptr ? 8 : elem_size;
+        _mi.type_size = member_is_ptr ? ptr_size : elem_size;
         _mi.deref_size = deref_size;
         _mi.array_len = member_array_len;
         _mi.tag_kind = member_tag_kind;
         _mi.tag_name = member_tag_name;
         _mi.tag_len = member_tag_len;
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
+        _mi.pointer_qual_levels = member_is_ptr ? total_pointer_levels : 0;
         if (member_is_ptr) {
           _mi.funcptr_param_fp_mask = head.has_func_suffix
                                           ? psx_last_funcptr_param_fp_mask()

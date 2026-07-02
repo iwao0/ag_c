@@ -39,17 +39,16 @@ enum {
 
 typedef struct {
   unsigned char *data;
-  size_t len;
-  size_t cap;
+  uint32_t len;
+  uint32_t cap;
 } wb_t;
 
 typedef struct {
-  unsigned char *body;
   int target_sym;
   int target_is_data;
   int target_is_global;
   int target_is_type;
-  size_t body_off;
+  uint32_t body_off;
   int type;
   int addend;
 } obj_reloc_t;
@@ -161,9 +160,10 @@ static int name_eq(const char *a, int alen, const char *b, int blen) {
 }
 
 static void wb_reserve(wb_t *b, size_t add) {
-  if (b->len + add <= b->cap) return;
-  size_t ncap = b->cap ? b->cap * 2 : 128;
-  while (ncap < b->len + add) ncap *= 2;
+  uint32_t need = b->len + (uint32_t)add;
+  if (need <= b->cap) return;
+  uint32_t ncap = b->cap ? b->cap * 2 : 128;
+  while (ncap < need) ncap *= 2;
   b->data = xrealloc(b->data, ncap);
   b->cap = ncap;
 }
@@ -177,7 +177,7 @@ static void wb_bytes(wb_t *b, const void *p, size_t n) {
   if (n == 0) return;
   wb_reserve(b, n);
   memcpy(b->data + b->len, p, n);
-  b->len += n;
+  b->len += (uint32_t)n;
 }
 
 static void wb_u32le(wb_t *b, uint32_t v) {
@@ -208,8 +208,8 @@ static void wb_sleb(wb_t *b, int64_t v) {
   }
 }
 
-static size_t wb_uleb5(wb_t *b, uint32_t v) {
-  size_t off = b->len;
+static uint32_t wb_uleb5(wb_t *b, uint32_t v) {
+  uint32_t off = b->len;
   for (int i = 0; i < 5; i++) {
     unsigned char byte = (unsigned char)(v & 0x7f);
     v >>= 7;
@@ -298,7 +298,7 @@ static void wb_zero(wb_t *b, int size) {
   if (size < 0) obj_unsupported_msg("negative data size in Wasm object mode");
   wb_reserve(b, (size_t)size);
   memset(b->data + b->len, 0, (size_t)size);
-  b->len += (size_t)size;
+  b->len += (uint32_t)size;
 }
 
 static obj_data_t *data_for_symbol(char *sym, int sym_len, int *out_addend) {
@@ -451,7 +451,7 @@ static obj_global_t *intern_va_arg_area_global(void) {
   return intern_global_symbol(VA_ARG_AREA_NAME, (int)strlen(VA_ARG_AREA_NAME));
 }
 
-static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_sym,
+static void func_add_reloc(obj_func_t *f, int type, uint32_t body_off, int target_sym,
                            int target_is_data, int addend) {
   if (f->reloc_count == f->reloc_cap) {
     int ncap = f->reloc_cap ? f->reloc_cap * 2 : 8;
@@ -459,8 +459,7 @@ static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_
     f->reloc_cap = ncap;
   }
   obj_reloc_t *r = &f->relocs[f->reloc_count++];
-  r->body = f->body.data;
-  r->body_off = body_off;
+  r->body_off = (uint32_t)body_off;
   r->type = type;
   r->target_sym = target_sym;
   r->target_is_data = target_is_data;
@@ -469,17 +468,33 @@ static void func_add_reloc(obj_func_t *f, int type, size_t body_off, int target_
   r->addend = addend;
 }
 
-static void func_add_global_reloc(obj_func_t *f, int type, size_t body_off, int target_sym) {
+static void func_add_call_reloc(obj_func_t *f, uint32_t body_off, int target_sym) {
+  if (f->reloc_count == f->reloc_cap) {
+    int ncap = f->reloc_cap ? f->reloc_cap * 2 : 8;
+    f->relocs = xrealloc(f->relocs, (size_t)ncap * sizeof(*f->relocs));
+    f->reloc_cap = ncap;
+  }
+  obj_reloc_t *r = &f->relocs[f->reloc_count++];
+  r->body_off = body_off;
+  r->type = R_WASM_FUNCTION_INDEX_LEB;
+  r->target_sym = target_sym;
+  r->target_is_data = 0;
+  r->target_is_global = 0;
+  r->target_is_type = 0;
+  r->addend = 0;
+}
+
+static void func_add_global_reloc(obj_func_t *f, int type, uint32_t body_off, int target_sym) {
   func_add_reloc(f, type, body_off, target_sym, 0, 0);
   f->relocs[f->reloc_count - 1].target_is_global = 1;
 }
 
-static void func_add_type_reloc(obj_func_t *f, size_t body_off, int type_index) {
+static void func_add_type_reloc(obj_func_t *f, uint32_t body_off, int type_index) {
   func_add_reloc(f, R_WASM_TYPE_INDEX_LEB, body_off, type_index, 0, 0);
   f->relocs[f->reloc_count - 1].target_is_type = 1;
 }
 
-static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_sym,
+static void data_add_reloc(obj_data_t *d, int type, uint32_t body_off, int target_sym,
                            int target_is_data, int addend) {
   if (d->reloc_count == d->reloc_cap) {
     int ncap = d->reloc_cap ? d->reloc_cap * 2 : 8;
@@ -487,8 +502,7 @@ static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_
     d->reloc_cap = ncap;
   }
   obj_reloc_t *r = &d->relocs[d->reloc_count++];
-  r->body = d->bytes.data;
-  r->body_off = body_off;
+  r->body_off = (uint32_t)body_off;
   r->type = type;
   r->target_sym = target_sym;
   r->target_is_data = target_is_data;
@@ -498,21 +512,36 @@ static void data_add_reloc(obj_data_t *d, int type, size_t body_off, int target_
 }
 
 static void add_global_reloc(obj_reloc_t **arr, int *count, int *cap, int type,
-                             size_t off, int target_sym, int addend) {
+                             uint32_t off, int target_sym, int addend) {
   if (*count == *cap) {
     int ncap = *cap ? *cap * 2 : 16;
     *arr = xrealloc(*arr, (size_t)ncap * sizeof(**arr));
     *cap = ncap;
   }
   obj_reloc_t *r = &(*arr)[(*count)++];
-  r->body = NULL;
-  r->body_off = off;
+  r->body_off = (uint32_t)off;
   r->type = type;
   r->target_sym = target_sym;
   r->target_is_data = 0;
   r->target_is_global = 0;
   r->target_is_type = 0;
   r->addend = addend;
+}
+
+static void add_code_reloc(uint32_t off, obj_reloc_t *src) {
+  if (g_obj.code_reloc_count == g_obj.code_reloc_cap) {
+    int ncap = g_obj.code_reloc_cap ? g_obj.code_reloc_cap * 2 : 16;
+    g_obj.code_relocs = xrealloc(g_obj.code_relocs, (size_t)ncap * sizeof(*g_obj.code_relocs));
+    g_obj.code_reloc_cap = ncap;
+  }
+  obj_reloc_t *r = &g_obj.code_relocs[g_obj.code_reloc_count++];
+  r->body_off = off;
+  r->type = src->type;
+  r->target_sym = src->target_sym;
+  r->target_is_data = 0;
+  r->target_is_global = 0;
+  r->target_is_type = 0;
+  r->addend = src->addend;
 }
 
 static int intern_type(const obj_sig_t *sig) {
@@ -797,13 +826,13 @@ static void emit_local_set(wb_t *b, int idx) {
 
 static void emit_stack_global_get(wb_t *b, obj_func_t *of, obj_global_t *sp) {
   wb_u8(b, 0x23);
-  size_t imm_off = wb_uleb5(b, 0);
+  uint32_t imm_off = wb_uleb5(b, 0);
   func_add_global_reloc(of, R_WASM_GLOBAL_INDEX_LEB, imm_off, (int)(sp - g_obj.globals));
 }
 
 static void emit_stack_global_set(wb_t *b, obj_func_t *of, obj_global_t *sp) {
   wb_u8(b, 0x24);
-  size_t imm_off = wb_uleb5(b, 0);
+  uint32_t imm_off = wb_uleb5(b, 0);
   func_add_global_reloc(of, R_WASM_GLOBAL_INDEX_LEB, imm_off, (int)(sp - g_obj.globals));
 }
 
@@ -1649,7 +1678,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             }
             of = &g_obj.funcs[of_index];
             wb_u8(&body, 0x41);
-            size_t imm_off = wb_uleb5(&body, 0);
+            uint32_t imm_off = wb_uleb5(&body, 0);
             func_add_reloc(of, R_WASM_TABLE_INDEX_SLEB, imm_off,
                            (int)(target - g_obj.funcs), 0, 0);
             emit_local_set(&body, local_index(param_count, i->dst.id));
@@ -1658,7 +1687,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           int addend = 0;
           obj_data_t *d = data_for_symbol(i->sym, i->op == IR_LOAD_STR ? -1 : i->sym_len, &addend);
           wb_u8(&body, 0x41);
-          size_t imm_off = wb_uleb5(&body, 0);
+          uint32_t imm_off = wb_uleb5(&body, 0);
           func_add_reloc(of, R_WASM_MEMORY_ADDR_LEB, imm_off, data_index(d), 1, addend);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
@@ -1911,7 +1940,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             }
             emit_addr_val(&body, i->callee, param_count);
             wb_u8(&body, 0x11);
-            size_t type_imm_off = wb_uleb5(&body, (uint32_t)type_index);
+            uint32_t type_imm_off = wb_uleb5(&body, (uint32_t)type_index);
             func_add_type_reloc(of, type_imm_off, type_index);
             wb_uleb(&body, 0);
             if (csig.result != IR_TY_VOID && i->dst.id >= 0) {
@@ -1949,9 +1978,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             emit_val(&body, i->args[a], emit_sig->params[p], param_count);
           }
           wb_u8(&body, 0x10);
-          size_t imm_off = wb_uleb5(&body, 0);
-          func_add_reloc(of, R_WASM_FUNCTION_INDEX_LEB, imm_off, -1, 0, 0);
-          of->relocs[of->reloc_count - 1].target_sym = target - g_obj.funcs;
+          uint32_t imm_off = wb_uleb5(&body, 0);
+          func_add_call_reloc(of, imm_off, (int)(target - g_obj.funcs));
           if (emit_sig->result != IR_TY_VOID && i->dst.id >= 0) {
             emit_local_set(&body, local_index(param_count, i->dst.id));
           }
@@ -2180,13 +2208,11 @@ static void emit_code_section(wb_t *out) {
     if (!f->defined) continue;
     wb_t body_size = {0};
     wb_uleb(&body_size, (uint32_t)f->body.len);
-    size_t body_payload_start = p.len + body_size.len;
+    uint32_t body_payload_start = p.len + body_size.len;
     wb_bytes(&p, body_size.data, body_size.len);
     wb_bytes(&p, f->body.data, f->body.len);
     for (int r = 0; r < f->reloc_count; r++) {
-      add_global_reloc(&g_obj.code_relocs, &g_obj.code_reloc_count, &g_obj.code_reloc_cap,
-                       f->relocs[r].type, body_payload_start + f->relocs[r].body_off,
-                       f->relocs[r].target_sym, f->relocs[r].addend);
+      add_code_reloc(body_payload_start + f->relocs[r].body_off, &f->relocs[r]);
     }
     free(body_size.data);
   }
@@ -2209,14 +2235,14 @@ static void emit_data_section(wb_t *out) {
     wb_uleb(&p, 0);
     wb_u8(&p, 0x0b);
     wb_uleb(&p, (uint32_t)d->bytes.len);
-    size_t data_start = p.len;
+    uint32_t data_start = p.len;
     wb_bytes(&p, d->bytes.data, d->bytes.len);
     for (int r = 0; r < d->reloc_count; r++) {
       int sym = d->relocs[r].target_is_data
                   ? g_obj.data[d->relocs[r].target_sym].symbol_index
                   : g_obj.funcs[d->relocs[r].target_sym].symbol_index;
       add_global_reloc(&g_obj.data_relocs, &g_obj.data_reloc_count, &g_obj.data_reloc_cap,
-                       d->relocs[r].type, data_start + d->relocs[r].body_off,
+                       d->relocs[r].type, (uint32_t)data_start + d->relocs[r].body_off,
                        sym, d->relocs[r].addend);
     }
   }
@@ -2398,14 +2424,14 @@ static void data_write_symbol_addr(obj_data_t *d, char *sym, int sym_len,
       target = intern_func(sym, sym_len);
       target->sig = func_sig_from_ctx(sym, sym_len);
     }
-    size_t off = d->bytes.len;
+    uint32_t off = d->bytes.len;
     wb_int_le(&d->bytes, 0, size);
     data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);
     return;
   }
   int reloc_addend = 0;
   obj_data_t *target = data_for_symbol(sym, sym_len, &reloc_addend);
-  size_t off = d->bytes.len;
+  uint32_t off = d->bytes.len;
   wb_int_le(&d->bytes, 0, size);
   data_add_reloc(d, R_WASM_MEMORY_ADDR_I32, off, data_index(target), 1,
                  reloc_addend + (int)addend);

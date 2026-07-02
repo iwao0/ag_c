@@ -1,3 +1,5 @@
+import { createAgcRuntimeImports } from "./agc-runtime-imports.js";
+
 const DEFAULT_SOURCE_PTR = 393216;
 const DEFAULT_SOURCE_CAP = 32768;
 const DEFAULT_OUTPUT_PTR = DEFAULT_SOURCE_PTR + DEFAULT_SOURCE_CAP;
@@ -113,7 +115,7 @@ export async function createCompiler(wasmSource, options = {}) {
       if (typeof options.onStderr === "function") options.onStderr(text);
     },
   };
-  const imports = { env: envImports };
+  const imports = createAgcRuntimeImports({ env: envImports });
   const instance = await instantiateFromSource(wasmSource, imports);
   const memory = instance.exports.memory;
   callbackMemory = memory;

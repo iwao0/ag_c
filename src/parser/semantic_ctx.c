@@ -51,6 +51,7 @@ struct tag_member_t {
   char *member_tag_name;
   int member_tag_len;
   int member_is_tag_pointer;
+  int pointer_qual_levels;
   int bit_width;    // ビットフィールド幅（0: 非ビットフィールド）
   int bit_offset;   // ストレージユニット内ビット位置
   int bit_is_signed;
@@ -501,6 +502,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->member_tag_name = desc->tag_name;
       m->member_tag_len = desc->tag_len;
       m->member_is_tag_pointer = desc->is_tag_pointer;
+      m->pointer_qual_levels = desc->pointer_qual_levels;
       m->bit_width = desc->bit_width;
       m->bit_offset = desc->bit_offset;
       m->bit_is_signed = desc->bit_is_signed;
@@ -530,6 +532,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->member_tag_name = desc->tag_name;
   m->member_tag_len = desc->tag_len;
   m->member_is_tag_pointer = desc->is_tag_pointer;
+  m->pointer_qual_levels = desc->pointer_qual_levels;
   m->bit_width = desc->bit_width;
   m->bit_offset = desc->bit_offset;
   m->bit_is_signed = desc->bit_is_signed;
@@ -712,6 +715,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->tag_name = m->member_tag_name;
   out->tag_len = m->member_tag_len;
   out->is_tag_pointer = m->member_is_tag_pointer;
+  out->pointer_qual_levels = m->pointer_qual_levels;
   out->bit_width = m->bit_width;
   out->bit_offset = m->bit_offset;
   out->bit_is_signed = m->bit_is_signed;

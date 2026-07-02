@@ -40,10 +40,10 @@ try {
   throw new Error("invalid source unexpectedly compiled");
 } catch (err) {
   const message = String(err && err.message ? err.message : err);
-  if (!message.includes("E") || !message.includes("実際のトークン") || message.includes("timed out")) {
+  if (!message.includes("必要な項目") || message.includes("timed out")) {
     throw new Error(`invalid source did not surface compiler diagnostics: ${message}`);
   }
-  if (!stderrChunks.join("").includes("実際のトークン")) {
+  if (!stderrChunks.join("").includes("必要な項目")) {
     throw new Error("invalid source did not stream diagnostics through onStderr");
   }
   if (terminations.length !== 1 || terminations[0].kind !== "exit" || terminations[0].status !== 1) {

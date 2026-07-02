@@ -1183,12 +1183,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
      * 配列メンバの decay 表現と区別する。 */
     deref->is_pointer = 1;
     deref->is_scalar_ptr_member = 1;
-    if (mem_info->deref_size == 8 &&
-        (mem_info->tag_kind == TK_STRUCT || mem_info->tag_kind == TK_UNION) &&
+    if ((mem_info->tag_kind == TK_STRUCT || mem_info->tag_kind == TK_UNION) &&
         mem_info->tag_name) {
       int pointee_size = psx_ctx_get_tag_size(mem_info->tag_kind, mem_info->tag_name,
                                               mem_info->tag_len);
-      deref->pointer_qual_levels = 2;
+      deref->pointer_qual_levels = mem_info->pointer_qual_levels > 0
+                                      ? mem_info->pointer_qual_levels
+                                      : 1;
       deref->base_deref_size = (short)(pointee_size > 0 ? pointee_size : 8);
     }
     if (mem_info->ptr_array_pointee_bytes > 0) {
@@ -4112,6 +4113,11 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   int ds = ps_node_deref_size(node);
   int ts = ps_node_type_size(node);
   int es = ds ? ds : (ts ? ts : 8);
+  if (node->kind == ND_DEREF &&
+      psx_node_pointer_qual_levels(node) == 1 &&
+      psx_node_base_deref_size(node) > 0) {
+    es = psx_node_base_deref_size(node);
+  }
   int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
   int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
   int next_ds = 0;  // さらに次の次元の要素サイズ (3D 用、0=なし)
@@ -4358,9 +4364,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
               node->kind == ND_FUNCALL ||
               (node->kind == ND_DEREF &&
                !deref_from_pointer_to_array &&
-               !((node_mem_t *)node)->is_scalar_ptr_member &&
                ((node_mem_t *)node)->ptr_array_pointee_bytes == 0 &&
-               !(node->lhs && node->lhs->kind == ND_ADD)))) {
+               (!(node->lhs && node->lhs->kind == ND_ADD) ||
+                ((node_mem_t *)node)->is_scalar_ptr_member)))) {
     /* 単段のスカラポインタ値 (`long *p`, `unsigned long *p`) の subscript は
      * pointee スカラ。`long *` ではポインタ認識のため pql=1 / bds=8 を持つが、
      * これは「要素がポインタ」ではなく「指している要素が 8B」という情報なので

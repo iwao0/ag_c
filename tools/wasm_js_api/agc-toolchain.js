@@ -1,4 +1,5 @@
 import { createCompiler } from "./agc-wasm.js";
+import { createAgcRuntimeImports } from "./agc-runtime-imports.js";
 import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js";
 
 function normalizeSources(sources) {
@@ -36,7 +37,7 @@ export async function createToolchain(options) {
 
   async function instantiateLinkedWasm(sources, linkOptions = {}, imports = {}) {
     const wasm = compileLinkedWasm(sources, linkOptions);
-    const result = await WebAssembly.instantiate(wasm, imports);
+    const result = await WebAssembly.instantiate(wasm, createAgcRuntimeImports(imports));
     return { wasm, module: result.module, instance: result.instance };
   }
 

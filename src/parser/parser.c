@@ -3926,7 +3926,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     int pointee = (param_ptr_levels <= 1 && ds->struct_size > 0) ? ds->struct_size : 8;
     lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, pointee, 0, 0);
     psx_decl_set_var_tag(var, ds->tag_kind, ds->tag_name, ds->tag_len, 1);
-    var->base_deref_size = (short)pointee;
+    var->base_deref_size = (short)(ds->struct_size > 0 ? ds->struct_size : pointee);
     /* 多段の struct ポインタ仮引数 (`struct N **root`): pointer_qual_levels を
      * declarator の段数で立てる。これがないと build_unary_deref_node の `*root` で
      * is_tag_pointer 伝播が pql>=2 を要求して 0 にクリアしてしまい、続く
@@ -3960,10 +3960,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
       return var;
     }
     /* スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）。
-     * 多段ポインタなら pointee_size=8、それ以外は ds->elem_size。 */
-    int pointee_size = (param_ptr_levels >= 2) ? 8 : ds->elem_size;
+     * typedef struct のように typedef 実体サイズがある場合は、最内 pointee
+     * サイズとしてそれを使う。これがないと `T **pp; (*pp)[i]` のスケールが
+     * sizeof(T) ではなく 8 になり、wasm32 の self-host リンカで import 配列が壊れる。 */
+    int base_pointee_size = (ds->typedef_sizeof_size > 0) ? ds->typedef_sizeof_size
+                                                          : ds->elem_size;
+    int pointee_size = (param_ptr_levels >= 2) ? 8 : base_pointee_size;
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
-    var->base_deref_size = (short)ds->elem_size;
+    var->base_deref_size = (short)base_pointee_size;
     /* `unsigned char *p` / `unsigned short *p` 等: pointee が unsigned なら is_unsigned を
      * 立てる。build_lvar_or_vla_node が pointee_is_unsigned へ伝播し、`*p` / `p[i]` が
      * zero-extend load (ldrb/ldrh) になる。未設定だと符号拡張で値が化けていた。 */

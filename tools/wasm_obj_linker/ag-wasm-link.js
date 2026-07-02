@@ -1,3 +1,5 @@
+import { createAgcRuntimeImports } from "../wasm_js_api/agc-runtime-imports.js";
+
 function asBytes(input, label) {
   if (input instanceof Uint8Array) return input;
   if (input instanceof ArrayBuffer) return new Uint8Array(input);
@@ -59,7 +61,7 @@ export async function createLinker(wasmSource, options = {}) {
       if (typeof options.onStderr === "function") options.onStderr(text);
     },
   };
-  const imports = { env: envImports };
+  const imports = createAgcRuntimeImports({ env: envImports });
   const instance = await instantiateFromSource(wasmSource, imports);
   const memory = instance.exports.memory;
   callbackMemory = memory;

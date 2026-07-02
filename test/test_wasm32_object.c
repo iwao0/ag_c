@@ -240,6 +240,109 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked static wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/struct_ptr_layout.c",
+                 "typedef unsigned long size_t; void *realloc(void *, size_t); "
+                 "typedef struct{int value;} obj_t; "
+                 "typedef struct{obj_t *obj; int func_index;} final_func_t; "
+                 "static void push(final_func_t **defs,int *count,int *cap,obj_t *obj,int func_index){"
+                 "if(*count==*cap){int ncap=*cap?*cap*2:16;"
+                 "*defs=realloc(*defs,(size_t)ncap*sizeof(final_func_t));*cap=ncap;}"
+                 "(*defs)[*count].obj=obj;(*defs)[*count].func_index=func_index;(*count)++;}"
+                 "int main(void){obj_t objs[2];final_func_t *defs=0;int count=0;int cap=0;"
+                 "objs[0].value=40;objs[1].value=2;"
+                 "push(&defs,&count,&cap,&objs[0],1);push(&defs,&count,&cap,&objs[1],3);"
+                 "if(count!=2)return 10;if(defs[0].obj!=&objs[0])return 11;"
+                 "if(defs[0].func_index!=1)return 12;if(defs[1].obj!=&objs[1])return 13;"
+                 "if(defs[1].func_index!=3)return 14;return defs[0].obj->value+defs[1].obj->value;}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/struct_ptr_layout.o "
+              "build/wasm32_obj/struct_ptr_layout.c",
+              "struct_ptr_layout.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o build/wasm32_obj/linked_struct_ptr_layout.wasm "
+              "build/wasm32_obj/struct_ptr_layout.o",
+              "wasm-ld struct ptr layout") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_struct_ptr_layout.wasm",
+              "wasm-validate struct ptr layout") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_struct_ptr_layout.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_struct_ptr_layout.interp",
+              "wasm-interp struct ptr layout") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_struct_ptr_layout.interp", buf, sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked struct pointer layout wasm returned unexpected result\n");
+    return 1;
+  }
+  if (write_file("build/wasm32_obj/struct_ptr_member_subscript.c",
+                 "typedef unsigned long size_t; void *realloc(void *, size_t); "
+                 "struct Sym{char *name; int len;}; "
+                 "struct Data{struct Sym *symbols; int count; int cap;}; "
+                 "static struct Data g; "
+                 "int main(void){g.symbols=realloc(g.symbols,(size_t)2*sizeof(struct Sym));"
+                 "g.symbols[0].name=\"main\";g.symbols[0].len=4;"
+                 "if(g.symbols[0].name[0]!='m')return 11;"
+                 "if(g.symbols[0].len!=4)return 12;return 42;}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/struct_ptr_member_subscript.o "
+              "build/wasm32_obj/struct_ptr_member_subscript.c",
+              "struct_ptr_member_subscript.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_struct_ptr_member_subscript.wasm "
+              "build/wasm32_obj/struct_ptr_member_subscript.o",
+              "wasm-ld struct ptr member subscript") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_struct_ptr_member_subscript.wasm",
+              "wasm-validate struct ptr member subscript") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_struct_ptr_member_subscript.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_struct_ptr_member_subscript.interp",
+              "wasm-interp struct ptr member subscript") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_struct_ptr_member_subscript.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked struct pointer member subscript wasm returned unexpected result\n");
+    return 1;
+  }
+  if (write_file("build/wasm32_obj/typedef_struct_pp_subscript.c",
+                 "typedef unsigned long size_t; void *realloc(void *, size_t); "
+                 "typedef struct{char *s; int len;} str_t; typedef struct object_t object_t; "
+                 "typedef struct{object_t *obj; int func_index; str_t name; "
+                 "int type_index; int final_index;} final_import_t; "
+                 "static int str_eq(str_t a,str_t b){if(a.len!=b.len)return 0;"
+                 "for(int i=0;i<a.len;i++)if(a.s[i]!=b.s[i])return 0;return 1;} "
+                 "static int find_import(final_import_t *imports,int count,str_t name,int type_index){"
+                 "for(int i=0;i<count;i++){if(imports[i].type_index==type_index&&"
+                 "str_eq(imports[i].name,name))return i;}return -1;} "
+                 "static void push(final_import_t **imports,int *count,int *cap,char *name,int len,int type_index){"
+                 "if(*count==*cap){int ncap=*cap?*cap*2:16;"
+                 "*imports=realloc(*imports,(size_t)ncap*sizeof(final_import_t));*cap=ncap;}"
+                 "final_import_t imp;imp.obj=0;imp.func_index=0;imp.name.s=name;imp.name.len=len;"
+                 "imp.type_index=type_index;imp.final_index=*count;(*imports)[*count]=imp;(*count)++;} "
+                 "int main(void){final_import_t *imports=0;int count=0,cap=0;"
+                 "str_t sin_name={\"sin\",3};str_t sqrt_name={\"sqrt\",4};str_t pow_name={\"pow\",3};"
+                 "push(&imports,&count,&cap,\"sin\",3,1);push(&imports,&count,&cap,\"sqrt\",4,1);"
+                 "push(&imports,&count,&cap,\"pow\",3,2);if(count!=3)return 10;"
+                 "if(find_import(imports,count,sin_name,1)!=0)return 11;"
+                 "if(find_import(imports,count,sqrt_name,1)!=1)return 12;"
+                 "if(find_import(imports,count,pow_name,2)!=2)return 13;return 42;}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/typedef_struct_pp_subscript.o "
+              "build/wasm32_obj/typedef_struct_pp_subscript.c",
+              "typedef_struct_pp_subscript.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_typedef_struct_pp_subscript.wasm "
+              "build/wasm32_obj/typedef_struct_pp_subscript.o",
+              "wasm-ld typedef struct pp subscript") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_typedef_struct_pp_subscript.wasm",
+              "wasm-validate typedef struct pp subscript") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_typedef_struct_pp_subscript.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_typedef_struct_pp_subscript.interp",
+              "wasm-interp typedef struct pp subscript") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_typedef_struct_pp_subscript.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked typedef struct pointer pointer subscript wasm returned unexpected result\n");
+    return 1;
+  }
   if (write_file("build/wasm32_obj/indirect_data.c",
                  "int add1(int x){return x+1;} int add2(int x){return x+2;} "
                  "union Ops{int (*f[2])(int); long raw;}; union Ops ops={.f[1]=add2}; "
@@ -823,7 +926,7 @@ int main(void) {
 
   const char *struct_string_offset_reloc_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<s>",
-      "<.LC0>+0x2", "<.LC1>+0x1", "size=24"};
+      "<.LC0>+0x2", "<.LC1>+0x1", "size=12"};
   failures += run_objdump_check("global_struct_string_offset_data_reloc",
                                 "struct S{const char *a; int pad; const char *b;}; "
                                 "struct S s={\"abc\"+2,7,\"de\"+1}; "

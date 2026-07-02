@@ -66,4 +66,33 @@ if (instantiated.instance.exports.main() !== 42) {
   throw new Error("instantiated pipeline main() did not return 42");
 }
 
+const mathSource = `
+double sin(double);
+double sqrt(double);
+double pow(double, double);
+int main(void) {
+  return (int)(sin(1.5707963267948966) * 1000.0) + (int)sqrt(4.0) + (int)pow(2.0, 3.0);
+}
+`;
+const mathLinked = toolchain.compileLinkedWasm(mathSource, { exports: ["main"], useStdlib: false });
+const mathLinkedPath = path.join(outDir, "linked_math_imports_from_api.wasm");
+await writeFile(mathLinkedPath, mathLinked);
+try {
+  const dump = execFileSync("wasm-objdump", ["-x", mathLinkedPath], { encoding: "utf8" });
+  if (!dump.includes("env.sin") ||
+      !dump.includes("env.sqrt") ||
+      !dump.includes("env.pow")) {
+    throw new Error("linked math wasm did not import JS math helpers");
+  }
+} catch (err) {
+  if (err.code !== "ENOENT") throw err;
+}
+const mathInstantiated = await toolchain.instantiateLinkedWasm(mathSource, {
+  exports: ["main"],
+  useStdlib: false,
+});
+if (mathInstantiated.instance.exports.main() !== 1010) {
+  throw new Error("instantiated math pipeline did not use JS math imports");
+}
+
 console.log(`ag_c wasm JS compile+link pipeline smoke: ok (${linkedPath})`);
