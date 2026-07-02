@@ -1633,7 +1633,9 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
    * 整数昇格: int 未満 (i8/i16) は符号付き int になるので幅<4 は符号付き 4byte 扱い。
    * 両辺の符号が異なる場合、符号なし側の幅が符号付き側の幅以上のときのみ符号なし。
    * 広い符号付き型は狭い符号なし型の全値を表現できるため符号付き演算になる。 */
-  int lsz = ir_type_size(l.type), rsz = ir_type_size(r.type);
+  int lsz = ps_node_type_size(node->lhs), rsz = ps_node_type_size(node->rhs);
+  if (lsz <= 0) lsz = ir_type_size(l.type);
+  if (rsz <= 0) rsz = ir_type_size(r.type);
   int lu = (lsz >= 4) && ps_node_is_unsigned(node->lhs);
   int ru = (rsz >= 4) && ps_node_is_unsigned(node->rhs);
   int lw = lsz < 4 ? 4 : lsz, rw = rsz < 4 ? 4 : rsz;

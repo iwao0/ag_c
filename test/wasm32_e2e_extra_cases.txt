@@ -278,6 +278,7 @@ probes_found_bugs/short_postinc.c
 probes_found_bugs/sign_compare.c
 probes_found_bugs/sizeof_arith.c
 probes_found_bugs/sizeof_cast_expression.c
+probes_found_bugs/sizeof_cast_subint_constant.c
 probes_found_bugs/sizeof_enum_type.c
 probes_found_bugs/sizeof_global_array_inferred_size.c
 probes_found_bugs/sizeof_int_literal.c

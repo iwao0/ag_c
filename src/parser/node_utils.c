@@ -132,6 +132,7 @@ int ps_node_type_size(node_t *node) {
       node_num_t *n = (node_num_t *)node;
       if (n->base.fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
       if (n->base.fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
+      if (n->int_width == 1 || n->int_width == 2) return n->int_width;
       return n->int_is_long ? 8 : 4;
     }
     default:

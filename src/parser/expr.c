@@ -735,7 +735,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
            control->kind == ND_ADDR || control->kind == ND_STRING) {
     gt.is_unsigned = ((node_mem_t *)control)->is_unsigned;
   } else {
-    gt.is_unsigned = control->is_unsigned;
+    gt.is_unsigned = ps_node_is_unsigned(control);
   }
   gt.scalar_size = ts ? ts : 4;
   /* 変数等の long long / plain char の型識別を制御式型へ反映 (_Generic 用)。
@@ -2750,13 +2750,20 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       else
         tv = cast_is_unsigned ? (long long)(unsigned char)v : (long long)(signed char)v;
       node_t *n = psx_node_new_num(tv);
+      ((node_num_t *)n)->int_width = (unsigned char)(type_kind == TK_SHORT ? 2 : 1);
+      if (cast_is_unsigned) psx_node_set_unsigned(n, 1);
       return n;
     }
     /* unsigned char/short: & マスクでゼロ拡張し unsigned ラベルを付ける。 */
     if (cast_is_unsigned) {
       node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(mask));
       psx_node_set_unsigned(masked, 1);
-      return masked;
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = masked;
+      wrap->type_size = (short)(width / 8);
+      wrap->is_unsigned = 1;
+      return (node_t *)wrap;
     }
     /* signed char/short: `(x << (64-width)) >> (64-width)` の算術シフトで符号拡張する。
      * 従来の `& マスク` だけだとビット (width-1) が立った runtime 値が符号拡張されず、
@@ -2767,7 +2774,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
     psx_node_set_unsigned(shl, 0);
     psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) を強制 */
-    return shr;
+    node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+    wrap->base.kind = ND_PTR_CAST;
+    wrap->base.lhs = shr;
+    wrap->type_size = (short)(width / 8);
+    return (node_t *)wrap;
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
   psx_diag_ctx(curtok(), "cast", "%s",
@@ -3046,16 +3057,16 @@ static void warn_if_sign_compare(node_t *lhs, node_t *rhs, const char *op) {
  *   `u < 0`,  `0 > u`   -> 常に偽
  * `u > 0`, `u == 0`, `u <= 0` 等は実際に値次第なので警告しない。
  *
- * unsigned char / unsigned short は C11 6.3.1.1 で signed int に昇格されるが、値域は
- * 元のまま (0..255 / 0..65535) なので比較結果はやはり同じ。is_unsigned フラグだけで判定
- * すれば十分。 */
+ * unsigned char / unsigned short は C11 6.3.1.1 で signed int に昇格されるため、
+ * `-(unsigned short)1 < 0` のような昇格後の式まで非負扱いすると誤る。ここでは
+ * int 以上の幅を持つ unsigned 型だけを対象にする。 */
 static int tuz_is_zero_literal(node_t *n) {
   return n && n->kind == ND_NUM && n->fp_kind == TK_FLOAT_KIND_NONE &&
          ((node_num_t *)n)->val == 0;
 }
 static int tuz_is_unsigned_integer(node_t *n) {
   return n && !ps_node_is_pointer(n) && n->fp_kind == TK_FLOAT_KIND_NONE &&
-         ps_node_is_unsigned(n);
+         ps_node_type_size(n) >= 4 && ps_node_is_unsigned(n);
 }
 static void warn_if_tautological_unsigned_zero(node_t *lhs, node_t *rhs, const char *op) {
   /* `u OP 0` */

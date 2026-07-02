@@ -18,6 +18,8 @@ int main(void) {
   unsigned long ul = 9UL;
   assert(sizeof(1 ? ui : ul) == sizeof(unsigned long));
   assert((unsigned long long)(1 ? ui : ul) == 4000000000ULL);
+  assert(_Generic((0 ? (unsigned long)4000000000UL : (long)-1L),
+                  unsigned long: 1, long: 2, default: 3) == 1);
 
   return 0;
 }
