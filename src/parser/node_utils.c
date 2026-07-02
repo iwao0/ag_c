@@ -99,7 +99,8 @@ int ps_node_type_size(node_t *node) {
       int l = ps_node_type_size(node->lhs);
       int r = ps_node_type_size(node->rhs);
       int m = l > r ? l : r;
-      return m > 0 ? m : 4;
+      if (m <= 0) return 4;
+      return m < 4 ? 4 : m;
     }
     case ND_SHL:
     case ND_SHR: {
@@ -557,6 +558,29 @@ static int node_is_unsigned(node_t *node) {
   }
 }
 
+static int node_uac_effective_unsigned(node_t *node) {
+  if (!node) return 0;
+  if (ps_node_is_pointer(node)) return 0;
+  if (node->fp_kind != TK_FLOAT_KIND_NONE) return 0;
+  return ps_node_type_size(node) >= 4 && node_is_unsigned(node);
+}
+
+static int node_uac_effective_size(node_t *node) {
+  int sz = ps_node_type_size(node);
+  return sz < 4 ? 4 : sz;
+}
+
+static int binary_usual_arith_unsigned(node_t *lhs, node_t *rhs) {
+  int lu = node_uac_effective_unsigned(lhs);
+  int ru = node_uac_effective_unsigned(rhs);
+  if (lu == ru) return lu;
+  int lw = node_uac_effective_size(lhs);
+  int rw = node_uac_effective_size(rhs);
+  int unsigned_w = lu ? lw : rw;
+  int signed_w = lu ? rw : lw;
+  return unsigned_w >= signed_w;
+}
+
 /* node_is_unsigned の公開ラッパ。IR builder が比較の符号 (通常算術変換) を
  * 決める際、オペランドの符号を ND_LVAR の mem.is_unsigned まで含めて判定する
  * ために使う。生の node->is_unsigned は LVAR/GVAR では 0 のままなので不可。 */
@@ -595,6 +619,10 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   if (kind == ND_SHL || kind == ND_SHR) {
     int lhs_sz = ps_node_type_size(lhs);
     if (lhs_sz >= 4 && node_is_unsigned(lhs)) node->is_unsigned = 1;
+  } else if (kind == ND_ADD || kind == ND_SUB || kind == ND_MUL ||
+             kind == ND_DIV || kind == ND_MOD || kind == ND_BITAND ||
+             kind == ND_BITXOR || kind == ND_BITOR) {
+    node->is_unsigned = binary_usual_arith_unsigned(lhs, rhs) ? 1 : 0;
   } else if (node_is_unsigned(lhs) || node_is_unsigned(rhs)) {
     node->is_unsigned = 1;
   }

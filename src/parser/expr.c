@@ -2750,7 +2750,6 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       else
         tv = cast_is_unsigned ? (long long)(unsigned char)v : (long long)(signed char)v;
       node_t *n = psx_node_new_num(tv);
-      if (cast_is_unsigned) psx_node_set_unsigned(n, 1);
       return n;
     }
     /* unsigned char/short: & マスクでゼロ拡張し unsigned ラベルを付ける。 */

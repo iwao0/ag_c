@@ -2712,7 +2712,9 @@ static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node) {
   if (!cast->is_pointer && !cast->is_tag_pointer && cast->type_size >= 8 &&
       v.type != IR_TY_I64 && v.type != IR_TY_PTR && !is_fp_type(v.type)) {
     int d = ir_func_new_vreg(ctx->f);
-    ir_inst_t *sx = ir_inst_new(cast->is_unsigned ? IR_ZEXT : IR_SEXT);
+    int src_unsigned = node->lhs && ps_node_type_size(node->lhs) >= 4 &&
+                       ps_node_is_unsigned(node->lhs);
+    ir_inst_t *sx = ir_inst_new(src_unsigned ? IR_ZEXT : IR_SEXT);
     sx->dst = ir_val_vreg(d, IR_TY_I64);
     sx->src1 = v;
     ir_func_append_inst(ctx->f, sx);

@@ -39,6 +39,7 @@ probes_found_bugs/assign_overflow_dangling.c
 probes_found_bugs/bitfield_brace_init.c
 probes_found_bugs/bitfield_enum_and_static_init.c
 probes_found_bugs/bitfield_pack_after_member.c
+probes_found_bugs/bitwise_narrow_unsigned_promote.c
 probes_found_bugs/bool_2d_array_normalize.c
 probes_found_bugs/bool_array_element_normalize.c
 probes_found_bugs/bool_bitfield.c

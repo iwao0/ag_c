@@ -1054,6 +1054,7 @@ static const test_case_t test_cases[] = {
     {"probes", "comma_in_condition", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/comma_in_condition.c", 0, 0},
     {"probes", "switch_fallthrough", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/switch_fallthrough.c", 0, 0},
     {"probes", "sign_compare", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sign_compare.c", 0, 0},
+    {"probes", "bitwise_narrow_unsigned_promote", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/bitwise_narrow_unsigned_promote.c", 0, 0},
     {"probes", "float_to_int_narrowing_extended", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_to_int_narrowing_extended.c", 0, 0},
     {"probes", "float_to_int_return_narrowing", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/float_to_int_return_narrowing.c", 0, 0},
     {"probes", "unsigned_fp_conversion", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_fp_conversion.c", 0, 0},
