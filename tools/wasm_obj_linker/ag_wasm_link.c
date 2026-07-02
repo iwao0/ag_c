@@ -266,7 +266,9 @@ static void buf_sleb_i32(buf_t *b, int32_t v) {
   while (more) {
     unsigned char c = (unsigned char)(v & 0x7f);
     int sign = c & 0x40;
-    v >>= 7;
+    uint32_t shifted = (uint32_t)v >> 7;
+    if (v < 0) shifted |= (~(uint32_t)0) << (32 - 7);
+    v = (int32_t)shifted;
     more = !((v == 0 && !sign) || (v == -1 && sign));
     if (more) c |= 0x80;
     buf_u8(b, c);
@@ -824,7 +826,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "swscanf") || str_eq_lit(name, "mbrtoc16") ||
          str_eq_lit(name, "c16rtomb") || str_eq_lit(name, "mbrtoc32") ||
          str_eq_lit(name, "c32rtomb") ||
-         str_eq_lit(name, "sqrt") ||
+         str_eq_lit(name, "sqrt") || str_eq_lit(name, "__ag_complex_sqrt") ||
          str_eq_lit(name, "sqrtf") || str_eq_lit(name, "sqrtl") ||
          str_eq_lit(name, "cbrtf") || str_eq_lit(name, "cbrtl") ||
          str_eq_lit(name, "pow") || str_eq_lit(name, "powf") ||
@@ -2319,7 +2321,7 @@ static int make_sprintf_stub_body(str_t name, type_t *type, buf_t *b, size_t *va
 }
 
 static int make_math_header_stub_body(str_t name, type_t *type, buf_t *b) {
-  if (str_eq_lit(name, "sqrt")) {
+  if (str_eq_lit(name, "sqrt") || str_eq_lit(name, "__ag_complex_sqrt")) {
     runtime_param_count(type, 1, name);
     if (wasm_type_param_valtype(type, 0) != 0x7c || wasm_type_result_valtype(type) != 0x7c) return 0;
     buf_uleb(b, 0);

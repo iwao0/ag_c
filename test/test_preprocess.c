@@ -640,8 +640,8 @@ static void expect_macro_expansion_limit_fail(void) {
 }
 
 static void expect_macro_arg_nesting_limit_fail(void) {
-  const int reps = 25050;
-  size_t cap = (size_t)reps * 6 + 256;
+  const int levels = 16;
+  size_t cap = 8192;
   char *input = calloc(cap, 1);
   if (!input) {
     fprintf(stderr, "  FAIL: cannot allocate macro arg nesting input\n");
@@ -649,22 +649,25 @@ static void expect_macro_arg_nesting_limit_fail(void) {
   }
   size_t len = 0;
   int n = snprintf(input + len, cap - len,
-                   "#define F0(x) x\n"
-                   "#define F1(x) F0(x)\n"
-                   "#define F2(x) F1(x)\n"
-                   "int main() { return ");
+                   "#define X0 1\n");
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
     free(input);
     exit(1);
   }
   len += (size_t)n;
-  for (int i = 0; i < reps; i++) {
-    if (i > 0) input[len++] = '+';
-    memcpy(input + len, "F2(0)", 5);
-    len += 5;
+  for (int i = 1; i <= levels; i++) {
+    n = snprintf(input + len, cap - len, "#define X%d (X%d + X%d)\n", i, i - 1, i - 1);
+    if (n < 0 || (size_t)n >= cap - len) {
+      fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
+      free(input);
+      exit(1);
+    }
+    len += (size_t)n;
   }
-  n = snprintf(input + len, cap - len, "; }\n");
+  n = snprintf(input + len, cap - len,
+               "#define USE(x) x\n"
+               "int main() { return USE(X%d); }\n", levels);
   if (n < 0 || (size_t)n >= cap - len) {
     fprintf(stderr, "  FAIL: macro arg nesting input overflow\n");
     free(input);

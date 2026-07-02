@@ -37,7 +37,7 @@ static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
 #define PP_MAX_INCLUDE_DEPTH 64
-#define PP_MAX_MACRO_EXPANSIONS 20000
+#define PP_MAX_MACRO_EXPANSIONS 32768
 #define PP_MAX_LINE_FILENAME_LEN 1024
 #define PP_MAX_INCLUDE_FILE_BYTES (16 * 1024 * 1024)
 #define PP_MAX_IF_EXPR_TOKENS 4096
@@ -1676,6 +1676,7 @@ static token_t *pp_expand_objlike(macro_t *m, token_t *macro_tok, char *name) {
   body_copy = paste_tokens(body_copy);
   hideset_t *hs = new_hideset(name);
   for (token_t *t = body_copy; t; t = t->next) {
+    count_macro_expansion_or_die();
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
     t->line_no = macro_tok->line_no;
     t->file_name_id = macro_tok->file_name_id;
@@ -1850,6 +1851,7 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
   token_t *body_copy = paste_tokens(body_head.next);
   hideset_t *hs = new_hideset(name);
   for (token_t *t = body_copy; t; t = t->next) {
+    count_macro_expansion_or_die();
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
     t->line_no = macro_tok->line_no;
     t->file_name_id = macro_tok->file_name_id;

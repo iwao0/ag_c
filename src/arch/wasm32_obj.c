@@ -201,7 +201,9 @@ static void wb_sleb(wb_t *b, int64_t v) {
   while (more) {
     unsigned char byte = (unsigned char)(v & 0x7f);
     int sign = byte & 0x40;
-    v >>= 7;
+    uint64_t shifted = (uint64_t)v >> 7;
+    if (v < 0) shifted |= (~(uint64_t)0) << (64 - 7);
+    v = (int64_t)shifted;
     if ((v == 0 && !sign) || (v == -1 && sign)) more = 0;
     else byte |= 0x80;
     wb_u8(b, byte);
@@ -845,8 +847,10 @@ static void emit_const(wb_t *b, ir_type_t type, long long value) {
     wb_u8(b, 0x42);
     wb_sleb(b, value);
   } else if (type == IR_TY_I32) {
+    uint32_t bits = (uint32_t)value;
+    int64_t signed_bits = (bits & 0x80000000u) ? (int64_t)bits - 0x100000000LL : (int64_t)bits;
     wb_u8(b, 0x41);
-    wb_sleb(b, (int32_t)(uint32_t)value);
+    wb_sleb(b, signed_bits);
   } else if (type == IR_TY_F32 || type == IR_TY_F64) {
     emit_fp_const(b, type, (double)value);
   } else {
