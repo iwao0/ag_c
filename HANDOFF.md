@@ -1,21 +1,42 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き359: browser demo worker compile errors）
+最終更新: 2026-07-02（続き360: wasm object pointer aggregate layout scan）
 
 ## 現状
 - `make test` = **green**。
   内訳として `./build/test_e2e` = **1148/1148 green**、
-  `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
-  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**。
+  `./build/test_wasm32_e2e` = **1119 compiled / 1119 executed green**、
+  `./build/test_wasm32_object` = **1120/1120 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test` = **green**、
   `make test-wasm-obj-linker` = **green**、
-  `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
-  `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**、
-  `make wasm32-object-link-all-fixture-scan` = **1118 pass / fail 0 / skip 1**、
+  `make test-wasm-js-api` = **green**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-linker-selfhost` = **green**、
+  `./build/test_wasm32_backend` = **green**、
+  `./build/test_wasm32_e2e` = **1119 compiled / 1119 executed green**、
+  `./build/test_wasm32_object` = **1120/1120 e2e fixture object compile + validate green**、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` = **1119 pass / fail 0 / skip 1**、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail` = **1119 pass / fail 0 / skip 1**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き360: **Wasm object link fixture scan の timeout 対応と pointer aggregate layout を修正**。
+  `scripts/run_wasm32_object_link_fixture_scan.sh` / `scripts/run_wasm32_object_link_c_testsuite_scan.sh`
+  に `perl` timeout wrapper を入れ、失敗時に hanging fixture を一覧化できるようにした。
+  `struct_array_of_ptr_to_array_member.c` / `struct_ptr_to_array_member.c` /
+  `struct_ptr_to_2d_array_member.c` / `struct_member_funcptr_array_size.c` が object-link 実行で
+  assert failure 停止していたため、frontend の C pointer object size は既存 parser metadata と同じ
+  8B として struct layout を計算する方針に戻した。Wasm lowering は引き続き address を i32 として扱う。
+  追加 fixture: `struct_member_funcptr_array_size.c`、
+  `test_wasm32_e2e` へ `ptrptr_deref_subscript_member.c` を登録。
+  直近コミット: `50affcce Fix wasm object pointer aggregate layout scan`。
+  確認: `make test`、`./build/test_wasm32_backend`、`./build/test_wasm32_e2e`、
+  `./build/test_wasm32_object`、`make test-wasm-obj-linker`、`make test-wasm-js-api`、
+  `make test-wasm-js-pipeline`、`make test-wasm-linker-selfhost`、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail`、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail`、
+  `make wasm32-object-link-c-testsuite-scan`。
 - 続き359: **browser demo の compile/link を Web Worker に移し、失敗時にエラー表示するようにした**。
   無効な C source で wasm self-host 内の `exit()` が runtime の無限ループに入ると renderer が
   100% になる問題があったため、`tools/wasm_js_api/demo-worker.js` を追加し、
