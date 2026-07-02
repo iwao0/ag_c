@@ -66,6 +66,37 @@ clang -o basic basic.s
 clang -arch arm64 -o basic_arm64 basic.s
 ```
 
+## Browser / Node から Wasm コンパイラを使う
+
+Wasm self-host 版の最小 JS API は `tools/wasm_js_api/` にあります。
+まず compiler wasm を生成します:
+
+```sh
+make wasm-selfhost-api
+```
+
+Node smoke:
+
+```sh
+make test-wasm-js-api
+```
+
+JS からは `createCompiler()` で読み込み、`compileWat(source)` で C ソースを WAT に変換します:
+
+```js
+import { readFile } from "node:fs/promises";
+import { createCompiler } from "./tools/wasm_js_api/agc-wasm.js";
+
+const wasm = await readFile("build/wasm_selfhost_api/ag_c_wasm_api.wasm");
+const compiler = await createCompiler(wasm);
+const wat = compiler.compileWat("int main(){return 42;}\n");
+console.log(wat);
+```
+
+TypeScript 用の宣言は `tools/wasm_js_api/agc-wasm.d.ts` です。
+v1 は fixed scratch buffer を使うため、既定では入力 32KB / 出力 96KB までを対象にしています。
+browser demo は `tools/wasm_js_api/demo.html` です。repo root を静的 file server で配信して開きます。
+
 ## config.toml の設定
 
 `ag_c` はまず入力ソースファイルと同じディレクトリの `config.toml` を読み込み、見つからない場合はカレントディレクトリの `config.toml` を読み込みます。  
