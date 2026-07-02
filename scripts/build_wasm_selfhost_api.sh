@@ -73,7 +73,10 @@ for src in "${sources[@]}"; do
   printf '%s\n' "$obj" >> "$list_file"
 done
 
-"$root/build/ag_wasm_link" --no-entry --export=agc_wasm_compile_wat \
+"$root/build/ag_wasm_link" --no-entry \
+  --export=agc_wasm_compile_wat \
+  --export=malloc \
+  --export=free \
   -o "$out_wasm" $(cat "$list_file")
 
 if command -v wasm-validate >/dev/null 2>&1; then

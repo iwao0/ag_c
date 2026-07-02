@@ -94,7 +94,8 @@ console.log(wat);
 ```
 
 TypeScript 用の宣言は `tools/wasm_js_api/agc-wasm.d.ts` です。
-v1 は fixed scratch buffer を使うため、既定では入力 32KB / 出力 96KB までを対象にしています。
+既定では wasm module が export する `malloc/free` で入出力バッファを確保します。
+`useHeapBuffers: false` を指定した場合だけ fixed scratch buffer 経路を使います。
 browser demo は `tools/wasm_js_api/demo.html` です。repo root を静的 file server で配信して開きます。
 
 ## config.toml の設定

@@ -20,6 +20,11 @@ cat > "$out_dir/other.c" <<'SRC'
 int other(int x) { return x; }
 SRC
 
+cat > "$out_dir/multi_export.c" <<'SRC'
+int answer(void) { return 7; }
+int main(void) { return answer() * 6; }
+SRC
+
 cat > "$out_dir/gmain.c" <<'SRC'
 extern int g;
 int main(void) {
@@ -952,6 +957,14 @@ SRC
 wasm-validate "$out_dir/linked.wasm"
 wasm-interp "$out_dir/linked.wasm" --run-all-exports > "$out_dir/linked.interp"
 grep -q 'main() => i32:42' "$out_dir/linked.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/multi_export.o" "$out_dir/multi_export.c"
+"$root/build/ag_wasm_link" --no-entry --export=main --export=answer -o "$out_dir/linked_multi_export.wasm" \
+  "$out_dir/multi_export.o"
+wasm-validate "$out_dir/linked_multi_export.wasm"
+wasm-interp "$out_dir/linked_multi_export.wasm" --run-all-exports > "$out_dir/linked_multi_export.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_multi_export.interp"
+grep -q 'answer() => i32:7' "$out_dir/linked_multi_export.interp"
 
 cp "$out_dir/main.o" "$out_dir/bad_reloc_target.o"
 perl -0777 -pi -e 'my $name = "\x0areloc.CODE"; my $i = index($_, $name); die "missing reloc.CODE\n" if $i < 0; substr($_, $i + length($name), 1) = "\x01";' \

@@ -3,6 +3,8 @@ export interface AgcWasmCompilerOptions {
   sourceCap?: number;
   outputPtr?: number;
   outputCap?: number;
+  initialOutputCap?: number;
+  useHeapBuffers?: boolean;
 }
 
 export interface AgcWasmCompiler {
@@ -13,6 +15,8 @@ export interface AgcWasmCompiler {
     sourceCap: number;
     outputPtr: number;
     outputCap: number;
+    initialOutputCap: number;
+    useHeapBuffers: boolean;
   };
   compileWat(source: string): string;
 }

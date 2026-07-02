@@ -164,6 +164,11 @@ typedef struct {
   uint32_t init_value;
 } final_global_t;
 
+typedef struct {
+  str_t name;
+  int func_index;
+} export_func_t;
+
 static void die(const char *msg) {
   fprintf(stderr, "ag_wasm_link: %s\n", msg);
   exit(1);
@@ -3428,14 +3433,23 @@ static void write_output(const char *path, buf_t *out) {
   fclose(f);
 }
 
-static void build_module(const char *out_path, const char *export_name,
+static int export_list_contains(const char **export_names, int export_count, const char *name) {
+  for (int i = 0; i < export_count; i++) {
+    if (strcmp(export_names[i], name) == 0) return 1;
+  }
+  return 0;
+}
+
+static void build_module(const char *out_path, const char **export_names, int export_count,
                          object_t *objs, int obj_count, int use_stdlib) {
   check_duplicate_definitions(objs, obj_count);
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
   if (use_stdlib) synthesize_runtime_object(objs, obj_count, &runtime);
   func_t *main_wrapper = NULL;
-  maybe_add_main_wrapper(objs, obj_count, export_name, &runtime, &main_wrapper);
+  maybe_add_main_wrapper(objs, obj_count,
+                         export_list_contains(export_names, export_count, "main") ? "main" : NULL,
+                         &runtime, &main_wrapper);
   if (runtime.func_count > 0 || runtime.data_count > 0) {
     object_t *with_runtime = xmalloc((size_t)(obj_count + 1) * sizeof(*with_runtime));
     memcpy(with_runtime, objs, (size_t)obj_count * sizeof(*with_runtime));
@@ -3580,24 +3594,32 @@ static void build_module(const char *out_path, const char *export_name,
     free(sec.data); sec = (buf_t){0};
   }
 
-  int export_func = -1;
-  if (export_name) {
-    str_t ex = str_dup(export_name, (int)strlen(export_name));
+  export_func_t *export_funcs = NULL;
+  int export_func_count = 0, export_func_cap = 0;
+  for (int ei = 0; ei < export_count; ei++) {
+    for (int prev = 0; prev < ei; prev++) {
+      if (strcmp(export_names[prev], export_names[ei]) == 0) {
+        dief("duplicate export: %s", export_names[ei]);
+      }
+    }
+    int export_func = -1;
+    str_t ex = str_dup(export_names[ei], (int)strlen(export_names[ei]));
     for (int i = 0; i < def_count; i++) {
       func_t *f = &defs[i].obj->funcs[defs[i].func_index];
       if (str_eq(f->name, ex)) export_func = f->final_index;
     }
-    if (export_func < 0) dief("export not found: %s", export_name);
+    if (export_func < 0) dief("export not found: %s", export_names[ei]);
+    export_func_t ef = {ex, export_func};
+    PUSH(export_funcs, export_func_count, export_func_cap, ef);
   }
-  buf_uleb(&sec, (uint32_t)(1 + (export_func >= 0 ? 1 : 0)));
+  buf_uleb(&sec, (uint32_t)(1 + export_func_count));
   buf_str(&sec, str_dup("memory", 6));
   buf_u8(&sec, 2);
   buf_uleb(&sec, 0);
-  if (export_func >= 0) {
-    str_t ex = str_dup(export_name, (int)strlen(export_name));
-    buf_str(&sec, ex);
+  for (int i = 0; i < export_func_count; i++) {
+    buf_str(&sec, export_funcs[i].name);
     buf_u8(&sec, 0);
-    buf_uleb(&sec, (uint32_t)export_func);
+    buf_uleb(&sec, (uint32_t)export_funcs[i].func_index);
   }
   emit_section(&out, SEC_EXPORT, &sec);
   free(sec.data); sec = (buf_t){0};
@@ -3646,7 +3668,7 @@ static void build_module(const char *out_path, const char *export_name,
 }
 
 static void usage(void) {
-  fprintf(stderr, "usage: ag_wasm_link [--nostdlib] --no-entry --export=main -o out.wasm a.o b.o ...\n");
+  fprintf(stderr, "usage: ag_wasm_link [--nostdlib] --no-entry [--export=name ...] -o out.wasm a.o b.o ...\n");
   exit(2);
 }
 
@@ -3666,7 +3688,8 @@ static int input_contains(const char **inputs, int count, const char *path) {
 
 int main(int argc, char **argv) {
   const char *out = NULL;
-  const char *export_name = NULL;
+  const char **export_names = xmalloc(((size_t)argc + 1) * sizeof(char *));
+  int export_count = 0, export_cap = argc + 1;
   int use_stdlib = 1;
   const char **inputs = xmalloc(((size_t)argc + 1) * sizeof(char *));
   int input_count = 0;
@@ -3675,7 +3698,12 @@ int main(int argc, char **argv) {
       if (++i >= argc) usage();
       out = argv[i];
     } else if (strncmp(argv[i], "--export=", 9) == 0) {
-      export_name = argv[i] + 9;
+      const char *name = argv[i] + 9;
+      if (!*name) usage();
+      PUSH(export_names, export_count, export_cap, name);
+    } else if (strcmp(argv[i], "--export") == 0) {
+      if (++i >= argc || !argv[i][0]) usage();
+      PUSH(export_names, export_count, export_cap, argv[i]);
     } else if (strcmp(argv[i], "--no-entry") == 0) {
       /* accepted for wasm-ld-shaped command lines */
     } else if (strcmp(argv[i], "--nostdlib") == 0) {
@@ -3696,6 +3724,6 @@ int main(int argc, char **argv) {
   }
   object_t *objs = xmalloc((size_t)input_count * sizeof(object_t));
   for (int i = 0; i < input_count; i++) objs[i] = parse_object(inputs[i]);
-  build_module(out, export_name, objs, input_count, use_stdlib);
+  build_module(out, export_names, export_count, objs, input_count, use_stdlib);
   return 0;
 }

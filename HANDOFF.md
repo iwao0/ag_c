@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き345: JS API v1）
+最終更新: 2026-07-02（続き346: JS API heap buffers）
 
 ## 現状
 - `make test` = **green**。
@@ -16,14 +16,19 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き346: **JS API の fixed scratch 既定を外し、wasm heap buffer 経路へ移行中**。
+  `ag_wasm_link` が複数 `--export=` を受けられるようにし、self-host API wasm は
+  `agc_wasm_compile_wat` / `malloc` / `free` を export する。
+  `tools/wasm_js_api/agc-wasm.js` は既定で `malloc/free` を使って入力・出力バッファを確保し、
+  `test_smoke.mjs` は 40KB 超の source も通す。fixed scratch 経路は
+  `useHeapBuffers: false` または明示 pointer 指定時の fallback として残している。
+  確認: `make test-wasm-obj-linker` = **green**、`make test-wasm-js-api` = **green**。
 - 続き345: **Wasm self-host compiler の JS API v1 を追加**。
   `scripts/build_wasm_selfhost_api.sh` と Makefile target `wasm-selfhost-api` /
   `test-wasm-js-api` を追加し、`build/wasm_selfhost_api/ag_c_wasm_api.wasm` を再生成可能にした。
   JS wrapper は `tools/wasm_js_api/agc-wasm.js`、型宣言は `agc-wasm.d.ts`、
   smoke は `test_smoke.mjs`、browser の textarea demo は `demo.html`。
   API は `createCompiler(wasmSource)` → `compileWat(source)`。
-  v1 は runtime heap より前の fixed scratch buffer を使うため、既定上限は入力 32KB / 出力 96KB。
-  今後の実用化では wasm 側 allocator/export か専用 buffer API を追加して、この固定上限を外すのが次の境界。
   確認: `make test-wasm-js-api` = **green**。
 - 続き344: **self-host `agc_wasm_compile_wat` が最小 C から WAT を返すところまで green**。
   `build/wasm_selfhost_probe_current/ag_c_wasm_api.wasm` を import なしで link し、
