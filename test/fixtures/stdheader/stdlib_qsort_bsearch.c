@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-int int_cmp(void *ap, void *bp) {
+static int int_cmp(void *ap, void *bp) {
     int a = *(int *)ap;
     int b = *(int *)bp;
     return (a > b) - (a < b);
