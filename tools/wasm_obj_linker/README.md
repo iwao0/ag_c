@@ -38,6 +38,18 @@ long agc_wasm_link_objects(long inputs, long input_count,
 array of C string pointers. The return value is a pointer to the linked wasm
 bytes, and `*out_len` receives the byte length.
 
+For JavaScript/TypeScript, use `tools/wasm_obj_linker/ag-wasm-link.js` and
+`ag-wasm-link.d.ts`:
+
+```js
+import { createLinker } from "./tools/wasm_obj_linker/ag-wasm-link.js";
+
+const linker = await createLinker(wasmBytes);
+const linked = linker.link([mainObjectBytes, otherObjectBytes], {
+  exports: ["main"],
+});
+```
+
 ## Usage
 
 ```sh

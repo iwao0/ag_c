@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き349: wasm self-host linker API）
+最終更新: 2026-07-02（続き350: wasm linker JS/TypeScript wrapper）
 
 ## 現状
 - `make test` = **green**。
@@ -28,6 +28,12 @@
   実装中に `buf_t` の構造体返り値と `type_t` の構造体一括 push が wasm 実行時に壊れたため、
   出力引数化と `push_type_copy()` で回避した。
   確認: `make test-wasm-obj-linker` = **green**、`make test-wasm-linker-selfhost` = **green**。
+- 続き350: **wasm 化したリンカー用 JS/TypeScript wrapper を追加**。
+  `tools/wasm_obj_linker/ag-wasm-link.js` と `ag-wasm-link.d.ts` を追加した。
+  `createLinker(wasmSource)` → `link([objectBytes...], { exports: ["main"], useStdlib: true })`
+  で `Uint8Array` の linked wasm を返す。
+  `tools/wasm_obj_linker/test_selfhost_api.mjs` はこの wrapper 経由に変更済み。
+  確認: `make test-wasm-linker-selfhost` = **green**。
 - 続き348: **`(*pp)[i].member` をコンパイラ側で修正**。
   `tools/wasm_obj_linker/ag_wasm_link.c` の `(*types)[i].raw_len` が `E3005` で落ちていた。
   リンカー source の回避変更は残さず、`build_subscript_deref()` で `T **pp` の `(*pp)[i]` を
