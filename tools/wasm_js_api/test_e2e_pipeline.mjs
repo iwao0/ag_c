@@ -49,9 +49,6 @@ function skipReason(src) {
   if (src === "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c") {
     return "multi-TU link fixture component without main";
   }
-  if (src === "test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c") {
-    return "requires tokenizer setjmp/longjmp recovery not available in wasm runtime yet";
-  }
   if (src.includes("/should_reject/")) {
     return "negative fixture";
   }

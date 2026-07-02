@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-03（続き365: wasm selfhost e2e object signatures / adaptive JS compile buffer）
+最終更新: 2026-07-03（続き366: wasm JS e2e pipeline skip 0）
 
 ## 現状
 - `make test` = **green**。
@@ -19,12 +19,29 @@
   `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**、
   `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm` = **green**、
   `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=100` =
-  **total registered 1121 / scanned 1120 / pass 1120 / fail 0 / skip 1 / linked 1120 / validated 1120 / ran 1120**、
+  **total registered 1121 / scanned 1121 / pass 1121 / fail 0 / skip 0 / linked 1121 / validated 1121 / ran 1121**、
   `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` = **1119 pass / fail 0 / skip 1**、
   `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail` = **1119 pass / fail 0 / skip 1**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き366: **wasm 化コンパイラ + wasm 化リンカーの JS e2e pipeline から最後の skip を外した**。
+  `test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c` は、native tokenizer では
+  `setjmp`/`longjmp` で回復していたが、wasm runtime の `longjmp` は停止用 stub なので
+  self-host compiler API では timeout/失敗の原因になっていた。
+  `ag_c_wasm` が wasm32 target source へ `__wasm32__` を predefined macro として出すようにし、
+  tokenizer は `__wasm32__` 時だけ `longjmp` を使わない寛容 1-token 読みに切り替える。
+  この経路では、偽分岐 skip に必要な directive/identifier/punctuator と安全な数値・文字列・文字リテラルは
+  通常 token として残し、未終端文字列、不正 escape、不正数値、巨大整数などは `TK_UNKNOWN`
+  で 1 文字ずつ進める。active code に流れた `TK_UNKNOWN` は従来どおり E2028 になる。
+  `AGC_TARGET_WASM32` は predefined にしていない。これを source 側へ出すと self-host compiler の
+  `src/main.c` 内 pointer-size 分岐まで有効になり、既存 self-host pipeline の前提を変えてしまうため。
+  確認: `make wasm-selfhost-api`、
+  `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=100` =
+  **1121 pass / fail 0 / skip 0**、
+  `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm`、
+  `./build/test_preprocess`、`./build/test_e2e` = **1150/1150**、
+  `./build/test_wasm32_object` = **1122/1122**、`git diff --check`。
 - 続き365: **wasm 化コンパイラ + wasm 化リンカーの e2e pipeline は fail 0 まで到達**。
   `9cb31f9a` で self-host wasm の `va_copy` 経路を直し、`0c8faa18` で object emitter の
   関数型 ABI と JS compile buffer 選択を直した。
@@ -36,10 +53,9 @@
   overflow または大きい source の時だけ heap buffer に fallback するようにした。
   これで heap 配置依存で出ていた self-host parser failure
   `input.c:423: E3064 [primary] 数値が必要です EOF` を避けつつ、大きい source の smoke は維持している。
-  残件として、wasm JS e2e pipeline では
-  `test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c` だけを skip している。
-  理由は tokenizer の `#if 0` 偽分岐 recovery が `setjmp`/`longjmp` に依存しており、
-  wasm runtime 上ではまだ同じ recovery が使えないため。次の具体的な対象はこの skip 解消。
+  この時点では wasm JS e2e pipeline に
+  `test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c` の skip が 1 件残っていた。
+  続き366でこの skip は解消済み。
   確認: `make wasm-selfhost-api`、
   `./build/test_wasm32_object`、
   `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm`、

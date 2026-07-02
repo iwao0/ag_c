@@ -1,4 +1,5 @@
 #include "preprocess.h"
+#include "../parser/config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/allocator.h"
 #include <stdlib.h>
@@ -562,6 +563,9 @@ static void pp_init_predefined_macros(void) {
   add_int_macro("__STDC_VERSION__", 201112LL);
   /* Apple Silicon ARM64 は LP64 (int=4, long/pointer=8)。 */
   add_int_macro("__LP64__", 1);
+  if (ps_get_target_pointer_size() == 4) {
+    add_int_macro("__wasm32__", 1);
+  }
 
   time_t now = time(NULL);
   struct tm *tm_info = localtime(&now);

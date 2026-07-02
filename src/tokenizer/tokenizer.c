@@ -11,7 +11,9 @@
 #include "punctuator.h"
 #include "scanner.h"
 #include "trigraph.h"
+#if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
 #include <setjmp.h>
+#endif
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -551,15 +553,249 @@ void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *
  * pps_skip_cond_incl / pps_materialize_line の先読み区間だけ true にする。
  * scanner が出す各種 TK_DIAG_* は (寛容モード中のみ) longjmp で tk_stream_next へ巻き戻る。 */
 static bool g_tolerate_untokenizable = false;
+#if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
 static jmp_buf g_tok_tolerate_jmp;
 static bool g_tok_jmp_valid = false;  // setjmp 済みで longjmp 可能な区間か
+#endif
 void tk_set_tolerate_untokenizable(bool v) { g_tolerate_untokenizable = v; }
 
 /* TK_DIAG_* マクロから呼ばれる。寛容モードかつ tokenize_one 実行中なら、エラーを出さず
  * tk_stream_next の setjmp 地点へ巻き戻す (戻らない)。それ以外は何もしない (通常診断へ続く)。 */
 void tk_tolerate_longjmp_if_active(void) {
+#if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
   if (g_tolerate_untokenizable && g_tok_jmp_valid) longjmp(g_tok_tolerate_jmp, 1);
+#endif
 }
+
+#if defined(AGC_TARGET_WASM32) || defined(__wasm32__)
+static bool tolerant_skip_escape(char **pp) {
+  char *p = *pp;
+  switch (*p) {
+    case 'a': case 'b': case 'f': case 'n': case 'r': case 't': case 'v':
+    case '\\': case '\'': case '"': case '?':
+      *pp = p + 1;
+      return true;
+    case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': {
+      int cnt = 0;
+      while (cnt < 3 && tk_is_octal_digit(*p)) {
+        p++;
+        cnt++;
+      }
+      *pp = p;
+      return true;
+    }
+    case 'x':
+      p++;
+      if (!tk_is_xdigit(*p)) return false;
+      while (tk_is_xdigit(*p)) p++;
+      *pp = p;
+      return true;
+    case 'u':
+    case 'U': {
+      int digits = (*p == 'u') ? 4 : 8;
+      uint32_t cp = 0;
+      for (int i = 0; i < digits; i++) {
+        char c = p[1 + i];
+        if (!tk_is_xdigit(c)) return false;
+        cp <<= 4;
+        if ('0' <= c && c <= '9') cp |= (uint32_t)(c - '0');
+        else if ('a' <= c && c <= 'f') cp |= (uint32_t)(c - 'a' + 10);
+        else cp |= (uint32_t)(c - 'A' + 10);
+      }
+      if (!tk_is_valid_ucn_codepoint(cp)) return false;
+      *pp = p + 1 + digits;
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+static bool tolerant_string_literal_is_safe(char *p) {
+  int str_prefix = 0;
+  tk_string_prefix_kind_t str_prefix_kind = TK_STR_PREFIX_NONE;
+  tk_char_width_t str_char_width = TK_CHAR_WIDTH_CHAR;
+  bool is_string_lit = (*p == '"');
+  tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
+  if (str_prefix > 0) is_string_lit = true;
+  if (!is_string_lit) return false;
+  if (*p == '"') str_prefix = 0;
+  p += str_prefix + 1;
+  while (*p && *p != '\n') {
+    if (*p == '"') return true;
+    if (*p == '\\') {
+      p++;
+      if (!tolerant_skip_escape(&p)) return false;
+      continue;
+    }
+    p++;
+  }
+  return false;
+}
+
+static bool tolerant_char_literal_is_safe(char *p) {
+  int chr_prefix = 0;
+  tk_char_prefix_kind_t chr_prefix_kind = TK_CHAR_PREFIX_NONE;
+  tk_char_width_t chr_char_width = TK_CHAR_WIDTH_CHAR;
+  bool is_char_lit = (*p == '\'');
+  tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
+  if (chr_prefix > 0) is_char_lit = true;
+  if (!is_char_lit) return false;
+  p += chr_prefix + 1;
+  int nchar = 0;
+  while (*p && *p != '\n') {
+    if (*p == '\'') return nchar > 0;
+    if (*p == '\\') {
+      p++;
+      if (!tolerant_skip_escape(&p)) return false;
+    } else {
+      p++;
+    }
+    nchar++;
+  }
+  return false;
+}
+
+static bool tolerant_int_suffix_is_safe(char **pp) {
+  char *p = *pp;
+  bool seen_u = false;
+  int long_cnt = 0;
+  for (;;) {
+    if (*p == 'u' || *p == 'U') {
+      if (seen_u) return false;
+      seen_u = true;
+      p++;
+      continue;
+    }
+    if (*p == 'l' || *p == 'L') {
+      if (p[1] == 'l' || p[1] == 'L') {
+        if (long_cnt != 0) return false;
+        long_cnt = 2;
+        p += 2;
+      } else {
+        if (long_cnt != 0) return false;
+        long_cnt = 1;
+        p++;
+      }
+      continue;
+    }
+    break;
+  }
+  if (tk_is_ident_continue_byte(*p) || *p == '.') return false;
+  *pp = p;
+  return true;
+}
+
+static bool tolerant_decimal_float_suffix_is_safe(char **pp) {
+  char *p = *pp;
+  if (*p == 'f' || *p == 'F' || *p == 'l' || *p == 'L') p++;
+  if (tk_is_ident_continue_byte(*p) || *p == '.') return false;
+  *pp = p;
+  return true;
+}
+
+static bool tolerant_number_literal_is_safe(char *p) {
+  if (!(tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1])))) return false;
+  char *q = p;
+  int digits = 0;
+
+  if (*q == '0' && (q[1] == 'x' || q[1] == 'X')) {
+    q += 2;
+    int hex_digits = 0;
+    while (tk_is_xdigit(*q)) {
+      q++;
+      hex_digits++;
+      digits++;
+    }
+    if (*q == '.') {
+      q++;
+      while (tk_is_xdigit(*q)) {
+        q++;
+        hex_digits++;
+        digits++;
+      }
+    }
+    if (hex_digits == 0 || digits > 16) return false;
+    if (*q == 'p' || *q == 'P') {
+      q++;
+      if (*q == '+' || *q == '-') q++;
+      if (!tk_is_digit(*q)) return false;
+      while (tk_is_digit(*q)) q++;
+      return tolerant_decimal_float_suffix_is_safe(&q);
+    }
+    return tolerant_int_suffix_is_safe(&q);
+  }
+
+  bool is_float = (*q == '.');
+  while (tk_is_digit(*q)) {
+    q++;
+    digits++;
+  }
+  if (*q == '.') {
+    is_float = true;
+    q++;
+    while (tk_is_digit(*q)) q++;
+  }
+  if (*q == 'e' || *q == 'E') {
+    is_float = true;
+    q++;
+    if (*q == '+' || *q == '-') q++;
+    if (!tk_is_digit(*q)) return false;
+    while (tk_is_digit(*q)) q++;
+  }
+  if (digits == 0 || digits > 18) return false;
+  if (is_float) return tolerant_decimal_float_suffix_is_safe(&q);
+  if (p[0] == '0' && tk_is_digit(p[1])) {
+    for (char *r = p + 1; r < q; r++) {
+      if (*r == '8' || *r == '9') return false;
+    }
+  }
+  return tolerant_int_suffix_is_safe(&q);
+}
+
+static token_t *tokenize_one_tolerant_wasm(char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
+  char *p = *pp;
+  int str_prefix = 0;
+  tk_string_prefix_kind_t str_prefix_kind = TK_STR_PREFIX_NONE;
+  tk_char_width_t str_char_width = TK_CHAR_WIDTH_CHAR;
+  tk_parse_string_prefix(p, &str_prefix, &str_prefix_kind, &str_char_width);
+  if (*p == '"' || str_prefix > 0) {
+    if (tolerant_string_literal_is_safe(p) &&
+        tokenize_string_literal(pp, cur_io, line_no, at_bol, has_space)) {
+      return *cur_io;
+    }
+    *pp = p + 1;
+    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+  }
+
+  int chr_prefix = 0;
+  tk_char_prefix_kind_t chr_prefix_kind = TK_CHAR_PREFIX_NONE;
+  tk_char_width_t chr_char_width = TK_CHAR_WIDTH_CHAR;
+  tk_parse_char_prefix(p, &chr_prefix, &chr_prefix_kind, &chr_char_width);
+  if (*p == '\'' || chr_prefix > 0) {
+    if (tolerant_char_literal_is_safe(p) &&
+        tokenize_char_literal(pp, cur_io, line_no, at_bol, has_space)) {
+      return *cur_io;
+    }
+    *pp = p + 1;
+    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+  }
+
+  if (tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1]))) {
+    if (tolerant_number_literal_is_safe(p) &&
+        tokenize_number_literal(pp, cur_io, line_no, at_bol, has_space)) {
+      return *cur_io;
+    }
+    *pp = p + 1;
+    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+  }
+
+  token_t *tok = tokenize_one(pp, cur_io, line_no, at_bol, has_space);
+  if (tok) return tok;
+  *pp = p + 1;
+  return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+}
+#endif
 
 token_t *tk_stream_next(tk_token_stream_t *s) {
   if (s->done) return NULL;
@@ -587,6 +823,9 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     }
     /* 寛容モード: scanner のエラーを longjmp で受け、トークン先頭の 1 文字を TK_UNKNOWN
      * にして進める (volatile は longjmp 後も値を保つため)。 */
+#if defined(AGC_TARGET_WASM32) || defined(__wasm32__)
+    return tokenize_one_tolerant_wasm(&s->p, &cur, s->line_no, flag_at_bol, flag_has_space);
+#else
     char *volatile tok_start = s->p;
     volatile bool v_at_bol = flag_at_bol;
     volatile bool v_has_space = flag_has_space;
@@ -606,6 +845,7 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     s->p = tok_start + 1;
     new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
     return head.next;
+#endif
   }
 }
 
