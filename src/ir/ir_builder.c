@@ -454,6 +454,7 @@ static void build_stmt_do_while(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_for(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_switch(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_case_default(ir_build_ctx_t *ctx, node_t *node);
+static void build_stmt_ternary_expr(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_break(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_continue(ir_build_ctx_t *ctx, node_t *node);
 static void build_stmt_goto(ir_build_ctx_t *ctx, node_t *node);
@@ -3023,6 +3024,7 @@ static void build_stmt(ir_build_ctx_t *ctx, node_t *node) {
     case ND_SWITCH:   build_stmt_switch(ctx, node); return;
     case ND_CASE:
     case ND_DEFAULT:  build_stmt_case_default(ctx, node); return;
+    case ND_TERNARY:  build_stmt_ternary_expr(ctx, node); return;
     case ND_BREAK:    build_stmt_break(ctx, node); return;
     case ND_CONTINUE: build_stmt_continue(ctx, node); return;
     case ND_GOTO:     build_stmt_goto(ctx, node); return;
@@ -3045,6 +3047,29 @@ static void build_stmt_block(ir_build_ctx_t *ctx, node_t *node) {
       if (ctx->failed) return;
     }
   }
+}
+
+static void build_stmt_ternary_expr(ir_build_ctx_t *ctx, node_t *node) {
+  node_ctrl_t *c = (node_ctrl_t *)node;
+  if (!c->els) {
+    fail(ctx, "ternary without else");
+    return;
+  }
+  ir_val_t cond = build_expr(ctx, node->lhs);
+  if (ctx->failed) return;
+  ir_block_t *then_b = ir_block_new(ctx->f);
+  ir_block_t *else_b = ir_block_new(ctx->f);
+  ir_block_t *merge_b = ir_block_new(ctx->f);
+  emit_br_cond(ctx, cond, then_b, else_b);
+  switch_to_new_block(ctx, then_b);
+  (void)build_expr(ctx, node->rhs);
+  if (ctx->failed) return;
+  emit_br(ctx, merge_b);
+  switch_to_new_block(ctx, else_b);
+  (void)build_expr(ctx, c->els);
+  if (ctx->failed) return;
+  emit_br(ctx, merge_b);
+  switch_to_new_block(ctx, merge_b);
 }
 
 static ir_val_t build_small_struct_return_value(ir_build_ctx_t *ctx, node_t *src, int size) {

@@ -343,6 +343,34 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked typedef struct pointer pointer subscript wasm returned unexpected result\n");
     return 1;
   }
+  if (write_file("build/wasm32_obj/typedef_va_list_forward.c",
+                 "#include <stdarg.h>\n"
+                 "static int take(const char *fmt, va_list ap){"
+                 "char *s=va_arg(ap,char *);"
+                 "return fmt[0]=='%'&&fmt[1]=='s'&&s[0]=='E'&&s[4]=='5'?42:9;}"
+                 "int wrap(const char *fmt,...){va_list ap;va_start(ap,fmt);"
+                 "int r=take(fmt,ap);va_end(ap);return r;}"
+                 "int main(void){return wrap(\"%s\",\"E3065\");}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/typedef_va_list_forward.o "
+              "build/wasm32_obj/typedef_va_list_forward.c",
+              "typedef_va_list_forward.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_typedef_va_list_forward.wasm "
+              "build/wasm32_obj/typedef_va_list_forward.o",
+              "wasm-ld typedef va_list forward") != 0) return 1;
+  if (run_cmd("wasm-validate build/wasm32_obj/linked_typedef_va_list_forward.wasm",
+              "wasm-validate typedef va_list forward") != 0) return 1;
+  if (run_cmd("wasm-interp build/wasm32_obj/linked_typedef_va_list_forward.wasm --run-all-exports "
+              "> build/wasm32_obj/linked_typedef_va_list_forward.interp",
+              "wasm-interp typedef va_list forward") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_typedef_va_list_forward.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:42")) {
+    fprintf(stderr, "FAIL: linked typedef va_list forward wasm returned unexpected result\n");
+    return 1;
+  }
   if (write_file("build/wasm32_obj/indirect_data.c",
                  "int add1(int x){return x+1;} int add2(int x){return x+2;} "
                  "union Ops{int (*f[2])(int); long raw;}; union Ops ops={.f[1]=add2}; "

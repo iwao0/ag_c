@@ -3963,10 +3963,15 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
      * typedef struct のように typedef 実体サイズがある場合は、最内 pointee
      * サイズとしてそれを使う。これがないと `T **pp; (*pp)[i]` のスケールが
      * sizeof(T) ではなく 8 になり、wasm32 の self-host リンカで import 配列が壊れる。 */
-    int base_pointee_size = (ds->typedef_sizeof_size > 0) ? ds->typedef_sizeof_size
-                                                          : ds->elem_size;
+    int base_pointee_size = (ds->typedef_sizeof_size > 0 &&
+                             (ds->typedef_is_array || !ds->base_is_pointer))
+                                ? ds->typedef_sizeof_size
+                                : ds->elem_size;
     int pointee_size = (param_ptr_levels >= 2) ? 8 : base_pointee_size;
-    lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, pointee_size, 0);
+    int lvar_elem_size = (param_ptr_levels == 1 && ds->typedef_is_array)
+                             ? ds->elem_size
+                             : pointee_size;
+    lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, lvar_elem_size, 0);
     var->base_deref_size = (short)base_pointee_size;
     /* `unsigned char *p` / `unsigned short *p` 等: pointee が unsigned なら is_unsigned を
      * 立てる。build_lvar_or_vla_node が pointee_is_unsigned へ伝播し、`*p` / `p[i]` が
@@ -3985,7 +3990,11 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
          * subscript が単段ポインタ (T*) 扱いになり outer_stride を無視して 1 要素
          * 分しか進まない。要素 struct が 8B 以上のときだけ pointee_size>=8 に該当し
          * 壊れていた (int(*)[N] は pointee<8 で元から pql 非設定)。 */
-        !(param_is_array_declarator && param_inner_first_dim > 0)) {
+        !(param_is_array_declarator && param_inner_first_dim > 0) &&
+        /* `typedef int row_t[N]; row_t *a` も pointee は配列。typedef サイズが
+         * 8B 以上でも pql を立てると `a[i]` が中間行ではなくポインタ値として
+         * load され、続く `a[i][j]` が壊れる。 */
+        !(param_ptr_levels == 1 && ds->typedef_is_array)) {
       var->pointer_qual_levels = param_ptr_levels;
     }
     /* `double *a` / `float *a` の単段ポインタ仮引数: pointee の fp 種別を伝播し、

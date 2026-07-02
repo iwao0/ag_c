@@ -4116,7 +4116,13 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   if (node->kind == ND_DEREF &&
       psx_node_pointer_qual_levels(node) == 1 &&
       psx_node_base_deref_size(node) > 0) {
-    es = psx_node_base_deref_size(node);
+    node_mem_t *m = (node_mem_t *)node;
+    if (m->deref_size == 0 &&
+        !(m->is_pointer && !m->is_scalar_ptr_member &&
+          node->lhs && node->lhs->kind == ND_ADD &&
+          (m->tag_kind == TK_STRUCT || m->tag_kind == TK_UNION))) {
+      es = psx_node_base_deref_size(node);
+    }
   }
   int vla_rsf = 0;  // 実行時行ストライドのフレームオフセット (0=なし)
   int inner_ds = 0; // 次の次元の要素サイズ (0=スカラ)
