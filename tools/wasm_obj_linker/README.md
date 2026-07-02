@@ -114,7 +114,7 @@ make test-wasm-obj-linker
 make test-wasm-linker-selfhost
 ```
 
-The smoke test covers cross-object direct calls, extern global read/write,
+The native linker smoke test covers cross-object direct calls, extern global read/write,
 data-address relocations in both code and data, static symbol collisions,
 unresolved host function imports, function pointer relocation through both code
 and data, imported host function table entries through both code and data
@@ -127,6 +127,11 @@ signature mismatch errors, malformed relocation target errors, and a
 many-data-segment case that requires more than one Wasm memory page. It also
 checks that default runtime-object linking resolves the runtime helpers above,
 while `--nostdlib` leaves those symbols as imports instead.
+
+The wasm self-host smoke test runs the JavaScript wrapper against
+`build/wasm_linker_selfhost/ag_wasm_link.wasm`. It checks both a single-object
+link and a two-object cross-TU link through `createLinker(...).link(...)`, then
+validates and executes the produced wasm.
 
 Not yet supported:
 

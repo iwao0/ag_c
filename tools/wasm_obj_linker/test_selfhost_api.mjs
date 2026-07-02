@@ -8,19 +8,28 @@ const wasmPath = process.argv[2] || path.join(root, "build/wasm_linker_selfhost/
 const outDir = path.join(root, "build/wasm_linker_selfhost_api_smoke");
 fs.mkdirSync(outDir, { recursive: true });
 
-const srcPath = path.join(outDir, "simple.c");
-const objPath = path.join(outDir, "simple.o");
 const linkedPath = path.join(outDir, "linked_from_api.wasm");
-fs.writeFileSync(srcPath, "int main(void) { return 42; }\n");
-execFileSync(path.join(root, "build/ag_c_wasm"), ["-c", "-o", objPath, srcPath], { stdio: "inherit" });
 
 const source = fs.readFileSync(wasmPath);
-const objBytes = fs.readFileSync(objPath);
 const linker = await createLinker(source);
-const linked = Buffer.from(linker.link([objBytes], { exports: ["main"] }));
-if (linked[0] !== 0x00 || linked[1] !== 0x61 || linked[2] !== 0x73 || linked[3] !== 0x6d) {
-  throw new Error("linker API output is not a wasm module");
+
+function compileObject(name, sourceText) {
+  const srcPath = path.join(outDir, `${name}.c`);
+  const objPath = path.join(outDir, `${name}.o`);
+  fs.writeFileSync(srcPath, sourceText);
+  execFileSync(path.join(root, "build/ag_c_wasm"), ["-c", "-o", objPath, srcPath], { stdio: "inherit" });
+  return fs.readFileSync(objPath);
 }
+
+function assertWasm(bytes) {
+  if (bytes[0] !== 0x00 || bytes[1] !== 0x61 || bytes[2] !== 0x73 || bytes[3] !== 0x6d) {
+    throw new Error("linker API output is not a wasm module");
+  }
+}
+
+const singleObj = compileObject("single", "int main(void) { return 42; }\n");
+const linked = Buffer.from(linker.link([singleObj], { exports: ["main"] }));
+assertWasm(linked);
 fs.writeFileSync(linkedPath, linked);
 
 try {
@@ -37,3 +46,28 @@ try {
 }
 
 console.log(`ag_wasm_link selfhost API smoke: ok (${linkedPath})`);
+
+const mainObj = compileObject("main_xtu", "int other(void); int main(void) { return other() + 1; }\n");
+const otherObj = compileObject("other_xtu", "int other(void) { return 41; }\n");
+const linkedXtuPath = path.join(outDir, "linked_xtu_from_api.wasm");
+const linkedXtu = Buffer.from(linker.link([mainObj, otherObj], {
+  exports: ["main"],
+  useStdlib: false,
+}));
+assertWasm(linkedXtu);
+fs.writeFileSync(linkedXtuPath, linkedXtu);
+
+try {
+  execFileSync("wasm-validate", [linkedXtuPath], { stdio: "inherit" });
+} catch (err) {
+  if (err.code !== "ENOENT") throw err;
+}
+
+try {
+  const out = execFileSync("wasm-interp", [linkedXtuPath, "--run-all-exports"], { encoding: "utf8" });
+  if (!out.includes("main() => i32:42")) throw new Error(out.trim() || "wasm-interp produced no main result");
+} catch (err) {
+  if (err.code !== "ENOENT") throw err;
+}
+
+console.log(`ag_wasm_link selfhost API xtu smoke: ok (${linkedXtuPath})`);

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き350: wasm linker JS/TypeScript wrapper）
+最終更新: 2026-07-02（続き351: wasm linker multi-object API smoke）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,12 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き351: **wasm 化したリンカー JS API の複数 object smoke を追加**。
+  `tools/wasm_obj_linker/test_selfhost_api.mjs` で `main_xtu.c` / `other_xtu.c` を別々に
+  `ag_c_wasm -c` で object 化し、wasm 上の `createLinker(...).link([mainObj, otherObj],
+  { exports: ["main"], useStdlib: false })` でリンクする。
+  `wasm-validate` と `wasm-interp --run-all-exports` で `main() => i32:42` を確認する。
+  確認: `make test-wasm-linker-selfhost` = **green**。
 - 続き349: **作成中リンカー自身を wasm 化し、in-memory API smoke まで green**。
   `scripts/build_wasm_linker_selfhost.sh` と Makefile target `wasm-linker-selfhost` /
   `test-wasm-linker-selfhost` を追加した。
