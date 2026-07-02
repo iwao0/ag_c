@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き361: wasm linker API argument diagnostics）
+最終更新: 2026-07-02（続き362: JS stdout/stderr callback buffering）
 
 ## 現状
 - `make test` = **green**。
@@ -21,6 +21,14 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き362: **JS wrapper の stdout/stderr callback 指定時は chunks に二重蓄積しないようにした**。
+  `tools/wasm_js_api/agc-wasm.js` と `tools/wasm_obj_linker/ag-wasm-link.js` は、
+  `onStdout` / `onStderr` が指定されている場合は callback へ都度渡すだけにし、
+  wrapper 内の `stdoutChunks` / `stderrChunks` には保持しない。callback 未指定時は従来通り
+  `readStdout()` / `readStderr()` 用に保持する。runtime 側の固定長 fallback buffer は残している。
+  確認: `node --check tools/wasm_js_api/agc-wasm.js`、
+  `node --check tools/wasm_obj_linker/ag-wasm-link.js`、`make test-wasm-js-api`、
+  `make test-wasm-linker-selfhost`、`make test-wasm-js-pipeline`、`git diff --check`。
 - 続き361: **wasm 化リンカー API の引数エラーを JS 側へ診断として返すようにした**。
   `agc_wasm_link_objects()` が短すぎる object slice や不正 export pointer で無言 `0` を返していたため、
   `die()` 経由に変更した。これにより JS wrapper の `onStderr` / `onTerminate` と例外 message に

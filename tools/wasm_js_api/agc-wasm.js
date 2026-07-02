@@ -103,16 +103,22 @@ export async function createCompiler(wasmSource, options = {}) {
   }
   const envImports = {
     __agc_runtime_stdout_write(ptr, len) {
-        const text = readCallbackBytes(ptr, len);
-        if (!text) return;
+      const text = readCallbackBytes(ptr, len);
+      if (!text) return;
+      if (typeof options.onStdout === "function") {
+        options.onStdout(text);
+      } else {
         stdoutChunks.push(text);
-        if (typeof options.onStdout === "function") options.onStdout(text);
+      }
     },
     __agc_runtime_stderr_write(ptr, len) {
       const text = readCallbackBytes(ptr, len);
       if (!text) return;
-      stderrChunks.push(text);
-      if (typeof options.onStderr === "function") options.onStderr(text);
+      if (typeof options.onStderr === "function") {
+        options.onStderr(text);
+      } else {
+        stderrChunks.push(text);
+      }
     },
   };
   const imports = createAgcRuntimeImports({ env: envImports });
