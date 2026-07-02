@@ -280,8 +280,7 @@ static int function_table_index_or_unsupported(char *name, int name_len) {
 }
 
 static ir_type_t funcptr_int_mask_type(unsigned iw) {
-  if (iw == 3) return IR_TY_I32;
-  return IR_TY_I64;
+  return iw == 2 ? IR_TY_I64 : IR_TY_I32;
 }
 
 static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_type_t fallback) {
@@ -292,7 +291,7 @@ static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_ty
   if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   if (iw != 0) {
     ir_type_t ty = funcptr_int_mask_type(iw);
-    if (ty == IR_TY_I32 && fallback != IR_TY_PTR && !is_fp_type(fallback)) return IR_TY_I64;
+    if (ty == IR_TY_I32 && iw != 3 && fallback != IR_TY_PTR && !is_fp_type(fallback)) return IR_TY_I64;
     return ty;
   }
   return fallback;
@@ -1120,9 +1119,11 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int null_ptr_pair_arg =
           a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
+      unsigned iw = a < 8 ? ((i->funcptr_param_int_mask >> (2 * a)) & 3u) : 0;
       if (from_funcptr_sig && !i->is_variadic_funcptr && !i->is_variadic_call &&
           arg_ty == IR_TY_I32 &&
-          raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg) {
+          raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg &&
+          iw != 3) {
         arg_ty = IR_TY_I64;
       }
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
@@ -1142,9 +1143,11 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int null_ptr_pair_arg =
           a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
+      unsigned iw = a < 8 ? ((i->funcptr_param_int_mask >> (2 * a)) & 3u) : 0;
       if (from_funcptr_sig && !i->is_variadic_funcptr && !i->is_variadic_call &&
           arg_ty == IR_TY_I32 &&
-          raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg) {
+          raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg &&
+          iw != 3) {
         arg_ty = IR_TY_I64;
       }
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;

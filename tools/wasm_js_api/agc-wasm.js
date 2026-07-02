@@ -13,6 +13,9 @@ function asBytes(input) {
 }
 
 async function instantiateFromSource(wasmSource, imports = {}) {
+  if (wasmSource instanceof WebAssembly.Module) {
+    return await WebAssembly.instantiate(wasmSource, imports);
+  }
   if (typeof wasmSource === "string" || wasmSource instanceof URL) {
     if (typeof WebAssembly.instantiateStreaming === "function" && typeof fetch === "function") {
       try {

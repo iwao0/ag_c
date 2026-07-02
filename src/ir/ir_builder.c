@@ -3677,6 +3677,8 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   return 1;
 }
 
+static int g_ir_dump_enabled(void);
+
 ir_module_t *ir_build_module(node_t **code) {
   ir_build_ctx_t ctx = {0};
   ctx.m = ir_module_new();
@@ -3688,6 +3690,12 @@ ir_module_t *ir_build_module(node_t **code) {
       return NULL;
     }
     if (!build_function(&ctx, (node_func_t *)n)) return NULL;
+  }
+  if (g_ir_dump_enabled()) {
+    char *buf = malloc(1 << 16);
+    ir_print_module_to_buf(ctx.m, buf, 1 << 16);
+    fprintf(stderr, "%s", buf);
+    free(buf);
   }
   return ctx.m;
 }

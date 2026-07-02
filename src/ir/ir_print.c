@@ -122,6 +122,13 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
         print_val(s, i->args[k]);
       }
       sink_printf(s, ")");
+      if (i->has_funcptr_sig) {
+        sink_printf(s, " fnptr{fp=%u,int=%u,retw=%u,void=%u}",
+                    (unsigned)i->funcptr_param_fp_mask,
+                    (unsigned)i->funcptr_param_int_mask,
+                    (unsigned)i->funcptr_ret_int_width,
+                    (unsigned)i->funcptr_ret_is_void);
+      }
       break;
     case IR_PARAM:
       sink_printf(s, "#%lld", i->src1.imm);

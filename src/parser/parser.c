@@ -3890,6 +3890,21 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   /* register_vla_array_param / apply_typedef_array_pointee_strides は ds を非const
    * の param_decl_spec_t * で受け取るため、内部的にキャストする。値は変更しない。 */
   param_decl_spec_t *ds = (param_decl_spec_t *)ds_in;
+  unsigned short funcptr_param_fp_mask = param_has_func_suffix
+                                           ? psx_last_funcptr_param_fp_mask()
+                                           : ds->funcptr_param_fp_mask;
+  unsigned short funcptr_param_int_mask = param_has_func_suffix
+                                            ? psx_last_funcptr_param_int_mask()
+                                            : ds->funcptr_param_int_mask;
+  int funcptr_ret_is_void = param_has_func_suffix
+                              ? (ds->base_type_kind == TK_VOID)
+                              : (ds->funcptr_ret_is_void ? 1 : 0);
+  int is_variadic_funcptr = param_has_func_suffix
+                              ? psx_last_funcptr_is_variadic()
+                              : (ds->is_variadic_funcptr ? 1 : 0);
+  int funcptr_nargs_fixed = param_has_func_suffix
+                              ? psx_last_funcptr_nargs_fixed()
+                              : ds->funcptr_nargs_fixed;
   if (param_is_array_declarator && param_is_ptr && param_has_func_suffix &&
       ds->tag_kind == TK_EOF) {
     /* `int (*ops[])(int)` 形式の関数ポインタ配列パラメータ。
@@ -3900,6 +3915,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     var->is_tag_pointer = 0;
     var->base_deref_size = 8;
     var->pointer_qual_levels = 1;
+    var->funcptr_param_fp_mask = funcptr_param_fp_mask;
+    var->funcptr_param_int_mask = funcptr_param_int_mask;
+    var->funcptr_ret_int_width = ds->funcptr_ret_int_width;
+    var->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
+    var->funcptr_ret_is_data_pointer = ds->funcptr_ret_is_data_pointer ? 1 : 0;
+    var->funcptr_ret_is_complex = ds->funcptr_ret_is_complex ? 1 : 0;
+    var->is_variadic_funcptr = is_variadic_funcptr ? 1 : 0;
+    var->funcptr_nargs_fixed = funcptr_nargs_fixed;
     return var;
   }
   if (param_is_array_declarator && ds->tag_kind == TK_EOF && !param_is_ptr) {
@@ -4012,14 +4035,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
      * `*a` / `a[i]` が fp load/store になるようにする (未設定だと整数 load + scvtf に
      * なって値が壊れていた)。 */
     var->pointee_fp_kind = (param_ptr_levels == 1) ? ds->fp_kind : TK_FLOAT_KIND_NONE;
-    var->funcptr_param_fp_mask = ds->funcptr_param_fp_mask;
-    var->funcptr_param_int_mask = ds->funcptr_param_int_mask;
+    var->funcptr_param_fp_mask = funcptr_param_fp_mask;
+    var->funcptr_param_int_mask = funcptr_param_int_mask;
     var->funcptr_ret_int_width = ds->funcptr_ret_int_width;
-    var->funcptr_ret_is_void = ds->funcptr_ret_is_void ? 1 : 0;
+    var->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
     var->funcptr_ret_is_data_pointer = ds->funcptr_ret_is_data_pointer ? 1 : 0;
     var->funcptr_ret_is_complex = ds->funcptr_ret_is_complex ? 1 : 0;
-    var->is_variadic_funcptr = ds->is_variadic_funcptr ? 1 : 0;
-    var->funcptr_nargs_fixed = ds->funcptr_nargs_fixed;
+    var->is_variadic_funcptr = is_variadic_funcptr ? 1 : 0;
+    var->funcptr_nargs_fixed = funcptr_nargs_fixed;
     /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
      * captured inner dims を使って outer_stride / mid_stride を設定する。 */
     if (param_is_array_declarator && param_inner_first_dim > 0) {

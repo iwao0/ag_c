@@ -93,6 +93,17 @@ static void clear_output_callback(void) {
 static int wasm_emit_function_direct(node_t *fn, int object_mode) {
   ir_module_t *m = ir_build_function_module(fn);
   if (!m) return 0;
+  {
+    const char *dump_ir = getenv("AG_DUMP_IR");
+    if (dump_ir && strcmp(dump_ir, "1") == 0) {
+      char *buf = malloc(1 << 16);
+      if (buf) {
+        ir_print_module_to_buf(m, buf, 1 << 16);
+        fprintf(stderr, "%s", buf);
+        free(buf);
+      }
+    }
+  }
   if (object_mode) {
     wasm32_obj_gen_ir_module(m);
   } else {

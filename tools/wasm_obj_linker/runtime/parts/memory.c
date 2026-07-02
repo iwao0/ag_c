@@ -28,7 +28,7 @@ long __agc_runtime_realloc(long ptr, long size) {
 
 void __agc_runtime_qsort(long base_addr, long nmemb, long size, long compar_addr) {
   if (!base_addr || nmemb <= 1 || size <= 0 || !compar_addr) return;
-  int (*cmp)(long, long) = (int (*)(long, long))compar_addr;
+  int (*cmp)(char *, char *) = (int (*)(char *, char *))compar_addr;
   long tmp_addr = __agc_runtime_malloc(size);
   long i = 0;
   while (i < nmemb) {
@@ -36,7 +36,7 @@ void __agc_runtime_qsort(long base_addr, long nmemb, long size, long compar_addr
     while (j < nmemb) {
       long a = base_addr + i * size;
       long b = base_addr + j * size;
-      if (cmp(a, b) > 0) {
+      if (cmp((char *)a, (char *)b) > 0) {
         __agc_runtime_memcpy(tmp_addr, a, size);
         __agc_runtime_memcpy(a, b, size);
         __agc_runtime_memcpy(b, tmp_addr, size);
@@ -49,11 +49,11 @@ void __agc_runtime_qsort(long base_addr, long nmemb, long size, long compar_addr
 
 long __agc_runtime_bsearch(long key_addr, long base_addr, long nmemb, long size, long compar_addr) {
   if (!key_addr || !base_addr || nmemb <= 0 || size <= 0 || !compar_addr) return 0;
-  int (*cmp)(long, long) = (int (*)(long, long))compar_addr;
+  int (*cmp)(char *, char *) = (int (*)(char *, char *))compar_addr;
   long i = 0;
   while (i < nmemb) {
     long elem = base_addr + i * size;
-    int r = cmp(key_addr, elem);
+    int r = cmp((char *)key_addr, (char *)elem);
     if (r == 0) return elem;
     i++;
   }
@@ -111,4 +111,3 @@ long __agc_runtime_memmove(long dst_addr, long src_addr, long n) {
   }
   return dst_addr;
 }
-

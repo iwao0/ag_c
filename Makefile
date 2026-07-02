@@ -170,6 +170,9 @@ test-wasm-linker-selfhost: $(WASM_LINKER_SELFHOST) $(WASM_TARGET)
 test-wasm-js-pipeline: $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
 	@node tools/wasm_js_api/test_compile_link_pipeline.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
 
+test-wasm-js-e2e: $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) $(WASM_RUNTIME)
+	@node tools/wasm_js_api/test_e2e_pipeline.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) --list-fail
+
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
@@ -215,6 +218,6 @@ c-testsuite-verbose: $(TARGET)
 
 FORCE:
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline c-testsuite c-testsuite-verbose FORCE
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
 
 -include $(DEPS)

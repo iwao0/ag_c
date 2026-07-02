@@ -1137,8 +1137,7 @@ static int funcptr_mask_param_count(unsigned short fp_mask, unsigned short int_m
 }
 
 static ir_type_t funcptr_int_mask_type(unsigned iw) {
-  if (iw == 3) return IR_TY_I32;
-  return IR_TY_I64;
+  return iw == 2 ? IR_TY_I64 : IR_TY_I32;
 }
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
@@ -1249,6 +1248,31 @@ static ir_val_t call_ret_area(ir_inst_t *i) {
   return i->ret_struct_area;
 }
 
+static int val_uses_vreg(ir_val_t v, int id) {
+  return v.id == id;
+}
+
+static int inst_uses_vreg(ir_inst_t *i, int id) {
+  if (!i) return 0;
+  if (val_uses_vreg(i->src1, id) || val_uses_vreg(i->src2, id) ||
+      val_uses_vreg(i->src3, id) || val_uses_vreg(i->callee, id) ||
+      val_uses_vreg(i->ret_struct_area, id)) {
+    return 1;
+  }
+  for (int a = 0; a < i->nargs; a++) {
+    if (val_uses_vreg(i->args[a], id)) return 1;
+  }
+  return 0;
+}
+
+static int vreg_used_after(ir_inst_t *from, int id) {
+  if (!from || id < 0) return 0;
+  for (ir_inst_t *i = from->next; i; i = i->next) {
+    if (inst_uses_vreg(i, id)) return 1;
+  }
+  return 0;
+}
+
 static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
   int has_ret_area = func_has_ret_area(f);
   memset(sig, 0, sizeof(*sig));
@@ -1292,6 +1316,10 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   }
   if (!has_ret_area && i->callee.id != IR_VAL_NONE && i->has_funcptr_sig) {
     sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
+    if (i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID ||
+        !vreg_used_after(i, i->dst.id)) {
+      sig.result = IR_TY_VOID;
+    }
     int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
     if (sig.nparams < call_nargs) {
       int old_nparams = sig.nparams;
@@ -1311,9 +1339,12 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       ir_type_t arg_ty = i->args[a].type;
       int null_ptr_pair_arg =
           a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+      unsigned iw = a < 8 ? ((i->funcptr_param_int_mask >> (2 * a)) & 3u) : 0;
+      int funcptr_pointer_param = iw == 3;
       if (!i->is_variadic_funcptr && !i->is_variadic_call &&
           sig.params[a] == IR_TY_I32 && arg_ty != IR_TY_PTR &&
-          arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64 && !null_ptr_pair_arg) {
+          arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64 && !null_ptr_pair_arg &&
+          !funcptr_pointer_param) {
         sig.params[a] = IR_TY_I64;
       }
     }

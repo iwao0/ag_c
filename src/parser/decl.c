@@ -5039,7 +5039,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         base_funcptr_ret_int_width || base_funcptr_ret_is_void ||
         base_funcptr_ret_is_complex || base_is_variadic_funcptr ||
         psx_ret_pointee_array_has_dims(base_funcptr_ret_pointee_array);
-    int is_funcptr_decl = is_pointer || has_base_funcptr_sig;
+    int is_funcptr_decl = is_pointer || g_decl_trailing_func_suffix || has_base_funcptr_sig;
     if (is_funcptr_decl && (g_last_funcptr_is_variadic || base_is_variadic_funcptr)) {
       var->is_variadic_funcptr = 1;
       var->funcptr_nargs_fixed = g_last_funcptr_is_variadic
