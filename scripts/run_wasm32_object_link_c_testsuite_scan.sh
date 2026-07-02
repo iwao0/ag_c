@@ -20,6 +20,7 @@ no imports. Unsupported GNU-extension cases are skipped.
 Set AG_C_WASM / AG_WASM_LINK to override tool paths.
 Set C_TESTSUITE_DIR to override the input directory.
 Set WASM32_OBJECT_LINK_C_TESTSUITE_SCAN_DIR to override the output directory.
+Set WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC to override the wasm-interp timeout.
 EOF
 }
 
@@ -76,6 +77,30 @@ run=0
 if command -v wasm-interp >/dev/null 2>&1 && command -v wasm-objdump >/dev/null 2>&1; then
   run=1
 fi
+interp_timeout_sec=${WASM32_OBJECT_LINK_SCAN_TIMEOUT_SEC:-60}
+
+run_with_timeout() {
+  local sec=$1
+  shift
+  perl -e '
+    my $sec = shift @ARGV;
+    my $pid = fork();
+    die "fork failed: $!\n" unless defined $pid;
+    if ($pid == 0) {
+      exec @ARGV or die "exec failed: $!\n";
+    }
+    $SIG{ALRM} = sub {
+      kill "TERM", $pid;
+      select undef, undef, undef, 0.1;
+      kill "KILL", $pid;
+      exit 124;
+    };
+    alarm $sec;
+    waitpid($pid, 0);
+    my $st = $?;
+    exit(($st & 127) ? 128 + ($st & 127) : ($st >> 8));
+  ' "$sec" "$@"
+}
 
 mkdir -p "$out_dir"
 failures="$out_dir/failures.txt"
@@ -156,9 +181,17 @@ for src in "$suite"/[0-9]*.c; do
   fi
 
   runnable=$((runnable + 1))
-  if ! wasm-interp "$wasm" --run-all-exports > "$interp" 2>"$err"; then
+  interp_status=0
+  run_with_timeout "$interp_timeout_sec" wasm-interp "$wasm" --run-all-exports > "$interp" 2>"$err" ||
+    interp_status=$?
+  if [ "$interp_status" -ne 0 ]; then
     failed=$((failed + 1))
-    msg=$(sed -n '1p' "$err")
+    if [ "$interp_status" -eq 124 ]; then
+      msg="wasm-interp timed out after ${interp_timeout_sec}s"
+    else
+      msg=$(sed -n '1p' "$err")
+      [ -n "$msg" ] || msg="wasm-interp exited with status $interp_status"
+    fi
     printf '%s\trun: %s\n' "$src" "$msg" >> "$failures"
     [ "$verbose" -ne 0 ] && printf 'FAIL %s\trun: %s\n' "$src" "$msg"
     continue

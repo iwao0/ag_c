@@ -461,7 +461,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 宣言子に `*` が現れないため head.is_ptr を立てておくと扱いが揃う。 */
       int total_pointer_levels = head.ptr_levels + (member_is_ptr_typedef ? 1 : 0);
       int member_is_ptr = head.is_ptr || member_is_ptr_typedef;
-      int ptr_size = ps_get_target_pointer_size();
+      /* The frontend currently models C pointer objects as 8 bytes even when the Wasm
+       * backend lowers addresses to i32. Keep aggregate layout consistent with sizeof
+       * and the rest of parser metadata until the whole type model is moved to ILP32. */
+      int ptr_size = 8;
       int member_elem_size = member_is_ptr ? ptr_size : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
       int deref_size = member_is_ptr ? ((total_pointer_levels >= 2) ? ptr_size : elem_size) : 0;

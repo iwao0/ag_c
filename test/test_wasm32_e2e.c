@@ -552,6 +552,8 @@ static const wasm_e2e_case_t cases[] = {
     {"evil", "nested_call", "test/fixtures/evil/nested_call.c"},
     {"evil", "char_overflow", "test/fixtures/evil/char_overflow.c"},
     {"evil", "nested_shadow", "test/fixtures/evil/nested_shadow.c"},
+    {"probes_found_bugs", "ptrptr_deref_subscript_member",
+     "test/fixtures/probes_found_bugs/ptrptr_deref_subscript_member.c"},
     {"func_name", "each_func_distinct", "test/fixtures/func_name/each_func_distinct.c"},
     {"func_name", "first_char_helper", "test/fixtures/func_name/first_char_helper.c"},
     {"func_name", "first_char_main", "test/fixtures/func_name/first_char_main.c"},

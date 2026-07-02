@@ -977,7 +977,7 @@ int main(void) {
 
   const char *struct_string_offset_reloc_needles[] = {
       "\"reloc.DATA\"", "R_WASM_MEMORY_ADDR_I32", "<s>",
-      "<.LC0>+0x2", "<.LC1>+0x1", "size=12"};
+      "<.LC0>+0x2", "<.LC1>+0x1", "size=24"};
   failures += run_objdump_check("global_struct_string_offset_data_reloc",
                                 "struct S{const char *a; int pad; const char *b;}; "
                                 "struct S s={\"abc\"+2,7,\"de\"+1}; "
