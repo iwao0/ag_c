@@ -50,6 +50,33 @@ static void ag_rt_write_idec(char *buf, size_t size, int bounded, size_t *pos,
   ag_rt_write_udec(buf, size, bounded, pos, u, 0, 0);
 }
 
+static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
+                              double v, int precision) {
+  if (precision < 0) precision = 6;
+  if (precision > 9) precision = 9;
+  if (v < 0.0) {
+    ag_rt_putc(buf, size, bounded, pos, '-');
+    v = -v;
+  }
+
+  unsigned long scale = 1;
+  for (int i = 0; i < precision; i++) scale *= 10;
+  double rounded = v + 0.5 / (double)scale;
+  unsigned long whole = (unsigned long)rounded;
+  double frac_ld = (rounded - (double)whole) * (double)scale;
+  unsigned long frac = (unsigned long)frac_ld;
+
+  ag_rt_write_udec(buf, size, bounded, pos, whole, 0, 0);
+  if (precision == 0) return;
+  ag_rt_putc(buf, size, bounded, pos, '.');
+  unsigned long div = scale / 10;
+  while (div > 0) {
+    ag_rt_putc(buf, size, bounded, pos, '0' + (int)(frac / div));
+    frac %= div;
+    div /= 10;
+  }
+}
+
 static void ag_rt_write_str_n(char *buf, size_t size, int bounded, size_t *pos,
                               const char *s, int limit) {
   if (limit < 0) {
@@ -104,8 +131,16 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     }
 
     int length_z = 0;
+    int length_l = 0;
+    int length_L = 0;
     if (*fmt == 'z') {
       length_z = 1;
+      fmt++;
+    } else if (*fmt == 'l') {
+      length_l = 1;
+      fmt++;
+    } else if (*fmt == 'L') {
+      length_L = 1;
       fmt++;
     }
 
@@ -121,6 +156,17 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       fmt++;
     } else if (*fmt == 'c') {
       ag_rt_putc(buf, size, bounded, &pos, va_arg(ap, int));
+      fmt++;
+    } else if (*fmt == 'f' || *fmt == 'F') {
+      (void)length_l;
+      double v;
+      if (length_L) {
+        long double lv = va_arg(ap, long double);
+        v = (double)lv;
+      } else {
+        v = va_arg(ap, double);
+      }
+      ag_rt_write_fixed(buf, size, bounded, &pos, v, precision);
       fmt++;
     } else {
       ag_rt_putc(buf, size, bounded, &pos, '%');

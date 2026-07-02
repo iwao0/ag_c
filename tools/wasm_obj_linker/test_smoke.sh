@@ -275,6 +275,22 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/snprintf_float.c" <<'SRC'
+int snprintf(char *s, unsigned long n, const char *fmt, ...);
+int main(void) {
+  char a[32];
+  char b[32];
+  char c[32];
+  int na = snprintf(a, sizeof(a), "%.1f", 3.14);
+  int nb = snprintf(b, sizeof(b), "%.2f", -2.25);
+  int nc = snprintf(c, sizeof(c), "%.1Lf", (long double)4.04);
+  return na == 3 && a[0] == '3' && a[1] == '.' && a[2] == '1' && a[3] == 0 &&
+         nb == 5 && b[0] == '-' && b[1] == '2' && b[2] == '.' && b[3] == '2' &&
+         b[4] == '5' && b[5] == 0 &&
+         nc == 3 && c[0] == '4' && c[1] == '.' && c[2] == '0' && c[3] == 0 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 long strlen(char *s);
 int strcmp(char *a, char *b);
@@ -1165,6 +1181,13 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.snprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
   grep -q '<env.sprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
 fi
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/snprintf_float.o" "$out_dir/snprintf_float.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_snprintf_float.wasm" \
+  "$out_dir/snprintf_float.o"
+wasm-validate "$out_dir/linked_snprintf_float.wasm"
+wasm-interp "$out_dir/linked_snprintf_float.wasm" --run-all-exports > "$out_dir/linked_snprintf_float.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_snprintf_float.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \
