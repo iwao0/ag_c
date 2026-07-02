@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き360: wasm object pointer aggregate layout scan）
+最終更新: 2026-07-02（続き361: wasm linker API argument diagnostics）
 
 ## 現状
 - `make test` = **green**。
@@ -21,6 +21,14 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き361: **wasm 化リンカー API の引数エラーを JS 側へ診断として返すようにした**。
+  `agc_wasm_link_objects()` が短すぎる object slice や不正 export pointer で無言 `0` を返していたため、
+  `die()` 経由に変更した。これにより JS wrapper の `onStderr` / `onTerminate` と例外 message に
+  `ag_wasm_link: invalid linker API object slice` などが届く。
+  `tools/wasm_obj_linker/test_selfhost_api.mjs` に短すぎる object の diagnostics smoke を追加。
+  直近コミット: `ee418c9a Surface wasm linker API argument errors`。
+  確認: `make test-wasm-obj-linker`、`make test-wasm-linker-selfhost`、
+  `make test-wasm-js-pipeline`、`git diff --check`。
 - 続き360: **Wasm object link fixture scan の timeout 対応と pointer aggregate layout を修正**。
   `scripts/run_wasm32_object_link_fixture_scan.sh` / `scripts/run_wasm32_object_link_c_testsuite_scan.sh`
   に `perl` timeout wrapper を入れ、失敗時に hanging fixture を一覧化できるようにした。
