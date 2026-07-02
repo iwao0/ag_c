@@ -58,4 +58,12 @@ try {
   if (err.code !== "ENOENT") throw err;
 }
 
+const instantiated = await toolchain.instantiateLinkedWasm([mainSource, otherSource], {
+  exports: ["main"],
+  useStdlib: false,
+});
+if (instantiated.instance.exports.main() !== 42) {
+  throw new Error("instantiated pipeline main() did not return 42");
+}
+
 console.log(`ag_c wasm JS compile+link pipeline smoke: ok (${linkedPath})`);

@@ -26,12 +26,19 @@ export async function createToolchain(options) {
     return linker.link(objects, linkOptions);
   }
 
+  async function instantiateLinkedWasm(sources, linkOptions = {}, imports = {}) {
+    const wasm = compileLinkedWasm(sources, linkOptions);
+    const result = await WebAssembly.instantiate(wasm, imports);
+    return { wasm, module: result.module, instance: result.instance };
+  }
+
   return {
     compiler,
     linker,
     compileWat: (source) => compiler.compileWat(source),
     compileObject: (source) => compiler.compileObject(source),
     compileLinkedWasm,
+    instantiateLinkedWasm,
   };
 }
 

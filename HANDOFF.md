@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き357: browser demo multi-source link）
+最終更新: 2026-07-02（続き358: wasm JS instantiate linked output）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,12 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き358: **JS toolchain で linked wasm を instantiate できるようにした**。
+  `tools/wasm_js_api/agc-toolchain.js` に `instantiateLinkedWasm(sources, options, imports)` を追加し、
+  `{ wasm, module, instance }` を返す。
+  pipeline smoke は `instance.exports.main()` が 42 を返すことも確認する。
+  browser demo の `Linked Wasm` mode でも `main` export があれば `main()` の戻り値を status に表示する。
+  確認: `make test-wasm-js-pipeline` = **green**。
 - 続き357: **browser demo で複数 source を object 経由 link できるようにした**。
   `tools/wasm_js_api/demo.html` の入力を 2 つの source textarea にし、`Linked Wasm` では
   空でない source をそれぞれ `compileObject()` してから `compileLinkedWasm([...])` へ渡す。

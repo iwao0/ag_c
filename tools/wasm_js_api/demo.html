@@ -124,7 +124,7 @@ int main(void){return other()+1;}
         return lines.join("\n");
       }
 
-      function compile() {
+      async function compile() {
         try {
           const sourceTexts = sources.map((el) => el.value).filter((text) => text.trim().length > 0);
           if (sourceTexts.length === 0) {
@@ -137,9 +137,19 @@ int main(void){return other()+1;}
             output.textContent = hexDump(obj);
             lastDownload = { bytes: obj, name: "out.o", type: "application/wasm" };
           } else if (mode.value === "linked") {
-            const wasm = toolchain.compileLinkedWasm(sourceTexts, { exports: ["main"], useStdlib: false });
+            const linked = await toolchain.instantiateLinkedWasm(sourceTexts, {
+              exports: ["main"],
+              useStdlib: false,
+            });
+            const wasm = linked.wasm;
             output.textContent = hexDump(wasm);
             lastDownload = { bytes: wasm, name: "out.wasm", type: "application/wasm" };
+            if (typeof linked.instance.exports.main === "function") {
+              const result = linked.instance.exports.main();
+              status.textContent = `OK main()=${String(result)}`;
+              download.disabled = false;
+              return;
+            }
           } else {
             const wat = toolchain.compileWat(sourceTexts[0]);
             output.textContent = wat;

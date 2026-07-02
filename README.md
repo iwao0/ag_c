@@ -96,8 +96,10 @@ const toolchain = await createToolchain({
 const source = "int main(){return 42;}\n";
 const wat = toolchain.compileWat(source);
 const wasm = toolchain.compileLinkedWasm(source, { exports: ["main"] });
+const linked = await toolchain.instantiateLinkedWasm(source, { exports: ["main"] });
 console.log(wat);
 console.log(wasm.byteLength);
+console.log(linked.instance.exports.main());
 ```
 
 低レベルに compiler だけを使う場合は `tools/wasm_js_api/agc-wasm.js` の
@@ -109,6 +111,7 @@ TypeScript 用の宣言は `tools/wasm_js_api/agc-toolchain.d.ts` です。
 browser demo は `tools/wasm_js_api/demo.html` です。repo root を静的 file server で配信して開きます。
 WAT、wasm object、linked wasm の 3 出力を切り替えられます。
 Linked Wasm では複数の source textarea を別々に object 化してからリンクします。
+`main` export を呼べる場合は、ブラウザ上で `main()` の戻り値も表示します。
 生成した `out.wat` / `out.o` / `out.wasm` は画面上の Download から保存できます。
 `make test-wasm-js-pipeline` は wasm 化コンパイラの `compileObject()` と wasm 化リンカーの
 `link()` を JS 上で直結し、2 つの C source を object 化して 1 つの wasm にリンクします。

@@ -113,13 +113,15 @@ make test-wasm-js-api
 
 JS の統合 wrapper は `tools/wasm_js_api/agc-toolchain.js` です。
 `createToolchain({ compilerWasm, linkerWasm })` から
-`compileWat(source)` / `compileObject(source)` / `compileLinkedWasm(source)` を使えます。
+`compileWat(source)` / `compileObject(source)` / `compileLinkedWasm(source)` /
+`instantiateLinkedWasm(source)` を使えます。
 compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
 (`Uint8Array`) を返します。
 browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の
 出力を切り替えられます。Linked Wasm では複数 source textarea を別々に object 化してから
-リンクします。生成した `out.wat` / `out.o` / `out.wasm` は Download から保存できます。
+リンクします。`main` export を呼べる場合は戻り値も表示します。
+生成した `out.wat` / `out.o` / `out.wasm` は Download から保存できます。
 
 wasm 化したリンカー API を作る:
 

@@ -21,6 +21,15 @@ export interface AgcWasmToolchain {
   compileWat(source: string): string;
   compileObject(source: string): Uint8Array;
   compileLinkedWasm(sources: string | string[], options?: AgcWasmLinkOptions): Uint8Array;
+  instantiateLinkedWasm(
+    sources: string | string[],
+    options?: AgcWasmLinkOptions,
+    imports?: WebAssembly.Imports,
+  ): Promise<{
+    wasm: Uint8Array;
+    module: WebAssembly.Module;
+    instance: WebAssembly.Instance;
+  }>;
 }
 
 export function createToolchain(options: AgcWasmToolchainOptions): Promise<AgcWasmToolchain>;
