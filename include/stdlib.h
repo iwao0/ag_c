@@ -39,8 +39,8 @@ int abs(int n);
 long labs(long n);
 
 /* Sorting and searching */
-void qsort(void *base, long nmemb, long size, void *compar);
-void *bsearch(void *key, void *base, long nmemb, long size, void *compar);
+void qsort(void *base, long nmemb, long size, int (*compar)(void *, void *));
+void *bsearch(void *key, void *base, long nmemb, long size, int (*compar)(void *, void *));
 
 /* Environment */
 char *getenv(char *name);

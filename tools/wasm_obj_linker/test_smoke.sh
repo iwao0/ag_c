@@ -335,8 +335,8 @@ unsigned long strtoumax(char *s, char **endptr, int base);
 int rand(void);
 void srand(int seed);
 long labs(long n);
-void qsort(void *base, long nmemb, long size, void *compar);
-void *bsearch(void *key, void *base, long nmemb, long size, void *compar);
+void qsort(void *base, long nmemb, long size, int (*compar)(void *, void *));
+void *bsearch(void *key, void *base, long nmemb, long size, int (*compar)(void *, void *));
 void exit(int status);
 void abort(void);
 char *getenv(char *name);
@@ -537,7 +537,7 @@ int getrusage(int who, struct rusage *usage);
 struct tm *localtime(long *timer);
 int setjmp(jmp_buf env);
 void longjmp(jmp_buf env, int val);
-int int_cmp(long ap, long bp) {
+int int_cmp(void *ap, void *bp) {
   int *a = (int *)ap;
   int *b = (int *)bp;
   return *a - *b;
