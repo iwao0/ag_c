@@ -108,6 +108,7 @@ TypeScript 用の宣言は `tools/wasm_js_api/agc-toolchain.d.ts` です。
 `useHeapBuffers: false` を指定した場合だけ fixed scratch buffer 経路を使います。
 browser demo は `tools/wasm_js_api/demo.html` です。repo root を静的 file server で配信して開きます。
 WAT、wasm object、linked wasm の 3 出力を切り替えられます。
+生成した `out.wat` / `out.o` / `out.wasm` は画面上の Download から保存できます。
 `make test-wasm-js-pipeline` は wasm 化コンパイラの `compileObject()` と wasm 化リンカーの
 `link()` を JS 上で直結し、2 つの C source を object 化して 1 つの wasm にリンクします。
 

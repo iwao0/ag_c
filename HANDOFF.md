@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き355: wasm JS toolchain wrapper）
+最終更新: 2026-07-02（続き356: browser demo download output）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,10 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き356: **browser demo から生成物を download できるようにした**。
+  `tools/wasm_js_api/demo.html` に `Download` ボタンを追加し、選択中の出力に応じて
+  `out.wat` / `out.o` / `out.wasm` を保存できる。
+  確認: `make test-wasm-js-pipeline` = **green**。
 - 続き355: **compiler/linker wasm をまとめる JS toolchain wrapper を追加**。
   `tools/wasm_js_api/agc-toolchain.js` と `.d.ts` を追加し、
   `createToolchain({ compilerWasm, linkerWasm })` から `compileWat(source)`、

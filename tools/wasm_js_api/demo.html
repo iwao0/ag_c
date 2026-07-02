@@ -72,6 +72,7 @@
   <body>
     <header>
       <button id="run" type="button">Compile</button>
+      <button id="download" type="button" disabled>Download</button>
       <select id="mode" aria-label="Output mode">
         <option value="wat">WAT</option>
         <option value="object">Object</option>
@@ -91,11 +92,13 @@
       const source = document.getElementById("source");
       const output = document.getElementById("output");
       const run = document.getElementById("run");
+      const download = document.getElementById("download");
       const mode = document.getElementById("mode");
       const toolchain = await createToolchain({
         compilerWasm: "../../build/wasm_selfhost_api/ag_c_wasm_api.wasm",
         linkerWasm: "../../build/wasm_linker_selfhost/ag_wasm_link.wasm",
       });
+      let lastDownload = null;
 
       function hexDump(bytes) {
         const lines = [];
@@ -109,15 +112,22 @@
 
       function compile() {
         try {
+          lastDownload = null;
+          download.disabled = true;
           if (mode.value === "object") {
             const obj = toolchain.compileObject(source.value);
             output.textContent = hexDump(obj);
+            lastDownload = { bytes: obj, name: "out.o", type: "application/wasm" };
           } else if (mode.value === "linked") {
             const wasm = toolchain.compileLinkedWasm(source.value, { exports: ["main"] });
             output.textContent = hexDump(wasm);
+            lastDownload = { bytes: wasm, name: "out.wasm", type: "application/wasm" };
           } else {
-            output.textContent = toolchain.compileWat(source.value);
+            const wat = toolchain.compileWat(source.value);
+            output.textContent = wat;
+            lastDownload = { text: wat, name: "out.wat", type: "text/plain" };
           }
+          download.disabled = false;
           status.textContent = "OK";
         } catch (err) {
           output.textContent = err && err.stack ? err.stack : String(err);
@@ -127,6 +137,18 @@
 
       run.addEventListener("click", compile);
       mode.addEventListener("change", compile);
+      download.addEventListener("click", () => {
+        if (!lastDownload) return;
+        const blob = lastDownload.bytes
+          ? new Blob([lastDownload.bytes], { type: lastDownload.type })
+          : new Blob([lastDownload.text], { type: lastDownload.type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = lastDownload.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
       compile();
     </script>
   </body>
