@@ -807,6 +807,29 @@ static int run_optional_link_case(void) {
     fprintf(stderr, "FAIL: linked static union extern addr wasm returned unexpected result\n");
     return 1;
   }
+  if (run_cmd("./build/ag_c_wasm -c -o "
+              "build/wasm32_obj/nested_struct_funcptr_designated_zero_init.o "
+              "test/fixtures/probes_found_bugs/nested_struct_funcptr_designated_zero_init.c",
+              "nested_struct_funcptr_designated_zero_init.o") != 0) return 1;
+  if (run_cmd("wasm-ld --no-entry --export=main -o "
+              "build/wasm32_obj/linked_nested_struct_funcptr_designated_zero_init.wasm "
+              "build/wasm32_obj/nested_struct_funcptr_designated_zero_init.o",
+              "wasm-ld nested struct funcptr designated zero init") != 0) return 1;
+  if (run_cmd("wasm-validate "
+              "build/wasm32_obj/linked_nested_struct_funcptr_designated_zero_init.wasm",
+              "wasm-validate nested struct funcptr designated zero init") != 0) return 1;
+  if (run_cmd("wasm-interp "
+              "build/wasm32_obj/linked_nested_struct_funcptr_designated_zero_init.wasm "
+              "--run-all-exports > "
+              "build/wasm32_obj/linked_nested_struct_funcptr_designated_zero_init.interp",
+              "wasm-interp nested struct funcptr designated zero init") != 0) return 1;
+  if (slurp("build/wasm32_obj/linked_nested_struct_funcptr_designated_zero_init.interp", buf,
+            sizeof(buf)) != 0) return 1;
+  if (!strstr(buf, "main() => i32:0")) {
+    fprintf(stderr, "FAIL: linked nested struct funcptr designated zero init wasm "
+                    "returned unexpected result\n");
+    return 1;
+  }
   return 0;
 }
 

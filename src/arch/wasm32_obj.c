@@ -2658,15 +2658,6 @@ static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx,
   }
 }
 
-static void collapse_trailing_zero_union_slots(global_var_t *gv, int start_idx, int *val_idx) {
-  /* The parser now reserves the full flat width of named union members.  Keeping
-   * those trailing zero slots consumed is required for arrays of unions and for
-   * following struct members to stay on their declared slot boundary. */
-  (void)gv;
-  (void)start_idx;
-  (void)val_idx;
-}
-
 static void select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
                                               global_var_t *gv, int idx,
                                               tag_member_info_t *mi) {
@@ -2819,7 +2810,7 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
       emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                         val_idx, base_off);
     }
-    collapse_trailing_zero_union_slots(gv, start_idx, val_idx);
+    consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
     return;
   }
   int slot = (*val_idx)++;
