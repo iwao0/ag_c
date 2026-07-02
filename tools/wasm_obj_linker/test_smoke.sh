@@ -1345,7 +1345,7 @@ extern FILE *__stdinp;
 extern FILE *__stdoutp;
 extern FILE *__stderrp;
 int main(void) {
-  return __stdinp == 0 && __stdoutp == 0 && __stderrp == 0 ? 42 : 1;
+  return __stdinp == 0 && __stdoutp == (FILE *)1 && __stderrp == (FILE *)2 ? 42 : 1;
 }
 SRC
 "$root/build/ag_c_wasm" -c -o "$out_dir/stdio_data_runtime.o" "$out_dir/stdio_data_runtime.c"
