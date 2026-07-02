@@ -1833,7 +1833,8 @@ static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
   if (!callee) return 0;
   if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
       callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    return ((node_mem_t *)callee)->funcptr_ret_is_data_pointer ? 1 : 0;
+    node_mem_t *m = (node_mem_t *)callee;
+    return (m->funcptr_ret_is_data_pointer || PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(m)) ? 1 : 0;
   }
   if (callee->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)callee;

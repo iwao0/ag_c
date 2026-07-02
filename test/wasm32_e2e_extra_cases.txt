@@ -53,6 +53,7 @@ probes_found_bugs/builtin_expect_fold.c
 probes_found_bugs/c11_standard_headers.c
 probes_found_bugs/cast_int_to_double.c
 probes_found_bugs/cast_short_char_sign_extend.c
+probes_found_bugs/cast_signed_subint_from_unsigned_expr.c
 probes_found_bugs/cast_subint_to_int_signedness.c
 probes_found_bugs/cast_to_signed_comparison.c
 probes_found_bugs/comparison_result_is_signed_int.c

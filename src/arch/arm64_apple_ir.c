@@ -683,6 +683,14 @@ static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
+      const char *spill_reg = d;
+      char w1[8], w2[8], wd[8];
+      if (ir_type_size(inst->dst.type) <= 4) {
+        to_w_name(s1, w1, sizeof(w1));
+        to_w_name(s2, w2, sizeof(w2));
+        to_w_name(d, wd, sizeof(wd));
+        s1 = w1; s2 = w2; d = wd;
+      }
       switch (inst->op) {
         case IR_ADD: cg_emitf("  add %s, %s, %s\n", d, s1, s2); break;
         case IR_SUB: cg_emitf("  sub %s, %s, %s\n", d, s1, s2); break;
@@ -690,12 +698,12 @@ static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_DIV: cg_emitf("  sdiv %s, %s, %s\n", d, s1, s2); break;
         case IR_UDIV: cg_emitf("  udiv %s, %s, %s\n", d, s1, s2); break;
         case IR_MOD:
-          cg_emitf("  sdiv x11, %s, %s\n", s1, s2);
-          cg_emitf("  msub %s, x11, %s, %s\n", d, s2, s1);
+          cg_emitf("  sdiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
+          cg_emitf("  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
           break;
         case IR_UMOD:
-          cg_emitf("  udiv x11, %s, %s\n", s1, s2);
-          cg_emitf("  msub %s, x11, %s, %s\n", d, s2, s1);
+          cg_emitf("  udiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
+          cg_emitf("  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
           break;
         case IR_AND: cg_emitf("  and %s, %s, %s\n", d, s1, s2); break;
         case IR_OR:  cg_emitf("  orr %s, %s, %s\n", d, s1, s2); break;
@@ -705,7 +713,7 @@ static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_LSR: cg_emitf("  lsr %s, %s, %s\n", d, s1, s2); break;
     default: break;
   }
-  release_dst(ctx, inst->dst, d, spill);
+  release_dst(ctx, inst->dst, spill_reg, spill);
 }
 
 static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {

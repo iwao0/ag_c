@@ -2827,11 +2827,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->is_unsigned = 1;
       return (node_t *)wrap;
     }
-    /* signed char/short: `(x << (64-width)) >> (64-width)` の算術シフトで符号拡張する。
+    /* signed char/short: `(x << (src_width-width)) >> (src_width-width)` の算術シフトで符号拡張する。
      * 従来の `& マスク` だけだとビット (width-1) が立った runtime 値が符号拡張されず、
      * インライン比較/演算で誤った正値になっていた (char/short 変数への代入では store 幅 +
      * ldrsb/ldrsh の reload で偶然符号拡張され合っていた)。`(int)long` の切り詰めと同形。 */
-    int sh = 64 - width;
+    int src_width = ps_node_type_size(operand) >= 8 ? 64 : 32;
+    int sh = src_width - width;
     node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(sh));
     node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
     psx_node_set_unsigned(shl, 0);

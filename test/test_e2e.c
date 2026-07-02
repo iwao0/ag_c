@@ -1021,6 +1021,7 @@ static const test_case_t test_cases[] = {
     {"probes", "alignof_aggregate", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/alignof_aggregate.c", 0, 0},
     {"probes", "generic_string_and_long", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/generic_string_and_long.c", 0, 0},
     {"probes", "cast_short_char_sign_extend", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/cast_short_char_sign_extend.c", 0, 0},
+    {"probes", "cast_signed_subint_from_unsigned_expr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/cast_signed_subint_from_unsigned_expr.c", 0, 0},
     {"probes", "array_row_decay_pointer_arith", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_pointer_arith.c", 0, 0},
     {"probes", "large_stack_frame", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/large_stack_frame.c", 0, 0},
     {"probes", "array_row_decay_3d_pointer_arith", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/array_row_decay_3d_pointer_arith.c", 0, 0},

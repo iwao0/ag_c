@@ -49,7 +49,8 @@ static void substitute_with_const(const_map_t *cm, ir_val_t *val, int nvregs) {
 
 /* 整数二項演算を host 側で計算。成功なら out にセットして 1 を返す。
  * 0 除算は失敗扱い (元の命令を残す)。 */
-static int eval_binop(ir_op_t op, long long a, long long b, long long *out) {
+static int eval_binop(ir_op_t op, long long a, long long b, ir_type_t ty, long long *out) {
+  int is_i32 = ir_type_size(ty) <= 4;
   switch (op) {
     case IR_ADD: *out = a + b; return 1;
     case IR_SUB: *out = a - b; return 1;
@@ -59,8 +60,30 @@ static int eval_binop(ir_op_t op, long long a, long long b, long long *out) {
     case IR_AND: *out = a & b; return 1;
     case IR_OR:  *out = a | b; return 1;
     case IR_XOR: *out = a ^ b; return 1;
-    case IR_SHL: *out = (long long)((unsigned long long)a << (b & 63)); return 1;
-    case IR_SHR: *out = a >> (b & 63); return 1;
+    case IR_SHL:
+      if (is_i32) {
+        unsigned int ua = (unsigned int)a;
+        *out = (long long)(int)(ua << (b & 31));
+      } else {
+        *out = (long long)((unsigned long long)a << (b & 63));
+      }
+      return 1;
+    case IR_SHR:
+      if (is_i32) {
+        int sa = (int)(unsigned int)a;
+        *out = (long long)(sa >> (b & 31));
+      } else {
+        *out = a >> (b & 63);
+      }
+      return 1;
+    case IR_LSR:
+      if (is_i32) {
+        unsigned int ua = (unsigned int)a;
+        *out = (long long)(ua >> (b & 31));
+      } else {
+        *out = (long long)((unsigned long long)a >> (b & 63));
+      }
+      return 1;
     case IR_EQ:  *out = (a == b) ? 1 : 0; return 1;
     case IR_NE:  *out = (a != b) ? 1 : 0; return 1;
     case IR_LT:  *out = (a < b)  ? 1 : 0; return 1;
@@ -99,7 +122,7 @@ static void const_fold_func(ir_func_t *f) {
       if (inst->src1.id == IR_VAL_IMM && inst->src2.id == IR_VAL_IMM &&
           inst->dst.id >= 0 && inst->dst.id < nvregs) {
         long long v;
-        if (eval_binop(inst->op, inst->src1.imm, inst->src2.imm, &v)) {
+        if (eval_binop(inst->op, inst->src1.imm, inst->src2.imm, inst->dst.type, &v)) {
           inst->op = IR_LOAD_IMM;
           inst->src1.id = IR_VAL_IMM;
           inst->src1.type = inst->dst.type;
