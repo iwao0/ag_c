@@ -1134,6 +1134,7 @@ static const test_case_t test_cases[] = {
     {"probes", "sizeof_int_literal", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/sizeof_int_literal.c", 0, 0},
     {"probes", "variadic_macro_empty_va", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_macro_empty_va.c", 0, 0},
     {"probes", "ternary_subint_branch", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ternary_subint_branch.c", 0, 0},
+    {"probes", "ternary_usual_arith_size_signedness", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/ternary_usual_arith_size_signedness.c", 0, 0},
     {"probes", "string_concat_stringize", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/string_concat_stringize.c", 0, 0},
     {"probes", "complex_brace_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/complex_brace_init.c", 0, 0},
     {"probes", "cast_voidptr_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/cast_voidptr_subscript.c", 0, 0},

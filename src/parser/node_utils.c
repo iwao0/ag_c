@@ -52,8 +52,14 @@ int ps_node_type_size(node_t *node) {
       return ps_node_type_size(node->rhs);
     case ND_TERNARY: {
       int l = ps_node_type_size(node->rhs);
-      if (l > 0) return l;
-      return ps_node_type_size(((node_ctrl_t *)node)->els);
+      int r = ps_node_type_size(((node_ctrl_t *)node)->els);
+      if (ps_node_is_pointer(node->rhs) || ps_node_is_pointer(((node_ctrl_t *)node)->els))
+        return 8;
+      if (l <= 0) l = 4;
+      if (r <= 0) r = 4;
+      if (l < 4) l = 4;
+      if (r < 4) r = 4;
+      return l > r ? l : r;
     }
     case ND_FUNCALL: {
       /* 関数呼び出し: 戻り値の型サイズを semantic ctx から推定する。
@@ -554,6 +560,23 @@ static int node_is_unsigned(node_t *node) {
       return as_mem(node)->is_unsigned;
     case ND_PTR_CAST:
       return as_mem(node)->is_unsigned || node->is_unsigned;
+    case ND_TERNARY: {
+      node_ctrl_t *t = (node_ctrl_t *)node;
+      if (!t->base.rhs || !t->els) return node->is_unsigned;
+      if (ps_node_is_pointer(t->base.rhs) || ps_node_is_pointer(t->els)) return 0;
+      if (t->base.rhs->fp_kind != TK_FLOAT_KIND_NONE ||
+          t->els->fp_kind != TK_FLOAT_KIND_NONE) return 0;
+      int lsz = ps_node_type_size(t->base.rhs);
+      int rsz = ps_node_type_size(t->els);
+      int lu = (lsz >= 4) && node_is_unsigned(t->base.rhs);
+      int ru = (rsz >= 4) && node_is_unsigned(t->els);
+      if (lu == ru) return lu;
+      int lw = lsz < 4 ? 4 : lsz;
+      int rw = rsz < 4 ? 4 : rsz;
+      int unsigned_w = lu ? lw : rw;
+      int signed_w = lu ? rw : lw;
+      return unsigned_w >= signed_w;
+    }
     default: return node->is_unsigned;
   }
 }

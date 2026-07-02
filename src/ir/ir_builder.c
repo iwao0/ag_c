@@ -278,10 +278,10 @@ static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t tar
   if (target_ty == IR_TY_PTR || v.type == IR_TY_PTR) {
     return ir_val_vreg(v.id, target_ty);
   }
-  /* 32 → 64 拡張: SEXT を入れる (符号情報なしのとき signed 拡張で C 規約に合う)。 */
+  /* 32 → 64 拡張: source の符号に合わせて SEXT/ZEXT を選ぶ。 */
   if (ir_type_size(target_ty) > ir_type_size(v.type)) {
     int dst = ir_func_new_vreg(ctx->f);
-    ir_inst_t *inst = ir_inst_new(IR_SEXT);
+    ir_inst_t *inst = ir_inst_new(src_unsigned ? IR_ZEXT : IR_SEXT);
     inst->dst = ir_val_vreg(dst, target_ty);
     inst->src1 = v;
     ir_func_append_inst(ctx->f, inst);
@@ -2413,6 +2413,10 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     res_ty = IR_TY_PTR;
     slot_size = 8;
   }
+  if (res_ty == IR_TY_I32 && ps_node_type_size(node) >= 8) {
+    res_ty = IR_TY_I64;
+    slot_size = 8;
+  }
   /* long / long long 分岐: 結果は 64bit 整数。8 バイト slot で扱う。 */
   if (res_ty == IR_TY_I32 &&
       (ternary_branch_is_wide_int(node->rhs) || ternary_branch_is_wide_int(c->els))) {
@@ -2455,7 +2459,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
    * してから STORE する。さもないと 4 バイトのみ書かれ、merge の 8 バイト LOAD で
    * 上位 4 バイトが garbage になる。 */
   if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && vt.type != res_ty) {
-    vt = coerce_to_type(ctx, vt, res_ty);
+    vt = coerce_to_type_ex(ctx, vt, res_ty, ps_node_is_unsigned(node), ps_node_is_unsigned(node->rhs));
   } else if (res_ty == IR_TY_I32 && !is_fp_type(vt.type) && ir_type_size(vt.type) < 4) {
     /* sub-int (char/short) 分岐: slot は 4 バイトなので full-width で store する。
      * strb だと上位 3 バイトが未初期化のまま残り、merge の 4 バイト ldrsw が garbage を
@@ -2488,7 +2492,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     ve = ir_val_vreg(v, res_ty);
   }
   if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && ve.type != res_ty) {
-    ve = coerce_to_type(ctx, ve, res_ty);
+    ve = coerce_to_type_ex(ctx, ve, res_ty, ps_node_is_unsigned(node), ps_node_is_unsigned(c->els));
   } else if (res_ty == IR_TY_I32 && !is_fp_type(ve.type) && ir_type_size(ve.type) < 4) {
     /* sub-int (char/short) 分岐の full-width store (then 側と同じ。詳細は上のコメント)。 */
     ve.type = IR_TY_I32;
