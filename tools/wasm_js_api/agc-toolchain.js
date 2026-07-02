@@ -37,7 +37,16 @@ export async function createToolchain(options) {
 
   async function instantiateLinkedWasm(sources, linkOptions = {}, imports = {}) {
     const wasm = compileLinkedWasm(sources, linkOptions);
-    const result = await WebAssembly.instantiate(wasm, createAgcRuntimeImports(imports));
+    let memory = null;
+    const runtimeImports = createAgcRuntimeImports({
+      ...imports,
+      stdio: {
+        ...(imports.stdio || {}),
+        getMemory: () => memory,
+      },
+    });
+    const result = await WebAssembly.instantiate(wasm, runtimeImports);
+    memory = result.instance.exports.memory;
     return { wasm, module: result.module, instance: result.instance };
   }
 

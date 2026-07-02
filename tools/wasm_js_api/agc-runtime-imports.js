@@ -23,16 +23,101 @@ function wrapMath(fn) {
   return (...args) => fn(...args.map(Number));
 }
 
-function agcPrintf(_fmt, ..._args) {
-  return 0;
+const utf8Decoder = new TextDecoder();
+
+function defaultGetMemory() {
+  return undefined;
 }
 
-function agcPuts(_s) {
-  return 1;
+function defaultWrite(_text) {}
+
+function readCString(memory, ptr, maxLen = 1024 * 1024) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return "";
+  const bytes = new Uint8Array(memory.buffer);
+  const endLimit = Math.min(bytes.length, ptr + maxLen);
+  let end = ptr;
+  while (end < endLimit && bytes[end] !== 0) end++;
+  return utf8Decoder.decode(bytes.subarray(ptr, end));
 }
 
-function agcPutchar(c) {
-  return Number(c) | 0;
+function formatPrintf(memory, fmtPtr, args) {
+  const fmt = readCString(memory, fmtPtr);
+  let argIndex = 0;
+  return fmt.replace(/%([-+ #0]*)(\d+|\*)?(\.(\d+|\*))?(hh|h|ll|l|L|z|t|j)?([%csdiuoxXfFeEgGaAp])/g,
+    (match, _flags, width, _precision, precisionValue, _length, spec) => {
+      if (spec === "%") return "%";
+      if (width === "*") argIndex++;
+      if (precisionValue === "*") argIndex++;
+      const value = args[argIndex++];
+      switch (spec) {
+        case "s":
+          return readCString(memory, value);
+        case "c":
+          return String.fromCodePoint(Number(value) & 0xff);
+        case "d":
+        case "i":
+          return String(Number(value) | 0);
+        case "u":
+          return String(Number(value) >>> 0);
+        case "o":
+          return (Number(value) >>> 0).toString(8);
+        case "x":
+          return (Number(value) >>> 0).toString(16);
+        case "X":
+          return (Number(value) >>> 0).toString(16).toUpperCase();
+        case "f":
+        case "F":
+        case "e":
+        case "E":
+        case "g":
+        case "G":
+        case "a":
+        case "A":
+          return String(Number(value));
+        case "p":
+          return `0x${(Number(value) >>> 0).toString(16)}`;
+        default:
+          return match;
+      }
+    });
+}
+
+function makeStdio(options = {}) {
+  const getMemory = options.getMemory || defaultGetMemory;
+  const writeStdout = options.onStdout || defaultWrite;
+  const writeStderr = options.onStderr || writeStdout;
+
+  function emitStdout(text) {
+    writeStdout(String(text));
+    return String(text).length;
+  }
+
+  function emitStderr(text) {
+    writeStderr(String(text));
+    return String(text).length;
+  }
+
+  function printf(fmt, ...args) {
+    return emitStdout(formatPrintf(getMemory(), fmt, args));
+  }
+
+  function fprintf(stream, fmt, ...args) {
+    const text = formatPrintf(getMemory(), fmt, args);
+    return Number(stream) === 2 ? emitStderr(text) : emitStdout(text);
+  }
+
+  function puts(s) {
+    return emitStdout(`${readCString(getMemory(), s)}\n`);
+  }
+
+  function putchar(c) {
+    const text = String.fromCodePoint(Number(c) & 0xff);
+    emitStdout(text);
+    return Number(c) | 0;
+  }
+
+  return { printf, fprintf, puts, putchar };
 }
 
 function agcFopen(_path, _mode) {
@@ -59,16 +144,17 @@ function agcFgets(_s, _size, _stream) {
   return 0;
 }
 
-export function createAgcRuntimeStdioEnvImports() {
+export function createAgcRuntimeStdioEnvImports(options = {}) {
+  const stdio = makeStdio(options);
   return {
-    printf: agcPrintf,
-    fprintf: agcPrintf,
-    sprintf: agcPrintf,
-    snprintf: agcPrintf,
-    vfprintf: agcPrintf,
-    vsnprintf: agcPrintf,
-    puts: agcPuts,
-    putchar: agcPutchar,
+    printf: stdio.printf,
+    fprintf: stdio.fprintf,
+    sprintf: () => 0,
+    snprintf: () => 0,
+    vfprintf: stdio.fprintf,
+    vsnprintf: () => 0,
+    puts: stdio.puts,
+    putchar: stdio.putchar,
     fopen: agcFopen,
     fclose: agcFclose,
     fread: agcFread,
@@ -184,11 +270,12 @@ export function createAgcRuntimeMathEnvImports() {
 }
 
 export function createAgcRuntimeImports(imports = {}) {
+  const { stdio, onStdout, onStderr, ...wasmImports } = imports;
   return {
-    ...imports,
+    ...wasmImports,
     env: {
       ...createAgcRuntimeMathEnvImports(),
-      ...createAgcRuntimeStdioEnvImports(),
+      ...createAgcRuntimeStdioEnvImports({ ...(stdio || {}), onStdout, onStderr }),
       ...(imports.env || {}),
     },
   };

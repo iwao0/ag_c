@@ -103,12 +103,18 @@ int main(void) {
   return 7;
 }
 `, { loadInclude });
+let linkedStdioStdout = "";
 const linkedStdio = await toolchain.instantiateLinkedWasm(linkedStdioSource, {
   exports: ["main"],
   useStdlib: false,
+}, {
+  onStdout: (chunk) => { linkedStdioStdout += chunk; },
 });
 if (linkedStdio.instance.exports.main() !== 7) {
   throw new Error("instantiated stdio import pipeline did not use JS stdio imports");
+}
+if (linkedStdioStdout !== "aa") {
+  throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
 }
 
 const stdioSource = await inlineStandardIncludes(`#include <stdio.h>

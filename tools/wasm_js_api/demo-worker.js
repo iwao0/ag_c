@@ -45,18 +45,27 @@ self.onmessage = async (ev) => {
       return;
     }
     if (mode === "linked") {
+      let stdout = "";
+      let stderr = "";
       const linked = await toolchain.instantiateLinkedWasm(expandedSources, {
         exports: ["main"],
         useStdlib: false,
+      }, {
+        onStdout: (chunk) => { stdout += chunk; },
+        onStderr: (chunk) => { stderr += chunk; },
       });
       let status = "OK";
       if (typeof linked.instance.exports.main === "function") {
         status = `OK main()=${String(linked.instance.exports.main())}`;
       }
+      const outputParts = [];
+      if (stdout.length > 0) outputParts.push(`stdout:\n${stdout}`);
+      if (stderr.length > 0) outputParts.push(`stderr:\n${stderr}`);
+      outputParts.push(`wasm:\n${hexDump(linked.wasm)}`);
       self.postMessage({
         ok: true,
         status,
-        output: hexDump(linked.wasm),
+        output: outputParts.join("\n\n"),
         download: { bytes: linked.wasm, name: "out.wasm", type: "application/wasm" },
       }, [linked.wasm.buffer]);
       return;
