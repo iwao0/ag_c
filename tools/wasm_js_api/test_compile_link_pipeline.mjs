@@ -1,19 +1,22 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createCompiler } from "./agc-wasm.js";
-import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js";
+import { createToolchain } from "./agc-toolchain.js";
 
 const compilerWasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm";
 const linkerWasmPath = process.argv[3] || "build/wasm_linker_selfhost/ag_wasm_link.wasm";
 const outDir = "build/wasm_js_pipeline_smoke";
 await mkdir(outDir, { recursive: true });
 
-const compiler = await createCompiler(await readFile(compilerWasmPath));
-const linker = await createLinker(await readFile(linkerWasmPath));
+const toolchain = await createToolchain({
+  compilerWasm: await readFile(compilerWasmPath),
+  linkerWasm: await readFile(linkerWasmPath),
+});
 
-const mainObj = compiler.compileObject("int other(void); int main(void) { return other() + 1; }\n");
-const otherObj = compiler.compileObject("int other(void) { return 41; }\n");
+const mainSource = "int other(void); int main(void) { return other() + 1; }\n";
+const otherSource = "int other(void) { return 41; }\n";
+const mainObj = toolchain.compileObject(mainSource);
+const otherObj = toolchain.compileObject(otherSource);
 
 const mainObjPath = path.join(outDir, "main_from_compiler_api.o");
 const otherObjPath = path.join(outDir, "other_from_compiler_api.o");
@@ -29,7 +32,7 @@ try {
   if (err.code !== "ENOENT") throw err;
 }
 
-const linked = linker.link([mainObj, otherObj], {
+const linked = toolchain.compileLinkedWasm([mainSource, otherSource], {
   exports: ["main"],
   useStdlib: false,
 });

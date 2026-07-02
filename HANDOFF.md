@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き354: browser demo linked wasm output）
+最終更新: 2026-07-02（続き355: wasm JS toolchain wrapper）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,12 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き355: **compiler/linker wasm をまとめる JS toolchain wrapper を追加**。
+  `tools/wasm_js_api/agc-toolchain.js` と `.d.ts` を追加し、
+  `createToolchain({ compilerWasm, linkerWasm })` から `compileWat(source)`、
+  `compileObject(source)`、`compileLinkedWasm(source | sources, options)` を呼べるようにした。
+  `tools/wasm_js_api/demo.html` と `test_compile_link_pipeline.mjs` はこの統合 wrapper 経由に変更。
+  確認: `make test-wasm-js-pipeline` = **green**。
 - 続き354: **browser demo で linked wasm 出力まで選べるようにした**。
   `tools/wasm_js_api/demo.html` が compiler wasm に加えて linker wasm も読み込み、
   Output mode を `WAT` / `Object` / `Linked Wasm` から選べる。

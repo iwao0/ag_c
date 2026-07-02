@@ -111,7 +111,10 @@ make wasm-selfhost-api
 make test-wasm-js-api
 ```
 
-JS wrapper は `tools/wasm_js_api/agc-wasm.js` です。
+JS の統合 wrapper は `tools/wasm_js_api/agc-toolchain.js` です。
+`createToolchain({ compilerWasm, linkerWasm })` から
+`compileWat(source)` / `compileObject(source)` / `compileLinkedWasm(source)` を使えます。
+compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
 (`Uint8Array`) を返します。
 browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の

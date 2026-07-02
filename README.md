@@ -82,22 +82,28 @@ make test-wasm-js-api
 make test-wasm-js-pipeline
 ```
 
-JS からは `createCompiler()` で読み込み、`compileWat(source)` で C ソースを WAT に、
-`compileObject(source)` で wasm object bytes に変換します:
+JS からは `createToolchain()` で compiler/linker wasm をまとめて読み込み、
+`compileWat(source)`、`compileObject(source)`、`compileLinkedWasm(source)` を使います:
 
 ```js
 import { readFile } from "node:fs/promises";
-import { createCompiler } from "./tools/wasm_js_api/agc-wasm.js";
+import { createToolchain } from "./tools/wasm_js_api/agc-toolchain.js";
 
-const wasm = await readFile("build/wasm_selfhost_api/ag_c_wasm_api.wasm");
-const compiler = await createCompiler(wasm);
-const wat = compiler.compileWat("int main(){return 42;}\n");
-const obj = compiler.compileObject("int other(void); int main(){return other();}\n");
+const toolchain = await createToolchain({
+  compilerWasm: await readFile("build/wasm_selfhost_api/ag_c_wasm_api.wasm"),
+  linkerWasm: await readFile("build/wasm_linker_selfhost/ag_wasm_link.wasm"),
+});
+const source = "int main(){return 42;}\n";
+const wat = toolchain.compileWat(source);
+const wasm = toolchain.compileLinkedWasm(source, { exports: ["main"] });
 console.log(wat);
-console.log(obj.byteLength);
+console.log(wasm.byteLength);
 ```
 
-TypeScript 用の宣言は `tools/wasm_js_api/agc-wasm.d.ts` です。
+低レベルに compiler だけを使う場合は `tools/wasm_js_api/agc-wasm.js` の
+`createCompiler()`、linker だけを使う場合は `tools/wasm_obj_linker/ag-wasm-link.js` の
+`createLinker()` も使えます。
+TypeScript 用の宣言は `tools/wasm_js_api/agc-toolchain.d.ts` です。
 既定では wasm module が export する `malloc/free` で入出力バッファを確保します。
 `useHeapBuffers: false` を指定した場合だけ fixed scratch buffer 経路を使います。
 browser demo は `tools/wasm_js_api/demo.html` です。repo root を静的 file server で配信して開きます。

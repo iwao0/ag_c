@@ -85,16 +85,17 @@
       <pre id="output"></pre>
     </main>
     <script type="module">
-      import { createCompiler } from "./agc-wasm.js";
-      import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js";
+      import { createToolchain } from "./agc-toolchain.js";
 
       const status = document.getElementById("status");
       const source = document.getElementById("source");
       const output = document.getElementById("output");
       const run = document.getElementById("run");
       const mode = document.getElementById("mode");
-      const compiler = await createCompiler("../../build/wasm_selfhost_api/ag_c_wasm_api.wasm");
-      const linker = await createLinker("../../build/wasm_linker_selfhost/ag_wasm_link.wasm");
+      const toolchain = await createToolchain({
+        compilerWasm: "../../build/wasm_selfhost_api/ag_c_wasm_api.wasm",
+        linkerWasm: "../../build/wasm_linker_selfhost/ag_wasm_link.wasm",
+      });
 
       function hexDump(bytes) {
         const lines = [];
@@ -109,14 +110,13 @@
       function compile() {
         try {
           if (mode.value === "object") {
-            const obj = compiler.compileObject(source.value);
+            const obj = toolchain.compileObject(source.value);
             output.textContent = hexDump(obj);
           } else if (mode.value === "linked") {
-            const obj = compiler.compileObject(source.value);
-            const wasm = linker.link([obj], { exports: ["main"] });
+            const wasm = toolchain.compileLinkedWasm(source.value, { exports: ["main"] });
             output.textContent = hexDump(wasm);
           } else {
-            output.textContent = compiler.compileWat(source.value);
+            output.textContent = toolchain.compileWat(source.value);
           }
           status.textContent = "OK";
         } catch (err) {
