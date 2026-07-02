@@ -28,6 +28,7 @@ WASM_TARGET=build/ag_c_wasm
 WASM_LINKER=build/ag_wasm_link
 WASM_RUNTIME=build/libagc_runtime.o
 WASM_SELFHOST_API=build/wasm_selfhost_api/ag_c_wasm_api.wasm
+WASM_LINKER_SELFHOST=build/wasm_linker_selfhost/ag_wasm_link.wasm
 TEST_TOKENIZER=build/test_tokenizer
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
@@ -158,6 +159,14 @@ wasm-selfhost-api: $(WASM_SELFHOST_API)
 test-wasm-js-api: $(WASM_SELFHOST_API)
 	@node tools/wasm_js_api/test_smoke.mjs $(WASM_SELFHOST_API)
 
+$(WASM_LINKER_SELFHOST): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
+	@bash scripts/build_wasm_linker_selfhost.sh build/wasm_linker_selfhost
+
+wasm-linker-selfhost: $(WASM_LINKER_SELFHOST)
+
+test-wasm-linker-selfhost: $(WASM_LINKER_SELFHOST) $(WASM_TARGET)
+	@node tools/wasm_obj_linker/test_selfhost_api.mjs $(WASM_LINKER_SELFHOST)
+
 check-tokenizer-perf-light:
 	./scripts/check_tokenizer_perf_light.sh
 
@@ -203,6 +212,6 @@ c-testsuite-verbose: $(TARGET)
 
 FORCE:
 
-.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api c-testsuite c-testsuite-verbose FORCE
+.PHONY: test test-asan clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost c-testsuite c-testsuite-verbose FORCE
 
 -include $(DEPS)

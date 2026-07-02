@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き348: compiler-side fix for `(*pp)[i].member`）
+最終更新: 2026-07-02（続き349: wasm self-host linker API）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,18 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き349: **作成中リンカー自身を wasm 化し、in-memory API smoke まで green**。
+  `scripts/build_wasm_linker_selfhost.sh` と Makefile target `wasm-linker-selfhost` /
+  `test-wasm-linker-selfhost` を追加した。
+  生成物は `build/wasm_linker_selfhost/ag_wasm_link.wasm`。
+  `agc_wasm_link_objects(inputs, input_count, exports, export_count, use_stdlib, out_len)` を export し、
+  JS/browser 側から object bytes を linear memory に置いてリンクできる最小 API にした。
+  `tools/wasm_obj_linker/test_selfhost_api.mjs` は `simple.c` を object 化し、wasm 化されたリンカーで
+  `main` export 付き wasm にリンクし、`wasm-validate` と `wasm-interp --run-all-exports`
+  で `main() => i32:42` を確認する。
+  実装中に `buf_t` の構造体返り値と `type_t` の構造体一括 push が wasm 実行時に壊れたため、
+  出力引数化と `push_type_copy()` で回避した。
+  確認: `make test-wasm-obj-linker` = **green**、`make test-wasm-linker-selfhost` = **green**。
 - 続き348: **`(*pp)[i].member` をコンパイラ側で修正**。
   `tools/wasm_obj_linker/ag_wasm_link.c` の `(*types)[i].raw_len` が `E3005` で落ちていた。
   リンカー source の回避変更は残さず、`build_subscript_deref()` で `T **pp` の `(*pp)[i]` を

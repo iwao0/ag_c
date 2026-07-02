@@ -352,6 +352,18 @@ static void patch_u32le(unsigned char *p, uint32_t v) {
   (arr)[(count)++] = (val); \
 } while (0)
 
+static int push_type_copy(type_t **arr, int *count, int *cap, const unsigned char *raw, size_t raw_len) {
+  if (*count == *cap) {
+    *cap = *cap ? *cap * 2 : 16;
+    *arr = xrealloc(*arr, (size_t)*cap * sizeof(**arr));
+  }
+  type_t *slot = &(*arr)[*count];
+  slot->raw_len = raw_len;
+  slot->raw = xmalloc(raw_len);
+  memcpy(slot->raw, raw, raw_len);
+  return (*count)++;
+}
+
 static unsigned char *read_file(const char *path, size_t *out_len) {
   FILE *f = fopen(path, "rb");
   if (!f) dief("failed to open %s", path);
@@ -375,11 +387,7 @@ static void parse_type_section(object_t *o, rd_t sec) {
     rd_skip(&sec, np);
     uint32_t nr = rd_uleb(&sec);
     rd_skip(&sec, nr);
-    type_t t = {0};
-    t.raw_len = sec.pos - start;
-    t.raw = xmalloc(t.raw_len);
-    memcpy(t.raw, sec.p + start, t.raw_len);
-    PUSH(o->types, o->type_count, o->type_cap, t);
+    push_type_copy(&o->types, &o->type_count, &o->type_cap, sec.p + start, sec.pos - start);
   }
 }
 
@@ -566,9 +574,7 @@ static void parse_reloc_section(object_t *o, rd_t sec, int is_code) {
   }
 }
 
-static object_t parse_object(const char *path) {
-  size_t len = 0;
-  unsigned char *file = read_file(path, &len);
+static object_t parse_object_bytes(const char *path, const unsigned char *file, size_t len) {
   if (len < 8 || memcmp(file, "\0asm", 4) != 0) dief("not a wasm object: %s", path);
   object_t o;
   memset(&o, 0, sizeof(o));
@@ -601,6 +607,13 @@ static object_t parse_object(const char *path) {
       }
     }
   }
+  return o;
+}
+
+static object_t parse_object(const char *path) {
+  size_t len = 0;
+  unsigned char *file = read_file(path, &len);
+  object_t o = parse_object_bytes(path, file, len);
   free(file);
   return o;
 }
@@ -612,12 +625,7 @@ static int intern_type(type_t **types, int *count, int *cap, const type_t *t) {
       return i;
     }
   }
-  type_t copy = {0};
-  copy.raw_len = t->raw_len;
-  copy.raw = xmalloc(copy.raw_len);
-  memcpy(copy.raw, t->raw, copy.raw_len);
-  PUSH(*types, *count, *cap, copy);
-  return *count - 1;
+  return push_type_copy(types, count, cap, t->raw, t->raw_len);
 }
 
 static void build_object_type_map(object_t *o, type_t **types, int *count, int *cap) {
@@ -2492,12 +2500,8 @@ static int add_runtime_undefined_func_symbol(object_t *runtime, str_t name, type
     if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) && str_eq(sym->name, name)) return i;
   }
 
-  type_t t = {0};
-  t.raw_len = type->raw_len;
-  t.raw = xmalloc(t.raw_len);
-  memcpy(t.raw, type->raw, t.raw_len);
-  int type_index = runtime->type_count;
-  PUSH(runtime->types, runtime->type_count, runtime->type_cap, t);
+  int type_index = push_type_copy(&runtime->types, &runtime->type_count, &runtime->type_cap,
+                                  type->raw, type->raw_len);
 
   func_t f = {0};
   f.name = str_dup(name.s, name.len);
@@ -3009,12 +3013,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
 static void add_runtime_func_symbol(object_t *objs, int obj_count, object_t *runtime,
                                     str_t name, type_t *type) {
   if (runtime_has_func(runtime, name)) return;
-  type_t t = {0};
-  t.raw_len = type->raw_len;
-  t.raw = xmalloc(t.raw_len);
-  memcpy(t.raw, type->raw, t.raw_len);
-  int type_index = runtime->type_count;
-  PUSH(runtime->types, runtime->type_count, runtime->type_cap, t);
+  int type_index = push_type_copy(&runtime->types, &runtime->type_count, &runtime->type_cap,
+                                  type->raw, type->raw_len);
 
   func_t f = {0};
   f.name = str_dup(name.s, name.len);
@@ -3065,12 +3065,8 @@ static int maybe_add_main_wrapper(object_t *objs, int obj_count, const char *exp
   if (wasm_type_result_valtype(main_type) != 0x7f) return 0;
 
   unsigned char wrapper_type_raw[] = {0x60, 0x00, 0x01, 0x7f}; /* () -> i32 */
-  type_t t = {0};
-  t.raw_len = sizeof(wrapper_type_raw);
-  t.raw = xmalloc(t.raw_len);
-  memcpy(t.raw, wrapper_type_raw, t.raw_len);
-  int type_index = runtime->type_count;
-  PUSH(runtime->types, runtime->type_count, runtime->type_cap, t);
+  int type_index = push_type_copy(&runtime->types, &runtime->type_count, &runtime->type_cap,
+                                  wrapper_type_raw, sizeof(wrapper_type_raw));
 
   func_t f = {0};
   f.name = str_dup("main", 4);
@@ -3440,8 +3436,8 @@ static int export_list_contains(const char **export_names, int export_count, con
   return 0;
 }
 
-static void build_module(const char *out_path, const char **export_names, int export_count,
-                         object_t *objs, int obj_count, int use_stdlib) {
+static void build_module_into(buf_t *out, const char **export_names, int export_count,
+                              object_t *objs, int obj_count, int use_stdlib) {
   check_duplicate_definitions(objs, obj_count);
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
@@ -3534,14 +3530,14 @@ static void build_module(const char *out_path, const char **export_names, int ex
     if (is_stack_pointer_name(globals[i].name)) globals[i].init_value = stack_top;
   }
 
-  buf_t out = {0};
-  buf_u32le(&out, 0x6d736100);
-  buf_u32le(&out, 1);
+  *out = (buf_t){0};
+  buf_u32le(out, 0x6d736100);
+  buf_u32le(out, 1);
 
   buf_t sec = {0};
   buf_uleb(&sec, (uint32_t)type_count);
   for (int i = 0; i < type_count; i++) buf_bytes(&sec, types[i].raw, types[i].raw_len);
-  emit_section(&out, SEC_TYPE, &sec);
+  emit_section(out, SEC_TYPE, &sec);
   free(sec.data); sec = (buf_t){0};
 
   if (import_count > 0) {
@@ -3552,7 +3548,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
       buf_u8(&sec, 0);
       buf_uleb(&sec, (uint32_t)imports[i].type_index);
     }
-    emit_section(&out, SEC_IMPORT, &sec);
+    emit_section(out, SEC_IMPORT, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
@@ -3562,7 +3558,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
       func_t *f = &defs[i].obj->funcs[defs[i].func_index];
       buf_uleb(&sec, (uint32_t)f->final_type);
     }
-    emit_section(&out, SEC_FUNCTION, &sec);
+    emit_section(out, SEC_FUNCTION, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
@@ -3571,14 +3567,14 @@ static void build_module(const char *out_path, const char **export_names, int ex
     buf_u8(&sec, 0x70);
     buf_u8(&sec, 0);
     buf_uleb(&sec, (uint32_t)table_count + 1);
-    emit_section(&out, SEC_TABLE, &sec);
+    emit_section(out, SEC_TABLE, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
   buf_uleb(&sec, 1);
   buf_u8(&sec, 0);
   buf_uleb(&sec, memory_pages);
-  emit_section(&out, SEC_MEMORY, &sec);
+  emit_section(out, SEC_MEMORY, &sec);
   free(sec.data); sec = (buf_t){0};
 
   if (global_count > 0) {
@@ -3590,7 +3586,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
       buf_sleb_i32(&sec, (int32_t)globals[i].init_value);
       buf_u8(&sec, 0x0b);
     }
-    emit_section(&out, SEC_GLOBAL, &sec);
+    emit_section(out, SEC_GLOBAL, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
@@ -3621,7 +3617,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
     buf_u8(&sec, 0);
     buf_uleb(&sec, (uint32_t)export_funcs[i].func_index);
   }
-  emit_section(&out, SEC_EXPORT, &sec);
+  emit_section(out, SEC_EXPORT, &sec);
   free(sec.data); sec = (buf_t){0};
 
   if (table_count > 0) {
@@ -3634,7 +3630,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
     for (int i = 0; i < table_count; i++) {
       buf_uleb(&sec, (uint32_t)table_funcs[i].final_func_index);
     }
-    emit_section(&out, SEC_ELEM, &sec);
+    emit_section(out, SEC_ELEM, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
@@ -3645,7 +3641,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
       buf_uleb(&sec, (uint32_t)f->body_len);
       buf_bytes(&sec, f->body, f->body_len);
     }
-    emit_section(&out, SEC_CODE, &sec);
+    emit_section(out, SEC_CODE, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
@@ -3660,11 +3656,56 @@ static void build_module(const char *out_path, const char **export_names, int ex
       buf_uleb(&sec, (uint32_t)d->size);
       buf_bytes(&sec, d->bytes, d->size);
     }
-    emit_section(&out, SEC_DATA, &sec);
+    emit_section(out, SEC_DATA, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
+}
+
+static void build_module(const char *out_path, const char **export_names, int export_count,
+                         object_t *objs, int obj_count, int use_stdlib) {
+  buf_t out;
+  build_module_into(&out, export_names, export_count, objs, obj_count, use_stdlib);
   write_output(out_path, &out);
+}
+
+typedef struct {
+  long ptr;
+  long len;
+} api_slice_t;
+
+long agc_wasm_link_objects(long inputs_addr, int input_count,
+                           long exports_addr, int export_count,
+                           int use_stdlib, long out_len_addr) {
+  if (!inputs_addr || input_count <= 0 || input_count > 4096 || export_count < 0 || export_count > 4096) {
+    return 0;
+  }
+  api_slice_t *inputs = (api_slice_t *)(uintptr_t)inputs_addr;
+  long *export_ptrs = exports_addr ? (long *)(uintptr_t)exports_addr : NULL;
+  long *out_len = out_len_addr ? (long *)(uintptr_t)out_len_addr : NULL;
+  if (!out_len) return 0;
+
+  object_t *objs = xmalloc((size_t)input_count * sizeof(*objs));
+  for (int i = 0; i < input_count; i++) {
+    if (!inputs[i].ptr || inputs[i].len < 8) return 0;
+    char name[32];
+    snprintf(name, sizeof(name), "input%d.o", i);
+    objs[i] = parse_object_bytes(name, (const unsigned char *)(uintptr_t)inputs[i].ptr,
+                                 (size_t)inputs[i].len);
+  }
+
+  const char **export_names = xmalloc((size_t)(export_count + 1) * sizeof(*export_names));
+  for (int i = 0; i < export_count; i++) {
+    if (!export_ptrs || !export_ptrs[i]) return 0;
+    export_names[i] = (const char *)(uintptr_t)export_ptrs[i];
+  }
+
+  buf_t out;
+  build_module_into(&out, export_names, export_count, objs, input_count, use_stdlib);
+  unsigned char *ret = xmalloc(out.len);
+  memcpy(ret, out.data, out.len);
+  *out_len = (long)out.len;
+  return (long)(uintptr_t)ret;
 }
 
 static void usage(void) {

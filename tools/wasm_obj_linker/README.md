@@ -12,6 +12,32 @@ separate repository.
 make build/ag_wasm_link build/libagc_runtime.o
 ```
 
+The linker can also be built as a wasm module:
+
+```sh
+make wasm-linker-selfhost
+make test-wasm-linker-selfhost
+```
+
+`build/wasm_linker_selfhost/ag_wasm_link.wasm` exports `memory`, `malloc`,
+`free`, `main`, and `agc_wasm_link_objects`. The API takes object bytes from
+linear memory rather than filesystem paths:
+
+```c
+typedef struct {
+  long ptr;
+  long len;
+} agc_link_slice_t;
+
+long agc_wasm_link_objects(long inputs, long input_count,
+                           long exports, long export_count,
+                           long use_stdlib, long out_len);
+```
+
+`inputs` points to an array of `(ptr,len)` object slices. `exports` points to an
+array of C string pointers. The return value is a pointer to the linked wasm
+bytes, and `*out_len` receives the byte length.
+
 ## Usage
 
 ```sh
@@ -73,6 +99,7 @@ Supported:
 
 ```sh
 make test-wasm-obj-linker
+make test-wasm-linker-selfhost
 ```
 
 The smoke test covers cross-object direct calls, extern global read/write,
