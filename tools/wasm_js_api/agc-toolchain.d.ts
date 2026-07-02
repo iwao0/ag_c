@@ -9,10 +9,12 @@ import type {
   AgcWasmLinkerOptions,
   AgcWasmLinkerSource,
 } from "../wasm_obj_linker/ag-wasm-link.js";
+import type { AgcRuntimeImports } from "./agc-runtime-imports.js";
 
 export interface AgcWasmToolchainOptions {
   compilerWasm: AgcWasmSource;
   linkerWasm: AgcWasmLinkerSource;
+  runtimeObject?: AgcWasmLinkerSource;
   compilerOptions?: AgcWasmCompilerOptions;
   linkerOptions?: AgcWasmLinkerOptions;
 }
@@ -26,11 +28,13 @@ export interface AgcWasmToolchain {
   instantiateLinkedWasm(
     sources: string | string[],
     options?: AgcWasmLinkOptions,
-    imports?: WebAssembly.Imports,
+    imports?: AgcRuntimeImports,
   ): Promise<{
     wasm: Uint8Array;
     module: WebAssembly.Module;
     instance: WebAssembly.Instance;
+    readStdout(): string;
+    readStderr(): string;
   }>;
 }
 

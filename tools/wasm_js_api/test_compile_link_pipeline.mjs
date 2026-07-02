@@ -12,6 +12,7 @@ await mkdir(outDir, { recursive: true });
 const toolchain = await createToolchain({
   compilerWasm: await readFile(compilerWasmPath),
   linkerWasm: await readFile(linkerWasmPath),
+  runtimeObject: await readFile("build/libagc_runtime.o"),
 });
 const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
 
@@ -99,21 +100,28 @@ if (mathInstantiated.instance.exports.main() !== 1010) {
 
 const linkedStdioSource = await inlineStandardIncludes(`#include <stdio.h>
 int main(void) {
-  printf("aa");
+  printf("%*s:%03d:aa", 4, "x", 7);
   return 7;
 }
 `, { loadInclude });
 let linkedStdioStdout = "";
 const linkedStdio = await toolchain.instantiateLinkedWasm(linkedStdioSource, {
-  exports: ["main"],
-  useStdlib: false,
+  exports: [
+    "main",
+    "__agc_runtime_stdout_ptr",
+    "__agc_runtime_stdout_len",
+    "__agc_runtime_stderr_ptr",
+    "__agc_runtime_stderr_len",
+  ],
+  useStdlib: true,
 }, {
   onStdout: (chunk) => { linkedStdioStdout += chunk; },
 });
 if (linkedStdio.instance.exports.main() !== 7) {
   throw new Error("instantiated stdio import pipeline did not use JS stdio imports");
 }
-if (linkedStdioStdout !== "aa") {
+if (linkedStdioStdout === "") linkedStdioStdout = linkedStdio.readStdout();
+if (linkedStdioStdout !== "   x:007:aa") {
   throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
 }
 

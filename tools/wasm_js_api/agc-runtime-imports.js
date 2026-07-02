@@ -41,45 +41,113 @@ function readCString(memory, ptr, maxLen = 1024 * 1024) {
   return utf8Decoder.decode(bytes.subarray(ptr, end));
 }
 
+function readMemoryUtf8(memory, ptr, len) {
+  ptr = Number(ptr) >>> 0;
+  len = Number(len) >>> 0;
+  if (!memory || !memory.buffer || len === 0 || ptr >= memory.buffer.byteLength) return "";
+  const bytes = new Uint8Array(memory.buffer);
+  const end = Math.min(bytes.length, ptr + len);
+  return utf8Decoder.decode(bytes.subarray(ptr, end));
+}
+
+function padFormatted(text, flags, width, numeric = false) {
+  if (width <= text.length) return text;
+  const leftAlign = flags.includes("-");
+  const padChar = numeric && flags.includes("0") && !leftAlign ? "0" : " ";
+  const padding = padChar.repeat(width - text.length);
+  if (leftAlign) return text + padding;
+  if (padChar === "0" && (text.startsWith("-") || text.startsWith("+"))) {
+    return text[0] + padding + text.slice(1);
+  }
+  return padding + text;
+}
+
 function formatPrintf(memory, fmtPtr, args) {
   const fmt = readCString(memory, fmtPtr);
   let argIndex = 0;
   return fmt.replace(/%([-+ #0]*)(\d+|\*)?(\.(\d+|\*))?(hh|h|ll|l|L|z|t|j)?([%csdiuoxXfFeEgGaAp])/g,
-    (match, _flags, width, _precision, precisionValue, _length, spec) => {
+    (match, flags, widthToken, precisionMatch, precisionValue, _length, spec) => {
       if (spec === "%") return "%";
-      if (width === "*") argIndex++;
-      if (precisionValue === "*") argIndex++;
+      let width = 0;
+      if (widthToken === "*") {
+        width = Number(args[argIndex++]) | 0;
+      } else if (widthToken) {
+        width = Number(widthToken) | 0;
+      }
+      if (width < 0) {
+        flags += "-";
+        width = -width;
+      }
+      let precision = -1;
+      if (precisionMatch) {
+        if (precisionValue === "*") {
+          precision = Number(args[argIndex++]) | 0;
+        } else if (precisionValue !== undefined) {
+          precision = Number(precisionValue) | 0;
+        } else {
+          precision = 0;
+        }
+      }
       const value = args[argIndex++];
+      let text;
+      let numeric = false;
       switch (spec) {
         case "s":
-          return readCString(memory, value);
+          text = readCString(memory, value);
+          if (precision >= 0) text = text.slice(0, precision);
+          return padFormatted(text, flags, width);
         case "c":
-          return String.fromCodePoint(Number(value) & 0xff);
+          return padFormatted(String.fromCodePoint(Number(value) & 0xff), flags, width);
         case "d":
         case "i":
-          return String(Number(value) | 0);
+          text = String(Number(value) | 0);
+          numeric = true;
+          break;
         case "u":
-          return String(Number(value) >>> 0);
+          text = String(Number(value) >>> 0);
+          numeric = true;
+          break;
         case "o":
-          return (Number(value) >>> 0).toString(8);
+          text = (Number(value) >>> 0).toString(8);
+          numeric = true;
+          break;
         case "x":
-          return (Number(value) >>> 0).toString(16);
+          text = (Number(value) >>> 0).toString(16);
+          numeric = true;
+          break;
         case "X":
-          return (Number(value) >>> 0).toString(16).toUpperCase();
+          text = (Number(value) >>> 0).toString(16).toUpperCase();
+          numeric = true;
+          break;
         case "f":
         case "F":
+          text = precision >= 0 ? Number(value).toFixed(precision) : String(Number(value));
+          numeric = true;
+          break;
         case "e":
         case "E":
+          text = precision >= 0 ? Number(value).toExponential(precision) : Number(value).toExponential();
+          if (spec === "E") text = text.toUpperCase();
+          numeric = true;
+          break;
         case "g":
         case "G":
+          text = precision >= 0 ? Number(value).toPrecision(precision || 1) : String(Number(value));
+          if (spec === "G") text = text.toUpperCase();
+          numeric = true;
+          break;
         case "a":
         case "A":
-          return String(Number(value));
+          text = String(Number(value));
+          numeric = true;
+          break;
         case "p":
-          return `0x${(Number(value) >>> 0).toString(16)}`;
+          text = `0x${(Number(value) >>> 0).toString(16)}`;
+          break;
         default:
           return match;
       }
+      return padFormatted(text, flags, width, numeric);
     });
 }
 
@@ -117,7 +185,15 @@ function makeStdio(options = {}) {
     return Number(c) | 0;
   }
 
-  return { printf, fprintf, puts, putchar };
+  function runtimeStdoutWrite(ptr, len) {
+    emitStdout(readMemoryUtf8(getMemory(), ptr, len));
+  }
+
+  function runtimeStderrWrite(ptr, len) {
+    emitStderr(readMemoryUtf8(getMemory(), ptr, len));
+  }
+
+  return { printf, fprintf, puts, putchar, runtimeStdoutWrite, runtimeStderrWrite };
 }
 
 function agcFopen(_path, _mode) {
@@ -155,6 +231,8 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     vsnprintf: () => 0,
     puts: stdio.puts,
     putchar: stdio.putchar,
+    __agc_runtime_stdout_write: stdio.runtimeStdoutWrite,
+    __agc_runtime_stderr_write: stdio.runtimeStderrWrite,
     fopen: agcFopen,
     fclose: agcFclose,
     fread: agcFread,

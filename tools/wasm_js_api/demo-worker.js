@@ -8,6 +8,7 @@ function getToolchain() {
     toolchainPromise = createToolchain({
       compilerWasm: "../../build/wasm_selfhost_api/ag_c_wasm_api.wasm",
       linkerWasm: "../../build/wasm_linker_selfhost/ag_wasm_link.wasm",
+      runtimeObject: "../../build/libagc_runtime.o",
     });
   }
   return toolchainPromise;
@@ -48,8 +49,14 @@ self.onmessage = async (ev) => {
       let stdout = "";
       let stderr = "";
       const linked = await toolchain.instantiateLinkedWasm(expandedSources, {
-        exports: ["main"],
-        useStdlib: false,
+        exports: [
+          "main",
+          "__agc_runtime_stdout_ptr",
+          "__agc_runtime_stdout_len",
+          "__agc_runtime_stderr_ptr",
+          "__agc_runtime_stderr_len",
+        ],
+        useStdlib: true,
       }, {
         onStdout: (chunk) => { stdout += chunk; },
         onStderr: (chunk) => { stderr += chunk; },
@@ -58,6 +65,8 @@ self.onmessage = async (ev) => {
       if (typeof linked.instance.exports.main === "function") {
         status = `OK main()=${String(linked.instance.exports.main())}`;
       }
+      if (stdout.length === 0) stdout = linked.readStdout();
+      if (stderr.length === 0) stderr = linked.readStderr();
       const outputParts = [];
       if (stdout.length > 0) outputParts.push(`stdout:\n${stdout}`);
       if (stderr.length > 0) outputParts.push(`stderr:\n${stderr}`);

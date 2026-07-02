@@ -2,6 +2,23 @@ import { createCompiler } from "./agc-wasm.js?v=stdio-imports";
 import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=stdio-imports";
 import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js?v=stdio-imports";
 
+const utf8Decoder = new TextDecoder();
+
+async function loadBytes(source, label) {
+  if (source === undefined || source === null) return null;
+  if (source instanceof Uint8Array) return source;
+  if (source instanceof ArrayBuffer) return new Uint8Array(source);
+  if (typeof source === "string" || source instanceof URL) {
+    if (typeof fetch !== "function") {
+      throw new TypeError(`${label} URL loading requires fetch`);
+    }
+    const response = await fetch(source);
+    if (!response.ok) throw new Error(`failed to fetch ${label}: ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  throw new TypeError(`${label} must be a URL, ArrayBuffer, or Uint8Array`);
+}
+
 function normalizeSources(sources) {
   if (typeof sources === "string") return [sources];
   if (!Array.isArray(sources) || sources.length === 0) {
@@ -21,6 +38,7 @@ export async function createToolchain(options) {
   }
   const compiler = await createCompiler(options.compilerWasm, options.compilerOptions);
   const linker = await createLinker(options.linkerWasm, options.linkerOptions);
+  const runtimeObject = await loadBytes(options.runtimeObject, "runtimeObject");
 
   function compileLinkedWasm(sources, linkOptions = {}) {
     const objects = normalizeSources(sources).map((source, i) => {
@@ -32,6 +50,9 @@ export async function createToolchain(options) {
         throw err;
       }
     });
+    if ((linkOptions.useStdlib ?? true) && runtimeObject) {
+      objects.push(runtimeObject);
+    }
     return linker.link(objects, linkOptions);
   }
 
@@ -47,7 +68,26 @@ export async function createToolchain(options) {
     });
     const result = await WebAssembly.instantiate(wasm, runtimeImports);
     memory = result.instance.exports.memory;
-    return { wasm, module: result.module, instance: result.instance };
+    function readExportBuffer(ptrName, lenName) {
+      const ptrFn = result.instance.exports[ptrName];
+      const lenFn = result.instance.exports[lenName];
+      if (!(memory instanceof WebAssembly.Memory) ||
+          typeof ptrFn !== "function" ||
+          typeof lenFn !== "function") {
+        return "";
+      }
+      const ptr = Number(ptrFn());
+      const len = Number(lenFn());
+      if (ptr <= 0 || len <= 0 || ptr + len > memory.buffer.byteLength) return "";
+      return utf8Decoder.decode(new Uint8Array(memory.buffer, ptr, len));
+    }
+    return {
+      wasm,
+      module: result.module,
+      instance: result.instance,
+      readStdout: () => readExportBuffer("__agc_runtime_stdout_ptr", "__agc_runtime_stdout_len"),
+      readStderr: () => readExportBuffer("__agc_runtime_stderr_ptr", "__agc_runtime_stderr_len"),
+    };
   }
 
   return {
