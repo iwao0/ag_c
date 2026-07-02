@@ -1,26 +1,51 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き364: browser demo stdio include expansion）
+最終更新: 2026-07-03（続き365: wasm selfhost e2e object signatures / adaptive JS compile buffer）
 
 ## 現状
 - `make test` = **green**。
-  内訳として `./build/test_e2e` = **1148/1148 green**、
+  内訳として `./build/test_e2e` = **1150/1150 green**、
   `./build/test_wasm32_e2e` = **1119 compiled / 1119 executed green**、
-  `./build/test_wasm32_object` = **1120/1120 e2e fixture object compile + validate green**。
+  `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test` = **green**、
+  `make wasm-selfhost-api` = **green**（`build/wasm_selfhost_api/ag_c_wasm_api.wasm` 生成）、
   `make test-wasm-obj-linker` = **green**、
   `make test-wasm-js-api` = **green**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-linker-selfhost` = **green**、
   `./build/test_wasm32_backend` = **green**、
   `./build/test_wasm32_e2e` = **1119 compiled / 1119 executed green**、
-  `./build/test_wasm32_object` = **1120/1120 e2e fixture object compile + validate green**、
+  `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**、
+  `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm` = **green**、
+  `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=100` =
+  **total registered 1121 / scanned 1120 / pass 1120 / fail 0 / skip 1 / linked 1120 / validated 1120 / ran 1120**、
   `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` = **1119 pass / fail 0 / skip 1**、
   `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail` = **1119 pass / fail 0 / skip 1**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き365: **wasm 化コンパイラ + wasm 化リンカーの e2e pipeline は fail 0 まで到達**。
+  `9cb31f9a` で self-host wasm の `va_copy` 経路を直し、`0c8faa18` で object emitter の
+  関数型 ABI と JS compile buffer 選択を直した。
+  `variadic_via_func_pointer.c` は、object mode の function pointer metadata と直接/未定義関数の
+  address initializer で整数引数を object ABI の `i64` に広げ、pointer は `i32`、FP は `f32/f64`
+  のままにすることで `indirect call signature mismatch` を解消した。
+  `indirect_data_xtu` 系も同じ ABI に揃い、`add2` の signature mismatch が消えた。
+  `complex_ops.c` は JS wrapper が通常サイズの source/output では fixed buffer を先に使い、
+  overflow または大きい source の時だけ heap buffer に fallback するようにした。
+  これで heap 配置依存で出ていた self-host parser failure
+  `input.c:423: E3064 [primary] 数値が必要です EOF` を避けつつ、大きい source の smoke は維持している。
+  残件として、wasm JS e2e pipeline では
+  `test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c` だけを skip している。
+  理由は tokenizer の `#if 0` 偽分岐 recovery が `setjmp`/`longjmp` に依存しており、
+  wasm runtime 上ではまだ同じ recovery が使えないため。次の具体的な対象はこの skip 解消。
+  確認: `make wasm-selfhost-api`、
+  `./build/test_wasm32_object`、
+  `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm`、
+  `./build/test_e2e`、
+  `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=100`、
+  `git diff --check`。
 - 続き364: **browser demo で `#include <stdio.h>` が E1002 にならないようにした**。
   Wasm self-host compiler API は仮想 FS を持たず、`input.c` からの `<stdio.h>` が
   `realpath("stdio.h")` 相当で include path validation に落ちていたため、
