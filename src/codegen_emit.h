@@ -5,5 +5,6 @@
 
 void cg_emitf(const char *fmt, ...);
 void gen_set_output_callback(gen_output_line_fn cb, void *user_data);
+void gen_set_simple_formatter(int enable);
 
 #endif

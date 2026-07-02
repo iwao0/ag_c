@@ -62,10 +62,50 @@ static void write_line_to_file(const char *line, size_t len, void *user_data) {
   fwrite(line, 1, len, out);
 }
 
+typedef struct {
+  char *buf;
+  int cap;
+  int len;
+  int overflow;
+} wasm_memory_output_t;
+
+static void write_line_to_memory(const char *line, size_t len, void *user_data) {
+  wasm_memory_output_t *out = (wasm_memory_output_t *)user_data;
+  for (size_t i = 0; i < len; i++) {
+    if (out->len + 1 < out->cap) {
+      out->buf[out->len] = line[i];
+    } else {
+      out->overflow = 1;
+    }
+    out->len++;
+  }
+  if (out->cap > 0) {
+    int nul = out->len < out->cap ? out->len : out->cap - 1;
+    out->buf[nul] = '\0';
+  }
+}
+
 static void clear_output_callback(void) {
   gen_output_line_fn cb = 0;
   void *user_data = 0;
   gen_set_output_callback(cb, user_data);
+}
+
+static int wasm_emit_function_direct(node_t *fn, int object_mode) {
+  ir_module_t *m = ir_build_function_module(fn);
+  if (!m) return 0;
+  if (object_mode) {
+#ifdef AGC_TARGET_WASM32
+    wasm32_obj_gen_ir_module(m);
+#else
+    ir_module_free(m);
+    return 0;
+#endif
+  } else {
+    wasm32_gen_ir_module(m);
+  }
+  ir_module_free(m);
+  return 1;
 }
 
 static char *read_file_contents(const char *path) {
@@ -99,6 +139,44 @@ static char *read_file_contents(const char *path) {
   }
   buf[nread] = '\0';
   return buf;
+}
+
+int agc_wasm_compile_wat(int source_addr, int out_addr, int out_cap) {
+  if (!source_addr || !out_addr || out_cap <= 0) return -1;
+
+  char *source = (char *)(long)source_addr;
+  wasm_memory_output_t out = {(char *)(long)out_addr, out_cap, 0, 0};
+  out.buf[0] = '\0';
+
+  const char *input_disp = "input.c";
+  tk_set_filename_ctx(tk_get_default_context(), input_disp);
+  tokenizer_context_t *tk_ctx = tk_get_default_context();
+
+  pp_stream_t *pps = NULL;
+  token_t *tok = pp_stream_open(&pps, tk_ctx, source);
+
+  gen_set_simple_formatter(1);
+  gen_set_output_callback(write_line_to_memory, &out);
+  wasm32_module_begin();
+
+  ps_stream_begin(tk_ctx, tok);
+  for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
+    if (!wasm_emit_function_direct(fn, 0)) {
+      clear_output_callback();
+      gen_set_simple_formatter(0);
+      if (pps) pp_stream_close(pps);
+      return -3;
+    }
+    ps_free_processed_ast();
+  }
+  if (pps) pp_stream_close(pps);
+
+  wasm32_emit_data_segments();
+  wasm32_module_end();
+  clear_output_callback();
+  gen_set_simple_formatter(0);
+
+  return out.overflow ? -2 : out.len;
 }
 
 int main(int argc, char **argv) {
@@ -173,13 +251,13 @@ int main(int argc, char **argv) {
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
   ps_stream_begin(tk_ctx, tok);
   for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
-    if (!ir_build_emit_function(fn,
 #ifdef AGC_TARGET_WASM32
-                                wasm_object_mode ? wasm32_obj_gen_ir_module : wasm32_gen_ir_module
+    if (!wasm_emit_function_direct(fn, wasm_object_mode)) {
 #else
+    if (!ir_build_emit_function(fn,
                                 gen_ir_module
-#endif
                                 )) {
+#endif
       diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
                           diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
       free(source);

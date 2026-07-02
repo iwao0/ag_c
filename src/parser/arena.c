@@ -12,6 +12,10 @@ struct arena_block_t {
   char data[];
 };
 
+static char *arena_block_data(arena_block_t *block) {
+  return (char *)(block + 1);
+}
+
 static arena_block_t *arena_head = NULL;
 static arena_block_t *arena_current = NULL;
 static size_t arena_reserved_bytes = 0;  // メモリ計測用: 現在の予約バイト数
@@ -44,7 +48,7 @@ void *arena_alloc(size_t size) {
     arena_current = block;
   }
 
-  void *ptr = arena_current->data + arena_current->used;
+  void *ptr = arena_block_data(arena_current) + arena_current->used;
   arena_current->used += size;
   memset(ptr, 0, size);
   return ptr;

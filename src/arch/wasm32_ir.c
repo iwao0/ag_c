@@ -80,15 +80,15 @@ typedef struct {
 
 static wasm_data_ctx_t g_data = {WASM_STATIC_BASE, NULL, 0, 0};
 static wasm_func_table_ctx_t g_func_table = {NULL, 0, 0, 0};
+static const char k_wasm_indent_spaces[] = "                                ";
 
 static void wasm_emit_indent(int spaces) {
-  static const char k_spaces[] = "                                ";
-  int chunk = (int)sizeof(k_spaces) - 1;
+  int chunk = (int)sizeof(k_wasm_indent_spaces) - 1;
   while (spaces > chunk) {
-    cg_emitf("%s", k_spaces);
+    cg_emitf("%s", k_wasm_indent_spaces);
     spaces -= chunk;
   }
-  if (spaces > 0) cg_emitf("%.*s", spaces, k_spaces);
+  if (spaces > 0) cg_emitf("%.*s", spaces, k_wasm_indent_spaces);
 }
 
 #define wasm_emitf(spaces, ...)       \

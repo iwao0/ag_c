@@ -29,4 +29,8 @@ int ir_build_each_and_emit(struct node_t **code, void (*emit_module)(ir_module_t
  * パースするたびに呼んで AST も関数ごとに解放できるようにする。fn は ND_FUNCDEF。 */
 int ir_build_emit_function(struct node_t *fn, void (*emit_module)(ir_module_t *));
 
+/* 1 関数だけを IR モジュールへ変換して返す。呼び出し側が直接 codegen したい経路用。
+ * 成功時は ir_module_free で解放する。変換不可なら NULL。 */
+ir_module_t *ir_build_function_module(struct node_t *fn);
+
 #endif /* AG_IR_BUILDER_H */

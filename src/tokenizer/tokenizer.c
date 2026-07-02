@@ -396,19 +396,6 @@ static bool tokenize_number_literal(
     char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space);
 
 /**
- * @brief 現在の空白/BOLフラグを取り出し、次トークン向けにリセットする。
- * @param at_bol 行頭フラグ。呼び出し後は `false` へリセットされる。
- * @param has_space 空白フラグ。呼び出し後は `false` へリセットされる。
- * @return 取り出したフラグ値。
- */
-static inline tokenize_flags_t take_tokenize_flags(bool *at_bol, bool *has_space) {
-  tokenize_flags_t f = {*at_bol, *has_space};
-  *at_bol = false;
-  *has_space = false;
-  return f;
-}
-
-/**
  * @brief Tokenizer実行セッションを開始し、active contextを切り替える。
  * @param ctx 実行対象コンテキスト。`NULL` の場合は既定コンテキスト。
  * @return 復元用のセッション情報。
@@ -427,16 +414,17 @@ static tokenize_session_t begin_tokenize_session(tokenizer_context_t *ctx) {
  * @param pp 入力カーソル。成功時は消費後位置へ更新。
  * @param cur_io トークン連結末尾ポインタ。成功時は新規トークンへ更新。
  * @param line_no 現在行番号。
- * @param flags 生成トークンへ転写する行頭/空白フラグ。
- * @return いずれかのトークナイズ規則に一致した場合 `true`。非該当時は `false`。
+ * @param at_bol 行頭フラグ。
+ * @param has_space 直前空白フラグ。
+ * @return 生成したトークン。非該当時は NULL。
  */
-static bool tokenize_one(char **pp, token_t **cur_io, int line_no, tokenize_flags_t flags) {
-  if (tokenize_punctuator(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
-  if (tokenize_string_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
-  if (tokenize_char_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
-  if (tokenize_ident_or_keyword(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
-  if (tokenize_number_literal(pp, cur_io, line_no, flags.at_bol, flags.has_space)) return true;
-  return false;
+static token_t *tokenize_one(char **pp, token_t **cur_io, int line_no, bool at_bol, bool has_space) {
+  if (tokenize_punctuator(pp, cur_io, line_no, at_bol, has_space)) return *cur_io;
+  if (tokenize_string_literal(pp, cur_io, line_no, at_bol, has_space)) return *cur_io;
+  if (tokenize_char_literal(pp, cur_io, line_no, at_bol, has_space)) return *cur_io;
+  if (tokenize_ident_or_keyword(pp, cur_io, line_no, at_bol, has_space)) return *cur_io;
+  if (tokenize_number_literal(pp, cur_io, line_no, at_bol, has_space)) return *cur_io;
+  return NULL;
 }
 
 /**
@@ -573,49 +561,51 @@ void tk_tolerate_longjmp_if_active(void) {
   if (g_tolerate_untokenizable && g_tok_jmp_valid) longjmp(g_tok_tolerate_jmp, 1);
 }
 
-/* 次の 1 トークンを切り出して返す。入力末尾では TK_EOF を 1 度だけ返し、以降は NULL。
- * 返すトークンの ->next は未設定 (呼び出し側が連結する)。 */
 token_t *tk_stream_next(tk_token_stream_t *s) {
   if (s->done) return NULL;
-  token_t local_head;
-  local_head.next = NULL;
-  token_t *cur = &local_head;
+  token_t head;
+  head.next = NULL;
+  token_t *cur = &head;
   for (;;) {
     s->p = tk_skip_ignored(s->p, &s->at_bol, &s->has_space, &s->line_no);
     if (!*s->p) {
       new_token_simple(TK_EOF, cur, s->line_no, false, false);
       s->done = true;
-      return local_head.next;
+      return head.next;
     }
-    tokenize_flags_t flags = take_tokenize_flags(&s->at_bol, &s->has_space);
+    bool flag_at_bol = s->at_bol;
+    bool flag_has_space = s->has_space;
+    s->at_bol = false;
+    s->has_space = false;
     if (!g_tolerate_untokenizable) {
-      if (tokenize_one(&s->p, &cur, s->line_no, flags)) {
-        return local_head.next;
-      }
+      char *p = s->p;
+      token_t *tok = tokenize_one(&p, &cur, s->line_no, flag_at_bol, flag_has_space);
+      s->p = p;
+      if (tok) return tok;
       TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, s->p, "%s",
                   diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
     }
     /* 寛容モード: scanner のエラーを longjmp で受け、トークン先頭の 1 文字を TK_UNKNOWN
      * にして進める (volatile は longjmp 後も値を保つため)。 */
     char *volatile tok_start = s->p;
-    volatile bool v_at_bol = flags.at_bol;
-    volatile bool v_has_space = flags.has_space;
+    volatile bool v_at_bol = flag_at_bol;
+    volatile bool v_has_space = flag_has_space;
     if (setjmp(g_tok_tolerate_jmp) != 0) {
       g_tok_jmp_valid = false;
       s->p = tok_start + 1;
       new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
-      return local_head.next;
+      return head.next;
     }
     g_tok_jmp_valid = true;
-    bool ok = tokenize_one(&s->p, &cur, s->line_no, flags);
+    char *p = s->p;
+    token_t *tok = tokenize_one(&p, &cur, s->line_no, flag_at_bol, flag_has_space);
+    s->p = p;
     g_tok_jmp_valid = false;
-    if (ok) {
-      return local_head.next;
-    }
+    if (tok) return tok;
     /* tokenize_one が false (トークナイズ不能文字): 1 文字を TK_UNKNOWN に。 */
     s->p = tok_start + 1;
     new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
-    return local_head.next;
+    return head.next;
   }
 }
 

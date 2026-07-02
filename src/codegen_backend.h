@@ -11,5 +11,6 @@ void gen_string_literals(void);
 void gen_float_literals(void);
 void gen_global_vars(void);
 void gen_set_output_callback(gen_output_line_fn cb, void *user_data);
+void gen_set_simple_formatter(int enable);
 
 #endif

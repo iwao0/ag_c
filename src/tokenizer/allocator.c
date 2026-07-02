@@ -12,6 +12,14 @@ struct arena_chunk_t {
   unsigned char data[];
 };
 
+static unsigned char *chunk_data(arena_chunk_t *c) {
+  return (unsigned char *)(c + 1);
+}
+
+static const unsigned char *chunk_data_const(const arena_chunk_t *c) {
+  return (const unsigned char *)(c + 1);
+}
+
 static arena_chunk_t *arena_head;
 static size_t total_chunks;
 static size_t total_reserved_bytes;  // 現在 live のチャンク総バイト数 (永続+recyclable 合算)
@@ -33,7 +41,8 @@ static arena_chunk_t *recyc_cursor_chunk = NULL; // 直近カーソルが属す�
 
 static int ptr_in_chunk(const void *p, const arena_chunk_t *c) {
   const unsigned char *u = p;
-  return c && u >= c->data && u < c->data + c->cap;
+  const unsigned char *base = c ? chunk_data_const(c) : NULL;
+  return c && u >= base && u < base + c->cap;
 }
 
 // FIFO 上で a が b 以前 (より古いか同じ) かを返す。
@@ -77,25 +86,25 @@ static void *arena_alloc(size_t size) {
   if (size == 0) size = 1;
   size = align_up(size, 8);
 
+  void *result = NULL;
   if (g_recyc_mode) {
     if (!recyc_newest || recyc_newest->used + size > recyc_newest->cap) {
       arena_chunk_t *chunk = new_chunk(size, RECYC_CHUNK_CAP);
       if (recyc_newest) recyc_newest->next = chunk; else recyc_oldest = chunk;
       recyc_newest = chunk;
     }
-    void *p = recyc_newest->data + recyc_newest->used;
+    result = chunk_data(recyc_newest) + recyc_newest->used;
     recyc_newest->used += size;
-    return p;
+  } else {
+    if (!arena_head || arena_head->used + size > arena_head->cap) {
+      arena_chunk_t *chunk = new_chunk(size, next_chunk_hint);
+      chunk->next = arena_head;  // 永続側は LIFO (prepend)
+      arena_head = chunk;
+    }
+    result = chunk_data(arena_head) + arena_head->used;
+    arena_head->used += size;
   }
-
-  if (!arena_head || arena_head->used + size > arena_head->cap) {
-    arena_chunk_t *chunk = new_chunk(size, next_chunk_hint);
-    chunk->next = arena_head;  // 永続側は LIFO (prepend)
-    arena_head = chunk;
-  }
-  void *p = arena_head->data + arena_head->used;
-  arena_head->used += size;
-  return p;
+  return result;
 }
 
 /** @brief recyclable モードを切り替える。streamed トークン生成中だけ 1 にする。 */

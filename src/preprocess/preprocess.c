@@ -62,6 +62,12 @@ static size_t if_expr_eval_steps = 0;
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
 static bool g_if_expr_eval = true;
 static void pp_error(diag_error_id_t id, const char *arg) __attribute__((noreturn));
+static const char *k_pp_month_names[] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+};
+static char pp_date_buf[16];
+static char pp_time_buf[10];
 
 static void if_expr_step_or_die(void) {
   if_expr_eval_steps++;
@@ -559,18 +565,12 @@ static void pp_init_predefined_macros(void) {
 
   time_t now = time(NULL);
   struct tm *tm_info = localtime(&now);
-  static const char *months[] = {
-    "Jan","Feb","Mar","Apr","May","Jun",
-    "Jul","Aug","Sep","Oct","Nov","Dec"
-  };
-  char date_buf[16];
-  char time_buf[10];
-  snprintf(date_buf, sizeof(date_buf), "%s %2d %4d",
-           months[tm_info->tm_mon], tm_info->tm_mday, tm_info->tm_year + 1900);
-  snprintf(time_buf, sizeof(time_buf), "%02d:%02d:%02d",
+  snprintf(pp_date_buf, sizeof(pp_date_buf), "%s %2d %4d",
+           k_pp_month_names[tm_info->tm_mon], tm_info->tm_mday, tm_info->tm_year + 1900);
+  snprintf(pp_time_buf, sizeof(pp_time_buf), "%02d:%02d:%02d",
            tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec);
-  add_string_macro("__DATE__", date_buf);
-  add_string_macro("__TIME__", time_buf);
+  add_string_macro("__DATE__", pp_date_buf);
+  add_string_macro("__TIME__", pp_time_buf);
 }
 
 static hideset_t *new_hideset(char *name) {

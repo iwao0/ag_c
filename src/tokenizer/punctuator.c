@@ -55,34 +55,49 @@ token_kind_t punctuator_kind_for_str(const char *op) {
 }
 
 static inline token_kind_t punctuator_kind_for_2chars(char c0, char c1) {
-  static const token_kind_t table[256][256] = {
-      ['!']['='] = TK_NEQ,
-      ['#']['#'] = TK_HASHHASH,
-      ['%']['='] = TK_MODEQ,
-      ['%'][':'] = TK_HASH,
-      ['%']['>'] = TK_RBRACE,
-      ['&']['&'] = TK_ANDAND,
-      ['&']['='] = TK_ANDEQ,
-      ['+']['+'] = TK_INC,
-      ['+']['='] = TK_PLUSEQ,
-      ['-']['-'] = TK_DEC,
-      ['-']['='] = TK_MINUSEQ,
-      ['-']['>'] = TK_ARROW,
-      ['*']['='] = TK_MULEQ,
-      ['/']['='] = TK_DIVEQ,
-      [':']['>'] = TK_RBRACKET,
-      ['<']['%'] = TK_LBRACE,
-      ['<'][':'] = TK_LBRACKET,
-      ['<']['<'] = TK_SHL,
-      ['<']['='] = TK_LE,
-      ['=']['='] = TK_EQEQ,
-      ['>']['='] = TK_GE,
-      ['>']['>'] = TK_SHR,
-      ['^']['='] = TK_XOREQ,
-      ['|']['='] = TK_OREQ,
-      ['|']['|'] = TK_OROR,
-  };
-  return table[(unsigned char)c0][(unsigned char)c1];
+  switch (c0) {
+    case '!': return c1 == '=' ? TK_NEQ : TK_EOF;
+    case '#': return c1 == '#' ? TK_HASHHASH : TK_EOF;
+    case '%':
+      if (c1 == '=') return TK_MODEQ;
+      if (c1 == ':') return TK_HASH;
+      if (c1 == '>') return TK_RBRACE;
+      return TK_EOF;
+    case '&':
+      if (c1 == '&') return TK_ANDAND;
+      if (c1 == '=') return TK_ANDEQ;
+      return TK_EOF;
+    case '+':
+      if (c1 == '+') return TK_INC;
+      if (c1 == '=') return TK_PLUSEQ;
+      return TK_EOF;
+    case '-':
+      if (c1 == '-') return TK_DEC;
+      if (c1 == '=') return TK_MINUSEQ;
+      if (c1 == '>') return TK_ARROW;
+      return TK_EOF;
+    case '*': return c1 == '=' ? TK_MULEQ : TK_EOF;
+    case '/': return c1 == '=' ? TK_DIVEQ : TK_EOF;
+    case ':': return c1 == '>' ? TK_RBRACKET : TK_EOF;
+    case '<':
+      if (c1 == '%') return TK_LBRACE;
+      if (c1 == ':') return TK_LBRACKET;
+      if (c1 == '<') return TK_SHL;
+      if (c1 == '=') return TK_LE;
+      return TK_EOF;
+    case '=': return c1 == '=' ? TK_EQEQ : TK_EOF;
+    case '>':
+      if (c1 == '=') return TK_GE;
+      if (c1 == '>') return TK_SHR;
+      return TK_EOF;
+    case '^': return c1 == '=' ? TK_XOREQ : TK_EOF;
+    case '|':
+      if (c1 == '=') return TK_OREQ;
+      if (c1 == '|') return TK_OROR;
+      return TK_EOF;
+    default:
+      return TK_EOF;
+  }
 }
 
 /** @brief `p` 位置で最長一致する記号（2〜4文字）を判定する。 */

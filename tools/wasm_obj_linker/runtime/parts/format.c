@@ -50,6 +50,20 @@ static void ag_rt_write_idec(char *buf, size_t size, int bounded, size_t *pos,
   ag_rt_write_udec(buf, size, bounded, pos, u, 0, 0);
 }
 
+static void ag_rt_write_str_n(char *buf, size_t size, int bounded, size_t *pos,
+                              const char *s, int limit) {
+  if (limit < 0) {
+    ag_rt_write_str(buf, size, bounded, pos, s);
+    return;
+  }
+  if (!s) s = "(null)";
+  while (*s && limit > 0) {
+    ag_rt_putc(buf, size, bounded, pos, *s);
+    s++;
+    limit--;
+  }
+}
+
 static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, va_list ap) {
   size_t pos = 0;
   while (*fmt) {
@@ -66,6 +80,7 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
 
     int zero_pad = 0;
     int width = 0;
+    int precision = -1;
     if (*fmt == '0') {
       zero_pad = 1;
       fmt++;
@@ -73,6 +88,19 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     while ((int)*fmt >= '0' && (int)*fmt <= '9') {
       width = width * 10 + (*fmt - '0');
       fmt++;
+    }
+    if (*fmt == '.') {
+      fmt++;
+      if (*fmt == '*') {
+        precision = va_arg(ap, int);
+        fmt++;
+      } else {
+        precision = 0;
+        while ((int)*fmt >= '0' && (int)*fmt <= '9') {
+          precision = precision * 10 + (*fmt - '0');
+          fmt++;
+        }
+      }
     }
 
     int length_z = 0;
@@ -89,7 +117,7 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       ag_rt_write_udec(buf, size, bounded, &pos, v, width, zero_pad);
       fmt++;
     } else if (*fmt == 's') {
-      ag_rt_write_str(buf, size, bounded, &pos, va_arg(ap, char *));
+      ag_rt_write_str_n(buf, size, bounded, &pos, va_arg(ap, char *), precision);
       fmt++;
     } else if (*fmt == 'c') {
       ag_rt_putc(buf, size, bounded, &pos, va_arg(ap, int));

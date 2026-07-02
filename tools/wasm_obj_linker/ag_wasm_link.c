@@ -3513,7 +3513,7 @@ static void build_module(const char *out_path, const char *export_name,
   patch_object_relocations(objs, obj_count, &imports, &import_count,
                            &types, &type_count, &type_cap, &globals, &global_count, &global_cap,
                            &table_funcs, &table_count, &table_cap);
-  uint32_t min_memory = mem > 65536 ? mem : 65536;
+  uint32_t min_memory = mem > 67108864 ? mem : 67108864;
   uint32_t memory_pages = align_to_u32_checked(min_memory, 65536, "memory layout overflow") / 65536;
   uint32_t stack_top = memory_pages * 65536;
   for (int i = 0; i < global_count; i++) {

@@ -854,7 +854,7 @@ static int parse_assoc_base_type(generic_type_t *out,
     int tag_len = 0;
     int is_ptr = 0;
     int td_is_unsigned = 0;
-    psx_typedef_info_t _ti;
+    psx_typedef_info_t _ti = {0};
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       base_kind = _ti.base_kind; elem_size = _ti.elem_size; fp_kind = _ti.fp_kind;
       tag_kind = _ti.tag_kind; tag_name = _ti.tag_name; tag_len = _ti.tag_len;
@@ -1769,7 +1769,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
     char *td_tag_name = NULL;
     int td_tag_len = 0;
     int td_ptr = 0;
-    psx_typedef_info_t _ti;
+    psx_typedef_info_t _ti = {0};
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
       td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
@@ -2312,6 +2312,10 @@ static int parse_parenthesized_type_size(void) {
     if ((!td_ptr || td_is_array) &&
         psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) {
       sz = td_sizeof;
+    }
+    if (sz <= 0 && !td_ptr && _ti.tag_kind != TK_EOF && _ti.tag_name) {
+      int tag_sz = psx_ctx_get_tag_size(_ti.tag_kind, _ti.tag_name, _ti.tag_len);
+      if (tag_sz > 0) sz = tag_sz;
     }
     return finish_parenthesized_type_size(t, sz);
   }

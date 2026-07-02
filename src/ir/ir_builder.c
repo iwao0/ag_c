@@ -3679,21 +3679,30 @@ static int g_ir_dump_enabled(void) {
  * (1 関数モジュールに const_fold/dce + gen_func)。fn は ND_FUNCDEF。成功 1 / エラー 0。 */
 int ir_build_emit_function(node_t *fn, void (*emit_module)(ir_module_t *)) {
   if (!fn || fn->kind != ND_FUNCDEF) return 0;
-  ir_build_ctx_t ctx = {0};
-  ctx.m = ir_module_new();
-  if (!build_function(&ctx, (node_func_t *)fn)) {
-    ir_module_free(ctx.m);
+  ir_module_t *m = ir_build_function_module(fn);
+  if (!m) {
     return 0;
   }
   if (g_ir_dump_enabled()) {
     char *buf = malloc(1 << 16);
-    ir_print_module_to_buf(ctx.m, buf, 1 << 16);
+    ir_print_module_to_buf(m, buf, 1 << 16);
     fprintf(stderr, "%s", buf);
     free(buf);
   }
-  if (emit_module) emit_module(ctx.m);
-  ir_module_free(ctx.m);
+  if (emit_module) emit_module(m);
+  ir_module_free(m);
   return 1;
+}
+
+ir_module_t *ir_build_function_module(node_t *fn) {
+  if (!fn || fn->kind != ND_FUNCDEF) return NULL;
+  ir_build_ctx_t ctx = {0};
+  ctx.m = ir_module_new();
+  if (!build_function(&ctx, (node_func_t *)fn)) {
+    ir_module_free(ctx.m);
+    return NULL;
+  }
+  return ctx.m;
 }
 
 int ir_build_each_and_emit(node_t **code, void (*emit_module)(ir_module_t *)) {

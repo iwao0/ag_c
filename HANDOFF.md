@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-01（続き343: libagc_runtime fstat helper）
+最終更新: 2026-07-02（続き344: self-host Wasm API smoke green）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,28 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き344: **self-host `agc_wasm_compile_wat` が最小 C から WAT を返すところまで green**。
+  `build/wasm_selfhost_probe_current/ag_c_wasm_api.wasm` を import なしで link し、
+  Node から `agc_wasm_compile_wat("int main(){return 42;}")` を呼んで
+  `(func $main ...)` と `(return (i32.const 42))` を含む WAT が返ることを確認した。
+  原因は 2 点。まず `src/tokenizer/allocator.c` と `src/parser/arena.c` の flexible array member
+  (`data[]`) 直接参照が Wasm object 経路で 0 アドレス化していたため、`chunk + 1` / `block + 1`
+  で payload address を取る helper に変更した。次に self-host wasm 上では
+  `ir_build_emit_function(fn, callback)` の callback 間接呼び出しが trap するため、
+  `ir_build_function_module(fn)` を追加し、Wasm target では IR module を作って直接
+  `wasm32_gen_ir_module` / `wasm32_obj_gen_ir_module` を呼ぶ形にした。
+  併せて memory output callback と simple formatter を追加し、Wasm 内 API から stdout ではなく
+  caller 指定 buffer へ WAT を返せるようにした。
+  確認: `make -j4 build/ag_c_wasm`、
+  self-host object relink + `wasm-validate build/wasm_selfhost_probe_current/ag_c_wasm_api.wasm`、
+  Node smoke (`RET 503`, `HAS_MAIN true`, `HAS_RETURN_42 true`)、
+  `make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = **1119/1119**、
+  `./build/test_wasm32_backend`、
+  `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed**、
+  `make test` = **green**、
+  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**、
+  `git diff --check`。
 - 続き343: **`libagc_runtime.o` に `fstat` helper を追加**。
   `src/preprocess/preprocess.c` は `open` 後に `fstat` で regular file と file size を確認するため、
   runtime object に `__agc_runtime_fstat` を追加した。現在の in-memory file buffer に合わせて

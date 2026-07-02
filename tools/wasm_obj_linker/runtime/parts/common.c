@@ -26,7 +26,7 @@ static char *ag_rt_ptr(long addr) {
   return (char *)addr;
 }
 
-static long ag_rt_heap = 32768;
+static long ag_rt_heap = 524288;
 static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
 static char ag_rt_strerror[] = "error";
