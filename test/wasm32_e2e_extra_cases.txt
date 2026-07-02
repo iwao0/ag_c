@@ -55,6 +55,7 @@ probes_found_bugs/cast_int_to_double.c
 probes_found_bugs/cast_short_char_sign_extend.c
 probes_found_bugs/cast_subint_to_int_signedness.c
 probes_found_bugs/cast_to_signed_comparison.c
+probes_found_bugs/comparison_result_is_signed_int.c
 probes_found_bugs/cast_to_struct_pointer.c
 probes_found_bugs/cast_voidptr_subscript.c
 probes_found_bugs/char_2d_array_string_init.c
@@ -138,6 +139,7 @@ probes_found_bugs/generic_char_and_longlong_identity.c
 probes_found_bugs/generic_complex_derived_type.c
 probes_found_bugs/generic_complex_derived_type_global.c
 probes_found_bugs/generic_long_double.c
+probes_found_bugs/generic_long_long_binary_result.c
 probes_found_bugs/generic_long_vs_longlong.c
 probes_found_bugs/generic_scalar_cast_control.c
 probes_found_bugs/generic_streaming_lookahead.c

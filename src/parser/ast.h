@@ -84,6 +84,7 @@ struct node_t {
   unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
                                      // (`!p == 0` の precedence-trap 警告に使う)
   unsigned int is_void_call : 1; // ND_FUNCALL: 戻り値が void
+  unsigned int is_long_long : 1; // 1: long long 型 (_Generic で long と区別)
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
@@ -190,6 +191,8 @@ struct node_num_t {
   unsigned char int_is_long_long;
   // 明示 cast で得た整数定数の幅。0 は通常の int/long リテラル、1/2 は char/short。
   unsigned char int_width;
+  // 明示 cast で得た plain char 定数。signed char / unsigned char と _Generic で区別する。
+  unsigned char int_is_plain_char;
   // 1: この NUM ノードが明示 cast (`(void*)0xdeadbeefL` 等) でポインタ型へ変換された
   // 結果。folding で ND_NUM に潰されてもキャスト経路を覚えておき、ポインタ変数初期化の
   // 制約チェック (C11 6.5.16.1) で「キャスト経由なら許容」として扱う。

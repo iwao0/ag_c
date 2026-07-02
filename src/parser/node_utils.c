@@ -582,6 +582,28 @@ static int node_is_unsigned(node_t *node) {
   }
 }
 
+static int node_is_long_long(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_NUM:
+      return ((node_num_t *)node)->int_is_long_long ? 1 : 0;
+    case ND_LVAR:
+      return as_lvar(node)->mem.is_long_long ? 1 : 0;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_PTR_CAST:
+      return as_mem(node)->is_long_long ? 1 : 0;
+    case ND_TERNARY: {
+      node_ctrl_t *t = (node_ctrl_t *)node;
+      return node_is_long_long(t->base.rhs) || node_is_long_long(t->els);
+    }
+    default:
+      return node->is_long_long ? 1 : 0;
+  }
+}
+
 static int node_uac_effective_unsigned(node_t *node) {
   if (!node) return 0;
   if (ps_node_is_pointer(node)) return 0;
@@ -643,10 +665,18 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   if (kind == ND_SHL || kind == ND_SHR) {
     int lhs_sz = ps_node_type_size(lhs);
     if (lhs_sz >= 4 && node_is_unsigned(lhs)) node->is_unsigned = 1;
+    if (lhs_sz >= 8 && node_is_long_long(lhs)) node->is_long_long = 1;
   } else if (kind == ND_ADD || kind == ND_SUB || kind == ND_MUL ||
              kind == ND_DIV || kind == ND_MOD || kind == ND_BITAND ||
              kind == ND_BITXOR || kind == ND_BITOR) {
     node->is_unsigned = binary_usual_arith_unsigned(lhs, rhs) ? 1 : 0;
+    if (ps_node_type_size(node) >= 8 &&
+        (node_is_long_long(lhs) || node_is_long_long(rhs))) {
+      node->is_long_long = 1;
+    }
+  } else if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE ||
+             kind == ND_LOGAND || kind == ND_LOGOR) {
+    node->is_unsigned = 0;
   } else if (node_is_unsigned(lhs) || node_is_unsigned(rhs)) {
     node->is_unsigned = 1;
   }

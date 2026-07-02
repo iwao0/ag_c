@@ -90,6 +90,29 @@ typedef struct {
 
 static void consume_local_type_quals(token_t **cur);
 static long long eval_const_expr_type_size(node_t *n, int *ok);
+
+static int expr_node_is_long_long_type(node_t *n) {
+  if (!n) return 0;
+  switch (n->kind) {
+    case ND_NUM:
+      return ((node_num_t *)n)->int_is_long_long ? 1 : 0;
+    case ND_LVAR:
+      return as_lvar(n)->mem.is_long_long ? 1 : 0;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_PTR_CAST:
+      return ((node_mem_t *)n)->is_long_long ? 1 : 0;
+    case ND_TERNARY: {
+      node_ctrl_t *t = (node_ctrl_t *)n;
+      return expr_node_is_long_long_type(t->base.rhs) ||
+             expr_node_is_long_long_type(t->els);
+    }
+    default:
+      return n->is_long_long ? 1 : 0;
+  }
+}
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
 static char *new_compound_lit_name(void);
@@ -704,7 +727,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   int is_ptr = 0;
   if (control->kind == ND_LVAR) is_ptr = ((node_lvar_t *)control)->mem.is_pointer;
   else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
-           control->kind == ND_ADDR || control->kind == ND_STRING) {
+           control->kind == ND_ADDR || control->kind == ND_STRING || control->kind == ND_PTR_CAST) {
     is_ptr = ((node_mem_t *)control)->is_pointer;
   }
   if (is_ptr) {
@@ -744,9 +767,12 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     if (as_lvar(control)->mem.is_long_long) gt.is_long_long = 1;
     if (as_lvar(control)->mem.is_plain_char) gt.is_plain_char = 1;
   } else if (control->kind == ND_GVAR || control->kind == ND_DEREF ||
-             control->kind == ND_ASSIGN || control->kind == ND_ADDR) {
+             control->kind == ND_ASSIGN || control->kind == ND_ADDR ||
+             control->kind == ND_PTR_CAST) {
     if (((node_mem_t *)control)->is_long_long) gt.is_long_long = 1;
     if (((node_mem_t *)control)->is_plain_char) gt.is_plain_char = 1;
+  } else if (expr_node_is_long_long_type(control)) {
+    gt.is_long_long = 1;
   }
   /* long/long long サフィックス付き整数リテラル (`42L`) は long (8B) として扱い、
    * _Generic の `long:` association と一致させる (int_is_long は parse_num_literal が立てる)。 */
@@ -755,6 +781,9 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     /* `0LL` は long long。long (8B) の association より long long を優先させるため
      * is_long_long を立てる (generic_type_matches が同サイズ整数で区別する)。 */
     if (((node_num_t *)control)->int_is_long_long) gt.is_long_long = 1;
+  }
+  if (control->kind == ND_NUM && ((node_num_t *)control)->int_is_plain_char) {
+    gt.is_plain_char = 1;
   }
   gt.kind = gt.is_unsigned ? TK_UNSIGNED : TK_INT;
   return gt;
@@ -1558,7 +1587,8 @@ static int parse_cast_array_suffixes_token(token_t **pt, int *out_dims, int max_
 static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointer, token_t **after_rparen,
                            token_kind_t *out_tag_kind, char **out_tag_name, int *out_tag_len,
                            int *out_elem_size, tk_float_kind_t *out_fp_kind, int *out_array_count,
-                           int *out_array_dims, int *out_array_dim_count, int *out_is_unsigned) {
+                           int *out_array_dims, int *out_array_dim_count, int *out_is_unsigned,
+                           int *out_is_long_long, int *out_is_plain_char) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
   tk_ensure_lookahead();
   token_t *t = tok->next;
@@ -1572,6 +1602,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_array_count) *out_array_count = 0;
   if (out_array_dim_count) *out_array_dim_count = 0;
   if (out_is_unsigned) *out_is_unsigned = 0;
+  if (out_is_long_long) *out_is_long_long = 0;
+  if (out_is_plain_char) *out_is_plain_char = 0;
   g_last_cast_is_complex = 0;
   g_last_cast_ptr_array_pointee_bytes = 0;
 
@@ -1614,7 +1646,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         inner_elem = 8;
         inner_fp = TK_FLOAT_KIND_DOUBLE;
         q = q->next->next;
-      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q, NULL, NULL)) {
+      } else if (parse_integer_cast_spec_sequence(q, &inner_kind, &inner_elem, NULL, &q,
+                                                  out_is_long_long, out_is_plain_char)) {
         inner_fp = TK_FLOAT_KIND_NONE;
       } else {
         inner_kind = q->kind;
@@ -1742,7 +1775,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   }
   if (is_type) {
     if (*type_kind == TK_EOF) {
-      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, out_is_unsigned, &t, NULL, NULL)) {
+      if (parse_integer_cast_spec_sequence(t, type_kind, out_elem_size, out_is_unsigned, &t,
+                                           out_is_long_long, out_is_plain_char)) {
         if (out_fp_kind) *out_fp_kind = TK_FLOAT_KIND_NONE;
       } else {
         *type_kind = t->kind;
@@ -2457,7 +2491,8 @@ static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
 
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
-                          int cast_elem_size, int cast_is_unsigned) {
+                          int cast_elem_size, int cast_is_unsigned, int cast_is_long_long,
+                          int cast_is_plain_char) {
   /* 浮動小数点定数 ND_NUM をスカラ整数型へキャストするのは定数畳み込みできる。
    * wrap_fp_to_int_if_needed 経由で ND_FP_TO_INT に変換してしまうと「定数」ではなく
    * なり、グローバル初期化 (`int g = (int)3.7;`) の has_init が立たず `.comm` に
@@ -2477,6 +2512,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     if (!is_pointer && type_kind == TK_LONG) {
       if (operand->kind == ND_NUM) {
         ((node_num_t *)operand)->int_is_long = 1;
+        ((node_num_t *)operand)->int_is_long_long = cast_is_long_long ? 1 : 0;
         psx_node_set_unsigned(operand, cast_is_unsigned);
         return operand;
       }
@@ -2486,6 +2522,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         wrap->base.lhs = operand;
         wrap->type_size = 8;
         wrap->is_unsigned = cast_is_unsigned ? 1 : 0;
+        wrap->is_long_long = cast_is_long_long ? 1 : 0;
         if (ps_node_is_unsigned(operand) && ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8)
           wrap->widen_zext_i64 = 1;
         return (node_t *)wrap;
@@ -2654,7 +2691,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
       psx_node_set_unsigned(shl, 0);
       psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) を強制 */
-      return shr;
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = shr;
+      wrap->type_size = 4;
+      return (node_t *)wrap;
     }
     /* ポインタ→整数の明示キャストでは初期化/代入時の制約違反検査を回避するため、
      * node_mem_t を持つノードの is_pointer をクリアする。 */
@@ -2672,6 +2713,13 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
        * (`(int)(unsigned short)0xFFFF` が -1 に、`(unsigned)(short)-1` が 65535 に)。
        * sub-int operand は元の load 符号性を保ち、暗黙変換と同じ正しい昇格に任せる。 */
       if (ps_node_type_size(operand) >= 4) psx_node_set_unsigned(operand, 0);
+    }
+    if (ps_node_type_size(operand) >= 4 && !ps_node_is_pointer(operand)) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->type_size = 4;
+      return (node_t *)wrap;
     }
     return operand;
   }
@@ -2697,7 +2745,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
       psx_node_set_unsigned(shl, target_unsigned);
       psx_node_set_unsigned(shr, target_unsigned);
-      return shr;
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = shr;
+      wrap->type_size = 4;
+      wrap->is_unsigned = target_unsigned ? 1 : 0;
+      return (node_t *)wrap;
     }
     /* sub-int (char/short) を (unsigned) へ: operand 自身の load 符号性 (ldrsh/ldrh)
      * を保ったまま 32bit unsigned 値へ昇格する必要がある。is_unsigned を直接立てると
@@ -2713,6 +2766,14 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffffffffLL));
       psx_node_set_unsigned(masked, 1);
       return masked;
+    }
+    if (op_sz >= 4 && !ps_node_is_pointer(operand)) {
+      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.lhs = operand;
+      wrap->type_size = 4;
+      wrap->is_unsigned = target_unsigned ? 1 : 0;
+      return (node_t *)wrap;
     }
     if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
         operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
@@ -2751,6 +2812,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         tv = cast_is_unsigned ? (long long)(unsigned char)v : (long long)(signed char)v;
       node_t *n = psx_node_new_num(tv);
       ((node_num_t *)n)->int_width = (unsigned char)(type_kind == TK_SHORT ? 2 : 1);
+      if (cast_is_plain_char) ((node_num_t *)n)->int_is_plain_char = 1;
       if (cast_is_unsigned) psx_node_set_unsigned(n, 1);
       return n;
     }
@@ -2778,6 +2840,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     wrap->base.kind = ND_PTR_CAST;
     wrap->base.lhs = shr;
     wrap->type_size = (short)(width / 8);
+    if (cast_is_plain_char) wrap->is_plain_char = 1;
     return (node_t *)wrap;
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
@@ -3400,10 +3463,12 @@ static node_t *cast(void) {
   tk_float_kind_t cast_fp_kind = TK_FLOAT_KIND_NONE;
   int cast_array_count = 0;
   int cast_is_unsigned = 0;
+  int cast_is_long_long = 0;
+  int cast_is_plain_char = 0;
   if (parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL, NULL,
-                      &cast_is_unsigned)) {
+                      &cast_is_unsigned, &cast_is_long_long, &cast_is_plain_char)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       // compound literal は primary/postfix 側で処理する
       return unary();
@@ -3462,7 +3527,8 @@ static node_t *cast(void) {
     }
     return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand,
                                      cast_tag_kind, cast_tag_name, cast_tag_len,
-                                     cast_elem_size, cast_is_unsigned));
+                                     cast_elem_size, cast_is_unsigned, cast_is_long_long,
+                                     cast_is_plain_char));
   }
   return unary();
 }
@@ -3487,7 +3553,7 @@ static node_t *parse_sizeof_operand(void) {
         parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                         &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                         &cast_elem_size, &cast_fp_kind, &cast_array_count,
-                        cast_array_dims, &cast_array_dim_count, NULL) &&
+                        cast_array_dims, &cast_array_dim_count, NULL, NULL, NULL) &&
         after_rparen && after_rparen->kind == TK_LBRACE) {
       node_t *node = parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
                                                       cast_tag_kind, cast_tag_name, cast_tag_len,
@@ -4853,7 +4919,7 @@ static node_t *try_parse_compound_literal(void) {
       parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count,
-                      cast_array_dims, &cast_array_dim_count, NULL) &&
+                      cast_array_dims, &cast_array_dim_count, NULL, NULL, NULL) &&
       after_rparen && after_rparen->kind == TK_LBRACE) {
     return parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
                                             cast_tag_kind, cast_tag_name, cast_tag_len,
