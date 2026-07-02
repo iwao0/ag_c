@@ -257,8 +257,24 @@ static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t tar
     v.type = target_ty;
     return v;
   }
-  /* 整数同士の幅変換 (PTR <-> i32/i64 もここ通る; 実体は同じ 64bit reg なので
-   * 値だけ流用)。型 tag は新しい dst でラップする。 */
+  /* pointer <-> integer の幅変換。Wasm では pointer は i32 なので、単に型 tag を
+   * 差し替えると i64 値を i32 local に入れる invalid code になる。 */
+  if (target_ty == IR_TY_PTR && ir_type_size(v.type) > ir_type_size(target_ty)) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_TRUNC);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
+  if (v.type == IR_TY_PTR && ir_type_size(target_ty) > ir_type_size(v.type)) {
+    int dst = ir_func_new_vreg(ctx->f);
+    ir_inst_t *inst = ir_inst_new(IR_ZEXT);
+    inst->dst = ir_val_vreg(dst, target_ty);
+    inst->src1 = v;
+    ir_func_append_inst(ctx->f, inst);
+    return ir_val_vreg(dst, target_ty);
+  }
   if (target_ty == IR_TY_PTR || v.type == IR_TY_PTR) {
     return ir_val_vreg(v.id, target_ty);
   }

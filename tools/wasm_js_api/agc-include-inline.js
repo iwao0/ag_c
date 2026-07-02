@@ -13,7 +13,7 @@ const BROWSER_INCLUDE_SHIMS = {
 `,
   "stdarg.h": `#ifndef _STDARG_H
 #define _STDARG_H
-#define va_list char *
+#define va_list long
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
 #define va_arg(ap, type) (*(type *)((long)(ap += ((sizeof(type) + 7) & -8)) - ((sizeof(type) + 7) & -8)))
 #define va_end(ap) ((void)(ap))

@@ -9,8 +9,7 @@
  *     `__va_arg_area` resolves to that address at runtime.
  *
  * va_list:
- *   Single pointer (char*) walking the contiguous stack array of
- *   variadic arguments.
+ *   Address value walking the contiguous stack array of variadic arguments.
  *
  * va_start(ap, last_named):
  *   Sets ap to the start of the variadic stack area. `last_named` is
@@ -24,7 +23,7 @@
 #ifndef _STDARG_H
 #define _STDARG_H
 
-typedef char *va_list;
+typedef long va_list;
 
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
 

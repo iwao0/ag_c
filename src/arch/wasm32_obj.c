@@ -1700,7 +1700,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_ZEXT:
         case IR_SEXT:
         case IR_TRUNC:
-          emit_val(&body, i->src1, i->dst.type, param_count);
+          emit_val(&body, i->src1, actual_vreg_type(i->dst), param_count);
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_I2F: {
