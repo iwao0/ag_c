@@ -152,7 +152,11 @@ typedef struct {
   unsigned short td_funcptr_param_fp_mask;
   unsigned short td_funcptr_param_int_mask;
   unsigned char td_funcptr_ret_int_width;
+  unsigned char td_funcptr_ret_is_void;
+  unsigned char td_funcptr_ret_is_pointer;
   unsigned char td_funcptr_ret_is_complex;
+  unsigned char td_is_variadic_funcptr;
+  short td_funcptr_nargs_fixed;
 } local_decl_spec_t;
 typedef struct {
   int arr_total;
@@ -5163,6 +5167,19 @@ node_t *psx_decl_parse_declaration(void) {
     return psx_node_new_num(0);
   }
 
+  if (ds.td_funcptr_param_fp_mask || ds.td_funcptr_param_int_mask ||
+      ds.td_funcptr_ret_int_width || ds.td_funcptr_ret_is_void ||
+      ds.td_funcptr_ret_is_pointer || ds.td_funcptr_ret_is_complex ||
+      ds.td_is_variadic_funcptr) {
+    g_decl_base_funcptr_param_fp_mask = ds.td_funcptr_param_fp_mask;
+    g_decl_base_funcptr_param_int_mask = ds.td_funcptr_param_int_mask;
+    g_decl_base_funcptr_ret_int_width = ds.td_funcptr_ret_int_width;
+    g_decl_base_funcptr_ret_is_void = ds.td_funcptr_ret_is_void ? 1 : 0;
+    g_decl_base_funcptr_ret_is_complex = ds.td_funcptr_ret_is_complex ? 1 : 0;
+    g_decl_base_is_variadic_funcptr = ds.td_is_variadic_funcptr ? 1 : 0;
+    g_decl_base_funcptr_nargs_fixed = ds.td_funcptr_nargs_fixed;
+  }
+
   return psx_decl_parse_declaration_after_type_ex(ds.elem_size, ds.fp_kind,
                                                   ds.tag_kind, ds.tag_name, ds.tag_len,
                                                   ds.base_is_pointer,
@@ -5208,7 +5225,11 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
       out->td_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       out->td_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
       out->td_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
+      out->td_funcptr_ret_is_void = _ti.funcptr_ret_is_void ? 1 : 0;
+      out->td_funcptr_ret_is_pointer = _ti.funcptr_ret_is_pointer ? 1 : 0;
       out->td_funcptr_ret_is_complex = _ti.funcptr_ret_is_complex ? 1 : 0;
+      out->td_is_variadic_funcptr = _ti.is_variadic_funcptr ? 1 : 0;
+      out->td_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
       g_decl_base_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
       g_decl_base_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
       g_decl_base_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
@@ -5477,6 +5498,13 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
     unsigned int ptr_volatile_mask = 0;
     int ptr_levels = 0;
     int paren_array_mul = 0;
+    g_paren_array_first_dim = 0;
+    g_paren_array_second_dim = 0;
+    g_paren_array_dim_count = 0;
+    g_paren_array_vla_dim = NULL;
+    g_decl_trailing_func_suffix = 0;
+    g_decl_had_paren_group = 0;
+    g_decl_func_suffix_count = 0;
     consume_pointer_chain_decl(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     token_ident_t *name = consume_decl_name(&is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels, &paren_array_mul);
     /* declarator が `*` を 1 つでも追加していれば decl_added_pointer=1。is_ptr が base 由来

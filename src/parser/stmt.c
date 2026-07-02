@@ -47,6 +47,7 @@ typedef struct {
 /* 直近にパースした typedef 宣言子で `*` が括弧内に現れたか (`(*PA)`)。pointer-to-array /
  * pointer-to-function の識別に使う。宣言子ごとに parse_typedef_decl でリセットする。 */
 static int g_stmt_typedef_ptr_in_paren = 0;
+static int g_stmt_typedef_has_func_suffix = 0;
 static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul);
 static node_t *stmt_internal(void);
 static node_t *parse_stmt_label(void);
@@ -66,7 +67,7 @@ static token_ident_t *parse_typedef_name_decl_recursive(int *is_ptr) {
   } else {
     name = tk_consume_ident();
   }
-  psx_skip_func_suffix_groups(NULL);
+  psx_skip_func_suffix_groups(&g_stmt_typedef_has_func_suffix);
   return name;
 }
 
@@ -225,6 +226,7 @@ static void parse_typedef_decl(void) {
   for (;;) {
     int is_ptr = is_pointer_base;
     g_stmt_typedef_ptr_in_paren = 0;
+    g_stmt_typedef_has_func_suffix = 0;
     int decl_stars = psx_consume_pointer_prefix_counted(&is_ptr);
     token_ident_t *name = parse_typedef_name_decl(&is_ptr);
     /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]` / `typedef ScorePtr SPA[3]`):
@@ -292,6 +294,21 @@ static void parse_typedef_decl(void) {
     _ti.array_first_dim = td_first_dim;
     _ti.array_dim_count = td_dim_count;
     if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
+    if (g_stmt_typedef_has_func_suffix && (is_ptr || g_stmt_typedef_ptr_in_paren)) {
+      _ti.is_funcptr = 1;
+      _ti.funcptr_ret_is_void = (base_kind == TK_VOID) ? 1 : 0;
+      _ti.funcptr_ret_is_pointer = 0;
+      _ti.funcptr_ret_is_complex =
+          (psx_last_type_is_complex() && !_ti.funcptr_ret_is_pointer) ? 1 : 0;
+      _ti.funcptr_ret_int_width =
+          psx_funcptr_ret_int_width_from_kind(base_kind, _ti.funcptr_ret_is_pointer, fp_kind);
+      _ti.funcptr_param_fp_mask = psx_last_funcptr_param_fp_mask();
+      _ti.funcptr_param_int_mask = psx_last_funcptr_param_int_mask();
+      if (psx_last_funcptr_is_variadic()) {
+        _ti.is_variadic_funcptr = 1;
+        _ti.funcptr_nargs_fixed = (short)psx_last_funcptr_nargs_fixed();
+      }
+    }
     if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
       psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
     }
