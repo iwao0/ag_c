@@ -312,6 +312,8 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
 }
 
 void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...) {
+  const char *suppress = getenv("AGC_SUPPRESS_WARNINGS");
+  if (suppress && suppress[0] && strcmp(suppress, "0") != 0) return;
   va_list ap;
   va_start(ap, fmt);
   { const char *fn = tk_filename_lookup(tok ? tok->file_name_id : 0);

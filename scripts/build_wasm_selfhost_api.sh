@@ -69,7 +69,7 @@ for src in "${sources[@]}"; do
   obj="$obj_dir/${src#src/}"
   obj="${obj%.c}.o"
   mkdir -p "$(dirname "$obj")"
-  (cd "$root" && ./build/ag_c_wasm -c -o "$obj" "$src")
+  (cd "$root" && AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o "$obj" "$src")
   printf '%s\n' "$obj" >> "$list_file"
 done
 

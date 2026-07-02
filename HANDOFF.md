@@ -1,10 +1,10 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き346: JS API heap buffers）
+最終更新: 2026-07-02（続き348: compiler-side fix for `(*pp)[i].member`）
 
 ## 現状
 - `make test` = **green**。
-  内訳として `./build/test_e2e` = **1147/1147 green**、
+  内訳として `./build/test_e2e` = **1148/1148 green**、
   `./build/test_wasm32_e2e` = **1118 compiled / 1118 executed green**、
   `./build/test_wasm32_object` = **1119/1119 e2e fixture object compile + validate green**。
 - 直近確認:
@@ -16,6 +16,23 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き348: **`(*pp)[i].member` をコンパイラ側で修正**。
+  `tools/wasm_obj_linker/ag_wasm_link.c` の `(*types)[i].raw_len` が `E3005` で落ちていた。
+  リンカー source の回避変更は残さず、`build_subscript_deref()` で `T **pp` の `(*pp)[i]` を
+  `T` 実体として扱うようにした。`IP (*pia)[N]` のような pointer-to-array は既存通り
+  ポインタ要素として扱うため、`outer_stride` 由来の `ND_DEREF` はこの分岐から外している。
+  回帰 fixture: `test/fixtures/probes_found_bugs/ptrptr_deref_subscript_member.c`。
+  確認: `./build/test_e2e` = **1148/1148 green**、
+  `AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o build/wasm_linker_selfhost/ag_wasm_link.o tools/wasm_obj_linker/ag_wasm_link.c` = **green**、
+  `./build/ag_wasm_link --no-entry --export=main -o build/wasm_linker_selfhost/ag_wasm_link.wasm build/wasm_linker_selfhost/ag_wasm_link.o` = **green**、
+  `wasm-validate build/wasm_linker_selfhost/ag_wasm_link.wasm` = **green**。
+- 続き347: **self-host API wasm 生成中の大量 warning を抑制**。
+  これは parse error ではなく、`ag_c_wasm` がコンパイラ自身を wasm object 化するときの
+  `W3004` / `W3005` / `W3018` などの warning 診断だった。
+  `diag_warn_tokf()` に `AGC_SUPPRESS_WARNINGS=1` を追加し、
+  `scripts/build_wasm_selfhost_api.sh` の object 化時だけ設定する。
+  通常実行では warning は残り、`AGC_SUPPRESS_WARNINGS=1` でも parse error は `E3065` として失敗する。
+  確認: `make test-wasm-js-api` = **green**。
 - 続き346: **JS API の fixed scratch 既定を外し、wasm heap buffer 経路へ移行中**。
   `ag_wasm_link` が複数 `--export=` を受けられるようにし、self-host API wasm は
   `agc_wasm_compile_wat` / `malloc` / `free` を export する。

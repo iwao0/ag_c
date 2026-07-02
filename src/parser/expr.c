@@ -4337,6 +4337,17 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
    * 単段 `int *arr[N]` (inner_ds==0) や genuine 多段ポインタ `int **pp` (es==inner_ds) は
    * 中間行でないので従来どおり最終要素として扱う。 */
   int subscript_is_intermediate_row = (inner_ds > 0 && es > inner_ds);
+  int deref_from_pointer_to_array = 0;
+  if (node->kind == ND_DEREF && node->lhs) {
+    node_t *probe = node->lhs;
+    while (probe && probe->kind == ND_ADD) probe = probe->lhs;
+    if (probe && probe->kind == ND_LVAR) {
+      lvar_t *src = psx_decl_find_lvar_by_offset(((node_lvar_t *)probe)->offset);
+      if (src && src->outer_stride > 0 && !src->is_array) {
+        deref_from_pointer_to_array = 1;
+      }
+    }
+  }
   if (pql >= 1 && bds > 0 && subscript_is_intermediate_row) {
     /* 中間行: pointer 化せず deref_size=inner_ds を保ち、pql / bds を次段へ carry して
      * 最終次元の subscript が「要素はポインタ」分岐に乗れるようにする。 */
@@ -4344,11 +4355,19 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     deref->base_deref_size = (short)bds;
   } else if (pql == 1 && bds > 0 &&
              (node->kind == ND_LVAR || node->kind == ND_GVAR ||
-              node->kind == ND_FUNCALL)) {
+              node->kind == ND_FUNCALL ||
+              (node->kind == ND_DEREF &&
+               !deref_from_pointer_to_array &&
+               !((node_mem_t *)node)->is_scalar_ptr_member &&
+               ((node_mem_t *)node)->ptr_array_pointee_bytes == 0 &&
+               !(node->lhs && node->lhs->kind == ND_ADD)))) {
     /* 単段のスカラポインタ値 (`long *p`, `unsigned long *p`) の subscript は
      * pointee スカラ。`long *` ではポインタ認識のため pql=1 / bds=8 を持つが、
      * これは「要素がポインタ」ではなく「指している要素が 8B」という情報なので
-     * 結果に pointer_qual_levels を carry しない。 */
+     * 結果に pointer_qual_levels を carry しない。
+     * `T **pp` の `(*pp)[i].member` も `*pp` が単段の `T *` 値になるためここで
+     * `T` 実体に落とす。これを下の「要素がポインタ」分岐に入れると `.member` が
+     * `T *` への `.` と誤判定される。 */
     deref->deref_size = 0;
   } else if (pql >= 1 && bds > 0) {
     deref->is_pointer = 1;
