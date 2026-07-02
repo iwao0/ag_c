@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き362: JS stdout/stderr callback buffering）
+最終更新: 2026-07-02（続き363: JS linker API memory range guards）
 
 ## 現状
 - `make test` = **green**。
@@ -21,6 +21,12 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き363: **JS linker wrapper の ABI 呼び出し fallback と memory range guard を追加**。
+  `tools/wasm_obj_linker/ag-wasm-link.js` の `malloc` / `free` / `agc_wasm_link_objects` 呼び出しを
+  compiler wrapper と同じく i64 BigInt / i32 Number の両対応にし、object descriptor、
+  export pointer 配列、out length、返却された linked wasm bytes が wasm memory 範囲内か確認する。
+  確認: `node --check tools/wasm_obj_linker/ag-wasm-link.js`、
+  `make test-wasm-linker-selfhost`、`make test-wasm-js-pipeline`、`git diff --check`。
 - 続き362: **JS wrapper の stdout/stderr callback 指定時は chunks に二重蓄積しないようにした**。
   `tools/wasm_js_api/agc-wasm.js` と `tools/wasm_obj_linker/ag-wasm-link.js` は、
   `onStdout` / `onStderr` が指定されている場合は callback へ都度渡すだけにし、

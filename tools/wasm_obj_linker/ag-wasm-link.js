@@ -28,11 +28,50 @@ async function instantiateFromSource(wasmSource, imports = {}) {
 }
 
 function callMalloc(malloc, size) {
-  return Number(malloc(BigInt(size || 1)));
+  try {
+    return Number(malloc(BigInt(size || 1)));
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return Number(malloc(size || 1));
+    }
+    throw err;
+  }
 }
 
 function callFree(free, ptr) {
-  free(ptr);
+  try {
+    free(BigInt(ptr));
+  } catch (err) {
+    if (err instanceof TypeError) {
+      free(ptr);
+      return;
+    }
+    throw err;
+  }
+}
+
+function callLinkObjects(fn, descPtr, objectCount, exportsPtr, exportCount, useStdlib, outLenPtr) {
+  try {
+    return Number(fn(
+      BigInt(descPtr),
+      BigInt(objectCount),
+      BigInt(exportsPtr),
+      BigInt(exportCount),
+      BigInt(useStdlib ? 1 : 0),
+      BigInt(outLenPtr),
+    ));
+  } catch (err) {
+    if (err instanceof TypeError) {
+      return Number(fn(descPtr, objectCount, exportsPtr, exportCount, useStdlib ? 1 : 0, outLenPtr));
+    }
+    throw err;
+  }
+}
+
+function ensureMemoryRange(memory, ptr, len, label) {
+  if (ptr < 0 || len < 0 || ptr + len > memory.buffer.byteLength) {
+    throw new RangeError(`${label} buffer is outside wasm memory`);
+  }
 }
 
 export async function createLinker(wasmSource, options = {}) {
@@ -107,6 +146,7 @@ export async function createLinker(wasmSource, options = {}) {
     const ptr = callMalloc(malloc, bytes.length || 1);
     if (!ptr) throw new Error("ag_wasm_link malloc failed");
     refresh();
+    ensureMemoryRange(memory, ptr, bytes.length, "allocated");
     u8.set(bytes, ptr);
     return ptr;
   }
@@ -193,8 +233,10 @@ export async function createLinker(wasmSource, options = {}) {
     try {
       const objectBytes = objects.map((obj, i) => asBytes(obj, `objects[${i}]`));
       const descPtr = callMalloc(malloc, objectBytes.length * 16);
+      if (!descPtr) throw new Error("ag_wasm_link malloc failed for object descriptors");
       allocations.push(descPtr);
       refresh();
+      ensureMemoryRange(memory, descPtr, objectBytes.length * 16, "object descriptor");
       for (let i = 0; i < objectBytes.length; i++) {
         const ptr = allocBytes(objectBytes[i]);
         allocations.push(ptr);
@@ -211,24 +253,22 @@ export async function createLinker(wasmSource, options = {}) {
         return ptr;
       });
       const exportsPtr = callMalloc(malloc, Math.max(1, exportPtrs.length) * 8);
+      if (!exportsPtr) throw new Error("ag_wasm_link malloc failed for export names");
       allocations.push(exportsPtr);
       refresh();
+      ensureMemoryRange(memory, exportsPtr, Math.max(1, exportPtrs.length) * 8, "exports");
       for (let i = 0; i < exportPtrs.length; i++) setU64(exportsPtr + i * 8, exportPtrs[i]);
 
       const outLenPtr = callMalloc(malloc, 8);
+      if (!outLenPtr) throw new Error("ag_wasm_link malloc failed for output length");
       allocations.push(outLenPtr);
       refresh();
+      ensureMemoryRange(memory, outLenPtr, 8, "output length");
       setU64(outLenPtr, 0);
 
       try {
-        linkedPtr = Number(linkObjects(
-          BigInt(descPtr),
-          BigInt(objectBytes.length),
-          BigInt(exportsPtr),
-          BigInt(exportPtrs.length),
-          BigInt(useStdlib ? 1 : 0),
-          BigInt(outLenPtr),
-        ));
+        linkedPtr = callLinkObjects(linkObjects, descPtr, objectBytes.length, exportsPtr,
+                                    exportPtrs.length, useStdlib, outLenPtr);
       } catch (err) {
         throwLinkFailure(err);
       }
@@ -237,6 +277,7 @@ export async function createLinker(wasmSource, options = {}) {
       if (!linkedPtr || linkedLen < 8) {
         throwLinkFailure();
       }
+      ensureMemoryRange(memory, linkedPtr, linkedLen, "linked wasm");
       return new Uint8Array(u8.slice(linkedPtr, linkedPtr + linkedLen));
     } finally {
       if (linkedPtr) callFree(free, linkedPtr);
