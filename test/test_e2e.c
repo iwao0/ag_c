@@ -1230,6 +1230,7 @@ static const test_case_t test_cases[] = {
     {"probes", "static_assert_in_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/static_assert_in_struct.c", 0, 0},
     {"probes", "global_struct_ptr_array_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_struct_ptr_array_subscript.c", 0, 0},
     {"probes", "vla_sizeof_direct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/vla_sizeof_direct.c", 0, 0},
+    {"probes", "struct_fp_pointer_member_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_fp_pointer_member_subscript.c", 0, 0},
     {"probes", "struct_double_ptr_deref_arrow", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_double_ptr_deref_arrow.c", 0, 0},
     {"probes", "unsupported_gnu_extensions_warn_skip", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c", 0, 0},
     {"probes", "funcptr_return_const_pointee", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_return_const_pointee.c", 0, 0},

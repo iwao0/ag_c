@@ -596,12 +596,20 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
                                           member_name, member_len, member_fp_kind);
         }
+        /* データポインタメンバ `double *dp`: pointee の fp_kind を保存する。
+         * build_member_deref_node が pointee_fp_kind として deref に伝播し、
+         * `s.dp[i]` / `p->dp[i]` を fp load/store にできるようにする。 */
+        if (has_member_name && member_is_ptr && !head.has_func_suffix &&
+            member_fp_kind != TK_FLOAT_KIND_NONE) {
+          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
+                                          member_name, member_len, member_fp_kind);
+        }
         /* 関数ポインタメンバ `double (*f)(double)`: 戻り型の fp_kind を保存する。
          * メンバ自体はポインタ (fp_kind は通常 !is_ptr のみ保存) なので、戻り fp を
          * member fp_kind フィールドに載せておき、build_member_deref_node が
          * pointee_fp_kind (= 戻り fp) として deref に伝播 → `s.f(x)` の funcall が
          * 戻り値を d0 で読めるようにする。これがないと戻り値を x0 で読み値が化けた。
-         * データポインタメンバ (`double *dp`) は対象外 (has_func_suffix で限定)。 */
+         * データポインタメンバは上の分岐で扱う。 */
         if (has_member_name && head.is_ptr && head.has_func_suffix &&
             member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
