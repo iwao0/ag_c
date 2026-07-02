@@ -112,15 +112,28 @@ make test-wasm-js-api
 ```
 
 JS の統合 wrapper は `tools/wasm_js_api/agc-toolchain.js` です。
-`createToolchain({ compilerWasm, linkerWasm })` から
+標準 runtime 付きで linked wasm を作る場合は `runtimeObject` も渡します。
+
+```js
+const toolchain = await createToolchain({
+  compilerWasm: "build/wasm_selfhost_api/ag_c_wasm_api.wasm",
+  linkerWasm: "build/wasm_linker_selfhost/ag_wasm_link.wasm",
+  runtimeObject: "build/libagc_runtime.o",
+});
+```
+
+`createToolchain({ compilerWasm, linkerWasm, runtimeObject })` から
 `compileWat(source)` / `compileObject(source)` / `compileLinkedWasm(source)` /
 `instantiateLinkedWasm(source)` を使えます。
+`instantiateLinkedWasm()` の戻り値には `readStdout()` / `readStderr()` もあり、
+runtime object の `printf` / `fprintf` 出力を `main()` 実行後に読めます。
 compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
 (`Uint8Array`) を返します。
 browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の
 出力を切り替えられます。Linked Wasm では複数 source textarea を別々に object 化してから
-リンクします。`main` export を呼べる場合は戻り値も表示します。
+runtime object と一緒にリンクします。`main` export を呼べる場合は戻り値も表示し、
+`printf` の結果は `stdout:` として表示します。
 compile/link は Web Worker 内で実行し、失敗時は `Compile error` として画面に表示します。
 生成した `out.wat` / `out.o` / `out.wasm` は Download から保存できます。
 

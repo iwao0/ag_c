@@ -1,6 +1,6 @@
-import { createCompiler } from "./agc-wasm.js?v=stdio-imports";
-import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=stdio-imports";
-import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js?v=stdio-imports";
+import { createCompiler } from "./agc-wasm.js?v=runtime-object";
+import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=runtime-object";
+import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js?v=runtime-object";
 
 const utf8Decoder = new TextDecoder();
 

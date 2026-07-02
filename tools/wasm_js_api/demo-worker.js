@@ -1,5 +1,5 @@
-import { createToolchain } from "./agc-toolchain.js?v=stdio-imports";
-import { inlineStandardIncludes } from "./agc-include-inline.js?v=stdio-imports";
+import { createToolchain } from "./agc-toolchain.js?v=runtime-object";
+import { inlineStandardIncludes } from "./agc-include-inline.js?v=runtime-object";
 
 let toolchainPromise = null;
 

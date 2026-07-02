@@ -1,4 +1,4 @@
-import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=stdio-imports";
+import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=runtime-object";
 
 const DEFAULT_SOURCE_PTR = 393216;
 const DEFAULT_SOURCE_CAP = 32768;
