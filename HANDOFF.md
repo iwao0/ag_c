@@ -1,11 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-03（続き366: wasm JS e2e pipeline skip 0）
+最終更新: 2026-07-03（続き367修正: GNU push_macro/pop_macro は warning skip 維持）
 
 ## 現状
 - `make test` = **green**。
   内訳として `./build/test_e2e` = **1150/1150 green**、
-  `./build/test_wasm32_e2e` = **1119 compiled / 1119 executed green**、
+  `./build/test_wasm32_e2e` = **1121 compiled / 1121 executed green**、
   `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test` = **green**、
@@ -15,16 +15,36 @@
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-linker-selfhost` = **green**、
   `./build/test_wasm32_backend` = **green**、
-  `./build/test_wasm32_e2e` = **1119 compiled / 1119 executed green**、
+  `./build/test_wasm32_e2e` = **1121 compiled / 1121 executed green**、
   `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**、
   `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm` = **green**、
   `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=100` =
   **total registered 1121 / scanned 1121 / pass 1121 / fail 0 / skip 0 / linked 1121 / validated 1121 / ran 1121**、
-  `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` = **1119 pass / fail 0 / skip 1**、
-  `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail` = **1119 pass / fail 0 / skip 1**、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` = **1121 pass / fail 0 / skip 1**、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail` = **1121 pass / fail 0 / skip 1**、
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き367修正: **GCC/GNU 拡張の方針を維持し、`#pragma push_macro` / `pop_macro` は warning skip のまま**。
+  いったん `push_macro` / `pop_macro` の意味実装を入れかけたが、GCC 拡張は入れない方針なので取り消した。
+  現在は `W3024` を出して指令行を読み飛ばす。c-testsuite `00206` は従来どおり unsupported skip、
+  `test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c` は skip 後の値
+  `VALUE == 2` を検査する。
+  別件として、Wasm WAT e2e parity で漏れていた `struct_fp_pointer_member_subscript.c` は
+  `test/wasm32_e2e_extra_cases.txt` に追加済み。
+  確認: `./build/test_preprocess` = **green**、
+  `./build/test_e2e` = **1150/1150 green**、
+  `./build/test_wasm32_e2e` = **1121 compiled / 1121 executed green**、
+  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / skip 2 / fail 0**、
+  `bash scripts/run_wasm32_object_c_testsuite_scan.sh --list-fail` = **218 pass / skip 2 / fail 0**、
+  `bash scripts/run_wasm32_wat_c_testsuite_scan.sh --list-fail` = **218 pass / skip 2 / fail 0**、
+  `make wasm32-object-link-c-testsuite-scan` = **218 pass / skip 2 / fail 0**、
+  `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` =
+  **1121 pass / fail 0 / skip 1**、
+  `make wasm-selfhost-api` = **green**、
+  `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm` = **green**、
+  `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=300` =
+  **1121 pass / fail 0 / skip 0**、`git diff --check`。
 - 続き366: **wasm 化コンパイラ + wasm 化リンカーの JS e2e pipeline から最後の skip を外した**。
   `test/fixtures/probes_found_bugs/if0_skip_non_c_tokens.c` は、native tokenizer では
   `setjmp`/`longjmp` で回復していたが、wasm runtime の `longjmp` は停止用 stub なので

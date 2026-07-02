@@ -323,6 +323,7 @@ probes_found_bugs/struct_member_array_ptr.c
 probes_found_bugs/struct_multidim_array_member.c
 probes_found_bugs/struct_of_struct_of_array.c
 probes_found_bugs/struct_partial_init_zerofill.c
+probes_found_bugs/struct_fp_pointer_member_subscript.c
 probes_found_bugs/struct_pointer_to_array.c
 probes_found_bugs/struct_pointer_arithmetic.c
 probes_found_bugs/struct_pointer_typedef_member.c
