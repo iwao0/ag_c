@@ -117,6 +117,25 @@ if (linkedStdioStdout !== "aa") {
   throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
 }
 
+try {
+  toolchain.compileLinkedWasm([
+    "int main(void) { return other(); }\n",
+    "int other(void){return 42２2;}\n",
+  ], {
+    exports: ["main"],
+    useStdlib: false,
+  });
+  throw new Error("invalid UTF-8 token source unexpectedly compiled");
+} catch (err) {
+  const message = err && err.message ? err.message : String(err);
+  if (!message.includes("source 2:") || !message.includes("E2028")) {
+    throw new Error(`invalid token diagnostic was not surfaced: ${JSON.stringify(message)}`);
+  }
+  if (message.includes("%*s")) {
+    throw new Error(`invalid token diagnostic leaked printf format text: ${JSON.stringify(message)}`);
+  }
+}
+
 const stdioSource = await inlineStandardIncludes(`#include <stdio.h>
 int main(void) { return 42; }
 `, { loadInclude });

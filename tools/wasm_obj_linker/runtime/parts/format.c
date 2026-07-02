@@ -91,6 +91,13 @@ static void ag_rt_write_str_n(char *buf, size_t size, int bounded, size_t *pos,
   }
 }
 
+static int ag_rt_strn_len(const char *s, int limit) {
+  int n = 0;
+  if (!s) s = "(null)";
+  while (s[n] && (limit < 0 || n < limit)) n++;
+  return n;
+}
+
 static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, va_list ap) {
   size_t pos = 0;
   while (*fmt) {
@@ -114,6 +121,11 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     }
     while ((int)*fmt >= '0' && (int)*fmt <= '9') {
       width = width * 10 + (*fmt - '0');
+      fmt++;
+    }
+    if (*fmt == '*') {
+      width = va_arg(ap, int);
+      if (width < 0) width = -width;
       fmt++;
     }
     if (*fmt == '.') {
@@ -152,9 +164,19 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       ag_rt_write_udec(buf, size, bounded, &pos, v, width, zero_pad);
       fmt++;
     } else if (*fmt == 's') {
-      ag_rt_write_str_n(buf, size, bounded, &pos, va_arg(ap, char *), precision);
+      char *s = va_arg(ap, char *);
+      int len = ag_rt_strn_len(s, precision);
+      while (len < width) {
+        ag_rt_putc(buf, size, bounded, &pos, ' ');
+        width--;
+      }
+      ag_rt_write_str_n(buf, size, bounded, &pos, s, precision);
       fmt++;
     } else if (*fmt == 'c') {
+      while (1 < width) {
+        ag_rt_putc(buf, size, bounded, &pos, ' ');
+        width--;
+      }
       ag_rt_putc(buf, size, bounded, &pos, va_arg(ap, int));
       fmt++;
     } else if (*fmt == 'f' || *fmt == 'F') {
