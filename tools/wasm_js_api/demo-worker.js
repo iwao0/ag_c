@@ -1,4 +1,5 @@
 import { createToolchain } from "./agc-toolchain.js";
+import { inlineStandardIncludes } from "./agc-include-inline.js";
 
 let toolchainPromise = null;
 
@@ -26,10 +27,11 @@ self.onmessage = async (ev) => {
   const { mode, sources } = ev.data;
   try {
     const toolchain = await getToolchain();
+    const expandedSources = await Promise.all(sources.map((source) => inlineStandardIncludes(source)));
     if (mode === "object") {
       let obj;
       try {
-        obj = toolchain.compileObject(sources[0]);
+        obj = toolchain.compileObject(expandedSources[0]);
       } catch (err) {
         err.message = `source 1: ${err.message}`;
         throw err;
@@ -43,7 +45,7 @@ self.onmessage = async (ev) => {
       return;
     }
     if (mode === "linked") {
-      const linked = await toolchain.instantiateLinkedWasm(sources, {
+      const linked = await toolchain.instantiateLinkedWasm(expandedSources, {
         exports: ["main"],
         useStdlib: false,
       });
@@ -61,7 +63,7 @@ self.onmessage = async (ev) => {
     }
     let wat;
     try {
-      wat = toolchain.compileWat(sources[0]);
+      wat = toolchain.compileWat(expandedSources[0]);
     } catch (err) {
       err.message = `source 1: ${err.message}`;
       throw err;

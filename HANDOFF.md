@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き363: JS linker API memory range guards）
+最終更新: 2026-07-02（続き364: browser demo stdio include expansion）
 
 ## 現状
 - `make test` = **green**。
@@ -21,6 +21,21 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き364: **browser demo で `#include <stdio.h>` が E1002 にならないようにした**。
+  Wasm self-host compiler API は仮想 FS を持たず、`input.c` からの `<stdio.h>` が
+  `realpath("stdio.h")` 相当で include path validation に落ちていたため、
+  `tools/wasm_js_api/agc-include-inline.js` を追加し、browser/JS API demo 経路では標準 angle include を
+  compile 前に展開する。`stdio.h` / `stddef.h` / `stdarg.h` は現時点で browser 用 shim を使う。
+  自己ホスト compiler 側は top-level `typedef` や一部 `extern` data symbol でまだ落ちるため、
+  shim は `#define size_t unsigned long`、`#define FILE void` などの形にしている。
+  `demo.html` は module worker の古い cache を掴まないよう `demo-worker.js?v=...` で起動する。
+  確認: `node --check tools/wasm_js_api/agc-include-inline.js`、
+  `node --check tools/wasm_js_api/demo-worker.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-api`、`make test-wasm-js-pipeline`、`git diff --check`。
+  プレビュー確認: `http://127.0.0.1:8765/tools/wasm_js_api/demo.html` に
+  `#include <stdio.h>\nint main(void) { return 42; }` を入力し、status `OK`、
+  output に `(return (i32.const 42))`、`E1002` なし。
 - 続き363: **JS linker wrapper の ABI 呼び出し fallback と memory range guard を追加**。
   `tools/wasm_obj_linker/ag-wasm-link.js` の `malloc` / `free` / `agc_wasm_link_objects` 呼び出しを
   compiler wrapper と同じく i64 BigInt / i32 Number の両対応にし、object descriptor、

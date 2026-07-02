@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createToolchain } from "./agc-toolchain.js";
+import { inlineStandardIncludes } from "./agc-include-inline.js";
 
 const compilerWasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm";
 const linkerWasmPath = process.argv[3] || "build/wasm_linker_selfhost/ag_wasm_link.wasm";
@@ -12,6 +13,7 @@ const toolchain = await createToolchain({
   compilerWasm: await readFile(compilerWasmPath),
   linkerWasm: await readFile(linkerWasmPath),
 });
+const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
 
 const mainSource = "int other(void); int main(void) { return other() + 1; }\n";
 const otherSource = "int other(void) { return 41; }\n";
@@ -93,6 +95,14 @@ const mathInstantiated = await toolchain.instantiateLinkedWasm(mathSource, {
 });
 if (mathInstantiated.instance.exports.main() !== 1010) {
   throw new Error("instantiated math pipeline did not use JS math imports");
+}
+
+const stdioSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) { return 42; }
+`, { loadInclude });
+const stdioWat = toolchain.compileWat(stdioSource);
+if (!stdioWat.includes("(return (i32.const 42))")) {
+  throw new Error("standard include expansion did not compile stdio.h in the JS pipeline");
 }
 
 console.log(`ag_c wasm JS compile+link pipeline smoke: ok (${linkedPath})`);
