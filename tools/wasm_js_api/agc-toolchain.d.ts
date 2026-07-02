@@ -6,6 +6,7 @@ import type {
 import type {
   AgcWasmLinker,
   AgcWasmLinkOptions,
+  AgcWasmLinkerOptions,
   AgcWasmLinkerSource,
 } from "../wasm_obj_linker/ag-wasm-link.js";
 
@@ -13,6 +14,7 @@ export interface AgcWasmToolchainOptions {
   compilerWasm: AgcWasmSource;
   linkerWasm: AgcWasmLinkerSource;
   compilerOptions?: AgcWasmCompilerOptions;
+  linkerOptions?: AgcWasmLinkerOptions;
 }
 
 export interface AgcWasmToolchain {

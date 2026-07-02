@@ -5,6 +5,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 out_dir=${1:-"$root/build/wasm_selfhost_api"}
 obj_dir="$out_dir/obj"
 list_file="$out_dir/objects.txt"
+runtime_obj="$obj_dir/tools/wasm_obj_linker/runtime/libagc_runtime_js.o"
 out_wasm="$out_dir/ag_c_wasm_api.wasm"
 lock_dir="$out_dir.lock"
 
@@ -16,6 +17,9 @@ trap 'rmdir "$lock_dir"' EXIT
 mkdir -p "$obj_dir"
 
 make -C "$root" -j4 build/ag_c_wasm build/ag_wasm_link build/libagc_runtime.o
+mkdir -p "$(dirname "$runtime_obj")"
+(cd "$root" && AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o "$runtime_obj" \
+  tools/wasm_obj_linker/runtime/libagc_runtime_js.c)
 
 sources=(
   src/arch/arm64_apple.c
@@ -79,9 +83,16 @@ for src in "${sources[@]}"; do
   printf '%s\n' "$obj" >> "$list_file"
 done
 
-"$root/build/ag_wasm_link" --no-entry \
+AGC_WASM_RUNTIME_OBJECT="$runtime_obj" "$root/build/ag_wasm_link" --no-entry \
   --export=agc_wasm_compile_wat \
   --export=agc_wasm_compile_object \
+  --export=__agc_runtime_stdout_ptr \
+  --export=__agc_runtime_stdout_len \
+  --export=__agc_runtime_stderr_ptr \
+  --export=__agc_runtime_stderr_len \
+  --export=__agc_runtime_stderr_reset \
+  --export=__agc_runtime_termination_kind \
+  --export=__agc_runtime_termination_status \
   --export=malloc \
   --export=free \
   -o "$out_wasm" $(cat "$list_file")

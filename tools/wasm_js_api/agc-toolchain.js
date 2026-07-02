@@ -19,7 +19,7 @@ export async function createToolchain(options) {
     throw new TypeError("createToolchain requires compilerWasm and linkerWasm");
   }
   const compiler = await createCompiler(options.compilerWasm, options.compilerOptions);
-  const linker = await createLinker(options.linkerWasm);
+  const linker = await createLinker(options.linkerWasm, options.linkerOptions);
 
   function compileLinkedWasm(sources, linkOptions = {}) {
     const objects = normalizeSources(sources).map((source, i) => {

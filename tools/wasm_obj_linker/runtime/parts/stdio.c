@@ -1,18 +1,31 @@
 int __agc_runtime_putchar(int c) {
+  ag_rt_stdout_write_mem((char *)&c, 1);
   return c;
 }
 
 int __agc_runtime_puts(long s_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  ag_rt_stdout_write_str(s);
+  ag_rt_stdout_write_mem("\n", 1);
   return (int)__agc_runtime_strlen(s_addr) + 1;
 }
 
 int __agc_runtime_fputs(long s_addr, long stream_addr) {
-  (void)stream_addr;
+  char *s = ag_rt_ptr(s_addr);
+  if (ag_rt_is_stderr_stream(stream_addr)) {
+    ag_rt_stderr_write_str(s);
+  } else if (ag_rt_is_stdout_stream(stream_addr)) {
+    ag_rt_stdout_write_str(s);
+  }
   return (int)__agc_runtime_strlen(s_addr);
 }
 
 int __agc_runtime_fputc(int c, long stream_addr) {
-  (void)stream_addr;
+  if (ag_rt_is_stderr_stream(stream_addr)) {
+    ag_rt_stderr_write_char(c);
+  } else if (ag_rt_is_stdout_stream(stream_addr)) {
+    ag_rt_stdout_write_mem((char *)&c, 1);
+  }
   return c;
 }
 
@@ -144,9 +157,13 @@ int __agc_runtime_fclose(long stream_addr) {
 }
 
 long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr) {
-  (void)stream_addr;
   char *src = ag_rt_ptr(ptr_addr);
   long total = size * nmemb;
+  if (ag_rt_is_stderr_stream(stream_addr)) {
+    ag_rt_stderr_write_mem(src, total);
+  } else if (ag_rt_is_stdout_stream(stream_addr)) {
+    ag_rt_stdout_write_mem(src, total);
+  }
   long i = 0;
   while (i < total && ag_rt_file_len < (long)sizeof(ag_rt_file_buf)) {
     ag_rt_file_buf[ag_rt_file_len++] = src[i++];

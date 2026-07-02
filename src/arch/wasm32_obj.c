@@ -2380,10 +2380,10 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
     uint32_t v = 0;
     if (lit->str[i] == '\\') {
       tk_parse_escape_value(lit->str, lit->len, &i, &v);
+      wb_utf8_codepoint(&d->bytes, v);
     } else {
-      v = (unsigned char)lit->str[i++];
+      wb_u8(&d->bytes, (unsigned char)lit->str[i++]);
     }
-    wb_utf8_codepoint(&d->bytes, v);
   }
   wb_u8(&d->bytes, 0);
   d->is_emitted = 1;

@@ -1655,23 +1655,23 @@ static void emit_string_literal_data(string_lit_t *lit, void *user) {
     uint32_t v = 0;
     if (lit->str[i] == '\\') {
       tk_parse_escape_value(lit->str, lit->len, &i, &v);
+      if (v < 0x80) {
+        emit_wat_escaped_byte((unsigned char)v);
+      } else if (v < 0x800) {
+        emit_wat_escaped_byte((unsigned char)(0xC0 | (v >> 6)));
+        emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
+      } else if (v < 0x10000) {
+        emit_wat_escaped_byte((unsigned char)(0xE0 | (v >> 12)));
+        emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 6) & 0x3F)));
+        emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
+      } else {
+        emit_wat_escaped_byte((unsigned char)(0xF0 | (v >> 18)));
+        emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 12) & 0x3F)));
+        emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 6) & 0x3F)));
+        emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
+      }
     } else {
-      v = (unsigned char)lit->str[i++];
-    }
-    if (v < 0x80) {
-      emit_wat_escaped_byte((unsigned char)v);
-    } else if (v < 0x800) {
-      emit_wat_escaped_byte((unsigned char)(0xC0 | (v >> 6)));
-      emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
-    } else if (v < 0x10000) {
-      emit_wat_escaped_byte((unsigned char)(0xE0 | (v >> 12)));
-      emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 6) & 0x3F)));
-      emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
-    } else {
-      emit_wat_escaped_byte((unsigned char)(0xF0 | (v >> 18)));
-      emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 12) & 0x3F)));
-      emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 6) & 0x3F)));
-      emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
+      emit_wat_escaped_byte((unsigned char)lit->str[i++]);
     }
   }
   cg_emitf("\\00\")\n");

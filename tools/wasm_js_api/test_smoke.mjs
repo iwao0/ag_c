@@ -5,7 +5,16 @@ import { createCompiler } from "./agc-wasm.js";
 
 const wasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm";
 const wasm = await readFile(wasmPath);
-const compiler = await createCompiler(wasm);
+const stderrChunks = [];
+const terminations = [];
+const compiler = await createCompiler(wasm, {
+  onStderr(chunk) {
+    stderrChunks.push(chunk);
+  },
+  onTerminate(event) {
+    terminations.push(event);
+  },
+});
 if (!compiler.limits.useHeapBuffers) {
   throw new Error("JS API did not enable wasm heap buffers");
 }
@@ -22,6 +31,24 @@ const largeSource = `/*${"x".repeat(40000)}*/\nint main(){return 7;}\n`;
 const largeWat = compiler.compileWat(largeSource);
 if (!largeWat.includes("(return (i32.const 7))")) {
   throw new Error("heap-buffer compile did not handle source larger than fixed buffer");
+}
+
+try {
+  stderrChunks.length = 0;
+  terminations.length = 0;
+  compiler.compileWat("int main( {\n");
+  throw new Error("invalid source unexpectedly compiled");
+} catch (err) {
+  const message = String(err && err.message ? err.message : err);
+  if (!message.includes("E") || !message.includes("実際のトークン") || message.includes("timed out")) {
+    throw new Error(`invalid source did not surface compiler diagnostics: ${message}`);
+  }
+  if (!stderrChunks.join("").includes("実際のトークン")) {
+    throw new Error("invalid source did not stream diagnostics through onStderr");
+  }
+  if (terminations.length !== 1 || terminations[0].kind !== "exit" || terminations[0].status !== 1) {
+    throw new Error(`invalid source did not report exit(1): ${JSON.stringify(terminations)}`);
+  }
 }
 
 const objectBytes = compiler.compileObject("int other(void); int main(void){return other();}\n");

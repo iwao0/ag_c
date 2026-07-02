@@ -168,15 +168,16 @@ int __agc_runtime_atexit(long func_addr) {
   return 0;
 }
 
+void __agc_runtime_trap(void);
+
 void __agc_runtime_exit(int status) {
-  (void)status;
-  for (;;) {
-  }
+  ag_rt_notify_termination(1, status);
+  __agc_runtime_trap();
 }
 
 void __agc_runtime_abort(void) {
-  for (;;) {
-  }
+  ag_rt_notify_termination(2, 0);
+  __agc_runtime_trap();
 }
 
 long __agc_runtime_getenv(long name_addr) {

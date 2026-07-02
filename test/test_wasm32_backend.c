@@ -256,6 +256,10 @@ int main(void) {
                        global_struct_bitfield, 2, 35);
   const char *string_lit[] = {"(data (i32.const", "\"abc\\00\"", "i32.load8_s"};
   failures += run_case("string_lit", "int main(){char *p=\"abc\"; return p[1];}\n", string_lit, 3, 98);
+  const char *utf8_string_lit[] = {"(data (i32.const", "\\e3\\81\\82\\00", "i32.load8_u"};
+  failures += run_case("utf8_string_lit",
+                       "int main(){unsigned char *p=(unsigned char *)\"あ\"; return p[0]+p[1]+p[2];}\n",
+                       utf8_string_lit, 3, 486);
   const char *struct_copy[] = {"i64.store", "i64.load", "i32.store", "i32.load"};
   failures += run_case("struct_copy",
                        "struct P{int a; int b; int c;}; int main(){struct P x; struct P y; "

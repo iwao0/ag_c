@@ -38,6 +38,10 @@ enum {
 };
 
 static const char *DEFAULT_RUNTIME_OBJECT = "build/libagc_runtime.o";
+static const char *runtime_object_path(void) {
+  const char *path = getenv("AGC_WASM_RUNTIME_OBJECT");
+  return path && path[0] ? path : DEFAULT_RUNTIME_OBJECT;
+}
 
 typedef struct {
   unsigned char *data;
@@ -730,6 +734,7 @@ static int is_runtime_data_symbol(str_t name) {
 
 static int is_runtime_func_symbol(str_t name) {
   return str_eq_lit(name, "printf") || str_eq_lit(name, "fprintf") ||
+         str_eq_lit(name, "__agc_runtime_trap") ||
          str_eq_lit(name, "vfprintf") ||
          str_eq_lit(name, "__assert_rtn") ||
          str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
@@ -2377,6 +2382,9 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   if (str_eq_lit(name, "__assert_rtn")) {
     buf_uleb(&b, 0); /* local decl count */
     buf_u8(&b, 0x00); /* unreachable */
+  } else if (str_eq_lit(name, "__agc_runtime_trap")) {
+    buf_uleb(&b, 0); /* local decl count */
+    buf_u8(&b, 0x00); /* unreachable */
   } else if (make_printf_stub_body(name, type, &b)) {
   } else if (make_strlen_stub_body(name, type, &b)) {
   } else if (make_strcmp_stub_body(name, type, &b)) {
@@ -3756,12 +3764,13 @@ int main(int argc, char **argv) {
     }
   }
   if (!out || input_count == 0) usage();
-  if (use_stdlib && !input_contains(inputs, input_count, DEFAULT_RUNTIME_OBJECT)) {
-    if (!file_exists(DEFAULT_RUNTIME_OBJECT)) {
+  const char *runtime_path = runtime_object_path();
+  if (use_stdlib && !input_contains(inputs, input_count, runtime_path)) {
+    if (!file_exists(runtime_path)) {
       dief("default runtime object not found: %s (run make build/libagc_runtime.o or pass --nostdlib)",
-           DEFAULT_RUNTIME_OBJECT);
+           runtime_path);
     }
-    inputs[input_count++] = DEFAULT_RUNTIME_OBJECT;
+    inputs[input_count++] = runtime_path;
   }
   object_t *objs = xmalloc((size_t)input_count * sizeof(object_t));
   for (int i = 0; i < input_count; i++) objs[i] = parse_object(inputs[i]);
