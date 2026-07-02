@@ -28,6 +28,11 @@
         grid-template-columns: 1fr 1fr;
         min-height: 0;
       }
+      .sources {
+        display: grid;
+        grid-template-rows: 1fr 1fr;
+        min-height: 0;
+      }
       textarea, pre {
         box-sizing: border-box;
         width: 100%;
@@ -42,7 +47,11 @@
       }
       textarea {
         border-right: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+        border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
         outline: none;
+      }
+      textarea:last-child {
+        border-bottom: 0;
       }
       button {
         font: inherit;
@@ -81,15 +90,20 @@
       <span id="status">Loading wasm...</span>
     </header>
     <main>
-      <textarea id="source" spellcheck="false">int main(){return 42;}
+      <div class="sources">
+        <textarea class="source" spellcheck="false">int other(void);
+int main(void){return other()+1;}
 </textarea>
+        <textarea class="source" spellcheck="false">int other(void){return 41;}
+</textarea>
+      </div>
       <pre id="output"></pre>
     </main>
     <script type="module">
       import { createToolchain } from "./agc-toolchain.js";
 
       const status = document.getElementById("status");
-      const source = document.getElementById("source");
+      const sources = Array.from(document.querySelectorAll(".source"));
       const output = document.getElementById("output");
       const run = document.getElementById("run");
       const download = document.getElementById("download");
@@ -112,18 +126,22 @@
 
       function compile() {
         try {
+          const sourceTexts = sources.map((el) => el.value).filter((text) => text.trim().length > 0);
+          if (sourceTexts.length === 0) {
+            throw new Error("no source input");
+          }
           lastDownload = null;
           download.disabled = true;
           if (mode.value === "object") {
-            const obj = toolchain.compileObject(source.value);
+            const obj = toolchain.compileObject(sourceTexts[0]);
             output.textContent = hexDump(obj);
             lastDownload = { bytes: obj, name: "out.o", type: "application/wasm" };
           } else if (mode.value === "linked") {
-            const wasm = toolchain.compileLinkedWasm(source.value, { exports: ["main"] });
+            const wasm = toolchain.compileLinkedWasm(sourceTexts, { exports: ["main"], useStdlib: false });
             output.textContent = hexDump(wasm);
             lastDownload = { bytes: wasm, name: "out.wasm", type: "application/wasm" };
           } else {
-            const wat = toolchain.compileWat(source.value);
+            const wat = toolchain.compileWat(sourceTexts[0]);
             output.textContent = wat;
             lastDownload = { text: wat, name: "out.wat", type: "text/plain" };
           }

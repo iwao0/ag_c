@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き356: browser demo download output）
+最終更新: 2026-07-02（続き357: browser demo multi-source link）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,12 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き357: **browser demo で複数 source を object 経由 link できるようにした**。
+  `tools/wasm_js_api/demo.html` の入力を 2 つの source textarea にし、`Linked Wasm` では
+  空でない source をそれぞれ `compileObject()` してから `compileLinkedWasm([...])` へ渡す。
+  初期値は `main` と `other` の cross-TU call で、WAT/Object は先頭 source の確認用として維持。
+  確認: Node から同じ初期 source で `compileWat(main)` と `compileLinkedWasm([main, other])` が成功、
+  `make test-wasm-js-pipeline` = **green**。
 - 続き356: **browser demo から生成物を download できるようにした**。
   `tools/wasm_js_api/demo.html` に `Download` ボタンを追加し、選択中の出力に応じて
   `out.wat` / `out.o` / `out.wasm` を保存できる。
