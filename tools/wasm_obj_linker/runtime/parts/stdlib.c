@@ -50,6 +50,76 @@ unsigned long __agc_runtime_strtoul(long s_addr, long endptr_addr, int base) {
   return __agc_runtime_strtoumax(s_addr, endptr_addr, base);
 }
 
+static int __agc_runtime_hex_digit(int c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+static double __agc_runtime_pow2i(int exp) {
+  double scale = 1.0;
+  if (exp > 0) {
+    while (exp > 0) {
+      scale = scale * 2.0;
+      exp--;
+    }
+  } else {
+    while (exp < 0) {
+      scale = scale / 2.0;
+      exp++;
+    }
+  }
+  return scale;
+}
+
+static int __agc_runtime_parse_hex_float(char **sp, double *out) {
+  char *s = *sp;
+  if (!(s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))) return 0;
+
+  char *p = s + 2;
+  double acc = 0.0;
+  int have_digit = 0;
+  int digit;
+  while ((digit = __agc_runtime_hex_digit(*p)) >= 0) {
+    have_digit = 1;
+    acc = acc * 16.0 + (double)digit;
+    p++;
+  }
+  if (*p == '.') {
+    double place = 1.0 / 16.0;
+    p++;
+    while ((digit = __agc_runtime_hex_digit(*p)) >= 0) {
+      have_digit = 1;
+      acc = acc + (double)digit * place;
+      place = place / 16.0;
+      p++;
+    }
+  }
+  if (!have_digit || !(*p == 'p' || *p == 'P')) return 0;
+  p++;
+
+  int exp_sign = 1;
+  if (*p == '-') {
+    exp_sign = -1;
+    p++;
+  } else if (*p == '+') {
+    p++;
+  }
+  int have_exp = 0;
+  int exp = 0;
+  while (*p >= '0' && *p <= '9') {
+    have_exp = 1;
+    exp = exp * 10 + (*p - '0');
+    p++;
+  }
+  if (!have_exp) return 0;
+
+  *out = acc * __agc_runtime_pow2i(exp * exp_sign);
+  *sp = p;
+  return 1;
+}
+
 double __agc_runtime_strtod(long s_addr, long endptr_addr) {
   char *s = ag_rt_ptr(s_addr);
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
@@ -59,6 +129,15 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
     s++;
   } else if (*s == '+') {
     s++;
+  }
+
+  double hex = 0.0;
+  if (__agc_runtime_parse_hex_float(&s, &hex)) {
+    if (endptr_addr) {
+      long *endp = (long *)ag_rt_ptr(endptr_addr);
+      *endp = (long)s;
+    }
+    return sign * hex;
   }
 
   double acc = 0.0;
