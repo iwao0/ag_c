@@ -1118,11 +1118,10 @@ static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
     for (int p = 0; p < nparams; p++) {
       int pcat = psx_ctx_get_function_param_category((char *)name, name_len, p);
       tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind((char *)name, name_len, p);
-      int int_size = psx_ctx_get_function_param_int_size((char *)name, name_len, p);
       if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) sig.params[p] = IR_TY_I32;
       else if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else sig.params[p] = int_size == 8 ? IR_TY_I64 : IR_TY_I32;
+      else sig.params[p] = IR_TY_I64;
     }
   }
   return sig;
@@ -1136,8 +1135,14 @@ static int funcptr_mask_param_count(unsigned short fp_mask, unsigned short int_m
   return n;
 }
 
-static ir_type_t funcptr_int_mask_type(unsigned iw) {
-  return iw == 2 ? IR_TY_I64 : IR_TY_I32;
+static ir_type_t funcptr_mask_param_type(unsigned fp, unsigned iw) {
+  if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
+  if (iw != 0) {
+    if (iw == 3) return IR_TY_I32;
+    return IR_TY_I64;
+  }
+  return IR_TY_I64;
 }
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
@@ -1158,10 +1163,7 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
     for (int p = 0; p < nparams; p++) {
       unsigned fp = (gv->funcptr_param_fp_mask >> (2 * p)) & 3u;
       unsigned iw = (gv->funcptr_param_int_mask >> (2 * p)) & 3u;
-      if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
-      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else if (iw != 0) sig.params[p] = funcptr_int_mask_type(iw);
-      else sig.params[p] = IR_TY_I64;
+      sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
   return sig;
@@ -1187,10 +1189,7 @@ static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
     for (int p = 0; p < nparams; p++) {
       unsigned fp = (mi->funcptr_param_fp_mask >> (2 * p)) & 3u;
       unsigned iw = (mi->funcptr_param_int_mask >> (2 * p)) & 3u;
-      if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
-      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else if (iw != 0) sig.params[p] = funcptr_int_mask_type(iw);
-      else sig.params[p] = IR_TY_I64;
+      sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
   return sig;
@@ -1215,10 +1214,7 @@ static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *nam
     for (int p = 0; p < nparams; p++) {
       unsigned fp = (inst->funcptr_param_fp_mask >> (2 * p)) & 3u;
       unsigned iw = (inst->funcptr_param_int_mask >> (2 * p)) & 3u;
-      if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
-      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
-      else if (iw != 0) sig.params[p] = funcptr_int_mask_type(iw);
-      else sig.params[p] = IR_TY_I64;
+      sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
   return sig;

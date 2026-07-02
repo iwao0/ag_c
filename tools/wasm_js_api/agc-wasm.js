@@ -298,7 +298,7 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function compileWat(source) {
     const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileWatExport, true);
+    if (useHeapBuffers) return compileAdaptive(sourceBytes, compileWatExport, true);
     return compileWithFixedBuffers(sourceBytes, compileWatExport, true);
   }
 
@@ -307,8 +307,26 @@ export async function createCompiler(wasmSource, options = {}) {
       throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
     }
     const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileObjectExport, false);
+    if (useHeapBuffers) return compileAdaptive(sourceBytes, compileObjectExport, false);
     return compileWithFixedBuffers(sourceBytes, compileObjectExport, false);
+  }
+
+  function fixedBuffersAvailable(sourceBytes) {
+    return sourceBytes.length <= sourceCap &&
+           sourcePtr + sourceCap <= memory.buffer.byteLength &&
+           outputPtr + outputCap <= memory.buffer.byteLength;
+  }
+
+  function compileAdaptive(sourceBytes, compileFn, asText) {
+    if (fixedBuffersAvailable(sourceBytes)) {
+      try {
+        return compileWithFixedBuffers(sourceBytes, compileFn, asText);
+      } catch (err) {
+        const message = String(err && err.message ? err.message : err);
+        if (!message.includes("ag_c wasm output exceeded")) throw err;
+      }
+    }
+    return compileWithHeapBuffers(sourceBytes, compileFn, asText);
   }
 
   return {
