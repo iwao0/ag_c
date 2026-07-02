@@ -21,6 +21,7 @@ node_t *ps_next_function(void);
 // 直前に ps_next_function で取り出した関数の codegen 後に呼び、その関数の AST
 // (parser arena) を解放する。次の ps_next_function は新たに arena を使う。
 void ps_free_processed_ast(void);
+void ps_reset_translation_unit_state(void);
 
 // 単一の式をパースしてASTのルートを返す
 node_t *ps_expr(void);

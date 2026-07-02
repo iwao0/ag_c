@@ -153,6 +153,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
 #endif
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
+  ps_reset_translation_unit_state();
+
   char *source = (char *)(long)source_addr;
   wasm_memory_output_t out = {(char *)(long)out_addr, out_cap, 0, 0};
   out.buf[0] = '\0';

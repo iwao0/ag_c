@@ -2371,6 +2371,15 @@ void psx_expr_get_current_funcname(char **out_name, int *out_len) {
   if (out_len) *out_len = g_current_funcname_len;
 }
 
+void psx_expr_reset_translation_unit_state(void) {
+  string_label_count = 0;
+  float_label_count = 0;
+  compound_lit_seq = 0;
+  g_addr_of_compound_pending = 0;
+  g_current_funcname = NULL;
+  g_current_funcname_len = 0;
+}
+
 // expr = assign ("," assign)*
 node_t *psx_expr_expr(void) {
   return expr_internal();

@@ -451,6 +451,20 @@ static void reset_toplevel_decl_spec_state(void) {
   g_last_type_thread_local = 0;
 }
 
+void ps_reset_translation_unit_state(void) {
+  global_vars = NULL;
+  string_literals = NULL;
+  float_literals = NULL;
+  memset(gvars_by_bucket, 0, sizeof(gvars_by_bucket));
+  reset_toplevel_decl_spec_state();
+  psx_expr_reset_translation_unit_state();
+  psx_ctx_reset_function_names();
+  psx_ctx_reset_function_diag_state();
+  psx_ctx_reset_tag_diag_state();
+  pragma_pack_reset();
+  arena_free_all();
+}
+
 static int parse_toplevel_tag_decl_spec(void) {
   if (!psx_ctx_is_tag_keyword(curtok()->kind)) return 0;
   parse_toplevel_tag_head(&g_toplevel_decl_tag_kind, &g_toplevel_decl_tag_name, &g_toplevel_decl_tag_len);
