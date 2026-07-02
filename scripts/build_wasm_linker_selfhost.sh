@@ -6,7 +6,13 @@ out_dir=${1:-"$root/build/wasm_linker_selfhost"}
 obj_dir="$out_dir/obj"
 out_obj="$obj_dir/tools/wasm_obj_linker/ag_wasm_link.o"
 out_wasm="$out_dir/ag_wasm_link.wasm"
+lock_dir="$out_dir.lock"
 
+mkdir -p "$(dirname "$out_dir")"
+while ! mkdir "$lock_dir" 2>/dev/null; do
+  sleep 0.1
+done
+trap 'rmdir "$lock_dir"' EXIT
 mkdir -p "$(dirname "$out_obj")"
 
 make -C "$root" -j4 build/ag_c_wasm build/ag_wasm_link build/libagc_runtime.o

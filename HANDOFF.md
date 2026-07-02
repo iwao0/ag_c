@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き352: wasm compiler JS API object output）
+最終更新: 2026-07-02（続き353: wasm JS compile+link pipeline smoke）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,16 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き353: **wasm 化コンパイラと wasm 化リンカーを JS 上で直結する smoke を追加**。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` と Makefile target
+  `test-wasm-js-pipeline` を追加した。
+  `createCompiler(...).compileObject()` で `main` / `other` を別々に object 化し、
+  `createLinker(...).link([mainObj, otherObj], { exports: ["main"], useStdlib: false })`
+  で 1 wasm にリンクする。生成物は
+  `build/wasm_js_pipeline_smoke/linked_from_wasm_compiler_and_linker.wasm`。
+  `wasm-objdump -x` で compiler API 由来 object の `linking` / `reloc.CODE` を確認し、
+  `wasm-validate` と `wasm-interp --run-all-exports` で `main() => i32:42` を確認する。
+  確認: `make test-wasm-js-pipeline` = **green**。
 - 続き352: **wasm 化したコンパイラ JS API に object bytes 出力を追加**。
   `agc_wasm_compile_object(source, out, cap)` を export し、`tools/wasm_js_api/agc-wasm.js`
   から `compileObject(source): Uint8Array` として呼べるようにした。
