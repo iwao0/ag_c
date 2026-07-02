@@ -19,6 +19,7 @@ export interface AgcWasmCompiler {
     useHeapBuffers: boolean;
   };
   compileWat(source: string): string;
+  compileObject(source: string): Uint8Array;
 }
 
 export type AgcWasmSource = string | URL | ArrayBuffer | Uint8Array;

@@ -31,8 +31,7 @@ async function instantiateFromSource(wasmSource) {
   return (await WebAssembly.instantiate(asBytes(wasmSource), {})).instance;
 }
 
-function callCompile(instance, sourcePtr, outputPtr, outputCap) {
-  const fn = instance.exports.agc_wasm_compile_wat;
+function callCompile(fn, sourcePtr, outputPtr, outputCap) {
   try {
     return Number(fn(BigInt(sourcePtr), BigInt(outputPtr), BigInt(outputCap)));
   } catch (err) {
@@ -75,13 +74,14 @@ function ensureMemoryRange(memory, ptr, len, label) {
 export async function createCompiler(wasmSource, options = {}) {
   const instance = await instantiateFromSource(wasmSource);
   const memory = instance.exports.memory;
-  const compile = instance.exports.agc_wasm_compile_wat;
+  const compileWatExport = instance.exports.agc_wasm_compile_wat;
+  const compileObjectExport = instance.exports.agc_wasm_compile_object;
   const malloc = instance.exports.malloc;
   const free = instance.exports.free;
   if (!(memory instanceof WebAssembly.Memory)) {
     throw new Error("ag_c wasm module does not export memory");
   }
-  if (typeof compile !== "function") {
+  if (typeof compileWatExport !== "function") {
     throw new Error("ag_c wasm module does not export agc_wasm_compile_wat");
   }
 
@@ -105,7 +105,7 @@ export async function createCompiler(wasmSource, options = {}) {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
 
-  function compileWatWithFixedBuffers(sourceBytes) {
+  function compileWithFixedBuffers(sourceBytes, compileFn, asText) {
     if (sourceBytes.length > sourceCap) {
       throw new RangeError(`source is ${sourceBytes.length} bytes; max is ${sourceCap}`);
     }
@@ -121,17 +121,19 @@ export async function createCompiler(wasmSource, options = {}) {
     mem.fill(0, outputPtr, outputPtr + outputCap);
     mem.set(sourceBytes, sourcePtr);
 
-    const n = callCompile(instance, sourcePtr, outputPtr, outputCap);
+    const n = callCompile(compileFn, sourcePtr, outputPtr, outputCap);
     if (n === -1) throw new Error("ag_c wasm compile failed: invalid buffer arguments");
     if (n === -2) throw new RangeError(`ag_c wasm output exceeded ${outputCap} bytes`);
     if (n === -3) throw new Error("ag_c wasm compile failed while building IR");
+    if (n === -4) throw new Error("ag_c wasm compile produced no output");
     if (n < 0) throw new Error(`ag_c wasm compile failed with code ${n}`);
 
     mem = new Uint8Array(memory.buffer);
-    return decoder.decode(mem.subarray(outputPtr, outputPtr + n));
+    const bytes = mem.slice(outputPtr, outputPtr + n);
+    return asText ? decoder.decode(bytes) : bytes;
   }
 
-  function compileWatWithHeapBuffers(sourceBytes) {
+  function compileWithHeapBuffers(sourceBytes, compileFn, asText) {
     const sourceAlloc = callPtrFunc(malloc, sourceBytes.length);
     if (!sourceAlloc) throw new Error("ag_c wasm malloc failed for source buffer");
     let outputAlloc = 0;
@@ -147,7 +149,7 @@ export async function createCompiler(wasmSource, options = {}) {
         mem = new Uint8Array(memory.buffer);
         ensureMemoryRange(memory, outputAlloc, cap, "output");
         mem.fill(0, outputAlloc, outputAlloc + cap);
-        const n = callCompile(instance, sourceAlloc, outputAlloc, cap);
+        const n = callCompile(compileFn, sourceAlloc, outputAlloc, cap);
         if (n === -2) {
           callVoidPtrFunc(free, outputAlloc);
           outputAlloc = 0;
@@ -159,9 +161,11 @@ export async function createCompiler(wasmSource, options = {}) {
         }
         if (n === -1) throw new Error("ag_c wasm compile failed: invalid buffer arguments");
         if (n === -3) throw new Error("ag_c wasm compile failed while building IR");
+        if (n === -4) throw new Error("ag_c wasm compile produced no output");
         if (n < 0) throw new Error(`ag_c wasm compile failed with code ${n}`);
         mem = new Uint8Array(memory.buffer);
-        return decoder.decode(mem.subarray(outputAlloc, outputAlloc + n));
+        const bytes = mem.slice(outputAlloc, outputAlloc + n);
+        return asText ? decoder.decode(bytes) : bytes;
       }
     } finally {
       if (outputAlloc) callVoidPtrFunc(free, outputAlloc);
@@ -171,14 +175,24 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function compileWat(source) {
     const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileWatWithHeapBuffers(sourceBytes);
-    return compileWatWithFixedBuffers(sourceBytes);
+    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileWatExport, true);
+    return compileWithFixedBuffers(sourceBytes, compileWatExport, true);
+  }
+
+  function compileObject(source) {
+    if (typeof compileObjectExport !== "function") {
+      throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
+    }
+    const sourceBytes = encoder.encode(`${source}\0`);
+    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileObjectExport, false);
+    return compileWithFixedBuffers(sourceBytes, compileObjectExport, false);
   }
 
   return {
     instance,
     memory,
     compileWat,
+    compileObject,
     limits: { sourcePtr, sourceCap, outputPtr, outputCap, initialOutputCap, useHeapBuffers },
   };
 }

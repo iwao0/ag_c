@@ -8,9 +8,7 @@
 #include "ir/ir_builder.h"
 #include "arch/arm64_apple_ir.h"
 #include "arch/wasm32_ir.h"
-#ifdef AGC_TARGET_WASM32
 #include "arch/wasm32_obj.h"
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -95,12 +93,7 @@ static int wasm_emit_function_direct(node_t *fn, int object_mode) {
   ir_module_t *m = ir_build_function_module(fn);
   if (!m) return 0;
   if (object_mode) {
-#ifdef AGC_TARGET_WASM32
     wasm32_obj_gen_ir_module(m);
-#else
-    ir_module_free(m);
-    return 0;
-#endif
   } else {
     wasm32_gen_ir_module(m);
   }
@@ -141,12 +134,15 @@ static char *read_file_contents(const char *path) {
   return buf;
 }
 
-int agc_wasm_compile_wat(int source_addr, int out_addr, int out_cap) {
+static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap,
+                                      int object_mode) {
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
   char *source = (char *)(long)source_addr;
   wasm_memory_output_t out = {(char *)(long)out_addr, out_cap, 0, 0};
   out.buf[0] = '\0';
+  unsigned char *obj_bytes = NULL;
+  size_t obj_len = 0;
 
   const char *input_disp = "input.c";
   tk_set_filename_ctx(tk_get_default_context(), input_disp);
@@ -155,28 +151,58 @@ int agc_wasm_compile_wat(int source_addr, int out_addr, int out_cap) {
   pp_stream_t *pps = NULL;
   token_t *tok = pp_stream_open(&pps, tk_ctx, source);
 
-  gen_set_simple_formatter(1);
-  gen_set_output_callback(write_line_to_memory, &out);
-  wasm32_module_begin();
+  if (object_mode) {
+    wasm32_obj_set_output_file(NULL);
+    wasm32_obj_capture_output(1);
+    wasm32_obj_begin();
+  } else {
+    gen_set_simple_formatter(1);
+    gen_set_output_callback(write_line_to_memory, &out);
+    wasm32_module_begin();
+  }
 
   ps_stream_begin(tk_ctx, tok);
   for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
-    if (!wasm_emit_function_direct(fn, 0)) {
+    if (!wasm_emit_function_direct(fn, object_mode)) {
       clear_output_callback();
       gen_set_simple_formatter(0);
       if (pps) pp_stream_close(pps);
+      wasm32_obj_capture_output(0);
       return -3;
     }
     ps_free_processed_ast();
   }
   if (pps) pp_stream_close(pps);
 
-  wasm32_emit_data_segments();
-  wasm32_module_end();
-  clear_output_callback();
-  gen_set_simple_formatter(0);
+  if (object_mode) {
+    wasm32_obj_emit_data_segments();
+    wasm32_obj_end();
+    wasm32_obj_capture_output(0);
+    obj_bytes = wasm32_obj_take_output(&obj_len);
+    if (!obj_bytes) return -4;
+    if (obj_len > (size_t)out_cap) {
+      free(obj_bytes);
+      return -2;
+    }
+    memcpy(out.buf, obj_bytes, obj_len);
+    free(obj_bytes);
+    return (int)obj_len;
+  } else {
+    wasm32_emit_data_segments();
+    wasm32_module_end();
+    clear_output_callback();
+    gen_set_simple_formatter(0);
+  }
 
   return out.overflow ? -2 : out.len;
+}
+
+int agc_wasm_compile_wat(int source_addr, int out_addr, int out_cap) {
+  return agc_wasm_compile_to_memory(source_addr, out_addr, out_cap, 0);
+}
+
+int agc_wasm_compile_object(int source_addr, int out_addr, int out_cap) {
+  return agc_wasm_compile_to_memory(source_addr, out_addr, out_cap, 1);
 }
 
 int main(int argc, char **argv) {

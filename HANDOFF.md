@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-02（続き351: wasm linker multi-object API smoke）
+最終更新: 2026-07-02（続き352: wasm compiler JS API object output）
 
 ## 現状
 - `make test` = **green**。
@@ -16,6 +16,14 @@
   `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き352: **wasm 化したコンパイラ JS API に object bytes 出力を追加**。
+  `agc_wasm_compile_object(source, out, cap)` を export し、`tools/wasm_js_api/agc-wasm.js`
+  から `compileObject(source): Uint8Array` として呼べるようにした。
+  `wasm32_obj` emitter は `FILE *` だけでなく、生成済み object binary をメモリに capture して
+  caller が `take` できる。browser demo は WAT/Object 出力を切り替えられる。
+  smoke では `compileObject("int other(void); int main(){return other();}")` の結果を
+  `wasm-objdump -x` で `linking` / `reloc.CODE` 付き object として確認する。
+  確認: `make test-wasm-js-api` = **green**、`make -j4 build/ag_c` = **green**。
 - 続き351: **wasm 化したリンカー JS API の複数 object smoke を追加**。
   `tools/wasm_obj_linker/test_selfhost_api.mjs` で `main_xtu.c` / `other_xtu.c` を別々に
   `ag_c_wasm -c` で object 化し、wasm 上の `createLinker(...).link([mainObj, otherObj],

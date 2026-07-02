@@ -75,6 +75,7 @@ done
 
 "$root/build/ag_wasm_link" --no-entry \
   --export=agc_wasm_compile_wat \
+  --export=agc_wasm_compile_object \
   --export=malloc \
   --export=free \
   -o "$out_wasm" $(cat "$list_file")

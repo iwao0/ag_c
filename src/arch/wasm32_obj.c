@@ -101,6 +101,7 @@ typedef struct {
 
 typedef struct {
   FILE *out;
+  int capture_output;
   obj_func_t *funcs;
   int func_count;
   int func_cap;
@@ -124,6 +125,7 @@ typedef struct {
 } obj_ctx_t;
 
 static obj_ctx_t g_obj;
+static wb_t g_obj_capture;
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
 static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
@@ -2308,10 +2310,25 @@ void wasm32_obj_set_output_file(FILE *out) {
   g_obj.out = out;
 }
 
+void wasm32_obj_capture_output(int enabled) {
+  g_obj.capture_output = enabled;
+}
+
+unsigned char *wasm32_obj_take_output(size_t *out_len) {
+  unsigned char *data = g_obj_capture.data;
+  if (out_len) *out_len = g_obj_capture.len;
+  g_obj_capture.data = NULL;
+  g_obj_capture.len = 0;
+  g_obj_capture.cap = 0;
+  return data;
+}
+
 void wasm32_obj_begin(void) {
   FILE *out = g_obj.out;
+  int capture_output = g_obj.capture_output;
   memset(&g_obj, 0, sizeof(g_obj));
   g_obj.out = out;
+  g_obj.capture_output = capture_output;
 }
 
 void wasm32_obj_gen_ir_module(ir_module_t *m) {
@@ -2978,8 +2995,16 @@ void wasm32_obj_end(void) {
   emit_reloc_section(&out, "reloc.CODE", code_section_index, g_obj.code_relocs, g_obj.code_reloc_count);
   emit_reloc_section(&out, "reloc.DATA", data_section_index, g_obj.data_relocs, g_obj.data_reloc_count);
 
-  if (!g_obj.out || fwrite(out.data, 1, out.len, g_obj.out) != out.len) {
+  if (g_obj.out && fwrite(out.data, 1, out.len, g_obj.out) != out.len) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to write Wasm object output");
   }
-  free(out.data);
+  if (g_obj.capture_output) {
+    free(g_obj_capture.data);
+    g_obj_capture = out;
+  } else {
+    if (!g_obj.out) {
+      diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "missing Wasm object output sink");
+    }
+    free(out.data);
+  }
 }

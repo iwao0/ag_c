@@ -5,6 +5,8 @@
 #include <stdio.h>
 
 void wasm32_obj_set_output_file(FILE *out);
+void wasm32_obj_capture_output(int enabled);
+unsigned char *wasm32_obj_take_output(size_t *out_len);
 void wasm32_obj_begin(void);
 void wasm32_obj_gen_ir_module(ir_module_t *m);
 void wasm32_obj_emit_data_segments(void);

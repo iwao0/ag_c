@@ -81,7 +81,8 @@ Node smoke:
 make test-wasm-js-api
 ```
 
-JS からは `createCompiler()` で読み込み、`compileWat(source)` で C ソースを WAT に変換します:
+JS からは `createCompiler()` で読み込み、`compileWat(source)` で C ソースを WAT に、
+`compileObject(source)` で wasm object bytes に変換します:
 
 ```js
 import { readFile } from "node:fs/promises";
@@ -90,7 +91,9 @@ import { createCompiler } from "./tools/wasm_js_api/agc-wasm.js";
 const wasm = await readFile("build/wasm_selfhost_api/ag_c_wasm_api.wasm");
 const compiler = await createCompiler(wasm);
 const wat = compiler.compileWat("int main(){return 42;}\n");
+const obj = compiler.compileObject("int other(void); int main(){return other();}\n");
 console.log(wat);
+console.log(obj.byteLength);
 ```
 
 TypeScript 用の宣言は `tools/wasm_js_api/agc-wasm.d.ts` です。

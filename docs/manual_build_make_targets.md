@@ -21,7 +21,7 @@ make test-wasm-linker-selfhost
 | `make build/ag_c_wasm` | `build/ag_c_wasm` | Wasm backend 付きコンパイラ。`ag_c_wasm input.c` で WAT、`-c -o out.o` で wasm object。 |
 | `make build/ag_wasm_link` | `build/ag_wasm_link` | wasm object 用の実験的リンカー。 |
 | `make build/libagc_runtime.o` | `build/libagc_runtime.o` | wasm object リンク時の標準 runtime object。`ag_wasm_link` は既定でこれを追加する。 |
-| `make wasm-selfhost-api` | `build/wasm_selfhost_api/ag_c_wasm_api.wasm` | wasm 化した C コンパイラ API。JS から `compileWat()` で使う。 |
+| `make wasm-selfhost-api` | `build/wasm_selfhost_api/ag_c_wasm_api.wasm` | wasm 化した C コンパイラ API。JS から `compileWat()` / `compileObject()` で使う。 |
 | `make wasm-linker-selfhost` | `build/wasm_linker_selfhost/ag_wasm_link.wasm` | wasm 化した wasm object リンカー。JS から object bytes を渡してリンクできる。 |
 | `make release` | `build/ag_c` | `-Oz -DNDEBUG -flto` で release 風にビルドする。 |
 
@@ -110,6 +110,10 @@ make wasm-selfhost-api
 make test-wasm-js-api
 ```
 
+JS wrapper は `tools/wasm_js_api/agc-wasm.js` です。
+`compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
+(`Uint8Array`) を返します。
+
 wasm 化したリンカー API を作る:
 
 ```sh
@@ -124,4 +128,3 @@ make clean
 ```
 
 `build/` を削除する。生成物、object、テストバイナリ、scan 出力は消える。
-

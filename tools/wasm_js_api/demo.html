@@ -48,6 +48,10 @@
         font: inherit;
         padding: 6px 12px;
       }
+      select {
+        font: inherit;
+        padding: 6px 8px;
+      }
       #status {
         min-width: 14em;
         text-align: right;
@@ -68,6 +72,10 @@
   <body>
     <header>
       <button id="run" type="button">Compile</button>
+      <select id="mode" aria-label="Output mode">
+        <option value="wat">WAT</option>
+        <option value="object">Object</option>
+      </select>
       <span id="status">Loading wasm...</span>
     </header>
     <main>
@@ -82,11 +90,27 @@
       const source = document.getElementById("source");
       const output = document.getElementById("output");
       const run = document.getElementById("run");
+      const mode = document.getElementById("mode");
       const compiler = await createCompiler("../../build/wasm_selfhost_api/ag_c_wasm_api.wasm");
+
+      function hexDump(bytes) {
+        const lines = [];
+        for (let off = 0; off < bytes.length; off += 16) {
+          const chunk = bytes.subarray(off, off + 16);
+          const hex = Array.from(chunk, (b) => b.toString(16).padStart(2, "0")).join(" ");
+          lines.push(`${off.toString(16).padStart(8, "0")}  ${hex}`);
+        }
+        return lines.join("\n");
+      }
 
       function compile() {
         try {
-          output.textContent = compiler.compileWat(source.value);
+          if (mode.value === "object") {
+            const obj = compiler.compileObject(source.value);
+            output.textContent = hexDump(obj);
+          } else {
+            output.textContent = compiler.compileWat(source.value);
+          }
           status.textContent = "OK";
         } catch (err) {
           output.textContent = err && err.stack ? err.stack : String(err);
@@ -95,6 +119,7 @@
       }
 
       run.addEventListener("click", compile);
+      mode.addEventListener("change", compile);
       compile();
     </script>
   </body>
