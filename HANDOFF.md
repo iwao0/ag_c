@@ -4362,3 +4362,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き379）: JS import stdio の 0 stream stderr 扱いを同期
+- default runtime object は出力系で `stream == 0` と `stream == stderr(2)` を stderr 扱いしているが、
+  JS import runtime は `stream == 2` だけ stderr 扱いだった。
+- `agc-runtime-imports.js` に `isStderrStream()` を追加し、`fputs` / `fputc` / `fwrite` / `fprintf` の
+  stream 判定を `0 || 2` に揃えた。
+- JS pipeline smoke に、`fputs` / `fputc` / `fwrite` の `(void *)0` 出力が stderr callback に届くケースを追加した。
+  `fprintf((void *)0, ...)` は varargs import の別問題を踏むため、この fixture には入れていない。
+- 確認:
+  - `make test-wasm-js-pipeline` = ok

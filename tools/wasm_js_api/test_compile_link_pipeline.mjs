@@ -247,7 +247,10 @@ int main(void) {
   if (fflush((void *)1) != 0) return 5;
   if (fwrite("CD", 1, 2, (void *)1) != 2) return 6;
   if (fwrite("!", 1, 1, (void *)2) != 1) return 7;
-  if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 8;
+  if (fputs("q", (void *)0) != 1) return 8;
+  if (fputc('r', (void *)0) != 'r') return 9;
+  if (fwrite("s", 1, 1, (void *)0) != 1) return 10;
+  if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 11;
   return 42;
 }
 `;
@@ -261,7 +264,7 @@ const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
   onStderr: (chunk) => { jsBasicStderr += chunk; },
 });
 const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
-if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCD" || jsBasicStderr !== "ER!") {
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCD" || jsBasicStderr !== "ER!qrs") {
   throw new Error(
     `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
   );

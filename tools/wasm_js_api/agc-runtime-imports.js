@@ -203,13 +203,18 @@ function makeStdio(options = {}) {
     return String(text).length;
   }
 
+  function isStderrStream(stream) {
+    const s = Number(stream);
+    return s === 0 || s === 2;
+  }
+
   function printf(fmt, ...args) {
     return emitStdout(formatPrintf(getMemory(), fmt, args));
   }
 
   function fprintf(stream, fmt, ...args) {
     const text = formatPrintf(getMemory(), fmt, args);
-    return Number(stream) === 2 ? emitStderr(text) : emitStdout(text);
+    return isStderrStream(stream) ? emitStderr(text) : emitStdout(text);
   }
 
   function sprintf(buf, fmt, ...args) {
@@ -226,7 +231,7 @@ function makeStdio(options = {}) {
 
   function fputs(s, stream) {
     const text = readCString(getMemory(), s);
-    return Number(stream) === 2 ? emitStderr(text) : emitStdout(text);
+    return isStderrStream(stream) ? emitStderr(text) : emitStdout(text);
   }
 
   function putchar(c) {
@@ -237,7 +242,7 @@ function makeStdio(options = {}) {
 
   function fputc(c, stream) {
     const text = String.fromCodePoint(Number(c) & 0xff);
-    if (Number(stream) === 2) {
+    if (isStderrStream(stream)) {
       emitStderr(text);
     } else {
       emitStdout(text);
@@ -255,7 +260,7 @@ function makeStdio(options = {}) {
     if (size <= 0 || nmemb <= 0) return 0n;
     const total = size * nmemb;
     const text = readMemoryUtf8(getMemory(), ptr, total);
-    if (Number(stream) === 2) {
+    if (isStderrStream(stream)) {
       emitStderr(text);
     } else {
       emitStdout(text);
