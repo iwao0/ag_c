@@ -720,6 +720,9 @@ int main(void) {
   int err_after_clear = ferror(rf);
   rewind(rf);
   long pos_after_rewind = ftell(rf);
+  long getlinen = getline(&lineptr, &linecap, rf);
+  int getline_ok = getlinen == 2 && lineptr[0] == 'A' && lineptr[1] == '\n' &&
+                   lineptr[2] == 0 && linecap >= 3;
   fclose(rf);
   FILE *rf2 = fopen("tmp.txt", "r");
   char line[8];
@@ -814,7 +817,7 @@ int main(void) {
          (int)difftime(100, 58) == 42 &&
          tm_info != 0 && tm_info->tm_year == 0 &&
          usage_ok == 0 && usage.ru_maxrss == 0 &&
-         getline(&lineptr, &linecap, rf) == -1 &&
+         getline_ok &&
          sj == 0 &&
          errp != 0 && (*errp = 34, *__error() == 34) &&
          signal(2, sigh) == 0 && raise(2) == 0 &&

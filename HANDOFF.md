@@ -4241,3 +4241,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 次段階は「import-free になった selfhost wasm をどう起動して C 入力を渡すか」
     の入口設計。現状 runtime の `getline` / file I/O は最小 stub/メモリファイル実装なので、
     ブラウザ UI からコンパイルするには argv/stdin/仮想ファイル投入の形を決める必要がある。
+
+### このセッション（続き371）: wasm JS runtime getline と streamed token recycle UAF 修正
+- default runtime の `getline` stub を、JS から注入した stdin / runtime file buffer を読む実装にした。
+  - `lineptr` / `n` を扱い、必要なら `realloc` で buffer を確保・拡張する。
+  - 改行を含めて返し、NUL 終端する。
+  - EOF 到達時は `f->eof = 1` にして `-1` を返す。
+- JS compile+link pipeline に `getline(stdin)` smoke を追加した。
+  `stdin = "first\nsecond\n"` で 2 行を読み、EOF と `feof(stdin)` まで確認する。
+- object linker smoke の linked libc runtime ケースにも `getline` 確認を追加した。
+- `libagc_runtime_js.c` の object 化中に、streamed preprocessor の token recycle で
+  `pps_pull_raw` が freed token を読む ASan UAF を確認した。
+  - 再現: `ASAN_OPTIONS=detect_leaks=0 AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm_asan_tmp -c -o /tmp/libagc_runtime_js_asan.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - 原因: pushback がない時に stream 側の recycle pin が外れ、preprocessor の出力鎖がまだ参照する
+    token chunk を parser cursor advance 側が回収できた。
+  - 対応: `pps_update_stream_pin` で `pb_head` がなければ `out_head` を pin し、stream が持つ出力鎖を
+    recycle 下限として保護するようにした。これは安全側の修正で、将来メモリ回収を詰めるなら
+    `out_head` の安全な pruning を別途設計する。
+- 確認:
+  - `make -j4 build/ag_c_wasm`
+  - `AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-js-pipeline` = ok
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = 1159 pass / 0 fail / 0 skip
+  - `make test-wasm-js-api` = ok
+  - `make test-wasm-js-e2e` = 1157 pass / 0 fail / 0 skip、validated 1157、ran 1157
+  - `make -B -j4 OBJROOT=build/obj/asan_manual WASM_TARGET=build/ag_c_wasm_asan_tmp CFLAGS='-std=c11 -g -O0 -Wall -Wextra -DDIAG_LANG_JA -fsanitize=address -fno-omit-frame-pointer' build/ag_c_wasm_asan_tmp`
+  - `ASAN_OPTIONS=detect_leaks=0 AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm_asan_tmp -c -o /tmp/libagc_runtime_js_asan.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c` = UAF 再発なし

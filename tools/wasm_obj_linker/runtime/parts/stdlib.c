@@ -337,10 +337,48 @@ int __agc_runtime_getrusage(int who, long usage_addr) {
 }
 
 long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
-  (void)lineptr_addr;
-  (void)n_addr;
-  (void)stream_addr;
-  return -1;
+  char **lineptr = (char **)ag_rt_ptr(lineptr_addr);
+  unsigned long *cap = (unsigned long *)ag_rt_ptr(n_addr);
+  struct ag_rt_file *f;
+  long start;
+  long len;
+  long need;
+  long new_cap;
+  char *dst;
+  char ch;
+  long i;
+  if (!lineptr || !cap) return -1;
+  if (!stream_addr || stream_addr == (long)__stdinp) {
+    f = &ag_rt_file_value;
+  } else {
+    f = (struct ag_rt_file *)ag_rt_ptr(stream_addr);
+  }
+  if (!f) return -1;
+  if (f->pos >= ag_rt_file_len) {
+    f->eof = 1;
+    return -1;
+  }
+  start = f->pos;
+  while (f->pos < ag_rt_file_len) {
+    ch = ag_rt_file_buf[f->pos++];
+    if (ch == '\n') break;
+  }
+  len = f->pos - start;
+  need = len + 1;
+  if (!*lineptr || (long)*cap < need) {
+    new_cap = *cap ? (long)*cap : 128;
+    while (new_cap < need) new_cap *= 2;
+    *lineptr = (char *)ag_rt_ptr(__agc_runtime_realloc((long)*lineptr, new_cap));
+    *cap = (unsigned long)new_cap;
+  }
+  dst = *lineptr;
+  i = 0;
+  while (i < len) {
+    dst[i] = ag_rt_file_buf[start + i];
+    i++;
+  }
+  dst[len] = 0;
+  return len;
 }
 
 int __agc_runtime_setjmp(long env_addr) {

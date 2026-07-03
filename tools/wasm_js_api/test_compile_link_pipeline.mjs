@@ -173,6 +173,32 @@ if (linkedLargeStdin.instance.exports.main() !== 42) {
   throw new Error("linked runtime large stdin injection failed");
 }
 
+const linkedGetlineSource = await inlineStandardIncludes(`#include <stdio.h>
+long getline(char **lineptr, unsigned long *n, FILE *stream);
+int main(void) {
+  char *line = 0;
+  unsigned long cap = 0;
+  long n1 = getline(&line, &cap, stdin);
+  if (n1 != 6 || line[0] != 'f' || line[4] != 't' || line[5] != '\\n' || line[6] != 0) return 1;
+  long n2 = getline(&line, &cap, stdin);
+  if (n2 != 7 || line[0] != 's' || line[6] != '\\n' || line[7] != 0) return 2;
+  long n3 = getline(&line, &cap, stdin);
+  if (n3 != -1 || !feof(stdin)) return 3;
+  if (cap < 8) return 4;
+  return 42;
+}
+`, { loadInclude });
+const linkedGetline = await toolchain.instantiateLinkedWasm(linkedGetlineSource, {
+  exports: ["main"],
+  useStdlib: true,
+}, {
+  stdio: { stdin: "first\nsecond\n" },
+});
+const linkedGetlineResult = linkedGetline.instance.exports.main();
+if (linkedGetlineResult !== 42) {
+  throw new Error(`linked runtime getline stdin failed: ${linkedGetlineResult}`);
+}
+
 const jsSnprintfSource = `
 int sprintf(char *buf, const char *fmt, int n, const char *s);
 int snprintf(char *buf, unsigned long size, const char *fmt, int n);

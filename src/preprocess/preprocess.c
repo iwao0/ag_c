@@ -2038,8 +2038,17 @@ static token_t *pps_pull_raw(pp_stream_t *s);
 static void pps_pushback_one(pp_stream_t *s, token_t *t);
 
 static void pps_update_stream_pin(pp_stream_t *s) {
-  if (s && s->pb_head) tk_allocator_recyc_stream_pin(s->pb_head);
-  else tk_allocator_recyc_stream_unpin();
+  if (!s) {
+    tk_allocator_recyc_stream_unpin();
+    return;
+  }
+  if (s->pb_head) {
+    tk_allocator_recyc_stream_pin(s->pb_head);
+  } else if (s->out_head) {
+    tk_allocator_recyc_stream_pin(s->out_head);
+  } else {
+    tk_allocator_recyc_stream_unpin();
+  }
 }
 
 static void pps_append(pp_stream_t *s, token_t *t) {
