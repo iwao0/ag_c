@@ -747,6 +747,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "wchar_search_concat_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_search_concat_ops.c", 0, 0},
     {"stdheader", "wchar_multibyte_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_multibyte_ops.c", 0, 0},
     {"stdheader", "wchar_convert_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_convert_ops.c", 0, 0},
+    {"stdheader", "wctype_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wctype_runtime_ops.c", 0, 0},
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
@@ -2048,6 +2049,8 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_iswpunct") == 0 || strcmp(sym, "_iswspace") == 0 ||
             strcmp(sym, "_iswupper") == 0 || strcmp(sym, "_iswxdigit") == 0 ||
             strcmp(sym, "_towlower") == 0 || strcmp(sym, "_towupper") == 0 ||
+            strcmp(sym, "_wctype") == 0 || strcmp(sym, "_iswctype") == 0 ||
+            strcmp(sym, "_wctrans") == 0 || strcmp(sym, "_towctrans") == 0 ||
             strcmp(sym, "_wcslen") == 0 || strcmp(sym, "_wcscpy") == 0 ||
             strcmp(sym, "_wcsncpy") == 0 || strcmp(sym, "_wcscat") == 0 ||
             strcmp(sym, "_wcsncat") == 0 || strcmp(sym, "_wcsstr") == 0 ||

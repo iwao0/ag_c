@@ -69,9 +69,15 @@ int __agc_runtime_wctype(long property_addr) {
   if (__agc_runtime_strcmp((long)p, (long)"alnum") == 0) return 1;
   if (__agc_runtime_strcmp((long)p, (long)"alpha") == 0) return 2;
   if (__agc_runtime_strcmp((long)p, (long)"blank") == 0) return 3;
-  if (__agc_runtime_strcmp((long)p, (long)"digit") == 0) return 4;
-  if (__agc_runtime_strcmp((long)p, (long)"space") == 0) return 5;
-  if (__agc_runtime_strcmp((long)p, (long)"xdigit") == 0) return 6;
+  if (__agc_runtime_strcmp((long)p, (long)"cntrl") == 0) return 4;
+  if (__agc_runtime_strcmp((long)p, (long)"digit") == 0) return 5;
+  if (__agc_runtime_strcmp((long)p, (long)"graph") == 0) return 6;
+  if (__agc_runtime_strcmp((long)p, (long)"lower") == 0) return 7;
+  if (__agc_runtime_strcmp((long)p, (long)"print") == 0) return 8;
+  if (__agc_runtime_strcmp((long)p, (long)"punct") == 0) return 9;
+  if (__agc_runtime_strcmp((long)p, (long)"space") == 0) return 10;
+  if (__agc_runtime_strcmp((long)p, (long)"upper") == 0) return 11;
+  if (__agc_runtime_strcmp((long)p, (long)"xdigit") == 0) return 12;
   return 0;
 }
 
@@ -79,9 +85,15 @@ int __agc_runtime_iswctype(int wc, int desc) {
   if (desc == 1) return __agc_runtime_isalnum(wc);
   if (desc == 2) return __agc_runtime_isalpha(wc);
   if (desc == 3) return __agc_runtime_isblank(wc);
-  if (desc == 4) return __agc_runtime_isdigit(wc);
-  if (desc == 5) return __agc_runtime_isspace(wc);
-  if (desc == 6) return __agc_runtime_isxdigit(wc);
+  if (desc == 4) return __agc_runtime_iscntrl(wc);
+  if (desc == 5) return __agc_runtime_isdigit(wc);
+  if (desc == 6) return __agc_runtime_isgraph(wc);
+  if (desc == 7) return __agc_runtime_islower(wc);
+  if (desc == 8) return __agc_runtime_isprint(wc);
+  if (desc == 9) return __agc_runtime_ispunct(wc);
+  if (desc == 10) return __agc_runtime_isspace(wc);
+  if (desc == 11) return __agc_runtime_isupper(wc);
+  if (desc == 12) return __agc_runtime_isxdigit(wc);
   return 0;
 }
 

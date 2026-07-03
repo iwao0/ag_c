@@ -2573,20 +2573,41 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("feupdateenv", 11)) {
     wasm_emitf(2, "(func $feupdateenv (param $envp i32) (result i32) (call $fesetenv (local.get $envp)))\n");
   }
+  int need_iswctype_stub = has_undefined_function("iswctype", 8);
+  int need_iswalnum_stub = has_undefined_function("iswalnum", 8) || need_iswctype_stub;
+  int need_iswalpha_stub = has_undefined_function("iswalpha", 8) || need_iswalnum_stub || need_iswctype_stub;
+  int need_iswblank_stub = has_undefined_function("iswblank", 8) || need_iswctype_stub;
+  int need_iswcntrl_stub = has_undefined_function("iswcntrl", 8) || need_iswctype_stub;
+  int need_iswdigit_stub = has_undefined_function("iswdigit", 8) || need_iswalnum_stub || need_iswctype_stub;
+  int need_iswgraph_stub = has_undefined_function("iswgraph", 8) ||
+                           has_undefined_function("iswpunct", 8) || need_iswctype_stub;
+  int need_iswlower_stub = has_undefined_function("iswlower", 8) || need_iswctype_stub;
+  int need_iswprint_stub = has_undefined_function("iswprint", 8) || need_iswctype_stub;
+  int need_iswpunct_stub = has_undefined_function("iswpunct", 8) || need_iswctype_stub;
+  int need_iswspace_stub = has_undefined_function("iswspace", 8) || need_iswctype_stub;
+  int need_iswupper_stub = has_undefined_function("iswupper", 8) || need_iswctype_stub;
+  int need_iswxdigit_stub = has_undefined_function("iswxdigit", 9) || need_iswctype_stub;
+  int need_towlower_stub = has_undefined_function("towlower", 8) ||
+                           has_undefined_function("towctrans", 9);
+  int need_towupper_stub = has_undefined_function("towupper", 8) ||
+                           has_undefined_function("towctrans", 9);
   int need_isalnum_stub = has_undefined_function("isalnum", 7) ||
-                          has_undefined_function("ispunct", 7);
-  int need_isalpha_stub = has_undefined_function("isalpha", 7) || need_isalnum_stub;
+                          has_undefined_function("ispunct", 7) ||
+                          need_iswalnum_stub || need_iswpunct_stub;
+  int need_isalpha_stub = has_undefined_function("isalpha", 7) || need_isalnum_stub ||
+                          need_iswalpha_stub;
   int need_isdigit_stub = has_undefined_function("isdigit", 7) ||
                           has_undefined_function("isxdigit", 8) ||
-                          need_isalnum_stub;
+                          need_isalnum_stub || need_iswdigit_stub || need_iswxdigit_stub;
   int need_islower_stub = has_undefined_function("islower", 7) ||
-                          has_undefined_function("toupper", 7) ||
-                          need_isalpha_stub;
+                          has_undefined_function("toupper", 7) || need_towupper_stub ||
+                          need_isalpha_stub || need_iswlower_stub;
   int need_isupper_stub = has_undefined_function("isupper", 7) ||
-                          has_undefined_function("tolower", 7) ||
-                          need_isalpha_stub;
+                          has_undefined_function("tolower", 7) || need_towlower_stub ||
+                          need_isalpha_stub || need_iswupper_stub;
   int need_isgraph_stub = has_undefined_function("isgraph", 7) ||
-                          has_undefined_function("ispunct", 7);
+                          has_undefined_function("ispunct", 7) || need_iswgraph_stub ||
+                          need_iswpunct_stub;
   if (need_isalpha_stub) {
     wasm_emitf(2, "(func $isalpha (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or\n");
@@ -2615,12 +2636,12 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.or (call $isalpha (local.get $c)) (call $isdigit (local.get $c)))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("isblank", 7)) {
+  if (has_undefined_function("isblank", 7) || need_iswblank_stub) {
     wasm_emitf(2, "(func $isblank (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or (i64.eq (local.get $c) (i64.const 32)) (i64.eq (local.get $c) (i64.const 9)))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("iscntrl", 7)) {
+  if (has_undefined_function("iscntrl", 7) || need_iswcntrl_stub) {
     wasm_emitf(2, "(func $iscntrl (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or (i32.and (i64.ge_s (local.get $c) (i64.const 0)) (i64.lt_s (local.get $c) (i64.const 32))) (i64.eq (local.get $c) (i64.const 127)))\n");
     wasm_emitf(2, ")\n");
@@ -2630,17 +2651,17 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 33)) (i64.le_s (local.get $c) (i64.const 126)))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("isprint", 7)) {
+  if (has_undefined_function("isprint", 7) || need_iswprint_stub) {
     wasm_emitf(2, "(func $isprint (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 32)) (i64.le_s (local.get $c) (i64.const 126)))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("ispunct", 7)) {
+  if (has_undefined_function("ispunct", 7) || need_iswpunct_stub) {
     wasm_emitf(2, "(func $ispunct (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.and (call $isgraph (local.get $c)) (i32.eqz (call $isalnum (local.get $c))))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("isspace", 7)) {
+  if (has_undefined_function("isspace", 7) || need_iswspace_stub) {
     wasm_emitf(2, "(func $isspace (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or (i64.eq (local.get $c) (i64.const 32))\n");
     wasm_emitf(6, "(i32.or (i64.eq (local.get $c) (i64.const 9))\n");
@@ -2649,14 +2670,14 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(12, "(i32.or (i64.eq (local.get $c) (i64.const 12)) (i64.eq (local.get $c) (i64.const 13)))))))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("isxdigit", 8)) {
+  if (has_undefined_function("isxdigit", 8) || need_iswxdigit_stub) {
     wasm_emitf(2, "(func $isxdigit (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or (call $isdigit (local.get $c))\n");
     wasm_emitf(6, "(i32.or (i32.and (i64.ge_s (local.get $c) (i64.const 65)) (i64.le_s (local.get $c) (i64.const 70)))\n");
     wasm_emitf(8, "(i32.and (i64.ge_s (local.get $c) (i64.const 97)) (i64.le_s (local.get $c) (i64.const 102)))))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("tolower", 7)) {
+  if (has_undefined_function("tolower", 7) || need_towlower_stub) {
     wasm_emitf(2, "(func $tolower (param $c i64) (result i32)\n");
     wasm_emitf(4, "(if (result i32) (call $isupper (local.get $c))\n");
     wasm_emitf(6, "(then (i32.wrap_i64 (i64.add (local.get $c) (i64.const 32))))\n");
@@ -2664,7 +2685,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, ")\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("toupper", 7)) {
+  if (has_undefined_function("toupper", 7) || need_towupper_stub) {
     wasm_emitf(2, "(func $toupper (param $c i64) (result i32)\n");
     wasm_emitf(4, "(if (result i32) (call $islower (local.get $c))\n");
     wasm_emitf(6, "(then (i32.wrap_i64 (i64.sub (local.get $c) (i64.const 32))))\n");
@@ -3521,25 +3542,154 @@ static void emit_minimal_libc_stubs(void) {
     int tm_addr = intern_data_symbol("__ag_stub_tm", 12, 36, 4)->addr;
     wasm_emitf(2, "(func $localtime (param i32) (result i32) (i32.const %d))\n", tm_addr);
   }
-  if (has_undefined_function("iswalpha", 8)) {
-    wasm_emitf(2, "(func $iswalpha (param $c i64) (result i32)\n");
-    wasm_emitf(4, "(i32.or\n");
-    wasm_emitf(6, "(i32.and (i64.ge_s (local.get $c) (i64.const 65)) (i64.le_s (local.get $c) (i64.const 90)))\n");
-    wasm_emitf(6, "(i32.and (i64.ge_s (local.get $c) (i64.const 97)) (i64.le_s (local.get $c) (i64.const 122)))\n");
-    wasm_emitf(4, ")\n");
+  if (need_iswalnum_stub) {
+    wasm_emitf(2, "(func $iswalnum (param $c i64) (result i32) (call $isalnum (local.get $c)))\n");
+  }
+  if (need_iswalpha_stub) {
+    wasm_emitf(2, "(func $iswalpha (param $c i64) (result i32) (call $isalpha (local.get $c)))\n");
+  }
+  if (need_iswblank_stub) {
+    wasm_emitf(2, "(func $iswblank (param $c i64) (result i32) (call $isblank (local.get $c)))\n");
+  }
+  if (need_iswcntrl_stub) {
+    wasm_emitf(2, "(func $iswcntrl (param $c i64) (result i32) (call $iscntrl (local.get $c)))\n");
+  }
+  if (need_iswdigit_stub) {
+    wasm_emitf(2, "(func $iswdigit (param $c i64) (result i32) (call $isdigit (local.get $c)))\n");
+  }
+  if (need_iswgraph_stub) {
+    wasm_emitf(2, "(func $iswgraph (param $c i64) (result i32) (call $isgraph (local.get $c)))\n");
+  }
+  if (need_iswlower_stub) {
+    wasm_emitf(2, "(func $iswlower (param $c i64) (result i32) (call $islower (local.get $c)))\n");
+  }
+  if (need_iswprint_stub) {
+    wasm_emitf(2, "(func $iswprint (param $c i64) (result i32) (call $isprint (local.get $c)))\n");
+  }
+  if (need_iswpunct_stub) {
+    wasm_emitf(2, "(func $iswpunct (param $c i64) (result i32) (call $ispunct (local.get $c)))\n");
+  }
+  if (need_iswspace_stub) {
+    wasm_emitf(2, "(func $iswspace (param $c i64) (result i32) (call $isspace (local.get $c)))\n");
+  }
+  if (need_iswupper_stub) {
+    wasm_emitf(2, "(func $iswupper (param $c i64) (result i32) (call $isupper (local.get $c)))\n");
+  }
+  if (need_iswxdigit_stub) {
+    wasm_emitf(2, "(func $iswxdigit (param $c i64) (result i32) (call $isxdigit (local.get $c)))\n");
+  }
+  if (need_towlower_stub) {
+    wasm_emitf(2, "(func $towlower (param $c i64) (result i32) (call $tolower (local.get $c)))\n");
+  }
+  if (need_towupper_stub) {
+    wasm_emitf(2, "(func $towupper (param $c i64) (result i32) (call $toupper (local.get $c)))\n");
+  }
+  int need_wctype_lookup_stub = has_undefined_function("wctype", 6) ||
+                                has_undefined_function("wctrans", 7);
+  if (need_wctype_lookup_stub) {
+    wasm_data_symbol_t *alnum = intern_data_symbol("__ag_wctype_alnum", 17, 6, 1);
+    wasm_data_symbol_t *alpha = intern_data_symbol("__ag_wctype_alpha", 17, 6, 1);
+    wasm_data_symbol_t *blank = intern_data_symbol("__ag_wctype_blank", 17, 6, 1);
+    wasm_data_symbol_t *cntrl = intern_data_symbol("__ag_wctype_cntrl", 17, 6, 1);
+    wasm_data_symbol_t *digit = intern_data_symbol("__ag_wctype_digit", 17, 6, 1);
+    wasm_data_symbol_t *graph = intern_data_symbol("__ag_wctype_graph", 17, 6, 1);
+    wasm_data_symbol_t *lower = intern_data_symbol("__ag_wctype_lower", 17, 6, 1);
+    wasm_data_symbol_t *print = intern_data_symbol("__ag_wctype_print", 17, 6, 1);
+    wasm_data_symbol_t *punct = intern_data_symbol("__ag_wctype_punct", 17, 6, 1);
+    wasm_data_symbol_t *space = intern_data_symbol("__ag_wctype_space", 17, 6, 1);
+    wasm_data_symbol_t *upper = intern_data_symbol("__ag_wctype_upper", 17, 6, 1);
+    wasm_data_symbol_t *xdigit = intern_data_symbol("__ag_wctype_xdigit", 18, 7, 1);
+    wasm_data_symbol_t *tolower_s = intern_data_symbol("__ag_wctrans_tolower", 20, 8, 1);
+    wasm_data_symbol_t *toupper_s = intern_data_symbol("__ag_wctrans_toupper", 20, 8, 1);
+    wasm_emitf(2, "(data (i32.const %d) \"alnum\\00\")\n", alnum->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"alpha\\00\")\n", alpha->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"blank\\00\")\n", blank->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"cntrl\\00\")\n", cntrl->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"digit\\00\")\n", digit->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"graph\\00\")\n", graph->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"lower\\00\")\n", lower->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"print\\00\")\n", print->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"punct\\00\")\n", punct->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"space\\00\")\n", space->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"upper\\00\")\n", upper->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"xdigit\\00\")\n", xdigit->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"tolower\\00\")\n", tolower_s->addr);
+    wasm_emitf(2, "(data (i32.const %d) \"toupper\\00\")\n", toupper_s->addr);
+    wasm_emitf(2, "(func $__ag_streq (param $a i32) (param $b i32) (result i32)\n");
+    wasm_emitf(4, "(local $ca i32)\n");
+    wasm_emitf(4, "(local $cb i32)\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(local.set $ca (i32.load8_u (local.get $a)))\n");
+    wasm_emitf(6, "(local.set $cb (i32.load8_u (local.get $b)))\n");
+    wasm_emitf(6, "(if (i32.ne (local.get $ca) (local.get $cb)) (then (return (i32.const 0))))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ca)) (then (return (i32.const 1))))\n");
+    wasm_emitf(6, "(local.set $a (i32.add (local.get $a) (i32.const 1)))\n");
+    wasm_emitf(6, "(local.set $b (i32.add (local.get $b) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("iswdigit", 8)) {
-    wasm_emitf(2, "(func $iswdigit (param $c i64) (result i32)\n");
-    wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 48)) (i64.le_s (local.get $c) (i64.const 57)))\n");
+  if (has_undefined_function("wctype", 6)) {
+    wasm_data_symbol_t *alnum = intern_data_symbol("__ag_wctype_alnum", 17, 6, 1);
+    wasm_data_symbol_t *alpha = intern_data_symbol("__ag_wctype_alpha", 17, 6, 1);
+    wasm_data_symbol_t *blank = intern_data_symbol("__ag_wctype_blank", 17, 6, 1);
+    wasm_data_symbol_t *cntrl = intern_data_symbol("__ag_wctype_cntrl", 17, 6, 1);
+    wasm_data_symbol_t *digit = intern_data_symbol("__ag_wctype_digit", 17, 6, 1);
+    wasm_data_symbol_t *graph = intern_data_symbol("__ag_wctype_graph", 17, 6, 1);
+    wasm_data_symbol_t *lower = intern_data_symbol("__ag_wctype_lower", 17, 6, 1);
+    wasm_data_symbol_t *print = intern_data_symbol("__ag_wctype_print", 17, 6, 1);
+    wasm_data_symbol_t *punct = intern_data_symbol("__ag_wctype_punct", 17, 6, 1);
+    wasm_data_symbol_t *space = intern_data_symbol("__ag_wctype_space", 17, 6, 1);
+    wasm_data_symbol_t *upper = intern_data_symbol("__ag_wctype_upper", 17, 6, 1);
+    wasm_data_symbol_t *xdigit = intern_data_symbol("__ag_wctype_xdigit", 18, 7, 1);
+    wasm_emitf(2, "(func $wctype (param $p i32) (result i32)\n");
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 1))))\n", alnum->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 2))))\n", alpha->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 3))))\n", blank->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 4))))\n", cntrl->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 5))))\n", digit->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 6))))\n", graph->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 7))))\n", lower->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 8))))\n", print->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 9))))\n", punct->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 10))))\n", space->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 11))))\n", upper->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 12))))\n", xdigit->addr);
+    wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("towupper", 8)) {
-    wasm_emitf(2, "(func $towupper (param $c i64) (result i32)\n");
-    wasm_emitf(4, "(if (result i32) (i32.and (i64.ge_s (local.get $c) (i64.const 97)) (i64.le_s (local.get $c) (i64.const 122)))\n");
-    wasm_emitf(6, "(then (i32.wrap_i64 (i64.sub (local.get $c) (i64.const 32))))\n");
-    wasm_emitf(6, "(else (i32.wrap_i64 (local.get $c)))\n");
-    wasm_emitf(4, ")\n");
+  if (need_iswctype_stub) {
+    wasm_emitf(2, "(func $iswctype (param $c i64) (param $desc i64) (result i32)\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 1)) (then (return (call $isalnum (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 2)) (then (return (call $isalpha (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 3)) (then (return (call $isblank (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 4)) (then (return (call $iscntrl (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 5)) (then (return (call $isdigit (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 6)) (then (return (call $isgraph (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 7)) (then (return (call $islower (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 8)) (then (return (call $isprint (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 9)) (then (return (call $ispunct (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 10)) (then (return (call $isspace (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 11)) (then (return (call $isupper (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 12)) (then (return (call $isxdigit (local.get $c)))))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wctrans", 7)) {
+    wasm_data_symbol_t *tolower_s = intern_data_symbol("__ag_wctrans_tolower", 20, 8, 1);
+    wasm_data_symbol_t *toupper_s = intern_data_symbol("__ag_wctrans_toupper", 20, 8, 1);
+    wasm_emitf(2, "(func $wctrans (param $p i32) (result i32)\n");
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 1))))\n", tolower_s->addr);
+    wasm_emitf(4, "(if (call $__ag_streq (local.get $p) (i32.const %d)) (then (return (i32.const 2))))\n", toupper_s->addr);
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("towctrans", 9)) {
+    wasm_emitf(2, "(func $towctrans (param $c i64) (param $desc i64) (result i32)\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 1)) (then (return (call $tolower (local.get $c)))))\n");
+    wasm_emitf(4, "(if (i64.eq (local.get $desc) (i64.const 2)) (then (return (call $toupper (local.get $c)))))\n");
+    wasm_emitf(4, "(i32.wrap_i64 (local.get $c))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("wcslen", 6)) {
