@@ -4386,3 +4386,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き381）: fdopen append mode の開始位置を修正
+- 続き380で `fopen(..., "a")` は末尾開始にしたが、`fdopen(fd, "a")` は fd の現在位置を使うままだった。
+- `fdopen` も mode 先頭が `a` の場合は `ag_rt_file_len` から開始し、`w`/`a` を write stream として扱うようにした。
+- object linker smoke に、`fdopen(fd, "a")` の `ftell` が既存長を返し、`fwrite("E")` で
+  `AZCD` が `AZCDE` に伸びるケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

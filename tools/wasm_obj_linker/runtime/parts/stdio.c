@@ -193,9 +193,11 @@ long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
 long __agc_runtime_fdopen(int fd, long mode_addr) {
   int idx = fd - 3;
   char *mode = ag_rt_ptr(mode_addr);
+  int append_mode = mode && mode[0] == 'a';
+  int write_mode = mode && (mode[0] == 'w' || mode[0] == 'a');
   struct ag_rt_file *f;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return 0;
-  f = ag_rt_alloc_file(mode && mode[0] == 'w', idx, ag_rt_fds[idx].pos);
+  f = ag_rt_alloc_file(write_mode, idx, append_mode ? ag_rt_file_len : ag_rt_fds[idx].pos);
   return (long)f;
 }
 

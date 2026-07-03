@@ -773,10 +773,23 @@ int main(void) {
   unsigned long owread = fread(owbuf, 1, 4, orr);
   int ow_eof = fgetc(orr);
   fclose(orr);
+  int fdap = open("tmp.txt", 0);
+  FILE *fdap_stream = fdopen(fdap, "a");
+  long fdappend_start = ftell(fdap_stream);
+  unsigned long fdappended = fwrite("E", 1, 1, fdap_stream);
+  fclose(fdap_stream);
+  close(fdap);
+  FILE *fdapr = fopen("tmp.txt", "r");
+  char fdapbuf[6];
+  unsigned long fdapread = fread(fdapbuf, 1, 5, fdapr);
+  fclose(fdapr);
   int file_write_pos_ok = overwrote == 1 && pos_after_overwrite == 2 &&
                           append_start == 3 && appended == 1 &&
                           owread == 4 && owbuf[0] == 'A' && owbuf[1] == 'Z' &&
-                          owbuf[2] == 'C' && owbuf[3] == 'D' && ow_eof == -1;
+                          owbuf[2] == 'C' && owbuf[3] == 'D' && ow_eof == -1 &&
+                          fdappend_start == 4 && fdappended == 1 &&
+                          fdapread == 5 && fdapbuf[0] == 'A' && fdapbuf[1] == 'Z' &&
+                          fdapbuf[2] == 'C' && fdapbuf[3] == 'D' && fdapbuf[4] == 'E';
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
