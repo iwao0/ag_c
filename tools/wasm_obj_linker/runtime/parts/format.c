@@ -74,11 +74,11 @@ static void ag_rt_write_pointer(char *buf, size_t size, int bounded, size_t *pos
 }
 
 static void ag_rt_write_idec(char *buf, size_t size, int bounded, size_t *pos,
-                             int v, int width, int zero_pad) {
+                             long v, int width, int zero_pad) {
   unsigned long u;
   int negative = v < 0;
   if (negative) {
-    u = (unsigned long)(-(long)v);
+    u = (unsigned long)(-(v + 1)) + 1u;
   } else {
     u = (unsigned long)v;
   }
@@ -203,6 +203,7 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
 
     int length_z = 0;
     int length_l = 0;
+    int length_ll = 0;
     int length_L = 0;
     if (*fmt == 'z') {
       length_z = 1;
@@ -210,13 +211,22 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     } else if (*fmt == 'l') {
       length_l = 1;
       fmt++;
+      if (*fmt == 'l') {
+        length_ll = 1;
+        fmt++;
+      }
     } else if (*fmt == 'L') {
       length_L = 1;
       fmt++;
     }
 
-    if (*fmt == 'd') {
-      int v = va_arg(ap, int);
+    if (*fmt == 'd' || *fmt == 'i') {
+      long v;
+      if (length_l || length_ll || length_z) {
+        v = va_arg(ap, long);
+      } else {
+        v = (long)va_arg(ap, int);
+      }
       if (left_align) {
         char tmp[64];
         size_t tmp_pos = 0;
@@ -229,7 +239,8 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       }
       fmt++;
     } else if (*fmt == 'u') {
-      unsigned long v = length_z ? va_arg(ap, unsigned long) : (unsigned long)va_arg(ap, unsigned int);
+      unsigned long v = (length_l || length_ll || length_z) ? va_arg(ap, unsigned long) :
+                                                              (unsigned long)va_arg(ap, unsigned int);
       if (left_align) {
         char tmp[64];
         size_t tmp_pos = 0;
@@ -244,7 +255,8 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     } else if (*fmt == 'x' || *fmt == 'X' || *fmt == 'o') {
       int upper = *fmt == 'X';
       unsigned int base = *fmt == 'o' ? 8u : 16u;
-      unsigned long v = length_z ? va_arg(ap, unsigned long) : (unsigned long)va_arg(ap, unsigned int);
+      unsigned long v = (length_l || length_ll || length_z) ? va_arg(ap, unsigned long) :
+                                                              (unsigned long)va_arg(ap, unsigned int);
       if (left_align) {
         char tmp[64];
         size_t tmp_pos = 0;

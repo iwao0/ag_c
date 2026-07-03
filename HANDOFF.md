@@ -4802,3 +4802,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き415）: default runtime printf 系の long integer format を修正
+- 簡易 formatter が `%ld` / `%lu` / `%lx` / `%llx` の整数引数を `int` 幅で読んでいた。
+- `l` / `ll` / `z` の整数 format は `long` / `unsigned long` として読み、`%i` は `%d` と同じ扱いにした。
+- `snprintf_negative.c` に `int` 幅を超える `%ld` / `%lu` / `%lx` / `%llx` と `%i` の確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186
