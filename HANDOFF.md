@@ -4656,3 +4656,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き404）: default runtime の allocator と qsort/bsearch を linear memory 上限で guard
+- `malloc()` が整数 overflow だけを見ており、64MiB の current linear memory を越える pointer を
+  返し得た。返された pointer は後続アクセスで trap する。
+- `qsort()` / `bsearch()` は `i * size` の address span を `LONG_MAX` 基準でしか見ておらず、
+  linear memory 外の巨大 stride でも comparator を呼び得た。
+- `memory.c` に 64MiB runtime memory limit helper を追加し、allocator は header + aligned size が
+  memory limit を越える場合 `0` を返すようにした。`qsort()` / `bsearch()` の array span 判定も
+  linear memory limit 基準へ変更し、`qsort()` は temporary allocation failure なら no-op にする。
+- `test_smoke.sh` の `alloc_state.c` に 60MiB 確保失敗確認を追加し、独立 fixture
+  `qsort_size_state.c` で巨大 size/nmemb が comparator を呼ばず、通常 sort/search は維持されることを
+  object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

@@ -640,6 +640,7 @@ int main(void) {
   char *q;
   char *r;
   void *bad_malloc = malloc(-1);
+  void *bad_malloc_large = malloc(60L * 1024L * 1024L);
   void *bad_calloc_neg = calloc(-1, 4);
   void *bad_calloc_overflow = calloc(1L << 62, 16);
   void *zero_calloc = calloc(0, 99);
@@ -652,10 +653,45 @@ int main(void) {
   if (!q) return 2;
   r = realloc(q, 2);
   if (!r) return 3;
-  return bad_malloc == 0 && bad_calloc_neg == 0 && bad_calloc_overflow == 0 &&
+  return bad_malloc == 0 && bad_malloc_large == 0 &&
+         bad_calloc_neg == 0 && bad_calloc_overflow == 0 &&
          zero_calloc != 0 && q != p && q[0] == 'A' && q[1] == 'B' &&
          q[2] == 'C' && r != q && r[0] == 'A' && r[1] == 'B' &&
          realloc(r, -1) == 0 && realloc(r, 0) == 0 ? 42 : 1;
+}
+SRC
+
+cat > "$out_dir/qsort_size_state.c" <<'SRC'
+void qsort(void *base, long nmemb, long size, int (*compar)(void *, void *));
+void *bsearch(void *key, void *base, long nmemb, long size, int (*compar)(void *, void *));
+int calls;
+int cmp_int(void *ap, void *bp) {
+  int *a = (int *)ap;
+  int *b = (int *)bp;
+  calls = calls + 1;
+  return *a - *b;
+}
+int main(void) {
+  int nums[3];
+  int key = 2;
+  int *found;
+  int pair[2];
+  void *bad_search;
+  nums[0] = 3;
+  nums[1] = 1;
+  nums[2] = 2;
+  qsort(nums, 3, sizeof(int), cmp_int);
+  found = bsearch(&key, nums, 3, sizeof(int), cmp_int);
+  if (!(nums[0] == 1 && nums[1] == 2 && nums[2] == 3 && found == nums + 1)) return 1;
+  calls = 0;
+  pair[0] = 9;
+  pair[1] = 8;
+  qsort(pair, 2, 1L << 62, cmp_int);
+  bad_search = bsearch(&key, pair, 2, 1L << 62, cmp_int);
+  if (!(calls == 0 && pair[0] == 9 && pair[1] == 8 && bad_search == 0)) return 2;
+  qsort(pair, 1L << 62, 8, cmp_int);
+  bad_search = bsearch(&key, pair, 1L << 62, 8, cmp_int);
+  return calls == 0 && pair[0] == 9 && pair[1] == 8 && bad_search == 0 ? 42 : 1;
 }
 SRC
 
@@ -1831,6 +1867,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_utf8_wide_state.interp"
 wasm-validate "$out_dir/linked_alloc_state.wasm"
 wasm-interp "$out_dir/linked_alloc_state.wasm" --run-all-exports > "$out_dir/linked_alloc_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_alloc_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/qsort_size_state.o" "$out_dir/qsort_size_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_qsort_size_state.wasm" \
+  "$out_dir/qsort_size_state.o"
+wasm-validate "$out_dir/linked_qsort_size_state.wasm"
+wasm-interp "$out_dir/linked_qsort_size_state.wasm" --run-all-exports > "$out_dir/linked_qsort_size_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_qsort_size_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

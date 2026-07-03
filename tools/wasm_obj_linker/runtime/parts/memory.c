@@ -1,18 +1,36 @@
+static long ag_rt_memory_limit(void) {
+  return 64L * 1024L * 1024L;
+}
+
 static long ag_rt_long_max(void) {
   return (long)((unsigned long)-1 >> 1);
 }
 
-static int ag_rt_alloc_size_ok(long size) {
+static int ag_rt_alloc_size_ok(long size, long *aligned_out) {
   long requested;
+  long aligned;
   if (size < 0) return 0;
   requested = size > 0 ? size : 1;
-  return requested <= ag_rt_long_max() - 15;
+  if (requested > ag_rt_long_max() - 15) return 0;
+  aligned = (requested + 7) & -8;
+  if (ag_rt_heap > ag_rt_memory_limit() - aligned - 8) return 0;
+  *aligned_out = aligned;
+  return 1;
+}
+
+static int ag_rt_array_span_ok(long base_addr, long nmemb, long size) {
+  long last_off;
+  if (base_addr < 0 || nmemb < 0 || size <= 0) return 0;
+  if (base_addr > ag_rt_memory_limit()) return 0;
+  if (nmemb <= 1) return 1;
+  if (size > ag_rt_long_max() / (nmemb - 1)) return 0;
+  last_off = size * (nmemb - 1);
+  return base_addr <= ag_rt_memory_limit() - last_off;
 }
 
 long __agc_runtime_malloc(long size) {
-  if (!ag_rt_alloc_size_ok(size)) return 0;
-  long requested = size > 0 ? size : 1;
-  long aligned = (requested + 7) & -8;
+  long aligned = 0;
+  if (!ag_rt_alloc_size_ok(size, &aligned)) return 0;
   long header = ag_rt_heap;
   ag_rt_heap = ag_rt_heap + aligned + 8;
   long *meta = (long *)ag_rt_ptr(header);
@@ -37,7 +55,6 @@ long __agc_runtime_calloc(long nmemb, long size) {
 }
 
 long __agc_runtime_realloc(long ptr, long size) {
-  if (!ag_rt_alloc_size_ok(size)) return 0;
   if (!ptr) return __agc_runtime_malloc(size);
   if (size == 0) return 0;
   long p = __agc_runtime_malloc(size);
@@ -50,8 +67,10 @@ long __agc_runtime_realloc(long ptr, long size) {
 
 void __agc_runtime_qsort(long base_addr, long nmemb, long size, long compar_addr) {
   if (!base_addr || nmemb <= 1 || size <= 0 || !compar_addr) return;
+  if (!ag_rt_array_span_ok(base_addr, nmemb, size)) return;
   int (*cmp)(void *, void *) = (int (*)(void *, void *))compar_addr;
   long tmp_addr = __agc_runtime_malloc(size);
+  if (!tmp_addr) return;
   long i = 0;
   while (i < nmemb) {
     long j = i + 1;
@@ -71,6 +90,7 @@ void __agc_runtime_qsort(long base_addr, long nmemb, long size, long compar_addr
 
 long __agc_runtime_bsearch(long key_addr, long base_addr, long nmemb, long size, long compar_addr) {
   if (!key_addr || !base_addr || nmemb <= 0 || size <= 0 || !compar_addr) return 0;
+  if (!ag_rt_array_span_ok(base_addr, nmemb, size)) return 0;
   int (*cmp)(void *, void *) = (int (*)(void *, void *))compar_addr;
   long i = 0;
   while (i < nmemb) {
