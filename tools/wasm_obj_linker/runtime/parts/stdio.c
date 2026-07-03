@@ -133,10 +133,11 @@ int __agc_runtime_getchar(void) {
 long __agc_runtime_fopen(long path_addr, long mode_addr) {
   (void)path_addr;
   char *mode = ag_rt_ptr(mode_addr);
-  int write_mode = mode && mode[0] == 'w';
+  int write_mode = mode && (mode[0] == 'w' || mode[0] == 'a');
+  int append_mode = mode && mode[0] == 'a';
   struct ag_rt_file *f;
-  if (write_mode) ag_rt_file_len = 0;
-  f = ag_rt_alloc_file(write_mode, -1, 0);
+  if (mode && mode[0] == 'w') ag_rt_file_len = 0;
+  f = ag_rt_alloc_file(write_mode, -1, append_mode ? ag_rt_file_len : 0);
   return (long)f;
 }
 
@@ -229,10 +230,11 @@ long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr
   f = ag_rt_input_stream(stream_addr);
   if (!f || f->is_stdin) return 0;
   long i = 0;
-  while (i < total && ag_rt_file_len < (long)sizeof(ag_rt_file_buf)) {
-    ag_rt_file_buf[ag_rt_file_len++] = src[i++];
+  while (i < total && f->pos < (long)sizeof(ag_rt_file_buf)) {
+    ag_rt_file_buf[f->pos++] = src[i++];
   }
-  ag_rt_file_set_pos(f, ag_rt_file_len);
+  if (f->pos > ag_rt_file_len) ag_rt_file_len = f->pos;
+  ag_rt_file_set_pos(f, f->pos);
   return size == 0 ? 0 : i / size;
 }
 

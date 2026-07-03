@@ -4372,3 +4372,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   `fprintf((void *)0, ...)` は varargs import の別問題を踏むため、この fixture には入れていない。
 - 確認:
   - `make test-wasm-js-pipeline` = ok
+
+### このセッション（続き380）: default runtime fwrite の file position 反映
+- default runtime object の通常 file stream 向け `__agc_runtime_fwrite` が、`FILE *` の現在位置を無視して
+  常に `ag_rt_file_len` の末尾へ追記していた。
+- 通常 file stream では `f->pos` から書き込み、書いた分だけ `f->pos` を進め、
+  必要な場合だけ `ag_rt_file_len` を伸ばすようにした。
+- `fopen(..., "w")` は truncate、`fopen(..., "a")` は既存長を保持して末尾位置から開始するようにした。
+- object linker smoke に、`fseek(wf, 1, SEEK_SET)` 後の `fwrite("Z")` が `ABC` を `AZC` に上書きすることと、
+  append mode が `AZCD` に伸ばすことを確認するケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

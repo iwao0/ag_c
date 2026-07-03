@@ -758,6 +758,25 @@ int main(void) {
   char *linep = fgets(line, sizeof(line), rf2);
   int ch2 = getc(rf2);
   fclose(rf2);
+  FILE *ow = fopen("tmp.txt", "w");
+  fwrite("ABC", 1, 3, ow);
+  fseek(ow, 1, 0);
+  unsigned long overwrote = fwrite("Z", 1, 1, ow);
+  long pos_after_overwrite = ftell(ow);
+  fclose(ow);
+  FILE *ap = fopen("tmp.txt", "a");
+  long append_start = ftell(ap);
+  unsigned long appended = fwrite("D", 1, 1, ap);
+  fclose(ap);
+  FILE *orr = fopen("tmp.txt", "r");
+  char owbuf[5];
+  unsigned long owread = fread(owbuf, 1, 4, orr);
+  int ow_eof = fgetc(orr);
+  fclose(orr);
+  int file_write_pos_ok = overwrote == 1 && pos_after_overwrite == 2 &&
+                          append_start == 3 && appended == 1 &&
+                          owread == 4 && owbuf[0] == 'A' && owbuf[1] == 'Z' &&
+                          owbuf[2] == 'C' && owbuf[3] == 'D' && ow_eof == -1;
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
@@ -983,6 +1002,7 @@ int main(void) {
          bad_seek == -1 && err_after_bad_seek && !err_after_clear && pos_after_rewind == 0 &&
          linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
          ch2 == 'B' &&
+         file_write_pos_ok &&
          printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
          fprintf(0, "[%04d]", 7) == 6 &&
          puts("ok") == 3 &&
