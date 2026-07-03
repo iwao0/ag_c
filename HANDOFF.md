@@ -4317,3 +4317,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き376）: fdopen stream と fd offset の同期
+- 続き375の fd table 化に続けて、`fdopen(fd, ...)` した FILE stream の読み取り位置を
+  元 fd に同期するようにした。
+  - `struct ag_rt_file` に `fd_index` を追加。
+  - `ag_rt_file_set_pos` を追加し、FILE 側の `pos` 更新時に対応 fd の `pos` も更新する。
+  - `fseek` / `rewind` / `fread` / `fgetc` / `fgets` / `getline` の position 更新を同期経由にした。
+- object linker smoke に、`fdopen(fd)` で `fgets` した後、同じ fd で `read` すると続きの `B` が読める
+  ケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

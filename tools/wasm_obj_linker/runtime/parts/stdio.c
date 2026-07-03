@@ -55,7 +55,8 @@ long __agc_runtime_stdin_write(long ptr_addr, long len) {
     ag_rt_fds[i].used = 0;
     ag_rt_fds[i].pos = 0;
   }
-  ag_rt_file_value.pos = 0;
+  ag_rt_file_value.fd_index = -1;
+  ag_rt_file_set_pos(&ag_rt_file_value, 0);
   ag_rt_file_value.write_mode = 0;
   ag_rt_file_value.eof = 0;
   ag_rt_file_value.error = 0;
@@ -82,7 +83,7 @@ int __agc_runtime_fseek(long stream_addr, long offset, int whence) {
     f->error = 1;
     return -1;
   }
-  f->pos = next;
+  ag_rt_file_set_pos(f, next);
   f->eof = 0;
   return 0;
 }
@@ -96,7 +97,7 @@ long __agc_runtime_ftell(long stream_addr) {
 void __agc_runtime_rewind(long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   if (!f) return;
-  f->pos = 0;
+  ag_rt_file_set_pos(f, 0);
   f->eof = 0;
   f->error = 0;
 }
@@ -136,7 +137,8 @@ int __agc_runtime_getchar(void) {
 long __agc_runtime_fopen(long path_addr, long mode_addr) {
   (void)path_addr;
   char *mode = ag_rt_ptr(mode_addr);
-  ag_rt_file_value.pos = 0;
+  ag_rt_file_value.fd_index = -1;
+  ag_rt_file_set_pos(&ag_rt_file_value, 0);
   ag_rt_file_value.write_mode = mode && mode[0] == 'w';
   ag_rt_file_value.eof = 0;
   ag_rt_file_value.error = 0;
@@ -198,7 +200,10 @@ long __agc_runtime_fdopen(int fd, long mode_addr) {
   struct ag_rt_file *f;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return 0;
   f = (struct ag_rt_file *)__agc_runtime_fopen(0, mode_addr);
-  if (f) f->pos = ag_rt_fds[idx].pos;
+  if (f) {
+    f->fd_index = idx;
+    ag_rt_file_set_pos(f, ag_rt_fds[idx].pos);
+  }
   return (long)f;
 }
 
@@ -230,6 +235,7 @@ long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr)
   while (i < total && f->pos < ag_rt_file_len) {
     dst[i++] = ag_rt_file_buf[f->pos++];
   }
+  ag_rt_file_set_pos(f, f->pos);
   if (i < total) f->eof = 1;
   return size == 0 ? 0 : i / size;
 }
@@ -240,7 +246,9 @@ int __agc_runtime_fgetc(long stream_addr) {
     f->eof = 1;
     return -1;
   }
-  return (int)(unsigned char)ag_rt_file_buf[f->pos++];
+  int ch = (int)(unsigned char)ag_rt_file_buf[f->pos++];
+  ag_rt_file_set_pos(f, f->pos);
+  return ch;
 }
 
 int __agc_runtime_getc(long stream_addr) {
@@ -261,6 +269,7 @@ long __agc_runtime_fgets(long s_addr, int size, long stream_addr) {
     dst[i++] = ch;
     if (ch == '\n') break;
   }
+  ag_rt_file_set_pos(f, f->pos);
   dst[i] = 0;
   return s_addr;
 }

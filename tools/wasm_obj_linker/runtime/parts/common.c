@@ -58,6 +58,7 @@ struct ag_rt_file {
   int write_mode;
   int eof;
   int error;
+  int fd_index;
 };
 
 struct ag_rt_fd {
@@ -70,8 +71,16 @@ struct ag_rt_lconv {
 };
 
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
-static struct ag_rt_file ag_rt_file_value;
 static struct ag_rt_fd ag_rt_fds[8];
+static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, -1};
+
+static void ag_rt_file_set_pos(struct ag_rt_file *f, long pos) {
+  if (!f) return;
+  f->pos = pos;
+  if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
+    ag_rt_fds[f->fd_index].pos = pos;
+  }
+}
 
 static int ag_rt_is_stdout_stream(long stream_addr) {
   return stream_addr == (long)__stdoutp;

@@ -714,6 +714,9 @@ int main(void) {
   FILE *fdstream = fdopen(fd2, "r");
   char fdline[4];
   char *fdlinep = fgets(fdline, sizeof(fdline), fdstream);
+  char fdafter[2];
+  long fd_after_stream = read(fd2, fdafter, 1);
+  int fdopen_sync_ok = fd_after_stream == 1 && fdafter[0] == 'B';
   fclose(fdstream);
   close(fd2);
   char rb[8];
@@ -959,6 +962,7 @@ int main(void) {
          fdbuf[2] == 'B' && close_ok == 0 &&
          fd_independent_ok &&
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
+         fdopen_sync_ok &&
          pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
          seek_ok == 0 && pos_after_seek == 1 && ch_seek == '\n' &&
          bad_seek == -1 && err_after_bad_seek && !err_after_clear && pos_after_rewind == 0 &&

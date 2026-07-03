@@ -359,6 +359,7 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
     ch = ag_rt_file_buf[f->pos++];
     if (ch == '\n') break;
   }
+  ag_rt_file_set_pos(f, f->pos);
   len = f->pos - start;
   need = len + 1;
   if (!*lineptr || (long)*cap < need) {
