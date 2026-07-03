@@ -4331,3 +4331,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き377）: default runtime の FILE stream table 化
+- default runtime object の `fopen` / `fdopen` が常に単一の `ag_rt_file_value` を返していたため、
+  複数 `FILE *` を開くと読み取り位置や eof/error 状態が干渉する状態だった。
+- `ag_rt_files[8]` を追加し、`fopen` / `fdopen` が pool から個別の stream 状態を割り当て、
+  `fclose` が pool slot を解放するようにした。
+- `stdin` と疑似ファイルの buffer/length も分離した。`FILE *` 独立化後に、
+  `fwrite` した疑似ファイル内容を `getchar()` が stdin として読んでしまう状態を避けるため。
+- object linker smoke に、同じ runtime file を `fopen` 2本で開き、それぞれの `FILE *` の読み取り位置が
+  独立していることを確認するケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_wasm32_backend` = `wasm32 backend tests passed`
+  - 補足: `make test-wasm32-backend` は make target がなく失敗するため、WAT backend は
+    `./build/test_wasm32_backend` を直接実行した。

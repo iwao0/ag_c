@@ -37,7 +37,7 @@ int __agc_runtime_fflush(long stream_addr) {
 }
 
 long __agc_runtime_stdin_capacity(void) {
-  return (long)sizeof(ag_rt_file_buf);
+  return (long)sizeof(ag_rt_stdin_buf);
 }
 
 long __agc_runtime_stdin_write(long ptr_addr, long len) {
@@ -45,21 +45,17 @@ long __agc_runtime_stdin_write(long ptr_addr, long len) {
   long n = len;
   long i = 0;
   if (n < 0) n = 0;
-  if (n > (long)sizeof(ag_rt_file_buf)) n = (long)sizeof(ag_rt_file_buf);
+  if (n > (long)sizeof(ag_rt_stdin_buf)) n = (long)sizeof(ag_rt_stdin_buf);
   while (i < n) {
-    ag_rt_file_buf[i] = src[i];
+    ag_rt_stdin_buf[i] = src[i];
     i++;
   }
-  ag_rt_file_len = n;
+  ag_rt_stdin_len = n;
+  ag_rt_reset_files();
   for (int i = 0; i < 8; i++) {
     ag_rt_fds[i].used = 0;
     ag_rt_fds[i].pos = 0;
   }
-  ag_rt_file_value.fd_index = -1;
-  ag_rt_file_set_pos(&ag_rt_file_value, 0);
-  ag_rt_file_value.write_mode = 0;
-  ag_rt_file_value.eof = 0;
-  ag_rt_file_value.error = 0;
   __stdinp = (void *)&ag_rt_file_value;
   return n;
 }
@@ -73,7 +69,7 @@ int __agc_runtime_fseek(long stream_addr, long offset, int whence) {
   } else if (whence == 1) {
     base = f->pos;
   } else if (whence == 2) {
-    base = ag_rt_file_len;
+    base = ag_rt_stream_len(f);
   } else {
     f->error = 1;
     return -1;
@@ -137,13 +133,11 @@ int __agc_runtime_getchar(void) {
 long __agc_runtime_fopen(long path_addr, long mode_addr) {
   (void)path_addr;
   char *mode = ag_rt_ptr(mode_addr);
-  ag_rt_file_value.fd_index = -1;
-  ag_rt_file_set_pos(&ag_rt_file_value, 0);
-  ag_rt_file_value.write_mode = mode && mode[0] == 'w';
-  ag_rt_file_value.eof = 0;
-  ag_rt_file_value.error = 0;
-  if (ag_rt_file_value.write_mode) ag_rt_file_len = 0;
-  return (long)&ag_rt_file_value;
+  int write_mode = mode && mode[0] == 'w';
+  struct ag_rt_file *f;
+  if (write_mode) ag_rt_file_len = 0;
+  f = ag_rt_alloc_file(write_mode, -1, 0);
+  return (long)f;
 }
 
 int __agc_runtime_open(long path_addr, int oflag) {
@@ -197,18 +191,27 @@ long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
 
 long __agc_runtime_fdopen(int fd, long mode_addr) {
   int idx = fd - 3;
+  char *mode = ag_rt_ptr(mode_addr);
   struct ag_rt_file *f;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return 0;
-  f = (struct ag_rt_file *)__agc_runtime_fopen(0, mode_addr);
-  if (f) {
-    f->fd_index = idx;
-    ag_rt_file_set_pos(f, ag_rt_fds[idx].pos);
-  }
+  f = ag_rt_alloc_file(mode && mode[0] == 'w', idx, ag_rt_fds[idx].pos);
   return (long)f;
 }
 
 int __agc_runtime_fclose(long stream_addr) {
-  (void)stream_addr;
+  struct ag_rt_file *f;
+  if (!stream_addr || stream_addr == (long)__stdinp ||
+      ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) {
+    return 0;
+  }
+  f = (struct ag_rt_file *)ag_rt_ptr(stream_addr);
+  if (f) {
+    if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
+      ag_rt_fds[f->fd_index].pos = f->pos;
+    }
+    f->used = 0;
+    f->fd_index = -1;
+  }
   return 0;
 }
 
@@ -231,9 +234,14 @@ long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr)
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   char *dst = ag_rt_ptr(ptr_addr);
   long total = size * nmemb;
+  char *src;
+  long len;
   long i = 0;
-  while (i < total && f->pos < ag_rt_file_len) {
-    dst[i++] = ag_rt_file_buf[f->pos++];
+  if (!f) return 0;
+  src = ag_rt_stream_buf(f);
+  len = ag_rt_stream_len(f);
+  while (i < total && f->pos < len) {
+    dst[i++] = src[f->pos++];
   }
   ag_rt_file_set_pos(f, f->pos);
   if (i < total) f->eof = 1;
@@ -242,11 +250,16 @@ long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr)
 
 int __agc_runtime_fgetc(long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
-  if (f->pos >= ag_rt_file_len) {
+  char *src;
+  long len;
+  if (!f) return -1;
+  src = ag_rt_stream_buf(f);
+  len = ag_rt_stream_len(f);
+  if (f->pos >= len) {
     f->eof = 1;
     return -1;
   }
-  int ch = (int)(unsigned char)ag_rt_file_buf[f->pos++];
+  int ch = (int)(unsigned char)src[f->pos++];
   ag_rt_file_set_pos(f, f->pos);
   return ch;
 }
@@ -258,14 +271,19 @@ int __agc_runtime_getc(long stream_addr) {
 long __agc_runtime_fgets(long s_addr, int size, long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   char *dst = ag_rt_ptr(s_addr);
+  char *src;
+  long len;
   int i = 0;
+  if (!f) return 0;
+  src = ag_rt_stream_buf(f);
+  len = ag_rt_stream_len(f);
   if (size <= 0) return 0;
-  if (f->pos >= ag_rt_file_len) {
+  if (f->pos >= len) {
     f->eof = 1;
     return 0;
   }
-  while (i + 1 < size && f->pos < ag_rt_file_len) {
-    char ch = ag_rt_file_buf[f->pos++];
+  while (i + 1 < size && f->pos < len) {
+    char ch = src[f->pos++];
     dst[i++] = ch;
     if (ch == '\n') break;
   }

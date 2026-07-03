@@ -340,6 +340,8 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   char **lineptr = (char **)ag_rt_ptr(lineptr_addr);
   unsigned long *cap = (unsigned long *)ag_rt_ptr(n_addr);
   struct ag_rt_file *f;
+  char *src;
+  long stream_len;
   long start;
   long len;
   long need;
@@ -350,13 +352,15 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   if (!lineptr || !cap) return -1;
   f = ag_rt_input_stream(stream_addr);
   if (!f) return -1;
-  if (f->pos >= ag_rt_file_len) {
+  src = ag_rt_stream_buf(f);
+  stream_len = ag_rt_stream_len(f);
+  if (f->pos >= stream_len) {
     f->eof = 1;
     return -1;
   }
   start = f->pos;
-  while (f->pos < ag_rt_file_len) {
-    ch = ag_rt_file_buf[f->pos++];
+  while (f->pos < stream_len) {
+    ch = src[f->pos++];
     if (ch == '\n') break;
   }
   ag_rt_file_set_pos(f, f->pos);
@@ -371,7 +375,7 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   dst = *lineptr;
   i = 0;
   while (i < len) {
-    dst[i] = ag_rt_file_buf[start + i];
+    dst[i] = src[start + i];
     i++;
   }
   dst[len] = 0;
