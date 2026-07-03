@@ -101,10 +101,12 @@ if (mathInstantiated.instance.exports.main() !== 1010) {
 const linkedStdioSource = await inlineStandardIncludes(`#include <stdio.h>
 int main(void) {
   printf("%*s:%03d:aa", 4, "x", 7);
+  perror("runtime");
   return 7;
 }
 `, { loadInclude });
 let linkedStdioStdout = "";
+let linkedStdioStderr = "";
 const linkedStdio = await toolchain.instantiateLinkedWasm(linkedStdioSource, {
   exports: [
     "main",
@@ -116,6 +118,7 @@ const linkedStdio = await toolchain.instantiateLinkedWasm(linkedStdioSource, {
   useStdlib: true,
 }, {
   onStdout: (chunk) => { linkedStdioStdout += chunk; },
+  onStderr: (chunk) => { linkedStdioStderr += chunk; },
 });
 if (linkedStdio.instance.exports.main() !== 7) {
   throw new Error("instantiated stdio import pipeline did not use JS stdio imports");
@@ -123,6 +126,10 @@ if (linkedStdio.instance.exports.main() !== 7) {
 if (linkedStdioStdout === "") linkedStdioStdout = linkedStdio.readStdout();
 if (linkedStdioStdout !== "   x:007:aa") {
   throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
+}
+if (linkedStdioStderr === "") linkedStdioStderr = linkedStdio.readStderr();
+if (linkedStdioStderr !== "runtime: error\n") {
+  throw new Error(`instantiated stdio import pipeline stderr mismatch: ${JSON.stringify(linkedStdioStderr)}`);
 }
 
 const linkedStdinSource = await inlineStandardIncludes(`#include <stdio.h>

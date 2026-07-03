@@ -99,7 +99,13 @@ void __agc_runtime_rewind(long stream_addr) {
 }
 
 void __agc_runtime_perror(long s_addr) {
-  (void)s_addr;
+  char *s = ag_rt_ptr(s_addr);
+  if (s && s[0]) {
+    ag_rt_stderr_write_str(s);
+    ag_rt_stderr_write_str(": ");
+  }
+  ag_rt_stderr_write_str(ag_rt_strerror);
+  ag_rt_stderr_write_char('\n');
 }
 
 int __agc_runtime_feof(long stream_addr) {

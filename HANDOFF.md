@@ -4291,3 +4291,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = 1186/1186
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `make test-wasm-js-e2e` = 1158 pass / 0 fail / 0 skip、validated 1158、ran 1158
+
+### このセッション（続き374）: default runtime perror の stderr 出力
+- default runtime object 側の `__agc_runtime_perror` が空実装だったため、
+  JS import runtime と同じく `prefix: error\n` を stderr buffer / JS callback へ出すようにした。
+  prefix が空なら `error\n` だけを出す。
+- JS compile+link pipeline の default runtime object smoke に `perror("runtime")` を追加し、
+  `readStderr()` / `onStderr` 経由で `runtime: error\n` が見えることを確認するようにした。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-js-pipeline` = ok
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
