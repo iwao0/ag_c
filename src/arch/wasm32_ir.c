@@ -2998,6 +2998,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   int need_strto64_stub = has_undefined_function("strtol", 6) || has_undefined_function("strtoul", 7) ||
+                          has_undefined_function("strtoimax", 9) || has_undefined_function("strtoumax", 9) ||
                           has_undefined_function("atol", 4) || has_undefined_function("atoi", 4);
   if (need_strto64_stub) {
     wasm_emitf(2, "(func $__ag_strto64 (param $s i32) (param $endptr i32) (param $base i64) (result i64)\n");
@@ -3052,6 +3053,16 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (has_undefined_function("strtoul", 7)) {
     wasm_emitf(2, "(func $strtoul (param $s i32) (param $endptr i32) (param $base i64) (result i64)\n");
+    wasm_emitf(4, "(call $__ag_strto64 (local.get $s) (local.get $endptr) (local.get $base))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("strtoimax", 9)) {
+    wasm_emitf(2, "(func $strtoimax (param $s i32) (param $endptr i32) (param $base i64) (result i64)\n");
+    wasm_emitf(4, "(call $__ag_strto64 (local.get $s) (local.get $endptr) (local.get $base))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("strtoumax", 9)) {
+    wasm_emitf(2, "(func $strtoumax (param $s i32) (param $endptr i32) (param $base i64) (result i64)\n");
     wasm_emitf(4, "(call $__ag_strto64 (local.get $s) (local.get $endptr) (local.get $base))\n");
     wasm_emitf(2, ")\n");
   }
