@@ -291,7 +291,58 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/vformat_file.c" <<'SRC'
+typedef long va_list;
+#define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
+#define va_end(ap) ((void)(ap))
+typedef void FILE;
+int vsnprintf(char *buf, unsigned long size, char *fmt, va_list ap);
+int vfprintf(FILE *stream, char *fmt, va_list ap);
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+int fgetc(FILE *stream);
+long ftell(FILE *stream);
+int call_vsnprintf(char *buf, unsigned long size, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vsnprintf(buf, size, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vfprintf(FILE *stream, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vfprintf(stream, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int main(void) {
+  char buf[8];
+  int sn = call_vsnprintf(buf, sizeof(buf), "%d-%s", 31, "ok");
+  FILE *wf = fopen("tmp.txt", "w");
+  int fn = call_vfprintf(wf, "V%d", 5);
+  long pos = ftell(wf);
+  fclose(wf);
+  FILE *rf = fopen("tmp.txt", "r");
+  char rb[3];
+  unsigned long got = fread(rb, 1, 2, rf);
+  int eof = fgetc(rf);
+  fclose(rf);
+  return sn == 5 && buf[0] == '3' && buf[1] == '1' && buf[2] == '-' &&
+         buf[3] == 'o' && buf[4] == 'k' && buf[5] == 0 &&
+         fn == 2 && pos == 2 && got == 2 &&
+         rb[0] == 'V' && rb[1] == '5' && eof == -1 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
+typedef long va_list;
+#define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
+#define va_arg(ap, type) (*(type *)((long)(ap += ((sizeof(type) + 7) & -8)) - ((sizeof(type) + 7) & -8)))
+#define va_end(ap) ((void)(ap))
 long strlen(char *s);
 int strcmp(char *a, char *b);
 void *memset(void *s, int c, unsigned long n);
@@ -529,6 +580,8 @@ void clearerr(FILE *stream);
 long getline(char **lineptr, unsigned long *n, FILE *stream);
 int printf(char *fmt, ...);
 int fprintf(FILE *stream, char *fmt, ...);
+int vfprintf(FILE *stream, char *fmt, va_list ap);
+int vsnprintf(char *buf, unsigned long size, char *fmt, va_list ap);
 int puts(char *s);
 int fputs(char *s, FILE *stream);
 int fputc(int c, FILE *stream);
@@ -539,6 +592,22 @@ int getrusage(int who, struct rusage *usage);
 struct tm *localtime(long *timer);
 int setjmp(jmp_buf env);
 void longjmp(jmp_buf env, int val);
+int call_vsnprintf(char *buf, unsigned long size, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vsnprintf(buf, size, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vfprintf(FILE *stream, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vfprintf(stream, fmt, ap);
+  va_end(ap);
+  return n;
+}
 int int_cmp(void *ap, void *bp) {
   int *a = (int *)ap;
   int *b = (int *)bp;
@@ -850,6 +919,12 @@ int main(void) {
   unsigned long fmtread = fread(fmtbuf, 1, 2, fmtr);
   int fmt_eof = fgetc(fmtr);
   fclose(fmtr);
+  char vfmtbuf[8];
+  int vfmt_ret = call_vsnprintf(vfmtbuf, sizeof(vfmtbuf), "%d-%s", 31, "ok");
+  FILE *vfmtw = fopen("tmp.txt", "w");
+  int vfprintf_ret = call_vfprintf(vfmtw, "V%d", 5);
+  long vfprintf_pos = ftell(vfmtw);
+  fclose(vfmtw);
   int file_write_pos_ok = overwrote == 1 && pos_after_overwrite == 2 &&
                           append_start == 3 && appended == 1 &&
                           owread == 4 && owbuf[0] == 'A' && owbuf[1] == 'Z' &&
@@ -863,6 +938,9 @@ int main(void) {
   int fprintf_file_ok = fmt_file_ret == 2 && fmt_file_pos == 2 &&
                         fmtread == 2 && fmtbuf[0] == 'K' &&
                         fmtbuf[1] == '7' && fmt_eof == -1;
+  int vformat_ok = vfmt_ret == 5 && vfmtbuf[0] == '3' && vfmtbuf[1] == '1' &&
+                   vfmtbuf[2] == '-' && vfmtbuf[3] == 'o' && vfmtbuf[4] == 'k' &&
+                   vfmtbuf[5] == 0 && vfprintf_ret == 2 && vfprintf_pos == 2;
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
@@ -1093,6 +1171,7 @@ int main(void) {
          ch2 == 'B' &&
          file_write_pos_ok &&
          fprintf_file_ok &&
+         vformat_ok &&
          printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
          fprintf(0, "[%04d]", 7) == 6 &&
          puts("ok") == 3 &&
@@ -1335,6 +1414,13 @@ wasm-validate "$out_dir/linked_snprintf_float.wasm"
 wasm-interp "$out_dir/linked_snprintf_float.wasm" --run-all-exports > "$out_dir/linked_snprintf_float.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_snprintf_float.interp"
 
+"$root/build/ag_c_wasm" -c -o "$out_dir/vformat_file.o" "$out_dir/vformat_file.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_vformat_file.wasm" \
+  "$out_dir/vformat_file.o"
+wasm-validate "$out_dir/linked_vformat_file.wasm"
+wasm-interp "$out_dir/linked_vformat_file.wasm" --run-all-exports > "$out_dir/linked_vformat_file.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_vformat_file.interp"
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \
   "$out_dir/libc_runtime.o"
@@ -1346,6 +1432,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
     "$out_dir/libc_runtime.o"
   wasm-objdump -x "$out_dir/linked_libc_runtime_nostdlib.wasm" > "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.vsnprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.vfprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memmove>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

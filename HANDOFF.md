@@ -4491,3 +4491,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - `linked_libc_runtime_nostdlib.objdump` に上記 symbol が import として残ることを fixture に追加した。
 - 確認:
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+
+### このセッション（続き390）: vsnprintf/vfprintf の object linker smoke を追加
+- `vsnprintf` / `vfprintf` は bridge mapping と runtime 実装があるが、実行経路の smoke が薄かった。
+- `libc_runtime.c` の巨大 main には軽い `call_vsnprintf` / `call_vfprintf` 確認を追加した。
+- 読み戻しまで含む `vfprintf` 確認は、巨大 main に直接入れると E4007 に到達したため、
+  独立した `vformat_file.c` smoke として追加した。`vfprintf(fopen("w"), "V%d", 5)` 後に
+  `fread` で `V5` を読めることを確認する。
+- `--nostdlib` objdump grep に `<env.vsnprintf>` / `<env.vfprintf>` も追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
