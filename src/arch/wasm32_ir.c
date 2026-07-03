@@ -3207,6 +3207,16 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(f64.convert_i64_s (i64.sub (local.get $end) (local.get $beginning)))\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("signal", 6)) {
+    wasm_emitf(2, "(func $signal (param $sig i64) (param $handler i32) (result i32)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("raise", 5)) {
+    wasm_emitf(2, "(func $raise (param $sig i64) (result i32)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("labs", 4)) {
     wasm_emitf(2, "(func $labs (param $x i64) (result i64)\n");
     wasm_emitf(4, "(if (result i64) (i64.lt_s (local.get $x) (i64.const 0))\n");
