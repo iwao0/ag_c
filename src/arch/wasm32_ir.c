@@ -2997,20 +2997,62 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("atoi", 4)) {
-    wasm_emitf(2, "(func $atoi (param $s i32) (result i32)\n");
+  int need_atol_stub = has_undefined_function("atol", 4) || has_undefined_function("atoi", 4);
+  if (need_atol_stub) {
+    wasm_emitf(2, "(func $atol (param $s i32) (result i64)\n");
     wasm_emitf(4, "(local $p i32)\n");
     wasm_emitf(4, "(local $ch i32)\n");
-    wasm_emitf(4, "(local $n i32)\n");
+    wasm_emitf(4, "(local $n i64)\n");
+    wasm_emitf(4, "(local $sign i64)\n");
+    wasm_emitf(4, "(local.set $sign (i64.const 1))\n");
     wasm_emitf(4, "(local.set $p (local.get $s))\n");
+    wasm_emitf(4, "(block $space_done (loop $space_loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(if (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.or (i32.eq (local.get $ch) (i32.const 9)) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.or (i32.eq (local.get $ch) (i32.const 11)) (i32.or (i32.eq (local.get $ch) (i32.const 12)) (i32.eq (local.get $ch) (i32.const 13))))))) (then\n");
+    wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(8, "(br $space_loop)\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(6, "(br $space_done)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(if (i32.eq (i32.load8_u (local.get $p)) (i32.const 45)) (then\n");
+    wasm_emitf(6, "(local.set $sign (i64.const -1))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(4, ") (else (if (i32.eq (i32.load8_u (local.get $p)) (i32.const 43)) (then\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(4, "))))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
     wasm_emitf(6, "(if (i32.or (i32.lt_u (local.get $ch) (i32.const 48)) (i32.gt_u (local.get $ch) (i32.const 57))) (then (br $done)))\n");
-    wasm_emitf(6, "(local.set $n (i32.add (i32.mul (local.get $n) (i32.const 10)) (i32.sub (local.get $ch) (i32.const 48))))\n");
+    wasm_emitf(6, "(local.set $n (i64.add (i64.mul (local.get $n) (i64.const 10)) (i64.extend_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
     wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
-    wasm_emitf(4, "(local.get $n)\n");
+    wasm_emitf(4, "(i64.mul (local.get $n) (local.get $sign))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("atoi", 4)) {
+    wasm_emitf(2, "(func $atoi (param $s i32) (result i32)\n");
+    wasm_emitf(4, "(i32.wrap_i64 (call $atol (local.get $s)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("labs", 4)) {
+    wasm_emitf(2, "(func $labs (param $x i64) (result i64)\n");
+    wasm_emitf(4, "(if (result i64) (i64.lt_s (local.get $x) (i64.const 0))\n");
+    wasm_emitf(6, "(then (i64.sub (i64.const 0) (local.get $x)))\n");
+    wasm_emitf(6, "(else (local.get $x))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("rand", 4) || has_undefined_function("srand", 5)) {
+    wasm_emitf(2, "(global $__ag_rand_state (mut i64) (i64.const 1))\n");
+  }
+  if (has_undefined_function("srand", 5)) {
+    wasm_emitf(2, "(func $srand (param $seed i64) (global.set $__ag_rand_state (local.get $seed)))\n");
+  }
+  if (has_undefined_function("rand", 4)) {
+    wasm_emitf(2, "(func $rand (result i32)\n");
+    wasm_emitf(4, "(global.set $__ag_rand_state (i64.add (i64.mul (global.get $__ag_rand_state) (i64.const 1103515245)) (i64.const 12345)))\n");
+    wasm_emitf(4, "(i32.and (i32.wrap_i64 (i64.shr_u (global.get $__ag_rand_state) (i64.const 16))) (i32.const 32767))\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("malloc", 6)) {
