@@ -37,7 +37,7 @@ static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
 #define PP_MAX_INCLUDE_DEPTH 64
-#define PP_MAX_MACRO_EXPANSIONS 32768
+#define PP_MAX_MACRO_EXPANSIONS 262144
 #define PP_MAX_LINE_FILENAME_LEN 1024
 #define PP_MAX_INCLUDE_FILE_BYTES (16 * 1024 * 1024)
 #define PP_MAX_IF_EXPR_TOKENS 4096

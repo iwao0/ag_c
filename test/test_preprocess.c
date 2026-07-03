@@ -601,7 +601,7 @@ static void expect_preprocess_fail_with_stderr_sanitized(const char *input, cons
 }
 
 static void expect_macro_expansion_limit_fail(void) {
-  const int levels = 15;
+  const int levels = 19;
   size_t cap = 8192;
   char *input = calloc(cap, 1);
   if (!input) {
@@ -640,7 +640,7 @@ static void expect_macro_expansion_limit_fail(void) {
 }
 
 static void expect_macro_arg_nesting_limit_fail(void) {
-  const int levels = 16;
+  const int levels = 19;
   size_t cap = 8192;
   char *input = calloc(cap, 1);
   if (!input) {

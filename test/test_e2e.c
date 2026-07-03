@@ -742,6 +742,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "ctype_toupper", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_toupper.c", 0, 0},
     {"stdheader", "ctype_classify_more", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_classify_more.c", 0, 0},
     {"stdheader", "wchar_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_runtime_ops.c", 0, 0},
+    {"stdheader", "wchar_memory_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_memory_ops.c", 0, 0},
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
@@ -2048,6 +2049,8 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_wcscmp") == 0 || strcmp(sym, "_wcsncmp") == 0 ||
             strcmp(sym, "_wcschr") == 0 || strcmp(sym, "_wcsrchr") == 0 ||
             strcmp(sym, "_wmemcpy") == 0 || strcmp(sym, "_wmemset") == 0 ||
+            strcmp(sym, "_wmemmove") == 0 || strcmp(sym, "_wmemcmp") == 0 ||
+            strcmp(sym, "_wmemchr") == 0 ||
             strcmp(sym, "_feclearexcept") == 0 || strcmp(sym, "_fetestexcept") == 0 ||
             strcmp(sym, "_feraiseexcept") == 0 || strcmp(sym, "_fegetround") == 0 ||
             strcmp(sym, "_fesetround") == 0 ||
@@ -2467,7 +2470,7 @@ int main() {
     const char *pp_limit_path = "build/e2e/compile_fail/macro_expansion_limit.c";
     const char *log_path = "build/e2e/logs/compile_fail_macro_expansion_limit.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
-        write_macro_expansion_limit_source(pp_limit_path, 16) != 0 ||
+        write_macro_expansion_limit_source(pp_limit_path, 19) != 0 ||
         run_ag_c_expect_fail_with_diag(pp_limit_path, "E1029", log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: macro_expansion_limit (see %s)\n", log_path);
       return 1;

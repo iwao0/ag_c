@@ -3592,6 +3592,31 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local.get $dst)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("wmemmove", 8)) {
+    wasm_emitf(2, "(func $wmemmove (param $dst i32) (param $src i32) (param $n i64) (result i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(if (i32.lt_u (local.get $dst) (local.get $src))\n");
+    wasm_emitf(6, "(then\n");
+    wasm_emitf(8, "(block $done (loop $loop\n");
+    wasm_emitf(10, "(if (i64.ge_u (local.get $i) (local.get $n)) (then (br $done)))\n");
+    wasm_emitf(10, "(i32.store (i32.add (local.get $dst) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4)))) (i32.load (i32.add (local.get $src) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
+    wasm_emitf(10, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(10, "(br $loop)\n");
+    wasm_emitf(8, "))\n");
+    wasm_emitf(6, ")\n");
+    wasm_emitf(6, "(else\n");
+    wasm_emitf(8, "(local.set $i (local.get $n))\n");
+    wasm_emitf(8, "(block $done (loop $loop\n");
+    wasm_emitf(10, "(if (i64.eqz (local.get $i)) (then (br $done)))\n");
+    wasm_emitf(10, "(local.set $i (i64.sub (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(10, "(i32.store (i32.add (local.get $dst) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4)))) (i32.load (i32.add (local.get $src) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
+    wasm_emitf(10, "(br $loop)\n");
+    wasm_emitf(8, "))\n");
+    wasm_emitf(6, ")\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(4, "(local.get $dst)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("wmemset", 7)) {
     wasm_emitf(2, "(func $wmemset (param $s i32) (param $ch i64) (param $n i64) (result i32)\n");
     wasm_emitf(4, "(local $i i64)\n");
@@ -3602,6 +3627,36 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(local.get $s)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wmemcmp", 7)) {
+    wasm_emitf(2, "(func $wmemcmp (param $a i32) (param $b i32) (param $n i64) (result i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(local $ca i32)\n");
+    wasm_emitf(4, "(local $cb i32)\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i64.ge_u (local.get $i) (local.get $n)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $ca (i32.load (i32.add (local.get $a) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
+    wasm_emitf(6, "(local.set $cb (i32.load (i32.add (local.get $b) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
+    wasm_emitf(6, "(if (i32.ne (local.get $ca) (local.get $cb)) (then (return (i32.sub (local.get $ca) (local.get $cb)))))\n");
+    wasm_emitf(6, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wmemchr", 7)) {
+    wasm_emitf(2, "(func $wmemchr (param $s i32) (param $ch i64) (param $n i64) (result i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(block $not_found (loop $loop\n");
+    wasm_emitf(6, "(if (i64.ge_u (local.get $i) (local.get $n)) (then (br $not_found)))\n");
+    wasm_emitf(6, "(if (i32.eq (i32.load (i32.add (local.get $s) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))) (i32.wrap_i64 (local.get $ch)))\n");
+    wasm_emitf(8, "(then (return (i32.add (local.get $s) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
+    wasm_emitf(6, ")\n");
+    wasm_emitf(6, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
   int atan_defined = psx_ctx_has_function_name("atan", 4) &&
