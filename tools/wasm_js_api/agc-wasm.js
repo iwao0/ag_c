@@ -298,7 +298,7 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function compileWat(source) {
     const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileAdaptive(sourceBytes, compileWatExport, true);
+    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileWatExport, true);
     return compileWithFixedBuffers(sourceBytes, compileWatExport, true);
   }
 
@@ -307,7 +307,7 @@ export async function createCompiler(wasmSource, options = {}) {
       throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
     }
     const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileAdaptive(sourceBytes, compileObjectExport, false);
+    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileObjectExport, false);
     return compileWithFixedBuffers(sourceBytes, compileObjectExport, false);
   }
 

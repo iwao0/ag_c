@@ -595,6 +595,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "wchar_memory_ops", "test/fixtures/stdheader/wchar_memory_ops.c"},
     {"stdheader", "wchar_search_concat_ops", "test/fixtures/stdheader/wchar_search_concat_ops.c"},
     {"stdheader", "wchar_multibyte_ops", "test/fixtures/stdheader/wchar_multibyte_ops.c"},
+    {"stdheader", "wchar_convert_ops", "test/fixtures/stdheader/wchar_convert_ops.c"},
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
     {"stdheader", "math_runtime_ops", "test/fixtures/stdheader/math_runtime_ops.c"},
     {"stdheader", "tgmath_variant_ops", "test/fixtures/stdheader/tgmath_variant_ops.c"},
