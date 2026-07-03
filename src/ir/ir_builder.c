@@ -29,7 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_LVARS 256
+#define MAX_LVARS 512
 #define MAX_LOOP_DEPTH 32
 #define MAX_CASES 256
 #define MAX_LABELS 64

@@ -1218,6 +1218,17 @@ SRC
   printf 'int main(void) { return g16999 - 16957; }\n'
 } > "$out_dir/many_globals.c"
 
+{
+  printf 'int main(void) {\n'
+  printf '  int sum = 0;\n'
+  for i in $(seq 0 299); do
+    printf '  int x%d = %d;\n' "$i" "$i"
+    printf '  sum = sum + x%d;\n' "$i"
+  done
+  printf '  return sum - 44808;\n'
+  printf '}\n'
+} > "$out_dir/many_locals.c"
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/main.o" "$out_dir/main.c"
 "$root/build/ag_c_wasm" -c -o "$out_dir/other.o" "$out_dir/other.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked.wasm" \
@@ -1681,5 +1692,12 @@ fi
 wasm-validate "$out_dir/linked_many_globals.wasm"
 wasm-interp "$out_dir/linked_many_globals.wasm" --run-all-exports > "$out_dir/linked_many_globals.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_many_globals.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/many_locals.o" "$out_dir/many_locals.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_locals.wasm" \
+  "$out_dir/many_locals.o"
+wasm-validate "$out_dir/linked_many_locals.wasm"
+wasm-interp "$out_dir/linked_many_locals.wasm" --run-all-exports > "$out_dir/linked_many_locals.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_many_locals.interp"
 
 echo "ag_wasm_link smoke: ok"

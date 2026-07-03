@@ -4511,3 +4511,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   独立 smoke に分けた。
 - 確認:
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+
+### このセッション（続き392）: IR builder の local owner 上限を引き上げ
+- 巨大な object linker smoke に条件を足すと E4007 になる原因を確認した。
+  IR builder の local owner tracking (`MAX_LVARS`) が 256 で、大きい関数が上限に到達していた。
+- `MAX_LVARS` を 512 に引き上げた。
+- `test_smoke.sh` に 300 個の local 変数を持つ `many_locals.c` を追加し、
+  object compile/link/validate/interp で `main() => i32:42` になることを確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186
