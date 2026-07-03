@@ -697,6 +697,19 @@ int main(void) {
   char fdbuf[4];
   long fdread = read(fd, fdbuf, 3);
   int close_ok = close(fd);
+  int fd_a = open("tmp.txt", 0);
+  int fd_b = open("tmp.txt", 0);
+  char fda[2];
+  char fdb[3];
+  long fda1 = read(fd_a, fda, 1);
+  long fdb2 = read(fd_b, fdb, 2);
+  long fda2 = read(fd_a, fda + 1, 1);
+  int close_a = close(fd_a);
+  int close_b = close(fd_b);
+  int fd_independent_ok = fda1 == 1 && fdb2 == 2 && fda2 == 1 &&
+                          fda[0] == 'A' && fda[1] == '\n' &&
+                          fdb[0] == 'A' && fdb[1] == '\n' &&
+                          close_a == 0 && close_b == 0;
   int fd2 = open("tmp.txt", 0);
   FILE *fdstream = fdopen(fd2, "r");
   char fdline[4];
@@ -944,6 +957,7 @@ int main(void) {
          fd >= 0 && stat_ok == 0 && (st.st_mode & 0170000) == 0100000 &&
          st.st_size == 3 && fdread == 3 && fdbuf[0] == 'A' && fdbuf[1] == '\n' &&
          fdbuf[2] == 'B' && close_ok == 0 &&
+         fd_independent_ok &&
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
          pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
          seek_ok == 0 && pos_after_seek == 1 && ch_seek == '\n' &&

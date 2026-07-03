@@ -34,7 +34,6 @@ static char ag_rt_strerror[] = "error";
 
 static char ag_rt_file_buf[AG_RT_FILE_BUF_CAP];
 static long ag_rt_file_len = 0;
-static long ag_rt_fd_pos = 0;
 static char ag_rt_stdout_buf[8192];
 static long ag_rt_stdout_len = 0;
 static char ag_rt_stderr_buf[8192];
@@ -61,12 +60,18 @@ struct ag_rt_file {
   int error;
 };
 
+struct ag_rt_fd {
+  int used;
+  long pos;
+};
+
 struct ag_rt_lconv {
   char *decimal_point;
 };
 
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 static struct ag_rt_file ag_rt_file_value;
+static struct ag_rt_fd ag_rt_fds[8];
 
 static int ag_rt_is_stdout_stream(long stream_addr) {
   return stream_addr == (long)__stdoutp;

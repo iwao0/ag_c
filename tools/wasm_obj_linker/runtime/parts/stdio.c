@@ -51,7 +51,10 @@ long __agc_runtime_stdin_write(long ptr_addr, long len) {
     i++;
   }
   ag_rt_file_len = n;
-  ag_rt_fd_pos = 0;
+  for (int i = 0; i < 8; i++) {
+    ag_rt_fds[i].used = 0;
+    ag_rt_fds[i].pos = 0;
+  }
   ag_rt_file_value.pos = 0;
   ag_rt_file_value.write_mode = 0;
   ag_rt_file_value.eof = 0;
@@ -144,12 +147,22 @@ long __agc_runtime_fopen(long path_addr, long mode_addr) {
 int __agc_runtime_open(long path_addr, int oflag) {
   (void)oflag;
   if (!path_addr) return -1;
-  ag_rt_fd_pos = 0;
-  return 3;
+  for (int i = 0; i < 8; i++) {
+    if (!ag_rt_fds[i].used) {
+      ag_rt_fds[i].used = 1;
+      ag_rt_fds[i].pos = 0;
+      return 3 + i;
+    }
+  }
+  return -1;
 }
 
 int __agc_runtime_close(int fd) {
-  (void)fd;
+  int idx = fd - 3;
+  if (idx >= 0 && idx < 8) {
+    ag_rt_fds[idx].used = 0;
+    ag_rt_fds[idx].pos = 0;
+  }
   return 0;
 }
 
@@ -159,7 +172,8 @@ struct ag_rt_stat {
 };
 
 int __agc_runtime_fstat(int fd, long st_addr) {
-  (void)fd;
+  int idx = fd - 3;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
   if (!st_addr) return -1;
   struct ag_rt_stat *st = (struct ag_rt_stat *)ag_rt_ptr(st_addr);
   st->st_mode = 0100000;
@@ -168,19 +182,24 @@ int __agc_runtime_fstat(int fd, long st_addr) {
 }
 
 long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
-  (void)fd;
+  int idx = fd - 3;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
   char *dst = ag_rt_ptr(buf_addr);
   long limit = (long)count;
   long i = 0;
-  while (i < limit && ag_rt_fd_pos < ag_rt_file_len) {
-    dst[i++] = ag_rt_file_buf[ag_rt_fd_pos++];
+  while (i < limit && ag_rt_fds[idx].pos < ag_rt_file_len) {
+    dst[i++] = ag_rt_file_buf[ag_rt_fds[idx].pos++];
   }
   return i;
 }
 
 long __agc_runtime_fdopen(int fd, long mode_addr) {
-  (void)fd;
-  return __agc_runtime_fopen(0, mode_addr);
+  int idx = fd - 3;
+  struct ag_rt_file *f;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return 0;
+  f = (struct ag_rt_file *)__agc_runtime_fopen(0, mode_addr);
+  if (f) f->pos = ag_rt_fds[idx].pos;
+  return (long)f;
 }
 
 int __agc_runtime_fclose(long stream_addr) {

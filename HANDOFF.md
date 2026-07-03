@@ -4303,3 +4303,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き375）: default runtime の fd 位置を独立化
+- default runtime object の `open` / `read` が単一の `ag_rt_fd_pos` を共有していたため、
+  複数 fd を開くと読み取り位置が干渉する状態だった。
+- `ag_rt_fds[8]` を追加し、`open` が fd 3..10 を割り当て、`read` / `close` / `fstat` が
+  fd ごとの position / used 状態を見るようにした。
+- `fdopen` は対象 fd の現在 position を FILE stream に反映するようにした。
+- object linker smoke に、同じ runtime file を fd 2本で開き、それぞれの read position が
+  独立していることを確認するケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
