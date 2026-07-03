@@ -400,6 +400,25 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/signal_state.c" <<'SRC'
+typedef void (*sig_handler_t)(int);
+sig_handler_t signal(int sig, sig_handler_t handler);
+int raise(int sig);
+int seen;
+void handler(int sig) {
+  seen = sig + 30;
+}
+int main(void) {
+  sig_handler_t old = signal(2, handler);
+  int rc = raise(2);
+  sig_handler_t old2 = signal(2, 0);
+  int rc2 = raise(2);
+  int bad = raise(99);
+  return old == 0 && rc == 0 && seen == 32 &&
+         old2 == handler && rc2 == 0 && seen == 32 && bad == -1 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1507,6 +1526,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_wide_locale_state.interp"
 wasm-validate "$out_dir/linked_fenv_state.wasm"
 wasm-interp "$out_dir/linked_fenv_state.wasm" --run-all-exports > "$out_dir/linked_fenv_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_fenv_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/signal_state.o" "$out_dir/signal_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_signal_state.wasm" \
+  "$out_dir/signal_state.o"
+wasm-validate "$out_dir/linked_signal_state.wasm"
+wasm-interp "$out_dir/linked_signal_state.wasm" --run-all-exports > "$out_dir/linked_signal_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_signal_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

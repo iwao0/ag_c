@@ -282,13 +282,19 @@ int __agc_runtime_system(long command_addr) {
 }
 
 long __agc_runtime_signal(int sig, long handler_addr) {
-  (void)sig;
-  (void)handler_addr;
-  return 0;
+  if (sig < 0 || sig >= 32) return 0;
+  long old = ag_rt_signal_handlers[sig];
+  ag_rt_signal_handlers[sig] = handler_addr;
+  return old;
 }
 
 int __agc_runtime_raise(int sig) {
-  (void)sig;
+  if (sig < 0 || sig >= 32) return -1;
+  long handler_addr = ag_rt_signal_handlers[sig];
+  if (handler_addr) {
+    void (*handler)(int) = (void (*)(int))handler_addr;
+    handler(sig);
+  }
   return 0;
 }
 

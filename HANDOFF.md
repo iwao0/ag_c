@@ -4534,3 +4534,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き394）: default runtime の signal/raise handler dispatch を実装
+- `signal(sig, handler)` / `raise(sig)` が no-op で、登録した handler が呼ばれていなかった。
+- runtime 状態に signal handler table を追加し、`signal()` が旧 handler を返して新 handler を保存し、
+  `raise()` が登録済み handler を indirect call するようにした。
+- Wasm function pointer の table index は 1 も正当な値になり得るため、handler 呼び出し条件は
+  `handler_addr != 0` にした。
+- `test_smoke.sh` に独立 fixture `signal_state.c` を追加し、handler 呼び出し、旧 handler 返却、
+  handler 解除後の no-op、範囲外 signal の失敗を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

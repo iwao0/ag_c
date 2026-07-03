@@ -47,6 +47,7 @@ static unsigned long ag_rt_rand_state = 1;
 static int ag_rt_round_mode = 0;
 static int ag_rt_except_flags = 0;
 static int ag_rt_errno_value = 0;
+static long ag_rt_signal_handlers[32];
 void *__stdinp;
 void *__stdoutp = (void *)1;
 void *__stderrp = (void *)2;
