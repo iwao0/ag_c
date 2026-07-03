@@ -152,4 +152,23 @@ if (!stdioWat.includes("(return (i32.const 42))")) {
   throw new Error("standard include expansion did not compile stdio.h in the JS pipeline");
 }
 
+const complexSource = await inlineStandardIncludes(
+  await readFile("test/fixtures/stdheader/complex_ops.c", "utf8"),
+  { loadInclude },
+);
+const complexObj = toolchain.compileObject(complexSource);
+const complexObjPath = path.join(outDir, "complex_ops_from_compiler_api.o");
+await writeFile(complexObjPath, complexObj);
+try {
+  const dump = execFileSync("wasm-objdump", ["-x", complexObjPath], { encoding: "utf8" });
+  if (!dump.includes("F <__ag_complex_sqrt>")) {
+    throw new Error("compiler API object is missing __ag_complex_sqrt definition");
+  }
+  if (dump.includes("@Q0") || dump.includes("env.__ag_complex_sqrt")) {
+    throw new Error("compiler API object has a corrupted or unresolved __ag_complex_sqrt symbol");
+  }
+} catch (err) {
+  if (err.code !== "ENOENT") throw err;
+}
+
 console.log(`ag_c wasm JS compile+link pipeline smoke: ok (${linkedPath})`);
