@@ -269,13 +269,16 @@ function makeStdio(options = {}) {
   }
 
   function write(fd, ptr, count) {
+    fd = Number(fd);
     count = Number(count);
     if (count <= 0) return 0n;
     const text = readMemoryUtf8(getMemory(), ptr, count);
-    if (isStderrStream(fd)) {
+    if (fd === 2) {
       emitStderr(text);
-    } else {
+    } else if (fd === 1) {
       emitStdout(text);
+    } else {
+      return -1n;
     }
     return BigInt(count);
   }

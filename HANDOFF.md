@@ -4443,9 +4443,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 ### このセッション（続き385）: JS import runtime に write/lseek を追加
 - default runtime object に `write` / `lseek` を追加したため、`useStdlib: false` の JS import runtime 側にも
   同名 import を追加した。
-- `write(fd, ptr, count)` は `fd == 0 || fd == 2` を stderr、それ以外を stdout として callback へ流す。
+- `write(fd, ptr, count)` は `fd == 1` を stdout、`fd == 2` を stderr として callback へ流す。
+  `fd == 0` は `FILE *` の null stream とは別物なので `-1` を返す。
 - JS import runtime には fd position state がないため、`lseek` は `-1` を返す最小実装にした。
-- JS pipeline smoke に、`write(1, "W")` が stdout、`write(2, "e")` と `write(0, "n")` が stderr に届き、
+- JS pipeline smoke に、`write(1, "W")` が stdout、`write(2, "e")` が stderr に届き、
   `lseek(1, 0, 0) == -1` になるケースを追加した。
+- 確認:
+  - `make test-wasm-js-pipeline` = ok
+
+### このセッション（続き386）: JS import write の fd 0 扱いを修正
+- 続き385で `write(0, ...)` を stderr に流していたが、これは `FILE *` の null stream と fd 0 を混同していた。
+- JS import runtime の `write` は fd 1/2 だけ callback に流し、それ以外は `-1` を返すようにした。
+- JS pipeline smoke の期待値も、`write(0, "n") == -1` かつ stderr に `n` が混ざらない形に更新した。
 - 確認:
   - `make test-wasm-js-pipeline` = ok
