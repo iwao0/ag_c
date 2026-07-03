@@ -35,7 +35,7 @@ export interface AgcWasmCompiler {
   readTermination(): AgcWasmTerminationEvent | null;
 }
 
-export type AgcWasmSource = string | URL | ArrayBuffer | Uint8Array;
+export type AgcWasmSource = string | URL | WebAssembly.Module | ArrayBuffer | Uint8Array;
 
 export function createCompiler(
   wasmSource: AgcWasmSource,

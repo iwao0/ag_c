@@ -11,10 +11,12 @@ import type {
 } from "../wasm_obj_linker/ag-wasm-link.js";
 import type { AgcRuntimeImports } from "./agc-runtime-imports.js";
 
+export type AgcWasmObjectSource = string | URL | ArrayBuffer | Uint8Array;
+
 export interface AgcWasmToolchainOptions {
   compilerWasm: AgcWasmSource;
   linkerWasm: AgcWasmLinkerSource;
-  runtimeObject?: AgcWasmLinkerSource;
+  runtimeObject?: AgcWasmObjectSource;
   compilerOptions?: AgcWasmCompilerOptions;
   linkerOptions?: AgcWasmLinkerOptions;
 }

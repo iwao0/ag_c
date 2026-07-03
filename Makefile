@@ -158,6 +158,7 @@ wasm-selfhost-api: $(WASM_SELFHOST_API)
 
 test-wasm-js-api: $(WASM_SELFHOST_API)
 	@node tools/wasm_js_api/test_smoke.mjs $(WASM_SELFHOST_API)
+	@node tools/wasm_js_api/test_package_exports.mjs
 
 $(WASM_LINKER_SELFHOST): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash scripts/build_wasm_linker_selfhost.sh build/wasm_linker_selfhost

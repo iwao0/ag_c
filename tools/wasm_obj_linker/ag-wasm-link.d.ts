@@ -25,7 +25,7 @@ export interface AgcWasmLinker {
   readTermination(): AgcWasmTerminationEvent | null;
 }
 
-export type AgcWasmLinkerSource = string | URL | ArrayBuffer | Uint8Array;
+export type AgcWasmLinkerSource = string | URL | WebAssembly.Module | ArrayBuffer | Uint8Array;
 
 export function createLinker(
   wasmSource: AgcWasmLinkerSource,

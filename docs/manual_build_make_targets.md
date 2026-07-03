@@ -115,6 +115,8 @@ make test-wasm-js-api
 
 JS の統合 wrapper は `tools/wasm_js_api/agc-toolchain.js` です。
 標準 runtime 付きで linked wasm を作る場合は `runtimeObject` も渡します。
+同じディレクトリに `.d.ts` も置いているため、TypeScript からは `createToolchain` /
+`createCompiler` / `createAgcRuntimeImports` / `inlineStandardIncludes` の型を参照できます。
 
 ```js
 const toolchain = await createToolchain({
@@ -132,6 +134,9 @@ runtime object の `printf` / `fprintf` 出力を `main()` 実行後に読めま
 compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
 (`Uint8Array`) を返します。
+ブラウザで `#include <stdio.h>` などを使う場合は、コンパイル前に
+`inlineStandardIncludes(source)` を通すと標準ヘッダを展開できます。デモと
+`make test-wasm-js-pipeline` はこの helper を使っています。
 browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の
 出力を切り替えられます。Linked Wasm では複数 source textarea を別々に object 化してから
 runtime object と一緒にリンクします。`main` export を呼べる場合は戻り値も表示し、

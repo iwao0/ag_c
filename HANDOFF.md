@@ -1,30 +1,39 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-03（続き367修正: GNU push_macro/pop_macro は warning skip 維持）
+最終更新: 2026-07-03（続き368: wasm JS API の型定義を実装に合わせる）
 
 ## 現状
 - `make test` = **green**。
-  内訳として `./build/test_e2e` = **1150/1150 green**、
-  `./build/test_wasm32_e2e` = **1121 compiled / 1121 executed green**、
-  `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**。
+  内訳として `./build/test_e2e` = **1185/1185 green**、
+  `./build/test_wasm32_e2e` = **1157 compiled / 1157 executed green**、
+  `./build/test_wasm32_object` = **1159/1159 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test` = **green**、
-  `make wasm-selfhost-api` = **green**（`build/wasm_selfhost_api/ag_c_wasm_api.wasm` 生成）、
-  `make test-wasm-obj-linker` = **green**、
-  `make test-wasm-js-api` = **green**、
   `make test-wasm-js-pipeline` = **green**、
-  `make test-wasm-linker-selfhost` = **green**、
-  `./build/test_wasm32_backend` = **green**、
-  `./build/test_wasm32_e2e` = **1121 compiled / 1121 executed green**、
-  `./build/test_wasm32_object` = **1122/1122 e2e fixture object compile + validate green**、
-  `node tools/wasm_js_api/test_smoke.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm` = **green**、
-  `node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --list-fail --progress-every=100` =
-  **total registered 1121 / scanned 1121 / pass 1121 / fail 0 / skip 0 / linked 1121 / validated 1121 / ran 1121**、
-  `bash scripts/run_wasm32_object_link_fixture_scan.sh --all-fixtures --list-fail` = **1121 pass / fail 0 / skip 1**、
-  `bash scripts/run_wasm32_object_link_fixture_scan.sh --list-fail` = **1121 pass / fail 0 / skip 1**、
-  `make wasm32-object-link-c-testsuite-scan` = **218 pass / fail 0 / skip 2**。
+  `make test-wasm-js-e2e` =
+  **total registered 1157 / scanned 1157 / pass 1157 / fail 0 / skip 0 / linked 1157 / validated 1157 / ran 1157**、
+  `make wasm32-wat-c-testsuite-scan` = **218 pass / fail 0 / skip 2**、
+  `make wasm32-object-c-testsuite-scan` = **218 pass / fail 0 / skip 2**、
+  `make wasm32-object-link-c-testsuite-scan` =
+  **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き368: **wasm JS API の型定義を実装に合わせた**。
+  `createCompiler` / `createLinker` は実装上 `WebAssembly.Module` を受け取れるため、
+  `AgcWasmSource` / `AgcWasmLinkerSource` に `WebAssembly.Module` を追加。
+  一方で `runtimeObject` は wasm module ではなく relocatable object bytes なので、
+  `AgcWasmObjectSource = string | URL | ArrayBuffer | Uint8Array` として分離した。
+  `inlineStandardIncludes` 用に `agc-include-inline.d.ts` も追加。
+  `tools/wasm_js_api/package.json` には `types` と exports の types/import map を追加。
+  `tools/wasm_js_api/test_package_exports.mjs` を追加し、`make test-wasm-js-api` で
+  package exports の import/types ファイル存在、公開 export 名、`.d.ts` 内の相対 import
+  参照切れを確認する。
+  `docs/manual_build_make_targets.md` の JS API 節にも TypeScript 型と include helper の
+  手がかりを追記。
+  `tsc` はこの環境に無かったため未実行。確認は
+  `make test-wasm-js-api`、`make test-wasm-js-pipeline`、
+  `node -e "JSON.parse(...package.json...)"`、
+  `node --input-type=module -e "...inlineStandardIncludes..."`、`git diff --check`。
 - 続き367修正: **GCC/GNU 拡張の方針を維持し、`#pragma push_macro` / `pop_macro` は warning skip のまま**。
   いったん `push_macro` / `pop_macro` の意味実装を入れかけたが、GCC 拡張は入れない方針なので取り消した。
   現在は `W3024` を出して指令行を読み飛ばす。c-testsuite `00206` は従来どおり unsupported skip、

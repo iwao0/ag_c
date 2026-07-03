@@ -1,3 +1,26 @@
 {
-  "type": "module"
+  "type": "module",
+  "types": "./agc-toolchain.d.ts",
+  "exports": {
+    ".": {
+      "types": "./agc-toolchain.d.ts",
+      "import": "./agc-toolchain.js"
+    },
+    "./agc-toolchain.js": {
+      "types": "./agc-toolchain.d.ts",
+      "import": "./agc-toolchain.js"
+    },
+    "./agc-wasm.js": {
+      "types": "./agc-wasm.d.ts",
+      "import": "./agc-wasm.js"
+    },
+    "./agc-runtime-imports.js": {
+      "types": "./agc-runtime-imports.d.ts",
+      "import": "./agc-runtime-imports.js"
+    },
+    "./agc-include-inline.js": {
+      "types": "./agc-include-inline.d.ts",
+      "import": "./agc-include-inline.js"
+    }
+  }
 }
