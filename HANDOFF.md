@@ -4268,3 +4268,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-e2e` = 1157 pass / 0 fail / 0 skip、validated 1157、ran 1157
   - `make -B -j4 OBJROOT=build/obj/asan_manual WASM_TARGET=build/ag_c_wasm_asan_tmp CFLAGS='-std=c11 -g -O0 -Wall -Wextra -DDIAG_LANG_JA -fsanitize=address -fno-omit-frame-pointer' build/ag_c_wasm_asan_tmp`
   - `ASAN_OPTIONS=detect_leaks=0 AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm_asan_tmp -c -o /tmp/libagc_runtime_js_asan.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c` = UAF 再発なし
+
+### このセッション（続き372）: runtime stream helper 共有と getline 宣言追加
+- `ag_rt_input_stream` を `stdio.c` から `common.c` に移し、`getline` と stdio 実装が同じ
+  stream 解決を使うようにした。
+- `include/stdio.h` と browser inline include shim に
+  `long getline(char **lineptr, size_t *n, FILE *stream);` を追加した。
+  JS pipeline の `getline` fixture から手書き宣言を外し、`#include <stdio.h>` だけで通るようにした。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-js-pipeline` = ok
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_preprocess`

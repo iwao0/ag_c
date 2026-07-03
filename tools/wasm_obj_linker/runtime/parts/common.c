@@ -76,6 +76,11 @@ static int ag_rt_is_stderr_stream(long stream_addr) {
   return stream_addr == 0 || stream_addr == (long)__stderrp;
 }
 
+static struct ag_rt_file *ag_rt_input_stream(long stream_addr) {
+  if (!stream_addr || stream_addr == (long)__stdinp) return &ag_rt_file_value;
+  return (struct ag_rt_file *)ag_rt_ptr(stream_addr);
+}
+
 static void ag_rt_stdout_reset_impl(void) {
   ag_rt_stdout_len = 0;
   ag_rt_stdout_buf[0] = 0;

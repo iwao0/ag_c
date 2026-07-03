@@ -60,11 +60,6 @@ long __agc_runtime_stdin_write(long ptr_addr, long len) {
   return n;
 }
 
-static struct ag_rt_file *ag_rt_input_stream(long stream_addr) {
-  if (!stream_addr || stream_addr == (long)__stdinp) return &ag_rt_file_value;
-  return (struct ag_rt_file *)ag_rt_ptr(stream_addr);
-}
-
 int __agc_runtime_fseek(long stream_addr, long offset, int whence) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   long base = 0;

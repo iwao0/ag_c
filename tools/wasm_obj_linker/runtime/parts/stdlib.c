@@ -348,11 +348,7 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   char ch;
   long i;
   if (!lineptr || !cap) return -1;
-  if (!stream_addr || stream_addr == (long)__stdinp) {
-    f = &ag_rt_file_value;
-  } else {
-    f = (struct ag_rt_file *)ag_rt_ptr(stream_addr);
-  }
+  f = ag_rt_input_stream(stream_addr);
   if (!f) return -1;
   if (f->pos >= ag_rt_file_len) {
     f->eof = 1;

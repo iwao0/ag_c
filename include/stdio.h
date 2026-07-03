@@ -30,6 +30,7 @@ int getchar(void);
 int fgetc(FILE *stream);
 int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+long getline(char **lineptr, size_t *n, FILE *stream);
 
 /* File operations */
 FILE *fopen(const char *path, const char *mode);

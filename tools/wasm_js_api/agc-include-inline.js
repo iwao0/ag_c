@@ -43,6 +43,7 @@ int getchar(void);
 int fgetc(FILE *stream);
 int getc(FILE *stream);
 char *fgets(char *s, int size, FILE *stream);
+long getline(char **lineptr, size_t *n, FILE *stream);
 FILE *fopen(const char *path, const char *mode);
 FILE *fdopen(int fd, const char *mode);
 int fclose(FILE *stream);

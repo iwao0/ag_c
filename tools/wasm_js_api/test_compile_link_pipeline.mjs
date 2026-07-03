@@ -174,7 +174,6 @@ if (linkedLargeStdin.instance.exports.main() !== 42) {
 }
 
 const linkedGetlineSource = await inlineStandardIncludes(`#include <stdio.h>
-long getline(char **lineptr, unsigned long *n, FILE *stream);
 int main(void) {
   char *line = 0;
   unsigned long cap = 0;
