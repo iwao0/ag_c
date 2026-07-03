@@ -4812,3 +4812,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き416）: default runtime printf 系の整数 precision を実装
+- 簡易 formatter が `%.3d` / `%5.3d` / `%.4x` などの整数 precision を無視していた。
+- `%d` / `%i` / `%u` / `%x` / `%X` / `%o` で precision を最小桁数として扱い、
+  precision 指定時は `0` flag より precision を優先するようにした。
+- `snprintf_negative.c` に `%.3d`、`%5.3d`、`%05.3d`、`%.0d`、`%.4x`、`%-5.3d` の確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

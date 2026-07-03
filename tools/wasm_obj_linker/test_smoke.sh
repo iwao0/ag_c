@@ -260,6 +260,12 @@ int main(void) {
   char ae[32];
   char af[32];
   char ag[32];
+  char ah[32];
+  char ai[32];
+  char aj[32];
+  char ak[32];
+  char al[32];
+  char am[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
   int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
@@ -297,6 +303,12 @@ int main(void) {
   int nae = snprintf(ae, sizeof(ae), "%lx", lhv);
   int naf = snprintf(af, sizeof(af), "%llx", llhv);
   int nag = snprintf(ag, sizeof(ag), "%i", -17);
+  int nah = snprintf(ah, sizeof(ah), "%.3d", 7);
+  int nai = snprintf(ai, sizeof(ai), "%5.3d", 7);
+  int naj = snprintf(aj, sizeof(aj), "%05.3d", 7);
+  int nak = snprintf(ak, sizeof(ak), "%.0d", 0);
+  int nal = snprintf(al, sizeof(al), "%.4x", 0x2au);
+  int nam = snprintf(am, sizeof(am), "%-5.3d", 7);
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
          b[4] == '3' && b[5] == '4' && b[6] == 0 &&
@@ -332,7 +344,13 @@ int main(void) {
          nad == 10 && ad[0] == '4' && ad[9] == '6' && ad[10] == 0 &&
          nae == 9 && ae[0] == '1' && ae[1] == '0' && ae[8] == 'a' && ae[9] == 0 &&
          naf == 9 && af[0] == '1' && af[1] == '0' && af[8] == 'a' && af[9] == 0 &&
-         nag == 3 && ag[0] == '-' && ag[1] == '1' && ag[2] == '7' && ag[3] == 0 ? 42 : 1;
+         nag == 3 && ag[0] == '-' && ag[1] == '1' && ag[2] == '7' && ag[3] == 0 &&
+         nah == 3 && ah[0] == '0' && ah[1] == '0' && ah[2] == '7' && ah[3] == 0 &&
+         nai == 5 && ai[0] == ' ' && ai[1] == ' ' && ai[2] == '0' && ai[4] == '7' && ai[5] == 0 &&
+         naj == 5 && aj[0] == ' ' && aj[1] == ' ' && aj[2] == '0' && aj[4] == '7' && aj[5] == 0 &&
+         nak == 0 && ak[0] == 0 &&
+         nal == 4 && al[0] == '0' && al[1] == '0' && al[2] == '2' && al[3] == 'a' && al[4] == 0 &&
+         nam == 5 && am[0] == '0' && am[1] == '0' && am[2] == '7' && am[3] == ' ' && am[4] == ' ' && am[5] == 0 ? 42 : 1;
 }
 SRC
 
