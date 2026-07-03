@@ -3191,6 +3191,22 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local.get $resolved)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("time", 4)) {
+    wasm_emitf(2, "(func $time (param $tloc i32) (result i64)\n");
+    wasm_emitf(4, "(if (local.get $tloc) (then (i64.store (local.get $tloc) (i64.const 0))))\n");
+    wasm_emitf(4, "(i64.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("clock", 5)) {
+    wasm_emitf(2, "(func $clock (result i64)\n");
+    wasm_emitf(4, "(i64.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("difftime", 8)) {
+    wasm_emitf(2, "(func $difftime (param $end i64) (param $beginning i64) (result f64)\n");
+    wasm_emitf(4, "(f64.convert_i64_s (i64.sub (local.get $end) (local.get $beginning)))\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("labs", 4)) {
     wasm_emitf(2, "(func $labs (param $x i64) (result i64)\n");
     wasm_emitf(4, "(if (result i64) (i64.lt_s (local.get $x) (i64.const 0))\n");

@@ -594,6 +594,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
     {"stdheader", "math_runtime_ops", "test/fixtures/stdheader/math_runtime_ops.c"},
     {"stdheader", "tgmath_variant_ops", "test/fixtures/stdheader/tgmath_variant_ops.c"},
+    {"stdheader", "time_runtime_ops", "test/fixtures/stdheader/time_runtime_ops.c"},
     {"stdheader", "stdlib_qsort_bsearch", "test/fixtures/stdheader/stdlib_qsort_bsearch.c"},
     {"stdheader", "stdlib_qsort_struct_bsearch_miss", "test/fixtures/stdheader/stdlib_qsort_struct_bsearch_miss.c"},
     {"struct_arg", "small_member", "test/fixtures/struct_arg/small_member.c"},
