@@ -545,6 +545,32 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/stdio_invalid_state.c" <<'SRC'
+typedef void FILE;
+FILE *fopen(char *path, char *mode);
+FILE *fdopen(int fd, char *mode);
+int fclose(FILE *stream);
+int open(char *path, int oflag);
+int close(int fd);
+int main(void) {
+  int fd = open("tmp.txt", 0);
+  int fd2 = open("tmp.txt", 0);
+  FILE *ok = fdopen(fd, "r");
+  int bad_path = fopen(0, "r") == 0;
+  int bad_mode_null = fopen("tmp.txt", 0) == 0;
+  int bad_mode_empty = fopen("tmp.txt", "") == 0;
+  int bad_mode_unknown = fopen("tmp.txt", "z") == 0;
+  int bad_fd = fdopen(-1, "r") == 0;
+  int bad_fd_mode_null = fdopen(fd2, 0) == 0;
+  int bad_fd_mode_unknown = fdopen(fd2, "z") == 0;
+  int ok_stream = ok != 0;
+  if (ok) fclose(ok);
+  close(fd2);
+  return bad_path && bad_mode_null && bad_mode_empty && bad_mode_unknown &&
+         bad_fd && bad_fd_mode_null && bad_fd_mode_unknown && ok_stream ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/localtime_state.c" <<'SRC'
 typedef long time_t;
 struct tm {
@@ -1869,6 +1895,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_getline_state.interp"
 wasm-validate "$out_dir/linked_stdio_size_state.wasm"
 wasm-interp "$out_dir/linked_stdio_size_state.wasm" --run-all-exports > "$out_dir/linked_stdio_size_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_stdio_size_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/stdio_invalid_state.o" "$out_dir/stdio_invalid_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_stdio_invalid_state.wasm" \
+  "$out_dir/stdio_invalid_state.o"
+wasm-validate "$out_dir/linked_stdio_invalid_state.wasm"
+wasm-interp "$out_dir/linked_stdio_invalid_state.wasm" --run-all-exports > "$out_dir/linked_stdio_invalid_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_stdio_invalid_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/localtime_state.o" "$out_dir/localtime_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_localtime_state.wasm" \

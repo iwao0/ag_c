@@ -4703,3 +4703,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き407）: default runtime fopen/fdopen の mode validation を追加
+- `fopen()` / `fdopen()` が NULL mode、空 mode、未知 mode でも file stream を返し得た。
+  `fopen()` は NULL path も成功扱いになっていた。
+- `stdio.c` に mode parser を追加し、runtime が扱う `r` / `w` / `a` 系以外は失敗として
+  `0` を返すようにした。`fopen(NULL, ...)` / `fopen(..., NULL)` / `fdopen(..., NULL)` も
+  `0` を返す。
+- `test_smoke.sh` に `stdio_invalid_state.c` を追加し、invalid path/mode/fd が失敗し、
+  valid `fdopen(fd, "r")` は維持されることを object compile/link/validate/interp で確認する。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

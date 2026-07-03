@@ -147,13 +147,23 @@ int __agc_runtime_getchar(void) {
   return __agc_runtime_fgetc((long)&ag_rt_file_value);
 }
 
-long __agc_runtime_fopen(long path_addr, long mode_addr) {
-  (void)path_addr;
+static int ag_rt_parse_file_mode(long mode_addr, int *write_mode, int *append_mode) {
+  if (!mode_addr) return 0;
   char *mode = ag_rt_ptr(mode_addr);
-  int write_mode = mode && (mode[0] == 'w' || mode[0] == 'a');
-  int append_mode = mode && mode[0] == 'a';
+  if (!mode || !mode[0]) return 0;
+  if (mode[0] != 'r' && mode[0] != 'w' && mode[0] != 'a') return 0;
+  *write_mode = mode[0] == 'w' || mode[0] == 'a';
+  *append_mode = mode[0] == 'a';
+  return 1;
+}
+
+long __agc_runtime_fopen(long path_addr, long mode_addr) {
+  int write_mode = 0;
+  int append_mode = 0;
   struct ag_rt_file *f;
-  if (mode && mode[0] == 'w') ag_rt_file_len = 0;
+  if (!path_addr) return 0;
+  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode)) return 0;
+  if (write_mode && !append_mode) ag_rt_file_len = 0;
   f = ag_rt_alloc_file(write_mode, -1, append_mode ? ag_rt_file_len : 0);
   return (long)f;
 }
@@ -244,11 +254,11 @@ long __agc_runtime_lseek(int fd, long offset, int whence) {
 
 long __agc_runtime_fdopen(int fd, long mode_addr) {
   int idx = fd - 3;
-  char *mode = ag_rt_ptr(mode_addr);
-  int append_mode = mode && mode[0] == 'a';
-  int write_mode = mode && (mode[0] == 'w' || mode[0] == 'a');
+  int append_mode = 0;
+  int write_mode = 0;
   struct ag_rt_file *f;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return 0;
+  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode)) return 0;
   f = ag_rt_alloc_file(write_mode, idx, append_mode ? ag_rt_file_len : ag_rt_fds[idx].pos);
   return (long)f;
 }
