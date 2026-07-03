@@ -29,6 +29,9 @@ static const wasm_link2_case_t link2_cases[] = {
     {"probes_found_bugs", "static_internal_linkage_xtu",
      "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c",
      "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c", 42},
+    {"probes_found_bugs", "extern_funcptr_xtu",
+     "test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c",
+     "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c", 42},
 };
 
 static const wasm_e2e_case_t cases[] = {

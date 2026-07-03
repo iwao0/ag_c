@@ -53,6 +53,9 @@ skip_reason() {
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
       echo "multi-TU link fixture; WAT mode is single-module standalone"
       ;;
+    test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
+      echo "multi-TU link fixture; WAT mode is single-module standalone"
+      ;;
     *)
       return 1
       ;;

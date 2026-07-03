@@ -1303,6 +1303,9 @@ static const link2_case_t link2_cases[] = {
     {"probes", "static_internal_linkage_xtu",
      "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c",
      "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c", 42},
+    {"probes", "extern_funcptr_xtu",
+     "test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c",
+     "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c", 42},
 };
 
 static const compile_fail_case_t compile_fail_cases[] = {

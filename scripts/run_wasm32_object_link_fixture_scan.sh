@@ -62,6 +62,9 @@ skip_reason() {
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c)
       echo "multi-TU link fixture component without main"
       ;;
+    test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c)
+      echo "multi-TU link fixture component without main"
+      ;;
     *)
       return 1
       ;;
@@ -73,6 +76,9 @@ link_companion() {
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
       echo "test/fixtures/probes_found_bugs/static_internal_linkage_xtu_other.c"
       ;;
+    test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
+      echo "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c"
+      ;;
     *)
       return 1
       ;;
@@ -82,6 +88,9 @@ link_companion() {
 expected_result() {
   case "$1" in
     test/fixtures/probes_found_bugs/static_internal_linkage_xtu_main.c)
+      echo 42
+      ;;
+    test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c)
       echo 42
       ;;
     *)
