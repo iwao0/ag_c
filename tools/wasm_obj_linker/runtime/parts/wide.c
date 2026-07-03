@@ -202,9 +202,20 @@ static int *__agc_runtime_wint_prefix(int *s, int *base) {
   return s;
 }
 
+static int __agc_runtime_wint_base_ok(int base) {
+  return base == 0 || (base >= 2 && base <= 36);
+}
+
 long __agc_runtime_wcstol(long nptr_addr, long endptr_addr, int base) {
   int *orig = (int *)ag_rt_ptr(nptr_addr);
   int *s = orig;
+  if (!__agc_runtime_wint_base_ok(base)) {
+    if (endptr_addr) {
+      long *endp = (long *)ag_rt_ptr(endptr_addr);
+      *endp = (long)orig;
+    }
+    return 0;
+  }
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   int sign = 1;
   if (*s == '-') {

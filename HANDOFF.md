@@ -4757,3 +4757,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き411）: default runtime strto*/wcsto* の invalid base を失敗扱いに修正
+- `strtol()` / `strtoul()` / `strtoumax()` / `wcstol()` / `wcstoul()` が base 37 などの
+  不正 base でも変換を進め得た。
+- 整数変換の base は `0` または `2..36` のみ受け付け、不正 base では `0` を返し、
+  `endptr` がある場合は入力先頭を指すようにした。
+- `strto_base.c` と `wide_strto_state.c` に base 36 の正常系と base 1/37 の失敗確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

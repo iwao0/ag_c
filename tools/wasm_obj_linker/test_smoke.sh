@@ -475,6 +475,7 @@ unsigned long strtoumax(char *s, char **endptr, int base);
 int main(void) {
   char *end = 0;
   char *none = "xyz";
+  char *bad_src = "10!";
   long hex = strtol("0x10!", &end, 0);
   int ok_hex = hex == 16 && *end == '!';
   long oct = strtol("010!", &end, 0);
@@ -485,7 +486,14 @@ int main(void) {
   int ok_uneg = uneg == (0UL - 8UL) && *end == '!';
   long no = strtol(none, &end, 0);
   int ok_none = no == 0 && end == none;
-  return ok_hex && ok_oct && ok_ux && ok_uneg && ok_none ? 42 : 1;
+  long b36 = strtol("z!", &end, 36);
+  int ok_b36 = b36 == 35 && *end == '!';
+  long bad_base_hi = strtol(bad_src, &end, 37);
+  int ok_bad_hi = bad_base_hi == 0 && end == bad_src;
+  unsigned long bad_base_lo = strtoul(bad_src, &end, 1);
+  int ok_bad_lo = bad_base_lo == 0 && end == bad_src;
+  return ok_hex && ok_oct && ok_ux && ok_uneg && ok_none &&
+         ok_b36 && ok_bad_hi && ok_bad_lo ? 42 : 1;
 }
 SRC
 
@@ -662,13 +670,19 @@ int main(void) {
   int ok_u = u == 8 && *end == '!';
   long no = wcstol(none, &end, 0);
   int ok_no = no == 0 && end == none;
+  int b36s[] = {'z', '!', 0};
+  long b36 = wcstol(b36s, &end, 36);
+  int ok_b36 = b36 == 35 && *end == '!';
+  long bad = wcstol(hex, &end, 37);
+  int ok_bad = bad == 0 && end == hex;
   double d = wcstod(dot, &end);
   int ok_dot = d == 0.25 && *end == '!';
   double nd = wcstod(none, &end);
   int ok_nd = nd == 0.0 && end == none;
   double od = wcstod(only_dot, &end);
   int ok_od = od == 0.0 && end == only_dot;
-  return ok_hex && ok_oct && ok_u && ok_no && ok_dot && ok_nd && ok_od ? 42 : 1;
+  return ok_hex && ok_oct && ok_u && ok_no && ok_b36 && ok_bad &&
+         ok_dot && ok_nd && ok_od ? 42 : 1;
 }
 SRC
 

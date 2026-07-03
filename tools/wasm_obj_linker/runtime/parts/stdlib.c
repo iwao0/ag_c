@@ -45,9 +45,20 @@ static char *__agc_runtime_int_prefix(char *s, int *base) {
   return s;
 }
 
+static int __agc_runtime_int_base_ok(int base) {
+  return base == 0 || (base >= 2 && base <= 36);
+}
+
 long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
   char *orig = ag_rt_ptr(s_addr);
   char *s = orig;
+  if (!__agc_runtime_int_base_ok(base)) {
+    if (endptr_addr) {
+      long *endp = (long *)ag_rt_ptr(endptr_addr);
+      *endp = (long)orig;
+    }
+    return 0;
+  }
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   int sign = 1;
   if (*s == '-') {
@@ -232,6 +243,13 @@ long __agc_runtime_strtoimax(long s_addr, long endptr_addr, int base) {
 unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
   char *orig = ag_rt_ptr(s_addr);
   char *s = orig;
+  if (!__agc_runtime_int_base_ok(base)) {
+    if (endptr_addr) {
+      long *endp = (long *)ag_rt_ptr(endptr_addr);
+      *endp = (long)orig;
+    }
+    return 0;
+  }
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   int neg = 0;
   if (*s == '-') {
