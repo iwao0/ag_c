@@ -2620,6 +2620,60 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("free", 4)) {
     wasm_emitf(2, "(func $free (param i32))\n");
   }
+  if (has_undefined_function("qsort", 5)) {
+    g_func_table.needs_table = 1;
+    wasm_emitf(2, "(func $qsort (param $base i32) (param $nmemb i64) (param $size i64) (param $compar i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(local $j i64)\n");
+    wasm_emitf(4, "(local $k i64)\n");
+    wasm_emitf(4, "(local $a i32)\n");
+    wasm_emitf(4, "(local $b i32)\n");
+    wasm_emitf(4, "(local $tmp i32)\n");
+    wasm_emitf(4, "(if (i32.or (i32.eqz (local.get $base)) (i32.or (i64.le_s (local.get $nmemb) (i64.const 1)) (i64.le_s (local.get $size) (i64.const 0)))) (then (return)))\n");
+    wasm_emitf(4, "(block $done (loop $outer\n");
+    wasm_emitf(6, "(if (i64.ge_s (local.get $i) (local.get $nmemb)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $j (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(block $inner_done (loop $inner\n");
+    wasm_emitf(8, "(if (i64.ge_s (local.get $j) (local.get $nmemb)) (then (br $inner_done)))\n");
+    wasm_emitf(8, "(local.set $a (i32.add (local.get $base) (i32.wrap_i64 (i64.mul (local.get $i) (local.get $size)))))\n");
+    wasm_emitf(8, "(local.set $b (i32.add (local.get $base) (i32.wrap_i64 (i64.mul (local.get $j) (local.get $size)))))\n");
+    wasm_emitf(8, "(if (i32.gt_s (call_indirect (param i32 i32) (result i32) (local.get $a) (local.get $b) (local.get $compar)) (i32.const 0))\n");
+    wasm_emitf(10, "(then\n");
+    wasm_emitf(12, "(local.set $k (i64.const 0))\n");
+    wasm_emitf(12, "(block $swap_done (loop $swap\n");
+    wasm_emitf(14, "(if (i64.ge_s (local.get $k) (local.get $size)) (then (br $swap_done)))\n");
+    wasm_emitf(14, "(local.set $tmp (i32.load8_u (i32.add (local.get $a) (i32.wrap_i64 (local.get $k)))))\n");
+    wasm_emitf(14, "(i32.store8 (i32.add (local.get $a) (i32.wrap_i64 (local.get $k))) (i32.load8_u (i32.add (local.get $b) (i32.wrap_i64 (local.get $k)))))\n");
+    wasm_emitf(14, "(i32.store8 (i32.add (local.get $b) (i32.wrap_i64 (local.get $k))) (local.get $tmp))\n");
+    wasm_emitf(14, "(local.set $k (i64.add (local.get $k) (i64.const 1)))\n");
+    wasm_emitf(14, "(br $swap)\n");
+    wasm_emitf(12, "))\n");
+    wasm_emitf(10, ")\n");
+    wasm_emitf(8, ")\n");
+    wasm_emitf(8, "(local.set $j (i64.add (local.get $j) (i64.const 1)))\n");
+    wasm_emitf(8, "(br $inner)\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(6, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(br $outer)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("bsearch", 7)) {
+    g_func_table.needs_table = 1;
+    wasm_emitf(2, "(func $bsearch (param $key i32) (param $base i32) (param $nmemb i64) (param $size i64) (param $compar i32) (result i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(local $elem i32)\n");
+    wasm_emitf(4, "(if (i32.or (i32.or (i32.eqz (local.get $key)) (i32.eqz (local.get $base))) (i64.le_s (local.get $size) (i64.const 0))) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i64.ge_s (local.get $i) (local.get $nmemb)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $elem (i32.add (local.get $base) (i32.wrap_i64 (i64.mul (local.get $i) (local.get $size)))))\n");
+    wasm_emitf(6, "(if (i32.eqz (call_indirect (param i32 i32) (result i32) (local.get $key) (local.get $elem) (local.get $compar))) (then (return (local.get $elem))))\n");
+    wasm_emitf(6, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("setlocale", 9)) {
     int c_addr = intern_data_symbol("__ag_stub_locale_c", 18, 2, 1)->addr;
     wasm_emitf(2, "(func $setlocale (param i64 i32) (result i32) (i32.const %d))\n", c_addr);
