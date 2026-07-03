@@ -26,6 +26,28 @@ static void ag_rt_write_udec(char *buf, size_t size, int bounded, size_t *pos,
   while (n > 0) ag_rt_putc(buf, size, bounded, pos, tmp[--n]);
 }
 
+static void ag_rt_write_uint_base(char *buf, size_t size, int bounded, size_t *pos,
+                                  unsigned long v, unsigned int base, int upper,
+                                  int width, int zero_pad) {
+  char tmp[64];
+  int n = 0;
+  const char *digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+  if (base < 2 || base > 16) base = 10;
+  do {
+    tmp[n++] = digits[v % base];
+    v = v / base;
+  } while (v != 0);
+  while (!zero_pad && n < width) {
+    ag_rt_putc(buf, size, bounded, pos, ' ');
+    width--;
+  }
+  while (zero_pad && n < width) {
+    ag_rt_putc(buf, size, bounded, pos, '0');
+    width--;
+  }
+  while (n > 0) ag_rt_putc(buf, size, bounded, pos, tmp[--n]);
+}
+
 static void ag_rt_write_spaces(char *buf, size_t size, int bounded, size_t *pos, int count) {
   while (count > 0) {
     ag_rt_putc(buf, size, bounded, pos, ' ');
@@ -204,6 +226,21 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
         ag_rt_write_spaces(buf, size, bounded, &pos, width - (int)tmp_pos);
       } else {
         ag_rt_write_udec(buf, size, bounded, &pos, v, width, zero_pad);
+      }
+      fmt++;
+    } else if (*fmt == 'x' || *fmt == 'X' || *fmt == 'o') {
+      int upper = *fmt == 'X';
+      unsigned int base = *fmt == 'o' ? 8u : 16u;
+      unsigned long v = length_z ? va_arg(ap, unsigned long) : (unsigned long)va_arg(ap, unsigned int);
+      if (left_align) {
+        char tmp[64];
+        size_t tmp_pos = 0;
+        ag_rt_write_uint_base(tmp, sizeof(tmp), 1, &tmp_pos, v, base, upper, 0, 0);
+        ag_rt_finish(tmp, sizeof(tmp), 1, tmp_pos);
+        ag_rt_write_bytes(buf, size, bounded, &pos, tmp, (int)tmp_pos);
+        ag_rt_write_spaces(buf, size, bounded, &pos, width - (int)tmp_pos);
+      } else {
+        ag_rt_write_uint_base(buf, size, bounded, &pos, v, base, upper, width, zero_pad);
       }
       fmt++;
     } else if (*fmt == 's') {

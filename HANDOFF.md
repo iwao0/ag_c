@@ -4781,3 +4781,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き413）: default runtime printf 系に hex/octal format を追加
+- 簡易 formatter が `%x` / `%X` / `%o` を未対応 format として扱っていた。
+- unsigned 値の基数出力 helper を追加し、width / zero padding / left-align と同じ規則で
+  `%x` / `%X` / `%o` を処理するようにした。
+- `snprintf_negative.c` に小文字 hex、大文字 HEX、zero padding、左寄せ、octal の確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186
