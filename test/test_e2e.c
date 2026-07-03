@@ -723,6 +723,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdlib_atoi", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_atoi.c", 0, 0},
     {"stdheader", "stdlib_abs", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_abs.c", 0, 0},
     {"stdheader", "stdlib_qsort_bsearch", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_qsort_bsearch.c", 0, 0},
+    {"stdheader", "stdlib_qsort_struct_bsearch_miss", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_qsort_struct_bsearch_miss.c", 0, 0},
     {"stdheader", "string_memset", CASE_ASSERT_FILE, "test/fixtures/stdheader/string_memset.c", 0, 0},
     {"stdheader", "ctype_isdigit", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_isdigit.c", 0, 0},
     {"stdheader", "ctype_isalpha", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_isalpha.c", 0, 0},
