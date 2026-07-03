@@ -4673,3 +4673,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き405）: default runtime signal() の invalid signal 戻り値を修正
+- `signal()` が `sig < 0` または `sig >= 32` の不正 signal でも `0` を返しており、
+  旧 handler がなかった場合と区別できなかった。
+- `__agc_runtime_signal()` は不正 signal で `-1` (`SIG_ERR` 相当) を返すようにした。
+  `raise()` は既に不正 signal で `-1` を返していたため、挙動を揃えた。
+- `test_smoke.sh` の `signal_state.c` に `signal(99, handler)` / `signal(-1, handler)` の
+  `SIG_ERR` 相当戻り値確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

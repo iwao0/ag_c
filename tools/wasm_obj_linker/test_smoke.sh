@@ -414,8 +414,11 @@ int main(void) {
   sig_handler_t old2 = signal(2, 0);
   int rc2 = raise(2);
   int bad = raise(99);
+  sig_handler_t bad_sig_hi = signal(99, handler);
+  sig_handler_t bad_sig_neg = signal(-1, handler);
   return old == 0 && rc == 0 && seen == 32 &&
-         old2 == handler && rc2 == 0 && seen == 32 && bad == -1 ? 42 : 1;
+         old2 == handler && rc2 == 0 && seen == 32 && bad == -1 &&
+         bad_sig_hi == (sig_handler_t)-1 && bad_sig_neg == (sig_handler_t)-1 ? 42 : 1;
 }
 SRC
 

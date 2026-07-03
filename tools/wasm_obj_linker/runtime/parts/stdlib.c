@@ -325,7 +325,7 @@ int __agc_runtime_system(long command_addr) {
 }
 
 long __agc_runtime_signal(int sig, long handler_addr) {
-  if (sig < 0 || sig >= 32) return 0;
+  if (sig < 0 || sig >= 32) return -1;
   long old = ag_rt_signal_handlers[sig];
   ag_rt_signal_handlers[sig] = handler_addr;
   return old;
