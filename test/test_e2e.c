@@ -741,6 +741,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "ctype_isalpha", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_isalpha.c", 0, 0},
     {"stdheader", "ctype_toupper", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_toupper.c", 0, 0},
     {"stdheader", "ctype_classify_more", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_classify_more.c", 0, 0},
+    {"stdheader", "wchar_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_runtime_ops.c", 0, 0},
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},

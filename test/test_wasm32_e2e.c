@@ -591,6 +591,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "stdlib_strto_float", "test/fixtures/stdheader/stdlib_strto_float.c"},
     {"stdheader", "stdlib_env_system", "test/fixtures/stdheader/stdlib_env_system.c"},
     {"stdheader", "stdlib_realpath", "test/fixtures/stdheader/stdlib_realpath.c"},
+    {"stdheader", "wchar_runtime_ops", "test/fixtures/stdheader/wchar_runtime_ops.c"},
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
     {"stdheader", "math_runtime_ops", "test/fixtures/stdheader/math_runtime_ops.c"},
     {"stdheader", "tgmath_variant_ops", "test/fixtures/stdheader/tgmath_variant_ops.c"},
