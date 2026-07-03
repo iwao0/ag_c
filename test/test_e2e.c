@@ -747,6 +747,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "time_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_runtime_ops.c", 0, 0},
     {"stdheader", "signal_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/signal_runtime_ops.c", 0, 0},
     {"stdheader", "inttypes_strto_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/inttypes_strto_ops.c", 0, 0},
+    {"stdheader", "fenv_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/fenv_runtime_ops.c", 0, 0},
     {"stdheader", "tgmath_variant_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/tgmath_variant_ops.c", 0, 0},
     {"stdheader", "assert_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/assert_include.c", 0, 0},
     {"stdheader", "errno_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/errno_include.c", 0, 0},
@@ -2046,6 +2047,9 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_feclearexcept") == 0 || strcmp(sym, "_fetestexcept") == 0 ||
             strcmp(sym, "_feraiseexcept") == 0 || strcmp(sym, "_fegetround") == 0 ||
             strcmp(sym, "_fesetround") == 0 ||
+            strcmp(sym, "_fegetexceptflag") == 0 || strcmp(sym, "_fesetexceptflag") == 0 ||
+            strcmp(sym, "_fegetenv") == 0 || strcmp(sym, "_feholdexcept") == 0 ||
+            strcmp(sym, "_fesetenv") == 0 || strcmp(sym, "_feupdateenv") == 0 ||
             strcmp(sym, "_setlocale") == 0 || strcmp(sym, "_localeconv") == 0 ||
             strcmp(sym, "_imaxabs") == 0 ||
             strcmp(sym, "_strtoimax") == 0 || strcmp(sym, "_strtoumax") == 0 ||

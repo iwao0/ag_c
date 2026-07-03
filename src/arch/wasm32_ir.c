@@ -2520,11 +2520,58 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, ")\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("fegetround", 10) || has_undefined_function("fesetround", 10) ||
+      has_undefined_function("fegetenv", 8) || has_undefined_function("fesetenv", 8) ||
+      has_undefined_function("feholdexcept", 12) || has_undefined_function("feupdateenv", 11)) {
+    wasm_emitf(2, "(global $__ag_fe_round_mode (mut i32) (i32.const 0))\n");
+  }
   if (has_undefined_function("feclearexcept", 13)) {
     wasm_emitf(2, "(func $feclearexcept (param i64) (result i32) (i32.const 0))\n");
   }
+  if (has_undefined_function("fegetexceptflag", 15)) {
+    wasm_emitf(2, "(func $fegetexceptflag (param $flagp i32) (param $excepts i64) (result i32)\n");
+    wasm_emitf(4, "(if (local.get $flagp) (then (i64.store (local.get $flagp) (local.get $excepts))))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("feraiseexcept", 13)) {
+    wasm_emitf(2, "(func $feraiseexcept (param i64) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("fesetexceptflag", 15)) {
+    wasm_emitf(2, "(func $fesetexceptflag (param i32 i64) (result i32) (i32.const 0))\n");
+  }
   if (has_undefined_function("fetestexcept", 12)) {
     wasm_emitf(2, "(func $fetestexcept (param $mask i64) (result i32) (i32.wrap_i64 (local.get $mask)))\n");
+  }
+  if (has_undefined_function("fegetround", 10)) {
+    wasm_emitf(2, "(func $fegetround (result i32) (global.get $__ag_fe_round_mode))\n");
+  }
+  if (has_undefined_function("fesetround", 10)) {
+    wasm_emitf(2, "(func $fesetround (param $round i64) (result i32)\n");
+    wasm_emitf(4, "(global.set $__ag_fe_round_mode (i32.wrap_i64 (local.get $round)))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("fegetenv", 8)) {
+    wasm_emitf(2, "(func $fegetenv (param $envp i32) (result i32)\n");
+    wasm_emitf(4, "(if (local.get $envp) (then\n");
+    wasm_emitf(6, "(i64.store (local.get $envp) (i64.extend_i32_u (global.get $__ag_fe_round_mode)))\n");
+    wasm_emitf(6, "(i64.store (i32.add (local.get $envp) (i32.const 8)) (i64.const 0))\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("feholdexcept", 12)) {
+    wasm_emitf(2, "(func $feholdexcept (param $envp i32) (result i32) (call $fegetenv (local.get $envp)))\n");
+  }
+  if (has_undefined_function("fesetenv", 8)) {
+    wasm_emitf(2, "(func $fesetenv (param $envp i32) (result i32)\n");
+    wasm_emitf(4, "(if (local.get $envp) (then (global.set $__ag_fe_round_mode (i32.wrap_i64 (i64.load (local.get $envp))))))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("feupdateenv", 11)) {
+    wasm_emitf(2, "(func $feupdateenv (param $envp i32) (result i32) (call $fesetenv (local.get $envp)))\n");
   }
   int need_isalnum_stub = has_undefined_function("isalnum", 7) ||
                           has_undefined_function("ispunct", 7);
