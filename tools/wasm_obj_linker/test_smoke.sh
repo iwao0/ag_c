@@ -411,6 +411,11 @@ int main(void) {
   ok = ok && fesetexceptflag(&flag, 16) == 0 && fetestexcept(31) == 0;
   ok = ok && fesetexceptflag(&flag, 4) == 0 && fetestexcept(31) == 4;
   ok = ok && fesetround(0x00400000) == 0 && fegetround() == 0x00400000;
+  ok = ok && fesetround(0x12345678) != 0 && fegetround() == 0x00400000;
+  ok = ok && fesetround(0x00800000) == 0 && fegetround() == 0x00800000;
+  ok = ok && fesetround(0x00C00000) == 0 && fegetround() == 0x00C00000;
+  ok = ok && fesetround(0) == 0 && fegetround() == 0;
+  ok = ok && fesetround(0x00400000) == 0 && fegetround() == 0x00400000;
   ok = ok && fegetenv(&env) == 0 && env.fpcr == 0x00400000 && env.fpsr == 4;
   ok = ok && feraiseexcept(16) == 0 && feholdexcept(&env) == 0 &&
             env.fpsr == 20 && fetestexcept(31) == 0;

@@ -1,8 +1,17 @@
 #define AG_RT_FE_ALL_EXCEPT 0x1f
 #define AG_RT_FE_DFL_ENV_ADDR (-1L)
+#define AG_RT_FE_TONEAREST 0x00000000
+#define AG_RT_FE_UPWARD 0x00400000
+#define AG_RT_FE_DOWNWARD 0x00800000
+#define AG_RT_FE_TOWARDZERO 0x00C00000
 
 static int ag_rt_fenv_mask(int excepts) {
   return excepts & AG_RT_FE_ALL_EXCEPT;
+}
+
+static int ag_rt_fenv_round_ok(int round) {
+  return round == AG_RT_FE_TONEAREST || round == AG_RT_FE_UPWARD ||
+         round == AG_RT_FE_DOWNWARD || round == AG_RT_FE_TOWARDZERO;
 }
 
 int __agc_runtime_feclearexcept(int excepts) {
@@ -38,6 +47,7 @@ int __agc_runtime_fegetround(void) {
 }
 
 int __agc_runtime_fesetround(int round) {
+  if (!ag_rt_fenv_round_ok(round)) return 1;
   ag_rt_round_mode = round;
   return 0;
 }

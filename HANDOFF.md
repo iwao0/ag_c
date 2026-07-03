@@ -4745,3 +4745,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き410）: default runtime fesetround() の invalid round mode を失敗扱いに修正
+- `fesetround()` が任意の整数 round mode を成功扱いで保存していた。
+- `FE_TONEAREST` / `FE_UPWARD` / `FE_DOWNWARD` / `FE_TOWARDZERO` 相当の 4 値だけを受け付け、
+  それ以外では非 0 を返して現在の round mode を維持するようにした。
+- `fenv_state.c` に invalid round mode が失敗し、既存 round mode が変わらないことと、
+  4 つの既知 round mode が成功することを追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186
