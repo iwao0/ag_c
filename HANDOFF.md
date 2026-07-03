@@ -4280,3 +4280,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `./build/test_preprocess`
+
+### このセッション（続き373）: getline stdheader fixture 追加
+- `test/fixtures/stdheader/stdio_getline_decl.c` を追加し、`test_e2e` の stdheader 一覧へ登録した。
+  `sizeof(&getline)` で `stdio.h` の宣言が見えることだけを確認し、通常 e2e の category link で
+  外部 `getline` symbol を要求しない形にしている。
+- 確認:
+  - `./build/ag_c test/fixtures/stdheader/stdio_getline_decl.c`
+  - `./build/ag_c_wasm -c -o /tmp/stdio_getline_decl.o test/fixtures/stdheader/stdio_getline_decl.c`
+  - `./build/test_e2e` = 1186/1186
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `make test-wasm-js-e2e` = 1158 pass / 0 fail / 0 skip、validated 1158、ran 1158
