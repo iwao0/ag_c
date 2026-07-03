@@ -226,6 +226,11 @@ int main(void) {
                                "char big[70000]; int main(){big[69999]=42; return big[0]+big[69999];}\n",
                                global_large_uninit_no_data, 2,
                                global_large_uninit_forbidden, 1, 42);
+  const char *global_large_uninit_then_string[] = {
+      "(data (i32.const", "\"AZ\\00\"", "(memory (export \"memory\") 3)"};
+  failures += run_case("global_large_uninit_then_string",
+                       "char big[70000]; char *p=\"AZ\"; int main(){big[69999]=p[1]; return big[69999]+p[0];}\n",
+                       global_large_uninit_then_string, 3, 155);
   const char *global_large_zero_double_array[] = {"f64.store", "f64.load"};
   failures += run_case("global_large_zero_double_array",
                        "double a[2][2]; int main(){a[1][1]=4.5; return (int)(a[0][0]+a[1][1]);}\n",

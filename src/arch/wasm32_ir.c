@@ -1610,10 +1610,6 @@ void wasm32_module_begin(void) {
   g_func_table.ref_count = 0;
   g_func_table.needs_table = 0;
   cg_emitf("(module\n");
-  wasm_emitf(2, "(memory (export \"memory\") 1)\n");
-  wasm_emitf(2, "(global $__stack_pointer (mut i32) (i32.const %d))\n", WASM_STACK_BASE);
-  wasm_emitf(2, "(global $__ag_va_arg_area (mut i32) (i32.const 0))\n");
-  wasm_emitf(2, "(global $__ag_heap_pointer (mut i32) (i32.const %d))\n", WASM_HEAP_BASE);
 }
 
 void wasm32_gen_ir_module(ir_module_t *m) {
@@ -4621,29 +4617,27 @@ static int wasm_align_up_int(int value, int align) {
   return value + (align - rem);
 }
 
-static void emit_memory_layout_start(void) {
+static void emit_memory_layout_decls(void) {
   int data_end = g_data.next_data_off;
   int heap_base = data_end > WASM_HEAP_BASE ? wasm_align_up_int(data_end, 8) : WASM_HEAP_BASE;
-  int required_bytes = heap_base + WASM_PAGE_SIZE;
-  int pages = (required_bytes + WASM_PAGE_SIZE - 1) / WASM_PAGE_SIZE;
-  if (pages < 1) pages = 1;
-  int stack_base = pages * WASM_PAGE_SIZE;
-  int grow_pages = pages - 1;
-  if (grow_pages <= 0 && heap_base == WASM_HEAP_BASE && stack_base == WASM_STACK_BASE) return;
-
-  wasm_emitf(2, "(func $__ag_start\n");
-  if (grow_pages > 0) {
-    wasm_emitf(4, "(drop (memory.grow (i32.const %d)))\n", grow_pages);
+  int pages = 1;
+  int stack_base = WASM_STACK_BASE;
+  if (heap_base != WASM_HEAP_BASE) {
+    int required_bytes = heap_base + WASM_PAGE_SIZE;
+    pages = (required_bytes + WASM_PAGE_SIZE - 1) / WASM_PAGE_SIZE;
+    if (pages < 1) pages = 1;
+    stack_base = pages * WASM_PAGE_SIZE;
   }
-  wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.const %d))\n", heap_base);
-  wasm_emitf(4, "(global.set $__stack_pointer (i32.const %d))\n", stack_base);
-  wasm_emitf(2, ")\n");
-  wasm_emitf(2, "(start $__ag_start)\n");
+
+  wasm_emitf(2, "(memory (export \"memory\") %d)\n", pages);
+  wasm_emitf(2, "(global $__stack_pointer (mut i32) (i32.const %d))\n", stack_base);
+  wasm_emitf(2, "(global $__ag_va_arg_area (mut i32) (i32.const 0))\n");
+  wasm_emitf(2, "(global $__ag_heap_pointer (mut i32) (i32.const %d))\n", heap_base);
 }
 
 void wasm32_module_end(void) {
   emit_minimal_libc_stubs();
   emit_function_table();
-  emit_memory_layout_start();
+  emit_memory_layout_decls();
   cg_emitf(")\n");
 }
