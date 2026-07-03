@@ -727,6 +727,28 @@ int main(void) {
                          fdw_written2 == 1 && fdw_end == 3 && fdw_pos2 == 0 &&
                          fdw_read == 3 && fdwbuf[0] == 'X' && fdwbuf[1] == 'q' &&
                          fdwbuf[2] == 'Z' && fdw_close == 0;
+  int fd_trunc = open("tmp.txt", 0x0400);
+  struct stat st_trunc = {0, 0};
+  int fstat_trunc_ok = fstat(fd_trunc, &st_trunc);
+  long wrote_trunc = write(fd_trunc, "LM", 2);
+  long pos_trunc = lseek(fd_trunc, 0, 2);
+  int close_trunc = close(fd_trunc);
+  int close_trunc_again = close(fd_trunc);
+  int fd_append = open("tmp.txt", 0x0008);
+  long append_pos = lseek(fd_append, 0, 1);
+  long wrote_append = write(fd_append, "N", 1);
+  long append_end = lseek(fd_append, 0, 2);
+  long append_rewind = lseek(fd_append, 0, 0);
+  char append_buf[4];
+  long append_read = read(fd_append, append_buf, 3);
+  int close_append = close(fd_append);
+  int open_flags_ok = fstat_trunc_ok == 0 && st_trunc.st_size == 0 &&
+                      wrote_trunc == 2 && pos_trunc == 2 && close_trunc == 0 &&
+                      close_trunc_again == -1 && append_pos == 2 &&
+                      wrote_append == 1 && append_end == 3 && append_rewind == 0 &&
+                      append_read == 3 && append_buf[0] == 'L' &&
+                      append_buf[1] == 'M' && append_buf[2] == 'N' &&
+                      close_append == 0;
   FILE *wf_restore = fopen("tmp.txt", "w");
   fwrite("A\nB", 1, 3, wf_restore);
   fclose(wf_restore);
@@ -744,7 +766,8 @@ int main(void) {
   fclose(fdclose_stream);
   char fdclosed_buf[1];
   long fdclosed_read = read(fdclose, fdclosed_buf, 1);
-  close(fdclose);
+  long fdclosed_write = write(fdclose, "x", 1);
+  int fdclosed_close = close(fdclose);
   FILE *rfa = fopen("tmp.txt", "r");
   FILE *rfb = fopen("tmp.txt", "r");
   int rfa_ch1 = fgetc(rfa);
@@ -1046,9 +1069,10 @@ int main(void) {
          fdbuf[2] == 'B' && close_ok == 0 &&
          fd_independent_ok &&
          fd_write_seek_ok &&
+         open_flags_ok &&
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
          fdopen_sync_ok &&
-         fdclosed_read == -1 &&
+         fdclosed_read == -1 && fdclosed_write == -1 && fdclosed_close == -1 &&
          file_independent_ok &&
          pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
          seek_ok == 0 && pos_after_seek == 1 && ch_seek == '\n' &&

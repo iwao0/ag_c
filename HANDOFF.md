@@ -4457,3 +4457,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - JS pipeline smoke の期待値も、`write(0, "n") == -1` かつ stderr に `n` が混ざらない形に更新した。
 - 確認:
   - `make test-wasm-js-pipeline` = ok
+
+### このセッション（続き387）: default runtime の open flags と close error を反映
+- `include/fcntl.h` に `O_APPEND` を追加し、既存の `O_TRUNC` と合わせて C 側から flag を書けるようにした。
+- default runtime object の `__agc_runtime_open` が `O_TRUNC` で疑似ファイル長を 0 にし、
+  `O_APPEND` で fd position を末尾から始めるようにした。
+- `__agc_runtime_close` は無効 fd やすでに閉じた fd に対して `-1` を返すようにした。
+- object linker smoke に、`open(..., O_TRUNC)` / `open(..., O_APPEND)` / 二重 close /
+  closed fd への `read` / `write` が期待通り失敗するケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

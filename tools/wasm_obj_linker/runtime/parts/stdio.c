@@ -158,13 +158,16 @@ long __agc_runtime_fopen(long path_addr, long mode_addr) {
   return (long)f;
 }
 
+#define AG_RT_O_APPEND 0x0008
+#define AG_RT_O_TRUNC 0x0400
+
 int __agc_runtime_open(long path_addr, int oflag) {
-  (void)oflag;
   if (!path_addr) return -1;
+  if (oflag & AG_RT_O_TRUNC) ag_rt_file_len = 0;
   for (int i = 0; i < 8; i++) {
     if (!ag_rt_fds[i].used) {
       ag_rt_fds[i].used = 1;
-      ag_rt_fds[i].pos = 0;
+      ag_rt_fds[i].pos = (oflag & AG_RT_O_APPEND) ? ag_rt_file_len : 0;
       return 3 + i;
     }
   }
@@ -173,10 +176,9 @@ int __agc_runtime_open(long path_addr, int oflag) {
 
 int __agc_runtime_close(int fd) {
   int idx = fd - 3;
-  if (idx >= 0 && idx < 8) {
-    ag_rt_fds[idx].used = 0;
-    ag_rt_fds[idx].pos = 0;
-  }
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  ag_rt_fds[idx].used = 0;
+  ag_rt_fds[idx].pos = 0;
   return 0;
 }
 
