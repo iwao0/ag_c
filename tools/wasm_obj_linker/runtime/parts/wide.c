@@ -173,8 +173,38 @@ long __agc_runtime_wmemchr(long s_addr, int ch, long n) {
   return 0;
 }
 
+static int ag_rt_wide_int_digit(int c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+  return -1;
+}
+
+static int *__agc_runtime_wint_prefix(int *s, int *base) {
+  int b = *base;
+  if (b == 0) {
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
+        ag_rt_wide_int_digit(s[2]) >= 0 && ag_rt_wide_int_digit(s[2]) < 16) {
+      *base = 16;
+      return s + 2;
+    }
+    if (s[0] == '0') {
+      *base = 8;
+      return s;
+    }
+    *base = 10;
+    return s;
+  }
+  if (b == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
+      ag_rt_wide_int_digit(s[2]) >= 0 && ag_rt_wide_int_digit(s[2]) < 16) {
+    return s + 2;
+  }
+  return s;
+}
+
 long __agc_runtime_wcstol(long nptr_addr, long endptr_addr, int base) {
-  int *s = (int *)ag_rt_ptr(nptr_addr);
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  int *s = orig;
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   int sign = 1;
   if (*s == '-') {
@@ -183,22 +213,19 @@ long __agc_runtime_wcstol(long nptr_addr, long endptr_addr, int base) {
   } else if (*s == '+') {
     s++;
   }
-  if (base == 0) base = 10;
-  if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+  s = __agc_runtime_wint_prefix(s, &base);
+  int *digits = s;
   long acc = 0;
   for (;;) {
-    int digit;
-    if (*s >= '0' && *s <= '9') digit = *s - '0';
-    else if (*s >= 'a' && *s <= 'z') digit = *s - 'a' + 10;
-    else if (*s >= 'A' && *s <= 'Z') digit = *s - 'A' + 10;
-    else break;
+    int digit = ag_rt_wide_int_digit(*s);
+    if (digit < 0) break;
     if (digit >= base) break;
     acc = acc * base + digit;
     s++;
   }
   if (endptr_addr) {
     long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)s;
+    *endp = (long)(s == digits ? orig : s);
   }
   return sign * acc;
 }
@@ -208,7 +235,8 @@ unsigned long __agc_runtime_wcstoul(long nptr_addr, long endptr_addr, int base) 
 }
 
 double __agc_runtime_wcstod(long nptr_addr, long endptr_addr) {
-  int *s = (int *)ag_rt_ptr(nptr_addr);
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  int *s = orig;
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   double sign = 1.0;
   if (*s == '-') {
@@ -218,7 +246,9 @@ double __agc_runtime_wcstod(long nptr_addr, long endptr_addr) {
     s++;
   }
   double acc = 0.0;
+  int have_digit = 0;
   while (*s >= '0' && *s <= '9') {
+    have_digit = 1;
     acc = acc * 10.0 + (double)(*s - '0');
     s++;
   }
@@ -226,10 +256,18 @@ double __agc_runtime_wcstod(long nptr_addr, long endptr_addr) {
     double place = 0.1;
     s++;
     while (*s >= '0' && *s <= '9') {
+      have_digit = 1;
       acc = acc + (double)(*s - '0') * place;
       place = place / 10.0;
       s++;
     }
+  }
+  if (!have_digit) {
+    if (endptr_addr) {
+      long *endp = (long *)ag_rt_ptr(endptr_addr);
+      *endp = (long)orig;
+    }
+    return 0.0;
   }
   if (endptr_addr) {
     long *endp = (long *)ag_rt_ptr(endptr_addr);

@@ -4601,3 +4601,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き400）: default runtime の wide strto 状態を修正
+- `wcstol()` が `base == 0` を常に 10 として扱い、wide 文字列の `0x10` / `010` を
+  16 進 / 8 進として読めていなかった。
+- `wcstol()` / `wcstod()` が変換できる digit が 0 個の場合にも `endptr` を進めることがあった。
+- wide 側に digit/prefix helper を追加し、`wcstol()` の base 自動判定と no-conversion `endptr` を修正した。
+  `wcstod()` も decimal digit が 0 個なら 0.0 と元入力 `endptr` を返すようにした。
+- `test_smoke.sh` に独立 fixture `wide_strto_state.c` を追加し、wide hex/octal/unsigned/no-conversion/
+  leading-dot decimal を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

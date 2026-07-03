@@ -515,6 +515,35 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/wide_strto_state.c" <<'SRC'
+long wcstol(int *s, int **endptr, int base);
+unsigned long wcstoul(int *s, int **endptr, int base);
+double wcstod(int *s, int **endptr);
+int main(void) {
+  int hex[] = {'0', 'x', '1', '0', '!', 0};
+  int oct[] = {'0', '1', '0', '!', 0};
+  int none[] = {' ', '+', 'x', 0};
+  int dot[] = {'.', '2', '5', '!', 0};
+  int only_dot[] = {'.', 'x', 0};
+  int *end = 0;
+  long h = wcstol(hex, &end, 0);
+  int ok_hex = h == 16 && *end == '!';
+  long o = wcstol(oct, &end, 0);
+  int ok_oct = o == 8 && *end == '!';
+  unsigned long u = wcstoul(oct, &end, 0);
+  int ok_u = u == 8 && *end == '!';
+  long no = wcstol(none, &end, 0);
+  int ok_no = no == 0 && end == none;
+  double d = wcstod(dot, &end);
+  int ok_dot = d == 0.25 && *end == '!';
+  double nd = wcstod(none, &end);
+  int ok_nd = nd == 0.0 && end == none;
+  double od = wcstod(only_dot, &end);
+  int ok_od = od == 0.0 && end == only_dot;
+  return ok_hex && ok_oct && ok_u && ok_no && ok_dot && ok_nd && ok_od ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1659,6 +1688,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_getline_state.interp"
 wasm-validate "$out_dir/linked_localtime_state.wasm"
 wasm-interp "$out_dir/linked_localtime_state.wasm" --run-all-exports > "$out_dir/linked_localtime_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_localtime_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/wide_strto_state.o" "$out_dir/wide_strto_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_wide_strto_state.wasm" \
+  "$out_dir/wide_strto_state.o"
+wasm-validate "$out_dir/linked_wide_strto_state.wasm"
+wasm-interp "$out_dir/linked_wide_strto_state.wasm" --run-all-exports > "$out_dir/linked_wide_strto_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_wide_strto_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \
