@@ -45,6 +45,7 @@ static long ag_rt_termination_status = 0;
 static char *ag_rt_strtok_next;
 static unsigned long ag_rt_rand_state = 1;
 static int ag_rt_round_mode = 0;
+static int ag_rt_except_flags = 0;
 static int ag_rt_errno_value = 0;
 void *__stdinp;
 void *__stdoutp = (void *)1;

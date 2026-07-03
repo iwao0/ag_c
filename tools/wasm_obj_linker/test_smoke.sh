@@ -365,6 +365,41 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/fenv_state.c" <<'SRC'
+typedef unsigned long long fexcept_t;
+typedef struct { unsigned long long fpcr; unsigned long long fpsr; } fenv_t;
+int feclearexcept(int excepts);
+int fegetexceptflag(fexcept_t *flagp, int excepts);
+int feraiseexcept(int excepts);
+int fesetexceptflag(fexcept_t *flagp, int excepts);
+int fetestexcept(int excepts);
+int fegetround(void);
+int fesetround(int round);
+int fegetenv(fenv_t *envp);
+int feholdexcept(fenv_t *envp);
+int fesetenv(fenv_t *envp);
+int feupdateenv(fenv_t *envp);
+int main(void) {
+  fexcept_t flag = 0;
+  fenv_t env = {0, 0};
+  int ok = 1;
+  ok = ok && feclearexcept(31) == 0 && fetestexcept(31) == 0;
+  ok = ok && feraiseexcept(4) == 0 && fetestexcept(31) == 4;
+  ok = ok && fegetexceptflag(&flag, 31) == 0 && flag == 4;
+  ok = ok && feclearexcept(4) == 0 && fetestexcept(31) == 0;
+  ok = ok && fesetexceptflag(&flag, 16) == 0 && fetestexcept(31) == 0;
+  ok = ok && fesetexceptflag(&flag, 4) == 0 && fetestexcept(31) == 4;
+  ok = ok && fesetround(0x00400000) == 0 && fegetround() == 0x00400000;
+  ok = ok && fegetenv(&env) == 0 && env.fpcr == 0x00400000 && env.fpsr == 4;
+  ok = ok && feraiseexcept(16) == 0 && feholdexcept(&env) == 0 &&
+            env.fpsr == 20 && fetestexcept(31) == 0;
+  ok = ok && fesetenv(&env) == 0 && fegetround() == 0x00400000 && fetestexcept(31) == 20;
+  ok = ok && feclearexcept(31) == 0 && feraiseexcept(1) == 0 &&
+            feupdateenv(&env) == 0 && fetestexcept(31) == 21;
+  return ok ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1095,9 +1130,9 @@ int main(void) {
          btowc('S') == 'S' && wctob('T') == 'T' &&
          swret == 5 && swbuf[0] == '1' && swbuf[1] == '2' && swbuf[2] == '-' &&
          swbuf[3] == 'O' && swbuf[4] == 'K' && swbuf[5] == 0 && scanret == 0 &&
-         feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 16 &&
+         feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 0 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
-         fetestexcept(16) == 16 &&
+         fetestexcept(31) == 4 &&
          fesetround(0x00400000) == 0 && fegetround() == 0x00400000 &&
          fegetenv(&env) == 0 && feholdexcept(&env) == 0 &&
          fesetenv(&env) == 0 && feupdateenv(&env) == 0 &&
@@ -1465,6 +1500,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_vformat_file.interp"
 wasm-validate "$out_dir/linked_wide_locale_state.wasm"
 wasm-interp "$out_dir/linked_wide_locale_state.wasm" --run-all-exports > "$out_dir/linked_wide_locale_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_wide_locale_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fenv_state.o" "$out_dir/fenv_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fenv_state.wasm" \
+  "$out_dir/fenv_state.o"
+wasm-validate "$out_dir/linked_fenv_state.wasm"
+wasm-interp "$out_dir/linked_fenv_state.wasm" --run-all-exports > "$out_dir/linked_fenv_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_fenv_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

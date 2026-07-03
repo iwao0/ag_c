@@ -1,27 +1,36 @@
+#define AG_RT_FE_ALL_EXCEPT 0x1f
+#define AG_RT_FE_DFL_ENV_ADDR (-1L)
+
+static int ag_rt_fenv_mask(int excepts) {
+  return excepts & AG_RT_FE_ALL_EXCEPT;
+}
+
 int __agc_runtime_feclearexcept(int excepts) {
-  (void)excepts;
+  ag_rt_except_flags &= ~ag_rt_fenv_mask(excepts);
   return 0;
 }
 
 int __agc_runtime_fegetexceptflag(long flagp_addr, int excepts) {
   unsigned long long *flagp = (unsigned long long *)ag_rt_ptr(flagp_addr);
-  if (flagp) *flagp = (unsigned long long)excepts;
+  if (flagp) *flagp = (unsigned long long)(ag_rt_except_flags & ag_rt_fenv_mask(excepts));
   return 0;
 }
 
 int __agc_runtime_feraiseexcept(int excepts) {
-  (void)excepts;
+  ag_rt_except_flags |= ag_rt_fenv_mask(excepts);
   return 0;
 }
 
 int __agc_runtime_fesetexceptflag(long flagp_addr, int excepts) {
-  (void)flagp_addr;
-  (void)excepts;
+  unsigned long long *flagp = (unsigned long long *)ag_rt_ptr(flagp_addr);
+  int mask = ag_rt_fenv_mask(excepts);
+  int flags = flagp ? (int)(*flagp) : 0;
+  ag_rt_except_flags = (ag_rt_except_flags & ~mask) | (flags & mask);
   return 0;
 }
 
 int __agc_runtime_fetestexcept(int excepts) {
-  return excepts;
+  return ag_rt_except_flags & ag_rt_fenv_mask(excepts);
 }
 
 int __agc_runtime_fegetround(void) {
@@ -37,23 +46,34 @@ int __agc_runtime_fegetenv(long envp_addr) {
   unsigned long long *envp = (unsigned long long *)ag_rt_ptr(envp_addr);
   if (envp) {
     envp[0] = (unsigned long long)ag_rt_round_mode;
-    envp[1] = 0;
+    envp[1] = (unsigned long long)ag_rt_except_flags;
   }
   return 0;
 }
 
 int __agc_runtime_feholdexcept(long envp_addr) {
-  return __agc_runtime_fegetenv(envp_addr);
+  int r = __agc_runtime_fegetenv(envp_addr);
+  if (r == 0) ag_rt_except_flags = 0;
+  return r;
 }
 
 int __agc_runtime_fesetenv(long envp_addr) {
   unsigned long long *envp = (unsigned long long *)ag_rt_ptr(envp_addr);
-  if (envp) ag_rt_round_mode = (int)envp[0];
+  if (envp_addr == AG_RT_FE_DFL_ENV_ADDR) {
+    ag_rt_round_mode = 0;
+    ag_rt_except_flags = 0;
+  } else if (envp) {
+    ag_rt_round_mode = (int)envp[0];
+    ag_rt_except_flags = (int)envp[1] & AG_RT_FE_ALL_EXCEPT;
+  }
   return 0;
 }
 
 int __agc_runtime_feupdateenv(long envp_addr) {
-  return __agc_runtime_fesetenv(envp_addr);
+  int raised = ag_rt_except_flags;
+  int r = __agc_runtime_fesetenv(envp_addr);
+  if (r == 0) ag_rt_except_flags |= raised;
+  return r;
 }
 
 long __agc_runtime_setlocale(int category, long locale_addr) {

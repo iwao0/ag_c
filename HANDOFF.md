@@ -4522,3 +4522,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き393）: default runtime の fenv 例外状態を実装
+- `fetestexcept()` が現在の例外状態ではなく引数をそのまま返し、
+  `feclearexcept()` / `feraiseexcept()` / `fesetexceptflag()` が状態を持っていなかったバグを修正した。
+- runtime 状態に `ag_rt_except_flags` を追加し、`fegetexceptflag()` / `fegetenv()` / `feholdexcept()` /
+  `fesetenv()` / `feupdateenv()` も例外状態を保存・復元するようにした。
+- `test_smoke.sh` に独立 fixture `fenv_state.c` を追加し、clear/raise/get/set/hold/setenv/updateenv を
+  object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
