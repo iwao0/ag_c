@@ -238,6 +238,8 @@ int fputc(int c, void *stream);
 int fflush(void *stream);
 unsigned long fwrite(const void *ptr, unsigned long size, unsigned long nmemb, void *stream);
 unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, void *stream);
+long write(int fd, const void *buf, unsigned long count);
+long lseek(int fd, long offset, int whence);
 int main(void) {
   char buf[4];
   if (fputs("A", (void *)1) != 1) return 1;
@@ -250,7 +252,11 @@ int main(void) {
   if (fputs("q", (void *)0) != 1) return 8;
   if (fputc('r', (void *)0) != 'r') return 9;
   if (fwrite("s", 1, 1, (void *)0) != 1) return 10;
-  if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 11;
+  if (write(1, "W", 1) != 1) return 11;
+  if (write(2, "e", 1) != 1) return 12;
+  if (write(0, "n", 1) != 1) return 13;
+  if (lseek(1, 0, 0) != -1) return 14;
+  if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 15;
   return 42;
 }
 `;
@@ -264,7 +270,7 @@ const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
   onStderr: (chunk) => { jsBasicStderr += chunk; },
 });
 const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
-if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCD" || jsBasicStderr !== "ER!qrs") {
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDW" || jsBasicStderr !== "ER!qrsen") {
   throw new Error(
     `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
   );

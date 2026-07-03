@@ -268,6 +268,22 @@ function makeStdio(options = {}) {
     return BigInt(nmemb);
   }
 
+  function write(fd, ptr, count) {
+    count = Number(count);
+    if (count <= 0) return 0n;
+    const text = readMemoryUtf8(getMemory(), ptr, count);
+    if (isStderrStream(fd)) {
+      emitStderr(text);
+    } else {
+      emitStdout(text);
+    }
+    return BigInt(count);
+  }
+
+  function lseek(_fd, _offset, _whence) {
+    return -1n;
+  }
+
   function fread(ptr, size, nmemb, _stream) {
     size = Number(size);
     nmemb = Number(nmemb);
@@ -351,6 +367,8 @@ function makeStdio(options = {}) {
     fflush,
     fread,
     fwrite,
+    write,
+    lseek,
     fgetc,
     fgets,
     feof,
@@ -390,6 +408,8 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     fclose: agcFclose,
     fread: stdio.fread,
     fwrite: stdio.fwrite,
+    write: stdio.write,
+    lseek: stdio.lseek,
     fgetc: stdio.fgetc,
     getc: stdio.fgetc,
     getchar: stdio.fgetc,

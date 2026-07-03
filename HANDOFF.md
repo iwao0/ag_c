@@ -4439,3 +4439,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き385）: JS import runtime に write/lseek を追加
+- default runtime object に `write` / `lseek` を追加したため、`useStdlib: false` の JS import runtime 側にも
+  同名 import を追加した。
+- `write(fd, ptr, count)` は `fd == 0 || fd == 2` を stderr、それ以外を stdout として callback へ流す。
+- JS import runtime には fd position state がないため、`lseek` は `-1` を返す最小実装にした。
+- JS pipeline smoke に、`write(1, "W")` が stdout、`write(2, "e")` と `write(0, "n")` が stderr に届き、
+  `lseek(1, 0, 0) == -1` になるケースを追加した。
+- 確認:
+  - `make test-wasm-js-pipeline` = ok
