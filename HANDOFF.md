@@ -4717,3 +4717,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き408）: default runtime stdio stream の read/write mode を尊重
+- `fopen(..., "r")` で開いた stream に `fwrite()` / `fputs()` / `fputc()` でき、
+  `fopen(..., "w")` で開いた stream から `fread()` / `fgetc()` / `fgets()` / `getline()` できる
+  状態になっていた。
+- `stdio.c` の file write helper は read-mode stream では 0 byte 書き込みにし、
+  `fread()` / `fgetc()` / `fgets()` は write-mode stream で error flag を立てて失敗するようにした。
+  `getline()` も write-mode stream では `-1` を返す。
+- `stdio_invalid_state.c` に read-mode への書き込み失敗と write-mode からの読み取り失敗を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

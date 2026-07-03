@@ -550,6 +550,12 @@ typedef void FILE;
 FILE *fopen(char *path, char *mode);
 FILE *fdopen(int fd, char *mode);
 int fclose(FILE *stream);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+int fputs(char *s, FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+int fseek(FILE *stream, long offset, int whence);
 int open(char *path, int oflag);
 int close(int fd);
 int main(void) {
@@ -566,8 +572,20 @@ int main(void) {
   int ok_stream = ok != 0;
   if (ok) fclose(ok);
   close(fd2);
+  FILE *rf = fopen("tmp.txt", "r");
+  int read_stream_write = fwrite("x", 1, 1, rf) == 0 &&
+                          fputs("x", rf) == -1 &&
+                          fputc('x', rf) == -1;
+  fclose(rf);
+  FILE *wf = fopen("tmp.txt", "w");
+  char b[1];
+  fwrite("A", 1, 1, wf);
+  fseek(wf, 0, 0);
+  int write_stream_read = fread(b, 1, 1, wf) == 0 && fgetc(wf) == -1;
+  fclose(wf);
   return bad_path && bad_mode_null && bad_mode_empty && bad_mode_unknown &&
-         bad_fd && bad_fd_mode_null && bad_fd_mode_unknown && ok_stream ? 42 : 1;
+         bad_fd && bad_fd_mode_null && bad_fd_mode_unknown && ok_stream &&
+         read_stream_write && write_stream_read ? 42 : 1;
 }
 SRC
 

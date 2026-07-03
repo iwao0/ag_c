@@ -430,6 +430,10 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   if (!lineptr || !cap) return -1;
   f = ag_rt_input_stream(stream_addr);
   if (!f) return -1;
+  if (f->write_mode) {
+    f->error = 1;
+    return -1;
+  }
   src = ag_rt_stream_buf(f);
   stream_len = ag_rt_stream_len(f);
   if (f->pos >= stream_len) {
