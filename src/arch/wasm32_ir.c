@@ -3041,6 +3041,31 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local.get $p)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("realloc", 7)) {
+    wasm_emitf(2, "(func $realloc (param $ptr i32) (param $size i64) (result i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $d i32)\n");
+    wasm_emitf(4, "(local $s i32)\n");
+    wasm_emitf(4, "(local $end i32)\n");
+    wasm_emitf(4, "(local $bytes i32)\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $size)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(local.set $bytes (i32.wrap_i64 (local.get $size)))\n");
+    wasm_emitf(4, "(local.set $p (global.get $__ag_heap_pointer))\n");
+    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.add (local.get $p) (i32.and (i32.add (local.get $bytes) (i32.const 7)) (i32.const -8))))\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $ptr)) (then (return (local.get $p))))\n");
+    wasm_emitf(4, "(local.set $d (local.get $p))\n");
+    wasm_emitf(4, "(local.set $s (local.get $ptr))\n");
+    wasm_emitf(4, "(local.set $end (i32.add (local.get $p) (local.get $bytes)))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i32.ge_u (local.get $d) (local.get $end)) (then (br $done)))\n");
+    wasm_emitf(6, "(i32.store8 (local.get $d) (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(6, "(local.set $d (i32.add (local.get $d) (i32.const 1)))\n");
+    wasm_emitf(6, "(local.set $s (i32.add (local.get $s) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $p)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("free", 4)) {
     wasm_emitf(2, "(func $free (param i32))\n");
   }

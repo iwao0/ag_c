@@ -726,6 +726,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdio_snprintf_formats", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_snprintf_formats.c", 0, 0},
     {"stdheader", "stdio_sprintf_formats", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_sprintf_formats.c", 0, 0},
     {"stdheader", "stdlib_malloc_free", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_malloc_free.c", 0, 0},
+    {"stdheader", "stdlib_realloc", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_realloc.c", 0, 0},
     {"stdheader", "stdlib_atoi", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_atoi.c", 0, 0},
     {"stdheader", "stdlib_abs", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_abs.c", 0, 0},
     {"stdheader", "stdlib_qsort_bsearch", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_qsort_bsearch.c", 0, 0},
