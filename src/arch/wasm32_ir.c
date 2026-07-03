@@ -2806,6 +2806,11 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("strerror", 8)) {
+    wasm_data_symbol_t *err = intern_data_symbol("__ag_stub_strerror", 18, 6, 1);
+    wasm_emitf(2, "(data (i32.const %d) \"error\\00\")\n", err->addr);
+    wasm_emitf(2, "(func $strerror (param $errnum i64) (result i32) (i32.const %d))\n", err->addr);
+  }
   if (has_undefined_function("putchar", 7)) {
     wasm_emitf(2, "(func $putchar (param $c i64) (result i32) (i32.wrap_i64 (local.get $c)))\n");
   }
