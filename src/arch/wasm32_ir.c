@@ -2526,7 +2526,21 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("fetestexcept", 12)) {
     wasm_emitf(2, "(func $fetestexcept (param $mask i64) (result i32) (i32.wrap_i64 (local.get $mask)))\n");
   }
-  if (has_undefined_function("isalpha", 7)) {
+  int need_isalnum_stub = has_undefined_function("isalnum", 7) ||
+                          has_undefined_function("ispunct", 7);
+  int need_isalpha_stub = has_undefined_function("isalpha", 7) || need_isalnum_stub;
+  int need_isdigit_stub = has_undefined_function("isdigit", 7) ||
+                          has_undefined_function("isxdigit", 8) ||
+                          need_isalnum_stub;
+  int need_islower_stub = has_undefined_function("islower", 7) ||
+                          has_undefined_function("toupper", 7) ||
+                          need_isalpha_stub;
+  int need_isupper_stub = has_undefined_function("isupper", 7) ||
+                          has_undefined_function("tolower", 7) ||
+                          need_isalpha_stub;
+  int need_isgraph_stub = has_undefined_function("isgraph", 7) ||
+                          has_undefined_function("ispunct", 7);
+  if (need_isalpha_stub) {
     wasm_emitf(2, "(func $isalpha (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or\n");
     wasm_emitf(6, "(i32.and (i64.ge_s (local.get $c) (i64.const 65)) (i64.le_s (local.get $c) (i64.const 90)))\n");
@@ -2534,14 +2548,78 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, ")\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("isdigit", 7)) {
+  if (need_isdigit_stub) {
     wasm_emitf(2, "(func $isdigit (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 48)) (i64.le_s (local.get $c) (i64.const 57)))\n");
     wasm_emitf(2, ")\n");
   }
+  if (need_islower_stub) {
+    wasm_emitf(2, "(func $islower (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 97)) (i64.le_s (local.get $c) (i64.const 122)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (need_isupper_stub) {
+    wasm_emitf(2, "(func $isupper (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 65)) (i64.le_s (local.get $c) (i64.const 90)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (need_isalnum_stub) {
+    wasm_emitf(2, "(func $isalnum (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.or (call $isalpha (local.get $c)) (call $isdigit (local.get $c)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("isblank", 7)) {
+    wasm_emitf(2, "(func $isblank (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.or (i64.eq (local.get $c) (i64.const 32)) (i64.eq (local.get $c) (i64.const 9)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("iscntrl", 7)) {
+    wasm_emitf(2, "(func $iscntrl (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.or (i32.and (i64.ge_s (local.get $c) (i64.const 0)) (i64.lt_s (local.get $c) (i64.const 32))) (i64.eq (local.get $c) (i64.const 127)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (need_isgraph_stub) {
+    wasm_emitf(2, "(func $isgraph (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 33)) (i64.le_s (local.get $c) (i64.const 126)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("isprint", 7)) {
+    wasm_emitf(2, "(func $isprint (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.and (i64.ge_s (local.get $c) (i64.const 32)) (i64.le_s (local.get $c) (i64.const 126)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("ispunct", 7)) {
+    wasm_emitf(2, "(func $ispunct (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.and (call $isgraph (local.get $c)) (i32.eqz (call $isalnum (local.get $c))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("isspace", 7)) {
+    wasm_emitf(2, "(func $isspace (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.or (i64.eq (local.get $c) (i64.const 32))\n");
+    wasm_emitf(6, "(i32.or (i64.eq (local.get $c) (i64.const 9))\n");
+    wasm_emitf(8, "(i32.or (i64.eq (local.get $c) (i64.const 10))\n");
+    wasm_emitf(10, "(i32.or (i64.eq (local.get $c) (i64.const 11))\n");
+    wasm_emitf(12, "(i32.or (i64.eq (local.get $c) (i64.const 12)) (i64.eq (local.get $c) (i64.const 13)))))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("isxdigit", 8)) {
+    wasm_emitf(2, "(func $isxdigit (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(i32.or (call $isdigit (local.get $c))\n");
+    wasm_emitf(6, "(i32.or (i32.and (i64.ge_s (local.get $c) (i64.const 65)) (i64.le_s (local.get $c) (i64.const 70)))\n");
+    wasm_emitf(8, "(i32.and (i64.ge_s (local.get $c) (i64.const 97)) (i64.le_s (local.get $c) (i64.const 102)))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("tolower", 7)) {
+    wasm_emitf(2, "(func $tolower (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(if (result i32) (call $isupper (local.get $c))\n");
+    wasm_emitf(6, "(then (i32.wrap_i64 (i64.add (local.get $c) (i64.const 32))))\n");
+    wasm_emitf(6, "(else (i32.wrap_i64 (local.get $c)))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("toupper", 7)) {
     wasm_emitf(2, "(func $toupper (param $c i64) (result i32)\n");
-    wasm_emitf(4, "(if (result i32) (i32.and (i64.ge_s (local.get $c) (i64.const 97)) (i64.le_s (local.get $c) (i64.const 122)))\n");
+    wasm_emitf(4, "(if (result i32) (call $islower (local.get $c))\n");
     wasm_emitf(6, "(then (i32.wrap_i64 (i64.sub (local.get $c) (i64.const 32))))\n");
     wasm_emitf(6, "(else (i32.wrap_i64 (local.get $c)))\n");
     wasm_emitf(4, ")\n");
