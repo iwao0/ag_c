@@ -744,6 +744,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "wchar_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_runtime_ops.c", 0, 0},
     {"stdheader", "wchar_memory_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_memory_ops.c", 0, 0},
     {"stdheader", "wchar_search_concat_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_search_concat_ops.c", 0, 0},
+    {"stdheader", "wchar_multibyte_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_multibyte_ops.c", 0, 0},
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
@@ -2053,6 +2054,9 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_wmemcpy") == 0 || strcmp(sym, "_wmemset") == 0 ||
             strcmp(sym, "_wmemmove") == 0 || strcmp(sym, "_wmemcmp") == 0 ||
             strcmp(sym, "_wmemchr") == 0 ||
+            strcmp(sym, "_mbrtowc") == 0 || strcmp(sym, "_wcrtomb") == 0 ||
+            strcmp(sym, "_mbsrtowcs") == 0 || strcmp(sym, "_wcsrtombs") == 0 ||
+            strcmp(sym, "_btowc") == 0 || strcmp(sym, "_wctob") == 0 ||
             strcmp(sym, "_feclearexcept") == 0 || strcmp(sym, "_fetestexcept") == 0 ||
             strcmp(sym, "_feraiseexcept") == 0 || strcmp(sym, "_fegetround") == 0 ||
             strcmp(sym, "_fesetround") == 0 ||

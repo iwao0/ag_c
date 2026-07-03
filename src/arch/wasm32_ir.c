@@ -3710,6 +3710,75 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("mbrtowc", 7)) {
+    wasm_emitf(2, "(func $mbrtowc (param $pwc i32) (param $s i32) (param $n i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i64.const 0))))\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $n)) (then (return (i64.const -2))))\n");
+    wasm_emitf(4, "(local.set $ch (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(4, "(if (local.get $pwc) (then (i32.store (local.get $pwc) (local.get $ch))))\n");
+    wasm_emitf(4, "(if (result i64) (i32.eqz (local.get $ch)) (then (i64.const 0)) (else (i64.const 1)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wcrtomb", 7)) {
+    wasm_emitf(2, "(func $wcrtomb (param $s i32) (param $wc i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i64.const 1))))\n");
+    wasm_emitf(4, "(i32.store8 (local.get $s) (i32.wrap_i64 (local.get $wc)))\n");
+    wasm_emitf(4, "(i64.const 1)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("mbsrtowcs", 9)) {
+    wasm_emitf(2, "(func $mbsrtowcs (param $dst i32) (param $srcp i32) (param $len i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(local $src i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(local.set $src (i32.wrap_i64 (i64.load (local.get $srcp))))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i64.ge_u (local.get $i) (local.get $len)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (i32.add (local.get $src) (i32.wrap_i64 (local.get $i)))))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (local.get $dst) (then (i32.store (i32.add (local.get $dst) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4)))) (local.get $ch))))\n");
+    wasm_emitf(6, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(if (i32.and (i64.lt_u (local.get $i) (local.get $len)) (i32.eqz (i32.load8_u (i32.add (local.get $src) (i32.wrap_i64 (local.get $i)))))) (then\n");
+    wasm_emitf(6, "(if (local.get $dst) (then (i32.store (i32.add (local.get $dst) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4)))) (i32.const 0))))\n");
+    wasm_emitf(6, "(i64.store (local.get $srcp) (i64.const 0))\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $i)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wcsrtombs", 9)) {
+    wasm_emitf(2, "(func $wcsrtombs (param $dst i32) (param $srcp i32) (param $len i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(local $src i32)\n");
+    wasm_emitf(4, "(local $i i64)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(local.set $src (i32.wrap_i64 (i64.load (local.get $srcp))))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(if (i64.ge_u (local.get $i) (local.get $len)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $ch (i32.load (i32.add (local.get $src) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (local.get $dst) (then (i32.store8 (i32.add (local.get $dst) (i32.wrap_i64 (local.get $i))) (local.get $ch))))\n");
+    wasm_emitf(6, "(local.set $i (i64.add (local.get $i) (i64.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(if (i32.and (i64.lt_u (local.get $i) (local.get $len)) (i32.eqz (i32.load (i32.add (local.get $src) (i32.wrap_i64 (i64.mul (local.get $i) (i64.const 4))))))) (then\n");
+    wasm_emitf(6, "(if (local.get $dst) (then (i32.store8 (i32.add (local.get $dst) (i32.wrap_i64 (local.get $i))) (i32.const 0))))\n");
+    wasm_emitf(6, "(i64.store (local.get $srcp) (i64.const 0))\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $i)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("btowc", 5)) {
+    wasm_emitf(2, "(func $btowc (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(if (result i32) (i64.eq (local.get $c) (i64.const -1)) (then (i32.const -1)) (else (i32.and (i32.wrap_i64 (local.get $c)) (i32.const 255))))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("wctob", 5)) {
+    wasm_emitf(2, "(func $wctob (param $c i64) (result i32)\n");
+    wasm_emitf(4, "(if (result i32) (i32.and (i64.ge_s (local.get $c) (i64.const 0)) (i64.le_s (local.get $c) (i64.const 255))) (then (i32.wrap_i64 (local.get $c))) (else (i32.const -1)))\n");
+    wasm_emitf(2, ")\n");
+  }
   int atan_defined = psx_ctx_has_function_name("atan", 4) &&
                      psx_ctx_is_function_defined("atan", 4);
   int atan2_defined = psx_ctx_has_function_name("atan2", 5) &&
