@@ -4501,3 +4501,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - `--nostdlib` objdump grep に `<env.vsnprintf>` / `<env.vfprintf>` も追加した。
 - 確認:
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+
+### このセッション（続き391）: wide/locale state の object linker smoke を追加
+- `mbsrtowcs` / `wcsrtombs` は既存 smoke で変換結果だけ見ていたため、返り値と `srcp` が
+  終端時に `NULL` へ更新されることを独立 fixture で確認するようにした。
+- `setlocale(LC_ALL 相当, "C")` の返り値が `"C"` を指し、`localeconv()->decimal_point` が `"."`
+  になることも同じ fixture で確認する。
+- 巨大な `libc_runtime.c` main に直接条件を足すと E4007 に到達したため、`wide_locale_state.c` として
+  独立 smoke に分けた。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`

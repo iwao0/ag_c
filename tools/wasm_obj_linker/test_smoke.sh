@@ -338,6 +338,33 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/wide_locale_state.c" <<'SRC'
+struct lconv {
+  char *decimal_point;
+};
+char *setlocale(int category, char *locale);
+struct lconv *localeconv(void);
+unsigned long mbsrtowcs(int *dst, char **src, unsigned long len, void *ps);
+unsigned long wcsrtombs(char *dst, int **src, unsigned long len, void *ps);
+int main(void) {
+  void *nullv = 0;
+  char *mbsrc = "Hi";
+  char *mbsrcp = mbsrc;
+  int wide[8];
+  unsigned long wn = mbsrtowcs(wide, &mbsrcp, 8, nullv);
+  int *widep = wide;
+  char narrow[8];
+  unsigned long nn = wcsrtombs(narrow, &widep, 8, nullv);
+  char *loc = setlocale(0, "C");
+  struct lconv *lc = localeconv();
+  return wn == 2 && mbsrcp == 0 && wide[0] == 'H' && wide[1] == 'i' &&
+         wide[2] == 0 && nn == 2 && widep == 0 && narrow[0] == 'H' &&
+         narrow[1] == 'i' && narrow[2] == 0 &&
+         loc != 0 && loc[0] == 'C' && loc[1] == 0 &&
+         lc != 0 && lc->decimal_point[0] == '.' && lc->decimal_point[1] == 0 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1420,6 +1447,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_snprintf_float.interp"
 wasm-validate "$out_dir/linked_vformat_file.wasm"
 wasm-interp "$out_dir/linked_vformat_file.wasm" --run-all-exports > "$out_dir/linked_vformat_file.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_vformat_file.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/wide_locale_state.o" "$out_dir/wide_locale_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_wide_locale_state.wasm" \
+  "$out_dir/wide_locale_state.o"
+wasm-validate "$out_dir/linked_wide_locale_state.wasm"
+wasm-interp "$out_dir/linked_wide_locale_state.wasm" --run-all-exports > "$out_dir/linked_wide_locale_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_wide_locale_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \
