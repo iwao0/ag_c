@@ -589,6 +589,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "stdlib_convert_rand", "test/fixtures/stdheader/stdlib_convert_rand.c"},
     {"stdheader", "stdlib_strto_int", "test/fixtures/stdheader/stdlib_strto_int.c"},
     {"stdheader", "stdlib_strto_float", "test/fixtures/stdheader/stdlib_strto_float.c"},
+    {"stdheader", "stdlib_env_system", "test/fixtures/stdheader/stdlib_env_system.c"},
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
     {"stdheader", "math_runtime_ops", "test/fixtures/stdheader/math_runtime_ops.c"},
     {"stdheader", "tgmath_variant_ops", "test/fixtures/stdheader/tgmath_variant_ops.c"},

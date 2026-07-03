@@ -3156,6 +3156,21 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(call $__ag_strtod (local.get $s) (i32.const 0))\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("atexit", 6)) {
+    wasm_emitf(2, "(func $atexit (param $func i32) (result i32)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("getenv", 6)) {
+    wasm_emitf(2, "(func $getenv (param $name i32) (result i32)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("system", 6)) {
+    wasm_emitf(2, "(func $system (param $command i32) (result i32)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("labs", 4)) {
     wasm_emitf(2, "(func $labs (param $x i64) (result i64)\n");
     wasm_emitf(4, "(if (result i64) (i64.lt_s (local.get $x) (i64.const 0))\n");

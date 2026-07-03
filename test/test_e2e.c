@@ -732,6 +732,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stdlib_convert_rand", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_convert_rand.c", 0, 0},
     {"stdheader", "stdlib_strto_int", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_int.c", 0, 0},
     {"stdheader", "stdlib_strto_float", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_strto_float.c", 0, 0},
+    {"stdheader", "stdlib_env_system", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_env_system.c", 0, 0},
     {"stdheader", "stdlib_qsort_bsearch", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_qsort_bsearch.c", 0, 0},
     {"stdheader", "stdlib_qsort_struct_bsearch_miss", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_qsort_struct_bsearch_miss.c", 0, 0},
     {"stdheader", "string_memset", CASE_ASSERT_FILE, "test/fixtures/stdheader/string_memset.c", 0, 0},
