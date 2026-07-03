@@ -748,6 +748,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "signal_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/signal_runtime_ops.c", 0, 0},
     {"stdheader", "inttypes_strto_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/inttypes_strto_ops.c", 0, 0},
     {"stdheader", "fenv_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/fenv_runtime_ops.c", 0, 0},
+    {"stdheader", "locale_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/locale_runtime_ops.c", 0, 0},
     {"stdheader", "tgmath_variant_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/tgmath_variant_ops.c", 0, 0},
     {"stdheader", "assert_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/assert_include.c", 0, 0},
     {"stdheader", "errno_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/errno_include.c", 0, 0},
