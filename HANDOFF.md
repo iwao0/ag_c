@@ -4627,3 +4627,18 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き402）: default runtime allocator の不正サイズ処理を修正
+- `malloc()` / `calloc()` / `realloc()` が負数サイズや `calloc(nmemb, size)` の乗算 overflow を
+  見ておらず、不正な小さい確保や heap pointer の wrap を起こし得た。
+- `memory.c` に runtime 内の `LONG_MAX` 判定 helper を追加し、負数サイズ、align/header 付きで
+  overflow するサイズ、`calloc` 乗算 overflow では `0` を返すようにした。
+  `malloc(0)` / `calloc(0, n)` は既存通り最小確保を返す。
+- `test_smoke.sh` に独立 fixture `alloc_state.c` を追加し、`malloc(-1)`、`calloc(-1, 4)`、
+  `calloc(1L << 62, 16)`、`calloc(0, 99)`、`realloc` grow/shrink/不正サイズを
+  object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

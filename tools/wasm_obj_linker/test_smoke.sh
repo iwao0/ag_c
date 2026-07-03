@@ -596,6 +596,34 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/alloc_state.c" <<'SRC'
+void *malloc(long size);
+void *calloc(long nmemb, long size);
+void *realloc(void *ptr, long size);
+int main(void) {
+  char *p = malloc(4);
+  char *q;
+  char *r;
+  void *bad_malloc = malloc(-1);
+  void *bad_calloc_neg = calloc(-1, 4);
+  void *bad_calloc_overflow = calloc(1L << 62, 16);
+  void *zero_calloc = calloc(0, 99);
+  if (!p) return 1;
+  p[0] = 'A';
+  p[1] = 'B';
+  p[2] = 'C';
+  p[3] = 0;
+  q = realloc(p, 8);
+  if (!q) return 2;
+  r = realloc(q, 2);
+  if (!r) return 3;
+  return bad_malloc == 0 && bad_calloc_neg == 0 && bad_calloc_overflow == 0 &&
+         zero_calloc != 0 && q != p && q[0] == 'A' && q[1] == 'B' &&
+         q[2] == 'C' && r != q && r[0] == 'A' && r[1] == 'B' &&
+         realloc(r, -1) == 0 && realloc(r, 0) == 0 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1754,6 +1782,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_wide_strto_state.interp"
 wasm-validate "$out_dir/linked_utf8_wide_state.wasm"
 wasm-interp "$out_dir/linked_utf8_wide_state.wasm" --run-all-exports > "$out_dir/linked_utf8_wide_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_utf8_wide_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/alloc_state.o" "$out_dir/alloc_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_alloc_state.wasm" \
+  "$out_dir/alloc_state.o"
+wasm-validate "$out_dir/linked_alloc_state.wasm"
+wasm-interp "$out_dir/linked_alloc_state.wasm" --run-all-exports > "$out_dir/linked_alloc_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_alloc_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

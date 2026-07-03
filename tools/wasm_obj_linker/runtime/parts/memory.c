@@ -1,4 +1,16 @@
+static long ag_rt_long_max(void) {
+  return (long)((unsigned long)-1 >> 1);
+}
+
+static int ag_rt_alloc_size_ok(long size) {
+  long requested;
+  if (size < 0) return 0;
+  requested = size > 0 ? size : 1;
+  return requested <= ag_rt_long_max() - 15;
+}
+
 long __agc_runtime_malloc(long size) {
+  if (!ag_rt_alloc_size_ok(size)) return 0;
   long requested = size > 0 ? size : 1;
   long aligned = (requested + 7) & -8;
   long header = ag_rt_heap;
@@ -13,8 +25,11 @@ void __agc_runtime_free(long ptr) {
 }
 
 long __agc_runtime_calloc(long nmemb, long size) {
+  if (nmemb < 0 || size < 0) return 0;
+  if (size != 0 && nmemb > ag_rt_long_max() / size) return 0;
   long n = nmemb * size;
   long p = __agc_runtime_malloc(n);
+  if (!p) return 0;
   char *dst = ag_rt_ptr(p);
   long i = 0;
   while (i < n) dst[i++] = 0;
@@ -22,9 +37,11 @@ long __agc_runtime_calloc(long nmemb, long size) {
 }
 
 long __agc_runtime_realloc(long ptr, long size) {
+  if (!ag_rt_alloc_size_ok(size)) return 0;
   if (!ptr) return __agc_runtime_malloc(size);
   if (size == 0) return 0;
   long p = __agc_runtime_malloc(size);
+  if (!p) return 0;
   long old_size = *(long *)ag_rt_ptr(ptr - 8);
   long copy_size = old_size < size ? old_size : size;
   __agc_runtime_memcpy(p, ptr, copy_size);
