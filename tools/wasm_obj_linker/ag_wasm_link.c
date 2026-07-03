@@ -773,6 +773,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncat") ||
          str_eq_lit(name, "strncmp") || str_eq_lit(name, "strchr") ||
          str_eq_lit(name, "strrchr") || str_eq_lit(name, "strstr") ||
+         str_eq_lit(name, "strspn") || str_eq_lit(name, "strcspn") ||
+         str_eq_lit(name, "strpbrk") ||
          str_eq_lit(name, "strtok") || str_eq_lit(name, "strerror") ||
          str_eq_lit(name, "memcmp") || str_eq_lit(name, "puts") ||
          str_eq_lit(name, "putchar") || str_eq_lit(name, "fputs") ||
@@ -2683,6 +2685,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strrchr";
   } else if (str_eq_lit(name, "strstr")) {
     target_lit = "__agc_runtime_strstr";
+  } else if (str_eq_lit(name, "strspn")) {
+    target_lit = "__agc_runtime_strspn";
+  } else if (str_eq_lit(name, "strcspn")) {
+    target_lit = "__agc_runtime_strcspn";
+  } else if (str_eq_lit(name, "strpbrk")) {
+    target_lit = "__agc_runtime_strpbrk";
   } else if (str_eq_lit(name, "strtok")) {
     target_lit = "__agc_runtime_strtok";
   } else if (str_eq_lit(name, "strerror")) {

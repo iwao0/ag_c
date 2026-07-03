@@ -4823,3 +4823,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き417）: default runtime string span/search 関数を追加
+- default runtime に `strspn()` / `strcspn()` / `strpbrk()` がなく、リンク後に `env.strspn` などの import が残り得た。
+- `runtime/parts/string.c` に3関数を追加し、`ag_wasm_link` の runtime symbol 対象と libc bridge 対象にも追加した。
+- `libc_runtime.c` smoke に span/search の実行確認と、`--nostdlib` 時の import 確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

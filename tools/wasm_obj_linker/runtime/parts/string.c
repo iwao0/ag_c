@@ -82,6 +82,16 @@ long __agc_runtime_memchr(long s_addr, int ch, long n) {
   return 0;
 }
 
+static int ag_rt_str_contains(char *s, int ch) {
+  int needle = ch & 255;
+  long i = 0;
+  while (s[i]) {
+    if (((int)s[i] & 255) == needle) return 1;
+    i++;
+  }
+  return 0;
+}
+
 long __agc_runtime_strchr(long s_addr, int ch) {
   char *s = ag_rt_ptr(s_addr);
   int needle = ch & 255;
@@ -121,13 +131,35 @@ long __agc_runtime_strstr(long haystack_addr, long needle_addr) {
   return 0;
 }
 
-static int ag_rt_strtok_is_delim(char ch, char *delim) {
+long __agc_runtime_strspn(long s_addr, long accept_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  char *accept = ag_rt_ptr(accept_addr);
   long i = 0;
-  while (delim[i]) {
-    if (ch == delim[i]) return 1;
+  while (s[i] && ag_rt_str_contains(accept, s[i])) i++;
+  return i;
+}
+
+long __agc_runtime_strcspn(long s_addr, long reject_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  char *reject = ag_rt_ptr(reject_addr);
+  long i = 0;
+  while (s[i] && !ag_rt_str_contains(reject, s[i])) i++;
+  return i;
+}
+
+long __agc_runtime_strpbrk(long s_addr, long accept_addr) {
+  char *s = ag_rt_ptr(s_addr);
+  char *accept = ag_rt_ptr(accept_addr);
+  long i = 0;
+  while (s[i]) {
+    if (ag_rt_str_contains(accept, s[i])) return s_addr + i;
     i++;
   }
   return 0;
+}
+
+static int ag_rt_strtok_is_delim(char ch, char *delim) {
+  return ag_rt_str_contains(delim, ch);
 }
 
 long __agc_runtime_strtok(long str_addr, long delim_addr) {

@@ -1040,6 +1040,9 @@ void *memchr(void *s, int ch, unsigned long n);
 char *strchr(char *s, int ch);
 char *strrchr(char *s, int ch);
 char *strstr(char *haystack, char *needle);
+unsigned long strspn(char *s, char *accept);
+unsigned long strcspn(char *s, char *reject);
+char *strpbrk(char *s, char *accept);
 char *strtok(char *str, char *delim);
 char *strerror(int errnum);
 long wcslen(int *s);
@@ -1537,6 +1540,11 @@ int main(void) {
   int cosh0 = (int)(cosh(0.0) * 1000.0);
   int tanh0 = (int)(tanh(0.0) * 1000.0);
   int tanh1 = (int)(tanh(1.0) * 1000.0);
+  char *pbrk_src = "xyzabc";
+  unsigned long span = strspn("aabbc", "ab");
+  unsigned long cspan = strcspn("aabbc", "c");
+  char *pbrk = strpbrk(pbrk_src, "ba");
+  char *pbrk_none = strpbrk("xyz", "ab");
   return strlen(a) == 5 &&
          strcmp(a, "hello") == 0 &&
          strcmp(d, "abcd") == 0 &&
@@ -1548,6 +1556,7 @@ int main(void) {
          strchr(a, 'l') == a + 2 &&
          strrchr(a, 'l') == a + 3 &&
          strstr(a, "ll") == a + 2 &&
+         span == 4 && cspan == 4 && pbrk == pbrk_src + 3 && pbrk_none == 0 &&
          tok1 == toks && strcmp(tok1, "aa") == 0 &&
          strcmp(tok2, "bb") == 0 && strcmp(tok3, "cc") == 0 && tok4 == 0 &&
          strerror(5)[0] == 'e' &&
@@ -2100,6 +2109,9 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.memchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strncat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strstr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strspn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strcspn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strpbrk>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtok>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strerror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
