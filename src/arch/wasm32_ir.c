@@ -2753,6 +2753,39 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local.get $dst)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("memmove", 7)) {
+    wasm_emitf(2, "(func $memmove (param $dst i32) (param $src i32) (param $n i64) (result i32)\n");
+    wasm_emitf(4, "(local $d i32)\n");
+    wasm_emitf(4, "(local $s i32)\n");
+    wasm_emitf(4, "(local $end i32)\n");
+    wasm_emitf(4, "(local $count i32)\n");
+    wasm_emitf(4, "(local.set $count (i32.wrap_i64 (local.get $n)))\n");
+    wasm_emitf(4, "(if (i32.le_u (local.get $dst) (local.get $src)) (then\n");
+    wasm_emitf(6, "(local.set $d (local.get $dst))\n");
+    wasm_emitf(6, "(local.set $s (local.get $src))\n");
+    wasm_emitf(6, "(local.set $end (i32.add (local.get $d) (local.get $count)))\n");
+    wasm_emitf(6, "(block $forward_done (loop $forward_loop\n");
+    wasm_emitf(8, "(if (i32.ge_u (local.get $d) (local.get $end)) (then (br $forward_done)))\n");
+    wasm_emitf(8, "(i32.store8 (local.get $d) (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(8, "(local.set $d (i32.add (local.get $d) (i32.const 1)))\n");
+    wasm_emitf(8, "(local.set $s (i32.add (local.get $s) (i32.const 1)))\n");
+    wasm_emitf(8, "(br $forward_loop)\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(4, ") (else\n");
+    wasm_emitf(6, "(local.set $d (i32.add (local.get $dst) (local.get $count)))\n");
+    wasm_emitf(6, "(local.set $s (i32.add (local.get $src) (local.get $count)))\n");
+    wasm_emitf(6, "(block $backward_done (loop $backward_loop\n");
+    wasm_emitf(8, "(if (i32.eqz (local.get $count)) (then (br $backward_done)))\n");
+    wasm_emitf(8, "(local.set $d (i32.sub (local.get $d) (i32.const 1)))\n");
+    wasm_emitf(8, "(local.set $s (i32.sub (local.get $s) (i32.const 1)))\n");
+    wasm_emitf(8, "(i32.store8 (local.get $d) (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(8, "(local.set $count (i32.sub (local.get $count) (i32.const 1)))\n");
+    wasm_emitf(8, "(br $backward_loop)\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $dst)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("memcmp", 6)) {
     wasm_emitf(2, "(func $memcmp (param $a i32) (param $b i32) (param $n i64) (result i32)\n");
     wasm_emitf(4, "(local $pa i32)\n");
