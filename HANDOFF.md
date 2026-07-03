@@ -4571,3 +4571,11 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き397）: getline の state smoke を追加
+- `getline()` は既存 smoke で 1 行目だけ確認していたため、2 行目、末尾 newline なし行、
+  EOF/`feof()`、既存 buffer の再利用が薄かった。
+- `test_smoke.sh` に独立 fixture `getline_state.c` を追加し、`A\nBC` を読み出して
+  1 行目の grow、2 行目の再利用、3 回目 EOF を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`

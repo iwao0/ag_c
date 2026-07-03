@@ -460,6 +460,33 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/getline_state.c" <<'SRC'
+typedef void FILE;
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+long getline(char **lineptr, unsigned long *n, FILE *stream);
+int feof(FILE *stream);
+int main(void) {
+  FILE *wf = fopen("tmp.txt", "w");
+  fwrite("A\nBC", 1, 4, wf);
+  fclose(wf);
+  FILE *rf = fopen("tmp.txt", "r");
+  char small[2];
+  char *line = small;
+  unsigned long cap = sizeof(small);
+  long n1 = getline(&line, &cap, rf);
+  int ok1 = n1 == 2 && line[0] == 'A' && line[1] == '\n' && line[2] == 0 && cap >= 3;
+  char *line_after_grow = line;
+  long n2 = getline(&line, &cap, rf);
+  int ok2 = n2 == 2 && line == line_after_grow && line[0] == 'B' && line[1] == 'C' && line[2] == 0;
+  long n3 = getline(&line, &cap, rf);
+  int ok3 = n3 == -1 && feof(rf);
+  fclose(rf);
+  return ok1 && ok2 && ok3 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1588,6 +1615,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_strto_base.interp"
 wasm-validate "$out_dir/linked_strtod_state.wasm"
 wasm-interp "$out_dir/linked_strtod_state.wasm" --run-all-exports > "$out_dir/linked_strtod_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_strtod_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/getline_state.o" "$out_dir/getline_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_getline_state.wasm" \
+  "$out_dir/getline_state.o"
+wasm-validate "$out_dir/linked_getline_state.wasm"
+wasm-interp "$out_dir/linked_getline_state.wasm" --run-all-exports > "$out_dir/linked_getline_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_getline_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \
