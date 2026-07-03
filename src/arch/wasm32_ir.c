@@ -3171,6 +3171,26 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("realpath", 8)) {
+    wasm_emitf(2, "(func $realpath (param $path i32) (param $resolved i32) (result i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $q i32)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $path)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $resolved)) (then (return (local.get $path))))\n");
+    wasm_emitf(4, "(local.set $p (local.get $path))\n");
+    wasm_emitf(4, "(local.set $q (local.get $resolved))\n");
+    wasm_emitf(4, "(loop $copy_loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(i32.store8 (local.get $q) (local.get $ch))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (return (local.get $resolved))))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(local.set $q (i32.add (local.get $q) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $copy_loop)\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(4, "(local.get $resolved)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("labs", 4)) {
     wasm_emitf(2, "(func $labs (param $x i64) (result i64)\n");
     wasm_emitf(4, "(if (result i64) (i64.lt_s (local.get $x) (i64.const 0))\n");
