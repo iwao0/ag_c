@@ -4484,3 +4484,10 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き389）: nostdlib bridge smoke の stdio/fd symbol 確認を拡充
+- runtime bridge には `putchar` / `fclose` / `fwrite` / `write` / `lseek` / `fgetc` / `getc` / `fgets` が
+  既に存在していたが、`--nostdlib` smoke の objdump grep が一部を確認していなかった。
+- `linked_libc_runtime_nostdlib.objdump` に上記 symbol が import として残ることを fixture に追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
