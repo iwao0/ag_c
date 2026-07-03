@@ -743,6 +743,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "ctype_classify_more", CASE_ASSERT_FILE, "test/fixtures/stdheader/ctype_classify_more.c", 0, 0},
     {"stdheader", "wchar_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_runtime_ops.c", 0, 0},
     {"stdheader", "wchar_memory_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_memory_ops.c", 0, 0},
+    {"stdheader", "wchar_search_concat_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_search_concat_ops.c", 0, 0},
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
@@ -2046,6 +2047,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_towlower") == 0 || strcmp(sym, "_towupper") == 0 ||
             strcmp(sym, "_wcslen") == 0 || strcmp(sym, "_wcscpy") == 0 ||
             strcmp(sym, "_wcsncpy") == 0 || strcmp(sym, "_wcscat") == 0 ||
+            strcmp(sym, "_wcsncat") == 0 || strcmp(sym, "_wcsstr") == 0 ||
             strcmp(sym, "_wcscmp") == 0 || strcmp(sym, "_wcsncmp") == 0 ||
             strcmp(sym, "_wcschr") == 0 || strcmp(sym, "_wcsrchr") == 0 ||
             strcmp(sym, "_wmemcpy") == 0 || strcmp(sym, "_wmemset") == 0 ||
