@@ -60,6 +60,19 @@ static void ag_rt_write_bytes(char *buf, size_t size, int bounded, size_t *pos,
   for (int i = 0; i < len; i++) ag_rt_putc(buf, size, bounded, pos, src[i]);
 }
 
+static void ag_rt_write_pointer(char *buf, size_t size, int bounded, size_t *pos,
+                                unsigned long v, int width, int left_align) {
+  char tmp[64];
+  size_t tmp_pos = 0;
+  ag_rt_putc(tmp, sizeof(tmp), 1, &tmp_pos, '0');
+  ag_rt_putc(tmp, sizeof(tmp), 1, &tmp_pos, 'x');
+  ag_rt_write_uint_base(tmp, sizeof(tmp), 1, &tmp_pos, v, 16, 0, 0, 0);
+  ag_rt_finish(tmp, sizeof(tmp), 1, tmp_pos);
+  if (!left_align) ag_rt_write_spaces(buf, size, bounded, pos, width - (int)tmp_pos);
+  ag_rt_write_bytes(buf, size, bounded, pos, tmp, (int)tmp_pos);
+  if (left_align) ag_rt_write_spaces(buf, size, bounded, pos, width - (int)tmp_pos);
+}
+
 static void ag_rt_write_idec(char *buf, size_t size, int bounded, size_t *pos,
                              int v, int width, int zero_pad) {
   unsigned long u;
@@ -242,6 +255,10 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       } else {
         ag_rt_write_uint_base(buf, size, bounded, &pos, v, base, upper, width, zero_pad);
       }
+      fmt++;
+    } else if (*fmt == 'p') {
+      void *p = va_arg(ap, void *);
+      ag_rt_write_pointer(buf, size, bounded, &pos, (unsigned long)(long)p, width, left_align);
       fmt++;
     } else if (*fmt == 's') {
       char *s = va_arg(ap, char *);

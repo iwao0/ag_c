@@ -4792,3 +4792,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き414）: default runtime printf 系に pointer format を追加
+- 簡易 formatter が `%p` を未対応 format として扱っていた。
+- pointer 値を `0x...` の小文字 hex として出力し、width / left-align も既存 format と同じ規則で扱うようにした。
+- `snprintf_negative.c` に null pointer の `%p` と `%-5p` の確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

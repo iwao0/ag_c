@@ -253,6 +253,8 @@ int main(void) {
   char x[32];
   char y[32];
   char z[32];
+  char aa[32];
+  char ab[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
   int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
@@ -279,6 +281,8 @@ int main(void) {
   int nx = snprintf(x, sizeof(x), "%04x", 0x2au);
   int ny = snprintf(y, sizeof(y), "%-5x", 0x2au);
   int nz = snprintf(z, sizeof(z), "%o", 0755u);
+  int naa = snprintf(aa, sizeof(aa), "%p", (char *)0);
+  int nab = snprintf(ab, sizeof(ab), "%-5p", (char *)0);
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
          b[4] == '3' && b[5] == '4' && b[6] == 0 &&
@@ -307,7 +311,9 @@ int main(void) {
          nw == 2 && w[0] == '2' && w[1] == 'A' && w[2] == 0 &&
          nx == 4 && x[0] == '0' && x[1] == '0' && x[2] == '2' && x[3] == 'a' && x[4] == 0 &&
          ny == 5 && y[0] == '2' && y[1] == 'a' && y[2] == ' ' && y[4] == ' ' && y[5] == 0 &&
-         nz == 3 && z[0] == '7' && z[1] == '5' && z[2] == '5' && z[3] == 0 ? 42 : 1;
+         nz == 3 && z[0] == '7' && z[1] == '5' && z[2] == '5' && z[3] == 0 &&
+         naa == 3 && aa[0] == '0' && aa[1] == 'x' && aa[2] == '0' && aa[3] == 0 &&
+         nab == 5 && ab[0] == '0' && ab[1] == 'x' && ab[2] == '0' && ab[3] == ' ' && ab[4] == ' ' && ab[5] == 0 ? 42 : 1;
 }
 SRC
 
