@@ -48,6 +48,8 @@ static int ag_rt_round_mode = 0;
 static int ag_rt_except_flags = 0;
 static int ag_rt_errno_value = 0;
 static long ag_rt_signal_handlers[32];
+static long ag_rt_atexit_handlers[32];
+static int ag_rt_atexit_count = 0;
 void *__stdinp;
 void *__stdoutp = (void *)1;
 void *__stderrp = (void *)2;
@@ -222,6 +224,8 @@ void __agc_runtime_stderr_reset(void) {
   ag_rt_stderr_reset_impl();
   ag_rt_termination_kind = 0;
   ag_rt_termination_status = 0;
+  ag_rt_atexit_count = 0;
+  for (int i = 0; i < 32; i++) ag_rt_atexit_handlers[i] = 0;
 }
 
 static void ag_rt_notify_termination(int kind, int status) {

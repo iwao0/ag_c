@@ -422,6 +422,26 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/atexit_state.c" <<'SRC'
+int atexit(void (*func)(void));
+int seen;
+void handler(void) {
+  seen = seen + 1;
+}
+int main(void) {
+  int ok = 1;
+  int i = 0;
+  ok = ok && atexit(0) == 0;
+  while (i < 32) {
+    ok = ok && atexit(handler) == 0;
+    i++;
+  }
+  ok = ok && seen == 0;
+  ok = ok && atexit(handler) == -1;
+  return ok ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/strto_base.c" <<'SRC'
 long strtol(char *s, char **endptr, int base);
 unsigned long strtoul(char *s, char **endptr, int base);
@@ -1814,6 +1834,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_fenv_state.interp"
 wasm-validate "$out_dir/linked_signal_state.wasm"
 wasm-interp "$out_dir/linked_signal_state.wasm" --run-all-exports > "$out_dir/linked_signal_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_signal_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/atexit_state.o" "$out_dir/atexit_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_atexit_state.wasm" \
+  "$out_dir/atexit_state.o"
+wasm-validate "$out_dir/linked_atexit_state.wasm"
+wasm-interp "$out_dir/linked_atexit_state.wasm" --run-all-exports > "$out_dir/linked_atexit_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_atexit_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/strto_base.o" "$out_dir/strto_base.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_strto_base.wasm" \

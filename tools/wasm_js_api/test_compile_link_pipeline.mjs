@@ -132,6 +132,46 @@ if (linkedStdioStderr !== "runtime: error\n") {
   throw new Error(`instantiated stdio import pipeline stderr mismatch: ${JSON.stringify(linkedStdioStderr)}`);
 }
 
+const linkedAtexitExitSource = `
+int atexit(void (*func)(void));
+void exit(int status);
+int printf(const char *fmt, ...);
+void first(void) { printf("A"); }
+void second(void) { printf("B"); }
+int main(void) {
+  if (atexit(first) != 0) return 1;
+  if (atexit(second) != 0) return 2;
+  exit(9);
+  return 3;
+}
+`;
+const linkedAtexitExit = await toolchain.instantiateLinkedWasm(linkedAtexitExitSource, {
+  exports: [
+    "main",
+    "__agc_runtime_stdout_ptr",
+    "__agc_runtime_stdout_len",
+    "__agc_runtime_termination_kind",
+    "__agc_runtime_termination_status",
+  ],
+  useStdlib: true,
+});
+let linkedAtexitTrapped = false;
+try {
+  linkedAtexitExit.instance.exports.main();
+} catch (_) {
+  linkedAtexitTrapped = true;
+}
+if (!linkedAtexitTrapped) {
+  throw new Error("linked runtime exit() did not trap after termination notification");
+}
+if (linkedAtexitExit.readStdout() !== "BA") {
+  throw new Error(`linked runtime atexit handlers did not run in reverse order: ${JSON.stringify(linkedAtexitExit.readStdout())}`);
+}
+if (Number(linkedAtexitExit.instance.exports.__agc_runtime_termination_kind()) !== 1 ||
+    Number(linkedAtexitExit.instance.exports.__agc_runtime_termination_status()) !== 9) {
+  throw new Error("linked runtime exit() did not preserve termination kind/status after atexit");
+}
+
 const linkedStdinSource = await inlineStandardIncludes(`#include <stdio.h>
 int main(void) {
   char buf[4];

@@ -4686,3 +4686,20 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き406）: default runtime atexit()/exit() の handler 実行を実装
+- `atexit()` が登録関数を捨てて常に成功していたため、`exit()` 経由で cleanup handler が
+  実行されなかった。
+- runtime に最大 32 件の `atexit` handler 配列を追加し、`exit(status)` の termination 通知前に
+  LIFO 順で handler を呼ぶようにした。`abort()` は handler を呼ばないまま維持。
+  `atexit(0)` は既存 smoke との互換で成功 no-op、容量超過は `-1` を返す。
+- `test_smoke.sh` に `atexit_state.c` を追加し、NULL no-op、32 件登録成功、登録時に handler が
+  実行されないこと、33 件目が `-1` になることを object compile/link/validate/interp で確認する。
+- `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `exit(9)` fixture を追加し、
+  trap 後に stdout buffer が `BA`（逆順 handler 実行）で、termination kind/status が
+  `exit` / `9` のまま残ることを確認する。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

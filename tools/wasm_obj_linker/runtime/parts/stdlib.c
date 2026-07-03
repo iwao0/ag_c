@@ -279,13 +279,27 @@ int __agc_runtime_rand(void) {
 }
 
 int __agc_runtime_atexit(long func_addr) {
-  (void)func_addr;
+  if (!func_addr) return 0;
+  if (ag_rt_atexit_count >= 32) return -1;
+  ag_rt_atexit_handlers[ag_rt_atexit_count++] = func_addr;
   return 0;
+}
+
+static void ag_rt_run_atexit_handlers(void) {
+  while (ag_rt_atexit_count > 0) {
+    long func_addr = ag_rt_atexit_handlers[--ag_rt_atexit_count];
+    ag_rt_atexit_handlers[ag_rt_atexit_count] = 0;
+    if (func_addr) {
+      void (*func)(void) = (void (*)(void))func_addr;
+      func();
+    }
+  }
 }
 
 void __agc_runtime_trap(void);
 
 void __agc_runtime_exit(int status) {
+  ag_rt_run_atexit_handlers();
   ag_rt_notify_termination(1, status);
   __agc_runtime_trap();
 }
