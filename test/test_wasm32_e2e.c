@@ -578,6 +578,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "limits_int_min", "test/fixtures/stdheader/limits_int_min.c"},
     {"stdheader", "stdint_int32", "test/fixtures/stdheader/stdint_int32.c"},
     {"stdheader", "stdint_uint8", "test/fixtures/stdheader/stdint_uint8.c"},
+    {"stdheader", "stdio_sprintf_formats", "test/fixtures/stdheader/stdio_sprintf_formats.c"},
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
     {"stdheader", "math_runtime_ops", "test/fixtures/stdheader/math_runtime_ops.c"},
     {"stdheader", "tgmath_variant_ops", "test/fixtures/stdheader/tgmath_variant_ops.c"},
