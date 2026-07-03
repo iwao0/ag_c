@@ -841,6 +841,15 @@ int main(void) {
   unsigned long fpread = fread(fpbuf, 1, 2, fpr);
   int fp_eof = fgetc(fpr);
   fclose(fpr);
+  FILE *fmtw = fopen("tmp.txt", "w");
+  int fmt_file_ret = fprintf(fmtw, "K%d", 7);
+  long fmt_file_pos = ftell(fmtw);
+  fclose(fmtw);
+  FILE *fmtr = fopen("tmp.txt", "r");
+  char fmtbuf[3];
+  unsigned long fmtread = fread(fmtbuf, 1, 2, fmtr);
+  int fmt_eof = fgetc(fmtr);
+  fclose(fmtr);
   int file_write_pos_ok = overwrote == 1 && pos_after_overwrite == 2 &&
                           append_start == 3 && appended == 1 &&
                           owread == 4 && owbuf[0] == 'A' && owbuf[1] == 'Z' &&
@@ -851,6 +860,9 @@ int main(void) {
                           fputs_file_ret == 1 && fputc_file_ret == 'I' &&
                           pos_after_fputs == 2 && fpread == 2 &&
                           fpbuf[0] == 'H' && fpbuf[1] == 'I' && fp_eof == -1;
+  int fprintf_file_ok = fmt_file_ret == 2 && fmt_file_pos == 2 &&
+                        fmtread == 2 && fmtbuf[0] == 'K' &&
+                        fmtbuf[1] == '7' && fmt_eof == -1;
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
@@ -1080,6 +1092,7 @@ int main(void) {
          linep == line && line[0] == 'A' && line[1] == '\n' && line[2] == 0 &&
          ch2 == 'B' &&
          file_write_pos_ok &&
+         fprintf_file_ok &&
          printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
          fprintf(0, "[%04d]", 7) == 6 &&
          puts("ok") == 3 &&

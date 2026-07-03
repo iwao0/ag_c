@@ -4471,3 +4471,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き388）: fprintf/vfprintf の file stream 書き込み対応
+- default runtime object の `__agc_runtime_fprintf` / `__agc_runtime_vfprintf` は stream 引数を受け取っていたが、
+  実際には stdout/stderr だけに出力し、通常 file stream には何も書いていなかった。
+- format 結果を `ag_rt_write_formatted_stream` で stdout/stderr/file stream に振り分けるようにした。
+  `fprintf(0, ...)` は既存 smoke と同じく stderr 扱いを維持している。
+- object linker smoke に、`fprintf(fopen("tmp.txt", "w"), "K%d", 7)` の返り値、位置、
+  読み戻し結果が `K7` になるケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
