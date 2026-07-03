@@ -579,6 +579,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "stdint_int32", "test/fixtures/stdheader/stdint_int32.c"},
     {"stdheader", "stdint_uint8", "test/fixtures/stdheader/stdint_uint8.c"},
     {"stdheader", "string_memmove_overlap", "test/fixtures/stdheader/string_memmove_overlap.c"},
+    {"stdheader", "string_search_concat", "test/fixtures/stdheader/string_search_concat.c"},
     {"stdheader", "stdio_snprintf_formats", "test/fixtures/stdheader/stdio_snprintf_formats.c"},
     {"stdheader", "stdio_sprintf_formats", "test/fixtures/stdheader/stdio_sprintf_formats.c"},
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
