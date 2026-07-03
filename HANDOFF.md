@@ -4731,3 +4731,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き409）: default runtime setlocale() の unsupported locale を失敗扱いに修正
+- `setlocale()` が locale 文字列に関係なく常に `"C"` を返し、unsupported locale も成功扱いに
+  なっていた。
+- runtime は現状 C locale のみ保持するため、`setlocale(category, NULL)` / `"C"` / `""` は
+  `"C"` を返し、未知 locale 文字列や範囲外 category は `0` を返すようにした。
+- `test_smoke.sh` に `locale_state.c` を追加し、query / `"C"` / `""` の成功、`"ja_JP.UTF-8"` と
+  category 99 の失敗、`localeconv()` の decimal point を object compile/link/validate/interp で
+  確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

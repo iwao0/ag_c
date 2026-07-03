@@ -365,6 +365,27 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/locale_state.c" <<'SRC'
+struct lconv {
+  char *decimal_point;
+};
+char *setlocale(int category, char *locale);
+struct lconv *localeconv(void);
+int main(void) {
+  char *query = setlocale(0, 0);
+  char *c = setlocale(0, "C");
+  char *native = setlocale(0, "");
+  char *bad_name = setlocale(0, "ja_JP.UTF-8");
+  char *bad_category = setlocale(99, "C");
+  struct lconv *lc = localeconv();
+  return query != 0 && query[0] == 'C' && query[1] == 0 &&
+         c != 0 && c[0] == 'C' && c[1] == 0 &&
+         native != 0 && native[0] == 'C' && native[1] == 0 &&
+         bad_name == 0 && bad_category == 0 &&
+         lc != 0 && lc->decimal_point[0] == '.' && lc->decimal_point[1] == 0 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/fenv_state.c" <<'SRC'
 typedef unsigned long long fexcept_t;
 typedef struct { unsigned long long fpcr; unsigned long long fpsr; } fenv_t;
@@ -1864,6 +1885,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_vformat_file.interp"
 wasm-validate "$out_dir/linked_wide_locale_state.wasm"
 wasm-interp "$out_dir/linked_wide_locale_state.wasm" --run-all-exports > "$out_dir/linked_wide_locale_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_wide_locale_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/locale_state.o" "$out_dir/locale_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_locale_state.wasm" \
+  "$out_dir/locale_state.o"
+wasm-validate "$out_dir/linked_locale_state.wasm"
+wasm-interp "$out_dir/linked_locale_state.wasm" --run-all-exports > "$out_dir/linked_locale_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_locale_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/fenv_state.o" "$out_dir/fenv_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fenv_state.wasm" \

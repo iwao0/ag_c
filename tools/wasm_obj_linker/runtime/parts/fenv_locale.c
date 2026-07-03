@@ -77,9 +77,12 @@ int __agc_runtime_feupdateenv(long envp_addr) {
 }
 
 long __agc_runtime_setlocale(int category, long locale_addr) {
-  (void)category;
-  (void)locale_addr;
-  return (long)ag_rt_locale_c;
+  if (category < 0 || category > 5) return 0;
+  if (!locale_addr) return (long)ag_rt_locale_c;
+  char *locale = ag_rt_ptr(locale_addr);
+  if (locale[0] == 0) return (long)ag_rt_locale_c;
+  if (locale[0] == 'C' && locale[1] == 0) return (long)ag_rt_locale_c;
+  return 0;
 }
 
 long __agc_runtime_localeconv(void) {
