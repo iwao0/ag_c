@@ -241,6 +241,13 @@ int main(void) {
   char l[32];
   char m[32];
   char n[32];
+  char o[32];
+  char p[32];
+  char q[32];
+  char r[32];
+  char s[32];
+  char t[32];
+  char u[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
   int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
@@ -255,6 +262,13 @@ int main(void) {
   int nl = sprintf(l, "%c", 'Q');
   int nm = snprintf(m, sizeof(m), "%%");
   int nn = sprintf(n, "%%");
+  int no = snprintf(o, sizeof(o), "%-5s", "xy");
+  int np = snprintf(p, sizeof(p), "%*s", -5, "xy");
+  int nq = snprintf(q, sizeof(q), "%-3c", 'R');
+  int nr = snprintf(r, sizeof(r), "%-5d", -7);
+  int ns = snprintf(s, sizeof(s), "%-5u", 8u);
+  int nt = snprintf(t, sizeof(t), "%-6.1f", 2.6);
+  int nu = snprintf(u, sizeof(u), "%-05d", 7);
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
          b[4] == '3' && b[5] == '4' && b[6] == 0 &&
@@ -271,7 +285,14 @@ int main(void) {
          nk == 1 && k[0] == 'Z' && k[1] == 0 &&
          nl == 1 && l[0] == 'Q' && l[1] == 0 &&
          nm == 1 && m[0] == '%' && m[1] == 0 &&
-         nn == 1 && n[0] == '%' && n[1] == 0 ? 42 : 1;
+         nn == 1 && n[0] == '%' && n[1] == 0 &&
+         no == 5 && o[0] == 'x' && o[1] == 'y' && o[2] == ' ' && o[4] == ' ' && o[5] == 0 &&
+         np == 5 && p[0] == 'x' && p[1] == 'y' && p[2] == ' ' && p[4] == ' ' && p[5] == 0 &&
+         nq == 3 && q[0] == 'R' && q[1] == ' ' && q[2] == ' ' && q[3] == 0 &&
+         nr == 5 && r[0] == '-' && r[1] == '7' && r[2] == ' ' && r[4] == ' ' && r[5] == 0 &&
+         ns == 5 && s[0] == '8' && s[1] == ' ' && s[4] == ' ' && s[5] == 0 &&
+         nt == 6 && t[0] == '2' && t[1] == '.' && t[2] == '6' && t[3] == ' ' && t[5] == ' ' && t[6] == 0 &&
+         nu == 5 && u[0] == '7' && u[1] == ' ' && u[4] == ' ' && u[5] == 0 ? 42 : 1;
 }
 SRC
 

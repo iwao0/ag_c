@@ -4769,3 +4769,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き412）: default runtime printf 系の左寄せ format を実装
+- `snprintf()` / `sprintf()` などの簡易 formatter が `%-5s` や負の `*` width を
+  左寄せとして扱えず、未対応 format として崩れ得た。
+- `%d` / `%u` / `%s` / `%c` / `%f` の `-` フラグを実装し、`%*s` の負 width も
+  左寄せとして扱うようにした。左寄せ時は `0` padding を無効化する。
+- `snprintf_negative.c` に左寄せ文字列、負 width、文字、整数、浮動小数、`%-05d` の確認を追加した。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

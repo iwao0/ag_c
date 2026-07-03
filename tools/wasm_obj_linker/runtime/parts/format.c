@@ -26,6 +26,18 @@ static void ag_rt_write_udec(char *buf, size_t size, int bounded, size_t *pos,
   while (n > 0) ag_rt_putc(buf, size, bounded, pos, tmp[--n]);
 }
 
+static void ag_rt_write_spaces(char *buf, size_t size, int bounded, size_t *pos, int count) {
+  while (count > 0) {
+    ag_rt_putc(buf, size, bounded, pos, ' ');
+    count--;
+  }
+}
+
+static void ag_rt_write_bytes(char *buf, size_t size, int bounded, size_t *pos,
+                              const char *src, int len) {
+  for (int i = 0; i < len; i++) ag_rt_putc(buf, size, bounded, pos, src[i]);
+}
+
 static void ag_rt_write_idec(char *buf, size_t size, int bounded, size_t *pos,
                              int v, int width, int zero_pad) {
   unsigned long u;
@@ -112,12 +124,20 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       continue;
     }
 
+    int left_align = 0;
     int zero_pad = 0;
     int width = 0;
     int precision = -1;
-    if (*fmt == '0') {
-      zero_pad = 1;
-      fmt++;
+    for (;;) {
+      if (*fmt == '-') {
+        left_align = 1;
+        fmt++;
+      } else if (*fmt == '0') {
+        zero_pad = 1;
+        fmt++;
+      } else {
+        break;
+      }
     }
     while ((int)*fmt >= '0' && (int)*fmt <= '9') {
       width = width * 10 + (*fmt - '0');
@@ -125,9 +145,13 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     }
     if (*fmt == '*') {
       width = va_arg(ap, int);
-      if (width < 0) width = -width;
+      if (width < 0) {
+        left_align = 1;
+        width = -width;
+      }
       fmt++;
     }
+    if (left_align) zero_pad = 0;
     if (*fmt == '.') {
       fmt++;
       if (*fmt == '*') {
@@ -157,27 +181,43 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
     }
 
     if (*fmt == 'd') {
-      ag_rt_write_idec(buf, size, bounded, &pos, va_arg(ap, int), width, zero_pad);
+      int v = va_arg(ap, int);
+      if (left_align) {
+        char tmp[64];
+        size_t tmp_pos = 0;
+        ag_rt_write_idec(tmp, sizeof(tmp), 1, &tmp_pos, v, 0, 0);
+        ag_rt_finish(tmp, sizeof(tmp), 1, tmp_pos);
+        ag_rt_write_bytes(buf, size, bounded, &pos, tmp, (int)tmp_pos);
+        ag_rt_write_spaces(buf, size, bounded, &pos, width - (int)tmp_pos);
+      } else {
+        ag_rt_write_idec(buf, size, bounded, &pos, v, width, zero_pad);
+      }
       fmt++;
     } else if (*fmt == 'u') {
       unsigned long v = length_z ? va_arg(ap, unsigned long) : (unsigned long)va_arg(ap, unsigned int);
-      ag_rt_write_udec(buf, size, bounded, &pos, v, width, zero_pad);
+      if (left_align) {
+        char tmp[64];
+        size_t tmp_pos = 0;
+        ag_rt_write_udec(tmp, sizeof(tmp), 1, &tmp_pos, v, 0, 0);
+        ag_rt_finish(tmp, sizeof(tmp), 1, tmp_pos);
+        ag_rt_write_bytes(buf, size, bounded, &pos, tmp, (int)tmp_pos);
+        ag_rt_write_spaces(buf, size, bounded, &pos, width - (int)tmp_pos);
+      } else {
+        ag_rt_write_udec(buf, size, bounded, &pos, v, width, zero_pad);
+      }
       fmt++;
     } else if (*fmt == 's') {
       char *s = va_arg(ap, char *);
       int len = ag_rt_strn_len(s, precision);
-      while (len < width) {
-        ag_rt_putc(buf, size, bounded, &pos, ' ');
-        width--;
-      }
+      if (!left_align) ag_rt_write_spaces(buf, size, bounded, &pos, width - len);
       ag_rt_write_str_n(buf, size, bounded, &pos, s, precision);
+      if (left_align) ag_rt_write_spaces(buf, size, bounded, &pos, width - len);
       fmt++;
     } else if (*fmt == 'c') {
-      while (1 < width) {
-        ag_rt_putc(buf, size, bounded, &pos, ' ');
-        width--;
-      }
-      ag_rt_putc(buf, size, bounded, &pos, va_arg(ap, int));
+      int ch = va_arg(ap, int);
+      if (!left_align) ag_rt_write_spaces(buf, size, bounded, &pos, width - 1);
+      ag_rt_putc(buf, size, bounded, &pos, ch);
+      if (left_align) ag_rt_write_spaces(buf, size, bounded, &pos, width - 1);
       fmt++;
     } else if (*fmt == 'f' || *fmt == 'F') {
       (void)length_l;
@@ -188,7 +228,16 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       } else {
         v = va_arg(ap, double);
       }
-      ag_rt_write_fixed(buf, size, bounded, &pos, v, precision);
+      if (left_align) {
+        char tmp[128];
+        size_t tmp_pos = 0;
+        ag_rt_write_fixed(tmp, sizeof(tmp), 1, &tmp_pos, v, precision);
+        ag_rt_finish(tmp, sizeof(tmp), 1, tmp_pos);
+        ag_rt_write_bytes(buf, size, bounded, &pos, tmp, (int)tmp_pos);
+        ag_rt_write_spaces(buf, size, bounded, &pos, width - (int)tmp_pos);
+      } else {
+        ag_rt_write_fixed(buf, size, bounded, &pos, v, precision);
+      }
       fmt++;
     } else {
       ag_rt_putc(buf, size, bounded, &pos, '%');
