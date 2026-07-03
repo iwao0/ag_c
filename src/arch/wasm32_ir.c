@@ -3413,6 +3413,10 @@ static void emit_minimal_libc_stubs(void) {
     int lc_addr = intern_data_symbol("__ag_stub_lconv", 15, 96, 4)->addr;
     wasm_emitf(2, "(func $localeconv (result i32) (i32.const %d))\n", lc_addr);
   }
+  if (has_undefined_function("localtime", 9)) {
+    int tm_addr = intern_data_symbol("__ag_stub_tm", 12, 36, 4)->addr;
+    wasm_emitf(2, "(func $localtime (param i32) (result i32) (i32.const %d))\n", tm_addr);
+  }
   if (has_undefined_function("iswalpha", 8)) {
     wasm_emitf(2, "(func $iswalpha (param $c i64) (result i32)\n");
     wasm_emitf(4, "(i32.or\n");

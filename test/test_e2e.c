@@ -745,6 +745,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
     {"stdheader", "time_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_runtime_ops.c", 0, 0},
+    {"stdheader", "time_localtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_localtime_ops.c", 0, 0},
     {"stdheader", "signal_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/signal_runtime_ops.c", 0, 0},
     {"stdheader", "inttypes_strto_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/inttypes_strto_ops.c", 0, 0},
     {"stdheader", "fenv_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/fenv_runtime_ops.c", 0, 0},
@@ -1978,6 +1979,7 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_realpath") == 0 ||
             strcmp(sym, "_time") == 0 || strcmp(sym, "_clock") == 0 ||
             strcmp(sym, "_difftime") == 0 ||
+            strcmp(sym, "_localtime") == 0 ||
             strcmp(sym, "_signal") == 0 || strcmp(sym, "_raise") == 0 ||
             strcmp(sym, "_perror") == 0 || strcmp(sym, "_fopen") == 0 ||
             strcmp(sym, "_fclose") == 0 || strcmp(sym, "_fflush") == 0 ||
