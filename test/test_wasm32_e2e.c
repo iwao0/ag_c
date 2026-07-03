@@ -587,6 +587,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "ctype_classify_more", "test/fixtures/stdheader/ctype_classify_more.c"},
     {"stdheader", "stdlib_realloc", "test/fixtures/stdheader/stdlib_realloc.c"},
     {"stdheader", "stdlib_convert_rand", "test/fixtures/stdheader/stdlib_convert_rand.c"},
+    {"stdheader", "stdlib_strto_int", "test/fixtures/stdheader/stdlib_strto_int.c"},
     {"stdheader", "math_dependency_ops", "test/fixtures/stdheader/math_dependency_ops.c"},
     {"stdheader", "math_runtime_ops", "test/fixtures/stdheader/math_runtime_ops.c"},
     {"stdheader", "tgmath_variant_ops", "test/fixtures/stdheader/tgmath_variant_ops.c"},
