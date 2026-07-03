@@ -4413,3 +4413,14 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     `build/wasm_selfhost_api/ag_c_wasm_api.wasm` 側で E4007 が出たが、
     `AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_debug.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
     と `make test-wasm-js-pipeline` の単独再実行は通った。
+
+### このセッション（続き383）: fclose(fdopen(...)) で fd も閉じる
+- default runtime object の `fclose(fdopen(fd, ...))` が FILE stream slot だけを解放し、
+  元 fd の `ag_rt_fds[idx].used` は開いたままにしていた。
+- `fclose` で fd-backed stream を閉じる時に fd position を同期した上で fd slot も unused にするようにした。
+- object linker smoke に、`fclose(fdopen(fd, "r"))` 後の `read(fd, ...)` が `-1` を返すケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

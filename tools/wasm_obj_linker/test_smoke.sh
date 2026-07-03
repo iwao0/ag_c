@@ -720,6 +720,12 @@ int main(void) {
   int fdopen_sync_ok = fd_after_stream == 1 && fdafter[0] == 'B';
   fclose(fdstream);
   close(fd2);
+  int fdclose = open("tmp.txt", 0);
+  FILE *fdclose_stream = fdopen(fdclose, "r");
+  fclose(fdclose_stream);
+  char fdclosed_buf[1];
+  long fdclosed_read = read(fdclose, fdclosed_buf, 1);
+  close(fdclose);
   FILE *rfa = fopen("tmp.txt", "r");
   FILE *rfb = fopen("tmp.txt", "r");
   int rfa_ch1 = fgetc(rfa);
@@ -1022,6 +1028,7 @@ int main(void) {
          fd_independent_ok &&
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
          fdopen_sync_ok &&
+         fdclosed_read == -1 &&
          file_independent_ok &&
          pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
          seek_ok == 0 && pos_after_seek == 1 && ch_seek == '\n' &&

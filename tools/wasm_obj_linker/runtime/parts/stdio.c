@@ -228,6 +228,7 @@ int __agc_runtime_fclose(long stream_addr) {
   if (f) {
     if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
       ag_rt_fds[f->fd_index].pos = f->pos;
+      ag_rt_fds[f->fd_index].used = 0;
     }
     f->used = 0;
     f->fd_index = -1;
