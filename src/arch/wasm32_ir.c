@@ -3883,6 +3883,40 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(if (result i32) (i32.and (i64.ge_s (local.get $c) (i64.const 0)) (i64.le_s (local.get $c) (i64.const 255))) (then (i32.wrap_i64 (local.get $c))) (else (i32.const -1)))\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("mbrtoc16", 8)) {
+    wasm_emitf(2, "(func $mbrtoc16 (param $pc16 i32) (param $s i32) (param $n i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i64.const 0))))\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $n)) (then (return (i64.const -2))))\n");
+    wasm_emitf(4, "(local.set $ch (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(4, "(if (local.get $pc16) (then (i32.store16 (local.get $pc16) (local.get $ch))))\n");
+    wasm_emitf(4, "(if (result i64) (i32.eqz (local.get $ch)) (then (i64.const 0)) (else (i64.const 1)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("c16rtomb", 8)) {
+    wasm_emitf(2, "(func $c16rtomb (param $s i32) (param $c16 i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i64.const 1))))\n");
+    wasm_emitf(4, "(i32.store8 (local.get $s) (i32.wrap_i64 (local.get $c16)))\n");
+    wasm_emitf(4, "(i64.const 1)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("mbrtoc32", 8)) {
+    wasm_emitf(2, "(func $mbrtoc32 (param $pc32 i32) (param $s i32) (param $n i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i64.const 0))))\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $n)) (then (return (i64.const -2))))\n");
+    wasm_emitf(4, "(local.set $ch (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(4, "(if (local.get $pc32) (then (i32.store (local.get $pc32) (local.get $ch))))\n");
+    wasm_emitf(4, "(if (result i64) (i32.eqz (local.get $ch)) (then (i64.const 0)) (else (i64.const 1)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("c32rtomb", 8)) {
+    wasm_emitf(2, "(func $c32rtomb (param $s i32) (param $c32 i64) (param $ps i32) (result i64)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i64.const 1))))\n");
+    wasm_emitf(4, "(i32.store8 (local.get $s) (i32.wrap_i64 (local.get $c32)))\n");
+    wasm_emitf(4, "(i64.const 1)\n");
+    wasm_emitf(2, ")\n");
+  }
   int atan_defined = psx_ctx_has_function_name("atan", 4) &&
                      psx_ctx_is_function_defined("atan", 4);
   int atan2_defined = psx_ctx_has_function_name("atan2", 5) &&

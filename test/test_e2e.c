@@ -710,6 +710,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "stddef_size_t", CASE_ASSERT_FILE, "test/fixtures/stdheader/stddef_size_t.c", 0, 0},
     {"stdheader", "stddef_null", CASE_ASSERT_FILE, "test/fixtures/stdheader/stddef_null.c", 0, 0},
     {"stdheader", "stddef_wchar_t", CASE_ASSERT_FILE, "test/fixtures/stdheader/stddef_wchar_t.c", 0, 0},
+    {"stdheader", "uchar_multibyte_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/uchar_multibyte_ops.c", 0, 0},
     {"stdheader", "stddef_max_align_t", CASE_ASSERT_FILE, "test/fixtures/stdheader/stddef_max_align_t.c", 0, 0},
     {"stdheader", "limits_int_max", CASE_ASSERT_FILE, "test/fixtures/stdheader/limits_int_max.c", 0, 0},
     {"stdheader", "limits_int_min", CASE_ASSERT_FILE, "test/fixtures/stdheader/limits_int_min.c", 0, 0},
@@ -2060,6 +2061,8 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_btowc") == 0 || strcmp(sym, "_wctob") == 0 ||
             strcmp(sym, "_wcstol") == 0 || strcmp(sym, "_wcstoul") == 0 ||
             strcmp(sym, "_wcstod") == 0 ||
+            strcmp(sym, "_mbrtoc16") == 0 || strcmp(sym, "_c16rtomb") == 0 ||
+            strcmp(sym, "_mbrtoc32") == 0 || strcmp(sym, "_c32rtomb") == 0 ||
             strcmp(sym, "_feclearexcept") == 0 || strcmp(sym, "_fetestexcept") == 0 ||
             strcmp(sym, "_feraiseexcept") == 0 || strcmp(sym, "_fegetround") == 0 ||
             strcmp(sym, "_fesetround") == 0 ||

@@ -573,6 +573,7 @@ static const wasm_e2e_case_t cases[] = {
     {"stdheader", "stddef_null", "test/fixtures/stdheader/stddef_null.c"},
     {"stdheader", "stddef_size_t", "test/fixtures/stdheader/stddef_size_t.c"},
     {"stdheader", "stddef_wchar_t", "test/fixtures/stdheader/stddef_wchar_t.c"},
+    {"stdheader", "uchar_multibyte_ops", "test/fixtures/stdheader/uchar_multibyte_ops.c"},
     {"stdheader", "limits_char_bit", "test/fixtures/stdheader/limits_char_bit.c"},
     {"stdheader", "limits_int_max", "test/fixtures/stdheader/limits_int_max.c"},
     {"stdheader", "limits_int_min", "test/fixtures/stdheader/limits_int_min.c"},
