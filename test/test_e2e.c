@@ -721,6 +721,7 @@ static const test_case_t test_cases[] = {
     {"stdheader", "string_strcmp", CASE_ASSERT_FILE, "test/fixtures/stdheader/string_strcmp.c", 0, 0},
     {"stdheader", "string_memmove_overlap", CASE_ASSERT_FILE, "test/fixtures/stdheader/string_memmove_overlap.c", 0, 0},
     {"stdheader", "string_search_concat", CASE_ASSERT_FILE, "test/fixtures/stdheader/string_search_concat.c", 0, 0},
+    {"stdheader", "string_strtok_basic", CASE_ASSERT_FILE, "test/fixtures/stdheader/string_strtok_basic.c", 0, 0},
     {"stdheader", "stdio_snprintf_formats", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_snprintf_formats.c", 0, 0},
     {"stdheader", "stdio_sprintf_formats", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdio_sprintf_formats.c", 0, 0},
     {"stdheader", "stdlib_malloc_free", CASE_ASSERT_FILE, "test/fixtures/stdheader/stdlib_malloc_free.c", 0, 0},

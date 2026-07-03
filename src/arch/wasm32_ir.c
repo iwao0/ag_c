@@ -2764,6 +2764,48 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("strtok", 6)) {
+    wasm_emitf(2, "(global $__ag_strtok_next (mut i32) (i32.const 0))\n");
+    wasm_emitf(2, "(func $__ag_strtok_is_delim (param $ch i32) (param $delim i32) (result i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $d i32)\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(local.set $d (i32.load8_u (i32.add (local.get $delim) (local.get $p))))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $d)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (i32.eq (local.get $d) (local.get $ch)) (then (return (i32.const 1))))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+    wasm_emitf(2, "(func $strtok (param $str i32) (param $delim i32) (result i32)\n");
+    wasm_emitf(4, "(local $s i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(if (i32.ne (local.get $str) (i32.const 0)) (then (local.set $s (local.get $str))) (else (local.set $s (global.get $__ag_strtok_next))))\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $s)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(block $skip_done (loop $skip_loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $s)))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (global.set $__ag_strtok_next (i32.const 0)) (return (i32.const 0))))\n");
+    wasm_emitf(6, "(if (i32.eqz (call $__ag_strtok_is_delim (local.get $ch) (local.get $delim))) (then (br $skip_done)))\n");
+    wasm_emitf(6, "(local.set $s (i32.add (local.get $s) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $skip_loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.set $p (local.get $s))\n");
+    wasm_emitf(4, "(block $scan_done (loop $scan_loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (global.set $__ag_strtok_next (i32.const 0)) (return (local.get $s))))\n");
+    wasm_emitf(6, "(if (call $__ag_strtok_is_delim (local.get $ch) (local.get $delim)) (then\n");
+    wasm_emitf(8, "(i32.store8 (local.get $p) (i32.const 0))\n");
+    wasm_emitf(8, "(global.set $__ag_strtok_next (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(8, "(return (local.get $s))\n");
+    wasm_emitf(6, "))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $scan_loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("putchar", 7)) {
     wasm_emitf(2, "(func $putchar (param $c i64) (result i32) (i32.wrap_i64 (local.get $c)))\n");
   }
