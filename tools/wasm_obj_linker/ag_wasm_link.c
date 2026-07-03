@@ -786,7 +786,8 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
          str_eq_lit(name, "fclose") || str_eq_lit(name, "fread") ||
          str_eq_lit(name, "open") || str_eq_lit(name, "close") ||
-         str_eq_lit(name, "read") || str_eq_lit(name, "fdopen") ||
+         str_eq_lit(name, "read") || str_eq_lit(name, "write") ||
+         str_eq_lit(name, "lseek") || str_eq_lit(name, "fdopen") ||
          str_eq_lit(name, "fstat") ||
          str_eq_lit(name, "fgetc") || str_eq_lit(name, "getc") ||
          str_eq_lit(name, "fgets") || str_eq_lit(name, "fseek") ||
@@ -2714,6 +2715,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_close";
   } else if (str_eq_lit(name, "read")) {
     target_lit = "__agc_runtime_read";
+  } else if (str_eq_lit(name, "write")) {
+    target_lit = "__agc_runtime_write";
+  } else if (str_eq_lit(name, "lseek")) {
+    target_lit = "__agc_runtime_lseek";
   } else if (str_eq_lit(name, "fdopen")) {
     target_lit = "__agc_runtime_fdopen";
   } else if (str_eq_lit(name, "fstat")) {

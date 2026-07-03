@@ -4424,3 +4424,18 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き384）: default runtime に write/lseek を追加
+- `include/unistd.h` は `read` / `close` だけで、default runtime object と linker bridge に
+  `write` / `lseek` が未登録だった。
+- `__agc_runtime_write` / `__agc_runtime_lseek` を追加し、既存の fd table (`ag_rt_fds`) と
+  疑似ファイル buffer (`ag_rt_file_buf`) を使って fd position と file length を更新するようにした。
+- `ag_wasm_link` の runtime symbol 判定と libc bridge に `write` / `lseek` を追加した。
+- object linker smoke に、`open` → `write("XYZ")` → `lseek(-2, SEEK_CUR)` → `write("q")`
+  → `read` で `XqZ` が読めるケースを追加した。
+- 確認:
+  - `make -j4 build/ag_wasm_link build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

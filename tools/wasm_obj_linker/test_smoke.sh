@@ -513,6 +513,8 @@ unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *st
 unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
 int open(char *path, int oflag);
 long read(int fd, void *buf, unsigned long count);
+long write(int fd, void *buf, unsigned long count);
+long lseek(int fd, long offset, int whence);
 int close(int fd);
 int fstat(int fd, struct stat *st);
 int fgetc(FILE *stream);
@@ -711,6 +713,23 @@ int main(void) {
                           fda[0] == 'A' && fda[1] == '\n' &&
                           fdb[0] == 'A' && fdb[1] == '\n' &&
                           close_a == 0 && close_b == 0;
+  int fdw = open("tmp.txt", 0);
+  long fdw_pos0 = lseek(fdw, 0, 0);
+  long fdw_written1 = write(fdw, "XYZ", 3);
+  long fdw_pos1 = lseek(fdw, -2, 1);
+  long fdw_written2 = write(fdw, "q", 1);
+  long fdw_end = lseek(fdw, 0, 2);
+  long fdw_pos2 = lseek(fdw, 0, 0);
+  char fdwbuf[4];
+  long fdw_read = read(fdw, fdwbuf, 3);
+  int fdw_close = close(fdw);
+  int fd_write_seek_ok = fdw_pos0 == 0 && fdw_written1 == 3 && fdw_pos1 == 1 &&
+                         fdw_written2 == 1 && fdw_end == 3 && fdw_pos2 == 0 &&
+                         fdw_read == 3 && fdwbuf[0] == 'X' && fdwbuf[1] == 'q' &&
+                         fdwbuf[2] == 'Z' && fdw_close == 0;
+  FILE *wf_restore = fopen("tmp.txt", "w");
+  fwrite("A\nB", 1, 3, wf_restore);
+  fclose(wf_restore);
   int fd2 = open("tmp.txt", 0);
   FILE *fdstream = fdopen(fd2, "r");
   char fdline[4];
@@ -1026,6 +1045,7 @@ int main(void) {
          st.st_size == 3 && fdread == 3 && fdbuf[0] == 'A' && fdbuf[1] == '\n' &&
          fdbuf[2] == 'B' && close_ok == 0 &&
          fd_independent_ok &&
+         fd_write_seek_ok &&
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
          fdopen_sync_ok &&
          fdclosed_read == -1 &&

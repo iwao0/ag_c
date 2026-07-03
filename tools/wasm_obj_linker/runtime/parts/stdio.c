@@ -207,6 +207,39 @@ long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
   return i;
 }
 
+long __agc_runtime_write(int fd, long buf_addr, unsigned long count) {
+  int idx = fd - 3;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  char *src = ag_rt_ptr(buf_addr);
+  long limit = (long)count;
+  long i = 0;
+  while (i < limit && ag_rt_fds[idx].pos < (long)sizeof(ag_rt_file_buf)) {
+    ag_rt_file_buf[ag_rt_fds[idx].pos++] = src[i++];
+  }
+  if (ag_rt_fds[idx].pos > ag_rt_file_len) ag_rt_file_len = ag_rt_fds[idx].pos;
+  return i;
+}
+
+long __agc_runtime_lseek(int fd, long offset, int whence) {
+  int idx = fd - 3;
+  long base = 0;
+  long next;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  if (whence == 0) {
+    base = 0;
+  } else if (whence == 1) {
+    base = ag_rt_fds[idx].pos;
+  } else if (whence == 2) {
+    base = ag_rt_file_len;
+  } else {
+    return -1;
+  }
+  next = base + offset;
+  if (next < 0) return -1;
+  ag_rt_fds[idx].pos = next;
+  return next;
+}
+
 long __agc_runtime_fdopen(int fd, long mode_addr) {
   int idx = fd - 3;
   char *mode = ag_rt_ptr(mode_addr);
