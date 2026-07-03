@@ -419,6 +419,27 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/strto_base.c" <<'SRC'
+long strtol(char *s, char **endptr, int base);
+unsigned long strtoul(char *s, char **endptr, int base);
+unsigned long strtoumax(char *s, char **endptr, int base);
+int main(void) {
+  char *end = 0;
+  char *none = "xyz";
+  long hex = strtol("0x10!", &end, 0);
+  int ok_hex = hex == 16 && *end == '!';
+  long oct = strtol("010!", &end, 0);
+  int ok_oct = oct == 8 && *end == '!';
+  unsigned long ux = strtoul("+0X1f!", &end, 0);
+  int ok_ux = ux == 31 && *end == '!';
+  unsigned long uneg = strtoumax("-010!", &end, 0);
+  int ok_uneg = uneg == (0UL - 8UL) && *end == '!';
+  long no = strtol(none, &end, 0);
+  int ok_none = no == 0 && end == none;
+  return ok_hex && ok_oct && ok_ux && ok_uneg && ok_none ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1533,6 +1554,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_fenv_state.interp"
 wasm-validate "$out_dir/linked_signal_state.wasm"
 wasm-interp "$out_dir/linked_signal_state.wasm" --run-all-exports > "$out_dir/linked_signal_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_signal_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/strto_base.o" "$out_dir/strto_base.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_strto_base.wasm" \
+  "$out_dir/strto_base.o"
+wasm-validate "$out_dir/linked_strto_base.wasm"
+wasm-interp "$out_dir/linked_strto_base.wasm" --run-all-exports > "$out_dir/linked_strto_base.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_strto_base.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

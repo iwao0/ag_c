@@ -16,8 +16,38 @@ int __agc_runtime_atoi(long s_addr) {
   return acc * sign;
 }
 
+static int __agc_runtime_int_digit(int c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+  return -1;
+}
+
+static char *__agc_runtime_int_prefix(char *s, int *base) {
+  int b = *base;
+  if (b == 0) {
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
+        __agc_runtime_int_digit(s[2]) >= 0 && __agc_runtime_int_digit(s[2]) < 16) {
+      *base = 16;
+      return s + 2;
+    }
+    if (s[0] == '0') {
+      *base = 8;
+      return s;
+    }
+    *base = 10;
+    return s;
+  }
+  if (b == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
+      __agc_runtime_int_digit(s[2]) >= 0 && __agc_runtime_int_digit(s[2]) < 16) {
+    return s + 2;
+  }
+  return s;
+}
+
 long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
-  char *s = ag_rt_ptr(s_addr);
+  char *orig = ag_rt_ptr(s_addr);
+  char *s = orig;
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   int sign = 1;
   if (*s == '-') {
@@ -26,22 +56,19 @@ long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {
   } else if (*s == '+') {
     s++;
   }
-  if (base == 0) base = 10;
-  if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+  s = __agc_runtime_int_prefix(s, &base);
+  char *digits = s;
   long acc = 0;
   for (;;) {
-    int digit;
-    if (*s >= '0' && *s <= '9') digit = *s - '0';
-    else if (*s >= 'a' && *s <= 'z') digit = *s - 'a' + 10;
-    else if (*s >= 'A' && *s <= 'Z') digit = *s - 'A' + 10;
-    else break;
+    int digit = __agc_runtime_int_digit(*s);
+    if (digit < 0) break;
     if (digit >= base) break;
     acc = acc * base + digit;
     s++;
   }
   if (endptr_addr) {
     long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)s;
+    *endp = (long)(s == digits ? orig : s);
   }
   return sign * acc;
 }
@@ -192,7 +219,8 @@ long __agc_runtime_strtoimax(long s_addr, long endptr_addr, int base) {
 }
 
 unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
-  char *s = ag_rt_ptr(s_addr);
+  char *orig = ag_rt_ptr(s_addr);
+  char *s = orig;
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   int neg = 0;
   if (*s == '-') {
@@ -201,22 +229,19 @@ unsigned long __agc_runtime_strtoumax(long s_addr, long endptr_addr, int base) {
   } else if (*s == '+') {
     s++;
   }
-  if (base == 0) base = 10;
-  if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s += 2;
+  s = __agc_runtime_int_prefix(s, &base);
+  char *digits = s;
   unsigned long acc = 0;
   for (;;) {
-    int digit;
-    if (*s >= '0' && *s <= '9') digit = *s - '0';
-    else if (*s >= 'a' && *s <= 'z') digit = *s - 'a' + 10;
-    else if (*s >= 'A' && *s <= 'Z') digit = *s - 'A' + 10;
-    else break;
+    int digit = __agc_runtime_int_digit(*s);
+    if (digit < 0) break;
     if (digit >= base) break;
     acc = acc * (unsigned long)base + (unsigned long)digit;
     s++;
   }
   if (endptr_addr) {
     long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)s;
+    *endp = (long)(s == digits ? orig : s);
   }
   return neg ? (0UL - acc) : acc;
 }

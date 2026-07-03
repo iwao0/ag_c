@@ -4547,3 +4547,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き395）: default runtime の strto base 自動判定を修正
+- `strtol()` / `strtoumax()` が `base == 0` を常に 10 として扱っており、
+  `0x10` や `010` を C の期待通りに 16 進 / 8 進として読めていなかった。
+- `base == 0` の `0x` prefix / leading zero 判定と、`base == 16` の optional `0x` prefix を実装した。
+- 変換できる digit が 0 個の場合は `endptr` に元の入力ポインタを返すようにした。
+- `test_smoke.sh` に独立 fixture `strto_base.c` を追加し、`strtol` / `strtoul` / `strtoumax` の
+  hex/octal/negative unsigned/no-conversion を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
