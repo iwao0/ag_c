@@ -4591,3 +4591,13 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き399）: default runtime の realpath(path, NULL) を malloc copy に修正
+- `realpath(path, NULL)` が入力文字列ポインタをそのまま返しており、呼び出し側が得るべき独立 buffer になっていなかった。
+- `resolved_path == NULL` のとき runtime heap から `strlen(path)+1` を確保し、path 文字列をコピーして返すようにした。
+- 既存 `libc_runtime.c` smoke の期待を強め、`realpath("src", 0)` の返り値が文字列 literal `"src"` と
+  同一ポインタではなく、内容は `"src"` であることを確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

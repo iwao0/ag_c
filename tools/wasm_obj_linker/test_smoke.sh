@@ -1198,7 +1198,7 @@ int main(void) {
          rand1 != rand2 &&
          atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 &&
          resolved_pathp == resolved_path && strcmp(resolved_path, "include") == 0 &&
-         resolved_nullp != 0 && strcmp(resolved_nullp, "src") == 0 &&
+         resolved_nullp != 0 && resolved_nullp != "src" && strcmp(resolved_nullp, "src") == 0 &&
          system("true") == 0 &&
          nums[0] == 1 && nums[1] == 2 && nums[2] == 3 && nums[3] == 4 && nums[4] == 5 &&
          found == nums + 2 && *found == 3 &&

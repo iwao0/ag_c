@@ -303,8 +303,15 @@ long __agc_runtime_getenv(long name_addr) {
 long __agc_runtime_realpath(long path_addr, long resolved_path_addr) {
   if (!path_addr) return 0;
   char *path = ag_rt_ptr(path_addr);
-  if (!resolved_path_addr) return path_addr;
-  char *resolved = ag_rt_ptr(resolved_path_addr);
+  char *resolved;
+  if (resolved_path_addr) {
+    resolved = ag_rt_ptr(resolved_path_addr);
+  } else {
+    long n = 0;
+    while (path[n]) n++;
+    resolved_path_addr = __agc_runtime_malloc(n + 1);
+    resolved = ag_rt_ptr(resolved_path_addr);
+  }
   long i = 0;
   do {
     resolved[i] = path[i];
