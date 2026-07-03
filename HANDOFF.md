@@ -4397,3 +4397,19 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き382）: fputs/fputc の file stream 書き込み対応
+- default runtime object の `__agc_runtime_fputs` / `__agc_runtime_fputc` は stdout/stderr だけを処理し、
+  通常 file stream には実際に書き込んでいなかった。
+- `ag_rt_file_write_mem` helper を追加し、`fputs` / `fputc` / `fwrite` が同じ file position 更新経路を使うようにした。
+- object linker smoke に、`fopen("w")` 後の `fputs("H")` と `fputc('I')` で `HI` が読めるケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+- 補足:
+  - `make test-wasm-js-pipeline` と `./build/test_wasm32_object` を同時実行した時に一度
+    `build/wasm_selfhost_api/ag_c_wasm_api.wasm` 側で E4007 が出たが、
+    `AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_debug.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+    と `make test-wasm-js-pipeline` の単独再実行は通った。

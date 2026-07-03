@@ -783,13 +783,26 @@ int main(void) {
   char fdapbuf[6];
   unsigned long fdapread = fread(fdapbuf, 1, 5, fdapr);
   fclose(fdapr);
+  FILE *fpw = fopen("tmp.txt", "w");
+  int fputs_file_ret = fputs("H", fpw);
+  int fputc_file_ret = fputc('I', fpw);
+  long pos_after_fputs = ftell(fpw);
+  fclose(fpw);
+  FILE *fpr = fopen("tmp.txt", "r");
+  char fpbuf[3];
+  unsigned long fpread = fread(fpbuf, 1, 2, fpr);
+  int fp_eof = fgetc(fpr);
+  fclose(fpr);
   int file_write_pos_ok = overwrote == 1 && pos_after_overwrite == 2 &&
                           append_start == 3 && appended == 1 &&
                           owread == 4 && owbuf[0] == 'A' && owbuf[1] == 'Z' &&
                           owbuf[2] == 'C' && owbuf[3] == 'D' && ow_eof == -1 &&
                           fdappend_start == 4 && fdappended == 1 &&
                           fdapread == 5 && fdapbuf[0] == 'A' && fdapbuf[1] == 'Z' &&
-                          fdapbuf[2] == 'C' && fdapbuf[3] == 'D' && fdapbuf[4] == 'E';
+                          fdapbuf[2] == 'C' && fdapbuf[3] == 'D' && fdapbuf[4] == 'E' &&
+                          fputs_file_ret == 1 && fputc_file_ret == 'I' &&
+                          pos_after_fputs == 2 && fpread == 2 &&
+                          fpbuf[0] == 'H' && fpbuf[1] == 'I' && fp_eof == -1;
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
