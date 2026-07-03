@@ -440,6 +440,26 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/strtod_state.c" <<'SRC'
+double strtod(char *s, char **endptr);
+int main(void) {
+  char *end = 0;
+  char *none = "  +xyz";
+  char *dot = ".x";
+  double hex = strtod("0x1.8p+3!", &end);
+  int ok_hex = hex == 12.0 && *end == '!';
+  double lead_dot = strtod(".25!", &end);
+  int ok_dot = lead_dot == 0.25 && *end == '!';
+  double noexp = strtod("1e+!", &end);
+  int ok_noexp = noexp == 1.0 && *end == 'e';
+  double noval = strtod(none, &end);
+  int ok_noval = noval == 0.0 && end == none;
+  double only_dot = strtod(dot, &end);
+  int ok_only_dot = only_dot == 0.0 && end == dot;
+  return ok_hex && ok_dot && ok_noexp && ok_noval && ok_only_dot ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1561,6 +1581,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_signal_state.interp"
 wasm-validate "$out_dir/linked_strto_base.wasm"
 wasm-interp "$out_dir/linked_strto_base.wasm" --run-all-exports > "$out_dir/linked_strto_base.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_strto_base.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/strtod_state.o" "$out_dir/strtod_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_strtod_state.wasm" \
+  "$out_dir/strtod_state.o"
+wasm-validate "$out_dir/linked_strtod_state.wasm"
+wasm-interp "$out_dir/linked_strtod_state.wasm" --run-all-exports > "$out_dir/linked_strtod_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_strtod_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

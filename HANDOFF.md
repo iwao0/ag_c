@@ -4559,3 +4559,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き396）: default runtime の strtod 変換なし処理を修正
+- `strtod()` が digit を 1 つも読めない入力でも変換成功扱いになり、`endptr` が元入力ではなく
+  sign/空白や `.` の後ろへ進むことがあった。
+- decimal path で整数部または小数部に 1 桁以上ある場合だけ変換成功扱いにし、
+  変換なしの場合は 0.0 を返して `endptr` に元入力ポインタを返すようにした。
+- `test_smoke.sh` に独立 fixture `strtod_state.c` を追加し、hex float、leading-dot decimal、
+  exponent 不成立時の巻き戻し、変換なし入力、`.` だけの入力を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

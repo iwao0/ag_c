@@ -148,7 +148,8 @@ static int __agc_runtime_parse_hex_float(char **sp, double *out) {
 }
 
 double __agc_runtime_strtod(long s_addr, long endptr_addr) {
-  char *s = ag_rt_ptr(s_addr);
+  char *orig = ag_rt_ptr(s_addr);
+  char *s = orig;
   while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
   double sign = 1.0;
   if (*s == '-') {
@@ -168,7 +169,9 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
   }
 
   double acc = 0.0;
+  int have_digit = 0;
   while (*s >= '0' && *s <= '9') {
+    have_digit = 1;
     acc = acc * 10.0 + (double)(*s - '0');
     s++;
   }
@@ -176,10 +179,18 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
     double place = 0.1;
     s++;
     while (*s >= '0' && *s <= '9') {
+      have_digit = 1;
       acc = acc + (double)(*s - '0') * place;
       place = place / 10.0;
       s++;
     }
+  }
+  if (!have_digit) {
+    if (endptr_addr) {
+      long *endp = (long *)ag_rt_ptr(endptr_addr);
+      *endp = (long)orig;
+    }
+    return 0.0;
   }
   if (*s == 'e' || *s == 'E') {
     char *exp_start = s;
