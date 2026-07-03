@@ -365,7 +365,22 @@ struct ag_rt_tm {
 static struct ag_rt_tm ag_rt_tm_value;
 
 long __agc_runtime_localtime(long timer_addr) {
-  (void)timer_addr;
+  long t = 0;
+  if (timer_addr) {
+    long *timer = (long *)ag_rt_ptr(timer_addr);
+    t = *timer;
+  }
+  if (t == 0) {
+    ag_rt_tm_value.tm_sec = 0;
+    ag_rt_tm_value.tm_min = 0;
+    ag_rt_tm_value.tm_hour = 0;
+    ag_rt_tm_value.tm_mday = 1;
+    ag_rt_tm_value.tm_mon = 0;
+    ag_rt_tm_value.tm_year = 70;
+    ag_rt_tm_value.tm_wday = 4;
+    ag_rt_tm_value.tm_yday = 0;
+    ag_rt_tm_value.tm_isdst = 0;
+  }
   return (long)&ag_rt_tm_value;
 }
 

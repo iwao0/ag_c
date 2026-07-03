@@ -487,6 +487,34 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/localtime_state.c" <<'SRC'
+typedef long time_t;
+struct tm {
+  int tm_sec;
+  int tm_min;
+  int tm_hour;
+  int tm_mday;
+  int tm_mon;
+  int tm_year;
+  int tm_wday;
+  int tm_yday;
+  int tm_isdst;
+};
+time_t time(time_t *tloc);
+struct tm *localtime(time_t *timer);
+double difftime(time_t end, time_t beginning);
+int main(void) {
+  time_t stored = -1;
+  time_t now = time(&stored);
+  struct tm *tm = localtime(&stored);
+  return now == 0 && stored == 0 && tm != 0 &&
+         tm->tm_sec == 0 && tm->tm_min == 0 && tm->tm_hour == 0 &&
+         tm->tm_mday == 1 && tm->tm_mon == 0 && tm->tm_year == 70 &&
+         tm->tm_wday == 4 && tm->tm_yday == 0 && tm->tm_isdst == 0 &&
+         (int)difftime(10, 3) == 7 ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1176,7 +1204,9 @@ int main(void) {
          found == nums + 2 && *found == 3 &&
          time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
          (int)difftime(100, 58) == 42 &&
-         tm_info != 0 && tm_info->tm_year == 0 &&
+         tm_info != 0 && tm_info->tm_sec == 0 && tm_info->tm_min == 0 &&
+         tm_info->tm_hour == 0 && tm_info->tm_mday == 1 && tm_info->tm_mon == 0 &&
+         tm_info->tm_year == 70 && tm_info->tm_wday == 4 && tm_info->tm_yday == 0 &&
          usage_ok == 0 && usage.ru_maxrss == 0 &&
          getline_ok &&
          sj == 0 &&
@@ -1622,6 +1652,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_strtod_state.interp"
 wasm-validate "$out_dir/linked_getline_state.wasm"
 wasm-interp "$out_dir/linked_getline_state.wasm" --run-all-exports > "$out_dir/linked_getline_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_getline_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/localtime_state.o" "$out_dir/localtime_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_localtime_state.wasm" \
+  "$out_dir/localtime_state.o"
+wasm-validate "$out_dir/linked_localtime_state.wasm"
+wasm-interp "$out_dir/linked_localtime_state.wasm" --run-all-exports > "$out_dir/linked_localtime_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_localtime_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

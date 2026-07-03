@@ -4579,3 +4579,15 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   1 行目の grow、2 行目の再利用、3 回目 EOF を object compile/link/validate/interp で確認するようにした。
 - 確認:
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+
+### このセッション（続き398）: default runtime の localtime(0) を epoch に合わせる
+- `time()` が 0 を返す一方で、`localtime(0)` の `struct tm` がゼロ埋めのままで、
+  epoch としての `1970-01-01 00:00:00` を表していなかった。
+- `localtime()` は `timer == 0` または `*timer == 0` のとき `tm_year=70`, `tm_mday=1`,
+  `tm_wday=4` など epoch の値を返すようにした。
+- `test_smoke.sh` に独立 fixture `localtime_state.c` を追加し、`time(&stored)` と
+  `localtime(&stored)` の整合、epoch fields、`difftime()` を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
