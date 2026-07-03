@@ -96,6 +96,45 @@ static int run_case(const char *name, const char *src, const char **needles, int
   return run_wabt_case(name, expected_ret);
 }
 
+static int run_case_without(const char *name, const char *src,
+                            const char **needles, int nneedles,
+                            const char **forbidden, int nforbidden,
+                            int expected_ret) {
+  char in[256];
+  char out[256];
+  snprintf(in, sizeof(in), "build/wasm32_%s.c", name);
+  snprintf(out, sizeof(out), "build/wasm32_%s.wat", name);
+  if (write_file(in, src) != 0) {
+    fprintf(stderr, "FAIL: write %s\n", in);
+    return 1;
+  }
+  char cmd[768];
+  snprintf(cmd, sizeof(cmd), "./build/ag_c_wasm %s > %s", in, out);
+  int rc = system(cmd);
+  if (rc != 0) {
+    fprintf(stderr, "FAIL: ag_c_wasm failed for %s (rc=%d)\n", name, rc);
+    return 1;
+  }
+  char buf[65536];
+  if (slurp(out, buf, sizeof(buf)) != 0) {
+    fprintf(stderr, "FAIL: read %s\n", out);
+    return 1;
+  }
+  for (int i = 0; i < nneedles; i++) {
+    if (!strstr(buf, needles[i])) {
+      fprintf(stderr, "FAIL: %s missing '%s'\n", name, needles[i]);
+      return 1;
+    }
+  }
+  for (int i = 0; i < nforbidden; i++) {
+    if (strstr(buf, forbidden[i])) {
+      fprintf(stderr, "FAIL: %s unexpectedly contains '%s'\n", name, forbidden[i]);
+      return 1;
+    }
+  }
+  return run_wabt_case(name, expected_ret);
+}
+
 static int run_fail_case(const char *name, const char *src, const char *needle) {
   char in[256];
   char log[256];
@@ -181,6 +220,12 @@ int main(void) {
   failures += run_case("global_large_zero_array",
                        "int a[2][3]; int main(){a[1][2]=77; return a[0][0]+a[1][2];}\n",
                        global_large_zero_array, 2, 77);
+  const char *global_large_uninit_no_data[] = {"i32.store8", "i32.load8_s"};
+  const char *global_large_uninit_forbidden[] = {"(data (i32.const"};
+  failures += run_case_without("global_large_uninit_no_data",
+                               "char big[70000]; int main(){big[69999]=42; return big[0]+big[69999];}\n",
+                               global_large_uninit_no_data, 2,
+                               global_large_uninit_forbidden, 1, 42);
   const char *global_large_zero_double_array[] = {"f64.store", "f64.load"};
   failures += run_case("global_large_zero_double_array",
                        "double a[2][2]; int main(){a[1][1]=4.5; return (int)(a[0][0]+a[1][1]);}\n",

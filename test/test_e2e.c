@@ -1279,6 +1279,7 @@ static const test_case_t test_cases[] = {
     {"probes", "struct_funcptr_designated_zero_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/struct_funcptr_designated_zero_init.c", 0, 0},
     {"probes", "nested_struct_funcptr_designated_zero_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/nested_struct_funcptr_designated_zero_init.c", 0, 0},
     {"probes", "wasm_nonvoid_indirect_unused_result", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/wasm_nonvoid_indirect_unused_result.c", 0, 0},
+    {"probes", "indirect_struct_return_funcptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/indirect_struct_return_funcptr.c", 0, 0},
     {"probes", "typedef_void_funcptr_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_void_funcptr_param.c", 0, 0},
 };
 
