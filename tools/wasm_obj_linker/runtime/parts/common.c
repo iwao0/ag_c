@@ -30,7 +30,9 @@ static long ag_rt_heap = 8 * 1024 * 1024;
 static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
 static char ag_rt_strerror[] = "error";
-static char ag_rt_file_buf[512];
+#define AG_RT_FILE_BUF_CAP (64 * 1024)
+
+static char ag_rt_file_buf[AG_RT_FILE_BUF_CAP];
 static long ag_rt_file_len = 0;
 static long ag_rt_fd_pos = 0;
 static char ag_rt_stdout_buf[8192];

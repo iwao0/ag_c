@@ -131,6 +131,14 @@ const toolchain = await createToolchain({
 `instantiateLinkedWasm(source)` を使えます。
 `instantiateLinkedWasm()` の戻り値には `readStdout()` / `readStderr()` もあり、
 runtime object の `printf` / `fprintf` 出力を `main()` 実行後に読めます。
+`instantiateLinkedWasm(..., ..., { stdio: { stdin } })` に string / `Uint8Array` /
+`ArrayBuffer` を渡すと、runtime object を使う linked wasm では `main()` 実行前に
+標準入力バッファへ注入され、`getchar` / `fgets(..., stdin)` / `fread(..., stdin)` から
+読めます。runtime object 側の stdin 容量は 64 KiB です。
+`useStdlib: false` など JS runtime import 経由で直接動かす場合も、同じ
+`stdin` option を `fgetc` / `getchar` / `fgets` / `fread` の入力に使えます。
+`feof` / `ferror` / `clearerr` もそれぞれの stdio 状態を見ます。
+`onStdout` / `onStderr` callback を渡すと `fwrite` / `fputs` などの出力を逐次受け取れます。
 compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `compileWat(source)` は WAT 文字列を返し、`compileObject(source)` は wasm object bytes
 (`Uint8Array`) を返します。
@@ -139,7 +147,8 @@ compiler 単体 wrapper は `tools/wasm_js_api/agc-wasm.js` です。
 `make test-wasm-js-pipeline` はこの helper を使っています。
 browser demo は `tools/wasm_js_api/demo.html` で、WAT / wasm object / linked wasm の
 出力を切り替えられます。Linked Wasm では複数 source textarea を別々に object 化してから
-runtime object と一緒にリンクします。`main` export を呼べる場合は戻り値も表示し、
+runtime object と一緒にリンクし、stdin textarea の内容も `stdio.stdin` として渡します。
+`main` export を呼べる場合は戻り値も表示し、
 `printf` の結果は `stdout:` として表示します。
 compile/link は Web Worker 内で実行し、失敗時は `Compile error` として画面に表示します。
 生成した `out.wat` / `out.o` / `out.wasm` は Download から保存できます。

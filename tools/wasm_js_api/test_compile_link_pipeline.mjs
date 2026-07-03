@@ -125,6 +125,157 @@ if (linkedStdioStdout !== "   x:007:aa") {
   throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
 }
 
+const linkedStdinSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) {
+  char buf[4];
+  int a = getchar();
+  char *p = fgets(buf, sizeof(buf), stdin);
+  int z = fgetc(stdin);
+  int eof = fgetc(stdin);
+  if (a != 'A') return 1;
+  if (!p || buf[0] != 'B' || buf[1] != 'C' || buf[2] != '\\n' || buf[3] != 0) return 2;
+  if (z != 'Z') return 3;
+  if (eof != EOF || !feof(stdin)) return 4;
+  return 42;
+}
+`, { loadInclude });
+const linkedStdin = await toolchain.instantiateLinkedWasm(linkedStdinSource, {
+  exports: ["main"],
+  useStdlib: true,
+}, {
+  stdio: { stdin: "ABC\nZ" },
+});
+if (linkedStdin.instance.exports.main() !== 42) {
+  throw new Error("linked runtime stdin injection failed");
+}
+
+const linkedLargeStdinSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) {
+  char buf[600];
+  unsigned long n = fread(buf, 1, sizeof(buf), stdin);
+  unsigned long i = 0;
+  int sum = 0;
+  if (n != sizeof(buf)) return 1;
+  while (i < sizeof(buf)) {
+    sum += buf[i];
+    i++;
+  }
+  return sum == 600 * 'x' ? 42 : 2;
+}
+`, { loadInclude });
+const linkedLargeStdin = await toolchain.instantiateLinkedWasm(linkedLargeStdinSource, {
+  exports: ["main"],
+  useStdlib: true,
+}, {
+  stdio: { stdin: "x".repeat(600) },
+});
+if (linkedLargeStdin.instance.exports.main() !== 42) {
+  throw new Error("linked runtime large stdin injection failed");
+}
+
+const jsSnprintfSource = `
+int sprintf(char *buf, const char *fmt, int n, const char *s);
+int snprintf(char *buf, unsigned long size, const char *fmt, int n);
+int main(void) {
+  char a[16];
+  char b[4];
+  char c[1];
+  int n = sprintf(a, "%d-%s", 12, "ok");
+  int m = snprintf(b, sizeof(b), "%05d", 42);
+  int z = snprintf(c, 0, "%s", "longer");
+  if (n != 5) return 1;
+  if (a[0] != '1' || a[1] != '2' || a[2] != '-' || a[3] != 'o' || a[4] != 'k' || a[5] != 0) return 2;
+  if (m != 5) return 3;
+  if (b[0] != '0' || b[1] != '0' || b[2] != '0' || b[3] != 0) return 4;
+  if (z != 6) return 5;
+  return 42;
+}
+`;
+const jsSnprintf = await toolchain.instantiateLinkedWasm(jsSnprintfSource, {
+  exports: ["main"],
+  useStdlib: false,
+});
+const jsSnprintfResult = jsSnprintf.instance.exports.main();
+if (jsSnprintfResult !== 42) {
+  throw new Error(`JS stdio snprintf/sprintf imports did not format into wasm memory: ${jsSnprintfResult}`);
+}
+
+const jsBasicStdioSource = `
+int fputs(const char *s, void *stream);
+int fputc(int c, void *stream);
+int fflush(void *stream);
+unsigned long fwrite(const void *ptr, unsigned long size, unsigned long nmemb, void *stream);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, void *stream);
+int main(void) {
+  char buf[4];
+  if (fputs("A", (void *)1) != 1) return 1;
+  if (fputc('B', (void *)1) != 'B') return 2;
+  if (fputs("E", (void *)2) != 1) return 3;
+  if (fputc('R', (void *)2) != 'R') return 4;
+  if (fflush((void *)1) != 0) return 5;
+  if (fwrite("CD", 1, 2, (void *)1) != 2) return 6;
+  if (fwrite("!", 1, 1, (void *)2) != 1) return 7;
+  if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 8;
+  return 42;
+}
+`;
+let jsBasicStdout = "";
+let jsBasicStderr = "";
+const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsBasicStdout += chunk; },
+  onStderr: (chunk) => { jsBasicStderr += chunk; },
+});
+const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCD" || jsBasicStderr !== "ER!") {
+  throw new Error(
+    `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
+  );
+}
+
+const jsStdinSource = `
+int fgetc(void *stream);
+int getchar(void);
+char *fgets(char *s, int size, void *stream);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, void *stream);
+int feof(void *stream);
+int ferror(void *stream);
+void clearerr(void *stream);
+void perror(const char *s);
+int main(void) {
+  char line[4];
+  char rest[4];
+  if (fgetc((void *)0) != 'a') return 1;
+  if (getchar() != '\\n') return 2;
+  if (fgets(line, sizeof(line), (void *)0) != line) return 3;
+  if (line[0] != 'b' || line[1] != 'c' || line[2] != '\\n' || line[3] != 0) return 4;
+  if (fread(rest, 2, 2, (void *)0) != 2) return 5;
+  if (rest[0] != 'd' || rest[1] != 'e' || rest[2] != 'f' || rest[3] != 'g') return 6;
+  if (feof((void *)0) != 0) return 7;
+  if (fgetc((void *)0) != -1) return 7;
+  if (feof((void *)0) != 1) return 8;
+  if (ferror((void *)0) != 0) return 9;
+  clearerr((void *)0);
+  if (feof((void *)0) != 0) return 10;
+  perror("stdin");
+  return 42;
+}
+`;
+let jsStdinStderr = "";
+const jsStdin = await toolchain.instantiateLinkedWasm(jsStdinSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  stdio: { stdin: "a\nbc\ndefg" },
+  onStderr: (chunk) => { jsStdinStderr += chunk; },
+});
+const jsStdinResult = jsStdin.instance.exports.main();
+if (jsStdinResult !== 42 || jsStdinStderr !== "stdin: error\n") {
+  throw new Error(`JS stdin imports failed: result=${jsStdinResult}, stderr=${JSON.stringify(jsStdinStderr)}`);
+}
+
 try {
   toolchain.compileLinkedWasm([
     "int main(void) { return other(); }\n",

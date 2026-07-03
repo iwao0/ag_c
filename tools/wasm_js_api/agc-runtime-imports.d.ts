@@ -2,6 +2,7 @@ export interface AgcRuntimeStdioOptions {
   getMemory?: () => WebAssembly.Memory | undefined | null;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
+  stdin?: string | ArrayBuffer | Uint8Array;
 }
 
 export type AgcRuntimeImports = WebAssembly.Imports & {

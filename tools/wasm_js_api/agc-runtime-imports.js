@@ -24,12 +24,21 @@ function wrapMath(fn) {
 }
 
 const utf8Decoder = new TextDecoder();
+const utf8Encoder = new TextEncoder();
 
 function defaultGetMemory() {
   return undefined;
 }
 
 function defaultWrite(_text) {}
+
+function normalizeBytes(input) {
+  if (input === undefined || input === null) return new Uint8Array();
+  if (typeof input === "string") return utf8Encoder.encode(input);
+  if (input instanceof Uint8Array) return input;
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+  throw new TypeError("stdio.stdin must be a string, ArrayBuffer, or Uint8Array");
+}
 
 function readCString(memory, ptr, maxLen = 1024 * 1024) {
   ptr = Number(ptr) >>> 0;
@@ -48,6 +57,30 @@ function readMemoryUtf8(memory, ptr, len) {
   const bytes = new Uint8Array(memory.buffer);
   const end = Math.min(bytes.length, ptr + len);
   return utf8Decoder.decode(bytes.subarray(ptr, end));
+}
+
+function writeMemoryBytes(memory, ptr, src) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return 0;
+  const bytes = new Uint8Array(memory.buffer);
+  const writeLen = Math.min(src.length, bytes.length - ptr);
+  if (writeLen > 0) bytes.set(src.subarray(0, writeLen), ptr);
+  return writeLen;
+}
+
+function writeCString(memory, ptr, text, maxBytes = -1) {
+  ptr = Number(ptr) >>> 0;
+  maxBytes = Number(maxBytes);
+  const encoded = utf8Encoder.encode(String(text));
+  if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return -1;
+  const bytes = new Uint8Array(memory.buffer);
+  if (maxBytes === 0) return encoded.length;
+  const limit = maxBytes < 0 ? bytes.length - ptr : Math.min(maxBytes, bytes.length - ptr);
+  if (limit <= 0) return encoded.length;
+  const writeLen = Math.min(encoded.length, limit - 1);
+  if (writeLen > 0) bytes.set(encoded.subarray(0, writeLen), ptr);
+  bytes[ptr + writeLen] = 0;
+  return encoded.length;
 }
 
 function padFormatted(text, flags, width, numeric = false) {
@@ -155,6 +188,10 @@ function makeStdio(options = {}) {
   const getMemory = options.getMemory || defaultGetMemory;
   const writeStdout = options.onStdout || defaultWrite;
   const writeStderr = options.onStderr || writeStdout;
+  const stdinBytes = normalizeBytes(options.stdin);
+  let stdinOffset = 0;
+  let stdinEof = false;
+  let fileError = 0;
 
   function emitStdout(text) {
     writeStdout(String(text));
@@ -175,14 +212,118 @@ function makeStdio(options = {}) {
     return Number(stream) === 2 ? emitStderr(text) : emitStdout(text);
   }
 
+  function sprintf(buf, fmt, ...args) {
+    return writeCString(getMemory(), buf, formatPrintf(getMemory(), fmt, args));
+  }
+
+  function snprintf(buf, size, fmt, ...args) {
+    return writeCString(getMemory(), buf, formatPrintf(getMemory(), fmt, args), size);
+  }
+
   function puts(s) {
     return emitStdout(`${readCString(getMemory(), s)}\n`);
+  }
+
+  function fputs(s, stream) {
+    const text = readCString(getMemory(), s);
+    return Number(stream) === 2 ? emitStderr(text) : emitStdout(text);
   }
 
   function putchar(c) {
     const text = String.fromCodePoint(Number(c) & 0xff);
     emitStdout(text);
     return Number(c) | 0;
+  }
+
+  function fputc(c, stream) {
+    const text = String.fromCodePoint(Number(c) & 0xff);
+    if (Number(stream) === 2) {
+      emitStderr(text);
+    } else {
+      emitStdout(text);
+    }
+    return Number(c) | 0;
+  }
+
+  function fflush(_stream) {
+    return 0;
+  }
+
+  function fwrite(ptr, size, nmemb, stream) {
+    size = Number(size);
+    nmemb = Number(nmemb);
+    if (size <= 0 || nmemb <= 0) return 0n;
+    const total = size * nmemb;
+    const text = readMemoryUtf8(getMemory(), ptr, total);
+    if (Number(stream) === 2) {
+      emitStderr(text);
+    } else {
+      emitStdout(text);
+    }
+    return BigInt(nmemb);
+  }
+
+  function fread(ptr, size, nmemb, _stream) {
+    size = Number(size);
+    nmemb = Number(nmemb);
+    if (size <= 0 || nmemb <= 0) return 0n;
+    if (stdinOffset >= stdinBytes.length) {
+      stdinEof = true;
+      return 0n;
+    }
+    const requested = size * nmemb;
+    const src = stdinBytes.subarray(stdinOffset, Math.min(stdinBytes.length, stdinOffset + requested));
+    const copied = writeMemoryBytes(getMemory(), ptr, src);
+    stdinOffset += copied;
+    if (copied < requested) stdinEof = true;
+    return BigInt(Math.floor(copied / size));
+  }
+
+  function fgetc(_stream) {
+    if (stdinOffset >= stdinBytes.length) {
+      stdinEof = true;
+      return -1;
+    }
+    return stdinBytes[stdinOffset++];
+  }
+
+  function fgets(s, size, _stream) {
+    size = Number(size);
+    if (size <= 0) return 0;
+    if (stdinOffset >= stdinBytes.length) {
+      stdinEof = true;
+      return 0;
+    }
+    const out = [];
+    while (out.length + 1 < size && stdinOffset < stdinBytes.length) {
+      const ch = stdinBytes[stdinOffset++];
+      out.push(ch);
+      if (ch === 10) break;
+    }
+    const bytes = new Uint8Array(out.length + 1);
+    bytes.set(out, 0);
+    bytes[out.length] = 0;
+    writeMemoryBytes(getMemory(), s, bytes);
+    return Number(s);
+  }
+
+  function feof(_stream) {
+    return stdinEof ? 1 : 0;
+  }
+
+  function ferror(_stream) {
+    return fileError;
+  }
+
+  function clearerr(_stream) {
+    stdinEof = false;
+    fileError = 0;
+  }
+
+  function perror(s) {
+    const prefix = readCString(getMemory(), s);
+    const text = prefix ? `${prefix}: error\n` : "error\n";
+    emitStderr(text);
   }
 
   function runtimeStdoutWrite(ptr, len) {
@@ -193,7 +334,27 @@ function makeStdio(options = {}) {
     emitStderr(readMemoryUtf8(getMemory(), ptr, len));
   }
 
-  return { printf, fprintf, puts, putchar, runtimeStdoutWrite, runtimeStderrWrite };
+  return {
+    printf,
+    fprintf,
+    sprintf,
+    snprintf,
+    puts,
+    fputs,
+    putchar,
+    fputc,
+    fflush,
+    fread,
+    fwrite,
+    fgetc,
+    fgets,
+    feof,
+    ferror,
+    clearerr,
+    perror,
+    runtimeStdoutWrite,
+    runtimeStderrWrite,
+  };
 }
 
 function agcFopen(_path, _mode) {
@@ -204,43 +365,34 @@ function agcFclose(_stream) {
   return 0;
 }
 
-function agcFread(_ptr, _size, nmemb, _stream) {
-  return Number(nmemb);
-}
-
-function agcFwrite(_ptr, _size, nmemb, _stream) {
-  return Number(nmemb);
-}
-
-function agcFgetc(_stream) {
-  return -1;
-}
-
-function agcFgets(_s, _size, _stream) {
-  return 0;
-}
-
 export function createAgcRuntimeStdioEnvImports(options = {}) {
   const stdio = makeStdio(options);
   return {
     printf: stdio.printf,
     fprintf: stdio.fprintf,
-    sprintf: () => 0,
-    snprintf: () => 0,
+    sprintf: stdio.sprintf,
+    snprintf: stdio.snprintf,
     vfprintf: stdio.fprintf,
     vsnprintf: () => 0,
     puts: stdio.puts,
+    fputs: stdio.fputs,
     putchar: stdio.putchar,
+    fputc: stdio.fputc,
+    fflush: stdio.fflush,
     __agc_runtime_stdout_write: stdio.runtimeStdoutWrite,
     __agc_runtime_stderr_write: stdio.runtimeStderrWrite,
     fopen: agcFopen,
     fclose: agcFclose,
-    fread: agcFread,
-    fwrite: agcFwrite,
-    fgetc: agcFgetc,
-    getc: agcFgetc,
-    getchar: agcFgetc,
-    fgets: agcFgets,
+    fread: stdio.fread,
+    fwrite: stdio.fwrite,
+    fgetc: stdio.fgetc,
+    getc: stdio.fgetc,
+    getchar: stdio.fgetc,
+    fgets: stdio.fgets,
+    feof: stdio.feof,
+    ferror: stdio.ferror,
+    clearerr: stdio.clearerr,
+    perror: stdio.perror,
   };
 }
 

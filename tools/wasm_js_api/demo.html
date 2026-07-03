@@ -30,7 +30,7 @@
       }
       .sources {
         display: grid;
-        grid-template-rows: 1fr 1fr;
+        grid-template-rows: 1fr 1fr minmax(96px, 0.35fr);
         min-height: 0;
       }
       textarea, pre {
@@ -96,12 +96,14 @@ int main(void){return other()+1;}
 </textarea>
         <textarea class="source" spellcheck="false">int other(void){return 41;}
 </textarea>
+        <textarea id="stdin" spellcheck="false" placeholder="stdin"></textarea>
       </div>
       <pre id="output"></pre>
     </main>
     <script type="module">
       const status = document.getElementById("status");
       const sources = Array.from(document.querySelectorAll(".source"));
+      const stdin = document.getElementById("stdin");
       const output = document.getElementById("output");
       const run = document.getElementById("run");
       const download = document.getElementById("download");
@@ -149,7 +151,7 @@ int main(void){return other()+1;}
           download.disabled = true;
           run.disabled = true;
           status.textContent = "Compiling...";
-          const result = await runCompileInWorker({ mode: mode.value, sources: sourceTexts });
+          const result = await runCompileInWorker({ mode: mode.value, sources: sourceTexts, stdin: stdin.value });
           output.textContent = result.output;
           lastDownload = result.download;
           download.disabled = false;

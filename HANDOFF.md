@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-03（続き368: wasm JS API の型定義を実装に合わせる）
+最終更新: 2026-07-04（続き370: linked runtime object stdin 注入）
 
 ## 現状
 - `make test` = **green**。
@@ -9,6 +9,7 @@
   `./build/test_wasm32_object` = **1159/1159 e2e fixture object compile + validate green**。
 - 直近確認:
   `make test` = **green**、
+  `make test-wasm-js-api` = **green**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-js-e2e` =
   **total registered 1157 / scanned 1157 / pass 1157 / fail 0 / skip 0 / linked 1157 / validated 1157 / ran 1157**、
@@ -18,7 +19,42 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き370: **linked runtime object に stdin 注入経路を追加**。
+  `tools/wasm_obj_linker/runtime/parts/stdio.c` に
+  `__agc_runtime_stdin_capacity` / `__agc_runtime_stdin_write` を追加し、
+  runtime object 側の `ag_rt_file_buf` へ JS から bytes を投入できるようにした。
+  `ag_rt_file_buf` は 512 byte だとすぐ詰まるため 64 KiB に拡大した。
+  `stdin` が未設定でも input 系 helper が null stream を runtime file として扱うようにし、
+  `getchar()` も runtime file から読む。
+  `tools/wasm_js_api/agc-toolchain.js` は
+  `instantiateLinkedWasm(..., ..., { stdio: { stdin } })` を受けた時だけ、
+  internal export として `__agc_runtime_malloc` / `__agc_runtime_free` /
+  `__agc_runtime_stdin_capacity` / `__agc_runtime_stdin_write` を link export に追加し、
+  instantiate 後・`main()` 実行前に UTF-8/bytes を runtime stdin へ注入する。
+  これで標準 `stdio.h` 経由の `getchar` / `fgets(..., stdin)` / `fread(..., stdin)` も
+  JS API から入力を受けられる。
+  browser demo にも stdin textarea を追加し、linked mode の worker から同じ option を渡す。
+  `test_compile_link_pipeline.mjs` には `getchar` / `fgets(stdin)` に加え、600 byte を
+  `fread` で読む smoke を追加した。
+  確認: `make test-wasm-js-pipeline`、`make test-wasm-js-api`、`make test-wasm-obj-linker`、
+  `make test-wasm-js-e2e` = 1157/1157 pass、`git diff --check`。
+- 続き369: **JS runtime stdio import を補強**。
+  `tools/wasm_js_api/agc-runtime-imports.js` の `sprintf` / `snprintf` が 0 を返すだけだったため、
+  JS env import として直接引数を受ける場合に wasm memory へ C 文字列を書き込む実装を追加。
+  `snprintf` は C と同じく、切り詰め時も「本来の出力長」を返す。
+  さらに `fputs` / `fputc` / `fflush` / `fwrite` を JS stdio import に追加し、stdout/stderr
+  callback へ流す。入力元が無い JS import の `fread` は、以前は何も読まずに `nmemb` を返していたが、
+  実動作に合わせて 0 を返すようにした。さらに `stdio: { stdin }` option を追加し、
+  string / `Uint8Array` / `ArrayBuffer` を `fgetc` / `getchar` / `fgets` / `fread` から読めるようにした。
+  EOF/error 状態として `feof` / `ferror` / `clearerr` / `perror` も JS stdio import に追加。
+  `fread` / `fwrite` は C 側 `unsigned long` 戻りなので JS import では BigInt を返す。
+  `docs/manual_build_make_targets.md` の JS API 節にも stdin/stdout callback の手がかりを追記。
+  注意: 標準 `stdio.h` の variadic `sprintf` / `snprintf` は caller が `__ag_va_arg_area` を使うため、
+  JS env import だけでは可変引数を読めない。標準ヘッダ経由の printf family は引き続き runtime object
+  経路を使う。
+  確認: `make test-wasm-js-api`、`make test-wasm-js-pipeline`、`git diff --check`。
 - 続き368: **wasm JS API の型定義を実装に合わせた**。
+  コミット済み: `77b23cda Add wasm JS API package typings smoke`。
   `createCompiler` / `createLinker` は実装上 `WebAssembly.Module` を受け取れるため、
   `AgcWasmSource` / `AgcWasmLinkerSource` に `WebAssembly.Module` を追加。
   一方で `runtimeObject` は wasm module ではなく relocatable object bytes なので、

@@ -25,7 +25,7 @@ function hexDump(bytes) {
 }
 
 self.onmessage = async (ev) => {
-  const { mode, sources } = ev.data;
+  const { mode, sources, stdin = "" } = ev.data;
   try {
     const toolchain = await getToolchain();
     const expandedSources = await Promise.all(sources.map((source) => inlineStandardIncludes(source)));
@@ -58,6 +58,7 @@ self.onmessage = async (ev) => {
         ],
         useStdlib: true,
       }, {
+        stdio: { stdin },
         onStdout: (chunk) => { stdout += chunk; },
         onStderr: (chunk) => { stderr += chunk; },
       });
