@@ -4642,3 +4642,17 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き403）: default runtime stdio の size overflow 処理を修正
+- `fwrite()` / `fread()` が `size * nmemb` を先に計算しており、overflow した `fwrite()` が
+  何も書いていないのに `nmemb` 成功を返し得た。
+- `stdio.c` に `ag_rt_io_total_size()` を追加し、負数相当の size/nmemb や乗算 overflow では
+  0 要素として返すようにした。`size == 0` / `nmemb == 0` は従来通り 0 要素扱い。
+- `test_smoke.sh` に独立 fixture `stdio_size_state.c` を追加し、巨大 size と `(unsigned long)-1` の
+  `fwrite()` が成功扱いにならないこと、通常 write/read と位置状態が壊れていないことを
+  object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+  - `./build/test_e2e` = 1186/1186

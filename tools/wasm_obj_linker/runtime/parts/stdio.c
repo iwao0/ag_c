@@ -271,10 +271,22 @@ int __agc_runtime_fclose(long stream_addr) {
   return 0;
 }
 
+static int ag_rt_io_total_size(long size, long nmemb, long *total_out) {
+  if (size < 0 || nmemb < 0) return 0;
+  if (size == 0 || nmemb == 0) {
+    *total_out = 0;
+    return 1;
+  }
+  if (size > ag_rt_long_max() / nmemb) return 0;
+  *total_out = size * nmemb;
+  return 1;
+}
+
 long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr) {
   char *src = ag_rt_ptr(ptr_addr);
-  long total = size * nmemb;
+  long total = 0;
   struct ag_rt_file *f;
+  if (!ag_rt_io_total_size(size, nmemb, &total)) return 0;
   if (ag_rt_is_stderr_stream(stream_addr)) {
     ag_rt_stderr_write_mem(src, total);
     return size == 0 ? 0 : nmemb;
@@ -290,10 +302,11 @@ long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr
 long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   char *dst = ag_rt_ptr(ptr_addr);
-  long total = size * nmemb;
+  long total = 0;
   char *src;
   long len;
   long i = 0;
+  if (!ag_rt_io_total_size(size, nmemb, &total)) return 0;
   if (!f) return 0;
   src = ag_rt_stream_buf(f);
   len = ag_rt_stream_len(f);

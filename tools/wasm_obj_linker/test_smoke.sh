@@ -487,6 +487,41 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/stdio_size_state.c" <<'SRC'
+typedef void FILE;
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+int fseek(FILE *stream, long offset, int whence);
+long ftell(FILE *stream);
+int feof(FILE *stream);
+int main(void) {
+  unsigned long huge = 1UL << 63;
+  FILE *wf = fopen("tmp.txt", "w");
+  unsigned long wbad1 = fwrite("x", huge, 2, wf);
+  unsigned long wbad2 = fwrite("x", (unsigned long)-1, 1, wf);
+  long pos_bad = ftell(wf);
+  unsigned long wok = fwrite("AB", 1, 2, wf);
+  long pos_ok = ftell(wf);
+  fclose(wf);
+  FILE *rf = fopen("tmp.txt", "r");
+  char buf[4];
+  unsigned long rbad = fread(buf, huge, 2, rf);
+  long rpos_bad = ftell(rf);
+  int eof_bad = feof(rf);
+  unsigned long rok = fread(buf, 1, 2, rf);
+  long rpos_ok = ftell(rf);
+  int eof_ok = feof(rf);
+  fclose(rf);
+  return wbad1 == 0 && wbad2 == 0 && pos_bad == 0 &&
+         wok == 2 && pos_ok == 2 &&
+         rbad == 0 && rpos_bad == 0 && !eof_bad &&
+         rok == 2 && buf[0] == 'A' && buf[1] == 'B' &&
+         rpos_ok == 2 && !eof_ok ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/localtime_state.c" <<'SRC'
 typedef long time_t;
 struct tm {
@@ -1761,6 +1796,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_strtod_state.interp"
 wasm-validate "$out_dir/linked_getline_state.wasm"
 wasm-interp "$out_dir/linked_getline_state.wasm" --run-all-exports > "$out_dir/linked_getline_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_getline_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/stdio_size_state.o" "$out_dir/stdio_size_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_stdio_size_state.wasm" \
+  "$out_dir/stdio_size_state.o"
+wasm-validate "$out_dir/linked_stdio_size_state.wasm"
+wasm-interp "$out_dir/linked_stdio_size_state.wasm" --run-all-exports > "$out_dir/linked_stdio_size_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_stdio_size_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/localtime_state.o" "$out_dir/localtime_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_localtime_state.wasm" \
