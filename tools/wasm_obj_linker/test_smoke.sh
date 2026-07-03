@@ -690,6 +690,7 @@ int main(void) {
   lc = localeconv();
   FILE *wf = fopen("tmp.txt", "w");
   int wrote = fwrite("A\nB", 1, 3, wf);
+  long pos_after_write = ftell(wf);
   fclose(wf);
   int fd = open("tmp.txt", 0);
   struct stat st = {0, 0};
@@ -730,6 +731,7 @@ int main(void) {
                             rfb_line[1] == '\n' && rfb_line[2] == 0;
   fclose(rfa);
   fclose(rfb);
+  unsigned long stdout_wrote = fwrite("NO", 1, 2, (FILE *)1);
   char rb[8];
   FILE *rf = fopen("tmp.txt", "r");
   int readn = fread(rb, 1, 2, rf);
@@ -967,7 +969,8 @@ int main(void) {
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          r[0] == 'A' &&
-         wrote == 3 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
+         wrote == 3 && pos_after_write == 3 &&
+         stdout_wrote == 2 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
          fd >= 0 && stat_ok == 0 && (st.st_mode & 0170000) == 0100000 &&
          st.st_size == 3 && fdread == 3 && fdbuf[0] == 'A' && fdbuf[1] == '\n' &&
          fdbuf[2] == 'B' && close_ok == 0 &&

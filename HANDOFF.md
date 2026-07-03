@@ -4349,3 +4349,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_backend` = `wasm32 backend tests passed`
   - 補足: `make test-wasm32-backend` は make target がなく失敗するため、WAT backend は
     `./build/test_wasm32_backend` を直接実行した。
+
+### このセッション（続き378）: fwrite(stdout/stderr) の疑似ファイル混入を修正
+- default runtime object の `__agc_runtime_fwrite` が stdout/stderr に書いたあと、
+  同じ bytes を疑似ファイル `ag_rt_file_buf` にも追加していた。
+- stdout/stderr stream では output callback/buffer へ書いた時点で `nmemb` を返し、疑似ファイルには流さないようにした。
+- 通常 file stream への `fwrite` は `ag_rt_file_len` まで position を進めるようにし、`ftell(wf)` でも書き込み位置が見えるようにした。
+- object linker smoke に、`fwrite("NO", ..., stdout)` が `tmp.txt` の内容を伸ばさないことと、
+  `fwrite` 後の `ftell(wf) == 3` を確認するケースを追加した。
+- 確認:
+  - `make -j4 build/libagc_runtime.o`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip

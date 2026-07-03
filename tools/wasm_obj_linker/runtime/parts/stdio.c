@@ -218,15 +218,21 @@ int __agc_runtime_fclose(long stream_addr) {
 long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr) {
   char *src = ag_rt_ptr(ptr_addr);
   long total = size * nmemb;
+  struct ag_rt_file *f;
   if (ag_rt_is_stderr_stream(stream_addr)) {
     ag_rt_stderr_write_mem(src, total);
+    return size == 0 ? 0 : nmemb;
   } else if (ag_rt_is_stdout_stream(stream_addr)) {
     ag_rt_stdout_write_mem(src, total);
+    return size == 0 ? 0 : nmemb;
   }
+  f = ag_rt_input_stream(stream_addr);
+  if (!f || f->is_stdin) return 0;
   long i = 0;
   while (i < total && ag_rt_file_len < (long)sizeof(ag_rt_file_buf)) {
     ag_rt_file_buf[ag_rt_file_len++] = src[i++];
   }
+  ag_rt_file_set_pos(f, ag_rt_file_len);
   return size == 0 ? 0 : i / size;
 }
 
