@@ -544,6 +544,58 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/utf8_wide_state.c" <<'SRC'
+unsigned long mbrtowc(int *pwc, char *s, unsigned long n, void *ps);
+unsigned long wcrtomb(char *s, int wc, void *ps);
+unsigned long mbrtoc16(unsigned short *pc16, char *s, unsigned long n, void *ps);
+unsigned long c16rtomb(char *s, unsigned short c16, void *ps);
+unsigned long mbrtoc32(unsigned int *pc32, char *s, unsigned long n, void *ps);
+unsigned long c32rtomb(char *s, unsigned int c32, void *ps);
+unsigned long mbsrtowcs(int *dst, char **src, unsigned long len, void *ps);
+unsigned long wcsrtombs(char *dst, int **src, unsigned long len, void *ps);
+int main(void) {
+  void *nullv = 0;
+  char jp[9];
+  jp[0] = 'A';
+  jp[1] = (char)0xe3;
+  jp[2] = (char)0x81;
+  jp[3] = (char)0x82;
+  jp[4] = (char)0xf0;
+  jp[5] = (char)0x9f;
+  jp[6] = (char)0x98;
+  jp[7] = (char)0x80;
+  jp[8] = 0;
+  int wc = 0;
+  char out[12];
+  int wide[4];
+  char *srcp = jp;
+  int *widep;
+  unsigned short c16 = 0;
+  unsigned int c32 = 0;
+  int ok_mbr = mbrtowc(&wc, jp + 1, 4, nullv) == 3 && wc == 0x3042 &&
+               mbrtowc(&wc, jp + 4, 4, nullv) == 4 && wc == 0x1f600 &&
+               mbrtowc(&wc, jp + 1, 2, nullv) == (unsigned long)-2;
+  int wr = wcrtomb(out, 0x3042, nullv);
+  int ok_wcr = wr == 3 && (unsigned char)out[0] == 0xe3 &&
+               (unsigned char)out[1] == 0x81 && (unsigned char)out[2] == 0x82;
+  int ok16 = mbrtoc16(&c16, jp + 1, 4, nullv) == 3 && c16 == 0x3042 &&
+             c16rtomb(out, c16, nullv) == 3 && (unsigned char)out[0] == 0xe3;
+  int ok32 = mbrtoc32(&c32, jp + 4, 4, nullv) == 4 && c32 == 0x1f600 &&
+             c32rtomb(out, c32, nullv) == 4 && (unsigned char)out[0] == 0xf0;
+  unsigned long wn = mbsrtowcs(wide, &srcp, 4, nullv);
+  widep = wide;
+  unsigned long bn = wcsrtombs(out, &widep, sizeof(out), nullv);
+  int ok_round = wn == 3 && srcp == 0 && wide[0] == 'A' &&
+                 wide[1] == 0x3042 && wide[2] == 0x1f600 && wide[3] == 0 &&
+                 bn == 8 && widep == 0 && out[0] == 'A' &&
+                 (unsigned char)out[1] == 0xe3 && (unsigned char)out[2] == 0x81 &&
+                 (unsigned char)out[3] == 0x82 && (unsigned char)out[4] == 0xf0 &&
+                 (unsigned char)out[5] == 0x9f && (unsigned char)out[6] == 0x98 &&
+                 (unsigned char)out[7] == 0x80 && out[8] == 0;
+  return ok_mbr && ok_wcr && ok16 && ok32 && ok_round ? 42 : 1;
+}
+SRC
+
 cat > "$out_dir/libc_runtime.c" <<'SRC'
 typedef long va_list;
 #define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
@@ -1695,6 +1747,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_localtime_state.interp"
 wasm-validate "$out_dir/linked_wide_strto_state.wasm"
 wasm-interp "$out_dir/linked_wide_strto_state.wasm" --run-all-exports > "$out_dir/linked_wide_strto_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_wide_strto_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/utf8_wide_state.o" "$out_dir/utf8_wide_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_utf8_wide_state.wasm" \
+  "$out_dir/utf8_wide_state.o"
+wasm-validate "$out_dir/linked_utf8_wide_state.wasm"
+wasm-interp "$out_dir/linked_utf8_wide_state.wasm" --run-all-exports > "$out_dir/linked_utf8_wide_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_utf8_wide_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/libc_runtime.o" "$out_dir/libc_runtime.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_libc_runtime.wasm" \

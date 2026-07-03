@@ -4614,3 +4614,16 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
+
+### このセッション（続き401）: default runtime の wide multibyte UTF-8 対応を追加
+- `mbrtowc()` / `wcrtomb()` / `mbsrtowcs()` / `wcsrtombs()` と char16/char32 bridge が
+  1 byte ASCII 前提で、UTF-8 の日本語文字や 4 byte codepoint を扱えなかった。
+- UTF-8 1/2/3/4 byte decode と encode を最小実装し、不完全入力は `(size_t)-2`、不正入力は `(size_t)-1` を返すようにした。
+- `mbrtoc16()` / `mbrtoc32()` は UTF-8 decode helper を使い、`c16rtomb()` / `c32rtomb()` は encode helper を使うようにした。
+- `mbsrtowcs()` / `wcsrtombs()` は codepoint 単位で src pointer 更新と終端処理を行うようにした。
+- `test_smoke.sh` に独立 fixture `utf8_wide_state.c` を追加し、U+3042 と U+1F600 の decode/encode、
+  mbsrtowcs/wcsrtombs roundtrip、char16/char32 bridge を object compile/link/validate/interp で確認するようにした。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = ok
+  - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
