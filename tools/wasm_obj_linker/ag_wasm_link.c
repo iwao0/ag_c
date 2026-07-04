@@ -737,7 +737,7 @@ static int is_runtime_data_symbol(str_t name) {
 static int is_runtime_func_symbol(str_t name) {
   return str_eq_lit(name, "printf") || str_eq_lit(name, "fprintf") ||
          str_eq_lit(name, "__agc_runtime_trap") ||
-         str_eq_lit(name, "vfprintf") ||
+         str_eq_lit(name, "vprintf") || str_eq_lit(name, "vfprintf") ||
          str_eq_lit(name, "__assert_rtn") ||
          str_eq_lit(name, "strlen") || str_eq_lit(name, "strcmp") ||
          str_eq_lit(name, "memset") || str_eq_lit(name, "memcpy") ||
@@ -752,19 +752,31 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "toupper") ||
          str_eq_lit(name, "malloc") || str_eq_lit(name, "free") ||
          str_eq_lit(name, "calloc") || str_eq_lit(name, "realloc") ||
+         str_eq_lit(name, "aligned_alloc") ||
          str_eq_lit(name, "atoi") || str_eq_lit(name, "atof") ||
-         str_eq_lit(name, "atol") ||
+         str_eq_lit(name, "atol") || str_eq_lit(name, "atoll") ||
          str_eq_lit(name, "strtol") || str_eq_lit(name, "strtoul") ||
-         str_eq_lit(name, "strtod") || str_eq_lit(name, "strtoimax") ||
+         str_eq_lit(name, "strtoll") || str_eq_lit(name, "strtoull") ||
+         str_eq_lit(name, "strtof") || str_eq_lit(name, "strtod") ||
+         str_eq_lit(name, "strtold") || str_eq_lit(name, "strtoimax") ||
          str_eq_lit(name, "strtoumax") || str_eq_lit(name, "rand") ||
          str_eq_lit(name, "srand") || str_eq_lit(name, "labs") ||
+         str_eq_lit(name, "llabs") ||
+         str_eq_lit(name, "div") || str_eq_lit(name, "ldiv") ||
+         str_eq_lit(name, "lldiv") ||
          str_eq_lit(name, "qsort") || str_eq_lit(name, "bsearch") ||
          str_eq_lit(name, "exit") || str_eq_lit(name, "abort") ||
-         str_eq_lit(name, "atexit") || str_eq_lit(name, "getenv") ||
+         str_eq_lit(name, "_Exit") || str_eq_lit(name, "quick_exit") ||
+         str_eq_lit(name, "atexit") || str_eq_lit(name, "at_quick_exit") ||
+         str_eq_lit(name, "getenv") ||
          str_eq_lit(name, "realpath") ||
          str_eq_lit(name, "system") || str_eq_lit(name, "time") ||
          str_eq_lit(name, "clock") || str_eq_lit(name, "difftime") ||
-         str_eq_lit(name, "localtime") || str_eq_lit(name, "getrusage") ||
+         str_eq_lit(name, "timespec_get") ||
+         str_eq_lit(name, "gmtime") || str_eq_lit(name, "localtime") ||
+         str_eq_lit(name, "mktime") || str_eq_lit(name, "asctime") ||
+         str_eq_lit(name, "ctime") || str_eq_lit(name, "strftime") ||
+         str_eq_lit(name, "getrusage") ||
          str_eq_lit(name, "getline") || str_eq_lit(name, "setjmp") ||
          str_eq_lit(name, "longjmp") ||
          str_eq_lit(name, "__error") || str_eq_lit(name, "signal") ||
@@ -772,35 +784,43 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "strcpy") || str_eq_lit(name, "strncpy") ||
          str_eq_lit(name, "strcat") || str_eq_lit(name, "strncat") ||
          str_eq_lit(name, "strncmp") || str_eq_lit(name, "strchr") ||
+         str_eq_lit(name, "strcoll") || str_eq_lit(name, "strxfrm") ||
          str_eq_lit(name, "strrchr") || str_eq_lit(name, "strstr") ||
          str_eq_lit(name, "strspn") || str_eq_lit(name, "strcspn") ||
          str_eq_lit(name, "strpbrk") ||
          str_eq_lit(name, "strtok") || str_eq_lit(name, "strerror") ||
          str_eq_lit(name, "memcmp") || str_eq_lit(name, "puts") ||
          str_eq_lit(name, "putchar") || str_eq_lit(name, "fputs") ||
-         str_eq_lit(name, "fputc") || str_eq_lit(name, "fflush") ||
+         str_eq_lit(name, "fputc") || str_eq_lit(name, "putc") ||
+         str_eq_lit(name, "fflush") ||
+         str_eq_lit(name, "setbuf") || str_eq_lit(name, "setvbuf") ||
          str_eq_lit(name, "perror") || str_eq_lit(name, "getchar") ||
          str_eq_lit(name, "sin") || str_eq_lit(name, "cos") ||
          str_eq_lit(name, "tan") ||
-         str_eq_lit(name, "sprintf") ||
-         str_eq_lit(name, "scanf") ||
-         str_eq_lit(name, "fscanf") ||
-         str_eq_lit(name, "sscanf") ||
+         str_eq_lit(name, "sprintf") || str_eq_lit(name, "vsprintf") ||
+         str_eq_lit(name, "scanf") || str_eq_lit(name, "vscanf") ||
+         str_eq_lit(name, "fscanf") || str_eq_lit(name, "vfscanf") ||
+         str_eq_lit(name, "sscanf") || str_eq_lit(name, "vsscanf") ||
          str_eq_lit(name, "vsnprintf") ||
          str_eq_lit(name, "snprintf") ||
-         str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
+         str_eq_lit(name, "fopen") || str_eq_lit(name, "freopen") ||
+         str_eq_lit(name, "tmpfile") || str_eq_lit(name, "tmpnam") ||
+         str_eq_lit(name, "fwrite") ||
          str_eq_lit(name, "fclose") || str_eq_lit(name, "fread") ||
-         str_eq_lit(name, "remove") ||
+         str_eq_lit(name, "remove") || str_eq_lit(name, "rename") ||
          str_eq_lit(name, "open") || str_eq_lit(name, "close") ||
          str_eq_lit(name, "read") || str_eq_lit(name, "write") ||
          str_eq_lit(name, "lseek") || str_eq_lit(name, "fdopen") ||
          str_eq_lit(name, "fstat") ||
          str_eq_lit(name, "fgetc") || str_eq_lit(name, "getc") ||
+         str_eq_lit(name, "ungetc") ||
          str_eq_lit(name, "fgets") || str_eq_lit(name, "fseek") ||
-         str_eq_lit(name, "ftell") || str_eq_lit(name, "rewind") ||
+         str_eq_lit(name, "ftell") || str_eq_lit(name, "fgetpos") ||
+         str_eq_lit(name, "fsetpos") || str_eq_lit(name, "rewind") ||
          str_eq_lit(name, "feof") || str_eq_lit(name, "ferror") ||
          str_eq_lit(name, "clearerr") ||
-         str_eq_lit(name, "imaxabs") || str_eq_lit(name, "feclearexcept") ||
+         str_eq_lit(name, "imaxabs") || str_eq_lit(name, "imaxdiv") ||
+         str_eq_lit(name, "feclearexcept") ||
          str_eq_lit(name, "fegetexceptflag") || str_eq_lit(name, "feraiseexcept") ||
          str_eq_lit(name, "fesetexceptflag") || str_eq_lit(name, "fetestexcept") ||
          str_eq_lit(name, "fegetround") || str_eq_lit(name, "fesetround") ||
@@ -820,17 +840,33 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "wcslen") || str_eq_lit(name, "wcscpy") ||
          str_eq_lit(name, "wcsncpy") || str_eq_lit(name, "wcscat") ||
          str_eq_lit(name, "wcsncat") || str_eq_lit(name, "wcscmp") ||
-         str_eq_lit(name, "wcsncmp") || str_eq_lit(name, "wcschr") ||
+         str_eq_lit(name, "wcsncmp") || str_eq_lit(name, "wcscoll") ||
+         str_eq_lit(name, "wcsxfrm") || str_eq_lit(name, "wcschr") ||
          str_eq_lit(name, "wcsrchr") || str_eq_lit(name, "wcsstr") ||
+         str_eq_lit(name, "wcsspn") || str_eq_lit(name, "wcscspn") ||
+         str_eq_lit(name, "wcspbrk") || str_eq_lit(name, "wcstok") ||
          str_eq_lit(name, "wmemcpy") ||
          str_eq_lit(name, "wmemmove") || str_eq_lit(name, "wmemset") ||
          str_eq_lit(name, "wmemcmp") || str_eq_lit(name, "wmemchr") ||
          str_eq_lit(name, "wcstol") || str_eq_lit(name, "wcstoul") ||
-         str_eq_lit(name, "wcstod") || str_eq_lit(name, "mbrtowc") ||
+         str_eq_lit(name, "wcstoll") || str_eq_lit(name, "wcstoull") ||
+         str_eq_lit(name, "wcstof") || str_eq_lit(name, "wcstod") ||
+         str_eq_lit(name, "wcstold") || str_eq_lit(name, "mblen") ||
+         str_eq_lit(name, "mbtowc") || str_eq_lit(name, "wctomb") ||
+         str_eq_lit(name, "mbstowcs") || str_eq_lit(name, "wcstombs") ||
+         str_eq_lit(name, "mbrtowc") || str_eq_lit(name, "mbrlen") ||
+         str_eq_lit(name, "mbsinit") ||
          str_eq_lit(name, "wcrtomb") || str_eq_lit(name, "mbsrtowcs") ||
-         str_eq_lit(name, "wcsrtombs") || str_eq_lit(name, "btowc") ||
+         str_eq_lit(name, "wcsrtombs") || str_eq_lit(name, "wcsftime") ||
+         str_eq_lit(name, "btowc") ||
          str_eq_lit(name, "wctob") || str_eq_lit(name, "swprintf") ||
-         str_eq_lit(name, "swscanf") || str_eq_lit(name, "mbrtoc16") ||
+         str_eq_lit(name, "swscanf") ||
+         str_eq_lit(name, "fgetwc") || str_eq_lit(name, "getwc") ||
+         str_eq_lit(name, "getwchar") || str_eq_lit(name, "fputwc") ||
+         str_eq_lit(name, "putwc") || str_eq_lit(name, "putwchar") ||
+         str_eq_lit(name, "ungetwc") || str_eq_lit(name, "fgetws") ||
+         str_eq_lit(name, "fputws") || str_eq_lit(name, "fwide") ||
+         str_eq_lit(name, "mbrtoc16") ||
          str_eq_lit(name, "c16rtomb") || str_eq_lit(name, "mbrtoc32") ||
          str_eq_lit(name, "c32rtomb") ||
          str_eq_lit(name, "sqrt") || str_eq_lit(name, "__ag_complex_sqrt") ||
@@ -848,6 +884,14 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "truncf") || str_eq_lit(name, "truncl") ||
          str_eq_lit(name, "fmod") ||
          str_eq_lit(name, "fmodf") || str_eq_lit(name, "fmodl") ||
+         str_eq_lit(name, "frexp") || str_eq_lit(name, "frexpf") ||
+         str_eq_lit(name, "frexpl") || str_eq_lit(name, "ldexp") ||
+         str_eq_lit(name, "ldexpf") || str_eq_lit(name, "ldexpl") ||
+         str_eq_lit(name, "modf") || str_eq_lit(name, "modff") ||
+         str_eq_lit(name, "modfl") || str_eq_lit(name, "copysign") ||
+         str_eq_lit(name, "copysignf") || str_eq_lit(name, "copysignl") ||
+         str_eq_lit(name, "nan") || str_eq_lit(name, "nanf") ||
+         str_eq_lit(name, "nanl") ||
          str_eq_lit(name, "cbrt") || str_eq_lit(name, "exp") ||
          str_eq_lit(name, "expf") || str_eq_lit(name, "expl") ||
          str_eq_lit(name, "log") || str_eq_lit(name, "logf") ||
@@ -870,7 +914,13 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "hypotf") || str_eq_lit(name, "hypotl") ||
          str_eq_lit(name, "fmin") || str_eq_lit(name, "fminf") ||
          str_eq_lit(name, "fminl") || str_eq_lit(name, "fmax") ||
-         str_eq_lit(name, "fmaxf") || str_eq_lit(name, "fmaxl");
+         str_eq_lit(name, "fmaxf") || str_eq_lit(name, "fmaxl") ||
+         str_eq_lit(name, "fpclassify") || str_eq_lit(name, "isfinite") ||
+         str_eq_lit(name, "isinf") || str_eq_lit(name, "isnan") ||
+         str_eq_lit(name, "isnormal") || str_eq_lit(name, "signbit") ||
+         str_eq_lit(name, "isgreater") || str_eq_lit(name, "isgreaterequal") ||
+         str_eq_lit(name, "isless") || str_eq_lit(name, "islessequal") ||
+         str_eq_lit(name, "islessgreater") || str_eq_lit(name, "isunordered");
 }
 
 static int runtime_has_data(object_t *runtime, str_t name) {
@@ -2543,6 +2593,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
   const char *target_lit = NULL;
   if (str_eq_lit(name, "printf")) {
     target_lit = "__agc_runtime_printf";
+  } else if (str_eq_lit(name, "vprintf")) {
+    target_lit = "__agc_runtime_vprintf";
   } else if (str_eq_lit(name, "fprintf")) {
     target_lit = "__agc_runtime_fprintf";
   } else if (str_eq_lit(name, "vfprintf")) {
@@ -2555,12 +2607,20 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_vsnprintf";
   } else if (str_eq_lit(name, "sprintf")) {
     target_lit = "__agc_runtime_sprintf";
+  } else if (str_eq_lit(name, "vsprintf")) {
+    target_lit = "__agc_runtime_vsprintf";
   } else if (str_eq_lit(name, "scanf")) {
     target_lit = "__agc_runtime_scanf";
+  } else if (str_eq_lit(name, "vscanf")) {
+    target_lit = "__agc_runtime_vscanf";
   } else if (str_eq_lit(name, "fscanf")) {
     target_lit = "__agc_runtime_fscanf";
+  } else if (str_eq_lit(name, "vfscanf")) {
+    target_lit = "__agc_runtime_vfscanf";
   } else if (str_eq_lit(name, "sscanf")) {
     target_lit = "__agc_runtime_sscanf";
+  } else if (str_eq_lit(name, "vsscanf")) {
+    target_lit = "__agc_runtime_vsscanf";
   } else if (str_eq_lit(name, "strlen")) {
     target_lit = "__agc_runtime_strlen";
   } else if (str_eq_lit(name, "strcmp")) {
@@ -2617,24 +2677,46 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_calloc";
   } else if (str_eq_lit(name, "realloc")) {
     target_lit = "__agc_runtime_realloc";
+  } else if (str_eq_lit(name, "aligned_alloc")) {
+    target_lit = "__agc_runtime_aligned_alloc";
   } else if (str_eq_lit(name, "atoi")) {
     target_lit = "__agc_runtime_atoi";
   } else if (str_eq_lit(name, "atof")) {
     target_lit = "__agc_runtime_atof";
   } else if (str_eq_lit(name, "atol")) {
     target_lit = "__agc_runtime_atol";
+  } else if (str_eq_lit(name, "atoll")) {
+    target_lit = "__agc_runtime_atoll";
   } else if (str_eq_lit(name, "strtol")) {
     target_lit = "__agc_runtime_strtol";
   } else if (str_eq_lit(name, "strtoul")) {
     target_lit = "__agc_runtime_strtoul";
+  } else if (str_eq_lit(name, "strtoll")) {
+    target_lit = "__agc_runtime_strtoll";
+  } else if (str_eq_lit(name, "strtoull")) {
+    target_lit = "__agc_runtime_strtoull";
+  } else if (str_eq_lit(name, "strtof")) {
+    target_lit = "__agc_runtime_strtof";
   } else if (str_eq_lit(name, "strtod")) {
     target_lit = "__agc_runtime_strtod";
+  } else if (str_eq_lit(name, "strtold")) {
+    target_lit = "__agc_runtime_strtold";
   } else if (str_eq_lit(name, "strtoimax")) {
     target_lit = "__agc_runtime_strtoimax";
   } else if (str_eq_lit(name, "strtoumax")) {
     target_lit = "__agc_runtime_strtoumax";
   } else if (str_eq_lit(name, "labs")) {
     target_lit = "__agc_runtime_labs";
+  } else if (str_eq_lit(name, "llabs")) {
+    target_lit = "__agc_runtime_llabs";
+  } else if (str_eq_lit(name, "div")) {
+    target_lit = "__agc_runtime_div";
+  } else if (str_eq_lit(name, "ldiv")) {
+    target_lit = "__agc_runtime_ldiv";
+  } else if (str_eq_lit(name, "lldiv")) {
+    target_lit = "__agc_runtime_lldiv";
+  } else if (str_eq_lit(name, "imaxdiv")) {
+    target_lit = "__agc_runtime_imaxdiv";
   } else if (str_eq_lit(name, "qsort")) {
     target_lit = "__agc_runtime_qsort";
   } else if (str_eq_lit(name, "bsearch")) {
@@ -2645,8 +2727,14 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_srand";
   } else if (str_eq_lit(name, "atexit")) {
     target_lit = "__agc_runtime_atexit";
+  } else if (str_eq_lit(name, "at_quick_exit")) {
+    target_lit = "__agc_runtime_at_quick_exit";
   } else if (str_eq_lit(name, "exit")) {
     target_lit = "__agc_runtime_exit";
+  } else if (str_eq_lit(name, "quick_exit")) {
+    target_lit = "__agc_runtime_quick_exit";
+  } else if (str_eq_lit(name, "_Exit")) {
+    target_lit = "__agc_runtime__Exit";
   } else if (str_eq_lit(name, "abort")) {
     target_lit = "__agc_runtime_abort";
   } else if (str_eq_lit(name, "getenv")) {
@@ -2661,8 +2749,20 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_clock";
   } else if (str_eq_lit(name, "difftime")) {
     target_lit = "__agc_runtime_difftime";
+  } else if (str_eq_lit(name, "timespec_get")) {
+    target_lit = "__agc_runtime_timespec_get";
+  } else if (str_eq_lit(name, "gmtime")) {
+    target_lit = "__agc_runtime_gmtime";
   } else if (str_eq_lit(name, "localtime")) {
     target_lit = "__agc_runtime_localtime";
+  } else if (str_eq_lit(name, "mktime")) {
+    target_lit = "__agc_runtime_mktime";
+  } else if (str_eq_lit(name, "asctime")) {
+    target_lit = "__agc_runtime_asctime";
+  } else if (str_eq_lit(name, "ctime")) {
+    target_lit = "__agc_runtime_ctime";
+  } else if (str_eq_lit(name, "strftime")) {
+    target_lit = "__agc_runtime_strftime";
   } else if (str_eq_lit(name, "getrusage")) {
     target_lit = "__agc_runtime_getrusage";
   } else if (str_eq_lit(name, "getline")) {
@@ -2687,6 +2787,10 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_strncat";
   } else if (str_eq_lit(name, "strncmp")) {
     target_lit = "__agc_runtime_strncmp";
+  } else if (str_eq_lit(name, "strcoll")) {
+    target_lit = "__agc_runtime_strcoll";
+  } else if (str_eq_lit(name, "strxfrm")) {
+    target_lit = "__agc_runtime_strxfrm";
   } else if (str_eq_lit(name, "memcmp")) {
     target_lit = "__agc_runtime_memcmp";
   } else if (str_eq_lit(name, "strchr")) {
@@ -2713,18 +2817,32 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fputs";
   } else if (str_eq_lit(name, "fputc")) {
     target_lit = "__agc_runtime_fputc";
+  } else if (str_eq_lit(name, "putc")) {
+    target_lit = "__agc_runtime_putc";
   } else if (str_eq_lit(name, "fflush")) {
     target_lit = "__agc_runtime_fflush";
+  } else if (str_eq_lit(name, "setbuf")) {
+    target_lit = "__agc_runtime_setbuf";
+  } else if (str_eq_lit(name, "setvbuf")) {
+    target_lit = "__agc_runtime_setvbuf";
   } else if (str_eq_lit(name, "perror")) {
     target_lit = "__agc_runtime_perror";
   } else if (str_eq_lit(name, "getchar")) {
     target_lit = "__agc_runtime_getchar";
   } else if (str_eq_lit(name, "fopen")) {
     target_lit = "__agc_runtime_fopen";
+  } else if (str_eq_lit(name, "freopen")) {
+    target_lit = "__agc_runtime_freopen";
+  } else if (str_eq_lit(name, "tmpfile")) {
+    target_lit = "__agc_runtime_tmpfile";
+  } else if (str_eq_lit(name, "tmpnam")) {
+    target_lit = "__agc_runtime_tmpnam";
   } else if (str_eq_lit(name, "fclose")) {
     target_lit = "__agc_runtime_fclose";
   } else if (str_eq_lit(name, "remove")) {
     target_lit = "__agc_runtime_remove";
+  } else if (str_eq_lit(name, "rename")) {
+    target_lit = "__agc_runtime_rename";
   } else if (str_eq_lit(name, "fwrite")) {
     target_lit = "__agc_runtime_fwrite";
   } else if (str_eq_lit(name, "fread")) {
@@ -2747,12 +2865,18 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fgetc";
   } else if (str_eq_lit(name, "getc")) {
     target_lit = "__agc_runtime_getc";
+  } else if (str_eq_lit(name, "ungetc")) {
+    target_lit = "__agc_runtime_ungetc";
   } else if (str_eq_lit(name, "fgets")) {
     target_lit = "__agc_runtime_fgets";
   } else if (str_eq_lit(name, "fseek")) {
     target_lit = "__agc_runtime_fseek";
   } else if (str_eq_lit(name, "ftell")) {
     target_lit = "__agc_runtime_ftell";
+  } else if (str_eq_lit(name, "fgetpos")) {
+    target_lit = "__agc_runtime_fgetpos";
+  } else if (str_eq_lit(name, "fsetpos")) {
+    target_lit = "__agc_runtime_fsetpos";
   } else if (str_eq_lit(name, "rewind")) {
     target_lit = "__agc_runtime_rewind";
   } else if (str_eq_lit(name, "feof")) {
@@ -2857,6 +2981,36 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fmodf";
   } else if (str_eq_lit(name, "fmodl")) {
     target_lit = "__agc_runtime_fmodl";
+  } else if (str_eq_lit(name, "frexp")) {
+    target_lit = "__agc_runtime_frexp";
+  } else if (str_eq_lit(name, "frexpf")) {
+    target_lit = "__agc_runtime_frexpf";
+  } else if (str_eq_lit(name, "frexpl")) {
+    target_lit = "__agc_runtime_frexpl";
+  } else if (str_eq_lit(name, "ldexp")) {
+    target_lit = "__agc_runtime_ldexp";
+  } else if (str_eq_lit(name, "ldexpf")) {
+    target_lit = "__agc_runtime_ldexpf";
+  } else if (str_eq_lit(name, "ldexpl")) {
+    target_lit = "__agc_runtime_ldexpl";
+  } else if (str_eq_lit(name, "modf")) {
+    target_lit = "__agc_runtime_modf";
+  } else if (str_eq_lit(name, "modff")) {
+    target_lit = "__agc_runtime_modff";
+  } else if (str_eq_lit(name, "modfl")) {
+    target_lit = "__agc_runtime_modfl";
+  } else if (str_eq_lit(name, "copysign")) {
+    target_lit = "__agc_runtime_copysign";
+  } else if (str_eq_lit(name, "copysignf")) {
+    target_lit = "__agc_runtime_copysignf";
+  } else if (str_eq_lit(name, "copysignl")) {
+    target_lit = "__agc_runtime_copysignl";
+  } else if (str_eq_lit(name, "nan")) {
+    target_lit = "__agc_runtime_nan";
+  } else if (str_eq_lit(name, "nanf")) {
+    target_lit = "__agc_runtime_nanf";
+  } else if (str_eq_lit(name, "nanl")) {
+    target_lit = "__agc_runtime_nanl";
   } else if (str_eq_lit(name, "cbrt")) {
     target_lit = "__agc_runtime_cbrt";
   } else if (str_eq_lit(name, "exp")) {
@@ -2931,6 +3085,30 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fmaxf";
   } else if (str_eq_lit(name, "fmaxl")) {
     target_lit = "__agc_runtime_fmaxl";
+  } else if (str_eq_lit(name, "fpclassify")) {
+    target_lit = "__agc_runtime_fpclassify";
+  } else if (str_eq_lit(name, "isfinite")) {
+    target_lit = "__agc_runtime_isfinite";
+  } else if (str_eq_lit(name, "isinf")) {
+    target_lit = "__agc_runtime_isinf";
+  } else if (str_eq_lit(name, "isnan")) {
+    target_lit = "__agc_runtime_isnan";
+  } else if (str_eq_lit(name, "isnormal")) {
+    target_lit = "__agc_runtime_isnormal";
+  } else if (str_eq_lit(name, "signbit")) {
+    target_lit = "__agc_runtime_signbit";
+  } else if (str_eq_lit(name, "isgreater")) {
+    target_lit = "__agc_runtime_isgreater";
+  } else if (str_eq_lit(name, "isgreaterequal")) {
+    target_lit = "__agc_runtime_isgreaterequal";
+  } else if (str_eq_lit(name, "isless")) {
+    target_lit = "__agc_runtime_isless";
+  } else if (str_eq_lit(name, "islessequal")) {
+    target_lit = "__agc_runtime_islessequal";
+  } else if (str_eq_lit(name, "islessgreater")) {
+    target_lit = "__agc_runtime_islessgreater";
+  } else if (str_eq_lit(name, "isunordered")) {
+    target_lit = "__agc_runtime_isunordered";
   } else if (str_eq_lit(name, "iswalnum")) {
     target_lit = "__agc_runtime_isalnum";
   } else if (str_eq_lit(name, "iswalpha")) {
@@ -2981,12 +3159,24 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_wcscmp";
   } else if (str_eq_lit(name, "wcsncmp")) {
     target_lit = "__agc_runtime_wcsncmp";
+  } else if (str_eq_lit(name, "wcscoll")) {
+    target_lit = "__agc_runtime_wcscoll";
+  } else if (str_eq_lit(name, "wcsxfrm")) {
+    target_lit = "__agc_runtime_wcsxfrm";
   } else if (str_eq_lit(name, "wcschr")) {
     target_lit = "__agc_runtime_wcschr";
   } else if (str_eq_lit(name, "wcsrchr")) {
     target_lit = "__agc_runtime_wcsrchr";
   } else if (str_eq_lit(name, "wcsstr")) {
     target_lit = "__agc_runtime_wcsstr";
+  } else if (str_eq_lit(name, "wcsspn")) {
+    target_lit = "__agc_runtime_wcsspn";
+  } else if (str_eq_lit(name, "wcscspn")) {
+    target_lit = "__agc_runtime_wcscspn";
+  } else if (str_eq_lit(name, "wcspbrk")) {
+    target_lit = "__agc_runtime_wcspbrk";
+  } else if (str_eq_lit(name, "wcstok")) {
+    target_lit = "__agc_runtime_wcstok";
   } else if (str_eq_lit(name, "wmemcpy")) {
     target_lit = "__agc_runtime_wmemcpy";
   } else if (str_eq_lit(name, "wmemmove")) {
@@ -3001,10 +3191,32 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_wcstol";
   } else if (str_eq_lit(name, "wcstoul")) {
     target_lit = "__agc_runtime_wcstoul";
+  } else if (str_eq_lit(name, "wcstoll")) {
+    target_lit = "__agc_runtime_wcstoll";
+  } else if (str_eq_lit(name, "wcstoull")) {
+    target_lit = "__agc_runtime_wcstoull";
+  } else if (str_eq_lit(name, "wcstof")) {
+    target_lit = "__agc_runtime_wcstof";
   } else if (str_eq_lit(name, "wcstod")) {
     target_lit = "__agc_runtime_wcstod";
+  } else if (str_eq_lit(name, "wcstold")) {
+    target_lit = "__agc_runtime_wcstold";
+  } else if (str_eq_lit(name, "mblen")) {
+    target_lit = "__agc_runtime_mblen";
+  } else if (str_eq_lit(name, "mbtowc")) {
+    target_lit = "__agc_runtime_mbtowc";
+  } else if (str_eq_lit(name, "wctomb")) {
+    target_lit = "__agc_runtime_wctomb";
+  } else if (str_eq_lit(name, "mbstowcs")) {
+    target_lit = "__agc_runtime_mbstowcs";
+  } else if (str_eq_lit(name, "wcstombs")) {
+    target_lit = "__agc_runtime_wcstombs";
   } else if (str_eq_lit(name, "mbrtowc")) {
     target_lit = "__agc_runtime_mbrtowc";
+  } else if (str_eq_lit(name, "mbrlen")) {
+    target_lit = "__agc_runtime_mbrlen";
+  } else if (str_eq_lit(name, "mbsinit")) {
+    target_lit = "__agc_runtime_mbsinit";
   } else if (str_eq_lit(name, "wcrtomb")) {
     target_lit = "__agc_runtime_wcrtomb";
   } else if (str_eq_lit(name, "mbrtoc16")) {
@@ -3019,6 +3231,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_mbsrtowcs";
   } else if (str_eq_lit(name, "wcsrtombs")) {
     target_lit = "__agc_runtime_wcsrtombs";
+  } else if (str_eq_lit(name, "wcsftime")) {
+    target_lit = "__agc_runtime_wcsftime";
   } else if (str_eq_lit(name, "btowc")) {
     target_lit = "__agc_runtime_btowc";
   } else if (str_eq_lit(name, "wctob")) {
@@ -3027,6 +3241,26 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_swprintf";
   } else if (str_eq_lit(name, "swscanf")) {
     target_lit = "__agc_runtime_swscanf";
+  } else if (str_eq_lit(name, "fgetwc")) {
+    target_lit = "__agc_runtime_fgetwc";
+  } else if (str_eq_lit(name, "getwc")) {
+    target_lit = "__agc_runtime_getwc";
+  } else if (str_eq_lit(name, "getwchar")) {
+    target_lit = "__agc_runtime_getwchar";
+  } else if (str_eq_lit(name, "fputwc")) {
+    target_lit = "__agc_runtime_fputwc";
+  } else if (str_eq_lit(name, "putwc")) {
+    target_lit = "__agc_runtime_putwc";
+  } else if (str_eq_lit(name, "putwchar")) {
+    target_lit = "__agc_runtime_putwchar";
+  } else if (str_eq_lit(name, "ungetwc")) {
+    target_lit = "__agc_runtime_ungetwc";
+  } else if (str_eq_lit(name, "fgetws")) {
+    target_lit = "__agc_runtime_fgetws";
+  } else if (str_eq_lit(name, "fputws")) {
+    target_lit = "__agc_runtime_fputws";
+  } else if (str_eq_lit(name, "fwide")) {
+    target_lit = "__agc_runtime_fwide";
   } else {
     return 0;
   }

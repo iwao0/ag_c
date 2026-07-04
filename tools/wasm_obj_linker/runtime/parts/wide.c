@@ -1,3 +1,9 @@
+int __agc_runtime_fgetc(long stream_addr);
+int __agc_runtime_getchar(void);
+int __agc_runtime_ungetc(int c, long stream_addr);
+int __agc_runtime_fputc(int c, long stream_addr);
+int __agc_runtime_putchar(int c);
+
 long __agc_runtime_wcslen(long s_addr) {
   int *s = (int *)ag_rt_ptr(s_addr);
   long n = 0;
@@ -75,6 +81,27 @@ int __agc_runtime_wcsncmp(long a_addr, long b_addr, long n) {
   return 0;
 }
 
+int __agc_runtime_wcscoll(long a_addr, long b_addr) {
+  return __agc_runtime_wcscmp(a_addr, b_addr);
+}
+
+unsigned long __agc_runtime_wcsxfrm(long dst_addr, long src_addr, unsigned long n) {
+  int *dst = dst_addr ? (int *)ag_rt_ptr(dst_addr) : (int *)0;
+  int *src = (int *)ag_rt_ptr(src_addr);
+  long limit = (long)n;
+  long len = 0;
+  while (src[len]) len++;
+  if (dst && limit != 0) {
+    long i = 0;
+    while (i + 1 < limit && src[i]) {
+      dst[i] = src[i];
+      i++;
+    }
+    dst[i] = 0;
+  }
+  return (unsigned long)len;
+}
+
 long __agc_runtime_wcschr(long s_addr, int ch) {
   int *s = (int *)ag_rt_ptr(s_addr);
   long i = 0;
@@ -110,6 +137,65 @@ long __agc_runtime_wcsstr(long haystack_addr, long needle_addr) {
     i++;
   }
   return 0;
+}
+
+static int ag_rt_wcs_contains(int *set, int ch) {
+  long i = 0;
+  while (set[i]) {
+    if (set[i] == ch) return 1;
+    i++;
+  }
+  return 0;
+}
+
+unsigned long __agc_runtime_wcsspn(long s_addr, long accept_addr) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  int *accept = (int *)ag_rt_ptr(accept_addr);
+  unsigned long i = 0;
+  while (s[i] && ag_rt_wcs_contains(accept, s[i])) i++;
+  return i;
+}
+
+unsigned long __agc_runtime_wcscspn(long s_addr, long reject_addr) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  int *reject = (int *)ag_rt_ptr(reject_addr);
+  unsigned long i = 0;
+  while (s[i] && !ag_rt_wcs_contains(reject, s[i])) i++;
+  return i;
+}
+
+long __agc_runtime_wcspbrk(long s_addr, long accept_addr) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  int *accept = (int *)ag_rt_ptr(accept_addr);
+  long i = 0;
+  while (s[i]) {
+    if (ag_rt_wcs_contains(accept, s[i])) return s_addr + i * 4;
+    i++;
+  }
+  return 0;
+}
+
+long __agc_runtime_wcstok(long s_addr, long delim_addr, long saveptr_addr) {
+  int *delim = (int *)ag_rt_ptr(delim_addr);
+  long *saveptr = (long *)ag_rt_ptr(saveptr_addr);
+  int *s = s_addr ? (int *)ag_rt_ptr(s_addr) : (int *)ag_rt_ptr(*saveptr);
+  int *tok;
+  if (!s) return 0;
+  while (*s && ag_rt_wcs_contains(delim, *s)) s++;
+  if (!*s) {
+    *saveptr = 0;
+    return 0;
+  }
+  tok = s;
+  while (*s && !ag_rt_wcs_contains(delim, *s)) s++;
+  if (*s) {
+    *s = 0;
+    s++;
+    *saveptr = (long)s;
+  } else {
+    *saveptr = 0;
+  }
+  return (long)tok;
 }
 
 long __agc_runtime_wmemcpy(long dst_addr, long src_addr, long n) {
@@ -173,118 +259,200 @@ long __agc_runtime_wmemchr(long s_addr, int ch, long n) {
   return 0;
 }
 
-static int ag_rt_wide_int_digit(int c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'z') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
+static char ag_rt_wide_strto_tmp[512];
+
+static long ag_rt_wide_copy_ascii(int *src) {
+  long n = 0;
+  while (src[n] && n + 1 < (long)sizeof(ag_rt_wide_strto_tmp)) {
+    int ch = src[n];
+    ag_rt_wide_strto_tmp[n] = (ch > 0 && ch < 128) ? (char)ch : 0;
+    if (ag_rt_wide_strto_tmp[n] == 0) break;
+    n++;
+  }
+  ag_rt_wide_strto_tmp[n] = 0;
+  return n;
+}
+
+static void ag_rt_wide_store_end(long endptr_addr, int *end) {
+  if (endptr_addr) {
+    long *endp = (long *)ag_rt_ptr(endptr_addr);
+    *endp = (long)end;
+  }
+}
+
+static int ag_rt_wide_digit_value(int ch) {
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'z') return ch - 'a' + 10;
+  if (ch >= 'A' && ch <= 'Z') return ch - 'A' + 10;
   return -1;
 }
 
-static int *__agc_runtime_wint_prefix(int *s, int *base) {
-  int b = *base;
-  if (b == 0) {
-    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
-        ag_rt_wide_int_digit(s[2]) >= 0 && ag_rt_wide_int_digit(s[2]) < 16) {
-      *base = 16;
-      return s + 2;
-    }
-    if (s[0] == '0') {
-      *base = 8;
-      return s;
-    }
-    *base = 10;
-    return s;
+static int ag_rt_wide_ascii_lower(int ch) {
+  if (ch >= 'A' && ch <= 'Z') return ch - 'A' + 'a';
+  return ch;
+}
+
+static int ag_rt_wide_match_lit(int *p, char *lit) {
+  int n = 0;
+  while (lit[n]) {
+    if (ag_rt_wide_ascii_lower(p[n]) != lit[n]) return 0;
+    n++;
   }
-  if (b == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
-      ag_rt_wide_int_digit(s[2]) >= 0 && ag_rt_wide_int_digit(s[2]) < 16) {
-    return s + 2;
+  return n;
+}
+
+static int ag_rt_wide_nan_payload_len(int *p) {
+  int n = 0;
+  if (*p != '(') return 0;
+  p++;
+  n++;
+  while (*p && *p != ')') {
+    p++;
+    n++;
+  }
+  if (*p == ')') return n + 1;
+  return 0;
+}
+
+static int *ag_rt_wide_int_end(int *orig, int base) {
+  int *s = orig;
+  int *digits;
+  int digit;
+  if (!(base == 0 || (base >= 2 && base <= 36))) return orig;
+  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
+  if (*s == '-' || *s == '+') s++;
+  if (base == 0) {
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
+        ag_rt_wide_digit_value(s[2]) >= 0 && ag_rt_wide_digit_value(s[2]) < 16) {
+      base = 16;
+      s += 2;
+    } else if (s[0] == '0') {
+      base = 8;
+    } else {
+      base = 10;
+    }
+  } else if (base == 16 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') &&
+             ag_rt_wide_digit_value(s[2]) >= 0 && ag_rt_wide_digit_value(s[2]) < 16) {
+    s += 2;
+  }
+  digits = s;
+  for (;;) {
+    digit = ag_rt_wide_digit_value(*s);
+    if (digit < 0 || digit >= base) break;
+    s++;
+  }
+  return s == digits ? orig : s;
+}
+
+static int *ag_rt_wide_float_end(int *orig) {
+  int *s = orig;
+  int *digits;
+  int have_digit = 0;
+  int special_len;
+  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
+  if (*s == '-' || *s == '+') s++;
+  special_len = ag_rt_wide_match_lit(s, "infinity");
+  if (special_len == 0) special_len = ag_rt_wide_match_lit(s, "inf");
+  if (special_len != 0) return s + special_len;
+  special_len = ag_rt_wide_match_lit(s, "nan");
+  if (special_len != 0) return s + special_len + ag_rt_wide_nan_payload_len(s + special_len);
+  if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+    int *p = s + 2;
+    while (ag_rt_wide_digit_value(*p) >= 0 && ag_rt_wide_digit_value(*p) < 16) {
+      have_digit = 1;
+      p++;
+    }
+    if (ag_rt_is_decimal_point(*p)) {
+      p++;
+      while (ag_rt_wide_digit_value(*p) >= 0 && ag_rt_wide_digit_value(*p) < 16) {
+        have_digit = 1;
+        p++;
+      }
+    }
+    if (!have_digit || !(*p == 'p' || *p == 'P')) return orig;
+    p++;
+    if (*p == '-' || *p == '+') p++;
+    digits = p;
+    while (*p >= '0' && *p <= '9') p++;
+    return p == digits ? orig : p;
+  }
+  digits = s;
+  while (*s >= '0' && *s <= '9') {
+    have_digit = 1;
+    s++;
+  }
+  if (ag_rt_is_decimal_point(*s)) {
+    s++;
+    while (*s >= '0' && *s <= '9') {
+      have_digit = 1;
+      s++;
+    }
+  }
+  if (!have_digit) return orig;
+  if (*s == 'e' || *s == 'E') {
+    int *exp = s + 1;
+    if (*exp == '-' || *exp == '+') exp++;
+    digits = exp;
+    while (*exp >= '0' && *exp <= '9') exp++;
+    if (exp != digits) s = exp;
   }
   return s;
 }
 
-static int __agc_runtime_wint_base_ok(int base) {
-  return base == 0 || (base >= 2 && base <= 36);
-}
-
 long __agc_runtime_wcstol(long nptr_addr, long endptr_addr, int base) {
   int *orig = (int *)ag_rt_ptr(nptr_addr);
-  int *s = orig;
-  if (!__agc_runtime_wint_base_ok(base)) {
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)orig;
-    }
-    return 0;
-  }
-  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
-  int sign = 1;
-  if (*s == '-') {
-    sign = -1;
-    s++;
-  } else if (*s == '+') {
-    s++;
-  }
-  s = __agc_runtime_wint_prefix(s, &base);
-  int *digits = s;
-  long acc = 0;
-  for (;;) {
-    int digit = ag_rt_wide_int_digit(*s);
-    if (digit < 0) break;
-    if (digit >= base) break;
-    acc = acc * base + digit;
-    s++;
-  }
-  if (endptr_addr) {
-    long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)(s == digits ? orig : s);
-  }
-  return sign * acc;
+  ag_rt_wide_copy_ascii(orig);
+  long value = __agc_runtime_strtol((long)ag_rt_wide_strto_tmp, 0, base);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_int_end(orig, base));
+  return value;
 }
 
 unsigned long __agc_runtime_wcstoul(long nptr_addr, long endptr_addr, int base) {
-  return (unsigned long)__agc_runtime_wcstol(nptr_addr, endptr_addr, base);
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  ag_rt_wide_copy_ascii(orig);
+  unsigned long value = __agc_runtime_strtoul((long)ag_rt_wide_strto_tmp, 0, base);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_int_end(orig, base));
+  return value;
+}
+
+long long __agc_runtime_wcstoll(long nptr_addr, long endptr_addr, int base) {
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  ag_rt_wide_copy_ascii(orig);
+  long long value = __agc_runtime_strtoll((long)ag_rt_wide_strto_tmp, 0, base);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_int_end(orig, base));
+  return value;
+}
+
+unsigned long long __agc_runtime_wcstoull(long nptr_addr, long endptr_addr, int base) {
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  ag_rt_wide_copy_ascii(orig);
+  unsigned long long value = __agc_runtime_strtoull((long)ag_rt_wide_strto_tmp, 0, base);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_int_end(orig, base));
+  return value;
+}
+
+float __agc_runtime_wcstof(long nptr_addr, long endptr_addr) {
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  ag_rt_wide_copy_ascii(orig);
+  float value = __agc_runtime_strtof((long)ag_rt_wide_strto_tmp, 0);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_float_end(orig));
+  return value;
 }
 
 double __agc_runtime_wcstod(long nptr_addr, long endptr_addr) {
   int *orig = (int *)ag_rt_ptr(nptr_addr);
-  int *s = orig;
-  while (*s == ' ' || *s == '\f' || *s == '\n' || *s == '\r' || *s == '\t' || *s == '\v') s++;
-  double sign = 1.0;
-  if (*s == '-') {
-    sign = -1.0;
-    s++;
-  } else if (*s == '+') {
-    s++;
-  }
-  double acc = 0.0;
-  int have_digit = 0;
-  while (*s >= '0' && *s <= '9') {
-    have_digit = 1;
-    acc = acc * 10.0 + (double)(*s - '0');
-    s++;
-  }
-  if (ag_rt_is_decimal_point(*s)) {
-    double place = 0.1;
-    s++;
-    while (*s >= '0' && *s <= '9') {
-      have_digit = 1;
-      acc = acc + (double)(*s - '0') * place;
-      place = place / 10.0;
-      s++;
-    }
-  }
-  if (!have_digit) {
-    if (endptr_addr) {
-      long *endp = (long *)ag_rt_ptr(endptr_addr);
-      *endp = (long)orig;
-    }
-    return 0.0;
-  }
-  if (endptr_addr) {
-    long *endp = (long *)ag_rt_ptr(endptr_addr);
-    *endp = (long)s;
-  }
-  return sign * acc;
+  ag_rt_wide_copy_ascii(orig);
+  double value = __agc_runtime_strtod((long)ag_rt_wide_strto_tmp, 0);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_float_end(orig));
+  return value;
+}
+
+double __agc_runtime_wcstold(long nptr_addr, long endptr_addr) {
+  int *orig = (int *)ag_rt_ptr(nptr_addr);
+  ag_rt_wide_copy_ascii(orig);
+  double value = (double)__agc_runtime_strtold((long)ag_rt_wide_strto_tmp, 0);
+  ag_rt_wide_store_end(endptr_addr, ag_rt_wide_float_end(orig));
+  return value;
 }
 
 long __agc_runtime_mbrtowc(long pwc_addr, long s_addr, long n, long ps_addr) {
@@ -391,6 +559,15 @@ long __agc_runtime_c32rtomb(long s_addr, unsigned int c32, long ps_addr) {
   return __agc_runtime_wcrtomb(s_addr, (int)c32, ps_addr);
 }
 
+long __agc_runtime_mbrlen(long s_addr, long n, long ps_addr) {
+  return __agc_runtime_mbrtowc(0, s_addr, n, ps_addr);
+}
+
+int __agc_runtime_mbsinit(long ps_addr) {
+  (void)ps_addr;
+  return 1;
+}
+
 long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_addr) {
   (void)ps_addr;
   long *srcp = (long *)ag_rt_ptr(srcp_addr);
@@ -447,10 +624,189 @@ long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_ad
   return bytes;
 }
 
+static int ag_rt_wcsftime_put_wch(int *dst, long maxsize, long *pos, int ch) {
+  if (*pos + 1 >= maxsize) return 0;
+  dst[*pos] = ch;
+  *pos = *pos + 1;
+  return 1;
+}
+
+static int ag_rt_wcsftime_put_narrow(int *dst, long maxsize, long *pos, char *s, long n) {
+  long i = 0;
+  while (i < n) {
+    if (!ag_rt_wcsftime_put_wch(dst, maxsize, pos, (unsigned char)s[i])) return 0;
+    i++;
+  }
+  return 1;
+}
+
+static int ag_rt_wcsftime_put_format(int *dst, long maxsize, long *pos, int spec, struct ag_rt_tm *tm) {
+  char tmp[128];
+  long tmp_pos = 0;
+  if (!ag_rt_strftime_put_format(tmp, (long)sizeof(tmp), &tmp_pos, spec, tm)) return 0;
+  return ag_rt_wcsftime_put_narrow(dst, maxsize, pos, tmp, tmp_pos);
+}
+
+unsigned long __agc_runtime_wcsftime(long dst_addr, unsigned long maxsize, long format_addr, long timeptr_addr) {
+  int *dst = (int *)ag_rt_ptr(dst_addr);
+  int *fmt = (int *)ag_rt_ptr(format_addr);
+  struct ag_rt_tm *tm = (struct ag_rt_tm *)ag_rt_ptr(timeptr_addr);
+  long pos = 0;
+  if (!dst || !fmt || !tm || maxsize == 0) return 0;
+  while (*fmt) {
+    if (*fmt == '%') {
+      fmt++;
+      if (!*fmt) {
+        if (!ag_rt_wcsftime_put_wch(dst, (long)maxsize, &pos, '%')) return 0;
+        break;
+      }
+      if (!ag_rt_wcsftime_put_format(dst, (long)maxsize, &pos, *fmt, tm)) return 0;
+    } else {
+      if (!ag_rt_wcsftime_put_wch(dst, (long)maxsize, &pos, *fmt)) return 0;
+    }
+    fmt++;
+  }
+  dst[pos] = 0;
+  return (unsigned long)pos;
+}
+
+int __agc_runtime_mblen(long s_addr, long n) {
+  long r;
+  if (!s_addr) return 0;
+  r = __agc_runtime_mbrtowc(0, s_addr, n, 0);
+  if (r < 0) return -1;
+  return (int)r;
+}
+
+int __agc_runtime_mbtowc(long pwc_addr, long s_addr, long n) {
+  long r;
+  if (!s_addr) return 0;
+  r = __agc_runtime_mbrtowc(pwc_addr, s_addr, n, 0);
+  if (r < 0) return -1;
+  return (int)r;
+}
+
+int __agc_runtime_wctomb(long s_addr, int wc) {
+  long r;
+  if (!s_addr) return 0;
+  r = __agc_runtime_wcrtomb(s_addr, wc, 0);
+  if (r < 0) return -1;
+  return (int)r;
+}
+
+long __agc_runtime_mbstowcs(long dst_addr, long src_addr, long n) {
+  long srcp = src_addr;
+  if (!src_addr) return -1;
+  return __agc_runtime_mbsrtowcs(dst_addr, (long)&srcp, n, 0);
+}
+
+long __agc_runtime_wcstombs(long dst_addr, long src_addr, long n) {
+  long srcp = src_addr;
+  if (!src_addr) return -1;
+  return __agc_runtime_wcsrtombs(dst_addr, (long)&srcp, n, 0);
+}
+
 int __agc_runtime_btowc(int c) {
   return c == -1 ? -1 : (c & 255);
 }
 
 int __agc_runtime_wctob(int c) {
   return (c >= 0 && c <= 255) ? c : -1;
+}
+
+int __agc_runtime_fputwc(int wc, long stream_addr) {
+  char tmp[4];
+  long n = __agc_runtime_wcrtomb((long)tmp, wc, 0);
+  long i = 0;
+  if (n < 0) return -1;
+  while (i < n) {
+    if (__agc_runtime_fputc((unsigned char)tmp[i], stream_addr) < 0) return -1;
+    i++;
+  }
+  return wc;
+}
+
+int __agc_runtime_putwc(int wc, long stream_addr) {
+  return __agc_runtime_fputwc(wc, stream_addr);
+}
+
+int __agc_runtime_putwchar(int wc) {
+  return __agc_runtime_fputwc(wc, (long)__stdoutp);
+}
+
+static int ag_rt_utf8_need_from_first(int c) {
+  if (c < 0) return -1;
+  if ((c & 0x80) == 0) return 1;
+  if ((c & 0xe0) == 0xc0) return 2;
+  if ((c & 0xf0) == 0xe0) return 3;
+  if ((c & 0xf8) == 0xf0) return 4;
+  return -1;
+}
+
+int __agc_runtime_fgetwc(long stream_addr) {
+  char tmp[4];
+  int wc = 0;
+  int first = __agc_runtime_fgetc(stream_addr);
+  int need = ag_rt_utf8_need_from_first(first);
+  int i = 1;
+  long r;
+  if (first < 0 || need < 0) return -1;
+  tmp[0] = (char)first;
+  while (i < need) {
+    int ch = __agc_runtime_fgetc(stream_addr);
+    if (ch < 0) return -1;
+    tmp[i] = (char)ch;
+    i++;
+  }
+  r = __agc_runtime_mbrtowc((long)&wc, (long)tmp, need, 0);
+  if (r < 0) return -1;
+  return wc;
+}
+
+int __agc_runtime_getwc(long stream_addr) {
+  return __agc_runtime_fgetwc(stream_addr);
+}
+
+int __agc_runtime_getwchar(void) {
+  return __agc_runtime_fgetwc((long)&ag_rt_file_value);
+}
+
+int __agc_runtime_ungetwc(int wc, long stream_addr) {
+  if (wc < 0 || wc > 0x7f) return -1;
+  return __agc_runtime_ungetc(wc, stream_addr);
+}
+
+long __agc_runtime_fgetws(long s_addr, int n, long stream_addr) {
+  int *dst = (int *)ag_rt_ptr(s_addr);
+  int i = 0;
+  int wc;
+  if (!dst || n <= 0) return 0;
+  while (i + 1 < n) {
+    wc = __agc_runtime_fgetwc(stream_addr);
+    if (wc < 0) break;
+    dst[i++] = wc;
+    if (wc == '\n') break;
+  }
+  if (i == 0) return 0;
+  dst[i] = 0;
+  return s_addr;
+}
+
+int __agc_runtime_fputws(long s_addr, long stream_addr) {
+  int *s = (int *)ag_rt_ptr(s_addr);
+  int count = 0;
+  if (!s) return -1;
+  while (*s) {
+    if (__agc_runtime_fputwc(*s, stream_addr) < 0) return -1;
+    s++;
+    count++;
+  }
+  return count;
+}
+
+int __agc_runtime_fwide(long stream_addr, int mode) {
+  (void)stream_addr;
+  if (mode > 0) return 1;
+  if (mode < 0) return -1;
+  return 0;
 }

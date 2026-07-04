@@ -40,6 +40,8 @@ static char ag_rt_stdout_buf[8192];
 static long ag_rt_stdout_len = 0;
 static char ag_rt_stderr_buf[8192];
 static long ag_rt_stderr_len = 0;
+static char ag_rt_tmpnam_buf[32];
+static unsigned long ag_rt_tmpnam_counter = 0;
 static long ag_rt_termination_kind = 0;
 static long ag_rt_termination_status = 0;
 static char *ag_rt_strtok_next;
@@ -50,6 +52,8 @@ static int ag_rt_errno_value = 0;
 static long ag_rt_signal_handlers[32];
 static long ag_rt_atexit_handlers[32];
 static int ag_rt_atexit_count = 0;
+static long ag_rt_quick_exit_handlers[32];
+static int ag_rt_quick_exit_count = 0;
 void *__stdinp;
 void *__stdoutp = (void *)1;
 void *__stderrp = (void *)2;
@@ -62,11 +66,14 @@ void __agc_runtime_stderr_write(long ptr_addr, long len);
 struct ag_rt_file {
   long pos;
   int write_mode;
+  int read_write;
   int eof;
   int error;
   int fd_index;
   int used;
   int is_stdin;
+  int has_ungetc;
+  int ungetc_ch;
 };
 
 struct ag_rt_fd {
@@ -80,7 +87,7 @@ struct ag_rt_lconv {
 
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 static struct ag_rt_fd ag_rt_fds[8];
-static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, -1, 1, 1};
+static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, -1, 1, 1, 0, 0};
 static struct ag_rt_file ag_rt_files[8];
 
 static int ag_rt_decimal_point_char(void) {
@@ -95,15 +102,18 @@ static int ag_rt_is_decimal_point(int ch) {
 static void ag_rt_file_set_pos(struct ag_rt_file *f, long pos) {
   if (!f) return;
   f->pos = pos;
+  f->has_ungetc = 0;
+  f->ungetc_ch = 0;
   if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
     ag_rt_fds[f->fd_index].pos = pos;
   }
 }
 
-static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int fd_index, long pos, int is_stdin) {
+static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int read_write, int fd_index, long pos, int is_stdin) {
   if (!f) return;
   f->used = 1;
   f->write_mode = write_mode;
+  f->read_write = read_write;
   f->eof = 0;
   f->error = 0;
   f->fd_index = fd_index;
@@ -111,10 +121,10 @@ static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int fd_index, 
   ag_rt_file_set_pos(f, pos);
 }
 
-static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int fd_index, long pos) {
+static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int read_write, int fd_index, long pos) {
   for (int i = 0; i < 8; i++) {
     if (!ag_rt_files[i].used) {
-      ag_rt_file_init(&ag_rt_files[i], write_mode, fd_index, pos, 0);
+      ag_rt_file_init(&ag_rt_files[i], write_mode, read_write, fd_index, pos, 0);
       return &ag_rt_files[i];
     }
   }
@@ -126,12 +136,15 @@ static void ag_rt_reset_files(void) {
     ag_rt_files[i].used = 0;
     ag_rt_files[i].pos = 0;
     ag_rt_files[i].write_mode = 0;
+    ag_rt_files[i].read_write = 0;
     ag_rt_files[i].eof = 0;
     ag_rt_files[i].error = 0;
     ag_rt_files[i].fd_index = -1;
     ag_rt_files[i].is_stdin = 0;
+    ag_rt_files[i].has_ungetc = 0;
+    ag_rt_files[i].ungetc_ch = 0;
   }
-  ag_rt_file_init(&ag_rt_file_value, 0, -1, 0, 1);
+  ag_rt_file_init(&ag_rt_file_value, 0, 0, -1, 0, 1);
 }
 
 static char *ag_rt_stream_buf(struct ag_rt_file *f) {
@@ -142,6 +155,14 @@ static char *ag_rt_stream_buf(struct ag_rt_file *f) {
 static long ag_rt_stream_len(struct ag_rt_file *f) {
   if (f && f->is_stdin) return ag_rt_stdin_len;
   return ag_rt_file_len;
+}
+
+static int ag_rt_file_can_read(struct ag_rt_file *f) {
+  return f && (!f->write_mode || f->read_write);
+}
+
+static int ag_rt_file_can_write(struct ag_rt_file *f) {
+  return f && !f->is_stdin && (f->write_mode || f->read_write);
 }
 
 static int ag_rt_is_stdout_stream(long stream_addr) {
@@ -235,6 +256,8 @@ void __agc_runtime_stderr_reset(void) {
   ag_rt_termination_status = 0;
   ag_rt_atexit_count = 0;
   for (int i = 0; i < 32; i++) ag_rt_atexit_handlers[i] = 0;
+  ag_rt_quick_exit_count = 0;
+  for (int i = 0; i < 32; i++) ag_rt_quick_exit_handlers[i] = 0;
 }
 
 static void ag_rt_notify_termination(int kind, int status) {

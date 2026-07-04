@@ -586,6 +586,8 @@ typedef long va_list;
 #define va_end(ap) ((void)(ap))
 typedef void FILE;
 int vsnprintf(char *buf, unsigned long size, char *fmt, va_list ap);
+int vsprintf(char *buf, char *fmt, va_list ap);
+int vprintf(char *fmt, va_list ap);
 int vfprintf(FILE *stream, char *fmt, va_list ap);
 FILE *fopen(char *path, char *mode);
 int fclose(FILE *stream);
@@ -600,6 +602,22 @@ int call_vsnprintf(char *buf, unsigned long size, char *fmt, ...) {
   va_end(ap);
   return n;
 }
+int call_vsprintf(char *buf, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vsprintf(buf, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vprintf(char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vprintf(fmt, ap);
+  va_end(ap);
+  return n;
+}
 int call_vfprintf(FILE *stream, char *fmt, ...) {
   va_list ap;
   int n;
@@ -611,6 +629,9 @@ int call_vfprintf(FILE *stream, char *fmt, ...) {
 int main(void) {
   char buf[8];
   int sn = call_vsnprintf(buf, sizeof(buf), "%d-%s", 31, "ok");
+  char sbuf[8];
+  int spn = call_vsprintf(sbuf, "%d-%s", 12, "go");
+  int pn = call_vprintf("P%d", 6);
   FILE *wf = fopen("tmp.txt", "w");
   int fn = call_vfprintf(wf, "V%d", 5);
   long pos = ftell(wf);
@@ -622,8 +643,77 @@ int main(void) {
   fclose(rf);
   return sn == 5 && buf[0] == '3' && buf[1] == '1' && buf[2] == '-' &&
          buf[3] == 'o' && buf[4] == 'k' && buf[5] == 0 &&
+         spn == 5 && sbuf[0] == '1' && sbuf[1] == '2' &&
+         sbuf[2] == '-' && sbuf[3] == 'g' && sbuf[4] == 'o' &&
+         sbuf[5] == 0 && pn == 2 &&
          fn == 2 && pos == 2 && got == 2 &&
          rb[0] == 'V' && rb[1] == '5' && eof == -1 ? 42 : 1;
+}
+SRC
+
+cat > "$out_dir/vscan_state.c" <<'SRC'
+typedef long va_list;
+#define va_start(ap, last) ((void)(last), (ap) = (va_list)__va_arg_area)
+#define va_end(ap) ((void)(ap))
+typedef void FILE;
+int vsscanf(char *s, char *fmt, va_list ap);
+int vfscanf(FILE *stream, char *fmt, va_list ap);
+int vscanf(char *fmt, va_list ap);
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+int fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+int call_vsscanf(char *s, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vsscanf(s, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vfscanf(FILE *stream, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vfscanf(stream, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vscanf(char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vscanf(fmt, ap);
+  va_end(ap);
+  return n;
+}
+int main(void) {
+  int a = 0;
+  unsigned int x = 0;
+  char s[4];
+  char c = 0;
+  int n = 0;
+  int r = call_vsscanf(" -11 1f uvwR", "%d %x %3s%c%n", &a, &x, s, &c, &n);
+  if (r != 4 || a != -11 || x != 31) return 1;
+  if (s[0] != 'u' || s[1] != 'v' || s[2] != 'w' || s[3] != 0) return 2;
+  if (c != 'R' || n != 12) return 3;
+
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 4;
+  if (fwrite("22 2a okZ", 1, 9, wf) != 9 || fclose(wf) != 0) return 5;
+  FILE *rf = fopen("tmp.txt", "r+");
+  if (!rf) return 6;
+  a = 0;
+  x = 0;
+  s[0] = s[1] = s[2] = s[3] = 0;
+  c = 0;
+  n = 0;
+  r = call_vfscanf(rf, "%d %x %2s%c%n", &a, &x, s, &c, &n);
+  if (fclose(rf) != 0) return 7;
+  if (r != 4 || a != 22 || x != 42) return 8;
+  if (s[0] != 'o' || s[1] != 'k' || s[2] != 0) return 9;
+  if (c != 'Z' || n != 9) return 10;
+
+  return 42;
 }
 SRC
 
@@ -739,6 +829,7 @@ SRC
 
 cat > "$out_dir/atexit_state.c" <<'SRC'
 int atexit(void (*func)(void));
+int at_quick_exit(void (*func)(void));
 int seen;
 void handler(void) {
   seen = seen + 1;
@@ -753,6 +844,13 @@ int main(void) {
   }
   ok = ok && seen == 0;
   ok = ok && atexit(handler) == -1;
+  ok = ok && at_quick_exit(0) == 0;
+  i = 0;
+  while (i < 32) {
+    ok = ok && at_quick_exit(handler) == 0;
+    i++;
+  }
+  ok = ok && at_quick_exit(handler) == -1;
   return ok ? 42 : 1;
 }
 SRC
@@ -787,7 +885,10 @@ int main(void) {
 SRC
 
 cat > "$out_dir/strtod_state.c" <<'SRC'
+float strtof(char *s, char **endptr);
 double strtod(char *s, char **endptr);
+long double strtold(char *s, char **endptr);
+int *__error(void);
 int main(void) {
   char *end = 0;
   char *none = "  +xyz";
@@ -802,7 +903,39 @@ int main(void) {
   int ok_noval = noval == 0.0 && end == none;
   double only_dot = strtod(dot, &end);
   int ok_only_dot = only_dot == 0.0 && end == dot;
-  return ok_hex && ok_dot && ok_noexp && ok_noval && ok_only_dot ? 42 : 1;
+  float f = strtof(" .5!", &end);
+  int ok_float = (int)(f * 100.0f) == 50 && *end == '!';
+  long double ld = strtold("0x1.4p+2!", &end);
+  int ok_long_double = (int)(ld * 10.0L) == 50 && *end == '!';
+  int *errp = __error();
+  *errp = 0;
+  double ov = strtod("1e309!", &end);
+  int ok_ov = ov > 1e300 && *end == '!' && *errp == 34;
+  *errp = 0;
+  double nov = strtod("-1e309!", &end);
+  int ok_nov = nov < -1e300 && *end == '!' && *errp == 34;
+  *errp = 0;
+  double under = strtod("1e-400!", &end);
+  int ok_under = under == 0.0 && *end == '!' && *errp == 34;
+  *errp = 0;
+  double hex_under = strtod("0x1p-2000!", &end);
+  int ok_hex_under = hex_under == 0.0 && *end == '!' && *errp == 34;
+  *errp = 0;
+  double zero_huge = strtod("0e9999!", &end);
+  int ok_zero_huge = zero_huge == 0.0 && *end == '!' && *errp == 0;
+  *errp = 0;
+  double infv = strtod("INF!", &end);
+  int ok_inf = infv > 1e300 && *end == '!' && *errp == 0;
+  double ninfv = strtof("-infinity!", &end);
+  int ok_ninf = ninfv < -1e300 && *end == '!' && *errp == 0;
+  double nanv = strtod("nan(payload)!", &end);
+  int ok_nan = nanv != 0.0 && !(nanv < 0.0) && !(nanv > 0.0) && *end == '!' && *errp == 0;
+  long double ldn = strtold("NaN(open!", &end);
+  int ok_nan_open = ldn != 0.0L && !(ldn < 0.0L) && !(ldn > 0.0L) && *end == '(' && *errp == 0;
+  return ok_hex && ok_dot && ok_noexp && ok_noval && ok_only_dot &&
+         ok_float && ok_long_double && ok_ov && ok_nov && ok_under &&
+         ok_hex_under && ok_zero_huge && ok_inf && ok_ninf && ok_nan &&
+         ok_nan_open ? 42 : 1;
 }
 SRC
 
@@ -811,6 +944,8 @@ typedef void FILE;
 FILE *fopen(char *path, char *mode);
 int fclose(FILE *stream);
 unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+int fgetc(FILE *stream);
+int ungetc(int c, FILE *stream);
 long getline(char **lineptr, unsigned long *n, FILE *stream);
 int feof(FILE *stream);
 int main(void) {
@@ -829,7 +964,14 @@ int main(void) {
   long n3 = getline(&line, &cap, rf);
   int ok3 = n3 == -1 && feof(rf);
   fclose(rf);
-  return ok1 && ok2 && ok3 ? 42 : 1;
+  FILE *rf2 = fopen("tmp.txt", "r");
+  int ch = fgetc(rf2);
+  int pushed = ungetc('Z', rf2);
+  long n4 = getline(&line, &cap, rf2);
+  int ok4 = ch == 'A' && pushed == 'Z' && n4 == 2 &&
+            line[0] == 'Z' && line[1] == '\n' && line[2] == 0;
+  fclose(rf2);
+  return ok1 && ok2 && ok3 && ok4 ? 42 : 1;
 }
 SRC
 
@@ -871,6 +1013,7 @@ SRC
 cat > "$out_dir/stdio_invalid_state.c" <<'SRC'
 typedef void FILE;
 FILE *fopen(char *path, char *mode);
+FILE *freopen(char *path, char *mode, FILE *stream);
 FILE *fdopen(int fd, char *mode);
 int fclose(FILE *stream);
 unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
@@ -927,6 +1070,7 @@ typedef void FILE;
 FILE *fopen(char *path, char *mode);
 int fclose(FILE *stream);
 int remove(char *path);
+int rename(char *oldpath, char *newpath);
 int fgetc(FILE *stream);
 int fputc(int c, FILE *stream);
 int feof(FILE *stream);
@@ -948,6 +1092,272 @@ int main(void) {
   if (!rf2) return 11;
   if (fgetc(rf2) != 'Z') return 12;
   if (fclose(rf2) != 0) return 13;
+  if (rename(0, "new.txt") == 0) return 14;
+  if (rename("tmp.txt", 0) == 0) return 15;
+  if (rename("tmp.txt", "new.txt") != 0) return 16;
+  FILE *rf3 = fopen("new.txt", "r");
+  if (!rf3) return 17;
+  if (fgetc(rf3) != 'Z') return 18;
+  if (fclose(rf3) != 0) return 19;
+  return 42;
+}
+SRC
+
+cat > "$out_dir/freopen_state.c" <<'SRC'
+typedef void FILE;
+#define SEEK_SET 0
+#define EOF (-1)
+FILE *fopen(char *path, char *mode);
+FILE *freopen(char *path, char *mode, FILE *stream);
+int fclose(FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+int fseek(FILE *stream, long offset, int whence);
+int feof(FILE *stream);
+int main(void) {
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 1;
+  if (fputc('A', wf) != 'A' || fputc('B', wf) != 'B' || fclose(wf) != 0) return 2;
+  FILE *rf = fopen("tmp.txt", "r");
+  if (!rf) return 3;
+  if (fgetc(rf) != 'A') return 4;
+  if (freopen(0, "r", rf) != 0) return 5;
+  if (freopen("tmp.txt", 0, rf) != 0) return 6;
+  if (freopen("tmp.txt", "z", rf) != 0) return 7;
+  if (freopen("tmp.txt", "w+", rf) != rf) return 8;
+  if (fputc('Z', rf) != 'Z') return 9;
+  if (fseek(rf, 0, SEEK_SET) != 0) return 10;
+  if (fgetc(rf) != 'Z') return 11;
+  if (fgetc(rf) != EOF || !feof(rf)) return 12;
+  if (freopen("tmp.txt", "r", rf) != rf) return 13;
+  if (fgetc(rf) != 'Z') return 14;
+  if (fclose(rf) != 0) return 15;
+  return 42;
+}
+SRC
+
+cat > "$out_dir/ungetc_state.c" <<'SRC'
+typedef void FILE;
+#define EOF (-1)
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+int getc(FILE *stream);
+int ungetc(int c, FILE *stream);
+int fscanf(FILE *stream, char *fmt, ...);
+unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
+char *fgets(char *s, int size, FILE *stream);
+int feof(FILE *stream);
+int main(void) {
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 1;
+  if (fputc('A', wf) != 'A' || fputc('B', wf) != 'B' ||
+      fputc('\n', wf) != '\n' || fputc('C', wf) != 'C') return 2;
+  if (fclose(wf) != 0) return 3;
+
+  FILE *rf = fopen("tmp.txt", "r");
+  if (!rf) return 4;
+  if (fgetc(rf) != 'A') return 5;
+  if (ungetc('X', rf) != 'X') return 6;
+  if (fgetc(rf) != 'X') return 7;
+  if (getc(rf) != 'B') return 8;
+  if (ungetc('Y', rf) != 'Y') return 9;
+  char buf[3];
+  if (fread(buf, 1, 3, rf) != 3) return 10;
+  if (buf[0] != 'Y' || buf[1] != '\n' || buf[2] != 'C') return 11;
+  if (fgetc(rf) != EOF || !feof(rf)) return 12;
+  if (ungetc('Z', rf) != 'Z' || feof(rf)) return 13;
+  if (fgetc(rf) != 'Z') return 14;
+  if (ungetc(EOF, rf) != EOF) return 15;
+  if (fclose(rf) != 0) return 16;
+
+  FILE *rf2 = fopen("tmp.txt", "r");
+  if (!rf2) return 17;
+  if (fgetc(rf2) != 'A') return 18;
+  if (ungetc('L', rf2) != 'L') return 19;
+  char line[4];
+  if (fgets(line, sizeof(line), rf2) != line) return 20;
+  if (line[0] != 'L' || line[1] != 'B' || line[2] != '\n' || line[3] != 0) return 21;
+  if (ungetc('M', rf2) != 'M') return 22;
+  if (ungetc('N', rf2) != EOF) return 23;
+  if (fgetc(rf2) != 'M') return 24;
+  if (fclose(rf2) != 0) return 25;
+
+  FILE *sw = fopen("tmp.txt", "w");
+  if (!sw) return 26;
+  if (fputc('1', sw) != '1' || fputc('2', sw) != '2' ||
+      fputc(' ', sw) != ' ' || fputc('3', sw) != '3' ||
+      fputc('4', sw) != '4') return 27;
+  if (fclose(sw) != 0) return 28;
+
+  FILE *sf = fopen("tmp.txt", "r");
+  if (!sf) return 29;
+  if (fgetc(sf) != '1') return 30;
+  if (ungetc('9', sf) != '9') return 31;
+  int a = 0;
+  int b = 0;
+  int n = 0;
+  if (fscanf(sf, "%d %d%n", &a, &b, &n) != 2) return 32;
+  if (a != 92 || b != 34 || n != 5) return 33;
+  if (fgetc(sf) != EOF || !feof(sf)) return 34;
+  if (fclose(sf) != 0) return 35;
+
+  FILE *sf2 = fopen("tmp.txt", "r");
+  if (!sf2) return 36;
+  if (fgetc(sf2) != '1') return 37;
+  if (ungetc('Q', sf2) != 'Q') return 38;
+  int bad = 77;
+  if (fscanf(sf2, "%d", &bad) != 0 || bad != 77) return 39;
+  if (fgetc(sf2) != 'Q') return 40;
+  if (fgetc(sf2) != '2') return 41;
+  if (fclose(sf2) != 0) return 49;
+
+  FILE *sf3 = fopen("tmp.txt", "r");
+  if (!sf3) return 50;
+  while (fgetc(sf3) != EOF) {}
+  if (!feof(sf3)) return 51;
+  if (ungetc('7', sf3) != '7' || feof(sf3)) return 52;
+  int eof_value = 0;
+  if (fscanf(sf3, "%d", &eof_value) != 1 || eof_value != 7) return 53;
+  if (fgetc(sf3) != EOF || !feof(sf3)) return 54;
+  if (fclose(sf3) != 0) return 55;
+  return 42;
+}
+SRC
+
+cat > "$out_dir/setvbuf_state.c" <<'SRC'
+typedef void FILE;
+#define BUFSIZ 8192
+#define _IOFBF 0
+#define _IOLBF 1
+#define _IONBF 2
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+void setbuf(FILE *stream, char *buf);
+int setvbuf(FILE *stream, char *buf, int mode, unsigned long size);
+int main(void) {
+  char buf[BUFSIZ];
+  if (setvbuf((FILE *)1, 0, _IONBF, 0) != 0) return 1;
+  if (setvbuf((FILE *)2, buf, _IOLBF, sizeof(buf)) != 0) return 2;
+  if (setvbuf((FILE *)1, buf, 99, sizeof(buf)) == 0) return 3;
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 4;
+  if (setvbuf(wf, buf, _IOFBF, sizeof(buf)) != 0) return 5;
+  setbuf(wf, 0);
+  if (fputc('B', wf) != 'B' || fclose(wf) != 0) return 6;
+  FILE *rf = fopen("tmp.txt", "r");
+  if (!rf) return 7;
+  setbuf(rf, buf);
+  if (fgetc(rf) != 'B') return 8;
+  if (fclose(rf) != 0) return 9;
+  return 42;
+}
+SRC
+
+cat > "$out_dir/fpos_state.c" <<'SRC'
+typedef void FILE;
+typedef long fpos_t;
+#define EOF (-1)
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+int ungetc(int c, FILE *stream);
+int fgetpos(FILE *stream, fpos_t *pos);
+int fsetpos(FILE *stream, fpos_t *pos);
+int main(void) {
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 1;
+  if (fputc('A', wf) != 'A' || fputc('B', wf) != 'B' ||
+      fputc('C', wf) != 'C' || fclose(wf) != 0) return 2;
+
+  FILE *rf = fopen("tmp.txt", "r");
+  if (!rf) return 3;
+  if (fgetc(rf) != 'A') return 4;
+  fpos_t pos = -1;
+  if (fgetpos(rf, &pos) != 0 || pos != 1) return 5;
+  if (fgetc(rf) != 'B') return 6;
+  if (fsetpos(rf, &pos) != 0) return 7;
+  if (fgetc(rf) != 'B') return 8;
+  if (ungetc('X', rf) != 'X') return 9;
+  if (fsetpos(rf, &pos) != 0) return 10;
+  if (fgetc(rf) != 'B') return 11;
+  if (fgetpos(rf, 0) == 0) return 12;
+  if (fsetpos(rf, 0) == 0) return 13;
+  if (fclose(rf) != 0) return 14;
+  return 42;
+}
+SRC
+
+cat > "$out_dir/update_file_state.c" <<'SRC'
+typedef void FILE;
+#define EOF (-1)
+#define SEEK_SET 0
+#define L_tmpnam 32
+#define TMP_MAX 10000
+FILE *fopen(char *path, char *mode);
+FILE *tmpfile(void);
+char *tmpnam(char *s);
+int fclose(FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+int fseek(FILE *stream, long offset, int whence);
+int same_text(char *a, char *b) {
+  int i = 0;
+  while (a[i] && b[i] && a[i] == b[i]) i++;
+  return a[i] == b[i];
+}
+int main(void) {
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 1;
+  if (fputc('A', wf) != 'A' || fputc('B', wf) != 'B' ||
+      fputc('C', wf) != 'C' || fclose(wf) != 0) return 2;
+
+  FILE *rp = fopen("tmp.txt", "r+");
+  if (!rp) return 3;
+  if (fgetc(rp) != 'A') return 4;
+  if (fseek(rp, 1, SEEK_SET) != 0) return 5;
+  if (fputc('Z', rp) != 'Z') return 6;
+  if (fseek(rp, 0, SEEK_SET) != 0) return 7;
+  if (fgetc(rp) != 'A' || fgetc(rp) != 'Z' ||
+      fgetc(rp) != 'C' || fgetc(rp) != EOF) return 8;
+  if (fclose(rp) != 0) return 9;
+
+  FILE *wp = fopen("tmp.txt", "w+");
+  if (!wp) return 10;
+  if (fputc('1', wp) != '1' || fputc('2', wp) != '2') return 11;
+  if (fseek(wp, 0, SEEK_SET) != 0) return 12;
+  if (fgetc(wp) != '1') return 13;
+  if (fseek(wp, 1, SEEK_SET) != 0) return 14;
+  if (fputc('9', wp) != '9') return 15;
+  if (fseek(wp, 0, SEEK_SET) != 0) return 16;
+  if (fgetc(wp) != '1' || fgetc(wp) != '9' || fgetc(wp) != EOF) return 17;
+  if (fclose(wp) != 0) return 18;
+
+  FILE *tp = tmpfile();
+  if (!tp) return 19;
+  if (fputc('T', tp) != 'T') return 20;
+  if (fseek(tp, 0, SEEK_SET) != 0) return 21;
+  if (fgetc(tp) != 'T' || fgetc(tp) != EOF) return 22;
+  if (fclose(tp) != 0) return 23;
+
+  char name1[L_tmpnam];
+  char name2[L_tmpnam];
+  if (TMP_MAX < 2) return 24;
+  if (tmpnam(name1) != name1 || name1[0] == 0) return 25;
+  char *static_name = tmpnam(0);
+  if (!static_name || static_name[0] == 0) return 26;
+  if (tmpnam(name2) != name2 || name2[0] == 0) return 27;
+  if (same_text(name1, name2)) return 28;
+  FILE *tn = fopen(name1, "w+");
+  if (!tn) return 29;
+  if (fputc('N', tn) != 'N') return 30;
+  if (fseek(tn, 0, SEEK_SET) != 0) return 31;
+  if (fgetc(tn) != 'N') return 32;
+  if (fclose(tn) != 0) return 33;
   return 42;
 }
 SRC
@@ -965,34 +1375,121 @@ struct tm {
   int tm_yday;
   int tm_isdst;
 };
+struct timespec {
+  time_t tv_sec;
+  long tv_nsec;
+};
+#define TIME_UTC 1
 time_t time(time_t *tloc);
-struct tm *localtime(time_t *timer);
 double difftime(time_t end, time_t beginning);
+int timespec_get(struct timespec *ts, int base);
+struct tm *gmtime(time_t *timer);
+struct tm *localtime(time_t *timer);
+time_t mktime(struct tm *timeptr);
+char *asctime(struct tm *timeptr);
+char *ctime(time_t *timer);
+unsigned long strftime(char *s, unsigned long maxsize, char *format, struct tm *timeptr);
+unsigned long wcsftime(int *s, unsigned long maxsize, int *format, struct tm *timeptr);
+int same_text(char *a, char *b) {
+  while (*a || *b) {
+    if (*a != *b) return 0;
+    a++;
+    b++;
+  }
+  return 1;
+}
+int same_wide(int *a, int *b) {
+  while (*a || *b) {
+    if (*a != *b) return 0;
+    a++;
+    b++;
+  }
+  return 1;
+}
 int main(void) {
   time_t stored = -1;
   time_t now = time(&stored);
   struct tm *tm = localtime(&stored);
-  return now == 0 && stored == 0 && tm != 0 &&
-         tm->tm_sec == 0 && tm->tm_min == 0 && tm->tm_hour == 0 &&
-         tm->tm_mday == 1 && tm->tm_mon == 0 && tm->tm_year == 70 &&
-         tm->tm_wday == 4 && tm->tm_yday == 0 && tm->tm_isdst == 0 &&
-         (int)difftime(10, 3) == 7 ? 42 : 1;
+  time_t sample = 90061;
+  struct tm *gtm;
+  char stamp[64];
+  int wstamp[64];
+  int wfmt[32];
+  int wexpect[64];
+  unsigned long stamp_len;
+  unsigned long wstamp_len;
+  struct timespec ts = {-1, -1};
+  struct tm mk = {0};
+  time_t made;
+  if (!(now == 0 && stored == 0 && tm != 0 &&
+        tm->tm_sec == 0 && tm->tm_min == 0 && tm->tm_hour == 0 &&
+        tm->tm_mday == 1 && tm->tm_mon == 0 && tm->tm_year == 70 &&
+        tm->tm_wday == 4 && tm->tm_yday == 0 && tm->tm_isdst == 0 &&
+        (int)difftime(10, 3) == 7)) return 1;
+  if (timespec_get(&ts, TIME_UTC) != TIME_UTC || ts.tv_sec != 0 || ts.tv_nsec != 0) return 9;
+  if (timespec_get(&ts, 99) != 0) return 10;
+  gtm = gmtime(&sample);
+  if (!(gtm != 0 && gtm->tm_sec == 1 && gtm->tm_min == 1 && gtm->tm_hour == 1 &&
+        gtm->tm_mday == 2 && gtm->tm_mon == 0 && gtm->tm_year == 70 &&
+        gtm->tm_wday == 5 && gtm->tm_yday == 1 && gtm->tm_isdst == 0)) return 2;
+  if (!same_text(asctime(gtm), "Fri Jan  2 01:01:01 1970\n")) return 3;
+  if (!same_text(ctime(&sample), "Fri Jan  2 01:01:01 1970\n")) return 4;
+  stamp_len = strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S %a %b %j %%", gtm);
+  if (stamp_len != 33 || !same_text(stamp, "1970-01-02 01:01:01 Fri Jan 002 %")) return 5;
+  if (strftime(stamp, 8, "%Y-%m-%d", gtm) != 0) return 6;
+  wfmt[0] = '%'; wfmt[1] = 'F'; wfmt[2] = ' '; wfmt[3] = '%'; wfmt[4] = 'T';
+  wfmt[5] = ' '; wfmt[6] = '%'; wfmt[7] = 'a'; wfmt[8] = 0;
+  wexpect[0] = '1'; wexpect[1] = '9'; wexpect[2] = '7'; wexpect[3] = '0';
+  wexpect[4] = '-'; wexpect[5] = '0'; wexpect[6] = '1'; wexpect[7] = '-';
+  wexpect[8] = '0'; wexpect[9] = '2'; wexpect[10] = ' '; wexpect[11] = '0';
+  wexpect[12] = '1'; wexpect[13] = ':'; wexpect[14] = '0'; wexpect[15] = '1';
+  wexpect[16] = ':'; wexpect[17] = '0'; wexpect[18] = '1'; wexpect[19] = ' ';
+  wexpect[20] = 'F'; wexpect[21] = 'r'; wexpect[22] = 'i'; wexpect[23] = 0;
+  wstamp_len = wcsftime(wstamp, 64, wfmt, gtm);
+  if (wstamp_len != 23 || !same_wide(wstamp, wexpect)) return 7;
+  if (wcsftime(wstamp, 8, wfmt, gtm) != 0) return 8;
+  mk.tm_sec = 0;
+  mk.tm_min = 0;
+  mk.tm_hour = 0;
+  mk.tm_mday = 3;
+  mk.tm_mon = 0;
+  mk.tm_year = 70;
+  mk.tm_wday = 0;
+  mk.tm_yday = 0;
+  mk.tm_isdst = -1;
+  made = mktime(&mk);
+  if (made != 172800 || mk.tm_wday != 6 || mk.tm_yday != 2 || mk.tm_isdst != 0) return 11;
+  return 42;
 }
 SRC
 
 cat > "$out_dir/wide_strto_state.c" <<'SRC'
 long wcstol(int *s, int **endptr, int base);
 unsigned long wcstoul(int *s, int **endptr, int base);
+long long wcstoll(int *s, int **endptr, int base);
+unsigned long long wcstoull(int *s, int **endptr, int base);
+float wcstof(int *s, int **endptr);
 double wcstod(int *s, int **endptr);
+long double wcstold(int *s, int **endptr);
+int *__error(void);
 int main(void) {
   int hex[] = {'0', 'x', '1', '0', '!', 0};
   int oct[] = {'0', '1', '0', '!', 0};
   int none[] = {' ', '+', 'x', 0};
   int dot[] = {'.', '2', '5', '!', 0};
+  int expf[] = {'-', '1', '.', '2', '5', 'e', '2', '!', 0};
+  int hexfloat[] = {'0', 'x', '1', '.', '8', 'p', '+', '3', '!', 0};
+  int llhex[] = {'-', '8', '0', '0', '0', '0', '0', '0', '0', '!', 0};
+  int ullhex[] = {'f', 'f', 'f', 'f', 'f', 'f', 'f', 'f', '!', 0};
+  int dinf[] = {'i', 'n', 'f', '!', 0};
+  int ov[] = {'9', '2', '2', '3', '3', '7', '2', '0', '3', '6', '8', '5', '4', '7', '7', '5', '8', '0', '8', '!', 0};
   int only_dot[] = {'.', 'x', 0};
   int *end = 0;
+  int *errp = __error();
   long h = wcstol(hex, &end, 0);
-  int ok_hex = h == 16 && *end == '!';
+  if (h != 16) return 31;
+  if (*end != '!') return 32;
+  int ok_hex = 1;
   long o = wcstol(oct, &end, 0);
   int ok_oct = o == 8 && *end == '!';
   unsigned long u = wcstoul(oct, &end, 0);
@@ -1006,17 +1503,52 @@ int main(void) {
   int ok_bad = bad == 0 && end == hex;
   double d = wcstod(dot, &end);
   int ok_dot = d == 0.25 && *end == '!';
+  float f = wcstof(expf, &end);
+  int ok_float = (int)f == -125 && *end == '!';
+  long double ld = wcstold(hexfloat, &end);
+  int ok_ld = (int)ld == 12 && *end == '!';
+  long long ll = wcstoll(llhex, &end, 16);
+  int ok_ll = ll == -2147483648LL && *end == '!';
+  unsigned long long ull = wcstoull(ullhex, &end, 16);
+  int ok_ull = ull == 4294967295ULL && *end == '!';
+  *errp = 0;
+  long long llov = wcstoll(ov, &end, 10);
+  int ok_ov = llov == 9223372036854775807LL && *end == '!' && *errp == 34;
+  *errp = 0;
+  double inf = wcstod(dinf, &end);
+  int ok_inf = inf > 1e300 && *end == '!' && *errp == 0;
   double nd = wcstod(none, &end);
   int ok_nd = nd == 0.0 && end == none;
   double od = wcstod(only_dot, &end);
   int ok_od = od == 0.0 && end == only_dot;
-  return ok_hex && ok_oct && ok_u && ok_no && ok_b36 && ok_bad &&
-         ok_dot && ok_nd && ok_od ? 42 : 1;
+  if (!ok_hex) return 1;
+  if (!ok_oct) return 2;
+  if (!ok_u) return 3;
+  if (!ok_no) return 4;
+  if (!ok_b36) return 5;
+  if (!ok_bad) return 6;
+  if (!ok_dot) return 7;
+  if (!ok_float) return 8;
+  if (!ok_ld) return 9;
+  if (!ok_ll) return 10;
+  if (!ok_ull) return 11;
+  if (!ok_ov) return 12;
+  if (!ok_inf) return 13;
+  if (!ok_nd) return 14;
+  if (!ok_od) return 15;
+  return 42;
 }
 SRC
 
 cat > "$out_dir/utf8_wide_state.c" <<'SRC'
+int mblen(char *s, unsigned long n);
+int mbtowc(int *pwc, char *s, unsigned long n);
+int wctomb(char *s, int wc);
+unsigned long mbstowcs(int *dst, char *src, unsigned long n);
+unsigned long wcstombs(char *dst, int *src, unsigned long n);
 unsigned long mbrtowc(int *pwc, char *s, unsigned long n, void *ps);
+unsigned long mbrlen(char *s, unsigned long n, void *ps);
+int mbsinit(void *ps);
 unsigned long wcrtomb(char *s, int wc, void *ps);
 unsigned long mbrtoc16(unsigned short *pc16, char *s, unsigned long n, void *ps);
 unsigned long c16rtomb(char *s, unsigned short c16, void *ps);
@@ -1046,6 +1578,10 @@ int main(void) {
   int ok_mbr = mbrtowc(&wc, jp + 1, 4, nullv) == 3 && wc == 0x3042 &&
                mbrtowc(&wc, jp + 4, 4, nullv) == 4 && wc == 0x1f600 &&
                mbrtowc(&wc, jp + 1, 2, nullv) == (unsigned long)-2;
+  int ok_mbrlen = mbrlen(jp + 1, 4, nullv) == 3 &&
+                  mbrlen(jp + 4, 4, nullv) == 4 &&
+                  mbrlen(jp + 1, 2, nullv) == (unsigned long)-2 &&
+                  mbrlen(0, 0, nullv) == 0 && mbsinit(nullv) == 1;
   int wr = wcrtomb(out, 0x3042, nullv);
   int ok_wcr = wr == 3 && (unsigned char)out[0] == 0xe3 &&
                (unsigned char)out[1] == 0x81 && (unsigned char)out[2] == 0x82;
@@ -1056,6 +1592,17 @@ int main(void) {
   unsigned long wn = mbsrtowcs(wide, &srcp, 4, nullv);
   widep = wide;
   unsigned long bn = wcsrtombs(out, &widep, sizeof(out), nullv);
+  int mbwc = 0;
+  char mbout[12];
+  int mbwide[4];
+  int ok_legacy = mblen(jp + 1, 4) == 3 && mblen(jp + 1, 2) == -1 &&
+                  mbtowc(&mbwc, jp + 1, 4) == 3 && mbwc == 0x3042 &&
+                  wctomb(mbout, 0x3042) == 3 &&
+                  (unsigned char)mbout[0] == 0xe3 &&
+                  mbstowcs(mbwide, jp, 4) == 3 && mbwide[0] == 'A' &&
+                  mbwide[1] == 0x3042 && mbwide[2] == 0x1f600 &&
+                  wcstombs(mbout, mbwide, sizeof(mbout)) == 8 &&
+                  mbout[0] == 'A' && (unsigned char)mbout[1] == 0xe3;
   int ok_round = wn == 3 && srcp == 0 && wide[0] == 'A' &&
                  wide[1] == 0x3042 && wide[2] == 0x1f600 && wide[3] == 0 &&
                  bn == 8 && widep == 0 && out[0] == 'A' &&
@@ -1063,7 +1610,41 @@ int main(void) {
                  (unsigned char)out[3] == 0x82 && (unsigned char)out[4] == 0xf0 &&
                  (unsigned char)out[5] == 0x9f && (unsigned char)out[6] == 0x98 &&
                  (unsigned char)out[7] == 0x80 && out[8] == 0;
-  return ok_mbr && ok_wcr && ok16 && ok32 && ok_round ? 42 : 1;
+  return ok_mbr && ok_mbrlen && ok_wcr && ok16 && ok32 && ok_round && ok_legacy ? 42 : 1;
+}
+SRC
+
+cat > "$out_dir/wide_io_state.c" <<'SRC'
+#include <stdio.h>
+#include <wchar.h>
+int main(void) {
+  FILE *fp;
+  wchar_t line[8];
+  wchar_t out[4];
+  if (fwide(0, 0) != 0 || fwide(0, 1) != 1 || fwide(0, -1) != -1) return 1;
+  fp = fopen("wide.txt", "w+");
+  if (!fp) return 2;
+  out[0] = 'O';
+  out[1] = 0x3042;
+  out[2] = '\n';
+  out[3] = 0;
+  if (fputwc('A', fp) != 'A') return 3;
+  if (putwc(0x3042, fp) != 0x3042) return 4;
+  if (fputwc('\n', fp) != '\n') return 5;
+  if (fputws(out, fp) != 3) return 6;
+  rewind(fp);
+  if (fgetwc(fp) != 'A') return 7;
+  if (ungetwc('Z', fp) != 'Z') return 8;
+  if (getwc(fp) != 'Z') return 9;
+  if (fgetwc(fp) != 0x3042) return 10;
+  if (fgetwc(fp) != '\n') return 11;
+  if (fgetws(line, 8, fp) != line) return 12;
+  if (line[0] != 'O' || line[1] != 0x3042 || line[2] != '\n' || line[3] != 0) return 13;
+  if (fgetwc(fp) != WEOF) return 14;
+  if (ungetwc(0x3042, fp) != WEOF) return 15;
+  if (fclose(fp) != 0) return 16;
+  if (putwchar('Q') != 'Q') return 17;
+  return 42;
 }
 SRC
 
@@ -1071,14 +1652,20 @@ cat > "$out_dir/alloc_state.c" <<'SRC'
 void *malloc(long size);
 void *calloc(long nmemb, long size);
 void *realloc(void *ptr, long size);
+void *aligned_alloc(long alignment, long size);
 int main(void) {
   char *p = malloc(4);
   char *q;
   char *r;
+  char *a16;
+  char *a32;
   void *bad_malloc = malloc(-1);
   void *bad_malloc_large = malloc(60L * 1024L * 1024L);
   void *bad_calloc_neg = calloc(-1, 4);
   void *bad_calloc_overflow = calloc(1L << 62, 16);
+  void *bad_align_nonpow2 = aligned_alloc(12, 24);
+  void *bad_align_size = aligned_alloc(16, 24);
+  void *bad_align_neg = aligned_alloc(16, -16);
   void *zero_calloc = calloc(0, 99);
   if (!p) return 1;
   p[0] = 'A';
@@ -1089,8 +1676,16 @@ int main(void) {
   if (!q) return 2;
   r = realloc(q, 2);
   if (!r) return 3;
+  a16 = aligned_alloc(16, 32);
+  a32 = aligned_alloc(32, 0);
+  if (!a16 || !a32) return 4;
+  a16[0] = 'Z';
+  a16[31] = 'Q';
   return bad_malloc == 0 && bad_malloc_large == 0 &&
          bad_calloc_neg == 0 && bad_calloc_overflow == 0 &&
+         bad_align_nonpow2 == 0 && bad_align_size == 0 && bad_align_neg == 0 &&
+         ((long)a16 % 16) == 0 && ((long)a32 % 32) == 0 &&
+         a16[0] == 'Z' && a16[31] == 'Q' &&
          zero_calloc != 0 && q != p && q[0] == 'A' && q[1] == 'B' &&
          q[2] == 'C' && r != q && r[0] == 'A' && r[1] == 'B' &&
          realloc(r, -1) == 0 && realloc(r, 0) == 0 ? 42 : 1;
@@ -1167,22 +1762,41 @@ int towupper(int c);
 void *malloc(long size);
 void *calloc(long nmemb, long size);
 void *realloc(void *ptr, long size);
+void *aligned_alloc(long alignment, long size);
 void free(void *p);
 int atexit(void *func);
+int at_quick_exit(void *func);
 double atof(char *s);
 long atol(char *s);
+long long atoll(char *s);
 long strtol(char *s, char **endptr, int base);
 unsigned long strtoul(char *s, char **endptr, int base);
+long long strtoll(char *s, char **endptr, int base);
+unsigned long long strtoull(char *s, char **endptr, int base);
+float strtof(char *s, char **endptr);
 double strtod(char *s, char **endptr);
+long double strtold(char *s, char **endptr);
 long strtoimax(char *s, char **endptr, int base);
 unsigned long strtoumax(char *s, char **endptr, int base);
 int rand(void);
 void srand(int seed);
 long labs(long n);
+long long llabs(long long n);
+typedef struct { int quot; int rem; } div_t;
+typedef struct { long quot; long rem; } ldiv_t;
+typedef struct { long long quot; long long rem; } lldiv_t;
+typedef struct { long long quot; long long rem; } imaxdiv_t;
+div_t div(int numer, int denom);
+ldiv_t ldiv(long numer, long denom);
+lldiv_t lldiv(long long numer, long long denom);
+imaxdiv_t imaxdiv(long long numer, long long denom);
 void qsort(void *base, long nmemb, long size, int (*compar)(void *, void *));
 void *bsearch(void *key, void *base, long nmemb, long size, int (*compar)(void *, void *));
 void exit(int status);
+void quick_exit(int status);
+void _Exit(int status);
 void abort(void);
+int *__error(void);
 char *getenv(char *name);
 char *realpath(char *path, char *resolved_path);
 int system(char *command);
@@ -1232,6 +1846,21 @@ long double truncl(long double x);
 double fmod(double x, double y);
 float fmodf(float x, float y);
 long double fmodl(long double x, long double y);
+double frexp(double x, int *exp);
+float frexpf(float x, int *exp);
+long double frexpl(long double x, int *exp);
+double ldexp(double x, int exp);
+float ldexpf(float x, int exp);
+long double ldexpl(long double x, int exp);
+double modf(double x, double *iptr);
+float modff(float x, float *iptr);
+long double modfl(long double x, long double *iptr);
+double copysign(double x, double y);
+float copysignf(float x, float y);
+long double copysignl(long double x, long double y);
+double nan(char *tagp);
+float nanf(char *tagp);
+long double nanl(char *tagp);
 double cbrt(double x);
 double exp(double x);
 float expf(float x);
@@ -1278,12 +1907,26 @@ long double fminl(long double x, long double y);
 double fmax(double x, double y);
 float fmaxf(float x, float y);
 long double fmaxl(long double x, long double y);
+int fpclassify(double x);
+int isfinite(double x);
+int isinf(double x);
+int isnan(double x);
+int isnormal(double x);
+int signbit(double x);
+int isgreater(double x, double y);
+int isgreaterequal(double x, double y);
+int isless(double x, double y);
+int islessequal(double x, double y);
+int islessgreater(double x, double y);
+int isunordered(double x, double y);
 int atoi(char *s);
 char *strcpy(char *dst, char *src);
 char *strncpy(char *dst, char *src, unsigned long n);
 char *strcat(char *dst, char *src);
 char *strncat(char *dst, char *src, unsigned long n);
 int strncmp(char *a, char *b, unsigned long n);
+int strcoll(char *a, char *b);
+unsigned long strxfrm(char *dst, char *src, unsigned long n);
 int memcmp(void *a, void *b, unsigned long n);
 void *memmove(void *dst, void *src, unsigned long n);
 void *memchr(void *s, int ch, unsigned long n);
@@ -1302,9 +1945,15 @@ int *wcscat(int *dst, int *src);
 int *wcsncat(int *dst, int *src, unsigned long n);
 int wcscmp(int *a, int *b);
 int wcsncmp(int *a, int *b, unsigned long n);
+int wcscoll(int *a, int *b);
+unsigned long wcsxfrm(int *dst, int *src, unsigned long n);
 int *wcschr(int *s, int ch);
 int *wcsrchr(int *s, int ch);
 int *wcsstr(int *s, int *sub);
+unsigned long wcsspn(int *s, int *accept);
+unsigned long wcscspn(int *s, int *reject);
+int *wcspbrk(int *s, int *accept);
+int *wcstok(int *s, int *delim, int **ptr);
 int *wmemcpy(int *dst, int *src, unsigned long n);
 int *wmemmove(int *dst, int *src, unsigned long n);
 int *wmemset(int *s, int ch, unsigned long n);
@@ -1312,8 +1961,19 @@ int wmemcmp(int *a, int *b, unsigned long n);
 int *wmemchr(int *s, int ch, unsigned long n);
 long wcstol(int *s, int **endptr, int base);
 unsigned long wcstoul(int *s, int **endptr, int base);
+long long wcstoll(int *s, int **endptr, int base);
+unsigned long long wcstoull(int *s, int **endptr, int base);
+float wcstof(int *s, int **endptr);
 double wcstod(int *s, int **endptr);
+long double wcstold(int *s, int **endptr);
+int mblen(char *s, unsigned long n);
+int mbtowc(int *pwc, char *s, unsigned long n);
+int wctomb(char *s, int wc);
+unsigned long mbstowcs(int *dst, char *src, unsigned long n);
+unsigned long wcstombs(char *dst, int *src, unsigned long n);
 unsigned long mbrtowc(int *pwc, char *s, unsigned long n, void *ps);
+unsigned long mbrlen(char *s, unsigned long n, void *ps);
+int mbsinit(void *ps);
 unsigned long wcrtomb(char *s, int wc, void *ps);
 unsigned long mbrtoc16(unsigned short *pc16, char *s, unsigned long n, void *ps);
 unsigned long c16rtomb(char *s, unsigned short c16, void *ps);
@@ -1325,6 +1985,17 @@ int btowc(int c);
 int wctob(int c);
 int swprintf(int *s, unsigned long n, int *fmt, ...);
 int swscanf(int *s, int *fmt, ...);
+typedef void FILE;
+int fgetwc(FILE *stream);
+int getwc(FILE *stream);
+int getwchar(void);
+int fputwc(int wc, FILE *stream);
+int putwc(int wc, FILE *stream);
+int putwchar(int wc);
+int ungetwc(int wc, FILE *stream);
+int *fgetws(int *s, int n, FILE *stream);
+int fputws(int *s, FILE *stream);
+int fwide(FILE *stream, int mode);
 int sscanf(char *s, char *fmt, ...);
 typedef void (*sig_handler_t)(int);
 sig_handler_t signal(int sig, sig_handler_t handler);
@@ -1334,7 +2005,6 @@ int iswctype(int wc, int desc);
 int wctrans(char *property);
 int towctrans(int wc, int desc);
 int putchar(int c);
-typedef void FILE;
 struct stat {
   unsigned short st_mode;
   long st_size;
@@ -1353,8 +2023,14 @@ struct tm {
   int tm_yday;
   int tm_isdst;
 };
+struct timespec {
+  long tv_sec;
+  long tv_nsec;
+};
+#define TIME_UTC 1
 typedef long jmp_buf[48];
 FILE *fopen(char *path, char *mode);
+FILE *freopen(char *path, char *mode, FILE *stream);
 FILE *fdopen(int fd, char *mode);
 int fclose(FILE *stream);
 unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
@@ -1377,18 +2053,28 @@ void clearerr(FILE *stream);
 long getline(char **lineptr, unsigned long *n, FILE *stream);
 int printf(char *fmt, ...);
 int fprintf(FILE *stream, char *fmt, ...);
+int vprintf(char *fmt, va_list ap);
 int vfprintf(FILE *stream, char *fmt, va_list ap);
+int vsprintf(char *buf, char *fmt, va_list ap);
 int vsnprintf(char *buf, unsigned long size, char *fmt, va_list ap);
 int scanf(char *fmt, ...);
 int fscanf(FILE *stream, char *fmt, ...);
 int puts(char *s);
 int fputs(char *s, FILE *stream);
 int fputc(int c, FILE *stream);
+int putc(int c, FILE *stream);
 int fflush(FILE *stream);
 void perror(char *s);
 int getchar(void);
 int getrusage(int who, struct rusage *usage);
+int timespec_get(struct timespec *ts, int base);
+struct tm *gmtime(long *timer);
 struct tm *localtime(long *timer);
+long mktime(struct tm *timeptr);
+char *asctime(struct tm *timeptr);
+char *ctime(long *timer);
+unsigned long strftime(char *s, unsigned long maxsize, char *format, struct tm *timeptr);
+unsigned long wcsftime(int *s, unsigned long maxsize, int *format, struct tm *timeptr);
 int setjmp(jmp_buf env);
 void longjmp(jmp_buf env, int val);
 int call_vsnprintf(char *buf, unsigned long size, char *fmt, ...) {
@@ -1396,6 +2082,22 @@ int call_vsnprintf(char *buf, unsigned long size, char *fmt, ...) {
   int n;
   va_start(ap, fmt);
   n = vsnprintf(buf, size, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vsprintf(char *buf, char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vsprintf(buf, fmt, ap);
+  va_end(ap);
+  return n;
+}
+int call_vprintf(char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vprintf(fmt, ap);
   va_end(ap);
   return n;
 }
@@ -1412,12 +2114,48 @@ int int_cmp(void *ap, void *bp) {
   int *b = (int *)bp;
   return *a - *b;
 }
+int math_decomp_check(void) {
+  double math_zero = 0.0;
+  double math_nzero = -math_zero;
+  int dexp = 0;
+  int fexp = 0;
+  int lexp = 0;
+  double dint = 0.0;
+  float fint = 0.0f;
+  long double lint = 0.0L;
+  double dfrac = modf(-3.75, &dint);
+  float ffrac = modff(2.25f, &fint);
+  long double lfrac = modfl(5.5L, &lint);
+  double dmant = frexp(-8.0, &dexp);
+  float fmant = frexpf(4.0f, &fexp);
+  long double lmant = frexpl(16.0L, &lexp);
+  double dcopysign = copysign(2.0, math_nzero);
+  float fcopysign = copysignf(2.0f, -0.0f);
+  long double lcopysign = copysignl(2.0L, -0.0L);
+  double dnan_api = nan("");
+  float fnan_api = nanf("");
+  long double lnan_api = nanl("");
+  return (int)(dmant * 1000.0) == -500 && dexp == 4 &&
+         (int)(fmant * 1000.0f) == 500 && fexp == 3 &&
+         (int)(lmant * 1000.0L) == 500 && lexp == 5 &&
+         (int)(ldexp(0.75, 3) * 1000.0) == 6000 &&
+         (int)(ldexpf(0.5f, 4) * 1000.0f) == 8000 &&
+         (int)(ldexpl(0.25L, 5) * 1000.0L) == 8000 &&
+         (int)(dfrac * 100.0) == -75 && (int)dint == -3 &&
+         (int)(ffrac * 100.0f) == 25 && (int)fint == 2 &&
+         (int)(lfrac * 100.0L) == 50 && (int)lint == 5 &&
+         (int)dcopysign == -2 && signbit(dcopysign) &&
+         (int)fcopysign == -2 && signbit(fcopysign) &&
+         (int)lcopysign == -2 && signbit(lcopysign) &&
+         isnan(dnan_api) && isnan(fnan_api) && isnan(lnan_api);
+}
 int main(void) {
   char a[32];
   char b[32];
   char c[32];
   char d[32];
   char e[32];
+  char xfrm[8];
   char toks[32];
   memset(a, 0, sizeof(a));
   memset(b, 0, sizeof(b));
@@ -1436,31 +2174,99 @@ int main(void) {
   char *tok2 = strtok(nullp, ",;");
   char *tok3 = strtok(nullp, ",;");
   char *tok4 = strtok(nullp, ",;");
+  unsigned long xfrm_len = strxfrm(xfrm, "hello", sizeof(xfrm));
+  unsigned long xfrm_len_only = strxfrm(xfrm, "abcdef", 0);
   char *p = malloc(8);
   char *q = calloc(4, 1);
   char *r = malloc(2);
+  char *aligned16 = aligned_alloc(16, 32);
+  char *aligned32 = aligned_alloc(32, 0);
+  void *bad_aligned_nonpow2 = aligned_alloc(12, 24);
+  void *bad_aligned_size = aligned_alloc(16, 24);
   r[0] = 'A';
   r[1] = 0;
   r = realloc(r, 4);
+  if (aligned16) {
+    aligned16[0] = 'A';
+    aligned16[31] = 'Z';
+  }
   char *endp = 0;
   char *uendp = 0;
   char *dendp = 0;
+  char *fendp = 0;
+  char *ldendp = 0;
   char *imax_endp = 0;
   char *umax_endp = 0;
+  char *ll_endp = 0;
+  char *ull_endp = 0;
+  char *ov_pos_endp = 0;
+  char *ov_neg_endp = 0;
+  char *uov_endp = 0;
+  char *uneg_endp = 0;
+  char *bad_base_endp = 0;
+  char *dov_endp = 0;
+  char *dunder_endp = 0;
+  char *dzero_endp = 0;
+  char *dinf_endp = 0;
+  char *dninf_endp = 0;
+  char *dnan_endp = 0;
   char *comma_endp = 0;
+  char bad_base_src[] = "123";
   char resolved_path[32];
   char *resolved_pathp = realpath("include", resolved_path);
   char *resolved_nullp = realpath("src", 0);
   long parsed = strtol("  -2a", &endp, 16);
   unsigned long parsed_u = strtoul("  ff!", &uendp, 16);
   double parsed_d = strtod(" -12.5e1!", &dendp);
+  float parsed_f = strtof(" .25!", &fendp);
+  long double parsed_ld = strtold("0x1.8p+3!", &ldendp);
   double comma_d = strtod("12,5", &comma_endp);
   double parsed_atof = atof(" 3.25x");
   long parsed_imax = strtoimax("  7f!", &imax_endp, 16);
   unsigned long parsed_umax = strtoumax("  377!", &umax_endp, 8);
+  long long parsed_ll = strtoll("  -80000000!", &ll_endp, 16);
+  unsigned long long parsed_ull = strtoull("  ffffffff!", &ull_endp, 16);
+  int *strto_errp = __error();
+  *strto_errp = 0;
+  double dov = strtod("1e309!", &dov_endp);
+  int dov_errno = *strto_errp;
+  *strto_errp = 0;
+  double dunder = strtod("1e-400!", &dunder_endp);
+  int dunder_errno = *strto_errp;
+  *strto_errp = 0;
+  double dzero = strtod("0e9999!", &dzero_endp);
+  int dzero_errno = *strto_errp;
+  *strto_errp = 0;
+  double dinf = strtod("INF!", &dinf_endp);
+  int dinf_errno = *strto_errp;
+  *strto_errp = 0;
+  float dninf = strtof("-infinity!", &dninf_endp);
+  int dninf_errno = *strto_errp;
+  *strto_errp = 0;
+  long double dnan = strtold("nan(payload)!", &dnan_endp);
+  int dnan_errno = *strto_errp;
+  *strto_errp = 0;
+  long ov_pos = strtol("9223372036854775808!", &ov_pos_endp, 10);
+  int ov_pos_errno = *strto_errp;
+  *strto_errp = 0;
+  long ov_neg = strtol("-9223372036854775809!", &ov_neg_endp, 10);
+  int ov_neg_errno = *strto_errp;
+  *strto_errp = 0;
+  unsigned long uov = strtoul("18446744073709551616!", &uov_endp, 10);
+  int uov_errno = *strto_errp;
+  *strto_errp = 0;
+  unsigned long uneg = strtoul("-1!", &uneg_endp, 10);
+  int uneg_errno = *strto_errp;
+  *strto_errp = 0;
+  long bad_base = strtol(bad_base_src, &bad_base_endp, 1);
+  int bad_base_errno = *strto_errp;
   srand(1);
   int rand1 = rand();
   int rand2 = rand();
+  div_t divv = div(-7, 3);
+  ldiv_t ldivv = ldiv(-7000000000L, 3000000000L);
+  lldiv_t lldivv = lldiv(7000000000000LL, -3000000000000LL);
+  imaxdiv_t imaxdivv = imaxdiv(-7000000000000LL, 3000000000000LL);
   int nums[5];
   int key = 3;
   int *found;
@@ -1468,7 +2274,20 @@ int main(void) {
   void *nullv = 0;
   long tloc = 123;
   long now = 0;
+  long later = 90061;
   struct tm *tm_info;
+  int tm_info_ok;
+  struct tm *gmtime_info;
+  struct tm mk_time = {0};
+  long made_time;
+  struct timespec ts_info = {-1, -1};
+  int timespec_ok;
+  int timespec_bad_base;
+  char timebuf[64];
+  unsigned long timebuf_len;
+  int wtimebuf[64];
+  int wtimefmt[16];
+  unsigned long wtimebuf_len;
   struct rusage usage = {0};
   char *lineptr = 0;
   unsigned long linecap = 0;
@@ -1481,6 +2300,18 @@ int main(void) {
   int wd[8];
   int we[8];
   int wfbuf[8];
+  int wxfrm[8];
+  int wspn_src[8];
+  int wspn_accept[4];
+  int wcspn_reject[4];
+  int wpbrk_accept[4];
+  int wtok_src[12];
+  int wtok_delim[2];
+  int *wtok_save = 0;
+  int *wtok1 = 0;
+  int *wtok2 = 0;
+  int *wtok3 = 0;
+  int *wtok4 = 0;
   int convw[8];
   char convc[8];
   int swbuf[16];
@@ -1493,6 +2324,14 @@ int main(void) {
   int wcnum[8];
   int wcdec[8];
   int wccomma[8];
+  int wcllhex[12];
+  int wcullhex[10];
+  int wcexpf[10];
+  int wchexfloat[10];
+  int wcinf[5];
+  int legacy_wc = 0;
+  int legacy_wide[8];
+  char legacy_mb[16];
   wcnum[0] = ' ';
   wcnum[1] = '-';
   wcnum[2] = '2';
@@ -1509,9 +2348,80 @@ int main(void) {
   wccomma[2] = ',';
   wccomma[3] = '5';
   wccomma[4] = 0;
+  wcllhex[0] = '-';
+  wcllhex[1] = '8';
+  wcllhex[2] = '0';
+  wcllhex[3] = '0';
+  wcllhex[4] = '0';
+  wcllhex[5] = '0';
+  wcllhex[6] = '0';
+  wcllhex[7] = '0';
+  wcllhex[8] = '0';
+  wcllhex[9] = '!';
+  wcllhex[10] = 0;
+  wcullhex[0] = 'f';
+  wcullhex[1] = 'f';
+  wcullhex[2] = 'f';
+  wcullhex[3] = 'f';
+  wcullhex[4] = 'f';
+  wcullhex[5] = 'f';
+  wcullhex[6] = 'f';
+  wcullhex[7] = 'f';
+  wcullhex[8] = '!';
+  wcullhex[9] = 0;
+  wcexpf[0] = '-';
+  wcexpf[1] = '1';
+  wcexpf[2] = '.';
+  wcexpf[3] = '2';
+  wcexpf[4] = '5';
+  wcexpf[5] = 'e';
+  wcexpf[6] = '2';
+  wcexpf[7] = '!';
+  wcexpf[8] = 0;
+  wchexfloat[0] = '0';
+  wchexfloat[1] = 'x';
+  wchexfloat[2] = '1';
+  wchexfloat[3] = '.';
+  wchexfloat[4] = '8';
+  wchexfloat[5] = 'p';
+  wchexfloat[6] = '+';
+  wchexfloat[7] = '3';
+  wchexfloat[8] = '!';
+  wchexfloat[9] = 0;
+  wcinf[0] = 'i';
+  wcinf[1] = 'n';
+  wcinf[2] = 'f';
+  wcinf[3] = '!';
+  wcinf[4] = 0;
   ws[0] = 'A';
   ws[1] = 'b';
   ws[2] = 0;
+  wspn_src[0] = 'a';
+  wspn_src[1] = 'b';
+  wspn_src[2] = 'a';
+  wspn_src[3] = 'c';
+  wspn_src[4] = 'd';
+  wspn_src[5] = 0;
+  wspn_accept[0] = 'a';
+  wspn_accept[1] = 'b';
+  wspn_accept[2] = 0;
+  wcspn_reject[0] = 'c';
+  wcspn_reject[1] = 0;
+  wpbrk_accept[0] = 'c';
+  wpbrk_accept[1] = 'd';
+  wpbrk_accept[2] = 0;
+  wtok_src[0] = 'a';
+  wtok_src[1] = 'a';
+  wtok_src[2] = ',';
+  wtok_src[3] = 'b';
+  wtok_src[4] = 'b';
+  wtok_src[5] = ',';
+  wtok_src[6] = ',';
+  wtok_src[7] = 'c';
+  wtok_src[8] = 'c';
+  wtok_src[9] = 0;
+  wtok_delim[0] = ',';
+  wtok_delim[1] = 0;
   p[0] = 'O';
   p[1] = 'K';
   p[2] = 0;
@@ -1524,13 +2434,79 @@ int main(void) {
   qsort(nums, 5, sizeof(int), int_cmp);
   found = bsearch(&key, nums, 5, sizeof(int), int_cmp);
   if (never) {
+    double dummy_d = 0.0;
+    float dummy_f = 0.0f;
+    long double dummy_ld = 0.0L;
     exit(7);
+    quick_exit(8);
+    _Exit(9);
     abort();
+    fgetwc(nullv);
+    getwc(nullv);
+    getwchar();
+    fputwc('A', nullv);
+    putwc('A', nullv);
+    putwchar('A');
+    ungetwc('A', nullv);
+    fgetws(convw, 8, nullv);
+    fputws(convw, nullv);
+    fwide(nullv, 1);
+    fpclassify(0.0);
+    isfinite(0.0);
+    isinf(0.0);
+    isnan(0.0);
+    isnormal(1.0);
+    signbit(-0.0);
+    isgreater(2.0, 1.0);
+    isgreaterequal(2.0, 2.0);
+    isless(1.0, 2.0);
+    islessequal(2.0, 2.0);
+    islessgreater(1.0, 2.0);
+    isunordered(0.0, 0.0);
+    frexp(1.0, &never);
+    frexpf(1.0f, &never);
+    frexpl(1.0L, &never);
+    ldexp(1.0, 1);
+    ldexpf(1.0f, 1);
+    ldexpl(1.0L, 1);
+    modf(1.0, &dummy_d);
+    modff(1.0f, &dummy_f);
+    modfl(1.0L, &dummy_ld);
+    copysign(1.0, -0.0);
+    copysignf(1.0f, -0.0f);
+    copysignl(1.0L, -0.0L);
+    nan("");
+    nanf("");
+    nanl("");
     longjmp(jb, 1);
   }
   int sj = setjmp(jb);
   int usage_ok = getrusage(0, &usage);
+  timespec_ok = timespec_get(&ts_info, TIME_UTC);
+  timespec_bad_base = timespec_get(&ts_info, 99);
   tm_info = localtime(&now);
+  tm_info_ok = tm_info != 0 && tm_info->tm_sec == 0 && tm_info->tm_min == 0 &&
+               tm_info->tm_hour == 0 && tm_info->tm_mday == 1 && tm_info->tm_mon == 0 &&
+               tm_info->tm_year == 70 && tm_info->tm_wday == 4 && tm_info->tm_yday == 0;
+  gmtime_info = gmtime(&later);
+  timebuf_len = strftime(timebuf, sizeof(timebuf), "%F %T %a %b %j", gmtime_info);
+  wtimefmt[0] = '%';
+  wtimefmt[1] = 'F';
+  wtimefmt[2] = ' ';
+  wtimefmt[3] = '%';
+  wtimefmt[4] = 'T';
+  wtimefmt[5] = 0;
+  wtimebuf_len = wcsftime(wtimebuf, 64, wtimefmt, gmtime_info);
+  mk_time.tm_sec = 0;
+  mk_time.tm_min = 0;
+  mk_time.tm_hour = 0;
+  mk_time.tm_mday = 3;
+  mk_time.tm_mon = 0;
+  mk_time.tm_year = 70;
+  mk_time.tm_wday = 0;
+  mk_time.tm_yday = 0;
+  mk_time.tm_isdst = -1;
+  made_time = mktime(&mk_time);
   wcscpy(wd, ws);
   wcsncpy(we, ws, 3);
   wcscat(we, ws);
@@ -1538,6 +2514,12 @@ int main(void) {
   wmemcpy(wfbuf, we, 4);
   wmemmove(wfbuf + 1, wfbuf, 3);
   wmemset(wfbuf + 4, 'Z', 2);
+  unsigned long wxfrm_len = wcsxfrm(wxfrm, ws, 8);
+  unsigned long wxfrm_need = wcsxfrm(0, we, 0);
+  wtok1 = wcstok(wtok_src, wtok_delim, &wtok_save);
+  wtok2 = wcstok(0, wtok_delim, &wtok_save);
+  wtok3 = wcstok(0, wtok_delim, &wtok_save);
+  wtok4 = wcstok(0, wtok_delim, &wtok_save);
   char *mbsrc = "Hi";
   char *mbsrcp = mbsrc;
   int *wcsrcp;
@@ -1863,6 +2845,14 @@ int main(void) {
         fscan_empty_fmt_ret == 0 && fscan_empty_n_ret == 0 && fscan_empty_n == 0 &&
         !fscan_empty_fmt_eof && !fscan_empty_n_eof &&
         fscan_empty_d_ret == -1 && fscan_empty_d == 99 && fscan_empty_eof)) return 115;
+  FILE *frw = fopen("tmp.txt", "w");
+  int frw_open = frw != 0;
+  int frw_reopen = frw_open && freopen("tmp.txt", "w+", frw) == frw;
+  int frw_write = frw_reopen && fwrite("R", 1, 1, frw) == 1;
+  int frw_seek = frw_reopen && fseek(frw, 0, 0) == 0;
+  char frw_buf[2];
+  int frw_read = frw_reopen && fread(frw_buf, 1, 1, frw) == 1 && frw_buf[0] == 'R';
+  int frw_close = frw_open ? fclose(frw) : -1;
   FILE *wf = fopen("tmp.txt", "w");
   int wrote = fwrite("A\nB", 1, 3, wf);
   long pos_after_write = ftell(wf);
@@ -2025,11 +3015,12 @@ int main(void) {
   FILE *fpw = fopen("tmp.txt", "w");
   int fputs_file_ret = fputs("H", fpw);
   int fputc_file_ret = fputc('I', fpw);
+  int putc_file_ret = putc('J', fpw);
   long pos_after_fputs = ftell(fpw);
   fclose(fpw);
   FILE *fpr = fopen("tmp.txt", "r");
-  char fpbuf[3];
-  unsigned long fpread = fread(fpbuf, 1, 2, fpr);
+  char fpbuf[4];
+  unsigned long fpread = fread(fpbuf, 1, 3, fpr);
   int fp_eof = fgetc(fpr);
   fclose(fpr);
   FILE *fmtw = fopen("tmp.txt", "w");
@@ -2043,6 +3034,9 @@ int main(void) {
   fclose(fmtr);
   char vfmtbuf[8];
   int vfmt_ret = call_vsnprintf(vfmtbuf, sizeof(vfmtbuf), "%d-%s", 31, "ok");
+  char vsprintfbuf[8];
+  int vsprintf_ret = call_vsprintf(vsprintfbuf, "%d-%s", 12, "go");
+  int vprintf_ret = call_vprintf("P%d", 6);
   FILE *vfmtw = fopen("tmp.txt", "w");
   int vfprintf_ret = call_vfprintf(vfmtw, "V%d", 5);
   long vfprintf_pos = ftell(vfmtw);
@@ -2055,14 +3049,19 @@ int main(void) {
                           fdapread == 5 && fdapbuf[0] == 'A' && fdapbuf[1] == 'Z' &&
                           fdapbuf[2] == 'C' && fdapbuf[3] == 'D' && fdapbuf[4] == 'E' &&
                           fputs_file_ret == 1 && fputc_file_ret == 'I' &&
-                          pos_after_fputs == 2 && fpread == 2 &&
-                          fpbuf[0] == 'H' && fpbuf[1] == 'I' && fp_eof == -1;
+                          putc_file_ret == 'J' && pos_after_fputs == 3 && fpread == 3 &&
+                          fpbuf[0] == 'H' && fpbuf[1] == 'I' && fpbuf[2] == 'J' &&
+                          fp_eof == -1;
   int fprintf_file_ok = fmt_file_ret == 2 && fmt_file_pos == 2 &&
                         fmtread == 2 && fmtbuf[0] == 'K' &&
                         fmtbuf[1] == '7' && fmt_eof == -1;
   int vformat_ok = vfmt_ret == 5 && vfmtbuf[0] == '3' && vfmtbuf[1] == '1' &&
                    vfmtbuf[2] == '-' && vfmtbuf[3] == 'o' && vfmtbuf[4] == 'k' &&
-                   vfmtbuf[5] == 0 && vfprintf_ret == 2 && vfprintf_pos == 2;
+                   vfmtbuf[5] == 0 &&
+                   vsprintf_ret == 5 && vsprintfbuf[0] == '1' && vsprintfbuf[1] == '2' &&
+                   vsprintfbuf[2] == '-' && vsprintfbuf[3] == 'g' && vsprintfbuf[4] == 'o' &&
+                   vsprintfbuf[5] == 0 && vprintf_ret == 2 &&
+                   vfprintf_ret == 2 && vfprintf_pos == 2;
   int sin0 = (int)(sin(0.0) * 1000.0);
   int sin90 = (int)(sin(1.5707963267948966) * 1000.0);
   int sinm90 = (int)(sin(-1.5707963267948966) * 1000.0);
@@ -2116,6 +3115,28 @@ int main(void) {
   int cosh0 = (int)(cosh(0.0) * 1000.0);
   int tanh0 = (int)(tanh(0.0) * 1000.0);
   int tanh1 = (int)(tanh(1.0) * 1000.0);
+  double math_zero = 0.0;
+  double math_nan = math_zero / math_zero;
+  double math_inf = 1.0 / math_zero;
+  double math_nzero = -math_zero;
+  double math_subnormal = 1.0e-310;
+  int math_class_ok = fpclassify(math_nan) == 0 &&
+                      fpclassify(math_inf) == 1 &&
+                      fpclassify(0.0) == 2 &&
+                      fpclassify(math_subnormal) == 3 &&
+                      fpclassify(1.0) == 4 &&
+                      isnan(math_nan) && !isnan(1.0) &&
+                      isinf(math_inf) && !isinf(math_nan) &&
+                      isfinite(1.0) && !isfinite(math_inf) && !isfinite(math_nan) &&
+                      isnormal(1.0) && !isnormal(math_subnormal) &&
+                      signbit(-1.0) && signbit(math_nzero) && !signbit(0.0) &&
+                      isgreater(2.0, 1.0) && !isgreater(math_nan, 1.0) &&
+                      isgreaterequal(2.0, 2.0) &&
+                      isless(1.0, 2.0) && !isless(math_nan, 2.0) &&
+                      islessequal(2.0, 2.0) &&
+                      islessgreater(1.0, 2.0) && !islessgreater(2.0, 2.0) &&
+                      isunordered(math_nan, 1.0) && !isunordered(1.0, 2.0);
+  int math_decomp_ok = math_decomp_check();
   char *pbrk_src = "xyzabc";
   unsigned long span = strspn("aabbc", "ab");
   unsigned long cspan = strcspn("aabbc", "c");
@@ -2132,33 +3153,72 @@ int main(void) {
          strchr(a, 'l') == a + 2 &&
          strrchr(a, 'l') == a + 3 &&
          strstr(a, "ll") == a + 2 &&
+         strcoll("abc", "abd") < 0 && strcoll("same", "same") == 0 &&
+         xfrm_len == 5 && strcmp(xfrm, "hello") == 0 && xfrm_len_only == 6 &&
          span == 4 && cspan == 4 && pbrk == pbrk_src + 3 && pbrk_none == 0 &&
          tok1 == toks && strcmp(tok1, "aa") == 0 &&
          strcmp(tok2, "bb") == 0 && strcmp(tok3, "cc") == 0 && tok4 == 0 &&
          strerror(5)[0] == 'e' &&
          abs(-42) == 42 &&
          labs(-1234567890123L) == 1234567890123L &&
+         llabs(-1234567890123LL) == 1234567890123LL &&
          imaxabs(-1234567890123L) == 1234567890123L &&
          atol(" -1234x") == -1234 &&
+         atoll(" -1234567890123x") == -1234567890123LL &&
          parsed == -42 && *endp == 0 &&
          parsed_u == 255 && *uendp == '!' &&
          (int)parsed_d == -125 && *dendp == '!' &&
+         (int)(parsed_f * 100.0f) == 25 && *fendp == '!' &&
+         (int)parsed_ld == 12 && *ldendp == '!' &&
          (int)comma_d == 12 && *comma_endp == ',' &&
          (int)(parsed_atof * 100.0) == 325 &&
          parsed_imax == 127 && *imax_endp == '!' &&
          parsed_umax == 255 && *umax_endp == '!' &&
+         parsed_ll == -2147483648LL && *ll_endp == '!' &&
+         parsed_ull == 4294967295ULL && *ull_endp == '!' &&
+         dov > 1e300 && *dov_endp == '!' && dov_errno == 34 &&
+         dunder == 0.0 && *dunder_endp == '!' && dunder_errno == 34 &&
+         dzero == 0.0 && *dzero_endp == '!' && dzero_errno == 0 &&
+         dinf > 1e300 && *dinf_endp == '!' && dinf_errno == 0 &&
+         dninf < -1e30f && *dninf_endp == '!' && dninf_errno == 0 &&
+         dnan != 0.0L && !(dnan < 0.0L) && !(dnan > 0.0L) && *dnan_endp == '!' && dnan_errno == 0 &&
+         ov_pos == 9223372036854775807L && *ov_pos_endp == '!' && ov_pos_errno == 34 &&
+         ov_neg == (-9223372036854775807L - 1L) && *ov_neg_endp == '!' && ov_neg_errno == 34 &&
+         uov == ~0UL && *uov_endp == '!' && uov_errno == 34 &&
+         uneg == ~0UL && *uneg_endp == '!' && uneg_errno == 0 &&
+         bad_base == 0 && bad_base_endp == bad_base_src && bad_base_errno == 22 &&
          rand1 != rand2 &&
-         atexit(nullv) == 0 && getenv("AGC_MISSING_ENV") == 0 &&
+         divv.quot == -2 && divv.rem == -1 &&
+         ldivv.quot == -2 && ldivv.rem == -1000000000L &&
+         lldivv.quot == -2 && lldivv.rem == 1000000000000LL &&
+         imaxdivv.quot == -2 && imaxdivv.rem == -1000000000000LL &&
+         aligned16 != 0 && aligned32 != 0 && ((long)aligned16 % 16) == 0 &&
+         ((long)aligned32 % 32) == 0 && aligned16[0] == 'A' && aligned16[31] == 'Z' &&
+         bad_aligned_nonpow2 == 0 && bad_aligned_size == 0 &&
+         atexit(nullv) == 0 && at_quick_exit(nullv) == 0 &&
+         getenv("AGC_MISSING_ENV") == 0 &&
          resolved_pathp == resolved_path && strcmp(resolved_path, "include") == 0 &&
          resolved_nullp != 0 && resolved_nullp != "src" && strcmp(resolved_nullp, "src") == 0 &&
          system("true") == 0 &&
+         frw_open && frw_reopen && frw_write && frw_seek && frw_read && frw_close == 0 &&
          nums[0] == 1 && nums[1] == 2 && nums[2] == 3 && nums[3] == 4 && nums[4] == 5 &&
          found == nums + 2 && *found == 3 &&
          time(&tloc) == 0 && tloc == 0 && clock() == 0 &&
          (int)difftime(100, 58) == 42 &&
-         tm_info != 0 && tm_info->tm_sec == 0 && tm_info->tm_min == 0 &&
-         tm_info->tm_hour == 0 && tm_info->tm_mday == 1 && tm_info->tm_mon == 0 &&
-         tm_info->tm_year == 70 && tm_info->tm_wday == 4 && tm_info->tm_yday == 0 &&
+         timespec_ok == TIME_UTC && ts_info.tv_sec == 0 && ts_info.tv_nsec == 0 &&
+         timespec_bad_base == 0 &&
+         tm_info_ok &&
+         gmtime_info != 0 && gmtime_info->tm_sec == 1 && gmtime_info->tm_min == 1 &&
+         gmtime_info->tm_hour == 1 && gmtime_info->tm_mday == 2 && gmtime_info->tm_mon == 0 &&
+         gmtime_info->tm_year == 70 && gmtime_info->tm_wday == 5 && gmtime_info->tm_yday == 1 &&
+         strcmp(asctime(gmtime_info), "Fri Jan  2 01:01:01 1970\n") == 0 &&
+         strcmp(ctime(&later), "Fri Jan  2 01:01:01 1970\n") == 0 &&
+         timebuf_len == 31 && strcmp(timebuf, "1970-01-02 01:01:01 Fri Jan 002") == 0 &&
+         strftime(timebuf, 8, "%Y-%m-%d", gmtime_info) == 0 &&
+         wtimebuf_len == 19 && wtimebuf[0] == '1' && wtimebuf[3] == '0' &&
+         wtimebuf[4] == '-' && wtimebuf[10] == ' ' && wtimebuf[18] == '1' &&
+         wtimebuf[19] == 0 && wcsftime(wtimebuf, 8, wtimefmt, gmtime_info) == 0 &&
+         made_time == 172800 && mk_time.tm_wday == 6 && mk_time.tm_yday == 2 &&
          usage_ok == 0 && usage.ru_maxrss == 0 &&
          getline_ok &&
          sj == 0 &&
@@ -2187,12 +3247,31 @@ int main(void) {
          wcsncmp(we, ws, 2) == 0 && wcschr(we, 'b') == we + 1 &&
          wcsrchr(we, 'b') == we + 4 &&
          wcsstr(we, ws) == we &&
+         wcscoll(ws, we) < 0 && wxfrm_len == 2 && wmemcmp(wxfrm, ws, 3) == 0 &&
+         wxfrm_need == 5 &&
+         wcsspn(wspn_src, wspn_accept) == 3 && wcscspn(wspn_src, wcspn_reject) == 3 &&
+         wcspbrk(wspn_src, wpbrk_accept) == wspn_src + 3 &&
+         wtok1 == wtok_src && wcsncmp(wtok1, ws + 0, 0) == 0 &&
+         wtok1[0] == 'a' && wtok1[1] == 'a' && wtok1[2] == 0 &&
+         wtok2[0] == 'b' && wtok2[1] == 'b' && wtok2[2] == 0 &&
+         wtok3[0] == 'c' && wtok3[1] == 'c' && wtok3[2] == 0 && wtok4 == 0 &&
          wmemcmp(wd, ws, 3) == 0 && wmemchr(wfbuf, 'Z', 6) == wfbuf + 4 &&
          wcstol(wcnum, &wend, 16) == -42 && *wend == '.' &&
          wcstoul(wcnum + 2, &wend, 16) == 42 && *wend == '.' &&
+         wcstoll(wcllhex, &wend, 16) == -2147483648LL && *wend == '!' &&
+         wcstoull(wcullhex, &wend, 16) == 4294967295ULL && *wend == '!' &&
+         (int)wcstof(wcexpf, &wend) == -125 && *wend == '!' &&
          (int)(wcstod(wcdec, &wend) * 10.0) == 25 && *wend == 0 &&
          (int)wcstod(wccomma, &wend) == 12 && *wend == ',' &&
+         (int)wcstold(wchexfloat, &wend) == 12 && *wend == '!' &&
+         wcstod(wcinf, &wend) > 1e300 && *wend == '!' &&
+         mblen("Q", 2) == 1 && mbtowc(&legacy_wc, "Q", 2) == 1 && legacy_wc == 'Q' &&
+         wctomb(legacy_mb, 'R') == 1 && legacy_mb[0] == 'R' &&
+         mbstowcs(legacy_wide, "Hi", 8) == 2 && legacy_wide[0] == 'H' &&
+         legacy_wide[1] == 'i' && wcstombs(legacy_mb, legacy_wide, 8) == 2 &&
+         legacy_mb[0] == 'H' && legacy_mb[1] == 'i' &&
          mbrtowc(convw, "Q", 2, nullv) == 1 && convw[0] == 'Q' &&
+         mbrlen("Q", 2, nullv) == 1 && mbrlen("", 1, nullv) == 0 && mbsinit(nullv) == 1 &&
          wcrtomb(convc, 'R', nullv) == 1 && convc[0] == 'R' &&
          convw[0] == 'Q' && convc[0] == 'R' &&
          m16 == 1 && c16 == 'U' && r16 == 1 &&
@@ -2326,6 +3405,8 @@ int main(void) {
          (int)(fmax(3.0, 4.0) * 1000.0) == 4000 &&
          (int)(fmaxf(3.0f, 4.0f) * 1000.0f) == 4000 &&
          (int)(fmaxl(3.0L, 4.0L) * 1000.0L) == 4000 &&
+         math_class_ok &&
+         math_decomp_ok &&
          sinh0 == 0 && cosh0 >= 998 && cosh0 <= 1002 &&
          tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
          atoi(" -123x") == -123 &&
@@ -2360,6 +3441,7 @@ int main(void) {
          puts("ok") == 3 &&
          fputs("abc", 0) == 3 &&
          fputc('R', 0) == 'R' &&
+         putc('S', 0) == 'S' &&
          fflush(0) == 0 &&
          (perror("ignored"), 1) &&
          getchar() == -1 &&
@@ -2622,6 +3704,13 @@ wasm-validate "$out_dir/linked_vformat_file.wasm"
 wasm-interp "$out_dir/linked_vformat_file.wasm" --run-all-exports > "$out_dir/linked_vformat_file.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_vformat_file.interp"
 
+"$root/build/ag_c_wasm" -c -o "$out_dir/vscan_state.o" "$out_dir/vscan_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_vscan_state.wasm" \
+  "$out_dir/vscan_state.o"
+wasm-validate "$out_dir/linked_vscan_state.wasm"
+wasm-interp "$out_dir/linked_vscan_state.wasm" --run-all-exports > "$out_dir/linked_vscan_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_vscan_state.interp"
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/wide_locale_state.o" "$out_dir/wide_locale_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_wide_locale_state.wasm" \
   "$out_dir/wide_locale_state.o"
@@ -2642,6 +3731,41 @@ grep -q 'main() => i32:42' "$out_dir/linked_locale_state.interp"
 wasm-validate "$out_dir/linked_remove_state.wasm"
 wasm-interp "$out_dir/linked_remove_state.wasm" --run-all-exports > "$out_dir/linked_remove_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_remove_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/freopen_state.o" "$out_dir/freopen_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_freopen_state.wasm" \
+  "$out_dir/freopen_state.o"
+wasm-validate "$out_dir/linked_freopen_state.wasm"
+wasm-interp "$out_dir/linked_freopen_state.wasm" --run-all-exports > "$out_dir/linked_freopen_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_freopen_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/ungetc_state.o" "$out_dir/ungetc_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_ungetc_state.wasm" \
+  "$out_dir/ungetc_state.o"
+wasm-validate "$out_dir/linked_ungetc_state.wasm"
+wasm-interp "$out_dir/linked_ungetc_state.wasm" --run-all-exports > "$out_dir/linked_ungetc_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_ungetc_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/setvbuf_state.o" "$out_dir/setvbuf_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_setvbuf_state.wasm" \
+  "$out_dir/setvbuf_state.o"
+wasm-validate "$out_dir/linked_setvbuf_state.wasm"
+wasm-interp "$out_dir/linked_setvbuf_state.wasm" --run-all-exports > "$out_dir/linked_setvbuf_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_setvbuf_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/fpos_state.o" "$out_dir/fpos_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fpos_state.wasm" \
+  "$out_dir/fpos_state.o"
+wasm-validate "$out_dir/linked_fpos_state.wasm"
+wasm-interp "$out_dir/linked_fpos_state.wasm" --run-all-exports > "$out_dir/linked_fpos_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_fpos_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/update_file_state.o" "$out_dir/update_file_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_update_file_state.wasm" \
+  "$out_dir/update_file_state.o"
+wasm-validate "$out_dir/linked_update_file_state.wasm"
+wasm-interp "$out_dir/linked_update_file_state.wasm" --run-all-exports > "$out_dir/linked_update_file_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_update_file_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/fenv_state.o" "$out_dir/fenv_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fenv_state.wasm" \
@@ -2720,6 +3844,13 @@ wasm-validate "$out_dir/linked_utf8_wide_state.wasm"
 wasm-interp "$out_dir/linked_utf8_wide_state.wasm" --run-all-exports > "$out_dir/linked_utf8_wide_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_utf8_wide_state.interp"
 
+"$root/build/ag_c_wasm" -c -o "$out_dir/wide_io_state.o" "$out_dir/wide_io_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_wide_io_state.wasm" \
+  "$out_dir/wide_io_state.o"
+wasm-validate "$out_dir/linked_wide_io_state.wasm"
+wasm-interp "$out_dir/linked_wide_io_state.wasm" --run-all-exports > "$out_dir/linked_wide_io_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_wide_io_state.interp"
+
 "$root/build/ag_c_wasm" -c -o "$out_dir/alloc_state.o" "$out_dir/alloc_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_alloc_state.wasm" \
   "$out_dir/alloc_state.o"
@@ -2746,6 +3877,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   wasm-objdump -x "$out_dir/linked_libc_runtime_nostdlib.wasm" > "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.vsnprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.vsprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.vprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.vfprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.scanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2757,15 +3890,23 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.strspn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strcspn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strpbrk>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strcoll>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strxfrm>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtok>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strerror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.malloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.realloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.aligned_alloc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atof>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atoll>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtoul>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtoll>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtoull>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtof>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strtold>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtoimax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.strtoumax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.qsort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2773,8 +3914,16 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.rand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.srand>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.labs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llabs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.div>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ldiv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lldiv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.imaxdiv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atexit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.at_quick_exit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.exit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.quick_exit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env._Exit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.abort>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getenv>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.realpath>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2782,7 +3931,14 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.time>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.clock>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.difftime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.timespec_get>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.gmtime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.localtime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mktime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.asctime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ctime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.strftime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsftime>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getrusage>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getline>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.setjmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2812,9 +3968,15 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wcscat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsncat>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsncmp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcscoll>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsxfrm>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcschr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsrchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcsstr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcsspn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcscspn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcspbrk>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstok>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemmove>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wmemset>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2822,8 +3984,19 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wmemchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcstol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcstoul>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstoll>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstoull>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstof>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcstod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstold>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mblen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbtowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wctomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbstowcs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.wcstombs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.mbrtowc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbrlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.mbsinit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.wcrtomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.mbrtoc16>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.c16rtomb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2835,8 +4008,19 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wctob>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.swprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.swscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fgetwc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.getwc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.getwchar>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fputwc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.putwc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.putwchar>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ungetwc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fgetws>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fputws>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fwide>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.freopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fdopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fclose>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fwrite>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2875,6 +4059,21 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.frexp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.frexpf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.frexpl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ldexp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ldexpf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ldexpl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.modf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.modff>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.modfl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.copysign>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.copysignf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.copysignl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.nan>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.nanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.nanl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.powf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.powl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sqrtl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2910,6 +4109,18 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fmax>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmaxf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmaxl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fpclassify>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isfinite>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isinf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isnan>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isnormal>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.signbit>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isgreater>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isgreaterequal>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isless>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.islessequal>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.islessgreater>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.isunordered>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.sinh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.printf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2918,6 +4129,7 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.putchar>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fputs>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fputc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.putc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fflush>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.perror>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.getchar>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

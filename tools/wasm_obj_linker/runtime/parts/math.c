@@ -194,6 +194,127 @@ long double __agc_runtime_fmodl(long double x, long double y) {
   return (long double)__agc_runtime_fmod((double)x, (double)y);
 }
 
+int __agc_runtime_isnan(double x);
+int __agc_runtime_isinf(double x);
+int __agc_runtime_isfinite(double x);
+int __agc_runtime_signbit(double x);
+
+double __agc_runtime_ldexp(double x, int exp) {
+  if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
+  while (exp > 0) {
+    x = x * 2.0;
+    exp--;
+  }
+  while (exp < 0) {
+    x = x / 2.0;
+    exp++;
+  }
+  return x;
+}
+
+float __agc_runtime_ldexpf(float x, int exp) {
+  return (float)__agc_runtime_ldexp((double)x, exp);
+}
+
+long double __agc_runtime_ldexpl(long double x, int exp) {
+  return (long double)__agc_runtime_ldexp((double)x, exp);
+}
+
+double __agc_runtime_frexp(double x, long exp_addr) {
+  int *out_exp = (int *)ag_rt_ptr(exp_addr);
+  double ax;
+  int e = 0;
+  if (!out_exp) return x;
+  if (x == 0.0 || !__agc_runtime_isfinite(x)) {
+    *out_exp = 0;
+    return x;
+  }
+  ax = __agc_runtime_fabs(x);
+  while (ax >= 1.0) {
+    ax = ax / 2.0;
+    e++;
+  }
+  while (ax < 0.5) {
+    ax = ax * 2.0;
+    e--;
+  }
+  *out_exp = e;
+  return __agc_runtime_signbit(x) ? -ax : ax;
+}
+
+float __agc_runtime_frexpf(float x, long exp_addr) {
+  return (float)__agc_runtime_frexp((double)x, exp_addr);
+}
+
+long double __agc_runtime_frexpl(long double x, long exp_addr) {
+  return (long double)__agc_runtime_frexp((double)x, exp_addr);
+}
+
+double __agc_runtime_modf(double x, long iptr_addr) {
+  double *iptr = (double *)ag_rt_ptr(iptr_addr);
+  double whole;
+  if (!iptr) return x;
+  if (__agc_runtime_isnan(x)) {
+    *iptr = x;
+    return x;
+  }
+  if (__agc_runtime_isinf(x)) {
+    *iptr = x;
+    return __agc_runtime_signbit(x) ? -0.0 : 0.0;
+  }
+  whole = __agc_runtime_trunc(x);
+  *iptr = whole;
+  return x - whole;
+}
+
+float __agc_runtime_modff(float x, long iptr_addr) {
+  float *iptr = (float *)ag_rt_ptr(iptr_addr);
+  double whole;
+  if (!iptr) return x;
+  if (__agc_runtime_isnan((double)x)) {
+    *iptr = x;
+    return x;
+  }
+  if (__agc_runtime_isinf((double)x)) {
+    *iptr = x;
+    return __agc_runtime_signbit((double)x) ? -0.0f : 0.0f;
+  }
+  whole = __agc_runtime_trunc((double)x);
+  *iptr = (float)whole;
+  return x - (float)whole;
+}
+
+long double __agc_runtime_modfl(long double x, long iptr_addr) {
+  return (long double)__agc_runtime_modf((double)x, iptr_addr);
+}
+
+double __agc_runtime_copysign(double x, double y) {
+  double ax = __agc_runtime_fabs(x);
+  return __agc_runtime_signbit(y) ? -ax : ax;
+}
+
+float __agc_runtime_copysignf(float x, float y) {
+  return (float)__agc_runtime_copysign((double)x, (double)y);
+}
+
+long double __agc_runtime_copysignl(long double x, long double y) {
+  return (long double)__agc_runtime_copysign((double)x, (double)y);
+}
+
+double __agc_runtime_nan(long tagp_addr) {
+  double z = 0.0;
+  (void)tagp_addr;
+  return z / z;
+}
+
+float __agc_runtime_nanf(long tagp_addr) {
+  return (float)__agc_runtime_nan(tagp_addr);
+}
+
+long double __agc_runtime_nanl(long tagp_addr) {
+  return (long double)__agc_runtime_nan(tagp_addr);
+}
+
 double __agc_runtime_cbrt(double x) {
   if (x == 0.0) return 0.0;
   double sign = x < 0.0 ? -1.0 : 1.0;
@@ -426,4 +547,60 @@ float __agc_runtime_fmaxf(float x, float y) {
 
 long double __agc_runtime_fmaxl(long double x, long double y) {
   return (long double)__agc_runtime_fmax((double)x, (double)y);
+}
+
+int __agc_runtime_isnan(double x) {
+  return !(x <= 0.0 || x > 0.0);
+}
+
+int __agc_runtime_isinf(double x) {
+  double max = 1.7976931348623157e308;
+  return x > max || x < -max;
+}
+
+int __agc_runtime_isfinite(double x) {
+  return !__agc_runtime_isnan(x) && !__agc_runtime_isinf(x);
+}
+
+int __agc_runtime_signbit(double x) {
+  return x < 0.0 || (x == 0.0 && 1.0 / x < 0.0);
+}
+
+int __agc_runtime_fpclassify(double x) {
+  double ax;
+  double min_normal = 2.2250738585072014e-308;
+  if (__agc_runtime_isnan(x)) return 0;
+  if (__agc_runtime_isinf(x)) return 1;
+  if (x == 0.0) return 2;
+  ax = __agc_runtime_fabs(x);
+  if (ax < min_normal) return 3;
+  return 4;
+}
+
+int __agc_runtime_isnormal(double x) {
+  return __agc_runtime_fpclassify(x) == 4;
+}
+
+int __agc_runtime_isunordered(double x, double y) {
+  return __agc_runtime_isnan(x) || __agc_runtime_isnan(y);
+}
+
+int __agc_runtime_isgreater(double x, double y) {
+  return !__agc_runtime_isunordered(x, y) && x > y;
+}
+
+int __agc_runtime_isgreaterequal(double x, double y) {
+  return !__agc_runtime_isunordered(x, y) && x >= y;
+}
+
+int __agc_runtime_isless(double x, double y) {
+  return !__agc_runtime_isunordered(x, y) && x < y;
+}
+
+int __agc_runtime_islessequal(double x, double y) {
+  return !__agc_runtime_isunordered(x, y) && x <= y;
+}
+
+int __agc_runtime_islessgreater(double x, double y) {
+  return !__agc_runtime_isunordered(x, y) && x != y;
 }

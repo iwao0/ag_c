@@ -1197,15 +1197,22 @@ static int ag_rt_wscan_set_contains(int *set, int *end, int invert, int ch) {
   return invert ? !found : found;
 }
 
-static int ag_rt_vscan_consumed(const char *s, const char *fmt, va_list ap,
-                                long *consumed_out, int *input_failure_out) {
-  const char *p = s;
+static long ag_rt_vscan_consumed_out;
+static int ag_rt_vscan_input_failure_out;
+
+static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
+  char *s;
+  char *fmt;
+  char *p;
   int assigned = 0;
   int input_failure = 0;
+  s = (char *)s_addr;
+  fmt = (char *)fmt_addr;
+  p = s;
   while (*fmt) {
-    if (ag_rt_scan_is_space((unsigned char)*fmt)) {
-      while (ag_rt_scan_is_space((unsigned char)*fmt)) fmt++;
-      while (ag_rt_scan_is_space((unsigned char)*p)) p++;
+    if (ag_rt_scan_is_space(*fmt)) {
+      while (ag_rt_scan_is_space(*fmt)) fmt++;
+      while (ag_rt_scan_is_space(*p)) p++;
       continue;
     }
     if (*fmt != '%') {
@@ -1326,7 +1333,7 @@ static int ag_rt_vscan_consumed(const char *s, const char *fmt, va_list ap,
       fmt++;
     } else if (*fmt == 's') {
       int n = 0;
-      while (ag_rt_scan_is_space((unsigned char)*p)) p++;
+      while (ag_rt_scan_is_space(*p)) p++;
       if (*p == 0) {
         input_failure = 1;
         break;
@@ -1334,7 +1341,7 @@ static int ag_rt_vscan_consumed(const char *s, const char *fmt, va_list ap,
       if (length_l) {
         int *out = 0;
         if (!suppress) out = va_arg(ap, int *);
-        while (*p && !ag_rt_scan_is_space((unsigned char)*p) && width != 0) {
+        while (*p && !ag_rt_scan_is_space(*p) && width != 0) {
           if (!suppress) out[n] = (unsigned char)*p;
           p++;
           n++;
@@ -1344,7 +1351,7 @@ static int ag_rt_vscan_consumed(const char *s, const char *fmt, va_list ap,
       } else {
         char *out = 0;
         if (!suppress) out = va_arg(ap, char *);
-        while (*p && !ag_rt_scan_is_space((unsigned char)*p) && width != 0) {
+        while (*p && !ag_rt_scan_is_space(*p) && width != 0) {
           if (!suppress) *(out + n) = *p;
           p++;
           n++;
@@ -1435,14 +1442,14 @@ static int ag_rt_vscan_consumed(const char *s, const char *fmt, va_list ap,
       break;
     }
   }
-  if (consumed_out) *consumed_out = (long)(p - s);
-  if (input_failure_out) *input_failure_out = input_failure;
+  ag_rt_vscan_consumed_out = (long)(p - s);
+  ag_rt_vscan_input_failure_out = input_failure;
   if (assigned == 0 && input_failure) return -1;
   return assigned;
 }
 
 static int ag_rt_vscan(const char *s, const char *fmt, va_list ap) {
-  return ag_rt_vscan_consumed(s, fmt, ap, 0, 0);
+  return ag_rt_vscan_consumed((long)s, (long)fmt, ap);
 }
 
 static int ag_rt_wscan_integer(int **pp, int width, int base, unsigned long *out,
@@ -2000,6 +2007,13 @@ int __agc_runtime_vsnprintf(long buf_addr, size_t size, long fmt_addr, long ap_a
   return ag_rt_vformat(buf, size, 1, fmt, ap);
 }
 
+int __agc_runtime_vsprintf(long buf_addr, long fmt_addr, long ap_addr) {
+  char *buf = (char *)(long)buf_addr;
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vformat(buf, 0, 0, fmt, ap);
+}
+
 int __agc_runtime_sprintf(long buf_addr, long fmt_addr, ...) {
   char *buf = (char *)(long)buf_addr;
   char *fmt = (char *)(long)fmt_addr;
@@ -2020,29 +2034,50 @@ int __agc_runtime_sscanf(long s_addr, long fmt_addr, ...) {
   return n;
 }
 
+int __agc_runtime_vsscanf(long s_addr, long fmt_addr, long ap_addr) {
+  char *s = (char *)(long)s_addr;
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vscan(s, fmt, ap);
+}
+
 static int ag_rt_vfscan(long stream_addr, char *fmt, va_list ap) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   char *src;
   long len;
   long avail;
+  long copied = 0;
   long consumed = 0;
+  long advance = 0;
   int input_failure = 0;
+  int had_ungetc;
   int n;
   static char scan_buf[AG_RT_FILE_BUF_CAP];
   if (!f) return -1;
-  if (f->write_mode) {
+  if (!ag_rt_file_can_read(f)) {
     f->error = 1;
     return -1;
   }
   src = ag_rt_stream_buf(f);
   len = ag_rt_stream_len(f);
+  had_ungetc = f->has_ungetc;
+  if (had_ungetc) {
+    scan_buf[copied++] = (char)f->ungetc_ch;
+  }
   avail = f->pos < len ? len - f->pos : 0;
-  if (avail >= AG_RT_FILE_BUF_CAP) avail = AG_RT_FILE_BUF_CAP - 1;
-  for (long i = 0; i < avail; i++) scan_buf[i] = src[f->pos + i];
-  scan_buf[avail] = 0;
-  n = ag_rt_vscan_consumed(scan_buf, fmt, ap, &consumed, &input_failure);
-  f->pos += consumed;
-  ag_rt_file_set_pos(f, f->pos);
+  if (avail >= AG_RT_FILE_BUF_CAP - copied) avail = AG_RT_FILE_BUF_CAP - copied - 1;
+  for (long i = 0; i < avail; i++) scan_buf[copied + i] = src[f->pos + i];
+  copied += avail;
+  scan_buf[copied] = 0;
+  n = ag_rt_vscan_consumed((long)scan_buf, (long)fmt, ap);
+  consumed = ag_rt_vscan_consumed_out;
+  input_failure = ag_rt_vscan_input_failure_out;
+  if (consumed > 0) {
+    advance = consumed;
+    if (had_ungetc) advance--;
+    if (advance < 0) advance = 0;
+    ag_rt_file_set_pos(f, f->pos + advance);
+  }
   if (input_failure) f->eof = 1;
   return n;
 }
@@ -2056,6 +2091,12 @@ int __agc_runtime_scanf(long fmt_addr, ...) {
   return n;
 }
 
+int __agc_runtime_vscanf(long fmt_addr, long ap_addr) {
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vfscan((long)&ag_rt_file_value, fmt, ap);
+}
+
 int __agc_runtime_fscanf(long stream_addr, long fmt_addr, ...) {
   char *fmt = (char *)(long)fmt_addr;
   va_list ap;
@@ -2065,6 +2106,12 @@ int __agc_runtime_fscanf(long stream_addr, long fmt_addr, ...) {
   return n;
 }
 
+int __agc_runtime_vfscanf(long stream_addr, long fmt_addr, long ap_addr) {
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  return ag_rt_vfscan(stream_addr, fmt, ap);
+}
+
 int __agc_runtime_printf(long fmt_addr, ...) {
   char *fmt = (char *)(long)fmt_addr;
   va_list ap;
@@ -2072,6 +2119,15 @@ int __agc_runtime_printf(long fmt_addr, ...) {
   char buf[1024];
   int n = ag_rt_vformat(buf, sizeof(buf), 1, fmt, ap);
   va_end(ap);
+  ag_rt_stdout_write_mem(buf, n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1);
+  return n;
+}
+
+int __agc_runtime_vprintf(long fmt_addr, long ap_addr) {
+  char *fmt = (char *)(long)fmt_addr;
+  va_list ap = (va_list)(long)ap_addr;
+  char buf[1024];
+  int n = ag_rt_vformat(buf, sizeof(buf), 1, fmt, ap);
   ag_rt_stdout_write_mem(buf, n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1);
   return n;
 }

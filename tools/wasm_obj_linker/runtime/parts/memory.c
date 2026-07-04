@@ -38,6 +38,32 @@ long __agc_runtime_malloc(long size) {
   return header + 8;
 }
 
+static int ag_rt_alignment_ok(long alignment) {
+  if (alignment <= 0) return 0;
+  return (alignment & (alignment - 1)) == 0;
+}
+
+long __agc_runtime_aligned_alloc(long alignment, long size) {
+  long requested;
+  long raw;
+  long aligned_ptr;
+  long header;
+  long total;
+  if (!ag_rt_alignment_ok(alignment) || size < 0) return 0;
+  if (alignment < 8) alignment = 8;
+  if (size % alignment != 0) return 0;
+  requested = size > 0 ? size : 1;
+  if (requested > ag_rt_long_max() - alignment - 8) return 0;
+  raw = ag_rt_heap + 8;
+  aligned_ptr = (raw + alignment - 1) & -alignment;
+  header = aligned_ptr - 8;
+  total = (aligned_ptr + requested) - ag_rt_heap;
+  if (total < 0 || ag_rt_heap > ag_rt_memory_limit() - total) return 0;
+  ag_rt_heap = ag_rt_heap + total;
+  *(long *)ag_rt_ptr(header) = requested;
+  return aligned_ptr;
+}
+
 void __agc_runtime_free(long ptr) {
   (void)ptr;
 }

@@ -71,6 +71,25 @@ int __agc_runtime_memcmp(long a_addr, long b_addr, long n) {
   return 0;
 }
 
+int __agc_runtime_strcoll(long a_addr, long b_addr) {
+  return __agc_runtime_strcmp(a_addr, b_addr);
+}
+
+long __agc_runtime_strxfrm(long dst_addr, long src_addr, long n) {
+  char *dst = ag_rt_ptr(dst_addr);
+  char *src = ag_rt_ptr(src_addr);
+  long len = __agc_runtime_strlen(src_addr);
+  long i = 0;
+  if (n > 0) {
+    while (i + 1 < n && src[i]) {
+      dst[i] = src[i];
+      i++;
+    }
+    dst[i] = 0;
+  }
+  return len;
+}
+
 long __agc_runtime_memchr(long s_addr, int ch, long n) {
   unsigned char *s = (unsigned char *)ag_rt_ptr(s_addr);
   int needle = ch & 255;

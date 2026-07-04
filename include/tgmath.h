@@ -24,6 +24,10 @@ float       truncf(float);      long double truncl(long double);
 float       fabsf(float);       long double fabsl(long double);
 float       powf(float, float); long double powl(long double, long double);
 float       fmodf(float, float);long double fmodl(long double, long double);
+float       frexpf(float, int *);long double frexpl(long double, int *);
+float       ldexpf(float, int);  long double ldexpl(long double, int);
+float       modff(float, float *);long double modfl(long double, long double *);
+float       copysignf(float, float);long double copysignl(long double, long double);
 float       atan2f(float, float);long double atan2l(long double, long double);
 float       hypotf(float, float);long double hypotl(long double, long double);
 float       fminf(float, float);long double fminl(long double, long double);
@@ -53,6 +57,10 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define fabs(x)  __tg_un(fabs, x)
 #define pow(x, y)   __tg_bin(pow, x, y)
 #define fmod(x, y)  __tg_bin(fmod, x, y)
+#define frexp(x, y) __tg_bin(frexp, x, y)
+#define ldexp(x, y) __tg_bin(ldexp, x, y)
+#define modf(x, y)  __tg_bin(modf, x, y)
+#define copysign(x, y) __tg_bin(copysign, x, y)
 #define atan2(x, y) __tg_bin(atan2, x, y)
 #define hypot(x, y) __tg_bin(hypot, x, y)
 #define fmin(x, y)  __tg_bin(fmin, x, y)

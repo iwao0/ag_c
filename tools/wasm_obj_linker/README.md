@@ -98,15 +98,26 @@ Supported:
   minimal file I/O stubs including seek/tell/error helpers,
   POSIX-style `open`/`read`/`close`/`fstat` plus `fdopen`,
   a tiny bump allocator plus small stdlib helpers
-  (`realloc`, `atol`, `strtol`, `rand`, `srand`, `labs`, `atexit`,
-  `exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,
-  `realpath`, `strtoimax`, `strtoumax`),
-  `time`/`clock`/`difftime`/`localtime`, `getrusage`, `getline`,
-  `setjmp`/`longjmp`, `errno` storage, wide-char and uchar conversion helpers,
+  (`realloc`, `aligned_alloc`, `atol`, `atoll`, `strtol`, `strtoll`, `strtoull`,
+  `rand`, `srand`, `labs`, `llabs`, `div`, `ldiv`, `lldiv`, `atexit`, `at_quick_exit`,
+  `exit`, `quick_exit`, `_Exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,
+  `realpath`, `strtoimax`, `strtoumax`, `imaxdiv`),
+  `time`/`clock`/`difftime`/`timespec_get`/`gmtime`/`localtime`/`mktime`/`asctime`/`ctime`/
+  `strftime`/`wcsftime`, `getrusage`, `getline`,
+  `setjmp`/`longjmp`, `errno` storage, wide-char string and conversion helpers
+  including `wcsspn`/`wcscspn`/`wcspbrk`/`wcstok` and
+  `wcstoll`/`wcstoull`/`wcstof`/`wcstold`, restartable multibyte helpers
+  (`mbrlen`, `mbsinit`), wide character I/O helpers
+  (`fgetwc`, `fputwc`, `fgetws`, `fputws`, `fwide`, and get/put aliases),
+  uchar conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
-  `pow`/`powf`/`powl`, remainder, cube-root, selected long-double wrappers,
-  and rounding helpers, stdio globals, and `__assert_rtn`.
+  `pow`/`powf`/`powl`, remainder, decomposition/sign helpers (`frexp`, `ldexp`,
+  `modf`, `copysign`, `nan`, and f/l wrappers), cube-root, selected long-double wrappers,
+  rounding helpers, and math classification/comparison helpers (`fpclassify`,
+  `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `isgreater`,
+  `isgreaterequal`, `isless`, `islessequal`, `islessgreater`, `isunordered`),
+  stdio globals, and `__assert_rtn`.
   The linker emits only small ABI bridges for those public symbols.
 
 ## Smoke Test

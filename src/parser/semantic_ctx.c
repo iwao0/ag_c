@@ -214,6 +214,7 @@ static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
 static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 static int tag_member_decl_order = 0;
+static int g_pending_tag_align = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
   // djb2 variant
@@ -237,6 +238,19 @@ static unsigned psx_ctx_hash_tag(token_kind_t kind, const char *name, int len) {
  * 関数戻り値型チェック等が前テストの登録に引きずられないようにする。 */
 void psx_ctx_reset_function_names(void) {
   memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
+}
+
+void psx_ctx_reset_translation_unit_scope(void) {
+  goto_refs_all = NULL;
+  memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
+  memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
+  memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
+  memset(enum_consts_by_bucket, 0, sizeof(enum_consts_by_bucket));
+  memset(typedefs_by_bucket, 0, sizeof(typedefs_by_bucket));
+  memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
+  tag_scope_depth = 0;
+  tag_member_decl_order = 0;
+  g_pending_tag_align = 0;
 }
 
 /* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。これにより、同一プロセス
@@ -426,7 +440,6 @@ void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len
 /* struct/union レイアウト計算 (struct_layout.c) が agg_align をここへ預け、直後の
  * psx_ctx_define_tag_type_with_layout が tag に書き込む。tag がテーブルに登録される
  * のは define 時なので、レイアウト中に直接 tag へ書けない。 */
-static int g_pending_tag_align = 0;
 void psx_ctx_set_pending_tag_align(int align) { g_pending_tag_align = align; }
 
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len, int member_count, int tag_size) {

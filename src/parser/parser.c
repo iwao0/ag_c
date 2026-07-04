@@ -463,9 +463,7 @@ void ps_reset_translation_unit_state(void) {
   memset(gvars_by_bucket, 0, sizeof(gvars_by_bucket));
   reset_toplevel_decl_spec_state();
   psx_expr_reset_translation_unit_state();
-  psx_ctx_reset_function_names();
-  psx_ctx_reset_function_diag_state();
-  psx_ctx_reset_tag_diag_state();
+  psx_ctx_reset_translation_unit_scope();
   pragma_pack_reset();
   arena_free_all();
 }

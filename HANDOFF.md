@@ -1,18 +1,25 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-04（続き427: scanf scanset runtime 対応）
+最終更新: 2026-07-05（続き479: math decomposition/sign helper runtime 対応）
 
 ## 現状
 - 直近の部分確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
+  `node --check tools/wasm_js_api/agc-include-inline.js` = **green**、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_decomp_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `make -j4 build/ag_wasm_link` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-js-api` = **green**、
   `./build/test_e2e` = **1186/1186 green**、
-  `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**、
   `./build/test_wasm32_object` = **1160/1160 e2e fixture object compile + validate green**、
+  `git diff --check` = **green**。
+- 以前の直近確認:
+  `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**、
   `./build/ag_c test/fixtures/stdheader/inttypes_strto_ops.c` = **green**、
   `./build/ag_c_wasm test/fixtures/stdheader/inttypes_strto_ops.c` = **green**、
-  `make test-wasm-js-api` = **green**、
-  `git diff --check` = **green**。
+  `make test-wasm-js-api` = **green**。
 - 以前の広域確認:
   `make test` = **green**、
   `make test-wasm-js-api` = **green**、
@@ -5298,6 +5305,985 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
   - `./build/test_e2e` = **1186/1186 OK**
 
+### このセッション（続き455）: stdio update mode (`r+` / `w+`) と `tmpfile()` runtime 対応
+- 見つかった浅い箇所:
+  - runtime の `FILE` 状態は read-only / write-only を `write_mode` だけで表しており、
+    `fopen("r+")` / `fopen("w+")` のような update stream を表せなかった。
+  - そのため標準 C の `tmpfile()` を足す場合も、単に API だけを追加すると read/write 両用 stream を返せず、
+    すぐに `fputc()` 後の `fseek()` + `fgetc()` が壊れる状態だった。
+- 根本対応:
+  - `struct ag_rt_file` に `read_write` を追加し、`ag_rt_file_can_read()` /
+    `ag_rt_file_can_write()` helper で read / write 可否を判定するようにした。
+  - 既存の read-only / write-only 挙動は維持しつつ、mode 文字列中の `+` を検出して
+    `fopen()` / `fdopen()` が update stream を作れるようにした。
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `FILE *tmpfile(void);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `tmpfile` /
+    `__agc_runtime_tmpfile` を追加した。
+  - runtime の単一 file-buffer モデルに合わせ、`tmpfile()` は file buffer を空にした read/write 両用 stream を返すようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `update_file_state.c` を追加し、
+    `r+` での既存内容 read + overwrite、`w+` での truncate + readback、`tmpfile()` の write + seek + readback を確認した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも同じ `w+` / `tmpfile()` smoke を追加した。
+- 残り:
+  - update stream の C 標準上の read/write 切替条件は簡易扱いで、現在の smoke では `fseek()` を挟む形だけを固定している。
+  - `tmpfile()` は runtime の単一 file-buffer 上の temporary stream で、OS 的な匿名ファイルや複数 path isolation は未対応。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き456）: stdio `tmpnam()` runtime 対応
+- 見つかった浅い箇所:
+  - 続き455で `tmpfile()` と update stream は入ったが、同じ C 標準の temporary-name API である
+    `tmpnam()`、`L_tmpnam`、`TMP_MAX` は `stdio.h`、linker rewrite、runtime 実体に無かった。
+  - 単に固定文字列を返すだけでは連続呼び出し時の名前生成 smoke が弱くなるため、runtime 側に counter を持たせる必要があった。
+- 根本対応:
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `L_tmpnam`、`TMP_MAX`、`char *tmpnam(char *s);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `tmpnam` /
+    `__agc_runtime_tmpnam` を追加した。
+  - runtime 共通状態に `ag_rt_tmpnam_buf` と `ag_rt_tmpnam_counter` を追加し、
+    `tmpnam(buf)` はユーザー提供 buffer、`tmpnam(NULL)` は static buffer へ `agc_tmp_N` 形式の名前を書いて返すようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `update_file_state.c` に、
+    `tmpnam(buf)` / `tmpnam(NULL)` / 連続呼び出しでの名前差分 / 生成名を使った `fopen("w+")` readback smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも同じ `tmpnam()` smoke を追加した。
+- 残り:
+  - `tmpnam()` は runtime 内 counter による名前生成で、OS 的な一意性予約や実ファイル名前空間との衝突回避は未対応。
+  - runtime file storage はまだ単一 file-buffer なので、生成名ごとの独立 storage は持っていない。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き457）: stdio `vprintf()` / `vsprintf()` runtime 対応
+- 見つかった浅い箇所:
+  - formatted output は `printf()` / `fprintf()` / `sprintf()` / `snprintf()` と
+    `vfprintf()` / `vsnprintf()` まで runtime 対応済みだったが、標準 C の
+    `vprintf()` / `vsprintf()` が `stdio.h`、linker rewrite、runtime 実体に無かった。
+  - そのため `va_list` を受け取って stdout や unbounded buffer へ出力する一般的な wrapper が
+    runtime link できない状態だった。
+- 根本対応:
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `vprintf()` / `vsprintf()` prototype を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `vprintf` /
+    `__agc_runtime_vprintf`、`vsprintf` / `__agc_runtime_vsprintf` を追加した。
+  - runtime は既存の `ag_rt_vformat()` を共有し、`vprintf()` は stdout buffer へ、
+    `vsprintf()` は `sprintf()` と同じ unbounded buffer 経路へ出力するようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `vformat_file.c` と `libc_runtime.c` に、
+    `va_list` wrapper 経由の `vprintf()` 戻り値、`vsprintf()` 戻り値 + buffer 内容 smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` では `vprintf()` の stdout 実出力と
+    `vsprintf()` の buffer 内容を確認する smoke を追加した。
+  - `--nostdlib` objdump smoke に `<env.vprintf>` / `<env.vsprintf>` import 確認も追加した。
+- 残り:
+  - `printf` 系の 1024 byte 内部 buffer 上限や、巨大出力時の完全な stdout/file write 分割は未対応のまま。
+  - 非 C locale と一部の浮動小数巨大値境界は runtime として未対応のまま。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き458）: stdio `vscanf()` / `vfscanf()` / `vsscanf()` runtime 対応
+- 見つかった浅い箇所:
+  - formatted input は `scanf()` / `fscanf()` / `sscanf()` まで runtime 対応済みだったが、
+    `va_list` 版の `vscanf()` / `vfscanf()` / `vsscanf()` が `stdio.h`、linker rewrite、runtime 実体に無かった。
+  - また `ag_rt_vfscan()` は続き455で追加した read/write helper を使わず `write_mode` を直接見ていたため、
+    `r+` update stream で `vfscanf()` 相当を読む経路が不自然に失敗する状態だった。
+- 根本対応:
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `vscanf()` / `vfscanf()` / `vsscanf()` prototype を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `vscanf` /
+    `__agc_runtime_vscanf`、`vfscanf` / `__agc_runtime_vfscanf`、`vsscanf` / `__agc_runtime_vsscanf` を追加した。
+  - runtime は既存の `ag_rt_vscan()` / `ag_rt_vfscan()` を共有し、`va_list` address を受け取って各 scan 経路へ渡すようにした。
+  - `ag_rt_vfscan()` の read 可否判定を `ag_rt_file_can_read()` に寄せ、read/write update stream でも scan できるようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `vscan_state.c` を追加し、`vsscanf()` と `r+` stream 上の
+    `vfscanf()` を `va_list` wrapper 経由で確認した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の scan smoke に `vsscanf()` / `vscanf()` / `vfscanf()` を追加し、
+    stdin 入力を実際に消費する `vscanf()` 経路も確認した。
+- 残り:
+  - scan 系の locale は C locale 前提で、非 C locale の decimal separator 等は未対応のまま。
+  - `vscan_state.c` の obj linker smoke では stdin 注入の都合で `vscanf()` 実行は JS pipeline 側に寄せている。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`（初回は test fixture から direct runtime helper を呼ぶ signature mismatch、fixture 整理後 green）
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き459）: stdlib `strtof()` / `strtold()` runtime 対応
+- 見つかった浅い箇所:
+  - floating conversion は `strtod()` / `atof()` まで runtime 対応済みだったが、同じ C 標準の
+    `strtof()` / `strtold()` が `stdlib.h`、linker rewrite、runtime 実体に無かった。
+  - そのため標準ヘッダ経由で単精度 / long double の文字列変換を使うコードは runtime link できない状態だった。
+- 根本対応:
+  - `include/stdlib.h` に `strtof()` / `strtold()` prototype を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `strtof` /
+    `__agc_runtime_strtof`、`strtold` / `__agc_runtime_strtold` を追加した。
+  - runtime 実体は既存の `__agc_runtime_strtod()` parser を共有し、戻り値型だけ `float` / `long double` へ変換する wrapper にした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `strtod_state.c` と `libc_runtime.c` smoke に
+    `strtof()` / `strtold()` の parse・endptr 確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.strtof>` / `<env.strtold>` import 確認も追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `#include <stdlib.h>` 経由の JS pipeline smoke を追加し、
+    `strtof()` / `strtod()` / `strtold()` を runtime link + instantiate で確認した。
+- 残り:
+  - `strtof()` / `strtold()` は `strtod()` parser を共有するため、overflow / underflow の `errno`
+    は続き466、`nan` / `inf` 文字列は続き467で対応済み。非 C locale の未対応範囲は `strtod()` と同じ。
+  - `long double` は現 wasm runtime の実装範囲では実質 double 相当の精度。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き460）: string `strcoll()` / `strxfrm()` runtime 対応
+- 見つかった浅い箇所:
+  - locale runtime は C locale の `setlocale()` / `localeconv()` まで持っていたが、同じ locale-aware string API の
+    `strcoll()` / `strxfrm()` が `string.h`、linker rewrite、runtime 実体に無かった。
+  - そのため標準ヘッダ経由で collation / transform API を使うコードは runtime link できない状態だった。
+- 根本対応:
+  - `include/string.h` に `strcoll()` / `strxfrm()` prototype を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `strcoll` /
+    `__agc_runtime_strcoll`、`strxfrm` / `__agc_runtime_strxfrm` を追加した。
+  - runtime は現状の C locale 方針に合わせ、`strcoll()` は `strcmp()` と同じ比較、
+    `strxfrm()` は変換済み文字列として source をそのまま bounded copy し、必要長を返す実装にした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `libc_runtime.c` smoke に比較結果、`strxfrm()` の通常 copy、
+    `n == 0` の必要長返却を追加した。
+  - `--nostdlib` objdump smoke に `<env.strcoll>` / `<env.strxfrm>` import 確認も追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `#include <string.h>` 経由の JS pipeline smoke を追加し、
+    runtime link + instantiate で確認した。
+- 残り:
+  - 非 C locale は runtime として未対応のため、locale-dependent collation / transformation は未実装。
+  - `strxfrm()` は C locale 前提の identity transform で、複雑な照合キー生成は行わない。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き461）: stdio `freopen()` runtime 対応
+- 見つかった浅い箇所:
+  - file operation は `fopen()` / `fdopen()` / `fclose()` / `tmpfile()` などまで runtime 対応済みだったが、
+    標準 C の `freopen()` が `stdio.h`、JS inline `stdio.h` shim、linker rewrite、runtime 実体に無かった。
+  - そのため標準ヘッダ経由で既存 stream を reopen するコードは compile / link できない状態だった。
+- 根本対応:
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `FILE *freopen(const char *path, const char *mode, FILE *stream);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `freopen` /
+    `__agc_runtime_freopen` を追加した。
+  - runtime は既存の `ag_rt_parse_file_mode()` と `ag_rt_file_init()` を共有し、同じ `FILE *` を
+    指定 mode で再初期化する実装にした。`w` / `w+` は truncate、`a` / `a+` は末尾位置、
+    `+` 付き mode は read/write stream として扱う。
+  - fd-backed stream を reopen する場合は対応する fd slot を閉じ、通常 runtime stream として再初期化する。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `freopen_state.c` を追加し、invalid path/mode failure、
+    `w+` reopen による truncate + write/readback、`r` reopen の readback を確認した。
+  - `libc_runtime.c` smoke と `--nostdlib` objdump smoke に `freopen()` 使用と `<env.freopen>` import 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdio runtime smoke に `#include <stdio.h>` 経由の
+    `freopen()` 実行確認を追加した。
+- 残り:
+  - runtime は単一 file-buffer モデルのため、path ごとの独立した file namespace や OS 的な reopen semantics は未対応。
+  - stdout / stderr の redirect と、`filename == NULL` による mode 変更は未対応。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`（初回は `libc_runtime.c` 側 prototype 漏れの warning、宣言追加後 green）
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き462）: stdio `putc()` runtime 対応
+- 見つかった浅い箇所:
+  - character I/O は `fputc()` / `putchar()` と input 側の `getc()` まで runtime 対応済みだったが、
+    標準 C の `putc()` が `stdio.h`、JS inline `stdio.h` shim、linker rewrite、runtime 実体に無かった。
+  - そのため標準ヘッダ経由で `putc(ch, stream)` を使うコードは compile / link できない状態だった。
+- 根本対応:
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `int putc(int c, FILE *stream);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `putc` /
+    `__agc_runtime_putc` を追加した。
+  - runtime 実体は `__agc_runtime_fputc()` に委譲し、stdout / stderr / file stream の既存 write path と
+    read-only stream error handling を共有するようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `libc_runtime.c` smoke に file stream への `putc()` 書き込み、
+    stderr 相当 stream への `putc()`、`--nostdlib` objdump の `<env.putc>` import 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdio runtime smoke に `#include <stdio.h>` 経由の
+    `putc()` 実行確認を追加した。
+- 残り:
+  - `putc()` は現 runtime では function として提供しており、標準 libc の macro 的な多重評価注意までは再現していない。
+  - file semantics は引き続き単一 file-buffer runtime の制約に従う。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き463）: stdlib multibyte wrapper runtime 対応
+- 見つかった浅い箇所:
+  - wide / multibyte runtime は `wchar.h` 側の restartable API、`mbrtowc()` / `wcrtomb()` /
+    `mbsrtowcs()` / `wcsrtombs()` などを持っていたが、標準 `stdlib.h` 側の
+    `mblen()` / `mbtowc()` / `wctomb()` / `mbstowcs()` / `wcstombs()` が無かった。
+  - そのため古い標準 multibyte conversion API を使うコードは、同等の基盤があるのに compile / link できない状態だった。
+- 根本対応:
+  - `include/stdlib.h` に `mblen()` / `mbtowc()` / `wctomb()` / `mbstowcs()` / `wcstombs()` prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/wide.c` に各 wrapper を追加し、既存の restartable API
+    `mbrtowc()` / `wcrtomb()` / `mbsrtowcs()` / `wcsrtombs()` を共有するようにした。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `mblen` / `mbtowc` / `wctomb` / `mbstowcs` / `wcstombs` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `utf8_wide_state.c` に UTF-8 の `mblen()` / `mbtowc()` /
+    `wctomb()` / `mbstowcs()` / `wcstombs()` smoke を追加した。
+  - `libc_runtime.c` smoke と `--nostdlib` objdump smoke に ASCII roundtrip と `<env.*>` import 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `#include <stdlib.h>` 経由 smoke に
+    multibyte wrapper の実行確認を追加した。
+- 残り:
+  - 実装は既存 wide runtime と同じ UTF-8 / C locale 前提で、stateful encoding や非 C locale の変換状態は未対応。
+  - `stdlib.h` は既存方針どおり typedef 型を避け、引数/戻り値に `long` / `int *` を使う簡易 prototype のまま。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き464）: stdlib `long long` integer conversion runtime 対応
+- 見つかった浅い箇所:
+  - `strtoimax()` / `strtoumax()` と `long long` 型サポートは既にあるのに、標準 `stdlib.h` 名の
+    `atoll()` / `strtoll()` / `strtoull()` / `llabs()` がヘッダ、runtime symbol 判定、rewrite、runtime 実体に無かった。
+  - そのため既存の整数変換基盤で扱える範囲でも、標準名を使うコードは compile / link できない状態だった。
+- 根本対応:
+  - `include/stdlib.h` に `atoll()` / `strtoll()` / `strtoull()` / `llabs()` prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に各 runtime 実体を追加し、
+    既存の `strtol()` / `strtoumax()` 系を共有する wrapper として実装した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `atoll` / `strtoll` / `strtoull` / `llabs` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `libc_runtime.c` smoke に
+    signed / unsigned の `long long` parse、`endptr`、`atoll()`、`llabs()` の実行確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.atoll>` / `<env.strtoll>` / `<env.strtoull>` / `<env.llabs>` の import 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `#include <stdlib.h>` 経由 smoke に同じ long long 系 API を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要にも追加した。
+- 残り:
+  - overflow / underflow の errno や飽和は続き465で `strtol()` / `strtoumax()` 共通 parser 側へ対応済み。
+  - `long` と `long long` は wasm ABI 上どちらも 64bit だが、C 型としては別名の prototype / symbol を通す方針。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make -j4 build/ag_wasm_link`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き465）: `strto*` integer overflow / errno runtime 対応
+- 見つかった浅い箇所:
+  - 続き464で `strtoll()` / `strtoull()` を標準名として通したが、共有元の `strtol()` /
+    `strtoumax()` parser は overflow を事前検出せず、計算中の wrap / signed overflow に寄っていた。
+  - そのため範囲外入力で `LONG_MAX` / `LONG_MIN` / `ULONG_MAX` に飽和せず、`errno = ERANGE` も立たない状態だった。
+  - invalid base でも `errno = EINVAL` を立てていなかった。
+- 根本対応:
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` の整数 parser を unsigned accumulator + cutoff/cutlim 判定へ変更した。
+  - `strtol()` は正方向 overflow で `LONG_MAX`、負方向 overflow で `LONG_MIN` を返し、`errno` に `ERANGE` を設定する。
+  - `strtoumax()` / `strtoul()` / `strtoull()` は `ULONG_MAX` 超過で `~0UL` を返し、`errno` に `ERANGE` を設定する。
+  - `strtoul("-1", ...)` のような範囲内 magnitude の負符号付き unsigned 変換は、C の規則どおり unsigned negation にし、
+    overflow 扱いにせず `errno` を維持する。
+  - invalid base は従来どおり `endptr` を元文字列へ戻しつつ、`errno` に `EINVAL` を設定するようにした。
+  - `strtoll()` / `strtoull()` / `strtoimax()` / `strtoumax()` は既存 wrapper 経由で同じ改善を受ける。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `libc_runtime.c` smoke に signed / unsigned overflow、
+    unsigned negative non-overflow、invalid base の `errno` / `endptr` 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `#include <stdlib.h>` + `<errno.h>` 経由 smoke に
+    `strtoll()` / `strtoull()` overflow と `errno` 確認を追加した。
+- 残り:
+  - `atoi()` / `atol()` / `atoll()` は C 標準上 overflow 時の規定が薄く、今回も `strto*` の明示的な範囲診断対象にはしていない。
+  - `strtod()` / `strtof()` / `strtold()` の overflow / underflow / `errno` は続き466で対応済み。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き466）: `strtod()` / `strtof()` / `strtold()` overflow / underflow errno 対応
+- 見つかった浅い箇所:
+  - `strtof()` / `strtold()` は続き459で `strtod()` 共有 wrapper として追加済みだったが、
+    共有元の `strtod()` parser は overflow / underflow を診断せず、`errno = ERANGE` も立てていなかった。
+  - decimal exponent や hex exponent が極端に大きい場合、単純 loop と通常の `double` 演算に任せるだけで、
+    C 標準の範囲外変換として扱えていなかった。
+- 根本対応:
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に floating conversion 用の infinity / max / inf 判定 helper と
+    finish helper を追加した。
+  - `strtod()` の decimal parser で非ゼロ仮数を追跡し、巨大 exponent は cap 付きで読みつつ、
+    overflow 時は `+/-inf` を返して `errno = ERANGE` を設定するようにした。
+  - underflow で非ゼロ入力が 0.0 へ落ちる場合も `errno = ERANGE` を設定するようにした。
+  - hex float parser も非ゼロ仮数と巨大 exponent を扱えるようにし、`0x1p-2000` のような underflow を診断する。
+  - `0e9999` のようなゼロ仮数は巨大 exponent でも `errno` を立てないようにした。
+  - `strtof()` / `strtold()` は既存 wrapper のまま、共有元 `strtod()` の改善を受ける。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `strtod_state.c` と `libc_runtime.c` smoke に、
+    decimal overflow、negative overflow、decimal/hex underflow、zero huge exponent の `errno` / `endptr` 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `<stdlib.h>` + `<errno.h>` 経由 smoke に同じ boundary 確認を追加した。
+- 残り:
+  - `nan` / `inf` 文字列そのものの `strtod()` 受理は続き467で対応済み。
+  - subnormal を非ゼロで返す細かい underflow 境界では、現在は 0.0 に落ちたケースを中心に `ERANGE` を確認している。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き467）: `strtod()` / `strtof()` / `strtold()` special float 文字列対応
+- 見つかった浅い箇所:
+  - scanf 系 runtime は `inf` / `infinity` / `nan(payload)` を読めていたが、
+    `strtod()` 側の parser は decimal / hex float だけを見ており、同じ special float 文字列を変換できなかった。
+  - そのため `strtof()` / `strtold()` も wrapper 経由で同じ未対応を継承していた。
+- 根本対応:
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に `strtod` 用の case-insensitive literal matcher と
+    `nan(payload)` payload skipper を追加した。
+  - `strtod()` の sign 処理後、数値 parse に入る前に `infinity` / `inf` / `nan` を認識するようにした。
+  - `nan(payload)` は閉じ括弧まである場合だけ payload 全体を消費し、閉じていない場合は `nan` だけを消費する。
+  - special float 変換では `errno` を変更せず、`endptr` は実際に消費した token の直後を指すようにした。
+  - `strtof()` / `strtold()` は既存 wrapper のまま、共有元 `strtod()` の改善を受ける。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `strtod_state.c` と `libc_runtime.c` smoke に
+    `INF`、`-infinity`、`nan(payload)`、閉じていない payload の `endptr` / `errno` 確認を追加した。
+  - NaN 判定は自己比較 warning を避け、`x != 0 && !(x < 0) && !(x > 0)` 形式で確認している。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `<stdlib.h>` + `<errno.h>` 経由 smoke に
+    `strtod()` / `strtof()` / `strtold()` の special float 確認を追加した。
+- 残り:
+  - NaN payload の値への反映は未実装で、現状は payload を消費するが生成値は通常の NaN。
+  - 非 C locale は引き続き未対応。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き468）: stdlib `div()` / `ldiv()` / `lldiv()` と inttypes `imaxdiv()` runtime 対応
+- 見つかった浅い箇所:
+  - `stdlib.h` は `abs()` / `labs()` / `llabs()` まで持っていたが、同じ整数算術 API の
+    `div()` / `ldiv()` / `lldiv()` と `div_t` / `ldiv_t` / `lldiv_t` が無かった。
+  - `inttypes.h` には `imaxdiv_t` / `imaxdiv()` の宣言が既にあったが、runtime symbol 判定、
+    rewrite、runtime 実体が無く、標準ヘッダ経由で link できない状態だった。
+- 根本対応:
+  - `include/stdlib.h` に `div_t` / `ldiv_t` / `lldiv_t` と `div()` / `ldiv()` / `lldiv()` prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に struct return の runtime 実体を追加し、
+    quotient は C の `/`、remainder は `numer - quot * denom` で計算するようにした。
+  - `imaxdiv()` は `long long` ベースの `lldiv()` 実体を共有する wrapper として追加した。
+  - struct return 用の局所 struct は `{0, 0}` 初期化し、selfhost runtime compile の未初期化警告を避けた。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `div` / `ldiv` / `lldiv` / `imaxdiv` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `libc_runtime.c` smoke に負値を含む
+    `div()` / `ldiv()` / `lldiv()` / `imaxdiv()` の quotient / remainder 確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.div>` / `<env.ldiv>` / `<env.lldiv>` / `<env.imaxdiv>` の import 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `<stdlib.h>` 経由 smoke に struct return の `div` family 確認を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要にも追加した。
+- 残り:
+  - 分母 0 は C 標準どおり未定義動作として扱い、runtime で診断はしていない。
+  - `imaxdiv()` は現在の `intmax_t == long long` 方針に合わせた実装。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き469）: `time.h` の標準 time conversion runtime 対応
+- 見つかった未対応:
+  - `include/time.h` は `time()` / `clock()` / `difftime()` / `localtime()` までで、
+    標準 C の `gmtime()` / `mktime()` / `asctime()` / `ctime()` / `strftime()` が未宣言だった。
+  - runtime 側の `localtime()` も epoch 0 専用に近い stub で、非 0 秒を `struct tm` に分解できなかった。
+  - linker の runtime symbol 判定と rewrite にも上記 time conversion API が無く、標準ヘッダ経由では
+    default runtime link できない状態だった。
+- 根本対応:
+  - `include/time.h` に `gmtime()` / `mktime()` / `asctime()` / `ctime()` / `strftime()` prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に epoch 秒から UTC `struct tm` を組み立てる共通 helper を追加し、
+    `localtime()` と `gmtime()` を同じ C locale / UTC 固定モデルへ寄せた。
+  - `mktime()` は `struct tm` から非負 epoch 秒を作り直し、`tm_wday` / `tm_yday` / `tm_isdst` を再設定する。
+  - `asctime()` / `ctime()` は C locale の固定英語名で標準形の文字列を返し、`strftime()` は `%Y` / `%m` /
+    `%d` / `%H` / `%M` / `%S` / `%a` / `%A` / `%b` / `%B` / `%j` / `%w` / `%F` / `%T` /
+    `%c` / `%x` / `%X` / `%%` を扱う最小実装にした。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `gmtime` / `mktime` / `asctime` / `ctime` / `strftime` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `localtime_state.c` と統合 `libc_runtime.c` に、
+    1970-01-02 01:01:01 UTC、`asctime()` / `ctime()` 文字列、`strftime()` 成功/容量不足、
+    `mktime()` 正規化、`--nostdlib` import 残りの確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `<time.h>` 経由の JS pipeline smoke を追加した。
+- 残り:
+  - timezone / DST / 非 C locale は未対応で、`localtime()` は現状 `gmtime()` と同じ UTC 固定。
+  - 負の epoch 秒は 1970-01-01 へ丸める簡易実装。`mktime()` も主に 1970 年以降を対象にしている。
+  - `strftime()` は主要 subset のみで、locale-dependent specifier や week number 系は未対応。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+    （途中、`struct tm` の静的 buffer 上書き前提をテスト側が誤っていて `linked_localtime_state` が一度 `i32:1`、
+    修正後 green）
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き479）: `math.h` decomposition/sign helper runtime 対応
+- 見つかった未対応:
+  - `math.h` の `frexp` / `ldexp` / `modf` / `copysign` / `nan` と f/l wrappers が
+    header/runtime/linker に無かった。
+  - JS env math import も pointer result を書く `frexp` / `modf` に必要な wasm memory 書き込み経路を持っていなかった。
+  - `tgmath.h` も今回追加する f/l wrappers を type-generic dispatch の候補に持っていなかった。
+- 根本対応:
+  - `include/math.h` に `frexp` / `frexpf` / `frexpl`, `ldexp` / `ldexpf` / `ldexpl`,
+    `modf` / `modff` / `modfl`, `copysign` / `copysignf` / `copysignl`, `nan` / `nanf` / `nanl`
+    を追加した。
+  - `include/tgmath.h` の f/l prototype と macro dispatch に `frexp` / `ldexp` / `modf` / `copysign`
+    を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/math.c` に runtime 実装を追加した。
+    `frexp` / `modf` は wasm address pointer へ結果を書き、`copysign` は既存 `signbit` helper と `fabs` を使う。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に上記 symbols を追加した。
+  - `tools/wasm_js_api/agc-runtime-imports.js` の math imports に memory getter を渡せるようにし、
+    `frexp` / `modf` が wasm memory の `int` / `float` / `double` slot へ書けるようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に統合 smoke と `--nostdlib` import grep を追加した。
+    巨大な統合 `main` にローカルを増やすと `E4007` になったため、実行確認は `math_decomp_check()` helper に分離した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `useStdlib:false` JS import smoke と
+    標準 `<math.h>` 経由 linked runtime smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に追記した。
+- 残り:
+  - `frexp` / `ldexp` は単純な 2 倍/1/2 ループ実装で、通常規模の値を対象にした最小 runtime 実装。
+  - `nan(tagp)` は tag payload を解釈せず NaN を返す。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-runtime-imports.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_decomp_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `make test-wasm-js-api` = `ag_c wasm JS API smoke: ok` / `package exports smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き478）: `math.h` classification/comparison runtime 対応
+- 見つかった未対応:
+  - `include/math.h` は三角関数、丸め、`fmin` / `fmax` などは持っていたが、
+    C99/C11 の classification / comparison API (`fpclassify`, `isfinite`, `isinf`, `isnan`,
+    `isnormal`, `signbit`, `isgreater`, `isgreaterequal`, `isless`, `islessequal`,
+    `islessgreater`, `isunordered`) が無かった。
+  - linked runtime object と JS env import のどちらにも同名 symbol が無く、標準 `<math.h>` 経由でも
+    `useStdlib:false` の JS import 経路でも使えない状態だった。
+- 根本対応:
+  - `include/math.h` に `FP_NAN` / `FP_INFINITE` / `FP_ZERO` / `FP_SUBNORMAL` / `FP_NORMAL` と
+    classification / comparison 関数宣言を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/math.c` に runtime 実装を追加した。
+    `isnan` は自己比較警告を避ける比較式、`signbit` は `-0.0` を拾うため `1.0 / x` の符号も見る。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に上記 symbols を追加した。
+  - `tools/wasm_js_api/agc-runtime-imports.js` の math env import に同じ API を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の統合 `libc_runtime.c` と `--nostdlib` import grep に
+    classification / comparison smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に、`useStdlib:false` の JS math import smoke と
+    標準 `<math.h>` 経由の linked runtime smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に追記した。
+- 残り:
+  - 標準では多くが macro だが、このリポジトリの標準ヘッダ方針に合わせて link 可能な関数宣言として公開している。
+  - `signbit(NaN)` の payload/sign bit までは区別しない。通常の負数と `-0.0` は検出する。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-runtime-imports.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_class_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き477）: JS stdio import の wide I/O 同期
+- 見つかった未対応:
+  - 続き476で linked runtime object には wide character I/O を追加したが、
+    `tools/wasm_js_api/agc-runtime-imports.js` の `createAgcRuntimeStdioEnvImports()` は
+    byte stdio (`fgetc` / `fputs` / `fread` / `fwrite` など) までで、
+    `useStdlib:false` の JS env import 経路では `fgetwc` / `fputwc` / `fgetws` / `fputws` / `fwide`
+    が未解決になる状態だった。
+  - JS import 側には `ungetc` も無く、stdin pushback を使う stdio smoke が書けなかった。
+- 根本対応:
+  - `tools/wasm_js_api/agc-runtime-imports.js` の stdio helper に stdin pushback を追加し、
+    `fgetc` / `fgets` / `fread` が同じ byte reader を通るようにした。
+  - JS env import に `ungetc` を追加した。
+  - JS env import に `fgetwc` / `getwc` / `getwchar` / `fputwc` / `putwc` / `putwchar` /
+    `ungetwc` / `fgetws` / `fputws` / `fwide` を追加した。
+    入力は UTF-8 byte 列から `wchar_t` code point へ decode し、出力は JS string として stdout/stderr callback へ流す。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `useStdlib:false` の JS import 専用 wide stdio smoke を追加した。
+- 残り:
+  - JS import 側の `ungetwc()` も linked runtime に合わせて ASCII pushback のみ対応。非 ASCII は `-1`。
+  - JS import 側は browser/API の軽量 import 経路なので、file stream table や orientation state は持たない。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-runtime-imports.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `git diff --check` = **green**
+
+### このセッション（続き476）: `wchar.h` wide character I/O runtime 対応
+- 見つかった未対応:
+  - C11 `wchar.h` の wide character I/O (`fgetwc` / `getwc` / `getwchar`,
+    `fputwc` / `putwc` / `putwchar`, `ungetwc`, `fgetws`, `fputws`, `fwide`) が
+    header / runtime / linker rewrite に無かった。
+  - byte-oriented `stdio` と UTF-8 wide conversion runtime は既にあったが、標準 wide I/O API から使えない状態だった。
+- 根本対応:
+  - `include/stdio.h` / `include/wchar.h` の `FILE` typedef guard を整理した。
+    JS browser shim の `#define FILE void` と実 `wchar.h` の typedef が衝突しないよう、
+    `tools/wasm_js_api/agc-include-inline.js` 側にも `_FILE_T` を定義し、`wchar.h` 側は `#ifndef FILE` も見る。
+  - `include/wchar.h` に wide character I/O prototype 一式を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/wide.c` に byte I/O forward declaration と runtime 実装を追加した。
+    `fputwc()` は `wcrtomb()` + `fputc()`、`fgetwc()` は UTF-8 byte 列 + `mbrtowc()` で変換する。
+    `getwc` / `getwchar` / `putwc` / `putwchar` alias、`fgetws()` / `fputws()`、簡易 `fwide()` も追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に wide I/O symbols を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に standalone `wide_io_state.c` と統合 `libc_runtime.c` の参照、
+    `--nostdlib` objdump import 確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `<stdio.h>` + `<wchar.h>` 経由の file wide I/O と
+    `putwchar()` stdout smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に wide character I/O を追記した。
+- 残り:
+  - `ungetwc()` は既存 stream が 1-byte pushback のため ASCII のみ対応。非 ASCII pushback は `WEOF` を返す。
+  - `fwide()` は orientation state を保持せず、`mode` の符号を返す簡易実装。
+  - wide I/O は UTF-8 / C locale 前提で、locale-dependent な stateful encoding は未対応。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_wide_io_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き475）: `stdlib.h` `aligned_alloc()` / quick termination runtime 対応
+- 見つかった未対応:
+  - C11 `stdlib.h` の `aligned_alloc()`、`at_quick_exit()`、`quick_exit()`、`_Exit()` が
+    `include/stdlib.h`、runtime 実体、linker rewrite に無かった。
+  - 既存 runtime は `malloc` / `calloc` / `realloc` と `atexit()` / `exit()` / `abort()` を持っていたが、
+    aligned allocation と quick termination family だけ標準ヘッダ経由で link できない状態だった。
+- 根本対応:
+  - `include/stdlib.h` に `aligned_alloc()`、`_Exit()`、`at_quick_exit()`、`quick_exit()` の prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/memory.c` に `__agc_runtime_aligned_alloc()` を追加した。
+    alignment は正の 2 冪、size は alignment の倍数を要求し、返す pointer 自体を指定 alignment にそろえる。
+    既存 `realloc()` が読む `ptr - 8` の size metadata も保つ。
+  - `tools/wasm_obj_linker/runtime/parts/common.c` に quick-exit handler stack を追加し、
+    runtime reset 時に `atexit` と同じく初期化するようにした。
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に `__agc_runtime_at_quick_exit()` /
+    `__agc_runtime_quick_exit()` / `__agc_runtime__Exit()` を追加した。
+    `quick_exit()` は quick-exit handler だけを LIFO で実行し、`atexit` handler は実行しない。
+    `_Exit()` はどちらの handler も実行しない。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `aligned_alloc` / `at_quick_exit` / `quick_exit` / `_Exit` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `alloc_state.c` と統合 `libc_runtime.c` に alignment 成功、
+    不正 alignment、size 非倍数、zero size の確認を追加した。
+  - `atexit_state.c` には `at_quick_exit()` の NULL 登録、32 件登録、上限超過確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.aligned_alloc>` / `<env.at_quick_exit>` /
+    `<env.quick_exit>` / `<env._Exit>` を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に、標準 `<stdlib.h>` 経由の `aligned_alloc()` smoke と、
+    `quick_exit()` / `_Exit()` の trap、stdout、termination kind/status 確認を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要にも追加した。
+- 残り:
+  - allocator は bump allocator のままで、`free()` は引き続き no-op。
+  - `aligned_alloc()` は C11 の size multiple rule を要求する。実装が対応する alignment は 2 冪の範囲。
+  - termination kind は runtime 内部確認用に `exit=1` / `abort=2` / `quick_exit=3` / `_Exit=4` として記録している。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_c11_process_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き474）: `time.h` `timespec_get()` runtime 対応
+- 見つかった未対応:
+  - C11 `time.h` の `struct timespec` / `TIME_UTC` / `timespec_get()` が、
+    `include/time.h`、runtime 実体、linker rewrite に無かった。
+  - 既存 runtime は `time()` / `clock()` / `difftime()` / `strftime()` まで持っていたため、
+    C11 の時刻取得 API だけ標準ヘッダ経由で link できない状態だった。
+- 根本対応:
+  - `include/time.h` に `struct timespec`、`TIME_UTC`、`int timespec_get(struct timespec *ts, int base);`
+    を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` に `__agc_runtime_timespec_get()` を追加した。
+    既存 `time()` と同じ deterministic runtime 方針に合わせ、`TIME_UTC` の時は `tv_sec=0` / `tv_nsec=0`
+    を設定して base を返し、不正 base や NULL pointer は 0 を返す。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `timespec_get` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `localtime_state.c` と統合 `libc_runtime.c` に
+    `TIME_UTC` 成功、不正 base 失敗、戻り値と timespec field の確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.timespec_get>` を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `<time.h>` pipeline smoke に
+    `timespec_get()` 実行確認を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に `timespec_get` を追記した。
+- 残り:
+  - `time()` と同じく deterministic epoch 0 の簡易 runtime。実時計、高精度 clock、timezone は未対応。
+  - `timespec_getres()` は C23 API なので今回の C11 runtime 対応には含めていない。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_timespec_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き473）: `wchar.h` `wcsftime()` runtime 対応
+- 見つかった未対応:
+  - C11 `wchar.h` の `wcsftime()` が、`include/wchar.h`、runtime 実体、linker rewrite に無かった。
+  - `time.h` 側の `strftime()` は runtime 済みだったが、wide 版だけ標準ヘッダ経由で default runtime link
+    できない状態だった。
+- 根本対応:
+  - `include/wchar.h` に
+    `size_t wcsftime(wchar_t *wcs, size_t maxsize, const wchar_t *format, const struct tm *timeptr);`
+    を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/wide.c` に `__agc_runtime_wcsftime()` を追加した。
+    wide format を読み、既存 `ag_rt_strftime_put_format()` の C locale subset を再利用して
+    wide buffer へ出力する。容量不足時は `strftime()` と同じく 0 を返す。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `wcsftime` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `localtime_state.c` と統合 `libc_runtime.c` に
+    `%F %T` / `%a` / 容量不足の実行確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.wcsftime>` を追加し、default runtime 無効時は import として
+    残ることも確認している。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `<time.h>` pipeline smoke に `<wchar.h>` 経由の
+    `wcsftime()` 実行確認を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に `wcsftime` を追記した。
+- 残り:
+  - `strftime()` と同じ C locale / subset 実装。locale-dependent specifier や week number 系は未対応。
+  - wide format の specifier は ASCII/C locale 前提。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_wcsftime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き472）: `wchar.h` `mbrlen()` / `mbsinit()` runtime 対応
+- 見つかった未対応:
+  - C11 `wchar.h` の restartable multibyte state API である `mbrlen()` / `mbsinit()` が、
+    `include/wchar.h`、runtime 実体、linker rewrite に無かった。
+  - 既に `mbrtowc()` / `wcrtomb()` / `mbsrtowcs()` / `wcsrtombs()` は入っていたため、
+    同じ multibyte state API 群の中で片方だけ標準ヘッダ経由で link できない状態だった。
+- 根本対応:
+  - `include/wchar.h` に `size_t mbrlen(const char *s, size_t n, mbstate_t *ps);` と
+    `int mbsinit(const mbstate_t *ps);` を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/wide.c` に `__agc_runtime_mbrlen()` /
+    `__agc_runtime_mbsinit()` を追加した。現 runtime は UTF-8 の stateless model なので、
+    `mbrlen()` は既存 `mbrtowc(NULL, s, n, ps)` に委譲し、`mbsinit()` は常に initial state として 1 を返す。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `mbrlen` / `mbsinit` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `utf8_wide_state.c` と統合 `libc_runtime.c` に、
+    ASCII / 3-byte UTF-8 / 4-byte UTF-8 / incomplete sequence / reset / NULL state の確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.mbrlen>` / `<env.mbsinit>` を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `<wchar.h>` 経由の JS pipeline smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要にも restartable multibyte helpers を追記した。
+- 残り:
+  - `mbstate_t` の実状態は持たない stateless 実装。shift state を持つ locale/encoding は未対応。
+  - `mbrlen()` の変換規則は既存 `mbrtowc()` と同じく UTF-8 subset 前提。
+- 確認:
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_mbrlen_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き471）: `wchar.h` wide string collation/span/tokenizer runtime 対応
+- 見つかった未対応:
+  - `wchar.h` に `wcscoll()` / `wcsxfrm()` / `wcsspn()` / `wcscspn()` /
+    `wcspbrk()` / `wcstok()` の prototype が無く、標準ヘッダ経由で使えなかった。
+  - runtime 側にも上記 wide string API の実体が無く、linker の runtime symbol 判定と rewrite にも
+    登録されていなかったため、default runtime link で未解決 import として残る状態だった。
+- 根本対応:
+  - `include/wchar.h` に `wcscoll()` / `wcsxfrm()` / `wcsspn()` / `wcscspn()` /
+    `wcspbrk()` / `wcstok()` prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/wide.c` に C locale 前提の wide string 実装を追加した。
+    `wcscoll()` は `wcscmp()` 相当、`wcsxfrm()` は変換後長と容量付き copy、span/search 系は
+    wide 文字単位の membership scan として実装している。
+  - `wcstok()` は caller が渡す save pointer を更新する in-buffer tokenizer として実装し、
+    連続 delimiter の skip、token 終端の NUL 書き込み、最終 NULL 返却を確認している。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `wcscoll` / `wcsxfrm` / `wcsspn` / `wcscspn` / `wcspbrk` / `wcstok` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の統合 `libc_runtime.c` に wide collation / transform /
+    span / break / tokenizer の実行確認を追加し、`--nostdlib` objdump smoke に同名 import 維持も追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の既存 `<wchar.h>` pipeline source に同じ
+    wide string smoke を統合した。別の `<wchar.h>` source を同一 selfhost compiler instance で追加すると
+    anonymous `mbstate_t` typedef の重複を踏むため、今回の runtime helper 検証は既存 source にまとめた。
+  - さらにこの挙動は shallow なテスト回避になり得るため、`ps_reset_translation_unit_state()` から
+    file-scope semantic table 全体を初期化する `psx_ctx_reset_translation_unit_scope()` を呼ぶようにした。
+    これで JS API / toolchain が同じ compiler instance を使い回して複数 source を object 化しても、
+    前 source の typedef / tag / enum / function-name 状態が次 source に漏れない。
+  - `test_compile_link_pipeline.mjs` には、別々の source がそれぞれ `<wchar.h>` を読む regression を追加し、
+    同一 compiler instance 上で `mbstate_t` typedef が重複診断にならないことを確認している。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要にも wide string span/tokenizer 群を追記した。
+- 残り:
+  - `wcscoll()` / `wcsxfrm()` は C locale 前提で、locale-dependent collation / transformation は未対応。
+  - `wcstok()` は標準どおり caller-provided save pointer を使う範囲の実装で、thread-local tokenizer は持たない。
+- 確認:
+  - `make -j4 build/ag_c`
+  - `make -j4 build/ag_c_wasm`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_nosuppress.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き470）: `wchar.h` wide `wcsto*` conversion family runtime 対応
+- 見つかった未対応:
+  - `wchar.h` の wide numeric conversion は `wcstol()` / `wcstoul()` / `wcstod()` までで、
+    標準 C の `wcstoll()` / `wcstoull()` / `wcstof()` / `wcstold()` が未宣言だった。
+  - runtime 側の `wcstol()` / `wcstoul()` / `wcstod()` は独自の簡易 parser で、
+    stdlib 側で対応済みの overflow / errno / hex float / `inf` / `nan(payload)` と挙動が揃っていなかった。
+  - linker の runtime symbol 判定と rewrite にも上記 wide conversion API が無く、
+    default runtime link できない状態だった。
+- 根本対応:
+  - `include/wchar.h` に `wcstoll()` / `wcstoull()` / `wcstof()` / `wcstold()` prototype を追加した。
+  - `tools/wasm_obj_linker/runtime/libagc_runtime.c` の include 順を `stdlib.c` → `wide.c` にし、
+    wide conversion が既存の `strto*` runtime 実装へ委譲できる依存方向に整理した。
+  - `tools/wasm_obj_linker/runtime/parts/wide.c` の wide conversion は、wide ASCII 入力を一時 char buffer へ写し、
+    値と errno は `strtol` / `strtoul` / `strtoll` / `strtoull` / `strtof` / `strtod` / `strtold`
+    runtime に委譲するようにした。
+  - `endptr` は char 側 end pointer への依存を避け、wide 文字列上で整数/浮動小数/special float の終端を
+    自前計算して返すようにした。これで selfhost wasm 上の local/static end storage 差に依存しない。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に
+    `wcstoll` / `wcstoull` / `wcstof` / `wcstold` を追加した。
+  - 追加中に `format.c` の `ag_rt_vscan_consumed()` が、selfhost runtime compile で
+    `va_list` / pointer 引数の形によって parser の K&R 誤認を踏むことが分かったため、
+    内部 helper は address を `long` で受け取り、consumed/input_failure を static storage で返す形にした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `wide_strto_state.c` と統合 `libc_runtime.c` に、
+    long long / unsigned long long / float / long double / overflow errno / `inf` / endptr の確認を追加した。
+  - `--nostdlib` objdump smoke に `<env.wcstoll>` / `<env.wcstoull>` / `<env.wcstof>` / `<env.wcstold>` を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `<wchar.h>` 経由の JS pipeline smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要にも wide conversion variant を追加した。
+- 残り:
+  - wide → char 変換は現 runtime の C locale / ASCII 前提。非 ASCII の数値文字や非 C locale は未対応。
+  - `wcstold()` の runtime 内部実体は現 Wasm ABI に合わせて f64 相当で返す。ヘッダ上の public API は
+    `long double` のまま。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_nosuppress.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe_nosuppress.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き454）: stdio `fgetpos()` / `fsetpos()` runtime 対応
+- 見つかった浅い箇所:
+  - `fseek()` / `ftell()` / `rewind()` は runtime 対応済みだったが、同じ位置管理 API である
+    `fgetpos()` / `fsetpos()` と `fpos_t` が `stdio.h`、linker rewrite、runtime 実体に無かった。
+  - そのため標準ヘッダ経由で `fpos_t pos; fgetpos(f, &pos); fsetpos(f, &pos);` を使うコードは
+    compile / link できない状態だった。
+- 根本対応:
+  - `include/stdio.h` と `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に
+    `typedef long fpos_t;` と `fgetpos()` / `fsetpos()` prototype を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `fgetpos` /
+    `__agc_runtime_fgetpos`、`fsetpos` / `__agc_runtime_fsetpos` を追加した。
+  - runtime では `fgetpos()` を現在の stream position 保存、`fsetpos()` を `fseek(stream, *pos, SEEK_SET)`
+    相当として実装し、既存の `ag_rt_file_set_pos()` 経路を使うことで `ungetc()` pushback も位置変更時に破棄されるようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `fpos_state.c` を追加し、保存位置への復帰、`ungetc()` 後の
+    `fsetpos()` が pushback を破棄すること、NULL `pos` failure を確認した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも、標準ヘッダ経由で同じ位置復帰 /
+    pushback 破棄 / NULL failure smoke を追加した。
+- 残り:
+  - `fpos_t` は runtime の単純な byte offset として扱っており、multi-byte state や locale-dependent state は未対応。
+  - runtime はまだ単一ファイルバッファで、複数 path / OS 的な unlink / rename semantics は未対応のまま。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き449）: stdio `ungetc()` runtime 対応
+- 見つかった浅い箇所:
+  - `stdio.h` / linker runtime symbol 判定 / runtime rewrite / runtime 実体のいずれにも
+    `ungetc()` が無かった。
+  - さらに単に `fgetc()` だけへ個別対応すると、`fread()` や `fgets()` が pushback 文字を無視する
+    その場限りの実装になるため、読み取り経路の共有化が必要だった。
+- 根本対応:
+  - `include/stdio.h` に `int ungetc(int c, FILE *stream);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `ungetc` /
+    `__agc_runtime_ungetc` を追加した。
+  - `struct ag_rt_file` に 1 文字分の pushback 状態を持たせ、
+    `fgetc()` / `getc()` / `fread()` / `fgets()` が共通の `ag_rt_file_read_char()` で消費するようにした。
+  - `ungetc()` 成功時は EOF 状態を解除し、`fseek()` / `rewind()` / 明示的な位置更新では pushback を破棄するようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `ungetc_state.c` を追加し、
+    `fgetc` / `getc` / `fread` / `fgets` / EOF 後 pushback / 二重 pushback 失敗を確認した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも
+    標準ヘッダ経由の `ungetc()` smoke を追加した。
+- 残り:
+  - runtime の stream はまだ単一ファイルバッファモデルのまま。
+  - `scanf` / `fscanf` 系は独自 scanner が直接 stream buffer と `pos` を読むため、
+    `ungetc()` の pushback を scanner 入力へ完全統合するには次の refactor が必要。
+  - 非 C locale、浮動小数出力の巨大値境界、OS 的な複数 path/file semantics は未対応。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き452）: stdio `rename()` runtime 対応
+- 見つかった未対応:
+  - 標準 `stdio.h` の file operation である `rename()` が、
+    `include/stdio.h` / linker runtime symbol 判定 / runtime rewrite / runtime 実体のいずれにも無かった。
+  - `remove()` は既に入っていたため、同じ file operation 群で片方だけ link できない状態だった。
+- 対応:
+  - `include/stdio.h` に `int rename(const char *oldpath, const char *newpath);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `rename` /
+    `__agc_runtime_rename` を追加した。
+  - runtime の単一ファイルバッファモデルに合わせ、`__agc_runtime_rename()` は
+    NULL 引数を失敗にし、非 NULL 引数では内容を保持したまま成功する簡易実装にした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `remove_state.c` に
+    NULL failure と rename 後の読み取り smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも
+    `rename()` smoke を追加した。
+- 残り:
+  - runtime はまだ単一ファイルバッファで、複数 path / 上書き / ディレクトリ / OS 的な rename semantics は未対応。
+  - 非 C locale、浮動小数出力の巨大値境界、OS 的な file semantics 全般はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き451）: `getline()` の `ungetc()` pushback 対応
+- 見つかった浅い箇所:
+  - `fgetc()` / `getc()` / `fread()` / `fgets()` / `scanf()` / `fscanf()` は
+    `ungetc()` の pushback を見るようになったが、`getline()` はまだ
+    `ag_rt_stream_buf()` と `f->pos` を直接読んでいた。
+  - そのため `fgetc(f); ungetc('Z', f); getline(&line, &cap, f);` のような入力で、
+    pushback 文字を行頭として扱えない境界が残っていた。
+- 根本対応:
+  - `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `getline()` を、
+    pushback 状態を消費する read helper 経由に変更した。
+  - 既存 runtime の簡易 `realloc()` は元ポインタの header を前提にするため、
+    stack buffer から grow する既存 smoke と衝突しないよう、行内容は一度 `ag_rt_getline_tmp` に読み、
+    必要容量を決めてから line buffer へコピーする方式にした。
+  - `stdio.c` の `ag_rt_file_read_char()` を `common.c` へ移す案は selfhost compile が後段で崩れたため採らず、
+    `getline()` 用の局所 helper に留めた。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `getline_state.c` に
+    `ungetc()` 後の `getline()` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link `getline()` 経路にも
+    `getchar()` / `ungetc()` / `getline()` の smoke を追加した。
+- 残り:
+  - runtime の stream はまだ単一ファイルバッファモデルのまま。
+  - 非 C locale、浮動小数出力の巨大値境界、OS 的な複数 path/file semantics は未対応。
+  - `getline()` は runtime の固定一時バッファ容量内での簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
+### このセッション（続き450）: `ungetc()` pushback の `scanf` / `fscanf` 統合
+- 見つかった浅い箇所:
+  - `ungetc()` は `fgetc()` / `getc()` / `fread()` / `fgets()` では消費されるようになったが、
+    `scanf()` / `fscanf()` は stream buffer と `pos` を直接 `scan_buf` にコピーしていた。
+  - そのため `ungetc('9', f); fscanf(f, "%d", &x);` のような入力では、
+    pushback 文字を scanner が見ないまま読み進める境界が残っていた。
+- 根本対応:
+  - `ag_rt_vfscan()` で `has_ungetc` が立っている場合、pushback 文字を `scan_buf` の先頭へ入れてから
+    実 stream の残りをコピーするようにした。
+  - scanner の消費量を実 stream の `pos` に反映するとき、pushback 文字分は実位置を進めず、
+    消費された場合だけ pushback 状態を破棄するようにした。
+  - 入力不一致で消費量 0 の場合は pushback を保持するため、後続の `fgetc()` で同じ文字を読める。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `ungetc_state.c` に
+    `fscanf()` 成功、`%n` の仮想入力カウント、不一致時の pushback 保持、EOF 後 pushback の scan を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも
+    `ungetc()` 後の `fscanf()` smoke を追加した。
+- 残り:
+  - runtime の stream はまだ単一ファイルバッファモデルのまま。
+  - 非 C locale、浮動小数出力の巨大値境界、OS 的な複数 path/file semantics は未対応。
+  - `sscanf` / `swscanf` はメモリ文字列入力なので、今回の stream pushback 対象外。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = 初回は selfhost linker 生成で `E4007` 一時失敗、
+    `bash scripts/build_wasm_linker_selfhost.sh build/wasm_linker_selfhost` 単体再実行後、
+    再実行で `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check` = **green**
+
 ### このセッション（続き444）: printf length modifier / `%n` 対応
 - 見つかった浅い箇所:
   - `printf` / `snprintf` の flag と floating family は広がってきたが、format parser が
@@ -5658,6 +6644,42 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
   - `git diff --check` = **green**
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`（並列実行時に stale build 由来の一時失敗、単独再実行で green）
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き453）: stdio `setbuf()` / `setvbuf()` runtime 対応と JS inline header 同期
+- 見つかった浅い箇所:
+  - `stdio.h` の file / buffering 系は `fflush()` まで runtime 対応済みだったが、標準 C の
+    `setbuf()` / `setvbuf()` と `BUFSIZ` / `_IOFBF` / `_IOLBF` / `_IONBF` が未定義だった。
+  - そのため標準ヘッダ経由で buffering API を呼ぶコードは compile / link できない状態だった。
+  - さらに `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim が実ヘッダに追随しておらず、
+    JS pipeline では `loadInclude` より先に shim が使われるため、新しい stdio API が見えない穴があった。
+- 根本対応:
+  - `include/stdio.h` に `BUFSIZ`、buffering mode 定数、`setbuf()` / `setvbuf()` prototype を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `setbuf` /
+    `__agc_runtime_setbuf`、`setvbuf` / `__agc_runtime_setvbuf` を追加した。
+  - runtime の単一 file-buffer モデルでは実バッファ切替を持たないため、`setvbuf()` は stream が有効で
+    mode が `_IOFBF` / `_IOLBF` / `_IONBF` の範囲なら no-op success、invalid mode や未知 stream は failure にした。
+  - `setbuf()` は標準通り戻り値なしで、内部的に `setvbuf(stream, buf, buf ? _IOFBF : _IONBF, BUFSIZ)`
+    相当へ委譲する形にした。
+  - `tools/wasm_js_api/agc-include-inline.js` の built-in `stdio.h` shim に、今回の buffering API だけでなく
+    直近で追加した `ungetc()` / `remove()` / `rename()` も同期した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `setvbuf_state.c` を追加し、stdout / stderr / file stream の
+    valid no-op、invalid mode failure、`setbuf()` 後も read / write が壊れないことを確認した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも `BUFSIZ` / mode 定数 /
+    `setbuf()` / `setvbuf()` smoke を追加した。
+- 残り:
+  - runtime はまだ単一ファイルバッファで、実際の buffering strategy 切替、ユーザー提供バッファ保持、
+    flush timing の差分は未実装。
+  - 複数 path / OS 的な unlink / rename semantics、非 C locale、浮動小数出力の巨大値境界は未対応のまま。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
   - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
   - `./build/test_e2e` = **1186/1186 OK**

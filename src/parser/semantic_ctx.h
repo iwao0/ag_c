@@ -6,6 +6,7 @@
 #include <stdbool.h>
 
 void psx_ctx_reset_function_scope(void);
+void psx_ctx_reset_translation_unit_scope(void);
 void psx_ctx_reset_function_names(void);
 /* 各 parse 開始時に呼ぶソフトリセット: 関数情報は残し、診断フラグ (is_defined / nargs_set_once
  * / ret_set_once / param_categories) のみクリア。 */

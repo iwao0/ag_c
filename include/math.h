@@ -1,6 +1,12 @@
 #ifndef _MATH_H
 #define _MATH_H
 
+#define FP_NAN 0
+#define FP_INFINITE 1
+#define FP_ZERO 2
+#define FP_SUBNORMAL 3
+#define FP_NORMAL 4
+
 double acos(double x);
 double asin(double x);
 double atan(double x);
@@ -34,6 +40,11 @@ double trunc(double x);
 
 double fabs(double x);
 double fmod(double x, double y);
+double frexp(double x, int *exp);
+double ldexp(double x, int exp);
+double modf(double x, double *iptr);
+double copysign(double x, double y);
+double nan(const char *tagp);
 double hypot(double x, double y);
 double fmin(double x, double y);
 double fmax(double x, double y);
@@ -73,11 +84,34 @@ float truncf(float x);
 long double truncl(long double x);
 float fmodf(float x, float y);
 long double fmodl(long double x, long double y);
+float frexpf(float x, int *exp);
+long double frexpl(long double x, int *exp);
+float ldexpf(float x, int exp);
+long double ldexpl(long double x, int exp);
+float modff(float x, float *iptr);
+long double modfl(long double x, long double *iptr);
+float copysignf(float x, float y);
+long double copysignl(long double x, long double y);
+float nanf(const char *tagp);
+long double nanl(const char *tagp);
 float hypotf(float x, float y);
 long double hypotl(long double x, long double y);
 float fminf(float x, float y);
 long double fminl(long double x, long double y);
 float fmaxf(float x, float y);
 long double fmaxl(long double x, long double y);
+
+int fpclassify(double x);
+int isfinite(double x);
+int isinf(double x);
+int isnan(double x);
+int isnormal(double x);
+int signbit(double x);
+int isgreater(double x, double y);
+int isgreaterequal(double x, double y);
+int isless(double x, double y);
+int islessequal(double x, double y);
+int islessgreater(double x, double y);
+int isunordered(double x, double y);
 
 #endif

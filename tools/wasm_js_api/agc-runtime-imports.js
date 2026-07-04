@@ -19,6 +19,67 @@ function agcFmax(x, y) {
   return Math.max(x, y);
 }
 
+function agcFpclassify(x) {
+  x = Number(x);
+  if (Number.isNaN(x)) return 0;
+  if (!Number.isFinite(x)) return 1;
+  if (x === 0) return 2;
+  return Math.abs(x) < 2.2250738585072014e-308 ? 3 : 4;
+}
+
+function agcSignbit(x) {
+  x = Number(x);
+  return x < 0 || Object.is(x, -0) ? 1 : 0;
+}
+
+function agcIsunordered(x, y) {
+  return Number.isNaN(Number(x)) || Number.isNaN(Number(y)) ? 1 : 0;
+}
+
+function agcLdexp(x, exp) {
+  return Number(x) * Math.pow(2, Number(exp) | 0);
+}
+
+function agcFrexp(memory, x, expPtr) {
+  x = Number(x);
+  if (!Number.isFinite(x) || x === 0) {
+    writeMemoryI32(memory, expPtr, 0);
+    return x;
+  }
+  const sign = x < 0 || Object.is(x, -0) ? -1 : 1;
+  let ax = Math.abs(x);
+  let exp = 0;
+  while (ax >= 1) {
+    ax /= 2;
+    exp++;
+  }
+  while (ax < 0.5) {
+    ax *= 2;
+    exp--;
+  }
+  writeMemoryI32(memory, expPtr, exp);
+  return sign * ax;
+}
+
+function agcModf(memory, x, intPtr, writeFloat) {
+  x = Number(x);
+  let whole;
+  let frac;
+  if (Number.isNaN(x)) {
+    whole = x;
+    frac = x;
+  } else if (!Number.isFinite(x)) {
+    whole = x;
+    frac = x < 0 ? -0 : 0;
+  } else {
+    whole = Math.trunc(x);
+    frac = x - whole;
+  }
+  if (writeFloat) writeMemoryF32(memory, intPtr, whole);
+  else writeMemoryF64(memory, intPtr, whole);
+  return frac;
+}
+
 function wrapMath(fn) {
   return (...args) => fn(...args.map(Number));
 }
@@ -116,6 +177,52 @@ function writeCString(memory, ptr, text, maxBytes = -1) {
   if (writeLen > 0) bytes.set(encoded.subarray(0, writeLen), ptr);
   bytes[ptr + writeLen] = 0;
   return encoded.length;
+}
+
+function readWCharString(memory, ptr, maxChars = 1024 * 1024) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return "";
+  const view = new DataView(memory.buffer);
+  const chars = [];
+  const end = Math.min(memory.buffer.byteLength, ptr + maxChars * 4);
+  for (let p = ptr; p + 3 < end; p += 4) {
+    const wc = view.getInt32(p, true);
+    if (wc === 0) break;
+    try {
+      chars.push(String.fromCodePoint(wc));
+    } catch {
+      return "";
+    }
+  }
+  return chars.join("");
+}
+
+function writeWChar(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 3 >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setInt32(ptr, Number(value) | 0, true);
+  return true;
+}
+
+function writeMemoryI32(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 3 >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setInt32(ptr, Number(value) | 0, true);
+  return true;
+}
+
+function writeMemoryF32(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 3 >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setFloat32(ptr, Number(value), true);
+  return true;
+}
+
+function writeMemoryF64(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 7 >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setFloat64(ptr, Number(value), true);
+  return true;
 }
 
 function padFormatted(text, flags, width, numeric = false) {
@@ -225,6 +332,7 @@ function makeStdio(options = {}) {
   const writeStderr = options.onStderr || writeStdout;
   const stdinBytes = normalizeBytes(options.stdin);
   let stdinOffset = 0;
+  const stdinPushback = [];
   let stdinEof = false;
   let fileError = 0;
 
@@ -289,6 +397,23 @@ function makeStdio(options = {}) {
     return 0;
   }
 
+  function readStdinByte() {
+    if (stdinPushback.length > 0) return stdinPushback.shift();
+    if (stdinOffset >= stdinBytes.length) {
+      stdinEof = true;
+      return -1;
+    }
+    return stdinBytes[stdinOffset++];
+  }
+
+  function ungetc(c, _stream) {
+    c = Number(c) | 0;
+    if (c < 0 || c > 255) return -1;
+    stdinPushback.unshift(c & 0xff);
+    stdinEof = false;
+    return c;
+  }
+
   function fwrite(ptr, size, nmemb, stream) {
     size = Number(size);
     nmemb = Number(nmemb);
@@ -326,44 +451,128 @@ function makeStdio(options = {}) {
     size = Number(size);
     nmemb = Number(nmemb);
     if (size <= 0 || nmemb <= 0) return 0n;
-    if (stdinOffset >= stdinBytes.length) {
-      stdinEof = true;
-      return 0n;
-    }
     const requested = size * nmemb;
-    const src = stdinBytes.subarray(stdinOffset, Math.min(stdinBytes.length, stdinOffset + requested));
-    const copied = writeMemoryBytes(getMemory(), ptr, src);
-    stdinOffset += copied;
-    if (copied < requested) stdinEof = true;
+    const out = new Uint8Array(requested);
+    let copied = 0;
+    while (copied < requested) {
+      const ch = readStdinByte();
+      if (ch < 0) break;
+      out[copied++] = ch;
+    }
+    if (copied === 0) return 0n;
+    writeMemoryBytes(getMemory(), ptr, out.subarray(0, copied));
     return BigInt(Math.floor(copied / size));
   }
 
   function fgetc(_stream) {
-    if (stdinOffset >= stdinBytes.length) {
-      stdinEof = true;
-      return -1;
-    }
-    return stdinBytes[stdinOffset++];
+    return readStdinByte();
   }
 
   function fgets(s, size, _stream) {
     size = Number(size);
     if (size <= 0) return 0;
-    if (stdinOffset >= stdinBytes.length) {
-      stdinEof = true;
-      return 0;
-    }
     const out = [];
-    while (out.length + 1 < size && stdinOffset < stdinBytes.length) {
-      const ch = stdinBytes[stdinOffset++];
+    while (out.length + 1 < size) {
+      const ch = readStdinByte();
+      if (ch < 0) break;
       out.push(ch);
       if (ch === 10) break;
     }
+    if (out.length === 0) return 0;
     const bytes = new Uint8Array(out.length + 1);
     bytes.set(out, 0);
     bytes[out.length] = 0;
     writeMemoryBytes(getMemory(), s, bytes);
     return Number(s);
+  }
+
+  function readUtf8CodePoint() {
+    const first = readStdinByte();
+    let need = 0;
+    let cp = 0;
+    if (first < 0) return -1;
+    if ((first & 0x80) === 0) return first;
+    if ((first & 0xe0) === 0xc0) {
+      need = 1;
+      cp = first & 0x1f;
+    } else if ((first & 0xf0) === 0xe0) {
+      need = 2;
+      cp = first & 0x0f;
+    } else if ((first & 0xf8) === 0xf0) {
+      need = 3;
+      cp = first & 0x07;
+    } else {
+      fileError = 1;
+      return -1;
+    }
+    for (let i = 0; i < need; i++) {
+      const ch = readStdinByte();
+      if (ch < 0 || (ch & 0xc0) !== 0x80) {
+        fileError = 1;
+        return -1;
+      }
+      cp = (cp << 6) | (ch & 0x3f);
+    }
+    return cp;
+  }
+
+  function fgetwc(stream) {
+    return readUtf8CodePoint(stream);
+  }
+
+  function fgetws(s, n, stream) {
+    n = Number(n) | 0;
+    if (n <= 0) return 0;
+    let count = 0;
+    while (count + 1 < n) {
+      const wc = fgetwc(stream);
+      if (wc < 0) break;
+      if (!writeWChar(getMemory(), Number(s) + count * 4, wc)) return 0;
+      count++;
+      if (wc === 10) break;
+    }
+    if (count === 0) return 0;
+    writeWChar(getMemory(), Number(s) + count * 4, 0);
+    return Number(s);
+  }
+
+  function fputwc(wc, stream) {
+    wc = Number(wc) | 0;
+    let text;
+    try {
+      text = String.fromCodePoint(wc);
+    } catch {
+      return -1;
+    }
+    if (isStderrStream(stream)) {
+      emitStderr(text);
+    } else {
+      emitStdout(text);
+    }
+    return wc;
+  }
+
+  function fputws(s, stream) {
+    const text = readWCharString(getMemory(), s);
+    if (isStderrStream(stream)) {
+      emitStderr(text);
+    } else {
+      emitStdout(text);
+    }
+    return [...text].length;
+  }
+
+  function ungetwc(wc, stream) {
+    wc = Number(wc) | 0;
+    if (wc < 0 || wc > 0x7f) return -1;
+    return ungetc(wc, stream);
+  }
+
+  function fwide(_stream, mode) {
+    mode = Number(mode) | 0;
+    if (mode > 0) return 1;
+    if (mode < 0) return -1;
+    return 0;
   }
 
   function feof(_stream) {
@@ -403,12 +612,19 @@ function makeStdio(options = {}) {
     putchar,
     fputc,
     fflush,
+    ungetc,
     fread,
     fwrite,
     write,
     lseek,
     fgetc,
     fgets,
+    fgetwc,
+    fgetws,
+    fputwc,
+    fputws,
+    ungetwc,
+    fwide,
     feof,
     ferror,
     clearerr,
@@ -440,6 +656,7 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     putchar: stdio.putchar,
     fputc: stdio.fputc,
     fflush: stdio.fflush,
+    ungetc: stdio.ungetc,
     __agc_runtime_stdout_write: stdio.runtimeStdoutWrite,
     __agc_runtime_stderr_write: stdio.runtimeStderrWrite,
     fopen: agcFopen,
@@ -452,6 +669,16 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     getc: stdio.fgetc,
     getchar: stdio.fgetc,
     fgets: stdio.fgets,
+    fgetwc: stdio.fgetwc,
+    getwc: stdio.fgetwc,
+    getwchar: stdio.fgetwc,
+    fputwc: stdio.fputwc,
+    putwc: stdio.fputwc,
+    putwchar: (wc) => stdio.fputwc(wc, 1),
+    ungetwc: stdio.ungetwc,
+    fgetws: stdio.fgetws,
+    fputws: stdio.fputws,
+    fwide: stdio.fwide,
     feof: stdio.feof,
     ferror: stdio.ferror,
     clearerr: stdio.clearerr,
@@ -459,19 +686,48 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
   };
 }
 
-export function createAgcRuntimeMathEnvImports() {
+export function createAgcRuntimeMathEnvImports(options = {}) {
+  const getMemory = options.getMemory || defaultGetMemory;
   const env = {};
   for (const def of AGC_MATH_IMPORTS) addMathImportFamily(env, ...def);
+  env.frexp = (x, expPtr) => agcFrexp(getMemory(), x, expPtr);
+  env.frexpf = (x, expPtr) => agcFrexp(getMemory(), x, expPtr);
+  env.frexpl = (x, expPtr) => agcFrexp(getMemory(), x, expPtr);
+  env.ldexp = agcLdexp;
+  env.ldexpf = agcLdexp;
+  env.ldexpl = agcLdexp;
+  env.modf = (x, intPtr) => agcModf(getMemory(), x, intPtr, false);
+  env.modff = (x, intPtr) => agcModf(getMemory(), x, intPtr, true);
+  env.modfl = (x, intPtr) => agcModf(getMemory(), x, intPtr, false);
+  env.copysign = (x, y) => (agcSignbit(y) ? -Math.abs(Number(x)) : Math.abs(Number(x)));
+  env.copysignf = env.copysign;
+  env.copysignl = env.copysign;
+  env.nan = () => Number.NaN;
+  env.nanf = env.nan;
+  env.nanl = env.nan;
+  env.fpclassify = agcFpclassify;
+  env.isfinite = (x) => Number.isFinite(Number(x)) ? 1 : 0;
+  env.isinf = (x) => !Number.isNaN(Number(x)) && !Number.isFinite(Number(x)) ? 1 : 0;
+  env.isnan = (x) => Number.isNaN(Number(x)) ? 1 : 0;
+  env.isnormal = (x) => agcFpclassify(x) === 4 ? 1 : 0;
+  env.signbit = agcSignbit;
+  env.isgreater = (x, y) => !agcIsunordered(x, y) && Number(x) > Number(y) ? 1 : 0;
+  env.isgreaterequal = (x, y) => !agcIsunordered(x, y) && Number(x) >= Number(y) ? 1 : 0;
+  env.isless = (x, y) => !agcIsunordered(x, y) && Number(x) < Number(y) ? 1 : 0;
+  env.islessequal = (x, y) => !agcIsunordered(x, y) && Number(x) <= Number(y) ? 1 : 0;
+  env.islessgreater = (x, y) => !agcIsunordered(x, y) && Number(x) !== Number(y) ? 1 : 0;
+  env.isunordered = agcIsunordered;
   return env;
 }
 
 export function createAgcRuntimeImports(imports = {}) {
   const { stdio, onStdout, onStderr, ...wasmImports } = imports;
+  const stdioOptions = stdio || {};
   return {
     ...wasmImports,
     env: {
-      ...createAgcRuntimeMathEnvImports(),
-      ...createAgcRuntimeStdioEnvImports({ ...(stdio || {}), onStdout, onStderr }),
+      ...createAgcRuntimeMathEnvImports({ getMemory: stdioOptions.getMemory }),
+      ...createAgcRuntimeStdioEnvImports({ ...stdioOptions, onStdout, onStderr }),
       ...(imports.env || {}),
     },
   };
