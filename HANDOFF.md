@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き492: asin/acos domain semantics 修正）
+最終更新: 2026-07-05（続き499: cbrt edge semantics 修正）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_asin_acos_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_cbrt_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green/up-to-date**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
@@ -32,6 +32,167 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き499: **`cbrt` runtime の edge semantics 修正**。
+  linked runtime object の `__agc_runtime_cbrt` は `x == 0.0` を一律 +0.0 に丸めており、
+  `cbrt(-0.0)` の符号を失っていた。また finite 前提の Newton iteration で、
+  `cbrt(+inf)` / `cbrt(-inf)` が `inf / inf` 経由で NaN に寄り得た。
+  runtime 側を NaN propagation、signed zero preservation、infinite input preservation の順に
+  明示処理する形へ変更した。`cbrtf` / `cbrtl` は wrapper 経由で同じ edge behavior を踏む。
+  JS import 経路は `Math.cbrt` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `cbrt` / `cbrtf` / `cbrtl` prototype と
+  `--nostdlib` import / linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも NaN、`±inf`、`-0.0` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_cbrt_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`（並行ビルド中に一度 `format.c` parse error が出たが、単独再実行で **green**）、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き498: **hyperbolic runtime の edge semantics 修正**。
+  linked runtime object の `__agc_runtime_tanh` は `exp(x)` / `exp(-x)` から
+  `(ex - em) / (ex + em)` を計算しており、`tanh(+inf)` / `tanh(-inf)` が
+  `inf / inf` 経由で NaN になり得た。
+  runtime 側を NaN propagation、`+inf -> 1.0`、`-inf -> -1.0` の順に明示処理する形へ変更した。
+  `tanhf` / `tanhl` は wrapper 経由で同じ edge behavior を踏む。
+  併せて既に domain guard 済みだった `acosh` / `atanh` についても、
+  `acosh(0.5)` -> NaN、`acosh(+inf)` -> +inf、`atanh(±1)` -> ±inf、
+  `atanh(|x| > 1)` -> NaN の回帰テストを追加した。
+  JS import 経路は `Math.sinh` / `Math.cosh` / `Math.tanh` /
+  `Math.acosh` / `Math.atanh` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも sinh/cosh/tanh の infinite input と
+  acosh/atanh の domain 境界を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_hyperbolic_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き497: **`sin` / `cos` / `tan` runtime の infinite input semantics 修正**。
+  linked runtime object の `__agc_runtime_sin` / `__agc_runtime_cos` は finite 前提で
+  range reduction しており、`sin(+inf)` / `cos(+inf)` では `inf - 2*pi` が
+  inf のまま進まず、実行時に固まり得た。`tan` も `cos` / `sin` 経由で同じ問題を踏む。
+  runtime 側を NaN propagation、infinite input -> NaN の順に明示処理する形へ変更した。
+  `sinf` / `sinl`、`cosf` / `cosl`、`tanf` / `tanl` は wrapper 経由で同じ edge behavior を踏む。
+  JS import 経路は `Math.sin` / `Math.cos` / `Math.tan` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `sinf` / `sinl` / `cos` / `cosf` /
+  `cosl` / `tan` / `tanf` / `tanl` prototype と `--nostdlib` import / linked runtime の
+  両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `±inf` 系の NaN 確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_trig_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き496: **`exp` runtime の edge semantics 修正**。
+  linked runtime object の `__agc_runtime_exp` は finite 前提で argument reduction しており、
+  `exp(+inf)` / `exp(-inf)` では `inf - ln2` / `-inf + ln2` が変化せず、
+  実行時に固まり得た。
+  runtime 側を NaN propagation、`+inf -> +inf`、`-inf -> 0.0` の順に明示処理する形へ変更した。
+  `expf` / `expl`、および `exp2` / `expm1` は wrapper 経由で同じ edge behavior を踏む。
+  JS import 経路は `Math.exp` / `Math.pow(2, x)` / `Math.expm1` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `exp` / `expf` / `expl` prototype と
+  `--nostdlib` import / linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも NaN、`+inf`、`-inf` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exp_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`（並行ビルド中に一度 `format.c` parse error が出たが、単独再実行で **green**）、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き495: **`log` runtime の edge/domain semantics 修正**。
+  linked runtime object の `__agc_runtime_log` は `x <= 0.0` を一律 0.0 に丸めており、
+  `log(0.0)` が -inf ではなく 0.0、`log(-1.0)` が NaN ではなく 0.0 になっていた。
+  さらに `log(+inf)` は normalization loop で `inf / 2.0` が inf のまま進まず、
+  実行時に固まり得た。
+  runtime 側を NaN propagation、zero -> -inf、negative -> NaN、+inf preservation の順に
+  明示処理する形へ変更した。`logf` / `logl`、および `log2` / `log10` / `log1p` は
+  wrapper 経由で同じ edge behavior を踏む。
+  JS import 経路は `Math.log` / `Math.log2` / `Math.log10` / `Math.log1p` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `log` / `logf` / `logl` /
+  `log2` / `log10` prototype と `--nostdlib` import / linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも zero、negative、NaN、+inf の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_log_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き494: **`pow` runtime の edge/domain semantics 修正**。
+  linked runtime object の `__agc_runtime_pow` は非整数指数で `x <= 0.0` を一律 0.0 に丸めており、
+  `pow(-2.0, 0.5)` が NaN ではなく 0.0 になり、`pow(+0.0, -0.5)` も +inf ではなく
+  0.0 になり得た。また NaN / ±inf 指数を整数キャストへ進める危険もあった。
+  runtime 側を `y == 0` / `x == 1`、NaN、infinite exponent、zero base、infinite base、
+  integer exponent、negative non-integer domain の順に明示処理する形へ変更した。
+  これで `pow(NaN, 0)` は 1、`pow(NaN, nonzero)` は NaN、
+  `pow(±0, negative)` は ±inf（負ゼロかつ奇数整数指数なら -inf）、
+  `pow(-2, 0.5)` は NaN になる。`powf` / `powl` は wrapper 経由で同じ挙動を踏む。
+  JS import 経路は `Math.pow` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `powf` / `powl` prototype と
+  `--nostdlib` import / linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも負の非整数底、NaN、ゼロ底の負指数、
+  負ゼロの奇数指数を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_pow_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き493: **`sqrt` runtime の edge semantics 修正**。
+  linked runtime object の `__agc_runtime_sqrt` / `__agc_runtime_sqrtf` は
+  `x <= 0.0` を一律 0.0 に丸めており、`sqrt(-1.0)` が NaN ではなく 0.0 になり、
+  `sqrt(-0.0)` の符号も失われていた。また `sqrt(+inf)` は Newton iteration の
+  `inf / inf` 経由で NaN に寄り得た。
+  runtime 側を NaN propagation、負値 domain guard、signed zero preservation、
+  +inf preservation の順に明示処理する形へ変更した。`sqrtl` は double runtime wrapper 経由で
+  同じ edge behavior を踏む。
+  JS import 経路は `Math.sqrt` のため実装変更不要だったが、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `sqrtf` / `sqrtl` prototype と
+  `--nostdlib` import / linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも負値、NaN、`-0.0`、`+inf` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_sqrt_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
 - 続き492: **`asin` / `acos` runtime の domain semantics 修正**。
   linked runtime object の `__agc_runtime_asin` / `__agc_runtime_acos` は
   `atan2(x, sqrt(1 - x*x))` で構成していたが、runtime 側の `sqrt` は負入力を 0.0 に丸めるため、

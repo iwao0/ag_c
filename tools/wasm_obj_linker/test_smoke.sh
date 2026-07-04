@@ -3593,11 +3593,25 @@ int main(void) {
          (int)(sqrt(2.0) * 1000.0) == 1414 &&
          (int)(sqrtf(2.0f) * 1000.0f) == 1414 &&
          (int)(sqrtl(2.0L) * 1000.0L) == 1414 &&
+         isnan(sqrt(-1.0)) &&
+         isnan(sqrtf(-1.0f)) &&
+         isnan(sqrtl(-1.0L)) &&
+         isnan(sqrt(math_nan)) &&
+         signbit(sqrt(-math_zero)) &&
+         sqrt(math_inf) > 1.0e300 &&
          (int)pow(2.0, 10.0) == 1024 &&
          pow_int == -8000 &&
          pow_frac >= 2998 && pow_frac <= 3002 &&
          powf_int == 32000 &&
          powl_int == 16000 &&
+         isnan(pow(-2.0, 0.5)) &&
+         isnan(powf(-2.0f, 0.5f)) &&
+         isnan(powl(-2.0L, 0.5L)) &&
+         isnan(pow(math_nan, 2.0)) &&
+         (int)pow(math_nan, 0.0) == 1 &&
+         pow(math_zero, -0.5) > 1.0e300 &&
+         signbit(pow(-math_zero, 3.0)) &&
+         pow(-math_zero, -3.0) < -1.0e300 &&
          (int)fabs(-3.5) == 3 &&
          (int)fabsf(-2.5f) == 2 &&
          (int)fabsl(-4.5L) == 4 &&
@@ -3622,6 +3636,15 @@ int main(void) {
          cosl180 <= -998 && cosl180 >= -1002 &&
          tanf45 >= 998 && tanf45 <= 1002 &&
          tanl45 >= 998 && tanl45 <= 1002 &&
+         isnan(sin(math_inf)) &&
+         isnan(sinf((float)math_inf)) &&
+         isnan(sinl((long double)math_inf)) &&
+         isnan(cos(math_inf)) &&
+         isnan(cosf((float)math_inf)) &&
+         isnan(cosl((long double)math_inf)) &&
+         isnan(tan(math_inf)) &&
+         isnan(tanf((float)math_inf)) &&
+         isnan(tanl((long double)math_inf)) &&
          fmod_pos == 1500 && fmod_neg == -1500 &&
          fmodf_pos == 1500 &&
          fmodl_pos == 1500 &&
@@ -3635,18 +3658,45 @@ int main(void) {
          cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
          cbrtf_pos >= 2998 && cbrtf_pos <= 3002 &&
          cbrtl_neg >= -2002 && cbrtl_neg <= -1998 &&
+         cbrt(math_inf) > 1.0e300 &&
+         cbrt(-math_inf) < -1.0e300 &&
+         isnan(cbrt(math_nan)) &&
+         isnan(cbrtf((float)math_nan)) &&
+         cbrtl((long double)math_inf) > 1.0e300L &&
+         signbit(cbrt(-math_zero)) &&
          exp1 >= 2716 && exp1 <= 2720 &&
          expf1 >= 2716 && expf1 <= 2720 &&
          expl1 >= 2716 && expl1 <= 2720 &&
+         exp(math_inf) > 1.0e300 &&
+         exp(-math_inf) == 0.0 &&
+         isnan(exp(math_nan)) &&
+         isnan(expf((float)math_nan)) &&
+         isnan(expl((long double)math_nan)) &&
+         exp2(math_inf) > 1.0e300 &&
+         exp2(-math_inf) == 0.0 &&
+         expm1(math_inf) > 1.0e300 &&
+         (int)expm1(-math_inf) == -1 &&
          loge >= 998 && loge <= 1002 &&
          logfe >= 998 && logfe <= 1002 &&
          logle >= 998 && logle <= 1002 &&
+         log(math_zero) < -1.0e300 &&
+         log(math_inf) > 1.0e300 &&
+         isnan(log(-1.0)) &&
+         isnan(logf(-1.0f)) &&
+         isnan(logl(-1.0L)) &&
+         isnan(log(math_nan)) &&
          log2v >= 2998 && log2v <= 3002 &&
          log2fv >= 2998 && log2fv <= 3002 &&
          log2lv >= 2998 && log2lv <= 3002 &&
+         log2(math_zero) < -1.0e300 &&
+         isnan(log2(-1.0)) &&
          log10v >= 1998 && log10v <= 2002 &&
          log10fv >= 1998 && log10fv <= 2002 &&
          log10lv >= 1998 && log10lv <= 2002 &&
+         log10(math_inf) > 1.0e300 &&
+         isnan(log10(-1.0)) &&
+         log1p(-1.0) < -1.0e300 &&
+         isnan(log1p(-2.0)) &&
          atan1 >= 783 && atan1 <= 787 &&
          atanf1 >= 783 && atanf1 <= 787 &&
          atanl1 >= 783 && atanl1 <= 787 &&
@@ -3708,6 +3758,19 @@ int main(void) {
          math_round_ext_ok &&
          sinh0 == 0 && cosh0 >= 998 && cosh0 <= 1002 &&
          tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
+         sinh(math_inf) > 1.0e300 &&
+         sinh(-math_inf) < -1.0e300 &&
+         cosh(math_inf) > 1.0e300 &&
+         cosh(-math_inf) > 1.0e300 &&
+         (int)tanh(math_inf) == 1 &&
+         (int)tanh(-math_inf) == -1 &&
+         acosh(math_inf) > 1.0e300 &&
+         isnan(acosh(0.5)) &&
+         isnan(acoshf(0.5f)) &&
+         isinf(atanh(1.0)) &&
+         isinf(atanh(-1.0)) &&
+         isnan(atanh(2.0)) &&
+         isnan(atanhl(2.0L)) &&
          atoi(" -123x") == -123 &&
          p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
          r[0] == 'A' &&

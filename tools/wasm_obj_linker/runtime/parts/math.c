@@ -1,12 +1,31 @@
+int __agc_runtime_isnan(double x);
+int __agc_runtime_isinf(double x);
+int __agc_runtime_isfinite(double x);
+int __agc_runtime_signbit(double x);
+double __agc_runtime_copysign(double x, double y);
+double __agc_runtime_fabs(double x);
+int __agc_runtime_fegetround(void);
+int __agc_runtime_feraiseexcept(int excepts);
+
 double __agc_runtime_sqrt(double x) {
-  if (x <= 0.0) return 0.0;
+  if (__agc_runtime_isnan(x)) return x;
+  if (x < 0.0) {
+    double zero = 0.0;
+    return zero / zero;
+  }
+  if (x == 0.0 || __agc_runtime_isinf(x)) return x;
   double g = x > 1.0 ? x : 1.0;
   for (int i = 0; i < 12; i++) g = (g + x / g) / 2.0;
   return g;
 }
 
 float __agc_runtime_sqrtf(float x) {
-  if (x <= 0.0f) return 0.0f;
+  if (__agc_runtime_isnan((double)x)) return x;
+  if (x < 0.0f) {
+    float zero = 0.0f;
+    return zero / zero;
+  }
+  if (x == 0.0f || __agc_runtime_isinf((double)x)) return x;
   float g = x > 1.0f ? x : 1.0f;
   for (int i = 0; i < 8; i++) g = (g + x / g) / 2.0f;
   return g;
@@ -17,8 +36,33 @@ long double __agc_runtime_sqrtl(long double x) {
 }
 
 double __agc_runtime_pow(double x, double y) {
+  if (y == 0.0 || x == 1.0) return 1.0;
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isnan(y)) return y;
+  if (__agc_runtime_isinf(y)) {
+    double ax = __agc_runtime_fabs(x);
+    double inf = 1.0 / 0.0;
+    if (ax == 1.0) return 1.0;
+    if (ax > 1.0) return y > 0.0 ? inf : 0.0;
+    return y > 0.0 ? 0.0 : inf;
+  }
   long yi = (long)y;
-  if ((double)yi == y) {
+  int y_is_int = (double)yi == y;
+  int y_is_odd_int = y_is_int && (yi & 1);
+  if (x == 0.0) {
+    if (y < 0.0) {
+      double inf = 1.0 / 0.0;
+      return __agc_runtime_signbit(x) && y_is_odd_int ? -inf : inf;
+    }
+    if (__agc_runtime_signbit(x) && y_is_odd_int) return -0.0;
+    return 0.0;
+  }
+  if (__agc_runtime_isinf(x)) {
+    double inf = 1.0 / 0.0;
+    if (y > 0.0) return __agc_runtime_signbit(x) && y_is_odd_int ? -inf : inf;
+    return __agc_runtime_signbit(x) && y_is_odd_int ? -0.0 : 0.0;
+  }
+  if (y_is_int) {
     double base = x;
     double result = 1.0;
     long n = yi < 0 ? -yi : yi;
@@ -29,7 +73,10 @@ double __agc_runtime_pow(double x, double y) {
     }
     return yi < 0 ? 1.0 / result : result;
   }
-  if (x <= 0.0) return 0.0;
+  if (x < 0.0) {
+    double zero = 0.0;
+    return zero / zero;
+  }
   return __agc_runtime_exp(y * __agc_runtime_log(x));
 }
 
@@ -106,6 +153,11 @@ long double __agc_runtime_truncl(long double x) {
 }
 
 double __agc_runtime_sin(double x) {
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isinf(x)) {
+    double zero = 0.0;
+    return zero / zero;
+  }
   double pi = 3.141592653589793;
   double two_pi = 6.283185307179586;
   while (x > pi) x = x - two_pi;
@@ -127,6 +179,11 @@ double __agc_runtime_sin(double x) {
 }
 
 double __agc_runtime_cos(double x) {
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isinf(x)) {
+    double zero = 0.0;
+    return zero / zero;
+  }
   double pi = 3.141592653589793;
   double two_pi = 6.283185307179586;
   while (x > pi) x = x - two_pi;
@@ -176,14 +233,6 @@ float __agc_runtime_tanf(float x) {
 long double __agc_runtime_tanl(long double x) {
   return (long double)__agc_runtime_tan((double)x);
 }
-
-int __agc_runtime_isnan(double x);
-int __agc_runtime_isinf(double x);
-int __agc_runtime_isfinite(double x);
-int __agc_runtime_signbit(double x);
-double __agc_runtime_copysign(double x, double y);
-int __agc_runtime_fegetround(void);
-int __agc_runtime_feraiseexcept(int excepts);
 
 double __agc_runtime_fmod(double x, double y) {
   if (__agc_runtime_isnan(x)) return x;
@@ -571,7 +620,8 @@ long double __agc_runtime_nanl(long tagp_addr) {
 }
 
 double __agc_runtime_cbrt(double x) {
-  if (x == 0.0) return 0.0;
+  if (__agc_runtime_isnan(x)) return x;
+  if (x == 0.0 || __agc_runtime_isinf(x)) return x;
   double sign = x < 0.0 ? -1.0 : 1.0;
   double a = x < 0.0 ? -x : x;
   double g = a > 1.0 ? a : 1.0;
@@ -588,6 +638,8 @@ long double __agc_runtime_cbrtl(long double x) {
 }
 
 double __agc_runtime_exp(double x) {
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isinf(x)) return x > 0.0 ? x : 0.0;
   double ln2 = 0.6931471805599453;
   int k = 0;
   while (x > ln2) {
@@ -616,7 +668,13 @@ double __agc_runtime_exp(double x) {
 }
 
 double __agc_runtime_log(double x) {
-  if (x <= 0.0) return 0.0;
+  if (__agc_runtime_isnan(x)) return x;
+  if (x == 0.0) return -1.0 / 0.0;
+  if (x < 0.0) {
+    double zero = 0.0;
+    return zero / zero;
+  }
+  if (__agc_runtime_isinf(x)) return x;
   int k = 0;
   while (x > 2.0) {
     x = x / 2.0;
@@ -885,6 +943,8 @@ long double __agc_runtime_coshl(long double x) {
 }
 
 double __agc_runtime_tanh(double x) {
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? -1.0 : 1.0;
   double ex = __agc_runtime_exp(x);
   double em = __agc_runtime_exp(-x);
   return (ex - em) / (ex + em);
