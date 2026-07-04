@@ -132,6 +132,40 @@ if (linkedStdioStderr !== "runtime: error\n") {
   throw new Error(`instantiated stdio import pipeline stderr mismatch: ${JSON.stringify(linkedStdioStderr)}`);
 }
 
+const linkedStdioErrorSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) {
+  char b[1];
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 1;
+  if (fwrite("A", 1, 1, wf) != 1) return 2;
+  if (fseek(wf, 0, SEEK_SET) != 0) return 3;
+  if (fread(b, 1, 1, wf) != 0) return 4;
+  if (!ferror(wf)) return 5;
+  clearerr(wf);
+  if (ferror(wf)) return 6;
+  if (fclose(wf) != 0) return 7;
+
+  FILE *rf = fopen("tmp.txt", "r");
+  if (!rf) return 8;
+  if (fwrite("B", 1, 1, rf) != 0) return 9;
+  if (fputs("B", rf) != EOF) return 10;
+  if (fputc('B', rf) != EOF) return 11;
+  if (!ferror(rf)) return 12;
+  clearerr(rf);
+  if (ferror(rf)) return 13;
+  if (fclose(rf) != 0) return 14;
+  return 42;
+}
+`, { loadInclude });
+const linkedStdioError = await toolchain.instantiateLinkedWasm(linkedStdioErrorSource, {
+  exports: ["main"],
+  useStdlib: true,
+});
+const linkedStdioErrorResult = linkedStdioError.instance.exports.main();
+if (linkedStdioErrorResult !== 42) {
+  throw new Error(`linked runtime stdio error state failed: ${linkedStdioErrorResult}`);
+}
+
 const linkedAtexitExitSource = `
 int atexit(void (*func)(void));
 void exit(int status);
@@ -282,6 +316,36 @@ int main(void) {
   if (r != 2) return 17;
   if (set[0] != 'a' || set[1] != 'b' || set[2] != 'c' || set[3] != 0) return 18;
   if (notz[0] != '1' || notz[1] != '2' || notz[2] != '3' || notz[3] != 0) return 19;
+  float sf = 0.0f;
+  double sd = 0.0;
+  long double sld = 0.0;
+  r = sscanf("1.25 -2.5e1 0x1.8p+3!", "%f %lf %Lf", &sf, &sd, &sld);
+  if (r != 3) return 20;
+  if ((int)(sf * 100.0f) != 125 || (int)sd != -25 || (int)sld != 12) return 21;
+  r = sscanf("12.34x", "%4f", &sf);
+  if (r != 1 || (int)(sf * 10.0f) != 123) return 22;
+  sf = 0.0f;
+  sd = 0.0;
+  sld = 0.0;
+  r = sscanf("nan(payload) INF -infinity", "%f %lf %Lf", &sf, &sd, &sld);
+  if (r != 3) return 23;
+  if (!(sf != 0.0f && !(sf < 0.0f) && !(sf > 0.0f))) return 24;
+  if (!(sd > 1000000.0 && sld < -1000000.0L)) return 25;
+  int fn = 0;
+  r = sscanf("infinity", "%3lf%n", &sd, &fn);
+  if (r != 1 || !(sd > 1000000.0) || fn != 3) return 26;
+  r = sscanf("12,5", "%lf%n", &sd, &fn);
+  if (r != 1 || (int)sd != 12 || fn != 2) return 34;
+  r = sscanf("", "");
+  if (r != 0) return 27;
+  fn = 7;
+  r = sscanf("", "%n", &fn);
+  if (r != 0 || fn != 0) return 28;
+  a = 99;
+  r = sscanf("", "%d", &a);
+  if (r != -1 || a != 99) return 29;
+  r = sscanf("x", "%d", &a);
+  if (r != 0 || a != 99) return 30;
 
   a = 0;
   x = 0;
@@ -302,6 +366,14 @@ int main(void) {
   if (a != 17) return 10;
   if (s[0] != 'd' || s[1] != 'o' || s[2] != 'n' || s[3] != 'e' || s[4] != 0) return 11;
   if (n != 7) return 12;
+  r = scanf("");
+  if (r != 0 || feof(stdin)) return 31;
+  n = 7;
+  r = scanf("%n", &n);
+  if (r != 0 || n != 0 || feof(stdin)) return 32;
+  a = 99;
+  r = scanf("%d", &a);
+  if (r != EOF || a != 99 || !feof(stdin)) return 33;
   return 42;
 }
 `, { loadInclude });
@@ -341,6 +413,161 @@ const jsSnprintf = await toolchain.instantiateLinkedWasm(jsSnprintfSource, {
 const jsSnprintfResult = jsSnprintf.instance.exports.main();
 if (jsSnprintfResult !== 42) {
   throw new Error(`JS stdio snprintf/sprintf imports did not format into wasm memory: ${jsSnprintfResult}`);
+}
+
+const linkedFloatFormatSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) {
+  char a[8];
+  char b[8];
+  char c[8];
+  char d[8];
+  char e[8];
+  char f[16];
+  char g[16];
+  char h[16];
+  char i[16];
+  char j[16];
+  char k[16];
+  char ha[16];
+  char hb[16];
+  char hc[16];
+  char hd[16];
+  char he[16];
+  char hf[16];
+  char hg[16];
+  char hh[16];
+  char hi[16];
+  char hj[16];
+  char hk[48];
+  char hl[32];
+  char hm[16];
+  char ho[16];
+  char hp[16];
+  char hq[16];
+  char hr[16];
+  char hs[16];
+  char ht[16];
+  signed char hhn = 0;
+  short hn = 0;
+  int in = 0;
+  long ln = 0;
+  long long lln = 0;
+  long long jn = 0;
+  long tn = 0;
+  double zero = 0.0;
+  double negzero = -zero;
+  double inf = 1.0 / zero;
+  double nanv = zero / zero;
+  int n = snprintf(a, sizeof(a), "%6.1f", 3.14);
+  int m = snprintf(b, sizeof(b), "%06.1f", -2.34);
+  int p = snprintf(c, sizeof(c), "%6f", inf);
+  int q = snprintf(d, sizeof(d), "%F", -inf);
+  int r = snprintf(e, sizeof(e), "%f", nanv);
+  int s = snprintf(f, sizeof(f), "%.2e", 1234.0);
+  int t = snprintf(g, sizeof(g), "%10.1E", -0.0123);
+  int u = snprintf(h, sizeof(h), "%010.1e", 9.99);
+  int v = snprintf(i, sizeof(i), "%.4g", 1234.0);
+  int w = snprintf(j, sizeof(j), "%.3g", 0.0001234);
+  int x = snprintf(k, sizeof(k), "%8.2G", 12345.0);
+  int ny = snprintf(ha, sizeof(ha), "%.1a", 3.0);
+  int nz = snprintf(hb, sizeof(hb), "%.1A", -0.5);
+  int naa = snprintf(hc, sizeof(hc), "%08.0a", 1.0);
+  int nab = snprintf(hd, sizeof(hd), "%#.0f", 3.0);
+  int nac = snprintf(he, sizeof(he), "%#.0e", 12.0);
+  int nad = snprintf(hf, sizeof(hf), "%#.3g", 123.0);
+  int nae = snprintf(hg, sizeof(hg), "%#.0a", 1.0);
+  int naf = snprintf(hh, sizeof(hh), "%+.1f", 3.14);
+  int nag = snprintf(hi, sizeof(hi), "% .1f", 3.14);
+  int nah = snprintf(hj, sizeof(hj), "%+08.1f", 3.14);
+  int nai = snprintf(hk, sizeof(hk), "%hhd:%hhu:%jd:%td:%zu",
+                     130, 250, (long long)-2147483649LL, (long)-9, (unsigned long)99);
+  int naj = snprintf(hl, sizeof(hl), "ab%hhncd%hnEF%nG%lnH%llnI%jnJ%tn",
+                     &hhn, &hn, &in, &ln, &lln, &jn, &tn);
+  int nak = snprintf(hm, sizeof(hm), "%.1f", negzero);
+  int nal = snprintf(ho, sizeof(ho), "%.1e", negzero);
+  int nam = snprintf(hp, sizeof(hp), "%.1g", negzero);
+  int nan = snprintf(hq, sizeof(hq), "%.0a", negzero);
+  int nao = snprintf(hr, sizeof(hr), "%.1g", 9.9);
+  int nap = snprintf(hs, sizeof(hs), "%.2g", 99.9);
+  int naq = snprintf(ht, sizeof(ht), "%.1g", 0.00009999);
+  if (n != 6 || a[0] != ' ' || a[1] != ' ' || a[2] != ' ' ||
+      a[3] != '3' || a[4] != '.' || a[5] != '1' || a[6] != 0) return 1;
+  if (m != 6 || b[0] != '-' || b[1] != '0' || b[2] != '0' ||
+      b[3] != '2' || b[4] != '.' || b[5] != '3' || b[6] != 0) return 2;
+  if (p != 6 || c[0] != ' ' || c[1] != ' ' || c[2] != ' ' ||
+      c[3] != 'i' || c[4] != 'n' || c[5] != 'f' || c[6] != 0) return 3;
+  if (q != 4 || d[0] != '-' || d[1] != 'I' || d[2] != 'N' || d[3] != 'F' || d[4] != 0) return 4;
+  if (r != 3 || e[0] != 'n' || e[1] != 'a' || e[2] != 'n' || e[3] != 0) return 5;
+  if (s != 8 || f[0] != '1' || f[1] != '.' || f[2] != '2' || f[3] != '3' ||
+      f[4] != 'e' || f[5] != '+' || f[6] != '0' || f[7] != '3' || f[8] != 0) return 6;
+  if (t != 10 || g[0] != ' ' || g[1] != ' ' || g[2] != '-' || g[3] != '1' ||
+      g[4] != '.' || g[5] != '2' || g[6] != 'E' || g[7] != '-' ||
+      g[8] != '0' || g[9] != '2' || g[10] != 0) return 7;
+  if (u != 10 || h[0] != '0' || h[1] != '0' || h[2] != '0' || h[3] != '1' ||
+      h[4] != '.' || h[5] != '0' || h[6] != 'e' || h[7] != '+' ||
+      h[8] != '0' || h[9] != '1' || h[10] != 0) return 8;
+  if (v != 4 || i[0] != '1' || i[1] != '2' || i[2] != '3' || i[3] != '4' || i[4] != 0) return 9;
+  if (w != 8 || j[0] != '0' || j[1] != '.' || j[2] != '0' || j[3] != '0' ||
+      j[4] != '0' || j[5] != '1' || j[6] != '2' || j[7] != '3' || j[8] != 0) return 10;
+  if (x != 8 || k[0] != ' ' || k[1] != '1' || k[2] != '.' || k[3] != '2' ||
+      k[4] != 'E' || k[5] != '+' || k[6] != '0' || k[7] != '4' || k[8] != 0) return 11;
+  if (ny != 8 || ha[0] != '0' || ha[1] != 'x' || ha[2] != '1' || ha[3] != '.' ||
+      ha[4] != '8' || ha[5] != 'p' || ha[6] != '+' || ha[7] != '1' || ha[8] != 0) return 12;
+  if (nz != 9 || hb[0] != '-' || hb[1] != '0' || hb[2] != 'X' || hb[3] != '1' ||
+      hb[4] != '.' || hb[5] != '0' || hb[6] != 'P' || hb[7] != '-' ||
+      hb[8] != '1' || hb[9] != 0) return 13;
+  if (naa != 8 || hc[0] != '0' || hc[1] != '0' || hc[2] != '0' || hc[3] != 'x' ||
+      hc[4] != '1' || hc[5] != 'p' || hc[6] != '+' || hc[7] != '0' ||
+      hc[8] != 0) return 14;
+  if (nab != 2 || hd[0] != '3' || hd[1] != '.' || hd[2] != 0) return 15;
+  if (nac != 6 || he[0] != '1' || he[1] != '.' || he[2] != 'e' || he[3] != '+' ||
+      he[4] != '0' || he[5] != '1' || he[6] != 0) return 16;
+  if (nad != 4 || hf[0] != '1' || hf[1] != '2' || hf[2] != '3' || hf[3] != '.' ||
+      hf[4] != 0) return 17;
+  if (nae != 7 || hg[0] != '0' || hg[1] != 'x' || hg[2] != '1' || hg[3] != '.' ||
+      hg[4] != 'p' || hg[5] != '+' || hg[6] != '0' || hg[7] != 0) return 18;
+  if (naf != 4 || hh[0] != '+' || hh[1] != '3' || hh[2] != '.' || hh[3] != '1' ||
+      hh[4] != 0) return 19;
+  if (nag != 4 || hi[0] != ' ' || hi[1] != '3' || hi[2] != '.' || hi[3] != '1' ||
+      hi[4] != 0) return 20;
+  if (nah != 8 || hj[0] != '+' || hj[1] != '0' || hj[2] != '0' || hj[3] != '0' ||
+      hj[4] != '0' || hj[5] != '3' || hj[6] != '.' || hj[7] != '1' ||
+      hj[8] != 0) return 21;
+  if (nai != 26 || hk[0] != '-' || hk[1] != '1' || hk[2] != '2' || hk[3] != '6' ||
+      hk[4] != ':' || hk[5] != '2' || hk[6] != '5' || hk[7] != '0' || hk[8] != ':' ||
+      hk[9] != '-' || hk[10] != '2' || hk[19] != '9' || hk[20] != ':' ||
+      hk[21] != '-' || hk[22] != '9' || hk[23] != ':' || hk[24] != '9' ||
+      hk[25] != '9' || hk[26] != 0) return 22;
+  if (naj != 10 || hl[0] != 'a' || hl[1] != 'b' || hl[2] != 'c' ||
+      hl[3] != 'd' || hl[4] != 'E' || hl[5] != 'F' || hl[6] != 'G' ||
+      hl[7] != 'H' || hl[8] != 'I' || hl[9] != 'J' || hl[10] != 0) return 23;
+  if (hhn != 2 || hn != 4 || in != 6 || ln != 7 || lln != 8 ||
+      jn != 9 || tn != 10) return 24;
+  if (nak != 4 || hm[0] != '-' || hm[1] != '0' || hm[2] != '.' ||
+      hm[3] != '0' || hm[4] != 0) return 25;
+  if (nal != 8 || ho[0] != '-' || ho[1] != '0' || ho[2] != '.' ||
+      ho[3] != '0' || ho[4] != 'e' || ho[5] != '+' || ho[6] != '0' ||
+      ho[7] != '0' || ho[8] != 0) return 26;
+  if (nam != 2 || hp[0] != '-' || hp[1] != '0' || hp[2] != 0) return 27;
+  if (nan != 7 || hq[0] != '-' || hq[1] != '0' || hq[2] != 'x' ||
+      hq[3] != '0' || hq[4] != 'p' || hq[5] != '+' || hq[6] != '0' ||
+      hq[7] != 0) return 28;
+  if (nao != 5 || hr[0] != '1' || hr[1] != 'e' || hr[2] != '+' ||
+      hr[3] != '0' || hr[4] != '1' || hr[5] != 0) return 29;
+  if (nap != 5 || hs[0] != '1' || hs[1] != 'e' || hs[2] != '+' ||
+      hs[3] != '0' || hs[4] != '2' || hs[5] != 0) return 30;
+  if (naq != 6 || ht[0] != '0' || ht[1] != '.' || ht[2] != '0' ||
+      ht[3] != '0' || ht[4] != '0' || ht[5] != '1' || ht[6] != 0) return 31;
+  return 42;
+}
+`, { loadInclude });
+const linkedFloatFormat = await toolchain.instantiateLinkedWasm(linkedFloatFormatSource, {
+  exports: ["main"],
+  useStdlib: true,
+});
+const linkedFloatFormatResult = linkedFloatFormat.instance.exports.main();
+if (linkedFloatFormatResult !== 42) {
+  throw new Error(`linked runtime float format padding failed: ${linkedFloatFormatResult}`);
 }
 
 const jsBasicStdioSource = `

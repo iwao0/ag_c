@@ -83,6 +83,15 @@ static struct ag_rt_fd ag_rt_fds[8];
 static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, -1, 1, 1};
 static struct ag_rt_file ag_rt_files[8];
 
+static int ag_rt_decimal_point_char(void) {
+  char *dp = ag_rt_lconv_value.decimal_point;
+  return dp && dp[0] ? (unsigned char)dp[0] : '.';
+}
+
+static int ag_rt_is_decimal_point(int ch) {
+  return ch == ag_rt_decimal_point_char();
+}
+
 static void ag_rt_file_set_pos(struct ag_rt_file *f, long pos) {
   if (!f) return;
   f->pos = pos;

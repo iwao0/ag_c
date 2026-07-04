@@ -5044,6 +5044,7 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check` = **green**
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
 
 ### このセッション（続き427）: scanf scanset runtime 対応
 - 見つかった浅い箇所:
@@ -5066,3 +5067,541 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check` = **green**
   - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
   - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+
+### このセッション（続き428）: scanf floating runtime 対応
+- 見つかった浅い箇所:
+  - 続き427時点で残っていた floating input (`%f` / `%e` / `%g`) が未対応で、
+    `sscanf()` は整数・文字列・scanset までは読めても `float` / `double` / `long double`
+    の格納に進めなかった。
+  - 実装中に、`va_arg(ap, float *)` / `va_arg(ap, double *)` が object runtime IR 上で
+    vararg slot から pointer を読むのではなく `load f32` / `load f64` → `f2i ptr` になる
+    経路を確認した。これは 8B vararg slot ABI では pointer 値を壊すため、浮動小数 scanner の
+    代入が `assigned == 3` でも実変数を更新できない原因だった。
+- 根本対応:
+  - narrow scanner (`sscanf` / `scanf` / `fscanf`) に `%f` / `%F` / `%e` / `%E` / `%g` / `%G`
+    を追加した。
+  - decimal, exponent, hex float (`0x...p...`) と field width を扱う `ag_rt_scan_float()` を追加した。
+  - `L` length modifier を parse し、`%f` は `float *`、`%lf` は `double *`、`%Lf` は
+    `long double *` に格納するようにした。
+  - scanner の floating 出力ポインタは `ag_rt_scan_va_arg_ptr()` で 8B vararg slot から
+    `unsigned long` として取得してから pointer 化するようにした。これにより
+    `float *` / `double *` の型付き `va_arg` 展開に依存せず、runtime ABI と同じ読み出しになる。
+  - WAT backend 側の variadic arg area prepare でも、元 IR 引数が `IR_TY_PTR` のときは
+    `effective_val_type()` の FP 推定より pointer を優先するようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` と
+    `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `%f %lf %Lf` と `%4f` の実行確認を追加した。
+- 残り:
+  - wide scanner (`swscanf`) の floating input はこの時点では未対応（続き429で対応）。
+  - `nan` / `inf`、locale、小数変換の丸め精度、厳密な unread / EOF / error 挙動はまだ簡易実装。
+- 確認:
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `git diff --check` = **green**
+
+### このセッション（続き429）: swscanf floating runtime 対応
+- 見つかった浅い箇所:
+  - 続き428で narrow `scanf` family の floating input は通ったが、wide scanner (`swscanf`) には
+    `%f` / `%e` / `%g` 系がまだ入っておらず、scanf family の対応範囲が narrow/wide でずれていた。
+  - 追加確認中、`__agc_runtime_swprintf()` / `__agc_runtime_swscanf()` の宣言後初期化が
+    selfhost runtime JS build の parser 制限に当たることも確認した。
+- 根本対応:
+  - wide scanner 用に `ag_rt_wscan_float()` を追加し、decimal、exponent、hex float
+    (`0x...p...`) と field width を扱うようにした。
+  - `ag_rt_vwscan()` に `%f` / `%F` / `%e` / `%E` / `%g` / `%G` と `L` length modifier を追加し、
+    `%f` は `float *`、`%lf` は `double *`、`%Lf` は `long double *` へ格納するようにした。
+  - floating 出力ポインタは narrow 側と同じく `ag_rt_scan_va_arg_ptr()` 経由で 8B vararg slot から
+    pointer として取得するようにし、型付き `va_arg` 展開に依存しない形に揃えた。
+  - `__agc_runtime_swprintf()` / `__agc_runtime_swscanf()` は既存 wide runtime と同じ `ag_rt_ptr()` 経由の
+    初期化に戻し、戻り値 `n` は関数先頭で宣言してから代入する形にして通常 runtime / JS runtime の
+    両方で selfhost compile が通るようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に wide 入力での `%f %lf %Lf` と `%4f` の runtime smoke を追加した。
+- 残り:
+  - `nan` / `inf` はこの時点では未対応（続き430で対応）。
+  - locale、小数変換の丸め精度、厳密な unread / EOF / error 挙動はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+
+### このセッション（続き430）: scanf floating nan/inf 対応
+- 見つかった浅い箇所:
+  - 続き428/429で decimal、exponent、hex float は読めるようになったが、
+    C の floating input item として自然に期待される `nan` / `inf` / `infinity` はまだ読めなかった。
+  - narrow と wide の両方に同じ残件があり、`scanf` family の対応範囲を同期して埋める必要があった。
+- 根本対応:
+  - scanner 共通の ASCII case-insensitive literal helper を追加し、field width を守って
+    `inf` / `infinity` と `nan` を読むようにした。
+  - `nan(payload)` 形式は閉じ括弧まで揃っている場合に payload も消費するようにした。
+  - narrow `ag_rt_scan_float()` と wide `ag_rt_wscan_float()` の両方に同じ特殊値処理を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に narrow/wide の
+    `nan(payload) INF -infinity` と narrow `%3lf%n` の runtime smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    `nan(payload) INF -infinity` と `%3lf%n` の確認を追加した。
+- 残り:
+  - EOF / input failure の一部はこの時点ではまだ大ざっぱ（続き431で改善）。
+  - locale、小数変換の丸め精度、厳密な unread / error 挙動はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+
+### このセッション（続き431）: scanf EOF/input failure 戻り値の整理
+- 見つかった浅い箇所:
+  - scanner は `assigned == 0 && *p == 0` を一律 EOF (`-1`) にしていたため、
+    `sscanf("", "")` や `sscanf("", "%n", &n)` のように input failure が起きていないケースまで
+    EOF になり得る状態だった。
+  - floating scanner は空白だけを読んで失敗した場合に caller 側の入力位置へ反映しないため、
+    `%f` の空白終端 input failure を EOF として判定しづらかった。
+- 根本対応:
+  - narrow `ag_rt_vscan_consumed()` と wide `ag_rt_vwscan()` に `input_failure` を追加し、
+    literal / `%%` / conversion が実際に入力終端で失敗した場合だけ EOF を返すようにした。
+  - `scanf` conversion としては代入数を増やさない `%n` や、空 format / 空白 directive の正常終了では
+    EOF ではなく `0` を返すようにした。
+  - `ag_rt_scan_float()` / `ag_rt_wscan_float()` は、空白 skip 後に floating item が無い場合でも
+    caller の入力位置を更新し、空白だけの `%f` 失敗を input failure として扱えるようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に narrow/wide の
+    empty format、`%n`、空入力 `%d`、空白だけ `%d`、非数字 `%d` の戻り値確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    narrow `sscanf` EOF/input failure smoke を追加した。
+- 残り:
+  - stream `scanf` / `fscanf` の EOF 上の空 format / `%n` はこの時点ではまだ
+    `ag_rt_vfscan()` の早期 return により `sscanf` とずれる（続き432で改善）。
+  - locale、小数変換の丸め精度、厳密な unread / error 挙動はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+
+### このセッション（続き432）: stream scanf EOF 早期 return の整理
+- 見つかった浅い箇所:
+  - 続き431で `sscanf` / `swscanf` の EOF/input failure は整理したが、
+    `scanf` / `fscanf` 共通の `ag_rt_vfscan()` は `f->pos >= len` の時点で scanner を呼ばずに
+    `-1` を返していた。
+  - そのため stream EOF 上の `scanf("")` や `scanf("%n", &n)` が、
+    input failure を起こしていないにもかかわらず EOF になる可能性が残っていた。
+- 根本対応:
+  - `ag_rt_vfscan()` の早期 EOF return をやめ、残り入力が 0 byte の場合も空バッファを
+    `ag_rt_vscan_consumed()` に渡して戻り値を決めるようにした。
+  - EOF flag は従来どおり `f->pos >= len` で立てるが、戻り値は scanner 側の
+    `input_failure` 判定に統一した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に空ファイル `fscanf("", "%n", "%d")` の runtime smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に stdin を読み切った後の
+    `scanf("")` / `scanf("%n")` / `scanf("%d")` の戻り値確認を追加した。
+- 残り:
+  - wide `swscanf` の整数 / `%n` length modifier 格納はこの時点ではまだ
+    `int *` / `unsigned int *` 寄り（続き433で改善）。
+  - locale、小数変換の丸め精度、厳密な unread / error 挙動はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+
+### このセッション（続き433）: swscanf integer/%n length modifier 格納同期
+- 見つかった浅い箇所:
+  - narrow `scanf` family は `%hhd` / `%hhu` / `%hn` / `%ln` などの length modifier 格納に対応済みだったが、
+    wide `swscanf` は整数変換と `%n` が `int *` / `unsigned int *` 固定寄りのままだった。
+  - そのため scanf family の対応範囲が narrow/wide で再びずれていた。
+- 根本対応:
+  - `ag_rt_vwscan()` でも `h` / `hh` / `l` / `ll` / `L` length modifier を parse するようにした。
+  - wide integer conversion は narrow 側と同じ `ag_rt_scan_store_signed()` /
+    `ag_rt_scan_store_unsigned()` 経由で格納するようにした。
+  - wide `%n` も `ag_rt_scan_store_count()` 経由にし、`%hhn` / `%hn` / `%ln` を正しい格納先サイズへ書くようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `swscanf` の `%hhd %hhu` と
+    `%d%hhn %d%hn %d%ln` の runtime smoke を追加した。
+- 残り:
+  - scanner / strtod / wcstod の decimal point はこの時点では hardcoded `'.'` 寄り（続き434で
+    C locale runtime の `localeconv()->decimal_point` 参照へ同期）。
+  - 小数変換の丸め精度、厳密な unread / error 挙動はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+
+### このセッション（続き434）: C locale decimal point の参照元同期
+- 見つかった浅い箇所:
+  - runtime は `setlocale()` / `localeconv()` として C locale のみを持ち、`localeconv()->decimal_point`
+    は `"."` を返すようになっていた。
+  - 一方で `strtod()` / `wcstod()` / `scanf` floating scanner は小数点判定を直接 `'.'` にしており、
+    locale runtime と floating parser が別々の仮定を持っていた。
+- 根本対応:
+  - `common.c` に `ag_rt_decimal_point_char()` / `ag_rt_is_decimal_point()` を追加し、
+    `ag_rt_lconv_value.decimal_point` を floating parser の参照元にした。
+  - `strtod()`、`wcstod()`、narrow `scanf` floating、wide `swscanf` floating の decimal point 判定を
+    `ag_rt_is_decimal_point()` 経由へ変更した。
+  - 現状の runtime は C locale のみ対応なので動作上の decimal point は `"."` のままだが、
+    `localeconv()` と parser の参照元は同期した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `strtod` / `wcstod` / `sscanf` / `swscanf` の
+    `"12,5"` が `12` で止まる C locale smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    `sscanf("12,5", "%lf%n", ...)` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 小数変換の丸め精度、厳密な unread / error 挙動はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+
+### このセッション（続き435）: stdio read/write mode error 状態の同期
+- 見つかった浅い箇所:
+  - `fread()` / `fgetc()` / `fgets()` / `fscanf()` は write-mode stream からの read 失敗で
+    `f->error` を立てるようになっていた。
+  - 一方で `fwrite()` / `fputs()` / `fputc()` / `fprintf()` が read-mode stream へ write した場合は、
+    共通 helper の `ag_rt_file_write_mem()` が単に 0 byte write として返すだけで、
+    `ferror()` に残る error 状態が付かない経路が残っていた。
+- 根本対応:
+  - `ag_rt_file_write_mem()` で、実データ write 時に stdin/read-mode stream へ書こうとした場合は
+    `f->error = 1` を立てて失敗するようにした。
+  - 同 helper で file buffer capacity に届いて partial write になった場合も `f->error` を立てるようにした。
+  - zero-size write は C library の通常挙動に合わせ、error を立てずに 0 のまま返す。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `stdio_invalid_state.c` で、
+    read-mode stream への `fwrite` / `fputs` / `fputc` と write-mode stream からの `fread` / `fgetc` が
+    戻り値だけでなく `ferror()` を立て、`clearerr()` で落ちることまで確認するようにした。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    `ferror` / `clearerr` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 小数変換の丸め精度、より厳密な unread / stream error 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き444）: printf length modifier / `%n` 対応
+- 見つかった浅い箇所:
+  - `printf` / `snprintf` の flag と floating family は広がってきたが、format parser が
+    `z` / `l` / `ll` / `L` しか見ておらず、`h` / `hh` / `j` / `t` が fallback 文字列として出る状態だった。
+  - `%n` も未対応で、出力済み文字数を格納する標準的な printf conversion が欠けていた。
+  - 追加確認中、`useStdlib: false` の JS import smoke に runtime-only の variadic length test を混ぜると
+    テスト対象がずれることが分かったため、stdlib link 経路と obj-linker runtime smoke に分離した。
+- 根本対応:
+  - `ag_rt_vformat()` の length parser に `h` / `hh` / `j` / `t` を追加した。
+  - signed / unsigned 整数の vararg 読み出しを helper 化し、`h` / `hh` は promoted `int` から
+    `short` / `signed char` / `unsigned short` / `unsigned char` へ狭めるようにした。
+  - `j` は現状の 8-byte slot 方針に合わせて `ll` 相当、`t` は `long` 相当として扱うようにした。
+    selfhost runtime では `va_arg(..., long long)` の macro 展開を避け、既存の `ll` と同じく `long` slot 読みへ寄せた。
+  - `%n` を追加し、`hh` / `h` / default / `l` / `ll` / `j` / `t` / `z` の格納幅に応じて
+    出力済み文字数を書き込むようにした。pointer vararg は scanf 側と同じ raw pointer 読みに揃えた。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `snprintf_length_mods.c` を追加し、
+    `%hhd` / `%hhu` / `%hd` / `%hu` / `%#hhx` / `%#hx` / `%jd` / `%td` / `%zu` と
+    `%hhn` / `%hn` / `%n` / `%ln` / `%lln` / `%jn` / `%tn` を実行確認するようにした。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも同じ length modifier / `%n` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 浮動小数出力のより厳密な丸め・巨大値境界、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き436）: stream scanf の EOF flag 副作用整理
+- 見つかった浅い箇所:
+  - 続き431/432で `scanf` family の戻り値は input failure 判定へ寄せたが、
+    `ag_rt_vfscan()` は scanner の内容に関係なく `f->pos >= len` なら `f->eof = 1` にしていた。
+  - そのため EOF 上の `fscanf(stream, "")` や `fscanf(stream, "%n", &n)` のように
+    入力を読まない directive でも、戻り値は `0` なのに `feof()` が立つ可能性が残っていた。
+- 根本対応:
+  - `ag_rt_vscan_consumed()` が `input_failure` を caller へ返せるようにし、
+    `ag_rt_vfscan()` は実際に入力終端で conversion/literal が失敗した場合だけ EOF flag を立てるようにした。
+  - 空 format / `%n` は EOF 上でも `feof()` を汚さず、後続の `%d` input failure で初めて `feof()` が立つ。
+  - `tools/wasm_obj_linker/test_smoke.sh` の空ファイル `fscanf` smoke で、
+    `fscanf("", "")` と `fscanf("%n")` 直後は `feof == 0`、`fscanf("%d")` 後は `feof != 0`
+    まで確認するようにした。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdin EOF smoke でも、
+    `scanf("")` / `scanf("%n")` は `feof(stdin) == 0`、後続 `scanf("%d")` は EOF を返して
+    `feof(stdin) != 0` になることを確認するようにした。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 小数変換の丸め精度、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き437）: printf `%f` の right width / zero padding 対応
+- 見つかった浅い箇所:
+  - default runtime の `%f` formatter は precision と left-align (`%-6.1f`) は扱っていたが、
+    right-align の width (`%6.1f`) と zero padding (`%06.1f`) を無視していた。
+  - そのため整数 format や文字列 format と比べて、浮動小数 format だけ幅指定の対応範囲がずれていた。
+- 根本対応:
+  - `ag_rt_write_fixed_padded()` を追加し、`%f` を一度 tmp buffer に描画してから、
+    right-align 時に space / zero padding を適用するようにした。
+  - zero padding で負数を出す場合は、`-002.3` のように符号を先に出してから 0 を詰めるようにした。
+  - 既存の left-align 経路はそのまま維持し、`%f` の width / zero flag 対応を右寄せ側へ揃えた。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に `%6.1f` と `%06.1f` の runtime smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    `snprintf("%6.1f")` / `snprintf("%06.1f")` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - `%e` / `%g` / `%a` 出力、丸め精度の厳密化、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き438）: printf `%f/%F` の inf/nan 出力対応
+- 見つかった浅い箇所:
+  - `scanf` family の floating input は `nan` / `inf` を読めるようになっていたが、
+    `printf` / `snprintf` 側の `%f` は通常数として整数化しようとしていた。
+  - そのため `snprintf("%f", 1.0 / 0.0)` や `snprintf("%f", 0.0 / 0.0)` のような特殊値で、
+    入力側と出力側の対応範囲がずれていた。
+- 根本対応:
+  - `ag_rt_double_is_nan()` / `ag_rt_double_is_inf()` を追加し、
+    `ag_rt_write_fixed()` で `nan` / `inf` / `-inf` を通常数とは別に出すようにした。
+  - `%F` では `NAN` / `INF` の大文字表記にした。
+  - 特殊値の width は通常の文字列と同じく space padding で扱い、`0` flag は特殊値では無視するようにした。
+  - NaN 判定は `v != v` ではなく比較式の組み合わせにして、runtime selfhost compile 時の自己比較警告を避けた。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に `%6f` の `inf`、
+    `%F` の `-INF`、`%f` の `nan` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由・stdlib link 経路にも同じ smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - `%e` / `%g` / `%a` 出力、丸め精度の厳密化、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き439）: printf `%e/%E` scientific notation 対応
+- 見つかった浅い箇所:
+  - `scanf` family は `%e`/`%E` を含む浮動小数入力を読めるようになっていたが、
+    `printf` / `snprintf` 側は `%f`/`%F` だけで、scientific notation 出力が未対応だった。
+  - `%f` の right width / zero padding / inf/nan 対応は入ったものの、同じ floating output family 内で
+    `%e`/`%E` だけ fallback の `%e` 文字出力に落ちる状態が残っていた。
+- 根本対応:
+  - `ag_rt_write_scientific()` / `ag_rt_write_scientific_padded()` を追加し、
+    有限値を `1.23e+03` / `-1.2E-02` 形式で出力するようにした。
+  - exponent suffix は符号付き・最低2桁にし、`%E` では `E` と特殊値の大文字表記を使うようにした。
+  - `ag_rt_write_float_text_padded()` を `%f` と `%e` の共通 padding helper にして、
+    space padding、zero padding、負数の符号先出し、特殊値では `0` flag を無視する挙動を揃えた。
+  - JS runtime selfhost compile で parser が受けない wide-scan の `int *out; out[n]` 表記を、
+    同じ意味の `*(out + n)` に直した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に
+    `%.2e` / `%10.1E` / `%010.1e` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由・stdlib link 経路にも
+    同じ `%e`/`%E` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - `%g` / `%a` 出力、丸め精度の厳密化、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き440）: printf `%g/%G` general floating output 対応
+- 見つかった浅い箇所:
+  - 続き439で `%e/%E` は追加したが、同じ floating output family の `%g/%G` は未対応のままだった。
+  - そのため入力側は `%g` 相当の浮動小数を読める一方、出力側では `%g` が fallback の文字列として出る状態が残っていた。
+- 根本対応:
+  - `ag_rt_write_general()` / `ag_rt_write_general_padded()` を追加し、
+    `%g/%G` が有効桁 precision を使って fixed / scientific notation を選ぶようにした。
+  - C の通常 `%g` と同じく、指数が `precision` 以上または `-4` 未満なら `%e/%E` 形式、
+    それ以外は `%f` 形式を使うようにした。
+  - `ag_rt_trim_float_trailing_zeros()` を追加し、`%g/%G` では末尾の `0` と不要な小数点を削るようにした。
+  - `%g/%G` も既存の floating padding helper を通すようにして、width / zero padding / 特殊値の扱いを
+    `%f` / `%e` と揃えた。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に
+    `%.4g` / `%.3g` / `%8.2G` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由・stdlib link 経路にも
+    同じ `%g/%G` smoke を追加した。
+- 残り:
+  - 非 C locale と `#` alternate form は runtime として未対応のまま。
+  - `%a` 出力、丸め精度の厳密化、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き441）: printf `%a/%A` hex floating output 対応
+- 見つかった浅い箇所:
+  - `%f/%F`、`%e/%E`、`%g/%G` は対応したが、floating output family の `%a/%A` が未対応のままだった。
+  - そのため hex float literal を入力側で扱える一方、出力側では `%a` が fallback の文字列として出る状態が残っていた。
+- 根本対応:
+  - `ag_rt_write_hex_float()` / `ag_rt_write_hex_float_padded()` を追加し、
+    有限値を `0x1.8p+1` / `-0X1.0P-1` 形式で出力するようにした。
+  - `%A` では `0X` prefix、hex digit、`P` suffix を大文字表記にした。
+  - precision 指定時は hex fractional digits を丸め付きで生成し、carry で mantissa が繰り上がる場合は exponent を進めるようにした。
+  - `%a/%A` も既存の floating padding helper を通すようにして、width / zero padding / 特殊値の扱いを
+    `%f` / `%e` / `%g` と揃えた。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に
+    `%.1a` / `%.1A` / `%08.0a` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由・stdlib link 経路にも
+    同じ `%a/%A` smoke を追加した。
+- 残り:
+  - 非 C locale と `#` alternate form は runtime として未対応のまま。
+  - 浮動小数出力のより厳密な丸め・巨大値境界、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き442）: printf `#` alternate form 対応
+- 見つかった浅い箇所:
+  - `printf` / `snprintf` の floating output family は `%f/%e/%g/%a` まで広がったが、
+    flag parser は `#` を読めず、alternate form が fallback 文字列として出る状態だった。
+  - 整数 base 出力でも `%#x` / `%#o` の prefix が未対応で、標準的な `printf` 指定子として穴が残っていた。
+- 根本対応:
+  - `ag_rt_vformat()` の flag parser に `#` を追加し、整数 base 出力と floating output helper へ `alternate` を渡すようにした。
+  - `%#x` / `%#X` は非ゼロ値に `0x` / `0X` prefix を付け、zero padding では prefix の後に `0` を詰めるようにした。
+  - `%#o` は先頭 `0` を保証しつつ、`%#.4o` のように precision 側ですでに先頭 `0` が入る場合は余分な `0` を足さないようにした。
+  - `%#f` / `%#e` / `%#a` では precision 0 でも小数点を出し、`%#g` では末尾 `0` / 小数点を削らないようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `%#x` / `%#X` / `%#o` / `%#08x` / `%#.4o` / `%#.0o` と、
+    `%#.0f` / `%#.0e` / `%#.3g` / `%#.0a` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由・stdlib link 経路にも
+    `%#.0f` / `%#.0e` / `%#.3g` / `%#.0a` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - `+` / space flag、浮動小数出力のより厳密な丸め・巨大値境界、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き443）: printf `+` / space sign flag 対応
+- 見つかった浅い箇所:
+  - 続き442で `#` alternate form は入ったが、flag parser は `+` / space をまだ読めず、
+    signed decimal と floating output の正値に符号を出せなかった。
+  - floating output の zero padding helper も `-` だけを sign として扱っていたため、
+    `+` / space を追加した場合に sign の前へ `0` が詰まる可能性があった。
+- 根本対応:
+  - `ag_rt_vformat()` の flag parser に `+` / space を追加し、`+` が space より優先されるようにした。
+  - `ag_rt_write_idec()` に sign 指定を渡し、`%+d` / `% d` / `%+05d` を signed decimal の幅・zero padding と統合した。
+  - floating output helper 群に sign 指定を渡し、`%+f` / `% f` / `%+e` / `%+g` / `%+a` でも正値の sign を出すようにした。
+  - `ag_rt_write_float_text_padded()` は `-` / `+` / space を sign として先に出してから zero padding するようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `%+d` / `% d` / `%+05d` と、
+    `%+.1f` / `% .1f` / `%+08.1f` / `%+.1e` / `%+.3g` / `%+.0a` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由・stdlib link 経路にも
+    `%+.1f` / `% .1f` / `%+08.1f` smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 浮動小数出力のより厳密な丸め・巨大値境界、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き445）: printf floating negative zero 対応
+- 見つかった浅い箇所:
+  - `printf` / `snprintf` の floating output は `%f` / `%e` / `%g` / `%a` と flag 類まで広がったが、
+    符号判定が `v < 0.0` だけだった。
+  - そのため `-0.0` が正の `0.0` として出力され、floating boundary の符号保持が不完全だった。
+- 根本対応:
+  - `ag_rt_double_is_negative()` を追加し、通常の負数に加えて negative zero も符号付き値として扱うようにした。
+  - `%f` / `%e` / `%g` / `%a` の各 formatter が同じ helper を使うようにし、
+    `-0.0` を `-0.0` / `-0.0e+00` / `-0` / `-0x0p+0` として出すようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に negative zero smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも同じ negative zero smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 浮動小数出力のより厳密な丸め・巨大値境界、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き446）: printf `%g` の丸め後指数による表記選択
+- 見つかった浅い箇所:
+  - `%g/%G` は fixed / scientific の選択を追加済みだったが、選択に使う指数が丸め前の値だった。
+  - そのため `printf("%.1g", 9.9)` や `printf("%.2g", 99.9)` のように丸めで桁上がりするケースで、
+    標準的な `1e+01` / `1e+02` ではなく fixed 側へ寄る可能性が残っていた。
+  - 逆に `printf("%.1g", 0.00009999)` は丸め後に指数が `-4` へ上がるため、scientific ではなく
+    `0.0001` を選ぶ必要があった。
+- 根本対応:
+  - `ag_rt_float_exp10_rounded()` を追加し、`%g/%G` の fixed / scientific 選択を丸め後の指数で判断するようにした。
+  - 未使用になった丸め前指数 helper は削除し、判断経路を一本化した。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に
+    `%.1g` の `9.9` / `%.2g` の `99.9` / `%.1g` の `0.00009999` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも同じ境界 smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 浮動小数出力の巨大値境界や、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**

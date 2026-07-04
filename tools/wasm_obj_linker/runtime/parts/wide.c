@@ -263,7 +263,7 @@ double __agc_runtime_wcstod(long nptr_addr, long endptr_addr) {
     acc = acc * 10.0 + (double)(*s - '0');
     s++;
   }
-  if (*s == '.') {
+  if (ag_rt_is_decimal_point(*s)) {
     double place = 0.1;
     s++;
     while (*s >= '0' && *s <= '9') {

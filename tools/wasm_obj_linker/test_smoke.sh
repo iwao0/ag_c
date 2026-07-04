@@ -266,6 +266,15 @@ int main(void) {
   char ak[32];
   char al[32];
   char am[32];
+  char an[32];
+  char ao[32];
+  char ap[32];
+  char aq[32];
+  char ar[32];
+  char as[32];
+  char at[32];
+  char au[32];
+  char av[32];
   int na = snprintf(a, sizeof(a), "%d", -42);
   int nb = snprintf(b, sizeof(b), "%d-%d", -12, 34);
   int nc = snprintf(c, sizeof(c), "%u", 4294967295u);
@@ -309,6 +318,15 @@ int main(void) {
   int nak = snprintf(ak, sizeof(ak), "%.0d", 0);
   int nal = snprintf(al, sizeof(al), "%.4x", 0x2au);
   int nam = snprintf(am, sizeof(am), "%-5.3d", 7);
+  int nan = snprintf(an, sizeof(an), "%#x", 0x2au);
+  int nao = snprintf(ao, sizeof(ao), "%#X", 0x2au);
+  int nap = snprintf(ap, sizeof(ap), "%#o", 0755u);
+  int naq = snprintf(aq, sizeof(aq), "%#08x", 0x2au);
+  int nar = snprintf(ar, sizeof(ar), "%#.4o", 0755u);
+  int nas = snprintf(as, sizeof(as), "%#.0o", 0u);
+  int nat = snprintf(at, sizeof(at), "%+d", 7);
+  int nau = snprintf(au, sizeof(au), "% d", 7);
+  int nav = snprintf(av, sizeof(av), "%+05d", 7);
   return na == 3 && a[0] == '-' && a[1] == '4' && a[2] == '2' && a[3] == 0 &&
          nb == 6 && b[0] == '-' && b[1] == '1' && b[2] == '2' && b[3] == '-' &&
          b[4] == '3' && b[5] == '4' && b[6] == 0 &&
@@ -350,7 +368,56 @@ int main(void) {
          naj == 5 && aj[0] == ' ' && aj[1] == ' ' && aj[2] == '0' && aj[4] == '7' && aj[5] == 0 &&
          nak == 0 && ak[0] == 0 &&
          nal == 4 && al[0] == '0' && al[1] == '0' && al[2] == '2' && al[3] == 'a' && al[4] == 0 &&
-         nam == 5 && am[0] == '0' && am[1] == '0' && am[2] == '7' && am[3] == ' ' && am[4] == ' ' && am[5] == 0 ? 42 : 1;
+         nam == 5 && am[0] == '0' && am[1] == '0' && am[2] == '7' && am[3] == ' ' && am[4] == ' ' && am[5] == 0 &&
+         nan == 4 && an[0] == '0' && an[1] == 'x' && an[2] == '2' && an[3] == 'a' && an[4] == 0 &&
+         nao == 4 && ao[0] == '0' && ao[1] == 'X' && ao[2] == '2' && ao[3] == 'A' && ao[4] == 0 &&
+         nap == 4 && ap[0] == '0' && ap[1] == '7' && ap[2] == '5' && ap[3] == '5' && ap[4] == 0 &&
+         naq == 8 && aq[0] == '0' && aq[1] == 'x' && aq[2] == '0' && aq[3] == '0' &&
+         aq[4] == '0' && aq[5] == '0' && aq[6] == '2' && aq[7] == 'a' && aq[8] == 0 &&
+         nar == 4 && ar[0] == '0' && ar[1] == '7' && ar[2] == '5' && ar[3] == '5' && ar[4] == 0 &&
+         nas == 1 && as[0] == '0' && as[1] == 0 &&
+         nat == 2 && at[0] == '+' && at[1] == '7' && at[2] == 0 &&
+         nau == 2 && au[0] == ' ' && au[1] == '7' && au[2] == 0 &&
+         nav == 5 && av[0] == '+' && av[1] == '0' && av[2] == '0' &&
+         av[3] == '0' && av[4] == '7' && av[5] == 0 ? 42 : 1;
+}
+SRC
+
+cat > "$out_dir/snprintf_length_mods.c" <<'SRC'
+int snprintf(char *s, unsigned long n, const char *fmt, ...);
+int main(void) {
+  char a[48];
+  char b[48];
+  char c[32];
+  signed char hhn = 0;
+  short hn = 0;
+  int in = 0;
+  long ln = 0;
+  long long lln = 0;
+  long long jn = 0;
+  long tn = 0;
+  int na = snprintf(a, sizeof(a), "%hhd:%hhu:%hd:%hu:%#hhx:%#hx",
+                    130, 250, -12345, 60000, 0x12a, 0x1234a);
+  int nb = snprintf(b, sizeof(b), "%jd:%td:%zu",
+                    (long long)-2147483649LL, (long)-9, (unsigned long)99);
+  int nc = snprintf(c, sizeof(c), "ab%hhncd%hnEF%nG%lnH%llnI%jnJ%tn",
+                    &hhn, &hn, &in, &ln, &lln, &jn, &tn);
+  if (na != 33 || a[0] != '-' || a[1] != '1' || a[2] != '2' ||
+      a[3] != '6' || a[4] != ':' || a[5] != '2' || a[6] != '5' ||
+      a[7] != '0' || a[8] != ':' || a[9] != '-' || a[10] != '1' ||
+      a[14] != '5' || a[15] != ':' || a[16] != '6' || a[21] != ':' ||
+      a[22] != '0' || a[23] != 'x' || a[24] != '2' || a[25] != 'a' ||
+      a[26] != ':' || a[27] != '0' || a[28] != 'x' || a[29] != '2' ||
+      a[32] != 'a' || a[33] != 0) return 1;
+  if (nb != 17 || b[0] != '-' || b[1] != '2' || b[10] != '9' ||
+      b[11] != ':' || b[12] != '-' || b[13] != '9' || b[14] != ':' ||
+      b[15] != '9' || b[16] != '9' || b[17] != 0) return 2;
+  if (nc != 10 || c[0] != 'a' || c[1] != 'b' || c[2] != 'c' ||
+      c[3] != 'd' || c[4] != 'E' || c[5] != 'F' || c[6] != 'G' ||
+      c[7] != 'H' || c[8] != 'I' || c[9] != 'J' || c[10] != 0) return 3;
+  if (hhn != 2 || hn != 4 || in != 6 || ln != 7 || lln != 8 ||
+      jn != 9 || tn != 10) return 4;
+  return 42;
 }
 SRC
 
@@ -360,13 +427,137 @@ int main(void) {
   char a[32];
   char b[32];
   char c[32];
+  char d[32];
+  char e[32];
+  char f[32];
+  char g[32];
+  char h[32];
+  char i[32];
+  char j[32];
+  char k[32];
+  char l[32];
+  char m[32];
+  char n[32];
+  char o[32];
+  char p[32];
+  char q[32];
+  char r[32];
+  char s[32];
+  char t[32];
+  char u[32];
+  char v[32];
+  char w[32];
+  char x[32];
+  char y[32];
+  char z[32];
+  char aa[32];
+  char ab[32];
+  char ac[32];
+  char ad[32];
+  char ae[32];
+  char af[32];
+  char ag[32];
+  char ah[32];
+  double zero = 0.0;
+  double negzero = -zero;
+  double inf = 1.0 / zero;
+  double nanv = zero / zero;
   int na = snprintf(a, sizeof(a), "%.1f", 3.14);
   int nb = snprintf(b, sizeof(b), "%.2f", -2.25);
   int nc = snprintf(c, sizeof(c), "%.1Lf", (long double)4.04);
+  int nd = snprintf(d, sizeof(d), "%6.1f", 3.14);
+  int ne = snprintf(e, sizeof(e), "%06.1f", -2.34);
+  int nf = snprintf(f, sizeof(f), "%6f", inf);
+  int ng = snprintf(g, sizeof(g), "%F", -inf);
+  int nh = snprintf(h, sizeof(h), "%f", nanv);
+  int ni = snprintf(i, sizeof(i), "%.2e", 1234.0);
+  int nj = snprintf(j, sizeof(j), "%10.1E", -0.0123);
+  int nk = snprintf(k, sizeof(k), "%010.1e", 9.99);
+  int nl = snprintf(l, sizeof(l), "%.4g", 1234.0);
+  int nm = snprintf(m, sizeof(m), "%.3g", 0.0001234);
+  int nn = snprintf(n, sizeof(n), "%8.2G", 12345.0);
+  int no = snprintf(o, sizeof(o), "%.1a", 3.0);
+  int np = snprintf(p, sizeof(p), "%.1A", -0.5);
+  int nq = snprintf(q, sizeof(q), "%08.0a", 1.0);
+  int nr = snprintf(r, sizeof(r), "%#.0f", 3.0);
+  int ns = snprintf(s, sizeof(s), "%#.0e", 12.0);
+  int nt = snprintf(t, sizeof(t), "%#.3g", 123.0);
+  int nu = snprintf(u, sizeof(u), "%#.0a", 1.0);
+  int nv = snprintf(v, sizeof(v), "%+.1f", 3.14);
+  int nw = snprintf(w, sizeof(w), "% .1f", 3.14);
+  int nx = snprintf(x, sizeof(x), "%+08.1f", 3.14);
+  int ny = snprintf(y, sizeof(y), "%+.1e", 12.0);
+  int nz = snprintf(z, sizeof(z), "%+.3g", 123.0);
+  int naa = snprintf(aa, sizeof(aa), "%+.0a", 1.0);
+  int nab = snprintf(ab, sizeof(ab), "%.1f", negzero);
+  int nac = snprintf(ac, sizeof(ac), "%.1e", negzero);
+  int nad = snprintf(ad, sizeof(ad), "%.1g", negzero);
+  int nae = snprintf(ae, sizeof(ae), "%.0a", negzero);
+  int naf = snprintf(af, sizeof(af), "%.1g", 9.9);
+  int nag = snprintf(ag, sizeof(ag), "%.2g", 99.9);
+  int nah = snprintf(ah, sizeof(ah), "%.1g", 0.00009999);
   return na == 3 && a[0] == '3' && a[1] == '.' && a[2] == '1' && a[3] == 0 &&
          nb == 5 && b[0] == '-' && b[1] == '2' && b[2] == '.' && b[3] == '2' &&
          b[4] == '5' && b[5] == 0 &&
-         nc == 3 && c[0] == '4' && c[1] == '.' && c[2] == '0' && c[3] == 0 ? 42 : 1;
+         nc == 3 && c[0] == '4' && c[1] == '.' && c[2] == '0' && c[3] == 0 &&
+         nd == 6 && d[0] == ' ' && d[1] == ' ' && d[2] == ' ' &&
+         d[3] == '3' && d[4] == '.' && d[5] == '1' && d[6] == 0 &&
+         ne == 6 && e[0] == '-' && e[1] == '0' && e[2] == '0' &&
+         e[3] == '2' && e[4] == '.' && e[5] == '3' && e[6] == 0 &&
+         nf == 6 && f[0] == ' ' && f[1] == ' ' && f[2] == ' ' &&
+         f[3] == 'i' && f[4] == 'n' && f[5] == 'f' && f[6] == 0 &&
+         ng == 4 && g[0] == '-' && g[1] == 'I' && g[2] == 'N' && g[3] == 'F' && g[4] == 0 &&
+         nh == 3 && h[0] == 'n' && h[1] == 'a' && h[2] == 'n' && h[3] == 0 &&
+         ni == 8 && i[0] == '1' && i[1] == '.' && i[2] == '2' && i[3] == '3' &&
+         i[4] == 'e' && i[5] == '+' && i[6] == '0' && i[7] == '3' && i[8] == 0 &&
+         nj == 10 && j[0] == ' ' && j[1] == ' ' && j[2] == '-' && j[3] == '1' &&
+         j[4] == '.' && j[5] == '2' && j[6] == 'E' && j[7] == '-' &&
+         j[8] == '0' && j[9] == '2' && j[10] == 0 &&
+         nk == 10 && k[0] == '0' && k[1] == '0' && k[2] == '0' && k[3] == '1' &&
+         k[4] == '.' && k[5] == '0' && k[6] == 'e' && k[7] == '+' &&
+         k[8] == '0' && k[9] == '1' && k[10] == 0 &&
+         nl == 4 && l[0] == '1' && l[1] == '2' && l[2] == '3' && l[3] == '4' && l[4] == 0 &&
+         nm == 8 && m[0] == '0' && m[1] == '.' && m[2] == '0' && m[3] == '0' &&
+         m[4] == '0' && m[5] == '1' && m[6] == '2' && m[7] == '3' && m[8] == 0 &&
+         nn == 8 && n[0] == ' ' && n[1] == '1' && n[2] == '.' && n[3] == '2' &&
+         n[4] == 'E' && n[5] == '+' && n[6] == '0' && n[7] == '4' && n[8] == 0 &&
+         no == 8 && o[0] == '0' && o[1] == 'x' && o[2] == '1' && o[3] == '.' &&
+         o[4] == '8' && o[5] == 'p' && o[6] == '+' && o[7] == '1' && o[8] == 0 &&
+         np == 9 && p[0] == '-' && p[1] == '0' && p[2] == 'X' && p[3] == '1' &&
+         p[4] == '.' && p[5] == '0' && p[6] == 'P' && p[7] == '-' &&
+         p[8] == '1' && p[9] == 0 &&
+         nq == 8 && q[0] == '0' && q[1] == '0' && q[2] == '0' && q[3] == 'x' &&
+         q[4] == '1' && q[5] == 'p' && q[6] == '+' && q[7] == '0' && q[8] == 0 &&
+         nr == 2 && r[0] == '3' && r[1] == '.' && r[2] == 0 &&
+         ns == 6 && s[0] == '1' && s[1] == '.' && s[2] == 'e' && s[3] == '+' &&
+         s[4] == '0' && s[5] == '1' && s[6] == 0 &&
+         nt == 4 && t[0] == '1' && t[1] == '2' && t[2] == '3' && t[3] == '.' && t[4] == 0 &&
+         nu == 7 && u[0] == '0' && u[1] == 'x' && u[2] == '1' && u[3] == '.' &&
+         u[4] == 'p' && u[5] == '+' && u[6] == '0' && u[7] == 0 &&
+         nv == 4 && v[0] == '+' && v[1] == '3' && v[2] == '.' && v[3] == '1' && v[4] == 0 &&
+         nw == 4 && w[0] == ' ' && w[1] == '3' && w[2] == '.' && w[3] == '1' && w[4] == 0 &&
+         nx == 8 && x[0] == '+' && x[1] == '0' && x[2] == '0' && x[3] == '0' &&
+         x[4] == '0' && x[5] == '3' && x[6] == '.' && x[7] == '1' && x[8] == 0 &&
+         ny == 8 && y[0] == '+' && y[1] == '1' && y[2] == '.' && y[3] == '2' &&
+         y[4] == 'e' && y[5] == '+' && y[6] == '0' && y[7] == '1' && y[8] == 0 &&
+         nz == 4 && z[0] == '+' && z[1] == '1' && z[2] == '2' && z[3] == '3' && z[4] == 0 &&
+         naa == 7 && aa[0] == '+' && aa[1] == '0' && aa[2] == 'x' && aa[3] == '1' &&
+         aa[4] == 'p' && aa[5] == '+' && aa[6] == '0' && aa[7] == 0 &&
+         nab == 4 && ab[0] == '-' && ab[1] == '0' && ab[2] == '.' &&
+         ab[3] == '0' && ab[4] == 0 &&
+         nac == 8 && ac[0] == '-' && ac[1] == '0' && ac[2] == '.' &&
+         ac[3] == '0' && ac[4] == 'e' && ac[5] == '+' && ac[6] == '0' &&
+         ac[7] == '0' && ac[8] == 0 &&
+         nad == 2 && ad[0] == '-' && ad[1] == '0' && ad[2] == 0 &&
+         nae == 7 && ae[0] == '-' && ae[1] == '0' && ae[2] == 'x' &&
+         ae[3] == '0' && ae[4] == 'p' && ae[5] == '+' && ae[6] == '0' &&
+         ae[7] == 0 &&
+         naf == 5 && af[0] == '1' && af[1] == 'e' && af[2] == '+' &&
+         af[3] == '0' && af[4] == '1' && af[5] == 0 &&
+         nag == 5 && ag[0] == '1' && ag[1] == 'e' && ag[2] == '+' &&
+         ag[3] == '0' && ag[4] == '2' && ag[5] == 0 &&
+         nah == 6 && ah[0] == '0' && ah[1] == '.' && ah[2] == '0' &&
+         ah[3] == '0' && ah[4] == '0' && ah[5] == '1' && ah[6] == 0 ? 42 : 1;
 }
 SRC
 
@@ -669,6 +860,8 @@ int fputs(char *s, FILE *stream);
 int fputc(int c, FILE *stream);
 int fgetc(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
+int ferror(FILE *stream);
+void clearerr(FILE *stream);
 int open(char *path, int oflag);
 int close(int fd);
 int main(void) {
@@ -689,16 +882,23 @@ int main(void) {
   int read_stream_write = fwrite("x", 1, 1, rf) == 0 &&
                           fputs("x", rf) == -1 &&
                           fputc('x', rf) == -1;
+  int read_stream_error = ferror(rf);
+  clearerr(rf);
+  int read_stream_clear = ferror(rf);
   fclose(rf);
   FILE *wf = fopen("tmp.txt", "w");
   char b[1];
   fwrite("A", 1, 1, wf);
   fseek(wf, 0, 0);
   int write_stream_read = fread(b, 1, 1, wf) == 0 && fgetc(wf) == -1;
+  int write_stream_error = ferror(wf);
+  clearerr(wf);
+  int write_stream_clear = ferror(wf);
   fclose(wf);
   return bad_path && bad_mode_null && bad_mode_empty && bad_mode_unknown &&
          bad_fd && bad_fd_mode_null && bad_fd_mode_unknown && ok_stream &&
-         read_stream_write && write_stream_read ? 42 : 1;
+         read_stream_write && read_stream_error && !read_stream_clear &&
+         write_stream_read && write_stream_error && !write_stream_clear ? 42 : 1;
 }
 SRC
 
@@ -1197,12 +1397,14 @@ int main(void) {
   char *dendp = 0;
   char *imax_endp = 0;
   char *umax_endp = 0;
+  char *comma_endp = 0;
   char resolved_path[32];
   char *resolved_pathp = realpath("include", resolved_path);
   char *resolved_nullp = realpath("src", 0);
   long parsed = strtol("  -2a", &endp, 16);
   unsigned long parsed_u = strtoul("  ff!", &uendp, 16);
   double parsed_d = strtod(" -12.5e1!", &dendp);
+  double comma_d = strtod("12,5", &comma_endp);
   double parsed_atof = atof(" 3.25x");
   long parsed_imax = strtoimax("  7f!", &imax_endp, 16);
   unsigned long parsed_umax = strtoumax("  377!", &umax_endp, 8);
@@ -1240,6 +1442,7 @@ int main(void) {
   int *wend = 0;
   int wcnum[8];
   int wcdec[8];
+  int wccomma[8];
   wcnum[0] = ' ';
   wcnum[1] = '-';
   wcnum[2] = '2';
@@ -1251,6 +1454,11 @@ int main(void) {
   wcdec[1] = '.';
   wcdec[2] = '5';
   wcdec[3] = 0;
+  wccomma[0] = '1';
+  wccomma[1] = '2';
+  wccomma[2] = ',';
+  wccomma[3] = '5';
+  wccomma[4] = 0;
   ws[0] = 'A';
   ws[1] = 'b';
   ws[2] = 0;
@@ -1305,6 +1513,92 @@ int main(void) {
   scanfmt[1] = 'd';
   scanfmt[2] = 0;
   int scanret = swscanf(swbuf, scanfmt, &never);
+  int wempty[1];
+  wempty[0] = 0;
+  int wemptyfmt[1];
+  wemptyfmt[0] = 0;
+  int wscan_empty_fmt_ret = swscanf(wempty, wemptyfmt);
+  int wscanf_n_fmt[3];
+  wscanf_n_fmt[0] = '%';
+  wscanf_n_fmt[1] = 'n';
+  wscanf_n_fmt[2] = 0;
+  int wscan_empty_n = 7;
+  int wscan_empty_n_ret = swscanf(wempty, wscanf_n_fmt, &wscan_empty_n);
+  int wscan_empty_d = 99;
+  int wscan_empty_d_ret = swscanf(wempty, scanfmt, &wscan_empty_d);
+  int wspacebuf[4];
+  wspacebuf[0] = ' ';
+  wspacebuf[1] = ' ';
+  wspacebuf[2] = ' ';
+  wspacebuf[3] = 0;
+  int wscan_space_d = 99;
+  int wscan_space_d_ret = swscanf(wspacebuf, scanfmt, &wscan_space_d);
+  int wxbuf[2];
+  wxbuf[0] = 'x';
+  wxbuf[1] = 0;
+  int wscan_mismatch_d = 99;
+  int wscan_mismatch_d_ret = swscanf(wxbuf, scanfmt, &wscan_mismatch_d);
+  int wscanf_hh_buf[8];
+  wscanf_hh_buf[0] = '-';
+  wscanf_hh_buf[1] = '5';
+  wscanf_hh_buf[2] = ' ';
+  wscanf_hh_buf[3] = '2';
+  wscanf_hh_buf[4] = '5';
+  wscanf_hh_buf[5] = '0';
+  wscanf_hh_buf[6] = 0;
+  int wscanf_hh_fmt[10];
+  wscanf_hh_fmt[0] = '%';
+  wscanf_hh_fmt[1] = 'h';
+  wscanf_hh_fmt[2] = 'h';
+  wscanf_hh_fmt[3] = 'd';
+  wscanf_hh_fmt[4] = ' ';
+  wscanf_hh_fmt[5] = '%';
+  wscanf_hh_fmt[6] = 'h';
+  wscanf_hh_fmt[7] = 'h';
+  wscanf_hh_fmt[8] = 'u';
+  wscanf_hh_fmt[9] = 0;
+  signed char wscan_hh = 0;
+  unsigned char wscan_uhh = 0;
+  int wscan_hh_ret = swscanf(wscanf_hh_buf, wscanf_hh_fmt, &wscan_hh, &wscan_uhh);
+  int wscanf_n_len_buf[9];
+  wscanf_n_len_buf[0] = '1';
+  wscanf_n_len_buf[1] = '2';
+  wscanf_n_len_buf[2] = ' ';
+  wscanf_n_len_buf[3] = '3';
+  wscanf_n_len_buf[4] = '4';
+  wscanf_n_len_buf[5] = '5';
+  wscanf_n_len_buf[6] = ' ';
+  wscanf_n_len_buf[7] = '6';
+  wscanf_n_len_buf[8] = 0;
+  int wscanf_n_len_fmt[19];
+  wscanf_n_len_fmt[0] = '%';
+  wscanf_n_len_fmt[1] = 'd';
+  wscanf_n_len_fmt[2] = '%';
+  wscanf_n_len_fmt[3] = 'h';
+  wscanf_n_len_fmt[4] = 'h';
+  wscanf_n_len_fmt[5] = 'n';
+  wscanf_n_len_fmt[6] = ' ';
+  wscanf_n_len_fmt[7] = '%';
+  wscanf_n_len_fmt[8] = 'd';
+  wscanf_n_len_fmt[9] = '%';
+  wscanf_n_len_fmt[10] = 'h';
+  wscanf_n_len_fmt[11] = 'n';
+  wscanf_n_len_fmt[12] = ' ';
+  wscanf_n_len_fmt[13] = '%';
+  wscanf_n_len_fmt[14] = 'd';
+  wscanf_n_len_fmt[15] = '%';
+  wscanf_n_len_fmt[16] = 'l';
+  wscanf_n_len_fmt[17] = 'n';
+  wscanf_n_len_fmt[18] = 0;
+  int wscan_n_a = 0;
+  int wscan_n_b = 0;
+  int wscan_n_c = 0;
+  signed char wscan_n_hh = 0;
+  short wscan_n_h = 0;
+  long wscan_n_l = 0;
+  int wscan_n_len_ret = swscanf(wscanf_n_len_buf, wscanf_n_len_fmt,
+                                &wscan_n_a, &wscan_n_hh, &wscan_n_b, &wscan_n_h,
+                                &wscan_n_c, &wscan_n_l);
   int scanpfmt[3];
   scanpfmt[0] = '%';
   scanpfmt[1] = 'p';
@@ -1334,6 +1628,98 @@ int main(void) {
   scanbrbuf[4] = 0;
   int wscan_set[4];
   int wscan_set_ret = swscanf(scanbrbuf, scanbrfmt, wscan_set);
+  int wscanf_float_buf[23];
+  wscanf_float_buf[0] = '1';
+  wscanf_float_buf[1] = '.';
+  wscanf_float_buf[2] = '2';
+  wscanf_float_buf[3] = '5';
+  wscanf_float_buf[4] = ' ';
+  wscanf_float_buf[5] = '-';
+  wscanf_float_buf[6] = '2';
+  wscanf_float_buf[7] = '.';
+  wscanf_float_buf[8] = '5';
+  wscanf_float_buf[9] = 'e';
+  wscanf_float_buf[10] = '1';
+  wscanf_float_buf[11] = ' ';
+  wscanf_float_buf[12] = '0';
+  wscanf_float_buf[13] = 'x';
+  wscanf_float_buf[14] = '1';
+  wscanf_float_buf[15] = '.';
+  wscanf_float_buf[16] = '8';
+  wscanf_float_buf[17] = 'p';
+  wscanf_float_buf[18] = '+';
+  wscanf_float_buf[19] = '3';
+  wscanf_float_buf[20] = '!';
+  wscanf_float_buf[21] = 0;
+  int wscanf_float_fmt[11];
+  wscanf_float_fmt[0] = '%';
+  wscanf_float_fmt[1] = 'f';
+  wscanf_float_fmt[2] = ' ';
+  wscanf_float_fmt[3] = '%';
+  wscanf_float_fmt[4] = 'l';
+  wscanf_float_fmt[5] = 'f';
+  wscanf_float_fmt[6] = ' ';
+  wscanf_float_fmt[7] = '%';
+  wscanf_float_fmt[8] = 'L';
+  wscanf_float_fmt[9] = 'f';
+  wscanf_float_fmt[10] = 0;
+  float wscan_f = 0.0f;
+  double wscan_d = 0.0;
+  long double wscan_ld = 0.0;
+  int wscan_float_ret = swscanf(wscanf_float_buf, wscanf_float_fmt,
+                                &wscan_f, &wscan_d, &wscan_ld);
+  int wscanf_width_buf[7];
+  wscanf_width_buf[0] = '1';
+  wscanf_width_buf[1] = '2';
+  wscanf_width_buf[2] = '.';
+  wscanf_width_buf[3] = '3';
+  wscanf_width_buf[4] = '4';
+  wscanf_width_buf[5] = 'x';
+  wscanf_width_buf[6] = 0;
+  int wscanf_width_fmt[4];
+  wscanf_width_fmt[0] = '%';
+  wscanf_width_fmt[1] = '4';
+  wscanf_width_fmt[2] = 'f';
+  wscanf_width_fmt[3] = 0;
+  float wscan_width_f = 0.0f;
+  int wscan_float_width_ret = swscanf(wscanf_width_buf, wscanf_width_fmt, &wscan_width_f);
+  int wscanf_comma_buf[5];
+  wscanf_comma_buf[0] = '1';
+  wscanf_comma_buf[1] = '2';
+  wscanf_comma_buf[2] = ',';
+  wscanf_comma_buf[3] = '5';
+  wscanf_comma_buf[4] = 0;
+  int wscanf_comma_fmt[6];
+  wscanf_comma_fmt[0] = '%';
+  wscanf_comma_fmt[1] = 'l';
+  wscanf_comma_fmt[2] = 'f';
+  wscanf_comma_fmt[3] = '%';
+  wscanf_comma_fmt[4] = 'n';
+  wscanf_comma_fmt[5] = 0;
+  double wscan_comma_d = 0.0;
+  int wscan_comma_n = 0;
+  int wscan_comma_ret = swscanf(wscanf_comma_buf, wscanf_comma_fmt,
+                                &wscan_comma_d, &wscan_comma_n);
+  int wscanf_special_buf[27];
+  char *wscanf_special_src = "nan(payload) INF -infinity";
+  int wscanf_special_i;
+  for (wscanf_special_i = 0; wscanf_special_i < 27; wscanf_special_i++) {
+    wscanf_special_buf[wscanf_special_i] = wscanf_special_src[wscanf_special_i];
+  }
+  float wscan_nan = 0.0f;
+  double wscan_inf = 0.0;
+  long double wscan_ninf = 0.0;
+  int wscan_float_special_ret = swscanf(wscanf_special_buf, wscanf_float_fmt,
+                                        &wscan_nan, &wscan_inf, &wscan_ninf);
+  if (wscan_float_ret != 3) return 99;
+  if ((int)(wscan_f * 100.0f) != 125) return 100;
+  if ((int)wscan_d != -25) return 101;
+  if ((int)wscan_ld != 12) return 102;
+  if (!(wscan_float_width_ret == 1 && (int)(wscan_width_f * 10.0f) == 123)) return 103;
+  if (!(wscan_comma_ret == 1 && (int)wscan_comma_d == 12 && wscan_comma_n == 2)) return 118;
+  if (wscan_float_special_ret != 3) return 104;
+  if (!(wscan_nan != 0.0f && !(wscan_nan < 0.0f) && !(wscan_nan > 0.0f))) return 105;
+  if (!(wscan_inf > 1000000.0 && wscan_ninf < -1000000.0L)) return 106;
   int scan_i = 0;
   unsigned int scan_x = 0;
   char scan_s[4];
@@ -1360,9 +1746,73 @@ int main(void) {
   char scan_set[4];
   char scan_not_z[4];
   int ssret_set = sscanf("abc123Z", "%3[a-z]%3[^Z]", scan_set, scan_not_z);
+  float scan_f = 0.0f;
+  double scan_d = 0.0;
+  long double scan_ld = 0.0;
+  int ssret_float = sscanf("1.25 -2.5e1 0x1.8p+3!", "%f %lf %Lf",
+                           &scan_f, &scan_d, &scan_ld);
+  float scan_width_f = 0.0f;
+  int ssret_float_width = sscanf("12.34x", "%4f", &scan_width_f);
+  float scan_nan = 0.0f;
+  double scan_inf = 0.0;
+  long double scan_ninf = 0.0;
+  int ssret_float_special = sscanf("nan(payload) INF -infinity", "%f %lf %Lf",
+                                   &scan_nan, &scan_inf, &scan_ninf);
+  double scan_inf_width = 0.0;
+  int scan_inf_width_n = 0;
+  int ssret_inf_width = sscanf("infinity", "%3lf%n", &scan_inf_width, &scan_inf_width_n);
+  double scan_comma_d = 0.0;
+  int scan_comma_n = 0;
+  int ssret_comma = sscanf("12,5", "%lf%n", &scan_comma_d, &scan_comma_n);
+  if (ssret_float != 3) return 92;
+  if ((int)(scan_f * 100.0f) != 125) return 96;
+  if ((int)scan_d != -25) return 97;
+  if ((int)scan_ld != 12) return 98;
+  if (!(ssret_float_width == 1 && (int)(scan_width_f * 10.0f) == 123)) return 93;
+  if (ssret_float_special != 3) return 94;
+  if (!(scan_nan != 0.0f && !(scan_nan < 0.0f) && !(scan_nan > 0.0f))) return 95;
+  if (!(scan_inf > 1000000.0 && scan_ninf < -1000000.0L)) return 107;
+  if (!(ssret_inf_width == 1 && scan_inf_width > 1000000.0 && scan_inf_width_n == 3)) return 108;
+  if (!(ssret_comma == 1 && (int)scan_comma_d == 12 && scan_comma_n == 2)) return 119;
+  int ssret_empty_fmt = sscanf("", "");
+  int scan_empty_n = 7;
+  int ssret_empty_n = sscanf("", "%n", &scan_empty_n);
+  int scan_empty_d = 99;
+  int ssret_empty_d = sscanf("", "%d", &scan_empty_d);
+  int scan_space_d = 99;
+  int ssret_space_d = sscanf("   ", "%d", &scan_space_d);
+  int scan_mismatch_d = 99;
+  int ssret_mismatch_d = sscanf("x", "%d", &scan_mismatch_d);
+  if (!(ssret_empty_fmt == 0 && ssret_empty_n == 0 && scan_empty_n == 0)) return 109;
+  if (!(ssret_empty_d == -1 && scan_empty_d == 99)) return 110;
+  if (!(ssret_space_d == -1 && scan_space_d == 99)) return 111;
+  if (!(ssret_mismatch_d == 0 && scan_mismatch_d == 99)) return 112;
+  if (!(wscan_empty_fmt_ret == 0 && wscan_empty_n_ret == 0 && wscan_empty_n == 0)) return 113;
+  if (!(wscan_empty_d_ret == -1 && wscan_empty_d == 99 &&
+        wscan_space_d_ret == -1 && wscan_space_d == 99 &&
+        wscan_mismatch_d_ret == 0 && wscan_mismatch_d == 99)) return 114;
+  if (!(wscan_hh_ret == 2 && wscan_hh == -5 && wscan_uhh == 250)) return 116;
+  if (!(wscan_n_len_ret == 3 && wscan_n_a == 12 && wscan_n_hh == 2 &&
+        wscan_n_b == 345 && wscan_n_h == 6 && wscan_n_c == 6 && wscan_n_l == 8)) return 117;
   struct lconv *lc;
   setlocale(0, "C");
   lc = localeconv();
+  FILE *empty_wf = fopen("empty.txt", "w");
+  int empty_close_w = fclose(empty_wf);
+  FILE *empty_rf = fopen("empty.txt", "r");
+  int fscan_empty_fmt_ret = fscanf(empty_rf, "");
+  int fscan_empty_fmt_eof = feof(empty_rf);
+  int fscan_empty_n = 7;
+  int fscan_empty_n_ret = fscanf(empty_rf, "%n", &fscan_empty_n);
+  int fscan_empty_n_eof = feof(empty_rf);
+  int fscan_empty_d = 99;
+  int fscan_empty_d_ret = fscanf(empty_rf, "%d", &fscan_empty_d);
+  int fscan_empty_eof = feof(empty_rf);
+  int empty_close_r = fclose(empty_rf);
+  if (!(empty_close_w == 0 && empty_close_r == 0 &&
+        fscan_empty_fmt_ret == 0 && fscan_empty_n_ret == 0 && fscan_empty_n == 0 &&
+        !fscan_empty_fmt_eof && !fscan_empty_n_eof &&
+        fscan_empty_d_ret == -1 && fscan_empty_d == 99 && fscan_empty_eof)) return 115;
   FILE *wf = fopen("tmp.txt", "w");
   int wrote = fwrite("A\nB", 1, 3, wf);
   long pos_after_write = ftell(wf);
@@ -1643,6 +2093,7 @@ int main(void) {
          parsed == -42 && *endp == 0 &&
          parsed_u == 255 && *uendp == '!' &&
          (int)parsed_d == -125 && *dendp == '!' &&
+         (int)comma_d == 12 && *comma_endp == ',' &&
          (int)(parsed_atof * 100.0) == 325 &&
          parsed_imax == 127 && *imax_endp == '!' &&
          parsed_umax == 255 && *umax_endp == '!' &&
@@ -1690,6 +2141,7 @@ int main(void) {
          wcstol(wcnum, &wend, 16) == -42 && *wend == '.' &&
          wcstoul(wcnum + 2, &wend, 16) == 42 && *wend == '.' &&
          (int)(wcstod(wcdec, &wend) * 10.0) == 25 && *wend == 0 &&
+         (int)wcstod(wccomma, &wend) == 12 && *wend == ',' &&
          mbrtowc(convw, "Q", 2, nullv) == 1 && convw[0] == 'Q' &&
          wcrtomb(convc, 'R', nullv) == 1 && convc[0] == 'R' &&
          convw[0] == 'Q' && convc[0] == 'R' &&
@@ -1699,9 +2151,23 @@ int main(void) {
          swret == 5 && swbuf[0] == '1' && swbuf[1] == '2' && swbuf[2] == '-' &&
          swbuf[3] == 'O' && swbuf[4] == 'K' && swbuf[5] == 0 &&
          scanret == 1 && never == 12 &&
+         wscan_empty_fmt_ret == 0 && wscan_empty_n_ret == 0 && wscan_empty_n == 0 &&
+         wscan_empty_d_ret == -1 && wscan_empty_d == 99 &&
+         wscan_space_d_ret == -1 && wscan_space_d == 99 &&
+         wscan_mismatch_d_ret == 0 && wscan_mismatch_d == 99 &&
+         wscan_hh_ret == 2 && wscan_hh == -5 && wscan_uhh == 250 &&
+         wscan_n_len_ret == 3 && wscan_n_a == 12 && wscan_n_hh == 2 &&
+         wscan_n_b == 345 && wscan_n_h == 6 && wscan_n_c == 6 && wscan_n_l == 8 &&
          wscan_p_ret == 1 && (long)wscan_p == 42 &&
          wscan_set_ret == 1 && wscan_set[0] == 'a' && wscan_set[1] == 'b' &&
          wscan_set[2] == 'c' && wscan_set[3] == 0 &&
+         wscan_float_ret == 3 && (int)(wscan_f * 100.0f) == 125 &&
+         (int)wscan_d == -25 && (int)wscan_ld == 12 &&
+         wscan_float_width_ret == 1 && (int)(wscan_width_f * 10.0f) == 123 &&
+         wscan_comma_ret == 1 && (int)wscan_comma_d == 12 && wscan_comma_n == 2 &&
+         wscan_float_special_ret == 3 &&
+         wscan_nan != 0.0f && !(wscan_nan < 0.0f) && !(wscan_nan > 0.0f) &&
+         wscan_inf > 1000000.0 && wscan_ninf < -1000000.0L &&
          ssret == 4 && scan_i == -42 && scan_x == 42 &&
          scan_s[0] == 'a' && scan_s[1] == 'b' && scan_s[2] == 'c' && scan_s[3] == 0 &&
          scan_c[0] == 'Z' && scan_n == 12 &&
@@ -1715,6 +2181,22 @@ int main(void) {
          scan_set[0] == 'a' && scan_set[1] == 'b' && scan_set[2] == 'c' && scan_set[3] == 0 &&
          scan_not_z[0] == '1' && scan_not_z[1] == '2' && scan_not_z[2] == '3' &&
          scan_not_z[3] == 0 &&
+         ssret_float == 3 && (int)(scan_f * 100.0f) == 125 &&
+         (int)scan_d == -25 && (int)scan_ld == 12 &&
+         ssret_float_width == 1 && (int)(scan_width_f * 10.0f) == 123 &&
+         ssret_comma == 1 && (int)scan_comma_d == 12 && scan_comma_n == 2 &&
+         ssret_float_special == 3 &&
+         scan_nan != 0.0f && !(scan_nan < 0.0f) && !(scan_nan > 0.0f) &&
+         scan_inf > 1000000.0 && scan_ninf < -1000000.0L &&
+         ssret_inf_width == 1 && scan_inf_width > 1000000.0 && scan_inf_width_n == 3 &&
+         ssret_empty_fmt == 0 && ssret_empty_n == 0 && scan_empty_n == 0 &&
+         ssret_empty_d == -1 && scan_empty_d == 99 &&
+         ssret_space_d == -1 && scan_space_d == 99 &&
+         ssret_mismatch_d == 0 && scan_mismatch_d == 99 &&
+         empty_close_w == 0 && empty_close_r == 0 &&
+         fscan_empty_fmt_ret == 0 && fscan_empty_n_ret == 0 && fscan_empty_n == 0 &&
+         !fscan_empty_fmt_eof && !fscan_empty_n_eof &&
+         fscan_empty_d_ret == -1 && fscan_empty_d == 99 && fscan_empty_eof &&
          feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 0 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
          fetestexcept(31) == 4 &&
@@ -2068,6 +2550,13 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.snprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
   grep -q '<env.sprintf>' "$out_dir/linked_snprintf_nostdlib.objdump"
 fi
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/snprintf_length_mods.o" "$out_dir/snprintf_length_mods.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_snprintf_length_mods.wasm" \
+  "$out_dir/snprintf_length_mods.o"
+wasm-validate "$out_dir/linked_snprintf_length_mods.wasm"
+wasm-interp "$out_dir/linked_snprintf_length_mods.wasm" --run-all-exports > "$out_dir/linked_snprintf_length_mods.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_snprintf_length_mods.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/snprintf_float.o" "$out_dir/snprintf_float.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_snprintf_float.wasm" \

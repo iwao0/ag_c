@@ -1066,7 +1066,7 @@ static int emit_variadic_arg_area_prepare(wasm_func_ctx_t *ctx, ir_inst_t *i, in
   wasm_emitf(indent, "(global.set $__ag_va_arg_area (global.get $__stack_pointer))\n");
   for (int a = i->nargs_fixed; a < i->nargs; a++) {
     int off = (a - i->nargs_fixed) * 8;
-    ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
+    ir_type_t arg_ty = i->args[a].type == IR_TY_PTR ? IR_TY_PTR : effective_val_type(ctx, i->args[a]);
     if (arg_ty == IR_TY_F64) {
       wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
       emit_val_expr_as(ctx, i->args[a], IR_TY_F64);

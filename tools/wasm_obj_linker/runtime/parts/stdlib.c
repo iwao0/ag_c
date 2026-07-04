@@ -124,7 +124,7 @@ static int __agc_runtime_parse_hex_float(char **sp, double *out) {
     acc = acc * 16.0 + (double)digit;
     p++;
   }
-  if (*p == '.') {
+  if (ag_rt_is_decimal_point((unsigned char)*p)) {
     double place = 1.0 / 16.0;
     p++;
     while ((digit = __agc_runtime_hex_digit(*p)) >= 0) {
@@ -186,7 +186,7 @@ double __agc_runtime_strtod(long s_addr, long endptr_addr) {
     acc = acc * 10.0 + (double)(*s - '0');
     s++;
   }
-  if (*s == '.') {
+  if (ag_rt_is_decimal_point((unsigned char)*s)) {
     double place = 0.1;
     s++;
     while (*s >= '0' && *s <= '9') {

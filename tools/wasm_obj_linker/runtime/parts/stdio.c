@@ -14,10 +14,16 @@ int __agc_runtime_puts(long s_addr) {
 
 static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
   long i = 0;
-  if (!f || f->is_stdin || !f->write_mode || total <= 0) return 0;
+  if (total <= 0) return 0;
+  if (!f) return 0;
+  if (f->is_stdin || !f->write_mode) {
+    f->error = 1;
+    return 0;
+  }
   while (i < total && f->pos < (long)sizeof(ag_rt_file_buf)) {
     ag_rt_file_buf[f->pos++] = src[i++];
   }
+  if (i < total) f->error = 1;
   if (f->pos > ag_rt_file_len) ag_rt_file_len = f->pos;
   ag_rt_file_set_pos(f, f->pos);
   return i;
