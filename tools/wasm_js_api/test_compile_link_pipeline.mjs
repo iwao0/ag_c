@@ -144,6 +144,18 @@ long double asinl(long double);
 double acos(double);
 float acosf(float);
 long double acosl(long double);
+double floor(double);
+float floorf(float);
+long double floorl(long double);
+double ceil(double);
+float ceilf(float);
+long double ceill(long double);
+double round(double);
+float roundf(float);
+long double roundl(long double);
+double trunc(double);
+float truncf(float);
+long double truncl(long double);
 double nearbyint(double);
 float nearbyintf(float);
 long double nearbyintl(long double);
@@ -259,6 +271,7 @@ int main(void) {
   if (!isnan(exp(nanv)) || !isnan(expf((float)nanv)) || !isnan(expl((long double)nanv))) return 108;
   if (exp2(infv) <= 1.0e300 || exp2(-infv) != 0.0) return 109;
   if (expm1(infv) <= 1.0e300 || (int)expm1(-infv) != -1) return 110;
+  if (!signbit(expm1(nzero)) || !signbit(expm1f(-0.0f)) || !signbit(expm1l(-0.0L))) return 139;
   if (!isnan(sin(infv)) || !isnan(sinf((float)infv)) || !isnan(sinl((long double)infv))) return 111;
   if (!isnan(cos(infv)) || !isnan(cosf((float)infv)) || !isnan(cosl((long double)infv))) return 112;
   if (!isnan(tan(infv)) || !isnan(tanf((float)infv)) || !isnan(tanl((long double)infv))) return 113;
@@ -268,6 +281,10 @@ int main(void) {
   if (acosh(infv) <= 1.0e300 || !isnan(acosh(0.5)) || !isnan(acoshf(0.5f))) return 117;
   if (atanh(1.0) <= 1.0e300 || atanh(-1.0) >= -1.0e300) return 118;
   if (!isnan(atanh(2.0)) || !isnan(atanhl(2.0L))) return 119;
+  if (asinh(1.0e200) <= 400.0 || asinh(1.0e200) >= 500.0) return 123;
+  if (asinh(-1.0e200) >= -400.0 || asinh(-1.0e200) <= -500.0) return 124;
+  if (acosh(1.0e200) <= 400.0 || acosh(1.0e200) >= 500.0) return 125;
+  if (acoshl(1.0e200L) <= 400.0L || acoshl(1.0e200L) >= 500.0L) return 126;
   if (cbrt(infv) <= 1.0e300 || cbrt(-infv) >= -1.0e300) return 120;
   if (!isnan(cbrt(nanv)) || !isnan(cbrtf((float)nanv))) return 121;
   if (cbrtl((long double)infv) <= 1.0e300L || !signbit(cbrt(nzero))) return 122;
@@ -287,12 +304,19 @@ int main(void) {
   if ((int)(scalbln(1.5, 3L) * 1000.0) != 12000) return 20;
   if ((int)(scalblnf(1.25f, 2L) * 1000.0f) != 5000) return 21;
   if ((int)(scalblnl(3.0L, -1L) * 1000.0L) != 1500) return 22;
+  if (ldexp(1.0, 5000) <= 1.0e300 || !signbit(ldexp(-1.0, -5000))) return 127;
+  if (scalbln(1.0, 5000L) <= 1.0e300 || !signbit(scalbln(-1.0, -5000L))) return 128;
+  if (scalblnf(1.0f, 5000L) <= 1.0e30f) return 129;
+  if (!signbit(scalblnl(-1.0L, -5000L))) return 130;
   if (ilogb(8.0) != 3 || ilogbf(0.75f) != -1 || ilogbl(0.25L) != -2) return 23;
   if ((int)logb(8.0) != 3 || (int)logbf(0.75f) != -1 || (int)logbl(0.25L) != -2) return 24;
   if ((int)(fmod(7.5, 2.0) * 1000.0) != 1500 || (int)(fmodf(7.5f, 2.0f) * 1000.0f) != 1500) return 25;
   if ((int)(fmodl(7.5L, 2.0L) * 1000.0L) != 1500) return 26;
   if (!isnan(fmod(7.5, z)) || !isnan(fmod(infv, 2.0))) return 27;
   if ((int)fmod(7.5, infv) != 7 || !signbit(fmod(-z, 3.0))) return 28;
+  if (fmod(1.0e20, 3.0) < 0.0 || fmod(1.0e20, 3.0) >= 3.0) return 133;
+  if (fmod(-1.0e20, 3.0) > 0.0 || fmod(-1.0e20, 3.0) <= -3.0) return 134;
+  if (fmodl(1.0e20L, 3.0L) < 0.0L || fmodl(1.0e20L, 3.0L) >= 3.0L) return 135;
   if ((int)(hypot(3.0, 4.0) * 1000.0) != 5000 || (int)(hypotf(3.0f, 4.0f) * 1000.0f) != 5000) return 29;
   if ((int)(hypotl(3.0L, 4.0L) * 1000.0L) != 5000) return 30;
   if (hypot(1.0e200, 1.0e200) <= 1.0e200) return 31;
@@ -308,9 +332,15 @@ int main(void) {
   if ((int)(modf(-3.75, &ip) * 100.0) != -75 || (int)ip != -3) return 17;
   if ((int)(modff(2.25f, &fip) * 100.0f) != 25 || (int)fip != 2) return 18;
   if ((int)(modfl(5.5L, &lip) * 100.0L) != 50 || (int)lip != 5) return 19;
+  if (!signbit(modf(nzero, &ip)) || !signbit(ip)) return 141;
+  if (!signbit(modff(-2.0f, &fip)) || (int)fip != -2) return 142;
+  if (!signbit(modfl(-0.0L, &lip)) || !signbit(lip)) return 143;
   if ((int)copysign(2.0, nzero) != -2 || !signbit(copysign(2.0, nzero))) return 20;
   if ((int)copysignf(2.0f, -0.0f) != -2 || !signbit(copysignf(2.0f, -0.0f))) return 21;
   if ((int)copysignl(2.0L, -0.0L) != -2 || !signbit(copysignl(2.0L, -0.0L))) return 22;
+  if (signbit(fabs(nzero)) || signbit(fabsf(-0.0f)) || signbit(fabsl(-0.0L))) return 131;
+  if (signbit(copysign(nzero, 1.0)) || signbit(copysignf(-0.0f, 1.0f)) ||
+      signbit(copysignl(-0.0L, 1.0L))) return 132;
   if (!isnan(nan("")) || !isnan(nanf("")) || !isnan(nanl(""))) return 23;
   if ((int)(fdim(5.5, 2.0) * 1000.0) != 3500 || (int)(fdim(2.0, 5.5) * 1000.0) != 0) return 24;
   if ((int)(fdimf(5.5f, 2.0f) * 1000.0f) != 3500) return 25;
@@ -326,6 +356,11 @@ int main(void) {
   if ((int)(remquol(5.5L, 2.0L, &lquo) * 1000.0L) != -500 || lquo != 3) return 35;
   if ((int)(remquo(19.5, 2.0, &dquo_bits) * 1000.0) != -500 || dquo_bits != 2) return 36;
   if ((int)(remquo(-19.5, 2.0, &dquo_neg_bits) * 1000.0) != 500 || dquo_neg_bits != -2) return 37;
+  if (remainder(1.0e20, 3.0) < -1.5 || remainder(1.0e20, 3.0) > 1.5) return 136;
+  if (remquo(1.0e20, 3.0, &dquo_bits) < -1.5 || remquo(1.0e20, 3.0, &dquo_bits) > 1.5 ||
+      dquo_bits < -7 || dquo_bits > 7) return 137;
+  if (remquo(-1.0e20, 3.0, &dquo_neg_bits) < -1.5 || remquo(-1.0e20, 3.0, &dquo_neg_bits) > 1.5 ||
+      dquo_neg_bits < -7 || dquo_neg_bits > 7) return 138;
   if ((int)(exp2(3.0) * 1000.0) < 7998 || (int)(exp2(3.0) * 1000.0) > 8002) return 38;
   if ((int)(exp2f(3.0f) * 1000.0f) < 7998 || (int)(exp2f(3.0f) * 1000.0f) > 8002) return 39;
   if ((int)(exp2l(3.0L) * 1000.0L) < 7998 || (int)(exp2l(3.0L) * 1000.0L) > 8002) return 40;
@@ -335,6 +370,7 @@ int main(void) {
   if ((int)(log1p(1.0) * 1000.0) < 691 || (int)(log1p(1.0) * 1000.0) > 695) return 44;
   if ((int)(log1pf(1.0f) * 1000.0f) < 691 || (int)(log1pf(1.0f) * 1000.0f) > 695) return 45;
   if ((int)(log1pl(1.0L) * 1000.0L) < 691 || (int)(log1pl(1.0L) * 1000.0L) > 695) return 46;
+  if (!signbit(log1p(nzero)) || !signbit(log1pf(-0.0f)) || !signbit(log1pl(-0.0L))) return 140;
   if ((int)(sinh(1.0) * 1000.0) < 1174 || (int)(sinh(1.0) * 1000.0) > 1176) return 47;
   if ((int)(sinhf(1.0f) * 1000.0f) < 1174 || (int)(sinhf(1.0f) * 1000.0f) > 1176) return 48;
   if ((int)(sinhl(1.0L) * 1000.0L) < 1174 || (int)(sinhl(1.0L) * 1000.0L) > 1176) return 49;
@@ -365,6 +401,10 @@ int main(void) {
   if (llrint(2.5) != 2 || llrintf(-2.5f) != -2 || llrintl(3.5L) != 4) return 74;
   if (lround(2.5) != 3 || lroundf(-2.5f) != -3 || lroundl(3.5L) != 4) return 75;
   if (llround(-3.5) != -4 || llroundf(2.5f) != 3 || llroundl(-2.5L) != -3) return 76;
+  if (!isnan(floor(nanv)) || ceil(infv) <= 1.0e300 || round(-infv) >= -1.0e300) return 92;
+  if (!signbit(floor(-z)) || !signbit(trunc(-0.8)) || !signbit(ceil(-0.8)) || !signbit(round(-0.3))) return 93;
+  if (!isnan(floorf((float)nanv)) || ceill((long double)infv) <= 1.0e300L) return 94;
+  if (!signbit(roundl(-0.3L))) return 95;
   if ((int)fmin(nanv, 7.0) != 7 || (int)fmin(7.0, nanv) != 7) return 77;
   if ((int)fminf((float)nanv, 5.0f) != 5 || (int)fminl(6.0L, (long double)nanv) != 6) return 78;
   if ((int)fmax(nanv, 7.0) != 7 || (int)fmax(7.0, nanv) != 7) return 79;
@@ -1484,6 +1524,7 @@ int main(void) {
   if (!isnan(exp(nanv)) || !isnan(expf((float)nanv)) || !isnan(expl((long double)nanv))) return 108;
   if (exp2(infv) <= 1.0e300 || exp2(-infv) != 0.0) return 109;
   if (expm1(infv) <= 1.0e300 || (int)expm1(-infv) != -1) return 110;
+  if (!signbit(expm1(nzero)) || !signbit(expm1f(-0.0f)) || !signbit(expm1l(-0.0L))) return 139;
   if (!isnan(sin(infv)) || !isnan(sinf((float)infv)) || !isnan(sinl((long double)infv))) return 111;
   if (!isnan(cos(infv)) || !isnan(cosf((float)infv)) || !isnan(cosl((long double)infv))) return 112;
   if (!isnan(tan(infv)) || !isnan(tanf((float)infv)) || !isnan(tanl((long double)infv))) return 113;
@@ -1493,6 +1534,10 @@ int main(void) {
   if (acosh(infv) <= 1.0e300 || !isnan(acosh(0.5)) || !isnan(acoshf(0.5f))) return 117;
   if (atanh(1.0) <= 1.0e300 || atanh(-1.0) >= -1.0e300) return 118;
   if (!isnan(atanh(2.0)) || !isnan(atanhl(2.0L))) return 119;
+  if (asinh(1.0e200) <= 400.0 || asinh(1.0e200) >= 500.0) return 123;
+  if (asinh(-1.0e200) >= -400.0 || asinh(-1.0e200) <= -500.0) return 124;
+  if (acosh(1.0e200) <= 400.0 || acosh(1.0e200) >= 500.0) return 125;
+  if (acoshl(1.0e200L) <= 400.0L || acoshl(1.0e200L) >= 500.0L) return 126;
   if (cbrt(infv) <= 1.0e300 || cbrt(-infv) >= -1.0e300) return 120;
   if (!isnan(cbrt(nanv)) || !isnan(cbrtf((float)nanv))) return 121;
   if (cbrtl((long double)infv) <= 1.0e300L || !signbit(cbrt(nzero))) return 122;
@@ -1512,12 +1557,19 @@ int main(void) {
   if ((int)(scalbln(1.5, 3L) * 1000.0) != 12000) return 24;
   if ((int)(scalblnf(1.25f, 2L) * 1000.0f) != 5000) return 25;
   if ((int)(scalblnl(3.0L, -1L) * 1000.0L) != 1500) return 26;
+  if (ldexp(1.0, 5000) <= 1.0e300 || !signbit(ldexp(-1.0, -5000))) return 127;
+  if (scalbln(1.0, 5000L) <= 1.0e300 || !signbit(scalbln(-1.0, -5000L))) return 128;
+  if (scalblnf(1.0f, 5000L) <= 1.0e30f) return 129;
+  if (!signbit(scalblnl(-1.0L, -5000L))) return 130;
   if (ilogb(8.0) != 3 || ilogbf(0.75f) != -1 || ilogbl(0.25L) != -2) return 27;
   if ((int)logb(8.0) != 3 || (int)logbf(0.75f) != -1 || (int)logbl(0.25L) != -2) return 28;
   if ((int)(fmod(7.5, 2.0) * 1000.0) != 1500 || (int)(fmodf(7.5f, 2.0f) * 1000.0f) != 1500) return 29;
   if ((int)(fmodl(7.5L, 2.0L) * 1000.0L) != 1500) return 30;
   if (!isnan(fmod(7.5, z)) || !isnan(fmod(infv, 2.0))) return 31;
   if ((int)fmod(7.5, infv) != 7 || !signbit(fmod(-z, 3.0))) return 32;
+  if (fmod(1.0e20, 3.0) < 0.0 || fmod(1.0e20, 3.0) >= 3.0) return 133;
+  if (fmod(-1.0e20, 3.0) > 0.0 || fmod(-1.0e20, 3.0) <= -3.0) return 134;
+  if (fmodl(1.0e20L, 3.0L) < 0.0L || fmodl(1.0e20L, 3.0L) >= 3.0L) return 135;
   if ((int)(hypot(3.0, 4.0) * 1000.0) != 5000 || (int)(hypotf(3.0f, 4.0f) * 1000.0f) != 5000) return 33;
   if ((int)(hypotl(3.0L, 4.0L) * 1000.0L) != 5000) return 34;
   if (hypot(1.0e200, 1.0e200) <= 1.0e200) return 35;
@@ -1529,9 +1581,15 @@ int main(void) {
   if ((int)(modf(-3.75, &ip) * 100.0) != -75 || (int)ip != -3) return 37;
   if ((int)(modff(2.25f, &fip) * 100.0f) != 25 || (int)fip != 2) return 38;
   if ((int)(modfl(5.5L, &lip) * 100.0L) != 50 || (int)lip != 5) return 39;
+  if (!signbit(modf(nzero, &ip)) || !signbit(ip)) return 141;
+  if (!signbit(modff(-2.0f, &fip)) || (int)fip != -2) return 142;
+  if (!signbit(modfl(-0.0L, &lip)) || !signbit(lip)) return 143;
   if ((int)copysign(2.0, nzero) != -2 || !signbit(copysign(2.0, nzero))) return 40;
   if ((int)copysignf(2.0f, -0.0f) != -2 || !signbit(copysignf(2.0f, -0.0f))) return 41;
   if ((int)copysignl(2.0L, -0.0L) != -2 || !signbit(copysignl(2.0L, -0.0L))) return 42;
+  if (signbit(fabs(nzero)) || signbit(fabsf(-0.0f)) || signbit(fabsl(-0.0L))) return 131;
+  if (signbit(copysign(nzero, 1.0)) || signbit(copysignf(-0.0f, 1.0f)) ||
+      signbit(copysignl(-0.0L, 1.0L))) return 132;
   if (!isnan(nan("")) || !isnan(nanf("")) || !isnan(nanl(""))) return 43;
   if ((int)(fdim(5.5, 2.0) * 1000.0) != 3500 || (int)(fdim(2.0, 5.5) * 1000.0) != 0) return 44;
   if ((int)(fdimf(5.5f, 2.0f) * 1000.0f) != 3500) return 45;
@@ -1547,6 +1605,11 @@ int main(void) {
   if ((int)(remquol(5.5L, 2.0L, &lquo) * 1000.0L) != -500 || lquo != 3) return 47;
   if ((int)(remquo(19.5, 2.0, &dquo_bits) * 1000.0) != -500 || dquo_bits != 2) return 48;
   if ((int)(remquo(-19.5, 2.0, &dquo_neg_bits) * 1000.0) != 500 || dquo_neg_bits != -2) return 49;
+  if (remainder(1.0e20, 3.0) < -1.5 || remainder(1.0e20, 3.0) > 1.5) return 136;
+  if (remquo(1.0e20, 3.0, &dquo_bits) < -1.5 || remquo(1.0e20, 3.0, &dquo_bits) > 1.5 ||
+      dquo_bits < -7 || dquo_bits > 7) return 137;
+  if (remquo(-1.0e20, 3.0, &dquo_neg_bits) < -1.5 || remquo(-1.0e20, 3.0, &dquo_neg_bits) > 1.5 ||
+      dquo_neg_bits < -7 || dquo_neg_bits > 7) return 138;
   if ((int)(exp2(3.0) * 1000.0) < 7998 || (int)(exp2(3.0) * 1000.0) > 8002) return 43;
   if ((int)(exp2f(3.0f) * 1000.0f) < 7998 || (int)(exp2f(3.0f) * 1000.0f) > 8002) return 44;
   if ((int)(exp2l(3.0L) * 1000.0L) < 7998 || (int)(exp2l(3.0L) * 1000.0L) > 8002) return 45;
@@ -1556,6 +1619,7 @@ int main(void) {
   if ((int)(log1p(1.0) * 1000.0) < 691 || (int)(log1p(1.0) * 1000.0) > 695) return 49;
   if ((int)(log1pf(1.0f) * 1000.0f) < 691 || (int)(log1pf(1.0f) * 1000.0f) > 695) return 50;
   if ((int)(log1pl(1.0L) * 1000.0L) < 691 || (int)(log1pl(1.0L) * 1000.0L) > 695) return 51;
+  if (!signbit(log1p(nzero)) || !signbit(log1pf(-0.0f)) || !signbit(log1pl(-0.0L))) return 140;
   if ((int)(sinh(1.0) * 1000.0) < 1174 || (int)(sinh(1.0) * 1000.0) > 1176) return 52;
   if ((int)(sinhf(1.0f) * 1000.0f) < 1174 || (int)(sinhf(1.0f) * 1000.0f) > 1176) return 53;
   if ((int)(sinhl(1.0L) * 1000.0L) < 1174 || (int)(sinhl(1.0L) * 1000.0L) > 1176) return 54;
@@ -1587,6 +1651,10 @@ int main(void) {
   if (nearbyint(2.5) != 2.0 || nearbyintf(-2.5f) != -2.0f || nearbyintl(3.5L) != 4.0L) return 76;
   if (lround(2.5) != 3 || lroundf(-2.5f) != -3 || lroundl(3.5L) != 4) return 77;
   if (llround(-3.5) != -4 || llroundf(2.5f) != 3 || llroundl(-2.5L) != -3) return 78;
+  if (!isnan(floor(nanv)) || ceil(infv) <= 1.0e300 || round(-infv) >= -1.0e300) return 96;
+  if (!signbit(floor(-z)) || !signbit(trunc(-0.8)) || !signbit(ceil(-0.8)) || !signbit(round(-0.3))) return 97;
+  if (!isnan(floorf((float)nanv)) || ceill((long double)infv) <= 1.0e300L) return 98;
+  if (!signbit(roundl(-0.3L))) return 99;
   if (fesetround(FE_UPWARD) != 0 || rint(2.1) != 3.0 || rintf(-2.1f) != -2.0f) return 79;
   if (lrint(2.1) != 3 || llrintf(-2.1f) != -2) return 80;
   if (fesetround(FE_DOWNWARD) != 0 || rintl(2.9L) != 2.0L || nearbyint(-2.1) != -3.0) return 81;

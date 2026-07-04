@@ -89,34 +89,44 @@ long double __agc_runtime_powl(long double x, long double y) {
 }
 
 double __agc_runtime_fabs(double x) {
+  if (x == 0.0) return 0.0;
   return x < 0.0 ? -x : x;
 }
 
 float __agc_runtime_fabsf(float x) {
+  if (x == 0.0f) return 0.0f;
   return x < 0.0f ? -x : x;
 }
 
 long double __agc_runtime_fabsl(long double x) {
+  if (x == 0.0L) return 0.0L;
   return x < 0.0L ? -x : x;
 }
 
 double __agc_runtime_trunc(double x) {
-  return (double)(long)x;
+  if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
+  long i = (long)x;
+  if (i == 0) return __agc_runtime_copysign(0.0, x);
+  return (double)i;
 }
 
 double __agc_runtime_floor(double x) {
+  if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
   long i = (long)x;
   if ((double)i > x) i = i - 1;
   return (double)i;
 }
 
 double __agc_runtime_ceil(double x) {
+  if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
   long i = (long)x;
   if ((double)i < x) i = i + 1;
+  if (i == 0 && x < 0.0) return __agc_runtime_copysign(0.0, x);
   return (double)i;
 }
 
 double __agc_runtime_round(double x) {
+  if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
   return x < 0.0 ? __agc_runtime_ceil(x - 0.5) : __agc_runtime_floor(x + 0.5);
 }
 
@@ -234,6 +244,37 @@ long double __agc_runtime_tanl(long double x) {
   return (long double)__agc_runtime_tan((double)x);
 }
 
+static int __agc_runtime_pow2_mod16(int shift) {
+  return shift >= 4 ? 0 : (1 << shift);
+}
+
+static double __agc_runtime_fmod_abs_quot(double ax, double ay, int *quo_mod16) {
+  double scaled;
+  int shift = 0;
+  int qmod = 0;
+  if (quo_mod16) *quo_mod16 = 0;
+  if (ax < ay) return ax;
+  scaled = ay;
+  while (scaled <= ax / 2.0 && scaled <= 8.988465674311579e307) {
+    scaled = scaled * 2.0;
+    shift++;
+  }
+  while (shift >= 0) {
+    if (ax >= scaled) {
+      ax = ax - scaled;
+      qmod = (qmod + __agc_runtime_pow2_mod16(shift)) & 15;
+    }
+    scaled = scaled / 2.0;
+    shift--;
+  }
+  if (quo_mod16) *quo_mod16 = qmod;
+  return ax;
+}
+
+static double __agc_runtime_fmod_abs(double ax, double ay) {
+  return __agc_runtime_fmod_abs_quot(ax, ay, 0);
+}
+
 double __agc_runtime_fmod(double x, double y) {
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isnan(y)) return y;
@@ -242,11 +283,9 @@ double __agc_runtime_fmod(double x, double y) {
     return zero / zero;
   }
   if (__agc_runtime_isinf(y) || x == 0.0) return x;
-  long q = (long)(x / y);
-  double r = x - (double)q * y;
-  if (x >= 0.0 && r < 0.0) r = r + __agc_runtime_fabs(y);
-  if (x < 0.0 && r > 0.0) r = r - __agc_runtime_fabs(y);
-  return r;
+  double r = __agc_runtime_fmod_abs(__agc_runtime_fabs(x), __agc_runtime_fabs(y));
+  if (r == 0.0) return __agc_runtime_copysign(0.0, x);
+  return __agc_runtime_signbit(x) ? -r : r;
 }
 
 float __agc_runtime_fmodf(float x, float y) {
@@ -351,28 +390,14 @@ long long __agc_runtime_llroundl(long double x) {
   return (long long)__agc_runtime_round((double)x);
 }
 
-static long __agc_runtime_nearest_even_quot(double q) {
-  int sign = 1;
-  if (q < 0.0) {
-    sign = -1;
-    q = -q;
-  }
-  long n = (long)q;
-  double frac = q - (double)n;
-  if (frac > 0.5 || (frac == 0.5 && (n & 1))) n++;
-  return sign < 0 ? -n : n;
-}
-
-static int __agc_runtime_remquo_quo_bits(double x, double y) {
-  long q = __agc_runtime_nearest_even_quot(x / y);
-  int sign = q < 0 ? -1 : 1;
-  int bits;
-  if (q < 0) q = -q;
-  bits = (int)(q & 7);
-  return sign < 0 ? -bits : bits;
-}
-
-double __agc_runtime_remainder(double x, double y) {
+static double __agc_runtime_remainder_core(double x, double y, int *quo_bits) {
+  int qmod = 0;
+  int flip_result_sign = 0;
+  int quotient_sign;
+  double ax;
+  double ay;
+  double r;
+  if (quo_bits) *quo_bits = 0;
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isnan(y)) return y;
   if (y == 0.0 || __agc_runtime_isinf(x)) {
@@ -380,8 +405,25 @@ double __agc_runtime_remainder(double x, double y) {
     return zero / zero;
   }
   if (__agc_runtime_isinf(y)) return x;
-  long q = __agc_runtime_nearest_even_quot(x / y);
-  return x - (double)q * y;
+  ax = __agc_runtime_fabs(x);
+  ay = __agc_runtime_fabs(y);
+  r = __agc_runtime_fmod_abs_quot(ax, ay, &qmod);
+  if (r > ay / 2.0 || (r == ay / 2.0 && (qmod & 1))) {
+    r = ay - r;
+    qmod = (qmod + 1) & 15;
+    flip_result_sign = 1;
+  }
+  quotient_sign = __agc_runtime_signbit(x) == __agc_runtime_signbit(y) ? 1 : -1;
+  if (quo_bits) {
+    int bits = qmod & 7;
+    *quo_bits = quotient_sign < 0 ? -bits : bits;
+  }
+  if (r == 0.0) return __agc_runtime_copysign(0.0, x);
+  return (__agc_runtime_signbit(x) != flip_result_sign) ? -r : r;
+}
+
+double __agc_runtime_remainder(double x, double y) {
+  return __agc_runtime_remainder_core(x, y, 0);
 }
 
 float __agc_runtime_remainderf(float x, float y) {
@@ -393,12 +435,11 @@ long double __agc_runtime_remainderl(long double x, long double y) {
 }
 
 double __agc_runtime_remquo(double x, double y, long quo_addr) {
-  double result = __agc_runtime_remainder(x, y);
+  int bits = 0;
+  double result = __agc_runtime_remainder_core(x, y, &bits);
   if (quo_addr) {
     int *quo = (int *)ag_rt_ptr(quo_addr);
-    *quo = (__agc_runtime_isfinite(x) && __agc_runtime_isfinite(y) && y != 0.0)
-               ? __agc_runtime_remquo_quo_bits(x, y)
-               : 0;
+    *quo = bits;
   }
   return result;
 }
@@ -437,8 +478,10 @@ long double __agc_runtime_fmal(long double x, long double y, long double z) {
   return (long double)__agc_runtime_fma((double)x, (double)y, (double)z);
 }
 
-double __agc_runtime_ldexp(double x, int exp) {
+static double __agc_runtime_ldexp_long(double x, long exp) {
   if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
+  if (exp > 4096) return __agc_runtime_copysign(1.0 / 0.0, x);
+  if (exp < -4096) return __agc_runtime_copysign(0.0, x);
   while (exp > 0) {
     x = x * 2.0;
     exp--;
@@ -450,36 +493,40 @@ double __agc_runtime_ldexp(double x, int exp) {
   return x;
 }
 
+double __agc_runtime_ldexp(double x, int exp) {
+  return __agc_runtime_ldexp_long(x, (long)exp);
+}
+
 float __agc_runtime_ldexpf(float x, int exp) {
-  return (float)__agc_runtime_ldexp((double)x, exp);
+  return (float)__agc_runtime_ldexp_long((double)x, (long)exp);
 }
 
 long double __agc_runtime_ldexpl(long double x, int exp) {
-  return (long double)__agc_runtime_ldexp((double)x, exp);
+  return (long double)__agc_runtime_ldexp_long((double)x, (long)exp);
 }
 
 double __agc_runtime_scalbn(double x, int exp) {
-  return __agc_runtime_ldexp(x, exp);
+  return __agc_runtime_ldexp_long(x, (long)exp);
 }
 
 float __agc_runtime_scalbnf(float x, int exp) {
-  return (float)__agc_runtime_scalbn((double)x, exp);
+  return (float)__agc_runtime_ldexp_long((double)x, (long)exp);
 }
 
 long double __agc_runtime_scalbnl(long double x, int exp) {
-  return (long double)__agc_runtime_scalbn((double)x, exp);
+  return (long double)__agc_runtime_ldexp_long((double)x, (long)exp);
 }
 
 double __agc_runtime_scalbln(double x, long exp) {
-  return __agc_runtime_ldexp(x, (int)exp);
+  return __agc_runtime_ldexp_long(x, exp);
 }
 
 float __agc_runtime_scalblnf(float x, long exp) {
-  return (float)__agc_runtime_scalbln((double)x, exp);
+  return (float)__agc_runtime_ldexp_long((double)x, exp);
 }
 
 long double __agc_runtime_scalblnl(long double x, long exp) {
-  return (long double)__agc_runtime_scalbln((double)x, exp);
+  return (long double)__agc_runtime_ldexp_long((double)x, exp);
 }
 
 int __agc_runtime_ilogb(double x) {
@@ -568,6 +615,7 @@ double __agc_runtime_modf(double x, long iptr_addr) {
   }
   whole = __agc_runtime_trunc(x);
   *iptr = whole;
+  if (x == whole) return __agc_runtime_copysign(0.0, x);
   return x - whole;
 }
 
@@ -585,6 +633,7 @@ float __agc_runtime_modff(float x, long iptr_addr) {
   }
   whole = __agc_runtime_trunc((double)x);
   *iptr = (float)whole;
+  if ((double)x == whole) return __agc_runtime_signbit((double)x) ? -0.0f : 0.0f;
   return x - (float)whole;
 }
 
@@ -708,10 +757,12 @@ double __agc_runtime_exp2(double x) {
 }
 
 double __agc_runtime_expm1(double x) {
+  if (x == 0.0) return x;
   return __agc_runtime_exp(x) - 1.0;
 }
 
 double __agc_runtime_log1p(double x) {
+  if (x == 0.0) return x;
   return __agc_runtime_log(1.0 + x);
 }
 
@@ -963,7 +1014,11 @@ double __agc_runtime_asinh(double x) {
   double r;
   if (__agc_runtime_isnan(x) || __agc_runtime_isinf(x)) return x;
   ax = __agc_runtime_fabs(x);
-  r = __agc_runtime_log(ax + __agc_runtime_sqrt(ax * ax + 1.0));
+  if (ax > 1.0e154) {
+    r = __agc_runtime_log(ax) + 0.6931471805599453;
+  } else {
+    r = __agc_runtime_log(ax + __agc_runtime_sqrt(ax * ax + 1.0));
+  }
   return __agc_runtime_signbit(x) ? -r : r;
 }
 
@@ -981,6 +1036,7 @@ double __agc_runtime_acosh(double x) {
   if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? zero / zero : x;
   if (x < 1.0) return zero / zero;
   if (x == 1.0) return 0.0;
+  if (x > 1.0e154) return __agc_runtime_log(x) + 0.6931471805599453;
   return __agc_runtime_log(x + __agc_runtime_sqrt(x - 1.0) * __agc_runtime_sqrt(x + 1.0));
 }
 

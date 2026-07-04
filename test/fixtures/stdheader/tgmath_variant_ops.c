@@ -34,6 +34,10 @@ int main(void) {
   float sin_fd = sin(1.0f / 0.0f);
   long double cos_ld = cos(1.0L / z);
   float tan_fd = tan(1.0f / 0.0f);
+  float modf_fint = 1.0f;
+  long double modf_lint = 1.0L;
+  int remquo_f_bits = 0;
+  int remquo_l_bits = 0;
   float acosh_fd = acosh(0.5f);
   long double atanh_ld = atanh(2.0L);
 
@@ -61,10 +65,13 @@ int main(void) {
   assert(nanish(tan_fd));
   assert(near1000(asinh(1.0f), 880, 882));
   assert(near1000(asinh(1.0L), 880, 882));
+  assert(asinh(1.0e200L) > 400.0L && asinh(1.0e200L) < 500.0L);
+  assert(asinh(-1.0e200L) < -400.0L && asinh(-1.0e200L) > -500.0L);
   assert(near1000(acosh(2.0f), 1315, 1317));
   assert(near1000(acosh(2.0L), 1315, 1317));
   assert(nanish(acosh_fd));
   assert(acosh(1.0L / z) > 1.0e300L);
+  assert(acosh(1.0e200L) > 400.0L && acosh(1.0e200L) < 500.0L);
   assert(near1000(atanh(0.5f), 548, 550));
   assert(near1000(atanh(0.5L), 548, 550));
   assert((int)tanh(1.0f / 0.0f) == 1);
@@ -96,12 +103,16 @@ int main(void) {
   assert(exp(-1.0L / 0.0L) == 0.0L);
   assert(nanish(exp_fd));
   assert(nanish(exp_ld));
+  assert(1.0f / expm1(-0.0f) < 0.0f);
+  assert(1.0L / expm1(-0.0L) < 0.0L);
   assert(near1000(log(2.718281828459045f), 998, 1002));
   assert(near1000(log(2.718281828459045L), 998, 1002));
   assert(nanish(log_fd));
   assert(nanish(log_ld));
   assert(log(0.0f) < -1.0e30f);
   assert(log(1.0L / z) > 1.0e300L);
+  assert(1.0f / log1p(-0.0f) < 0.0f);
+  assert(1.0L / log1p(-0.0L) < 0.0L);
   assert(near1000(log2(8.0f), 2998, 3002));
   assert(near1000(log2(8.0L), 2998, 3002));
   assert(nanish(log2(-1.0f)));
@@ -118,6 +129,13 @@ int main(void) {
   assert((int)round(-2.5L) == -3);
   assert((int)trunc(-2.8f) == -2);
   assert((int)trunc(-2.8L) == -2);
+  assert(nanish(floor((float)nanv)));
+  assert(ceil(1.0L / z) > 1.0e300L);
+  assert(round(-1.0f / 0.0f) < -1.0e30f);
+  assert(1.0f / floor(-0.0f) < 0.0f);
+  assert(1.0f / trunc(-0.8f) < 0.0f);
+  assert(1.0L / ceil(-0.8L) < 0.0L);
+  assert(1.0L / round(-0.3L) < 0.0L);
   assert(nearbyint(2.5f) == 2.0f);
   assert(nearbyint(3.5L) == 4.0L);
   assert(rint(2.5f) == 2.0f);
@@ -128,6 +146,10 @@ int main(void) {
   assert(llround(-2.5L) == -3);
   assert(near1000(fabs(-2.5f), 2498, 2502));
   assert(near1000(fabs(-4.5L), 4498, 4502));
+  assert(1.0f / fabs(-0.0f) > 0.0f);
+  assert(1.0L / fabs(-0.0L) > 0.0L);
+  assert(1.0f / copysign(-0.0f, 1.0f) > 0.0f);
+  assert(1.0L / copysign(-0.0L, 1.0L) > 0.0L);
 
   assert(near1000(pow(2.0f, 5.0f), 31998, 32002));
   assert(near1000(pow(2.0L, 4.0L), 15998, 16002));
@@ -142,10 +164,21 @@ int main(void) {
   assert(nanish(fmod(7.5L, 0.0L)));
   assert((int)fmod(7.5f, 1.0f / 0.0f) == 7);
   assert((int)fmod(7.5L, 1.0L / 0.0L) == 7);
+  assert(fabs(fmod(1.0e20f, 3.0f)) < 3.0f);
+  assert(fmod(-1.0e20L, 3.0L) <= 0.0L && fabs(fmod(-1.0e20L, 3.0L)) < 3.0L);
+  assert(fabs(remainder(1.0e20f, 3.0f)) <= 1.5f);
+  assert(fabs(remquo(5.5f, 2.0f, &remquo_f_bits)) < 0.51f && remquo_f_bits == 3);
+  assert(fabs(remquo(-1.0e20L, 3.0L, &remquo_l_bits)) <= 1.5L);
+  assert(1.0f / modf(-0.0f, &modf_fint) < 0.0f && 1.0f / modf_fint < 0.0f);
+  assert(1.0L / modf(-2.0L, &modf_lint) < 0.0L && (int)modf_lint == -2);
   assert(near1000(scalbn(0.75f, 4), 11998, 12002));
   assert(near1000(scalbn(0.25L, 6), 15998, 16002));
   assert(near1000(scalbln(1.25f, 2L), 4998, 5002));
   assert(near1000(scalbln(3.0L, -1L), 1498, 1502));
+  assert(ldexp(1.0f, 5000) > 1.0e30f);
+  assert(1.0L / ldexp(-1.0L, -5000) < 0.0L);
+  assert(scalbln(1.0L, 5000L) > 1.0e300L);
+  assert(1.0f / scalbln(-1.0f, -5000L) < 0.0f);
   assert(ilogb(0.75f) == -1);
   assert(ilogb(8.0L) == 3);
   assert((int)logb(0.75f) == -1);

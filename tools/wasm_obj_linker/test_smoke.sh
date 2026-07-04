@@ -2200,9 +2200,15 @@ int math_decomp_check(void) {
   double dint = 0.0;
   float fint = 0.0f;
   long double lint = 0.0L;
+  double dzint = 1.0;
+  float fint_exact = 1.0f;
+  long double lzint = 1.0L;
   double dfrac = modf(-3.75, &dint);
   float ffrac = modff(2.25f, &fint);
   long double lfrac = modfl(5.5L, &lint);
+  double dneg_zero_frac = modf(math_nzero, &dzint);
+  float fneg_int_frac = modff(-2.0f, &fint_exact);
+  long double lneg_zero_frac = modfl(-0.0L, &lzint);
   double dmant = frexp(-8.0, &dexp);
   float fmant = frexpf(4.0f, &fexp);
   long double lmant = frexpl(16.0L, &lexp);
@@ -2224,15 +2230,29 @@ int math_decomp_check(void) {
          (int)(scalbln(1.5, 3L) * 1000.0) == 12000 &&
          (int)(scalblnf(1.25f, 2L) * 1000.0f) == 5000 &&
          (int)(scalblnl(3.0L, -1L) * 1000.0L) == 1500 &&
+         ldexp(1.0, 5000) > 1.0e300 &&
+         signbit(ldexp(-1.0, -5000)) &&
+         scalbln(1.0, 5000L) > 1.0e300 &&
+         signbit(scalbln(-1.0, -5000L)) &&
+         scalblnf(1.0f, 5000L) > 1.0e30f &&
+         signbit(scalblnl(-1.0L, -5000L)) &&
          ilogb(8.0) == 3 && ilogbf(0.75f) == -1 && ilogbl(0.25L) == -2 &&
          (int)logb(8.0) == 3 && (int)logbf(0.75f) == -1 &&
          (int)logbl(0.25L) == -2 &&
          (int)(dfrac * 100.0) == -75 && (int)dint == -3 &&
          (int)(ffrac * 100.0f) == 25 && (int)fint == 2 &&
          (int)(lfrac * 100.0L) == 50 && (int)lint == 5 &&
+         signbit(dneg_zero_frac) && signbit(dzint) &&
+         signbit(fneg_int_frac) && (int)fint_exact == -2 &&
+         signbit(lneg_zero_frac) && signbit(lzint) &&
          (int)dcopysign == -2 && signbit(dcopysign) &&
          (int)fcopysign == -2 && signbit(fcopysign) &&
          (int)lcopysign == -2 && signbit(lcopysign) &&
+         !signbit(fabs(math_nzero)) && !signbit(fabsf(-0.0f)) &&
+         !signbit(fabsl(-0.0L)) &&
+         !signbit(copysign(math_nzero, 1.0)) &&
+         !signbit(copysignf(-0.0f, 1.0f)) &&
+         !signbit(copysignl(-0.0L, 1.0L)) &&
          (int)(fdim(5.5, 2.0) * 1000.0) == 3500 &&
          (int)(fdim(2.0, 5.5) * 1000.0) == 0 &&
          (int)(fdimf(5.5f, 2.0f) * 1000.0f) == 3500 &&
@@ -2248,6 +2268,12 @@ int math_decomp_check(void) {
          (int)(remquol(5.5L, 2.0L, &lquo) * 1000.0L) == -500 && lquo == 3 &&
          (int)(remquo(19.5, 2.0, &dquo_bits) * 1000.0) == -500 && dquo_bits == 2 &&
          (int)(remquo(-19.5, 2.0, &dquo_neg_bits) * 1000.0) == 500 && dquo_neg_bits == -2 &&
+         remainder(1.0e20, 3.0) >= -1.5 && remainder(1.0e20, 3.0) <= 1.5 &&
+         remquo(1.0e20, 3.0, &dquo_bits) >= -1.5 &&
+         remquo(1.0e20, 3.0, &dquo_bits) <= 1.5 && dquo_bits >= -7 && dquo_bits <= 7 &&
+         remquo(-1.0e20, 3.0, &dquo_neg_bits) >= -1.5 &&
+         remquo(-1.0e20, 3.0, &dquo_neg_bits) <= 1.5 &&
+         dquo_neg_bits >= -7 && dquo_neg_bits <= 7 &&
          isnan(dnan_api) && isnan(fnan_api) && isnan(lnan_api);
 }
 int math_exp_log_ext_check(void) {
@@ -2290,9 +2316,13 @@ int math_exp_log_ext_check(void) {
          expm1v >= 1716 && expm1v <= 1720 &&
          expm1fv >= 1716 && expm1fv <= 1720 &&
          expm1lv >= 1716 && expm1lv <= 1720 &&
+         signbit(expm1(-0.0)) && signbit(expm1f(-0.0f)) &&
+         signbit(expm1l(-0.0L)) &&
          log1pv >= 691 && log1pv <= 695 &&
          log1pfv >= 691 && log1pfv <= 695 &&
          log1plv >= 691 && log1plv <= 695 &&
+         signbit(log1p(-0.0)) && signbit(log1pf(-0.0f)) &&
+         signbit(log1pl(-0.0L)) &&
          sinhv >= 1174 && sinhv <= 1176 &&
          sinhfv >= 1174 && sinhfv <= 1176 &&
          sinhlv >= 1174 && sinhlv <= 1176 &&
@@ -2305,9 +2335,13 @@ int math_exp_log_ext_check(void) {
          asinhv >= 880 && asinhv <= 882 &&
          asinhfv >= 880 && asinhfv <= 882 &&
          asinhlv >= 880 && asinhlv <= 882 &&
+         asinh(1.0e200) > 400.0 && asinh(1.0e200) < 500.0 &&
+         asinh(-1.0e200) < -400.0 && asinh(-1.0e200) > -500.0 &&
          acoshv >= 1315 && acoshv <= 1317 &&
          acoshfv >= 1315 && acoshfv <= 1317 &&
          acoshlv >= 1315 && acoshlv <= 1317 &&
+         acosh(1.0e200) > 400.0 && acosh(1.0e200) < 500.0 &&
+         acoshl(1.0e200L) > 400.0L && acoshl(1.0e200L) < 500.0L &&
          atanhv >= 548 && atanhv <= 550 &&
          atanhfv >= 548 && atanhfv <= 550 &&
          atanhlv >= 548 && atanhlv <= 550 &&
@@ -2320,11 +2354,19 @@ int math_exp_log_ext_check(void) {
 }
 int math_round_ext_check(void) {
   int ok = 1;
+  double z = 0.0;
+  double infv = 1.0 / z;
+  double nanv = z / z;
   ok = ok && nearbyint(2.5) == 2.0 && nearbyint(3.5) == 4.0 &&
             nearbyintf(-2.5f) == -2.0f && nearbyintl(-3.5L) == -4.0L;
   ok = ok && lround(2.5) == 3 && lroundf(-2.5f) == -3 &&
             lroundl(3.5L) == 4 && llround(-3.5) == -4 &&
             llroundf(2.5f) == 3 && llroundl(-2.5L) == -3;
+  ok = ok && isnan(floor(nanv)) && ceil(infv) > 1.0e300 &&
+            round(-infv) < -1.0e300 && signbit(floor(-z)) &&
+            signbit(trunc(-0.8)) && signbit(ceil(-0.8)) &&
+            signbit(round(-0.3)) && isnan(floorf((float)nanv)) &&
+            ceill((long double)infv) > 1.0e300L && signbit(roundl(-0.3L));
   ok = ok && fesetround(0x00400000) == 0 &&
             rint(2.1) == 3.0 && rintf(-2.1f) == -2.0f &&
             lrint(2.1) == 3 && llrintf(-2.1f) == -2;
@@ -3615,10 +3657,22 @@ int main(void) {
          (int)fabs(-3.5) == 3 &&
          (int)fabsf(-2.5f) == 2 &&
          (int)fabsl(-4.5L) == 4 &&
+         !signbit(fabs(-math_zero)) && !signbit(fabsf(-0.0f)) &&
+         !signbit(fabsl(-0.0L)) &&
+         !signbit(copysign(-math_zero, 1.0)) &&
+         !signbit(copysignf(-0.0f, 1.0f)) &&
+         !signbit(copysignl(-0.0L, 1.0L)) &&
          (int)floor(3.8) == 3 && (int)floor(-3.2) == -4 &&
          (int)ceil(3.2) == 4 && (int)ceil(-3.8) == -3 &&
          (int)round(3.5) == 4 && (int)round(-3.5) == -4 &&
          (int)trunc(3.8) == 3 && (int)trunc(-3.8) == -3 &&
+         isnan(floor(math_nan)) && ceil(math_inf) > 1.0e300 &&
+         round(-math_inf) < -1.0e300 &&
+         signbit(floor(-math_zero)) && signbit(trunc(-0.8)) &&
+         signbit(ceil(-0.8)) && signbit(round(-0.3)) &&
+         isnan(floorf((float)math_nan)) &&
+         ceill((long double)math_inf) > 1.0e300L &&
+         signbit(roundl(-0.3L)) &&
          (int)floorf(2.9f) == 2 && (int)ceilf(2.1f) == 3 &&
          (int)roundf(-2.5f) == -3 &&
          (int)floorl(2.9L) == 2 && (int)ceill(2.1L) == 3 &&
@@ -3654,6 +3708,9 @@ int main(void) {
          signbit(fmod(-math_zero, 3.0)) &&
          isnan(fmodf(7.5f, 0.0f)) &&
          isnan(fmodl(7.5L, 0.0L)) &&
+         fmod(1.0e20, 3.0) >= 0.0 && fmod(1.0e20, 3.0) < 3.0 &&
+         fmod(-1.0e20, 3.0) <= 0.0 && fmod(-1.0e20, 3.0) > -3.0 &&
+         fmodl(1.0e20L, 3.0L) >= 0.0L && fmodl(1.0e20L, 3.0L) < 3.0L &&
          cbrt_pos >= 2998 && cbrt_pos <= 3002 &&
          cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
          cbrtf_pos >= 2998 && cbrtf_pos <= 3002 &&
@@ -3676,6 +3733,9 @@ int main(void) {
          exp2(-math_inf) == 0.0 &&
          expm1(math_inf) > 1.0e300 &&
          (int)expm1(-math_inf) == -1 &&
+         signbit(expm1(-math_zero)) &&
+         signbit(expm1f(-0.0f)) &&
+         signbit(expm1l(-0.0L)) &&
          loge >= 998 && loge <= 1002 &&
          logfe >= 998 && logfe <= 1002 &&
          logle >= 998 && logle <= 1002 &&
@@ -3697,6 +3757,9 @@ int main(void) {
          isnan(log10(-1.0)) &&
          log1p(-1.0) < -1.0e300 &&
          isnan(log1p(-2.0)) &&
+         signbit(log1p(-math_zero)) &&
+         signbit(log1pf(-0.0f)) &&
+         signbit(log1pl(-0.0L)) &&
          atan1 >= 783 && atan1 <= 787 &&
          atanf1 >= 783 && atanf1 <= 787 &&
          atanl1 >= 783 && atanl1 <= 787 &&
@@ -3765,6 +3828,9 @@ int main(void) {
          (int)tanh(math_inf) == 1 &&
          (int)tanh(-math_inf) == -1 &&
          acosh(math_inf) > 1.0e300 &&
+         asinh(1.0e200) > 400.0 && asinh(1.0e200) < 500.0 &&
+         asinh(-1.0e200) < -400.0 && asinh(-1.0e200) > -500.0 &&
+         acosh(1.0e200) > 400.0 && acosh(1.0e200) < 500.0 &&
          isnan(acosh(0.5)) &&
          isnan(acoshf(0.5f)) &&
          isinf(atanh(1.0)) &&

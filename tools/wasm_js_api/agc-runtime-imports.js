@@ -180,7 +180,7 @@ function agcModf(memory, x, intPtr, writeFloat) {
     frac = x < 0 ? -0 : 0;
   } else {
     whole = Math.trunc(x);
-    frac = x - whole;
+    frac = x === whole ? (agcSignbit(x) ? -0 : 0) : x - whole;
   }
   if (writeFloat) writeMemoryF32(memory, intPtr, whole);
   else writeMemoryF64(memory, intPtr, whole);

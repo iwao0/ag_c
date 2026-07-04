@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き499: cbrt edge semantics 修正）
+最終更新: 2026-07-05（続き507: modf signed-zero semantics 修正）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_cbrt_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_modf_zero_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green/up-to-date**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
@@ -32,6 +32,194 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き507: **`modf` runtime / JS import の signed-zero semantics 修正**。
+  linked runtime object の `__agc_runtime_modf` / `modff` は fractional part を `x - whole` で返しており、
+  `modf(-0.0)` や `modf(-2.0)` の fractional part が `-0.0` ではなく `+0.0` に丸まり得た。
+  runtime 側で `x == whole` のときは `copysign(0.0, x)` 相当を返すようにし、
+  integer part の格納は従来どおり保つ形へ変更した。
+  併せて `--nostdlib` import 経路の `tools/wasm_js_api/agc-runtime-imports.js` の `agcModf` も同じ semantics に揃えた。
+  これで `modf(-0.0, &ip)` / `modff(-2.0f, &ip)` / `modfl(-0.0L, &ip)` は
+  fractional part の signed zero を保つ。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも exact integer / negative zero の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_modf_zero_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き506: **`log1p` / `expm1` runtime の signed-zero semantics 修正**。
+  linked runtime object の `__agc_runtime_log1p` は `log(1.0 + x)`、
+  `__agc_runtime_expm1` は `exp(x) - 1.0` にそのまま委譲していたため、
+  `log1p(-0.0)` / `expm1(-0.0)` が `-0.0` ではなく `+0.0` に丸まり得た。
+  runtime 側で zero 入力を先に `return x` するようにし、入力の signed zero を保つようにした。
+  `log1pf` / `log1pl` / `expm1f` / `expm1l` は wrapper 経由で同じ分岐を踏む。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも signed-zero 確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_log1p_expm1_zero_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き505: **`remainder` / `remquo` runtime の large quotient semantics 修正**。
+  linked runtime object の `__agc_runtime_remainder` / `remquo` は
+  `x / y` を `long` に丸めて nearest-even quotient や low quotient bits を作っており、
+  `remainder(1.0e20, 3.0)` / `remquo(1.0e20, 3.0, &q)` のように商が `long` 範囲を超える入力で
+  誤った結果や未定義寄りの挙動に落ち得た。
+  runtime 側を `__agc_runtime_fmod_abs_quot` / `__agc_runtime_remainder_core` に整理し、
+  2 倍スケール reduction で剰余と floor quotient の下位 bit を同時に追う形へ変更した。
+  これで巨大 quotient でも integer cast せず、`remainder` / `remquo` の結果は `|r| <= |y| / 2` に収まる。
+  `remquo` の通常サイズ quotient bits は既存どおり確認しつつ、巨大入力の `quo` は標準上 bit 数が実装定義なので、
+  stdheader fixture では bounded remainder を主に確認している。
+  `remainderf` / `remainderl` / `remquof` / `remquol` は wrapper 経由で同じ分岐を踏む。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも large quotient の bounded remainder 確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_remainder_large_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`（一度 `format.c` parse error が出たが、単独再実行で **green**）、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き504: **`fmod` runtime の large quotient semantics 修正**。
+  linked runtime object の `__agc_runtime_fmod` は `long q = (long)(x / y)` で商を整数化しており、
+  `fmod(1.0e20, 3.0)` のように商が `long` 範囲を大きく超える入力で誤った剰余や未定義寄りの挙動に落ち得た。
+  runtime 側に `__agc_runtime_fmod_abs` を追加し、除数を 2 倍スケールして引き戻す方式に変更した。
+  これで巨大 quotient でも integer cast せず、結果は `|r| < |y|` に収まる。
+  exact multiple は `copysign(0.0, x)` で入力符号の signed zero を保つ。
+  `fmodf` / `fmodl` は wrapper 経由で同じ分岐を踏む。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも large quotient の bounded remainder 確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_fmod_large_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き503: **`fabs` / `copysign` runtime の signed-zero semantics 修正**。
+  linked runtime object の `__agc_runtime_fabs` / `fabsf` / `fabsl` は
+  `x < 0.0` だけで分岐していたため、`fabs(-0.0)` が `+0.0` ではなく `-0.0` のまま残り得た。
+  さらに `__agc_runtime_copysign` は内部で `fabs` を使うため、
+  `copysign(-0.0, +1.0)` でも負ゼロが残り得た。
+  runtime 側で zero 入力を明示的に `+0.0` へ正規化するようにした。
+  これにより `fabs(-0.0)` / `fabsf(-0.0f)` / `fabsl(-0.0L)` は正ゼロ、
+  `copysign(-0.0, +1.0)` family も正ゼロになる。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも signed-zero 確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_fabs_zero_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`（一度 `format.c` parse error が出たが、単独再実行で **green**）、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き502: **`ldexp` / `scalbn` / `scalbln` runtime の large exponent semantics 修正**。
+  linked runtime object の `__agc_runtime_ldexp` は exponent の絶対値ぶんだけ `* 2.0` / `/ 2.0` を
+  ループしており、巨大 exponent で実行が固まり得た。さらに `__agc_runtime_scalbln` は
+  `long exp` を `(int)exp` に丸めて `ldexp` へ渡していたため、`long` 範囲の exponent を誤変換し得た。
+  runtime 側に `long` exponent を受ける内部 helper `__agc_runtime_ldexp_long` を追加し、
+  `ldexp` / `ldexpf` / `ldexpl` / `scalbn` / `scalbnf` / `scalbnl` /
+  `scalbln` / `scalblnf` / `scalblnl` をそこへ寄せた。
+  非有限値と signed zero はそのまま返し、極端に大きい exponent は `±inf` / signed zero へ早期 saturation する。
+  これで `ldexp(1.0, 5000)` / `scalbln(1.0, 5000L)` は素早く `+inf` 側へ、
+  `ldexp(-1.0, -5000)` / `scalbln(-1.0, -5000L)` は signed zero 側へ落ちる。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも large exponent overflow / underflow と signed zero の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_ldexp_large_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  （一度 `format.c` parse error が出たが、単独再実行で **green**）、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`（一度 `format.c` parse error が出たが、単独再実行で **green**）、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き501: **`asinh` / `acosh` runtime の large finite semantics 修正**。
+  linked runtime object の `__agc_runtime_asinh` は `ax * ax + 1.0`、
+  `__agc_runtime_acosh` は `sqrt(x - 1.0) * sqrt(x + 1.0)` を中間計算に使っており、
+  `asinh(1.0e200)` / `acosh(1.0e200)` のような巨大だが有限の入力で中間 overflow し、
+  結果が有限値ではなく `+inf` / `-inf` に寄り得た。
+  runtime 側を large finite では `log(|x|) + ln2` / `log(x) + ln2` に切り替える形へ変更した。
+  これで `asinh(±1.0e200)` と `acosh(1.0e200)` は 400〜500 程度の有限値に収まる。
+  `asinhf` / `asinhl` / `acoshf` / `acoshl` は wrapper 経由で同じ分岐を踏む。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも large finite が `inf` にならない確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_asinh_acosh_large_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き500: **`trunc` / `floor` / `ceil` / `round` runtime の edge semantics 修正**。
+  linked runtime object の `__agc_runtime_trunc` / `floor` / `ceil` / `round` は
+  finite 前提で `long` cast へ進んでおり、NaN / `±inf` を整数変換してしまう可能性があった。
+  また `trunc(-0.8)` / `ceil(-0.8)` / `round(-0.3)` や `floor(-0.0)` で
+  `-0.0` の符号を失い得た。
+  runtime 側を non-finite preservation、zero preservation、負の 1 未満での signed zero preservation の順に
+  明示処理する形へ変更した。`floorf` / `floorl` などの f/l wrappers と、
+  `nearbyint` / `rint` の内部 rounding mode 経路も同じ下位 helper を踏む。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には手書き prototype と
+  `--nostdlib` import / linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも NaN、`±inf`、`-0.0` / negative fractional の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_round_edge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
 - 続き499: **`cbrt` runtime の edge semantics 修正**。
   linked runtime object の `__agc_runtime_cbrt` は `x == 0.0` を一律 +0.0 に丸めており、
   `cbrt(-0.0)` の符号を失っていた。また finite 前提の Newton iteration で、
