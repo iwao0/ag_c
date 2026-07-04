@@ -83,6 +83,24 @@ for (const [name, entry] of Object.entries(exportsMap)) {
       throw new Error(`export ${name} does not provide ${exportName}`);
     }
   }
+  if (name === "./agc-runtime-imports.js") {
+    const mathEnv = mod.createAgcRuntimeMathEnvImports();
+    for (const importName of [
+      "sin", "sinf", "sinl",
+      "sqrt", "sqrtf", "sqrtl",
+      "pow", "powf", "powl",
+      "__agc_runtime_math_sin",
+      "__agc_runtime_math_sqrt",
+      "__agc_runtime_math_pow",
+    ]) {
+      if (typeof mathEnv[importName] !== "function") {
+        throw new Error(`math env imports missing ${importName}`);
+      }
+    }
+    if (mathEnv.__agc_runtime_math_sqrt(4) !== 2) {
+      throw new Error("math env runtime alias returned the wrong value");
+    }
+  }
 }
 
 console.log("ag_c wasm JS package exports smoke: ok");

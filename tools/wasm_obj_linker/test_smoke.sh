@@ -1075,6 +1075,7 @@ int btowc(int c);
 int wctob(int c);
 int swprintf(int *s, unsigned long n, int *fmt, ...);
 int swscanf(int *s, int *fmt, ...);
+int sscanf(char *s, char *fmt, ...);
 typedef void (*sig_handler_t)(int);
 sig_handler_t signal(int sig, sig_handler_t handler);
 int raise(int sig);
@@ -1128,6 +1129,8 @@ int printf(char *fmt, ...);
 int fprintf(FILE *stream, char *fmt, ...);
 int vfprintf(FILE *stream, char *fmt, va_list ap);
 int vsnprintf(char *buf, unsigned long size, char *fmt, va_list ap);
+int scanf(char *fmt, ...);
+int fscanf(FILE *stream, char *fmt, ...);
 int puts(char *s);
 int fputs(char *s, FILE *stream);
 int fputc(int c, FILE *stream);
@@ -1302,6 +1305,61 @@ int main(void) {
   scanfmt[1] = 'd';
   scanfmt[2] = 0;
   int scanret = swscanf(swbuf, scanfmt, &never);
+  int scanpfmt[3];
+  scanpfmt[0] = '%';
+  scanpfmt[1] = 'p';
+  scanpfmt[2] = 0;
+  int scanpbuf[5];
+  scanpbuf[0] = '0';
+  scanpbuf[1] = 'x';
+  scanpbuf[2] = '2';
+  scanpbuf[3] = 'a';
+  scanpbuf[4] = 0;
+  void *wscan_p = 0;
+  int wscan_p_ret = swscanf(scanpbuf, scanpfmt, &wscan_p);
+  int scanbrfmt[8];
+  scanbrfmt[0] = '%';
+  scanbrfmt[1] = 'l';
+  scanbrfmt[2] = '[';
+  scanbrfmt[3] = 'a';
+  scanbrfmt[4] = '-';
+  scanbrfmt[5] = 'z';
+  scanbrfmt[6] = ']';
+  scanbrfmt[7] = 0;
+  int scanbrbuf[5];
+  scanbrbuf[0] = 'a';
+  scanbrbuf[1] = 'b';
+  scanbrbuf[2] = 'c';
+  scanbrbuf[3] = '!';
+  scanbrbuf[4] = 0;
+  int wscan_set[4];
+  int wscan_set_ret = swscanf(scanbrbuf, scanbrfmt, wscan_set);
+  int scan_i = 0;
+  unsigned int scan_x = 0;
+  char scan_s[4];
+  char scan_c[2];
+  int scan_n = 0;
+  int ssret = sscanf(" -42 2a abcZ", "%d %x %3s%c%n", &scan_i, &scan_x, scan_s, scan_c, &scan_n);
+  signed char scan_hh = 0;
+  unsigned char scan_uhh = 0;
+  int ssret_hh = sscanf("-5 250", "%hhd %hhu", &scan_hh, &scan_uhh);
+  int scan_n_a = 0;
+  int scan_n_b = 0;
+  int scan_n_c = 0;
+  signed char scan_n_hh = 0;
+  short scan_n_h = 0;
+  long scan_n_l = 0;
+  int ssret_n_len = sscanf("12 345 6", "%d%hhn %d%hn %d%ln",
+                           &scan_n_a, &scan_n_hh, &scan_n_b, &scan_n_h,
+                           &scan_n_c, &scan_n_l);
+  int scan_ws[3];
+  int scan_wc[1];
+  int ssret_wide_char = sscanf("hi Z", "%ls %lc", scan_ws, scan_wc);
+  void *scan_p = 0;
+  int ssret_p = sscanf("0x2a", "%p", &scan_p);
+  char scan_set[4];
+  char scan_not_z[4];
+  int ssret_set = sscanf("abc123Z", "%3[a-z]%3[^Z]", scan_set, scan_not_z);
   struct lconv *lc;
   setlocale(0, "C");
   lc = localeconv();
@@ -1383,6 +1441,24 @@ int main(void) {
   long fdclosed_read = read(fdclose, fdclosed_buf, 1);
   long fdclosed_write = write(fdclose, "x", 1);
   int fdclosed_close = close(fdclose);
+  FILE *scanw = fopen("tmp.txt", "w");
+  fwrite("55 2a okZ", 1, 9, scanw);
+  fclose(scanw);
+  FILE *scanr = fopen("tmp.txt", "r");
+  int file_scan_i = 0;
+  unsigned int file_scan_x = 0;
+  char file_scan_s[3];
+  char file_scan_c[2];
+  int file_scan_n = 0;
+  int fsret = fscanf(scanr, "%d %x %2s%c%n", &file_scan_i, &file_scan_x,
+                     file_scan_s, file_scan_c, &file_scan_n);
+  long file_scan_pos = ftell(scanr);
+  fclose(scanr);
+  int stdin_scan_i = 0;
+  int stdin_scan_empty = scanf("%d", &stdin_scan_i);
+  FILE *scan_restore = fopen("tmp.txt", "w");
+  fwrite("A\nB", 1, 3, scan_restore);
+  fclose(scan_restore);
   FILE *rfa = fopen("tmp.txt", "r");
   FILE *rfb = fopen("tmp.txt", "r");
   int rfa_ch1 = fgetc(rfa);
@@ -1621,7 +1697,24 @@ int main(void) {
          m32 == 1 && c32 == 'V' && r32 == 1 && convc[2] == 'U' && convc[3] == 'V' &&
          btowc('S') == 'S' && wctob('T') == 'T' &&
          swret == 5 && swbuf[0] == '1' && swbuf[1] == '2' && swbuf[2] == '-' &&
-         swbuf[3] == 'O' && swbuf[4] == 'K' && swbuf[5] == 0 && scanret == 0 &&
+         swbuf[3] == 'O' && swbuf[4] == 'K' && swbuf[5] == 0 &&
+         scanret == 1 && never == 12 &&
+         wscan_p_ret == 1 && (long)wscan_p == 42 &&
+         wscan_set_ret == 1 && wscan_set[0] == 'a' && wscan_set[1] == 'b' &&
+         wscan_set[2] == 'c' && wscan_set[3] == 0 &&
+         ssret == 4 && scan_i == -42 && scan_x == 42 &&
+         scan_s[0] == 'a' && scan_s[1] == 'b' && scan_s[2] == 'c' && scan_s[3] == 0 &&
+         scan_c[0] == 'Z' && scan_n == 12 &&
+         ssret_hh == 2 && scan_hh == -5 && scan_uhh == 250 &&
+         ssret_n_len == 3 && scan_n_a == 12 && scan_n_hh == 2 &&
+         scan_n_b == 345 && scan_n_h == 6 && scan_n_c == 6 && scan_n_l == 8 &&
+         ssret_wide_char == 2 && scan_ws[0] == 'h' && scan_ws[1] == 'i' &&
+         scan_ws[2] == 0 && scan_wc[0] == 'Z' &&
+         ssret_p == 1 && (long)scan_p == 42 &&
+         ssret_set == 2 &&
+         scan_set[0] == 'a' && scan_set[1] == 'b' && scan_set[2] == 'c' && scan_set[3] == 0 &&
+         scan_not_z[0] == '1' && scan_not_z[1] == '2' && scan_not_z[2] == '3' &&
+         scan_not_z[3] == 0 &&
          feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 0 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
          fetestexcept(31) == 4 &&
@@ -1717,6 +1810,10 @@ int main(void) {
          fdstream != 0 && fdlinep == fdline && fdline[0] == 'A' && fdline[1] == '\n' &&
          fdopen_sync_ok &&
          fdclosed_read == -1 && fdclosed_write == -1 && fdclosed_close == -1 &&
+         fsret == 4 && file_scan_i == 55 && file_scan_x == 42 &&
+         file_scan_s[0] == 'o' && file_scan_s[1] == 'k' && file_scan_s[2] == 0 &&
+         file_scan_c[0] == 'Z' && file_scan_n == 9 && file_scan_pos == 9 &&
+         stdin_scan_empty == -1 && stdin_scan_i == 0 &&
          file_independent_ok &&
          pos_after_read == 2 && !eof_after_ch && eof_read == -1 && eof_after_miss &&
          seek_ok == 0 && pos_after_seek == 1 && ch_seek == '\n' &&
@@ -2104,6 +2201,8 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.strlen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.vsnprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.vfprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memcpy>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memmove>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.memchr>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -2190,6 +2289,7 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.wctob>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.swprintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.swscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sscanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fdopen>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fclose>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

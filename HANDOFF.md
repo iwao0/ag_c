@@ -1,13 +1,19 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-04（続き370: linked runtime object stdin 注入）
+最終更新: 2026-07-04（続き427: scanf scanset runtime 対応）
 
 ## 現状
-- `make test` = **green**。
-  内訳として `./build/test_e2e` = **1185/1185 green**、
-  `./build/test_wasm32_e2e` = **1157 compiled / 1157 executed green**、
-  `./build/test_wasm32_object` = **1159/1159 e2e fixture object compile + validate green**。
-- 直近確認:
+- 直近の部分確認:
+  `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `make test-wasm-js-pipeline` = **green**、
+  `./build/test_e2e` = **1186/1186 green**、
+  `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**、
+  `./build/test_wasm32_object` = **1160/1160 e2e fixture object compile + validate green**、
+  `./build/ag_c test/fixtures/stdheader/inttypes_strto_ops.c` = **green**、
+  `./build/ag_c_wasm test/fixtures/stdheader/inttypes_strto_ops.c` = **green**、
+  `make test-wasm-js-api` = **green**、
+  `git diff --check` = **green**。
+- 以前の広域確認:
   `make test` = **green**、
   `make test-wasm-js-api` = **green**、
   `make test-wasm-js-pipeline` = **green**、
@@ -4833,3 +4839,230 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = ok
   - `./build/test_wasm32_object` = 1160 pass / 0 fail / 0 skip
   - `./build/test_e2e` = 1186/1186
+
+### このセッション（続き418）: string span/search を標準ヘッダと WAT backend へ同期
+- 続き417で default runtime object 側へ追加済みだった `strspn()` / `strcspn()` / `strpbrk()` が、
+  `include/string.h` には未宣言だったため、標準ヘッダ経由で使えるように宣言を追加した。
+- `test/fixtures/stdheader/string_search_concat.c` に3関数のヘッダ経由 smoke を追加した。
+  native e2e ではテストハーネスが外部 libc symbol を fixture namespace 化しない allow list に
+  `_strspn` / `_strcspn` / `_strpbrk` を追加した。
+- WAT backend の minimal libc stub にも3関数を追加した。共通 helper
+  `$__ag_str_contains` を使い、`strspn` / `strcspn` は `size_t` 戻りの `i64`、
+  `strpbrk` は pointer 戻りの `i32` として出力する。
+- `test/test_wasm32_e2e.c` の parity check で既存 `stdio_getline_decl.c` が未登録だったため、
+  Wasm E2E 一覧へ同期した。
+- 確認:
+  - `make -j4 build/ag_c build/test_wasm32_e2e build/test_e2e build/test_wasm32_object`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `git diff --check` = **green**
+
+### このセッション（続き419）: default runtime sscanf/swscanf の最小実装
+- `include/stdio.h` に `sscanf()` 宣言を追加し、`ag_wasm_link` の runtime symbol 判定と
+  libc bridge に `sscanf -> __agc_runtime_sscanf` を追加した。
+- `tools/wasm_obj_linker/runtime/parts/format.c` に lightweight scanner を追加した。
+  対応範囲は `%d` / `%i` / `%u` / `%x` / `%X` / `%o` / `%s` / `%c` / `%n`、
+  whitespace、literal、`%%`、width、`*` assignment suppression、`h` / `l` / `ll` の整数格納。
+  `scanf()` / `fscanf()` はまだ未実装で、stream 入力を読む次の単位として残っている。
+- 既存の `__agc_runtime_swscanf()` は 0 固定 stub から、wide input/format 用の同等 scanner に変更した。
+  wide 側は `%d` などの整数、`%s` / `%ls`、`%c` / `%lc`、`%n` を扱う最小実装。
+- 実装中に、`va_list` を helper へ値渡しすると引数位置が進まず `%s` が最初の出力先へ書く問題を確認した。
+  `va_list *` を helper に渡す形へ修正済み。
+- `tools/wasm_obj_linker/test_smoke.sh` の libc runtime smoke に
+  `swscanf(swbuf, L"%d", &never)` 相当の成功確認と、
+  `sscanf(" -42 2a abcZ", "%d %x %3s%c%n", ...)` の成功確認を追加した。
+  `--nostdlib` objdump import 確認にも `<env.sscanf>` を追加した。
+- 確認:
+  - `make -j4 build/ag_wasm_link build/libagc_runtime.o build/ag_c_wasm`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_object build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+
+### このセッション（続き420）: default runtime scanf/fscanf を追加
+- 続き419の lightweight scanner を stream 入力にも使えるよう、消費 byte 数を返す
+  `ag_rt_vscan_consumed()` に分けた。
+- `__agc_runtime_scanf()` / `__agc_runtime_fscanf()` を追加した。
+  `scanf()` は runtime stdin、`fscanf()` は `ag_rt_input_stream()` で得た FILE stream の
+  現在位置から最大 `AG_RT_FILE_BUF_CAP - 1` byte を scanner に渡し、変換で消費した分だけ
+  stream position を進める。write mode stream は error 扱い、空入力は EOF (`-1`)。
+- `include/stdio.h` に `scanf()` / `fscanf()` 宣言を追加し、`ag_wasm_link` の runtime symbol 判定と
+  libc bridge に `scanf -> __agc_runtime_scanf`、
+  `fscanf -> __agc_runtime_fscanf` を追加した。
+- `tools/wasm_obj_linker/test_smoke.sh` の libc runtime smoke に
+  `fscanf()` の `%d %x %2s%c%n` 成功確認と stream position 更新確認、
+  空 stdin での `scanf()` EOF 確認、`--nostdlib` objdump の `<env.scanf>` / `<env.fscanf>`
+  import 確認を追加した。
+- 残り: scanner はまだ minimal 実装で、浮動小数入力、`[` scanset、`p`、厳密な unread/EOF/error
+  挙動などは未対応。
+- 確認:
+  - `make -j4 build/ag_wasm_link build/libagc_runtime.o build/ag_c_wasm`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_object build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+
+### このセッション（続き421）: JS math runtime imports の重複定義を整理
+- `tools/wasm_js_api/agc-runtime-imports.js` の math import は、通常 C symbol 名
+  (`sin` / `sinf` / `sinl` など) と互換用の `__agc_runtime_math_*` 名を両方公開している。
+  通常名は `useStdlib: false` の linked wasm が `env.sin` などを import する経路で必要。
+  `__agc_runtime_math_*` は既存 runtime/helper 名との互換として残した。
+- 手書きで2種類を並べていた object literal は廃止し、`AGC_MATH_IMPORTS` の1つの定義表から
+  base 名、`f` / `l` suffix、`__agc_runtime_math_*` alias を生成するようにした。
+  これで公開 import 名は維持しつつ、追加・修正箇所は1つになった。
+- `tools/wasm_js_api/test_package_exports.mjs` に `createAgcRuntimeMathEnvImports()` の smoke を追加し、
+  `sin` / `sinf` / `sinl`、`sqrt` / `sqrtf` / `sqrtl`、`pow` / `powf` / `powl` と
+  `__agc_runtime_math_sin` / `__agc_runtime_math_sqrt` / `__agc_runtime_math_pow` が
+  function として存在することを確認するようにした。
+- 続き419/420で追加した scanner 実装の `va_arg()` を条件演算子の中に置いた形が
+  self-host compiler API の runtime 再ビルドで崩れていたため、
+  `if (!suppress)` 内で `va_arg()` を読む self-host に優しい形へ変更した。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-runtime-imports.js`
+  - `node --check tools/wasm_js_api/test_package_exports.mjs`
+  - `make wasm-selfhost-api`
+  - `make test-wasm-js-api`
+  - `make test-wasm-js-pipeline`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+
+### このセッション（続き422）: 浅い対応の監査と JS include shim の scanf 同期
+- 見つかった浅い箇所:
+  - `include/stdio.h` と runtime object 側には `scanf()` / `fscanf()` / `sscanf()` を追加済みだったが、
+    `tools/wasm_js_api/agc-include-inline.js` の browser shim 版 `<stdio.h>` が古いままで、
+    JS pipeline の `#include <stdio.h>` 経由では scanf family の variadic 宣言が落ちていた。
+  - その結果、selfhost compiler/linker pipeline では標準ヘッダ経由の `sscanf()` が variadic call として
+    lowering されず、runtime scanner ではなく stub 的な戻り値 `1` になる経路があった。
+- 根本対応:
+  - browser shim 版 `<stdio.h>` に `scanf()` / `fscanf()` / `sscanf()` 宣言を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `#include <stdio.h>` 経由かつ
+    `useStdlib: true` の `sscanf()` / `scanf()` / `fscanf(stdin, ...)` 実行確認を追加した。
+    直接 JS import へ `scanf` 系を生やす案は、Wasm backend の variadic ABI が `__ag_va_arg_area`
+    経由であり JS import には可変引数が渡らないため不採用。
+  - `tools/wasm_obj_linker/runtime/parts/format.c` の `ag_rt_scan_integer()` から未使用の
+    `signed_conv` 引数を削除し、signed/unsigned の扱いを呼び出し側に集約した。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-include-inline.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - browser shim に `scanf` / `fscanf` / `sscanf` 宣言が含まれることを node smoke で確認
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `make test-wasm-js-api` = `ag_c wasm JS API smoke: ok` / `ag_c wasm JS package exports smoke: ok`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+  - `git diff --check` = **green**
+
+### このセッション（続き423）: scanf %hh 格納と runtime README 同期
+- 見つかった浅い箇所:
+  - lightweight scanner は `h` と `hh` を同じ扱いにしており、`%hhd` / `%hhu` が
+    `signed char *` / `unsigned char *` ではなく `short *` / `unsigned short *` として扱われる状態だった。
+  - `tools/wasm_obj_linker/README.md` の default runtime helper 一覧が古く、
+    追加済みの `scanf` / `fscanf` / `sscanf` と `strspn` / `strcspn` / `strpbrk` を反映していなかった。
+- 根本対応:
+  - `ag_rt_scan_store_signed()` / `ag_rt_scan_store_unsigned()` に `length_hh` を追加し、
+    `hh` length modifier のときは 1 byte の signed/unsigned char に格納するようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` の libc runtime smoke に
+    `sscanf("-5 250", "%hhd %hhu", ...)` の実行確認を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の標準ヘッダ経由 `scanf` family smoke にも
+    同じ `%hh` ケースを追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime helper 一覧を現状へ同期した。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `make test-wasm-js-api` = `ag_c wasm JS API smoke: ok` / `ag_c wasm JS package exports smoke: ok`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+  - `git diff --check` = **green**
+
+### このセッション（続き424）: scanf length modifier の追加同期
+- 見つかった浅い箇所:
+  - `scanf` family の scanner は `%n` の length modifier を無視して常に `int *` に格納していた。
+    `%hhn` / `%hn` / `%ln` などが実際の C の格納先サイズと合っていなかった。
+  - narrow `scanf` の `%ls` / `%lc` は `l` modifier を parse していたが、実際には `char *` へ書いていた。
+    wide scanner 側は同等ケースを分けていたため、narrow 側だけ浅い実装になっていた。
+- 根本対応:
+  - `ag_rt_scan_store_count()` を追加し、`%n` でも `hh` / `h` / `l` / `ll` に応じた格納先へ書くようにした。
+  - narrow `scanf` の `%ls` / `%lc` で `int *` wide char buffer に書くようにした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `%hhn` / `%hn` / `%ln` と `%ls` / `%lc` の runtime smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に同じ標準ヘッダ経由・stdlib link 経路の smoke を追加した。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `make test-wasm-js-api` = `ag_c wasm JS API smoke: ok` / `ag_c wasm JS package exports smoke: ok`
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+  - `git diff --check` = **green**
+
+### このセッション（続き425）: inttypes PRI/SCN macro coverage 同期
+- 見つかった浅い箇所:
+  - `scanf` family の scanner は `hh` / `h` / `l` / `ll` まで対応したが、
+    `include/inttypes.h` の `SCN*` macro は `SCNd32` / `SCNd64` など一部だけで、
+    `SCNd8` / `SCNu8` / `SCNx16` / `SCN*MAX` / `SCN*PTR` が未定義だった。
+  - 既存の `PRIu8` / `PRIx16` などは `"u"` / `"x"` のままで、8/16 bit 型向けの標準 format macro として
+    scanner 側の length modifier 対応と揃っていなかった。
+- 根本対応:
+  - `include/inttypes.h` に `PRI*` / `SCN*` の 8 / 16 / 32 / 64 / MAX / PTR 系をまとめて追加・整理した。
+  - 8/16 bit の `PRI*` は `hhd` / `hd` / `hhu` / `hx` などの `hh` / `h` length modifier 付きに揃えた。
+  - `test/fixtures/stdheader/inttypes_strto_ops.c` に `SCNd8` / `SCNu8` / `SCNxPTR` と
+    `PRIu8` / `PRId16` / `PRIXPTR` の展開確認を追加した。
+  - fixture では `sscanf()` を直接呼ばず、macro 文字列の展開だけを検査する形にした。
+    これにより WAT backend の直コンパイル経路へ不要な external runtime call を持ち込まない。
+- 確認:
+  - `git diff --check` = **green**
+  - `./build/ag_c test/fixtures/stdheader/inttypes_strto_ops.c` = **green**
+  - `./build/ag_c_wasm test/fixtures/stdheader/inttypes_strto_ops.c` = **green**
+  - `./build/test_e2e` = **1186/1186 green**
+  - `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+
+### このセッション（続き426）: scanf %p runtime 対応
+- 見つかった浅い箇所:
+  - 続き420時点の残件に `p` が残っており、runtime scanner は `%d` / `%i` / `%u` / `%x` / `%o`
+    などの整数変換には対応していたが、`%p` は未対応だった。
+  - `printf` / `snprintf` 側は `%p` 済みだったため、入出力 runtime の対応範囲が片側だけ欠けていた。
+- 根本対応:
+  - narrow scanner (`sscanf` / `scanf` / `fscanf`) に `%p` を追加し、`0x` prefix 付き/なしの
+    16進入力を `void **` へ格納するようにした。
+  - wide scanner (`swscanf`) にも同じ `%p` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `sscanf("0x2a", "%p", &p)` と
+    wide 入力での `swscanf(..., L"%p", &p)` の runtime smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    `sscanf("%p")` 実行確認を追加した。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+
+### このセッション（続き427）: scanf scanset runtime 対応
+- 見つかった浅い箇所:
+  - 続き420時点の残件に `[` scanset が残っており、runtime scanner は `%s` で whitespace 区切りの
+    文字列入力は読めたが、`%[a-z]` / `%[^Z]` のような文字集合指定を扱えなかった。
+  - narrow `scanf` family と wide `swscanf` の対応範囲を同期する必要があった。
+- 根本対応:
+  - scanset parser helper を追加し、先頭 `]`、反転 `^`、範囲指定 `a-z` を扱えるようにした。
+  - narrow scanner (`sscanf` / `scanf` / `fscanf`) に `%[` と `%l[` を追加した。
+  - wide scanner (`swscanf`) にも `%[` と `%l[` を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `sscanf("abc123Z", "%3[a-z]%3[^Z]", ...)` と
+    wide 入力での `swscanf(..., L"%l[a-z]", ...)` の runtime smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に標準ヘッダ経由・stdlib link 経路の
+    scanset 実行確認を追加した。
+- 残り:
+  - scanner の大きな未対応は浮動小数入力（`%f` / `%e` / `%g` など）と、
+    厳密な unread / EOF / error 挙動。
+- 確認:
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`

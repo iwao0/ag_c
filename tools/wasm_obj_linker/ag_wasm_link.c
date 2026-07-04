@@ -783,6 +783,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "sin") || str_eq_lit(name, "cos") ||
          str_eq_lit(name, "tan") ||
          str_eq_lit(name, "sprintf") ||
+         str_eq_lit(name, "scanf") ||
+         str_eq_lit(name, "fscanf") ||
+         str_eq_lit(name, "sscanf") ||
          str_eq_lit(name, "vsnprintf") ||
          str_eq_lit(name, "snprintf") ||
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
@@ -2551,6 +2554,12 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_vsnprintf";
   } else if (str_eq_lit(name, "sprintf")) {
     target_lit = "__agc_runtime_sprintf";
+  } else if (str_eq_lit(name, "scanf")) {
+    target_lit = "__agc_runtime_scanf";
+  } else if (str_eq_lit(name, "fscanf")) {
+    target_lit = "__agc_runtime_fscanf";
+  } else if (str_eq_lit(name, "sscanf")) {
+    target_lit = "__agc_runtime_sscanf";
   } else if (str_eq_lit(name, "strlen")) {
     target_lit = "__agc_runtime_strlen";
   } else if (str_eq_lit(name, "strcmp")) {

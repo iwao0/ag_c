@@ -245,6 +245,77 @@ if (linkedGetlineResult !== 42) {
   throw new Error(`linked runtime getline stdin failed: ${linkedGetlineResult}`);
 }
 
+const linkedScanfSource = await inlineStandardIncludes(`#include <stdio.h>
+int main(void) {
+  int a = 0;
+  unsigned int x = 0;
+  char s[5];
+  char c = 0;
+  int n = 0;
+  int r = sscanf(" -42 2a abcZ", "%d %x %3s%c%n", &a, &x, s, &c, &n);
+  if (r != 4) return 1;
+  if (a != -42 || x != 42) return 2;
+  if (s[0] != 'a' || s[1] != 'b' || s[2] != 'c' || s[3] != 0) return 3;
+  if (c != 'Z' || n != 12) return 4;
+  signed char hh = 0;
+  unsigned char uhh = 0;
+  r = sscanf("-5 250", "%hhd %hhu", &hh, &uhh);
+  if (r != 2 || hh != -5 || uhh != 250) return 13;
+  int na = 0;
+  int nb = 0;
+  int nc = 0;
+  signed char nhh = 0;
+  short nh = 0;
+  long nl = 0;
+  r = sscanf("12 345 6", "%d%hhn %d%hn %d%ln", &na, &nhh, &nb, &nh, &nc, &nl);
+  if (r != 3 || na != 12 || nhh != 2 || nb != 345 || nh != 6 || nc != 6 || nl != 8) return 14;
+  int ws[3];
+  int wc[1];
+  r = sscanf("hi Z", "%ls %lc", ws, wc);
+  if (r != 2 || ws[0] != 'h' || ws[1] != 'i' || ws[2] != 0 || wc[0] != 'Z') return 15;
+  void *p = 0;
+  r = sscanf("0x2a", "%p", &p);
+  if (r != 1 || (long)p != 42) return 16;
+  char set[4];
+  char notz[4];
+  r = sscanf("abc123Z", "%3[a-z]%3[^Z]", set, notz);
+  if (r != 2) return 17;
+  if (set[0] != 'a' || set[1] != 'b' || set[2] != 'c' || set[3] != 0) return 18;
+  if (notz[0] != '1' || notz[1] != '2' || notz[2] != '3' || notz[3] != 0) return 19;
+
+  a = 0;
+  x = 0;
+  s[0] = s[1] = s[2] = s[3] = s[4] = 0;
+  c = 0;
+  n = 0;
+  r = scanf("%d %x %2s%c%n", &a, &x, s, &c, &n);
+  if (r != 4) return 5;
+  if (a != 55 || x != 42) return 6;
+  if (s[0] != 'o' || s[1] != 'k' || s[2] != 0) return 7;
+  if (c != 'Z' || n != 9) return 8;
+
+  a = 0;
+  s[0] = s[1] = s[2] = s[3] = s[4] = 0;
+  n = 0;
+  r = fscanf(stdin, "%d %4s%n", &a, s, &n);
+  if (r != 2) return 9;
+  if (a != 17) return 10;
+  if (s[0] != 'd' || s[1] != 'o' || s[2] != 'n' || s[3] != 'e' || s[4] != 0) return 11;
+  if (n != 7) return 12;
+  return 42;
+}
+`, { loadInclude });
+const linkedScanf = await toolchain.instantiateLinkedWasm(linkedScanfSource, {
+  exports: ["main"],
+  useStdlib: true,
+}, {
+  stdio: { stdin: "55 2a okZ17 done" },
+});
+const linkedScanfResult = linkedScanf.instance.exports.main();
+if (linkedScanfResult !== 42) {
+  throw new Error(`linked runtime scanf family failed: ${linkedScanfResult}`);
+}
+
 const jsSnprintfSource = `
 int sprintf(char *buf, const char *fmt, int n, const char *s);
 int snprintf(char *buf, unsigned long size, const char *fmt, int n);

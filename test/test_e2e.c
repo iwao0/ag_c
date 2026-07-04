@@ -1969,7 +1969,9 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_strlen") == 0 || strcmp(sym, "_strcpy") == 0 ||
             strcmp(sym, "_strncpy") == 0 || strcmp(sym, "_strcat") == 0 ||
             strcmp(sym, "_strncat") == 0 || strcmp(sym, "_strchr") == 0 ||
-            strcmp(sym, "_strrchr") == 0 || strcmp(sym, "_strstr") == 0 ||
+            strcmp(sym, "_strrchr") == 0 || strcmp(sym, "_strspn") == 0 ||
+            strcmp(sym, "_strcspn") == 0 || strcmp(sym, "_strpbrk") == 0 ||
+            strcmp(sym, "_strstr") == 0 ||
             strcmp(sym, "_strtok") == 0 || strcmp(sym, "_strerror") == 0 ||
             strcmp(sym, "_memcpy") == 0 || strcmp(sym, "_memmove") == 0 ||
             strcmp(sym, "_memcmp") == 0 || strcmp(sym, "_memchr") == 0 ||

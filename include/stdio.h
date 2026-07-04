@@ -19,6 +19,11 @@ int sprintf(char *buf, const char *fmt, ...);
 int snprintf(char *buf, size_t size, const char *fmt, ...);
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
 
+/* Formatted input */
+int scanf(const char *fmt, ...);
+int fscanf(FILE *stream, const char *fmt, ...);
+int sscanf(const char *s, const char *fmt, ...);
+
 /* Character output */
 int puts(const char *s);
 int putchar(int c);

@@ -303,7 +303,10 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
          (name_len == 7 && memcmp(name, "fprintf", 7) == 0) ||
          (name_len == 4 && memcmp(name, "puts", 4) == 0) ||
          (name_len == 7 && memcmp(name, "sprintf", 7) == 0) ||
-         (name_len == 8 && memcmp(name, "snprintf", 8) == 0);
+         (name_len == 8 && memcmp(name, "snprintf", 8) == 0) ||
+         (name_len == 6 && memcmp(name, "strspn", 6) == 0) ||
+         (name_len == 7 && memcmp(name, "strcspn", 7) == 0) ||
+         (name_len == 7 && memcmp(name, "strpbrk", 7) == 0);
 }
 
 static void emit_function_table(void) {
@@ -2903,6 +2906,73 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "))\n");
     wasm_emitf(6, "(local.set $h (i32.add (local.get $h) (i32.const 1)))\n");
     wasm_emitf(6, "(br $outer)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  int need_str_set_contains_stub = has_undefined_function("strspn", 6) ||
+                                   has_undefined_function("strcspn", 7) ||
+                                   has_undefined_function("strpbrk", 7);
+  if (need_str_set_contains_stub) {
+    wasm_emitf(2, "(func $__ag_str_contains (param $set i32) (param $ch i32) (result i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $d i32)\n");
+    wasm_emitf(4, "(local.set $p (local.get $set))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(local.set $d (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $d)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (i32.eq (local.get $d) (local.get $ch)) (then (return (i32.const 1))))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("strspn", 6)) {
+    wasm_emitf(2, "(func $strspn (param $s i32) (param $accept i32) (result i64)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(local $n i64)\n");
+    wasm_emitf(4, "(local.set $p (local.get $s))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (i32.eqz (call $__ag_str_contains (local.get $accept) (local.get $ch))) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $n (i64.add (local.get $n) (i64.const 1)))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $n)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("strcspn", 7)) {
+    wasm_emitf(2, "(func $strcspn (param $s i32) (param $reject i32) (result i64)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(local $n i64)\n");
+    wasm_emitf(4, "(local.set $p (local.get $s))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (call $__ag_str_contains (local.get $reject) (local.get $ch)) (then (br $done)))\n");
+    wasm_emitf(6, "(local.set $n (i64.add (local.get $n) (i64.const 1)))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $n)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("strpbrk", 7)) {
+    wasm_emitf(2, "(func $strpbrk (param $s i32) (param $accept i32) (result i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(local $ch i32)\n");
+    wasm_emitf(4, "(local.set $p (local.get $s))\n");
+    wasm_emitf(4, "(block $done (loop $loop\n");
+    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
+    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (br $done)))\n");
+    wasm_emitf(6, "(if (call $__ag_str_contains (local.get $accept) (local.get $ch)) (then (return (local.get $p))))\n");
+    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
+    wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
