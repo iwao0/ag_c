@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き480: math fdim/fma runtime 対応）
+最終更新: 2026-07-05（続き482: math exp2/expm1/log1p runtime 対応）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_fdim_fma_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exp_log_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
@@ -5773,6 +5773,69 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
   - `./build/test_e2e` = **1186/1186 OK**
   - `git diff --check` = **green**
+
+### このセッション（続き482）: `math.h` exp2/expm1/log1p runtime 対応
+- 見つかった未対応:
+  - C11 `math.h` の `exp2` / `expm1` / `log1p` と f/l wrappers が
+    header/runtime/linker/JS import/tgmath 側に無かった。
+- 根本対応:
+  - `include/math.h` に `exp2` / `exp2f` / `exp2l`, `expm1` / `expm1f` / `expm1l`,
+    `log1p` / `log1pf` / `log1pl` を追加した。
+  - `include/tgmath.h` に f/l prototype と type-generic dispatch を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/math.c` に既存 `exp` / `log` を使う runtime 実装を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に上記 symbols を追加した。
+  - `tools/wasm_js_api/agc-runtime-imports.js` の `AGC_MATH_IMPORTS` に JS import family を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に linked runtime 実行 smoke と `--nostdlib` import grep を追加した。
+    巨大 `main` のローカル増加で `E4007` にならないよう、追加実行確認は `math_exp_log_ext_check()` helper に分離した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `useStdlib:false` JS import smoke と
+    標準 `<math.h>` 経由 linked runtime smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に追記した。
+- 残り:
+  - `expm1` / `log1p` は小値向けの高精度専用アルゴリズムではなく、現状は `exp(x) - 1` / `log(1 + x)` の最小実装。
+  - `exp2` は `exp(x * ln2)` ベースの近似実装。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-runtime-imports.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exp_log_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker`
+  - `make test-wasm-js-pipeline`
+  - `make test-wasm-js-api`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check`
+
+### このセッション（続き481）: `math.h` remainder/remquo runtime 対応
+- 見つかった未対応:
+  - C11 `math.h` の剰余系として `fmod` はあったが、`remainder` / `remquo` と f/l wrappers が
+    header/runtime/linker/JS import/tgmath 側に無かった。
+- 根本対応:
+  - `include/math.h` に `remainder` / `remainderf` / `remainderl`,
+    `remquo` / `remquof` / `remquol` を追加した。
+  - `include/tgmath.h` に f/l prototype と type-generic dispatch を追加した。
+  - `tools/wasm_obj_linker/runtime/parts/math.c` に nearest-even quotient helper を追加し、
+    `remainder` と `remquo` の runtime 実装を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に上記 symbols を追加した。
+  - `tools/wasm_js_api/agc-runtime-imports.js` に `remainder` import family と、
+    wasm memory の `int *quo` に書く `remquo` / `remquof` / `remquol` import を追加した。
+  - `tools/wasm_obj_linker/test_smoke.sh` に linked runtime 実行 smoke と `--nostdlib` import grep を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `useStdlib:false` JS import smoke と
+    標準 `<math.h>` 経由 linked runtime smoke を追加した。
+  - `tools/wasm_obj_linker/README.md` の runtime support 概要に追記した。
+- 残り:
+  - `remainder` / `remquo` は通常規模の quotient を対象にした最小実装。巨大 quotient や完全な libm 精度までは未対応。
+  - `remquo` の `quo` は実装定義として signed low 3 quotient bits を返す。
+- 確認:
+  - `node --check tools/wasm_js_api/agc-runtime-imports.js`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_remainder_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `make -j4 build/ag_wasm_link`
+  - `make test-wasm-obj-linker`
+  - `make test-wasm-js-pipeline`
+  - `make test-wasm-js-api`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
+  - `git diff --check`
 
 ### このセッション（続き480）: `math.h` fdim/fma runtime 対応
 - 見つかった未対応:

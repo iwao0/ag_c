@@ -199,6 +199,66 @@ int __agc_runtime_isinf(double x);
 int __agc_runtime_isfinite(double x);
 int __agc_runtime_signbit(double x);
 
+static long __agc_runtime_nearest_even_quot(double q) {
+  int sign = 1;
+  if (q < 0.0) {
+    sign = -1;
+    q = -q;
+  }
+  long n = (long)q;
+  double frac = q - (double)n;
+  if (frac > 0.5 || (frac == 0.5 && (n & 1))) n++;
+  return sign < 0 ? -n : n;
+}
+
+static int __agc_runtime_remquo_quo_bits(double x, double y) {
+  long q = __agc_runtime_nearest_even_quot(x / y);
+  int sign = q < 0 ? -1 : 1;
+  int bits;
+  if (q < 0) q = -q;
+  bits = (int)(q & 7);
+  return sign < 0 ? -bits : bits;
+}
+
+double __agc_runtime_remainder(double x, double y) {
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isnan(y)) return y;
+  if (y == 0.0 || __agc_runtime_isinf(x)) {
+    double zero = 0.0;
+    return zero / zero;
+  }
+  if (__agc_runtime_isinf(y)) return x;
+  long q = __agc_runtime_nearest_even_quot(x / y);
+  return x - (double)q * y;
+}
+
+float __agc_runtime_remainderf(float x, float y) {
+  return (float)__agc_runtime_remainder((double)x, (double)y);
+}
+
+long double __agc_runtime_remainderl(long double x, long double y) {
+  return (long double)__agc_runtime_remainder((double)x, (double)y);
+}
+
+double __agc_runtime_remquo(double x, double y, long quo_addr) {
+  double result = __agc_runtime_remainder(x, y);
+  if (quo_addr) {
+    int *quo = (int *)ag_rt_ptr(quo_addr);
+    *quo = (__agc_runtime_isfinite(x) && __agc_runtime_isfinite(y) && y != 0.0)
+               ? __agc_runtime_remquo_quo_bits(x, y)
+               : 0;
+  }
+  return result;
+}
+
+float __agc_runtime_remquof(float x, float y, long quo_addr) {
+  return (float)__agc_runtime_remquo((double)x, (double)y, quo_addr);
+}
+
+long double __agc_runtime_remquol(long double x, long double y, long quo_addr) {
+  return (long double)__agc_runtime_remquo((double)x, (double)y, quo_addr);
+}
+
 double __agc_runtime_fdim(double x, double y) {
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isnan(y)) return y;
@@ -416,6 +476,18 @@ double __agc_runtime_log10(double x) {
   return __agc_runtime_log(x) / 2.302585092994046;
 }
 
+double __agc_runtime_exp2(double x) {
+  return __agc_runtime_exp(x * 0.6931471805599453);
+}
+
+double __agc_runtime_expm1(double x) {
+  return __agc_runtime_exp(x) - 1.0;
+}
+
+double __agc_runtime_log1p(double x) {
+  return __agc_runtime_log(1.0 + x);
+}
+
 float __agc_runtime_expf(float x) {
   return (float)__agc_runtime_exp((double)x);
 }
@@ -424,12 +496,36 @@ long double __agc_runtime_expl(long double x) {
   return (long double)__agc_runtime_exp((double)x);
 }
 
+float __agc_runtime_exp2f(float x) {
+  return (float)__agc_runtime_exp2((double)x);
+}
+
+long double __agc_runtime_exp2l(long double x) {
+  return (long double)__agc_runtime_exp2((double)x);
+}
+
+float __agc_runtime_expm1f(float x) {
+  return (float)__agc_runtime_expm1((double)x);
+}
+
+long double __agc_runtime_expm1l(long double x) {
+  return (long double)__agc_runtime_expm1((double)x);
+}
+
 float __agc_runtime_logf(float x) {
   return (float)__agc_runtime_log((double)x);
 }
 
 long double __agc_runtime_logl(long double x) {
   return (long double)__agc_runtime_log((double)x);
+}
+
+float __agc_runtime_log1pf(float x) {
+  return (float)__agc_runtime_log1p((double)x);
+}
+
+long double __agc_runtime_log1pl(long double x) {
+  return (long double)__agc_runtime_log1p((double)x);
 }
 
 float __agc_runtime_log2f(float x) {

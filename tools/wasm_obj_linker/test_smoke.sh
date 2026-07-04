@@ -1846,6 +1846,12 @@ long double truncl(long double x);
 double fmod(double x, double y);
 float fmodf(float x, float y);
 long double fmodl(long double x, long double y);
+double remainder(double x, double y);
+float remainderf(float x, float y);
+long double remainderl(long double x, long double y);
+double remquo(double x, double y, int *quo);
+float remquof(float x, float y, int *quo);
+long double remquol(long double x, long double y, int *quo);
 double fdim(double x, double y);
 float fdimf(float x, float y);
 long double fdiml(long double x, long double y);
@@ -1871,9 +1877,18 @@ double cbrt(double x);
 double exp(double x);
 float expf(float x);
 long double expl(long double x);
+double exp2(double x);
+float exp2f(float x);
+long double exp2l(long double x);
+double expm1(double x);
+float expm1f(float x);
+long double expm1l(long double x);
 double log(double x);
 float logf(float x);
 long double logl(long double x);
+double log1p(double x);
+float log1pf(float x);
+long double log1pl(long double x);
 double log2(double x);
 float log2f(float x);
 long double log2l(long double x);
@@ -2126,6 +2141,11 @@ int math_decomp_check(void) {
   int dexp = 0;
   int fexp = 0;
   int lexp = 0;
+  int dquo = 0;
+  int fquo = 0;
+  int lquo = 0;
+  int dquo_bits = 0;
+  int dquo_neg_bits = 0;
   double dint = 0.0;
   float fint = 0.0f;
   long double lint = 0.0L;
@@ -2160,7 +2180,35 @@ int math_decomp_check(void) {
          (int)(fma(2.0, 3.0, 0.5) * 1000.0) == 6500 &&
          (int)(fmaf(2.0f, 3.0f, 0.5f) * 1000.0f) == 6500 &&
          (int)(fmal(2.0L, 3.0L, 0.5L) * 1000.0L) == 6500 &&
+         (int)(remainder(5.5, 2.0) * 1000.0) == -500 &&
+         (int)(remainderf(5.5f, 2.0f) * 1000.0f) == -500 &&
+         (int)(remainderl(5.5L, 2.0L) * 1000.0L) == -500 &&
+         (int)(remquo(5.5, 2.0, &dquo) * 1000.0) == -500 && dquo == 3 &&
+         (int)(remquof(5.5f, 2.0f, &fquo) * 1000.0f) == -500 && fquo == 3 &&
+         (int)(remquol(5.5L, 2.0L, &lquo) * 1000.0L) == -500 && lquo == 3 &&
+         (int)(remquo(19.5, 2.0, &dquo_bits) * 1000.0) == -500 && dquo_bits == 2 &&
+         (int)(remquo(-19.5, 2.0, &dquo_neg_bits) * 1000.0) == 500 && dquo_neg_bits == -2 &&
          isnan(dnan_api) && isnan(fnan_api) && isnan(lnan_api);
+}
+int math_exp_log_ext_check(void) {
+  int exp2v = (int)(exp2(3.0) * 1000.0);
+  int exp2fv = (int)(exp2f(3.0f) * 1000.0f);
+  int exp2lv = (int)(exp2l(3.0L) * 1000.0L);
+  int expm1v = (int)(expm1(1.0) * 1000.0);
+  int expm1fv = (int)(expm1f(1.0f) * 1000.0f);
+  int expm1lv = (int)(expm1l(1.0L) * 1000.0L);
+  int log1pv = (int)(log1p(1.0) * 1000.0);
+  int log1pfv = (int)(log1pf(1.0f) * 1000.0f);
+  int log1plv = (int)(log1pl(1.0L) * 1000.0L);
+  return exp2v >= 7998 && exp2v <= 8002 &&
+         exp2fv >= 7998 && exp2fv <= 8002 &&
+         exp2lv >= 7998 && exp2lv <= 8002 &&
+         expm1v >= 1716 && expm1v <= 1720 &&
+         expm1fv >= 1716 && expm1fv <= 1720 &&
+         expm1lv >= 1716 && expm1lv <= 1720 &&
+         log1pv >= 691 && log1pv <= 695 &&
+         log1pfv >= 691 && log1pfv <= 695 &&
+         log1plv >= 691 && log1plv <= 695;
 }
 int main(void) {
   char a[32];
@@ -2479,6 +2527,12 @@ int main(void) {
     frexp(1.0, &never);
     frexpf(1.0f, &never);
     frexpl(1.0L, &never);
+    remainder(5.5, 2.0);
+    remainderf(5.5f, 2.0f);
+    remainderl(5.5L, 2.0L);
+    remquo(5.5, 2.0, &never);
+    remquof(5.5f, 2.0f, &never);
+    remquol(5.5L, 2.0L, &never);
     fdim(2.0, 1.0);
     fdimf(2.0f, 1.0f);
     fdiml(2.0L, 1.0L);
@@ -3156,6 +3210,7 @@ int main(void) {
                       islessgreater(1.0, 2.0) && !islessgreater(2.0, 2.0) &&
                       isunordered(math_nan, 1.0) && !isunordered(1.0, 2.0);
   int math_decomp_ok = math_decomp_check();
+  int math_exp_log_ext_ok = math_exp_log_ext_check();
   char *pbrk_src = "xyzabc";
   unsigned long span = strspn("aabbc", "ab");
   unsigned long cspan = strcspn("aabbc", "c");
@@ -3426,6 +3481,7 @@ int main(void) {
          (int)(fmaxl(3.0L, 4.0L) * 1000.0L) == 4000 &&
          math_class_ok &&
          math_decomp_ok &&
+         math_exp_log_ext_ok &&
          sinh0 == 0 && cosh0 >= 998 && cosh0 <= 1002 &&
          tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
          atoi(" -123x") == -123 &&
@@ -4078,6 +4134,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.remainder>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.remainderf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.remainderl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.remquo>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.remquof>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.remquol>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fdim>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fdimf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fdiml>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -4108,8 +4170,19 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.exp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.expf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.expl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.exp2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.exp2f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.exp2l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.expm1>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.expm1f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.expm1l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.logf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.logl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log1p>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log1pf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log1pl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.log2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log2f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log2l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"

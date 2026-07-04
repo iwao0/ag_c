@@ -31,6 +31,38 @@ function agcFma(x, y, z) {
   return Number(x) * Number(y) + Number(z);
 }
 
+function agcNearestEvenQuot(q) {
+  q = Number(q);
+  const sign = q < 0 ? -1 : 1;
+  const aq = Math.abs(q);
+  let n = Math.trunc(aq);
+  const frac = aq - n;
+  if (frac > 0.5 || (frac === 0.5 && (n & 1))) n++;
+  return sign * n;
+}
+
+function agcRemainder(x, y) {
+  x = Number(x);
+  y = Number(y);
+  if (Number.isNaN(x)) return x;
+  if (Number.isNaN(y)) return y;
+  if (y === 0 || !Number.isFinite(x)) return Number.NaN;
+  if (!Number.isFinite(y)) return x;
+  return x - agcNearestEvenQuot(x / y) * y;
+}
+
+function agcRemquo(memory, x, y, quoPtr) {
+  const result = agcRemainder(x, y);
+  if (quoPtr) {
+    const q = Number.isFinite(Number(x)) && Number.isFinite(Number(y)) && Number(y) !== 0
+      ? agcNearestEvenQuot(Number(x) / Number(y))
+      : 0;
+    const bits = Math.sign(q || 1) * (Math.abs(q) & 7);
+    writeMemoryI32(memory, quoPtr, bits);
+  }
+  return result;
+}
+
 function agcFpclassify(x) {
   x = Number(x);
   if (Number.isNaN(x)) return 0;
@@ -106,6 +138,8 @@ const AGC_MATH_IMPORTS = [
   ["cos", wrapMath(Math.cos), ["f", "l"], true],
   ["cosh", wrapMath(Math.cosh), [], true],
   ["exp", wrapMath(Math.exp), ["f", "l"], true],
+  ["exp2", wrapMath((x) => Math.pow(2, x)), ["f", "l"], true],
+  ["expm1", wrapMath(Math.expm1), ["f", "l"], true],
   ["fabs", wrapMath(Math.abs), ["f", "l"], true],
   ["floor", wrapMath(Math.floor), ["f", "l"], true],
   ["fdim", agcFdim, ["f", "l"], true],
@@ -115,9 +149,11 @@ const AGC_MATH_IMPORTS = [
   ["fmod", wrapMath((x, y) => x % y), ["f", "l"], true],
   ["hypot", wrapMath(Math.hypot), ["f", "l"], true],
   ["log", wrapMath(Math.log), ["f", "l"], true],
+  ["log1p", wrapMath(Math.log1p), ["f", "l"], true],
   ["log10", wrapMath(Math.log10), ["f", "l"], true],
   ["log2", wrapMath(Math.log2), ["f", "l"], true],
   ["pow", wrapMath(Math.pow), ["f", "l"], true],
+  ["remainder", agcRemainder, ["f", "l"], true],
   ["round", agcRound, ["f", "l"], true],
   ["sin", wrapMath(Math.sin), ["f", "l"], true],
   ["sinh", wrapMath(Math.sinh), [], true],
@@ -713,6 +749,10 @@ export function createAgcRuntimeMathEnvImports(options = {}) {
   env.modf = (x, intPtr) => agcModf(getMemory(), x, intPtr, false);
   env.modff = (x, intPtr) => agcModf(getMemory(), x, intPtr, true);
   env.modfl = (x, intPtr) => agcModf(getMemory(), x, intPtr, false);
+  env.remquo = (x, y, quoPtr) => agcRemquo(getMemory(), x, y, quoPtr);
+  env.remquof = env.remquo;
+  env.remquol = env.remquo;
+  env.__agc_runtime_math_remquo = env.remquo;
   env.copysign = (x, y) => (agcSignbit(y) ? -Math.abs(Number(x)) : Math.abs(Number(x)));
   env.copysignf = env.copysign;
   env.copysignl = env.copysign;

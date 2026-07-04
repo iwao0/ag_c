@@ -884,6 +884,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "truncf") || str_eq_lit(name, "truncl") ||
          str_eq_lit(name, "fmod") ||
          str_eq_lit(name, "fmodf") || str_eq_lit(name, "fmodl") ||
+         str_eq_lit(name, "remainder") || str_eq_lit(name, "remainderf") ||
+         str_eq_lit(name, "remainderl") || str_eq_lit(name, "remquo") ||
+         str_eq_lit(name, "remquof") || str_eq_lit(name, "remquol") ||
          str_eq_lit(name, "fdim") || str_eq_lit(name, "fdimf") ||
          str_eq_lit(name, "fdiml") || str_eq_lit(name, "fma") ||
          str_eq_lit(name, "fmaf") || str_eq_lit(name, "fmal") ||
@@ -897,8 +900,13 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "nanl") ||
          str_eq_lit(name, "cbrt") || str_eq_lit(name, "exp") ||
          str_eq_lit(name, "expf") || str_eq_lit(name, "expl") ||
+         str_eq_lit(name, "exp2") || str_eq_lit(name, "exp2f") ||
+         str_eq_lit(name, "exp2l") || str_eq_lit(name, "expm1") ||
+         str_eq_lit(name, "expm1f") || str_eq_lit(name, "expm1l") ||
          str_eq_lit(name, "log") || str_eq_lit(name, "logf") ||
-         str_eq_lit(name, "logl") || str_eq_lit(name, "log2") ||
+         str_eq_lit(name, "logl") || str_eq_lit(name, "log1p") ||
+         str_eq_lit(name, "log1pf") || str_eq_lit(name, "log1pl") ||
+         str_eq_lit(name, "log2") ||
          str_eq_lit(name, "log2f") || str_eq_lit(name, "log2l") ||
          str_eq_lit(name, "log10") || str_eq_lit(name, "log10f") ||
          str_eq_lit(name, "log10l") || str_eq_lit(name, "atan") ||
@@ -2984,6 +2992,18 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fmodf";
   } else if (str_eq_lit(name, "fmodl")) {
     target_lit = "__agc_runtime_fmodl";
+  } else if (str_eq_lit(name, "remainder")) {
+    target_lit = "__agc_runtime_remainder";
+  } else if (str_eq_lit(name, "remainderf")) {
+    target_lit = "__agc_runtime_remainderf";
+  } else if (str_eq_lit(name, "remainderl")) {
+    target_lit = "__agc_runtime_remainderl";
+  } else if (str_eq_lit(name, "remquo")) {
+    target_lit = "__agc_runtime_remquo";
+  } else if (str_eq_lit(name, "remquof")) {
+    target_lit = "__agc_runtime_remquof";
+  } else if (str_eq_lit(name, "remquol")) {
+    target_lit = "__agc_runtime_remquol";
   } else if (str_eq_lit(name, "fdim")) {
     target_lit = "__agc_runtime_fdim";
   } else if (str_eq_lit(name, "fdimf")) {
@@ -3034,12 +3054,30 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_expf";
   } else if (str_eq_lit(name, "expl")) {
     target_lit = "__agc_runtime_expl";
+  } else if (str_eq_lit(name, "exp2")) {
+    target_lit = "__agc_runtime_exp2";
+  } else if (str_eq_lit(name, "exp2f")) {
+    target_lit = "__agc_runtime_exp2f";
+  } else if (str_eq_lit(name, "exp2l")) {
+    target_lit = "__agc_runtime_exp2l";
+  } else if (str_eq_lit(name, "expm1")) {
+    target_lit = "__agc_runtime_expm1";
+  } else if (str_eq_lit(name, "expm1f")) {
+    target_lit = "__agc_runtime_expm1f";
+  } else if (str_eq_lit(name, "expm1l")) {
+    target_lit = "__agc_runtime_expm1l";
   } else if (str_eq_lit(name, "log")) {
     target_lit = "__agc_runtime_log";
   } else if (str_eq_lit(name, "logf")) {
     target_lit = "__agc_runtime_logf";
   } else if (str_eq_lit(name, "logl")) {
     target_lit = "__agc_runtime_logl";
+  } else if (str_eq_lit(name, "log1p")) {
+    target_lit = "__agc_runtime_log1p";
+  } else if (str_eq_lit(name, "log1pf")) {
+    target_lit = "__agc_runtime_log1pf";
+  } else if (str_eq_lit(name, "log1pl")) {
+    target_lit = "__agc_runtime_log1pl";
   } else if (str_eq_lit(name, "log2")) {
     target_lit = "__agc_runtime_log2";
   } else if (str_eq_lit(name, "log2f")) {
