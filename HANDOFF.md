@@ -5605,3 +5605,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
   - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
   - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き447）: printf decimal floating precision 上限拡張
+- 見つかった浅い箇所:
+  - `%f` / `%e` / `%g` の decimal floating formatter は precision を 9 桁で打ち切っていた。
+  - そのため `printf("%.12f", 1.0)` や `printf("%.12e", 1.0)` のような通常の指定でも、
+    出力が 9 桁相当に短くなる可能性が残っていた。
+- 根本対応:
+  - decimal floating precision の clamp を `AG_RT_DECIMAL_FORMAT_MAX_PRECISION` と helper に集約した。
+  - `%f` / `%e` は default precision 6、`%g` は precision 0 を 1 とする挙動を保ったまま、
+    decimal 出力の実用上限を 18 桁へ広げた。
+  - `tools/wasm_obj_linker/test_smoke.sh` の `snprintf_float.c` に
+    `%.12f` / `%.12e` / `%#.12g` smoke を追加した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも同じ precision smoke を追加した。
+- 残り:
+  - 非 C locale は runtime として未対応のまま。
+  - 浮動小数出力の巨大値境界や、18 桁を超える高 precision の完全対応、
+    さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`（初回は既存 wide helper 重複診断で一度失敗、単独再実行で green）
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**

@@ -423,6 +423,13 @@ SRC
 
 cat > "$out_dir/snprintf_float.c" <<'SRC'
 int snprintf(char *s, unsigned long n, const char *fmt, ...);
+static int zeros(char *s, int first, int last) {
+  int i;
+  for (i = first; i <= last; i++) {
+    if (s[i] != '0') return 0;
+  }
+  return 1;
+}
 int main(void) {
   char a[32];
   char b[32];
@@ -458,6 +465,9 @@ int main(void) {
   char af[32];
   char ag[32];
   char ah[32];
+  char ai[32];
+  char aj[32];
+  char ak[32];
   double zero = 0.0;
   double negzero = -zero;
   double inf = 1.0 / zero;
@@ -496,6 +506,9 @@ int main(void) {
   int naf = snprintf(af, sizeof(af), "%.1g", 9.9);
   int nag = snprintf(ag, sizeof(ag), "%.2g", 99.9);
   int nah = snprintf(ah, sizeof(ah), "%.1g", 0.00009999);
+  int nai = snprintf(ai, sizeof(ai), "%.12f", 1.0);
+  int naj = snprintf(aj, sizeof(aj), "%.12e", 1.0);
+  int nak = snprintf(ak, sizeof(ak), "%#.12g", 1.0);
   return na == 3 && a[0] == '3' && a[1] == '.' && a[2] == '1' && a[3] == 0 &&
          nb == 5 && b[0] == '-' && b[1] == '2' && b[2] == '.' && b[3] == '2' &&
          b[4] == '5' && b[5] == 0 &&
@@ -557,7 +570,13 @@ int main(void) {
          nag == 5 && ag[0] == '1' && ag[1] == 'e' && ag[2] == '+' &&
          ag[3] == '0' && ag[4] == '2' && ag[5] == 0 &&
          nah == 6 && ah[0] == '0' && ah[1] == '.' && ah[2] == '0' &&
-         ah[3] == '0' && ah[4] == '0' && ah[5] == '1' && ah[6] == 0 ? 42 : 1;
+         ah[3] == '0' && ah[4] == '0' && ah[5] == '1' && ah[6] == 0 &&
+         nai == 14 && ai[0] == '1' && ai[1] == '.' && zeros(ai, 2, 13) && ai[14] == 0 &&
+         naj == 18 && aj[0] == '1' && aj[1] == '.' && zeros(aj, 2, 13) &&
+         aj[14] == 'e' && aj[15] == '+' && aj[16] == '0' && aj[17] == '0' &&
+         aj[18] == 0 &&
+         nak == 13 && ak[0] == '1' && ak[1] == '.' && zeros(ak, 2, 12) &&
+         ak[13] == 0 ? 42 : 1;
 }
 SRC
 

@@ -1,3 +1,5 @@
+#define AG_RT_DECIMAL_FORMAT_MAX_PRECISION 18
+
 static int ag_rt_udec_len(unsigned long v) {
   int n = 1;
   while (v / 10) {
@@ -158,6 +160,17 @@ static int ag_rt_double_is_negative(double v) {
   return v == 0.0 && (1.0 / v) == -(1.0 / zero);
 }
 
+static int ag_rt_decimal_format_precision(int precision) {
+  if (precision < 0) return 6;
+  if (precision > AG_RT_DECIMAL_FORMAT_MAX_PRECISION) return AG_RT_DECIMAL_FORMAT_MAX_PRECISION;
+  return precision;
+}
+
+static int ag_rt_general_format_precision(int precision) {
+  precision = ag_rt_decimal_format_precision(precision);
+  return precision == 0 ? 1 : precision;
+}
+
 static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
                               double v, int precision, int upper, int alternate, int sign_ch) {
   if (ag_rt_double_is_nan(v)) {
@@ -178,8 +191,7 @@ static void ag_rt_write_fixed(char *buf, size_t size, int bounded, size_t *pos,
     ag_rt_putc(buf, size, bounded, pos, upper ? 'F' : 'f');
     return;
   }
-  if (precision < 0) precision = 6;
-  if (precision > 9) precision = 9;
+  precision = ag_rt_decimal_format_precision(precision);
   if (ag_rt_double_is_negative(v)) {
     ag_rt_putc(buf, size, bounded, pos, '-');
     v = -v;
@@ -263,8 +275,7 @@ static void ag_rt_write_scientific(char *buf, size_t size, int bounded, size_t *
     ag_rt_write_fixed(buf, size, bounded, pos, v, precision, upper, alternate, sign_ch);
     return;
   }
-  if (precision < 0) precision = 6;
-  if (precision > 9) precision = 9;
+  precision = ag_rt_decimal_format_precision(precision);
   if (ag_rt_double_is_negative(v)) {
     ag_rt_putc(buf, size, bounded, pos, '-');
     v = -v;
@@ -377,9 +388,7 @@ static void ag_rt_write_general(char *buf, size_t size, int bounded, size_t *pos
     ag_rt_write_fixed(buf, size, bounded, pos, v, precision, upper, alternate, sign_ch);
     return;
   }
-  if (precision < 0) precision = 6;
-  if (precision == 0) precision = 1;
-  if (precision > 9) precision = 9;
+  precision = ag_rt_general_format_precision(precision);
   exp = ag_rt_float_exp10_rounded(v, precision);
   if (exp < -4 || exp >= precision) {
     ag_rt_write_scientific(tmp, sizeof(tmp), 1, &tmp_pos, v, precision - 1, upper,

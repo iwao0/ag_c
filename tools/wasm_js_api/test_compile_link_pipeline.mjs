@@ -416,6 +416,13 @@ if (jsSnprintfResult !== 42) {
 }
 
 const linkedFloatFormatSource = await inlineStandardIncludes(`#include <stdio.h>
+static int zeros(char *s, int first, int last) {
+  int i;
+  for (i = first; i <= last; i++) {
+    if (s[i] != '0') return 0;
+  }
+  return 1;
+}
 int main(void) {
   char a[8];
   char b[8];
@@ -447,6 +454,9 @@ int main(void) {
   char hr[16];
   char hs[16];
   char ht[16];
+  char hu[24];
+  char hv[24];
+  char hw[24];
   signed char hhn = 0;
   short hn = 0;
   int in = 0;
@@ -490,6 +500,9 @@ int main(void) {
   int nao = snprintf(hr, sizeof(hr), "%.1g", 9.9);
   int nap = snprintf(hs, sizeof(hs), "%.2g", 99.9);
   int naq = snprintf(ht, sizeof(ht), "%.1g", 0.00009999);
+  int nar = snprintf(hu, sizeof(hu), "%.12f", 1.0);
+  int nas = snprintf(hv, sizeof(hv), "%.12e", 1.0);
+  int nat = snprintf(hw, sizeof(hw), "%#.12g", 1.0);
   if (n != 6 || a[0] != ' ' || a[1] != ' ' || a[2] != ' ' ||
       a[3] != '3' || a[4] != '.' || a[5] != '1' || a[6] != 0) return 1;
   if (m != 6 || b[0] != '-' || b[1] != '0' || b[2] != '0' ||
@@ -558,6 +571,13 @@ int main(void) {
       hs[3] != '0' || hs[4] != '2' || hs[5] != 0) return 30;
   if (naq != 6 || ht[0] != '0' || ht[1] != '.' || ht[2] != '0' ||
       ht[3] != '0' || ht[4] != '0' || ht[5] != '1' || ht[6] != 0) return 31;
+  if (nar != 14 || hu[0] != '1' || hu[1] != '.' || !zeros(hu, 2, 13) ||
+      hu[14] != 0) return 32;
+  if (nas != 18 || hv[0] != '1' || hv[1] != '.' || !zeros(hv, 2, 13) ||
+      hv[14] != 'e' || hv[15] != '+' || hv[16] != '0' || hv[17] != '0' ||
+      hv[18] != 0) return 33;
+  if (nat != 13 || hw[0] != '1' || hw[1] != '.' || !zeros(hw, 2, 12) ||
+      hw[13] != 0) return 34;
   return 42;
 }
 `, { loadInclude });
