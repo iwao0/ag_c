@@ -287,6 +287,20 @@ int __agc_runtime_fclose(long stream_addr) {
   return 0;
 }
 
+int __agc_runtime_remove(long path_addr) {
+  int i;
+  if (!path_addr) return -1;
+  ag_rt_file_len = 0;
+  for (i = 0; i < 8; i++) {
+    if (ag_rt_files[i].used && !ag_rt_files[i].is_stdin) {
+      ag_rt_file_set_pos(&ag_rt_files[i], 0);
+      ag_rt_files[i].eof = 0;
+    }
+    if (ag_rt_fds[i].used) ag_rt_fds[i].pos = 0;
+  }
+  return 0;
+}
+
 static int ag_rt_io_total_size(long size, long nmemb, long *total_out) {
   if (size < 0 || nmemb < 0) return 0;
   if (size == 0 || nmemb == 0) {

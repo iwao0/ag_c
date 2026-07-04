@@ -921,6 +921,37 @@ int main(void) {
 }
 SRC
 
+cat > "$out_dir/remove_state.c" <<'SRC'
+typedef void FILE;
+#define EOF (-1)
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+int remove(char *path);
+int fgetc(FILE *stream);
+int fputc(int c, FILE *stream);
+int feof(FILE *stream);
+int main(void) {
+  FILE *wf = fopen("tmp.txt", "w");
+  if (!wf) return 1;
+  if (fputc('A', wf) != 'A' || fputc('B', wf) != 'B') return 2;
+  if (fclose(wf) != 0) return 3;
+  if (remove(0) == 0) return 4;
+  if (remove("tmp.txt") != 0) return 5;
+  FILE *rf = fopen("tmp.txt", "r");
+  if (!rf) return 6;
+  if (fgetc(rf) != EOF || !feof(rf)) return 7;
+  if (fclose(rf) != 0) return 8;
+  FILE *wf2 = fopen("tmp.txt", "w");
+  if (!wf2) return 9;
+  if (fputc('Z', wf2) != 'Z' || fclose(wf2) != 0) return 10;
+  FILE *rf2 = fopen("tmp.txt", "r");
+  if (!rf2) return 11;
+  if (fgetc(rf2) != 'Z') return 12;
+  if (fclose(rf2) != 0) return 13;
+  return 42;
+}
+SRC
+
 cat > "$out_dir/localtime_state.c" <<'SRC'
 typedef long time_t;
 struct tm {
@@ -2604,6 +2635,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_wide_locale_state.interp"
 wasm-validate "$out_dir/linked_locale_state.wasm"
 wasm-interp "$out_dir/linked_locale_state.wasm" --run-all-exports > "$out_dir/linked_locale_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_locale_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/remove_state.o" "$out_dir/remove_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_remove_state.wasm" \
+  "$out_dir/remove_state.o"
+wasm-validate "$out_dir/linked_remove_state.wasm"
+wasm-interp "$out_dir/linked_remove_state.wasm" --run-all-exports > "$out_dir/linked_remove_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_remove_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/fenv_state.o" "$out_dir/fenv_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_fenv_state.wasm" \

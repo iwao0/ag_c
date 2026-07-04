@@ -790,6 +790,7 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "snprintf") ||
          str_eq_lit(name, "fopen") || str_eq_lit(name, "fwrite") ||
          str_eq_lit(name, "fclose") || str_eq_lit(name, "fread") ||
+         str_eq_lit(name, "remove") ||
          str_eq_lit(name, "open") || str_eq_lit(name, "close") ||
          str_eq_lit(name, "read") || str_eq_lit(name, "write") ||
          str_eq_lit(name, "lseek") || str_eq_lit(name, "fdopen") ||
@@ -2722,6 +2723,8 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fopen";
   } else if (str_eq_lit(name, "fclose")) {
     target_lit = "__agc_runtime_fclose";
+  } else if (str_eq_lit(name, "remove")) {
+    target_lit = "__agc_runtime_remove";
   } else if (str_eq_lit(name, "fwrite")) {
     target_lit = "__agc_runtime_fwrite";
   } else if (str_eq_lit(name, "fread")) {

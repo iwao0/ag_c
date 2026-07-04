@@ -41,6 +41,7 @@ long getline(char **lineptr, size_t *n, FILE *stream);
 FILE *fopen(const char *path, const char *mode);
 FILE *fdopen(int fd, const char *mode);
 int fclose(FILE *stream);
+int remove(const char *path);
 int fflush(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
 long ftell(FILE *stream);

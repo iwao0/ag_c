@@ -154,6 +154,12 @@ int main(void) {
   clearerr(rf);
   if (ferror(rf)) return 13;
   if (fclose(rf) != 0) return 14;
+  if (remove(NULL) == 0) return 15;
+  if (remove("tmp.txt") != 0) return 16;
+  rf = fopen("tmp.txt", "r");
+  if (!rf) return 17;
+  if (fgetc(rf) != EOF || !feof(rf)) return 18;
+  if (fclose(rf) != 0) return 19;
   return 42;
 }
 `, { loadInclude });

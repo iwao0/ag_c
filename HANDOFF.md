@@ -5631,3 +5631,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
   - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
   - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き448）: stdio `remove()` runtime 対応
+- 見つかった浅い箇所:
+  - default runtime は `fopen` / `fclose` / `fread` / `fwrite` などの簡易 file I/O を持っていたが、
+    標準 C の `remove()` は `stdio.h`、linker rewrite、runtime 実体のいずれにも無かった。
+  - そのため標準ヘッダ経由で `remove("tmp.txt")` を使うコードは runtime link できない状態だった。
+- 根本対応:
+  - `include/stdio.h` に `int remove(const char *path);` を追加した。
+  - `tools/wasm_obj_linker/ag_wasm_link.c` の runtime symbol 判定と rewrite に `remove` /
+    `__agc_runtime_remove` を追加した。
+  - runtime の単一ファイルバッファモデルに合わせ、`__agc_runtime_remove()` は NULL path を失敗にし、
+    非 NULL path では file buffer を空にして open stream / fd の位置を先頭へ戻すようにした。
+  - selfhost runtime compile で parser が崩れないよう、追加関数内の loop は `for (i = ...)` 形式にした。
+  - `tools/wasm_obj_linker/test_smoke.sh` に `remove_state.c` を追加し、
+    NULL path failure、削除後 EOF、削除後の再書き込みを確認した。
+  - `tools/wasm_js_api/test_compile_link_pipeline.mjs` の stdlib link 経路にも
+    `remove(NULL)` / `remove("tmp.txt")` / 削除後 EOF の smoke を追加した。
+- 残り:
+  - runtime はまだ単一ファイルバッファで、複数 path や OS 的な unlink/rename semantics は未対応。
+  - 非 C locale、浮動小数出力の巨大値境界、さらに細かい unread / stream EOF 境界はまだ簡易実装。
+- 確認:
+  - `make -j4 build/ag_wasm_link`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`
+  - `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`
+  - `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  - `git diff --check` = **green**
+  - `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`（並列実行時に stale build 由来の一時失敗、単独再実行で green）
+  - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
+  - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
+  - `./build/test_e2e` = **1186/1186 OK**
