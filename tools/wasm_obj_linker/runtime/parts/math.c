@@ -8,34 +8,76 @@ int __agc_runtime_fegetround(void);
 int __agc_runtime_feraiseexcept(int excepts);
 
 double __agc_runtime_sqrt(double x) {
+  int scale = 0;
+  double y;
+  double g;
   if (__agc_runtime_isnan(x)) return x;
   if (x < 0.0) {
     double zero = 0.0;
     return zero / zero;
   }
   if (x == 0.0 || __agc_runtime_isinf(x)) return x;
-  double g = x > 1.0 ? x : 1.0;
-  for (int i = 0; i < 12; i++) g = (g + x / g) / 2.0;
+  y = x;
+  while (y >= 4.0) {
+    y = y / 4.0;
+    scale++;
+  }
+  while (y < 1.0) {
+    y = y * 4.0;
+    scale--;
+  }
+  g = y > 1.0 ? y : 1.0;
+  for (int i = 0; i < 12; i++) g = (g + y / g) / 2.0;
+  while (scale > 0) {
+    g = g * 2.0;
+    scale--;
+  }
+  while (scale < 0) {
+    g = g / 2.0;
+    scale++;
+  }
   return g;
 }
 
 float __agc_runtime_sqrtf(float x) {
-  if (__agc_runtime_isnan((double)x)) return x;
-  if (x < 0.0f) {
-    float zero = 0.0f;
-    return zero / zero;
-  }
-  if (x == 0.0f || __agc_runtime_isinf((double)x)) return x;
-  float g = x > 1.0f ? x : 1.0f;
-  for (int i = 0; i < 8; i++) g = (g + x / g) / 2.0f;
-  return g;
+  return (float)__agc_runtime_sqrt((double)x);
 }
 
 long double __agc_runtime_sqrtl(long double x) {
   return (long double)__agc_runtime_sqrt((double)x);
 }
 
+static double __agc_runtime_trunc_abs(double ax) {
+  double scale;
+  double whole;
+  if (ax < 1.0) return 0.0;
+  if (ax >= 4503599627370496.0) return ax;
+  scale = 1.0;
+  while (scale <= ax / 2.0 && scale < 2251799813685248.0) scale = scale * 2.0;
+  whole = 0.0;
+  while (scale >= 1.0) {
+    if (whole + scale <= ax) whole = whole + scale;
+    scale = scale / 2.0;
+  }
+  return whole;
+}
+
+static int __agc_runtime_finite_is_integer(double x) {
+  double ax = x < 0.0 ? -x : x;
+  return __agc_runtime_trunc_abs(ax) == ax;
+}
+
+static int __agc_runtime_integer_abs_is_even(double ax) {
+  double half;
+  if (ax >= 9007199254740992.0) return 1;
+  half = __agc_runtime_trunc_abs(ax / 2.0);
+  return half * 2.0 == ax;
+}
+
 double __agc_runtime_pow(double x, double y) {
+  double ay;
+  int y_is_int;
+  int y_is_odd_int;
   if (y == 0.0 || x == 1.0) return 1.0;
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isnan(y)) return y;
@@ -46,9 +88,9 @@ double __agc_runtime_pow(double x, double y) {
     if (ax > 1.0) return y > 0.0 ? inf : 0.0;
     return y > 0.0 ? 0.0 : inf;
   }
-  long yi = (long)y;
-  int y_is_int = (double)yi == y;
-  int y_is_odd_int = y_is_int && (yi & 1);
+  ay = y < 0.0 ? -y : y;
+  y_is_int = __agc_runtime_finite_is_integer(y);
+  y_is_odd_int = y_is_int && !__agc_runtime_integer_abs_is_even(ay);
   if (x == 0.0) {
     if (y < 0.0) {
       double inf = 1.0 / 0.0;
@@ -65,13 +107,13 @@ double __agc_runtime_pow(double x, double y) {
   if (y_is_int) {
     double base = x;
     double result = 1.0;
-    long n = yi < 0 ? -yi : yi;
-    while (n > 0) {
-      if (n & 1) result = result * base;
+    double n = ay;
+    while (n >= 1.0) {
+      if (!__agc_runtime_integer_abs_is_even(n)) result = result * base;
       base = base * base;
-      n = n / 2;
+      n = __agc_runtime_trunc_abs(n / 2.0);
     }
-    return yi < 0 ? 1.0 / result : result;
+    return y < 0.0 ? 1.0 / result : result;
   }
   if (x < 0.0) {
     double zero = 0.0;
@@ -104,25 +146,36 @@ long double __agc_runtime_fabsl(long double x) {
 }
 
 double __agc_runtime_trunc(double x) {
+  double whole;
   if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
-  long i = (long)x;
-  if (i == 0) return __agc_runtime_copysign(0.0, x);
-  return (double)i;
+  whole = __agc_runtime_trunc_abs(__agc_runtime_fabs(x));
+  if (whole == 0.0) return __agc_runtime_copysign(0.0, x);
+  return x < 0.0 ? -whole : whole;
 }
 
 double __agc_runtime_floor(double x) {
+  double ax;
+  double whole;
   if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
-  long i = (long)x;
-  if ((double)i > x) i = i - 1;
-  return (double)i;
+  if (x > 0.0) return __agc_runtime_trunc_abs(x);
+  ax = __agc_runtime_fabs(x);
+  whole = __agc_runtime_trunc_abs(ax);
+  if (whole == ax) return -whole;
+  return -(whole + 1.0);
 }
 
 double __agc_runtime_ceil(double x) {
+  double ax;
+  double whole;
   if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
-  long i = (long)x;
-  if ((double)i < x) i = i + 1;
-  if (i == 0 && x < 0.0) return __agc_runtime_copysign(0.0, x);
-  return (double)i;
+  if (x > 0.0) {
+    whole = __agc_runtime_trunc_abs(x);
+    return whole == x ? whole : whole + 1.0;
+  }
+  ax = __agc_runtime_fabs(x);
+  whole = __agc_runtime_trunc_abs(ax);
+  if (whole == 0.0) return __agc_runtime_copysign(0.0, x);
+  return -whole;
 }
 
 double __agc_runtime_round(double x) {
@@ -162,16 +215,31 @@ long double __agc_runtime_truncl(long double x) {
   return (long double)__agc_runtime_trunc((double)x);
 }
 
+static double __agc_runtime_reduce_angle(double x) {
+  double pi = 3.141592653589793;
+  double two_pi = 6.283185307179586;
+  double sign = x < 0.0 ? -1.0 : 1.0;
+  double ax = x < 0.0 ? -x : x;
+  double q = __agc_runtime_trunc_abs(ax / two_pi);
+  double r = ax - q * two_pi;
+  if (r < 0.0) r = r + two_pi;
+  if (r > two_pi) {
+    q = __agc_runtime_trunc_abs(r / two_pi);
+    r = r - q * two_pi;
+    if (r < 0.0) r = r + two_pi;
+    if (r > two_pi) r = 0.0;
+  }
+  if (r > pi) r = r - two_pi;
+  return sign * r;
+}
+
 double __agc_runtime_sin(double x) {
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isinf(x)) {
     double zero = 0.0;
     return zero / zero;
   }
-  double pi = 3.141592653589793;
-  double two_pi = 6.283185307179586;
-  while (x > pi) x = x - two_pi;
-  while (x < -pi) x = x + two_pi;
+  x = __agc_runtime_reduce_angle(x);
   double x2 = x * x;
   double term = x;
   double sum = x;
@@ -194,10 +262,7 @@ double __agc_runtime_cos(double x) {
     double zero = 0.0;
     return zero / zero;
   }
-  double pi = 3.141592653589793;
-  double two_pi = 6.283185307179586;
-  while (x > pi) x = x - two_pi;
-  while (x < -pi) x = x + two_pi;
+  x = __agc_runtime_reduce_angle(x);
   double x2 = x * x;
   double term = 1.0;
   double sum = 1.0;
@@ -304,7 +369,8 @@ long double __agc_runtime_fmodl(long double x, long double y) {
 static double __agc_runtime_round_even(double x) {
   double t = __agc_runtime_trunc(x);
   double frac = __agc_runtime_fabs(x - t);
-  if (frac > 0.5 || (frac == 0.5 && ((long)__agc_runtime_fabs(t) & 1))) {
+  if (frac > 0.5 ||
+      (frac == 0.5 && !__agc_runtime_integer_abs_is_even(__agc_runtime_fabs(t)))) {
     t = t + (__agc_runtime_signbit(x) ? -1.0 : 1.0);
   }
   return t;
@@ -669,12 +735,34 @@ long double __agc_runtime_nanl(long tagp_addr) {
 }
 
 double __agc_runtime_cbrt(double x) {
+  int scale = 0;
+  double sign;
+  double a;
+  double y;
+  double g;
   if (__agc_runtime_isnan(x)) return x;
   if (x == 0.0 || __agc_runtime_isinf(x)) return x;
-  double sign = x < 0.0 ? -1.0 : 1.0;
-  double a = x < 0.0 ? -x : x;
-  double g = a > 1.0 ? a : 1.0;
-  for (int i = 0; i < 24; i++) g = (2.0 * g + a / (g * g)) / 3.0;
+  sign = x < 0.0 ? -1.0 : 1.0;
+  a = x < 0.0 ? -x : x;
+  y = a;
+  while (y >= 8.0) {
+    y = y / 8.0;
+    scale++;
+  }
+  while (y < 1.0) {
+    y = y * 8.0;
+    scale--;
+  }
+  g = y > 1.0 ? y : 1.0;
+  for (int i = 0; i < 16; i++) g = (2.0 * g + y / (g * g)) / 3.0;
+  while (scale > 0) {
+    g = g * 2.0;
+    scale--;
+  }
+  while (scale < 0) {
+    g = g / 2.0;
+    scale++;
+  }
   return sign * g;
 }
 
@@ -689,6 +777,8 @@ long double __agc_runtime_cbrtl(long double x) {
 double __agc_runtime_exp(double x) {
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isinf(x)) return x > 0.0 ? x : 0.0;
+  if (x > 709.782712893384) return 1.0 / 0.0;
+  if (x < -745.1332191019411) return 0.0;
   double ln2 = 0.6931471805599453;
   int k = 0;
   while (x > ln2) {
@@ -757,12 +847,34 @@ double __agc_runtime_exp2(double x) {
 }
 
 double __agc_runtime_expm1(double x) {
+  double term;
+  double sum;
   if (x == 0.0) return x;
+  if (__agc_runtime_fabs(x) < 1.0e-4) {
+    term = x;
+    sum = x;
+    for (int i = 2; i <= 24; i++) {
+      term = term * x / (double)i;
+      sum = sum + term;
+    }
+    return sum;
+  }
   return __agc_runtime_exp(x) - 1.0;
 }
 
 double __agc_runtime_log1p(double x) {
+  double term;
+  double sum;
   if (x == 0.0) return x;
+  if (__agc_runtime_fabs(x) < 1.0e-4) {
+    term = x;
+    sum = x;
+    for (int n = 2; n <= 40; n++) {
+      term = -term * x;
+      sum = sum + term / (double)n;
+    }
+    return sum;
+  }
   return __agc_runtime_log(1.0 + x);
 }
 
@@ -877,9 +989,22 @@ static double ag_rt_atan_core(double x) {
 }
 
 double __agc_runtime_atan(double x) {
-  if (x > 1.0) return 1.5707963267948966 - ag_rt_atan_core(1.0 / x);
-  if (x < -1.0) return -1.5707963267948966 - ag_rt_atan_core(1.0 / x);
-  return ag_rt_atan_core(x);
+  double half_pi = 1.5707963267948966;
+  double quarter_pi = 0.7853981633974483;
+  double ax;
+  double r;
+  if (__agc_runtime_isnan(x)) return x;
+  if (x == 0.0) return x;
+  if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? -half_pi : half_pi;
+  ax = __agc_runtime_fabs(x);
+  if (ax > 1.0) {
+    r = half_pi - ag_rt_atan_core(1.0 / ax);
+  } else if (ax > 0.4142135623730950) {
+    r = quarter_pi + ag_rt_atan_core((ax - 1.0) / (ax + 1.0));
+  } else {
+    r = ag_rt_atan_core(ax);
+  }
+  return __agc_runtime_signbit(x) ? -r : r;
 }
 
 double __agc_runtime_atan2(double y, double x) {
@@ -996,6 +1121,8 @@ long double __agc_runtime_coshl(long double x) {
 double __agc_runtime_tanh(double x) {
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? -1.0 : 1.0;
+  if (x > 20.0) return 1.0;
+  if (x < -20.0) return -1.0;
   double ex = __agc_runtime_exp(x);
   double em = __agc_runtime_exp(-x);
   return (ex - em) / (ex + em);
@@ -1051,11 +1178,23 @@ long double __agc_runtime_acoshl(long double x) {
 double __agc_runtime_atanh(double x) {
   double zero = 0.0;
   double ax;
+  double term;
+  double sum;
   if (__agc_runtime_isnan(x)) return x;
   ax = __agc_runtime_fabs(x);
   if (ax > 1.0 || __agc_runtime_isinf(x)) return zero / zero;
+  if (x == 0.0) return x;
   if (x == 1.0) return 1.0 / zero;
   if (x == -1.0) return -1.0 / zero;
+  if (ax < 1.0e-4) {
+    term = x;
+    sum = x;
+    for (int n = 3; n <= 39; n = n + 2) {
+      term = term * x * x;
+      sum = sum + term / (double)n;
+    }
+    return sum;
+  }
   return 0.5 * __agc_runtime_log((1.0 + x) / (1.0 - x));
 }
 

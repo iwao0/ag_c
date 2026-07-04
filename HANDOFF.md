@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き507: modf signed-zero semantics 修正）
+最終更新: 2026-07-05（続き515: atan intermediate reduction / edge semantics 修正）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_modf_zero_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_atan_reduce_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green/up-to-date**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
@@ -32,6 +32,222 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き515: **`atan` runtime の intermediate reduction / edge semantics 修正**。
+  linked runtime object の `__agc_runtime_atan` は単純な `x / (1 + 0.28*x*x)` 近似だけだったため、
+  `atan(1.0)` など中間域で誤差が大きく、`atan(±inf)` や `atan(-0.0)` の edge semantics も明示されていなかった。
+  runtime 側で `|x| > 1` は `pi/2 - atan_core(1/|x|)`、`|x| > sqrt(2)-1` 付近は
+  `pi/4 + atan_core((|x|-1)/(|x|+1))` に落としてから既存 core 近似を使うようにした。
+  NaN はそのまま返し、`±0.0` は signed zero を保持、`±inf` は `±pi/2` を返す。
+  追加テスト時に `tools/wasm_js_api/test_compile_link_pipeline.mjs` の手書き `mathSource` に
+  `atan` / `atanf` / `atanl` 宣言が抜けていて、`--nostdlib` import 経路だけが暗黙 int 扱いで
+  `return 162` になった。宣言を追加し、dump check に `env.atan` を入れ、
+  import 経路の失敗メッセージには実戻り値を含めるようにした。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `atan(±1.0)` /
+  `atan(-0.0)` / `atan(±inf)` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_atan_reduce_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き514: **`log1p` / `expm1` / `atanh` runtime の small finite semantics 修正**。
+  linked runtime object の `__agc_runtime_log1p` は `log(1.0 + x)`、
+  `__agc_runtime_expm1` は `exp(x) - 1.0`、
+  `__agc_runtime_atanh` は `0.5 * log((1.0 + x) / (1.0 - x))` に委譲していた。
+  そのため `1.0e-20` のような小さい finite 入力では `1.0 + x` や `exp(x) - 1.0` が丸まって、
+  結果が 0 に消え得た。
+  さらに `atanh(-0.0)` は `log(1.0)` 経由で `+0.0` になり、signed zero を失い得た。
+  runtime 側で `|x| < 1e-4` の `log1p` / `expm1` / `atanh` を Taylor series 経路にし、
+  `atanh(±0.0)` は先に `return x` するようにした。
+  通常サイズ、domain error、`±1` の atanh infinite edge は既存挙動を維持。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `log1p(±1.0e-20)` /
+  `expm1(±1.0e-20)` / `atanh(±1.0e-20)` / `atanh(-0.0)` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_small_log_exp_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き513: **`cbrt` runtime の large/small finite scaling 修正**。
+  linked runtime object の `__agc_runtime_cbrt` は初期値を `a > 1 ? a : 1` にして
+  固定 24 回 Newton iteration するだけだったため、
+  `cbrt(1.0e300)` のような巨大有限値では `1.0e100` 付近まで収束せず、桁違いな値を返し得た。
+  また `cbrt(1.0e-300)` のような非常に小さい有限値でも初期値 1.0 からの固定回数では十分に縮まらなかった。
+  runtime 側で入力の絶対値を 8 の冪で `[1, 8)` へ正規化し、その範囲で Newton iteration してから
+  2 の冪で戻すようにした。
+  NaN、signed zero、`±inf`、負有限値の符号維持は既存どおり。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `cbrt(±1.0e300)` /
+  `cbrt(1.0e-300)` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_cbrt_scaled_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き512: **`sqrt` runtime の large/small finite scaling 修正**。
+  linked runtime object の `__agc_runtime_sqrt` は初期値を `x > 1 ? x : 1` にして
+  固定 12 回 Newton iteration するだけだったため、
+  `sqrt(1.0e200)` のような巨大有限値では `1.0e100` 付近まで収束せず、ほぼ `x / 2^12` 側の桁違いな値を返し得た。
+  また `sqrt(1.0e-200)` のような非常に小さい有限値でも初期値 1.0 からの固定回数では十分に縮まらなかった。
+  runtime 側で入力を 4 の冪で `[1, 4)` へ正規化し、その範囲で Newton iteration してから
+  2 の冪で戻すようにした。
+  `sqrtf` は独自の浅い 8 回 iteration をやめ、double 実装へ委譲して同じ semantics を通す。
+  NaN、負値、`±0.0`、`+inf` の既存挙動は維持。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `sqrt(1.0e200)` /
+  `sqrt(1.0e-200)` / `sqrtf(1.0e20f)` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_sqrt_scaled_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き511: **`sin` / `cos` / `tan` runtime の finite huge range reduction 修正**。
+  linked runtime object の `__agc_runtime_sin` / `cos` は finite 引数を `[-pi, pi]` へ落とす際に
+  `while (x > pi) x -= 2pi` / `while (x < -pi) x += 2pi` で 1 周期ずつ引き戻していた。
+  そのため `sin(10000.0)` 程度でも不要に多数回ループし、さらに大きい有限入力では実行が固まり得た。
+  runtime 側に `__agc_runtime_reduce_angle` を追加し、
+  続き508で入れた cast-free `__agc_runtime_trunc_abs` を使って一度 quotient を作り、
+  bounded な補正だけで `[-pi, pi]` へ落とす形へ変更した。
+  `tan` は `sin` / `cos` に委譲しているため同じ改善を受ける。
+  これは高精度 range reduction の実装ではないが、既存 runtime の近似実装の範囲内で
+  finite huge 入力が大量ループに落ちる問題を解消する根本対応。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `sin/cos/tan(10000.0)` が finite bounded に収まる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_trig_huge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き510: **`exp` / `exp2` / `expm1` / hyperbolic runtime の large finite saturation 修正**。
+  linked runtime object の `__agc_runtime_exp` は finite 引数を `ln2` で縮小する際に
+  `while (x > ln2)` / `while (x < -ln2)` で 1 step ずつ引き戻していた。
+  そのため `exp(10000.0)` / `exp(-10000.0)` のような finite だが範囲外の入力で大量ループになり、
+  `exp2` / `expm1` / `sinh` / `cosh` / `tanh` も同じ問題を継承していた。
+  runtime 側で double の overflow / underflow 閾値を先に判定し、
+  `exp(10000.0)` は `+inf` 側、`exp(-10000.0)` は `+0.0` 側へ即時 saturation するようにした。
+  併せて `tanh` は finite large で `exp(x) / exp(x)` が `inf/inf` にならないよう、
+  `|x| > 20` では `±1.0` を返す早期分岐を追加した。
+  これにより `exp2(±2000.0)` / `expm1(-10000.0)` /
+  `sinh(±10000.0)` / `cosh(±10000.0)` / `tanh(±10000.0)` も固まらず期待側へ落ちる。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも finite huge saturation の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exp_huge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き509: **`pow` runtime の large finite exponent cast-free 化**。
+  linked runtime object の `__agc_runtime_pow` は finite exponent を最初に `(long)y` へ変換して
+  integer 判定・odd parity 判定・integer exponentiation に使っていた。
+  そのため `pow(-2.0, 10000000001.0)` のように 32-bit `long` 範囲を超える指数や、
+  `pow(-2.0, 1.0e20)` のように整数変換範囲を大きく超える finite exponent で、
+  誤った符号や未定義寄りの挙動に落ち得た。
+  続き508で入れた cast-free な整数部 helper を `pow` の前へ移し、
+  `__agc_runtime_finite_is_integer` と `__agc_runtime_integer_abs_is_even` で
+  finite exponent の integer / parity 判定を行うようにした。
+  integer exponentiation も double integer を 2 で割りながら進める形にし、
+  `long` へ落とさず exponentiation-by-squaring する。
+  これで `pow(-2.0, 10000000000.0)` は正の overflow 側、
+  `pow(-2.0, 10000000001.0)` は負の overflow 側、
+  `pow(-2.0, -10000000001.0)` と `pow(-0.0, 10000000001.0)` は signed-zero / sign を保つ。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも large even/odd exponent と negative zero base の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_pow_huge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き508: **`trunc` / `floor` / `ceil` / `round` / `nearbyint` / `rint` runtime の large finite cast-free 化**。
+  linked runtime object の round family は `trunc` / `floor` / `ceil` と
+  `nearbyint` / `rint` の ties-to-even parity 判定で `(long)` cast に依存していた。
+  そのため `10000000000.75` のように 32-bit `long` 範囲を超える fractional double や、
+  `1.0e20` のように整数変換範囲を大きく超える finite double で、誤った結果や未定義寄りの挙動に落ち得た。
+  runtime 側に `__agc_runtime_trunc_abs` / `__agc_runtime_integer_abs_is_even` を追加し、
+  double の仮数幅内では 2 の冪から整数部を組み立て、巨大 finite では double 表現上すでに整数として扱える値をそのまま返す形にした。
+  これで `trunc(10000000000.75)` / `floor(-10000000000.75)` /
+  `ceil(10000000000.25)` / `round(-10000000000.25)` と、
+  `trunc/floor/ceil/round(±1.0e20)` は `long` へ落ちずに処理される。
+  `nearbyint(10000000000.5)` / `rint(10000000001.5)` の ties-to-even parity 判定も
+  `(long)` cast を使わない経路になった。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも large finite / large tie-to-even の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_round_huge_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`（追加直後に main 側の rounding-mode 前提違いで一度失敗。tie-to-even 確認を `math_round_ext_check` 側へ残し、main 側の重複だけ外して再実行 **green**）、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
 - 続き507: **`modf` runtime / JS import の signed-zero semantics 修正**。
   linked runtime object の `__agc_runtime_modf` / `modff` は fractional part を `x - whole` で返しており、
   `modf(-0.0)` や `modf(-2.0)` の fractional part が `-0.0` ではなく `+0.0` に丸まり得た。

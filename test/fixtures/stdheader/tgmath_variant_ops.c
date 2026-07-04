@@ -43,6 +43,9 @@ int main(void) {
 
   assert(near1000(sqrt(f), 1412, 1416));
   assert(near1000(sqrt(l), 1412, 1416));
+  assert(sqrt(1.0e20f) > 9.9e9f && sqrt(1.0e20f) < 1.01e10f);
+  assert(sqrt(1.0e200L) > 9.9e99L && sqrt(1.0e200L) < 1.01e100L);
+  assert(sqrt(1.0e-200L) > 9.9e-101L && sqrt(1.0e-200L) < 1.01e-100L);
   assert(nanish(sqrt_fd));
   assert(nanish(sqrt_ld));
   assert(1.0f / sqrt_fnz < 0.0f);
@@ -53,6 +56,9 @@ int main(void) {
   assert(cbrt(-1.0L / 0.0L) < -1.0e300L);
   assert(1.0f / cbrt(-0.0f) < 0.0f);
   assert(nanish(cbrt((float)nanv)));
+  assert(cbrt(1.0e30f) > 9.9e9f && cbrt(1.0e30f) < 1.01e10f);
+  assert(cbrt(1.0e300L) > 9.9e99L && cbrt(1.0e300L) < 1.01e100L);
+  assert(cbrt(-1.0e300L) < -9.9e99L && cbrt(-1.0e300L) > -1.01e100L);
 
   assert(near1000(sin(1.5707963267948966f), 998, 1002));
   assert(near1000(sin(1.5707963267948966L), 998, 1002));
@@ -63,6 +69,9 @@ int main(void) {
   assert(near1000(tan(0.7853981633974483f), 998, 1002));
   assert(near1000(tan(0.7853981633974483L), 998, 1002));
   assert(nanish(tan_fd));
+  assert(sin(10000.0f) == sin(10000.0f) && sin(10000.0f) > -2.0f && sin(10000.0f) < 2.0f);
+  assert(cos(10000.0L) == cos(10000.0L) && cos(10000.0L) > -2.0L && cos(10000.0L) < 2.0L);
+  assert(tan(10000.0f) == tan(10000.0f) && tan(10000.0f) > -100.0f && tan(10000.0f) < 100.0f);
   assert(near1000(asinh(1.0f), 880, 882));
   assert(near1000(asinh(1.0L), 880, 882));
   assert(asinh(1.0e200L) > 400.0L && asinh(1.0e200L) < 500.0L);
@@ -78,6 +87,9 @@ int main(void) {
   assert((int)tanh(-1.0L / 0.0L) == -1);
   assert(atanh(1.0f) > 1.0e30f);
   assert(nanish(atanh_ld));
+  assert(1.0f / atanh(-0.0f) < 0.0f);
+  assert(atanh(1.0e-20L) > 0.0L && atanh(1.0e-20L) < 2.0e-20L);
+  assert(atanh(-1.0e-20L) < 0.0L && atanh(-1.0e-20L) > -2.0e-20L);
 
   assert(near1000(asin(1.0f), 1568, 1572));
   assert(near1000(asin(1.0L), 1568, 1572));
@@ -89,6 +101,9 @@ int main(void) {
   assert(nanish(acos_ld));
   assert(near1000(atan(1.0f), 783, 787));
   assert(near1000(atan(1.0L), 783, 787));
+  assert(near1000(atan(-1.0f), -787, -783));
+  assert(1.0f / atan(-0.0f) < 0.0f);
+  assert(atan(1.0L / z) > 1.56L && atan(1.0L / z) < 1.58L);
   assert(near1000(atan2(1.0f, 0.0f), 1568, 1572));
   assert(near1000(atan2(1.0L, 0.0L), 1568, 1572));
   assert(1.0f / atan2(-0.0f, 0.0f) < 0.0f);
@@ -101,10 +116,21 @@ int main(void) {
   assert(near1000(exp(1.0L), 2716, 2720));
   assert(exp(1.0f / 0.0f) > 1.0e30f);
   assert(exp(-1.0L / 0.0L) == 0.0L);
+  assert(exp(10000.0f) > 1.0e30f);
+  assert(exp(-10000.0L) == 0.0L);
+  assert(exp2(2000.0f) > 1.0e30f);
+  assert(exp2(-2000.0L) == 0.0L);
+  assert((int)expm1(-10000.0f) == -1);
   assert(nanish(exp_fd));
   assert(nanish(exp_ld));
   assert(1.0f / expm1(-0.0f) < 0.0f);
   assert(1.0L / expm1(-0.0L) < 0.0L);
+  assert(sinh(10000.0f) > 1.0e30f);
+  assert(sinh(-10000.0L) < -1.0e300L);
+  assert(cosh(10000.0f) > 1.0e30f);
+  assert(cosh(-10000.0L) > 1.0e300L);
+  assert((int)tanh(10000.0f) == 1);
+  assert((int)tanh(-10000.0L) == -1);
   assert(near1000(log(2.718281828459045f), 998, 1002));
   assert(near1000(log(2.718281828459045L), 998, 1002));
   assert(nanish(log_fd));
@@ -113,6 +139,10 @@ int main(void) {
   assert(log(1.0L / z) > 1.0e300L);
   assert(1.0f / log1p(-0.0f) < 0.0f);
   assert(1.0L / log1p(-0.0L) < 0.0L);
+  assert(log1p(1.0e-20L) > 0.0L && log1p(1.0e-20L) < 2.0e-20L);
+  assert(log1p(-1.0e-20L) < 0.0L && log1p(-1.0e-20L) > -2.0e-20L);
+  assert(expm1(1.0e-20L) > 0.0L && expm1(1.0e-20L) < 2.0e-20L);
+  assert(expm1(-1.0e-20L) < 0.0L && expm1(-1.0e-20L) > -2.0e-20L);
   assert(near1000(log2(8.0f), 2998, 3002));
   assert(near1000(log2(8.0L), 2998, 3002));
   assert(nanish(log2(-1.0f)));
@@ -136,8 +166,18 @@ int main(void) {
   assert(1.0f / trunc(-0.8f) < 0.0f);
   assert(1.0L / ceil(-0.8L) < 0.0L);
   assert(1.0L / round(-0.3L) < 0.0L);
+  assert(trunc(10000000000.75) == 10000000000.0);
+  assert(floor(-10000000000.75) == -10000000001.0);
+  assert(ceil(10000000000.25) == 10000000001.0);
+  assert(round(-10000000000.25) == -10000000000.0);
+  assert(trunc(1.0e20) == 1.0e20);
+  assert(floor(1.0e20) == 1.0e20);
+  assert(ceil(-1.0e20) == -1.0e20);
+  assert(round(-1.0e20) == -1.0e20);
   assert(nearbyint(2.5f) == 2.0f);
   assert(nearbyint(3.5L) == 4.0L);
+  assert(nearbyint(10000000000.5) == 10000000000.0);
+  assert(rint(10000000001.5L) == 10000000002.0L);
   assert(rint(2.5f) == 2.0f);
   assert(rint(-3.5L) == -4.0L);
   assert(lrint(3.5f) == 4);
@@ -158,6 +198,12 @@ int main(void) {
   assert((int)pow((float)nanv, 0.0f) == 1);
   assert(pow(0.0L, -0.5L) > 1.0e300L);
   assert(1.0f / pow(-0.0f, 3.0f) < 0.0f);
+  assert(pow(-2.0, 10000000000.0) > 1.0e300);
+  assert(pow(-2.0, 10000000001.0) < -1.0e300);
+  assert(pow(2.0, -10000000000.0) == 0.0);
+  assert(1.0 / pow(-2.0, -10000000001.0) < 0.0);
+  assert(1.0 / pow(-0.0, 10000000001.0) < 0.0);
+  assert(pow(-0.0, -10000000001.0) < -1.0e300);
   assert(near1000(fmod(7.5f, 2.0f), 1498, 1502));
   assert(near1000(fmod(7.5L, 2.0L), 1498, 1502));
   assert(nanish(fmod(7.5f, 0.0f)));

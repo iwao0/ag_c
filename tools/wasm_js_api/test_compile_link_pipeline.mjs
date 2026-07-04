@@ -138,6 +138,9 @@ long double acoshl(long double);
 double atanh(double);
 float atanhf(float);
 long double atanhl(long double);
+double atan(double);
+float atanf(float);
+long double atanl(long double);
 double asin(double);
 float asinf(float);
 long double asinl(long double);
@@ -258,29 +261,55 @@ int main(void) {
   if ((int)(sqrtl(2.0L) * 1000.0L) != 1414) return 95;
   if (!isnan(sqrt(-1.0)) || !isnan(sqrtf(-1.0f)) || !isnan(sqrtl(-1.0L))) return 96;
   if (!isnan(sqrt(nanv)) || !signbit(sqrt(nzero)) || sqrt(infv) <= 1.0e300) return 97;
+  if (sqrt(1.0e200) <= 9.9e99 || sqrt(1.0e200) >= 1.01e100) return 149;
+  if (sqrt(1.0e-200) <= 9.9e-101 || sqrt(1.0e-200) >= 1.01e-100) return 150;
+  if (sqrtf(1.0e20f) <= 9.9e9f || sqrtf(1.0e20f) >= 1.01e10f) return 151;
   if (!isnan(pow(-2.0, 0.5)) || !isnan(powf(-2.0f, 0.5f)) || !isnan(powl(-2.0L, 0.5L))) return 98;
   if (!isnan(pow(nanv, 2.0)) || (int)pow(nanv, 0.0) != 1) return 99;
   if (pow(z, -0.5) <= 1.0e300 || !signbit(pow(nzero, 3.0))) return 100;
   if (pow(nzero, -3.0) >= -1.0e300) return 101;
+  if (pow(-2.0, 10000000000.0) <= 1.0e300 || pow(-2.0, 10000000001.0) >= -1.0e300) return 127;
+  if (pow(2.0, -10000000000.0) != 0.0 || !signbit(pow(-2.0, -10000000001.0))) return 128;
+  if (!signbit(pow(nzero, 10000000001.0)) || pow(nzero, -10000000001.0) >= -1.0e300) return 129;
   if (log(z) >= -1.0e300 || log(infv) <= 1.0e300) return 102;
   if (!isnan(log(-1.0)) || !isnan(logf(-1.0f)) || !isnan(logl(-1.0L))) return 103;
   if (!isnan(log(nanv)) || log2(z) >= -1.0e300 || !isnan(log2(-1.0))) return 104;
   if (log10(infv) <= 1.0e300 || !isnan(log10(-1.0))) return 105;
   if (log1p(-1.0) >= -1.0e300 || !isnan(log1p(-2.0))) return 106;
+  if (log1p(1.0e-20) <= 0.0 || log1p(1.0e-20) >= 2.0e-20) return 155;
+  if (log1p(-1.0e-20) >= 0.0 || log1p(-1.0e-20) <= -2.0e-20) return 156;
   if (exp(infv) <= 1.0e300 || exp(-infv) != 0.0) return 107;
   if (!isnan(exp(nanv)) || !isnan(expf((float)nanv)) || !isnan(expl((long double)nanv))) return 108;
   if (exp2(infv) <= 1.0e300 || exp2(-infv) != 0.0) return 109;
   if (expm1(infv) <= 1.0e300 || (int)expm1(-infv) != -1) return 110;
   if (!signbit(expm1(nzero)) || !signbit(expm1f(-0.0f)) || !signbit(expm1l(-0.0L))) return 139;
+  if (exp(10000.0) <= 1.0e300 || exp(-10000.0) != 0.0) return 140;
+  if (exp2(2000.0) <= 1.0e300 || exp2(-2000.0) != 0.0) return 141;
+  if ((int)expm1(-10000.0) != -1) return 142;
+  if (expm1(1.0e-20) <= 0.0 || expm1(1.0e-20) >= 2.0e-20) return 157;
+  if (expm1(-1.0e-20) >= 0.0 || expm1(-1.0e-20) <= -2.0e-20) return 158;
   if (!isnan(sin(infv)) || !isnan(sinf((float)infv)) || !isnan(sinl((long double)infv))) return 111;
   if (!isnan(cos(infv)) || !isnan(cosf((float)infv)) || !isnan(cosl((long double)infv))) return 112;
   if (!isnan(tan(infv)) || !isnan(tanf((float)infv)) || !isnan(tanl((long double)infv))) return 113;
+  if (sin(10000.0) != sin(10000.0) || sin(10000.0) <= -2.0 || sin(10000.0) >= 2.0) return 146;
+  if (cos(10000.0) != cos(10000.0) || cos(10000.0) <= -2.0 || cos(10000.0) >= 2.0) return 147;
+  if (tan(10000.0) != tan(10000.0) || tan(10000.0) <= -100.0 || tan(10000.0) >= 100.0) return 148;
   if (sinh(infv) <= 1.0e300 || sinh(-infv) >= -1.0e300) return 114;
   if (cosh(infv) <= 1.0e300 || cosh(-infv) <= 1.0e300) return 115;
   if ((int)tanh(infv) != 1 || (int)tanh(-infv) != -1) return 116;
+  if (sinh(10000.0) <= 1.0e300 || sinh(-10000.0) >= -1.0e300) return 143;
+  if (cosh(10000.0) <= 1.0e300 || cosh(-10000.0) <= 1.0e300) return 144;
+  if ((int)tanh(10000.0) != 1 || (int)tanh(-10000.0) != -1) return 145;
   if (acosh(infv) <= 1.0e300 || !isnan(acosh(0.5)) || !isnan(acoshf(0.5f))) return 117;
   if (atanh(1.0) <= 1.0e300 || atanh(-1.0) >= -1.0e300) return 118;
   if (!isnan(atanh(2.0)) || !isnan(atanhl(2.0L))) return 119;
+  if (!signbit(atanh(nzero))) return 159;
+  if (atanh(1.0e-20) <= 0.0 || atanh(1.0e-20) >= 2.0e-20) return 160;
+  if (atanh(-1.0e-20) >= 0.0 || atanh(-1.0e-20) <= -2.0e-20) return 161;
+  if ((int)(atan(1.0) * 1000.0) < 783 || (int)(atan(1.0) * 1000.0) > 787) return 162;
+  if ((int)(atan(-1.0) * 1000.0) > -783 || (int)(atan(-1.0) * 1000.0) < -787) return 163;
+  if (!signbit(atan(nzero))) return 164;
+  if (atan(infv) <= 1.56 || atan(infv) >= 1.58 || atan(-infv) >= -1.56 || atan(-infv) <= -1.58) return 165;
   if (asinh(1.0e200) <= 400.0 || asinh(1.0e200) >= 500.0) return 123;
   if (asinh(-1.0e200) >= -400.0 || asinh(-1.0e200) <= -500.0) return 124;
   if (acosh(1.0e200) <= 400.0 || acosh(1.0e200) >= 500.0) return 125;
@@ -288,6 +317,9 @@ int main(void) {
   if (cbrt(infv) <= 1.0e300 || cbrt(-infv) >= -1.0e300) return 120;
   if (!isnan(cbrt(nanv)) || !isnan(cbrtf((float)nanv))) return 121;
   if (cbrtl((long double)infv) <= 1.0e300L || !signbit(cbrt(nzero))) return 122;
+  if (cbrt(1.0e300) <= 9.9e99 || cbrt(1.0e300) >= 1.01e100) return 152;
+  if (cbrt(-1.0e300) >= -9.9e99 || cbrt(-1.0e300) <= -1.01e100) return 153;
+  if (cbrt(1.0e-300) <= 9.9e-101 || cbrt(1.0e-300) >= 1.01e-100) return 154;
   if (!isgreater(2.0, 1.0) || isgreater(nanv, 1.0)) return 7;
   if (!isgreaterequal(2.0, 2.0) || !isless(1.0, 2.0)) return 8;
   if (!islessequal(2.0, 2.0) || !islessgreater(1.0, 2.0)) return 9;
@@ -405,6 +437,11 @@ int main(void) {
   if (!signbit(floor(-z)) || !signbit(trunc(-0.8)) || !signbit(ceil(-0.8)) || !signbit(round(-0.3))) return 93;
   if (!isnan(floorf((float)nanv)) || ceill((long double)infv) <= 1.0e300L) return 94;
   if (!signbit(roundl(-0.3L))) return 95;
+  if (trunc(10000000000.75) != 10000000000.0 || floor(-10000000000.75) != -10000000001.0) return 118;
+  if (ceil(10000000000.25) != 10000000001.0 || round(-10000000000.25) != -10000000000.0) return 119;
+  if (trunc(1.0e20) != 1.0e20 || floor(1.0e20) != 1.0e20) return 120;
+  if (ceil(-1.0e20) != -1.0e20 || round(-1.0e20) != -1.0e20) return 121;
+  if (nearbyint(10000000000.5) != 10000000000.0 || rint(10000000001.5) != 10000000002.0) return 126;
   if ((int)fmin(nanv, 7.0) != 7 || (int)fmin(7.0, nanv) != 7) return 77;
   if ((int)fminf((float)nanv, 5.0f) != 5 || (int)fminl(6.0L, (long double)nanv) != 6) return 78;
   if ((int)fmax(nanv, 7.0) != 7 || (int)fmax(7.0, nanv) != 7) return 79;
@@ -427,6 +464,7 @@ try {
       !dump.includes("env.tanhl") ||
       !dump.includes("env.asinh") ||
       !dump.includes("env.acoshl") ||
+      !dump.includes("env.atan") ||
       !dump.includes("env.atanhf") ||
       !dump.includes("env.scalbn") ||
       !dump.includes("env.scalblnl") ||
@@ -445,8 +483,9 @@ const mathInstantiated = await toolchain.instantiateLinkedWasm(mathSource, {
   exports: ["main"],
   useStdlib: false,
 });
-if (mathInstantiated.instance.exports.main() !== 1010) {
-  throw new Error("instantiated math pipeline did not use JS math imports");
+const mathImportResult = mathInstantiated.instance.exports.main();
+if (mathImportResult !== 1010) {
+  throw new Error(`instantiated math pipeline did not use JS math imports: ${mathImportResult}`);
 }
 
 const linkedStdioSource = await inlineStandardIncludes(`#include <stdio.h>
@@ -1511,29 +1550,55 @@ int main(void) {
   if ((int)(sqrtl(2.0L) * 1000.0L) != 1414) return 95;
   if (!isnan(sqrt(-1.0)) || !isnan(sqrtf(-1.0f)) || !isnan(sqrtl(-1.0L))) return 96;
   if (!isnan(sqrt(nanv)) || !signbit(sqrt(nzero)) || sqrt(infv) <= 1.0e300) return 97;
+  if (sqrt(1.0e200) <= 9.9e99 || sqrt(1.0e200) >= 1.01e100) return 149;
+  if (sqrt(1.0e-200) <= 9.9e-101 || sqrt(1.0e-200) >= 1.01e-100) return 150;
+  if (sqrtf(1.0e20f) <= 9.9e9f || sqrtf(1.0e20f) >= 1.01e10f) return 151;
   if (!isnan(pow(-2.0, 0.5)) || !isnan(powf(-2.0f, 0.5f)) || !isnan(powl(-2.0L, 0.5L))) return 98;
   if (!isnan(pow(nanv, 2.0)) || (int)pow(nanv, 0.0) != 1) return 99;
   if (pow(z, -0.5) <= 1.0e300 || !signbit(pow(nzero, 3.0))) return 100;
   if (pow(nzero, -3.0) >= -1.0e300) return 101;
+  if (pow(-2.0, 10000000000.0) <= 1.0e300 || pow(-2.0, 10000000001.0) >= -1.0e300) return 127;
+  if (pow(2.0, -10000000000.0) != 0.0 || !signbit(pow(-2.0, -10000000001.0))) return 128;
+  if (!signbit(pow(nzero, 10000000001.0)) || pow(nzero, -10000000001.0) >= -1.0e300) return 129;
   if (log(z) >= -1.0e300 || log(infv) <= 1.0e300) return 102;
   if (!isnan(log(-1.0)) || !isnan(logf(-1.0f)) || !isnan(logl(-1.0L))) return 103;
   if (!isnan(log(nanv)) || log2(z) >= -1.0e300 || !isnan(log2(-1.0))) return 104;
   if (log10(infv) <= 1.0e300 || !isnan(log10(-1.0))) return 105;
   if (log1p(-1.0) >= -1.0e300 || !isnan(log1p(-2.0))) return 106;
+  if (log1p(1.0e-20) <= 0.0 || log1p(1.0e-20) >= 2.0e-20) return 155;
+  if (log1p(-1.0e-20) >= 0.0 || log1p(-1.0e-20) <= -2.0e-20) return 156;
   if (exp(infv) <= 1.0e300 || exp(-infv) != 0.0) return 107;
   if (!isnan(exp(nanv)) || !isnan(expf((float)nanv)) || !isnan(expl((long double)nanv))) return 108;
   if (exp2(infv) <= 1.0e300 || exp2(-infv) != 0.0) return 109;
   if (expm1(infv) <= 1.0e300 || (int)expm1(-infv) != -1) return 110;
   if (!signbit(expm1(nzero)) || !signbit(expm1f(-0.0f)) || !signbit(expm1l(-0.0L))) return 139;
+  if (exp(10000.0) <= 1.0e300 || exp(-10000.0) != 0.0) return 140;
+  if (exp2(2000.0) <= 1.0e300 || exp2(-2000.0) != 0.0) return 141;
+  if ((int)expm1(-10000.0) != -1) return 142;
+  if (expm1(1.0e-20) <= 0.0 || expm1(1.0e-20) >= 2.0e-20) return 157;
+  if (expm1(-1.0e-20) >= 0.0 || expm1(-1.0e-20) <= -2.0e-20) return 158;
   if (!isnan(sin(infv)) || !isnan(sinf((float)infv)) || !isnan(sinl((long double)infv))) return 111;
   if (!isnan(cos(infv)) || !isnan(cosf((float)infv)) || !isnan(cosl((long double)infv))) return 112;
   if (!isnan(tan(infv)) || !isnan(tanf((float)infv)) || !isnan(tanl((long double)infv))) return 113;
+  if (sin(10000.0) != sin(10000.0) || sin(10000.0) <= -2.0 || sin(10000.0) >= 2.0) return 146;
+  if (cos(10000.0) != cos(10000.0) || cos(10000.0) <= -2.0 || cos(10000.0) >= 2.0) return 147;
+  if (tan(10000.0) != tan(10000.0) || tan(10000.0) <= -100.0 || tan(10000.0) >= 100.0) return 148;
   if (sinh(infv) <= 1.0e300 || sinh(-infv) >= -1.0e300) return 114;
   if (cosh(infv) <= 1.0e300 || cosh(-infv) <= 1.0e300) return 115;
   if ((int)tanh(infv) != 1 || (int)tanh(-infv) != -1) return 116;
+  if (sinh(10000.0) <= 1.0e300 || sinh(-10000.0) >= -1.0e300) return 143;
+  if (cosh(10000.0) <= 1.0e300 || cosh(-10000.0) <= 1.0e300) return 144;
+  if ((int)tanh(10000.0) != 1 || (int)tanh(-10000.0) != -1) return 145;
   if (acosh(infv) <= 1.0e300 || !isnan(acosh(0.5)) || !isnan(acoshf(0.5f))) return 117;
   if (atanh(1.0) <= 1.0e300 || atanh(-1.0) >= -1.0e300) return 118;
   if (!isnan(atanh(2.0)) || !isnan(atanhl(2.0L))) return 119;
+  if (!signbit(atanh(nzero))) return 159;
+  if (atanh(1.0e-20) <= 0.0 || atanh(1.0e-20) >= 2.0e-20) return 160;
+  if (atanh(-1.0e-20) >= 0.0 || atanh(-1.0e-20) <= -2.0e-20) return 161;
+  if ((int)(atan(1.0) * 1000.0) < 783 || (int)(atan(1.0) * 1000.0) > 787) return 162;
+  if ((int)(atan(-1.0) * 1000.0) > -783 || (int)(atan(-1.0) * 1000.0) < -787) return 163;
+  if (!signbit(atan(nzero))) return 164;
+  if (atan(infv) <= 1.56 || atan(infv) >= 1.58 || atan(-infv) >= -1.56 || atan(-infv) <= -1.58) return 165;
   if (asinh(1.0e200) <= 400.0 || asinh(1.0e200) >= 500.0) return 123;
   if (asinh(-1.0e200) >= -400.0 || asinh(-1.0e200) <= -500.0) return 124;
   if (acosh(1.0e200) <= 400.0 || acosh(1.0e200) >= 500.0) return 125;
@@ -1541,6 +1606,9 @@ int main(void) {
   if (cbrt(infv) <= 1.0e300 || cbrt(-infv) >= -1.0e300) return 120;
   if (!isnan(cbrt(nanv)) || !isnan(cbrtf((float)nanv))) return 121;
   if (cbrtl((long double)infv) <= 1.0e300L || !signbit(cbrt(nzero))) return 122;
+  if (cbrt(1.0e300) <= 9.9e99 || cbrt(1.0e300) >= 1.01e100) return 152;
+  if (cbrt(-1.0e300) >= -9.9e99 || cbrt(-1.0e300) <= -1.01e100) return 153;
+  if (cbrt(1.0e-300) <= 9.9e-101 || cbrt(1.0e-300) >= 1.01e-100) return 154;
   if (!isgreater(2.0, 1.0) || isgreater(nanv, 1.0)) return 11;
   if (!isgreaterequal(2.0, 2.0) || !isless(1.0, 2.0)) return 12;
   if (!islessequal(2.0, 2.0) || !islessgreater(1.0, 2.0)) return 13;
@@ -1655,6 +1723,11 @@ int main(void) {
   if (!signbit(floor(-z)) || !signbit(trunc(-0.8)) || !signbit(ceil(-0.8)) || !signbit(round(-0.3))) return 97;
   if (!isnan(floorf((float)nanv)) || ceill((long double)infv) <= 1.0e300L) return 98;
   if (!signbit(roundl(-0.3L))) return 99;
+  if (trunc(10000000000.75) != 10000000000.0 || floor(-10000000000.75) != -10000000001.0) return 122;
+  if (ceil(10000000000.25) != 10000000001.0 || round(-10000000000.25) != -10000000000.0) return 123;
+  if (trunc(1.0e20) != 1.0e20 || floor(1.0e20) != 1.0e20) return 124;
+  if (ceil(-1.0e20) != -1.0e20 || round(-1.0e20) != -1.0e20) return 125;
+  if (nearbyint(10000000000.5) != 10000000000.0 || rint(10000000001.5) != 10000000002.0) return 126;
   if (fesetround(FE_UPWARD) != 0 || rint(2.1) != 3.0 || rintf(-2.1f) != -2.0f) return 79;
   if (lrint(2.1) != 3 || llrintf(-2.1f) != -2) return 80;
   if (fesetround(FE_DOWNWARD) != 0 || rintl(2.9L) != 2.0L || nearbyint(-2.1) != -3.0) return 81;
