@@ -24,6 +24,8 @@ float       truncf(float);      long double truncl(long double);
 float       fabsf(float);       long double fabsl(long double);
 float       powf(float, float); long double powl(long double, long double);
 float       fmodf(float, float);long double fmodl(long double, long double);
+float       fdimf(float, float);long double fdiml(long double, long double);
+float       fmaf(float, float, float);long double fmal(long double, long double, long double);
 float       frexpf(float, int *);long double frexpl(long double, int *);
 float       ldexpf(float, int);  long double ldexpl(long double, int);
 float       modff(float, float *);long double modfl(long double, long double *);
@@ -37,6 +39,7 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
  * 区別できず `f##f` が `sqrtsqrt` のように壊れる (引数名 == 貼り付け先トークンの衝突)。 */
 #define __tg_un(fn, x)      _Generic((x), float: fn##f, long double: fn##l, default: fn)(x)
 #define __tg_bin(fn, x, y)  _Generic((x), float: fn##f, long double: fn##l, default: fn)((x), (y))
+#define __tg_tri(fn, x, y, z)  _Generic((x), float: fn##f, long double: fn##l, default: fn)((x), (y), (z))
 
 #define sqrt(x)  __tg_un(sqrt, x)
 #define cbrt(x)  __tg_un(cbrt, x)
@@ -57,6 +60,8 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define fabs(x)  __tg_un(fabs, x)
 #define pow(x, y)   __tg_bin(pow, x, y)
 #define fmod(x, y)  __tg_bin(fmod, x, y)
+#define fdim(x, y)  __tg_bin(fdim, x, y)
+#define fma(x, y, z) __tg_tri(fma, x, y, z)
 #define frexp(x, y) __tg_bin(frexp, x, y)
 #define ldexp(x, y) __tg_bin(ldexp, x, y)
 #define modf(x, y)  __tg_bin(modf, x, y)

@@ -884,6 +884,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "truncf") || str_eq_lit(name, "truncl") ||
          str_eq_lit(name, "fmod") ||
          str_eq_lit(name, "fmodf") || str_eq_lit(name, "fmodl") ||
+         str_eq_lit(name, "fdim") || str_eq_lit(name, "fdimf") ||
+         str_eq_lit(name, "fdiml") || str_eq_lit(name, "fma") ||
+         str_eq_lit(name, "fmaf") || str_eq_lit(name, "fmal") ||
          str_eq_lit(name, "frexp") || str_eq_lit(name, "frexpf") ||
          str_eq_lit(name, "frexpl") || str_eq_lit(name, "ldexp") ||
          str_eq_lit(name, "ldexpf") || str_eq_lit(name, "ldexpl") ||
@@ -2981,6 +2984,18 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_fmodf";
   } else if (str_eq_lit(name, "fmodl")) {
     target_lit = "__agc_runtime_fmodl";
+  } else if (str_eq_lit(name, "fdim")) {
+    target_lit = "__agc_runtime_fdim";
+  } else if (str_eq_lit(name, "fdimf")) {
+    target_lit = "__agc_runtime_fdimf";
+  } else if (str_eq_lit(name, "fdiml")) {
+    target_lit = "__agc_runtime_fdiml";
+  } else if (str_eq_lit(name, "fma")) {
+    target_lit = "__agc_runtime_fma";
+  } else if (str_eq_lit(name, "fmaf")) {
+    target_lit = "__agc_runtime_fmaf";
+  } else if (str_eq_lit(name, "fmal")) {
+    target_lit = "__agc_runtime_fmal";
   } else if (str_eq_lit(name, "frexp")) {
     target_lit = "__agc_runtime_frexp";
   } else if (str_eq_lit(name, "frexpf")) {

@@ -19,6 +19,18 @@ function agcFmax(x, y) {
   return Math.max(x, y);
 }
 
+function agcFdim(x, y) {
+  x = Number(x);
+  y = Number(y);
+  if (Number.isNaN(x)) return x;
+  if (Number.isNaN(y)) return y;
+  return x > y ? x - y : 0;
+}
+
+function agcFma(x, y, z) {
+  return Number(x) * Number(y) + Number(z);
+}
+
 function agcFpclassify(x) {
   x = Number(x);
   if (Number.isNaN(x)) return 0;
@@ -96,6 +108,8 @@ const AGC_MATH_IMPORTS = [
   ["exp", wrapMath(Math.exp), ["f", "l"], true],
   ["fabs", wrapMath(Math.abs), ["f", "l"], true],
   ["floor", wrapMath(Math.floor), ["f", "l"], true],
+  ["fdim", agcFdim, ["f", "l"], true],
+  ["fma", agcFma, ["f", "l"], true],
   ["fmax", agcFmax, ["f", "l"], true],
   ["fmin", agcFmin, ["f", "l"], true],
   ["fmod", wrapMath((x, y) => x % y), ["f", "l"], true],

@@ -199,6 +199,32 @@ int __agc_runtime_isinf(double x);
 int __agc_runtime_isfinite(double x);
 int __agc_runtime_signbit(double x);
 
+double __agc_runtime_fdim(double x, double y) {
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isnan(y)) return y;
+  return x > y ? x - y : 0.0;
+}
+
+float __agc_runtime_fdimf(float x, float y) {
+  return (float)__agc_runtime_fdim((double)x, (double)y);
+}
+
+long double __agc_runtime_fdiml(long double x, long double y) {
+  return (long double)__agc_runtime_fdim((double)x, (double)y);
+}
+
+double __agc_runtime_fma(double x, double y, double z) {
+  return x * y + z;
+}
+
+float __agc_runtime_fmaf(float x, float y, float z) {
+  return (float)__agc_runtime_fma((double)x, (double)y, (double)z);
+}
+
+long double __agc_runtime_fmal(long double x, long double y, long double z) {
+  return (long double)__agc_runtime_fma((double)x, (double)y, (double)z);
+}
+
 double __agc_runtime_ldexp(double x, int exp) {
   if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
   while (exp > 0) {

@@ -73,6 +73,12 @@ const mathSource = `
 double sin(double);
 double sqrt(double);
 double pow(double, double);
+double fdim(double, double);
+float fdimf(float, float);
+long double fdiml(long double, long double);
+double fma(double, double, double);
+float fmaf(float, float, float);
+long double fmal(long double, long double, long double);
 double frexp(double, int *);
 float frexpf(float, int *);
 long double frexpl(long double, int *);
@@ -135,6 +141,12 @@ int main(void) {
   if ((int)copysignf(2.0f, -0.0f) != -2 || !signbit(copysignf(2.0f, -0.0f))) return 21;
   if ((int)copysignl(2.0L, -0.0L) != -2 || !signbit(copysignl(2.0L, -0.0L))) return 22;
   if (!isnan(nan("")) || !isnan(nanf("")) || !isnan(nanl(""))) return 23;
+  if ((int)(fdim(5.5, 2.0) * 1000.0) != 3500 || (int)(fdim(2.0, 5.5) * 1000.0) != 0) return 24;
+  if ((int)(fdimf(5.5f, 2.0f) * 1000.0f) != 3500) return 25;
+  if ((int)(fdiml(5.5L, 2.0L) * 1000.0L) != 3500) return 26;
+  if ((int)(fma(2.0, 3.0, 0.5) * 1000.0) != 6500) return 27;
+  if ((int)(fmaf(2.0f, 3.0f, 0.5f) * 1000.0f) != 6500) return 28;
+  if ((int)(fmal(2.0L, 3.0L, 0.5L) * 1000.0L) != 6500) return 29;
   return (int)(sin(1.5707963267948966) * 1000.0) + (int)sqrt(4.0) + (int)pow(2.0, 3.0);
 }
 `;
@@ -1228,6 +1240,12 @@ int main(void) {
   if ((int)copysignf(2.0f, -0.0f) != -2 || !signbit(copysignf(2.0f, -0.0f))) return 25;
   if ((int)copysignl(2.0L, -0.0L) != -2 || !signbit(copysignl(2.0L, -0.0L))) return 26;
   if (!isnan(nan("")) || !isnan(nanf("")) || !isnan(nanl(""))) return 27;
+  if ((int)(fdim(5.5, 2.0) * 1000.0) != 3500 || (int)(fdim(2.0, 5.5) * 1000.0) != 0) return 28;
+  if ((int)(fdimf(5.5f, 2.0f) * 1000.0f) != 3500) return 29;
+  if ((int)(fdiml(5.5L, 2.0L) * 1000.0L) != 3500) return 30;
+  if ((int)(fma(2.0, 3.0, 0.5) * 1000.0) != 6500) return 31;
+  if ((int)(fmaf(2.0f, 3.0f, 0.5f) * 1000.0f) != 6500) return 32;
+  if ((int)(fmal(2.0L, 3.0L, 0.5L) * 1000.0L) != 6500) return 33;
   return 42;
 }
 `, { loadInclude });

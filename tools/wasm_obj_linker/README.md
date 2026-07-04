@@ -112,8 +112,9 @@ Supported:
   uchar conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
   trigonometric, inverse-trigonometric, and hyperbolic helpers, exp/log/log2/log10,
-  `pow`/`powf`/`powl`, remainder, decomposition/sign helpers (`frexp`, `ldexp`,
-  `modf`, `copysign`, `nan`, and f/l wrappers), cube-root, selected long-double wrappers,
+  `pow`/`powf`/`powl`, remainder, positive-difference/fused-multiply-add entry points,
+  decomposition/sign helpers (`frexp`, `ldexp`, `modf`, `copysign`, `nan`, and f/l wrappers),
+  cube-root, selected long-double wrappers,
   rounding helpers, and math classification/comparison helpers (`fpclassify`,
   `isfinite`, `isinf`, `isnan`, `isnormal`, `signbit`, `isgreater`,
   `isgreaterequal`, `isless`, `islessequal`, `islessgreater`, `isunordered`),

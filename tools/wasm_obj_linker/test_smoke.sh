@@ -1846,6 +1846,12 @@ long double truncl(long double x);
 double fmod(double x, double y);
 float fmodf(float x, float y);
 long double fmodl(long double x, long double y);
+double fdim(double x, double y);
+float fdimf(float x, float y);
+long double fdiml(long double x, long double y);
+double fma(double x, double y, double z);
+float fmaf(float x, float y, float z);
+long double fmal(long double x, long double y, long double z);
 double frexp(double x, int *exp);
 float frexpf(float x, int *exp);
 long double frexpl(long double x, int *exp);
@@ -2147,6 +2153,13 @@ int math_decomp_check(void) {
          (int)dcopysign == -2 && signbit(dcopysign) &&
          (int)fcopysign == -2 && signbit(fcopysign) &&
          (int)lcopysign == -2 && signbit(lcopysign) &&
+         (int)(fdim(5.5, 2.0) * 1000.0) == 3500 &&
+         (int)(fdim(2.0, 5.5) * 1000.0) == 0 &&
+         (int)(fdimf(5.5f, 2.0f) * 1000.0f) == 3500 &&
+         (int)(fdiml(5.5L, 2.0L) * 1000.0L) == 3500 &&
+         (int)(fma(2.0, 3.0, 0.5) * 1000.0) == 6500 &&
+         (int)(fmaf(2.0f, 3.0f, 0.5f) * 1000.0f) == 6500 &&
+         (int)(fmal(2.0L, 3.0L, 0.5L) * 1000.0L) == 6500 &&
          isnan(dnan_api) && isnan(fnan_api) && isnan(lnan_api);
 }
 int main(void) {
@@ -2466,6 +2479,12 @@ int main(void) {
     frexp(1.0, &never);
     frexpf(1.0f, &never);
     frexpl(1.0L, &never);
+    fdim(2.0, 1.0);
+    fdimf(2.0f, 1.0f);
+    fdiml(2.0L, 1.0L);
+    fma(2.0, 3.0, 0.5);
+    fmaf(2.0f, 3.0f, 0.5f);
+    fmal(2.0L, 3.0L, 0.5L);
     ldexp(1.0, 1);
     ldexpf(1.0f, 1);
     ldexpl(1.0L, 1);
@@ -4059,6 +4078,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.fmod>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.fmodl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fdim>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fdimf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fdiml>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fma>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmaf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.fmal>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.frexp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.frexpf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.frexpl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
