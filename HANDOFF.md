@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き484: math rounding runtime 対応）
+最終更新: 2026-07-05（続き487: math exponent scaling/runtime 対応）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_round_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exponent_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
@@ -32,6 +32,88 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き487: **math.h の exponent scaling/runtime 対応**。
+  C99 math exponent family として `scalbn` / `scalbln` / `ilogb` / `logb` と
+  f/l wrapper を `include/math.h` と `include/tgmath.h` に追加した。
+  `math.h` には `FP_ILOGB0` / `FP_ILOGBNAN` も定義した。
+  runtime object では `scalbn` / `scalbln` を既存 `ldexp` helper に寄せ、
+  `ilogb` / `logb` は有限値を 2 倍/半分へ正規化しながら指数を抽出する。
+  0 / NaN / ±inf は runtime 側で先に処理し、`logb(0)` は -inf、`logb(±inf)` は +inf、
+  `ilogb(0)` / `ilogb(NaN)` は `FP_ILOGB0` / `FP_ILOGBNAN` 相当を返す。
+  `tools/wasm_obj_linker/ag_wasm_link.c` は runtime symbol allowlist と rewrite target を追加し、
+  `tools/wasm_js_api/agc-runtime-imports.js` は JS import 経路に同じ family を追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` は linked runtime と `--nostdlib`
+  import の両経路を確認する。通常 e2e のカテゴリ内 namespace rewrite では
+  host 側 libc symbol が prefix rename されないよう `test/test_e2e.c` の除外リストも更新した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exponent_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -j4 build/ag_wasm_link`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e`、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き486: **math.h の inverse hyperbolic runtime 対応**。
+  C99 inverse hyperbolic family として `asinh` / `acosh` / `atanh` と f/l wrapper
+  (`asinhf` / `asinhl` / `acoshf` / `acoshl` / `atanhf` / `atanhl`) を
+  `include/math.h` と `include/tgmath.h` に追加した。
+  runtime object では既存 `log` / `sqrt` helper を使い、
+  `asinh(x) = sign(x) * log(|x| + sqrt(x*x + 1))`、
+  `acosh(x) = log(x + sqrt(x - 1) * sqrt(x + 1))`、
+  `atanh(x) = 0.5 * log((1 + x) / (1 - x))` を基本にした。
+  既存 `log` は `inf` 入力でループし得るため、NaN / ±inf / domain edge は
+  runtime 側で先に処理している。
+  `tools/wasm_obj_linker/ag_wasm_link.c` は runtime symbol allowlist と rewrite target を追加し、
+  `tools/wasm_js_api/agc-runtime-imports.js` は JS import 経路に `Math.asinh` /
+  `Math.acosh` / `Math.atanh` を追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` は linked runtime と `--nostdlib`
+  import の両経路を確認する。通常 e2e のカテゴリ内 namespace rewrite では
+  host 側 libc symbol が prefix rename されないよう `test/test_e2e.c` の除外リストも更新した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_inverse_hyperbolic_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -j4 build/ag_wasm_link`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e`、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き485: **math.h の `erf` / `erfc` runtime 対応**。
+  C99 error function family として `erf` / `erfc` と f/l wrapper
+  (`erff` / `erfl` / `erfcf` / `erfcl`) を `include/math.h` と
+  `include/tgmath.h` に追加した。
+  runtime object では Abramowitz-Stegun 系の近似で `erf` を実装し、
+  `erfc` は `1 - erf(x)` を基本にしつつ NaN と ±inf を明示処理する。
+  `tools/wasm_obj_linker/ag_wasm_link.c` は runtime symbol allowlist と
+  rewrite target を追加し、`tools/wasm_js_api/agc-runtime-imports.js` は
+  `Math.erf` が無い JS 環境でも動く同じ近似の import を追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` は linked runtime と
+  `--nostdlib` import の両経路を確認する。
+  通常 e2e のカテゴリ内 namespace rewrite では、host 側 libc symbol が
+  `agc_stdheader_*_erf` のように prefix rename されないよう
+  `test/test_e2e.c` の外部 libc 除外リストも同時に更新した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_erf_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -j4 build/ag_wasm_link`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e`、
+  `./build/test_e2e` = **1186/1186 green**。
 - 続き484: **math.h の rounding runtime 対応**。
   C99 math rounding family として
   `nearbyint` / `rint` / `lrint` / `llrint` / `lround` / `llround` と

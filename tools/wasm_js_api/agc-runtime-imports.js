@@ -28,6 +28,25 @@ function agcLround(x) {
   return agcI64FromNumber(agcRound(x));
 }
 
+function agcErf(x) {
+  x = Number(x);
+  if (Number.isNaN(x)) return x;
+  if (!Number.isFinite(x)) return x < 0 ? -1 : 1;
+  const sign = x < 0 ? -1 : 1;
+  const ax = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * ax);
+  const poly = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t -
+    0.284496736) * t + 0.254829592) * t;
+  return sign * (1 - poly * Math.exp(-ax * ax));
+}
+
+function agcErfc(x) {
+  x = Number(x);
+  if (Number.isNaN(x)) return x;
+  if (!Number.isFinite(x)) return x < 0 ? 2 : 0;
+  return 1 - agcErf(x);
+}
+
 function agcFmin(x, y) {
   x = Number(x);
   y = Number(y);
@@ -109,6 +128,25 @@ function agcLdexp(x, exp) {
   return Number(x) * Math.pow(2, Number(exp) | 0);
 }
 
+function agcScalbln(x, exp) {
+  return Number(x) * Math.pow(2, Number(exp));
+}
+
+function agcIlogb(x) {
+  x = Number(x);
+  if (Number.isNaN(x) || x === 0) return -2147483648;
+  if (!Number.isFinite(x)) return 2147483647;
+  return Math.floor(Math.log2(Math.abs(x)));
+}
+
+function agcLogb(x) {
+  x = Number(x);
+  if (Number.isNaN(x)) return x;
+  if (!Number.isFinite(x)) return Number.POSITIVE_INFINITY;
+  if (x === 0) return Number.NEGATIVE_INFINITY;
+  return agcIlogb(x);
+}
+
 function agcFrexp(memory, x, expPtr) {
   x = Number(x);
   if (!Number.isFinite(x) || x === 0) {
@@ -155,9 +193,12 @@ function wrapMath(fn) {
 
 const AGC_MATH_IMPORTS = [
   ["acos", wrapMath(Math.acos), ["f", "l"], true],
+  ["acosh", wrapMath(Math.acosh), ["f", "l"], true],
   ["asin", wrapMath(Math.asin), ["f", "l"], true],
+  ["asinh", wrapMath(Math.asinh), ["f", "l"], true],
   ["atan", wrapMath(Math.atan), ["f", "l"], true],
   ["atan2", wrapMath(Math.atan2), ["f", "l"], true],
+  ["atanh", wrapMath(Math.atanh), ["f", "l"], true],
   ["cbrt", wrapMath(Math.cbrt), ["f", "l"], true],
   ["ceil", wrapMath(Math.ceil), ["f", "l"], true],
   ["cos", wrapMath(Math.cos), ["f", "l"], true],
@@ -165,6 +206,8 @@ const AGC_MATH_IMPORTS = [
   ["exp", wrapMath(Math.exp), ["f", "l"], true],
   ["exp2", wrapMath((x) => Math.pow(2, x)), ["f", "l"], true],
   ["expm1", wrapMath(Math.expm1), ["f", "l"], true],
+  ["erf", agcErf, ["f", "l"], true],
+  ["erfc", agcErfc, ["f", "l"], true],
   ["fabs", wrapMath(Math.abs), ["f", "l"], true],
   ["floor", wrapMath(Math.floor), ["f", "l"], true],
   ["fdim", agcFdim, ["f", "l"], true],
@@ -173,10 +216,12 @@ const AGC_MATH_IMPORTS = [
   ["fmin", agcFmin, ["f", "l"], true],
   ["fmod", wrapMath((x, y) => x % y), ["f", "l"], true],
   ["hypot", wrapMath(Math.hypot), ["f", "l"], true],
+  ["ilogb", agcIlogb, ["f", "l"], true],
   ["log", wrapMath(Math.log), ["f", "l"], true],
   ["log1p", wrapMath(Math.log1p), ["f", "l"], true],
   ["log10", wrapMath(Math.log10), ["f", "l"], true],
   ["log2", wrapMath(Math.log2), ["f", "l"], true],
+  ["logb", agcLogb, ["f", "l"], true],
   ["nearbyint", agcRoundEven, ["f", "l"], true],
   ["pow", wrapMath(Math.pow), ["f", "l"], true],
   ["remainder", agcRemainder, ["f", "l"], true],
@@ -186,6 +231,8 @@ const AGC_MATH_IMPORTS = [
   ["round", agcRound, ["f", "l"], true],
   ["lround", agcLround, ["f", "l"], true],
   ["llround", agcLround, ["f", "l"], true],
+  ["scalbn", agcLdexp, ["f", "l"], true],
+  ["scalbln", agcScalbln, ["f", "l"], true],
   ["sin", wrapMath(Math.sin), ["f", "l"], true],
   ["sinh", wrapMath(Math.sinh), ["f", "l"], true],
   ["sqrt", wrapMath(Math.sqrt), ["f", "l"], true],

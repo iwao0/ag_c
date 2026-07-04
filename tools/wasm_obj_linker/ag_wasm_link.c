@@ -902,6 +902,12 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "frexp") || str_eq_lit(name, "frexpf") ||
          str_eq_lit(name, "frexpl") || str_eq_lit(name, "ldexp") ||
          str_eq_lit(name, "ldexpf") || str_eq_lit(name, "ldexpl") ||
+         str_eq_lit(name, "scalbn") || str_eq_lit(name, "scalbnf") ||
+         str_eq_lit(name, "scalbnl") || str_eq_lit(name, "scalbln") ||
+         str_eq_lit(name, "scalblnf") || str_eq_lit(name, "scalblnl") ||
+         str_eq_lit(name, "ilogb") || str_eq_lit(name, "ilogbf") ||
+         str_eq_lit(name, "ilogbl") || str_eq_lit(name, "logb") ||
+         str_eq_lit(name, "logbf") || str_eq_lit(name, "logbl") ||
          str_eq_lit(name, "modf") || str_eq_lit(name, "modff") ||
          str_eq_lit(name, "modfl") || str_eq_lit(name, "copysign") ||
          str_eq_lit(name, "copysignf") || str_eq_lit(name, "copysignl") ||
@@ -912,6 +918,9 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "exp2") || str_eq_lit(name, "exp2f") ||
          str_eq_lit(name, "exp2l") || str_eq_lit(name, "expm1") ||
          str_eq_lit(name, "expm1f") || str_eq_lit(name, "expm1l") ||
+         str_eq_lit(name, "erf") || str_eq_lit(name, "erff") ||
+         str_eq_lit(name, "erfl") || str_eq_lit(name, "erfc") ||
+         str_eq_lit(name, "erfcf") || str_eq_lit(name, "erfcl") ||
          str_eq_lit(name, "log") || str_eq_lit(name, "logf") ||
          str_eq_lit(name, "logl") || str_eq_lit(name, "log1p") ||
          str_eq_lit(name, "log1pf") || str_eq_lit(name, "log1pl") ||
@@ -933,7 +942,12 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "sinhl") || str_eq_lit(name, "cosh") ||
          str_eq_lit(name, "coshf") || str_eq_lit(name, "coshl") ||
          str_eq_lit(name, "tanh") || str_eq_lit(name, "tanhf") ||
-         str_eq_lit(name, "tanhl") || str_eq_lit(name, "hypot") ||
+         str_eq_lit(name, "tanhl") || str_eq_lit(name, "asinh") ||
+         str_eq_lit(name, "asinhf") || str_eq_lit(name, "asinhl") ||
+         str_eq_lit(name, "acosh") || str_eq_lit(name, "acoshf") ||
+         str_eq_lit(name, "acoshl") || str_eq_lit(name, "atanh") ||
+         str_eq_lit(name, "atanhf") || str_eq_lit(name, "atanhl") ||
+         str_eq_lit(name, "hypot") ||
          str_eq_lit(name, "hypotf") || str_eq_lit(name, "hypotl") ||
          str_eq_lit(name, "fmin") || str_eq_lit(name, "fminf") ||
          str_eq_lit(name, "fminl") || str_eq_lit(name, "fmax") ||
@@ -3076,6 +3090,30 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_ldexpf";
   } else if (str_eq_lit(name, "ldexpl")) {
     target_lit = "__agc_runtime_ldexpl";
+  } else if (str_eq_lit(name, "scalbn")) {
+    target_lit = "__agc_runtime_scalbn";
+  } else if (str_eq_lit(name, "scalbnf")) {
+    target_lit = "__agc_runtime_scalbnf";
+  } else if (str_eq_lit(name, "scalbnl")) {
+    target_lit = "__agc_runtime_scalbnl";
+  } else if (str_eq_lit(name, "scalbln")) {
+    target_lit = "__agc_runtime_scalbln";
+  } else if (str_eq_lit(name, "scalblnf")) {
+    target_lit = "__agc_runtime_scalblnf";
+  } else if (str_eq_lit(name, "scalblnl")) {
+    target_lit = "__agc_runtime_scalblnl";
+  } else if (str_eq_lit(name, "ilogb")) {
+    target_lit = "__agc_runtime_ilogb";
+  } else if (str_eq_lit(name, "ilogbf")) {
+    target_lit = "__agc_runtime_ilogbf";
+  } else if (str_eq_lit(name, "ilogbl")) {
+    target_lit = "__agc_runtime_ilogbl";
+  } else if (str_eq_lit(name, "logb")) {
+    target_lit = "__agc_runtime_logb";
+  } else if (str_eq_lit(name, "logbf")) {
+    target_lit = "__agc_runtime_logbf";
+  } else if (str_eq_lit(name, "logbl")) {
+    target_lit = "__agc_runtime_logbl";
   } else if (str_eq_lit(name, "modf")) {
     target_lit = "__agc_runtime_modf";
   } else if (str_eq_lit(name, "modff")) {
@@ -3114,6 +3152,18 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_expm1f";
   } else if (str_eq_lit(name, "expm1l")) {
     target_lit = "__agc_runtime_expm1l";
+  } else if (str_eq_lit(name, "erf")) {
+    target_lit = "__agc_runtime_erf";
+  } else if (str_eq_lit(name, "erff")) {
+    target_lit = "__agc_runtime_erff";
+  } else if (str_eq_lit(name, "erfl")) {
+    target_lit = "__agc_runtime_erfl";
+  } else if (str_eq_lit(name, "erfc")) {
+    target_lit = "__agc_runtime_erfc";
+  } else if (str_eq_lit(name, "erfcf")) {
+    target_lit = "__agc_runtime_erfcf";
+  } else if (str_eq_lit(name, "erfcl")) {
+    target_lit = "__agc_runtime_erfcl";
   } else if (str_eq_lit(name, "log")) {
     target_lit = "__agc_runtime_log";
   } else if (str_eq_lit(name, "logf")) {
@@ -3180,6 +3230,24 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_tanhf";
   } else if (str_eq_lit(name, "tanhl")) {
     target_lit = "__agc_runtime_tanhl";
+  } else if (str_eq_lit(name, "asinh")) {
+    target_lit = "__agc_runtime_asinh";
+  } else if (str_eq_lit(name, "asinhf")) {
+    target_lit = "__agc_runtime_asinhf";
+  } else if (str_eq_lit(name, "asinhl")) {
+    target_lit = "__agc_runtime_asinhl";
+  } else if (str_eq_lit(name, "acosh")) {
+    target_lit = "__agc_runtime_acosh";
+  } else if (str_eq_lit(name, "acoshf")) {
+    target_lit = "__agc_runtime_acoshf";
+  } else if (str_eq_lit(name, "acoshl")) {
+    target_lit = "__agc_runtime_acoshl";
+  } else if (str_eq_lit(name, "atanh")) {
+    target_lit = "__agc_runtime_atanh";
+  } else if (str_eq_lit(name, "atanhf")) {
+    target_lit = "__agc_runtime_atanhf";
+  } else if (str_eq_lit(name, "atanhl")) {
+    target_lit = "__agc_runtime_atanhl";
   } else if (str_eq_lit(name, "hypot")) {
     target_lit = "__agc_runtime_hypot";
   } else if (str_eq_lit(name, "hypotf")) {

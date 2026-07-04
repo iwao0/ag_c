@@ -2035,6 +2035,12 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_sinhf") == 0 || strcmp(sym, "_sinhl") == 0 ||
             strcmp(sym, "_coshf") == 0 || strcmp(sym, "_coshl") == 0 ||
             strcmp(sym, "_tanhf") == 0 || strcmp(sym, "_tanhl") == 0 ||
+            strcmp(sym, "_asinh") == 0 || strcmp(sym, "_asinhf") == 0 ||
+            strcmp(sym, "_asinhl") == 0 ||
+            strcmp(sym, "_acosh") == 0 || strcmp(sym, "_acoshf") == 0 ||
+            strcmp(sym, "_acoshl") == 0 ||
+            strcmp(sym, "_atanh") == 0 || strcmp(sym, "_atanhf") == 0 ||
+            strcmp(sym, "_atanhl") == 0 ||
             strcmp(sym, "_asinf") == 0 || strcmp(sym, "_asinl") == 0 ||
             strcmp(sym, "_acosf") == 0 || strcmp(sym, "_acosl") == 0 ||
             strcmp(sym, "_atanf") == 0 || strcmp(sym, "_atanl") == 0 ||
@@ -2044,6 +2050,10 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_expm1") == 0 || strcmp(sym, "_expm1f") == 0 ||
             strcmp(sym, "_expm1l") == 0 ||
             strcmp(sym, "_expf") == 0 || strcmp(sym, "_expl") == 0 ||
+            strcmp(sym, "_erf") == 0 || strcmp(sym, "_erff") == 0 ||
+            strcmp(sym, "_erfl") == 0 ||
+            strcmp(sym, "_erfc") == 0 || strcmp(sym, "_erfcf") == 0 ||
+            strcmp(sym, "_erfcl") == 0 ||
             strcmp(sym, "_logf") == 0 || strcmp(sym, "_logl") == 0 ||
             strcmp(sym, "_log1p") == 0 || strcmp(sym, "_log1pf") == 0 ||
             strcmp(sym, "_log1pl") == 0 ||
@@ -2077,6 +2087,14 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_frexpl") == 0 ||
             strcmp(sym, "_ldexp") == 0 || strcmp(sym, "_ldexpf") == 0 ||
             strcmp(sym, "_ldexpl") == 0 ||
+            strcmp(sym, "_scalbn") == 0 || strcmp(sym, "_scalbnf") == 0 ||
+            strcmp(sym, "_scalbnl") == 0 ||
+            strcmp(sym, "_scalbln") == 0 || strcmp(sym, "_scalblnf") == 0 ||
+            strcmp(sym, "_scalblnl") == 0 ||
+            strcmp(sym, "_ilogb") == 0 || strcmp(sym, "_ilogbf") == 0 ||
+            strcmp(sym, "_ilogbl") == 0 ||
+            strcmp(sym, "_logb") == 0 || strcmp(sym, "_logbf") == 0 ||
+            strcmp(sym, "_logbl") == 0 ||
             strcmp(sym, "_modf") == 0 || strcmp(sym, "_modff") == 0 ||
             strcmp(sym, "_modfl") == 0 ||
             strcmp(sym, "_copysign") == 0 || strcmp(sym, "_copysignf") == 0 ||

@@ -111,10 +111,11 @@ Supported:
   (`fgetwc`, `fputwc`, `fgetws`, `fputws`, `fwide`, and get/put aliases),
   uchar conversion helpers,
   fenv/locale/signal/wctype helpers, selected math helpers including
-  trigonometric, inverse-trigonometric, and hyperbolic helpers with f/l wrappers,
-  exp/exp2/expm1/log/log1p/log2/log10,
+  trigonometric, inverse-trigonometric, hyperbolic, and inverse-hyperbolic helpers with f/l wrappers,
+  exp/exp2/expm1/erf/erfc/log/log1p/log2/log10,
   `pow`/`powf`/`powl`, remainder/remquo, positive-difference/fused-multiply-add entry points,
-  decomposition/sign helpers (`frexp`, `ldexp`, `modf`, `copysign`, `nan`, and f/l wrappers),
+  decomposition/sign helpers (`frexp`, `ldexp`, `scalbn`, `scalbln`, `ilogb`,
+  `logb`, `modf`, `copysign`, `nan`, and f/l wrappers),
   cube-root, selected long-double wrappers,
   rounding helpers including fenv-aware `rint`/`nearbyint` and integer
   rounding wrappers, and math classification/comparison helpers (`fpclassify`,

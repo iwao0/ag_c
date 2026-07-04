@@ -79,6 +79,12 @@ long double exp2l(long double);
 double expm1(double);
 float expm1f(float);
 long double expm1l(long double);
+double erf(double);
+float erff(float);
+long double erfl(long double);
+double erfc(double);
+float erfcf(float);
+long double erfcl(long double);
 double log1p(double);
 float log1pf(float);
 long double log1pl(long double);
@@ -91,6 +97,15 @@ long double coshl(long double);
 double tanh(double);
 float tanhf(float);
 long double tanhl(long double);
+double asinh(double);
+float asinhf(float);
+long double asinhl(long double);
+double acosh(double);
+float acoshf(float);
+long double acoshl(long double);
+double atanh(double);
+float atanhf(float);
+long double atanhl(long double);
 double nearbyint(double);
 float nearbyintf(float);
 long double nearbyintl(long double);
@@ -127,6 +142,18 @@ long double frexpl(long double, int *);
 double ldexp(double, int);
 float ldexpf(float, int);
 long double ldexpl(long double, int);
+double scalbn(double, int);
+float scalbnf(float, int);
+long double scalbnl(long double, int);
+double scalbln(double, long);
+float scalblnf(float, long);
+long double scalblnl(long double, long);
+int ilogb(double);
+int ilogbf(float);
+int ilogbl(long double);
+double logb(double);
+float logbf(float);
+long double logbl(long double);
 double modf(double, double *);
 float modff(float, float *);
 long double modfl(long double, long double *);
@@ -181,6 +208,14 @@ int main(void) {
   if ((int)(ldexp(0.75, 3) * 1000.0) != 6000) return 14;
   if ((int)(ldexpf(0.5f, 4) * 1000.0f) != 8000) return 15;
   if ((int)(ldexpl(0.25L, 5) * 1000.0L) != 8000) return 16;
+  if ((int)(scalbn(0.75, 4) * 1000.0) != 12000) return 17;
+  if ((int)(scalbnf(0.5f, 5) * 1000.0f) != 16000) return 18;
+  if ((int)(scalbnl(0.25L, 6) * 1000.0L) != 16000) return 19;
+  if ((int)(scalbln(1.5, 3L) * 1000.0) != 12000) return 20;
+  if ((int)(scalblnf(1.25f, 2L) * 1000.0f) != 5000) return 21;
+  if ((int)(scalblnl(3.0L, -1L) * 1000.0L) != 1500) return 22;
+  if (ilogb(8.0) != 3 || ilogbf(0.75f) != -1 || ilogbl(0.25L) != -2) return 23;
+  if ((int)logb(8.0) != 3 || (int)logbf(0.75f) != -1 || (int)logbl(0.25L) != -2) return 24;
   if ((int)(modf(-3.75, &ip) * 100.0) != -75 || (int)ip != -3) return 17;
   if ((int)(modff(2.25f, &fip) * 100.0f) != 25 || (int)fip != 2) return 18;
   if ((int)(modfl(5.5L, &lip) * 100.0L) != 50 || (int)lip != 5) return 19;
@@ -220,12 +255,27 @@ int main(void) {
   if ((int)(tanh(1.0) * 1000.0) < 760 || (int)(tanh(1.0) * 1000.0) > 762) return 53;
   if ((int)(tanhf(1.0f) * 1000.0f) < 760 || (int)(tanhf(1.0f) * 1000.0f) > 762) return 54;
   if ((int)(tanhl(1.0L) * 1000.0L) < 760 || (int)(tanhl(1.0L) * 1000.0L) > 762) return 55;
-  if (nearbyint(2.5) != 2.0 || nearbyintf(-2.5f) != -2.0f || nearbyintl(3.5L) != 4.0L) return 56;
-  if (rint(3.5) != 4.0 || rintf(2.5f) != 2.0f || rintl(-3.5L) != -4.0L) return 57;
-  if (lrint(3.5) != 4 || lrintf(2.5f) != 2 || lrintl(-3.5L) != -4) return 58;
-  if (llrint(2.5) != 2 || llrintf(-2.5f) != -2 || llrintl(3.5L) != 4) return 59;
-  if (lround(2.5) != 3 || lroundf(-2.5f) != -3 || lroundl(3.5L) != 4) return 60;
-  if (llround(-3.5) != -4 || llroundf(2.5f) != 3 || llroundl(-2.5L) != -3) return 61;
+  if ((int)(asinh(1.0) * 1000.0) < 880 || (int)(asinh(1.0) * 1000.0) > 882) return 56;
+  if ((int)(asinhf(1.0f) * 1000.0f) < 880 || (int)(asinhf(1.0f) * 1000.0f) > 882) return 57;
+  if ((int)(asinhl(1.0L) * 1000.0L) < 880 || (int)(asinhl(1.0L) * 1000.0L) > 882) return 58;
+  if ((int)(acosh(2.0) * 1000.0) < 1315 || (int)(acosh(2.0) * 1000.0) > 1317) return 59;
+  if ((int)(acoshf(2.0f) * 1000.0f) < 1315 || (int)(acoshf(2.0f) * 1000.0f) > 1317) return 60;
+  if ((int)(acoshl(2.0L) * 1000.0L) < 1315 || (int)(acoshl(2.0L) * 1000.0L) > 1317) return 61;
+  if ((int)(atanh(0.5) * 1000.0) < 548 || (int)(atanh(0.5) * 1000.0) > 550) return 62;
+  if ((int)(atanhf(0.5f) * 1000.0f) < 548 || (int)(atanhf(0.5f) * 1000.0f) > 550) return 63;
+  if ((int)(atanhl(0.5L) * 1000.0L) < 548 || (int)(atanhl(0.5L) * 1000.0L) > 550) return 64;
+  if ((int)(erf(1.0) * 1000.0) < 841 || (int)(erf(1.0) * 1000.0) > 844) return 65;
+  if ((int)(erff(1.0f) * 1000.0f) < 841 || (int)(erff(1.0f) * 1000.0f) > 844) return 66;
+  if ((int)(erfl(1.0L) * 1000.0L) < 841 || (int)(erfl(1.0L) * 1000.0L) > 844) return 67;
+  if ((int)(erfc(1.0) * 1000.0) < 156 || (int)(erfc(1.0) * 1000.0) > 158) return 68;
+  if ((int)(erfcf(1.0f) * 1000.0f) < 156 || (int)(erfcf(1.0f) * 1000.0f) > 158) return 69;
+  if ((int)(erfcl(1.0L) * 1000.0L) < 156 || (int)(erfcl(1.0L) * 1000.0L) > 158) return 70;
+  if (nearbyint(2.5) != 2.0 || nearbyintf(-2.5f) != -2.0f || nearbyintl(3.5L) != 4.0L) return 71;
+  if (rint(3.5) != 4.0 || rintf(2.5f) != 2.0f || rintl(-3.5L) != -4.0L) return 72;
+  if (lrint(3.5) != 4 || lrintf(2.5f) != 2 || lrintl(-3.5L) != -4) return 73;
+  if (llrint(2.5) != 2 || llrintf(-2.5f) != -2 || llrintl(3.5L) != 4) return 74;
+  if (lround(2.5) != 3 || lroundf(-2.5f) != -3 || lroundl(3.5L) != 4) return 75;
+  if (llround(-3.5) != -4 || llroundf(2.5f) != 3 || llroundl(-2.5L) != -3) return 76;
   return (int)(sin(1.5707963267948966) * 1000.0) + (int)sqrt(4.0) + (int)pow(2.0, 3.0);
 }
 `;
@@ -240,6 +290,15 @@ try {
       !dump.includes("env.sinhf") ||
       !dump.includes("env.coshl") ||
       !dump.includes("env.tanhl") ||
+      !dump.includes("env.asinh") ||
+      !dump.includes("env.acoshl") ||
+      !dump.includes("env.atanhf") ||
+      !dump.includes("env.scalbn") ||
+      !dump.includes("env.scalblnl") ||
+      !dump.includes("env.ilogb") ||
+      !dump.includes("env.logbl") ||
+      !dump.includes("env.erf") ||
+      !dump.includes("env.erfcl") ||
       !dump.includes("env.lrint") ||
       !dump.includes("env.llroundl")) {
     throw new Error("linked math wasm did not import JS math helpers");
@@ -1323,27 +1382,35 @@ int main(void) {
   if ((int)(ldexp(0.75, 3) * 1000.0) != 6000) return 18;
   if ((int)(ldexpf(0.5f, 4) * 1000.0f) != 8000) return 19;
   if ((int)(ldexpl(0.25L, 5) * 1000.0L) != 8000) return 20;
-  if ((int)(modf(-3.75, &ip) * 100.0) != -75 || (int)ip != -3) return 21;
-  if ((int)(modff(2.25f, &fip) * 100.0f) != 25 || (int)fip != 2) return 22;
-  if ((int)(modfl(5.5L, &lip) * 100.0L) != 50 || (int)lip != 5) return 23;
-  if ((int)copysign(2.0, nzero) != -2 || !signbit(copysign(2.0, nzero))) return 24;
-  if ((int)copysignf(2.0f, -0.0f) != -2 || !signbit(copysignf(2.0f, -0.0f))) return 25;
-  if ((int)copysignl(2.0L, -0.0L) != -2 || !signbit(copysignl(2.0L, -0.0L))) return 26;
-  if (!isnan(nan("")) || !isnan(nanf("")) || !isnan(nanl(""))) return 27;
-  if ((int)(fdim(5.5, 2.0) * 1000.0) != 3500 || (int)(fdim(2.0, 5.5) * 1000.0) != 0) return 28;
-  if ((int)(fdimf(5.5f, 2.0f) * 1000.0f) != 3500) return 29;
-  if ((int)(fdiml(5.5L, 2.0L) * 1000.0L) != 3500) return 30;
-  if ((int)(fma(2.0, 3.0, 0.5) * 1000.0) != 6500) return 31;
-  if ((int)(fmaf(2.0f, 3.0f, 0.5f) * 1000.0f) != 6500) return 32;
-  if ((int)(fmal(2.0L, 3.0L, 0.5L) * 1000.0L) != 6500) return 33;
-  if ((int)(remainder(5.5, 2.0) * 1000.0) != -500) return 34;
-  if ((int)(remainderf(5.5f, 2.0f) * 1000.0f) != -500) return 35;
-  if ((int)(remainderl(5.5L, 2.0L) * 1000.0L) != -500) return 36;
-  if ((int)(remquo(5.5, 2.0, &dquo) * 1000.0) != -500 || dquo != 3) return 37;
-  if ((int)(remquof(5.5f, 2.0f, &fquo) * 1000.0f) != -500 || fquo != 3) return 38;
-  if ((int)(remquol(5.5L, 2.0L, &lquo) * 1000.0L) != -500 || lquo != 3) return 39;
-  if ((int)(remquo(19.5, 2.0, &dquo_bits) * 1000.0) != -500 || dquo_bits != 2) return 40;
-  if ((int)(remquo(-19.5, 2.0, &dquo_neg_bits) * 1000.0) != 500 || dquo_neg_bits != -2) return 41;
+  if ((int)(scalbn(0.75, 4) * 1000.0) != 12000) return 21;
+  if ((int)(scalbnf(0.5f, 5) * 1000.0f) != 16000) return 22;
+  if ((int)(scalbnl(0.25L, 6) * 1000.0L) != 16000) return 23;
+  if ((int)(scalbln(1.5, 3L) * 1000.0) != 12000) return 24;
+  if ((int)(scalblnf(1.25f, 2L) * 1000.0f) != 5000) return 25;
+  if ((int)(scalblnl(3.0L, -1L) * 1000.0L) != 1500) return 26;
+  if (ilogb(8.0) != 3 || ilogbf(0.75f) != -1 || ilogbl(0.25L) != -2) return 27;
+  if ((int)logb(8.0) != 3 || (int)logbf(0.75f) != -1 || (int)logbl(0.25L) != -2) return 28;
+  if ((int)(modf(-3.75, &ip) * 100.0) != -75 || (int)ip != -3) return 29;
+  if ((int)(modff(2.25f, &fip) * 100.0f) != 25 || (int)fip != 2) return 30;
+  if ((int)(modfl(5.5L, &lip) * 100.0L) != 50 || (int)lip != 5) return 31;
+  if ((int)copysign(2.0, nzero) != -2 || !signbit(copysign(2.0, nzero))) return 32;
+  if ((int)copysignf(2.0f, -0.0f) != -2 || !signbit(copysignf(2.0f, -0.0f))) return 33;
+  if ((int)copysignl(2.0L, -0.0L) != -2 || !signbit(copysignl(2.0L, -0.0L))) return 34;
+  if (!isnan(nan("")) || !isnan(nanf("")) || !isnan(nanl(""))) return 35;
+  if ((int)(fdim(5.5, 2.0) * 1000.0) != 3500 || (int)(fdim(2.0, 5.5) * 1000.0) != 0) return 36;
+  if ((int)(fdimf(5.5f, 2.0f) * 1000.0f) != 3500) return 37;
+  if ((int)(fdiml(5.5L, 2.0L) * 1000.0L) != 3500) return 38;
+  if ((int)(fma(2.0, 3.0, 0.5) * 1000.0) != 6500) return 39;
+  if ((int)(fmaf(2.0f, 3.0f, 0.5f) * 1000.0f) != 6500) return 40;
+  if ((int)(fmal(2.0L, 3.0L, 0.5L) * 1000.0L) != 6500) return 41;
+  if ((int)(remainder(5.5, 2.0) * 1000.0) != -500) return 42;
+  if ((int)(remainderf(5.5f, 2.0f) * 1000.0f) != -500) return 43;
+  if ((int)(remainderl(5.5L, 2.0L) * 1000.0L) != -500) return 44;
+  if ((int)(remquo(5.5, 2.0, &dquo) * 1000.0) != -500 || dquo != 3) return 45;
+  if ((int)(remquof(5.5f, 2.0f, &fquo) * 1000.0f) != -500 || fquo != 3) return 46;
+  if ((int)(remquol(5.5L, 2.0L, &lquo) * 1000.0L) != -500 || lquo != 3) return 47;
+  if ((int)(remquo(19.5, 2.0, &dquo_bits) * 1000.0) != -500 || dquo_bits != 2) return 48;
+  if ((int)(remquo(-19.5, 2.0, &dquo_neg_bits) * 1000.0) != 500 || dquo_neg_bits != -2) return 49;
   if ((int)(exp2(3.0) * 1000.0) < 7998 || (int)(exp2(3.0) * 1000.0) > 8002) return 43;
   if ((int)(exp2f(3.0f) * 1000.0f) < 7998 || (int)(exp2f(3.0f) * 1000.0f) > 8002) return 44;
   if ((int)(exp2l(3.0L) * 1000.0L) < 7998 || (int)(exp2l(3.0L) * 1000.0L) > 8002) return 45;
@@ -1362,16 +1429,31 @@ int main(void) {
   if ((int)(tanh(1.0) * 1000.0) < 760 || (int)(tanh(1.0) * 1000.0) > 762) return 58;
   if ((int)(tanhf(1.0f) * 1000.0f) < 760 || (int)(tanhf(1.0f) * 1000.0f) > 762) return 59;
   if ((int)(tanhl(1.0L) * 1000.0L) < 760 || (int)(tanhl(1.0L) * 1000.0L) > 762) return 60;
-  if (nearbyint(2.5) != 2.0 || nearbyintf(-2.5f) != -2.0f || nearbyintl(3.5L) != 4.0L) return 61;
-  if (lround(2.5) != 3 || lroundf(-2.5f) != -3 || lroundl(3.5L) != 4) return 62;
-  if (llround(-3.5) != -4 || llroundf(2.5f) != 3 || llroundl(-2.5L) != -3) return 63;
-  if (fesetround(FE_UPWARD) != 0 || rint(2.1) != 3.0 || rintf(-2.1f) != -2.0f) return 64;
-  if (lrint(2.1) != 3 || llrintf(-2.1f) != -2) return 65;
-  if (fesetround(FE_DOWNWARD) != 0 || rintl(2.9L) != 2.0L || nearbyint(-2.1) != -3.0) return 66;
-  if (lrintl(2.9L) != 2 || llrintl(-2.1L) != -3) return 67;
-  if (fesetround(FE_TOWARDZERO) != 0 || rint(2.9) != 2.0 || rint(-2.9) != -2.0) return 68;
-  if (lrintf(2.9f) != 2 || llrint(-2.9) != -2) return 69;
-  if (fesetround(FE_TONEAREST) != 0 || rint(2.5) != 2.0 || rint(3.5) != 4.0 || lrint(3.5) != 4) return 70;
+  if ((int)(asinh(1.0) * 1000.0) < 880 || (int)(asinh(1.0) * 1000.0) > 882) return 61;
+  if ((int)(asinhf(1.0f) * 1000.0f) < 880 || (int)(asinhf(1.0f) * 1000.0f) > 882) return 62;
+  if ((int)(asinhl(1.0L) * 1000.0L) < 880 || (int)(asinhl(1.0L) * 1000.0L) > 882) return 63;
+  if ((int)(acosh(2.0) * 1000.0) < 1315 || (int)(acosh(2.0) * 1000.0) > 1317) return 64;
+  if ((int)(acoshf(2.0f) * 1000.0f) < 1315 || (int)(acoshf(2.0f) * 1000.0f) > 1317) return 65;
+  if ((int)(acoshl(2.0L) * 1000.0L) < 1315 || (int)(acoshl(2.0L) * 1000.0L) > 1317) return 66;
+  if ((int)(atanh(0.5) * 1000.0) < 548 || (int)(atanh(0.5) * 1000.0) > 550) return 67;
+  if ((int)(atanhf(0.5f) * 1000.0f) < 548 || (int)(atanhf(0.5f) * 1000.0f) > 550) return 68;
+  if ((int)(atanhl(0.5L) * 1000.0L) < 548 || (int)(atanhl(0.5L) * 1000.0L) > 550) return 69;
+  if ((int)(erf(1.0) * 1000.0) < 841 || (int)(erf(1.0) * 1000.0) > 844) return 70;
+  if ((int)(erff(1.0f) * 1000.0f) < 841 || (int)(erff(1.0f) * 1000.0f) > 844) return 71;
+  if ((int)(erfl(1.0L) * 1000.0L) < 841 || (int)(erfl(1.0L) * 1000.0L) > 844) return 72;
+  if ((int)(erfc(1.0) * 1000.0) < 156 || (int)(erfc(1.0) * 1000.0) > 158) return 73;
+  if ((int)(erfcf(1.0f) * 1000.0f) < 156 || (int)(erfcf(1.0f) * 1000.0f) > 158) return 74;
+  if ((int)(erfcl(1.0L) * 1000.0L) < 156 || (int)(erfcl(1.0L) * 1000.0L) > 158) return 75;
+  if (nearbyint(2.5) != 2.0 || nearbyintf(-2.5f) != -2.0f || nearbyintl(3.5L) != 4.0L) return 76;
+  if (lround(2.5) != 3 || lroundf(-2.5f) != -3 || lroundl(3.5L) != 4) return 77;
+  if (llround(-3.5) != -4 || llroundf(2.5f) != 3 || llroundl(-2.5L) != -3) return 78;
+  if (fesetround(FE_UPWARD) != 0 || rint(2.1) != 3.0 || rintf(-2.1f) != -2.0f) return 79;
+  if (lrint(2.1) != 3 || llrintf(-2.1f) != -2) return 80;
+  if (fesetround(FE_DOWNWARD) != 0 || rintl(2.9L) != 2.0L || nearbyint(-2.1) != -3.0) return 81;
+  if (lrintl(2.9L) != 2 || llrintl(-2.1L) != -3) return 82;
+  if (fesetround(FE_TOWARDZERO) != 0 || rint(2.9) != 2.0 || rint(-2.9) != -2.0) return 83;
+  if (lrintf(2.9f) != 2 || llrint(-2.9) != -2) return 84;
+  if (fesetround(FE_TONEAREST) != 0 || rint(2.5) != 2.0 || rint(3.5) != 4.0 || lrint(3.5) != 4) return 85;
   return 42;
 }
 `, { loadInclude });

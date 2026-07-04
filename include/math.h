@@ -6,6 +6,8 @@
 #define FP_ZERO 2
 #define FP_SUBNORMAL 3
 #define FP_NORMAL 4
+#define FP_ILOGB0 (-2147483647 - 1)
+#define FP_ILOGBNAN (-2147483647 - 1)
 
 double acos(double x);
 double asin(double x);
@@ -18,16 +20,27 @@ double tan(double x);
 double cosh(double x);
 double sinh(double x);
 double tanh(double x);
+double acosh(double x);
+double asinh(double x);
+double atanh(double x);
 float coshf(float x);
 long double coshl(long double x);
 float sinhf(float x);
 long double sinhl(long double x);
 float tanhf(float x);
 long double tanhl(long double x);
+float acoshf(float x);
+long double acoshl(long double x);
+float asinhf(float x);
+long double asinhl(long double x);
+float atanhf(float x);
+long double atanhl(long double x);
 
 double exp(double x);
 double exp2(double x);
 double expm1(double x);
+double erf(double x);
+double erfc(double x);
 double log(double x);
 double log1p(double x);
 double log10(double x);
@@ -61,6 +74,10 @@ double fdim(double x, double y);
 double fma(double x, double y, double z);
 double frexp(double x, int *exp);
 double ldexp(double x, int exp);
+double scalbn(double x, int exp);
+double scalbln(double x, long exp);
+int ilogb(double x);
+double logb(double x);
 double modf(double x, double *iptr);
 double copysign(double x, double y);
 double nan(const char *tagp);
@@ -88,6 +105,10 @@ float exp2f(float x);
 long double exp2l(long double x);
 float expm1f(float x);
 long double expm1l(long double x);
+float erff(float x);
+long double erfl(long double x);
+float erfcf(float x);
+long double erfcl(long double x);
 float logf(float x);
 long double logl(long double x);
 float log1pf(float x);
@@ -133,6 +154,14 @@ float frexpf(float x, int *exp);
 long double frexpl(long double x, int *exp);
 float ldexpf(float x, int exp);
 long double ldexpl(long double x, int exp);
+float scalbnf(float x, int exp);
+long double scalbnl(long double x, int exp);
+float scalblnf(float x, long exp);
+long double scalblnl(long double x, long exp);
+int ilogbf(float x);
+int ilogbl(long double x);
+float logbf(float x);
+long double logbl(long double x);
 float modff(float x, float *iptr);
 long double modfl(long double x, long double *iptr);
 float copysignf(float x, float y);

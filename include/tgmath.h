@@ -13,12 +13,17 @@ float       tanf(float);        long double tanl(long double);
 float       sinhf(float);       long double sinhl(long double);
 float       coshf(float);       long double coshl(long double);
 float       tanhf(float);       long double tanhl(long double);
+float       asinhf(float);      long double asinhl(long double);
+float       acoshf(float);      long double acoshl(long double);
+float       atanhf(float);      long double atanhl(long double);
 float       asinf(float);       long double asinl(long double);
 float       acosf(float);       long double acosl(long double);
 float       atanf(float);       long double atanl(long double);
 float       expf(float);        long double expl(long double);
 float       exp2f(float);       long double exp2l(long double);
 float       expm1f(float);      long double expm1l(long double);
+float       erff(float);        long double erfl(long double);
+float       erfcf(float);       long double erfcl(long double);
 float       logf(float);        long double logl(long double);
 float       log1pf(float);      long double log1pl(long double);
 float       log10f(float);      long double log10l(long double);
@@ -42,6 +47,10 @@ float       fdimf(float, float);long double fdiml(long double, long double);
 float       fmaf(float, float, float);long double fmal(long double, long double, long double);
 float       frexpf(float, int *);long double frexpl(long double, int *);
 float       ldexpf(float, int);  long double ldexpl(long double, int);
+float       scalbnf(float, int); long double scalbnl(long double, int);
+float       scalblnf(float, long);long double scalblnl(long double, long);
+int         ilogbf(float);       int ilogbl(long double);
+float       logbf(float);        long double logbl(long double);
 float       modff(float, float *);long double modfl(long double, long double *);
 float       copysignf(float, float);long double copysignl(long double, long double);
 float       atan2f(float, float);long double atan2l(long double, long double);
@@ -63,12 +72,17 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define sinh(x)  __tg_un(sinh, x)
 #define cosh(x)  __tg_un(cosh, x)
 #define tanh(x)  __tg_un(tanh, x)
+#define asinh(x) __tg_un(asinh, x)
+#define acosh(x) __tg_un(acosh, x)
+#define atanh(x) __tg_un(atanh, x)
 #define asin(x)  __tg_un(asin, x)
 #define acos(x)  __tg_un(acos, x)
 #define atan(x)  __tg_un(atan, x)
 #define exp(x)   __tg_un(exp, x)
 #define exp2(x)  __tg_un(exp2, x)
 #define expm1(x) __tg_un(expm1, x)
+#define erf(x)   __tg_un(erf, x)
+#define erfc(x)  __tg_un(erfc, x)
 #define log(x)   __tg_un(log, x)
 #define log1p(x) __tg_un(log1p, x)
 #define log10(x) __tg_un(log10, x)
@@ -92,6 +106,10 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define fma(x, y, z) __tg_tri(fma, x, y, z)
 #define frexp(x, y) __tg_bin(frexp, x, y)
 #define ldexp(x, y) __tg_bin(ldexp, x, y)
+#define scalbn(x, y) __tg_bin(scalbn, x, y)
+#define scalbln(x, y) __tg_bin(scalbln, x, y)
+#define ilogb(x) __tg_un(ilogb, x)
+#define logb(x) __tg_un(logb, x)
 #define modf(x, y)  __tg_bin(modf, x, y)
 #define copysign(x, y) __tg_bin(copysign, x, y)
 #define atan2(x, y) __tg_bin(atan2, x, y)

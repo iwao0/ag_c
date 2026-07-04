@@ -1882,6 +1882,18 @@ long double frexpl(long double x, int *exp);
 double ldexp(double x, int exp);
 float ldexpf(float x, int exp);
 long double ldexpl(long double x, int exp);
+double scalbn(double x, int exp);
+float scalbnf(float x, int exp);
+long double scalbnl(long double x, int exp);
+double scalbln(double x, long exp);
+float scalblnf(float x, long exp);
+long double scalblnl(long double x, long exp);
+int ilogb(double x);
+int ilogbf(float x);
+int ilogbl(long double x);
+double logb(double x);
+float logbf(float x);
+long double logbl(long double x);
 double modf(double x, double *iptr);
 float modff(float x, float *iptr);
 long double modfl(long double x, long double *iptr);
@@ -1901,6 +1913,12 @@ long double exp2l(long double x);
 double expm1(double x);
 float expm1f(float x);
 long double expm1l(long double x);
+double erf(double x);
+float erff(float x);
+long double erfl(long double x);
+double erfc(double x);
+float erfcf(float x);
+long double erfcl(long double x);
 double log(double x);
 float logf(float x);
 long double logl(long double x);
@@ -1934,6 +1952,15 @@ long double coshl(long double x);
 double tanh(double x);
 float tanhf(float x);
 long double tanhl(long double x);
+double asinh(double x);
+float asinhf(float x);
+long double asinhl(long double x);
+double acosh(double x);
+float acoshf(float x);
+long double acoshl(long double x);
+double atanh(double x);
+float atanhf(float x);
+long double atanhl(long double x);
 double sin(double x);
 float sinf(float x);
 long double sinl(long double x);
@@ -2191,6 +2218,15 @@ int math_decomp_check(void) {
          (int)(ldexp(0.75, 3) * 1000.0) == 6000 &&
          (int)(ldexpf(0.5f, 4) * 1000.0f) == 8000 &&
          (int)(ldexpl(0.25L, 5) * 1000.0L) == 8000 &&
+         (int)(scalbn(0.75, 4) * 1000.0) == 12000 &&
+         (int)(scalbnf(0.5f, 5) * 1000.0f) == 16000 &&
+         (int)(scalbnl(0.25L, 6) * 1000.0L) == 16000 &&
+         (int)(scalbln(1.5, 3L) * 1000.0) == 12000 &&
+         (int)(scalblnf(1.25f, 2L) * 1000.0f) == 5000 &&
+         (int)(scalblnl(3.0L, -1L) * 1000.0L) == 1500 &&
+         ilogb(8.0) == 3 && ilogbf(0.75f) == -1 && ilogbl(0.25L) == -2 &&
+         (int)logb(8.0) == 3 && (int)logbf(0.75f) == -1 &&
+         (int)logbl(0.25L) == -2 &&
          (int)(dfrac * 100.0) == -75 && (int)dint == -3 &&
          (int)(ffrac * 100.0f) == 25 && (int)fint == 2 &&
          (int)(lfrac * 100.0L) == 50 && (int)lint == 5 &&
@@ -2233,6 +2269,21 @@ int math_exp_log_ext_check(void) {
   int tanhv = (int)(tanh(1.0) * 1000.0);
   int tanhfv = (int)(tanhf(1.0f) * 1000.0f);
   int tanhlv = (int)(tanhl(1.0L) * 1000.0L);
+  int asinhv = (int)(asinh(1.0) * 1000.0);
+  int asinhfv = (int)(asinhf(1.0f) * 1000.0f);
+  int asinhlv = (int)(asinhl(1.0L) * 1000.0L);
+  int acoshv = (int)(acosh(2.0) * 1000.0);
+  int acoshfv = (int)(acoshf(2.0f) * 1000.0f);
+  int acoshlv = (int)(acoshl(2.0L) * 1000.0L);
+  int atanhv = (int)(atanh(0.5) * 1000.0);
+  int atanhfv = (int)(atanhf(0.5f) * 1000.0f);
+  int atanhlv = (int)(atanhl(0.5L) * 1000.0L);
+  int erfv = (int)(erf(1.0) * 1000.0);
+  int erffv = (int)(erff(1.0f) * 1000.0f);
+  int erflv = (int)(erfl(1.0L) * 1000.0L);
+  int erfcv = (int)(erfc(1.0) * 1000.0);
+  int erfcfv = (int)(erfcf(1.0f) * 1000.0f);
+  int erfclv = (int)(erfcl(1.0L) * 1000.0L);
   return exp2v >= 7998 && exp2v <= 8002 &&
          exp2fv >= 7998 && exp2fv <= 8002 &&
          exp2lv >= 7998 && exp2lv <= 8002 &&
@@ -2250,7 +2301,22 @@ int math_exp_log_ext_check(void) {
          coshlv >= 1542 && coshlv <= 1544 &&
          tanhv >= 760 && tanhv <= 762 &&
          tanhfv >= 760 && tanhfv <= 762 &&
-         tanhlv >= 760 && tanhlv <= 762;
+         tanhlv >= 760 && tanhlv <= 762 &&
+         asinhv >= 880 && asinhv <= 882 &&
+         asinhfv >= 880 && asinhfv <= 882 &&
+         asinhlv >= 880 && asinhlv <= 882 &&
+         acoshv >= 1315 && acoshv <= 1317 &&
+         acoshfv >= 1315 && acoshfv <= 1317 &&
+         acoshlv >= 1315 && acoshlv <= 1317 &&
+         atanhv >= 548 && atanhv <= 550 &&
+         atanhfv >= 548 && atanhfv <= 550 &&
+         atanhlv >= 548 && atanhlv <= 550 &&
+         erfv >= 841 && erfv <= 844 &&
+         erffv >= 841 && erffv <= 844 &&
+         erflv >= 841 && erflv <= 844 &&
+         erfcv >= 156 && erfcv <= 158 &&
+         erfcfv >= 156 && erfcfv <= 158 &&
+         erfclv >= 156 && erfclv <= 158;
 }
 int math_round_ext_check(void) {
   int ok = 1;
@@ -2604,6 +2670,18 @@ int main(void) {
     ldexp(1.0, 1);
     ldexpf(1.0f, 1);
     ldexpl(1.0L, 1);
+    scalbn(1.0, 1);
+    scalbnf(1.0f, 1);
+    scalbnl(1.0L, 1);
+    scalbln(1.0, 1L);
+    scalblnf(1.0f, 1L);
+    scalblnl(1.0L, 1L);
+    ilogb(1.0);
+    ilogbf(1.0f);
+    ilogbl(1.0L);
+    logb(1.0);
+    logbf(1.0f);
+    logbl(1.0L);
     modf(1.0, &dummy_d);
     modff(1.0f, &dummy_f);
     modfl(1.0L, &dummy_ld);
@@ -2613,6 +2691,12 @@ int main(void) {
     nan("");
     nanf("");
     nanl("");
+    erf(1.0);
+    erff(1.0f);
+    erfl(1.0L);
+    erfc(1.0);
+    erfcf(1.0f);
+    erfcl(1.0L);
     nearbyint(1.5);
     nearbyintf(1.5f);
     nearbyintl(1.5L);
@@ -2640,6 +2724,15 @@ int main(void) {
     tanh(1.0);
     tanhf(1.0f);
     tanhl(1.0L);
+    asinh(1.0);
+    asinhf(1.0f);
+    asinhl(1.0L);
+    acosh(2.0);
+    acoshf(2.0f);
+    acoshl(2.0L);
+    atanh(0.5);
+    atanhf(0.5f);
+    atanhl(0.5L);
     longjmp(jb, 1);
   }
   int sj = setjmp(jb);
@@ -4243,6 +4336,18 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.ldexp>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ldexpf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.ldexpl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scalbn>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scalbnf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scalbnl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scalbln>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scalblnf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.scalblnl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ilogb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ilogbf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.ilogbl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.logb>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.logbf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.logbl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.modf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.modff>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.modfl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -4267,6 +4372,12 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.expm1>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.expm1f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.expm1l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.erf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.erff>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.erfl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.erfc>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.erfcf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.erfcl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.logf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.logl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
@@ -4306,6 +4417,15 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.tanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tanhf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.tanhl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.asinh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.asinhf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.asinhl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.acosh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.acoshf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.acoshl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atanhf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.atanhl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atanl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atan2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
