@@ -10,6 +10,9 @@ float       cbrtf(float);       long double cbrtl(long double);
 float       sinf(float);        long double sinl(long double);
 float       cosf(float);        long double cosl(long double);
 float       tanf(float);        long double tanl(long double);
+float       sinhf(float);       long double sinhl(long double);
+float       coshf(float);       long double coshl(long double);
+float       tanhf(float);       long double tanhl(long double);
 float       asinf(float);       long double asinl(long double);
 float       acosf(float);       long double acosl(long double);
 float       atanf(float);       long double atanl(long double);
@@ -24,6 +27,12 @@ float       floorf(float);      long double floorl(long double);
 float       ceilf(float);       long double ceill(long double);
 float       roundf(float);      long double roundl(long double);
 float       truncf(float);      long double truncl(long double);
+float       nearbyintf(float);  long double nearbyintl(long double);
+float       rintf(float);       long double rintl(long double);
+long        lrintf(float);      long lrintl(long double);
+long long   llrintf(float);     long long llrintl(long double);
+long        lroundf(float);     long lroundl(long double);
+long long   llroundf(float);    long long llroundl(long double);
 float       fabsf(float);       long double fabsl(long double);
 float       powf(float, float); long double powl(long double, long double);
 float       fmodf(float, float);long double fmodl(long double, long double);
@@ -51,6 +60,9 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define sin(x)   __tg_un(sin, x)
 #define cos(x)   __tg_un(cos, x)
 #define tan(x)   __tg_un(tan, x)
+#define sinh(x)  __tg_un(sinh, x)
+#define cosh(x)  __tg_un(cosh, x)
+#define tanh(x)  __tg_un(tanh, x)
 #define asin(x)  __tg_un(asin, x)
 #define acos(x)  __tg_un(acos, x)
 #define atan(x)  __tg_un(atan, x)
@@ -65,6 +77,12 @@ float       fmaxf(float, float);long double fmaxl(long double, long double);
 #define ceil(x)  __tg_un(ceil, x)
 #define round(x) __tg_un(round, x)
 #define trunc(x) __tg_un(trunc, x)
+#define nearbyint(x) __tg_un(nearbyint, x)
+#define rint(x)  __tg_un(rint, x)
+#define lrint(x) __tg_un(lrint, x)
+#define llrint(x) __tg_un(llrint, x)
+#define lround(x) __tg_un(lround, x)
+#define llround(x) __tg_un(llround, x)
 #define fabs(x)  __tg_un(fabs, x)
 #define pow(x, y)   __tg_bin(pow, x, y)
 #define fmod(x, y)  __tg_bin(fmod, x, y)

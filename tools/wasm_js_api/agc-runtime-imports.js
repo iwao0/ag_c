@@ -3,6 +3,31 @@ function agcRound(x) {
   return x < 0 ? -Math.floor(-x + 0.5) : Math.floor(x + 0.5);
 }
 
+function agcRoundEven(x) {
+  x = Number(x);
+  if (!Number.isFinite(x) || x === 0) return x;
+  const t = Math.trunc(x);
+  const frac = Math.abs(x - t);
+  if (frac > 0.5 || (frac === 0.5 && (Math.abs(t) & 1))) {
+    return t + (x < 0 ? -1 : 1);
+  }
+  return t;
+}
+
+function agcI64FromNumber(x) {
+  x = Number(x);
+  if (!Number.isFinite(x)) return 0n;
+  return BigInt(Math.trunc(x));
+}
+
+function agcLrint(x) {
+  return agcI64FromNumber(agcRoundEven(x));
+}
+
+function agcLround(x) {
+  return agcI64FromNumber(agcRound(x));
+}
+
 function agcFmin(x, y) {
   x = Number(x);
   y = Number(y);
@@ -136,7 +161,7 @@ const AGC_MATH_IMPORTS = [
   ["cbrt", wrapMath(Math.cbrt), ["f", "l"], true],
   ["ceil", wrapMath(Math.ceil), ["f", "l"], true],
   ["cos", wrapMath(Math.cos), ["f", "l"], true],
-  ["cosh", wrapMath(Math.cosh), [], true],
+  ["cosh", wrapMath(Math.cosh), ["f", "l"], true],
   ["exp", wrapMath(Math.exp), ["f", "l"], true],
   ["exp2", wrapMath((x) => Math.pow(2, x)), ["f", "l"], true],
   ["expm1", wrapMath(Math.expm1), ["f", "l"], true],
@@ -152,14 +177,20 @@ const AGC_MATH_IMPORTS = [
   ["log1p", wrapMath(Math.log1p), ["f", "l"], true],
   ["log10", wrapMath(Math.log10), ["f", "l"], true],
   ["log2", wrapMath(Math.log2), ["f", "l"], true],
+  ["nearbyint", agcRoundEven, ["f", "l"], true],
   ["pow", wrapMath(Math.pow), ["f", "l"], true],
   ["remainder", agcRemainder, ["f", "l"], true],
+  ["rint", agcRoundEven, ["f", "l"], true],
+  ["lrint", agcLrint, ["f", "l"], true],
+  ["llrint", agcLrint, ["f", "l"], true],
   ["round", agcRound, ["f", "l"], true],
+  ["lround", agcLround, ["f", "l"], true],
+  ["llround", agcLround, ["f", "l"], true],
   ["sin", wrapMath(Math.sin), ["f", "l"], true],
-  ["sinh", wrapMath(Math.sinh), [], true],
+  ["sinh", wrapMath(Math.sinh), ["f", "l"], true],
   ["sqrt", wrapMath(Math.sqrt), ["f", "l"], true],
   ["tan", wrapMath(Math.tan), ["f", "l"], true],
-  ["tanh", wrapMath(Math.tanh), [], true],
+  ["tanh", wrapMath(Math.tanh), ["f", "l"], true],
   ["trunc", wrapMath(Math.trunc), ["f", "l"], true],
 ];
 

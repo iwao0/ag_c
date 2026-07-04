@@ -1,6 +1,7 @@
 // math.h runtime helpers should link and return plausible values.
 // expected: exit=0
 #include <assert.h>
+#include <fenv.h>
 #include <math.h>
 
 static int near1000(double v, int lo, int hi) {
@@ -47,5 +48,33 @@ int main(void) {
   assert((int)floorf(2.9f) == 2);
   assert((int)ceilf(2.1f) == 3);
   assert((int)roundf(-2.5f) == -3);
+  assert(nearbyint(2.5) == 2.0);
+  assert(nearbyint(3.5) == 4.0);
+  assert(nearbyintf(-2.5f) == -2.0f);
+  assert(nearbyintl(-3.5L) == -4.0L);
+  assert(lround(2.5) == 3);
+  assert(lroundf(-2.5f) == -3);
+  assert(lroundl(3.5L) == 4);
+  assert(llround(-3.5) == -4);
+  assert(llroundf(2.5f) == 3);
+  assert(llroundl(-2.5L) == -3);
+  assert(fesetround(FE_UPWARD) == 0);
+  assert(rint(2.1) == 3.0);
+  assert(rintf(-2.1f) == -2.0f);
+  assert(lrint(2.1) == 3);
+  assert(llrintf(-2.1f) == -2);
+  assert(fesetround(FE_DOWNWARD) == 0);
+  assert(rintl(2.9L) == 2.0L);
+  assert(nearbyint(-2.1) == -3.0);
+  assert(lrintl(2.9L) == 2);
+  assert(llrintl(-2.1L) == -3);
+  assert(fesetround(FE_TOWARDZERO) == 0);
+  assert(rint(2.9) == 2.0);
+  assert(rint(-2.9) == -2.0);
+  assert(lrintf(2.9f) == 2);
+  assert(llrint(-2.9) == -2);
+  assert(fesetround(FE_TONEAREST) == 0);
+  assert(rint(2.5) == 2.0);
+  assert(rint(3.5) == 4.0);
   return 0;
 }

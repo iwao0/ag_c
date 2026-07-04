@@ -882,6 +882,15 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "roundf") || str_eq_lit(name, "floorl") ||
          str_eq_lit(name, "ceill") || str_eq_lit(name, "roundl") ||
          str_eq_lit(name, "truncf") || str_eq_lit(name, "truncl") ||
+         str_eq_lit(name, "nearbyint") || str_eq_lit(name, "nearbyintf") ||
+         str_eq_lit(name, "nearbyintl") || str_eq_lit(name, "rint") ||
+         str_eq_lit(name, "rintf") || str_eq_lit(name, "rintl") ||
+         str_eq_lit(name, "lrint") || str_eq_lit(name, "lrintf") ||
+         str_eq_lit(name, "lrintl") || str_eq_lit(name, "llrint") ||
+         str_eq_lit(name, "llrintf") || str_eq_lit(name, "llrintl") ||
+         str_eq_lit(name, "lround") || str_eq_lit(name, "lroundf") ||
+         str_eq_lit(name, "lroundl") || str_eq_lit(name, "llround") ||
+         str_eq_lit(name, "llroundf") || str_eq_lit(name, "llroundl") ||
          str_eq_lit(name, "fmod") ||
          str_eq_lit(name, "fmodf") || str_eq_lit(name, "fmodl") ||
          str_eq_lit(name, "remainder") || str_eq_lit(name, "remainderf") ||
@@ -920,8 +929,11 @@ static int is_runtime_func_symbol(str_t name) {
          str_eq_lit(name, "cos") || str_eq_lit(name, "cosf") ||
          str_eq_lit(name, "cosl") || str_eq_lit(name, "tan") ||
          str_eq_lit(name, "tanf") || str_eq_lit(name, "tanl") ||
-         str_eq_lit(name, "sinh") || str_eq_lit(name, "cosh") ||
-         str_eq_lit(name, "tanh") || str_eq_lit(name, "hypot") ||
+         str_eq_lit(name, "sinh") || str_eq_lit(name, "sinhf") ||
+         str_eq_lit(name, "sinhl") || str_eq_lit(name, "cosh") ||
+         str_eq_lit(name, "coshf") || str_eq_lit(name, "coshl") ||
+         str_eq_lit(name, "tanh") || str_eq_lit(name, "tanhf") ||
+         str_eq_lit(name, "tanhl") || str_eq_lit(name, "hypot") ||
          str_eq_lit(name, "hypotf") || str_eq_lit(name, "hypotl") ||
          str_eq_lit(name, "fmin") || str_eq_lit(name, "fminf") ||
          str_eq_lit(name, "fminl") || str_eq_lit(name, "fmax") ||
@@ -2968,6 +2980,42 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_truncf";
   } else if (str_eq_lit(name, "truncl")) {
     target_lit = "__agc_runtime_truncl";
+  } else if (str_eq_lit(name, "nearbyint")) {
+    target_lit = "__agc_runtime_nearbyint";
+  } else if (str_eq_lit(name, "nearbyintf")) {
+    target_lit = "__agc_runtime_nearbyintf";
+  } else if (str_eq_lit(name, "nearbyintl")) {
+    target_lit = "__agc_runtime_nearbyintl";
+  } else if (str_eq_lit(name, "rint")) {
+    target_lit = "__agc_runtime_rint";
+  } else if (str_eq_lit(name, "rintf")) {
+    target_lit = "__agc_runtime_rintf";
+  } else if (str_eq_lit(name, "rintl")) {
+    target_lit = "__agc_runtime_rintl";
+  } else if (str_eq_lit(name, "lrint")) {
+    target_lit = "__agc_runtime_lrint";
+  } else if (str_eq_lit(name, "lrintf")) {
+    target_lit = "__agc_runtime_lrintf";
+  } else if (str_eq_lit(name, "lrintl")) {
+    target_lit = "__agc_runtime_lrintl";
+  } else if (str_eq_lit(name, "llrint")) {
+    target_lit = "__agc_runtime_llrint";
+  } else if (str_eq_lit(name, "llrintf")) {
+    target_lit = "__agc_runtime_llrintf";
+  } else if (str_eq_lit(name, "llrintl")) {
+    target_lit = "__agc_runtime_llrintl";
+  } else if (str_eq_lit(name, "lround")) {
+    target_lit = "__agc_runtime_lround";
+  } else if (str_eq_lit(name, "lroundf")) {
+    target_lit = "__agc_runtime_lroundf";
+  } else if (str_eq_lit(name, "lroundl")) {
+    target_lit = "__agc_runtime_lroundl";
+  } else if (str_eq_lit(name, "llround")) {
+    target_lit = "__agc_runtime_llround";
+  } else if (str_eq_lit(name, "llroundf")) {
+    target_lit = "__agc_runtime_llroundf";
+  } else if (str_eq_lit(name, "llroundl")) {
+    target_lit = "__agc_runtime_llroundl";
   } else if (str_eq_lit(name, "sin")) {
     target_lit = "__agc_runtime_sin";
   } else if (str_eq_lit(name, "sinf")) {
@@ -3116,10 +3164,22 @@ static int emit_runtime_libc_bridge(object_t *objs, int obj_count, object_t *run
     target_lit = "__agc_runtime_acosl";
   } else if (str_eq_lit(name, "sinh")) {
     target_lit = "__agc_runtime_sinh";
+  } else if (str_eq_lit(name, "sinhf")) {
+    target_lit = "__agc_runtime_sinhf";
+  } else if (str_eq_lit(name, "sinhl")) {
+    target_lit = "__agc_runtime_sinhl";
   } else if (str_eq_lit(name, "cosh")) {
     target_lit = "__agc_runtime_cosh";
+  } else if (str_eq_lit(name, "coshf")) {
+    target_lit = "__agc_runtime_coshf";
+  } else if (str_eq_lit(name, "coshl")) {
+    target_lit = "__agc_runtime_coshl";
   } else if (str_eq_lit(name, "tanh")) {
     target_lit = "__agc_runtime_tanh";
+  } else if (str_eq_lit(name, "tanhf")) {
+    target_lit = "__agc_runtime_tanhf";
+  } else if (str_eq_lit(name, "tanhl")) {
+    target_lit = "__agc_runtime_tanhl";
   } else if (str_eq_lit(name, "hypot")) {
     target_lit = "__agc_runtime_hypot";
   } else if (str_eq_lit(name, "hypotf")) {

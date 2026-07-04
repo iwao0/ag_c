@@ -198,6 +198,102 @@ int __agc_runtime_isnan(double x);
 int __agc_runtime_isinf(double x);
 int __agc_runtime_isfinite(double x);
 int __agc_runtime_signbit(double x);
+int __agc_runtime_fegetround(void);
+int __agc_runtime_feraiseexcept(int excepts);
+
+#define AG_RT_FE_UPWARD 0x00400000
+#define AG_RT_FE_DOWNWARD 0x00800000
+#define AG_RT_FE_TOWARDZERO 0x00C00000
+#define AG_RT_FE_INEXACT 0x10
+
+static double __agc_runtime_round_even(double x) {
+  double t = __agc_runtime_trunc(x);
+  double frac = __agc_runtime_fabs(x - t);
+  if (frac > 0.5 || (frac == 0.5 && ((long)__agc_runtime_fabs(t) & 1))) {
+    t = t + (__agc_runtime_signbit(x) ? -1.0 : 1.0);
+  }
+  return t;
+}
+
+double __agc_runtime_nearbyint(double x) {
+  int mode;
+  if (!__agc_runtime_isfinite(x) || x == 0.0) return x;
+  mode = __agc_runtime_fegetround();
+  if (mode == AG_RT_FE_UPWARD) return __agc_runtime_ceil(x);
+  if (mode == AG_RT_FE_DOWNWARD) return __agc_runtime_floor(x);
+  if (mode == AG_RT_FE_TOWARDZERO) return __agc_runtime_trunc(x);
+  return __agc_runtime_round_even(x);
+}
+
+float __agc_runtime_nearbyintf(float x) {
+  return (float)__agc_runtime_nearbyint((double)x);
+}
+
+long double __agc_runtime_nearbyintl(long double x) {
+  return (long double)__agc_runtime_nearbyint((double)x);
+}
+
+double __agc_runtime_rint(double x) {
+  double r = __agc_runtime_nearbyint(x);
+  if (__agc_runtime_isfinite(x) && r != x) __agc_runtime_feraiseexcept(AG_RT_FE_INEXACT);
+  return r;
+}
+
+float __agc_runtime_rintf(float x) {
+  return (float)__agc_runtime_rint((double)x);
+}
+
+long double __agc_runtime_rintl(long double x) {
+  return (long double)__agc_runtime_rint((double)x);
+}
+
+long __agc_runtime_lrint(double x) {
+  return (long)__agc_runtime_rint(x);
+}
+
+long __agc_runtime_lrintf(float x) {
+  return (long)__agc_runtime_rint((double)x);
+}
+
+long __agc_runtime_lrintl(long double x) {
+  return (long)__agc_runtime_rint((double)x);
+}
+
+long long __agc_runtime_llrint(double x) {
+  return (long long)__agc_runtime_rint(x);
+}
+
+long long __agc_runtime_llrintf(float x) {
+  return (long long)__agc_runtime_rint((double)x);
+}
+
+long long __agc_runtime_llrintl(long double x) {
+  return (long long)__agc_runtime_rint((double)x);
+}
+
+long __agc_runtime_lround(double x) {
+  return (long)__agc_runtime_round(x);
+}
+
+long __agc_runtime_lroundf(float x) {
+  return (long)__agc_runtime_round((double)x);
+}
+
+long __agc_runtime_lroundl(long double x) {
+  return (long)__agc_runtime_round((double)x);
+}
+
+long long __agc_runtime_llround(double x) {
+  return (long long)__agc_runtime_round(x);
+}
+
+long long __agc_runtime_llroundf(float x) {
+  return (long long)__agc_runtime_round((double)x);
+}
+
+long long __agc_runtime_llroundl(long double x) {
+  return (long long)__agc_runtime_round((double)x);
+}
 
 static long __agc_runtime_nearest_even_quot(double q) {
   int sign = 1;
@@ -623,16 +719,40 @@ double __agc_runtime_sinh(double x) {
   return (ex - em) / 2.0;
 }
 
+float __agc_runtime_sinhf(float x) {
+  return (float)__agc_runtime_sinh((double)x);
+}
+
+long double __agc_runtime_sinhl(long double x) {
+  return (long double)__agc_runtime_sinh((double)x);
+}
+
 double __agc_runtime_cosh(double x) {
   double ex = __agc_runtime_exp(x);
   double em = __agc_runtime_exp(-x);
   return (ex + em) / 2.0;
 }
 
+float __agc_runtime_coshf(float x) {
+  return (float)__agc_runtime_cosh((double)x);
+}
+
+long double __agc_runtime_coshl(long double x) {
+  return (long double)__agc_runtime_cosh((double)x);
+}
+
 double __agc_runtime_tanh(double x) {
   double ex = __agc_runtime_exp(x);
   double em = __agc_runtime_exp(-x);
   return (ex - em) / (ex + em);
+}
+
+float __agc_runtime_tanhf(float x) {
+  return (float)__agc_runtime_tanh((double)x);
+}
+
+long double __agc_runtime_tanhl(long double x) {
+  return (long double)__agc_runtime_tanh((double)x);
 }
 
 double __agc_runtime_hypot(double x, double y) {

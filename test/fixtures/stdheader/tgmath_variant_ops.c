@@ -47,6 +47,14 @@ int main(void) {
   assert((int)round(-2.5L) == -3);
   assert((int)trunc(-2.8f) == -2);
   assert((int)trunc(-2.8L) == -2);
+  assert(nearbyint(2.5f) == 2.0f);
+  assert(nearbyint(3.5L) == 4.0L);
+  assert(rint(2.5f) == 2.0f);
+  assert(rint(-3.5L) == -4.0L);
+  assert(lrint(3.5f) == 4);
+  assert(llrint(-2.5L) == -2);
+  assert(lround(2.5f) == 3);
+  assert(llround(-2.5L) == -3);
   assert(near1000(fabs(-2.5f), 2498, 2502));
   assert(near1000(fabs(-4.5L), 4498, 4502));
 

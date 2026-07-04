@@ -1,16 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き482: math exp2/expm1/log1p runtime 対応）
+最終更新: 2026-07-05（続き484: math rounding runtime 対応）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_exp_log_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_round_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-js-api` = **green**、
+  `make build/test_e2e` = **green**、
   `./build/test_e2e` = **1186/1186 green**、
   `./build/test_wasm32_object` = **1160/1160 e2e fixture object compile + validate green**、
   `git diff --check` = **green**。
@@ -31,6 +32,62 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き484: **math.h の rounding runtime 対応**。
+  C99 math rounding family として
+  `nearbyint` / `rint` / `lrint` / `llrint` / `lround` / `llround` と
+  f/l wrapper を `include/math.h` / `include/tgmath.h` に追加した。
+  runtime object では `nearbyint` / `rint` / `lrint` / `llrint` が既存 fenv runtime の
+  `fegetround()` を見て `FE_TONEAREST` / `FE_UPWARD` / `FE_DOWNWARD` /
+  `FE_TOWARDZERO` を反映するようにした。`rint` 系は非整数への丸め時に
+  `FE_INEXACT` を raise する。`lround` / `llround` は既存 `round()` と同じ
+  half-away-from-zero の整数化。
+  `tools/wasm_obj_linker/ag_wasm_link.c` は runtime symbol allowlist と rewrite target を追加し、
+  `tools/wasm_js_api/agc-runtime-imports.js` は default rounding の JS import と i64 戻り
+  (`BigInt`) の `lrint` / `llrint` / `lround` / `llround` import を追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` は linked runtime と `--nostdlib`
+  import の両経路を確認する。
+  通常 e2e のカテゴリ内 namespace rewrite では、最近追加した math libc symbols が
+  prefix rename されないよう `test/test_e2e.c` の外部 libc 除外リストも更新した
+  （この更新が無いと `agc_stdheader_math_runtime_ops_lrint` のような未解決 symbol になる）。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_round_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -j4 build/ag_wasm_link`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `make build/test_e2e`、
+  `./build/test_e2e` = **1186/1186 green**、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `git diff --check`。
+- 続き483: **math.h の hyperbolic f/l runtime 対応**。
+  `sinh` / `cosh` / `tanh` は double 版だけ runtime/linker/JS import が通っていたため、
+  `sinhf` / `sinhl` / `coshf` / `coshl` / `tanhf` / `tanhl` を
+  `include/math.h` と `include/tgmath.h` に追加し、`tgmath.h` の型総称マクロも
+  f/l 版へ dispatch するようにした。
+  runtime object では既存 double 版を使う f/l wrapper を追加し、
+  `tools/wasm_obj_linker/ag_wasm_link.c` の `is_runtime_func_symbol()` と
+  rewrite target に同じ 6 symbol を追加。
+  `tools/wasm_js_api/agc-runtime-imports.js` では hyperbolic family も
+  `["f", "l"]` suffix を生成するように揃えた。
+  `tools/wasm_obj_linker/test_smoke.sh` は通常 linked runtime check と `--nostdlib`
+  import grep の両方で f/l 版を確認し、`tools/wasm_js_api/test_compile_link_pipeline.mjs`
+  は JS import 経路と `<math.h>` linked runtime 経路の両方に smoke を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_hyperbolic_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -j4 build/ag_wasm_link`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `./build/test_e2e` = **1186/1186 green**。
+  注意: hyperbolic double 版そのものは既存実装 (`exp(x)` と `exp(-x)` からの近似) のまま。
+  今回は f/l wrapper と runtime/linker/JS import の結線漏れを埋めた。
 - 続き370: **linked runtime object に stdin 注入経路を追加**。
   `tools/wasm_obj_linker/runtime/parts/stdio.c` に
   `__agc_runtime_stdin_capacity` / `__agc_runtime_stdin_write` を追加し、

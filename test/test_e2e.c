@@ -2032,18 +2032,57 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_sinf") == 0 || strcmp(sym, "_sinl") == 0 ||
             strcmp(sym, "_cosf") == 0 || strcmp(sym, "_cosl") == 0 ||
             strcmp(sym, "_tanf") == 0 || strcmp(sym, "_tanl") == 0 ||
+            strcmp(sym, "_sinhf") == 0 || strcmp(sym, "_sinhl") == 0 ||
+            strcmp(sym, "_coshf") == 0 || strcmp(sym, "_coshl") == 0 ||
+            strcmp(sym, "_tanhf") == 0 || strcmp(sym, "_tanhl") == 0 ||
             strcmp(sym, "_asinf") == 0 || strcmp(sym, "_asinl") == 0 ||
             strcmp(sym, "_acosf") == 0 || strcmp(sym, "_acosl") == 0 ||
             strcmp(sym, "_atanf") == 0 || strcmp(sym, "_atanl") == 0 ||
             strcmp(sym, "_atan2f") == 0 || strcmp(sym, "_atan2l") == 0 ||
+            strcmp(sym, "_exp2") == 0 || strcmp(sym, "_exp2f") == 0 ||
+            strcmp(sym, "_exp2l") == 0 ||
+            strcmp(sym, "_expm1") == 0 || strcmp(sym, "_expm1f") == 0 ||
+            strcmp(sym, "_expm1l") == 0 ||
             strcmp(sym, "_expf") == 0 || strcmp(sym, "_expl") == 0 ||
             strcmp(sym, "_logf") == 0 || strcmp(sym, "_logl") == 0 ||
+            strcmp(sym, "_log1p") == 0 || strcmp(sym, "_log1pf") == 0 ||
+            strcmp(sym, "_log1pl") == 0 ||
             strcmp(sym, "_log10f") == 0 || strcmp(sym, "_log10l") == 0 ||
             strcmp(sym, "_log2f") == 0 || strcmp(sym, "_log2l") == 0 ||
             strcmp(sym, "_floorl") == 0 || strcmp(sym, "_ceill") == 0 ||
             strcmp(sym, "_roundl") == 0 || strcmp(sym, "_truncf") == 0 ||
             strcmp(sym, "_truncl") == 0 || strcmp(sym, "_hypot") == 0 ||
             strcmp(sym, "_hypotf") == 0 || strcmp(sym, "_hypotl") == 0 ||
+            strcmp(sym, "_nearbyint") == 0 || strcmp(sym, "_nearbyintf") == 0 ||
+            strcmp(sym, "_nearbyintl") == 0 ||
+            strcmp(sym, "_rint") == 0 || strcmp(sym, "_rintf") == 0 ||
+            strcmp(sym, "_rintl") == 0 ||
+            strcmp(sym, "_lrint") == 0 || strcmp(sym, "_lrintf") == 0 ||
+            strcmp(sym, "_lrintl") == 0 ||
+            strcmp(sym, "_llrint") == 0 || strcmp(sym, "_llrintf") == 0 ||
+            strcmp(sym, "_llrintl") == 0 ||
+            strcmp(sym, "_lround") == 0 || strcmp(sym, "_lroundf") == 0 ||
+            strcmp(sym, "_lroundl") == 0 ||
+            strcmp(sym, "_llround") == 0 || strcmp(sym, "_llroundf") == 0 ||
+            strcmp(sym, "_llroundl") == 0 ||
+            strcmp(sym, "_remainder") == 0 || strcmp(sym, "_remainderf") == 0 ||
+            strcmp(sym, "_remainderl") == 0 ||
+            strcmp(sym, "_remquo") == 0 || strcmp(sym, "_remquof") == 0 ||
+            strcmp(sym, "_remquol") == 0 ||
+            strcmp(sym, "_fdim") == 0 || strcmp(sym, "_fdimf") == 0 ||
+            strcmp(sym, "_fdiml") == 0 ||
+            strcmp(sym, "_fma") == 0 || strcmp(sym, "_fmaf") == 0 ||
+            strcmp(sym, "_fmal") == 0 ||
+            strcmp(sym, "_frexp") == 0 || strcmp(sym, "_frexpf") == 0 ||
+            strcmp(sym, "_frexpl") == 0 ||
+            strcmp(sym, "_ldexp") == 0 || strcmp(sym, "_ldexpf") == 0 ||
+            strcmp(sym, "_ldexpl") == 0 ||
+            strcmp(sym, "_modf") == 0 || strcmp(sym, "_modff") == 0 ||
+            strcmp(sym, "_modfl") == 0 ||
+            strcmp(sym, "_copysign") == 0 || strcmp(sym, "_copysignf") == 0 ||
+            strcmp(sym, "_copysignl") == 0 ||
+            strcmp(sym, "_nan") == 0 || strcmp(sym, "_nanf") == 0 ||
+            strcmp(sym, "_nanl") == 0 ||
             strcmp(sym, "_fmin") == 0 || strcmp(sym, "_fminf") == 0 ||
             strcmp(sym, "_fminl") == 0 || strcmp(sym, "_fmax") == 0 ||
             strcmp(sym, "_fmaxf") == 0 || strcmp(sym, "_fmaxl") == 0 ||

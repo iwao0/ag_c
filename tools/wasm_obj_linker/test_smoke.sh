@@ -1843,6 +1843,24 @@ float roundf(float x);
 long double roundl(long double x);
 float truncf(float x);
 long double truncl(long double x);
+double nearbyint(double x);
+float nearbyintf(float x);
+long double nearbyintl(long double x);
+double rint(double x);
+float rintf(float x);
+long double rintl(long double x);
+long lrint(double x);
+long lrintf(float x);
+long lrintl(long double x);
+long long llrint(double x);
+long long llrintf(float x);
+long long llrintl(long double x);
+long lround(double x);
+long lroundf(float x);
+long lroundl(long double x);
+long long llround(double x);
+long long llroundf(float x);
+long long llroundl(long double x);
 double fmod(double x, double y);
 float fmodf(float x, float y);
 long double fmodl(long double x, long double y);
@@ -1908,8 +1926,14 @@ double acos(double x);
 float acosf(float x);
 long double acosl(long double x);
 double sinh(double x);
+float sinhf(float x);
+long double sinhl(long double x);
 double cosh(double x);
+float coshf(float x);
+long double coshl(long double x);
 double tanh(double x);
+float tanhf(float x);
+long double tanhl(long double x);
 double sin(double x);
 float sinf(float x);
 long double sinl(long double x);
@@ -2200,6 +2224,15 @@ int math_exp_log_ext_check(void) {
   int log1pv = (int)(log1p(1.0) * 1000.0);
   int log1pfv = (int)(log1pf(1.0f) * 1000.0f);
   int log1plv = (int)(log1pl(1.0L) * 1000.0L);
+  int sinhv = (int)(sinh(1.0) * 1000.0);
+  int sinhfv = (int)(sinhf(1.0f) * 1000.0f);
+  int sinhlv = (int)(sinhl(1.0L) * 1000.0L);
+  int coshv = (int)(cosh(1.0) * 1000.0);
+  int coshfv = (int)(coshf(1.0f) * 1000.0f);
+  int coshlv = (int)(coshl(1.0L) * 1000.0L);
+  int tanhv = (int)(tanh(1.0) * 1000.0);
+  int tanhfv = (int)(tanhf(1.0f) * 1000.0f);
+  int tanhlv = (int)(tanhl(1.0L) * 1000.0L);
   return exp2v >= 7998 && exp2v <= 8002 &&
          exp2fv >= 7998 && exp2fv <= 8002 &&
          exp2lv >= 7998 && exp2lv <= 8002 &&
@@ -2208,7 +2241,36 @@ int math_exp_log_ext_check(void) {
          expm1lv >= 1716 && expm1lv <= 1720 &&
          log1pv >= 691 && log1pv <= 695 &&
          log1pfv >= 691 && log1pfv <= 695 &&
-         log1plv >= 691 && log1plv <= 695;
+         log1plv >= 691 && log1plv <= 695 &&
+         sinhv >= 1174 && sinhv <= 1176 &&
+         sinhfv >= 1174 && sinhfv <= 1176 &&
+         sinhlv >= 1174 && sinhlv <= 1176 &&
+         coshv >= 1542 && coshv <= 1544 &&
+         coshfv >= 1542 && coshfv <= 1544 &&
+         coshlv >= 1542 && coshlv <= 1544 &&
+         tanhv >= 760 && tanhv <= 762 &&
+         tanhfv >= 760 && tanhfv <= 762 &&
+         tanhlv >= 760 && tanhlv <= 762;
+}
+int math_round_ext_check(void) {
+  int ok = 1;
+  ok = ok && nearbyint(2.5) == 2.0 && nearbyint(3.5) == 4.0 &&
+            nearbyintf(-2.5f) == -2.0f && nearbyintl(-3.5L) == -4.0L;
+  ok = ok && lround(2.5) == 3 && lroundf(-2.5f) == -3 &&
+            lroundl(3.5L) == 4 && llround(-3.5) == -4 &&
+            llroundf(2.5f) == 3 && llroundl(-2.5L) == -3;
+  ok = ok && fesetround(0x00400000) == 0 &&
+            rint(2.1) == 3.0 && rintf(-2.1f) == -2.0f &&
+            lrint(2.1) == 3 && llrintf(-2.1f) == -2;
+  ok = ok && fesetround(0x00800000) == 0 &&
+            rintl(2.9L) == 2.0L && nearbyint(-2.1) == -3.0 &&
+            lrintl(2.9L) == 2 && llrintl(-2.1L) == -3;
+  ok = ok && fesetround(0x00C00000) == 0 &&
+            rint(2.9) == 2.0 && rint(-2.9) == -2.0 &&
+            lrintf(2.9f) == 2 && llrint(-2.9) == -2;
+  ok = ok && fesetround(0) == 0 &&
+            rint(2.5) == 2.0 && rint(3.5) == 4.0 && lrint(3.5) == 4;
+  return ok;
 }
 int main(void) {
   char a[32];
@@ -2551,6 +2613,33 @@ int main(void) {
     nan("");
     nanf("");
     nanl("");
+    nearbyint(1.5);
+    nearbyintf(1.5f);
+    nearbyintl(1.5L);
+    rint(1.5);
+    rintf(1.5f);
+    rintl(1.5L);
+    lrint(1.5);
+    lrintf(1.5f);
+    lrintl(1.5L);
+    llrint(1.5);
+    llrintf(1.5f);
+    llrintl(1.5L);
+    lround(1.5);
+    lroundf(1.5f);
+    lroundl(1.5L);
+    llround(1.5);
+    llroundf(1.5f);
+    llroundl(1.5L);
+    sinh(1.0);
+    sinhf(1.0f);
+    sinhl(1.0L);
+    cosh(1.0);
+    coshf(1.0f);
+    coshl(1.0L);
+    tanh(1.0);
+    tanhf(1.0f);
+    tanhl(1.0L);
     longjmp(jb, 1);
   }
   int sj = setjmp(jb);
@@ -3211,6 +3300,7 @@ int main(void) {
                       isunordered(math_nan, 1.0) && !isunordered(1.0, 2.0);
   int math_decomp_ok = math_decomp_check();
   int math_exp_log_ext_ok = math_exp_log_ext_check();
+  int math_round_ext_ok = math_round_ext_check();
   char *pbrk_src = "xyzabc";
   unsigned long span = strspn("aabbc", "ab");
   unsigned long cspan = strcspn("aabbc", "c");
@@ -3482,6 +3572,7 @@ int main(void) {
          math_class_ok &&
          math_decomp_ok &&
          math_exp_log_ext_ok &&
+         math_round_ext_ok &&
          sinh0 == 0 && cosh0 >= 998 && cosh0 <= 1002 &&
          tanh0 == 0 && tanh1 >= 759 && tanh1 <= 763 &&
          atoi(" -123x") == -123 &&
@@ -4188,6 +4279,33 @@ if command -v wasm-objdump >/dev/null 2>&1; then
   grep -q '<env.log10>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log10f>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.log10l>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.nearbyint>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.nearbyintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.nearbyintl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.rint>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.rintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.rintl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lrint>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lrintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lrintl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llrint>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llrintf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llrintl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lround>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lroundf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.lroundl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llround>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llroundf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.llroundl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sinh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sinhf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.sinhl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.cosh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.coshf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.coshl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tanh>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tanhf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
+  grep -q '<env.tanhl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atanf>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atanl>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
   grep -q '<env.atan2>' "$out_dir/linked_libc_runtime_nostdlib.objdump"
