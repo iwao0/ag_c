@@ -3625,6 +3625,12 @@ int main(void) {
          fmod_pos == 1500 && fmod_neg == -1500 &&
          fmodf_pos == 1500 &&
          fmodl_pos == 1500 &&
+         isnan(fmod(7.5, math_zero)) &&
+         isnan(fmod(math_inf, 2.0)) &&
+         (int)fmod(7.5, math_inf) == 7 &&
+         signbit(fmod(-math_zero, 3.0)) &&
+         isnan(fmodf(7.5f, 0.0f)) &&
+         isnan(fmodl(7.5L, 0.0L)) &&
          cbrt_pos >= 2998 && cbrt_pos <= 3002 &&
          cbrt_neg >= -2002 && cbrt_neg <= -1998 &&
          cbrtf_pos >= 2998 && cbrtf_pos <= 3002 &&
@@ -3647,21 +3653,55 @@ int main(void) {
          atan2v >= 1568 && atan2v <= 1572 &&
          atan2fv >= 1568 && atan2fv <= 1572 &&
          atan2lv >= 1568 && atan2lv <= 1572 &&
+         signbit(atan2(-math_zero, math_zero)) &&
+         (int)(atan2(math_zero, -math_zero) * 1000.0) >= 3140 &&
+         (int)(atan2(math_zero, -math_zero) * 1000.0) <= 3143 &&
+         (int)(atan2(-math_zero, -math_zero) * 1000.0) <= -3140 &&
+         (int)(atan2(-math_zero, -math_zero) * 1000.0) >= -3143 &&
+         (int)(atan2(math_inf, math_inf) * 1000.0) >= 783 &&
+         (int)(atan2(math_inf, math_inf) * 1000.0) <= 787 &&
+         (int)(atan2(math_inf, -math_inf) * 1000.0) >= 2354 &&
+         (int)(atan2(math_inf, -math_inf) * 1000.0) <= 2358 &&
+         (int)(atan2(-math_inf, -math_inf) * 1000.0) <= -2354 &&
+         (int)(atan2(-math_inf, -math_inf) * 1000.0) >= -2358 &&
          asinv >= 1568 && asinv <= 1572 &&
          asinfv >= 1568 && asinfv <= 1572 &&
          asinlv >= 1568 && asinlv <= 1572 &&
          acosv >= 1568 && acosv <= 1572 &&
          acosfv >= 1568 && acosfv <= 1572 &&
          acosl_v >= 1568 && acosl_v <= 1572 &&
+         isnan(asin(2.0)) &&
+         isnan(asinf(2.0f)) &&
+         isnan(asinl(2.0L)) &&
+         isnan(asin(math_nan)) &&
+         isnan(acos(2.0)) &&
+         isnan(acosf(2.0f)) &&
+         isnan(acosl(2.0L)) &&
+         isnan(acos(math_nan)) &&
          (int)(hypot(3.0, 4.0) * 1000.0) == 5000 &&
          (int)(hypotf(3.0f, 4.0f) * 1000.0f) == 5000 &&
          (int)(hypotl(3.0L, 4.0L) * 1000.0L) == 5000 &&
+         hypot(1.0e200, 1.0e200) > 1.0e200 &&
+         hypot(math_inf, math_nan) > 1.0e300 &&
+         isnan(hypot(math_nan, 3.0)) &&
          (int)(fmin(3.0, 4.0) * 1000.0) == 3000 &&
          (int)(fminf(3.0f, 4.0f) * 1000.0f) == 3000 &&
          (int)(fminl(3.0L, 4.0L) * 1000.0L) == 3000 &&
+         (int)fmin(math_nan, 7.0) == 7 &&
+         (int)fmin(7.0, math_nan) == 7 &&
+         (int)fminf((float)math_nan, 5.0f) == 5 &&
+         (int)fminl(6.0L, (long double)math_nan) == 6 &&
+         signbit(fmin(-math_zero, math_zero)) &&
+         signbit(fmin(math_zero, -math_zero)) &&
          (int)(fmax(3.0, 4.0) * 1000.0) == 4000 &&
          (int)(fmaxf(3.0f, 4.0f) * 1000.0f) == 4000 &&
          (int)(fmaxl(3.0L, 4.0L) * 1000.0L) == 4000 &&
+         (int)fmax(math_nan, 7.0) == 7 &&
+         (int)fmax(7.0, math_nan) == 7 &&
+         (int)fmaxf((float)math_nan, 5.0f) == 5 &&
+         (int)fmaxl(6.0L, (long double)math_nan) == 6 &&
+         !signbit(fmax(-math_zero, math_zero)) &&
+         !signbit(fmax(math_zero, -math_zero)) &&
          math_class_ok &&
          math_decomp_ok &&
          math_exp_log_ext_ok &&

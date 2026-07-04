@@ -8,9 +8,19 @@ static int near1000(double v, int lo, int hi) {
   return n >= lo && n <= hi;
 }
 
+static int nanish(long double v) {
+  return v != 0.0L && !(v < 0.0L) && !(v > 0.0L);
+}
+
 int main(void) {
   float f = 2.0f;
   long double l = 2.0L;
+  double z = 0.0;
+  double nanv = z / z;
+  float asin_fd = asin(2.0f);
+  long double asin_ld = asin(2.0L);
+  float acos_fd = acos(2.0f);
+  long double acos_ld = acos(2.0L);
 
   assert(near1000(sqrt(f), 1412, 1416));
   assert(near1000(sqrt(l), 1412, 1416));
@@ -32,12 +42,21 @@ int main(void) {
 
   assert(near1000(asin(1.0f), 1568, 1572));
   assert(near1000(asin(1.0L), 1568, 1572));
+  assert(nanish(asin_fd));
+  assert(nanish(asin_ld));
   assert(near1000(acos(0.0f), 1568, 1572));
   assert(near1000(acos(0.0L), 1568, 1572));
+  assert(nanish(acos_fd));
+  assert(nanish(acos_ld));
   assert(near1000(atan(1.0f), 783, 787));
   assert(near1000(atan(1.0L), 783, 787));
   assert(near1000(atan2(1.0f, 0.0f), 1568, 1572));
   assert(near1000(atan2(1.0L, 0.0L), 1568, 1572));
+  assert(1.0f / atan2(-0.0f, 0.0f) < 0.0f);
+  assert(near1000(atan2(0.0L, -0.0L), 3140, 3143));
+  assert(near1000(atan2(-0.0L, -0.0L), -3143, -3140));
+  assert(near1000(atan2(1.0f / 0.0f, -1.0f / 0.0f), 2354, 2358));
+  assert(near1000(atan2(-1.0L / 0.0L, -1.0L / 0.0L), -2358, -2354));
 
   assert(near1000(exp(1.0f), 2716, 2720));
   assert(near1000(exp(1.0L), 2716, 2720));
@@ -72,6 +91,10 @@ int main(void) {
   assert(near1000(pow(2.0L, 4.0L), 15998, 16002));
   assert(near1000(fmod(7.5f, 2.0f), 1498, 1502));
   assert(near1000(fmod(7.5L, 2.0L), 1498, 1502));
+  assert(nanish(fmod(7.5f, 0.0f)));
+  assert(nanish(fmod(7.5L, 0.0L)));
+  assert((int)fmod(7.5f, 1.0f / 0.0f) == 7);
+  assert((int)fmod(7.5L, 1.0L / 0.0L) == 7);
   assert(near1000(scalbn(0.75f, 4), 11998, 12002));
   assert(near1000(scalbn(0.25L, 6), 15998, 16002));
   assert(near1000(scalbln(1.25f, 2L), 4998, 5002));
@@ -82,10 +105,21 @@ int main(void) {
   assert((int)logb(8.0L) == 3);
   assert(near1000(hypot(3.0f, 4.0f), 4998, 5002));
   assert(near1000(hypot(3.0L, 4.0L), 4998, 5002));
+  assert(hypot(1.0e20f, 1.0e20f) > 1.0e20f);
+  assert(hypot(1.0L / z, (long double)nanv) > 1.0e300L);
+  assert(nanish(hypot((float)nanv, 3.0f)));
   assert(near1000(fmin(3.0f, 4.0f), 2998, 3002));
   assert(near1000(fmin(3.0L, 4.0L), 2998, 3002));
   assert(near1000(fmax(3.0f, 4.0f), 3998, 4002));
   assert(near1000(fmax(3.0L, 4.0L), 3998, 4002));
+  assert((int)fmin((float)nanv, 5.0f) == 5);
+  assert((int)fmin(6.0L, (long double)nanv) == 6);
+  assert(1.0f / fmin(-0.0f, 0.0f) < 0.0f);
+  assert(1.0L / fmin(0.0L, -0.0L) < 0.0L);
+  assert((int)fmax((float)nanv, 5.0f) == 5);
+  assert((int)fmax(6.0L, (long double)nanv) == 6);
+  assert(1.0f / fmax(-0.0f, 0.0f) > 0.0f);
+  assert(1.0L / fmax(0.0L, -0.0L) > 0.0L);
 
   return 0;
 }
