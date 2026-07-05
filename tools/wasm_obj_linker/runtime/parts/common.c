@@ -178,14 +178,17 @@ static int ag_rt_is_stdout_stream(long stream_addr) {
 }
 
 static int ag_rt_is_stderr_stream(long stream_addr) {
-  return stream_addr == 0 || stream_addr == (long)__stderrp;
+  return stream_addr == (long)__stderrp;
 }
 
 static struct ag_rt_file *ag_rt_input_stream(long stream_addr) {
   if (!stream_addr || stream_addr == (long)__stdinp) return &ag_rt_file_value;
-  struct ag_rt_file *f = (struct ag_rt_file *)ag_rt_ptr(stream_addr);
-  if (!f || !f->used) return 0;
-  return f;
+  if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) return 0;
+  if (stream_addr == (long)&ag_rt_file_value) return &ag_rt_file_value;
+  for (int i = 0; i < 8; i++) {
+    if (stream_addr == (long)&ag_rt_files[i] && ag_rt_files[i].used) return &ag_rt_files[i];
+  }
+  return 0;
 }
 
 static void ag_rt_stdout_reset_impl(void) {

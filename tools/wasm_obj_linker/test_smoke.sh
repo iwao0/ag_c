@@ -1020,16 +1020,24 @@ unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, FILE *st
 unsigned long fwrite(void *ptr, unsigned long size, unsigned long nmemb, FILE *stream);
 int fputs(char *s, FILE *stream);
 int fputc(int c, FILE *stream);
+int fprintf(FILE *stream, char *fmt, ...);
 int fgetc(FILE *stream);
 int fseek(FILE *stream, long offset, int whence);
+long ftell(FILE *stream);
 int ferror(FILE *stream);
+int feof(FILE *stream);
 void clearerr(FILE *stream);
+int fflush(FILE *stream);
+int setvbuf(FILE *stream, char *buf, int mode, unsigned long size);
+int fscanf(FILE *stream, char *fmt, ...);
+long getline(char **lineptr, unsigned long *n, FILE *stream);
 int open(char *path, int oflag);
 int close(int fd);
 int *__error(void);
 #define errno (*__error())
 #define EINVAL 22
 #define EBADF 9
+#define ENOMEM 12
 int main(void) {
   int fd = open("tmp.txt", 0);
   int fd2 = open("tmp.txt", 0);
@@ -1051,6 +1059,19 @@ int main(void) {
   int ok_stream = ok != 0;
   if (ok) fclose(ok);
   close(fd2);
+  FILE *full = fopen("tmp.txt", "w");
+  unsigned long fill_i = 0;
+  int fill_ok = full != 0;
+  while (fill_i < 65536 && fill_ok) {
+    if (fputc('x', full) != 'x') fill_ok = 0;
+    fill_i++;
+  }
+  errno = 0;
+  int full_fputc = full && fputc('y', full) == -1 && errno == ENOMEM && ferror(full);
+  clearerr(full);
+  errno = 0;
+  int full_fwrite = full && fwrite("z", 1, 1, full) == 0 && errno == ENOMEM && ferror(full);
+  if (full) fclose(full);
   FILE *rf = fopen("tmp.txt", "r");
   errno = 0;
   int read_stream_write = fwrite("x", 1, 1, rf) == 0 &&
@@ -1063,6 +1084,10 @@ int main(void) {
   fclose(rf);
   FILE *wf = fopen("tmp.txt", "w");
   char b[1];
+  errno = 0;
+  int stdout_stream_read = fread(b, 1, 1, (FILE *)1) == 0 &&
+                           fgetc((FILE *)1) == -1 &&
+                           errno == EBADF;
   fwrite("A", 1, 1, wf);
   fseek(wf, 0, 0);
   errno = 0;
@@ -1071,11 +1096,49 @@ int main(void) {
   int write_stream_error = ferror(wf);
   clearerr(wf);
   int write_stream_clear = ferror(wf);
+  char *line = 0;
+  unsigned long cap = 0;
+  errno = 0;
+  int write_stream_getline = getline(&line, &cap, wf) == -1 && errno == EBADF;
   fclose(wf);
+  errno = 0;
+  int unknown_fgetc = fgetc((FILE *)3) == -1 && errno == EBADF;
+  errno = 0;
+  int unknown_fread = fread(b, 1, 1, (FILE *)3) == 0 && errno == EBADF;
+  errno = 0;
+  int unknown_fwrite = fwrite("x", 1, 1, (FILE *)3) == 0 && errno == EBADF;
+  errno = 0;
+  int unknown_fprintf = fprintf((FILE *)3, "x%d", 1) == -1 && errno == EBADF;
+  errno = 0;
+  int unknown_fflush = fflush((FILE *)3) == -1 && errno == EBADF;
+  errno = 0;
+  int unknown_fclose = fclose((FILE *)3) == -1 && errno == EBADF;
+  errno = 0;
+  int unknown_setvbuf = setvbuf((FILE *)3, 0, 0, 0) == -1 && errno == EBADF;
+  errno = 0;
+  int unknown_ftell = ftell((FILE *)3) == -1 && errno == EBADF;
+  errno = 0;
+  int unknown_feof = feof((FILE *)3) == 0 && errno == EBADF;
+  errno = 0;
+  int unknown_ferror = ferror((FILE *)3) == 1 && errno == EBADF;
+  errno = 0;
+  clearerr((FILE *)3);
+  int unknown_clearerr = errno == EBADF;
+  int scan_value = 77;
+  errno = 0;
+  int unknown_fscanf = fscanf((FILE *)3, "%d", &scan_value) == -1 && errno == EBADF && scan_value == 77;
+  errno = 0;
+  int unknown_getline = getline(&line, &cap, (FILE *)3) == -1 && errno == EBADF;
   return bad_path && bad_mode_null && bad_mode_empty && bad_mode_unknown &&
          bad_fd && bad_fd_mode_null && bad_fd_mode_unknown && ok_stream &&
+         fill_ok && full_fputc && full_fwrite &&
          read_stream_write && read_stream_errno == EBADF && read_stream_error && !read_stream_clear &&
-         write_stream_read && write_stream_errno == EBADF && write_stream_error && !write_stream_clear ? 42 : 1;
+         stdout_stream_read &&
+         write_stream_read && write_stream_errno == EBADF && write_stream_error && !write_stream_clear &&
+         unknown_fgetc && unknown_fread && unknown_fwrite && unknown_fprintf && unknown_fflush &&
+         unknown_fclose && unknown_setvbuf && unknown_ftell && unknown_feof &&
+         unknown_ferror && unknown_clearerr && unknown_fscanf && unknown_getline &&
+         write_stream_getline ? 42 : 1;
 }
 SRC
 
@@ -1636,6 +1699,7 @@ int main(void) {
 SRC
 
 cat > "$out_dir/wide_io_state.c" <<'SRC'
+#include <errno.h>
 #include <stdio.h>
 #include <wchar.h>
 int main(void) {
@@ -1643,6 +1707,8 @@ int main(void) {
   wchar_t line[8];
   wchar_t out[4];
   if (fwide(0, 0) != 0 || fwide(0, 1) != 1 || fwide(0, -1) != -1) return 1;
+  errno = 0;
+  if (fwide((FILE *)3, 1) != 0 || errno != EBADF) return 18;
   fp = fopen("wide.txt", "w+");
   if (!fp) return 2;
   out[0] = 'O';
@@ -2098,6 +2164,9 @@ int iswctype(int wc, int desc);
 int wctrans(char *property);
 int towctrans(int wc, int desc);
 int putchar(int c);
+int *__error(void);
+#define errno (*__error())
+#define EBADF 9
 struct stat {
   unsigned short st_mode;
   long st_size;
@@ -3987,11 +4056,11 @@ int main(void) {
          fprintf_file_ok &&
          vformat_ok &&
          printf("value=%d/%u/%s/%c/%%", -12, 345u, "ok", 'Z') == 20 &&
-         fprintf(0, "[%04d]", 7) == 6 &&
+         (errno = 0, fprintf(0, "[%04d]", 7) == -1 && errno == EBADF) &&
          puts("ok") == 3 &&
-         fputs("abc", 0) == 3 &&
-         fputc('R', 0) == 'R' &&
-         putc('S', 0) == 'S' &&
+         (errno = 0, fputs("abc", 0) == -1 && errno == EBADF) &&
+         (errno = 0, fputc('R', 0) == -1 && errno == EBADF) &&
+         (errno = 0, putc('S', 0) == -1 && errno == EBADF) &&
          fflush(0) == 0 &&
          (perror("ignored"), 1) &&
          getchar() == -1 &&

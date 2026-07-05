@@ -1043,9 +1043,13 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   long i;
   if (!lineptr || !cap) return -1;
   f = ag_rt_input_stream(stream_addr);
-  if (!f) return -1;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (f->write_mode) {
     f->error = 1;
+    ag_rt_set_errno(9);
     return -1;
   }
   len = 0;

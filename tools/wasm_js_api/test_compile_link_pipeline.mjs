@@ -599,6 +599,49 @@ int main(void) {
   if (ferror(rf)) return 13;
   if (fclose(rf) != 0) return 14;
   errno = 0;
+  if (fprintf(NULL, "B") != EOF || errno != EBADF) return 94;
+  errno = 0;
+  if (fputs("B", NULL) != EOF || errno != EBADF) return 95;
+  errno = 0;
+  if (fputc('B', NULL) != EOF || errno != EBADF) return 96;
+  errno = 0;
+  if (fwrite("B", 1, 1, NULL) != 0 || errno != EBADF) return 97;
+  errno = 0;
+  if (fgetc(stdout) != EOF || errno != EBADF) return 98;
+  errno = 0;
+  if (fread(b, 1, 1, stdout) != 0 || errno != EBADF) return 99;
+  errno = 0;
+  if (fgetc((FILE *)3) != EOF || errno != EBADF) return 100;
+  errno = 0;
+  if (fprintf((FILE *)3, "B%d", 1) != EOF || errno != EBADF) return 113;
+  errno = 0;
+  if (fwrite("B", 1, 1, (FILE *)3) != 0 || errno != EBADF) return 101;
+  errno = 0;
+  if (fflush((FILE *)3) != EOF || errno != EBADF) return 102;
+  errno = 0;
+  if (fclose((FILE *)3) != EOF || errno != EBADF) return 103;
+  errno = 0;
+  if (ftell((FILE *)3) != -1 || errno != EBADF) return 104;
+  errno = 0;
+  if (feof((FILE *)3) != 0 || errno != EBADF) return 105;
+  errno = 0;
+  if (ferror((FILE *)3) != 1 || errno != EBADF) return 106;
+  errno = 0;
+  clearerr((FILE *)3);
+  if (errno != EBADF) return 107;
+  int scan_value = 77;
+  errno = 0;
+  if (fscanf((FILE *)3, "%d", &scan_value) != EOF || errno != EBADF || scan_value != 77) return 108;
+  char *line = NULL;
+  size_t line_cap = 0;
+  errno = 0;
+  if (getline(&line, &line_cap, (FILE *)3) != -1 || errno != EBADF) return 109;
+  FILE *gw = fopen("tmp.txt", "w");
+  if (!gw) return 110;
+  errno = 0;
+  if (getline(&line, &line_cap, gw) != -1 || errno != EBADF) return 111;
+  if (fclose(gw) != 0) return 112;
+  errno = 0;
   if (remove(NULL) == 0 || errno != EINVAL) return 15;
   if (remove("tmp.txt") != 0) return 16;
   rf = fopen("tmp.txt", "r");
@@ -709,6 +752,19 @@ int main(void) {
   if (fgetc(fr) != 'S') return 91;
   if (fgetc(fr) != EOF || !feof(fr)) return 92;
   if (fclose(fr) != 0) return 93;
+  FILE *full = fopen("tmp.txt", "w");
+  if (!full) return 114;
+  size_t fill_i = 0;
+  while (fill_i < 65536) {
+    if (fputc('x', full) != 'x') return 115;
+    fill_i++;
+  }
+  errno = 0;
+  if (fputc('y', full) != EOF || errno != ENOMEM || !ferror(full)) return 116;
+  clearerr(full);
+  errno = 0;
+  if (fwrite("z", 1, 1, full) != 0 || errno != ENOMEM || !ferror(full)) return 117;
+  if (fclose(full) != 0) return 118;
   return 42;
 }
 `, { loadInclude });
@@ -935,7 +991,8 @@ if (linkedWideConversionResult !== 42) {
   throw new Error(`linked runtime wide conversion failed: ${linkedWideConversionResult}`);
 }
 
-const linkedWideIOSource = await inlineStandardIncludes(`#include <stdio.h>
+const linkedWideIOSource = await inlineStandardIncludes(`#include <errno.h>
+#include <stdio.h>
 #include <wchar.h>
 int main(void) {
   FILE *fp = fopen("wide.txt", "w+");
@@ -943,6 +1000,8 @@ int main(void) {
   wchar_t text[] = {'O', 0x3042, '\\n', 0};
   if (!fp) return 1;
   if (fwide(fp, 1) != 1 || fwide(fp, -1) != -1 || fwide(fp, 0) != 0) return 2;
+  errno = 0;
+  if (fwide((FILE *)3, 1) != 0 || errno != EBADF) return 18;
   if (fputwc('A', fp) != 'A') return 3;
   if (putwc(0x3042, fp) != 0x3042) return 4;
   if (fputwc('\\n', fp) != '\\n') return 5;
@@ -1812,7 +1871,9 @@ if (linkedMathClassResult !== 42) {
 const jsBasicStdioSource = `
 int fputs(const char *s, void *stream);
 int fputc(int c, void *stream);
+int fprintf(void *stream, const char *fmt, ...);
 int fflush(void *stream);
+int fclose(void *stream);
 unsigned long fwrite(const void *ptr, unsigned long size, unsigned long nmemb, void *stream);
 unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, void *stream);
 long write(int fd, const void *buf, unsigned long count);
@@ -1831,11 +1892,27 @@ int main(void) {
   if (fputs("E", (void *)2) != 1) return 3;
   if (fputc('R', (void *)2) != 'R') return 4;
   if (fflush((void *)1) != 0) return 5;
+  errno = 0;
+  if (fflush((void *)3) != -1 || errno != EBADF) return 21;
+  if (fclose((void *)0) != 0 || fclose((void *)1) != 0 || fclose((void *)2) != 0) return 22;
+  errno = 0;
+  if (fclose((void *)3) != -1 || errno != EBADF) return 23;
   if (fwrite("CD", 1, 2, (void *)1) != 2) return 6;
   if (fwrite("!", 1, 1, (void *)2) != 1) return 7;
-  if (fputs("q", (void *)0) != 1) return 8;
-  if (fputc('r', (void *)0) != 'r') return 9;
-  if (fwrite("s", 1, 1, (void *)0) != 1) return 10;
+  errno = 0;
+  if (fputs("q", (void *)0) != -1 || errno != EBADF) return 8;
+  errno = 0;
+  if (fputc('r', (void *)0) != -1 || errno != EBADF) return 9;
+  errno = 0;
+  if (fprintf((void *)0, "t%d", 1) != -1 || errno != EBADF) return 24;
+  errno = 0;
+  if (fwrite("s", 1, 1, (void *)0) != 0 || errno != EBADF) return 10;
+  errno = 0;
+  if (fwrite("z", 0, 1, (void *)0) != 0 || errno != 0) return 25;
+  errno = 0;
+  if (fwrite("z", (unsigned long)-1, 1, (void *)1) != 0 || errno != EINVAL) return 26;
+  errno = 0;
+  if (fread(buf, (unsigned long)-1, 1, (void *)0) != 0 || errno != EINVAL) return 27;
   if (write(1, "W", 1) != 1) return 11;
   if (write(2, "e", 1) != 1) return 12;
   errno = 0;
@@ -1849,6 +1926,8 @@ int main(void) {
   if (fopen((void *)0, "r") != 0 || errno != EINVAL) return 18;
   errno = 0;
   if (fopen("missing.txt", "r") != 0 || errno != ENOENT) return 19;
+  errno = 0;
+  if (fread(buf, 1, 1, (void *)1) != 0 || errno != EBADF) return 20;
   if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 15;
   return 42;
 }
@@ -1863,7 +1942,7 @@ const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
   onStderr: (chunk) => { jsBasicStderr += chunk; },
 });
 const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
-if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDW" || jsBasicStderr !== "ER!qrsejs: error\n") {
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDW" || jsBasicStderr !== "ER!ejs: error\n") {
   throw new Error(
     `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
   );
@@ -1877,10 +1956,29 @@ unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, void *st
 int feof(void *stream);
 int ferror(void *stream);
 void clearerr(void *stream);
+int ungetc(int c, void *stream);
+int *__error(void);
 void perror(const char *s);
+#define errno (*__error())
+#define EBADF 9
 int main(void) {
   char line[4];
   char rest[4];
+  errno = 0;
+  if (fgetc((void *)1) != -1 || errno != EBADF) return 11;
+  errno = 0;
+  if (fgets(line, sizeof(line), (void *)1) != 0 || errno != EBADF) return 12;
+  errno = 0;
+  if (fread(rest, 1, 1, (void *)1) != 0 || errno != EBADF) return 13;
+  errno = 0;
+  if (ungetc('z', (void *)1) != -1 || errno != EBADF) return 14;
+  errno = 0;
+  if (feof((void *)3) != 0 || errno != EBADF) return 15;
+  errno = 0;
+  if (ferror((void *)3) != 1 || errno != EBADF) return 16;
+  errno = 0;
+  clearerr((void *)3);
+  if (errno != EBADF) return 17;
   if (fgetc((void *)0) != 'a') return 1;
   if (getchar() != '\\n') return 2;
   if (fgets(line, sizeof(line), (void *)0) != line) return 3;
@@ -1893,6 +1991,7 @@ int main(void) {
   if (ferror((void *)0) != 0) return 9;
   clearerr((void *)0);
   if (feof((void *)0) != 0) return 10;
+  errno = 0;
   perror("stdin");
   return 42;
 }
@@ -1921,16 +2020,31 @@ int ungetwc(int wc, void *stream);
 int *fgetws(int *s, int n, void *stream);
 int fputws(const int *s, void *stream);
 int fwide(void *stream, int mode);
+int *__error(void);
+#define errno (*__error())
+#define EBADF 9
 int main(void) {
   int line[4];
   int text[] = {0x3042, '!', 0};
   if (fwide((void *)0, 1) != 1) return 1;
   if (fwide((void *)0, -1) != -1) return 2;
   if (fwide((void *)0, 0) != 0) return 3;
+  errno = 0;
+  if (fwide((void *)3, 1) != 0 || errno != EBADF) return 21;
   if (fputwc('A', (void *)1) != 'A') return 4;
   if (putwc(0x3042, (void *)1) != 0x3042) return 5;
   if (fputws(text, (void *)2) != 2) return 6;
   if (putwchar('Q') != 'Q') return 7;
+  errno = 0;
+  if (fputwc('Z', (void *)0) != -1 || errno != EBADF) return 19;
+  errno = 0;
+  if (fputws(text, (void *)0) != -1 || errno != EBADF) return 20;
+  errno = 0;
+  if (fgetwc((void *)1) != -1 || errno != EBADF) return 16;
+  errno = 0;
+  if (fgetws(line, 4, (void *)1) != 0 || errno != EBADF) return 17;
+  errno = 0;
+  if (ungetwc('Z', (void *)1) != -1 || errno != EBADF) return 18;
   if (fgetwc((void *)0) != 'x') return 8;
   if (ungetwc('Y', (void *)0) != 'Y') return 9;
   if (getwc((void *)0) != 'Y') return 10;

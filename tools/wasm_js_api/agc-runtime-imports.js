@@ -493,9 +493,48 @@ function makeStdio(options = {}) {
     return String(text).length;
   }
 
-  function isStderrStream(stream) {
+  function outputStreamKind(stream) {
     const s = Number(stream);
-    return s === 0 || s === 2;
+    if (stream === undefined || s === 1) return "stdout";
+    if (s === 2) return "stderr";
+    setErrno(AGC_EBADF);
+    return null;
+  }
+
+  function isKnownStream(stream) {
+    const s = Number(stream);
+    return stream === undefined || s === 0 || s === 1 || s === 2;
+  }
+
+  function rejectKnownStream(stream) {
+    if (isKnownStream(stream)) return false;
+    setErrno(AGC_EBADF);
+    return true;
+  }
+
+  function isInputStream(stream) {
+    return stream === undefined || Number(stream) === 0;
+  }
+
+  function rejectInputStream(stream) {
+    if (isInputStream(stream)) return false;
+    setErrno(AGC_EBADF);
+    return true;
+  }
+
+  function ioTotalSize(size, nmemb) {
+    size = Number(size);
+    nmemb = Number(nmemb);
+    if (size < 0 || nmemb < 0 || !Number.isFinite(size) || !Number.isFinite(nmemb)) {
+      setErrno(AGC_EINVAL);
+      return null;
+    }
+    if (size === 0 || nmemb === 0) return 0;
+    if (size > Number.MAX_SAFE_INTEGER / nmemb) {
+      setErrno(AGC_EINVAL);
+      return null;
+    }
+    return size * nmemb;
   }
 
   function __error() {
@@ -507,8 +546,10 @@ function makeStdio(options = {}) {
   }
 
   function fprintf(stream, fmt, ...args) {
+    const kind = outputStreamKind(stream);
+    if (!kind) return -1;
     const text = formatPrintf(getMemory(), fmt, args);
-    return isStderrStream(stream) ? emitStderr(text) : emitStdout(text);
+    return kind === "stderr" ? emitStderr(text) : emitStdout(text);
   }
 
   function sprintf(buf, fmt, ...args) {
@@ -524,8 +565,10 @@ function makeStdio(options = {}) {
   }
 
   function fputs(s, stream) {
+    const kind = outputStreamKind(stream);
+    if (!kind) return -1;
     const text = readCString(getMemory(), s);
-    return isStderrStream(stream) ? emitStderr(text) : emitStdout(text);
+    return kind === "stderr" ? emitStderr(text) : emitStdout(text);
   }
 
   function putchar(c) {
@@ -535,8 +578,10 @@ function makeStdio(options = {}) {
   }
 
   function fputc(c, stream) {
+    const kind = outputStreamKind(stream);
+    if (!kind) return -1;
     const text = String.fromCodePoint(Number(c) & 0xff);
-    if (isStderrStream(stream)) {
+    if (kind === "stderr") {
       emitStderr(text);
     } else {
       emitStdout(text);
@@ -544,7 +589,8 @@ function makeStdio(options = {}) {
     return Number(c) | 0;
   }
 
-  function fflush(_stream) {
+  function fflush(stream) {
+    if (rejectKnownStream(stream)) return -1;
     return 0;
   }
 
@@ -566,7 +612,8 @@ function makeStdio(options = {}) {
     return 0;
   }
 
-  function fclose(_stream) {
+  function fclose(stream) {
+    if (rejectKnownStream(stream)) return -1;
     return 0;
   }
 
@@ -579,7 +626,8 @@ function makeStdio(options = {}) {
     return stdinBytes[stdinOffset++];
   }
 
-  function ungetc(c, _stream) {
+  function ungetc(c, stream) {
+    if (rejectInputStream(stream)) return -1;
     c = Number(c) | 0;
     if (c < 0 || c > 255) {
       setErrno(AGC_EINVAL);
@@ -591,12 +639,15 @@ function makeStdio(options = {}) {
   }
 
   function fwrite(ptr, size, nmemb, stream) {
+    const total = ioTotalSize(size, nmemb);
+    if (total === null) return 0n;
+    if (total === 0) return 0n;
     size = Number(size);
     nmemb = Number(nmemb);
-    if (size <= 0 || nmemb <= 0) return 0n;
-    const total = size * nmemb;
+    const kind = outputStreamKind(stream);
+    if (!kind) return 0n;
     const text = readMemoryUtf8(getMemory(), ptr, total);
-    if (isStderrStream(stream)) {
+    if (kind === "stderr") {
       emitStderr(text);
     } else {
       emitStdout(text);
@@ -625,11 +676,12 @@ function makeStdio(options = {}) {
     return -1n;
   }
 
-  function fread(ptr, size, nmemb, _stream) {
+  function fread(ptr, size, nmemb, stream) {
+    const requested = ioTotalSize(size, nmemb);
+    if (requested === null) return 0n;
+    if (requested === 0) return 0n;
     size = Number(size);
-    nmemb = Number(nmemb);
-    if (size <= 0 || nmemb <= 0) return 0n;
-    const requested = size * nmemb;
+    if (rejectInputStream(stream)) return 0n;
     const out = new Uint8Array(requested);
     let copied = 0;
     while (copied < requested) {
@@ -642,13 +694,15 @@ function makeStdio(options = {}) {
     return BigInt(Math.floor(copied / size));
   }
 
-  function fgetc(_stream) {
+  function fgetc(stream) {
+    if (rejectInputStream(stream)) return -1;
     return readStdinByte();
   }
 
-  function fgets(s, size, _stream) {
+  function fgets(s, size, stream) {
     size = Number(size);
     if (size <= 0) return 0;
+    if (rejectInputStream(stream)) return 0;
     const out = [];
     while (out.length + 1 < size) {
       const ch = readStdinByte();
@@ -695,12 +749,14 @@ function makeStdio(options = {}) {
   }
 
   function fgetwc(stream) {
+    if (rejectInputStream(stream)) return -1;
     return readUtf8CodePoint(stream);
   }
 
   function fgetws(s, n, stream) {
     n = Number(n) | 0;
     if (n <= 0) return 0;
+    if (rejectInputStream(stream)) return 0;
     let count = 0;
     while (count + 1 < n) {
       const wc = fgetwc(stream);
@@ -715,6 +771,8 @@ function makeStdio(options = {}) {
   }
 
   function fputwc(wc, stream) {
+    const kind = outputStreamKind(stream);
+    if (!kind) return -1;
     wc = Number(wc) | 0;
     let text;
     try {
@@ -723,7 +781,7 @@ function makeStdio(options = {}) {
       setErrno(AGC_EINVAL);
       return -1;
     }
-    if (isStderrStream(stream)) {
+    if (kind === "stderr") {
       emitStderr(text);
     } else {
       emitStdout(text);
@@ -732,8 +790,10 @@ function makeStdio(options = {}) {
   }
 
   function fputws(s, stream) {
+    const kind = outputStreamKind(stream);
+    if (!kind) return -1;
     const text = readWCharString(getMemory(), s);
-    if (isStderrStream(stream)) {
+    if (kind === "stderr") {
       emitStderr(text);
     } else {
       emitStdout(text);
@@ -742,6 +802,7 @@ function makeStdio(options = {}) {
   }
 
   function ungetwc(wc, stream) {
+    if (rejectInputStream(stream)) return -1;
     wc = Number(wc) | 0;
     if (wc < 0 || wc > 0x7f) {
       setErrno(AGC_EINVAL);
@@ -750,22 +811,29 @@ function makeStdio(options = {}) {
     return ungetc(wc, stream);
   }
 
-  function fwide(_stream, mode) {
+  function fwide(stream, mode) {
+    if (rejectKnownStream(stream)) return 0;
     mode = Number(mode) | 0;
     if (mode > 0) return 1;
     if (mode < 0) return -1;
     return 0;
   }
 
-  function feof(_stream) {
+  function feof(stream) {
+    if (rejectKnownStream(stream)) return 0;
+    if (!isInputStream(stream)) return 0;
     return stdinEof ? 1 : 0;
   }
 
-  function ferror(_stream) {
+  function ferror(stream) {
+    if (rejectKnownStream(stream)) return 1;
+    if (!isInputStream(stream)) return 0;
     return fileError;
   }
 
-  function clearerr(_stream) {
+  function clearerr(stream) {
+    if (rejectKnownStream(stream)) return;
+    if (!isInputStream(stream)) return;
     stdinEof = false;
     fileError = 0;
   }

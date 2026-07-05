@@ -1,9 +1,23 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き525: WAT minimal stdio stub の成功偽装修正）
+最終更新: 2026-07-05（続き537: JS import `fread` / `fwrite` size validation 補強）
 
 ## 現状
 - 直近の部分確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `make build/libagc_runtime.o` = **green**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `make test-wasm-js-api` = **green**、
+  `git diff --check` = **green**。
+- 以前の直近確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-js-api` = **green**、
+  `git diff --check` = **green**。
+- さらに以前の直近確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `make -j4 build/test_wasm32_backend` = **green**、
@@ -18,7 +32,7 @@
   `./build/test_e2e` = **1186/1186 green**、
   `./build/test_wasm32_object` = **1160/1160 e2e fixture object compile + validate green**、
   `git diff --check` = **green**。
-- 以前の直近確認:
+- さらに前の直近確認:
   `./build/test_wasm32_e2e` = **1158 compiled / 1158 executed green**、
   `./build/ag_c test/fixtures/stdheader/inttypes_strto_ops.c` = **green**、
   `./build/ag_c_wasm test/fixtures/stdheader/inttypes_strto_ops.c` = **green**、
@@ -35,6 +49,208 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き537: **JS import `fread` / `fwrite` size validation 補強**。
+  linked runtime 側の `fread` / `fwrite` は負の size/nmemb や overflow 相当を `EINVAL` に落とす一方、
+  `useStdlib: false` の JS import runtime は `size <= 0` を単なる no-op として扱うだけで、
+  wasm 側から `(unsigned long)-1` のような巨大値が渡った場合の検証が弱かった。
+  `tools/wasm_js_api/agc-runtime-imports.js` に `ioTotalSize()` を追加し、
+  負値・非有限値・安全整数を超える積を `errno=EINVAL` の失敗として扱い、ゼロ長 I/O は従来どおり no-op にした。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `useStdlib: false` basic stdio ケースには、
+  `fwrite("z", 0, 1, invalid_stream)` が errno を汚さないこと、
+  `fwrite(..., (unsigned long)-1, ...)` / `fread(..., (unsigned long)-1, ...)` が `EINVAL` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き536: **linked runtime file buffer partial write の errno 補強**。
+  `tools/wasm_obj_linker/runtime/parts/stdio.c` の `ag_rt_file_write_mem()` は、
+  内部 file buffer (`AG_RT_FILE_BUF_CAP`) が満杯になって partial write した場合に
+  `ferror` は立てていたが、`errno` を設定していなかった。
+  runtime 内リソース不足として `ENOMEM` を設定するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  64KiB を埋めた後の `fputc` / `fwrite` が失敗し、`ENOMEM` と `ferror` が立つ確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き535: **linked runtime `fprintf` unknown stream の errno 補強**。
+  `tools/wasm_obj_linker/runtime/parts/format.c` の formatted output helper は、
+  unknown stream に対して `-1` は返していたが `errno` を設定していなかった。
+  `ag_rt_write_formatted_stream()` の `!ag_rt_input_stream()` 経路に `EBADF` を設定し、
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に `fprintf((FILE *)3, ...)` が
+  `EOF` / `EBADF` になる確認を追加した。
+  `make test-wasm-js-api` で selfhost API wasm の runtime 再コンパイル時に
+  `ag_rt_vscan_consumed()` 内の direct pointer cast が parser の弱い箇所を踏んだため、
+  `ag_rt_ptr()` helper 経由へ寄せる互換修正も入れた。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き534: **JS import `fprintf` の invalid stream 回帰確認追加**。
+  続き527で JS import runtime の output 系 stream validation を実装した際、
+  `fprintf` も `outputStreamKind()` を通すようにしていたが、
+  smoke 側では `fputs` / `fputc` / `fwrite` の invalid stream だけを確認していた。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `useStdlib: false` basic stdio ケースに
+  `fprintf((void *)0, ...)` が `-1` / `EBADF` になる確認を追加し、
+  output 系 helper の適用範囲をテストで固定した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き533: **linked runtime `fscanf` / `getline` の invalid stream errno 補強**。
+  続き531/532で FILE stream 解決を whitelist 化した後、`fscanf` / `getline` 経路を確認した。
+  どちらも `ag_rt_input_stream()` を通るため unknown stream の dereference は避けられていたが、
+  invalid stream / write-only stream の失敗時に `errno` を設定していなかった。
+  `tools/wasm_obj_linker/runtime/parts/format.c` の `ag_rt_vfscan()` と
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `__agc_runtime_getline()` で、
+  invalid stream / read 不可 stream に `EBADF` を設定するよう補強した。
+  `tools/wasm_obj_linker/test_smoke.sh` と `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  `(FILE *)3` の `fscanf` / `getline` と write-only stream の `getline` が `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き532: **linked runtime `fwide` の invalid stream 対応**。
+  続き531で FILE stream 解決を whitelist 化した後、wide stdio 側を見直したところ、
+  `tools/wasm_obj_linker/runtime/parts/wide.c` の `__agc_runtime_fwide()` は stream 引数を完全に無視し、
+  `(FILE *)3` のような unknown stream でも mode だけを見て成功扱いしていた。
+  `fwide` も stdin/stdout/stderr と runtime が発行した実 FILE だけを有効 stream として扱い、
+  unknown stream では `errno=EBADF` を設定して `0` を返すようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `wide_io_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked wide IO ケースに
+  `fwide((FILE *)3, 1)` が `0` / `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き531: **linked runtime FILE stream 解決の whitelist 化**。
+  続き530で stdout/stderr を入力 stream として弾いたが、根本には
+  `ag_rt_input_stream()` が未知の数値を FILE 構造体ポインタとして直接 dereference する設計が残っていた。
+  `tools/wasm_obj_linker/runtime/parts/common.c` の `ag_rt_input_stream()` を whitelist 化し、
+  stdin (`0` / `__stdinp` / `&ag_rt_file_value`) と、runtime が発行した `ag_rt_files[]` の使用中 slot だけを
+  FILE stream として認めるようにした。
+  これにより `(FILE *)3` のような未知 stream は dereference されず、安全に `EBADF` 失敗へ落ちる。
+  併せて `tools/wasm_obj_linker/runtime/parts/stdio.c` で
+  `fflush` / `setvbuf` / `ftell` / `fclose` / `feof` / `ferror` / `clearerr` の invalid stream errno を補強した。
+  `tools/wasm_obj_linker/test_smoke.sh` と `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  unknown stream の `fgetc` / `fread` / `fwrite` / `fflush` / `fclose` / `ftell` / `feof` / `ferror` / `clearerr` が
+  `EBADF` になる確認を追加した。
+  `make test-wasm-js-api` では selfhost API wasm の runtime 再コンパイルで
+  `tools/wasm_obj_linker/runtime/parts/format.c` の `for (long i = ... )` が parser の弱い箇所を踏んだため、
+  変数宣言を loop 外へ出す互換修正も入れた。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き530: **linked runtime の stdout/stderr 入力誤読防止**。
+  続き529で NULL stream 出力を stderr 成功にしていた `ag_rt_is_stderr_stream(0)` を直した後、
+  逆向きに `fgetc(stdout)` / `fread(..., stdout)` のような入力系を確認した。
+  `ag_rt_input_stream()` は `stream_addr` が `1` / `2` の場合でも FILE 構造体ポインタとして
+  low address を読みに行く可能性があり、JS import runtime の read 系 stream validation と同種の浅い実装だった。
+  `tools/wasm_obj_linker/runtime/parts/common.c` の `ag_rt_input_stream()` で
+  stdout/stderr は明示的に入力 stream ではないものとして `0` を返すようにした。
+  さらに `tools/wasm_obj_linker/runtime/parts/stdio.c` の `ag_rt_file_read_char()` で、
+  NULL stream / read 不可 stream の `fgetc` 系単体呼び出しも `errno=EBADF` を設定するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` と `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  `fread(..., stdout)` / `fgetc(stdout)` が `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き529: **linked runtime の NULL stream 出力成功潰し**。
+  続き526-528で JS import runtime の stream validation を整えた後、linked runtime 側を見直したところ、
+  `ag_rt_is_stderr_stream(0)` が true になっていた。
+  そのため `fprintf(NULL, ...)` / `fputs(..., NULL)` / `fputc(..., NULL)` / `fwrite(..., NULL)` などが
+  stderr 出力として成功し得る状態で、`0` を stdin としても使う runtime 内規約とも衝突していた。
+  `tools/wasm_obj_linker/runtime/parts/common.c` の stderr 判定から `0` 特例を外し、
+  NULL stream 出力は stdin/invalid write 経路で `EBADF` 失敗になるようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の古い成功期待
+  `fprintf(0, ...)` / `fputs(..., 0)` / `fputc(..., 0)` / `putc(..., 0)` を
+  `errno=EBADF` 失敗期待へ更新した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error ケースにも
+  NULL stream 出力が `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き528: **JS import state 系 stdio の stream validation 追加**。
+  続き526/527で JS import runtime の read/output 系 stdio に stream validation を入れたが、
+  `fflush` / `fclose` は任意 stream で成功し、`feof` / `ferror` / `clearerr` は任意 stream に対して
+  stdin の状態を返す実装のままだった。
+  `tools/wasm_js_api/agc-runtime-imports.js` に `isKnownStream()` / `rejectKnownStream()` を追加し、
+  stdin/stdout/stderr と引数省略だけを既知 stream として扱うようにした。
+  `fflush` / `fclose` / `fwide` / `feof` / `ferror` / `clearerr` は unknown stream では
+  `errno=EBADF` を設定して失敗またはエラー値を返す。
+  stdout/stderr の `feof` / `ferror` / `clearerr` は標準 stream の no-op/0 として維持した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  `fflush` / `fclose` / `feof` / `ferror` / `clearerr` / `fwide` の unknown stream が
+  `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き527: **JS import output 系 stdio の stream validation 追加**。
+  続き526で `useStdlib: false` の JS import runtime の read 系 stdio に stream validation を入れたが、
+  output 系はまだ `(void *)0` を stderr として扱い、未知 stream も stdout として成功させていた。
+  これは input 側の `0 == stdin` 互換と衝突する上、linked runtime の bad stream 失敗方針ともズレる shallow behavior だった。
+  `tools/wasm_js_api/agc-runtime-imports.js` に `outputStreamKind()` を追加し、
+  output stream は `1` / 省略時を stdout、`2` を stderr、それ以外を `errno=EBADF` の失敗として扱うようにした。
+  `fprintf` / `fputs` / `fputc` / `fwrite` / `fputwc` / `fputws` はこの helper を通す。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` では、
+  `fputs` / `fputc` / `fwrite` / `fputwc` / `fputws` の invalid stream が `EBADF` になり、
+  stderr へ余計な文字を出さないことを確認するよう期待値を更新した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き526: **JS import read 系 stdio の stream validation 追加**。
+  `useStdlib: false` の JS import runtime では、`fread` / `fgetc` / `fgets` / wide read / `ungetc` が
+  stream 引数を見ずに常に stdin buffer を読む実装だった。
+  そのため `(void *)1` など stdout 相当や非入力 stream を渡しても、stdin が残っていれば成功し、
+  linked runtime 側の `EBADF` 方針とズレる浅い挙動になっていた。
+  既存の raw `0` を stdin として使う JS import API と、`getchar()` / `getwchar()` の引数なし呼び出しは維持しつつ、
+  非入力 stream では `errno=EBADF` を設定して失敗する `rejectInputStream()` guard を追加した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  invalid stream の `fread` / `fgetc` / `fgets` / `ungetc` / `fgetwc` / `fgetws` / `ungetwc` が
+  `EBADF` になり、stdin の通常読み取りを消費しないことを確認するテストを追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
 - 続き525: **WAT backend minimal stdio stub の成功偽装修正**。
   `src/arch/wasm32_ir.c` の WAT backend minimal libc stubs では、実ファイル state を持たないにもかかわらず
   `fopen` が常に非 NULL (`1`) を返し、`fread` / `fwrite` も要求 `nmemb` をそのまま成功として返していた。

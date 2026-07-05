@@ -1206,8 +1206,8 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
   char *p;
   int assigned = 0;
   int input_failure = 0;
-  s = (char *)s_addr;
-  fmt = (char *)fmt_addr;
+  s = ag_rt_ptr(s_addr);
+  fmt = ag_rt_ptr(fmt_addr);
   p = s;
   while (*fmt) {
     if (ag_rt_scan_is_space(*fmt)) {
@@ -2049,13 +2049,18 @@ static int ag_rt_vfscan(long stream_addr, char *fmt, va_list ap) {
   long copied = 0;
   long consumed = 0;
   long advance = 0;
+  long i;
   int input_failure = 0;
   int had_ungetc;
   int n;
   static char scan_buf[AG_RT_FILE_BUF_CAP];
-  if (!f) return -1;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (!ag_rt_file_can_read(f)) {
     f->error = 1;
+    ag_rt_set_errno(9);
     return -1;
   }
   src = ag_rt_stream_buf(f);
@@ -2066,7 +2071,7 @@ static int ag_rt_vfscan(long stream_addr, char *fmt, va_list ap) {
   }
   avail = f->pos < len ? len - f->pos : 0;
   if (avail >= AG_RT_FILE_BUF_CAP - copied) avail = AG_RT_FILE_BUF_CAP - copied - 1;
-  for (long i = 0; i < avail; i++) scan_buf[copied + i] = src[f->pos + i];
+  for (i = 0; i < avail; i++) scan_buf[copied + i] = src[f->pos + i];
   copied += avail;
   scan_buf[copied] = 0;
   n = ag_rt_vscan_consumed((long)scan_buf, (long)fmt, ap);
@@ -2141,7 +2146,10 @@ static int ag_rt_write_formatted_stream(long stream_addr, char *buf, int n) {
     ag_rt_stdout_write_mem(buf, len);
   } else {
     struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
-    if (!f) return -1;
+    if (!f) {
+      ag_rt_set_errno(9);
+      return -1;
+    }
     if (ag_rt_file_write_mem(f, buf, len) != len) return -1;
   }
   return n;

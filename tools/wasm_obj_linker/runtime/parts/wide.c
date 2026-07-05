@@ -805,7 +805,11 @@ int __agc_runtime_fputws(long s_addr, long stream_addr) {
 }
 
 int __agc_runtime_fwide(long stream_addr, int mode) {
-  (void)stream_addr;
+  if (stream_addr && !ag_rt_is_stdout_stream(stream_addr) && !ag_rt_is_stderr_stream(stream_addr) &&
+      !ag_rt_input_stream(stream_addr)) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
   if (mode > 0) return 1;
   if (mode < 0) return -1;
   return 0;
