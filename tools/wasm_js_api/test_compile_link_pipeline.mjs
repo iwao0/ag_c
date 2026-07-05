@@ -1761,6 +1761,32 @@ if (jsSnprintfResult !== 42) {
   throw new Error(`JS stdio snprintf/sprintf imports did not format into wasm memory: ${jsSnprintfResult}`);
 }
 
+const jsSnprintfStringSource = `
+int snprintf(char *buf, unsigned long size, const char *fmt, const char *s);
+int main(void) {
+  char a[8];
+  char b[8];
+  char c[8];
+  int n = snprintf(a, sizeof(a), "%5s", "\u3042");
+  int m = snprintf(b, sizeof(b), "%.3s", "\u3042Z");
+  int p = snprintf(c, sizeof(c), "%.3s", (void *)0);
+  if (n != 5 || a[0] != ' ' || a[1] != ' ' || (unsigned char)a[2] != 0xe3 ||
+      (unsigned char)a[3] != 0x81 || (unsigned char)a[4] != 0x82 || a[5] != 0) return 1;
+  if (m != 3 || (unsigned char)b[0] != 0xe3 || (unsigned char)b[1] != 0x81 ||
+      (unsigned char)b[2] != 0x82 || b[3] != 0) return 2;
+  if (p != 3 || c[0] != '(' || c[1] != 'n' || c[2] != 'u' || c[3] != 0) return 3;
+  return 42;
+}
+`;
+const jsSnprintfString = await toolchain.instantiateLinkedWasm(jsSnprintfStringSource, {
+  exports: ["main"],
+  useStdlib: false,
+});
+const jsSnprintfStringResult = jsSnprintfString.instance.exports.main();
+if (jsSnprintfStringResult !== 42) {
+  throw new Error(`JS stdio snprintf string width/precision imports failed: ${jsSnprintfStringResult}`);
+}
+
 const linkedFloatFormatSource = await inlineStandardIncludes(`#include <stdio.h>
 static int zeros(char *s, int first, int last) {
   int i;
@@ -2195,6 +2221,8 @@ if (linkedMathClassResult !== 42) {
 }
 
 const jsBasicStdioSource = `
+int printf(const char *fmt, ...);
+int puts(const char *s);
 int fputs(const char *s, void *stream);
 int fputc(int c, void *stream);
 int fprintf(void *stream, const char *fmt, ...);
@@ -2248,6 +2276,10 @@ int main(void) {
   if (fread(buf, (unsigned long)-1, 1, (void *)0) != 0 || errno != EINVAL) return 27;
   errno = 0;
   if (fread(buf, (unsigned long)-1, 1, (void *)1) != 0 || errno != EBADF) return 34;
+  if (printf("\u3042") != 3) return 35;
+  if (fputs("\u3042", (void *)1) != 3) return 36;
+  if (puts("\u3042") != 4) return 37;
+  if (fprintf((void *)2, "\u3042") != 3) return 38;
   if (write(1, "W", 1) != 1) return 11;
   if (write(2, "e", 1) != 1) return 12;
   errno = 0;
@@ -2287,9 +2319,146 @@ const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
   onStderr: (chunk) => { jsBasicStderr += chunk; },
 });
 const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
-if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDW" || jsBasicStderr !== "ER!ejs: error\n") {
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDあああ\nW" || jsBasicStderr !== "ER!あejs: error\n") {
   throw new Error(
     `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
+  );
+}
+
+const jsPrintfStringSource = `
+int printf(const char *fmt, const char *s);
+int main(void) {
+  if (printf("%5s", "\u3042") != 5) return 1;
+  if (printf("%.3s", "\u3042Z") != 3) return 2;
+  if (printf("%s", (void *)0) != 6) return 3;
+  if (printf("%.3s", (void *)0) != 3) return 4;
+  return 42;
+}
+`;
+let jsPrintfStringStdout = "";
+const jsPrintfString = await toolchain.instantiateLinkedWasm(jsPrintfStringSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsPrintfStringStdout += chunk; },
+});
+const jsPrintfStringResult = jsPrintfString.instance.exports.main();
+if (jsPrintfStringResult !== 42 || jsPrintfStringStdout !== "  ああ(null)(nu") {
+  throw new Error(
+    `JS printf string width/precision import failed: result=${jsPrintfStringResult}, stdout=${JSON.stringify(jsPrintfStringStdout)}`,
+  );
+}
+
+const jsPrintfLongIntegerSource = `
+int printf(const char *fmt, long a, unsigned long b, unsigned long c);
+int main(void) {
+  long a = (1L << 32) + 42;
+  unsigned long b = (1UL << 32) + 15;
+  if (printf("%ld:%lu:%lx", a, b, b) != 31) return 1;
+  return 42;
+}
+`;
+let jsPrintfLongIntegerStdout = "";
+const jsPrintfLongInteger = await toolchain.instantiateLinkedWasm(jsPrintfLongIntegerSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsPrintfLongIntegerStdout += chunk; },
+});
+const jsPrintfLongIntegerResult = jsPrintfLongInteger.instance.exports.main();
+if (jsPrintfLongIntegerResult !== 42 || jsPrintfLongIntegerStdout !== "4294967338:4294967311:10000000f") {
+  throw new Error(
+    `JS printf long integer import failed: result=${jsPrintfLongIntegerResult}, stdout=${JSON.stringify(jsPrintfLongIntegerStdout)}`,
+  );
+}
+
+const jsPrintfIntegerPrecisionSource = `
+int printf(const char *fmt, int a, int b, int c, int d, int e, int f, int g);
+int main(void) {
+  if (printf("%+.3d:% .3d:%.0d:%#.0o:%#.4x:%05.3d:%#.5o", 42, 7, 0, 0, 15, 7, 9) != 31) return 1;
+  return 42;
+}
+`;
+let jsPrintfIntegerPrecisionStdout = "";
+const jsPrintfIntegerPrecision = await toolchain.instantiateLinkedWasm(jsPrintfIntegerPrecisionSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsPrintfIntegerPrecisionStdout += chunk; },
+});
+const jsPrintfIntegerPrecisionResult = jsPrintfIntegerPrecision.instance.exports.main();
+if (jsPrintfIntegerPrecisionResult !== 42 || jsPrintfIntegerPrecisionStdout !== "+042: 007::0:0x000f:  007:00011") {
+  throw new Error(
+    `JS printf integer precision import failed: result=${jsPrintfIntegerPrecisionResult}, stdout=${JSON.stringify(jsPrintfIntegerPrecisionStdout)}`,
+  );
+}
+
+const jsPrintfZeroPadPrefixSource = `
+int printf(const char *fmt, int a, int b, int c, int d);
+int main(void) {
+  if (printf("%#08x:%#08X:%+05d:% 05d", 15, 15, 7, 7) != 29) return 1;
+  return 42;
+}
+`;
+let jsPrintfZeroPadPrefixStdout = "";
+const jsPrintfZeroPadPrefix = await toolchain.instantiateLinkedWasm(jsPrintfZeroPadPrefixSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsPrintfZeroPadPrefixStdout += chunk; },
+});
+const jsPrintfZeroPadPrefixResult = jsPrintfZeroPadPrefix.instance.exports.main();
+if (jsPrintfZeroPadPrefixResult !== 42 || jsPrintfZeroPadPrefixStdout !== "0x00000f:0X00000F:+0007: 0007") {
+  throw new Error(
+    `JS printf zero-pad prefix import failed: result=${jsPrintfZeroPadPrefixResult}, stdout=${JSON.stringify(jsPrintfZeroPadPrefixStdout)}`,
+  );
+}
+
+const jsPrintfPointerSource = `
+int printf(const char *fmt, unsigned long p);
+int main(void) {
+  unsigned long p = (1UL << 32) + 0x1234UL;
+  if (printf("%p", p) != 11) return 1;
+  return 42;
+}
+`;
+let jsPrintfPointerStdout = "";
+const jsPrintfPointer = await toolchain.instantiateLinkedWasm(jsPrintfPointerSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsPrintfPointerStdout += chunk; },
+});
+const jsPrintfPointerResult = jsPrintfPointer.instance.exports.main();
+if (jsPrintfPointerResult !== 42 || jsPrintfPointerStdout !== "0x100001234") {
+  throw new Error(
+    `JS printf pointer import failed: result=${jsPrintfPointerResult}, stdout=${JSON.stringify(jsPrintfPointerStdout)}`,
+  );
+}
+
+const jsPrintfCountStoreSource = `
+int printf(const char *fmt, int *a, long *b, signed char *c, short *d);
+int main(void) {
+  int a = -1;
+  long b = -1;
+  signed char c = -1;
+  short d = -1;
+  if (printf("A%n\u3042%lnB%hhnC%hn", &a, &b, &c, &d) != 6) return 1;
+  if (a != 1 || b != 4 || c != 5 || d != 6) return 2;
+  return 42;
+}
+`;
+let jsPrintfCountStoreStdout = "";
+const jsPrintfCountStore = await toolchain.instantiateLinkedWasm(jsPrintfCountStoreSource, {
+  exports: ["main"],
+  useStdlib: false,
+}, {
+  onStdout: (chunk) => { jsPrintfCountStoreStdout += chunk; },
+});
+const jsPrintfCountStoreResult = jsPrintfCountStore.instance.exports.main();
+if (jsPrintfCountStoreResult !== 42 || jsPrintfCountStoreStdout !== "AあBC") {
+  throw new Error(
+    `JS printf count-store import failed: result=${jsPrintfCountStoreResult}, stdout=${JSON.stringify(jsPrintfCountStoreStdout)}`,
   );
 }
 

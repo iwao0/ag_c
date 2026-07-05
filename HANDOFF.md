@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き565: JS import stdio errno/error同期）
+最終更新: 2026-07-05（続き566: JS import stdio UTF-8 byte count同期）
 
 ## 現状
 - 直近の部分確認:
@@ -57,6 +57,66 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き566: **JS import stdio UTF-8出力戻り値のbyte count同期**。
+  `useStdlib:false` の JS import stdio は `printf()` / `fprintf()` / `puts()` / `fputs()` で
+  出力 text を JS string として扱い、戻り値も `String.length` になっていた。
+  そのため narrow string の `"\u3042"` のように C 側では UTF-8 3 byte の文字が、JS import runtime では
+  1 文字として返り、linked runtime の `__agc_runtime_strlen()` / byte write 系戻り値とズレる浅い挙動だった。
+  `emitStdout()` / `emitStderr()` は出力 text を従来通り JS callback へ渡しつつ、戻り値だけ
+  `TextEncoder` の UTF-8 byte length に変更した。`write()` / `fwrite()` は入力 byte count を返す既存経路なので
+  そのまま。
+  さらに同じ byte count の観点で、JS import の簡易 `formatPrintf()` が `%s` の precision と width を
+  JS string 文字数で処理していた箇所も同期した。linked runtime は `ag_rt_strn_len()` /
+  `ag_rt_write_str_n()` で narrow string の byte 数を使うため、JS import 側も `%s` precision では
+  C string を指定 byte 数まで読み、padding 幅は UTF-8 byte length で計算するようにした。
+  同じ `%s` 経路で、linked runtime は NULL string を `"(null)"` として扱うが、JS import 側は
+  `readCString(NULL)` 由来で空文字にしていたため、`formatStringArg()` を追加して NULL も
+  `"(null)"` として扱い、precision もその文字列に適用するようにした。
+  さらに `formatPrintf()` は `l` / `ll` / `z` / `t` / `j` などの整数長さ修飾子を parse していたが、
+  実際の整数変換では常に 32bit (`|0` / `>>>0`) に潰していた。linked runtime 側は `long` /
+  `unsigned long` を読むため、JS import 側にも `BigInt` を保持した整数変換 helper を追加し、
+  `%ld` / `%lu` / `%lx` などが 64bit 値を 32bit に切り詰めないようにした。
+  さらに整数 precision / sign / alternate flag も linked runtime に寄せた。従来の JS import は
+  `%.3d` や `%#.4x` を通常の整数文字列として扱っており、`%.0d` の 0 も空にならず、
+  precision 指定時に `0` padding を無効化する規則も無かった。signed / unsigned helper を分け、
+  `+` / space sign、`#` octal/hex prefix、precision zero-fill、`%.0d` zero suppression をまとめて
+  適用するようにした。
+  続けて、precision が無い `0` padding でも prefix/sign の位置が linked runtime とズレていたため、
+  `padFormatted()` を prefix-aware にした。`%#08x` / `%#08X` は `0x` / `0X` の後ろに zero padding を入れ、
+  `%+05d` / `% 05d` も sign / space sign の後ろに zero padding を入れる。
+  `%p` も `Number(value) >>> 0` で 32bit 化していたため、`formatPointer()` を追加して
+  `BigInt` の 64bit unsigned 値を保持したまま `0x...` を出すようにした。
+  さらに linked runtime が持つ `%n` count store も JS import では未対応で、従来は `%n` が
+  そのまま文字列として残っていた。`formatPrintf()` が置換済み出力の UTF-8 byte 数を追跡し、
+  `%n` / `%ln` / `%hhn` / `%hn` で int / long / signed char / short へ count を保存するようにした。
+  `%#o` と precision の組み合わせも追加確認し、alternate prefix の有無は precision 適用前の桁数で
+  判断するようにした。これにより `%#.0o` の 0 は `0` のまま、`%#.5o` の 9 は余計な prefix なしの
+  `00011` になる。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の basic stdio import smoke には、
+  `printf("\u3042")` / `fputs("\u3042", stdout)` / `fprintf(stderr, "\u3042")` が 3、
+  `puts("\u3042")` が newline 込みで 4 を返す確認を追加した。
+  追加で `printf("%5s", "\u3042")` が 2 space + UTF-8 3 byte で戻り値 5、
+  `printf("%.3s", "\u3042Z")` が `\u3042` だけを出して戻り値 3 になる確認を
+  固定 import signature の別 smoke に分けて追加した。`snprintf()` 経路にも同じ `%s` width/precision
+  のメモリ出力確認を追加している。さらに `printf("%s", NULL)` が `"(null)"` / 戻り値 6、
+  `printf("%.3s", NULL)` と `snprintf(..., "%.3s", NULL)` が `"(nu"` / 戻り値 3 になることも確認した。
+  整数長さ修飾子については、`printf("%ld:%lu:%lx", (1L<<32)+42, (1UL<<32)+15, ...)` が
+  `4294967338:4294967311:10000000f` を出し、戻り値 31 になる JS import smoke を追加した。
+  整数 precision / flag については
+  `printf("%+.3d:% .3d:%.0d:%#.0o:%#.4x:%05.3d:%#.5o", 42, 7, 0, 0, 15, 7, 9)` が
+  `+042: 007::0:0x000f:  007:00011` / 戻り値 31 になる確認を追加した。
+  zero padding と prefix/sign の順序については
+  `printf("%#08x:%#08X:%+05d:% 05d", 15, 15, 7, 7)` が
+  `0x00000f:0X00000F:+0007: 0007` / 戻り値 29 になる確認を追加した。
+  pointer については `printf("%p", (1UL<<32)+0x1234)` が `0x100001234` / 戻り値 11 になる
+  JS import smoke を追加した。
+  `%n` については `printf("A%n\u3042%lnB%hhnC%hn", ...)` が `A\u3042BC` / 戻り値 6 を出し、
+  それぞれ 1 / 4 / 5 / 6 byte count を保存する確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`。
 - 続き565: **JS import stdio `fopen` / `write` / `ungetc` errno/error同期**。
   続き562-564で linked stdlib runtime 側の長すぎる path を `ENAMETOOLONG` に揃えたが、
   `useStdlib: false` の JS import runtime (`tools/wasm_js_api/agc-runtime-imports.js`) は

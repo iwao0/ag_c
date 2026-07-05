@@ -344,6 +344,27 @@ function writeMemoryI32(memory, ptr, value) {
   return true;
 }
 
+function writeMemoryI16(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 1 >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setInt16(ptr, Number(value) | 0, true);
+  return true;
+}
+
+function writeMemoryI8(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setInt8(ptr, Number(value) | 0);
+  return true;
+}
+
+function writeMemoryI64(memory, ptr, value) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 7 >= memory.buffer.byteLength) return false;
+  new DataView(memory.buffer).setBigInt64(ptr, BigInt(value), true);
+  return true;
+}
+
 function readMemoryI32(memory, ptr) {
   ptr = Number(ptr) >>> 0;
   if (!memory || !memory.buffer || ptr + 3 >= memory.buffer.byteLength) return 0;
@@ -364,24 +385,125 @@ function writeMemoryF64(memory, ptr, value) {
   return true;
 }
 
+function utf8ByteLength(text) {
+  return utf8Encoder.encode(String(text)).length;
+}
+
 function padFormatted(text, flags, width, numeric = false) {
-  if (width <= text.length) return text;
+  const len = utf8ByteLength(text);
+  if (width <= len) return text;
   const leftAlign = flags.includes("-");
   const padChar = numeric && flags.includes("0") && !leftAlign ? "0" : " ";
-  const padding = padChar.repeat(width - text.length);
+  const padding = padChar.repeat(width - len);
   if (leftAlign) return text + padding;
   if (padChar === "0" && (text.startsWith("-") || text.startsWith("+"))) {
     return text[0] + padding + text.slice(1);
   }
+  if (padChar === "0" && text.startsWith(" ")) {
+    return text[0] + padding + text.slice(1);
+  }
+  if (padChar === "0" && (text.startsWith("0x") || text.startsWith("0X"))) {
+    return text.slice(0, 2) + padding + text.slice(2);
+  }
   return padding + text;
+}
+
+function formatStringArg(memory, ptr, precision) {
+  if (!Number(ptr)) {
+    const text = "(null)";
+    return precision >= 0 ? text.slice(0, precision) : text;
+  }
+  return readCString(memory, ptr, precision >= 0 ? precision : 1024 * 1024);
+}
+
+function integerBitsForLength(length) {
+  if (length === "hh") return 8n;
+  if (length === "h") return 16n;
+  if (length === "l" || length === "ll" || length === "z" || length === "t" || length === "j") return 64n;
+  return 32n;
+}
+
+function valueToBigInt(value) {
+  if (typeof value === "bigint") return value;
+  return BigInt(Number(value) | 0);
+}
+
+function precisionFlags(flags, precision) {
+  return precision >= 0 ? flags.replace(/0/g, "") : flags;
+}
+
+function zeroPadIntegerDigits(digits, precision) {
+  if (precision <= digits.length) return digits;
+  return "0".repeat(precision - digits.length) + digits;
+}
+
+function signedIntegerValue(value, length) {
+  const bits = integerBitsForLength(length);
+  const mod = 1n << bits;
+  const sign = 1n << (bits - 1n);
+  let v = valueToBigInt(value) & (mod - 1n);
+  if ((v & sign) !== 0n) v -= mod;
+  return v;
+}
+
+function unsignedIntegerValue(value, length) {
+  const bits = integerBitsForLength(length);
+  const mod = 1n << bits;
+  return valueToBigInt(value) & (mod - 1n);
+}
+
+function formatSignedInteger(value, length, precision, flags) {
+  const v = signedIntegerValue(value, length);
+  const negative = v < 0n;
+  const magnitude = negative ? -v : v;
+  let digits = precision === 0 && magnitude === 0n ? "" : magnitude.toString(10);
+  digits = zeroPadIntegerDigits(digits, precision);
+  if (negative) return `-${digits}`;
+  if (flags.includes("+")) return `+${digits}`;
+  if (flags.includes(" ")) return ` ${digits}`;
+  return digits;
+}
+
+function formatUnsignedInteger(value, length, base, upper, precision, flags) {
+  const v = unsignedIntegerValue(value, length);
+  let digits = precision === 0 && v === 0n ? "" : v.toString(base);
+  if (upper) digits = digits.toUpperCase();
+  const rawDigitLength = digits.length;
+  digits = zeroPadIntegerDigits(digits, precision);
+  if (flags.includes("#") && base === 16 && v !== 0n) return `${upper ? "0X" : "0x"}${digits}`;
+  if (flags.includes("#") && base === 8 &&
+      ((v === 0n && precision === 0) || (v !== 0n && (precision < 0 || precision <= rawDigitLength)))) {
+    return `0${digits}`;
+  }
+  return digits;
+}
+
+function formatPointer(value) {
+  return `0x${(valueToBigInt(value) & ((1n << 64n) - 1n)).toString(16)}`;
+}
+
+function storeFormatCount(memory, ptr, length, count) {
+  if (length === "hh") return writeMemoryI8(memory, ptr, count);
+  if (length === "h") return writeMemoryI16(memory, ptr, count);
+  if (length === "l" || length === "ll" || length === "z" || length === "t" || length === "j") {
+    return writeMemoryI64(memory, ptr, BigInt(count));
+  }
+  return writeMemoryI32(memory, ptr, count);
 }
 
 function formatPrintf(memory, fmtPtr, args) {
   const fmt = readCString(memory, fmtPtr);
   let argIndex = 0;
-  return fmt.replace(/%([-+ #0]*)(\d+|\*)?(\.(\d+|\*))?(hh|h|ll|l|L|z|t|j)?([%csdiuoxXfFeEgGaAp])/g,
-    (match, flags, widthToken, precisionMatch, precisionValue, _length, spec) => {
-      if (spec === "%") return "%";
+  let lastEnd = 0;
+  let outputByteCount = 0;
+  return fmt.replace(/%([-+ #0]*)(\d+|\*)?(\.(\d+|\*))?(hh|h|ll|l|L|z|t|j)?([%csdiuoxXfFeEgGaApn])/g,
+    (match, flags, widthToken, precisionMatch, precisionValue, length, spec, offset) => {
+      outputByteCount += utf8ByteLength(fmt.slice(lastEnd, offset));
+      lastEnd = offset + match.length;
+      if (spec === "%") {
+        outputByteCount += 1;
+        return "%";
+      }
       let width = 0;
       if (widthToken === "*") {
         width = Number(args[argIndex++]) | 0;
@@ -407,30 +529,35 @@ function formatPrintf(memory, fmtPtr, args) {
       let numeric = false;
       switch (spec) {
         case "s":
-          text = readCString(memory, value);
-          if (precision >= 0) text = text.slice(0, precision);
-          return padFormatted(text, flags, width);
+          text = formatStringArg(memory, value, precision);
+          break;
         case "c":
-          return padFormatted(String.fromCodePoint(Number(value) & 0xff), flags, width);
+          text = String.fromCodePoint(Number(value) & 0xff);
+          break;
         case "d":
         case "i":
-          text = String(Number(value) | 0);
+          text = formatSignedInteger(value, length, precision, flags);
+          flags = precisionFlags(flags, precision);
           numeric = true;
           break;
         case "u":
-          text = String(Number(value) >>> 0);
+          text = formatUnsignedInteger(value, length, 10, false, precision, flags);
+          flags = precisionFlags(flags, precision);
           numeric = true;
           break;
         case "o":
-          text = (Number(value) >>> 0).toString(8);
+          text = formatUnsignedInteger(value, length, 8, false, precision, flags);
+          flags = precisionFlags(flags, precision);
           numeric = true;
           break;
         case "x":
-          text = (Number(value) >>> 0).toString(16);
+          text = formatUnsignedInteger(value, length, 16, false, precision, flags);
+          flags = precisionFlags(flags, precision);
           numeric = true;
           break;
         case "X":
-          text = (Number(value) >>> 0).toString(16).toUpperCase();
+          text = formatUnsignedInteger(value, length, 16, true, precision, flags);
+          flags = precisionFlags(flags, precision);
           numeric = true;
           break;
         case "f":
@@ -456,12 +583,17 @@ function formatPrintf(memory, fmtPtr, args) {
           numeric = true;
           break;
         case "p":
-          text = `0x${(Number(value) >>> 0).toString(16)}`;
+          text = formatPointer(value);
           break;
+        case "n":
+          storeFormatCount(memory, value, length, outputByteCount);
+          return "";
         default:
           return match;
       }
-      return padFormatted(text, flags, width, numeric);
+      text = padFormatted(text, flags, width, numeric);
+      outputByteCount += utf8ByteLength(text);
+      return text;
     });
 }
 
@@ -479,13 +611,15 @@ function makeStdio(options = {}) {
   const strerrorMessage = (value) => Number(value) === 0 ? "no error" : "error";
 
   function emitStdout(text) {
-    writeStdout(String(text));
-    return String(text).length;
+    text = String(text);
+    writeStdout(text);
+    return utf8Encoder.encode(text).length;
   }
 
   function emitStderr(text) {
-    writeStderr(String(text));
-    return String(text).length;
+    text = String(text);
+    writeStderr(text);
+    return utf8Encoder.encode(text).length;
   }
 
   function outputStreamKind(stream) {
