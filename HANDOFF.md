@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き632: typedef 経由 void* function pointer 戻り型を補強）
+最終更新: 2026-07-06（続き635: WAT standalone setjmp/longjmp minimal stub gap を解消）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
-  **1184 compiled, 1184 executed**、
+  **1187 compiled, 1187 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -37,6 +37,49 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き635: **WAT standalone `setjmp()` / `longjmp()` の minimal stub gap を解消**。
+  `include/setjmp.h` と linked runtime / linker rewrite には `setjmp` / `longjmp` があったが、
+  WAT standalone の public stub table と `emit_minimal_libc_stubs()` には入っていなかった。
+  linked runtime 側と同じ方針で、`setjmp()` は現状の minimal semantics として 0 を返し、
+  `longjmp()` は非局所ジャンプ未サポートの trap 終端として `unreachable` stub にした。
+  `jmp_buf` 引数は WAT 呼び出し側が `i64` で渡すため、stub signature も `i64` に合わせた。
+  function pointer table 参照でも落ちないよう `has_minimal_libc_stub_function()` の table にも同じ 2 symbol を追加した。
+  回帰は WAT 専用の `test/fixtures/wasm32/setjmp_stub_ops.c` として追加し、
+  直接呼び出しと `int (*)(jmp_buf)` 経由の `setjmp()` 参照、`longjmp()` function pointer 参照を確認する。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1187 compiled, 1187 executed`、
+  `make -j4 build/test_parser build/test_e2e` + `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き634: **WAT standalone `exit()` / `_Exit()` / `abort()` / `quick_exit()` の function pointer 参照 gap を解消**。
+  `include/stdlib.h` と linked runtime / linker rewrite には termination family が揃っていたが、
+  WAT standalone の public stub table と `emit_minimal_libc_stubs()` には入っておらず、
+  関数ポインタとして参照すると external function pointer / undefined import になり得た。
+  standalone WAT には終了状態をホストへ通知する runtime channel がないため、
+  `exit()` / `_Exit()` / `quick_exit()` / `abort()` は linked runtime の trap 終端に合わせた
+  `unreachable` stub として追加した。function pointer table 参照でも落ちないよう
+  `has_minimal_libc_stub_function()` の table にも同じ 4 symbol を追加した。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdlib_exit_funcptr_ops.c` として追加し、
+  local/global の function pointer 参照を確認する。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1186 compiled, 1186 executed`、
+  `make -j4 build/test_parser build/test_e2e` + `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き633: **WAT standalone `nan()` / `nanf()` / `nanl()` の undefined import gap を解消**。
+  `include/math.h` と linked runtime / linker rewrite には `nan` family が揃っていたが、
+  WAT standalone の public stub table と `emit_minimal_libc_stubs()` には入っておらず、
+  standalone WAT で関数APIとして参照すると undefined import になり得た。
+  `src/arch/wasm32_ir.c` に `nan()` / `nanf()` / `nanl()` を追加し、
+  `nan()` / `nanl()` は `f64` NaN、`nanf()` は `f32` NaN を返す minimal semantics とした。
+  function pointer 参照でも落ちないよう `has_minimal_libc_stub_function()` の table にも同じ 3 symbol を追加した。
+  回帰は WAT 専用の `test/fixtures/wasm32/math_nan_ops.c` として追加し、
+  直接呼び出しと `double (*)(const char *)` 経由の `nan()` 呼び出しを確認する。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1185 compiled, 1185 executed`、
+  `make -j4 build/test_parser build/test_e2e` + `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
 - 続き632: **typedef 経由の `void *(*fn)(...)` function pointer 戻り型メタデータを補強**。
   続き631 の回帰を local 直書きだけでなく typedef / global / parameter /
   function-returning-function-pointer 経路へ広げたところ、`typedef void *(*move_fn_t)(...)` の

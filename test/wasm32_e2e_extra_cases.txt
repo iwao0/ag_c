@@ -575,10 +575,13 @@ probes_found_bugs/anon_union_promoted_array_designator.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/math_classify_compare_ops.c
 wasm32/math_fdim_fma_frexp_ops.c
+wasm32/math_nan_ops.c
 wasm32/signal_ign_ops.c
+wasm32/setjmp_stub_ops.c
 wasm32/string_coll_xfrm_ops.c
 wasm32/stdlib_alloc_abs_ops.c
 wasm32/stdlib_div_ops.c
+wasm32/stdlib_exit_funcptr_ops.c
 wasm32/stdlib_multibyte_ops.c
 wasm32/stdio_file_state_ops.c
 wasm32/stdio_output_ops.c

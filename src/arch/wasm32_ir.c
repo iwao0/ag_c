@@ -301,16 +301,16 @@ static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_ty
 static int has_minimal_libc_stub_function(char *name, int name_len) {
   static const char *stub_names[] = {
       "__assert_rtn",
-      "abs", "acos", "acosf", "acosh", "acoshf", "acoshl", "acosl",
+      "_Exit", "abs", "acos", "acosf", "acosh", "acoshf", "acoshl", "acosl",
       "aligned_alloc", "asctime", "asin", "asinf", "asinh", "asinhf", "asinhl",
-      "asinl", "at_quick_exit", "atan", "atan2", "atan2f", "atan2l", "atanf",
+      "asinl", "abort", "at_quick_exit", "atan", "atan2", "atan2f", "atan2l", "atanf",
       "atanh", "atanhf", "atanhl", "atanl", "atexit", "atof", "atoi", "atol",
       "atoll", "bsearch", "btowc", "c16rtomb", "c32rtomb", "calloc", "cbrt",
       "cbrtf", "cbrtl", "ceil", "ceilf", "ceill", "clearerr", "clock",
       "copysign", "copysignf", "copysignl", "cos", "cosf", "cosh", "coshf",
       "coshl", "cosl", "ctime", "difftime", "div", "erf", "erfc", "erfcf",
       "erfcl", "erff", "erfl", "exp", "exp2", "exp2f", "exp2l", "expf",
-      "expl", "expm1", "expm1f", "expm1l", "fabs", "fabsf", "fabsl", "fclose",
+      "expl", "expm1", "expm1f", "expm1l", "exit", "fabs", "fabsf", "fabsl", "fclose",
       "fdim", "fdimf", "fdiml", "fdopen", "feclearexcept", "fegetenv",
       "fegetexceptflag", "fegetround", "feholdexcept", "feof", "feraiseexcept",
       "ferror", "fesetenv", "fesetexceptflag", "fesetround", "fetestexcept",
@@ -330,18 +330,18 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
       "iswspace", "iswupper", "iswxdigit", "isxdigit", "labs", "ldexp",
       "ldexpf", "ldexpl", "ldiv", "llabs", "lldiv", "llrint", "llrintf",
       "llrintl", "llround", "llroundf", "llroundl", "localeconv", "localtime",
-      "log", "log10", "log10f", "log10l", "log1p", "log1pf", "log1pl", "log2",
+      "longjmp", "log", "log10", "log10f", "log10l", "log1p", "log1pf", "log1pl", "log2",
       "log2f", "log2l", "logb", "logbf", "logbl", "logf", "logl", "lrint",
       "lrintf", "lrintl", "lround", "lroundf", "lroundl", "malloc", "mblen",
       "mbrlen", "mbrtoc16", "mbrtoc32", "mbrtowc", "mbsinit", "mbsrtowcs",
       "mbstowcs", "mbtowc", "memchr", "memcmp", "memcpy", "memmove", "memset",
-      "mktime", "modf", "modff", "modfl", "nearbyint", "nearbyintf",
-      "nearbyintl", "perror", "pow", "powf", "powl", "printf", "putc",
+      "mktime", "modf", "modff", "modfl", "nan", "nanf", "nanl",
+      "nearbyint", "nearbyintf", "nearbyintl", "perror", "pow", "powf", "powl", "printf", "putc",
       "putchar", "puts", "putwc", "putwchar", "qsort", "raise", "rand",
-      "realloc", "realpath", "remainder", "remainderf", "remainderl", "remove",
+      "quick_exit", "realloc", "realpath", "remainder", "remainderf", "remainderl", "remove",
       "remquo", "remquof", "remquol", "rename", "rewind", "rint", "rintf",
       "rintl", "round", "roundf", "roundl", "scalbln", "scalblnf", "scalblnl",
-      "scalbn", "scalbnf", "scalbnl", "scanf", "setbuf", "setlocale",
+      "scalbn", "scalbnf", "scalbnl", "scanf", "setbuf", "setjmp", "setlocale",
       "setvbuf", "signal", "signbit", "sin", "sinf", "sinh", "sinhf", "sinhl",
       "sinl", "snprintf", "sprintf", "sqrt", "sqrtf", "sqrtl", "srand",
       "sscanf", "strcat", "strchr", "strcmp", "strcoll", "strcpy", "strcspn",
@@ -3987,6 +3987,24 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("__assert_rtn", 12)) {
     wasm_emitf(2, "(func $__assert_rtn (param i32 i32 i32 i32) (unreachable))\n");
   }
+  if (has_undefined_function("exit", 4)) {
+    wasm_emitf(2, "(func $exit (param $status i64) (unreachable))\n");
+  }
+  if (has_undefined_function("_Exit", 5)) {
+    wasm_emitf(2, "(func $_Exit (param $status i64) (unreachable))\n");
+  }
+  if (has_undefined_function("quick_exit", 10)) {
+    wasm_emitf(2, "(func $quick_exit (param $status i64) (unreachable))\n");
+  }
+  if (has_undefined_function("abort", 5)) {
+    wasm_emitf(2, "(func $abort (unreachable))\n");
+  }
+  if (has_undefined_function("setjmp", 6)) {
+    wasm_emitf(2, "(func $setjmp (param $env i64) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("longjmp", 7)) {
+    wasm_emitf(2, "(func $longjmp (param $env i64) (param $val i64) (unreachable))\n");
+  }
   int needs_format_dec_helper =
       has_undefined_function("snprintf", 8) || has_undefined_function("sprintf", 7);
   int need_rounding_mode_helper =
@@ -7192,6 +7210,19 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (has_undefined_function("copysignl", 9)) {
     wasm_emitf(2, "(func $copysignl (param $x f64) (param $y f64) (result f64) (f64.copysign (local.get $x) (local.get $y)))\n");
+  }
+  if (has_undefined_function("nan", 3) || has_undefined_function("nanl", 4)) {
+    wasm_emitf(2, "(func $nan (param $tagp i32) (result f64)\n");
+    wasm_emitf(4, "(f64.div (f64.const 0) (f64.const 0))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("nanf", 4)) {
+    wasm_emitf(2, "(func $nanf (param $tagp i32) (result f32)\n");
+    wasm_emitf(4, "(f32.div (f32.const 0) (f32.const 0))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("nanl", 4)) {
+    wasm_emitf(2, "(func $nanl (param $tagp i32) (result f64) (call $nan (local.get $tagp)))\n");
   }
   if (has_undefined_function("erf", 3) || has_undefined_function("erff", 4) ||
       has_undefined_function("erfl", 4)) {
