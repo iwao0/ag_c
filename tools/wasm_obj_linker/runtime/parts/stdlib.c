@@ -700,6 +700,16 @@ static long ag_rt_time_days_before_month(int year, int month) {
   return days;
 }
 
+static long ag_rt_time_days_before_year(int year) {
+  long days = 0;
+  if (year >= 1970) {
+    for (int y = 1970; y < year; y++) days = days + ag_rt_time_days_in_year(y);
+  } else {
+    for (int y = year; y < 1970; y++) days = days - ag_rt_time_days_in_year(y);
+  }
+  return days;
+}
+
 static char *ag_rt_time_wday_name(int wday) {
   if (wday == 0) return "Sun";
   if (wday == 1) return "Mon";
@@ -806,11 +816,7 @@ static long ag_rt_time_to_seconds(struct ag_rt_tm *tm) {
     mon = mon - 12;
     year++;
   }
-  if (year >= 1970) {
-    for (int y = 1970; y < year; y++) days = days + ag_rt_time_days_in_year(y);
-  } else {
-    for (int y = year; y < 1970; y++) days = days - ag_rt_time_days_in_year(y);
-  }
+  days = ag_rt_time_days_before_year(year);
   days = days + ag_rt_time_days_before_month(year, mon) + tm->tm_mday - 1;
   return days * 86400 + (long)tm->tm_hour * 3600 + (long)tm->tm_min * 60 + tm->tm_sec;
 }
@@ -938,22 +944,101 @@ static int ag_rt_strftime_put_num(char *dst, long maxsize, long *pos, long value
   return ag_rt_strftime_put_num_pad(dst, maxsize, pos, value, width, '0');
 }
 
+static int ag_rt_time_week_sunday(struct ag_rt_tm *tm) {
+  return (tm->tm_yday + 7 - tm->tm_wday) / 7;
+}
+
+static int ag_rt_time_week_monday(struct ag_rt_tm *tm) {
+  int monday_index = (tm->tm_wday + 6) % 7;
+  return (tm->tm_yday + 7 - monday_index) / 7;
+}
+
+static int ag_rt_time_wday_for_year_start(int year) {
+  int wday = (int)((4 + ag_rt_time_days_before_year(year)) % 7);
+  if (wday < 0) wday += 7;
+  return wday;
+}
+
+static int ag_rt_time_iso_weeks_in_year(int year) {
+  int jan1 = ag_rt_time_wday_for_year_start(year);
+  if (jan1 == 4) return 53;
+  if (jan1 == 3 && ag_rt_time_is_leap(year)) return 53;
+  return 52;
+}
+
+static int ag_rt_time_iso_year_week(struct ag_rt_tm *tm, int *iso_year_out) {
+  int year = tm->tm_year + 1900;
+  int monday_index = (tm->tm_wday + 6) % 7;
+  int week = (tm->tm_yday - monday_index + 10) / 7;
+  if (week < 1) {
+    year--;
+    week = ag_rt_time_iso_weeks_in_year(year);
+  } else if (week > ag_rt_time_iso_weeks_in_year(year)) {
+    year++;
+    week = 1;
+  }
+  *iso_year_out = year;
+  return week;
+}
+
 static int ag_rt_strftime_put_format(char *dst, long maxsize, long *pos, int spec, struct ag_rt_tm *tm) {
   if (spec == '%') return ag_rt_strftime_put_char(dst, maxsize, pos, '%');
   if (spec == 'a') return ag_rt_strftime_put_str(dst, maxsize, pos, ag_rt_time_wday_name(tm->tm_wday));
   if (spec == 'A') return ag_rt_strftime_put_str(dst, maxsize, pos, ag_rt_time_wday_full_name(tm->tm_wday));
   if (spec == 'b' || spec == 'h') return ag_rt_strftime_put_str(dst, maxsize, pos, ag_rt_time_mon_name(tm->tm_mon));
   if (spec == 'B') return ag_rt_strftime_put_str(dst, maxsize, pos, ag_rt_time_mon_full_name(tm->tm_mon));
+  if (spec == 'C') return ag_rt_strftime_put_num(dst, maxsize, pos, (tm->tm_year + 1900) / 100, 2);
   if (spec == 'd') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_mday, 2);
   if (spec == 'e') return ag_rt_strftime_put_num_pad(dst, maxsize, pos, tm->tm_mday, 2, ' ');
+  if (spec == 'D') {
+    return ag_rt_strftime_put_format(dst, maxsize, pos, 'm', tm) &&
+           ag_rt_strftime_put_char(dst, maxsize, pos, '/') &&
+           ag_rt_strftime_put_format(dst, maxsize, pos, 'd', tm) &&
+           ag_rt_strftime_put_char(dst, maxsize, pos, '/') &&
+           ag_rt_strftime_put_format(dst, maxsize, pos, 'y', tm);
+  }
   if (spec == 'H') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_hour, 2);
+  if (spec == 'I') {
+    int hour = tm->tm_hour % 12;
+    if (hour == 0) hour = 12;
+    return ag_rt_strftime_put_num(dst, maxsize, pos, hour, 2);
+  }
   if (spec == 'j') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_yday + 1, 3);
+  if (spec == 'g' || spec == 'G' || spec == 'V') {
+    int iso_year = 0;
+    int iso_week = ag_rt_time_iso_year_week(tm, &iso_year);
+    if (spec == 'g') return ag_rt_strftime_put_num(dst, maxsize, pos, iso_year % 100, 2);
+    if (spec == 'G') return ag_rt_strftime_put_num(dst, maxsize, pos, iso_year, 4);
+    return ag_rt_strftime_put_num(dst, maxsize, pos, iso_week, 2);
+  }
   if (spec == 'm') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_mon + 1, 2);
   if (spec == 'M') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_min, 2);
+  if (spec == 'n') return ag_rt_strftime_put_char(dst, maxsize, pos, '\n');
+  if (spec == 'p') return ag_rt_strftime_put_str(dst, maxsize, pos, tm->tm_hour < 12 ? "AM" : "PM");
+  if (spec == 'r') {
+    return ag_rt_strftime_put_format(dst, maxsize, pos, 'I', tm) &&
+           ag_rt_strftime_put_char(dst, maxsize, pos, ':') &&
+           ag_rt_strftime_put_format(dst, maxsize, pos, 'M', tm) &&
+           ag_rt_strftime_put_char(dst, maxsize, pos, ':') &&
+           ag_rt_strftime_put_format(dst, maxsize, pos, 'S', tm) &&
+           ag_rt_strftime_put_char(dst, maxsize, pos, ' ') &&
+           ag_rt_strftime_put_format(dst, maxsize, pos, 'p', tm);
+  }
+  if (spec == 'R') {
+    return ag_rt_strftime_put_format(dst, maxsize, pos, 'H', tm) &&
+           ag_rt_strftime_put_char(dst, maxsize, pos, ':') &&
+           ag_rt_strftime_put_format(dst, maxsize, pos, 'M', tm);
+  }
   if (spec == 'S') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_sec, 2);
+  if (spec == 't') return ag_rt_strftime_put_char(dst, maxsize, pos, '\t');
+  if (spec == 'U') return ag_rt_strftime_put_num(dst, maxsize, pos, ag_rt_time_week_sunday(tm), 2);
+  if (spec == 'u') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_wday == 0 ? 7 : tm->tm_wday, 1);
   if (spec == 'w') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_wday, 1);
+  if (spec == 'W') return ag_rt_strftime_put_num(dst, maxsize, pos, ag_rt_time_week_monday(tm), 2);
   if (spec == 'y') return ag_rt_strftime_put_num(dst, maxsize, pos, (tm->tm_year + 1900) % 100, 2);
   if (spec == 'Y') return ag_rt_strftime_put_num(dst, maxsize, pos, tm->tm_year + 1900, 4);
+  if (spec == 'z') return ag_rt_strftime_put_str(dst, maxsize, pos, "+0000");
+  if (spec == 'Z') return ag_rt_strftime_put_str(dst, maxsize, pos, "UTC");
   if (spec == 'F') {
     return ag_rt_strftime_put_format(dst, maxsize, pos, 'Y', tm) &&
            ag_rt_strftime_put_char(dst, maxsize, pos, '-') &&

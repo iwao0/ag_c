@@ -1904,19 +1904,28 @@ int main(void) {
   time_t now = time(&stored);
   struct tm *tm = localtime(&stored);
   time_t sample = 90061;
+  time_t sunday = 259200;
+  time_t monday = 345600;
   struct tm *gtm;
+  struct tm *sun_tm;
+  struct tm *mon_tm;
   time_t before_epoch = -1;
   struct tm *btm;
   char stamp[64];
   int wstamp[64];
   int wfmt[32];
+  int wfmt_iso[] = {'%', 'G', '-', '%', 'V', '-', '%', 'u', ' ', '%', 'R', ' ', '%', 'z', 0};
   int wexpect[64];
+  int wexpect_iso[] = {'1', '9', '7', '0', '-', '0', '1', '-', '5', ' ', '0', '1',
+                       ':', '0', '1', ' ', '+', '0', '0', '0', '0', 0};
   unsigned long stamp_len;
   unsigned long wstamp_len;
   struct timespec ts = {-1, -1};
   struct tm mk = {0};
+  struct tm nmk = {0};
   struct tm bmk = {0};
   time_t made;
+  time_t nmade;
   time_t bmade;
   if (!(now == 0 && stored == 0 && tm != 0 &&
         tm->tm_sec == 0 && tm->tm_min == 0 && tm->tm_hour == 0 &&
@@ -1945,6 +1954,16 @@ int main(void) {
   wstamp_len = wcsftime(wstamp, 64, wfmt, gtm);
   if (wstamp_len != 23 || !same_wide(wstamp, wexpect)) return 7;
   if (wcsftime(wstamp, 8, wfmt, gtm) != 0) return 8;
+  wstamp_len = wcsftime(wstamp, 64, wfmt_iso, gtm);
+  if (wstamp_len != 21 || !same_wide(wstamp, wexpect_iso)) return 19;
+  stamp_len = strftime(stamp, sizeof(stamp), "%C %D %R %r %u %G %g %V %z%n%t", gtm);
+  if (stamp_len != 50 || !same_text(stamp, "19 01/02/70 01:01 01:01:01 AM 5 1970 70 01 +0000\n\t")) return 17;
+  sun_tm = gmtime(&sunday);
+  if (!sun_tm || strftime(stamp, sizeof(stamp), "%I:%M %p %U %W %Z", sun_tm) != 18 ||
+      !same_text(stamp, "12:00 AM 01 00 UTC")) return 15;
+  mon_tm = gmtime(&monday);
+  if (!mon_tm || strftime(stamp, sizeof(stamp), "%I:%M %p %U %W %Z", mon_tm) != 18 ||
+      !same_text(stamp, "12:00 AM 01 01 UTC")) return 16;
   mk.tm_sec = 0;
   mk.tm_min = 0;
   mk.tm_hour = 0;
@@ -1956,11 +1975,24 @@ int main(void) {
   mk.tm_isdst = -1;
   made = mktime(&mk);
   if (made != 172800 || mk.tm_wday != 6 || mk.tm_yday != 2 || mk.tm_isdst != 0) return 11;
+  nmk.tm_sec = 70;
+  nmk.tm_min = 61;
+  nmk.tm_hour = 25;
+  nmk.tm_mday = 32;
+  nmk.tm_mon = 0;
+  nmk.tm_year = 70;
+  nmk.tm_isdst = -1;
+  nmade = mktime(&nmk);
+  if (nmade != 2772130 || nmk.tm_sec != 10 || nmk.tm_min != 2 || nmk.tm_hour != 2 ||
+      nmk.tm_mday != 2 || nmk.tm_mon != 1 || nmk.tm_year != 70 ||
+      nmk.tm_wday != 1 || nmk.tm_yday != 32 || nmk.tm_isdst != 0) return 20;
   btm = gmtime(&before_epoch);
   if (!(btm != 0 && btm->tm_sec == 59 && btm->tm_min == 59 && btm->tm_hour == 23 &&
         btm->tm_mday == 31 && btm->tm_mon == 11 && btm->tm_year == 69 &&
         btm->tm_wday == 3 && btm->tm_yday == 364 && btm->tm_isdst == 0)) return 12;
   if (!same_text(asctime(btm), "Wed Dec 31 23:59:59 1969\n")) return 13;
+  if (strftime(stamp, sizeof(stamp), "%G %g %V %u", btm) != 12 ||
+      !same_text(stamp, "1970 70 01 3")) return 18;
   bmk.tm_sec = 59;
   bmk.tm_min = 59;
   bmk.tm_hour = 23;

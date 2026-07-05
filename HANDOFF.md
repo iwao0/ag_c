@@ -1,9 +1,44 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き578: wasm time runtime pre-1970 対応）
+最終更新: 2026-07-05（続き582: wasm mktime 正規化 smoke 補強）
 
 ## 現状
 - 直近の部分確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `git diff --check` = **green**、
+  `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `make test-wasm-js-pipeline` = **green**、
+  `./build/test_e2e` = **1186/1186 OK**。
+- 続き582: **`mktime()` の範囲外フィールド正規化を smoke で固定**。
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `mktime()` は、日付・時刻を秒数へ合成してから
+  `ag_rt_time_from_seconds()` で `struct tm` を正規化する設計になっている。
+  これまで smoke は通常範囲内の入力だけだったため、`tm_mday=32` / `tm_hour=25` /
+  `tm_min=61` / `tm_sec=70` が 1970-02-02 02:02:10、`tm_wday=1`、`tm_yday=32` に
+  正規化されることを `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に追加した。
+- 続き581: **`strftime()` 追加指定子の実装整理と `wcsftime()` 経路の smoke 補強**。
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` では、`ag_rt_time_to_seconds()` と ISO week-year 判定で
+  重複していた 1970 年基準の日数計算を `ag_rt_time_days_before_year()` に寄せた。
+  また、`wcsftime()` は `ag_rt_strftime_put_format()` を経由するため、追加した
+  `%G-%V-%u %R %z` が wide 文字列でも正しく出ることを
+  `tools/wasm_obj_linker/test_smoke.sh` と `tools/wasm_js_api/test_compile_link_pipeline.mjs` に追加した。
+- 続き580: **wasm linked runtime の `strftime()` 標準指定子をさらに拡張**。
+  続き579の `%I/%p/%U/%W/%Z` に加え、
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `ag_rt_strftime_put_format()` に
+  `%C`、`%D`、`%R`、`%r`、`%n`、`%t`、`%z`、`%u`、`%V`、`%G`、`%g` を追加した。
+  ISO week-year は年初の曜日と leap year から 52/53 週を判定し、
+  1969-12-31 が ISO week-year では `1970-W01-3` になる境界も smoke で確認している。
+  `tools/wasm_obj_linker/test_smoke.sh` と `tools/wasm_js_api/test_compile_link_pipeline.mjs` に
+  `%C %D %R %r %u %G %g %V %z%n%t` と pre-epoch ISO week-year の期待値を追加した。
+- 続き579: **wasm linked runtime の `strftime()` 標準指定子を拡張**。
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `ag_rt_strftime_put_format()` に
+  `%I`（12時間表記）、`%p`（AM/PM）、`%U`（日曜始まり週番号）、`%W`（月曜始まり週番号）、
+  `%Z`（この runtime では `UTC`）を追加した。`wcsftime()` は同じ narrow formatter を経由するため
+  同じ指定子を wide 文字列にも反映できる。`tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の time smoke に
+  1970-01-04/05 を使った `%U/%W` 境界と `%I/%p/%Z` の期待値を追加した。
+- 以前の直近確認（続き578時点、strftime 変更前）:
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `git diff --check` = **green**、

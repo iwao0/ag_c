@@ -1189,18 +1189,24 @@ const linkedTimeSource = await inlineStandardIncludes(`#include <time.h>
 int main(void) {
   time_t epoch = 0;
   time_t sample = 90061;
+  time_t sunday = 259200;
+  time_t monday = 345600;
   time_t before_epoch = -1;
   struct tm *epoch_tm = localtime(&epoch);
   int epoch_ok = epoch_tm && epoch_tm->tm_year == 70 && epoch_tm->tm_mon == 0 &&
                  epoch_tm->tm_mday == 1 && epoch_tm->tm_wday == 4;
   struct tm *tm = gmtime(&sample);
+  struct tm *sun_tm;
+  struct tm *mon_tm;
   struct tm *btm;
   char buf[64];
   wchar_t wbuf[64];
   wchar_t wfmt[] = {'%', 'F', ' ', '%', 'T', 0};
+  wchar_t wfmt_iso[] = {'%', 'G', '-', '%', 'V', '-', '%', 'u', ' ', '%', 'R', ' ', '%', 'z', 0};
   size_t n;
   size_t wn;
   struct tm mk = {0};
+  struct tm nmk = {0};
   struct tm bmk = {0};
   struct timespec ts = {-1, -1};
   if (!epoch_ok) return 1;
@@ -1217,6 +1223,18 @@ int main(void) {
   if (wn != 19 || wbuf[0] != '1' || wbuf[3] != '0' || wbuf[4] != '-' ||
       wbuf[10] != ' ' || wbuf[18] != '1' || wbuf[19] != 0) return 7;
   if (wcsftime(wbuf, 8, wfmt, tm) != 0) return 8;
+  wn = wcsftime(wbuf, 64, wfmt_iso, tm);
+  if (wn != 21 || wbuf[0] != '1' || wbuf[3] != '0' || wbuf[4] != '-' ||
+      wbuf[7] != '-' || wbuf[8] != '5' || wbuf[10] != '0' || wbuf[14] != '1' ||
+      wbuf[16] != '+' || wbuf[20] != '0' || wbuf[21] != 0) return 19;
+  n = strftime(buf, sizeof(buf), "%C %D %R %r %u %G %g %V %z%n%t", tm);
+  if (n != 50 || strcmp(buf, "19 01/02/70 01:01 01:01:01 AM 5 1970 70 01 +0000\\n\\t") != 0) return 17;
+  sun_tm = gmtime(&sunday);
+  if (!sun_tm || strftime(buf, sizeof(buf), "%I:%M %p %U %W %Z", sun_tm) != 18 ||
+      strcmp(buf, "12:00 AM 01 00 UTC") != 0) return 15;
+  mon_tm = gmtime(&monday);
+  if (!mon_tm || strftime(buf, sizeof(buf), "%I:%M %p %U %W %Z", mon_tm) != 18 ||
+      strcmp(buf, "12:00 AM 01 01 UTC") != 0) return 16;
   mk.tm_sec = 0;
   mk.tm_min = 0;
   mk.tm_hour = 0;
@@ -1227,11 +1245,23 @@ int main(void) {
   mk.tm_yday = 0;
   mk.tm_isdst = -1;
   if (mktime(&mk) != 172800 || mk.tm_wday != 6 || mk.tm_yday != 2 || mk.tm_isdst != 0) return 9;
+  nmk.tm_sec = 70;
+  nmk.tm_min = 61;
+  nmk.tm_hour = 25;
+  nmk.tm_mday = 32;
+  nmk.tm_mon = 0;
+  nmk.tm_year = 70;
+  nmk.tm_isdst = -1;
+  if (mktime(&nmk) != 2772130 || nmk.tm_sec != 10 || nmk.tm_min != 2 || nmk.tm_hour != 2 ||
+      nmk.tm_mday != 2 || nmk.tm_mon != 1 || nmk.tm_year != 70 ||
+      nmk.tm_wday != 1 || nmk.tm_yday != 32 || nmk.tm_isdst != 0) return 20;
   btm = gmtime(&before_epoch);
   if (!btm || btm->tm_sec != 59 || btm->tm_min != 59 || btm->tm_hour != 23 ||
       btm->tm_mday != 31 || btm->tm_mon != 11 || btm->tm_year != 69 ||
       btm->tm_wday != 3 || btm->tm_yday != 364 || btm->tm_isdst != 0) return 12;
   if (strcmp(asctime(btm), "Wed Dec 31 23:59:59 1969\\n") != 0) return 13;
+  if (strftime(buf, sizeof(buf), "%G %g %V %u", btm) != 12 ||
+      strcmp(buf, "1970 70 01 3") != 0) return 18;
   bmk.tm_sec = 59;
   bmk.tm_min = 59;
   bmk.tm_hour = 23;
