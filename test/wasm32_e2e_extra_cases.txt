@@ -572,9 +572,13 @@ probes_found_bugs/wasm_nonvoid_indirect_unused_result.c
 probes_found_bugs/anon_global_array_member_designator.c
 probes_found_bugs/anon_ptr_to_array_member_designator.c
 probes_found_bugs/anon_union_promoted_array_designator.c
+wasm32/math_classify_compare_ops.c
+wasm32/math_fdim_fma_frexp_ops.c
 wasm32/signal_ign_ops.c
+wasm32/string_coll_xfrm_ops.c
 wasm32/stdlib_alloc_abs_ops.c
 wasm32/stdlib_div_ops.c
+wasm32/stdlib_multibyte_ops.c
 wasm32/stdio_file_state_ops.c
 wasm32/stdio_output_ops.c
 wasm32/stdio_printf_count_ops.c
@@ -582,5 +586,6 @@ wasm32/stdio_scan_input_ops.c
 wasm32/stdio_sscanf_ops.c
 wasm32/stdio_vsnprintf_ops.c
 wasm32/wchar_output_ops.c
+wasm32/wchar_convert_more_ops.c
 wasm32/wchar_input_ops.c
 wasm32/wchar_swprintf_ops.c

@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き625: WAT standalone aligned_alloc/llabs/at_quick_exit stubs を追加）
+最終更新: 2026-07-06（続き630: WAT standalone math classification/comparison stubs を追加）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
-  **1178 compiled, 1178 executed**、
+  **1183 compiled, 1183 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -37,6 +37,77 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き630: **WAT standalone `fpclassify()` / `isfinite()` / `isinf()` / `isnan()` / `isnormal()` / `signbit()` と
+  ordered/unordered comparison predicate の undefined import gap を解消**。
+  linked runtime / linker rewrite と `math.h` には classification/comparison macro 相当の経路があったが、
+  WAT standalone 側は `fmin` / `fmax` 周辺までで止まっており、これらの symbol が関数参照された場合に
+  undefined import になり得た。
+  `isnan()` / `isinf()` / `isfinite()` / `signbit()` / `fpclassify()` / `isnormal()` を standalone stub として追加し、
+  `fpclassify()` は現行 `math.h` の `FP_*` 定数に合わせて NaN / Inf / Zero / Subnormal / Normal を返すようにした。
+  `isgreater()` / `isgreaterequal()` / `isless()` / `islessequal()` / `islessgreater()` は
+  NaN unordered case を false にし、`isunordered()` は片側 NaN を true とする helper に集約した。
+  helper はユーザー定義済み関数と重複しないよう `has_defined_function()` guard 付きで emit する。
+  回帰は WAT 専用の `test/fixtures/wasm32/math_classify_compare_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1183 compiled, 1183 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き629: **WAT standalone `fdim()` / `fma()` / `frexp()` family の undefined import gap を解消**。
+  linked runtime / linker rewrite には `fdim` / `fdimf` / `fdiml`、`fma` / `fmaf` / `fmal`、
+  `frexp` / `frexpf` / `frexpl` が入っていたが、WAT standalone 側は `hypot`、`fmin`、`fmax`
+  など周辺の math stub までで止まっていた。
+  `fdim()` は NaN passthrough と positive difference、`fma()` は `x * y + z`、
+  `frexp()` は finite/zero の exponent store と mantissa normalization を実装し、
+  float / long double variant は現行 WAT backend の型表現に合わせて wrapper とした。
+  回帰は WAT 専用の `test/fixtures/wasm32/math_fdim_fma_frexp_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1182 compiled, 1182 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き628: **WAT standalone `wcstoll()` / `wcstoull()` / `wcstof()` / `wcstold()` の undefined import gap を解消**。
+  linked runtime / linker rewrite と `include/wchar.h` には wide numeric conversion の long long /
+  float / long double variant が揃っていたが、WAT standalone 側は `wcstol()` / `wcstoul()` /
+  `wcstod()` までで止まっていた。
+  `wcstoll()` / `wcstoull()` は既存の wide integer parser `__ag_wcsto64` へ接続し、
+  `wcstof()` は `wcstod()` から `f32.demote_f64`、`wcstold()` は現行 WAT backend の
+  long double 表現に合わせて `f64` wrapper とした。
+  回帰は WAT 専用の `test/fixtures/wasm32/wchar_convert_more_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1181 compiled, 1181 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き627: **WAT standalone `strcoll()` / `strxfrm()` の undefined import gap を解消**。
+  `include/string.h` と linked runtime / linker rewrite には `strcoll` / `strxfrm` が入っていたが、
+  WAT standalone 側は `strcmp` / `strncmp` などの基本 string stub までで止まっていた。
+  standalone WAT は locale state を持たないため C locale 相当の minimal semantics とし、
+  `strcoll()` は bytewise compare、`strxfrm()` は元文字列長を返しつつ `n > 0` の範囲で
+  NUL 終端付きに元文字列をコピーする実装にした。
+  function table 参照でも落ちないよう `has_minimal_libc_stub_function()` に同じ 2 symbol を追加した。
+  回帰は WAT 専用の `test/fixtures/wasm32/string_coll_xfrm_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1180 compiled, 1180 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き626: **WAT standalone `mblen()` / `mbtowc()` / `wctomb()` / `mbstowcs()` / `wcstombs()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には legacy stdlib multibyte conversion symbol が入っていたが、
+  WAT standalone 側は restartable な `mbrtowc()` / `wcrtomb()` / `mbsrtowcs()` / `wcsrtombs()`
+  までで止まっていた。
+  `mblen()` / `mbtowc()` は `mbrtowc()`、`wctomb()` は `wcrtomb()`、
+  `mbstowcs()` / `wcstombs()` は scratch の `srcp` slot を経由して
+  `mbsrtowcs()` / `wcsrtombs()` に接続し、runtime 側と同じく負の conversion result は
+  legacy API の -1 に丸めるようにした。
+  旧 API が helper を必要とする場合でも、ユーザー定義済みの helper と重複定義しないよう
+  helper emit 条件も `has_defined_function()` で堅牢化した。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdlib_multibyte_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1179 compiled, 1179 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
 - 続き625: **WAT standalone `aligned_alloc()` / `llabs()` / `at_quick_exit()` の undefined import gap を解消**。
   linked runtime / linker rewrite にはこれらの stdlib symbol が入っていたが、WAT standalone 側は
   `malloc` / `calloc` / `realloc` / `free`、`labs`、`atexit` までで止まっていた。
