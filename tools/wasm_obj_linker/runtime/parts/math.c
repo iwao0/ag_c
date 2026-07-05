@@ -878,20 +878,27 @@ double __agc_runtime_log1p(double x) {
   return __agc_runtime_log(1.0 + x);
 }
 
-double __agc_runtime_erf(double x) {
-  double sign = 1.0;
+static double ag_rt_erfc_tail(double x) {
   double t;
   double poly;
+  t = 1.0 / (1.0 + 0.3275911 * x);
+  poly = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t -
+           0.284496736) * t + 0.254829592) * t;
+  return poly * __agc_runtime_exp(-x * x);
+}
+
+double __agc_runtime_erf(double x) {
+  double sign = 1.0;
+  double tail;
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? -1.0 : 1.0;
+  if (x == 0.0) return x;
   if (x < 0.0) {
     sign = -1.0;
     x = -x;
   }
-  t = 1.0 / (1.0 + 0.3275911 * x);
-  poly = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t -
-           0.284496736) * t + 0.254829592) * t;
-  return sign * (1.0 - poly * __agc_runtime_exp(-x * x));
+  tail = ag_rt_erfc_tail(x);
+  return sign * (1.0 - tail);
 }
 
 float __agc_runtime_erff(float x) {
@@ -903,9 +910,14 @@ long double __agc_runtime_erfl(long double x) {
 }
 
 double __agc_runtime_erfc(double x) {
+  double ax;
+  double tail;
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? 2.0 : 0.0;
-  return 1.0 - __agc_runtime_erf(x);
+  if (x == 0.0) return 1.0;
+  ax = x < 0.0 ? -x : x;
+  tail = ag_rt_erfc_tail(ax);
+  return x < 0.0 ? 2.0 - tail : tail;
 }
 
 float __agc_runtime_erfcf(float x) {
@@ -1041,20 +1053,29 @@ double __agc_runtime_atan2(double y, double x) {
 }
 
 double __agc_runtime_asin(double x) {
+  double half_pi = 1.5707963267948966;
   if (__agc_runtime_isnan(x)) return x;
   if (x < -1.0 || x > 1.0) {
     double zero = 0.0;
     return zero / zero;
   }
+  if (x == 0.0) return x;
+  if (x == 1.0) return half_pi;
+  if (x == -1.0) return -half_pi;
   return __agc_runtime_atan2(x, __agc_runtime_sqrt(1.0 - x * x));
 }
 
 double __agc_runtime_acos(double x) {
+  double pi = 3.141592653589793;
+  double half_pi = 1.5707963267948966;
   if (__agc_runtime_isnan(x)) return x;
   if (x < -1.0 || x > 1.0) {
     double zero = 0.0;
     return zero / zero;
   }
+  if (x == 1.0) return 0.0;
+  if (x == -1.0) return pi;
+  if (x == 0.0) return half_pi;
   return __agc_runtime_atan2(__agc_runtime_sqrt(1.0 - x * x), x);
 }
 
@@ -1091,8 +1112,14 @@ long double __agc_runtime_acosl(long double x) {
 }
 
 double __agc_runtime_sinh(double x) {
-  double ex = __agc_runtime_exp(x);
-  double em = __agc_runtime_exp(-x);
+  double ex;
+  double em;
+  if (__agc_runtime_isnan(x)) return x;
+  if (__agc_runtime_isinf(x)) return x;
+  if (x == 0.0) return x;
+  if (__agc_runtime_fabs(x) < 1.0e-4) return x;
+  ex = __agc_runtime_exp(x);
+  em = __agc_runtime_exp(-x);
   return (ex - em) / 2.0;
 }
 
@@ -1121,6 +1148,8 @@ long double __agc_runtime_coshl(long double x) {
 double __agc_runtime_tanh(double x) {
   if (__agc_runtime_isnan(x)) return x;
   if (__agc_runtime_isinf(x)) return __agc_runtime_signbit(x) ? -1.0 : 1.0;
+  if (x == 0.0) return x;
+  if (__agc_runtime_fabs(x) < 1.0e-4) return x;
   if (x > 20.0) return 1.0;
   if (x < -20.0) return -1.0;
   double ex = __agc_runtime_exp(x);
@@ -1140,7 +1169,9 @@ double __agc_runtime_asinh(double x) {
   double ax;
   double r;
   if (__agc_runtime_isnan(x) || __agc_runtime_isinf(x)) return x;
+  if (x == 0.0) return x;
   ax = __agc_runtime_fabs(x);
+  if (ax < 1.0e-4) return x;
   if (ax > 1.0e154) {
     r = __agc_runtime_log(ax) + 0.6931471805599453;
   } else {

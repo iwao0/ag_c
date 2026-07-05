@@ -2310,6 +2310,9 @@ int math_exp_log_ext_check(void) {
   int erfcv = (int)(erfc(1.0) * 1000.0);
   int erfcfv = (int)(erfcf(1.0f) * 1000.0f);
   int erfclv = (int)(erfcl(1.0L) * 1000.0L);
+  double erfc10 = erfc(10.0);
+  float erfcf5 = erfcf(5.0f);
+  long double erfcl10 = erfcl(10.0L);
   return exp2v >= 7998 && exp2v <= 8002 &&
          exp2fv >= 7998 && exp2fv <= 8002 &&
          exp2lv >= 7998 && exp2lv <= 8002 &&
@@ -2339,12 +2342,20 @@ int math_exp_log_ext_check(void) {
          tanhv >= 760 && tanhv <= 762 &&
          tanhfv >= 760 && tanhfv <= 762 &&
          tanhlv >= 760 && tanhlv <= 762 &&
+         signbit(sinh(-0.0)) && signbit(tanh(-0.0)) &&
+         signbit(asinh(-0.0)) &&
+         sinh(1.0e-20) > 0.0 && sinh(1.0e-20) < 2.0e-20 &&
+         sinh(-1.0e-20) < 0.0 && sinh(-1.0e-20) > -2.0e-20 &&
+         tanh(1.0e-20) > 0.0 && tanh(1.0e-20) < 2.0e-20 &&
+         tanh(-1.0e-20) < 0.0 && tanh(-1.0e-20) > -2.0e-20 &&
          sinh(10000.0) > 1.0e300 && sinh(-10000.0) < -1.0e300 &&
          cosh(10000.0) > 1.0e300 && cosh(-10000.0) > 1.0e300 &&
          (int)tanh(10000.0) == 1 && (int)tanh(-10000.0) == -1 &&
          asinhv >= 880 && asinhv <= 882 &&
          asinhfv >= 880 && asinhfv <= 882 &&
          asinhlv >= 880 && asinhlv <= 882 &&
+         asinh(1.0e-20) > 0.0 && asinh(1.0e-20) < 2.0e-20 &&
+         asinh(-1.0e-20) < 0.0 && asinh(-1.0e-20) > -2.0e-20 &&
          asinh(1.0e200) > 400.0 && asinh(1.0e200) < 500.0 &&
          asinh(-1.0e200) < -400.0 && asinh(-1.0e200) > -500.0 &&
          acoshv >= 1315 && acoshv <= 1317 &&
@@ -2361,9 +2372,18 @@ int math_exp_log_ext_check(void) {
          erfv >= 841 && erfv <= 844 &&
          erffv >= 841 && erffv <= 844 &&
          erflv >= 841 && erflv <= 844 &&
+         erf(0.0) == 0.0 && signbit(erf(-0.0)) &&
+         erff(0.0f) == 0.0f && signbit(erff(-0.0f)) &&
+         erfl(0.0L) == 0.0L && signbit(erfl(-0.0L)) &&
          erfcv >= 156 && erfcv <= 158 &&
          erfcfv >= 156 && erfcfv <= 158 &&
-         erfclv >= 156 && erfclv <= 158;
+         erfclv >= 156 && erfclv <= 158 &&
+         erfc(0.0) == 1.0 && erfc(-0.0) == 1.0 &&
+         erfcf(0.0f) == 1.0f && erfcf(-0.0f) == 1.0f &&
+         erfcl(0.0L) == 1.0L && erfcl(-0.0L) == 1.0L &&
+         erfc10 > 0.0 && erfc10 < 1.0e-40 &&
+         erfcf5 > 0.0f && erfcf5 < 1.0e-10f &&
+         erfcl10 > 0.0L && erfcl10 < 1.0e-40L;
 }
 int math_round_ext_check(void) {
   int ok = 1;
@@ -3847,6 +3867,12 @@ int main(void) {
          acosv >= 1568 && acosv <= 1572 &&
          acosfv >= 1568 && acosfv <= 1572 &&
          acosl_v >= 1568 && acosl_v <= 1572 &&
+         (int)(asin(-1.0) * 1000.0) <= -1568 &&
+         (int)(asin(-1.0) * 1000.0) >= -1572 &&
+         signbit(asin(-math_zero)) &&
+         acos(1.0) == 0.0 && !signbit(acos(1.0)) &&
+         (int)(acos(-1.0) * 1000.0) >= 3140 &&
+         (int)(acos(-1.0) * 1000.0) <= 3143 &&
          isnan(asin(2.0)) &&
          isnan(asinf(2.0f)) &&
          isnan(asinl(2.0L)) &&

@@ -1,12 +1,12 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き515: atan intermediate reduction / edge semantics 修正）
+最終更新: 2026-07-05（続き519: asin/acos endpoint fast path 追加）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_atan_reduce_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_asin_acos_endpoint_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `make -j4 build/ag_wasm_link` = **green/up-to-date**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
@@ -32,6 +32,114 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き519: **`asin` / `acos` runtime の endpoint fast path 追加**。
+  linked runtime object の `__agc_runtime_asin` / `__agc_runtime_acos` は端点も
+  `sqrt` と `atan2` の合成に委譲していた。
+  実測では現状も `asin(-0.0)` / `acos(±1.0)` は期待値を返していたが、
+  `asin(±1.0)` / `asin(±0.0)` / `acos(±1.0)` / `acos(0.0)` の edge semantics を
+  runtime 内で局所的に固定するため、明示 fast path を追加した。
+  `asin(±0.0)` は signed zero を保持し、`asin(±1.0)` は `±pi/2`、
+  `acos(1.0)` は `+0.0`、`acos(-1.0)` は `pi`、`acos(0.0)` は `pi/2` を返す。
+  domain error / NaN の既存挙動は維持。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `asin(-1.0)` /
+  `asin(-0.0)` / `acos(1.0)` / `acos(-1.0)` の確認を追加した。
+  途中で `make test-wasm-obj-linker` の runtime 再ビルドが一度失敗し、
+  `build/libagc_runtime.o` が 0 byte で残ったが、同じ source の直接コンパイルは通過。
+  `make -B build/libagc_runtime.o` で compiler/runtime object を強制再ビルドして復旧後、
+  `make test-wasm-obj-linker` は **ag_wasm_link smoke: ok**。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_asin_acos_endpoint_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -B build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き518: **`erf` / `erfc` runtime の zero edge semantics 修正**。
+  続き516で `erfc` tail helper を共有する形にした後も、
+  近似式の係数由来で `erf(0.0)` が厳密な `+0.0` ではなく約 `1e-9` になり、
+  `erf(-0.0)` も `-0.0` を保持できていなかった。
+  linked runtime の小 probe では `erf(0.0) != 0.0` で戻り値 1 になり、JS import runtime でも
+  `env.erf(0)` が `9.999999717180685e-10` になることを確認した。
+  C runtime 側で `__agc_runtime_erf(±0.0)` は `return x`、
+  `__agc_runtime_erfc(±0.0)` は `1.0` を返す fast path を追加した。
+  JS import runtime 側も同じ zero fast path を追加した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `erf(±0.0)` /
+  `erfc(±0.0)` の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_erf_zero_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き517: **`sinh` / `tanh` / `asinh` runtime の small finite cancellation / signed-zero 修正**。
+  linked runtime object の `__agc_runtime_sinh` は `exp(x)` と `exp(-x)` の差、
+  `__agc_runtime_tanh` はそれらの比、`__agc_runtime_asinh` は `log(ax + sqrt(ax*ax + 1))`
+  に委譲していた。
+  そのため `1.0e-20` のような小さい finite 入力では丸めで差や log 引数が 1.0 に潰れ、
+  結果が 0 になり得た。
+  また `sinh(-0.0)` / `tanh(-0.0)` / `asinh(-0.0)` が signed zero を失い得た。
+  runtime 側で NaN / inf の既存 edge semantics を維持しつつ、`±0.0` は先に `return x`、
+  `|x| < 1e-4` では `sinh` / `tanh` / `asinh` とも `x` を返す小入力経路を追加した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `sinh(±1.0e-20)` /
+  `tanh(±1.0e-20)` / `asinh(±1.0e-20)` と `-0.0` signbit の確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_small_hyperbolic_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き516: **`erfc` runtime の cancellation tail 修正**。
+  linked runtime object と JS import runtime の `erfc` は `1.0 - erf(x)` で実装されていたため、
+  `erfc(10.0)` のような正の大きめ入力では true value が小さい正数でも cancellation で 0 に丸まり得た。
+  実際に linked runtime の小 probe で `erfc(10.0)` が 0 になり、戻り値 1 で再現した。
+  C runtime 側は `ag_rt_erfc_tail()` を追加し、既存の `erf` もその tail helper を共有する形にした。
+  `erfc(x)` は `x >= 0` なら tail を直接返し、`x < 0` なら `2.0 - tail` を返す。
+  NaN / `±inf` の既存 edge semantics は維持。
+  JS import runtime 側も `agcErfcTail()` を追加し、`agcErf()` / `agcErfc()` が同じ tail 計算を共有するようにした。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には `--nostdlib` import /
+  linked runtime の両経路チェックを追加した。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` にも `erfc(10.0)` /
+  `erfcf(5.0f)` / `erfcl(10.0L)` が 0 に潰れず小さい正数になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_erfc_tail_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
 - 続き515: **`atan` runtime の intermediate reduction / edge semantics 修正**。
   linked runtime object の `__agc_runtime_atan` は単純な `x / (1 + 0.28*x*x)` 近似だけだったため、
   `atan(1.0)` など中間域で誤差が大きく、`atan(±inf)` や `atan(-0.0)` の edge semantics も明示されていなかった。

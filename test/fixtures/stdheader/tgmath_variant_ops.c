@@ -74,6 +74,9 @@ int main(void) {
   assert(tan(10000.0f) == tan(10000.0f) && tan(10000.0f) > -100.0f && tan(10000.0f) < 100.0f);
   assert(near1000(asinh(1.0f), 880, 882));
   assert(near1000(asinh(1.0L), 880, 882));
+  assert(1.0f / asinh(-0.0f) < 0.0f);
+  assert(asinh(1.0e-20f) > 0.0f && asinh(1.0e-20f) < 2.0e-20f);
+  assert(asinh(-1.0e-20L) < 0.0L && asinh(-1.0e-20L) > -2.0e-20L);
   assert(asinh(1.0e200L) > 400.0L && asinh(1.0e200L) < 500.0L);
   assert(asinh(-1.0e200L) < -400.0L && asinh(-1.0e200L) > -500.0L);
   assert(near1000(acosh(2.0f), 1315, 1317));
@@ -85,6 +88,12 @@ int main(void) {
   assert(near1000(atanh(0.5L), 548, 550));
   assert((int)tanh(1.0f / 0.0f) == 1);
   assert((int)tanh(-1.0L / 0.0L) == -1);
+  assert(1.0f / sinh(-0.0f) < 0.0f);
+  assert(sinh(1.0e-20f) > 0.0f && sinh(1.0e-20f) < 2.0e-20f);
+  assert(sinh(-1.0e-20L) < 0.0L && sinh(-1.0e-20L) > -2.0e-20L);
+  assert(1.0f / tanh(-0.0f) < 0.0f);
+  assert(tanh(1.0e-20f) > 0.0f && tanh(1.0e-20f) < 2.0e-20f);
+  assert(tanh(-1.0e-20L) < 0.0L && tanh(-1.0e-20L) > -2.0e-20L);
   assert(atanh(1.0f) > 1.0e30f);
   assert(nanish(atanh_ld));
   assert(1.0f / atanh(-0.0f) < 0.0f);
@@ -93,8 +102,12 @@ int main(void) {
 
   assert(near1000(asin(1.0f), 1568, 1572));
   assert(near1000(asin(1.0L), 1568, 1572));
+  assert(near1000(asin(-1.0f), -1572, -1568));
+  assert(1.0f / asin(-0.0f) < 0.0f);
   assert(nanish(asin_fd));
   assert(nanish(asin_ld));
+  assert(near1000(acos(-1.0L), 3140, 3143));
+  assert(acos(1.0f) == 0.0f && 1.0f / acos(1.0f) > 0.0f);
   assert(near1000(acos(0.0f), 1568, 1572));
   assert(near1000(acos(0.0L), 1568, 1572));
   assert(nanish(acos_fd));
@@ -151,8 +164,14 @@ int main(void) {
   assert(nanish(log10(-1.0L)));
   assert(near1000(erf(1.0f), 841, 844));
   assert(near1000(erf(1.0L), 841, 844));
+  assert(erf(0.0f) == 0.0f && 1.0f / erf(-0.0f) < 0.0f);
+  assert(erf(0.0L) == 0.0L && 1.0L / erf(-0.0L) < 0.0L);
   assert(near1000(erfc(1.0f), 156, 158));
   assert(near1000(erfc(1.0L), 156, 158));
+  assert(erfc(0.0f) == 1.0f && erfc(-0.0f) == 1.0f);
+  assert(erfc(0.0L) == 1.0L && erfc(-0.0L) == 1.0L);
+  assert(erfc(5.0f) > 0.0f && erfc(5.0f) < 1.0e-10f);
+  assert(erfc(10.0L) > 0.0L && erfc(10.0L) < 1.0e-40L);
 
   assert((int)floor(2.9L) == 2);
   assert((int)ceil(2.1L) == 3);

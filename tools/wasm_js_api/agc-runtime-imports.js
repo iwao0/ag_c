@@ -28,23 +28,29 @@ function agcLround(x) {
   return agcI64FromNumber(agcRound(x));
 }
 
+function agcErfcTail(ax) {
+  const t = 1 / (1 + 0.3275911 * ax);
+  const poly = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t -
+    0.284496736) * t + 0.254829592) * t;
+  return poly * Math.exp(-ax * ax);
+}
+
 function agcErf(x) {
   x = Number(x);
   if (Number.isNaN(x)) return x;
   if (!Number.isFinite(x)) return x < 0 ? -1 : 1;
+  if (x === 0) return x;
   const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
-  const t = 1 / (1 + 0.3275911 * ax);
-  const poly = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t -
-    0.284496736) * t + 0.254829592) * t;
-  return sign * (1 - poly * Math.exp(-ax * ax));
+  return sign * (1 - agcErfcTail(Math.abs(x)));
 }
 
 function agcErfc(x) {
   x = Number(x);
   if (Number.isNaN(x)) return x;
   if (!Number.isFinite(x)) return x < 0 ? 2 : 0;
-  return 1 - agcErf(x);
+  if (x === 0) return 1;
+  const tail = agcErfcTail(Math.abs(x));
+  return x < 0 ? 2 - tail : tail;
 }
 
 function agcFmin(x, y) {
