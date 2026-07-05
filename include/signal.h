@@ -10,6 +10,10 @@
 
 typedef void (*sig_handler_t)(int);
 
+#define SIG_DFL ((sig_handler_t)0)
+#define SIG_ERR ((sig_handler_t)-1)
+#define SIG_IGN ((sig_handler_t)1)
+
 sig_handler_t signal(int sig, sig_handler_t handler);
 int raise(int sig);
 

@@ -1,6 +1,7 @@
 // tgmath.h dispatch should link float and long double math variants.
 // expected: exit=0
 #include <assert.h>
+#include <limits.h>
 #include <tgmath.h>
 
 static int near1000(double v, int lo, int hi) {
@@ -248,6 +249,12 @@ int main(void) {
   assert(ilogb(8.0L) == 3);
   assert((int)logb(0.75f) == -1);
   assert((int)logb(8.0L) == 3);
+  assert(ilogb(0.0f) == FP_ILOGB0);
+  assert(ilogb((long double)nanv) == FP_ILOGBNAN);
+  assert(ilogb(1.0L / z) == INT_MAX);
+  assert(logb(0.0f) < -1.0e30f);
+  assert(logb(1.0L / z) > 1.0e300L);
+  assert(nanish(logb((long double)nanv)));
   assert(near1000(hypot(3.0f, 4.0f), 4998, 5002));
   assert(near1000(hypot(3.0L, 4.0L), 4998, 5002));
   assert(hypot(1.0e20f, 1.0e20f) > 1.0e20f);

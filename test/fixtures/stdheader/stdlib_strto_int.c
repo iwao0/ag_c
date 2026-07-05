@@ -19,5 +19,15 @@ int main(void) {
 
     assert(strtoul("+0x1f!", &end, 16) == 31);
     assert(*end == '!');
+
+    char no_digits[] = "   +xyz";
+    end = 0;
+    assert(strtol(no_digits, &end, 10) == 0);
+    assert(end == no_digits);
+
+    char no_unsigned[] = "  -";
+    end = 0;
+    assert(strtoul(no_unsigned, &end, 10) == 0);
+    assert(end == no_unsigned);
     return 0;
 }

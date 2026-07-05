@@ -622,6 +622,7 @@ long __agc_runtime_signal(int sig, long handler_addr) {
 int __agc_runtime_raise(int sig) {
   if (sig < 0 || sig >= 32) return -1;
   long handler_addr = ag_rt_signal_handlers[sig];
+  if (handler_addr == 1) return 0;
   if (handler_addr) {
     void (*handler)(int) = (void (*)(int))handler_addr;
     handler(sig);

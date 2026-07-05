@@ -85,7 +85,8 @@ Supported:
 - BSS-like data symbols whose symbol size is larger than their data payload;
   zero-initialized memory covers the omitted tail.
 - A defined function table with element segments for address-taken functions;
-  table index 0 is reserved for null function pointers.
+  table index 0 is reserved for null function pointers and table index 1 is
+  reserved for `SIG_IGN`.
 - Final active data segment offsets and global initializer `i32.const`
   immediates are emitted as signed LEB128.
 - Default runtime-object linking through `build/libagc_runtime.o`; currently it

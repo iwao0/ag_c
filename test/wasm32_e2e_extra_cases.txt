@@ -19,6 +19,7 @@ arithmetic/mod_zero_impl_defined.c
 funcall/variadic_def.c
 funcall/variadic_proto.c
 pointer/array_decay_diff.c
+wasm32/fenv_dfl_env_ops.c
 probes_found_bugs/addr_of_array_compound_literal.c
 probes_found_bugs/alignas_overaligned_local.c
 probes_found_bugs/alignof_aggregate.c
@@ -234,6 +235,7 @@ probes_found_bugs/long_pointer_param_and_call.c
 probes_found_bugs/long_return_value.c
 probes_found_bugs/macro_arg_nested_same_name.c
 probes_found_bugs/macro_nested_paste_call.c
+probes_found_bugs/macro_nested_paste_call_arg.c
 probes_found_bugs/macro_paste_empty_operand.c
 probes_found_bugs/many_double_params.c
 probes_found_bugs/many_int_params.c
@@ -570,3 +572,8 @@ probes_found_bugs/wasm_nonvoid_indirect_unused_result.c
 probes_found_bugs/anon_global_array_member_designator.c
 probes_found_bugs/anon_ptr_to_array_member_designator.c
 probes_found_bugs/anon_union_promoted_array_designator.c
+wasm32/signal_ign_ops.c
+wasm32/stdio_output_ops.c
+wasm32/stdio_vsnprintf_ops.c
+wasm32/wchar_output_ops.c
+wasm32/wchar_swprintf_ops.c

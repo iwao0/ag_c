@@ -2503,12 +2503,18 @@ static int pps_step(pp_stream_t *s) {
           token_t **args = pp_collect_args(m, grp, &rparen);
           tk_set_cursor_hook(NULL);
           token_t *body = pp_expand_funclike(m, tok, args, name);
-          tk_set_cursor_hook(pps_on_advance);
           free(args);
           if (body) {
+            /* The suffix rescan calls preprocess_ctx() on a synthetic token list.
+             * Keep the outer streaming cursor hook disabled so that nested cursor
+             * movement cannot refill the outer stream before the expansion result
+             * is pushed back. */
             body = pp_stream_splice_paren_suffix_and_rescan(s, body);
             if (s->pb_head) s->ooo_active = 1;
             pps_pushback_list(s, body);
+            tk_set_cursor_hook(pps_on_advance);
+          } else {
+            tk_set_cursor_hook(pps_on_advance);
           }
           free(name);
           return 0;
@@ -2580,7 +2586,7 @@ static void pps_on_advance(token_t *cursor) {
   /* reclaim_hold が立っている間 (マクロ展開で out 鎖が確保順≠消費順になった区間をカーソルが
    * まだ通過中) は chunk 解放を止める。通常コードでは展開がすぐ終わり reclaim_hold が解け、
    * ウィンドウは O(1) のまま。病的な深い再帰展開では展開上限 (E1029) に達してエラーになる。 */
-  if (!s->reclaim_hold) tk_allocator_recyc_on_cursor(cursor);
+  if (!s->reclaim_hold && !s->pb_head) tk_allocator_recyc_on_cursor(cursor);
 }
 
 /* カーソルを進めずに前方を先読みするパーサ経路 (_Generic の型照合等) 用に、現在カーソルの

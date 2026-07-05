@@ -1,12 +1,11 @@
-// time.h localtime runtime call
+// time.h gmtime runtime call
 // Expected: exit=0
 #include <time.h>
 
 int main(void) {
     time_t t = 0;
-    struct tm *tm = localtime(&t);
+    struct tm *tm = gmtime(&t);
     if (!tm) return 1;
-#ifdef __wasm32__
     if (tm->tm_sec != 0) return 2;
     if (tm->tm_min != 0) return 3;
     if (tm->tm_hour != 0) return 4;
@@ -16,15 +15,9 @@ int main(void) {
     if (tm->tm_wday != 4) return 8;
     if (tm->tm_yday != 0) return 9;
     if (tm->tm_isdst != 0) return 10;
-#else
-    if (tm->tm_sec < 0 || tm->tm_sec > 60) return 2;
-    if (tm->tm_min < 0 || tm->tm_min > 59) return 3;
-    if (tm->tm_hour < 0 || tm->tm_hour > 23) return 4;
-#endif
     t = 86400;
-    tm = localtime(&t);
+    tm = gmtime(&t);
     if (!tm) return 11;
-#ifdef __wasm32__
     if (tm->tm_sec != 0) return 12;
     if (tm->tm_min != 0) return 13;
     if (tm->tm_hour != 0) return 14;
@@ -34,10 +27,5 @@ int main(void) {
     if (tm->tm_wday != 5) return 18;
     if (tm->tm_yday != 1) return 19;
     if (tm->tm_isdst != 0) return 20;
-#else
-    if (tm->tm_sec < 0 || tm->tm_sec > 60) return 12;
-    if (tm->tm_min < 0 || tm->tm_min > 59) return 13;
-    if (tm->tm_hour < 0 || tm->tm_hour > 23) return 14;
-#endif
     return 0;
 }

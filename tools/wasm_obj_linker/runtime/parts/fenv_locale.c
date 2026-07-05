@@ -5,6 +5,11 @@
 #define AG_RT_FE_DOWNWARD 0x00800000
 #define AG_RT_FE_TOWARDZERO 0x00C00000
 
+static int ag_rt_fenv_is_dfl_env(long envp_addr) {
+  return envp_addr == AG_RT_FE_DFL_ENV_ADDR ||
+         (unsigned long)envp_addr == 0xffffffffUL;
+}
+
 static int ag_rt_fenv_mask(int excepts) {
   return excepts & AG_RT_FE_ALL_EXCEPT;
 }
@@ -68,11 +73,14 @@ int __agc_runtime_feholdexcept(long envp_addr) {
 }
 
 int __agc_runtime_fesetenv(long envp_addr) {
-  unsigned long long *envp = (unsigned long long *)ag_rt_ptr(envp_addr);
-  if (envp_addr == AG_RT_FE_DFL_ENV_ADDR) {
+  unsigned long long *envp;
+  if (ag_rt_fenv_is_dfl_env(envp_addr)) {
     ag_rt_round_mode = 0;
     ag_rt_except_flags = 0;
-  } else if (envp) {
+    return 0;
+  }
+  envp = (unsigned long long *)ag_rt_ptr(envp_addr);
+  if (envp) {
     ag_rt_round_mode = (int)envp[0];
     ag_rt_except_flags = (int)envp[1] & AG_RT_FE_ALL_EXCEPT;
   }

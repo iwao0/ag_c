@@ -6,6 +6,10 @@ int add(int a, int b) { return a + b; }
 int mul(int a, int b) { return a * b; }
 int apply(int (*f)(int, int), int a, int b) { return f(a, b); }
 int main(void) {
+    int (*fp)(int, int) = add;
+    int (*null_fp)(int, int) = 0;
+    assert(fp != 0);
+    assert(null_fp == 0);
     assert(apply(add, 3, 4) == 7);
     assert(apply(mul, 2, 5) == 10);
     return 0;

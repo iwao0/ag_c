@@ -466,11 +466,11 @@ int main(void) {
                        "if(strrchr(t,'a')-t!=3) return 4; memset(a,'x',3); "
                        "memcpy(a+1,\"yz\",2); if(memcmp(a,\"xyz\",3)) return 5; return 0;}\n",
                        string_stubs, 7, 0);
-  const char *empty_indirect_table[] = {"(table 1 funcref)", "call_indirect"};
+  const char *empty_indirect_table[] = {"(table 2 funcref)", "call_indirect"};
   failures += run_case("empty_indirect_table",
                        "typedef int (*F)(int); int call(F f, int x){return f(x);} int main(){return 0;}\n",
                        empty_indirect_table, 2, 0);
-  const char *funcptr_init[] = {"(data (i32.const", "(table 1 funcref)", "(elem (i32.const 0) $f"};
+  const char *funcptr_init[] = {"(data (i32.const", "(table 3 funcref)", "(elem (i32.const 2) $f"};
   failures += run_case("funcptr_init",
                        "int f(){return 1;} int (*fp[1])()={f}; int main(){return fp[0]();}\n",
                        funcptr_init, 3, 1);
@@ -550,8 +550,8 @@ int main(void) {
                        "struct S{double d; int x;}; union U{struct S s; long raw;}; "
                        "union U g={.s={2.5,4}}; int main(){return (int)g.s.d+g.s.x;}\n",
                        global_union_struct_fp, 2, 6);
-  const char *global_union_funcptr_array_member_call[] = {"(data (i32.const", "(table 2 funcref)",
-                                                            "(elem (i32.const 0) $add1 $add2",
+  const char *global_union_funcptr_array_member_call[] = {"(data (i32.const", "(table 4 funcref)",
+                                                            "(elem (i32.const 2) $add1 $add2",
                                                             "call_indirect"};
   failures += run_case("global_union_funcptr_array_member_call",
                        "int add1(int x){return x+1;} int add2(int x){return x+2;} "
@@ -654,11 +654,11 @@ int main(void) {
   failures += run_case("double_call",
                        "double addd(double a,double b){return a+b;} int main(){return (int)addd(1.25,2.75);}\n",
                        double_call, 3, 4);
-  const char *funcptr_call[] = {"(table 1 funcref)", "(elem (i32.const 0) $add1", "call_indirect"};
+  const char *funcptr_call[] = {"(table 3 funcref)", "(elem (i32.const 2) $add1", "call_indirect"};
   failures += run_case("funcptr_call",
                        "int add1(int x){return x+1;} int main(){int (*fp)(int); fp=add1; return fp(41);}\n",
                        funcptr_call, 3, 42);
-  const char *funcptr_double_call[] = {"(table 1 funcref)", "call_indirect", "(param f64)", "(result f64)"};
+  const char *funcptr_double_call[] = {"(table 3 funcref)", "call_indirect", "(param f64)", "(result f64)"};
   failures += run_case("funcptr_double_call",
                        "double addd(double x,double y){return x+y;} int main(){double (*fp)(double,double); "
                        "fp=addd; return (int)fp(1.25,2.75);}\n",
@@ -696,7 +696,7 @@ int main(void) {
                        "int main(){struct Big (*fp)(int); fp=mkbig; struct Big r; r=fp(40); "
                        "return r.a+r.c+fp(1).b;}\n",
                        funcptr_struct_return, 3, 84);
-  const char *global_funcptr_struct_return[] = {"(data (i32.const", "(table 1 funcref)",
+  const char *global_funcptr_struct_return[] = {"(data (i32.const", "(table 3 funcref)",
                                                 "(call_indirect (param i32) (param i64)"};
   failures += run_case("global_funcptr_struct_return",
                        "struct Big{int a; int b; int c;}; "
@@ -704,7 +704,7 @@ int main(void) {
                        "struct Big (*g)(int)=mkbig; int main(){struct Big r; r=g(5); "
                        "return r.b+r.c;}\n",
                        global_funcptr_struct_return, 3, 13);
-  const char *struct_funcptr_struct_return[] = {"(data (i32.const", "(table 1 funcref)",
+  const char *struct_funcptr_struct_return[] = {"(data (i32.const", "(table 3 funcref)",
                                                 "(call_indirect (param i32) (param i64)"};
   failures += run_case("struct_funcptr_struct_return",
                        "struct Big{int a; int b; int c;}; "
@@ -712,7 +712,7 @@ int main(void) {
                        "struct Ops{struct Big (*f)(int);}; struct Ops ops={mkbig}; "
                        "int main(){struct Big r; r=ops.f(10); return r.a+r.c;}\n",
                        struct_funcptr_struct_return, 3, 22);
-  const char *funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
+  const char *funcptr_void_call[] = {"call_indirect", "(table 3 funcref)"};
   failures += run_case("funcptr_void_call",
                        "void set(int *p){*p=9;} int main(){void (*fp)(int*); int x; x=0; "
                        "fp=set; fp(&x); return x;}\n",
@@ -722,17 +722,17 @@ int main(void) {
                        "int set(int *p){*p=9; return 123;} int main(){int (*fp)(int*); int x; x=0; "
                        "fp=set; fp(&x); return x;}\n",
                        funcptr_unused_result_call, 3, 9);
-  const char *forward_func_addr[] = {"(table 1 funcref)", "(elem (i32.const 0) $main"};
+  const char *forward_func_addr[] = {"(table 3 funcref)", "(elem (i32.const 2) $main"};
   failures += run_case("forward_func_addr",
                        "int main(); void *foo(){return &main;} int main(){foo(); return 0;}\n",
                        forward_func_addr, 2, 0);
-  const char *forward_funcptr_store[] = {"(table 1 funcref)", "(elem (i32.const 0) $later"};
+  const char *forward_funcptr_store[] = {"(table 3 funcref)", "(elem (i32.const 2) $later"};
   failures += run_case("forward_funcptr_store",
                        "int later(void); struct S{int (*f)(void);}; void set(struct S *s){s->f=later;} "
                        "int later(void){return 7;} int main(){struct S s; set(&s); return s.f();}\n",
                        forward_funcptr_store, 2, 7);
   const char *fprintf_funcptr_stub[] = {"(func $fprintf (param i32 i32) (result i32)",
-                                        "(elem (i32.const 0) $fprintf", "call_indirect"};
+                                        "(elem (i32.const 2) $fprintf", "call_indirect"};
   failures += run_case("fprintf_funcptr_stub",
                        "typedef void FILE; int fprintf(FILE*, const char*, ...); "
                        "int (*p)(FILE*, const char*, ...)=&fprintf; "
@@ -741,41 +741,41 @@ int main(void) {
   failures += run_fail_case("funcptr_external_ref",
                             "int ext(int); int main(){int (*fp)(int); fp=ext; return fp(1);}\n",
                             "E4008");
-  const char *global_funcptr_call[] = {"(data (i32.const", "(table 1 funcref)", "call_indirect"};
+  const char *global_funcptr_call[] = {"(data (i32.const", "(table 3 funcref)", "call_indirect"};
   failures += run_case("global_funcptr_call",
                        "int add1(int x){return x+1;} int (*g)(int)=add1; int main(){return g(41);}\n",
                        global_funcptr_call, 3, 42);
-  const char *global_funcptr_array_call[] = {"(data (i32.const", "(table 2 funcref)",
-                                             "(elem (i32.const 0) $add1 $add2", "call_indirect"};
+  const char *global_funcptr_array_call[] = {"(data (i32.const", "(table 4 funcref)",
+                                             "(elem (i32.const 2) $add1 $add2", "call_indirect"};
   failures += run_case("global_funcptr_array_call",
                        "int add1(int x){return x+1;} int add2(int x){return x+2;} "
                        "int (*ops[2])(int)={add1,add2}; int main(){return ops[1](40);}\n",
                        global_funcptr_array_call, 4, 42);
-  const char *static_funcptr_call[] = {"(i32.const 0)", "(table 1 funcref)", "call_indirect"};
+  const char *static_funcptr_call[] = {"(i32.const 0)", "(table 3 funcref)", "call_indirect"};
   failures += run_case("static_funcptr_call",
                        "int add1(int x){return x+1;} int main(){static int (*fp)(int)=add1; "
                        "return fp(41);}\n",
                        static_funcptr_call, 3, 42);
-  const char *struct_funcptr_call[] = {"(data (i32.const", "(table 1 funcref)", "call_indirect"};
+  const char *struct_funcptr_call[] = {"(data (i32.const", "(table 3 funcref)", "call_indirect"};
   failures += run_case("struct_funcptr_call",
                        "int add1(int x){return x+1;} struct Ops{int (*f)(int);}; "
                        "struct Ops ops={add1}; int main(){return ops.f(41);}\n",
                        struct_funcptr_call, 3, 42);
-  const char *struct_funcptr_offset_call[] = {"(data (i32.const", "(table 1 funcref)", "call_indirect"};
+  const char *struct_funcptr_offset_call[] = {"(data (i32.const", "(table 3 funcref)", "call_indirect"};
   failures += run_case("struct_funcptr_offset_call",
                        "int add1(int x){return x+1;} struct Ops{int pad; int (*f)(int);}; "
                        "struct Ops ops={5,add1}; int main(){return ops.f(41);}\n",
                        struct_funcptr_offset_call, 3, 42);
-  const char *struct_funcptr_array_member_call[] = {"(data (i32.const", "(table 2 funcref)",
-                                                     "(elem (i32.const 0) $add1 $add2",
+  const char *struct_funcptr_array_member_call[] = {"(data (i32.const", "(table 4 funcref)",
+                                                     "(elem (i32.const 2) $add1 $add2",
                                                      "call_indirect"};
   failures += run_case("struct_funcptr_array_member_call",
                        "int add1(int x){return x+1;} int add2(int x){return x+2;} "
                        "struct Ops{int (*f[2])(int);}; struct Ops ops={{add1,add2}}; "
                        "int main(){return ops.f[1](40);}\n",
                        struct_funcptr_array_member_call, 4, 42);
-  const char *static_union_funcptr_array_member_call[] = {"(data (i32.const", "(table 2 funcref)",
-                                                            "(elem (i32.const 0) $add1 $add2",
+  const char *static_union_funcptr_array_member_call[] = {"(data (i32.const", "(table 4 funcref)",
+                                                            "(elem (i32.const 2) $add1 $add2",
                                                             "call_indirect"};
   failures += run_case("static_union_funcptr_array_member_call",
                        "int add1(int x){return x+1;} int add2(int x){return x+2;} "
@@ -783,14 +783,14 @@ int main(void) {
                        "int main(){static union Ops ops={.f[1]=add2}; "
                        "static int (*q)(int)=add1; return ops.f[1](40)+q(0)-1;}\n",
                        static_union_funcptr_array_member_call, 4, 42);
-  const char *struct_funcptr_array_member_store_call[] = {"(table 2 funcref)", "$add1 $add2",
+  const char *struct_funcptr_array_member_store_call[] = {"(table 4 funcref)", "$add1 $add2",
                                                            "call_indirect"};
   failures += run_case("struct_funcptr_array_member_store_call",
                        "int add1(int x){return x+1;} int add2(int x){return x+2;} "
                        "struct Ops{int (*f[2])(int);}; struct Ops ops={{add2,add2}}; "
                        "int main(){ops.f[1]=add1; return ops.f[1](41);}\n",
                        struct_funcptr_array_member_store_call, 3, 42);
-  const char *struct_funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
+  const char *struct_funcptr_void_call[] = {"call_indirect", "(table 3 funcref)"};
   failures += run_case("struct_funcptr_void_call",
                        "void set(int *p){*p=9;} struct Ops{void (*f)(int*);}; "
                        "struct Ops ops={set}; int main(){int x; x=0; ops.f(&x); return x;}\n",
@@ -800,13 +800,13 @@ int main(void) {
                        "int set(int *p){*p=9; return 123;} struct Ops{int (*f)(int*);}; "
                        "struct Ops ops={set}; int main(){int x; x=0; ops.f(&x); return x;}\n",
                        struct_funcptr_unused_result_call, 3, 9);
-  const char *struct_funcptr_store_call[] = {"(table 2 funcref)", "$set7 $set9", "call_indirect"};
+  const char *struct_funcptr_store_call[] = {"(table 4 funcref)", "$set7 $set9", "call_indirect"};
   failures += run_case("struct_funcptr_store_call",
                        "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
                        "struct Ops{void (*f)(int*);}; struct Ops ops={set9}; "
                        "int main(){int x; x=0; ops.f=set7; ops.f(&x); return x;}\n",
                        struct_funcptr_store_call, 3, 7);
-  const char *struct_funcptr_control_flow_store[] = {"(table 2 funcref)", "$set7 $set9",
+  const char *struct_funcptr_control_flow_store[] = {"(table 4 funcref)", "$set7 $set9",
                                                      "call_indirect", "(local $pc i32)"};
   failures += run_case("struct_funcptr_control_flow_store",
                        "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
@@ -823,12 +823,12 @@ int main(void) {
   failures += run_fail_case("global_funcptr_external_ref",
                             "int ext(int); int (*g)(int)=ext; int main(){return 0;}\n",
                             "E4008");
-  const char *global_funcptr_void_call[] = {"call_indirect", "(table 1 funcref)"};
+  const char *global_funcptr_void_call[] = {"call_indirect", "(table 3 funcref)"};
   failures += run_case("global_funcptr_void_call",
                        "void set(int *p){*p=9;} void (*g)(int*)=set; "
                        "int main(){int x; x=0; g(&x); return x;}\n",
                        global_funcptr_void_call, 2, 9);
-  const char *global_funcptr_void_store_call[] = {"(table 2 funcref)", "$set7 $set9", "call_indirect"};
+  const char *global_funcptr_void_store_call[] = {"(table 4 funcref)", "$set7 $set9", "call_indirect"};
   failures += run_case("global_funcptr_void_store_call",
                        "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "
                        "void (*g)(int*)=set9; int main(){int x; x=0; g=set7; g(&x); return x;}\n",
@@ -838,7 +838,7 @@ int main(void) {
                        "int set(int *p){*p=9; return 123;} int (*g)(int*)=set; "
                        "int main(){int x; x=0; g(&x); return x;}\n",
                        global_funcptr_unused_result_call, 3, 9);
-  const char *global_funcptr_control_flow_store[] = {"(table 2 funcref)", "$set7 $set9",
+  const char *global_funcptr_control_flow_store[] = {"(table 4 funcref)", "$set7 $set9",
                                                      "call_indirect", "(local $pc i32)"};
   failures += run_case("global_funcptr_control_flow_store",
                        "void set9(int *p){*p=9;} void set7(int *p){*p=7;} "

@@ -748,12 +748,18 @@ static const test_case_t test_cases[] = {
     {"stdheader", "wchar_search_concat_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_search_concat_ops.c", 0, 0},
     {"stdheader", "wchar_multibyte_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_multibyte_ops.c", 0, 0},
     {"stdheader", "wchar_convert_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_convert_ops.c", 0, 0},
+    {"stdheader", "wchar_time_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wchar_time_ops.c", 0, 0},
     {"stdheader", "wctype_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/wctype_runtime_ops.c", 0, 0},
     {"stdheader", "math_include", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_include.c", 0, 0},
     {"stdheader", "math_dependency_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_dependency_ops.c", 0, 0},
     {"stdheader", "math_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_runtime_ops.c", 0, 0},
+    {"stdheader", "math_wrapper_only_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/math_wrapper_only_ops.c", 0, 0},
     {"stdheader", "time_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_runtime_ops.c", 0, 0},
+    {"stdheader", "time_gmtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_gmtime_ops.c", 0, 0},
     {"stdheader", "time_localtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_localtime_ops.c", 0, 0},
+    {"stdheader", "time_text_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_text_ops.c", 0, 0},
+    {"stdheader", "time_strftime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_strftime_ops.c", 0, 0},
+    {"stdheader", "time_mktime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/time_mktime_ops.c", 0, 0},
     {"stdheader", "signal_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/signal_runtime_ops.c", 0, 0},
     {"stdheader", "inttypes_strto_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/inttypes_strto_ops.c", 0, 0},
     {"stdheader", "fenv_runtime_ops", CASE_ASSERT_FILE, "test/fixtures/stdheader/fenv_runtime_ops.c", 0, 0},
@@ -1185,6 +1191,7 @@ static const test_case_t test_cases[] = {
     {"probes", "variadic_via_func_pointer", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/variadic_via_func_pointer.c", 0, 0},
     {"probes", "global_variadic_funcptr_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_variadic_funcptr_call.c", 0, 0},
     {"probes", "macro_nested_paste_call", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_nested_paste_call.c", 0, 0},
+    {"probes", "macro_nested_paste_call_arg", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_nested_paste_call_arg.c", 0, 0},
     {"probes", "macro_paste_empty_operand", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/macro_paste_empty_operand.c", 0, 0},
     {"probes", "incomplete_tag_and_nested_func_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/incomplete_tag_and_nested_func_param.c", 0, 0},
     {"probes", "gnu_attribute_parse", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/gnu_attribute_parse.c", 0, 0},
@@ -1993,7 +2000,10 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_realpath") == 0 ||
             strcmp(sym, "_time") == 0 || strcmp(sym, "_clock") == 0 ||
             strcmp(sym, "_difftime") == 0 ||
-            strcmp(sym, "_localtime") == 0 ||
+            strcmp(sym, "_gmtime") == 0 || strcmp(sym, "_localtime") == 0 ||
+            strcmp(sym, "_asctime") == 0 || strcmp(sym, "_ctime") == 0 ||
+            strcmp(sym, "_strftime") == 0 || strcmp(sym, "_mktime") == 0 ||
+            strcmp(sym, "_timespec_get") == 0 ||
             strcmp(sym, "_signal") == 0 || strcmp(sym, "_raise") == 0 ||
             strcmp(sym, "_perror") == 0 || strcmp(sym, "_fopen") == 0 ||
             strcmp(sym, "_fclose") == 0 || strcmp(sym, "_fflush") == 0 ||
@@ -2119,15 +2129,20 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_wcsncpy") == 0 || strcmp(sym, "_wcscat") == 0 ||
             strcmp(sym, "_wcsncat") == 0 || strcmp(sym, "_wcsstr") == 0 ||
             strcmp(sym, "_wcscmp") == 0 || strcmp(sym, "_wcsncmp") == 0 ||
+            strcmp(sym, "_wcscoll") == 0 || strcmp(sym, "_wcsxfrm") == 0 ||
             strcmp(sym, "_wcschr") == 0 || strcmp(sym, "_wcsrchr") == 0 ||
+            strcmp(sym, "_wcsspn") == 0 || strcmp(sym, "_wcscspn") == 0 ||
+            strcmp(sym, "_wcspbrk") == 0 || strcmp(sym, "_wcstok") == 0 ||
             strcmp(sym, "_wmemcpy") == 0 || strcmp(sym, "_wmemset") == 0 ||
             strcmp(sym, "_wmemmove") == 0 || strcmp(sym, "_wmemcmp") == 0 ||
             strcmp(sym, "_wmemchr") == 0 ||
             strcmp(sym, "_mbrtowc") == 0 || strcmp(sym, "_wcrtomb") == 0 ||
             strcmp(sym, "_mbsrtowcs") == 0 || strcmp(sym, "_wcsrtombs") == 0 ||
+            strcmp(sym, "_mbrlen") == 0 || strcmp(sym, "_mbsinit") == 0 ||
             strcmp(sym, "_btowc") == 0 || strcmp(sym, "_wctob") == 0 ||
             strcmp(sym, "_wcstol") == 0 || strcmp(sym, "_wcstoul") == 0 ||
             strcmp(sym, "_wcstod") == 0 ||
+            strcmp(sym, "_wcsftime") == 0 ||
             strcmp(sym, "_mbrtoc16") == 0 || strcmp(sym, "_c16rtomb") == 0 ||
             strcmp(sym, "_mbrtoc32") == 0 || strcmp(sym, "_c32rtomb") == 0 ||
             strcmp(sym, "_feclearexcept") == 0 || strcmp(sym, "_fetestexcept") == 0 ||

@@ -2,6 +2,7 @@
 // expected: exit=0
 #include <assert.h>
 #include <fenv.h>
+#include <limits.h>
 #include <math.h>
 
 static int near1000(double v, int lo, int hi) {
@@ -239,6 +240,12 @@ int main(void) {
   assert((int)logb(8.0) == 3);
   assert((int)logbf(0.75f) == -1);
   assert((int)logbl(0.25L) == -2);
+  assert(ilogb(z) == FP_ILOGB0);
+  assert(ilogb(nanv) == FP_ILOGBNAN);
+  assert(ilogb(1.0 / z) == INT_MAX);
+  assert(logb(z) < -1.0e300);
+  assert(logb(1.0 / z) > 1.0e300);
+  assert(nanish(logb(nanv)));
   assert((int)fmin(nanv, 7.0) == 7);
   assert((int)fmin(7.0, nanv) == 7);
   assert((int)fminf((float)nanv, 5.0f) == 5);

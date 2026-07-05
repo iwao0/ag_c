@@ -3786,7 +3786,7 @@ static int intern_table_func(final_table_func_t **table_funcs, int *table_count,
   tf.obj = obj;
   tf.func_index = func_index;
   tf.final_func_index = final_func_index;
-  tf.table_index = *table_count + 1;
+  tf.table_index = *table_count + 2;
   f->final_table_index = tf.table_index;
   PUSH(*table_funcs, *table_count, *table_cap, tf);
   return tf.table_index;
@@ -4044,7 +4044,7 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
     buf_uleb(&sec, 1);
     buf_u8(&sec, 0x70);
     buf_u8(&sec, 0);
-    buf_uleb(&sec, (uint32_t)table_count + 1);
+    buf_uleb(&sec, (uint32_t)table_count + 2);
     emit_section(out, SEC_TABLE, &sec);
     free(sec.data); sec = (buf_t){0};
   }
@@ -4102,7 +4102,7 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
     buf_uleb(&sec, 1);
     buf_u8(&sec, 0);
     buf_u8(&sec, 0x41);
-    buf_sleb_i32(&sec, 1);
+    buf_sleb_i32(&sec, 2);
     buf_u8(&sec, 0x0b);
     buf_uleb(&sec, (uint32_t)table_count);
     for (int i = 0; i < table_count; i++) {

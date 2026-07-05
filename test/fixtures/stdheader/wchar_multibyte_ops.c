@@ -14,6 +14,11 @@ int main(void) {
     if (mbrtowc(&wc, "", 1, 0) != 0 || wc != 0) return 6;
     if (mbrtowc(&wc, "x", 0, 0) != (size_t)-2) return 7;
     if (wcrtomb(out, L'k', 0) != 1 || out[0] != 'k') return 8;
+    if (mbrlen("A", 2, 0) != 1) return 13;
+    if (mbrlen("", 1, 0) != 0) return 14;
+    if (mbrlen("x", 0, 0) != (size_t)-2) return 15;
+    if (mbrlen(0, 0, 0) != 0) return 16;
+    if (!mbsinit(0)) return 17;
     {
         const char *src = "az";
         wchar_t wide[4] = {0};

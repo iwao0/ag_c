@@ -17,5 +17,10 @@ int main(void) {
     assert(strtod("4e-1z", &end) == 0.4);
     assert(*end == 'z');
     assert(atof("+3.5") == 3.5);
+
+    char no_digits[] = "  -.x";
+    end = 0;
+    assert(strtod(no_digits, &end) == 0.0);
+    assert(end == no_digits);
     return 0;
 }

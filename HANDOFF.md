@@ -1,9 +1,632 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き582: wasm mktime 正規化 smoke 補強）
+最終更新: 2026-07-06（続き617: WAT standalone vsnprintf/vsprintf stubs を追加）
 
 ## 現状
 - 直近の部分確認:
+  `./build/test_e2e` =
+  **1193/1193 pass**、
+  `./build/test_wasm32_e2e` =
+  **1171 compiled, 1171 executed**、
+  `make wasm32-wat-c-testsuite-scan` =
+  **218/218 pass, fail 0**、
+  `make wasm32-object-c-testsuite-scan` =
+  **218/218 pass, fail 0**、
+  `make wasm32-object-link-c-testsuite-scan` =
+  **218/218 pass, fail 0**、
+  `wasm-interp build/wasm32_wat_scan/stdheader__math_runtime_ops.wasm --run-all-exports` =
+  **main() => i32:0**、
+  `wasm-interp build/wasm32_wat_scan/stdheader__tgmath_variant_ops.wasm --run-all-exports` =
+  **main() => i32:0**、
+  `make test-wasm-js-e2e` =
+  **1160/1160 pass, fail 0**、
+  `make test-wasm-js-api` = **green**、
+  `make test-wasm-linker-selfhost` = **green**、
+  `./build/test_wasm32_object` =
+  **pass（内部 e2e scan 1162/1162 pass, fail 0）**、
+  `./build/test_wasm32_backend` = **pass**、
+  `make wasm32-object-fixture-scan` =
+  **1164/1164 pass, fail 0**、
+  `make wasm32-object-link-fixture-scan` =
+  **1160/1160 pass, fail 0**、
+  `make wasm32-object-link-all-fixture-scan` =
+  **1162/1162 pass, fail 0**、
+  `make wasm32-wat-fixture-scan` =
+  **1162/1162 pass, fail 0**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `git diff --check` = **green**、
+  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き617: **WAT standalone `vsnprintf()` / `vsprintf()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には `vsnprintf` / `vsprintf` が runtime symbol として入っていたが、
+  WAT standalone 側には本体がなく、`stdarg.h` の `va_list` 経由で formatted output を使うコードが
+  undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に `__ag_vsnprintf_impl` を追加し、`va_list` の 8 byte slot を順に読みながら
+  `%d` / `%u` / `%02d` / `%s` / `%c` / `%%` と literal を処理するようにした。
+  `vsnprintf()` は `size` に基づく切り詰めと NUL 終端、`vsprintf()` は同じ helper への大きな size wrapper とした。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdio_vsnprintf_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1171 compiled, 1171 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き616: **WAT standalone `swprintf()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には `swprintf` が runtime symbol として入っていたが、
+  WAT standalone 側には本体がなく、`wchar.h` 経由で `swprintf()` を使う standalone WAT が
+  undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に `swprintf` 用の variadic call 特例を追加し、
+  fixed args 3 個に加えて最初の追加引数 2 個を WAT stub へ渡すようにした。
+  本体は `wchar_t` を 4 byte 単位で読み書きし、`%d` / `%u` / `%02d` / `%%` と literal を処理する。
+  戻り値は書こうとした wide 文字数、`size > 0` では `size - 1` 位置までに NUL 終端するため、
+  fixed return stub ではなく truncation と終端位置も検証できる。
+  回帰は WAT 専用の `test/fixtures/wasm32/wchar_swprintf_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1170 compiled, 1170 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き615: **WAT standalone `fputs()` / `fputc()` / `putc()` / `setvbuf()` /
+  `setbuf()` / `perror()` の undefined import gap を解消し、`puts()` の戻り値を改善**。
+  linked runtime / linker rewrite には narrow stdio output / buffering helper 群が入っていたが、
+  WAT standalone 側は `puts()` / `putchar()` などのごく薄い stub に寄っており、
+  `fputs()` / `fputc()` / `putc()` / `setvbuf()` / `setbuf()` / `perror()` は
+  undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に output-only の minimal stub を追加し、`fputs()` は文字列長、
+  `fputc()` / `putc()` は書いた文字、`setvbuf()` は non-NULL stream かつ mode 0..2 で 0、
+  invalid stream / mode では -1、`setbuf()` / `perror()` は no-op とした。
+  既存 `puts()` は固定 1 を返していたため、文字列長 + newline の戻り値に直した。
+  host libc へ疑似 `FILE *` を渡さないよう、回帰は WAT 専用の
+  `test/fixtures/wasm32/stdio_output_ops.c` として追加し、`test/wasm32_e2e_extra_cases.txt`
+  に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/ag_c_wasm test/fixtures/wasm32/stdio_output_ops.c > build/wasm32_e2e/wasm32_stdio_output_ops.wat && wat2wasm build/wasm32_e2e/wasm32_stdio_output_ops.wat -o build/wasm32_e2e/wasm32_stdio_output_ops.wasm && wasm-interp build/wasm32_e2e/wasm32_stdio_output_ops.wasm --run-all-exports`
+  = `main() => i32:0`、
+  `./build/test_wasm32_e2e` = `1169 compiled, 1169 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き614: **WAT standalone `fputwc()` / `putwc()` / `putwchar()` / `fputws()` /
+  `fwide()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には wide I/O helper 群が入っていたが、WAT standalone 側では
+  `putchar()` 以外の出力系 wide I/O stub が無く、`wchar.h` 経由で output-only wide API を使う
+  standalone WAT が undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に output-only の minimal stub を追加し、`fputwc()` / `putwc()` は
+  non-NULL stream なら書いた wide char を返し、NULL stream は `WEOF` 相当の -1 を返す。
+  `putwchar()` は既存 `putchar()` と同じく実出力を持たない standalone 戻り値 stub、
+  `fputws()` は wide 文字数を返し、NULL string / stream は -1 を返す。
+  `fwide()` は standalone state を持たないため、non-NULL stream では mode の符号を返し、
+  NULL stream では 0 を返す。
+  host libc へ不正な `FILE *` を渡す fixture にしないため、回帰は WAT 専用の
+  `test/fixtures/wasm32/wchar_output_ops.c` として追加し、`test/wasm32_e2e_extra_cases.txt`
+  に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/ag_c_wasm test/fixtures/wasm32/wchar_output_ops.c > build/wasm32_e2e/wasm32_wchar_output_ops.wat && wat2wasm build/wasm32_e2e/wasm32_wchar_output_ops.wat -o build/wasm32_e2e/wasm32_wchar_output_ops.wasm && wasm-interp build/wasm32_e2e/wasm32_wchar_output_ops.wasm --run-all-exports`
+  = `main() => i32:0`、
+  `./build/test_wasm32_e2e` = `1168 compiled, 1168 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き613: **WAT standalone `mbrlen()` / `mbsinit()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には `mbrlen()` / `mbsinit()` が入っていたが、WAT standalone 側では
+  `mbrtowc()` / `wcrtomb()` / `mbsrtowcs()` / `wcsrtombs()` などに対して
+  restartable multibyte helper の `mbrlen()` / `mbsinit()` だけ minimal libc stub が無かった。
+  `src/arch/wasm32_ir.c` では `mbrlen()` 単独利用時にも `$mbrtowc` を emit するよう dependency 条件を広げ、
+  `$mbrlen` は `$mbrtowc(NULL, s, n, ps)` wrapper、`$mbsinit` は現在の stateless standalone model に合わせて
+  常に 1 を返す stub として追加した。
+  回帰として `test/fixtures/stdheader/wchar_multibyte_ops.c` に ASCII / NUL / n==0 /
+  NULL reset / `mbsinit(NULL)` を追加した。通常 E2E 側では host libc symbol allowlist に
+  `_mbrlen` / `_mbsinit` を追加した。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/ag_c_wasm build/wasm32_e2e/stdheader_wchar_multibyte_ops.c > build/wasm32_e2e/stdheader_wchar_multibyte_ops.wat && wat2wasm build/wasm32_e2e/stdheader_wchar_multibyte_ops.wat -o build/wasm32_e2e/stdheader_wchar_multibyte_ops.wasm && wasm-interp build/wasm32_e2e/stdheader_wchar_multibyte_ops.wasm --run-all-exports`
+  = `main() => i32:0`、
+  `./build/test_wasm32_e2e` = `1167 compiled, 1167 executed`、
+  `./build/test_e2e` = `1193/1193 pass`。
+- 続き612: **WAT standalone `wcscoll()` / `wcsxfrm()` / `wcsspn()` / `wcscspn()` /
+  `wcspbrk()` / `wcstok()` の undefined import gap を解消**。
+  続き471で linked runtime / linker rewrite には wide collation/span/tokenizer 群が入っていたが、
+  WAT standalone 側の minimal libc stub には同じ関数群が無く、standalone WAT では
+  `wchar.h` fixture が undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に C locale 前提の `wcscoll()` / `wcsxfrm()` と、
+  4-byte `wchar_t` の membership scan による `wcsspn()` / `wcscspn()` / `wcspbrk()` /
+  caller-provided save pointer を更新する `wcstok()` を追加した。
+  `wcsxfrm()` では初回実装時に `dst && n` 判定を `i32.and(dst, n != 0)` としてしまい、
+  偶数アドレスの stack buffer で copy がスキップされる浅いバグが見つかったため、
+  `dst != 0 && n != 0` の明示判定へ修正した。
+  回帰として既存 `test/fixtures/stdheader/wchar_search_concat_ops.c` に、
+  collation / transform / bounded transform / span / complement span / break search /
+  `wcstok()` の連続 delimiter skip と最終 NULL を追加した。
+  通常 E2E 側では host libc symbol allowlist に `_wcscoll` / `_wcsxfrm` / `_wcsspn` /
+  `_wcscspn` / `_wcspbrk` / `_wcstok` を追加した。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/ag_c_wasm build/wasm32_e2e/stdheader_wchar_search_concat_ops.c > build/wasm32_e2e/stdheader_wchar_search_concat_ops.wat && wat2wasm build/wasm32_e2e/stdheader_wchar_search_concat_ops.wat -o build/wasm32_e2e/stdheader_wchar_search_concat_ops.wasm && wasm-interp build/wasm32_e2e/stdheader_wchar_search_concat_ops.wasm --run-all-exports`
+  = `main() => i32:0`、
+  `./build/test_wasm32_e2e` = `1167 compiled, 1167 executed`、
+  `./build/test_e2e` = `1193/1193 pass`。
+- 続き611: **WAT standalone `wcsftime()` の undefined import gap を解消**。
+  `strftime()` は続き610までで linked runtime 側の主要指定子に寄せたが、
+  `include/wchar.h` と linked runtime には `wcsftime()` がある一方、WAT standalone 側は
+  `wcsftime()` stub を持たず、wide 版だけ undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に `$wcsftime` bridge を追加し、wide format を ASCII narrow の
+  静的 format buffer に変換して既存 `$strftime` を呼び、結果を 4-byte `wchar_t` buffer へ戻すようにした。
+  C locale standalone 方針のため、wide format 内の非 ASCII code point は 0 を返す。
+  `wcsftime()` だけを使う translation unit でも `$strftime` stub / time helper / static name table が出るように、
+  emit 条件も `wcsftime` を含めて拡張した。
+  回帰として `test/fixtures/stdheader/wchar_time_ops.c` を追加し、
+  `wcsftime(buf, ..., L"%G-%V %A %B %F %T", gmtime(1609459200))` が
+  `L"2020-53 Friday January 2021-01-01 00:00:00"` になることと、
+  容量不足時に 0 を返すことを確認する。
+  通常 E2E 側では host libc symbol allowlist に `_wcsftime` を追加し、
+  `test/test_wasm32_e2e.c` / `test/test_e2e.c` の stdheader fixture list に登録した。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1167 compiled, 1167 executed`、
+  `./build/test_e2e` = `1193/1193 pass`。
+- 続き610: **WAT standalone `strftime()` の ISO week-year `%G` / `%g` / `%V` を追加**。
+  続き609で full weekday/month name `%A` / `%B` を埋めた後も、linked runtime 側にある
+  ISO week-year 系 `%G` / `%g` / `%V` は WAT standalone 側では fallback の
+  `"%G"` / `"%g"` / `"%V"` 出力になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` の `emit_wasm_strftime_stub()` に linked runtime と同じ
+  `(tm_yday - monday_index + 10) / 7` ベースの ISO week-year helper を追加し、
+  `%G` は 4 桁 ISO year、`%g` は 2 桁 ISO year、`%V` は 2 桁 ISO week を出すようにした。
+  `strftime()` 単独でもこの helper が使う `__ag_time_is_leap()` /
+  `__ag_time_days_before_year()` が出るよう、time conversion helper の emit 条件に
+  `strftime` も含めた。
+  回帰として `test/fixtures/stdheader/time_strftime_ops.c` の wasm32 経路で
+  `time_t t = 1609459200`（2021-01-01 Friday）が ISO では `2020-W53` になることを、
+  `strftime(buf, sizeof(buf), "%G %g %V", tm)` == `"2020 20 53"` で確認する。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`。
+- 続き609: **WAT standalone `strftime()` の full weekday/month name `%A` / `%B` を追加**。
+  続き608で週番号 `%U` / `%W` を埋めた後も、linked runtime 側にある
+  full weekday name `%A` と full month name `%B` は WAT standalone 側では fallback の
+  `"%A"` / `"%B"` 出力になり得る差分が残っていた。`src/arch/wasm32_ir.c` の
+  minimal static data に C locale 固定の full weekday/month name table を追加し、
+  `emit_wasm_strftime_stub()` には NUL 終端文字列を出力する `__ag_strftime_putz()` と
+  full name selector helper、`%A` / `%B` 分岐を追加した。
+  回帰として `test/fixtures/stdheader/time_strftime_ops.c` の wasm32 経路で
+  `strftime(buf, sizeof(buf), "%A %B", tm)` が `"Monday January"` になり、
+  戻り値が `strlen(buf)` と一致することを確認する。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`。
+- 続き608: **WAT standalone `strftime()` の週番号 `%U` / `%W` を追加**。
+  続き607で composite 指定子 `%c` / `%r` を埋めた後も、linked runtime 側にある
+  Sunday-start week number `%U` と Monday-start week number `%W` が WAT standalone 側では
+  fallback 出力になり得る差分が残っていた。`src/arch/wasm32_ir.c` の
+  `emit_wasm_strftime_stub()` に `tm_yday` / `tm_wday` から 2 桁週番号を計算する分岐を追加した。
+  回帰として `test/fixtures/stdheader/time_strftime_ops.c` の wasm32 経路で
+  `time_t t = 4 * 86400`（1970-01-05 Monday）の `gmtime()` 結果から
+  `strftime(buf, sizeof(buf), "%U %W", tm)` が `"01 01"` になり、戻り値が
+  `strlen(buf)` と一致することを確認する。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`。
+- 続き607: **WAT standalone `strftime()` の composite 指定子 `%c` / `%r` を追加**。
+  続き606で短縮曜日/月名や `%D` / `%R` / `%x` / `%X` などを standalone 側へ寄せたが、
+  linked runtime 側にある `%c` と `%r` はまだ WAT standalone formatter では fallback の
+  `"%c"` / `"%r"` 出力になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` の `emit_wasm_strftime_stub()` に、C locale 固定で
+  `%c` = `"Fri Jan 02 00:00:00 1970"` 形式、`%r` = `"12:00:00 AM"` 形式を組み立てる分岐を追加した。
+  回帰として `test/fixtures/stdheader/time_strftime_ops.c` の wasm32 経路で
+  `strftime(buf, sizeof(buf), "%c | %r", tm)` が
+  `"Fri Jan 02 00:00:00 1970 | 12:00:00 AM"` になり、戻り値が `strlen(buf)` と一致することを確認する。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`、`git diff --check` = green。
+- 続き606: **WAT standalone `strftime()` の対応指定子を linked runtime 側にさらに寄せた**。
+  続き605で time.h の `struct tm` 生成と text conversion が動的になった後、
+  `strftime()` はまだ `%Y/%m/%d/%H/%M/%S/%F/%T/%%` 中心の minimal formatter で、
+  linked runtime 側にある短縮曜日/月名や日付・時刻 composite の多くが未対応だった。
+  `src/arch/wasm32_ir.c` の WAT standalone `strftime()` に、C locale 固定の短縮曜日/月名 table を
+  `strftime` 単独時にも出すようにし、`%a`, `%b`/`%h`, `%C`, `%D`, `%e`, `%I`, `%j`,
+  `%n`, `%p`, `%R`, `%t`, `%u`, `%w`, `%x`, `%X`, `%y`, `%z`, `%Z` を追加した。
+  WAT standalone は UTC 固定なので `%z` は `+0000`、`%Z` は `UTC`。
+  回帰として `time_strftime_ops.c` の wasm32 経路で `time_t t = 86400` の `gmtime()` 結果から
+  `"Fri Jan  2 19 01/02/70 12 002 AM 00:00 1970-01-02 00:00:00 70 +0000 UTC \n\t5 5"`
+  を確認する。確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`、`git diff --check` = green。
+- 続き605: **WAT standalone `asctime()` / `ctime()` の固定 epoch 文字列 stub を解消**。
+  続き604で `gmtime()` / `localtime()` が入力時刻を読むようになった後も、
+  `asctime()` / `ctime()` は `"Thu Jan  1 00:00:00 1970\n"` の固定 data segment を返すだけで、
+  `time_t t = 86400` でも epoch 文字列を返し得る状態だった。`src/arch/wasm32_ir.c` に
+  weekday/month 短縮名 table と `__ag_asctime_impl()` を追加し、`struct tm` の
+  `tm_wday` / `tm_mon` / `tm_mday` / `tm_hour` / `tm_min` / `tm_sec` / `tm_year` から
+  asctime 形式の 26-byte 文字列を static buffer に構成するようにした。
+  `ctime()` は `time_t` を `__ag_time_from_seconds()` で static `tm` に変換してから同じ formatter を呼ぶ。
+  回帰として `time_text_ops.c` の wasm32 経路に `time_t t = 86400` の
+  `"Fri Jan  2 00:00:00 1970\n"` 確認を追加した。確認は
+  `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`、`git diff --check` = green。
+- 続き604: **WAT standalone `gmtime()` / `localtime()` の成功偽装をさらに解消**。
+  続き603で `mktime()` 用の `struct tm`⇔seconds helper を追加した後に time.h stub を見直すと、
+  `gmtime()` / `localtime()` はまだ `time_t *` の中身を読まず、epoch 初期化済み static `tm` を返すだけだった。
+  そのため `time_t t = 86400` でも `1970-01-01` を返し得る浅い対応になっていた。
+  `src/arch/wasm32_ir.c` の time conversion helper を `mktime()` 専用から共通 helper に分け、
+  `gmtime()` / `localtime()` が入力 `time_t` を読み、`__ag_time_from_seconds()` で static `tm` を更新して返すようにした。
+  WAT standalone の `localtime()` は引き続き UTC 固定だが、linked runtime と同じく時刻値から
+  `tm_sec` / `tm_min` / `tm_hour` / `tm_mday` / `tm_mon` / `tm_year` / `tm_wday` / `tm_yday` /
+  `tm_isdst` を構成する。回帰として `time_gmtime_ops.c` と `time_localtime_ops.c` に
+  `time_t t = 86400` の確認を追加した。確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`、`git diff --check` = green。
+- 続き603: **WAT standalone time.h minimal stub に `mktime()` を追加**。
+  続き602後に time.h family の linked runtime との差をさらに見ると、linked runtime 側には
+  `mktime()` がある一方、WAT standalone minimal stub 側は未定義のままだった。
+  固定値を返す浅い stub にはせず、`src/arch/wasm32_ir.c` に WAT 用の
+  leap year / month days / days-before-year / days-before-month / `struct tm`⇔seconds helper を追加し、
+  `mktime()` が `struct tm` を秒へ変換してから同じ `struct tm` を正規化し直すようにした。
+  `tm_mon` の範囲外、秒・分・時の carry、leap day、`tm_wday` / `tm_yday` / `tm_isdst=0` の更新を扱う。
+  回帰として `test/fixtures/stdheader/time_mktime_ops.c` を追加し、
+  wasm32 では UTC 固定の戻り秒も厳密確認する。host 側は timezone 差を避けるため、共通に確認できる
+  正規化後の `struct tm` fields を見る。`test/test_e2e.c` の host libc symbol allowlist に
+  `_mktime` も追加した。確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1166 compiled, 1166 executed`、
+  `./build/test_e2e` = `1192/1192 pass`、`git diff --check` = green。
+- 続き602: **WAT standalone time.h minimal stub に `strftime()` minimal formatter を追加**。
+  続き601後に time.h family の linked runtime との差をさらに見ると、linked runtime 側には
+  `strftime()` がある一方、WAT standalone minimal stub 側は未定義のままだった。
+  `src/arch/wasm32_ir.c` に `$strftime` と小さな出力 helper を追加し、`struct tm` の
+  `tm_year` / `tm_mon` / `tm_mday` / `tm_hour` / `tm_min` / `tm_sec` から
+  `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%F`, `%T`, `%%` と通常 literal を整形するようにした。
+  buffer に終端 NUL を置けない場合は 0 を返す。これは locale 名・曜日名・week 系指定子まで含む
+  full `strftime()` ではないが、WAT standalone の epoch/minimal time stub として undefined import を
+  解消し、固定文字列ではなく `struct tm` fields から値を作る実装にした。
+  回帰として `test/fixtures/stdheader/time_strftime_ops.c` を追加し、
+  `gmtime(0)` から `%F %T %Y %m %d %H %M %S %%` が
+  `"1970-01-01 00:00:00 1970 01 01 00 00 00 %"` になることと、小さい buffer では
+  0 を返すことを確認する。`test/test_e2e.c` の host libc symbol allowlist に `_strftime` も追加した。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1165 compiled, 1165 executed`、
+  `./build/test_e2e` = `1191/1191 pass`、`git diff --check` = green。
+- 続き601: **WAT standalone time.h minimal stub に `asctime()` / `ctime()` を追加**。
+  続き600後に time.h family の linked runtime との差をさらに見ると、
+  linked runtime 側には `asctime()` / `ctime()` がある一方、WAT standalone minimal stub 側は
+  未定義のままだった。`src/arch/wasm32_ir.c` に epoch 用 static string
+  `"Thu Jan  1 00:00:00 1970\n"` を data segment として追加し、
+  `asctime()` / `ctime()` がその文字列を返すようにした。WAT standalone は引き続き
+  UTC 固定・epoch 中心の minimal time 実装だが、`gmtime(0)` / `localtime(0)` と同じ
+  observable state に揃え、undefined import ではなく実行値で確認できるようにした。
+  回帰として `test/fixtures/stdheader/time_text_ops.c` を追加し、
+  `asctime(gmtime(&t))` と wasm32 の `ctime(&t)` を確認する。通常 host の `ctime(0)` は
+  timezone 依存なので NULL でないことだけを確認する。`test/test_e2e.c` の host libc symbol
+  allowlist に `_asctime` / `_ctime` も追加した。確認は
+  `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1164 compiled, 1164 executed`、
+  `./build/test_e2e` = `1190/1190 pass`、`git diff --check` = green。
+- 続き600: **WAT standalone time.h minimal stub に `gmtime()` と `timespec_get()` を追加**。
+  続き599で `localtime(0)` の成功偽装は直したが、同じ time.h family を見直すと
+  linked runtime 側には `gmtime()` / `timespec_get()` がある一方、WAT standalone minimal stub 側は
+  未定義のままだった。`src/arch/wasm32_ir.c` で `gmtime()` も `localtime()` と同じ
+  epoch static `struct tm` を返すようにし、`timespec_get(ts, TIME_UTC)` は
+  `tv_sec=0`, `tv_nsec=0` を格納して `TIME_UTC` を返し、未対応 base や NULL は 0 を返すようにした。
+  回帰として `test/fixtures/stdheader/time_gmtime_ops.c` を追加し、
+  `time_runtime_ops.c` に `timespec_get()` 確認を追加した。通常 E2E では host の
+  `timespec_get()` が現在時刻を返すため、ゼロ時刻の厳密確認は `__wasm32__` に限定している。
+  `test/test_e2e.c` の host libc symbol allowlist に `_gmtime` / `_timespec_get` も追加した。
+  確認は `make -j4 build/test_wasm32_e2e build/test_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1163 compiled, 1163 executed`、
+  `./build/test_e2e` = `1189/1189 pass`、`git diff --check` = green。
+- 続き599: **WAT standalone `localtime(0)` の static `struct tm` を epoch 値で初期化**。
+  C ライブラリ系の浅い stub を追加確認したところ、linked runtime 側の `localtime()` は
+  `gmtime()` と同じ UTC 固定ながら秒から `struct tm` を構成している一方、
+  `src/arch/wasm32_ir.c` の WAT standalone minimal stub は 36 byte のゼロ領域
+  `__ag_stub_tm` を返すだけで、`time_t t = 0` でも `tm_mday == 0` / `tm_year == 0`
+  になり得る成功偽装だった。`emit_minimal_locale_data_if_needed()` を
+  `emit_minimal_static_data_if_needed()` に広げ、`localtime` が未定義のときは
+  static `struct tm` の `tm_mday=1`, `tm_year=70`, `tm_wday=4` を data segment として
+  初期化するよう修正した。回帰として `test/fixtures/stdheader/time_localtime_ops.c` の
+  wasm32 経路だけ `1970-01-01 Thu 00:00:00` を厳密に確認し、native E2E 側は実行環境の
+  timezone に依存しない範囲チェックのままにした。確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1162 compiled, 1162 executed`、
+  `./build/test_e2e` = `1188/1188 pass`、`git diff --check` = green。
+- 続き598: **streaming preprocessor の pushback token が残っている間に recyclable chunk を解放する UAF を修正**。
+  続き597後の追加確認で `make test-wasm-js-pipeline` / `make test-wasm-js-api` の
+  selfhost API 生成中に `tools/wasm_obj_linker/runtime/parts/format.c:1209` の
+  `E2006` や `format.c:1049` の `E3064` として不安定に崩れることがあった。
+  同じ `libagc_runtime_js.c` は `/tmp` への単体 object 出力では通り、
+  `build/wasm_selfhost_api/obj/tools/wasm_obj_linker/runtime/libagc_runtime_js.o`
+  のような長い出力パスで露出しやすかったが、ASan 付き `build/ag_c_wasm` で再現すると
+  `pps_pull_raw()` の `s->pb_head = t->next` が heap-use-after-free として検出された。
+  原因は、macro 展開や指令処理の pushback 列がまだ raw 入力として残っている最中に、
+  parser cursor 前進フック `pps_on_advance()` が `tk_allocator_recyc_on_cursor()` を呼び、
+  pushback token を含む recyclable chunk を解放し得ること。
+  pushback 列は出力列に載る前の「将来読む token」なので、`src/preprocess/preprocess.c` の
+  `pps_on_advance()` で `s->pb_head` が非 NULL の間は chunk reclaim を抑止するよう修正した。
+  確認は ASan 付き `build/ag_c_wasm` で長い `-o .../libagc_runtime_js.o` compile = pass、
+  通常ビルドへ戻した後に同じ direct compile = pass、
+  `make test-wasm-js-api` = green、
+  `make test-wasm-js-pipeline` = green、
+  `./build/test_preprocess` = green、
+  `./build/test_e2e` = `1188/1188 pass`、
+  `./build/test_wasm32_e2e` = `1162 compiled, 1162 executed`、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1160/1160 pass, fail 0`。
+- 続き597: **streaming preprocessor の `MACRO(args)(suffix)` 再 scan 中に outer stream が先へ進む問題を修正**。
+  広めの c-testsuite scan を追加確認したところ、`test/external/c-testsuite/tests/single-exec/00201.c` が
+  `CAT(A,B)(x)` を `printf("%d\n", ...)` の第2引数で使う形で失敗し、
+  `printf("%d\n", );` のように `xy` 展開結果が出力列から消えていた。
+  macro 展開自体は `CAT -> CAT2 -> AB -> CAT -> CAT2 -> xy` まで正しく到達していたが、
+  `pp_stream_splice_paren_suffix_and_rescan()` が合成 token list を `preprocess_ctx()` で再 scan する間に
+  outer streaming cursor hook が復帰していたため、内側 token の cursor 移動で outer stream refill が走り、
+  `xy` を pushback する前に外側の `) ; return ...` が append されていた。
+  `src/preprocess/preprocess.c` の function-like macro 展開経路で cursor hook を
+  `pp_expand_funclike()` だけでなく suffix rescan 完了まで無効化し、展開結果を pushback してから
+  outer hook を戻すよう修正した。
+  回帰として `test/fixtures/probes_found_bugs/macro_nested_paste_call_arg.c` を追加し、
+  `test/test_e2e.c` と `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `./build/ag_c test/external/c-testsuite/tests/single-exec/00201.c` = pass、
+  `./build/ag_c_wasm test/external/c-testsuite/tests/single-exec/00201.c` = pass、
+  `make wasm32-wat-c-testsuite-scan` = `218/218 pass, fail 0`、
+  `make wasm32-object-c-testsuite-scan` = `218/218 pass, fail 0`、
+  `make wasm32-object-link-c-testsuite-scan` = `218/218 pass, fail 0`、
+  `./build/test_e2e` = `1188/1188 pass`、
+  `./build/test_wasm32_e2e` = `1162 compiled, 1162 executed`、
+  `make wasm32-wat-fixture-scan` = `1162/1162 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `1164/1164 pass, fail 0`、
+  `make wasm32-object-link-fixture-scan` = `1160/1160 pass, fail 0`、
+  `./build/test_wasm32_object` = pass（内部 e2e scan `1162/1162 pass, fail 0`）、
+  `make wasm32-object-link-all-fixture-scan` = `1162/1162 pass, fail 0`、
+  `git diff --check` = green。
+- 続き596: **`SIG_IGN` を host 互換値に戻し、Wasm table slot 1 を予約**。
+  続き595では `SIG_IGN` を Wasm function table index と衝突しない `-2` sentinel にしたが、
+  通常 e2e/clang 参照では repo の `include/signal.h` から host libc の `signal()` にその値が渡るため、
+  public header としては host 側の標準的な sentinel 表現とズレることが分かった。
+  その場限りに共有 fixture から `SIG_IGN` runtime check を外すのではなく、
+  `include/signal.h` の `SIG_IGN` を `(sig_handler_t)1` に戻し、Wasm 側を合わせて修正した。
+  WAT standalone は function table slot 0 を null、slot 1 を `SIG_IGN` 用に予約し、
+  実関数の table index を 2 始まりへ変更した。object linker も同じく
+  `R_WASM_TABLE_INDEX_*` の最終 table index と Element section offset を 2 始まりにし、
+  `tools/wasm_obj_linker/README.md` に slot 1 reserved を追記した。
+  WAT `$raise` と linked runtime `__agc_runtime_raise` は handler 値 1 を呼び出さず成功扱いで返す。
+  これにより shared `test/fixtures/stdheader/signal_runtime_ops.c` に
+  `signal(SIGINT, SIG_IGN)` / `raise(SIGINT)` の runtime check を戻せた。
+  wasm 専用 `test/fixtures/wasm32/signal_ign_ops.c` も残し、standalone Wasm の同挙動を追加で固定している。
+  追加で `make wasm32-object-link-all-fixture-scan` が `test/fixtures/wasm32/fenv_dfl_env_ops.c` で
+  `FE_DFL_ENV` を `4294967295` として linked runtime に渡し、`fesetenv()` が `-1L` と判定できず
+  out-of-bounds dereference することも見つかった。
+  `tools/wasm_obj_linker/runtime/parts/fenv_locale.c` に wasm32 の `0xffffffff` も default env とみなす
+  helper を追加し、`ag_rt_ptr()` より前に判定するよう修正した。
+  確認は `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1161 compiled, 1161 executed`、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `./build/test_wasm32_backend` = pass、
+  `make wasm32-wat-fixture-scan` = `1161/1161 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `1163/1163 pass, fail 0`、
+  `make wasm32-object-link-fixture-scan` = `1159/1159 pass, fail 0`、
+  `make wasm32-object-link-all-fixture-scan` = `1161/1161 pass, fail 0`、
+  `make test-wasm-js-api` = green、
+  `make test-wasm-linker-selfhost` = green、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `git diff --check` = green。
+- 続き595: **`signal.h` の `SIG_DFL` / `SIG_ERR` / `SIG_IGN` と runtime sentinel 処理を追加**。
+  続き592-594で `signal/raise` の runtime 挙動を固めたが、`include/signal.h` には
+  C 標準の handler macro である `SIG_DFL` / `SIG_ERR` / `SIG_IGN` がまだ無かった。
+  この時点では `SIG_DFL` を null handler、`SIG_ERR` を `-1`、`SIG_IGN` を function table index と
+  衝突しない `-2` sentinel として定義したが、続き596で public `SIG_IGN` は `(sig_handler_t)1` に戻し、
+  Wasm 側の table slot 1 を予約する根本対応に置き換えた。
+  `test/fixtures/stdheader/signal_include.c` で macro の存在・相互 distinctness を固定した。
+  `test/fixtures/stdheader/signal_runtime_ops.c` では `signal(-1, handler) == SIG_ERR` も確認する。
+  確認は `make build/test_e2e build/test_wasm32_e2e build/test_wasm32_object` = green、
+  `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1160 compiled, 1160 executed`、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make wasm32-wat-fixture-scan` = `1160/1160 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `1162/1162 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `git diff --check` = green。
+- 続き594: **`signal()` の旧 handler 返却と invalid `raise()` を回帰で固定**。
+  続き592で WAT standalone の `signal/raise` を no-op から handler 保存・実行に修正し、
+  続き593で function pointer null 予約を直接見る回帰を追加した。
+  今回は `test/fixtures/stdheader/signal_runtime_ops.c` をさらに強化し、
+  2回目の `signal(SIGINT, handler)` が前回登録済みの `handler` を返すこと、
+  `raise(SIGINT)` が handler の副作用 `seen += 7` を起こすこと、
+  `raise(-1)` が成功扱いにならないことを確認するようにした。
+  restore 後に実際に `raise(SIGINT)` すると host e2e では既定動作に戻ってプロセス終了し得るため、
+  そこは共有 fixture では実行していない。
+  確認は `make build/test_e2e build/test_wasm32_e2e` = green、
+  `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1160 compiled, 1160 executed`、
+  `make wasm32-wat-fixture-scan` = `1160/1160 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `1162/1162 pass, fail 0`、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `git diff --check` = green。
+- 続き593: **function table index 0 null 予約を直接見る回帰を追加**。
+  続き592で standalone WAT の function pointer を 1 始まりにし、table index 0 を
+  null function pointer 用に予約したが、直接の回帰は `signal/raise` の handler 実行経路に寄っていた。
+  今回 `test/fixtures/funcall/funcptr_apply_multi.c` に
+  `int (*fp)(int, int) = add;` と `int (*null_fp)(int, int) = 0;` を追加し、
+  `fp != 0` と `null_fp == 0` を明示的に assert するよう強化した。
+  これにより、最初の address-taken 関数が table index 0 になって null と区別できなくなる回帰を、
+  間接呼び出しの成功とは別に検出できる。
+  確認は `make build/test_e2e build/test_wasm32_e2e` = green、
+  `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1160 compiled, 1160 executed`、
+  `make wasm32-wat-fixture-scan` = `1160/1160 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `597/597 pass, fail 0`、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `git diff --check` = green。
+- 続き592: **WAT standalone の `signal`/`raise` no-op と function table index 0 のズレを修正**。
+  浅い stub の追加確認で、linked runtime は `signal()` が handler を保存し `raise()` が呼び出す一方、
+  `src/arch/wasm32_ir.c` の WAT standalone stub はどちらも成功を返すだけだった。
+  さらに standalone WAT の function table は index 0 に通常関数を置いており、
+  `tools/wasm_obj_linker/README.md` と object linker 側の「table index 0 は null function pointer 予約」
+  とズレていた。このまま `signal` だけ直すと、最初の handler 関数が 0 に見えて呼べないため、
+  `intern_function_table_ref()` の返す function pointer を 1 始まりにし、WAT table は
+  slot 0 を空けて `(elem (i32.const 1) ...)` から実関数を配置するよう揃えた。
+  その上で WAT minimal libc stub に 32 entry の `__ag_signal_handlers` 領域を確保し、
+  `signal(sig, handler)` は旧 handler を返しつつ保存、`raise(sig)` は保存済み handler を
+  `(call_indirect (param i64) ...)` で実行するようにした。
+  回帰として `test/fixtures/stdheader/signal_runtime_ops.c` の handler に `seen += 7` の副作用を持たせ、
+  `raise(SIGINT)` 後に handler が実行されたことまで確認するよう強化した。
+  確認は `make build/test_e2e build/test_wasm32_e2e` = green、
+  `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1160 compiled, 1160 executed`、
+  `make wasm32-wat-fixture-scan` = `1160/1160 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `617/617 pass, fail 0`、
+  `git diff --check` = green。
+- 続き591: **WAT standalone `strto*`/`wcsto*` no-conversion 時の `endptr` を根本修正**。
+  浅い対応の見直しとして `src/arch/wasm32_ir.c` の WAT minimal libc stub を確認したところ、
+  `__ag_strto64` / `__ag_strtod` / `__ag_wcsto64` / `wcstod` が空白と符号を読み飛ばした後に
+  digit が 1 つも無いケースでも、その進んだ位置を `endptr` に入れていた。
+  C の `strto*` 契約では変換が成立しない場合 `endptr` は元の `nptr` を指す必要があるため、
+  各 parser に `any_digit` を持たせ、digit 未検出なら `endptr = s` として 0 / 0.0 を返すよう修正した。
+  回帰として `test/fixtures/stdheader/stdlib_strto_int.c`、
+  `test/fixtures/stdheader/stdlib_strto_float.c`、
+  `test/fixtures/stdheader/wchar_convert_ops.c` に `"   +xyz"` / `"  -"` / `"  -.x"` /
+  wide 版の no-conversion 入力を追加し、戻り値だけでなく `endptr == nptr` まで固定した。
+  確認は `make build/test_e2e build/test_wasm32_e2e` = green、
+  `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1160 compiled, 1160 executed`、
+  `make wasm32-wat-fixture-scan` = `1160/1160 pass, fail 0`、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make wasm32-object-fixture-scan` = `642/642 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `git diff --check` = green。
+- 続き590: **`FE_DFL_ENV` の WAT standalone 回帰を wasm 専用 fixture で固定**。
+  続き589で `fesetenv(FE_DFL_ENV)` は `src/arch/wasm32_ir.c` の WAT stub 側に実装したが、
+  共有 `stdheader/fenv_runtime_ops.c` に入れると、repo の簡易 `include/fenv.h` が定義する
+  `FE_DFL_ENV ((const fenv_t *)(-1))` とホスト libc の実 `fenv_t` 表現が通常 e2e で衝突するため、
+  通常 e2e からは外していた。今回は `test/fixtures/wasm32/fenv_dfl_env_ops.c` を追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録して、Wasm 実行だけで
+  `feraiseexcept` / `fesetround(FE_DOWNWARD)` 後に `fesetenv(FE_DFL_ENV)` が
+  flags を clear し round mode を `FE_TONEAREST` に戻すことを固定した。
+  生成 WAT では `FE_DFL_ENV` が `i32.const -1` として渡り、`$fesetenv` が
+  `__ag_fe_round_mode` と `__ag_fe_except_flags` を初期化する経路を確認済み。
+  確認は `make wasm32-wat-fixture-scan` = `1160/1160 pass, fail 0`、
+  `./build/test_wasm32_e2e` = `1160 compiled, 1160 executed`、
+  `make wasm32-object-fixture-scan` = `1162/1162 pass, fail 0`、
+  `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `git diff --check` = green。
+- 続き589: **wasm32 WAT standalone fenv flags を状態保持する実装へ修正**。
+  続き588の `math_wrapper_only_ops` を `test/test_e2e.c` と
+  `test/test_wasm32_e2e.c` に登録し、再ビルド済みの `./build/test_wasm32_e2e`
+  で確認したところ、追加 fixture ではなく既存
+  `probes_found_bugs/c11_standard_headers.c` が `main() => i32:100` で落ちた。
+  `wasm-interp --trace` で見ると `feclearexcept(FE_ALL_EXCEPT)` 後の
+  `fetestexcept(FE_ALL_EXCEPT) == 0` が失敗しており、WAT standalone の
+  `feclearexcept` が no-op、`fetestexcept(mask)` が常に `mask` を返す浅い stub
+  だったことが原因。
+  `src/arch/wasm32_ir.c` に `__ag_fe_except_flags` global を追加し、
+  `feclearexcept` / `feraiseexcept` / `fetestexcept` / `fegetexceptflag` /
+  `fesetexceptflag` / `fegetenv` / `fesetenv` / `feholdexcept` / `feupdateenv`
+  が同じ flags 状態を参照・保存・復元するようにした。
+  また `feholdexcept` が内部で使う `$fegetenv`、`feupdateenv` が内部で使う
+  `$fesetenv` の emit 依存も明示した。
+  回帰として `test/fixtures/stdheader/fenv_runtime_ops.c` を
+  clear/raise/test/save/restore/update まで確認する内容へ拡張済み。
+  共有 fixture はホスト libc e2e も走るため、repo の簡易 `FE_DFL_ENV`
+  表現とホスト libc 表現の差に触れるチェックは入れていない。
+  確認は `./build/test_e2e` = `1187/1187 pass`、
+  `./build/test_wasm32_e2e` = `1159 compiled, 1159 executed`、
+  `make wasm32-wat-fixture-scan` = `1159/1159 pass, fail 0`、
+  `./build/test_wasm32_object` = `1161/1161 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1159/1159 pass, fail 0`、
+  `git diff --check` = green。
+- 続き588: **wasm32 WAT standalone math wrapper-only の base stub 依存漏れを修正**。
+  続き587後に WAT minimal math stub を見直したところ、既存の大きい math fixture では
+  base 関数と f/l wrapper を同時に使うため隠れていたが、`logbf` だけ、`ilogbf` だけ、
+  `modfl` だけ、`remquol` だけ、`scalbnf` / `ldexpf` だけのような wrapper-only 使用では、
+  wrapper が呼ぶ `$logb` / `$ilogb` / `$modf` / `$remquo` / `$remainder` / `$scalbn`
+  が emit されない経路があった。
+  `src/arch/wasm32_ir.c` の base stub emit 条件を wrapper まで含む依存条件に整理し、
+  `scalbln*` / `ldexp*` / `scalbn*` の direct-call 第2引数も WAT stub の `i64` param に揃えた。
+  回帰用に `test/fixtures/stdheader/math_wrapper_only_ops.c` を追加し、wrapper-only でも
+  `wat2wasm/validate` と `wasm-interp` 実行が通ることを固定した。
+  確認は `make wasm32-wat-fixture-scan` = `1159/1159 pass, fail 0`、
+  `wasm-interp build/wasm32_wat_scan/stdheader__math_wrapper_only_ops.wasm --run-all-exports` =
+  `main() => i32:0`、
+  `./build/test_wasm32_object` = `1160/1160 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1158/1158 pass, fail 0`、
+  `git diff --check` = green。
+- 続き587: **wasm32 WAT standalone `ilogb/logb` の特殊値 trap を修正**。
+  続き586の math stub 補強を見直したところ、linked runtime と JS import 側は
+  `ilogb(0/NaN/inf)` と `logb(0/NaN/inf)` の特殊値を処理していた一方、
+  WAT standalone stub は `ilogb(0)` / `ilogb(inf)` で `i32.trunc_f64_s` に
+  `-inf` / `inf` を渡して trap し得る状態だった。
+  `src/arch/wasm32_ir.c` の `$ilogb` に `FP_ILOGB0` / `FP_ILOGBNAN` 相当の
+  `INT_MIN` と `INT_MAX` 分岐を追加し、`$logb` は `NaN` / `0 -> -inf` /
+  `inf -> +inf` を返すようにした。
+  `test/fixtures/stdheader/math_runtime_ops.c` と
+  `test/fixtures/stdheader/tgmath_variant_ops.c` に同境界の assert を追加済み。
+  確認は `make wasm32-wat-fixture-scan` = `1158/1158 pass, fail 0`、
+  `wasm-interp build/wasm32_wat_scan/stdheader__math_runtime_ops.wasm --run-all-exports` =
+  `main() => i32:0`、
+  `wasm-interp build/wasm32_wat_scan/stdheader__tgmath_variant_ops.wasm --run-all-exports` =
+  `main() => i32:0`、
+  `./build/test_wasm32_object` = `1160/1160 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1158/1158 pass, fail 0`、
+  `git diff --check` = green。
+- 続き586: **wasm32 WAT standalone math runtime の浅い stub を実行互換側へ補強**。
+  続き585で `wat2wasm/validate` は通ったが、
+  `wasm-interp build/wasm32_wat_scan/stdheader__math_runtime_ops.wasm --run-all-exports` と
+  `wasm-interp build/wasm32_wat_scan/stdheader__tgmath_variant_ops.wasm --run-all-exports` が
+  既存 WAT math stub のループ近似・特殊値不足により完了しない/assert で止まる状態だった。
+  今回 `src/arch/wasm32_ir.c` の WAT minimal math stub を、fixture だけの場当たりではなく
+  `NaN` / `inf` / `-0.0` / 極端値 / rounding mode の実行時挙動に寄せて補強した。
+  具体的には `exp/log/sin/cos` の特殊値 guard、`pow` の巨大指数と `-0.0` 符号、
+  `cbrt` の `exp(log(abs(x))/3)` 経路と `exp/log` 依存、`fenv` rounding を使う
+  `nearbyint/rint/lrint/llrint`、`fmin/fmax` の NaN 規則、`erf/erfc` 近似、
+  `remquo/modf/fmod/hypot/ilogb/atan/atan2` の境界を修正。
+  確認は `make wasm32-wat-fixture-scan` = `1158/1158 pass, fail 0`、
+  上記 2 本の `wasm-interp ... --run-all-exports` = `main() => i32:0`、
+  `./build/test_wasm32_object` = `1160/1160 pass, fail 0`、
+  `make test-wasm-js-pipeline` = green、
+  `make test-wasm-obj-linker` = `ag_wasm_link smoke: ok`、
+  `make test-wasm-js-e2e` = `1158/1158 pass, fail 0`、
+  `git diff --check` = green。
+- 続き585: **wasm32 WAT fixture scan の実失敗を修正**。
+  `make wasm32-wat-fixture-scan` が `test/fixtures/stdheader/math_runtime_ops.c` /
+  `test/fixtures/stdheader/tgmath_variant_ops.c` で `$acosh` / `$acoshf` 未定義により
+  `wat2wasm` 失敗していた。原因は `src/arch/wasm32_ir.c` の standalone WAT 用 minimal math stub が、
+  linker runtime 側で追加済みの `asinh/acosh/atanh` 系や、その後続の `exp2/expm1/log1p`、
+  hyperbolic f/l variants、round/decomp/remainder 系に追随していなかったこと。
+  `src/arch/wasm32_ir.c` に WAT minimal stub を追加し、`ldexp/scalbn` 系の指数引数だけ
+  direct-call emission で `i64` に揃えた。広すぎる整数引数の `i64` 化は一度全 fixture を壊したため撤回済み。
+  確認は `make wasm32-wat-fixture-scan` = `1158/1158 pass, fail 0`、
+  `wc -c build/wasm32_wat_scan/failures.txt` = `0`、
+  `./build/test_wasm32_object` = `1160/1160 pass, fail 0`、
+  `git diff --check` = green。
+  追加確認として `wasm-interp build/wasm32_wat_scan/stdheader__math_runtime_ops.wasm --run-all-exports` と
+  `wasm-interp build/wasm32_wat_scan/stdheader__tgmath_variant_ops.wasm --run-all-exports` を試したが、
+  この時点では既存の WAT math stub が大きな入力をループ近似するため 2 分近く完了せず `Ctrl-C` で中断した。
+  この WAT standalone の math runtime 実行互換は続き586で修正済み。
+- 続き584: **libc 先回りではなく linker/object 側の実失敗ゲートを確認**。
+  `make test-wasm-linker-selfhost` は selfhost linker API / xtu / diagnostics smoke まで green。
+  `make wasm32-object-link-fixture-scan` と `make wasm32-object-link-all-fixture-scan` はどちらも
+  `1158/1158 pass, fail 0`。`build/wasm32_obj_link_scan/failures.txt` も空。
+  ここまでの確認では、wasm JS e2e、JS API、selfhost linker API、wasm32 object、object link 実行系の
+  いずれにも直近の実失敗は見つかっていない。
+- 続き583: **C標準ライブラリ拡張を失敗駆動に戻して full wasm JS e2e を確認**。
+  直近の方針として、libc を網羅的に広げるのではなく、`make test-wasm-js-e2e` の実失敗から
+  必要最小限の runtime gap を潰す方針に戻した。現在の full wasm JS e2e は
+  `1158/1158 pass, fail 0` で、`build/wasm_js_e2e_pipeline/failures.txt` も空。
+  `make test-wasm-js-api` も green のため、現時点では新しい libc 関数や
+  time/locale/stdio 互換性を先回り実装しない。
+  追加で `./build/test_wasm32_object` も `1160/1160 pass` のため、object 生成側にも
+  直近の実失敗はない。
+  次に進めるなら、libc 拡張ではなく別の失敗ソース（未実行ゲート、selfhost/linker 挙動、
+  既知 TODO のうち実テストで再現できるもの）から対象を選ぶ。
+- 以前の直近確認（続き582時点、full wasm JS e2e 再確認前）:
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
   `git diff --check` = **green**、
