@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き620: WAT standalone strtoll/strtoull/atoll/strtof/strtold wrappers を追加）
+最終更新: 2026-07-06（続き625: WAT standalone aligned_alloc/llabs/at_quick_exit stubs を追加）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
-  **1173 compiled, 1173 executed**、
+  **1178 compiled, 1178 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -37,6 +37,69 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き625: **WAT standalone `aligned_alloc()` / `llabs()` / `at_quick_exit()` の undefined import gap を解消**。
+  linked runtime / linker rewrite にはこれらの stdlib symbol が入っていたが、WAT standalone 側は
+  `malloc` / `calloc` / `realloc` / `free`、`labs`、`atexit` までで止まっていた。
+  `aligned_alloc()` は standalone heap pointer を指定 alignment 境界へ丸めて返す minimal allocator とし、
+  alignment 0 では NULL を返す。`llabs()` は i64 abs、`at_quick_exit()` は standalone では
+  登録成功の 0 を返す stub とした。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdlib_alloc_abs_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1178 compiled, 1178 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`。
+- 続き624: **WAT standalone `div()` / `ldiv()` / `lldiv()` / `imaxdiv()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には stdlib / inttypes の div family が入っていたが、
+  WAT standalone 側には `imaxabs()` だけがあり、`div()` / `ldiv()` / `lldiv()` / `imaxdiv()` は
+  undefined import になり得た。
+  `src/arch/wasm32_ir.c` に商と剰余を返す minimal stub を追加した。
+  `div_t` は現行 WAT backend で 8 byte aggregate として i64 にパックして返されるため、
+  `div()` は lower 32 bit に `quot`、upper 32 bit に `rem` を詰める ABI に合わせた。
+  `ldiv()` / `lldiv()` / `imaxdiv()` は hidden return pointer に 8 byte の `quot` / `rem` を store する。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdlib_div_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1177 compiled, 1177 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`。
+- 続き623: **WAT standalone `swscanf()` と wide input 系の undefined import gap を解消**。
+  linked runtime / linker rewrite には `swscanf` / `fgetwc` / `getwc` / `getwchar` /
+  `ungetwc` / `fgetws` が入っていたが、WAT standalone 側には wide output stub だけがあり、
+  wide input と wide formatted input が undefined import になり得た。
+  `swscanf()` は wide string 入力を持つため単純 EOF stub ではなく、`sscanf()` と同じ限定範囲の
+  parser として literal / whitespace skip と `%d` / `%u` / `%s` / `%c` を処理するようにした。
+  WAT variadic call 側では `swscanf()` へ最初の出力先 2 個を渡す特例を追加している。
+  FILE state を持つ `fgetwc()` / `getwc()` / `getwchar()` / `ungetwc()` / `fgetws()` は、
+  standalone の no-input semantics として `WEOF` / NULL を返し、渡された buffer は変更しない。
+  回帰は WAT 専用の `test/fixtures/wasm32/wchar_input_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1176 compiled, 1176 executed`、
+  `./build/test_e2e` = `1193/1193 pass`。
+- 続き622: **WAT standalone の stdio file/state 系 undefined import gap を追加で解消**。
+  linked runtime / linker rewrite には `freopen` / `tmpfile` / `tmpnam` / `fdopen` / `remove` /
+  `rename` / `fflush` / `getchar` / `ungetc` / `getline` / `fseek` / `ftell` / `fgetpos` /
+  `fsetpos` / `rewind` / `feof` / `ferror` / `clearerr` が入っていたが、WAT standalone 側は
+  `fopen` / `fread` / `fgetc` など一部の薄い stub だけだった。
+  standalone WAT は実ファイルシステムや FILE state を持たないため、ファイル生成/削除/入力系は NULL/EOF/失敗値、
+  flush / close / seek / position query / clear 系は状態なし no-op として最小 semantics を揃えた。
+  `fgetpos()` は non-NULL stream/pos では 0 を store して成功、invalid 入力では -1 とした。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdio_file_state_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1175 compiled, 1175 executed`、
+  `./build/test_e2e` = `1193/1193 pass`。
+- 続き621: **WAT standalone `scanf()` / `vscanf()` / `fscanf()` / `vfscanf()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には formatted input の stdin / FILE variants が入っていたが、
+  WAT standalone 側では `sscanf()` / `vsscanf()` だけが実装済みで、`scanf()` / `vscanf()` /
+  `fscanf()` / `vfscanf()` は undefined import になり得た。
+  standalone WAT は stdin / FILE state を持たないため、これらは入力失敗として `EOF` 相当の -1 を返す
+  no-input stub とし、variadic の出力先引数は触らない。
+  function table 参照でも落ちないよう `has_minimal_libc_stub_function()` に同じ 4 symbol を追加した。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdio_scan_input_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1174 compiled, 1174 executed`、
+  `./build/test_e2e` = `1193/1193 pass`。
 - 続き620: **WAT standalone `strtoll()` / `strtoull()` / `atoll()` / `strtof()` / `strtold()` の wrapper gap を解消**。
   header / linked runtime / linker rewrite 側にはこれらの symbol が揃っていたが、
   WAT standalone 側は既存の `__ag_strto64` / `__ag_strtod` helper から `strtol` / `strtoul` / `strtod` / `atof`

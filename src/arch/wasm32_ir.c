@@ -308,8 +308,13 @@ static int has_minimal_libc_stub_function(char *name, int name_len) {
          (name_len == 8 && memcmp(name, "snprintf", 8) == 0) ||
          (name_len == 8 && memcmp(name, "vsprintf", 8) == 0) ||
          (name_len == 9 && memcmp(name, "vsnprintf", 9) == 0) ||
+         (name_len == 5 && memcmp(name, "scanf", 5) == 0) ||
+         (name_len == 6 && memcmp(name, "vscanf", 6) == 0) ||
+         (name_len == 6 && memcmp(name, "fscanf", 6) == 0) ||
+         (name_len == 7 && memcmp(name, "vfscanf", 7) == 0) ||
          (name_len == 6 && memcmp(name, "sscanf", 6) == 0) ||
          (name_len == 7 && memcmp(name, "vsscanf", 7) == 0) ||
+         (name_len == 7 && memcmp(name, "swscanf", 7) == 0) ||
          (name_len == 8 && memcmp(name, "swprintf", 8) == 0) ||
          (name_len == 6 && memcmp(name, "strspn", 6) == 0) ||
          (name_len == 7 && memcmp(name, "strcspn", 7) == 0) ||
@@ -1205,20 +1210,25 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   int is_minimal_sscanf =
       i->sym_len == 6 && memcmp(i->sym, "sscanf", 6) == 0 &&
       !psx_ctx_is_function_defined(i->sym, i->sym_len);
+  int is_minimal_swscanf =
+      i->sym_len == 7 && memcmp(i->sym, "swscanf", 7) == 0 &&
+      !psx_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_fixed2_format = is_minimal_snprintf || is_minimal_swprintf;
   int is_minimal_output_count = is_minimal_printf || is_minimal_fprintf;
   int call_nargs = is_minimal_fixed2_format ? 5 :
                    (is_minimal_printf ? 3 :
                     (is_minimal_fprintf ? 4 :
-                     (is_minimal_sscanf ? 4 : (i->is_variadic_call ? i->nargs_fixed : i->nargs))));
+                     ((is_minimal_sscanf || is_minimal_swscanf) ? 4 :
+                      (i->is_variadic_call ? i->nargs_fixed : i->nargs))));
   for (int a = 0; a < call_nargs; a++) {
-    if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf) && a >= i->nargs) {
+    if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
+        a >= i->nargs) {
       cg_emitf(" (i64.const 0)");
       continue;
     }
     ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
-    if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf) && a >= i->nargs_fixed &&
-        is_fp_type(arg_ty)) {
+    if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
+        a >= i->nargs_fixed && is_fp_type(arg_ty)) {
       cg_emitf(" (i64.const 0)");
       continue;
     }
@@ -1228,11 +1238,12 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
         (i->sym_len == 4 && memcmp(i->sym, "puts", 4) == 0 && a == 0) ||
         (i->sym_len == 6 && memcmp(i->sym, "strlen", 6) == 0 && a == 0) ||
         (is_minimal_fixed2_format && (a == 0 || a == 2)) ||
-        (is_minimal_sscanf && (a == 0 || a == 1 || a >= 2));
+        (is_minimal_sscanf && (a == 0 || a == 1 || a >= 2)) ||
+        (is_minimal_swscanf && (a == 0 || a == 1 || a >= 2));
     if (minimal_stub_ptr_arg ||
         psx_ctx_get_function_param_category(i->sym, i->sym_len, a) == PSX_PCAT_PTR) {
       arg_ty = IR_TY_PTR;
-    } else if (is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf) {
+    } else if (is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) {
       arg_ty = IR_TY_I64;
     } else if (a == 1 &&
                ((i->sym_len == 5 && memcmp(i->sym, "ldexp", 5) == 0) ||
@@ -2936,6 +2947,155 @@ static void emit_wasm_vsscanf_stubs(void) {
   }
 }
 
+static void emit_wasm_swscanf_stub(void) {
+  wasm_emitf(2, "(func $__ag_wscan_isspace (param $ch i32) (result i32)\n");
+  wasm_emitf(4, "(i32.or (i32.or (i32.eq (local.get $ch) (i32.const 32)) (i32.eq (local.get $ch) (i32.const 9))) (i32.or (i32.eq (local.get $ch) (i32.const 10)) (i32.eq (local.get $ch) (i32.const 13))))\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_wscan_skip_spaces (param $p i32) (result i32)\n");
+  wasm_emitf(4, "(block $done (loop $loop\n");
+  wasm_emitf(6, "(if (i32.eqz (call $__ag_wscan_isspace (i32.load (local.get $p)))) (then (br $done)))\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(6, "(br $loop)\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(local.get $p)\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_wscan_isdigit (param $ch i32) (result i32)\n");
+  wasm_emitf(4, "(i32.and (i32.ge_u (local.get $ch) (i32.const 48)) (i32.le_u (local.get $ch) (i32.const 57)))\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_wscan_int (param $p i32) (param $dst i32) (param $is_signed i32) (result i32)\n");
+  wasm_emitf(4, "(local $ch i32)\n");
+  wasm_emitf(4, "(local $digits i32)\n");
+  wasm_emitf(4, "(local $neg i32)\n");
+  wasm_emitf(4, "(local $val i64)\n");
+  wasm_emitf(4, "(local.set $p (call $__ag_wscan_skip_spaces (local.get $p)))\n");
+  wasm_emitf(4, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(4, "(if (local.get $is_signed) (then\n");
+  wasm_emitf(6, "(if (i32.eq (local.get $ch) (i32.const 45)) (then\n");
+  wasm_emitf(8, "(local.set $neg (i32.const 1))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(8, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(6, ") (else (if (i32.eq (local.get $ch) (i32.const 43)) (then\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(8, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(6, "))))\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(block $done (loop $loop\n");
+  wasm_emitf(6, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(6, "(if (i32.eqz (call $__ag_wscan_isdigit (local.get $ch))) (then (br $done)))\n");
+  wasm_emitf(6, "(local.set $val (i64.add (i64.mul (local.get $val) (i64.const 10)) (i64.extend_i32_u (i32.sub (local.get $ch) (i32.const 48)))))\n");
+  wasm_emitf(6, "(local.set $digits (i32.add (local.get $digits) (i32.const 1)))\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(6, "(br $loop)\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(if (i32.eqz (local.get $digits)) (then (return (i32.const 0))))\n");
+  wasm_emitf(4, "(if (local.get $dst) (then\n");
+  wasm_emitf(6, "(if (local.get $neg)\n");
+  wasm_emitf(8, "(then (i32.store (local.get $dst) (i32.wrap_i64 (i64.sub (i64.const 0) (local.get $val)))))\n");
+  wasm_emitf(8, "(else (i32.store (local.get $dst) (i32.wrap_i64 (local.get $val))))\n");
+  wasm_emitf(6, ")\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(local.get $p)\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_wscan_word (param $p i32) (param $dst i32) (result i32)\n");
+  wasm_emitf(4, "(local $ch i32)\n");
+  wasm_emitf(4, "(local $out i32)\n");
+  wasm_emitf(4, "(local $count i32)\n");
+  wasm_emitf(4, "(local.set $p (call $__ag_wscan_skip_spaces (local.get $p)))\n");
+  wasm_emitf(4, "(local.set $out (local.get $dst))\n");
+  wasm_emitf(4, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(4, "(if (i32.or (i32.eqz (local.get $ch)) (call $__ag_wscan_isspace (local.get $ch))) (then (return (i32.const 0))))\n");
+  wasm_emitf(4, "(block $done (loop $loop\n");
+  wasm_emitf(6, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(6, "(if (i32.or (i32.eqz (local.get $ch)) (call $__ag_wscan_isspace (local.get $ch))) (then (br $done)))\n");
+  wasm_emitf(6, "(if (local.get $out) (then (i32.store (local.get $out) (local.get $ch)) (local.set $out (i32.add (local.get $out) (i32.const 4)))))\n");
+  wasm_emitf(6, "(local.set $count (i32.add (local.get $count) (i32.const 1)))\n");
+  wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(6, "(br $loop)\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(if (local.get $out) (then (i32.store (local.get $out) (i32.const 0))))\n");
+  wasm_emitf(4, "(if (i32.eqz (local.get $count)) (then (return (i32.const 0))))\n");
+  wasm_emitf(4, "(local.get $p)\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_wscan_char (param $p i32) (param $dst i32) (result i32)\n");
+  wasm_emitf(4, "(local $ch i32)\n");
+  wasm_emitf(4, "(local.set $ch (i32.load (local.get $p)))\n");
+  wasm_emitf(4, "(if (i32.eqz (local.get $ch)) (then (return (i32.const 0))))\n");
+  wasm_emitf(4, "(if (local.get $dst) (then (i32.store (local.get $dst) (local.get $ch))))\n");
+  wasm_emitf(4, "(i32.add (local.get $p) (i32.const 4))\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $__ag_swscanf_next_arg (param $which i32) (param $a i32) (param $b i32) (result i32)\n");
+  wasm_emitf(4, "(if (i32.eqz (local.get $which)) (then (return (local.get $a))))\n");
+  wasm_emitf(4, "(if (i32.eq (local.get $which) (i32.const 1)) (then (return (local.get $b))))\n");
+  wasm_emitf(4, "(i32.const 0)\n");
+  wasm_emitf(2, ")\n");
+  wasm_emitf(2, "(func $swscanf (param $s i32) (param $fmt i32) (param $a i32) (param $b i32) (result i32)\n");
+  wasm_emitf(4, "(local $p i32)\n");
+  wasm_emitf(4, "(local $f i32)\n");
+  wasm_emitf(4, "(local $ch i32)\n");
+  wasm_emitf(4, "(local $spec i32)\n");
+  wasm_emitf(4, "(local $dst i32)\n");
+  wasm_emitf(4, "(local $next i32)\n");
+  wasm_emitf(4, "(local $assigns i32)\n");
+  wasm_emitf(4, "(local.set $p (local.get $s))\n");
+  wasm_emitf(4, "(local.set $f (local.get $fmt))\n");
+  wasm_emitf(4, "(block $done (loop $loop\n");
+  wasm_emitf(6, "(local.set $ch (i32.load (local.get $f)))\n");
+  wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (br $done)))\n");
+  wasm_emitf(6, "(if (call $__ag_wscan_isspace (local.get $ch)) (then\n");
+  wasm_emitf(8, "(block $fmt_space_done (loop $fmt_space\n");
+  wasm_emitf(10, "(if (i32.eqz (call $__ag_wscan_isspace (i32.load (local.get $f)))) (then (br $fmt_space_done)))\n");
+  wasm_emitf(10, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(10, "(br $fmt_space)\n");
+  wasm_emitf(8, "))\n");
+  wasm_emitf(8, "(local.set $p (call $__ag_wscan_skip_spaces (local.get $p)))\n");
+  wasm_emitf(8, "(br $loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (i32.ne (local.get $ch) (i32.const 37)) (then\n");
+  wasm_emitf(8, "(if (i32.ne (i32.load (local.get $p)) (local.get $ch)) (then (br $done)))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(8, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(8, "(br $loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(6, "(local.set $spec (i32.load (local.get $f)))\n");
+  wasm_emitf(6, "(if (i32.eqz (local.get $spec)) (then (br $done)))\n");
+  wasm_emitf(6, "(if (i32.eq (local.get $spec) (i32.const 37)) (then\n");
+  wasm_emitf(8, "(if (i32.ne (i32.load (local.get $p)) (i32.const 37)) (then (br $done)))\n");
+  wasm_emitf(8, "(local.set $p (i32.add (local.get $p) (i32.const 4)))\n");
+  wasm_emitf(8, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(8, "(br $loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(local.set $dst (call $__ag_swscanf_next_arg (local.get $assigns) (local.get $a) (local.get $b)))\n");
+  wasm_emitf(6, "(if (i32.or (i32.eq (local.get $spec) (i32.const 100)) (i32.eq (local.get $spec) (i32.const 117))) (then\n");
+  wasm_emitf(8, "(local.set $next (call $__ag_wscan_int (local.get $p) (local.get $dst) (i32.eq (local.get $spec) (i32.const 100))))\n");
+  wasm_emitf(8, "(if (i32.eqz (local.get $next)) (then (br $done)))\n");
+  wasm_emitf(8, "(local.set $p (local.get $next))\n");
+  wasm_emitf(8, "(local.set $assigns (i32.add (local.get $assigns) (i32.const 1)))\n");
+  wasm_emitf(8, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(8, "(br $loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (i32.eq (local.get $spec) (i32.const 115)) (then\n");
+  wasm_emitf(8, "(local.set $next (call $__ag_wscan_word (local.get $p) (local.get $dst)))\n");
+  wasm_emitf(8, "(if (i32.eqz (local.get $next)) (then (br $done)))\n");
+  wasm_emitf(8, "(local.set $p (local.get $next))\n");
+  wasm_emitf(8, "(local.set $assigns (i32.add (local.get $assigns) (i32.const 1)))\n");
+  wasm_emitf(8, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(8, "(br $loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(if (i32.eq (local.get $spec) (i32.const 99)) (then\n");
+  wasm_emitf(8, "(local.set $next (call $__ag_wscan_char (local.get $p) (local.get $dst)))\n");
+  wasm_emitf(8, "(if (i32.eqz (local.get $next)) (then (br $done)))\n");
+  wasm_emitf(8, "(local.set $p (local.get $next))\n");
+  wasm_emitf(8, "(local.set $assigns (i32.add (local.get $assigns) (i32.const 1)))\n");
+  wasm_emitf(8, "(local.set $f (i32.add (local.get $f) (i32.const 4)))\n");
+  wasm_emitf(8, "(br $loop)\n");
+  wasm_emitf(6, "))\n");
+  wasm_emitf(6, "(br $done)\n");
+  wasm_emitf(4, "))\n");
+  wasm_emitf(4, "(local.get $assigns)\n");
+  wasm_emitf(2, ")\n");
+}
+
 static void emit_wasm_strftime_stub(void) {
   int wday_addr = intern_data_symbol("__ag_time_wday_names", 20, 21, 1)->addr;
   int mon_addr = intern_data_symbol("__ag_time_mon_names", 19, 36, 1)->addr;
@@ -3687,8 +3847,29 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("fopen", 5)) {
     wasm_emitf(2, "(func $fopen (param i32 i32) (result i32) (i32.const 0))\n");
   }
+  if (has_undefined_function("freopen", 7)) {
+    wasm_emitf(2, "(func $freopen (param i32 i32 i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("tmpfile", 7)) {
+    wasm_emitf(2, "(func $tmpfile (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("tmpnam", 6)) {
+    wasm_emitf(2, "(func $tmpnam (param i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("fdopen", 6)) {
+    wasm_emitf(2, "(func $fdopen (param i64 i32) (result i32) (i32.const 0))\n");
+  }
   if (has_undefined_function("fclose", 6)) {
     wasm_emitf(2, "(func $fclose (param i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("remove", 6)) {
+    wasm_emitf(2, "(func $remove (param i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("rename", 6)) {
+    wasm_emitf(2, "(func $rename (param i32 i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("fflush", 6)) {
+    wasm_emitf(2, "(func $fflush (param i32) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("fread", 5)) {
     wasm_emitf(2, "(func $fread (param i32 i64 i64 i32) (result i64) (i64.const 0))\n");
@@ -3702,8 +3883,55 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("getc", 4)) {
     wasm_emitf(2, "(func $getc (param i32) (result i32) (i32.const -1))\n");
   }
+  if (has_undefined_function("getchar", 7)) {
+    wasm_emitf(2, "(func $getchar (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("ungetc", 6)) {
+    wasm_emitf(2, "(func $ungetc (param i64 i32) (result i32) (i32.const -1))\n");
+  }
   if (has_undefined_function("fgets", 5)) {
     wasm_emitf(2, "(func $fgets (param i32 i64 i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("getline", 7)) {
+    wasm_emitf(2, "(func $getline (param i32 i32 i32) (result i64) (i64.const -1))\n");
+  }
+  if (has_undefined_function("fseek", 5)) {
+    wasm_emitf(2, "(func $fseek (param $stream i32) (param $offset i64) (param $whence i64) (result i32)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $stream)) (then (return (i32.const -1))))\n");
+    wasm_emitf(4, "(if (i32.or (i64.lt_s (local.get $whence) (i64.const 0)) (i64.gt_s (local.get $whence) (i64.const 2))) (then (return (i32.const -1))))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("ftell", 5)) {
+    wasm_emitf(2, "(func $ftell (param $stream i32) (result i64)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $stream)) (then (return (i64.const -1))))\n");
+    wasm_emitf(4, "(i64.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("fgetpos", 7)) {
+    wasm_emitf(2, "(func $fgetpos (param $stream i32) (param $pos i32) (result i32)\n");
+    wasm_emitf(4, "(if (i32.or (i32.eqz (local.get $stream)) (i32.eqz (local.get $pos))) (then (return (i32.const -1))))\n");
+    wasm_emitf(4, "(i64.store (local.get $pos) (i64.const 0))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("fsetpos", 7)) {
+    wasm_emitf(2, "(func $fsetpos (param $stream i32) (param $pos i32) (result i32)\n");
+    wasm_emitf(4, "(if (i32.or (i32.eqz (local.get $stream)) (i32.eqz (local.get $pos))) (then (return (i32.const -1))))\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("rewind", 6)) {
+    wasm_emitf(2, "(func $rewind (param $stream i32))\n");
+  }
+  if (has_undefined_function("feof", 4)) {
+    wasm_emitf(2, "(func $feof (param i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("ferror", 6)) {
+    wasm_emitf(2, "(func $ferror (param i32) (result i32) (i32.const 0))\n");
+  }
+  if (has_undefined_function("clearerr", 8)) {
+    wasm_emitf(2, "(func $clearerr (param i32))\n");
   }
   if (has_undefined_function("__assert_rtn", 12)) {
     wasm_emitf(2, "(func $__assert_rtn (param i32 i32 i32 i32) (unreachable))\n");
@@ -3748,8 +3976,23 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("sscanf", 6) || has_undefined_function("vsscanf", 7)) {
     emit_wasm_vsscanf_stubs();
   }
+  if (has_undefined_function("scanf", 5)) {
+    wasm_emitf(2, "(func $scanf (param $fmt i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("vscanf", 6)) {
+    wasm_emitf(2, "(func $vscanf (param $fmt i32) (param $ap i64) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("fscanf", 6)) {
+    wasm_emitf(2, "(func $fscanf (param $stream i32) (param $fmt i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("vfscanf", 7)) {
+    wasm_emitf(2, "(func $vfscanf (param $stream i32) (param $fmt i32) (param $ap i64) (result i32) (i32.const -1))\n");
+  }
   if (has_undefined_function("swprintf", 8)) {
     emit_wasm_swprintf_stub();
+  }
+  if (has_undefined_function("swscanf", 7)) {
+    emit_wasm_swscanf_stub();
   }
   if (has_undefined_function("imaxabs", 7)) {
     wasm_emitf(2, "(func $imaxabs (param $x i64) (result i64)\n");
@@ -3757,6 +4000,32 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(then (i64.sub (i64.const 0) (local.get $x)))\n");
     wasm_emitf(6, "(else (local.get $x))\n");
     wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("div", 3)) {
+    wasm_emitf(2, "(func $div (param $numer i64) (param $denom i64) (result i64)\n");
+    wasm_emitf(4, "(i64.or\n");
+    wasm_emitf(6, "(i64.extend_i32_u (i32.wrap_i64 (i64.div_s (local.get $numer) (local.get $denom))))\n");
+    wasm_emitf(6, "(i64.shl (i64.extend_i32_u (i32.wrap_i64 (i64.rem_s (local.get $numer) (local.get $denom)))) (i64.const 32))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("ldiv", 4)) {
+    wasm_emitf(2, "(func $ldiv (param $ret i32) (param $numer i64) (param $denom i64)\n");
+    wasm_emitf(4, "(i64.store (local.get $ret) (i64.div_s (local.get $numer) (local.get $denom)))\n");
+    wasm_emitf(4, "(i64.store (i32.add (local.get $ret) (i32.const 8)) (i64.rem_s (local.get $numer) (local.get $denom)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("lldiv", 5)) {
+    wasm_emitf(2, "(func $lldiv (param $ret i32) (param $numer i64) (param $denom i64)\n");
+    wasm_emitf(4, "(i64.store (local.get $ret) (i64.div_s (local.get $numer) (local.get $denom)))\n");
+    wasm_emitf(4, "(i64.store (i32.add (local.get $ret) (i32.const 8)) (i64.rem_s (local.get $numer) (local.get $denom)))\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("imaxdiv", 7)) {
+    wasm_emitf(2, "(func $imaxdiv (param $ret i32) (param $numer i64) (param $denom i64)\n");
+    wasm_emitf(4, "(i64.store (local.get $ret) (i64.div_s (local.get $numer) (local.get $denom)))\n");
+    wasm_emitf(4, "(i64.store (i32.add (local.get $ret) (i32.const 8)) (i64.rem_s (local.get $numer) (local.get $denom)))\n");
     wasm_emitf(2, ")\n");
   }
   if (need_rounding_mode_helper || has_undefined_function("fegetround", 10) ||
@@ -4763,6 +5032,11 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("at_quick_exit", 13)) {
+    wasm_emitf(2, "(func $at_quick_exit (param $func i32) (result i32)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("getenv", 6)) {
     wasm_emitf(2, "(func $getenv (param $name i32) (result i32)\n");
     wasm_emitf(4, "(i32.const 0)\n");
@@ -4869,6 +5143,14 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, ")\n");
     wasm_emitf(2, ")\n");
   }
+  if (has_undefined_function("llabs", 5)) {
+    wasm_emitf(2, "(func $llabs (param $x i64) (result i64)\n");
+    wasm_emitf(4, "(if (result i64) (i64.lt_s (local.get $x) (i64.const 0))\n");
+    wasm_emitf(6, "(then (i64.sub (i64.const 0) (local.get $x)))\n");
+    wasm_emitf(6, "(else (local.get $x))\n");
+    wasm_emitf(4, ")\n");
+    wasm_emitf(2, ")\n");
+  }
   if (has_undefined_function("rand", 4) || has_undefined_function("srand", 5)) {
     wasm_emitf(2, "(global $__ag_rand_state (mut i64) (i64.const 1))\n");
   }
@@ -4906,6 +5188,17 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(local.set $q (i32.add (local.get $q) (i32.const 1)))\n");
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(local.get $p)\n");
+    wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("aligned_alloc", 13)) {
+    wasm_emitf(2, "(func $aligned_alloc (param $alignment i64) (param $size i64) (result i32)\n");
+    wasm_emitf(4, "(local $align i32)\n");
+    wasm_emitf(4, "(local $p i32)\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $alignment)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(local.set $align (i32.wrap_i64 (local.get $alignment)))\n");
+    wasm_emitf(4, "(local.set $p (i32.and (i32.add (global.get $__ag_heap_pointer) (i32.sub (local.get $align) (i32.const 1))) (i32.xor (i32.sub (local.get $align) (i32.const 1)) (i32.const -1))))\n");
+    wasm_emitf(4, "(global.set $__ag_heap_pointer (i32.add (local.get $p) (i32.and (i32.add (i32.wrap_i64 (local.get $size)) (i32.const 7)) (i32.const -8))))\n");
     wasm_emitf(4, "(local.get $p)\n");
     wasm_emitf(2, ")\n");
   }
@@ -5699,6 +5992,21 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, "(func $wctob (param $c i64) (result i32)\n");
     wasm_emitf(4, "(if (result i32) (i32.and (i64.ge_s (local.get $c) (i64.const 0)) (i64.le_s (local.get $c) (i64.const 255))) (then (i32.wrap_i64 (local.get $c))) (else (i32.const -1)))\n");
     wasm_emitf(2, ")\n");
+  }
+  if (has_undefined_function("fgetwc", 6)) {
+    wasm_emitf(2, "(func $fgetwc (param i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("getwc", 5)) {
+    wasm_emitf(2, "(func $getwc (param i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("getwchar", 8)) {
+    wasm_emitf(2, "(func $getwchar (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("ungetwc", 7)) {
+    wasm_emitf(2, "(func $ungetwc (param i64 i32) (result i32) (i32.const -1))\n");
+  }
+  if (has_undefined_function("fgetws", 6)) {
+    wasm_emitf(2, "(func $fgetws (param i32 i64 i32) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("fputwc", 6)) {
     wasm_emitf(2, "(func $fputwc (param $wc i64) (param $stream i32) (result i32)\n");
