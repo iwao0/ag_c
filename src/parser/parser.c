@@ -1232,15 +1232,15 @@ static global_var_t *register_toplevel_global_decl(char *name, int len, int is_p
                          g_toplevel_decl_ptr_levels == 1)
                             ? (unsigned char)g_toplevel_decl_fp_kind
                             : (unsigned char)TK_FLOAT_KIND_NONE;
-  gv->funcptr_ret_is_void =
-      (is_ptr && (g_toplevel_decl_has_func_suffix
-                      ? (g_toplevel_decl_base_kind == TK_VOID)
-                      : g_toplevel_decl_base_funcptr_ret_is_void))
-          ? 1
-          : 0;
   gv->funcptr_ret_is_data_pointer =
       (is_ptr && g_toplevel_decl_has_func_suffix &&
        (g_toplevel_decl_ptr_levels > 1 || g_toplevel_decl_base_is_ptr))
+          ? 1
+          : 0;
+  gv->funcptr_ret_is_void =
+      (is_ptr && (g_toplevel_decl_has_func_suffix
+                      ? (g_toplevel_decl_base_kind == TK_VOID && !gv->funcptr_ret_is_data_pointer)
+                      : g_toplevel_decl_base_funcptr_ret_is_void))
           ? 1
           : 0;
   gv->funcptr_ret_is_complex =
@@ -2741,13 +2741,14 @@ static void apply_toplevel_object_from_head(toplevel_declarator_head_t head) {
                                   : g_toplevel_decl_base_funcptr_param_int_mask;
     gv->funcptr_param_fp_mask = fp_mask;
     gv->funcptr_param_int_mask = int_mask;
-    gv->funcptr_ret_is_void = g_toplevel_decl_has_func_suffix
-                                  ? (g_toplevel_decl_base_kind == TK_VOID)
-                                  : g_toplevel_decl_base_funcptr_ret_is_void;
     gv->funcptr_ret_is_data_pointer =
         g_toplevel_decl_has_func_suffix
             ? ((g_toplevel_decl_ptr_levels > 1 || g_toplevel_decl_base_is_ptr) ? 1 : 0)
             : 0;
+    gv->funcptr_ret_is_void =
+        g_toplevel_decl_has_func_suffix
+            ? (g_toplevel_decl_base_kind == TK_VOID && !gv->funcptr_ret_is_data_pointer)
+            : g_toplevel_decl_base_funcptr_ret_is_void;
     gv->funcptr_ret_is_complex =
         g_toplevel_decl_has_func_suffix
             ? ((psx_last_type_is_complex() && !gv->funcptr_ret_is_data_pointer) ? 1 : 0)
@@ -2777,8 +2778,7 @@ static toplevel_declarator_head_t parse_toplevel_declarator_head(int base_is_ptr
   g_toplevel_decl_paren_array_dim_count = 0;
   for (int i = 0; i < 8; i++) g_toplevel_decl_paren_array_dims[i] = 0;
   psx_consume_pointer_prefix(&out.is_ptr);
-  if (g_toplevel_decl_is_typedef && out.is_ptr &&
-      (g_toplevel_decl_tag_kind == TK_STRUCT || g_toplevel_decl_tag_kind == TK_UNION)) {
+  if (g_toplevel_decl_is_typedef && out.is_ptr) {
     g_toplevel_decl_funcptr_ret_is_pointer = 1;
   }
   out.name = parse_toplevel_decl_name(&out.is_ptr, &out.paren_array_mul);
@@ -2932,8 +2932,9 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
   if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
   if (g_toplevel_decl_has_func_suffix && (is_ptr || g_toplevel_decl_ptr_in_paren_group)) {
     _ti.is_funcptr = 1;
-    _ti.funcptr_ret_is_void = (g_toplevel_decl_base_kind == TK_VOID) ? 1 : 0;
     _ti.funcptr_ret_is_pointer = g_toplevel_decl_funcptr_ret_is_pointer ? 1 : 0;
+    _ti.funcptr_ret_is_void =
+        (g_toplevel_decl_base_kind == TK_VOID && !_ti.funcptr_ret_is_pointer) ? 1 : 0;
     _ti.funcptr_ret_is_complex =
         (psx_last_type_is_complex() && !_ti.funcptr_ret_is_pointer) ? 1 : 0;
     _ti.funcptr_ret_int_width = psx_funcptr_ret_int_width_from_kind(
@@ -3930,9 +3931,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   unsigned short funcptr_param_int_mask = param_has_func_suffix
                                             ? psx_last_funcptr_param_int_mask()
                                             : ds->funcptr_param_int_mask;
-  int funcptr_ret_is_void = param_has_func_suffix
-                              ? (ds->base_type_kind == TK_VOID)
-                              : (ds->funcptr_ret_is_void ? 1 : 0);
+  int funcptr_ret_is_data_pointer =
+      param_has_func_suffix
+          ? ((param_ptr_levels > 1 || ds->base_is_pointer) ? 1 : 0)
+          : (ds->funcptr_ret_is_data_pointer ? 1 : 0);
+  int funcptr_ret_is_void =
+      param_has_func_suffix
+          ? (ds->base_type_kind == TK_VOID && !funcptr_ret_is_data_pointer)
+          : (ds->funcptr_ret_is_void ? 1 : 0);
   int is_variadic_funcptr = param_has_func_suffix
                               ? psx_last_funcptr_is_variadic()
                               : (ds->is_variadic_funcptr ? 1 : 0);
@@ -3953,7 +3959,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     var->funcptr_param_int_mask = funcptr_param_int_mask;
     var->funcptr_ret_int_width = ds->funcptr_ret_int_width;
     var->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
-    var->funcptr_ret_is_data_pointer = ds->funcptr_ret_is_data_pointer ? 1 : 0;
+    var->funcptr_ret_is_data_pointer = funcptr_ret_is_data_pointer ? 1 : 0;
     var->funcptr_ret_is_complex = ds->funcptr_ret_is_complex ? 1 : 0;
     var->is_variadic_funcptr = is_variadic_funcptr ? 1 : 0;
     var->funcptr_nargs_fixed = funcptr_nargs_fixed;
@@ -4073,7 +4079,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     var->funcptr_param_int_mask = funcptr_param_int_mask;
     var->funcptr_ret_int_width = ds->funcptr_ret_int_width;
     var->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
-    var->funcptr_ret_is_data_pointer = ds->funcptr_ret_is_data_pointer ? 1 : 0;
+    var->funcptr_ret_is_data_pointer = funcptr_ret_is_data_pointer ? 1 : 0;
     var->funcptr_ret_is_complex = ds->funcptr_ret_is_complex ? 1 : 0;
     var->is_variadic_funcptr = is_variadic_funcptr ? 1 : 0;
     var->funcptr_nargs_fixed = funcptr_nargs_fixed;
@@ -4369,8 +4375,8 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
         int lv = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
         out->base_pointer_levels = (lv > 0) ? lv : 1;
       }
-      if (_ti.is_funcptr || _ti.funcptr_ret_is_void || _ti.funcptr_ret_int_width ||
-          _ti.funcptr_param_fp_mask || _ti.funcptr_param_int_mask ||
+      if (_ti.is_funcptr || _ti.funcptr_ret_is_void || _ti.funcptr_ret_is_pointer ||
+          _ti.funcptr_ret_int_width || _ti.funcptr_param_fp_mask || _ti.funcptr_param_int_mask ||
           _ti.is_variadic_funcptr) {
         out->funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
         out->funcptr_param_int_mask = _ti.funcptr_param_int_mask;

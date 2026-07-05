@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き630: WAT standalone math classification/comparison stubs を追加）
+最終更新: 2026-07-06（続き632: typedef 経由 void* function pointer 戻り型を補強）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
-  **1183 compiled, 1183 executed**、
+  **1184 compiled, 1184 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -37,6 +37,42 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き632: **typedef 経由の `void *(*fn)(...)` function pointer 戻り型メタデータを補強**。
+  続き631 の回帰を local 直書きだけでなく typedef / global / parameter /
+  function-returning-function-pointer 経路へ広げたところ、`typedef void *(*move_fn_t)(...)` の
+  戻り値が data pointer として伝播せず、`call_indirect` が result なしで emit される穴が見つかった。
+  `src/parser/parser.c` では typedef 名から仮引数宣言 spec へ `funcptr_ret_is_pointer` も
+  signature 情報としてコピーするようにし、top-level typedef 登録では `void *(*F)(...)` の
+  先頭 pointer prefix を function pointer の戻り data pointer として記録するようにした。
+  `src/parser/decl.c` でも local declaration の typedef 経由に `g_decl_base_funcptr_ret_is_pointer`
+  を追加し、local 変数へ `funcptr_ret_is_data_pointer` を伝播するようにした。
+  回帰は `test/fixtures/wasm32/libc_funcptr_stub_ops.c` に `move_fn_t` typedef、global、
+  parameter、function return 経路を追加して固定した。
+  確認は `make -j4 build/test_parser build/test_wasm32_e2e` + `./build/test_parser` = pass、
+  `./build/test_wasm32_e2e` = `1184 compiled, 1184 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き631: **WAT standalone libc stub の function pointer 経路を実装済み stub 群と同期**。
+  見つかった浅い箇所:
+  - `src/arch/wasm32_ir.c` の `has_minimal_libc_stub_function()` は、standalone WAT が実際に
+    emit できる public libc stub の一部だけを function table 参照可としていた。
+  - そのため `memmove` / `strerror` / `time` / `setlocale` / `qsort` など、直接呼び出しなら
+    standalone stub が出る関数でも、`int (*fp)(...) = ...` のように関数ポインタ経由へ回ると
+    `external function pointer in Wasm backend` または table signature mismatch に落ち得た。
+  根本対応:
+  - `has_minimal_libc_stub_function()` を個別条件の羅列から public standalone stub 名テーブルへ置き換え、
+    実装済み stub の function pointer allowlist をまとめて同期した。
+  - `void *(*f)(...)` のような関数ポインタ戻り型が `void` 戻り扱いになる型メタデータの穴を修正した。
+    対象は local declaration、toplevel/global、typedef、parameter 経路。
+  - function pointer signature がある indirect call では、古い `null_ptr_pair_arg` 特例で
+    `setlocale(int, const char *)` の第一引数を pointer 扱いしないようにした。
+  - 回帰は WAT 専用の `test/fixtures/wasm32/libc_funcptr_stub_ops.c` として追加し、
+    `memmove` / `strerror` / `fputs` / `fputc` / `time` / `difftime` / `fenv` / `locale` /
+    `rand` / `qsort` を関数ポインタ経由で確認する。
+  確認は `make -j4 build/test_parser build/test_wasm32_e2e` + `./build/test_parser` = pass、
+  `./build/test_wasm32_e2e` = `1184 compiled, 1184 executed`、
+  `make -j4 build/test_e2e` + `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
 - 続き630: **WAT standalone `fpclassify()` / `isfinite()` / `isinf()` / `isnan()` / `isnormal()` / `signbit()` と
   ordered/unordered comparison predicate の undefined import gap を解消**。
   linked runtime / linker rewrite と `math.h` には classification/comparison macro 相当の経路があったが、

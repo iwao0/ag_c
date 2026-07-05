@@ -299,49 +299,73 @@ static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_ty
 }
 
 static int has_minimal_libc_stub_function(char *name, int name_len) {
-  return (name_len == 6 && memcmp(name, "printf", 6) == 0) ||
-         (name_len == 7 && memcmp(name, "fprintf", 7) == 0) ||
-         (name_len == 7 && memcmp(name, "vprintf", 7) == 0) ||
-         (name_len == 8 && memcmp(name, "vfprintf", 8) == 0) ||
-         (name_len == 4 && memcmp(name, "puts", 4) == 0) ||
-         (name_len == 7 && memcmp(name, "sprintf", 7) == 0) ||
-         (name_len == 8 && memcmp(name, "snprintf", 8) == 0) ||
-         (name_len == 8 && memcmp(name, "vsprintf", 8) == 0) ||
-         (name_len == 9 && memcmp(name, "vsnprintf", 9) == 0) ||
-         (name_len == 5 && memcmp(name, "scanf", 5) == 0) ||
-         (name_len == 6 && memcmp(name, "vscanf", 6) == 0) ||
-         (name_len == 6 && memcmp(name, "fscanf", 6) == 0) ||
-         (name_len == 7 && memcmp(name, "vfscanf", 7) == 0) ||
-         (name_len == 6 && memcmp(name, "sscanf", 6) == 0) ||
-         (name_len == 7 && memcmp(name, "vsscanf", 7) == 0) ||
-         (name_len == 7 && memcmp(name, "swscanf", 7) == 0) ||
-         (name_len == 8 && memcmp(name, "swprintf", 8) == 0) ||
-         (name_len == 5 && memcmp(name, "mblen", 5) == 0) ||
-         (name_len == 6 && memcmp(name, "mbtowc", 6) == 0) ||
-         (name_len == 6 && memcmp(name, "wctomb", 6) == 0) ||
-         (name_len == 8 && memcmp(name, "mbstowcs", 8) == 0) ||
-         (name_len == 8 && memcmp(name, "wcstombs", 8) == 0) ||
-         (name_len == 7 && memcmp(name, "strcoll", 7) == 0) ||
-         (name_len == 7 && memcmp(name, "strxfrm", 7) == 0) ||
-         (name_len == 7 && memcmp(name, "wcstoll", 7) == 0) ||
-         (name_len == 8 && memcmp(name, "wcstoull", 8) == 0) ||
-         (name_len == 6 && memcmp(name, "wcstof", 6) == 0) ||
-         (name_len == 7 && memcmp(name, "wcstold", 7) == 0) ||
-         (name_len == 10 && memcmp(name, "fpclassify", 10) == 0) ||
-         (name_len == 8 && memcmp(name, "isfinite", 8) == 0) ||
-         (name_len == 5 && memcmp(name, "isinf", 5) == 0) ||
-         (name_len == 5 && memcmp(name, "isnan", 5) == 0) ||
-         (name_len == 8 && memcmp(name, "isnormal", 8) == 0) ||
-         (name_len == 7 && memcmp(name, "signbit", 7) == 0) ||
-         (name_len == 9 && memcmp(name, "isgreater", 9) == 0) ||
-         (name_len == 14 && memcmp(name, "isgreaterequal", 14) == 0) ||
-         (name_len == 6 && memcmp(name, "isless", 6) == 0) ||
-         (name_len == 11 && memcmp(name, "islessequal", 11) == 0) ||
-         (name_len == 13 && memcmp(name, "islessgreater", 13) == 0) ||
-         (name_len == 11 && memcmp(name, "isunordered", 11) == 0) ||
-         (name_len == 6 && memcmp(name, "strspn", 6) == 0) ||
-         (name_len == 7 && memcmp(name, "strcspn", 7) == 0) ||
-         (name_len == 7 && memcmp(name, "strpbrk", 7) == 0);
+  static const char *stub_names[] = {
+      "__assert_rtn",
+      "abs", "acos", "acosf", "acosh", "acoshf", "acoshl", "acosl",
+      "aligned_alloc", "asctime", "asin", "asinf", "asinh", "asinhf", "asinhl",
+      "asinl", "at_quick_exit", "atan", "atan2", "atan2f", "atan2l", "atanf",
+      "atanh", "atanhf", "atanhl", "atanl", "atexit", "atof", "atoi", "atol",
+      "atoll", "bsearch", "btowc", "c16rtomb", "c32rtomb", "calloc", "cbrt",
+      "cbrtf", "cbrtl", "ceil", "ceilf", "ceill", "clearerr", "clock",
+      "copysign", "copysignf", "copysignl", "cos", "cosf", "cosh", "coshf",
+      "coshl", "cosl", "ctime", "difftime", "div", "erf", "erfc", "erfcf",
+      "erfcl", "erff", "erfl", "exp", "exp2", "exp2f", "exp2l", "expf",
+      "expl", "expm1", "expm1f", "expm1l", "fabs", "fabsf", "fabsl", "fclose",
+      "fdim", "fdimf", "fdiml", "fdopen", "feclearexcept", "fegetenv",
+      "fegetexceptflag", "fegetround", "feholdexcept", "feof", "feraiseexcept",
+      "ferror", "fesetenv", "fesetexceptflag", "fesetround", "fetestexcept",
+      "feupdateenv", "fflush", "fgetc", "fgetpos", "fgets", "fgetwc", "fgetws",
+      "floor", "floorf", "floorl", "fma", "fmaf", "fmal", "fmax", "fmaxf",
+      "fmaxl", "fmin", "fminf", "fminl", "fmod", "fmodf", "fmodl", "fopen",
+      "fpclassify", "fprintf", "fputc", "fputs", "fputwc", "fputws", "fread",
+      "free", "freopen", "frexp", "frexpf", "frexpl", "fscanf", "fseek",
+      "fsetpos", "ftell", "fwide", "fwrite", "getc", "getchar", "getenv",
+      "getline", "getwc", "getwchar", "gmtime", "hypot", "hypotf", "hypotl",
+      "ilogb", "ilogbf", "ilogbl", "imaxabs", "imaxdiv", "isalnum", "isalpha",
+      "isblank", "iscntrl", "isdigit", "isfinite", "isgraph", "isgreater",
+      "isgreaterequal", "isinf", "isless", "islessequal", "islessgreater",
+      "islower", "isnan", "isnormal", "isprint", "ispunct", "isspace",
+      "isunordered", "isupper", "iswalnum", "iswalpha", "iswblank", "iswcntrl",
+      "iswctype", "iswdigit", "iswgraph", "iswlower", "iswprint", "iswpunct",
+      "iswspace", "iswupper", "iswxdigit", "isxdigit", "labs", "ldexp",
+      "ldexpf", "ldexpl", "ldiv", "llabs", "lldiv", "llrint", "llrintf",
+      "llrintl", "llround", "llroundf", "llroundl", "localeconv", "localtime",
+      "log", "log10", "log10f", "log10l", "log1p", "log1pf", "log1pl", "log2",
+      "log2f", "log2l", "logb", "logbf", "logbl", "logf", "logl", "lrint",
+      "lrintf", "lrintl", "lround", "lroundf", "lroundl", "malloc", "mblen",
+      "mbrlen", "mbrtoc16", "mbrtoc32", "mbrtowc", "mbsinit", "mbsrtowcs",
+      "mbstowcs", "mbtowc", "memchr", "memcmp", "memcpy", "memmove", "memset",
+      "mktime", "modf", "modff", "modfl", "nearbyint", "nearbyintf",
+      "nearbyintl", "perror", "pow", "powf", "powl", "printf", "putc",
+      "putchar", "puts", "putwc", "putwchar", "qsort", "raise", "rand",
+      "realloc", "realpath", "remainder", "remainderf", "remainderl", "remove",
+      "remquo", "remquof", "remquol", "rename", "rewind", "rint", "rintf",
+      "rintl", "round", "roundf", "roundl", "scalbln", "scalblnf", "scalblnl",
+      "scalbn", "scalbnf", "scalbnl", "scanf", "setbuf", "setlocale",
+      "setvbuf", "signal", "signbit", "sin", "sinf", "sinh", "sinhf", "sinhl",
+      "sinl", "snprintf", "sprintf", "sqrt", "sqrtf", "sqrtl", "srand",
+      "sscanf", "strcat", "strchr", "strcmp", "strcoll", "strcpy", "strcspn",
+      "strerror", "strftime", "strlen", "strncat", "strncmp", "strncpy",
+      "strpbrk", "strrchr", "strspn", "strstr", "strtod", "strtof",
+      "strtoimax", "strtok", "strtol", "strtold", "strtoll", "strtoul",
+      "strtoull", "strtoumax", "strxfrm", "swprintf", "swscanf", "system",
+      "tan", "tanf", "tanh", "tanhf", "tanhl", "tanl", "time", "timespec_get",
+      "tmpfile", "tmpnam", "tolower", "toupper", "towctrans", "towlower",
+      "towupper", "trunc", "truncf", "truncl", "ungetc", "ungetwc", "vfprintf",
+      "vfscanf", "vprintf", "vscanf", "vsnprintf", "vsprintf", "vsscanf",
+      "wcrtomb", "wcscat", "wcschr", "wcscmp", "wcscoll", "wcscpy", "wcscspn",
+      "wcsftime", "wcslen", "wcsncat", "wcsncmp", "wcsncpy", "wcspbrk",
+      "wcsrchr", "wcsrtombs", "wcsspn", "wcsstr", "wcstod", "wcstof", "wcstok",
+      "wcstol", "wcstold", "wcstoll", "wcstombs", "wcstoul", "wcstoull",
+      "wcsxfrm", "wctob", "wctomb", "wctrans", "wctype", "wmemchr", "wmemcmp",
+      "wmemcpy", "wmemmove", "wmemset",
+  };
+  int n = (int)(sizeof(stub_names) / sizeof(stub_names[0]));
+  for (int i = 0; i < n; i++) {
+    int len = (int)strlen(stub_names[i]);
+    if (name_len == len && memcmp(name, stub_names[i], (size_t)len) == 0) return 1;
+  }
+  return 0;
 }
 
 static void emit_function_table(void) {
@@ -1156,7 +1180,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int from_funcptr_sig = i->has_funcptr_sig ? 1 : 0;
       if (from_funcptr_sig) arg_ty = funcptr_param_type_from_inst(i, a, arg_ty);
       int null_ptr_pair_arg =
-          a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+          !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       unsigned iw = a < 8 ? ((i->funcptr_param_int_mask >> (2 * a)) & 3u) : 0;
       if (from_funcptr_sig && !i->is_variadic_funcptr && !i->is_variadic_call &&
@@ -1180,7 +1204,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int from_funcptr_sig = i->has_funcptr_sig ? 1 : 0;
       if (from_funcptr_sig) arg_ty = funcptr_param_type_from_inst(i, a, arg_ty);
       int null_ptr_pair_arg =
-          a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+          !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       unsigned iw = a < 8 ? ((i->funcptr_param_int_mask >> (2 * a)) & 3u) : 0;
       if (from_funcptr_sig && !i->is_variadic_funcptr && !i->is_variadic_call &&

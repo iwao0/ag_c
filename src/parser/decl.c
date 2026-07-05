@@ -528,6 +528,7 @@ static unsigned short g_decl_base_funcptr_param_int_mask = 0;
 static unsigned char g_decl_base_funcptr_ret_int_width = 0;
 static psx_ret_pointee_array_t g_decl_base_funcptr_ret_pointee_array = {0};
 static int g_decl_base_funcptr_ret_is_void = 0;
+static int g_decl_base_funcptr_ret_is_pointer = 0;
 static int g_decl_base_funcptr_ret_is_complex = 0;
 static int g_decl_base_is_variadic_funcptr = 0;
 static short g_decl_base_funcptr_nargs_fixed = 0;
@@ -4470,6 +4471,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   psx_ret_pointee_array_t base_funcptr_ret_pointee_array =
       g_decl_base_funcptr_ret_pointee_array;
   int base_funcptr_ret_is_void = g_decl_base_funcptr_ret_is_void;
+  int base_funcptr_ret_is_pointer = g_decl_base_funcptr_ret_is_pointer;
   int base_funcptr_ret_is_complex = g_decl_base_funcptr_ret_is_complex;
   int base_is_variadic_funcptr = g_decl_base_is_variadic_funcptr;
   short base_funcptr_nargs_fixed = g_decl_base_funcptr_nargs_fixed;
@@ -4478,6 +4480,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   g_decl_base_funcptr_ret_int_width = 0;
   g_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_decl_base_funcptr_ret_is_void = 0;
+  g_decl_base_funcptr_ret_is_pointer = 0;
   g_decl_base_funcptr_ret_is_complex = 0;
   g_decl_base_is_variadic_funcptr = 0;
   g_decl_base_funcptr_nargs_fixed = 0;
@@ -5041,7 +5044,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     int has_base_funcptr_sig =
         base_funcptr_param_fp_mask || base_funcptr_param_int_mask ||
         base_funcptr_ret_int_width || base_funcptr_ret_is_void ||
-        base_funcptr_ret_is_complex || base_is_variadic_funcptr ||
+        base_funcptr_ret_is_pointer || base_funcptr_ret_is_complex || base_is_variadic_funcptr ||
         psx_ret_pointee_array_has_dims(base_funcptr_ret_pointee_array);
     int is_funcptr_decl = is_pointer || g_decl_trailing_func_suffix || has_base_funcptr_sig;
     if (is_funcptr_decl && (g_last_funcptr_is_variadic || base_is_variadic_funcptr)) {
@@ -5058,12 +5061,15 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       var->funcptr_param_int_mask = g_decl_trailing_func_suffix
                                        ? g_last_funcptr_param_int_mask
                                        : base_funcptr_param_int_mask;
-      var->funcptr_ret_is_void = g_decl_trailing_func_suffix
-                                     ? (decl_base_is_void ? 1 : 0)
-                                     : (base_funcptr_ret_is_void ? 1 : 0);
+      int direct_ret_is_data_pointer =
+          (g_decl_trailing_func_suffix && (ptr_levels > 1 || base_is_pointer)) ? 1 : 0;
       var->funcptr_ret_is_data_pointer =
-          g_decl_trailing_func_suffix ? ((ptr_levels > 1 || base_is_pointer) ? 1 : 0)
-                                      : 0;
+          g_decl_trailing_func_suffix ? direct_ret_is_data_pointer
+                                      : (base_funcptr_ret_is_pointer ? 1 : 0);
+      var->funcptr_ret_is_void =
+          g_decl_trailing_func_suffix
+              ? (decl_base_is_void && !direct_ret_is_data_pointer)
+              : (base_funcptr_ret_is_void ? 1 : 0);
       var->funcptr_ret_is_complex =
           g_decl_trailing_func_suffix
               ? ((decl_is_complex && !var->funcptr_ret_is_data_pointer) ? 1 : 0)
@@ -5176,6 +5182,7 @@ node_t *psx_decl_parse_declaration(void) {
     g_decl_base_funcptr_param_int_mask = ds.td_funcptr_param_int_mask;
     g_decl_base_funcptr_ret_int_width = ds.td_funcptr_ret_int_width;
     g_decl_base_funcptr_ret_is_void = ds.td_funcptr_ret_is_void ? 1 : 0;
+    g_decl_base_funcptr_ret_is_pointer = ds.td_funcptr_ret_is_pointer ? 1 : 0;
     g_decl_base_funcptr_ret_is_complex = ds.td_funcptr_ret_is_complex ? 1 : 0;
     g_decl_base_is_variadic_funcptr = ds.td_is_variadic_funcptr ? 1 : 0;
     g_decl_base_funcptr_nargs_fixed = ds.td_funcptr_nargs_fixed;
@@ -5236,6 +5243,7 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
       g_decl_base_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
       g_decl_base_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
       g_decl_base_funcptr_ret_is_void = _ti.funcptr_ret_is_void;
+      g_decl_base_funcptr_ret_is_pointer = _ti.funcptr_ret_is_pointer;
       g_decl_base_funcptr_ret_is_complex = _ti.funcptr_ret_is_complex;
       g_decl_base_is_variadic_funcptr = _ti.is_variadic_funcptr ? 1 : 0;
       g_decl_base_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
@@ -5258,6 +5266,7 @@ static int parse_local_decl_spec_from_builtin(local_decl_spec_t *out) {
   g_decl_base_funcptr_ret_int_width = 0;
   g_decl_base_funcptr_ret_pointee_array = psx_ret_pointee_array_make(0, 0, 0);
   g_decl_base_funcptr_ret_is_void = 0;
+  g_decl_base_funcptr_ret_is_pointer = 0;
   g_decl_base_funcptr_ret_is_complex = 0;
   g_decl_base_is_variadic_funcptr = 0;
   g_decl_base_funcptr_nargs_fixed = 0;
