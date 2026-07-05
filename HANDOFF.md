@@ -1,12 +1,14 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き546: remove後FDの fstat/lseek EBADF 化）
+最終更新: 2026-07-05（続き564: table full時のlong path errno優先）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c` = **green**、
-  `make build/libagc_runtime.o` = **green**、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_preflight.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o build/libagc_runtime.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `make build/libagc_runtime.o` = **green/up-to-date**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-js-api` = **green**、
@@ -49,6 +51,374 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き564: **table full時のlong path errno優先**。
+  続き562/563で長すぎる path を `ENAMETOOLONG` で拒否するようにしたが、
+  `fopen()` / `open()` は file/FD slot 空き確認を path 長 preflight より先に行っていた。
+  そのため FILE table / FD table が満杯の状態では、長すぎる path に対して
+  `ENAMETOOLONG` ではなく `ENOMEM` が返る浅い順序依存が残っていた。
+  `__agc_runtime_fopen()` / `__agc_runtime_open()` に non-JS runtime 用の
+  `ag_rt_store_name_fits()` preflight を slot 検査より前へ追加し、path 自体の不正を
+  resource exhaustion より先に返すようにした。store 取得や truncate は従来通り slot 検査後なので、
+  続き551/552の「失敗時に既存状態を先に壊さない」性質は保っている。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に、
+  FILE table が満杯でも `fopen(long_path, "w")` は `ENAMETOOLONG`、
+  FD table が満杯でも `open(long_path, O_RDWR|O_CREAT)` は `ENAMETOOLONG` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_preflight.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `./build/ag_c_wasm -c -o build/libagc_runtime.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き563: **`ENAMETOOLONG`公開ヘッダ追随**。
+  続き562で長すぎる path を errno 36 で拒否するようにしたが、`include/errno.h` には
+  `ENAMETOOLONG` が未定義のままだった。runtime が名前のない errno を返す形は利用側にとって浅いので、
+  `include/errno.h` に `#define ENAMETOOLONG 36` を追加した。
+  `test/fixtures/stdheader/errno_include.c` も `ENAMETOOLONG == 36` を assert するように広げ、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case では
+  長 path の errno 検査を数値 36 直書きから `ENAMETOOLONG` へ置き換えた。
+  `tools/wasm_obj_linker/test_smoke.sh` の手書き fixture でも同名 macro を定義して、
+  long path regression が名前付き errno を確認するようにした。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_errno.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `./build/ag_c test/fixtures/stdheader/errno_include.c`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_e2e`、
+  `git diff --check`。
+- 続き562: **長pathのunreachable store防止**。
+  path store は `AG_RT_FILE_NAME_CAP` の範囲に名前を保存するが、従来は長い path を
+  `ag_rt_store_name_copy()` で切り詰めて保存し、検索時は full path と完全一致で比較していた。
+  そのため `fopen(long_path, "w")` / `open(long_path, O_CREAT)` が成功しても、以後同じ full path で
+  見つからない unreachable store を作る浅い挙動になっていた。
+  `ag_rt_store_name_fits()` を追加し、長すぎる path は store 作成・削除・rename の前に errno 36
+  (`ENAMETOOLONG` 相当) で失敗させるようにした。`remove()` / `rename(old, ...)` などの呼び出し側が
+  `ag_rt_store_for_path()` の path error を `ENOENT` で上書きしないようにもした。
+  さらに `rename(existing, long_path)` は destination 側が存在しない扱いで最後に切り詰め保存へ落ちるため、
+  new path も事前に長さ検査するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に、
+  長 path の `fopen` / `open(O_CREAT)` / `remove` / `rename(long, short)` / `rename(short, long)` が
+  errno 36 で失敗する確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_longpath3.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `./build/ag_c_wasm -c -o build/libagc_runtime.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+  注意: `ag_rt_stream_has_store()` も selfhost parser に合わせて複合 return から早期 return 形式へ単純化した。
+  これは続き561で入れた `fflush` / `setvbuf` の store 検査が JS callbacks runtime compile で
+  `format.c` 側診断へ崩れるのを防ぐための同等変換。
+- 続き561: **remove後streamの`fflush`/`setvbuf` EBADF化**。
+  続き547で `remove()` 後に残った `FILE*` の read/seek/tell/ungetc 系を EBADF に寄せたが、
+  `fflush()` と `setvbuf()` は backing store を確認せず、削除済み stream でも成功してしまう浅い実装が残っていた。
+  `__agc_runtime_fflush()` / `__agc_runtime_setvbuf()` を stdout/stderr/NULL の既存成功扱いは保ったまま、
+  実ファイル stream では `ag_rt_stream_has_store()` を確認する経路にした。
+  selfhost parser が複合条件で後続 `format.c` 診断へ崩れたため、実装は早期 return 形式に単純化している。
+  `tools/wasm_obj_linker/test_smoke.sh` の `remove_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に、
+  `remove()` 後の held stream で `fflush()` / `setvbuf()` が `EBADF` かつ `ferror()` を立てる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe5.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `./build/ag_c_wasm -c -o build/libagc_runtime.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+  注意: `make -B build/libagc_runtime.o` / `make -B build/wasm_selfhost_api/ag_c_wasm_api.wasm` は
+  native `build/ag_c_wasm` 再ビルド直後の runtime compile で `format.c` 側の既存 selfhost parser 診断に当たることがあった。
+  その後 `./build/ag_c_wasm -c -o build/libagc_runtime.o tools/wasm_obj_linker/runtime/libagc_runtime.c` で
+  runtime object を正常化し、通常の `make build/libagc_runtime.o` / JS pipeline / JS API は green。
+- 続き560: **`freopen` 時の rename退避temporary store解放**。
+  続き559で `fclose()` / `close()` の temporary store 最終参照解放を共通化したが、
+  `freopen()` は stream を閉じるのではなく別 store に付け替えるため、同じ寿命管理から漏れていた。
+  特に large destination を open したまま `rename(small_old, large_dst)` すると、
+  open stream は unlinked temporary store に退避された 300B large buffer を参照する。
+  その stream を `freopen("new", "w", stream)` で別 path へ付け替えた場合、
+  旧 temporary store が未参照のまま shared large buffer を掴み続け、次の 257B 以上の write が
+  `ENOMEM` になり得た。
+  `__agc_runtime_freopen()` で旧 `FILE*` store と fdopen 元 FD store を退避しておき、
+  新 store へ付け替えた後に `ag_rt_release_temp_store_if_unreferenced()` を呼ぶようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に、
+  large destination の overwrite rename 後、その open stream を `freopen()` して 300B 書けること、
+  かつ path 側 destination は small old 内容を保つことを追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make -B build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`。
+- 続き559: **rename退避temporary storeの最終参照解放**。
+  続き555-558で `rename(old, existing_new)` 時の destination open handle を
+  unlinked temporary store へ退避するようにしたが、退避 store の寿命管理が
+  `fclose()` 側に寄っていて shallow だった。
+  具体的には `fclose()` は temporary store を即解放していたため、同じ退避 store を
+  `FILE*` と FD の両方が参照している状態で `FILE*` だけ閉じると、残った FD が
+  backing store を失う可能性があった。逆に `close(fd)` 側には temporary store の
+  最終参照解放処理がなく、FILE/FD で寿命管理が非対称だった。
+  `ag_rt_release_temp_store_if_unreferenced()` を追加し、`fclose()` / `close()` の
+  どちらでも参照を落とした後に「最後の参照が消えた temporary store だけ」を解放するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case では、
+  destination を `FILE*` と FD の両方で開いたまま overwrite rename し、
+  destination 側 `FILE*` を先に閉じても destination 側 FD が旧内容を読めることを確認するようにした。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`（初回は既知の selfhost 側 `format.c` parse 診断で一度失敗、単独再実行で green）、
+  `make test-wasm-js-api`。
+- 続き558: **large destination rename overwriteのsmall old適用**。
+  続き555-557で rename overwrite の open handle 保持を固めたが、
+  destination が 300B の large primary store かつ open handle に参照され、
+  old が small file の場合、destination を unlinked temporary store へ退避した後に
+  path 側 destination へ small old をコピーする必要がある。
+  従来の共通 copy 経路は `ag_rt_store_buf_for_write()` を通るため、退避済み large destination が
+  shared large buffer を持っている状態では `ENOMEM` になり得た。
+  old 内容が `AG_RT_FILE_SMALL_BUF_CAP` に収まる場合は、destination path store の
+  `small_buf` へ直接コピーするようにし、large destination open handle と path 側置換を両立した。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に、
+  large destination を開いたまま small old で overwrite rename し、
+  open handle は旧 large 内容、path は small old 内容を読む確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き557: **large old rename overwriteのopen handle保持**。
+  続き555/556で rename overwrite 時の destination open handle 退避と失敗原子性を固定したが、
+  共有 large buffer を動かす最も危ない経路として、old 側が 300B の large primary store で
+  destination 側が open handle を持つケースも追加で固定した。
+  `rename(large_old, existing_dst)` 後も、rename 前に開いていた destination stream は置換前内容を読み、
+  path としての destination は large old 内容を 300B 読めることを確認する。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き556: **rename overwrite退避失敗時の原子性固定**。
+  続き555で `rename(old, existing_new)` 時に destination 側 open handle を
+  unlinked temporary store へ退避するようにしたため、退避先を確保できない場合の
+  失敗原子性も固定した。
+  全 store slot が open handle に参照されている状態では退避 store を確保できないため、
+  `rename(old, existing_new)` は `errno=ENOMEM` で失敗し、old / destination の open handle は
+  それぞれ元内容を読めるままにする。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case に、
+  old / destination / extra2本で store slot を埋めた状態の rename overwrite failure を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き555: **rename overwrite時のdestination open handle保持**。
+  続き548で `rename(old, existing_new)` 後に old 側 open handle を維持するようにしたが、
+  destination 側を rename 前から開いていた `FILE*` / FD は existing_new store の上書きで
+  元内容を失っていた。POSIX 的には path は置き換わっても、既に開いていた destination handle は
+  置換前の file を読み続けるべきなので、open-handle isolation として浅い実装だった。
+  destination store に open refs がある場合は、`ag_rt_alloc_temp_store_excluding()` で unlinked temporary
+  store を確保し、`ag_rt_preserve_replaced_store_refs()` で destination 内容と refs を退避してから
+  destination path store を old 内容へ置き換えるようにした。
+  退避 store を確保できない場合は `ENOMEM` で rename を失敗させ、既存 state は触らない。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  rename overwrite 後も destination 側を事前に開いていた `FILE*` / FD が
+  置換前内容を読める確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き554: **`freopen` 失敗時の先行FD close防止**。
+  `fdopen` 由来の stream に `freopen(path, mode, stream)` を呼ぶと、
+  新しい path の store を確保する前に元 FD table entry を閉じていた。
+  そのため store 確保が `ENOMEM` で失敗して `freopen` が NULL を返しても、
+  元 FD だけが失われる浅い実装だった。
+  `__agc_runtime_freopen()` では store 確保が成功してから元 FD を close する順序へ変更した。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  全 store slot が open handle に参照されている状態で `freopen` が `ENOMEM` 失敗した後も、
+  元 FD から既存内容を読める確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き553: **`tmpfile` 失敗時の先行store確保防止**。
+  続き551/552で `fopen` / `open` の失敗時に既存状態を先に壊す経路を防いだが、
+  `tmpfile()` は `FILE*` slot を確保できるか確認する前に temporary store を確保していた。
+  そのため stream slot が満杯で `tmpfile()` が失敗しても、temp store だけが消費される浅い実装だった。
+  `__agc_runtime_tmpfile()` の先頭で `ag_rt_has_free_file_slot()` を確認し、
+  slot がなければ store に触らず `errno=ENOMEM` で失敗するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  stream slot 満杯時の `tmpfile()` が `ENOMEM` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き552: **`open` 失敗時の先行truncate防止**。
+  続き551で `fopen(path, "w")` の先行 truncate を防いだが、
+  raw FD の `open(path, O_RDWR | O_TRUNC)` も同じく store を見つけて `len=0` にしてから
+  FD slot を探していた。そのため FD table が満杯で `open` が `ENOMEM` 失敗しても、
+  既存 file 内容だけが消える浅い実装だった。
+  `ag_rt_has_free_fd_slot()` を追加し、`open` は `O_EXCL` の存在チェック後、
+  store/truncate に触る前に FD slot の空きを確認するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  同じ path を8本 read-open して FD table を満杯にした状態で
+  `open(path, O_RDWR | O_TRUNC)` が `ENOMEM` になり、既存内容が残る確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き551: **`fopen` 失敗時の先行truncate防止**。
+  `fopen(path, "w")` は store を見つけた直後に `len=0` へ truncate し、
+  その後で `FILE*` slot を確保していた。そのため `FILE*` slot が満杯で
+  `fopen` が `ENOMEM` 失敗しても、既存 file 内容だけが消える浅い実装だった。
+  `ag_rt_has_free_file_slot()` を追加し、`fopen` は path/store/truncate に触る前に
+  stream slot の空きを確認するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  同じ path を8本 read-open して stream slot を満杯にした状態で
+  `fopen(path, "w")` が `ENOMEM` になり、既存内容が残る確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き550: **large primary store切替時の黙ったtruncate防止**。
+  default runtime は large file 用の共有 `ag_rt_file_buf` を1本だけ持ち、
+  別 store へ write 対象を切り替える時に、前の primary store を `small_buf` へ退避する。
+  ただし前の store が `AG_RT_FILE_SMALL_BUF_CAP` を超えている場合でも、
+  先頭256Bだけをコピーして `len` も256へ縮めており、既存 file 内容を黙って truncate する
+  浅い実装だった。
+  `ag_rt_store_buf_for_write()` で、前の primary store が small buffer に退避できないサイズなら
+  `errno=ENOMEM` で切替を拒否し、既存 file の内容を保持するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `store_reuse_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  300B の既存 file を保持したまま別 file が257B目で `ENOMEM` になり、
+  既存 300B file がそのまま読める確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き549: **open中store slotの再利用抑止**。
+  default runtime の file store は少数 slot を再利用するが、`ag_rt_alloc_store()` は
+  空きがない場合に既存 slot を上書きする際、その slot を指したままの `FILE*` / FD を
+  考慮していなかった。そのため、古い open handle が新しく割り当てられた別 path の内容を
+  読めてしまう浅い実装だった。
+  `ag_rt_store_has_refs()` を追加し、open stream / FD が参照している store slot は
+  新規 path 作成時の eviction 対象から外すようにした。
+  全 store slot が open handle に参照されている場合は、既存 handle を壊さず
+  `errno=ENOMEM` で作成を失敗させる。
+  `ag_rt_invalidate_store_refs()` は remove 用の共通 invalidation helper として残し、
+  `remove` 側の重複していた手書き invalidation も helper 呼び出しに寄せた。
+  `tools/wasm_obj_linker/test_smoke.sh` には独立した `store_reuse_state` smoke を追加し、
+  unreferenced slot の再利用後も古い `FILE*` / FD が元内容を読めることと、
+  全 slot が open 中の場合は追加作成が `ENOMEM` になることを確認した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case にも
+  同じ store reuse ケースを追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き548: **rename overwrite後の open handle 維持**。
+  続き547で `FILE*` の invalid store 検出を強めたことで、既存 path へ
+  `rename(old, new)` する分岐の浅さも見えるようになった。
+  default runtime は old store の内容を既存 new store へコピーした後に old store を unused にするが、
+  old 側を既に開いていた `FILE*` / FD の `store_index` を移動先へ張り替えていなかったため、
+  rename 後の open handle が `EBADF` 化し得た。
+  `ag_rt_repoint_store_refs()` を追加し、rename overwrite で old store を解放する前に
+  open stream / FD の参照を new store へ付け替えるようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  既存 destination への rename 後も、rename 前に old 側を開いていた `FILE*` / FD が
+  元内容を読める確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き547: **remove後FILE streamの `EBADF` 化**。
+  続き546で remove 後の FD 経路は `EBADF` に揃えたが、同じ backing store を指していた
+  `FILE*` については、`remove` 後に `store_index=-1` / `error=1` へ invalid 化されても、
+  `fgetc` / `fread` / `fgets` は EOF 相当、`fseek` / `ftell` / `fgetpos` / `rewind` は
+  成功相当に進み得る浅い実装だった。
+  `ag_rt_stream_has_store()` を追加し、`FILE*` が stdin 以外で valid store を持つことを
+  read/seek/tell/getpos/rewind/ungetc の入口で確認するようにした。
+  invalidated stream は `ferror` を立て、`errno=EBADF` で失敗する。
+  `tools/wasm_obj_linker/test_smoke.sh` の `remove_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error case には、
+  開いたままの stream の backing path を `remove` した後の
+  `fgetc` / `fread` / `fseek` / `ftell` / `fgetpos` / `rewind` / `ungetc` が
+  `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
 - 続き546: **remove後FDの `fstat` / `lseek` EBADF 化**。
   default runtime の `remove(path)` は対象 store を invalid にし、開いたままの FD の
   `store_index` も `-1` にする。`read` / `write` はこの invalid store を

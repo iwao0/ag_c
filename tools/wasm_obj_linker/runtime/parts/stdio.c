@@ -86,8 +86,16 @@ int __agc_runtime_putc(int c, long stream_addr) {
 }
 
 int __agc_runtime_fflush(long stream_addr) {
-  if (stream_addr && !ag_rt_is_stdout_stream(stream_addr) && !ag_rt_is_stderr_stream(stream_addr) &&
-      !ag_rt_input_stream(stream_addr)) {
+  struct ag_rt_file *f;
+  if (!stream_addr) return 0;
+  if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) return 0;
+  f = ag_rt_input_stream(stream_addr);
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
     ag_rt_set_errno(9);
     return -1;
   }
@@ -95,6 +103,7 @@ int __agc_runtime_fflush(long stream_addr) {
 }
 
 int __agc_runtime_setvbuf(long stream_addr, long buf_addr, int mode, unsigned long size) {
+  struct ag_rt_file *f;
   (void)buf_addr;
   (void)size;
   if (mode < 0 || mode > 2) {
@@ -102,9 +111,17 @@ int __agc_runtime_setvbuf(long stream_addr, long buf_addr, int mode, unsigned lo
     return -1;
   }
   if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) return 0;
-  if (ag_rt_input_stream(stream_addr)) return 0;
-  ag_rt_set_errno(9);
-  return -1;
+  f = ag_rt_input_stream(stream_addr);
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  return 0;
 }
 
 void __agc_runtime_setbuf(long stream_addr, long buf_addr) {
@@ -146,6 +163,11 @@ int __agc_runtime_fseek(long stream_addr, long offset, int whence) {
     ag_rt_set_errno(9);
     return -1;
   }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (whence == 0) {
     base = 0;
   } else if (whence == 1) {
@@ -174,6 +196,11 @@ long __agc_runtime_ftell(long stream_addr) {
     ag_rt_set_errno(9);
     return -1;
   }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return -1;
+  }
   return f->pos;
 }
 
@@ -181,6 +208,11 @@ int __agc_runtime_fgetpos(long stream_addr, long pos_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   long *pos;
   if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
     ag_rt_set_errno(9);
     return -1;
   }
@@ -205,7 +237,15 @@ int __agc_runtime_fsetpos(long stream_addr, long pos_addr) {
 
 void __agc_runtime_rewind(long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
-  if (!f) return;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return;
+  }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return;
+  }
   ag_rt_file_set_pos(f, 0);
   f->eof = 0;
   f->error = 0;
@@ -269,6 +309,11 @@ static int ag_rt_file_read_char(struct ag_rt_file *f) {
     ag_rt_set_errno(9);
     return -1;
   }
+  if (!ag_rt_stream_has_store(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (f->has_ungetc) {
     f->has_ungetc = 0;
     f->eof = 0;
@@ -316,13 +361,23 @@ long __agc_runtime_fopen(long path_addr, long mode_addr) {
     ag_rt_set_errno(22);
     return 0;
   }
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+  if (!ag_rt_store_name_fits(ag_rt_ptr(path_addr))) {
+    ag_rt_set_errno(36);
+    return 0;
+  }
+#endif
+  if (!ag_rt_has_free_file_slot()) {
+    ag_rt_set_errno(12);
+    return 0;
+  }
 #ifdef AGC_RUNTIME_JS_CALLBACKS
   store_index = ag_rt_store_for_path(path_addr, 1);
 #else
   store_index = ag_rt_store_for_path(path_addr, write_mode);
 #endif
   if (store_index < 0) {
-    ag_rt_set_errno(2);
+    if (!write_mode && ag_rt_errno_value != 36) ag_rt_set_errno(2);
     return 0;
   }
   if (write_mode && !append_mode) ag_rt_file_stores[store_index].len = 0;
@@ -338,6 +393,8 @@ long __agc_runtime_freopen(long path_addr, long mode_addr, long stream_addr) {
   int append_mode = 0;
   int read_write = 0;
   int store_index;
+  int old_fd_store_index = -1;
+  int old_store_index;
   struct ag_rt_file *f;
   if (!path_addr) {
     ag_rt_set_errno(22);
@@ -356,32 +413,45 @@ long __agc_runtime_freopen(long path_addr, long mode_addr, long stream_addr) {
     ag_rt_set_errno(9);
     return 0;
   }
-  if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
-    ag_rt_fds[f->fd_index].used = 0;
-    ag_rt_fds[f->fd_index].pos = 0;
-    ag_rt_fds[f->fd_index].read_mode = 0;
-    ag_rt_fds[f->fd_index].write_mode = 0;
-  }
 #ifdef AGC_RUNTIME_JS_CALLBACKS
   store_index = ag_rt_store_for_path(path_addr, 1);
 #else
   store_index = ag_rt_store_for_path(path_addr, write_mode);
 #endif
   if (store_index < 0) {
-    ag_rt_set_errno(2);
+    if (!write_mode && ag_rt_errno_value != 36) ag_rt_set_errno(2);
     return 0;
+  }
+  old_store_index = f->store_index;
+  if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
+    old_fd_store_index = ag_rt_fds[f->fd_index].store_index;
+    ag_rt_fds[f->fd_index].used = 0;
+    ag_rt_fds[f->fd_index].pos = 0;
+    ag_rt_fds[f->fd_index].store_index = -1;
+    ag_rt_fds[f->fd_index].read_mode = 0;
+    ag_rt_fds[f->fd_index].write_mode = 0;
+    ag_rt_fds[f->fd_index].append_mode = 0;
   }
   if (write_mode && !append_mode) ag_rt_file_stores[store_index].len = 0;
   ag_rt_file_init(f, write_mode, append_mode, read_write, -1,
                   append_mode ? ag_rt_file_stores[store_index].len : 0, 0,
                   store_index);
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+  ag_rt_release_temp_store_if_unreferenced(old_fd_store_index);
+  ag_rt_release_temp_store_if_unreferenced(old_store_index);
+#endif
   if (f == &ag_rt_file_value) __stdinp = (void *)&ag_rt_file_value;
   return (long)f;
 }
 
 long __agc_runtime_tmpfile(void) {
-  int store_index = ag_rt_temp_store();
+  int store_index;
   struct ag_rt_file *f;
+  if (!ag_rt_has_free_file_slot()) {
+    ag_rt_set_errno(12);
+    return 0;
+  }
+  store_index = ag_rt_temp_store();
   if (store_index < 0) return 0;
   f = ag_rt_alloc_file(1, 0, 1, -1, 0, store_index);
   if (!f) ag_rt_set_errno(12);
@@ -442,9 +512,19 @@ int __agc_runtime_open(long path_addr, int oflag) {
   }
   read_mode = access_mode != AG_RT_O_WRONLY;
   write_mode = access_mode != 0;
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+  if (!ag_rt_store_name_fits(ag_rt_ptr(path_addr))) {
+    ag_rt_set_errno(36);
+    return -1;
+  }
+#endif
   if ((oflag & AG_RT_O_CREAT) && (oflag & AG_RT_O_EXCL) &&
       ag_rt_store_for_path(path_addr, 0) >= 0) {
     ag_rt_set_errno(17);
+    return -1;
+  }
+  if (!ag_rt_has_free_fd_slot()) {
+    ag_rt_set_errno(12);
     return -1;
   }
 #ifdef AGC_RUNTIME_JS_CALLBACKS
@@ -453,7 +533,7 @@ int __agc_runtime_open(long path_addr, int oflag) {
   store_index = ag_rt_store_for_path(path_addr, (oflag & AG_RT_O_CREAT) != 0);
 #endif
   if (store_index < 0) {
-    ag_rt_set_errno(2);
+    if (!(oflag & AG_RT_O_CREAT) && ag_rt_errno_value != 36) ag_rt_set_errno(2);
     return -1;
   }
   if ((oflag & AG_RT_O_TRUNC) && write_mode) ag_rt_file_stores[store_index].len = 0;
@@ -474,16 +554,21 @@ int __agc_runtime_open(long path_addr, int oflag) {
 
 int __agc_runtime_close(int fd) {
   int idx = fd - 3;
+  int store_index;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
     ag_rt_set_errno(9);
     return -1;
   }
+  store_index = ag_rt_fds[idx].store_index;
   ag_rt_fds[idx].used = 0;
   ag_rt_fds[idx].pos = 0;
   ag_rt_fds[idx].store_index = -1;
   ag_rt_fds[idx].read_mode = 0;
   ag_rt_fds[idx].write_mode = 0;
   ag_rt_fds[idx].append_mode = 0;
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+  ag_rt_release_temp_store_if_unreferenced(store_index);
+#endif
   return 0;
 }
 
@@ -649,6 +734,8 @@ long __agc_runtime_fdopen(int fd, long mode_addr) {
 
 int __agc_runtime_fclose(long stream_addr) {
   struct ag_rt_file *f;
+  int fd_store_index = -1;
+  int store_index;
   if (!stream_addr || stream_addr == (long)__stdinp ||
       ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) {
     return 0;
@@ -659,6 +746,7 @@ int __agc_runtime_fclose(long stream_addr) {
     return -1;
   }
   if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
+    fd_store_index = ag_rt_fds[f->fd_index].store_index;
     ag_rt_fds[f->fd_index].pos = f->pos;
     ag_rt_fds[f->fd_index].used = 0;
     ag_rt_fds[f->fd_index].store_index = -1;
@@ -666,19 +754,14 @@ int __agc_runtime_fclose(long stream_addr) {
     ag_rt_fds[f->fd_index].write_mode = 0;
     ag_rt_fds[f->fd_index].append_mode = 0;
   }
+  store_index = f->store_index;
   f->used = 0;
   f->fd_index = -1;
-  if (f->store_index >= 0 && f->store_index < AG_RT_FILE_STORE_COUNT &&
-      ag_rt_file_stores[f->store_index].used &&
-      ag_rt_file_stores[f->store_index].temporary) {
-    if (ag_rt_primary_file_store == f->store_index) ag_rt_primary_file_store = -1;
-    ag_rt_file_stores[f->store_index].used = 0;
-    ag_rt_file_stores[f->store_index].len = 0;
-    ag_rt_file_stores[f->store_index].buf = ag_rt_file_stores[f->store_index].small_buf;
-    ag_rt_file_stores[f->store_index].cap = AG_RT_FILE_SMALL_BUF_CAP;
-    ag_rt_file_stores[f->store_index].name[0] = 0;
-  }
   f->store_index = -1;
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+  ag_rt_release_temp_store_if_unreferenced(fd_store_index);
+  ag_rt_release_temp_store_if_unreferenced(store_index);
+#endif
   return 0;
 }
 
@@ -702,7 +785,6 @@ int __agc_runtime_remove(long path_addr) {
 }
 #else
 int __agc_runtime_remove(long path_addr) {
-  int i;
   int store_index;
   if (!path_addr) {
     ag_rt_set_errno(22);
@@ -710,7 +792,7 @@ int __agc_runtime_remove(long path_addr) {
   }
   store_index = ag_rt_store_for_path(path_addr, 0);
   if (store_index < 0) {
-    ag_rt_set_errno(2);
+    if (ag_rt_errno_value != 36) ag_rt_set_errno(2);
     return -1;
   }
   if (ag_rt_primary_file_store == store_index) ag_rt_primary_file_store = -1;
@@ -720,22 +802,49 @@ int __agc_runtime_remove(long path_addr) {
   ag_rt_file_stores[store_index].cap = AG_RT_FILE_SMALL_BUF_CAP;
   ag_rt_file_stores[store_index].len = 0;
   ag_rt_file_stores[store_index].name[0] = 0;
+  ag_rt_invalidate_store_refs(store_index);
+  return 0;
+}
+#endif
+
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+static void ag_rt_repoint_store_refs(int old_index, int new_index) {
+  int i;
   for (i = 0; i < 8; i++) {
     if (ag_rt_files[i].used && !ag_rt_files[i].is_stdin &&
-        ag_rt_files[i].store_index == store_index) {
-      ag_rt_files[i].store_index = -1;
-      ag_rt_files[i].error = 1;
-      ag_rt_files[i].eof = 0;
+        ag_rt_files[i].store_index == old_index) {
+      ag_rt_files[i].store_index = new_index;
     }
-    if (ag_rt_fds[i].used && ag_rt_fds[i].store_index == store_index) {
-      ag_rt_fds[i].store_index = -1;
-      ag_rt_fds[i].pos = 0;
-      ag_rt_fds[i].read_mode = 0;
-      ag_rt_fds[i].write_mode = 0;
-      ag_rt_fds[i].append_mode = 0;
+    if (ag_rt_fds[i].used && ag_rt_fds[i].store_index == old_index) {
+      ag_rt_fds[i].store_index = new_index;
     }
   }
-  return 0;
+}
+
+static int ag_rt_preserve_replaced_store_refs(int store_index, int exclude_index) {
+  int preserve_index;
+  long i;
+  if (!ag_rt_store_has_refs(store_index)) return 1;
+  preserve_index = ag_rt_alloc_temp_store_excluding(store_index, exclude_index);
+  if (preserve_index < 0) return 0;
+  ag_rt_file_stores[preserve_index].len = ag_rt_file_stores[store_index].len;
+  if (ag_rt_primary_file_store == store_index) {
+    ag_rt_file_stores[preserve_index].buf = ag_rt_file_buf;
+    ag_rt_file_stores[preserve_index].cap = AG_RT_FILE_BUF_CAP;
+    ag_rt_primary_file_store = preserve_index;
+    ag_rt_file_stores[store_index].buf = ag_rt_file_stores[store_index].small_buf;
+    ag_rt_file_stores[store_index].cap = AG_RT_FILE_SMALL_BUF_CAP;
+  } else {
+    i = 0;
+    while (i < ag_rt_file_stores[store_index].len && i < AG_RT_FILE_SMALL_BUF_CAP) {
+      ag_rt_file_stores[preserve_index].small_buf[i] = ag_rt_file_stores[store_index].buf[i];
+      i++;
+    }
+    ag_rt_file_stores[preserve_index].buf = ag_rt_file_stores[preserve_index].small_buf;
+    ag_rt_file_stores[preserve_index].cap = AG_RT_FILE_SMALL_BUF_CAP;
+  }
+  ag_rt_repoint_store_refs(store_index, preserve_index);
+  return 1;
 }
 #endif
 
@@ -758,16 +867,22 @@ int __agc_runtime_rename(long oldpath_addr, long newpath_addr) {
   }
   old_index = ag_rt_store_for_path(oldpath_addr, 0);
   if (old_index < 0) {
-    ag_rt_set_errno(2);
+    if (ag_rt_errno_value != 36) ag_rt_set_errno(2);
+    return -1;
+  }
+  if (!ag_rt_store_name_fits(ag_rt_ptr(newpath_addr))) {
+    ag_rt_set_errno(36);
     return -1;
   }
   new_index = ag_rt_store_for_path(newpath_addr, 0);
   if (new_index >= 0 && new_index != old_index) {
+    if (!ag_rt_preserve_replaced_store_refs(new_index, old_index)) return -1;
     if (ag_rt_primary_file_store == old_index) {
       ag_rt_file_stores[new_index].buf = ag_rt_file_buf;
       ag_rt_file_stores[new_index].cap = AG_RT_FILE_BUF_CAP;
       ag_rt_file_stores[new_index].len = ag_rt_file_stores[old_index].len;
       ag_rt_primary_file_store = new_index;
+      ag_rt_repoint_store_refs(old_index, new_index);
       ag_rt_file_stores[old_index].used = 0;
       ag_rt_file_stores[old_index].temporary = 0;
       ag_rt_file_stores[old_index].buf = ag_rt_file_stores[old_index].small_buf;
@@ -776,16 +891,27 @@ int __agc_runtime_rename(long oldpath_addr, long newpath_addr) {
       ag_rt_file_stores[old_index].name[0] = 0;
       return 0;
     }
-    if (ag_rt_file_stores[old_index].len > 0 &&
-        !ag_rt_store_buf_for_write(new_index, ag_rt_file_stores[old_index].len)) {
-      return -1;
-    }
     ag_rt_file_stores[new_index].len = ag_rt_file_stores[old_index].len;
-    i = 0;
-    while (i < ag_rt_file_stores[old_index].len && i < AG_RT_FILE_BUF_CAP) {
-      ag_rt_file_stores[new_index].buf[i] = ag_rt_file_stores[old_index].buf[i];
-      i++;
+    if (ag_rt_file_stores[old_index].len <= AG_RT_FILE_SMALL_BUF_CAP) {
+      if (ag_rt_primary_file_store == new_index) ag_rt_primary_file_store = -1;
+      ag_rt_file_stores[new_index].buf = ag_rt_file_stores[new_index].small_buf;
+      ag_rt_file_stores[new_index].cap = AG_RT_FILE_SMALL_BUF_CAP;
+      i = 0;
+      while (i < ag_rt_file_stores[old_index].len) {
+        ag_rt_file_stores[new_index].buf[i] = ag_rt_file_stores[old_index].buf[i];
+        i++;
+      }
+    } else {
+      if (!ag_rt_store_buf_for_write(new_index, ag_rt_file_stores[old_index].len)) {
+        return -1;
+      }
+      i = 0;
+      while (i < ag_rt_file_stores[old_index].len && i < AG_RT_FILE_BUF_CAP) {
+        ag_rt_file_stores[new_index].buf[i] = ag_rt_file_stores[old_index].buf[i];
+        i++;
+      }
     }
+    ag_rt_repoint_store_refs(old_index, new_index);
     ag_rt_file_stores[old_index].used = 0;
     ag_rt_file_stores[old_index].temporary = 0;
     ag_rt_file_stores[old_index].len = 0;
@@ -864,9 +990,17 @@ int __agc_runtime_fgetc(long stream_addr) {
 
 int __agc_runtime_ungetc(int c, long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
-  if (!f || c == -1 || !ag_rt_file_can_read(f) || f->has_ungetc) {
-    if (f && !ag_rt_file_can_read(f)) f->error = 1;
-    ag_rt_set_errno(f ? 22 : 9);
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!ag_rt_file_can_read(f) || !ag_rt_stream_has_store(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (c == -1 || f->has_ungetc) {
+    ag_rt_set_errno(22);
     return -1;
   }
   f->has_ungetc = 1;

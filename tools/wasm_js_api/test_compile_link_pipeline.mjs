@@ -584,8 +584,196 @@ static int call_vsprintf(char *buf, const char *fmt, ...) {
   va_end(ap);
   return n;
 }
+static int write_one(char *path, int ch) {
+  FILE *f = fopen(path, "w");
+  if (!f) return 0;
+  if (fputc(ch, f) != ch) return 0;
+  return fclose(f) == 0;
+}
+static int write_many(char *path, int count, int ch) {
+  FILE *f = fopen(path, "w");
+  int i = 0;
+  if (!f) return 0;
+  while (i < count) {
+    if (fputc(ch, f) != ch) return 0;
+    i++;
+  }
+  return fclose(f) == 0;
+}
 int main(void) {
   char b[8];
+  char long_path[] = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmn.txt";
+  int large_i = 0;
+  fpos_t removed_pos = 0;
+  if (!write_one("keep.txt", 'K')) return 181;
+  if (!write_one("hot.txt", 'H')) return 182;
+  FILE *reuse_keep = fopen("keep.txt", "r");
+  int reuse_fd = open("keep.txt", O_RDONLY);
+  if (!reuse_keep || reuse_fd < 0) return 183;
+  if (!write_one("one.txt", '1')) return 184;
+  if (!write_one("two.txt", '2')) return 185;
+  if (!write_one("three.txt", '3')) return 186;
+  errno = 0;
+  if (fgetc(reuse_keep) != 'K' || fgetc(reuse_keep) != EOF || ferror(reuse_keep)) return 187;
+  errno = 0;
+  if (read(reuse_fd, b, 1) != 1 || b[0] != 'K') return 188;
+  if (fclose(reuse_keep) != 0) return 189;
+  if (close(reuse_fd) != 0) return 190;
+  FILE *reuse_r0 = fopen("reuse_r0.txt", "w");
+  FILE *reuse_r1 = fopen("reuse_r1.txt", "w");
+  FILE *reuse_r2 = fopen("reuse_r2.txt", "w");
+  FILE *reuse_r3 = fopen("reuse_r3.txt", "w");
+  if (!reuse_r0 || !reuse_r1 || !reuse_r2 || !reuse_r3) return 193;
+  errno = 0;
+  if (fopen("reuse_r4.txt", "w") != NULL || errno != ENOMEM) return 194;
+  if (fclose(reuse_r0) != 0 || fclose(reuse_r1) != 0 ||
+      fclose(reuse_r2) != 0 || fclose(reuse_r3) != 0) return 195;
+  if (!write_one("guard.txt", 'G')) return 208;
+  FILE *g0 = fopen("guard.txt", "r");
+  FILE *g1 = fopen("guard.txt", "r");
+  FILE *g2 = fopen("guard.txt", "r");
+  FILE *g3 = fopen("guard.txt", "r");
+  FILE *g4 = fopen("guard.txt", "r");
+  FILE *g5 = fopen("guard.txt", "r");
+  FILE *g6 = fopen("guard.txt", "r");
+  FILE *g7 = fopen("guard.txt", "r");
+  if (!g0 || !g1 || !g2 || !g3 || !g4 || !g5 || !g6 || !g7) return 209;
+  errno = 0;
+  if (fopen("guard.txt", "w") != NULL || errno != ENOMEM) return 210;
+  errno = 0;
+  if (fopen(long_path, "w") != NULL || errno != ENAMETOOLONG) return 281;
+  errno = 0;
+  if (tmpfile() != NULL || errno != ENOMEM) return 218;
+  if (fgetc(g0) != 'G') return 211;
+  if (fclose(g0) != 0 || fclose(g1) != 0 || fclose(g2) != 0 ||
+      fclose(g3) != 0 || fclose(g4) != 0 || fclose(g5) != 0 ||
+      fclose(g6) != 0 || fclose(g7) != 0) return 212;
+  if (!write_one("fdguard.txt", 'F')) return 213;
+  int fg0 = open("fdguard.txt", O_RDONLY);
+  int fg1 = open("fdguard.txt", O_RDONLY);
+  int fg2 = open("fdguard.txt", O_RDONLY);
+  int fg3 = open("fdguard.txt", O_RDONLY);
+  int fg4 = open("fdguard.txt", O_RDONLY);
+  int fg5 = open("fdguard.txt", O_RDONLY);
+  int fg6 = open("fdguard.txt", O_RDONLY);
+  int fg7 = open("fdguard.txt", O_RDONLY);
+  if (fg0 < 0 || fg1 < 0 || fg2 < 0 || fg3 < 0 ||
+      fg4 < 0 || fg5 < 0 || fg6 < 0 || fg7 < 0) return 214;
+  errno = 0;
+  if (open("fdguard.txt", O_RDWR | O_TRUNC) != -1 || errno != ENOMEM) return 215;
+  errno = 0;
+  if (open(long_path, O_RDWR | O_CREAT) != -1 || errno != ENAMETOOLONG) return 282;
+  if (read(fg0, b, 1) != 1 || b[0] != 'F') return 216;
+  if (close(fg0) != 0 || close(fg1) != 0 || close(fg2) != 0 ||
+      close(fg3) != 0 || close(fg4) != 0 || close(fg5) != 0 ||
+      close(fg6) != 0 || close(fg7) != 0) return 217;
+  if (!write_one("freopen0.txt", 'A')) return 219;
+  int fd_freopen = open("freopen0.txt", O_RDONLY);
+  if (fd_freopen < 0) return 220;
+  FILE *fr0 = fdopen(fd_freopen, "r");
+  if (!fr0) return 221;
+  if (!write_one("freopen1.txt", 'B')) return 222;
+  FILE *fr1 = fopen("freopen1.txt", "r");
+  if (!fr1) return 223;
+  if (!write_one("freopen2.txt", 'C')) return 224;
+  FILE *fr2 = fopen("freopen2.txt", "r");
+  if (!fr2) return 225;
+  if (!write_one("freopen3.txt", 'D')) return 226;
+  FILE *fr3 = fopen("freopen3.txt", "r");
+  if (!fr3) return 227;
+  errno = 0;
+  if (freopen("freopen4.txt", "w", fr0) != NULL || errno != ENOMEM) return 228;
+  if (read(fd_freopen, b, 1) != 1 || b[0] != 'A') return 229;
+  if (fclose(fr0) != 0 || fclose(fr1) != 0 ||
+      fclose(fr2) != 0 || fclose(fr3) != 0) return 230;
+  if (!write_one("rename_old.txt", 'O')) return 234;
+  FILE *rename_old_full = fopen("rename_old.txt", "r");
+  if (!rename_old_full) return 235;
+  if (!write_one("rename_dst.txt", 'D')) return 236;
+  FILE *rename_dst_full = fopen("rename_dst.txt", "r");
+  if (!rename_dst_full) return 237;
+  if (!write_one("rename_extra1.txt", '1')) return 238;
+  FILE *rename_extra1 = fopen("rename_extra1.txt", "r");
+  if (!rename_extra1) return 239;
+  if (!write_one("rename_extra2.txt", '2')) return 240;
+  FILE *rename_extra2 = fopen("rename_extra2.txt", "r");
+  if (!rename_extra2) return 241;
+  errno = 0;
+  if (rename("rename_old.txt", "rename_dst.txt") != -1 || errno != ENOMEM) return 242;
+  if (fgetc(rename_old_full) != 'O' || fgetc(rename_dst_full) != 'D') return 243;
+  if (fclose(rename_old_full) != 0 || fclose(rename_dst_full) != 0 ||
+      fclose(rename_extra1) != 0 || fclose(rename_extra2) != 0) return 244;
+  if (!write_many("rename_large_dst.txt", 300, 'D')) return 255;
+  if (!write_one("rename_small_old.txt", 's')) return 256;
+  FILE *rename_large_dst = fopen("rename_large_dst.txt", "r");
+  if (!rename_large_dst) return 257;
+  if (rename("rename_small_old.txt", "rename_large_dst.txt") != 0) return 258;
+  large_i = 0;
+  while (large_i < 300) {
+    if (fgetc(rename_large_dst) != 'D') return 259;
+    large_i++;
+  }
+  if (fgetc(rename_large_dst) != EOF || ferror(rename_large_dst)) return 260;
+  if (freopen("rename_after_freopen.txt", "w", rename_large_dst) != rename_large_dst) return 267;
+  large_i = 0;
+  while (large_i < 300) {
+    if (fputc('R', rename_large_dst) != 'R') return 268;
+    large_i++;
+  }
+  if (fclose(rename_large_dst) != 0) return 261;
+  FILE *rename_small_new = fopen("rename_large_dst.txt", "r");
+  if (!rename_small_new) return 262;
+  if (fgetc(rename_small_new) != 's' || fgetc(rename_small_new) != EOF) return 263;
+  if (fclose(rename_small_new) != 0) return 264;
+  FILE *rename_after_freopen = fopen("rename_after_freopen.txt", "r");
+  if (!rename_after_freopen) return 269;
+  large_i = 0;
+  while (large_i < 300) {
+    if (fgetc(rename_after_freopen) != 'R') return 270;
+    large_i++;
+  }
+  if (fgetc(rename_after_freopen) != EOF || ferror(rename_after_freopen)) return 271;
+  if (fclose(rename_after_freopen) != 0) return 272;
+  if (remove("rename_after_freopen.txt") != 0) return 273;
+  if (remove("rename_large_dst.txt") != 0) return 265;
+  if (!write_many("big.txt", 300, 'B')) return 197;
+  FILE *other = fopen("other.txt", "w");
+  if (!other) return 198;
+  large_i = 0;
+  while (large_i < 256) {
+    if (fputc('x', other) != 'x') return 199;
+    large_i++;
+  }
+  errno = 0;
+  if (fputc('x', other) != EOF || errno != ENOMEM || !ferror(other)) return 200;
+  if (fclose(other) != 0) return 201;
+  FILE *big = fopen("big.txt", "r");
+  if (!big) return 202;
+  large_i = 0;
+  while (large_i < 300) {
+    if (fgetc(big) != 'B') return 203;
+    large_i++;
+  }
+  if (fgetc(big) != EOF || ferror(big)) return 204;
+  if (fclose(big) != 0) return 205;
+  if (remove("big.txt") != 0) return 206;
+  if (remove("other.txt") != 0) return 207;
+  if (!write_many("rename_big_old.txt", 300, 'L')) return 245;
+  if (!write_one("rename_big_dst.txt", 'd')) return 246;
+  FILE *rename_big_dst = fopen("rename_big_dst.txt", "r");
+  if (!rename_big_dst) return 247;
+  if (rename("rename_big_old.txt", "rename_big_dst.txt") != 0) return 248;
+  if (fgetc(rename_big_dst) != 'd' || fgetc(rename_big_dst) != EOF) return 249;
+  if (fclose(rename_big_dst) != 0) return 250;
+  FILE *rename_big_new = fopen("rename_big_dst.txt", "r");
+  if (!rename_big_new) return 251;
+  large_i = 0;
+  while (large_i < 300) {
+    if (fgetc(rename_big_new) != 'L') return 252;
+    large_i++;
+  }
+  if (fgetc(rename_big_new) != EOF || ferror(rename_big_new)) return 253;
+  if (fclose(rename_big_new) != 0) return 254;
   errno = 0;
   if (fopen(NULL, "r") != NULL || errno != EINVAL) return 80;
   FILE *wf = fopen("tmp.txt", "w");
@@ -656,7 +844,29 @@ int main(void) {
   if (fclose(gw) != 0) return 112;
   errno = 0;
   if (remove(NULL) == 0 || errno != EINVAL) return 15;
+  FILE *held = fopen("tmp.txt", "r");
+  if (!held) return 165;
   if (remove("tmp.txt") != 0) return 16;
+  errno = 0;
+  if (fgetc(held) != EOF || errno != EBADF || !ferror(held)) return 166;
+  errno = 0;
+  if (fread(b, 1, 1, held) != 0 || errno != EBADF || !ferror(held)) return 167;
+  errno = 0;
+  if (fseek(held, 0, SEEK_SET) != -1 || errno != EBADF || !ferror(held)) return 168;
+  errno = 0;
+  if (ftell(held) != -1 || errno != EBADF || !ferror(held)) return 169;
+  errno = 0;
+  if (fgetpos(held, &removed_pos) != -1 || errno != EBADF || !ferror(held)) return 170;
+  errno = 0;
+  rewind(held);
+  if (errno != EBADF || !ferror(held)) return 171;
+  errno = 0;
+  if (ungetc('Q', held) != EOF || errno != EBADF || !ferror(held)) return 172;
+  errno = 0;
+  if (fflush(held) != EOF || errno != EBADF || !ferror(held)) return 274;
+  errno = 0;
+  if (setvbuf(held, NULL, _IONBF, 0) != EOF || errno != EBADF || !ferror(held)) return 275;
+  if (fclose(held) != 0) return 173;
   errno = 0;
   rf = fopen("tmp.txt", "r");
   if (rf != NULL || errno != ENOENT) return 17;
@@ -672,11 +882,33 @@ int main(void) {
   if (fgetc(uf) != 'Q') return 26;
   if (fgetc(uf) != 'B') return 27;
   if (fclose(uf) != 0) return 28;
+  FILE *rename_src_touch = fopen("tmp.txt", "a");
+  if (!rename_src_touch) return 191;
+  if (fputc('C', rename_src_touch) != 'C' || fclose(rename_src_touch) != 0) return 192;
+  FILE *rename_held = fopen("tmp.txt", "r");
+  int fd_rename_held = open("tmp.txt", O_RDONLY);
+  if (!rename_held || fd_rename_held < 0) return 176;
+  FILE *rename_dst = fopen("dst.txt", "w");
+  if (!rename_dst) return 174;
+  if (fputc('D', rename_dst) != 'D' || fclose(rename_dst) != 0) return 175;
+  FILE *rename_dst_held = fopen("dst.txt", "r");
+  int fd_rename_dst_held = open("dst.txt", O_RDONLY);
+  if (!rename_dst_held || fd_rename_dst_held < 0) return 231;
+  if (rename("tmp.txt", "dst.txt") != 0) return 177;
+  if (fgetc(rename_held) != 'A' || fgetc(rename_held) != 'B' ||
+      fgetc(rename_held) != 'C' || fgetc(rename_held) != EOF) return 178;
+  if (read(fd_rename_held, b, 3) != 3 ||
+      b[0] != 'A' || b[1] != 'B' || b[2] != 'C') return 179;
+  if (fgetc(rename_dst_held) != 'D' || fgetc(rename_dst_held) != EOF) return 232;
+  if (fclose(rename_dst_held) != 0) return 266;
+  if (read(fd_rename_dst_held, b, 1) != 1 || b[0] != 'D') return 233;
+  if (fclose(rename_held) != 0 || close(fd_rename_held) != 0 ||
+      close(fd_rename_dst_held) != 0) return 180;
   errno = 0;
   if (rename(NULL, "new.txt") == 0 || errno != EINVAL) return 29;
   errno = 0;
   if (rename("tmp.txt", NULL) == 0 || errno != EINVAL) return 30;
-  if (rename("tmp.txt", "new.txt") != 0) return 31;
+  if (rename("dst.txt", "new.txt") != 0) return 31;
   uf = fopen("new.txt", "r");
   if (!uf) return 32;
   if (fgetc(uf) != 'A') return 33;
@@ -688,6 +920,16 @@ int main(void) {
   int excl_new = open("new.txt", O_CREAT | O_EXCL);
   if (excl_new < 0) return 121;
   if (close(excl_new) != 0) return 122;
+  errno = 0;
+  if (fopen(long_path, "w") != NULL || errno != ENAMETOOLONG) return 276;
+  errno = 0;
+  if (open(long_path, O_RDWR | O_CREAT) != -1 || errno != ENAMETOOLONG) return 277;
+  errno = 0;
+  if (remove(long_path) == 0 || errno != ENAMETOOLONG) return 278;
+  errno = 0;
+  if (rename(long_path, "short_long.txt") == 0 || errno != ENAMETOOLONG) return 279;
+  errno = 0;
+  if (rename("new.txt", long_path) == 0 || errno != ENAMETOOLONG) return 280;
   int fd_ro = open("new.txt", O_RDONLY);
   if (fd_ro < 0) return 123;
   errno = 0;

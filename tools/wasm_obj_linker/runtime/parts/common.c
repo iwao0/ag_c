@@ -167,6 +167,22 @@ static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int append_mode, int 
   return 0;
 }
 
+static int ag_rt_has_free_file_slot(void) {
+  int i;
+  for (i = 0; i < 8; i++) {
+    if (!ag_rt_files[i].used) return 1;
+  }
+  return 0;
+}
+
+static int ag_rt_has_free_fd_slot(void) {
+  int i;
+  for (i = 0; i < 8; i++) {
+    if (!ag_rt_fds[i].used) return 1;
+  }
+  return 0;
+}
+
 static void ag_rt_reset_files(void) {
   for (int i = 0; i < 8; i++) {
     ag_rt_files[i].used = 0;
@@ -203,12 +219,31 @@ static long ag_rt_stream_len(struct ag_rt_file *f) {
   return 0;
 }
 
+static int ag_rt_stream_has_store(struct ag_rt_file *f) {
+  if (!f) return 0;
+  if (f->is_stdin) return 1;
+  if (f->store_index < 0) return 0;
+  if (f->store_index >= AG_RT_FILE_STORE_COUNT) return 0;
+  if (!ag_rt_file_stores[f->store_index].used) return 0;
+  return 1;
+}
+
 #ifndef AGC_RUNTIME_JS_CALLBACKS
 static int ag_rt_store_name_equal(const char *a, const char *b) {
   int i = 0;
   if (!a || !b) return 0;
   while (a[i] && b[i] && a[i] == b[i]) i++;
   return a[i] == 0 && b[i] == 0;
+}
+
+static int ag_rt_store_name_fits(const char *path) {
+  int i = 0;
+  if (!path) return 0;
+  while (path[i]) {
+    if (i + 1 >= AG_RT_FILE_NAME_CAP) return 0;
+    i++;
+  }
+  return 1;
 }
 
 static void ag_rt_store_name_copy(char *dst, const char *src) {
@@ -236,6 +271,55 @@ static int ag_rt_find_store_by_name(const char *path) {
   return -1;
 }
 
+static void ag_rt_invalidate_store_refs(int store_index) {
+  int i;
+  for (i = 0; i < 8; i++) {
+    if (ag_rt_files[i].used && !ag_rt_files[i].is_stdin &&
+        ag_rt_files[i].store_index == store_index) {
+      ag_rt_files[i].store_index = -1;
+      ag_rt_files[i].error = 1;
+      ag_rt_files[i].eof = 0;
+    }
+    if (ag_rt_fds[i].used && ag_rt_fds[i].store_index == store_index) {
+      ag_rt_fds[i].store_index = -1;
+      ag_rt_fds[i].pos = 0;
+      ag_rt_fds[i].read_mode = 0;
+      ag_rt_fds[i].write_mode = 0;
+      ag_rt_fds[i].append_mode = 0;
+    }
+  }
+}
+
+static int ag_rt_store_has_refs(int store_index) {
+  int i;
+  for (i = 0; i < 8; i++) {
+    if (ag_rt_files[i].used && !ag_rt_files[i].is_stdin &&
+        ag_rt_files[i].store_index == store_index) {
+      return 1;
+    }
+    if (ag_rt_fds[i].used && ag_rt_fds[i].store_index == store_index) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void ag_rt_release_temp_store_if_unreferenced(int store_index) {
+  if (store_index < 0 || store_index >= AG_RT_FILE_STORE_COUNT) return;
+  if (!ag_rt_file_stores[store_index].used ||
+      !ag_rt_file_stores[store_index].temporary ||
+      ag_rt_store_has_refs(store_index)) {
+    return;
+  }
+  if (ag_rt_primary_file_store == store_index) ag_rt_primary_file_store = -1;
+  ag_rt_file_stores[store_index].used = 0;
+  ag_rt_file_stores[store_index].temporary = 0;
+  ag_rt_file_stores[store_index].len = 0;
+  ag_rt_file_stores[store_index].buf = ag_rt_file_stores[store_index].small_buf;
+  ag_rt_file_stores[store_index].cap = AG_RT_FILE_SMALL_BUF_CAP;
+  ag_rt_file_stores[store_index].name[0] = 0;
+}
+
 static int ag_rt_alloc_store(const char *path, int temporary) {
   int i;
   for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
@@ -251,7 +335,7 @@ static int ag_rt_alloc_store(const char *path, int temporary) {
     }
   }
   for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
-    if (i != ag_rt_primary_file_store) {
+    if (i != ag_rt_primary_file_store && !ag_rt_store_has_refs(i)) {
       ag_rt_file_stores[i].used = 1;
       ag_rt_file_stores[i].temporary = temporary;
       ag_rt_store_name_copy(ag_rt_file_stores[i].name, temporary ? "" : path);
@@ -261,15 +345,50 @@ static int ag_rt_alloc_store(const char *path, int temporary) {
       return i;
     }
   }
-  i = 0;
-  ag_rt_primary_file_store = -1;
-  ag_rt_file_stores[i].used = 1;
-  ag_rt_file_stores[i].temporary = temporary;
-  ag_rt_store_name_copy(ag_rt_file_stores[i].name, temporary ? "" : path);
-  ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
-  ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
-  ag_rt_file_stores[i].len = 0;
-  return i;
+  for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
+    if (!ag_rt_store_has_refs(i)) {
+      if (ag_rt_primary_file_store == i) ag_rt_primary_file_store = -1;
+      ag_rt_file_stores[i].used = 1;
+      ag_rt_file_stores[i].temporary = temporary;
+      ag_rt_store_name_copy(ag_rt_file_stores[i].name, temporary ? "" : path);
+      ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
+      ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
+      ag_rt_file_stores[i].len = 0;
+      return i;
+    }
+  }
+  ag_rt_set_errno(12);
+  return -1;
+}
+
+static int ag_rt_alloc_temp_store_excluding(int exclude_a, int exclude_b) {
+  int i;
+  for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
+    if (i != exclude_a && i != exclude_b && !ag_rt_file_stores[i].used) {
+      if (ag_rt_primary_file_store == i) ag_rt_primary_file_store = -1;
+      ag_rt_file_stores[i].used = 1;
+      ag_rt_file_stores[i].temporary = 1;
+      ag_rt_file_stores[i].name[0] = 0;
+      ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
+      ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
+      ag_rt_file_stores[i].len = 0;
+      return i;
+    }
+  }
+  for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
+    if (i != exclude_a && i != exclude_b && !ag_rt_store_has_refs(i)) {
+      if (ag_rt_primary_file_store == i) ag_rt_primary_file_store = -1;
+      ag_rt_file_stores[i].used = 1;
+      ag_rt_file_stores[i].temporary = 1;
+      ag_rt_file_stores[i].name[0] = 0;
+      ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
+      ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
+      ag_rt_file_stores[i].len = 0;
+      return i;
+    }
+  }
+  ag_rt_set_errno(12);
+  return -1;
 }
 #endif
 
@@ -291,6 +410,10 @@ static int ag_rt_store_for_path(long path_addr, int create) {
 static int ag_rt_store_for_path(long path_addr, int create) {
   char *path = ag_rt_ptr(path_addr);
   int idx = ag_rt_find_store_by_name(path);
+  if (!ag_rt_store_name_fits(path)) {
+    ag_rt_set_errno(36);
+    return -1;
+  }
   if (idx >= 0 || !create) return idx;
   return ag_rt_alloc_store(path, 0);
 }
@@ -364,6 +487,12 @@ static char *ag_rt_store_buf_for_write(int store_index, long needed) {
   }
   if (ag_rt_primary_file_store >= 0 && ag_rt_primary_file_store != store_index) {
     old_store = ag_rt_primary_file_store;
+    if (old_store >= 0 && old_store < AG_RT_FILE_STORE_COUNT &&
+        ag_rt_file_stores[old_store].used &&
+        ag_rt_file_stores[old_store].len > AG_RT_FILE_SMALL_BUF_CAP) {
+      ag_rt_set_errno(12);
+      return 0;
+    }
     i = 0;
     while (old_store >= 0 && old_store < AG_RT_FILE_STORE_COUNT &&
            ag_rt_file_stores[old_store].used &&
@@ -373,9 +502,6 @@ static char *ag_rt_store_buf_for_write(int store_index, long needed) {
       i++;
     }
     if (old_store >= 0 && old_store < AG_RT_FILE_STORE_COUNT) {
-      if (ag_rt_file_stores[old_store].len > AG_RT_FILE_SMALL_BUF_CAP) {
-        ag_rt_file_stores[old_store].len = AG_RT_FILE_SMALL_BUF_CAP;
-      }
       ag_rt_file_stores[old_store].buf = ag_rt_file_stores[old_store].small_buf;
       ag_rt_file_stores[old_store].cap = AG_RT_FILE_SMALL_BUF_CAP;
     }

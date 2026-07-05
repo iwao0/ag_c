@@ -13,6 +13,7 @@ int *__error(void);
 #define ENOTDIR 20
 #define EDOM   33
 #define ERANGE 34
+#define ENAMETOOLONG 36
 #define EINVAL 22
 #define EFBIG  27
 #define ENOMEM 12
