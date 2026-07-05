@@ -20,6 +20,17 @@ int main(void) {
     assert(strtoul("+0x1f!", &end, 16) == 31);
     assert(*end == '!');
 
+    long long ll = strtoll(" -12345q", &end, 10);
+    assert(ll == -12345);
+    assert(*end == 'q');
+
+    char ull_s[] = "ff!";
+    unsigned long long ull = strtoull(ull_s, &end, 16);
+    assert(ull == 255);
+    assert(end == ull_s + 2);
+
+    assert(atoll("-42") == -42);
+
     char no_digits[] = "   +xyz";
     end = 0;
     assert(strtol(no_digits, &end, 10) == 0);

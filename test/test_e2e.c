@@ -1996,7 +1996,9 @@ static int copy_and_namespace_symbols(const char *src_path, const char *dst_path
             strcmp(sym, "_atexit") == 0 || strcmp(sym, "_getenv") == 0 ||
             strcmp(sym, "_system") == 0 || strcmp(sym, "_atof") == 0 ||
             strcmp(sym, "_strtol") == 0 || strcmp(sym, "_strtoul") == 0 ||
-            strcmp(sym, "_strtod") == 0 ||
+            strcmp(sym, "_strtoll") == 0 || strcmp(sym, "_strtoull") == 0 ||
+            strcmp(sym, "_strtof") == 0 || strcmp(sym, "_strtod") == 0 ||
+            strcmp(sym, "_strtold") == 0 || strcmp(sym, "_atoll") == 0 ||
             strcmp(sym, "_realpath") == 0 ||
             strcmp(sym, "_time") == 0 || strcmp(sym, "_clock") == 0 ||
             strcmp(sym, "_difftime") == 0 ||

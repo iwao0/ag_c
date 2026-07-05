@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き617: WAT standalone vsnprintf/vsprintf stubs を追加）
+最終更新: 2026-07-06（続き620: WAT standalone strtoll/strtoull/atoll/strtof/strtold wrappers を追加）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
-  **1171 compiled, 1171 executed**、
+  **1173 compiled, 1173 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -37,6 +37,47 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き620: **WAT standalone `strtoll()` / `strtoull()` / `atoll()` / `strtof()` / `strtold()` の wrapper gap を解消**。
+  header / linked runtime / linker rewrite 側にはこれらの symbol が揃っていたが、
+  WAT standalone 側は既存の `__ag_strto64` / `__ag_strtod` helper から `strtol` / `strtoul` / `strtod` / `atof`
+  などへつなぐ wrapper だけで、long long / float / long double variant が undefined import になり得た。
+  `src/arch/wasm32_ir.c` で既存 helper の emit 条件に `strtoll` / `strtoull` / `atoll` / `strtof` / `strtold` を含め、
+  `strtof` は `f32.demote_f64`、`strtold` は現行 WAT backend の long double 表現に合わせて f64 result として返す wrapper を追加した。
+  通常 e2e 側でも、`test/test_e2e.c` の外部 libc symbol allowlist に同じ stdlib 関数を追加し、
+  stdheader fixture が prefix 付き symbol に書き換えられてリンク不能になる古い穴も塞いだ。
+  回帰は既存の `test/fixtures/stdheader/stdlib_strto_int.c` と `test/fixtures/stdheader/stdlib_strto_float.c` に追記した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1173 compiled, 1173 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き619: **WAT standalone `sscanf()` / `vsscanf()` の undefined import gap を解消**。
+  linked runtime / linker rewrite には `sscanf` / `vsscanf` が runtime symbol として入っていたが、
+  WAT standalone 側には本体がなく、文字列入力の formatted input でも undefined import になり得る差分が残っていた。
+  `src/arch/wasm32_ir.c` に `__ag_vsscanf_impl` と小さな scanner helper 群を追加し、
+  literal / whitespace skip と `%d` / `%u` / `%s` / `%c` を処理するようにした。
+  `sscanf()` は最初の出力先 2 個を一時 `va_list` slot に詰めて同じ helper に渡し、
+  `vsscanf()` は `va_list` の 8 byte slot から出力先ポインタを順に読む。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdio_sscanf_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1173 compiled, 1173 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き618: **WAT standalone `printf()` / `fprintf()` / `vprintf()` / `vfprintf()` の固定値 stub を改善**。
+  WAT standalone 側の `printf()` は固定 5、`fprintf()` は固定 1 を返すだけで、format / 引数を読まない
+  shallow stub になっていた。
+  `src/arch/wasm32_ir.c` の外部可変長呼び出しで `printf()` / `fprintf()` へ最初の追加引数 2 個を渡すようにし、
+  直前に追加した `__ag_vsnprintf_impl` を使って実出力は捨てつつ書こうとした文字数を返すようにした。
+  対応範囲は WAT standalone の既存 formatted output と同じく `%d` / `%u` / `%02d` / `%s` / `%c` / `%%` と literal。
+  未対応の float vararg は WAT type mismatch を避けるため 0 slot として扱い、既存の `%f` smoke を壊さないようにした。
+  `vprintf()` / `vfprintf()` も `va_list` から同じ helper へつなぎ、`fprintf()` は standalone では stream state を持たない
+  count-only semantics とした。
+  回帰は WAT 専用の `test/fixtures/wasm32/stdio_printf_count_ops.c` として追加し、
+  `test/wasm32_e2e_extra_cases.txt` に登録した。
+  確認は `make -j4 build/test_wasm32_e2e` = pass、
+  `./build/test_wasm32_e2e` = `1172 compiled, 1172 executed`、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
 - 続き617: **WAT standalone `vsnprintf()` / `vsprintf()` の undefined import gap を解消**。
   linked runtime / linker rewrite には `vsnprintf` / `vsprintf` が runtime symbol として入っていたが、
   WAT standalone 側には本体がなく、`stdarg.h` の `va_list` 経由で formatted output を使うコードが

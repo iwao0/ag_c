@@ -18,6 +18,14 @@ int main(void) {
     assert(*end == 'z');
     assert(atof("+3.5") == 3.5);
 
+    float f = strtof("2.5f", &end);
+    assert(f == 2.5f);
+    assert(*end == 'f');
+
+    long double ld = strtold("-6.25!", &end);
+    assert(ld == -6.25);
+    assert(*end == '!');
+
     char no_digits[] = "  -.x";
     end = 0;
     assert(strtod(no_digits, &end) == 0.0);

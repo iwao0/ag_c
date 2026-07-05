@@ -574,6 +574,8 @@ probes_found_bugs/anon_ptr_to_array_member_designator.c
 probes_found_bugs/anon_union_promoted_array_designator.c
 wasm32/signal_ign_ops.c
 wasm32/stdio_output_ops.c
+wasm32/stdio_printf_count_ops.c
+wasm32/stdio_sscanf_ops.c
 wasm32/stdio_vsnprintf_ops.c
 wasm32/wchar_output_ops.c
 wasm32/wchar_swprintf_ops.c
