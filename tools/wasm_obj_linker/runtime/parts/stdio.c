@@ -14,6 +14,7 @@ int __agc_runtime_puts(long s_addr) {
 
 static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
   long i = 0;
+  long gap;
   char *dst;
   long *lenp;
   if (total <= 0) return 0;
@@ -32,12 +33,17 @@ static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
     ag_rt_set_errno(9);
     return 0;
   }
+  if (f->append_mode) f->pos = ag_rt_file_stores[f->store_index].len;
   dst = ag_rt_store_buf_for_write(f->store_index, f->pos + total);
   if (!dst) {
     f->error = 1;
     return 0;
   }
   lenp = &ag_rt_file_stores[f->store_index].len;
+  gap = *lenp;
+  while (gap < f->pos && gap < AG_RT_FILE_BUF_CAP) {
+    dst[gap++] = 0;
+  }
   while (i < total && f->pos < AG_RT_FILE_BUF_CAP) {
     dst[f->pos++] = src[i++];
   }
@@ -45,7 +51,7 @@ static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
     f->error = 1;
     ag_rt_set_errno(12);
   }
-  if (f->pos > *lenp) *lenp = f->pos;
+  if (i > 0 && f->pos > *lenp) *lenp = f->pos;
   ag_rt_file_set_pos(f, f->pos);
   return i;
 }
@@ -125,6 +131,9 @@ long __agc_runtime_stdin_write(long ptr_addr, long len) {
     ag_rt_fds[i].used = 0;
     ag_rt_fds[i].pos = 0;
     ag_rt_fds[i].store_index = -1;
+    ag_rt_fds[i].read_mode = 0;
+    ag_rt_fds[i].write_mode = 0;
+    ag_rt_fds[i].append_mode = 0;
   }
   __stdinp = (void *)&ag_rt_file_value;
   return n;
@@ -317,7 +326,7 @@ long __agc_runtime_fopen(long path_addr, long mode_addr) {
     return 0;
   }
   if (write_mode && !append_mode) ag_rt_file_stores[store_index].len = 0;
-  f = ag_rt_alloc_file(write_mode, read_write, -1,
+  f = ag_rt_alloc_file(write_mode, append_mode, read_write, -1,
                        append_mode ? ag_rt_file_stores[store_index].len : 0,
                        store_index);
   if (!f) ag_rt_set_errno(12);
@@ -350,6 +359,8 @@ long __agc_runtime_freopen(long path_addr, long mode_addr, long stream_addr) {
   if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
     ag_rt_fds[f->fd_index].used = 0;
     ag_rt_fds[f->fd_index].pos = 0;
+    ag_rt_fds[f->fd_index].read_mode = 0;
+    ag_rt_fds[f->fd_index].write_mode = 0;
   }
 #ifdef AGC_RUNTIME_JS_CALLBACKS
   store_index = ag_rt_store_for_path(path_addr, 1);
@@ -361,7 +372,7 @@ long __agc_runtime_freopen(long path_addr, long mode_addr, long stream_addr) {
     return 0;
   }
   if (write_mode && !append_mode) ag_rt_file_stores[store_index].len = 0;
-  ag_rt_file_init(f, write_mode, read_write, -1,
+  ag_rt_file_init(f, write_mode, append_mode, read_write, -1,
                   append_mode ? ag_rt_file_stores[store_index].len : 0, 0,
                   store_index);
   if (f == &ag_rt_file_value) __stdinp = (void *)&ag_rt_file_value;
@@ -372,7 +383,7 @@ long __agc_runtime_tmpfile(void) {
   int store_index = ag_rt_temp_store();
   struct ag_rt_file *f;
   if (store_index < 0) return 0;
-  f = ag_rt_alloc_file(1, 1, -1, 0, store_index);
+  f = ag_rt_alloc_file(1, 0, 1, -1, 0, store_index);
   if (!f) ag_rt_set_errno(12);
   return (long)f;
 }
@@ -410,11 +421,30 @@ long __agc_runtime_tmpnam(long s_addr) {
 #define AG_RT_O_APPEND 0x0008
 #define AG_RT_O_CREAT 0x0200
 #define AG_RT_O_TRUNC 0x0400
+#define AG_RT_O_EXCL 0x0800
+#define AG_RT_O_ACCMODE 0x0003
+#define AG_RT_O_WRONLY 0x0001
+#define AG_RT_O_RDWR 0x0002
 
 int __agc_runtime_open(long path_addr, int oflag) {
   int store_index;
+  int access_mode;
+  int read_mode;
+  int write_mode;
   if (!path_addr) {
     ag_rt_set_errno(22);
+    return -1;
+  }
+  access_mode = oflag & AG_RT_O_ACCMODE;
+  if (access_mode == AG_RT_O_ACCMODE) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
+  read_mode = access_mode != AG_RT_O_WRONLY;
+  write_mode = access_mode != 0;
+  if ((oflag & AG_RT_O_CREAT) && (oflag & AG_RT_O_EXCL) &&
+      ag_rt_store_for_path(path_addr, 0) >= 0) {
+    ag_rt_set_errno(17);
     return -1;
   }
 #ifdef AGC_RUNTIME_JS_CALLBACKS
@@ -426,12 +456,15 @@ int __agc_runtime_open(long path_addr, int oflag) {
     ag_rt_set_errno(2);
     return -1;
   }
-  if (oflag & AG_RT_O_TRUNC) ag_rt_file_stores[store_index].len = 0;
+  if ((oflag & AG_RT_O_TRUNC) && write_mode) ag_rt_file_stores[store_index].len = 0;
   for (int i = 0; i < 8; i++) {
     if (!ag_rt_fds[i].used) {
       ag_rt_fds[i].used = 1;
       ag_rt_fds[i].pos = (oflag & AG_RT_O_APPEND) ? ag_rt_file_stores[store_index].len : 0;
       ag_rt_fds[i].store_index = store_index;
+      ag_rt_fds[i].read_mode = read_mode;
+      ag_rt_fds[i].write_mode = write_mode;
+      ag_rt_fds[i].append_mode = (oflag & AG_RT_O_APPEND) != 0;
       return 3 + i;
     }
   }
@@ -448,6 +481,9 @@ int __agc_runtime_close(int fd) {
   ag_rt_fds[idx].used = 0;
   ag_rt_fds[idx].pos = 0;
   ag_rt_fds[idx].store_index = -1;
+  ag_rt_fds[idx].read_mode = 0;
+  ag_rt_fds[idx].write_mode = 0;
+  ag_rt_fds[idx].append_mode = 0;
   return 0;
 }
 
@@ -466,28 +502,37 @@ int __agc_runtime_fstat(int fd, long st_addr) {
     ag_rt_set_errno(22);
     return -1;
   }
+  if (ag_rt_fds[idx].store_index < 0 || ag_rt_fds[idx].store_index >= AG_RT_FILE_STORE_COUNT ||
+      !ag_rt_file_stores[ag_rt_fds[idx].store_index].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   struct ag_rt_stat *st = (struct ag_rt_stat *)ag_rt_ptr(st_addr);
   st->st_mode = 0100000;
-  if (ag_rt_fds[idx].store_index >= 0 && ag_rt_fds[idx].store_index < AG_RT_FILE_STORE_COUNT &&
-      ag_rt_file_stores[ag_rt_fds[idx].store_index].used) {
-    st->st_size = ag_rt_file_stores[ag_rt_fds[idx].store_index].len;
-  } else {
-    st->st_size = 0;
-  }
+  st->st_size = ag_rt_file_stores[ag_rt_fds[idx].store_index].len;
   return 0;
 }
 
 long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
   int idx = fd - 3;
+  long limit;
+  long i = 0;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
     ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!ag_rt_fds[idx].read_mode) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  limit = (long)count;
+  if (limit < 0) {
+    ag_rt_set_errno(22);
     return -1;
   }
   char *dst = ag_rt_ptr(buf_addr);
   char *src;
   long len;
-  long limit = (long)count;
-  long i = 0;
   if (ag_rt_fds[idx].store_index < 0 || ag_rt_fds[idx].store_index >= AG_RT_FILE_STORE_COUNT ||
       !ag_rt_file_stores[ag_rt_fds[idx].store_index].used) {
     ag_rt_set_errno(9);
@@ -503,27 +548,44 @@ long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
 
 long __agc_runtime_write(int fd, long buf_addr, unsigned long count) {
   int idx = fd - 3;
+  long limit;
+  long i = 0;
+  long gap;
   if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
     ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!ag_rt_fds[idx].write_mode) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  limit = (long)count;
+  if (limit < 0) {
+    ag_rt_set_errno(22);
     return -1;
   }
   char *src = ag_rt_ptr(buf_addr);
   char *dst;
   long *lenp;
-  long limit = (long)count;
-  long i = 0;
   if (ag_rt_fds[idx].store_index < 0 || ag_rt_fds[idx].store_index >= AG_RT_FILE_STORE_COUNT ||
       !ag_rt_file_stores[ag_rt_fds[idx].store_index].used) {
     ag_rt_set_errno(9);
     return -1;
   }
+  if (ag_rt_fds[idx].append_mode) {
+    ag_rt_fds[idx].pos = ag_rt_file_stores[ag_rt_fds[idx].store_index].len;
+  }
   dst = ag_rt_store_buf_for_write(ag_rt_fds[idx].store_index, ag_rt_fds[idx].pos + limit);
   if (!dst) return -1;
   lenp = &ag_rt_file_stores[ag_rt_fds[idx].store_index].len;
+  gap = *lenp;
+  while (gap < ag_rt_fds[idx].pos && gap < AG_RT_FILE_BUF_CAP) {
+    dst[gap++] = 0;
+  }
   while (i < limit && ag_rt_fds[idx].pos < AG_RT_FILE_BUF_CAP) {
     dst[ag_rt_fds[idx].pos++] = src[i++];
   }
-  if (ag_rt_fds[idx].pos > *lenp) *lenp = ag_rt_fds[idx].pos;
+  if (i > 0 && ag_rt_fds[idx].pos > *lenp) *lenp = ag_rt_fds[idx].pos;
   return i;
 }
 
@@ -535,16 +597,16 @@ long __agc_runtime_lseek(int fd, long offset, int whence) {
     ag_rt_set_errno(9);
     return -1;
   }
+  if (ag_rt_fds[idx].store_index < 0 || ag_rt_fds[idx].store_index >= AG_RT_FILE_STORE_COUNT ||
+      !ag_rt_file_stores[ag_rt_fds[idx].store_index].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (whence == 0) {
     base = 0;
   } else if (whence == 1) {
     base = ag_rt_fds[idx].pos;
   } else if (whence == 2) {
-    if (ag_rt_fds[idx].store_index < 0 || ag_rt_fds[idx].store_index >= AG_RT_FILE_STORE_COUNT ||
-        !ag_rt_file_stores[ag_rt_fds[idx].store_index].used) {
-      ag_rt_set_errno(9);
-      return -1;
-    }
     base = ag_rt_file_stores[ag_rt_fds[idx].store_index].len;
   } else {
     ag_rt_set_errno(22);
@@ -573,7 +635,12 @@ long __agc_runtime_fdopen(int fd, long mode_addr) {
     ag_rt_set_errno(22);
     return 0;
   }
-  f = ag_rt_alloc_file(write_mode, read_write, idx,
+  if (((!write_mode || read_write) && !ag_rt_fds[idx].read_mode) ||
+      ((write_mode || append_mode) && !ag_rt_fds[idx].write_mode)) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
+  f = ag_rt_alloc_file(write_mode, append_mode, read_write, idx,
                        append_mode ? ag_rt_file_stores[ag_rt_fds[idx].store_index].len : ag_rt_fds[idx].pos,
                        ag_rt_fds[idx].store_index);
   if (!f) ag_rt_set_errno(12);
@@ -595,6 +662,9 @@ int __agc_runtime_fclose(long stream_addr) {
     ag_rt_fds[f->fd_index].pos = f->pos;
     ag_rt_fds[f->fd_index].used = 0;
     ag_rt_fds[f->fd_index].store_index = -1;
+    ag_rt_fds[f->fd_index].read_mode = 0;
+    ag_rt_fds[f->fd_index].write_mode = 0;
+    ag_rt_fds[f->fd_index].append_mode = 0;
   }
   f->used = 0;
   f->fd_index = -1;
@@ -660,6 +730,9 @@ int __agc_runtime_remove(long path_addr) {
     if (ag_rt_fds[i].used && ag_rt_fds[i].store_index == store_index) {
       ag_rt_fds[i].store_index = -1;
       ag_rt_fds[i].pos = 0;
+      ag_rt_fds[i].read_mode = 0;
+      ag_rt_fds[i].write_mode = 0;
+      ag_rt_fds[i].append_mode = 0;
     }
   }
   return 0;

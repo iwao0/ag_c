@@ -563,7 +563,14 @@ if (linkedStdioStderr !== "runtime: no error\nruntime: error\n") {
 }
 
 const linkedStdioErrorSource = await inlineStandardIncludes(`#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <errno.h>
+struct stat {
+  unsigned short st_mode;
+  long st_size;
+};
+int fstat(int fd, struct stat *st);
 static int same_text(char *a, char *b) {
   int i = 0;
   while (a[i] && b[i] && a[i] == b[i]) i++;
@@ -578,7 +585,7 @@ static int call_vsprintf(char *buf, const char *fmt, ...) {
   return n;
 }
 int main(void) {
-  char b[1];
+  char b[8];
   errno = 0;
   if (fopen(NULL, "r") != NULL || errno != EINVAL) return 80;
   FILE *wf = fopen("tmp.txt", "w");
@@ -674,6 +681,76 @@ int main(void) {
   if (!uf) return 32;
   if (fgetc(uf) != 'A') return 33;
   if (fclose(uf) != 0) return 34;
+  errno = 0;
+  int excl_existing = open("new.txt", O_CREAT | O_EXCL);
+  if (excl_existing >= 0 || errno != EEXIST) return 119;
+  if (remove("new.txt") != 0) return 120;
+  int excl_new = open("new.txt", O_CREAT | O_EXCL);
+  if (excl_new < 0) return 121;
+  if (close(excl_new) != 0) return 122;
+  int fd_ro = open("new.txt", O_RDONLY);
+  if (fd_ro < 0) return 123;
+  errno = 0;
+  if (write(fd_ro, "x", 1) != -1 || errno != EBADF) return 124;
+  errno = 0;
+  if (fdopen(fd_ro, "w") != NULL || errno != EBADF) return 125;
+  if (close(fd_ro) != 0) return 126;
+  int fd_wo = open("new.txt", O_WRONLY);
+  if (fd_wo < 0) return 127;
+  errno = 0;
+  if (read(fd_wo, b, 1) != -1 || errno != EBADF) return 128;
+  errno = 0;
+  if (fdopen(fd_wo, "r") != NULL || errno != EBADF) return 129;
+  if (close(fd_wo) != 0) return 130;
+  int fd_rw = open("new.txt", O_RDWR);
+  if (fd_rw < 0) return 131;
+  if (write(fd_rw, "Z", 1) != 1) return 132;
+  if (lseek(fd_rw, 0, SEEK_SET) != 0) return 133;
+  if (read(fd_rw, b, 1) != 1 || b[0] != 'Z') return 134;
+  errno = 0;
+  if (write(fd_rw, "x", (unsigned long)-1) != -1 || errno != EINVAL) return 149;
+  errno = 0;
+  if (read(fd_rw, b, (unsigned long)-1) != -1 || errno != EINVAL) return 150;
+  if (close(fd_rw) != 0) return 135;
+  int fd_ro_trunc = open("new.txt", O_RDONLY | O_TRUNC);
+  if (fd_ro_trunc < 0) return 151;
+  if (read(fd_ro_trunc, b, 1) != 1 || b[0] != 'Z') return 152;
+  if (close(fd_ro_trunc) != 0) return 153;
+  int fd_gap = open("new.txt", O_RDWR);
+  if (fd_gap < 0) return 154;
+  if (lseek(fd_gap, 3, SEEK_SET) != 3) return 155;
+  if (write(fd_gap, "W", 1) != 1) return 156;
+  if (lseek(fd_gap, 0, SEEK_SET) != 0) return 157;
+  if (read(fd_gap, b, 4) != 4 || b[0] != 'Z' || b[1] != 0 ||
+      b[2] != 0 || b[3] != 'W') return 158;
+  if (close(fd_gap) != 0) return 159;
+  int fd_app = open("new.txt", O_RDWR | O_APPEND);
+  if (fd_app < 0) return 136;
+  if (lseek(fd_app, 0, SEEK_SET) != 0) return 137;
+  if (write(fd_app, "Y", 1) != 1) return 138;
+  if (lseek(fd_app, 0, SEEK_SET) != 0) return 139;
+  if (read(fd_app, b, 5) != 5 || b[0] != 'Z' || b[1] != 0 ||
+      b[2] != 0 || b[3] != 'W' || b[4] != 'Y') return 140;
+  if (close(fd_app) != 0) return 141;
+  FILE *af = fopen("new.txt", "a");
+  if (!af) return 142;
+  if (fseek(af, 0, SEEK_SET) != 0) return 143;
+  if (fwrite("Q", 1, 1, af) != 1) return 144;
+  if (fclose(af) != 0) return 145;
+  fd_rw = open("new.txt", O_RDONLY);
+  if (fd_rw < 0) return 146;
+  if (read(fd_rw, b, 6) != 6 || b[0] != 'Z' || b[1] != 0 || b[2] != 0 ||
+      b[3] != 'W' || b[4] != 'Y' || b[5] != 'Q') return 147;
+  if (close(fd_rw) != 0) return 148;
+  int fd_removed = open("new.txt", O_RDONLY);
+  if (fd_removed < 0) return 160;
+  if (remove("new.txt") != 0) return 161;
+  struct stat removed_st;
+  errno = 0;
+  if (fstat(fd_removed, &removed_st) != -1 || errno != EBADF) return 162;
+  errno = 0;
+  if (lseek(fd_removed, 0, SEEK_SET) != -1 || errno != EBADF) return 163;
+  if (close(fd_removed) != 0) return 164;
   char iobuf[BUFSIZ];
   if (setvbuf(stdout, NULL, _IONBF, 0) != 0) return 35;
   if (setvbuf(stderr, iobuf, _IOLBF, sizeof(iobuf)) != 0) return 36;

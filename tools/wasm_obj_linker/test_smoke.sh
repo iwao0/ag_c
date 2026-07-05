@@ -1195,9 +1195,13 @@ struct stat {
   long st_size;
 };
 #define EOF (-1)
+#define O_WRONLY 1
+#define O_RDWR 2
 #define O_CREAT 0x0200
 #define O_TRUNC 0x0400
+#define O_EXCL 0x0800
 FILE *fopen(char *path, char *mode);
+FILE *fdopen(int fd, char *mode);
 int fclose(FILE *stream);
 int fputc(int c, FILE *stream);
 int fgetc(FILE *stream);
@@ -1242,12 +1246,12 @@ int main(void) {
   if (fgetc(a) != 'X' || fgetc(a) != 'Y' || fgetc(a) != EOF) return 16;
   if (fclose(a) != 0) return 18;
 
-  int fd_a = open("fd_a.txt", O_CREAT | O_TRUNC);
-  int fd_b = open("fd_b.txt", O_CREAT | O_TRUNC);
+  int fd_a = open("fd_a.txt", O_RDWR | O_CREAT | O_TRUNC);
+  int fd_b = open("fd_b.txt", O_RDWR | O_CREAT | O_TRUNC);
   if (fd_a < 0 || fd_b < 0) return 19;
   if (write(fd_a, "12", 2) != 2 || write(fd_b, "Q", 1) != 1) return 20;
   if (lseek(fd_a, 0, 0) != 0 || lseek(fd_b, 0, 0) != 0) return 21;
-  char fdabuf[3];
+  char fdabuf[6];
   char fdbbuf[2];
   if (read(fd_a, fdabuf, 2) != 2 || read(fd_b, fdbbuf, 1) != 1) return 22;
   if (fdabuf[0] != '1' || fdabuf[1] != '2' || fdbbuf[0] != 'Q') return 23;
@@ -1255,7 +1259,50 @@ int main(void) {
   struct stat stb = {0, 0};
   if (fstat(fd_a, &sta) != 0 || fstat(fd_b, &stb) != 0) return 24;
   if (sta.st_size != 2 || stb.st_size != 1) return 25;
+  *errp = 0;
+  if (write(fd_a, "x", (unsigned long)-1) != -1 || *errp != 22) return 37;
+  *errp = 0;
+  if (read(fd_a, fdabuf, (unsigned long)-1) != -1 || *errp != 22) return 38;
+  if (lseek(fd_a, 4, 0) != 4) return 52;
+  if (write(fd_a, "Z", 1) != 1) return 53;
+  if (lseek(fd_a, 0, 0) != 0) return 54;
+  if (read(fd_a, fdabuf, 5) != 5) return 55;
+  if (fdabuf[0] != '1' || fdabuf[1] != '2' || fdabuf[2] != 0 ||
+      fdabuf[3] != 0 || fdabuf[4] != 'Z') return 56;
+  struct stat stgap = {0, 0};
+  if (fstat(fd_a, &stgap) != 0 || stgap.st_size != 5) return 57;
+  *errp = 0;
+  int excl_existing = open("fd_a.txt", O_CREAT | O_EXCL);
+  if (excl_existing >= 0 || *errp != 17) return 27;
   if (close(fd_a) != 0 || close(fd_b) != 0) return 26;
+  int fd_ro_trunc = open("fd_a.txt", O_TRUNC);
+  if (fd_ro_trunc < 0) return 39;
+  if (read(fd_ro_trunc, fdabuf, 5) != 5 || fdabuf[0] != '1' || fdabuf[1] != '2' ||
+      fdabuf[2] != 0 || fdabuf[3] != 0 || fdabuf[4] != 'Z') return 40;
+  if (close(fd_ro_trunc) != 0) return 41;
+  int fd_ro = open("fd_a.txt", 0);
+  int fd_wo = open("fd_b.txt", O_WRONLY);
+  if (fd_ro < 0 || fd_wo < 0) return 31;
+  *errp = 0;
+  if (write(fd_ro, "x", 1) != -1 || *errp != 9) return 32;
+  *errp = 0;
+  if (read(fd_wo, fdabuf, 1) != -1 || *errp != 9) return 33;
+  *errp = 0;
+  if (fdopen(fd_ro, "w") != 0 || *errp != 9) return 34;
+  *errp = 0;
+  if (fdopen(fd_wo, "r") != 0 || *errp != 9) return 35;
+  if (close(fd_ro) != 0 || close(fd_wo) != 0) return 36;
+  int fd_removed = open("fd_b.txt", O_RDWR);
+  if (fd_removed < 0) return 58;
+  if (remove("fd_b.txt") != 0) return 28;
+  *errp = 0;
+  if (fstat(fd_removed, &stb) != -1 || *errp != 9) return 59;
+  *errp = 0;
+  if (lseek(fd_removed, 0, 0) != -1 || *errp != 9) return 60;
+  if (close(fd_removed) != 0) return 61;
+  int excl_new = open("fd_b.txt", O_CREAT | O_EXCL);
+  if (excl_new < 0) return 29;
+  if (close(excl_new) != 0) return 30;
   return 42;
 }
 SRC
@@ -2240,6 +2287,8 @@ int putchar(int c);
 int *__error(void);
 #define errno (*__error())
 #define EBADF 9
+#define O_WRONLY 1
+#define O_RDWR 2
 struct stat {
   unsigned short st_mode;
   long st_size;
@@ -3377,7 +3426,7 @@ int main(void) {
                           fda[0] == 'A' && fda[1] == '\n' &&
                           fdb[0] == 'A' && fdb[1] == '\n' &&
                           close_a == 0 && close_b == 0;
-  int fdw = open("tmp.txt", 0);
+  int fdw = open("tmp.txt", O_RDWR);
   long fdw_pos0 = lseek(fdw, 0, 0);
   long fdw_written1 = write(fdw, "XYZ", 3);
   long fdw_pos1 = lseek(fdw, -2, 1);
@@ -3391,27 +3440,30 @@ int main(void) {
                          fdw_written2 == 1 && fdw_end == 3 && fdw_pos2 == 0 &&
                          fdw_read == 3 && fdwbuf[0] == 'X' && fdwbuf[1] == 'q' &&
                          fdwbuf[2] == 'Z' && fdw_close == 0;
-  int fd_trunc = open("tmp.txt", 0x0400);
+  int fd_trunc = open("tmp.txt", O_RDWR | 0x0400);
   struct stat st_trunc = {0, 0};
   int fstat_trunc_ok = fstat(fd_trunc, &st_trunc);
   long wrote_trunc = write(fd_trunc, "LM", 2);
   long pos_trunc = lseek(fd_trunc, 0, 2);
   int close_trunc = close(fd_trunc);
   int close_trunc_again = close(fd_trunc);
-  int fd_append = open("tmp.txt", 0x0008);
+  int fd_append = open("tmp.txt", O_RDWR | 0x0008);
   long append_pos = lseek(fd_append, 0, 1);
   long wrote_append = write(fd_append, "N", 1);
   long append_end = lseek(fd_append, 0, 2);
+  long append_rewind_before_write = lseek(fd_append, 0, 0);
+  long wrote_append_after_seek = write(fd_append, "O", 1);
   long append_rewind = lseek(fd_append, 0, 0);
-  char append_buf[4];
-  long append_read = read(fd_append, append_buf, 3);
+  char append_buf[5];
+  long append_read = read(fd_append, append_buf, 4);
   int close_append = close(fd_append);
   int open_flags_ok = fstat_trunc_ok == 0 && st_trunc.st_size == 0 &&
                       wrote_trunc == 2 && pos_trunc == 2 && close_trunc == 0 &&
                       close_trunc_again == -1 && append_pos == 2 &&
-                      wrote_append == 1 && append_end == 3 && append_rewind == 0 &&
-                      append_read == 3 && append_buf[0] == 'L' &&
-                      append_buf[1] == 'M' && append_buf[2] == 'N' &&
+                      wrote_append == 1 && append_end == 3 &&
+                      append_rewind_before_write == 0 && wrote_append_after_seek == 1 &&
+                      append_rewind == 0 && append_read == 4 && append_buf[0] == 'L' &&
+                      append_buf[1] == 'M' && append_buf[2] == 'N' && append_buf[3] == 'O' &&
                       close_append == 0;
   FILE *wf_restore = fopen("tmp.txt", "w");
   fwrite("A\nB", 1, 3, wf_restore);
@@ -3496,6 +3548,7 @@ int main(void) {
   fclose(ow);
   FILE *ap = fopen("tmp.txt", "a");
   long append_start = ftell(ap);
+  fseek(ap, 0, 0);
   unsigned long appended = fwrite("D", 1, 1, ap);
   fclose(ap);
   FILE *orr = fopen("tmp.txt", "r");
@@ -3503,9 +3556,10 @@ int main(void) {
   unsigned long owread = fread(owbuf, 1, 4, orr);
   int ow_eof = fgetc(orr);
   fclose(orr);
-  int fdap = open("tmp.txt", 0);
+  int fdap = open("tmp.txt", O_WRONLY);
   FILE *fdap_stream = fdopen(fdap, "a");
   long fdappend_start = ftell(fdap_stream);
+  fseek(fdap_stream, 0, 0);
   unsigned long fdappended = fwrite("E", 1, 1, fdap_stream);
   fclose(fdap_stream);
   close(fdap);

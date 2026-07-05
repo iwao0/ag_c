@@ -77,6 +77,7 @@ void __agc_runtime_stderr_write(long ptr_addr, long len);
 struct ag_rt_file {
   long pos;
   int write_mode;
+  int append_mode;
   int read_write;
   int eof;
   int error;
@@ -92,6 +93,9 @@ struct ag_rt_fd {
   int used;
   long pos;
   int store_index;
+  int read_mode;
+  int write_mode;
+  int append_mode;
 };
 
 struct ag_rt_file_store {
@@ -110,7 +114,7 @@ struct ag_rt_lconv {
 
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 static struct ag_rt_fd ag_rt_fds[8];
-static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, -1, 1, 1, 0, 0, -1};
+static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, 0, -1, 1, 1, 0, 0, -1};
 static struct ag_rt_file ag_rt_files[8];
 static struct ag_rt_file_store ag_rt_file_stores[AG_RT_FILE_STORE_COUNT];
 
@@ -137,10 +141,12 @@ static void ag_rt_file_set_pos(struct ag_rt_file *f, long pos) {
   }
 }
 
-static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int read_write, int fd_index, long pos, int is_stdin, int store_index) {
+static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int append_mode, int read_write,
+                            int fd_index, long pos, int is_stdin, int store_index) {
   if (!f) return;
   f->used = 1;
   f->write_mode = write_mode;
+  f->append_mode = append_mode;
   f->read_write = read_write;
   f->eof = 0;
   f->error = 0;
@@ -150,10 +156,11 @@ static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int read_write
   ag_rt_file_set_pos(f, pos);
 }
 
-static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int read_write, int fd_index, long pos, int store_index) {
+static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int append_mode, int read_write,
+                                           int fd_index, long pos, int store_index) {
   for (int i = 0; i < 8; i++) {
     if (!ag_rt_files[i].used) {
-      ag_rt_file_init(&ag_rt_files[i], write_mode, read_write, fd_index, pos, 0, store_index);
+      ag_rt_file_init(&ag_rt_files[i], write_mode, append_mode, read_write, fd_index, pos, 0, store_index);
       return &ag_rt_files[i];
     }
   }
@@ -165,6 +172,7 @@ static void ag_rt_reset_files(void) {
     ag_rt_files[i].used = 0;
     ag_rt_files[i].pos = 0;
     ag_rt_files[i].write_mode = 0;
+    ag_rt_files[i].append_mode = 0;
     ag_rt_files[i].read_write = 0;
     ag_rt_files[i].eof = 0;
     ag_rt_files[i].error = 0;
@@ -174,7 +182,7 @@ static void ag_rt_reset_files(void) {
     ag_rt_files[i].ungetc_ch = 0;
     ag_rt_files[i].store_index = -1;
   }
-  ag_rt_file_init(&ag_rt_file_value, 0, 0, -1, 0, 1, -1);
+  ag_rt_file_init(&ag_rt_file_value, 0, 0, 0, -1, 0, 1, -1);
 }
 
 static char *ag_rt_stream_buf(struct ag_rt_file *f) {

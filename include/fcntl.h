@@ -7,6 +7,7 @@
 #define O_APPEND 0x0008
 #define O_CREAT  0x0200
 #define O_TRUNC  0x0400
+#define O_EXCL   0x0800
 #define O_NOFOLLOW 0x0100
 #define O_CLOEXEC 0x1000000
 

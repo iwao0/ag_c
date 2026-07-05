@@ -9,6 +9,7 @@ int *__error(void);
 #define EIO    5
 #define EBADF  9
 #define EACCES 13
+#define EEXIST 17
 #define ENOTDIR 20
 #define EDOM   33
 #define ERANGE 34

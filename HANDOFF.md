@@ -1,14 +1,14 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き539: default runtime missing path の ENOENT 化）
+最終更新: 2026-07-05（続き546: remove後FDの fstat/lseek EBADF 化）
 
 ## 現状
 - 直近の部分確認:
-  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c` = **green**、
   `make build/libagc_runtime.o` = **green**、
-  `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-js-api` = **green**、
   `git diff --check` = **green**。
 - 以前の直近確認:
@@ -49,6 +49,129 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き546: **remove後FDの `fstat` / `lseek` EBADF 化**。
+  default runtime の `remove(path)` は対象 store を invalid にし、開いたままの FD の
+  `store_index` も `-1` にする。`read` / `write` はこの invalid store を
+  `EBADF` として扱っていた一方、`fstat` は size 0 の成功扱いになり、
+  `lseek(SEEK_SET/CUR)` は store が消えていても成功し得る浅い実装だった。
+  `__agc_runtime_fstat()` と `__agc_runtime_lseek()` で、FD が指す store が
+  invalid / unused の場合は `errno=EBADF` で `-1` を返すように揃えた。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case には、
+  `open` 済み FD の backing path を `remove` した後の `fstat` / `lseek` が
+  `EBADF` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き545: **seek gap write の zero-fill**。
+  `lseek` / `fseek` で EOF より先へ進めてから `write` / `fwrite` した場合、
+  file length は伸びる一方で、途中の gap を明示的に 0 で埋めていなかった。
+  store slot は再利用されるため、gap 部分に古い小バッファ内容が見える可能性がある浅い実装だった。
+  `ag_rt_file_write_mem()` と `__agc_runtime_write()` で、現在 length から write 位置までを
+  実書き込み前に zero-fill するようにした。
+  併せて、現在位置が buffer 上限を超えていて1バイトも書けない失敗 write では
+  length だけを伸ばさないようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case で、
+  seek gap 後の read が `0` 埋めを返すことを確認した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き544: **`O_TRUNC` side effect の write-mode 限定**。
+  `open(path, flags)` の `O_TRUNC` は access mode に関係なく store 長を 0 にしており、
+  `open("x", O_RDONLY | O_TRUNC)` 相当でも内容を消せる浅い実装だった。
+  default runtime では `O_TRUNC` の truncate 副作用を write可能な open
+  (`O_WRONLY` / `O_RDWR`) の場合だけに限定した。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case には、
+  read-only `O_TRUNC` では既存内容が残る確認を追加した。
+  既存の `O_RDWR | O_TRUNC` smoke は引き続き truncate されることを確認している。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き543: **raw FD `read` / `write` count validation**。
+  `fread` / `fwrite` は巨大な `size * nmemb` を `EINVAL` にしていた一方、
+  raw FD の `read(fd, buf, count)` / `write(fd, buf, count)` は `count` をそのまま `long` に落としており、
+  `(unsigned long)-1` のような値が no-op 相当や不安定な境界挙動になり得る浅い実装だった。
+  `__agc_runtime_read` / `__agc_runtime_write` で `count` が signed `long` に収まらない場合を
+  `errno=EINVAL` の失敗にし、buffer 参照前に弾くようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case に、
+  `(unsigned long)-1` count の `read` / `write` が `EINVAL` になる確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き542: **default runtime append write semantics の保持**。
+  続き541でFDの access mode を保持するようにした後も、`O_APPEND` / `fopen("a")` /
+  `fdopen(fd, "a")` は open 時の初期位置を末尾にするだけで、
+  その後 `lseek` / `fseek` すると次の write が途中上書きになり得る浅い実装だった。
+  `struct ag_rt_fd` と `struct ag_rt_file` に append flag を追加し、
+  `write` / `fwrite` 系の実書き込み直前に現在の store 長へ position を戻すようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` では `O_APPEND` FD、`fopen("a")`、`fdopen(..., "a")` の
+  seek 後 append を確認し、`tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case でも
+  `O_APPEND` と `fopen("a")` の seek 後 append を固定した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き541: **default runtime FD access mode の保持**。
+  続き540で `open` の存在チェックを補強した後も、default linked runtime の FD は
+  `O_RDONLY` / `O_WRONLY` / `O_RDWR` を保持しておらず、`open("x", O_RDONLY)` したFDへ
+  `write` できる浅いモデルのままだった。
+  `struct ag_rt_fd` に read/write 権限を追加し、`open` で access mode を保存するようにした。
+  `read` / `write` はFD権限を見て `EBADF` 失敗にし、`fdopen(fd, mode)` もFD権限と要求 mode が
+  合わない場合は `EBADF` で失敗する。
+  既存の読み書き両用テストは `O_RDWR` を明示するよう更新し、
+  `tools/wasm_obj_linker/test_smoke.sh` の小さい `path_storage_state` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case で、
+  read-only FD への `write`、write-only FD からの `read`、権限不一致の `fdopen` を固定した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き540: **default runtime `open` の `O_EXCL` 対応**。
+  続き538/539で default runtime が path ごとの存在を区別できるようになったため、
+  これまで未接続だった `open(path, O_CREAT | O_EXCL)` の存在チェックを runtime に追加した。
+  `include/fcntl.h` に `O_EXCL`、`include/errno.h` に `EEXIST` を追加し、
+  既存 path では `errno=EEXIST` の失敗、削除後または未存在 path では作成成功になる。
+  `tools/wasm_obj_linker/test_smoke.sh` の `path_storage_state` と、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case で、
+  ヘッダ経由の `O_EXCL` / `EEXIST` と runtime の動作を固定した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`。
 - 続き539: **default runtime missing path の ENOENT 化**。
   続き538で default runtime に path store を入れた後も、`fopen("missing", "r")` /
   `open("missing", 0)` / `remove("missing")` は store を新規作成して成功し得るままだった。
