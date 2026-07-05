@@ -1,9 +1,29 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き566: JS import stdio UTF-8 byte count同期）
+最終更新: 2026-07-05（続き575: wasm JS e2e timeout確認）
 
 ## 現状
 - 直近の部分確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-js-api` = **green**、
+  `git diff --check` = **green**。
+- 追加の広域確認:
+  `make test-wasm-js-e2e` =
+  **1157/1158 pass, 1 fail**。
+  失敗は `test/fixtures/probes_found_bugs/c11_standard_headers.c` の
+  `spawnSync wasm-interp ETIMEDOUT`。同 fixture 単体を
+  `WASM_JS_E2E_PIPELINE_TIMEOUT_MS=30000 node tools/wasm_js_api/test_e2e_pipeline.mjs ... --start=1117 --limit=1`
+  で再実行しても timeout。生成済み wasm の `wasm-interp ... --run-export=main` も 60 秒以上返らず停止した。
+  formatter / JS import stdio の failure ではなく、この fixture の linked wasm 実行時間または停止挙動の別件として扱う。
+- 以前の直近確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-js-api` = **green**、
+  `git diff --check` = **green**。
+- 以前の直近確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `make test-wasm-js-pipeline` = **green**、
@@ -57,6 +77,182 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き575: **wasm JS e2e timeout確認**。
+  続き574までの JS import formatter / stdio byte 同期の差分が大きくなったため、追加で
+  `make test-wasm-js-e2e` を実行した。結果は total registered 1158 / pass 1157 / fail 1。
+  fail は `test/fixtures/probes_found_bugs/c11_standard_headers.c` の `spawnSync wasm-interp ETIMEDOUT` のみ。
+  登録順を確認すると同 fixture は index 1117 で、timeout を 30000ms に伸ばした単体再実行
+  (`--start=1117 --limit=1`) でも timeout した。
+  生成済み `build/wasm_js_e2e_pipeline/probes_found_bugs__c11_standard_headers.wasm` を
+  `wasm-interp ... --run-export=main` で直接実行しても 60 秒以上返らなかったため、
+  今回の JS import formatter / stdio callback の挙動差というより、C11 標準ヘッダ probe の linked wasm
+  実行時間または停止挙動の別件として残している。
+  この確認の後、`node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、`make test-wasm-js-api`、`git diff --check` は green のまま。
+- 続き574: **JS import format literal byte同期**。
+  続き568-573で `formatPrintf()` の変換結果と stdio byte I/O は raw bytes を保持するようになったが、
+  format string 自体はまだ `readCString()` で JS text に decode してから正規表現にかけていた。
+  そのため format literal 部分に invalid UTF-8 byte が含まれると、linked runtime はその byte をそのまま
+  出力するのに、JS import 側は replacement text の UTF-8 bytes に変換して byte count も変わり得た。
+  `decodedTextWithByteOffsets()` を追加し、format string bytes を decode した text と各 JS string offset に
+  対応する元 byte offset を持つようにした。format spec の解析は従来通り text/regex を使いつつ、
+  conversion 間の literal は元の `fmtBytes.slice(...)` を append する。これで format literal の raw byte と
+  `%s` / `%c` 等の変換結果 bytes が同じ output stream に並ぶ。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  `fmt = {0xe3, '%', 's', 0}` で `printf(fmt, "Q")` が戻り値 2 になり、
+  stdout callback では invalid single byte + `Q` が `�Q` と見える確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き573: **JS import formatter append helper整理**。
+  続き570で `formatPrintf()` の callback text は最終 bytes 全体を 1 回だけ decode するようにしたが、
+  内部 helper はまだ `appendOutputChunk(state, text, bytes)` という text/bytes 両対応の形を残していた。
+  実際には `state.text` は廃止済みで、bytes を持っている箇所でも text 引数を渡す形だけが残っていたため、
+  将来の変更で chunk ごと decode に戻りやすい浅い形だった。
+  `appendOutputBytes()` と `appendOutputText()` に分け、raw byte を持つ `%c` / `%s` / padding 済み bytes は
+  bytes だけを append し、literal や数値 formatting など text から出るものだけを `TextEncoder` へ通すように整理した。
+  挙動変更は意図しておらず、既存の raw byte smoke と formatter smoke で確認している。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き572: **JS import `perror()` prefix byte同期**。
+  続き571で `fputs()` / `puts()` / `fwrite()` / `write()` / runtime stdout/stderr callback を
+  byteOutput 経路へ寄せたが、`perror()` はまだ prefix の C string を `readCString()` で
+  JS text に decode してから `": error\n"` を連結していた。
+  linked runtime の `__agc_runtime_perror()` は prefix を `ag_rt_stderr_write_str()` で byte write するため、
+  JS import 側も `readCStringBytes()` で prefix bytes を読み、ASCII suffix だけを `TextEncoder` で
+  byte列化して `bytesWithSuffixOutput()` で連結するようにした。
+  これに合わせて、もう使われなくなった `readMemoryUtf8()` helper は削除した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の basic stdio import smoke には、
+  手で組んだ `raw_utf8` prefix を `perror(raw_utf8)` に渡し、stderr callback で `\u3042: error\n` と
+  して見えることを追加確認した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き571: **JS import stdio byte I/O同期**。
+  続き568-570で `formatPrintf()` の raw byte stream は整えたが、通常の stdio byte I/O はまだ
+  `readMemoryUtf8()` で wasm memory bytes を JS text に decode してから `emitStdout()` /
+  `emitStderr()` へ渡していた。これだと `fputs()` / `puts()` / `fwrite()` / `write()` /
+  `__agc_runtime_stdout_write()` / `__agc_runtime_stderr_write()` が、linked runtime の byte write と違い、
+  invalid byte や境界を跨ぐ UTF-8 byte列を text 再エンコード経由で扱う浅い実装になる。
+  `readMemoryBytes()` と `bytesWithSuffixOutput()` を追加し、`fputs()` / `puts()` /
+  `fwrite()` / `write()` / runtime stdout/stderr callback は wasm memory から読んだ bytes を
+  `byteOutput()` として渡すようにした。callback 用 text は bytes 全体を `TextDecoder` した表示だが、
+  戻り値や `snprintf()` memory output と同じく実出力 bytes は保持される。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の basic stdio import smoke には、
+  手で組んだ `raw_utf8 = {0xe3,0x81,0x82,0}` を `fputs()` / `puts()` / `fwrite()` / `write()` に渡し、
+  それぞれ 3 / 4 / 3 / 3 byte を返して stdout callback では `\u3042` として連結表示される確認を追加した。
+  既存の `fputc(0xe3)` は 1 byte 単独の invalid UTF-8 として replacement text になる確認を残し、
+  「単発 byte write」と「連続 byte stream」の違いも固定している。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き570: **JS import formatter decode境界同期**。
+  続き568/569で `formatPrintf()` が bytes を保持するようになったが、callback 用の表示 text は
+  各変換 chunk を個別に `TextDecoder` して `state.text` へ足していた。
+  そのため `printf("%c%c%c", 0xe3, 0x81, 0x82)` のように UTF-8 1 文字の bytes が複数変換に分かれると、
+  実出力 bytes は `e3 81 82` で正しい一方、callback text は chunk ごとの invalid byte として
+  replacement text になり得た。
+  `formatPrintf()` は最終的に連結した bytes 全体を 1 回だけ `TextDecoder` へ通し、
+  `byteOutput(text, bytes)` を返すようにした。これにより `snprintf()` memory output と
+  `printf()` callback 表示の decode 境界が同じ byte stream 上に揃う。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には固定 signature の別 smoke として、
+  `printf("%c%c%c", 0xe3, 0x81, 0x82)` が戻り値 3 で stdout callback に `\u3042` を渡す確認を追加した。
+  `%3c%n` の raw single byte / count smoke は別 fixture に分け、固定 signature の引数順を保っている。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き569: **JS import `%s` raw byte出力同期**。
+  続き568で `formatPrintf()` を byte-aware output へ変え、`%c` / `putchar()` /
+  `fputc()` は raw byte を保持するようにしたが、`%s` はまだ `readCString()` で wasm memory の
+  C string bytes を JS text に decode してから再エンコードしていた。
+  そのため invalid UTF-8 byte を含む narrow string では、linked runtime の `ag_rt_write_str_n()` と違い、
+  replacement text の UTF-8 bytes に変換されて byte count / `snprintf()` memory output がズレ得た。
+  `readCStringBytes()` と `bytesToOutput()` を追加し、`formatStringArg()` は NULL の `"(null)"` も含めて
+  byte-aware output を返すようにした。`%s` の precision は C string bytes に対する上限として扱い、
+  width padding も `appendByteOutputPadded()` で byte length ベースに space を追加する。
+  通常の UTF-8 文字列は callback 表示 text を従来どおり保ちつつ、raw invalid byte は memory output では
+  元 byte のまま残る。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  `snprintf(d, ..., "%4.1s", raw)` で `raw[0] = 0xe3` の 1 byte だけを出し、
+  space 3 byte + `0xe3` + NUL / 戻り値 4 になる確認を追加した。
+  `printf("%4.1s%n", raw, &n)` でも戻り値 4 / `n == 4` を確認し、stdout callback では invalid single byte が
+  replacement text として見えることを固定した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き568: **JS import formatter raw byte出力同期**。
+  続き566/567で `formatPrintf()` の戻り値や `%n` count を UTF-8 byte count に寄せたが、
+  `%c` だけはまだ `String.fromCodePoint(c & 0xff)` の JS 文字列として扱っていた。
+  そのため `printf("%c", 0xe3)` / `snprintf(buf, ..., "%c", 0xe3)` のような raw byte 出力が、
+  linked runtime の `ag_rt_putc()` / `__agc_runtime_fputc()` と違い、JS 側で UTF-8 再エンコードされて
+  2 byte 相当になり得る浅い実装だった。
+  `formatPrintf()` の内部を text-only の `String.replace()` 戻り値依存から、表示用 text と実出力 bytes を
+  同時に組み立てる byte-aware output へ変えた。`printf()` / `fprintf()` は callback へ従来通り
+  text を渡しつつ、戻り値は bytes length を返す。`sprintf()` / `snprintf()` は同じ bytes を wasm memory へ
+  書くため、`%c` の 0xe3 は `0xe3` 1 byte として保存される。`%n` count もこの bytes length を使う。
+  `putchar()` / `fputc()` も同じ `rawByteOutput()` helper を通すようにし、stdout/stderr callback の表示は
+  byte列を `TextDecoder` した text、戻り値は従来通り渡された `c` のままにした。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` には、
+  `snprintf(a, ..., "%3c", 0xe3)` が space 2 byte + `0xe3` + NUL になり戻り値 3、
+  `snprintf(b, ..., "%c", 0xe3)` が `0xe3` + NUL になり戻り値 1、
+  `printf("%3c%n", 0xe3, &n)` が戻り値 3 / `n == 3` になる確認を追加した。
+  basic stdio import smoke でも `fputc(0xe3, stdout)` が `0xe3` を返し、stdout callback 側では
+  invalid single UTF-8 byte が replacement text として見えることを固定した。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き567: **JS import float formatter同期**。
+  続き566で `useStdlib:false` の JS import `formatPrintf()` を byte count / string /
+  integer / pointer / `%n` まで linked runtime に寄せたが、float 系だけはまだ
+  `Number.toString()` / `toFixed()` / `toExponential()` を直接呼ぶ簡易実装だった。
+  そのため `%f` の default precision が 6 桁にならず、`%e` の exponent が 2 桁に揃わず、
+  `%g` の fixed/scientific 選択や trailing zero trim、`#` alternate、positive sign /
+  space sign、negative zero、`inf` / `nan` の大文字化、hex float `%a` / `%A` が
+  linked runtime の `tools/wasm_obj_linker/runtime/parts/format.c` とズレていた。
+  `tools/wasm_js_api/agc-runtime-imports.js` に decimal/general precision、special float、
+  exponent 正規化、trailing zero trim、fixed/scientific/general/hex float の helper を追加し、
+  `%f` / `%F` / `%e` / `%E` / `%g` / `%G` / `%a` / `%A` が同じ helper 群を通るようにした。
+  `padFormatted()` は整数の `0x` prefix-aware zero padding を維持しつつ、hex float では
+  linked runtime と同じく sign だけを先に出して `0x` prefix 自体は padding に巻き込まないよう、
+  prefix-aware を切り替え可能にした。これにより `%#08x` は引き続き `0x00000f` だが、
+  `%08.0a` は linked runtime と同じ `000x1p+0` になる。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `useStdlib:false` smoke には、
+  `%6.1f` / `%06.1f` / `%6f` / `%F` / `%f`、`%.2e` / `%10.1E` / `%010.1e`、
+  `%.4g` / `%.3g` / `%8.2G` / `%#.0f` / `%#.0e` / `%#.3g`、
+  `%+.1f` / `% .1f` / `%+08.1f` / negative zero の `%f/%e/%g`、
+  `%.1a` / `%.1A` / `%08.0a` / `%#.0a` の確認を追加した。
+  JS import smoke では既存の固定 signature 方針に合わせ、`printf` を
+  `int printf(const char *fmt, double a, double b, double c, double d, double e, double f);`
+  として宣言し、余分な double 引数を渡して format 側で無視させている。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
 - 続き566: **JS import stdio UTF-8出力戻り値のbyte count同期**。
   `useStdlib:false` の JS import stdio は `printf()` / `fprintf()` / `puts()` / `fputs()` で
   出力 text を JS string として扱い、戻り値も `String.length` になっていた。

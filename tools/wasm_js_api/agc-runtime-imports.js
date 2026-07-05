@@ -286,6 +286,16 @@ function readCString(memory, ptr, maxLen = 1024 * 1024) {
   return utf8Decoder.decode(bytes.subarray(ptr, end));
 }
 
+function readCStringBytes(memory, ptr, maxLen = 1024 * 1024) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return new Uint8Array();
+  const bytes = new Uint8Array(memory.buffer);
+  const endLimit = Math.min(bytes.length, ptr + maxLen);
+  let end = ptr;
+  while (end < endLimit && bytes[end] !== 0) end++;
+  return bytes.slice(ptr, end);
+}
+
 function cStringFileNameErrno(memory, ptr) {
   ptr = Number(ptr) >>> 0;
   if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return AGC_EINVAL;
@@ -297,13 +307,13 @@ function cStringFileNameErrno(memory, ptr) {
   return AGC_EINVAL;
 }
 
-function readMemoryUtf8(memory, ptr, len) {
+function readMemoryBytes(memory, ptr, len) {
   ptr = Number(ptr) >>> 0;
   len = Number(len) >>> 0;
-  if (!memory || !memory.buffer || len === 0 || ptr >= memory.buffer.byteLength) return "";
+  if (!memory || !memory.buffer || len === 0 || ptr >= memory.buffer.byteLength) return new Uint8Array();
   const bytes = new Uint8Array(memory.buffer);
   const end = Math.min(bytes.length, ptr + len);
-  return utf8Decoder.decode(bytes.subarray(ptr, end));
+  return bytes.slice(ptr, end);
 }
 
 function writeMemoryBytes(memory, ptr, src) {
@@ -315,10 +325,82 @@ function writeMemoryBytes(memory, ptr, src) {
   return writeLen;
 }
 
+function byteOutput(text, bytes) {
+  return { text, bytes };
+}
+
+function outputText(value) {
+  return value && value.bytes instanceof Uint8Array ? value.text : String(value);
+}
+
+function outputBytes(value) {
+  return value && value.bytes instanceof Uint8Array ? value.bytes : utf8Encoder.encode(String(value));
+}
+
+function rawByteOutput(value) {
+  const bytes = new Uint8Array([Number(value) & 0xff]);
+  return byteOutput(utf8Decoder.decode(bytes), bytes);
+}
+
+function bytesToOutput(bytes) {
+  return byteOutput(utf8Decoder.decode(bytes), bytes);
+}
+
+function bytesWithSuffixOutput(bytes, suffixBytes) {
+  const out = new Uint8Array(bytes.length + suffixBytes.length);
+  out.set(bytes, 0);
+  out.set(suffixBytes, bytes.length);
+  return bytesToOutput(out);
+}
+
+function isUtf8Continuation(byte) {
+  return (byte & 0xc0) === 0x80;
+}
+
+function decodedTextWithByteOffsets(bytes) {
+  let text = "";
+  const offsets = [];
+  for (let i = 0; i < bytes.length;) {
+    const start = i;
+    let cp = -1;
+    let len = 1;
+    const b0 = bytes[i];
+    if (b0 < 0x80) {
+      cp = b0;
+    } else if (b0 >= 0xc2 && b0 <= 0xdf && i + 1 < bytes.length &&
+               isUtf8Continuation(bytes[i + 1])) {
+      cp = ((b0 & 0x1f) << 6) | (bytes[i + 1] & 0x3f);
+      len = 2;
+    } else if (i + 2 < bytes.length &&
+               ((b0 === 0xe0 && bytes[i + 1] >= 0xa0 && bytes[i + 1] <= 0xbf) ||
+                (b0 >= 0xe1 && b0 <= 0xec && isUtf8Continuation(bytes[i + 1])) ||
+                (b0 === 0xed && bytes[i + 1] >= 0x80 && bytes[i + 1] <= 0x9f) ||
+                (b0 >= 0xee && b0 <= 0xef && isUtf8Continuation(bytes[i + 1]))) &&
+               isUtf8Continuation(bytes[i + 2])) {
+      cp = ((b0 & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f);
+      len = 3;
+    } else if (i + 3 < bytes.length &&
+               ((b0 === 0xf0 && bytes[i + 1] >= 0x90 && bytes[i + 1] <= 0xbf) ||
+                (b0 >= 0xf1 && b0 <= 0xf3 && isUtf8Continuation(bytes[i + 1])) ||
+                (b0 === 0xf4 && bytes[i + 1] >= 0x80 && bytes[i + 1] <= 0x8f)) &&
+               isUtf8Continuation(bytes[i + 2]) && isUtf8Continuation(bytes[i + 3])) {
+      cp = ((b0 & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) |
+        ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
+      len = 4;
+    }
+    const chunk = cp >= 0 ? String.fromCodePoint(cp) : "\ufffd";
+    for (let j = 0; j < chunk.length; j++) offsets[text.length + j] = start;
+    text += chunk;
+    i += len;
+  }
+  offsets[text.length] = bytes.length;
+  return { text, offsets };
+}
+
 function writeCString(memory, ptr, text, maxBytes = -1) {
   ptr = Number(ptr) >>> 0;
   maxBytes = Number(maxBytes);
-  const encoded = utf8Encoder.encode(String(text));
+  const encoded = outputBytes(text);
   if (!memory || !memory.buffer || ptr >= memory.buffer.byteLength) return -1;
   const bytes = new Uint8Array(memory.buffer);
   if (maxBytes === 0) return encoded.length;
@@ -389,7 +471,7 @@ function utf8ByteLength(text) {
   return utf8Encoder.encode(String(text)).length;
 }
 
-function padFormatted(text, flags, width, numeric = false) {
+function padFormatted(text, flags, width, numeric = false, prefixAware = true) {
   const len = utf8ByteLength(text);
   if (width <= len) return text;
   const leftAlign = flags.includes("-");
@@ -402,7 +484,7 @@ function padFormatted(text, flags, width, numeric = false) {
   if (padChar === "0" && text.startsWith(" ")) {
     return text[0] + padding + text.slice(1);
   }
-  if (padChar === "0" && (text.startsWith("0x") || text.startsWith("0X"))) {
+  if (prefixAware && padChar === "0" && (text.startsWith("0x") || text.startsWith("0X"))) {
     return text.slice(0, 2) + padding + text.slice(2);
   }
   return padding + text;
@@ -410,10 +492,10 @@ function padFormatted(text, flags, width, numeric = false) {
 
 function formatStringArg(memory, ptr, precision) {
   if (!Number(ptr)) {
-    const text = "(null)";
-    return precision >= 0 ? text.slice(0, precision) : text;
+    const bytes = utf8Encoder.encode("(null)");
+    return bytesToOutput(precision >= 0 ? bytes.slice(0, precision) : bytes);
   }
-  return readCString(memory, ptr, precision >= 0 ? precision : 1024 * 1024);
+  return bytesToOutput(readCStringBytes(memory, ptr, precision >= 0 ? precision : 1024 * 1024));
 }
 
 function integerBitsForLength(length) {
@@ -482,6 +564,137 @@ function formatPointer(value) {
   return `0x${(valueToBigInt(value) & ((1n << 64n) - 1n)).toString(16)}`;
 }
 
+function decimalFloatPrecision(precision) {
+  if (precision < 0) return 6;
+  return Math.min(precision, 18);
+}
+
+function generalFloatPrecision(precision) {
+  precision = decimalFloatPrecision(precision);
+  return precision === 0 ? 1 : precision;
+}
+
+function floatSign(value, flags) {
+  if (value < 0 || Object.is(value, -0)) return "-";
+  if (flags.includes("+")) return "+";
+  if (flags.includes(" ")) return " ";
+  return "";
+}
+
+function formatSpecialFloat(value, upper, flags) {
+  const body = Number.isNaN(value) ? "nan" : "inf";
+  return floatSign(value, flags) + (upper ? body.toUpperCase() : body);
+}
+
+function normalizeExponent(text, upper) {
+  const marker = upper ? "E" : "e";
+  const [mantissa, exponentText] = text.split(/[eE]/);
+  const exp = Number(exponentText);
+  const sign = exp < 0 ? "-" : "+";
+  const mag = Math.abs(exp);
+  return `${mantissa}${marker}${sign}${mag < 10 ? "0" : ""}${mag}`;
+}
+
+function withAlternateDecimal(text, alternate) {
+  if (!alternate || text.includes(".")) return text;
+  const exp = text.search(/[eE]/);
+  if (exp >= 0) return `${text.slice(0, exp)}.${text.slice(exp)}`;
+  return `${text}.`;
+}
+
+function trimFloatTrailingZeros(text) {
+  const exp = text.search(/[eE]/);
+  const suffix = exp >= 0 ? text.slice(exp) : "";
+  let body = exp >= 0 ? text.slice(0, exp) : text;
+  if (body.includes(".")) {
+    body = body.replace(/0+$/, "").replace(/\.$/, "");
+  }
+  return body + suffix;
+}
+
+function formatFixedFloat(value, precision, upper, alternate, flags) {
+  value = Number(value);
+  if (!Number.isFinite(value)) return formatSpecialFloat(value, upper, flags);
+  precision = decimalFloatPrecision(precision);
+  const sign = floatSign(value, flags);
+  const mag = Math.abs(value);
+  return sign + withAlternateDecimal(mag.toFixed(precision), alternate);
+}
+
+function formatScientificFloat(value, precision, upper, alternate, flags) {
+  value = Number(value);
+  if (!Number.isFinite(value)) return formatSpecialFloat(value, upper, flags);
+  precision = decimalFloatPrecision(precision);
+  const sign = floatSign(value, flags);
+  const mag = Math.abs(value);
+  let text = normalizeExponent(mag.toExponential(precision), upper);
+  text = withAlternateDecimal(text, alternate);
+  return sign + text;
+}
+
+function roundedDecimalExponent(value, precision) {
+  if (value === 0) return 0;
+  const text = Math.abs(value).toExponential(Math.max(precision - 1, 0));
+  return Number(text.replace(/^.*[eE]/, ""));
+}
+
+function formatGeneralFloat(value, precision, upper, alternate, flags) {
+  value = Number(value);
+  if (!Number.isFinite(value)) return formatSpecialFloat(value, upper, flags);
+  precision = generalFloatPrecision(precision);
+  const exp = roundedDecimalExponent(value, precision);
+  let text;
+  if (exp < -4 || exp >= precision) {
+    text = formatScientificFloat(value, precision - 1, upper, alternate, flags);
+  } else {
+    const fracPrecision = Math.max(precision - exp - 1, 0);
+    text = formatFixedFloat(value, fracPrecision, upper, alternate, flags);
+  }
+  return alternate ? text : trimFloatTrailingZeros(text);
+}
+
+function formatHexFloat(value, precision, upper, alternate, flags) {
+  value = Number(value);
+  if (!Number.isFinite(value)) return formatSpecialFloat(value, upper, flags);
+  precision = precision < 0 ? 13 : Math.min(precision, 13);
+  const sign = floatSign(value, flags);
+  const prefix = upper ? "0X" : "0x";
+  const expMarker = upper ? "P" : "p";
+  const digits = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+  let mag = Math.abs(value);
+  if (mag === 0) {
+    const frac = precision > 0 ? `.${"0".repeat(precision)}` : (alternate ? "." : "");
+    return `${sign}${prefix}0${frac}${expMarker}+0`;
+  }
+  let exp = Math.floor(Math.log2(mag));
+  let mantissa = mag / Math.pow(2, exp);
+  if (mantissa < 1) {
+    mantissa *= 2;
+    exp--;
+  } else if (mantissa >= 2) {
+    mantissa /= 2;
+    exp++;
+  }
+  const scale = Math.pow(16, precision);
+  let fracUnits = Math.floor((mantissa - 1) * scale + 0.5);
+  if (fracUnits >= scale) {
+    fracUnits = 0;
+    exp++;
+  }
+  let frac = "";
+  if (precision > 0) {
+    let div = scale / 16;
+    while (div >= 1) {
+      const digit = Math.floor(fracUnits / div);
+      frac += digits[digit];
+      fracUnits %= div;
+      div /= 16;
+    }
+  }
+  const dot = precision > 0 || alternate ? "." : "";
+  return `${sign}${prefix}1${dot}${frac}${expMarker}${exp < 0 ? "-" : "+"}${Math.abs(exp)}`;
+}
+
 function storeFormatCount(memory, ptr, length, count) {
   if (length === "hh") return writeMemoryI8(memory, ptr, count);
   if (length === "h") return writeMemoryI16(memory, ptr, count);
@@ -491,18 +704,64 @@ function storeFormatCount(memory, ptr, length, count) {
   return writeMemoryI32(memory, ptr, count);
 }
 
+function appendOutputBytes(state, bytes) {
+  state.bytes.push(bytes);
+  state.byteCount += bytes.length;
+}
+
+function appendOutputText(state, text) {
+  appendOutputBytes(state, utf8Encoder.encode(String(text)));
+}
+
+function appendRawCharOutput(state, value, flags, width) {
+  const raw = outputBytes(rawByteOutput(value));
+  const padLen = Math.max(0, width - 1);
+  if (flags.includes("-")) {
+    const bytes = new Uint8Array(1 + padLen);
+    bytes.set(raw, 0);
+    bytes.fill(0x20, 1);
+    appendOutputBytes(state, bytes);
+    return;
+  }
+  const bytes = new Uint8Array(1 + padLen);
+  bytes.fill(0x20, 0, padLen);
+  bytes.set(raw, padLen);
+  appendOutputBytes(state, bytes);
+}
+
+function appendByteOutputPadded(state, value, flags, width) {
+  const src = outputBytes(value);
+  const padLen = Math.max(0, width - src.length);
+  if (padLen === 0) {
+    appendOutputBytes(state, src);
+    return;
+  }
+  const bytes = new Uint8Array(src.length + padLen);
+  if (flags.includes("-")) {
+    bytes.set(src, 0);
+    bytes.fill(0x20, src.length);
+  } else {
+    bytes.fill(0x20, 0, padLen);
+    bytes.set(src, padLen);
+  }
+  appendOutputBytes(state, bytes);
+}
+
 function formatPrintf(memory, fmtPtr, args) {
-  const fmt = readCString(memory, fmtPtr);
+  const fmtBytes = readCStringBytes(memory, fmtPtr);
+  const decodedFmt = decodedTextWithByteOffsets(fmtBytes);
+  const fmt = decodedFmt.text;
+  const fmtOffsets = decodedFmt.offsets;
   let argIndex = 0;
   let lastEnd = 0;
-  let outputByteCount = 0;
-  return fmt.replace(/%([-+ #0]*)(\d+|\*)?(\.(\d+|\*))?(hh|h|ll|l|L|z|t|j)?([%csdiuoxXfFeEgGaApn])/g,
+  const state = { bytes: [], byteCount: 0 };
+  fmt.replace(/%([-+ #0]*)(\d+|\*)?(\.(\d+|\*))?(hh|h|ll|l|L|z|t|j)?([%csdiuoxXfFeEgGaApn])/g,
     (match, flags, widthToken, precisionMatch, precisionValue, length, spec, offset) => {
-      outputByteCount += utf8ByteLength(fmt.slice(lastEnd, offset));
+      appendOutputBytes(state, fmtBytes.slice(fmtOffsets[lastEnd], fmtOffsets[offset]));
       lastEnd = offset + match.length;
       if (spec === "%") {
-        outputByteCount += 1;
-        return "%";
+        appendOutputBytes(state, new Uint8Array([37]));
+        return match;
       }
       let width = 0;
       if (widthToken === "*") {
@@ -530,10 +789,11 @@ function formatPrintf(memory, fmtPtr, args) {
       switch (spec) {
         case "s":
           text = formatStringArg(memory, value, precision);
-          break;
+          appendByteOutputPadded(state, text, flags, width);
+          return match;
         case "c":
-          text = String.fromCodePoint(Number(value) & 0xff);
-          break;
+          appendRawCharOutput(state, value, flags, width);
+          return match;
         case "d":
         case "i":
           text = formatSignedInteger(value, length, precision, flags);
@@ -562,39 +822,46 @@ function formatPrintf(memory, fmtPtr, args) {
           break;
         case "f":
         case "F":
-          text = precision >= 0 ? Number(value).toFixed(precision) : String(Number(value));
-          numeric = true;
+          text = formatFixedFloat(value, precision, spec === "F", flags.includes("#"), flags);
+          numeric = Number.isFinite(Number(value));
           break;
         case "e":
         case "E":
-          text = precision >= 0 ? Number(value).toExponential(precision) : Number(value).toExponential();
-          if (spec === "E") text = text.toUpperCase();
-          numeric = true;
+          text = formatScientificFloat(value, precision, spec === "E", flags.includes("#"), flags);
+          numeric = Number.isFinite(Number(value));
           break;
         case "g":
         case "G":
-          text = precision >= 0 ? Number(value).toPrecision(precision || 1) : String(Number(value));
-          if (spec === "G") text = text.toUpperCase();
-          numeric = true;
+          text = formatGeneralFloat(value, precision, spec === "G", flags.includes("#"), flags);
+          numeric = Number.isFinite(Number(value));
           break;
         case "a":
         case "A":
-          text = String(Number(value));
-          numeric = true;
+          text = formatHexFloat(value, precision, spec === "A", flags.includes("#"), flags);
+          numeric = Number.isFinite(Number(value));
           break;
         case "p":
           text = formatPointer(value);
           break;
         case "n":
-          storeFormatCount(memory, value, length, outputByteCount);
-          return "";
+          storeFormatCount(memory, value, length, state.byteCount);
+          return match;
         default:
           return match;
       }
-      text = padFormatted(text, flags, width, numeric);
-      outputByteCount += utf8ByteLength(text);
-      return text;
+      text = padFormatted(text, flags, width, numeric,
+                          !("fFeEgGaA".includes(spec)));
+      appendOutputText(state, text);
+      return match;
     });
+  appendOutputBytes(state, fmtBytes.slice(fmtOffsets[lastEnd]));
+  const bytes = new Uint8Array(state.byteCount);
+  let offset = 0;
+  for (const chunk of state.bytes) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return byteOutput(utf8Decoder.decode(bytes), bytes);
 }
 
 function makeStdio(options = {}) {
@@ -611,15 +878,15 @@ function makeStdio(options = {}) {
   const strerrorMessage = (value) => Number(value) === 0 ? "no error" : "error";
 
   function emitStdout(text) {
-    text = String(text);
-    writeStdout(text);
-    return utf8Encoder.encode(text).length;
+    const bytes = outputBytes(text);
+    writeStdout(outputText(text));
+    return bytes.length;
   }
 
   function emitStderr(text) {
-    text = String(text);
-    writeStderr(text);
-    return utf8Encoder.encode(text).length;
+    const bytes = outputBytes(text);
+    writeStderr(outputText(text));
+    return bytes.length;
   }
 
   function outputStreamKind(stream) {
@@ -700,26 +967,25 @@ function makeStdio(options = {}) {
   }
 
   function puts(s) {
-    return emitStdout(`${readCString(getMemory(), s)}\n`);
+    return emitStdout(bytesWithSuffixOutput(readCStringBytes(getMemory(), s), new Uint8Array([10])));
   }
 
   function fputs(s, stream) {
     const kind = outputStreamKind(stream);
     if (!kind) return -1;
-    const text = readCString(getMemory(), s);
+    const text = bytesToOutput(readCStringBytes(getMemory(), s));
     return kind === "stderr" ? emitStderr(text) : emitStdout(text);
   }
 
   function putchar(c) {
-    const text = String.fromCodePoint(Number(c) & 0xff);
-    emitStdout(text);
+    emitStdout(rawByteOutput(c));
     return Number(c) | 0;
   }
 
   function fputc(c, stream) {
     const kind = outputStreamKind(stream);
     if (!kind) return -1;
-    const text = String.fromCodePoint(Number(c) & 0xff);
+    const text = rawByteOutput(c);
     if (kind === "stderr") {
       emitStderr(text);
     } else {
@@ -791,7 +1057,7 @@ function makeStdio(options = {}) {
     nmemb = Number(nmemb);
     const kind = outputStreamKind(stream);
     if (!kind) return 0n;
-    const text = readMemoryUtf8(getMemory(), ptr, total);
+    const text = bytesToOutput(readMemoryBytes(getMemory(), ptr, total));
     if (kind === "stderr") {
       emitStderr(text);
     } else {
@@ -810,7 +1076,7 @@ function makeStdio(options = {}) {
     count = ioByteCount(count);
     if (count === null) return -1n;
     if (count === 0) return 0n;
-    const text = readMemoryUtf8(getMemory(), ptr, count);
+    const text = bytesToOutput(readMemoryBytes(getMemory(), ptr, count));
     if (isStderr) {
       emitStderr(text);
     } else {
@@ -996,18 +1262,18 @@ function makeStdio(options = {}) {
   }
 
   function perror(s) {
-    const prefix = readCString(getMemory(), s);
+    const prefix = readCStringBytes(getMemory(), s);
     const message = strerrorMessage(getErrno());
-    const text = prefix ? `${prefix}: ${message}\n` : `${message}\n`;
-    emitStderr(text);
+    const suffix = prefix.length > 0 ? `: ${message}\n` : `${message}\n`;
+    emitStderr(bytesWithSuffixOutput(prefix, utf8Encoder.encode(suffix)));
   }
 
   function runtimeStdoutWrite(ptr, len) {
-    emitStdout(readMemoryUtf8(getMemory(), ptr, len));
+    emitStdout(bytesToOutput(readMemoryBytes(getMemory(), ptr, len)));
   }
 
   function runtimeStderrWrite(ptr, len) {
-    emitStderr(readMemoryUtf8(getMemory(), ptr, len));
+    emitStderr(bytesToOutput(readMemoryBytes(getMemory(), ptr, len)));
   }
 
   return {
