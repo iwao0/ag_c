@@ -47,8 +47,8 @@ int main(void) {
 
   /* fenv: 例外フラグ操作 (libc) */
   feclearexcept(FE_ALL_EXCEPT);
-  volatile double x = 1.0, y = 3.0, z = x / y;
-  (void)z;
+  assert(fetestexcept(FE_ALL_EXCEPT) == 0);
+  assert(feraiseexcept(FE_INEXACT) == 0);
   assert(fetestexcept(FE_INEXACT) != 0);
 
   /* locale: localeconv (libc) */

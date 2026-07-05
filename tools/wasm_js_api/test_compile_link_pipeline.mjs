@@ -1189,16 +1189,19 @@ const linkedTimeSource = await inlineStandardIncludes(`#include <time.h>
 int main(void) {
   time_t epoch = 0;
   time_t sample = 90061;
+  time_t before_epoch = -1;
   struct tm *epoch_tm = localtime(&epoch);
   int epoch_ok = epoch_tm && epoch_tm->tm_year == 70 && epoch_tm->tm_mon == 0 &&
                  epoch_tm->tm_mday == 1 && epoch_tm->tm_wday == 4;
   struct tm *tm = gmtime(&sample);
+  struct tm *btm;
   char buf[64];
   wchar_t wbuf[64];
   wchar_t wfmt[] = {'%', 'F', ' ', '%', 'T', 0};
   size_t n;
   size_t wn;
   struct tm mk = {0};
+  struct tm bmk = {0};
   struct timespec ts = {-1, -1};
   if (!epoch_ok) return 1;
   if (!tm || tm->tm_sec != 1 || tm->tm_min != 1 || tm->tm_hour != 1 ||
@@ -1224,6 +1227,19 @@ int main(void) {
   mk.tm_yday = 0;
   mk.tm_isdst = -1;
   if (mktime(&mk) != 172800 || mk.tm_wday != 6 || mk.tm_yday != 2 || mk.tm_isdst != 0) return 9;
+  btm = gmtime(&before_epoch);
+  if (!btm || btm->tm_sec != 59 || btm->tm_min != 59 || btm->tm_hour != 23 ||
+      btm->tm_mday != 31 || btm->tm_mon != 11 || btm->tm_year != 69 ||
+      btm->tm_wday != 3 || btm->tm_yday != 364 || btm->tm_isdst != 0) return 12;
+  if (strcmp(asctime(btm), "Wed Dec 31 23:59:59 1969\\n") != 0) return 13;
+  bmk.tm_sec = 59;
+  bmk.tm_min = 59;
+  bmk.tm_hour = 23;
+  bmk.tm_mday = 31;
+  bmk.tm_mon = 11;
+  bmk.tm_year = 69;
+  bmk.tm_isdst = -1;
+  if (mktime(&bmk) != -1 || bmk.tm_wday != 3 || bmk.tm_yday != 364 || bmk.tm_isdst != 0) return 14;
   return 42;
 }
 `, { loadInclude });
@@ -1503,6 +1519,70 @@ if (Number(linkedUnderscoreExit.instance.exports.__agc_runtime_termination_kind(
     Number(linkedUnderscoreExit.instance.exports.__agc_runtime_termination_status()) !== 5) {
   throw new Error("linked runtime _Exit() did not preserve termination kind/status");
 }
+
+const linkedAssertFailSource = `
+void __assert_rtn(char *func, char *file, int line, char *expr);
+int main(void) {
+  __assert_rtn("main", "assert_runtime_fail.c", 3, "0");
+  return 42;
+}
+`;
+const linkedAssertFail = await toolchain.instantiateLinkedWasm(linkedAssertFailSource, {
+  exports: [
+    "main",
+    "__agc_runtime_termination_kind",
+    "__agc_runtime_termination_status",
+  ],
+  useStdlib: true,
+});
+let linkedAssertTrapped = false;
+try {
+  linkedAssertFail.instance.exports.main();
+} catch (_) {
+  linkedAssertTrapped = true;
+}
+if (!linkedAssertTrapped) {
+  throw new Error("linked runtime __assert_rtn() did not trap through abort");
+}
+if (Number(linkedAssertFail.instance.exports.__agc_runtime_termination_kind()) !== 2 ||
+    Number(linkedAssertFail.instance.exports.__agc_runtime_termination_status()) !== 0) {
+  throw new Error("linked runtime __assert_rtn() did not notify abort termination");
+}
+
+toolchain = await freshToolchain();
+
+const linkedLongjmpFailSource = `
+typedef long jmp_buf[48];
+void longjmp(jmp_buf env, int val);
+int main(void) {
+  jmp_buf env;
+  longjmp(env, 7);
+  return 42;
+}
+`;
+const linkedLongjmpFail = await toolchain.instantiateLinkedWasm(linkedLongjmpFailSource, {
+  exports: [
+    "main",
+    "__agc_runtime_termination_kind",
+    "__agc_runtime_termination_status",
+  ],
+  useStdlib: true,
+});
+let linkedLongjmpTrapped = false;
+try {
+  linkedLongjmpFail.instance.exports.main();
+} catch (_) {
+  linkedLongjmpTrapped = true;
+}
+if (!linkedLongjmpTrapped) {
+  throw new Error("linked runtime longjmp() did not trap through abort");
+}
+if (Number(linkedLongjmpFail.instance.exports.__agc_runtime_termination_kind()) !== 2 ||
+    Number(linkedLongjmpFail.instance.exports.__agc_runtime_termination_status()) !== 0) {
+  throw new Error("linked runtime longjmp() did not notify abort termination");
+}
+
+toolchain = await freshToolchain();
 
 const linkedStdinSource = await inlineStandardIncludes(`#include <stdio.h>
 int main(void) {

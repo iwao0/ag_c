@@ -757,15 +757,23 @@ static void ag_rt_time_from_seconds(long t, struct ag_rt_tm *out) {
   int mon;
   int yday;
   if (!out) return;
-  if (t < 0) t = 0;
   days = t / 86400;
   rem = t % 86400;
+  if (rem < 0) {
+    rem = rem + 86400;
+    days--;
+  }
   out->tm_hour = (int)(rem / 3600);
   rem = rem % 3600;
   out->tm_min = (int)(rem / 60);
   out->tm_sec = (int)(rem % 60);
   out->tm_wday = (int)((4 + days) % 7);
+  if (out->tm_wday < 0) out->tm_wday += 7;
   year = 1970;
+  while (days < 0) {
+    year--;
+    days = days + ag_rt_time_days_in_year(year);
+  }
   while (days >= ag_rt_time_days_in_year(year)) {
     days = days - ag_rt_time_days_in_year(year);
     year++;
@@ -798,7 +806,11 @@ static long ag_rt_time_to_seconds(struct ag_rt_tm *tm) {
     mon = mon - 12;
     year++;
   }
-  for (int y = 1970; y < year; y++) days = days + ag_rt_time_days_in_year(y);
+  if (year >= 1970) {
+    for (int y = 1970; y < year; y++) days = days + ag_rt_time_days_in_year(y);
+  } else {
+    for (int y = year; y < 1970; y++) days = days - ag_rt_time_days_in_year(y);
+  }
   days = days + ag_rt_time_days_before_month(year, mon) + tm->tm_mday - 1;
   return days * 86400 + (long)tm->tm_hour * 3600 + (long)tm->tm_min * 60 + tm->tm_sec;
 }
@@ -875,7 +887,7 @@ long __agc_runtime_localtime(long timer_addr) {
 long __agc_runtime_mktime(long timeptr_addr) {
   struct ag_rt_tm *tm = (struct ag_rt_tm *)ag_rt_ptr(timeptr_addr);
   long t = ag_rt_time_to_seconds(tm);
-  if (tm && t >= 0) ag_rt_time_from_seconds(t, tm);
+  if (tm) ag_rt_time_from_seconds(t, tm);
   return t;
 }
 
@@ -1085,8 +1097,7 @@ int __agc_runtime_setjmp(long env_addr) {
 void __agc_runtime_longjmp(long env_addr, int val) {
   (void)env_addr;
   (void)val;
-  for (;;) {
-  }
+  __agc_runtime_abort();
 }
 
 long __agc_runtime___error(void) {

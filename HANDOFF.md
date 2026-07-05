@@ -1,9 +1,67 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き575: wasm JS e2e timeout確認）
+最終更新: 2026-07-05（続き578: wasm time runtime pre-1970 対応）
 
 ## 現状
 - 直近の部分確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `git diff --check` = **green**、
+  `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `make test-wasm-js-pipeline` = **green**、
+  `./build/test_e2e` = **1186/1186 OK**。
+- 続き578: **wasm linked runtime の time 変換で pre-1970 を epoch に丸めないよう修正**。
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `ag_rt_time_from_seconds()` は
+  負の `time_t` を 0 に clamp していたため、`gmtime(-1)` が 1969-12-31 23:59:59 ではなく
+  epoch になっていた。負の剰余、曜日、1970 年より前への year 巻き戻しを扱うようにし、
+  `ag_rt_time_to_seconds()` も 1970 年未満の year を負の日数として合成するようにした。
+  `mktime()` は戻り値 `-1` が有効時刻にもなり得るため、`t >= 0` 条件なしで `struct tm` を正規化する。
+  `tools/wasm_obj_linker/test_smoke.sh` と `tools/wasm_js_api/test_compile_link_pipeline.mjs` に
+  `gmtime(-1)` / `asctime()` / `mktime(1969-12-31 23:59:59)` の smoke を追加した。
+- 以前の直近確認（続き577時点、time 変更前）:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
+  `make test-wasm-js-pipeline` = **green**、
+  `WASM_JS_E2E_PIPELINE_TIMEOUT_MS=30000 node tools/wasm_js_api/test_e2e_pipeline.mjs build/wasm_selfhost_api/ag_c_wasm_api.wasm build/wasm_linker_selfhost/ag_wasm_link.wasm --start=1117 --limit=1 --list-fail --progress-every=1`
+  = **1/1 pass**、
+  `./build/test_e2e` = **1186/1186 OK**、
+  `make test-wasm-js-e2e` =
+  **1158/1158 pass, fail 0**、
+  `git diff --check` = **green**。
+- 続き577: **wasm linked runtime の `longjmp()` 未対応経路を timeout ではなく trap に統一**。
+  `tools/wasm_obj_linker/runtime/parts/stdlib.c` の `__agc_runtime_longjmp()` は無限ループではなく
+  `__agc_runtime_abort()` を呼ぶようにした。完全な non-local jump は compiler/runtime 協調が必要なため
+  まだ未実装だが、呼ばれた場合に実行が無限に止まらず abort termination kind=2 と trap で見えるようになった。
+  `tools/wasm_obj_linker/test_smoke.sh` に `longjmp()` 実呼び出しが
+  `main() => error: unreachable executed` になる smoke を追加し、
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` に JS instantiate 経路で `longjmp()` が trap し
+  abort termination を通知する smoke を追加した。
+- 以前の広域確認（続き576時点、longjmp 変更前）:
+  `make test-wasm-js-e2e` =
+  **1158/1158 pass, fail 0**、
+  `git diff --check` = **green**。
+- 続き576: **wasm linked runtime の assert 失敗を timeout ではなく trap に統一**。
+  `tools/wasm_obj_linker/runtime/parts/format.c` の `__agc_runtime___assert_rtn()` は
+  無限ループではなく `__agc_runtime_abort()` を呼ぶようにした。これにより failed assert は
+  termination kind=2 を記録して `__agc_runtime_trap()` に落ちる。
+  `tools/wasm_obj_linker/test_smoke.sh` に failed assert が `main() => error: unreachable executed`
+  になる smoke を追加し、`tools/wasm_js_api/test_compile_link_pipeline.mjs` には
+  JS instantiate 経路で `__assert_rtn()` が trap し abort termination を通知する smoke を追加した。
+- 続き576: **`c11_standard_headers.c` の fenv 期待を runtime 契約に合わせて修正**。
+  前回 timeout の実体は、assert 失敗時の無限ループだった。trap 化後の単体再実行では
+  `result mismatch; expected main() => i32:0; got main() => error: unreachable executed` に変わり、
+  fixture の fenv 部分が素の `x / y` による `FE_INEXACT` 副作用を期待していることが原因だった。
+  現在の wasm backend は通常の FP 除算を `f64.div` / `f32.div` として出し、runtime の
+  `ag_rt_except_flags` は明示的な `feclearexcept` / `feraiseexcept` / `fetestexcept` 操作を管理する設計。
+  そのため fixture は `feclearexcept(FE_ALL_EXCEPT)` 後に flags が空であることを確認し、
+  `feraiseexcept(FE_INEXACT)` で明示的に例外フラグを立てて確認する形へ変更した。
+- 残り:
+  - wasm backend は通常の FP 演算による fenv exception flag 更新までは実装していない。
+    これをやる場合は `IR_FDIV` などの FP 演算を runtime helper 化する必要があり、object 生成、
+    minimal stub、linker runtime symbol、性能の全てに波及する別タスク。
+  - 非 C locale、複数 path / OS 的 unlink/rename semantics、浮動小数出力の巨大値境界などは未対応のまま。
+- 以前の直近確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `make test-wasm-js-pipeline` = **green**、

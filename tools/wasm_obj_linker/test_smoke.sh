@@ -1905,6 +1905,8 @@ int main(void) {
   struct tm *tm = localtime(&stored);
   time_t sample = 90061;
   struct tm *gtm;
+  time_t before_epoch = -1;
+  struct tm *btm;
   char stamp[64];
   int wstamp[64];
   int wfmt[32];
@@ -1913,7 +1915,9 @@ int main(void) {
   unsigned long wstamp_len;
   struct timespec ts = {-1, -1};
   struct tm mk = {0};
+  struct tm bmk = {0};
   time_t made;
+  time_t bmade;
   if (!(now == 0 && stored == 0 && tm != 0 &&
         tm->tm_sec == 0 && tm->tm_min == 0 && tm->tm_hour == 0 &&
         tm->tm_mday == 1 && tm->tm_mon == 0 && tm->tm_year == 70 &&
@@ -1952,6 +1956,20 @@ int main(void) {
   mk.tm_isdst = -1;
   made = mktime(&mk);
   if (made != 172800 || mk.tm_wday != 6 || mk.tm_yday != 2 || mk.tm_isdst != 0) return 11;
+  btm = gmtime(&before_epoch);
+  if (!(btm != 0 && btm->tm_sec == 59 && btm->tm_min == 59 && btm->tm_hour == 23 &&
+        btm->tm_mday == 31 && btm->tm_mon == 11 && btm->tm_year == 69 &&
+        btm->tm_wday == 3 && btm->tm_yday == 364 && btm->tm_isdst == 0)) return 12;
+  if (!same_text(asctime(btm), "Wed Dec 31 23:59:59 1969\n")) return 13;
+  bmk.tm_sec = 59;
+  bmk.tm_min = 59;
+  bmk.tm_hour = 23;
+  bmk.tm_mday = 31;
+  bmk.tm_mon = 11;
+  bmk.tm_year = 69;
+  bmk.tm_isdst = -1;
+  bmade = mktime(&bmk);
+  if (bmade != -1 || bmk.tm_wday != 3 || bmk.tm_yday != 364 || bmk.tm_isdst != 0) return 14;
   return 42;
 }
 SRC
@@ -5291,12 +5309,41 @@ SRC
 wasm-validate "$out_dir/linked_assert_runtime.wasm"
 wasm-interp "$out_dir/linked_assert_runtime.wasm" --run-all-exports > "$out_dir/linked_assert_runtime.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_assert_runtime.interp"
+cat > "$out_dir/assert_runtime_fail.c" <<'SRC'
+void __assert_rtn(char *func, char *file, int line, char *expr);
+int main(void) {
+  __assert_rtn("main", "assert_runtime_fail.c", 3, "0");
+  return 42;
+}
+SRC
+"$root/build/ag_c_wasm" -c -o "$out_dir/assert_runtime_fail.o" "$out_dir/assert_runtime_fail.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_assert_runtime_fail.wasm" \
+  "$out_dir/assert_runtime_fail.o"
+wasm-validate "$out_dir/linked_assert_runtime_fail.wasm"
+wasm-interp "$out_dir/linked_assert_runtime_fail.wasm" --run-all-exports > "$out_dir/linked_assert_runtime_fail.interp" 2>&1
+grep -q 'main() => error: unreachable executed' "$out_dir/linked_assert_runtime_fail.interp"
 if command -v wasm-objdump >/dev/null 2>&1; then
   "$root/build/ag_wasm_link" --nostdlib --no-entry --export=main -o "$out_dir/linked_assert_runtime_nostdlib.wasm" \
     "$out_dir/assert_runtime.o"
   wasm-objdump -x "$out_dir/linked_assert_runtime_nostdlib.wasm" > "$out_dir/linked_assert_runtime_nostdlib.objdump"
   grep -q '<env.__assert_rtn>' "$out_dir/linked_assert_runtime_nostdlib.objdump"
 fi
+
+cat > "$out_dir/longjmp_runtime_fail.c" <<'SRC'
+typedef long jmp_buf[48];
+void longjmp(jmp_buf env, int val);
+int main(void) {
+  jmp_buf env;
+  longjmp(env, 7);
+  return 42;
+}
+SRC
+"$root/build/ag_c_wasm" -c -o "$out_dir/longjmp_runtime_fail.o" "$out_dir/longjmp_runtime_fail.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_longjmp_runtime_fail.wasm" \
+  "$out_dir/longjmp_runtime_fail.o"
+wasm-validate "$out_dir/linked_longjmp_runtime_fail.wasm"
+wasm-interp "$out_dir/linked_longjmp_runtime_fail.wasm" --run-all-exports > "$out_dir/linked_longjmp_runtime_fail.interp" 2>&1
+grep -q 'main() => error: unreachable executed' "$out_dir/linked_longjmp_runtime_fail.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/many_globals.o" "$out_dir/many_globals.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_many_globals.wasm" \

@@ -2200,6 +2200,5 @@ void __agc_runtime___assert_rtn(long func_addr, long file_addr, int line, long e
   (void)file_addr;
   (void)line;
   (void)expr_addr;
-  for (;;) {
-  }
+  __agc_runtime_abort();
 }
