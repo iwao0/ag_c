@@ -564,6 +564,7 @@ static node_t *parse_stmt_block(void) {
   int cap = 16;
   node->body = calloc(cap, sizeof(node_t*));
   int prev_terminates = 0;
+  int in_unreachable_run = 0;
   /* このブロック内で case/default を一度でも見たか。switch fallthrough 警告は
    * 「直前文が case 本体の続きで、かつ非終端のまま次の case に至る」場合のみ発火させる
    * ため、最初の case 出現前のセットアップ文 (`int tmp = ...; switch(x){...}` の中の
@@ -572,11 +573,13 @@ static node_t *parse_stmt_block(void) {
   while (!tk_consume('}')) {
     // #pragma pack マーカーはブロック内でも透過的に処理（AST には載せない）。
     if (psx_try_consume_pragma_pack_marker()) continue;
-    if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
-        !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
+    int resumes_reachable = curtok()->kind == TK_CASE || curtok()->kind == TK_DEFAULT ||
+        (curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON);
+    if (resumes_reachable) in_unreachable_run = 0;
+    if (prev_terminates && !resumes_reachable && !in_unreachable_run) {
       diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
                      "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
-      prev_terminates = 0;
+      in_unreachable_run = 1;
     }
     /* switch fallthrough (clang -Wimplicit-fallthrough 相当):
      * 既に case を出した後で、次の case/default に到達しようとしていて、
@@ -593,7 +596,9 @@ static node_t *parse_stmt_block(void) {
       cap = pda_next_cap(cap, i + 2);
       node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
     }
+    if (in_unreachable_run) psx_ctx_enter_unreachable_diagnostic_suppression();
     node->body[i] = block_item();
+    if (in_unreachable_run) psx_ctx_leave_unreachable_diagnostic_suppression();
     node_kind_t k = node->body[i]->kind;
     /* prev_terminates は浅い終端 (このブロックの直接要素が break/return 等) と、
      * case/default 本体の末尾終端を合わせて反映する。前者は unreachable 検出に、

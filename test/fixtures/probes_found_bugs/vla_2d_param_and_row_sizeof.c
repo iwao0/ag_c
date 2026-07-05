@@ -22,6 +22,9 @@ int main(void) {
     assert(sizeof(v[0]) == (unsigned long)m * sizeof(int));   /* 16 */
     int idx = 1;
     assert(sizeof(v[idx]) == 16);            /* 行ストライドは添字非依存 */
+    idx = 0;
+    assert(sizeof(v[++idx]) == 16);          /* VLA sizeof operand の添字式は評価される */
+    assert(idx == 1);
     assert(sizeof(v) == (unsigned long)n * m * sizeof(int));  /* 全体 32 (不変) */
     assert(sizeof(v[1][2]) == sizeof(int));  /* 要素は elem (不変) */
 

@@ -885,6 +885,7 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
   token_ident_t *id = (token_ident_t *)curtok();
   lvar_t *src = psx_decl_find_lvar(id->str, id->len);
   if (!src || !src->is_array) return NULL;
+  src->used_count++;
   src->is_used = 1;
   if (src->elem_size != elem_size || src->size != elem_size * array_len) return NULL;
   if (!curtok()->next || (curtok()->next->kind != TK_COMMA && curtok()->next->kind != TK_RBRACE)) return NULL;
@@ -3117,6 +3118,9 @@ lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int el
   var->elem_size = elem_size;
   var->is_array = is_array;
   var->align_bytes = align;
+  if (psx_ctx_in_unreachable_diagnostic_suppression()) {
+    var->suppress_unreachable_warnings = 1;
+  }
   locals = var;
   lvar_index_on_add(var);
   return var;

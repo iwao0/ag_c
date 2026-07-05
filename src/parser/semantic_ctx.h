@@ -18,6 +18,9 @@ void psx_ctx_leave_block_scope(void);
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok);
 void psx_ctx_register_label_def(char *name, int len, token_t *tok);
 void psx_ctx_validate_goto_refs(void);
+void psx_ctx_enter_unreachable_diagnostic_suppression(void);
+void psx_ctx_leave_unreachable_diagnostic_suppression(void);
+int psx_ctx_in_unreachable_diagnostic_suppression(void);
 
 bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len);

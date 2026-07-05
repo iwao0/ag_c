@@ -40,6 +40,8 @@ struct lvar_t {
   unsigned int is_unsigned : 1;       // 1: unsigned type
   unsigned int is_used : 1;           // 1: 参照された
   unsigned int is_unevaluated_used : 1; // 1: sizeof 等の未評価オペランドで参照された
+  unsigned int is_address_taken : 1;  // 1: & 等でアドレスだけ参照された
+  unsigned int suppress_unreachable_warnings : 1; // 1: 到達不能文で宣言され W3003/W3004 を抑制
   unsigned int is_param : 1;          // 1: 関数パラメータ
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int is_complex : 1;       // 1: _Complex型
@@ -86,6 +88,7 @@ struct lvar_t {
    * 表現へ組み直すため pointee 配列全体のバイト数を保持する。 */
   int ptr_array_pointee_bytes;
   int align_bytes; // 0 = natural alignment
+  int used_count; // 評価済みの値参照回数 (&local の再分類で減らす)
   // 多次元配列サポート用
   int outer_stride;             // 1次サブスクリプトのストライド（直下の次元 1 つ分のバイトサイズ）
   int mid_stride;               // 3D 配列 `a[N1][N2][N3]` の 2 次サブスクリプトのストライド（=N3*elem）。0=2D以下。

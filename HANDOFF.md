@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き642: `sizeof` 未評価オペランドの未初期化/未使用警告を分離）
+最終更新: 2026-07-06（続き645: VLA/static array `sizeof` の W3003 と VLA operand 評価を補正）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,69 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き645: **VLA/static array `sizeof` の W3003 と VLA operand 評価を補正**。
+  `sizeof(vla)` / `sizeof(vla[i])` / `sizeof(static_local_array)` は C の `sizeof`
+  として値を読む通常評価ではない一方、VLA 型 operand では添字式などの副作用は実行される。
+  これまで runtime size を返す shortcut が対象 lvar を `sizeof` operand 使用として mark しておらず、
+  `vla_sizeof_direct.c` / `static_local_array_sizeof.c` / `sizeof_vla.c` /
+  `vla_2d_param_and_row_sizeof.c` で不要な `W3003` が出ていた。
+  `parse_sizeof_operand()` の VLA / N-D VLA subarray / 2D VLA row / 非 VLA local array /
+  static local array shortcut で `is_unevaluated_used` を立てるようにし、VLA subscript shortcut では
+  bracket 内の式を parse して `ND_COMMA(prefix, runtime_size)` に載せることで
+  `sizeof(v[++idx])` の `++idx` も IR に残すようにした。
+  確認は
+  `./build/ag_c test/fixtures/probes_found_bugs/vla_sizeof_direct.c > /tmp/ag_c_vla_sizeof_direct.s 2> /tmp/ag_c_vla_sizeof_direct.err` =
+  既存の `W3018` 2件のみ、
+  `./build/ag_c test/fixtures/probes_found_bugs/static_local_array_sizeof.c > /tmp/ag_c_static_local_array_sizeof.s 2> /tmp/ag_c_static_local_array_sizeof.err` =
+  stderr empty、
+  `./build/ag_c test/fixtures/probes_found_bugs/vla_2d_param_and_row_sizeof.c > /tmp/ag_c_vla_2d_param_row_sizeof.s 2> /tmp/ag_c_vla_2d_param_row_sizeof.err` =
+  stderr empty、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`（`build/ag_c_wasm` rebuild 後）、
+  `git diff --check` = green。
+- 続き644: **到達不能文の未初期化/未使用警告を W3002 へ集約**。
+  `test/fixtures/probes_found_bugs/typedef_label_shadow.c` では
+  `goto s;` から `s:` ラベルまでのコードが到達不能で、既に `W3002` が出ている。
+  しかし parser は到達不能文を通常通り parse し、その中の `struct s s;` と
+  `return s.s.s + s.s.s1.s;` の参照を `is_used` に入れていたため、同じ到達不能領域から
+  `W3004` が追加で出ていた。
+  `semantic_ctx` に unreachable diagnostic suppression depth を追加し、
+  `parse_funcdef_body_block()` / `parse_stmt_block()` は `return` / `goto` 等の後から次の
+  label / case / default までを unreachable run として parse する。
+  その間に宣言されたローカルは `suppress_unreachable_warnings` で W3003/W3004 対象外にし、
+  その間の値参照・address-taken・代入初期化マークも warning pass 用 state へ反映しない。
+  これにより到達不能領域由来の二次警告は `W3002` に集約される。
+  一方で `union U u; return u;` の inline union return 系は到達可能な未初期化値返却なので、
+  `W3004` のまま残している。
+  確認は
+  `./build/ag_c test/fixtures/probes_found_bugs/typedef_label_shadow.c > /tmp/ag_c_typedef_label_shadow.s 2> /tmp/ag_c_typedef_label_shadow.err` =
+  `W3002` のみ、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き643: **address-only 参照の未初期化/未使用警告を分離**。
+  `struct S s; struct S *p = &s; p->a = ...` や
+  `(char *)&s.i - (char *)&s` のような式では、`s` のアドレスを計算しているだけで
+  `s` の値を未初期化読み出ししているわけではない。
+  これまで識別子解決時に一律 `is_used` を立てていたため、
+  `member_arrow.c` や `struct_addr_cast_subtract.c` で `W3004` が出ていた。
+  `lvar_t` に `is_address_taken` と `used_count` を追加し、通常の評価済み参照は
+  `used_count` で数えるようにした上で、`build_unary_addr_node()` が
+  `&local` / `&local_array` / direct member の根 `&local.member` だけを
+  値使用から address-taken に再分類するようにした。
+  単純に `&` operand 全体を special-case すると `&*p` の `p` まで値使用でなくなってしまうため、
+  回帰として `int *p; return &*p == 0;` は引き続き `W3004` を出すことも固定した。
+  確認は
+  `./build/ag_c test/fixtures/type_decl/member_arrow.c > /tmp/ag_c_member_arrow.s 2> /tmp/ag_c_member_arrow.err` =
+  stderr empty、
+  `./build/ag_c test/fixtures/probes_found_bugs/struct_addr_cast_subtract.c > /tmp/ag_c_struct_addr_cast_subtract.s 2> /tmp/ag_c_struct_addr_cast_subtract.err` =
+  stderr empty、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
 - 続き642: **`sizeof` 未評価オペランドの未初期化/未使用警告を分離**。
   `int (*p)[3][4]; sizeof(*p)` のような `sizeof` operand は C の未評価文脈なので、
   `p` を実行時に読む未初期化使用ではない。

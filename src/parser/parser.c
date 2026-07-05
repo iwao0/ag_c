@@ -4724,20 +4724,25 @@ static node_block_t *parse_funcdef_body_block(void) {
   int body_cap = 16;
   body->body = calloc(body_cap, sizeof(node_t *));
   int prev_terminates = 0;
+  int in_unreachable_run = 0;
   while (!tk_consume('}')) {
     // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
     if (psx_try_consume_pragma_pack_marker()) continue;
-    if (prev_terminates && curtok()->kind != TK_CASE && curtok()->kind != TK_DEFAULT &&
-        !(curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON)) {
+    int resumes_reachable = curtok()->kind == TK_CASE || curtok()->kind == TK_DEFAULT ||
+        (curtok()->kind == TK_IDENT && curtok()->next && curtok()->next->kind == TK_COLON);
+    if (resumes_reachable) in_unreachable_run = 0;
+    if (prev_terminates && !resumes_reachable && !in_unreachable_run) {
       diag_warn_tokf(DIAG_WARN_PARSER_UNREACHABLE_CODE, curtok(),
                      "%s", diag_warn_message_for(DIAG_WARN_PARSER_UNREACHABLE_CODE));
-      prev_terminates = 0;
+      in_unreachable_run = 1;
     }
     if (i >= body_cap - 1) {
       body_cap = pda_next_cap(body_cap, i + 2);
       body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
     }
+    if (in_unreachable_run) psx_ctx_enter_unreachable_diagnostic_suppression();
     body->body[i] = psx_stmt_stmt();
+    if (in_unreachable_run) psx_ctx_leave_unreachable_diagnostic_suppression();
     node_kind_t k = body->body[i]->kind;
     prev_terminates = (k == ND_RETURN || k == ND_BREAK || k == ND_CONTINUE || k == ND_GOTO);
     i++;
@@ -4751,7 +4756,8 @@ static node_block_t *parse_funcdef_body_block(void) {
  * 仮引数 / underscore-prefix / 配列は対象外。 */
 static void warn_unused_uninit_locals(void) {
   for (lvar_t *v = psx_decl_get_locals(); v; v = v->next_all) {
-    if (!v->is_used && !v->is_unevaluated_used && !v->is_param && v->name[0] != '_') {
+    if (v->suppress_unreachable_warnings) continue;
+    if (!v->is_used && !v->is_unevaluated_used && !v->is_address_taken && !v->is_param && v->name[0] != '_') {
       diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, curtok(),
                      diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
                      v->len, v->name);

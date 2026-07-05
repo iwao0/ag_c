@@ -215,6 +215,7 @@ static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 static int tag_member_decl_order = 0;
 static int g_pending_tag_align = 0;
+static int g_unreachable_diagnostic_suppression_depth = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
   // djb2 variant
@@ -251,6 +252,7 @@ void psx_ctx_reset_translation_unit_scope(void) {
   tag_scope_depth = 0;
   tag_member_decl_order = 0;
   g_pending_tag_align = 0;
+  g_unreachable_diagnostic_suppression_depth = 0;
 }
 
 /* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。これにより、同一プロセス
@@ -283,6 +285,7 @@ void psx_ctx_reset_function_scope(void) {
   goto_refs_all = NULL;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   tag_scope_depth = 0;
+  g_unreachable_diagnostic_suppression_depth = 0;
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
     tag_type_t **tt = &tag_types_by_bucket[i];
     while (*tt) {
@@ -317,6 +320,18 @@ void psx_ctx_reset_function_scope(void) {
       td = &(*td)->next_hash;
     }
   }
+}
+
+void psx_ctx_enter_unreachable_diagnostic_suppression(void) {
+  g_unreachable_diagnostic_suppression_depth++;
+}
+
+void psx_ctx_leave_unreachable_diagnostic_suppression(void) {
+  if (g_unreachable_diagnostic_suppression_depth > 0) g_unreachable_diagnostic_suppression_depth--;
+}
+
+int psx_ctx_in_unreachable_diagnostic_suppression(void) {
+  return g_unreachable_diagnostic_suppression_depth > 0;
 }
 
 void psx_ctx_enter_block_scope(void) {

@@ -163,11 +163,27 @@ static int in_unevaluated_operand(void) {
 
 static void mark_lvar_used_if_evaluated(lvar_t *var) {
   if (!var) return;
+  if (psx_ctx_in_unreachable_diagnostic_suppression()) return;
   if (in_unevaluated_operand()) {
     var->is_unevaluated_used = 1;
   } else {
+    var->used_count++;
     var->is_used = 1;
   }
+}
+
+static void mark_lvar_address_taken(lvar_t *var) {
+  if (!var) return;
+  if (psx_ctx_in_unreachable_diagnostic_suppression()) return;
+  if (var->used_count > 0) var->used_count--;
+  var->is_used = var->used_count > 0;
+  var->is_address_taken = 1;
+}
+
+static void mark_lvar_sizeof_operand_used(lvar_t *var) {
+  if (!var) return;
+  if (psx_ctx_in_unreachable_diagnostic_suppression()) return;
+  var->is_unevaluated_used = 1;
 }
 
 static int sizeof_expr_node(node_t *node) {
@@ -2940,11 +2956,36 @@ static node_t *assigned_lvar_from_target(node_t *target) {
 }
 
 static void mark_assigned_lvar_initialized(node_t *target) {
+  if (psx_ctx_in_unreachable_diagnostic_suppression()) return;
   node_t *lvar = assigned_lvar_from_target(target);
   if (!lvar) return;
   if (lvar->kind == ND_LVAR) {
     lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)lvar)->offset);
     if (lv) lv->is_initialized = 1;
+  }
+}
+
+static lvar_t *lvar_from_lvar_node(node_t *node) {
+  if (!node || node->kind != ND_LVAR) return NULL;
+  return psx_decl_find_lvar_by_offset(((node_lvar_t *)node)->offset);
+}
+
+static void mark_address_taken_from_operand(node_t *operand) {
+  if (!operand) return;
+  if (operand->kind == ND_COMMA && operand->rhs) {
+    mark_address_taken_from_operand(operand->rhs);
+    return;
+  }
+  if (operand->kind == ND_LVAR) {
+    mark_lvar_address_taken(lvar_from_lvar_node(operand));
+    return;
+  }
+  if (operand->kind == ND_ADDR && operand->lhs && operand->lhs->kind == ND_LVAR) {
+    mark_lvar_address_taken(lvar_from_lvar_node(operand->lhs));
+    return;
+  }
+  if (operand->kind == ND_DEREF) {
+    mark_lvar_address_taken(lvar_from_lvar_node(assigned_aggregate_lvar_from_member_addr(operand->lhs)));
   }
 }
 
@@ -3598,6 +3639,34 @@ static node_t *cast(void) {
   return unary();
 }
 
+static node_t *sizeof_vla_runtime_size_node(int slot_off) {
+  node_t *lvar = psx_node_new_lvar_typed(slot_off, 8);
+  as_lvar(lvar)->mem.is_unsigned = 1;
+  node_mem_t *cast = arena_alloc(sizeof(node_mem_t));
+  cast->base.kind = ND_PTR_CAST;
+  cast->base.lhs = lvar;
+  cast->type_size = 8;
+  cast->is_unsigned = 1;
+  return (node_t *)cast;
+}
+
+static node_t *append_comma_expr(node_t *prefix, node_t *expr) {
+  if (!expr) return prefix;
+  return prefix ? psx_node_new_binary(ND_COMMA, prefix, expr) : expr;
+}
+
+static node_t *parse_sizeof_vla_subscript_prefix(int sub_depth) {
+  node_t *prefix = NULL;
+  for (int i = 0; i < sub_depth; i++) {
+    tk_expect('[');
+    node_t *idx = expr_internal();
+    tk_expect(']');
+    prefix = append_comma_expr(prefix, idx);
+  }
+  tk_expect(')');
+  return prefix;
+}
+
 // sizeof (expr) / sizeof (type) を処理する。`sizeof` トークンは呼び出し前に消費済み。
 // VLA: sizeof(vla_var) は実行時バイトサイズ ([x29+16+offset+8]) をロード。
 static node_t *parse_sizeof_operand(void) {
@@ -3641,6 +3710,7 @@ static node_t *parse_sizeof_operand(void) {
        * `)` を期待し E2006 になっていた)。 */
       if (arr_var && arr_var->is_vla &&
           curtok()->next && curtok()->next->kind == TK_RPAREN) {
+        mark_lvar_sizeof_operand_used(arr_var);
         set_curtok(curtok()->next);
         tk_expect(')');
         /* VLA メタ slot (offset+8 = total size) を 8B scalar として返す。find_owning_lvar
@@ -3648,14 +3718,7 @@ static node_t *parse_sizeof_operand(void) {
          * cg_size_needs_indirect_struct(16) が真となり「struct 16B」扱いで 2 slot 渡しに
          * 化けて garbage が混じる。ND_PTR_CAST でラップして scalar 8B unsigned long として
          * 明示し、所属判定を回避する。 */
-        node_t *lvar = psx_node_new_lvar_typed(arr_var->offset + 8, 8);
-        as_lvar(lvar)->mem.is_unsigned = 1;
-        node_mem_t *cast = arena_alloc(sizeof(node_mem_t));
-        cast->base.kind = ND_PTR_CAST;
-        cast->base.lhs = lvar;
-        cast->type_size = 8;
-        cast->is_unsigned = 1;
-        return (node_t *)cast;
+        return sizeof_vla_runtime_size_node(arr_var->offset + 8);
       }
       /* `sizeof(vlaN[i][j]...)` は N-D VLA の中間サブ配列のランタイムサイズ (例 3D の k*elem、
        * 4D の k*l*elem など)。連続する `[...]` を D 段 peek して、`(D-1)*8 + 16` 番目のスロット
@@ -3684,16 +3747,12 @@ static node_t *parse_sizeof_operand(void) {
          * scalar elem)。t が `)` を指していれば「式の終わり」。 */
         if (sub_depth >= 2 && t && t->kind == TK_RPAREN &&
             (sub_depth - 1) <= arr_var->vla_strides_remaining) {
-          set_curtok(t->next);
+          mark_lvar_sizeof_operand_used(arr_var);
+          set_curtok(curtok()->next);  /* consume ident */
+          node_t *prefix = parse_sizeof_vla_subscript_prefix(sub_depth);
           int slot_off = arr_var->vla_row_stride_frame_off + 8 * (sub_depth - 1);
-          node_t *lvarN = psx_node_new_lvar_typed(slot_off, 8);
-          as_lvar(lvarN)->mem.is_unsigned = 1;
-          node_mem_t *castN = arena_alloc(sizeof(node_mem_t));
-          castN->base.kind = ND_PTR_CAST;
-          castN->base.lhs = lvarN;
-          castN->type_size = 8;
-          castN->is_unsigned = 1;
-          return (node_t *)castN;
+          node_t *size_node = sizeof_vla_runtime_size_node(slot_off);
+          return prefix ? psx_node_new_binary(ND_COMMA, prefix, size_node) : size_node;
         }
       }
       /* `sizeof(vla2d[i])` は行のランタイムサイズ (内側次元 * elem)。行ストライドは
@@ -3709,17 +3768,13 @@ static node_t *parse_sizeof_operand(void) {
           t = t->next;
         }
         if (t && t->kind == TK_RBRACKET && t->next && t->next->kind == TK_RPAREN) {
-          set_curtok(t->next->next);  /* `]` `)` を消費 */
+          mark_lvar_sizeof_operand_used(arr_var);
+          set_curtok(curtok()->next);  /* consume ident */
+          node_t *prefix = parse_sizeof_vla_subscript_prefix(1);
           /* 2D VLA の行サイズも同様に ND_PTR_CAST でラップして所属判定を回避し、scalar 8B
            * unsigned long として variadic 経路に乗せる。 */
-          node_t *lvar2 = psx_node_new_lvar_typed(arr_var->vla_row_stride_frame_off, 8);
-          as_lvar(lvar2)->mem.is_unsigned = 1;
-          node_mem_t *cast2 = arena_alloc(sizeof(node_mem_t));
-          cast2->base.kind = ND_PTR_CAST;
-          cast2->base.lhs = lvar2;
-          cast2->type_size = 8;
-          cast2->is_unsigned = 1;
-          return (node_t *)cast2;
+          node_t *size_node = sizeof_vla_runtime_size_node(arr_var->vla_row_stride_frame_off);
+          return prefix ? psx_node_new_binary(ND_COMMA, prefix, size_node) : size_node;
         }
       }
       /* sizeof(arr) where arr is a non-VLA array: C 仕様で array → pointer
@@ -3729,6 +3784,7 @@ static node_t *parse_sizeof_operand(void) {
       if (arr_var && arr_var->is_array) {
         token_t *peek = curtok()->next;
         if (peek && peek->kind == TK_RPAREN) {
+          mark_lvar_sizeof_operand_used(arr_var);
           set_curtok(peek->next);
           return psx_node_new_num(arr_var->size);
         }
@@ -3742,6 +3798,7 @@ static node_t *parse_sizeof_operand(void) {
           global_var_t *sgv = psx_find_global_var(arr_var->static_global_name,
                                                   arr_var->static_global_name_len);
           if (sgv && sgv->type_size > 0) {
+            mark_lvar_sizeof_operand_used(arr_var);
             set_curtok(peek->next);
             return psx_node_new_num(sgv->type_size);
           }
@@ -4129,6 +4186,7 @@ static node_t *wrap_as_addr(node_t *operand) {
 
 // `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
 static node_t *build_unary_addr_node(node_t *operand) {
+  mark_address_taken_from_operand(operand);
   /* C11 6.5.3.2p1: bitfield のアドレスは取得できない。
    * `s.f` (bitfield) は ND_DEREF にラップされて bit_width が立っているので
    * ここで弾く。 */
