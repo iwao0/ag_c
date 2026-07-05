@@ -50,7 +50,7 @@ static int __agc_runtime_int_base_ok(int base) {
 }
 
 static void __agc_runtime_set_errno(int value) {
-  ag_rt_errno_value = value;
+  ag_rt_set_errno(value);
 }
 
 long __agc_runtime_strtol(long s_addr, long endptr_addr, int base) {

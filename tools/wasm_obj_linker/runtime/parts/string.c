@@ -202,6 +202,5 @@ long __agc_runtime_strtok(long str_addr, long delim_addr) {
 }
 
 long __agc_runtime_strerror(int errnum) {
-  (void)errnum;
-  return (long)ag_rt_strerror;
+  return (long)ag_rt_strerror_message(errnum);
 }

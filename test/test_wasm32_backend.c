@@ -452,9 +452,9 @@ int main(void) {
   failures += run_case("stdio_file_stubs",
                        "#include <stdio.h>\n"
                        "int main(){FILE *f=fopen(\"x\",\"r\"); char b[4]; "
-                       "int ok=f!=0 && fwrite(\"a\",1,3,f)==3 && fread(b,1,2,f)==2; "
+                       "int ok=f==0 && fwrite(\"a\",1,3,f)==0 && fread(b,1,2,f)==0; "
                        "ok=ok && fgetc(f)==EOF && getc(f)==EOF && fgets(b,4,f)==0; "
-                       "return ok ? fclose(f) : 9;}\n",
+                       "return ok && fclose(f)==0 ? 0 : 9;}\n",
                        stdio_file_stubs, 5, 0);
   const char *string_stubs[] = {"(call $strncpy", "(call $strcat", "(call $strncmp",
                                 "(call $strchr", "(call $strrchr", "(call $memcpy",

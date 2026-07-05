@@ -15,9 +15,13 @@ int __agc_runtime_puts(long s_addr) {
 static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
   long i = 0;
   if (total <= 0) return 0;
-  if (!f) return 0;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
   if (!ag_rt_file_can_write(f)) {
     f->error = 1;
+    ag_rt_set_errno(9);
     return 0;
   }
   while (i < total && f->pos < (long)sizeof(ag_rt_file_buf)) {
@@ -102,7 +106,10 @@ long __agc_runtime_stdin_write(long ptr_addr, long len) {
 int __agc_runtime_fseek(long stream_addr, long offset, int whence) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   long base = 0;
-  if (!f) return -1;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (whence == 0) {
     base = 0;
   } else if (whence == 1) {
@@ -111,11 +118,13 @@ int __agc_runtime_fseek(long stream_addr, long offset, int whence) {
     base = ag_rt_stream_len(f);
   } else {
     f->error = 1;
+    ag_rt_set_errno(22);
     return -1;
   }
   long next = base + offset;
   if (next < 0) {
     f->error = 1;
+    ag_rt_set_errno(22);
     return -1;
   }
   ag_rt_file_set_pos(f, next);
@@ -132,7 +141,14 @@ long __agc_runtime_ftell(long stream_addr) {
 int __agc_runtime_fgetpos(long stream_addr, long pos_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   long *pos;
-  if (!f || !pos_addr) return -1;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!pos_addr) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   pos = (long *)ag_rt_ptr(pos_addr);
   *pos = f->pos;
   return 0;
@@ -140,7 +156,10 @@ int __agc_runtime_fgetpos(long stream_addr, long pos_addr) {
 
 int __agc_runtime_fsetpos(long stream_addr, long pos_addr) {
   long *pos;
-  if (!pos_addr) return -1;
+  if (!pos_addr) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   pos = (long *)ag_rt_ptr(pos_addr);
   return __agc_runtime_fseek(stream_addr, *pos, 0);
 }
@@ -159,7 +178,7 @@ void __agc_runtime_perror(long s_addr) {
     ag_rt_stderr_write_str(s);
     ag_rt_stderr_write_str(": ");
   }
-  ag_rt_stderr_write_str(ag_rt_strerror);
+  ag_rt_stderr_write_str(ag_rt_strerror_message(ag_rt_errno_value));
   ag_rt_stderr_write_char('\n');
 }
 
@@ -232,10 +251,17 @@ long __agc_runtime_fopen(long path_addr, long mode_addr) {
   int append_mode = 0;
   int read_write = 0;
   struct ag_rt_file *f;
-  if (!path_addr) return 0;
-  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode, &read_write)) return 0;
+  if (!path_addr) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
+  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode, &read_write)) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
   if (write_mode && !append_mode) ag_rt_file_len = 0;
   f = ag_rt_alloc_file(write_mode, read_write, -1, append_mode ? ag_rt_file_len : 0);
+  if (!f) ag_rt_set_errno(12);
   return (long)f;
 }
 
@@ -244,11 +270,23 @@ long __agc_runtime_freopen(long path_addr, long mode_addr, long stream_addr) {
   int append_mode = 0;
   int read_write = 0;
   struct ag_rt_file *f;
-  if (!path_addr) return 0;
-  if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) return 0;
-  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode, &read_write)) return 0;
+  if (!path_addr) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
+  if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
+  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode, &read_write)) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
   f = ag_rt_input_stream(stream_addr);
-  if (!f) return 0;
+  if (!f) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
   if (f->fd_index >= 0 && f->fd_index < 8 && ag_rt_fds[f->fd_index].used) {
     ag_rt_fds[f->fd_index].used = 0;
     ag_rt_fds[f->fd_index].pos = 0;
@@ -261,7 +299,9 @@ long __agc_runtime_freopen(long path_addr, long mode_addr, long stream_addr) {
 
 long __agc_runtime_tmpfile(void) {
   ag_rt_file_len = 0;
-  return (long)ag_rt_alloc_file(1, 1, -1, 0);
+  struct ag_rt_file *f = ag_rt_alloc_file(1, 1, -1, 0);
+  if (!f) ag_rt_set_errno(12);
+  return (long)f;
 }
 
 static void ag_rt_tmpnam_write(char *dst, unsigned long seq) {
@@ -298,7 +338,10 @@ long __agc_runtime_tmpnam(long s_addr) {
 #define AG_RT_O_TRUNC 0x0400
 
 int __agc_runtime_open(long path_addr, int oflag) {
-  if (!path_addr) return -1;
+  if (!path_addr) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   if (oflag & AG_RT_O_TRUNC) ag_rt_file_len = 0;
   for (int i = 0; i < 8; i++) {
     if (!ag_rt_fds[i].used) {
@@ -307,12 +350,16 @@ int __agc_runtime_open(long path_addr, int oflag) {
       return 3 + i;
     }
   }
+  ag_rt_set_errno(12);
   return -1;
 }
 
 int __agc_runtime_close(int fd) {
   int idx = fd - 3;
-  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   ag_rt_fds[idx].used = 0;
   ag_rt_fds[idx].pos = 0;
   return 0;
@@ -325,8 +372,14 @@ struct ag_rt_stat {
 
 int __agc_runtime_fstat(int fd, long st_addr) {
   int idx = fd - 3;
-  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
-  if (!st_addr) return -1;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
+  if (!st_addr) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   struct ag_rt_stat *st = (struct ag_rt_stat *)ag_rt_ptr(st_addr);
   st->st_mode = 0100000;
   st->st_size = ag_rt_file_len;
@@ -335,7 +388,10 @@ int __agc_runtime_fstat(int fd, long st_addr) {
 
 long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
   int idx = fd - 3;
-  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   char *dst = ag_rt_ptr(buf_addr);
   long limit = (long)count;
   long i = 0;
@@ -347,7 +403,10 @@ long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
 
 long __agc_runtime_write(int fd, long buf_addr, unsigned long count) {
   int idx = fd - 3;
-  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   char *src = ag_rt_ptr(buf_addr);
   long limit = (long)count;
   long i = 0;
@@ -362,7 +421,10 @@ long __agc_runtime_lseek(int fd, long offset, int whence) {
   int idx = fd - 3;
   long base = 0;
   long next;
-  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return -1;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
+    ag_rt_set_errno(9);
+    return -1;
+  }
   if (whence == 0) {
     base = 0;
   } else if (whence == 1) {
@@ -370,10 +432,14 @@ long __agc_runtime_lseek(int fd, long offset, int whence) {
   } else if (whence == 2) {
     base = ag_rt_file_len;
   } else {
+    ag_rt_set_errno(22);
     return -1;
   }
   next = base + offset;
-  if (next < 0) return -1;
+  if (next < 0) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   ag_rt_fds[idx].pos = next;
   return next;
 }
@@ -384,9 +450,16 @@ long __agc_runtime_fdopen(int fd, long mode_addr) {
   int write_mode = 0;
   int read_write = 0;
   struct ag_rt_file *f;
-  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) return 0;
-  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode, &read_write)) return 0;
+  if (idx < 0 || idx >= 8 || !ag_rt_fds[idx].used) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
+  if (!ag_rt_parse_file_mode(mode_addr, &write_mode, &append_mode, &read_write)) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
   f = ag_rt_alloc_file(write_mode, read_write, idx, append_mode ? ag_rt_file_len : ag_rt_fds[idx].pos);
+  if (!f) ag_rt_set_errno(12);
   return (long)f;
 }
 
@@ -410,7 +483,10 @@ int __agc_runtime_fclose(long stream_addr) {
 
 int __agc_runtime_remove(long path_addr) {
   int i;
-  if (!path_addr) return -1;
+  if (!path_addr) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   ag_rt_file_len = 0;
   for (i = 0; i < 8; i++) {
     if (ag_rt_files[i].used && !ag_rt_files[i].is_stdin) {
@@ -423,7 +499,10 @@ int __agc_runtime_remove(long path_addr) {
 }
 
 int __agc_runtime_rename(long oldpath_addr, long newpath_addr) {
-  if (!oldpath_addr || !newpath_addr) return -1;
+  if (!oldpath_addr || !newpath_addr) {
+    ag_rt_set_errno(22);
+    return -1;
+  }
   return 0;
 }
 
@@ -442,7 +521,10 @@ long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr
   char *src = ag_rt_ptr(ptr_addr);
   long total = 0;
   struct ag_rt_file *f;
-  if (!ag_rt_io_total_size(size, nmemb, &total)) return 0;
+  if (!ag_rt_io_total_size(size, nmemb, &total)) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
   if (ag_rt_is_stderr_stream(stream_addr)) {
     ag_rt_stderr_write_mem(src, total);
     return size == 0 ? 0 : nmemb;
@@ -461,10 +543,17 @@ long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr)
   long total = 0;
   long i = 0;
   int ch;
-  if (!ag_rt_io_total_size(size, nmemb, &total)) return 0;
-  if (!f) return 0;
+  if (!ag_rt_io_total_size(size, nmemb, &total)) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
+  if (!f) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
   if (!ag_rt_file_can_read(f)) {
     f->error = 1;
+    ag_rt_set_errno(9);
     return 0;
   }
   while (i < total) {
@@ -484,6 +573,7 @@ int __agc_runtime_ungetc(int c, long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
   if (!f || c == -1 || !ag_rt_file_can_read(f) || f->has_ungetc) {
     if (f && !ag_rt_file_can_read(f)) f->error = 1;
+    ag_rt_set_errno(f ? 22 : 9);
     return -1;
   }
   f->has_ungetc = 1;
@@ -501,12 +591,19 @@ long __agc_runtime_fgets(long s_addr, int size, long stream_addr) {
   char *dst = ag_rt_ptr(s_addr);
   int i = 0;
   int ch;
-  if (!f) return 0;
-  if (!ag_rt_file_can_read(f)) {
-    f->error = 1;
+  if (!f) {
+    ag_rt_set_errno(9);
     return 0;
   }
-  if (size <= 0) return 0;
+  if (!ag_rt_file_can_read(f)) {
+    f->error = 1;
+    ag_rt_set_errno(9);
+    return 0;
+  }
+  if (size <= 0) {
+    ag_rt_set_errno(22);
+    return 0;
+  }
   while (i + 1 < size) {
     ch = ag_rt_file_read_char(f);
     if (ch < 0) break;

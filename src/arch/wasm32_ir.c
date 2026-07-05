@@ -2478,16 +2478,16 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, "(func $puts (param i32) (result i32) (i32.const 1))\n");
   }
   if (has_undefined_function("fopen", 5)) {
-    wasm_emitf(2, "(func $fopen (param i32 i32) (result i32) (i32.const 1))\n");
+    wasm_emitf(2, "(func $fopen (param i32 i32) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("fclose", 6)) {
     wasm_emitf(2, "(func $fclose (param i32) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("fread", 5)) {
-    wasm_emitf(2, "(func $fread (param i32 i64 i64 i32) (result i64) (local.get 2))\n");
+    wasm_emitf(2, "(func $fread (param i32 i64 i64 i32) (result i64) (i64.const 0))\n");
   }
   if (has_undefined_function("fwrite", 6)) {
-    wasm_emitf(2, "(func $fwrite (param i32 i64 i64 i32) (result i64) (local.get 2))\n");
+    wasm_emitf(2, "(func $fwrite (param i32 i64 i64 i32) (result i64) (i64.const 0))\n");
   }
   if (has_undefined_function("fgetc", 5)) {
     wasm_emitf(2, "(func $fgetc (param i32) (result i32) (i32.const -1))\n");
@@ -3020,9 +3020,14 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("strerror", 8)) {
+    wasm_data_symbol_t *ok = intern_data_symbol("__ag_stub_strerror_ok", 21, 9, 1);
     wasm_data_symbol_t *err = intern_data_symbol("__ag_stub_strerror", 18, 6, 1);
+    wasm_emitf(2, "(data (i32.const %d) \"no error\\00\")\n", ok->addr);
     wasm_emitf(2, "(data (i32.const %d) \"error\\00\")\n", err->addr);
-    wasm_emitf(2, "(func $strerror (param $errnum i64) (result i32) (i32.const %d))\n", err->addr);
+    wasm_emitf(2, "(func $strerror (param $errnum i64) (result i32)\n");
+    wasm_emitf(4, "(if (i64.eqz (local.get $errnum)) (then (return (i32.const %d))))\n", ok->addr);
+    wasm_emitf(4, "(i32.const %d)\n", err->addr);
+    wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("putchar", 7)) {
     wasm_emitf(2, "(func $putchar (param $c i64) (result i32) (i32.wrap_i64 (local.get $c)))\n");

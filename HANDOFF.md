@@ -1,17 +1,20 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き519: asin/acos endpoint fast path 追加）
+最終更新: 2026-07-05（続き525: WAT minimal stdio stub の成功偽装修正）
 
 ## 現状
 - 直近の部分確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
-  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_math_asin_acos_endpoint_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
-  `make -j4 build/ag_wasm_link` = **green/up-to-date**、
+  `make -j4 build/test_wasm32_backend` = **green**、
+  `./build/test_wasm32_backend` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_stdio_errno_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
+  `./build/ag_c_wasm -c -o /tmp/string_strerror_stdio_errno_fixture.o test/fixtures/stdheader/string_strerror.c` = **green**、
+  `make build/libagc_runtime.o` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-js-api` = **green**、
-  `make build/test_e2e` = **green**、
+  `make build/test_e2e` = **green/up-to-date**、
   `./build/test_e2e` = **1186/1186 green**、
   `./build/test_wasm32_object` = **1160/1160 e2e fixture object compile + validate green**、
   `git diff --check` = **green**。
@@ -32,6 +35,139 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き525: **WAT backend minimal stdio stub の成功偽装修正**。
+  `src/arch/wasm32_ir.c` の WAT backend minimal libc stubs では、実ファイル state を持たないにもかかわらず
+  `fopen` が常に非 NULL (`1`) を返し、`fread` / `fwrite` も要求 `nmemb` をそのまま成功として返していた。
+  これは linked runtime / JS import runtime 側で進めてきた errno/stdio 失敗の正直な扱いと逆方向で、
+  実際には IO できないのに成功したように見せる浅い stub だった。
+  minimal WAT stub は実ファイルを扱わないため、`fopen` は `0`、`fread` / `fwrite` は `0` を返すように変更した。
+  `test/test_wasm32_backend.c` の `stdio_file_stubs` も、古い「`fopen` 成功 / read-write 成功」期待をやめ、
+  `fopen == 0`、`fwrite == 0`、`fread == 0`、`fgetc/getc == EOF`、`fgets == 0` を確認する形に更新した。
+  確認:
+  `git diff --check`、
+  `make -j4 build/test_wasm32_backend`、
+  `./build/test_wasm32_backend`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `make test-wasm-obj-linker`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き524: **JS import `fopen` の `errno` 設定追加**。
+  続き523で `useStdlib: false` の JS import runtime に memory-backed `__error` と
+  `perror` の errno 連動を追加したが、同じ import 経路の `fopen` はまだ常に `0` を返すだけで
+  errno を設定していなかった。
+  `agc-runtime-imports.js` の `fopen` / `fclose` を `makeStdio()` 内へ移し、
+  `fopen(NULL, ...)` や invalid mode は `EINVAL(22)`、runtime が実ファイルを持たないため
+  有効な path/mode でも open 失敗として `ENOENT(2)` を設定して `0` を返すようにした。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `useStdlib: false` stdio ケースに
+  `fopen((void *)0, "r")` と `fopen("missing.txt", "r")` の errno 確認を追加した。
+  確認:
+  `git diff --check`、
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `make test-wasm-obj-linker`。
+- 続き523: **JS import runtime の `errno` / `perror` 対応追加**。
+  linked runtime 側では続き521/522で `strerror` / `perror` / stdio 失敗時 `errno` を整えたが、
+  `useStdlib: false` の JS import runtime には `__error` import が無く、
+  `perror` も常に `"error"` を出す固定実装のままだった。
+  `tools/wasm_js_api/agc-runtime-imports.js` に memory-backed な `__error` import を追加し、
+  Wasm static/data 領域より手前の固定小領域 `AGC_JS_ERRNO_ADDR=16` を errno storage として返すようにした。
+  JS import runtime 側の `write` bad fd / `lseek` / invalid `ungetc` / invalid wide char 出力でも
+  `EBADF(9)` / `EINVAL(22)` を設定するようにした。
+  `perror` はこの memory-backed errno を読み、`0` なら `"no error"`、非0なら `"error"` を出す。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `useStdlib: false` stdio ケースに
+  `__error()` / `errno` / `perror("js")` の確認を追加し、
+  bad fd 後の stderr が `"js: error\n"` を含むこと、別 stdin import instance の初期 errno では
+  `perror("stdin")` が `"stdin: no error\n"` になることを確認するようにした。
+  確認:
+  `git diff --check`、
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `make test-wasm-obj-linker`。
+- 続き522: **stdio 失敗経路の `errno` 設定追加**。
+  続き521で `perror` が `ag_rt_errno_value` を見るようになったが、
+  `fopen(NULL, ...)` / invalid mode / `fdopen` bad fd / wrong-direction `fread`/`fwrite` /
+  `remove(NULL)` / `rename(NULL, ...)` などの stdio 失敗経路は失敗値だけ返し、
+  `errno` を設定していなかった。
+  そのため `perror` は直前失敗を反映する準備があっても、stdio 失敗後の状態が浅かった。
+  `common.c` に `ag_rt_set_errno()` を追加し、既存 `strto*` 系の errno 設定もこの helper に寄せた。
+  `stdio.c` では失敗戻り値や stream error の既存挙動を維持したまま、
+  invalid argument は `EINVAL(22)`、bad fd / bad stream direction は `EBADF(9)`、
+  runtime 内リソース不足は `ENOMEM(12)` を設定するようにした。
+  `include/errno.h` には `EBADF 9` を追加した。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio error ケースでは
+  `fopen(NULL, "r")` / write-only stream からの `fread` / read-only stream への `fwrite` /
+  `remove(NULL)` / `rename(NULL, ...)` の errno を確認するようにした。
+  `tools/wasm_obj_linker/test_smoke.sh` の `stdio_invalid_state` / `remove_state` も
+  `__error()` 経由で `EINVAL` / `EBADF` を確認するようにした。
+  確認:
+  `git diff --check`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_stdio_errno_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `./build/ag_c_wasm -c -o /tmp/string_strerror_stdio_errno_fixture.o test/fixtures/stdheader/string_strerror.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き521: **`perror` の `errno` 連動修正**。
+  続き520で `strerror(0)` と非0 errno の固定文字列潰れを直したが、
+  linked runtime の `__agc_runtime_perror` はまだ `ag_rt_strerror` を直接出しており、
+  runtime の `ag_rt_errno_value` を見ていなかった。
+  そのため `errno == 0` でも `perror("x")` は常に `"x: error\n"` になっていた。
+  `common.c` に state を増やさない `ag_rt_strerror_message(int errnum)` helper を追加し、
+  `__agc_runtime_strerror` と `__agc_runtime_perror` の両方が同じ選択ロジックを使うようにした。
+  `perror` は `ag_rt_errno_value == 0` なら `"no error"`、非0なら既存 `"error"` を出す。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio runtime ケースで
+  `errno = 0; perror("runtime"); errno = 5; perror("runtime");` を実行し、
+  stderr が `"runtime: no error\nruntime: error\n"` になることを確認するようにした。
+  確認:
+  `git diff --check`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_perror_errno_probe.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `./build/ag_c_wasm -c -o /tmp/string_strerror_fixture_after_perror.o test/fixtures/stdheader/string_strerror.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green/up-to-date**、
+  `./build/test_e2e` = **1186/1186 green**。
+- 続き520: **`strerror(0)` と非0 errno の固定文字列潰れ修正**。
+  linked runtime の `__agc_runtime_strerror` は `errnum` を無視して常に `"error"` を返しており、
+  `ag_c_wasm` が未リンク時に埋める `strerror` stub も同じく `"error"` 固定だった。
+  そのため `strerror(0)` と `strerror(5)` が区別できず、既存テストも non-null / non-empty 程度で
+  この浅い実装を検出できていなかった。
+  runtime 側は `errnum == 0` で `"no error"`、非0で既存 `"error"` を返すようにした。
+  最初は success 文字列を common global に追加したが、巨大 runtime object の再コンパイルで既存 parser の弱い箇所を踏み、
+  `build/libagc_runtime.o` が 0 byte になったため、共通 state を増やさず関数内 string literal を返す実装へ変更した。
+  未リンク stub 側も `src/arch/wasm32_ir.c` で `"no error"` と `"error"` の data symbol を分け、
+  `errnum == 0` のとき success 文字列を返すようにした。
+  `test/fixtures/stdheader/string_strerror.c` は host libc でも走るため exact 文字列比較にはせず、
+  `strerror(0)` / `strerror(5)` が non-null / non-empty かつ異なることを確認する形にした。
+  `tools/wasm_obj_linker/test_smoke.sh` と
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` にも linked runtime の区別確認を追加した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `git diff --check`、
+  `make -j4 build/ag_c_wasm`、
+  `make -j4 build/ag_wasm_link` = **up-to-date**、
+  `./build/ag_c_wasm -c -o /tmp/string_strerror_fixture.o test/fixtures/stdheader/string_strerror.c`、
+  `./build/ag_c_wasm -c -o /tmp/libagc_runtime_strerror_probe3.o tools/wasm_obj_linker/runtime/libagc_runtime.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `./build/test_wasm32_object` = **1160/1160 green**、
+  `make build/test_e2e` = **green**、
+  `./build/test_e2e` = **1186/1186 green**。
 - 続き519: **`asin` / `acos` runtime の endpoint fast path 追加**。
   linked runtime object の `__agc_runtime_asin` / `__agc_runtime_acos` は端点も
   `sqrt` と `atan2` の合成に委譲していた。

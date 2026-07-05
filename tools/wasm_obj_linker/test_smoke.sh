@@ -1026,24 +1026,37 @@ int ferror(FILE *stream);
 void clearerr(FILE *stream);
 int open(char *path, int oflag);
 int close(int fd);
+int *__error(void);
+#define errno (*__error())
+#define EINVAL 22
+#define EBADF 9
 int main(void) {
   int fd = open("tmp.txt", 0);
   int fd2 = open("tmp.txt", 0);
   FILE *ok = fdopen(fd, "r");
-  int bad_path = fopen(0, "r") == 0;
-  int bad_mode_null = fopen("tmp.txt", 0) == 0;
-  int bad_mode_empty = fopen("tmp.txt", "") == 0;
-  int bad_mode_unknown = fopen("tmp.txt", "z") == 0;
-  int bad_fd = fdopen(-1, "r") == 0;
-  int bad_fd_mode_null = fdopen(fd2, 0) == 0;
-  int bad_fd_mode_unknown = fdopen(fd2, "z") == 0;
+  errno = 0;
+  int bad_path = fopen(0, "r") == 0 && errno == EINVAL;
+  errno = 0;
+  int bad_mode_null = fopen("tmp.txt", 0) == 0 && errno == EINVAL;
+  errno = 0;
+  int bad_mode_empty = fopen("tmp.txt", "") == 0 && errno == EINVAL;
+  errno = 0;
+  int bad_mode_unknown = fopen("tmp.txt", "z") == 0 && errno == EINVAL;
+  errno = 0;
+  int bad_fd = fdopen(-1, "r") == 0 && errno == EBADF;
+  errno = 0;
+  int bad_fd_mode_null = fdopen(fd2, 0) == 0 && errno == EINVAL;
+  errno = 0;
+  int bad_fd_mode_unknown = fdopen(fd2, "z") == 0 && errno == EINVAL;
   int ok_stream = ok != 0;
   if (ok) fclose(ok);
   close(fd2);
   FILE *rf = fopen("tmp.txt", "r");
+  errno = 0;
   int read_stream_write = fwrite("x", 1, 1, rf) == 0 &&
                           fputs("x", rf) == -1 &&
                           fputc('x', rf) == -1;
+  int read_stream_errno = errno;
   int read_stream_error = ferror(rf);
   clearerr(rf);
   int read_stream_clear = ferror(rf);
@@ -1052,15 +1065,17 @@ int main(void) {
   char b[1];
   fwrite("A", 1, 1, wf);
   fseek(wf, 0, 0);
+  errno = 0;
   int write_stream_read = fread(b, 1, 1, wf) == 0 && fgetc(wf) == -1;
+  int write_stream_errno = errno;
   int write_stream_error = ferror(wf);
   clearerr(wf);
   int write_stream_clear = ferror(wf);
   fclose(wf);
   return bad_path && bad_mode_null && bad_mode_empty && bad_mode_unknown &&
          bad_fd && bad_fd_mode_null && bad_fd_mode_unknown && ok_stream &&
-         read_stream_write && read_stream_error && !read_stream_clear &&
-         write_stream_read && write_stream_error && !write_stream_clear ? 42 : 1;
+         read_stream_write && read_stream_errno == EBADF && read_stream_error && !read_stream_clear &&
+         write_stream_read && write_stream_errno == EBADF && write_stream_error && !write_stream_clear ? 42 : 1;
 }
 SRC
 
@@ -1074,12 +1089,16 @@ int rename(char *oldpath, char *newpath);
 int fgetc(FILE *stream);
 int fputc(int c, FILE *stream);
 int feof(FILE *stream);
+int *__error(void);
+#define errno (*__error())
+#define EINVAL 22
 int main(void) {
   FILE *wf = fopen("tmp.txt", "w");
   if (!wf) return 1;
   if (fputc('A', wf) != 'A' || fputc('B', wf) != 'B') return 2;
   if (fclose(wf) != 0) return 3;
-  if (remove(0) == 0) return 4;
+  errno = 0;
+  if (remove(0) == 0 || errno != EINVAL) return 4;
   if (remove("tmp.txt") != 0) return 5;
   FILE *rf = fopen("tmp.txt", "r");
   if (!rf) return 6;
@@ -1092,8 +1111,10 @@ int main(void) {
   if (!rf2) return 11;
   if (fgetc(rf2) != 'Z') return 12;
   if (fclose(rf2) != 0) return 13;
-  if (rename(0, "new.txt") == 0) return 14;
-  if (rename("tmp.txt", 0) == 0) return 15;
+  errno = 0;
+  if (rename(0, "new.txt") == 0 || errno != EINVAL) return 14;
+  errno = 0;
+  if (rename("tmp.txt", 0) == 0 || errno != EINVAL) return 15;
   if (rename("tmp.txt", "new.txt") != 0) return 16;
   FILE *rf3 = fopen("new.txt", "r");
   if (!rf3) return 17;
@@ -3499,7 +3520,7 @@ int main(void) {
          span == 4 && cspan == 4 && pbrk == pbrk_src + 3 && pbrk_none == 0 &&
          tok1 == toks && strcmp(tok1, "aa") == 0 &&
          strcmp(tok2, "bb") == 0 && strcmp(tok3, "cc") == 0 && tok4 == 0 &&
-         strerror(5)[0] == 'e' &&
+         strerror(5)[0] == 'e' && strcmp(strerror(0), strerror(5)) != 0 &&
          abs(-42) == 42 &&
          labs(-1234567890123L) == 1234567890123L &&
          llabs(-1234567890123LL) == 1234567890123LL &&

@@ -509,6 +509,7 @@ if (mathImportResult !== 1010) {
 }
 
 const linkedStdioSource = await inlineStandardIncludes(`#include <stdio.h>
+#include <errno.h>
 #include <stdarg.h>
 static int call_vprintf(const char *fmt, ...) {
   va_list ap;
@@ -521,6 +522,9 @@ static int call_vprintf(const char *fmt, ...) {
 int main(void) {
   printf("%*s:%03d:aa", 4, "x", 7);
   if (call_vprintf(":v%d", 8) != 3) return 9;
+  errno = 0;
+  perror("runtime");
+  errno = 5;
   perror("runtime");
   return 7;
 }
@@ -548,11 +552,12 @@ if (linkedStdioStdout !== "   x:007:aa:v8") {
   throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
 }
 if (linkedStdioStderr === "") linkedStdioStderr = linkedStdio.readStderr();
-if (linkedStdioStderr !== "runtime: error\n") {
+if (linkedStdioStderr !== "runtime: no error\nruntime: error\n") {
   throw new Error(`instantiated stdio import pipeline stderr mismatch: ${JSON.stringify(linkedStdioStderr)}`);
 }
 
 const linkedStdioErrorSource = await inlineStandardIncludes(`#include <stdio.h>
+#include <errno.h>
 static int same_text(char *a, char *b) {
   int i = 0;
   while (a[i] && b[i] && a[i] == b[i]) i++;
@@ -568,11 +573,15 @@ static int call_vsprintf(char *buf, const char *fmt, ...) {
 }
 int main(void) {
   char b[1];
+  errno = 0;
+  if (fopen(NULL, "r") != NULL || errno != EINVAL) return 80;
   FILE *wf = fopen("tmp.txt", "w");
   if (!wf) return 1;
   if (fwrite("A", 1, 1, wf) != 1) return 2;
   if (fseek(wf, 0, SEEK_SET) != 0) return 3;
+  errno = 0;
   if (fread(b, 1, 1, wf) != 0) return 4;
+  if (errno != EBADF) return 81;
   if (!ferror(wf)) return 5;
   clearerr(wf);
   if (ferror(wf)) return 6;
@@ -580,14 +589,17 @@ int main(void) {
 
   FILE *rf = fopen("tmp.txt", "r");
   if (!rf) return 8;
+  errno = 0;
   if (fwrite("B", 1, 1, rf) != 0) return 9;
+  if (errno != EBADF) return 82;
   if (fputs("B", rf) != EOF) return 10;
   if (fputc('B', rf) != EOF) return 11;
   if (!ferror(rf)) return 12;
   clearerr(rf);
   if (ferror(rf)) return 13;
   if (fclose(rf) != 0) return 14;
-  if (remove(NULL) == 0) return 15;
+  errno = 0;
+  if (remove(NULL) == 0 || errno != EINVAL) return 15;
   if (remove("tmp.txt") != 0) return 16;
   rf = fopen("tmp.txt", "r");
   if (!rf) return 17;
@@ -605,8 +617,10 @@ int main(void) {
   if (fgetc(uf) != 'Q') return 26;
   if (fgetc(uf) != 'B') return 27;
   if (fclose(uf) != 0) return 28;
-  if (rename(NULL, "new.txt") == 0) return 29;
-  if (rename("tmp.txt", NULL) == 0) return 30;
+  errno = 0;
+  if (rename(NULL, "new.txt") == 0 || errno != EINVAL) return 29;
+  errno = 0;
+  if (rename("tmp.txt", NULL) == 0 || errno != EINVAL) return 30;
   if (rename("tmp.txt", "new.txt") != 0) return 31;
   uf = fopen("new.txt", "r");
   if (!uf) return 32;
@@ -851,6 +865,8 @@ int main(void) {
   if (strcoll("same", "same") != 0) return 2;
   if (n != 5 || strcmp(buf, "hello") != 0) return 3;
   if (need != 6) return 4;
+  if (strerror(5)[0] != 'e') return 5;
+  if (strcmp(strerror(0), strerror(5)) == 0) return 6;
   return 42;
 }
 `, { loadInclude });
@@ -1801,6 +1817,13 @@ unsigned long fwrite(const void *ptr, unsigned long size, unsigned long nmemb, v
 unsigned long fread(void *ptr, unsigned long size, unsigned long nmemb, void *stream);
 long write(int fd, const void *buf, unsigned long count);
 long lseek(int fd, long offset, int whence);
+void *fopen(const char *path, const char *mode);
+int *__error(void);
+void perror(const char *s);
+#define errno (*__error())
+#define ENOENT 2
+#define EBADF 9
+#define EINVAL 22
 int main(void) {
   char buf[4];
   if (fputs("A", (void *)1) != 1) return 1;
@@ -1815,8 +1838,17 @@ int main(void) {
   if (fwrite("s", 1, 1, (void *)0) != 1) return 10;
   if (write(1, "W", 1) != 1) return 11;
   if (write(2, "e", 1) != 1) return 12;
+  errno = 0;
   if (write(0, "n", 1) != -1) return 13;
+  if (errno != EBADF) return 16;
+  perror("js");
+  errno = 0;
   if (lseek(1, 0, 0) != -1) return 14;
+  if (errno != EBADF) return 17;
+  errno = 0;
+  if (fopen((void *)0, "r") != 0 || errno != EINVAL) return 18;
+  errno = 0;
+  if (fopen("missing.txt", "r") != 0 || errno != ENOENT) return 19;
   if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 15;
   return 42;
 }
@@ -1831,7 +1863,7 @@ const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
   onStderr: (chunk) => { jsBasicStderr += chunk; },
 });
 const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
-if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDW" || jsBasicStderr !== "ER!qrse") {
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDW" || jsBasicStderr !== "ER!qrsejs: error\n") {
   throw new Error(
     `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
   );
@@ -1874,7 +1906,7 @@ const jsStdin = await toolchain.instantiateLinkedWasm(jsStdinSource, {
   onStderr: (chunk) => { jsStdinStderr += chunk; },
 });
 const jsStdinResult = jsStdin.instance.exports.main();
-if (jsStdinResult !== 42 || jsStdinStderr !== "stdin: error\n") {
+if (jsStdinResult !== 42 || jsStdinStderr !== "stdin: no error\n") {
   throw new Error(`JS stdin imports failed: result=${jsStdinResult}, stderr=${JSON.stringify(jsStdinStderr)}`);
 }
 

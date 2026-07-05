@@ -32,6 +32,10 @@ static char ag_rt_decimal_point[] = ".";
 static char ag_rt_strerror[] = "error";
 #define AG_RT_FILE_BUF_CAP (64 * 1024)
 
+static char *ag_rt_strerror_message(int errnum) {
+  return errnum == 0 ? "no error" : ag_rt_strerror;
+}
+
 static char ag_rt_file_buf[AG_RT_FILE_BUF_CAP];
 static char ag_rt_stdin_buf[AG_RT_FILE_BUF_CAP];
 static long ag_rt_file_len = 0;
@@ -93,6 +97,10 @@ static struct ag_rt_file ag_rt_files[8];
 static int ag_rt_decimal_point_char(void) {
   char *dp = ag_rt_lconv_value.decimal_point;
   return dp && dp[0] ? (unsigned char)dp[0] : '.';
+}
+
+static void ag_rt_set_errno(int value) {
+  ag_rt_errno_value = value;
 }
 
 static int ag_rt_is_decimal_point(int ch) {

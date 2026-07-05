@@ -255,6 +255,10 @@ function addMathImportFamily(env, baseName, fn, suffixes, runtimeAlias) {
 
 const utf8Decoder = new TextDecoder();
 const utf8Encoder = new TextEncoder();
+const AGC_JS_ERRNO_ADDR = 16;
+const AGC_ENOENT = 2;
+const AGC_EBADF = 9;
+const AGC_EINVAL = 22;
 
 function defaultGetMemory() {
   return undefined;
@@ -343,6 +347,12 @@ function writeMemoryI32(memory, ptr, value) {
   if (!memory || !memory.buffer || ptr + 3 >= memory.buffer.byteLength) return false;
   new DataView(memory.buffer).setInt32(ptr, Number(value) | 0, true);
   return true;
+}
+
+function readMemoryI32(memory, ptr) {
+  ptr = Number(ptr) >>> 0;
+  if (!memory || !memory.buffer || ptr + 3 >= memory.buffer.byteLength) return 0;
+  return new DataView(memory.buffer).getInt32(ptr, true);
 }
 
 function writeMemoryF32(memory, ptr, value) {
@@ -469,6 +479,9 @@ function makeStdio(options = {}) {
   const stdinPushback = [];
   let stdinEof = false;
   let fileError = 0;
+  const setErrno = (value) => writeMemoryI32(getMemory(), AGC_JS_ERRNO_ADDR, value);
+  const getErrno = () => readMemoryI32(getMemory(), AGC_JS_ERRNO_ADDR);
+  const strerrorMessage = (value) => Number(value) === 0 ? "no error" : "error";
 
   function emitStdout(text) {
     writeStdout(String(text));
@@ -483,6 +496,10 @@ function makeStdio(options = {}) {
   function isStderrStream(stream) {
     const s = Number(stream);
     return s === 0 || s === 2;
+  }
+
+  function __error() {
+    return AGC_JS_ERRNO_ADDR;
   }
 
   function printf(fmt, ...args) {
@@ -531,6 +548,28 @@ function makeStdio(options = {}) {
     return 0;
   }
 
+  function isValidFileMode(modePtr) {
+    const mode = readCString(getMemory(), modePtr);
+    return mode === "r" || mode === "w" || mode === "a" ||
+      mode === "r+" || mode === "w+" || mode === "a+" ||
+      mode === "rb" || mode === "wb" || mode === "ab" ||
+      mode === "rb+" || mode === "wb+" || mode === "ab+" ||
+      mode === "r+b" || mode === "w+b" || mode === "a+b";
+  }
+
+  function fopen(path, mode) {
+    if (!Number(path) || !isValidFileMode(mode)) {
+      setErrno(AGC_EINVAL);
+      return 0;
+    }
+    setErrno(AGC_ENOENT);
+    return 0;
+  }
+
+  function fclose(_stream) {
+    return 0;
+  }
+
   function readStdinByte() {
     if (stdinPushback.length > 0) return stdinPushback.shift();
     if (stdinOffset >= stdinBytes.length) {
@@ -542,7 +581,10 @@ function makeStdio(options = {}) {
 
   function ungetc(c, _stream) {
     c = Number(c) | 0;
-    if (c < 0 || c > 255) return -1;
+    if (c < 0 || c > 255) {
+      setErrno(AGC_EINVAL);
+      return -1;
+    }
     stdinPushback.unshift(c & 0xff);
     stdinEof = false;
     return c;
@@ -572,12 +614,14 @@ function makeStdio(options = {}) {
     } else if (fd === 1) {
       emitStdout(text);
     } else {
+      setErrno(AGC_EBADF);
       return -1n;
     }
     return BigInt(count);
   }
 
   function lseek(_fd, _offset, _whence) {
+    setErrno(AGC_EBADF);
     return -1n;
   }
 
@@ -676,6 +720,7 @@ function makeStdio(options = {}) {
     try {
       text = String.fromCodePoint(wc);
     } catch {
+      setErrno(AGC_EINVAL);
       return -1;
     }
     if (isStderrStream(stream)) {
@@ -698,7 +743,10 @@ function makeStdio(options = {}) {
 
   function ungetwc(wc, stream) {
     wc = Number(wc) | 0;
-    if (wc < 0 || wc > 0x7f) return -1;
+    if (wc < 0 || wc > 0x7f) {
+      setErrno(AGC_EINVAL);
+      return -1;
+    }
     return ungetc(wc, stream);
   }
 
@@ -724,7 +772,8 @@ function makeStdio(options = {}) {
 
   function perror(s) {
     const prefix = readCString(getMemory(), s);
-    const text = prefix ? `${prefix}: error\n` : "error\n";
+    const message = strerrorMessage(getErrno());
+    const text = prefix ? `${prefix}: ${message}\n` : `${message}\n`;
     emitStderr(text);
   }
 
@@ -743,6 +792,8 @@ function makeStdio(options = {}) {
     snprintf,
     puts,
     fputs,
+    fopen,
+    fclose,
     putchar,
     fputc,
     fflush,
@@ -763,17 +814,10 @@ function makeStdio(options = {}) {
     ferror,
     clearerr,
     perror,
+    __error,
     runtimeStdoutWrite,
     runtimeStderrWrite,
   };
-}
-
-function agcFopen(_path, _mode) {
-  return 0;
-}
-
-function agcFclose(_stream) {
-  return 0;
 }
 
 export function createAgcRuntimeStdioEnvImports(options = {}) {
@@ -793,8 +837,8 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     ungetc: stdio.ungetc,
     __agc_runtime_stdout_write: stdio.runtimeStdoutWrite,
     __agc_runtime_stderr_write: stdio.runtimeStderrWrite,
-    fopen: agcFopen,
-    fclose: agcFclose,
+    fopen: stdio.fopen,
+    fclose: stdio.fclose,
     fread: stdio.fread,
     fwrite: stdio.fwrite,
     write: stdio.write,
@@ -817,6 +861,7 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     ferror: stdio.ferror,
     clearerr: stdio.clearerr,
     perror: stdio.perror,
+    __error: stdio.__error,
   };
 }
 
