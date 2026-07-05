@@ -573,6 +573,7 @@ probes_found_bugs/anon_global_array_member_designator.c
 probes_found_bugs/anon_ptr_to_array_member_designator.c
 probes_found_bugs/anon_union_promoted_array_designator.c
 wasm32/libc_funcptr_stub_ops.c
+wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c
 wasm32/math_fdim_fma_frexp_ops.c
 wasm32/math_nan_ops.c

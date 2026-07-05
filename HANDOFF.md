@@ -1,13 +1,13 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き635: WAT standalone setjmp/longjmp minimal stub gap を解消）
+最終更新: 2026-07-06（続き639: `<stdatomic.h>` の内部 atomic intrinsic 宣言漏れを解消）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
-  **1187 compiled, 1187 executed**、
+  **1188 compiled, 1188 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -37,6 +37,67 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き639: **`<stdatomic.h>` の内部 atomic intrinsic 宣言漏れを解消**。
+  `test/fixtures/stdheader/stdatomic_ops.c` は実行としては通っていたが、
+  public macro が展開する `__ag_atomic_load` / `__ag_atomic_store` /
+  `__ag_atomic_fetch_*` / `__ag_atomic_cas` / `__ag_atomic_fence` がヘッダ内で未宣言だったため、
+  C99/C11 では不可な implicit declaration 警告 `W3016` を大量に出していた。
+  これらは通常 runtime 関数ではなく IR builder が `__ag_atomic_` prefix を検出して
+  `IR_ATOMIC` に下ろす内部 compiler intrinsic なので、`include/stdatomic.h` に内部 prototype を追加した。
+  対象 fixture 単体では `__ag_atomic_*` / `W3016` が消え、残るのは既存の未初期化解析警告のみ。
+  確認は
+  `./build/ag_c test/fixtures/stdheader/stdatomic_ops.c > /tmp/ag_c_stdatomic_ops.s 2> /tmp/ag_c_stdatomic_ops.err`
+  + `rg -n "__ag_atomic_|W3016" /tmp/ag_c_stdatomic_ops.err` = no match、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き638: **標準ヘッダ public runtime-backed API の standalone gap 検査を追加**。
+  続き637 の `__error()` は、`emit_minimal_libc_stubs()` と `has_minimal_libc_stub_function()` の
+  同期検査だけでは検出できない種類の漏れだった。
+  そこで `test/test_wasm32_e2e.c` に、同梱 C 標準ヘッダの public prototype、
+  `tools/wasm_obj_linker/ag_wasm_link.c` の `is_runtime_func_symbol()`、
+  WAT standalone の `stub_names[]` を突き合わせる自己検査を追加した。
+  標準ヘッダで公開され、linked runtime が runtime-backed とみなす関数が
+  standalone table に無い場合は `./build/test_wasm32_e2e` が FAIL する。
+  `static` な `<complex.h>` 実装や typedef は検査対象から外しており、public runtime symbol の
+  WAT standalone 対応漏れに絞って検出する。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1188 compiled, 1188 executed`、
+  `make -j4 build/test_parser build/test_e2e` + `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き637: **WAT standalone `errno` / `__error()` storage gap を解消**。
+  `include/errno.h` は `errno` を `(*__error())` として公開し、linked runtime / linker rewrite には
+  `__error` → `__agc_runtime___error` があったが、WAT standalone の public stub table と
+  `emit_minimal_libc_stubs()` には `__error` が無かった。
+  そのため standalone WAT で `errno` を読み書きするコードは undefined import になり得た。
+  `src/arch/wasm32_ir.c` に 4 byte の `__ag_stub_errno` static data を確保し、
+  `__error()` がそのアドレスを返す minimal storage stub を追加した。
+  function pointer 経路も table に追加し、続き636 の table / emit 同期検査で今後の漏れを検出できる。
+  回帰は WAT 専用の `test/fixtures/wasm32/errno_storage_ops.c` として追加し、
+  `errno` と `*__error()` の双方向書き換え、`int *(*)(void)` 経由の参照を確認する。
+  追加後の再計測では、標準ヘッダ public prototype かつ linked runtime-backed な symbol の
+  WAT standalone 未対応は空、standalone table / emit gate の差分も空。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1188 compiled, 1188 executed`、
+  `make -j4 build/test_parser build/test_e2e` + `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
+- 続き636: **WAT standalone libc stub table と emit 条件の同期検査を追加**。
+  直近の `nan` / termination family / `setjmp` 追加のように、
+  `emit_minimal_libc_stubs()` に実体を足しても `has_minimal_libc_stub_function()` の public stub table を
+  忘れると function pointer 経路だけが後で壊れるため、`test/test_wasm32_e2e.c` に
+  `src/arch/wasm32_ir.c` を読み取る自己検査を追加した。
+  検査は `stub_names[]` の symbol 集合と `emit_minimal_libc_stubs()` 内の
+  `has_undefined_function("...")` gate 集合を突き合わせ、片方向だけの漏れを即 FAIL にする。
+  これにより今後の standalone libc stub 追加時に table / emit の手動同期漏れが
+  `./build/test_wasm32_e2e` で検出される。
+  確認は `make -j4 build/test_wasm32_e2e` + `./build/test_wasm32_e2e` =
+  `1187 compiled, 1187 executed`、
+  `make -j4 build/test_parser build/test_e2e` + `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `git diff --check` = green。
 - 続き635: **WAT standalone `setjmp()` / `longjmp()` の minimal stub gap を解消**。
   `include/setjmp.h` と linked runtime / linker rewrite には `setjmp` / `longjmp` があったが、
   WAT standalone の public stub table と `emit_minimal_libc_stubs()` には入っていなかった。

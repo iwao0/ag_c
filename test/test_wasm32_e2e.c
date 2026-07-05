@@ -19,11 +19,17 @@ typedef struct {
 } wasm_link2_case_t;
 
 #define MAX_EXTRA_CASES 1024
+#define MAX_STUB_SYMBOLS 512
 
 static wasm_e2e_case_t extra_cases[MAX_EXTRA_CASES];
 static char extra_case_categories[MAX_EXTRA_CASES][64];
 static char extra_case_names[MAX_EXTRA_CASES][192];
 static char extra_case_paths[MAX_EXTRA_CASES][256];
+
+typedef struct {
+  char names[MAX_STUB_SYMBOLS][64];
+  size_t count;
+} symbol_set_t;
 
 static const wasm_link2_case_t link2_cases[] = {
     {"probes_found_bugs", "static_internal_linkage_xtu",
@@ -945,6 +951,259 @@ static int verify_test_e2e_fixture_parity(size_t nextra) {
   return missing ? 1 : 0;
 }
 
+static char *slurp_alloc(const char *path) {
+  FILE *fp = fopen(path, "rb");
+  if (!fp) return NULL;
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    return NULL;
+  }
+  long size = ftell(fp);
+  if (size < 0) {
+    fclose(fp);
+    return NULL;
+  }
+  rewind(fp);
+  char *buf = (char *)malloc((size_t)size + 1);
+  if (!buf) {
+    fclose(fp);
+    return NULL;
+  }
+  size_t n = fread(buf, 1, (size_t)size, fp);
+  fclose(fp);
+  if (n != (size_t)size) {
+    free(buf);
+    return NULL;
+  }
+  buf[n] = '\0';
+  return buf;
+}
+
+static int symbol_set_contains(const symbol_set_t *set, const char *name) {
+  for (size_t i = 0; i < set->count; i++) {
+    if (strcmp(set->names[i], name) == 0) return 1;
+  }
+  return 0;
+}
+
+static int symbol_set_add(symbol_set_t *set, const char *name, size_t len) {
+  if (len == 0 || len >= sizeof(set->names[0])) return 1;
+  char tmp[64];
+  memcpy(tmp, name, len);
+  tmp[len] = '\0';
+  if (symbol_set_contains(set, tmp)) return 0;
+  if (set->count >= MAX_STUB_SYMBOLS) return 1;
+  memcpy(set->names[set->count], tmp, len + 1);
+  set->count++;
+  return 0;
+}
+
+static int collect_stub_table_symbols(const char *src, symbol_set_t *out) {
+  const char *start = strstr(src, "static const char *stub_names[] = {");
+  if (!start) return 1;
+  start = strchr(start, '{');
+  if (!start) return 1;
+  const char *end = strstr(start, "\n  };");
+  if (!end) return 1;
+
+  const char *p = start;
+  while (p < end) {
+    p = strchr(p, '"');
+    if (!p || p >= end) break;
+    const char *q = strchr(p + 1, '"');
+    if (!q || q > end) return 1;
+    if (symbol_set_add(out, p + 1, (size_t)(q - p - 1)) != 0) return 1;
+    p = q + 1;
+  }
+  return 0;
+}
+
+static int collect_stub_emit_symbols(const char *src, symbol_set_t *out) {
+  const char *start = strstr(src, "static void emit_minimal_libc_stubs(void)");
+  if (!start) return 1;
+  const char *end = strstr(start, "static int wasm_align_up_int");
+  if (!end) return 1;
+
+  const char *needle = "has_undefined_function(\"";
+  size_t needle_len = strlen(needle);
+  const char *p = start;
+  while ((p = strstr(p, needle)) != NULL && p < end) {
+    p += needle_len;
+    const char *q = strchr(p, '"');
+    if (!q || q > end) return 1;
+    if (symbol_set_add(out, p, (size_t)(q - p)) != 0) return 1;
+    p = q + 1;
+  }
+  return 0;
+}
+
+static int collect_runtime_func_symbols(const char *src, symbol_set_t *out) {
+  const char *start = strstr(src, "static int is_runtime_func_symbol(str_t name)");
+  if (!start) return 1;
+  const char *end = strstr(start, "static int runtime_has_func");
+  if (!end) return 1;
+
+  const char *needle = "str_eq_lit(name, \"";
+  size_t needle_len = strlen(needle);
+  const char *p = start;
+  while ((p = strstr(p, needle)) != NULL && p < end) {
+    p += needle_len;
+    const char *q = strchr(p, '"');
+    if (!q || q > end) return 1;
+    if (symbol_set_add(out, p, (size_t)(q - p)) != 0) return 1;
+    p = q + 1;
+  }
+  return 0;
+}
+
+static int is_ident_char(char c) {
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+         (c >= '0' && c <= '9') || c == '_';
+}
+
+static int collect_public_header_symbols_from_text(char *text, symbol_set_t *out) {
+  char *line = text;
+  while (*line) {
+    char *next = strchr(line, '\n');
+    if (next) *next = '\0';
+
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '#' && !strstr(p, "typedef") && !strstr(p, "static")) {
+      char *decl = p;
+      while (*decl) {
+        char *semi = strchr(decl, ';');
+        char saved = '\0';
+        if (semi) {
+          saved = *semi;
+          *semi = '\0';
+        }
+
+        char *paren = strchr(decl, '(');
+        if (paren && strchr(paren, ')')) {
+          char *name_end = paren;
+          while (name_end > decl && (name_end[-1] == ' ' || name_end[-1] == '\t')) name_end--;
+          char *name_start = name_end;
+          while (name_start > decl && is_ident_char(name_start[-1])) name_start--;
+          if (name_start < name_end) {
+            size_t len = (size_t)(name_end - name_start);
+            if (!(len == 4 && memcmp(name_start, "void", 4) == 0) &&
+                !(len >= 5 && memcmp(name_start, "__ag_", 5) == 0)) {
+              if (symbol_set_add(out, name_start, len) != 0) return 1;
+            }
+          }
+        }
+
+        if (!semi) break;
+        *semi = saved;
+        decl = semi + 1;
+      }
+    }
+
+    if (!next) break;
+    *next = '\n';
+    line = next + 1;
+  }
+  return 0;
+}
+
+static int collect_public_std_header_symbols(symbol_set_t *out) {
+  static const char *headers[] = {
+      "include/assert.h", "include/complex.h", "include/ctype.h", "include/errno.h",
+      "include/fenv.h", "include/float.h", "include/inttypes.h", "include/iso646.h",
+      "include/limits.h", "include/locale.h", "include/math.h", "include/setjmp.h",
+      "include/signal.h", "include/stdalign.h", "include/stdarg.h", "include/stdatomic.h",
+      "include/stdbool.h", "include/stddef.h", "include/stdint.h", "include/stdio.h",
+      "include/stdlib.h", "include/stdnoreturn.h", "include/string.h", "include/tgmath.h",
+      "include/time.h", "include/uchar.h", "include/wchar.h", "include/wctype.h",
+  };
+  size_t nheaders = sizeof(headers) / sizeof(headers[0]);
+  for (size_t i = 0; i < nheaders; i++) {
+    char *text = slurp_alloc(headers[i]);
+    if (!text) {
+      fprintf(stderr, "FAIL: open %s for public standard header symbol check\n", headers[i]);
+      return 1;
+    }
+    int rc = collect_public_header_symbols_from_text(text, out);
+    free(text);
+    if (rc != 0) return 1;
+  }
+  return 0;
+}
+
+static int verify_minimal_libc_stub_table_sync(void) {
+  char *src = slurp_alloc("src/arch/wasm32_ir.c");
+  if (!src) {
+    fprintf(stderr, "FAIL: open src/arch/wasm32_ir.c for minimal libc stub sync check\n");
+    return 1;
+  }
+
+  symbol_set_t table = {0};
+  symbol_set_t emitted = {0};
+  int failed = 0;
+  if (collect_stub_table_symbols(src, &table) != 0 ||
+      collect_stub_emit_symbols(src, &emitted) != 0) {
+    fprintf(stderr, "FAIL: parse minimal libc stub symbols from src/arch/wasm32_ir.c\n");
+    free(src);
+    return 1;
+  }
+
+  for (size_t i = 0; i < table.count; i++) {
+    if (!symbol_set_contains(&emitted, table.names[i])) {
+      fprintf(stderr, "FAIL: has_minimal_libc_stub_function lists '%s' but emit_minimal_libc_stubs does not gate it\n",
+              table.names[i]);
+      failed = 1;
+    }
+  }
+  for (size_t i = 0; i < emitted.count; i++) {
+    if (!symbol_set_contains(&table, emitted.names[i])) {
+      fprintf(stderr, "FAIL: emit_minimal_libc_stubs gates '%s' but has_minimal_libc_stub_function does not list it\n",
+              emitted.names[i]);
+      failed = 1;
+    }
+  }
+
+  free(src);
+  return failed;
+}
+
+static int verify_runtime_backed_std_headers_have_standalone_stubs(void) {
+  char *wasm_src = slurp_alloc("src/arch/wasm32_ir.c");
+  char *linker_src = slurp_alloc("tools/wasm_obj_linker/ag_wasm_link.c");
+  if (!wasm_src || !linker_src) {
+    fprintf(stderr, "FAIL: open sources for runtime-backed standard header stub check\n");
+    free(wasm_src);
+    free(linker_src);
+    return 1;
+  }
+
+  symbol_set_t table = {0};
+  symbol_set_t runtime = {0};
+  symbol_set_t headers = {0};
+  if (collect_stub_table_symbols(wasm_src, &table) != 0 ||
+      collect_runtime_func_symbols(linker_src, &runtime) != 0 ||
+      collect_public_std_header_symbols(&headers) != 0) {
+    fprintf(stderr, "FAIL: parse sources for runtime-backed standard header stub check\n");
+    free(wasm_src);
+    free(linker_src);
+    return 1;
+  }
+
+  int failed = 0;
+  for (size_t i = 0; i < headers.count; i++) {
+    if (symbol_set_contains(&runtime, headers.names[i]) &&
+        !symbol_set_contains(&table, headers.names[i])) {
+      fprintf(stderr, "FAIL: runtime-backed standard header function '%s' is missing from WAT standalone libc stub table\n",
+              headers.names[i]);
+      failed = 1;
+    }
+  }
+
+  free(wasm_src);
+  free(linker_src);
+  return failed;
+}
+
 int main(void) {
   if (mkdir_p("build/wasm32_e2e") != 0) {
     fprintf(stderr, "FAIL: mkdir build/wasm32_e2e\n");
@@ -953,6 +1212,8 @@ int main(void) {
   size_t nextra = 0;
   if (load_extra_cases("test/wasm32_e2e_extra_cases.txt", &nextra) != 0) return 1;
   if (verify_test_e2e_fixture_parity(nextra) != 0) return 1;
+  if (verify_minimal_libc_stub_table_sync() != 0) return 1;
+  if (verify_runtime_backed_std_headers_have_standalone_stubs() != 0) return 1;
 
   int failures = 0;
   int executed = 0;

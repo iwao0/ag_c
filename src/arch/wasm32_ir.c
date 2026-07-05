@@ -300,7 +300,7 @@ static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_ty
 
 static int has_minimal_libc_stub_function(char *name, int name_len) {
   static const char *stub_names[] = {
-      "__assert_rtn",
+      "__assert_rtn", "__error",
       "_Exit", "abs", "acos", "acosf", "acosh", "acoshf", "acoshl", "acosl",
       "aligned_alloc", "asctime", "asin", "asinf", "asinh", "asinhf", "asinhl",
       "asinl", "abort", "at_quick_exit", "atan", "atan2", "atan2f", "atan2l", "atanf",
@@ -3986,6 +3986,10 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (has_undefined_function("__assert_rtn", 12)) {
     wasm_emitf(2, "(func $__assert_rtn (param i32 i32 i32 i32) (unreachable))\n");
+  }
+  if (has_undefined_function("__error", 7)) {
+    int errno_addr = intern_data_symbol("__ag_stub_errno", 15, 4, 4)->addr;
+    wasm_emitf(2, "(func $__error (result i32) (i32.const %d))\n", errno_addr);
   }
   if (has_undefined_function("exit", 4)) {
     wasm_emitf(2, "(func $exit (param $status i64) (unreachable))\n");

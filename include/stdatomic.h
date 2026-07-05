@@ -66,6 +66,19 @@ typedef _Atomic unsigned long      atomic_uintmax_t;
 typedef struct { _Bool __ag_val; } atomic_flag;
 #define ATOMIC_FLAG_INIT {0}
 
+/* Internal compiler intrinsics used by the public macros below.  They are
+ * lowered by the IR builder and never linked as ordinary runtime functions. */
+long __ag_atomic_load(void *obj);
+long __ag_atomic_store(void *obj, long value);
+long __ag_atomic_exchange(void *obj, long value);
+int  __ag_atomic_cas(void *obj, void *expected, long desired);
+long __ag_atomic_fetch_add(void *obj, long value);
+long __ag_atomic_fetch_sub(void *obj, long value);
+long __ag_atomic_fetch_or(void *obj, long value);
+long __ag_atomic_fetch_xor(void *obj, long value);
+long __ag_atomic_fetch_and(void *obj, long value);
+int  __ag_atomic_fence(void);
+
 /* 初期化: オブジェクトはまだ共有されていないので非アトミックでよい (C11 7.17.2.2)。 */
 #define atomic_init(obj, value) ((void)(*(obj) = (value)))
 
