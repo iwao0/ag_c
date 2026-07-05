@@ -44,6 +44,7 @@ static int float_label_count = 0;
 static int compound_lit_seq = 0;
 static int g_expr_nest_depth = 0;
 static int g_paren_nest_depth = 0;
+static int g_unevaluated_operand_depth = 0;
 
 static int fp_literal_fractional_part_known(double f) {
   /* Diagnostic-only cast.  In the selfhost wasm compiler, out-of-i32-range
@@ -154,6 +155,19 @@ static void enter_paren_nest_or_die(void) {
 
 static void leave_paren_nest(void) {
   if (g_paren_nest_depth > 0) g_paren_nest_depth--;
+}
+
+static int in_unevaluated_operand(void) {
+  return g_unevaluated_operand_depth > 0;
+}
+
+static void mark_lvar_used_if_evaluated(lvar_t *var) {
+  if (!var) return;
+  if (in_unevaluated_operand()) {
+    var->is_unevaluated_used = 1;
+  } else {
+    var->is_used = 1;
+  }
 }
 
 static int sizeof_expr_node(node_t *node) {
@@ -2881,6 +2895,59 @@ static node_t *hoist_compound_assign_lvalue(node_t *target, node_t **prefix_io) 
   return (node_t *)via;
 }
 
+static int node_is_aggregate_lvar(node_t *node) {
+  if (!node || node->kind != ND_LVAR) return 0;
+  node_lvar_t *lv = (node_lvar_t *)node;
+  return lv->mem.tag_kind == TK_STRUCT || lv->mem.tag_kind == TK_UNION;
+}
+
+static node_t *assigned_aggregate_lvar_from_member_base(node_t *base);
+
+static node_t *assigned_aggregate_lvar_from_member_addr(node_t *addr) {
+  if (!addr) return NULL;
+  if (addr->kind == ND_COMMA && addr->rhs) return assigned_aggregate_lvar_from_member_addr(addr->rhs);
+  if ((addr->kind == ND_ADD || addr->kind == ND_SUB) && addr->lhs) {
+    return assigned_aggregate_lvar_from_member_addr(addr->lhs);
+  }
+  if (addr->kind == ND_ADDR && addr->lhs) return assigned_aggregate_lvar_from_member_base(addr->lhs);
+  return NULL;
+}
+
+static node_t *assigned_aggregate_lvar_from_member_base(node_t *base) {
+  if (!base) return NULL;
+  if (node_is_aggregate_lvar(base)) return base;
+  if (base->kind == ND_COMMA && base->rhs) return assigned_aggregate_lvar_from_member_base(base->rhs);
+  if (base->kind == ND_DEREF && base->lhs) return assigned_aggregate_lvar_from_member_addr(base->lhs);
+  return NULL;
+}
+
+static node_t *assigned_lvar_from_target(node_t *target) {
+  if (!target) return NULL;
+  if (target->kind == ND_LVAR) return target;
+  /* `*(&local) = value` is a direct assignment to `local`, but appears after
+   * macro expansion in forms such as atomic_init(&x, value).  Keep this exact
+   * syntactic case narrow; arbitrary `*p = value` may alias many objects. */
+  if (target->kind == ND_DEREF && target->lhs &&
+      target->lhs->kind == ND_ADDR && target->lhs->lhs &&
+      target->lhs->lhs->kind == ND_LVAR) {
+    return target->lhs->lhs;
+  }
+  /* Member assignment is represented as `*(addr(aggregate) + offset) = value`.
+   * The warning pass is variable-granular, not field-sensitive, so a write to a
+   * struct/union member should count as initializing the owning aggregate. */
+  if (target->kind == ND_DEREF) return assigned_aggregate_lvar_from_member_addr(target->lhs);
+  return NULL;
+}
+
+static void mark_assigned_lvar_initialized(node_t *target) {
+  node_t *lvar = assigned_lvar_from_target(target);
+  if (!lvar) return;
+  if (lvar->kind == ND_LVAR) {
+    lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)lvar)->offset);
+    if (lv) lv->is_initialized = 1;
+  }
+}
+
 static node_t *assign(void) {
   node_t *node = conditional();
   node_t *lhs_prefix = NULL;
@@ -2909,10 +2976,7 @@ static node_t *assign(void) {
       set_curtok(curtok()->next);
       node_t *rhs = assign();
       psx_node_reject_const_qual_discard(assign_target, rhs);
-      if (assign_target->kind == ND_LVAR) {
-        lvar_t *lv = psx_decl_find_lvar_by_offset(((node_lvar_t *)assign_target)->offset);
-        if (lv) lv->is_initialized = 1;
-      }
+      mark_assigned_lvar_initialized(assign_target);
       /* C11 6.3.1.2: _Bool への代入は (rhs != 0) を 0/1 で表す。
        * struct メンバ `s.b` (ND_DEREF で mem.is_bool が立っている) や、
        * _Bool ローカル変数 (ND_LVAR で lvar の is_bool) の場合に正規化する。 */
@@ -3556,10 +3620,12 @@ static node_t *parse_sizeof_operand(void) {
                         &cast_elem_size, &cast_fp_kind, &cast_array_count,
                         cast_array_dims, &cast_array_dim_count, NULL, NULL, NULL) &&
         after_rparen && after_rparen->kind == TK_LBRACE) {
+      g_unevaluated_operand_depth++;
       node_t *node = parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
                                                       cast_tag_kind, cast_tag_name, cast_tag_len,
                                                       cast_elem_size, cast_fp_kind, cast_array_count,
                                                       cast_array_dims, cast_array_dim_count);
+      if (g_unevaluated_operand_depth > 0) g_unevaluated_operand_depth--;
       tk_expect(')');
       return psx_node_new_num(sizeof_expr_node(node));
     }
@@ -3702,12 +3768,17 @@ static node_t *parse_sizeof_operand(void) {
         return psx_node_new_lvar_typed(arr_var->offset + 8, 8);
       }
     }
-    node_t *node = expr_internal();
-    tk_expect(')');
-    return psx_node_new_num(sizeof_expr_node(node));
-  }
-  return psx_node_new_num(sizeof_expr_node(unary()));
-}
+	    g_unevaluated_operand_depth++;
+	    node_t *node = expr_internal();
+	    if (g_unevaluated_operand_depth > 0) g_unevaluated_operand_depth--;
+	    tk_expect(')');
+	    return psx_node_new_num(sizeof_expr_node(node));
+	  }
+	  g_unevaluated_operand_depth++;
+	  node_t *node = unary();
+	  if (g_unevaluated_operand_depth > 0) g_unevaluated_operand_depth--;
+	  return psx_node_new_num(sizeof_expr_node(node));
+	}
 
 static node_t *build_pre_inc_dec_node(node_kind_t kind, const char *op) {
   node_t *target = unary();
@@ -5656,7 +5727,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     if (sz > var->elem_size && var->elem_size > 0) gv->mem.is_pointer = 1;
     gv->name = var->static_global_name;
     gv->name_len = var->static_global_name_len;
-    var->is_used = 1;
+    mark_lvar_used_if_evaluated(var);
     return (node_t *)gv;
   }
   int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
@@ -5803,7 +5874,7 @@ static node_t *resolve_identifier(token_ident_t *tok) {
      * 解析を続けたい場合のフォールバックとして lvar 登録しておく。 */
     var = psx_decl_register_lvar(tok->str, tok->len);
   }
-  var->is_used = 1;
+  mark_lvar_used_if_evaluated(var);
   /* static local 配列はグローバルに lowering 済み (decl.c:try_lower_static_local_array)。
    * alias lvar の offset=0 は意味を持たないので、build_array_lvar_addr_node が
    * フレーム上の偽アドレスを base にしないよう専用経路で ND_ADDR(ND_GVAR) を返す。 */

@@ -1,9 +1,11 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き639: `<stdatomic.h>` の内部 atomic intrinsic 宣言漏れを解消）
+最終更新: 2026-07-06（続き642: `sizeof` 未評価オペランドの未初期化/未使用警告を分離）
 
 ## 現状
 - 直近の部分確認:
+  `./build/test_parser` =
+  **pass**、
   `./build/test_e2e` =
   **1193/1193 pass**、
   `./build/test_wasm32_e2e` =
@@ -37,6 +39,59 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き642: **`sizeof` 未評価オペランドの未初期化/未使用警告を分離**。
+  `int (*p)[3][4]; sizeof(*p)` のような `sizeof` operand は C の未評価文脈なので、
+  `p` を実行時に読む未初期化使用ではない。
+  ただし単純に `is_used` を立てないだけだと `W3004` が `W3003` (未使用変数) に化けるため、
+  `lvar_t` に `is_unevaluated_used` を追加した。
+  `src/parser/expr.c` では `sizeof` の通常式 operand を parse する間だけ
+  `g_unevaluated_operand_depth` を立て、識別子参照は `is_used` ではなく
+  `is_unevaluated_used` に記録する。
+  `src/parser/parser.c` の warning pass は、評価済み参照も未評価参照も無い変数だけ `W3003`、
+  評価済み参照かつ未初期化の変数だけ `W3004` とするよう分けた。
+  `test/test_parser.c` には `sizeof(x)` と `sizeof(*p)` が `W3004` にならない regression を追加した。
+  確認は
+  `./build/ag_c test/fixtures/type_decl/local_ptr_to_2d_array_sizeof.c > /tmp/ag_c_sizeof_ptr2d.s 2> /tmp/ag_c_sizeof_ptr2d.err` =
+  stderr empty、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き641: **struct/union メンバ代入の未初期化解析警告を解消**。
+  続き640と同じ根で、parser の初期化済みマークが直接の `x = ...` だけを見ていたため、
+  `struct S s; s.a = 2; s.b = 5; return s.a + s.b;` や bitfield 代入後の読み出しでも、
+  変数単位の warning pass が `s` を未初期化扱いして `W3004` を出していた。
+  メンバ代入は AST 上 `DEREF(ADD(ADDR(aggregate), offset)) = value` になるため、
+  `src/parser/expr.c` の `mark_assigned_lvar_initialized()` を
+  「代入先から初期化対象ローカルを抽出する」helper 群に分け、根元が struct/union ローカルだと分かる
+  direct member assignment だけを初期化済みにするよう広げた。
+  任意の `*p = ...` や `p->a = ...` の alias 経由は今回も初期化済みにしない。
+  `test/test_parser.c` には `struct` メンバ代入と bitfield メンバ代入の `W3004` regression を追加した。
+  確認は
+  `./build/ag_c test/fixtures/type_decl/member_dot.c > /tmp/ag_c_member_dot.s 2> /tmp/ag_c_member_dot.err` =
+  stderr empty、
+  `./build/ag_c test/fixtures/bitfield/read.c > /tmp/ag_c_bitfield_read.s 2> /tmp/ag_c_bitfield_read.err` =
+  stderr empty、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き640: **`atomic_init(&x, ...)` の未初期化解析警告を根本修正**。
+  続き639で `<stdatomic.h>` の `__ag_atomic_*` implicit declaration は消えたが、
+  `atomic_init(obj, value)` は macro 展開後に `(*(obj) = value)` となり、
+  `atomic_init(&x, 10)` は `*(&x) = 10` になる。
+  parser の初期化済みマークは直接の `x = ...` (`ND_LVAR`) だけを見ていたため、
+  実体としては `x` へ代入しているのに `x` / `lx` / `sx` / `cx` / `scx` が
+  関数末尾で `W3004` 扱いになっていた。
+  `src/parser/expr.c` に exact な `DEREF(ADDR(LVAR))` だけをローカルへの代入として扱う
+  `mark_assigned_lvar_initialized()` を追加し、任意の `*p = ...` までは初期化扱いしないようにした。
+  `test/test_parser.c` には成功時 stderr に特定警告が出ないことを確認する
+  `expect_parse_ok_without_message()` を追加し、`int x; *(&x)=1;` と
+  `_Atomic` typedef 経由の `((void)(*(&x)=10))` を `W3004` regression として固定した。
+  確認は
+  `./build/ag_c test/fixtures/stdheader/stdatomic_ops.c > /tmp/ag_c_stdatomic_ops.s 2> /tmp/ag_c_stdatomic_ops.err`
+  + `rg -n "W3004|__ag_atomic_|W3016|警告" /tmp/ag_c_stdatomic_ops.err` = no match、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
 - 続き639: **`<stdatomic.h>` の内部 atomic intrinsic 宣言漏れを解消**。
   `test/fixtures/stdheader/stdatomic_ops.c` は実行としては通っていたが、
   public macro が展開する `__ag_atomic_load` / `__ag_atomic_store` /
@@ -44,7 +99,8 @@
   C99/C11 では不可な implicit declaration 警告 `W3016` を大量に出していた。
   これらは通常 runtime 関数ではなく IR builder が `__ag_atomic_` prefix を検出して
   `IR_ATOMIC` に下ろす内部 compiler intrinsic なので、`include/stdatomic.h` に内部 prototype を追加した。
-  対象 fixture 単体では `__ag_atomic_*` / `W3016` が消え、残るのは既存の未初期化解析警告のみ。
+  対象 fixture 単体では `__ag_atomic_*` / `W3016` が消えた。
+  この時点で残っていた `atomic_init(&x, ...)` 由来の `W3004` は続き640で解消済み。
   確認は
   `./build/ag_c test/fixtures/stdheader/stdatomic_ops.c > /tmp/ag_c_stdatomic_ops.s 2> /tmp/ag_c_stdatomic_ops.err`
   + `rg -n "__ag_atomic_|W3016" /tmp/ag_c_stdatomic_ops.err` = no match、

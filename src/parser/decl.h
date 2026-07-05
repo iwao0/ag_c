@@ -39,6 +39,7 @@ struct lvar_t {
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int is_unsigned : 1;       // 1: unsigned type
   unsigned int is_used : 1;           // 1: 参照された
+  unsigned int is_unevaluated_used : 1; // 1: sizeof 等の未評価オペランドで参照された
   unsigned int is_param : 1;          // 1: 関数パラメータ
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int is_complex : 1;       // 1: _Complex型

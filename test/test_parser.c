@@ -155,6 +155,41 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
   ASSERT_TRUE(strstr(buf, needle) == NULL);
 }
 
+static void expect_parse_ok_without_message(const char *input, const char *needle) {
+  int fds[2];
+  ASSERT_TRUE(pipe(fds) == 0);
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(fds[0]);
+    dup2(fds[1], STDERR_FILENO);
+    close(fds[1]);
+    freopen("/dev/null", "w", stdout);
+    token_t *head = tk_tokenize((char *)input);
+    parsed_code = ps_program_from(head);
+    _exit(0);
+  }
+
+  close(fds[1]);
+  char buf[4096];
+  size_t used = 0;
+  for (;;) {
+    ssize_t nread = read(fds[0], buf + used, sizeof(buf) - 1 - used);
+    if (nread <= 0) break;
+    used += (size_t)nread;
+    if (used >= sizeof(buf) - 1) break;
+  }
+  buf[used] = '\0';
+  close(fds[0]);
+
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(0, WEXITSTATUS(status));
+  ASSERT_TRUE(strstr(buf, needle) == NULL);
+}
+
 static void test_expr_number() {
   printf("test_expr_number...\n");
     node_t *node = parse_expr_input("42");
@@ -712,6 +747,8 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
+  expect_parse_ok_without_message("int main(void){ int x; return sizeof(x); }", "W3004");
+  expect_parse_ok_without_message("int main(void){ int (*p)[3][4]; return sizeof(*p); }", "W3004");
 
   parsed_code = parse_program_input("main() { struct S { int x; }; return sizeof(struct S); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
@@ -1869,6 +1906,16 @@ static void test_parse_evil_edge_cases() {
 
   // 複雑な式文のパース
   expect_parse_ok("main() { int x; x = 1 + 2 * 3 - 4 / 2 + (5 % 3); return x; }");
+  expect_parse_ok_without_message("main() { int x; *(&x) = 1; return x; }", "W3004");
+  expect_parse_ok_without_message(
+      "typedef _Atomic int atomic_int; int main(void){ atomic_int x; ((void)(*(&x)=10)); return x; }",
+      "W3004");
+  expect_parse_ok_without_message(
+      "int main(void){ struct S { int a; int b; }; struct S s; s.a=2; s.b=5; return s.a+s.b; }",
+      "W3004");
+  expect_parse_ok_without_message(
+      "int main(void){ struct B { unsigned a:3; unsigned b:5; }; struct B s; s.a=5; s.b=10; return s.a; }",
+      "W3004");
   expect_parse_ok("main() { int a; int b; int c; a = b = c = 42; return a; }");
   expect_parse_ok("main() { return 1?2:3?4:5?6:7; }");
   expect_parse_ok("main() { int x=1; return x<<1|x<<2|x<<3; }");

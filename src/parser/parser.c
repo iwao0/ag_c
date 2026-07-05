@@ -4751,7 +4751,7 @@ static node_block_t *parse_funcdef_body_block(void) {
  * 仮引数 / underscore-prefix / 配列は対象外。 */
 static void warn_unused_uninit_locals(void) {
   for (lvar_t *v = psx_decl_get_locals(); v; v = v->next_all) {
-    if (!v->is_used && !v->is_param && v->name[0] != '_') {
+    if (!v->is_used && !v->is_unevaluated_used && !v->is_param && v->name[0] != '_') {
       diag_warn_tokf(DIAG_WARN_PARSER_UNUSED_VARIABLE, curtok(),
                      diag_warn_message_for(DIAG_WARN_PARSER_UNUSED_VARIABLE),
                      v->len, v->name);
